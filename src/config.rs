@@ -19,6 +19,10 @@ pub struct RaptorpathConfig {
     pub max_fec_overhead: Option<f64>,
     pub protocol_hint: Option<String>,
     pub status_addr: Option<String>,
+    /// Additional routes to add through the tunnel (CIDR notation)
+    pub route: Option<Vec<String>>,
+    /// DNS server to configure on the tunnel interface
+    pub dns: Option<String>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -81,6 +85,8 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         max_fec_overhead: overlay.max_fec_overhead.or(base.max_fec_overhead),
         protocol_hint: overlay.protocol_hint.or(base.protocol_hint),
         status_addr: overlay.status_addr.or(base.status_addr),
+        route: overlay.route.or(base.route),
+        dns: overlay.dns.or(base.dns),
     }
 }
 
@@ -117,6 +123,13 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         .transpose()
         .map_err(|e| anyhow::anyhow!("invalid status address: {e}"))?;
 
+    let dns: Option<std::net::IpAddr> = config
+        .dns
+        .as_ref()
+        .map(|s| s.parse())
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("invalid DNS address: {e}"))?;
+
     let peer_config = PeerConfig {
         bind_addrs,
         peer_addrs,
@@ -127,6 +140,8 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         protocol_hint,
         is_server: config.server.unwrap_or(false),
         status_addr,
+        routes: config.route.clone().unwrap_or_default(),
+        dns,
     };
 
     Ok((peer_config, status_addr))
@@ -183,6 +198,8 @@ mod tests {
             max_fec_overhead: Some(0.5),
             protocol_hint: Some("auto".into()),
             status_addr: Some("127.0.0.1:9820".into()),
+            route: Some(vec!["192.168.50.0/24".into()]),
+            dns: Some("10.99.0.1".into()),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

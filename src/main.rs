@@ -4,6 +4,7 @@ mod fec;
 mod monitor;
 mod net;
 mod preflight;
+mod routing;
 mod scheduler;
 mod transport;
 mod tun;
@@ -32,6 +33,8 @@ enum Commands {
     Check,
     /// Query status of a running raptorpath instance
     Status(StatusArgs),
+    /// Download and install platform dependencies (e.g. wintun.dll on Windows)
+    Setup,
 }
 
 #[derive(Parser, Debug)]
@@ -75,6 +78,14 @@ struct RunArgs {
     /// Status endpoint address (e.g. 127.0.0.1:9820)
     #[arg(long)]
     status_addr: Option<String>,
+
+    /// Routes to add through the tunnel (CIDR notation, comma-separated)
+    #[arg(long, value_delimiter = ',')]
+    route: Vec<String>,
+
+    /// DNS server to configure on the tunnel interface
+    #[arg(long)]
+    dns: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -110,10 +121,13 @@ async fn main() -> anyhow::Result<()> {
         protocol_hint: None,
         profile: None,
         status_addr: None,
+        route: vec![],
+        dns: None,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
         Commands::Status(args) => cmd_status(args).await,
+        Commands::Setup => cmd_setup().await,
     }
 }
 
@@ -152,6 +166,12 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         max_fec_overhead: args.max_fec_overhead,
         protocol_hint: args.protocol_hint,
         status_addr: args.status_addr,
+        route: if args.route.is_empty() {
+            None
+        } else {
+            Some(args.route)
+        },
+        dns: args.dns,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;
@@ -166,20 +186,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
     }
     println!();
 
-    // Build the full PeerConfig with status_addr
-    let config = net::PeerConfig {
-        bind_addrs: peer_config.bind_addrs,
-        peer_addrs: peer_config.peer_addrs,
-        tun_name: peer_config.tun_name,
-        tun_addr: peer_config.tun_addr,
-        target_tail_loss: peer_config.target_tail_loss,
-        max_fec_overhead: peer_config.max_fec_overhead,
-        protocol_hint: peer_config.protocol_hint,
-        is_server: peer_config.is_server,
-        status_addr,
-    };
-
-    net::run(config).await
+    net::run(peer_config).await
 }
 
 async fn cmd_check(config_path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -288,4 +295,102 @@ async fn cmd_status(args: StatusArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn cmd_setup() -> anyhow::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        // Check if wintun.dll already exists
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let dll_path = exe_dir.join("wintun.dll");
+
+        if dll_path.exists() {
+            println!("wintun.dll already exists at {}", dll_path.display());
+            println!("To reinstall, delete it first and run setup again.");
+            return Ok(());
+        }
+
+        println!("Downloading wintun from https://www.wintun.net/ ...");
+
+        // Download the wintun zip
+        let url = "https://www.wintun.net/builds/wintun-0.14.1.zip";
+        let output = tokio::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Invoke-WebRequest -Uri '{}' -OutFile '$env:TEMP\\wintun.zip'",
+                    url
+                ),
+            ])
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to download wintun: {}", stderr.trim());
+        }
+
+        println!("Extracting wintun.dll...");
+
+        // Extract the correct architecture DLL
+        let arch_dir = if cfg!(target_arch = "x86_64") {
+            "wintun\\bin\\amd64\\wintun.dll"
+        } else if cfg!(target_arch = "aarch64") {
+            "wintun\\bin\\arm64\\wintun.dll"
+        } else {
+            "wintun\\bin\\x86\\wintun.dll"
+        };
+
+        let extract_output = tokio::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Expand-Archive -Path '$env:TEMP\\wintun.zip' -DestinationPath '$env:TEMP\\wintun_extract' -Force; \
+                     Copy-Item \"$env:TEMP\\wintun_extract\\{}\" -Destination '{}'",
+                    arch_dir,
+                    dll_path.display()
+                ),
+            ])
+            .output()
+            .await?;
+
+        if !extract_output.status.success() {
+            let stderr = String::from_utf8_lossy(&extract_output.stderr);
+            anyhow::bail!("Failed to extract wintun.dll: {}", stderr.trim());
+        }
+
+        // Cleanup temp files
+        let _ = tokio::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Remove-Item '$env:TEMP\\wintun.zip' -Force -ErrorAction SilentlyContinue; \
+                 Remove-Item '$env:TEMP\\wintun_extract' -Recurse -Force -ErrorAction SilentlyContinue",
+            ])
+            .output()
+            .await;
+
+        println!("wintun.dll installed at {}", dll_path.display());
+        println!("Setup complete.");
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        println!("No additional setup needed on Linux.");
+        println!("Make sure the TUN kernel module is loaded: sudo modprobe tun");
+        println!("Run raptorpath with: sudo raptorpath run ...");
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        println!("Setup not implemented for this platform.");
+        Ok(())
+    }
 }

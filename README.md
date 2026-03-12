@@ -32,6 +32,8 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 - Preflight environment checks (`raptorpath check`)
 - HTTP monitoring endpoint with runtime stats (`/status`, `/health`)
 - Graceful shutdown with partial block flush and peer notification
+- Automatic route and DNS management with cleanup on shutdown
+- `setup` command for automated wintun.dll installation on Windows
 
 ## Architecture
 
@@ -52,7 +54,7 @@ App ◀── TUN ◀── Packet Extract ◀── RaptorQ Decode  ◀──�
 ### Windows
 - Visual Studio Build Tools with C++ workload
 - Windows SDK (for kernel32.lib etc.)
-- [WinTUN driver](https://www.wintun.net/) — download `wintun.dll` and place in your PATH or next to the binary
+- [WinTUN driver](https://www.wintun.net/) — run `raptorpath setup` to install automatically, or download manually
 
 ### Linux
 - Root or `CAP_NET_ADMIN` capability
@@ -80,7 +82,15 @@ sudo raptorpath run \
   --bind 0.0.0.0:4433,0.0.0.0:4434 \
   --peer 203.0.113.1:4433,203.0.113.1:4434 \
   --tun-name rpath0 \
-  --tun-addr 10.99.0.2/24
+  --tun-addr 10.99.0.2/24 \
+  --route 192.168.50.0/24,10.0.0.0/8 \
+  --dns 10.99.0.1
+```
+
+### Setup (Windows)
+```bash
+# Download and install wintun.dll automatically
+raptorpath setup
 ```
 
 ### Preflight checks
@@ -120,6 +130,8 @@ See the `--help` output for TOML config format and all available fields.
 | `--profile` | none | Config profile: `home` or `datacenter` |
 | `--config` | none | Path to TOML config file |
 | `--status-addr` | none | Address for HTTP monitoring endpoint |
+| `--route` | none | Routes to add through tunnel (CIDR, comma-separated) |
+| `--dns` | none | DNS server to configure on tunnel interface |
 
 ### Environment
 
@@ -132,10 +144,11 @@ See the `--help` output for TOML config format and all available fields.
 
 ```
 src/
-├── main.rs              CLI entry point (run/check/status subcommands)
+├── main.rs              CLI entry point (run/check/status/setup subcommands)
 ├── lib.rs               Library re-exports
 ├── config.rs            TOML config with profile/layered merging
 ├── preflight.rs         Pre-run environment checks
+├── routing.rs           Route and DNS management
 ├── net/mod.rs           Orchestration (TUN ↔ FEC ↔ transport)
 ├── fec/
 │   ├── codec.rs         RaptorQ encoder/decoder wrapper

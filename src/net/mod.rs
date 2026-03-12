@@ -15,12 +15,12 @@ use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{Decoder, EncodingParams, FecStream};
 use crate::monitor::stats::SharedStats;
+use crate::routing::{self, ManagedDns, ManagedRoute};
 use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
 use crate::tun::{TunConfig, TunInterface};
 use bytes::Bytes;
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,6 +40,10 @@ pub struct PeerConfig {
     pub protocol_hint: ProtocolHint,
     pub is_server: bool,
     pub status_addr: Option<SocketAddr>,
+    /// Additional routes to add through the tunnel (CIDR notation)
+    pub routes: Vec<String>,
+    /// DNS server to configure on the tunnel interface
+    pub dns: Option<IpAddr>,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -103,6 +107,42 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     })
     .await?;
     info!("TUN interface {} ready", config.tun_name);
+
+    // Set up routes through the tunnel
+    let peer_gateway = routing::infer_peer_ip(tun_ip, prefix_len);
+    let mut managed_routes: Vec<ManagedRoute> = Vec::new();
+    if let Some(gw) = peer_gateway {
+        for route_cidr in &config.routes {
+            let route = ManagedRoute {
+                destination: route_cidr.clone(),
+                gateway: gw,
+                iface: config.tun_name.clone(),
+            };
+            if let Err(e) = routing::add_route(&route).await {
+                warn!(%e, route = %route_cidr, "failed to add route");
+            } else {
+                managed_routes.push(route);
+            }
+        }
+    } else if !config.routes.is_empty() {
+        warn!("cannot infer peer gateway IP — routes not added");
+    }
+
+    // Configure DNS on tunnel interface
+    let mut managed_dns: Option<ManagedDns> = None;
+    if let Some(dns_server) = config.dns {
+        let mut dns = ManagedDns {
+            server: dns_server,
+            iface: config.tun_name.clone(),
+            #[cfg(target_os = "linux")]
+            previous_resolv_conf: None,
+        };
+        if let Err(e) = routing::set_dns(&mut dns).await {
+            warn!(%e, "failed to configure DNS");
+        } else {
+            managed_dns = Some(dns);
+        }
+    }
 
     // Create QUIC transport
     let mut transport = QuicTransport::new(&config.bind_addrs, config.is_server).await?;
@@ -513,6 +553,14 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         r = sender_handle => { r?; }
         r = receiver_handle => { r?; }
         _ = cleanup_handle => {}
+    }
+
+    // Clean up routes and DNS on shutdown
+    for route in &managed_routes {
+        routing::remove_route(route).await;
+    }
+    if let Some(ref dns) = managed_dns {
+        routing::revert_dns(dns).await;
     }
 
     Ok(())
