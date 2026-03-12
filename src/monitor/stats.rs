@@ -105,6 +105,8 @@ pub struct PathStats {
     pub cwnd: AtomicU64,
     pub in_flight: AtomicU64,
     pub in_slow_start: AtomicBool,
+    /// Interarrival jitter in microseconds (RFC 3550 style)
+    pub jitter_us: AtomicU64,
 }
 
 impl PathStats {
@@ -120,6 +122,7 @@ impl PathStats {
             cwnd: AtomicU64::new(10),
             in_flight: AtomicU64::new(0),
             in_slow_start: AtomicBool::new(true),
+            jitter_us: AtomicU64::new(0),
         }
     }
 
@@ -135,6 +138,7 @@ impl PathStats {
             cwnd: self.cwnd.load(Ordering::Relaxed),
             in_flight: self.in_flight.load(Ordering::Relaxed),
             in_slow_start: self.in_slow_start.load(Ordering::Relaxed),
+            jitter_us: self.jitter_us.load(Ordering::Relaxed),
         }
     }
 }
@@ -183,6 +187,7 @@ pub struct PathSnapshot {
     pub cwnd: u64,
     pub in_flight: u64,
     pub in_slow_start: bool,
+    pub jitter_us: u64,
 }
 
 #[derive(Debug, Serialize)]

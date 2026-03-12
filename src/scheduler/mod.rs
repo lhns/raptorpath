@@ -7,6 +7,7 @@
 use crate::control::LossEstimator;
 use crate::fec::WireSymbol;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 /// Identifies a network path (e.g., WiFi, LTE, Ethernet).
 pub type PathId = u32;
@@ -25,6 +26,10 @@ pub struct PathState {
     pub ssthresh: u32,
     /// Whether we are in slow-start phase
     pub in_slow_start: bool,
+    /// Last time we received an RTCP-style report or any data from this path
+    pub last_report: Instant,
+    /// Maximum datagram size discovered for this path
+    pub max_datagram_size: Option<usize>,
 }
 
 impl PathState {
@@ -46,6 +51,8 @@ impl PathState {
             active: true,
             ssthresh: 64,
             in_slow_start: true,
+            last_report: Instant::now(),
+            max_datagram_size: None,
         }
     }
 
@@ -240,6 +247,41 @@ impl Scheduler {
         if let Some(path) = self.paths.get_mut(&path_id) {
             path.on_loss(fec_recovered);
         }
+    }
+
+    /// Record that we received a report/data from a path (keepalive).
+    pub fn touch_path(&mut self, path_id: PathId) {
+        if let Some(path) = self.paths.get_mut(&path_id) {
+            path.last_report = Instant::now();
+            if !path.active {
+                tracing::info!(path_id, "path recovered — marking active");
+                path.active = true;
+                // Reset to slow-start on recovery
+                path.cwnd = PathState::INITIAL_CWND;
+                path.ssthresh = 64;
+                path.in_slow_start = true;
+            }
+        }
+    }
+
+    /// Check all paths for staleness and deactivate dead ones.
+    /// Returns list of path IDs that were deactivated.
+    pub fn check_dead_paths(&mut self, timeout: Duration) -> Vec<PathId> {
+        let now = Instant::now();
+        let mut deactivated = vec![];
+        for path in self.paths.values_mut() {
+            if path.active && now.duration_since(path.last_report) > timeout {
+                tracing::warn!(path_id = path.id, "path timed out — marking inactive");
+                path.active = false;
+                deactivated.push(path.id);
+            }
+        }
+        deactivated
+    }
+
+    /// Get all path IDs (including inactive).
+    pub fn all_path_ids(&self) -> Vec<PathId> {
+        self.paths.keys().copied().collect()
     }
 }
 

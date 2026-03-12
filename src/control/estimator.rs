@@ -32,6 +32,13 @@ pub struct LossEstimator {
     burst_threshold: u32,
     in_burst: bool,
 
+    /// Interarrival jitter (RTCP-style, RFC 3550 A.8)
+    jitter: f64,
+    /// Last packet arrival timestamp for jitter calculation
+    last_arrival_us: Option<u64>,
+    /// Last packet send timestamp for jitter calculation
+    last_send_ts_us: Option<u64>,
+
     /// Bookkeeping
     total_sent: u64,
     total_received: u64,
@@ -53,6 +60,9 @@ impl LossEstimator {
             consecutive_losses: 0,
             burst_threshold: 3,
             in_burst: false,
+            jitter: 0.0,
+            last_arrival_us: None,
+            last_send_ts_us: None,
             total_sent: 0,
             total_received: 0,
             last_update: Instant::now(),
@@ -132,6 +142,27 @@ impl LossEstimator {
 
     pub fn throughput(&self) -> f64 {
         self.ewma_throughput
+    }
+
+    /// Record arrival for jitter calculation (RFC 3550 A.8).
+    /// `send_ts_us`: sender's timestamp in microseconds.
+    /// `arrival_us`: local arrival time in microseconds.
+    pub fn record_arrival(&mut self, send_ts_us: u64, arrival_us: u64) {
+        if let (Some(last_send), Some(last_arrival)) = (self.last_send_ts_us, self.last_arrival_us) {
+            // D(i,j) = (Rj - Ri) - (Sj - Si)
+            let transit_diff = (arrival_us as i64 - last_arrival as i64)
+                - (send_ts_us as i64 - last_send as i64);
+            let d = transit_diff.unsigned_abs() as f64;
+            // J(i) = J(i-1) + (|D(i,j)| - J(i-1)) / 16
+            self.jitter += (d - self.jitter) / 16.0;
+        }
+        self.last_send_ts_us = Some(send_ts_us);
+        self.last_arrival_us = Some(arrival_us);
+    }
+
+    /// Current jitter estimate in microseconds (RFC 3550 style).
+    pub fn jitter_us(&self) -> f64 {
+        self.jitter
     }
 
     pub fn is_in_burst(&self) -> bool {

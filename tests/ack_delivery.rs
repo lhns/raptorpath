@@ -181,6 +181,9 @@ fn test_path_report_roundtrip() {
         loss_rate: 0.05,
         avg_rtt_us: 15000,
         throughput_bps: 1_000_000.0,
+        jitter_us: 500,
+        symbols_sent: 1000,
+        symbols_received: 950,
     };
     let wire = WireMessage::Control(msg);
     let data = wire.serialize();
@@ -192,11 +195,17 @@ fn test_path_report_roundtrip() {
             loss_rate,
             avg_rtt_us,
             throughput_bps,
+            jitter_us,
+            symbols_sent,
+            symbols_received,
         }) => {
             assert_eq!(path_id, 2);
             assert!((loss_rate - 0.05).abs() < 1e-10);
             assert_eq!(avg_rtt_us, 15000);
             assert!((throughput_bps - 1_000_000.0).abs() < 1e-5);
+            assert_eq!(jitter_us, 500);
+            assert_eq!(symbols_sent, 1000);
+            assert_eq!(symbols_received, 950);
         }
         _ => panic!("expected PathReport"),
     }

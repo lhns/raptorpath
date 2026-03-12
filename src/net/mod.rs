@@ -84,6 +84,13 @@ impl BlockProfile {
 const DECODER_TIMEOUT: Duration = Duration::from_secs(30);
 /// Decoder cleanup interval.
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
+/// RTCP-style report interval (how often we send PathReport + Ping).
+const REPORT_INTERVAL: Duration = Duration::from_secs(2);
+/// Dead path timeout: if no report received for this long, deactivate the path.
+const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
+/// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
+/// 8 bytes wire header + ~40 bytes bincode overhead estimate.
+const WIRE_OVERHEAD: usize = 48;
 
 fn now_us() -> u64 {
     SystemTime::now()
@@ -382,8 +389,24 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     let batch_path_id = batch.path_id;
                     let symbol_count = batch.symbols.len() as u32;
 
+                    // Touch path as keepalive (received data = path is alive)
+                    recv_scheduler.lock().touch_path(path_id);
+
+                    // Record arrival for RTCP-style jitter calculation
+                    {
+                        let arrival_us = now_us();
+                        let mut sched = recv_scheduler.lock();
+                        if let Some(path) = sched.path_mut(path_id) {
+                            path.estimator.record_arrival(batch_send_ts, arrival_us);
+                            // Update jitter in monitoring stats
+                            if let Some(ps) = recv_stats.path(path_id) {
+                                ps.jitter_us.store(path.estimator.jitter_us() as u64, Ordering::Relaxed);
+                            }
+                        }
+                    }
+
                     // Track batch sequences for loss detection (ADR-0003)
-                    let (expected, received_total) = {
+                    let (expected, _received_total) = {
                         let mut tracker = recv_path_tracking
                             .entry(path_id)
                             .or_insert_with(PathBatchTracker::new);
@@ -549,10 +572,70 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         });
     }
 
+    // RTCP-style periodic report + keepalive task
+    let report_transport = transport_arc.clone();
+    let report_scheduler = scheduler_arc.clone();
+    let report_stats = stats.clone();
+    let mut report_shutdown_rx = shutdown_tx.subscribe();
+    let report_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(REPORT_INTERVAL);
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {}
+                _ = report_shutdown_rx.recv() => break,
+            }
+
+            let mut sched = report_scheduler.lock();
+
+            // Check for dead paths
+            let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
+            for pid in &deactivated {
+                if let Some(ps) = report_stats.path(*pid) {
+                    ps.active.store(false, Ordering::Relaxed);
+                }
+            }
+
+            // Query and store MTU per path
+            for pid in sched.all_path_ids() {
+                if let Some(mtu) = report_transport.max_datagram_size(pid) {
+                    if let Some(path) = sched.path_mut(pid) {
+                        path.max_datagram_size = Some(mtu);
+                    }
+                }
+            }
+
+            // Send PathReport + Ping on each active path
+            let path_ids = sched.active_paths();
+            let reports: Vec<_> = path_ids.iter().filter_map(|&pid| {
+                let path = sched.path(pid)?;
+                let ps = report_stats.path(pid)?;
+                Some((pid, ControlMessage::PathReport {
+                    path_id: pid,
+                    loss_rate: path.estimator.loss_rate(),
+                    avg_rtt_us: path.estimator.rtt().as_micros() as u64,
+                    throughput_bps: path.estimator.throughput(),
+                    jitter_us: path.estimator.jitter_us() as u64,
+                    symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
+                    symbols_received: ps.symbols_received.load(Ordering::Relaxed),
+                }))
+            }).collect();
+            drop(sched);
+
+            for (pid, report) in reports {
+                let _ = report_transport.send_control_datagram(pid, report);
+                let _ = report_transport.send_control_datagram(
+                    pid,
+                    ControlMessage::Ping { timestamp_us: now_us() },
+                );
+            }
+        }
+    });
+
     tokio::select! {
         r = sender_handle => { r?; }
         r = receiver_handle => { r?; }
         _ = cleanup_handle => {}
+        _ = report_handle => {}
     }
 
     // Clean up routes and DNS on shutdown
@@ -759,13 +842,14 @@ fn handle_control_message(
 
         // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
         ControlMessage::Ack {
-            block_id,
+            block_id: _,
             received_ids,
             echo_send_timestamp_us,
             expected_count,
             received_count,
         } => {
             let mut sched = scheduler.lock();
+            sched.touch_path(path_id);
             sched.ack(path_id, received_ids.len() as u32);
 
             // ADR-0007: RTT from echoed sender timestamp (same clock, no skew)
@@ -843,20 +927,37 @@ fn handle_control_message(
 
         ControlMessage::PathReport {
             path_id: report_path_id,
-            loss_rate: _,
+            loss_rate,
             avg_rtt_us,
             throughput_bps,
+            jitter_us,
+            symbols_sent: _,
+            symbols_received: _,
         } => {
             let mut sched = scheduler.lock();
+            // Touch path — this doubles as keepalive
+            sched.touch_path(report_path_id);
             if let Some(path) = sched.path_mut(report_path_id) {
                 path.estimator
                     .record_rtt(Duration::from_micros(avg_rtt_us));
                 path.estimator.record_throughput(throughput_bps);
+                // Record peer's reported loss for cross-validation
+                if loss_rate > 0.0 {
+                    let approx_sent = 100u32;
+                    let approx_received = ((1.0 - loss_rate) * approx_sent as f64) as u32;
+                    path.estimator.record_batch(approx_sent, approx_received);
+                }
+            }
+            // Update monitoring stats with peer's jitter
+            if let Some(ps) = stats.path(report_path_id) {
+                ps.rtt_us.store(avg_rtt_us, Ordering::Relaxed);
+                ps.jitter_us.store(jitter_us, Ordering::Relaxed);
             }
         }
 
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
+            scheduler.lock().touch_path(path_id);
             let _ = transport.send_control_datagram(path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
         }
 

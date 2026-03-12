@@ -84,12 +84,18 @@ pub enum ControlMessage {
         symbols_needed: u32,
     },
 
-    /// Path quality report (receiver → sender).
+    /// Path quality report (RTCP-style, bidirectional).
     PathReport {
         path_id: u32,
         loss_rate: f64,
         avg_rtt_us: u64,
         throughput_bps: f64,
+        /// Interarrival jitter in microseconds (RFC 3550 A.8)
+        jitter_us: u64,
+        /// Cumulative symbols sent on this path
+        symbols_sent: u64,
+        /// Cumulative symbols received on this path
+        symbols_received: u64,
     },
 
     /// Request more repair symbols for a block.

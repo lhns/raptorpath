@@ -217,6 +217,13 @@ impl QuicTransport {
         Ok(())
     }
 
+    /// Query the max datagram size for a path (PMTU-based).
+    pub fn max_datagram_size(&self, path_id: PathId) -> Option<usize> {
+        self.connections
+            .get(&path_id)
+            .and_then(|conn| conn.max_datagram_size())
+    }
+
     /// Receive datagrams from a path.
     pub async fn recv_datagram(&self, path_id: PathId) -> anyhow::Result<WireMessage> {
         let conn = self

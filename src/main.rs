@@ -264,9 +264,10 @@ async fn cmd_status(args: StatusArgs) -> anyhow::Result<()> {
             let tp = p.get("throughput_mbps").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let cwnd = p.get("cwnd").and_then(|v| v.as_u64()).unwrap_or(0);
             let in_flight = p.get("in_flight").and_then(|v| v.as_u64()).unwrap_or(0);
+            let jitter = p.get("jitter_us").and_then(|v| v.as_u64()).unwrap_or(0) as f64 / 1000.0;
             println!(
                 "  Path {id:<3} {state:<8}  RTT: {rtt:>6.1}ms  Loss: {loss:>5.1}%  \
-                 Throughput: {tp:>7.1} Mbps  cwnd: {cwnd}  in_flight: {in_flight}"
+                 Jitter: {jitter:>5.1}ms  Throughput: {tp:>7.1} Mbps  cwnd: {cwnd}  in_flight: {in_flight}"
             );
         }
         println!();

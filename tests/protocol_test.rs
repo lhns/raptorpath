@@ -138,6 +138,9 @@ fn test_path_report_roundtrip() {
         loss_rate: 0.05,
         avg_rtt_us: 15000,
         throughput_bps: 50_000_000.0,
+        jitter_us: 250,
+        symbols_sent: 5000,
+        symbols_received: 4750,
     });
 
     let bytes = msg.serialize();
@@ -149,11 +152,17 @@ fn test_path_report_roundtrip() {
             loss_rate,
             avg_rtt_us,
             throughput_bps,
+            jitter_us,
+            symbols_sent,
+            symbols_received,
         }) => {
             assert_eq!(path_id, 1);
             assert!((loss_rate - 0.05).abs() < 1e-10);
             assert_eq!(avg_rtt_us, 15000);
             assert!((throughput_bps - 50_000_000.0).abs() < 1.0);
+            assert_eq!(jitter_us, 250);
+            assert_eq!(symbols_sent, 5000);
+            assert_eq!(symbols_received, 4750);
         }
         _ => panic!("expected PathReport"),
     }
