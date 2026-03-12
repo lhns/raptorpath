@@ -13,26 +13,25 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 
 ## Project Status
 
-**Prototype / proof of concept.** The core architecture compiles and the data path is wired up, but several critical issues remain before end-to-end operation. See [docs/adr/](docs/adr/) for the full list.
+**All 15 architecture issues resolved.** The core data path is fully wired with FEC-aware congestion control, ACK feedback, protocol versioning, runtime monitoring, and graceful shutdown. See [docs/adr/](docs/adr/) for the full list of resolved ADRs.
 
-### What works
+### Features
 - RaptorQ encoding/decoding with source-first symbol emission
 - Bayesian loss estimation with EWMA and burst detection
 - Feedforward FEC rate computation (binomial model) + PI feedback controller
 - Multipath scheduler (RTT-aware for source, goodput-aware for repair)
 - QUIC transport with per-path connections and datagram framing
 - TUN interface creation on Linux and Windows
-- CLI with configurable tail loss target, FEC overhead cap, protocol hints
-
-### What doesn't work yet
-- **Packet framing** — decoded blocks don't preserve IP packet boundaries ([ADR-0002](docs/adr/0002-packet-framing-after-decode.md))
-- **Loss feedback** — estimator is fed incorrect data, FEC rate control is effectively disabled ([ADR-0003](docs/adr/0003-loss-estimation-is-broken.md))
-- **Block metadata** — receiver never learns encoding params for blocks ([ADR-0008](docs/adr/0008-blockstart-not-handled.md))
-- **ACK mechanism** — no receiver→sender feedback at all ([ADR-0005](docs/adr/0005-ack-mechanism-missing.md))
-- **Block flush** — partial blocks wait indefinitely for more data ([ADR-0001](docs/adr/0001-block-assembly-timeout.md))
-- **Congestion control** — none; will flood the network ([ADR-0009](docs/adr/0009-no-congestion-control.md))
-
-See [docs/adr/README.md](docs/adr/README.md) for the prioritized issue list.
+- Length-prefixed packet framing preserving IP boundaries
+- ACK/feedback loop with echo-based RTT measurement
+- AIMD congestion control with FEC-aware loss response
+- Protocol versioning with 8-byte magic+version header and handshake
+- Block profiles tuned by protocol hint (realtime/bulk/auto)
+- Channel backpressure with bounded queues and drop-on-full
+- TOML config with layered merging (profile → file → CLI)
+- Preflight environment checks (`raptorpath check`)
+- HTTP monitoring endpoint with runtime stats (`/status`, `/health`)
+- Graceful shutdown with partial block flush and peer notification
 
 ## Architecture
 
@@ -69,7 +68,7 @@ cargo build --release
 
 ### Server (listener)
 ```bash
-sudo raptorpath --server \
+sudo raptorpath run --server \
   --bind 0.0.0.0:4433,0.0.0.0:4434 \
   --tun-name rpath0 \
   --tun-addr 10.99.0.1/24
@@ -77,14 +76,36 @@ sudo raptorpath --server \
 
 ### Client
 ```bash
-sudo raptorpath \
+sudo raptorpath run \
   --bind 0.0.0.0:4433,0.0.0.0:4434 \
   --peer 203.0.113.1:4433,203.0.113.1:4434 \
   --tun-name rpath0 \
   --tun-addr 10.99.0.2/24
 ```
 
-### Options
+### Preflight checks
+```bash
+raptorpath check --bind 0.0.0.0:4433 --server
+```
+
+### Runtime monitoring
+```bash
+# Start with monitoring enabled
+sudo raptorpath run --status-addr 127.0.0.1:9820 ...
+
+# Query stats from another terminal
+raptorpath status
+raptorpath status --json
+```
+
+### Configuration file
+```bash
+sudo raptorpath run --config raptorpath.toml
+```
+
+See the `--help` output for TOML config format and all available fields.
+
+### Options (run subcommand)
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -96,6 +117,9 @@ sudo raptorpath \
 | `--target-tail-loss` | `1e-5` | Target probability of block decode failure |
 | `--max-fec-overhead` | `0.5` | Max repair symbols as fraction of source (50%) |
 | `--protocol-hint` | `auto` | `realtime`, `bulk`, or `auto` |
+| `--profile` | none | Config profile: `home` or `datacenter` |
+| `--config` | none | Path to TOML config file |
+| `--status-addr` | none | Address for HTTP monitoring endpoint |
 
 ### Environment
 
@@ -108,8 +132,10 @@ sudo raptorpath \
 
 ```
 src/
-├── main.rs              CLI entry point
+├── main.rs              CLI entry point (run/check/status subcommands)
 ├── lib.rs               Library re-exports
+├── config.rs            TOML config with profile/layered merging
+├── preflight.rs         Pre-run environment checks
 ├── net/mod.rs           Orchestration (TUN ↔ FEC ↔ transport)
 ├── fec/
 │   ├── codec.rs         RaptorQ encoder/decoder wrapper
@@ -117,10 +143,13 @@ src/
 ├── control/
 │   ├── estimator.rs     Bayesian loss rate estimation
 │   └── fec_rate.rs      FEC rate controller (feedforward + PI)
-├── scheduler/mod.rs     Multipath symbol scheduling
+├── scheduler/mod.rs     Multipath scheduler + AIMD congestion control
 ├── transport/
-│   ├── protocol.rs      Wire protocol definitions
+│   ├── protocol.rs      Wire protocol (versioned framing, handshake)
 │   └── quic.rs          QUIC transport (quinn)
+├── monitor/
+│   ├── stats.rs         Lock-free SharedStats with atomics
+│   └── http.rs          Axum HTTP endpoint (/status, /health)
 └── tun/
     ├── mod.rs           Platform-agnostic TUN interface
     ├── linux/mod.rs     Linux TUN (kernel driver)
