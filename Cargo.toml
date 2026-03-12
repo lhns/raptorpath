@@ -57,6 +57,7 @@ wintun = "0.5"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tokio-test = "0.4"
+rand_chacha = "0.3"
 
 [[bench]]
 name = "fec_bench"
