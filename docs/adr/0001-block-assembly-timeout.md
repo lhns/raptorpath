@@ -1,7 +1,7 @@
 # ADR-0001: Block Assembly Needs Flush Timeout
 
 ## Status
-**Open** — must fix before any real use
+**Resolved** — flush timeout implemented in `net/mod.rs` using `tokio::select!` with configurable `FLUSH_TIMEOUT` (10ms default)
 
 ## Context
 The sender in `net/mod.rs` accumulates IP packets into a 64KB block buffer before FEC encoding. It only flushes when the buffer reaches `MAX_BLOCK_SIZE`. On low-traffic or bursty connections (gaming, SSH, DNS), packets can sit in the buffer indefinitely, causing unbounded latency.

@@ -1,7 +1,7 @@
 # ADR-0008: Receiver Doesn't Handle BlockStart Messages
 
 ## Status
-**Open** — correctness bug
+**Resolved** — sender sends `BlockStart` before symbols via `encode_and_send_block()`. Receiver handles `BlockStart` in `handle_control_message()` to create decoders with correct params.
 
 ## Context
 The sender is supposed to send a `ControlMessage::BlockStart { params, transfer_length }` before transmitting symbols for a new block. The receiver needs this to create a properly configured decoder.

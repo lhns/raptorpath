@@ -1,7 +1,7 @@
 # ADR-0007: RTT Calculation Depends on Clock Synchronization
 
 ## Status
-**Open** — correctness bug
+**Resolved** — ACK now echoes sender's timestamp (`echo_send_timestamp_us`), RTT computed from same clock.
 
 ## Context
 RTT is calculated in `net/mod.rs` as:

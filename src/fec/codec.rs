@@ -11,6 +11,8 @@ use raptorq::{
     SourceBlockEncoder,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::time::Instant;
 
 /// Parameters for a single FEC block.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -126,6 +128,10 @@ pub struct Decoder {
     decoded: bool,
     /// The decoded result, if available
     result: Option<Bytes>,
+    /// Deduplication: track seen payload_ids
+    seen_ids: HashSet<u32>,
+    /// When this decoder was created (for timeout eviction)
+    pub created_at: Instant,
 }
 
 impl Decoder {
@@ -144,6 +150,8 @@ impl Decoder {
             total_fed: 0,
             decoded: false,
             result: None,
+            seen_ids: HashSet::new(),
+            created_at: Instant::now(),
         }
     }
 
@@ -152,6 +160,11 @@ impl Decoder {
     pub fn add_symbol(&mut self, symbol: &WireSymbol) -> Option<Bytes> {
         if self.decoded {
             return self.result.clone();
+        }
+
+        // Deduplicate
+        if !self.seen_ids.insert(symbol.payload_id) {
+            return None; // already seen this symbol
         }
 
         // Track source symbols for direct passthrough
@@ -177,7 +190,9 @@ impl Decoder {
         }
 
         // If all source symbols arrived, we can reconstruct directly
-        if self.source_count == self.params.source_symbols {
+        if self.params.source_symbols > 0
+            && self.source_count == self.params.source_symbols
+        {
             let data: Vec<u8> = self
                 .received_source
                 .iter()
@@ -194,15 +209,30 @@ impl Decoder {
 
     /// Check if all source symbols arrived without loss (fast path).
     pub fn is_complete_source(&self) -> bool {
-        self.source_count == self.params.source_symbols
+        self.params.source_symbols > 0 && self.source_count == self.params.source_symbols
     }
 
     pub fn is_decoded(&self) -> bool {
         self.decoded
     }
 
+    /// Total symbols fed to this decoder.
+    pub fn total_fed(&self) -> u32 {
+        self.total_fed
+    }
+
+    /// The encoding params for this block.
+    pub fn params(&self) -> &EncodingParams {
+        &self.params
+    }
+
     /// Get individual source symbols that have arrived (for streaming to app layer).
     pub fn get_source_symbol(&self, index: usize) -> Option<&[u8]> {
         self.received_source.get(index)?.as_deref()
+    }
+
+    /// Get all received payload_ids (for ACKs).
+    pub fn received_ids(&self) -> Vec<u32> {
+        self.seen_ids.iter().copied().collect()
     }
 }

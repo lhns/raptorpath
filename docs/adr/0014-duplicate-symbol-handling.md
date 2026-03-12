@@ -1,7 +1,7 @@
 # ADR-0014: No Duplicate Symbol Detection
 
 ## Status
-**Open** — minor correctness issue
+**Resolved** — `Decoder` now tracks `seen_ids: HashSet<u32>` and skips duplicates.
 
 ## Context
 With multipath transport, the same symbol could potentially arrive twice (retransmission, routing anomaly, or implementation bug). The `Decoder::add_symbol()` method feeds every received symbol into the raptorq decoder without deduplication.

@@ -8,31 +8,37 @@ use serde::{Deserialize, Serialize};
 pub struct SymbolBatch {
     /// Symbols in this batch
     pub symbols: Vec<WireSymbol>,
-    /// Sending timestamp (microseconds since epoch)
+    /// Sending timestamp (microseconds since connection epoch) — sender's clock
     pub send_timestamp_us: u64,
-    /// Batch sequence number for loss detection
+    /// Batch sequence number for loss detection (per-path monotonic)
     pub batch_seq: u64,
+    /// Total symbols sent in this block on this path (for receiver loss tracking)
+    pub path_id: u32,
 }
 
 /// Control messages exchanged between peers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ControlMessage {
-    /// Announce encoding parameters for a new block.
+    /// Announce encoding parameters for a new block (sender → receiver).
     BlockStart {
         params: EncodingParams,
         transfer_length: u64,
     },
 
-    /// Acknowledge received symbols.
+    /// Acknowledge received symbols (receiver → sender).
     Ack {
         block_id: u64,
-        /// Bitmap of received symbol payload_ids
+        /// Which payload_ids were received
         received_ids: Vec<u32>,
-        /// Receiver timestamp for RTT calculation
-        recv_timestamp_us: u64,
+        /// Echo the sender's timestamp for RTT calculation (sender's clock, not receiver's)
+        echo_send_timestamp_us: u64,
+        /// How many symbols the receiver expected (from batch_seq gaps)
+        expected_count: u32,
+        /// How many symbols actually received
+        received_count: u32,
     },
 
-    /// Report block decode success/failure.
+    /// Report block decode success/failure (receiver → sender).
     BlockResult {
         block_id: u64,
         success: bool,

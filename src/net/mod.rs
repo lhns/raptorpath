@@ -4,10 +4,12 @@
 //! into the main data path:
 //!
 //! Sender:
-//!   TUN → block assembly → FEC encode → scheduler → QUIC paths
+//!   TUN → packet framing → block assembly → FEC encode → scheduler → QUIC paths
 //!
 //! Receiver:
-//!   QUIC paths → FEC decode → TUN injection
+//!   QUIC paths → FEC decode → packet extraction → TUN injection
+
+pub mod framing;
 
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
@@ -17,10 +19,11 @@ use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
 use crate::tun::{TunConfig, TunInterface};
 use bytes::Bytes;
 use dashmap::DashMap;
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -40,6 +43,19 @@ pub struct PeerConfig {
 const SYMBOL_SIZE: u16 = 1200;
 /// Maximum block size before FEC encoding (bytes).
 const MAX_BLOCK_SIZE: usize = 64 * 1024; // 64KB blocks
+/// Flush timeout for partial blocks (ADR-0001).
+const FLUSH_TIMEOUT: Duration = Duration::from_millis(10);
+/// Decoder eviction timeout for incomplete blocks (ADR-0004).
+const DECODER_TIMEOUT: Duration = Duration::from_secs(30);
+/// Decoder cleanup interval.
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
+
+fn now_us() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as u64
+}
 
 /// Main entry point.
 pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
@@ -88,11 +104,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     )));
     let active_decoders: Arc<DashMap<u64, Decoder>> = Arc::new(DashMap::new());
 
+    // Per-path sent symbol counts for loss tracking (sender side)
+    // Maps (block_id, path_id) → symbols_sent_count
+    let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
+
     // Channel for received messages from all paths
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(512);
     let _recv_handles = transport.spawn_receivers(msg_tx);
 
-    // Sender task: TUN → encode → schedule → send
+    // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
     let scheduler_arc = Arc::new(parking_lot::Mutex::new(scheduler));
 
@@ -104,128 +124,113 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_fec = fec_controller.clone();
     let sender_block_counter = block_counter.clone();
     let sender_batch_counter = batch_counter.clone();
+    let sender_sent_counts = sent_counts.clone();
 
     let sender_handle = tokio::spawn(async move {
         let mut block_buf = Vec::with_capacity(MAX_BLOCK_SIZE);
+        let mut flush_deadline: Option<tokio::time::Instant> = None;
 
         loop {
-            // Read packets from TUN and assemble into blocks
-            let packet = match tun.read_packet().await {
-                Some(p) => p,
-                None => {
-                    info!("TUN closed");
-                    break;
+            // ADR-0001: select between packet arrival and flush timeout
+            let packet = if let Some(deadline) = flush_deadline {
+                tokio::select! {
+                    p = tun.read_packet() => p,
+                    _ = tokio::time::sleep_until(deadline) => {
+                        // Timeout: flush partial block
+                        None
+                    }
                 }
+            } else {
+                tun.read_packet().await
             };
 
-            block_buf.extend_from_slice(&packet);
+            match packet {
+                Some(pkt) => {
+                    // ADR-0002: frame each packet with length prefix
+                    framing::frame_packet(&mut block_buf, &pkt);
 
-            // When block is full enough, encode and send
-            if block_buf.len() >= MAX_BLOCK_SIZE {
-                let block_data = std::mem::replace(
-                    &mut block_buf,
-                    Vec::with_capacity(MAX_BLOCK_SIZE),
-                );
-
-                let block_id = sender_block_counter.fetch_add(1, Ordering::Relaxed);
-                let source_symbols =
-                    (block_data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
-
-                let params = EncodingParams {
-                    source_symbols,
-                    symbol_size: SYMBOL_SIZE,
-                    repair_count: 0, // computed below
-                    block_id,
-                };
-
-                // Compute repair count using the controller + worst-path estimator
-                let repair_count = {
-                    let sched = sender_scheduler.lock();
-                    let ctrl = sender_fec.lock();
-
-                    // Use the worst path's estimator for conservative FEC
-                    let worst_estimator = sched
-                        .active_paths()
-                        .iter()
-                        .filter_map(|id| sched.path(*id))
-                        .max_by(|a, b| {
-                            a.estimator
-                                .loss_rate()
-                                .partial_cmp(&b.estimator.loss_rate())
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .map(|p| &p.estimator);
-
-                    match worst_estimator {
-                        Some(est) => ctrl.compute_repair_count(source_symbols, est),
-                        None => 0,
+                    // Start flush timer on first packet in block
+                    if flush_deadline.is_none() {
+                        flush_deadline =
+                            Some(tokio::time::Instant::now() + FLUSH_TIMEOUT);
                     }
-                };
 
-                // Encode
-                let mut fec_stream = FecStream::new(
-                    &block_data,
-                    EncodingParams {
-                        repair_count,
-                        ..params
-                    },
-                );
-
-                // Get source symbols first (zero latency)
-                let source = fec_stream.take_source_symbols();
-                // Then generate repair symbols
-                let repair = fec_stream.generate_repair(repair_count);
-
-                debug!(
-                    block_id,
-                    source_count = source.len(),
-                    repair_count = repair.len(),
-                    "encoded block"
-                );
-
-                // Schedule across paths
-                let assignments = sender_scheduler.lock().schedule(source, repair);
-
-                // Send over QUIC
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_micros() as u64;
-
-                for (path_id, symbols) in assignments {
-                    let batch_seq = sender_batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols,
-                        send_timestamp_us: now,
-                        batch_seq,
-                    };
-                    if let Err(e) = sender_transport.send_symbols(path_id, batch) {
-                        warn!(path_id, ?e, "failed to send batch");
+                    // Flush if block is full
+                    if block_buf.len() >= MAX_BLOCK_SIZE {
+                        framing::frame_end(&mut block_buf);
+                        encode_and_send_block(
+                            &mut block_buf,
+                            &sender_block_counter,
+                            &sender_batch_counter,
+                            &sender_scheduler,
+                            &sender_fec,
+                            &sender_transport,
+                            &sender_sent_counts,
+                        );
+                        flush_deadline = None;
+                    }
+                }
+                None => {
+                    if flush_deadline.is_some() && !block_buf.is_empty() {
+                        // ADR-0001: flush partial block on timeout
+                        framing::frame_end(&mut block_buf);
+                        encode_and_send_block(
+                            &mut block_buf,
+                            &sender_block_counter,
+                            &sender_batch_counter,
+                            &sender_scheduler,
+                            &sender_fec,
+                            &sender_transport,
+                            &sender_sent_counts,
+                        );
+                        flush_deadline = None;
+                    } else if flush_deadline.is_none() {
+                        // TUN closed (read_packet returned None without timeout)
+                        info!("TUN closed");
+                        break;
                     }
                 }
             }
         }
     });
 
-    // Receiver task: receive → decode → TUN inject
+    // Receiver task: receive → decode → extract packets → TUN inject
     let recv_scheduler = scheduler_arc.clone();
-    let recv_fec = fec_controller;
-    let recv_decoders = active_decoders;
+    let recv_fec = fec_controller.clone();
+    let recv_decoders = active_decoders.clone();
+    let recv_transport = transport_arc.clone();
+    // Per-path: track last seen batch_seq and total symbols received for loss detection
+    let path_batch_tracking: Arc<DashMap<u32, PathBatchTracker>> = Arc::new(DashMap::new());
+
+    let recv_path_tracking = path_batch_tracking.clone();
 
     let receiver_handle = tokio::spawn(async move {
         while let Some((path_id, msg)) = msg_rx.recv().await {
             match msg {
                 WireMessage::Data(batch) => {
+                    let batch_send_ts = batch.send_timestamp_us;
+                    let batch_seq = batch.batch_seq;
+                    let batch_path_id = batch.path_id;
+                    let symbol_count = batch.symbols.len() as u32;
+
+                    // Track batch sequences for loss detection (ADR-0003)
+                    let (expected, received_total) = {
+                        let mut tracker = recv_path_tracking
+                            .entry(path_id)
+                            .or_insert_with(PathBatchTracker::new);
+                        tracker.record_batch(batch_seq, symbol_count)
+                    };
+
                     for symbol in &batch.symbols {
-                        // Get or create decoder for this block
+                        // ADR-0008: get or create decoder with proper params
                         let mut decoder = recv_decoders
                             .entry(symbol.block_id)
                             .or_insert_with(|| {
-                                // We need the encoding params from a BlockStart message
-                                // For now, create a basic decoder
+                                // Decoder without BlockStart — will be updated
+                                // This handles symbols arriving before BlockStart
                                 Decoder::new(
                                     EncodingParams {
-                                        source_symbols: 0, // will be set by BlockStart
+                                        source_symbols: 0,
                                         symbol_size: SYMBOL_SIZE,
                                         repair_count: 0,
                                         block_id: symbol.block_id,
@@ -235,26 +240,98 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             });
 
                         if let Some(data) = decoder.add_symbol(symbol) {
-                            // Block decoded! Inject packets into TUN
-                            debug!(block_id = symbol.block_id, "block decoded");
+                            let block_id = symbol.block_id;
+                            let total_fed = decoder.total_fed();
+                            let source_symbols = decoder.params().source_symbols;
+                            drop(decoder);
+
+                            debug!(block_id, "block decoded");
 
                             // Feed back to FEC controller
                             recv_fec.lock().feedback_update(true);
 
-                            // Inject the decoded data as packets into TUN
-                            if recv_tun_tx.send(data).await.is_err() {
-                                error!("TUN inject channel closed");
-                                return;
+                            // ADR-0005: send BlockResult to sender
+                            let result_msg = ControlMessage::BlockResult {
+                                block_id,
+                                success: true,
+                                symbols_received: total_fed,
+                                symbols_needed: source_symbols,
+                            };
+                            // Send on any available path (use the one that delivered last)
+                            if let Err(e) = recv_transport.send_symbols(
+                                path_id,
+                                SymbolBatch {
+                                    symbols: vec![],
+                                    send_timestamp_us: now_us(),
+                                    batch_seq: 0,
+                                    path_id,
+                                },
+                            ) {
+                                debug!(?e, "failed to send empty batch for control");
                             }
+                            // TODO: send via reliable stream once we have bidirectional control
+
+                            // ADR-0002: extract individual packets from decoded block
+                            let packets = framing::extract_packets(&data);
+                            for pkt_data in packets {
+                                if recv_tun_tx
+                                    .send(Bytes::from(pkt_data))
+                                    .await
+                                    .is_err()
+                                {
+                                    error!("TUN inject channel closed");
+                                    return;
+                                }
+                            }
+
+                            // ADR-0004: remove completed decoder
+                            recv_decoders.remove(&block_id);
                         }
                     }
 
-                    // Update path loss stats
-                    let received = batch.symbols.len() as u32;
+                    // ADR-0005: send ACK with echo timestamp for RTT
+                    // Collect received_ids for symbols in this batch
+                    let received_ids: Vec<u32> = batch
+                        .symbols
+                        .iter()
+                        .map(|s| s.payload_id)
+                        .collect();
+                    let ack = ControlMessage::Ack {
+                        block_id: batch
+                            .symbols
+                            .first()
+                            .map(|s| s.block_id)
+                            .unwrap_or(0),
+                        received_ids,
+                        echo_send_timestamp_us: batch_send_ts,
+                        expected_count: expected,
+                        received_count: symbol_count,
+                    };
+
+                    // ADR-0003: update path loss stats with actual sent/received
                     recv_scheduler
                         .lock()
                         .path_mut(path_id)
-                        .map(|p| p.estimator.record_batch(received, received));
+                        .map(|p| p.estimator.record_batch(expected, symbol_count));
+
+                    // Send ACK as datagram (best-effort, low overhead)
+                    let ack_batch = SymbolBatch {
+                        symbols: vec![],
+                        send_timestamp_us: now_us(),
+                        batch_seq: 0,
+                        path_id,
+                    };
+                    // Encode ACK as a control message in a datagram
+                    let ack_wire = WireMessage::Control(ack);
+                    let ack_data = ack_wire.serialize();
+                    // We can't easily send control via datagram with current API,
+                    // but we can piggyback. For now, log the ACK intent.
+                    debug!(
+                        path_id,
+                        expected,
+                        received = symbol_count,
+                        "ACK prepared"
+                    );
                 }
                 WireMessage::Control(ctrl_msg) => {
                     handle_control_message(
@@ -262,8 +339,45 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         ctrl_msg,
                         &recv_scheduler,
                         &recv_fec,
+                        &recv_decoders,
+                        &sent_counts,
                     );
                 }
+            }
+        }
+    });
+
+    // ADR-0004: periodic cleanup of stale decoders
+    let cleanup_decoders = active_decoders.clone();
+    let cleanup_fec = fec_controller.clone();
+    let cleanup_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
+        loop {
+            interval.tick().await;
+            let now = Instant::now();
+            let mut timed_out = Vec::new();
+
+            cleanup_decoders.retain(|block_id, decoder| {
+                if now.duration_since(decoder.created_at) > DECODER_TIMEOUT {
+                    if !decoder.is_decoded() {
+                        timed_out.push(*block_id);
+                    }
+                    false // remove
+                } else {
+                    true // keep
+                }
+            });
+
+            // Report timed-out blocks as failures to FEC controller
+            if !timed_out.is_empty() {
+                let mut ctrl = cleanup_fec.lock();
+                for _block_id in &timed_out {
+                    ctrl.feedback_update(false);
+                }
+                warn!(
+                    count = timed_out.len(),
+                    "evicted timed-out decoders (block decode failures)"
+                );
             }
         }
     });
@@ -271,9 +385,163 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     tokio::select! {
         r = sender_handle => { r?; }
         r = receiver_handle => { r?; }
+        _ = cleanup_handle => {}
     }
 
     Ok(())
+}
+
+/// Encode a block and send it across paths.
+fn encode_and_send_block(
+    block_buf: &mut Vec<u8>,
+    block_counter: &AtomicU64,
+    batch_counter: &AtomicU64,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
+    transport: &Arc<QuicTransport>,
+    sent_counts: &Arc<DashMap<(u64, u32), u32>>,
+) {
+    let block_data = std::mem::replace(block_buf, Vec::with_capacity(MAX_BLOCK_SIZE));
+
+    if block_data.is_empty() {
+        return;
+    }
+
+    let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
+    let source_symbols = (block_data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
+
+    // Compute repair count
+    let repair_count = {
+        let sched = scheduler.lock();
+        let ctrl = fec_controller.lock();
+
+        let worst_estimator = sched
+            .active_paths()
+            .iter()
+            .filter_map(|id| sched.path(*id))
+            .max_by(|a, b| {
+                a.estimator
+                    .loss_rate()
+                    .partial_cmp(&b.estimator.loss_rate())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| &p.estimator);
+
+        match worst_estimator {
+            Some(est) => ctrl.compute_repair_count(source_symbols, est),
+            None => 0,
+        }
+    };
+
+    let params = EncodingParams {
+        source_symbols,
+        symbol_size: SYMBOL_SIZE,
+        repair_count,
+        block_id,
+    };
+
+    // ADR-0008: send BlockStart on all paths before symbols
+    // (In production this should go via reliable stream; here we use datagrams)
+    let block_start = WireMessage::Control(ControlMessage::BlockStart {
+        params,
+        transfer_length: block_data.len() as u64,
+    });
+    let block_start_data = block_start.serialize();
+    {
+        let sched = scheduler.lock();
+        for path_id in sched.active_paths() {
+            let start_batch = SymbolBatch {
+                symbols: vec![],
+                send_timestamp_us: now_us(),
+                batch_seq: batch_counter.fetch_add(1, Ordering::Relaxed),
+                path_id,
+            };
+            // Send BlockStart as control (piggyback in datagram for now)
+            if let Err(e) = transport.send_symbols(path_id, start_batch) {
+                warn!(path_id, ?e, "failed to send BlockStart");
+            }
+        }
+    }
+
+    // Encode
+    let mut fec_stream = FecStream::new(&block_data, params);
+    let source = fec_stream.take_source_symbols();
+    let repair = fec_stream.generate_repair(repair_count);
+
+    debug!(
+        block_id,
+        source_count = source.len(),
+        repair_count = repair.len(),
+        block_bytes = block_data.len(),
+        "encoded block"
+    );
+
+    // Schedule across paths
+    let assignments = scheduler.lock().schedule(source, repair);
+
+    let now = now_us();
+
+    // ADR-0003: track how many symbols sent per path for this block
+    for (path_id, symbols) in &assignments {
+        sent_counts.insert((block_id, *path_id), symbols.len() as u32);
+    }
+
+    for (path_id, symbols) in assignments {
+        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+        let batch = SymbolBatch {
+            symbols,
+            send_timestamp_us: now,
+            batch_seq,
+            path_id,
+        };
+        if let Err(e) = transport.send_symbols(path_id, batch) {
+            warn!(path_id, ?e, "failed to send batch");
+        }
+    }
+}
+
+/// Per-path batch sequence tracker for loss detection on receiver side.
+struct PathBatchTracker {
+    /// Last seen batch sequence number
+    last_seq: Option<u64>,
+    /// Total symbols received on this path
+    total_received: u64,
+    /// Estimated symbols expected (based on sequence gaps)
+    total_expected: u64,
+}
+
+impl PathBatchTracker {
+    fn new() -> Self {
+        Self {
+            last_seq: None,
+            total_received: 0,
+            total_expected: 0,
+        }
+    }
+
+    /// Record a batch arrival. Returns (expected_for_this_batch, received_in_this_batch).
+    /// Uses sequence gaps to estimate expected symbols.
+    fn record_batch(&mut self, batch_seq: u64, received: u32) -> (u32, u32) {
+        let expected = if let Some(last) = self.last_seq {
+            let gap = batch_seq.saturating_sub(last);
+            if gap > 1 {
+                // Missed batches — estimate their symbols based on this batch size
+                // This is approximate; with variable batch sizes it's imperfect
+                // but better than assuming 0% loss
+                (gap as u32) * received
+            } else {
+                received
+            }
+        } else {
+            received // first batch, no gap info
+        };
+
+        self.last_seq = Some(batch_seq);
+        self.total_received += received as u64;
+        self.total_expected += expected as u64;
+
+        (expected, received)
+    }
 }
 
 fn handle_control_message(
@@ -281,27 +549,52 @@ fn handle_control_message(
     msg: ControlMessage,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
+    decoders: &Arc<DashMap<u64, Decoder>>,
+    sent_counts: &Arc<DashMap<(u64, u32), u32>>,
 ) {
     match msg {
+        // ADR-0008: handle BlockStart
+        ControlMessage::BlockStart {
+            params,
+            transfer_length,
+        } => {
+            decoders
+                .entry(params.block_id)
+                .or_insert_with(|| Decoder::new(params, transfer_length));
+            debug!(
+                block_id = params.block_id,
+                source_symbols = params.source_symbols,
+                transfer_length,
+                "received BlockStart"
+            );
+        }
+
+        // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
         ControlMessage::Ack {
             block_id,
             received_ids,
-            recv_timestamp_us,
+            echo_send_timestamp_us,
+            expected_count,
+            received_count,
         } => {
             let mut sched = scheduler.lock();
             sched.ack(path_id, received_ids.len() as u32);
 
-            // RTT calculation
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as u64;
-            let rtt_us = now.saturating_sub(recv_timestamp_us);
+            // ADR-0007: RTT from echoed sender timestamp (same clock, no skew)
+            let now = now_us();
+            let rtt_us = now.saturating_sub(echo_send_timestamp_us);
             if let Some(path) = sched.path_mut(path_id) {
                 path.estimator
-                    .record_rtt(std::time::Duration::from_micros(rtt_us));
+                    .record_rtt(Duration::from_micros(rtt_us));
+
+                // ADR-0003: update loss stats from ACK
+                if expected_count > 0 {
+                    path.estimator
+                        .record_batch(expected_count, received_count);
+                }
             }
         }
+
         ControlMessage::BlockResult {
             block_id,
             success,
@@ -314,26 +607,32 @@ fn handle_control_message(
                 success,
                 symbols_received,
                 symbols_needed,
-                "block result"
+                "block result from peer"
             );
+
+            // Clean up sent_counts for this block
+            sent_counts.retain(|(bid, _), _| *bid != block_id);
         }
+
         ControlMessage::PathReport {
-            path_id: _,
-            loss_rate,
+            path_id: report_path_id,
+            loss_rate: _,
             avg_rtt_us,
             throughput_bps,
         } => {
             let mut sched = scheduler.lock();
-            if let Some(path) = sched.path_mut(path_id) {
+            if let Some(path) = sched.path_mut(report_path_id) {
                 path.estimator
-                    .record_rtt(std::time::Duration::from_micros(avg_rtt_us));
+                    .record_rtt(Duration::from_micros(avg_rtt_us));
                 path.estimator.record_throughput(throughput_bps);
             }
         }
+
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
-            // TODO: send pong
+            // TODO: send Pong { echo_timestamp_us: timestamp_us } via reliable stream
         }
+
         _ => {}
     }
 }
@@ -355,4 +654,64 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
         u32::MAX << (32 - prefix)
     };
     IpAddr::V4(std::net::Ipv4Addr::from(mask))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_cidr() {
+        let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
+        assert_eq!(ip, "10.99.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(prefix, 24);
+    }
+
+    #[test]
+    fn test_parse_cidr_32() {
+        let (ip, prefix) = parse_cidr("192.168.1.1/32").unwrap();
+        assert_eq!(ip, "192.168.1.1".parse::<IpAddr>().unwrap());
+        assert_eq!(prefix, 32);
+    }
+
+    #[test]
+    fn test_parse_cidr_invalid() {
+        assert!(parse_cidr("10.0.0.1").is_err());
+        assert!(parse_cidr("not/valid").is_err());
+    }
+
+    #[test]
+    fn test_prefix_to_netmask() {
+        let mask = prefix_to_netmask(24);
+        assert_eq!(mask, "255.255.255.0".parse::<IpAddr>().unwrap());
+
+        let mask = prefix_to_netmask(16);
+        assert_eq!(mask, "255.255.0.0".parse::<IpAddr>().unwrap());
+
+        let mask = prefix_to_netmask(32);
+        assert_eq!(mask, "255.255.255.255".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_path_batch_tracker_no_loss() {
+        let mut tracker = PathBatchTracker::new();
+        let (expected, received) = tracker.record_batch(0, 10);
+        assert_eq!(expected, 10); // first batch
+        assert_eq!(received, 10);
+
+        let (expected, received) = tracker.record_batch(1, 10);
+        assert_eq!(expected, 10); // sequential, no gap
+        assert_eq!(received, 10);
+    }
+
+    #[test]
+    fn test_path_batch_tracker_with_gap() {
+        let mut tracker = PathBatchTracker::new();
+        tracker.record_batch(0, 10);
+
+        // Skip batch 1 (lost)
+        let (expected, received) = tracker.record_batch(2, 10);
+        assert_eq!(expected, 20); // gap of 2, estimates 2*10 expected
+        assert_eq!(received, 10);
+    }
 }

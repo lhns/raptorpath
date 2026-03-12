@@ -1,7 +1,7 @@
 # ADR-0005: No ACK/Feedback Loop Between Receiver and Sender
 
 ## Status
-**Open** — required for loss estimation, congestion control, and RTT
+**Partially resolved** — ACK message format updated with `echo_send_timestamp_us` for RTT. Receiver prepares ACKs with loss data. Full reliable-stream ACK delivery is still TODO.
 
 ## Context
 The protocol defines `ControlMessage::Ack`, `BlockResult`, and `PathReport` messages, but none of them are ever sent. The receiver processes incoming data but never sends anything back to the sender.

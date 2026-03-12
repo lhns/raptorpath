@@ -267,10 +267,13 @@ mod tests {
     #[test]
     fn test_zero_loss_no_repair() {
         let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto);
-        let est = LossEstimator::new(); // fresh, no loss recorded
+        let mut est = LossEstimator::new();
+        // Feed some zero-loss observations to overcome the weak prior
+        for _ in 0..50 {
+            est.record_batch(100, 100);
+        }
         let r = ctrl.compute_repair_count(100, &est);
-        // With only the weak prior, should compute minimal repair
-        assert!(r < 20, "Expected minimal repair for near-zero loss, got {r}");
+        assert!(r < 5, "Expected minimal repair for zero loss, got {r}");
     }
 
     #[test]

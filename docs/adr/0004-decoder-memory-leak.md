@@ -1,7 +1,7 @@
 # ADR-0004: Decoder Map Grows Without Bound
 
 ## Status
-**Open** — resource leak, must fix
+**Resolved** — completed decoders removed immediately. Periodic cleanup task evicts stale decoders after `DECODER_TIMEOUT` (30s) and reports failures to FEC controller.
 
 ## Context
 The receiver stores per-block decoders in `active_decoders: Arc<DashMap<u64, Decoder>>`. Entries are added when the first symbol of a new block arrives. Entries are never removed.
