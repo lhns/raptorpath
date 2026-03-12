@@ -9,7 +9,7 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0002](0002-packet-framing-after-decode.md) | Packet framing after FEC decode | Resolved |
 | [0003](0003-loss-estimation-is-broken.md) | Loss estimation feeds incorrect data | Resolved |
 | [0008](0008-blockstart-not-handled.md) | Receiver doesn't handle BlockStart | Resolved |
-| [0005](0005-ack-mechanism-missing.md) | No ACK/feedback loop | Partially resolved |
+| [0005](0005-ack-mechanism-missing.md) | No ACK/feedback loop | Resolved |
 | [0007](0007-rtt-calculation-broken.md) | RTT depends on clock sync | Resolved |
 
 ## High (traffic stalls, resource leaks, network damage)
@@ -18,8 +18,8 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 |---|-------|--------|
 | [0001](0001-block-assembly-timeout.md) | Block assembly needs flush timeout | Resolved |
 | [0004](0004-decoder-memory-leak.md) | Decoder map grows without bound | Resolved |
-| [0009](0009-no-congestion-control.md) | No congestion control | Open |
-| [0011](0011-channel-backpressure.md) | Channels stall under load | Open |
+| [0009](0009-no-congestion-control.md) | No congestion control | Resolved |
+| [0011](0011-channel-backpressure.md) | Channels stall under load | Resolved |
 
 ## Medium (UX, performance, operability)
 

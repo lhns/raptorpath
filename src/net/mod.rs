@@ -109,7 +109,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
 
     // Channel for received messages from all paths
-    let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(512);
+    // ADR-0011: larger message channel to avoid stalling under load
+    let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
     let _recv_handles = transport.spawn_receivers(msg_tx);
 
     // Sender task: TUN → frame → encode → schedule → send
@@ -257,30 +258,23 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 symbols_received: total_fed,
                                 symbols_needed: source_symbols,
                             };
-                            // Send on any available path (use the one that delivered last)
-                            if let Err(e) = recv_transport.send_symbols(
-                                path_id,
-                                SymbolBatch {
-                                    symbols: vec![],
-                                    send_timestamp_us: now_us(),
-                                    batch_seq: 0,
-                                    path_id,
-                                },
-                            ) {
-                                debug!(?e, "failed to send empty batch for control");
+                            if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
+                                debug!(?e, path_id, "failed to send BlockResult");
                             }
-                            // TODO: send via reliable stream once we have bidirectional control
 
                             // ADR-0002: extract individual packets from decoded block
                             let packets = framing::extract_packets(&data);
+                            // ADR-0011: use try_send to avoid blocking receiver if TUN is slow
                             for pkt_data in packets {
-                                if recv_tun_tx
-                                    .send(Bytes::from(pkt_data))
-                                    .await
-                                    .is_err()
-                                {
-                                    error!("TUN inject channel closed");
-                                    return;
+                                match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
+                                    Ok(()) => {}
+                                    Err(mpsc::error::TrySendError::Full(_)) => {
+                                        warn!("TUN inject channel full, dropping packet");
+                                    }
+                                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                                        error!("TUN inject channel closed");
+                                        return;
+                                    }
                                 }
                             }
 
@@ -314,24 +308,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         .path_mut(path_id)
                         .map(|p| p.estimator.record_batch(expected, symbol_count));
 
-                    // Send ACK as datagram (best-effort, low overhead)
-                    let ack_batch = SymbolBatch {
-                        symbols: vec![],
-                        send_timestamp_us: now_us(),
-                        batch_seq: 0,
-                        path_id,
-                    };
-                    // Encode ACK as a control message in a datagram
-                    let ack_wire = WireMessage::Control(ack);
-                    let ack_data = ack_wire.serialize();
-                    // We can't easily send control via datagram with current API,
-                    // but we can piggyback. For now, log the ACK intent.
-                    debug!(
-                        path_id,
-                        expected,
-                        received = symbol_count,
-                        "ACK prepared"
-                    );
+                    // ADR-0005: send ACK as datagram (best-effort, low overhead)
+                    if let Err(e) = recv_transport.send_control_datagram(path_id, ack) {
+                        debug!(?e, path_id, "failed to send ACK datagram");
+                    }
                 }
                 WireMessage::Control(ctrl_msg) => {
                     handle_control_message(
@@ -341,6 +321,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &recv_fec,
                         &recv_decoders,
                         &sent_counts,
+                        &recv_transport,
                     );
                 }
             }
@@ -551,6 +532,7 @@ fn handle_control_message(
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
     decoders: &Arc<DashMap<u64, Decoder>>,
     sent_counts: &Arc<DashMap<(u64, u32), u32>>,
+    transport: &Arc<QuicTransport>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart
@@ -602,6 +584,24 @@ fn handle_control_message(
             symbols_needed,
         } => {
             fec_controller.lock().feedback_update(success);
+
+            // ADR-0009: signal congestion control on block result
+            // If block failed (not enough symbols), that's a congestion signal
+            // If block succeeded despite loss, FEC handled it (random loss)
+            let had_loss = symbols_received < symbols_needed + (symbols_needed / 5); // rough: needed some repair
+            if had_loss || !success {
+                let mut sched = scheduler.lock();
+                // Signal loss to all paths that sent symbols for this block
+                let path_ids: Vec<u32> = sent_counts
+                    .iter()
+                    .filter(|entry| entry.key().0 == block_id)
+                    .map(|entry| entry.key().1)
+                    .collect();
+                for pid in path_ids {
+                    sched.on_loss(pid, success); // fec_recovered = success
+                }
+            }
+
             debug!(
                 block_id,
                 success,
@@ -630,7 +630,7 @@ fn handle_control_message(
 
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
-            // TODO: send Pong { echo_timestamp_us: timestamp_us } via reliable stream
+            let _ = transport.send_control_datagram(path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
         }
 
         _ => {}

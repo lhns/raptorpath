@@ -48,8 +48,9 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
 
     info!(name = %config.name, "WinTUN interface created");
 
-    let (os_tx, rx) = mpsc::channel::<Bytes>(256);
-    let (tx, mut inject_rx) = mpsc::channel::<Bytes>(256);
+    // ADR-0011: larger channel capacities to reduce stalls under load
+    let (os_tx, rx) = mpsc::channel::<Bytes>(4096);
+    let (tx, mut inject_rx) = mpsc::channel::<Bytes>(4096);
 
     let mtu = config.mtu;
 

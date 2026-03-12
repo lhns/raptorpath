@@ -94,6 +94,18 @@ impl QuicTransport {
         Ok(())
     }
 
+    /// Send a control message as a datagram (best-effort, low latency).
+    pub fn send_control_datagram(&self, path_id: PathId, msg: ControlMessage) -> anyhow::Result<()> {
+        let conn = self
+            .connections
+            .get(&path_id)
+            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
+        let wire = WireMessage::Control(msg);
+        let data = wire.serialize();
+        conn.send_datagram(data.into())?;
+        Ok(())
+    }
+
     /// Send a control message over a path's reliable stream.
     pub async fn send_control(
         &self,
@@ -139,6 +151,10 @@ impl QuicTransport {
             let conn = conn.clone();
             let tx = tx.clone();
 
+            // Clone for uni-stream receiver before datagram task moves them
+            let conn_uni = conn.clone();
+            let tx_uni = tx.clone();
+
             // Datagram receiver
             let handle = tokio::spawn(async move {
                 loop {
@@ -161,6 +177,42 @@ impl QuicTransport {
                 }
             });
             handles.push(handle);
+
+            // Uni-stream receiver (for reliable control messages)
+            let uni_handle = tokio::spawn(async move {
+                loop {
+                    match conn_uni.accept_uni().await {
+                        Ok(mut recv) => {
+                            // Read length-prefixed message
+                            let mut len_buf = [0u8; 4];
+                            if recv.read_exact(&mut len_buf).await.is_err() {
+                                continue;
+                            }
+                            let len = u32::from_be_bytes(len_buf) as usize;
+                            if len > 1_000_000 { continue; } // sanity limit
+                            let mut data = vec![0u8; len];
+                            if recv.read_exact(&mut data).await.is_err() {
+                                continue;
+                            }
+                            match WireMessage::deserialize(&data) {
+                                Ok(msg) => {
+                                    if tx_uni.send((path_id, msg)).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(path_id, ?e, "failed to deserialize uni stream message");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(path_id, ?e, "uni stream accept error");
+                            break;
+                        }
+                    }
+                }
+            });
+            handles.push(uni_handle);
         }
 
         handles

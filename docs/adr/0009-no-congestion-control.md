@@ -1,7 +1,7 @@
 # ADR-0009: No Congestion Control
 
 ## Status
-**Open** — will cause network damage in production
+**Resolved** — AIMD congestion control with FEC-aware loss response. Slow start, congestion avoidance, multiplicative decrease on congestion loss, gentle reduction on FEC-recovered loss.
 
 ## Context
 The scheduler tracks a per-path `cwnd` (congestion window) initialized to 10 symbols. This window never grows or shrinks — there is no congestion control algorithm.

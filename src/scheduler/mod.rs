@@ -21,6 +21,19 @@ pub struct PathState {
     pub in_flight: u32,
     /// Whether the path is considered usable
     pub active: bool,
+    /// Slow-start threshold
+    pub ssthresh: u32,
+    /// Whether we are in slow-start phase
+    pub in_slow_start: bool,
+}
+
+impl PathState {
+    /// Minimum congestion window (never go below this).
+    pub const MIN_CWND: u32 = 2;
+    /// Initial congestion window.
+    pub const INITIAL_CWND: u32 = 10;
+    /// Maximum congestion window.
+    pub const MAX_CWND: u32 = 10_000;
 }
 
 impl PathState {
@@ -28,9 +41,11 @@ impl PathState {
         Self {
             id,
             estimator: LossEstimator::new(),
-            cwnd: 10, // initial window
+            cwnd: Self::INITIAL_CWND,
             in_flight: 0,
             active: true,
+            ssthresh: 64,
+            in_slow_start: true,
         }
     }
 
@@ -45,6 +60,41 @@ impl PathState {
     /// Available capacity: cwnd - in_flight.
     pub fn available(&self) -> u32 {
         self.cwnd.saturating_sub(self.in_flight)
+    }
+
+    /// AIMD congestion control: handle acknowledgements.
+    ///
+    /// In slow start the window grows by `acked` each call (roughly doubles
+    /// per RTT). In congestion avoidance we do standard additive increase.
+    pub fn on_ack(&mut self, acked: u32) {
+        if self.in_slow_start {
+            self.cwnd += acked;
+            if self.cwnd >= self.ssthresh {
+                self.in_slow_start = false;
+            }
+        } else {
+            // Additive increase: +1 per full window acked
+            self.cwnd += std::cmp::max(1, acked / self.cwnd);
+        }
+        self.cwnd = std::cmp::min(self.cwnd, Self::MAX_CWND);
+    }
+
+    /// AIMD congestion control: handle loss events.
+    ///
+    /// FEC-aware: if the block was recovered by the FEC decoder despite the
+    /// lost packet, the loss is likely random (wireless) rather than
+    /// congestion, so we barely reduce. If the block *failed* to decode,
+    /// treat it as a real congestion signal and halve the window.
+    pub fn on_loss(&mut self, fec_recovered: bool) {
+        if fec_recovered {
+            // Random / wireless loss – gentle reduction
+            self.cwnd = std::cmp::max(self.cwnd.saturating_sub(1), Self::MIN_CWND);
+        } else {
+            // Congestion signal – multiplicative decrease
+            self.ssthresh = std::cmp::max(self.cwnd / 2, Self::MIN_CWND);
+            self.cwnd = self.ssthresh;
+            self.in_slow_start = false;
+        }
     }
 }
 
@@ -177,6 +227,18 @@ impl Scheduler {
     pub fn ack(&mut self, path_id: PathId, count: u32) {
         if let Some(path) = self.paths.get_mut(&path_id) {
             path.in_flight = path.in_flight.saturating_sub(count);
+            path.on_ack(count);
+        }
+    }
+
+    /// Notify the scheduler of a loss event on a path.
+    ///
+    /// `fec_recovered`: true if the FEC decoder recovered the block despite
+    /// the loss (random/wireless loss), false if the block failed to decode
+    /// (congestion signal).
+    pub fn on_loss(&mut self, path_id: PathId, fec_recovered: bool) {
+        if let Some(path) = self.paths.get_mut(&path_id) {
+            path.on_loss(fec_recovered);
         }
     }
 }
