@@ -1,0 +1,7 @@
+/target
+*.exe
+*.dll
+*.pdb
+msvc_lib.txt
+msvc_include.txt
+getenv.bat
