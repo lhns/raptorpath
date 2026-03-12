@@ -1,7 +1,7 @@
 # ADR-0006: Protocol Hint Should Influence Block Size and Timing
 
 ## Status
-**Open** — performance improvement
+**Resolved** — BlockProfile derived from ProtocolHint controls max_block_size, flush_timeout, and symbol_size. Realtime: 4KB/2ms/512B. Bulk: 64KB/50ms/1200B. Auto: 16KB/10ms/1200B.
 
 ## Context
 The `--protocol-hint` flag (realtime/bulk/auto) currently only affects the FEC repair multiplier in `fec_rate.rs`. But the biggest latency knob is block assembly, not FEC rate.

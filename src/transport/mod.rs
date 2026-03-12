@@ -7,5 +7,5 @@
 mod protocol;
 mod quic;
 
-pub use protocol::{ControlMessage, SymbolBatch, WireMessage};
+pub use protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage, WIRE_MAGIC};
 pub use quic::QuicTransport;

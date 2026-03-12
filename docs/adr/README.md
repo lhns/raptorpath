@@ -25,9 +25,9 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 
 | # | Title | Status |
 |---|-------|--------|
-| [0006](0006-protocol-hint-block-sizing.md) | Protocol hint should influence block size | Open |
-| [0010](0010-handshake-and-versioning.md) | No handshake or protocol versioning | Open |
+| [0006](0006-protocol-hint-block-sizing.md) | Protocol hint should influence block size | Resolved |
+| [0010](0010-handshake-and-versioning.md) | No handshake or protocol versioning | Resolved |
 | [0012](0012-platform-setup-ux.md) | Platform setup too complex | Resolved |
 | [0013](0013-monitoring-and-observability.md) | No runtime monitoring | Resolved |
 | [0014](0014-duplicate-symbol-handling.md) | No duplicate symbol detection | Resolved |
-| [0015](0015-graceful-shutdown.md) | No graceful shutdown | Open |
+| [0015](0015-graceful-shutdown.md) | No graceful shutdown | Resolved |

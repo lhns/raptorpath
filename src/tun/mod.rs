@@ -61,3 +61,9 @@ impl TunInterface {
             .map_err(|_| anyhow::anyhow!("TUN write channel closed"))
     }
 }
+
+impl Drop for TunInterface {
+    fn drop(&mut self) {
+        tracing::info!(name = %self.name, "cleaning up TUN interface");
+    }
+}

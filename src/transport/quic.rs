@@ -4,7 +4,7 @@
 //! - DATAGRAM frames for symbol data (unreliable, low overhead)
 //! - A bidirectional stream for control messages (reliable)
 
-use super::protocol::{ControlMessage, SymbolBatch, WireMessage};
+use super::protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage};
 use crate::scheduler::PathId;
 use quinn::{ClientConfig, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
@@ -57,7 +57,17 @@ impl QuicTransport {
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
 
         let connection = endpoint.connect(peer_addr, "raptorpath")?.await?;
-        info!(path_id, %peer_addr, "connected");
+
+        // ADR-0010: perform handshake
+        let local_hs = Handshake {
+            version: PROTOCOL_VERSION,
+            max_block_size: 64 * 1024,
+            symbol_size: 1200,
+            path_id,
+        };
+        let _peer_hs = Self::perform_handshake(&connection, &local_hs).await?;
+
+        info!(path_id, %peer_addr, "connected and handshake complete");
         self.connections.insert(path_id, connection);
         Ok(())
     }
@@ -74,9 +84,88 @@ impl QuicTransport {
             .await
             .ok_or_else(|| anyhow::anyhow!("endpoint closed"))?;
         let connection = incoming.await?;
-        info!(path_id, remote = %connection.remote_address(), "accepted connection");
+
+        // ADR-0010: accept handshake from peer
+        let local_hs = Handshake {
+            version: PROTOCOL_VERSION,
+            max_block_size: 64 * 1024,
+            symbol_size: 1200,
+            path_id,
+        };
+        let _peer_hs = Self::accept_handshake(&connection, &local_hs).await?;
+
+        info!(path_id, remote = %connection.remote_address(), "accepted with handshake");
         self.connections.insert(path_id, connection);
         Ok(())
+    }
+
+    /// Perform handshake on a connection (client side). Returns the peer's handshake.
+    async fn perform_handshake(
+        conn: &quinn::Connection,
+        local: &Handshake,
+    ) -> anyhow::Result<Handshake> {
+        // Open a bidirectional stream for handshake
+        let (mut send, mut recv) = conn.open_bi().await?;
+
+        // Send our handshake
+        let data = local.serialize();
+        send.write_all(&(data.len() as u32).to_be_bytes()).await?;
+        send.write_all(&data).await?;
+        send.finish()?;
+
+        // Read peer's handshake
+        let mut len_buf = [0u8; 4];
+        recv.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        if len > 10_000 {
+            anyhow::bail!("handshake too large: {len} bytes");
+        }
+        let mut buf = vec![0u8; len];
+        recv.read_exact(&mut buf).await?;
+
+        let peer = Handshake::deserialize(&buf)?;
+        info!(
+            local_version = local.version,
+            peer_version = peer.version,
+            peer_path_id = peer.path_id,
+            "handshake complete"
+        );
+        Ok(peer)
+    }
+
+    /// Accept a handshake from a peer (server side).
+    async fn accept_handshake(
+        conn: &quinn::Connection,
+        local: &Handshake,
+    ) -> anyhow::Result<Handshake> {
+        // Accept the bidirectional stream
+        let (mut send, mut recv) = conn.accept_bi().await?;
+
+        // Read peer's handshake first (peer initiated)
+        let mut len_buf = [0u8; 4];
+        recv.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        if len > 10_000 {
+            anyhow::bail!("handshake too large: {len} bytes");
+        }
+        let mut buf = vec![0u8; len];
+        recv.read_exact(&mut buf).await?;
+
+        let peer = Handshake::deserialize(&buf)?;
+
+        // Send our handshake back
+        let data = local.serialize();
+        send.write_all(&(data.len() as u32).to_be_bytes()).await?;
+        send.write_all(&data).await?;
+        send.finish()?;
+
+        info!(
+            local_version = local.version,
+            peer_version = peer.version,
+            peer_path_id = peer.path_id,
+            "handshake complete (server)"
+        );
+        Ok(peer)
     }
 
     /// Send a symbol batch over a path using QUIC datagrams.

@@ -1,7 +1,7 @@
 # ADR-0015: No Graceful Shutdown
 
 ## Status
-**Open** — data loss on exit
+**Resolved** — Ctrl+C triggers broadcast shutdown signal. Sender flushes partial block, sends ControlMessage::Shutdown to peer, exits cleanly. Receiver handles shutdown signal and Shutdown messages. TunInterface Drop impl logs cleanup.
 
 ## Context
 The main loop uses `tokio::select!` on sender and receiver handles. On Ctrl+C or process termination, tasks are aborted immediately.

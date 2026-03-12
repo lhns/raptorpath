@@ -1,7 +1,7 @@
 # ADR-0010: No Handshake or Protocol Versioning
 
 ## Status
-**Open** — required for production use
+**Resolved** — 8-byte magic+version header (RPTQ + v1) on all WireMessages. Handshake exchanged on bidi stream after QUIC connect/accept with version/capability negotiation. Version mismatch rejected at deserialization.
 
 ## Context
 Peers connect via QUIC and immediately start sending symbol batches. There is no application-level handshake to negotiate capabilities, version, or exchange path metadata.

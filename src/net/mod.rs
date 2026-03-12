@@ -42,12 +42,40 @@ pub struct PeerConfig {
     pub status_addr: Option<SocketAddr>,
 }
 
-/// Symbol size — tuned to fit within typical MTU after QUIC overhead.
-const SYMBOL_SIZE: u16 = 1200;
-/// Maximum block size before FEC encoding (bytes).
-const MAX_BLOCK_SIZE: usize = 64 * 1024; // 64KB blocks
-/// Flush timeout for partial blocks (ADR-0001).
-const FLUSH_TIMEOUT: Duration = Duration::from_millis(10);
+// ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
+// Kept as fallback for decoder creation when BlockStart hasn't arrived yet.
+const DEFAULT_SYMBOL_SIZE: u16 = 1200;
+const DEFAULT_MAX_BLOCK_SIZE: usize = 64 * 1024;
+
+/// ADR-0006: Block assembly profile derived from protocol hint.
+struct BlockProfile {
+    max_block_size: usize,
+    flush_timeout: Duration,
+    symbol_size: u16,
+}
+
+impl BlockProfile {
+    fn from_hint(hint: ProtocolHint) -> Self {
+        match hint {
+            ProtocolHint::Realtime => Self {
+                max_block_size: 4 * 1024,           // 4KB — sub-5ms latency
+                flush_timeout: Duration::from_millis(2),
+                symbol_size: 512,                    // smaller symbols for small packets
+            },
+            ProtocolHint::Bulk => Self {
+                max_block_size: 64 * 1024,          // 64KB — max throughput
+                flush_timeout: Duration::from_millis(50),
+                symbol_size: 1200,
+            },
+            ProtocolHint::Auto => Self {
+                max_block_size: 16 * 1024,          // 16KB — balanced
+                flush_timeout: Duration::from_millis(10),
+                symbol_size: 1200,
+            },
+        }
+    }
+}
+
 /// Decoder eviction timeout for incomplete blocks (ADR-0004).
 const DECODER_TIMEOUT: Duration = Duration::from_secs(30);
 /// Decoder cleanup interval.
@@ -105,6 +133,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.max_fec_overhead,
         config.protocol_hint,
     )));
+    // ADR-0006: derive block assembly profile from protocol hint
+    let profile = BlockProfile::from_hint(config.protocol_hint);
+    info!(
+        max_block_size = profile.max_block_size,
+        flush_timeout_ms = profile.flush_timeout.as_millis() as u64,
+        symbol_size = profile.symbol_size,
+        "block assembly profile"
+    );
+
     // ADR-0013: shared monitoring stats
     let stats = Arc::new(SharedStats::new());
     for (i, _) in config.bind_addrs.iter().enumerate() {
@@ -115,6 +152,20 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.target_tail_loss.to_bits(),
         Ordering::Relaxed,
     );
+
+    // ADR-0015: graceful shutdown signaling
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    let mut sender_shutdown_rx = shutdown_tx.subscribe();
+    let mut recv_shutdown_rx = shutdown_tx.subscribe();
+
+    // Spawn Ctrl+C handler
+    let ctrlc_shutdown_tx = shutdown_tx.clone();
+    tokio::spawn(async move {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            info!("received Ctrl+C, initiating graceful shutdown...");
+            let _ = ctrlc_shutdown_tx.send(());
+        }
+    });
 
     let active_decoders: Arc<DashMap<u64, Decoder>> = Arc::new(DashMap::new());
 
@@ -142,12 +193,18 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_sent_counts = sent_counts.clone();
     let sender_stats = stats.clone();
 
+    let sender_profile_max_block = profile.max_block_size;
+    let sender_profile_flush = profile.flush_timeout;
+    let sender_profile_symbol_size = profile.symbol_size;
+
     let sender_handle = tokio::spawn(async move {
-        let mut block_buf = Vec::with_capacity(MAX_BLOCK_SIZE);
+        let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut flush_deadline: Option<tokio::time::Instant> = None;
+        let mut shutting_down = false;
 
         loop {
             // ADR-0001: select between packet arrival and flush timeout
+            // ADR-0015: also listen for shutdown signal
             let packet = if let Some(deadline) = flush_deadline {
                 tokio::select! {
                     p = tun.read_packet() => p,
@@ -155,10 +212,45 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         // Timeout: flush partial block
                         None
                     }
+                    _ = sender_shutdown_rx.recv() => { shutting_down = true; None }
                 }
             } else {
-                tun.read_packet().await
+                tokio::select! {
+                    p = tun.read_packet() => p,
+                    _ = sender_shutdown_rx.recv() => { shutting_down = true; None }
+                }
             };
+
+            // ADR-0015: flush partial block and notify peer on shutdown
+            if shutting_down {
+                if !block_buf.is_empty() {
+                    framing::frame_end(&mut block_buf);
+                    encode_and_send_block(
+                        &mut block_buf,
+                        &sender_block_counter,
+                        &sender_batch_counter,
+                        &sender_scheduler,
+                        &sender_fec,
+                        &sender_transport,
+                        &sender_sent_counts,
+                        &sender_stats,
+                        sender_profile_symbol_size,
+                        sender_profile_max_block,
+                    );
+                }
+                // Send Shutdown control message to peer on all paths
+                {
+                    let sched = sender_scheduler.lock();
+                    for pid in sched.active_paths() {
+                        let _ = sender_transport.send_control_datagram(
+                            pid,
+                            ControlMessage::Shutdown,
+                        );
+                    }
+                }
+                info!("sender shut down gracefully");
+                break;
+            }
 
             match packet {
                 Some(pkt) => {
@@ -168,11 +260,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     // Start flush timer on first packet in block
                     if flush_deadline.is_none() {
                         flush_deadline =
-                            Some(tokio::time::Instant::now() + FLUSH_TIMEOUT);
+                            Some(tokio::time::Instant::now() + sender_profile_flush);
                     }
 
                     // Flush if block is full
-                    if block_buf.len() >= MAX_BLOCK_SIZE {
+                    if block_buf.len() >= sender_profile_max_block {
                         framing::frame_end(&mut block_buf);
                         encode_and_send_block(
                             &mut block_buf,
@@ -183,6 +275,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_transport,
                             &sender_sent_counts,
                             &sender_stats,
+                            sender_profile_symbol_size,
+                            sender_profile_max_block,
                         );
                         flush_deadline = None;
                     }
@@ -200,6 +294,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_transport,
                             &sender_sent_counts,
                             &sender_stats,
+                            sender_profile_symbol_size,
+                            sender_profile_max_block,
                         );
                         flush_deadline = None;
                     } else if flush_deadline.is_none() {
@@ -222,9 +318,23 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
+    let recv_symbol_size = profile.symbol_size;
 
     let receiver_handle = tokio::spawn(async move {
-        while let Some((path_id, msg)) = msg_rx.recv().await {
+        loop {
+            // ADR-0015: select between message arrival and shutdown signal
+            let (path_id, msg) = tokio::select! {
+                msg = msg_rx.recv() => {
+                    match msg {
+                        Some(m) => m,
+                        None => break, // channel closed
+                    }
+                }
+                _ = recv_shutdown_rx.recv() => {
+                    info!("receiver shutting down");
+                    break;
+                }
+            };
             match msg {
                 WireMessage::Data(batch) => {
                     let batch_send_ts = batch.send_timestamp_us;
@@ -250,11 +360,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 Decoder::new(
                                     EncodingParams {
                                         source_symbols: 0,
-                                        symbol_size: SYMBOL_SIZE,
+                                        symbol_size: recv_symbol_size,
                                         repair_count: 0,
                                         block_id: symbol.block_id,
                                     },
-                                    MAX_BLOCK_SIZE as u64,
+                                    DEFAULT_MAX_BLOCK_SIZE as u64,
                                 )
                             });
 
@@ -418,15 +528,17 @@ fn encode_and_send_block(
     transport: &Arc<QuicTransport>,
     sent_counts: &Arc<DashMap<(u64, u32), u32>>,
     stats: &Arc<SharedStats>,
+    symbol_size: u16,
+    max_block_size: usize,
 ) {
-    let block_data = std::mem::replace(block_buf, Vec::with_capacity(MAX_BLOCK_SIZE));
+    let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
 
     if block_data.is_empty() {
         return;
     }
 
     let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
-    let source_symbols = (block_data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
+    let source_symbols = (block_data.len() as f64 / symbol_size as f64).ceil() as u32;
 
     // Compute repair count
     let repair_count = {
@@ -453,7 +565,7 @@ fn encode_and_send_block(
 
     let params = EncodingParams {
         source_symbols,
-        symbol_size: SYMBOL_SIZE,
+        symbol_size,
         repair_count,
         block_id,
     };
@@ -698,6 +810,11 @@ fn handle_control_message(
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
             let _ = transport.send_control_datagram(path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
+        }
+
+        // ADR-0015: handle graceful shutdown from peer
+        ControlMessage::Shutdown => {
+            info!(path_id, "peer is shutting down");
         }
 
         _ => {}

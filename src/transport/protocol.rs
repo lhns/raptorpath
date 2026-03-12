@@ -3,6 +3,44 @@
 use crate::fec::{EncodingParams, WireSymbol};
 use serde::{Deserialize, Serialize};
 
+/// Protocol version. Increment on breaking changes.
+pub const PROTOCOL_VERSION: u32 = 1;
+/// Magic bytes for wire format identification.
+pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
+
+/// Handshake message exchanged on connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Handshake {
+    pub version: u32,
+    pub max_block_size: u32,
+    pub symbol_size: u16,
+    pub path_id: u32,
+}
+
+impl Handshake {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&WIRE_MAGIC);
+        data.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
+        data.extend(bincode::serialize(self).expect("handshake serialization should not fail"));
+        data
+    }
+
+    pub fn deserialize(data: &[u8]) -> anyhow::Result<Self> {
+        if data.len() < 8 {
+            anyhow::bail!("handshake too short");
+        }
+        if &data[..4] != &WIRE_MAGIC {
+            anyhow::bail!("invalid handshake magic");
+        }
+        let version = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+        if version != PROTOCOL_VERSION {
+            anyhow::bail!("protocol version mismatch: expected {PROTOCOL_VERSION}, got {version}");
+        }
+        Ok(bincode::deserialize(&data[8..])?)
+    }
+}
+
 /// A batch of symbols sent over a path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolBatch {
@@ -63,6 +101,9 @@ pub enum ControlMessage {
     /// Keepalive / path probe.
     Ping { timestamp_us: u64 },
     Pong { echo_timestamp_us: u64 },
+
+    /// Graceful shutdown notification.
+    Shutdown,
 }
 
 /// Top-level wire message.
@@ -74,10 +115,30 @@ pub enum WireMessage {
 
 impl WireMessage {
     pub fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("serialization should not fail")
+        let mut data = Vec::new();
+        data.extend_from_slice(&WIRE_MAGIC);
+        data.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
+        data.extend(bincode::serialize(self).expect("serialization should not fail"));
+        data
     }
 
     pub fn deserialize(data: &[u8]) -> Result<Self, bincode::Error> {
-        bincode::deserialize(data)
+        if data.len() < 8 {
+            return Err(Box::new(bincode::ErrorKind::Custom(
+                "message too short for header".into(),
+            )));
+        }
+        if &data[..4] != &WIRE_MAGIC {
+            return Err(Box::new(bincode::ErrorKind::Custom(
+                "invalid magic bytes — not a raptorpath message".into(),
+            )));
+        }
+        let version = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+        if version != PROTOCOL_VERSION {
+            return Err(Box::new(bincode::ErrorKind::Custom(
+                format!("protocol version mismatch: expected {PROTOCOL_VERSION}, got {version}"),
+            )));
+        }
+        bincode::deserialize(&data[8..])
     }
 }
