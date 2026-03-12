@@ -14,6 +14,7 @@ pub mod framing;
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{Decoder, EncodingParams, FecStream};
+use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
 use crate::tun::{TunConfig, TunInterface};
@@ -28,6 +29,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 /// Configuration for a raptorpath peer.
+#[derive(Debug)]
 pub struct PeerConfig {
     pub bind_addrs: Vec<SocketAddr>,
     pub peer_addrs: Vec<SocketAddr>,
@@ -37,6 +39,7 @@ pub struct PeerConfig {
     pub max_fec_overhead: f64,
     pub protocol_hint: ProtocolHint,
     pub is_server: bool,
+    pub status_addr: Option<SocketAddr>,
 }
 
 /// Symbol size — tuned to fit within typical MTU after QUIC overhead.
@@ -102,6 +105,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.max_fec_overhead,
         config.protocol_hint,
     )));
+    // ADR-0013: shared monitoring stats
+    let stats = Arc::new(SharedStats::new());
+    for (i, _) in config.bind_addrs.iter().enumerate() {
+        stats.add_path(i as u32);
+    }
+    // Store target tail loss in stats
+    stats.fec.target_tail_loss_bits.store(
+        config.target_tail_loss.to_bits(),
+        Ordering::Relaxed,
+    );
+
     let active_decoders: Arc<DashMap<u64, Decoder>> = Arc::new(DashMap::new());
 
     // Per-path sent symbol counts for loss tracking (sender side)
@@ -126,6 +140,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_block_counter = block_counter.clone();
     let sender_batch_counter = batch_counter.clone();
     let sender_sent_counts = sent_counts.clone();
+    let sender_stats = stats.clone();
 
     let sender_handle = tokio::spawn(async move {
         let mut block_buf = Vec::with_capacity(MAX_BLOCK_SIZE);
@@ -167,6 +182,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_fec,
                             &sender_transport,
                             &sender_sent_counts,
+                            &sender_stats,
                         );
                         flush_deadline = None;
                     }
@@ -183,6 +199,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_fec,
                             &sender_transport,
                             &sender_sent_counts,
+                            &sender_stats,
                         );
                         flush_deadline = None;
                     } else if flush_deadline.is_none() {
@@ -204,6 +221,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let path_batch_tracking: Arc<DashMap<u32, PathBatchTracker>> = Arc::new(DashMap::new());
 
     let recv_path_tracking = path_batch_tracking.clone();
+    let recv_stats = stats.clone();
 
     let receiver_handle = tokio::spawn(async move {
         while let Some((path_id, msg)) = msg_rx.recv().await {
@@ -248,6 +266,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 
                             debug!(block_id, "block decoded");
 
+                            // ADR-0013: update monitoring stats
+                            recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
+
                             // Feed back to FEC controller
                             recv_fec.lock().feedback_update(true);
 
@@ -280,6 +301,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 
                             // ADR-0004: remove completed decoder
                             recv_decoders.remove(&block_id);
+                            recv_stats.blocks.pending.store(recv_decoders.len() as u64, Ordering::Relaxed);
                         }
                     }
 
@@ -322,6 +344,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &recv_decoders,
                         &sent_counts,
                         &recv_transport,
+                        &recv_stats,
                     );
                 }
             }
@@ -331,6 +354,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // ADR-0004: periodic cleanup of stale decoders
     let cleanup_decoders = active_decoders.clone();
     let cleanup_fec = fec_controller.clone();
+    let cleanup_stats = stats.clone();
     let cleanup_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
         loop {
@@ -355,6 +379,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 for _block_id in &timed_out {
                     ctrl.feedback_update(false);
                 }
+                // ADR-0013: update monitoring stats for timed-out blocks
+                cleanup_stats.blocks.decoded_fail.fetch_add(timed_out.len() as u64, Ordering::Relaxed);
                 warn!(
                     count = timed_out.len(),
                     "evicted timed-out decoders (block decode failures)"
@@ -362,6 +388,16 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             }
         }
     });
+
+    // ADR-0013: spawn status HTTP endpoint if configured
+    if let Some(addr) = config.status_addr {
+        let http_stats = stats.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::monitor::http::serve(http_stats, addr).await {
+                warn!(?e, "status HTTP endpoint failed");
+            }
+        });
+    }
 
     tokio::select! {
         r = sender_handle => { r?; }
@@ -381,6 +417,7 @@ fn encode_and_send_block(
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
     transport: &Arc<QuicTransport>,
     sent_counts: &Arc<DashMap<(u64, u32), u32>>,
+    stats: &Arc<SharedStats>,
 ) {
     let block_data = std::mem::replace(block_buf, Vec::with_capacity(MAX_BLOCK_SIZE));
 
@@ -457,6 +494,11 @@ fn encode_and_send_block(
         "encoded block"
     );
 
+    // ADR-0013: update monitoring stats
+    stats.blocks.encoded.fetch_add(1, Ordering::Relaxed);
+    stats.fec.total_source_symbols.fetch_add(source_symbols as u64, Ordering::Relaxed);
+    stats.fec.total_repair_symbols.fetch_add(repair_count as u64, Ordering::Relaxed);
+
     // Schedule across paths
     let assignments = scheduler.lock().schedule(source, repair);
 
@@ -464,6 +506,9 @@ fn encode_and_send_block(
 
     // ADR-0003: track how many symbols sent per path for this block
     for (path_id, symbols) in &assignments {
+        if let Some(ps) = stats.path(*path_id) {
+            ps.symbols_sent.fetch_add(symbols.len() as u64, Ordering::Relaxed);
+        }
         sent_counts.insert((block_id, *path_id), symbols.len() as u32);
     }
 
@@ -533,6 +578,7 @@ fn handle_control_message(
     decoders: &Arc<DashMap<u64, Decoder>>,
     sent_counts: &Arc<DashMap<(u64, u32), u32>>,
     transport: &Arc<QuicTransport>,
+    stats: &Arc<SharedStats>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart
@@ -574,6 +620,17 @@ fn handle_control_message(
                     path.estimator
                         .record_batch(expected_count, received_count);
                 }
+
+                // ADR-0013: update path monitoring stats
+                if let Some(ps) = stats.path(path_id) {
+                    ps.rtt_us.store(rtt_us, Ordering::Relaxed);
+                    ps.loss_rate_e6.store((path.estimator.loss_rate() * 1_000_000.0) as u64, Ordering::Relaxed);
+                    ps.throughput_bps.store(path.estimator.throughput() as u64, Ordering::Relaxed);
+                    ps.cwnd.store(path.cwnd as u64, Ordering::Relaxed);
+                    ps.in_flight.store(path.in_flight as u64, Ordering::Relaxed);
+                    ps.in_slow_start.store(path.in_slow_start, Ordering::Relaxed);
+                    ps.symbols_received.fetch_add(received_ids.len() as u64, Ordering::Relaxed);
+                }
             }
         }
 
@@ -584,6 +641,16 @@ fn handle_control_message(
             symbols_needed,
         } => {
             fec_controller.lock().feedback_update(success);
+
+            // ADR-0013: update FEC monitoring stats
+            {
+                let diag = fec_controller.lock().diagnostics();
+                stats.fec.actual_failure_rate_bits.store(diag.actual_failure_rate.to_bits(), Ordering::Relaxed);
+                stats.fec.pi_correction_e3.store((diag.pi_correction * 1000.0) as i64, Ordering::Relaxed);
+            }
+            if !success {
+                stats.blocks.decoded_fail.fetch_add(1, Ordering::Relaxed);
+            }
 
             // ADR-0009: signal congestion control on block result
             // If block failed (not enough symbols), that's a congestion signal

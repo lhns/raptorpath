@@ -1,0 +1,202 @@
+//! Configuration: TOML file loading, profile presets, CLI overlay.
+
+use crate::control::fec_rate::ProtocolHint;
+use crate::net::PeerConfig;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use std::path::Path;
+
+/// TOML-serializable configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct RaptorpathConfig {
+    pub server: Option<bool>,
+    pub bind: Option<Vec<String>>,
+    pub peer: Option<Vec<String>>,
+    pub tun_name: Option<String>,
+    pub tun_addr: Option<String>,
+    pub target_tail_loss: Option<f64>,
+    pub max_fec_overhead: Option<f64>,
+    pub protocol_hint: Option<String>,
+    pub status_addr: Option<String>,
+}
+
+/// Named configuration profiles with sensible defaults.
+#[derive(Debug, Clone, Copy)]
+pub enum Profile {
+    /// Home network: WiFi + LTE, moderate loss, latency-sensitive
+    Home,
+    /// Datacenter: low loss, high throughput, stricter tail loss target
+    Datacenter,
+}
+
+impl Profile {
+    pub fn defaults(&self) -> RaptorpathConfig {
+        match self {
+            Profile::Home => RaptorpathConfig {
+                target_tail_loss: Some(1e-4),
+                max_fec_overhead: Some(0.3),
+                protocol_hint: Some("auto".to_string()),
+                ..Default::default()
+            },
+            Profile::Datacenter => RaptorpathConfig {
+                target_tail_loss: Some(1e-6),
+                max_fec_overhead: Some(0.5),
+                protocol_hint: Some("bulk".to_string()),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+impl std::str::FromStr for Profile {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "home" => Ok(Profile::Home),
+            "datacenter" | "dc" => Ok(Profile::Datacenter),
+            other => anyhow::bail!("unknown profile '{other}'. Available: home, datacenter"),
+        }
+    }
+}
+
+/// Load config from TOML file.
+pub fn load_config(path: &Path) -> anyhow::Result<RaptorpathConfig> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("failed to read config file '{}': {e}", path.display()))?;
+    let config: RaptorpathConfig = toml::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("failed to parse config file '{}': {e}", path.display()))?;
+    Ok(config)
+}
+
+/// Merge two configs: `overlay` values take precedence over `base`.
+pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathConfig {
+    RaptorpathConfig {
+        server: overlay.server.or(base.server),
+        bind: overlay.bind.or(base.bind),
+        peer: overlay.peer.or(base.peer),
+        tun_name: overlay.tun_name.or(base.tun_name),
+        tun_addr: overlay.tun_addr.or(base.tun_addr),
+        target_tail_loss: overlay.target_tail_loss.or(base.target_tail_loss),
+        max_fec_overhead: overlay.max_fec_overhead.or(base.max_fec_overhead),
+        protocol_hint: overlay.protocol_hint.or(base.protocol_hint),
+        status_addr: overlay.status_addr.or(base.status_addr),
+    }
+}
+
+/// Convert resolved config into PeerConfig + optional status address.
+pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<SocketAddr>)> {
+    let bind_addrs: Vec<SocketAddr> = config
+        .bind
+        .as_ref()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|s| s.parse())
+        .collect::<Result<_, _>>()
+        .map_err(|e| anyhow::anyhow!("invalid bind address: {e}"))?;
+
+    let peer_addrs: Vec<SocketAddr> = config
+        .peer
+        .as_ref()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|s| s.parse())
+        .collect::<Result<_, _>>()
+        .map_err(|e| anyhow::anyhow!("invalid peer address: {e}"))?;
+
+    let protocol_hint: ProtocolHint = config
+        .protocol_hint
+        .as_deref()
+        .unwrap_or("auto")
+        .parse()?;
+
+    let status_addr: Option<SocketAddr> = config
+        .status_addr
+        .as_ref()
+        .map(|s| s.parse())
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("invalid status address: {e}"))?;
+
+    let peer_config = PeerConfig {
+        bind_addrs,
+        peer_addrs,
+        tun_name: config.tun_name.clone().unwrap_or_else(|| "rpath0".into()),
+        tun_addr: config.tun_addr.clone().unwrap_or_else(|| "10.99.0.1/24".into()),
+        target_tail_loss: config.target_tail_loss.unwrap_or(1e-5),
+        max_fec_overhead: config.max_fec_overhead.unwrap_or(0.5),
+        protocol_hint,
+        is_server: config.server.unwrap_or(false),
+        status_addr,
+    };
+
+    Ok((peer_config, status_addr))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profile_defaults() {
+        let home = Profile::Home.defaults();
+        assert_eq!(home.target_tail_loss, Some(1e-4));
+        assert_eq!(home.max_fec_overhead, Some(0.3));
+
+        let dc = Profile::Datacenter.defaults();
+        assert_eq!(dc.target_tail_loss, Some(1e-6));
+        assert_eq!(dc.max_fec_overhead, Some(0.5));
+    }
+
+    #[test]
+    fn test_merge_overlay_wins() {
+        let base = RaptorpathConfig {
+            tun_name: Some("base".into()),
+            target_tail_loss: Some(1e-5),
+            ..Default::default()
+        };
+        let overlay = RaptorpathConfig {
+            tun_name: Some("overlay".into()),
+            ..Default::default()
+        };
+        let merged = merge(base, overlay);
+        assert_eq!(merged.tun_name.as_deref(), Some("overlay"));
+        assert_eq!(merged.target_tail_loss, Some(1e-5)); // from base
+    }
+
+    #[test]
+    fn test_parse_profile() {
+        assert!(matches!("home".parse::<Profile>().unwrap(), Profile::Home));
+        assert!(matches!("datacenter".parse::<Profile>().unwrap(), Profile::Datacenter));
+        assert!(matches!("dc".parse::<Profile>().unwrap(), Profile::Datacenter));
+        assert!("unknown".parse::<Profile>().is_err());
+    }
+
+    #[test]
+    fn test_toml_roundtrip() {
+        let config = RaptorpathConfig {
+            server: Some(true),
+            bind: Some(vec!["0.0.0.0:4433".into()]),
+            peer: Some(vec!["1.2.3.4:4433".into()]),
+            tun_name: Some("rpath0".into()),
+            tun_addr: Some("10.99.0.1/24".into()),
+            target_tail_loss: Some(1e-5),
+            max_fec_overhead: Some(0.5),
+            protocol_hint: Some("auto".into()),
+            status_addr: Some("127.0.0.1:9820".into()),
+        };
+        let toml_str = toml::to_string(&config).unwrap();
+        let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.server, Some(true));
+        assert_eq!(parsed.tun_name.as_deref(), Some("rpath0"));
+    }
+
+    #[test]
+    fn test_resolve_defaults() {
+        let config = RaptorpathConfig::default();
+        let (peer_config, status_addr) = resolve(&config).unwrap();
+        assert_eq!(peer_config.tun_name, "rpath0");
+        assert_eq!(peer_config.tun_addr, "10.99.0.1/24");
+        assert!(!peer_config.is_server);
+        assert!(status_addr.is_none());
+    }
+}

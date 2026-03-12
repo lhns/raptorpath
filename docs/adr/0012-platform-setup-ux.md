@@ -1,7 +1,7 @@
 # ADR-0012: Platform Setup Is Too Complex and Error-Prone
 
 ## Status
-**Open** — UX issue
+**Resolved** — TOML config file support, profile presets (home/datacenter), preflight checks with actionable errors, subcommands (run/check/status), netsh uses async tokio::process::Command.
 
 ## Context
 Running raptorpath requires multiple manual steps that aren't documented, validated, or automated.

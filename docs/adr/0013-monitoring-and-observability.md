@@ -1,7 +1,7 @@
 # ADR-0013: No Runtime Monitoring or Observability
 
 ## Status
-**Open** — usability and debugging issue
+**Resolved** — SharedStats with atomics for per-path/FEC/block metrics. HTTP status endpoint (axum) on configurable port. `raptorpath status` CLI subcommand with pretty-print and --json mode.
 
 ## Context
 A multipath FEC system has many moving parts. When something goes wrong (high latency, stalls, path failures), the operator needs visibility into what's happening.

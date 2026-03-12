@@ -22,7 +22,7 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
     // Set IP address using netsh (wintun doesn't do IP config)
     let addr_str = config.address.to_string();
     let mask_str = config.netmask.to_string();
-    let output = std::process::Command::new("netsh")
+    let output = tokio::process::Command::new("netsh")
         .args([
             "interface",
             "ip",
@@ -33,11 +33,15 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
             &addr_str,
             &mask_str,
         ])
-        .output()?;
+        .output()
+        .await?;
     if !output.status.success() {
-        tracing::warn!(
-            "netsh set address failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "Failed to configure TUN interface '{}': {}. \
+             Make sure you are running as Administrator.",
+            config.name,
+            stderr.trim()
         );
     }
 
