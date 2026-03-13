@@ -86,6 +86,10 @@ struct RunArgs {
     /// DNS server to configure on the tunnel interface
     #[arg(long)]
     dns: Option<String>,
+
+    /// Block interleaving depth (1=disabled, 2+=spread burst loss across N blocks)
+    #[arg(long)]
+    interleave_depth: Option<u32>,
 }
 
 #[derive(Parser, Debug)]
@@ -123,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
         status_addr: None,
         route: vec![],
         dns: None,
+        interleave_depth: None,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
@@ -172,6 +177,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
             Some(args.route)
         },
         dns: args.dns,
+        interleave_depth: args.interleave_depth,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

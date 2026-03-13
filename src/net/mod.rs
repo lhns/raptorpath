@@ -10,6 +10,7 @@
 //!   QUIC paths → FEC decode → packet extraction → TUN injection
 
 pub mod framing;
+pub mod interleave;
 
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
@@ -44,6 +45,8 @@ pub struct PeerConfig {
     pub routes: Vec<String>,
     /// DNS server to configure on the tunnel interface
     pub dns: Option<IpAddr>,
+    /// Block interleaving depth (1 = disabled, 2+ = interleave across N blocks)
+    pub interleave_depth: u32,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -186,6 +189,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         max_block_size = profile.max_block_size,
         flush_timeout_ms = profile.flush_timeout.as_millis() as u64,
         symbol_size = profile.symbol_size,
+        interleave_depth = config.interleave_depth,
         "block assembly profile"
     );
 
@@ -243,27 +247,58 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
     let sender_profile_symbol_size = profile.symbol_size;
+    let sender_interleave_depth = config.interleave_depth;
+    // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
+    let sender_interleave_timeout = profile.flush_timeout * 2;
 
     let sender_handle = tokio::spawn(async move {
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut flush_deadline: Option<tokio::time::Instant> = None;
         let mut shutting_down = false;
+        let mut ileave = interleave::InterleavingBuffer::new(
+            sender_interleave_depth as usize,
+            sender_interleave_timeout,
+        );
 
         loop {
-            // ADR-0001: select between packet arrival and flush timeout
-            // ADR-0015: also listen for shutdown signal
-            let packet = if let Some(deadline) = flush_deadline {
-                tokio::select! {
-                    p = tun.read_packet() => p,
-                    _ = tokio::time::sleep_until(deadline) => {
-                        // Timeout: flush partial block
-                        None
+            // Compute interleave drain deadline
+            let ileave_deadline = ileave.oldest_deadline().map(|d| {
+                // Convert std Instant to tokio Instant (offset from now)
+                let std_now = std::time::Instant::now();
+                let remaining = d.saturating_duration_since(std_now);
+                tokio::time::Instant::now() + remaining
+            });
+
+            // ADR-0001: select between packet arrival, flush timeout, interleave drain, and shutdown
+            let packet = {
+                let flush_sleep = async {
+                    match flush_deadline {
+                        Some(d) => tokio::time::sleep_until(d).await,
+                        None => std::future::pending().await,
                     }
-                    _ = sender_shutdown_rx.recv() => { shutting_down = true; None }
-                }
-            } else {
+                };
+                let ileave_sleep = async {
+                    match ileave_deadline {
+                        Some(d) => tokio::time::sleep_until(d).await,
+                        None => std::future::pending().await,
+                    }
+                };
                 tokio::select! {
                     p = tun.read_packet() => p,
+                    _ = flush_sleep => None,
+                    _ = ileave_sleep => {
+                        // Interleave timeout — drain and send buffered symbols
+                        if ileave.should_drain() || !ileave.is_empty() {
+                            send_interleaved_batches(
+                                &mut ileave,
+                                &sender_batch_counter,
+                                &sender_transport,
+                                &sender_scheduler,
+                                &sender_stats,
+                            );
+                        }
+                        continue;
+                    }
                     _ = sender_shutdown_rx.recv() => { shutting_down = true; None }
                 }
             };
@@ -272,7 +307,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             if shutting_down {
                 if !block_buf.is_empty() {
                     framing::frame_end(&mut block_buf);
-                    encode_and_send_block(
+                    encode_to_interleave_buf(
                         &mut block_buf,
                         &sender_block_counter,
                         &sender_batch_counter,
@@ -283,8 +318,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &sender_stats,
                         sender_profile_symbol_size,
                         sender_profile_max_block,
+                        &mut ileave,
                     );
                 }
+                // Force-drain all remaining interleaved symbols
+                send_interleaved_batches(
+                    &mut ileave,
+                    &sender_batch_counter,
+                    &sender_transport,
+                    &sender_scheduler,
+                    &sender_stats,
+                );
                 // Send Shutdown control message to peer on all paths
                 {
                     let sched = sender_scheduler.lock();
@@ -313,7 +357,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     // Flush if block is full
                     if block_buf.len() >= sender_profile_max_block {
                         framing::frame_end(&mut block_buf);
-                        encode_and_send_block(
+                        encode_to_interleave_buf(
                             &mut block_buf,
                             &sender_block_counter,
                             &sender_batch_counter,
@@ -324,15 +368,26 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_stats,
                             sender_profile_symbol_size,
                             sender_profile_max_block,
+                            &mut ileave,
                         );
                         flush_deadline = None;
+                        // Check if interleave buffer is ready to drain
+                        if ileave.should_drain() {
+                            send_interleaved_batches(
+                                &mut ileave,
+                                &sender_batch_counter,
+                                &sender_transport,
+                                &sender_scheduler,
+                                &sender_stats,
+                            );
+                        }
                     }
                 }
                 None => {
                     if flush_deadline.is_some() && !block_buf.is_empty() {
                         // ADR-0001: flush partial block on timeout
                         framing::frame_end(&mut block_buf);
-                        encode_and_send_block(
+                        encode_to_interleave_buf(
                             &mut block_buf,
                             &sender_block_counter,
                             &sender_batch_counter,
@@ -343,8 +398,19 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_stats,
                             sender_profile_symbol_size,
                             sender_profile_max_block,
+                            &mut ileave,
                         );
                         flush_deadline = None;
+                        // Check if interleave buffer is ready to drain
+                        if ileave.should_drain() {
+                            send_interleaved_batches(
+                                &mut ileave,
+                                &sender_batch_counter,
+                                &sender_transport,
+                                &sender_scheduler,
+                                &sender_stats,
+                            );
+                        }
                     } else if flush_deadline.is_none() {
                         // TUN closed (read_packet returned None without timeout)
                         info!("TUN closed");
@@ -649,8 +715,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Encode a block and send it across paths.
-fn encode_and_send_block(
+/// Encode a block and push symbols into the interleaving buffer.
+fn encode_to_interleave_buf(
     block_buf: &mut Vec<u8>,
     block_counter: &AtomicU64,
     batch_counter: &AtomicU64,
@@ -661,6 +727,7 @@ fn encode_and_send_block(
     stats: &Arc<SharedStats>,
     symbol_size: u16,
     max_block_size: usize,
+    ileave: &mut interleave::InterleavingBuffer,
 ) {
     let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
 
@@ -702,12 +769,6 @@ fn encode_and_send_block(
     };
 
     // ADR-0008: send BlockStart on all paths before symbols
-    // (In production this should go via reliable stream; here we use datagrams)
-    let block_start = WireMessage::Control(ControlMessage::BlockStart {
-        params,
-        transfer_length: block_data.len() as u64,
-    });
-    let block_start_data = block_start.serialize();
     {
         let sched = scheduler.lock();
         for path_id in sched.active_paths() {
@@ -717,7 +778,6 @@ fn encode_and_send_block(
                 batch_seq: batch_counter.fetch_add(1, Ordering::Relaxed),
                 path_id,
             };
-            // Send BlockStart as control (piggyback in datagram for now)
             if let Err(e) = transport.send_symbols(path_id, start_batch) {
                 warn!(path_id, ?e, "failed to send BlockStart");
             }
@@ -742,10 +802,8 @@ fn encode_and_send_block(
     stats.fec.total_source_symbols.fetch_add(source_symbols as u64, Ordering::Relaxed);
     stats.fec.total_repair_symbols.fetch_add(repair_count as u64, Ordering::Relaxed);
 
-    // Schedule across paths
+    // Schedule across paths (assigns symbols to paths but doesn't send yet)
     let assignments = scheduler.lock().schedule(source, repair);
-
-    let now = now_us();
 
     // ADR-0003: track how many symbols sent per path for this block
     for (path_id, symbols) in &assignments {
@@ -755,7 +813,30 @@ fn encode_and_send_block(
         sent_counts.insert((block_id, *path_id), symbols.len() as u32);
     }
 
-    for (path_id, symbols) in assignments {
+    // Push into interleaving buffer instead of sending directly
+    ileave.push_block(block_id, assignments);
+}
+
+/// Drain interleaved symbols from the buffer and send them on the wire.
+fn send_interleaved_batches(
+    ileave: &mut interleave::InterleavingBuffer,
+    batch_counter: &AtomicU64,
+    transport: &Arc<QuicTransport>,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    stats: &Arc<SharedStats>,
+) {
+    let batches = if ileave.should_drain() {
+        ileave.drain()
+    } else {
+        ileave.drain_all()
+    };
+
+    let now = now_us();
+
+    for (path_id, symbols) in batches {
+        if symbols.is_empty() {
+            continue;
+        }
         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
         let batch = SymbolBatch {
             symbols,
@@ -764,7 +845,7 @@ fn encode_and_send_block(
             path_id,
         };
         if let Err(e) = transport.send_symbols(path_id, batch) {
-            warn!(path_id, ?e, "failed to send batch");
+            warn!(path_id, ?e, "failed to send interleaved batch");
         }
     }
 }

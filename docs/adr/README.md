@@ -31,3 +31,9 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0013](0013-monitoring-and-observability.md) | No runtime monitoring | Resolved |
 | [0014](0014-duplicate-symbol-handling.md) | No duplicate symbol detection | Resolved |
 | [0015](0015-graceful-shutdown.md) | No graceful shutdown | Resolved |
+
+## Features
+
+| # | Title | Status |
+|---|-------|--------|
+| [0016](0016-block-interleaving.md) | Block interleaving for burst loss resilience | Resolved |

@@ -23,6 +23,8 @@ pub struct RaptorpathConfig {
     pub route: Option<Vec<String>>,
     /// DNS server to configure on the tunnel interface
     pub dns: Option<String>,
+    /// Block interleaving depth (1 = disabled, 2+ = spread burst loss across N blocks)
+    pub interleave_depth: Option<u32>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -87,6 +89,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         status_addr: overlay.status_addr.or(base.status_addr),
         route: overlay.route.or(base.route),
         dns: overlay.dns.or(base.dns),
+        interleave_depth: overlay.interleave_depth.or(base.interleave_depth),
     }
 }
 
@@ -130,6 +133,13 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         .transpose()
         .map_err(|e| anyhow::anyhow!("invalid DNS address: {e}"))?;
 
+    // Default interleave depth based on protocol hint
+    let default_interleave = match protocol_hint {
+        ProtocolHint::Realtime => 2,
+        ProtocolHint::Bulk => 4,
+        ProtocolHint::Auto => 3,
+    };
+
     let peer_config = PeerConfig {
         bind_addrs,
         peer_addrs,
@@ -142,6 +152,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         status_addr,
         routes: config.route.clone().unwrap_or_default(),
         dns,
+        interleave_depth: config.interleave_depth.unwrap_or(default_interleave),
     };
 
     Ok((peer_config, status_addr))
@@ -200,6 +211,7 @@ mod tests {
             status_addr: Some("127.0.0.1:9820".into()),
             route: Some(vec!["192.168.50.0/24".into()]),
             dns: Some("10.99.0.1".into()),
+            interleave_depth: Some(3),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
