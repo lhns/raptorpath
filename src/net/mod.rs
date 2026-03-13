@@ -227,7 +227,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // Channel for received messages from all paths
     // ADR-0011: larger message channel to avoid stalling under load
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
-    let _recv_handles = transport.spawn_receivers(msg_tx);
+    let _recv_handles = transport.spawn_receivers(msg_tx.clone());
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
@@ -628,15 +628,67 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         }
     });
 
+    // Path management command channel (for runtime add/remove via HTTP API)
+    let (path_cmd_tx, mut path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
+
     // ADR-0013: spawn status HTTP endpoint if configured
     if let Some(addr) = config.status_addr {
         let http_stats = stats.clone();
+        let http_cmd_tx = path_cmd_tx.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::monitor::http::serve(http_stats, addr).await {
+            if let Err(e) = crate::monitor::http::serve(http_stats, addr, http_cmd_tx).await {
                 warn!(?e, "status HTTP endpoint failed");
             }
         });
     }
+
+    // Path command processor: handles runtime add/remove of paths
+    let cmd_transport = transport_arc.clone();
+    let cmd_scheduler = scheduler_arc.clone();
+    let cmd_stats = stats.clone();
+    let cmd_msg_tx = msg_tx.clone();
+    let next_path_id = Arc::new(AtomicU64::new(config.bind_addrs.len() as u64));
+    let mut cmd_shutdown_rx = shutdown_tx.subscribe();
+    let cmd_handle = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                cmd = path_cmd_rx.recv() => {
+                    let cmd = match cmd {
+                        Some(c) => c,
+                        None => break,
+                    };
+                    match cmd {
+                        crate::monitor::http::PathCommand::Add { bind_addr, peer_addr } => {
+                            let path_id = next_path_id.fetch_add(1, Ordering::Relaxed) as u32;
+                            info!(path_id, %bind_addr, ?peer_addr, "adding path at runtime");
+                            match cmd_transport.add_path(path_id, bind_addr, peer_addr).await {
+                                Ok(conn) => {
+                                    cmd_scheduler.lock().add_path(path_id);
+                                    cmd_stats.add_path(path_id);
+                                    cmd_transport.spawn_receiver_for_path(
+                                        path_id,
+                                        conn,
+                                        cmd_msg_tx.clone(),
+                                    );
+                                    info!(path_id, "path added successfully");
+                                }
+                                Err(e) => {
+                                    warn!(path_id, ?e, "failed to add path");
+                                }
+                            }
+                        }
+                        crate::monitor::http::PathCommand::Remove { path_id } => {
+                            info!(path_id, "removing path at runtime");
+                            cmd_transport.remove_path(path_id);
+                            cmd_scheduler.lock().remove_path(path_id);
+                            info!(path_id, "path removed");
+                        }
+                    }
+                }
+                _ = cmd_shutdown_rx.recv() => break,
+            }
+        }
+    });
 
     // RTCP-style periodic report + keepalive task
     let report_transport = transport_arc.clone();
@@ -702,6 +754,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         r = receiver_handle => { r?; }
         _ = cleanup_handle => {}
         _ = report_handle => {}
+        _ = cmd_handle => {}
     }
 
     // Clean up routes and DNS on shutdown
@@ -1060,6 +1113,17 @@ fn handle_control_message(
         // ADR-0015: handle graceful shutdown from peer
         ControlMessage::Shutdown => {
             info!(path_id, "peer is shutting down");
+        }
+
+        ControlMessage::PathAdd { path_id: new_path_id, bind_addr } => {
+            info!(new_path_id, %bind_addr, "peer announced new path");
+            // The peer is adding a path. We'll handle the connection setup
+            // through the path command processor.
+        }
+
+        ControlMessage::PathRemove { path_id: removed_id } => {
+            info!(removed_id, "peer removed path");
+            scheduler.lock().remove_path(removed_id);
         }
 
         _ => {}

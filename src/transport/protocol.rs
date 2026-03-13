@@ -110,6 +110,17 @@ pub enum ControlMessage {
 
     /// Graceful shutdown notification.
     Shutdown,
+
+    /// Notify peer that a new path is being added (connection migration).
+    PathAdd {
+        path_id: u32,
+        bind_addr: String,
+    },
+
+    /// Notify peer that a path is being removed (connection migration).
+    PathRemove {
+        path_id: u32,
+    },
 }
 
 /// Top-level wire message.

@@ -6,26 +6,30 @@
 
 use super::protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage};
 use crate::scheduler::PathId;
+use dashmap::DashMap;
 use quinn::{ClientConfig, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// A QUIC-based multipath transport.
+///
+/// Uses DashMap for connections so paths can be added/removed at runtime.
 pub struct QuicTransport {
     /// Local endpoints (one per bind address / path)
-    endpoints: HashMap<PathId, Endpoint>,
+    endpoints: DashMap<PathId, Endpoint>,
     /// Active connections per path
-    connections: HashMap<PathId, quinn::Connection>,
+    connections: DashMap<PathId, quinn::Connection>,
+    /// Whether this transport is a server
+    is_server: bool,
 }
 
 impl QuicTransport {
     /// Create a new transport with endpoints bound to the given addresses.
     pub async fn new(bind_addrs: &[SocketAddr], is_server: bool) -> anyhow::Result<Self> {
-        let mut endpoints = HashMap::new();
+        let endpoints = DashMap::new();
 
         for (i, addr) in bind_addrs.iter().enumerate() {
             let endpoint = if is_server {
@@ -45,12 +49,13 @@ impl QuicTransport {
 
         Ok(Self {
             endpoints,
-            connections: HashMap::new(),
+            connections: DashMap::new(),
+            is_server,
         })
     }
 
     /// Connect to a peer on a specific path.
-    pub async fn connect(&mut self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
+    pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
         let endpoint = self
             .endpoints
             .get(&path_id)
@@ -73,7 +78,7 @@ impl QuicTransport {
     }
 
     /// Accept an incoming connection on a specific path.
-    pub async fn accept(&mut self, path_id: PathId) -> anyhow::Result<()> {
+    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
         let endpoint = self
             .endpoints
             .get(&path_id)
@@ -99,21 +104,134 @@ impl QuicTransport {
         Ok(())
     }
 
+    /// Add a new path at runtime. Binds a new endpoint, connects or accepts,
+    /// and returns the connection for receiver spawning.
+    pub async fn add_path(
+        &self,
+        path_id: PathId,
+        bind_addr: SocketAddr,
+        peer_addr: Option<SocketAddr>,
+    ) -> anyhow::Result<quinn::Connection> {
+        // Create and bind new endpoint
+        let endpoint = if self.is_server {
+            let (server_config, _cert) = Self::generate_self_signed_config()?;
+            Endpoint::server(server_config, bind_addr)?
+        } else {
+            let mut ep = Endpoint::client(bind_addr)?;
+            ep.set_default_client_config(Self::insecure_client_config());
+            ep
+        };
+        self.endpoints.insert(path_id, endpoint);
+
+        // Connect or accept
+        if let Some(peer) = peer_addr {
+            self.connect(path_id, peer).await?;
+        } else {
+            self.accept(path_id).await?;
+        }
+
+        let conn = self
+            .connections
+            .get(&path_id)
+            .ok_or_else(|| anyhow::anyhow!("connection not found after setup"))?
+            .clone();
+        Ok(conn)
+    }
+
+    /// Remove a path at runtime.
+    pub fn remove_path(&self, path_id: PathId) {
+        if let Some((_, conn)) = self.connections.remove(&path_id) {
+            conn.close(0u32.into(), b"path removed");
+        }
+        self.endpoints.remove(&path_id);
+        info!(path_id, "path removed");
+    }
+
+    /// Spawn receive loops for a single path, feeding into a channel.
+    pub fn spawn_receiver_for_path(
+        &self,
+        path_id: PathId,
+        conn: quinn::Connection,
+        tx: mpsc::Sender<(PathId, WireMessage)>,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        let mut handles = vec![];
+
+        let conn_uni = conn.clone();
+        let tx_uni = tx.clone();
+
+        // Datagram receiver
+        let handle = tokio::spawn(async move {
+            loop {
+                match conn.read_datagram().await {
+                    Ok(data) => match WireMessage::deserialize(&data) {
+                        Ok(msg) => {
+                            if tx.send((path_id, msg)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            warn!(path_id, ?e, "failed to deserialize datagram");
+                        }
+                    },
+                    Err(e) => {
+                        error!(path_id, ?e, "datagram receive error");
+                        break;
+                    }
+                }
+            }
+        });
+        handles.push(handle);
+
+        // Uni-stream receiver (for reliable control messages)
+        let uni_handle = tokio::spawn(async move {
+            loop {
+                match conn_uni.accept_uni().await {
+                    Ok(mut recv) => {
+                        let mut len_buf = [0u8; 4];
+                        if recv.read_exact(&mut len_buf).await.is_err() {
+                            continue;
+                        }
+                        let len = u32::from_be_bytes(len_buf) as usize;
+                        if len > 1_000_000 { continue; }
+                        let mut data = vec![0u8; len];
+                        if recv.read_exact(&mut data).await.is_err() {
+                            continue;
+                        }
+                        match WireMessage::deserialize(&data) {
+                            Ok(msg) => {
+                                if tx_uni.send((path_id, msg)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                warn!(path_id, ?e, "failed to deserialize uni stream message");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(path_id, ?e, "uni stream accept error");
+                        break;
+                    }
+                }
+            }
+        });
+        handles.push(uni_handle);
+
+        handles
+    }
+
     /// Perform handshake on a connection (client side). Returns the peer's handshake.
     async fn perform_handshake(
         conn: &quinn::Connection,
         local: &Handshake,
     ) -> anyhow::Result<Handshake> {
-        // Open a bidirectional stream for handshake
         let (mut send, mut recv) = conn.open_bi().await?;
 
-        // Send our handshake
         let data = local.serialize();
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;
         send.finish()?;
 
-        // Read peer's handshake
         let mut len_buf = [0u8; 4];
         recv.read_exact(&mut len_buf).await?;
         let len = u32::from_be_bytes(len_buf) as usize;
@@ -138,10 +256,8 @@ impl QuicTransport {
         conn: &quinn::Connection,
         local: &Handshake,
     ) -> anyhow::Result<Handshake> {
-        // Accept the bidirectional stream
         let (mut send, mut recv) = conn.accept_bi().await?;
 
-        // Read peer's handshake first (peer initiated)
         let mut len_buf = [0u8; 4];
         recv.read_exact(&mut len_buf).await?;
         let len = u32::from_be_bytes(len_buf) as usize;
@@ -153,7 +269,6 @@ impl QuicTransport {
 
         let peer = Handshake::deserialize(&buf)?;
 
-        // Send our handshake back
         let data = local.serialize();
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;
@@ -178,7 +293,6 @@ impl QuicTransport {
         let msg = WireMessage::Data(batch);
         let data = msg.serialize();
 
-        // Use QUIC datagrams for unreliable delivery
         conn.send_datagram(data.into())?;
         Ok(())
     }
@@ -210,7 +324,6 @@ impl QuicTransport {
         let wire = WireMessage::Control(msg);
         let data = wire.serialize();
 
-        // Length-prefix the message
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;
         send.finish()?;
@@ -243,72 +356,10 @@ impl QuicTransport {
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = vec![];
 
-        for (&path_id, conn) in &self.connections {
-            let conn = conn.clone();
-            let tx = tx.clone();
-
-            // Clone for uni-stream receiver before datagram task moves them
-            let conn_uni = conn.clone();
-            let tx_uni = tx.clone();
-
-            // Datagram receiver
-            let handle = tokio::spawn(async move {
-                loop {
-                    match conn.read_datagram().await {
-                        Ok(data) => match WireMessage::deserialize(&data) {
-                            Ok(msg) => {
-                                if tx.send((path_id, msg)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                warn!(path_id, ?e, "failed to deserialize datagram");
-                            }
-                        },
-                        Err(e) => {
-                            error!(path_id, ?e, "datagram receive error");
-                            break;
-                        }
-                    }
-                }
-            });
-            handles.push(handle);
-
-            // Uni-stream receiver (for reliable control messages)
-            let uni_handle = tokio::spawn(async move {
-                loop {
-                    match conn_uni.accept_uni().await {
-                        Ok(mut recv) => {
-                            // Read length-prefixed message
-                            let mut len_buf = [0u8; 4];
-                            if recv.read_exact(&mut len_buf).await.is_err() {
-                                continue;
-                            }
-                            let len = u32::from_be_bytes(len_buf) as usize;
-                            if len > 1_000_000 { continue; } // sanity limit
-                            let mut data = vec![0u8; len];
-                            if recv.read_exact(&mut data).await.is_err() {
-                                continue;
-                            }
-                            match WireMessage::deserialize(&data) {
-                                Ok(msg) => {
-                                    if tx_uni.send((path_id, msg)).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!(path_id, ?e, "failed to deserialize uni stream message");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!(path_id, ?e, "uni stream accept error");
-                            break;
-                        }
-                    }
-                }
-            });
-            handles.push(uni_handle);
+        for entry in self.connections.iter() {
+            let path_id = *entry.key();
+            let conn = entry.value().clone();
+            handles.extend(self.spawn_receiver_for_path(path_id, conn, tx.clone()));
         }
 
         handles
@@ -353,7 +404,6 @@ impl QuicTransport {
 }
 
 /// Skip certificate verification (for self-signed certs in testing/dev).
-/// In production, use proper certificate validation.
 #[derive(Debug)]
 struct SkipCertVerification;
 
