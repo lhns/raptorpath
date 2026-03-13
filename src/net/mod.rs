@@ -736,7 +736,22 @@ fn encode_to_interleave_buf(
     }
 
     let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
-    let source_symbols = (block_data.len() as f64 / symbol_size as f64).ceil() as u32;
+
+    // MTU-aware symbol sizing: use PMTU-discovered max datagram size if available,
+    // otherwise fall back to the profile default. We take the minimum MTU across
+    // all active paths to avoid fragmentation on any path.
+    let effective_symbol_size = {
+        let sched = scheduler.lock();
+        match sched.min_mtu() {
+            Some(mtu) if mtu > WIRE_OVERHEAD => {
+                let mtu_based = (mtu - WIRE_OVERHEAD) as u16;
+                // Clamp: don't go below 64 bytes or above the profile default
+                mtu_based.clamp(64, symbol_size)
+            }
+            _ => symbol_size,
+        }
+    };
+    let source_symbols = (block_data.len() as f64 / effective_symbol_size as f64).ceil() as u32;
 
     // Compute repair count
     let repair_count = {
@@ -763,7 +778,7 @@ fn encode_to_interleave_buf(
 
     let params = EncodingParams {
         source_symbols,
-        symbol_size,
+        symbol_size: effective_symbol_size,
         repair_count,
         block_id,
     };

@@ -157,6 +157,45 @@ fn test_inactive_path_not_in_active_paths() {
 }
 
 #[test]
+fn test_min_mtu_across_paths() {
+    let mut sched = Scheduler::new();
+    sched.add_path(0);
+    sched.add_path(1);
+    sched.add_path(2);
+
+    // No MTU known yet
+    assert!(sched.min_mtu().is_none());
+
+    // Set MTUs
+    sched.path_mut(0).unwrap().max_datagram_size = Some(1200);
+    sched.path_mut(1).unwrap().max_datagram_size = Some(1400);
+    // Path 2 has no MTU
+
+    // Should return the minimum across paths that have MTU
+    assert_eq!(sched.min_mtu(), Some(1200));
+
+    // Set path 2 to a smaller MTU
+    sched.path_mut(2).unwrap().max_datagram_size = Some(800);
+    assert_eq!(sched.min_mtu(), Some(800));
+}
+
+#[test]
+fn test_min_mtu_ignores_inactive_paths() {
+    let mut sched = Scheduler::new();
+    sched.add_path(0);
+    sched.add_path(1);
+
+    sched.path_mut(0).unwrap().max_datagram_size = Some(500);
+    sched.path_mut(1).unwrap().max_datagram_size = Some(1200);
+
+    // Deactivate the path with small MTU
+    sched.path_mut(0).unwrap().active = false;
+
+    // Should only consider active paths
+    assert_eq!(sched.min_mtu(), Some(1200));
+}
+
+#[test]
 fn test_path_stats_jitter_field() {
     use raptorpath::monitor::stats::SharedStats;
     use std::sync::atomic::Ordering;

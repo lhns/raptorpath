@@ -283,6 +283,16 @@ impl Scheduler {
     pub fn all_path_ids(&self) -> Vec<PathId> {
         self.paths.keys().copied().collect()
     }
+
+    /// Get the minimum max_datagram_size across all active paths that have
+    /// reported an MTU. Returns None if no active path has a known MTU.
+    pub fn min_mtu(&self) -> Option<usize> {
+        self.paths
+            .values()
+            .filter(|p| p.active)
+            .filter_map(|p| p.max_datagram_size)
+            .min()
+    }
 }
 
 impl Default for Scheduler {

@@ -37,3 +37,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | # | Title | Status |
 |---|-------|--------|
 | [0016](0016-block-interleaving.md) | Block interleaving for burst loss resilience | Resolved |
+| [0017](0017-mtu-aware-symbol-sizing.md) | MTU-aware symbol sizing via PMTU discovery | Resolved |
