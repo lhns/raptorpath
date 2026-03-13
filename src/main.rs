@@ -90,6 +90,10 @@ struct RunArgs {
     /// Block interleaving depth (1=disabled, 2+=spread burst loss across N blocks)
     #[arg(long)]
     interleave_depth: Option<u32>,
+
+    /// Path to a pinned TLS certificate (DER or PEM) for server verification
+    #[arg(long)]
+    pin_cert: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -128,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         route: vec![],
         dns: None,
         interleave_depth: None,
+        pin_cert: None,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
@@ -178,6 +183,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         },
         dns: args.dns,
         interleave_depth: args.interleave_depth,
+        pin_cert: args.pin_cert,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

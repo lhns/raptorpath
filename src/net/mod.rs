@@ -47,6 +47,8 @@ pub struct PeerConfig {
     pub dns: Option<IpAddr>,
     /// Block interleaving depth (1 = disabled, 2+ = interleave across N blocks)
     pub interleave_depth: u32,
+    /// Optional path to a pinned TLS certificate for server verification
+    pub pin_cert: Option<std::path::PathBuf>,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -155,7 +157,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     }
 
     // Create QUIC transport
-    let mut transport = QuicTransport::new(&config.bind_addrs, config.is_server).await?;
+    let mut transport = QuicTransport::new(
+        &config.bind_addrs,
+        config.is_server,
+        config.pin_cert.as_deref(),
+    ).await?;
 
     // Set up paths
     let mut scheduler = Scheduler::new();

@@ -25,6 +25,8 @@ pub struct RaptorpathConfig {
     pub dns: Option<String>,
     /// Block interleaving depth (1 = disabled, 2+ = spread burst loss across N blocks)
     pub interleave_depth: Option<u32>,
+    /// Path to a pinned TLS certificate (DER or PEM) for server verification
+    pub pin_cert: Option<String>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -90,6 +92,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         route: overlay.route.or(base.route),
         dns: overlay.dns.or(base.dns),
         interleave_depth: overlay.interleave_depth.or(base.interleave_depth),
+        pin_cert: overlay.pin_cert.or(base.pin_cert),
     }
 }
 
@@ -153,6 +156,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         routes: config.route.clone().unwrap_or_default(),
         dns,
         interleave_depth: config.interleave_depth.unwrap_or(default_interleave),
+        pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
     };
 
     Ok((peer_config, status_addr))
@@ -212,6 +216,7 @@ mod tests {
             route: Some(vec!["192.168.50.0/24".into()]),
             dns: Some("10.99.0.1".into()),
             interleave_depth: Some(3),
+            pin_cert: None,
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

@@ -87,25 +87,25 @@ Compensates for model mismatch (correlated losses, estimation lag).
 
 ### High Priority
 
-- [ ] **Block interleaving** — Spread symbols from multiple blocks across time so a single burst
+- [x] **Block interleaving** — Spread symbols from multiple blocks across time so a single burst
   doesn't wipe out one block. Interleave N blocks' symbols in round-robin before scheduling.
   Dramatically improves burst resilience without extra FEC overhead.
 
-- [ ] **Path MTU discovery** — Use `quinn::Connection::max_datagram_size()` (already queried in
+- [x] **Path MTU discovery** — Use `quinn::Connection::max_datagram_size()` (already queried in
   RTCP reports) to dynamically size symbols per path. Avoids fragmentation on constrained links
   and maximizes goodput on fat pipes. Requires per-path symbol sizing or padding strategy.
 
-- [ ] **Connection migration** — Add/remove paths at runtime without tearing down the session.
+- [x] **Connection migration** — Add/remove paths at runtime without tearing down the session.
   Hot-add a new WiFi or LTE path when it becomes available, gracefully drain a dying path.
   Requires a control message to announce new paths and a handshake extension.
 
 ### Medium Priority
 
-- [ ] **BBR-style congestion control** — Replace AIMD (loss-based) with a delay-based algorithm.
+- [x] **BBR-style congestion control** — Replace AIMD (loss-based) with a delay-based algorithm.
   AIMD interprets wireless loss as congestion, causing unnecessary cwnd reduction. BBR uses
   RTT gradient to distinguish congestion from random loss — much better for mixed wireless paths.
 
-- [ ] **TLS cert pinning** — Current QUIC setup uses self-signed certs with insecure client
+- [x] **TLS cert pinning** — Current QUIC setup uses self-signed certs with insecure client
   validation. Add certificate pinning or a pre-shared key exchange for production deployments.
 
 - [ ] **Correlated loss modeling** — Current Bayesian estimator assumes i.i.d. loss. Real wireless

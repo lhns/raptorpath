@@ -3,13 +3,19 @@
 //! Each path gets its own QUIC connection. We use:
 //! - DATAGRAM frames for symbol data (unreliable, low overhead)
 //! - A bidirectional stream for control messages (reliable)
+//!
+//! TLS modes:
+//! - Default: self-signed cert, skip verification (dev/testing)
+//! - Pinned: verify server cert matches a pinned DER/PEM file (production)
 
 use super::protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage};
 use crate::scheduler::PathId;
 use dashmap::DashMap;
 use quinn::{ClientConfig, Endpoint, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -24,22 +30,43 @@ pub struct QuicTransport {
     connections: DashMap<PathId, quinn::Connection>,
     /// Whether this transport is a server
     is_server: bool,
+    /// Optional pinned certificate for client-side verification.
+    /// When set, the client verifies the server's cert matches this fingerprint.
+    pinned_cert_hash: Option<[u8; 32]>,
 }
 
 impl QuicTransport {
     /// Create a new transport with endpoints bound to the given addresses.
-    pub async fn new(bind_addrs: &[SocketAddr], is_server: bool) -> anyhow::Result<Self> {
+    ///
+    /// `pin_cert_path`: optional path to a DER or PEM certificate file.
+    /// When provided, the client will verify that the server's certificate
+    /// matches this pinned cert (SHA-256 fingerprint comparison).
+    pub async fn new(
+        bind_addrs: &[SocketAddr],
+        is_server: bool,
+        pin_cert_path: Option<&Path>,
+    ) -> anyhow::Result<Self> {
+        let pinned_cert_hash = pin_cert_path
+            .map(|p| load_pinned_cert_hash(p))
+            .transpose()?;
+
+        if let Some(hash) = &pinned_cert_hash {
+            info!(fingerprint = %hex::encode(hash), "TLS cert pinning enabled");
+        }
+
         let endpoints = DashMap::new();
 
         for (i, addr) in bind_addrs.iter().enumerate() {
             let endpoint = if is_server {
-                let (server_config, _cert) = Self::generate_self_signed_config()?;
-                let ep = Endpoint::server(server_config, *addr)?;
-                info!(%addr, path_id = i, "server endpoint bound");
-                ep
+                let (server_config, cert_der) = Self::generate_self_signed_config()?;
+                // Log the server cert fingerprint so the user can pin it on the client
+                let fingerprint = sha256_fingerprint(&cert_der[0]);
+                info!(%addr, path_id = i, fingerprint = %hex::encode(fingerprint),
+                    "server endpoint bound — use this fingerprint for --pin-cert");
+                Endpoint::server(server_config, *addr)?
             } else {
                 let mut ep = Endpoint::client(*addr)?;
-                let client_config = Self::insecure_client_config();
+                let client_config = Self::make_client_config(pinned_cert_hash);
                 ep.set_default_client_config(client_config);
                 info!(%addr, path_id = i, "client endpoint bound");
                 ep
@@ -51,6 +78,7 @@ impl QuicTransport {
             endpoints,
             connections: DashMap::new(),
             is_server,
+            pinned_cert_hash,
         })
     }
 
@@ -118,7 +146,7 @@ impl QuicTransport {
             Endpoint::server(server_config, bind_addr)?
         } else {
             let mut ep = Endpoint::client(bind_addr)?;
-            ep.set_default_client_config(Self::insecure_client_config());
+            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash));
             ep
         };
         self.endpoints.insert(path_id, endpoint);
@@ -385,10 +413,17 @@ impl QuicTransport {
         Ok((server_config, vec![cert_der]))
     }
 
-    fn insecure_client_config() -> ClientConfig {
+    /// Build a client config with either pinned cert verification or
+    /// insecure mode (skip verification) for dev/testing.
+    fn make_client_config(pinned_hash: Option<[u8; 32]>) -> ClientConfig {
+        let verifier: Arc<dyn rustls::client::danger::ServerCertVerifier> = match pinned_hash {
+            Some(hash) => Arc::new(PinnedCertVerifier { expected_hash: hash }),
+            None => Arc::new(SkipCertVerification),
+        };
+
         let crypto = rustls::ClientConfig::builder()
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(SkipCertVerification))
+            .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
 
         let mut config = ClientConfig::new(Arc::new(
@@ -400,6 +435,87 @@ impl QuicTransport {
         transport.datagram_receive_buffer_size(Some(65536));
         config.transport_config(Arc::new(transport));
         config
+    }
+}
+
+/// Compute SHA-256 fingerprint of a DER-encoded certificate.
+fn sha256_fingerprint(cert: &CertificateDer<'_>) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(cert.as_ref());
+    hasher.finalize().into()
+}
+
+/// Load a pinned certificate from a DER or PEM file and return its SHA-256 hash.
+fn load_pinned_cert_hash(path: &Path) -> anyhow::Result<[u8; 32]> {
+    let data = std::fs::read(path)
+        .map_err(|e| anyhow::anyhow!("failed to read pinned cert '{}': {e}", path.display()))?;
+
+    // Try PEM first, fall back to DER
+    let cert_der = if data.starts_with(b"-----BEGIN") {
+        let pem = pem::parse(&data)
+            .map_err(|e| anyhow::anyhow!("failed to parse PEM cert '{}': {e}", path.display()))?;
+        CertificateDer::from(pem.into_contents())
+    } else {
+        CertificateDer::from(data)
+    };
+
+    Ok(sha256_fingerprint(&cert_der))
+}
+
+/// Certificate verifier that pins to a specific certificate's SHA-256 fingerprint.
+#[derive(Debug)]
+struct PinnedCertVerifier {
+    expected_hash: [u8; 32],
+}
+
+impl rustls::client::danger::ServerCertVerifier for PinnedCertVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        let actual_hash = sha256_fingerprint(end_entity);
+        if actual_hash == self.expected_hash {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General(format!(
+                "certificate fingerprint mismatch: expected {}, got {}",
+                hex::encode(self.expected_hash),
+                hex::encode(actual_hash),
+            )))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::ED25519,
+        ]
     }
 }
 

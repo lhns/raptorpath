@@ -40,3 +40,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0017](0017-mtu-aware-symbol-sizing.md) | MTU-aware symbol sizing via PMTU discovery | Resolved |
 | [0018](0018-connection-migration.md) | Runtime connection migration via HTTP API | Resolved |
 | [0019](0019-bbr-delay-based-cc.md) | BBR-style delay-based congestion control | Resolved |
+| [0020](0020-tls-cert-pinning.md) | Optional TLS certificate pinning | Resolved |
