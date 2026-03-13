@@ -1,20 +1,20 @@
 //! Streaming FEC interface — sends source symbols immediately,
 //! then streams repair symbols based on controller demand.
 
-use super::codec::{Encoder, EncodingParams, WireSymbol};
+use super::traits::{EncodingParams, FecBackend, FecEncoder, WireSymbol};
 use tokio::sync::mpsc;
 
 /// A FEC stream that first yields all source symbols, then generates
 /// repair symbols on demand from the controller.
 pub struct FecStream {
-    encoder: Encoder,
+    encoder: Box<dyn FecEncoder>,
     source_emitted: bool,
 }
 
 impl FecStream {
-    pub fn new(data: &[u8], params: EncodingParams) -> Self {
+    pub fn new(data: &[u8], params: EncodingParams, backend: FecBackend) -> Self {
         Self {
-            encoder: Encoder::new(data, params),
+            encoder: backend.create_encoder(data, params),
             source_emitted: false,
         }
     }
@@ -39,7 +39,7 @@ impl RepairStream {
     /// Spawn a task that generates repair symbols and sends them to the channel.
     /// The controller can request more by sending a count on `demand_rx`.
     pub fn spawn(
-        encoder: Encoder,
+        encoder: Box<dyn FecEncoder>,
         mut demand_rx: mpsc::Receiver<u32>,
         symbol_tx: mpsc::Sender<Vec<WireSymbol>>,
     ) -> tokio::task::JoinHandle<()> {

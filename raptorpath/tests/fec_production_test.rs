@@ -8,7 +8,7 @@ use bytes::Bytes;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use raptorpath::fec::{Decoder, Encoder, EncodingParams, WireSymbol};
+use raptorpath::fec::{FecBackend, EncodingParams, WireSymbol};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,7 +41,7 @@ fn encode_block(
         repair_count,
         block_id,
     };
-    let encoder = Encoder::new(data, params);
+    let encoder = FecBackend::RaptorQ.create_encoder(data, params);
     let source = encoder.source_symbols();
     let repair = encoder.repair_symbols(repair_count);
     (source, repair, params)
@@ -53,7 +53,7 @@ fn decode_symbols(
     params: EncodingParams,
     transfer_length: u64,
 ) -> Option<Bytes> {
-    let mut decoder = Decoder::new(params, transfer_length);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, transfer_length);
     let mut result = None;
     for sym in symbols {
         if let Some(data) = decoder.add_symbol(sym) {
@@ -95,7 +95,7 @@ fn test_k_minus_1_source_symbols_cannot_decode() {
     let k = source.len();
     assert!(k >= 2, "need at least 2 source symbols for this test");
 
-    let mut decoder = Decoder::new(params, data.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, data.len() as u64);
     for sym in source.iter().take(k - 1) {
         let result = decoder.add_symbol(sym);
         assert!(
@@ -114,7 +114,7 @@ fn test_exactly_k_source_symbols_decodes() {
     let repair_count = 5;
     let (source, _repair, params) = encode_block(&data, symbol_size, repair_count, 0);
 
-    let mut decoder = Decoder::new(params, data.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, data.len() as u64);
     let mut decoded = None;
     for sym in &source {
         if let Some(d) = decoder.add_symbol(sym) {
@@ -246,8 +246,8 @@ fn test_interleaved_blocks() {
 
     // Interleave: block0 sym0, block1 sym0, block0 sym1, block1 sym1, ...
     let max_len = source0.len().max(source1.len());
-    let mut decoder0 = Decoder::new(params0, data0.len() as u64);
-    let mut decoder1 = Decoder::new(params1, data1.len() as u64);
+    let mut decoder0 = FecBackend::RaptorQ.create_decoder(params0, data0.len() as u64);
+    let mut decoder1 = FecBackend::RaptorQ.create_decoder(params1, data1.len() as u64);
     let mut result0: Option<Bytes> = None;
     let mut result1: Option<Bytes> = None;
 
@@ -322,7 +322,7 @@ fn test_data_integrity_varied_sizes() {
     for &size in &sizes {
         let data = make_data(size);
         let params = make_params(size, symbol_size, repair_count);
-        let encoder = Encoder::new(&data, params);
+        let encoder = FecBackend::RaptorQ.create_encoder(&data, params);
         let source = encoder.source_symbols();
         let _repair = encoder.repair_symbols(repair_count);
 
@@ -357,7 +357,7 @@ fn test_massive_loss_insufficient_repair() {
         "total symbols ({total}) must be fewer than K ({k}) for this test"
     );
 
-    let mut decoder = Decoder::new(params, data.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, data.len() as u64);
     let mut decoded = false;
     for sym in &symbols {
         if decoder.add_symbol(sym).is_some() {

@@ -1,6 +1,6 @@
 # RaptorPath
 
-Multipath network tunnel with RaptorQ fountain code FEC. Bonds multiple network paths (WiFi + LTE + Ethernet) into a single virtual interface, using forward error correction to tolerate per-path loss without the head-of-line blocking problem of traditional MPTCP.
+Multipath network tunnel with fountain code FEC. Bonds multiple network paths (WiFi + LTE + Ethernet) into a single virtual interface, using forward error correction to tolerate per-path loss without the head-of-line blocking problem of traditional MPTCP.
 
 ## Why not regular MPTCP?
 
@@ -16,7 +16,8 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 **All 15 architecture issues resolved.** The core data path is fully wired with FEC-aware congestion control, ACK feedback, protocol versioning, runtime monitoring, and graceful shutdown. See [docs/adr/](docs/adr/) for the full list of resolved ADRs.
 
 ### Features
-- RaptorQ encoding/decoding with source-first symbol emission
+- Swappable FEC backend: RaptorQ (default) or METTLE streaming erasure code
+- Source-first symbol emission with on-demand repair generation
 - Bayesian loss estimation with EWMA and burst detection
 - Feedforward FEC rate computation (binomial model) + PI feedback controller
 - Multipath scheduler (RTT-aware for source, goodput-aware for repair)
@@ -40,9 +41,9 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 See [DESIGN.md](DESIGN.md) for the full architecture diagram and design decisions.
 
 ```
-App ──▶ TUN ──▶ Block Assembly ──▶ RaptorQ Encode ──▶ Scheduler ──▶ QUIC paths
-                                                                        │
-App ◀── TUN ◀── Packet Extract ◀── RaptorQ Decode  ◀──────────────────┘
+App ──▶ TUN ──▶ Block Assembly ──▶ FEC Encode ──▶ Scheduler ──▶ QUIC paths
+                                                                      │
+App ◀── TUN ◀── Packet Extract ◀── FEC Decode  ◀────────────────────┘
 ```
 
 ## Prerequisites
@@ -113,7 +114,21 @@ raptorpath status --json
 sudo raptorpath run --config raptorpath.toml
 ```
 
-See the `--help` output for TOML config format and all available fields.
+Example `raptorpath.toml`:
+```toml
+server = false
+bind = ["0.0.0.0:4433", "0.0.0.0:4434"]
+peer = ["203.0.113.1:4433", "203.0.113.1:4434"]
+tun_name = "rpath0"
+tun_addr = "10.99.0.2/24"
+protocol_hint = "realtime"
+fec_backend = "mettle"         # "raptorq" (default) or "mettle"
+route = ["192.168.50.0/24"]
+dns = "10.99.0.1"
+status_addr = "127.0.0.1:9820"
+```
+
+CLI flags override config file values. See `--help` for all available fields.
 
 ### Options (run subcommand)
 
@@ -132,6 +147,9 @@ See the `--help` output for TOML config format and all available fields.
 | `--status-addr` | none | Address for HTTP monitoring endpoint |
 | `--route` | none | Routes to add through tunnel (CIDR, comma-separated) |
 | `--dns` | none | DNS server to configure on tunnel interface |
+| `--interleave-depth` | auto | Block interleaving depth (1=disabled, 2+=burst resilience) |
+| `--pin-cert` | none | Path to pinned TLS certificate (DER or PEM) |
+| `--fec-backend` | `raptorq` | FEC backend: `raptorq` or `mettle` |
 
 ### Environment
 
@@ -143,30 +161,41 @@ See the `--help` output for TOML config format and all available fields.
 ## Project Structure
 
 ```
-src/
-├── main.rs              CLI entry point (run/check/status/setup subcommands)
-├── lib.rs               Library re-exports
-├── config.rs            TOML config with profile/layered merging
-├── preflight.rs         Pre-run environment checks
-├── routing.rs           Route and DNS management
-├── net/mod.rs           Orchestration (TUN ↔ FEC ↔ transport)
-├── fec/
-│   ├── codec.rs         RaptorQ encoder/decoder wrapper
-│   └── stream.rs        Streaming FEC interface
-├── control/
-│   ├── estimator.rs     Bayesian loss rate estimation
-│   └── fec_rate.rs      FEC rate controller (feedforward + PI)
-├── scheduler/mod.rs     Multipath scheduler + AIMD congestion control
-├── transport/
-│   ├── protocol.rs      Wire protocol (versioned framing, handshake)
-│   └── quic.rs          QUIC transport (quinn)
-├── monitor/
-│   ├── stats.rs         Lock-free SharedStats with atomics
-│   └── http.rs          Axum HTTP endpoint (/status, /health)
-└── tun/
-    ├── mod.rs           Platform-agnostic TUN interface
-    ├── linux/mod.rs     Linux TUN (kernel driver)
-    └── windows/mod.rs   Windows TUN (wintun)
+raptorpath/                      (workspace root)
+├── raptorpath/                  Main crate
+│   └── src/
+│       ├── main.rs              CLI entry point (run/check/status/setup)
+│       ├── lib.rs               Library re-exports
+│       ├── config.rs            TOML config with profile/layered merging
+│       ├── preflight.rs         Pre-run environment checks
+│       ├── routing.rs           Route and DNS management
+│       ├── net/mod.rs           Orchestration (TUN ↔ FEC ↔ transport)
+│       ├── fec/
+│       │   ├── traits.rs        FecEncoder/FecDecoder traits, FecBackend enum
+│       │   ├── raptorq_backend.rs  RaptorQ implementation (RFC 6330)
+│       │   ├── mettle_backend.rs   METTLE adapter (wraps mettle crate)
+│       │   └── stream.rs        Streaming FEC interface
+│       ├── control/
+│       │   ├── estimator.rs     Bayesian loss rate estimation
+│       │   └── fec_rate.rs      FEC rate controller (feedforward + PI)
+│       ├── scheduler/mod.rs     Multipath scheduler + AIMD congestion control
+│       ├── transport/
+│       │   ├── protocol.rs      Wire protocol (versioned framing, handshake)
+│       │   └── quic.rs          QUIC transport (quinn)
+│       ├── monitor/
+│       │   ├── stats.rs         Lock-free SharedStats with atomics
+│       │   └── http.rs          Axum HTTP endpoint (/status, /health)
+│       └── tun/
+│           ├── mod.rs           Platform-agnostic TUN interface
+│           ├── linux/mod.rs     Linux TUN (kernel driver)
+│           └── windows/mod.rs   Windows TUN (wintun)
+└── mettle/                      Standalone METTLE erasure code crate
+    └── src/
+        ├── lib.rs               Public API and MettleConfig
+        ├── encoder.rs           Streaming encoder with bin accumulation
+        ├── decoder.rs           Peeling decoder
+        ├── graph.rs             Tanner graph / hash-based edge generation
+        └── gf2.rs               GF(2) XOR packet operations
 ```
 
 ## License

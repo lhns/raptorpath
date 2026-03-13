@@ -1,6 +1,7 @@
-//! Core RaptorQ encoding/decoding wrapper.
+//! RaptorQ FEC backend.
 //!
-//! Wraps the `raptorq` crate with our latency-optimized strategy:
+//! Wraps the `raptorq` crate to implement the FecEncoder/FecDecoder traits.
+//! Latency-optimized strategy:
 //! 1. Emit source symbols first (passthrough — zero encoding latency)
 //! 2. Generate repair symbols as a stream (fountain property)
 //! 3. Receiver processes source symbols immediately, uses decoder only on loss
@@ -10,39 +11,18 @@ use raptorq::{
     Decoder as RqDecoder, Encoder as RqEncoder, EncodingPacket, ObjectTransmissionInformation,
     SourceBlockEncoder,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Instant;
 
-/// Parameters for a single FEC block.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct EncodingParams {
-    /// Number of source symbols (k)
-    pub source_symbols: u32,
-    /// Symbol size in bytes (T) — should align with path MTU
-    pub symbol_size: u16,
-    /// Number of repair symbols to generate for this block
-    pub repair_count: u32,
-    /// Block sequence number
-    pub block_id: u64,
-}
+use super::traits::{EncodingParams, FecDecoder, FecEncoder, WireSymbol};
 
-/// Symbol sent over the wire.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WireSymbol {
-    pub block_id: u64,
-    pub payload_id: u32,
-    pub is_repair: bool,
-    pub data: Vec<u8>,
-}
-
-/// Encoder: takes a block of data and produces source + repair symbols.
-pub struct Encoder {
+/// RaptorQ encoder: takes a block of data and produces source + repair symbols.
+pub struct RaptorqEncoder {
     params: EncodingParams,
     rq_encoder: RqEncoder,
 }
 
-impl Encoder {
+impl RaptorqEncoder {
     pub fn new(data: &[u8], params: EncodingParams) -> Self {
         let oti = ObjectTransmissionInformation::with_defaults(
             data.len() as u64,
@@ -51,10 +31,10 @@ impl Encoder {
         let rq_encoder = RqEncoder::new(data, oti);
         Self { params, rq_encoder }
     }
+}
 
-    /// Get source symbols — these are the original data, zero encoding cost.
-    /// Send these first for minimum latency.
-    pub fn source_symbols(&self) -> Vec<WireSymbol> {
+impl FecEncoder for RaptorqEncoder {
+    fn source_symbols(&self) -> Vec<WireSymbol> {
         let block_id = self.params.block_id;
         self.rq_encoder
             .get_block_encoders()
@@ -80,10 +60,7 @@ impl Encoder {
             .collect()
     }
 
-    /// Generate repair symbols. These can be generated incrementally and
-    /// streamed out as needed — the fountain property means we can generate
-    /// as many as we want.
-    pub fn repair_symbols(&self, count: u32) -> Vec<WireSymbol> {
+    fn repair_symbols(&self, count: u32) -> Vec<WireSymbol> {
         let block_id = self.params.block_id;
         self.rq_encoder
             .get_block_encoders()
@@ -110,12 +87,12 @@ impl Encoder {
     }
 }
 
-/// Decoder: reassembles a block from received symbols.
+/// RaptorQ decoder: reassembles a block from received symbols.
 ///
 /// Key optimization: source symbols that arrive intact can be used directly
 /// without waiting for full block decoding. Only when there are losses do we
 /// need to invoke the fountain decoder.
-pub struct Decoder {
+pub struct RaptorqDecoder {
     params: EncodingParams,
     rq_decoder: RqDecoder,
     /// Track which source symbols we've received directly
@@ -131,10 +108,10 @@ pub struct Decoder {
     /// Deduplication: track seen payload_ids
     seen_ids: HashSet<u32>,
     /// When this decoder was created (for timeout eviction)
-    pub created_at: Instant,
+    created: Instant,
 }
 
-impl Decoder {
+impl RaptorqDecoder {
     pub fn new(params: EncodingParams, transfer_length: u64) -> Self {
         let oti = ObjectTransmissionInformation::with_defaults(
             transfer_length,
@@ -151,20 +128,20 @@ impl Decoder {
             decoded: false,
             result: None,
             seen_ids: HashSet::new(),
-            created_at: Instant::now(),
+            created: Instant::now(),
         }
     }
+}
 
-    /// Feed a received symbol into the decoder.
-    /// Returns `Some(data)` if the block is now fully decoded.
-    pub fn add_symbol(&mut self, symbol: &WireSymbol) -> Option<Bytes> {
+impl FecDecoder for RaptorqDecoder {
+    fn add_symbol(&mut self, symbol: &WireSymbol) -> Option<Bytes> {
         if self.decoded {
             return self.result.clone();
         }
 
         // Deduplicate
         if !self.seen_ids.insert(symbol.payload_id) {
-            return None; // already seen this symbol
+            return None;
         }
 
         // Track source symbols for direct passthrough
@@ -207,32 +184,31 @@ impl Decoder {
         None
     }
 
-    /// Check if all source symbols arrived without loss (fast path).
-    pub fn is_complete_source(&self) -> bool {
+    fn is_complete_source(&self) -> bool {
         self.params.source_symbols > 0 && self.source_count == self.params.source_symbols
     }
 
-    pub fn is_decoded(&self) -> bool {
+    fn is_decoded(&self) -> bool {
         self.decoded
     }
 
-    /// Total symbols fed to this decoder.
-    pub fn total_fed(&self) -> u32 {
+    fn total_fed(&self) -> u32 {
         self.total_fed
     }
 
-    /// The encoding params for this block.
-    pub fn params(&self) -> &EncodingParams {
+    fn params(&self) -> &EncodingParams {
         &self.params
     }
 
-    /// Get individual source symbols that have arrived (for streaming to app layer).
-    pub fn get_source_symbol(&self, index: usize) -> Option<&[u8]> {
+    fn get_source_symbol(&self, index: usize) -> Option<&[u8]> {
         self.received_source.get(index)?.as_deref()
     }
 
-    /// Get all received payload_ids (for ACKs).
-    pub fn received_ids(&self) -> Vec<u32> {
+    fn received_ids(&self) -> Vec<u32> {
         self.seen_ids.iter().copied().collect()
+    }
+
+    fn created_at(&self) -> Instant {
+        self.created
     }
 }

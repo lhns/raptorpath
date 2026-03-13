@@ -2,7 +2,7 @@
 //!
 //! Tests the full path: packets → frame → encode → (simulate loss) → decode → extract.
 
-use raptorpath::fec::{Decoder, Encoder, EncodingParams, WireSymbol};
+use raptorpath::fec::{FecBackend, EncodingParams, WireSymbol};
 use raptorpath::net::framing;
 
 /// Helper: frame packets into a block, encode, decode, extract.
@@ -29,7 +29,7 @@ fn roundtrip_with_loss(
     };
 
     // Encode
-    let encoder = Encoder::new(&block, params);
+    let encoder = FecBackend::RaptorQ.create_encoder(&block, params);
     let source = encoder.source_symbols();
     let repair = encoder.repair_symbols(repair_count);
 
@@ -46,7 +46,7 @@ fn roundtrip_with_loss(
         .collect();
 
     // Decode
-    let mut decoder = Decoder::new(params, transfer_length);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, transfer_length);
     let mut decoded_data = None;
 
     for symbol in &transmitted {

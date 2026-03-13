@@ -1,0 +1,68 @@
+[package]
+name = "raptorpath"
+version = "0.1.0"
+edition = "2021"
+description = "Multipath transport with RaptorQ fountain codes for erasure-resilient networking"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# FEC
+raptorq = "2"
+mettle = { path = "../mettle" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# QUIC transport
+quinn = "0.11"
+rustls = { version = "0.23", features = ["ring"] }
+
+# TUN interface
+tun = { version = "0.7", features = ["async"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+
+# Statistics / math
+statrs = "0.17"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utils
+bytes = "1"
+thiserror = "2"
+dashmap = "6"
+parking_lot = "0.12"
+rand = "0.8"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+toml = "0.8"
+serde_json = "1"
+axum = "0.8"
+rcgen = "0.13"
+sha2 = "0.10"
+hex = "0.4"
+pem = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+] }
+wintun = "0.5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# tun crate handles Linux natively
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tokio-test = "0.4"
+rand_chacha = "0.3"
+
+[[bench]]
+name = "fec_bench"
+harness = false

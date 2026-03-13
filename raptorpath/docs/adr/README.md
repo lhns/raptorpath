@@ -41,3 +41,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0018](0018-connection-migration.md) | Runtime connection migration via HTTP API | Resolved |
 | [0019](0019-bbr-delay-based-cc.md) | BBR-style delay-based congestion control | Resolved |
 | [0020](0020-tls-cert-pinning.md) | Optional TLS certificate pinning | Resolved |
+| [0021](0021-swappable-fec-backend.md) | Swappable FEC backend (RaptorQ + METTLE) | Resolved |

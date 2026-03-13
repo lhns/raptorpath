@@ -1,7 +1,7 @@
 //! End-to-end tests: frame packets -> encode FEC block -> simulate loss -> decode -> extract.
 //! Proves the full codec pipeline without any TUN or network dependency.
 
-use raptorpath::fec::{Decoder, EncodingParams, FecStream, WireSymbol};
+use raptorpath::fec::{FecBackend, EncodingParams, FecStream, WireSymbol};
 use raptorpath::net::framing::{extract_packets, frame_end, frame_packet};
 
 /// Run the full pipeline: frame packets, encode, simulate loss, decode, extract.
@@ -27,7 +27,7 @@ fn e2e_pipeline(
         repair_count,
         block_id: 0,
     };
-    let mut fec = FecStream::new(&block, params);
+    let mut fec = FecStream::new(&block, params, FecBackend::RaptorQ);
     let source = fec.take_source_symbols();
     let repair = fec.generate_repair(repair_count);
 
@@ -42,7 +42,7 @@ fn e2e_pipeline(
         .collect();
 
     // 4. Decode
-    let mut decoder = Decoder::new(params, block.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, block.len() as u64);
     let mut decoded_data = None;
     for sym in &transmitted {
         if let Some(data) = decoder.add_symbol(sym) {
@@ -250,12 +250,12 @@ fn test_e2e_maximum_loss_recovery() {
         block_id: 0,
     };
 
-    let mut fec = FecStream::new(&block, params);
+    let mut fec = FecStream::new(&block, params, FecBackend::RaptorQ);
     let _source = fec.take_source_symbols();
     let repair = fec.generate_repair(repair_count);
 
     // Feed only repair symbols (drop all source)
-    let mut decoder = Decoder::new(params, block.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, block.len() as u64);
     let mut decoded_data = None;
     for sym in &repair {
         if let Some(data) = decoder.add_symbol(sym) {

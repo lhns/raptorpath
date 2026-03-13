@@ -2,7 +2,7 @@
 //! Verifies graceful shutdown components: message serialization,
 //! broadcast signaling, partial block flush, and idempotency.
 
-use raptorpath::fec::{Decoder, EncodingParams, FecStream};
+use raptorpath::fec::{FecBackend, EncodingParams, FecStream};
 use raptorpath::net::framing::{extract_packets, frame_end, frame_packet};
 use raptorpath::transport::{ControlMessage, WireMessage};
 use tokio::sync::broadcast;
@@ -76,11 +76,11 @@ async fn test_partial_block_flush_before_shutdown() {
         block_id: 0,
     };
 
-    let mut fec = FecStream::new(&block, params);
+    let mut fec = FecStream::new(&block, params, FecBackend::RaptorQ);
     let source = fec.take_source_symbols();
 
     // Decode
-    let mut decoder = Decoder::new(params, block.len() as u64);
+    let mut decoder = FecBackend::RaptorQ.create_decoder(params, block.len() as u64);
     let mut decoded_data = None;
     for sym in &source {
         if let Some(data) = decoder.add_symbol(sym) {

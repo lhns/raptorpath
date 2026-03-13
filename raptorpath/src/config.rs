@@ -1,6 +1,7 @@
 //! Configuration: TOML file loading, profile presets, CLI overlay.
 
 use crate::control::fec_rate::ProtocolHint;
+use crate::fec::FecBackend;
 use crate::net::PeerConfig;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -27,6 +28,8 @@ pub struct RaptorpathConfig {
     pub interleave_depth: Option<u32>,
     /// Path to a pinned TLS certificate (DER or PEM) for server verification
     pub pin_cert: Option<String>,
+    /// FEC backend: "raptorq" (default) or "mettle"
+    pub fec_backend: Option<String>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -93,6 +96,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         dns: overlay.dns.or(base.dns),
         interleave_depth: overlay.interleave_depth.or(base.interleave_depth),
         pin_cert: overlay.pin_cert.or(base.pin_cert),
+        fec_backend: overlay.fec_backend.or(base.fec_backend),
     }
 }
 
@@ -143,6 +147,12 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         ProtocolHint::Auto => 3,
     };
 
+    let fec_backend = match config.fec_backend.as_deref() {
+        Some("mettle") => FecBackend::Mettle,
+        Some("raptorq") | None => FecBackend::RaptorQ,
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle"),
+    };
+
     let peer_config = PeerConfig {
         bind_addrs,
         peer_addrs,
@@ -157,6 +167,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         dns,
         interleave_depth: config.interleave_depth.unwrap_or(default_interleave),
         pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
+        fec_backend,
     };
 
     Ok((peer_config, status_addr))
@@ -217,11 +228,13 @@ mod tests {
             dns: Some("10.99.0.1".into()),
             interleave_depth: Some(3),
             pin_cert: None,
+            fec_backend: Some("mettle".into()),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.server, Some(true));
         assert_eq!(parsed.tun_name.as_deref(), Some("rpath0"));
+        assert_eq!(parsed.fec_backend.as_deref(), Some("mettle"));
     }
 
     #[test]
