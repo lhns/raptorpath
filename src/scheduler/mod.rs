@@ -3,14 +3,209 @@
 //!
 //! Unlike round-robin MPTCP, we schedule symbols proportional to each path's
 //! effective goodput and route repair symbols preferentially to better paths.
+//!
+//! Congestion control is BBR-inspired and delay-based: it tracks the minimum
+//! RTT (propagation baseline) and maximum delivery rate in sliding windows,
+//! then sets cwnd = BDP (bandwidth × delay product).  Loss alone does NOT
+//! reduce the window — only rising RTT does.  This prevents wireless random
+//! loss from collapsing throughput, unlike traditional loss-based AIMD.
 
 use crate::control::LossEstimator;
 use crate::fec::WireSymbol;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 /// Identifies a network path (e.g., WiFi, LTE, Ethernet).
 pub type PathId = u32;
+
+/// Sliding window entry for bandwidth/RTT tracking.
+#[derive(Clone, Debug)]
+struct BwSample {
+    /// Delivery rate in symbols per second.
+    delivery_rate: f64,
+    /// Timestamp when this sample was taken.
+    timestamp: Instant,
+}
+
+#[derive(Clone, Debug)]
+struct RttSample {
+    rtt: Duration,
+    timestamp: Instant,
+}
+
+/// BBR-inspired congestion control state.
+///
+/// Instead of reacting to loss (AIMD), we model the pipe:
+///   - `min_rtt`: propagation delay baseline (10s sliding window)
+///   - `max_bw`: maximum observed delivery rate (10s sliding window)
+///   - `bdp = max_bw × min_rtt`: the bandwidth-delay product
+///   - `cwnd = gain × bdp` (gain > 1 during probe, = 1 steady state)
+///
+/// Loss handling is RTT-aware:
+///   - Loss + stable RTT → wireless/random → no cwnd reduction
+///   - Loss + rising RTT → real congestion → reduce to BDP
+///   - Decode failure + rising RTT → aggressive drain to 0.75 × BDP
+#[derive(Debug)]
+pub struct BbrState {
+    /// Sliding window of bandwidth samples (symbols/sec).
+    bw_samples: VecDeque<BwSample>,
+    /// Sliding window of RTT samples.
+    rtt_samples: VecDeque<RttSample>,
+    /// How long to keep samples in sliding windows.
+    window_duration: Duration,
+    /// Minimum RTT seen in the current window (propagation baseline).
+    min_rtt: Option<Duration>,
+    /// Maximum delivery rate seen in the current window.
+    max_bw: f64,
+    /// Current gain factor applied to BDP for cwnd.
+    /// > 1.0 during startup/probing, 1.0 in steady state.
+    cwnd_gain: f64,
+    /// Whether we're in startup phase (probe for bandwidth).
+    in_startup: bool,
+    /// Previous RTT for detecting trends.
+    prev_rtt: Option<Duration>,
+    /// Consecutive RTT increases (congestion signal).
+    rtt_increases: u32,
+    /// Number of RTT increases that count as congestion.
+    congestion_threshold: u32,
+    /// Delivered symbols counter for delivery rate calculation.
+    delivered: u64,
+    /// Timestamp of last delivery measurement.
+    last_delivered_time: Instant,
+    /// Delivered count at last measurement.
+    last_delivered: u64,
+}
+
+impl BbrState {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            bw_samples: VecDeque::new(),
+            rtt_samples: VecDeque::new(),
+            window_duration: Duration::from_secs(10),
+            min_rtt: None,
+            max_bw: 0.0,
+            cwnd_gain: 2.0, // start with 2x gain for startup probing
+            in_startup: true,
+            prev_rtt: None,
+            rtt_increases: 0,
+            congestion_threshold: 3,
+            delivered: 0,
+            last_delivered_time: now,
+            last_delivered: 0,
+        }
+    }
+
+    /// Record delivery of `count` symbols.  Returns the computed delivery rate.
+    fn record_delivery(&mut self, count: u32) -> f64 {
+        self.delivered += count as u64;
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_delivered_time).as_secs_f64();
+
+        // Need at least 1ms of elapsed time to compute a meaningful rate
+        if elapsed < 0.001 {
+            return self.max_bw;
+        }
+
+        let delta_delivered = self.delivered - self.last_delivered;
+        let rate = delta_delivered as f64 / elapsed;
+
+        self.last_delivered_time = now;
+        self.last_delivered = self.delivered;
+
+        // Add to sliding window
+        self.bw_samples.push_back(BwSample {
+            delivery_rate: rate,
+            timestamp: now,
+        });
+        self.expire_old_samples(now);
+
+        // Update max bandwidth
+        self.max_bw = self
+            .bw_samples
+            .iter()
+            .map(|s| s.delivery_rate)
+            .fold(0.0f64, f64::max);
+
+        rate
+    }
+
+    /// Record an RTT sample.
+    fn record_rtt(&mut self, rtt: Duration) {
+        let now = Instant::now();
+
+        // Detect RTT trend
+        if let Some(prev) = self.prev_rtt {
+            // RTT increased by more than 10% → possible congestion
+            if rtt > prev + prev / 10 {
+                self.rtt_increases += 1;
+            } else {
+                self.rtt_increases = self.rtt_increases.saturating_sub(1);
+            }
+        }
+        self.prev_rtt = Some(rtt);
+
+        self.rtt_samples.push_back(RttSample {
+            rtt,
+            timestamp: now,
+        });
+        self.expire_old_samples(now);
+
+        // Update min RTT
+        self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
+    }
+
+    /// Whether RTT is trending upward (congestion detected).
+    fn is_congested(&self) -> bool {
+        self.rtt_increases >= self.congestion_threshold
+    }
+
+    /// Compute the BDP-based cwnd target.
+    fn bdp_cwnd(&self) -> u32 {
+        let min_rtt_secs = self
+            .min_rtt
+            .unwrap_or(Duration::from_millis(50))
+            .as_secs_f64();
+
+        let bdp = self.max_bw * min_rtt_secs;
+
+        // Apply gain and clamp
+        let target = (bdp * self.cwnd_gain) as u32;
+        target.clamp(PathState::MIN_CWND, PathState::MAX_CWND)
+    }
+
+    /// Expire samples older than the sliding window.
+    fn expire_old_samples(&mut self, now: Instant) {
+        let cutoff = now.checked_sub(self.window_duration).unwrap_or(now);
+        while self
+            .bw_samples
+            .front()
+            .is_some_and(|s| s.timestamp < cutoff)
+        {
+            self.bw_samples.pop_front();
+        }
+        while self
+            .rtt_samples
+            .front()
+            .is_some_and(|s| s.timestamp < cutoff)
+        {
+            self.rtt_samples.pop_front();
+        }
+    }
+
+    /// Exit startup phase: drop gain to steady-state.
+    fn exit_startup(&mut self) {
+        if self.in_startup {
+            self.in_startup = false;
+            self.cwnd_gain = 1.0;
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
 
 /// Per-path state tracked by the scheduler.
 pub struct PathState {
@@ -22,14 +217,17 @@ pub struct PathState {
     pub in_flight: u32,
     /// Whether the path is considered usable
     pub active: bool,
-    /// Slow-start threshold
+    /// Slow-start threshold (kept for compatibility with tests, but BBR
+    /// uses BDP-based cwnd instead of ssthresh-driven phase changes)
     pub ssthresh: u32,
-    /// Whether we are in slow-start phase
+    /// Whether we are in slow-start phase (maps to BBR startup)
     pub in_slow_start: bool,
     /// Last time we received an RTCP-style report or any data from this path
     pub last_report: Instant,
     /// Maximum datagram size discovered for this path
     pub max_datagram_size: Option<usize>,
+    /// BBR congestion control state
+    bbr: BbrState,
 }
 
 impl PathState {
@@ -53,6 +251,7 @@ impl PathState {
             in_slow_start: true,
             last_report: Instant::now(),
             max_datagram_size: None,
+            bbr: BbrState::new(),
         }
     }
 
@@ -69,39 +268,96 @@ impl PathState {
         self.cwnd.saturating_sub(self.in_flight)
     }
 
-    /// AIMD congestion control: handle acknowledgements.
+    /// BBR-style congestion control: handle acknowledgements.
     ///
-    /// In slow start the window grows by `acked` each call (roughly doubles
-    /// per RTT). In congestion avoidance we do standard additive increase.
+    /// Records delivery, computes BDP, and adjusts cwnd toward the
+    /// bandwidth-delay product.  During startup, cwnd grows aggressively
+    /// (2× BDP gain).  Once the pipe is full (RTT starts rising or BDP
+    /// stabilizes), transitions to steady state (1× gain).
     pub fn on_ack(&mut self, acked: u32) {
-        if self.in_slow_start {
-            self.cwnd += acked;
-            if self.cwnd >= self.ssthresh {
+        let rate = self.bbr.record_delivery(acked);
+
+        // Startup exit: if delivery rate stopped growing or RTT is rising
+        if self.bbr.in_startup {
+            if self.bbr.is_congested() {
+                self.bbr.exit_startup();
+            }
+            // Also exit startup if we've had enough samples and BDP is meaningful
+            if self.bbr.bw_samples.len() >= 4 && self.bbr.min_rtt.is_some() {
+                let bdp = self.bbr.bdp_cwnd();
+                if self.cwnd >= bdp {
+                    self.bbr.exit_startup();
+                }
+            }
+        }
+
+        // Set cwnd based on BDP
+        let bdp_target = self.bbr.bdp_cwnd();
+
+        if self.bbr.in_startup {
+            // During startup, grow toward BDP target but also allow
+            // traditional slow-start growth if BDP estimate is too low
+            self.cwnd = std::cmp::max(self.cwnd + acked, bdp_target);
+        } else {
+            // Steady state: converge toward BDP
+            // Smooth transition: move 25% toward target per ACK
+            if bdp_target > self.cwnd {
+                let step = std::cmp::max(1, (bdp_target - self.cwnd) / 4);
+                self.cwnd += step;
+            } else if bdp_target < self.cwnd {
+                let step = std::cmp::max(1, (self.cwnd - bdp_target) / 4);
+                self.cwnd = self.cwnd.saturating_sub(step);
+            }
+        }
+
+        self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
+
+        // Sync legacy fields
+        self.in_slow_start = self.bbr.in_startup;
+        if !self.in_slow_start && self.ssthresh > self.cwnd {
+            self.ssthresh = self.cwnd;
+        }
+    }
+
+    /// BBR-style congestion control: handle loss events.
+    ///
+    /// Unlike AIMD, loss alone does NOT reduce cwnd.  The key insight:
+    ///   - Loss + stable RTT → wireless/random loss → ignore (FEC handles it)
+    ///   - Loss + rising RTT → real congestion → drain to BDP
+    ///   - Decode failure + rising RTT → severe congestion → drain to 0.75 × BDP
+    pub fn on_loss(&mut self, fec_recovered: bool) {
+        if self.bbr.is_congested() {
+            // RTT is rising → real congestion
+            self.bbr.exit_startup();
+            let bdp = self.bbr.bdp_cwnd();
+
+            if fec_recovered {
+                // Congestion but FEC saved us — drain to BDP
+                self.cwnd = std::cmp::max(bdp, Self::MIN_CWND);
+            } else {
+                // Decode failure + congestion — aggressive drain to 75% BDP
+                let target = (bdp as f64 * 0.75) as u32;
+                self.cwnd = std::cmp::max(target, Self::MIN_CWND);
+                self.ssthresh = self.cwnd;
                 self.in_slow_start = false;
             }
         } else {
-            // Additive increase: +1 per full window acked
-            self.cwnd += std::cmp::max(1, acked / self.cwnd);
+            // RTT is stable → wireless/random loss, not congestion
+            if fec_recovered {
+                // FEC recovered, no congestion signal → do nothing
+            } else {
+                // Decode failure without congestion is unusual.
+                // Gently reduce: this might be a borderline case where
+                // we need slightly more FEC, not less bandwidth.
+                self.cwnd = std::cmp::max(self.cwnd.saturating_sub(1), Self::MIN_CWND);
+            }
         }
-        self.cwnd = std::cmp::min(self.cwnd, Self::MAX_CWND);
     }
 
-    /// AIMD congestion control: handle loss events.
-    ///
-    /// FEC-aware: if the block was recovered by the FEC decoder despite the
-    /// lost packet, the loss is likely random (wireless) rather than
-    /// congestion, so we barely reduce. If the block *failed* to decode,
-    /// treat it as a real congestion signal and halve the window.
-    pub fn on_loss(&mut self, fec_recovered: bool) {
-        if fec_recovered {
-            // Random / wireless loss – gentle reduction
-            self.cwnd = std::cmp::max(self.cwnd.saturating_sub(1), Self::MIN_CWND);
-        } else {
-            // Congestion signal – multiplicative decrease
-            self.ssthresh = std::cmp::max(self.cwnd / 2, Self::MIN_CWND);
-            self.cwnd = self.ssthresh;
-            self.in_slow_start = false;
-        }
+    /// Feed an RTT measurement into BBR state.
+    /// Call this when processing ACKs/reports that include RTT.
+    pub fn record_rtt_sample(&mut self, rtt: Duration) {
+        self.bbr.record_rtt(rtt);
     }
 }
 
@@ -256,10 +512,11 @@ impl Scheduler {
             if !path.active {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
-                // Reset to slow-start on recovery
+                // Reset to startup on recovery
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
+                path.bbr.reset();
             }
         }
     }

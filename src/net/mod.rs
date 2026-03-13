@@ -1005,8 +1005,9 @@ fn handle_control_message(
             let now = now_us();
             let rtt_us = now.saturating_sub(echo_send_timestamp_us);
             if let Some(path) = sched.path_mut(path_id) {
-                path.estimator
-                    .record_rtt(Duration::from_micros(rtt_us));
+                let rtt_duration = Duration::from_micros(rtt_us);
+                path.estimator.record_rtt(rtt_duration);
+                path.record_rtt_sample(rtt_duration);
 
                 // ADR-0003: update loss stats from ACK
                 if expected_count > 0 {
@@ -1087,8 +1088,9 @@ fn handle_control_message(
             // Touch path — this doubles as keepalive
             sched.touch_path(report_path_id);
             if let Some(path) = sched.path_mut(report_path_id) {
-                path.estimator
-                    .record_rtt(Duration::from_micros(avg_rtt_us));
+                let rtt_duration = Duration::from_micros(avg_rtt_us);
+                path.estimator.record_rtt(rtt_duration);
+                path.record_rtt_sample(rtt_duration);
                 path.estimator.record_throughput(throughput_bps);
                 // Record peer's reported loss for cross-validation
                 if loss_rate > 0.0 {

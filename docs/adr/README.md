@@ -39,3 +39,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0016](0016-block-interleaving.md) | Block interleaving for burst loss resilience | Resolved |
 | [0017](0017-mtu-aware-symbol-sizing.md) | MTU-aware symbol sizing via PMTU discovery | Resolved |
 | [0018](0018-connection-migration.md) | Runtime connection migration via HTTP API | Resolved |
+| [0019](0019-bbr-delay-based-cc.md) | BBR-style delay-based congestion control | Resolved |

@@ -1,7 +1,7 @@
-//! ADR-0009: Congestion control tests.
+//! ADR-0009 + ADR-0019: BBR-style delay-based congestion control tests.
 
 use raptorpath::fec::WireSymbol;
-use raptorpath::scheduler::Scheduler;
+use raptorpath::scheduler::{PathState, Scheduler};
 use std::time::Duration;
 
 fn make_symbol(id: u32, repair: bool) -> WireSymbol {
@@ -21,114 +21,123 @@ fn test_initial_cwnd() {
 }
 
 #[test]
-fn test_slow_start_grows_cwnd() {
+fn test_startup_grows_cwnd() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // Send and ack — cwnd should grow in slow start
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
     sched.schedule(source, vec![]);
     let cwnd_before = sched.path(0).unwrap().cwnd;
 
+    // Simulate time passing so delivery rate is computable
+    std::thread::sleep(Duration::from_millis(2));
     sched.ack(0, 5);
     let cwnd_after = sched.path(0).unwrap().cwnd;
 
     assert!(
         cwnd_after > cwnd_before,
-        "cwnd should grow in slow start: {cwnd_before} -> {cwnd_after}"
+        "cwnd should grow during startup: {cwnd_before} -> {cwnd_after}"
     );
 }
 
 #[test]
-fn test_slow_start_doubles_per_rtt() {
+fn test_startup_doubles_per_rtt() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // In slow start, cwnd += acked, so acking 10 from initial 10 => 20
-    let source: Vec<_> = (0..10).map(|i| make_symbol(i, false)).collect();
-    sched.schedule(source, vec![]);
-    sched.ack(0, 10);
+    // In startup, cwnd should grow aggressively
+    let initial = sched.path(0).unwrap().cwnd;
+    assert_eq!(initial, PathState::INITIAL_CWND);
 
-    assert_eq!(sched.path(0).unwrap().cwnd, 20, "slow start should double cwnd");
+    std::thread::sleep(Duration::from_millis(2));
+    sched.ack(0, initial);
+    let after_first = sched.path(0).unwrap().cwnd;
+
+    // Startup adds acked to cwnd (like slow-start)
+    assert!(
+        after_first >= initial * 2,
+        "Startup should at least double cwnd: {initial} -> {after_first}"
+    );
 }
 
 #[test]
-fn test_congestion_avoidance_after_ssthresh() {
+fn test_loss_with_stable_rtt_no_reduction() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // ssthresh=64, so grow past it with repeated acks
-    // After reaching ssthresh, growth should be slower (additive)
-    for _ in 0..10 {
-        let cwnd = sched.path(0).unwrap().cwnd;
-        let source: Vec<_> = (0..cwnd).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(0, cwnd);
+    // Feed stable RTT samples (no congestion signal)
+    let path = sched.path_mut(0).unwrap();
+    for _ in 0..5 {
+        path.record_rtt_sample(Duration::from_millis(50));
     }
 
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(cwnd > 64, "should have passed ssthresh");
-
-    // Now each ack should only add ~1 (congestion avoidance)
-    let before = sched.path(0).unwrap().cwnd;
-    let source: Vec<_> = (0..10).map(|i| make_symbol(i, false)).collect();
-    sched.schedule(source, vec![]);
+    // Grow cwnd
+    std::thread::sleep(Duration::from_millis(2));
     sched.ack(0, 10);
-    let after = sched.path(0).unwrap().cwnd;
+    let cwnd_before = sched.path(0).unwrap().cwnd;
 
-    // In congestion avoidance, increase is small: max(1, acked/cwnd)
-    // With acked=10 and cwnd>64, increase should be 1
-    assert!(
-        after - before <= 2,
-        "congestion avoidance should grow slowly: {before} -> {after}"
+    // FEC-recovered loss with stable RTT → should NOT reduce
+    sched.on_loss(0, true);
+    let cwnd_after = sched.path(0).unwrap().cwnd;
+
+    assert_eq!(
+        cwnd_after, cwnd_before,
+        "Wireless loss (stable RTT, FEC recovered) should not reduce cwnd"
     );
 }
 
 #[test]
-fn test_loss_without_fec_halves_cwnd() {
+fn test_loss_with_rising_rtt_reduces_cwnd() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
     // Grow cwnd first
-    for _ in 0..5 {
-        let cwnd = sched.path(0).unwrap().cwnd;
-        let source: Vec<_> = (0..cwnd).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(0, cwnd);
-    }
+    std::thread::sleep(Duration::from_millis(2));
+    sched.ack(0, 50);
+    let cwnd_before = sched.path(0).unwrap().cwnd;
+    assert!(cwnd_before > PathState::MIN_CWND);
 
-    let before = sched.path(0).unwrap().cwnd;
-    assert!(before > 10, "cwnd should have grown: {before}");
+    // Feed rising RTT samples → triggers congestion detection
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(70));
+    path.record_rtt_sample(Duration::from_millis(100));
+    path.record_rtt_sample(Duration::from_millis(140));
 
-    // Congestion loss (block failed to decode)
+    // Now loss with congestion signal
     sched.on_loss(0, false);
-    let after = sched.path(0).unwrap().cwnd;
+    let cwnd_after = sched.path(0).unwrap().cwnd;
 
-    assert_eq!(after, before / 2, "cwnd should halve on congestion loss");
+    assert!(
+        cwnd_after <= cwnd_before,
+        "Loss with rising RTT should reduce cwnd: {cwnd_before} -> {cwnd_after}"
+    );
 }
 
 #[test]
-fn test_loss_with_fec_gentle_reduction() {
+fn test_decode_failure_with_congestion_aggressive_drain() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
     // Grow cwnd
-    for _ in 0..3 {
-        let cwnd = sched.path(0).unwrap().cwnd;
-        let source: Vec<_> = (0..cwnd).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(0, cwnd);
-    }
+    std::thread::sleep(Duration::from_millis(2));
+    sched.ack(0, 100);
+    let cwnd_before = sched.path(0).unwrap().cwnd;
 
-    let before = sched.path(0).unwrap().cwnd;
-    // Random loss but FEC recovered
-    sched.on_loss(0, true);
-    let after = sched.path(0).unwrap().cwnd;
+    // Rising RTT → congestion
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(80));
+    path.record_rtt_sample(Duration::from_millis(120));
+    path.record_rtt_sample(Duration::from_millis(170));
 
-    assert_eq!(
-        after,
-        before - 1,
-        "FEC-recovered loss should only reduce cwnd by 1"
+    // Decode failure (fec_recovered=false) with congestion
+    sched.on_loss(0, false);
+    let cwnd_after = sched.path(0).unwrap().cwnd;
+
+    assert!(
+        cwnd_after < cwnd_before,
+        "Decode failure + congestion should aggressively drain: {cwnd_before} -> {cwnd_after}"
     );
 }
 
@@ -137,13 +146,19 @@ fn test_cwnd_never_below_minimum() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // Force cwnd down with repeated congestion losses
+    // Force congestion signal
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(80));
+    path.record_rtt_sample(Duration::from_millis(120));
+    path.record_rtt_sample(Duration::from_millis(170));
+
     for _ in 0..20 {
         sched.on_loss(0, false);
     }
 
     let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(cwnd >= 2, "cwnd should never go below MIN_CWND=2, got {cwnd}");
+    assert!(cwnd >= PathState::MIN_CWND, "cwnd should never go below MIN_CWND=2, got {cwnd}");
 }
 
 #[test]
@@ -152,57 +167,68 @@ fn test_cwnd_capped_at_max() {
     sched.add_path(0);
 
     // Aggressive growth
-    for _ in 0..100 {
+    for i in 0..100 {
         let cwnd = sched.path(0).unwrap().cwnd;
-        let batch = std::cmp::min(cwnd, 1000); // don't allocate too much
-        let source: Vec<_> = (0..batch).map(|i| make_symbol(i, false)).collect();
+        let batch = std::cmp::min(cwnd, 1000);
+        let source: Vec<_> = (0..batch).map(|j| make_symbol(i * 1000 + j, false)).collect();
         sched.schedule(source, vec![]);
+        std::thread::sleep(Duration::from_millis(1));
         sched.ack(0, batch);
     }
 
     let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(cwnd <= 10_000, "cwnd should be capped at MAX_CWND, got {cwnd}");
+    assert!(cwnd <= PathState::MAX_CWND, "cwnd should be capped at MAX_CWND, got {cwnd}");
 }
 
 #[test]
-fn test_loss_exits_slow_start() {
+fn test_loss_exits_startup() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // Should start in slow start
-    let path = sched.path(0).unwrap();
-    assert!(path.in_slow_start, "should start in slow start");
+    assert!(sched.path(0).unwrap().in_slow_start, "should start in startup");
 
-    // Congestion loss exits slow start
+    // Rising RTT + loss exits startup
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(80));
+    path.record_rtt_sample(Duration::from_millis(120));
+    path.record_rtt_sample(Duration::from_millis(170));
+
     sched.on_loss(0, false);
-    let path = sched.path(0).unwrap();
-    assert!(!path.in_slow_start, "loss should exit slow start");
+    assert!(!sched.path(0).unwrap().in_slow_start, "congestion + loss should exit startup");
 }
 
 #[test]
-fn test_ack_with_on_loss_recovers() {
+fn test_recovery_after_loss() {
     let mut sched = Scheduler::new();
     sched.add_path(0);
 
-    // Grow → lose → recover
-    for _ in 0..3 {
-        let source: Vec<_> = (0..10).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(0, 10);
-    }
+    // Grow cwnd
+    std::thread::sleep(Duration::from_millis(2));
+    sched.ack(0, 50);
     let peak = sched.path(0).unwrap().cwnd;
 
-    sched.on_loss(0, false); // halve
-    let trough = sched.path(0).unwrap().cwnd;
-    assert!(trough < peak);
+    // Congestion loss
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(80));
+    path.record_rtt_sample(Duration::from_millis(120));
+    path.record_rtt_sample(Duration::from_millis(170));
+    sched.on_loss(0, false);
 
-    // Now grow back (in congestion avoidance, slower)
+    let trough = sched.path(0).unwrap().cwnd;
+    assert!(trough < peak, "loss should reduce cwnd");
+
+    // Feed stable RTT to clear congestion signal, then ack to recover
+    let path = sched.path_mut(0).unwrap();
+    for _ in 0..5 {
+        path.record_rtt_sample(Duration::from_millis(50));
+    }
+
     for _ in 0..100 {
+        std::thread::sleep(Duration::from_millis(1));
         let cwnd = sched.path(0).unwrap().cwnd;
-        let batch = std::cmp::min(cwnd, 100);
-        let source: Vec<_> = (0..batch).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(0, batch);
+        sched.ack(0, std::cmp::min(cwnd, 100));
     }
     let recovered = sched.path(0).unwrap().cwnd;
     assert!(
@@ -218,16 +244,21 @@ fn test_multipath_independent_cc() {
     sched.add_path(1);
 
     // Grow both paths
-    for pid in [0, 1] {
-        let source: Vec<_> = (0..10).map(|i| make_symbol(i, false)).collect();
-        sched.schedule(source, vec![]);
-        sched.ack(pid, 10);
-    }
+    let source: Vec<_> = (0..10).map(|i| make_symbol(i, false)).collect();
+    sched.schedule(source, vec![]);
+    std::thread::sleep(Duration::from_millis(2));
+    sched.ack(0, 5);
+    sched.ack(1, 5);
 
     let cwnd0_before = sched.path(0).unwrap().cwnd;
     let cwnd1_before = sched.path(1).unwrap().cwnd;
 
-    // Only path 0 has loss
+    // Only path 0 gets congestion signal
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(Duration::from_millis(80));
+    path.record_rtt_sample(Duration::from_millis(120));
+    path.record_rtt_sample(Duration::from_millis(170));
     sched.on_loss(0, false);
 
     let cwnd0_after = sched.path(0).unwrap().cwnd;
