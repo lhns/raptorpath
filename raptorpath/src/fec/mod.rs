@@ -17,6 +17,7 @@ pub(crate) mod rlc_backend;
 pub(crate) mod window_traits;
 pub(crate) mod rlc_window;
 pub(crate) mod mettle_window;
+pub(crate) mod streaming;
 mod stream;
 
 pub use traits::{EncodingParams, FecBackend, FecDecoder, FecEncoder, WireSymbol};
@@ -24,3 +25,4 @@ pub use stream::{FecStream, RepairStream};
 pub use window_traits::{WindowEncoder, WindowDecoder};
 pub use rlc_window::{RlcWindowEncoder, RlcWindowDecoder};
 pub use mettle_window::{MettleWindowEncoder, MettleWindowDecoder};
+pub use streaming::{StreamingEncoder, StreamingDecoder, StreamingParams};

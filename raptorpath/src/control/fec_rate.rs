@@ -78,6 +78,7 @@ impl FecRateController {
             FecBackend::Mettle => 0.15,   // METTLE needs ~5-25%; 15% is conservative
             FecBackend::ReedSolomon => 0.0, // MDS: zero overhead, any k of n suffices
             FecBackend::Rlc => 0.004,     // Near-MDS: ~0.4% overhead (GF(256) random matrix)
+            FecBackend::Streaming => 0.0, // Streaming codes: rate-optimal, no systematic overhead
         };
         Self {
             target_tail_loss,
@@ -264,6 +265,34 @@ impl FecRateController {
         };
 
         rate.min(self.max_overhead).max(0.0)
+    }
+
+    /// Compute streaming code parameters from the current loss estimator.
+    ///
+    /// Returns `StreamingParams` with T, B, ε derived from the channel model:
+    /// - B: from Gilbert-Elliott mean burst length × safety factor
+    /// - ε: from upper-bound loss rate
+    /// - T: set to B (delay constraint = burst tolerance)
+    pub fn compute_streaming_params(
+        &self,
+        estimator: &LossEstimator,
+    ) -> crate::fec::StreamingParams {
+        let ge = estimator.ge_estimator();
+        let burst_length = if ge.is_valid() {
+            ge.mean_burst_length().max(1.0)
+        } else {
+            2.0 // Default assumption: short bursts
+        };
+
+        let loss_rate = estimator.loss_rate_upper(0.95);
+
+        // Safety factor: 15% over-provisioning for Realtime, 10% otherwise
+        let safety = match self.hint {
+            ProtocolHint::Realtime => 1.15,
+            _ => 1.10,
+        };
+
+        crate::fec::StreamingParams::from_channel(burst_length, loss_rate, safety)
     }
 
     /// Get diagnostics for monitoring.

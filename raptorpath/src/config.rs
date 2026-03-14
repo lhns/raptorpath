@@ -151,8 +151,9 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         Some("mettle") => FecBackend::Mettle,
         Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
         Some("rlc") => FecBackend::Rlc,
+        Some("streaming") => FecBackend::Streaming,
         Some("raptorq") | None => FecBackend::RaptorQ,
-        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc"),
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc, streaming"),
     };
 
     let peer_config = PeerConfig {

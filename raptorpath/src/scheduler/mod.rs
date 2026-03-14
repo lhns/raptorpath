@@ -644,6 +644,38 @@ impl Scheduler {
         self.paths.keys().copied().collect()
     }
 
+    /// Pick the best path for a source symbol: lowest RTT with available capacity.
+    pub fn best_source_path(&self) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active && p.available() > 0)
+            .min_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()))
+            .map(|p| p.id)
+    }
+
+    /// Pick the best path for a repair symbol: highest goodput with available capacity.
+    pub fn best_repair_path(&self) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active && p.available() > 0)
+            .max_by(|a, b| {
+                a.effective_goodput()
+                    .partial_cmp(&b.effective_goodput())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.id)
+    }
+
+    /// Pick a secondary path for redundant source scheduling (different from primary).
+    /// Returns None if only one usable path is available.
+    pub fn redundant_source_path(&self, primary: PathId) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active && p.available() > 0 && p.id != primary)
+            .min_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()))
+            .map(|p| p.id)
+    }
+
     /// Get the minimum max_datagram_size across all active paths that have
     /// reported an MTU. Returns None if no active path has a known MTU.
     pub fn min_mtu(&self) -> Option<usize> {
@@ -673,6 +705,104 @@ mod tests {
             data: vec![0u8; 64],
             backend: FecBackend::RaptorQ,
         }
+    }
+
+    #[test]
+    fn test_best_source_path_picks_lowest_rtt() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+
+        sched
+            .path_mut(0)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(100));
+        sched
+            .path_mut(1)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(10));
+
+        assert_eq!(sched.best_source_path(), Some(1));
+    }
+
+    #[test]
+    fn test_best_repair_path_picks_highest_goodput() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Path 0: low throughput
+        sched.path_mut(0).unwrap().estimator.record_batch(10, 9);
+        sched.path_mut(0).unwrap().estimator.record_throughput(100.0);
+
+        // Path 1: high throughput
+        sched.path_mut(1).unwrap().estimator.record_batch(10, 9);
+        sched.path_mut(1).unwrap().estimator.record_throughput(1000.0);
+
+        assert_eq!(sched.best_repair_path(), Some(1));
+    }
+
+    #[test]
+    fn test_redundant_source_path_picks_different_path() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+        sched.add_path(2);
+
+        sched
+            .path_mut(0)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(5));
+        sched
+            .path_mut(1)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(20));
+        sched
+            .path_mut(2)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(50));
+
+        // Primary is 0, redundant should be 1 (second-lowest RTT)
+        let redundant = sched.redundant_source_path(0);
+        assert_eq!(redundant, Some(1));
+    }
+
+    #[test]
+    fn test_redundant_source_path_none_with_single_path() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+
+        assert_eq!(sched.redundant_source_path(0), None);
+    }
+
+    #[test]
+    fn test_best_source_path_skips_full_cwnd() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+
+        sched
+            .path_mut(0)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(5));
+        sched
+            .path_mut(1)
+            .unwrap()
+            .estimator
+            .record_rtt(std::time::Duration::from_millis(50));
+
+        // Fill path 0's cwnd
+        let cwnd = sched.path(0).unwrap().cwnd;
+        sched.path_mut(0).unwrap().in_flight = cwnd;
+
+        // Should pick path 1 since path 0 has no capacity
+        assert_eq!(sched.best_source_path(), Some(1));
     }
 
     #[test]

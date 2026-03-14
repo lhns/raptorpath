@@ -46,3 +46,5 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0023](0023-gilbert-elliott-loss-model.md) | Gilbert-Elliott HMM for bursty loss estimation | Resolved |
 | [0024](0024-bbr-probe-rtt-phase.md) | BBR ProbeRTT phase for min_rtt freshness | Resolved |
 | [0025](0025-window-nack-sender-repair.md) | WindowNack sender-side targeted repair | Resolved |
+| [0026](0026-multipath-window-scheduling.md) | Multipath window scheduling (RTT/goodput + redundant) | Resolved |
+| [0027](0027-streaming-codes.md) | Streaming codes (Badr/Martinian delay-optimal) | Resolved |

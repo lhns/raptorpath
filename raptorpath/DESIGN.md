@@ -292,21 +292,14 @@ coding**:
 - [x] **TLS cert pinning** — Current QUIC setup uses self-signed certs with insecure client
   validation. Add certificate pinning or a pre-shared key exchange for production deployments.
 
-- [ ] **Correlated loss modeling (Gilbert-Elliott HMM)** — Current Bayesian estimator assumes
-  i.i.d. loss. Real wireless channels have burst structure: a "good" state with low loss and a
-  "bad" state with high loss, with transition probabilities between them. A two-state Hidden
-  Markov Model tracks which state the channel is in and conditions FEC on the current state —
-  more repair when the HMM predicts "bad state likely," less during stable "good state." Improves
-  FEC accuracy during burst/recovery transitions where the i.i.d. model over- or under-estimates.
+- [x] **Correlated loss modeling (Gilbert-Elliott HMM)** — Two-state HMM implemented
+  (ADR-0023). Feeds burst_factor into FEC rate controller and mean_burst_length into
+  streaming code params.
 
 ### Congestion Control & Scheduling Improvements
 
-- [ ] **ProbeRTT phase** — The current BBR implementation never drains queues to measure true
-  propagation delay. Real BBR v2 enters a ProbeRTT phase every ~10 seconds, reducing cwnd to 4
-  for 200ms to let queues drain and get a clean `min_rtt`. Without this, `min_rtt` drifts upward
-  over time as standing queues develop, inflating BDP estimates and causing the controller to
-  over-allocate bandwidth. Implementation: add a timer to `BbrState` that triggers ProbeRTT,
-  temporarily clamp cwnd, record the min RTT during the drain, then resume normal operation.
+- [x] **ProbeRTT phase** — Implemented (ADR-0024). 10s interval, 200ms hold at cwnd=4.
+  Prevents min_rtt drift from standing queues.
 
 - [ ] **Pacing / burst smoothing** — Currently `on_ack` can grow cwnd aggressively during startup
   (`cwnd + acked`), causing micro-bursts that overwhelm WiFi buffers and trigger transient
@@ -337,13 +330,15 @@ The FEC layer uses a **swappable backend** architecture (see [ADR-0021](docs/adr
 The `FecEncoder`/`FecDecoder` traits abstract the erasure code, and `FecBackend` enum selects
 the implementation at runtime. Currently supported backends:
 
-- **RaptorQ** (default) — RFC 6330 rateless fountain code. Near-optimal erasure recovery
-  (any k(1+ε) symbols decode k source symbols). Well-tested, production-quality.
-- **METTLE** — SC-MET-LDGM streaming code with pure peeling decoder. Research implementation
-  in the standalone `mettle` crate. O(1) decode per symbol, GF(2)-only XOR operations.
-  Best suited for low-latency streaming; needs higher overhead at small windows (w=50).
+- **RaptorQ** (default) — RFC 6330 rateless fountain code.
+- **METTLE** — SC-MET-LDGM streaming code with pure peeling decoder (patent-encumbered).
+- **Reed-Solomon** — MDS erasure code with zero overhead.
+- **RLC** — RFC 8681 sliding window random linear code (block + window mode).
+- **Streaming** — Badr/Martinian delay-optimal two-layer code (ADR-0027).
 
-Select via `--fec-backend mettle` (CLI) or `fec_backend = "mettle"` (TOML config).
+Select via `--fec-backend <name>` (CLI) or `fec_backend = "<name>"` (TOML config).
+
+For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-competitive-analysis.md).
 
 - [ ] **Hybrid proactive/reactive FEC** — Send repair symbols proactively alongside source
   symbols at the estimated loss rate, then use targeted retransmission after ACK feedback for any
@@ -351,15 +346,10 @@ Select via `--fec-backend mettle` (CLI) or `fec_backend = "mettle"` (TOML config
   exists. Cross-path retransmission (resend on path B what path A lost) is part of the reactive
   phase. See "Research: Optimal FEC/ARQ Architecture" above for full analysis.
 
-- [ ] **Sliding window FEC (streaming codes)** — The optimal architecture for low-latency multipath
-  transport: replace block-based coding with sliding window erasure coding to eliminate block
-  assembly delay entirely. Badr et al. (2017) proved these codes are rate-optimal for burst+random
-  erasure channels within delay constraints. The implementable-today option is **sliding window RLC
-  (RFC 8681)** — GF(2^8) Gaussian elimination is O(n³), but at our window sizes (~50 symbols)
-  this is fast (Steinwurf benchmarks: 56 Gbps decode at K=16, 3.68 Gbps at K=500). **METTLE
-  (2026)** is now implemented as a backend (see above) for block-based evaluation; a true streaming
-  integration (replacing block assembly entirely) is a future step.
-  *References: Badr et al. 2017, RFC 8681, METTLE (arxiv 2602.10020), rQUIC (Garrido et al. 2019).*
+- [x] **Sliding window FEC (streaming codes)** — Implemented three window backends: RLC (ADR-0022),
+  METTLE window mode, and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
+  layered construction (burst XOR + random GF(256)). Parameters derived from GE HMM estimator.
+  *References: Badr et al. 2017, RFC 8681, ADR-0022, ADR-0027.*
 
 - [ ] **Cross-path retransmission** — When symbols are detected lost on path A, retransmit them on
   path B. No algebraic coding needed — just targeted resend using exact loss information from ACK

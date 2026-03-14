@@ -310,6 +310,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_window_mode = window_mode;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
+    let sender_protocol_hint = config.protocol_hint;
 
     let sender_handle = tokio::spawn(async move {
         // ----- Sliding-window sender mode -----
@@ -326,6 +327,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 &sender_window_ack,
                 &mut sender_nack_rx,
                 &mut sender_shutdown_rx,
+                sender_protocol_hint,
             )
             .await;
             return;
@@ -529,6 +531,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
             let decoder: Box<dyn WindowDecoder> = match recv_fec_backend {
                 FecBackend::Mettle => Box::new(MettleWindowDecoder::new(recv_symbol_size)),
+                FecBackend::Streaming => {
+                    let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
+                    Box::new(crate::fec::StreamingDecoder::new(recv_symbol_size, params))
+                }
                 _ => Box::new(RlcWindowDecoder::new(recv_symbol_size)),
             };
             Some(decoder)
@@ -1104,31 +1110,16 @@ fn compute_gap_ranges(
     gaps
 }
 
-/// Select paths for window-mode source and repair symbols.
-/// Source: lowest-loss path. Repair: second-lowest-loss or round-robin for diversity.
-fn select_window_paths(scheduler: &Scheduler) -> (u32, u32) {
-    let paths = scheduler.active_paths();
-    if paths.is_empty() {
-        return (0, 0);
-    }
-    if paths.len() == 1 {
-        return (paths[0], paths[0]);
-    }
+/// Select the best source path for a window-mode symbol: lowest RTT with capacity.
+/// Falls back to path 0 if no active paths.
+fn select_source_path(scheduler: &Scheduler) -> u32 {
+    scheduler.best_source_path().unwrap_or(0)
+}
 
-    // Sort paths by loss rate (ascending)
-    let mut path_loss: Vec<(u32, f64)> = paths
-        .iter()
-        .filter_map(|&id| {
-            scheduler.path(id).map(|p| (id, p.estimator.loss_rate()))
-        })
-        .collect();
-    path_loss.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    let source_path = path_loss[0].0;
-    // Repair on second-lowest-loss path for diversity
-    let repair_path = path_loss.get(1).map(|p| p.0).unwrap_or(source_path);
-
-    (source_path, repair_path)
+/// Select the best repair path for a window-mode symbol: highest goodput with capacity.
+/// Falls back to `fallback` if no active paths.
+fn select_repair_path(scheduler: &Scheduler, fallback: u32) -> u32 {
+    scheduler.best_repair_path().unwrap_or(fallback)
 }
 
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
@@ -1145,6 +1136,7 @@ async fn run_window_sender(
     window_ack_seq: &Arc<AtomicU64>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
+    protocol_hint: ProtocolHint,
 ) {
     let mut encoder: Box<dyn WindowEncoder> = match fec_backend {
         FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
@@ -1152,6 +1144,29 @@ async fn run_window_sender(
             symbol_size,
             42, // seed — deterministic for reproducibility
         )),
+        FecBackend::Streaming => {
+            // Compute initial streaming params from current channel estimate
+            let params = {
+                let ctrl = fec_controller.lock();
+                let sched = scheduler.lock();
+                let estimator = sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .max_by(|a, b| {
+                        a.estimator
+                            .loss_rate()
+                            .partial_cmp(&b.estimator.loss_rate())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|p| &p.estimator);
+                match estimator {
+                    Some(est) => ctrl.compute_streaming_params(est),
+                    None => crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15),
+                }
+            };
+            Box::new(crate::fec::StreamingEncoder::new(symbol_size, params))
+        }
         _ => Box::new(RlcWindowEncoder::new(symbol_size)),
     };
     let mut source_since_repair: u64 = 0;
@@ -1198,14 +1213,14 @@ async fn run_window_sender(
         let framed = framing::frame_window_packet(&pkt, symbol_size);
         let wire_sym = encoder.add_source(&framed);
 
-        // Send source symbol immediately — pick best paths via scheduler
-        let (source_path, repair_path) = {
+        // Send source symbol — pick best path by lowest RTT with capacity
+        let source_path = {
             let sched = scheduler.lock();
-            select_window_paths(&sched)
+            select_source_path(&sched)
         };
         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
         let batch = SymbolBatch {
-            symbols: vec![wire_sym],
+            symbols: vec![wire_sym.clone()],
             send_timestamp_us: now_us(),
             batch_seq,
             path_id: source_path,
@@ -1213,15 +1228,54 @@ async fn run_window_sender(
         if let Err(e) = transport.send_symbols(source_path, batch) {
             warn!(source_path, ?e, "failed to send window source symbol");
         }
+        {
+            let mut sched = scheduler.lock();
+            if let Some(p) = sched.path_mut(source_path) {
+                p.in_flight += 1;
+            }
+        }
         if let Some(ps) = stats.path(source_path) {
             ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
         }
         stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
 
+        // Redundant send for Realtime: duplicate source on second-best path
+        if protocol_hint == ProtocolHint::Realtime {
+            let alt_path = {
+                let sched = scheduler.lock();
+                sched.redundant_source_path(source_path)
+            };
+            if let Some(alt) = alt_path {
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch = SymbolBatch {
+                    symbols: vec![wire_sym],
+                    send_timestamp_us: now_us(),
+                    batch_seq,
+                    path_id: alt,
+                };
+                if let Err(e) = transport.send_symbols(alt, batch) {
+                    warn!(alt, ?e, "failed to send redundant source symbol");
+                }
+                {
+                    let mut sched = scheduler.lock();
+                    if let Some(p) = sched.path_mut(alt) {
+                        p.in_flight += 1;
+                    }
+                }
+                if let Some(ps) = stats.path(alt) {
+                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+
         source_since_repair += 1;
 
-        // Generate repair symbol based on current repair rate
+        // Generate repair symbol — pick best path by highest goodput
         if source_since_repair >= repair_interval && encoder.window_size() > 0 {
+            let repair_path = {
+                let sched = scheduler.lock();
+                select_repair_path(&sched, source_path)
+            };
             let repair_sym = encoder.generate_repair();
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
             let batch = SymbolBatch {
@@ -1232,6 +1286,12 @@ async fn run_window_sender(
             };
             if let Err(e) = transport.send_symbols(repair_path, batch) {
                 warn!(repair_path, ?e, "failed to send window repair symbol");
+            }
+            {
+                let mut sched = scheduler.lock();
+                if let Some(p) = sched.path_mut(repair_path) {
+                    p.in_flight += 1;
+                }
             }
             if let Some(ps) = stats.path(repair_path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
@@ -1252,6 +1312,10 @@ async fn run_window_sender(
                     .map(|(s, e)| e - s + 1)
                     .sum();
                 let repair_count = (total_gap as usize).min(MAX_NACK_REPAIRS_PER_NACK);
+                let nack_repair_path = {
+                    let sched = scheduler.lock();
+                    select_repair_path(&sched, source_path)
+                };
                 for _ in 0..repair_count {
                     if encoder.window_size() == 0 {
                         break;
@@ -1262,10 +1326,10 @@ async fn run_window_sender(
                         symbols: vec![repair_sym],
                         send_timestamp_us: now_us(),
                         batch_seq,
-                        path_id: repair_path,
+                        path_id: nack_repair_path,
                     };
-                    if let Err(e) = transport.send_symbols(repair_path, batch) {
-                        warn!(repair_path, ?e, "failed to send NACK repair symbol");
+                    if let Err(e) = transport.send_symbols(nack_repair_path, batch) {
+                        warn!(nack_repair_path, ?e, "failed to send NACK repair symbol");
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                 }

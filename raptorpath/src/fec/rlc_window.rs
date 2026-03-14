@@ -49,7 +49,7 @@ impl SplitMix64 {
 }
 
 /// Generate deterministic coefficients for a window-mode repair symbol.
-fn generate_window_coefficients(
+pub fn generate_window_coefficients(
     window_start: u64,
     window_count: u16,
     repair_index: u32,
