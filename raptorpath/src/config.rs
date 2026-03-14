@@ -156,6 +156,8 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc, streaming"),
     };
 
+    let fec_backend_explicit = config.fec_backend.is_some();
+
     let peer_config = PeerConfig {
         bind_addrs,
         peer_addrs,
@@ -171,6 +173,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         interleave_depth: config.interleave_depth.unwrap_or(default_interleave),
         pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
         fec_backend,
+        fec_backend_explicit,
     };
 
     Ok((peer_config, status_addr))

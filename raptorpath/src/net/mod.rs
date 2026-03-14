@@ -53,6 +53,8 @@ pub struct PeerConfig {
     pub pin_cert: Option<std::path::PathBuf>,
     /// Which FEC backend to use (RaptorQ or Mettle)
     pub fec_backend: FecBackend,
+    /// Whether the user explicitly set fec_backend (vs defaulting to RaptorQ)
+    pub fec_backend_explicit: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -215,6 +217,18 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     }
     info!("all paths connected");
 
+    // Auto-select streaming backend for Realtime when no explicit backend chosen.
+    // Streaming codes are delay-optimal for bursty channels, which Realtime traffic
+    // typically traverses (WiFi + LTE paths with GE burst loss patterns).
+    let effective_fec_backend = if config.protocol_hint == ProtocolHint::Realtime
+        && !config.fec_backend_explicit
+    {
+        info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
+        FecBackend::Streaming
+    } else {
+        config.fec_backend
+    };
+
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(AtomicU64::new(0));
@@ -222,7 +236,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.target_tail_loss,
         config.max_fec_overhead,
         config.protocol_hint,
-        config.fec_backend,
+        effective_fec_backend,
     )));
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
@@ -259,7 +273,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         }
     });
 
-    let window_mode = is_window_mode(config.protocol_hint, config.fec_backend);
+    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend);
     // Shared window ACK: receiver writes, sender reads to advance the encoder window
     let window_ack_seq = Arc::new(AtomicU64::new(0));
 
@@ -269,7 +283,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     if window_mode {
         info!(
             symbol_size = profile.symbol_size,
-            backend = ?config.fec_backend,
+            backend = ?effective_fec_backend,
             "sliding-window FEC mode"
         );
     }
@@ -303,7 +317,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
     let sender_profile_symbol_size = profile.symbol_size;
-    let sender_fec_backend = config.fec_backend;
+    let sender_fec_backend = effective_fec_backend;
     let sender_interleave_depth = config.interleave_depth;
     // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
     let sender_interleave_timeout = profile.flush_timeout * 2;
@@ -510,7 +524,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let recv_scheduler = scheduler_arc.clone();
     let recv_fec = fec_controller.clone();
     let recv_decoders = active_decoders.clone();
-    let recv_fec_backend = config.fec_backend;
+    let recv_fec_backend = effective_fec_backend;
     let recv_transport = transport_arc.clone();
     // Per-path: track last seen batch_seq and total symbols received for loss detection
     let path_batch_tracking: Arc<DashMap<u32, PathBatchTracker>> = Arc::new(DashMap::new());
