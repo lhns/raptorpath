@@ -42,7 +42,7 @@ fn test_jitter_first_packet_no_jitter() {
 
 #[test]
 fn test_dead_path_detection() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
 
@@ -61,7 +61,7 @@ fn test_dead_path_detection() {
 
 #[test]
 fn test_touch_path_reactivates() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     // Manually deactivate
@@ -79,7 +79,7 @@ fn test_touch_path_reactivates() {
 
 #[test]
 fn test_touch_path_updates_last_report() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     // Touch the path
@@ -91,7 +91,7 @@ fn test_touch_path_updates_last_report() {
 
 #[test]
 fn test_all_path_ids() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
     sched.add_path(2);
@@ -113,7 +113,7 @@ fn test_path_report_with_jitter_roundtrip() {
         symbols_received: 9800,
     });
 
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -133,7 +133,7 @@ fn test_path_report_with_jitter_roundtrip() {
 
 #[test]
 fn test_max_datagram_size_stored_on_path() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     let path = sched.path_mut(0).unwrap();
@@ -145,7 +145,7 @@ fn test_max_datagram_size_stored_on_path() {
 
 #[test]
 fn test_inactive_path_not_in_active_paths() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
 
@@ -158,7 +158,7 @@ fn test_inactive_path_not_in_active_paths() {
 
 #[test]
 fn test_min_mtu_across_paths() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
     sched.add_path(2);
@@ -181,7 +181,7 @@ fn test_min_mtu_across_paths() {
 
 #[test]
 fn test_min_mtu_ignores_inactive_paths() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
 

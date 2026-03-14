@@ -5,6 +5,7 @@
 //! - EWMA for fast adaptation to changing conditions
 //! - Burst detection for non-iid loss patterns
 
+use super::gilbert_elliott::GilbertElliottEstimator;
 use std::time::{Duration, Instant};
 
 /// Per-path loss estimator.
@@ -39,6 +40,9 @@ pub struct LossEstimator {
     /// Last packet send timestamp for jitter calculation
     last_send_ts_us: Option<u64>,
 
+    /// Gilbert-Elliott HMM for bursty loss estimation
+    ge: GilbertElliottEstimator,
+
     /// Bookkeeping
     total_sent: u64,
     total_received: u64,
@@ -63,6 +67,7 @@ impl LossEstimator {
             jitter: 0.0,
             last_arrival_us: None,
             last_send_ts_us: None,
+            ge: GilbertElliottEstimator::new(),
             total_sent: 0,
             total_received: 0,
             last_update: Instant::now(),
@@ -96,6 +101,15 @@ impl LossEstimator {
         } else {
             self.consecutive_losses = 0;
             self.in_burst = false;
+        }
+
+        // Feed Gilbert-Elliott HMM: approximate as `lost` Bad symbols
+        // followed by `received` Good symbols within this batch
+        for _ in 0..lost {
+            self.ge.record_symbol(false);
+        }
+        for _ in 0..received {
+            self.ge.record_symbol(true);
         }
 
         self.total_sent += sent as u64;
@@ -163,6 +177,10 @@ impl LossEstimator {
     /// Current jitter estimate in microseconds (RFC 3550 style).
     pub fn jitter_us(&self) -> f64 {
         self.jitter
+    }
+
+    pub fn ge_estimator(&self) -> &GilbertElliottEstimator {
+        &self.ge
     }
 
     pub fn is_in_burst(&self) -> bool {

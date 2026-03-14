@@ -56,6 +56,7 @@ impl FecEncoder for MettleBlockEncoder {
                 payload_id: i as u32,
                 is_repair: false,
                 data: data.clone(),
+                backend: super::traits::FecBackend::Mettle,
             })
             .collect()
     }
@@ -87,6 +88,7 @@ impl FecEncoder for MettleBlockEncoder {
                     payload_id: (num_source + cp.bin_index) as u32,
                     is_repair: true,
                     data: wire_data,
+                    backend: super::traits::FecBackend::Mettle,
                 }
             })
             .collect()
@@ -103,6 +105,8 @@ pub struct MettleBlockDecoder {
     seen_ids: HashSet<u32>,
     created: Instant,
     transfer_length: u64,
+    /// Symbols rejected due to out-of-bounds or adversarial values
+    rejected_symbols: u32,
 }
 
 impl MettleBlockDecoder {
@@ -120,6 +124,7 @@ impl MettleBlockDecoder {
             seen_ids: HashSet::new(),
             created: Instant::now(),
             transfer_length,
+            rejected_symbols: 0,
         }
     }
 
@@ -143,6 +148,11 @@ impl FecDecoder for MettleBlockDecoder {
             return self.result.clone();
         }
 
+        // Reject symbols from a different backend
+        if symbol.backend != super::traits::FecBackend::Mettle {
+            return None;
+        }
+
         // Deduplicate
         if !self.seen_ids.insert(symbol.payload_id) {
             return None;
@@ -158,11 +168,38 @@ impl FecDecoder for MettleBlockDecoder {
             // Repair symbol: decode the encoded bin_index + members + coded_data
             let data = &symbol.data;
             if data.len() < 8 {
+                self.rejected_symbols += 1;
                 return None; // malformed
             }
             let bin_index = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+
+            // Reject adversarial bin_index values to prevent HashMap pressure
+            let config = mettle::MettleConfig::small_window();
+            let max_bin = mettle::graph::total_bins(
+                self.params.source_symbols as usize,
+                &config,
+            ) * 2;
+            if bin_index >= max_bin {
+                self.rejected_symbols += 1;
+                return None; // adversarial bin_index
+            }
             let num_members = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
-            let members_end = 8 + num_members * 4;
+
+            // Overflow guard: num_members * 4 can overflow on 32-bit or with
+            // malicious input. Also sanity-check against source_symbols.
+            let source_symbols = self.params.source_symbols as usize;
+            if num_members > source_symbols {
+                self.rejected_symbols += 1;
+                return None; // malformed: more members than source symbols
+            }
+            let members_bytes = match num_members.checked_mul(4) {
+                Some(n) => n,
+                None => return None, // overflow
+            };
+            let members_end = match members_bytes.checked_add(8) {
+                Some(n) => n,
+                None => return None, // overflow
+            };
             if data.len() < members_end {
                 return None; // malformed
             }

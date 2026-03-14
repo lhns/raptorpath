@@ -28,6 +28,8 @@ pub struct WireSymbol {
     pub payload_id: u32,
     pub is_repair: bool,
     pub data: Vec<u8>,
+    /// Which FEC backend produced this symbol. Decoders reject mismatched backends.
+    pub backend: FecBackend,
 }
 
 /// Trait for FEC block encoders.
@@ -66,6 +68,10 @@ pub enum FecBackend {
     RaptorQ,
     /// METTLE — streaming erasure code with pure peeling decoder (research implementation).
     Mettle,
+    /// Reed-Solomon — MDS erasure code with zero overhead (any k of n suffices).
+    ReedSolomon,
+    /// Random Linear Code (RFC 8681) — GF(2^8) random linear combinations, near-MDS, rateless.
+    Rlc,
 }
 
 impl Default for FecBackend {
@@ -75,11 +81,38 @@ impl Default for FecBackend {
 }
 
 impl FecBackend {
+    /// Whether this backend's algorithm is streaming-native (operates over a
+    /// sliding window) vs block-only (requires all k sources upfront).
+    ///
+    /// Streaming-native backends can use the sliding-window FEC pipeline;
+    /// block-only backends must use the block-based pipeline.
+    pub fn is_streaming(&self) -> bool {
+        matches!(self, Self::Rlc | Self::Mettle)
+    }
+
+    /// Per-repair-symbol wire overhead in bytes. METTLE repair symbols carry
+    /// bin membership lists in-band; RaptorQ symbols have no extra overhead.
+    /// The scheduler should subtract this from MTU when computing symbol size.
+    pub fn repair_wire_overhead(&self, num_edges: usize) -> usize {
+        match self {
+            // RaptorQ: payload_id is already in WireSymbol, no extra in-band data
+            Self::RaptorQ => 0,
+            // METTLE: [bin_index(4)][num_members(4)][members(4 * num_edges)]
+            Self::Mettle => 4 + 4 + 4 * num_edges,
+            // Reed-Solomon: MDS code, no extra wire data
+            Self::ReedSolomon => 0,
+            // RLC: [repair_index(4 bytes)] header per repair symbol
+            Self::Rlc => 4,
+        }
+    }
+
     /// Create an encoder for the given data and parameters.
     pub fn create_encoder(&self, data: &[u8], params: EncodingParams) -> Box<dyn FecEncoder> {
         match self {
             Self::RaptorQ => Box::new(super::raptorq_backend::RaptorqEncoder::new(data, params)),
             Self::Mettle => Box::new(super::mettle_backend::MettleBlockEncoder::new(data, params)),
+            Self::ReedSolomon => Box::new(super::rs_backend::ReedSolomonEncoder::new(data, params)),
+            Self::Rlc => Box::new(super::rlc_backend::RlcEncoder::new(data, params)),
         }
     }
 
@@ -95,6 +128,12 @@ impl FecBackend {
             }
             Self::Mettle => {
                 Box::new(super::mettle_backend::MettleBlockDecoder::new(params, transfer_length))
+            }
+            Self::ReedSolomon => {
+                Box::new(super::rs_backend::ReedSolomonDecoder::new(params, transfer_length))
+            }
+            Self::Rlc => {
+                Box::new(super::rlc_backend::RlcDecoder::new(params, transfer_length))
             }
         }
     }

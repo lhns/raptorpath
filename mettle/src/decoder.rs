@@ -53,6 +53,8 @@ pub struct MettleDecoder {
     total_fed: u32,
     /// IDs of all symbols seen (for deduplication and ACK reporting).
     seen_ids: HashSet<u32>,
+    /// Number of symbols rejected (out-of-bounds position, duplicate, etc.)
+    rejected_count: u32,
 }
 
 impl MettleDecoder {
@@ -60,7 +62,13 @@ impl MettleDecoder {
     ///
     /// `num_source` must match the encoder's total number of source packets.
     /// `seed` must match the encoder's seed for graph generation to be consistent.
+    ///
+    /// # Panics
+    /// Panics if config parameters are invalid (e.g. window_size=0).
     pub fn new(config: MettleConfig, num_source: usize, seed: u64) -> Self {
+        config
+            .validate()
+            .expect("invalid MettleConfig for decoder");
         Self {
             config,
             recovered: vec![None; num_source],
@@ -72,6 +80,7 @@ impl MettleDecoder {
             seed,
             total_fed: 0,
             seen_ids: HashSet::new(),
+            rejected_count: 0,
         }
     }
 
@@ -84,10 +93,11 @@ impl MettleDecoder {
         self.seen_ids.insert(position as u32);
 
         if position >= self.num_source {
+            self.rejected_count += 1;
             return false;
         }
         if self.recovered[position].is_some() {
-            return false; // already have it
+            return false; // already have it (not counted as rejected — just duplicate)
         }
 
         // Mark as recovered
@@ -169,13 +179,17 @@ impl MettleDecoder {
             let bin = match self.pending_bins.get(&bin_index) {
                 Some(b) if b.remaining.len() == 1 => {
                     // Still degree 1 — proceed
-                    self.pending_bins.remove(&bin_index).unwrap()
+                    // Safety: we just confirmed the key exists via .get() above
+                    self.pending_bins.remove(&bin_index)
+                        .expect("invariant: bin_index was confirmed present via get()")
                 }
                 _ => continue, // No longer degree 1 (or removed)
             };
 
             // The single remaining member's data is the bin's XOR accumulator
-            let pos = *bin.remaining.iter().next().unwrap();
+            // Safety: we only enter this branch when remaining.len() == 1
+            let pos = *bin.remaining.iter().next()
+                .expect("invariant: remaining.len() == 1 was checked above");
 
             if self.recovered[pos].is_some() {
                 continue; // Race: already recovered by another path
@@ -197,7 +211,10 @@ impl MettleDecoder {
     /// XOR a newly recovered source packet out of all pending bins that contain it.
     /// If any bin drops to degree 1, enqueue it for peeling.
     fn propagate_recovery(&mut self, position: usize) {
-        let recovered_data = self.recovered[position].as_ref().unwrap().clone();
+        // Safety: callers only invoke propagate_recovery after setting recovered[position] = Some(...)
+        let recovered_data = self.recovered[position].as_ref()
+            .expect("invariant: propagate_recovery called only after recovery")
+            .clone();
 
         // Get all bins containing this position
         let bin_indices: Vec<usize> = self
@@ -262,6 +279,11 @@ impl MettleDecoder {
     /// All seen symbol IDs (for ACK reporting).
     pub fn seen_ids(&self) -> &HashSet<u32> {
         &self.seen_ids
+    }
+
+    /// Number of symbols rejected (out-of-bounds position).
+    pub fn rejected_count(&self) -> u32 {
+        self.rejected_count
     }
 }
 
@@ -422,6 +444,59 @@ mod tests {
         // The first 5 should be recoverable
         for i in 0..5 {
             assert!(decoder.get_source(i).is_some());
+        }
+    }
+
+    #[test]
+    fn out_of_bounds_source_rejected_and_counted() {
+        let config = test_config();
+        let mut decoder = MettleDecoder::new(config, 5, 42);
+
+        // Position 5 is out of bounds (num_source = 5, valid range 0..4)
+        assert!(!decoder.add_source_packet(5, &[1, 2, 3]));
+        assert!(!decoder.add_source_packet(usize::MAX, &[1, 2, 3]));
+        assert_eq!(decoder.rejected_count(), 2);
+        assert_eq!(decoder.num_recovered(), 0);
+    }
+
+    #[test]
+    fn zero_length_packets() {
+        let config = test_config();
+        let mut encoder = MettleEncoder::new(config, 42);
+        encoder.add_source_packet(&[]);
+
+        let mut decoder = MettleDecoder::new(config, 1, 42);
+        decoder.add_source_packet(0, &[]);
+        assert!(decoder.is_complete());
+        assert_eq!(decoder.recovered_data().unwrap(), vec![]);
+    }
+
+    #[test]
+    fn duplicate_coded_packets_ignored() {
+        let config = test_config();
+        let seed = 42;
+        let num = 10;
+        let packets: Vec<Vec<u8>> = (0..num).map(|i| vec![i as u8; 100]).collect();
+
+        let mut encoder = MettleEncoder::new(config, seed);
+        for pkt in &packets {
+            encoder.add_source_packet(pkt);
+        }
+        let coded = encoder.coded_packets();
+
+        let mut decoder = MettleDecoder::new(config, num, seed);
+        // Feed all source except position 0
+        for i in 1..num {
+            decoder.add_source_packet(i, &packets[i]);
+        }
+
+        if let Some(first_coded) = coded.first() {
+            // Feed the same coded packet twice
+            decoder.add_coded_packet(first_coded);
+            let recovered_before = decoder.num_recovered();
+            decoder.add_coded_packet(first_coded); // duplicate
+            // Duplicate should not increase recovery count
+            assert_eq!(decoder.num_recovered(), recovered_before);
         }
     }
 }

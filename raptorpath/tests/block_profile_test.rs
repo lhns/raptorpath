@@ -5,7 +5,7 @@ use raptorpath::transport::{ControlMessage, WireMessage, PROTOCOL_VERSION, WIRE_
 #[test]
 fn test_wire_message_has_version_header() {
     let msg = WireMessage::Control(ControlMessage::Ping { timestamp_us: 42 });
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
 
     // First 4 bytes should be magic
     assert_eq!(&data[..4], &WIRE_MAGIC);
@@ -23,7 +23,7 @@ fn test_wire_message_roundtrip_with_version() {
         expected_count: 10,
         received_count: 3,
     });
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -38,7 +38,7 @@ fn test_wire_message_roundtrip_with_version() {
 #[test]
 fn test_wrong_magic_rejected() {
     let msg = WireMessage::Control(ControlMessage::Ping { timestamp_us: 0 });
-    let mut data = msg.serialize();
+    let mut data = msg.serialize().unwrap();
     data[0] = b'X'; // corrupt magic
     assert!(WireMessage::deserialize(&data).is_err());
 }
@@ -46,7 +46,7 @@ fn test_wrong_magic_rejected() {
 #[test]
 fn test_wrong_version_rejected() {
     let msg = WireMessage::Control(ControlMessage::Ping { timestamp_us: 0 });
-    let mut data = msg.serialize();
+    let mut data = msg.serialize().unwrap();
     // Set version to 99
     let bad_version: u32 = 99;
     data[4..8].copy_from_slice(&bad_version.to_be_bytes());
@@ -67,7 +67,7 @@ fn test_handshake_roundtrip() {
         symbol_size: 1200,
         path_id: 0,
     };
-    let data = hs.serialize();
+    let data = hs.serialize().unwrap();
     let decoded = Handshake::deserialize(&data).unwrap();
 
     assert_eq!(decoded.version, PROTOCOL_VERSION);
@@ -84,7 +84,7 @@ fn test_handshake_wrong_magic() {
         symbol_size: 1200,
         path_id: 0,
     };
-    let mut data = hs.serialize();
+    let mut data = hs.serialize().unwrap();
     data[0] = b'Z';
     assert!(Handshake::deserialize(&data).is_err());
 }
@@ -97,7 +97,7 @@ fn test_handshake_wrong_version() {
         symbol_size: 1200,
         path_id: 0,
     };
-    let mut data = hs.serialize();
+    let mut data = hs.serialize().unwrap();
     let bad: u32 = 255;
     data[4..8].copy_from_slice(&bad.to_be_bytes());
     assert!(Handshake::deserialize(&data).is_err());
@@ -106,7 +106,7 @@ fn test_handshake_wrong_version() {
 #[test]
 fn test_shutdown_message_roundtrip() {
     let msg = WireMessage::Control(ControlMessage::Shutdown);
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -118,7 +118,7 @@ fn test_shutdown_message_roundtrip() {
 #[test]
 fn test_data_message_with_version() {
     use raptorpath::transport::SymbolBatch;
-    use raptorpath::fec::WireSymbol;
+    use raptorpath::fec::{FecBackend, WireSymbol};
 
     let batch = SymbolBatch {
         symbols: vec![WireSymbol {
@@ -126,13 +126,14 @@ fn test_data_message_with_version() {
             payload_id: 0,
             is_repair: false,
             data: vec![42; 100],
+            backend: FecBackend::RaptorQ,
         }],
         send_timestamp_us: 999,
         batch_seq: 1,
         path_id: 0,
     };
     let msg = WireMessage::Data(batch);
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
 
     // Verify header
     assert_eq!(&data[..4], &WIRE_MAGIC);

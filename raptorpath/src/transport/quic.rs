@@ -255,7 +255,7 @@ impl QuicTransport {
     ) -> anyhow::Result<Handshake> {
         let (mut send, mut recv) = conn.open_bi().await?;
 
-        let data = local.serialize();
+        let data = local.serialize()?;
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;
         send.finish()?;
@@ -297,7 +297,7 @@ impl QuicTransport {
 
         let peer = Handshake::deserialize(&buf)?;
 
-        let data = local.serialize();
+        let data = local.serialize()?;
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;
         send.finish()?;
@@ -319,7 +319,7 @@ impl QuicTransport {
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
         let msg = WireMessage::Data(batch);
-        let data = msg.serialize();
+        let data = msg.serialize()?;
 
         conn.send_datagram(data.into())?;
         Ok(())
@@ -332,7 +332,7 @@ impl QuicTransport {
             .get(&path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         let wire = WireMessage::Control(msg);
-        let data = wire.serialize();
+        let data = wire.serialize()?;
         conn.send_datagram(data.into())?;
         Ok(())
     }
@@ -350,7 +350,7 @@ impl QuicTransport {
 
         let mut send = conn.open_uni().await?;
         let wire = WireMessage::Control(msg);
-        let data = wire.serialize();
+        let data = wire.serialize()?;
 
         send.write_all(&(data.len() as u32).to_be_bytes()).await?;
         send.write_all(&data).await?;

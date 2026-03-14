@@ -1,7 +1,8 @@
 //! Production stability tests for BBR-style delay-based congestion control.
 
-use raptorpath::fec::WireSymbol;
-use raptorpath::scheduler::{PathState, Scheduler};
+use raptorpath::fec::{FecBackend, WireSymbol};
+use raptorpath::scheduler::{MockClock, PathState, Scheduler};
+use std::sync::Arc;
 use std::time::Duration;
 
 fn make_symbol(id: u32, repair: bool) -> WireSymbol {
@@ -10,23 +11,28 @@ fn make_symbol(id: u32, repair: bool) -> WireSymbol {
         payload_id: id,
         is_repair: repair,
         data: vec![0u8; 64],
+        backend: FecBackend::RaptorQ,
     }
+}
+
+fn millis(ms: u64) -> Duration {
+    Duration::from_millis(ms)
 }
 
 /// Helper: inject rising RTT samples to trigger congestion detection.
 fn inject_congestion(sched: &mut Scheduler, path_id: u32) {
     let path = sched.path_mut(path_id).unwrap();
-    path.record_rtt_sample(Duration::from_millis(50));
-    path.record_rtt_sample(Duration::from_millis(80));
-    path.record_rtt_sample(Duration::from_millis(120));
-    path.record_rtt_sample(Duration::from_millis(170));
+    path.record_rtt_sample(millis(50));
+    path.record_rtt_sample(millis(80));
+    path.record_rtt_sample(millis(120));
+    path.record_rtt_sample(millis(170));
 }
 
 /// Helper: inject stable RTT samples to clear congestion.
 fn inject_stable_rtt(sched: &mut Scheduler, path_id: u32) {
     let path = sched.path_mut(path_id).unwrap();
     for _ in 0..5 {
-        path.record_rtt_sample(Duration::from_millis(50));
+        path.record_rtt_sample(millis(50));
     }
 }
 
@@ -35,7 +41,8 @@ fn inject_stable_rtt(sched: &mut Scheduler, path_id: u32) {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_burst_loss_10_consecutive_with_congestion() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock);
     sched.add_path(1);
 
     inject_congestion(&mut sched, 1);
@@ -56,11 +63,12 @@ fn test_burst_loss_10_consecutive_with_congestion() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_wireless_loss_does_not_collapse_cwnd() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Grow cwnd
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 50);
     let cwnd_before = sched.path(1).unwrap().cwnd;
 
@@ -84,10 +92,11 @@ fn test_wireless_loss_does_not_collapse_cwnd() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_decode_failure_stable_rtt_gentle() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 50);
     let cwnd_before = sched.path(1).unwrap().cwnd;
 
@@ -109,10 +118,11 @@ fn test_decode_failure_stable_rtt_gentle() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_congestion_decode_failure_aggressive() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 100);
     let cwnd_before = sched.path(1).unwrap().cwnd;
 
@@ -131,11 +141,12 @@ fn test_congestion_decode_failure_aggressive() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_recovery_after_congestion_loss() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Grow
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 50);
     let peak = sched.path(1).unwrap().cwnd;
 
@@ -148,7 +159,7 @@ fn test_recovery_after_congestion_loss() {
     // Clear congestion and recover
     inject_stable_rtt(&mut sched, 1);
     for _ in 0..200 {
-        std::thread::sleep(Duration::from_millis(1));
+        clock.advance(millis(1));
         let cwnd = sched.path(1).unwrap().cwnd;
         sched.ack(1, cwnd);
     }
@@ -165,16 +176,17 @@ fn test_recovery_after_congestion_loss() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_startup_exits_on_bdp() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Feed RTT so BDP can be computed
     let path = sched.path_mut(1).unwrap();
-    path.record_rtt_sample(Duration::from_millis(50));
+    path.record_rtt_sample(millis(50));
 
     // Ack enough to accumulate delivery rate
     for _ in 0..20 {
-        std::thread::sleep(Duration::from_millis(2));
+        clock.advance(millis(2));
         sched.ack(1, 100);
     }
 
@@ -191,7 +203,8 @@ fn test_startup_exits_on_bdp() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_in_flight_cannot_go_negative() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock);
     sched.add_path(1);
 
     sched.path_mut(1).unwrap().in_flight = 5;
@@ -206,7 +219,8 @@ fn test_in_flight_cannot_go_negative() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_all_paths_dead_schedule_returns_empty() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock);
     sched.add_path(1);
     sched.add_path(2);
 
@@ -226,7 +240,8 @@ fn test_all_paths_dead_schedule_returns_empty() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_scheduler_fairness_proportional_to_goodput() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock);
     sched.add_path(1);
     sched.add_path(2);
 
@@ -282,18 +297,19 @@ fn test_scheduler_fairness_proportional_to_goodput() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_rtt_congestion_threshold() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 50);
     let cwnd_before = sched.path(1).unwrap().cwnd;
 
     // Only 2 RTT increases — below threshold of 3
     let path = sched.path_mut(1).unwrap();
-    path.record_rtt_sample(Duration::from_millis(50));
-    path.record_rtt_sample(Duration::from_millis(70));
-    path.record_rtt_sample(Duration::from_millis(100));
+    path.record_rtt_sample(millis(50));
+    path.record_rtt_sample(millis(70));
+    path.record_rtt_sample(millis(100));
 
     // Loss with borderline RTT — should NOT aggressively drain
     // (only 2 increases, threshold is 3)
@@ -311,11 +327,12 @@ fn test_rtt_congestion_threshold() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_cwnd_growth_after_congestion_loss() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Grow cwnd
-    std::thread::sleep(Duration::from_millis(2));
+    clock.advance(millis(2));
     sched.ack(1, 50);
 
     // Congestion + loss → cwnd drains
@@ -327,7 +344,7 @@ fn test_cwnd_growth_after_congestion_loss() {
     // Clear congestion, then ack repeatedly to recover
     inject_stable_rtt(&mut sched, 1);
     for _ in 0..500 {
-        std::thread::sleep(Duration::from_millis(1));
+        clock.advance(millis(1));
         let cwnd = sched.path(1).unwrap().cwnd;
         sched.ack(1, cwnd);
     }

@@ -9,6 +9,8 @@
 
 pub mod estimator;
 pub mod fec_rate;
+pub mod gilbert_elliott;
 
 pub use estimator::LossEstimator;
 pub use fec_rate::FecRateController;
+pub use gilbert_elliott::GilbertElliottEstimator;

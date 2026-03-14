@@ -11,7 +11,16 @@
 mod traits;
 pub(crate) mod mettle_backend;
 pub(crate) mod raptorq_backend;
+pub(crate) mod rs_backend;
+pub(crate) mod gf256;
+pub(crate) mod rlc_backend;
+pub(crate) mod window_traits;
+pub(crate) mod rlc_window;
+pub(crate) mod mettle_window;
 mod stream;
 
 pub use traits::{EncodingParams, FecBackend, FecDecoder, FecEncoder, WireSymbol};
 pub use stream::{FecStream, RepairStream};
+pub use window_traits::{WindowEncoder, WindowDecoder};
+pub use rlc_window::{RlcWindowEncoder, RlcWindowDecoder};
+pub use mettle_window::{MettleWindowEncoder, MettleWindowDecoder};

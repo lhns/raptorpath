@@ -16,7 +16,7 @@ fn test_ack_serialization_roundtrip() {
         received_count: 5,
     };
     let wire = WireMessage::Control(ack);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -46,7 +46,7 @@ fn test_block_result_serialization_roundtrip() {
         symbols_needed: 50,
     };
     let wire = WireMessage::Control(msg);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -71,7 +71,7 @@ fn test_pong_serialization_roundtrip() {
         echo_timestamp_us: 123456789,
     };
     let wire = WireMessage::Control(msg);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -113,7 +113,7 @@ fn test_ack_with_empty_received_ids() {
         received_count: 0,
     };
     let wire = WireMessage::Control(ack);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -136,7 +136,7 @@ fn test_ack_with_large_received_ids() {
         received_count: 1000,
     };
     let wire = WireMessage::Control(ack);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -159,7 +159,7 @@ fn test_repair_request_roundtrip() {
         additional_count: 5,
     };
     let wire = WireMessage::Control(msg);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -186,7 +186,7 @@ fn test_path_report_roundtrip() {
         symbols_received: 950,
     };
     let wire = WireMessage::Control(msg);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
     let decoded = WireMessage::deserialize(&data).unwrap();
 
     match decoded {
@@ -222,7 +222,7 @@ fn test_control_message_as_datagram_size() {
         received_count: u32::MAX,
     };
     let wire = WireMessage::Control(ack);
-    let data = wire.serialize();
+    let data = wire.serialize().unwrap();
 
     // QUIC datagrams should fit in a single UDP packet (~1200 bytes for QUIC initial)
     // 100 payload_ids × 4 bytes = 400 bytes + overhead, should be well under 1200

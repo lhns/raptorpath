@@ -42,3 +42,7 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0019](0019-bbr-delay-based-cc.md) | BBR-style delay-based congestion control | Resolved |
 | [0020](0020-tls-cert-pinning.md) | Optional TLS certificate pinning | Resolved |
 | [0021](0021-swappable-fec-backend.md) | Swappable FEC backend (RaptorQ + METTLE) | Resolved |
+| [0022](0022-sliding-window-fec.md) | Sliding window FEC architecture (RS + RLC + window pipeline) | Resolved |
+| [0023](0023-gilbert-elliott-loss-model.md) | Gilbert-Elliott HMM for bursty loss estimation | Resolved |
+| [0024](0024-bbr-probe-rtt-phase.md) | BBR ProbeRTT phase for min_rtt freshness | Resolved |
+| [0025](0025-window-nack-sender-repair.md) | WindowNack sender-side targeted repair | Resolved |

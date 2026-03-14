@@ -7,7 +7,7 @@
 //! and the transport (which sends them). Symbols from up to `depth` blocks
 //! accumulate, then drain in round-robin order across blocks.
 
-use crate::fec::WireSymbol;
+use crate::fec::{FecBackend, WireSymbol};
 use crate::scheduler::PathId;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -175,6 +175,7 @@ mod tests {
             payload_id,
             is_repair: false,
             data: vec![0u8; 64],
+            backend: FecBackend::RaptorQ,
         }
     }
 

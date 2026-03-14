@@ -149,8 +149,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 
     let fec_backend = match config.fec_backend.as_deref() {
         Some("mettle") => FecBackend::Mettle,
+        Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
+        Some("rlc") => FecBackend::Rlc,
         Some("raptorq") | None => FecBackend::RaptorQ,
-        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle"),
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc"),
     };
 
     let peer_config = PeerConfig {

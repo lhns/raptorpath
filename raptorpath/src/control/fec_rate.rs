@@ -16,6 +16,7 @@
 //!    actual block decode failures and adjusting a correction term.
 
 use super::estimator::LossEstimator;
+use crate::fec::FecBackend;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -69,11 +70,19 @@ pub struct FecRateController {
 }
 
 impl FecRateController {
-    pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint) -> Self {
+    pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint, backend: FecBackend) -> Self {
+        // METTLE requires significantly more overhead than RaptorQ for reliable decoding,
+        // especially at small window sizes (w=50).
+        let codec_overhead = match backend {
+            FecBackend::RaptorQ => 0.01,  // RaptorQ decodes with <1% overhead
+            FecBackend::Mettle => 0.15,   // METTLE needs ~5-25%; 15% is conservative
+            FecBackend::ReedSolomon => 0.0, // MDS: zero overhead, any k of n suffices
+            FecBackend::Rlc => 0.004,     // Near-MDS: ~0.4% overhead (GF(256) random matrix)
+        };
         Self {
             target_tail_loss,
             max_overhead,
-            rq_overhead: 0.01, // RaptorQ typically decodes with <1% overhead
+            rq_overhead: codec_overhead,
             hint,
             integral_error: 0.0,
             kp: 2.0,
@@ -113,6 +122,18 @@ impl FecRateController {
                 (total as f64 * 0.7) as u32
             }
             ProtocolHint::Auto => total,
+        };
+
+        // Gilbert-Elliott burst adjustment: if bursty channel detected,
+        // scale up repair to cover correlated losses that i.i.d. model misses
+        let total = {
+            let ge = estimator.ge_estimator();
+            if ge.is_valid() && ge.mean_burst_length() > 2.0 {
+                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * 0.3;
+                (total as f64 * burst_factor) as u32
+            } else {
+                total
+            }
         };
 
         // Cap at max overhead
@@ -207,6 +228,44 @@ impl FecRateController {
         );
     }
 
+    /// Compute the repair rate for sliding-window mode: how many repair symbols
+    /// to generate per source symbol. E.g., 0.1 = 1 repair per 10 source symbols.
+    pub fn compute_repair_rate(&self, estimator: &LossEstimator) -> f64 {
+        let p = estimator.loss_rate_upper(0.95);
+        if p < 1e-10 {
+            return 0.0;
+        }
+
+        let eps = self.rq_overhead;
+        // Base rate: compensate for loss + codec overhead
+        let rate = p / (1.0 - p) + eps;
+
+        // Statistical safety margin
+        let z = normal_quantile_upper(self.target_tail_loss);
+        let safety = z * (p * (1.0 - p)).sqrt() * 0.1;
+        let rate = rate + safety;
+
+        // Protocol hint adjustment
+        let rate = match self.hint {
+            ProtocolHint::Realtime => rate * 1.2, // more aggressive for real-time
+            ProtocolHint::Bulk => rate * 0.7,
+            ProtocolHint::Auto => rate,
+        };
+
+        // Gilbert-Elliott burst adjustment for sliding-window mode
+        let rate = {
+            let ge = estimator.ge_estimator();
+            if ge.is_valid() && ge.mean_burst_length() > 2.0 {
+                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * 0.3;
+                rate * burst_factor
+            } else {
+                rate
+            }
+        };
+
+        rate.min(self.max_overhead).max(0.0)
+    }
+
     /// Get diagnostics for monitoring.
     pub fn diagnostics(&self) -> FecDiagnostics {
         FecDiagnostics {
@@ -266,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_zero_loss_no_repair() {
-        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto);
+        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
         let mut est = LossEstimator::new();
         // Feed some zero-loss observations to overcome the weak prior
         for _ in 0..50 {
@@ -278,7 +337,7 @@ mod tests {
 
     #[test]
     fn test_high_loss_more_repair() {
-        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto);
+        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
         let mut est = LossEstimator::new();
         for _ in 0..100 {
             est.record_batch(100, 80); // 20% loss
@@ -290,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_pi_correction() {
-        let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto);
+        let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
         // Simulate repeated failures
         for _ in 0..20 {
             ctrl.feedback_update(false);
@@ -303,8 +362,8 @@ mod tests {
 
     #[test]
     fn test_protocol_hint_realtime_more_aggressive() {
-        let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime);
-        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk);
+        let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ);
+        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::RaptorQ);
 
         let mut est = LossEstimator::new();
         for _ in 0..100 {

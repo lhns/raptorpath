@@ -23,8 +23,9 @@ pub fn xor_packets(dst: &mut [u8], src: &[u8]) {
     }
 }
 
-/// XOR `src` into `acc`, extending `acc` with zeros if it's shorter than `src`,
-/// or extending the XOR region if `src` is shorter.
+/// XOR `src` into `acc`, extending `acc` with zeros if it's shorter than `src`.
+/// If `src` is shorter than `acc`, only the first `src.len()` bytes are XOR'd;
+/// the tail of `acc` is left unchanged (equivalent to XOR with implicit zeros).
 pub fn xor_into(acc: &mut Vec<u8>, src: &[u8]) {
     if acc.len() < src.len() {
         acc.resize(src.len(), 0);

@@ -10,14 +10,36 @@
 //! reduce the window — only rising RTT does.  This prevents wireless random
 //! loss from collapsing throughput, unlike traditional loss-based AIMD.
 
+pub mod clock;
+pub use clock::*;
+
 use crate::control::LossEstimator;
-use crate::fec::WireSymbol;
+use crate::fec::{FecBackend, WireSymbol};
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Identifies a network path (e.g., WiFi, LTE, Ethernet).
 pub type PathId = u32;
+
+/// BBR phase state machine.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BbrPhase {
+    /// Probing for bandwidth (aggressive 2x gain).
+    Startup,
+    /// Steady-state bandwidth probing (1x gain).
+    ProbeBw,
+    /// Periodic min_rtt re-measurement (reduced cwnd).
+    ProbeRtt,
+}
+
+/// How often to enter ProbeRTT to refresh min_rtt (BBRv1: 10s).
+const PROBE_RTT_INTERVAL: Duration = Duration::from_secs(10);
+/// How long to hold in ProbeRTT phase (BBRv1: 200ms).
+const PROBE_RTT_DURATION: Duration = Duration::from_millis(200);
+/// Cwnd during ProbeRTT — minimal to drain the pipe.
+const PROBE_RTT_CWND: u32 = 4;
 
 /// Sliding window entry for bandwidth/RTT tracking.
 #[derive(Clone, Debug)]
@@ -61,8 +83,14 @@ pub struct BbrState {
     /// Current gain factor applied to BDP for cwnd.
     /// > 1.0 during startup/probing, 1.0 in steady state.
     cwnd_gain: f64,
-    /// Whether we're in startup phase (probe for bandwidth).
-    in_startup: bool,
+    /// Current BBR phase (Startup, ProbeBw, or ProbeRtt).
+    phase: BbrPhase,
+    /// When min_rtt was last refreshed (for ProbeRTT entry decision).
+    min_rtt_stamp: Instant,
+    /// When ProbeRTT hold period ends (None if not in ProbeRTT).
+    probe_rtt_done_stamp: Option<Instant>,
+    /// Cwnd to restore after ProbeRTT exits.
+    prior_cwnd: Option<u32>,
     /// Previous RTT for detecting trends.
     prev_rtt: Option<Duration>,
     /// Consecutive RTT increases (congestion signal).
@@ -75,11 +103,13 @@ pub struct BbrState {
     last_delivered_time: Instant,
     /// Delivered count at last measurement.
     last_delivered: u64,
+    /// Injectable clock for time queries.
+    clock: Arc<dyn Clock>,
 }
 
 impl BbrState {
-    fn new() -> Self {
-        let now = Instant::now();
+    fn new(clock: Arc<dyn Clock>) -> Self {
+        let now = clock.now();
         Self {
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
@@ -87,20 +117,24 @@ impl BbrState {
             min_rtt: None,
             max_bw: 0.0,
             cwnd_gain: 2.0, // start with 2x gain for startup probing
-            in_startup: true,
+            phase: BbrPhase::Startup,
+            min_rtt_stamp: now,
+            probe_rtt_done_stamp: None,
+            prior_cwnd: None,
             prev_rtt: None,
             rtt_increases: 0,
             congestion_threshold: 3,
             delivered: 0,
             last_delivered_time: now,
             last_delivered: 0,
+            clock,
         }
     }
 
     /// Record delivery of `count` symbols.  Returns the computed delivery rate.
     fn record_delivery(&mut self, count: u32) -> f64 {
         self.delivered += count as u64;
-        let now = Instant::now();
+        let now = self.clock.now();
         let elapsed = now.duration_since(self.last_delivered_time).as_secs_f64();
 
         // Need at least 1ms of elapsed time to compute a meaningful rate
@@ -133,7 +167,7 @@ impl BbrState {
 
     /// Record an RTT sample.
     fn record_rtt(&mut self, rtt: Duration) {
-        let now = Instant::now();
+        let now = self.clock.now();
 
         // Detect RTT trend
         if let Some(prev) = self.prev_rtt {
@@ -152,8 +186,13 @@ impl BbrState {
         });
         self.expire_old_samples(now);
 
-        // Update min RTT
+        let old_min = self.min_rtt;
         self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
+
+        // Refresh min_rtt_stamp when min_rtt is updated to a new low
+        if self.min_rtt <= Some(rtt) && (old_min.is_none() || self.min_rtt <= old_min) {
+            self.min_rtt_stamp = now;
+        }
     }
 
     /// Whether RTT is trending upward (congestion detected).
@@ -163,6 +202,11 @@ impl BbrState {
 
     /// Compute the BDP-based cwnd target.
     fn bdp_cwnd(&self) -> u32 {
+        // During ProbeRTT, use minimal cwnd to drain the pipe
+        if self.phase == BbrPhase::ProbeRtt {
+            return PROBE_RTT_CWND;
+        }
+
         let min_rtt_secs = self
             .min_rtt
             .unwrap_or(Duration::from_millis(50))
@@ -196,14 +240,53 @@ impl BbrState {
 
     /// Exit startup phase: drop gain to steady-state.
     fn exit_startup(&mut self) {
-        if self.in_startup {
-            self.in_startup = false;
+        if self.phase == BbrPhase::Startup {
+            self.phase = BbrPhase::ProbeBw;
             self.cwnd_gain = 1.0;
         }
     }
 
+    /// Whether we're still in startup phase.
+    fn in_startup(&self) -> bool {
+        self.phase == BbrPhase::Startup
+    }
+
+    /// Check if we should enter ProbeRTT to refresh min_rtt.
+    /// Enters ProbeRTT if min_rtt hasn't been refreshed in PROBE_RTT_INTERVAL.
+    /// `current_cwnd` is needed to save/restore after ProbeRTT.
+    fn maybe_enter_probe_rtt(&mut self, current_cwnd: u32) {
+        if self.phase == BbrPhase::ProbeRtt {
+            return;
+        }
+        let now = self.clock.now();
+        if now.duration_since(self.min_rtt_stamp) > PROBE_RTT_INTERVAL {
+            self.prior_cwnd = Some(current_cwnd);
+            self.phase = BbrPhase::ProbeRtt;
+            self.probe_rtt_done_stamp = Some(now + PROBE_RTT_DURATION);
+        }
+    }
+
+    /// Check if ProbeRTT hold period is complete, and exit if so.
+    /// Returns the prior cwnd to restore, if exiting.
+    fn maybe_exit_probe_rtt(&mut self) -> Option<u32> {
+        if self.phase != BbrPhase::ProbeRtt {
+            return None;
+        }
+        let now = self.clock.now();
+        if let Some(done) = self.probe_rtt_done_stamp {
+            if now >= done {
+                self.min_rtt_stamp = now;
+                self.phase = BbrPhase::ProbeBw;
+                self.probe_rtt_done_stamp = None;
+                return self.prior_cwnd.take();
+            }
+        }
+        None
+    }
+
     fn reset(&mut self) {
-        *self = Self::new();
+        let clock = self.clock.clone();
+        *self = Self::new(clock);
     }
 }
 
@@ -228,6 +311,8 @@ pub struct PathState {
     pub max_datagram_size: Option<usize>,
     /// BBR congestion control state
     bbr: BbrState,
+    /// Injectable clock
+    clock: Arc<dyn Clock>,
 }
 
 impl PathState {
@@ -240,7 +325,8 @@ impl PathState {
 }
 
 impl PathState {
-    pub fn new(id: PathId) -> Self {
+    pub fn new(id: PathId, clock: Arc<dyn Clock>) -> Self {
+        let now = clock.now();
         Self {
             id,
             estimator: LossEstimator::new(),
@@ -249,9 +335,10 @@ impl PathState {
             active: true,
             ssthresh: 64,
             in_slow_start: true,
-            last_report: Instant::now(),
+            last_report: now,
             max_datagram_size: None,
-            bbr: BbrState::new(),
+            bbr: BbrState::new(clock.clone()),
+            clock,
         }
     }
 
@@ -275,10 +362,10 @@ impl PathState {
     /// (2× BDP gain).  Once the pipe is full (RTT starts rising or BDP
     /// stabilizes), transitions to steady state (1× gain).
     pub fn on_ack(&mut self, acked: u32) {
-        let rate = self.bbr.record_delivery(acked);
+        let _rate = self.bbr.record_delivery(acked);
 
         // Startup exit: if delivery rate stopped growing or RTT is rising
-        if self.bbr.in_startup {
+        if self.bbr.in_startup() {
             if self.bbr.is_congested() {
                 self.bbr.exit_startup();
             }
@@ -291,10 +378,19 @@ impl PathState {
             }
         }
 
+        // Check ProbeRTT entry/exit
+        self.bbr.maybe_enter_probe_rtt(self.cwnd);
+        if let Some(prior) = self.bbr.maybe_exit_probe_rtt() {
+            self.cwnd = prior;
+        }
+
         // Set cwnd based on BDP
         let bdp_target = self.bbr.bdp_cwnd();
 
-        if self.bbr.in_startup {
+        if self.bbr.phase == BbrPhase::ProbeRtt {
+            // During ProbeRTT, force cwnd to PROBE_RTT_CWND
+            self.cwnd = PROBE_RTT_CWND;
+        } else if self.bbr.in_startup() {
             // During startup, grow toward BDP target but also allow
             // traditional slow-start growth if BDP estimate is too low
             self.cwnd = std::cmp::max(self.cwnd + acked, bdp_target);
@@ -313,7 +409,7 @@ impl PathState {
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
 
         // Sync legacy fields
-        self.in_slow_start = self.bbr.in_startup;
+        self.in_slow_start = self.bbr.in_startup();
         if !self.in_slow_start && self.ssthresh > self.cwnd {
             self.ssthresh = self.cwnd;
         }
@@ -326,6 +422,11 @@ impl PathState {
     ///   - Loss + rising RTT → real congestion → drain to BDP
     ///   - Decode failure + rising RTT → severe congestion → drain to 0.75 × BDP
     pub fn on_loss(&mut self, fec_recovered: bool) {
+        // During ProbeRTT, don't further reduce cwnd
+        if self.bbr.phase == BbrPhase::ProbeRtt {
+            return;
+        }
+
         if self.bbr.is_congested() {
             // RTT is rising → real congestion
             self.bbr.exit_startup();
@@ -364,17 +465,19 @@ impl PathState {
 /// The multipath scheduler.
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
+    clock: Arc<dyn Clock>,
 }
 
 impl Scheduler {
-    pub fn new() -> Self {
+    pub fn new(clock: Arc<dyn Clock>) -> Self {
         Self {
             paths: HashMap::new(),
+            clock,
         }
     }
 
     pub fn add_path(&mut self, id: PathId) {
-        self.paths.insert(id, PathState::new(id));
+        self.paths.insert(id, PathState::new(id, self.clock.clone()));
     }
 
     pub fn remove_path(&mut self, id: PathId) {
@@ -508,7 +611,7 @@ impl Scheduler {
     /// Record that we received a report/data from a path (keepalive).
     pub fn touch_path(&mut self, path_id: PathId) {
         if let Some(path) = self.paths.get_mut(&path_id) {
-            path.last_report = Instant::now();
+            path.last_report = self.clock.now();
             if !path.active {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
@@ -524,7 +627,7 @@ impl Scheduler {
     /// Check all paths for staleness and deactivate dead ones.
     /// Returns list of path IDs that were deactivated.
     pub fn check_dead_paths(&mut self, timeout: Duration) -> Vec<PathId> {
-        let now = Instant::now();
+        let now = self.clock.now();
         let mut deactivated = vec![];
         for path in self.paths.values_mut() {
             if path.active && now.duration_since(path.last_report) > timeout {
@@ -554,7 +657,7 @@ impl Scheduler {
 
 impl Default for Scheduler {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(WallClock))
     }
 }
 
@@ -568,12 +671,13 @@ mod tests {
             payload_id: id,
             is_repair: repair,
             data: vec![0u8; 64],
+            backend: FecBackend::RaptorQ,
         }
     }
 
     #[test]
     fn test_schedule_prefers_low_rtt_for_source() {
-        let mut sched = Scheduler::new();
+        let mut sched = Scheduler::new(Arc::new(WallClock));
         sched.add_path(0);
         sched.add_path(1);
 

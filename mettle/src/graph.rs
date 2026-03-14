@@ -34,7 +34,12 @@ pub fn compute_bin_indices(x: usize, config: &MettleConfig, seed: u64) -> Vec<us
     // Edges 2..l: stochastic with binomial placement
     if l > 1 {
         // Seed the RNG with a hash of (seed, x) for reproducibility
-        let mut rng = SmallRng::seed_from_u64(seed.wrapping_mul(2654435761).wrapping_add(x as u64));
+        // splitmix64-style combiner for better avalanche than linear hash
+        let mut h = seed;
+        h = h.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        h ^= x as u64;
+        h = h.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let mut rng = SmallRng::seed_from_u64(h);
 
         let right_boundary = ((1.0 + c) * (x + w) as f64).floor() as usize;
 

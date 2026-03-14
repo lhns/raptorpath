@@ -53,6 +53,7 @@ impl FecEncoder for RaptorqEncoder {
                             payload_id,
                             is_repair: false,
                             data: serialized[4..].to_vec(),
+                            backend: super::traits::FecBackend::RaptorQ,
                         }
                     })
                     .collect::<Vec<_>>()
@@ -79,6 +80,7 @@ impl FecEncoder for RaptorqEncoder {
                             payload_id,
                             is_repair: true,
                             data: serialized[4..].to_vec(),
+                            backend: super::traits::FecBackend::RaptorQ,
                         }
                     })
                     .collect::<Vec<_>>()
@@ -137,6 +139,11 @@ impl FecDecoder for RaptorqDecoder {
     fn add_symbol(&mut self, symbol: &WireSymbol) -> Option<Bytes> {
         if self.decoded {
             return self.result.clone();
+        }
+
+        // Reject symbols from a different backend
+        if symbol.backend != super::traits::FecBackend::RaptorQ {
+            return None;
         }
 
         // Deduplicate

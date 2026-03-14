@@ -5,8 +5,9 @@
 //! transfer loop that feeds RTT/loss/throughput into the scheduler and
 //! verifies that the CC and scheduler adapt correctly.
 
-use raptorpath::fec::WireSymbol;
-use raptorpath::scheduler::{PathState, Scheduler};
+use raptorpath::fec::{FecBackend, WireSymbol};
+use raptorpath::scheduler::{MockClock, PathState, Scheduler};
+use std::sync::Arc;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -20,8 +21,13 @@ fn make_symbols(count: u32, repair: bool) -> Vec<WireSymbol> {
             payload_id: i,
             is_repair: repair,
             data: vec![0u8; 64],
+            backend: FecBackend::RaptorQ,
         })
         .collect()
+}
+
+fn millis(ms: u64) -> Duration {
+    Duration::from_millis(ms)
 }
 
 /// Simulated path profile.
@@ -34,8 +40,8 @@ struct PathProfile {
 
 /// Set up a scheduler with the given path profiles, running enough
 /// warmup rounds for the estimators to converge.
-fn setup_paths(profiles: &[PathProfile]) -> Scheduler {
-    let mut sched = Scheduler::new();
+fn setup_paths(profiles: &[PathProfile], clock: Arc<MockClock>) -> Scheduler {
+    let mut sched = Scheduler::new(clock);
     for p in profiles {
         sched.add_path(p.id);
         let path = sched.path_mut(p.id).unwrap();
@@ -61,14 +67,15 @@ fn setup_paths(profiles: &[PathProfile]) -> Scheduler {
 /// estimator/BBR data to the specified path and acks on it.
 fn simulate_round(
     sched: &mut Scheduler,
+    clock: &MockClock,
     path_id: u32,
     rtt: Duration,
     loss_pct: f64,
     throughput_bps: f64,
     symbols_per_round: u32,
 ) {
-    // Brief sleep so delivery rate is computable
-    std::thread::sleep(Duration::from_millis(2));
+    // Advance mock clock so delivery rate is computable
+    clock.advance(millis(2));
 
     // Simulate ACK with loss
     let received = ((1.0 - loss_pct) * symbols_per_round as f64) as u32;
@@ -105,6 +112,7 @@ fn count_for_path(assignments: &[(u32, Vec<WireSymbol>)], path_id: u32) -> usize
 // ===========================================================================
 #[test]
 fn test_asymmetric_wifi_cellular() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -119,12 +127,12 @@ fn test_asymmetric_wifi_cellular() {
             throughput_bps: 20_000_000.0, // 20 Mbps cellular
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Run 20 rounds per path
     for _ in 0..20 {
-        simulate_round(&mut sched, 1, Duration::from_millis(10), 0.05, 50_000_000.0, 50);
-        simulate_round(&mut sched, 2, Duration::from_millis(60), 0.01, 20_000_000.0, 50);
+        simulate_round(&mut sched, &clock, 1, millis(10), 0.05, 50_000_000.0, 50);
+        simulate_round(&mut sched, &clock, 2, millis(60), 0.01, 20_000_000.0, 50);
     }
 
     // Reset in_flight for clean scheduling
@@ -163,6 +171,7 @@ fn test_asymmetric_wifi_cellular() {
 // ===========================================================================
 #[test]
 fn test_three_path_heterogeneous() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -183,12 +192,12 @@ fn test_three_path_heterogeneous() {
             throughput_bps: 10_000_000.0, // Cellular
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     for _ in 0..20 {
-        simulate_round(&mut sched, 1, Duration::from_millis(5), 0.03, 100_000_000.0, 80);
-        simulate_round(&mut sched, 2, Duration::from_millis(15), 0.05, 50_000_000.0, 40);
-        simulate_round(&mut sched, 3, Duration::from_millis(80), 0.01, 10_000_000.0, 10);
+        simulate_round(&mut sched, &clock, 1, millis(5), 0.03, 100_000_000.0, 80);
+        simulate_round(&mut sched, &clock, 2, millis(15), 0.05, 50_000_000.0, 40);
+        simulate_round(&mut sched, &clock, 3, millis(80), 0.01, 10_000_000.0, 10);
     }
 
     sched.path_mut(1).unwrap().in_flight = 0;
@@ -220,6 +229,7 @@ fn test_three_path_heterogeneous() {
 // ===========================================================================
 #[test]
 fn test_path_degradation_mid_transfer() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -234,12 +244,12 @@ fn test_path_degradation_mid_transfer() {
             throughput_bps: 30_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Phase 1: Both paths healthy, 20 rounds
     for _ in 0..20 {
-        simulate_round(&mut sched, 1, Duration::from_millis(10), 0.02, 50_000_000.0, 50);
-        simulate_round(&mut sched, 2, Duration::from_millis(50), 0.01, 30_000_000.0, 30);
+        simulate_round(&mut sched, &clock, 1, millis(10), 0.02, 50_000_000.0, 50);
+        simulate_round(&mut sched, &clock, 2, millis(50), 0.01, 30_000_000.0, 30);
     }
 
     // Phase 2: Path 1 gets congested — RTT rises, loss increases
@@ -247,6 +257,7 @@ fn test_path_degradation_mid_transfer() {
     for &rtt in &congestion_rtts {
         simulate_round(
             &mut sched,
+            &clock,
             1,
             Duration::from_millis(rtt),
             0.15,
@@ -284,6 +295,7 @@ fn test_path_degradation_mid_transfer() {
 // ===========================================================================
 #[test]
 fn test_path_death_and_recovery() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -298,12 +310,12 @@ fn test_path_death_and_recovery() {
             throughput_bps: 30_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Warmup: both paths running
     for _ in 0..10 {
-        simulate_round(&mut sched, 1, Duration::from_millis(10), 0.02, 50_000_000.0, 50);
-        simulate_round(&mut sched, 2, Duration::from_millis(40), 0.01, 30_000_000.0, 30);
+        simulate_round(&mut sched, &clock, 1, millis(10), 0.02, 50_000_000.0, 50);
+        simulate_round(&mut sched, &clock, 2, millis(40), 0.01, 30_000_000.0, 30);
     }
 
     // Path 1 dies
@@ -339,7 +351,7 @@ fn test_path_death_and_recovery() {
 
     // After a few rounds of recovery, path 1 should participate again
     for _ in 0..10 {
-        simulate_round(&mut sched, 1, Duration::from_millis(10), 0.02, 50_000_000.0, 30);
+        simulate_round(&mut sched, &clock, 1, millis(10), 0.02, 50_000_000.0, 30);
     }
 
     sched.path_mut(1).unwrap().in_flight = 0;
@@ -360,6 +372,7 @@ fn test_path_death_and_recovery() {
 // ===========================================================================
 #[test]
 fn test_mixed_wireless_and_congestion() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -374,14 +387,15 @@ fn test_mixed_wireless_and_congestion() {
             throughput_bps: 30_000_000.0, // Wired: low loss
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Path 1: wireless loss (stable RTT, high loss)
     for _ in 0..20 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(15),
+            millis(15),
             0.08,
             40_000_000.0,
             50,
@@ -393,6 +407,7 @@ fn test_mixed_wireless_and_congestion() {
     for &rtt in &rtts {
         simulate_round(
             &mut sched,
+            &clock,
             2,
             Duration::from_millis(rtt),
             0.10,
@@ -432,20 +447,22 @@ fn test_mixed_wireless_and_congestion() {
 // ===========================================================================
 #[test]
 fn test_hot_add_path_mid_transfer() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![PathProfile {
         id: 1,
         rtt_ms: 20,
         loss_pct: 0.03,
         throughput_bps: 40_000_000.0,
     }];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Transfer on single path for a while
     for _ in 0..20 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(20),
+            millis(20),
             0.03,
             40_000_000.0,
             50,
@@ -468,8 +485,9 @@ fn test_hot_add_path_mid_transfer() {
     for _ in 0..20 {
         simulate_round(
             &mut sched,
+            &clock,
             2,
-            Duration::from_millis(10),
+            millis(10),
             0.01,
             60_000_000.0,
             50,
@@ -508,6 +526,7 @@ fn test_hot_add_path_mid_transfer() {
 // ===========================================================================
 #[test]
 fn test_hot_remove_path_mid_transfer() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -522,22 +541,24 @@ fn test_hot_remove_path_mid_transfer() {
             throughput_bps: 30_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Both paths running
     for _ in 0..10 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(15),
+            millis(15),
             0.02,
             50_000_000.0,
             50,
         );
         simulate_round(
             &mut sched,
+            &clock,
             2,
-            Duration::from_millis(40),
+            millis(40),
             0.01,
             30_000_000.0,
             30,
@@ -565,6 +586,7 @@ fn test_hot_remove_path_mid_transfer() {
 // ===========================================================================
 #[test]
 fn test_flapping_path() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -579,7 +601,7 @@ fn test_flapping_path() {
             throughput_bps: 30_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Flap path 1 three times
     for cycle in 0..3 {
@@ -587,16 +609,18 @@ fn test_flapping_path() {
         for _ in 0..5 {
             simulate_round(
                 &mut sched,
+                &clock,
                 1,
-                Duration::from_millis(10),
+                millis(10),
                 0.02,
                 50_000_000.0,
                 50,
             );
             simulate_round(
                 &mut sched,
+                &clock,
                 2,
-                Duration::from_millis(40),
+                millis(40),
                 0.01,
                 30_000_000.0,
                 30,
@@ -610,8 +634,9 @@ fn test_flapping_path() {
         for _ in 0..3 {
             simulate_round(
                 &mut sched,
+                &clock,
                 2,
-                Duration::from_millis(40),
+                millis(40),
                 0.01,
                 30_000_000.0,
                 30,
@@ -645,6 +670,7 @@ fn test_flapping_path() {
 // ===========================================================================
 #[test]
 fn test_gradual_path_degradation() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -659,22 +685,24 @@ fn test_gradual_path_degradation() {
             throughput_bps: 30_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Phase 1: both healthy
     for _ in 0..10 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(10),
+            millis(10),
             0.01,
             50_000_000.0,
             50,
         );
         simulate_round(
             &mut sched,
+            &clock,
             2,
-            Duration::from_millis(30),
+            millis(30),
             0.01,
             30_000_000.0,
             30,
@@ -695,6 +723,7 @@ fn test_gradual_path_degradation() {
         for _ in 0..3 {
             simulate_round(
                 &mut sched,
+                &clock,
                 1,
                 Duration::from_millis(*rtt_ms),
                 *loss,
@@ -703,8 +732,9 @@ fn test_gradual_path_degradation() {
             );
             simulate_round(
                 &mut sched,
+                &clock,
                 2,
-                Duration::from_millis(30),
+                millis(30),
                 0.01,
                 30_000_000.0,
                 30,
@@ -735,7 +765,8 @@ fn test_gradual_path_degradation() {
 // ===========================================================================
 #[test]
 fn test_sustained_wireless_loss_cwnd_stable() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Warmup
@@ -743,8 +774,8 @@ fn test_sustained_wireless_loss_cwnd_stable() {
     path.cwnd = 200;
     path.in_slow_start = false;
     for _ in 0..20 {
-        path.estimator.record_rtt(Duration::from_millis(15));
-        path.record_rtt_sample(Duration::from_millis(15));
+        path.estimator.record_rtt(millis(15));
+        path.record_rtt_sample(millis(15));
         path.estimator.record_throughput(50_000_000.0);
         path.estimator.record_batch(100, 95);
     }
@@ -755,8 +786,9 @@ fn test_sustained_wireless_loss_cwnd_stable() {
     for _ in 0..100 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(15),
+            millis(15),
             0.10,
             50_000_000.0,
             100,
@@ -778,7 +810,8 @@ fn test_sustained_wireless_loss_cwnd_stable() {
 // ===========================================================================
 #[test]
 fn test_congestion_then_full_recovery() {
-    let mut sched = Scheduler::new();
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
     sched.add_path(2);
 
@@ -786,16 +819,18 @@ fn test_congestion_then_full_recovery() {
     for _ in 0..20 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(20),
+            millis(20),
             0.02,
             40_000_000.0,
             50,
         );
         simulate_round(
             &mut sched,
+            &clock,
             2,
-            Duration::from_millis(20),
+            millis(20),
             0.02,
             40_000_000.0,
             50,
@@ -809,6 +844,7 @@ fn test_congestion_then_full_recovery() {
     for &rtt in &congestion_rtts {
         simulate_round(
             &mut sched,
+            &clock,
             1,
             Duration::from_millis(rtt),
             0.15,
@@ -846,8 +882,9 @@ fn test_congestion_then_full_recovery() {
     for _ in 0..50 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
-            Duration::from_millis(20),
+            millis(20),
             0.02,
             40_000_000.0,
             50,
@@ -866,6 +903,7 @@ fn test_congestion_then_full_recovery() {
 // ===========================================================================
 #[test]
 fn test_scheduler_rebalances_on_degradation() {
+    let clock = Arc::new(MockClock::new());
     let profiles = vec![
         PathProfile {
             id: 1,
@@ -880,7 +918,7 @@ fn test_scheduler_rebalances_on_degradation() {
             throughput_bps: 50_000_000.0,
         },
     ];
-    let mut sched = setup_paths(&profiles);
+    let mut sched = setup_paths(&profiles, clock.clone());
 
     // Phase 1: equal paths — both should get symbols
     sched.path_mut(1).unwrap().in_flight = 0;
@@ -902,6 +940,7 @@ fn test_scheduler_rebalances_on_degradation() {
     for _ in 0..20 {
         simulate_round(
             &mut sched,
+            &clock,
             1,
             Duration::from_millis(100),
             0.20,
@@ -910,8 +949,9 @@ fn test_scheduler_rebalances_on_degradation() {
         );
         simulate_round(
             &mut sched,
+            &clock,
             2,
-            Duration::from_millis(10),
+            millis(10),
             0.01,
             50_000_000.0,
             50,

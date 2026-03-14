@@ -15,13 +15,15 @@ pub mod interleave;
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
+use crate::fec::{MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
 use crate::monitor::stats::SharedStats;
 use crate::routing::{self, ManagedDns, ManagedRoute};
-use crate::scheduler::Scheduler;
+use crate::scheduler::{Scheduler, WallClock};
 use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
 use crate::tun::{TunConfig, TunInterface};
 use bytes::Bytes;
 use dashmap::DashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -91,8 +93,38 @@ impl BlockProfile {
 const DECODER_TIMEOUT: Duration = Duration::from_secs(30);
 /// Decoder cleanup interval.
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
+/// Maximum number of concurrent active decoders. When exceeded, the oldest
+/// incomplete decoder is evicted before creating a new one. Prevents OOM from
+/// a malicious peer opening unlimited block_ids.
+const MAX_CONCURRENT_DECODERS: usize = 10_000;
 /// RTCP-style report interval (how often we send PathReport + Ping).
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
+/// Maximum window size for sliding-window FEC (source symbols in encoder window).
+const MAX_WINDOW_SIZE: usize = 200;
+/// Repair generation interval: generate one repair per this many source symbols.
+/// Dynamically adjusted by the FEC rate controller.
+const BASE_REPAIR_INTERVAL: u64 = 10;
+/// Default reorder buffer timeout for window mode (milliseconds).
+const DEFAULT_REORDER_TIMEOUT_MS: u64 = 20;
+/// Maximum packets buffered in the reorder buffer before force-delivery.
+const MAX_REORDER_BUFFERED: usize = 500;
+/// Reorder buffer drain interval (how often we check for expired entries).
+const REORDER_DRAIN_INTERVAL: Duration = Duration::from_millis(5);
+/// Maximum number of gap ranges in a WindowNack message.
+const MAX_NACK_GAPS: usize = 20;
+/// Maximum repair symbols generated per NACK received.
+const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
+/// Minimum interval between NACK-triggered repair bursts (microseconds).
+const NACK_REPAIR_COOLDOWN_US: u64 = 5_000;
+
+/// Returns true if this config should use sliding-window mode instead of block mode.
+///
+/// The pipeline shape follows from the algorithm's capabilities: streaming-native
+/// backends (RLC, METTLE) use the sliding-window pipeline for realtime traffic;
+/// block-only backends (RaptorQ, Reed-Solomon) always use the block pipeline.
+fn is_window_mode(hint: ProtocolHint, backend: FecBackend) -> bool {
+    hint == ProtocolHint::Realtime && backend.is_streaming()
+}
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
@@ -166,7 +198,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     ).await?;
 
     // Set up paths
-    let mut scheduler = Scheduler::new();
+    let mut scheduler = Scheduler::new(Arc::new(WallClock));
     for (i, _addr) in config.bind_addrs.iter().enumerate() {
         scheduler.add_path(i as u32);
     }
@@ -190,6 +222,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.target_tail_loss,
         config.max_fec_overhead,
         config.protocol_hint,
+        config.fec_backend,
     )));
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
@@ -226,6 +259,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         }
     });
 
+    let window_mode = is_window_mode(config.protocol_hint, config.fec_backend);
+    // Shared window ACK: receiver writes, sender reads to advance the encoder window
+    let window_ack_seq = Arc::new(AtomicU64::new(0));
+
+    // NACK gap channel: handle_control_message sends gap ranges, window sender receives for targeted repair
+    let (nack_tx, nack_rx) = tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(16);
+
+    if window_mode {
+        info!(
+            symbol_size = profile.symbol_size,
+            backend = ?config.fec_backend,
+            "sliding-window FEC mode"
+        );
+    }
+
     let active_decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>> = Arc::new(DashMap::new());
 
     // Per-path sent symbol counts for loss tracking (sender side)
@@ -259,8 +307,31 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_interleave_depth = config.interleave_depth;
     // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
     let sender_interleave_timeout = profile.flush_timeout * 2;
+    let sender_window_mode = window_mode;
+    let sender_window_ack = window_ack_seq.clone();
+    let mut sender_nack_rx = nack_rx;
 
     let sender_handle = tokio::spawn(async move {
+        // ----- Sliding-window sender mode -----
+        if sender_window_mode {
+            run_window_sender(
+                &mut tun,
+                sender_profile_symbol_size,
+                sender_fec_backend,
+                &sender_fec,
+                &sender_batch_counter,
+                &sender_transport,
+                &sender_scheduler,
+                &sender_stats,
+                &sender_window_ack,
+                &mut sender_nack_rx,
+                &mut sender_shutdown_rx,
+            )
+            .await;
+            return;
+        }
+
+        // ----- Block-mode sender (existing) -----
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut flush_deadline: Option<tokio::time::Instant> = None;
         let mut shutting_down = false;
@@ -445,8 +516,38 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
     let recv_symbol_size = profile.symbol_size;
+    let recv_window_mode = window_mode;
+    let recv_window_ack = window_ack_seq.clone();
+    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> = if window_mode {
+        Some(nack_tx)
+    } else {
+        None
+    };
 
     let receiver_handle = tokio::spawn(async move {
+        // Window decoder: created once, long-lived (only used in window mode)
+        let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
+            let decoder: Box<dyn WindowDecoder> = match recv_fec_backend {
+                FecBackend::Mettle => Box::new(MettleWindowDecoder::new(recv_symbol_size)),
+                _ => Box::new(RlcWindowDecoder::new(recv_symbol_size)),
+            };
+            Some(decoder)
+        } else {
+            None
+        };
+        // Track highest delivered seq for window ACK
+        let mut highest_delivered_seq: u64 = 0;
+        // Reorder buffer for window mode — delivers packets in sequence order
+        let mut reorder_buf = if recv_window_mode {
+            Some(ReorderBuffer::new(DEFAULT_REORDER_TIMEOUT_MS, MAX_REORDER_BUFFERED))
+        } else {
+            None
+        };
+        // Track received seqs for WindowNack gap reporting
+        let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+        let mut highest_seen_seq: u64 = 0;
+        let mut last_nack_time = Instant::now();
+
         loop {
             // ADR-0015: select between message arrival and shutdown signal
             let (path_id, msg) = tokio::select! {
@@ -492,68 +593,156 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         tracker.record_batch(batch_seq, symbol_count)
                     };
 
-                    for symbol in &batch.symbols {
-                        // ADR-0008: get or create decoder with proper params
-                        let mut decoder = recv_decoders
-                            .entry(symbol.block_id)
-                            .or_insert_with(|| {
-                                // Decoder without BlockStart — will be updated
-                                // This handles symbols arriving before BlockStart
-                                recv_fec_backend.create_decoder(
-                                    EncodingParams {
-                                        source_symbols: 0,
-                                        symbol_size: recv_symbol_size,
-                                        repair_count: 0,
-                                        block_id: symbol.block_id,
-                                    },
-                                    DEFAULT_MAX_BLOCK_SIZE as u64,
-                                )
-                            });
+                    // Route symbols to window decoder or block decoder
+                    if let Some(ref mut win_dec) = window_decoder {
+                        // ----- Window-mode receive path -----
+                        for symbol in &batch.symbols {
+                            let recovered = win_dec.add_symbol(symbol);
+                            for (seq, sym_data) in recovered {
+                                received_seqs.insert(seq);
+                                if seq > highest_seen_seq {
+                                    highest_seen_seq = seq;
+                                }
 
-                        if let Some(data) = decoder.add_symbol(symbol) {
-                            let block_id = symbol.block_id;
-                            let total_fed = decoder.total_fed();
-                            let source_symbols = decoder.params().source_symbols;
-                            drop(decoder);
+                                // Route through reorder buffer if available
+                                let deliverable = if let Some(ref mut reorder) = reorder_buf {
+                                    reorder.push(seq, sym_data)
+                                } else {
+                                    vec![(seq, sym_data)]
+                                };
 
-                            debug!(block_id, "block decoded");
-
-                            // ADR-0013: update monitoring stats
-                            recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
-
-                            // Feed back to FEC controller
-                            recv_fec.lock().feedback_update(true);
-
-                            // ADR-0005: send BlockResult to sender
-                            let result_msg = ControlMessage::BlockResult {
-                                block_id,
-                                success: true,
-                                symbols_received: total_fed,
-                                symbols_needed: source_symbols,
-                            };
-                            if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
-                                debug!(?e, path_id, "failed to send BlockResult");
-                            }
-
-                            // ADR-0002: extract individual packets from decoded block
-                            let packets = framing::extract_packets(&data);
-                            // ADR-0011: use try_send to avoid blocking receiver if TUN is slow
-                            for pkt_data in packets {
-                                match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
-                                    Ok(()) => {}
-                                    Err(mpsc::error::TrySendError::Full(_)) => {
-                                        warn!("TUN inject channel full, dropping packet");
+                                for (dseq, ddata) in deliverable {
+                                    if let Some(pkt_data) = framing::extract_window_packet(&ddata) {
+                                        match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
+                                            Ok(()) => {}
+                                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                                warn!("TUN inject channel full, dropping packet");
+                                            }
+                                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                                error!("TUN inject channel closed");
+                                                return;
+                                            }
+                                        }
                                     }
-                                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                                        error!("TUN inject channel closed");
-                                        return;
+                                    if dseq > highest_delivered_seq {
+                                        highest_delivered_seq = dseq;
                                     }
                                 }
                             }
+                        }
 
-                            // ADR-0004: remove completed decoder
-                            recv_decoders.remove(&block_id);
-                            recv_stats.blocks.pending.store(recv_decoders.len() as u64, Ordering::Relaxed);
+                        // Drain expired reorder buffer entries
+                        if let Some(ref mut reorder) = reorder_buf {
+                            let expired = reorder.drain_expired(Instant::now());
+                            for (dseq, ddata) in expired {
+                                if let Some(pkt_data) = framing::extract_window_packet(&ddata) {
+                                    let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                                }
+                                if dseq > highest_delivered_seq {
+                                    highest_delivered_seq = dseq;
+                                }
+                            }
+                        }
+
+                        // Periodically send WindowAck to sender
+                        if highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed) {
+                            recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+                            let ack_msg = ControlMessage::WindowAck {
+                                received_up_to: highest_delivered_seq,
+                            };
+                            if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
+                                debug!(?e, path_id, "failed to send WindowAck");
+                            }
+                        }
+
+                        // Send WindowNack with gap ranges (rate-limited)
+                        let now = Instant::now();
+                        if now.duration_since(last_nack_time) >= REPORT_INTERVAL
+                            && highest_seen_seq > 0
+                        {
+                            let gap_start = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64);
+                            let gaps = compute_gap_ranges(&received_seqs, gap_start, highest_seen_seq);
+                            if !gaps.is_empty() {
+                                let nack_msg = ControlMessage::WindowNack { gaps };
+                                if let Err(e) = recv_transport.send_control_datagram(path_id, nack_msg) {
+                                    debug!(?e, path_id, "failed to send WindowNack");
+                                }
+                            }
+                            last_nack_time = now;
+
+                            // Prune old entries from received_seqs tracking
+                            let prune_before = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64 * 2);
+                            received_seqs = received_seqs.split_off(&prune_before);
+                        }
+                    } else {
+                        // ----- Block-mode receive path (existing) -----
+                        for symbol in &batch.symbols {
+                            // Evict oldest decoder if at capacity (DoS protection)
+                            if !recv_decoders.contains_key(&symbol.block_id)
+                                && recv_decoders.len() >= MAX_CONCURRENT_DECODERS
+                            {
+                                evict_oldest_decoder(&recv_decoders);
+                            }
+
+                            // ADR-0008: get or create decoder with proper params
+                            let mut decoder = recv_decoders
+                                .entry(symbol.block_id)
+                                .or_insert_with(|| {
+                                    recv_fec_backend.create_decoder(
+                                        EncodingParams {
+                                            source_symbols: 0,
+                                            symbol_size: recv_symbol_size,
+                                            repair_count: 0,
+                                            block_id: symbol.block_id,
+                                        },
+                                        DEFAULT_MAX_BLOCK_SIZE as u64,
+                                    )
+                                });
+
+                            if let Some(data) = decoder.add_symbol(symbol) {
+                                let block_id = symbol.block_id;
+                                let total_fed = decoder.total_fed();
+                                let source_symbols = decoder.params().source_symbols;
+                                drop(decoder);
+
+                                debug!(block_id, "block decoded");
+
+                                // ADR-0013: update monitoring stats
+                                recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
+
+                                // Feed back to FEC controller
+                                recv_fec.lock().feedback_update(true);
+
+                                // ADR-0005: send BlockResult to sender
+                                let result_msg = ControlMessage::BlockResult {
+                                    block_id,
+                                    success: true,
+                                    symbols_received: total_fed,
+                                    symbols_needed: source_symbols,
+                                };
+                                if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
+                                    debug!(?e, path_id, "failed to send BlockResult");
+                                }
+
+                                // ADR-0002: extract individual packets from decoded block
+                                let packets = framing::extract_packets(&data);
+                                for pkt_data in packets {
+                                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
+                                        Ok(()) => {}
+                                        Err(mpsc::error::TrySendError::Full(_)) => {
+                                            warn!("TUN inject channel full, dropping packet");
+                                        }
+                                        Err(mpsc::error::TrySendError::Closed(_)) => {
+                                            error!("TUN inject channel closed");
+                                            return;
+                                        }
+                                    }
+                                }
+
+                                // ADR-0004: remove completed decoder
+                                recv_decoders.remove(&block_id);
+                                recv_stats.blocks.pending.store(recv_decoders.len() as u64, Ordering::Relaxed);
+                            }
                         }
                     }
 
@@ -598,6 +787,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &recv_transport,
                         recv_fec_backend,
                         &recv_stats,
+                        recv_nack_tx.as_ref(),
                     );
                 }
             }
@@ -782,6 +972,350 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Reorder buffer for window-mode receiver
+// ---------------------------------------------------------------------------
+
+/// Reorder buffer that holds out-of-order recovered symbols and delivers them
+/// in sequence order. Expired entries are force-delivered after a timeout.
+struct ReorderBuffer {
+    /// Pending out-of-order entries: seq → (data, buffered_at)
+    pending: BTreeMap<u64, (Bytes, Instant)>,
+    /// Next sequence to deliver in order
+    next_deliver_seq: u64,
+    /// How long to hold an entry before force-delivering
+    timeout: Duration,
+    /// Maximum entries to buffer before force-draining
+    max_buffered: usize,
+}
+
+impl ReorderBuffer {
+    fn new(timeout_ms: u64, max_buffered: usize) -> Self {
+        Self {
+            pending: BTreeMap::new(),
+            next_deliver_seq: 0,
+            timeout: Duration::from_millis(timeout_ms),
+            max_buffered,
+        }
+    }
+
+    /// Push a recovered symbol. Returns a contiguous prefix of deliverable entries.
+    fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes)> {
+        self.pending.insert(seq, (data, Instant::now()));
+
+        // Force-drain oldest if over capacity
+        if self.pending.len() > self.max_buffered {
+            return self.force_drain_oldest();
+        }
+
+        self.drain_contiguous()
+    }
+
+    /// Drain the contiguous prefix starting from `next_deliver_seq`.
+    fn drain_contiguous(&mut self) -> Vec<(u64, Bytes)> {
+        let mut result = Vec::new();
+        while let Some((data, _)) = self.pending.remove(&self.next_deliver_seq) {
+            result.push((self.next_deliver_seq, data));
+            self.next_deliver_seq += 1;
+        }
+        result
+    }
+
+    /// Deliver entries held longer than `timeout`, plus any contiguous prefix.
+    fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes)> {
+        let mut result = Vec::new();
+
+        // Collect expired entries
+        let expired: Vec<u64> = self
+            .pending
+            .iter()
+            .filter(|(_, (_, buffered_at))| now.duration_since(*buffered_at) >= self.timeout)
+            .map(|(&seq, _)| seq)
+            .collect();
+
+        if expired.is_empty() {
+            return result;
+        }
+
+        // Deliver expired entries in order, advancing next_deliver_seq past them
+        for seq in expired {
+            if let Some((data, _)) = self.pending.remove(&seq) {
+                result.push((seq, data));
+                if seq >= self.next_deliver_seq {
+                    self.next_deliver_seq = seq + 1;
+                }
+            }
+        }
+
+        // Also drain any newly contiguous entries
+        result.extend(self.drain_contiguous());
+        result
+    }
+
+    /// Force-drain the oldest entries to get back under capacity.
+    fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes)> {
+        let mut result = Vec::new();
+        while self.pending.len() > self.max_buffered / 2 {
+            if let Some((&seq, _)) = self.pending.iter().next() {
+                if let Some((data, _)) = self.pending.remove(&seq) {
+                    result.push((seq, data));
+                    if seq >= self.next_deliver_seq {
+                        self.next_deliver_seq = seq + 1;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        result.extend(self.drain_contiguous());
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WindowNack gap computation
+// ---------------------------------------------------------------------------
+
+/// Compute gap ranges from a set of received sequences in a window.
+/// Returns Vec<(start, end)> of inclusive ranges of missing sequences.
+fn compute_gap_ranges(
+    received: &BTreeSet<u64>,
+    window_start: u64,
+    window_end: u64,
+) -> Vec<(u64, u64)> {
+    let mut gaps = Vec::new();
+    let mut expected = window_start;
+
+    for &seq in received.range(window_start..=window_end) {
+        if seq > expected {
+            gaps.push((expected, seq - 1));
+            if gaps.len() >= MAX_NACK_GAPS {
+                return gaps;
+            }
+        }
+        expected = seq + 1;
+    }
+
+    // Trailing gap
+    if expected <= window_end && gaps.len() < MAX_NACK_GAPS {
+        gaps.push((expected, window_end));
+    }
+
+    gaps
+}
+
+/// Select paths for window-mode source and repair symbols.
+/// Source: lowest-loss path. Repair: second-lowest-loss or round-robin for diversity.
+fn select_window_paths(scheduler: &Scheduler) -> (u32, u32) {
+    let paths = scheduler.active_paths();
+    if paths.is_empty() {
+        return (0, 0);
+    }
+    if paths.len() == 1 {
+        return (paths[0], paths[0]);
+    }
+
+    // Sort paths by loss rate (ascending)
+    let mut path_loss: Vec<(u32, f64)> = paths
+        .iter()
+        .filter_map(|&id| {
+            scheduler.path(id).map(|p| (id, p.estimator.loss_rate()))
+        })
+        .collect();
+    path_loss.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let source_path = path_loss[0].0;
+    // Repair on second-lowest-loss path for diversity
+    let repair_path = path_loss.get(1).map(|p| p.0).unwrap_or(source_path);
+
+    (source_path, repair_path)
+}
+
+/// Sliding-window sender loop. Reads packets from TUN, frames them as individual
+/// source symbols, sends them immediately, and periodically generates repair symbols.
+async fn run_window_sender(
+    tun: &mut TunInterface,
+    symbol_size: u16,
+    fec_backend: FecBackend,
+    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
+    batch_counter: &AtomicU64,
+    transport: &Arc<QuicTransport>,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    stats: &Arc<SharedStats>,
+    window_ack_seq: &Arc<AtomicU64>,
+    nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
+    shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
+) {
+    let mut encoder: Box<dyn WindowEncoder> = match fec_backend {
+        FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
+            mettle::MettleConfig::small_window(),
+            symbol_size,
+            42, // seed — deterministic for reproducibility
+        )),
+        _ => Box::new(RlcWindowEncoder::new(symbol_size)),
+    };
+    let mut source_since_repair: u64 = 0;
+    let mut prev_ack: u64 = 0;
+    let mut last_nack_repair_us: u64 = 0;
+
+    // Announce window mode to peer on all paths
+    {
+        let sched = scheduler.lock();
+        for pid in sched.active_paths() {
+            let _ = transport.send_control_datagram(
+                pid,
+                ControlMessage::WindowStart { symbol_size },
+            );
+        }
+    }
+
+    // Compute initial repair rate
+    let mut repair_interval = BASE_REPAIR_INTERVAL;
+
+    loop {
+        let packet = tokio::select! {
+            p = tun.read_packet() => p,
+            _ = shutdown_rx.recv() => {
+                // Send Shutdown on all paths
+                let sched = scheduler.lock();
+                for pid in sched.active_paths() {
+                    let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
+                }
+                info!("window sender shut down gracefully");
+                return;
+            }
+        };
+
+        let pkt = match packet {
+            Some(p) => p,
+            None => {
+                info!("TUN closed");
+                return;
+            }
+        };
+
+        // Frame the packet as a window-mode source symbol (length-prefixed, padded)
+        let framed = framing::frame_window_packet(&pkt, symbol_size);
+        let wire_sym = encoder.add_source(&framed);
+
+        // Send source symbol immediately — pick best paths via scheduler
+        let (source_path, repair_path) = {
+            let sched = scheduler.lock();
+            select_window_paths(&sched)
+        };
+        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+        let batch = SymbolBatch {
+            symbols: vec![wire_sym],
+            send_timestamp_us: now_us(),
+            batch_seq,
+            path_id: source_path,
+        };
+        if let Err(e) = transport.send_symbols(source_path, batch) {
+            warn!(source_path, ?e, "failed to send window source symbol");
+        }
+        if let Some(ps) = stats.path(source_path) {
+            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+        }
+        stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
+
+        source_since_repair += 1;
+
+        // Generate repair symbol based on current repair rate
+        if source_since_repair >= repair_interval && encoder.window_size() > 0 {
+            let repair_sym = encoder.generate_repair();
+            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+            let batch = SymbolBatch {
+                symbols: vec![repair_sym],
+                send_timestamp_us: now_us(),
+                batch_seq,
+                path_id: repair_path,
+            };
+            if let Err(e) = transport.send_symbols(repair_path, batch) {
+                warn!(repair_path, ?e, "failed to send window repair symbol");
+            }
+            if let Some(ps) = stats.path(repair_path) {
+                ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+            }
+            stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+
+            source_since_repair = 0;
+        }
+
+        // Drain NACK channel → targeted repair for specific gaps
+        let now_repair_us = now_us();
+        if now_repair_us.saturating_sub(last_nack_repair_us) >= NACK_REPAIR_COOLDOWN_US {
+            while let Ok(gaps) = nack_rx.try_recv() {
+                let (win_start, win_end) = encoder.window_span();
+                let total_gap: u64 = gaps
+                    .iter()
+                    .filter(|(s, e)| *e >= win_start && *s <= win_end)
+                    .map(|(s, e)| e - s + 1)
+                    .sum();
+                let repair_count = (total_gap as usize).min(MAX_NACK_REPAIRS_PER_NACK);
+                for _ in 0..repair_count {
+                    if encoder.window_size() == 0 {
+                        break;
+                    }
+                    let repair_sym = encoder.generate_repair();
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![repair_sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: repair_path,
+                    };
+                    if let Err(e) = transport.send_symbols(repair_path, batch) {
+                        warn!(repair_path, ?e, "failed to send NACK repair symbol");
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            last_nack_repair_us = now_repair_us;
+        }
+
+        // Advance encoder window based on receiver ACKs
+        let ack = window_ack_seq.load(Ordering::Relaxed);
+        if ack > prev_ack {
+            encoder.advance(ack.saturating_sub(MAX_WINDOW_SIZE as u64 / 2));
+            prev_ack = ack;
+        }
+
+        // Cap window size
+        if encoder.window_size() > MAX_WINDOW_SIZE {
+            let (oldest, _) = encoder.window_span();
+            encoder.advance(oldest + (encoder.window_size() - MAX_WINDOW_SIZE) as u64);
+        }
+
+        // Update repair interval from FEC rate controller
+        {
+            let ctrl = fec_controller.lock();
+            let sched = scheduler.lock();
+            let worst_estimator = sched
+                .active_paths()
+                .iter()
+                .filter_map(|id| sched.path(*id))
+                .max_by(|a, b| {
+                    a.estimator
+                        .loss_rate()
+                        .partial_cmp(&b.estimator.loss_rate())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|p| &p.estimator);
+
+            if let Some(est) = worst_estimator {
+                let rate = ctrl.compute_repair_rate(est);
+                if rate > 0.001 {
+                    // rate = repair/source, so interval = 1/rate
+                    repair_interval = (1.0 / rate).ceil() as u64;
+                    repair_interval = repair_interval.clamp(1, 100);
+                } else {
+                    repair_interval = BASE_REPAIR_INTERVAL;
+                }
+            }
+        }
+    }
+}
+
 /// Encode a block and push symbols into the interleaving buffer.
 fn encode_to_interleave_buf(
     block_buf: &mut Vec<u8>,
@@ -808,11 +1342,17 @@ fn encode_to_interleave_buf(
     // MTU-aware symbol sizing: use PMTU-discovered max datagram size if available,
     // otherwise fall back to the profile default. We take the minimum MTU across
     // all active paths to avoid fragmentation on any path.
+    // For METTLE, repair symbols carry extra in-band metadata (bin membership lists)
+    // that must be subtracted from the available MTU.
+    let fec_wire_overhead = fec_backend.repair_wire_overhead(
+        mettle::MettleConfig::small_window().num_edges,
+    );
     let effective_symbol_size = {
         let sched = scheduler.lock();
+        let total_overhead = WIRE_OVERHEAD + fec_wire_overhead;
         match sched.min_mtu() {
-            Some(mtu) if mtu > WIRE_OVERHEAD => {
-                let mtu_based = (mtu - WIRE_OVERHEAD) as u16;
+            Some(mtu) if mtu > total_overhead => {
+                let mtu_based = (mtu - total_overhead) as u16;
                 // Clamp: don't go below 64 bytes or above the profile default
                 mtu_based.clamp(64, symbol_size)
             }
@@ -987,6 +1527,7 @@ fn handle_control_message(
     transport: &Arc<QuicTransport>,
     fec_backend: FecBackend,
     stats: &Arc<SharedStats>,
+    nack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart
@@ -994,6 +1535,12 @@ fn handle_control_message(
             params,
             transfer_length,
         } => {
+            // Evict oldest decoder if at capacity (DoS protection)
+            if !decoders.contains_key(&params.block_id)
+                && decoders.len() >= MAX_CONCURRENT_DECODERS
+            {
+                evict_oldest_decoder(decoders);
+            }
             decoders
                 .entry(params.block_id)
                 .or_insert_with(|| fec_backend.create_decoder(params, transfer_length));
@@ -1144,7 +1691,39 @@ fn handle_control_message(
             scheduler.lock().remove_path(removed_id);
         }
 
+        ControlMessage::WindowStart { symbol_size } => {
+            debug!(path_id, symbol_size, "peer entered window mode");
+        }
+
+        ControlMessage::WindowAck { received_up_to } => {
+            debug!(path_id, received_up_to, "window ACK received");
+            // The sender reads window_ack_seq via AtomicU64; this is handled
+            // in the sender loop directly, not here. Log for diagnostics.
+        }
+
+        ControlMessage::WindowNack { gaps } => {
+            debug!(path_id, gap_count = gaps.len(), "window NACK received");
+            if let Some(tx) = nack_tx {
+                let _ = tx.try_send(gaps);
+            }
+        }
+
         _ => {}
+    }
+}
+
+/// Evict the oldest incomplete decoder from the map. Used to enforce
+/// `MAX_CONCURRENT_DECODERS` and prevent OOM from a peer flooding block_ids.
+fn evict_oldest_decoder(decoders: &DashMap<u64, Box<dyn FecDecoder>>) {
+    let oldest = decoders
+        .iter()
+        .filter(|entry| !entry.value().is_decoded())
+        .min_by_key(|entry| entry.value().created_at())
+        .map(|entry| *entry.key());
+
+    if let Some(block_id) = oldest {
+        decoders.remove(&block_id);
+        warn!(block_id, "evicted oldest decoder (concurrent decoder limit reached)");
     }
 }
 

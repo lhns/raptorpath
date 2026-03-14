@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 #[tokio::test]
 async fn test_shutdown_message_serializes() {
     let msg = WireMessage::Control(ControlMessage::Shutdown);
-    let bytes = msg.serialize();
+    let bytes = msg.serialize().unwrap();
     let deserialized = WireMessage::deserialize(&bytes).expect("deserialization must succeed");
 
     match deserialized {
@@ -129,15 +129,15 @@ async fn test_shutdown_control_message_variants() {
 
     for original in &messages {
         let wire = WireMessage::Control(original.clone());
-        let bytes = wire.serialize();
+        let bytes = wire.serialize().unwrap();
         let deserialized =
             WireMessage::deserialize(&bytes).expect("deserialization must succeed");
 
         match (&wire, &deserialized) {
             (WireMessage::Control(a), WireMessage::Control(b)) => {
                 // Verify they serialize to the same bytes (roundtrip identity)
-                let bytes_a = WireMessage::Control(a.clone()).serialize();
-                let bytes_b = WireMessage::Control(b.clone()).serialize();
+                let bytes_a = WireMessage::Control(a.clone()).serialize().unwrap();
+                let bytes_b = WireMessage::Control(b.clone()).serialize().unwrap();
                 assert_eq!(bytes_a, bytes_b, "roundtrip must be identical");
             }
             _ => panic!("expected Control variant"),

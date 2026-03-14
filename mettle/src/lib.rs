@@ -48,7 +48,7 @@
 pub mod decoder;
 pub mod encoder;
 pub(crate) mod gf2;
-pub(crate) mod graph;
+pub mod graph;
 
 pub use decoder::MettleDecoder;
 pub use encoder::{CodedPacket, MettleEncoder};
@@ -89,5 +89,121 @@ impl MettleConfig {
             num_edges: 4,
             overhead_factor: 0.15,
         }
+    }
+
+    /// Validate configuration parameters. Returns `Err` with a description if any
+    /// parameter is out of range. Called automatically by encoder/decoder constructors.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.window_size < 1 {
+            return Err(format!(
+                "window_size must be >= 1, got {}",
+                self.window_size
+            ));
+        }
+        if self.num_edges < 1 {
+            return Err(format!("num_edges must be >= 1, got {}", self.num_edges));
+        }
+        if !self.overhead_factor.is_finite() {
+            return Err(format!(
+                "overhead_factor must be finite, got {}",
+                self.overhead_factor
+            ));
+        }
+        if self.overhead_factor < 0.0 || self.overhead_factor > 10.0 {
+            return Err(format!(
+                "overhead_factor must be in [0.0, 10.0], got {}",
+                self.overhead_factor
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_valid() {
+        MettleConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn small_window_config_valid() {
+        MettleConfig::small_window().validate().unwrap();
+    }
+
+    #[test]
+    fn config_window_size_zero() {
+        let config = MettleConfig {
+            window_size: 0,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_num_edges_zero() {
+        let config = MettleConfig {
+            num_edges: 0,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_overhead_negative() {
+        let config = MettleConfig {
+            overhead_factor: -0.1,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_overhead_infinity() {
+        let config = MettleConfig {
+            overhead_factor: f64::INFINITY,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_overhead_nan() {
+        let config = MettleConfig {
+            overhead_factor: f64::NAN,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_overhead_too_large() {
+        let config = MettleConfig {
+            overhead_factor: 11.0,
+            ..MettleConfig::default()
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MettleConfig")]
+    fn encoder_rejects_invalid_config() {
+        let config = MettleConfig {
+            window_size: 0,
+            ..MettleConfig::default()
+        };
+        MettleEncoder::new(config, 42);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid MettleConfig")]
+    fn decoder_rejects_invalid_config() {
+        let config = MettleConfig {
+            overhead_factor: -1.0,
+            ..MettleConfig::default()
+        };
+        MettleDecoder::new(config, 10, 42);
     }
 }

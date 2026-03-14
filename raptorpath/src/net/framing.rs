@@ -49,6 +49,34 @@ pub fn extract_packets(data: &[u8]) -> Vec<Vec<u8>> {
     packets
 }
 
+// ---------------------------------------------------------------------------
+// Window-mode framing: each source symbol = one packet (padded to symbol_size)
+// ---------------------------------------------------------------------------
+
+/// Frame a single packet as a window-mode source symbol.
+/// Returns a padded buffer of `symbol_size` bytes with a 2-byte length prefix.
+pub fn frame_window_packet(data: &[u8], symbol_size: u16) -> Vec<u8> {
+    let size = symbol_size as usize;
+    let mut buf = vec![0u8; size];
+    let max_payload = size.saturating_sub(2);
+    let len = data.len().min(max_payload);
+    buf[0..2].copy_from_slice(&(len as u16).to_le_bytes());
+    buf[2..2 + len].copy_from_slice(&data[..len]);
+    buf
+}
+
+/// Extract the original packet from a window-mode source symbol.
+pub fn extract_window_packet(symbol_data: &[u8]) -> Option<Vec<u8>> {
+    if symbol_data.len() < 2 {
+        return None;
+    }
+    let len = u16::from_le_bytes([symbol_data[0], symbol_data[1]]) as usize;
+    if len == 0 || 2 + len > symbol_data.len() {
+        return None;
+    }
+    Some(symbol_data[2..2 + len].to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +207,59 @@ mod tests {
 
         // 2 bytes length prefix + 1000 data + 2 bytes sentinel = 1004
         assert_eq!(buf.len(), 1004);
+    }
+
+    // -----------------------------------------------------------------------
+    // Window-mode framing tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_window_frame_roundtrip() {
+        let packet = vec![1, 2, 3, 4, 5];
+        let symbol = frame_window_packet(&packet, 64);
+        assert_eq!(symbol.len(), 64);
+
+        let extracted = extract_window_packet(&symbol).unwrap();
+        assert_eq!(extracted, packet);
+    }
+
+    #[test]
+    fn test_window_frame_empty_packet() {
+        // Zero-length packet should yield None on extraction (sentinel-like)
+        let symbol = frame_window_packet(&[], 64);
+        assert_eq!(symbol.len(), 64);
+        assert!(extract_window_packet(&symbol).is_none());
+    }
+
+    #[test]
+    fn test_window_frame_max_payload() {
+        // Packet fills entire symbol (minus 2-byte length prefix)
+        let packet = vec![0xAB; 62]; // 64 - 2
+        let symbol = frame_window_packet(&packet, 64);
+        let extracted = extract_window_packet(&symbol).unwrap();
+        assert_eq!(extracted, packet);
+    }
+
+    #[test]
+    fn test_window_frame_oversized_packet_truncated() {
+        // Packet larger than symbol capacity — silently truncated
+        let packet = vec![0xFF; 200];
+        let symbol = frame_window_packet(&packet, 64);
+        let extracted = extract_window_packet(&symbol).unwrap();
+        assert_eq!(extracted.len(), 62); // 64 - 2
+    }
+
+    #[test]
+    fn test_window_frame_too_short_symbol() {
+        assert!(extract_window_packet(&[]).is_none());
+        assert!(extract_window_packet(&[0]).is_none());
+    }
+
+    #[test]
+    fn test_window_frame_corrupt_length() {
+        // Length field points past end of data
+        let mut symbol = vec![0u8; 10];
+        symbol[0..2].copy_from_slice(&100u16.to_le_bytes());
+        assert!(extract_window_packet(&symbol).is_none());
     }
 }

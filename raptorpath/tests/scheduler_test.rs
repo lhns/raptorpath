@@ -1,6 +1,6 @@
 //! Scheduler tests: multipath symbol distribution.
 
-use raptorpath::fec::WireSymbol;
+use raptorpath::fec::{FecBackend, WireSymbol};
 use raptorpath::scheduler::Scheduler;
 use std::time::Duration;
 
@@ -12,12 +12,13 @@ fn make_symbol(id: u32, repair: bool) -> WireSymbol {
         payload_id: id,
         is_repair: repair,
         data: vec![0u8; 64],
+        backend: FecBackend::RaptorQ,
     }
 }
 
 #[test]
 fn test_single_path_gets_everything() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
@@ -30,7 +31,7 @@ fn test_single_path_gets_everything() {
 
 #[test]
 fn test_source_prefers_low_rtt() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
 
@@ -59,7 +60,7 @@ fn test_source_prefers_low_rtt() {
 
 #[test]
 fn test_all_symbols_distributed() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
     sched.add_path(2);
@@ -74,7 +75,7 @@ fn test_all_symbols_distributed() {
 
 #[test]
 fn test_inactive_path_excluded() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
     sched.path_mut(1).unwrap().active = false;
@@ -93,7 +94,7 @@ fn test_inactive_path_excluded() {
 
 #[test]
 fn test_in_flight_tracking() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
@@ -110,7 +111,7 @@ fn test_in_flight_tracking() {
 
 #[test]
 fn test_cwnd_limits_scheduling() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.path_mut(0).unwrap().cwnd = 3; // very small window
 
@@ -124,7 +125,7 @@ fn test_cwnd_limits_scheduling() {
 
 #[test]
 fn test_remove_path() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
     sched.add_path(1);
     assert!(sched.path(1).is_some());
@@ -135,7 +136,7 @@ fn test_remove_path() {
 
 #[test]
 fn test_schedule_empty_symbols() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     sched.add_path(0);
 
     let result: ScheduleResult = sched.schedule(vec![], vec![]);
@@ -145,7 +146,7 @@ fn test_schedule_empty_symbols() {
 
 #[test]
 fn test_no_paths_available() {
-    let mut sched = Scheduler::new();
+    let mut sched = Scheduler::default();
     // No paths added
 
     let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();

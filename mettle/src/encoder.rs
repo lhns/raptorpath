@@ -40,7 +40,13 @@ pub struct MettleEncoder {
 
 impl MettleEncoder {
     /// Create a new encoder with the given configuration.
+    ///
+    /// # Panics
+    /// Panics if config parameters are invalid (e.g. window_size=0).
     pub fn new(config: MettleConfig, seed: u64) -> Self {
+        config
+            .validate()
+            .expect("invalid MettleConfig for encoder");
         // Pre-allocate bins. We'll grow as needed when packets are added.
         Self {
             config,
@@ -56,7 +62,22 @@ impl MettleEncoder {
     ///
     /// The packet is stored for systematic transmission and XOR'd into `l` bins
     /// determined by the METTLE graph structure.
+    ///
+    /// # Panics
+    /// Panics if `packet` has a different length than the first packet added.
+    /// All source packets in a block must be the same size (pad the last one
+    /// at the call site if needed).
     pub fn add_source_packet(&mut self, packet: &[u8]) {
+        if let Some(first) = self.source_packets.first() {
+            assert_eq!(
+                packet.len(),
+                first.len(),
+                "METTLE: all source packets must be the same size (expected {}, got {})",
+                first.len(),
+                packet.len(),
+            );
+        }
+
         let x = self.source_packets.len();
         self.source_packets.push(packet.to_vec());
 

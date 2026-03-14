@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 # FEC
 raptorq = "2"
 mettle = { path = "../mettle" }
+reed-solomon-erasure = "6"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
