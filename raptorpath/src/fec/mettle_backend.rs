@@ -61,19 +61,21 @@ impl FecEncoder for MettleBlockEncoder {
             .collect()
     }
 
-    fn repair_symbols(&self, _count: u32) -> Vec<WireSymbol> {
+    fn repair_symbols(&self, count: u32) -> Vec<WireSymbol> {
         let block_id = self.params.block_id;
         let coded = self.encoder.coded_packets();
+        let n = coded.len();
         let num_source = self.encoder.num_source();
 
-        // METTLE is a fixed-rate code — the peeling decoder needs the complete
-        // bin structure to cascade. Unlike rateless codes (RaptorQ/RLC) where
-        // each repair is independently useful, METTLE's bins form an
-        // interdependent graph. Return ALL coded bins regardless of `count`;
-        // the decoder stops processing once it completes.
-        coded
-            .into_iter()
-            .map(|cp| {
+        // Use golden-ratio stride to spread selected bins quasi-uniformly
+        // across the full bin range, matching mettle_window.rs strategy.
+        // Sequential .take(count) would only cover bins 0..count-1, missing
+        // source positions whose TLE bins fall outside that range.
+        let phi_inv: f64 = 0.6180339887; // 1/φ
+        (0..count as usize)
+            .map(|i| ((i as f64 * phi_inv * n as f64) as usize) % n)
+            .map(|idx| {
+                let cp = &coded[idx];
                 // Encode bin_index and members into the repair symbol data.
                 // The decoder needs members to know which source positions are in this bin.
                 // We encode: [bin_index(4 bytes)][num_members(4 bytes)][members...][coded_data]
@@ -95,6 +97,10 @@ impl FecEncoder for MettleBlockEncoder {
                 }
             })
             .collect()
+    }
+
+    fn max_repairs(&self) -> u32 {
+        self.encoder.coded_packets().len() as u32
     }
 }
 
@@ -389,27 +395,27 @@ mod tests {
     }
 
     #[test]
-    fn test_repair_symbols_returns_all_bins() {
-        // Regression: repair_symbols() must return ALL coded bins, not just `count`.
+    fn test_repair_symbols_respects_count() {
+        // repair_symbols(count) must return at most `count` symbols.
         let data = vec![0xABu8; 10_000]; // k=50 symbols of 200 bytes
         let params = make_params(50, 200, 5);
         let encoder = MettleBlockEncoder::new(&data, params);
 
-        let repairs = encoder.repair_symbols(5);
-        let total_coded = encoder.encoder.coded_packets().len();
+        let total_coded = encoder.max_repairs();
+        assert!(total_coded > 5, "total coded bins ({}) should be >> 5", total_coded);
 
-        // Must return every coded bin, not just the first 5
+        // Requesting fewer than total returns exactly that many
+        let repairs = encoder.repair_symbols(5);
+        assert_eq!(repairs.len(), 5, "repair_symbols(5) should return 5, got {}", repairs.len());
+
+        // Requesting max_repairs returns all bins
+        let all_repairs = encoder.repair_symbols(total_coded);
         assert_eq!(
-            repairs.len(),
+            all_repairs.len(),
+            total_coded as usize,
+            "repair_symbols(max_repairs()) should return ALL {} coded bins, got {}",
             total_coded,
-            "repair_symbols() should return ALL {} coded bins, got {}",
-            total_coded,
-            repairs.len()
-        );
-        assert!(
-            repairs.len() > 5,
-            "total coded bins ({}) should be >> 5",
-            repairs.len()
+            all_repairs.len()
         );
     }
 
@@ -495,6 +501,40 @@ mod tests {
             }
         }
         assert!(recovered, "Should recover from 1 loss with repair symbols");
+    }
+
+    #[test]
+    fn test_repair_symbols_spread_across_bins() {
+        // Golden-ratio stride should spread 14 repairs across the full bin range,
+        // not cluster them at bins 0-13.
+        let k = 50;
+        let data = vec![0xABu8; k * 200];
+        let params = make_params(k as u32, 200, 14);
+        let encoder = MettleBlockEncoder::new(&data, params);
+
+        let total_bins = encoder.max_repairs() as usize;
+        assert!(total_bins > 14, "need more total bins than requested repairs");
+
+        let repairs = encoder.repair_symbols(14);
+        assert_eq!(repairs.len(), 14);
+
+        // Extract bin indices from the wire format (first 4 bytes of each repair)
+        let bin_indices: Vec<usize> = repairs
+            .iter()
+            .map(|r| u32::from_le_bytes(r.data[0..4].try_into().unwrap()) as usize)
+            .collect();
+
+        let min_bin = *bin_indices.iter().min().unwrap();
+        let max_bin = *bin_indices.iter().max().unwrap();
+        let span = max_bin - min_bin;
+
+        // The selected bins should span at least half the total bin range
+        assert!(
+            span >= total_bins / 2,
+            "Bin spread too narrow: bins {:?}, span={}, total_bins={}. \
+             Expected span >= {} (half of total bins)",
+            bin_indices, span, total_bins, total_bins / 2
+        );
     }
 
     #[test]

@@ -1,12 +1,19 @@
-# Benchmark Results — 2026-03-15 (Post-METTLE Bug Fix)
+# Benchmark Results — 2026-03-15 (Post-METTLE Bug Fix, Fair Benchmarks)
 
 Platform: Windows 11 Pro, `test` profile (unoptimized + debuginfo).
-Run after METTLE edge probability fix (ADR 0028) and integration adapter fixes.
+Run after METTLE edge probability fix (ADR 0028), integration adapter fixes,
+and benchmark fairness corrections.
 
 This document supersedes the METTLE-related findings from
 [benchmark-realworld-results-2026-03-14.md](benchmark-realworld-results-2026-03-14.md).
 Timing data from that document remains valid (the fix does not change computational
 complexity). Only recovery rates changed.
+
+**Update (golden-ratio stride)**: Block adapter `repair_symbols()` now uses
+golden-ratio stride bin selection (same pattern as `mettle_window.rs`) instead
+of sequential `.take(count)`. This spreads selected bins quasi-uniformly across
+the full bin range so every source position has coverage. Same-overhead METTLE
+block recovery improved modestly (see tables below).
 
 ---
 
@@ -17,11 +24,15 @@ Three bugs were fixed between March 14 and March 15:
 | Bug | Impact | Fix |
 |-----|--------|-----|
 | Edge probability off-by-one (`graph.rs`) | First stochastic edge collided with TLE, wasting 25% of graph connectivity | `p = 1/2^(i-1)` changed to `p = 1/2^i` |
-| Block adapter returns subset of bins (`mettle_backend.rs`) | Only first N bins by index sent as repairs, leaving higher source positions unprotected | Return all coded bins (METTLE needs full graph) |
+| Block adapter `repair_symbols()` ignored `count` (`mettle_backend.rs`) | Production code via `stream.rs` sent ~8x more repair data than intended; benchmarks gave METTLE unfair advantage | Respect `count` parameter, add `max_repairs()` to trait |
 | Decoder num_source mismatch (`mettle_backend.rs`) | Decoder expected `params.source_symbols` positions but encoder produced `ceil(data_len / symbol_size)` | Compute from `transfer_length / symbol_size` |
+| Sequential bin selection in `repair_symbols()` | `.take(14)` grabbed bins 0-13, missing sources whose TLE bins > 13 | Golden-ratio stride spreads bins quasi-uniformly across full range |
 
-Additionally, the window encoder repair selection was changed from sequential to
-golden-ratio stride for better bin range coverage.
+Additionally:
+- Window encoder repair selection changed from sequential to golden-ratio stride
+- Block encoder `repair_symbols()` also uses golden-ratio stride for bin selection
+- Window METTLE repair budget unified with RLC (`2.0 × loss_rate`, min 5)
+- Block benchmarks split into two tables: same-overhead (fair) and full-budget
 
 ---
 
@@ -42,50 +53,101 @@ Unchanged from March 14. All tests use Gilbert-Elliott bursty loss:
 
 From `fec_realworld_recovery_test` (10 trials per cell, deterministic seeds).
 
-### Block-mode FEC Recovery (64 KB, 25% overhead, METTLE sends all bins)
+### Block-mode FEC Recovery — Same Overhead (64 KB, k=55, all backends get 14 repairs)
 
-|                  | Datacenter | WiFi    | LTE     | Congested |
-|------------------|------------|---------|---------|-----------|
-| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 40.0%     |
-| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 40.0%     |
-| **METTLE**       | **100.0%** | **100.0%** | **100.0%** | **100.0%** |
-| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 40.0%     |
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
+| **METTLE**       | 80.0%      | 40.0%   | 60.0%   | 0.0%      | 14      | 25%      |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
 
-METTLE now matches or exceeds all backends in block mode. At Congested (12%
-stationary loss), METTLE achieves 100% where RaptorQ/RS/RLC achieve only 40%.
-This is because the block adapter now sends ALL coded bins — METTLE's peeling
-decoder has the full graph structure and can cascade through any loss pattern
-that the TLE edges provide starting points for.
+With identical overhead, METTLE is the **weakest** block-mode backend. Golden-ratio
+stride bin selection improved recovery from 30-70% to 40-80% (DC-LTE) by spreading
+14 bins across the full ~103 bin range, but the peeling decoder still cannot cascade
+with so few bins. RaptorQ/RLC generate independent repair symbols, so each one
+contributes useful information.
 
-### Window-mode FEC Recovery (500 symbols, 2x loss overhead)
+### Block-mode FEC Recovery — Full Budget (each backend's natural repair limit)
+
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
+| **METTLE**       | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 103     | 187%     |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 40.0%     | 14      | 25%      |
+
+METTLE achieves 100% recovery everywhere — but sends **7.4x more repair data**
+(187% vs 25% overhead). This is NOT an apples-to-apples comparison. See the
+same-bandwidth table below for the definitive answer.
+
+### Block-mode FEC Recovery — Same Bandwidth as METTLE (all backends get 103 repairs = 187%)
+
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 103     | 187%     |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 103     | 187%     |
+| **METTLE**       | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 103     | 187%     |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 103     | 187%     |
+
+**Key finding**: At equal bandwidth (187% overhead), all backends achieve 100%
+recovery across all scenarios. METTLE's Congested advantage in the Full Budget
+table is entirely due to sending 7.4x more data — not algorithmic superiority.
+RaptorQ/RLC match METTLE's recovery when given the same bandwidth budget.
+
+### Window-mode FEC Recovery (500 symbols, 2x loss overhead, unified budgets)
 
 |                    | Datacenter | WiFi    | LTE     | Congested |
 |--------------------|------------|---------|---------|-----------|
 | **RLC Window**     | 100.0%     | 100.0%  | 100.0%  | 26.2%     |
-| **METTLE Window**  | 14.3%      | 23.4%   | 30.2%   | 54.6%     |
+| **METTLE Window**  | 14.3%      | 18.4%   | 19.2%   | 36.5%     |
 | **Streaming**      | 42.9%      | 34.8%   | 16.3%   | 11.7%     |
 
-METTLE Window improved from 0-6% to 14-55%, but remains below RLC Window at
-low-medium loss. At Congested, METTLE Window (54.6%) now exceeds both RLC
-Window (26.2%) and Streaming (11.7%) — the peeling decoder's speed allows it
-to process more repairs within the window budget.
+All window backends now use the same repair budget formula (`2.0 × loss_rate`,
+min 5). Previously METTLE used `3.0 × loss_rate` (min 10), inflating its
+numbers. With unified budgets, METTLE Window is below RLC at all loss rates
+except Congested (36.5% vs 26.2%).
 
-### Cross-Pipeline Comparison (500 pkts, 50-pkt blocks for block mode)
+### Cross-Pipeline Block — Same Overhead (500 pkts, 50-pkt blocks, 25%)
 
-**Block backends:**
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 76.0%     | 13      | 26%      |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 62.0%     | 13      | 26%      |
+| **METTLE**       | 99.0%      | 57.0%   | 55.0%   | 4.0%      | 13      | 26%      |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 62.0%     | 13      | 26%      |
 
-|                  | Datacenter | WiFi    | LTE     | Congested |
-|------------------|------------|---------|---------|-----------|
-| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 76.0%     |
-| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 62.0%     |
-| **METTLE**       | **100.0%** | **100.0%** | **100.0%** | **100.0%** |
-| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 62.0%     |
+### Cross-Pipeline Block — Full Budget (each backend's natural repair limit)
 
-**Window backends:** (same as window-mode table above)
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 76.0%     | 13      | 26%      |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 62.0%     | 13      | 26%      |
+| **METTLE**       | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 87      | 174%     |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 62.0%     | 13      | 26%      |
 
-METTLE block now dominates the cross-pipeline comparison. The 100% recovery at
-Congested (where RaptorQ is 76%, RS/RLC 62%) is significant — METTLE's full
-bin set provides enough redundancy for the peeling cascade even at high loss.
+### Cross-Pipeline Block — Same Bandwidth as METTLE (all backends get 97 repairs = 194%)
+
+|                  | Datacenter | WiFi    | LTE     | Congested | Repairs | Overhead |
+|------------------|------------|---------|---------|-----------|---------|----------|
+| **RaptorQ**      | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 97      | 194%     |
+| **Reed-Solomon** | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 97      | 194%     |
+| **METTLE**       | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 97      | 194%     |
+| **RLC**          | 100.0%     | 100.0%  | 100.0%  | 100.0%    | 97      | 194%     |
+
+Same pattern: at equal bandwidth, all backends achieve identical 100% recovery.
+
+**Cross-pipeline window backends:**
+
+|                    | Datacenter | WiFi    | LTE     | Congested |
+|--------------------|------------|---------|---------|-----------|
+| **RLC Window**     | 100.0%     | 100.0%  | 100.0%  | 26.2%     |
+| **METTLE Window**  | 14.3%      | 18.4%   | 19.2%   | 36.5%     |
+| **Streaming**      | 42.9%      | 34.8%   | 16.3%   | 11.7%     |
+
+Same pattern as block mode: METTLE's cross-pipeline advantage at Congested
+(100% vs 76%) comes from sending 6.7x more repair data (174% vs 26% overhead).
+The same-bandwidth table confirms all backends match at equal overhead.
 
 ---
 
@@ -161,167 +223,156 @@ METTLE speedup factors (vs next-fastest):
 
 ---
 
-## 7. Comparative Ranking — March 14 vs March 15
+## 7. Comparative Ranking (Fair Benchmarks)
 
-### Block Mode
+### Block Mode — Same Overhead (25%)
 
-| Backend      | Mar 14 Recovery | Mar 15 Recovery | Speed | Overall Rank |
-|--------------|----------------|----------------|-------|-------------|
-| **METTLE**   | 0-70%          | **100%**       | Fastest | **1st** (promoted) |
-| **RaptorQ**  | 100%           | 100%           | Medium | 2nd |
-| **RLC**      | 100%           | 100%           | Medium | 3rd |
-| **RS**       | 100%           | 100%           | Slowest | 4th |
+| Backend      | Recovery (DC/WiFi/LTE) | Recovery (Congested) | Speed | Rank |
+|--------------|------------------------|----------------------|-------|------|
+| **RaptorQ**  | 100%                   | 40%                  | Medium | **1st** |
+| **RLC**      | 100%                   | 40%                  | Medium | 2nd |
+| **RS**       | 100%                   | 40%                  | Slowest | 3rd |
+| **METTLE**   | 40-80%                 | 0%                   | Fastest | 4th |
 
-METTLE goes from worst to best in block mode. It is the only backend to
-achieve 100% recovery at Congested, and it does so at 3.5x the encoding speed
-of the next-fastest option.
+At equal overhead, METTLE is the worst block-mode backend. Its fixed-rate
+peeling decoder cannot recover with only 14 of ~103 coded bins.
 
-### Window Mode
+### Block Mode — Full Budget (each backend's max)
 
-| Backend        | Mar 14 Recovery | Mar 15 Recovery | Speed | Overall Rank |
-|----------------|----------------|----------------|-------|-------------|
-| **RLC Window** | 100%           | 100%           | Slow  | **1st** |
-| **METTLE Win** | 0-6%           | **14-55%**     | Fast  | 2nd (promoted) |
-| **Streaming**  | 12-43%         | 12-43%         | Medium | 3rd |
+| Backend      | Recovery (all) | Repairs | Overhead | Speed | Notes |
+|--------------|----------------|---------|----------|-------|-------|
+| **METTLE**   | 100%           | 103     | 187%     | Fastest | 7.4x more repair data |
+| **RaptorQ**  | 100% (DC-LTE), 40% (Cong) | 14 | 25% | Medium | Rateless, bandwidth-efficient |
+| **RLC**      | 100% (DC-LTE), 40% (Cong) | 14 | 25% | Medium | Same as RaptorQ |
+| **RS**       | 100% (DC-LTE), 40% (Cong) | 14 | 25% | Slowest | MDS |
 
-RLC Window remains the reliability leader. METTLE Window improved significantly
-but cannot match RLC's rateless properties. However, at Congested loss, METTLE
-Window (55%) now exceeds both RLC Window (26%) and Streaming (12%).
+METTLE can achieve 100% everywhere but only by spending ~7x the bandwidth.
 
-### Cross-Pipeline Block
+### Block Mode — Same Bandwidth as METTLE (187% overhead)
 
-| Backend      | Mar 14 Recovery | Mar 15 Recovery | Speed | Overall Rank |
-|--------------|----------------|----------------|-------|-------------|
-| **METTLE**   | 0%             | **100%**       | Fastest | **1st** (promoted) |
-| **RaptorQ**  | 76-100%        | 76-100%        | Medium | 2nd |
-| **RLC**      | 62-100%        | 62-100%        | Medium | 3rd |
-| **RS**       | 62-100%        | 62-100%        | Slowest | 4th |
+| Backend      | Recovery (all) | Repairs | Speed | Rank |
+|--------------|----------------|---------|-------|------|
+| **RaptorQ**  | 100%           | 103     | Medium | **1st** (tied) |
+| **RLC**      | 100%           | 103     | Medium | 1st (tied) |
+| **RS**       | 100%           | 103     | Slowest | 1st (tied) |
+| **METTLE**   | 100%           | 103     | Fastest | 1st (tied) |
+
+At equal bandwidth (187% overhead), all backends achieve 100% recovery. METTLE's
+only differentiator is speed — 3.5x faster encode, 16x faster decode.
+
+### Window Mode (unified 2x loss budget)
+
+| Backend        | Recovery (DC-LTE) | Recovery (Congested) | Speed | Rank |
+|----------------|-------------------|----------------------|-------|------|
+| **RLC Window** | 100%              | 26.2%                | Slow  | **1st** |
+| **Streaming**  | 17-43%            | 11.7%                | Medium | 2nd |
+| **METTLE Win** | 14-19%            | 36.5%                | Fast  | 3rd |
+
+With unified repair budgets, METTLE Window only wins at Congested (36.5% vs
+26.2%). At low-medium loss, RLC is strictly superior.
 
 ---
 
 ## 8. Analysis
 
-### The METTLE Turnaround
+### The Benchmark Fairness Fix
 
-The March 14 benchmarks concluded: *"METTLE stays research-only; not viable
-for production."* This was wrong — the code had a bug.
+The previous version of this document reported METTLE as the "best block-mode
+FEC backend" — this was misleading. Two benchmark issues inflated METTLE's
+numbers:
 
-With the fix, METTLE is now the **best block-mode FEC backend** in raptorpath:
+1. **Block mode**: `repair_symbols()` ignored the `count` parameter and
+   returned ALL ~103 coded bins, while other backends received only 14
+   (25% overhead). METTLE got **7.4x more redundancy**.
 
-| Attribute           | METTLE | RaptorQ | Winner |
-|---------------------|--------|---------|--------|
-| Block recovery (DC/WiFi/LTE) | 100% | 100% | Tie |
-| Block recovery (Congested) | **100%** | 40% | **METTLE** |
-| Encode speed (64KB) | **183 us** | 648 us | **METTLE** (3.5x) |
-| Decode speed (repair) | **33 us** | 540 us | **METTLE** (16x) |
-| Overhead model | Fixed-rate | Rateless | RaptorQ (more flexible) |
-| Patent status | Encumbered | Free | RaptorQ |
+2. **Window mode**: METTLE used `3.0 × loss_rate` (min 10) repair multiplier
+   vs RLC's `2.0 × loss_rate` (min 5). Higher loss = more METTLE repairs,
+   creating the appearance of recovery improving with loss.
 
-The caveat: METTLE achieves 100% block recovery only when the adapter sends
-all coded bins. This makes METTLE a fixed-rate code in practice — the sender
-cannot tune the repair count dynamically. RaptorQ's rateless property (generate
-any number of unique repairs on demand) remains an advantage for adaptive rate
-control.
+3. **Production bug**: `stream.rs:31` calls `repair_symbols(count)` through
+   the trait. METTLE ignoring `count` meant production code silently sent
+   ~8x more repair data than intended.
 
-### Why METTLE Beats RaptorQ at Congested
+The fix: `repair_symbols()` now respects `count`, a new `max_repairs()` trait
+method lets callers discover the codec's repair budget, and benchmarks use
+two tables to separate the apples-to-apples comparison from the full-budget
+comparison.
 
-At 12% stationary loss with GE bursts, the test provisions 25% repair overhead.
-RaptorQ/RS/RLC fail 60% of the time because 25% overhead is not always
-sufficient for bursty patterns — a burst can wipe out more than 25% of a
-block's source symbols.
+### METTLE's Actual Position
 
-METTLE sends ALL its coded bins (approximately `(1+c) * (k + w)` bins for k
-source symbols). At k=55 with c=0.15 and w=50, that's about 121 bins for 55
-source symbols — an effective overhead of ~120%. This massive redundancy
-absorbs any burst pattern. The trade-off is bandwidth: METTLE sends more
-repair data. A fairer comparison would give RaptorQ the same 120% repair
-overhead, where it would likely also achieve 100%.
+| Attribute              | METTLE                  | RaptorQ           | Winner |
+|------------------------|-------------------------|-------------------|--------|
+| Same-overhead recovery (25%) | 40-80% (DC-LTE), 0% (C) | 100% (DC-LTE), 40% (C) | **RaptorQ** |
+| Same-bandwidth recovery (187%) | 100%               | 100%              | **Tied** |
+| Full-budget recovery   | 100% (103 rep, 187%)    | 40% (Cong, 14 rep, 25%) | METTLE (at 7x bandwidth) |
+| Encode speed (64KB)    | **183 us**              | 648 us            | **METTLE** (3.5x) |
+| Decode speed (repair)  | **33 us**               | 540 us            | **METTLE** (16x) |
+| Overhead model         | Fixed-rate (~103 bins)   | Rateless          | **RaptorQ** |
+| Patent status          | Encumbered              | Free              | **RaptorQ** |
 
-### METTLE Window Mode: Improved but Fundamentally Limited
+**Same-bandwidth test proves it**: at 187% overhead, RaptorQ/RLC/RS all achieve
+100% recovery — matching METTLE exactly. METTLE has no algorithmic recovery
+advantage. Its speed advantage is real and significant; its recovery advantage
+at full budget is purely a bandwidth artifact. The right use case is when
+bandwidth is cheap and latency matters — send all bins and enjoy 3.5-16x
+faster encode/decode.
 
-Window METTLE improved from 0-6% to 14-55% recovery but cannot match RLC
-Window's 100% at low-medium loss. The core limitation:
+### METTLE Window: Honest Numbers
 
-1. **Fixed-rate vs rateless**: METTLE generates a fixed bin set. When the
-   encoder has 500 source symbols, it produces ~600 coded bins. The test
-   generates only 10-53 repairs (2x stationary loss), which is a small
-   fraction of the total bins. Even with golden-ratio stride distribution,
-   this subset cannot cover all possible loss positions.
+With unified repair budgets (`2.0 × loss_rate`, min 5):
+- **Datacenter**: 14.3% (was 14.3% — unaffected, min-5 dominates)
+- **WiFi**: 18.4% (was 23.4% with 3x multiplier)
+- **LTE**: 19.2% (was 30.2% with 3x multiplier)
+- **Congested**: 36.5% (was 54.6% with 3x/min-10 multiplier)
 
-2. **RLC is rateless**: Each RLC repair is a unique random GF(256)
-   combination. Even 10 repairs are 10 independent equations — highly
-   likely to cover the missing symbols. METTLE's 10 repairs are 10 specific
-   bins from a fixed graph — they may or may not happen to cover the lost
-   positions.
+The previous "recovery increases with loss" pattern was an artifact of the
+higher repair multiplier giving METTLE proportionally more repairs at high loss.
 
-3. **The crossover at Congested**: At high loss (12%), the test generates
-   more repairs (~180) and RLC's GF(256) decode cost spikes. METTLE's
-   XOR-only peeling processes these faster, and the higher repair count
-   covers more of its bin range. This is why METTLE Window (55%) beats RLC
-   Window (26%) at Congested — it can process more data per unit time.
+### The Speed-Reliability Frontier
 
-### The Speed-Reliability Frontier (Updated)
+| Backend          | Speed Tier | Block (25% OH) | Block (187% OH) | Window | Best For |
+|------------------|------------|----------------|-----------------|--------|----------|
+| Block METTLE     | **Fastest** | 0-80%         | **100%**        | N/A    | Bandwidth-unlimited block FEC |
+| Block RaptorQ    | Medium     | **100%**       | **100%**        | N/A    | **General block FEC** |
+| Block RLC        | Medium     | **100%**       | **100%**        | N/A    | Alternative to RaptorQ |
+| Block RS         | Slowest    | **100%**       | **100%**        | N/A    | Interop only |
+| Window RLC       | Slow       | N/A            | N/A             | **100%** | **Streaming FEC** |
+| Window METTLE    | Fast       | N/A            | N/A             | 14-37% | Fast decode, low reliability |
+| Streaming        | Medium     | N/A            | N/A             | 12-43% | Needs tuning |
 
-Previous benchmarks described a speed-reliability trade-off where METTLE was
-fast but unreliable. The fix collapses this trade-off for block mode:
-
-| Backend          | Speed Tier | Block Reliability | Window Reliability | Best For |
-|------------------|------------|-------------------|---------------------|----------|
-| Block METTLE     | **Fastest** | **100%** | N/A | **Block FEC (all scenarios)** |
-| Block RaptorQ    | Medium     | 100%              | N/A                 | Rate-adaptive block FEC |
-| Block RLC        | Medium     | 100%              | N/A                 | Alternative to RaptorQ |
-| Block RS         | Slowest    | 100%              | N/A                 | Interop only |
-| Window RLC       | Slow       | N/A               | **100%**            | **Streaming FEC** |
-| Window METTLE    | Fast       | N/A               | 14-55%              | High-loss streaming |
-| Streaming        | Medium     | N/A               | 12-43%              | Needs tuning |
-
-### Why METTLE Outperforms at Congested (the Fair Comparison)
-
-The 100% vs 40% gap at Congested deserves scrutiny. METTLE sends all ~121
-coded bins as repairs. The other backends send only `ceil(k * 0.25)` = 14
-repair symbols. This is not an apples-to-apples bandwidth comparison.
-
-If we normalize by repair count:
-- METTLE sends **121 repair symbols** (100% overhead) -> 100% recovery
-- RaptorQ sends **14 repair symbols** (25% overhead) -> 40% recovery
-- RaptorQ with 100% overhead would send **55 repairs** -> likely ~100%
-
-METTLE's block advantage at Congested comes partly from sending more repair
-data, not purely from algorithmic superiority. However, the encode/decode
-speed advantage is real and independent of repair count.
+At 187% overhead (METTLE's full budget), all block backends achieve 100%
+recovery. METTLE's only advantage at this overhead level is encode/decode speed.
 
 ---
 
 ## 9. Updated Recommendations
 
-### Changes from March 14
+### Changes from Previous Version
 
-| Finding | March 14 | March 15 |
-|---------|----------|----------|
-| METTLE block reliability | 0-70% | **100%** |
-| METTLE cross-pipeline block | 0% | **100%** |
-| METTLE window reliability | 0-6% | **14-55%** |
-| METTLE overall recommendation | Research-only | **Production-viable (block mode)** |
+| Finding | Previous (unfair) | Corrected (fair) |
+|---------|-------------------|------------------|
+| METTLE block (same overhead) | "100%" (was getting 103 repairs) | **0-80%** (with 14 repairs, golden-ratio stride) |
+| METTLE block (full budget) | N/A | **100%** (103 repairs, 7.4x bandwidth) |
+| METTLE window | 14-55% (inflated by 3x multiplier) | **14-37%** (unified 2x budget) |
+| METTLE overall | "Best block-mode backend" | **Fast but bandwidth-hungry** |
+| Production bug | `repair_symbols()` ignored count | **Fixed**: respects count, `max_repairs()` added |
 
 ### Production Backend Selection
 
-1. **METTLE (block mode)** — promoted to tier-1 for block FEC when patent
-   status is acceptable. 100% recovery at 3.5x encode speed. Best choice
-   for latency-sensitive applications of any block size. Caveat: sends all
-   coded bins (fixed-rate), so bandwidth usage is higher than rateless codes
-   at low loss. Not suitable for adaptive rate control.
+1. **RaptorQ (block mode)** — the safe default. 100% recovery at 25% overhead,
+   rateless (tunable repair count), patent-free. Best when bandwidth matters.
 
-2. **RaptorQ (block mode)** — remains the safe default for adaptive rate
-   control. Near-optimal recovery with tunable repair count. Best when
-   bandwidth is constrained and repair count must be minimized. Patent-free.
+2. **METTLE (block mode, full budget)** — use when bandwidth is cheap and
+   latency is critical. 3.5x encode, 16x decode speed. Must send all ~103
+   coded bins. Patent-encumbered.
 
 3. **RLC (window mode)** — recommended for streaming/window FEC. 100%
-   recovery in the window pipeline. Decode is expensive (GF(256) GE) but
-   reliability is unmatched.
+   recovery, rateless. Decode is expensive (GF(256) GE) but reliability
+   is unmatched.
 
-4. **METTLE (window mode)** — consider for high-loss streaming where decode
-   speed matters more than recovery rate. Outperforms RLC Window at
-   Congested (55% vs 26%). Not yet production-ready for general use.
+4. **METTLE (window mode)** — consider only for high-loss scenarios where
+   decode speed matters more than recovery rate. 36.5% at Congested vs
+   RLC's 26.2%, but 14-19% at lower loss rates.
 
 5. **RS** — niche, only when external interop requires it.
 
@@ -329,32 +380,29 @@ speed advantage is real and independent of repair count.
 
 ### Decision Matrix
 
-| Scenario                  | Backend       | Why |
-|---------------------------|---------------|-----|
-| Block, latency-critical   | **METTLE**    | 3.5x encode, 16x decode, 100% recovery |
-| Block, bandwidth-limited  | **RaptorQ**   | Rateless: only send needed repairs |
-| Block, patent-free required | **RaptorQ** | METTLE is patent-encumbered |
-| Window, general           | **RLC Window** | 100% recovery, rateless |
-| Window, high-loss         | **METTLE Win** | 55% recovery, 135x faster decode |
-| Streaming, burst-heavy    | **Streaming** | Burst+random layers (needs tuning) |
+| Scenario                    | Backend        | Why |
+|-----------------------------|----------------|-----|
+| Block, general              | **RaptorQ**    | 100% recovery at minimal overhead, patent-free |
+| Block, latency-critical     | **METTLE**     | 3.5x encode, 16x decode (must send all bins) |
+| Block, bandwidth-limited    | **RaptorQ**    | Rateless: 14 repairs vs METTLE's 103 |
+| Block, patent-free required | **RaptorQ**    | METTLE is patent-encumbered |
+| Window, general             | **RLC Window** | 100% recovery, rateless |
+| Window, high-loss + speed   | **METTLE Win** | 37% recovery, 135x faster decode |
+| Streaming, burst-heavy      | **Streaming**  | Burst+random layers (needs tuning) |
 
 ---
 
 ## 10. Remaining Work
 
-1. **Fair bandwidth comparison**: Run RaptorQ/RLC block tests with the same
-   repair count as METTLE (all bins, ~120% overhead) to isolate algorithmic
-   advantage from bandwidth advantage.
+1. **Adaptive METTLE**: Investigate pre-generating all coded bins but only
+   sending a subset selected by the rate controller. This would give METTLE
+   rateless-like behavior at the cost of pre-computation.
 
 2. **Window METTLE with more repairs**: Test METTLE window with repair
    count = coded.len() (send all bins) to establish the upper bound of
    window recovery when bandwidth is not constrained.
 
-3. **Adaptive METTLE**: Investigate pre-generating all coded bins but only
-   sending a subset selected by the rate controller. This would give METTLE
-   rateless-like behavior at the cost of pre-computation.
-
-4. **METTLE patent assessment**: Determine whether the provisional patent
+3. **METTLE patent assessment**: Determine whether the provisional patent
    (Yu et al.) blocks production deployment.
 
 ---
@@ -374,3 +422,27 @@ cargo test -p mettle --test edge_analysis -- --nocapture
 # Timing benchmarks (requires release mode, ~10 minutes)
 cargo bench --bench fec_realworld_bench
 ```
+
+---
+
+## 11. Tapered vs Flat Interleaving (ADR 0029)
+
+**Setup**: 500 packets in 50-packet blocks, 25% overhead, 10 trials per scenario.
+Tapered interleaving front-loads repairs from block B into block B+1's source stream
+using exponential decay adapted to loss rate.
+
+| Backend | Mode | Datacenter | WiFi | LTE | Congested |
+|---------|------|-----------|------|-----|-----------|
+| RaptorQ | Flat | 100.0% | 100.0% | 100.0% | 48.0% |
+| RaptorQ | **Tapered** | 100.0% | 100.0% | 100.0% | **53.0%** |
+| METTLE | Flat | 96.0% | 60.0% | 47.0% | 0.0% |
+| METTLE | **Tapered** | **97.0%** | 60.0% | **58.0%** | **2.0%** |
+| RLC | Flat | 100.0% | 100.0% | 100.0% | 28.0% |
+| RLC | **Tapered** | 100.0% | 100.0% | 100.0% | **38.0%** |
+
+**Key findings**:
+- Tapered interleaving improves recovery in all high-loss scenarios with no regressions
+- Largest gains on Congested (RLC +10pp, RaptorQ +5pp) and LTE (METTLE +11pp)
+- The improvement comes from spreading repairs across burst boundaries — a burst
+  that previously destroyed all of block B's repairs now only hits some of them
+- Low-loss scenarios are unaffected (repairs still cluster near the front)

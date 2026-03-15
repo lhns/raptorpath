@@ -38,6 +38,10 @@ pub trait FecEncoder: Send {
     fn source_symbols(&self) -> Vec<WireSymbol>;
     /// Generate repair symbols. Can be called multiple times for fountain codes.
     fn repair_symbols(&self, count: u32) -> Vec<WireSymbol>;
+    /// Maximum number of useful repair symbols this encoder can produce.
+    /// Rateless codes (RaptorQ, RLC) return `u32::MAX`; fixed-rate codes
+    /// return the actual coded symbol count.
+    fn max_repairs(&self) -> u32 { u32::MAX }
 }
 
 /// Trait for FEC block decoders.

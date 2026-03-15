@@ -351,10 +351,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut flush_deadline: Option<tokio::time::Instant> = None;
         let mut shutting_down = false;
-        let mut ileave = interleave::InterleavingBuffer::new(
-            sender_interleave_depth as usize,
-            sender_interleave_timeout,
-        );
+        let mut ileave = if sender_interleave_depth >= 2 {
+            interleave::InterleavingBuffer::new_tapered(
+                sender_interleave_depth as usize,
+                sender_interleave_timeout,
+            )
+        } else {
+            interleave::InterleavingBuffer::new(
+                sender_interleave_depth as usize,
+                sender_interleave_timeout,
+            )
+        };
 
         loop {
             // Compute interleave drain deadline
@@ -1186,6 +1193,9 @@ async fn run_window_sender(
     let mut source_since_repair: u64 = 0;
     let mut prev_ack: u64 = 0;
     let mut last_nack_repair_us: u64 = 0;
+    /// Burst factor: controls how many extra repairs to generate when a new
+    /// source enters the window. burst_count = ceil(loss_rate * BURST_FACTOR).
+    const BURST_FACTOR: f64 = 4.0;
 
     // Announce window mode to peer on all paths
     {
@@ -1278,6 +1288,47 @@ async fn run_window_sender(
                 }
                 if let Some(ps) = stats.path(alt) {
                     ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+
+        // Repair burst: front-load extra repairs for new sources that have zero
+        // coverage. burst_count adapts to loss — higher loss = more burst repairs.
+        if encoder.window_size() > 1 {
+            let burst_loss = {
+                let sched = scheduler.lock();
+                sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .map(|p| p.estimator.loss_rate())
+                    .fold(0.0f64, f64::max)
+            };
+            let burst_count = (burst_loss * BURST_FACTOR).ceil() as u64;
+            if burst_count > 0 {
+                let burst_path = {
+                    let sched = scheduler.lock();
+                    select_repair_path(&sched, source_path)
+                };
+                for _ in 0..burst_count {
+                    if encoder.window_size() == 0 {
+                        break;
+                    }
+                    let burst_sym = encoder.generate_repair();
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![burst_sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: burst_path,
+                    };
+                    if let Err(e) = transport.send_symbols(burst_path, batch) {
+                        warn!(burst_path, ?e, "failed to send burst repair symbol");
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    if let Some(ps) = stats.path(burst_path) {
+                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }
@@ -1526,10 +1577,21 @@ fn send_interleaved_batches(
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
 ) {
+    // Compute worst-path loss rate for tapered interleaving decay
+    let loss_rate = {
+        let sched = scheduler.lock();
+        sched
+            .active_paths()
+            .iter()
+            .filter_map(|id| sched.path(*id))
+            .map(|p| p.estimator.loss_rate())
+            .fold(0.0f64, f64::max)
+    };
+
     let batches = if ileave.should_drain() {
-        ileave.drain()
+        ileave.drain(loss_rate)
     } else {
-        ileave.drain_all()
+        ileave.drain_all(loss_rate)
     };
 
     let now = now_us();

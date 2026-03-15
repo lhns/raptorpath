@@ -5,9 +5,9 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::fec::{
-    EncodingParams, FecBackend, MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder,
-    RlcWindowEncoder, StreamingDecoder, StreamingEncoder, StreamingParams, WindowDecoder,
-    WindowEncoder, WireSymbol,
+    EncodingParams, FecBackend, FecEncoder, MettleWindowDecoder, MettleWindowEncoder,
+    RlcWindowDecoder, RlcWindowEncoder, StreamingDecoder, StreamingEncoder, StreamingParams,
+    WindowDecoder, WindowEncoder, WireSymbol,
 };
 use std::collections::BTreeSet;
 
@@ -117,17 +117,11 @@ const SYMBOL_SIZE: u16 = 1200;
 // Block-mode recovery test
 // ---------------------------------------------------------------------------
 
-fn block_recovery_rate(backend: FecBackend, scenario: &Scenario) -> f64 {
+/// Block recovery with identical 25% overhead for all backends (apples-to-apples).
+fn block_recovery_rate_same_overhead(backend: FecBackend, scenario: &Scenario) -> (f64, u32) {
     let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
     let k = (data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
-    // 25% overhead repair
     let repair_count = (k as f64 * 0.25).ceil() as u32;
-    // METTLE needs more overhead
-    let repair_count = if backend == FecBackend::Mettle {
-        repair_count * 2
-    } else {
-        repair_count
-    };
 
     let mut successes = 0u64;
 
@@ -155,7 +149,167 @@ fn block_recovery_rate(backend: FecBackend, scenario: &Scenario) -> f64 {
         }
     }
 
-    successes as f64 / NUM_TRIALS as f64 * 100.0
+    (successes as f64 / NUM_TRIALS as f64 * 100.0, repair_count)
+}
+
+/// Block recovery with full repair budget — METTLE gets max_repairs(), others get 25%.
+fn block_recovery_rate_full_budget(backend: FecBackend, scenario: &Scenario) -> (f64, u32) {
+    let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
+    let k = (data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
+    let base_repair = (k as f64 * 0.25).ceil() as u32;
+
+    // Probe max_repairs from a sample encoder
+    let sample_params = make_params(k, SYMBOL_SIZE, base_repair);
+    let sample_encoder = backend.create_encoder(&data, sample_params);
+    let max_rep = sample_encoder.max_repairs();
+    let repair_count = if max_rep < u32::MAX { max_rep } else { base_repair };
+
+    let mut successes = 0u64;
+
+    for seed in 0..NUM_TRIALS {
+        let params = make_params(k, SYMBOL_SIZE, repair_count);
+        let encoder = backend.create_encoder(&data, params);
+        let source = encoder.source_symbols();
+        let repairs = encoder.repair_symbols(repair_count);
+
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let (surviving, _) = scenario.channel.apply(&source, &mut rng);
+        let mut all_syms: Vec<WireSymbol> = surviving;
+        all_syms.extend(repairs);
+
+        let mut decoder = backend.create_decoder(params, data.len() as u64);
+        let mut decoded = false;
+        for sym in &all_syms {
+            if decoder.add_symbol(sym).is_some() {
+                decoded = true;
+                break;
+            }
+        }
+        if decoded {
+            successes += 1;
+        }
+    }
+
+    (successes as f64 / NUM_TRIALS as f64 * 100.0, repair_count)
+}
+
+// ---------------------------------------------------------------------------
+// Block-mode recovery — same bandwidth as METTLE (all backends get METTLE's max_repairs)
+// ---------------------------------------------------------------------------
+
+/// All backends get METTLE's max_repairs count, answering: "at equal bandwidth, does
+/// METTLE's Congested advantage persist?" Returns (recovery%, repair_count, overhead%).
+fn block_recovery_rate_same_bandwidth(backend: FecBackend, scenario: &Scenario) -> (f64, u32, f64) {
+    let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
+    let k = (data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
+    let base_repair = (k as f64 * 0.25).ceil() as u32;
+
+    // Determine METTLE's max_repairs for this k
+    let mettle_params = make_params(k, SYMBOL_SIZE, base_repair);
+    let mettle_encoder = FecBackend::Mettle.create_encoder(&data, mettle_params);
+    let mettle_max = mettle_encoder.max_repairs();
+
+    // All backends get the same repair count as METTLE
+    let repair_count = mettle_max;
+    let overhead = repair_count as f64 / k as f64 * 100.0;
+
+    let mut successes = 0u64;
+
+    for seed in 0..NUM_TRIALS {
+        let params = make_params(k, SYMBOL_SIZE, repair_count);
+        let encoder = backend.create_encoder(&data, params);
+        let source = encoder.source_symbols();
+        let repairs = encoder.repair_symbols(repair_count);
+
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let (surviving, _) = scenario.channel.apply(&source, &mut rng);
+        let mut all_syms: Vec<WireSymbol> = surviving;
+        all_syms.extend(repairs);
+
+        let mut decoder = backend.create_decoder(params, data.len() as u64);
+        let mut decoded = false;
+        for sym in &all_syms {
+            if decoder.add_symbol(sym).is_some() {
+                decoded = true;
+                break;
+            }
+        }
+        if decoded {
+            successes += 1;
+        }
+    }
+
+    (successes as f64 / NUM_TRIALS as f64 * 100.0, repair_count, overhead)
+}
+
+// ---------------------------------------------------------------------------
+// Cross-pipeline block — same bandwidth as METTLE
+// ---------------------------------------------------------------------------
+
+/// Cross-pipeline version: all backends get METTLE's max_repairs per block.
+fn cross_block_recovery_same_bandwidth(backend: FecBackend, scenario: &Scenario) -> (f64, u32, f64) {
+    let num_symbols = 500usize;
+    let block_size = 50usize;
+    let num_blocks = (num_symbols + block_size - 1) / block_size;
+
+    // Determine METTLE's max_repairs for k=block_size
+    let probe_data: Vec<u8> = vec![0u8; block_size * SYMBOL_SIZE as usize];
+    let probe_k = block_size as u32;
+    let probe_repair = (probe_k as f64 * 0.25).ceil() as u32;
+    let probe_params = make_params(probe_k, SYMBOL_SIZE, probe_repair);
+    let probe_encoder = FecBackend::Mettle.create_encoder(&probe_data, probe_params);
+    let mettle_max = probe_encoder.max_repairs();
+    let overhead = mettle_max as f64 / probe_k as f64 * 100.0;
+
+    let mut total_blocks = 0u64;
+    let mut successful_blocks = 0u64;
+
+    for seed in 0..NUM_TRIALS {
+        let packet_data: Vec<Vec<u8>> = (0..num_symbols)
+            .map(|i| vec![(i % 256) as u8; 1000])
+            .collect();
+
+        for block_idx in 0..num_blocks {
+            let start = block_idx * block_size;
+            let end = (start + block_size).min(num_symbols);
+            let block_packets = &packet_data[start..end];
+            let k = block_packets.len() as u32;
+
+            let block_data: Vec<u8> = block_packets.iter().flat_map(|p| p.iter().copied()).collect();
+
+            let params = EncodingParams {
+                source_symbols: k,
+                symbol_size: SYMBOL_SIZE,
+                repair_count: mettle_max,
+                block_id: block_idx as u64,
+            };
+
+            let encoder = backend.create_encoder(&block_data, params);
+            let source = encoder.source_symbols();
+            let repairs = encoder.repair_symbols(mettle_max);
+
+            let mut rng = ChaCha8Rng::seed_from_u64(seed * 100 + block_idx as u64);
+            let (surviving, _) = scenario.channel.apply(&source, &mut rng);
+            let mut all_syms: Vec<WireSymbol> = surviving;
+            all_syms.extend(repairs);
+
+            let mut decoder = backend.create_decoder(params, block_data.len() as u64);
+            let mut decoded = false;
+            for sym in &all_syms {
+                if decoder.add_symbol(sym).is_some() {
+                    decoded = true;
+                    break;
+                }
+            }
+
+            total_blocks += 1;
+            if decoded {
+                successful_blocks += 1;
+            }
+        }
+    }
+
+    (successful_blocks as f64 / total_blocks as f64 * 100.0, mettle_max, overhead)
 }
 
 // ---------------------------------------------------------------------------
@@ -235,9 +389,9 @@ fn window_recovery_mettle(scenario: &Scenario) -> f64 {
             .map(|pkt| encoder.add_source(pkt))
             .collect();
 
-        let repair_count = (num_symbols as f64 * scenario.stationary_loss * 3.0)
+        let repair_count = (num_symbols as f64 * scenario.stationary_loss * 2.0)
             .ceil() as usize;
-        let repair_count = repair_count.max(10);
+        let repair_count = repair_count.max(5);
         let repairs: Vec<WireSymbol> = (0..repair_count)
             .map(|_| encoder.generate_repair())
             .collect();
@@ -355,13 +509,15 @@ fn window_recovery_streaming(scenario: &Scenario) -> f64 {
 // Cross-pipeline comparison: block backends on streaming data
 // ---------------------------------------------------------------------------
 
-fn cross_block_recovery(backend: FecBackend, scenario: &Scenario) -> f64 {
+/// Cross-pipeline block recovery with same overhead for all backends.
+fn cross_block_recovery_same_overhead(backend: FecBackend, scenario: &Scenario) -> (f64, u32) {
     let num_symbols = 500usize;
-    let block_size = 50usize; // ~10 blocks
+    let block_size = 50usize;
     let num_blocks = (num_symbols + block_size - 1) / block_size;
 
     let mut total_blocks = 0u64;
     let mut successful_blocks = 0u64;
+    let mut repair_used = 0u32;
 
     for seed in 0..NUM_TRIALS {
         let packet_data: Vec<Vec<u8>> = (0..num_symbols)
@@ -374,14 +530,9 @@ fn cross_block_recovery(backend: FecBackend, scenario: &Scenario) -> f64 {
             let block_packets = &packet_data[start..end];
             let k = block_packets.len() as u32;
 
-            // Concatenate into a block
             let block_data: Vec<u8> = block_packets.iter().flat_map(|p| p.iter().copied()).collect();
             let repair_count = (k as f64 * 0.25).ceil() as u32;
-            let repair_count = if backend == FecBackend::Mettle {
-                repair_count * 2
-            } else {
-                repair_count
-            };
+            repair_used = repair_count;
 
             let params = EncodingParams {
                 source_symbols: k,
@@ -415,7 +566,174 @@ fn cross_block_recovery(backend: FecBackend, scenario: &Scenario) -> f64 {
         }
     }
 
-    successful_blocks as f64 / total_blocks as f64 * 100.0
+    (successful_blocks as f64 / total_blocks as f64 * 100.0, repair_used)
+}
+
+/// Cross-pipeline block recovery with full repair budget per backend.
+fn cross_block_recovery_full_budget(backend: FecBackend, scenario: &Scenario) -> (f64, u32) {
+    let num_symbols = 500usize;
+    let block_size = 50usize;
+    let num_blocks = (num_symbols + block_size - 1) / block_size;
+
+    let mut total_blocks = 0u64;
+    let mut successful_blocks = 0u64;
+    let mut repair_used = 0u32;
+
+    for seed in 0..NUM_TRIALS {
+        let packet_data: Vec<Vec<u8>> = (0..num_symbols)
+            .map(|i| vec![(i % 256) as u8; 1000])
+            .collect();
+
+        for block_idx in 0..num_blocks {
+            let start = block_idx * block_size;
+            let end = (start + block_size).min(num_symbols);
+            let block_packets = &packet_data[start..end];
+            let k = block_packets.len() as u32;
+
+            let block_data: Vec<u8> = block_packets.iter().flat_map(|p| p.iter().copied()).collect();
+            let base_repair = (k as f64 * 0.25).ceil() as u32;
+
+            let params = EncodingParams {
+                source_symbols: k,
+                symbol_size: SYMBOL_SIZE,
+                repair_count: base_repair,
+                block_id: block_idx as u64,
+            };
+
+            let encoder = backend.create_encoder(&block_data, params);
+            let max_rep = encoder.max_repairs();
+            let repair_count = if max_rep < u32::MAX { max_rep } else { base_repair };
+            repair_used = repair_count;
+
+            let source = encoder.source_symbols();
+            let repairs = encoder.repair_symbols(repair_count);
+
+            let mut rng = ChaCha8Rng::seed_from_u64(seed * 100 + block_idx as u64);
+            let (surviving, _) = scenario.channel.apply(&source, &mut rng);
+            let mut all_syms: Vec<WireSymbol> = surviving;
+            all_syms.extend(repairs);
+
+            let mut decoder = backend.create_decoder(params, block_data.len() as u64);
+            let mut decoded = false;
+            for sym in &all_syms {
+                if decoder.add_symbol(sym).is_some() {
+                    decoded = true;
+                    break;
+                }
+            }
+
+            total_blocks += 1;
+            if decoded {
+                successful_blocks += 1;
+            }
+        }
+    }
+
+    (successful_blocks as f64 / total_blocks as f64 * 100.0, repair_used)
+}
+
+// ---------------------------------------------------------------------------
+// Tapered interleaving: flat vs tapered block recovery comparison
+// ---------------------------------------------------------------------------
+
+use raptorpath::net::interleave::InterleavingBuffer;
+use std::time::Duration;
+
+/// Simulate cross-block recovery with interleaving applied.
+///
+/// - `tapered`: if true, use tapered interleaving; else flat round-robin.
+/// - Encodes multiple blocks, pushes them into InterleavingBuffer, drains, then
+///   passes the interleaved symbol stream through the channel. Decodes per-block.
+fn cross_block_recovery_interleaved(
+    backend: FecBackend,
+    scenario: &Scenario,
+    tapered: bool,
+) -> (f64, u32) {
+    let num_symbols = 500usize;
+    let block_size = 50usize;
+    let num_blocks = (num_symbols + block_size - 1) / block_size;
+
+    let mut total_blocks = 0u64;
+    let mut successful_blocks = 0u64;
+    let mut repair_used = 0u32;
+
+    for seed in 0..NUM_TRIALS {
+        let packet_data: Vec<Vec<u8>> = (0..num_symbols)
+            .map(|i| vec![(i % 256) as u8; 1000])
+            .collect();
+
+        // Encode all blocks, collect (block_data_len, params, WireSymbols)
+        let mut encoded_blocks: Vec<(Vec<u8>, EncodingParams, Vec<WireSymbol>)> = Vec::new();
+        let depth = num_blocks.min(4);
+        let mut ileave = if tapered {
+            InterleavingBuffer::new_tapered(depth, Duration::from_secs(60))
+        } else {
+            InterleavingBuffer::new(depth, Duration::from_secs(60))
+        };
+
+        for block_idx in 0..num_blocks {
+            let start = block_idx * block_size;
+            let end = (start + block_size).min(num_symbols);
+            let block_packets = &packet_data[start..end];
+            let k = block_packets.len() as u32;
+
+            let block_data: Vec<u8> = block_packets.iter().flat_map(|p| p.iter().copied()).collect();
+            let repair_count = (k as f64 * 0.25).ceil() as u32;
+            repair_used = repair_count;
+
+            let params = EncodingParams {
+                source_symbols: k,
+                symbol_size: SYMBOL_SIZE,
+                repair_count,
+                block_id: block_idx as u64,
+            };
+
+            let encoder = backend.create_encoder(&block_data, params);
+            let mut all_syms = encoder.source_symbols();
+            all_syms.extend(encoder.repair_symbols(repair_count));
+
+            encoded_blocks.push((block_data, params, Vec::new()));
+
+            // Push into interleaving buffer (single path 0)
+            ileave.push_block(block_idx as u64, vec![(0u32, all_syms)]);
+        }
+
+        // Drain all symbols through the interleaving buffer
+        let batches = ileave.drain_all(scenario.stationary_loss);
+        let interleaved_syms: Vec<WireSymbol> = batches
+            .into_iter()
+            .flat_map(|(_, syms)| syms)
+            .collect();
+
+        // Pass the interleaved stream through the channel
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let (surviving, _) = scenario.channel.apply(&interleaved_syms, &mut rng);
+
+        // Group surviving symbols by block_id and try to decode
+        let mut per_block: std::collections::HashMap<u64, Vec<WireSymbol>> =
+            std::collections::HashMap::new();
+        for sym in surviving {
+            per_block.entry(sym.block_id).or_default().push(sym);
+        }
+
+        for (block_idx, (block_data, params, _)) in encoded_blocks.iter().enumerate() {
+            let block_syms = per_block.get(&(block_idx as u64)).cloned().unwrap_or_default();
+            let mut decoder = backend.create_decoder(*params, block_data.len() as u64);
+            let mut decoded = false;
+            for sym in &block_syms {
+                if decoder.add_symbol(sym).is_some() {
+                    decoded = true;
+                    break;
+                }
+            }
+            total_blocks += 1;
+            if decoded {
+                successful_blocks += 1;
+            }
+        }
+    }
+
+    (successful_blocks as f64 / total_blocks as f64 * 100.0, repair_used)
 }
 
 // ---------------------------------------------------------------------------
@@ -426,11 +744,12 @@ fn cross_block_recovery(backend: FecBackend, scenario: &Scenario) -> f64 {
 fn fec_realworld_recovery_comparison() {
     let scenarios = scenarios();
 
-    // Part 1: Block-mode recovery
-    println!("\n=== Block-mode FEC Recovery (64KB, 25% overhead, {} trials) ===", NUM_TRIALS);
+    // Part 1a: Block-mode recovery — same 25% overhead for all
+    let k_64kb = (65536.0f64 / SYMBOL_SIZE as f64).ceil() as u32;
+    println!("\n=== Block-mode FEC Recovery — Same Overhead (64KB, k={}, 25%, {} trials) ===", k_64kb, NUM_TRIALS);
     println!(
-        "{:>16} {:>12} {:>12} {:>12} {:>12}",
-        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name
+        "{:>16} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
     );
 
     for (name, backend) in [
@@ -439,10 +758,52 @@ fn fec_realworld_recovery_comparison() {
         ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
-        let rates: Vec<f64> = scenarios.iter().map(|s| block_recovery_rate(backend, s)).collect();
+        let results: Vec<(f64, u32)> = scenarios.iter().map(|s| block_recovery_rate_same_overhead(backend, s)).collect();
+        let oh = results[0].1 as f64 / k_64kb as f64 * 100.0;
         println!(
-            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            name, rates[0], rates[1], rates[2], rates[3]
+            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
+        );
+    }
+
+    // Part 1b: Block-mode recovery — full budget (each backend's natural limit)
+    println!("\n=== Block-mode FEC Recovery — Full Budget (64KB, each backend's natural repair limit, {} trials) ===", NUM_TRIALS);
+    println!(
+        "{:>16} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
+    );
+
+    for (name, backend) in [
+        ("RaptorQ", FecBackend::RaptorQ),
+        ("Reed-Solomon", FecBackend::ReedSolomon),
+        ("METTLE", FecBackend::Mettle),
+        ("RLC", FecBackend::Rlc),
+    ] {
+        let results: Vec<(f64, u32)> = scenarios.iter().map(|s| block_recovery_rate_full_budget(backend, s)).collect();
+        let oh = results[0].1 as f64 / k_64kb as f64 * 100.0;
+        println!(
+            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
+        );
+    }
+
+    // Part 1c: Block-mode recovery — same bandwidth as METTLE
+    println!("\n=== Block-mode FEC Recovery — Same Bandwidth as METTLE (64KB, {} trials) ===", NUM_TRIALS);
+    println!(
+        "{:>16} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
+    );
+
+    for (name, backend) in [
+        ("RaptorQ", FecBackend::RaptorQ),
+        ("Reed-Solomon", FecBackend::ReedSolomon),
+        ("METTLE", FecBackend::Mettle),
+        ("RLC", FecBackend::Rlc),
+    ] {
+        let results: Vec<(f64, u32, f64)> = scenarios.iter().map(|s| block_recovery_rate_same_bandwidth(backend, s)).collect();
+        println!(
+            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, results[0].2
         );
     }
 
@@ -482,30 +843,112 @@ fn fec_realworld_recovery_comparison() {
     }
 
     // Part 3: Cross-pipeline comparison
+    let cross_k = 50u32; // block size for cross-pipeline
     println!(
-        "\n=== Cross-Pipeline FEC Comparison (500 pkts, GE channel, {} trials avg) ===",
+        "\n=== Cross-Pipeline Block — Same Overhead (500 pkts, 50-pkt blocks, 25%, {} trials) ===",
         NUM_TRIALS
     );
     println!(
-        "{:>20} {:>12} {:>12} {:>12} {:>12}",
-        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name
+        "{:>20} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
     );
-    println!("  Block:");
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
         ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
-        let rates: Vec<f64> = scenarios
+        let results: Vec<(f64, u32)> = scenarios
             .iter()
-            .map(|s| cross_block_recovery(backend, s))
+            .map(|s| cross_block_recovery_same_overhead(backend, s))
             .collect();
+        let oh = results[0].1 as f64 / cross_k as f64 * 100.0;
         println!(
-            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            name, rates[0], rates[1], rates[2], rates[3]
+            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
         );
     }
+
+    println!(
+        "\n=== Cross-Pipeline Block — Full Budget (500 pkts, 50-pkt blocks, each backend's natural limit, {} trials) ===",
+        NUM_TRIALS
+    );
+    println!(
+        "{:>20} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
+    );
+    for (name, backend) in [
+        ("RaptorQ", FecBackend::RaptorQ),
+        ("Reed-Solomon", FecBackend::ReedSolomon),
+        ("METTLE", FecBackend::Mettle),
+        ("RLC", FecBackend::Rlc),
+    ] {
+        let results: Vec<(f64, u32)> = scenarios
+            .iter()
+            .map(|s| cross_block_recovery_full_budget(backend, s))
+            .collect();
+        let oh = results[0].1 as f64 / cross_k as f64 * 100.0;
+        println!(
+            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
+        );
+    }
+    println!(
+        "\n=== Cross-Pipeline Block — Same Bandwidth as METTLE (500 pkts, 50-pkt blocks, {} trials) ===",
+        NUM_TRIALS
+    );
+    println!(
+        "{:>20} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
+    );
+    for (name, backend) in [
+        ("RaptorQ", FecBackend::RaptorQ),
+        ("Reed-Solomon", FecBackend::ReedSolomon),
+        ("METTLE", FecBackend::Mettle),
+        ("RLC", FecBackend::Rlc),
+    ] {
+        let results: Vec<(f64, u32, f64)> = scenarios
+            .iter()
+            .map(|s| cross_block_recovery_same_bandwidth(backend, s))
+            .collect();
+        println!(
+            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
+            name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, results[0].2
+        );
+    }
+
+    // Part 4: Tapered vs Flat interleaving comparison
+    println!(
+        "\n=== Tapered vs Flat Interleaving (500 pkts, 50-pkt blocks, 25%, {} trials) ===",
+        NUM_TRIALS
+    );
+    println!(
+        "{:>24} {:>12} {:>12} {:>12} {:>12}",
+        "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name
+    );
+    for (name, backend) in [
+        ("RaptorQ", FecBackend::RaptorQ),
+        ("METTLE", FecBackend::Mettle),
+        ("RLC", FecBackend::Rlc),
+    ] {
+        let flat: Vec<(f64, u32)> = scenarios
+            .iter()
+            .map(|s| cross_block_recovery_interleaved(backend, s, false))
+            .collect();
+        let tapered: Vec<(f64, u32)> = scenarios
+            .iter()
+            .map(|s| cross_block_recovery_interleaved(backend, s, true))
+            .collect();
+        println!(
+            "{:>20} Flat {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
+            name, flat[0].0, flat[1].0, flat[2].0, flat[3].0
+        );
+        println!(
+            "{:>20} Taper {:>10.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
+            "", tapered[0].0, tapered[1].0, tapered[2].0, tapered[3].0
+        );
+    }
+
     println!("  Window:");
     {
         let rates: Vec<f64> = scenarios.iter().map(|s| window_recovery_rlc(s)).collect();
