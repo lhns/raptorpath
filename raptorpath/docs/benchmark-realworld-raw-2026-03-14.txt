@@ -1,0 +1,1003 @@
+warning: fields `config` and `seed` are never read
+  --> mettle\src\decoder.rs:37:5
+   |
+36 | pub struct MettleDecoder {
+   |            ------------- fields in this struct
+37 |     config: MettleConfig,
+   |     ^^^^^^
+...
+51 |     seed: u64,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `xor_packets` is never used
+ --> mettle\src\gf2.rs:8:8
+  |
+8 | pub fn xor_packets(dst: &mut [u8], src: &[u8]) {
+  |        ^^^^^^^^^^^
+
+warning: `mettle` (lib) generated 2 warnings
+warning: unused import: `FecBackend`
+  --> raptorpath\src\net\interleave.rs:10:18
+   |
+10 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `warn`
+ --> raptorpath\src\routing.rs:7:21
+  |
+7 | use tracing::{info, warn};
+  |                     ^^^^
+
+warning: unused import: `FecBackend`
+  --> raptorpath\src\scheduler\mod.rs:17:18
+   |
+17 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> raptorpath\src\net\mod.rs:196:9
+    |
+196 |     let mut transport = QuicTransport::new(
+    |         ----^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `batch_path_id`
+   --> raptorpath\src\net\mod.rs:589:25
+    |
+589 |                     let batch_path_id = batch.path_id;
+    |                         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_batch_path_id`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `mtu`
+  --> raptorpath\src\tun\windows\mod.rs:59:9
+   |
+59 |     let mtu = config.mtu;
+   |         ^^^ help: if this is intentional, prefix it with an underscore: `_mtu`
+
+warning: unused variable: `scheduler`
+    --> raptorpath\src\net\mod.rs:1526:5
+     |
+1526 |     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+     |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_scheduler`
+
+warning: unused variable: `stats`
+    --> raptorpath\src\net\mod.rs:1527:5
+     |
+1527 |     stats: &Arc<SharedStats>,
+     |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_stats`
+
+warning: function `checked_inv` is never used
+  --> raptorpath\src\fec\gf256.rs:68:8
+   |
+68 | pub fn checked_inv(a: u8) -> Option<u8> {
+   |        ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `peel_queue` is never read
+   --> raptorpath\src\fec\mettle_window.rs:230:5
+    |
+221 | pub struct MettleWindowDecoder {
+    |            ------------------- field in this struct
+...
+230 |     peel_queue: VecDeque<u64>,
+    |     ^^^^^^^^^^
+
+warning: constant `DEFAULT_SYMBOL_SIZE` is never used
+  --> raptorpath\src\net\mod.rs:62:7
+   |
+62 | const DEFAULT_SYMBOL_SIZE: u16 = 1200;
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REORDER_DRAIN_INTERVAL` is never used
+   --> raptorpath\src\net\mod.rs:114:7
+    |
+114 | const REORDER_DRAIN_INTERVAL: Duration = Duration::from_millis(5);
+    |       ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `block_id` is never read
+  --> raptorpath\src\net\interleave.rs:31:5
+   |
+30 | struct BlockSlot {
+   |        --------- field in this struct
+31 |     block_id: u64,
+   |     ^^^^^^^^
+
+warning: field `clock` is never read
+   --> raptorpath\src\scheduler\mod.rs:315:5
+    |
+294 | pub struct PathState {
+    |            --------- field in this struct
+...
+315 |     clock: Arc<dyn Clock>,
+    |     ^^^^^
+
+warning: `raptorpath` (lib) generated 14 warnings (run `cargo fix --lib -p raptorpath` to apply 8 suggestions)
+warning: unused import: `gilbert_elliott::GilbertElliottEstimator`
+  --> raptorpath\src\control\mod.rs:16:9
+   |
+16 | pub use gilbert_elliott::GilbertElliottEstimator;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `FecEncoder`
+  --> raptorpath\src\fec\mod.rs:25:58
+   |
+25 | pub use traits::{EncodingParams, FecBackend, FecDecoder, FecEncoder, WireSymbol};
+   |                                                          ^^^^^^^^^^
+
+warning: unused import: `RepairStream`
+  --> raptorpath\src\fec\mod.rs:26:29
+   |
+26 | pub use stream::{FecStream, RepairStream};
+   |                             ^^^^^^^^^^^^
+
+warning: unused import: `FecBackend`
+  --> raptorpath\src\net\interleave.rs:10:18
+   |
+10 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+
+warning: unused imports: `Handshake`, `PROTOCOL_VERSION`, and `WIRE_MAGIC`
+  --> raptorpath\src\transport\mod.rs:10:36
+   |
+10 | pub use protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage, WIRE_MAGIC};
+   |                                    ^^^^^^^^^  ^^^^^^^^^^^^^^^^                            ^^^^^^^^^^
+
+warning: methods `loss_variance` and `time_since_update` are never used
+   --> raptorpath\src\control\estimator.rs:147:12
+    |
+ 52 | impl LossEstimator {
+    | ------------------ methods in this implementation
+...
+147 |     pub fn loss_variance(&self) -> f64 {
+    |            ^^^^^^^^^^^^^
+...
+190 |     pub fn time_since_update(&self) -> Duration {
+    |            ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `integral_error` and `target_tail_loss` are never read
+   --> raptorpath\src\control\fec_rate.rs:313:9
+    |
+310 | pub struct FecDiagnostics {
+    |            -------------- fields in this struct
+...
+313 |     pub integral_error: f64,
+    |         ^^^^^^^^^^^^^^
+314 |     pub target_tail_loss: f64,
+    |         ^^^^^^^^^^^^^^^^
+    |
+    = note: `FecDiagnostics` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `state`, `p_gb`, and `conditional_loss_rate` are never used
+   --> raptorpath\src\control\gilbert_elliott.rs:84:12
+    |
+ 42 | impl GilbertElliottEstimator {
+    | ---------------------------- methods in this implementation
+...
+ 84 |     pub fn state(&self) -> HmmState {
+    |            ^^^^^
+...
+ 89 |     pub fn p_gb(&self) -> f64 {
+    |            ^^^^
+...
+118 |     pub fn conditional_loss_rate(&self) -> f64 {
+    |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `is_complete_source`, `get_source_symbol`, and `received_ids` are never used
+  --> raptorpath\src\fec\traits.rs:48:8
+   |
+44 | pub trait FecDecoder: Send + Sync {
+   |           ---------- methods in this trait
+...
+48 |     fn is_complete_source(&self) -> bool;
+   |        ^^^^^^^^^^^^^^^^^^
+...
+56 |     fn get_source_symbol(&self, index: usize) -> Option<&[u8]>;
+   |        ^^^^^^^^^^^^^^^^^
+57 |     /// Get all received payload_ids (for ACKs).
+58 |     fn received_ids(&self) -> Vec<u32>;
+   |        ^^^^^^^^^^^^
+
+warning: function `checked_inv` is never used
+  --> raptorpath\src\fec\gf256.rs:68:8
+   |
+68 | pub fn checked_inv(a: u8) -> Option<u8> {
+   |        ^^^^^^^^^^^
+
+warning: methods `advance` and `total_fed` are never used
+  --> raptorpath\src\fec\window_traits.rs:39:8
+   |
+33 | pub trait WindowDecoder: Send + Sync {
+   |           ------------- methods in this trait
+...
+39 |     fn advance(&mut self, oldest_seq: u64);
+   |        ^^^^^^^
+...
+42 |     fn total_fed(&self) -> u64;
+   |        ^^^^^^^^^
+
+warning: fields `b` and `epsilon` are never read
+  --> raptorpath\src\fec\streaming.rs:38:9
+   |
+34 | pub struct StreamingParams {
+   |            --------------- fields in this struct
+...
+38 |     pub b: u32,
+   |         ^
+39 |     /// Random (non-burst) loss rate
+40 |     pub epsilon: f64,
+   |         ^^^^^^^
+   |
+   = note: `StreamingParams` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `total_rate` is never used
+  --> raptorpath\src\fec\streaming.rs:87:12
+   |
+47 | impl StreamingParams {
+   | -------------------- method in this implementation
+...
+87 |     pub fn total_rate(&self) -> f64 {
+   |            ^^^^^^^^^^
+
+warning: struct `RepairStream` is never constructed
+  --> raptorpath\src\fec\stream.rs:36:12
+   |
+36 | pub struct RepairStream;
+   |            ^^^^^^^^^^^^
+
+warning: associated function `spawn` is never used
+  --> raptorpath\src\fec\stream.rs:41:12
+   |
+38 | impl RepairStream {
+   | ----------------- associated function in this implementation
+...
+41 |     pub fn spawn(
+   |            ^^^^^
+
+warning: variant `Warn` is never constructed
+  --> raptorpath\src\preflight.rs:20:5
+   |
+18 | pub enum CheckStatus {
+   |          ----------- variant in this enum
+19 |     Pass,
+20 |     Warn,
+   |     ^^^^
+   |
+   = note: `CheckStatus` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `iface` is never read
+  --> raptorpath\src\routing.rs:14:9
+   |
+11 | pub struct ManagedRoute {
+   |            ------------ field in this struct
+...
+14 |     pub iface: String,       // TUN interface name
+   |         ^^^^^
+   |
+   = note: `ManagedRoute` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `MockClock` is never constructed
+  --> raptorpath\src\scheduler\clock.rs:27:12
+   |
+27 | pub struct MockClock {
+   |            ^^^^^^^^^
+
+warning: associated items `new` and `advance` are never used
+  --> raptorpath\src\scheduler\clock.rs:32:12
+   |
+31 | impl MockClock {
+   | -------------- associated items in this implementation
+32 |     pub fn new() -> Self {
+   |            ^^^
+...
+39 |     pub fn advance(&self, d: Duration) {
+   |            ^^^^^^^
+
+warning: methods `send_control` and `recv_datagram` are never used
+   --> raptorpath\src\transport\quic.rs:341:18
+    |
+ 38 | impl QuicTransport {
+    | ------------------ methods in this implementation
+...
+341 |     pub async fn send_control(
+    |                  ^^^^^^^^^^^^
+...
+369 |     pub async fn recv_datagram(&self, path_id: PathId) -> anyhow::Result<WireMessage> {
+    |                  ^^^^^^^^^^^^^
+
+warning: method `write_packet` is never used
+  --> raptorpath\src\tun\mod.rs:57:18
+   |
+34 | impl TunInterface {
+   | ----------------- method in this implementation
+...
+57 |     pub async fn write_packet(&self, data: Bytes) -> anyhow::Result<()> {
+   |                  ^^^^^^^^^^^^
+
+warning: `raptorpath` (bin "raptorpath") generated 33 warnings (12 duplicates) (run `cargo fix --bin "raptorpath" -p raptorpath` to apply 5 suggestions)
+warning: variable does not need to be mutable
+   --> raptorpath\benches\fec_realworld_bench.rs:420:21
+    |
+420 |                 let mut rng = ChaCha8Rng::seed_from_u64(0);
+    |                     ----^^^
+    |                     |
+    |                     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `raptorpath` (bench "fec_realworld_bench") generated 1 warning (run `cargo fix --bench "fec_realworld_bench" -p raptorpath` to apply 1 suggestion)
+    Finished `bench` profile [optimized] target(s) in 1.47s
+     Running benches\fec_realworld_bench.rs (C:\Users\pierr\Documents\claude\raptorpath\target\release\deps\fec_realworld_bench-e341ae59e8634fdb.exe)
+Gnuplot not found, using plotters backend
+Benchmarking block_encode_realworld/datacenter/raptorq
+Benchmarking block_encode_realworld/datacenter/raptorq: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/datacenter/raptorq: Collecting 30 samples in estimated 5.3099 s (7905 iterations)
+Benchmarking block_encode_realworld/datacenter/raptorq: Analyzing
+block_encode_realworld/datacenter/raptorq
+                        time:   [623.89 µs 647.63 µs 672.07 µs]
+Found 2 outliers among 30 measurements (6.67%)
+  1 (3.33%) high mild
+  1 (3.33%) high severe
+Benchmarking block_encode_realworld/datacenter/rs
+Benchmarking block_encode_realworld/datacenter/rs: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/datacenter/rs: Collecting 30 samples in estimated 5.4955 s (3720 iterations)
+Benchmarking block_encode_realworld/datacenter/rs: Analyzing
+block_encode_realworld/datacenter/rs
+                        time:   [1.4170 ms 1.4632 ms 1.5109 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) high mild
+  1 (3.33%) high severe
+Benchmarking block_encode_realworld/datacenter/mettle
+Benchmarking block_encode_realworld/datacenter/mettle: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/datacenter/mettle: Collecting 30 samples in estimated 5.0634 s (28k iterations)
+Benchmarking block_encode_realworld/datacenter/mettle: Analyzing
+block_encode_realworld/datacenter/mettle
+                        time:   [176.25 µs 183.38 µs 190.82 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_encode_realworld/datacenter/rlc
+Benchmarking block_encode_realworld/datacenter/rlc: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/datacenter/rlc: Collecting 30 samples in estimated 5.1410 s (8835 iterations)
+Benchmarking block_encode_realworld/datacenter/rlc: Analyzing
+block_encode_realworld/datacenter/rlc
+                        time:   [515.86 µs 527.70 µs 539.22 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_encode_realworld/wifi_home/raptorq
+Benchmarking block_encode_realworld/wifi_home/raptorq: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/wifi_home/raptorq: Collecting 30 samples in estimated 5.2014 s (9765 iterations)
+Benchmarking block_encode_realworld/wifi_home/raptorq: Analyzing
+block_encode_realworld/wifi_home/raptorq
+                        time:   [559.66 µs 584.39 µs 604.59 µs]
+Benchmarking block_encode_realworld/wifi_home/rs
+Benchmarking block_encode_realworld/wifi_home/rs: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/wifi_home/rs: Collecting 30 samples in estimated 5.3254 s (3720 iterations)
+Benchmarking block_encode_realworld/wifi_home/rs: Analyzing
+block_encode_realworld/wifi_home/rs
+                        time:   [1.5029 ms 1.5380 ms 1.5723 ms]
+Benchmarking block_encode_realworld/wifi_home/mettle
+Benchmarking block_encode_realworld/wifi_home/mettle: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/wifi_home/mettle: Collecting 30 samples in estimated 5.0241 s (29k iterations)
+Benchmarking block_encode_realworld/wifi_home/mettle: Analyzing
+block_encode_realworld/wifi_home/mettle
+                        time:   [163.96 µs 170.63 µs 178.44 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high severe
+Benchmarking block_encode_realworld/wifi_home/rlc
+Benchmarking block_encode_realworld/wifi_home/rlc: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/wifi_home/rlc: Collecting 30 samples in estimated 5.2406 s (7440 iterations)
+Benchmarking block_encode_realworld/wifi_home/rlc: Analyzing
+block_encode_realworld/wifi_home/rlc
+                        time:   [706.59 µs 728.62 µs 752.14 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) high mild
+  1 (3.33%) high severe
+Benchmarking block_encode_realworld/lte_mobile/raptorq
+Benchmarking block_encode_realworld/lte_mobile/raptorq: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/lte_mobile/raptorq: Collecting 30 samples in estimated 5.1050 s (9300 iterations)
+Benchmarking block_encode_realworld/lte_mobile/raptorq: Analyzing
+block_encode_realworld/lte_mobile/raptorq
+                        time:   [556.94 µs 577.55 µs 596.30 µs]
+Benchmarking block_encode_realworld/lte_mobile/rs
+Benchmarking block_encode_realworld/lte_mobile/rs: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/lte_mobile/rs: Collecting 30 samples in estimated 5.1252 s (3255 iterations)
+Benchmarking block_encode_realworld/lte_mobile/rs: Analyzing
+block_encode_realworld/lte_mobile/rs
+                        time:   [1.4457 ms 1.4899 ms 1.5686 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking block_encode_realworld/lte_mobile/mettle
+Benchmarking block_encode_realworld/lte_mobile/mettle: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/lte_mobile/mettle: Collecting 30 samples in estimated 5.0555 s (29k iterations)
+Benchmarking block_encode_realworld/lte_mobile/mettle: Analyzing
+block_encode_realworld/lte_mobile/mettle
+                        time:   [170.29 µs 175.06 µs 180.23 µs]
+Found 6 outliers among 30 measurements (20.00%)
+  2 (6.67%) low mild
+  4 (13.33%) high mild
+Benchmarking block_encode_realworld/lte_mobile/rlc
+Benchmarking block_encode_realworld/lte_mobile/rlc: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/lte_mobile/rlc: Collecting 30 samples in estimated 5.1005 s (5580 iterations)
+Benchmarking block_encode_realworld/lte_mobile/rlc: Analyzing
+block_encode_realworld/lte_mobile/rlc
+                        time:   [913.65 µs 942.05 µs 973.48 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  3 (10.00%) high mild
+Benchmarking block_encode_realworld/congested_wifi/raptorq
+Benchmarking block_encode_realworld/congested_wifi/raptorq: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/congested_wifi/raptorq: Collecting 30 samples in estimated 5.1830 s (7905 iterations)
+Benchmarking block_encode_realworld/congested_wifi/raptorq: Analyzing
+block_encode_realworld/congested_wifi/raptorq
+                        time:   [600.00 µs 626.36 µs 651.13 µs]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high mild
+Benchmarking block_encode_realworld/congested_wifi/rs
+Benchmarking block_encode_realworld/congested_wifi/rs: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/congested_wifi/rs: Collecting 30 samples in estimated 5.7437 s (2790 iterations)
+Benchmarking block_encode_realworld/congested_wifi/rs: Analyzing
+block_encode_realworld/congested_wifi/rs
+                        time:   [2.0598 ms 2.0896 ms 2.1239 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking block_encode_realworld/congested_wifi/mettle
+Benchmarking block_encode_realworld/congested_wifi/mettle: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/congested_wifi/mettle: Collecting 30 samples in estimated 5.0154 s (28k iterations)
+Benchmarking block_encode_realworld/congested_wifi/mettle: Analyzing
+block_encode_realworld/congested_wifi/mettle
+                        time:   [180.08 µs 184.11 µs 188.57 µs]
+Found 4 outliers among 30 measurements (13.33%)
+  2 (6.67%) high mild
+  2 (6.67%) high severe
+Benchmarking block_encode_realworld/congested_wifi/rlc
+Benchmarking block_encode_realworld/congested_wifi/rlc: Warming up for 3.0000 s
+Benchmarking block_encode_realworld/congested_wifi/rlc: Collecting 30 samples in estimated 5.2727 s (1860 iterations)
+Benchmarking block_encode_realworld/congested_wifi/rlc: Analyzing
+block_encode_realworld/congested_wifi/rlc
+                        time:   [2.7486 ms 2.7912 ms 2.8503 ms]
+
+Benchmarking block_decode_realworld/datacenter/raptorq
+Benchmarking block_decode_realworld/datacenter/raptorq: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/datacenter/raptorq: Collecting 30 samples in estimated 5.0181 s (80k iterations)
+Benchmarking block_decode_realworld/datacenter/raptorq: Analyzing
+block_decode_realworld/datacenter/raptorq
+                        time:   [61.094 µs 62.316 µs 63.567 µs]
+Benchmarking block_decode_realworld/datacenter/rs
+Benchmarking block_decode_realworld/datacenter/rs: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/datacenter/rs: Collecting 30 samples in estimated 5.5132 s (3720 iterations)
+Benchmarking block_decode_realworld/datacenter/rs: Analyzing
+block_decode_realworld/datacenter/rs
+                        time:   [1.4706 ms 1.4979 ms 1.5329 ms]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high mild
+Benchmarking block_decode_realworld/datacenter/mettle
+Benchmarking block_decode_realworld/datacenter/mettle: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/datacenter/mettle: Collecting 30 samples in estimated 5.0289 s (47k iterations)
+Benchmarking block_decode_realworld/datacenter/mettle: Analyzing
+block_decode_realworld/datacenter/mettle
+                        time:   [106.84 µs 108.52 µs 110.25 µs]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high severe
+Benchmarking block_decode_realworld/datacenter/rlc
+Benchmarking block_decode_realworld/datacenter/rlc: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/datacenter/rlc: Collecting 30 samples in estimated 5.0051 s (86k iterations)
+Benchmarking block_decode_realworld/datacenter/rlc: Analyzing
+block_decode_realworld/datacenter/rlc
+                        time:   [57.252 µs 58.722 µs 60.322 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_decode_realworld/wifi_home/raptorq
+Benchmarking block_decode_realworld/wifi_home/raptorq: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/wifi_home/raptorq: Collecting 30 samples in estimated 5.0211 s (8835 iterations)
+Benchmarking block_decode_realworld/wifi_home/raptorq: Analyzing
+block_decode_realworld/wifi_home/raptorq
+                        time:   [524.22 µs 539.55 µs 554.51 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_decode_realworld/wifi_home/rs
+Benchmarking block_decode_realworld/wifi_home/rs: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/wifi_home/rs: Collecting 30 samples in estimated 5.2448 s (3255 iterations)
+Benchmarking block_decode_realworld/wifi_home/rs: Analyzing
+block_decode_realworld/wifi_home/rs
+                        time:   [1.5622 ms 1.5846 ms 1.6082 ms]
+Found 4 outliers among 30 measurements (13.33%)
+  3 (10.00%) high mild
+  1 (3.33%) high severe
+Benchmarking block_decode_realworld/wifi_home/mettle
+Benchmarking block_decode_realworld/wifi_home/mettle: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/wifi_home/mettle: Collecting 30 samples in estimated 5.0041 s (145k iterations)
+Benchmarking block_decode_realworld/wifi_home/mettle: Analyzing
+block_decode_realworld/wifi_home/mettle
+                        time:   [32.403 µs 33.307 µs 34.386 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  3 (10.00%) high mild
+Benchmarking block_decode_realworld/wifi_home/rlc
+Benchmarking block_decode_realworld/wifi_home/rlc: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/wifi_home/rlc: Collecting 30 samples in estimated 5.0658 s (23k iterations)
+Benchmarking block_decode_realworld/wifi_home/rlc: Analyzing
+block_decode_realworld/wifi_home/rlc
+                        time:   [219.59 µs 227.56 µs 236.37 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_decode_realworld/lte_mobile/raptorq
+Benchmarking block_decode_realworld/lte_mobile/raptorq: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/lte_mobile/raptorq: Collecting 30 samples in estimated 5.0015 s (81k iterations)
+Benchmarking block_decode_realworld/lte_mobile/raptorq: Analyzing
+block_decode_realworld/lte_mobile/raptorq
+                        time:   [64.880 µs 67.853 µs 70.901 µs]
+Benchmarking block_decode_realworld/lte_mobile/rs
+Benchmarking block_decode_realworld/lte_mobile/rs: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/lte_mobile/rs: Collecting 30 samples in estimated 5.3582 s (3255 iterations)
+Benchmarking block_decode_realworld/lte_mobile/rs: Analyzing
+block_decode_realworld/lte_mobile/rs
+                        time:   [1.5831 ms 1.6116 ms 1.6500 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking block_decode_realworld/lte_mobile/mettle
+Benchmarking block_decode_realworld/lte_mobile/mettle: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/lte_mobile/mettle: Collecting 30 samples in estimated 5.0261 s (46k iterations)
+Benchmarking block_decode_realworld/lte_mobile/mettle: Analyzing
+block_decode_realworld/lte_mobile/mettle
+                        time:   [106.75 µs 109.19 µs 111.28 µs]
+Benchmarking block_decode_realworld/lte_mobile/rlc
+Benchmarking block_decode_realworld/lte_mobile/rlc: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/lte_mobile/rlc: Collecting 30 samples in estimated 5.0139 s (93k iterations)
+Benchmarking block_decode_realworld/lte_mobile/rlc: Analyzing
+block_decode_realworld/lte_mobile/rlc
+                        time:   [53.845 µs 54.436 µs 55.038 µs]
+Found 4 outliers among 30 measurements (13.33%)
+  1 (3.33%) high mild
+  3 (10.00%) high severe
+Benchmarking block_decode_realworld/congested_wifi/raptorq
+Benchmarking block_decode_realworld/congested_wifi/raptorq: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/congested_wifi/raptorq: Collecting 30 samples in estimated 5.0123 s (131k iterations)
+Benchmarking block_decode_realworld/congested_wifi/raptorq: Analyzing
+block_decode_realworld/congested_wifi/raptorq
+                        time:   [37.969 µs 38.716 µs 39.677 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) high mild
+  1 (3.33%) high severe
+Benchmarking block_decode_realworld/congested_wifi/rs
+Benchmarking block_decode_realworld/congested_wifi/rs: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/congested_wifi/rs: Collecting 30 samples in estimated 5.0019 s (324k iterations)
+Benchmarking block_decode_realworld/congested_wifi/rs: Analyzing
+block_decode_realworld/congested_wifi/rs
+                        time:   [14.856 µs 15.066 µs 15.260 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking block_decode_realworld/congested_wifi/mettle
+Benchmarking block_decode_realworld/congested_wifi/mettle: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/congested_wifi/mettle: Collecting 30 samples in estimated 5.0123 s (106k iterations)
+Benchmarking block_decode_realworld/congested_wifi/mettle: Analyzing
+block_decode_realworld/congested_wifi/mettle
+                        time:   [46.646 µs 47.877 µs 49.320 µs]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high severe
+Benchmarking block_decode_realworld/congested_wifi/rlc
+Benchmarking block_decode_realworld/congested_wifi/rlc: Warming up for 3.0000 s
+Benchmarking block_decode_realworld/congested_wifi/rlc: Collecting 30 samples in estimated 5.7998 s (2325 iterations)
+Benchmarking block_decode_realworld/congested_wifi/rlc: Analyzing
+block_decode_realworld/congested_wifi/rlc
+                        time:   [2.3140 ms 2.3620 ms 2.4328 ms]
+Found 2 outliers among 30 measurements (6.67%)
+  2 (6.67%) high mild
+
+Benchmarking window_encode_realworld/datacenter/rlc
+Benchmarking window_encode_realworld/datacenter/rlc: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/datacenter/rlc: Collecting 30 samples in estimated 7.1691 s (1395 iterations)
+Benchmarking window_encode_realworld/datacenter/rlc: Analyzing
+window_encode_realworld/datacenter/rlc
+                        time:   [5.1218 ms 5.1907 ms 5.2749 ms]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking window_encode_realworld/datacenter/mettle
+Benchmarking window_encode_realworld/datacenter/mettle: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/datacenter/mettle: Collecting 30 samples in estimated 5.7041 s (3720 iterations)
+Benchmarking window_encode_realworld/datacenter/mettle: Analyzing
+window_encode_realworld/datacenter/mettle
+                        time:   [1.5008 ms 1.5293 ms 1.5602 ms]
+Benchmarking window_encode_realworld/datacenter/streaming
+Benchmarking window_encode_realworld/datacenter/streaming: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/datacenter/streaming: Collecting 30 samples in estimated 5.2461 s (6045 iterations)
+Benchmarking window_encode_realworld/datacenter/streaming: Analyzing
+window_encode_realworld/datacenter/streaming
+                        time:   [833.32 µs 1.0199 ms 1.1909 ms]
+Found 4 outliers among 30 measurements (13.33%)
+  2 (6.67%) high mild
+  2 (6.67%) high severe
+Benchmarking window_encode_realworld/wifi_home/rlc
+Benchmarking window_encode_realworld/wifi_home/rlc: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/wifi_home/rlc: Collecting 30 samples in estimated 6.3550 s (930 iterations)
+Benchmarking window_encode_realworld/wifi_home/rlc: Analyzing
+window_encode_realworld/wifi_home/rlc
+                        time:   [5.3037 ms 5.4975 ms 5.7942 ms]
+Benchmarking window_encode_realworld/wifi_home/mettle
+Benchmarking window_encode_realworld/wifi_home/mettle: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/wifi_home/mettle: Collecting 30 samples in estimated 5.9545 s (2325 iterations)
+Benchmarking window_encode_realworld/wifi_home/mettle: Analyzing
+window_encode_realworld/wifi_home/mettle
+                        time:   [1.5218 ms 1.6014 ms 1.7345 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) high mild
+  1 (3.33%) high severe
+Benchmarking window_encode_realworld/wifi_home/streaming
+Benchmarking window_encode_realworld/wifi_home/streaming: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/wifi_home/streaming: Collecting 30 samples in estimated 5.4717 s (5115 iterations)
+Benchmarking window_encode_realworld/wifi_home/streaming: Analyzing
+window_encode_realworld/wifi_home/streaming
+                        time:   [696.90 µs 736.18 µs 792.46 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking window_encode_realworld/lte_mobile/rlc
+Benchmarking window_encode_realworld/lte_mobile/rlc: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/lte_mobile/rlc: Collecting 30 samples in estimated 8.5945 s (930 iterations)
+Benchmarking window_encode_realworld/lte_mobile/rlc: Analyzing
+window_encode_realworld/lte_mobile/rlc
+                        time:   [8.4223 ms 9.5276 ms 10.899 ms]
+Benchmarking window_encode_realworld/lte_mobile/mettle
+Benchmarking window_encode_realworld/lte_mobile/mettle: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/lte_mobile/mettle: Collecting 30 samples in estimated 5.2707 s (2325 iterations)
+Benchmarking window_encode_realworld/lte_mobile/mettle: Analyzing
+window_encode_realworld/lte_mobile/mettle
+                        time:   [2.2676 ms 2.5710 ms 2.9940 ms]
+Benchmarking window_encode_realworld/lte_mobile/streaming
+Benchmarking window_encode_realworld/lte_mobile/streaming: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/lte_mobile/streaming: Collecting 30 samples in estimated 5.7887 s (2325 iterations)
+Benchmarking window_encode_realworld/lte_mobile/streaming: Analyzing
+window_encode_realworld/lte_mobile/streaming
+                        time:   [2.1138 ms 2.5880 ms 2.9648 ms]
+Found 6 outliers among 30 measurements (20.00%)
+  6 (20.00%) high severe
+Benchmarking window_encode_realworld/congested_wifi/rlc
+Benchmarking window_encode_realworld/congested_wifi/rlc: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/congested_wifi/rlc: Collecting 30 samples in estimated 5.1470 s (210 iterations)
+Benchmarking window_encode_realworld/congested_wifi/rlc: Analyzing
+window_encode_realworld/congested_wifi/rlc
+                        time:   [27.251 ms 30.132 ms 33.355 ms]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking window_encode_realworld/congested_wifi/mettle
+Benchmarking window_encode_realworld/congested_wifi/mettle: Warming up for 3.0000 s
+Benchmarking window_encode_realworld/congested_wifi/mettle: Collecting 30 samples in estimated 6.9924 s (930 iterations)
+Benchmarking window_encode_realworld/congested_wifi/mettle: Analyzing
+window_encode_realworld/congested_wifi/mettle
+                        time:   [6.3092 ms 7.2770 ms 8.1380 ms]
+Found 7 outliers among 30 measurements (23.33%)
+  6 (20.00%) high mild
+  1 (3.33%) high severe
+Benchmarking window_encode_realworld/congested_wifi/streaming
+Benchmarking window_encode_realworld/congested_wifi/streaming: Warming up for 3.0000 s
+
+Warning: Unable to complete 30 samples in 5.0s. You may wish to increase target time to 8.0s, enable flat sampling, or reduce sample count to 10.
+Benchmarking window_encode_realworld/congested_wifi/streaming: Collecting 30 samples in estimated 8.0075 s (465 iterations)
+Benchmarking window_encode_realworld/congested_wifi/streaming: Analyzing
+window_encode_realworld/congested_wifi/streaming
+                        time:   [15.868 ms 18.505 ms 20.920 ms]
+Found 2 outliers among 30 measurements (6.67%)
+  1 (3.33%) high mild
+  1 (3.33%) high severe
+
+Benchmarking window_decode_realworld/datacenter/rlc
+Benchmarking window_decode_realworld/datacenter/rlc: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/datacenter/rlc: Collecting 30 samples in estimated 6.1578 s (930 iterations)
+Benchmarking window_decode_realworld/datacenter/rlc: Analyzing
+window_decode_realworld/datacenter/rlc
+                        time:   [7.1481 ms 8.0659 ms 9.3241 ms]
+Benchmarking window_decode_realworld/datacenter/mettle
+Benchmarking window_decode_realworld/datacenter/mettle: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/datacenter/mettle: Collecting 30 samples in estimated 5.0812 s (19k iterations)
+Benchmarking window_decode_realworld/datacenter/mettle: Analyzing
+window_decode_realworld/datacenter/mettle
+                        time:   [269.74 µs 302.00 µs 347.93 µs]
+Benchmarking window_decode_realworld/datacenter/streaming
+Benchmarking window_decode_realworld/datacenter/streaming: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/datacenter/streaming: Collecting 30 samples in estimated 5.1300 s (8835 iterations)
+Benchmarking window_decode_realworld/datacenter/streaming: Analyzing
+window_decode_realworld/datacenter/streaming
+                        time:   [327.92 µs 337.99 µs 350.08 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking window_decode_realworld/wifi_home/rlc
+Benchmarking window_decode_realworld/wifi_home/rlc: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/wifi_home/rlc: Collecting 30 samples in estimated 9.0305 s (930 iterations)
+Benchmarking window_decode_realworld/wifi_home/rlc: Analyzing
+window_decode_realworld/wifi_home/rlc
+                        time:   [7.5561 ms 8.8836 ms 10.355 ms]
+Found 5 outliers among 30 measurements (16.67%)
+  3 (10.00%) high mild
+  2 (6.67%) high severe
+Benchmarking window_decode_realworld/wifi_home/mettle
+Benchmarking window_decode_realworld/wifi_home/mettle: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/wifi_home/mettle: Collecting 30 samples in estimated 5.0684 s (16k iterations)
+Benchmarking window_decode_realworld/wifi_home/mettle: Analyzing
+window_decode_realworld/wifi_home/mettle
+                        time:   [231.68 µs 257.68 µs 290.61 µs]
+Found 4 outliers among 30 measurements (13.33%)
+  2 (6.67%) high mild
+  2 (6.67%) high severe
+Benchmarking window_decode_realworld/wifi_home/streaming
+Benchmarking window_decode_realworld/wifi_home/streaming: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/wifi_home/streaming: Collecting 30 samples in estimated 5.0433 s (13k iterations)
+Benchmarking window_decode_realworld/wifi_home/streaming: Analyzing
+window_decode_realworld/wifi_home/streaming
+                        time:   [435.61 µs 476.59 µs 512.34 µs]
+Benchmarking window_decode_realworld/lte_mobile/rlc
+Benchmarking window_decode_realworld/lte_mobile/rlc: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/lte_mobile/rlc: Collecting 30 samples in estimated 9.4945 s (930 iterations)
+Benchmarking window_decode_realworld/lte_mobile/rlc: Analyzing
+window_decode_realworld/lte_mobile/rlc
+                        time:   [9.4183 ms 9.5404 ms 9.7019 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  2 (6.67%) high mild
+  1 (3.33%) high severe
+Benchmarking window_decode_realworld/lte_mobile/mettle
+Benchmarking window_decode_realworld/lte_mobile/mettle: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/lte_mobile/mettle: Collecting 30 samples in estimated 5.0342 s (22k iterations)
+Benchmarking window_decode_realworld/lte_mobile/mettle: Analyzing
+window_decode_realworld/lte_mobile/mettle
+                        time:   [225.73 µs 230.44 µs 234.44 µs]
+Benchmarking window_decode_realworld/lte_mobile/streaming
+Benchmarking window_decode_realworld/lte_mobile/streaming: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/lte_mobile/streaming: Collecting 30 samples in estimated 5.0531 s (8835 iterations)
+Benchmarking window_decode_realworld/lte_mobile/streaming: Analyzing
+window_decode_realworld/lte_mobile/streaming
+                        time:   [576.31 µs 612.41 µs 661.88 µs]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+Benchmarking window_decode_realworld/congested_wifi/rlc
+Benchmarking window_decode_realworld/congested_wifi/rlc: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/congested_wifi/rlc: Collecting 30 samples in estimated 5.3857 s (210 iterations)
+Benchmarking window_decode_realworld/congested_wifi/rlc: Analyzing
+window_decode_realworld/congested_wifi/rlc
+                        time:   [25.980 ms 26.364 ms 26.793 ms]
+Found 6 outliers among 30 measurements (20.00%)
+  4 (13.33%) high mild
+  2 (6.67%) high severe
+Benchmarking window_decode_realworld/congested_wifi/mettle
+Benchmarking window_decode_realworld/congested_wifi/mettle: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/congested_wifi/mettle: Collecting 30 samples in estimated 5.0333 s (27k iterations)
+Benchmarking window_decode_realworld/congested_wifi/mettle: Analyzing
+window_decode_realworld/congested_wifi/mettle
+                        time:   [190.29 µs 194.89 µs 199.51 µs]
+Found 1 outliers among 30 measurements (3.33%)
+  1 (3.33%) high mild
+Benchmarking window_decode_realworld/congested_wifi/streaming
+Benchmarking window_decode_realworld/congested_wifi/streaming: Warming up for 3.0000 s
+Benchmarking window_decode_realworld/congested_wifi/streaming: Collecting 30 samples in estimated 7.2656 s (1395 iterations)
+Benchmarking window_decode_realworld/congested_wifi/streaming: Analyzing
+window_decode_realworld/congested_wifi/streaming
+                        time:   [5.0348 ms 5.1258 ms 5.2429 ms]
+Found 3 outliers among 30 measurements (10.00%)
+  1 (3.33%) high mild
+  2 (6.67%) high severe
+
+Benchmarking cross_pipeline/datacenter/block_raptorq
+Benchmarking cross_pipeline/datacenter/block_raptorq: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/block_raptorq: Collecting 20 samples in estimated 5.0904 s (8400 iterations)
+Benchmarking cross_pipeline/datacenter/block_raptorq: Analyzing
+cross_pipeline/datacenter/block_raptorq
+                        time:   [595.27 µs 602.66 µs 612.03 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/datacenter/block_rs
+Benchmarking cross_pipeline/datacenter/block_rs: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/block_rs: Collecting 20 samples in estimated 5.0646 s (1680 iterations)
+Benchmarking cross_pipeline/datacenter/block_rs: Analyzing
+cross_pipeline/datacenter/block_rs
+                        time:   [2.8925 ms 2.9798 ms 3.0900 ms]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking cross_pipeline/datacenter/block_mettle
+Benchmarking cross_pipeline/datacenter/block_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/block_mettle: Collecting 20 samples in estimated 5.0345 s (17k iterations)
+Benchmarking cross_pipeline/datacenter/block_mettle: Analyzing
+cross_pipeline/datacenter/block_mettle
+                        time:   [288.27 µs 305.87 µs 322.77 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking cross_pipeline/datacenter/block_rlc
+Benchmarking cross_pipeline/datacenter/block_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/block_rlc: Collecting 20 samples in estimated 5.0069 s (8400 iterations)
+Benchmarking cross_pipeline/datacenter/block_rlc: Analyzing
+cross_pipeline/datacenter/block_rlc
+                        time:   [584.20 µs 601.68 µs 625.87 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/datacenter/window_rlc
+Benchmarking cross_pipeline/datacenter/window_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/window_rlc: Collecting 20 samples in estimated 5.0372 s (2730 iterations)
+Benchmarking cross_pipeline/datacenter/window_rlc: Analyzing
+cross_pipeline/datacenter/window_rlc
+                        time:   [1.8017 ms 1.8320 ms 1.8753 ms]
+Found 4 outliers among 20 measurements (20.00%)
+  3 (15.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/datacenter/window_mettle
+Benchmarking cross_pipeline/datacenter/window_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/window_mettle: Collecting 20 samples in estimated 5.0862 s (9450 iterations)
+Benchmarking cross_pipeline/datacenter/window_mettle: Analyzing
+cross_pipeline/datacenter/window_mettle
+                        time:   [529.06 µs 569.01 µs 621.18 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking cross_pipeline/datacenter/window_streaming
+Benchmarking cross_pipeline/datacenter/window_streaming: Warming up for 3.0000 s
+Benchmarking cross_pipeline/datacenter/window_streaming: Collecting 20 samples in estimated 5.0409 s (16k iterations)
+Benchmarking cross_pipeline/datacenter/window_streaming: Analyzing
+cross_pipeline/datacenter/window_streaming
+                        time:   [322.58 µs 344.02 µs 366.75 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/wifi_home/block_raptorq
+Benchmarking cross_pipeline/wifi_home/block_raptorq: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/block_raptorq: Collecting 20 samples in estimated 5.0251 s (4620 iterations)
+Benchmarking cross_pipeline/wifi_home/block_raptorq: Analyzing
+cross_pipeline/wifi_home/block_raptorq
+                        time:   [1.0853 ms 1.1162 ms 1.1434 ms]
+Benchmarking cross_pipeline/wifi_home/block_rs
+Benchmarking cross_pipeline/wifi_home/block_rs: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/block_rs: Collecting 20 samples in estimated 5.3974 s (1680 iterations)
+Benchmarking cross_pipeline/wifi_home/block_rs: Analyzing
+cross_pipeline/wifi_home/block_rs
+                        time:   [3.0850 ms 3.1774 ms 3.2952 ms]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/wifi_home/block_mettle
+Benchmarking cross_pipeline/wifi_home/block_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/block_mettle: Collecting 20 samples in estimated 5.0242 s (23k iterations)
+Benchmarking cross_pipeline/wifi_home/block_mettle: Analyzing
+cross_pipeline/wifi_home/block_mettle
+                        time:   [211.70 µs 221.93 µs 233.85 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/wifi_home/block_rlc
+Benchmarking cross_pipeline/wifi_home/block_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/block_rlc: Collecting 20 samples in estimated 5.1725 s (5460 iterations)
+Benchmarking cross_pipeline/wifi_home/block_rlc: Analyzing
+cross_pipeline/wifi_home/block_rlc
+                        time:   [927.09 µs 959.68 µs 993.70 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking cross_pipeline/wifi_home/window_rlc
+Benchmarking cross_pipeline/wifi_home/window_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/window_rlc: Collecting 20 samples in estimated 5.0806 s (2520 iterations)
+Benchmarking cross_pipeline/wifi_home/window_rlc: Analyzing
+cross_pipeline/wifi_home/window_rlc
+                        time:   [1.9023 ms 1.9735 ms 2.0547 ms]
+Benchmarking cross_pipeline/wifi_home/window_mettle
+Benchmarking cross_pipeline/wifi_home/window_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/window_mettle: Collecting 20 samples in estimated 5.0243 s (9240 iterations)
+Benchmarking cross_pipeline/wifi_home/window_mettle: Analyzing
+cross_pipeline/wifi_home/window_mettle
+                        time:   [543.99 µs 574.92 µs 599.72 µs]
+Benchmarking cross_pipeline/wifi_home/window_streaming
+Benchmarking cross_pipeline/wifi_home/window_streaming: Warming up for 3.0000 s
+Benchmarking cross_pipeline/wifi_home/window_streaming: Collecting 20 samples in estimated 5.0062 s (15k iterations)
+Benchmarking cross_pipeline/wifi_home/window_streaming: Analyzing
+cross_pipeline/wifi_home/window_streaming
+                        time:   [312.19 µs 316.05 µs 320.38 µs]
+Benchmarking cross_pipeline/lte_mobile/block_raptorq
+Benchmarking cross_pipeline/lte_mobile/block_raptorq: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/block_raptorq: Collecting 20 samples in estimated 5.0894 s (8400 iterations)
+Benchmarking cross_pipeline/lte_mobile/block_raptorq: Analyzing
+cross_pipeline/lte_mobile/block_raptorq
+                        time:   [590.06 µs 602.55 µs 616.79 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/lte_mobile/block_rs
+Benchmarking cross_pipeline/lte_mobile/block_rs: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/block_rs: Collecting 20 samples in estimated 5.1857 s (1680 iterations)
+Benchmarking cross_pipeline/lte_mobile/block_rs: Analyzing
+cross_pipeline/lte_mobile/block_rs
+                        time:   [3.0109 ms 3.0405 ms 3.0926 ms]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking cross_pipeline/lte_mobile/block_mettle
+Benchmarking cross_pipeline/lte_mobile/block_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/block_mettle: Collecting 20 samples in estimated 5.0315 s (18k iterations)
+Benchmarking cross_pipeline/lte_mobile/block_mettle: Analyzing
+cross_pipeline/lte_mobile/block_mettle
+                        time:   [276.94 µs 279.47 µs 282.35 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/lte_mobile/block_rlc
+Benchmarking cross_pipeline/lte_mobile/block_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/block_rlc: Collecting 20 samples in estimated 5.0310 s (5460 iterations)
+Benchmarking cross_pipeline/lte_mobile/block_rlc: Analyzing
+cross_pipeline/lte_mobile/block_rlc
+                        time:   [905.02 µs 917.09 µs 929.52 µs]
+Benchmarking cross_pipeline/lte_mobile/window_rlc
+Benchmarking cross_pipeline/lte_mobile/window_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/window_rlc: Collecting 20 samples in estimated 5.0466 s (2730 iterations)
+Benchmarking cross_pipeline/lte_mobile/window_rlc: Analyzing
+cross_pipeline/lte_mobile/window_rlc
+                        time:   [1.7581 ms 1.7664 ms 1.7737 ms]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/lte_mobile/window_mettle
+Benchmarking cross_pipeline/lte_mobile/window_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/window_mettle: Collecting 20 samples in estimated 5.0302 s (9660 iterations)
+Benchmarking cross_pipeline/lte_mobile/window_mettle: Analyzing
+cross_pipeline/lte_mobile/window_mettle
+                        time:   [509.26 µs 511.46 µs 513.66 µs]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/lte_mobile/window_streaming
+Benchmarking cross_pipeline/lte_mobile/window_streaming: Warming up for 3.0000 s
+Benchmarking cross_pipeline/lte_mobile/window_streaming: Collecting 20 samples in estimated 5.0064 s (15k iterations)
+Benchmarking cross_pipeline/lte_mobile/window_streaming: Analyzing
+cross_pipeline/lte_mobile/window_streaming
+                        time:   [329.14 µs 333.94 µs 340.43 µs]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+Benchmarking cross_pipeline/congested_wifi/block_raptorq
+Benchmarking cross_pipeline/congested_wifi/block_raptorq: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/block_raptorq: Collecting 20 samples in estimated 5.0240 s (8400 iterations)
+Benchmarking cross_pipeline/congested_wifi/block_raptorq: Analyzing
+cross_pipeline/congested_wifi/block_raptorq
+                        time:   [581.48 µs 598.99 µs 617.75 µs]
+Benchmarking cross_pipeline/congested_wifi/block_rs
+Benchmarking cross_pipeline/congested_wifi/block_rs: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/block_rs: Collecting 20 samples in estimated 5.2217 s (2520 iterations)
+Benchmarking cross_pipeline/congested_wifi/block_rs: Analyzing
+cross_pipeline/congested_wifi/block_rs
+                        time:   [2.0560 ms 2.0759 ms 2.0996 ms]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking cross_pipeline/congested_wifi/block_mettle
+Benchmarking cross_pipeline/congested_wifi/block_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/block_mettle: Collecting 20 samples in estimated 5.0397 s (23k iterations)
+Benchmarking cross_pipeline/congested_wifi/block_mettle: Analyzing
+cross_pipeline/congested_wifi/block_mettle
+                        time:   [223.73 µs 226.96 µs 230.05 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking cross_pipeline/congested_wifi/block_rlc
+Benchmarking cross_pipeline/congested_wifi/block_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/block_rlc: Collecting 20 samples in estimated 5.3582 s (1050 iterations)
+Benchmarking cross_pipeline/congested_wifi/block_rlc: Analyzing
+cross_pipeline/congested_wifi/block_rlc
+                        time:   [5.0923 ms 5.1783 ms 5.2571 ms]
+Benchmarking cross_pipeline/congested_wifi/window_rlc
+Benchmarking cross_pipeline/congested_wifi/window_rlc: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/window_rlc: Collecting 20 samples in estimated 5.4844 s (1260 iterations)
+Benchmarking cross_pipeline/congested_wifi/window_rlc: Analyzing
+cross_pipeline/congested_wifi/window_rlc
+                        time:   [4.3143 ms 4.3483 ms 4.4039 ms]
+Found 4 outliers among 20 measurements (20.00%)
+  2 (10.00%) high mild
+  2 (10.00%) high severe
+Benchmarking cross_pipeline/congested_wifi/window_mettle
+Benchmarking cross_pipeline/congested_wifi/window_mettle: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/window_mettle: Collecting 20 samples in estimated 5.1037 s (8400 iterations)
+Benchmarking cross_pipeline/congested_wifi/window_mettle: Analyzing
+cross_pipeline/congested_wifi/window_mettle
+                        time:   [606.59 µs 622.65 µs 640.76 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking cross_pipeline/congested_wifi/window_streaming
+Benchmarking cross_pipeline/congested_wifi/window_streaming: Warming up for 3.0000 s
+Benchmarking cross_pipeline/congested_wifi/window_streaming: Collecting 20 samples in estimated 5.2616 s (2940 iterations)
+Benchmarking cross_pipeline/congested_wifi/window_streaming: Analyzing
+cross_pipeline/congested_wifi/window_streaming
+                        time:   [1.6862 ms 1.7059 ms 1.7334 ms]
+

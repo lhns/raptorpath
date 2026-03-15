@@ -219,3 +219,112 @@ impl FecDecoder for RaptorqDecoder {
         self.created
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::traits::FecBackend;
+
+    fn make_params(k: u32, symbol_size: u16, repair_count: u32) -> EncodingParams {
+        EncodingParams {
+            source_symbols: k,
+            symbol_size,
+            repair_count,
+            block_id: 0,
+        }
+    }
+
+    #[test]
+    fn test_source_symbol_fast_path() {
+        // All k source symbols arrive → is_complete_source() true, decode via fast-path
+        let data = vec![42u8; 4800]; // 4 symbols of 1200 bytes
+        let params = make_params(4, 1200, 2);
+        let encoder = RaptorqEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+
+        let mut decoder = RaptorqDecoder::new(params, data.len() as u64);
+        for src in &sources {
+            let result = decoder.add_symbol(src);
+            if decoder.is_complete_source() {
+                assert!(result.is_some());
+                assert_eq!(&result.unwrap()[..data.len()], &data[..]);
+                break;
+            }
+        }
+        assert!(decoder.is_complete_source() || decoder.is_decoded());
+    }
+
+    #[test]
+    fn test_backend_mismatch_rejected() {
+        let data = vec![1u8; 1200];
+        let params = make_params(1, 1200, 1);
+        let mut decoder = RaptorqDecoder::new(params, data.len() as u64);
+
+        let wrong_sym = WireSymbol {
+            block_id: 0,
+            payload_id: 0,
+            is_repair: false,
+            data: data.clone(),
+            backend: FecBackend::ReedSolomon,
+        };
+        assert!(decoder.add_symbol(&wrong_sym).is_none());
+        assert_eq!(decoder.total_fed(), 0);
+    }
+
+    #[test]
+    fn test_dedup_same_payload_id() {
+        let data = vec![7u8; 2400];
+        let params = make_params(2, 1200, 1);
+        let encoder = RaptorqEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+
+        let mut decoder = RaptorqDecoder::new(params, data.len() as u64);
+        decoder.add_symbol(&sources[0]);
+        assert_eq!(decoder.total_fed(), 1);
+
+        // Feed same symbol again
+        let result = decoder.add_symbol(&sources[0]);
+        assert!(result.is_none());
+        assert_eq!(decoder.total_fed(), 1); // not incremented
+    }
+
+    #[test]
+    fn test_k1_single_symbol() {
+        // k=1 edge case: encode/decode round-trip
+        let data = vec![99u8; 1200];
+        let params = make_params(1, 1200, 0);
+        let encoder = RaptorqEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+
+        let mut decoder = RaptorqDecoder::new(params, data.len() as u64);
+        let result = decoder.add_symbol(&sources[0]);
+        assert!(result.is_some());
+        assert_eq!(&result.unwrap()[..data.len()], &data[..]);
+    }
+
+    #[test]
+    fn test_repair_recovery() {
+        // Drop 1 source, feed repair → decode succeeds
+        let data = vec![55u8; 3600]; // 3 symbols of 1200
+        let params = make_params(3, 1200, 5);
+        let encoder = RaptorqEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+        let repairs = encoder.repair_symbols(5);
+
+        let mut decoder = RaptorqDecoder::new(params, data.len() as u64);
+        // Feed sources 0 and 2, skip 1
+        decoder.add_symbol(&sources[0]);
+        decoder.add_symbol(&sources[2]);
+
+        // Feed repairs until decode
+        let mut decoded = false;
+        for repair in &repairs {
+            if let Some(result) = decoder.add_symbol(repair) {
+                assert_eq!(&result[..data.len()], &data[..]);
+                decoded = true;
+                break;
+            }
+        }
+        assert!(decoded, "Should decode with repair symbols");
+    }
+}

@@ -62,6 +62,17 @@ pub fn inv(a: u8) -> u8 {
     EXP_TABLE[(255 - log_a) as usize]
 }
 
+/// Checked multiplicative inverse: returns `None` for zero, `Some(inv(a))` otherwise.
+/// Defense-in-depth for callers that may not have already guarded against zero.
+#[inline(always)]
+pub fn checked_inv(a: u8) -> Option<u8> {
+    if a == 0 {
+        None
+    } else {
+        Some(inv(a))
+    }
+}
+
 /// Multiply-accumulate: dst[i] ^= coeff * src[i] for all i.
 /// This is the hot loop for RLC encoding/decoding.
 #[inline]
@@ -164,6 +175,15 @@ mod tests {
         mul_acc_slice(7, &src, &mut dst);
         for (i, &s) in src.iter().enumerate() {
             assert_eq!(dst[i], add(prev[i], mul(7, s)));
+        }
+    }
+
+    #[test]
+    fn test_checked_inv() {
+        assert_eq!(checked_inv(0), None);
+        for a in 1..=255u8 {
+            let inv_a = checked_inv(a).unwrap();
+            assert_eq!(mul(a, inv_a), 1);
         }
     }
 

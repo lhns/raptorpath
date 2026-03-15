@@ -1,12 +1,14 @@
 //! FEC encoding/decoding with swappable backends.
 //!
 //! Supports multiple erasure code implementations:
-//! - **RaptorQ** (default): rateless fountain code, near-optimal erasure recovery
-//! - **METTLE**: streaming erasure code with pure peeling decoder (research)
+//! - **RaptorQ** (default): rateless fountain code, near-optimal recovery (~1% overhead)
+//! - **Reed-Solomon**: MDS code, zero overhead, any k of n suffices (GF(2^8), max n=255)
+//! - **RLC**: random linear code over GF(2^8), near-MDS, truly rateless (RFC 8681)
+//! - **Streaming**: delay-optimal two-layer code for bursty channels (Badr/Martinian)
+//! - **METTLE**: graph-based peeling code, fast XOR-only decode (research, patent-encumbered)
 //!
-//! The backend is selected via [`FecBackend`], which provides factory methods
-//! for creating encoders and decoders. The rest of raptorpath uses the
-//! [`FecEncoder`] and [`FecDecoder`] traits, making the FEC layer pluggable.
+//! Block-mode backends (RaptorQ, RS, METTLE, RLC) use [`FecEncoder`]/[`FecDecoder`].
+//! Window-mode backends (RLC, METTLE, Streaming) use [`WindowEncoder`]/[`WindowDecoder`].
 
 mod traits;
 pub(crate) mod mettle_backend;

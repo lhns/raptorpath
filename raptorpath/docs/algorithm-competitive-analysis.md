@@ -203,14 +203,14 @@ These algorithms operate at the wrong abstraction level or solve a different pro
 
 ## 4. Competitive Matrix
 
-| Algorithm | Rateless | Systematic | Encode | Decode | Overhead (epsilon) | Rust Crate | Patent-Free | Verdict |
-|-----------|----------|------------|--------|--------|--------------------|------------|-------------|---------|
-| **RaptorQ** | Yes | Yes | O(k) | O(k^2) | ~1% | `raptorq` (prod) | Yes | Incumbent default |
-| **METTLE** | Yes | Yes | O(k) | O(k) | ~15% | `mettle` (research) | **No** | Incumbent realtime |
-| **Reed-Solomon** | No* | Yes | O(k*r) | O(k^2) | **0%** | `reed-solomon-erasure` (prod) | Yes | **Benchmark** |
-| **SW-RLC** | Yes | Yes | O(W) | O(W^3) | ~0% | None (~500-1000 LOC) | Yes | **Benchmark** |
-| **Streaming** | No | Yes | O(W) | O(W) | Optimal | `streaming.rs` (impl) | Yes | **Implemented** |
-| Online Codes | Yes | Yes | O(k) | O(k) | ~5-10% | Unmaintained | Likely | Watch |
+| Algorithm | Rateless | Systematic | Encode | Decode | Overhead (epsilon) | Rust Crate | Patent-Free | Window Mode | Verdict |
+|-----------|----------|------------|--------|--------|--------------------|------------|-------------|-------------|---------|
+| **RaptorQ** | Yes | Yes | O(k) | O(k^2) | ~1% | `raptorq` (prod) | Yes | No | Incumbent default |
+| **METTLE** | Yes | Yes | O(k) | O(k) | ~15% | `mettle` (research) | **No** | Yes | Incumbent realtime |
+| **Reed-Solomon** | No* | Yes | O(k*r) | O(k^2) | **0%** | `reed-solomon-erasure` (prod) | Yes | No | **Benchmark** |
+| **SW-RLC** | Yes | Yes | O(W) | O(W^3) | ~0% | `rlc_backend.rs` (impl) | Yes | Yes | **Implemented** |
+| **Streaming** | No | Yes | O(W) | O(W) | Optimal | `streaming.rs` (impl) | Yes | Yes | **Implemented** |
+| Online Codes | Yes | Yes | O(k) | O(k) | ~5-10% | Unmaintained | Likely | — | Watch |
 
 \* Fakeable by pre-generating max repair budget. GF(2^8) limits total symbols to 255,
 allowing up to 201 repair symbols at k=54 (more than sufficient).

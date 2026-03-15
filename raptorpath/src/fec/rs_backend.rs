@@ -263,3 +263,102 @@ impl FecDecoder for ReedSolomonDecoder {
         self.created
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_params(k: u32, symbol_size: u16, repair_count: u32) -> EncodingParams {
+        EncodingParams {
+            source_symbols: k,
+            symbol_size,
+            repair_count,
+            block_id: 0,
+        }
+    }
+
+    #[test]
+    fn test_repair_count_capped_at_255_minus_k() {
+        // k=200, repair=100 → encoder caps at 55
+        let data = vec![1u8; 200 * 100]; // k=200, symbol_size=100
+        let params = make_params(200, 100, 100);
+        let encoder = ReedSolomonEncoder::new(&data, params);
+        let repairs = encoder.repair_symbols(100);
+        assert_eq!(repairs.len(), 55, "Should cap at 255 - 200 = 55");
+    }
+
+    #[test]
+    fn test_padding_short_data() {
+        // Data shorter than k×symbol_size → padded, round-trip works
+        let data = vec![42u8; 100]; // Only 100 bytes but k=4, symbol_size=200
+        let params = make_params(4, 200, 4);
+        let encoder = ReedSolomonEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+        let repairs = encoder.repair_symbols(4);
+
+        let mut decoder = ReedSolomonDecoder::new(params, data.len() as u64);
+        // Drop source 1, feed the rest + 1 repair
+        decoder.add_symbol(&sources[0]);
+        decoder.add_symbol(&sources[2]);
+        decoder.add_symbol(&sources[3]);
+        let result = decoder.add_symbol(&repairs[0]);
+        assert!(result.is_some());
+        assert_eq!(&result.unwrap()[..data.len()], &data[..]);
+    }
+
+    #[test]
+    fn test_zero_repair_all_sources() {
+        // r=0, all sources arrive → decode succeeds
+        let data = vec![7u8; 600];
+        let params = make_params(3, 200, 0);
+        let encoder = ReedSolomonEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+
+        let mut decoder = ReedSolomonDecoder::new(params, data.len() as u64);
+        decoder.add_symbol(&sources[0]);
+        decoder.add_symbol(&sources[1]);
+        let result = decoder.add_symbol(&sources[2]);
+        assert!(result.is_some());
+        assert_eq!(&result.unwrap()[..], &data[..]);
+    }
+
+    #[test]
+    fn test_out_of_bounds_payload_id() {
+        // payload_id >= k+r → None
+        let data = vec![1u8; 400];
+        let params = make_params(2, 200, 2);
+        let mut decoder = ReedSolomonDecoder::new(params, data.len() as u64);
+
+        let bad_sym = WireSymbol {
+            block_id: 0,
+            payload_id: 100, // way out of bounds
+            is_repair: true,
+            data: vec![0u8; 200],
+            backend: FecBackend::ReedSolomon,
+        };
+        assert!(decoder.add_symbol(&bad_sym).is_none());
+    }
+
+    #[test]
+    fn test_single_loss_repair_recovery() {
+        // Drop 1 source, feed 1 repair → decode succeeds
+        let data = vec![88u8; 1000];
+        let params = make_params(5, 200, 5);
+        let encoder = ReedSolomonEncoder::new(&data, params);
+        let sources = encoder.source_symbols();
+        let repairs = encoder.repair_symbols(5);
+
+        let mut decoder = ReedSolomonDecoder::new(params, data.len() as u64);
+        // Feed all sources except index 2
+        for (i, src) in sources.iter().enumerate() {
+            if i == 2 {
+                continue;
+            }
+            decoder.add_symbol(src);
+        }
+        // Feed one repair → should decode
+        let result = decoder.add_symbol(&repairs[0]);
+        assert!(result.is_some());
+        assert_eq!(&result.unwrap()[..data.len()], &data[..]);
+    }
+}

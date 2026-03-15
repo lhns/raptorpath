@@ -64,15 +64,20 @@ pub trait FecDecoder: Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FecBackend {
-    /// RaptorQ (RFC 6330) — rateless fountain code with near-optimal erasure recovery.
+    /// RaptorQ (RFC 6330) — rateless fountain code, LDPC+LT hybrid, ~1% overhead.
+    /// Block-mode only. Near-optimal recovery probability. Patent-free.
     RaptorQ,
-    /// METTLE — streaming erasure code with pure peeling decoder (research implementation).
+    /// METTLE — graph-based peeling code, XOR-only decode, ~15% overhead.
+    /// Block + window modes. Fast but unreliable at small k. Patent-encumbered.
     Mettle,
-    /// Reed-Solomon — MDS erasure code with zero overhead (any k of n suffices).
+    /// Reed-Solomon (GF(2^8)) — MDS code, 0% overhead, fixed-rate (max n=255).
+    /// Block-mode only. Guaranteed recovery with exactly k of n symbols. Patent-free.
     ReedSolomon,
-    /// Random Linear Code (RFC 8681) — GF(2^8) random linear combinations, near-MDS, rateless.
+    /// Random Linear Code (RFC 8681) — GF(2^8) random combinations, ~0% overhead, truly rateless.
+    /// Block + window modes. Near-MDS via Gaussian elimination. Patent-free.
     Rlc,
     /// Streaming codes (Badr/Martinian) — delay-optimal two-layer code for burst+random channels.
+    /// Window-mode only. Burst layer (diagonal XOR) + random layer (GF(256)). Patent-free.
     Streaming,
 }
 

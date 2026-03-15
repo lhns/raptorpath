@@ -59,7 +59,7 @@ fn w50_1pct_loss() {
     let config = MettleConfig::small_window();
     let rate = measure_success_rate(config, 50, 0.01, 100);
     println!("w=50, 1% loss: {:.1}% success rate", rate * 100.0);
-    assert!(rate > 0.8, "Expected >80% success at 1% loss, got {:.1}%", rate * 100.0);
+    assert!(rate > 0.95, "Expected >95% success at 1% loss, got {:.1}%", rate * 100.0);
 }
 
 #[test]
@@ -67,8 +67,7 @@ fn w50_5pct_loss() {
     let config = MettleConfig::small_window();
     let rate = measure_success_rate(config, 50, 0.05, 100);
     println!("w=50, 5% loss: {:.1}% success rate", rate * 100.0);
-    // Lower expectation for 5% loss at small window
-    assert!(rate > 0.5, "Expected >50% success at 5% loss, got {:.1}%", rate * 100.0);
+    assert!(rate > 0.95, "Expected >95% success at 5% loss, got {:.1}%", rate * 100.0);
 }
 
 #[test]

@@ -105,23 +105,58 @@ From the paper (w=600):
 | Overhead @ 1% loss | 5.5% | 6.14% |
 | Overhead @ 10% loss | 25% | 15% |
 
-**Small window caveat**: the paper optimized for w=600. At w=50 (raptorpath's target),
-the spatially-coupled cascade may not propagate as reliably. Run the `small_window` tests
-to characterize behavior at your target window size.
+**Small window note**: the paper optimized for w=600. At w=50 (raptorpath's target),
+recovery still reaches 100% at up to 10% loss when all coded bins are available.
+Run the `small_window` and `statistical` tests to verify at your target window size.
+
+## Known issues and fixes (ADR 0028)
+
+An edge probability off-by-one bug was discovered and fixed in March 2026. The
+stochastic edge formula used `p = 1/2^(i-1)` instead of `p = 1/2^i`, causing
+the first stochastic edge to always collide with the TLE edge. After the
+encoder's deduplication, this wasted 25% of graph connectivity and severely
+degraded recovery rates (0-70% instead of 100%).
+
+**Impact**: the fix changed recovery from near-zero to 100% across all tested
+configurations (w=50 and w=600, 1-10% loss).
+
+Regression tests in `graph.rs` (inline) and `tests/edge_analysis.rs` guard
+against reintroduction. Key invariants:
+
+- First stochastic edge probability must be < 1.0 (p = 0.5, not 1.0)
+- TLE-stochastic collision rate must be < 5% (was ~100% with the bug)
+- Average unique edges per source must be > 3.5 out of 4
+- Mean offsets must follow geometric spacing: n/2, n/4, n/8
+
+### Integration notes (raptorpath adapter)
+
+When using METTLE through raptorpath's `FecBackend::Mettle` block adapter:
+
+- **All coded bins must be sent.** METTLE is a fixed-rate code; the peeling
+  decoder needs the complete graph structure to cascade. Unlike rateless codes
+  (RaptorQ, RLC), partial bin sets break recovery. The `repair_symbols()` method
+  returns all bins regardless of the `count` parameter.
+- **`num_source` must match the data split**, not the application-level packet count.
+  The decoder computes `num_source = ceil(transfer_length / symbol_size)`.
+- **Window mode repair selection** uses golden-ratio stride to distribute repairs
+  across the bin range, avoiding clustering at early positions.
 
 ## Testing
 
 ```bash
-# Unit tests
+# Unit tests (includes edge probability regression tests)
 cargo test -p mettle
 
 # Integration tests with output
 cargo test -p mettle -- --nocapture
 
+# Edge analysis: collision rate, mean offsets, A/B test (ADR 0028)
+cargo test -p mettle --test edge_analysis -- --nocapture
+
 # Small window characterization (prints statistics)
 cargo test -p mettle small_window -- --nocapture
 
-# Statistical evaluation (1000+ trials)
+# Statistical evaluation (500 trials per configuration)
 cargo test -p mettle statistical -- --nocapture
 
 # Benchmarks
@@ -139,11 +174,12 @@ mettle/
 │   ├── graph.rs        # Tanner graph edge generation (TLE + binomial)
 │   └── gf2.rs          # GF(2) XOR operations
 ├── tests/
-│   ├── encode_decode.rs  # Full round-trip tests
-│   ├── peeling.rs        # Peeling mechanics tests
-│   ├── streaming.rs      # Streaming encode/decode tests
-│   ├── small_window.rs   # Small window characterization
-│   └── statistical.rs    # Large-scale statistical evaluation
+│   ├── edge_analysis.rs   # Edge collision & probability regression tests (ADR 0028)
+│   ├── encode_decode.rs   # Full round-trip tests
+│   ├── peeling.rs         # Peeling mechanics tests
+│   ├── streaming.rs       # Streaming encode/decode tests
+│   ├── small_window.rs    # Small window characterization
+│   └── statistical.rs     # Large-scale statistical evaluation
 └── benches/
     └── mettle_bench.rs   # Criterion benchmarks
 ```

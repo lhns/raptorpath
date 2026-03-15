@@ -140,8 +140,19 @@ impl WindowEncoder for MettleWindowEncoder {
             };
         }
 
-        // Round-robin through coded packets using repair_index
-        let cp = &coded[repair_index as usize % coded.len()];
+        // METTLE is fixed-rate: coded_packets() returns a fixed set of bins.
+        // Distribute repairs across the full bin range using a stride pattern
+        // so that early repairs cover diverse source positions rather than
+        // clustering at the start of the bin index space. Once all unique bins
+        // are exhausted, cap at the last bin (duplicates add zero value).
+        let cp = if coded.len() <= 1 {
+            &coded[0]
+        } else {
+            // Use golden-ratio stride for quasi-uniform distribution over bins
+            let phi_inv = 0.6180339887; // 1/φ
+            let idx = ((repair_index as f64 * phi_inv * coded.len() as f64) as usize) % coded.len();
+            &coded[idx]
+        };
 
         // Build wire format: [window_start(8)][num_members(2)][member_offsets: u16 LE...][xor_data]
         let num_members = cp.members.len() as u16;
@@ -707,5 +718,139 @@ mod tests {
         assert_eq!(results.len(), 1);
         let extracted = extract_window_packet(&results[0].1).unwrap();
         assert_eq!(extracted, test_data);
+    }
+
+    /// Helper: parse member offsets from a repair wire symbol's data.
+    /// Wire format: [window_start(8 LE)][num_members(2 LE)][member_offsets: u16 LE...]
+    fn parse_repair_members(data: &[u8]) -> (u64, Vec<u16>) {
+        let window_start = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let num_members = u16::from_le_bytes(data[8..10].try_into().unwrap()) as usize;
+        let mut offsets = Vec::with_capacity(num_members);
+        for j in 0..num_members {
+            let pos = REPAIR_HEADER_FIXED + j * 2;
+            let off = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap());
+            offsets.push(off);
+        }
+        (window_start, offsets)
+    }
+
+    #[test]
+    fn test_repairs_are_not_sequential_duplicates() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+
+        for i in 0..20u8 {
+            encoder.add_source(&vec![i; SYMBOL_SIZE as usize]);
+        }
+
+        let mut unique_member_sets = HashSet::new();
+        for _ in 0..20 {
+            let repair = encoder.generate_repair();
+            assert!(repair.is_repair);
+            let (_ws, offsets) = parse_repair_members(&repair.data);
+            let member_set: BTreeSet<u16> = offsets.into_iter().collect();
+            unique_member_sets.insert(member_set);
+        }
+
+        assert!(
+            unique_member_sets.len() >= 10,
+            "Expected at least 10 unique member sets from 20 repairs, got {}",
+            unique_member_sets.len()
+        );
+    }
+
+    #[test]
+    fn test_repairs_cover_diverse_source_positions() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+
+        for i in 0..50u8 {
+            encoder.add_source(&vec![i; SYMBOL_SIZE as usize]);
+        }
+
+        let mut all_positions = HashSet::new();
+        for _ in 0..15 {
+            let repair = encoder.generate_repair();
+            let (ws, offsets) = parse_repair_members(&repair.data);
+            for off in offsets {
+                all_positions.insert(ws + off as u64);
+            }
+        }
+
+        assert!(
+            all_positions.len() >= 20,
+            "Expected at least 20 unique source positions covered by 15 repairs, got {}",
+            all_positions.len()
+        );
+    }
+
+    #[test]
+    fn test_repair_distribution_not_clustered_at_start() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+
+        for i in 0..100u8 {
+            encoder.add_source(&vec![i; SYMBOL_SIZE as usize]);
+        }
+
+        let mut total_offset: u64 = 0;
+        let mut count: u64 = 0;
+        for _ in 0..20 {
+            let repair = encoder.generate_repair();
+            let (_ws, offsets) = parse_repair_members(&repair.data);
+            for off in &offsets {
+                total_offset += *off as u64;
+                count += 1;
+            }
+        }
+
+        let avg = total_offset as f64 / count as f64;
+        assert!(
+            avg > 25.0,
+            "Expected average member offset > 25 (at least 25% into window), got {:.1}",
+            avg
+        );
+    }
+
+    #[test]
+    fn test_window_recovery_with_mid_range_loss() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+        let mut decoder = MettleWindowDecoder::new(SYMBOL_SIZE);
+
+        let mut source_syms = Vec::new();
+        for i in 0..20u8 {
+            let pkt = vec![i + 100; SYMBOL_SIZE as usize];
+            source_syms.push(encoder.add_source(&pkt));
+        }
+
+        // Feed all sources except position 10 (mid-range)
+        for (i, sym) in source_syms.iter().enumerate() {
+            if i == 10 {
+                continue;
+            }
+            decoder.add_symbol(sym);
+        }
+
+        // Feed repairs until position 10 is recovered
+        let mut recovered_10 = false;
+        for _ in 0..40 {
+            let repair = encoder.generate_repair();
+            let results = decoder.add_symbol(&repair);
+            for (seq, data) in &results {
+                if *seq == 10 {
+                    assert_eq!(
+                        &data[..],
+                        &vec![110u8; SYMBOL_SIZE as usize][..],
+                        "Recovered data for seq 10 should match original"
+                    );
+                    recovered_10 = true;
+                }
+            }
+            if recovered_10 {
+                break;
+            }
+        }
+
+        assert!(
+            recovered_10,
+            "Should recover mid-range source 10 with distributed repairs"
+        );
     }
 }

@@ -9,8 +9,9 @@
 //!
 //! - **Edges 2..l**: stochastic placement using a hash-seeded RNG. The i-th edge lands
 //!   at distance `η_i` from the right boundary of the window, where `η_i` is drawn from
-//!   `Binomial((1+c)*w, 1/2^(i-1))`. This places later edges progressively closer to
-//!   the source packet's position, creating the spatial coupling that enables peeling.
+//!   `Binomial((1+c)*w, 1/2^i)`. This gives geometrically-spaced spatial coupling:
+//!   i=1 → mean offset n/2, i=2 → n/4, i=3 → n/8, placing edges progressively closer
+//!   to the source packet's position.
 
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -68,7 +69,16 @@ fn tle_bin(x: usize, c: f64) -> usize {
 /// Stochastic bin placement for edge `edge_idx` (1-indexed, starting from the 2nd edge).
 ///
 /// The landing position is: `right_boundary - η`, where `η` is drawn from an
-/// approximation of `Binomial(n, p)` with `n = (1+c)*w` and `p = 1/2^(edge_idx-1)`.
+/// approximation of `Binomial(n, p)` with `n = (1+c)*w` and `p = 1/2^edge_idx`.
+///
+/// Using `p = 1/2^i` (not `1/2^(i-1)`) gives geometrically-spaced spatial coupling:
+/// - i=1: p=0.5   → mean offset = n/2 (halfway through window)
+/// - i=2: p=0.25  → mean offset = n/4
+/// - i=3: p=0.125 → mean offset = n/8
+///
+/// The previous formula `1/2^(i-1)` made the first stochastic edge (i=1) use p=1.0,
+/// causing η = n deterministically, which placed the bin at exactly the TLE position.
+/// After deduplication, this wasted 25% of the graph connectivity.
 ///
 /// For computational simplicity, we sample from the binomial by summing Bernoulli trials
 /// (exact for small n, which is the case at typical window sizes).
@@ -80,7 +90,7 @@ fn binomial_bin(
     rng: &mut SmallRng,
 ) -> usize {
     let n = ((1.0 + c) * w as f64).floor() as usize;
-    let p = 1.0 / (1u64 << (edge_idx - 1)) as f64; // 1/2^(i-1) for edge i (1-indexed from 2nd)
+    let p = 1.0 / (1u64 << edge_idx) as f64; // 1/2^i for edge i (1-indexed from 2nd)
 
     // Sample from Binomial(n, p) by summing Bernoulli trials
     let mut eta = 0usize;
@@ -177,5 +187,153 @@ mod tests {
         // Should be approximately (1+c) * (n + w)
         let expected_100 = (1.1_f64 * 150.0).ceil() as usize + 1;
         assert_eq!(bins_100, expected_100);
+    }
+
+    // === Regression tests for ADR-0028: edge probability off-by-one ===
+
+    #[test]
+    fn first_stochastic_edge_probability_not_one() {
+        // Regression: the old formula p = 1/2^(edge_idx-1) made edge_idx=1 use p=1.0,
+        // so binomial_bin always returned right_boundary - n. With p=0.5 there must be
+        // variance across different RNG seeds.
+        let config = test_config();
+        let w = config.window_size;
+        let c = config.overhead_factor;
+        let right_boundary = ((1.0 + c) * (50 + w) as f64).floor() as usize;
+
+        let mut results = Vec::with_capacity(100);
+        for trial in 0u64..100 {
+            let mut rng = SmallRng::seed_from_u64(trial);
+            let bin = binomial_bin(right_boundary, 1, w, c, &mut rng);
+            results.push(bin);
+        }
+
+        // If p were 1.0, every result would be identical (right_boundary - n).
+        // With p=0.5, results must vary.
+        let first = results[0];
+        let all_same = results.iter().all(|&r| r == first);
+        assert!(
+            !all_same,
+            "All 100 trials produced the same bin {first}; p is likely 1.0 (off-by-one bug)"
+        );
+    }
+
+    #[test]
+    fn stochastic_edges_never_systematically_collide_with_tle() {
+        // Regression: with p=1.0 the first stochastic edge always landed at the TLE
+        // position, causing ~100% collision rate. After the fix (p=0.5) sporadic
+        // collisions are fine, but systematic collision indicates a regression.
+        let config = test_config();
+        let num_positions = 200;
+        let mut collisions = 0;
+
+        for x in 0..num_positions {
+            let indices = compute_bin_indices(x, &config, 0xDEAD);
+            let tle = indices[0];
+            // Edge at index 1 is the first stochastic edge (edge_idx=1)
+            if indices[1] == tle {
+                collisions += 1;
+            }
+        }
+
+        let collision_rate = collisions as f64 / num_positions as f64;
+        assert!(
+            collision_rate < 0.50,
+            "First stochastic edge collides with TLE {:.0}% of the time \
+             (expected < 50%, got {collisions}/{num_positions}). \
+             Likely regression to p=1/2^(i-1).",
+            collision_rate * 100.0
+        );
+        // Tighter sanity: should actually be very rare (< 5%)
+        assert!(
+            collision_rate < 0.05,
+            "Collision rate {:.1}% is higher than expected < 5%",
+            collision_rate * 100.0
+        );
+    }
+
+    #[test]
+    fn first_stochastic_edge_has_variance() {
+        // With p=1.0 (the bug), std dev of eta was exactly 0.
+        // With p=0.5, std dev should be sqrt(n*p*(1-p)) ≈ 3.7 for n=55.
+        let config = test_config();
+        let w = config.window_size;
+        let c = config.overhead_factor;
+        let right_boundary = ((1.0 + c) * (50 + w) as f64).floor() as usize;
+        let n = ((1.0 + c) * w as f64).floor() as usize;
+
+        let trials = 1000;
+        let mut values = Vec::with_capacity(trials);
+        for trial in 0u64..trials as u64 {
+            let mut rng = SmallRng::seed_from_u64(trial.wrapping_mul(7919));
+            let bin = binomial_bin(right_boundary, 1, w, c, &mut rng);
+            // eta = right_boundary - bin
+            values.push((right_boundary - bin) as f64);
+        }
+
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        let variance =
+            values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+        let std_dev = variance.sqrt();
+
+        // Expected std dev ≈ sqrt(n * 0.5 * 0.5) ≈ sqrt(n)/2
+        let expected_std = (n as f64 * 0.5 * 0.5).sqrt();
+
+        assert!(
+            std_dev > 0.0,
+            "Standard deviation is 0 — binomial_bin is deterministic (p=1.0 bug)"
+        );
+        assert!(
+            std_dev > expected_std * 0.5,
+            "Standard deviation {std_dev:.2} is too low (expected ~{expected_std:.2})"
+        );
+    }
+
+    #[test]
+    fn edge_probabilities_decrease_geometrically() {
+        // Edges 1,2,3 have p=1/2, 1/4, 1/8 so mean offsets (eta) should be n/2, n/4, n/8.
+        // Assert mean_offset[0] > mean_offset[1] > mean_offset[2].
+        let config = test_config();
+        let w = config.window_size;
+        let c = config.overhead_factor;
+        let right_boundary = ((1.0 + c) * (50 + w) as f64).floor() as usize;
+
+        let trials = 1000;
+        let mut mean_offsets = [0.0f64; 3];
+
+        for edge_idx in 1..=3usize {
+            let mut total = 0u64;
+            for trial in 0u64..trials as u64 {
+                let mut rng = SmallRng::seed_from_u64(trial.wrapping_mul(6271));
+                let bin = binomial_bin(right_boundary, edge_idx, w, c, &mut rng);
+                total += (right_boundary - bin) as u64;
+            }
+            mean_offsets[edge_idx - 1] = total as f64 / trials as f64;
+        }
+
+        assert!(
+            mean_offsets[0] > mean_offsets[1],
+            "Edge 1 mean offset ({:.1}) should exceed edge 2 ({:.1})",
+            mean_offsets[0],
+            mean_offsets[1]
+        );
+        assert!(
+            mean_offsets[1] > mean_offsets[2],
+            "Edge 2 mean offset ({:.1}) should exceed edge 3 ({:.1})",
+            mean_offsets[1],
+            mean_offsets[2]
+        );
+
+        // Generous check: each mean should be roughly 2x the next (within 50% tolerance)
+        let ratio_1_2 = mean_offsets[0] / mean_offsets[1];
+        let ratio_2_3 = mean_offsets[1] / mean_offsets[2];
+        assert!(
+            ratio_1_2 > 1.3 && ratio_1_2 < 3.0,
+            "Ratio edge1/edge2 = {ratio_1_2:.2}, expected ~2.0"
+        );
+        assert!(
+            ratio_2_3 > 1.3 && ratio_2_3 < 3.0,
+            "Ratio edge2/edge3 = {ratio_2_3:.2}, expected ~2.0"
+        );
     }
 }

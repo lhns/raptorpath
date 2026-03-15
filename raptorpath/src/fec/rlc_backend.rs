@@ -363,3 +363,91 @@ impl FecDecoder for RlcDecoder {
         self.created
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_params(k: u32, symbol_size: u16, repair_count: u32) -> EncodingParams {
+        EncodingParams {
+            source_symbols: k,
+            symbol_size,
+            repair_count,
+            block_id: 0,
+        }
+    }
+
+    #[test]
+    fn test_coefficient_determinism() {
+        // Same (block_id, repair_index) → same coefficients
+        let c1 = generate_coefficients(42, 7, 10);
+        let c2 = generate_coefficients(42, 7, 10);
+        assert_eq!(c1, c2);
+
+        // Different repair_index → different coefficients
+        let c3 = generate_coefficients(42, 8, 10);
+        assert_ne!(c1, c3);
+    }
+
+    #[test]
+    fn test_nonzero_coefficients() {
+        // next_nonzero_u8() never returns 0 over 1000 iterations
+        let mut rng = SplitMix64::new(12345);
+        for _ in 0..1000 {
+            assert_ne!(rng.next_nonzero_u8(), 0);
+        }
+    }
+
+    #[test]
+    fn test_repair_only_recovery() {
+        // k=4, feed only repair symbols (no source) → GE decode succeeds
+        let data = vec![42u8; 800]; // 4 symbols of 200
+        let params = make_params(4, 200, 10);
+        let encoder = RlcEncoder::new(&data, params);
+        let repairs = encoder.repair_symbols(10);
+
+        let mut decoder = RlcDecoder::new(params, data.len() as u64);
+        let mut decoded = false;
+        for repair in &repairs {
+            if let Some(result) = decoder.add_symbol(repair) {
+                assert_eq!(&result[..data.len()], &data[..]);
+                decoded = true;
+                break;
+            }
+        }
+        assert!(decoded, "RLC should decode from repair-only with k=4");
+    }
+
+    #[test]
+    fn test_linearly_dependent_row() {
+        // Two repairs with identical seed → second doesn't increase rank
+        let data = vec![11u8; 400];
+        let params = make_params(2, 200, 2);
+        let encoder = RlcEncoder::new(&data, params);
+        let repairs = encoder.repair_symbols(1);
+
+        let mut decoder = RlcDecoder::new(params, data.len() as u64);
+        decoder.add_symbol(&repairs[0]);
+        assert_eq!(decoder.rank, 1);
+
+        // Feed an identical symbol (same payload_id → deduped, rank stays)
+        decoder.add_symbol(&repairs[0]);
+        assert_eq!(decoder.rank, 1);
+    }
+
+    #[test]
+    fn test_repair_wire_format() {
+        // Repair data starts with 4-byte LE repair_index header
+        let data = vec![5u8; 400];
+        let params = make_params(2, 200, 3);
+        let encoder = RlcEncoder::new(&data, params);
+        let repairs = encoder.repair_symbols(3);
+
+        for (i, repair) in repairs.iter().enumerate() {
+            assert!(repair.is_repair);
+            assert!(repair.data.len() >= 4);
+            let repair_index = u32::from_le_bytes(repair.data[0..4].try_into().unwrap());
+            assert_eq!(repair_index, i as u32);
+        }
+    }
+}
