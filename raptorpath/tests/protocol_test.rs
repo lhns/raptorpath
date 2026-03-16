@@ -56,6 +56,7 @@ fn test_block_start_roundtrip() {
             block_id: 777,
         },
         transfer_length: 65536,
+        backend: FecBackend::RaptorQ,
     });
 
     let bytes = msg.serialize().unwrap();
@@ -65,10 +66,12 @@ fn test_block_start_roundtrip() {
         WireMessage::Control(ControlMessage::BlockStart {
             params,
             transfer_length,
+            backend,
         }) => {
             assert_eq!(params.source_symbols, 55);
             assert_eq!(params.block_id, 777);
             assert_eq!(transfer_length, 65536);
+            assert_eq!(backend, FecBackend::RaptorQ);
         }
         _ => panic!("expected BlockStart"),
     }

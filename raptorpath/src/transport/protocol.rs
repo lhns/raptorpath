@@ -1,6 +1,6 @@
 //! Wire protocol definitions.
 
-use crate::fec::{EncodingParams, WireSymbol};
+use crate::fec::{EncodingParams, FecBackend, WireSymbol};
 use bincode::Options;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ fn bincode_options() -> impl Options {
 }
 
 /// Protocol version. Increment on breaking changes.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -78,6 +78,7 @@ pub enum ControlMessage {
     BlockStart {
         params: EncodingParams,
         transfer_length: u64,
+        backend: FecBackend,
     },
 
     /// Acknowledge received symbols (receiver → sender).
@@ -142,6 +143,7 @@ pub enum ControlMessage {
     /// Announce that the sender is entering sliding-window FEC mode.
     WindowStart {
         symbol_size: u16,
+        backend: FecBackend,
     },
 
     /// Acknowledge received window-mode symbols (receiver → sender).
@@ -154,6 +156,21 @@ pub enum ControlMessage {
     WindowNack {
         /// Inclusive ranges of missing sequence numbers: (start, end).
         gaps: Vec<(u64, u64)>,
+    },
+
+    /// Sender signals backend switch at a window flush point (sender → receiver).
+    WindowSwitch {
+        /// Last source sequence number under the old backend.
+        flush_seq: u64,
+        /// The new FEC backend to switch to.
+        new_backend: FecBackend,
+        /// Symbol size for the new backend.
+        symbol_size: u16,
+    },
+
+    /// Receiver confirms it drained up to flush_seq and is ready (receiver → sender).
+    WindowSwitchAck {
+        flush_seq: u64,
     },
 }
 

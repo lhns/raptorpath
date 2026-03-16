@@ -13,6 +13,7 @@ pub mod framing;
 pub mod interleave;
 
 use crate::control::FecRateController;
+use crate::control::backend_selector::BackendSelector;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
 use crate::fec::{MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
@@ -55,6 +56,14 @@ pub struct PeerConfig {
     pub fec_backend: FecBackend,
     /// Whether the user explicitly set fec_backend (vs defaulting to RaptorQ)
     pub fec_backend_explicit: bool,
+    /// Low threshold for auto FEC backend switching
+    pub fec_switch_threshold_low: f64,
+    /// High threshold for auto FEC backend switching
+    pub fec_switch_threshold_high: f64,
+    /// Minimum seconds between FEC backend switches
+    pub fec_switch_interval: u64,
+    /// Whether auto FEC backend switching is enabled
+    pub fec_auto_switch: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -132,6 +141,17 @@ const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
 /// 8 bytes wire header + ~40 bytes bincode overhead estimate.
 const WIRE_OVERHEAD: usize = 48;
+
+/// Map FecBackend to u8 for atomic stats storage.
+fn backend_to_u8(backend: FecBackend) -> u8 {
+    match backend {
+        FecBackend::RaptorQ => 0,
+        FecBackend::Mettle => 1,
+        FecBackend::ReedSolomon => 2,
+        FecBackend::Rlc => 3,
+        FecBackend::Streaming => 4,
+    }
+}
 
 fn now_us() -> u64 {
     SystemTime::now()
@@ -317,6 +337,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
     let sender_profile_symbol_size = profile.symbol_size;
+    // ADR-0030: BackendSelector for runtime switching
+    let forced_backend = if config.fec_backend_explicit && !config.fec_auto_switch {
+        Some(effective_fec_backend)
+    } else {
+        None
+    };
+    let sender_backend_selector = BackendSelector::new(
+        effective_fec_backend,
+        forced_backend,
+        config.protocol_hint,
+        config.fec_switch_threshold_low,
+        config.fec_switch_threshold_high,
+        config.fec_switch_interval,
+        window_mode,
+    );
     let sender_fec_backend = effective_fec_backend;
     let sender_interleave_depth = config.interleave_depth;
     // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
@@ -327,6 +362,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_protocol_hint = config.protocol_hint;
 
     let sender_handle = tokio::spawn(async move {
+        let mut backend_selector = sender_backend_selector;
+
         // ----- Sliding-window sender mode -----
         if sender_window_mode {
             run_window_sender(
@@ -342,6 +379,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 &mut sender_nack_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
+                &mut backend_selector,
             )
             .await;
             return;
@@ -422,7 +460,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         sender_profile_symbol_size,
                         sender_profile_max_block,
                         &mut ileave,
-                        sender_fec_backend,
+                        &mut backend_selector,
                     );
                 }
                 // Force-drain all remaining interleaved symbols
@@ -473,7 +511,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             sender_profile_symbol_size,
                             sender_profile_max_block,
                             &mut ileave,
-                            sender_fec_backend,
+                            &mut backend_selector,
                         );
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
@@ -504,7 +542,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             sender_profile_symbol_size,
                             sender_profile_max_block,
                             &mut ileave,
-                            sender_fec_backend,
+                            &mut backend_selector,
                         );
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
@@ -712,10 +750,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             }
 
                             // ADR-0008: get or create decoder with proper params
+                            // ADR-0030: use symbol's backend for fallback decoder creation
                             let mut decoder = recv_decoders
                                 .entry(symbol.block_id)
                                 .or_insert_with(|| {
-                                    recv_fec_backend.create_decoder(
+                                    symbol.backend.create_decoder(
                                         EncodingParams {
                                             source_symbols: 0,
                                             symbol_size: recv_symbol_size,
@@ -804,6 +843,23 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     }
                 }
                 WireMessage::Control(ctrl_msg) => {
+                    // ADR-0030: handle WindowSwitch in receiver loop to swap decoder
+                    if let ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size: switch_sym_size } = &ctrl_msg {
+                        info!(
+                            flush_seq,
+                            ?new_backend,
+                            switch_sym_size,
+                            "received WindowSwitch — rebuilding decoder"
+                        );
+                        // Rebuild window decoder with new backend
+                        window_decoder = Some(create_window_decoder(*new_backend, *switch_sym_size));
+                        // Send WindowSwitchAck
+                        let ack_msg = ControlMessage::WindowSwitchAck { flush_seq: *flush_seq };
+                        if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
+                            debug!(?e, path_id, "failed to send WindowSwitchAck");
+                        }
+                    }
+
                     handle_control_message(
                         path_id,
                         ctrl_msg,
@@ -1158,6 +1214,7 @@ async fn run_window_sender(
     nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
+    backend_selector: &mut BackendSelector,
 ) {
     let mut encoder: Box<dyn WindowEncoder> = match fec_backend {
         FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
@@ -1203,7 +1260,7 @@ async fn run_window_sender(
         for pid in sched.active_paths() {
             let _ = transport.send_control_datagram(
                 pid,
-                ControlMessage::WindowStart { symbol_size },
+                ControlMessage::WindowStart { symbol_size, backend: fec_backend },
             );
         }
     }
@@ -1440,8 +1497,118 @@ async fn run_window_sender(
                 } else {
                     repair_interval = BASE_REPAIR_INTERVAL;
                 }
+
+                // ADR-0030: evaluate window-mode backend switching
+                if let Some(new_backend) = backend_selector.evaluate(est) {
+                    let old_backend = fec_backend;
+                    info!(
+                        ?old_backend,
+                        ?new_backend,
+                        loss = est.loss_rate(),
+                        "FEC backend switch (window mode) — initiating flush"
+                    );
+
+                    // Get current highest source seq as flush point
+                    let (_, flush_seq) = encoder.window_span();
+
+                    // Generate extra repair burst before switching (2x normal)
+                    let flush_repair_count = (encoder.window_size() * 2).min(MAX_WINDOW_SIZE);
+                    let flush_path = {
+                        let fsched = scheduler.lock();
+                        select_repair_path(&fsched, source_path)
+                    };
+                    for _ in 0..flush_repair_count {
+                        if encoder.window_size() == 0 { break; }
+                        let flush_sym = encoder.generate_repair();
+                        let flush_batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let flush_batch = SymbolBatch {
+                            symbols: vec![flush_sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq: flush_batch_seq,
+                            path_id: flush_path,
+                        };
+                        let _ = transport.send_symbols(flush_path, flush_batch);
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    }
+
+                    // Send WindowSwitch message on all paths
+                    {
+                        let switch_sched = scheduler.lock();
+                        for pid in switch_sched.active_paths() {
+                            let _ = transport.send_control_datagram(
+                                pid,
+                                ControlMessage::WindowSwitch {
+                                    flush_seq,
+                                    new_backend,
+                                    symbol_size,
+                                },
+                            );
+                        }
+                    }
+
+                    // Rebuild encoder with new backend
+                    encoder = create_window_encoder(new_backend, symbol_size, fec_controller, scheduler);
+
+                    // Update FEC rate controller overhead
+                    fec_controller.lock().update_backend(new_backend);
+
+                    // Update stats
+                    stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
+                }
             }
         }
+    }
+}
+
+/// Create a window encoder for the given backend.
+fn create_window_encoder(
+    backend: FecBackend,
+    symbol_size: u16,
+    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+) -> Box<dyn WindowEncoder> {
+    match backend {
+        FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
+            mettle::MettleConfig::small_window(),
+            symbol_size,
+            42,
+        )),
+        FecBackend::Streaming => {
+            let params = {
+                let ctrl = fec_controller.lock();
+                let sched = scheduler.lock();
+                let estimator = sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .max_by(|a, b| {
+                        a.estimator
+                            .loss_rate()
+                            .partial_cmp(&b.estimator.loss_rate())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|p| &p.estimator);
+                match estimator {
+                    Some(est) => ctrl.compute_streaming_params(est),
+                    None => crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15),
+                }
+            };
+            Box::new(crate::fec::StreamingEncoder::new(symbol_size, params))
+        }
+        _ => Box::new(RlcWindowEncoder::new(symbol_size)),
+    }
+}
+
+/// Create a window decoder for the given backend.
+fn create_window_decoder(backend: FecBackend, symbol_size: u16) -> Box<dyn WindowDecoder> {
+    match backend {
+        FecBackend::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
+        FecBackend::Streaming => {
+            let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
+            Box::new(crate::fec::StreamingDecoder::new(symbol_size, params))
+        }
+        _ => Box::new(RlcWindowDecoder::new(symbol_size)),
     }
 }
 
@@ -1458,13 +1625,44 @@ fn encode_to_interleave_buf(
     symbol_size: u16,
     max_block_size: usize,
     ileave: &mut interleave::InterleavingBuffer,
-    fec_backend: FecBackend,
+    backend_selector: &mut BackendSelector,
 ) {
     let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
 
     if block_data.is_empty() {
         return;
     }
+
+    // ADR-0030: evaluate backend selector before encoding each block
+    {
+        let sched = scheduler.lock();
+        let worst_estimator = sched
+            .active_paths()
+            .iter()
+            .filter_map(|id| sched.path(*id))
+            .max_by(|a, b| {
+                a.estimator
+                    .loss_rate()
+                    .partial_cmp(&b.estimator.loss_rate())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| &p.estimator);
+        if let Some(est) = worst_estimator {
+            if let Some(new_backend) = backend_selector.evaluate(est) {
+                let old = backend_selector.current();
+                info!(
+                    ?old,
+                    ?new_backend,
+                    loss = est.loss_rate(),
+                    "FEC backend switch (block mode)"
+                );
+                fec_controller.lock().update_backend(new_backend);
+                stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
+                stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
+            }
+        }
+    }
+    let fec_backend = backend_selector.current();
 
     let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
 
@@ -1536,7 +1734,7 @@ fn encode_to_interleave_buf(
         }
     }
 
-    // Encode
+    // Encode (ADR-0030: use selector's current backend)
     let mut fec_stream = FecStream::new(&block_data, params, fec_backend);
     let source = fec_stream.take_source_symbols();
     let repair = fec_stream.generate_repair(repair_count);
@@ -1670,10 +1868,11 @@ fn handle_control_message(
     nack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
 ) {
     match msg {
-        // ADR-0008: handle BlockStart
+        // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
         ControlMessage::BlockStart {
             params,
             transfer_length,
+            backend,
         } => {
             // Evict oldest decoder if at capacity (DoS protection)
             if !decoders.contains_key(&params.block_id)
@@ -1683,11 +1882,12 @@ fn handle_control_message(
             }
             decoders
                 .entry(params.block_id)
-                .or_insert_with(|| fec_backend.create_decoder(params, transfer_length));
+                .or_insert_with(|| backend.create_decoder(params, transfer_length));
             debug!(
                 block_id = params.block_id,
                 source_symbols = params.source_symbols,
                 transfer_length,
+                ?backend,
                 "received BlockStart"
             );
         }
@@ -1831,8 +2031,8 @@ fn handle_control_message(
             scheduler.lock().remove_path(removed_id);
         }
 
-        ControlMessage::WindowStart { symbol_size } => {
-            debug!(path_id, symbol_size, "peer entered window mode");
+        ControlMessage::WindowStart { symbol_size, backend } => {
+            debug!(path_id, symbol_size, ?backend, "peer entered window mode");
         }
 
         ControlMessage::WindowAck { received_up_to } => {
@@ -1846,6 +2046,15 @@ fn handle_control_message(
             if let Some(tx) = nack_tx {
                 let _ = tx.try_send(gaps);
             }
+        }
+
+        // ADR-0030: WindowSwitch/WindowSwitchAck handled in receiver/sender loops directly
+        ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
+            debug!(path_id, flush_seq, ?new_backend, symbol_size, "window switch request (handled in receiver loop)");
+        }
+
+        ControlMessage::WindowSwitchAck { flush_seq } => {
+            debug!(path_id, flush_seq, "window switch ack (handled in sender loop)");
         }
 
         _ => {}

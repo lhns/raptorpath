@@ -30,6 +30,14 @@ pub struct RaptorpathConfig {
     pub pin_cert: Option<String>,
     /// FEC backend: "raptorq" (default) or "mettle"
     pub fec_backend: Option<String>,
+    /// Low threshold for FEC backend switching (below → RaptorQ), default 0.01
+    pub fec_switch_threshold_low: Option<f64>,
+    /// High threshold for FEC backend switching (above → Mettle), default 0.10
+    pub fec_switch_threshold_high: Option<f64>,
+    /// Minimum seconds between FEC backend switches, default 5
+    pub fec_switch_interval: Option<u64>,
+    /// Enable automatic FEC backend switching (default: true unless fec_backend is set)
+    pub fec_auto_switch: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -97,6 +105,10 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         interleave_depth: overlay.interleave_depth.or(base.interleave_depth),
         pin_cert: overlay.pin_cert.or(base.pin_cert),
         fec_backend: overlay.fec_backend.or(base.fec_backend),
+        fec_switch_threshold_low: overlay.fec_switch_threshold_low.or(base.fec_switch_threshold_low),
+        fec_switch_threshold_high: overlay.fec_switch_threshold_high.or(base.fec_switch_threshold_high),
+        fec_switch_interval: overlay.fec_switch_interval.or(base.fec_switch_interval),
+        fec_auto_switch: overlay.fec_auto_switch.or(base.fec_auto_switch),
     }
 }
 
@@ -158,6 +170,9 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 
     let fec_backend_explicit = config.fec_backend.is_some();
 
+    // Auto-switching: disabled if fec_backend is explicitly set and fec_auto_switch is not explicitly true
+    let fec_auto_switch = config.fec_auto_switch.unwrap_or(!fec_backend_explicit);
+
     let peer_config = PeerConfig {
         bind_addrs,
         peer_addrs,
@@ -174,6 +189,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
         fec_backend,
         fec_backend_explicit,
+        fec_switch_threshold_low: config.fec_switch_threshold_low.unwrap_or(0.01),
+        fec_switch_threshold_high: config.fec_switch_threshold_high.unwrap_or(0.10),
+        fec_switch_interval: config.fec_switch_interval.unwrap_or(5),
+        fec_auto_switch,
     };
 
     Ok((peer_config, status_addr))
@@ -235,12 +254,18 @@ mod tests {
             interleave_depth: Some(3),
             pin_cert: None,
             fec_backend: Some("mettle".into()),
+            fec_switch_threshold_low: Some(0.01),
+            fec_switch_threshold_high: Some(0.10),
+            fec_switch_interval: Some(5),
+            fec_auto_switch: Some(true),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.server, Some(true));
         assert_eq!(parsed.tun_name.as_deref(), Some("rpath0"));
         assert_eq!(parsed.fec_backend.as_deref(), Some("mettle"));
+        assert_eq!(parsed.fec_switch_threshold_low, Some(0.01));
+        assert_eq!(parsed.fec_auto_switch, Some(true));
     }
 
     #[test]

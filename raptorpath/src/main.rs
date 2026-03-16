@@ -190,6 +190,10 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         interleave_depth: args.interleave_depth,
         pin_cert: args.pin_cert,
         fec_backend: args.fec_backend,
+        fec_switch_threshold_low: None,
+        fec_switch_threshold_high: None,
+        fec_switch_interval: None,
+        fec_auto_switch: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

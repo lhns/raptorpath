@@ -50,3 +50,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0027](0027-streaming-codes.md) | Streaming codes (Badr/Martinian delay-optimal) | Resolved |
 | [0028](0028-mettle-performance-analysis.md) | METTLE performance analysis — edge probability bug | Resolved |
 | [0029](0029-tapered-repair-interleaving.md) | Tapered repair interleaving (exponential decay + window burst) | Resolved |
+| [0030](0030-runtime-backend-switching.md) | Runtime FEC backend switching (loss-based heuristic + flush protocol) | Resolved |

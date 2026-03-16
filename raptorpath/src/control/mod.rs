@@ -7,6 +7,7 @@
 //! The feedback component (PI controller) compensates for model mismatch
 //! (correlated losses, bursty channels, estimation lag).
 
+pub mod backend_selector;
 pub mod estimator;
 pub mod fec_rate;
 pub mod gilbert_elliott;

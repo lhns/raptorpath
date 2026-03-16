@@ -295,6 +295,17 @@ impl FecRateController {
         crate::fec::StreamingParams::from_channel(burst_length, loss_rate, safety)
     }
 
+    /// Update the codec overhead for a new backend (used during runtime switching).
+    pub fn update_backend(&mut self, backend: FecBackend) {
+        self.rq_overhead = match backend {
+            FecBackend::RaptorQ => 0.01,
+            FecBackend::Mettle => 0.15,
+            FecBackend::ReedSolomon => 0.0,
+            FecBackend::Rlc => 0.004,
+            FecBackend::Streaming => 0.0,
+        };
+    }
+
     /// Get diagnostics for monitoring.
     pub fn diagnostics(&self) -> FecDiagnostics {
         FecDiagnostics {
