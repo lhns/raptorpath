@@ -67,10 +67,30 @@ pub struct FecRateController {
     prev_actual_tail_loss: f64,
     /// Exponential moving average of actual block failure rate
     actual_failure_rate: f64,
+    /// Whether PI feedback loop is enabled
+    enable_pi_feedback: bool,
+    /// GE burst scaling multiplier (0.0 = disabled)
+    ge_burst_factor: f64,
+    /// Extra FEC fraction during bursts in realtime mode (0.0 = disabled)
+    realtime_burst_extra: f64,
 }
 
 impl FecRateController {
+    /// Create a new FecRateController with default feature toggles (all enabled).
     pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint, backend: FecBackend) -> Self {
+        Self::new_with_toggles(target_tail_loss, max_overhead, hint, backend, true, 0.10, 0.10)
+    }
+
+    /// Create a new FecRateController with explicit feature toggles.
+    pub fn new_with_toggles(
+        target_tail_loss: f64,
+        max_overhead: f64,
+        hint: ProtocolHint,
+        backend: FecBackend,
+        enable_pi_feedback: bool,
+        ge_burst_factor: f64,
+        realtime_burst_extra: f64,
+    ) -> Self {
         // METTLE requires significantly more overhead than RaptorQ for reliable decoding,
         // especially at small window sizes (w=50).
         let codec_overhead = match backend {
@@ -91,6 +111,9 @@ impl FecRateController {
             pi_correction: 0.0,
             prev_actual_tail_loss: 0.0,
             actual_failure_rate: 0.0,
+            enable_pi_feedback,
+            ge_burst_factor,
+            realtime_burst_extra,
         }
     }
 
@@ -111,8 +134,8 @@ impl FecRateController {
         let total = match self.hint {
             ProtocolHint::Realtime => {
                 // More aggressive: also account for burst losses
-                let burst_extra = if estimator.is_in_burst() {
-                    (k as f64 * 0.1) as u32 // Extra 10% during bursts
+                let burst_extra = if estimator.is_in_burst() && self.realtime_burst_extra > 0.0 {
+                    (k as f64 * self.realtime_burst_extra) as u32
                 } else {
                     0
                 };
@@ -129,8 +152,8 @@ impl FecRateController {
         // scale up repair to cover correlated losses that i.i.d. model misses
         let total = {
             let ge = estimator.ge_estimator();
-            if ge.is_valid() && ge.mean_burst_length() > 2.0 {
-                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * 0.3;
+            if self.ge_burst_factor > 0.0 && ge.is_valid() && ge.mean_burst_length() > 2.0 {
+                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * self.ge_burst_factor;
                 (total as f64 * burst_factor) as u32
             } else {
                 total
@@ -204,6 +227,9 @@ impl FecRateController {
     /// Update the PI controller with actual block decode results.
     /// Call this after each block decode attempt.
     pub fn feedback_update(&mut self, block_succeeded: bool) {
+        if !self.enable_pi_feedback {
+            return;
+        }
         // Track actual failure rate
         let sample = if block_succeeded { 0.0 } else { 1.0 };
         let alpha = 0.05; // slow EWMA for failure rate
@@ -229,6 +255,22 @@ impl FecRateController {
         );
     }
 
+    /// Update the PI controller from window-mode decoder stats.
+    ///
+    /// Call periodically (e.g., every REPORT_INTERVAL) from the window receive loop.
+    /// Uses repair efficiency (useful/fed ratio) as a proxy for the binary
+    /// success/failure signal that block mode provides.
+    pub fn feedback_update_window(&mut self, repairs_fed: u64, repairs_useful: u64) {
+        if !self.enable_pi_feedback || repairs_fed == 0 {
+            return;
+        }
+        // Useful ratio > 0.5 means most repairs were needed → under-provisioned
+        // Useful ratio ≤ 0.5 means comfortable margin → not under-provisioned
+        let useful_ratio = repairs_useful as f64 / repairs_fed as f64;
+        let not_under_provisioned = useful_ratio <= 0.5;
+        self.feedback_update(not_under_provisioned);
+    }
+
     /// Compute the repair rate for sliding-window mode: how many repair symbols
     /// to generate per source symbol. E.g., 0.1 = 1 repair per 10 source symbols.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator) -> f64 {
@@ -246,9 +288,24 @@ impl FecRateController {
         let safety = z * (p * (1.0 - p)).sqrt() * 0.1;
         let rate = rate + safety;
 
+        // PI feedback correction (mirrors compute_repair_count behavior)
+        let rate = if self.enable_pi_feedback {
+            rate + self.pi_correction.max(0.0)
+        } else {
+            rate
+        };
+
         // Protocol hint adjustment
         let rate = match self.hint {
-            ProtocolHint::Realtime => rate * 1.2, // more aggressive for real-time
+            ProtocolHint::Realtime => {
+                // ADR-0035: port burst extra from compute_repair_count() to window mode
+                let burst_extra = if estimator.is_in_burst() && self.realtime_burst_extra > 0.0 {
+                    self.realtime_burst_extra
+                } else {
+                    0.0
+                };
+                rate * 1.2 + burst_extra
+            }
             ProtocolHint::Bulk => rate * 0.7,
             ProtocolHint::Auto => rate,
         };
@@ -256,8 +313,8 @@ impl FecRateController {
         // Gilbert-Elliott burst adjustment for sliding-window mode
         let rate = {
             let ge = estimator.ge_estimator();
-            if ge.is_valid() && ge.mean_burst_length() > 2.0 {
-                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * 0.3;
+            if self.ge_burst_factor > 0.0 && ge.is_valid() && ge.mean_burst_length() > 2.0 {
+                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * self.ge_burst_factor;
                 rate * burst_factor
             } else {
                 rate

@@ -95,7 +95,7 @@ struct RunArgs {
     #[arg(long)]
     pin_cert: Option<String>,
 
-    /// FEC backend: raptorq (default) or mettle
+    /// FEC backend: raptorq (default), mettle, rs, rlc, or streaming
     #[arg(long)]
     fec_backend: Option<String>,
 }
@@ -194,6 +194,13 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         fec_switch_threshold_high: None,
         fec_switch_interval: None,
         fec_auto_switch: None,
+        enable_pi_feedback: None,
+        ge_burst_factor: None,
+        realtime_burst_extra: None,
+        enable_probe_rtt: None,
+        reorder_timeout_ms: None,
+        reorder_max_size: None,
+        nack_auto_disable_threshold: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

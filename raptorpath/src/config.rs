@@ -38,6 +38,20 @@ pub struct RaptorpathConfig {
     pub fec_switch_interval: Option<u64>,
     /// Enable automatic FEC backend switching (default: true unless fec_backend is set)
     pub fec_auto_switch: Option<bool>,
+    /// Enable PI feedback loop in FEC rate controller (default: true)
+    pub enable_pi_feedback: Option<bool>,
+    /// GE burst scaling multiplier; 0.0 = disabled (default: 0.10)
+    pub ge_burst_factor: Option<f64>,
+    /// Extra FEC % during bursts in realtime mode; 0.0 = disabled (default: 0.10)
+    pub realtime_burst_extra: Option<f64>,
+    /// Enable ProbeRTT phase in BBR (default: true)
+    pub enable_probe_rtt: Option<bool>,
+    /// Reorder buffer timeout in ms; 0 = disabled (default: 20)
+    pub reorder_timeout_ms: Option<u64>,
+    /// Reorder buffer max capacity (default: 500)
+    pub reorder_max_size: Option<usize>,
+    /// NACK auto-disable threshold: disable NACK repair when max_fec_overhead >= this (default: 0.20)
+    pub nack_auto_disable_threshold: Option<f64>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -109,6 +123,13 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         fec_switch_threshold_high: overlay.fec_switch_threshold_high.or(base.fec_switch_threshold_high),
         fec_switch_interval: overlay.fec_switch_interval.or(base.fec_switch_interval),
         fec_auto_switch: overlay.fec_auto_switch.or(base.fec_auto_switch),
+        enable_pi_feedback: overlay.enable_pi_feedback.or(base.enable_pi_feedback),
+        ge_burst_factor: overlay.ge_burst_factor.or(base.ge_burst_factor),
+        realtime_burst_extra: overlay.realtime_burst_extra.or(base.realtime_burst_extra),
+        enable_probe_rtt: overlay.enable_probe_rtt.or(base.enable_probe_rtt),
+        reorder_timeout_ms: overlay.reorder_timeout_ms.or(base.reorder_timeout_ms),
+        reorder_max_size: overlay.reorder_max_size.or(base.reorder_max_size),
+        nack_auto_disable_threshold: overlay.nack_auto_disable_threshold.or(base.nack_auto_disable_threshold),
     }
 }
 
@@ -193,6 +214,13 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         fec_switch_threshold_high: config.fec_switch_threshold_high.unwrap_or(0.10),
         fec_switch_interval: config.fec_switch_interval.unwrap_or(5),
         fec_auto_switch,
+        enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
+        ge_burst_factor: config.ge_burst_factor.unwrap_or(0.10),
+        realtime_burst_extra: config.realtime_burst_extra.unwrap_or(0.10),
+        enable_probe_rtt: config.enable_probe_rtt.unwrap_or(true),
+        reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
+        reorder_max_size: config.reorder_max_size.unwrap_or(500),
+        nack_auto_disable_threshold: config.nack_auto_disable_threshold.unwrap_or(0.20),
     };
 
     Ok((peer_config, status_addr))
@@ -258,6 +286,13 @@ mod tests {
             fec_switch_threshold_high: Some(0.10),
             fec_switch_interval: Some(5),
             fec_auto_switch: Some(true),
+            enable_pi_feedback: Some(false),
+            ge_burst_factor: Some(0.0),
+            realtime_burst_extra: Some(0.05),
+            enable_probe_rtt: Some(false),
+            reorder_timeout_ms: Some(0),
+            reorder_max_size: Some(200),
+            nack_auto_disable_threshold: Some(0.25),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
@@ -266,6 +301,13 @@ mod tests {
         assert_eq!(parsed.fec_backend.as_deref(), Some("mettle"));
         assert_eq!(parsed.fec_switch_threshold_low, Some(0.01));
         assert_eq!(parsed.fec_auto_switch, Some(true));
+        assert_eq!(parsed.enable_pi_feedback, Some(false));
+        assert_eq!(parsed.ge_burst_factor, Some(0.0));
+        assert_eq!(parsed.realtime_burst_extra, Some(0.05));
+        assert_eq!(parsed.enable_probe_rtt, Some(false));
+        assert_eq!(parsed.reorder_timeout_ms, Some(0));
+        assert_eq!(parsed.reorder_max_size, Some(200));
+        assert_eq!(parsed.nack_auto_disable_threshold, Some(0.25));
     }
 
     #[test]

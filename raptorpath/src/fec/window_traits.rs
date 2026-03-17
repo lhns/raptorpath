@@ -40,4 +40,10 @@ pub trait WindowDecoder: Send + Sync {
 
     /// Total symbols fed to this decoder.
     fn total_fed(&self) -> u64;
+
+    /// Number of repair symbols fed to this decoder.
+    fn repairs_fed(&self) -> u64 { 0 }
+
+    /// Number of repair symbols that contributed to recovery (useful repairs).
+    fn repairs_useful(&self) -> u64 { 0 }
 }

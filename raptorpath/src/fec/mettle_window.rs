@@ -247,6 +247,10 @@ pub struct MettleWindowDecoder {
     total_fed: u64,
     /// Next bin_id to assign (monotonic)
     next_bin_id: u64,
+    /// Total repair symbols fed
+    repairs_fed: u64,
+    /// Repair symbols that contributed to recovery
+    repairs_useful: u64,
 }
 
 impl MettleWindowDecoder {
@@ -261,6 +265,8 @@ impl MettleWindowDecoder {
             seen: HashSet::new(),
             total_fed: 0,
             next_bin_id: 0,
+            repairs_fed: 0,
+            repairs_useful: 0,
         }
     }
 
@@ -365,6 +371,8 @@ impl WindowDecoder for MettleWindowDecoder {
                 return vec![];
             }
 
+            self.repairs_fed += 1;
+
             let window_start =
                 u64::from_le_bytes(symbol.data[0..8].try_into().unwrap());
             let num_members =
@@ -418,6 +426,7 @@ impl WindowDecoder for MettleWindowDecoder {
 
             if remaining.len() == 1 {
                 // Degree 1 — recover immediately
+                self.repairs_useful += 1;
                 let peeled_seq = *remaining.iter().next().unwrap();
                 self.recovered.insert(peeled_seq, data.clone());
 
@@ -475,6 +484,14 @@ impl WindowDecoder for MettleWindowDecoder {
 
     fn total_fed(&self) -> u64 {
         self.total_fed
+    }
+
+    fn repairs_fed(&self) -> u64 {
+        self.repairs_fed
+    }
+
+    fn repairs_useful(&self) -> u64 {
+        self.repairs_useful
     }
 }
 

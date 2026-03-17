@@ -17,50 +17,7 @@ use super::gf256;
 use super::traits::{FecBackend, WireSymbol};
 use super::window_traits::{WindowDecoder, WindowEncoder};
 
-// ---------------------------------------------------------------------------
-// SplitMix64 PRNG (same as rlc_backend, duplicated to avoid coupling)
-// ---------------------------------------------------------------------------
-
-struct SplitMix64 {
-    state: u64,
-}
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^ (z >> 31)
-    }
-
-    fn next_nonzero_u8(&mut self) -> u8 {
-        loop {
-            let v = self.next_u64() as u8;
-            if v != 0 {
-                return v;
-            }
-        }
-    }
-}
-
-/// Generate deterministic coefficients for a window-mode repair symbol.
-pub fn generate_window_coefficients(
-    window_start: u64,
-    window_count: u16,
-    repair_index: u32,
-) -> Vec<u8> {
-    let seed = window_start
-        .wrapping_mul(65537)
-        .wrapping_add((window_count as u64) << 48)
-        .wrapping_add(repair_index as u64);
-    let mut rng = SplitMix64::new(seed);
-    (0..window_count).map(|_| rng.next_nonzero_u8()).collect()
-}
+pub use gf256::generate_window_coefficients;
 
 /// Repair symbol wire header size: 8 (window_start) + 2 (window_count) + 4 (repair_index) = 14
 const REPAIR_HEADER_SIZE: usize = 14;
@@ -206,6 +163,10 @@ pub struct RlcWindowDecoder {
     seen: HashSet<(u64, u32, bool)>,
     /// Total symbols fed
     total_fed: u64,
+    /// Total repair symbols fed
+    repairs_fed: u64,
+    /// Repair symbols that contributed to recovery
+    repairs_useful: u64,
 }
 
 impl RlcWindowDecoder {
@@ -217,6 +178,8 @@ impl RlcWindowDecoder {
             output: BTreeSet::new(),
             seen: HashSet::new(),
             total_fed: 0,
+            repairs_fed: 0,
+            repairs_useful: 0,
         }
     }
 
@@ -412,6 +375,8 @@ impl WindowDecoder for RlcWindowDecoder {
                 return vec![];
             }
 
+            self.repairs_fed += 1;
+
             let window_start =
                 u64::from_le_bytes(symbol.data[0..8].try_into().unwrap());
             let window_count =
@@ -441,7 +406,11 @@ impl WindowDecoder for RlcWindowDecoder {
             }
 
             // Insert into incremental GE system
-            self.insert_equation(coeff_map, data)
+            let recovered = self.insert_equation(coeff_map, data);
+            if !recovered.is_empty() {
+                self.repairs_useful += 1;
+            }
+            recovered
         }
     }
 
@@ -479,6 +448,14 @@ impl WindowDecoder for RlcWindowDecoder {
 
     fn total_fed(&self) -> u64 {
         self.total_fed
+    }
+
+    fn repairs_fed(&self) -> u64 {
+        self.repairs_fed
+    }
+
+    fn repairs_useful(&self) -> u64 {
+        self.repairs_useful
     }
 }
 

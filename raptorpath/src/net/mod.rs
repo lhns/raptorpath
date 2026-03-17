@@ -11,6 +11,7 @@
 
 pub mod framing;
 pub mod interleave;
+pub mod reorder;
 
 use crate::control::FecRateController;
 use crate::control::backend_selector::BackendSelector;
@@ -24,6 +25,7 @@ use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
 use crate::tun::{TunConfig, TunInterface};
 use bytes::Bytes;
 use dashmap::DashMap;
+use reorder::ReorderBuffer;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -64,6 +66,20 @@ pub struct PeerConfig {
     pub fec_switch_interval: u64,
     /// Whether auto FEC backend switching is enabled
     pub fec_auto_switch: bool,
+    /// Enable PI feedback loop in FEC rate controller
+    pub enable_pi_feedback: bool,
+    /// GE burst scaling multiplier (0.0 = disabled)
+    pub ge_burst_factor: f64,
+    /// Extra FEC % during bursts in realtime mode (0.0 = disabled)
+    pub realtime_burst_extra: f64,
+    /// Enable ProbeRTT phase in BBR
+    pub enable_probe_rtt: bool,
+    /// Reorder buffer timeout in ms (0 = disabled)
+    pub reorder_timeout_ms: u64,
+    /// Reorder buffer max capacity
+    pub reorder_max_size: usize,
+    /// NACK auto-disable threshold: disable NACK when max_fec_overhead >= this
+    pub nack_auto_disable_threshold: f64,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -122,7 +138,7 @@ const MAX_REORDER_BUFFERED: usize = 500;
 /// Reorder buffer drain interval (how often we check for expired entries).
 const REORDER_DRAIN_INTERVAL: Duration = Duration::from_millis(5);
 /// Maximum number of gap ranges in a WindowNack message.
-const MAX_NACK_GAPS: usize = 20;
+pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
 const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
 /// Minimum interval between NACK-triggered repair bursts (microseconds).
@@ -220,7 +236,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     ).await?;
 
     // Set up paths
-    let mut scheduler = Scheduler::new(Arc::new(WallClock));
+    let mut scheduler = Scheduler::new_with_config(Arc::new(WallClock), config.enable_probe_rtt);
     for (i, _addr) in config.bind_addrs.iter().enumerate() {
         scheduler.add_path(i as u32);
     }
@@ -252,11 +268,14 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(AtomicU64::new(0));
-    let fec_controller = Arc::new(parking_lot::Mutex::new(FecRateController::new(
+    let fec_controller = Arc::new(parking_lot::Mutex::new(FecRateController::new_with_toggles(
         config.target_tail_loss,
         config.max_fec_overhead,
         config.protocol_hint,
         effective_fec_backend,
+        config.enable_pi_feedback,
+        config.ge_burst_factor,
+        config.realtime_burst_extra,
     )));
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
@@ -603,8 +622,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         // Track highest delivered seq for window ACK
         let mut highest_delivered_seq: u64 = 0;
         // Reorder buffer for window mode — delivers packets in sequence order
-        let mut reorder_buf = if recv_window_mode {
-            Some(ReorderBuffer::new(DEFAULT_REORDER_TIMEOUT_MS, MAX_REORDER_BUFFERED))
+        let mut reorder_buf = if recv_window_mode && config.reorder_timeout_ms > 0 {
+            Some(ReorderBuffer::new(config.reorder_timeout_ms, config.reorder_max_size))
         } else {
             None
         };
@@ -612,6 +631,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
+        // ADR-0035: PI feedback tracking for window mode
+        let mut last_pi_repairs_fed: u64 = 0;
+        let mut last_pi_repairs_useful: u64 = 0;
 
         loop {
             // ADR-0015: select between message arrival and shutdown signal
@@ -721,19 +743,36 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         }
 
                         // Send WindowNack with gap ranges (rate-limited)
+                        // ADR-0035: auto-disable NACK when max_fec_overhead >= threshold
+                        let nack_budget_ok = config.max_fec_overhead < config.nack_auto_disable_threshold;
                         let now = Instant::now();
                         if now.duration_since(last_nack_time) >= REPORT_INTERVAL
                             && highest_seen_seq > 0
                         {
-                            let gap_start = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64);
-                            let gaps = compute_gap_ranges(&received_seqs, gap_start, highest_seen_seq);
-                            if !gaps.is_empty() {
-                                let nack_msg = ControlMessage::WindowNack { gaps };
-                                if let Err(e) = recv_transport.send_control_datagram(path_id, nack_msg) {
-                                    debug!(?e, path_id, "failed to send WindowNack");
+                            if nack_budget_ok {
+                                let gap_start = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64);
+                                let gaps = compute_gap_ranges(&received_seqs, gap_start, highest_seen_seq);
+                                if !gaps.is_empty() {
+                                    let nack_msg = ControlMessage::WindowNack { gaps };
+                                    if let Err(e) = recv_transport.send_control_datagram(path_id, nack_msg) {
+                                        debug!(?e, path_id, "failed to send WindowNack");
+                                    }
                                 }
                             }
                             last_nack_time = now;
+
+                            // ADR-0035: PI feedback for window mode
+                            if let Some(ref win_dec) = window_decoder {
+                                let fed = win_dec.repairs_fed();
+                                let useful = win_dec.repairs_useful();
+                                let delta_fed = fed - last_pi_repairs_fed;
+                                let delta_useful = useful - last_pi_repairs_useful;
+                                if delta_fed > 0 {
+                                    recv_fec.lock().feedback_update_window(delta_fed, delta_useful);
+                                }
+                                last_pi_repairs_fed = fed;
+                                last_pi_repairs_useful = useful;
+                            }
 
                             // Prune old entries from received_seqs tracking
                             let prune_before = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64 * 2);
@@ -1055,105 +1094,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Reorder buffer for window-mode receiver
-// ---------------------------------------------------------------------------
-
-/// Reorder buffer that holds out-of-order recovered symbols and delivers them
-/// in sequence order. Expired entries are force-delivered after a timeout.
-struct ReorderBuffer {
-    /// Pending out-of-order entries: seq → (data, buffered_at)
-    pending: BTreeMap<u64, (Bytes, Instant)>,
-    /// Next sequence to deliver in order
-    next_deliver_seq: u64,
-    /// How long to hold an entry before force-delivering
-    timeout: Duration,
-    /// Maximum entries to buffer before force-draining
-    max_buffered: usize,
-}
-
-impl ReorderBuffer {
-    fn new(timeout_ms: u64, max_buffered: usize) -> Self {
-        Self {
-            pending: BTreeMap::new(),
-            next_deliver_seq: 0,
-            timeout: Duration::from_millis(timeout_ms),
-            max_buffered,
-        }
-    }
-
-    /// Push a recovered symbol. Returns a contiguous prefix of deliverable entries.
-    fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes)> {
-        self.pending.insert(seq, (data, Instant::now()));
-
-        // Force-drain oldest if over capacity
-        if self.pending.len() > self.max_buffered {
-            return self.force_drain_oldest();
-        }
-
-        self.drain_contiguous()
-    }
-
-    /// Drain the contiguous prefix starting from `next_deliver_seq`.
-    fn drain_contiguous(&mut self) -> Vec<(u64, Bytes)> {
-        let mut result = Vec::new();
-        while let Some((data, _)) = self.pending.remove(&self.next_deliver_seq) {
-            result.push((self.next_deliver_seq, data));
-            self.next_deliver_seq += 1;
-        }
-        result
-    }
-
-    /// Deliver entries held longer than `timeout`, plus any contiguous prefix.
-    fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes)> {
-        let mut result = Vec::new();
-
-        // Collect expired entries
-        let expired: Vec<u64> = self
-            .pending
-            .iter()
-            .filter(|(_, (_, buffered_at))| now.duration_since(*buffered_at) >= self.timeout)
-            .map(|(&seq, _)| seq)
-            .collect();
-
-        if expired.is_empty() {
-            return result;
-        }
-
-        // Deliver expired entries in order, advancing next_deliver_seq past them
-        for seq in expired {
-            if let Some((data, _)) = self.pending.remove(&seq) {
-                result.push((seq, data));
-                if seq >= self.next_deliver_seq {
-                    self.next_deliver_seq = seq + 1;
-                }
-            }
-        }
-
-        // Also drain any newly contiguous entries
-        result.extend(self.drain_contiguous());
-        result
-    }
-
-    /// Force-drain the oldest entries to get back under capacity.
-    fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes)> {
-        let mut result = Vec::new();
-        while self.pending.len() > self.max_buffered / 2 {
-            if let Some((&seq, _)) = self.pending.iter().next() {
-                if let Some((data, _)) = self.pending.remove(&seq) {
-                    result.push((seq, data));
-                    if seq >= self.next_deliver_seq {
-                        self.next_deliver_seq = seq + 1;
-                    }
-                }
-            } else {
-                break;
-            }
-        }
-        result.extend(self.drain_contiguous());
-        result
-    }
-}
+// ReorderBuffer extracted to src/net/reorder.rs
 
 // ---------------------------------------------------------------------------
 // WindowNack gap computation
@@ -1161,7 +1102,7 @@ impl ReorderBuffer {
 
 /// Compute gap ranges from a set of received sequences in a window.
 /// Returns Vec<(start, end)> of inclusive ranges of missing sequences.
-fn compute_gap_ranges(
+pub fn compute_gap_ranges(
     received: &BTreeSet<u64>,
     window_start: u64,
     window_end: u64,

@@ -21,46 +21,10 @@ use std::time::Instant;
 use super::gf256;
 use super::traits::{EncodingParams, FecBackend, FecDecoder, FecEncoder, WireSymbol};
 
-// ---------------------------------------------------------------------------
-// SplitMix64 PRNG — fast, deterministic, good avalanche for coefficient generation
-// ---------------------------------------------------------------------------
-
-struct SplitMix64 {
-    state: u64,
-}
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^ (z >> 31)
-    }
-
-    fn next_u8(&mut self) -> u8 {
-        self.next_u64() as u8
-    }
-
-    /// Generate a non-zero GF(2^8) coefficient.
-    fn next_nonzero_u8(&mut self) -> u8 {
-        loop {
-            let v = self.next_u8();
-            if v != 0 {
-                return v;
-            }
-        }
-    }
-}
-
 /// Generate deterministic coefficients for a repair symbol.
 fn generate_coefficients(block_id: u64, repair_index: u32, k: usize) -> Vec<u8> {
     let seed = (block_id << 32) | repair_index as u64;
-    let mut rng = SplitMix64::new(seed);
+    let mut rng = gf256::SplitMix64::new(seed);
     (0..k).map(|_| rng.next_nonzero_u8()).collect()
 }
 
@@ -392,7 +356,7 @@ mod tests {
     #[test]
     fn test_nonzero_coefficients() {
         // next_nonzero_u8() never returns 0 over 1000 iterations
-        let mut rng = SplitMix64::new(12345);
+        let mut rng = gf256::SplitMix64::new(12345);
         for _ in 0..1000 {
             assert_ne!(rng.next_nonzero_u8(), 0);
         }

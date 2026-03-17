@@ -70,6 +70,8 @@ struct RttSample {
 ///   - Decode failure + rising RTT → aggressive drain to 0.75 × BDP
 #[derive(Debug)]
 pub struct BbrState {
+    /// Whether ProbeRTT phase is enabled (can be disabled for benchmarking)
+    enable_probe_rtt: bool,
     /// Sliding window of bandwidth samples (symbols/sec).
     bw_samples: VecDeque<BwSample>,
     /// Sliding window of RTT samples.
@@ -108,9 +110,10 @@ pub struct BbrState {
 }
 
 impl BbrState {
-    fn new(clock: Arc<dyn Clock>) -> Self {
+    fn new(clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
         let now = clock.now();
         Self {
+            enable_probe_rtt,
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
@@ -189,8 +192,10 @@ impl BbrState {
         let old_min = self.min_rtt;
         self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
 
-        // Refresh min_rtt_stamp when min_rtt is updated to a new low
-        if self.min_rtt <= Some(rtt) && (old_min.is_none() || self.min_rtt <= old_min) {
+        // Refresh min_rtt_stamp only when a genuinely new low is observed.
+        // This ensures ProbeRTT fires after PROBE_RTT_INTERVAL when RTT
+        // is trending up and no fresh minimum has been seen.
+        if old_min.is_none() || self.min_rtt < old_min {
             self.min_rtt_stamp = now;
         }
     }
@@ -255,7 +260,7 @@ impl BbrState {
     /// Enters ProbeRTT if min_rtt hasn't been refreshed in PROBE_RTT_INTERVAL.
     /// `current_cwnd` is needed to save/restore after ProbeRTT.
     fn maybe_enter_probe_rtt(&mut self, current_cwnd: u32) {
-        if self.phase == BbrPhase::ProbeRtt {
+        if !self.enable_probe_rtt || self.phase == BbrPhase::ProbeRtt {
             return;
         }
         let now = self.clock.now();
@@ -286,7 +291,13 @@ impl BbrState {
 
     fn reset(&mut self) {
         let clock = self.clock.clone();
-        *self = Self::new(clock);
+        let enable_probe_rtt = self.enable_probe_rtt;
+        *self = Self::new(clock, enable_probe_rtt);
+    }
+
+    /// Read the current min_rtt estimate (for diagnostics/benchmarking).
+    pub fn min_rtt(&self) -> Option<Duration> {
+        self.min_rtt
     }
 }
 
@@ -325,7 +336,7 @@ impl PathState {
 }
 
 impl PathState {
-    pub fn new(id: PathId, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(id: PathId, clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
         let now = clock.now();
         Self {
             id,
@@ -337,7 +348,7 @@ impl PathState {
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
-            bbr: BbrState::new(clock.clone()),
+            bbr: BbrState::new(clock.clone(), enable_probe_rtt),
             clock,
         }
     }
@@ -460,12 +471,18 @@ impl PathState {
     pub fn record_rtt_sample(&mut self, rtt: Duration) {
         self.bbr.record_rtt(rtt);
     }
+
+    /// Read BBR's current min_rtt estimate (for diagnostics/benchmarking).
+    pub fn bbr_min_rtt(&self) -> Option<Duration> {
+        self.bbr.min_rtt()
+    }
 }
 
 /// The multipath scheduler.
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
     clock: Arc<dyn Clock>,
+    enable_probe_rtt: bool,
 }
 
 impl Scheduler {
@@ -473,11 +490,20 @@ impl Scheduler {
         Self {
             paths: HashMap::new(),
             clock,
+            enable_probe_rtt: true,
+        }
+    }
+
+    pub fn new_with_config(clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
+        Self {
+            paths: HashMap::new(),
+            clock,
+            enable_probe_rtt,
         }
     }
 
     pub fn add_path(&mut self, id: PathId) {
-        self.paths.insert(id, PathState::new(id, self.clock.clone()));
+        self.paths.insert(id, PathState::new(id, self.clock.clone(), self.enable_probe_rtt));
     }
 
     pub fn remove_path(&mut self, id: PathId) {
@@ -690,6 +716,13 @@ impl Scheduler {
 impl Default for Scheduler {
     fn default() -> Self {
         Self::new(Arc::new(WallClock))
+    }
+}
+
+impl Scheduler {
+    /// Set enable_probe_rtt for new paths (for benchmarking)
+    pub fn set_enable_probe_rtt(&mut self, enable: bool) {
+        self.enable_probe_rtt = enable;
     }
 }
 
