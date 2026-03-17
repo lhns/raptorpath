@@ -207,6 +207,25 @@ impl WindowEncoder for MettleWindowEncoder {
     fn window_size(&self) -> usize {
         self.window.len()
     }
+
+    fn get_source(&self, seq: u64) -> Option<WireSymbol> {
+        let (start, _) = self.window_span();
+        if seq < start {
+            return None;
+        }
+        let offset = (seq - start) as usize;
+        let (front_seq, data) = self.window.get(offset)?;
+        if *front_seq != seq {
+            return None;
+        }
+        Some(WireSymbol {
+            block_id: seq,
+            payload_id: 0,
+            is_repair: false,
+            data: data.clone(),
+            backend: FecBackend::Mettle,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -869,5 +888,42 @@ mod tests {
             recovered_10,
             "Should recover mid-range source 10 with distributed repairs"
         );
+    }
+
+    #[test]
+    fn test_get_source_retrieves_correct_data() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+
+        for i in 0..5u8 {
+            encoder.add_source(&vec![i + 10; 32]);
+        }
+
+        for seq in 0..5u64 {
+            let sym = encoder.get_source(seq).expect("should find source");
+            assert_eq!(sym.block_id, seq);
+            assert!(!sym.is_repair);
+            assert_eq!(sym.backend, FecBackend::Mettle);
+            assert_eq!(sym.data[0], (seq as u8) + 10);
+        }
+
+        assert!(encoder.get_source(5).is_none());
+    }
+
+    #[test]
+    fn test_get_source_returns_none_after_advance() {
+        let mut encoder = MettleWindowEncoder::new(test_config(), SYMBOL_SIZE, 42);
+
+        for i in 0..10u8 {
+            encoder.add_source(&vec![i; 32]);
+        }
+
+        encoder.advance(5);
+
+        for seq in 0..5u64 {
+            assert!(encoder.get_source(seq).is_none(), "seq {seq} should be evicted");
+        }
+        for seq in 5..10u64 {
+            assert!(encoder.get_source(seq).is_some(), "seq {seq} should still be available");
+        }
     }
 }

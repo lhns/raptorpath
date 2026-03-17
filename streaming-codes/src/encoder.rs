@@ -108,6 +108,12 @@ impl StreamingCoreEncoder {
         self.window.len()
     }
 
+    /// Retrieve a source symbol by sequence number.
+    /// Returns `None` if the symbol has been evicted from the window.
+    pub fn get_source(&self, seq: u64) -> Option<&Vec<u8>> {
+        self.window.get(&seq)
+    }
+
     fn generate_burst_repair(&self) -> RepairSymbol {
         let t = self.params.t as u64;
         let mut coded = vec![0u8; self.symbol_size as usize];

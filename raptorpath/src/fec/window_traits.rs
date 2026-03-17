@@ -27,6 +27,13 @@ pub trait WindowEncoder: Send {
 
     /// Number of source symbols currently in the window.
     fn window_size(&self) -> usize;
+
+    /// Retrieve an exact source symbol by sequence number.
+    /// Returns `None` if the symbol has been evicted from the window.
+    fn get_source(&self, seq: u64) -> Option<WireSymbol> {
+        let _ = seq;
+        None
+    }
 }
 
 /// Sliding window decoder — processes symbols as they arrive.

@@ -692,6 +692,22 @@ impl Scheduler {
             .map(|p| p.id)
     }
 
+    /// Pick the best repair path, preferring to avoid `avoid` for cross-path diversity.
+    /// Falls back to `best_repair_path()` if no alternative exists.
+    pub fn best_repair_path_avoiding(&self, avoid: PathId) -> Option<PathId> {
+        let alt = self
+            .paths
+            .values()
+            .filter(|p| p.active && p.available() > 0 && p.id != avoid)
+            .max_by(|a, b| {
+                a.effective_goodput()
+                    .partial_cmp(&b.effective_goodput())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.id);
+        alt.or_else(|| self.best_repair_path())
+    }
+
     /// Pick a secondary path for redundant source scheduling (different from primary).
     /// Returns None if only one usable path is available.
     pub fn redundant_source_path(&self, primary: PathId) -> Option<PathId> {
@@ -868,5 +884,34 @@ mod tests {
             .unwrap_or(0);
 
         assert!(path1_count > 0, "Low-RTT path should receive source symbols");
+    }
+
+    #[test]
+    fn test_best_repair_path_avoiding_picks_alternative() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Path 0: highest goodput
+        sched.path_mut(0).unwrap().estimator.record_batch(10, 9);
+        sched.path_mut(0).unwrap().estimator.record_throughput(1000.0);
+
+        // Path 1: lower goodput
+        sched.path_mut(1).unwrap().estimator.record_batch(10, 9);
+        sched.path_mut(1).unwrap().estimator.record_throughput(500.0);
+
+        // Avoiding path 0 should pick path 1
+        assert_eq!(sched.best_repair_path_avoiding(0), Some(1));
+        // Avoiding path 1 should pick path 0
+        assert_eq!(sched.best_repair_path_avoiding(1), Some(0));
+    }
+
+    #[test]
+    fn test_best_repair_path_avoiding_falls_back_single_path() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+
+        // With only one path, avoiding it should still return it
+        assert_eq!(sched.best_repair_path_avoiding(0), Some(0));
     }
 }

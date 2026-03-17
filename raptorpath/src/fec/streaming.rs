@@ -59,6 +59,17 @@ impl WindowEncoder for StreamingEncoder {
     fn window_size(&self) -> usize {
         self.core.window_size()
     }
+
+    fn get_source(&self, seq: u64) -> Option<WireSymbol> {
+        let data = self.core.get_source(seq)?;
+        Some(WireSymbol {
+            block_id: seq,
+            payload_id: 0,
+            is_repair: false,
+            data: data.clone(),
+            backend: FecBackend::Streaming,
+        })
+    }
 }
 
 /// Streaming decoder adapter — implements `WindowDecoder` by wrapping `StreamingCoreDecoder`.

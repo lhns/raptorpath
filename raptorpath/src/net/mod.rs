@@ -128,9 +128,6 @@ const MAX_CONCURRENT_DECODERS: usize = 10_000;
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 /// Maximum window size for sliding-window FEC (source symbols in encoder window).
 const MAX_WINDOW_SIZE: usize = 200;
-/// Repair generation interval: generate one repair per this many source symbols.
-/// Dynamically adjusted by the FEC rate controller.
-const BASE_REPAIR_INTERVAL: u64 = 10;
 /// Default reorder buffer timeout for window mode (milliseconds).
 const DEFAULT_REORDER_TIMEOUT_MS: u64 = 20;
 /// Maximum packets buffered in the reorder buffer before force-delivery.
@@ -1140,6 +1137,12 @@ fn select_repair_path(scheduler: &Scheduler, fallback: u32) -> u32 {
     scheduler.best_repair_path().unwrap_or(fallback)
 }
 
+/// Select the best repair path while avoiding a specific path (cross-path diversity).
+/// Falls back to any available repair path if no alternative exists.
+fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32) -> u32 {
+    scheduler.best_repair_path_avoiding(avoid).unwrap_or(fallback)
+}
+
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
 /// source symbols, sends them immediately, and periodically generates repair symbols.
 async fn run_window_sender(
@@ -1188,12 +1191,14 @@ async fn run_window_sender(
         }
         _ => Box::new(RlcWindowEncoder::new(symbol_size)),
     };
-    let mut source_since_repair: u64 = 0;
     let mut prev_ack: u64 = 0;
     let mut last_nack_repair_us: u64 = 0;
-    /// Burst factor: controls how many extra repairs to generate when a new
-    /// source enters the window. burst_count = ceil(loss_rate * BURST_FACTOR).
-    const BURST_FACTOR: f64 = 4.0;
+    /// Repair factor for fractional accumulator: controls proactive repair rate.
+    const REPAIR_FACTOR: f64 = 4.0;
+    /// Fractional repair accumulator: tracks sub-symbol repair debt.
+    let mut repair_debt: f64 = 0.0;
+    /// Maps source seq → path it was sent on (for cross-path retransmission).
+    let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
 
     // Announce window mode to peer on all paths
     {
@@ -1205,9 +1210,6 @@ async fn run_window_sender(
             );
         }
     }
-
-    // Compute initial repair rate
-    let mut repair_interval = BASE_REPAIR_INTERVAL;
 
     loop {
         let packet = tokio::select! {
@@ -1261,6 +1263,9 @@ async fn run_window_sender(
         }
         stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
 
+        // Track which path this source was sent on (for cross-path retransmission)
+        source_path_map.insert(wire_sym.block_id, source_path);
+
         // Redundant send for Realtime: duplicate source on second-best path
         if protocol_hint == ProtocolHint::Realtime {
             let alt_path = {
@@ -1290,10 +1295,11 @@ async fn run_window_sender(
             }
         }
 
-        // Repair burst: front-load extra repairs for new sources that have zero
-        // coverage. burst_count adapts to loss — higher loss = more burst repairs.
+        // Fractional repair accumulator: each source adds loss_rate * REPAIR_FACTOR
+        // to debt. When debt >= 1.0, emit one repair symbol. ACK feedback and NACKs
+        // reduce debt, so at low loss the effective proactive rate approaches zero.
         if encoder.window_size() > 1 {
-            let burst_loss = {
+            let current_loss = {
                 let sched = scheduler.lock();
                 sched
                     .active_paths()
@@ -1302,100 +1308,130 @@ async fn run_window_sender(
                     .map(|p| p.estimator.loss_rate())
                     .fold(0.0f64, f64::max)
             };
-            let burst_count = (burst_loss * BURST_FACTOR).ceil() as u64;
-            if burst_count > 0 {
-                let burst_path = {
+            repair_debt += current_loss * REPAIR_FACTOR;
+
+            while repair_debt >= 1.0 && encoder.window_size() > 0 {
+                repair_debt -= 1.0;
+                let repair_path = {
                     let sched = scheduler.lock();
                     select_repair_path(&sched, source_path)
                 };
-                for _ in 0..burst_count {
-                    if encoder.window_size() == 0 {
-                        break;
-                    }
-                    let burst_sym = encoder.generate_repair();
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![burst_sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: burst_path,
-                    };
-                    if let Err(e) = transport.send_symbols(burst_path, batch) {
-                        warn!(burst_path, ?e, "failed to send burst repair symbol");
-                    }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-                    if let Some(ps) = stats.path(burst_path) {
-                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                let repair_sym = encoder.generate_repair();
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch = SymbolBatch {
+                    symbols: vec![repair_sym],
+                    send_timestamp_us: now_us(),
+                    batch_seq,
+                    path_id: repair_path,
+                };
+                if let Err(e) = transport.send_symbols(repair_path, batch) {
+                    warn!(repair_path, ?e, "failed to send proactive repair symbol");
+                }
+                {
+                    let mut sched = scheduler.lock();
+                    if let Some(p) = sched.path_mut(repair_path) {
+                        p.in_flight += 1;
                     }
                 }
+                if let Some(ps) = stats.path(repair_path) {
+                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                }
+                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
             }
         }
 
-        source_since_repair += 1;
-
-        // Generate repair symbol — pick best path by highest goodput
-        if source_since_repair >= repair_interval && encoder.window_size() > 0 {
-            let repair_path = {
-                let sched = scheduler.lock();
-                select_repair_path(&sched, source_path)
-            };
-            let repair_sym = encoder.generate_repair();
-            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch {
-                symbols: vec![repair_sym],
-                send_timestamp_us: now_us(),
-                batch_seq,
-                path_id: repair_path,
-            };
-            if let Err(e) = transport.send_symbols(repair_path, batch) {
-                warn!(repair_path, ?e, "failed to send window repair symbol");
-            }
-            {
-                let mut sched = scheduler.lock();
-                if let Some(p) = sched.path_mut(repair_path) {
-                    p.in_flight += 1;
-                }
-            }
-            if let Some(ps) = stats.path(repair_path) {
-                ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-            }
-            stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-
-            source_since_repair = 0;
-        }
-
-        // Drain NACK channel → targeted repair for specific gaps
+        // Drain NACK channel → retransmit exact source symbols + repair margin
         let now_repair_us = now_us();
         if now_repair_us.saturating_sub(last_nack_repair_us) >= NACK_REPAIR_COOLDOWN_US {
             while let Ok(gaps) = nack_rx.try_recv() {
                 let (win_start, win_end) = encoder.window_span();
-                let total_gap: u64 = gaps
-                    .iter()
-                    .filter(|(s, e)| *e >= win_start && *s <= win_end)
-                    .map(|(s, e)| e - s + 1)
-                    .sum();
-                let repair_count = (total_gap as usize).min(MAX_NACK_REPAIRS_PER_NACK);
-                let nack_repair_path = {
-                    let sched = scheduler.lock();
-                    select_repair_path(&sched, source_path)
-                };
-                for _ in 0..repair_count {
-                    if encoder.window_size() == 0 {
-                        break;
+                let mut retransmitted: u64 = 0;
+                let mut nacked_count: u64 = 0;
+
+                for &(gap_start, gap_end) in &gaps {
+                    let clamped_start = gap_start.max(win_start);
+                    let clamped_end = gap_end.min(win_end);
+                    if clamped_start > clamped_end {
+                        continue;
                     }
-                    let repair_sym = encoder.generate_repair();
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![repair_sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: nack_repair_path,
-                    };
-                    if let Err(e) = transport.send_symbols(nack_repair_path, batch) {
-                        warn!(nack_repair_path, ?e, "failed to send NACK repair symbol");
+                    nacked_count += clamped_end - clamped_start + 1;
+
+                    for seq in clamped_start..=clamped_end {
+                        if retransmitted >= MAX_NACK_REPAIRS_PER_NACK as u64 {
+                            break;
+                        }
+                        // Cross-path: avoid the path that originally carried this symbol
+                        let original_path = source_path_map.get(&seq).copied().unwrap_or(source_path);
+                        let nack_path = {
+                            let sched = scheduler.lock();
+                            select_repair_path_avoiding(&sched, original_path, source_path)
+                        };
+
+                        // Try exact source retransmission first, fall back to repair
+                        let sym = encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair());
+
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch = SymbolBatch {
+                            symbols: vec![sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq,
+                            path_id: nack_path,
+                        };
+                        if let Err(e) = transport.send_symbols(nack_path, batch) {
+                            warn!(nack_path, ?e, "failed to send NACK retransmission");
+                        }
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                        retransmitted += 1;
                     }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                 }
+
+                // Repair margin: extra repairs proportional to loss rate
+                if retransmitted > 0 {
+                    let current_loss = {
+                        let sched = scheduler.lock();
+                        sched
+                            .active_paths()
+                            .iter()
+                            .filter_map(|id| sched.path(*id))
+                            .map(|p| p.estimator.loss_rate())
+                            .fold(0.0f64, f64::max)
+                    };
+                    let margin = (retransmitted as f64 * current_loss).ceil() as u64;
+                    let margin_path = {
+                        let sched = scheduler.lock();
+                        select_repair_path(&sched, source_path)
+                    };
+                    for _ in 0..margin {
+                        if encoder.window_size() == 0 {
+                            break;
+                        }
+                        let repair_sym = encoder.generate_repair();
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch = SymbolBatch {
+                            symbols: vec![repair_sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq,
+                            path_id: margin_path,
+                        };
+                        if let Err(e) = transport.send_symbols(margin_path, batch) {
+                            warn!(margin_path, ?e, "failed to send NACK repair margin");
+                        }
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+
+                // Reduce repair_debt — NACK'd symbols are handled reactively now
+                let current_loss = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id))
+                        .map(|p| p.estimator.loss_rate())
+                        .fold(0.0f64, f64::max)
+                };
+                let debt_reduction = nacked_count as f64 * current_loss * REPAIR_FACTOR;
+                repair_debt = (repair_debt - debt_reduction).max(0.0);
             }
             last_nack_repair_us = now_repair_us;
         }
@@ -1403,7 +1439,26 @@ async fn run_window_sender(
         // Advance encoder window based on receiver ACKs
         let ack = window_ack_seq.load(Ordering::Relaxed);
         if ack > prev_ack {
+            // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
+            let newly_acked = ack - prev_ack;
+            let current_loss = {
+                let sched = scheduler.lock();
+                sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .map(|p| p.estimator.loss_rate())
+                    .fold(0.0f64, f64::max)
+            };
+            let debt_reduction = newly_acked as f64 * current_loss * REPAIR_FACTOR;
+            repair_debt = (repair_debt - debt_reduction).max(0.0);
+
             encoder.advance(ack.saturating_sub(MAX_WINDOW_SIZE as u64 / 2));
+
+            // Clean up source_path_map for evicted sequences
+            let (win_start, _) = encoder.window_span();
+            source_path_map.retain(|&seq, _| seq >= win_start);
+
             prev_ack = ack;
         }
 
@@ -1411,6 +1466,9 @@ async fn run_window_sender(
         if encoder.window_size() > MAX_WINDOW_SIZE {
             let (oldest, _) = encoder.window_span();
             encoder.advance(oldest + (encoder.window_size() - MAX_WINDOW_SIZE) as u64);
+            // Clean up source_path_map for evicted sequences
+            let (win_start, _) = encoder.window_span();
+            source_path_map.retain(|&seq, _| seq >= win_start);
         }
 
         // Update repair interval from FEC rate controller
@@ -1430,15 +1488,6 @@ async fn run_window_sender(
                 .map(|p| &p.estimator);
 
             if let Some(est) = worst_estimator {
-                let rate = ctrl.compute_repair_rate(est);
-                if rate > 0.001 {
-                    // rate = repair/source, so interval = 1/rate
-                    repair_interval = (1.0 / rate).ceil() as u64;
-                    repair_interval = repair_interval.clamp(1, 100);
-                } else {
-                    repair_interval = BASE_REPAIR_INTERVAL;
-                }
-
                 // ADR-0030: evaluate window-mode backend switching
                 if let Some(new_backend) = backend_selector.evaluate(est) {
                     let old_backend = fec_backend;

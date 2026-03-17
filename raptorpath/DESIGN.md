@@ -345,22 +345,20 @@ For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-
 - [x] **Tapered repair interleaving** — ADR-0029
 - [x] **Runtime backend switching** — ADR-0030
 
-- [ ] **Hybrid proactive/reactive FEC** — Send repair symbols proactively alongside source
-  symbols at the estimated loss rate, then use targeted retransmission after ACK feedback for any
-  remaining losses. This is a scheduling change, not a coding change — the encoder already
-  exists. Cross-path retransmission (resend on path B what path A lost) is part of the reactive
-  phase. See "Research: Optimal FEC/ARQ Architecture" above for full analysis.
+- [x] **Hybrid proactive/reactive FEC** — Fractional repair accumulator replaces burst and
+  interval repairs. Each source adds `loss_rate × 4.0` to a debt counter; when debt ≥ 1.0, one
+  repair is emitted. ACK feedback and NACKs reduce debt, so proactive overhead approaches zero at
+  low loss. NACK handler retransmits exact source symbols (via `get_source()`) instead of random
+  repairs, with repair margin for retransmission losses. ADR-0037.
 
 - [x] **Sliding window FEC (streaming codes)** — Implemented three window backends: RLC (ADR-0022),
   METTLE window mode, and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
   layered construction (burst XOR + random GF(256)). Parameters derived from GE HMM estimator.
   *References: Badr et al. 2017, RFC 8681, ADR-0022, ADR-0027.*
 
-- [ ] **Cross-path retransmission** — When symbols are detected lost on path A, retransmit them on
-  path B. No algebraic coding needed — just targeted resend using exact loss information from ACK
-  feedback. Part of the hybrid proactive/reactive approach. Note: sliding window codes subsume
-  cross-block algebraic coding, so dedicated cross-block FEC is unnecessary if sliding window
-  coding is adopted.
+- [x] **Cross-path retransmission** — When symbols are detected lost on path A, retransmit them on
+  path B via `best_repair_path_avoiding()`. Falls back to any available path for single-path
+  setups. Part of the hybrid proactive/reactive approach (ADR-0037).
   *Reference: Cloud et al., "Multi-Path TCP with Network Coding," IEEE INFOCOM, 2013.*
 
 - [ ] **Proactive retransmission (speculative repair)** — When a symbol's expected ACK deadline
