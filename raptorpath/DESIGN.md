@@ -14,8 +14,8 @@
 └──────┬──────┘
        │
 ┌──────▼──────┐
-│  RaptorQ    │  1. Emit source symbols (zero latency)
-│   Encoder   │  2. Stream repair symbols (fountain)
+│ FEC Encode  │  1. Emit source symbols (zero latency)
+│ (5 backends)│  2. Stream repair symbols (fountain)
 └──────┬──────┘
        │
 ┌──────▼──────┐
@@ -29,8 +29,8 @@
    └───┼───┘
        │
 ┌──────▼──────┐
-│  RaptorQ    │  Decode from any k(1+ε) of n symbols
-│   Decoder   │
+│ FEC Decode  │  Decode from any k(1+ε) of n symbols
+│ (5 backends)│
 └──────┬──────┘
        │ TUN interface
 ┌──────▼──────┐
@@ -339,6 +339,11 @@ the implementation at runtime. Currently supported backends:
 Select via `--fec-backend <name>` (CLI) or `fec_backend = "<name>"` (TOML config).
 
 For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-competitive-analysis.md).
+
+- [x] **WindowNack sender repair** — ADR-0025
+- [x] **Multipath window scheduling** — ADR-0026
+- [x] **Tapered repair interleaving** — ADR-0029
+- [x] **Runtime backend switching** — ADR-0030
 
 - [ ] **Hybrid proactive/reactive FEC** — Send repair symbols proactively alongside source
   symbols at the estimated loss rate, then use targeted retransmission after ACK feedback for any

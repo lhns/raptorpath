@@ -51,3 +51,8 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0028](0028-mettle-performance-analysis.md) | METTLE performance analysis — edge probability bug | Resolved |
 | [0029](0029-tapered-repair-interleaving.md) | Tapered repair interleaving (exponential decay + window burst) | Resolved |
 | [0030](0030-runtime-backend-switching.md) | Runtime FEC backend switching (loss-based heuristic + flush protocol) | Resolved |
+| [0031](0031-network-simulation-harness.md) | Network simulation harness (SimChannel + component tests) | Resolved |
+| [0032](0032-benchmark-recommendations.md) | Ablation benchmark recommendations (PI window fix, GE default, trial count) | Resolved |
+| [0033](0033-pipeline-ablation-benchmark.md) | Full-pipeline ablation benchmark (ProbeRTT, reorder, NACK, auto-switch, multipath) | Resolved |
+| [0034](0034-tradeoff-ablation-benchmark.md) | Per-feature tradeoff ablation (latency, ordering, burst recovery, efficiency) | Resolved |
+| [0035](0035-algorithm-recommendations.md) | Algorithm recommendations and metric architecture review | Resolved |
