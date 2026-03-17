@@ -1,0 +1,6 @@
+[package]
+name = "gf256"
+version = "0.1.0"
+edition = "2021"
+description = "GF(2^8) finite field arithmetic and deterministic coefficient generation"
+license = "MIT OR Apache-2.0"

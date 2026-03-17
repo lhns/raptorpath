@@ -800,6 +800,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gf256"
+version = "0.1.0"
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1575,6 +1579,7 @@ dependencies = [
  "clap",
  "criterion",
  "dashmap",
+ "gf256",
  "hex",
  "mettle",
  "parking_lot 0.12.5",
@@ -1590,6 +1595,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "statrs",
+ "streaming-codes",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
@@ -2039,6 +2045,14 @@ dependencies = [
  "nalgebra",
  "num-traits",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "streaming-codes"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "gf256",
 ]
 
 [[package]]
