@@ -60,3 +60,5 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0037](0037-nack-source-retransmit.md) | NACK source retransmission, cross-path repair, fractional repair accumulator | Accepted |
 | [0038](0038-benchmark-overhead-taxonomy.md) | Benchmark overhead taxonomy and methodology documentation | Accepted |
 | [0039](0039-overhead-reduction.md) | Overhead reduction: benchmark repair floor fix and window-mode symbol packing | Accepted |
+| [0040](0040-benchmark-repair-alignment.md) | Benchmark repair alignment + multi-backend (RLC/METTLE/RaptorQ) comparison | Accepted |
+| [0041](0041-simd-gf256.md) | SIMD-accelerated GF(2^8) multiply-accumulate (split-table PSHUFB) | Accepted |

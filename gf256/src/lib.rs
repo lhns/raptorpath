@@ -3,7 +3,9 @@
 //! Galois Field with 256 elements using irreducible polynomial 0x11D (x^8 + x^4 + x^3 + x^2 + 1),
 //! the same polynomial used by AES and Reed-Solomon standards.
 //!
-//! All operations use log/exp table lookups for O(1) multiplication.
+//! Scalar operations use log/exp table lookups for O(1) multiplication.
+//! Bulk operations (`mul_acc_slice`, `mul_slice`) use SIMD acceleration (AVX2/SSSE3)
+//! when available, with automatic runtime CPU feature detection.
 
 /// Irreducible polynomial for GF(2^8): x^8 + x^4 + x^3 + x^2 + 1 = 0x11D
 const POLY: u16 = 0x11D;
@@ -73,19 +75,73 @@ pub fn checked_inv(a: u8) -> Option<u8> {
     }
 }
 
-/// Multiply-accumulate: dst[i] ^= coeff * src[i] for all i.
-/// This is the hot loop for RLC encoding/decoding.
-#[inline]
-pub fn mul_acc_slice(coeff: u8, src: &[u8], dst: &mut [u8]) {
-    if coeff == 0 {
-        return;
-    }
-    if coeff == 1 {
-        for (d, &s) in dst.iter_mut().zip(src.iter()) {
-            *d ^= s;
+// ---------------------------------------------------------------------------
+// SIMD module (x86_64 only) + runtime dispatch
+// ---------------------------------------------------------------------------
+
+#[cfg(target_arch = "x86_64")]
+mod simd;
+
+use std::sync::OnceLock;
+
+type MulFn = fn(u8, &[u8], &mut [u8]);
+type XorFn = fn(&[u8], &mut [u8]);
+
+static MUL_ACC_FN: OnceLock<MulFn> = OnceLock::new();
+static MUL_SLICE_FN: OnceLock<MulFn> = OnceLock::new();
+static XOR_ACC_FN: OnceLock<XorFn> = OnceLock::new();
+
+fn detect_mul_acc() -> MulFn {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return simd::mul_acc_avx2_dispatch;
         }
-        return;
+        if is_x86_feature_detected!("ssse3") {
+            return simd::mul_acc_ssse3_dispatch;
+        }
     }
+    mul_acc_slice_scalar
+}
+
+fn detect_mul_slice() -> MulFn {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return simd::mul_slice_avx2_dispatch;
+        }
+        if is_x86_feature_detected!("ssse3") {
+            return simd::mul_slice_ssse3_dispatch;
+        }
+    }
+    mul_slice_scalar
+}
+
+fn detect_xor_acc() -> XorFn {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return simd::xor_acc_avx2_dispatch;
+        }
+        if is_x86_feature_detected!("ssse3") {
+            return simd::xor_acc_ssse3_dispatch;
+        }
+    }
+    xor_acc_scalar
+}
+
+// ---------------------------------------------------------------------------
+// Scalar implementations (fallback + SIMD tail processing)
+// ---------------------------------------------------------------------------
+
+fn xor_acc_scalar(src: &[u8], dst: &mut [u8]) {
+    for (d, &s) in dst.iter_mut().zip(src.iter()) {
+        *d ^= s;
+    }
+}
+
+/// Scalar multiply-accumulate for coeff ∉ {0, 1}.
+pub(crate) fn mul_acc_slice_scalar(coeff: u8, src: &[u8], dst: &mut [u8]) {
     let log_c = LOG_TABLE[coeff as usize] as u16;
     for (d, &s) in dst.iter_mut().zip(src.iter()) {
         if s != 0 {
@@ -95,7 +151,40 @@ pub fn mul_acc_slice(coeff: u8, src: &[u8], dst: &mut [u8]) {
     }
 }
 
-/// Multiply a slice by a scalar: dst[i] = coeff * src[i].
+/// Scalar multiply-slice for coeff ∉ {0, 1}.
+pub(crate) fn mul_slice_scalar(coeff: u8, src: &[u8], dst: &mut [u8]) {
+    let log_c = LOG_TABLE[coeff as usize] as u16;
+    for (d, &s) in dst.iter_mut().zip(src.iter()) {
+        if s == 0 {
+            *d = 0;
+        } else {
+            let log_s = LOG_TABLE[s as usize] as u16;
+            *d = EXP_TABLE[((log_c + log_s) % 255) as usize];
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API (unchanged signatures)
+// ---------------------------------------------------------------------------
+
+/// Multiply-accumulate: `dst[i] ^= coeff * src[i]` for all i.
+/// This is the hot loop for RLC encoding/decoding.
+/// Uses SIMD acceleration (AVX2/SSSE3) when available.
+#[inline]
+pub fn mul_acc_slice(coeff: u8, src: &[u8], dst: &mut [u8]) {
+    if coeff == 0 {
+        return;
+    }
+    if coeff == 1 {
+        (XOR_ACC_FN.get_or_init(detect_xor_acc))(src, dst);
+        return;
+    }
+    (MUL_ACC_FN.get_or_init(detect_mul_acc))(coeff, src, dst);
+}
+
+/// Multiply a slice by a scalar: `dst[i] = coeff * src[i]`.
+/// Uses SIMD acceleration (AVX2/SSSE3) when available.
 #[inline]
 pub fn mul_slice(coeff: u8, src: &[u8], dst: &mut [u8]) {
     if coeff == 0 {
@@ -108,15 +197,7 @@ pub fn mul_slice(coeff: u8, src: &[u8], dst: &mut [u8]) {
         dst[..src.len()].copy_from_slice(src);
         return;
     }
-    let log_c = LOG_TABLE[coeff as usize] as u16;
-    for (d, &s) in dst.iter_mut().zip(src.iter()) {
-        if s == 0 {
-            *d = 0;
-        } else {
-            let log_s = LOG_TABLE[s as usize] as u16;
-            *d = EXP_TABLE[((log_c + log_s) % 255) as usize];
-        }
-    }
+    (MUL_SLICE_FN.get_or_init(detect_mul_slice))(coeff, src, dst);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,5 +338,87 @@ mod tests {
         let c1 = generate_window_coefficients(100, 10, 5);
         let c2 = generate_window_coefficients(100, 10, 6);
         assert_ne!(c1, c2);
+    }
+
+    // --- SIMD correctness tests ---
+
+    #[test]
+    fn test_mul_acc_all_coefficients() {
+        // Verify SIMD matches scalar for all 255 non-zero coefficients
+        let mut rng = SplitMix64::new(0xDEADBEEF);
+        let src: Vec<u8> = (0..1200).map(|_| rng.next_u64() as u8).collect();
+
+        for coeff in 1..=255u8 {
+            let mut dst_simd = vec![0u8; 1200];
+            let mut dst_scalar = vec![0u8; 1200];
+            mul_acc_slice(coeff, &src, &mut dst_simd);
+            mul_acc_slice_scalar(coeff, &src, &mut dst_scalar);
+            assert_eq!(dst_simd, dst_scalar, "mismatch for coeff={coeff}");
+        }
+    }
+
+    #[test]
+    fn test_mul_acc_edge_lengths() {
+        let sizes = [0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 100, 1200];
+        let mut rng = SplitMix64::new(0xCAFEBABE);
+
+        for &sz in &sizes {
+            let src: Vec<u8> = (0..sz).map(|_| rng.next_u64() as u8).collect();
+            let mut dst_simd = vec![0u8; sz];
+            let mut dst_scalar = vec![0u8; sz];
+
+            mul_acc_slice(42, &src, &mut dst_simd);
+            mul_acc_slice_scalar(42, &src, &mut dst_scalar);
+            assert_eq!(dst_simd, dst_scalar, "mul_acc mismatch at size={sz}");
+        }
+    }
+
+    #[test]
+    fn test_mul_slice_simd_vs_scalar() {
+        let coeffs = [0u8, 1, 2, 42, 128, 255];
+        let mut rng = SplitMix64::new(0x12345678);
+        let src: Vec<u8> = (0..1200).map(|_| rng.next_u64() as u8).collect();
+
+        for &c in &coeffs {
+            let mut dst_dispatch = vec![0xFFu8; 1200];
+            let mut dst_expected = vec![0xFFu8; 1200];
+
+            mul_slice(c, &src, &mut dst_dispatch);
+            // Compute expected with scalar mul
+            for (i, &s) in src.iter().enumerate() {
+                dst_expected[i] = mul(c, s);
+            }
+            assert_eq!(dst_dispatch, dst_expected, "mul_slice mismatch for coeff={c}");
+        }
+    }
+
+    #[test]
+    fn test_mul_acc_accumulation_semantics() {
+        let mut rng = SplitMix64::new(0xABCD);
+        let src: Vec<u8> = (0..512).map(|_| rng.next_u64() as u8).collect();
+        let mut dst = vec![0u8; 512];
+
+        // Two successive mul_acc_slice calls should XOR correctly
+        mul_acc_slice(17, &src, &mut dst);
+        mul_acc_slice(42, &src, &mut dst);
+
+        for (i, &s) in src.iter().enumerate() {
+            let expected = mul(17, s) ^ mul(42, s);
+            assert_eq!(dst[i], expected, "accumulation mismatch at i={i}");
+        }
+    }
+
+    #[test]
+    fn test_xor_acc_via_coeff_one() {
+        let mut rng = SplitMix64::new(0x9999);
+        let src: Vec<u8> = (0..1200).map(|_| rng.next_u64() as u8).collect();
+        let initial: Vec<u8> = (0..1200).map(|_| rng.next_u64() as u8).collect();
+        let mut dst = initial.clone();
+
+        mul_acc_slice(1, &src, &mut dst);
+
+        for i in 0..1200 {
+            assert_eq!(dst[i], initial[i] ^ src[i], "xor_acc mismatch at i={i}");
+        }
     }
 }

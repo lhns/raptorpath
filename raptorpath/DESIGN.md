@@ -385,6 +385,15 @@ raptorpath's FEC-based recovery against retransmission-based QUIC/MPTCP across 6
 overhead (padding, headers, metadata serialization). QUIC retransmissions are internal to the channel
 model and appear as increased latency, not explicit overhead.
 
+The benchmark uses the production-equivalent **fractional repair accumulator** (`repair_debt += batch *
+loss_rate * 4.0`), not the PI controller. This ensures overhead scales proportionally with actual loss
+rate. See [ADR-0040](docs/adr/0040-benchmark-repair-alignment.md) for the repair alignment fix.
+
+**Multi-backend comparison** (ADR-0040): the benchmark tests three FEC backends across all scenarios:
+- **RLC** (window mode) — GF(2^8) Gaussian elimination, ~0% coding overhead, O(k^3) decode
+- **METTLE** (window mode) — XOR peeling decoder, ~15% coding overhead, O(k) decode
+- **RaptorQ** (block mode) — fountain code, ~1% coding overhead, block-granularity delivery
+
 The meaningful comparison is in the latency and recovery columns: raptorpath trades bandwidth (higher
 overhead) for lower tail latency (p95/p99), especially on lossy and bursty links.
 

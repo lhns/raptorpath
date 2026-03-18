@@ -802,6 +802,9 @@ dependencies = [
 [[package]]
 name = "gf256"
 version = "0.1.0"
+dependencies = [
+ "criterion",
+]
 
 [[package]]
 name = "half"

@@ -1,18 +1,20 @@
 //! Transport comparison benchmark: raptorpath FEC vs reliable QUIC/MPTCP baselines.
 //!
-//! Compares 5 transport configurations across 6 network scenarios, measuring
-//! recovery rate, goodput, latency percentiles, completion time, overhead,
-//! and in-order delivery rate.
+//! Compares transport configurations (RLC, METTLE window-mode; RaptorQ block-mode)
+//! across 6 network scenarios, measuring recovery rate, goodput, latency percentiles,
+//! completion time, overhead, and in-order delivery rate.
 //!
-//! Run with: cargo test --test transport_comparison_bench -- --nocapture
+//! Run with: bash cargo.sh test --test transport_comparison_bench -- --nocapture
 
 mod common;
 
 use common::*;
+use mettle::MettleConfig;
 use raptorpath::control::estimator::LossEstimator;
-use raptorpath::control::fec_rate::{FecRateController, ProtocolHint};
 use raptorpath::fec::{
-    FecBackend, RlcWindowDecoder, RlcWindowEncoder, WireSymbol, WindowDecoder, WindowEncoder,
+    EncodingParams, FecBackend, FecDecoder, FecEncoder, MettleWindowDecoder,
+    MettleWindowEncoder, RaptorqDecoder, RaptorqEncoder, RlcWindowDecoder,
+    RlcWindowEncoder, WireSymbol, WindowDecoder, WindowEncoder,
 };
 use raptorpath::net::reorder::ReorderBuffer;
 use raptorpath::scheduler::{Clock, MockClock, Scheduler};
@@ -24,10 +26,12 @@ use std::time::{Duration, Instant};
 // Constants
 // ---------------------------------------------------------------------------
 
-const NUM_SYMBOLS: u32 = 4000;
+const NUM_SYMBOLS: u32 = 2000;
 const BATCH_SIZE: u32 = 10;
-const NUM_TRIALS: u64 = 20;
+const NUM_TRIALS: u64 = 10;
 const SYMBOL_SIZE: u16 = 64;
+const BLOCK_SIZE: u32 = 50;
+const REPAIR_FACTOR: f64 = 4.0;
 
 // ---------------------------------------------------------------------------
 // Metrics
@@ -116,11 +120,13 @@ enum TransportKind {
     QuicDualMinRtt,
     RaptorpathSingle,
     RaptorpathDual,
+    RaptorpathRaptorqSingle,
 }
 
 struct TransportConfig {
     name: &'static str,
     kind: TransportKind,
+    backend: FecBackend,
 }
 
 fn transport_configs() -> Vec<TransportConfig> {
@@ -128,22 +134,42 @@ fn transport_configs() -> Vec<TransportConfig> {
         TransportConfig {
             name: "quic_single",
             kind: TransportKind::QuicSingle,
+            backend: FecBackend::Rlc,
         },
         TransportConfig {
             name: "quic_dual_rr",
             kind: TransportKind::QuicDualRR,
+            backend: FecBackend::Rlc,
         },
         TransportConfig {
             name: "quic_dual_minrtt",
             kind: TransportKind::QuicDualMinRtt,
+            backend: FecBackend::Rlc,
         },
         TransportConfig {
-            name: "raptorpath_single",
+            name: "rp_rlc_single",
             kind: TransportKind::RaptorpathSingle,
+            backend: FecBackend::Rlc,
         },
         TransportConfig {
-            name: "raptorpath_dual",
+            name: "rp_rlc_dual",
             kind: TransportKind::RaptorpathDual,
+            backend: FecBackend::Rlc,
+        },
+        TransportConfig {
+            name: "rp_mettle_single",
+            kind: TransportKind::RaptorpathSingle,
+            backend: FecBackend::Mettle,
+        },
+        TransportConfig {
+            name: "rp_mettle_dual",
+            kind: TransportKind::RaptorpathDual,
+            backend: FecBackend::Mettle,
+        },
+        TransportConfig {
+            name: "rp_raptorq_single",
+            kind: TransportKind::RaptorpathRaptorqSingle,
+            backend: FecBackend::RaptorQ,
         },
     ]
 }
@@ -604,27 +630,47 @@ fn run_quic_dual_minrtt(
 }
 
 // ---------------------------------------------------------------------------
-// Raptorpath FEC transport runners
+// Window-mode FEC helpers
+// ---------------------------------------------------------------------------
+
+fn make_window_encoder(backend: FecBackend, seed: u64) -> Box<dyn WindowEncoder> {
+    match backend {
+        FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
+            MettleConfig::small_window(),
+            SYMBOL_SIZE,
+            seed,
+        )),
+        _ => Box::new(RlcWindowEncoder::new(SYMBOL_SIZE)),
+    }
+}
+
+fn make_window_decoder(backend: FecBackend) -> Box<dyn WindowDecoder> {
+    match backend {
+        FecBackend::Mettle => Box::new(MettleWindowDecoder::new(SYMBOL_SIZE)),
+        _ => Box::new(RlcWindowDecoder::new(SYMBOL_SIZE)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Raptorpath window-mode FEC transport runners
 // ---------------------------------------------------------------------------
 
 fn run_raptorpath_single(
     seed: u64,
     scenario: &Scenario,
+    backend: FecBackend,
 ) -> DeliveryMetrics {
     let clock = Arc::new(MockClock::new());
     let (mut primary, _secondary, primary_base) =
         make_lossy_channels(scenario.kind, clock.clone(), seed);
 
-    let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
-    let mut decoder = RlcWindowDecoder::new(SYMBOL_SIZE);
+    let mut encoder = make_window_encoder(backend, seed);
+    let mut decoder = make_window_decoder(backend);
     let mut reorder_buf = ReorderBuffer::new(25, 500);
     let mut estimator = LossEstimator::new();
-    let mut fec_ctrl = FecRateController::new(
-        1e-5,
-        0.5,
-        ProtocolHint::Realtime,
-        FecBackend::Rlc,
-    );
+
+    // Fractional repair accumulator (matches production run_window_sender)
+    let mut repair_debt: f64 = 0.0;
 
     let mut send_times: HashMap<u64, Instant> = HashMap::new();
     let mut deliver_times: HashMap<u64, Instant> = HashMap::new();
@@ -650,13 +696,14 @@ fn run_raptorpath_single(
         }
         total_source_sent += this_batch;
 
-        // Adaptive repair
-        let repair_rate = fec_ctrl.compute_repair_rate(&estimator);
-        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).min(10);
-        for _ in 0..repair_count {
+        // Fractional repair accumulator
+        let loss_rate = estimator.loss_rate();
+        repair_debt += this_batch as f64 * loss_rate * REPAIR_FACTOR;
+        while repair_debt >= 1.0 {
             if encoder.window_size() == 0 {
                 break;
             }
+            repair_debt -= 1.0;
             let repair = encoder.generate_repair();
             primary.send(repair);
             total_repair_sent += 1;
@@ -688,11 +735,9 @@ fn run_raptorpath_single(
             }
         }
 
-        // Update estimator and FEC controller
+        // Update estimator
         estimator.record_batch(this_batch, batch_survived);
         estimator.record_rtt(primary_base);
-        let batch_ok = batch_survived == this_batch;
-        fec_ctrl.feedback_update(batch_ok);
     }
 
     // Drain remaining
@@ -740,6 +785,7 @@ fn run_raptorpath_single(
 fn run_raptorpath_dual(
     seed: u64,
     scenario: &Scenario,
+    backend: FecBackend,
 ) -> DeliveryMetrics {
     let clock = Arc::new(MockClock::new());
     let (mut primary, mut secondary, primary_base) =
@@ -764,16 +810,13 @@ fn run_raptorpath_dual(
         }
     }
 
-    let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
-    let mut decoder = RlcWindowDecoder::new(SYMBOL_SIZE);
+    let mut encoder = make_window_encoder(backend, seed);
+    let mut decoder = make_window_decoder(backend);
     let mut reorder_buf = ReorderBuffer::new(25, 500);
     let mut estimator = LossEstimator::new();
-    let mut fec_ctrl = FecRateController::new(
-        1e-5,
-        0.5,
-        ProtocolHint::Realtime,
-        FecBackend::Rlc,
-    );
+
+    // Fractional repair accumulator (matches production run_window_sender)
+    let mut repair_debt: f64 = 0.0;
 
     let mut send_times: HashMap<u64, Instant> = HashMap::new();
     let mut deliver_times: HashMap<u64, Instant> = HashMap::new();
@@ -806,13 +849,14 @@ fn run_raptorpath_dual(
         }
         total_source_sent += this_batch;
 
-        // Adaptive repair on primary
-        let repair_rate = fec_ctrl.compute_repair_rate(&estimator);
-        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).min(10);
-        for _ in 0..repair_count {
+        // Fractional repair accumulator on primary
+        let loss_rate = estimator.loss_rate();
+        repair_debt += this_batch as f64 * loss_rate * REPAIR_FACTOR;
+        while repair_debt >= 1.0 {
             if encoder.window_size() == 0 {
                 break;
             }
+            repair_debt -= 1.0;
             let repair = encoder.generate_repair();
             primary.send(repair);
             total_repair_sent += 1;
@@ -869,9 +913,6 @@ fn run_raptorpath_dual(
             let fec_ok = (batch_dropped as f64 / this_batch as f64) < 0.20;
             sched.on_loss(primary_id, fec_ok);
         }
-
-        let batch_ok = batch_dropped == 0;
-        fec_ctrl.feedback_update(batch_ok);
     }
 
     // Drain remaining
@@ -904,6 +945,162 @@ fn run_raptorpath_dual(
                 delivery_order.push(seq);
             }
         }
+    }
+
+    let end_time = clock.now();
+    let total_tx = (total_source_sent + total_repair_sent) as u64;
+    compute_metrics(
+        &send_times,
+        &deliver_times,
+        &delivery_order,
+        NUM_SYMBOLS,
+        total_tx,
+        total_source_sent as u64,
+        start_time,
+        end_time,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// RaptorQ block-mode FEC transport runner
+// ---------------------------------------------------------------------------
+
+fn run_raptorq_single(
+    seed: u64,
+    scenario: &Scenario,
+) -> DeliveryMetrics {
+    let clock = Arc::new(MockClock::new());
+    let (mut primary, _secondary, primary_base) =
+        make_lossy_channels(scenario.kind, clock.clone(), seed);
+
+    let mut estimator = LossEstimator::new();
+
+    let mut send_times: HashMap<u64, Instant> = HashMap::new();
+    let mut deliver_times: HashMap<u64, Instant> = HashMap::new();
+    let mut delivery_order: Vec<u64> = Vec::new();
+    let mut total_source_sent: u32 = 0;
+    let mut total_repair_sent: u32 = 0;
+    let start_time = clock.now();
+
+    // Active decoders for in-flight blocks: (decoder, block_start_sym_idx, block_size)
+    let mut active_decoders: Vec<(RaptorqDecoder, u32, u32)> = Vec::new();
+
+    let mut sym_idx: u32 = 0;
+    let mut block_id: u64 = 0;
+
+    while sym_idx < NUM_SYMBOLS {
+        let block_size = BLOCK_SIZE.min(NUM_SYMBOLS - sym_idx);
+        let block_start = sym_idx;
+
+        // Prepare block data
+        let transfer_length = block_size as u64 * SYMBOL_SIZE as u64;
+        let mut block_data = vec![0u8; transfer_length as usize];
+        for i in 0..block_size {
+            let offset = i as usize * SYMBOL_SIZE as usize;
+            block_data[offset..offset + SYMBOL_SIZE as usize]
+                .fill((block_start + i) as u8);
+        }
+
+        let params = EncodingParams {
+            source_symbols: block_size,
+            symbol_size: SYMBOL_SIZE,
+            repair_count: 0,
+            block_id,
+        };
+
+        let encoder = RaptorqEncoder::new(&block_data, params);
+        let source_syms = encoder.source_symbols();
+
+        // Compute repair from estimator
+        let loss_rate = estimator.loss_rate();
+        let repair_count = (block_size as f64 * loss_rate * REPAIR_FACTOR).ceil() as u32;
+        let repair_syms = encoder.repair_symbols(repair_count);
+
+        // Send source symbols through lossy channel
+        let mut batch_survived = 0u32;
+        for sym in source_syms {
+            send_times.insert(sym_idx as u64, clock.now());
+            if primary.send(sym) {
+                batch_survived += 1;
+            }
+            sym_idx += 1;
+        }
+        total_source_sent += block_size;
+
+        // Send repair symbols
+        for repair in repair_syms {
+            primary.send(repair);
+            total_repair_sent += 1;
+        }
+
+        // Create decoder for this block
+        let dec = RaptorqDecoder::new(params, transfer_length);
+        active_decoders.push((dec, block_start, block_size));
+
+        clock.advance(primary_base.max(Duration::from_millis(5)));
+
+        // Deliver and feed to active decoders
+        let now = clock.now();
+        for pkt in primary.deliver() {
+            let bid = pkt.symbol.block_id;
+            for (decoder, _, _) in active_decoders.iter_mut() {
+                if decoder.params().block_id == bid && !decoder.is_decoded() {
+                    decoder.add_symbol(&pkt.symbol);
+                    break;
+                }
+            }
+        }
+
+        // Check for completed blocks and mark symbols delivered
+        for (decoder, bstart, bsize) in &active_decoders {
+            if decoder.is_decoded() {
+                for i in 0..*bsize {
+                    let seq = (*bstart + i) as u64;
+                    if !deliver_times.contains_key(&seq) {
+                        deliver_times.insert(seq, now);
+                        delivery_order.push(seq);
+                    }
+                }
+            }
+        }
+
+        // Remove completed decoders
+        active_decoders.retain(|(dec, _, _)| !dec.is_decoded());
+
+        estimator.record_batch(block_size, batch_survived);
+        estimator.record_rtt(primary_base);
+        block_id += 1;
+    }
+
+    // Drain remaining in-flight
+    for _ in 0..200 {
+        clock.advance(primary_base.max(Duration::from_millis(10)));
+        let now = clock.now();
+        let delivered = primary.deliver();
+        if delivered.is_empty() && primary.in_flight_count() == 0 && active_decoders.is_empty() {
+            break;
+        }
+        for pkt in delivered {
+            let bid = pkt.symbol.block_id;
+            for (decoder, _, _) in active_decoders.iter_mut() {
+                if decoder.params().block_id == bid && !decoder.is_decoded() {
+                    decoder.add_symbol(&pkt.symbol);
+                    break;
+                }
+            }
+        }
+        for (decoder, bstart, bsize) in &active_decoders {
+            if decoder.is_decoded() {
+                for i in 0..*bsize {
+                    let seq = (*bstart + i) as u64;
+                    if !deliver_times.contains_key(&seq) {
+                        deliver_times.insert(seq, now);
+                        delivery_order.push(seq);
+                    }
+                }
+            }
+        }
+        active_decoders.retain(|(dec, _, _)| !dec.is_decoded());
     }
 
     let end_time = clock.now();
@@ -995,8 +1192,13 @@ fn run_trial(
         TransportKind::QuicSingle => run_quic_single(seed, scenario),
         TransportKind::QuicDualRR => run_quic_dual_rr(seed, scenario),
         TransportKind::QuicDualMinRtt => run_quic_dual_minrtt(seed, scenario),
-        TransportKind::RaptorpathSingle => run_raptorpath_single(seed, scenario),
-        TransportKind::RaptorpathDual => run_raptorpath_dual(seed, scenario),
+        TransportKind::RaptorpathSingle => {
+            run_raptorpath_single(seed, scenario, transport.backend)
+        }
+        TransportKind::RaptorpathDual => {
+            run_raptorpath_dual(seed, scenario, transport.backend)
+        }
+        TransportKind::RaptorpathRaptorqSingle => run_raptorq_single(seed, scenario),
     }
 }
 
@@ -1119,9 +1321,13 @@ fn transport_comparison_benchmark() {
     }
 
     println!();
-    println!("Transport configs: quic_single (reliable retransmit, 1 path),");
-    println!("  quic_dual_rr (reliable, 2 paths round-robin),");
-    println!("  quic_dual_minrtt (reliable, 2 paths min-RTT selection),");
-    println!("  raptorpath_single (FEC+lossy, 1 path),");
-    println!("  raptorpath_dual (FEC+lossy, 2 paths multipath scheduler).");
+    println!("Transport configs:");
+    println!("  quic_single        — reliable retransmit, 1 path");
+    println!("  quic_dual_rr       — reliable, 2 paths round-robin");
+    println!("  quic_dual_minrtt   — reliable, 2 paths min-RTT selection");
+    println!("  rp_rlc_single      — RLC window FEC, 1 path");
+    println!("  rp_rlc_dual        — RLC window FEC, 2 paths multipath");
+    println!("  rp_mettle_single   — METTLE window FEC, 1 path");
+    println!("  rp_mettle_dual     — METTLE window FEC, 2 paths multipath");
+    println!("  rp_raptorq_single  — RaptorQ block FEC, 1 path");
 }
