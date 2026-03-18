@@ -652,7 +652,7 @@ fn run_raptorpath_single(
 
         // Adaptive repair
         let repair_rate = fec_ctrl.compute_repair_rate(&estimator);
-        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).max(1).min(10);
+        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).min(10);
         for _ in 0..repair_count {
             if encoder.window_size() == 0 {
                 break;
@@ -808,7 +808,7 @@ fn run_raptorpath_dual(
 
         // Adaptive repair on primary
         let repair_rate = fec_ctrl.compute_repair_rate(&estimator);
-        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).max(1).min(10);
+        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32).min(10);
         for _ in 0..repair_count {
             if encoder.window_size() == 0 {
                 break;

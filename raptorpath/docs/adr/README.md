@@ -58,3 +58,5 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0035](0035-algorithm-recommendations.md) | Algorithm recommendations and metric architecture review | Resolved |
 | [0036](0036-transport-comparison-benchmark.md) | Raptorpath vs reliable QUIC/MPTCP transport comparison benchmark | Accepted |
 | [0037](0037-nack-source-retransmit.md) | NACK source retransmission, cross-path repair, fractional repair accumulator | Accepted |
+| [0038](0038-benchmark-overhead-taxonomy.md) | Benchmark overhead taxonomy and methodology documentation | Accepted |
+| [0039](0039-overhead-reduction.md) | Overhead reduction: benchmark repair floor fix and window-mode symbol packing | Accepted |

@@ -377,6 +377,38 @@ For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-
   assembly stage that tags blocks with a priority level, and a modified `compute_repair_count`
   that scales repair symbols by priority.
 
+### Benchmark Interpretation
+
+The transport comparison benchmark ([ADR-0036](docs/adr/0036-transport-comparison-benchmark.md)) compares
+raptorpath's FEC-based recovery against retransmission-based QUIC/MPTCP across 6 network scenarios. The
+`overhead_pct` column measures **FEC repair symbol overhead only** — it does not include wire protocol
+overhead (padding, headers, metadata serialization). QUIC retransmissions are internal to the channel
+model and appear as increased latency, not explicit overhead.
+
+The meaningful comparison is in the latency and recovery columns: raptorpath trades bandwidth (higher
+overhead) for lower tail latency (p95/p99), especially on lossy and bursty links.
+
+See [ADR-0038](docs/adr/0038-benchmark-overhead-taxonomy.md) for the full overhead taxonomy (five layers)
+and metric definitions.
+
+### Symbol Packing
+
+Window-mode framing maps 1 IP packet → 1 FEC symbol, padding with zeros to `symbol_size`. For small
+packets (VoIP 160B, DNS 60B, TCP ACK 52B) in a 512B symbol, 60-90% of each symbol is wasted.
+
+`SymbolPacker` (in `net/framing.rs`) accumulates multiple small packets into one symbol using block-mode
+length-prefix framing (`[u16 BE len][data]...[u16 0x0000 sentinel]`). This reuses the existing
+`extract_packets()` function — no new parser needed.
+
+- **Enabled for:** `ProtocolHint::Realtime` (VoIP, gaming)
+- **Flush timeout:** 1ms (configurable) — partial buffers are emitted before the deadline
+- **Protocol negotiation:** `packed: bool` in `ControlMessage::WindowStart` tells the receiver which
+  extraction path to use
+- **Impact:** 2-3x better symbol utilization for small packets; fewer symbols → fewer repairs → less
+  FEC overhead
+
+See [ADR-0039](docs/adr/0039-overhead-reduction.md) for details and trade-offs.
+
 ### Lower Priority
 
 - [ ] **Reinforcement learning for scheduling** — Use RL to learn scheduling policies that

@@ -144,6 +144,10 @@ pub enum ControlMessage {
     WindowStart {
         symbol_size: u16,
         backend: FecBackend,
+        /// Whether the sender packs multiple small packets into each symbol.
+        /// When true, the receiver must use `extract_packets()` (block-mode framing)
+        /// instead of `extract_window_packet()` to recover individual packets.
+        packed: bool,
     },
 
     /// Acknowledge received window-mode symbols (receiver → sender).

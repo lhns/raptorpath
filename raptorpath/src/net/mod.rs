@@ -616,6 +616,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         } else {
             None
         };
+        // Whether the sender packs multiple packets per symbol (set via WindowStart)
+        let mut window_packed: bool = false;
         // Track highest delivered seq for window ACK
         let mut highest_delivered_seq: u64 = 0;
         // Reorder buffer for window mode — delivers packets in sequence order
@@ -696,7 +698,16 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 };
 
                                 for (dseq, ddata) in deliverable {
-                                    if let Some(pkt_data) = framing::extract_window_packet(&ddata) {
+                                    // Extract packets: packed mode uses block-mode framing,
+                                    // unpacked mode uses single-packet window framing.
+                                    let packets: Vec<Vec<u8>> = if window_packed {
+                                        framing::extract_packets(&ddata)
+                                    } else {
+                                        framing::extract_window_packet(&ddata)
+                                            .into_iter()
+                                            .collect()
+                                    };
+                                    for pkt_data in packets {
                                         match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
                                             Ok(()) => {}
                                             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -719,7 +730,14 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         if let Some(ref mut reorder) = reorder_buf {
                             let expired = reorder.drain_expired(Instant::now());
                             for (dseq, ddata) in expired {
-                                if let Some(pkt_data) = framing::extract_window_packet(&ddata) {
+                                let packets: Vec<Vec<u8>> = if window_packed {
+                                    framing::extract_packets(&ddata)
+                                } else {
+                                    framing::extract_window_packet(&ddata)
+                                        .into_iter()
+                                        .collect()
+                                };
+                                for pkt_data in packets {
                                     let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                                 }
                                 if dseq > highest_delivered_seq {
@@ -879,6 +897,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     }
                 }
                 WireMessage::Control(ctrl_msg) => {
+                    // Handle WindowStart packed flag in receiver loop
+                    if let ControlMessage::WindowStart { packed, .. } = &ctrl_msg {
+                        window_packed = *packed;
+                    }
+
                     // ADR-0030: handle WindowSwitch in receiver loop to swap decoder
                     if let ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size: switch_sym_size } = &ctrl_msg {
                         info!(
@@ -1199,6 +1222,12 @@ async fn run_window_sender(
     let mut repair_debt: f64 = 0.0;
     /// Maps source seq → path it was sent on (for cross-path retransmission).
     let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    /// Last source path used (for NACK repair path selection outside the send macro).
+    let mut last_source_path: u32 = 0;
+
+    // Symbol packer: accumulate small packets into packed symbols for Realtime mode
+    let use_packing = protocol_hint == ProtocolHint::Realtime;
+    let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
     // Announce window mode to peer on all paths
     {
@@ -1206,15 +1235,133 @@ async fn run_window_sender(
         for pid in sched.active_paths() {
             let _ = transport.send_control_datagram(
                 pid,
-                ControlMessage::WindowStart { symbol_size, backend: fec_backend },
+                ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: use_packing },
             );
         }
     }
 
+    // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
+    macro_rules! send_source_symbol {
+        ($framed:expr) => {{
+            let wire_sym = encoder.add_source(&$framed);
+
+            // Send source symbol — pick best path by lowest RTT with capacity
+            let source_path = {
+                let sched = scheduler.lock();
+                select_source_path(&sched)
+            };
+            last_source_path = source_path;
+            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+            let batch = SymbolBatch {
+                symbols: vec![wire_sym.clone()],
+                send_timestamp_us: now_us(),
+                batch_seq,
+                path_id: source_path,
+            };
+            if let Err(e) = transport.send_symbols(source_path, batch) {
+                warn!(source_path, ?e, "failed to send window source symbol");
+            }
+            {
+                let mut sched = scheduler.lock();
+                if let Some(p) = sched.path_mut(source_path) {
+                    p.in_flight += 1;
+                }
+            }
+            if let Some(ps) = stats.path(source_path) {
+                ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+            }
+            stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
+
+            // Track which path this source was sent on (for cross-path retransmission)
+            source_path_map.insert(wire_sym.block_id, source_path);
+
+            // Redundant send for Realtime: duplicate source on second-best path
+            if protocol_hint == ProtocolHint::Realtime {
+                let alt_path = {
+                    let sched = scheduler.lock();
+                    sched.redundant_source_path(source_path)
+                };
+                if let Some(alt) = alt_path {
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![wire_sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: alt,
+                    };
+                    if let Err(e) = transport.send_symbols(alt, batch) {
+                        warn!(alt, ?e, "failed to send redundant source symbol");
+                    }
+                    {
+                        let mut sched = scheduler.lock();
+                        if let Some(p) = sched.path_mut(alt) {
+                            p.in_flight += 1;
+                        }
+                    }
+                    if let Some(ps) = stats.path(alt) {
+                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+
+            // Fractional repair accumulator
+            if encoder.window_size() > 1 {
+                let current_loss = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id))
+                        .map(|p| p.estimator.loss_rate())
+                        .fold(0.0f64, f64::max)
+                };
+                repair_debt += current_loss * REPAIR_FACTOR;
+
+                while repair_debt >= 1.0 && encoder.window_size() > 0 {
+                    repair_debt -= 1.0;
+                    let repair_path = {
+                        let sched = scheduler.lock();
+                        select_repair_path(&sched, source_path)
+                    };
+                    let repair_sym = encoder.generate_repair();
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![repair_sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: repair_path,
+                    };
+                    if let Err(e) = transport.send_symbols(repair_path, batch) {
+                        warn!(repair_path, ?e, "failed to send proactive repair symbol");
+                    }
+                    {
+                        let mut sched = scheduler.lock();
+                        if let Some(p) = sched.path_mut(repair_path) {
+                            p.in_flight += 1;
+                        }
+                    }
+                    if let Some(ps) = stats.path(repair_path) {
+                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }};
+    }
+
     loop {
+        // Determine if packer has pending data for flush timer
+        let packer_pending = use_packing && packer.is_pending();
+
         let packet = tokio::select! {
             p = tun.read_packet() => p,
             _ = shutdown_rx.recv() => {
+                // Flush any remaining packed data before shutdown
+                if use_packing {
+                    if let Some(packed) = packer.flush() {
+                        send_source_symbol!(packed);
+                    }
+                }
                 // Send Shutdown on all paths
                 let sched = scheduler.lock();
                 for pid in sched.active_paths() {
@@ -1223,121 +1370,38 @@ async fn run_window_sender(
                 info!("window sender shut down gracefully");
                 return;
             }
+            _ = tokio::time::sleep(packer.time_until_flush()), if packer_pending => {
+                // Flush timeout expired — emit partial packed symbol
+                if let Some(packed) = packer.flush() {
+                    send_source_symbol!(packed);
+                }
+                continue;
+            }
         };
 
         let pkt = match packet {
             Some(p) => p,
             None => {
+                // Flush remaining packed data before exit
+                if use_packing {
+                    if let Some(packed) = packer.flush() {
+                        send_source_symbol!(packed);
+                    }
+                }
                 info!("TUN closed");
                 return;
             }
         };
 
-        // Frame the packet as a window-mode source symbol (length-prefixed, padded)
-        let framed = framing::frame_window_packet(&pkt, symbol_size);
-        let wire_sym = encoder.add_source(&framed);
-
-        // Send source symbol — pick best path by lowest RTT with capacity
-        let source_path = {
-            let sched = scheduler.lock();
-            select_source_path(&sched)
-        };
-        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-        let batch = SymbolBatch {
-            symbols: vec![wire_sym.clone()],
-            send_timestamp_us: now_us(),
-            batch_seq,
-            path_id: source_path,
-        };
-        if let Err(e) = transport.send_symbols(source_path, batch) {
-            warn!(source_path, ?e, "failed to send window source symbol");
-        }
-        {
-            let mut sched = scheduler.lock();
-            if let Some(p) = sched.path_mut(source_path) {
-                p.in_flight += 1;
+        if use_packing {
+            // Pack multiple small packets into one symbol
+            if let Some(packed) = packer.push(&pkt) {
+                send_source_symbol!(packed);
             }
-        }
-        if let Some(ps) = stats.path(source_path) {
-            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-        }
-        stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
-
-        // Track which path this source was sent on (for cross-path retransmission)
-        source_path_map.insert(wire_sym.block_id, source_path);
-
-        // Redundant send for Realtime: duplicate source on second-best path
-        if protocol_hint == ProtocolHint::Realtime {
-            let alt_path = {
-                let sched = scheduler.lock();
-                sched.redundant_source_path(source_path)
-            };
-            if let Some(alt) = alt_path {
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch {
-                    symbols: vec![wire_sym],
-                    send_timestamp_us: now_us(),
-                    batch_seq,
-                    path_id: alt,
-                };
-                if let Err(e) = transport.send_symbols(alt, batch) {
-                    warn!(alt, ?e, "failed to send redundant source symbol");
-                }
-                {
-                    let mut sched = scheduler.lock();
-                    if let Some(p) = sched.path_mut(alt) {
-                        p.in_flight += 1;
-                    }
-                }
-                if let Some(ps) = stats.path(alt) {
-                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        }
-
-        // Fractional repair accumulator: each source adds loss_rate * REPAIR_FACTOR
-        // to debt. When debt >= 1.0, emit one repair symbol. ACK feedback and NACKs
-        // reduce debt, so at low loss the effective proactive rate approaches zero.
-        if encoder.window_size() > 1 {
-            let current_loss = {
-                let sched = scheduler.lock();
-                sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .map(|p| p.estimator.loss_rate())
-                    .fold(0.0f64, f64::max)
-            };
-            repair_debt += current_loss * REPAIR_FACTOR;
-
-            while repair_debt >= 1.0 && encoder.window_size() > 0 {
-                repair_debt -= 1.0;
-                let repair_path = {
-                    let sched = scheduler.lock();
-                    select_repair_path(&sched, source_path)
-                };
-                let repair_sym = encoder.generate_repair();
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch {
-                    symbols: vec![repair_sym],
-                    send_timestamp_us: now_us(),
-                    batch_seq,
-                    path_id: repair_path,
-                };
-                if let Err(e) = transport.send_symbols(repair_path, batch) {
-                    warn!(repair_path, ?e, "failed to send proactive repair symbol");
-                }
-                {
-                    let mut sched = scheduler.lock();
-                    if let Some(p) = sched.path_mut(repair_path) {
-                        p.in_flight += 1;
-                    }
-                }
-                if let Some(ps) = stats.path(repair_path) {
-                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-                }
-                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-            }
+        } else {
+            // Legacy: one packet per symbol (padded)
+            let framed = framing::frame_window_packet(&pkt, symbol_size);
+            send_source_symbol!(framed);
         }
 
         // Drain NACK channel → retransmit exact source symbols + repair margin
@@ -1361,10 +1425,10 @@ async fn run_window_sender(
                             break;
                         }
                         // Cross-path: avoid the path that originally carried this symbol
-                        let original_path = source_path_map.get(&seq).copied().unwrap_or(source_path);
+                        let original_path = source_path_map.get(&seq).copied().unwrap_or(last_source_path);
                         let nack_path = {
                             let sched = scheduler.lock();
-                            select_repair_path_avoiding(&sched, original_path, source_path)
+                            select_repair_path_avoiding(&sched, original_path, last_source_path)
                         };
 
                         // Try exact source retransmission first, fall back to repair
@@ -1399,7 +1463,7 @@ async fn run_window_sender(
                     let margin = (retransmitted as f64 * current_loss).ceil() as u64;
                     let margin_path = {
                         let sched = scheduler.lock();
-                        select_repair_path(&sched, source_path)
+                        select_repair_path(&sched, last_source_path)
                     };
                     for _ in 0..margin {
                         if encoder.window_size() == 0 {
@@ -1505,7 +1569,7 @@ async fn run_window_sender(
                     let flush_repair_count = (encoder.window_size() * 2).min(MAX_WINDOW_SIZE);
                     let flush_path = {
                         let fsched = scheduler.lock();
-                        select_repair_path(&fsched, source_path)
+                        select_repair_path(&fsched, last_source_path)
                     };
                     for _ in 0..flush_repair_count {
                         if encoder.window_size() == 0 { break; }
@@ -2021,8 +2085,8 @@ fn handle_control_message(
             scheduler.lock().remove_path(removed_id);
         }
 
-        ControlMessage::WindowStart { symbol_size, backend } => {
-            debug!(path_id, symbol_size, ?backend, "peer entered window mode");
+        ControlMessage::WindowStart { symbol_size, backend, packed } => {
+            debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
         }
 
         ControlMessage::WindowAck { received_up_to } => {
