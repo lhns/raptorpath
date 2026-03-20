@@ -68,10 +68,8 @@ pub struct PeerConfig {
     pub fec_auto_switch: bool,
     /// Enable PI feedback loop in FEC rate controller
     pub enable_pi_feedback: bool,
-    /// GE burst scaling multiplier (0.0 = disabled)
-    pub ge_burst_factor: f64,
-    /// Extra FEC % during bursts in realtime mode (0.0 = disabled)
-    pub realtime_burst_extra: f64,
+    /// Symbol size override (0 = use profile default)
+    pub symbol_size_override: u16,
     /// Enable ProbeRTT phase in BBR
     pub enable_probe_rtt: bool,
     /// Reorder buffer timeout in ms (0 = disabled)
@@ -140,6 +138,83 @@ pub const MAX_NACK_GAPS: usize = 20;
 const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
 /// Minimum interval between NACK-triggered repair bursts (microseconds).
 const NACK_REPAIR_COOLDOWN_US: u64 = 5_000;
+
+/// Congestion-aware NACK repair throttle (ADR-0046).
+///
+/// Tracks loss rate and RTT trends to detect congestion vs wireless loss.
+/// When congestion is detected (rising loss AND rising RTT), exponentially
+/// reduces NACK repair count. When congestion clears, linearly ramps up.
+struct NackCongestionState {
+    /// Current multiplier for NACK repairs (0.0 = fully suppressed, 1.0 = normal)
+    repair_multiplier: f64,
+    /// Previous loss rate sample
+    prev_loss_rate: f64,
+    /// Consecutive rising-loss periods
+    rising_loss_count: u32,
+    /// Previous RTT sample
+    prev_rtt: Option<Duration>,
+    /// Consecutive rising-RTT periods
+    rising_rtt_count: u32,
+    /// How many consecutive rises trigger backoff
+    congestion_threshold: u32,
+    /// Per-update recovery step when not congested
+    recovery_step: f64,
+}
+
+impl NackCongestionState {
+    fn new() -> Self {
+        Self {
+            repair_multiplier: 1.0,
+            prev_loss_rate: 0.0,
+            rising_loss_count: 0,
+            prev_rtt: None,
+            rising_rtt_count: 0,
+            congestion_threshold: 2,
+            recovery_step: 0.1,
+        }
+    }
+
+    /// Update with current loss rate and RTT. Returns the repair multiplier.
+    fn update(&mut self, loss_rate: f64, rtt: Option<Duration>) -> f64 {
+        // Detect rising loss (>10% relative increase + 0.1% absolute floor)
+        if loss_rate > self.prev_loss_rate * 1.1 + 0.001 {
+            self.rising_loss_count += 1;
+        } else {
+            self.rising_loss_count = 0;
+        }
+        self.prev_loss_rate = loss_rate;
+
+        // Detect rising RTT
+        if let (Some(prev), Some(curr)) = (self.prev_rtt, rtt) {
+            if curr > prev + Duration::from_millis(1) {
+                self.rising_rtt_count += 1;
+            } else {
+                self.rising_rtt_count = 0;
+            }
+        }
+        self.prev_rtt = rtt;
+
+        // Congestion = both rising loss AND rising RTT
+        let congested = self.rising_loss_count >= self.congestion_threshold
+            && self.rising_rtt_count >= self.congestion_threshold;
+
+        if congested {
+            // Exponential backoff: halve the multiplier
+            self.repair_multiplier = (self.repair_multiplier * 0.5).max(0.0);
+        } else if self.rising_loss_count == 0 && self.rising_rtt_count == 0 {
+            // Both stable: linearly recover
+            self.repair_multiplier = (self.repair_multiplier + self.recovery_step).min(1.0);
+        }
+        // If only one is rising, hold steady
+
+        self.repair_multiplier
+    }
+
+    /// Current repair multiplier.
+    fn multiplier(&self) -> f64 {
+        self.repair_multiplier
+    }
+}
 
 /// Returns true if this config should use sliding-window mode instead of block mode.
 ///
@@ -262,6 +337,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.fec_backend
     };
 
+    // ADR-0006: derive block assembly profile from protocol hint
+    let profile = BlockProfile::from_hint(config.protocol_hint);
+
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(AtomicU64::new(0));
@@ -271,11 +349,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.protocol_hint,
         effective_fec_backend,
         config.enable_pi_feedback,
-        config.ge_burst_factor,
-        config.realtime_burst_extra,
+        profile.symbol_size,
     )));
-    // ADR-0006: derive block assembly profile from protocol hint
-    let profile = BlockProfile::from_hint(config.protocol_hint);
     info!(
         max_block_size = profile.max_block_size,
         flush_timeout_ms = profile.flush_timeout.as_millis() as u64,
@@ -1216,10 +1291,10 @@ async fn run_window_sender(
     };
     let mut prev_ack: u64 = 0;
     let mut last_nack_repair_us: u64 = 0;
-    /// Repair factor for fractional accumulator: controls proactive repair rate.
-    const REPAIR_FACTOR: f64 = 4.0;
     /// Fractional repair accumulator: tracks sub-symbol repair debt.
     let mut repair_debt: f64 = 0.0;
+    /// Congestion-aware NACK repair throttle (ADR-0046).
+    let mut nack_congestion = NackCongestionState::new();
     /// Maps source seq → path it was sent on (for cross-path retransmission).
     let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
     /// Last source path used (for NACK repair path selection outside the send macro).
@@ -1306,16 +1381,21 @@ async fn run_window_sender(
 
             // Fractional repair accumulator
             if encoder.window_size() > 1 {
-                let current_loss = {
+                let repair_rate = {
+                    let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
-                    sched
+                    let path_estimator = sched
                         .active_paths()
                         .iter()
                         .filter_map(|id| sched.path(*id))
-                        .map(|p| p.estimator.loss_rate())
-                        .fold(0.0f64, f64::max)
+                        .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|p| &p.estimator);
+                    match path_estimator {
+                        Some(est) => ctrl.compute_repair_rate(est),
+                        None => 0.0,
+                    }
                 };
-                repair_debt += current_loss * REPAIR_FACTOR;
+                repair_debt += repair_rate;
 
                 while repair_debt >= 1.0 && encoder.window_size() > 0 {
                     repair_debt -= 1.0;
@@ -1405,9 +1485,37 @@ async fn run_window_sender(
         }
 
         // Drain NACK channel → retransmit exact source symbols + repair margin
+        // ADR-0046: congestion-aware NACK backoff
         let now_repair_us = now_us();
         if now_repair_us.saturating_sub(last_nack_repair_us) >= NACK_REPAIR_COOLDOWN_US {
+            // Update congestion state from scheduler
+            let (current_loss, current_rtt) = {
+                let sched = scheduler.lock();
+                let worst = sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .max_by(|a, b| {
+                        a.estimator
+                            .loss_rate()
+                            .partial_cmp(&b.estimator.loss_rate())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                match worst {
+                    Some(p) => (p.estimator.loss_rate(), p.bbr_min_rtt()),
+                    None => (0.0, None),
+                }
+            };
+            let nack_multiplier = nack_congestion.update(current_loss, current_rtt);
+            let effective_max_repairs =
+                (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
+
             while let Ok(gaps) = nack_rx.try_recv() {
+                if effective_max_repairs == 0 {
+                    // Fully suppressed — drain NACK queue without sending repairs
+                    continue;
+                }
+
                 let (win_start, win_end) = encoder.window_span();
                 let mut retransmitted: u64 = 0;
                 let mut nacked_count: u64 = 0;
@@ -1421,7 +1529,7 @@ async fn run_window_sender(
                     nacked_count += clamped_end - clamped_start + 1;
 
                     for seq in clamped_start..=clamped_end {
-                        if retransmitted >= MAX_NACK_REPAIRS_PER_NACK as u64 {
+                        if retransmitted >= effective_max_repairs {
                             break;
                         }
                         // Cross-path: avoid the path that originally carried this symbol
@@ -1485,16 +1593,19 @@ async fn run_window_sender(
                 }
 
                 // Reduce repair_debt — NACK'd symbols are handled reactively now
-                let current_loss = {
+                let repair_rate = {
+                    let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
-                    sched
-                        .active_paths()
-                        .iter()
+                    let path_est = sched.active_paths().iter()
                         .filter_map(|id| sched.path(*id))
-                        .map(|p| p.estimator.loss_rate())
-                        .fold(0.0f64, f64::max)
+                        .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|p| &p.estimator);
+                    match path_est {
+                        Some(est) => ctrl.compute_repair_rate(est),
+                        None => 0.0,
+                    }
                 };
-                let debt_reduction = nacked_count as f64 * current_loss * REPAIR_FACTOR;
+                let debt_reduction = nacked_count as f64 * repair_rate;
                 repair_debt = (repair_debt - debt_reduction).max(0.0);
             }
             last_nack_repair_us = now_repair_us;
@@ -1505,16 +1616,19 @@ async fn run_window_sender(
         if ack > prev_ack {
             // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
             let newly_acked = ack - prev_ack;
-            let current_loss = {
+            let repair_rate = {
+                let ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
-                sched
-                    .active_paths()
-                    .iter()
+                let path_est = sched.active_paths().iter()
                     .filter_map(|id| sched.path(*id))
-                    .map(|p| p.estimator.loss_rate())
-                    .fold(0.0f64, f64::max)
+                    .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|p| &p.estimator);
+                match path_est {
+                    Some(est) => ctrl.compute_repair_rate(est),
+                    None => 0.0,
+                }
             };
-            let debt_reduction = newly_acked as f64 * current_loss * REPAIR_FACTOR;
+            let debt_reduction = newly_acked as f64 * repair_rate;
             repair_debt = (repair_debt - debt_reduction).max(0.0);
 
             encoder.advance(ack.saturating_sub(MAX_WINDOW_SIZE as u64 / 2));

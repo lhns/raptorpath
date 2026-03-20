@@ -1,7 +1,8 @@
 # RaptorPath Comprehensive Algorithm & Backend Overview
 
 Consolidated reference for all FEC backends, control-plane algorithms, scheduler features,
-and their measured performance. All data sourced from benchmarks run March 13-16, 2026.
+and their measured performance. Bench suite data updated 2026-03-19 after ADR-0043
+(information-theoretic FEC rate controller). Earlier data from March 13-16, 2026.
 
 For architecture and design rationale, see [../DESIGN.md](../DESIGN.md).
 For per-feature configuration, see [FEATURES.md](FEATURES.md).
@@ -108,50 +109,57 @@ Tapered interleaving improves recovery in high-loss scenarios with no regression
 
 ## 2. Control Plane Algorithms
 
-### 2.1 FEC Rate Controller (Feedforward + PI Feedback)
+### 2.1 FEC Rate Controller (Information-Theoretic + PI Feedback)
 
 **Files**: `control/fec_rate.rs`, `control/estimator.rs`
+**ADR**: [ADR-0043](adr/0043-information-theoretic-fec-rate.md)
 
 The FEC rate controller computes how many repair symbols to send per block/window.
 
-**Architecture**:
-1. **Feedforward model**: Binomial model `r = k*p/(1-p) + z*sqrt(n*p*(1-p))` computes the
-   statistically expected repair count. Uses Newton's method on normal CDF constraint to
-   meet `target_tail_loss` (default 1e-5).
-2. **PI feedback loop**: Observes actual block decode success/failure. Proportional (Kp=2.0)
-   + Integral (Ki=0.5) correction with anti-windup clamping.
-3. **Protocol hint awareness**: Realtime gets extra burst margin; Bulk reduces FEC to 70%.
+**Architecture** (rewritten in ADR-0043):
 
-**Measured overhead cost** (ablation, 2026-03-16, normal 50% budget):
+The controller uses an information-theoretic optimal formula instead of the previous
+stacked-multiplier approach. For an i.i.d. erasure channel with loss rate p, the minimum
+overhead is `p/(1-p)`. For a burst channel with max burst length B and delay constraint
+T symbols, the minimum overhead is `B/T` (Badr et al. 2017).
 
-| Feature | Datacenter | WiFi | LTE | Congested |
-|---------|-----------|------|-----|-----------|
-| PI feedback | +16.4pp | +12.7pp | +7.3pp | (capped) |
-| GE burst factor | +9.1pp | +14.5pp | +10.9pp | (capped) |
-| Realtime burst extra | +12.7pp | +9.1pp | +3.6pp | (capped) |
+```
+base_rate  = max(p/(1-p) + codec_overhead, B/T)
+margin     = (z * uncertainty * 0.25).clamp(0.0, 1.0)    // single safety margin
+rate       = base_rate * (1 + margin) + pi_correction + hint_offset
+```
 
-Recovery is 100% everywhere at normal budget — these features are "insurance" that pays
-off under tight budgets and long sessions where the loss model drifts.
+Where `T = (RTT * throughput) / symbol_size` naturally incorporates RTT:
+- **Low RTT** (datacenter): large T, random-loss term dominates, low overhead
+- **High RTT** (satellite): small T, burst term dominates, more proactive FEC
+- **No throughput data** (warmup): B/T term disabled, falls back to random-loss only
+
+Key design choices:
+1. **Single safety margin** from Beta posterior uncertainty, replacing 5 stacked margins
+2. **PI feedback** (Kp=0.5, Ki=0.1) for residual model mismatch — reduced gains because
+   the base formula is accurate enough that PI just handles residual error
+3. **Protocol hint**: additive offset (+0.05 Realtime, -0.05 Bulk, 0 Auto), not multiplicative
+4. **GE burst term** (B/T) is built into the formula, not a separate scaling factor
+
+**Measured wire overhead** (see [benchmark-results-2026-03-19.md](benchmark-results-2026-03-19.md) Table 2):
+DC total 8.3% (down from 12.5%), WiFi 13.9% (down from 20% capped), Congested 23.1%.
+The residual gap above the information-theoretic minimum comes from the 95th-percentile
+Beta upper bound — intentional conservatism for production safety.
 
 **Config**: `enable_pi_feedback = true`, `target_tail_loss = 1e-5`, `max_fec_overhead = 0.5`
 
-### 2.2 Gilbert-Elliott HMM Burst Scaling
+### 2.2 Gilbert-Elliott HMM
 
 **File**: `control/gilbert_elliott.rs` ([ADR-0023](adr/0023-gilbert-elliott-loss-model.md))
 
-Two-state Hidden Markov Model detects correlated loss bursts. When mean_burst_length > 2,
-scales repair by `1 + ln(burst_length - 1) * ge_burst_factor`.
+Two-state Hidden Markov Model detects correlated loss bursts. Feeds `mean_burst_length`
+into the FEC rate controller's B/T burst term and into streaming code parameters.
 
-**Measured impact** (ablation, 2026-03-16):
-- Most impactful control feature: saves 7-16pp overhead when disabled
-- WiFi (burst ~2.0): minimal scaling (~1.0x)
-- LTE (burst ~4.0): ~1.33x scaling
-- Congested: highest scaling, but capped at max_overhead
+As of ADR-0043, the GE burst model is integrated into the rate formula rather than being
+a separate multiplicative scaling factor. The B/T term naturally captures the
+delay-constrained capacity of a burst erasure channel.
 
-**Trade-off**: Insurance against correlated bursts that the i.i.d. binomial model underestimates.
-Worth the 7-16pp overhead cost for SLA-critical deployments on wireless channels.
-
-**Config**: `ge_burst_factor = 0.15` (default), `0.0` = disabled
+**Config**: Always on (feeds estimator). No separate `ge_burst_factor` toggle needed.
 
 ### 2.3 Backend Auto-Switch
 
@@ -166,7 +174,8 @@ Monitors loss rate and switches between FEC backends using hysteresis thresholds
 - Default thresholds (2%, 8%) are near-optimal from threshold sweep testing
 
 **Config**: `fec_auto_switch = true`, `fec_switch_threshold_low = 0.01`,
-`fec_switch_threshold_high = 0.10`, `fec_switch_interval = 5` seconds
+`fec_switch_threshold_high = 0.12` (raised from 0.10 per ADR-0043 bench data showing
+block codes cliff at ~12-15%), `fec_switch_interval = 5` seconds
 
 ### 2.4 Loss Estimator
 
@@ -178,8 +187,10 @@ Always-on component that feeds all control algorithms.
 - **Beta-Binomial**: Bayesian posterior with 95th-percentile upper confidence bound
 - **Decay**: `beta_decay` parameter for forgetting old observations
 
-Provides: `loss_rate_upper(0.95)` (for FEC rate), `is_in_burst()` (for realtime extra),
-`burst_factor` and `mean_burst_length` (for GE scaling and streaming parameters).
+Provides: `loss_rate_upper(0.95)` (for FEC rate), `loss_rate_mean()` (point estimate),
+`loss_uncertainty(0.95)` (relative uncertainty for safety margin), `is_in_burst()`,
+`rtt()`, `throughput()` (for B/T burst term), and `ge_estimator()` (for burst length
+and streaming parameters).
 
 ---
 
@@ -302,9 +313,53 @@ burst resilience.
 
 ---
 
-## 4. Performance Cross-Reference
+## 4. Bench Suite Results
 
-### Scenario x Backend → Recovery Rate (block mode, 25% overhead)
+Run with `cargo test --test bench_suite -- --nocapture` ([ADR-0042](adr/0042-bench-suite-consolidation.md)).
+
+Latest results: **[benchmark-results-2026-03-19.md](benchmark-results-2026-03-19.md)**
+(post-ADR-0043 information-theoretic FEC rate controller).
+
+The bench suite produces 5 tables:
+
+1. **Table 1: Backend Loss Sweep** — Recovery vs uniform loss for all 5 backends.
+   Key finding: block codes cliff at ~12-15% loss; RLC Window is the best window backend.
+2. **Table 2: Wire Overhead** — All 5 overhead layers. DC overhead dropped from 12.5%
+   to 5.7%, WiFi from 20% to 11.2% after ADR-0043.
+3. **Table 3: Feature Ablation** — One-feature-off at 8% FEC budget. Multipath is the
+   most impactful feature (+10.6pp overhead, +50ms p99 when removed).
+4. **Table 4: FEC vs Retransmit** — Dual-path FEC halves p99 latency vs retransmit
+   and achieves 100% in-order delivery.
+5. **Table 5: Transport Comparison** — Full ADR-0036 matrix: QUIC single, MPTCP (rr +
+   minRTT), FEC single, FEC dual across WiFi/LTE/Satellite. FEC dual-path wins on
+   latency (2x better p99); QUIC wins on bandwidth (7x less overhead).
+
+### Key numbers (from latest run)
+
+| Metric | QUIC single | MPTCP rr | FEC single | FEC dual |
+|--------|------------:|---------:|-----------:|---------:|
+| WiFi p99 (ms) | 20.0 | 20.0 | 18.8 | **10.0** |
+| LTE p99 (ms) | 82.7 | 81.3 | 95.3 | **40.0** |
+| Satellite p99 (ms) | 600.0 | 596.7 | 1010.0 | **286.7** |
+| WiFi overhead | **2.7%** | **2.8%** | 20.0% | 20.0% |
+| In-order (all) | ~51% | ~54% | ~99% | **~100%** |
+
+For full tables, analysis, and methodology notes, see the
+[timestamped results file](benchmark-results-2026-03-19.md).
+
+### Historical results
+
+| Date | Document | What changed |
+|------|----------|-------------|
+| 2026-03-19 | [benchmark-results-2026-03-19.md](benchmark-results-2026-03-19.md) | ADR-0043 info-theoretic rate controller, Table 5 transport comparison |
+| 2026-03-16 | [ablation-results-2026-03-16.md](ablation-results-2026-03-16.md) | Feature ablation overhead costs (pre-ADR-0043) |
+| 2026-03-15 | [benchmark-results-2026-03-15.md](benchmark-results-2026-03-15.md) | Post-METTLE bug fix, tapered interleaving |
+| 2026-03-14 | [benchmark-realworld-results-2026-03-14.md](benchmark-realworld-results-2026-03-14.md) | Real-world channel timing |
+| 2026-03-13 | [benchmark-results-2026-03-13.md](benchmark-results-2026-03-13.md) | Initial encode/decode speed, waterfall |
+
+### Legacy Performance Data
+
+#### Scenario x Backend → Recovery Rate (block mode, 25% overhead, March 2026)
 
 | Scenario | Stationary Loss | RaptorQ | RS | RLC | METTLE |
 |----------|----------------|---------|-----|-----|--------|
@@ -313,24 +368,7 @@ burst resilience.
 | LTE Mobile | ~3.5% | 100% | 100% | 100% | 60% |
 | Congested WiFi | ~12% | 40% | 40% | 40% | 0% |
 
-### Scenario x Backend → Recovery Rate (window mode, 2x loss budget)
-
-| Scenario | Stationary Loss | RLC | Streaming | METTLE |
-|----------|----------------|-----|-----------|--------|
-| Datacenter | ~0.1% | 100% | 42.9% | 14.3% |
-| WiFi Home | ~2.5% | 100% | 34.8% | 18.4% |
-| LTE Mobile | ~3.5% | 100% | 16.3% | 19.2% |
-| Congested WiFi | ~12% | 26.2% | 11.7% | 36.5% |
-
-### Feature Overhead Cost (normal budget, RaptorQ block mode)
-
-| Feature | Datacenter | WiFi | LTE | Congested |
-|---------|-----------|------|-----|-----------|
-| PI feedback | +16.4pp | +12.7pp | +7.3pp | (capped) |
-| GE burst factor | +9.1pp | +14.5pp | +10.9pp | (capped) |
-| RT burst extra | +12.7pp | +9.1pp | +3.6pp | (capped) |
-
-### Encode/Decode Speed Summary
+#### Encode/Decode Speed Summary (Criterion microbenchmarks, March 2026)
 
 | Backend | Encode (64KB) | Decode (repair) | Relative |
 |---------|-------------|-----------------|----------|
@@ -351,15 +389,16 @@ Concrete recommendations for common deployment scenarios, derived from measured 
 |-----------|-------|
 | **Backend** | RaptorQ (block, default) → RLC (window, if streaming) |
 | **Expected loss** | 2-5%, bursty (GE burst ~2 packets) |
-| **FEC overhead** | 15-20% |
+| **FEC overhead** | ~11-14% (measured: 11.2% at 2.5% loss, Realtime hint) |
 | **Interleave** | Depth 3 (tapered) |
-| **Key features** | GE burst scaling (handles WiFi bursts), PI feedback |
+| **Key features** | B/T burst term (handles WiFi bursts via RTT-aware formula) |
 | **Multipath** | Single path typical; dual if WiFi + Ethernet available |
-| **Recovery expectation** | 100% at DC-LTE loss levels; may drop at Congested |
+| **Recovery expectation** | 100% at DC-WiFi loss levels; may drop at Congested |
 
-**Why this works**: RaptorQ achieves 100% recovery at 25% overhead for WiFi-level loss.
-The GE HMM detects WiFi's characteristic short bursts and the tapered interleaver
-spreads them across blocks. PI feedback corrects for model drift over long sessions.
+**Why this works**: The information-theoretic formula provisions ~p/(1-p) ≈ 2.6% base rate
+for 2.5% loss, plus codec overhead and safety margin. The B/T burst term adds protection
+proportional to burst_length/T when the GE model detects correlated loss. Total overhead
+is ~11% — half of the previous 20% (capped) result.
 
 ### Datacenter
 
@@ -367,14 +406,15 @@ spreads them across blocks. PI feedback corrects for model drift over long sessi
 |-----------|-------|
 | **Backend** | RaptorQ (block) with minimal FEC, or no FEC at all |
 | **Expected loss** | <0.1%, near-i.i.d. |
-| **FEC overhead** | 5% (insurance) or 0% (rely on retransmission) |
+| **FEC overhead** | ~6-8% (measured: 5.7% FEC + 2.6% framing at 0.1% loss) |
 | **Interleave** | Off (depth 1) — no bursts to spread |
-| **Key features** | None critical; disable GE, ProbeRTT, reorder buffer |
+| **Key features** | None critical; low RTT → large T → B/T term negligible |
 | **Multipath** | Not needed (single reliable path) |
 | **Recovery expectation** | 100% always; retransmission at <1ms RTT is negligible |
 
-**Why this works**: At sub-1% loss and sub-1ms RTT, FEC adds overhead for almost no
-benefit. Retransmission costs ~2ms. If using FEC as insurance, RaptorQ at 5% is sufficient.
+**Why this works**: At sub-1% loss and sub-1ms RTT, the optimal rate p/(1-p) ≈ 0.1%.
+The measured 5.7% overhead comes from the Beta posterior's 95th-percentile conservatism.
+Retransmission costs ~2ms. For absolute minimum overhead, set `max_fec_overhead = 0.02`.
 
 ### Mobile Multipath (WiFi + LTE)
 
@@ -413,12 +453,12 @@ latency spiral that would be catastrophic for real-time traffic.
 
 | Scenario | Backend | Overhead | Interleave | Multipath | Key Feature |
 |----------|---------|----------|------------|-----------|-------------|
-| Datacenter | RaptorQ | 5% | Off | No | — |
-| WiFi Home | RaptorQ | 15% | Depth 3 | No | GE burst |
-| WiFi + LTE | RLC/RaptorQ | 15-25% | Depth 2 | Smart | Reorder buffer |
-| VoIP/Gaming | METTLE/RaptorQ | 20-30% | Depth 2 | Redundant | ProbeRTT |
-| Satellite (GEO) | RaptorQ | 20-25% | Depth 4 | No | PI feedback |
-| Bulk transfer | RaptorQ (Bulk hint) | 10% | Depth 4 | No | — |
+| Datacenter | RaptorQ | ~6% | Off | No | — |
+| WiFi Home | RaptorQ | ~11-14% | Depth 3 | No | B/T burst term |
+| WiFi + LTE | RLC/RaptorQ | 11-20% | Depth 2 | Smart | Reorder buffer, multipath |
+| VoIP/Gaming | METTLE/RaptorQ | 15-20% | Depth 2 | Redundant | ProbeRTT |
+| Satellite (GEO) | RaptorQ | 15-20% | Depth 4 | No | B/T (high RTT → more FEC) |
+| Bulk transfer | RaptorQ (Bulk hint) | ~6-10% | Depth 4 | No | -0.05 hint offset |
 
 ---
 
@@ -426,9 +466,11 @@ latency spiral that would be catastrophic for real-time traffic.
 
 | Data | Source Document |
 |------|----------------|
+| **Consolidated bench suite (Tables 1-4)** | `tests/bench_suite.rs` ([ADR-0042](adr/0042-bench-suite-consolidation.md)) |
+| **FEC rate controller formula** | [ADR-0043](adr/0043-information-theoretic-fec-rate.md) |
 | Encode/decode speed, waterfall comparison | [benchmark-results-2026-03-13.md](benchmark-results-2026-03-13.md) |
 | Block/window recovery, tapered interleaving | [benchmark-results-2026-03-15.md](benchmark-results-2026-03-15.md) |
-| Feature ablation (overhead cost) | [ablation-results-2026-03-16.md](ablation-results-2026-03-16.md) |
+| Feature ablation (overhead cost, pre-ADR-0043) | [ablation-results-2026-03-16.md](ablation-results-2026-03-16.md) |
 | Reorder, multipath, backend switch tradeoffs | ADR-0034 tradeoff bench output |
 | Algorithm properties, competitive analysis | [algorithm-competitive-analysis.md](algorithm-competitive-analysis.md) |
 | Real-world channel timing data | [benchmark-realworld-results-2026-03-14.md](benchmark-realworld-results-2026-03-14.md) |
@@ -436,4 +478,4 @@ latency spiral that would be catastrophic for real-time traffic.
 
 ---
 
-*Last updated: 2026-03-17*
+*Last updated: 2026-03-19*

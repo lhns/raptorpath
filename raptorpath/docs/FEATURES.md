@@ -32,7 +32,7 @@ RaptorPath supports five swappable FEC backends via the `FecEncoder`/`FecDecoder
 |-----------|------|-------------|
 | Loss Estimator | `control/estimator.rs` | EWMA + Bayesian Beta-Binomial loss estimation with 95th-percentile upper confidence bound |
 | Gilbert-Elliott HMM | `control/gilbert_elliott.rs` | Two-state Hidden Markov Model for correlated loss / burst detection. Feeds `burst_factor` and `mean_burst_length` into FEC rate and streaming params ([ADR-0023](adr/0023-gilbert-elliott-hmm.md)) |
-| FEC Rate Controller | `control/fec_rate.rs` | Feedforward binomial model (`r = k*p/(1-p) + z*sqrt(n*p*(1-p))`) + PI feedback controller on residual block failure rate. Protocol-hint-aware (realtime/bulk/auto) |
+| FEC Rate Controller | `control/fec_rate.rs` | Information-theoretic optimal formula: `max(p/(1-p), B/T) × (1+margin) + PI + hint_offset`. RTT-aware via B/T burst term ([ADR-0043](adr/0043-information-theoretic-fec-rate.md)) |
 | Backend Selector | `control/backend_selector.rs` | Runtime loss-based auto-switching between FEC backends. Hysteresis thresholds prevent flapping ([ADR-0030](adr/0030-runtime-fec-backend-switching.md)) |
 
 ---
@@ -86,15 +86,15 @@ RaptorPath supports five swappable FEC backends via the `FecEncoder`/`FecDecoder
 | Interleave depth | `interleave_depth` | `--interleave-depth` | auto (hint-based: realtime=2, auto=3, bulk=4) |
 | Auto backend switching | `fec_auto_switch` | — | `true` (unless `fec_backend` is explicitly set) |
 | Switch threshold (low) | `fec_switch_threshold_low` | — | `0.01` |
-| Switch threshold (high) | `fec_switch_threshold_high` | — | `0.10` |
+| Switch threshold (high) | `fec_switch_threshold_high` | — | `0.12` |
 | Switch interval | `fec_switch_interval` | — | `5` seconds |
 | Target tail loss | `target_tail_loss` | `--target-tail-loss` | `1e-5` |
 | Max FEC overhead | `max_fec_overhead` | `--max-fec-overhead` | `0.5` |
 | Monitoring endpoint | `status_addr` | `--status-addr` | off |
 | TLS cert pinning | `pin_cert` | `--pin-cert` | off |
 | PI feedback loop | `enable_pi_feedback` | — | `true` |
-| GE burst scaling | `ge_burst_factor` | — | `0.3` (0.0 = disabled) |
-| Realtime burst extra | `realtime_burst_extra` | — | `0.10` (0.0 = disabled) |
+| ~~GE burst scaling~~ | ~~`ge_burst_factor`~~ | — | Removed in ADR-0043 (integrated into B/T formula) |
+| ~~Realtime burst extra~~ | ~~`realtime_burst_extra`~~ | — | Removed in ADR-0043 (replaced by +0.05 hint offset) |
 | ProbeRTT phase | `enable_probe_rtt` | — | `true` |
 | Reorder buffer timeout | `reorder_timeout_ms` | — | `20` (0 = disabled) |
 | Reorder buffer capacity | `reorder_max_size` | — | `500` |
@@ -105,7 +105,7 @@ RaptorPath supports five swappable FEC backends via the `FecEncoder`/`FecDecoder
 |-----------|------|--------|
 | Loss estimation (EWMA + Beta-Binomial) | `control/estimator.rs` | Core FEC rate dependency — all backends need loss estimates |
 | Gilbert-Elliott HMM | `control/gilbert_elliott.rs` | Integrated in LossEstimator; feeds burst params to FEC rate |
-| FEC rate controller (feedforward) | `control/fec_rate.rs` | Core repair symbol computation (PI feedback is toggleable separately) |
+| FEC rate controller (info-theoretic) | `control/fec_rate.rs` | Core repair symbol computation via `max(p/(1-p), B/T)` formula (PI feedback is toggleable separately) |
 | BBR congestion control | `scheduler/mod.rs` | Only CC algorithm implemented (ProbeRTT phase is toggleable separately) |
 | Tapered interleaving | `net/interleave.rs` | Automatic when interleave depth >= 2 |
 
@@ -141,22 +141,25 @@ raptorpath run --interleave-depth 4 ...
 | Protocol hint | `realtime`, `bulk`, `auto` |
 | Interleave depth | 1 (off), 2, 4 |
 
-### Ablation benchmark
+### Consolidated benchmark suite
 
-Run `cargo test --test ablation_bench -- --nocapture` to measure each toggleable
-feature's impact. Uses one-feature-off ablation: baseline (all on) then disable
-one at a time. Outputs markdown tables with recovery rate, repair count, overhead,
-and delta from baseline per feature × scenario × backend.
+Run `cargo test --test bench_suite -- --nocapture` to produce 4 focused tables
+([ADR-0042](adr/0042-bench-suite-consolidation.md)):
+
+1. **Backend Loss Sweep** — recovery rate vs uniform loss for all 5 backends with 95% CI
+2. **Wire Overhead Breakdown** — all 5 overhead layers from ADR-0038 (info-theoretic rate, ADR-0043)
+3. **Feature Ablation** — one-feature-off under WiFi bursty with 8% FEC budget (tightened from 20% in ADR-0043)
+4. **FEC vs Retransmit** — FEC dual-path vs retransmit dual-path across 3 scenarios
+5. **Transport Comparison** — QUIC single vs MPTCP (rr + minRTT) vs FEC (single + dual) across 3 scenarios (ADR-0036)
 
 ### Existing benchmarks
 
-- `tests/ablation_bench.rs` — Feature ablation benchmark (one-feature-off)
-- `tests/pipeline_ablation_bench.rs` — Full-pipeline ablation (recovery-only, [ADR-0033](adr/0033-pipeline-ablation-benchmark.md))
-- `tests/tradeoff_ablation_bench.rs` — Per-feature tradeoff benchmark with latency/ordering/burst metrics ([ADR-0034](adr/0034-tradeoff-ablation-benchmark.md))
+- `tests/bench_suite.rs` — Consolidated benchmark suite (ADR-0042)
 - `benches/fec_bench.rs` — Microbenchmarks for encode/decode throughput per backend
-- `docs/benchmark-results-2026-03-13.md` — FEC backend comparison results
-- `docs/benchmark-results-2026-03-15.md` — Latest benchmark results
+- `docs/benchmark-results-2026-03-19.md` — Latest: ADR-0043 rate controller + transport comparison
+- `docs/benchmark-results-2026-03-15.md` — Post-METTLE bug fix, tapered interleaving
 - `docs/benchmark-realworld-results-2026-03-14.md` — Real-world network test results
+- `docs/benchmark-results-2026-03-13.md` — Initial FEC backend comparison
 - `docs/algorithm-competitive-analysis.md` — Detailed algorithm comparison
 
 ---
@@ -237,9 +240,9 @@ Auto-switch detects 2-3 transitions across phases. Hysteresis prevents flapping.
 | **Benefit** | Optimal codec efficiency across changing conditions. RLC has near-zero overhead at low loss; Streaming/Mettle handles burst loss better at high loss |
 | **When to enable** | Variable loss environments (mobile, WiFi roaming), mixed-condition tunnels |
 | **When to disable** | Stable loss environments, benchmarking a specific backend, debugging codec issues |
-| **Threshold tuning** | Default (2%, 8%) is near-optimal. Lower thresholds = more switching, higher thresholds = slower adaptation |
+| **Threshold tuning** | Default (1%, 12%) — high threshold raised from 8%/10% per ADR-0043 bench data showing block codes cliff at ~12-15% loss (Table 1) |
 | **Key metric** | Per-phase overhead (low-loss phase vs high-loss phase), `backend_switches` count |
-| **Config** | `fec_auto_switch = true` (default), `fec_switch_threshold_low = 0.01`, `fec_switch_threshold_high = 0.10` |
+| **Config** | `fec_auto_switch = true` (default), `fec_switch_threshold_low = 0.01`, `fec_switch_threshold_high = 0.12` |
 
 ### Multipath Scheduling
 
@@ -268,36 +271,41 @@ decode probability). Optional redundant send mode sends source on all paths.
 ### FEC Rate: PI Feedback Loop
 
 **What it does**: Observes actual block decode success/failure rate and adjusts a correction
-term added to the feedforward FEC rate. Uses a PI (proportional-integral) controller to
-converge actual failure rate toward the target.
+term added to the information-theoretic base rate. Uses a PI (proportional-integral) controller
+(Kp=0.5, Ki=0.1) to converge actual failure rate toward the target.
 
-**Measured overhead cost** (ablation bench, 2026-03-16, RaptorQ block mode):
-DC +16.4pp, WiFi +12.7pp, LTE +7.3pp, Congested (capped at max_overhead).
+Since ADR-0043, PI gains are reduced (from Kp=2.0/Ki=0.5) because the information-theoretic
+base formula is accurate enough that PI only handles residual model mismatch.
+
+**Measured impact** (bench suite Table 3, 2026-03-19, 8% FEC budget):
+Disabling PI (`no_pi`) showed 0pp delta — the base formula's accuracy means PI contributes
+minimally in steady-state simulation. PI remains valuable in production where loss
+characteristics change over time and the estimator may lag.
 
 | Dimension | Impact |
 |-----------|--------|
-| **Cost** | 7-16pp overhead (measured). Can overshoot if loss changes rapidly (integral windup, mitigated by clamping) |
-| **Benefit** | Corrects for model mismatch between estimated and actual loss. Handles non-i.i.d. loss patterns that the binomial model underestimates |
-| **When to enable** | Production deployments, bursty channels, long-lived connections |
-| **When to disable** | Short benchmarks, well-characterized channels where feedforward model is accurate |
+| **Cost** | Minimal in steady state. Can overshoot if loss changes rapidly (integral windup, mitigated by clamping) |
+| **Benefit** | Corrects for model mismatch between estimated and actual loss over long sessions |
+| **When to enable** | Production deployments, long-lived connections, changing channel conditions |
+| **When to disable** | Short benchmarks, well-characterized channels |
 | **Config** | `enable_pi_feedback = true` (default) |
 
-### Gilbert-Elliott Burst Scaling
+### Gilbert-Elliott Burst Model
 
-**What it does**: When the GE HMM detects correlated loss (mean_burst_length > 2), scales up
-repair count by `1 + ln(burst_length - 1) * ge_burst_factor` to cover correlated drops the
-i.i.d. model misses.
+**What it does**: Two-state HMM detects correlated loss bursts. Feeds `mean_burst_length`
+into the FEC rate controller's B/T delay-constrained capacity term.
 
-**Measured overhead cost** (ablation bench, 2026-03-16, RaptorQ block mode):
-DC +9.1pp, WiFi +14.5pp, LTE +10.9pp, Congested (capped). Most impactful feature.
+As of ADR-0043, the GE model is integrated into the rate formula rather than being a
+separate multiplicative scaling factor. The `B/T` term (`burst_length / T_symbols`) naturally
+captures the delay-constrained capacity of a burst erasure channel, where
+`T = (RTT × throughput) / symbol_size`.
 
 | Dimension | Impact |
 |-----------|--------|
-| **Cost** | 7-16pp overhead (measured). Logarithmic scaling during burst periods |
-| **Benefit** | Correct FEC provisioning for bursty channels. Without it, the i.i.d. binomial model underestimates repair needs during bursts |
-| **When to enable** | WiFi, LTE, any channel with correlated loss |
-| **When to disable** | Datacenter (near-i.i.d. loss), benchmarks isolating other features |
-| **Config** | `ge_burst_factor = 0.15` (default), `0.0` = disabled |
+| **Cost** | None — the B/T term is built into the base formula |
+| **Benefit** | RTT-aware burst protection. High RTT → small T → B/T dominates → more proactive FEC. Low RTT → NACK can fill gaps cheaply |
+| **When relevant** | WiFi, LTE, satellite — any channel with correlated loss |
+| **Config** | Always on (no separate toggle needed) |
 
 ### Block Interleaving
 

@@ -79,7 +79,7 @@ fn test_estimator_total_loss() {
 
 #[test]
 fn test_fec_rate_increases_with_loss() {
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
 
     let mut est_low = LossEstimator::new();
     for _ in 0..100 {
@@ -102,7 +102,7 @@ fn test_fec_rate_increases_with_loss() {
 
 #[test]
 fn test_fec_rate_respects_max_overhead() {
-    let ctrl = FecRateController::new(1e-5, 0.3, ProtocolHint::Auto, FecBackend::RaptorQ); // max 30%
+    let ctrl = FecRateController::new(1e-5, 0.3, ProtocolHint::Auto, FecBackend::RaptorQ, 1200); // max 30%
 
     let mut est = LossEstimator::new();
     for _ in 0..100 {
@@ -115,7 +115,7 @@ fn test_fec_rate_respects_max_overhead() {
 
 #[test]
 fn test_pi_controller_adapts_on_failure() {
-    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
 
     // Repeated failures → PI should increase correction
     for _ in 0..30 {
@@ -140,7 +140,7 @@ fn test_pi_controller_adapts_on_failure() {
 
 #[test]
 fn test_pi_controller_stable_on_success() {
-    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
 
     // All successes — PI should stay near zero
     for _ in 0..100 {
@@ -159,7 +159,7 @@ fn test_pi_controller_stable_on_success() {
 fn test_full_control_loop() {
     // Simulate the full loop: estimate loss → compute FEC → simulate decode → feedback
     let mut est = LossEstimator::new();
-    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+    let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
 
     // Phase 1: 10% loss, system should converge
     for round in 0..100 {
@@ -193,7 +193,7 @@ fn test_full_control_loop() {
 
 #[test]
 fn test_burst_detection_increases_fec() {
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ, 1200);
 
     let mut est_normal = LossEstimator::new();
     for _ in 0..50 {

@@ -179,6 +179,22 @@ impl LossEstimator {
         self.jitter
     }
 
+    /// Point estimate of loss rate from Beta posterior mean.
+    pub fn loss_rate_mean(&self) -> f64 {
+        self.beta_b / (self.beta_a + self.beta_b)
+    }
+
+    /// Relative uncertainty: (upper_bound - mean) / mean.
+    /// Returns 0.0 when loss is negligible.
+    pub fn loss_uncertainty(&self, confidence: f64) -> f64 {
+        let mean = self.loss_rate_mean();
+        if mean < 1e-10 {
+            return 0.0;
+        }
+        let upper = self.loss_rate_upper(confidence);
+        ((upper - mean) / mean).max(0.0)
+    }
+
     pub fn ge_estimator(&self) -> &GilbertElliottEstimator {
         &self.ge
     }

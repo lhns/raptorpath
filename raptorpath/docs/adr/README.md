@@ -62,3 +62,8 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0039](0039-overhead-reduction.md) | Overhead reduction: benchmark repair floor fix and window-mode symbol packing | Accepted |
 | [0040](0040-benchmark-repair-alignment.md) | Benchmark repair alignment + multi-backend (RLC/METTLE/RaptorQ) comparison | Accepted |
 | [0041](0041-simd-gf256.md) | SIMD-accelerated GF(2^8) multiply-accumulate (split-table PSHUFB) | Accepted |
+| [0042](0042-bench-suite-consolidation.md) | Consolidated bench suite (4 focused tables, shared SimChannel) | Accepted |
+| [0043](0043-information-theoretic-fec-rate.md) | Information-theoretic FEC rate controller (optimal p/(1-p) + B/T formula) | Accepted |
+| [0044](0044-benchmark-methodology.md) | Benchmark methodology audit (LinkModel, correlated fading, clock fix, MPTCP fix) | Accepted |
+| [0045](0045-matrix-benchmark.md) | Comprehensive matrix benchmark (6 backends × 4 configs × 2 paths × 5 scenarios) | Accepted |
+| [0046](0046-nack-congestion-sim-realism.md) | NACK congestion awareness + simulation realism (cwnd pacing, early delivery, reorder) | Accepted |

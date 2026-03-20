@@ -29,7 +29,7 @@ fn test_bursty_channel_increases_repair_rate() {
     let ge = bursty_est.ge_estimator();
     assert!(ge.is_valid(), "GE should be valid after 300 transitions");
 
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
 
     // With bursty data fed symbol-by-symbol through record_batch, the GE
     // estimator sees transitions and should detect burst length > 2.
@@ -70,7 +70,7 @@ fn test_bursty_channel_increases_sliding_window_repair_rate() {
         bursty_est.record_batch(15, 10);
     }
 
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
     let rate = ctrl.compute_repair_rate(&bursty_est);
     assert!(
         rate > 0.0,

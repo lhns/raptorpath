@@ -49,10 +49,12 @@ pub struct FecRateController {
     target_tail_loss: f64,
     /// Maximum FEC overhead as fraction of source symbols
     max_overhead: f64,
-    /// RaptorQ decode overhead factor
+    /// Codec decode overhead factor
     rq_overhead: f64,
     /// Protocol hint
     hint: ProtocolHint,
+    /// Symbol size in bytes (needed to compute T = RTT × throughput / symbol_size)
+    symbol_size: u16,
 
     // PI feedback controller state
     /// Integral error accumulator
@@ -69,16 +71,12 @@ pub struct FecRateController {
     actual_failure_rate: f64,
     /// Whether PI feedback loop is enabled
     enable_pi_feedback: bool,
-    /// GE burst scaling multiplier (0.0 = disabled)
-    ge_burst_factor: f64,
-    /// Extra FEC fraction during bursts in realtime mode (0.0 = disabled)
-    realtime_burst_extra: f64,
 }
 
 impl FecRateController {
     /// Create a new FecRateController with default feature toggles (all enabled).
-    pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint, backend: FecBackend) -> Self {
-        Self::new_with_toggles(target_tail_loss, max_overhead, hint, backend, true, 0.10, 0.10)
+    pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint, backend: FecBackend, symbol_size: u16) -> Self {
+        Self::new_with_toggles(target_tail_loss, max_overhead, hint, backend, true, symbol_size)
     }
 
     /// Create a new FecRateController with explicit feature toggles.
@@ -88,8 +86,7 @@ impl FecRateController {
         hint: ProtocolHint,
         backend: FecBackend,
         enable_pi_feedback: bool,
-        ge_burst_factor: f64,
-        realtime_burst_extra: f64,
+        symbol_size: u16,
     ) -> Self {
         // METTLE requires significantly more overhead than RaptorQ for reliable decoding,
         // especially at small window sizes (w=50).
@@ -105,123 +102,22 @@ impl FecRateController {
             max_overhead,
             rq_overhead: codec_overhead,
             hint,
+            symbol_size,
             integral_error: 0.0,
-            kp: 2.0,
-            ki: 0.5,
+            kp: 0.5,
+            ki: 0.1,
             pi_correction: 0.0,
             prev_actual_tail_loss: 0.0,
             actual_failure_rate: 0.0,
             enable_pi_feedback,
-            ge_burst_factor,
-            realtime_burst_extra,
         }
     }
 
     /// Compute the number of repair symbols needed for `k` source symbols
     /// given the current loss estimate from `estimator`.
     pub fn compute_repair_count(&self, k: u32, estimator: &LossEstimator) -> u32 {
-        // Use the upper bound of loss rate for conservative estimation
-        let p = estimator.loss_rate_upper(0.95);
-        if p < 1e-10 {
-            return 0; // No measurable loss
-        }
-
-        let feedforward = self.feedforward_repair(k, p);
-        let correction = self.pi_correction.max(0.0) as u32;
-        let total = feedforward + correction;
-
-        // Apply protocol hint multiplier
-        let total = match self.hint {
-            ProtocolHint::Realtime => {
-                // More aggressive: also account for burst losses
-                let burst_extra = if estimator.is_in_burst() && self.realtime_burst_extra > 0.0 {
-                    (k as f64 * self.realtime_burst_extra) as u32
-                } else {
-                    0
-                };
-                total + burst_extra
-            }
-            ProtocolHint::Bulk => {
-                // Less aggressive: we can retransmit
-                (total as f64 * 0.7) as u32
-            }
-            ProtocolHint::Auto => total,
-        };
-
-        // Gilbert-Elliott burst adjustment: if bursty channel detected,
-        // scale up repair to cover correlated losses that i.i.d. model misses
-        let total = {
-            let ge = estimator.ge_estimator();
-            if self.ge_burst_factor > 0.0 && ge.is_valid() && ge.mean_burst_length() > 2.0 {
-                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * self.ge_burst_factor;
-                (total as f64 * burst_factor) as u32
-            } else {
-                total
-            }
-        };
-
-        // Cap at max overhead
-        let max_repair = (k as f64 * self.max_overhead) as u32;
-        let result = total.min(max_repair);
-
-        debug!(
-            k,
-            p,
-            feedforward,
-            correction,
-            result,
-            "computed repair count"
-        );
-
-        result
-    }
-
-    /// Feedforward: compute repair count from binomial model.
-    ///
-    /// We want: P(received < k(1+ε)) ≤ δ
-    /// where received ~ Binomial(n, 1-p), n = k + r
-    ///
-    /// Normal approximation: need n such that
-    ///   n(1-p) - z_δ·√(n·p·(1-p)) ≥ k(1+ε)
-    ///
-    /// Solving for n (quadratic in √n):
-    ///   n ≈ (k(1+ε) + z²·p(1-p)/2 + z·√(k(1+ε)·p + z²·p²(1-p)²/4)) / (1-p)
-    ///
-    /// Then r = n - k.
-    fn feedforward_repair(&self, k: u32, p: f64) -> u32 {
-        let kf = k as f64;
-        let eps = self.rq_overhead;
-        let target = kf * (1.0 + eps); // symbols needed to decode
-        let q = 1.0 - p;
-
-        // z-score for target tail loss
-        let z = normal_quantile_upper(self.target_tail_loss);
-
-        // Quadratic solution for n
-        let _z2 = z * z;
-        let pq = p * q;
-
-        // Iterative refinement (Newton's method on the normal CDF constraint)
-        // Start with the simple estimate
-        let mut n = target / q + z * (target * p / q).sqrt();
-
-        for _ in 0..5 {
-            let mean = n * q;
-            let std = (n * pq).sqrt();
-            let current_quantile = mean - z * std;
-            let gap = target - current_quantile;
-
-            // Derivative of (n*q - z*sqrt(n*p*q)) w.r.t. n
-            let deriv = q - z * pq / (2.0 * (n * pq).sqrt());
-            if deriv.abs() < 1e-12 {
-                break;
-            }
-            n += gap / deriv;
-            n = n.max(kf); // n must be at least k
-        }
-
-        let r = (n - kf).ceil() as u32;
-        r.max(0)
+        let rate = self.compute_repair_rate(estimator);
+        (k as f64 * rate).ceil() as u32
     }
 
     /// Update the PI controller with actual block decode results.
@@ -273,55 +169,55 @@ impl FecRateController {
 
     /// Compute the repair rate for sliding-window mode: how many repair symbols
     /// to generate per source symbol. E.g., 0.1 = 1 repair per 10 source symbols.
+    ///
+    /// Uses information-theoretic optimal formula (ADR-0043):
+    ///   rate = max(p/(1-p) + codec_overhead, B/T) × (1 + margin) + pi + hint_offset
+    ///
+    /// Where T = (RTT × throughput) / symbol_size accounts for RTT naturally:
+    /// - Low RTT → large T → random-loss term dominates → low overhead
+    /// - High RTT → small T → burst term dominates → more proactive FEC
     pub fn compute_repair_rate(&self, estimator: &LossEstimator) -> f64 {
         let p = estimator.loss_rate_upper(0.95);
         if p < 1e-10 {
             return 0.0;
         }
 
-        let eps = self.rq_overhead;
-        // Base rate: compensate for loss + codec overhead
-        let rate = p / (1.0 - p) + eps;
+        // --- Random loss term: information-theoretic minimum ---
+        let random_rate = p / (1.0 - p) + self.rq_overhead;
 
-        // Statistical safety margin
-        let z = normal_quantile_upper(self.target_tail_loss);
-        let safety = z * (p * (1.0 - p)).sqrt() * 0.1;
-        let rate = rate + safety;
-
-        // PI feedback correction (mirrors compute_repair_count behavior)
-        let rate = if self.enable_pi_feedback {
-            rate + self.pi_correction.max(0.0)
+        // --- Burst loss term: delay-constrained capacity B/T ---
+        // Only applies when we have both a valid GE model and throughput data.
+        // Without throughput data, T is undefined — fall back to random-loss only.
+        let ge = estimator.ge_estimator();
+        let burst_rate = if ge.is_valid() && estimator.throughput() > 0.0 {
+            let burst_length = ge.mean_burst_length().max(1.0);
+            let rtt_secs = estimator.rtt().as_secs_f64();
+            let t_symbols = (rtt_secs * estimator.throughput() / self.symbol_size as f64).max(1.0);
+            burst_length / t_symbols
         } else {
-            rate
+            0.0
         };
 
-        // Protocol hint adjustment
-        let rate = match self.hint {
-            ProtocolHint::Realtime => {
-                // ADR-0035: port burst extra from compute_repair_count() to window mode
-                let burst_extra = if estimator.is_in_burst() && self.realtime_burst_extra > 0.0 {
-                    self.realtime_burst_extra
-                } else {
-                    0.0
-                };
-                rate * 1.2 + burst_extra
-            }
-            ProtocolHint::Bulk => rate * 0.7,
-            ProtocolHint::Auto => rate,
+        // --- Optimal rate: max of random and burst ---
+        let base_rate = random_rate.max(burst_rate);
+
+        // --- Single safety margin from estimation uncertainty ---
+        let z = normal_quantile_upper(self.target_tail_loss);
+        let uncertainty = estimator.loss_uncertainty(0.95);
+        let margin = (z * uncertainty * 0.25).clamp(0.0, 1.0);
+
+        // --- PI feedback correction (reduced gains) ---
+        let pi = if self.enable_pi_feedback { self.pi_correction.max(0.0) } else { 0.0 };
+
+        // --- Protocol hint: additive offset, not multiplicative ---
+        let hint_offset = match self.hint {
+            ProtocolHint::Realtime => 0.05,
+            ProtocolHint::Bulk => -0.05,
+            ProtocolHint::Auto => 0.0,
         };
 
-        // Gilbert-Elliott burst adjustment for sliding-window mode
-        let rate = {
-            let ge = estimator.ge_estimator();
-            if self.ge_burst_factor > 0.0 && ge.is_valid() && ge.mean_burst_length() > 2.0 {
-                let burst_factor = 1.0 + (ge.mean_burst_length() - 1.0).ln().max(0.0) * self.ge_burst_factor;
-                rate * burst_factor
-            } else {
-                rate
-            }
-        };
-
-        rate.min(self.max_overhead).max(0.0)
+        let rate = base_rate * (1.0 + margin) + pi + hint_offset;
+        rate.clamp(0.0, self.max_overhead)
     }
 
     /// Compute streaming code parameters from the current loss estimator.
@@ -422,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_zero_loss_no_repair() {
-        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
         let mut est = LossEstimator::new();
         // Feed some zero-loss observations to overcome the weak prior
         for _ in 0..50 {
@@ -434,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_high_loss_more_repair() {
-        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
         let mut est = LossEstimator::new();
         for _ in 0..100 {
             est.record_batch(100, 80); // 20% loss
@@ -446,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_pi_correction() {
-        let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ);
+        let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
         // Simulate repeated failures
         for _ in 0..20 {
             ctrl.feedback_update(false);
@@ -459,8 +355,8 @@ mod tests {
 
     #[test]
     fn test_protocol_hint_realtime_more_aggressive() {
-        let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ);
-        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::RaptorQ);
+        let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ, 1200);
+        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::RaptorQ, 1200);
 
         let mut est = LossEstimator::new();
         for _ in 0..100 {
