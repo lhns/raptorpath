@@ -212,9 +212,10 @@ impl FecRateController {
         let pi = if self.enable_pi_feedback { self.pi_correction.max(0.0) } else { 0.0 };
 
         // --- Protocol hint: additive offset, not multiplicative ---
+        // Reduced from 0.05 to 0.02: 5% was too aggressive for low-loss scenarios
         let hint_offset = match self.hint {
-            ProtocolHint::Realtime => 0.05,
-            ProtocolHint::Bulk => -0.05,
+            ProtocolHint::Realtime => 0.02,
+            ProtocolHint::Bulk => -0.02,
             ProtocolHint::Auto => 0.0,
         };
 

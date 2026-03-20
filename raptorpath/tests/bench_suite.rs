@@ -1060,6 +1060,7 @@ fn run_matrix_trial_window(
     let mut encode_times: Vec<Instant> = Vec::new();
     let mut total_source_sent: u32 = 0;
     let mut total_repair_sent: u32 = 0;
+    let mut repair_debt: f64 = 0.0; // Fractional repair accumulator
 
     let tick = Duration::from_micros(500);
     let mut sym_idx: u32 = 0;
@@ -1186,11 +1187,12 @@ fn run_matrix_trial_window(
         }
         total_source_sent += this_batch;
 
-        // Adaptive repair
+        // Adaptive repair with fractional accumulator — avoids ceil() rounding overhead
         let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator);
-        let repair_count = ((this_batch as f64 * repair_rate).ceil() as u32)
-            .max(1)
-            .min(10);
+        repair_debt += this_batch as f64 * repair_rate;
+        let repair_count = (repair_debt.floor() as u32).min(10);
+        repair_debt -= repair_count as f64;
+        let mut batch_repairs_sent: u32 = 0;
         for _ in 0..repair_count {
             if encoder.window_size() == 0 {
                 break;
@@ -1198,6 +1200,7 @@ fn run_matrix_trial_window(
             let repair = encoder.generate_repair();
             primary.send(repair);
             total_repair_sent += 1;
+            batch_repairs_sent += 1;
         }
 
         // 0.5ms tick loop (20 ticks = 10ms per batch)
@@ -1208,13 +1211,37 @@ fn run_matrix_trial_window(
         }
 
         // NACK repair with congestion awareness
-        if config.enable_nack && sym_idx > BATCH_SIZE {
-            let window_start = if sym_idx > 50 {
-                (sym_idx - 50) as u64
+        // Per-batch budget cap: total repairs (proactive + NACK) ≤ overhead budget
+        let max_batch_repairs = ((this_batch as f64 * MATRIX_FEC_OVERHEAD * 2.0).ceil() as u32)
+            .max(1);
+        let nack_budget = max_batch_repairs.saturating_sub(batch_repairs_sent);
+
+        // Age gate: only NACK symbols older than 2× base_delay to filter timing artifacts
+        let nack_age_gate = Duration::from_millis(scenario.base_delay_ms * 2);
+        let nack_oldest_eligible = if clock.now() > encode_times[0] + nack_age_gate {
+            // Find the newest seq whose encode_time is old enough
+            let cutoff = clock.now() - nack_age_gate;
+            // Binary-ish search: the seq that was encoded before cutoff
+            let mut eligible_end = sym_idx as u64;
+            for seq in (0..sym_idx as u64).rev() {
+                if (seq as usize) < encode_times.len() && encode_times[seq as usize] <= cutoff {
+                    eligible_end = seq;
+                    break;
+                }
+            }
+            eligible_end
+        } else {
+            0 // Nothing old enough yet
+        };
+
+        if config.enable_nack && nack_oldest_eligible > BATCH_SIZE as u64 && nack_budget > 0 {
+            let window_start = if nack_oldest_eligible > 50 {
+                nack_oldest_eligible - 50
             } else {
                 0
             };
-            let window_end = sym_idx as u64;
+            let window_end = nack_oldest_eligible;
+            // Use received_set (network arrivals) — age gate filters timing artifacts
             let gaps = compute_gap_ranges(&received_set, window_start, window_end);
 
             if !gaps.is_empty() {
@@ -1250,8 +1277,9 @@ fn run_matrix_trial_window(
 
                 let nack_repairs = ((gaps.len().min(MAX_NACK_GAPS).min(3) as f64
                     * nack_repair_multiplier)
-                    .round() as usize)
-                    .min(3);
+                    .round() as u32)
+                    .min(3)
+                    .min(nack_budget);
 
                 for _ in 0..nack_repairs {
                     if encoder.window_size() == 0 {

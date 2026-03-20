@@ -13,7 +13,7 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 
 ## Project Status
 
-**31 ADRs resolved.** The core data path is fully wired with five FEC backends, sliding-window FEC, Gilbert-Elliott burst modeling, runtime backend auto-switching, BBR congestion control, tapered interleaving, and multipath window scheduling. See [docs/adr/](docs/adr/) for the full decision log.
+**32 ADRs resolved.** The core data path is fully wired with five FEC backends, sliding-window FEC, Gilbert-Elliott burst modeling, runtime backend auto-switching, BBR congestion control, tapered interleaving, and multipath window scheduling. See [docs/adr/](docs/adr/) for the full decision log.
 
 ### Features
 - Five swappable FEC backends: RaptorQ, METTLE, Reed-Solomon, RLC, Streaming
