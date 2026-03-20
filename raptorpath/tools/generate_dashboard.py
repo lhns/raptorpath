@@ -112,6 +112,11 @@ function fmtTimestampFull(ts) {
   return `${parts[0]}-${parts[1]}-${parts[2]} ${time}`;
 }
 
+function parseTimestamp(ts) {
+  const p = ts.split('-');
+  return `${p[0]}-${p[1]}-${p[2]}T${p[3].substring(0,2)}:${p[3].substring(2,4)}:${p[3].substring(4,6)}`;
+}
+
 // =====================================================
 // <bench-controls>
 // =====================================================
@@ -653,7 +658,7 @@ class BenchDashboard extends LitElement {
   // --- TREND (one chart per metric) ---
   _renderAllTrend() {
     const { scenario, config, paths } = this;
-    const xLabels = RUNS.map(r => r.commit_hash.substring(0,7) + '\n' + fmtTimestamp(r.timestamp));
+    const xDates = RUNS.map(r => parseTimestamp(r.timestamp));
     const divIds = ALL_METRICS.map(m => `chart-trend-${m}`);
 
     for (const metric of ALL_METRICS) {
@@ -679,7 +684,7 @@ class BenchDashboard extends LitElement {
           customdata.push(i);
         }
         traces.push({
-          x: xLabels, y: ys,
+          x: xDates, y: ys,
           error_y: { type: 'data', array: errs, visible: true, thickness: 1.5 },
           mode: 'lines+markers',
           name: backend,
@@ -687,7 +692,7 @@ class BenchDashboard extends LitElement {
           line: { color: BACKEND_COLORS[backend] || '#888' },
           marker: { size: 8 },
           customdata,
-          hovertemplate: '%{y:.3f} \u00b1 %{error_y.array:.3f}<extra>' + backend + '</extra>'
+          hovertemplate: '%{x|%Y-%m-%d %H:%M}<br>%{y:.3f} \u00b1 %{error_y.array:.3f}<extra>' + backend + '</extra>'
         });
       }
 
@@ -695,7 +700,7 @@ class BenchDashboard extends LitElement {
         ...PLOT_LAYOUT,
         title: { text: metric, font: { size: 14 } },
         yaxis: { ...PLOT_LAYOUT.yaxis, title: metric },
-        xaxis: { ...PLOT_LAYOUT.xaxis, tickangle: 0 },
+        xaxis: { ...PLOT_LAYOUT.xaxis, type: 'date', tickformat: '%b %d\n%H:%M' },
         showlegend: true,
         legend: { orientation: 'h', y: -0.2 },
         height: 380,

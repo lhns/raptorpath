@@ -67,3 +67,4 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0044](0044-benchmark-methodology.md) | Benchmark methodology audit (LinkModel, correlated fading, clock fix, MPTCP fix) | Accepted |
 | [0045](0045-matrix-benchmark.md) | Comprehensive matrix benchmark (6 backends × 4 configs × 2 paths × 5 scenarios) | Accepted |
 | [0046](0046-nack-congestion-sim-realism.md) | NACK congestion awareness + simulation realism (cwnd pacing, early delivery, reorder) | Accepted |
+| [0049](0049-benchmark-dashboard.md) | Benchmark dashboard generator (Plotly + Lit, 4 visualization tabs) | Accepted |
