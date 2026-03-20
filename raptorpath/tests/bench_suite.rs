@@ -426,9 +426,15 @@ fn compute_in_order_rate(delivery_order: &[u64]) -> f64 {
     if delivery_order.len() <= 1 {
         return 1.0;
     }
-    let in_order = (1..delivery_order.len())
-        .filter(|&i| delivery_order[i] > delivery_order[i - 1])
-        .count();
+    // RFC 4737: packet is in-order if seq > max_seen_so_far
+    let mut max_seen = delivery_order[0];
+    let mut in_order = 0u64;
+    for &seq in &delivery_order[1..] {
+        if seq > max_seen {
+            in_order += 1;
+        }
+        max_seen = max_seen.max(seq);
+    }
     in_order as f64 / (delivery_order.len() - 1) as f64
 }
 
@@ -1036,9 +1042,16 @@ fn run_matrix_trial_window(
     // Cwnd pacing (ADR-0046: 2b)
     let (primary_cwnd, secondary_cwnd) = scenario_cwnd(scenario);
 
-    // NACK congestion tracking for benchmark
-    let mut nack_loss_rising: u32 = 0;
-    let mut prev_loss_rate: f64 = 0.0;
+    // NACK congestion tracking: production-style exponential backoff
+    let mut nack_repair_multiplier: f64 = 1.0;
+    let mut nack_prev_loss_rate: f64 = 0.0;
+    let mut nack_rising_loss: u32 = 0;
+    let mut nack_prev_rtt: Option<Duration> = None;
+    let mut nack_rising_rtt: u32 = 0;
+
+    // Window PI feedback tracking
+    let mut last_fed: u64 = 0;
+    let mut last_useful: u64 = 0;
 
     let mut recovered = BTreeSet::new();
     let mut received_set = BTreeSet::new();
@@ -1048,7 +1061,7 @@ fn run_matrix_trial_window(
     let mut total_source_sent: u32 = 0;
     let mut total_repair_sent: u32 = 0;
 
-    let tick = Duration::from_millis(2);
+    let tick = Duration::from_micros(500);
     let mut sym_idx: u32 = 0;
 
     // Inline helper: process deliveries and feed scheduler
@@ -1062,15 +1075,36 @@ fn run_matrix_trial_window(
                 delivered.extend(sec_pkts);
                 if sec_count > 0 {
                     scheduler.ack(1, sec_count);
-                    if let Some(p) = scheduler.path_mut(1) {
-                        p.record_rtt_sample(Duration::from_millis(scenario.base_delay_ms));
-                    }
                 }
             }
             if primary_count > 0 {
                 scheduler.ack(0, primary_count);
-                if let Some(p) = scheduler.path_mut(0) {
-                    p.record_rtt_sample(Duration::from_millis(scenario.base_delay_ms));
+            }
+
+            // Compute actual RTT from delivery timestamps
+            let mut rtt_sum = Duration::ZERO;
+            let mut rtt_count = 0u32;
+            for pkt in &delivered {
+                let seq = pkt.seq as usize;
+                if seq < encode_times.len() {
+                    let actual_rtt = pkt.delivery_time.duration_since(encode_times[seq]);
+                    rtt_sum += actual_rtt;
+                    rtt_count += 1;
+                }
+            }
+            if rtt_count > 0 {
+                let avg_rtt = rtt_sum / rtt_count;
+                live_estimator.record_rtt(avg_rtt);
+                // Feed measured RTT to scheduler paths
+                if primary_count > 0 {
+                    if let Some(p) = scheduler.path_mut(0) {
+                        p.record_rtt_sample(avg_rtt);
+                    }
+                }
+                if num_paths >= 2 && delivered.len() as u32 > primary_count {
+                    if let Some(p) = scheduler.path_mut(1) {
+                        p.record_rtt_sample(avg_rtt);
+                    }
                 }
             }
 
@@ -1109,7 +1143,7 @@ fn run_matrix_trial_window(
         for _ in 0..this_batch {
             // Cwnd pacing: if primary is full, drain until capacity frees up
             let mut pacing_ticks = 0;
-            while primary.in_flight_count() >= primary_cwnd && pacing_ticks < 50 {
+            while primary.in_flight_count() >= primary_cwnd && pacing_ticks < 200 {
                 clock.advance(tick);
                 let now = clock.now();
                 process_window_deliveries!(now);
@@ -1166,8 +1200,8 @@ fn run_matrix_trial_window(
             total_repair_sent += 1;
         }
 
-        // 2ms tick loop (5 ticks = 10ms per batch)
-        for _ in 0..5 {
+        // 0.5ms tick loop (20 ticks = 10ms per batch)
+        for _ in 0..20 {
             clock.advance(tick);
             let now = clock.now();
             process_window_deliveries!(now);
@@ -1184,18 +1218,38 @@ fn run_matrix_trial_window(
             let gaps = compute_gap_ranges(&received_set, window_start, window_end);
 
             if !gaps.is_empty() {
-                // Congestion-aware NACK scaling: reduce repairs when loss is rising
+                // Production-style congestion-aware NACK scaling with exponential backoff
                 let current_loss = live_estimator.loss_rate();
-                if current_loss > prev_loss_rate * 1.1 + 0.001 {
-                    nack_loss_rising += 1;
-                } else {
-                    nack_loss_rising = 0;
-                }
-                prev_loss_rate = current_loss;
+                let current_rtt = live_estimator.rtt();
 
-                let nack_multiplier = if nack_loss_rising >= 2 { 0.0 } else { 1.0 };
+                // Detect rising loss (>10% relative increase + 0.1% absolute floor)
+                if current_loss > nack_prev_loss_rate * 1.1 + 0.001 {
+                    nack_rising_loss += 1;
+                } else {
+                    nack_rising_loss = 0;
+                }
+                nack_prev_loss_rate = current_loss;
+
+                // Detect rising RTT
+                if let Some(prev_rtt) = nack_prev_rtt {
+                    if current_rtt > prev_rtt + Duration::from_millis(1) {
+                        nack_rising_rtt += 1;
+                    } else {
+                        nack_rising_rtt = 0;
+                    }
+                }
+                nack_prev_rtt = Some(current_rtt);
+
+                // Congestion = both rising loss AND rising RTT
+                let congested = nack_rising_loss >= 2 && nack_rising_rtt >= 2;
+                if congested {
+                    nack_repair_multiplier = (nack_repair_multiplier * 0.5).max(0.0);
+                } else if nack_rising_loss == 0 && nack_rising_rtt == 0 {
+                    nack_repair_multiplier = (nack_repair_multiplier + 0.1).min(1.0);
+                }
+
                 let nack_repairs = ((gaps.len().min(MAX_NACK_GAPS).min(3) as f64
-                    * nack_multiplier)
+                    * nack_repair_multiplier)
                     .round() as usize)
                     .min(3);
 
@@ -1211,8 +1265,16 @@ fn run_matrix_trial_window(
         }
 
         live_estimator.record_batch(this_batch, batch_survived);
-        live_estimator.record_rtt(Duration::from_millis(scenario.base_delay_ms));
-        fec_ctrl.feedback_update(batch_dropped == 0);
+        // RTT is now fed from actual delivery timestamps in process_window_deliveries!
+
+        // Window PI feedback: use repair efficiency instead of block-mode binary signal
+        {
+            let fed = decoder.repairs_fed();
+            let useful = decoder.repairs_useful();
+            fec_ctrl.feedback_update_window(fed - last_fed, useful - last_useful);
+            last_fed = fed;
+            last_useful = useful;
+        }
 
         // Feed loss events to scheduler
         if batch_dropped > 0 {
@@ -1265,7 +1327,7 @@ fn drain_and_collect_window(
     encode_times: &[Instant],
     tick: Duration,
 ) {
-    for _ in 0..200 {
+    for _ in 0..800 {
         clock.advance(tick);
         let now = clock.now();
         let mut d = primary.deliver();
@@ -1403,7 +1465,7 @@ fn run_matrix_trial_block(
     // Track which source symbols arrived intact per block (for early delivery)
     let mut block_arrived: Vec<BTreeSet<u64>> = Vec::new();
 
-    let tick = Duration::from_millis(2);
+    let tick = Duration::from_micros(500);
 
     // Helper: process deliveries for block mode with early source delivery (ADR-0046)
     macro_rules! process_block_deliveries {
@@ -1514,7 +1576,7 @@ fn run_matrix_trial_block(
             for i in batch_start..batch_end {
                 // Cwnd pacing: drain until primary has capacity
                 let mut pacing_ticks = 0;
-                while primary.in_flight_count() >= primary_cwnd && pacing_ticks < 50 {
+                while primary.in_flight_count() >= primary_cwnd && pacing_ticks < 200 {
                     clock.advance(tick);
                     let now = clock.now();
                     let mut d = primary.deliver();
@@ -1548,8 +1610,8 @@ fn run_matrix_trial_block(
             }
             repairs_cursor += batch_repair_count;
 
-            // Tick loop
-            for _ in 0..5 {
+            // 0.5ms tick loop (20 ticks = 10ms per batch)
+            for _ in 0..20 {
                 clock.advance(tick);
                 let now = clock.now();
 
@@ -1562,7 +1624,23 @@ fn run_matrix_trial_block(
             }
 
             live_estimator.record_batch(this_batch, batch_survived);
-            live_estimator.record_rtt(Duration::from_millis(scenario.base_delay_ms));
+            // RTT fed from actual delivery timestamps (block trial measures via send_times)
+            {
+                let now_block = clock.now();
+                let mut rtt_sum_block = Duration::ZERO;
+                let mut rtt_n = 0u32;
+                for seq in (block_start_seq + batch_start as u64)..(block_start_seq + batch_end as u64) {
+                    if recovered.contains(&seq) {
+                        if let Some(&st) = send_times.get(&seq) {
+                            rtt_sum_block += now_block.duration_since(st);
+                            rtt_n += 1;
+                        }
+                    }
+                }
+                if rtt_n > 0 {
+                    live_estimator.record_rtt(rtt_sum_block / rtt_n);
+                }
+            }
             fec_ctrl.feedback_update(batch_dropped == 0);
 
             batch_start = batch_end;
@@ -1577,7 +1655,7 @@ fn run_matrix_trial_block(
     }
 
     // Drain remaining in-flight
-    for _ in 0..200 {
+    for _ in 0..800 {
         clock.advance(tick);
         let now = clock.now();
         let mut d = primary.deliver();
@@ -1664,7 +1742,7 @@ fn run_matrix_trial_retransmit(
     // Cwnd pacing (ADR-0046: 2b)
     let (primary_cwnd, secondary_cwnd) = scenario_cwnd(scenario);
 
-    let tick = Duration::from_millis(2);
+    let tick = Duration::from_micros(500);
     let mut sym_idx: u32 = 0;
 
     // Inline helper for retransmit delivery processing
@@ -1707,7 +1785,7 @@ fn run_matrix_trial_retransmit(
                 primary_cwnd
             };
             let mut pacing_ticks = 0;
-            while pacing_ticks < 50 {
+            while pacing_ticks < 200 {
                 let in_flight = if secondary.is_some() && i % 2 != 0 {
                     secondary.as_ref().unwrap().in_flight_count()
                 } else {
@@ -1745,8 +1823,8 @@ fn run_matrix_trial_retransmit(
             sym_idx += 1;
         }
 
-        // 2ms tick loop (5 ticks = 10ms per batch)
-        for _ in 0..5 {
+        // 0.5ms tick loop (20 ticks = 10ms per batch)
+        for _ in 0..20 {
             clock.advance(tick);
             let now = clock.now();
             drain_retransmit!(now);
@@ -1754,7 +1832,7 @@ fn run_matrix_trial_retransmit(
     }
 
     // Drain remaining
-    for _ in 0..200 {
+    for _ in 0..800 {
         clock.advance(tick);
         let now = clock.now();
         let empty = primary.in_flight_count() == 0

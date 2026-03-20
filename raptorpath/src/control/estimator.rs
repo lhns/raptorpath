@@ -195,6 +195,11 @@ impl LossEstimator {
         ((upper - mean) / mean).max(0.0)
     }
 
+    /// Total number of symbols sent (for confidence adaptation).
+    pub fn total_sent(&self) -> u64 {
+        self.total_sent
+    }
+
     pub fn ge_estimator(&self) -> &GilbertElliottEstimator {
         &self.ge
     }

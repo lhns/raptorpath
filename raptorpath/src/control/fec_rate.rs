@@ -177,7 +177,9 @@ impl FecRateController {
     /// - Low RTT → large T → random-loss term dominates → low overhead
     /// - High RTT → small T → burst term dominates → more proactive FEC
     pub fn compute_repair_rate(&self, estimator: &LossEstimator) -> f64 {
-        let p = estimator.loss_rate_upper(0.95);
+        // Adaptive confidence: after 500+ samples the posterior is tight; 85th percentile suffices
+        let confidence = if estimator.total_sent() > 500 { 0.85 } else { 0.95 };
+        let p = estimator.loss_rate_upper(confidence);
         if p < 1e-10 {
             return 0.0;
         }
@@ -239,10 +241,10 @@ impl FecRateController {
 
         let loss_rate = estimator.loss_rate_upper(0.95);
 
-        // Safety factor: 15% over-provisioning for Realtime, 10% otherwise
+        // Safety factor: 10% over-provisioning for Realtime, 5% otherwise (ADR-0035)
         let safety = match self.hint {
-            ProtocolHint::Realtime => 1.15,
-            _ => 1.10,
+            ProtocolHint::Realtime => 1.10,
+            _ => 1.05,
         };
 
         crate::fec::StreamingParams::from_channel(burst_length, loss_rate, safety)
