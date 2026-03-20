@@ -235,7 +235,7 @@ class BenchControls extends LitElement {
     scenario: { type: String },
     config: { type: String },
     paths: { type: Number },
-    backends: { type: Array },
+    ablationBackend: { type: String },
     activeTab: { type: String },
     commitInfo: { type: Object },
     selectedRunIdx: { type: Number },
@@ -254,10 +254,10 @@ class BenchControls extends LitElement {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 24px;
+      padding: 8px 24px;
       border-bottom: 1px solid #0f3460;
     }
-    .header h1 { font-size: 1.4rem; font-weight: 600; color: #e0e0e0; }
+    .header h1 { font-size: 1.4rem; font-weight: 600; color: #e0e0e0; margin: 0; }
     .header .meta { color: #8899aa; font-size: 0.85rem; }
 
     .commit-info {
@@ -278,7 +278,7 @@ class BenchControls extends LitElement {
       gap: 12px;
       align-items: flex-start;
     }
-    .radio-group, .checkbox-group {
+    .radio-group {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -292,7 +292,7 @@ class BenchControls extends LitElement {
       margin-right: 6px;
       font-weight: 600;
     }
-    label.radio, label.check {
+    label.radio {
       display: flex;
       align-items: center;
       gap: 3px;
@@ -303,8 +303,8 @@ class BenchControls extends LitElement {
       border-radius: 4px;
       transition: background 0.15s;
     }
-    label.radio:hover, label.check:hover { background: rgba(233,69,96,0.12); }
-    input[type="radio"], input[type="checkbox"] {
+    label.radio:hover { background: rgba(233,69,96,0.12); }
+    input[type="radio"] {
       accent-color: #e94560;
       margin: 0;
     }
@@ -342,7 +342,7 @@ class BenchControls extends LitElement {
   _showScenario() { return this.activeTab === 'trend' || this.activeTab === 'ablation'; }
   _showConfig()   { return this.activeTab === 'trend' || this.activeTab === 'matrix'; }
   _showPaths()    { return this.activeTab !== 'sweep'; }
-  _showBackends() { return this.activeTab === 'trend' || this.activeTab === 'ablation'; }
+  _showBackend()  { return this.activeTab === 'ablation'; }
   _showControls() { return this.activeTab !== 'sweep'; }
 
   render() {
@@ -403,14 +403,14 @@ class BenchControls extends LitElement {
           `)}
         </div>` : ''}
 
-        ${this._showBackends() ? html`
-        <div class="checkbox-group">
-          <span class="group-label">Backends</span>
+        ${this._showBackend() ? html`
+        <div class="radio-group">
+          <span class="group-label">Backend</span>
           ${ALL_BACKENDS.map(b => html`
-            <label class="check">
-              <input type="checkbox" value=${b}
-                ?checked=${this.backends.includes(b)}
-                @change=${this._onBackend}>
+            <label class="radio">
+              <input type="radio" name="ablation-backend" value=${b}
+                ?checked=${b === this.ablationBackend}
+                @change=${this._onAblationBackend}>
               <span class="dot" style="background:${BACKEND_COLORS[b] || '#888'}"></span>
               ${b}
             </label>
@@ -439,10 +439,7 @@ class BenchControls extends LitElement {
   _onScenario(e) { this._fire('control-change', { scenario: e.target.value }); }
   _onConfig(e) { this._fire('control-change', { config: e.target.value }); }
   _onPaths(e) { this._fire('control-change', { paths: parseInt(e.target.value) }); }
-  _onBackend(e) {
-    const checked = [...this.renderRoot.querySelectorAll('.checkbox-group input:checked')].map(cb => cb.value);
-    this._fire('control-change', { backends: checked });
-  }
+  _onAblationBackend(e) { this._fire('control-change', { ablationBackend: e.target.value }); }
 }
 customElements.define('bench-controls', BenchControls);
 
@@ -454,7 +451,7 @@ class BenchDashboard extends LitElement {
     scenario: { type: String },
     config: { type: String },
     paths: { type: Number },
-    backends: { type: Array },
+    ablationBackend: { type: String },
     activeTab: { type: String },
     commitInfo: { type: Object },
     selectedRunIdx: { type: Number },
@@ -486,7 +483,7 @@ class BenchDashboard extends LitElement {
       position: absolute;
       top: 2px;
       right: 2px;
-      z-index: 1001;
+      z-index: 10;
       display: flex;
     }
     .modebar-group {
@@ -533,10 +530,12 @@ class BenchDashboard extends LitElement {
     this.scenario = ALL_SCENARIOS.includes('WiFi') ? 'WiFi' : ALL_SCENARIOS[0];
     this.config = ALL_CONFIGS.includes('baseline') ? 'baseline' : ALL_CONFIGS[0];
     this.paths = ALL_PATHS.includes(1) ? 1 : ALL_PATHS[0];
-    this.backends = [...ALL_BACKENDS];
+    this.ablationBackend = ALL_BACKENDS[0];
     this.activeTab = 'trend';
     this.commitInfo = null;
     this.selectedRunIdx = RUNS.length - 1;
+    this._hiddenBackends = new Set();
+    this._bindedDivs = new Set();
   }
 
   render() {
@@ -545,7 +544,7 @@ class BenchDashboard extends LitElement {
         .scenario=${this.scenario}
         .config=${this.config}
         .paths=${this.paths}
-        .backends=${this.backends}
+        .ablationBackend=${this.ablationBackend}
         .activeTab=${this.activeTab}
         .commitInfo=${this.commitInfo}
         .selectedRunIdx=${this.selectedRunIdx}
@@ -596,7 +595,7 @@ class BenchDashboard extends LitElement {
     if (d.scenario !== undefined) this.scenario = d.scenario;
     if (d.config !== undefined) this.config = d.config;
     if (d.paths !== undefined) this.paths = d.paths;
-    if (d.backends !== undefined) this.backends = d.backends;
+    if (d.ablationBackend !== undefined) this.ablationBackend = d.ablationBackend;
   }
 
   _onTabChange(e) {
@@ -616,7 +615,8 @@ class BenchDashboard extends LitElement {
     };
   }
 
-  updated() {
+  updated(changedProps) {
+    if (changedProps.size === 1 && changedProps.has('commitInfo')) return;
     this.updateComplete.then(() => {
       requestAnimationFrame(() => this._renderCharts());
     });
@@ -634,17 +634,34 @@ class BenchDashboard extends LitElement {
     return this.renderRoot.getElementById(id);
   }
 
+  // --- Legend sync helper ---
+  _syncLegend(prefix, divIds, data) {
+    const backend = data.data[data.curveNumber].name;
+    const isHidden = this._hiddenBackends.has(backend);
+    if (isHidden) this._hiddenBackends.delete(backend);
+    else this._hiddenBackends.add(backend);
+    const vis = isHidden ? true : 'legendonly';
+    for (const id of divIds) {
+      const d = this._getChartDiv(id);
+      if (!d || !d.data) continue;
+      const idx = d.data.findIndex(t => t.name === backend);
+      if (idx >= 0) Plotly.restyle(d, { visible: vis }, [idx]);
+    }
+    return false; // prevent Plotly default
+  }
+
   // --- TREND (one chart per metric) ---
   _renderAllTrend() {
-    const { scenario, config, paths, backends } = this;
+    const { scenario, config, paths } = this;
     const xLabels = RUNS.map(r => r.commit_hash.substring(0,7) + '\n' + fmtTimestamp(r.timestamp));
+    const divIds = ALL_METRICS.map(m => `chart-trend-${m}`);
 
     for (const metric of ALL_METRICS) {
       const div = this._getChartDiv(`chart-trend-${metric}`);
       if (!div) continue;
 
       const traces = [];
-      for (const backend of backends) {
+      for (const backend of ALL_BACKENDS) {
         const ys = [], errs = [], customdata = [];
         for (let i = 0; i < RUNS.length; i++) {
           const run = RUNS[i];
@@ -666,6 +683,7 @@ class BenchDashboard extends LitElement {
           error_y: { type: 'data', array: errs, visible: true, thickness: 1.5 },
           mode: 'lines+markers',
           name: backend,
+          visible: this._hiddenBackends.has(backend) ? 'legendonly' : true,
           line: { color: BACKEND_COLORS[backend] || '#888' },
           marker: { size: 8 },
           customdata,
@@ -683,11 +701,15 @@ class BenchDashboard extends LitElement {
         height: 380,
       };
 
-      Plotly.newPlot(div, traces, layout, PLOT_CONFIG);
-      div.on('plotly_click', (data) => {
-        const idx = data.points[0].customdata;
-        this._showCommitInfo(RUNS[idx]);
-      });
+      Plotly.react(div, traces, layout, PLOT_CONFIG);
+      if (!this._bindedDivs.has(div)) {
+        this._bindedDivs.add(div);
+        div.on('plotly_click', (data) => {
+          const idx = data.points[0].customdata;
+          this._showCommitInfo(RUNS[idx]);
+        });
+        div.on('plotly_legendclick', (data) => this._syncLegend('trend', divIds, data));
+      }
     }
   }
 
@@ -742,8 +764,11 @@ class BenchDashboard extends LitElement {
         height: 380,
       };
 
-      Plotly.newPlot(div, [trace], layout, PLOT_CONFIG);
-      div.on('plotly_click', () => this._showCommitInfo(run));
+      Plotly.react(div, [trace], layout, PLOT_CONFIG);
+      if (!this._bindedDivs.has(div)) {
+        this._bindedDivs.add(div);
+        div.on('plotly_click', () => this._showCommitInfo(RUNS[this.selectedRunIdx]));
+      }
     }
   }
 
@@ -754,6 +779,7 @@ class BenchDashboard extends LitElement {
       { key: 'table1_uniform', divId: 'chart-sweep-uniform', label: 'Recovery vs Loss \u2014 Uniform' },
       { key: 'table1b_bursty', divId: 'chart-sweep-bursty', label: 'Recovery vs Loss \u2014 Bursty (Gilbert-Elliott)' },
     ];
+    const divIds = models.map(m => m.divId);
 
     for (const { key, divId, label } of models) {
       const div = this._getChartDiv(divId);
@@ -770,6 +796,7 @@ class BenchDashboard extends LitElement {
           error_y: { type: 'data', array: entries.map(e => e.recovery.ci95), visible: true, thickness: 1.5 },
           mode: 'lines+markers',
           name: backend,
+          visible: this._hiddenBackends.has(backend) ? 'legendonly' : true,
           line: { color: BACKEND_COLORS[backend] || '#888' },
           marker: { size: 7 },
           hovertemplate: 'Loss %{x}%: %{y:.2f}% \u00b1 %{error_y.array:.3f}<extra>' + backend + '</extra>'
@@ -786,20 +813,23 @@ class BenchDashboard extends LitElement {
         height: 380,
       };
 
-      Plotly.newPlot(div, traces, layout, PLOT_CONFIG);
-      div.on('plotly_click', () => this._showCommitInfo(run));
+      Plotly.react(div, traces, layout, PLOT_CONFIG);
+      if (!this._bindedDivs.has(div)) {
+        this._bindedDivs.add(div);
+        div.on('plotly_click', () => this._showCommitInfo(RUNS[this.selectedRunIdx]));
+        div.on('plotly_legendclick', (data) => this._syncLegend('sweep', divIds, data));
+      }
     }
   }
 
   // --- ABLATION (one bar chart per metric) ---
   _renderAllAblation() {
-    const { scenario, paths, backends, selectedRunIdx } = this;
+    const { scenario, paths, ablationBackend, selectedRunIdx } = this;
     const run = RUNS[selectedRunIdx];
     const configs = ['baseline', 'no_nack', 'no_reorder', 'no_pi'];
     const configLabels = { baseline: 'Baseline', no_nack: 'No NACK', no_reorder: 'No Reorder', no_pi: 'No PI' };
     const configColors = ['#2196F3', '#FF9800', '#E91E63', '#9C27B0'];
-    // Use first checked backend for ablation
-    const backend = backends.length > 0 ? backends[0] : ALL_BACKENDS[0];
+    const backend = ablationBackend;
 
     for (const metric of ALL_METRICS) {
       const div = this._getChartDiv(`chart-ablation-${metric}`);
@@ -840,8 +870,11 @@ class BenchDashboard extends LitElement {
         height: 380,
       };
 
-      Plotly.newPlot(div, [trace], layout, PLOT_CONFIG);
-      div.on('plotly_click', () => this._showCommitInfo(run));
+      Plotly.react(div, [trace], layout, PLOT_CONFIG);
+      if (!this._bindedDivs.has(div)) {
+        this._bindedDivs.add(div);
+        div.on('plotly_click', () => this._showCommitInfo(RUNS[this.selectedRunIdx]));
+      }
     }
   }
 }
