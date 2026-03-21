@@ -34,11 +34,11 @@ symbol (FEC fallback):
 
 | Aspect         | Correction Symbol (retransmit) | Correction Symbol (FEC repair) |
 |----------------|-------------------------------|-------------------------------|
-| When chosen    | Un-ACKed symbol older than T_retx exists | No eligible retransmit candidate |
+| When chosen    | With probability P_lost(t) | With probability 1-P_lost(t) |
 | Content        | Exact copy of source symbol   | Random linear combination      |
 | Decode cost    | Zero (immediate use)          | Needs FEC decoder              |
 | Bandwidth cost | Same (one symbol slot)        | Same (one symbol slot)         |
-| Latency cost   | T_retx + RTT/2 (ARQ recovery) | Zero additional (arrives with source) |
+| Latency cost   | Depends on when P_lost triggers | Zero additional (arrives with source) |
 
 ### 1.2 Notation
 
@@ -50,7 +50,7 @@ symbol (FEC fallback):
 | B      | Mean burst length = 1/q | symbols (count) | 2.0 |
 | W      | Encoder window size | symbols (count) | 50 |
 | RTT    | Round-trip time | seconds | 0.050 (50ms) |
-| T_retx | Retransmit timeout = SRTT + z(1-ε) × RTTVAR | seconds | 0.060 (60ms) |
+| P_lost(t) | P(symbol lost given no ACK after time t) | probability (0-1) | 0.5 at t=SRTT |
 | t_fec  | FEC recovery time = m / (A × (1-ε)) × t_sym | seconds | 0.003 (3ms) |
 | t_sym  | Symbol transmission time = symbol_size / throughput | seconds | 0.000096 (96μs at 100Mbps) |
 | SRTT   | Smoothed RTT estimate | seconds | 0.050 (50ms) |
@@ -63,7 +63,7 @@ symbol (FEC fallback):
 | ρ      | Reliability target: P(symbol delivered) ≥ ρ | probability (0-1) | 1.0 (100%) |
 | T_cut  | Taper cutoff time (stop corrections after this) | seconds | ∞ (100% reliability) |
 | L_prop | Propagation delay (base latency) | seconds | 0.025 (25ms) |
-| L_arq  | ARQ recovery latency = T_retx + RTT/2 | seconds | 0.100 (100ms) |
+| L_arq  | ARQ recovery latency (time from loss to retransmit arrival) | seconds | 0.075-0.100 |
 | σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
 | z_δ    | Standard normal quantile for δ | dimensionless | 3.72 (for δ=1e-4) |
 | ε_codec | Codec decode overhead | ratio (0-1) | 0.01 (RaptorQ) |
@@ -338,9 +338,11 @@ for bulk transfer but too slow for real-time applications.
 - Self-healing: if the ACK itself is lost on the reverse path, the sender just
   waits longer and retransmits anyway. No special mechanism needed.
 
-### 3.4 Recovery Latency: t_fec vs T_retx
+### 3.4 Recovery Latency and the P_lost(t) Model
 
 A lost symbol is recovered by whichever mechanism finishes first — FEC or ARQ.
+Rather than a hard timeout threshold, the choice between repair and retransmit
+is **probabilistic**, based on the sender's confidence that a symbol was lost.
 
 **FEC recovery time (t_fec):** The taper function generates repair symbols
 continuously after a source symbol is sent. Each repair that covers the lost
@@ -357,7 +359,7 @@ lost symbols in the window, the decoder needs m surviving repairs:
     t_sym = symbol_size / throughput (time to transmit one symbol)
 ```
 
-Concrete examples for a single loss (m=1), A=0.04, ε=0.025:
+Concrete examples for a single loss (m=1), A=0.04, e=0.025:
 
 ```
   At 100 Mbps, 1200-byte symbols:  t_sym = 0.096ms, t_fec = 2.5ms
@@ -367,50 +369,84 @@ Concrete examples for a single loss (m=1), A=0.04, ε=0.025:
 
 For burst loss (m=5 on WiFi at 100 Mbps): t_fec = 5 x 2.5ms = 12.5ms.
 
-**ARQ recovery time (T_retx + RTT/2):** The sender waits T_retx for an ACK,
-then retransmits. The retransmitted symbol travels RTT/2 to the receiver.
+**P_lost(t): the probability a symbol was lost.** At time t after sending a
+symbol, given no ACK has arrived, what is the probability it was actually lost?
 
-**The optimal T_retx** balances premature retransmission against delayed
-recovery. A symbol should be retransmitted when we're confident it was lost
-— that is, when the probability of the ACK just being delayed is low:
-
-```
-  T_retx = SRTT + z(1-e) x RTTVAR
-
-  where z(1-e) = standard normal quantile at probability (1-e)
-```
-
-This formula is adaptive: higher loss rate = shorter timeout (less evidence
-of loss needed). Lower loss rate = longer timeout (loss is rare, wait for
-more evidence before concluding loss).
+If the symbol was received, the ACK should arrive after roughly one RTT. If
+the symbol was lost, no ACK will ever come (until a correction recovers it).
+Using Bayes' theorem:
 
 ```
-  | Scenario  | e     | z(1-e) | T_retx (SRTT=50ms, RTTVAR=5ms) |
-  |-----------|-------|--------|--------------------------------|
-  | DC        | 0.001 | 3.09   | 65.5ms                         |
-  | WiFi      | 0.025 | 1.96   | 59.8ms                         |
-  | LTE       | 0.05  | 1.64   | 58.2ms                         |
-  | Satellite | 0.09  | 1.34   | 56.7ms                         |
+  P_lost(t) = e / [e + (1-e) x P(RTT > t)]
+
+  where:
+    e          = channel loss rate (prior probability of loss)
+    P(RTT > t) = probability the ACK is delayed beyond time t
+               = tail of the RTT distribution (from SRTT and RTTVAR)
 ```
 
-**Which one wins?** The lost symbol is recovered at min(t_fec, T_retx+RTT/2):
+This gives a smooth transition from "probably fine" to "certainly lost":
+
+```
+  t = 0:            P_lost = e              (just the base loss rate)
+  t = SRTT:         P_lost ≈ 2e             (ACK expected by now)
+  t = SRTT + 2s:    P_lost ≈ 0.98           (very confident it's lost)
+  t >> SRTT:        P_lost -> 1.0            (certainly lost)
+```
+
+Concrete example (WiFi, e = 0.025, SRTT = 50ms):
+
+```
+  t = 0ms:    P_lost = 0.025    -> 97.5% repair, 2.5% retransmit
+  t = 40ms:   P_lost = 0.08     -> 92% repair, 8% retransmit
+  t = 50ms:   P_lost = 0.05     -> 95% repair, 5% retransmit
+  t = 60ms:   P_lost = 0.35     -> 65% repair, 35% retransmit
+  t = 70ms:   P_lost = 0.85     -> 15% repair, 85% retransmit
+  t = 80ms:   P_lost = 0.98     -> 2% repair, 98% retransmit
+```
+
+**No hard threshold.** There is no T_retx parameter to tune. The transition
+from repair to retransmit is driven entirely by P_lost(t), which itself is
+determined by the channel loss rate e and the RTT distribution. Both are
+measured quantities — no knobs.
+
+**Bandwidth efficiency.** A retransmit is wasted if the symbol wasn't actually
+lost (duplicate). A repair is never wasted (always provides information to the
+decoder). The expected waste per correction slot is:
+
+```
+  E[waste] = P(retransmit chosen) x P(symbol not actually lost)
+           = P_lost(t) x (1 - P_lost(t))
+```
+
+This is maximized at P_lost = 0.5 (maximum uncertainty) and zero at the
+extremes. The probabilistic model automatically minimizes waste.
+
+**Proactive retransmit emerges naturally.** At high loss rates (e.g., e = 0.5),
+P_lost(0) = 0.5 — half the correction slots are retransmits even at t = 0.
+This is proactive redundant source sending, no special mode needed. At low
+loss rates (e = 0.001), P_lost(0) = 0.001 — virtually all repair. The model
+adapts to the channel automatically.
+
+**Which mechanism wins on latency?** FEC recovery (t_fec) is typically much
+faster than ARQ recovery (waiting for P_lost to rise + RTT/2):
 
 ```
   Time ---------------------------------------------------------->
-  t=0                  t_fec            T_retx        T_retx+RTT/2
-  |                     |                |              |
-  S3 lost               FEC decodes S3   timeout fires  retransmit
-                        (if enough       (if FEC        arrives
-                         repairs         didn't work)
-                         arrived)
-  |<-- FEC working --->|
-  |<--------- ARQ waiting (but FEC covers the gap) -------->|
+  t=0          t_fec                                    retransmit
+  |             |                                       arrives
+  S3 lost       FEC decodes      P_lost rises,          |
+                (if enough       retransmit chosen       |
+                 repairs         in correction slots     |
+                 arrived)                                |
+  |<-- FEC -->|
+  |<---- taper generating corrections the whole time --->|
+  |     (gradually shifting from repair to retransmit)   |
 ```
 
-At 100 Mbps on WiFi: t_fec = 2.5ms, T_retx + RTT/2 = 85ms. **FEC wins by
-34x** for single losses. T_retx only fires for burst losses that overwhelm
-the FEC budget — and even then, the exact value of T_retx is not critical
-because FEC repair is running in parallel the whole time.
+At 100 Mbps on WiFi: t_fec = 2.5ms. Most losses are FEC-recovered long
+before P_lost rises high enough for retransmission. ARQ retransmit is only
+relevant for burst losses that overwhelm the FEC budget.
 
 ### 3.5 Why Unify FEC and ARQ?
 
@@ -430,31 +466,34 @@ The key insight: **the taper function controls WHEN to generate correction
 symbols** (the density schedule). **The per-slot decision controls WHAT to
 generate** (repair or retransmit). These are orthogonal choices:
 
-- **Early in the taper** (right after sending source): no timeouts have fired
-  yet, so no un-ACKed symbols are eligible for retransmit. All correction
-  symbols are FEC repair. This is pure proactive protection.
+- **Early in the taper** (right after sending source): P_lost(t) is low, so
+  almost all correction symbols are FEC repair. This is pure proactive
+  protection — we don't yet know what's lost.
 
-- **Late in the taper** (after T_retx has elapsed): un-ACKed symbols have
-  timed out and become retransmit candidates. Correction symbols prefer
-  exact source retransmission over random repair.
+- **Late in the taper** (t >> SRTT): P_lost(t) approaches 1, so correction
+  symbols are almost all retransmits. We're confident about which symbols
+  are lost and send the exact data the receiver needs.
+
+- **In between**: a smooth probabilistic mix. No hard phase switch.
 
 This means the taper function **naturally transitions from FEC to ARQ** as
-time passes, without any explicit phase switch. The unified mechanism is
+time passes, driven by the P_lost(t) posterior. The unified mechanism is
 called a **correction symbol** — it is either a repair symbol or a source
-retransmit, decided at generation time.
+retransmit, decided probabilistically at generation time.
 
 ### 3.6 Correction Symbols — The Unified Concept
 
 A **correction symbol** is any symbol sent to recover lost data. It occupies
 one symbol slot on the wire and serves one of two purposes:
 
-| Aspect         | Source retransmit (ARQ)         | Repair symbol (FEC)            |
-|----------------|--------------------------------|--------------------------------|
-| When chosen    | Un-ACKed symbol older than T_retx exists | No eligible retransmit |
-| Content        | Exact copy of source symbol    | Random linear combination      |
-| Receiver action| Immediate use, no decoder      | Feed to FEC decoder            |
-| Bandwidth cost | Same (one symbol slot)         | Same (one symbol slot)         |
-| Best for       | Known-lost symbols (after timeout) | Proactive burst protection  |
+| Aspect         | Source retransmit (ARQ)          | Repair symbol (FEC)            |
+|----------------|----------------------------------|--------------------------------|
+| When chosen    | With probability P_lost(t)       | With probability 1-P_lost(t)   |
+| Content        | Exact copy of source symbol      | Random linear combination      |
+| Receiver action| Immediate use, no decoder        | Feed to FEC decoder            |
+| Bandwidth cost | Same (one symbol slot)           | Same (one symbol slot)         |
+| Waste risk     | Duplicate if symbol wasn't lost  | Never wasted (always useful)   |
+| Best for       | High-confidence loss (P_lost>>0) | Low-confidence (early, P_lost~e)|
 
 The taper function (Section 4) determines the **density** of correction
 symbols over time. This section explains what happens in each slot.
@@ -462,33 +501,40 @@ symbols over time. This section explains what happens in each slot.
 ### 3.7 Per-Slot Decision
 
 When the taper function decides to generate a correction symbol, the sender
-checks the retransmit buffer:
+makes a probabilistic choice based on P_lost(t) for the oldest un-ACKed
+symbol in the retransmit buffer:
 
 ```
   Taper decides: "generate a correction symbol now"
                       |
                       v
   +---------------------------------------+
-  | Retransmit buffer has un-ACKed        |
-  | source symbol older than T_retx?      |
-  +---- YES ----------+---- NO -----------+
-  |                    |                   |
-  | Retransmit         | Generate random   |
-  | exact source       | repair symbol     |
-  | (immediate         | (FEC, needs       |
-  |  decode)           |  decoder)         |
-  +--------------------+-------------------+
+  | P_lost(t) for oldest un-ACKed symbol  |
+  |                                       |
+  | With probability P_lost(t):           |
+  |   -> Retransmit exact source          |
+  |      (immediate decode at receiver)   |
+  |                                       |
+  | With probability 1 - P_lost(t):       |
+  |   -> Generate random repair symbol    |
+  |      (FEC, covers any loss in window) |
+  +---------------------------------------+
+
+  P_lost(t) = e / [e + (1-e) x P(RTT > t)]
 ```
 
-**Why prefer retransmit?** A retransmitted source symbol is immediately usable
-by the receiver — no FEC decoding needed, no dependency on other symbols. It is
-strictly better than a repair symbol when the sender has high confidence the
-original was lost (because enough time has passed without an ACK).
+**Why probabilistic, not a hard threshold?** A retransmitted source symbol is
+immediately usable but wastes the slot if the original wasn't actually lost.
+A repair symbol is always useful (provides information to the decoder) but
+requires decoder processing. The probabilistic mix minimizes expected waste:
 
-**Why T_retx?** The timeout T_retx prevents premature retransmission. If we
-retransmit too early, the original might still be in flight and we waste a
-correction slot. T_retx should be set to approximately RTT + margin, so that
-an ACK would have arrived by now if the symbol was received.
+```
+  E[waste] = P_lost(t) x (1 - P_lost(t))
+```
+
+This is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
+all retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
+(maximum uncertainty). The model automatically allocates the right mix.
 
 ### 3.8 The Retransmit Buffer
 
@@ -1494,15 +1540,13 @@ To verify the model:
    Recovery latency (Section 3.4):
      t_sym = symbol_size / throughput     symbol transmission time   [seconds]
      t_fec = m / (A x (1-e)) x t_sym     FEC recovery time          [seconds]
-     T_retx = SRTT + z(1-e) x RTTVAR     retransmit timeout         [seconds]
-     L_arq = T_retx + RTT/2              ARQ recovery latency       [seconds]
-     L_actual = min(t_fec, L_arq)         actual recovery latency    [seconds]
+     P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence        [probability]
+     L_actual = min(t_fec, retransmit arrival)                       [seconds]
 
-   Correction symbol per-slot decision (Section 3.7):
-     if retransmit_buffer.peek().age > T_retx:
-       send exact source retransmit       (preferred: immediate decode)
-     else:
-       send random repair symbol          (FEC fallback: needs decoder)
+   Per-slot decision (Section 3.7):
+     with probability P_lost(t):   send source retransmit  (immediate decode)
+     with probability 1-P_lost(t): send repair symbol      (FEC, any loss)
+     E[waste] = P_lost(t) x (1 - P_lost(t))               (minimized at extremes)
 ```
 
 ## Appendix B: Related Work
@@ -1795,10 +1839,12 @@ we always have enough correction to survive at least B consecutive erasures.
    for small windows or very bursty channels. Could we use the exact GE
    distribution (computable from the transition matrix) for higher precision?
 
-5. **Optimal T_retx tuning (resolved):** T_retx = SRTT + z(1-ε) × RTTVAR
-   (Section 3.4). Adaptive: higher loss = shorter timeout. The exact value is
-   not critical because FEC repair runs in parallel — t_fec is typically much
-   shorter than T_retx, so most losses are FEC-recovered before the timeout.
+5. **Optimal retransmit timing (resolved):** Replaced by the P_lost(t) model
+   (Section 3.4). No hard timeout — the repair/retransmit mix is determined
+   probabilistically by P_lost(t) = ε / [ε + (1-ε) × P(RTT > t)]. This
+   smoothly transitions from repair to retransmit as confidence in loss grows,
+   naturally handles proactive retransmit at high loss rates, and minimizes
+   expected waste at E[waste] = P_lost × (1 - P_lost).
 
 ---
 
