@@ -190,43 +190,216 @@ started, how likely it is to still be ongoing after t symbols.
 
 ## 3. Recovery Mechanisms
 
-### 3.1 Correction Symbols — The Unified Concept
+### 3.1 The Problem: Recovering Lost Symbols
 
-Instead of separate FEC (proactive repair) and ARQ (reactive retransmit)
-mechanisms, we have **one mechanism**: the taper function controls the density
-of **correction symbols**. Each correction symbol occupies one symbol slot on
-the wire and serves exactly one of two purposes:
+When a source symbol is erased by the channel, the receiver has a gap in the
+data stream. There are two fundamentally different ways to fill that gap:
 
-1. **Source retransmit**: an exact copy of a previously-sent source symbol that
-   the receiver has not yet ACKed. The receiver can use it immediately — no
-   decoder needed.
+1. **Send extra data proactively** (before knowing what will be lost): the
+   sender generates redundant symbols alongside source data. If a source
+   symbol is lost, the redundant symbols can reconstruct it. This costs
+   bandwidth (the redundant symbols are sent whether needed or not) but adds
+   no latency (they arrive at roughly the same time as the source).
 
-2. **Repair symbol**: a random linear combination of source symbols in the
-   encoder window (standard FEC). The receiver feeds it to the FEC decoder.
+2. **Detect the loss and resend** (after knowing what was lost): the sender
+   discovers that a symbol wasn't received (via ACK timeout) and retransmits
+   it. This costs latency (at least one round-trip to detect + retransmit)
+   but wastes no bandwidth (only lost symbols are resent).
 
-From the channel's perspective, both are identical: one symbol slot, subject to
-the same erasure probability ε. From the bandwidth budget's perspective, both
-cost the same. The only difference is what the receiver does with them.
+These two approaches are called **FEC** (Forward Error Correction) and **ARQ**
+(Automatic Repeat reQuest). The challenge is finding the right balance between
+them — more FEC means lower latency but higher bandwidth; more ARQ means lower
+bandwidth but higher latency.
 
-### 3.2 Per-Slot Decision
+### 3.2 FEC: Proactive Recovery
+
+**The encoder window.** The sender maintains a sliding window of the W most
+recent source symbols. This window is the encoder's "memory" — it tracks
+which source symbols are available for generating repair:
+
+```
+  Encoder window (W = 5 symbols):
+
+  sent:   [S1] [S2] [S3] [S4] [S5] [S6] [S7] [S8] ...
+                     |----- window -----|
+                     S3  S4  S5  S6  S7
+
+  As new symbols arrive, old ones are evicted from the left.
+```
+
+**Repair symbols** are random linear combinations of source symbols in the
+window. Each repair symbol is computed as:
+
+```
+  R = c1*S3 + c2*S4 + c3*S5 + c4*S6 + c5*S7
+```
+
+where c1..c5 are random coefficients in GF(256) (a finite field — arithmetic
+wraps around so values stay within 0-255). Each repair symbol is a different
+random combination, giving the decoder independent equations.
+
+**How decoding works.** If k source symbols in the window are lost, the
+receiver needs at least k repair symbols that survived the channel. Each
+repair symbol provides one linear equation relating the lost symbols. With
+k equations and k unknowns, the decoder solves the system (Gaussian
+elimination over GF(256)) to recover the lost data.
+
+```
+  Example: source S3 and S5 lost, S4/S6/S7 received
+
+  Time ----------------------------------------------------------->
+
+  Source:  [S1] [S2] [S3] [S4] [S5] [S6] [S7]
+                       X         X              <- lost
+  Repair:    [R1]  [R2]    [R3]       [R4]
+              |     |        |          |
+              v     v        v          v
+         covers   covers   covers    covers
+         S1-S3    S2-S4    S3-S6     S5-S7
+
+  Decoder receives R1, R2, R3, R4 and knows S4, S6, S7.
+  Substituting known values into R3 and R4:
+    R3 = c1*S3 + c2*(known S4) + c3*S5 + c4*(known S6)
+    R4 = c5*S5 + c6*(known S6) + c7*(known S7)
+  -> 2 equations, 2 unknowns (S3, S5) -> solve.
+```
+
+**Systematic codes.** In our system, source symbols are sent as-is — they
+are not encoded. This means if nothing is lost, the receiver can use the
+data immediately without any decoding. The decoder is only invoked when at
+least one source symbol is missing. This is important for efficiency: at
+low loss rates, the decoder rarely runs.
+
+**Codec overhead.** Not all random linear combinations are independent.
+Some may be (near-)linearly dependent, providing redundant equations. This
+means the decoder sometimes needs slightly more repair symbols than the
+number of losses. This extra requirement is the codec overhead — e.g., 1%
+for RaptorQ means the decoder needs 1% more symbols than the theoretical
+minimum of k.
+
+**Properties of FEC:**
+- Bandwidth cost: r repair symbols per source symbol (always-on, paid whether
+  loss occurs or not)
+- Latency cost: zero additional (repair arrives at roughly the same time as
+  source)
+- Bandwidth fraction used: r/(1+r) of total link capacity
+
+### 3.3 ARQ: Reactive Recovery
+
+ARQ recovers lost symbols by retransmitting them after detecting the loss.
+In our system, loss detection is **sender-side**: the sender tracks which
+symbols have been ACKed and retransmits any that remain un-ACKed after a
+timeout.
+
+This is how TCP has worked for 40 years [RFC2018] and is proven robust for
+unicast connections. The alternative (receiver-side detection via NACK
+messages) adds detection delay and is fragile when the reverse path is lossy.
+
+**Timeline of ARQ recovery:**
+
+```
+  Time ---------------------------------------------------------->
+
+  Sender:  [S1] [S2] [S3] [S4] [S5] ...            [S3']
+                       |                              ^
+                       X lost                         | retransmit
+                       |                              |
+  Receiver: S1   S2  (gap)  S4   S5   ... ACK ...    S3'
+                                        |             immediate
+                                   ACK says:          use!
+                                   "got up to S2,
+                                    SACK: S4,S5"
+            |                           |             |
+            |<----- T_retx ----------->|<-- RTT/2 -->|
+            |   (sender waits for       | (one-way    |
+            |    ACK, then times out)   |  propagation)|
+```
+
+The sender sent S3 at time 0. After T_retx (roughly one RTT, enough time for
+an ACK to return), no ACK has confirmed S3. The sender retransmits S3. The
+retransmitted symbol travels one-way (RTT/2) to the receiver.
+
+**Key advantage over FEC:** A retransmitted source symbol is immediately usable
+by the receiver — no decoder needed, no dependency on other symbols. The
+receiver gets the exact data it was missing and can process it right away.
+
+**Key disadvantage:** The retransmission adds L_arq = T_retx + RTT/2 of latency.
+For a link with 50ms RTT and T_retx = 75ms: L_arq = 100ms. This is acceptable
+for bulk transfer but too slow for real-time applications.
+
+**Properties of ARQ:**
+- Bandwidth cost: approximately ε per source symbol (only retransmit what's
+  actually lost — no waste)
+- Latency cost: L_arq = T_retx + RTT/2 per recovery event
+- Self-healing: if the ACK itself is lost on the reverse path, the sender just
+  waits longer and retransmits anyway. No special mechanism needed.
+
+### 3.4 Why Unify FEC and ARQ?
+
+Both FEC and ARQ produce one symbol on the wire. Both cost the same bandwidth
+per symbol. The difference is timing and content:
+
+```
+  FEC repair:        generated immediately, random combination, needs decoder
+  ARQ retransmit:    generated after timeout, exact source copy, immediately usable
+
+  Both occupy one symbol slot on the wire.
+  Both are subject to the same channel loss rate ε.
+  Both serve the same purpose: recover a lost source symbol.
+```
+
+The key insight: **the taper function controls WHEN to generate correction
+symbols** (the density schedule). **The per-slot decision controls WHAT to
+generate** (repair or retransmit). These are orthogonal choices:
+
+- **Early in the taper** (right after sending source): no timeouts have fired
+  yet, so no un-ACKed symbols are eligible for retransmit. All correction
+  symbols are FEC repair. This is pure proactive protection.
+
+- **Late in the taper** (after T_retx has elapsed): un-ACKed symbols have
+  timed out and become retransmit candidates. Correction symbols prefer
+  exact source retransmission over random repair.
+
+This means the taper function **naturally transitions from FEC to ARQ** as
+time passes, without any explicit phase switch. The unified mechanism is
+called a **correction symbol** — it is either a repair symbol or a source
+retransmit, decided at generation time.
+
+### 3.5 Correction Symbols — The Unified Concept
+
+A **correction symbol** is any symbol sent to recover lost data. It occupies
+one symbol slot on the wire and serves one of two purposes:
+
+| Aspect         | Source retransmit (ARQ)         | Repair symbol (FEC)            |
+|----------------|--------------------------------|--------------------------------|
+| When chosen    | Un-ACKed symbol older than T_retx exists | No eligible retransmit |
+| Content        | Exact copy of source symbol    | Random linear combination      |
+| Receiver action| Immediate use, no decoder      | Feed to FEC decoder            |
+| Bandwidth cost | Same (one symbol slot)         | Same (one symbol slot)         |
+| Best for       | Known-lost symbols (after timeout) | Proactive burst protection  |
+
+The taper function (Section 4) determines the **density** of correction
+symbols over time. This section explains what happens in each slot.
+
+### 3.6 Per-Slot Decision
 
 When the taper function decides to generate a correction symbol, the sender
-makes a per-slot decision:
+checks the retransmit buffer:
 
 ```
   Taper decides: "generate a correction symbol now"
-                      │
-                      ▼
-  ┌───────────────────────────────────────┐
-  │ Retransmit buffer has un-ACKed       │
-  │ source symbol older than T_retx?     │
-  ├──── YES ──────────┬──── NO ──────────┤
-  │                   │                  │
-  │ Retransmit        │ Generate random  │
-  │ exact source      │ repair symbol    │
-  │ (immediate        │ (FEC, needs      │
-  │  decode)          │  decoder)        │
-  └───────────────────┴──────────────────┘
+                      |
+                      v
+  +---------------------------------------+
+  | Retransmit buffer has un-ACKed        |
+  | source symbol older than T_retx?      |
+  +---- YES ----------+---- NO -----------+
+  |                    |                   |
+  | Retransmit         | Generate random   |
+  | exact source       | repair symbol     |
+  | (immediate         | (FEC, needs       |
+  |  decode)           |  decoder)         |
+  +--------------------+-------------------+
 ```
 
 **Why prefer retransmit?** A retransmitted source symbol is immediately usable
@@ -239,7 +412,7 @@ retransmit too early, the original might still be in flight and we waste a
 correction slot. T_retx should be set to approximately RTT + margin, so that
 an ACK would have arrived by now if the symbol was received.
 
-### 3.3 The Retransmit Buffer
+### 3.7 The Retransmit Buffer
 
 The sender maintains a **retransmit buffer**: an ordered list of source symbols
 that have been sent but not yet ACKed.
@@ -247,9 +420,9 @@ that have been sent but not yet ACKed.
 ```
   Retransmit buffer (ordered by send time, oldest first):
 
-  ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-  │ S12 │ S13 │ S17 │ S18 │ S19 │ S24 │ S25 │  <- un-ACKed symbols
-  └─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+  +-----+-----+-----+-----+-----+-----+-----+
+  | S12 | S13 | S17 | S18 | S19 | S24 | S25 |  <- un-ACKed symbols
+  +-----+-----+-----+-----+-----+-----+-----+
     ^                                    ^
     oldest                               newest
     (first retransmit                    (too recent,
@@ -267,90 +440,94 @@ The buffer is bounded by the encoder window size W — symbols that leave the
 encoder window are removed regardless of ACK status (the FEC decoder can no
 longer use them, so the system relies on the decoder having recovered them).
 
-### 3.4 SACK-Extended WindowAck
+### 3.8 SACK-Extended WindowAck
 
-The receiver sends periodic **ACK+SACK** messages (replacing the former
-WindowNack/NackAck mechanism):
+The receiver sends periodic **ACK+SACK** messages to tell the sender what
+arrived. This is the same mechanism TCP has used since RFC 2018:
 
 ```
   ACK+SACK message:
-  ┌──────────────────────────────────────────────────┐
-  │ cumulative_ack: 42    (all symbols ≤ 42 received)│
-  │ sack_ranges: [(45,47), (50,55)]                  │
-  │ echo_timestamp: 1705012345.678                   │
-  └──────────────────────────────────────────────────┘
+  +---------------------------------------------------+
+  | cumulative_ack: 42    (all symbols <= 42 received) |
+  | sack_ranges: [(45,47), (50,55)]                    |
+  | echo_timestamp: 1705012345.678                     |
+  +---------------------------------------------------+
 ```
 
 - **Cumulative ACK**: the highest sequence number such that all symbols up to
-  and including it have been received. Same as TCP's cumulative ACK.
+  and including it have been received. The sender knows everything up to 42
+  arrived. Symbols 43 and 44 are missing (gaps).
 - **SACK ranges** [RFC2018]: out-of-order blocks received beyond the cumulative
-  ACK. These tell the sender exactly which symbols arrived despite gaps.
-- **Echo timestamp**: for RTT measurement.
+  ACK. Here, symbols 45-47 and 50-55 also arrived. Combined with the
+  cumulative ACK, the sender knows exactly that symbols 43, 44, 48, 49 are
+  missing.
+- **Echo timestamp**: the sender's own timestamp echoed back for RTT
+  measurement (no clock synchronization needed).
 
-**Advantages over the former NACK-based approach:**
-- ACK-based protocols are proven more robust for unicast (TCP's 40-year track
-  record). ACKs confirm what works; NACKs report what failed.
-- The sender infers losses from gaps in SACK — no separate NACK message needed.
+**Why ACK+SACK instead of NACK?** ACK-based protocols are more robust for
+unicast connections:
 - If an ACK is lost, the sender simply waits longer and retransmits anyway
-  (self-healing). No NackAck echo mechanism needed.
-- SACK is a well-understood, widely-deployed mechanism [RFC2018].
+  (self-healing). A lost NACK means the sender never learns about the loss.
+- ACKs confirm what works; NACKs report what failed. Confirming success is
+  more reliable than reporting failure.
+- No separate NackAck echo mechanism needed to measure reverse path loss.
 
-### 3.5 Per-Symbol Delivery Outcomes
+### 3.9 Per-Symbol Delivery Outcomes
 
 A lost symbol has three possible outcomes, depending on whether the taper
 function's correction symbols recover it before the cutoff T_cut:
 
 ```
    Outcome 1: FEC-recovered (proactive repair arrives before T_retx)
-     Latency: L_prop + small delay (≈ same as source)
-     Probability: ε × P_fec
+     Latency: L_prop + small delay (same as source)
+     Probability: e x P_fec
 
    Outcome 2: ARQ-recovered (retransmit arrives after T_retx, before T_cut)
      Latency: L_prop + L_arq  where L_arq = T_retx + RTT/2
-     Probability: ε × (1 - P_fec) × P_arq
+     Probability: e x (1 - P_fec) x P_arq
 
    Outcome 3: Lost (not recovered by T_cut)
-     Latency: ∞ (never delivered)
-     Probability: ε × (1 - P_fec) × (1 - P_arq)
+     Latency: infinity (never delivered)
+     Probability: e x (1 - P_fec) x (1 - P_arq)
 ```
 
 Where P_arq = probability that a retransmitted correction symbol succeeds
-within the cutoff. When ρ = 100% (T_cut = ∞), P_arq = 1 and outcome 3
+within the cutoff. When ρ = 100% (T_cut = infinity), P_arq = 1 and outcome 3
 never occurs.
 
 The full delivery distribution:
 
 ```
-   P(on-time delivery) = (1 - ε) + ε × P_fec           not lost, or FEC
-   P(late delivery)    = ε × (1 - P_fec) × P_arq       ARQ retransmit
-   P(permanent loss)   = ε × (1 - P_fec) × (1 - P_arq) not recovered
+   P(on-time delivery) = (1 - e) + e x P_fec           not lost, or FEC
+   P(late delivery)    = e x (1 - P_fec) x P_arq       ARQ retransmit
+   P(permanent loss)   = e x (1 - P_fec) x (1 - P_arq) not recovered
 
-   Reliability: ρ = 1 - P(permanent loss)
-   Tail latency: δ = P(late delivery) / ρ               among delivered symbols
+   Reliability: p = 1 - P(permanent loss)
+   Tail latency: d = P(late delivery) / p               among delivered symbols
 ```
 
-### 3.6 The Triangle in Action
+### 3.10 The Triangle in Action
 
-Under **100% reliability** (ρ = 1, T_cut = ∞): outcome 3 never occurs.
+Under **100% reliability** (ρ = 1, T_cut = infinity): outcome 3 never occurs.
 "Tail loss from FEC" equals "tail latency events" — they are the same thing.
 This is the special case from Section 6.
 
-Under **variable reliability** (ρ < 1, T_cut < ∞): the taper is cut off.
+Under **variable reliability** (ρ < 1, T_cut < infinity): the taper is cut off.
 Symbols beyond T_cut are permanently lost. This saves bandwidth (fewer
 correction symbols) and bounds latency (no recovery beyond T_cut), at the
 cost of reliability.
 
 ```
-  ρ = 100%:  ─────────────────────────────── (taper runs until ACK)
+  p = 100%:  ---------------------------------- (taper runs until ACK)
              all symbols eventually delivered
 
-  ρ = 98%:   ──────────────┐
-             98% delivered  │ T_cut
-             2% lost        └── (taper stops, accept loss)
+  p = 98%:   ----------------+
+             98% delivered    | T_cut
+             2% lost          +-- (taper stops, accept loss)
 
-  ρ = 95%:   ────────┐
-             95%      │ T_cut (shorter)
-             5% lost  └── accept loss (sensor/VoIP)
+  p = 95%:   ----------+
+             95%        | T_cut (shorter)
+             5% lost    +-- accept loss (sensor/VoIP)
 ```
 
 ---
