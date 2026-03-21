@@ -366,6 +366,20 @@ impl PathState {
         self.cwnd.saturating_sub(self.in_flight)
     }
 
+    /// Spare capacity as a fraction of in-flight traffic.
+    ///
+    /// Returns `(cwnd - in_flight) / in_flight` when in_flight > 0.
+    /// Used by the FEC rate controller to ensure repairs don't exceed
+    /// available link capacity (the "never hurts" guarantee).
+    ///
+    /// Returns f64::INFINITY when in_flight is 0 (unlimited spare capacity).
+    pub fn spare_capacity(&self) -> f64 {
+        if self.in_flight == 0 {
+            return f64::INFINITY;
+        }
+        self.cwnd.saturating_sub(self.in_flight) as f64 / self.in_flight as f64
+    }
+
     /// BBR-style congestion control: handle acknowledgements.
     ///
     /// Records delivery, computes BDP, and adjusts cwnd toward the
@@ -716,6 +730,18 @@ impl Scheduler {
             .filter(|p| p.active && p.available() > 0 && p.id != primary)
             .min_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()))
             .map(|p| p.id)
+    }
+
+    /// Aggregate spare capacity across all active paths.
+    ///
+    /// Returns the minimum spare_capacity fraction across active paths,
+    /// representing the tightest bottleneck. Used to cap FEC repair rate.
+    pub fn spare_capacity(&self) -> f64 {
+        self.paths
+            .values()
+            .filter(|p| p.active)
+            .map(|p| p.spare_capacity())
+            .fold(f64::INFINITY, f64::min)
     }
 
     /// Get the minimum max_datagram_size across all active paths that have

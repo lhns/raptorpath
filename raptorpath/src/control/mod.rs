@@ -8,10 +8,12 @@
 //! (correlated losses, bursty channels, estimation lag).
 
 pub mod backend_selector;
+pub mod changepoint;
 pub mod estimator;
 pub mod fec_rate;
 pub mod gilbert_elliott;
 
+pub use changepoint::BayesianChangepoint;
 pub use estimator::LossEstimator;
 pub use fec_rate::FecRateController;
 pub use gilbert_elliott::GilbertElliottEstimator;

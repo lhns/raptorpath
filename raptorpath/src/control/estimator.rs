@@ -1,25 +1,36 @@
-//! Loss rate estimation using Bayesian EWMA.
+//! Loss rate estimation using Bayesian EWMA + BOCD.
 //!
 //! Combines:
 //! - Beta-Binomial conjugate prior for principled uncertainty quantification
 //! - EWMA for fast adaptation to changing conditions
 //! - Burst detection for non-iid loss patterns
+//! - BOCD (Bayesian Online Changepoint Detection) for regime-aware prediction
+//! - Separate TX/RX loss tracking for asymmetric path estimation
 
+use super::changepoint::BayesianChangepoint;
 use super::gilbert_elliott::GilbertElliottEstimator;
 use std::time::{Duration, Instant};
 
 /// Per-path loss estimator.
 #[derive(Debug)]
 pub struct LossEstimator {
-    /// EWMA of loss rate
-    ewma_loss: f64,
+    // --- TX path loss (forward direction) ---
+    /// EWMA of TX loss rate
+    tx_ewma_loss: f64,
     /// EWMA smoothing factor (higher = more responsive)
     alpha: f64,
-    /// Beta distribution parameters (Bayesian prior)
+    /// Beta distribution parameters (Bayesian prior) for TX path
     beta_a: f64, // successes (received)
     beta_b: f64, // failures (lost)
     /// Decay factor for Beta params to forget old data
     beta_decay: f64,
+
+    // --- RX path loss (reverse direction, from NackAck feedback) ---
+    /// Beta distribution parameters for RX path loss
+    rx_beta_a: f64,
+    rx_beta_b: f64,
+    /// EWMA of RX loss rate
+    rx_ewma_loss: f64,
 
     /// RTT estimation (EWMA)
     ewma_rtt: Duration,
@@ -43,6 +54,9 @@ pub struct LossEstimator {
     /// Gilbert-Elliott HMM for bursty loss estimation
     ge: GilbertElliottEstimator,
 
+    /// BOCD for regime-aware prediction
+    bocd: BayesianChangepoint,
+
     /// Bookkeeping
     total_sent: u64,
     total_received: u64,
@@ -52,12 +66,16 @@ pub struct LossEstimator {
 impl LossEstimator {
     pub fn new() -> Self {
         Self {
-            ewma_loss: 0.0,
+            tx_ewma_loss: 0.0,
             alpha: 0.1, // ~10-sample half-life
             // Weak prior: Beta(1,1) = uniform
             beta_a: 1.0,
             beta_b: 1.0,
             beta_decay: 0.995, // slowly forget old observations
+            // RX path: weak prior
+            rx_beta_a: 1.0,
+            rx_beta_b: 1.0,
+            rx_ewma_loss: 0.0,
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
             ewma_throughput: 0.0,
@@ -68,6 +86,7 @@ impl LossEstimator {
             last_arrival_us: None,
             last_send_ts_us: None,
             ge: GilbertElliottEstimator::new(),
+            bocd: BayesianChangepoint::default_fec(),
             total_sent: 0,
             total_received: 0,
             last_update: Instant::now(),
@@ -84,13 +103,16 @@ impl LossEstimator {
         };
 
         // EWMA update
-        self.ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.ewma_loss;
+        self.tx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.tx_ewma_loss;
 
         // Beta-Binomial update with decay
         self.beta_a *= self.beta_decay;
         self.beta_b *= self.beta_decay;
         self.beta_a += received as f64;
         self.beta_b += lost as f64;
+
+        // BOCD update
+        self.bocd.update(received, lost);
 
         // Burst detection
         if lost > 0 {
@@ -117,6 +139,40 @@ impl LossEstimator {
         self.last_update = Instant::now();
     }
 
+    /// Update RX (reverse path) loss estimate from NackAck feedback.
+    ///
+    /// `nacks_sent`: number of NACKs the receiver sent in this period
+    /// `acks_received`: number of NackAcks received back from the sender
+    pub fn update_rx_loss(&mut self, nacks_sent: u32, acks_received: u32) {
+        if nacks_sent == 0 {
+            return;
+        }
+        let lost = nacks_sent.saturating_sub(acks_received);
+        let batch_loss = lost as f64 / nacks_sent as f64;
+
+        // EWMA update
+        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+
+        // Beta-Binomial update with decay
+        self.rx_beta_a *= self.beta_decay;
+        self.rx_beta_b *= self.beta_decay;
+        self.rx_beta_a += acks_received as f64;
+        self.rx_beta_b += lost as f64;
+    }
+
+    /// RX path loss rate (point estimate).
+    pub fn rx_loss_rate(&self) -> f64 {
+        self.rx_ewma_loss
+    }
+
+    /// NACK effectiveness: probability that a NACK round-trip succeeds.
+    /// = (1 - ε_rx)² where ε_rx is the RX path loss rate.
+    /// The NACK must survive the reverse path AND the repair must survive the forward path.
+    pub fn nack_effectiveness(&self) -> f64 {
+        let rx_loss = self.rx_ewma_loss;
+        (1.0 - rx_loss).powi(2)
+    }
+
     /// Record an RTT measurement.
     pub fn record_rtt(&mut self, rtt: Duration) {
         let rtt_secs = rtt.as_secs_f64();
@@ -131,16 +187,30 @@ impl LossEstimator {
             self.rtt_alpha * bytes_per_sec + (1.0 - self.rtt_alpha) * self.ewma_throughput;
     }
 
-    /// Current loss rate estimate (point estimate).
+    /// Current TX loss rate estimate (point estimate, EWMA).
     pub fn loss_rate(&self) -> f64 {
-        self.ewma_loss
+        self.tx_ewma_loss
     }
 
-    /// Upper bound of loss rate at given confidence level.
+    /// Upper bound of TX loss rate at given confidence level.
     /// Uses the Beta posterior: quantile at (1 - confidence).
     /// This is what we use for computing FEC rate — we want to be conservative.
     pub fn loss_rate_upper(&self, confidence: f64) -> f64 {
         beta_quantile(self.beta_b, self.beta_a, confidence)
+    }
+
+    /// Predictive upper bound from BOCD posterior.
+    ///
+    /// This integrates over run-length uncertainty, producing a tighter
+    /// bound than the Beta posterior when in steady state, and a wider
+    /// bound during regime changes. This IS the margin — no additional
+    /// safety factor needed.
+    pub fn predictive_loss_upper(&self, confidence: f64) -> f64 {
+        if self.bocd.updates() < 5 {
+            // Not enough data for BOCD — fall back to Beta upper bound
+            return self.loss_rate_upper(confidence);
+        }
+        self.bocd.predictive_quantile(confidence)
     }
 
     /// Variance of loss estimate (from Beta posterior).
@@ -202,6 +272,10 @@ impl LossEstimator {
 
     pub fn ge_estimator(&self) -> &GilbertElliottEstimator {
         &self.ge
+    }
+
+    pub fn bocd(&self) -> &BayesianChangepoint {
+        &self.bocd
     }
 
     pub fn is_in_burst(&self) -> bool {
@@ -297,5 +371,41 @@ mod tests {
         assert!(est.is_in_burst());
         est.record_batch(10, 10); // no loss
         assert!(!est.is_in_burst());
+    }
+
+    #[test]
+    fn test_predictive_loss_upper() {
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(100, 90);
+        }
+
+        let pred_upper = est.predictive_loss_upper(0.95);
+        assert!(pred_upper > 0.08, "Predictive upper should be above ~10%: {pred_upper}");
+        assert!(pred_upper < 0.25, "Predictive upper should be reasonable: {pred_upper}");
+    }
+
+    #[test]
+    fn test_rx_loss_tracking() {
+        let mut est = LossEstimator::new();
+
+        // Simulate 20% RX path loss
+        for _ in 0..50 {
+            est.update_rx_loss(10, 8);
+        }
+
+        let rx_loss = est.rx_loss_rate();
+        assert!((rx_loss - 0.2).abs() < 0.05, "Expected ~20% RX loss, got {rx_loss}");
+
+        let effectiveness = est.nack_effectiveness();
+        // (1 - 0.2)^2 = 0.64
+        assert!((effectiveness - 0.64).abs() < 0.1, "Expected ~0.64 effectiveness, got {effectiveness}");
+    }
+
+    #[test]
+    fn test_nack_effectiveness_no_loss() {
+        let est = LossEstimator::new();
+        let eff = est.nack_effectiveness();
+        assert!((eff - 1.0).abs() < 0.01, "No RX loss should give ~1.0 effectiveness: {eff}");
     }
 }

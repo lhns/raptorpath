@@ -176,6 +176,14 @@ pub enum ControlMessage {
     WindowSwitchAck {
         flush_seq: u64,
     },
+
+    /// Sender acknowledges receipt of a WindowNack (sender → receiver).
+    /// Used to measure RX path loss: if receiver sends NACKs but doesn't
+    /// get NackAcks back, the reverse path is lossy.
+    NackAck {
+        /// Monotonic NACK ID echoed back to the receiver.
+        nack_id: u32,
+    },
 }
 
 /// Top-level wire message.

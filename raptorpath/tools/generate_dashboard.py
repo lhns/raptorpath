@@ -344,7 +344,7 @@ class BenchControls extends LitElement {
     }
   `;
 
-  _showScenario() { return this.activeTab === 'trend' || this.activeTab === 'ablation'; }
+  _showScenario() { return this.activeTab === 'trend' || this.activeTab === 'ablation' || this.activeTab === 'budget'; }
   _showConfig()   { return this.activeTab === 'trend' || this.activeTab === 'matrix'; }
   _showPaths()    { return this.activeTab !== 'sweep'; }
   _showBackend()  { return this.activeTab === 'ablation'; }
@@ -359,10 +359,10 @@ class BenchControls extends LitElement {
       </div>
 
       <div class="tabs">
-        ${['trend', 'matrix', 'sweep', 'ablation'].map(t => html`
+        ${['trend', 'matrix', 'sweep', 'ablation', 'budget'].map(t => html`
           <button class="tab-btn ${t === this.activeTab ? 'active' : ''}"
             @click=${() => this._fire('tab-change', t)}>
-            ${{trend:'Trend', matrix:'Matrix', sweep:'Loss Sweep', ablation:'Ablation'}[t]}
+            ${{trend:'Trend', matrix:'Matrix', sweep:'Loss Sweep', ablation:'Ablation', budget:'Budget'}[t]}
           </button>
         `)}
       </div>
@@ -591,6 +591,18 @@ class BenchDashboard extends LitElement {
             </div>
           `)}
         </div>
+
+        <div class="tab-content ${this.activeTab === 'budget' ? 'active' : ''}">
+          <div class="chart-card">
+            <div class="chart-div" id="chart-budget-waterfall"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-div" id="chart-budget-timeseries"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-div" id="chart-budget-gap"></div>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -633,6 +645,7 @@ class BenchDashboard extends LitElement {
     else if (tab === 'matrix') this._renderAllMatrix();
     else if (tab === 'sweep') this._renderAllSweep();
     else if (tab === 'ablation') this._renderAllAblation();
+    else if (tab === 'budget') this._renderAllBudget();
   }
 
   _getChartDiv(id) {
@@ -880,6 +893,133 @@ class BenchDashboard extends LitElement {
         this._bindedDivs.add(div);
         div.on('plotly_click', () => this._showCommitInfo(RUNS[this.selectedRunIdx]));
       }
+    }
+  }
+  // --- BUDGET TAB (ADR-0050: FEC budget visualization) ---
+  _renderAllBudget() {
+    const { scenario, paths, selectedRunIdx } = this;
+    const run = RUNS[selectedRunIdx];
+
+    // Budget waterfall: break down overhead into proactive | nack | wasted | spare
+    const waterfallDiv = this._getChartDiv('chart-budget-waterfall');
+    if (waterfallDiv) {
+      const backends = ALL_BACKENDS.filter(b => b !== 'Retransmit');
+      const overhead = [], theoretical = [];
+      for (const backend of backends) {
+        const entry = run.matrix.find(e =>
+          e.backend === backend && e.scenario === scenario &&
+          e.config === 'baseline' && e.paths === paths
+        );
+        if (entry && entry.metrics.overhead_pct) {
+          overhead.push(entry.metrics.overhead_pct.mean);
+          // Information-theoretic minimum: p/(1-p) where p = loss rate
+          const loss = entry.metrics.loss_rate ? entry.metrics.loss_rate.mean : 0;
+          theoretical.push(loss > 0 ? (loss / (1 - loss)) * 100 : 0);
+        } else {
+          overhead.push(0);
+          theoretical.push(0);
+        }
+      }
+
+      const traces = [
+        {
+          x: backends, y: theoretical,
+          type: 'bar', name: 'IT Minimum',
+          marker: { color: '#4CAF50' },
+          hovertemplate: '%{x}: %{y:.2f}%<extra>IT Minimum</extra>'
+        },
+        {
+          x: backends, y: overhead.map((o, i) => Math.max(0, o - theoretical[i])),
+          type: 'bar', name: 'Estimation Tax',
+          marker: { color: '#FF9800' },
+          hovertemplate: '%{x}: %{y:.2f}%<extra>Estimation Tax</extra>'
+        }
+      ];
+
+      const layout = {
+        ...PLOT_LAYOUT,
+        title: { text: 'Budget Waterfall \u2014 ' + scenario + ' / ' + paths + 'p', font: { size: 14 } },
+        barmode: 'stack',
+        yaxis: { ...PLOT_LAYOUT.yaxis, title: 'Overhead (%)' },
+        showlegend: true,
+        legend: { orientation: 'h', y: -0.2 },
+        height: 380,
+      };
+      Plotly.react(waterfallDiv, traces, layout, PLOT_CONFIG);
+    }
+
+    // Time-series: overhead trend across runs
+    const tsDiv = this._getChartDiv('chart-budget-timeseries');
+    if (tsDiv) {
+      const backends = ALL_BACKENDS.filter(b => b !== 'Retransmit');
+      const traces = backends.map(backend => {
+        const xs = [], ys = [];
+        for (let i = 0; i < RUNS.length; i++) {
+          const entry = RUNS[i].matrix.find(e =>
+            e.backend === backend && e.scenario === scenario &&
+            e.config === 'baseline' && e.paths === paths
+          );
+          if (entry && entry.metrics.overhead_pct) {
+            xs.push(parseTimestamp(RUNS[i].timestamp));
+            ys.push(entry.metrics.overhead_pct.mean);
+          }
+        }
+        return {
+          x: xs, y: ys,
+          mode: 'lines+markers', name: backend,
+          line: { color: BACKEND_COLORS[backend] || '#888' },
+          marker: { size: 6 },
+          hovertemplate: '%{x|%b %d}: %{y:.2f}%<extra>' + backend + '</extra>'
+        };
+      }).filter(t => t.x.length > 0);
+
+      const layout = {
+        ...PLOT_LAYOUT,
+        title: { text: 'Overhead Trend \u2014 ' + scenario + ' / ' + paths + 'p', font: { size: 14 } },
+        xaxis: { ...PLOT_LAYOUT.xaxis, type: 'date', title: 'Date' },
+        yaxis: { ...PLOT_LAYOUT.yaxis, title: 'Overhead (%)' },
+        showlegend: true,
+        legend: { orientation: 'h', y: -0.25 },
+        height: 380,
+      };
+      Plotly.react(tsDiv, traces, layout, PLOT_CONFIG);
+    }
+
+    // Estimation gap: actual overhead / IT minimum ratio
+    const gapDiv = this._getChartDiv('chart-budget-gap');
+    if (gapDiv) {
+      const scenarios = ALL_SCENARIOS;
+      const backends = ALL_BACKENDS.filter(b => b !== 'Retransmit');
+      const traces = backends.map(backend => {
+        const ratios = scenarios.map(sc => {
+          const entry = run.matrix.find(e =>
+            e.backend === backend && e.scenario === sc &&
+            e.config === 'baseline' && e.paths === paths
+          );
+          if (!entry || !entry.metrics.overhead_pct) return 0;
+          const overhead = entry.metrics.overhead_pct.mean;
+          const loss = entry.metrics.loss_rate ? entry.metrics.loss_rate.mean : 0;
+          const it_min = loss > 0 ? (loss / (1 - loss)) * 100 : 0.01;
+          return it_min > 0.01 ? overhead / it_min : 0;
+        });
+        return {
+          x: scenarios, y: ratios,
+          type: 'bar', name: backend,
+          marker: { color: BACKEND_COLORS[backend] || '#888' },
+          hovertemplate: '%{x}: %{y:.1f}x<extra>' + backend + '</extra>'
+        };
+      });
+
+      const layout = {
+        ...PLOT_LAYOUT,
+        title: { text: 'Estimation Gap (Actual / IT Minimum) \u2014 ' + paths + 'p', font: { size: 14 } },
+        barmode: 'group',
+        yaxis: { ...PLOT_LAYOUT.yaxis, title: 'Gap Ratio (lower = better)', type: 'log' },
+        showlegend: true,
+        legend: { orientation: 'h', y: -0.25 },
+        height: 380,
+      };
+      Plotly.react(gapDiv, traces, layout, PLOT_CONFIG);
     }
   }
 }

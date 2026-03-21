@@ -35,7 +35,7 @@ fn test_bursty_channel_increases_repair_rate() {
     // estimator sees transitions and should detect burst length > 2.
     // But since both estimators get the same batch data, the difference
     // comes from the GE burst_factor in compute_repair_count.
-    let bursty_repair = ctrl.compute_repair_count(100, &bursty_est);
+    let bursty_repair = ctrl.compute_repair_count(100, &bursty_est, 50);
     assert!(
         bursty_repair > 0,
         "bursty channel should need repair symbols"
@@ -71,7 +71,7 @@ fn test_bursty_channel_increases_sliding_window_repair_rate() {
     }
 
     let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
-    let rate = ctrl.compute_repair_rate(&bursty_est);
+    let rate = ctrl.compute_repair_rate(&bursty_est, 50);
     assert!(
         rate > 0.0,
         "bursty channel should have positive repair rate"

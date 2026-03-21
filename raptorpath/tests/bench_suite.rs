@@ -839,7 +839,7 @@ fn table2_wire_overhead() -> (String, Vec<OverheadRow>) {
                 FecBackend::Rlc,
                 SYMBOL_SIZE,
             );
-            let repair_rate = ctrl.compute_repair_rate(&estimator);
+            let repair_rate = ctrl.compute_repair_rate(&estimator, NUM_SYMBOLS as usize);
             let repair_count = (NUM_SYMBOLS as f64 * repair_rate).ceil() as u64;
             let overhead = repair_count as f64 * SYMBOL_SIZE as f64 / source_data as f64 * 100.0;
             totals[i] += overhead;
@@ -885,7 +885,7 @@ fn table2_wire_overhead() -> (String, Vec<OverheadRow>) {
                 FecBackend::Rlc,
                 SYMBOL_SIZE,
             );
-            let repair_rate = ctrl.compute_repair_rate(&estimator);
+            let repair_rate = ctrl.compute_repair_rate(&estimator, NUM_SYMBOLS as usize);
             let total_symbols = NUM_SYMBOLS as f64 * (1.0 + repair_rate);
             let overhead =
                 total_symbols * per_symbol_meta as f64 / source_data as f64 * 100.0;
@@ -914,7 +914,7 @@ fn table2_wire_overhead() -> (String, Vec<OverheadRow>) {
                 FecBackend::Rlc,
                 SYMBOL_SIZE,
             );
-            let repair_rate = ctrl.compute_repair_rate(&estimator);
+            let repair_rate = ctrl.compute_repair_rate(&estimator, NUM_SYMBOLS as usize);
             let total_symbols = NUM_SYMBOLS as f64 * (1.0 + repair_rate);
             let num_batches = (total_symbols / BATCH_SIZE as f64).ceil();
             let overhead =
@@ -944,7 +944,7 @@ fn table2_wire_overhead() -> (String, Vec<OverheadRow>) {
                 FecBackend::Rlc,
                 SYMBOL_SIZE,
             );
-            let repair_rate = ctrl.compute_repair_rate(&estimator);
+            let repair_rate = ctrl.compute_repair_rate(&estimator, NUM_SYMBOLS as usize);
             let repair_count = (NUM_SYMBOLS as f64 * repair_rate).ceil();
             let overhead =
                 repair_count * repair_header as f64 / source_data as f64 * 100.0;
@@ -1188,7 +1188,7 @@ fn run_matrix_trial_window(
         total_source_sent += this_batch;
 
         // Adaptive repair with fractional accumulator — avoids ceil() rounding overhead
-        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator);
+        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator, encoder.window_size());
         repair_debt += this_batch as f64 * repair_rate;
         let repair_count = (repair_debt.floor() as u32).min(10);
         repair_debt -= repair_count as f64;
@@ -1568,7 +1568,7 @@ fn run_matrix_trial_block(
 
     for block_idx in 0..num_blocks {
         // Compute repair count from PI-adjusted controller
-        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator);
+        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator, BLOCK_SIZE as usize);
         let mut repair_count = ((BLOCK_SIZE as f64 * repair_rate).ceil() as u32).max(1);
         if fec_backend == FecBackend::ReedSolomon {
             repair_count = repair_count.min(255 - BLOCK_SIZE);

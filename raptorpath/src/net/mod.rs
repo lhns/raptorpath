@@ -1299,6 +1299,10 @@ async fn run_window_sender(
     let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
     /// Last source path used (for NACK repair path selection outside the send macro).
     let mut last_source_path: u32 = 0;
+    /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+    let mut nack_repairs_this_period: u64 = 0;
+    /// Source symbols sent in the current reporting period.
+    let mut source_symbols_this_period: u64 = 0;
 
     // Symbol packer: accumulate small packets into packed symbols for Realtime mode
     let use_packing = protocol_hint == ProtocolHint::Realtime;
@@ -1346,6 +1350,7 @@ async fn run_window_sender(
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
+            source_symbols_this_period += 1;
 
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
@@ -1379,11 +1384,12 @@ async fn run_window_sender(
                 }
             }
 
-            // Fractional repair accumulator
+            // Fractional repair accumulator with cwnd budget gate (ADR-0050)
             if encoder.window_size() > 1 {
                 let repair_rate = {
                     let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
+                    let spare = sched.spare_capacity();
                     let path_estimator = sched
                         .active_paths()
                         .iter()
@@ -1391,7 +1397,7 @@ async fn run_window_sender(
                         .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                         .map(|p| &p.estimator);
                     match path_estimator {
-                        Some(est) => ctrl.compute_repair_rate(est),
+                        Some(est) => ctrl.compute_repair_rate_capped(est, spare, encoder.window_size()),
                         None => 0.0,
                     }
                 };
@@ -1510,9 +1516,33 @@ async fn run_window_sender(
             let effective_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
 
+            // ADR-0050: compute NACK budget from BudgetAllocator
+            let nack_budget_remaining = {
+                let ctrl = fec_controller.lock();
+                let sched = scheduler.lock();
+                let worst_est = sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|p| &p.estimator);
+                match worst_est {
+                    Some(est) => {
+                        let p_upper = est.predictive_loss_upper(1.0 - ctrl.target_tail_loss());
+                        let nack_eff = est.nack_effectiveness();
+                        let budget = crate::control::fec_rate::BudgetAllocator::compute(
+                            p_upper, ctrl.codec_overhead(), current_loss * 0.5, nack_eff,
+                        );
+                        let nack_cap_symbols = (budget.nack_cap() * source_symbols_this_period as f64) as u64;
+                        nack_cap_symbols.saturating_sub(nack_repairs_this_period)
+                    }
+                    None => effective_max_repairs,
+                }
+            };
+
             while let Ok(gaps) = nack_rx.try_recv() {
-                if effective_max_repairs == 0 {
-                    // Fully suppressed — drain NACK queue without sending repairs
+                if effective_max_repairs == 0 || nack_budget_remaining == 0 {
+                    // Fully suppressed or budget exhausted — drain NACK queue
                     continue;
                 }
 
@@ -1553,6 +1583,7 @@ async fn run_window_sender(
                             warn!(nack_path, ?e, "failed to send NACK retransmission");
                         }
                         stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                        nack_repairs_this_period += 1;
                         retransmitted += 1;
                     }
                 }
@@ -1589,6 +1620,7 @@ async fn run_window_sender(
                             warn!(margin_path, ?e, "failed to send NACK repair margin");
                         }
                         stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                        nack_repairs_this_period += 1;
                     }
                 }
 
@@ -1601,7 +1633,7 @@ async fn run_window_sender(
                         .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                         .map(|p| &p.estimator);
                     match path_est {
-                        Some(est) => ctrl.compute_repair_rate(est),
+                        Some(est) => ctrl.compute_repair_rate(est, encoder.window_size()),
                         None => 0.0,
                     }
                 };
@@ -1624,7 +1656,7 @@ async fn run_window_sender(
                     .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|p| &p.estimator);
                 match path_est {
-                    Some(est) => ctrl.compute_repair_rate(est),
+                    Some(est) => ctrl.compute_repair_rate(est, encoder.window_size()),
                     None => 0.0,
                 }
             };
@@ -1632,6 +1664,12 @@ async fn run_window_sender(
             repair_debt = (repair_debt - debt_reduction).max(0.0);
 
             encoder.advance(ack.saturating_sub(MAX_WINDOW_SIZE as u64 / 2));
+
+            // Reset budget period counters on significant window advancement
+            if newly_acked >= 10 {
+                nack_repairs_this_period = 0;
+                source_symbols_this_period = 0;
+            }
 
             // Clean up source_path_map for evicted sequences
             let (win_start, _) = encoder.window_span();
@@ -1874,7 +1912,7 @@ fn encode_to_interleave_buf(
             .map(|p| &p.estimator);
 
         match worst_estimator {
-            Some(est) => ctrl.compute_repair_count(source_symbols, est),
+            Some(est) => ctrl.compute_repair_count(source_symbols, est, source_symbols as usize),
             None => 0,
         }
     };
@@ -2211,9 +2249,24 @@ fn handle_control_message(
 
         ControlMessage::WindowNack { gaps } => {
             debug!(path_id, gap_count = gaps.len(), "window NACK received");
+            // Send NackAck back to receiver for RX path loss measurement
+            // Use gap count as a lightweight nack_id proxy
+            let nack_id = gaps.len() as u32;
+            let _ = transport.send_control_datagram(
+                path_id,
+                ControlMessage::NackAck { nack_id },
+            );
             if let Some(tx) = nack_tx {
                 let _ = tx.try_send(gaps);
             }
+        }
+
+        ControlMessage::NackAck { nack_id } => {
+            debug!(path_id, nack_id, "NackAck received — RX path alive");
+            // NackAck reception is tracked by the receiver for RX loss estimation.
+            // The receiver updates its estimator based on how many NackAcks come back
+            // vs how many NACKs were sent. This is handled at the application level
+            // in the receiver loop, not here, since we need access to the NACK counter.
         }
 
         // ADR-0030: WindowSwitch/WindowSwitchAck handled in receiver/sender loops directly
