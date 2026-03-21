@@ -1,6 +1,6 @@
-# FEC/NACK Mathematical Foundation
+# FEC/ARQ Unified Correction Symbol Model
 
-A principled model for optimal repair allocation in raptorpath.
+A principled model for optimal correction symbol allocation in raptorpath.
 
 ---
 
@@ -11,30 +11,33 @@ A principled model for optimal repair allocation in raptorpath.
 ```
   Sender                          Channel                        Receiver
  ┌──────────┐                  ┌───────────┐                  ┌──────────┐
- │          │   source syms    │           │   surviving      │          │
- │  Source  ├─────────────────►│           ├─────────────────►│  Decode  │
- │ packets  │                  │  Erasure  │                  │          │
- │          │   repair syms    │  Channel  │   surviving      │          │
- │  FEC     ├─────────────────►│  (GE)     ├─────────────────►│  FEC     │
- │ Encoder  │                  │           │                  │ Decoder  │
- │          │                  │           │                  │          │
- │          │◄─── ACK ─────────┤           │◄─── ACK ────────┤          │
- │          │◄─── NACK ────────┤           │◄─── NACK ───────┤  Gap     │
- │          ├──── NackAck ────►│           ├──── NackAck ───►│ Detector │
- │          │                  │           │                  │          │
- │          ├──── NACK repair ►│           ├──── repair ────►│          │
+ │  Source  ├── source syms ──►│  Erasure  ├── surviving ────►│  Decode  │
+ │ packets  │                  │  Channel  │                  │          │
+ │          ├── correction ───►│  (GE)     ├── surviving ────►│  FEC     │
+ │  Taper   │   symbols        │           │                  │ Decoder  │
+ │ Function │                  │           │                  │          │
+ │          │◄── ACK+SACK ────┤           │◄── ACK+SACK ────┤  Gap     │
+ │ Retransmit                  │           │                  │ Detect + │
+ │  Buffer  │                  │           │                  │  SACK    │
  └──────────┘                  └───────────┘                  └──────────┘
 ```
 
 The system provides **100% reliable** delivery. Every source symbol eventually
 reaches the receiver. The only question is **when** — the delivery latency.
 
-Two recovery mechanisms:
+One unified mechanism — **correction symbols** — handles both proactive and
+reactive recovery. The taper function controls correction symbol density, and
+each correction slot either retransmits an exact source symbol from the
+retransmit buffer (preferred, if old enough) or generates a random repair
+symbol (FEC fallback):
 
-| Mechanism | Direction  | Bandwidth cost        | Latency cost              |
-|-----------|------------|-----------------------|---------------------------|
-| FEC       | Proactive  | Always-on (per source)| Zero (arrives with source)|
-| NACK      | Reactive   | Per-event (only loss) | detection_delay + RTT     |
+| Aspect         | Correction Symbol (retransmit) | Correction Symbol (FEC repair) |
+|----------------|-------------------------------|-------------------------------|
+| When chosen    | Un-ACKed symbol older than T_retx exists | No eligible retransmit candidate |
+| Content        | Exact copy of source symbol   | Random linear combination      |
+| Decode cost    | Zero (immediate use)          | Needs FEC decoder              |
+| Bandwidth cost | Same (one symbol slot)        | Same (one symbol slot)         |
+| Latency cost   | T_retx + RTT/2 (ARQ recovery) | Zero additional (arrives with source) |
 
 ### 1.2 Notation
 
@@ -46,14 +49,14 @@ Two recovery mechanisms:
 | B      | Mean burst length = 1/q | symbols |
 | W      | Encoder window size | symbols |
 | RTT    | Round-trip time | seconds |
-| D_nack | NACK detection delay | seconds |
-| r      | Total repair rate (repair symbols per source symbol) | ratio |
-| τ(t)   | Taper function: repair density at offset t | repairs/symbol |
-| A      | Taper amplitude (scaling factor) | repairs/symbol |
+| T_retx | Retransmit timeout (time before un-ACKed symbol becomes retransmit candidate) | seconds |
+| r      | Total correction rate (correction symbols per source symbol) | ratio |
+| τ(t)   | Taper function: correction density at offset t | corrections/symbol |
+| A      | Taper amplitude (scaling factor) | corrections/symbol |
 | P_fec  | Probability a lost symbol is FEC-recovered | probability |
 | δ      | Tail latency target: P(late delivery) ≤ δ | probability |
 | L_prop | Propagation delay (base latency) | seconds |
-| L_nack | NACK recovery latency = D_nack + RTT | seconds |
+| L_arq  | ARQ recovery latency = T_retx + RTT/2 | seconds |
 
 ### 1.3 What We Control vs What We Optimize
 
@@ -62,24 +65,25 @@ Two recovery mechanisms:
  ┌─────────────────────┐         ┌──────────────┐         ┌──────────────┐
  │ δ = tail latency    │         │              │         │              │
  │     target          │────────►│  Minimize r  │────────►│ r* = optimal │
- │ (from protocol hint)│         │  subject to  │         │   repair rate│
- │                     │         │  P(late) ≤ δ │         │              │
- └─────────────────────┘         │              │         │ τ*(t) = opt. │
- ┌─────────────────────┐         │              │         │   taper func │
- │ Channel observations│────────►│              │         │              │
- │ (loss, RTT, bursts) │         │              │         │ P_fec = FEC  │
- └─────────────────────┘         └──────────────┘         │   recovery   │
+ │ (from protocol hint)│         │  subject to  │         │   correction │
+ │                     │         │  P(late) ≤ δ │         │   rate       │
+ └─────────────────────┘         │              │         │              │
+ ┌─────────────────────┐         │              │         │ τ*(t) = opt. │
+ │ Channel observations│────────►│              │         │   taper func │
+ │ (loss, RTT, bursts) │         │              │         │              │
+ └─────────────────────┘         └──────────────┘         │ P_fec = FEC  │
+                                                          │   recovery   │
                                                           │   probability│
                                                           └──────────────┘
 ```
 
 **Input**: The tail latency target δ is the single control knob. It is set by
 the protocol hint:
-- Realtime: δ very small (almost everything FEC-recovered, minimal NACK latency)
-- Bulk: δ larger (allow more NACK recovery, save bandwidth)
+- Realtime: δ very small (almost everything FEC-recovered, minimal ARQ latency)
+- Bulk: δ larger (allow more ARQ recovery, save bandwidth)
 - Auto: moderate δ
 
-**Output**: The taper function τ*(t) that achieves minimum bandwidth (repair
+**Output**: The taper function τ*(t) that achieves minimum bandwidth (correction
 rate r*) while satisfying the tail latency constraint.
 
 ---
@@ -159,80 +163,140 @@ started, how likely it is to still be ongoing after t symbols.
 
 ## 3. Recovery Mechanisms
 
-### 3.1 FEC (Forward Error Correction)
+### 3.1 Correction Symbols — The Unified Concept
 
-FEC generates **repair symbols** — linear combinations of source symbols in
-the encoder window. Repair symbols are sent proactively, before knowing what
-will be lost.
+Instead of separate FEC (proactive repair) and ARQ (reactive retransmit)
+mechanisms, we have **one mechanism**: the taper function controls the density
+of **correction symbols**. Each correction symbol occupies one symbol slot on
+the wire and serves exactly one of two purposes:
 
-```
-  Time ──────────────────────────────────────────────►
+1. **Source retransmit**: an exact copy of a previously-sent source symbol that
+   the receiver has not yet ACKed. The receiver can use it immediately — no
+   decoder needed.
 
-  Source:  [S1] [S2] [S3] [S4] [S5] [S6] [S7] ...
-  Repair:    [R1]  [R2]     [R3]        [R4]   ...
-                ↑     ↑        ↑            ↑
-                │     │        │            │
-         covers S1-S3  covers S1-S4  covers S3-S6  covers S4-S7
-         (window)      (window)      (window)      (window)
-```
+2. **Repair symbol**: a random linear combination of source symbols in the
+   encoder window (standard FEC). The receiver feeds it to the FEC decoder.
 
-If S3 is lost, it can be recovered from any repair symbol whose coding window
-includes S3, provided enough linearly independent equations arrive.
+From the channel's perspective, both are identical: one symbol slot, subject to
+the same erasure probability ε. From the bandwidth budget's perspective, both
+cost the same. The only difference is what the receiver does with them.
 
-**Properties:**
-- Cost: r repair symbols per source symbol (always, whether needed or not)
-- Latency: zero additional (repair arrives at roughly the same time as source)
-- Bandwidth: costs r/(1+r) fraction of link capacity
+### 3.2 Per-Slot Decision
 
-### 3.2 NACK (Negative Acknowledgement)
-
-When the receiver detects a gap in the sequence, it sends a NACK listing the
-missing symbols. The sender retransmits.
+When the taper function decides to generate a correction symbol, the sender
+makes a per-slot decision:
 
 ```
-  Time ──────────────────────────────────────────────────────►
-
-  Sender:  [S1] [S2] [S3] [S4] [S5] ... wait ... [S3']
-                       ↓ lost                        ↑ retransmit
-  Receiver: S1   S2   gap  S4   S5  ... detect ...
-                                          │
-                                    NACK {S3} ──────┘
-                                          │
-            ├──────── D_nack ────────────►├── RTT ──►│
-            │         detection           │  round   │
-            │         delay               │  trip    │
+  Taper decides: "generate a correction symbol now"
+       │
+       ▼
+  ┌─────────────────────────────────────┐
+  │ Retransmit buffer has un-ACKed      │
+  │ source symbol older than T_retx?    │
+  ├──── YES ────────┬──── NO ───────────┤
+  │                 │                   │
+  │ Retransmit      │ Generate random   │
+  │ exact source    │ repair symbol     │
+  │ (immediate      │ (FEC, needs       │
+  │  decode)        │  decoder)         │
+  └─────────────────┴───────────────────┘
 ```
 
-**Properties:**
-- Cost: ≈ ε per source symbol (only retransmit what's actually lost)
-- Latency: D_nack + RTT per recovery event
-- Amortization: one NACK can cover multiple gaps → cost per symbol decreases
-  for burst losses
+**Why prefer retransmit?** A retransmitted source symbol is immediately usable
+by the receiver — no FEC decoding needed, no dependency on other symbols. It is
+strictly better than a repair symbol when the sender has high confidence the
+original was lost (because enough time has passed without an ACK).
 
-### 3.3 Per-Symbol Delivery Latency
+**Why T_retx?** The timeout T_retx prevents premature retransmission. If we
+retransmit too early, the original might still be in flight and we waste a
+correction slot. T_retx should be set to approximately RTT + margin, so that
+an ACK would have arrived by now if the symbol was received.
+
+### 3.3 The Retransmit Buffer
+
+The sender maintains a **retransmit buffer**: an ordered list of source symbols
+that have been sent but not yet ACKed.
+
+```
+  Retransmit buffer (ordered by send time, oldest first):
+
+  ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+  │ S12 │ S13 │ S17 │ S18 │ S19 │ S24 │ S25 │  ← un-ACKed symbols
+  └─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+    ↑                         ↑
+    oldest                    newest
+    (first retransmit         (too recent,
+     candidate if             wait for ACK)
+     age > T_retx)
+```
+
+**Operations:**
+- **Enqueue**: every sent source symbol is added to the tail
+- **Dequeue (ACK)**: when an ACK or SACK confirms receipt, remove the symbol
+- **Peek (retransmit)**: when generating a correction symbol, check the head —
+  if its age exceeds T_retx, retransmit it (but keep it in the buffer until ACKed)
+
+The buffer is bounded by the encoder window size W — symbols that leave the
+encoder window are removed regardless of ACK status (the FEC decoder can no
+longer use them, so the system relies on the decoder having recovered them).
+
+### 3.4 SACK-Extended WindowAck
+
+The receiver sends periodic **ACK+SACK** messages (replacing the former
+WindowNack/NackAck mechanism):
+
+```
+  ACK+SACK message:
+  ┌──────────────────────────────────────────────────┐
+  │ cumulative_ack: 42    (all symbols ≤ 42 received)│
+  │ sack_ranges: [(45,47), (50,55)]                  │
+  │ echo_timestamp: 1705012345.678                   │
+  └──────────────────────────────────────────────────┘
+```
+
+- **Cumulative ACK**: the highest sequence number such that all symbols up to
+  and including it have been received. Same as TCP's cumulative ACK.
+- **SACK ranges** [RFC2018]: out-of-order blocks received beyond the cumulative
+  ACK. These tell the sender exactly which symbols arrived despite gaps.
+- **Echo timestamp**: for RTT measurement.
+
+**Advantages over the former NACK-based approach:**
+- ACK-based protocols are proven more robust for unicast (TCP's 40-year track
+  record). ACKs confirm what works; NACKs report what failed.
+- The sender infers losses from gaps in SACK — no separate NACK message needed.
+- If an ACK is lost, the sender simply waits longer and retransmits anyway
+  (self-healing). No NackAck echo mechanism needed.
+- SACK is a well-understood, widely-deployed mechanism [RFC2018].
+
+### 3.5 Per-Symbol Delivery Latency
 
 Since the system guarantees 100% reliability, every symbol is delivered.
 The delivery latency for symbol s has two cases:
 
 ```
    L(s) = L_prop                              if s not lost, or FEC-recovered
-   L(s) = L_prop + D_nack + RTT              if NACK-recovered
+   L(s) = L_prop + L_arq                      if ARQ-recovered (retransmitted)
 ```
 
 The delivery latency distribution:
 
 ```
    P(L(s) = L_prop)              = (1 - ε) + ε × P_fec
-   P(L(s) = L_prop + L_nack)     = ε × (1 - P_fec)
+   P(L(s) = L_prop + L_arq)     = ε × (1 - P_fec)
 
-   where L_nack = D_nack + RTT
+   where L_arq = T_retx + RTT/2
 ```
 
-### 3.4 Why "Tail Loss" = "Tail Latency"
+Note: L_arq = T_retx + RTT/2 because T_retx accounts for the time the sender
+waits before retransmitting (roughly one RTT to allow the ACK to arrive), and
+RTT/2 is the one-way propagation delay for the retransmitted symbol to reach
+the receiver. In practice, T_retx ≈ RTT + margin, so L_arq ≈ 1.5 × RTT + margin.
+
+### 3.6 Why "Tail Loss" = "Tail Latency"
 
 Since reliability is 100%, there is no permanent loss. What we informally call
 "tail loss from FEC" is actually "symbols that FEC didn't recover" — these
-symbols get NACK-recovered with additional latency. Therefore:
+symbols get ARQ-recovered with additional latency. Therefore:
 
 **Tail loss probability from FEC = tail latency event probability.**
 
@@ -249,12 +313,12 @@ tradeoff — they are the same thing under 100% reliability.
 
 ### 4.1 Definition
 
-The taper function τ(t) specifies the repair density at time offset t from
+The taper function τ(t) specifies the correction density at time offset t from
 a source symbol. At offset t after symbol s enters the window, we generate
-τ(t) repair symbols covering s.
+τ(t) correction symbols covering s.
 
 ```
-  Repair
+  Correction
   density
   τ(t)
     │
@@ -276,7 +340,7 @@ a source symbol. At offset t after symbol s enters the window, we generate
 
 ### 4.2 Why Match the Loss Distribution?
 
-The taper should allocate more repair where loss is more likely. Given that a
+The taper should allocate more correction where loss is more likely. Given that a
 symbol was lost (we're in a burst), the conditional probability that the burst
 is still active at offset t is:
 
@@ -284,23 +348,23 @@ is still active at offset t is:
    P(burst active at offset t | burst at offset 0) = (1-q)^t
 ```
 
-The optimal repair allocation is proportional to this conditional probability.
+The optimal correction allocation is proportional to this conditional probability.
 This is the **water-filling solution**: given a fixed budget, allocate resources
 proportional to the probability of needing them.
 
 **Proof sketch (Lagrange multipliers):** We want to maximize P_fec given a
-fixed total repair budget r. The marginal benefit of a repair symbol at offset
-t is proportional to P(burst still active at t). The Lagrangian is maximized
-when the repair density is proportional to (1-q)^t. This water-filling
-principle is analogous to the delay-optimal streaming code constructions
-in [Badr2017] and [Fong2019].
+fixed total correction budget r. The marginal benefit of a correction symbol at
+offset t is proportional to P(burst still active at t). The Lagrangian is
+maximized when the correction density is proportional to (1-q)^t. This
+water-filling principle is analogous to the delay-optimal streaming code
+constructions in [Badr2017] and [Fong2019].
 
 For an i.i.d. channel (q = 1, no burst memory): τ(t) = constant (flat taper).
-This is correct — every position is equally likely to need repair.
+This is correct — every position is equally likely to need correction.
 
-### 4.3 Total Repair Rate
+### 4.3 Total Correction Rate
 
-The total repair rate (repair symbols per source symbol) is:
+The total correction rate (correction symbols per source symbol) is:
 
 ```
    r = Σ_{t=0}^{∞} τ(t) = A × Σ_{t=0}^{∞} (1-q)^t = A / q
@@ -312,24 +376,24 @@ Since 0 < q ≤ 1, this geometric series converges. Therefore:
    A = r × q
 ```
 
-The amplitude is uniquely determined by the repair rate and the GE parameter.
+The amplitude is uniquely determined by the correction rate and the GE parameter.
 
 ### 4.4 The Taper Never Reaches Zero
 
 The exponential (1-q)^t is always positive for 0 < q < 1. This is correct
 behavior: there is always a nonzero probability of a burst still continuing.
 As long as a symbol has not been ACK'd, there is a nonzero probability it
-was lost, so we should continue generating (increasingly rare) repair coverage.
+was lost, so we should continue generating (increasingly rare) correction coverage.
 
 ```
-  t = 0:    τ(0) = A                        peak repair density
+  t = 0:    τ(0) = A                        peak correction density
   t = B:    τ(B) = A × e^{-1} ≈ 0.37 × A   one mean burst length
   t = 2B:   τ(2B) = A × e^{-2} ≈ 0.14 × A  two mean burst lengths
   t = 5B:   τ(5B) = A × e^{-5} ≈ 0.007 × A five mean burst lengths
   t → ∞:    τ(t) → 0                        but never zero
 ```
 
-In practice, once a symbol is ACK'd, we stop generating repair for it (the
+In practice, once a symbol is ACK'd, we stop generating correction for it (the
 encoder window advances past it). The theoretical infinite tail is truncated
 by the ACK mechanism.
 
@@ -343,7 +407,7 @@ The taper function adapts in real time through two mechanisms:
 
 2. **BOCD changepoint detection**: If the loss regime changes abruptly (e.g.,
    path switches from WiFi to LTE), BOCD detects the changepoint within 5-15
-   batches and widens the posterior, increasing the repair budget until the
+   batches and widens the posterior, increasing the correction budget until the
    new regime is characterized.
 
 ```
@@ -373,9 +437,11 @@ At the sender, we receive periodic feedback:
 |-------------|--------|-----------|
 | (sent, received) per batch | ACK messages | Every batch (~10-100ms) |
 | RTT | Echoed timestamps in ACK | Every batch |
-| Gap ranges (missing seqs) | WindowNack | Every report interval (2s) |
-| NackAck receipt | Sender echo of NACK | Per NACK cycle |
+| SACK ranges (out-of-order blocks) | ACK+SACK messages | Every ACK |
 | Throughput | Delivery rate tracking | Continuous |
+
+The sender infers losses from gaps: symbols not covered by the cumulative ACK
+or any SACK range are presumed lost after T_retx has elapsed.
 
 ### 5.2 EWMA — Fast Point Estimate
 
@@ -471,28 +537,36 @@ The GE estimator tracks transition counts with exponential decay:
 
 These estimates feed directly into the taper function shape: τ(t) = A × (1-q̂)^t.
 
-### 5.6 RX Path Loss Estimation
+### 5.6 ACK Loss and Self-Healing
 
-The feedback channel (receiver → sender) may also be lossy. If NACKs get lost,
-the sender never knows to retransmit.
+The feedback channel (receiver → sender) may also be lossy. If ACKs get lost,
+the sender lacks up-to-date knowledge of what the receiver has.
 
-**Measurement:** Sender echoes NackAck for each WindowNack received. The
-receiver tracks how many NACKs it sent vs how many NackAcks came back:
+**Self-healing property:** Unlike a NACK-based system where a lost NACK means
+the sender never learns about the loss, an ACK-based system is inherently
+self-healing:
+
+- If an ACK is lost, the sender simply does not advance its knowledge of
+  receiver state. Symbols remain in the retransmit buffer.
+- After T_retx elapses without acknowledgment, the sender retransmits — this
+  is correct behavior whether the original was lost or just the ACK was lost.
+- If the original arrived but the ACK was lost, the receiver gets a duplicate
+  (harmless — deduplicated by sequence number) and sends another ACK.
+- Eventually an ACK gets through, and the sender's state catches up.
 
 ```
-   ε_rx = (nacks_sent - nack_acks_received) / nacks_sent
+  ACK lost scenario:
+
+  Sender:    [S1] [S2] ... wait T_retx ... [S1'] ... receives ACK ... done
+                                              ↑
+                                    retransmit (safe: either original
+                                    or ACK was lost, both handled)
+
+  No separate mechanism needed — the retransmit timeout handles both cases.
 ```
 
-**NACK effectiveness:** A NACK round-trip requires the NACK to survive the
-reverse path AND the repair to survive the forward path:
-
-```
-   nack_effectiveness = (1 - ε_rx) × (1 - ε_tx) ≈ (1 - ε_rx)²
-```
-
-(Approximating ε_tx ≈ ε_rx for symmetric paths, or using separate estimates.)
-
-When nack_effectiveness is low, NACK is unreliable and FEC must compensate.
+This eliminates the need for RX path loss estimation, NackAck echo, and NACK
+effectiveness tracking. The system is simpler and more robust.
 
 ### 5.7 Estimation Error and Overhead
 
@@ -500,7 +574,7 @@ Estimation error directly maps to overhead:
 
 ```
    If ε̂ > ε_true:  over-provisioning → wasted bandwidth
-   If ε̂ < ε_true:  under-provisioning → more NACK latency events
+   If ε̂ < ε_true:  under-provisioning → more ARQ latency events
 
    Overhead gap = (ε̂ - ε_true) / ε_true
 ```
@@ -516,7 +590,7 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 ### 6.1 Formal Statement
 
 ```
-   minimize:    r = A/q                     (repair rate = bandwidth cost)
+   minimize:    r = A/q                     (correction rate = bandwidth cost)
 
    subject to:  ε × (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
 
@@ -526,16 +600,16 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 
 **Input:** δ (tail latency target, from protocol hint)
 
-**Output:** A* (optimal taper amplitude), r* = A*/q (optimal repair rate)
+**Output:** A* (optimal taper amplitude), r* = A*/q (optimal correction rate)
 
 ### 6.2 FEC Recovery Probability
 
-Consider a symbol lost at position 0. Repair symbols generated at offsets
+Consider a symbol lost at position 0. Correction symbols generated at offsets
 t = 0, 1, 2, ... each have:
 - Probability τ(t) of being generated (fractional: may or may not generate one)
 - Probability (1-ε) of surviving the channel
 
-The expected number of repair symbols covering the lost position that arrive:
+The expected number of correction symbols covering the lost position that arrive:
 
 ```
    R(A, q) = Σ_{t=0}^{W-1} τ(t) × (1-ε)
@@ -549,7 +623,7 @@ For large W (window much larger than burst length): (1-q)^W ≈ 0, so:
    R(A, q) ≈ A × (1-ε) / q = r × (1-ε)
 ```
 
-**Recovery model:** The number of useful repair symbols arriving is approximately
+**Recovery model:** The number of useful correction symbols arriving is approximately
 Poisson(R). For FEC recovery, we need at least 1 repair symbol (plus codec
 overhead, see Section 7). Simplified to needing at least 1:
 
@@ -579,7 +653,7 @@ Using R ≈ A × (1-ε) / q:
    r* = A*/q = ln(ε/δ) / (1-ε)
 ```
 
-### 6.4 The Optimal Repair Rate Formula
+### 6.4 The Optimal Correction Rate Formula
 
 ```
   ┌───────────────────────────────────────────┐
@@ -589,17 +663,17 @@ Using R ≈ A × (1-ε) / q:
   │   where:                                  │
   │     ε = average loss rate (from BOCD)     │
   │     δ = tail latency target               │
-  │     r* = optimal repair rate              │
+  │     r* = optimal correction rate          │
   │                                           │
   └───────────────────────────────────────────┘
 ```
 
 **Properties:**
 - r* depends only on ε and δ, not on q (burst length doesn't affect the TOTAL
-  repair budget, only its distribution over time via the taper shape)
-- As δ → 0 (tighter tail): r* → ∞ (need infinite FEC for zero NACK events)
-- As δ → ε (loose tail = every loss goes to NACK): r* → 0 (no FEC needed)
-- As ε → 0 (perfect channel): r* → 0 (no repair needed)
+  correction budget, only its distribution over time via the taper shape)
+- As δ → 0 (tighter tail): r* → ∞ (need infinite FEC for zero ARQ events)
+- As δ → ε (loose tail = every loss goes to ARQ): r* → 0 (no FEC needed)
+- As ε → 0 (perfect channel): r* → 0 (no correction needed)
 
 The **taper amplitude** is:
 ```
@@ -636,31 +710,31 @@ For ε = 0.025 (WiFi), δ = 1e-4 (Realtime):
 This seems very high. Let's check: r_IT = 0.025/0.975 = 0.0256, so r* = 0.0256 × 221 = 5.66.
 That's 566% overhead — clearly too much.
 
-**The issue:** Our Poisson approximation is too pessimistic. A single repair
+**The issue:** Our Poisson approximation is too pessimistic. A single correction
 symbol at offset t doesn't independently have probability τ(t) of existing —
-the repair symbols are generated deterministically by the taper schedule.
-The correct model needs to account for the fact that multiple repair symbols
+the correction symbols are generated deterministically by the taper schedule.
+The correct model needs to account for the fact that multiple correction symbols
 from the taper collectively protect the lost symbol.
 
 ### 6.6 Corrected Model
 
-Let's reconsider. The taper generates repair symbols at known positions. For a
-window of size W, the taper generates exactly r × W repair symbols total. The
-question is: given that a source symbol is lost, how many repair symbols
+Let's reconsider. The taper generates correction symbols at known positions. For a
+window of size W, the taper generates exactly r × W correction symbols total. The
+question is: given that a source symbol is lost, how many correction symbols
 covering it will arrive at the receiver?
 
 In a sliding window code, repair symbols are linear combinations of all source
 symbols in the window. A repair at offset t from source s covers s as long as
 s is still in the window (t < W).
 
-Number of repair symbols generated while s is in the window:
+Number of correction symbols generated while s is in the window:
 ```
-   N_repair = Σ_{t=0}^{W-1} τ(t)
+   N_correction = Σ_{t=0}^{W-1} τ(t)
 ```
 
 Of these, each survives independently with probability (1-ε). Expected arrivals:
 ```
-   R = N_repair × (1-ε) = (A/q) × (1-(1-q)^W) × (1-ε)
+   R = N_correction × (1-ε) = (A/q) × (1-(1-q)^W) × (1-ε)
 ```
 
 For the decoder to recover s, we need at least 1 linearly independent repair
@@ -729,7 +803,7 @@ in a window of size W is:
 
 We compute σ²_burst directly from the GE estimator's p̂ and q̂.
 
-### 6.8 The Corrected Optimal Repair Rate
+### 6.8 The Corrected Optimal Correction Rate
 
 ```
   ┌──────────────────────────────────────────────────────────────┐
@@ -817,7 +891,7 @@ Weighted by decoder invocation probability:
    ε_codec_eff = ε_codec × P(decoder invoked) = ε_codec × (1 - (1-ε)^W)
 ```
 
-The corrected repair rate becomes:
+The corrected correction rate becomes:
 
 ```
    r* = (ε + ε_codec_eff)/(1-ε) + z_δ × √((ε + ε_codec_eff) / (W × (1-ε)))
@@ -825,8 +899,8 @@ The corrected repair rate becomes:
 
 ### 7.3 Impact on METTLE at DC
 
-Without weighting: r* includes 15% codec overhead → 16.1% repair rate.
-With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74% → 1.8% repair rate.
+Without weighting: r* includes 15% codec overhead → 16.1% correction rate.
+With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74% → 1.8% correction rate.
 
 The weighting reduces METTLE's DC overhead by ~9×.
 
@@ -849,7 +923,7 @@ Different traffic types have different δ targets:
   Realtime packets ──► [FEC encoder (δ=1e-6)] ──► channel
   Bulk packets     ──► [FEC encoder (δ=1e-2)] ──► channel
 ```
-Each stream has its own taper. No repair sharing. Simple.
+Each stream has its own taper. No correction sharing. Simple.
 
 **Before FEC (shared stream):**
 ```
@@ -859,7 +933,7 @@ One taper covers everything. Repair symbols are linear combinations of ALL
 source symbols [RFC8681] — a repair can recover ANY lost symbol regardless of class.
 
 **Advantage of shared:** repair symbols are fungible. A repair generated "for"
-a Realtime symbol can recover a Bulk symbol if needed. Total repair budget can
+a Realtime symbol can recover a Bulk symbol if needed. Total correction budget can
 be lower than the sum of separate budgets (statistical multiplexing).
 
 **Disadvantage of shared:** the taper must be sized for the tightest class.
@@ -872,7 +946,7 @@ Shared FEC is cheaper when the traffic mix is balanced or dominated by the
 tight class. Separate streams are cheaper when the tight class is a small
 fraction. The crossover depends on the specific δ values and loss rate.
 
-**Decision rule:** Compare total repair bandwidth:
+**Decision rule:** Compare total correction bandwidth:
 ```
    shared_cost = r*(ε, min(δ_c))          (one encoder, tightest δ)
    separate_cost = Σ_c f_c × r*(ε, δ_c)  (per-class, weighted by fraction f_c)
@@ -904,15 +978,17 @@ and measure whether the actual tail latency matches the theoretical prediction.
 ```
    For each trial:
      1. Generate GE loss trace: {lost_1, lost_2, ..., lost_N}
-     2. Generate repair schedule from taper: {repair_1, repair_2, ...}
-     3. Apply channel loss to both source and repair
-     4. For each lost source symbol, check if enough repair arrived
-     5. Count NACK events (symbols not FEC-recovered)
-     6. Measure: actual_nack_fraction = nack_events / N
+     2. Generate correction schedule from taper: {correction_1, correction_2, ...}
+     3. Apply channel loss to both source and correction symbols
+     4. For each lost source symbol:
+        a. Check if enough repair symbols arrived (FEC recovery)
+        b. If not, mark as ARQ-recovered (retransmit needed)
+     5. Count ARQ events (symbols not FEC-recovered)
+     6. Measure: actual_arq_fraction = arq_events / N
 
    Over many trials:
-     Verify: P(actual_nack_fraction > δ) is small
-     Verify: mean repair rate ≈ r*
+     Verify: P(actual_arq_fraction > δ) is small
+     Verify: mean correction rate ≈ r*
 ```
 
 ### 9.2 Analytical Predictions to Verify
@@ -929,10 +1005,10 @@ and measure whether the actual tail latency matches the theoretical prediction.
 
 | Case | Expected behavior | Why |
 |------|-------------------|-----|
-| ε = 0 (no loss) | r* = 0 | No repair needed |
+| ε = 0 (no loss) | r* = 0 | No correction needed |
 | ε → 1 (total loss) | r* → ∞ | Can't recover anything with FEC alone |
-| δ = ε (every loss to NACK) | r* = 0 | No FEC needed, all NACK |
-| δ → 0 (zero NACK tolerance) | r* → ∞ | Must FEC-recover everything |
+| δ = ε (every loss to ARQ) | r* = 0 | No FEC needed, all ARQ |
+| δ → 0 (zero ARQ tolerance) | r* → ∞ | Must FEC-recover everything |
 | W = 1 (no window) | Margin term large | Single-symbol recovery needs more redundancy |
 | q = 1 (no burst memory) | τ(t) = flat | Reduces to iid case |
 
@@ -963,7 +1039,7 @@ To verify the model:
    Burst variance correction:
      σ²_burst = 1 + 2(1-p-q)/(p+q)        variance inflation from burst correlation
 
-   Optimal repair rate:
+   Optimal correction rate:
      r* = ε̂/(1-ε̂) + z_δ × √(ε̂ × σ²_burst / (W(1-ε̂)))
      where ε̂ = ε + ε_codec × (1-(1-ε)^W)  effective loss with codec overhead
            z_δ = Φ⁻¹(1-δ)                  normal quantile for tail target
@@ -971,16 +1047,38 @@ To verify the model:
    Tail latency:
      P(late delivery) = ε × (1 - P_fec) ≤ δ
 
-   NACK effectiveness:
-     nack_eff = (1-ε_rx) × (1-ε_tx)       probability NACK round-trip succeeds
+   Retransmit buffer:
+     T_retx ≈ RTT + margin                retransmit timeout
+     L_arq = T_retx + RTT/2               ARQ recovery latency
 
-   Budget split:
-     total = r*
-     proactive = r* - nack_expected
-     nack_cap = nack_expected = historical_nack_rate × nack_eff
+   Correction symbol per-slot decision:
+     if retransmit_buffer.peek().age > T_retx:
+       send exact source retransmit        (preferred: immediate decode)
+     else:
+       send random repair symbol           (FEC fallback: needs decoder)
 ```
 
 ## Appendix B: Related Work
+
+### ACK-Based vs NACK-Based Recovery
+
+Our model uses ACK-based (positive acknowledgment) feedback, the same approach
+that TCP has used successfully for over 40 years. In contrast, many real-time
+protocols (e.g., RTCP NACK [RFC4585]) use negative acknowledgment where the
+receiver explicitly reports losses.
+
+**Why ACK-based is more robust for unicast:**
+- ACKs confirm what works; NACKs report what failed. If a NACK is lost, the
+  sender never learns about the loss. If an ACK is lost, the sender simply
+  retransmits after a timeout (self-healing).
+- SACK [RFC2018] provides the same information as NACKs (which symbols are
+  missing) but derived from positive evidence (which symbols arrived).
+- The sender can infer losses from SACK gaps without requiring the receiver
+  to detect and report them.
+
+NACK-based approaches remain useful for multicast (one sender, many receivers)
+where ACK implosion is a concern [RFC3208]. For our unicast tunnel model,
+ACK+SACK is strictly superior.
 
 ### Hybrid FEC-ARQ for Lossless Streaming
 
@@ -988,7 +1086,7 @@ The closest prior work is Mehrotra, Li & Huang [Mehrotra2010], who solve the
 same core problem: minimize delivery delay for lossless, in-order streaming
 over a lossy channel using hybrid FEC+ARQ. Their key result: sometimes it is
 optimal to **preempt original data packets with FEC packets** — delaying new
-data to send proactive repair prevents a NACK round-trip and reduces overall
+data to send proactive repair prevents an ARQ round-trip and reduces overall
 latency. This maps directly to our taper function concept.
 
 **Differences from our model:**
@@ -1035,9 +1133,9 @@ shape, and the tail latency constraint determines the amplitude analytically.
 
 The water-filling principle [Gallager1968] — allocating resources proportional
 to channel quality — is foundational in information theory. Our taper function
-applies this principle in the time domain: allocate repair density proportional
+applies this principle in the time domain: allocate correction density proportional
 to the conditional loss probability (1-q)^t. While water-filling is well-known
-for power allocation in OFDM, its application to FEC repair density matching
+for power allocation in OFDM, its application to correction symbol density matching
 the GE burst survival function appears novel.
 
 ### What This Model Contributes
@@ -1049,41 +1147,42 @@ the GE burst survival function appears novel.
 | Taper function | Not formalized | GE survival function τ(t) = A(1-q)^t |
 | Burst correction | Not addressed | σ²_burst = 1+2(1-p-q)/(p+q) |
 | Protocol hint | Separate FEC/ARQ tuning knobs | Single knob: tail latency target δ |
-| Repair rate formula | Numerical | r* = ε/(1-ε) + z_δ√(ε·σ²_burst/(W(1-ε))) |
+| Correction rate formula | Numerical | r* = ε/(1-ε) + z_δ√(ε·σ²_burst/(W(1-ε))) |
+| Feedback mechanism | NACK-based or separate FEC/ARQ | Unified correction symbols with ACK+SACK |
 
 ## Appendix C: Model Extensions from Related Work
 
 The following extensions are motivated by concrete results from related research
 and represent improvements over the base model in Sections 1-9.
 
-### C.1 FEC Preemption of Source Data [Mehrotra2010]
+### C.1 Correction Symbol Preemption of Source Data [Mehrotra2010]
 
-The base model treats source and repair as independent streams. Mehrotra & Li
-show that it is sometimes optimal to **delay source packets to send FEC repair
-first**. During a detected burst, sending source into a known-bad channel
-wastes bandwidth. Sending repair for already-transmitted source recovers data
-without NACK latency.
+The base model treats source and correction as independent streams. Mehrotra & Li
+show that it is sometimes optimal to **delay source packets to send correction
+symbols first**. During a detected burst, sending source into a known-bad channel
+wastes bandwidth. Sending correction for already-transmitted source recovers data
+without ARQ latency.
 
 **Extension:** Allow the taper function to exceed 1.0:
 
 ```
    τ(t) = A × (1-q)^t
 
-   When τ(t) > 1.0: send more repair than source at this offset.
-   This means pausing source transmission to send repair instead.
+   When τ(t) > 1.0: send more correction than source at this offset.
+   This means pausing source transmission to send correction instead.
 ```
 
 This naturally occurs when A is large (high loss) and t is small (burst just
 started). The sender observes the GE state via recent loss observations and
 increases τ(t) when in a detected burst.
 
-**Decision rule:** Preempt source with repair when the expected value of
-sending repair (prevents one NACK round-trip) exceeds the cost of delaying
+**Decision rule:** Preempt source with correction when the expected value of
+sending correction (prevents one ARQ round-trip) exceeds the cost of delaying
 source (adds one slot of latency):
 
 ```
-   preempt when:  P(burst active) × L_nack > L_slot
-   i.e., when:    (1-q)^t × (D_nack + RTT) > 1/throughput
+   preempt when:  P(burst active) × L_arq > L_slot
+   i.e., when:    (1-q)^t × (T_retx + RTT/2) > 1/throughput
 ```
 
 ### C.2 Information Debt for Exact P_fec [RLC_GE2025]
@@ -1182,7 +1281,7 @@ delay T.
 The streaming capacity for this model is C(T,B) = T/(T+B) [Badr2017].
 
 **Extension:** Regardless of the probabilistic taper, enforce a minimum
-repair density that survives the worst-case DCSW pattern:
+correction density that survives the worst-case DCSW pattern:
 
 ```
    τ_floor = B / W                    (enough to survive one full burst per window)
@@ -1191,10 +1290,10 @@ repair density that survives the worst-case DCSW pattern:
 ```
 
 The floor ensures that even if the GE estimator underestimates burst length,
-we always have enough repair to survive at least B consecutive erasures.
+we always have enough correction to survive at least B consecutive erasures.
 
 ```
-  Repair
+  Correction
   density
   τ(t)
     │
@@ -1208,7 +1307,7 @@ we always have enough repair to survive at least B consecutive erasures.
     └──────────────────────────────── time offset t
 ```
 
-**Corrected total repair rate with floor:**
+**Corrected total correction rate with floor:**
 
 ```
    r* = max(A/q, τ_floor × W) / W
@@ -1219,9 +1318,9 @@ we always have enough repair to survive at least B consecutive erasures.
 
 ### C.6 Summary of Extensions
 
-| Extension | From | Effect on repair rate | Effect on P_fec accuracy |
-|-----------|------|----------------------|--------------------------|
-| FEC preemption | [Mehrotra2010] | Reduces delay during bursts | Improves burst recovery |
+| Extension | From | Effect on correction rate | Effect on P_fec accuracy |
+|-----------|------|-------------------------|--------------------------|
+| Correction preemption | [Mehrotra2010] | Reduces delay during bursts | Improves burst recovery |
 | Information debt | [RLC_GE2025] | More precise | Exact (Markov chain) |
 | Analytical bounds | [Vajha2020] | Verification only | Bounds, not point estimate |
 | Multipath diversity | [Zeng2021] | Reduces A_multi | Higher for same budget |
@@ -1240,13 +1339,18 @@ we always have enough repair to survive at least B consecutive erasures.
    in multi-link streaming.
 
 3. **Interaction with congestion control:** The spare_capacity gate limits
-   repair rate. When r* > spare_capacity, we can't achieve the tail target.
+   correction rate. When r* > spare_capacity, we can't achieve the tail target.
    How should the system signal this to the application?
 
 4. **Normal approximation validity:** Even with the burst variance correction
    (σ²_burst), the normal approximation to the loss count may be inaccurate
    for small windows or very bursty channels. Could we use the exact GE
    distribution (computable from the transition matrix) for higher precision?
+
+5. **Optimal T_retx tuning:** The retransmit timeout T_retx trades off between
+   premature retransmission (wasting correction slots on symbols that will be
+   ACKed) and delayed recovery (waiting too long to retransmit genuinely lost
+   symbols). The optimal T_retx likely depends on RTT variance and loss rate.
 
 ---
 
@@ -1375,6 +1479,14 @@ we always have enough repair to survive at least B consecutive erasures.
 - **[Gallager1968]** R.G. Gallager, *Information Theory and Reliable
   Communication*, John Wiley & Sons, 1968.
   Water-filling theorem for optimal resource allocation across channels.
+
+### TCP SACK
+
+- **[RFC2018]** M. Mathis, J. Mahdavi, S. Floyd, A. Romanow, "TCP Selective
+  Acknowledgment Options," IETF RFC 2018, 1996.
+  Defines SACK for TCP: receiver reports non-contiguous blocks of received
+  data, allowing sender to infer exactly which segments were lost. Our
+  ACK+SACK feedback mechanism adapts this proven approach.
 
 ### Sliding Window Channel Models
 
