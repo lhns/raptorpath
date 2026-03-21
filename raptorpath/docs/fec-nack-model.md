@@ -980,7 +980,254 @@ To verify the model:
      nack_cap = nack_expected = historical_nack_rate × nack_eff
 ```
 
-## Appendix B: Open Questions
+## Appendix B: Related Work
+
+### Hybrid FEC-ARQ for Lossless Streaming
+
+The closest prior work is Mehrotra, Li & Huang [Mehrotra2010], who solve the
+same core problem: minimize delivery delay for lossless, in-order streaming
+over a lossy channel using hybrid FEC+ARQ. Their key result: sometimes it is
+optimal to **preempt original data packets with FEC packets** — delaying new
+data to send proactive repair prevents a NACK round-trip and reduces overall
+latency. This maps directly to our taper function concept.
+
+**Differences from our model:**
+- They use a Markov Decision Process (MDP) formulation and compute the optimal
+  policy numerically. We derive a closed-form taper function from the GE
+  survival function, which is more directly implementable.
+- Their model doesn't account for burst correlation in the margin term (our
+  σ²_burst correction).
+- They don't address multi-protocol traffic classes or interleaving.
+
+The precursor paper [Mehrotra2009] establishes the basic hybrid FEC-ARQ
+protocol framework.
+
+### Streaming Codes over Gilbert-Elliott Channels
+
+Vajha et al. [Vajha2020] provide the first **analytical** (not simulation-only)
+bounds on block-erasure probability for streaming codes over GE channels.
+Previously, streaming codes were designed for a simplified proxy channel (the
+delay-constrained sliding window model from [Badr2017]) and then evaluated via
+simulation on GE. Their upper and lower bounds could be used to verify our
+P_fec predictions without simulation.
+
+Very recent work [RLC_GE2025] analyzes Random Linear Codes (our RLC backend)
+specifically over GE channels, providing analytical performance characterization
+that directly applies to our system.
+
+### Tail Latency Optimization with Proactive FEC
+
+CloudBurst [Zeng2021] uses proactive FEC over multipath to reduce p99 tail
+latency by 60-75% in commodity datacenters. Different setting (datacenter LAN
+vs our WAN/wireless focus) but the same core insight: proactive FEC-coded
+packets spread across paths, recovered from the first arrivals. They use
+rateless fountain codes; we use windowed RLC/streaming codes with a taper.
+
+### Joint FEC/ARQ under Gilbert-Elliott
+
+Razavi et al. [Razavi2008] develop adaptive heuristic algorithms that jointly
+select FEC redundancy and ARQ persistence under GE channel conditions, applied
+to video streaming. They search the joint parameter space numerically. Our
+approach is more principled: the GE parameters directly determine the taper
+shape, and the tail latency constraint determines the amplitude analytically.
+
+### Water-Filling and Optimal Resource Allocation
+
+The water-filling principle [Gallager1968] — allocating resources proportional
+to channel quality — is foundational in information theory. Our taper function
+applies this principle in the time domain: allocate repair density proportional
+to the conditional loss probability (1-q)^t. While water-filling is well-known
+for power allocation in OFDM, its application to FEC repair density matching
+the GE burst survival function appears novel.
+
+### What This Model Contributes
+
+| Aspect | Prior work | This model |
+|--------|-----------|------------|
+| Optimization target | Throughput, avg delay, or weighted cost | Tail latency only (= tail loss under 100% reliability) |
+| FEC/ARQ balance | MDP or heuristic search | Closed-form from GE params + tail constraint |
+| Taper function | Not formalized | GE survival function τ(t) = A(1-q)^t |
+| Burst correction | Not addressed | σ²_burst = 1+2(1-p-q)/(p+q) |
+| Protocol hint | Separate FEC/ARQ tuning knobs | Single knob: tail latency target δ |
+| Repair rate formula | Numerical | r* = ε/(1-ε) + z_δ√(ε·σ²_burst/(W(1-ε))) |
+
+## Appendix C: Model Extensions from Related Work
+
+The following extensions are motivated by concrete results from related research
+and represent improvements over the base model in Sections 1-9.
+
+### C.1 FEC Preemption of Source Data [Mehrotra2010]
+
+The base model treats source and repair as independent streams. Mehrotra & Li
+show that it is sometimes optimal to **delay source packets to send FEC repair
+first**. During a detected burst, sending source into a known-bad channel
+wastes bandwidth. Sending repair for already-transmitted source recovers data
+without NACK latency.
+
+**Extension:** Allow the taper function to exceed 1.0:
+
+```
+   τ(t) = A × (1-q)^t
+
+   When τ(t) > 1.0: send more repair than source at this offset.
+   This means pausing source transmission to send repair instead.
+```
+
+This naturally occurs when A is large (high loss) and t is small (burst just
+started). The sender observes the GE state via recent loss observations and
+increases τ(t) when in a detected burst.
+
+**Decision rule:** Preempt source with repair when the expected value of
+sending repair (prevents one NACK round-trip) exceeds the cost of delaying
+source (adds one slot of latency):
+
+```
+   preempt when:  P(burst active) × L_nack > L_slot
+   i.e., when:    (1-q)^t × (D_nack + RTT) > 1/throughput
+```
+
+### C.2 Information Debt for Exact P_fec [RLC_GE2025]
+
+The base model uses a normal approximation for P_fec. The information debt
+framework tracks the running deficit between received and needed symbols:
+
+```
+   I_d(t) = symbols_needed(t) - symbols_received(t)
+```
+
+Recovery occurs when I_d returns to 0. The slot error probability is:
+
+```
+   p_e = E{error_slots} / E{debt_cycle_length}
+```
+
+where error_slots counts time steps where I_d ≥ ζ (the maximum recoverable
+debt, determined by window size and code rate).
+
+**Key finding:** For systematic codes, successfully receiving a source symbol
+can sometimes **reduce** decodability of earlier lost symbols through Gaussian
+elimination interactions. Our normal approximation misses this effect.
+
+**Extension:** Replace the normal-approximation P_fec with debt-tracking:
+
+```
+   Current model:  P_fec ≈ 1 - Φ(-z) where z depends on (ε, W, σ²_burst)
+   Extended model: P_fec = 1 - p_e where p_e from debt Markov chain
+```
+
+The debt Markov chain has state space {0, 1, ..., ζ} with transition
+probabilities depending on GE state and repair density. This is computable
+(finite-state Markov chain) though not as simple as the closed-form formula.
+
+### C.3 Analytical P_fec Bounds [Vajha2020]
+
+Vajha et al. derive upper and lower bounds on block-erasure probability for
+streaming codes over GE without simulation. Their bounds depend on:
+- GE parameters (p, q)
+- Code rate R = K/N
+- Decoding delay constraint T
+
+**Extension to verification (Section 9):**
+
+```
+   For our taper with rate r* and window W:
+     Effective code rate R = 1/(1+r*)
+     Delay constraint T = W
+
+   Vajha lower bound ≤ P(erasure) ≤ Vajha upper bound
+
+   If our predicted P_fec falls within these bounds: ✓ model validated
+   If not: normal approximation is inadequate → use debt model (C.2)
+```
+
+This gives us an analytical verification path that complements simulation.
+
+### C.4 Multipath Diversity Gain [Zeng2021]
+
+CloudBurst sends FEC-coded packets across multiple paths and recovers from
+whichever path delivers first. This is a **diversity gain**: the same repair
+on two independent paths has survival probability `1 - ε₁ε₂` instead of
+`1 - ε₁`.
+
+**Extension:** For multipath, the effective repair arrival rate is higher
+than single-path. With M independent paths of loss rates ε₁...εₘ:
+
+```
+   P(repair arrives on at least one path) = 1 - Π(εᵢ)
+
+   Single path:  P(arrive) = 1-ε
+   Dual path:    P(arrive) = 1-ε² ≈ 1 for small ε
+```
+
+This means the multipath taper can use a **lower amplitude** A than single-path
+for the same P_fec target. The optimal multipath taper:
+
+```
+   τ_multi(t) = A_multi × (1-q)^t
+
+   where A_multi = A_single × (1-ε) / (1-Π(εᵢ))
+```
+
+For two paths with 5% loss each: A_multi = A_single × 0.95/0.9975 ≈ 0.95 × A_single.
+Modest gain for similar paths, but significant when paths have different
+characteristics (one lossy WiFi, one reliable Ethernet).
+
+### C.5 DCSW Worst-Case Taper Floor
+
+The Delay-Constrained Sliding Window model [Badr2017], [Fong2019] provides
+a **hard guarantee**: within any window of W symbols, at most B consecutive
+erasures or N random erasures can occur, and recovery must happen within
+delay T.
+
+The streaming capacity for this model is C(T,B) = T/(T+B) [Badr2017].
+
+**Extension:** Regardless of the probabilistic taper, enforce a minimum
+repair density that survives the worst-case DCSW pattern:
+
+```
+   τ_floor = B / W                    (enough to survive one full burst per window)
+
+   τ*(t) = max(A × (1-q)^t, τ_floor)  (probabilistic taper with hard floor)
+```
+
+The floor ensures that even if the GE estimator underestimates burst length,
+we always have enough repair to survive at least B consecutive erasures.
+
+```
+  Repair
+  density
+  τ(t)
+    │
+  A ┤╲
+    │  ╲
+    │    ╲
+    │      ╲
+  ──┤────────╲─────────────────────── τ_floor = B/W
+    │          ╲  ╲  (taper hits floor)
+    │            (floor continues)
+    └──────────────────────────────── time offset t
+```
+
+**Corrected total repair rate with floor:**
+
+```
+   r* = max(A/q, τ_floor × W) / W
+
+   In practice: A/q dominates when loss is high (large A).
+   Floor dominates when loss is low but bursts are long (large B, small ε).
+```
+
+### C.6 Summary of Extensions
+
+| Extension | From | Effect on repair rate | Effect on P_fec accuracy |
+|-----------|------|----------------------|--------------------------|
+| FEC preemption | [Mehrotra2010] | Reduces delay during bursts | Improves burst recovery |
+| Information debt | [RLC_GE2025] | More precise | Exact (Markov chain) |
+| Analytical bounds | [Vajha2020] | Verification only | Bounds, not point estimate |
+| Multipath diversity | [Zeng2021] | Reduces A_multi | Higher for same budget |
+| DCSW taper floor | [Badr2017] | Hard minimum guarantee | Worst-case protection |
+
+## Appendix D: Open Questions
 
 1. **Finite window truncation:** The taper is theoretically infinite-tailed
    but the encoder window has finite size W. What's lost by truncation?
@@ -1081,9 +1328,57 @@ To verify the model:
   arXiv:2201.06609, 2022.
   Introduces delay spectrum concept for per-link rate allocation.
 
+### Hybrid FEC-ARQ
+
+- **[Mehrotra2010]** S. Mehrotra, J. Li, Y. Huang, "Optimizing FEC Transmission
+  Strategy for Minimizing Delay in Lossless Sequential Streaming," *IEEE Trans.
+  Multimedia*, 2010. MSR-TR-2010-134.
+  Closest prior work: MDP-based optimization of when to send FEC vs data for
+  lossless streaming. Key insight: preempting data with FEC can reduce latency.
+
+- **[Mehrotra2009]** S. Mehrotra, J. Li, "A hybrid FEC-ARQ protocol for
+  low-delay lossless sequential data streaming," *IEEE MMSP*, 2009.
+  Precursor establishing the hybrid FEC-ARQ protocol framework.
+
+- **[Razavi2008]** R. Razavi et al., "Performance Evaluation of Joint FEC and
+  ARQ Optimization Heuristic Algorithms under Gilbert-Elliot Wireless Channel,"
+  *IEEE CCNC*, 2008.
+  Adaptive joint FEC/ARQ parameter search under GE channels for video.
+
+### Streaming Code Analysis over GE
+
+- **[Vajha2020]** M. Vajha, V. Ramkumar, M. Jhamtani, P.V. Kumar, "On the
+  Performance Analysis of Streaming Codes over the Gilbert-Elliott Channel,"
+  arXiv:2005.06921, 2020. *ITW 2021*.
+  First analytical bounds on block-erasure probability for streaming codes
+  over GE channels, replacing simulation-only evaluation.
+
+- **[RLC_GE2025]** "On the Analysis of Random Linear Streaming Codes in
+  Stochastic Channels," arXiv:2509.01894, 2025.
+  Analytical performance of RLC over GE channels — directly applicable to
+  our RLC backend.
+
+### Tail Latency
+
+- **[Zeng2021]** G. Zeng, L. Chen, B. Yi, K. Chen, "Optimizing Tail Latency
+  in Commodity Datacenters using Forward Error Correction,"
+  arXiv:2110.15157, 2021. (CloudBurst)
+  Proactive FEC over multipath reduces p99 latency by 60-75% in datacenters.
+
 ### Information Theory
 
 - **[Shannon1948]** C.E. Shannon, "A mathematical theory of communication,"
   *Bell System Technical Journal*, vol. 27, pp. 379-423, 623-656, 1948.
   The erasure channel capacity result C = 1-ε gives the IT minimum repair
   rate r_IT = ε/(1-ε) used throughout this paper.
+
+- **[Gallager1968]** R.G. Gallager, *Information Theory and Reliable
+  Communication*, John Wiley & Sons, 1968.
+  Water-filling theorem for optimal resource allocation across channels.
+
+### Sliding Window Channel Models
+
+- **[Vajha2020b]** M. Vajha, V. Ramkumar, P.V. Kumar, "On Sliding Window
+  Approximation of Gilbert-Elliott Channel for Delay Constrained Setting,"
+  arXiv:2005.06914, 2020.
+  Formalizes the DCSW-to-GE approximation used in streaming code design.
