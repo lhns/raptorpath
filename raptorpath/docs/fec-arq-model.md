@@ -50,7 +50,11 @@ symbol (FEC fallback):
 | B      | Mean burst length = 1/q | symbols (count) | 2.0 |
 | W      | Encoder window size | symbols (count) | 50 |
 | RTT    | Round-trip time | seconds | 0.050 (50ms) |
-| T_retx | Retransmit timeout | seconds | 0.075 (1.5×RTT) |
+| T_retx | Retransmit timeout = SRTT + z(1-ε) × RTTVAR | seconds | 0.060 (60ms) |
+| t_fec  | FEC recovery time = m / (A × (1-ε)) × t_sym | seconds | 0.003 (3ms) |
+| t_sym  | Symbol transmission time = symbol_size / throughput | seconds | 0.000096 (96μs at 100Mbps) |
+| SRTT   | Smoothed RTT estimate | seconds | 0.050 (50ms) |
+| RTTVAR | RTT variance estimate (standard deviation) | seconds | 0.005 (5ms) |
 | r      | Total correction rate | ratio (corrections/source) | 0.08 (8%) |
 | τ(t)   | Taper function: correction density at offset t | ratio (corrections/symbol) | 0.04 |
 | A      | Taper amplitude (scaling factor) | ratio (corrections/symbol) | 0.04 |
@@ -334,7 +338,81 @@ for bulk transfer but too slow for real-time applications.
 - Self-healing: if the ACK itself is lost on the reverse path, the sender just
   waits longer and retransmits anyway. No special mechanism needed.
 
-### 3.4 Why Unify FEC and ARQ?
+### 3.4 Recovery Latency: t_fec vs T_retx
+
+A lost symbol is recovered by whichever mechanism finishes first — FEC or ARQ.
+
+**FEC recovery time (t_fec):** The taper function generates repair symbols
+continuously after a source symbol is sent. Each repair that covers the lost
+symbol AND survives the channel gives the decoder one more equation. For m
+lost symbols in the window, the decoder needs m surviving repairs:
+
+```
+  t_fec = m / (A x (1-e)) x t_sym
+
+  where:
+    m     = number of lost symbols in the window (usually 1)
+    A     = taper amplitude (corrections/symbol at offset 0)
+    1-e   = probability each repair survives the channel
+    t_sym = symbol_size / throughput (time to transmit one symbol)
+```
+
+Concrete examples for a single loss (m=1), A=0.04, ε=0.025:
+
+```
+  At 100 Mbps, 1200-byte symbols:  t_sym = 0.096ms, t_fec = 2.5ms
+  At  10 Mbps, 1200-byte symbols:  t_sym = 0.96ms,  t_fec = 24.6ms
+  At   1 Mbps, 1200-byte symbols:  t_sym = 9.6ms,   t_fec = 245ms
+```
+
+For burst loss (m=5 on WiFi at 100 Mbps): t_fec = 5 x 2.5ms = 12.5ms.
+
+**ARQ recovery time (T_retx + RTT/2):** The sender waits T_retx for an ACK,
+then retransmits. The retransmitted symbol travels RTT/2 to the receiver.
+
+**The optimal T_retx** balances premature retransmission against delayed
+recovery. A symbol should be retransmitted when we're confident it was lost
+— that is, when the probability of the ACK just being delayed is low:
+
+```
+  T_retx = SRTT + z(1-e) x RTTVAR
+
+  where z(1-e) = standard normal quantile at probability (1-e)
+```
+
+This formula is adaptive: higher loss rate = shorter timeout (less evidence
+of loss needed). Lower loss rate = longer timeout (loss is rare, wait for
+more evidence before concluding loss).
+
+```
+  | Scenario  | e     | z(1-e) | T_retx (SRTT=50ms, RTTVAR=5ms) |
+  |-----------|-------|--------|--------------------------------|
+  | DC        | 0.001 | 3.09   | 65.5ms                         |
+  | WiFi      | 0.025 | 1.96   | 59.8ms                         |
+  | LTE       | 0.05  | 1.64   | 58.2ms                         |
+  | Satellite | 0.09  | 1.34   | 56.7ms                         |
+```
+
+**Which one wins?** The lost symbol is recovered at min(t_fec, T_retx+RTT/2):
+
+```
+  Time ---------------------------------------------------------->
+  t=0                  t_fec            T_retx        T_retx+RTT/2
+  |                     |                |              |
+  S3 lost               FEC decodes S3   timeout fires  retransmit
+                        (if enough       (if FEC        arrives
+                         repairs         didn't work)
+                         arrived)
+  |<-- FEC working --->|
+  |<--------- ARQ waiting (but FEC covers the gap) -------->|
+```
+
+At 100 Mbps on WiFi: t_fec = 2.5ms, T_retx + RTT/2 = 85ms. **FEC wins by
+34x** for single losses. T_retx only fires for burst losses that overwhelm
+the FEC budget — and even then, the exact value of T_retx is not critical
+because FEC repair is running in parallel the whole time.
+
+### 3.5 Why Unify FEC and ARQ?
 
 Both FEC and ARQ produce one symbol on the wire. Both cost the same bandwidth
 per symbol. The difference is timing and content:
@@ -365,7 +443,7 @@ time passes, without any explicit phase switch. The unified mechanism is
 called a **correction symbol** — it is either a repair symbol or a source
 retransmit, decided at generation time.
 
-### 3.5 Correction Symbols — The Unified Concept
+### 3.6 Correction Symbols — The Unified Concept
 
 A **correction symbol** is any symbol sent to recover lost data. It occupies
 one symbol slot on the wire and serves one of two purposes:
@@ -381,7 +459,7 @@ one symbol slot on the wire and serves one of two purposes:
 The taper function (Section 4) determines the **density** of correction
 symbols over time. This section explains what happens in each slot.
 
-### 3.6 Per-Slot Decision
+### 3.7 Per-Slot Decision
 
 When the taper function decides to generate a correction symbol, the sender
 checks the retransmit buffer:
@@ -412,7 +490,7 @@ retransmit too early, the original might still be in flight and we waste a
 correction slot. T_retx should be set to approximately RTT + margin, so that
 an ACK would have arrived by now if the symbol was received.
 
-### 3.7 The Retransmit Buffer
+### 3.8 The Retransmit Buffer
 
 The sender maintains a **retransmit buffer**: an ordered list of source symbols
 that have been sent but not yet ACKed.
@@ -440,7 +518,7 @@ The buffer is bounded by the encoder window size W — symbols that leave the
 encoder window are removed regardless of ACK status (the FEC decoder can no
 longer use them, so the system relies on the decoder having recovered them).
 
-### 3.8 SACK-Extended WindowAck
+### 3.9 SACK-Extended WindowAck
 
 The receiver sends periodic **ACK+SACK** messages to tell the sender what
 arrived. This is the same mechanism TCP has used since RFC 2018:
@@ -472,7 +550,7 @@ unicast connections:
   more reliable than reporting failure.
 - No separate NackAck echo mechanism needed to measure reverse path loss.
 
-### 3.9 Per-Symbol Delivery Outcomes
+### 3.10 Per-Symbol Delivery Outcomes
 
 A lost symbol has three possible outcomes, depending on whether the taper
 function's correction symbols recover it before the cutoff T_cut:
@@ -506,7 +584,7 @@ The full delivery distribution:
    Tail latency: d = P(late delivery) / p               among delivered symbols
 ```
 
-### 3.10 The Triangle in Action
+### 3.11 The Triangle in Action
 
 Under **100% reliability** (ρ = 1, T_cut = infinity): outcome 3 never occurs.
 "Tail loss from FEC" equals "tail latency events" — they are the same thing.
@@ -1413,11 +1491,14 @@ To verify the model:
      P(late)      = ε × (1-P_fec) × P_arq                           [probability]
      P(lost)      = ε × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
 
-   Retransmit buffer (Section 3.3):
-     T_retx ≈ RTT + margin               retransmit timeout         [seconds]
+   Recovery latency (Section 3.4):
+     t_sym = symbol_size / throughput     symbol transmission time   [seconds]
+     t_fec = m / (A x (1-e)) x t_sym     FEC recovery time          [seconds]
+     T_retx = SRTT + z(1-e) x RTTVAR     retransmit timeout         [seconds]
      L_arq = T_retx + RTT/2              ARQ recovery latency       [seconds]
+     L_actual = min(t_fec, L_arq)         actual recovery latency    [seconds]
 
-   Correction symbol per-slot decision (Section 3.2):
+   Correction symbol per-slot decision (Section 3.7):
      if retransmit_buffer.peek().age > T_retx:
        send exact source retransmit       (preferred: immediate decode)
      else:
@@ -1714,10 +1795,10 @@ we always have enough correction to survive at least B consecutive erasures.
    for small windows or very bursty channels. Could we use the exact GE
    distribution (computable from the transition matrix) for higher precision?
 
-5. **Optimal T_retx tuning:** The retransmit timeout T_retx trades off between
-   premature retransmission (wasting correction slots on symbols that will be
-   ACKed) and delayed recovery (waiting too long to retransmit genuinely lost
-   symbols). The optimal T_retx likely depends on RTT variance and loss rate.
+5. **Optimal T_retx tuning (resolved):** T_retx = SRTT + z(1-ε) × RTTVAR
+   (Section 3.4). Adaptive: higher loss = shorter timeout. The exact value is
+   not critical because FEC repair runs in parallel — t_fec is typically much
+   shorter than T_retx, so most losses are FEC-recovered before the timeout.
 
 ---
 
