@@ -66,6 +66,7 @@ symbol (FEC fallback):
 | L_arq  | ARQ recovery latency (time from loss to retransmit arrival) | seconds | 0.075-0.100 |
 | σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
 | z_δ    | Standard normal quantile for δ | dimensionless | 3.72 (for δ=1e-4) |
+| ε_burst | Current channel loss rate (fast EWMA or GE state) | probability (0-1) | 0.5 (during burst) |
 | ε_codec | Codec decode overhead | ratio (0-1) | 0.01 (RaptorQ) |
 
 ### 1.3 Glossary
@@ -446,10 +447,32 @@ Concrete example (WiFi, e = 0.025, SRTT = 50ms):
   t = 80ms:   P_lost = 0.98     -> 2% repair, 98% retransmit
 ```
 
-**No hard threshold.** There is no T_retx parameter to tune. The transition
-from repair to retransmit is driven entirely by P_lost(t), which itself is
-determined by the channel loss rate e and the RTT distribution. Both are
-measured quantities — no knobs.
+**Two loss estimates for two purposes.** The formula uses ε (the long-run
+average from BOCD) as the Bayesian prior for whether a SPECIFIC symbol was
+lost. But the per-slot decision also needs to account for CURRENT channel
+conditions:
+
+- **ε** (long-run, from BOCD): "What's the base rate of loss on this channel?"
+  Used as the prior in P_lost(t). Updates slowly (BOCD posterior).
+- **ε_burst** (fast, from GE state or fast EWMA): "Is the channel bad RIGHT
+  NOW?" Used to discount retransmit during bursts, because during high loss,
+  repair is more flexible (covers any lost symbol, not just one). Updates
+  quickly (per-symbol GE state transitions).
+
+The burst-aware per-slot probability is:
+
+```
+  P(retransmit) = P_lost(t_k) x (1 - e_burst)
+```
+
+When ε_burst is low (good channel): P(retransmit) ≈ P_lost(t_k) — targeting
+is efficient, retransmit if confident. When ε_burst is high (burst): the
+(1 - ε_burst) factor suppresses retransmit in favor of repair — repair is
+more flexible during concurrent multi-symbol loss.
+
+**No hard threshold.** The transition from repair to retransmit is driven by
+two measured quantities: P_lost(t) from ACK timing and ε_burst from channel
+observation. No tuning knobs.
 
 **Bandwidth efficiency.** A retransmit is wasted if the symbol wasn't actually
 lost (duplicate). A repair is never wasted (always provides information to the
@@ -527,14 +550,14 @@ retransmit, decided probabilistically at generation time.
 A **correction symbol** is any symbol sent to recover lost data. It occupies
 one symbol slot on the wire and serves one of two purposes:
 
-| Aspect         | Source retransmit (ARQ)          | Repair symbol (FEC)            |
-|----------------|----------------------------------|--------------------------------|
-| When chosen    | With probability P_lost(t)       | With probability 1-P_lost(t)   |
-| Content        | Exact copy of source symbol      | Random linear combination      |
-| Receiver action| Immediate use, no decoder        | Feed to FEC decoder            |
-| Bandwidth cost | Same (one symbol slot)           | Same (one symbol slot)         |
-| Waste risk     | Duplicate if symbol wasn't lost  | Never wasted (always useful)   |
-| Best for       | High-confidence loss (P_lost>>0) | Low-confidence (early, P_lost~e)|
+| Aspect         | Source retransmit (ARQ)              | Repair symbol (FEC)               |
+|----------------|--------------------------------------|-----------------------------------|
+| When chosen    | P = P_lost(t) x (1-e_burst)         | P = 1 - P_lost(t) x (1-e_burst)  |
+| Content        | Exact copy of source symbol          | Random linear combination         |
+| Receiver action| Immediate use, no decoder            | Feed to FEC decoder               |
+| Bandwidth cost | Same (one symbol slot)               | Same (one symbol slot)            |
+| Waste risk     | Duplicate if symbol wasn't lost      | Never wasted (always useful)      |
+| Best for       | Confirmed loss + good channel        | Uncertain loss or burst (flexible)|
 
 The taper function (Section 4) determines the **density** of correction
 symbols over time. This section explains what happens in each slot.
@@ -549,29 +572,46 @@ symbol in the retransmit buffer:
   Taper decides: "generate a correction symbol now"
                       |
                       v
-  +---------------------------------------+
-  | P_lost(t) for oldest un-ACKed symbol  |
-  |                                       |
-  | With probability P_lost(t):           |
-  |   -> Retransmit exact source          |
-  |      (immediate decode at receiver)   |
-  |                                       |
-  | With probability 1 - P_lost(t):       |
-  |   -> Generate random repair symbol    |
-  |      (FEC, covers any loss in window) |
-  +---------------------------------------+
+  +-------------------------------------------+
+  | Compute mixing probability:               |
+  |                                           |
+  |   P_retx = P_lost(t_k) x (1 - e_burst)   |
+  |                                           |
+  | With probability P_retx:                  |
+  |   -> Retransmit exact source              |
+  |      (immediate decode at receiver)       |
+  |                                           |
+  | With probability 1 - P_retx:             |
+  |   -> Generate random repair symbol        |
+  |      (FEC, covers any loss in window)     |
+  +-------------------------------------------+
 
-  P_lost(t) = e / [e + (1-e) x P(RTT > t)]
+  P_lost(t_k) = e / [e + (1-e) x P(RTT > t_k)]    per-symbol loss confidence
+  e_burst     = fast EWMA or GE state estimate      current channel condition
 ```
 
-**Why probabilistic, not a hard threshold?** A retransmitted source symbol is
-immediately usable but wastes the slot if the original wasn't actually lost.
-A repair symbol is always useful (provides information to the decoder) but
-requires decoder processing. The probabilistic mix minimizes expected waste:
+**Two factors in the mixing probability:**
+
+- **P_lost(t_k)**: "Am I confident this specific symbol was lost?" Based on
+  ACK timing. High when enough time has passed without an ACK.
+- **(1 - ε_burst)**: "Is the channel currently good enough for targeted
+  retransmit?" When ε_burst is high (burst), repair is preferred because it
+  flexibly covers any of the multiple concurrent losses. When ε_burst is low,
+  retransmit is efficient — only one symbol is likely lost.
+
+**Concrete examples:**
 
 ```
-  E[waste] = P_lost(t) x (1 - P_lost(t))
+  Isolated loss, good channel:   P_lost=0.9,  e_burst=0.03 -> P_retx=0.87
+  Burst, old un-ACKed symbol:    P_lost=0.95, e_burst=0.50 -> P_retx=0.48
+  Severe burst:                  P_lost=0.99, e_burst=0.90 -> P_retx=0.10
+  Fresh symbol, good channel:    P_lost=0.03, e_burst=0.03 -> P_retx=0.03
+  Fresh symbol, during burst:    P_lost=0.03, e_burst=0.90 -> P_retx=0.003
 ```
+
+During bursts (ε_burst high), almost all correction slots become repair —
+matching Mehrotra & Li's optimal policy [Mehrotra2010]. After the burst
+(ε_burst drops), un-ACKed symbols have high P_lost → retransmit takes over.
 
 This is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
 all retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
@@ -1585,9 +1625,10 @@ To verify the model:
      L_actual = min(t_fec, retransmit arrival)                       [seconds]
 
    Per-slot decision (Section 3.7):
-     with probability P_lost(t):   send source retransmit  (immediate decode)
-     with probability 1-P_lost(t): send repair symbol      (FEC, any loss)
-     E[waste] = P_lost(t) x (1 - P_lost(t))               (minimized at extremes)
+     P_retx = P_lost(t) x (1 - e_burst)                   (burst-aware mixing)
+     with probability P_retx:     send source retransmit   (immediate decode)
+     with probability 1-P_retx:   send repair symbol       (FEC, any loss)
+     e_burst = fast EWMA or GE state estimate              (current channel)
 ```
 
 ## Appendix B: Related Work
