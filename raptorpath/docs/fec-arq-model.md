@@ -9,21 +9,22 @@ A principled model for optimal correction symbol allocation in raptorpath.
 ### 1.1 Components
 
 ```
-  Sender                          Channel                        Receiver
- ┌──────────┐                  ┌───────────┐                  ┌──────────┐
- │  Source  ├── source syms ──►│  Erasure  ├── surviving ────►│  Decode  │
- │ packets  │                  │  Channel  │                  │          │
- │          ├── correction ───►│  (GE)     ├── surviving ────►│  FEC     │
- │  Taper   │   symbols        │           │                  │ Decoder  │
- │ Function │                  │           │                  │          │
- │          │◄── ACK+SACK ────┤           │◄── ACK+SACK ────┤  Gap     │
- │ Retransmit                  │           │                  │ Detect + │
- │  Buffer  │                  │           │                  │  SACK    │
- └──────────┘                  └───────────┘                  └──────────┘
+ Sender                       Channel                      Receiver
+┌───────────┐              ┌───────────┐              ┌───────────┐
+│ Source    ├─ source ────►│           ├─ surviving ─►│ Decode    │
+│ packets   │   syms       │  Erasure  │              │           │
+│           ├─ correction ►│  Channel  ├─ surviving ─►│ FEC       │
+│ Taper     │   symbols    │  (GE)     │              │ Decoder   │
+│ Function  │              │           │              │           │
+│           │◄─ ACK+SACK ─┤           │◄─ ACK+SACK ─┤ Gap       │
+│ Retransmit│              │           │              │ Detect +  │
+│ Buffer    │              │           │              │ SACK      │
+└───────────┘              └───────────┘              └───────────┘
 ```
 
-The system provides **100% reliable** delivery. Every source symbol eventually
-reaches the receiver. The only question is **when** — the delivery latency.
+The system provides **reliable** delivery. Three properties form a triangle —
+bandwidth, tail latency, and reliability. Fix any two, the third is determined
+by the channel. The protocol hint selects which two to fix.
 
 One unified mechanism — **correction symbols** — handles both proactive and
 reactive recovery. The taper function controls correction symbol density, and
@@ -41,50 +42,76 @@ symbol (FEC fallback):
 
 ### 1.2 Notation
 
-| Symbol | Meaning | Unit |
-|--------|---------|------|
-| ε      | Average channel loss rate | probability |
-| p      | P(Good → Bad) in GE model | probability |
-| q      | P(Bad → Good) in GE model | probability |
-| B      | Mean burst length = 1/q | symbols |
-| W      | Encoder window size | symbols |
-| RTT    | Round-trip time | seconds |
-| T_retx | Retransmit timeout (time before un-ACKed symbol becomes retransmit candidate) | seconds |
-| r      | Total correction rate (correction symbols per source symbol) | ratio |
-| τ(t)   | Taper function: correction density at offset t | corrections/symbol |
-| A      | Taper amplitude (scaling factor) | corrections/symbol |
-| P_fec  | Probability a lost symbol is FEC-recovered | probability |
-| δ      | Tail latency target: P(late delivery) ≤ δ | probability |
-| L_prop | Propagation delay (base latency) | seconds |
-| L_arq  | ARQ recovery latency = T_retx + RTT/2 | seconds |
+| Symbol | Meaning | Unit | Example |
+|--------|---------|------|---------|
+| ε      | Average channel loss rate | probability (0-1) | 0.025 (2.5% WiFi) |
+| p      | P(Good → Bad) in GE model | probability (0-1) | 0.013 |
+| q      | P(Bad → Good) in GE model | probability (0-1) | 0.5 |
+| B      | Mean burst length = 1/q | symbols (count) | 2.0 |
+| W      | Encoder window size | symbols (count) | 50 |
+| RTT    | Round-trip time | seconds | 0.050 (50ms) |
+| T_retx | Retransmit timeout | seconds | 0.075 (1.5×RTT) |
+| r      | Total correction rate | ratio (corrections/source) | 0.08 (8%) |
+| τ(t)   | Taper function: correction density at offset t | ratio (corrections/symbol) | 0.04 |
+| A      | Taper amplitude (scaling factor) | ratio (corrections/symbol) | 0.04 |
+| P_fec  | Probability a lost symbol is FEC-recovered | probability (0-1) | 0.95 |
+| δ      | Tail latency target: P(late delivery) ≤ δ | probability (0-1) | 1e-4 |
+| ρ      | Reliability target: P(symbol delivered) ≥ ρ | probability (0-1) | 1.0 (100%) |
+| T_cut  | Taper cutoff time (stop corrections after this) | seconds | ∞ (100% reliability) |
+| L_prop | Propagation delay (base latency) | seconds | 0.025 (25ms) |
+| L_arq  | ARQ recovery latency = T_retx + RTT/2 | seconds | 0.100 (100ms) |
+| σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
+| z_δ    | Standard normal quantile for δ | dimensionless | 3.72 (for δ=1e-4) |
+| ε_codec | Codec decode overhead | ratio (0-1) | 0.01 (RaptorQ) |
 
-### 1.3 What We Control vs What We Optimize
+### 1.3 The Bandwidth / Latency / Reliability Triangle
+
+Three properties are linked by the channel. Fix any two, the third is determined:
 
 ```
-  INPUTS (we control)              OPTIMIZATION              OUTPUTS
- ┌─────────────────────┐         ┌──────────────┐         ┌──────────────┐
- │ δ = tail latency    │         │              │         │              │
- │     target          │────────►│  Minimize r  │────────►│ r* = optimal │
- │ (from protocol hint)│         │  subject to  │         │   correction │
- │                     │         │  P(late) ≤ δ │         │   rate       │
- └─────────────────────┘         │              │         │              │
- ┌─────────────────────┐         │              │         │ τ*(t) = opt. │
- │ Channel observations│────────►│              │         │   taper func │
- │ (loss, RTT, bursts) │         │              │         │              │
- └─────────────────────┘         └──────────────┘         │ P_fec = FEC  │
-                                                          │   recovery   │
-                                                          │   probability│
-                                                          └──────────────┘
+              Bandwidth (r)
+              correction symbols
+              per source symbol
+                   /\
+                  /  \
+                 / FIX \
+                / any 2  \
+               / compute  \
+              /   the 3rd  \
+             /              \
+            /________________\
+  Tail latency (δ)      Reliability (ρ)
+  P(late delivery)      P(symbol delivered)
 ```
 
-**Input**: The tail latency target δ is the single control knob. It is set by
-the protocol hint:
-- Realtime: δ very small (almost everything FEC-recovered, minimal ARQ latency)
-- Bulk: δ larger (allow more ARQ recovery, save bandwidth)
-- Auto: moderate δ
+| Mode | Fix | Compute | Use case |
+|------|-----|---------|----------|
+| **Bulk transfer** | ρ=100%, minimize r | δ (tail latency) | File transfer, backup |
+| **VoIP** | δ (max latency), r (codec rate) | ρ (reliability) | Interactive voice |
+| **Live video** | δ (frame deadline), ρ (≥99.9%) | r (bandwidth) | Streaming, conferencing |
+| **Gaming** | δ (tight), ρ (≥99%) | r (bandwidth) | Real-time game state |
+| **Sensor/IoT** | r (minimal), ρ (≥95%) | δ (tail latency) | Periodic telemetry |
 
-**Output**: The taper function τ*(t) that achieves minimum bandwidth (correction
-rate r*) while satisfying the tail latency constraint.
+The protocol hint selects the mode and constraints:
+
+```
+ INPUTS                      OPTIMIZATION            OUTPUTS
+┌──────────────────────┐    ┌────────────────┐    ┌────────────────┐
+│ Mode (from protocol  │    │                │    │                │
+│ hint): which two     ├───►│ Given two,     ├───►│ Third          │
+│ properties to fix    │    │ compute the    │    │ property       │
+│                      │    │ third via      │    │                │
+│ Constraint values    ├───►│ the taper      ├───►│ τ*(t) = opt.   │
+│ (δ, ρ, or r)        │    │ function       │    │ taper func     │
+│                      │    │                │    │                │
+│ Channel observations ├───►│                │    │ T_cut = taper  │
+│ (ε, p, q, RTT)      │    │                │    │ cutoff time    │
+└──────────────────────┘    └────────────────┘    └────────────────┘
+```
+
+When ρ < 100%, the taper has a finite cutoff T_cut. Symbols not recovered by
+T_cut are permanently lost. When ρ = 100%, T_cut = ∞ (correction symbols
+continue until ACK, the infinite-tailed taper from Section 4).
 
 ---
 
@@ -96,22 +123,22 @@ The channel alternates between Good (low loss) and Bad (high loss) states
 [Gilbert1960], [Elliott1963]:
 
 ```
-         p                              q
-   ┌──────────►┐                  ┌──────────►┐
-   │           │                  │           │
- ┌─┴─┐      ┌─┴─┐              ┌─┴─┐      ┌─┴─┐
- │ G │      │ B │              │ B │      │ G │
- │   │◄─────┤   │              │   │◄─────┤   │
- └───┘  q   └───┘              └───┘  p   └───┘
-   │           │
-   │ 1-p       │ 1-q
-   └───────────┘
-        self-loops
+            p
+     .---------->.
+     |           |
+   +---+       +---+
+   | G |       | B |
+   |   |<------|   |
+   +---+   q   +---+
+     |           |
+     '---. .---'
+      1-p   1-q
+      (self-loops)
 
-   p = P(Good → Bad)    = probability of entering a burst
-   q = P(Bad → Good)    = probability of exiting a burst
-   1-p = P(Good → Good) = probability of staying in Good
-   1-q = P(Bad → Bad)   = probability of burst continuing
+   p   = P(Good -> Bad)  = probability of entering a burst
+   q   = P(Bad -> Good)  = probability of exiting a burst
+   1-p = P(Good -> Good) = probability of staying in Good
+   1-q = P(Bad -> Bad)   = probability of burst continuing
 ```
 
 **Simplified model** (used throughout): in Good state, no loss (h_G = 0).
@@ -188,18 +215,18 @@ makes a per-slot decision:
 
 ```
   Taper decides: "generate a correction symbol now"
-       │
-       ▼
-  ┌─────────────────────────────────────┐
-  │ Retransmit buffer has un-ACKed      │
-  │ source symbol older than T_retx?    │
-  ├──── YES ────────┬──── NO ───────────┤
-  │                 │                   │
-  │ Retransmit      │ Generate random   │
-  │ exact source    │ repair symbol     │
-  │ (immediate      │ (FEC, needs       │
-  │  decode)        │  decoder)         │
-  └─────────────────┴───────────────────┘
+                      │
+                      ▼
+  ┌───────────────────────────────────────┐
+  │ Retransmit buffer has un-ACKed       │
+  │ source symbol older than T_retx?     │
+  ├──── YES ──────────┬──── NO ──────────┤
+  │                   │                  │
+  │ Retransmit        │ Generate random  │
+  │ exact source      │ repair symbol    │
+  │ (immediate        │ (FEC, needs      │
+  │  decode)          │  decoder)        │
+  └───────────────────┴──────────────────┘
 ```
 
 **Why prefer retransmit?** A retransmitted source symbol is immediately usable
@@ -221,12 +248,12 @@ that have been sent but not yet ACKed.
   Retransmit buffer (ordered by send time, oldest first):
 
   ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-  │ S12 │ S13 │ S17 │ S18 │ S19 │ S24 │ S25 │  ← un-ACKed symbols
+  │ S12 │ S13 │ S17 │ S18 │ S19 │ S24 │ S25 │  <- un-ACKed symbols
   └─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-    ↑                         ↑
-    oldest                    newest
-    (first retransmit         (too recent,
-     candidate if             wait for ACK)
+    ^                                    ^
+    oldest                               newest
+    (first retransmit                    (too recent,
+     candidate if                        wait for ACK)
      age > T_retx)
 ```
 
@@ -268,44 +295,63 @@ WindowNack/NackAck mechanism):
   (self-healing). No NackAck echo mechanism needed.
 - SACK is a well-understood, widely-deployed mechanism [RFC2018].
 
-### 3.5 Per-Symbol Delivery Latency
+### 3.5 Per-Symbol Delivery Outcomes
 
-Since the system guarantees 100% reliability, every symbol is delivered.
-The delivery latency for symbol s has two cases:
-
-```
-   L(s) = L_prop                              if s not lost, or FEC-recovered
-   L(s) = L_prop + L_arq                      if ARQ-recovered (retransmitted)
-```
-
-The delivery latency distribution:
+A lost symbol has three possible outcomes, depending on whether the taper
+function's correction symbols recover it before the cutoff T_cut:
 
 ```
-   P(L(s) = L_prop)              = (1 - ε) + ε × P_fec
-   P(L(s) = L_prop + L_arq)     = ε × (1 - P_fec)
+   Outcome 1: FEC-recovered (proactive repair arrives before T_retx)
+     Latency: L_prop + small delay (≈ same as source)
+     Probability: ε × P_fec
 
-   where L_arq = T_retx + RTT/2
+   Outcome 2: ARQ-recovered (retransmit arrives after T_retx, before T_cut)
+     Latency: L_prop + L_arq  where L_arq = T_retx + RTT/2
+     Probability: ε × (1 - P_fec) × P_arq
+
+   Outcome 3: Lost (not recovered by T_cut)
+     Latency: ∞ (never delivered)
+     Probability: ε × (1 - P_fec) × (1 - P_arq)
 ```
 
-Note: L_arq = T_retx + RTT/2 because T_retx accounts for the time the sender
-waits before retransmitting (roughly one RTT to allow the ACK to arrive), and
-RTT/2 is the one-way propagation delay for the retransmitted symbol to reach
-the receiver. In practice, T_retx ≈ RTT + margin, so L_arq ≈ 1.5 × RTT + margin.
+Where P_arq = probability that a retransmitted correction symbol succeeds
+within the cutoff. When ρ = 100% (T_cut = ∞), P_arq = 1 and outcome 3
+never occurs.
 
-### 3.6 Why "Tail Loss" = "Tail Latency"
-
-Since reliability is 100%, there is no permanent loss. What we informally call
-"tail loss from FEC" is actually "symbols that FEC didn't recover" — these
-symbols get ARQ-recovered with additional latency. Therefore:
-
-**Tail loss probability from FEC = tail latency event probability.**
+The full delivery distribution:
 
 ```
-   P(late delivery) = P(L(s) > L_prop) = ε × (1 - P_fec)
+   P(on-time delivery) = (1 - ε) + ε × P_fec           not lost, or FEC
+   P(late delivery)    = ε × (1 - P_fec) × P_arq       ARQ retransmit
+   P(permanent loss)   = ε × (1 - P_fec) × (1 - P_arq) not recovered
+
+   Reliability: ρ = 1 - P(permanent loss)
+   Tail latency: δ = P(late delivery) / ρ               among delivered symbols
 ```
 
-This is the single quantity we optimize. There is no separate "loss vs latency"
-tradeoff — they are the same thing under 100% reliability.
+### 3.6 The Triangle in Action
+
+Under **100% reliability** (ρ = 1, T_cut = ∞): outcome 3 never occurs.
+"Tail loss from FEC" equals "tail latency events" — they are the same thing.
+This is the special case from Section 6.
+
+Under **variable reliability** (ρ < 1, T_cut < ∞): the taper is cut off.
+Symbols beyond T_cut are permanently lost. This saves bandwidth (fewer
+correction symbols) and bounds latency (no recovery beyond T_cut), at the
+cost of reliability.
+
+```
+  ρ = 100%:  ─────────────────────────────── (taper runs until ACK)
+             all symbols eventually delivered
+
+  ρ = 98%:   ──────────────┐
+             98% delivered  │ T_cut
+             2% lost        └── (taper stops, accept loss)
+
+  ρ = 95%:   ────────┐
+             95%      │ T_cut (shorter)
+             5% lost  └── accept loss (sensor/VoIP)
+```
 
 ---
 
@@ -321,20 +367,20 @@ a source symbol. At offset t after symbol s enters the window, we generate
   Correction
   density
   τ(t)
-    │
-  A ┤ ╲
-    │   ╲
-    │    ╲
-    │     ╲
-    │      ╲
-    │       ╲──────────────────────── (never reaches 0)
-    │
-    └──────────────────────────────── time offset t
-    0      B     2B     3B    ...
+    |
+  A +--\
+    |   \
+    |    \
+    |     \
+    |      \
+    |       \------------------------------ (never reaches 0)
+    |
+    +--+------+------+------+-------------- time offset t
+    0  B     2B     3B     4B    ...
 
-  τ(t) = A × (1-q)^t
+  τ(t) = A x (1-q)^t
 
-  A = amplitude (what we solve for)
+  A     = amplitude (what we solve for)
   (1-q)^t = GE burst survival function
 ```
 
@@ -411,18 +457,18 @@ The taper function adapts in real time through two mechanisms:
    new regime is characterized.
 
 ```
-  Before changepoint:           After changepoint:
-  (short bursts, q=0.5)         (long bursts, q=0.2)
+  Before changepoint:            After changepoint:
+  (short bursts, q=0.5)          (long bursts, q=0.2)
 
-  τ(t)                          τ(t)
-    │                             │
-  A ┤╲                          A'┤ ╲
-    │  ╲                          │  ╲
-    │   ╲                         │    ╲
-    │     ╲                       │      ╲
-    │       ──────                │         ╲──────────
-    └─────────── t                └──────────────────── t
-    fast decay                    slow decay, higher A'
+  τ(t)                           τ(t)
+    |                              |
+  A +\                           A'+--\
+    |  \                           |    \
+    |   \                          |      \
+    |    \                         |        \
+    |     \------                  |          \-----------
+    +------------ t                +---------------------- t
+    fast decay                     slow decay, higher A'
 ```
 
 ---
@@ -489,21 +535,22 @@ Bayesian Online Changepoint Detection [Adams2007] maintains a
 distribution over "how long since the last regime change?" (the run length).
 
 ```
-  Observation stream:   ●●●●●●●●●○○○○●●●●●●●●●●●●●●○○○●●
-                        ←  regime 1  →← regime 2 →← r3 →
-                                     ↑            ↑
-                              changepoint    changepoint
+  Observation stream:   ...oooooooooxxxxxooooooooooooooxxxooo...
+                        <- regime 1  ->   <- regime 2 -> <r3>
+                                     ^                ^
+                                changepoint      changepoint
 
   Run-length distribution P(r_t | data):
 
-  Regime 1 (steady):     Changepoint:        Regime 2 (steady):
-  Mass at r=50           Mass splits:         Mass at r=20
-  (confident)            r=0 (new regime)     (confident again)
-                         r=51 (old continues)
-  ┌─┐                    ┌─┐    ┌─┐           ┌─┐
-  │ │                    │ │    │ │           │ │
-  ──┴──── r              ──┴────┴──── r       ──┴──── r
-    50                   0      51               20
+  Regime 1 (steady):   Changepoint:          Regime 2 (steady):
+  Mass at r=50         Mass splits:          Mass at r=20
+  (confident)          r=0  (new regime)     (confident again)
+                       r=51 (old continues)
+   |                    |      |               |
+  _|_                  _|_    _|_             _|_
+  | |                  | |    | |             | |
+  ------- r            ----------- r          ------- r
+    50                 0      51                20
 ```
 
 For each run length, BOCD maintains Beta-Binomial sufficient statistics.
@@ -806,18 +853,14 @@ We compute σ²_burst directly from the GE estimator's p̂ and q̂.
 ### 6.8 The Corrected Optimal Correction Rate
 
 ```
-  ┌──────────────────────────────────────────────────────────────┐
-  │                                                              │
-  │   r* = ε/(1-ε) + z_δ × √(ε × σ²_burst / (W × (1-ε)))      │
-  │         ╰─┬──╯   ╰──────────────┬─────────────────╯         │
-  │      IT minimum           tail margin                        │
-  │                  (accounts for burst correlation)             │
-  │                                                              │
-  │   σ²_burst = 1 + 2(1-p-q)/(p+q)                             │
-  │                                                              │
-  │   z_δ = Φ⁻¹(1-δ)  (standard normal quantile)                │
-  │                                                              │
-  └──────────────────────────────────────────────────────────────┘
+  r* = e/(1-e) + z_d x sqrt(e x s2_burst / (W x (1-e)))
+       '--v--'   '--------------v-----------------'
+    IT minimum             tail margin
+                 (accounts for burst correlation)
+
+  s2_burst = 1 + 2(1-p-q)/(p+q)
+
+  z_d = standard normal quantile for (1-d)
 ```
 
 **Properties:**
@@ -851,6 +894,146 @@ The margin term is: `z_δ × √(ε × σ²_burst / (W × (1-ε)))`
    Bulk (δ=1e-2):    r* = 9.9% + 2.33×√(0.09×5.1/45.5) = 9.9% + 7.4% = 17.3%
    Auto (δ=1e-4):    r* = 9.9% + 3.72×√(0.09×5.1/45.5) = 9.9% + 11.8% = 21.7%
    Realtime (δ=1e-6): r* = 9.9% + 4.75×√(0.09×5.1/45.5) = 9.9% + 15.1% = 25.0%
+```
+
+### 6.10 Three-Variable Optimization
+
+Section 6.8 solves for r* given δ (with ρ=100%). Here we generalize to all
+three modes of the bandwidth/latency/reliability triangle.
+
+#### Taper with cutoff
+
+When ρ < 100%, the taper is truncated at T_cut:
+
+```
+   τ(t) = A × (1-q)^t    for t ≤ T_cut
+   τ(t) = 0               for t > T_cut
+```
+
+Total correction rate with cutoff:
+
+```
+   r = A × Σ_{t=0}^{T_cut} (1-q)^t = A × (1 - (1-q)^{T_cut+1}) / q
+```
+
+For T_cut = ∞ (ρ = 100%): reduces to r = A/q (Section 4.3).
+
+#### Mode 1: Given (δ, ρ) → compute r
+
+Fix tail latency target δ and reliability ρ. Compute minimum bandwidth r*.
+
+Step 1: From ρ, find T_cut. The reliability ρ = P(recovered within T_cut).
+Using the corrected model (Section 6.8):
+
+```
+   T_cut such that: ε × (1 - P_fec(T_cut)) × (1 - P_arq(T_cut)) = 1 - ρ
+```
+
+For ρ = 100%: T_cut = ∞ (no cutoff). For ρ = 98%: solve for finite T_cut.
+
+Step 2: From δ, find A using the tail latency constraint (Section 6.8):
+
+```
+   A* such that: ε × (1 - P_fec(A*)) ≤ δ    (among delivered symbols)
+```
+
+Step 3: Compute r* = A* × (1 - (1-q)^{T_cut+1}) / q.
+
+**Special case ρ = 100%**: T_cut = ∞, r* = A*/q = ε/(1-ε) + z_δ√(...).
+This is the formula from Section 6.8.
+
+#### Mode 2: Given (r, ρ) → compute δ
+
+Fix bandwidth r and reliability ρ. Compute resulting tail latency δ.
+
+```
+   From ρ: find T_cut (same as Mode 1, Step 1)
+   From r and T_cut: A = r × q / (1 - (1-q)^{T_cut+1})
+   From A: P_fec = 1 - exp(-R)  where R = A(1-ε)/q × (1-(1-q)^W)
+   Result: δ = ε × (1 - P_fec) × P_arq / ρ
+```
+
+#### Mode 3: Given (r, δ) → compute ρ
+
+Fix bandwidth r and tail latency δ. Compute resulting reliability ρ.
+
+```
+   From r: A = r × q / (1 - (1-q)^{T_cut+1})     (depends on T_cut)
+   From δ: determine how much of the taper is "on-time" vs "late"
+   From A and the taper integral: ρ = total recovery probability within T_cut
+```
+
+This mode requires solving for T_cut and A simultaneously (they're coupled).
+In practice, iterate: start with T_cut = ∞, compute r needed for δ,
+if r > budget, reduce T_cut until the bandwidth constraint is met.
+The resulting ρ falls out.
+
+#### Worked examples
+
+**Example 1: Bulk file transfer (WiFi, ε=0.025)**
+
+```
+   Fix: ρ = 100%, minimize r
+   Compute: δ (tail latency)
+
+   r* = 2.6% + z_δ × 1.2%     (from Section 6.9, WiFi row)
+
+   At minimum r = r_IT = 2.6%:  δ = ε = 2.5% (every lost symbol goes to ARQ)
+   Tail latency ≈ T_retx + RTT/2 for 2.5% of symbols
+   For RTT = 50ms: L_arq ≈ 100ms for 2.5% of symbols
+
+   To get δ = 1e-2: r* = 5.4% (from worked examples)
+```
+
+**Example 2: VoIP (WiFi, ε=0.025)**
+
+```
+   Fix: δ = 150ms budget → T_cut = 150ms / symbol_time
+        r = 5% (codec + small overhead)
+   Compute: ρ (reliability)
+
+   With r = 5%, the taper generates enough correction symbols that:
+   - P_fec ≈ 0.90 (90% of lost symbols FEC-recovered, zero latency)
+   - P_arq within 150ms ≈ 0.08 (8% recovered by retransmit)
+   - P_lost = 0.02 (2% permanently lost)
+   - ρ = 98%
+
+   The VoIP codec conceals the 2% frame loss.
+```
+
+**Example 3: Live video (WiFi, ε=0.025)**
+
+```
+   Fix: δ = 33ms (one frame at 30fps), ρ = 99.9%
+   Compute: r (bandwidth)
+
+   Need 99.9% of symbols delivered within 33ms.
+   T_cut determined by ρ = 99.9%: T_cut ≈ 3 × RTT
+   A determined by δ: need P(recovery within 33ms) ≥ 0.999
+   r* ≈ 8.4% (close to Realtime from Section 6.9)
+```
+
+**Example 4: Gaming (LTE, ε=0.05)**
+
+```
+   Fix: δ = 20ms (tight), ρ = 99% (1% loss acceptable)
+   Compute: r (bandwidth)
+
+   Very tight latency + moderate reliability → aggressive FEC
+   T_cut ≈ 2 × RTT (short: accept 1% loss)
+   r* ≈ 12% (most budget goes to proactive FEC within 20ms)
+```
+
+**Example 5: Sensor telemetry (Satellite, ε=0.09)**
+
+```
+   Fix: r = 5% (minimal bandwidth), ρ = 95%
+   Compute: δ (tail latency)
+
+   Low bandwidth budget + high loss → many symbols go to ARQ
+   T_cut determined by ρ = 95%
+   δ ≈ 15% (15% of delivered symbols arrive late)
+   Acceptable for periodic sensor readings.
 ```
 
 ---
@@ -1027,35 +1210,41 @@ To verify the model:
 ## Appendix A: Summary of Key Formulas
 
 ```
-   Channel:
-     ε = p/(p+q)                          average loss rate
-     B = 1/q                              mean burst length
-     P(burst ≥ t) = (1-q)^{t-1}          burst survival
+   Channel (Section 2):
+     ε = p/(p+q)                          average loss rate          [probability]
+     B = 1/q                              mean burst length          [symbols]
+     P(burst ≥ t) = (1-q)^{t-1}          burst survival             [probability]
+     σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
 
-   Taper:
-     τ*(t) = A* × (1-q)^t                optimal taper function
-     A* = r* × q                          taper amplitude
+   Taper function (Section 4):
+     τ*(t) = A* × (1-q)^t                optimal taper function     [corrections/symbol]
+     A* = r* × q                          taper amplitude (ρ=100%)  [corrections/symbol]
+     τ(t) = 0 for t > T_cut              taper cutoff (ρ<100%)
 
-   Burst variance correction:
-     σ²_burst = 1 + 2(1-p-q)/(p+q)        variance inflation from burst correlation
+   Optimal correction rate (Section 6.8, ρ=100%):
+     r* = ε̂/(1-ε̂) + z_δ × √(ε̂ × σ²_burst / (W(1-ε̂)))            [ratio]
+     where ε̂ = ε + ε_codec × (1-(1-ε)^W)  effective loss            [probability]
+           z_δ = Φ⁻¹(1-δ)                  normal quantile           [dimensionless]
 
-   Optimal correction rate:
-     r* = ε̂/(1-ε̂) + z_δ × √(ε̂ × σ²_burst / (W(1-ε̂)))
-     where ε̂ = ε + ε_codec × (1-(1-ε)^W)  effective loss with codec overhead
-           z_δ = Φ⁻¹(1-δ)                  normal quantile for tail target
+   Three-variable optimization (Section 6.10):
+     Given (δ, ρ) → r:  find T_cut from ρ, find A from δ, r = A(1-(1-q)^T_cut)/q
+     Given (r, ρ) → δ:  find T_cut from ρ, compute A from r, δ = ε(1-P_fec)P_arq/ρ
+     Given (r, δ) → ρ:  iterate T_cut until budget constraint met, ρ = recovery within T_cut
 
-   Tail latency:
-     P(late delivery) = ε × (1 - P_fec) ≤ δ
+   Per-symbol delivery (Section 3.5):
+     P(on-time)   = (1-ε) + ε × P_fec                               [probability]
+     P(late)      = ε × (1-P_fec) × P_arq                           [probability]
+     P(lost)      = ε × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
 
-   Retransmit buffer:
-     T_retx ≈ RTT + margin                retransmit timeout
-     L_arq = T_retx + RTT/2               ARQ recovery latency
+   Retransmit buffer (Section 3.3):
+     T_retx ≈ RTT + margin               retransmit timeout         [seconds]
+     L_arq = T_retx + RTT/2              ARQ recovery latency       [seconds]
 
-   Correction symbol per-slot decision:
+   Correction symbol per-slot decision (Section 3.2):
      if retransmit_buffer.peek().age > T_retx:
-       send exact source retransmit        (preferred: immediate decode)
+       send exact source retransmit       (preferred: immediate decode)
      else:
-       send random repair symbol           (FEC fallback: needs decoder)
+       send random repair symbol          (FEC fallback: needs decoder)
 ```
 
 ## Appendix B: Related Work
@@ -1296,15 +1485,15 @@ we always have enough correction to survive at least B consecutive erasures.
   Correction
   density
   τ(t)
-    │
-  A ┤╲
-    │  ╲
-    │    ╲
-    │      ╲
-  ──┤────────╲─────────────────────── τ_floor = B/W
-    │          ╲  ╲  (taper hits floor)
-    │            (floor continues)
-    └──────────────────────────────── time offset t
+    |
+  A +--\
+    |   \
+    |    \
+    |     \
+  --+------\------------------------------ τ_floor = B/W
+    |       (taper hits floor,
+    |        floor continues indefinitely)
+    +-------------------------------------- time offset t
 ```
 
 **Corrected total correction rate with floor:**
