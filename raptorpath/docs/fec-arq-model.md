@@ -1694,10 +1694,11 @@ we always have enough correction to survive at least B consecutive erasures.
 
 ## Appendix D: Open Questions
 
-1. **Finite window truncation:** The taper is theoretically infinite-tailed
-   but the encoder window has finite size W. What's lost by truncation?
-   For W >> B (window much larger than mean burst), the truncation error is
-   (1-q)^W which is negligible. For W ≈ B, it may matter.
+1. **Finite window truncation (resolved):** The taper is infinite-tailed but
+   the encoder window has finite size W. After eviction, FEC repair is no
+   longer possible — but the retransmit buffer (Section 3.7) still holds the
+   exact source symbol for ARQ retransmission. The truncation error (1-q)^W
+   only affects the FEC component; the unified model's ARQ fallback covers it.
 
 2. **Multi-path:** With multiple paths, losses are correlated differently
    per path. Should each path have its own taper, or should there be a
