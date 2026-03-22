@@ -619,7 +619,65 @@ one symbol slot on the wire and serves one of two purposes:
 The taper function (Section 4) determines the **density** of correction
 symbols over time. This section explains what happens in each slot.
 
-### 3.7 Per-Slot Decision
+### 3.7 Three-Stream View: Source, Repair, Retransmit
+
+Conceptually, the sender manages **three streams** that compete for wire
+capacity. Each stream has a different effect on the bandwidth/latency/
+reliability triangle:
+
+```
+  Stream         | Latency       | Bandwidth     | Reliability
+  ---------------+---------------+---------------+--------------
+  Source          | ++ immediate  | neutral       | neutral
+  Repair (FEC)   | - decoder     | + (no waste   | ++ (covers
+                 |   wait        |   if taper     |    any loss)
+                 |               |   matched)    |
+  Retransmit     | + immediate   | - (duplicate  | + (targeted
+  (ARQ)          |   decode      |   risk)       |    recovery)
+```
+
+The hierarchical model (taper + P_lost) determines the three-stream mix:
+
+```
+  Total capacity: C (from Copa)
+
+  source_rate     = C / (1 + r)                     [from taper ratio r]
+  repair_rate     = C x r / (1+r) x (1 - P_retx)   [correction minus retransmit]
+  retransmit_rate = C x r / (1+r) x P_retx          [from P_lost x (1-e_burst)]
+
+  where r     = taper correction ratio (Section 4)
+        P_retx = P_lost(t) x (1 - e_burst) (Section 3.4)
+```
+
+The three rates sum to C. The taper ratio r controls the source/correction
+split. P_retx controls the repair/retransmit split within corrections.
+
+**How the protocol hint shifts the mix:**
+
+```
+  Realtime (low latency):
+    -> tight delta -> high r (more corrections for fast FEC recovery)
+    -> BUT also high P_retx when confident (retransmit = immediate decode)
+    -> Mix: moderate source, moderate repair, moderate retransmit
+
+  Bulk (high bandwidth):
+    -> loose delta -> low r (fewer corrections, more source)
+    -> low P_retx (prefer repair over retransmit, less duplicate risk)
+    -> Mix: lots of source, some repair, little retransmit
+
+  VoIP (fixed bandwidth + latency, variable reliability):
+    -> r constrained by bandwidth budget
+    -> high P_retx when confident (immediate decode matters)
+    -> Mix: fixed source rate, split corrections by P_retx
+```
+
+**Per-path three-stream fractions:** Each path has its own r_i and P_retx_i,
+so the three-stream fractions naturally differ per path. A low-latency path
+with low loss has: high source, low repair, low retransmit. A high-loss path
+has: lower source, high repair, moderate retransmit. The hierarchical model
+produces these automatically — no separate three-way optimization needed.
+
+### 3.8 Per-Slot Decision
 
 When the taper function decides to generate a correction symbol, the sender
 makes a probabilistic choice based on P_lost(t) for the oldest un-ACKed
@@ -674,7 +732,7 @@ This is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
 all retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
 (maximum uncertainty). The model automatically allocates the right mix.
 
-### 3.8 The Retransmit Buffer
+### 3.9 The Retransmit Buffer
 
 The sender maintains a **retransmit buffer**: an ordered list of source symbols
 that have been sent but not yet ACKed.
@@ -702,7 +760,7 @@ The buffer is bounded by the encoder window size W — symbols that leave the
 encoder window are removed regardless of ACK status (the FEC decoder can no
 longer use them, so the system relies on the decoder having recovered them).
 
-### 3.9 SACK-Extended WindowAck
+### 3.10 SACK-Extended WindowAck
 
 The receiver sends periodic **ACK+SACK** messages to tell the sender what
 arrived. This is the same mechanism TCP has used since RFC 2018:
@@ -734,7 +792,7 @@ unicast connections:
   more reliable than reporting failure.
 - No separate NackAck echo mechanism needed to measure reverse path loss.
 
-### 3.10 Per-Symbol Delivery Outcomes
+### 3.11 Per-Symbol Delivery Outcomes
 
 A lost symbol has three possible outcomes, depending on whether the taper
 function's correction symbols recover it before the cutoff T_cut:
@@ -768,7 +826,7 @@ The full delivery distribution:
    Tail latency: d = P(late delivery) / p               among delivered symbols
 ```
 
-### 3.11 The Triangle in Action
+### 3.12 The Triangle in Action
 
 Under **100% reliability** (ρ = 1, T_cut = infinity): outcome 3 never occurs.
 "Tail loss from FEC" equals "tail latency events" — they are the same thing.
