@@ -1122,6 +1122,17 @@ The IT minimum (Shannon limit for the erasure channel [Shannon1948]) is:
    r_IT = ε / (1-ε)
 ```
 
+**Why ε/(1-ε), not just ε?** Correction symbols are also subject to channel
+loss. A correction sent to replace a lost source might itself be lost, needing
+another correction, which might also be lost:
+
+```
+   e + e^2 + e^3 + ... = e / (1-e)
+```
+
+At 30% loss: need 43% overhead (not 30%), because 30% of corrections are lost
+too. The (1-ε) denominator IS this geometric series. See also Section 11.4.
+
 Our optimal rate:
 
 ```
@@ -1766,11 +1777,6 @@ The decoder doesn't care WHICH symbols arrive — just HOW MANY. A repair
 symbol on Path A can recover a lost source on Path B. Source symbols can
 arrive in any order. The reorder buffer handles sequencing after decode.
 
-This means:
-- Source can go on ANY path without causing HOL blocking
-- Corrections are path-agnostic — useful regardless of which path they arrive on
-- Slow paths don't stall fast paths — the decoder works with whatever arrives
-
 ### 11.2 Per-Path Model
 
 Each path i runs independently with its own:
@@ -1787,90 +1793,139 @@ All paths share:
 - **One retransmit buffer**: any path can retransmit any un-ACKed symbol
 - **One FEC encoder window**: repair symbols cover the same source window
 
-### 11.3 Effective Delivery Time
+### 11.3 Unified Symbol Stream and Interleaving
 
-For a source symbol sent on path i, the expected time until the receiver has
-usable data:
-
-```
-  E_i = RTT_i/2 + e_i x t_recovery_i
-
-  where t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x t_arq_i
-                        ^                   ^
-                   FEC recovery time    ARQ retransmit time
-```
-
-E_i is a unified latency metric that accounts for:
-- Propagation delay (RTT_i/2)
-- Loss as latency overhead (e_i x recovery time)
-- The FEC/ARQ mix on that path (weighted by P_fec_i)
-
-Example:
+Each path carries a **unified stream** of source + correction symbols,
+interleaved at that path's own taper ratio. The interleaving is essential
+for burst protection — corrections scattered among source symbols survive
+bursts that wipe out consecutive symbols:
 
 ```
-  Path A (WiFi):  RTT=20ms, e=0.05, t_recovery=15ms  -> E = 10 + 0.75 = 10.75ms
-  Path B (LTE):   RTT=60ms, e=0.02, t_recovery=20ms  -> E = 30 + 0.40 = 30.40ms
-  Path C (Sat):   RTT=600ms, e=0.09, t_recovery=50ms -> E = 300 + 4.5 = 304.5ms
+  Path A (e=0.05, r=0.05):  [S][S][S][S][C][S][S][S][S][C]...   5% corrections
+  Path B (e=0.10, r=0.11):  [S][S][C][S][S][C][S][S][C]...      11% corrections
+
+  During burst on Path A:   [S][X][X][X][C][S]...
+                                 lost      ^ this correction survives!
+                                             -> decoder can recover
 ```
 
-### 11.4 Effective Bandwidth
-
-For path i, the source-carrying capacity after accounting for correction
-overhead:
-
-```
-  B_eff_i = C_i / (1 + r_i)
-
-  where C_i = Copa's total rate (symbols/sec)
-        r_i = per-path correction rate (from taper)
-```
-
-Paths with low loss have low r_i -> high B_eff (most bandwidth for source).
-Paths with high loss have high r_i -> low B_eff (most bandwidth for corrections).
-
-Example:
+**Source and corrections must NOT be separated between paths.** If source
+goes on one path and corrections on another, the source path has no
+interleaved corrections, and burst protection fails:
 
 ```
-  Path A (WiFi):  C=1000 sym/s, r=0.12  -> B_eff = 893 sym/s source capacity
-  Path B (LTE):   C=500 sym/s,  r=0.04  -> B_eff = 481 sym/s source capacity
-  Path C (Sat):   C=200 sym/s,  r=0.25  -> B_eff = 160 sym/s source capacity
-                                    total: 1534 sym/s source capacity
+  BAD: source/correction separation
+  Path A: [S][S][S][S][S][S]...  <- burst wipes everything, no protection
+  Path B: [C][C][C][C][C][C]...  <- corrections exist but on wrong path
 ```
 
-### 11.5 Source Scheduling: Water-Filling by E_i
+The scheduler distributes the combined stream across paths. Each path
+independently interleaves at its own ratio.
 
-Source symbols are distributed across paths by filling the lowest-E_i path
-first, then overflowing to the next:
+### 11.4 Correction Deficit
 
-```
-  1. Sort paths by E_i (effective delivery time, ascending)
-  2. Fill fastest path with source up to its B_eff capacity
-  3. Overflow to next-fastest path
-  4. Repeat until all source is distributed
-
-  Example (source rate = 1200 sym/s):
-
-  Paths sorted by E_i:        B_eff:        source allocated:
-  Path A (E=10.75ms)           893           [=======893=======] full
-  Path B (E=30.40ms)           481           [===307===] partial (need 307 more)
-  Path C (E=304.5ms)           160           (not needed)
-                                     total:  1200 sym/s
-```
-
-Most source on the fastest path, overflow on slower paths. The receiver
-processes fast-path symbols immediately while slow-path symbols catch up.
-
-The per-path taper fills each path's remaining capacity with corrections:
+The **correction deficit** is the total expected corrections still needed
+across all paths:
 
 ```
-  Path A: [S][S][S][C][S][S][C][S][S][S][C][C]...  (r=0.12: ~1 in 8 is correction)
-  Path B: [S][S][C][S][C]...                        (r=0.04: ~1 in 25 is correction)
+  deficit = SUM_{s in un-ACKed} e_s
+
+  where e_s = channel loss rate of path(s) at the time symbol s was sent
 ```
 
-### 11.6 Interpolated Objective Function
+Each source or correction symbol sent on path i adds e_i to the deficit
+(it might be lost). Each ACKed symbol removes its send-time e_s (confirmed
+survived).
 
-Instead of discrete modes, one parameterized objective with weights from the
-protocol hint:
+**Why e/(1-e) is a geometric series:** When a correction symbol is itself
+lost, it needs replacement. This creates a chain:
+
+```
+  Source lost:                0.30   (30% loss)
+  Corrections also lost:     0.30 x 0.30 = 0.09
+  Replacements also lost:    0.30^3 = 0.027
+  ...
+  Total = 0.30 + 0.09 + 0.027 + ... = 0.30 / (1 - 0.30) = 0.4286
+```
+
+This is why r_IT = e/(1-e), not just e. The (1-e) denominator accounts
+for the infinite chain of correction-of-correction loss. The deficit
+counter captures this naturally: lost corrections add to the deficit,
+generating more corrections, until enough survive.
+
+**Cross-path correction deficit:** When source is on path A (e_A) and
+corrections go on path B (e_B), the formula becomes:
+
+```
+  r = e_A / (1 - e_B)
+```
+
+This emerges from the deficit dynamics: source adds e_A, each surviving
+correction on path B removes (1-e_B). Equilibrium: e_A = r x (1-e_B).
+
+### 11.5 Effective Delivery Time and Bandwidth
+
+For each path i:
+
+```
+  E_i     = RTT_i/2 + e_i x t_recovery_i       effective delivery time  [sec]
+  B_eff_i = C_i / (1 + r_i)                     source-carrying capacity [sym/s]
+  e_combined = SUM(C_i x e_i) / SUM(C_i)        throughput-weighted loss  [prob]
+```
+
+### 11.6 Scheduler Ratio Adjustment
+
+The scheduler can adjust the per-path source/correction ratio to favor
+certain paths for source symbols. This is only beneficial for
+**latency-sensitive** traffic (source symbols are immediately processable,
+corrections are not — so putting more source on a fast path saves latency):
+
+```
+  Default (natural taper):
+    Path A (fast, e=0.05):  [S][S][S][S][C][S][S][S][S][C]...   r=0.05
+
+  Latency-optimized (scheduler shifts source to fast path):
+    Path A (fast):          [S][S][S][S][S][S][S][S][S][C]...   r'=0.02
+    Path B (slow):          [S][C][C][S][C][C][S][C][C]...      r'=0.30
+                                                                 (absorbs deficit)
+```
+
+For **bandwidth-optimized** traffic: no adjustment needed. Source and
+corrections cost the same bandwidth. The natural taper ratio is optimal.
+
+**Constraint:** Each path must maintain minimum interleaving for burst
+protection. The scheduler cannot reduce the correction ratio below a
+floor that leaves the path unprotected during bursts.
+
+### 11.7 Burst Protection During Ratio Adjustment
+
+When the scheduler reduces a path's correction ratio (more source, fewer
+corrections), that path becomes more vulnerable to burst loss. The question:
+how to maintain burst protection?
+
+**Option 1: Hard floor.** r_i' >= B_i/W (mean burst length / window size).
+Guarantees enough corrections for one expected burst per window. Conservative.
+
+**Option 2: Protocol-hint-dependent floor.**
+Realtime: r_i' >= B_i/W (hard floor). Bulk: r_i' >= 0 (let taper
+self-correct via BOCD). Balanced: r_i' >= B_i/(2W) (softer floor).
+
+**Option 3: Let the taper self-correct.** No floor. If a burst overwhelms
+the reduced correction ratio, BOCD detects increased loss, raises e, and
+the taper amplitude A increases automatically. The first burst after
+scheduler adjustment is under-protected (5-15 sample detection delay);
+subsequent bursts are covered.
+
+**Open question for future work:** A quick-reacting burst protection
+mechanism independent of the scheduler-dictated ratio. The taper's GE
+shape (front-loaded corrections) provides some inherent burst protection,
+but a mechanism that overrides the scheduler during detected bursts would
+be more robust. This could involve the GE state directly controlling
+a minimum correction rate that bypasses the scheduler.
+
+### 11.8 Interpolated Objective Function
+
+One parameterized objective with weights from the protocol hint:
 
 ```
   minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
@@ -1881,19 +1936,13 @@ protocol hint:
               x_i x source_rate <= B_eff_i    per-path capacity
 ```
 
-The protocol hint maps to weights on a continuous spectrum:
-
 ```
   Realtime:   w_lat = 1.0,  w_bw = 0.0   minimize latency at any bandwidth cost
   Balanced:   w_lat = 0.5,  w_bw = 0.5   balance latency and bandwidth
   Bulk:       w_lat = 0.0,  w_bw = 1.0   minimize bandwidth waste (overhead)
-  Custom:     any point on [0,1]          smooth interpolation
 ```
 
-When w_lat dominates: source concentrates on low-E_i paths (fastest delivery).
-When w_bw dominates: source concentrates on low-r_i paths (least overhead).
-
-### 11.7 QoS Priority Cascade
+### 11.9 QoS Priority Cascade
 
 When multiple protocol classes share the same paths, they pick in priority
 order from tightest to loosest latency requirement:
@@ -1902,23 +1951,9 @@ order from tightest to loosest latency requirement:
   1. Realtime picks first:  lowest E_i paths, up to its source volume
   2. Balanced picks next:   best remaining path capacity
   3. Bulk gets the rest:    whatever capacity remains
-
-  Example (3 classes on 3 paths):
-
-  Realtime (200 sym/s): picks Path A (E=10.75ms)     [====200====]
-  Balanced (500 sym/s): picks Path A remainder (693)  [=500=]
-                        + Path B (0)                  not needed
-  Bulk (500 sym/s):     picks Path A remainder (193)  [193]
-                        + Path B (481)                [=====481=====]
-                                                      total OK
 ```
 
-This ensures latency-sensitive traffic gets the best paths. Bulk is happy
-with any path (it optimizes for bandwidth, not latency). The priority order
-guarantees no latency-sensitive traffic is forced onto a slow path when a
-fast path is available.
-
-### 11.8 Cross-Path Retransmit
+### 11.10 Cross-Path Retransmit
 
 The shared retransmit buffer enables recovery across paths. When source
 symbol S_k was sent on path A and lost, any path's correction slot can
@@ -1926,22 +1961,10 @@ retransmit it:
 
 ```
   P(retransmit on path j) = P_lost(t_k, e_A) x (1 - e_burst_j)
-                              ^                    ^
-                         confidence S_k      current loss on
-                         was lost (from      retransmit path j
-                         path A's ACK)       (prefer good paths)
 ```
 
-The retransmit naturally goes on the path with lowest e_burst — the most
-reliable path currently. This provides **path diversity**: source on one
-path, recovery on another. The probability of total loss is:
-
-```
-  P(both fail) = e_A x e_j      (much lower than single-path e_A)
-```
-
-For e_A = 0.10, e_j = 0.02: P(both fail) = 0.002. Path diversity gives
-50x improvement over single-path recovery.
+Cross-path diversity: P(both fail) = e_A x e_j. For e_A=0.10, e_j=0.02:
+P(both fail) = 0.002 — 50x improvement over single-path.
 
 ---
 
@@ -1995,6 +2018,9 @@ For e_A = 0.10, e_j = 0.02: P(both fail) = 0.002. Path diversity gives
    Multi-path scheduling (Section 11):
      E_i = RTT_i/2 + e_i x t_recovery_i                      [seconds]
      B_eff_i = C_i / (1 + r_i)                               [symbols/sec]
+     e_combined = SUM(C_i x e_i) / SUM(C_i)                  [probability]
+     deficit = SUM_{un-ACKed s}(e_s)                          [expected corrections]
+     cross-path: r = e_source / (1 - e_correction)           [ratio]
      minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
      P(cross-path retx) = P_lost(t, e_src) x (1 - e_burst_j)
      P(both paths fail) = e_src x e_retx                      [probability]
@@ -2271,10 +2297,12 @@ we always have enough correction to survive at least B consecutive erasures.
    only affects the FEC component; the unified model's ARQ fallback covers it.
 
 2. **Multi-path (resolved):** Each path has its own taper, Copa, and GE
-   estimator (Section 11). Source scheduling by water-filling on effective
-   delivery time E_i. Cross-path retransmit via shared buffer. Protocol hint
-   sets the latency/bandwidth weight for the scheduling objective. QoS
-   priority cascade for mixed traffic classes.
+   estimator (Section 11). Unified stream per path preserves interleaving.
+   Scheduler adjusts per-path source/correction ratio (latency mode only).
+   Global correction deficit tracks outstanding corrections. Cross-path
+   retransmit via shared buffer. **Partially open:** burst protection during
+   scheduler ratio adjustment needs a quick-reacting mechanism independent
+   of scheduler-dictated ratios (Section 11.7).
 
 3. **Interaction with congestion control (resolved):** Copa [Copa2018] controls
    total rate, taper controls source/correction split (Section 10). When
