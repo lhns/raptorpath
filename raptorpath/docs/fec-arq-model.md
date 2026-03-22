@@ -2,38 +2,42 @@
 
 ## Abstract
 
-This paper develops a principled mathematical model for reliable data
-delivery over lossy multipath channels, unifying Forward Error Correction
-(FEC) and Automatic Repeat reQuest (ARQ) under a single framework.
+Data traversing lossy multipath channels (WiFi, LTE, satellite) has
+specific requirements: some needs low latency (VoIP), some needs high
+throughput (file transfer), some tolerates partial loss (sensor telemetry).
+Each available path has different characteristics — bandwidth, latency,
+and loss rate. The goal of this model is to **optimally use each path or
+combination of paths to satisfy the constraints of the data sent over
+them**, without ad-hoc tuning knobs.
 
-The core contribution is the **correction symbol** — a unified concept that
-subsumes both FEC repair symbols and ARQ source retransmits. A single taper
-function, derived from the Gilbert-Elliott channel model's burst survival
-function, controls the density of correction symbols over time. At each
-correction slot, a probabilistic decision based on per-symbol loss confidence
-P_lost(t) and current channel state e_burst determines whether to send a
-targeted source retransmit (immediate decode) or a flexible FEC repair.
+Three properties — bandwidth, tail latency, and reliability — form a
+triangle: fix any two, the third is determined by the channel. The protocol
+hint (Realtime, Bulk, etc.) selects which two to fix. The model computes
+the optimal correction rate, taper schedule, and path allocation from
+measured channel parameters — no magic offsets or manual thresholds.
 
-The model replaces ad-hoc tuning with closed-form optimization. Three
-properties — bandwidth, tail latency, and reliability — form a triangle:
-fix any two, the third is determined by the channel. The optimal correction
-rate r* = e/(1-e) + z_d x sqrt(e x s2_burst / (W(1-e))) combines the
-information-theoretic minimum with a burst-variance-corrected tail margin.
-The protocol hint (Realtime, Bulk, etc.) selects which properties to fix,
-not a magic overhead offset.
+The core mechanism is the **correction symbol** — a unified concept that
+subsumes both FEC repair symbols (proactive, flexible) and ARQ source
+retransmits (reactive, immediately decodable). A single taper function,
+shaped by the Gilbert-Elliott channel model's burst survival function,
+controls correction density over time. A probabilistic per-slot decision
+based on loss confidence P_lost(t) and current channel state e_burst
+determines whether each correction is a retransmit or a repair.
 
-For congestion control, Copa is recommended over BBR: its natural rate
-oscillation avoids BBR's ProbeRTT phase, which creates FEC protection gaps.
-For multipath, each path runs its own Copa, taper, and GE estimator. A
-unified symbol stream per path preserves interleaving for burst protection.
-A global correction deficit tracks outstanding recovery needs across paths,
-and the scheduler adjusts per-path source/correction ratios based on an
-interpolated latency/bandwidth objective.
+The optimal correction rate r* = e/(1-e) + z_d x sqrt(e x s2_burst /
+(W(1-e))) combines the information-theoretic minimum with a burst-variance-
+corrected tail margin. Copa congestion control is recommended over BBR for
+its taper-compatible rate oscillation (no FEC protection gaps from ProbeRTT).
 
-ACK-based feedback with SACK (Selective Acknowledgement) replaces the
-NACK mechanism entirely. The sender infers losses from ACK absence and
-retransmits from a shared retransmit buffer — the same proven approach
-TCP has used for 40 years.
+For multipath, each path runs its own Copa, taper, and GE estimator with a
+unified symbol stream preserving interleaved burst protection. A global
+correction deficit tracks outstanding recovery needs across paths. The
+scheduler adjusts per-path source/correction ratios using an interpolated
+latency/bandwidth objective, with QoS priority cascading for mixed traffic.
+
+ACK-based feedback with SACK replaces the NACK mechanism — the same proven
+approach TCP has used for 40 years, with sender-side loss inference from
+ACK absence.
 
 ---
 
