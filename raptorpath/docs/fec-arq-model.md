@@ -1739,6 +1739,212 @@ correctly; it's the application that needs to adapt.
 
 ---
 
+## 11. Multi-Path Scheduling
+
+### 11.1 Why FEC Beats MPTCP
+
+MPTCP (Multi-Path TCP) schedulers are fundamentally limited by **head-of-line
+(HOL) blocking**: TCP requires in-order delivery, so a packet on the slow path
+blocks all fast-path packets at the receiver. MPTCP schedulers (round-robin,
+weighted, BLEST [Ferlin2016]) try to minimize this by avoiding slow paths,
+but they can't eliminate it.
+
+Our FEC-based model is fundamentally different:
+
+```
+  MPTCP:                           Raptorpath:
+
+  Path A: [P1] [P2] [P5] [P6]     Path A: [S1] [C] [S3] [C]
+  Path B: [P3] [P4]               Path B: [S2] [S4] [C]
+
+  Receiver must wait for P3        Decoder needs ANY k of n symbols.
+  before delivering P4,P5,P6.      Order doesn't matter.
+  HOL blocking on slow path.        No HOL blocking.
+```
+
+The decoder doesn't care WHICH symbols arrive — just HOW MANY. A repair
+symbol on Path A can recover a lost source on Path B. Source symbols can
+arrive in any order. The reorder buffer handles sequencing after decode.
+
+This means:
+- Source can go on ANY path without causing HOL blocking
+- Corrections are path-agnostic — useful regardless of which path they arrive on
+- Slow paths don't stall fast paths — the decoder works with whatever arrives
+
+### 11.2 Per-Path Model
+
+Each path i runs independently with its own:
+
+```
+  Copa_i:     rate_i = 1 / (d x dq_i)         total sending rate
+  GE_i:       (e_i, p_i, q_i)                  loss model
+  Taper_i:    tau_i(t) = A_i x (1-q_i)^t       correction density
+  r_i:        correction rate = A_i / q_i       source/correction ratio
+```
+
+All paths share:
+- **One source stream**: source symbols are distributed across paths
+- **One retransmit buffer**: any path can retransmit any un-ACKed symbol
+- **One FEC encoder window**: repair symbols cover the same source window
+
+### 11.3 Effective Delivery Time
+
+For a source symbol sent on path i, the expected time until the receiver has
+usable data:
+
+```
+  E_i = RTT_i/2 + e_i x t_recovery_i
+
+  where t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x t_arq_i
+                        ^                   ^
+                   FEC recovery time    ARQ retransmit time
+```
+
+E_i is a unified latency metric that accounts for:
+- Propagation delay (RTT_i/2)
+- Loss as latency overhead (e_i x recovery time)
+- The FEC/ARQ mix on that path (weighted by P_fec_i)
+
+Example:
+
+```
+  Path A (WiFi):  RTT=20ms, e=0.05, t_recovery=15ms  -> E = 10 + 0.75 = 10.75ms
+  Path B (LTE):   RTT=60ms, e=0.02, t_recovery=20ms  -> E = 30 + 0.40 = 30.40ms
+  Path C (Sat):   RTT=600ms, e=0.09, t_recovery=50ms -> E = 300 + 4.5 = 304.5ms
+```
+
+### 11.4 Effective Bandwidth
+
+For path i, the source-carrying capacity after accounting for correction
+overhead:
+
+```
+  B_eff_i = C_i / (1 + r_i)
+
+  where C_i = Copa's total rate (symbols/sec)
+        r_i = per-path correction rate (from taper)
+```
+
+Paths with low loss have low r_i -> high B_eff (most bandwidth for source).
+Paths with high loss have high r_i -> low B_eff (most bandwidth for corrections).
+
+Example:
+
+```
+  Path A (WiFi):  C=1000 sym/s, r=0.12  -> B_eff = 893 sym/s source capacity
+  Path B (LTE):   C=500 sym/s,  r=0.04  -> B_eff = 481 sym/s source capacity
+  Path C (Sat):   C=200 sym/s,  r=0.25  -> B_eff = 160 sym/s source capacity
+                                    total: 1534 sym/s source capacity
+```
+
+### 11.5 Source Scheduling: Water-Filling by E_i
+
+Source symbols are distributed across paths by filling the lowest-E_i path
+first, then overflowing to the next:
+
+```
+  1. Sort paths by E_i (effective delivery time, ascending)
+  2. Fill fastest path with source up to its B_eff capacity
+  3. Overflow to next-fastest path
+  4. Repeat until all source is distributed
+
+  Example (source rate = 1200 sym/s):
+
+  Paths sorted by E_i:        B_eff:        source allocated:
+  Path A (E=10.75ms)           893           [=======893=======] full
+  Path B (E=30.40ms)           481           [===307===] partial (need 307 more)
+  Path C (E=304.5ms)           160           (not needed)
+                                     total:  1200 sym/s
+```
+
+Most source on the fastest path, overflow on slower paths. The receiver
+processes fast-path symbols immediately while slow-path symbols catch up.
+
+The per-path taper fills each path's remaining capacity with corrections:
+
+```
+  Path A: [S][S][S][C][S][S][C][S][S][S][C][C]...  (r=0.12: ~1 in 8 is correction)
+  Path B: [S][S][C][S][C]...                        (r=0.04: ~1 in 25 is correction)
+```
+
+### 11.6 Interpolated Objective Function
+
+Instead of discrete modes, one parameterized objective with weights from the
+protocol hint:
+
+```
+  minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
+             ^                          ^
+        latency cost               bandwidth overhead cost
+
+  subject to: SUM(x_i) = 1              all source distributed
+              x_i x source_rate <= B_eff_i    per-path capacity
+```
+
+The protocol hint maps to weights on a continuous spectrum:
+
+```
+  Realtime:   w_lat = 1.0,  w_bw = 0.0   minimize latency at any bandwidth cost
+  Balanced:   w_lat = 0.5,  w_bw = 0.5   balance latency and bandwidth
+  Bulk:       w_lat = 0.0,  w_bw = 1.0   minimize bandwidth waste (overhead)
+  Custom:     any point on [0,1]          smooth interpolation
+```
+
+When w_lat dominates: source concentrates on low-E_i paths (fastest delivery).
+When w_bw dominates: source concentrates on low-r_i paths (least overhead).
+
+### 11.7 QoS Priority Cascade
+
+When multiple protocol classes share the same paths, they pick in priority
+order from tightest to loosest latency requirement:
+
+```
+  1. Realtime picks first:  lowest E_i paths, up to its source volume
+  2. Balanced picks next:   best remaining path capacity
+  3. Bulk gets the rest:    whatever capacity remains
+
+  Example (3 classes on 3 paths):
+
+  Realtime (200 sym/s): picks Path A (E=10.75ms)     [====200====]
+  Balanced (500 sym/s): picks Path A remainder (693)  [=500=]
+                        + Path B (0)                  not needed
+  Bulk (500 sym/s):     picks Path A remainder (193)  [193]
+                        + Path B (481)                [=====481=====]
+                                                      total OK
+```
+
+This ensures latency-sensitive traffic gets the best paths. Bulk is happy
+with any path (it optimizes for bandwidth, not latency). The priority order
+guarantees no latency-sensitive traffic is forced onto a slow path when a
+fast path is available.
+
+### 11.8 Cross-Path Retransmit
+
+The shared retransmit buffer enables recovery across paths. When source
+symbol S_k was sent on path A and lost, any path's correction slot can
+retransmit it:
+
+```
+  P(retransmit on path j) = P_lost(t_k, e_A) x (1 - e_burst_j)
+                              ^                    ^
+                         confidence S_k      current loss on
+                         was lost (from      retransmit path j
+                         path A's ACK)       (prefer good paths)
+```
+
+The retransmit naturally goes on the path with lowest e_burst — the most
+reliable path currently. This provides **path diversity**: source on one
+path, recovery on another. The probability of total loss is:
+
+```
+  P(both fail) = e_A x e_j      (much lower than single-path e_A)
+```
+
+For e_A = 0.10, e_j = 0.02: P(both fail) = 0.002. Path diversity gives
+50x improvement over single-path recovery.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```
@@ -1785,6 +1991,13 @@ correctly; it's the application that needs to adapt.
      dq = RTT_current - RTT_min                              [seconds]
      source_rate = total_rate / (1 + r*)                     [symbols/sec]
      correction_rate = total_rate x r* / (1 + r*)            [symbols/sec]
+
+   Multi-path scheduling (Section 11):
+     E_i = RTT_i/2 + e_i x t_recovery_i                      [seconds]
+     B_eff_i = C_i / (1 + r_i)                               [symbols/sec]
+     minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
+     P(cross-path retx) = P_lost(t, e_src) x (1 - e_burst_j)
+     P(both paths fail) = e_src x e_retx                      [probability]
 ```
 
 ## Appendix B: Related Work
@@ -2057,10 +2270,11 @@ we always have enough correction to survive at least B consecutive erasures.
    exact source symbol for ARQ retransmission. The truncation error (1-q)^W
    only affects the FEC component; the unified model's ARQ fallback covers it.
 
-2. **Multi-path:** With multiple paths, losses are correlated differently
-   per path. Should each path have its own taper, or should there be a
-   joint taper across paths? See [Facenda2022] for delay spectrum concepts
-   in multi-link streaming.
+2. **Multi-path (resolved):** Each path has its own taper, Copa, and GE
+   estimator (Section 11). Source scheduling by water-filling on effective
+   delivery time E_i. Cross-path retransmit via shared buffer. Protocol hint
+   sets the latency/bandwidth weight for the scheduling objective. QoS
+   priority cascade for mixed traffic classes.
 
 3. **Interaction with congestion control (resolved):** Copa [Copa2018] controls
    total rate, taper controls source/correction split (Section 10). When
