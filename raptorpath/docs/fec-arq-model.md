@@ -1589,6 +1589,156 @@ To verify the model:
 
 ---
 
+## 10. Congestion Control Integration
+
+### 10.1 Why Delay-Based CC is Required
+
+On lossy links (WiFi, LTE, satellite), loss-based CC (NewReno, CUBIC) is
+catastrophic. Every random channel loss triggers cwnd halving, collapsing
+throughput on exactly the links raptorpath is designed for:
+
+```
+  NewReno on 2.5% WiFi loss:
+    -> cwnd halves on every loss event
+    -> throughput oscillates wildly, average << capacity
+    -> our FEC tries to compensate -> more traffic -> more congestion
+
+  Delay-based CC on 2.5% WiFi loss:
+    -> loss + stable RTT = channel loss -> ignore, let FEC handle it
+    -> loss + rising RTT = congestion   -> reduce rate
+    -> throughput stays near capacity
+```
+
+Delay-based CC distinguishes congestion (queue buildup = rising RTT) from
+channel loss (random drops = stable RTT). This is essential for raptorpath.
+
+### 10.2 QUIC Datagrams Bypass Quinn's CC
+
+Raptorpath sends symbol data as QUIC unreliable datagrams, which bypass
+Quinn's built-in congestion control (NewReno). Our own CC is the sole rate
+limiter for data traffic. Quinn's CC only applies to QUIC streams (handshake,
+reliable control messages — small and infrequent).
+
+This means our CC is solely responsible for not flooding the network.
+
+### 10.3 Copa vs BBR
+
+The current implementation uses BBR (ADR-0019). We recommend migrating to
+Copa [Copa2018] because of better interaction with the taper function:
+
+| Aspect | BBR | Copa |
+|--------|-----|------|
+| Core idea | measure max_bw x min_rtt = BDP | rate = 1/(d x dq) |
+| Queue draining | ProbeRTT: 200ms forced drain every 10s | Natural oscillation |
+| Phases | Startup -> ProbeBw -> ProbeRtt (state machine) | No phases, one formula |
+| Lossy links | RTT-trend check to ignore random loss | Delay-based, same effect |
+| Complexity | ~300 lines, multiple edge cases | One rate formula |
+| Taper interaction | ProbeRTT creates FEC protection gap | Smooth, no gaps |
+
+**The critical difference — taper compatibility:**
+
+```
+  Copa:                            BBR ProbeRTT:
+
+  Rate                             Rate
+    |  /\/\/\/\/\/\/\/\              |  ________            ________
+    | /                \             | |        |          |
+    |/                  \/\/\/\      | |        |__________|
+    +----------------------> t       +----------------------> t
+
+  Taper                            Taper
+  coverage                         coverage
+    |  ==================           |  ========            ========
+    |  continuous protection        |  gap!     ^^^^^^^^^^
+    +----------------------> t      +----------|-----------> t
+                                         200ms FEC blind spot
+```
+
+Copa's rate oscillation is smooth and fast (order of RTT). The taper function
+uses RATIO (corrections per source symbol), which stays constant. Absolute
+rates oscillate gently, but the EWMA smooths throughput estimates. The taper
+doesn't notice Copa's oscillation.
+
+BBR's ProbeRTT drops cwnd to 4 symbols for 200ms. During this period:
+- Source rate drops to nearly zero
+- Correction rate drops proportionally (ratio constant, absolute count tanks)
+- Source symbols sent during ProbeRTT get almost no FEC protection
+- If a burst loss hits during ProbeRTT, recovery is severely degraded
+- After ProbeRTT exits: data burst -> potential queue buildup
+
+### 10.4 Copa's Rate Formula
+
+Copa targets a queue occupancy that balances throughput and delay:
+
+```
+  rate = 1 / (d x dq)
+
+  where:
+    d  = Copa parameter (controls target queue depth; default d = 0.5)
+    dq = queuing_delay = RTT_current - RTT_min
+```
+
+When dq is small (queue empty): rate is high -> fill the pipe.
+When dq is large (queue building): rate drops -> drain the queue.
+
+This naturally oscillates: send fast -> queue builds -> send slow -> queue
+drains -> send fast again. The oscillation frequency is ~1/RTT and amplitude
+depends on d. No periodic forced drain phase needed.
+
+**min_rtt estimation:** Copa uses the minimum observed RTT in a sliding
+window, same as BBR. Copa's natural oscillation causes the queue to
+periodically drain to near-empty, refreshing min_rtt as a side effect.
+No explicit ProbeRTT phase needed.
+
+### 10.5 CC + Taper: The Complete Architecture
+
+```
+  Copa determines: total_rate (symbols/sec on the wire)
+  Taper determines: r* (correction symbols per source symbol)
+
+  source_rate     = total_rate / (1 + r*)
+  correction_rate = total_rate x r* / (1 + r*)
+
+  When channel worsens: e rises -> r* rises -> source_rate falls
+  When congestion:      dq rises -> total_rate falls -> both fall
+  When channel clears:  e drops -> r* drops -> source_rate rises
+```
+
+The two controllers are orthogonal:
+- Copa controls HOW FAST (total symbols per second)
+- Taper controls HOW MUCH redundancy (correction per source ratio)
+
+Neither needs to know about the other. Copa sees total traffic; taper sees
+loss rate. They compose naturally.
+
+### 10.6 ECN as Opportunistic Enhancement
+
+If the network path supports ECN [RFC3168], congestion is signaled by router
+marking (CE bit) instead of dropping. This provides:
+- Congestion detection without loss -> even better for delay-based CC
+- Positive identification: marked = congestion, dropped = channel loss
+- No need to distinguish via RTT trends (direct signal)
+
+QUIC validates ECN support at connection startup. If supported, use it.
+If not (common on wireless), fall back to Copa's delay-based detection.
+
+### 10.7 Application Back-Pressure
+
+When r* is so high that source_rate = total_rate/(1+r*) drops below the
+application's minimum (e.g., VoIP codec needs 64kbps), the system signals
+back-pressure: "the channel cannot support your required quality at this
+loss rate."
+
+The application must respond:
+- Reduce quality (lower bitrate codec, lower video resolution)
+- Accept lower reliability (increase d, decrease p)
+- Wait for better conditions
+
+This is a resource allocation problem, not a CC problem. The CC works
+correctly; it's the application that needs to adapt.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```
@@ -1629,6 +1779,12 @@ To verify the model:
      with probability P_retx:     send source retransmit   (immediate decode)
      with probability 1-P_retx:   send repair symbol       (FEC, any loss)
      e_burst = fast EWMA or GE state estimate              (current channel)
+
+   Congestion control (Section 10):
+     Copa: rate = 1 / (d x dq)                              [symbols/sec]
+     dq = RTT_current - RTT_min                              [seconds]
+     source_rate = total_rate / (1 + r*)                     [symbols/sec]
+     correction_rate = total_rate x r* / (1 + r*)            [symbols/sec]
 ```
 
 ## Appendix B: Related Work
@@ -1906,9 +2062,11 @@ we always have enough correction to survive at least B consecutive erasures.
    joint taper across paths? See [Facenda2022] for delay spectrum concepts
    in multi-link streaming.
 
-3. **Interaction with congestion control:** The spare_capacity gate limits
-   correction rate. When r* > spare_capacity, we can't achieve the tail target.
-   How should the system signal this to the application?
+3. **Interaction with congestion control (resolved):** Copa [Copa2018] controls
+   total rate, taper controls source/correction split (Section 10). When
+   source_rate = total_rate/(1+r*) drops below the app's minimum, the system
+   signals back-pressure. Copa is preferred over BBR: no ProbeRTT, no FEC
+   protection gaps, simpler formula, taper-compatible.
 
 4. **Normal approximation validity:** Even with the burst variance correction
    (σ²_burst), the normal approximation to the loss count may be inaccurate
@@ -2038,6 +2196,13 @@ we always have enough correction to survive at least B consecutive erasures.
   in Commodity Datacenters using Forward Error Correction,"
   arXiv:2110.15157, 2021. (CloudBurst)
   Proactive FEC over multipath reduces p99 latency by 60-75% in datacenters.
+
+### Congestion Control
+
+- **[Copa2018]** V. Arun, H. Balakrishnan, "Copa: Practical Delay-Based
+  Congestion Control for the Internet," NSDI 2018.
+  Delay-based CC with natural queue draining (no ProbeRTT). Rate formula:
+  rate = 1/(δ × dq). Recommended for raptorpath (Section 10).
 
 ### Information Theory
 
