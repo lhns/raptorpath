@@ -1,6 +1,39 @@
 # FEC/ARQ Unified Correction Symbol Model
 
-A principled model for optimal correction symbol allocation in raptorpath.
+## Abstract
+
+This paper develops a principled mathematical model for reliable data
+delivery over lossy multipath channels, unifying Forward Error Correction
+(FEC) and Automatic Repeat reQuest (ARQ) under a single framework.
+
+The core contribution is the **correction symbol** — a unified concept that
+subsumes both FEC repair symbols and ARQ source retransmits. A single taper
+function, derived from the Gilbert-Elliott channel model's burst survival
+function, controls the density of correction symbols over time. At each
+correction slot, a probabilistic decision based on per-symbol loss confidence
+P_lost(t) and current channel state e_burst determines whether to send a
+targeted source retransmit (immediate decode) or a flexible FEC repair.
+
+The model replaces ad-hoc tuning with closed-form optimization. Three
+properties — bandwidth, tail latency, and reliability — form a triangle:
+fix any two, the third is determined by the channel. The optimal correction
+rate r* = e/(1-e) + z_d x sqrt(e x s2_burst / (W(1-e))) combines the
+information-theoretic minimum with a burst-variance-corrected tail margin.
+The protocol hint (Realtime, Bulk, etc.) selects which properties to fix,
+not a magic overhead offset.
+
+For congestion control, Copa is recommended over BBR: its natural rate
+oscillation avoids BBR's ProbeRTT phase, which creates FEC protection gaps.
+For multipath, each path runs its own Copa, taper, and GE estimator. A
+unified symbol stream per path preserves interleaving for burst protection.
+A global correction deficit tracks outstanding recovery needs across paths,
+and the scheduler adjusts per-path source/correction ratios based on an
+interpolated latency/bandwidth objective.
+
+ACK-based feedback with SACK (Selective Acknowledgement) replaces the
+NACK mechanism entirely. The sender infers losses from ACK absence and
+retransmits from a shared retransmit buffer — the same proven approach
+TCP has used for 40 years.
 
 ---
 
@@ -164,6 +197,26 @@ continue until ACK, the infinite-tailed taper from Section 4).
 ## 2. Channel Model
 
 ### 2.1 Gilbert-Elliott Two-State HMM
+
+**Why a two-state model?** Real wireless channels don't lose packets
+independently. WiFi interference causes consecutive packet drops during
+fading events. LTE handovers create burst gaps as the device switches
+cells. Satellite links suffer weather-induced outages lasting many packets.
+
+An independent (i.i.d.) loss model — where each packet is lost with
+probability ε regardless of its neighbors — badly underestimates the
+probability of burst loss. If ε = 5%, the i.i.d. model predicts
+P(3 consecutive losses) = 0.05^3 = 0.0125%. In reality, once the channel
+enters a bad state, consecutive losses are highly correlated, and
+P(3 consecutive) might be 2-5% — orders of magnitude higher.
+
+The Gilbert-Elliott model captures this **memory** in the loss process with
+just two parameters (p, q). The channel switches between a Good state
+(no/low loss) and a Bad state (high/total loss). Once in the Bad state,
+it tends to STAY there for multiple symbols (a burst). This simple structure
+is rich enough to match real channel behavior [Gilbert1960] yet tractable
+enough for closed-form analysis — the burst survival function (1-q)^t
+directly gives us the optimal taper function shape (Section 4).
 
 The channel alternates between Good (low loss) and Bad (high loss) states
 [Gilbert1960], [Elliott1963]:
