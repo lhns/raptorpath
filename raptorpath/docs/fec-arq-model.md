@@ -24,7 +24,7 @@ controls correction density over time. A probabilistic per-slot decision
 based on loss confidence P_lost(t) — driven by time since send —
 determines whether each correction is a retransmit or a repair.
 
-The optimal correction rate r* = e/(1-e) + z_d x sqrt(e x s2_burst /
+The optimal correction rate r* = e/(1-e) + z_delta x sqrt(e x s2_burst /
 (W(1-e))) combines the information-theoretic minimum with a burst-variance-
 corrected tail margin. Copa congestion control is recommended over BBR for
 its taper-compatible rate oscillation (no FEC protection gaps from ProbeRTT).
@@ -484,6 +484,11 @@ Using Bayes' theorem:
                = tail of the RTT distribution (from SRTT and RTTVAR)
 ```
 
+Assuming RTT is normally distributed with mean SRTT and standard deviation
+RTTVAR: P(RTT > t) = 1 - Phi((t - SRTT) / RTTVAR), where Phi is the
+standard normal CDF. This is the same normal approximation used in TCP's
+RTO computation [RFC6298].
+
 This gives a smooth transition from "probably fine" to "certainly lost":
 
 ```
@@ -738,6 +743,13 @@ The buffer is bounded by the encoder window size W — symbols that leave the
 encoder window are removed regardless of ACK status (the FEC decoder can no
 longer use them, so the system relies on the decoder having recovered them).
 
+The buffer cannot deadlock: the encoder window advances as new source
+symbols are sent, evicting the oldest symbols regardless of their ACK
+status. This bounds the retransmit buffer at W entries maximum. If ACKs
+stall completely, the oldest un-ACKed symbols are evicted from both the
+window and the buffer — the system gracefully degrades (those symbols
+rely on the decoder rather than retransmission for recovery).
+
 ### 3.10 SACK-Extended WindowAck
 
 The receiver sends periodic **ACK+SACK** messages to tell the sender what
@@ -928,7 +940,7 @@ The taper function adapts in real time through two mechanisms:
 
 2. **BOCD changepoint detection**: If the loss regime changes abruptly (e.g.,
    path switches from WiFi to LTE), BOCD detects the changepoint within 5-15
-   batches and widens the posterior, increasing the correction budget until the
+   batches (a batch = one ACK feedback cycle, typically at intervals of 10-100ms depending on sending rate and path RTT) and widens the posterior, increasing the correction budget until the
    new regime is characterized.
 
 ```
@@ -996,7 +1008,12 @@ The Beta distribution is the conjugate prior for Binomial observations:
    Upper quantile:  beta_quantile(b', a', confidence)
 ```
 
-The decay factor (0.995) causes old observations to fade, allowing adaptation.
+The decay factor (0.995) causes old observations to fade, allowing
+adaptation. This gives a half-life of approximately 138 observations
+(ln(0.5)/ln(0.995) ≈ 138). The value is not sensitive — decay factors
+between 0.99 and 0.999 produce similar steady-state behavior. The choice
+trades off adaptation speed (lower decay = faster forgetting) against
+estimation stability (higher decay = smoother estimates).
 
 **Strengths:** Principled uncertainty — the spread of the posterior tells us how
 confident we are. Tight posterior → low uncertainty → small safety margin needed.
@@ -1056,6 +1073,13 @@ The GE estimator tracks transition counts with exponential decay:
      q̂ = b_to_g / (b_to_g + b_to_b)         P(Bad → Good)
      B̂ = 1/q̂                                mean burst length
 ```
+
+**Initialization:** All transition counters start at zero, initial state
+assumed Good. The GE estimates are gated by a minimum sample count (the
+is_valid() check) — until enough transitions are observed (~50 symbols),
+the estimator returns default values (B=2.0, q=0.5). During this bootstrap
+period, the Beta prior (Section 5.3) and BOCD (Section 5.4) provide loss
+estimation without relying on GE burst parameters.
 
 These estimates feed directly into the taper function shape: τ(t) = A × (1-q̂)^t.
 
@@ -1243,11 +1267,13 @@ For ε = 0.025 (WiFi), δ = 1e-4 (Realtime):
 This seems very high. Let's check: r_IT = 0.025/0.975 = 0.0256, so r* = 0.0256 × 221 = 5.66.
 That's 566% overhead — clearly too much.
 
-**The issue:** Our Poisson approximation is too pessimistic. A single correction
-symbol at offset t doesn't independently have probability τ(t) of existing —
-the correction symbols are generated deterministically by the taper schedule.
-The correct model needs to account for the fact that multiple correction symbols
-from the taper collectively protect the lost symbol.
+**The issue:** The Poisson model (Section 6.2-6.4) treats each repair symbol
+as an independent random event with probability tau(t) of existing. In
+reality, repair symbols are generated deterministically by the taper schedule
+— their positions are known, not random. The taper generates exactly r*W
+repair symbols in a window of W, and each survives independently with
+probability (1-e). This is a Binomial process, not Poisson. The corrected
+model in Section 6.6 uses the Binomial/Normal approximation instead.
 
 ### 6.6 Corrected Model
 
@@ -1339,14 +1365,14 @@ We compute σ²_burst directly from the GE estimator's p̂ and q̂.
 ### 6.8 The Corrected Optimal Correction Rate
 
 ```
-  r* = e/(1-e) + z_d x sqrt(e x s2_burst / (W x (1-e)))
+  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))
        '--v--'   '--------------v-----------------'
     IT minimum             tail margin
                  (accounts for burst correlation)
 
   s2_burst = 1 + 2(1-p-q)/(p+q)
 
-  z_d = standard normal quantile for (1-d)
+  z_delta = standard normal quantile for (1-delta)
 ```
 
 **Properties:**
@@ -1354,6 +1380,11 @@ We compute σ²_burst directly from the GE estimator's p̂ and q̂.
 - Tail margin scales as 1/√W — larger windows need proportionally less margin
 - z_δ controls the margin: tighter δ → larger z_δ → more margin
 - σ²_burst amplifies the margin for bursty channels (large for small p+q)
+
+**Note:** This formula uses the raw loss rate e. For the canonical production
+formula including codec overhead, replace e with e_hat = e + e_codec x
+(1-(1-e)^W) from Section 7.2. The codec-adjusted version accounts for decoder
+invocation probability on systematic codes.
 
 ### 6.9 Worked Examples
 
@@ -1789,10 +1820,13 @@ This naturally oscillates: send fast -> queue builds -> send slow -> queue
 drains -> send fast again. The oscillation frequency is ~1/RTT and amplitude
 depends on d. No periodic forced drain phase needed.
 
-**min_rtt estimation:** Copa uses the minimum observed RTT in a sliding
-window, same as BBR. Copa's natural oscillation causes the queue to
-periodically drain to near-empty, refreshing min_rtt as a side effect.
-No explicit ProbeRTT phase needed.
+**min_rtt estimation:** Copa uses the minimum observed RTT in a 10-second
+sliding window (same duration as BBR's min_rtt window). Copa's natural rate
+oscillation periodically reduces the queue to near-empty, refreshing the
+minimum within this window. If min_rtt has not been refreshed for an extended
+period (>20s), the system can force a brief rate reduction as a fallback
+— though this is rarely needed because Copa's oscillation provides
+natural refreshing.
 
 ### 10.5 CC + Taper: The Complete Architecture
 
@@ -1966,6 +2000,11 @@ For each path i:
   e_combined = SUM(C_i x e_i) / SUM(C_i)        throughput-weighted loss  [prob]
 ```
 
+where t_recovery_i = P_fec_i x t_fec_i + (1 - P_fec_i) x L_arq_i is the
+expected recovery time on path i if the symbol is lost. t_fec_i is the FEC
+recovery time (Section 3.4) and L_arq_i is the ARQ recovery latency on
+that path.
+
 ### 11.6 Scheduler Ratio Adjustment
 
 The scheduler can adjust the per-path source/correction ratio to favor
@@ -2008,6 +2047,11 @@ the reduced correction ratio, BOCD detects increased loss, raises ε, and
 the taper amplitude A increases automatically. The first burst after
 scheduler adjustment is under-protected (5-15 sample detection delay);
 subsequent bursts are covered.
+
+**Recommendation:** Option 3 (let the taper self-correct via BOCD) for
+simplicity and adaptiveness. For production deployments requiring hard
+guarantees, Option 1 (r_min = B_i/W) can be layered on top as a safety
+floor without conflicting with the adaptive mechanism.
 
 **Resolution:** The P_lost(t) timing naturally produces Mehrotra's optimal
 policy [Mehrotra2010]: before RTT elapses (during burst), P_lost is low so
@@ -2062,6 +2106,11 @@ retransmit it:
 
 Cross-path diversity: P(both fail) = e_A x e_j. For e_A=0.10, e_j=0.02:
 P(both fail) = 0.002 — 50x improvement over single-path.
+
+**Path selection:** For cross-path retransmit, choose the path j with the
+highest (1 - e_burst_j) among paths with available Copa capacity. This
+greedy choice sends the retransmit on the most reliable currently-available
+path. Ties are broken by lowest RTT_j (fastest delivery).
 
 ---
 
@@ -2462,7 +2511,7 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
 
 **Core model gaps (critical):**
 
-6. **RTT distribution for P_lost not specified.** (Section 3.4) [LOW]
+6. **RTT distribution for P_lost not specified (resolved).** (Section 3.4) [LOW]
    P_lost uses P(RTT > t) but never specifies the distribution. Assuming
    normal with SRTT and RTTVAR gives P(RTT > t) = 1 - Phi((t-SRTT)/RTTVAR).
    Needs one sentence.
@@ -2477,13 +2526,13 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
    repairs for k losses." The corrected model (6.6+) is canonical but the
    Poisson model (6.2-6.4) should be explicitly marked as superseded.
 
-9. **Poisson model error not characterized.** (Section 6.5) [LOW]
+9. **Poisson model error not characterized (resolved).** (Section 6.5) [LOW]
    The transition from Poisson (6.4) to corrected (6.6) says "too
    pessimistic" but doesn't explain why. The error: Poisson treats each
    repair as independent, ignoring that repairs are deterministically
    generated by the taper. One paragraph.
 
-10. **r* formula: which version is canonical?** (Section 6.8 vs 7.2) [LOW]
+10. **r* formula: which version is canonical (resolved)?** (Section 6.8 vs 7.2) [LOW]
     Section 6.8 uses raw ε. Section 7.2 adds codec overhead ε_codec.
     The canonical formula should be r* with ε_hat = ε + ε_codec × P(decoder).
     Needs a clarifying note in Section 6.8.
@@ -2497,14 +2546,14 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     justification. Since ρ is monotone in T_cut and T_cut is monotone in r,
     binary search converges. One paragraph.
 
-13. **t_recovery_i undefined in multipath context.** (Section 11.5) [LOW]
+13. **t_recovery_i undefined in multipath context (resolved).** (Section 11.5) [LOW]
     E_i = RTT_i/2 + ε_i × t_recovery_i but t_recovery_i not defined for
     multipath. It should reference Section 3.4: t_recovery_i = P_fec_i ×
     t_fec_i + (1-P_fec_i) × L_arq_i. One sentence.
 
 **Implementation details (medium priority):**
 
-14. **Retransmit buffer saturation.** (Section 3.9) [LOW]
+14. **Retransmit buffer saturation (resolved).** (Section 3.9) [LOW]
     If ACKs stall, buffer fills. The encoder window eviction already handles
     this — symbols leaving the window are removed. No deadlock because the
     window advances regardless of ACK state. One sentence clarification.
@@ -2513,7 +2562,7 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     "Periodic" is vague. Should specify: receiver sends ACK+SACK on every
     incoming batch (piggybacked). Format follows RFC 2018 SACK blocks.
 
-16. **GE parameter initialization.** (Section 5.5) [LOW]
+16. **GE parameter initialization (resolved).** (Section 5.5) [LOW]
     Initial state: all counters = 0, start in Good state, use the Beta
     prior (weak uniform) until enough transitions observed. GE is_valid()
     already gates usage (existing code). One sentence.
@@ -2522,7 +2571,7 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     Copa's δ controls target queue depth. Default 0.5 is from the Copa
     paper. Adaptive δ is future work (Copa+ paper addresses this).
 
-18. **Copa min_rtt refresh.** (Section 10.4) [LOW]
+18. **Copa min_rtt refresh (resolved).** (Section 10.4) [LOW]
     Copa's natural oscillation refreshes min_rtt. Sliding window of 10s
     (same as BBR). If min_rtt seems stale (RTT consistently above by 2x),
     force a brief rate reduction. One paragraph.
@@ -2532,25 +2581,25 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     code, or rate-limit feedback). The paper should note this is an API
     design question, not a model question.
 
-20. **Scheduler burst protection floor choice.** (Section 11.7) [LOW]
+20. **Scheduler burst protection floor choice (resolved).** (Section 11.7) [LOW]
     Three options given. Recommendation: Option 3 (let taper self-correct)
     for simplicity, with Option 1 (hard floor) available as a safety net
     for production deployments. One sentence.
 
-21. **Cross-path retransmit path selection.** (Section 11.10) [LOW]
+21. **Cross-path retransmit path selection (resolved).** (Section 11.10) [LOW]
     Path with lowest ε_burst and available capacity. Greedy selection.
     Already implied by P_retx formula (highest (1-ε_burst) wins).
 
 **Minor (notation, justification):**
 
-22. **z_d vs z_δ inconsistency.** (Section 6.8) [LOW]
+22. **z_d vs z_δ inconsistency (resolved).** (Section 6.8) [LOW]
     Line uses "z_d" and "d" where it should be "z_δ" and "δ".
 
-23. **Beta decay 0.995 not justified.** (Section 5.3) [LOW]
+23. **Beta decay 0.995 not justified (resolved).** (Section 5.3) [LOW]
     Standard value for slow-forgetting Bayesian update. Half-life ≈ 138
     samples. Sensitivity is low — values 0.99-0.999 give similar results.
 
-24. **BOCD "5-15 batches" — what's a batch?** (Section 4.5) [LOW]
+24. **BOCD "5-15 batches" — what's a batch (resolved)?** (Section 4.5) [LOW]
     A batch = one ACK feedback cycle. With per-batch ACKs at ~10-100ms
     intervals, 5-15 batches = 50ms-1.5s adaptation time.
 
