@@ -99,6 +99,8 @@ symbol (FEC fallback):
 | δ      | Tail latency target: P(late delivery) ≤ δ | probability (0-1) | 1e-4 |
 | ρ      | Reliability target: P(symbol delivered) ≥ ρ | probability (0-1) | 1.0 (100%) |
 | T_cut  | Taper cutoff time (stop corrections after this) | seconds | ∞ (100% reliability) |
+| B_max  | 99.99th percentile burst length = ceil(ln(0.0001)/ln(1-q)) | symbols (count) | 19 (WiFi, q=0.5) |
+| buffer_max | Max retransmit buffer size (derived) | symbols (count) | 750 (WiFi 100Mbps) |
 | L_prop | Propagation delay (base latency) | seconds | 0.025 (25ms) |
 | L_arq  | ARQ recovery latency (time from loss to retransmit arrival) | seconds | 0.075-0.100 |
 | σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
@@ -739,16 +741,45 @@ that have been sent but not yet ACKed.
 - **Peek (retransmit)**: when generating a correction symbol, check the head —
   if its age exceeds T_retx, retransmit it (but keep it in the buffer until ACKed)
 
-The buffer is bounded by the encoder window size W — symbols that leave the
-encoder window are removed regardless of ACK status (the FEC decoder can no
-longer use them, so the system relies on the decoder having recovered them).
+**The retransmit buffer is NOT bounded by the encoder window.** The encoder
+window (W symbols) bounds what FEC repair can cover. The retransmit buffer
+bounds what ARQ retransmit can cover. They serve different purposes:
 
-The buffer cannot deadlock: the encoder window advances as new source
-symbols are sent, evicting the oldest symbols regardless of their ACK
-status. This bounds the retransmit buffer at W entries maximum. If ACKs
-stall completely, the oldest un-ACKed symbols are evicted from both the
-window and the buffer — the system gracefully degrades (those symbols
-rely on the decoder rather than retransmission for recovery).
+- Symbol in encoder window AND buffer: protected by FEC + ARQ
+- Symbol evicted from window, still in buffer: protected by ARQ only
+- Symbol ACKed: removed from buffer (delivered)
+
+Two independent mechanisms manage the buffer:
+
+**Age eviction (T_cut):** Symbols older than T_cut are evicted from the
+buffer — accepted as permanently lost. T_cut is derived from the triangle
+optimization (Section 6.10): for reliability target ρ, T_cut is the time
+where P(not recovered) = 1-ρ. When ρ = 100%, the equation has no finite
+solution, so T_cut = ∞ (never evict). This emerges from the math — not a
+special case.
+
+**Size backpressure (buffer_max):** When the buffer reaches buffer_max
+entries, the sender pauses accepting new source symbols from the
+application (backpressure). Correction symbols continue being generated
+for existing buffer contents — corrections recover lost symbols, ACKs
+arrive, and the buffer drains. Once space is available, source resumes.
+
+buffer_max is derived, not configured:
+
+    For ρ < 100%:  buffer_max = source_rate x T_cut
+                   (eviction keeps buffer within this bound)
+
+    For ρ = 100%:  buffer_max = source_rate x (RTT + B_max / (r* x (1-e)) x t_sym)
+                   where B_max = ceil(ln(0.0001) / ln(1-q)) ≈ 9.2/q
+                   (99.99th percentile burst length from GE model)
+
+Both mechanisms always run. T_cut determines which triggers first:
+- Finite T_cut → eviction keeps buffer small → backpressure rarely triggers
+- T_cut = ∞ → no eviction → backpressure is the only limit
+
+What bends when:
+- ρ < 100%: reliability bends (eviction at T_cut)
+- ρ = 100%: latency bends (backpressure at buffer_max, rare)
 
 ### 3.10 SACK-Extended WindowAck
 
@@ -839,6 +870,34 @@ cost of reliability.
              95%        | T_cut (shorter)
              5% lost    +-- accept loss (sensor/VoIP)
 ```
+
+### 3.13 Four-Mechanism Composition
+
+The complete system is four independent mechanisms that compose without
+interfering:
+
+    Mechanism       Controls              Derives from
+    -------------------------------------------------------
+    Copa            Total wire rate        RTT, bandwidth (delay-based)
+    Taper           Source/correction      e, q, delta (GE + triangle)
+                    ratio
+    T_cut + buffer  Reliability guarantee  rho (triangle), GE B_max
+    P_lost          Repair/retransmit      ACK timing, e
+                    mix
+
+Each mechanism has one job and one set of inputs. None needs to know about the
+others:
+
+- Copa doesn't know about FEC — it just limits total rate
+- The taper doesn't know about Copa — it just sets the ratio
+- T_cut doesn't know about the taper — it just evicts old symbols
+- P_lost doesn't know about T_cut — it just picks repair vs retransmit
+
+The protocol hint flows through the triangle to set delta and rho, which
+determine the taper amplitude and T_cut. Copa independently discovers the
+pipe capacity. P_lost independently tracks per-symbol loss confidence.
+The four mechanisms compose to produce the correct behavior for each
+protocol class without branching or mode switches.
 
 ---
 
@@ -2149,6 +2208,11 @@ path. Ties are broken by lowest RTT_j (fastest delivery).
      P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence        [probability]
      L_actual = min(t_fec, retransmit arrival)                       [seconds]
 
+   Retransmit buffer (Section 3.9):
+     B_max = ceil(ln(0.0001) / ln(1-q))                    [symbols]
+     buffer_max = source_rate x (RTT + B_max/(r*(1-e))*t_sym)  [symbols, rho=100%]
+     buffer_max = source_rate x T_cut                        [symbols, rho<100%]
+
    Per-slot decision (Section 3.8):
      P_retx = P_lost(t)                                    (time-based mixing)
      with probability P_retx:     send source retransmit   (immediate decode)
@@ -2554,9 +2618,8 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
 **Implementation details (medium priority):**
 
 14. **Retransmit buffer saturation (resolved).** (Section 3.9) [LOW]
-    If ACKs stall, buffer fills. The encoder window eviction already handles
-    this — symbols leaving the window are removed. No deadlock because the
-    window advances regardless of ACK state. One sentence clarification.
+    Resolved: dual-mechanism model — T_cut age eviction + buffer_max size
+    backpressure. Buffer is NOT bounded by encoder window. See Section 3.9.
 
 15. **SACK timing and format.** (Section 3.10) [MEDIUM]
     "Periodic" is vague. Should specify: receiver sends ACK+SACK on every
