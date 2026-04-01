@@ -21,7 +21,7 @@ subsumes both FEC repair symbols (proactive, flexible) and ARQ source
 retransmits (reactive, immediately decodable). A single taper function,
 shaped by the Gilbert-Elliott channel model's burst survival function,
 controls correction density over time. A probabilistic per-slot decision
-based on loss confidence P_lost(t) and current channel state e_burst
+based on loss confidence P_lost(t) — driven by time since send —
 determines whether each correction is a retransmit or a repair.
 
 The optimal correction rate r* = e/(1-e) + z_d x sqrt(e x s2_burst /
@@ -103,7 +103,7 @@ symbol (FEC fallback):
 | L_arq  | ARQ recovery latency (time from loss to retransmit arrival) | seconds | 0.075-0.100 |
 | σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
 | z_δ    | Standard normal quantile for δ | dimensionless | 3.72 (for δ=1e-4) |
-| ε_burst | Current channel loss rate (fast EWMA or GE state) | probability (0-1) | 0.5 (during burst) |
+| ε_burst | Current channel loss rate (fast EWMA or GE state, optional — see C.6) | probability (0-1) | 0.5 (during burst) |
 | ε_codec | Codec decode overhead | ratio (0-1) | 0.01 (RaptorQ) |
 
 ### 1.3 Glossary
@@ -188,7 +188,7 @@ The protocol hint selects the mode and constraints:
 │ (δ, ρ, or r)        │    │ function       │    │ taper func     │
 │                      │    │                │    │                │
 │ Channel observations ├───►│                │    │ T_cut = taper  │
-│ (ε, p, q, RTT)      │    │                │    │ cutoff time    │
+│ (e, p, q, RTT)      │    │                │    │ cutoff time    │
 └──────────────────────┘    └────────────────┘    └────────────────┘
 ```
 
@@ -260,7 +260,7 @@ Stationary state probabilities:
 Average loss rate:
 
 ```
-   ε = π_B × h_B + π_G × h_G = π_B = p / (p + q)
+   e = π_B × h_B + π_G × h_G = π_B = p / (p + q)
 ```
 
 ### 2.3 Burst Length Distribution
@@ -504,32 +504,20 @@ Concrete example (WiFi, e = 0.025, SRTT = 50ms):
   t = 80ms:   P_lost = 0.98     -> 2% repair, 98% retransmit
 ```
 
-**Two loss estimates for two purposes.** The formula uses ε (the long-run
-average from BOCD) as the Bayesian prior for whether a SPECIFIC symbol was
-lost. But the per-slot decision also needs to account for CURRENT channel
-conditions:
-
-- **ε** (long-run, from BOCD): "What's the base rate of loss on this channel?"
-  Used as the prior in P_lost(t). Updates slowly (BOCD posterior).
-- **ε_burst** (fast, from GE state or fast EWMA): "Is the channel bad RIGHT
-  NOW?" Used to discount retransmit during bursts, because during high loss,
-  repair is more flexible (covers any lost symbol, not just one). Updates
-  quickly (per-symbol GE state transitions).
-
-The burst-aware per-slot probability is:
+The per-slot decision uses P_lost(t) directly:
 
 ```
-  P(retransmit) = P_lost(t_k) x (1 - e_burst)
+  P(retransmit) = P_lost(t_k)
 ```
-
-When ε_burst is low (good channel): P(retransmit) ≈ P_lost(t_k) — targeting
-is efficient, retransmit if confident. When ε_burst is high (burst): the
-(1 - ε_burst) factor suppresses retransmit in favor of repair — repair is
-more flexible during concurrent multi-symbol loss.
 
 **No hard threshold.** The transition from repair to retransmit is driven by
-two measured quantities: P_lost(t) from ACK timing and ε_burst from channel
-observation. No tuning knobs.
+TIME since send. Early (t small): P_lost is low, so corrections are mostly
+repair — flexible coverage for uncertain losses. Late (t >> SRTT): P_lost
+approaches 1, so corrections are mostly retransmit — targeted recovery of
+confirmed losses. No tuning knobs.
+
+See Appendix C.6 for an optional channel-state discount (ε_burst) that
+provides modest improvement for long-burst scenarios.
 
 **Bandwidth efficiency.** A retransmit is wasted if the symbol wasn't actually
 lost (duplicate). A repair is never wasted (always provides information to the
@@ -579,7 +567,7 @@ per symbol. The difference is timing and content:
   ARQ retransmit:    generated after timeout, exact source copy, immediately usable
 
   Both occupy one symbol slot on the wire.
-  Both are subject to the same channel loss rate ε.
+  Both are subject to the same channel loss rate e.
   Both serve the same purpose: recover a lost source symbol.
 ```
 
@@ -609,7 +597,7 @@ one symbol slot on the wire and serves one of two purposes:
 
 | Aspect         | Source retransmit (ARQ)              | Repair symbol (FEC)               |
 |----------------|--------------------------------------|-----------------------------------|
-| When chosen    | P = P_lost(t) x (1-e_burst)         | P = 1 - P_lost(t) x (1-e_burst)  |
+| When chosen    | With probability P_lost(t)           | With probability 1-P_lost(t)      |
 | Content        | Exact copy of source symbol          | Random linear combination         |
 | Receiver action| Immediate use, no decoder            | Feed to FEC decoder               |
 | Bandwidth cost | Same (one symbol slot)               | Same (one symbol slot)            |
@@ -641,16 +629,16 @@ The hierarchical model (taper + P_lost) determines the three-stream mix:
 ```
   Total capacity: C (from Copa)
 
-  source_rate     = C / (1 + r)                     [from taper ratio r]
-  repair_rate     = C x r / (1+r) x (1 - P_retx)   [correction minus retransmit]
-  retransmit_rate = C x r / (1+r) x P_retx          [from P_lost x (1-e_burst)]
+  source_rate     = C / (1 + r)                          [from taper ratio r]
+  retransmit_rate = C x r / (1+r) x P_lost(t)            [confirmed losses]
+  repair_rate     = C x r / (1+r) x (1 - P_lost(t))      [uncertain losses]
 
-  where r     = taper correction ratio (Section 4)
-        P_retx = P_lost(t) x (1 - e_burst) (Section 3.4)
+  where r        = taper correction ratio (Section 4)
+        P_lost(t) = loss confidence (Section 3.4)
 ```
 
 The three rates sum to C. The taper ratio r controls the source/correction
-split. P_retx controls the repair/retransmit split within corrections.
+split. P_lost(t) controls the repair/retransmit split within corrections.
 
 **How the protocol hint shifts the mix:**
 
@@ -690,7 +678,7 @@ symbol in the retransmit buffer:
   +-------------------------------------------+
   | Compute mixing probability:               |
   |                                           |
-  |   P_retx = P_lost(t_k) x (1 - e_burst)   |
+  |   P_retx = P_lost(t_k)                    |
   |                                           |
   | With probability P_retx:                  |
   |   -> Retransmit exact source              |
@@ -702,35 +690,25 @@ symbol in the retransmit buffer:
   +-------------------------------------------+
 
   P_lost(t_k) = e / [e + (1-e) x P(RTT > t_k)]    per-symbol loss confidence
-  e_burst     = fast EWMA or GE state estimate      current channel condition
 ```
 
-**Two factors in the mixing probability:**
+**The FEC/ARQ mix is regulated by TIME since send.** Early correction slots
+(t small) have low P_lost — the ACK hasn't had time to return, so loss is
+uncertain. Almost all corrections are FEC repair, which flexibly covers any
+lost symbol. Late correction slots (t >> SRTT) have high P_lost — the ACK
+should have arrived by now, so loss is confirmed. Corrections shift to
+retransmit, which is immediately decodable.
 
-- **P_lost(t_k)**: "Am I confident this specific symbol was lost?" Based on
-  ACK timing. High when enough time has passed without an ACK.
-- **(1 - ε_burst)**: "Is the channel currently good enough for targeted
-  retransmit?" When ε_burst is high (burst), repair is preferred because it
-  flexibly covers any of the multiple concurrent losses. When ε_burst is low,
-  retransmit is efficient — only one symbol is likely lost.
+This naturally produces Mehrotra & Li's optimal policy [Mehrotra2010]:
+during bursts (before RTT elapses), P_lost stays low → mostly repair.
+After bursts (ACKs reveal gaps), P_lost rises → targeted retransmit.
 
-**Concrete examples:**
-
-```
-  Isolated loss, good channel:   P_lost=0.9,  e_burst=0.03 -> P_retx=0.87
-  Burst, old un-ACKed symbol:    P_lost=0.95, e_burst=0.50 -> P_retx=0.48
-  Severe burst:                  P_lost=0.99, e_burst=0.90 -> P_retx=0.10
-  Fresh symbol, good channel:    P_lost=0.03, e_burst=0.03 -> P_retx=0.03
-  Fresh symbol, during burst:    P_lost=0.03, e_burst=0.90 -> P_retx=0.003
-```
-
-During bursts (ε_burst high), almost all correction slots become repair —
-matching Mehrotra & Li's optimal policy [Mehrotra2010]. After the burst
-(ε_burst drops), un-ACKed symbols have high P_lost → retransmit takes over.
-
-This is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
+P_retx is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
 all retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
 (maximum uncertainty). The model automatically allocates the right mix.
+
+See Appendix C.6 for an optional channel-state discount (ε_burst) that
+provides modest improvement for long-burst scenarios.
 
 ### 3.9 The Retransmit Buffer
 
@@ -991,7 +969,7 @@ or any SACK range are presumed lost after T_retx has elapsed.
 Exponentially Weighted Moving Average of the loss rate:
 
 ```
-   ε̂_ewma(n) = α × (lost/sent) + (1-α) × ε̂_ewma(n-1)
+   e_hat_ewma(n) = α × (lost/sent) + (1-α) × e_hat_ewma(n-1)
 
    α = 0.1 → approximately 10-sample half-life
 ```
@@ -1117,10 +1095,10 @@ effectiveness tracking. The system is simpler and more robust.
 Estimation error directly maps to overhead:
 
 ```
-   If ε̂ > ε_true:  over-provisioning → wasted bandwidth
-   If ε̂ < ε_true:  under-provisioning → more ARQ latency events
+   If e_hat > e_true:  over-provisioning → wasted bandwidth
+   If e_hat < e_true:  under-provisioning → more ARQ latency events
 
-   Overhead gap = (ε̂ - ε_true) / ε_true
+   Overhead gap = (e_hat - e_true) / e_true
 ```
 
 BOCD minimizes this gap by adapting the estimation confidence to the regime:
@@ -1136,10 +1114,10 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 ```
    minimize:    r = A/q                     (correction rate = bandwidth cost)
 
-   subject to:  ε × (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
+   subject to:  e × (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
 
    where:       τ(t) = A × (1-q)^t          (taper function)
-                P_fec depends on A, q, ε, W  (FEC recovery probability)
+                P_fec depends on A, q, e, W  (FEC recovery probability)
 ```
 
 **Input:** δ (tail latency target, from protocol hint)
@@ -1156,15 +1134,15 @@ t = 0, 1, 2, ... each have:
 The expected number of correction symbols covering the lost position that arrive:
 
 ```
-   R(A, q) = Σ_{t=0}^{W-1} τ(t) × (1-ε)
-           = A × (1-ε) × Σ_{t=0}^{W-1} (1-q)^t
-           = A × (1-ε) × (1 - (1-q)^W) / q
+   R(A, q) = Σ_{t=0}^{W-1} τ(t) × (1-e)
+           = A × (1-e) × Σ_{t=0}^{W-1} (1-q)^t
+           = A × (1-e) × (1 - (1-q)^W) / q
 ```
 
 For large W (window much larger than burst length): (1-q)^W ≈ 0, so:
 
 ```
-   R(A, q) ≈ A × (1-ε) / q = r × (1-ε)
+   R(A, q) ≈ A × (1-e) / q = r × (1-e)
 ```
 
 **Recovery model:** The number of useful correction symbols arriving is approximately
@@ -1180,21 +1158,21 @@ overhead, see Section 7). Simplified to needing at least 1:
 Substituting into the constraint:
 
 ```
-   ε × (1 - P_fec) ≤ δ
-   ε × e^{-R} ≤ δ
-   e^{-R} ≤ δ/ε
-   -R ≤ ln(δ/ε)
-   R ≥ ln(ε/δ)                    (note: ε > δ, so ln(ε/δ) > 0)
+   e × (1 - P_fec) ≤ δ
+   e × e^{-R} ≤ δ
+   e^{-R} ≤ δ/e
+   -R ≤ ln(δ/e)
+   R ≥ ln(e/δ)                    (note: e > δ, so ln(e/δ) > 0)
 ```
 
 Using R ≈ A × (1-ε) / q:
 
 ```
-   A × (1-ε) / q ≥ ln(ε/δ)
+   A × (1-e) / q ≥ ln(e/δ)
 
-   A* = q × ln(ε/δ) / (1-ε)
+   A* = q × ln(e/δ) / (1-e)
 
-   r* = A*/q = ln(ε/δ) / (1-ε)
+   r* = A*/q = ln(e/δ) / (1-e)
 ```
 
 ### 6.4 The Optimal Correction Rate Formula
@@ -1202,10 +1180,10 @@ Using R ≈ A × (1-ε) / q:
 ```
   ┌───────────────────────────────────────────┐
   │                                           │
-  │   r* = ln(ε/δ) / (1-ε)                   │
+  │   r* = ln(e/δ) / (1-e)                   │
   │                                           │
   │   where:                                  │
-  │     ε = average loss rate (from BOCD)     │
+  │     e = average loss rate (from BOCD)     │
   │     δ = tail latency target               │
   │     r* = optimal correction rate          │
   │                                           │
@@ -1221,12 +1199,12 @@ Using R ≈ A × (1-ε) / q:
 
 The **taper amplitude** is:
 ```
-   A* = r* × q = q × ln(ε/δ) / (1-ε)
+   A* = r* × q = q × ln(e/δ) / (1-e)
 ```
 
 And the **complete taper function** is:
 ```
-   τ*(t) = A* × (1-q)^t = q × ln(ε/δ) / (1-ε) × (1-q)^t
+   τ*(t) = A* × (1-q)^t = q × ln(e/δ) / (1-e) × (1-q)^t
 ```
 
 ### 6.5 Comparison with Information-Theoretic Minimum
@@ -1234,7 +1212,7 @@ And the **complete taper function** is:
 The IT minimum (Shannon limit for the erasure channel [Shannon1948]) is:
 
 ```
-   r_IT = ε / (1-ε)
+   r_IT = e / (1-e)
 ```
 
 **Why ε/(1-ε), not just ε?** Correction symbols are also subject to channel
@@ -1251,7 +1229,7 @@ too. The (1-ε) denominator IS this geometric series. See also Section 11.4.
 Our optimal rate:
 
 ```
-   r* = ln(ε/δ) / (1-ε) = r_IT × ln(ε/δ) / ε = r_IT × ln(1/δ)/ε + r_IT × ln(ε)/ε
+   r* = ln(e/δ) / (1-e) = r_IT × ln(e/δ) / e = r_IT × ln(1/δ)/e + r_IT × ln(e)/e
 ```
 
 The ratio r*/r_IT = ln(ε/δ)/ε. This is the **unavoidable overhead** of
@@ -1289,7 +1267,7 @@ Number of correction symbols generated while s is in the window:
 
 Of these, each survives independently with probability (1-ε). Expected arrivals:
 ```
-   R = N_correction × (1-ε) = (A/q) × (1-(1-q)^W) × (1-ε)
+   R = N_correction × (1-e) = (A/q) × (1-(1-q)^W) × (1-e)
 ```
 
 For the decoder to recover s, we need at least 1 linearly independent repair
@@ -1310,7 +1288,7 @@ model. The tail latency constraint requires recovery at the δ-th percentile.
 Let K be the number of lost symbols in a window. For the GE model:
 ```
    P(K = k) depends on the burst structure
-   For large W: K ≈ εW with variance determined by burstiness
+   For large W: K ≈ e*W with variance determined by burstiness
 ```
 
 For recovery: number of arriving repairs ≥ K.
@@ -1321,14 +1299,14 @@ Constraint: P(repairs < K) ≤ δ.
 
 Using normal approximation:
 ```
-   P(repairs < K) ≈ P(Normal(rW(1-ε), rW(1-ε)ε) < K)
+   P(repairs < K) ≈ P(Normal(rW(1-e), rW(1-e)e) < K)
 ```
 
 This requires the δ-quantile of repairs to exceed the (1-δ)-quantile of losses.
 The algebra gives:
 
 ```
-   r ≥ ε/(1-ε) + z_δ × √(ε/(W(1-ε)))
+   r ≥ e/(1-e) + z_δ × √(e/(W(1-e)))
 ```
 
 where z_δ is the standard normal quantile [Abramowitz1964] for probability δ.
@@ -1342,9 +1320,9 @@ The GE autocorrelation decays with eigenvalue (1-p-q). The variance of losses
 in a window of size W is:
 
 ```
-   Var_iid(K) = W × ε × (1-ε)                    (independent losses)
+   Var_iid(K) = W × e × (1-e)                    (independent losses)
 
-   Var_GE(K)  = W × ε × (1-ε) × σ²_burst         (burst-correlated losses)
+   Var_GE(K)  = W × e × (1-e) × σ²_burst         (burst-correlated losses)
 
    σ²_burst = 1 + 2(1-p-q)/(p+q)                  (variance inflation factor)
 ```
@@ -1434,7 +1412,7 @@ Step 1: From ρ, find T_cut. The reliability ρ = P(recovered within T_cut).
 Using the corrected model (Section 6.8):
 
 ```
-   T_cut such that: ε × (1 - P_fec(T_cut)) × (1 - P_arq(T_cut)) = 1 - ρ
+   T_cut such that: e × (1 - P_fec(T_cut)) × (1 - P_arq(T_cut)) = 1 - ρ
 ```
 
 For ρ = 100%: T_cut = ∞ (no cutoff). For ρ = 98%: solve for finite T_cut.
@@ -1442,7 +1420,7 @@ For ρ = 100%: T_cut = ∞ (no cutoff). For ρ = 98%: solve for finite T_cut.
 Step 2: From δ, find A using the tail latency constraint (Section 6.8):
 
 ```
-   A* such that: ε × (1 - P_fec(A*)) ≤ δ    (among delivered symbols)
+   A* such that: e × (1 - P_fec(A*)) ≤ δ    (among delivered symbols)
 ```
 
 Step 3: Compute r* = A* × (1 - (1-q)^{T_cut+1}) / q.
@@ -1457,8 +1435,8 @@ Fix bandwidth r and reliability ρ. Compute resulting tail latency δ.
 ```
    From ρ: find T_cut (same as Mode 1, Step 1)
    From r and T_cut: A = r × q / (1 - (1-q)^{T_cut+1})
-   From A: P_fec = 1 - exp(-R)  where R = A(1-ε)/q × (1-(1-q)^W)
-   Result: δ = ε × (1 - P_fec) × P_arq / ρ
+   From A: P_fec = 1 - exp(-R)  where R = A(1-e)/q × (1-(1-q)^W)
+   Result: δ = e × (1 - P_fec) × P_arq / ρ
 ```
 
 #### Mode 3: Given (r, δ) → compute ρ
@@ -1486,7 +1464,7 @@ The resulting ρ falls out.
 
    r* = 2.6% + z_δ × 1.2%     (from Section 6.9, WiFi row)
 
-   At minimum r = r_IT = 2.6%:  δ = ε = 2.5% (every lost symbol goes to ARQ)
+   At minimum r = r_IT = 2.6%:  δ = e = 2.5% (every lost symbol goes to ARQ)
    Tail latency ≈ T_retx + RTT/2 for 2.5% of symbols
    For RTT = 50ms: L_arq ≈ 100ms for 2.5% of symbols
 
@@ -1554,7 +1532,7 @@ For systematic codes (METTLE, RLC, RaptorQ), the decoder is only invoked when
 at least one source symbol in the window is lost:
 
 ```
-   P(decoder invoked) = 1 - (1-ε)^W
+   P(decoder invoked) = 1 - (1-e)^W
 ```
 
 | Scenario | ε     | W=50                | W=200               |
@@ -1579,13 +1557,13 @@ the information-theoretic minimum:
 Weighted by decoder invocation probability:
 
 ```
-   ε_codec_eff = ε_codec × P(decoder invoked) = ε_codec × (1 - (1-ε)^W)
+   e_codec_eff = e_codec × P(decoder invoked) = e_codec × (1 - (1-e)^W)
 ```
 
 The corrected correction rate becomes:
 
 ```
-   r* = (ε + ε_codec_eff)/(1-ε) + z_δ × √((ε + ε_codec_eff) / (W × (1-ε)))
+   r* = (e + e_codec_eff)/(1-e) + z_δ × √((e + e_codec_eff) / (W × (1-e)))
 ```
 
 ### 7.3 Impact on METTLE at DC
@@ -1639,8 +1617,8 @@ fraction. The crossover depends on the specific δ values and loss rate.
 
 **Decision rule:** Compare total correction bandwidth:
 ```
-   shared_cost = r*(ε, min(δ_c))          (one encoder, tightest δ)
-   separate_cost = Σ_c f_c × r*(ε, δ_c)  (per-class, weighted by fraction f_c)
+   shared_cost = r*(e, min(δ_c))          (one encoder, tightest δ)
+   separate_cost = Σ_c f_c × r*(e, δ_c)  (per-class, weighted by fraction f_c)
 ```
 
 Choose whichever is lower.
@@ -1650,7 +1628,7 @@ Choose whichever is lower.
 For shared FEC with per-symbol δ, the constraint becomes:
 
 ```
-   For each class c: ε × (1 - P_fec) ≤ δ_c
+   For each class c: e × (1 - P_fec) ≤ δ_c
 ```
 
 Since P_fec is the same for all symbols (shared repair), the binding constraint
@@ -2012,7 +1990,7 @@ corrections cost the same bandwidth. The natural taper ratio is optimal.
 protection. The scheduler cannot reduce the correction ratio below a
 floor that leaves the path unprotected during bursts.
 
-### 11.7 Burst Protection During Ratio Adjustment
+### 11.7 Burst Protection During Ratio Adjustment (largely resolved)
 
 When the scheduler reduces a path's correction ratio (more source, fewer
 corrections), that path becomes more vulnerable to burst loss. The question:
@@ -2026,17 +2004,21 @@ Realtime: r_i' >= B_i/W (hard floor). Bulk: r_i' >= 0 (let taper
 self-correct via BOCD). Balanced: r_i' >= B_i/(2W) (softer floor).
 
 **Option 3: Let the taper self-correct.** No floor. If a burst overwhelms
-the reduced correction ratio, BOCD detects increased loss, raises e, and
+the reduced correction ratio, BOCD detects increased loss, raises ε, and
 the taper amplitude A increases automatically. The first burst after
 scheduler adjustment is under-protected (5-15 sample detection delay);
 subsequent bursts are covered.
 
-**Open question for future work:** A quick-reacting burst protection
-mechanism independent of the scheduler-dictated ratio. The taper's GE
-shape (front-loaded corrections) provides some inherent burst protection,
-but a mechanism that overrides the scheduler during detected bursts would
-be more robust. This could involve the GE state directly controlling
-a minimum correction rate that bypasses the scheduler.
+**Resolution:** The P_lost(t) timing naturally produces Mehrotra's optimal
+policy [Mehrotra2010]: before RTT elapses (during burst), P_lost is low so
+corrections are mostly repair — flexible coverage for any lost symbol.
+After RTT (burst usually over), P_lost rises and corrections shift to
+targeted retransmit. BOCD + taper adapts the correction rate within ~1ms
+of burst detection, which is negligible relative to RTT.
+
+A two-speed taper (A_effective = A_baseline x (1 + burst_boost)) is an
+optional micro-optimization for extreme scenarios where a long burst is
+still ongoing at detection time. See Appendix C.6 for details.
 
 ### 11.8 Interpolated Objective Function
 
@@ -2075,7 +2057,7 @@ symbol S_k was sent on path A and lost, any path's correction slot can
 retransmit it:
 
 ```
-  P(retransmit on path j) = P_lost(t_k, e_A) x (1 - e_burst_j)
+  P(retransmit on path j) = P_lost(t_k, e_A)
 ```
 
 Cross-path diversity: P(both fail) = e_A x e_j. For e_A=0.10, e_j=0.02:
@@ -2087,7 +2069,7 @@ P(both fail) = 0.002 — 50x improvement over single-path.
 
 ```
    Channel (Section 2):
-     ε = p/(p+q)                          average loss rate          [probability]
+     e = p/(p+q)                          average loss rate          [probability]
      B = 1/q                              mean burst length          [symbols]
      P(burst ≥ t) = (1-q)^{t-1}          burst survival             [probability]
      σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
@@ -2098,19 +2080,19 @@ P(both fail) = 0.002 — 50x improvement over single-path.
      τ(t) = 0 for t > T_cut              taper cutoff (ρ<100%)
 
    Optimal correction rate (Section 6.8, ρ=100%):
-     r* = ε̂/(1-ε̂) + z_δ × √(ε̂ × σ²_burst / (W(1-ε̂)))            [ratio]
-     where ε̂ = ε + ε_codec × (1-(1-ε)^W)  effective loss            [probability]
+     r* = e_hat/(1-e_hat) + z_δ × √(e_hat × σ²_burst / (W(1-e_hat)))            [ratio]
+     where e_hat = e + e_codec × (1-(1-e)^W)  effective loss            [probability]
            z_δ = Φ⁻¹(1-δ)                  normal quantile           [dimensionless]
 
    Three-variable optimization (Section 6.10):
      Given (δ, ρ) → r:  find T_cut from ρ, find A from δ, r = A(1-(1-q)^T_cut)/q
-     Given (r, ρ) → δ:  find T_cut from ρ, compute A from r, δ = ε(1-P_fec)P_arq/ρ
+     Given (r, ρ) → δ:  find T_cut from ρ, compute A from r, δ = e(1-P_fec)P_arq/ρ
      Given (r, δ) → ρ:  iterate T_cut until budget constraint met, ρ = recovery within T_cut
 
    Per-symbol delivery (Section 3.5):
-     P(on-time)   = (1-ε) + ε × P_fec                               [probability]
-     P(late)      = ε × (1-P_fec) × P_arq                           [probability]
-     P(lost)      = ε × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
+     P(on-time)   = (1-e) + e × P_fec                               [probability]
+     P(late)      = e × (1-P_fec) × P_arq                           [probability]
+     P(lost)      = e × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
 
    Recovery latency (Section 3.4):
      t_sym = symbol_size / throughput     symbol transmission time   [seconds]
@@ -2118,11 +2100,12 @@ P(both fail) = 0.002 — 50x improvement over single-path.
      P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence        [probability]
      L_actual = min(t_fec, retransmit arrival)                       [seconds]
 
-   Per-slot decision (Section 3.7):
-     P_retx = P_lost(t) x (1 - e_burst)                   (burst-aware mixing)
+   Per-slot decision (Section 3.8):
+     P_retx = P_lost(t)                                    (time-based mixing)
      with probability P_retx:     send source retransmit   (immediate decode)
      with probability 1-P_retx:   send repair symbol       (FEC, any loss)
-     e_burst = fast EWMA or GE state estimate              (current channel)
+     Optional refinement: P_retx = P_lost(t) x (1 - e_burst)
+       for long-burst scenarios (Appendix C.6)
 
    Congestion control (Section 10):
      Copa: rate = 1 / (d x dq)                              [symbols/sec]
@@ -2137,7 +2120,7 @@ P(both fail) = 0.002 — 50x improvement over single-path.
      deficit = SUM_{un-ACKed s}(e_s)                          [expected corrections]
      cross-path: r = e_source / (1 - e_correction)           [ratio]
      minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
-     P(cross-path retx) = P_lost(t, e_src) x (1 - e_burst_j)
+     P(cross-path retx) = P_lost(t, e_src)
      P(both paths fail) = e_src x e_retx                      [probability]
 ```
 
@@ -2287,7 +2270,7 @@ elimination interactions. Our normal approximation misses this effect.
 **Extension:** Replace the normal-approximation P_fec with debt-tracking:
 
 ```
-   Current model:  P_fec ≈ 1 - Φ(-z) where z depends on (ε, W, σ²_burst)
+   Current model:  P_fec ≈ 1 - Φ(-z) where z depends on (e, W, σ²_burst)
    Extended model: P_fec = 1 - p_e where p_e from debt Markov chain
 ```
 
@@ -2329,10 +2312,10 @@ on two independent paths has survival probability `1 - ε₁ε₂` instead of
 than single-path. With M independent paths of loss rates ε₁...εₘ:
 
 ```
-   P(repair arrives on at least one path) = 1 - Π(εᵢ)
+   P(repair arrives on at least one path) = 1 - Π(e_i)
 
-   Single path:  P(arrive) = 1-ε
-   Dual path:    P(arrive) = 1-ε² ≈ 1 for small ε
+   Single path:  P(arrive) = 1-e
+   Dual path:    P(arrive) = 1-e^2 ≈ 1 for small e
 ```
 
 This means the multipath taper can use a **lower amplitude** A than single-path
@@ -2341,7 +2324,7 @@ for the same P_fec target. The optimal multipath taper:
 ```
    τ_multi(t) = A_multi × (1-q)^t
 
-   where A_multi = A_single × (1-ε) / (1-Π(εᵢ))
+   where A_multi = A_single × (1-e) / (1-Π(e_i))
 ```
 
 For two paths with 5% loss each: A_multi = A_single × 0.95/0.9975 ≈ 0.95 × A_single.
@@ -2390,10 +2373,42 @@ we always have enough correction to survive at least B consecutive erasures.
    r* = max(A/q, τ_floor × W) / W
 
    In practice: A/q dominates when loss is high (large A).
-   Floor dominates when loss is low but bursts are long (large B, small ε).
+   Floor dominates when loss is low but bursts are long (large B, small e).
 ```
 
-### C.6 Summary of Extensions
+### C.6 Burst-Aware Channel Discount (considered refinement)
+
+The per-slot decision can optionally include a channel-state discount:
+
+```
+  P_retx = P_lost(t) x (1 - e_burst)
+```
+
+where e_burst is a fast-reacting estimate of current channel loss (from GE
+state or fast EWMA). This suppresses retransmit during ongoing bursts, where
+repair is more flexible (covers any lost symbol).
+
+Two separate loss estimates serve different purposes:
+
+- **ε** (long-run, from BOCD): Bayesian prior for per-symbol loss confidence
+  in P_lost
+- **ε_burst** (fast, from GE state): current channel condition discount
+
+This was considered for the primary model but deemed unnecessary because:
+
+1. P_lost(t) alone handles the primary FEC/ARQ regulation via timing
+2. Before burst detection (t < RTT): P_lost is already low → mostly repair
+3. After burst detection (t > RTT): burst is usually over → ε_burst has dropped
+4. The improvement is only significant for long bursts still ongoing at
+   detection time (~1ms improvement)
+
+The source/correction ratio was also considered for fast burst adjustment
+(two-speed taper: A_effective = A_baseline x (1 + burst_boost)), but the
+existing BOCD rate adaptation handles this with negligible delay.
+
+Preserved here for future reference if extreme burst scenarios require it.
+
+### C.7 Summary of Extensions
 
 | Extension | From | Effect on correction rate | Effect on P_fec accuracy |
 |-----------|------|-------------------------|--------------------------|
@@ -2402,6 +2417,7 @@ we always have enough correction to survive at least B consecutive erasures.
 | Analytical bounds | [Vajha2020] | Verification only | Bounds, not point estimate |
 | Multipath diversity | [Zeng2021] | Reduces A_multi | Higher for same budget |
 | DCSW taper floor | [Badr2017] | Hard minimum guarantee | Worst-case protection |
+| Burst-aware discount | C.6 | Modest improvement for long bursts | Suppresses retransmit during bursts |
 
 ## Appendix D: Open Questions
 
@@ -2415,9 +2431,10 @@ we always have enough correction to survive at least B consecutive erasures.
    estimator (Section 11). Unified stream per path preserves interleaving.
    Scheduler adjusts per-path source/correction ratio (latency mode only).
    Global correction deficit tracks outstanding corrections. Cross-path
-   retransmit via shared buffer. **Partially open:** burst protection during
-   scheduler ratio adjustment needs a quick-reacting mechanism independent
-   of scheduler-dictated ratios (Section 11.7).
+   retransmit via shared buffer. Burst protection during scheduler ratio
+   adjustment is largely resolved: P_lost timing + BOCD adapts within ~1ms
+   (Section 11.7). Two-speed taper is an optional refinement for extreme
+   scenarios (Appendix C.6).
 
 3. **Interaction with congestion control (resolved):** Copa [Copa2018] controls
    total rate, taper controls source/correction split (Section 10). When
