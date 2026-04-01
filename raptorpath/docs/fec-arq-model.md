@@ -2088,40 +2088,29 @@ corrections cost the same bandwidth. The natural taper ratio is optimal.
 protection. The scheduler cannot reduce the correction ratio below a
 floor that leaves the path unprotected during bursts.
 
-### 11.7 Burst Protection During Ratio Adjustment (largely resolved)
+### 11.7 Burst Protection During Ratio Adjustment
 
 When the scheduler reduces a path's correction ratio (more source, fewer
-corrections), that path becomes more vulnerable to burst loss. The question:
-how to maintain burst protection?
+corrections), that path has fewer same-path corrections to survive a burst.
+But burst protection is already handled by two existing mechanisms:
 
-**Option 1: Hard floor.** r_i' >= B_i/W (mean burst length / window size).
-Guarantees enough corrections for one expected burst per window. Conservative.
+**Global correction deficit (Section 11.4):** When one path's corrections
+are reduced, the deficit grows — and other paths absorb it by generating
+more corrections. The total correction budget across all paths remains
+matched to the total loss. No per-path floor is needed because the
+correction budget is global, not per-path.
 
-**Option 2: Protocol-hint-dependent floor.**
-Realtime: r_i' >= B_i/W (hard floor). Bulk: r_i' >= 0 (let taper
-self-correct via BOCD). Balanced: r_i' >= B_i/(2W) (softer floor).
+**Cross-path diversity (Section 11.10):** Corrections on the slow path
+survive bursts on the fast path (different channel, different burst
+pattern). A burst on path A is covered by corrections from path B.
+P(both paths burst simultaneously) = ε_A × ε_B — negligible for
+independent paths.
 
-**Option 3: Let the taper self-correct.** No floor. If a burst overwhelms
-the reduced correction ratio, BOCD detects increased loss, raises ε, and
-the taper amplitude A increases automatically. The first burst after
-scheduler adjustment is under-protected (5-15 sample detection delay);
-subsequent bursts are covered.
-
-**Recommendation:** Option 3 (let the taper self-correct via BOCD) for
-simplicity and adaptiveness. For production deployments requiring hard
-guarantees, Option 1 (r_min = B_i/W) can be layered on top as a safety
-floor without conflicting with the adaptive mechanism.
-
-**Resolution:** The P_lost(t) timing naturally produces Mehrotra's optimal
-policy [Mehrotra2010]: before RTT elapses (during burst), P_lost is low so
-corrections are mostly repair — flexible coverage for any lost symbol.
-After RTT (burst usually over), P_lost rises and corrections shift to
-targeted retransmit. BOCD + taper adapts the correction rate within ~1ms
-of burst detection, which is negligible relative to RTT.
-
-A two-speed taper (A_effective = A_baseline x (1 + burst_boost)) is an
-optional micro-optimization for extreme scenarios where a long burst is
-still ongoing at detection time. See Appendix C.6 for details.
+No correction floor (r_min) is needed. The global deficit and cross-path
+diversity provide burst protection without any per-path minimum. The
+taper self-corrects via BOCD if loss increases, and P_lost(t) naturally
+produces Mehrotra's optimal policy (repair during uncertainty, retransmit
+after confirmation).
 
 ### 11.8 Interpolated Objective Function
 
@@ -2644,10 +2633,10 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     code, or rate-limit feedback). The paper should note this is an API
     design question, not a model question.
 
-20. **Scheduler burst protection floor choice (resolved).** (Section 11.7) [LOW]
-    Three options given. Recommendation: Option 3 (let taper self-correct)
-    for simplicity, with Option 1 (hard floor) available as a safety net
-    for production deployments. One sentence.
+20. **Scheduler burst protection floor (resolved).** (Section 11.7) [LOW]
+    No floor needed. Global correction deficit + cross-path diversity
+    handle burst protection when the scheduler reduces a path's correction
+    ratio. The three options and floor discussion were removed.
 
 21. **Cross-path retransmit path selection (resolved).** (Section 11.10) [LOW]
     Path with lowest ε_burst and available capacity. Greedy selection.
