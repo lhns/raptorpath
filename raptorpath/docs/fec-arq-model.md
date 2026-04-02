@@ -789,37 +789,61 @@ What bends when:
 - ρ < 100%: reliability bends (eviction at T_cut)
 - ρ = 100%: latency bends (backpressure at buffer_max, rare)
 
-### 3.10 SACK-Extended WindowAck
+### 3.10 SACK-Extended ACK
 
-The receiver sends periodic **ACK+SACK** messages to tell the sender what
-arrived. This is the same mechanism TCP has used since RFC 2018:
+The receiver sends an **ACK per received symbol** — every incoming symbol
+triggers an immediate ACK in the reverse direction. This provides the
+fastest possible loss detection and the most RTT samples for estimation.
+
+**Overhead:** Each ACK is ~80 bytes (fields + QUIC/UDP headers). At any
+link speed, ACK traffic is approximately 0.6% of the data rate — negligible.
+
+**Alternatives considered:**
+- Per-batch ACK: lower overhead, but slower loss detection (batch granularity)
+- Delayed ACK (TCP style, every 200ms): 50% less traffic, but adds 200ms
+  detection delay — too slow for our P_lost model
+- Piggyback ACK on reverse-direction data: zero overhead for bidirectional
+  traffic — a future optimization for the bidirectional case
+
+**ACK contents (5 fields):**
 
 ```
-  ACK+SACK message:
-  +---------------------------------------------------+
-  | cumulative_ack: 42    (all symbols <= 42 received) |
-  | sack_ranges: [(45,47), (50,55)]                    |
-  | echo_timestamp: 1705012345.678                     |
-  +---------------------------------------------------+
+  +-----------------------------------------------------------+
+  | cumulative_ack:       u64    all seqs <= this received     |
+  | sack_ranges:          [(u64,u64)]  additional ranges       |
+  | echo_timestamp:       u64    sender's timestamp            |
+  | jitter_us:            u32    interarrival jitter (us)      |
+  | cumulative_received:  u64    total symbols received        |
+  +-----------------------------------------------------------+
 ```
 
-- **Cumulative ACK**: the highest sequence number such that all symbols up to
-  and including it have been received. The sender knows everything up to 42
-  arrived. Symbols 43 and 44 are missing (gaps).
-- **SACK ranges** [RFC2018]: out-of-order blocks received beyond the cumulative
-  ACK. Here, symbols 45-47 and 50-55 also arrived. Combined with the
-  cumulative ACK, the sender knows exactly that symbols 43, 44, 48, 49 are
-  missing.
-- **Echo timestamp**: the sender's own timestamp echoed back for RTT
-  measurement (no clock synchronization needed).
+- **cumulative_ack**: highest sequence number such that ALL symbols up to and
+  including it have been received. An optimization — equivalent to a SACK
+  range starting at 0, but compressed to one number.
+- **sack_ranges** (Selective ACK [RFC2018]): out-of-order ranges received beyond
+  the cumulative point. Tells the sender exactly which symbols arrived despite
+  gaps. Cumulative within the T_cut window — all received fragments are
+  reported, not just the most recent (unlike TCP which limits to 3-4 blocks).
+- **echo_timestamp**: sender's own send timestamp echoed back for RTT
+  measurement. RTT = now - echo. No clock synchronization needed.
+- **jitter_us**: interarrival jitter in microseconds [RFC3550 A.8]. u32 holds
+  up to 4300 seconds (matches RFC 3550's 32-bit field). Used for reorder
+  buffer sizing, congestion detection, and real-time jitter budgets.
+- **cumulative_received**: running total of symbols received. Self-healing
+  counter that survives ACK loss and SACK pruning. Gives the sender a
+  reliable aggregate reliability metric: ρ_actual = received / sent.
 
-**Why ACK+SACK instead of NACK?** ACK-based protocols are more robust for
-unicast connections:
-- If an ACK is lost, the sender simply waits longer and retransmits anyway
-  (self-healing). A lost NACK means the sender never learns about the loss.
-- ACKs confirm what works; NACKs report what failed. Confirming success is
-  more reliable than reporting failure.
-- No separate NackAck echo mechanism needed to measure reverse path loss.
+**Gap pruning at T_cut:** For ρ < 100%, gaps older than T_cut are pruned by
+the receiver — cumulative_ack advances past abandoned symbols. Both sender
+(buffer eviction) and receiver (gap pruning) use the same T_cut, communicated
+at connection start and updatable mid-connection via control message.
+
+For ρ = 100% (T_cut = ∞): no pruning. cumulative_ack advances only when
+gaps are filled by corrections. SACK ranges are temporary.
+
+**ACK loss handling:** Cumulative ACKs are self-healing — each new ACK
+supersedes all previous ones. If ACK_5 is lost but ACK_6 arrives, the sender
+gets all information from ACK_6. No ACK retransmission needed.
 
 ### 3.11 Per-Symbol Delivery Outcomes
 
@@ -2032,6 +2056,28 @@ The application must respond:
 This is a resource allocation problem, not a CC problem. The CC works
 correctly; it's the application that needs to adapt.
 
+**Back-pressure mechanism:** The sender stops reading from the source (TUN
+interface, application socket) when the retransmit buffer reaches buffer_max.
+This causes the kernel's write buffer to fill, which causes the application's
+write() to block — identical to TCP behavior when the send buffer is full.
+
+No special API is needed for basic operation: applications using the TUN
+interface experience standard blocking write() semantics. Data is accepted
+when the channel can handle it and blocked when it can't.
+
+**Optional stats API (for advanced applications):** Applications that want
+finer control can subscribe to channel statistics:
+- Per-path: ε, RTT, throughput, correction rate r, Copa rate
+- Aggregate: effective reliability ρ, tail latency δ, correction deficit
+- Events: backpressure start/end, path added/removed, regime change
+
+The API also allows overriding protocol characteristics mid-connection:
+- Adjust δ (tail latency target) or ρ (reliability target)
+- Change T_cut (affects eviction and gap pruning)
+- Force path preferences
+
+This API is implementation-specific and not part of the core model.
+
 ---
 
 ## 11. Multi-Path Scheduling
@@ -2724,9 +2770,10 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     Resolved: dual-mechanism model — T_cut age eviction + buffer_max size
     backpressure. Buffer is NOT bounded by encoder window. See Section 3.9.
 
-15. **SACK timing and format.** (Section 3.10) [MEDIUM]
-    "Periodic" is vague. Should specify: receiver sends ACK+SACK on every
-    incoming batch (piggybacked). Format follows RFC 2018 SACK blocks.
+15. **SACK timing and format (resolved).** (Section 3.10) [MEDIUM]
+    Per-packet ACK (0.6% overhead). 5 fields: cumulative_ack, sack_ranges
+    (cumulative within T_cut), echo_timestamp, jitter_us (u32), cumulative_received.
+    Gap pruning at T_cut. ACK loss self-healing via cumulative semantics.
 
 16. **GE parameter initialization (resolved).** (Section 5.5) [LOW]
     Initial state: all counters = 0, start in Good state, use the Beta
@@ -2743,10 +2790,10 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     (same as BBR). If min_rtt seems stale (RTT consistently above by 2x),
     force a brief rate reduction. One paragraph.
 
-19. **Back-pressure signaling.** (Section 10.7) [MEDIUM]
-    The signal mechanism is implementation-specific (API callback, error
-    code, or rate-limit feedback). The paper should note this is an API
-    design question, not a model question.
+19. **Back-pressure signaling (resolved).** (Section 10.7) [MEDIUM]
+    Blocking write() like TCP — sender stops reading from source when
+    buffer_max reached. Optional stats API for advanced applications.
+    Implementation-specific, not part of core model.
 
 20. **Scheduler burst protection floor (resolved).** (Section 11.7) [LOW]
     No floor needed. Global correction deficit + cross-path diversity
