@@ -2537,6 +2537,13 @@ The debt Markov chain has state space {0, 1, ..., ζ} with transition
 probabilities depending on GE state and repair density. This is computable
 (finite-state Markov chain) though not as simple as the closed-form formula.
 
+**Status:** The normal formula is used in the paper for analytical insight.
+For implementation, the exact O(W²) transfer matrix computation (see open
+point #4, resolved) provides the same precision as the debt model. Both
+are finite-state Markov chain computations over the GE channel — the debt
+model tracks decoder state, the transfer matrix tracks loss counts. Either
+gives exact P_fec for implementation use.
+
 ### C.3 Analytical P_fec Bounds [Vajha2020]
 
 Vajha et al. derive upper and lower bounds on block-erasure probability for
@@ -2559,6 +2566,10 @@ streaming codes over GE without simulation. Their bounds depend on:
 ```
 
 This gives us an analytical verification path that complements simulation.
+Every verification method strengthens confidence in the model — simulation
+validates end-to-end behavior, Vajha bounds validate the P_fec formula
+analytically, and the exact O(W²) computation validates the normal
+approximation numerically.
 
 ### C.4 Multipath Diversity Gain [Zeng2021]
 
