@@ -2590,6 +2590,13 @@ For two paths with 5% loss each: A_multi = A_single × 0.95/0.9975 ≈ 0.95 × A
 Modest gain for similar paths, but significant when paths have different
 characteristics (one lossy WiFi, one reliable Ethernet).
 
+**Not applicable to our model.** CloudBurst duplicates the same repair symbol
+across paths. Our model uses shared-buffer cross-path retransmit instead
+(Section 11.10): each path generates its own corrections, and the shared
+retransmit buffer enables cross-path recovery. The diversity gain
+P(both fail) = ε_A × ε_B is already captured in Section 11.10 without
+repair duplication.
+
 ### C.5 DCSW Worst-Case Taper Floor
 
 The Delay-Constrained Sliding Window model [Badr2017], [Fong2019] provides
