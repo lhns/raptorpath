@@ -2343,34 +2343,44 @@ the same interpolated objective as source scheduling (Section 13.8).
      e = p/(p+q)                          average loss rate          [probability]
      B = 1/q                              mean burst length          [symbols]
      P(burst ≥ t) = (1-q)^{t-1}          burst survival             [probability]
-     σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
 
    Taper function (Section 6):
      τ*(t) = A* x (1-q)^t                optimal taper function     [corrections/symbol]
      A* = r* x q                          taper amplitude (ρ=100%)  [corrections/symbol]
-     τ(t) = 0 for t > T_cut              taper cutoff (ρ<100%)
 
-   Optimal correction rate (Section 8.4, ρ=100%):
-     r* = e_hat/(1-e_hat) + z_δ x √(e_hat x σ²_burst / (W(1-e_hat)))            [ratio]
-     P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))    [probability]
-     where e_hat = e + e_codec x (1-(1-e)^W)  effective loss            [probability]
-           z_δ = Φ⁻¹(1-δ)                  normal quantile           [dimensionless]
+   Burst variance correction (Section 8.3):
+     σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
+     Var_GE(K) = W x e x (1-e) x σ²_burst  loss count variance      [symbols^2]
+
+   Optimal correction rate (Section 8.4):
+     Base:  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))     [ratio]
+     With codec: replace e with e_hat (see Section 9.2)
+     P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))        [probability]
+     z_delta = normal_quantile(1-delta)                                     [dimensionless]
+
+   Codec overhead (Section 9.2):
+     e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead  [probability]
+     e_hat = e + e_codec_eff                effective loss rate      [probability]
 
    Three-variable optimization (Section 8.6):
-     Given (δ, ρ) → r:  find T_cut from ρ, find A from δ, r = A(1-(1-q)^T_cut)/q
+     Taper cutoff: τ(t) = 0 for t > T_cut                (ρ<100%)
+     Correction rate with cutoff: r = A x (1-(1-q)^{T_cut+1}) / q
+     Given (δ, ρ) → r:  find T_cut from ρ, find A from δ, r = A(1-(1-q)^{T_cut+1})/q
      Given (r, ρ) → δ:  find T_cut from ρ, compute A from r, δ = e(1-P_fec)P_arq/ρ
      Given (r, δ) → ρ:  iterate T_cut until budget constraint met, ρ = recovery within T_cut
 
-   Per-symbol delivery (Section 4.1):
+   Per-symbol delivery (Section 5.3):
      P(on-time)   = (1-e) + e x P_fec                               [probability]
      P(late)      = e x (1-P_fec) x P_arq                           [probability]
      P(lost)      = e x (1-P_fec) x (1-P_arq) = 1-ρ                [probability]
-     P_arq = 1 - (1-rho) / (e x (1-P_fec))              [probability]
+     P_arq = 1 - (1-rho) / (e x (1-P_fec))                         [probability]
 
    Recovery latency (Section 3.4):
      t_sym = symbol_size / throughput     symbol transmission time   [seconds]
      t_fec = m / (A x (1-e)) x t_sym     FEC recovery time          [seconds]
+     t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x L_arq_i      [seconds]
      P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence        [probability]
+     P(RTT > t) = 1 - Phi((t - SRTT) / RTTVAR)                      [probability]
      L_actual = min(t_fec, retransmit arrival)                       [seconds]
 
    Retransmit buffer (Section 5.1):
