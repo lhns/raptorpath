@@ -1541,7 +1541,28 @@ Using the corrected model (Section 6.8):
    T_cut such that: e × (1 - P_fec(T_cut)) × (1 - P_arq(T_cut)) = 1 - ρ
 ```
 
-For ρ = 100%: T_cut = ∞ (no cutoff). For ρ = 98%: solve for finite T_cut.
+For ρ = 100%: T_cut = ∞ (no finite solution — see Section 3.12).
+For ρ < 100%: solve via binary search. P(recovered by T_cut) is monotone
+increasing in T_cut (more time = more corrections = higher recovery):
+
+```
+  Algorithm: find T_cut from ρ
+
+  lo = 0
+  hi = W × 10                        (upper bound: many window lengths)
+  while hi - lo > tolerance:
+      mid = (lo + hi) / 2
+      corrections = A × (1-(1-q)^(mid+1)) / q × (1-e)
+      P_recovered = P(corrections >= losses in window)    (normal approx)
+      if P_recovered < ρ:
+          lo = mid                    (need more time)
+      else:
+          hi = mid                    (enough time)
+  T_cut = hi
+```
+
+Convergence is guaranteed because P(recovered) is monotone in T_cut.
+Typically converges in ~20 iterations (log2 of search range).
 
 Step 2: From δ, find A using the tail latency constraint (Section 6.8):
 
@@ -1576,9 +1597,29 @@ Fix bandwidth r and tail latency δ. Compute resulting reliability ρ.
 ```
 
 This mode requires solving for T_cut and A simultaneously (they're coupled).
-In practice, iterate: start with T_cut = ∞, compute r needed for δ,
-if r > budget, reduce T_cut until the bandwidth constraint is met.
-The resulting ρ falls out.
+Binary search on T_cut works: ρ is monotone in T_cut (larger T_cut = more
+recovery time = higher ρ), and r is monotone in T_cut (larger T_cut =
+more corrections needed = higher r). For a given r budget:
+
+```
+  Algorithm: find ρ given (r, δ)
+
+  lo = 0
+  hi = W × 10
+  while hi - lo > tolerance:
+      mid = (lo + hi) / 2
+      A = r × q / (1 - (1-q)^(mid+1))
+      P_fec = P(FEC recovers within min(mid, W))   (from A, e, W)
+      if A produces rate > r:
+          hi = mid        (T_cut too large for budget)
+      else:
+          lo = mid        (can afford more T_cut)
+  T_cut = lo
+  ρ = P(recovered within T_cut)                     (from taper integral)
+```
+
+Convergence guaranteed by monotonicity. The resulting ρ is the maximum
+reliability achievable within the bandwidth budget r at tail latency δ.
 
 #### Worked examples
 
@@ -2643,14 +2684,13 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     The canonical formula should be r* with ε_hat = ε + ε_codec × P(decoder).
     Needs a clarifying note in Section 6.8.
 
-11. **T_cut computation algorithm.** (Section 6.10) [MEDIUM]
-    Finding T_cut from ρ requires solving an implicit equation. Binary search
-    works (T_cut is monotone in ρ). Needs a 3-line algorithm.
+11. **T_cut computation algorithm (resolved).** (Section 6.10) [MEDIUM]
+    Binary search on T_cut. P(recovered) is monotone in T_cut. Algorithm
+    added to Mode 1. Converges in ~20 iterations.
 
-12. **Mode 3 convergence.** (Section 6.10) [MEDIUM]
-    The iterative approach (reduce T_cut until r fits) needs convergence
-    justification. Since ρ is monotone in T_cut and T_cut is monotone in r,
-    binary search converges. One paragraph.
+12. **Mode 3 convergence (resolved).** (Section 6.10) [MEDIUM]
+    Binary search on T_cut with monotonicity in ρ and r. Algorithm added
+    to Mode 3. Convergence guaranteed.
 
 13. **t_recovery_i undefined in multipath context (resolved).** (Section 11.5) [LOW]
     E_i = RTT_i/2 + ε_i × t_recovery_i but t_recovery_i not defined for
