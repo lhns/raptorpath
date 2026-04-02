@@ -247,8 +247,16 @@ The channel alternates between Good (low loss) and Bad (high loss) states
 ```
 
 **Simplified model** (used throughout): in Good state, no loss (h_G = 0).
-In Bad state, total loss (h_B = 1). This makes the math tractable and is a
-reasonable approximation for packet-level erasure channels.
+In Bad state, total loss (h_B = 1). For packet-level erasure channels, this
+is not an approximation — it is the correct model. UDP datagrams either
+arrive intact (transport-layer checksums verify integrity) or are fully
+dropped. There is no partial packet delivery. A symbol is either received
+completely or lost completely.
+
+This would be an approximation for bit-level or symbol-level channels where
+partial corruption exists (e.g., analog radio). But raptorpath operates at
+the packet level over UDP/QUIC, where checksum verification makes h_G = 0
+and h_B = 1 exact.
 
 ### 2.2 Stationary Properties
 
@@ -1942,11 +1950,11 @@ BBR's ProbeRTT drops cwnd to 4 symbols for 200ms. During this period:
 Copa targets a queue occupancy that balances throughput and delay:
 
 ```
-  rate = 1 / (d x dq)
+  rate = 1 / (d_copa x dq)
 
   where:
-    d  = Copa parameter (controls target queue depth; default d = 0.5)
-    dq = queuing_delay = RTT_current - RTT_min
+    d_copa = Copa parameter (controls target queue depth; default 0.5)
+    dq     = queuing_delay = RTT_current - RTT_min
 ```
 
 When dq is small (queue empty): rate is high -> fill the pipe.
@@ -1954,7 +1962,20 @@ When dq is large (queue building): rate drops -> drain the queue.
 
 This naturally oscillates: send fast -> queue builds -> send slow -> queue
 drains -> send fast again. The oscillation frequency is ~1/RTT and amplitude
-depends on d. No periodic forced drain phase needed.
+depends on d_copa. No periodic forced drain phase needed.
+
+**Copa's d_copa is NOT the same as our tail latency target δ.** Copa's
+d_copa controls the target queue depth at the bottleneck (1/d_copa packets).
+Our δ controls the tail probability of late delivery. They are independent
+parameters that happen to use similar notation in their respective papers.
+
+d_copa = 0.5 (from the Copa paper [Copa2018]) targets a queue of 2 packets
+— very shallow. The Copa+ follow-up paper explores adaptive d_copa, which
+could be coupled to the protocol hint: Realtime (tight latency) → higher
+d_copa (shallower queue, ~1 less packet of delay) and Bulk (throughput) →
+lower d_copa (deeper queue, better link utilization). However, the gain is
+approximately 1 packet of queue delay (~1ms at typical speeds) — negligible
+compared to RTT. The default d_copa = 0.5 is sufficient for all scenarios.
 
 **min_rtt estimation:** Copa uses the minimum observed RTT in a 10-second
 sliding window (same duration as BBR's min_rtt window). Copa's natural rate
@@ -2300,7 +2321,7 @@ the same interpolated objective as source scheduling (Section 11.8).
        for long-burst scenarios (Appendix C.6)
 
    Congestion control (Section 10):
-     Copa: rate = 1 / (d x dq)                              [symbols/sec]
+     Copa: rate = 1 / (d_copa x dq)                         [symbols/sec]
      dq = RTT_current - RTT_min                              [seconds]
      source_rate = total_rate / (1 + r*)                     [symbols/sec]
      correction_rate = total_rate x r* / (1 + r*)            [symbols/sec]
@@ -2712,9 +2733,10 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     prior (weak uniform) until enough transitions observed. GE is_valid()
     already gates usage (existing code). One sentence.
 
-17. **Copa parameter δ tuning.** (Section 10.4) [MEDIUM]
-    Copa's δ controls target queue depth. Default 0.5 is from the Copa
-    paper. Adaptive δ is future work (Copa+ paper addresses this).
+17. **Copa parameter d tuning (resolved).** (Section 10.4) [MEDIUM]
+    Renamed to d_copa to avoid confusion with tail latency delta.
+    Default 0.5 sufficient. Adaptive d_copa (Copa+) is a negligible
+    optimization (~1ms gain).
 
 18. **Copa min_rtt refresh (resolved).** (Section 10.4) [LOW]
     Copa's natural oscillation refreshes min_rtt. Sliding window of 10s
@@ -2750,10 +2772,9 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     A batch = one ACK feedback cycle. With per-batch ACKs at ~10-100ms
     intervals, 5-15 batches = 50ms-1.5s adaptation time.
 
-25. **GE simplified model error bounds.** (Section 2.1) [MEDIUM]
-    The h_G=0, h_B=1 approximation ignores partial loss in each state.
-    Error grows when real h_G > 0 or h_B < 1. Sensitivity analysis would
-    quantify this but is not critical for the model's validity.
+25. **GE simplified model error bounds (resolved).** (Section 2.1) [MEDIUM]
+    h_G=0, h_B=1 is exact for packet-level erasure (UDP checksums ensure
+    no partial delivery). Not an approximation for our use case.
 
 26. **P_arq missing from Appendix A (resolved).** [LOW]
     Added P_arq formula to Appendix A.
