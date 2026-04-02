@@ -832,19 +832,50 @@ function's correction symbols recover it before the cutoff T_cut:
      Probability: e x (1 - P_fec) x (1 - P_arq)
 ```
 
-Where P_arq = probability that a retransmitted correction symbol succeeds
-within the cutoff. When ρ = 100% (T_cut = infinity), P_arq = 1 and outcome 3
-never occurs.
+**P_arq** is the probability that ARQ retransmission succeeds, given that
+FEC failed to recover the symbol. It is a conditional probability in this
+chain:
+
+```
+    Symbol sent
+      |
+      +-- (1-e): arrives directly          -> delivered (on-time)
+      |
+      +-- e: lost on the channel
+           |
+           +-- P_fec: FEC recovers it      -> delivered (on-time)
+           |
+           +-- (1-P_fec): FEC failed
+                |
+                +-- P_arq: ARQ succeeds    -> delivered (late, L_arq)
+                |
+                +-- (1-P_arq): ARQ fails   -> permanently lost
+```
+
+P_arq is derived from the reliability target ρ, not computed independently:
+
+```
+    P(lost) = e x (1 - P_fec) x (1 - P_arq) = 1 - ρ
+
+    Solving: P_arq = 1 - (1-ρ) / (e x (1-P_fec))
+```
+
+For ρ = 100%: P_arq = 1. We keep retransmitting until ACK (T_cut = infinity),
+so ARQ eventually succeeds. FEC is still active — it handles most recoveries
+fast. ARQ is the backstop for what FEC misses.
+
+For ρ < 100%: P_arq < 1. We stop retransmitting at T_cut. Symbols not
+recovered by then are permanently lost.
 
 The full delivery distribution:
 
 ```
-   P(on-time delivery) = (1 - e) + e x P_fec           not lost, or FEC
-   P(late delivery)    = e x (1 - P_fec) x P_arq       ARQ retransmit
-   P(permanent loss)   = e x (1 - P_fec) x (1 - P_arq) not recovered
+    P(on-time delivery) = (1 - e) + e x P_fec           not lost, or FEC
+    P(late delivery)    = e x (1 - P_fec) x P_arq       ARQ retransmit
+    P(permanent loss)   = e x (1 - P_fec) x (1 - P_arq) not recovered
 
-   Reliability: p = 1 - P(permanent loss)
-   Tail latency: d = P(late delivery) / p               among delivered symbols
+    Reliability: ρ = 1 - P(permanent loss)
+    Tail latency: δ = P(late delivery) / ρ               among delivered symbols
 ```
 
 ### 3.12 The Triangle in Action
@@ -1207,7 +1238,12 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 
 **Output:** A* (optimal taper amplitude), r* = A*/q (optimal correction rate)
 
-### 6.2 FEC Recovery Probability
+### 6.2 FEC Recovery Probability (preliminary — superseded by Section 6.6)
+
+*Note: Sections 6.2-6.5 develop a preliminary Poisson model that gives
+unrealistic results. The model is superseded by the corrected Binomial
+model in Section 6.6. The preliminary derivation is kept to show why the
+simpler per-symbol approach fails and motivate the per-window model.*
 
 Consider a symbol lost at position 0. Correction symbols generated at offsets
 t = 0, 1, 2, ... each have:
@@ -1236,7 +1272,7 @@ overhead, see Section 7). Simplified to needing at least 1:
    P_fec(A, q) = 1 - P(Poisson(R) = 0) = 1 - e^{-R}
 ```
 
-### 6.3 Solving for A*
+### 6.3 Solving for A* (preliminary)
 
 Substituting into the constraint:
 
@@ -1258,7 +1294,7 @@ Using R ≈ A × (1-ε) / q:
    r* = A*/q = ln(e/δ) / (1-e)
 ```
 
-### 6.4 The Optimal Correction Rate Formula
+### 6.4 The Optimal Correction Rate Formula (preliminary — see 6.8)
 
 ```
   ┌───────────────────────────────────────────┐
@@ -1334,7 +1370,7 @@ repair symbols in a window of W, and each survives independently with
 probability (1-e). This is a Binomial process, not Poisson. The corrected
 model in Section 6.6 uses the Binomial/Normal approximation instead.
 
-### 6.6 Corrected Model
+### 6.6 Corrected Model (canonical)
 
 Let's reconsider. The taper generates correction symbols at known positions. For a
 window of size W, the taper generates exactly r × W correction symbols total. The
@@ -2202,6 +2238,7 @@ the same interpolated objective as source scheduling (Section 11.8).
      P(on-time)   = (1-e) + e × P_fec                               [probability]
      P(late)      = e × (1-P_fec) × P_arq                           [probability]
      P(lost)      = e × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
+     P_arq = 1 - (1-rho) / (e x (1-P_fec))              [probability]
 
    Recovery latency (Section 3.4):
      t_sym = symbol_size / throughput     symbol transmission time   [seconds]
@@ -2556,10 +2593,15 @@ Preserved here for future reference if extreme burst scenarios require it.
    signals back-pressure. Copa is preferred over BBR: no ProbeRTT, no FEC
    protection gaps, simpler formula, taper-compatible.
 
-4. **Normal approximation validity:** Even with the burst variance correction
-   (σ²_burst), the normal approximation to the loss count may be inaccurate
-   for small windows or very bursty channels. Could we use the exact GE
-   distribution (computable from the transition matrix) for higher precision?
+4. **Normal approximation validity (resolved).** The normal approximation
+   uses the EXACT mean (We) and EXACT variance (We(1-e)s2_burst) from the
+   GE model — only the distribution SHAPE is approximated as a bell curve.
+   For W >> B (all practical scenarios: W=50, B=2-3), the CLT makes this
+   accurate. For edge cases (W close to B), the exact GE tail probability is
+   computable via transfer matrix dynamic programming in O(W^2) — trivially
+   cheap (2500 operations for W=50). The normal formula provides analytical
+   insight (clean, closed-form); the exact computation is recommended for
+   implementation and validation.
 
 5. **Optimal retransmit timing (resolved):** Replaced by the P_lost(t) model
    (Section 3.4). No hard timeout — the repair/retransmit mix is determined
@@ -2581,15 +2623,14 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
    normal with SRTT and RTTVAR gives P(RTT > t) = 1 - Phi((t-SRTT)/RTTVAR).
    Needs one sentence.
 
-7. **P_arq never defined.** (Section 3.11, 6.10, Appendix A) [MEDIUM]
-   Used in delivery outcome formulas but never derived. P_arq = probability
-   that a retransmitted correction succeeds within T_cut. Depends on loss
-   rate of the retransmit path, number of retransmit attempts within T_cut.
+7. **P_arq never defined (resolved).** (Section 3.11, 6.10, Appendix A) [MEDIUM]
+   Derived from reliability target:
+   P_arq = 1 - (1-rho)/(e x (1-P_fec)). See Section 3.11.
 
-8. **P_fec: two contradictory models.** (Section 6.2 vs 6.6) [MEDIUM]
-   Section 6.2 says "need at least 1 repair." Section 6.6 says "need k
-   repairs for k losses." The corrected model (6.6+) is canonical but the
-   Poisson model (6.2-6.4) should be explicitly marked as superseded.
+8. **P_fec: two contradictory models (resolved).** (Section 6.2 vs 6.6) [MEDIUM]
+   Sections 6.2-6.5 marked as preliminary (Poisson,
+   superseded). Section 6.6 marked as canonical (Binomial/Normal). Progression
+   preserved to show why per-symbol model fails.
 
 9. **Poisson model error not characterized (resolved).** (Section 6.5) [LOW]
    The transition from Poisson (6.4) to corrected (6.6) says "too
@@ -2674,8 +2715,8 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     Error grows when real h_G > 0 or h_B < 1. Sensitivity analysis would
     quantify this but is not critical for the model's validity.
 
-26. **P_arq missing from Appendix A.** [LOW]
-    Add once P_arq is defined (see item 7).
+26. **P_arq missing from Appendix A (resolved).** [LOW]
+    Added P_arq formula to Appendix A.
 
 ---
 
