@@ -149,6 +149,24 @@ model. In the simplified model: Good = no loss, Bad = total loss. Transition
 probabilities p (Good->Bad) and q (Bad->Good) determine burst behavior.
 See Section 2.
 
+**P_lost(t)** — probability that a specific symbol was lost, given no ACK
+received after time t. The per-slot mixing probability for repair vs
+retransmit. See Section 3.4.
+
+**P_fec** — probability that a lost symbol is recovered by FEC (proactive
+correction) before ARQ retransmit kicks in. See Section 6.6.
+
+**P_arq** — probability that ARQ retransmit succeeds, given FEC failed.
+Derived from reliability target: P_arq = 1-(1-ρ)/(ε×(1-P_fec)).
+See Section 3.11.
+
+**z_delta** — standard normal quantile at probability (1-δ). Controls the
+tail margin in the repair rate formula. See Section 6.8.
+
+**σ²_burst (s2_burst)** — burst variance inflation factor for the GE
+channel: 1+2(1-p-q)/(p+q). Corrects the iid normal approximation for
+burst-correlated losses. See Section 6.7.
+
 ### 1.4 The Bandwidth / Latency / Reliability Triangle
 
 Three properties are linked by the channel. Fix any two, the third is determined:
@@ -270,7 +288,7 @@ Stationary state probabilities:
 Average loss rate:
 
 ```
-   e = π_B × h_B + π_G × h_G = π_B = p / (p + q)
+   e = π_B x h_B + π_G x h_G = π_B = p / (p + q)
 ```
 
 ### 2.3 Burst Length Distribution
@@ -279,7 +297,7 @@ Given we just entered the Bad state, the burst length T follows a geometric
 distribution:
 
 ```
-   P(T = t) = q × (1-q)^(t-1)        for t = 1, 2, 3, ...
+   P(T = t) = q x (1-q)^(t-1)        for t = 1, 2, 3, ...
 
    P(T ≥ t) = (1-q)^(t-1)            survival function
 
@@ -1022,13 +1040,13 @@ This is correct — every position is equally likely to need correction.
 The total correction rate (correction symbols per source symbol) is:
 
 ```
-   r = Σ_{t=0}^{∞} τ(t) = A × Σ_{t=0}^{∞} (1-q)^t = A / q
+   r = Σ_{t=0}^{∞} τ(t) = A x Σ_{t=0}^{∞} (1-q)^t = A / q
 ```
 
 Since 0 < q ≤ 1, this geometric series converges. Therefore:
 
 ```
-   A = r × q
+   A = r x q
 ```
 
 The amplitude is uniquely determined by the correction rate and the GE parameter.
@@ -1042,9 +1060,9 @@ was lost, so we should continue generating (increasingly rare) correction covera
 
 ```
   t = 0:    τ(0) = A                        peak correction density
-  t = B:    τ(B) = A × e^{-1} ≈ 0.37 × A   one mean burst length
-  t = 2B:   τ(2B) = A × e^{-2} ≈ 0.14 × A  two mean burst lengths
-  t = 5B:   τ(5B) = A × e^{-5} ≈ 0.007 × A five mean burst lengths
+  t = B:    τ(B) = A x e^{-1} ≈ 0.37 x A   one mean burst length
+  t = 2B:   τ(2B) = A x e^{-2} ≈ 0.14 x A  two mean burst lengths
+  t = 5B:   τ(5B) = A x e^{-5} ≈ 0.007 x A five mean burst lengths
   t → ∞:    τ(t) → 0                        but never zero
 ```
 
@@ -1103,7 +1121,7 @@ or any SACK range are presumed lost after T_retx has elapsed.
 Exponentially Weighted Moving Average of the loss rate:
 
 ```
-   e_hat_ewma(n) = α × (lost/sent) + (1-α) × e_hat_ewma(n-1)
+   e_hat_ewma(n) = α x (lost/sent) + (1-α) x e_hat_ewma(n-1)
 
    α = 0.1 → approximately 10-sample half-life
 ```
@@ -1121,8 +1139,8 @@ The Beta distribution is the conjugate prior for Binomial observations:
 
 ```
    Prior:     Beta(a, b)        (a = received, b = lost)
-   Update:    a' = a × decay + received
-              b' = b × decay + lost
+   Update:    a' = a x decay + received
+              b' = b x decay + lost
    Posterior: Beta(a', b')
 
    Mean loss rate:  b' / (a' + b')
@@ -1171,7 +1189,7 @@ For each run length, BOCD maintains Beta-Binomial sufficient statistics.
 The predictive quantile integrates over all possible run lengths:
 
 ```
-   P̂_upper(confidence) = Σ_r P(r_t = r | data) × beta_quantile(stats_r, confidence)
+   P̂_upper(confidence) = Σ_r P(r_t = r | data) x beta_quantile(stats_r, confidence)
 ```
 
 **Key properties:**
@@ -1260,9 +1278,9 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 ```
    minimize:    r = A/q                     (correction rate = bandwidth cost)
 
-   subject to:  e × (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
+   subject to:  e x (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
 
-   where:       τ(t) = A × (1-q)^t          (taper function)
+   where:       τ(t) = A x (1-q)^t          (taper function)
                 P_fec depends on A, q, e, W  (FEC recovery probability)
 ```
 
@@ -1285,15 +1303,15 @@ t = 0, 1, 2, ... each have:
 The expected number of correction symbols covering the lost position that arrive:
 
 ```
-   R(A, q) = Σ_{t=0}^{W-1} τ(t) × (1-e)
-           = A × (1-e) × Σ_{t=0}^{W-1} (1-q)^t
-           = A × (1-e) × (1 - (1-q)^W) / q
+   R(A, q) = Σ_{t=0}^{W-1} τ(t) x (1-e)
+           = A x (1-e) x Σ_{t=0}^{W-1} (1-q)^t
+           = A x (1-e) x (1 - (1-q)^W) / q
 ```
 
 For large W (window much larger than burst length): (1-q)^W ≈ 0, so:
 
 ```
-   R(A, q) ≈ A × (1-e) / q = r × (1-e)
+   R(A, q) ≈ A x (1-e) / q = r x (1-e)
 ```
 
 **Recovery model:** The number of useful correction symbols arriving is approximately
@@ -1309,8 +1327,8 @@ overhead, see Section 7). Simplified to needing at least 1:
 Substituting into the constraint:
 
 ```
-   e × (1 - P_fec) ≤ δ
-   e × e^{-R} ≤ δ
+   e x (1 - P_fec) ≤ δ
+   e x e^{-R} ≤ δ
    e^{-R} ≤ δ/e
    -R ≤ ln(δ/e)
    R ≥ ln(e/δ)                    (note: e > δ, so ln(e/δ) > 0)
@@ -1319,9 +1337,9 @@ Substituting into the constraint:
 Using R ≈ A × (1-ε) / q:
 
 ```
-   A × (1-e) / q ≥ ln(e/δ)
+   A x (1-e) / q ≥ ln(e/δ)
 
-   A* = q × ln(e/δ) / (1-e)
+   A* = q x ln(e/δ) / (1-e)
 
    r* = A*/q = ln(e/δ) / (1-e)
 ```
@@ -1350,12 +1368,12 @@ Using R ≈ A × (1-ε) / q:
 
 The **taper amplitude** is:
 ```
-   A* = r* × q = q × ln(e/δ) / (1-e)
+   A* = r* x q = q x ln(e/δ) / (1-e)
 ```
 
 And the **complete taper function** is:
 ```
-   τ*(t) = A* × (1-q)^t = q × ln(e/δ) / (1-e) × (1-q)^t
+   τ*(t) = A* x (1-q)^t = q x ln(e/δ) / (1-e) x (1-q)^t
 ```
 
 ### 6.5 Comparison with Information-Theoretic Minimum
@@ -1380,7 +1398,7 @@ too. The (1-ε) denominator IS this geometric series. See also Section 11.4.
 Our optimal rate:
 
 ```
-   r* = ln(e/δ) / (1-e) = r_IT × ln(e/δ) / e = r_IT × ln(1/δ)/e + r_IT × ln(e)/e
+   r* = ln(e/δ) / (1-e) = r_IT x ln(e/δ) / e = r_IT x ln(1/δ)/e + r_IT x ln(e)/e
 ```
 
 The ratio r*/r_IT = ln(ε/δ)/ε. This is the **unavoidable overhead** of
@@ -1420,7 +1438,7 @@ Number of correction symbols generated while s is in the window:
 
 Of these, each survives independently with probability (1-ε). Expected arrivals:
 ```
-   R = N_correction × (1-e) = (A/q) × (1-(1-q)^W) × (1-e)
+   R = N_correction x (1-e) = (A/q) x (1-(1-q)^W) x (1-e)
 ```
 
 For the decoder to recover s, we need at least 1 linearly independent repair
@@ -1459,10 +1477,29 @@ This requires the δ-quantile of repairs to exceed the (1-δ)-quantile of losses
 The algebra gives:
 
 ```
-   r ≥ e/(1-e) + z_δ × √(e/(W(1-e)))
+   r ≥ e/(1-e) + z_δ x √(e/(W(1-e)))
 ```
 
 where z_δ is the standard normal quantile [Abramowitz1964] for probability δ.
+
+**The explicit P_fec formula.** Given correction rate r, loss rate e,
+burst variance s2_burst, and window size W:
+
+    Losses in window:      K ~ Normal(We, We(1-e)s2_burst)
+    Surviving corrections: C ~ Normal(rW(1-e), rWe(1-e))
+
+    P_fec = P(C >= K) = Phi(z)
+
+    where z = sqrt(W) x (r(1-e) - e) / sqrt(e(1-e)(r + s2_burst))
+
+At the IT minimum (r = e/(1-e)): z = 0, P_fec = 0.5 (coin flip — half the
+time corrections suffice, half the time they don't). The margin term in
+Section 6.8's r* pushes z positive, giving P_fec > 0.5.
+
+**Note:** The r* formula from Section 6.8 is a first-order approximation
+of inverting this P_fec formula. It drops r from the variance denominator
+(assumes r << s2_burst). For practical r values (0.05-0.25) this is
+accurate. For exact computation, invert the P_fec formula numerically.
 
 ### 6.7 Burst Variance Correction
 
@@ -1473,9 +1510,9 @@ The GE autocorrelation decays with eigenvalue (1-p-q). The variance of losses
 in a window of size W is:
 
 ```
-   Var_iid(K) = W × e × (1-e)                    (independent losses)
+   Var_iid(K) = W x e x (1-e)                    (independent losses)
 
-   Var_GE(K)  = W × e × (1-e) × σ²_burst         (burst-correlated losses)
+   Var_GE(K)  = W x e x (1-e) x σ²_burst         (burst-correlated losses)
 
    σ²_burst = 1 + 2(1-p-q)/(p+q)                  (variance inflation factor)
 ```
@@ -1521,23 +1558,23 @@ The margin term is: `z_δ × √(ε × σ²_burst / (W × (1-ε)))`
 
 **DC (ε=0.001, W=50, σ²_burst=3.0):**
 ```
-   Bulk (δ=1e-2):    r* = 0.001 + 2.33×√(0.001×3.0/49.95) = 0.1% + 1.8% = 1.9%
-   Auto (δ=1e-4):    r* = 0.001 + 3.72×√(0.001×3.0/49.95) = 0.1% + 2.9% = 3.0%
-   Realtime (δ=1e-6): r* = 0.001 + 4.75×√(0.001×3.0/49.95) = 0.1% + 3.7% = 3.8%
+   Bulk (δ=1e-2):    r* = 0.001 + 2.33x√(0.001x3.0/49.95) = 0.1% + 1.8% = 1.9%
+   Auto (δ=1e-4):    r* = 0.001 + 3.72x√(0.001x3.0/49.95) = 0.1% + 2.9% = 3.0%
+   Realtime (δ=1e-6): r* = 0.001 + 4.75x√(0.001x3.0/49.95) = 0.1% + 3.7% = 3.8%
 ```
 
 **WiFi (ε=0.025, W=50, σ²_burst=2.9):**
 ```
-   Bulk (δ=1e-2):    r* = 2.6% + 2.33×√(0.025×2.9/48.75) = 2.6% + 2.8% = 5.4%
-   Auto (δ=1e-4):    r* = 2.6% + 3.72×√(0.025×2.9/48.75) = 2.6% + 4.5% = 7.1%
-   Realtime (δ=1e-6): r* = 2.6% + 4.75×√(0.025×2.9/48.75) = 2.6% + 5.8% = 8.4%
+   Bulk (δ=1e-2):    r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% + 2.8% = 5.4%
+   Auto (δ=1e-4):    r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 4.5% = 7.1%
+   Realtime (δ=1e-6): r* = 2.6% + 4.75x√(0.025x2.9/48.75) = 2.6% + 5.8% = 8.4%
 ```
 
 **Satellite (ε=0.09, W=50, σ²_burst=5.1):**
 ```
-   Bulk (δ=1e-2):    r* = 9.9% + 2.33×√(0.09×5.1/45.5) = 9.9% + 7.4% = 17.3%
-   Auto (δ=1e-4):    r* = 9.9% + 3.72×√(0.09×5.1/45.5) = 9.9% + 11.8% = 21.7%
-   Realtime (δ=1e-6): r* = 9.9% + 4.75×√(0.09×5.1/45.5) = 9.9% + 15.1% = 25.0%
+   Bulk (δ=1e-2):    r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% + 7.4% = 17.3%
+   Auto (δ=1e-4):    r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 11.8% = 21.7%
+   Realtime (δ=1e-6): r* = 9.9% + 4.75x√(0.09x5.1/45.5) = 9.9% + 15.1% = 25.0%
 ```
 
 ### 6.10 Three-Variable Optimization
@@ -1550,14 +1587,14 @@ three modes of the bandwidth/latency/reliability triangle.
 When ρ < 100%, the taper is truncated at T_cut:
 
 ```
-   τ(t) = A × (1-q)^t    for t ≤ T_cut
+   τ(t) = A x (1-q)^t    for t ≤ T_cut
    τ(t) = 0               for t > T_cut
 ```
 
 Total correction rate with cutoff:
 
 ```
-   r = A × Σ_{t=0}^{T_cut} (1-q)^t = A × (1 - (1-q)^{T_cut+1}) / q
+   r = A x Σ_{t=0}^{T_cut} (1-q)^t = A x (1 - (1-q)^{T_cut+1}) / q
 ```
 
 For T_cut = ∞ (ρ = 100%): reduces to r = A/q (Section 4.3).
@@ -1570,7 +1607,7 @@ Step 1: From ρ, find T_cut. The reliability ρ = P(recovered within T_cut).
 Using the corrected model (Section 6.8):
 
 ```
-   T_cut such that: e × (1 - P_fec(T_cut)) × (1 - P_arq(T_cut)) = 1 - ρ
+   T_cut such that: e x (1 - P_fec(T_cut)) x (1 - P_arq(T_cut)) = 1 - ρ
 ```
 
 For ρ = 100%: T_cut = ∞ (no finite solution — see Section 3.12).
@@ -1581,11 +1618,11 @@ increasing in T_cut (more time = more corrections = higher recovery):
   Algorithm: find T_cut from ρ
 
   lo = 0
-  hi = W × 10                        (upper bound: many window lengths)
+  hi = W x 10                        (upper bound: many window lengths)
   while hi - lo > tolerance:
       mid = (lo + hi) / 2
-      corrections = A × (1-(1-q)^(mid+1)) / q × (1-e)
-      P_recovered = P(corrections >= losses in window)    (normal approx)
+      corrections = A x (1-(1-q)^(mid+1)) / q x (1-e)
+      P_recovered = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))    (Section 6.6)
       if P_recovered < ρ:
           lo = mid                    (need more time)
       else:
@@ -1599,7 +1636,7 @@ Typically converges in ~20 iterations (log2 of search range).
 Step 2: From δ, find A using the tail latency constraint (Section 6.8):
 
 ```
-   A* such that: e × (1 - P_fec(A*)) ≤ δ    (among delivered symbols)
+   A* such that: e x (1 - P_fec(A*)) ≤ δ    (among delivered symbols)
 ```
 
 Step 3: Compute r* = A* × (1 - (1-q)^{T_cut+1}) / q.
@@ -1613,9 +1650,9 @@ Fix bandwidth r and reliability ρ. Compute resulting tail latency δ.
 
 ```
    From ρ: find T_cut (same as Mode 1, Step 1)
-   From r and T_cut: A = r × q / (1 - (1-q)^{T_cut+1})
-   From A: P_fec = 1 - exp(-R)  where R = A(1-e)/q × (1-(1-q)^W)
-   Result: δ = e × (1 - P_fec) × P_arq / ρ
+   From r and T_cut: A = r x q / (1 - (1-q)^{T_cut+1})
+   From r and W: P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))  (Section 6.6)
+   Result: δ = e x (1 - P_fec) x P_arq / ρ
 ```
 
 #### Mode 3: Given (r, δ) → compute ρ
@@ -1623,7 +1660,7 @@ Fix bandwidth r and reliability ρ. Compute resulting tail latency δ.
 Fix bandwidth r and tail latency δ. Compute resulting reliability ρ.
 
 ```
-   From r: A = r × q / (1 - (1-q)^{T_cut+1})     (depends on T_cut)
+   From r: A = r x q / (1 - (1-q)^{T_cut+1})     (depends on T_cut)
    From δ: determine how much of the taper is "on-time" vs "late"
    From A and the taper integral: ρ = total recovery probability within T_cut
 ```
@@ -1637,11 +1674,11 @@ more corrections needed = higher r). For a given r budget:
   Algorithm: find ρ given (r, δ)
 
   lo = 0
-  hi = W × 10
+  hi = W x 10
   while hi - lo > tolerance:
       mid = (lo + hi) / 2
-      A = r × q / (1 - (1-q)^(mid+1))
-      P_fec = P(FEC recovers within min(mid, W))   (from A, e, W)
+      A = r x q / (1 - (1-q)^(mid+1))
+      P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))   (Section 6.6)
       if A produces rate > r:
           hi = mid        (T_cut too large for budget)
       else:
@@ -1661,7 +1698,7 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Fix: ρ = 100%, minimize r
    Compute: δ (tail latency)
 
-   r* = 2.6% + z_δ × 1.2%     (from Section 6.9, WiFi row)
+   r* = 2.6% + z_δ x 1.2%     (from Section 6.9, WiFi row)
 
    At minimum r = r_IT = 2.6%:  δ = e = 2.5% (every lost symbol goes to ARQ)
    Tail latency ≈ T_retx + RTT/2 for 2.5% of symbols
@@ -1693,7 +1730,7 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Compute: r (bandwidth)
 
    Need 99.9% of symbols delivered within 33ms.
-   T_cut determined by ρ = 99.9%: T_cut ≈ 3 × RTT
+   T_cut determined by ρ = 99.9%: T_cut ≈ 3 x RTT
    A determined by δ: need P(recovery within 33ms) ≥ 0.999
    r* ≈ 8.4% (close to Realtime from Section 6.9)
 ```
@@ -1705,7 +1742,7 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Compute: r (bandwidth)
 
    Very tight latency + moderate reliability → aggressive FEC
-   T_cut ≈ 2 × RTT (short: accept 1% loss)
+   T_cut ≈ 2 x RTT (short: accept 1% loss)
    r* ≈ 12% (most budget goes to proactive FEC within 20ms)
 ```
 
@@ -1756,13 +1793,13 @@ the information-theoretic minimum:
 Weighted by decoder invocation probability:
 
 ```
-   e_codec_eff = e_codec × P(decoder invoked) = e_codec × (1 - (1-e)^W)
+   e_codec_eff = e_codec x P(decoder invoked) = e_codec x (1 - (1-e)^W)
 ```
 
 The corrected correction rate becomes:
 
 ```
-   r* = (e + e_codec_eff)/(1-e) + z_δ × √((e + e_codec_eff) / (W × (1-e)))
+   r* = (e + e_codec_eff)/(1-e) + z_δ x √((e + e_codec_eff) / (W x (1-e)))
 ```
 
 ### 7.3 Impact on METTLE at DC
@@ -1817,7 +1854,7 @@ fraction. The crossover depends on the specific δ values and loss rate.
 **Decision rule:** Compare total correction bandwidth:
 ```
    shared_cost = r*(e, min(δ_c))          (one encoder, tightest δ)
-   separate_cost = Σ_c f_c × r*(e, δ_c)  (per-class, weighted by fraction f_c)
+   separate_cost = Σ_c f_c x r*(e, δ_c)  (per-class, weighted by fraction f_c)
 ```
 
 Choose whichever is lower.
@@ -1827,7 +1864,7 @@ Choose whichever is lower.
 For shared FEC with per-symbol δ, the constraint becomes:
 
 ```
-   For each class c: e × (1 - P_fec) ≤ δ_c
+   For each class c: e x (1 - P_fec) ≤ δ_c
 ```
 
 Since P_fec is the same for all symbols (shared repair), the binding constraint
@@ -1937,6 +1974,12 @@ Copa [Copa2018] because of better interaction with the taper function:
 | Lossy links | RTT-trend check to ignore random loss | Delay-based, same effect |
 | Complexity | ~300 lines, multiple edge cases | One rate formula |
 | Taper interaction | ProbeRTT creates FEC protection gap | Smooth, no gaps |
+
+**Implementation status:** Copa is recommended as the target congestion
+control algorithm. The current codebase uses BBR (ADR-0019). Migration
+to Copa is a future implementation task. The model and formulas in this
+paper are CC-agnostic — they work with any delay-based CC that provides
+a total sending rate.
 
 **The critical difference — taper compatibility:**
 
@@ -2328,13 +2371,14 @@ the same interpolated objective as source scheduling (Section 11.8).
      σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
 
    Taper function (Section 4):
-     τ*(t) = A* × (1-q)^t                optimal taper function     [corrections/symbol]
-     A* = r* × q                          taper amplitude (ρ=100%)  [corrections/symbol]
+     τ*(t) = A* x (1-q)^t                optimal taper function     [corrections/symbol]
+     A* = r* x q                          taper amplitude (ρ=100%)  [corrections/symbol]
      τ(t) = 0 for t > T_cut              taper cutoff (ρ<100%)
 
    Optimal correction rate (Section 6.8, ρ=100%):
-     r* = e_hat/(1-e_hat) + z_δ × √(e_hat × σ²_burst / (W(1-e_hat)))            [ratio]
-     where e_hat = e + e_codec × (1-(1-e)^W)  effective loss            [probability]
+     r* = e_hat/(1-e_hat) + z_δ x √(e_hat x σ²_burst / (W(1-e_hat)))            [ratio]
+     P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))    [probability]
+     where e_hat = e + e_codec x (1-(1-e)^W)  effective loss            [probability]
            z_δ = Φ⁻¹(1-δ)                  normal quantile           [dimensionless]
 
    Three-variable optimization (Section 6.10):
@@ -2343,9 +2387,9 @@ the same interpolated objective as source scheduling (Section 11.8).
      Given (r, δ) → ρ:  iterate T_cut until budget constraint met, ρ = recovery within T_cut
 
    Per-symbol delivery (Section 3.5):
-     P(on-time)   = (1-e) + e × P_fec                               [probability]
-     P(late)      = e × (1-P_fec) × P_arq                           [probability]
-     P(lost)      = e × (1-P_fec) × (1-P_arq) = 1-ρ                [probability]
+     P(on-time)   = (1-e) + e x P_fec                               [probability]
+     P(late)      = e x (1-P_fec) x P_arq                           [probability]
+     P(lost)      = e x (1-P_fec) x (1-P_arq) = 1-ρ                [probability]
      P_arq = 1 - (1-rho) / (e x (1-P_fec))              [probability]
 
    Recovery latency (Section 3.4):
@@ -2592,9 +2636,9 @@ This means the multipath taper can use a **lower amplitude** A than single-path
 for the same P_fec target. The optimal multipath taper:
 
 ```
-   τ_multi(t) = A_multi × (1-q)^t
+   τ_multi(t) = A_multi x (1-q)^t
 
-   where A_multi = A_single × (1-e) / (1-Π(e_i))
+   where A_multi = A_single x (1-e) / (1-Π(e_i))
 ```
 
 For two paths with 5% loss each: A_multi = A_single × 0.95/0.9975 ≈ 0.95 × A_single.
@@ -2623,7 +2667,7 @@ correction density that survives the worst-case DCSW pattern:
 ```
    τ_floor = B / W                    (enough to survive one full burst per window)
 
-   τ*(t) = max(A × (1-q)^t, τ_floor)  (probabilistic taper with hard floor)
+   τ*(t) = max(A x (1-q)^t, τ_floor)  (probabilistic taper with hard floor)
 ```
 
 The floor ensures that even if the GE estimator underestimates burst length,
@@ -2656,7 +2700,7 @@ IS the hard guarantee. The DCSW floor is redundant.
 **Corrected total correction rate with floor (for reference):**
 
 ```
-   r* = max(A/q, τ_floor × W) / W
+   r* = max(A/q, τ_floor x W) / W
 
    In practice: A/q dominates when loss is high (large A).
    Floor dominates when loss is low but bursts are long (large B, small e).
