@@ -2644,7 +2644,16 @@ we always have enough correction to survive at least B consecutive erasures.
     +-------------------------------------- time offset t
 ```
 
-**Corrected total correction rate with floor:**
+**Not applicable to our model.** The DCSW floor is a hard guarantee from a
+worst-case adversarial channel model. Our model already handles burst
+protection through multiple mechanisms: (1) the taper's front-loaded density
+exceeds B/W for any reasonable r*, (2) the retransmit buffer holds burst-lost
+symbols for ARQ recovery after detection, (3) cross-path diversity on
+multipath, and (4) backpressure guarantees delivery for ρ=100%. Even if a
+burst overwhelms the taper entirely, ARQ kicks in — the retransmit buffer
+IS the hard guarantee. The DCSW floor is redundant.
+
+**Corrected total correction rate with floor (for reference):**
 
 ```
    r* = max(A/q, τ_floor × W) / W
