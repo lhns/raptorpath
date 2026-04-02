@@ -2151,7 +2151,8 @@ For each path i:
 where t_recovery_i = P_fec_i x t_fec_i + (1 - P_fec_i) x L_arq_i is the
 expected recovery time on path i if the symbol is lost. t_fec_i is the FEC
 recovery time (Section 3.4) and L_arq_i is the ARQ recovery latency on
-that path.
+that path. The delay spectrum concept [Facenda2022] provides related
+per-link rate allocation theory for multi-path streaming.
 
 ### 13.6 Scheduler Ratio Adjustment
 
@@ -2348,7 +2349,7 @@ receiver explicitly reports losses.
   to detect and report them.
 
 NACK-based approaches remain useful for multicast (one sender, many receivers)
-where ACK implosion is a concern [RFC3208]. For our unicast tunnel model,
+where ACK implosion is a concern [RFC4585]. For our unicast tunnel model,
 ACK+SACK is strictly superior.
 
 ### Hybrid FEC-ARQ for Lossless Streaming
@@ -2382,7 +2383,18 @@ P_fec predictions without simulation.
 
 Very recent work [RLC_GE2025] analyzes Random Linear Codes (our RLC backend)
 specifically over GE channels, providing analytical performance characterization
-that directly applies to our system.
+that directly applies to our system. A related result [Vajha2020b] formalizes
+the sliding window approximation of the GE channel used in streaming code design.
+
+The foundational work on delay-constrained burst erasure correction
+[Martinian2004] established the theoretical framework that later streaming
+code constructions build upon. Krishnan & Ramkumar [Krishnan2020] provide the
+simplest rate-optimal streaming code construction (staggered diagonal embedding),
+demonstrating that optimal streaming codes need not be complex. Tambur
+[Rudow2023] is a production-quality implementation of streaming codes for
+videoconferencing, demonstrating 26% fewer decode failures and 35% less
+redundancy bandwidth — validating that streaming code theory translates to
+practical gains.
 
 ### Tail Latency Optimization with Proactive FEC
 
@@ -2965,6 +2977,10 @@ model in Section 8.2 uses the Binomial/Normal approximation instead.
   "RTP: A Transport Protocol for Real-Time Applications," IETF RFC 3550, 2003.
   Appendix A.8 defines the interarrival jitter calculation used in our estimator.
 
+- **[RFC6298]** V. Paxson, M. Allman, J. Chu, M. Sargent, "Computing TCP's
+  Retransmission Timer," IETF RFC 6298, 2011.
+  Standard for TCP RTO computation using SRTT and RTTVAR.
+
 - **[Abramowitz1964]** M. Abramowitz, I.A. Stegun, *Handbook of Mathematical
   Functions*, National Bureau of Standards, 1964.
   Rational approximation for the standard normal quantile (Section 26.2.23),
@@ -3082,6 +3098,17 @@ model in Section 8.2 uses the Binomial/Normal approximation instead.
   Defines SACK for TCP: receiver reports non-contiguous blocks of received
   data, allowing sender to infer exactly which segments were lost. Our
   ACK+SACK feedback mechanism adapts this proven approach.
+
+### ECN and Multicast Feedback
+
+- **[RFC3168]** K. Ramakrishnan, S. Floyd, D. Black, "The Addition of Explicit
+  Congestion Notification (ECN) to IP," IETF RFC 3168, 2001.
+  ECN mechanism for router-signaled congestion without packet drops.
+
+- **[RFC4585]** J. Ott, S. Wenger, N. Sato, C. Burmeister, J. Rey, "Extended
+  RTP Profile for RTCP-Based Feedback," IETF RFC 4585, 2006.
+  RTCP NACK-based feedback for RTP multicast — the multicast feedback
+  mechanism where ACK implosion is relevant.
 
 ### Sliding Window Channel Models
 
