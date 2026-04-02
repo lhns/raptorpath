@@ -69,41 +69,7 @@ ACK absence.
 
 ## 1. System Model
 
-### 1.1 Components
-
-```
- Sender                       Channel                      Receiver
-┌───────────┐              ┌───────────┐              ┌───────────┐
-│ Source    ├─ source ────►│           ├─ surviving ─►│ Decode    │
-│ packets   │   syms       │  Erasure  │              │           │
-│           ├─ correction ►│  Channel  ├─ surviving ─►│ FEC       │
-│ Taper     │   symbols    │  (GE)     │              │ Decoder   │
-│ Function  │              │           │              │           │
-│           │◄─ ACK+SACK ─┤           │◄─ ACK+SACK ─┤ Gap       │
-│ Retransmit│              │           │              │ Detect +  │
-│ Buffer    │              │           │              │ SACK      │
-└───────────┘              └───────────┘              └───────────┘
-```
-
-The system provides **reliable** delivery. Three properties form a triangle —
-bandwidth, tail latency, and reliability. Fix any two, the third is determined
-by the channel. The protocol hint selects which two to fix.
-
-One unified mechanism — **correction symbols** — handles both proactive and
-reactive recovery. The taper function controls correction symbol density, and
-each correction slot either retransmits an exact source symbol from the
-retransmit buffer (preferred, if old enough) or generates a random repair
-symbol (FEC fallback):
-
-| Aspect         | Correction Symbol (retransmit) | Correction Symbol (FEC repair) |
-|----------------|-------------------------------|-------------------------------|
-| When chosen    | With probability P_lost(t) | With probability 1-P_lost(t) |
-| Content        | Exact copy of source symbol   | Random linear combination      |
-| Decode cost    | Zero (immediate use)          | Needs FEC decoder              |
-| Bandwidth cost | Same (one symbol slot)        | Same (one symbol slot)         |
-| Latency cost   | Depends on when P_lost triggers | Zero additional (arrives with source) |
-
-### 1.2 Notation
+### 1.1 Notation
 
 | Symbol | Meaning | Unit | Example |
 |--------|---------|------|---------|
@@ -134,7 +100,7 @@ symbol (FEC fallback):
 | ε_burst | Current channel loss rate (fast EWMA or GE state, optional — see C.6) | probability (0-1) | 0.5 (during burst) |
 | ε_codec | Codec decode overhead | ratio (0-1) | 0.01 (RaptorQ) |
 
-### 1.3 Glossary
+### 1.2 Glossary
 
 **Correction symbol** — any symbol sent to recover lost data. Either a source
 retransmit (exact copy, immediate decode) or a repair symbol (FEC linear
@@ -192,6 +158,40 @@ tail margin in the repair rate formula. See Section 8.4.
 **σ²_burst (s2_burst)** — burst variance inflation factor for the GE
 channel: 1+2(1-p-q)/(p+q). Corrects the iid normal approximation for
 burst-correlated losses. See Section 8.3.
+
+### 1.3 Components
+
+```
+ Sender                       Channel                      Receiver
+┌───────────┐              ┌───────────┐              ┌───────────┐
+│ Source    ├─ source ────►│           ├─ surviving ─►│ Decode    │
+│ packets   │   syms       │  Erasure  │              │           │
+│           ├─ correction ►│  Channel  ├─ surviving ─►│ FEC       │
+│ Taper     │   symbols    │  (GE)     │              │ Decoder   │
+│ Function  │              │           │              │           │
+│           │◄─ ACK+SACK ─┤           │◄─ ACK+SACK ─┤ Gap       │
+│ Retransmit│              │           │              │ Detect +  │
+│ Buffer    │              │           │              │ SACK      │
+└───────────┘              └───────────┘              └───────────┘
+```
+
+The system provides **reliable** delivery. Three properties form a triangle —
+bandwidth, tail latency, and reliability. Fix any two, the third is determined
+by the channel. The protocol hint selects which two to fix.
+
+One unified mechanism — **correction symbols** — handles both proactive and
+reactive recovery. The taper function controls correction symbol density, and
+each correction slot either retransmits an exact source symbol from the
+retransmit buffer (preferred, if old enough) or generates a random repair
+symbol (FEC fallback):
+
+| Aspect         | Correction Symbol (retransmit) | Correction Symbol (FEC repair) |
+|----------------|-------------------------------|-------------------------------|
+| When chosen    | With probability P_lost(t) | With probability 1-P_lost(t) |
+| Content        | Exact copy of source symbol   | Random linear combination      |
+| Decode cost    | Zero (immediate use)          | Needs FEC decoder              |
+| Bandwidth cost | Same (one symbol slot)        | Same (one symbol slot)         |
+| Latency cost   | Depends on when P_lost triggers | Zero additional (arrives with source) |
 
 ### 1.4 The Bandwidth / Latency / Reliability Triangle
 
@@ -730,7 +730,7 @@ produces these automatically — no separate three-way optimization needed.
 
 ### 4.4 Per-Slot Decision
 
-When the taper function decides to generate a correction symbol, the sender
+When the taper function (defined in Section 6) decides to generate a correction symbol, the sender
 makes a probabilistic choice based on P_lost(t) for the oldest un-ACKed
 symbol in the retransmit buffer:
 
@@ -811,7 +811,7 @@ bounds what ARQ retransmit can cover. They serve different purposes:
 
 Two independent mechanisms manage the buffer:
 
-**Age eviction (T_cut):** Symbols older than T_cut are evicted from the
+**Age eviction (T_cut):** Symbols older than T_cut (derived from the reliability target ρ in Section 8.6) are evicted from the
 buffer — accepted as permanently lost. T_cut is derived from the triangle
 optimization (Section 8.6): for reliability target ρ, T_cut is the time
 where P(not recovered) = 1-ρ. When ρ = 100%, the equation has no finite
@@ -1402,6 +1402,11 @@ Section 8.4's r* pushes z positive, giving P_fec > 0.5.
 of inverting this P_fec formula. It drops r from the variance denominator
 (assumes r << s2_burst). For practical r values (0.05-0.25) this is
 accurate. For exact computation, invert the P_fec formula numerically.
+
+This normal approximation is valid when W >> B (window much larger than mean
+burst) — which covers all practical scenarios (W=50, B=2-3). For edge cases
+where W ≈ B, the exact GE distribution is computable via transfer matrix
+dynamic programming in O(W^2). See Appendix D item 4.
 
 ### 8.3 Burst Variance Correction
 
