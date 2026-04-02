@@ -2155,10 +2155,22 @@ retransmit it:
 Cross-path diversity: P(both fail) = e_A x e_j. For e_A=0.10, e_j=0.02:
 P(both fail) = 0.002 — 50x improvement over single-path.
 
-**Path selection:** For cross-path retransmit, choose the path j with the
-highest (1 - e_burst_j) among paths with available Copa capacity. This
-greedy choice sends the retransmit on the most reliable currently-available
-path. Ties are broken by lowest RTT_j (fastest delivery).
+**No explicit path routing needed.** Cross-path retransmit emerges from the
+shared buffer. Each path independently generates correction symbols from its
+taper. When a correction slot produces a retransmit (via P_lost), it pulls
+from the shared buffer — which may contain symbols from any path. P_lost
+uses per-path ε, so symbols from lossier paths have higher P_lost and are
+retransmitted first.
+
+**Work-stealing analogy.** Paths with spare Copa capacity (typically low-loss
+paths whose tapers need fewer corrections) have room to pull retransmits
+from the shared pool — like idle threads stealing work. High-loss paths are
+busy with their own corrections. This naturally routes retransmits through
+reliable paths without explicit selection.
+
+**Potential refinement:** For latency-sensitive traffic, weighting retransmit
+pulls toward the lowest-RTT path would reduce recovery time. This follows
+the same interpolated objective as source scheduling (Section 11.8).
 
 ---
 
@@ -2639,8 +2651,10 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
     ratio. The three options and floor discussion were removed.
 
 21. **Cross-path retransmit path selection (resolved).** (Section 11.10) [LOW]
-    Path with lowest ε_burst and available capacity. Greedy selection.
-    Already implied by P_retx formula (highest (1-ε_burst) wins).
+    No explicit path selection needed. Cross-path retransmit emerges from
+    shared buffer + per-path P_lost. Paths with spare capacity naturally
+    pull retransmits (work-stealing). Weighted path preference for
+    latency-sensitive traffic noted as potential refinement.
 
 **Minor (notation, justification):**
 
