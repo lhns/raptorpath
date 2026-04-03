@@ -236,7 +236,7 @@ burst-correlated losses. See Section 8.3.
 │           ├─ correction ►│  Channel  ├─ surviving ─►│ FEC       │
 │ Taper     │   symbols    │  (GE)     │              │ Decoder   │
 │ Function  │              │           │              │           │
-│           │◄─ ACK+SACK ─┤           │◄─ ACK+SACK ─┤ Gap       │
+│           │◄─ ACK+SACK ──┤           │◄─ ACK+SACK ──┤ Gap       │
 │ Retransmit│              │           │              │ Detect +  │
 │ Buffer    │              │           │              │ SACK      │
 └───────────┘              └───────────┘              └───────────┘
@@ -268,14 +268,14 @@ Three properties are linked by the channel. Fix any two, the third is determined
               Bandwidth (r)
               correction symbols
               per source symbol
-                   /\
-                  /  \
+                   / \
+                  /   \
                  / FIX \
-                / any 2  \
-               / compute  \
-              /   the 3rd  \
-             /              \
-            /________________\
+                / any 2 \
+               / compute \
+              /  the 3rd  \
+             /             \
+            /_______________\
   Tail latency (δ)      Reliability (ρ)
   P(late delivery)      P(symbol delivered)
 ```
@@ -298,10 +298,10 @@ The protocol hint selects the mode and constraints:
 │ properties to fix    │    │ compute the    │    │ property       │
 │                      │    │ third via      │    │                │
 │ Constraint values    ├───►│ the taper      ├───►│ τ*(t) = opt.   │
-│ (δ, ρ, or r)        │    │ function       │    │ taper func     │
+│ (δ, ρ, or r)         │    │ function       │    │ taper func     │
 │                      │    │                │    │                │
 │ Channel observations ├───►│                │    │ T_cut = taper  │
-│ (e, p, q, RTT)      │    │                │    │ cutoff time    │
+│ (e, p, q, RTT)       │    │                │    │ cutoff time    │
 └──────────────────────┘    └────────────────┘    └────────────────┘
 ```
 
@@ -347,7 +347,7 @@ The channel alternates between Good (low loss) and Bad (high loss) states
    |   |<------|   |
    +---+   q   +---+
      |           |
-     '---. .---'
+     '---. .-----'
       1-p   1-q
       (self-loops)
 
@@ -445,7 +445,7 @@ which source symbols are available for generating repair:
   Encoder window (W = 5 symbols):
 
   sent:   [S1] [S2] [S3] [S4] [S5] [S6] [S7] [S8] ...
-                     |----- window -----|
+                     |----- window ------|
                      S3  S4  S5  S6  S7
 
   As new symbols arrive, old ones are evicted from the left.
@@ -534,9 +534,9 @@ messages) adds detection delay and is fragile when the reverse path is lossy.
                                    "got up to S2,
                                     SACK: S4,S5"
             |                           |             |
-            |<----- T_retx ----------->|<-- RTT/2 -->|
+            |<----- T_retx ------------>|<-- RTT/2 -->|
             |   (sender waits for       | (one-way    |
-            |    ACK, then times out)   |  propagation)|
+            |    ACK, then times out)   | propagation)|
 ```
 
 The sender sent S3 at time 0. After T_retx (roughly one RTT, enough time for
@@ -670,7 +670,7 @@ faster than ARQ recovery (waiting for P_lost to rise + RTT/2):
   Time ---------------------------------------------------------->
   t=0          t_fec                                    retransmit
   |             |                                       arrives
-  S3 lost       FEC decodes      P_lost rises,          |
+  S3 lost       FEC decodes      P_lost rises,           |
                 (if enough       retransmit chosen       |
                  repairs         in correction slots     |
                  arrived)                                |
@@ -746,9 +746,9 @@ reliability triangle:
 ```
   Stream         | Latency       | Bandwidth     | Reliability
   ---------------+---------------+---------------+--------------
-  Source          | ++ immediate  | neutral       | neutral
+  Source         | ++ immediate  | neutral       | neutral
   Repair (FEC)   | - decoder     | + (no waste   | ++ (covers
-                 |   wait        |   if taper     |    any loss)
+                 |   wait        |   if taper    |    any loss)
                  |               |   matched)    |
   Retransmit     | + immediate   | - (duplicate  | + (targeted
   (ARQ)          |   decode      |   risk)       |    recovery)
@@ -814,7 +814,7 @@ symbol in the retransmit buffer:
   |   -> Retransmit exact source              |
   |      (immediate decode at receiver)       |
   |                                           |
-  | With probability 1 - P_retx:             |
+  | With probability 1 - P_retx:              |
   |   -> Generate random repair symbol        |
   |      (FEC, covers any loss in window)     |
   +-------------------------------------------+
@@ -928,11 +928,11 @@ link speed, ACK traffic is approximately 0.6% of the data rate — negligible.
 
 ```
   +-----------------------------------------------------------+
-  | cumulative_ack:       u64    all seqs <= this received     |
-  | sack_ranges:          [(u64,u64)]  additional ranges       |
-  | echo_timestamp:       u64    sender's timestamp            |
-  | jitter_us:            u32    interarrival jitter (us)      |
-  | cumulative_received:  u64    total symbols received        |
+  | cumulative_ack:       u64    all seqs <= this received    |
+  | sack_ranges:          [(u64,u64)]  additional ranges      |
+  | echo_timestamp:       u64    sender's timestamp           |
+  | jitter_us:            u32    interarrival jitter (us)     |
+  | cumulative_received:  u64    total symbols received       |
   +-----------------------------------------------------------+
 ```
 
@@ -1045,12 +1045,12 @@ cost of reliability.
              all symbols eventually delivered
 
   p = 98%:   ----------------+
-             98% delivered    | T_cut
-             2% lost          +-- (taper stops, accept loss)
+             98% delivered   | T_cut
+             2% lost         +-- (taper stops, accept loss)
 
   p = 95%:   ----------+
-             95%        | T_cut (shorter)
-             5% lost    +-- accept loss (sensor/VoIP)
+             95%       | T_cut (shorter)
+             5% lost   +-- accept loss (sensor/VoIP)
 ```
 
 ### 5.5 Four-Mechanism Composition
@@ -1312,7 +1312,7 @@ The GE estimator tracks transition counts with exponential decay:
    Estimated parameters:
      p̂ = g_to_b / (g_to_g + g_to_b)         P(Good → Bad)
      q̂ = b_to_g / (b_to_g + b_to_b)         P(Bad → Good)
-     B̂ = 1/q̂                                mean burst length
+     B̂ = 1/q̂                               mean burst length
 ```
 
 **Initialization:** All transition counters start at zero, initial state
@@ -1377,11 +1377,11 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 ### 8.1 Formal Statement
 
 ```
-   minimize:    r = A/q                     (correction rate = bandwidth cost)
+   minimize:    r = A/q                      (correction rate = bandwidth cost)
 
-   subject to:  e x (1 - P_fec(A, q)) ≤ δ  (tail latency constraint)
+   subject to:  e x (1 - P_fec(A, q)) ≤ δ    (tail latency constraint)
 
-   where:       τ(t) = A x (1-q)^t          (taper function)
+   where:       τ(t) = A x (1-q)^t           (taper function)
                 P_fec depends on A, q, e, W  (FEC recovery probability)
 ```
 
@@ -1504,9 +1504,9 @@ We compute σ²_burst directly from the GE estimator's p̂ and q̂.
 
 ```
   r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))
-       '--v--'   '--------------v-----------------'
-    IT minimum             tail margin
-                 (accounts for burst correlation)
+       '--v--'   '------------------v---------------------'
+    IT minimum                 tail margin
+                     (accounts for burst correlation)
 
   s2_burst = 1 + 2(1-p-q)/(p+q)
 
@@ -1532,22 +1532,22 @@ The margin term is: `z_δ × √(ε × σ²_burst / (W × (1-ε)))`
 
 **DC (ε=0.001, W=50, σ²_burst=3.0):**
 ```
-   Bulk (δ=1e-2):    r* = 0.001 + 2.33x√(0.001x3.0/49.95) = 0.1% + 1.8% = 1.9%
-   Auto (δ=1e-4):    r* = 0.001 + 3.72x√(0.001x3.0/49.95) = 0.1% + 2.9% = 3.0%
+   Bulk (δ=1e-2):     r* = 0.001 + 2.33x√(0.001x3.0/49.95) = 0.1% + 1.8% = 1.9%
+   Auto (δ=1e-4):     r* = 0.001 + 3.72x√(0.001x3.0/49.95) = 0.1% + 2.9% = 3.0%
    Realtime (δ=1e-6): r* = 0.001 + 4.75x√(0.001x3.0/49.95) = 0.1% + 3.7% = 3.8%
 ```
 
 **WiFi (ε=0.025, W=50, σ²_burst=2.9):**
 ```
-   Bulk (δ=1e-2):    r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% + 2.8% = 5.4%
-   Auto (δ=1e-4):    r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 4.5% = 7.1%
+   Bulk (δ=1e-2):     r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% + 2.8% = 5.4%
+   Auto (δ=1e-4):     r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 4.5% = 7.1%
    Realtime (δ=1e-6): r* = 2.6% + 4.75x√(0.025x2.9/48.75) = 2.6% + 5.8% = 8.4%
 ```
 
 **Satellite (ε=0.09, W=50, σ²_burst=5.1):**
 ```
-   Bulk (δ=1e-2):    r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% + 7.4% = 17.3%
-   Auto (δ=1e-4):    r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 11.8% = 21.7%
+   Bulk (δ=1e-2):     r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% +  7.4% = 17.3%
+   Auto (δ=1e-4):     r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 11.8% = 21.7%
    Realtime (δ=1e-6): r* = 9.9% + 4.75x√(0.09x5.1/45.5) = 9.9% + 15.1% = 25.0%
 ```
 
@@ -1562,7 +1562,7 @@ When ρ < 100%, the taper is truncated at T_cut:
 
 ```
    τ(t) = A x (1-q)^t    for t ≤ T_cut
-   τ(t) = 0               for t > T_cut
+   τ(t) = 0              for t > T_cut
 ```
 
 Total correction rate with cutoff:
@@ -1598,9 +1598,9 @@ increasing in T_cut (more time = more corrections = higher recovery):
       corrections = A x (1-(1-q)^(mid+1)) / q x (1-e)
       P_recovered = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))    (Section 8.2)
       if P_recovered < ρ:
-          lo = mid                    (need more time)
+          lo = mid                   (need more time)
       else:
-          hi = mid                    (enough time)
+          hi = mid                   (enough time)
   T_cut = hi
 ```
 
@@ -1827,7 +1827,7 @@ fraction. The crossover depends on the specific δ values and loss rate.
 
 **Decision rule:** Compare total correction bandwidth:
 ```
-   shared_cost = r*(e, min(δ_c))          (one encoder, tightest δ)
+   shared_cost = r*(e, min(δ_c))         (one encoder, tightest δ)
    separate_cost = Σ_c f_c x r*(e, δ_c)  (per-class, weighted by fraction f_c)
 ```
 
@@ -1968,9 +1968,9 @@ a total sending rate.
 
   Taper                            Taper
   coverage                         coverage
-    |  ==================           |  ========            ========
-    |  continuous protection        |  gap!     ^^^^^^^^^^
-    +----------------------> t      +----------|-----------> t
+    |  ==================            |  ========            ========
+    |  continuous protection         |  gap!     ^^^^^^^^^^
+    +----------------------> t       +----------|-----------> t
                                          200ms FEC blind spot
 ```
 
@@ -2110,14 +2110,14 @@ but they can't eliminate it.
 Our FEC-based model is fundamentally different:
 
 ```
-  MPTCP:                           Raptorpath:
+  MPTCP:                          Raptorpath:
 
   Path A: [P1] [P2] [P5] [P6]     Path A: [S1] [C] [S3] [C]
   Path B: [P3] [P4]               Path B: [S2] [S4] [C]
 
-  Receiver must wait for P3        Decoder needs ANY k of n symbols.
-  before delivering P4,P5,P6.      Order doesn't matter.
-  HOL blocking on slow path.        No HOL blocking.
+  Receiver must wait for P3       Decoder needs ANY k of n symbols.
+  before delivering P4,P5,P6.     Order doesn't matter.
+  HOL blocking on slow path.      No HOL blocking.
 ```
 
 The decoder doesn't care WHICH symbols arrive — just HOW MANY. A repair
@@ -2130,9 +2130,9 @@ Each path i runs independently with its own:
 
 ```
   Copa_i:     rate_i = 1 / (d x dq_i)         total sending rate
-  GE_i:       (e_i, p_i, q_i)                  loss model
-  Taper_i:    tau_i(t) = A_i x (1-q_i)^t       correction density
-  r_i:        correction rate = A_i / q_i       source/correction ratio
+  GE_i:       (e_i, p_i, q_i)                 loss model
+  Taper_i:    tau_i(t) = A_i x (1-q_i)^t      correction density
+  r_i:        correction rate = A_i / q_i     source/correction ratio
 ```
 
 All paths share:
@@ -2149,7 +2149,7 @@ bursts that wipe out consecutive symbols:
 
 ```
   Path A (e=0.05, r=0.05):  [S][S][S][S][C][S][S][S][S][C]...   5% corrections
-  Path B (e=0.10, r=0.11):  [S][S][C][S][S][C][S][S][C]...      11% corrections
+  Path B (e=0.10, r=0.11):  [S][S][C][S][S][C][S][S][C]...     11% corrections
 
   During burst on Path A:   [S][X][X][X][C][S]...
                                  lost      ^ this correction survives!
@@ -2188,7 +2188,7 @@ survived).
 lost, it needs replacement. This creates a chain:
 
 ```
-  Source lost:                0.30   (30% loss)
+  Source lost:               0.30   (30% loss)
   Corrections also lost:     0.30 x 0.30 = 0.09
   Replacements also lost:    0.30^3 = 0.027
   ...
@@ -2216,8 +2216,8 @@ For each path i:
 
 ```
   E_i     = RTT_i/2 + e_i x t_recovery_i       effective delivery time  [sec]
-  B_eff_i = C_i / (1 + r_i)                     source-carrying capacity [sym/s]
-  e_combined = SUM(C_i x e_i) / SUM(C_i)        throughput-weighted loss  [prob]
+  B_eff_i = C_i / (1 + r_i)                    source-carrying capacity [sym/s]
+  e_combined = SUM(C_i x e_i) / SUM(C_i)       throughput-weighted loss [prob]
 ```
 
 where t_recovery_i = P_fec_i x t_fec_i + (1 - P_fec_i) x L_arq_i is the
@@ -2240,7 +2240,7 @@ corrections are not — so putting more source on a fast path saves latency):
   Latency-optimized (scheduler shifts source to fast path):
     Path A (fast):          [S][S][S][S][S][S][S][S][S][C]...   r'=0.02
     Path B (slow):          [S][C][C][S][C][C][S][C][C]...      r'=0.30
-                                                                 (absorbs deficit)
+                                                                (absorbs deficit)
 ```
 
 For **bandwidth-optimized** traffic: no adjustment needed. Source and
@@ -2283,8 +2283,8 @@ One parameterized objective with weights from the protocol hint:
              ^                          ^
         latency cost               bandwidth overhead cost
 
-  subject to: SUM(x_i) = 1              all source distributed
-              x_i x source_rate <= B_eff_i    per-path capacity
+  subject to: SUM(x_i) = 1                  all source distributed
+              x_i x source_rate <= B_eff_i  per-path capacity
 ```
 
 ```
@@ -2340,27 +2340,27 @@ the same interpolated objective as source scheduling (Section 13.8).
 
 ```
    Channel (Section 2):
-     e = p/(p+q)                          average loss rate          [probability]
-     B = 1/q                              mean burst length          [symbols]
-     P(burst ≥ t) = (1-q)^{t-1}          burst survival             [probability]
+     e = p/(p+q)                           average loss rate           [probability]
+     B = 1/q                               mean burst length           [symbols]
+     P(burst ≥ t) = (1-q)^{t-1}            burst survival              [probability]
 
    Taper function (Section 6):
-     τ*(t) = A* x (1-q)^t                optimal taper function     [corrections/symbol]
-     A* = r* x q                          taper amplitude (ρ=100%)  [corrections/symbol]
+     τ*(t) = A* x (1-q)^t                  optimal taper function      [corrections/symbol]
+     A* = r* x q                           taper amplitude (ρ=100%)    [corrections/symbol]
 
    Burst variance correction (Section 8.3):
-     σ²_burst = 1 + 2(1-p-q)/(p+q)       burst variance inflation   [dimensionless]
-     Var_GE(K) = W x e x (1-e) x σ²_burst  loss count variance      [symbols^2]
+     σ²_burst = 1 + 2(1-p-q)/(p+q)         burst variance inflation    [dimensionless]
+     Var_GE(K) = W x e x (1-e) x σ²_burst  loss count variance         [symbols^2]
 
    Optimal correction rate (Section 8.4):
-     Base:  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))     [ratio]
+     Base:  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))  [ratio]
      With codec: replace e with e_hat (see Section 9.2)
-     P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))        [probability]
-     z_delta = normal_quantile(1-delta)                                     [dimensionless]
+     P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))      [probability]
+     z_delta = normal_quantile(1-delta)                                [dimensionless]
 
    Codec overhead (Section 9.2):
-     e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead  [probability]
-     e_hat = e + e_codec_eff                effective loss rate      [probability]
+     e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead     [probability]
+     e_hat = e + e_codec_eff               effective loss rate         [probability]
 
    Three-variable optimization (Section 8.6):
      Taper cutoff: τ(t) = 0 for t > T_cut                (ρ<100%)
@@ -2370,46 +2370,46 @@ the same interpolated objective as source scheduling (Section 13.8).
      Given (r, δ) → ρ:  iterate T_cut until budget constraint met, ρ = recovery within T_cut
 
    Per-symbol delivery (Section 5.3):
-     P(on-time)   = (1-e) + e x P_fec                               [probability]
-     P(late)      = e x (1-P_fec) x P_arq                           [probability]
-     P(lost)      = e x (1-P_fec) x (1-P_arq) = 1-ρ                [probability]
-     P_arq = 1 - (1-rho) / (e x (1-P_fec))                         [probability]
+     P(on-time)   = (1-e) + e x P_fec                                  [probability]
+     P(late)      = e x (1-P_fec) x P_arq                              [probability]
+     P(lost)      = e x (1-P_fec) x (1-P_arq) = 1-ρ                    [probability]
+     P_arq = 1 - (1-rho) / (e x (1-P_fec))                             [probability]
 
    Recovery latency (Section 3.4):
-     t_sym = symbol_size / throughput     symbol transmission time   [seconds]
-     t_fec = m / (A x (1-e)) x t_sym     FEC recovery time          [seconds]
-     t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x L_arq_i      [seconds]
-     P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence        [probability]
-     P(RTT > t) = 1 - Phi((t - SRTT) / RTTVAR)                      [probability]
-     L_actual = min(t_fec, retransmit arrival)                       [seconds]
+     t_sym = symbol_size / throughput      symbol transmission time    [seconds]
+     t_fec = m / (A x (1-e)) x t_sym       FEC recovery time           [seconds]
+     t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x L_arq_i          [seconds]
+     P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence           [probability]
+     P(RTT > t) = 1 - Phi((t - SRTT) / RTTVAR)                         [probability]
+     L_actual = min(t_fec, retransmit arrival)                         [seconds]
 
    Retransmit buffer (Section 5.1):
-     B_max = ceil(ln(0.0001) / ln(1-q))                    [symbols]
-     buffer_max = source_rate x (RTT + B_max/(r*(1-e))*t_sym)  [symbols, rho=100%]
-     buffer_max = source_rate x T_cut                        [symbols, rho<100%]
+     B_max = ceil(ln(0.0001) / ln(1-q))                                [symbols]
+     buffer_max = source_rate x (RTT + B_max/(r*(1-e))*t_sym)          [symbols, rho=100%]
+     buffer_max = source_rate x T_cut                                  [symbols, rho<100%]
 
    Per-slot decision (Section 4.4):
-     P_retx = P_lost(t)                                    (time-based mixing)
-     with probability P_retx:     send source retransmit   (immediate decode)
-     with probability 1-P_retx:   send repair symbol       (FEC, any loss)
+     P_retx = P_lost(t)                                                (time-based mixing)
+     with probability P_retx:     send source retransmit               (immediate decode)
+     with probability 1-P_retx:   send repair symbol                   (FEC, any loss)
      Optional refinement: P_retx = P_lost(t) x (1 - e_burst)
        for long-burst scenarios (Appendix C.6)
 
    Congestion control (Section 12):
-     Copa: rate = 1 / (d_copa x dq)                         [symbols/sec]
-     dq = RTT_current - RTT_min                              [seconds]
-     source_rate = total_rate / (1 + r*)                     [symbols/sec]
-     correction_rate = total_rate x r* / (1 + r*)            [symbols/sec]
+     Copa: rate = 1 / (d_copa x dq)                                    [symbols/sec]
+     dq = RTT_current - RTT_min                                        [seconds]
+     source_rate = total_rate / (1 + r*)                               [symbols/sec]
+     correction_rate = total_rate x r* / (1 + r*)                      [symbols/sec]
 
    Multi-path scheduling (Section 13):
-     E_i = RTT_i/2 + e_i x t_recovery_i                      [seconds]
-     B_eff_i = C_i / (1 + r_i)                               [symbols/sec]
-     e_combined = SUM(C_i x e_i) / SUM(C_i)                  [probability]
-     deficit = SUM_{un-ACKed s}(e_s)                          [expected corrections]
-     cross-path: r = e_source / (1 - e_correction)           [ratio]
+     E_i = RTT_i/2 + e_i x t_recovery_i                                [seconds]
+     B_eff_i = C_i / (1 + r_i)                                         [symbols/sec]
+     e_combined = SUM(C_i x e_i) / SUM(C_i)                            [probability]
+     deficit = SUM_{un-ACKed s}(e_s)                                   [expected corrections]
+     cross-path: r = e_source / (1 - e_correction)                     [ratio]
      minimize: w_lat x SUM(x_i x E_i) + w_bw x SUM(x_i x r_i)
      P(cross-path retx) = P_lost(t, e_src)
-     P(both paths fail) = e_src x e_retx                      [probability]
+     P(both paths fail) = e_src x e_retx                               [probability]
 ```
 
 ## Appendix B: Related Work
@@ -2963,7 +2963,7 @@ Using R ≈ A × (1-ε) / q:
 ```
   ┌───────────────────────────────────────────┐
   │                                           │
-  │   r* = ln(e/δ) / (1-e)                   │
+  │   r* = ln(e/δ) / (1-e)                    │
   │                                           │
   │   where:                                  │
   │     e = average loss rate (from BOCD)     │
