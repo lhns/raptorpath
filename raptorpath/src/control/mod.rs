@@ -15,5 +15,5 @@ pub mod gilbert_elliott;
 
 pub use changepoint::BayesianChangepoint;
 pub use estimator::LossEstimator;
-pub use fec_rate::FecRateController;
+pub use fec_rate::{FecRateController, TaperFunction, p_lost};
 pub use gilbert_elliott::GilbertElliottEstimator;

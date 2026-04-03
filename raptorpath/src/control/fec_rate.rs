@@ -252,6 +252,140 @@ impl FecRateController {
     }
 }
 
+/// Taper function: time-decaying correction density τ(t) = A × (1-q)^t.
+///
+/// Matches the GE burst survival function — more corrections where loss is
+/// likely (right after a burst), fewer as time passes. The amplitude A is
+/// derived from the optimal correction rate r* and the GE parameter q.
+///
+/// See paper Section 4 (The Taper Function).
+#[derive(Debug, Clone)]
+pub struct TaperFunction {
+    /// Taper amplitude: peak correction density at t=0.
+    /// A = r* × q, where r* is the optimal correction rate.
+    pub amplitude: f64,
+    /// Decay base: (1-q) where q = P(Bad→Good) from GE model.
+    /// Each time step, the density multiplies by this factor.
+    pub decay: f64,
+    /// Total correction rate: A / q = r*.
+    pub total_rate: f64,
+    /// The GE parameter q (for reference).
+    pub q: f64,
+}
+
+impl TaperFunction {
+    /// Create a taper function from the estimator and rate controller.
+    ///
+    /// Uses the GE model's q parameter for the decay shape and the
+    /// optimal correction rate r* for the amplitude.
+    pub fn from_estimator(estimator: &LossEstimator, rate: f64) -> Self {
+        let ge = estimator.ge_estimator();
+        let q = if ge.is_valid() {
+            ge.p_bg().clamp(0.01, 1.0) // q = P(Bad→Good)
+        } else {
+            0.5 // Default: mean burst length = 2
+        };
+
+        let amplitude = rate * q;
+        let decay = 1.0 - q;
+
+        Self {
+            amplitude,
+            decay,
+            total_rate: rate,
+            q,
+        }
+    }
+
+    /// Correction density at time offset t (in symbol intervals).
+    ///
+    /// Returns τ(t) = A × (1-q)^t — the number of correction symbols
+    /// to generate per source symbol at offset t.
+    pub fn density(&self, t: f64) -> f64 {
+        self.amplitude * self.decay.powf(t)
+    }
+
+    /// Whether to generate a correction symbol at this offset,
+    /// using the taper density as a probability.
+    ///
+    /// For densities > 1.0 (high loss), always generate.
+    /// For densities < 1.0, probabilistic based on density.
+    pub fn should_generate(&self, t: f64, rng_value: f64) -> bool {
+        let d = self.density(t);
+        if d >= 1.0 {
+            true
+        } else {
+            rng_value < d
+        }
+    }
+}
+
+/// Compute P_lost(t): probability a symbol was lost given no ACK after time t.
+///
+/// Uses Bayes' theorem with the channel loss rate as prior:
+///   P_lost(t) = ε / [ε + (1-ε) × P(RTT > t)]
+///
+/// where P(RTT > t) is the normal survival function.
+///
+/// Returns a value in [ε, 1.0] that smoothly transitions from "probably fine"
+/// (t << SRTT) to "certainly lost" (t >> SRTT).
+///
+/// See paper Section 3.4 (Recovery Latency and the P_lost(t) Model).
+pub fn p_lost(age_secs: f64, epsilon: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
+    if epsilon >= 1.0 {
+        return 1.0;
+    }
+    if epsilon <= 0.0 {
+        return 0.0;
+    }
+
+    // P(RTT > t) using normal survival function
+    let rttvar = rttvar_secs.max(0.001); // avoid division by zero
+    let z = (age_secs - srtt_secs) / rttvar;
+    // Phi(-z) = P(RTT > t) for normal distribution
+    let p_rtt_exceeds = normal_survival(z);
+
+    // Bayes: P(lost | no ACK at t) = ε / [ε + (1-ε) × P(RTT > t)]
+    let denom = epsilon + (1.0 - epsilon) * p_rtt_exceeds;
+    if denom < 1e-300 {
+        return 1.0;
+    }
+    (epsilon / denom).clamp(0.0, 1.0)
+}
+
+/// Standard normal survival function: P(Z > z) = 1 - Φ(z).
+/// Uses the same rational approximation as normal_quantile.
+fn normal_survival(z: f64) -> f64 {
+    // For large positive z, survival is tiny
+    if z > 8.0 {
+        return 0.0;
+    }
+    if z < -8.0 {
+        return 1.0;
+    }
+
+    // Use the error function approximation
+    // Φ(z) ≈ 0.5 × (1 + erf(z/√2))
+    // P(Z > z) = 1 - Φ(z) = 0.5 × erfc(z/√2)
+    //
+    // Abramowitz & Stegun approximation for erfc:
+    let x = z / std::f64::consts::SQRT_2;
+    let ax = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * ax);
+    let poly = t * (0.254829592
+        + t * (-0.284496736
+            + t * (1.421413741
+                + t * (-1.453152027
+                    + t * 1.061405429))));
+    let erfc_ax = poly * (-ax * ax).exp();
+
+    if x >= 0.0 {
+        0.5 * erfc_ax
+    } else {
+        1.0 - 0.5 * erfc_ax
+    }
+}
+
 /// Joint FEC/NACK budget allocator.
 ///
 /// Splits the total repair budget between proactive FEC and reactive NACK repair,
@@ -449,5 +583,136 @@ mod tests {
         let budget = BudgetAllocator::compute(0.0, 0.01, 0.05, 0.8);
         assert!(budget.total_budget() < 1e-10);
         assert!(budget.proactive_rate() < 1e-10);
+    }
+
+    // --- Taper function tests ---
+
+    #[test]
+    fn test_taper_density_decays() {
+        let taper = TaperFunction {
+            amplitude: 0.04,
+            decay: 0.5, // q=0.5, mean burst = 2
+            total_rate: 0.08,
+            q: 0.5,
+        };
+
+        let d0 = taper.density(0.0);
+        let d1 = taper.density(1.0);
+        let d2 = taper.density(2.0);
+
+        assert!((d0 - 0.04).abs() < 1e-10, "density(0) = amplitude");
+        assert!((d1 - 0.02).abs() < 1e-10, "density(1) = A * 0.5");
+        assert!((d2 - 0.01).abs() < 1e-10, "density(2) = A * 0.25");
+        assert!(d0 > d1, "density decays");
+        assert!(d1 > d2, "density decays monotonically");
+    }
+
+    #[test]
+    fn test_taper_from_estimator() {
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(100, 90); // 10% loss
+        }
+
+        let rate = 0.12; // 12% correction rate
+        let taper = TaperFunction::from_estimator(&est, rate);
+
+        assert!(taper.amplitude > 0.0, "amplitude should be positive");
+        assert!(taper.decay > 0.0 && taper.decay < 1.0, "decay in (0,1)");
+        assert!((taper.total_rate - rate).abs() < 1e-10, "total rate preserved");
+        assert!((taper.amplitude - rate * taper.q).abs() < 1e-10, "A = r * q");
+    }
+
+    #[test]
+    fn test_taper_total_rate_geometric_sum() {
+        // The geometric series sum of τ(t) for t=0..∞ should equal total_rate
+        let taper = TaperFunction {
+            amplitude: 0.06,
+            decay: 0.7, // q=0.3
+            total_rate: 0.06 / 0.3,
+            q: 0.3,
+        };
+
+        // Sum first 1000 terms (approximates infinite sum)
+        let sum: f64 = (0..1000).map(|t| taper.density(t as f64)).sum();
+        assert!(
+            (sum - taper.total_rate).abs() < 0.001,
+            "geometric sum ≈ A/q = total_rate: sum={sum}, expected={}",
+            taper.total_rate
+        );
+    }
+
+    // --- P_lost tests ---
+
+    #[test]
+    fn test_p_lost_at_zero() {
+        // At t=0, P_lost ≈ ε (just the base loss rate)
+        let p = p_lost(0.0, 0.025, 0.050, 0.005);
+        assert!(
+            (p - 0.025).abs() < 0.005,
+            "P_lost(0) ≈ ε: got {p}"
+        );
+    }
+
+    #[test]
+    fn test_p_lost_at_srtt() {
+        // At t = SRTT, P_lost should be elevated (ACK expected by now)
+        let p = p_lost(0.050, 0.025, 0.050, 0.005);
+        assert!(
+            p > 0.025 * 1.5,
+            "P_lost(SRTT) should be well above ε: got {p}"
+        );
+    }
+
+    #[test]
+    fn test_p_lost_at_large_t() {
+        // At t >> SRTT, P_lost → 1.0
+        let p = p_lost(0.200, 0.025, 0.050, 0.005);
+        assert!(
+            p > 0.95,
+            "P_lost(4×SRTT) should be near 1.0: got {p}"
+        );
+    }
+
+    #[test]
+    fn test_p_lost_monotone() {
+        // P_lost should increase with age
+        let srtt = 0.050;
+        let rttvar = 0.005;
+        let eps = 0.025;
+
+        let p1 = p_lost(0.01, eps, srtt, rttvar);
+        let p2 = p_lost(0.03, eps, srtt, rttvar);
+        let p3 = p_lost(0.05, eps, srtt, rttvar);
+        let p4 = p_lost(0.10, eps, srtt, rttvar);
+
+        assert!(p1 < p2, "P_lost should increase: {p1} < {p2}");
+        assert!(p2 < p3, "P_lost should increase: {p2} < {p3}");
+        assert!(p3 < p4, "P_lost should increase: {p3} < {p4}");
+    }
+
+    #[test]
+    fn test_p_lost_high_epsilon() {
+        // With high loss rate, P_lost(0) should be high
+        let p = p_lost(0.0, 0.5, 0.050, 0.005);
+        assert!(
+            (p - 0.5).abs() < 0.01,
+            "P_lost(0) with ε=0.5 should be ~0.5: got {p}"
+        );
+    }
+
+    #[test]
+    fn test_normal_survival_basic() {
+        // P(Z > 0) = 0.5
+        let s = normal_survival(0.0);
+        assert!((s - 0.5).abs() < 0.01, "survival(0) ≈ 0.5: got {s}");
+
+        // P(Z > 2) ≈ 0.0228
+        let s2 = normal_survival(2.0);
+        assert!((s2 - 0.0228).abs() < 0.005, "survival(2) ≈ 0.023: got {s2}");
+
+        // P(Z > -2) ≈ 0.9772
+        let sm2 = normal_survival(-2.0);
+        assert!((sm2 - 0.9772).abs() < 0.005, "survival(-2) ≈ 0.977: got {sm2}");
     }
 }
