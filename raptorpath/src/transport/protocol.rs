@@ -150,15 +150,28 @@ pub enum ControlMessage {
         packed: bool,
     },
 
-    /// Acknowledge received window-mode symbols (receiver → sender).
+    /// Acknowledge received window-mode symbols with SACK (receiver → sender).
+    ///
+    /// Replaces the former WindowNack mechanism. Per-packet ACK with selective
+    /// acknowledgment ranges, RTT echo, jitter, and cumulative received count.
+    /// See paper Section 6.2 (SACK-Extended ACK).
     WindowAck {
         /// All sequences up to this have been received or recovered.
         received_up_to: u64,
+        /// Selective ACK: out-of-order ranges received beyond cumulative point.
+        /// Cumulative within T_cut window — all received fragments reported.
+        sack_ranges: Vec<(u64, u64)>,
+        /// Echo the sender's timestamp for RTT measurement (sender's clock).
+        echo_send_timestamp_us: u64,
+        /// Interarrival jitter in microseconds (RFC 3550 A.8).
+        jitter_us: u32,
+        /// Running total of symbols received (self-healing reliability metric).
+        cumulative_received: u64,
     },
 
-    /// Report gaps in window-mode reception for NACK-based repair (receiver → sender).
+    /// DEPRECATED: WindowNack replaced by SACK-extended WindowAck.
+    /// Kept for wire compatibility during transition.
     WindowNack {
-        /// Inclusive ranges of missing sequence numbers: (start, end).
         gaps: Vec<(u64, u64)>,
     },
 
@@ -177,11 +190,9 @@ pub enum ControlMessage {
         flush_seq: u64,
     },
 
-    /// Sender acknowledges receipt of a WindowNack (sender → receiver).
-    /// Used to measure RX path loss: if receiver sends NACKs but doesn't
-    /// get NackAcks back, the reverse path is lossy.
+    /// DEPRECATED: NackAck is no longer used. SACK-extended WindowAck replaces
+    /// the NACK mechanism. Kept for wire compatibility during transition.
     NackAck {
-        /// Monotonic NACK ID echoed back to the receiver.
         nack_id: u32,
     },
 }

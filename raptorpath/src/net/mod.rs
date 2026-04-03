@@ -821,34 +821,57 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             }
                         }
 
-                        // Periodically send WindowAck to sender
+                        // Send SACK-extended WindowAck to sender
                         if highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed) {
                             recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+
+                            // Compute SACK ranges: received sequences beyond cumulative_ack
+                            let sack = compute_gap_ranges(
+                                &received_seqs,
+                                highest_delivered_seq,
+                                highest_seen_seq,
+                            );
+                            // Convert gaps to received ranges for SACK
+                            // (SACK reports what WAS received, not what's missing)
+                            let mut sack_ranges = Vec::new();
+                            let mut cursor = highest_delivered_seq + 1;
+                            for &(gap_start, gap_end) in &sack {
+                                if cursor < gap_start {
+                                    sack_ranges.push((cursor, gap_start - 1));
+                                }
+                                cursor = gap_end + 1;
+                            }
+                            if cursor <= highest_seen_seq {
+                                sack_ranges.push((cursor, highest_seen_seq));
+                            }
+
+                            let jitter = {
+                                let sched = recv_scheduler.lock();
+                                sched.path(path_id)
+                                    .map(|p| p.estimator.jitter_us() as u32)
+                                    .unwrap_or(0)
+                            };
+
                             let ack_msg = ControlMessage::WindowAck {
                                 received_up_to: highest_delivered_seq,
+                                sack_ranges,
+                                echo_send_timestamp_us: batch_send_ts,
+                                jitter_us: jitter,
+                                cumulative_received: recv_stats.path(path_id)
+                                    .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
+                                    .unwrap_or(0),
                             };
                             if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                                 debug!(?e, path_id, "failed to send WindowAck");
                             }
                         }
 
-                        // Send WindowNack with gap ranges (rate-limited)
-                        // ADR-0035: auto-disable NACK when max_fec_overhead >= threshold
-                        let nack_budget_ok = config.max_fec_overhead < config.nack_auto_disable_threshold;
+                        // Periodic tasks (rate-limited by REPORT_INTERVAL)
+                        // NACK sending replaced by SACK-extended WindowAck above.
                         let now = Instant::now();
                         if now.duration_since(last_nack_time) >= REPORT_INTERVAL
                             && highest_seen_seq > 0
                         {
-                            if nack_budget_ok {
-                                let gap_start = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64);
-                                let gaps = compute_gap_ranges(&received_seqs, gap_start, highest_seen_seq);
-                                if !gaps.is_empty() {
-                                    let nack_msg = ControlMessage::WindowNack { gaps };
-                                    if let Err(e) = recv_transport.send_control_datagram(path_id, nack_msg) {
-                                        debug!(?e, path_id, "failed to send WindowNack");
-                                    }
-                                }
-                            }
                             last_nack_time = now;
 
                             // ADR-0035: PI feedback for window mode
@@ -2300,10 +2323,29 @@ fn handle_control_message(
             debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
         }
 
-        ControlMessage::WindowAck { received_up_to } => {
-            debug!(path_id, received_up_to, "window ACK received");
-            // The sender reads window_ack_seq via AtomicU64; this is handled
-            // in the sender loop directly, not here. Log for diagnostics.
+        ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received } => {
+            debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
+            // Update RTT from echoed timestamp
+            let now = now_us();
+            let rtt_us = now.saturating_sub(echo_send_timestamp_us);
+            {
+                let mut sched = scheduler.lock();
+                sched.touch_path(path_id);
+                if let Some(path) = sched.path_mut(path_id) {
+                    let rtt_duration = Duration::from_micros(rtt_us);
+                    path.estimator.record_rtt(rtt_duration);
+                    path.record_rtt_sample(rtt_duration);
+                }
+            }
+            // Update monitoring stats
+            if let Some(ps) = stats.path(path_id) {
+                ps.rtt_us.store(rtt_us, Ordering::Relaxed);
+                ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
+            }
+            // The sender reads window_ack_seq via AtomicU64 in the sender loop.
+            // SACK ranges are available here for future gap-based retransmit
+            // optimization but the current P_lost model handles this via the
+            // retransmit buffer age mechanism.
         }
 
         ControlMessage::WindowNack { gaps } => {
