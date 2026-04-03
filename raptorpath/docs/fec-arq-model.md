@@ -687,6 +687,20 @@ relevant for burst losses that overwhelm the FEC budget.
 
 ## 4. The Taper Function
 
+Why not send correction symbols at a constant rate? If loss were uniformly
+distributed over time (i.i.d.), a constant rate would be optimal — every
+position is equally likely to need correction. But on real wireless channels,
+loss comes in **bursts** (Section 2). A burst wipes out consecutive symbols,
+then the channel recovers. Right after a burst starts, the probability of
+continued loss is high; as time passes, it decays exponentially.
+
+A constant correction rate misallocates: it sends too many corrections during
+good periods (wasted) and too few right after a burst (when they're needed
+most). The taper function solves this by matching correction density to the
+burst survival probability — more corrections where loss is likely, fewer
+where it isn't. This minimizes the total correction budget for a given
+recovery target.
+
 ### 4.1 Definition
 
 The taper function τ(t) specifies the correction density at time offset t from
