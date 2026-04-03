@@ -1304,6 +1304,10 @@ async fn run_window_sender(
     /// Source symbols sent in the current reporting period.
     let mut source_symbols_this_period: u64 = 0;
 
+    /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
+    /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
+    let mut retransmit_buffer: std::collections::BTreeMap<u64, (u64, f64, u32)> = std::collections::BTreeMap::new();
+
     // Symbol packer: accumulate small packets into packed symbols for Realtime mode
     let use_packing = protocol_hint == ProtocolHint::Realtime;
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
@@ -1355,6 +1359,19 @@ async fn run_window_sender(
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
 
+            // Add to retransmit buffer for P_lost-based retransmit decisions
+            {
+                let epsilon = {
+                    let sched = scheduler.lock();
+                    sched.active_paths().iter()
+                        .filter_map(|id| sched.path(*id))
+                        .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                        .map(|p| p.estimator.loss_rate())
+                        .unwrap_or(0.0)
+                };
+                retransmit_buffer.insert(wire_sym.block_id, (now_us(), epsilon, source_path));
+            }
+
             // Redundant send for Realtime: duplicate source on second-best path
             if protocol_hint == ProtocolHint::Realtime {
                 let alt_path = {
@@ -1405,28 +1422,68 @@ async fn run_window_sender(
 
                 while repair_debt >= 1.0 && encoder.window_size() > 0 {
                     repair_debt -= 1.0;
-                    let repair_path = {
+
+                    // P_lost-based correction symbol decision:
+                    // Check oldest un-ACKed symbol in retransmit buffer.
+                    // If P_lost is high enough, retransmit it (immediate decode).
+                    // Otherwise, generate a new repair symbol (FEC).
+                    let correction_sym = {
+                        let now = now_us();
+                        let (srtt_secs, rttvar_secs, epsilon) = {
+                            let sched = scheduler.lock();
+                            let worst = sched.active_paths().iter()
+                                .filter_map(|id| sched.path(*id))
+                                .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal));
+                            match worst {
+                                Some(p) => (p.estimator.rtt().as_secs_f64(), p.estimator.rtt().as_secs_f64() * 0.1, p.estimator.loss_rate()),
+                                None => (0.05, 0.005, 0.0),
+                            }
+                        };
+
+                        // Find oldest retransmit candidate and compute P_lost
+                        let mut use_retransmit = false;
+                        let mut retransmit_seq = 0u64;
+                        if let Some((&seq, &(send_time_us, eps_at_send, _path))) = retransmit_buffer.iter().next() {
+                            let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
+                            let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
+                            // Use P_lost as the retransmit probability
+                            // Simple threshold: retransmit if P_lost > 0.5
+                            if p > 0.5 {
+                                use_retransmit = true;
+                                retransmit_seq = seq;
+                            }
+                        }
+
+                        if use_retransmit {
+                            // Retransmit: try to get exact source symbol from encoder
+                            encoder.get_source(retransmit_seq).unwrap_or_else(|| encoder.generate_repair())
+                        } else {
+                            // Repair: generate a new FEC symbol
+                            encoder.generate_repair()
+                        }
+                    };
+
+                    let correction_path = {
                         let sched = scheduler.lock();
                         select_repair_path(&sched, source_path)
                     };
-                    let repair_sym = encoder.generate_repair();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
-                        symbols: vec![repair_sym],
+                        symbols: vec![correction_sym],
                         send_timestamp_us: now_us(),
                         batch_seq,
-                        path_id: repair_path,
+                        path_id: correction_path,
                     };
-                    if let Err(e) = transport.send_symbols(repair_path, batch) {
-                        warn!(repair_path, ?e, "failed to send proactive repair symbol");
+                    if let Err(e) = transport.send_symbols(correction_path, batch) {
+                        warn!(correction_path, ?e, "failed to send correction symbol");
                     }
                     {
                         let mut sched = scheduler.lock();
-                        if let Some(p) = sched.path_mut(repair_path) {
+                        if let Some(p) = sched.path_mut(correction_path) {
                             p.in_flight += 1;
                         }
                     }
-                    if let Some(ps) = stats.path(repair_path) {
+                    if let Some(ps) = stats.path(correction_path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -1671,9 +1728,11 @@ async fn run_window_sender(
                 source_symbols_this_period = 0;
             }
 
-            // Clean up source_path_map for evicted sequences
+            // Clean up source_path_map and retransmit buffer for ACKed/evicted sequences
             let (win_start, _) = encoder.window_span();
             source_path_map.retain(|&seq, _| seq >= win_start);
+            // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
+            retransmit_buffer = retransmit_buffer.split_off(&(ack + 1));
 
             prev_ack = ack;
         }
