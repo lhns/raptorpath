@@ -127,10 +127,9 @@ TYPST_FILE=$(mktemp --suffix=.typ)
     -V margin-left=2.5cm \
     -V margin-right=2.5cm \
     --toc \
-    --toc-depth=2 \
-    --number-sections \
+    --toc-depth=3 \
     --metadata title="FEC/ARQ Unified Correction Symbol Model" \
-    --metadata author="Raptorpath Project" \
+    --metadata author="Pierre Kisters" \
     --metadata date="April 2026" \
     2>&1
 
@@ -140,7 +139,35 @@ TYPST_FILE=$(mktemp --suffix=.typ)
 # e.g., "columns: (16.9%, 14.08%, ...)" -> "columns: (1fr, 1fr, ...)"
 sed -i '/^    columns: (/s/[0-9.]*%/1fr/g' "$TYPST_FILE"
 
-# Step 3: typst to PDF
+# Step 3: prevent double page break when first subsection follows section
+# Level-1 heading (=) and level-2 (==) both get pagebreaks from show rules.
+# When == immediately follows =, that's a double break. Convert the first
+# == after each = to a manual heading that bypasses the show rule.
+python3 -c "
+import re, sys
+typst_file = sys.argv[1]
+with open(typst_file, encoding='utf-8') as f:
+    lines = f.readlines()
+out = []
+prev_was_h1 = False
+for line in lines:
+    s = line.rstrip()
+    if re.match(r'^= ', s) and not re.match(r'^==', s):
+        prev_was_h1 = True
+        out.append(line)
+    elif re.match(r'^== ', s) and prev_was_h1:
+        title = s[3:]
+        out.append('#heading(level: 2, outlined: true)[' + title + ']\n')
+        prev_was_h1 = False
+    else:
+        if s:
+            prev_was_h1 = False
+        out.append(line)
+with open(typst_file, 'w', encoding='utf-8') as f:
+    f.writelines(out)
+" "$TYPST_FILE"
+
+# Step 4: typst to PDF
 "$TYPST" compile "$TYPST_FILE" "$OUTPUT" 2>&1
 
 rm -f "$TMPFILE" "$TYPST_HEADER" "$TYPST_FILE"
