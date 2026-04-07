@@ -242,7 +242,8 @@ class Simulation {
 
     this.symbolSize = 1200;
     this.sigma2 = burstVarianceFactor(this.p, this.q);
-    this.rStar = computeRStar(this.eps, this.sigma2, this.W);
+    this.rStarAuto = computeRStar(this.eps, this.sigma2, this.W);
+    this.rStar = params.r; // from triangle (user-set or computed)
     this.amplitude = this.rStar * this.q;
     this.decay = 1 - this.q;
     // Link capacity: C symbols per tick. Source gets C/(1+r), corrections get C*r/(1+r).
@@ -266,6 +267,8 @@ class Simulation {
 
     this.totalSrc = 0; this.totalFec = 0; this.totalArq = 0;
     this.totalLost = 0;
+    // Steady-state counters (only during source-sending phase)
+    this.steadySrc = 0; this.steadyFec = 0; this.steadyArq = 0;
     this.cumSent = 0;      // all symbols sent (source + FEC + ARQ)
     this.cumArrived = 0;   // all symbols arrived at receiver (not lost on channel)
     this.cumDecoded = 0;   // source data usable by application
@@ -293,10 +296,12 @@ class Simulation {
     // Use fractional accumulator: each slot, add r to corrDebt.
     // When corrDebt >= 1, that slot is correction. Otherwise, source.
     for (let slot = 0; slot < C; slot++) {
-      this.fecDebt = Math.min(this.fecDebt + r, 3.0); // cap to prevent runaway
+      // First slot each tick is always source (guarantees data flow even at high r*)
+      const forceSource = (slot === 0 && !this.sourceDone);
+      this.fecDebt = Math.min(this.fecDebt + r, 3.0);
 
       const hasUnrecovered = this.symbols.some(s => s.lost && !s.recovered);
-      if (this.fecDebt >= 1.0 && hasUnrecovered) {
+      if (!forceSource && this.fecDebt >= 1.0 && (!this.sourceDone || hasUnrecovered)) {
         // --- Correction slot ---
         this.fecDebt -= 1.0;
 
@@ -323,7 +328,10 @@ class Simulation {
           this.totalFec++; fecN++; this.cumSent++;
           if (!lost) {
             this.cumArrived++;
-            this.fecPool++;
+            // FEC pool only grows when there are lost symbols to recover.
+            // In a real decoder, FEC covers the current window — if all
+            // source in the window arrived, the repair is redundant.
+            if (this.lostPending > 0) this.fecPool++;
           }
         }
       } else if (!this.sourceDone) {
@@ -371,6 +379,11 @@ class Simulation {
     // Prune old symbols to avoid memory growth
     this.symbols = this.symbols.filter(s => !s.recovered || this.tick - s.tick < 10);
 
+    // Track steady-state overhead (source-sending phase only)
+    if (!this.sourceDone) {
+      this.steadySrc += srcN; this.steadyFec += fecN; this.steadyArq += arqN;
+    }
+
     this.rateHistory.push({
       src: srcN, fec: fecN, arq: arqN, lost: lostN,
       cumSent: this.cumSent, cumArrived: this.cumArrived, cumDecoded: this.cumDecoded
@@ -408,8 +421,17 @@ const slR=document.getElementById('sl-r'), slDelta=document.getElementById('sl-d
 const slRho=document.getElementById('sl-rho'), triMode=document.getElementById('tri-mode');
 
 function getParams() {
-  return { eps: Math.max(parseFloat(slEps.value),0.001), q: parseFloat(slQ.value),
-    rttMs: parseInt(slRtt.value), W: parseInt(slW.value) };
+  const eps = Math.max(parseFloat(slEps.value),0.001), q = parseFloat(slQ.value);
+  const pp = eps*q/(1-eps), s2 = burstVarianceFactor(pp, q);
+  const W = parseInt(slW.value), m = triMode.value;
+  // Get r from the triangle: computed in delta-rho mode, slider in r-rho/r-delta modes
+  let r;
+  if (m === 'delta-rho') {
+    r = solveRFromDeltaRho(eps, q, W, s2, Math.pow(10, parseFloat(slDelta.value)), parseFloat(slRho.value)).r;
+  } else {
+    r = parseFloat(slR.value);
+  }
+  return { eps, q, rttMs: parseInt(slRtt.value), W, r };
 }
 function updateLabels() {
   const p = getParams();
@@ -525,12 +547,12 @@ function drawStrip() {
 
 function updateMetrics() {
   if (!sim) return;
-  const oh = sim.totalSrc>0 ? ((sim.totalFec+sim.totalArq)/sim.totalSrc*100) : 0;
+  const oh = sim.steadySrc>0 ? ((sim.steadyFec+sim.steadyArq)/sim.steadySrc*100) : 0;
   const rec = sim.totalSrc>0 ? (sim.cumDecoded/sim.totalSrc*100) : 100;
   document.getElementById('m-overhead').textContent = oh.toFixed(1)+'%';
   document.getElementById('m-recovery').textContent = rec.toFixed(1)+'%';
   const pp=sim.p, s2=sim.sigma2;
-  document.getElementById('m-rstar').textContent = sim.rStar.toFixed(4);
+  document.getElementById('m-rstar').textContent = sim.rStar.toFixed(3) + ' (auto: ' + sim.rStarAuto.toFixed(3) + ')';
   document.getElementById('m-src').textContent = sim.totalSrc;
   document.getElementById('m-fec').textContent = sim.totalFec;
   document.getElementById('m-arq').textContent = sim.totalArq;
