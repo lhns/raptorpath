@@ -1482,9 +1482,9 @@ async fn run_window_sender(
                         if let Some((&seq, &(send_time_us, eps_at_send, _path))) = retransmit_buffer.iter().next() {
                             let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
                             let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
-                            // Use P_lost as the retransmit probability
-                            // Simple threshold: retransmit if P_lost > 0.5
-                            if p > 0.5 {
+                            // Paper Section 3.4: P(retransmit) = P_lost(t_k).
+                            // Probabilistic — smooth transition from FEC to ARQ.
+                            if rand::random::<f64>() < p {
                                 use_retransmit = true;
                                 retransmit_seq = seq;
                             }
