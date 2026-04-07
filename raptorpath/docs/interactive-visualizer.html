@@ -244,6 +244,7 @@ class Simulation {
     this.sigma2 = burstVarianceFactor(this.p, this.q);
     this.rStarAuto = computeRStar(this.eps, this.sigma2, this.W);
     this.rStar = params.r; // from triangle (user-set or computed)
+    this.tCut = params.tCut; // Infinity at rho=1.0, finite at rho<1.0
     this.amplitude = this.rStar * this.q;
     this.decay = 1 - this.q;
     // Link capacity: C symbols per tick. Source gets C/(1+r), corrections get C*r/(1+r).
@@ -302,35 +303,51 @@ class Simulation {
 
       const hasUnrecovered = this.symbols.some(s => s.lost && !s.recovered);
       if (!forceSource && this.fecDebt >= 1.0 && (!this.sourceDone || hasUnrecovered)) {
-        // --- Correction slot ---
+        // --- Correction slot: P_lost splits between ARQ and FEC ---
+        // Paper Section 5.3: retransmit_rate = correction_rate × P_lost(t)
+        //                    repair_rate     = correction_rate × (1 - P_lost(t))
         this.fecDebt -= 1.0;
 
-        // P_lost decides repair vs retransmit (paper Section 5.2)
-        // Find oldest un-ACKed lost symbol for potential retransmit
-        let arqCandidate = null;
+        // Paper Section 3.4: select which symbol this correction slot covers,
+        // weighted by taper density. Then use that symbol's P_lost for FEC/ARQ.
+        // Young symbols (high density) are selected often → low P_lost → FEC.
+        // Old symbols (low density) are selected rarely → high P_lost → ARQ.
+        let totalDensity = 0;
         for (const sym of this.symbols) {
-          if (sym.recovered || !sym.lost) continue;
-          const ageTicks = this.tick - sym.tick;
-          if (ageTicks < this.rttTicks) continue;
-          if (this.tick - sym.arqTick < this.rttTicks) continue;
-          const ageSecs = ageTicks * 0.001;
-          const pl = pLost(ageSecs, this.eps, this.srttSecs, this.rttvarSecs);
-          if (pl > 0.5) { arqCandidate = sym; break; }
+          if (sym.recovered) continue;
+          totalDensity += taperDensity(this.tick - sym.tick, this.amplitude, this.decay);
+        }
+        // Weighted random selection
+        let pick = null;
+        if (totalDensity > 0) {
+          let r2 = Math.random() * totalDensity;
+          for (const sym of this.symbols) {
+            if (sym.recovered) continue;
+            r2 -= taperDensity(this.tick - sym.tick, this.amplitude, this.decay);
+            if (r2 <= 0) { pick = sym; break; }
+          }
         }
 
         const lost = this.channel.isLost();
         if (lost) lostN++;
-        if (arqCandidate) {
-          arqCandidate.arqTick = this.tick;
-          this.totalArq++; arqN++; this.cumSent++;
-          if (!lost) { this.cumArrived++; arqCandidate.recovered = true; this.cumDecoded++; this.lostPending--; }
-        } else {
+
+        let didArq = false;
+        if (pick) {
+          const ageSecs = (this.tick - pick.tick) * 0.001;
+          const pl = pLost(ageSecs, this.eps, this.srttSecs, this.rttvarSecs);
+          if (Math.random() < pl && pick.lost
+              && this.tick - pick.tick >= this.rttTicks
+              && this.tick - pick.arqTick >= this.rttTicks) {
+            pick.arqTick = this.tick;
+            this.totalArq++; arqN++; this.cumSent++;
+            if (!lost) { this.cumArrived++; pick.recovered = true; this.cumDecoded++; this.lostPending--; }
+            didArq = true;
+          }
+        }
+        if (!didArq) {
           this.totalFec++; fecN++; this.cumSent++;
           if (!lost) {
             this.cumArrived++;
-            // FEC pool only grows when there are lost symbols to recover.
-            // In a real decoder, FEC covers the current window — if all
-            // source in the window arrived, the repair is redundant.
             if (this.lostPending > 0) this.fecPool++;
           }
         }
@@ -346,19 +363,21 @@ class Simulation {
       }
     }
 
-    // FEC decode: when enough repair symbols have accumulated to cover pending losses,
-    // the decoder fires and recovers all lost symbols in one batch.
-    // This models the real decoder: it needs fecPool >= lostPending to decode.
-    if (this.fecPool >= this.lostPending && this.lostPending > 0) {
-      // Bulk decode: recover all pending lost symbols
+    // Incremental FEC decode: each FEC symbol in pool recovers one lost symbol.
+    // Real sliding-window decoder recovers incrementally, not in bulk.
+    while (this.fecPool > 0 && this.lostPending > 0) {
+      let found = false;
       for (const sym of this.symbols) {
         if (sym.lost && !sym.recovered) {
           sym.recovered = true;
           this.cumDecoded++;
+          this.lostPending--;
+          this.fecPool--;
+          found = true;
+          break;
         }
       }
-      this.fecPool -= this.lostPending;
-      this.lostPending = 0;
+      if (!found) break;
     }
 
     // Process ACKs: non-lost symbols ACKed after RTT (removes from retransmit consideration)
@@ -367,17 +386,27 @@ class Simulation {
         sym.recovered = true; // ACKed, no longer pending
     }
 
-    // Give up on symbols older than 5x RTT
-    if (this.sourceDone) {
+    // T_cut eviction: give up on symbols older than T_cut (rho < 1.0).
+    // At rho=1.0, T_cut=Infinity → never give up.
+    if (this.sourceDone && isFinite(this.tCut)) {
+      const tCutTicks = Math.round(this.tCut);
       for (const sym of this.symbols) {
-        if (sym.lost && !sym.recovered && this.tick - sym.tick > this.rttTicks * 5)
-          sym.recovered = true;
+        if (sym.lost && !sym.recovered && this.tick - sym.tick > tCutTicks) {
+          sym.recovered = true; // permanently lost (accepted)
+          this.lostPending--;
+        }
       }
-      if (!this.symbols.some(s => !s.recovered)) this.finished = true;
     }
 
-    // Prune old symbols to avoid memory growth
-    this.symbols = this.symbols.filter(s => !s.recovered || this.tick - s.tick < 10);
+    // Finish when all source symbols are decoded or evicted
+    if (this.sourceDone && this.lostPending <= 0 && !this.symbols.some(s => s.lost && !s.recovered)) {
+      this.finished = true;
+    }
+    // Safety cap
+    if (this.tick > 5000) this.finished = true;
+
+    // Prune resolved symbols (keep lost unrecovered for FEC/ARQ)
+    this.symbols = this.symbols.filter(s => (s.lost && !s.recovered) || this.tick - s.tick < 10);
 
     // Track steady-state overhead (source-sending phase only)
     if (!this.sourceDone) {
@@ -431,7 +460,15 @@ function getParams() {
   } else {
     r = parseFloat(slR.value);
   }
-  return { eps, q, rttMs: parseInt(slRtt.value), W, r };
+  // Get rho and compute T_cut
+  let rho;
+  if (m === 'r-delta') {
+    rho = solveRhoFromRDelta(eps, q, W, s2, parseFloat(slR.value), Math.pow(10, parseFloat(slDelta.value))).rho;
+  } else {
+    rho = parseFloat(slRho.value);
+  }
+  const tCut = findTCut(eps, q, r, W, s2, rho); // Infinity at rho=1.0
+  return { eps, q, rttMs: parseInt(slRtt.value), W, r, rho, tCut };
 }
 function updateLabels() {
   const p = getParams();
