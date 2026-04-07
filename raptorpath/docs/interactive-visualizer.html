@@ -446,6 +446,12 @@ function solveTri() {
 // =========================================================================
 // CHARTS
 // =========================================================================
+// Sync yLost axis to y axis so the Lost line scales identically
+Chart.register({id:'syncYLost', afterLayout(chart){
+  const y=chart.scales.y, yl=chart.scales.yLost;
+  if(y&&yl){yl.options.min=y.min;yl.options.max=y.max;}
+}});
+
 const mainChart = new Chart(document.getElementById('main-chart').getContext('2d'), {
   type:'line', data:{ labels:[],
     datasets:[
@@ -456,7 +462,7 @@ const mainChart = new Chart(document.getElementById('main-chart').getContext('2d
       {label:'ARQ', data:[], borderColor:'#e67e22', backgroundColor:'rgba(230,126,34,0.5)',
        fill:true, pointRadius:0, borderWidth:1, yAxisID:'y'},
       {label:'Lost', data:[], borderColor:'#e74c3c', backgroundColor:'transparent',
-       pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'y'},
+       pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'yLost', order:-1},
       {label:'Sent %', data:[], borderColor:'rgba(255,255,255,0.3)', backgroundColor:'transparent',
        pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'y2'},
       {label:'Arrived %', data:[], borderColor:'rgba(255,255,255,0.7)', backgroundColor:'transparent',
@@ -469,6 +475,7 @@ const mainChart = new Chart(document.getElementById('main-chart').getContext('2d
     scales:{
       x:{title:{display:true,text:'Time (ticks)',color:'#777'},ticks:{color:'#555',maxTicksLimit:15},grid:{color:'#111'}},
       y:{stacked:true, position:'left', title:{display:true,text:'Rate (sym/tick)',color:'#777'},ticks:{color:'#555'},grid:{color:'#111'},min:0, suggestedMax:6},
+      yLost:{display:false, position:'left', stacked:false, min:0},
       y2:{position:'right', title:{display:true,text:'Progress %',color:'#777'},ticks:{color:'#555',callback:v=>v+'%'},grid:{drawOnChartArea:false},min:0},
     },
     plugins:{legend:{labels:{color:'#aaa',boxWidth:10,font:{size:10}}}},
