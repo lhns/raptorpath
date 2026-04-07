@@ -1611,6 +1611,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "raptorpath-math"
+version = "0.1.0"
+
+[[package]]
+name = "raptorpath-wasm"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "raptorpath-math",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "raptorq"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

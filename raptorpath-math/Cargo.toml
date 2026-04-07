@@ -1,0 +1,7 @@
+[package]
+name = "raptorpath-math"
+version = "0.1.0"
+edition = "2021"
+description = "Pure math functions for the raptorpath FEC/ARQ model"
+
+[dependencies]

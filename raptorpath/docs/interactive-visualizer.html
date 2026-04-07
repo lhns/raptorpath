@@ -146,286 +146,73 @@ canvas { border-radius: 6px; }
 </div>
 </div>
 
-<script>
+<script type="module">
 // =========================================================================
-// MATH MODULE — ported from src/control/fec_rate.rs
+// WASM MODULE — real Rust math + simulation compiled from raptorpath-math
 // =========================================================================
-function normalSurvival(z) {
-  if (z > 8) return 0; if (z < -8) return 1;
-  const x = z / Math.SQRT2, ax = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * ax);
-  const poly = t*(0.254829592+t*(-0.284496736+t*(1.421413741+t*(-1.453152027+t*1.061405429))));
-  const erfcAx = poly * Math.exp(-ax * ax);
-  return x >= 0 ? 0.5 * erfcAx : 1 - 0.5 * erfcAx;
-}
-function burstVarianceFactor(p, q) {
-  const s = p + q; return s < 1e-10 ? 1 : Math.max(1, 1 + 2*(1-p-q)/s);
-}
-function pFecNormal(r, eps, W, s2) {
-  if (W<=0||eps<=0||eps>=1||r<=0) return 0;
-  const num = r*(1-eps)-eps; if (num<=0) return 0;
-  const den = Math.sqrt(eps*(1-eps)*(r+s2)); if (den<1e-300) return 1;
-  return 1 - normalSurvival(Math.sqrt(W)*num/den);
-}
-function pLost(age, eps, srtt, rv) {
-  if (eps>=1) return 1; if (eps<=0) return 0;
-  rv = Math.max(rv, 0.001);
-  const pr = normalSurvival((age-srtt)/rv);
-  const d = eps+(1-eps)*pr; return d<1e-300 ? 1 : Math.min(1,Math.max(0,eps/d));
-}
-function computeRStar(eps, s2, W) {
-  if (eps<=0||eps>=1) return 0;
-  return eps/(1-eps) + (W>0 ? 2.33*Math.sqrt(eps*s2/(W*(1-eps))) : 0);
-}
-function taperDensity(t, A, decay) { return A * Math.pow(decay, t); }
+import init, * as wasm from './wasm/raptorpath_wasm.js';
+await init();
 
-function computeDelta(eps, r, rho, W, s2) {
-  if (eps<=0||rho<=0) return 0;
-  const pfec = pFecNormal(r,eps,W,s2), fm = eps*(1-pfec);
-  if (fm<1e-15) return 0;
-  const pa = Math.max(0,Math.min(1, 1-(1-rho)/fm));
-  return fm*pa/rho;
-}
-function findTCut(eps,q,r,W,s2,rho) {
-  if (rho>=1) return Infinity; if (rho<=0||eps<=0) return 0;
-  let lo=0,hi=W*10;
-  for (let i=0;i<100&&hi-lo>0.01;i++) {
-    const m=(lo+hi)/2, decay=Math.max(1-q,0);
-    const pfec=pFecNormal(r,eps,W,s2), cb=r*(1-Math.pow(decay,m+1));
-    const rn=eps/(1-eps), pa=rn>0?Math.min(cb/rn,1):1;
-    const pr=1-eps*(1-pfec)*(1-pa);
-    pr<rho ? lo=m : hi=m;
-  }
-  return hi;
-}
+// Wrap wasm three-var solvers to return JS objects
 function solveRFromDeltaRho(eps,q,W,s2,delta,rho) {
-  let lo=eps/(1-eps),hi=2;
-  for (let i=0;i<100&&hi-lo>1e-6;i++) {
-    const m=(lo+hi)/2; computeDelta(eps,m,rho,W,s2)>delta ? lo=m : hi=m; }
-  const r=hi, tCut=findTCut(eps,q,r,W,s2,rho);
-  return {r,delta,rho,tCut};
+  const a = wasm.solve_r_from_delta_rho(eps,q,W,s2,delta,rho);
+  return {r:a[0], delta:a[1], rho:a[2], tCut:a[3]};
 }
 function solveDeltaFromRRho(eps,q,W,s2,r,rho) {
-  return {r, delta:computeDelta(eps,r,rho,W,s2), rho, tCut:findTCut(eps,q,r,W,s2,rho)};
+  const a = wasm.solve_delta_from_r_rho(eps,q,W,s2,r,rho);
+  return {r:a[0], delta:a[1], rho:a[2], tCut:a[3]};
 }
 function solveRhoFromRDelta(eps,q,W,s2,r,delta) {
-  let lo=0.5,hi=1-1e-12;
-  for (let i=0;i<100&&hi-lo>1e-6;i++) {
-    const m=(lo+hi)/2; computeDelta(eps,r,m,W,s2)>delta ? hi=m : lo=m; }
-  const rho=lo, tCut=findTCut(eps,q,r,W,s2,rho);
-  return {r,delta,rho,tCut};
+  const a = wasm.solve_rho_from_r_delta(eps,q,W,s2,r,delta);
+  return {r:a[0], delta:a[1], rho:a[2], tCut:a[3]};
 }
 
-// =========================================================================
-// SIMULATION ENGINE
-// =========================================================================
-const NUM_SOURCE = 200; // total source symbols to send
+// Thin JS wrapper around wasm Simulation to match UI expectations
+const NUM_SOURCE = 200;
+const SMOOTH_WINDOW = 6;
 
-class GEChannel {
-  constructor(p,q) { this.p=p; this.q=q; this.state='good'; }
-  step() {
-    this.state === 'good'
-      ? (Math.random()<this.p && (this.state='bad'))
-      : (Math.random()<this.q && (this.state='good'));
-    return this.state;
-  }
-  isLost() { return this.state === 'bad'; }
-}
-
-class Simulation {
+class SimWrapper {
   constructor(params) {
-    this.eps = params.eps;
-    this.q = params.q;
-    this.p = params.eps * params.q / (1 - params.eps);
-    this.rttMs = params.rttMs;
-    this.W = params.W;
-
-    this.symbolSize = 1200;
-    this.sigma2 = burstVarianceFactor(this.p, this.q);
-    this.rStarAuto = computeRStar(this.eps, this.sigma2, this.W);
-    this.rStar = params.r; // from triangle (user-set or computed)
-    this.tCut = params.tCut; // Infinity at rho=1.0, finite at rho<1.0
-    this.amplitude = this.rStar * this.q;
-    this.decay = 1 - this.q;
-    // Link capacity: C symbols per tick. Source gets C/(1+r), corrections get C*r/(1+r).
-    this.capacity = 4;
-    // RTT in ticks: assume 1 tick = 1ms
-    this.rttTicks = Math.max(2, Math.round(this.rttMs / 1));
-    this.srttSecs = this.rttMs / 1000;
-    this.rttvarSecs = this.srttSecs * 0.25;
-
-    this.channel = new GEChannel(this.p, this.q);
-    this.tick = 0;
-    this.rateHistory = []; // {src, fec, arq, cumRecv, cumDecoded}
+    const rho = params.rho || 1.0;
+    this.inner = new wasm.Simulation(params.eps, params.q, params.rttMs, params.W, params.r, rho);
+    this.rateHistory = [];
     this.channelStates = [];
     this.lossEvents = [];
-
-    // Source symbols: {tick, seq, lost, recovered, arqTick (last retransmit tick)}
-    this.symbols = [];
-    this.nextSeq = 0;
-    this.sourceDone = false; // all NUM_SOURCE sent
-    this.finished = false;   // all decoded or given up
-
-    this.totalSrc = 0; this.totalFec = 0; this.totalArq = 0;
-    this.totalLost = 0;
-    // Steady-state counters (only during source-sending phase)
-    this.steadySrc = 0; this.steadyFec = 0; this.steadyArq = 0;
-    this.cumSent = 0;      // all symbols sent (source + FEC + ARQ)
-    this.cumArrived = 0;   // all symbols arrived at receiver (not lost on channel)
-    this.cumDecoded = 0;   // source data usable by application
-    this.fecDebt = 0;
-    this.fecPool = 0; // FEC repair symbols received (not yet used for decoding)
-    this.lostPending = 0;  // lost source symbols waiting for FEC recovery
-    this.smoothWindow = 6;
+    this.eps = params.eps;
+    this.q = params.q;
+    this.sigma2 = wasm.burst_variance_factor(params.eps * params.q / (1 - params.eps), params.q);
   }
+
+  get finished() { return this.inner.is_finished(); }
+  get rStar() { return this.inner.get_r_star(); }
+  get rStarAuto() { return this.inner.get_r_star_auto(); }
+  get totalSrc() { return this.inner.get_total_src(); }
+  get totalFec() { return this.inner.get_total_fec(); }
+  get totalArq() { return this.inner.get_total_arq(); }
+  get totalLost() { return this.inner.get_total_lost(); }
+  get cumDecoded() { return this.inner.get_cum_decoded(); }
+  get tick() { return this.inner.get_tick(); }
+
+  retxBufSize() { return this.inner.get_retx_buf_size(); }
 
   step() {
-    // Paper Section 5.3: Total capacity C splits as:
-    //   source_rate     = C / (1 + r)
-    //   correction_rate = C * r / (1 + r)
-    // Source and correction are interleaved. Each correction slot uses
-    // P_lost(t) to decide repair (FEC) vs retransmit (ARQ).
     if (this.finished) return;
-    this.channel.step();
-    this.channelStates.push(this.channel.state);
-
-    let srcN = 0, fecN = 0, arqN = 0, lostN = 0;
-    const r = this.rStar;
-    const C = this.capacity;
-
-    // Interleave source and correction at ratio 1/(1+r) vs r/(1+r).
-    // Use fractional accumulator: each slot, add r to corrDebt.
-    // When corrDebt >= 1, that slot is correction. Otherwise, source.
-    for (let slot = 0; slot < C; slot++) {
-      // First slot each tick is always source (guarantees data flow even at high r*)
-      const forceSource = (slot === 0 && !this.sourceDone);
-      this.fecDebt = Math.min(this.fecDebt + r, 3.0);
-
-      const hasUnrecovered = this.symbols.some(s => s.lost && !s.recovered);
-      if (!forceSource && this.fecDebt >= 1.0 && (!this.sourceDone || hasUnrecovered)) {
-        // --- Correction slot: P_lost splits between ARQ and FEC ---
-        // Paper Section 5.3: retransmit_rate = correction_rate × P_lost(t)
-        //                    repair_rate     = correction_rate × (1 - P_lost(t))
-        this.fecDebt -= 1.0;
-
-        // Paper Section 3.4: select which symbol this correction slot covers,
-        // weighted by taper density. Then use that symbol's P_lost for FEC/ARQ.
-        // Young symbols (high density) are selected often → low P_lost → FEC.
-        // Old symbols (low density) are selected rarely → high P_lost → ARQ.
-        let totalDensity = 0;
-        for (const sym of this.symbols) {
-          if (sym.recovered) continue;
-          totalDensity += taperDensity(this.tick - sym.tick, this.amplitude, this.decay);
-        }
-        // Weighted random selection
-        let pick = null;
-        if (totalDensity > 0) {
-          let r2 = Math.random() * totalDensity;
-          for (const sym of this.symbols) {
-            if (sym.recovered) continue;
-            r2 -= taperDensity(this.tick - sym.tick, this.amplitude, this.decay);
-            if (r2 <= 0) { pick = sym; break; }
-          }
-        }
-
-        const lost = this.channel.isLost();
-        if (lost) lostN++;
-
-        let didArq = false;
-        if (pick) {
-          const ageSecs = (this.tick - pick.tick) * 0.001;
-          const pl = pLost(ageSecs, this.eps, this.srttSecs, this.rttvarSecs);
-          if (Math.random() < pl && pick.lost
-              && this.tick - pick.tick >= this.rttTicks
-              && this.tick - pick.arqTick >= this.rttTicks) {
-            pick.arqTick = this.tick;
-            this.totalArq++; arqN++; this.cumSent++;
-            if (!lost) { this.cumArrived++; pick.recovered = true; this.cumDecoded++; this.lostPending--; }
-            didArq = true;
-          }
-        }
-        if (!didArq) {
-          this.totalFec++; fecN++; this.cumSent++;
-          if (!lost) {
-            this.cumArrived++;
-            if (this.lostPending > 0) this.fecPool++;
-          }
-        }
-      } else if (!this.sourceDone) {
-        const lost = this.channel.isLost();
-        if (lost) lostN++;
-        const sym = { tick: this.tick, seq: this.nextSeq++, lost, recovered: false, arqTick: -Infinity };
-        this.symbols.push(sym);
-        this.totalSrc++; srcN++; this.cumSent++;
-        if (lost) { this.totalLost++; this.lossEvents.push(this.tick); this.lostPending++; }
-        else { this.cumArrived++; this.cumDecoded++; }
-        if (this.nextSeq >= NUM_SOURCE) this.sourceDone = true;
-      }
-    }
-
-    // Incremental FEC decode: each FEC symbol in pool recovers one lost symbol.
-    // Real sliding-window decoder recovers incrementally, not in bulk.
-    while (this.fecPool > 0 && this.lostPending > 0) {
-      let found = false;
-      for (const sym of this.symbols) {
-        if (sym.lost && !sym.recovered) {
-          sym.recovered = true;
-          this.cumDecoded++;
-          this.lostPending--;
-          this.fecPool--;
-          found = true;
-          break;
-        }
-      }
-      if (!found) break;
-    }
-
-    // Process ACKs: non-lost symbols ACKed after RTT (removes from retransmit consideration)
-    for (const sym of this.symbols) {
-      if (!sym.lost && !sym.recovered && this.tick - sym.tick >= this.rttTicks)
-        sym.recovered = true; // ACKed, no longer pending
-    }
-
-    // T_cut eviction: give up on symbols older than T_cut (rho < 1.0).
-    // At rho=1.0, T_cut=Infinity → never give up.
-    if (this.sourceDone && isFinite(this.tCut)) {
-      const tCutTicks = Math.round(this.tCut);
-      for (const sym of this.symbols) {
-        if (sym.lost && !sym.recovered && this.tick - sym.tick > tCutTicks) {
-          sym.recovered = true; // permanently lost (accepted)
-          this.lostPending--;
-        }
-      }
-    }
-
-    // Finish when all source symbols are decoded or evicted
-    if (this.sourceDone && this.lostPending <= 0 && !this.symbols.some(s => s.lost && !s.recovered)) {
-      this.finished = true;
-    }
-    // Safety cap
-    if (this.tick > 5000) this.finished = true;
-
-    // Prune resolved symbols (keep lost unrecovered for FEC/ARQ)
-    this.symbols = this.symbols.filter(s => (s.lost && !s.recovered) || this.tick - s.tick < 10);
-
-    // Track steady-state overhead (source-sending phase only)
-    if (!this.sourceDone) {
-      this.steadySrc += srcN; this.steadyFec += fecN; this.steadyArq += arqN;
-    }
-
+    this.inner.step();
+    this.channelStates.push(this.inner.channel_is_good() ? 'good' : 'bad');
+    const lost = this.inner.get_lost();
+    if (lost > 0) this.lossEvents.push(this.inner.get_tick() - 1);
+    const pct = 100 / this.inner.get_num_source();
     this.rateHistory.push({
-      src: srcN, fec: fecN, arq: arqN, lost: lostN,
-      cumSent: this.cumSent, cumArrived: this.cumArrived, cumDecoded: this.cumDecoded
+      src: this.inner.get_src(), fec: this.inner.get_fec(),
+      arq: this.inner.get_arq(), lost,
+      cumSent: this.inner.get_cum_sent() * pct,
+      cumArrived: this.inner.get_cum_arrived() * pct,
+      cumDecoded: this.inner.get_cum_decoded() * pct,
     });
-    this.tick++;
-  }
-
-  retxBufSize() {
-    return this.symbols.filter(s => s.lost && !s.recovered).length;
   }
 
   smoothedRate(idx) {
-    const w = this.smoothWindow;
+    const w = SMOOTH_WINDOW;
     const start = Math.max(0, idx - w + 1), end = idx + 1;
     let s=0,f=0,a=0,l=0,n=0;
     for (let i=start; i<end && i<this.rateHistory.length; i++) {
@@ -433,9 +220,8 @@ class Simulation {
       a+=this.rateHistory[i].arq; l+=this.rateHistory[i].lost; n++;
     }
     const h = this.rateHistory[idx];
-    const pct = 100 / NUM_SOURCE;
     return n>0 ? {src:s/n, fec:f/n, arq:a/n, lost:l/n,
-                  cumSent:h.cumSent*pct, cumArrived:h.cumArrived*pct, cumDecoded:h.cumDecoded*pct}
+                  cumSent:h.cumSent, cumArrived:h.cumArrived, cumDecoded:h.cumDecoded}
                : {src:0,fec:0,arq:0,lost:0,cumSent:0,cumArrived:0,cumDecoded:0};
   }
 }
@@ -451,7 +237,7 @@ const slRho=document.getElementById('sl-rho'), triMode=document.getElementById('
 
 function getParams() {
   const eps = Math.max(parseFloat(slEps.value),0.001), q = parseFloat(slQ.value);
-  const pp = eps*q/(1-eps), s2 = burstVarianceFactor(pp, q);
+  const pp = eps*q/(1-eps), s2 = wasm.burst_variance_factor(pp, q);
   const W = parseInt(slW.value), m = triMode.value;
   // Get r from the triangle: computed in delta-rho mode, slider in r-rho/r-delta modes
   let r;
@@ -467,7 +253,7 @@ function getParams() {
   } else {
     rho = parseFloat(slRho.value);
   }
-  const tCut = findTCut(eps, q, r, W, s2, rho); // Infinity at rho=1.0
+  const tCut = wasm.find_t_cut(eps, q, r, W, s2, rho); // Infinity at rho=1.0
   return { eps, q, rttMs: parseInt(slRtt.value), W, r, rho, tCut };
 }
 function updateLabels() {
@@ -479,7 +265,7 @@ function updateLabels() {
   document.getElementById('v-r').textContent = parseFloat(slR.value).toFixed(2);
   document.getElementById('v-delta').textContent = Math.pow(10,parseFloat(slDelta.value)).toExponential(1);
   document.getElementById('v-rho').textContent = parseFloat(slRho.value).toFixed(3);
-  const pp = p.eps*p.q/(1-p.eps), s2 = burstVarianceFactor(pp,p.q);
+  const pp = p.eps*p.q/(1-p.eps), s2 = wasm.burst_variance_factor(pp,p.q);
   document.getElementById('derived-vals').textContent =
     `p=${pp.toFixed(4)} | burst=${(1/p.q).toFixed(1)} | sigma2=${s2.toFixed(2)}`;
 }
@@ -490,7 +276,7 @@ function updateTriVis() {
   document.getElementById('sl-rho-wrap').style.display = m==='r-delta' ? 'none' : '';
 }
 function solveTri() {
-  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=burstVarianceFactor(pp,p.q);
+  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=wasm.burst_variance_factor(pp,p.q);
   const m=triMode.value; let res;
   if (m==='delta-rho') res=solveRFromDeltaRho(p.eps,p.q,p.W,s2,Math.pow(10,parseFloat(slDelta.value)),parseFloat(slRho.value));
   else if (m==='r-rho') res=solveDeltaFromRRho(p.eps,p.q,p.W,s2,parseFloat(slR.value),parseFloat(slRho.value));
@@ -556,10 +342,10 @@ const taperChart = new Chart(document.getElementById('taper-chart').getContext('
 });
 
 function updateTaper() {
-  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=burstVarianceFactor(pp,p.q);
-  const rS=computeRStar(p.eps,s2,p.W), A=rS*p.q, d=1-p.q;
+  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=wasm.burst_variance_factor(pp,p.q);
+  const rS=wasm.compute_r_star(p.eps,s2,p.W), A=rS*p.q, d=1-p.q;
   const labels=[], data=[];
-  for (let t=0;t<=60;t++) { labels.push(t); data.push(taperDensity(t,A,d)); }
+  for (let t=0;t<=60;t++) { labels.push(t); data.push(wasm.taper_density(t,A,d)); }
   taperChart.data.labels=labels; taperChart.data.datasets[0].data=data;
   taperChart.update('none');
 }
@@ -584,8 +370,8 @@ function drawStrip() {
 
 function updateMetrics() {
   if (!sim) return;
-  const oh = sim.steadySrc>0 ? ((sim.steadyFec+sim.steadyArq)/sim.steadySrc*100) : 0;
-  const rec = sim.totalSrc>0 ? (sim.cumDecoded/sim.totalSrc*100) : 100;
+  const oh = sim.inner ? sim.inner.get_overhead() : 0;
+  const rec = sim.inner ? sim.inner.get_recovery() : 100;
   document.getElementById('m-overhead').textContent = oh.toFixed(1)+'%';
   document.getElementById('m-recovery').textContent = rec.toFixed(1)+'%';
   const pp=sim.p, s2=sim.sigma2;
@@ -607,7 +393,7 @@ function resetSim() {
   document.getElementById('btn-play').textContent = 'Play';
   document.getElementById('btn-play').classList.remove('active');
   if (animId) { cancelAnimationFrame(animId); animId = null; }
-  sim = new Simulation(getParams());
+  sim = new SimWrapper(getParams());
   for (const ds of mainChart.data.datasets) ds.data = [];
   mainChart.data.labels = []; mainChart.update('none');
   drawStrip(); updateMetrics(); updateTaper(); solveTri();
