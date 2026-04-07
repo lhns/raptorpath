@@ -70,14 +70,10 @@ pub struct PeerConfig {
     pub enable_pi_feedback: bool,
     /// Symbol size override (0 = use profile default)
     pub symbol_size_override: u16,
-    /// Enable ProbeRTT phase in BBR
-    pub enable_probe_rtt: bool,
     /// Reorder buffer timeout in ms (0 = disabled)
     pub reorder_timeout_ms: u64,
     /// Reorder buffer max capacity
     pub reorder_max_size: usize,
-    /// NACK auto-disable threshold: disable NACK when max_fec_overhead >= this
-    pub nack_auto_disable_threshold: f64,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -307,8 +303,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         config.pin_cert.as_deref(),
     ).await?;
 
-    // Set up paths
-    let mut scheduler = Scheduler::new_with_config(Arc::new(WallClock), config.enable_probe_rtt);
+    // Set up paths with protocol-hint-derived scheduling weights
+    let mut scheduler = Scheduler::new_with_hint(Arc::new(WallClock), config.protocol_hint);
     for (i, _addr) in config.bind_addrs.iter().enumerate() {
         scheduler.add_path(i as u32);
     }
@@ -1314,8 +1310,12 @@ async fn run_window_sender(
     };
     let mut prev_ack: u64 = 0;
     let mut last_nack_repair_us: u64 = 0;
-    /// Fractional repair accumulator: tracks sub-symbol repair debt.
+    // Fractional repair accumulator: tracks sub-symbol repair debt.
+    // Driven by TaperFunction density when GE data is available,
+    // falls back to flat rate from compute_repair_rate_capped.
     let mut repair_debt: f64 = 0.0;
+    // Source symbol counter for taper time offset (symbols since window start).
+    let mut taper_offset: u64 = 0;
     /// Congestion-aware NACK repair throttle (ADR-0046).
     let mut nack_congestion = NackCongestionState::new();
     /// Maps source seq → path it was sent on (for cross-path retransmission).
@@ -1393,6 +1393,9 @@ async fn run_window_sender(
                         .unwrap_or(0.0)
                 };
                 retransmit_buffer.insert(wire_sym.block_id, (now_us(), epsilon, source_path));
+                // Track correction deficit: this symbol needs epsilon coverage
+                let mut sched = scheduler.lock();
+                sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
             }
 
             // Redundant send for Realtime: duplicate source on second-best path
@@ -1424,7 +1427,9 @@ async fn run_window_sender(
                 }
             }
 
-            // Fractional repair accumulator with cwnd budget gate (ADR-0050)
+            // Taper-driven repair accumulator with cwnd budget gate (ADR-0050).
+            // Uses TaperFunction density τ(t) = A×(1-q)^t when GE data is available,
+            // capped by spare capacity. Falls back to flat rate otherwise.
             if encoder.window_size() > 1 {
                 let repair_rate = {
                     let ctrl = fec_controller.lock();
@@ -1437,11 +1442,19 @@ async fn run_window_sender(
                         .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                         .map(|p| &p.estimator);
                     match path_estimator {
-                        Some(est) => ctrl.compute_repair_rate_capped(est, spare, encoder.window_size()),
+                        Some(est) => {
+                            let flat_rate = ctrl.compute_repair_rate_capped(est, spare, encoder.window_size());
+                            // Use taper density at current offset if GE model is valid
+                            let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
+                            let density = taper.density(taper_offset as f64);
+                            // Cap by spare capacity (never exceed link headroom)
+                            density.min(spare.max(0.0))
+                        }
                         None => 0.0,
                     }
                 };
                 repair_debt += repair_rate;
+                taper_offset += 1;
 
                 while repair_debt >= 1.0 && encoder.window_size() > 0 {
                     repair_debt -= 1.0;
@@ -1588,7 +1601,7 @@ async fn run_window_sender(
                             .unwrap_or(std::cmp::Ordering::Equal)
                     });
                 match worst {
-                    Some(p) => (p.estimator.loss_rate(), p.bbr_min_rtt()),
+                    Some(p) => (p.estimator.loss_rate(), p.copa_min_rtt()),
                     None => (0.0, None),
                 }
             };
@@ -1756,6 +1769,13 @@ async fn run_window_sender(
             source_path_map.retain(|&seq, _| seq >= win_start);
             // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
             retransmit_buffer = retransmit_buffer.split_off(&(ack + 1));
+            // Update correction deficit: ACKed symbols no longer need coverage
+            {
+                let mut sched = scheduler.lock();
+                sched.deficit.on_ack_cumulative(ack);
+            }
+            // Reset taper offset on window advancement (new correction cycle)
+            taper_offset = 0;
 
             prev_ack = ack;
         }

@@ -4,15 +4,16 @@
 //! Unlike round-robin MPTCP, we schedule symbols proportional to each path's
 //! effective goodput and route repair symbols preferentially to better paths.
 //!
-//! Congestion control is BBR-inspired and delay-based: it tracks the minimum
-//! RTT (propagation baseline) and maximum delivery rate in sliding windows,
-//! then sets cwnd = BDP (bandwidth × delay product).  Loss alone does NOT
-//! reduce the window — only rising RTT does.  This prevents wireless random
-//! loss from collapsing throughput, unlike traditional loss-based AIMD.
+//! Congestion control uses Copa (delay-based): it tracks the minimum RTT
+//! (propagation baseline) and computes rate = 1/(d_copa × dq), where
+//! dq = RTT - min_RTT is the queuing delay.  Loss alone does NOT reduce
+//! the window — only rising RTT does.  This prevents wireless random loss
+//! from collapsing throughput.  No ProbeRTT phase (natural oscillation).
 
 pub mod clock;
 pub use clock::*;
 
+use crate::control::fec_rate::ProtocolHint;
 use crate::control::LossEstimator;
 use crate::fec::{FecBackend, WireSymbol};
 use std::collections::HashMap;
@@ -23,23 +24,107 @@ use std::time::{Duration, Instant};
 /// Identifies a network path (e.g., WiFi, LTE, Ethernet).
 pub type PathId = u32;
 
-/// BBR phase state machine.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum BbrPhase {
-    /// Probing for bandwidth (aggressive 2x gain).
-    Startup,
-    /// Steady-state bandwidth probing (1x gain).
-    ProbeBw,
-    /// Periodic min_rtt re-measurement (reduced cwnd).
-    ProbeRtt,
+/// Copa congestion control parameter: target queue depth.
+/// d_copa = 0.5 targets ~2 packets of queue. See paper Section 12.4.
+const COPA_DELTA: f64 = 0.5;
+
+/// Scheduling weights derived from protocol hint.
+/// Controls the latency vs bandwidth trade-off in the interpolated objective.
+/// See paper Section 13.8.
+#[derive(Debug, Clone, Copy)]
+pub struct SchedulingWeights {
+    /// Weight for latency cost: SUM(x_i × E_i)
+    pub w_lat: f64,
+    /// Weight for bandwidth overhead cost: SUM(x_i × r_i)
+    pub w_bw: f64,
 }
 
-/// How often to enter ProbeRTT to refresh min_rtt (BBRv1: 10s).
-const PROBE_RTT_INTERVAL: Duration = Duration::from_secs(10);
-/// How long to hold in ProbeRTT phase (BBRv1: 200ms).
-const PROBE_RTT_DURATION: Duration = Duration::from_millis(200);
-/// Cwnd during ProbeRTT — minimal to drain the pipe.
-const PROBE_RTT_CWND: u32 = 4;
+impl SchedulingWeights {
+    pub fn from_hint(hint: ProtocolHint) -> Self {
+        match hint {
+            ProtocolHint::Realtime => Self { w_lat: 1.0, w_bw: 0.0 },
+            ProtocolHint::Bulk => Self { w_lat: 0.0, w_bw: 1.0 },
+            ProtocolHint::Auto => Self { w_lat: 0.5, w_bw: 0.5 },
+        }
+    }
+}
+
+/// Global correction deficit tracker.
+///
+/// Tracks `deficit = SUM(epsilon_s for un-ACKed symbols)` — the total expected
+/// corrections still needed across all paths. See paper Section 13.4.
+///
+/// Each sent symbol adds `epsilon_i` (loss rate of its path) to the deficit.
+/// Each ACKed symbol removes its send-time `epsilon_s` (confirmed survived).
+/// Lost corrections add to the deficit, creating the geometric chain that
+/// produces `r = epsilon / (1 - epsilon)`.
+#[derive(Debug)]
+pub struct CorrectionDeficit {
+    /// Per-symbol tracking: (seq, path_id, epsilon_at_send)
+    pending: VecDeque<(u64, PathId, f64)>,
+    /// Running sum of epsilon_s for all pending symbols.
+    total: f64,
+}
+
+impl CorrectionDeficit {
+    pub fn new() -> Self {
+        Self {
+            pending: VecDeque::new(),
+            total: 0.0,
+        }
+    }
+
+    /// Record a symbol sent on a path with loss rate epsilon.
+    pub fn on_send(&mut self, seq: u64, path_id: PathId, epsilon: f64) {
+        self.pending.push_back((seq, path_id, epsilon));
+        self.total += epsilon;
+    }
+
+    /// Acknowledge a symbol (confirmed received). Removes its epsilon from deficit.
+    /// Returns true if the symbol was found and removed.
+    pub fn on_ack(&mut self, seq: u64) -> bool {
+        if let Some(pos) = self.pending.iter().position(|(s, _, _)| *s == seq) {
+            let (_, _, eps) = self.pending.remove(pos).unwrap();
+            self.total -= eps;
+            if self.total < 0.0 {
+                self.total = 0.0; // floating point guard
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Acknowledge all symbols up to and including `up_to_seq` (cumulative ACK).
+    pub fn on_ack_cumulative(&mut self, up_to_seq: u64) {
+        while self.pending.front().is_some_and(|(s, _, _)| *s <= up_to_seq) {
+            let (_, _, eps) = self.pending.pop_front().unwrap();
+            self.total -= eps;
+        }
+        if self.total < 0.0 {
+            self.total = 0.0;
+        }
+    }
+
+    /// Current total correction deficit.
+    pub fn deficit(&self) -> f64 {
+        self.total
+    }
+
+    /// Number of un-ACKed symbols being tracked.
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Per-path deficit: sum of epsilon_s for un-ACKed symbols on a specific path.
+    pub fn path_deficit(&self, path_id: PathId) -> f64 {
+        self.pending
+            .iter()
+            .filter(|(_, pid, _)| *pid == path_id)
+            .map(|(_, _, eps)| eps)
+            .sum()
+    }
+}
 
 /// Sliding window entry for bandwidth/RTT tracking.
 #[derive(Clone, Debug)]
@@ -56,43 +141,30 @@ struct RttSample {
     timestamp: Instant,
 }
 
-/// BBR-inspired congestion control state.
+/// Copa delay-based congestion control state.
 ///
-/// Instead of reacting to loss (AIMD), we model the pipe:
-///   - `min_rtt`: propagation delay baseline (10s sliding window)
-///   - `max_bw`: maximum observed delivery rate (10s sliding window)
-///   - `bdp = max_bw × min_rtt`: the bandwidth-delay product
-///   - `cwnd = gain × bdp` (gain > 1 during probe, = 1 steady state)
+/// Copa (Arun & Balakrishnan, NSDI 2018) computes the sending rate from
+/// the queuing delay: rate = 1 / (d_copa × dq), where dq = RTT - min_RTT.
 ///
-/// Loss handling is RTT-aware:
-///   - Loss + stable RTT → wireless/random → no cwnd reduction
-///   - Loss + rising RTT → real congestion → reduce to BDP
-///   - Decode failure + rising RTT → aggressive drain to 0.75 × BDP
+/// Key properties:
+///   - No phases (no Startup/ProbeBw/ProbeRtt state machine)
+///   - Natural rate oscillation drains queues without explicit probe phase
+///   - Compatible with taper function (no FEC protection gaps)
+///   - Delay-based: loss + stable RTT = channel loss (ignore)
+///
+/// See paper Section 12 (Congestion Control Integration).
 #[derive(Debug)]
-pub struct BbrState {
-    /// Whether ProbeRTT phase is enabled (can be disabled for benchmarking)
-    enable_probe_rtt: bool,
+pub struct CopaState {
     /// Sliding window of bandwidth samples (symbols/sec).
     bw_samples: VecDeque<BwSample>,
     /// Sliding window of RTT samples.
     rtt_samples: VecDeque<RttSample>,
-    /// How long to keep samples in sliding windows.
+    /// How long to keep samples in sliding windows (10s).
     window_duration: Duration,
     /// Minimum RTT seen in the current window (propagation baseline).
     min_rtt: Option<Duration>,
     /// Maximum delivery rate seen in the current window.
     max_bw: f64,
-    /// Current gain factor applied to BDP for cwnd.
-    /// > 1.0 during startup/probing, 1.0 in steady state.
-    cwnd_gain: f64,
-    /// Current BBR phase (Startup, ProbeBw, or ProbeRtt).
-    phase: BbrPhase,
-    /// When min_rtt was last refreshed (for ProbeRTT entry decision).
-    min_rtt_stamp: Instant,
-    /// When ProbeRTT hold period ends (None if not in ProbeRTT).
-    probe_rtt_done_stamp: Option<Instant>,
-    /// Cwnd to restore after ProbeRTT exits.
-    prior_cwnd: Option<u32>,
     /// Previous RTT for detecting trends.
     prev_rtt: Option<Duration>,
     /// Consecutive RTT increases (congestion signal).
@@ -105,31 +177,28 @@ pub struct BbrState {
     last_delivered_time: Instant,
     /// Delivered count at last measurement.
     last_delivered: u64,
+    /// Whether we're still in initial ramp-up (first few RTTs).
+    in_startup: bool,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
 
-impl BbrState {
-    fn new(clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
+impl CopaState {
+    fn new(clock: Arc<dyn Clock>) -> Self {
         let now = clock.now();
         Self {
-            enable_probe_rtt,
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
             max_bw: 0.0,
-            cwnd_gain: 2.0, // start with 2x gain for startup probing
-            phase: BbrPhase::Startup,
-            min_rtt_stamp: now,
-            probe_rtt_done_stamp: None,
-            prior_cwnd: None,
             prev_rtt: None,
             rtt_increases: 0,
             congestion_threshold: 3,
             delivered: 0,
             last_delivered_time: now,
             last_delivered: 0,
+            in_startup: true,
             clock,
         }
     }
@@ -174,7 +243,6 @@ impl BbrState {
 
         // Detect RTT trend
         if let Some(prev) = self.prev_rtt {
-            // RTT increased by more than 10% → possible congestion
             if rtt > prev + prev / 10 {
                 self.rtt_increases += 1;
             } else {
@@ -188,16 +256,7 @@ impl BbrState {
             timestamp: now,
         });
         self.expire_old_samples(now);
-
-        let old_min = self.min_rtt;
         self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
-
-        // Refresh min_rtt_stamp only when a genuinely new low is observed.
-        // This ensures ProbeRTT fires after PROBE_RTT_INTERVAL when RTT
-        // is trending up and no fresh minimum has been seen.
-        if old_min.is_none() || self.min_rtt < old_min {
-            self.min_rtt_stamp = now;
-        }
     }
 
     /// Whether RTT is trending upward (congestion detected).
@@ -205,94 +264,52 @@ impl BbrState {
         self.rtt_increases >= self.congestion_threshold
     }
 
-    /// Compute the BDP-based cwnd target.
-    fn bdp_cwnd(&self) -> u32 {
-        // During ProbeRTT, use minimal cwnd to drain the pipe
-        if self.phase == BbrPhase::ProbeRtt {
-            return PROBE_RTT_CWND;
-        }
-
-        let min_rtt_secs = self
-            .min_rtt
-            .unwrap_or(Duration::from_millis(50))
+    /// Copa cwnd target: rate = 1/(d_copa × dq), cwnd = rate × min_rtt.
+    ///
+    /// dq = current_rtt - min_rtt (queuing delay).
+    /// When dq is small (queue empty): rate is high → large cwnd.
+    /// When dq is large (queue full): rate drops → small cwnd.
+    fn copa_cwnd(&self) -> u32 {
+        let min_rtt = self.min_rtt.unwrap_or(Duration::from_millis(50));
+        let min_rtt_secs = min_rtt.as_secs_f64();
+        let current_rtt_secs = self.prev_rtt
+            .unwrap_or(min_rtt)
             .as_secs_f64();
 
-        let bdp = self.max_bw * min_rtt_secs;
+        let dq = (current_rtt_secs - min_rtt_secs).max(0.0001); // avoid div by zero
+        let rate = 1.0 / (COPA_DELTA * dq); // symbols per second
 
-        // Apply gain and clamp
-        let target = (bdp * self.cwnd_gain) as u32;
+        // cwnd = rate × min_rtt (how many symbols fill the pipe)
+        let cwnd = rate * min_rtt_secs;
+
+        // During startup, allow aggressive growth (2x gain)
+        let gain = if self.in_startup { 2.0 } else { 1.0 };
+        let target = (cwnd * gain) as u32;
         target.clamp(PathState::MIN_CWND, PathState::MAX_CWND)
     }
 
     /// Expire samples older than the sliding window.
     fn expire_old_samples(&mut self, now: Instant) {
         let cutoff = now.checked_sub(self.window_duration).unwrap_or(now);
-        while self
-            .bw_samples
-            .front()
-            .is_some_and(|s| s.timestamp < cutoff)
-        {
+        while self.bw_samples.front().is_some_and(|s| s.timestamp < cutoff) {
             self.bw_samples.pop_front();
         }
-        while self
-            .rtt_samples
-            .front()
-            .is_some_and(|s| s.timestamp < cutoff)
-        {
+        while self.rtt_samples.front().is_some_and(|s| s.timestamp < cutoff) {
             self.rtt_samples.pop_front();
         }
     }
 
-    /// Exit startup phase: drop gain to steady-state.
-    fn exit_startup(&mut self) {
-        if self.phase == BbrPhase::Startup {
-            self.phase = BbrPhase::ProbeBw;
-            self.cwnd_gain = 1.0;
-        }
-    }
-
-    /// Whether we're still in startup phase.
     fn in_startup(&self) -> bool {
-        self.phase == BbrPhase::Startup
+        self.in_startup
     }
 
-    /// Check if we should enter ProbeRTT to refresh min_rtt.
-    /// Enters ProbeRTT if min_rtt hasn't been refreshed in PROBE_RTT_INTERVAL.
-    /// `current_cwnd` is needed to save/restore after ProbeRTT.
-    fn maybe_enter_probe_rtt(&mut self, current_cwnd: u32) {
-        if !self.enable_probe_rtt || self.phase == BbrPhase::ProbeRtt {
-            return;
-        }
-        let now = self.clock.now();
-        if now.duration_since(self.min_rtt_stamp) > PROBE_RTT_INTERVAL {
-            self.prior_cwnd = Some(current_cwnd);
-            self.phase = BbrPhase::ProbeRtt;
-            self.probe_rtt_done_stamp = Some(now + PROBE_RTT_DURATION);
-        }
-    }
-
-    /// Check if ProbeRTT hold period is complete, and exit if so.
-    /// Returns the prior cwnd to restore, if exiting.
-    fn maybe_exit_probe_rtt(&mut self) -> Option<u32> {
-        if self.phase != BbrPhase::ProbeRtt {
-            return None;
-        }
-        let now = self.clock.now();
-        if let Some(done) = self.probe_rtt_done_stamp {
-            if now >= done {
-                self.min_rtt_stamp = now;
-                self.phase = BbrPhase::ProbeBw;
-                self.probe_rtt_done_stamp = None;
-                return self.prior_cwnd.take();
-            }
-        }
-        None
+    fn exit_startup(&mut self) {
+        self.in_startup = false;
     }
 
     fn reset(&mut self) {
         let clock = self.clock.clone();
-        let enable_probe_rtt = self.enable_probe_rtt;
-        *self = Self::new(clock, enable_probe_rtt);
+        *self = Self::new(clock);
     }
 
     /// Read the current min_rtt estimate (for diagnostics/benchmarking).
@@ -311,17 +328,16 @@ pub struct PathState {
     pub in_flight: u32,
     /// Whether the path is considered usable
     pub active: bool,
-    /// Slow-start threshold (kept for compatibility with tests, but BBR
-    /// uses BDP-based cwnd instead of ssthresh-driven phase changes)
+    /// Slow-start threshold (kept for legacy test compatibility)
     pub ssthresh: u32,
-    /// Whether we are in slow-start phase (maps to BBR startup)
+    /// Whether we are in slow-start phase (Copa startup)
     pub in_slow_start: bool,
     /// Last time we received an RTCP-style report or any data from this path
     pub last_report: Instant,
     /// Maximum datagram size discovered for this path
     pub max_datagram_size: Option<usize>,
-    /// BBR congestion control state
-    bbr: BbrState,
+    /// Copa delay-based congestion control state.
+    copa: CopaState,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -336,7 +352,7 @@ impl PathState {
 }
 
 impl PathState {
-    pub fn new(id: PathId, clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
+    pub fn new(id: PathId, clock: Arc<dyn Clock>) -> Self {
         let now = clock.now();
         Self {
             id,
@@ -348,9 +364,47 @@ impl PathState {
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
-            bbr: BbrState::new(clock.clone(), enable_probe_rtt),
+            copa: CopaState::new(clock.clone()),
             clock,
         }
+    }
+
+    /// Correction rate r = epsilon / (1 - epsilon).
+    /// The (1-epsilon) denominator accounts for corrections-of-corrections.
+    /// See paper Section 13.4.
+    pub fn correction_rate(&self) -> f64 {
+        let eps = self.estimator.loss_rate();
+        if eps >= 1.0 {
+            return f64::INFINITY;
+        }
+        eps / (1.0 - eps)
+    }
+
+    /// Effective delivery time E_i = RTT_i/2 + epsilon_i × t_recovery_i.
+    ///
+    /// t_recovery is the expected time to recover a lost symbol. We approximate
+    /// it as one RTT (ARQ round-trip) weighted by loss probability. When FEC
+    /// is likely to recover (low loss), t_recovery is small. When ARQ is needed
+    /// (high loss or aged symbol), t_recovery approaches one full RTT.
+    ///
+    /// See paper Section 13.5.
+    pub fn effective_delivery_time(&self) -> f64 {
+        let rtt_secs = self.estimator.rtt().as_secs_f64();
+        let eps = self.estimator.loss_rate();
+        // t_recovery ≈ RTT (one round-trip for ARQ recovery)
+        let t_recovery = rtt_secs;
+        rtt_secs / 2.0 + eps * t_recovery
+    }
+
+    /// Source-carrying capacity: B_eff = throughput / (1 + r).
+    /// See paper Section 13.5.
+    pub fn effective_bandwidth(&self) -> f64 {
+        let throughput = self.estimator.throughput();
+        let r = self.correction_rate();
+        if r.is_infinite() {
+            return 0.0;
+        }
+        throughput / (1.0 + r)
     }
 
     /// Effective goodput: throughput * (1 - loss_rate).
@@ -380,53 +434,44 @@ impl PathState {
         self.cwnd.saturating_sub(self.in_flight) as f64 / self.in_flight as f64
     }
 
-    /// BBR-style congestion control: handle acknowledgements.
+    /// Copa congestion control: handle acknowledgements.
     ///
-    /// Records delivery, computes BDP, and adjusts cwnd toward the
-    /// bandwidth-delay product.  During startup, cwnd grows aggressively
-    /// (2× BDP gain).  Once the pipe is full (RTT starts rising or BDP
-    /// stabilizes), transitions to steady state (1× gain).
+    /// Records delivery and adjusts cwnd via Copa's delay-based formula:
+    /// rate = 1/(d_copa × dq), cwnd = rate × min_rtt.
+    /// During startup, cwnd grows aggressively (2× gain).
+    /// Once RTT starts rising, transitions to steady state.
     pub fn on_ack(&mut self, acked: u32) {
-        let _rate = self.bbr.record_delivery(acked);
+        let _rate = self.copa.record_delivery(acked);
 
-        // Startup exit: if delivery rate stopped growing or RTT is rising
-        if self.bbr.in_startup() {
-            if self.bbr.is_congested() {
-                self.bbr.exit_startup();
+        // Startup exit: if RTT is rising (queue building)
+        if self.copa.in_startup() {
+            if self.copa.is_congested() {
+                self.copa.exit_startup();
             }
-            // Also exit startup if we've had enough samples and BDP is meaningful
-            if self.bbr.bw_samples.len() >= 4 && self.bbr.min_rtt.is_some() {
-                let bdp = self.bbr.bdp_cwnd();
-                if self.cwnd >= bdp {
-                    self.bbr.exit_startup();
+            // Also exit startup if we've had enough samples
+            if self.copa.bw_samples.len() >= 4 && self.copa.min_rtt.is_some() {
+                let copa_target = self.copa.copa_cwnd();
+                if self.cwnd >= copa_target {
+                    self.copa.exit_startup();
                 }
             }
         }
 
-        // Check ProbeRTT entry/exit
-        self.bbr.maybe_enter_probe_rtt(self.cwnd);
-        if let Some(prior) = self.bbr.maybe_exit_probe_rtt() {
-            self.cwnd = prior;
-        }
+        // Copa cwnd: purely delay-based, no phases
+        let copa_target = self.copa.copa_cwnd();
 
-        // Set cwnd based on BDP
-        let bdp_target = self.bbr.bdp_cwnd();
-
-        if self.bbr.phase == BbrPhase::ProbeRtt {
-            // During ProbeRTT, force cwnd to PROBE_RTT_CWND
-            self.cwnd = PROBE_RTT_CWND;
-        } else if self.bbr.in_startup() {
-            // During startup, grow toward BDP target but also allow
-            // traditional slow-start growth if BDP estimate is too low
-            self.cwnd = std::cmp::max(self.cwnd + acked, bdp_target);
+        if self.copa.in_startup() {
+            // During startup, grow toward Copa target but also allow
+            // traditional slow-start growth if estimate is too low
+            self.cwnd = std::cmp::max(self.cwnd + acked, copa_target);
         } else {
-            // Steady state: converge toward BDP
+            // Steady state: converge toward Copa target
             // Smooth transition: move 25% toward target per ACK
-            if bdp_target > self.cwnd {
-                let step = std::cmp::max(1, (bdp_target - self.cwnd) / 4);
+            if copa_target > self.cwnd {
+                let step = std::cmp::max(1, (copa_target - self.cwnd) / 4);
                 self.cwnd += step;
-            } else if bdp_target < self.cwnd {
-                let step = std::cmp::max(1, (self.cwnd - bdp_target) / 4);
+            } else if copa_target < self.cwnd {
+                let step = std::cmp::max(1, (self.cwnd - copa_target) / 4);
                 self.cwnd = self.cwnd.saturating_sub(step);
             }
         }
@@ -434,35 +479,30 @@ impl PathState {
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
 
         // Sync legacy fields
-        self.in_slow_start = self.bbr.in_startup();
+        self.in_slow_start = self.copa.in_startup();
         if !self.in_slow_start && self.ssthresh > self.cwnd {
             self.ssthresh = self.cwnd;
         }
     }
 
-    /// BBR-style congestion control: handle loss events.
+    /// Copa congestion control: handle loss events.
     ///
     /// Unlike AIMD, loss alone does NOT reduce cwnd.  The key insight:
     ///   - Loss + stable RTT → wireless/random loss → ignore (FEC handles it)
-    ///   - Loss + rising RTT → real congestion → drain to BDP
-    ///   - Decode failure + rising RTT → severe congestion → drain to 0.75 × BDP
+    ///   - Loss + rising RTT → real congestion → drain toward Copa target
+    ///   - Decode failure + rising RTT → severe congestion → drain to 0.75 × Copa target
     pub fn on_loss(&mut self, fec_recovered: bool) {
-        // During ProbeRTT, don't further reduce cwnd
-        if self.bbr.phase == BbrPhase::ProbeRtt {
-            return;
-        }
-
-        if self.bbr.is_congested() {
+        if self.copa.is_congested() {
             // RTT is rising → real congestion
-            self.bbr.exit_startup();
-            let bdp = self.bbr.bdp_cwnd();
+            self.copa.exit_startup();
+            let copa_target = self.copa.copa_cwnd();
 
             if fec_recovered {
-                // Congestion but FEC saved us — drain to BDP
-                self.cwnd = std::cmp::max(bdp, Self::MIN_CWND);
+                // Congestion but FEC saved us — drain to Copa target
+                self.cwnd = std::cmp::max(copa_target, Self::MIN_CWND);
             } else {
-                // Decode failure + congestion — aggressive drain to 75% BDP
-                let target = (bdp as f64 * 0.75) as u32;
+                // Decode failure + congestion — aggressive drain to 75% Copa target
+                let target = (copa_target as f64 * 0.75) as u32;
                 self.cwnd = std::cmp::max(target, Self::MIN_CWND);
                 self.ssthresh = self.cwnd;
                 self.in_slow_start = false;
@@ -480,23 +520,30 @@ impl PathState {
         }
     }
 
-    /// Feed an RTT measurement into BBR state.
+    /// Feed an RTT measurement into Copa state.
     /// Call this when processing ACKs/reports that include RTT.
     pub fn record_rtt_sample(&mut self, rtt: Duration) {
-        self.bbr.record_rtt(rtt);
+        self.copa.record_rtt(rtt);
     }
 
-    /// Read BBR's current min_rtt estimate (for diagnostics/benchmarking).
-    pub fn bbr_min_rtt(&self) -> Option<Duration> {
-        self.bbr.min_rtt()
+    /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
+    pub fn copa_min_rtt(&self) -> Option<Duration> {
+        self.copa.min_rtt()
     }
 }
 
 /// The multipath scheduler.
+///
+/// Uses the interpolated objective function from paper Section 13.8:
+///   minimize: w_lat × SUM(x_i × E_i) + w_bw × SUM(x_i × r_i)
+/// where E_i is effective delivery time and r_i is correction rate per path.
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
     clock: Arc<dyn Clock>,
-    enable_probe_rtt: bool,
+    /// Global correction deficit tracker (paper Section 13.4).
+    pub deficit: CorrectionDeficit,
+    /// Scheduling weights from protocol hint.
+    weights: SchedulingWeights,
 }
 
 impl Scheduler {
@@ -504,20 +551,33 @@ impl Scheduler {
         Self {
             paths: HashMap::new(),
             clock,
-            enable_probe_rtt: true,
+            deficit: CorrectionDeficit::new(),
+            weights: SchedulingWeights::from_hint(ProtocolHint::Auto),
         }
     }
 
-    pub fn new_with_config(clock: Arc<dyn Clock>, enable_probe_rtt: bool) -> Self {
+    /// Create scheduler with protocol hint for weight configuration.
+    pub fn new_with_hint(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         Self {
             paths: HashMap::new(),
             clock,
-            enable_probe_rtt,
+            deficit: CorrectionDeficit::new(),
+            weights: SchedulingWeights::from_hint(hint),
         }
     }
 
+    /// Update scheduling weights (e.g., when protocol hint changes).
+    pub fn set_weights(&mut self, weights: SchedulingWeights) {
+        self.weights = weights;
+    }
+
+    /// Current scheduling weights.
+    pub fn weights(&self) -> SchedulingWeights {
+        self.weights
+    }
+
     pub fn add_path(&mut self, id: PathId) {
-        self.paths.insert(id, PathState::new(id, self.clock.clone(), self.enable_probe_rtt));
+        self.paths.insert(id, PathState::new(id, self.clock.clone()));
     }
 
     pub fn remove_path(&mut self, id: PathId) {
@@ -540,12 +600,13 @@ impl Scheduler {
             .collect()
     }
 
-    /// Schedule symbols across paths.
+    /// Schedule symbols across paths using the interpolated objective.
     ///
-    /// Strategy:
-    /// - Source symbols go to the LOWEST LATENCY paths first (minimize time to first byte)
-    /// - Repair symbols go to the HIGHEST GOODPUT paths (maximize decode probability)
-    /// - Within each category, distribute proportional to available capacity
+    /// Objective (paper Section 13.8):
+    ///   minimize: w_lat × SUM(x_i × E_i) + w_bw × SUM(x_i × r_i)
+    ///
+    /// Source symbols go to paths with lowest weighted cost.
+    /// Repair symbols go to paths with highest effective goodput (maximize decode probability).
     ///
     /// Returns: Vec<(PathId, Vec<WireSymbol>)>
     pub fn schedule(
@@ -555,35 +616,48 @@ impl Scheduler {
     ) -> Vec<(PathId, Vec<WireSymbol>)> {
         let mut assignments: HashMap<PathId, Vec<WireSymbol>> = HashMap::new();
 
-        // Sort paths by RTT for source symbol scheduling
-        let mut paths_by_rtt: Vec<_> = self
+        let active_paths: Vec<_> = self
             .paths
             .values()
             .filter(|p| p.active && p.available() > 0)
             .collect();
-        paths_by_rtt.sort_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()));
 
-        // Distribute source symbols to lowest-latency paths first
+        if active_paths.is_empty() {
+            return vec![];
+        }
+
+        // Compute per-path cost for source scheduling using interpolated objective.
+        // cost_i = w_lat × E_i + w_bw × r_i
+        // Lower cost = better path for source symbols.
+        let mut path_costs: Vec<(PathId, f64, u32)> = active_paths
+            .iter()
+            .map(|p| {
+                let e_i = p.effective_delivery_time();
+                let r_i = p.correction_rate();
+                let r_clamped = if r_i.is_infinite() { 10.0 } else { r_i };
+                let cost = self.weights.w_lat * e_i + self.weights.w_bw * r_clamped;
+                (p.id, cost, p.available())
+            })
+            .collect();
+        path_costs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Distribute source symbols to lowest-cost paths first
         let mut source_iter = source_symbols.into_iter();
-        for path in &paths_by_rtt {
-            let available = path.available() as usize;
-            let batch: Vec<_> = source_iter.by_ref().take(available).collect();
+        for &(pid, _, avail) in &path_costs {
+            let batch: Vec<_> = source_iter.by_ref().take(avail as usize).collect();
             if batch.is_empty() {
                 break;
             }
-            assignments
-                .entry(path.id)
-                .or_default()
-                .extend(batch);
+            assignments.entry(pid).or_default().extend(batch);
         }
-        // If source symbols remain, distribute to any available path
+        // Overflow to best path
         for sym in source_iter {
-            if let Some(path) = paths_by_rtt.first() {
-                assignments.entry(path.id).or_default().push(sym);
+            if let Some(&(pid, _, _)) = path_costs.first() {
+                assignments.entry(pid).or_default().push(sym);
             }
         }
 
-        // Sort paths by goodput for repair symbol scheduling
+        // Repair symbols: distribute proportional to effective goodput
         let mut paths_by_goodput: Vec<_> = self
             .paths
             .values()
@@ -595,7 +669,6 @@ impl Scheduler {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Distribute repair symbols proportional to goodput
         if !paths_by_goodput.is_empty() {
             let total_goodput: f64 = paths_by_goodput.iter().map(|p| p.effective_goodput()).sum();
             let mut repair_iter = repair_symbols.into_iter().peekable();
@@ -603,7 +676,6 @@ impl Scheduler {
             if total_goodput > 0.0 {
                 for path in &paths_by_goodput {
                     let fraction = path.effective_goodput() / total_goodput;
-                    // Proportional share (at least 1 if there are symbols left)
                     let count = (fraction * repair_iter.len() as f64).ceil() as usize;
                     let batch: Vec<_> = repair_iter.by_ref().take(count).collect();
                     if !batch.is_empty() {
@@ -611,7 +683,7 @@ impl Scheduler {
                     }
                 }
             }
-            // Remaining repair symbols to best path
+            // Remaining repair symbols to best goodput path
             for sym in repair_iter {
                 if let Some(path) = paths_by_goodput.first() {
                     assignments.entry(path.id).or_default().push(sym);
@@ -659,7 +731,7 @@ impl Scheduler {
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
-                path.bbr.reset();
+                path.copa.reset();
             }
         }
     }
@@ -684,13 +756,27 @@ impl Scheduler {
         self.paths.keys().copied().collect()
     }
 
-    /// Pick the best path for a source symbol: lowest RTT with available capacity.
+    /// Pick the best path for a source symbol: lowest interpolated cost.
+    ///
+    /// cost_i = w_lat × E_i + w_bw × r_i (paper Section 13.8)
     pub fn best_source_path(&self) -> Option<PathId> {
         self.paths
             .values()
             .filter(|p| p.active && p.available() > 0)
-            .min_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()))
+            .min_by(|a, b| {
+                let cost_a = self.path_cost(a);
+                let cost_b = self.path_cost(b);
+                cost_a.partial_cmp(&cost_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|p| p.id)
+    }
+
+    /// Compute the interpolated scheduling cost for a path.
+    fn path_cost(&self, path: &PathState) -> f64 {
+        let e_i = path.effective_delivery_time();
+        let r_i = path.correction_rate();
+        let r_clamped = if r_i.is_infinite() { 10.0 } else { r_i };
+        self.weights.w_lat * e_i + self.weights.w_bw * r_clamped
     }
 
     /// Pick the best path for a repair symbol: highest goodput with available capacity.
@@ -728,7 +814,11 @@ impl Scheduler {
         self.paths
             .values()
             .filter(|p| p.active && p.available() > 0 && p.id != primary)
-            .min_by(|a, b| a.estimator.rtt().cmp(&b.estimator.rtt()))
+            .min_by(|a, b| {
+                let cost_a = self.path_cost(a);
+                let cost_b = self.path_cost(b);
+                cost_a.partial_cmp(&cost_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|p| p.id)
     }
 
@@ -762,9 +852,9 @@ impl Default for Scheduler {
 }
 
 impl Scheduler {
-    /// Set enable_probe_rtt for new paths (for benchmarking)
-    pub fn set_enable_probe_rtt(&mut self, enable: bool) {
-        self.enable_probe_rtt = enable;
+    /// Set protocol hint (updates scheduling weights).
+    pub fn set_protocol_hint(&mut self, hint: ProtocolHint) {
+        self.weights = SchedulingWeights::from_hint(hint);
     }
 }
 
@@ -939,5 +1029,176 @@ mod tests {
 
         // With only one path, avoiding it should still return it
         assert_eq!(sched.best_repair_path_avoiding(0), Some(0));
+    }
+
+    // -----------------------------------------------------------------------
+    // Correction deficit tests (paper Section 13.4)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_deficit_tracks_sends_and_acks() {
+        let mut deficit = CorrectionDeficit::new();
+        assert_eq!(deficit.deficit(), 0.0);
+
+        deficit.on_send(0, 1, 0.10);
+        deficit.on_send(1, 1, 0.10);
+        deficit.on_send(2, 2, 0.05);
+        assert!((deficit.deficit() - 0.25).abs() < 1e-10);
+        assert_eq!(deficit.pending_count(), 3);
+
+        // ACK symbol 1
+        assert!(deficit.on_ack(1));
+        assert!((deficit.deficit() - 0.15).abs() < 1e-10);
+        assert_eq!(deficit.pending_count(), 2);
+
+        // ACK unknown symbol → no change
+        assert!(!deficit.on_ack(99));
+        assert!((deficit.deficit() - 0.15).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_deficit_cumulative_ack() {
+        let mut deficit = CorrectionDeficit::new();
+        for seq in 0..10 {
+            deficit.on_send(seq, 1, 0.10);
+        }
+        assert!((deficit.deficit() - 1.0).abs() < 1e-10);
+
+        deficit.on_ack_cumulative(4); // ACK 0..=4
+        assert_eq!(deficit.pending_count(), 5);
+        assert!((deficit.deficit() - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_deficit_per_path() {
+        let mut deficit = CorrectionDeficit::new();
+        deficit.on_send(0, 1, 0.10);
+        deficit.on_send(1, 2, 0.05);
+        deficit.on_send(2, 1, 0.10);
+
+        assert!((deficit.path_deficit(1) - 0.20).abs() < 1e-10);
+        assert!((deficit.path_deficit(2) - 0.05).abs() < 1e-10);
+        assert!((deficit.path_deficit(3) - 0.00).abs() < 1e-10);
+    }
+
+    // -----------------------------------------------------------------------
+    // Effective delivery time tests (paper Section 13.5)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_effective_delivery_time() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+
+        let path = sched.path_mut(0).unwrap();
+        // Record multiple RTT samples so EWMA converges
+        for _ in 0..20 {
+            path.estimator.record_rtt(Duration::from_millis(100));
+        }
+        // Record some loss: 10 sent, 9 received → ~10% loss
+        for _ in 0..20 {
+            path.estimator.record_batch(10, 9);
+        }
+
+        let e = path.effective_delivery_time();
+        let rtt = path.estimator.rtt().as_secs_f64();
+        let eps = path.estimator.loss_rate();
+        let expected = rtt / 2.0 + eps * rtt;
+        assert!((e - expected).abs() < 0.001, "E_i={e}, expected={expected}, rtt={rtt}, eps={eps}");
+    }
+
+    #[test]
+    fn test_correction_rate() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+
+        let path = sched.path_mut(0).unwrap();
+        // Record loss to get ~10% loss rate
+        for _ in 0..20 {
+            path.estimator.record_batch(10, 9);
+        }
+        let eps = path.estimator.loss_rate();
+        let r = path.correction_rate();
+        let expected = eps / (1.0 - eps);
+        assert!((r - expected).abs() < 0.001, "r={r}, expected={expected}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Interpolated objective tests (paper Section 13.8)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_realtime_prefers_low_latency_over_low_loss() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Realtime);
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Path 0: low RTT (10ms), high loss (20%)
+        sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+        for _ in 0..20 {
+            sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
+        }
+
+        // Path 1: high RTT (200ms), low loss (1%)
+        sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+        for _ in 0..20 {
+            sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
+        }
+
+        // Realtime (w_lat=1, w_bw=0): should prefer path 0 (lower E_i despite higher loss)
+        assert_eq!(sched.best_source_path(), Some(0));
+    }
+
+    #[test]
+    fn test_bulk_prefers_low_overhead() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Path 0: low RTT (10ms), high loss (20%) → high r
+        sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+        for _ in 0..20 {
+            sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
+        }
+
+        // Path 1: high RTT (200ms), low loss (1%) → low r
+        sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+        for _ in 0..20 {
+            sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
+        }
+
+        // Bulk (w_lat=0, w_bw=1): should prefer path 1 (lower correction rate)
+        assert_eq!(sched.best_source_path(), Some(1));
+    }
+
+    #[test]
+    fn test_schedule_uses_objective_weights() {
+        // With Realtime hint, source should go to low-latency path even if it has more loss
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Realtime);
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Path 0: fast, lossy
+        sched.path_mut(0).unwrap().estimator.record_rtt(Duration::from_millis(10));
+        for _ in 0..20 {
+            sched.path_mut(0).unwrap().estimator.record_batch(10, 8);
+        }
+
+        // Path 1: slow, clean
+        sched.path_mut(1).unwrap().estimator.record_rtt(Duration::from_millis(200));
+        for _ in 0..20 {
+            sched.path_mut(1).unwrap().estimator.record_batch(100, 99);
+        }
+
+        let source: Vec<_> = (0..5).map(|i| make_symbol(i, false)).collect();
+        let result = sched.schedule(source, vec![]);
+
+        let path0_count = result
+            .iter()
+            .find(|(id, _)| *id == 0)
+            .map(|(_, s)| s.len())
+            .unwrap_or(0);
+
+        assert!(path0_count > 0, "Realtime should send source on fast path");
     }
 }

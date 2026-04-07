@@ -37,7 +37,7 @@ const BATCH_SIZE: u32 = 10;
 const NUM_TRIALS: u64 = 30;
 const MAX_FEC_OVERHEAD: f64 = 0.20;
 const BLOCK_SIZE: u32 = 200;
-const MATRIX_FEC_OVERHEAD: f64 = 0.08;
+const MATRIX_FEC_OVERHEAD: f64 = 0.12;
 
 // ---------------------------------------------------------------------------
 // BackendChoice — replaces WindowBackendKind
@@ -1032,8 +1032,8 @@ fn run_matrix_trial_window(
     let mut reorder_buf = ReorderBuffer::new(config.reorder_timeout_ms, 500);
     let mut live_estimator = make_estimator_for_loss(scenario.pre_warm_loss);
 
-    // Scheduler/BBR integration (ADR-0046: 2c)
-    let mut scheduler = Scheduler::new(clock.clone() as Arc<dyn Clock>);
+    // Scheduler/Copa integration (ADR-0046: 2c)
+    let mut scheduler = Scheduler::new_with_hint(clock.clone() as Arc<dyn Clock>, ProtocolHint::Realtime);
     scheduler.add_path(0);
     if num_paths >= 2 {
         scheduler.add_path(1);
@@ -1060,7 +1060,8 @@ fn run_matrix_trial_window(
     let mut encode_times: Vec<Instant> = Vec::new();
     let mut total_source_sent: u32 = 0;
     let mut total_repair_sent: u32 = 0;
-    let mut repair_debt: f64 = 0.0; // Fractional repair accumulator
+    let mut repair_debt: f64 = 0.0; // Taper-driven fractional repair accumulator
+    let mut taper_offset: u64 = 0;  // Symbol offset for taper density
 
     let tick = Duration::from_micros(500);
     let mut sym_idx: u32 = 0;
@@ -1111,6 +1112,8 @@ fn run_matrix_trial_window(
 
             for pkt in &delivered {
                 received_set.insert(pkt.seq);
+                // Update correction deficit: this symbol survived
+                scheduler.deficit.on_ack(pkt.seq);
                 for (seq, data) in decoder.add_symbol(&pkt.symbol) {
                     for (rseq, _) in reorder_buf.push_with_time(seq, data, $now) {
                         if recovered.insert(rseq) {
@@ -1183,13 +1186,23 @@ fn run_matrix_trial_window(
                 }
             }
 
+            // Track correction deficit for this source symbol
+            let send_path = if use_secondary { 1 } else { 0 };
+            let eps = live_estimator.loss_rate();
+            scheduler.deficit.on_send(sym_idx as u64 - 1, send_path, eps);
+
             sym_idx += 1;
         }
         total_source_sent += this_batch;
 
-        // Adaptive repair with fractional accumulator — avoids ceil() rounding overhead
-        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator, encoder.window_size());
-        repair_debt += this_batch as f64 * repair_rate;
+        // Taper-driven repair accumulator: uses TaperFunction density τ(t) = A×(1-q)^t
+        // when GE data is available, falls back to flat rate otherwise.
+        let flat_rate = fec_ctrl.compute_repair_rate(&live_estimator, encoder.window_size());
+        let taper = raptorpath::control::TaperFunction::from_estimator(&live_estimator, flat_rate);
+        for _ in 0..this_batch {
+            repair_debt += taper.density(taper_offset as f64);
+            taper_offset += 1;
+        }
         let repair_count = (repair_debt.floor() as u32).min(10);
         repair_debt -= repair_count as f64;
         let mut batch_repairs_sent: u32 = 0;

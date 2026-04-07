@@ -1,6 +1,6 @@
-//! B2: BBR/ProbeRTT convergence tests with SimChannel.
+//! B2: Copa delay-based CC convergence tests with SimChannel.
 //!
-//! Verifies that BBR congestion control converges through realistic
+//! Verifies that Copa congestion control converges through realistic
 //! simulated network conditions rather than manually injected data.
 
 mod common;
@@ -76,9 +76,9 @@ fn simulate_round_via_channel(
 }
 
 #[test]
-fn test_bbr_converges_through_sim_channel() {
+fn test_copa_converges_through_sim_channel() {
     let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new_with_config(clock.clone(), true);
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     // Warmup
@@ -144,14 +144,16 @@ fn test_bbr_converges_through_sim_channel() {
 }
 
 #[test]
-fn test_probe_rtt_fires_and_recovers() {
+fn test_copa_reduces_cwnd_on_queue_buildup() {
+    // Copa should reduce cwnd when RTT rises (queue building),
+    // without needing an explicit ProbeRTT phase.
     let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new_with_config(clock.clone(), true);
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1);
 
     let mut channel = SimChannel::datacenter(clock.clone(), 99);
 
-    // Warmup with delivery rate
+    // Warmup with low RTT
     {
         let path = sched.path_mut(1).unwrap();
         path.cwnd = 200;
@@ -164,7 +166,7 @@ fn test_probe_rtt_fires_and_recovers() {
         }
     }
 
-    // Run enough rounds to build delivery rate
+    // Run steady state rounds
     for _ in 0..50 {
         simulate_round_via_channel(
             &mut sched,
@@ -179,54 +181,33 @@ fn test_probe_rtt_fires_and_recovers() {
 
     let cwnd_before = sched.path(1).unwrap().cwnd;
 
-    // Advance clock past ProbeRTT interval (10s)
-    clock.advance(Duration::from_secs(11));
-
-    // Trigger ProbeRTT entry via an ACK
-    simulate_round_via_channel(
-        &mut sched,
-        &clock,
-        &mut channel,
-        1,
-        millis(5),
-        100_000_000.0,
-        50,
-    );
-
-    let cwnd_during = sched.path(1).unwrap().cwnd;
-    assert_eq!(
-        cwnd_during, 4,
-        "cwnd should drop to PROBE_RTT_CWND=4 during ProbeRTT: cwnd={cwnd_during}"
-    );
-
-    // Advance past ProbeRTT duration (200ms)
-    clock.advance(Duration::from_millis(300));
-
-    // Exit ProbeRTT via ACK
-    simulate_round_via_channel(
-        &mut sched,
-        &clock,
-        &mut channel,
-        1,
-        millis(5),
-        100_000_000.0,
-        50,
-    );
+    // Simulate queue buildup: RTT rises from 5ms to 50ms
+    for _ in 0..10 {
+        simulate_round_via_channel(
+            &mut sched,
+            &clock,
+            &mut channel,
+            1,
+            millis(50),
+            100_000_000.0,
+            50,
+        );
+    }
 
     let cwnd_after = sched.path(1).unwrap().cwnd;
     assert!(
-        cwnd_after > 4,
-        "cwnd should recover after ProbeRTT: before={cwnd_before}, after={cwnd_after}"
+        cwnd_after < cwnd_before,
+        "Copa should reduce cwnd when RTT rises: before={cwnd_before}, after={cwnd_after}"
     );
 }
 
 #[test]
-fn test_bbr_wireless_vs_congestion() {
-    // Tests the key BBR insight: loss + stable RTT (wireless) should NOT
+fn test_copa_wireless_vs_congestion() {
+    // Tests the key Copa insight: loss + stable RTT (wireless) should NOT
     // collapse cwnd, while loss + rising RTT (congestion) SHOULD.
     // Uses SimChannel for both paths to model realistic behavior.
     let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new_with_config(clock.clone(), false);
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1); // WiFi: stable RTT, 5% loss
     sched.add_path(2); // Wired: rising RTT, 5% loss (congestion)
 
@@ -318,7 +299,7 @@ fn test_bbr_wireless_vs_congestion() {
 #[test]
 fn test_two_paths_rtt_weighted_scheduling() {
     let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new_with_config(clock.clone(), false);
+    let mut sched = Scheduler::new(clock.clone());
     sched.add_path(1); // Path A: 5ms RTT
     sched.add_path(2); // Path B: 50ms RTT
 

@@ -286,36 +286,45 @@ fn test_multipath_independent_cc() {
 }
 
 // ---------------------------------------------------------------------------
-// ProbeRTT tests (ADR-0024)
+// Copa delay-based congestion control tests (replaces ProbeRTT / ADR-0024)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_probe_rtt_entered_after_10s() {
+fn test_copa_cwnd_tracks_queuing_delay() {
+    // Copa: rate = 1/(d_copa × dq). When RTT rises (dq grows), cwnd should drop.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
 
-    // Give it an initial RTT sample so min_rtt is set
+    // Baseline: low RTT → large Copa target
     let path = sched.path_mut(0).unwrap();
     path.record_rtt_sample(millis(50));
 
-    // Grow cwnd out of startup
-    clock.advance(millis(2));
-    sched.ack(0, 20);
+    // Grow cwnd in startup
+    for _ in 0..10 {
+        clock.advance(millis(2));
+        sched.ack(0, 20);
+    }
+    let cwnd_low_rtt = sched.path(0).unwrap().cwnd;
 
-    // Advance clock past 10s without refreshing min_rtt
-    clock.advance(Duration::from_secs(11));
+    // Now RTT rises significantly (queue building)
+    for _ in 0..5 {
+        let path = sched.path_mut(0).unwrap();
+        path.record_rtt_sample(millis(200));
+        clock.advance(millis(2));
+        sched.ack(0, 5);
+    }
+    let cwnd_high_rtt = sched.path(0).unwrap().cwnd;
 
-    // Trigger ProbeRTT check via on_ack
-    clock.advance(millis(2));
-    sched.ack(0, 1);
-
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert_eq!(cwnd, 4, "should be in ProbeRTT with cwnd=4, got {cwnd}");
+    assert!(
+        cwnd_high_rtt < cwnd_low_rtt,
+        "Copa should reduce cwnd when RTT rises: low_rtt={cwnd_low_rtt}, high_rtt={cwnd_high_rtt}"
+    );
 }
 
 #[test]
-fn test_probe_rtt_cwnd_drained() {
+fn test_copa_no_probe_rtt_phase() {
+    // Copa has no ProbeRTT phase — cwnd never drops to 4 after 10s idle.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
@@ -324,143 +333,122 @@ fn test_probe_rtt_cwnd_drained() {
     path.record_rtt_sample(millis(50));
 
     // Grow cwnd
-    clock.advance(millis(2));
-    sched.ack(0, 50);
+    for _ in 0..10 {
+        clock.advance(millis(2));
+        sched.ack(0, 20);
+    }
     let cwnd_before = sched.path(0).unwrap().cwnd;
-    assert!(cwnd_before > 4, "cwnd should be large before ProbeRTT");
+    assert!(cwnd_before > 4, "cwnd should be large");
 
-    // Trigger ProbeRTT
+    // Advance 11 seconds (would trigger ProbeRTT under BBR)
     clock.advance(Duration::from_secs(11));
     clock.advance(millis(2));
-    sched.ack(0, 1);
-
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert_eq!(cwnd, 4, "cwnd should drain to PROBE_RTT_CWND=4");
-}
-
-#[test]
-fn test_probe_rtt_exits_after_200ms() {
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-
-    let path = sched.path_mut(0).unwrap();
-    path.record_rtt_sample(millis(50));
-
-    // Grow cwnd
-    clock.advance(millis(2));
-    sched.ack(0, 50);
-    let cwnd_before_probe = sched.path(0).unwrap().cwnd;
-
-    // Enter ProbeRTT
-    clock.advance(Duration::from_secs(11));
-    clock.advance(millis(2));
-    sched.ack(0, 1);
-    assert_eq!(sched.path(0).unwrap().cwnd, 4, "should be in ProbeRTT");
-
-    // Advance 200ms to exit ProbeRTT
-    clock.advance(millis(201));
     sched.ack(0, 1);
 
     let cwnd_after = sched.path(0).unwrap().cwnd;
     assert!(
         cwnd_after > 4,
-        "cwnd should recover after ProbeRTT exit, got {cwnd_after}"
+        "Copa should NOT enter ProbeRTT, cwnd={cwnd_after}"
     );
 }
 
 #[test]
-fn test_probe_rtt_refreshes_min_rtt() {
+fn test_copa_min_rtt_tracks_baseline() {
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
 
     let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(millis(100));
+    assert_eq!(path.copa_min_rtt(), Some(millis(100)));
+
+    // Lower RTT sample updates min_rtt
     path.record_rtt_sample(millis(50));
+    assert_eq!(path.copa_min_rtt(), Some(millis(50)));
 
-    // Enter ProbeRTT
-    clock.advance(Duration::from_secs(11));
-    clock.advance(millis(2));
-    sched.ack(0, 1);
+    // Higher RTT sample does NOT change min_rtt
+    path.record_rtt_sample(millis(80));
+    assert_eq!(path.copa_min_rtt(), Some(millis(50)));
+}
 
-    // Record a new low RTT during ProbeRTT (this is the point of the phase)
+#[test]
+fn test_copa_min_rtt_window_expires() {
+    // min_rtt should expire after 10s window
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+
     let path = sched.path_mut(0).unwrap();
     path.record_rtt_sample(millis(30));
+    assert_eq!(path.copa_min_rtt(), Some(millis(30)));
 
-    // Exit ProbeRTT
-    clock.advance(millis(201));
-    sched.ack(0, 1);
-
-    // After exit, should NOT re-enter ProbeRTT for another 10s
-    // because min_rtt_stamp was refreshed on exit
-    clock.advance(Duration::from_secs(5));
-    clock.advance(millis(2));
-    sched.ack(0, 1);
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(
-        cwnd > 4,
-        "should NOT re-enter ProbeRTT within 10s, got cwnd={cwnd}"
-    );
-}
-
-#[test]
-fn test_probe_rtt_not_entered_if_fresh() {
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-
-    // Keep refreshing min_rtt with new low samples
-    for _ in 0..5 {
-        let path = sched.path_mut(0).unwrap();
-        path.record_rtt_sample(millis(50));
-        clock.advance(Duration::from_secs(2));
-        sched.ack(0, 5);
-    }
-
-    let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(
-        cwnd > 4,
-        "should NOT enter ProbeRTT with fresh min_rtt, got cwnd={cwnd}"
-    );
-}
-
-#[test]
-fn test_probe_rtt_full_cycle() {
-    let clock = Arc::new(MockClock::new());
-    let mut sched = Scheduler::new(clock.clone());
-    sched.add_path(0);
-
-    // 1. Startup phase
+    // Advance past 10s window, record higher RTT
+    clock.advance(Duration::from_secs(11));
     let path = sched.path_mut(0).unwrap();
-    path.record_rtt_sample(millis(50));
+    path.record_rtt_sample(millis(80));
+
+    // Old 30ms sample should be expired, min_rtt is now 80ms
+    assert_eq!(path.copa_min_rtt(), Some(millis(80)));
+}
+
+#[test]
+fn test_copa_startup_exits_on_congestion() {
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+
     assert!(sched.path(0).unwrap().in_slow_start, "should start in startup");
 
-    // 2. Grow to steady state
-    for _ in 0..20 {
+    // Record increasing RTTs to trigger congestion detection
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(millis(50));
+    path.record_rtt_sample(millis(70));
+    path.record_rtt_sample(millis(95));
+    path.record_rtt_sample(millis(120));
+
+    // ACK to trigger startup exit check
+    clock.advance(millis(2));
+    sched.ack(0, 10);
+
+    assert!(
+        !sched.path(0).unwrap().in_slow_start,
+        "should exit startup when RTT is rising"
+    );
+}
+
+#[test]
+fn test_copa_steady_state_convergence() {
+    // In steady state, Copa should converge cwnd toward the delay-based target.
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+
+    let path = sched.path_mut(0).unwrap();
+    path.record_rtt_sample(millis(50));
+
+    // Exit startup
+    for _ in 0..10 {
         clock.advance(millis(2));
         sched.ack(0, 20);
     }
-    let steady_cwnd = sched.path(0).unwrap().cwnd;
-    assert!(steady_cwnd > 10, "should have grown cwnd in steady state");
 
-    // 3. Wait 10s → enter ProbeRTT
-    clock.advance(Duration::from_secs(11));
-    clock.advance(millis(2));
-    sched.ack(0, 1);
-    let probe_cwnd = sched.path(0).unwrap().cwnd;
-    assert_eq!(probe_cwnd, 4, "should be in ProbeRTT");
-
-    // 4. Wait 200ms → exit ProbeRTT
-    clock.advance(millis(201));
-    sched.ack(0, 1);
-    let exit_cwnd = sched.path(0).unwrap().cwnd;
-    assert!(exit_cwnd > 4, "should exit ProbeRTT and restore cwnd");
-
-    // 5. Recover in steady state
+    // Record stable RTTs and keep ACKing — cwnd should stabilize
+    let mut cwnds = vec![];
     for _ in 0..20 {
+        let path = sched.path_mut(0).unwrap();
+        path.record_rtt_sample(millis(55)); // slight queuing
         clock.advance(millis(2));
-        sched.ack(0, 10);
+        sched.ack(0, 5);
+        cwnds.push(sched.path(0).unwrap().cwnd);
     }
-    let recovered_cwnd = sched.path(0).unwrap().cwnd;
-    assert!(recovered_cwnd > 4, "cwnd should recover: {recovered_cwnd}");
+
+    // Last 5 cwnds should be close to each other (converged)
+    let last5 = &cwnds[cwnds.len() - 5..];
+    let max = *last5.iter().max().unwrap();
+    let min = *last5.iter().min().unwrap();
+    let range = max - min;
+    assert!(
+        range <= max / 4,
+        "cwnd should converge in steady state, range={range}, values={last5:?}"
+    );
 }

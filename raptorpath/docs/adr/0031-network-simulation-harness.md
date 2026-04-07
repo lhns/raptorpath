@@ -23,7 +23,7 @@ Raptorpath has several network-dependent features (BBR/ProbeRTT, reorder buffer,
 ### Test Files
 | File | Tests | Exercises |
 |------|-------|-----------|
-| `sim_bbr_test.rs` | 4 | BBR convergence, ProbeRTT, wireless-vs-congestion, RTT-weighted scheduling |
+| `sim_copa_test.rs` | 4 | Copa convergence, delay-based cwnd, wireless-vs-congestion, RTT-weighted scheduling |
 | `sim_backend_test.rs` | 4 | Low→high loss switch, SimChannel-driven switch, burst→streaming, hysteresis |
 | `sim_reorder_test.rs` | 4 | Jittery delivery reordering, timeout expiry, over-capacity drain, bursty gaps |
 | `sim_nack_test.rs` | 4 | Gap detection accuracy, RLC repair recovery, cooldown rate limiting, gap bounds |

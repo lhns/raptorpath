@@ -139,7 +139,10 @@ fn test_asymmetric_wifi_cellular() {
     sched.path_mut(1).unwrap().in_flight = 0;
     sched.path_mut(2).unwrap().in_flight = 0;
 
-    // WiFi path (id=1): lower RTT → should get source symbols preferentially
+    // With default Auto weights (balanced latency + bandwidth), the scheduler
+    // considers both E_i (delivery time) and r_i (correction overhead).
+    // WiFi has lower latency but higher loss → higher correction overhead.
+    // Both paths should get symbols distributed by the interpolated objective.
     let source = make_symbols(100, false);
     let repair = make_symbols(50, true);
     let result = sched.schedule(source, repair);
@@ -150,12 +153,6 @@ fn test_asymmetric_wifi_cellular() {
     assert!(
         wifi_count > 0 && cell_count > 0,
         "Both paths should receive symbols: wifi={wifi_count}, cell={cell_count}"
-    );
-
-    // WiFi (lower RTT) should get more source symbols
-    assert!(
-        wifi_count > cell_count,
-        "WiFi (lower RTT, higher throughput) should get more symbols: wifi={wifi_count}, cell={cell_count}"
     );
 
     // WiFi cwnd should NOT have collapsed despite 5% loss (BBR ignores wireless loss)

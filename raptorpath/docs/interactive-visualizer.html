@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raptorpath FEC/ARQ Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --src: #4a90d9; --fec: #2ecc71; --arq: #e67e22;
+  --recv: #ffffff; --decoded: #f1c40f;
+  --bg: #1a1a2e; --panel: #16213e; --border: #0f3460;
+  --text: #e0e0e0; --accent: #53c8f5;
+  --good: #2ecc71; --bad: #e74c3c;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--text); padding: 12px; font-size: 13px; }
+.grid { display: grid; grid-template-columns: 280px 1fr;
+  grid-template-rows: auto auto; gap: 10px; max-width: 1400px; margin: 0 auto; }
+.panel { background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; }
+.panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--accent); margin-bottom: 6px; }
+.controls { grid-row: 1 / 3; overflow-y: auto; max-height: 90vh; }
+.chart-area { grid-column: 2; }
+.bottom-row { grid-column: 2; display: grid;
+  grid-template-columns: 1fr 220px; gap: 10px; }
+label.slider-label { display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 1px; font-size: 12px; }
+label.slider-label span.val { font-weight: bold; color: var(--accent);
+  min-width: 50px; text-align: right; }
+input[type="range"] { width: 100%; height: 5px; -webkit-appearance: none;
+  appearance: none; background: var(--border); border-radius: 3px;
+  outline: none; margin-bottom: 6px; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none;
+  width: 12px; height: 12px; background: var(--accent); border-radius: 50%;
+  cursor: pointer; }
+select { width: 100%; padding: 3px; background: var(--border); color: var(--text);
+  border: 1px solid #444; border-radius: 4px; margin-bottom: 6px; font-size: 11px; }
+.btn-row { display: flex; gap: 4px; margin-top: 6px; }
+button { flex: 1; padding: 5px 8px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); border-radius: 4px;
+  cursor: pointer; font-size: 11px; }
+button:hover { background: var(--border); }
+button.active { background: var(--accent); color: #000; }
+.metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; font-size: 11px; }
+.metrics-grid dt { color: #888; } .metrics-grid dd { font-weight: bold; text-align: right; }
+.derived { font-size: 11px; color: #888; margin-bottom: 6px; }
+.separator { border-top: 1px solid var(--border); margin: 8px 0; }
+.channel-strip-wrap { position: relative; height: 24px; margin-top: 4px; }
+#channel-strip { width: 100%; height: 24px; border-radius: 4px; display: block; }
+canvas { border-radius: 6px; }
+.chart-wrap { position: relative; }
+.chart-wrap canvas { width: 100% !important; }
+.tri-svg { display: block; margin: 4px auto; }
+.tri-fixed { fill: var(--text); font-size: 11px; }
+.tri-computed { fill: var(--accent); font-size: 12px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="grid">
+
+<!-- CONTROL PANEL -->
+<div class="panel controls">
+  <h3>Channel</h3>
+  <label class="slider-label">Loss rate <span class="val" id="v-eps">5.0%</span></label>
+  <input type="range" id="sl-eps" min="0" max="0.30" step="0.001" value="0.05">
+  <label class="slider-label">q (Bad to Good) <span class="val" id="v-q">0.50</span></label>
+  <input type="range" id="sl-q" min="0.02" max="1.0" step="0.01" value="0.50">
+  <label class="slider-label">RTT (ms) <span class="val" id="v-rtt">50</span></label>
+  <input type="range" id="sl-rtt" min="1" max="500" step="1" value="50">
+  <label class="slider-label">Window W <span class="val" id="v-w">50</span></label>
+  <input type="range" id="sl-w" min="10" max="200" step="1" value="50">
+  <div class="derived" id="derived-vals">p=0.026 | burst=2.0 | sigma2=2.8</div>
+
+  <div class="separator"></div>
+  <h3>Triangle</h3>
+  <select id="tri-mode">
+    <option value="delta-rho">Fix delta + rho -> r</option>
+    <option value="r-rho">Fix r + rho -> delta</option>
+    <option value="r-delta">Fix r + delta -> rho</option>
+  </select>
+  <div id="sl-r-wrap">
+    <label class="slider-label">r (overhead) <span class="val" id="v-r">0.10</span></label>
+    <input type="range" id="sl-r" min="0.01" max="1.0" step="0.01" value="0.10">
+  </div>
+  <div id="sl-delta-wrap">
+    <label class="slider-label">delta (P late) <span class="val" id="v-delta">1e-3</span></label>
+    <input type="range" id="sl-delta" min="-6" max="-0.3" step="0.1" value="-3">
+  </div>
+  <div id="sl-rho-wrap">
+    <label class="slider-label">rho (reliability) <span class="val" id="v-rho">1.000</span></label>
+    <input type="range" id="sl-rho" min="0.90" max="1.0" step="0.001" value="1.0">
+  </div>
+  <svg class="tri-svg" width="256" height="130" viewBox="0 0 256 130">
+    <polygon points="128,18 16,108 240,108" fill="none" stroke="#0f3460" stroke-width="1.5"/>
+    <text id="tri-r" x="128" y="13" text-anchor="middle" font-size="11" class="tri-fixed">r = 0.10</text>
+    <text id="tri-delta" x="4" y="124" text-anchor="start" font-size="11" class="tri-fixed">delta = 1e-3</text>
+    <text id="tri-rho" x="252" y="124" text-anchor="end" font-size="11" class="tri-fixed">rho = 1.000</text>
+  </svg>
+
+  <div class="separator"></div>
+  <h3>Playback</h3>
+  <div class="btn-row">
+    <button id="btn-play">Play</button>
+    <button id="btn-reset">Reset</button>
+    <select id="sel-speed" style="flex:0.6">
+      <option value="1">1x</option>
+      <option value="3">3x</option>
+      <option value="5" selected>5x</option>
+      <option value="10">10x</option>
+      <option value="25">25x</option>
+    </select>
+  </div>
+</div>
+
+<!-- MAIN CHART -->
+<div class="panel chart-area">
+  <h3>Sender Rate &amp; Receiver Progress</h3>
+  <div class="chart-wrap"><canvas id="main-chart" height="360"></canvas></div>
+  <div class="channel-strip-wrap"><canvas id="channel-strip" height="24"></canvas></div>
+</div>
+
+<!-- BOTTOM ROW -->
+<div class="bottom-row">
+  <div class="panel">
+    <h3>Taper Curve: tau(t) = A * (1-q)^t</h3>
+    <div style="height:130px"><canvas id="taper-chart"></canvas></div>
+  </div>
+  <div class="panel">
+    <h3>Metrics</h3>
+    <dl class="metrics-grid">
+      <dt>Overhead</dt><dd id="m-overhead">0.0%</dd>
+      <dt>Recovery</dt><dd id="m-recovery">100%</dd>
+      <dt>r*</dt><dd id="m-rstar">0.00</dd>
+      <dt>Src sent</dt><dd id="m-src">0</dd>
+      <dt>FEC sent</dt><dd id="m-fec">0</dd>
+      <dt>ARQ sent</dt><dd id="m-arq">0</dd>
+      <dt>Lost</dt><dd id="m-lost">0</dd>
+      <dt>Decoded</dt><dd id="m-decoded">0</dd>
+      <dt>Retx buf</dt><dd id="m-retxbuf">0</dd>
+      <dt>Tick</dt><dd id="m-tick">0</dd>
+    </dl>
+  </div>
+</div>
+</div>
+
+<script>
+// =========================================================================
+// MATH MODULE — ported from src/control/fec_rate.rs
+// =========================================================================
+function normalSurvival(z) {
+  if (z > 8) return 0; if (z < -8) return 1;
+  const x = z / Math.SQRT2, ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  const poly = t*(0.254829592+t*(-0.284496736+t*(1.421413741+t*(-1.453152027+t*1.061405429))));
+  const erfcAx = poly * Math.exp(-ax * ax);
+  return x >= 0 ? 0.5 * erfcAx : 1 - 0.5 * erfcAx;
+}
+function burstVarianceFactor(p, q) {
+  const s = p + q; return s < 1e-10 ? 1 : Math.max(1, 1 + 2*(1-p-q)/s);
+}
+function pFecNormal(r, eps, W, s2) {
+  if (W<=0||eps<=0||eps>=1||r<=0) return 0;
+  const num = r*(1-eps)-eps; if (num<=0) return 0;
+  const den = Math.sqrt(eps*(1-eps)*(r+s2)); if (den<1e-300) return 1;
+  return 1 - normalSurvival(Math.sqrt(W)*num/den);
+}
+function pLost(age, eps, srtt, rv) {
+  if (eps>=1) return 1; if (eps<=0) return 0;
+  rv = Math.max(rv, 0.001);
+  const pr = normalSurvival((age-srtt)/rv);
+  const d = eps+(1-eps)*pr; return d<1e-300 ? 1 : Math.min(1,Math.max(0,eps/d));
+}
+function computeRStar(eps, s2, W) {
+  if (eps<=0||eps>=1) return 0;
+  return eps/(1-eps) + (W>0 ? 2.33*Math.sqrt(eps*s2/(W*(1-eps))) : 0);
+}
+function taperDensity(t, A, decay) { return A * Math.pow(decay, t); }
+
+function computeDelta(eps, r, rho, W, s2) {
+  if (eps<=0||rho<=0) return 0;
+  const pfec = pFecNormal(r,eps,W,s2), fm = eps*(1-pfec);
+  if (fm<1e-15) return 0;
+  const pa = Math.max(0,Math.min(1, 1-(1-rho)/fm));
+  return fm*pa/rho;
+}
+function findTCut(eps,q,r,W,s2,rho) {
+  if (rho>=1) return Infinity; if (rho<=0||eps<=0) return 0;
+  let lo=0,hi=W*10;
+  for (let i=0;i<100&&hi-lo>0.01;i++) {
+    const m=(lo+hi)/2, decay=Math.max(1-q,0);
+    const pfec=pFecNormal(r,eps,W,s2), cb=r*(1-Math.pow(decay,m+1));
+    const rn=eps/(1-eps), pa=rn>0?Math.min(cb/rn,1):1;
+    const pr=1-eps*(1-pfec)*(1-pa);
+    pr<rho ? lo=m : hi=m;
+  }
+  return hi;
+}
+function solveRFromDeltaRho(eps,q,W,s2,delta,rho) {
+  let lo=eps/(1-eps),hi=2;
+  for (let i=0;i<100&&hi-lo>1e-6;i++) {
+    const m=(lo+hi)/2; computeDelta(eps,m,rho,W,s2)>delta ? lo=m : hi=m; }
+  const r=hi, tCut=findTCut(eps,q,r,W,s2,rho);
+  return {r,delta,rho,tCut};
+}
+function solveDeltaFromRRho(eps,q,W,s2,r,rho) {
+  return {r, delta:computeDelta(eps,r,rho,W,s2), rho, tCut:findTCut(eps,q,r,W,s2,rho)};
+}
+function solveRhoFromRDelta(eps,q,W,s2,r,delta) {
+  let lo=0.5,hi=1-1e-12;
+  for (let i=0;i<100&&hi-lo>1e-6;i++) {
+    const m=(lo+hi)/2; computeDelta(eps,r,m,W,s2)>delta ? hi=m : lo=m; }
+  const rho=lo, tCut=findTCut(eps,q,r,W,s2,rho);
+  return {r,delta,rho,tCut};
+}
+
+// =========================================================================
+// SIMULATION ENGINE
+// =========================================================================
+const NUM_SOURCE = 200; // total source symbols to send
+
+class GEChannel {
+  constructor(p,q) { this.p=p; this.q=q; this.state='good'; }
+  step() {
+    this.state === 'good'
+      ? (Math.random()<this.p && (this.state='bad'))
+      : (Math.random()<this.q && (this.state='good'));
+    return this.state;
+  }
+  isLost() { return this.state === 'bad'; }
+}
+
+class Simulation {
+  constructor(params) {
+    this.eps = params.eps;
+    this.q = params.q;
+    this.p = params.eps * params.q / (1 - params.eps);
+    this.rttMs = params.rttMs;
+    this.W = params.W;
+
+    this.symbolSize = 1200;
+    this.sigma2 = burstVarianceFactor(this.p, this.q);
+    this.rStar = computeRStar(this.eps, this.sigma2, this.W);
+    this.amplitude = this.rStar * this.q;
+    this.decay = 1 - this.q;
+    // Link capacity: C symbols per tick. Source gets C/(1+r), corrections get C*r/(1+r).
+    this.capacity = 4;
+    // RTT in ticks: assume 1 tick = 1ms
+    this.rttTicks = Math.max(2, Math.round(this.rttMs / 1));
+    this.srttSecs = this.rttMs / 1000;
+    this.rttvarSecs = this.srttSecs * 0.25;
+
+    this.channel = new GEChannel(this.p, this.q);
+    this.tick = 0;
+    this.rateHistory = []; // {src, fec, arq, cumRecv, cumDecoded}
+    this.channelStates = [];
+    this.lossEvents = [];
+
+    // Source symbols: {tick, seq, lost, recovered, arqTick (last retransmit tick)}
+    this.symbols = [];
+    this.nextSeq = 0;
+    this.sourceDone = false; // all NUM_SOURCE sent
+    this.finished = false;   // all decoded or given up
+
+    this.totalSrc = 0; this.totalFec = 0; this.totalArq = 0;
+    this.totalLost = 0;
+    this.cumSent = 0;      // all symbols sent (source + FEC + ARQ)
+    this.cumArrived = 0;   // all symbols arrived at receiver (not lost on channel)
+    this.cumDecoded = 0;   // source data usable by application
+    this.fecDebt = 0;
+    this.fecPool = 0; // FEC repair symbols received (not yet used for decoding)
+    this.lostPending = 0;  // lost source symbols waiting for FEC recovery
+    this.smoothWindow = 6;
+  }
+
+  step() {
+    // Paper Section 5.3: Total capacity C splits as:
+    //   source_rate     = C / (1 + r)
+    //   correction_rate = C * r / (1 + r)
+    // Source and correction are interleaved. Each correction slot uses
+    // P_lost(t) to decide repair (FEC) vs retransmit (ARQ).
+    if (this.finished) return;
+    this.channel.step();
+    this.channelStates.push(this.channel.state);
+
+    let srcN = 0, fecN = 0, arqN = 0, lostN = 0;
+    const r = this.rStar;
+    const C = this.capacity;
+
+    // Interleave source and correction at ratio 1/(1+r) vs r/(1+r).
+    // Use fractional accumulator: each slot, add r to corrDebt.
+    // When corrDebt >= 1, that slot is correction. Otherwise, source.
+    for (let slot = 0; slot < C; slot++) {
+      this.fecDebt = Math.min(this.fecDebt + r, 3.0); // cap to prevent runaway
+
+      const hasUnrecovered = this.symbols.some(s => s.lost && !s.recovered);
+      if (this.fecDebt >= 1.0 && hasUnrecovered) {
+        // --- Correction slot ---
+        this.fecDebt -= 1.0;
+
+        // P_lost decides repair vs retransmit (paper Section 5.2)
+        // Find oldest un-ACKed lost symbol for potential retransmit
+        let arqCandidate = null;
+        for (const sym of this.symbols) {
+          if (sym.recovered || !sym.lost) continue;
+          const ageTicks = this.tick - sym.tick;
+          if (ageTicks < this.rttTicks) continue;
+          if (this.tick - sym.arqTick < this.rttTicks) continue;
+          const ageSecs = ageTicks * 0.001;
+          const pl = pLost(ageSecs, this.eps, this.srttSecs, this.rttvarSecs);
+          if (pl > 0.5) { arqCandidate = sym; break; }
+        }
+
+        const lost = this.channel.isLost();
+        if (lost) lostN++;
+        if (arqCandidate) {
+          arqCandidate.arqTick = this.tick;
+          this.totalArq++; arqN++; this.cumSent++;
+          if (!lost) { this.cumArrived++; arqCandidate.recovered = true; this.cumDecoded++; this.lostPending--; }
+        } else {
+          this.totalFec++; fecN++; this.cumSent++;
+          if (!lost) {
+            this.cumArrived++;
+            this.fecPool++;
+          }
+        }
+      } else if (!this.sourceDone) {
+        const lost = this.channel.isLost();
+        if (lost) lostN++;
+        const sym = { tick: this.tick, seq: this.nextSeq++, lost, recovered: false, arqTick: -Infinity };
+        this.symbols.push(sym);
+        this.totalSrc++; srcN++; this.cumSent++;
+        if (lost) { this.totalLost++; this.lossEvents.push(this.tick); this.lostPending++; }
+        else { this.cumArrived++; this.cumDecoded++; }
+        if (this.nextSeq >= NUM_SOURCE) this.sourceDone = true;
+      }
+    }
+
+    // FEC decode: when enough repair symbols have accumulated to cover pending losses,
+    // the decoder fires and recovers all lost symbols in one batch.
+    // This models the real decoder: it needs fecPool >= lostPending to decode.
+    if (this.fecPool >= this.lostPending && this.lostPending > 0) {
+      // Bulk decode: recover all pending lost symbols
+      for (const sym of this.symbols) {
+        if (sym.lost && !sym.recovered) {
+          sym.recovered = true;
+          this.cumDecoded++;
+        }
+      }
+      this.fecPool -= this.lostPending;
+      this.lostPending = 0;
+    }
+
+    // Process ACKs: non-lost symbols ACKed after RTT (removes from retransmit consideration)
+    for (const sym of this.symbols) {
+      if (!sym.lost && !sym.recovered && this.tick - sym.tick >= this.rttTicks)
+        sym.recovered = true; // ACKed, no longer pending
+    }
+
+    // Give up on symbols older than 5x RTT
+    if (this.sourceDone) {
+      for (const sym of this.symbols) {
+        if (sym.lost && !sym.recovered && this.tick - sym.tick > this.rttTicks * 5)
+          sym.recovered = true;
+      }
+      if (!this.symbols.some(s => !s.recovered)) this.finished = true;
+    }
+
+    // Prune old symbols to avoid memory growth
+    this.symbols = this.symbols.filter(s => !s.recovered || this.tick - s.tick < 10);
+
+    this.rateHistory.push({
+      src: srcN, fec: fecN, arq: arqN, lost: lostN,
+      cumSent: this.cumSent, cumArrived: this.cumArrived, cumDecoded: this.cumDecoded
+    });
+    this.tick++;
+  }
+
+  retxBufSize() {
+    return this.symbols.filter(s => s.lost && !s.recovered).length;
+  }
+
+  smoothedRate(idx) {
+    const w = this.smoothWindow;
+    const start = Math.max(0, idx - w + 1), end = idx + 1;
+    let s=0,f=0,a=0,l=0,n=0;
+    for (let i=start; i<end && i<this.rateHistory.length; i++) {
+      s+=this.rateHistory[i].src; f+=this.rateHistory[i].fec;
+      a+=this.rateHistory[i].arq; l+=this.rateHistory[i].lost; n++;
+    }
+    const h = this.rateHistory[idx];
+    const pct = 100 / NUM_SOURCE;
+    return n>0 ? {src:s/n, fec:f/n, arq:a/n, lost:l/n,
+                  cumSent:h.cumSent*pct, cumArrived:h.cumArrived*pct, cumDecoded:h.cumDecoded*pct}
+               : {src:0,fec:0,arq:0,lost:0,cumSent:0,cumArrived:0,cumDecoded:0};
+  }
+}
+
+// =========================================================================
+// UI
+// =========================================================================
+let sim = null, running = false, animId = null;
+const slEps=document.getElementById('sl-eps'), slQ=document.getElementById('sl-q');
+const slRtt=document.getElementById('sl-rtt'), slW=document.getElementById('sl-w');
+const slR=document.getElementById('sl-r'), slDelta=document.getElementById('sl-delta');
+const slRho=document.getElementById('sl-rho'), triMode=document.getElementById('tri-mode');
+
+function getParams() {
+  return { eps: Math.max(parseFloat(slEps.value),0.001), q: parseFloat(slQ.value),
+    rttMs: parseInt(slRtt.value), W: parseInt(slW.value) };
+}
+function updateLabels() {
+  const p = getParams();
+  document.getElementById('v-eps').textContent = (parseFloat(slEps.value)*100).toFixed(1)+'%';
+  document.getElementById('v-q').textContent = parseFloat(slQ.value).toFixed(2);
+  document.getElementById('v-rtt').textContent = slRtt.value+' ms';
+  document.getElementById('v-w').textContent = slW.value;
+  document.getElementById('v-r').textContent = parseFloat(slR.value).toFixed(2);
+  document.getElementById('v-delta').textContent = Math.pow(10,parseFloat(slDelta.value)).toExponential(1);
+  document.getElementById('v-rho').textContent = parseFloat(slRho.value).toFixed(3);
+  const pp = p.eps*p.q/(1-p.eps), s2 = burstVarianceFactor(pp,p.q);
+  document.getElementById('derived-vals').textContent =
+    `p=${pp.toFixed(4)} | burst=${(1/p.q).toFixed(1)} | sigma2=${s2.toFixed(2)}`;
+}
+function updateTriVis() {
+  const m = triMode.value;
+  document.getElementById('sl-r-wrap').style.display = m==='delta-rho' ? 'none' : '';
+  document.getElementById('sl-delta-wrap').style.display = m==='r-rho' ? 'none' : '';
+  document.getElementById('sl-rho-wrap').style.display = m==='r-delta' ? 'none' : '';
+}
+function solveTri() {
+  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=burstVarianceFactor(pp,p.q);
+  const m=triMode.value; let res;
+  if (m==='delta-rho') res=solveRFromDeltaRho(p.eps,p.q,p.W,s2,Math.pow(10,parseFloat(slDelta.value)),parseFloat(slRho.value));
+  else if (m==='r-rho') res=solveDeltaFromRRho(p.eps,p.q,p.W,s2,parseFloat(slR.value),parseFloat(slRho.value));
+  else res=solveRhoFromRDelta(p.eps,p.q,p.W,s2,parseFloat(slR.value),Math.pow(10,parseFloat(slDelta.value)));
+  const eR=document.getElementById('tri-r'), eD=document.getElementById('tri-delta'), eP=document.getElementById('tri-rho');
+  eR.textContent='r = '+res.r.toFixed(4); eD.textContent='\u03B4 = '+res.delta.toExponential(2); eP.textContent='\u03C1 = '+res.rho.toFixed(4);
+  eR.setAttribute('class', m==='delta-rho'?'tri-computed':'tri-fixed');
+  eD.setAttribute('class', m==='r-rho'?'tri-computed':'tri-fixed');
+  eP.setAttribute('class', m==='r-delta'?'tri-computed':'tri-fixed');
+}
+
+// =========================================================================
+// CHARTS
+// =========================================================================
+const mainChart = new Chart(document.getElementById('main-chart').getContext('2d'), {
+  type:'line', data:{ labels:[],
+    datasets:[
+      {label:'Source', data:[], borderColor:'#4a90d9', backgroundColor:'rgba(74,144,217,0.5)',
+       fill:true, pointRadius:0, borderWidth:1, yAxisID:'y'},
+      {label:'FEC', data:[], borderColor:'#2ecc71', backgroundColor:'rgba(46,204,113,0.5)',
+       fill:true, pointRadius:0, borderWidth:1, yAxisID:'y'},
+      {label:'ARQ', data:[], borderColor:'#e67e22', backgroundColor:'rgba(230,126,34,0.5)',
+       fill:true, pointRadius:0, borderWidth:1, yAxisID:'y'},
+      {label:'Lost', data:[], borderColor:'#e74c3c', backgroundColor:'transparent',
+       pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'y'},
+      {label:'Sent %', data:[], borderColor:'rgba(255,255,255,0.3)', backgroundColor:'transparent',
+       pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'y2'},
+      {label:'Arrived %', data:[], borderColor:'rgba(255,255,255,0.7)', backgroundColor:'transparent',
+       borderDash:[4,3], pointRadius:0, borderWidth:1.5, fill:false, yAxisID:'y2'},
+      {label:'Decoded %', data:[], borderColor:'#f1c40f', backgroundColor:'transparent',
+       pointRadius:0, borderWidth:2, fill:false, yAxisID:'y2'},
+    ]},
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:false,
+    scales:{
+      x:{title:{display:true,text:'Time (ticks)',color:'#777'},ticks:{color:'#555',maxTicksLimit:15},grid:{color:'#111'}},
+      y:{stacked:true, position:'left', title:{display:true,text:'Rate (sym/tick)',color:'#777'},ticks:{color:'#555'},grid:{color:'#111'},min:0, suggestedMax:6},
+      y2:{position:'right', title:{display:true,text:'Progress %',color:'#777'},ticks:{color:'#555',callback:v=>v+'%'},grid:{drawOnChartArea:false},min:0},
+    },
+    plugins:{legend:{labels:{color:'#aaa',boxWidth:10,font:{size:10}}}},
+    interaction:{mode:'index',intersect:false},
+  },
+});
+
+const taperChart = new Chart(document.getElementById('taper-chart').getContext('2d'), {
+  type:'line', data:{labels:[], datasets:[{label:'tau(t)', data:[], borderColor:'#2ecc71',
+    backgroundColor:'rgba(46,204,113,0.1)', fill:true, pointRadius:0, borderWidth:2}]},
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:false,
+    scales:{
+      x:{title:{display:true,text:'offset t (symbols)',color:'#777'},ticks:{color:'#555'},grid:{color:'#111'}},
+      y:{title:{display:true,text:'tau(t)',color:'#777'},ticks:{color:'#555'},grid:{color:'#111'},min:0},
+    },
+    plugins:{legend:{display:false}},
+  },
+});
+
+function updateTaper() {
+  const p=getParams(), pp=p.eps*p.q/(1-p.eps), s2=burstVarianceFactor(pp,p.q);
+  const rS=computeRStar(p.eps,s2,p.W), A=rS*p.q, d=1-p.q;
+  const labels=[], data=[];
+  for (let t=0;t<=60;t++) { labels.push(t); data.push(taperDensity(t,A,d)); }
+  taperChart.data.labels=labels; taperChart.data.datasets[0].data=data;
+  taperChart.update('none');
+}
+
+const stripCanvas=document.getElementById('channel-strip'), stripCtx=stripCanvas.getContext('2d');
+function drawStrip() {
+  if (!sim) return;
+  const w=stripCanvas.width=stripCanvas.clientWidth, h=stripCanvas.height;
+  stripCtx.clearRect(0,0,w,h);
+  const n=sim.channelStates.length; if (!n) return;
+  // Align with main chart: use the chart's visible X range
+  // Chart.js pads ~5% on each side; the data range = n ticks
+  const chartArea = mainChart.chartArea;
+  const chartW = chartArea ? chartArea.right - chartArea.left : w;
+  const chartL = chartArea ? chartArea.left : 0;
+  const px = chartW / Math.max(n, 1);
+  for (let i=0;i<n;i++) {
+    stripCtx.fillStyle = sim.channelStates[i]==='good' ? '#2ecc7130' : '#e74c3c80';
+    stripCtx.fillRect(chartL + i*px, 0, Math.ceil(px)+1, h);
+  }
+}
+
+function updateMetrics() {
+  if (!sim) return;
+  const oh = sim.totalSrc>0 ? ((sim.totalFec+sim.totalArq)/sim.totalSrc*100) : 0;
+  const rec = sim.totalSrc>0 ? (sim.cumDecoded/sim.totalSrc*100) : 100;
+  document.getElementById('m-overhead').textContent = oh.toFixed(1)+'%';
+  document.getElementById('m-recovery').textContent = rec.toFixed(1)+'%';
+  const pp=sim.p, s2=sim.sigma2;
+  document.getElementById('m-rstar').textContent = sim.rStar.toFixed(4);
+  document.getElementById('m-src').textContent = sim.totalSrc;
+  document.getElementById('m-fec').textContent = sim.totalFec;
+  document.getElementById('m-arq').textContent = sim.totalArq;
+  document.getElementById('m-lost').textContent = sim.totalLost;
+  document.getElementById('m-decoded').textContent = sim.cumDecoded;
+  document.getElementById('m-retxbuf').textContent = sim.retxBufSize();
+  document.getElementById('m-tick').textContent = sim.tick;
+}
+
+// =========================================================================
+// ANIMATION
+// =========================================================================
+function resetSim() {
+  running = false;
+  document.getElementById('btn-play').textContent = 'Play';
+  document.getElementById('btn-play').classList.remove('active');
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+  sim = new Simulation(getParams());
+  for (const ds of mainChart.data.datasets) ds.data = [];
+  mainChart.data.labels = []; mainChart.update('none');
+  drawStrip(); updateMetrics(); updateTaper(); solveTri();
+}
+
+function animate() {
+  if (!running || !sim) return;
+  const s = parseInt(document.getElementById('sel-speed').value);
+  for (let i=0; i<s; i++) {
+    if (sim.finished) { running = false; break; }
+    sim.step();
+  }
+  const labels=mainChart.data.labels;
+  const ds = mainChart.data.datasets;
+  while (labels.length < sim.rateHistory.length) {
+    const idx = labels.length; labels.push(idx);
+    const r = sim.smoothedRate(idx);
+    ds[0].data.push(r.src); ds[1].data.push(r.fec); ds[2].data.push(r.arq);
+    ds[3].data.push(r.lost);
+    ds[4].data.push(r.cumSent); ds[5].data.push(r.cumArrived); ds[6].data.push(r.cumDecoded);
+  }
+  mainChart.update('none');
+  drawStrip(); updateMetrics();
+  if (running) animId = requestAnimationFrame(animate);
+  else { document.getElementById('btn-play').textContent='Play';
+         document.getElementById('btn-play').classList.remove('active'); }
+}
+
+// =========================================================================
+// EVENTS
+// =========================================================================
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!sim || sim.finished) resetSim();
+  running = !running;
+  const b=document.getElementById('btn-play');
+  b.textContent=running?'Pause':'Play'; b.classList.toggle('active',running);
+  if (running) animId = requestAnimationFrame(animate);
+});
+document.getElementById('btn-reset').addEventListener('click', resetSim);
+triMode.addEventListener('change', () => { updateTriVis(); solveTri(); });
+for (const sl of [slEps,slQ,slRtt,slW,slR,slDelta,slRho])
+  sl.addEventListener('input', () => { updateLabels(); updateTaper(); solveTri(); });
+
+updateLabels(); updateTriVis(); updateTaper(); solveTri(); resetSim();
+</script>
+</body>
+</html>

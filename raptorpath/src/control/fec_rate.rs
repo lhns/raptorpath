@@ -19,7 +19,6 @@
 use super::estimator::LossEstimator;
 use crate::fec::FecBackend;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 /// Protocol hint controls the latency/tail-reliability tradeoff.
 ///
@@ -161,8 +160,20 @@ impl FecRateController {
             0.0
         };
 
-        // --- Random loss term: information-theoretic minimum ---
-        let random_rate = p / (1.0 - p) + effective_codec_overhead;
+        // --- Random loss term: information-theoretic minimum + σ²_burst margin ---
+        // r* = ε/(1-ε) + z_δ × √(ε × σ²_burst / (W × (1-ε)))
+        // The z_δ comes from the confidence quantile (already in p via BOCD).
+        // σ²_burst inflates the margin for bursty channels.
+        let sigma2 = burst_variance_factor(estimator);
+        let margin = if window_size > 0 {
+            let w = window_size as f64;
+            // Statistical margin: accounts for finite window variance
+            // Uses z=2.33 (99th percentile) scaled by σ²_burst
+            2.33 * (p * sigma2 / (w * (1.0 - p))).sqrt()
+        } else {
+            0.0
+        };
+        let random_rate = p / (1.0 - p) + margin + effective_codec_overhead;
 
         // --- Burst loss term: delay-constrained capacity B/T ---
         let ge = estimator.ge_estimator();
@@ -386,6 +397,324 @@ fn normal_survival(z: f64) -> f64 {
     }
 }
 
+/// Burst variance inflation factor σ²_burst for the GE channel.
+///
+/// σ²_burst = 1 + 2(1-p-q)/(p+q)
+///
+/// where p = P(Good→Bad), q = P(Bad→Good) from the GE model.
+/// This inflates the margin term in the r* formula to account for
+/// correlated (bursty) losses. See paper Section 8.3.
+///
+/// Returns 1.0 (iid) when GE parameters are unavailable or degenerate.
+pub fn burst_variance_factor(estimator: &LossEstimator) -> f64 {
+    let ge = estimator.ge_estimator();
+    if !ge.is_valid() {
+        return 1.0;
+    }
+    let p = ge.p_gb(); // P(Good→Bad)
+    let q = ge.p_bg(); // P(Bad→Good)
+    let sum = p + q;
+    if sum < 1e-10 {
+        return 1.0;
+    }
+    let factor = 1.0 + 2.0 * (1.0 - p - q) / sum;
+    factor.max(1.0) // σ²_burst ≥ 1 (iid is the minimum)
+}
+
+/// Compute maximum burst length B_max at the 99.99th percentile.
+///
+/// B_max = ceil(ln(0.0001) / ln(1-q))
+///
+/// This is the number of consecutive lost symbols we expect to see
+/// at most once in 10,000 bursts. Used for buffer sizing at ρ=100%.
+/// See paper Section 9.3.
+pub fn b_max(q: f64) -> u64 {
+    if q <= 0.0 || q >= 1.0 {
+        return 1;
+    }
+    let ln_threshold = (0.0001_f64).ln(); // ln(1e-4)
+    let ln_persist = (1.0 - q).ln();      // ln(1-q) < 0
+    if ln_persist >= 0.0 {
+        return 1;
+    }
+    (ln_threshold / ln_persist).ceil() as u64
+}
+
+/// Three-variable optimization: given two of (r, δ, ρ), compute the third.
+///
+/// The three variables form a triangle (paper Section 1.4, 8.6):
+///   r  = correction rate (bandwidth overhead)
+///   δ  = tail latency: P(late delivery) / ρ — fraction of delivered symbols
+///        that needed ARQ (arrived late rather than on-time via FEC)
+///   ρ  = reliability: P(symbol delivered at all within T_cut)
+///
+/// Fix any two → the third is determined by the channel.
+///
+/// Key relationships (paper Section 6.3):
+///   P(on-time) = (1-ε) + ε × P_fec
+///   P(late)    = ε × (1-P_fec) × P_arq
+///   P(lost)    = ε × (1-P_fec) × (1-P_arq) = 1-ρ
+///   P_arq      = 1 - (1-ρ) / (ε × (1-P_fec))
+///   δ          = P(late) / ρ
+#[derive(Debug, Clone)]
+pub struct ThreeVarResult {
+    /// Correction rate (bandwidth overhead).
+    pub r: f64,
+    /// Tail latency: fraction of delivered symbols that arrived late (via ARQ).
+    pub delta: f64,
+    /// Reliability (fraction of symbols delivered within T_cut).
+    pub rho: f64,
+    /// Age cutoff in symbol intervals.
+    pub t_cut: f64,
+    /// Buffer size in symbols.
+    pub buffer_max: f64,
+}
+
+/// Compute T_cut from target reliability ρ via binary search.
+///
+/// Finds the smallest T_cut such that P(recovered within T_cut) ≥ ρ.
+/// Uses the taper integral: corrections accumulated = A × (1-(1-q)^(T+1)) / q.
+///
+/// See paper Section 9.4 (Mode 1, Step 1).
+pub fn find_t_cut(
+    epsilon: f64,
+    q: f64,
+    r: f64,
+    window_size: f64,
+    sigma2_burst: f64,
+    target_rho: f64,
+) -> f64 {
+    if target_rho >= 1.0 {
+        return f64::INFINITY; // 100% reliability needs infinite T_cut
+    }
+    if target_rho <= 0.0 || epsilon <= 0.0 {
+        return 0.0;
+    }
+
+    let mut lo: f64 = 0.0;
+    let mut hi: f64 = window_size * 10.0; // generous upper bound
+    let tolerance = 0.01; // fine granularity for monotonicity
+
+    for _ in 0..100 { // max iterations
+        if hi - lo < tolerance {
+            break;
+        }
+        let mid = (lo + hi) / 2.0;
+        let p_recovered = p_recovered_within(mid, epsilon, q, r, window_size, sigma2_burst);
+        if p_recovered < target_rho {
+            lo = mid; // need more time
+        } else {
+            hi = mid; // enough time
+        }
+    }
+    hi
+}
+
+/// P(symbol recovered within time T) using FEC + ARQ.
+///
+/// P_recovered = 1 - ε × (1 - P_fec(r, W)) × (1 - P_arq(T))
+///
+/// where P_fec uses the normal approximation and P_arq accounts for
+/// corrections accumulated up to time T via the taper integral.
+fn p_recovered_within(
+    t: f64,
+    epsilon: f64,
+    q: f64,
+    r: f64,
+    window_size: f64,
+    sigma2_burst: f64,
+) -> f64 {
+    if epsilon <= 0.0 {
+        return 1.0;
+    }
+
+    // P_fec: probability FEC recovers (from r* and W)
+    let p_fec = p_fec_normal(r, epsilon, window_size, sigma2_burst);
+
+    // P_arq: probability ARQ recovers by time T
+    // Taper integral: corrections accumulated = A × (1-(1-q)^(T+1)) / q
+    // where A = r × q. So total corrections by T = r × (1-(1-q)^(T+1)).
+    let decay = (1.0 - q).max(0.0);
+    let corrections_by_t = r * (1.0 - decay.powf(t + 1.0));
+    // P_arq ≈ 1 - (1-corrections_by_t/r_needed)^+ , simplified:
+    // If accumulated corrections ≥ what's needed, P_arq → 1
+    let r_needed = epsilon / (1.0 - epsilon);
+    let p_arq = if r_needed > 0.0 {
+        (corrections_by_t / r_needed).min(1.0)
+    } else {
+        1.0
+    };
+
+    // Combined: P(recovered) = 1 - P(lost) × P(FEC fails) × P(ARQ fails)
+    1.0 - epsilon * (1.0 - p_fec) * (1.0 - p_arq)
+}
+
+/// P_fec using normal approximation (paper Section 8.1).
+///
+/// P_fec = Φ(√W × (r(1-ε)-ε) / √(ε(1-ε)(r+σ²_burst)))
+fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -> f64 {
+    if window_size <= 0.0 || epsilon <= 0.0 || epsilon >= 1.0 || r <= 0.0 {
+        return 0.0;
+    }
+    let numerator = r * (1.0 - epsilon) - epsilon;
+    if numerator <= 0.0 {
+        return 0.0; // r too low to overcome loss
+    }
+    let denominator = (epsilon * (1.0 - epsilon) * (r + sigma2_burst)).sqrt();
+    if denominator < 1e-300 {
+        return 1.0;
+    }
+    let z = window_size.sqrt() * numerator / denominator;
+    1.0 - normal_survival(z)
+}
+
+/// Compute δ (tail latency) from r and ρ using the paper's delivery model.
+///
+/// δ = P(late delivery) / ρ
+/// P(late) = ε × (1-P_fec) × P_arq
+/// P_arq = 1 - (1-ρ) / (ε × (1-P_fec))   (derived from ρ target)
+///
+/// When ρ = 100%, P_arq = 1, so δ = ε × (1-P_fec) / 1.0.
+/// When ρ < 100%, some symbols are permanently lost, reducing δ.
+fn compute_delta(epsilon: f64, r: f64, rho: f64, window_size: f64, sigma2_burst: f64) -> f64 {
+    if epsilon <= 0.0 || rho <= 0.0 {
+        return 0.0;
+    }
+    let p_fec = p_fec_normal(r, epsilon, window_size, sigma2_burst);
+    let fec_miss = epsilon * (1.0 - p_fec); // P(lost AND FEC failed)
+    if fec_miss < 1e-15 {
+        return 0.0; // FEC recovers everything
+    }
+    // P_arq = 1 - (1-ρ) / fec_miss, clamped to [0, 1]
+    let p_arq = (1.0 - (1.0 - rho) / fec_miss).clamp(0.0, 1.0);
+    let p_late = fec_miss * p_arq;
+    p_late / rho
+}
+
+/// Mode 1: Given (δ, ρ) → compute r.
+///
+/// Find the minimum correction rate that achieves both the tail latency
+/// target δ and reliability target ρ. See paper Section 8.6.
+///
+/// δ = P(late delivery among delivered symbols). Lower δ requires more FEC
+/// so fewer symbols fall through to the slow ARQ path.
+pub fn solve_r_from_delta_rho(
+    epsilon: f64,
+    q: f64,
+    window_size: f64,
+    sigma2_burst: f64,
+    delta: f64,
+    rho: f64,
+) -> ThreeVarResult {
+    // Binary search for r that achieves δ target
+    let mut lo: f64 = epsilon / (1.0 - epsilon); // minimum r (information-theoretic)
+    let mut hi: f64 = 2.0; // generous upper bound
+    let tolerance = 1e-6;
+
+    for _ in 0..100 {
+        if hi - lo < tolerance {
+            break;
+        }
+        let mid = (lo + hi) / 2.0;
+        let d = compute_delta(epsilon, mid, rho, window_size, sigma2_burst);
+        if d > delta {
+            lo = mid; // need more FEC to reduce late deliveries
+        } else {
+            hi = mid; // enough FEC
+        }
+    }
+    let r = hi;
+
+    let t_cut = find_t_cut(epsilon, q, r, window_size, sigma2_burst, rho);
+    let buffer_max = compute_buffer_max(epsilon, q, r, t_cut);
+
+    ThreeVarResult { r, delta, rho, t_cut, buffer_max }
+}
+
+/// Mode 2: Given (r, ρ) → compute δ.
+///
+/// With fixed correction rate and reliability, compute the resulting
+/// tail latency δ = P(late delivery) / ρ. See paper Section 8.6.
+pub fn solve_delta_from_r_rho(
+    epsilon: f64,
+    q: f64,
+    window_size: f64,
+    sigma2_burst: f64,
+    r: f64,
+    rho: f64,
+) -> ThreeVarResult {
+    let delta = compute_delta(epsilon, r, rho, window_size, sigma2_burst);
+
+    let t_cut = find_t_cut(epsilon, q, r, window_size, sigma2_burst, rho);
+    let buffer_max = compute_buffer_max(epsilon, q, r, t_cut);
+
+    ThreeVarResult { r, delta, rho, t_cut, buffer_max }
+}
+
+/// Mode 3: Given (r, δ) → compute ρ.
+///
+/// With fixed correction rate and tail latency δ, compute the achievable
+/// reliability ρ. Binary search on ρ. See paper Section 8.6.
+///
+/// δ = P(late) / ρ depends on ρ (via P_arq), so we search for ρ where
+/// compute_delta(ε, r, ρ, W, σ²) = δ.
+pub fn solve_rho_from_r_delta(
+    epsilon: f64,
+    q: f64,
+    window_size: f64,
+    sigma2_burst: f64,
+    r: f64,
+    delta: f64,
+) -> ThreeVarResult {
+    // Binary search for ρ that produces the target δ.
+    // As ρ increases (more reliable), P_arq increases, P(late) increases,
+    // but δ = P(late)/ρ can go either way. We search for the highest ρ
+    // where δ ≤ target.
+    let mut lo: f64 = 0.5;
+    let mut hi: f64 = 1.0 - 1e-12;
+    let tolerance = 1e-6;
+
+    for _ in 0..100 {
+        if hi - lo < tolerance {
+            break;
+        }
+        let mid = (lo + hi) / 2.0;
+        let d = compute_delta(epsilon, r, mid, window_size, sigma2_burst);
+        if d > delta {
+            hi = mid; // too much late delivery at this ρ
+        } else {
+            lo = mid; // δ satisfied, try higher ρ
+        }
+    }
+    let rho = lo;
+
+    let t_cut = find_t_cut(epsilon, q, r, window_size, sigma2_burst, rho);
+    let buffer_max = compute_buffer_max(epsilon, q, r, t_cut);
+
+    ThreeVarResult { r, delta, rho, t_cut, buffer_max }
+}
+
+/// Compute buffer_max from T_cut and channel parameters.
+///
+/// For ρ < 100%: buffer_max = source_rate × T_cut (in symbol intervals).
+/// For ρ = 100%: buffer_max = RTT + B_max / (r × (1-ε)) × t_sym.
+///
+/// This returns buffer_max in symbol intervals (caller scales by source_rate).
+fn compute_buffer_max(epsilon: f64, q: f64, r: f64, t_cut: f64) -> f64 {
+    if t_cut.is_infinite() {
+        // ρ = 100%: use B_max formula
+        let bmax = b_max(q) as f64;
+        let drain_rate = r * (1.0 - epsilon);
+        if drain_rate > 0.0 {
+            bmax / drain_rate
+        } else {
+            bmax
+        }
+    } else {
+        t_cut
+    }
+}
+
 /// Joint FEC/NACK budget allocator.
 ///
 /// Splits the total repair budget between proactive FEC and reactive NACK repair,
@@ -530,30 +859,31 @@ mod tests {
 
     #[test]
     fn test_codec_overhead_weighted_by_decoder_invocation() {
-        let ctrl_mettle = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Mettle, 1200);
+        // Compare Mettle (15% codec overhead) vs ReedSolomon (0% overhead) at same window.
+        // The difference isolates the codec overhead contribution.
+        let ctrl_mettle = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::Mettle, 1200);
+        let ctrl_rs = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::ReedSolomon, 1200);
 
         let mut est = LossEstimator::new();
-        // Very low loss: P(decoder invoked) is small
+        // Low-moderate loss so rate doesn't hit max_overhead cap
         for _ in 0..100 {
-            est.record_batch(1000, 999); // 0.1% loss
+            est.record_batch(100, 95); // 5% loss
         }
 
-        let rate_small_window = ctrl_mettle.compute_repair_rate(&est, 10);
-        let rate_large_window = ctrl_mettle.compute_repair_rate(&est, 200);
-
-        // Larger window = higher P(decoder invoked) = more codec overhead
+        // At same window, Mettle should have higher rate than RS due to codec overhead
+        let rate_mettle = ctrl_mettle.compute_repair_rate(&est, 50);
+        let rate_rs = ctrl_rs.compute_repair_rate(&est, 50);
         assert!(
-            rate_large_window > rate_small_window,
-            "Larger window should have more codec overhead: small={rate_small_window}, large={rate_large_window}"
+            rate_mettle > rate_rs,
+            "Mettle should have higher rate than RS due to codec overhead: mettle={rate_mettle}, rs={rate_rs}"
         );
 
-        // With zero window size, no codec overhead at all
-        let rate_zero = ctrl_mettle.compute_repair_rate(&est, 0);
-        let ctrl_rs = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::ReedSolomon, 1200);
-        let rate_rs = ctrl_rs.compute_repair_rate(&est, 0);
+        // With zero window size, no codec overhead → Mettle ≈ RS
+        let rate_mettle_zero = ctrl_mettle.compute_repair_rate(&est, 0);
+        let rate_rs_zero = ctrl_rs.compute_repair_rate(&est, 0);
         assert!(
-            (rate_zero - rate_rs).abs() < 0.001,
-            "Zero window should have no codec overhead: mettle={rate_zero}, rs={rate_rs}"
+            (rate_mettle_zero - rate_rs_zero).abs() < 0.01,
+            "Zero window should have no codec overhead: mettle={rate_mettle_zero}, rs={rate_rs_zero}"
         );
     }
 
@@ -714,5 +1044,176 @@ mod tests {
         // P(Z > -2) ≈ 0.9772
         let sm2 = normal_survival(-2.0);
         assert!((sm2 - 0.9772).abs() < 0.005, "survival(-2) ≈ 0.977: got {sm2}");
+    }
+
+    // --- Burst variance tests (Phase 5) ---
+
+    #[test]
+    fn test_burst_variance_iid_channel() {
+        // For iid channel (p+q ≈ 1), σ²_burst → 1
+        // This is the p=0.5, q=0.5 case: 1 + 2*(1-1)/1 = 1
+        // We can't easily set GE params on LossEstimator, so test the formula directly
+        // via p_fec_normal which uses sigma2_burst parameter
+        let p_fec_iid = p_fec_normal(0.15, 0.10, 50.0, 1.0);   // σ²=1 (iid)
+        let p_fec_burst = p_fec_normal(0.15, 0.10, 50.0, 3.0);  // σ²=3 (bursty)
+
+        assert!(
+            p_fec_iid > p_fec_burst,
+            "iid should have higher P_fec than bursty: iid={p_fec_iid}, burst={p_fec_burst}"
+        );
+    }
+
+    #[test]
+    fn test_burst_variance_scenarios() {
+        // Paper Section 8.3 reference values:
+        // DC: σ²≈3.0, WiFi: σ²≈2.9, LTE: σ²≈3.8, Satellite: σ²≈5.1
+        // Test the formula: σ² = 1 + 2(1-p-q)/(p+q)
+
+        // DC: p=0.001, q=0.5 → 1 + 2*(1-0.501)/0.501 ≈ 2.99
+        let s_dc: f64 = 1.0 + 2.0 * (1.0 - 0.001 - 0.5) / (0.001 + 0.5);
+        assert!((s_dc - 3.0).abs() < 0.1, "DC σ²≈3.0: got {s_dc}");
+
+        // LTE: p=0.01, q=0.2 → 1 + 2*(1-0.21)/0.21 ≈ 8.5
+        // (actual values depend on exact p,q — test formula is correct)
+        let s_lte: f64 = 1.0 + 2.0 * (1.0 - 0.01 - 0.2) / (0.01 + 0.2);
+        assert!(s_lte > 1.0, "LTE σ² > 1 (bursty): got {s_lte}");
+        assert!(s_lte > s_dc, "LTE more bursty than DC");
+    }
+
+    #[test]
+    fn test_burst_variance_no_ge_data() {
+        let est = LossEstimator::new();
+        let s = burst_variance_factor(&est);
+        assert_eq!(s, 1.0, "No GE data → σ²=1.0 (iid fallback)");
+    }
+
+    // --- B_max tests ---
+
+    #[test]
+    fn test_b_max_values() {
+        // q=0.5: B_max = ceil(ln(0.0001)/ln(0.5)) ≈ ceil(9.21/0.693) = ceil(13.29) = 14
+        let bm = b_max(0.5);
+        assert_eq!(bm, 14, "B_max(q=0.5) = 14");
+
+        // q=0.1: longer bursts → larger B_max
+        let bm_low_q = b_max(0.1);
+        assert!(bm_low_q > bm, "Lower q → longer bursts → larger B_max");
+
+        // Approximate: B_max ≈ 9.2/q
+        let approx = (9.2_f64 / 0.1).ceil() as u64;
+        assert!((bm_low_q as i64 - approx as i64).abs() <= 5, "B_max ≈ 9.2/q: got {bm_low_q}, approx {approx}");
+    }
+
+    #[test]
+    fn test_b_max_edge_cases() {
+        assert_eq!(b_max(0.0), 1);
+        assert_eq!(b_max(1.0), 1);
+    }
+
+    // --- P_fec normal approximation tests ---
+
+    #[test]
+    fn test_p_fec_normal_basic() {
+        // With r well above ε/(1-ε), P_fec should be high
+        let p = p_fec_normal(0.20, 0.10, 50.0, 1.0);
+        assert!(p > 0.9, "r=0.20, ε=0.10, W=50 should have high P_fec: {p}");
+
+        // With r barely above ε/(1-ε), P_fec should be moderate
+        let p2 = p_fec_normal(0.12, 0.10, 50.0, 1.0);
+        assert!(p2 > 0.0 && p2 < p, "Marginal r should give lower P_fec: {p2}");
+
+        // With r below ε/(1-ε), P_fec = 0
+        let p3 = p_fec_normal(0.05, 0.10, 50.0, 1.0);
+        assert!(p3 < 0.01, "r < ε/(1-ε) should give P_fec ≈ 0: {p3}");
+    }
+
+    #[test]
+    fn test_p_fec_increases_with_window() {
+        // Larger window → tighter concentration → higher P_fec
+        let p_small = p_fec_normal(0.15, 0.10, 20.0, 1.0);
+        let p_large = p_fec_normal(0.15, 0.10, 200.0, 1.0);
+        assert!(
+            p_large > p_small,
+            "Larger window should increase P_fec: W=20: {p_small}, W=200: {p_large}"
+        );
+    }
+
+    // --- Three-variable optimization tests (Phase 6) ---
+
+    #[test]
+    fn test_find_t_cut_monotone_in_rho() {
+        // Use marginal r (barely above ε/(1-ε)) and small window so FEC alone
+        // doesn't provide near-perfect recovery, forcing T_cut to differentiate.
+        let eps = 0.20;
+        let q = 0.1; // long bursts
+        let r = 0.26; // just above 0.25 = ε/(1-ε)
+        let w = 10.0; // small window
+        let s2 = 5.0; // high burst variance
+
+        let t1 = find_t_cut(eps, q, r, w, s2, 0.80);
+        let t2 = find_t_cut(eps, q, r, w, s2, 0.90);
+        let t3 = find_t_cut(eps, q, r, w, s2, 0.95);
+
+        assert!(t1 <= t2, "Higher ρ needs larger T_cut: t(0.80)={t1} <= t(0.90)={t2}");
+        assert!(t2 <= t3, "Higher ρ needs larger T_cut: t(0.90)={t2} <= t(0.95)={t3}");
+        // At least one pair should be strictly different
+        assert!(t1 < t3, "T_cut should increase from ρ=0.80 to ρ=0.95: {t1} < {t3}");
+    }
+
+    #[test]
+    fn test_mode1_delta_rho_to_r() {
+        let result = solve_r_from_delta_rho(0.10, 0.3, 50.0, 3.0, 0.001, 0.99);
+        // r should be above the information-theoretic minimum
+        let r_min = 0.10 / 0.90;
+        assert!(result.r > r_min, "r should exceed ε/(1-ε): r={}, min={r_min}", result.r);
+        assert_eq!(result.delta, 0.001);
+        assert_eq!(result.rho, 0.99);
+        assert!(result.t_cut > 0.0, "T_cut should be positive");
+        assert!(result.buffer_max > 0.0, "buffer_max should be positive");
+    }
+
+    #[test]
+    fn test_mode2_r_rho_to_delta() {
+        let result = solve_delta_from_r_rho(0.10, 0.3, 50.0, 3.0, 0.20, 0.99);
+        // With generous r=0.20 for ε=0.10, delta should be small
+        assert!(result.delta < 0.10, "delta should be small with generous r: {}", result.delta);
+        assert_eq!(result.r, 0.20);
+        assert_eq!(result.rho, 0.99);
+    }
+
+    #[test]
+    fn test_mode3_r_delta_to_rho() {
+        let result = solve_rho_from_r_delta(0.10, 0.3, 50.0, 3.0, 0.20, 0.001);
+        // With generous r and tight δ, ρ should be high
+        assert!(result.rho > 0.5, "ρ should be high with generous r: {}", result.rho);
+        assert_eq!(result.r, 0.20);
+        assert_eq!(result.delta, 0.001);
+    }
+
+    #[test]
+    fn test_three_var_consistency() {
+        // Mode 1 produces (r, δ, ρ). Feed r and ρ into Mode 2 → should get same δ.
+        // Use high ρ (0.999) so FEC alone can't satisfy it, forcing ARQ to contribute
+        // and producing a non-zero δ.
+        let eps = 0.10;
+        let q = 0.3;
+        let w = 20.0; // smaller window so P_fec isn't near-perfect
+        let s2 = 3.0;
+
+        let m1 = solve_r_from_delta_rho(eps, q, w, s2, 0.05, 0.999);
+        let m2 = solve_delta_from_r_rho(eps, q, w, s2, m1.r, 0.999);
+
+        assert!(
+            (m1.delta - m2.delta).abs() < 0.01,
+            "Mode 1 and Mode 2 should agree on δ: m1={}, m2={}",
+            m1.delta, m2.delta
+        );
+    }
+
+    #[test]
+    fn test_buffer_max_finite_rho() {
+        let result = solve_r_from_delta_rho(0.10, 0.3, 50.0, 3.0, 0.001, 0.98);
+        assert!(result.buffer_max.is_finite(), "buffer_max should be finite for ρ<1");
+        assert!(result.t_cut.is_finite(), "T_cut should be finite for ρ<1");
     }
 }

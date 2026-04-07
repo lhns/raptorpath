@@ -197,10 +197,8 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         enable_pi_feedback: None,
         ge_burst_factor: None,
         realtime_burst_extra: None,
-        enable_probe_rtt: None,
         reorder_timeout_ms: None,
         reorder_max_size: None,
-        nack_auto_disable_threshold: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;
