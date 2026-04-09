@@ -30,6 +30,10 @@ glue = glue.replace('export class ', 'class ')
 glue = glue.replace('export function ', 'function ')
 glue = re.sub(r'^export \{.*$', '', glue, flags=re.MULTILINE)
 glue = re.sub(r'^/\* @ts-self-types.*$', '', glue, flags=re.MULTILINE)
+# Remove __wbg_load and __wbg_init functions (they use import.meta and multi-line strings)
+# We only need initSync which works with embedded bytes
+glue = re.sub(r'async function __wbg_load\(.*?^}', '', glue, flags=re.DOTALL|re.MULTILINE)
+glue = re.sub(r'async function __wbg_init\(.*?^}', '', glue, flags=re.DOTALL|re.MULTILINE)
 
 wasm_b64 = "${WASM_B64}"
 
