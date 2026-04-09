@@ -349,7 +349,7 @@ function b_max(q) {
  * @returns {number}
  */
 function burst_variance_factor(p, q) {
-    const ret = burst_variance_factor(p, q);
+    const ret = wasm.burst_variance_factor(p, q);
     return ret;
 }
 
@@ -373,7 +373,7 @@ function compute_delta(epsilon, r, rho, window_size, sigma2_burst) {
  * @returns {number}
  */
 function compute_r_star(epsilon, sigma2, window_size) {
-    const ret = compute_r_star(epsilon, sigma2, window_size);
+    const ret = wasm.compute_r_star(epsilon, sigma2, window_size);
     return ret;
 }
 
@@ -387,7 +387,7 @@ function compute_r_star(epsilon, sigma2, window_size) {
  * @returns {number}
  */
 function find_t_cut(epsilon, q, r, window_size, sigma2_burst, target_rho) {
-    const ret = find_t_cut(epsilon, q, r, window_size, sigma2_burst, target_rho);
+    const ret = wasm.find_t_cut(epsilon, q, r, window_size, sigma2_burst, target_rho);
     return ret;
 }
 
@@ -435,7 +435,7 @@ function p_lost(age_secs, epsilon, srtt_secs, rttvar_secs) {
  * @returns {Float64Array}
  */
 function solve_delta_from_r_rho(epsilon, q, window_size, sigma2_burst, r, rho) {
-    const ret = solve_delta_from_r_rho(epsilon, q, window_size, sigma2_burst, r, rho);
+    const ret = wasm.solve_delta_from_r_rho(epsilon, q, window_size, sigma2_burst, r, rho);
     var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
     return v1;
@@ -452,7 +452,7 @@ function solve_delta_from_r_rho(epsilon, q, window_size, sigma2_burst, r, rho) {
  * @returns {Float64Array}
  */
 function solve_r_from_delta_rho(epsilon, q, window_size, sigma2_burst, delta, rho) {
-    const ret = solve_r_from_delta_rho(epsilon, q, window_size, sigma2_burst, delta, rho);
+    const ret = wasm.solve_r_from_delta_rho(epsilon, q, window_size, sigma2_burst, delta, rho);
     var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
     return v1;
@@ -469,7 +469,7 @@ function solve_r_from_delta_rho(epsilon, q, window_size, sigma2_burst, delta, rh
  * @returns {Float64Array}
  */
 function solve_rho_from_r_delta(epsilon, q, window_size, sigma2_burst, r, delta) {
-    const ret = solve_rho_from_r_delta(epsilon, q, window_size, sigma2_burst, r, delta);
+    const ret = wasm.solve_rho_from_r_delta(epsilon, q, window_size, sigma2_burst, r, delta);
     var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
     return v1;
@@ -482,7 +482,7 @@ function solve_rho_from_r_delta(epsilon, q, window_size, sigma2_burst, r, delta)
  * @returns {number}
  */
 function taper_density(t, amplitude, decay) {
-    const ret = taper_density(t, amplitude, decay);
+    const ret = wasm.taper_density(t, amplitude, decay);
     return ret;
 }
 

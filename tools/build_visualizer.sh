@@ -115,21 +115,8 @@ html = html.replace('<script type="module">', '<script>')
 pattern = r'// =+\n// WASM MODULE.*?(?=// =+\n// UI)'
 html = re.sub(pattern, init_block, html, flags=re.DOTALL)
 
-# In the UI section, replace 'wasm.xxx(' and 'wasm_mod.xxx(' with direct function calls.
-# The glue functions are now global, so no prefix needed.
-for fn in ['burst_variance_factor', 'compute_r_star', 'taper_density',
-           'find_t_cut', 'solve_r_from_delta_rho', 'solve_delta_from_r_rho',
-           'solve_rho_from_r_delta']:
-    html = html.replace(f'wasm_mod.{fn}(', f'{fn}(')
-    html = html.replace(f'wasm.{fn}(', f'{fn}(')
-
-# Fix Simulation constructor references
-html = html.replace('new wasm_mod.Simulation(', 'new Simulation(')
-html = html.replace('new wasm.Simulation(', 'new Simulation(')
-
-# Fix overhead/recovery metric calls
-html = html.replace('sim.inner ? sim.inner.get_overhead() : 0', 'sim.inner.get_overhead()')
-html = html.replace('sim.inner ? sim.inner.get_recovery() : 100', 'sim.inner.get_recovery()')
+# No wasm.xxx -> xxx replacement needed: the source HTML already uses direct calls.
+# The glue code's internal wasm.xxx references must NOT be touched.
 
 open('raptorpath/docs/interactive-visualizer.html', 'w').write(html)
 print(f"HTML size: {len(html)} bytes")
