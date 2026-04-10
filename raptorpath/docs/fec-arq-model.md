@@ -123,6 +123,18 @@ ACK absence.
     - [13.8 Interpolated Objective Function](#138-interpolated-objective-function)
     - [13.9 QoS Priority Cascade](#139-qos-priority-cascade)
     - [13.10 Cross-Path Retransmit](#1310-cross-path-retransmit)
+14. [Future Directions and Considered Improvements](#14-future-directions-and-considered-improvements)
+    - [14.1 Reconsidering the Triangle](#141-reconsidering-the-triangle-bandwidth-as-constraint-not-variable)
+    - [14.2 FEC Latency Is Not Zero](#142-fec-latency-is-not-zero)
+    - [14.3 Unified FEC Latency Distribution](#143-unified-fec-latency-distribution)
+    - [14.4 Ambient FEC and the Pipeline Effect](#144-ambient-fec-and-the-pipeline-effect)
+    - [14.5 Optimal Encoder Window Size](#145-optimal-encoder-window-size)
+    - [14.6 ARQ Latency and the Retransmit Sweet Spot](#146-arq-latency-and-the-retransmit-sweet-spot)
+    - [14.7 When FEC Beats ARQ](#147-when-fec-beats-arq-and-vice-versa)
+    - [14.8 Per-Symbol Recovery Probability](#148-per-symbol-recovery-probability-function)
+    - [14.9 Reconceived Delivery Time Distribution](#149-reconceived-delivery-time-distribution)
+    - [14.10 Latency vs Throughput Trade-off](#1410-latency-tail-vs-throughput-not-always-a-trade-off)
+    - [14.11 Application Profiles Revisited](#1411-application-profiles-revisited)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -2347,6 +2359,310 @@ reliable paths without explicit selection.
 **Potential refinement:** For latency-sensitive traffic, weighting retransmit
 pulls toward the lowest-RTT path would reduce recovery time. This follows
 the same interpolated objective as source scheduling (Section 13.8).
+
+---
+
+## 14. Future Directions and Considered Improvements
+
+The following sections document insights discovered through building and
+testing the interactive visualizer simulation. They represent deeper
+considerations about how FEC latency, ARQ latency, bandwidth, and the
+encoder window interact — areas where the current model can be refined
+in future work.
+
+### 14.1 Reconsidering the Triangle: Bandwidth as Constraint, Not Variable
+
+The current triangle (Section 1.4) treats r (bandwidth overhead) as a
+variable alongside δ (tail latency) and ρ (reliability). But Copa
+(Section 12) discovers a fixed link capacity C. We cannot create more
+bandwidth — we can only choose how to fill the pipe. Every FEC symbol
+displaces a source symbol:
+
+```
+  source_rate = C / (1 + r)
+
+  More FEC (higher r) → faster per-window recovery → but slower completion
+```
+
+This means "bandwidth overhead" is not an independent dimension — it IS
+long-window latency at a fixed link rate. The real trade-off space may be:
+
+```
+         Short-window latency
+         (per-window tail delivery)
+              / \
+             /   \
+            / FIX \
+           / any 2 \
+          /         \
+         /___________\
+Long-window         Reliability
+latency              (ρ)
+(throughput/
+completion time)
+```
+
+r is the internal mechanism that trades short-window for long-window
+latency. The user sets latency targets; the system computes r. This
+reframing may lead to more intuitive protocol hint mappings.
+
+### 14.2 FEC Latency Is Not Zero
+
+Section 3.2 states "Latency cost: zero additional (repair arrives at
+roughly the same time as source)." This is an approximation. FEC repair
+symbols arrive AFTER the source symbols they cover. A lost symbol S3 is
+only recovered when enough repairs covering S3 have arrived AND the
+decoder resolves S3's equation. This takes time t_fec > 0.
+
+**Per-symbol:** FEC can never make a single symbol arrive faster than if
+it wasn't lost. The repair always arrives after the source it covers.
+
+**Per-window:** FEC can recover all losses within a window once enough
+repairs accumulate. The decode latency depends on the encoder window
+size W and the correction rate r.
+
+The distinction matters for real-time applications where per-symbol
+latency is the constraint. For file transfers, only per-window/total
+completion time matters, and the approximation is acceptable.
+
+### 14.3 Unified FEC Latency Distribution
+
+For m concurrent losses (a burst of length m), the time until all m are
+recovered follows a counting process. Using the Poisson approximation
+(valid when per-slot correction probabilities are small):
+
+```
+  λ(T) = Σ_{t=0}^{T} τ(t) × (1-ε)
+       = A × (1-ε) × (1 - (1-q)^(T+1)) / q
+
+  P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
+                    = 1 - Σ_{k=0}^{m-1} e^{-λ(T)} × λ(T)^k / k!
+```
+
+This is the regularized incomplete gamma function Q(m, λ(T)).
+
+**Unified across codec types:**
+
+- Block codec (RaptorQ, RS): m = losses in block of size K. All m
+  symbols decode simultaneously when the m-th repair arrives.
+- Window codec (RLC, Streaming): m = losses in window of size W.
+  Decoder can cascade — recovering one symbol may immediately resolve
+  others via Gaussian elimination. The block CDF is a conservative
+  lower bound (window codecs recover faster due to cascade).
+
+### 14.4 Ambient FEC and the Pipeline Effect
+
+With a sliding window codec, repair symbols are generated continuously
+as part of the steady-state r/(1+r) interleaving (Section 5.3). When a
+loss occurs, there are already repair symbols "in the pipeline" that
+cover the lost position — they were generated while the lost symbol was
+in the encoder window.
+
+```
+  Window:  [S1][S2]...[S50][R1][S51][R2]...[S100][R3]...
+                         ^          ^
+                         S50 lost   R1 already covers [S1..S100]
+                                    → decoder has one equation instantly
+```
+
+For a symbol that has been in the window for T_w ticks before loss:
+
+```
+  λ_total(T) = λ_prior(T_w) + λ_new(T)
+
+  λ_prior(T_w) = accumulated surviving repairs from before the loss
+               = r × (1-ε) × T_w / (1+r)
+  λ_new(T)     = new taper corrections after the loss
+               = A × (1-ε) × (1-(1-q)^(T+1)) / q
+```
+
+**Larger windows accumulate more ambient FEC → faster recovery.** This
+means FEC latency is not just about new repairs generated after the
+loss — it includes the pipeline of repairs already in flight.
+
+### 14.5 Optimal Encoder Window Size
+
+The window should be large enough that ambient FEC covers typical bursts.
+For a burst of length B, we need B surviving repairs in the pipeline:
+
+```
+  W × r × (1-ε) / (1+r) ≥ B
+
+  W_min(B) = B × (1+r) / (r × (1-ε))
+```
+
+For the mean burst (B = 1/q) with r = ε/(1-ε):
+
+```
+  W_min = 1 / (q × ε)
+```
+
+```
+  Scenario          ε      q     W_min(mean)   B_99   W_min(p99)
+  ---------------------------------------------------------------
+  WiFi              5%    0.50        40          7       ~60
+  LTE              10%    0.20        50         21      ~150
+  Satellite         9%    0.10       111         44      ~350
+```
+
+Setting W so that W × t_sym ≈ RTT gives FEC and ARQ roughly equal
+recovery latency. Below that threshold, FEC is strictly faster than ARQ
+for all burst lengths up to the pipeline capacity.
+
+### 14.6 ARQ Latency and the Retransmit Sweet Spot
+
+ARQ latency is well-defined: L_arq = T_retx + RTT/2 ≈ 1.5 × RTT.
+But T_retx depends on confidence that the symbol is actually lost.
+P_lost(t) (Section 3.4) models this confidence.
+
+As T_cut shrinks (retransmit sooner):
+
+- ↑ Faster recovery for truly lost symbols
+- ↓ More false-positive retransmits (duplicates)
+- ↓ Duplicates waste bandwidth → worse long-window latency
+
+P_lost(t) is exactly this probability/waste trade-off curve. The sweet
+spot is where P_lost(T_cut) is high enough that few retransmits are
+wasted, but low enough for timely recovery.
+
+For T_cut < RTT: **proactive retransmit** territory. We retransmit
+before knowing if the symbol was lost. This is bandwidth-expensive but
+latency-optimal for the individual symbol. Viable only at high ε where
+most symbols are lost anyway (P_lost(0) = ε is already high).
+
+### 14.7 When FEC Beats ARQ (and Vice Versa)
+
+**FEC wins when:** t_fec(W) < L_arq ≈ 1.5 × RTT
+
+```
+  - High RTT (satellite): ARQ is slow, FEC's window decode is faster
+  - Short bursts: m small, few repairs needed, quick decode
+  - High bandwidth: t_sym small, window fills quickly
+```
+
+**ARQ wins when:** L_arq < t_fec(W)
+
+```
+  - Low RTT (datacenter): ARQ round-trip is fast
+  - Very long bursts: m large, FEC needs many repairs
+  - Low bandwidth: large t_sym, window takes long to fill
+```
+
+The crossover point t_fec(W) = 1.5 × RTT determines the optimal
+FEC/ARQ balance for a given link. The window size optimization
+(Section 14.5) can be tuned to align this crossover with the link's
+RTT, making FEC optimal for all bursts shorter than the pipeline.
+
+### 14.8 Per-Symbol Recovery Probability Function
+
+Given GE parameters (p, q), the taper, and the encoder window size, we
+can compute a per-symbol recovery probability as a function of time:
+
+```
+  P_recovery(T | m, T_w) = P(Poisson(λ_total(T)) ≥ m)
+
+  where:
+    λ_total(T) = λ_prior(T_w) + λ_new(T)
+    m          = burst length (geometric(q) from GE model)
+    T_w        = time symbol has been in window before loss
+```
+
+This is computable analytically via the Poisson CDF (regularized
+incomplete gamma function). No Monte Carlo simulation needed, though
+a Markov chain on GE states would give the joint distribution of
+(burst_length, recovery_time) for more precise analysis.
+
+Since we measure p and q directly from the GE estimator (Section 7.5),
+these parameters are available at runtime. This opens the possibility
+of computing the recovery CDF for each symbol to make optimal FEC/ARQ
+decisions — a refinement of the current P_lost heuristic.
+
+### 14.9 Reconceived Delivery Time Distribution
+
+The corrected per-symbol delivery time CDF:
+
+```
+  P(delivered by T) =
+      (1-ε)                                     not lost (arrives at RTT/2)
+    + ε × P(t_fec ≤ T | m)                     lost, FEC recovers by T
+    + ε × (1-P(t_fec ≤ T | m)) × I(T ≥ L_arq) lost, ARQ recovers by T
+```
+
+The tail: δ(T) = 1 - P(delivered by T) = P(delivery takes > T)
+
+This allows the triangle to use a **time budget** T_budget instead of
+the current binary FEC/ARQ classification:
+
+```
+  Fix T_budget + ρ → compute r   (minimum r for the latency target)
+  Fix r + ρ       → compute T    (what latency does this r achieve?)
+  Fix r + T_budget → compute ρ   (reliability at this latency budget)
+```
+
+The time-based formulation connects naturally to application requirements:
+"99% of packets within 33ms" maps directly to δ(33ms) ≤ 0.01, ρ ≥ 0.999.
+
+### 14.10 Latency Tail vs Throughput: Not Always a Trade-off
+
+With perfectly matched FEC (r = ε/(1-ε), zero waste):
+
+- Short-window latency: FEC recovers bursts within the window ✓
+- Long-window latency: minimal overhead (~ε/(1-ε) extra symbols) ✓
+- Both improve simultaneously vs the no-FEC baseline
+
+The trade-off only appears when:
+
+1. **Over-provisioning FEC:** wastes bandwidth → worse completion time
+2. **Over-provisioning ARQ:** duplicates waste bandwidth
+3. **Under-provisioning either:** tail latency degrades
+
+The taper function's role (Section 4) is to match FEC exactly to the
+loss distribution, avoiding both over- and under-provisioning. When
+well-matched, there is no latency-vs-throughput trade-off — only the
+inherent cost of channel loss (ε/(1-ε) overhead is the theoretical
+minimum regardless of mechanism).
+
+### 14.11 Application Profiles Revisited
+
+With the refined latency model, the application profiles from
+Section 1.4 gain additional precision:
+
+**VoIP/Gaming** (T_budget ≈ 20ms, ρ = 98%):
+
+```
+  FEC window should contain < 20ms of data.
+  At high ε: accept 2% loss rather than ARQ delay.
+  Proactive retransmit viable if ε > 30% (P_lost(0) = ε is already high).
+  W_optimal: small (minimize t_fec), accept higher per-window loss.
+```
+
+**Large file transfer** (T_budget = relaxed, ρ = 100%):
+
+```
+  Only throughput (long-window latency) matters.
+  Minimize r → maximize source_rate = C/(1+r).
+  ARQ handles the tail — per-symbol latency irrelevant.
+  r = ε/(1-ε) is optimal (information-theoretic minimum).
+  W_optimal: large (maximize pipeline, minimize FEC overhead variance).
+```
+
+**Live video** (T_budget ≈ 33ms per frame, ρ = 99.9%):
+
+```
+  Per-frame deadline. FEC window ≈ one frame of data.
+  Moderate FEC for fast burst recovery within frame.
+  ARQ backstop for rare multi-frame bursts.
+  W_optimal: ≈ frame_size / symbol_size (natural alignment).
+```
+
+**Sensor/IoT** (T_budget = relaxed, ρ = 95%):
+
+```
+  Bandwidth-constrained (low-power link).
+  Minimal FEC, minimal ARQ. Accept 5% loss.
+  r kept minimal to maximize source throughput.
+  W_optimal: small (save memory on constrained device).
+```
 
 ---
 
