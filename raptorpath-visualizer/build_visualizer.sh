@@ -2,17 +2,17 @@
 # Build the interactive visualizer with embedded WASM.
 # Produces a single self-contained HTML file that works from file://.
 #
-# Usage: bash tools/build_visualizer.sh
+# Usage: bash raptorpath-visualizer/build_visualizer.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Building WASM..."
-wasm-pack build raptorpath-wasm --target web --out-dir ../raptorpath/docs/wasm 2>&1 | tail -3
+wasm-pack build raptorpath-wasm --target web --out-dir ../raptorpath-visualizer/wasm 2>&1 | tail -3
 
 echo "Base64-encoding WASM binary..."
-WASM_B64=$(base64 -w0 raptorpath/docs/wasm/raptorpath_wasm_bg.wasm)
-echo "  WASM size: $(wc -c < raptorpath/docs/wasm/raptorpath_wasm_bg.wasm) bytes"
+WASM_B64=$(base64 -w0 raptorpath-visualizer/wasm/raptorpath_wasm_bg.wasm)
+echo "  WASM size: $(wc -c < raptorpath-visualizer/wasm/raptorpath_wasm_bg.wasm) bytes"
 echo "  Base64 size: ${#WASM_B64} chars"
 
 echo "Generating inline visualizer..."
@@ -21,10 +21,10 @@ TMPFILE=$(mktemp)
 cat > "$TMPFILE" <<PYEOF
 import re
 
-html = open('raptorpath/docs/interactive-visualizer.html').read()
+html = open('raptorpath-visualizer/interactive-visualizer.html').read()
 
 # Read glue JS, strip export keywords but keep function names
-glue = open('raptorpath/docs/wasm/raptorpath_wasm.js').read()
+glue = open('raptorpath-visualizer/wasm/raptorpath_wasm.js').read()
 glue = glue.replace('export class ', 'class ')
 glue = glue.replace('export function ', 'function ')
 glue = re.sub(r'^export \{.*$', '', glue, flags=re.MULTILINE)
@@ -132,12 +132,12 @@ html = re.sub(pattern, init_block, html, flags=re.DOTALL)
 # No wasm.xxx -> xxx replacement needed: the source HTML already uses direct calls.
 # The glue code's internal wasm.xxx references must NOT be touched.
 
-open('raptorpath/docs/interactive-visualizer.html', 'w').write(html)
+open('raptorpath-visualizer/interactive-visualizer.html', 'w').write(html)
 print(f"HTML size: {len(html)} bytes")
 PYEOF
 
 python3 "$TMPFILE"
 rm -f "$TMPFILE"
 
-echo "Done! Visualizer updated: raptorpath/docs/interactive-visualizer.html"
+echo "Done! Visualizer updated: raptorpath-visualizer/interactive-visualizer.html"
 echo "Open it directly in a browser (file:// works)."
