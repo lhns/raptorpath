@@ -3,6 +3,18 @@
 //! No IO, no async, no platform dependencies. Used by both the main
 //! raptorpath crate and the raptorpath-wasm crate.
 
+pub mod changepoint;
+pub mod gilbert_elliott;
+pub mod estimator;
+pub mod fec_rate_controller;
+pub mod rlc;
+
+pub use changepoint::BayesianChangepoint;
+pub use gilbert_elliott::GilbertElliottEstimator;
+pub use estimator::LossEstimator;
+pub use fec_rate_controller::FecRateController;
+pub use rlc::{RlcEncoder, RlcDecoder};
+
 /// Standard normal survival function: P(Z > z) = 1 - Phi(z).
 /// Abramowitz & Stegun rational approximation.
 pub fn normal_survival(z: f64) -> f64 {
@@ -18,6 +30,18 @@ pub fn normal_survival(z: f64) -> f64 {
                     + t * 1.061405429))));
     let erfc_ax = poly * (-ax * ax).exp();
     if x >= 0.0 { 0.5 * erfc_ax } else { 1.0 - 0.5 * erfc_ax }
+}
+
+/// Standard normal quantile (inverse CDF). Abramowitz & Stegun rational approximation.
+pub fn normal_quantile(p: f64) -> f64 {
+    if p <= 0.0 { return f64::NEG_INFINITY; }
+    if p >= 1.0 { return f64::INFINITY; }
+    if (p - 0.5).abs() < 1e-12 { return 0.0; }
+    let (sign, q) = if p < 0.5 { (-1.0, p) } else { (1.0, 1.0 - p) };
+    let t = (-2.0 * q.ln()).sqrt();
+    let num = 2.515517 + 0.802853 * t + 0.010328 * t * t;
+    let den = 1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t;
+    sign * (t - num / den)
 }
 
 /// Compute P_lost(t): probability a symbol was lost given no ACK after time t.

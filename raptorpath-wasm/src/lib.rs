@@ -85,54 +85,49 @@ pub struct Simulation {
     q: f64,
     p: f64,
     sigma2: f64,
-    r_star: f64,
-    r_star_auto: f64,
-    amplitude: f64,
-    decay: f64,
+    r_star: f64,        // current r (adaptive or static)
+    r_star_auto: f64,   // auto-computed r* for reference
+    r_static: f64,      // static r from constructor
     rtt_ticks: u32,
     srtt_secs: f64,
     rttvar_secs: f64,
     t_cut: f64,
     capacity: u32,
-
-    // GE channel state
     channel_good: bool,
-
-    // Simulation state
     tick: u32,
-    symbols: Vec<Symbol>,
-    next_seq: u32,
     source_done: bool,
     finished: bool,
     num_source: u32,
 
+    // Adaptive r
+    estimator: math::LossEstimator,
+    fec_controller: math::FecRateController,
+
+    // Real RLC codec
+    encoder: math::RlcEncoder,
+    decoder: math::RlcDecoder,
+
+    // Symbol tracking (for ARQ: which seqs are lost and un-recovered)
+    symbols: Vec<Symbol>,
+    next_seq: u32,
+
     // Counters
-    total_src: u32,
-    total_fec: u32,
-    total_arq: u32,
-    total_lost: u32,
-    steady_src: u32,
-    steady_fec: u32,
-    steady_arq: u32,
-    cum_sent: u32,
-    cum_arrived: u32,
-    cum_decoded: u32,
+    total_src: u32, total_fec: u32, total_arq: u32, total_lost: u32,
+    steady_src: u32, steady_fec: u32, steady_arq: u32,
+    cum_sent: u32, cum_arrived: u32, cum_decoded: u32,
     fec_debt: f64,
-    fec_pool: u32,
     lost_pending: u32,
 
-    // Per-tick output (read after each step)
-    last_src: u32,
-    last_fec: u32,
-    last_arq: u32,
-    last_lost: u32,
+    // Per-tick output
+    last_src: u32, last_fec: u32, last_arq: u32, last_lost: u32,
 
-    // RNG state (simple xorshift64)
+    // RNG
     rng_state: u64,
 }
 
 struct Symbol {
     tick: u32,
+    seq: u64,
     lost: bool,
     recovered: bool,
     arq_tick: i32,
@@ -140,15 +135,11 @@ struct Symbol {
 
 impl Simulation {
     fn rng(&mut self) -> f64 {
-        // xorshift64
         let mut x = self.rng_state;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
+        x ^= x << 13; x ^= x >> 7; x ^= x << 17;
         self.rng_state = x;
         (x as f64) / (u64::MAX as f64)
     }
-
     fn channel_step(&mut self) {
         if self.channel_good {
             if self.rng() < self.p { self.channel_good = false; }
@@ -156,7 +147,6 @@ impl Simulation {
             if self.rng() < self.q { self.channel_good = true; }
         }
     }
-
     fn is_lost(&self) -> bool { !self.channel_good }
 }
 
@@ -168,28 +158,26 @@ impl Simulation {
         let sigma2 = math::burst_variance_factor(p, q);
         let r_star_auto = math::compute_r_star(eps, sigma2, w as f64);
         let t_cut = math::find_t_cut(eps, q, r, w as f64, sigma2, rho);
+        // Symbol size 8 bytes: small for wasm efficiency, content doesn't matter for viz
+        let symbol_size = 8;
         Self {
             eps, q, p, sigma2,
-            r_star: r,
-            r_star_auto,
-            amplitude: r * q.clamp(0.01, 1.0),
-            decay: 1.0 - q.clamp(0.01, 1.0),
+            r_star: r, r_star_auto, r_static: r,
             rtt_ticks: rtt_ms.max(2),
             srtt_secs: rtt_ms as f64 / 1000.0,
             rttvar_secs: rtt_ms as f64 / 4000.0,
-            t_cut,
-            capacity: 4,
-            channel_good: true,
-            tick: 0,
-            symbols: Vec::new(),
-            next_seq: 0,
-            source_done: false,
-            finished: false,
-            num_source: 200,
+            t_cut, capacity: 4,
+            channel_good: true, tick: 0,
+            source_done: false, finished: false, num_source: 200,
+            estimator: math::LossEstimator::new(),
+            fec_controller: math::FecRateController::new(1e-5, 0.5, 0.004),
+            encoder: math::RlcEncoder::new(symbol_size),
+            decoder: math::RlcDecoder::new(symbol_size),
+            symbols: Vec::new(), next_seq: 0,
             total_src: 0, total_fec: 0, total_arq: 0, total_lost: 0,
             steady_src: 0, steady_fec: 0, steady_arq: 0,
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
-            fec_debt: 0.0, fec_pool: 0, lost_pending: 0,
+            fec_debt: 0.0, lost_pending: 0,
             last_src: 0, last_fec: 0, last_arq: 0, last_lost: 0,
             rng_state: 0xdeadbeef12345678,
         }
@@ -203,40 +191,48 @@ impl Simulation {
         let mut fec_n: u32 = 0;
         let mut arq_n: u32 = 0;
         let mut lost_n: u32 = 0;
-        let r = self.r_star;
+        let mut tick_sent: u32 = 0;
+        let mut tick_survived: u32 = 0;
+
+        // Adaptive r from estimator (updates every tick)
+        let w = self.encoder.window_size();
+        let r = if w > 0 {
+            let adaptive = self.fec_controller.compute_repair_rate(&self.estimator, w);
+            if adaptive > 0.001 { adaptive } else { self.r_static }
+        } else {
+            self.r_static
+        };
+        self.r_star = r;
         let c = self.capacity;
 
         for slot in 0..c {
             let force_source = slot == 0 && !self.source_done;
             self.fec_debt = (self.fec_debt + r).min(3.0);
-
             let has_unrecovered = self.symbols.iter().any(|s| s.lost && !s.recovered);
 
             if !force_source && self.fec_debt >= 1.0 && (!self.source_done || has_unrecovered) {
+                // --- Correction slot ---
                 self.fec_debt -= 1.0;
+                let lost = self.is_lost();
+                if lost { lost_n += 1; }
+                tick_sent += 1;
 
-                // Weighted random selection by taper density
+                // P_lost weighted selection for ARQ vs FEC
+                let taper = math::TaperFunction::new(r, self.q);
                 let mut total_density: f64 = 0.0;
                 for sym in &self.symbols {
                     if sym.recovered { continue; }
-                    let age = self.tick.saturating_sub(sym.tick);
-                    total_density += math::TaperFunction::new(self.r_star, self.q).density(age as f64);
+                    total_density += taper.density((self.tick.saturating_sub(sym.tick)) as f64);
                 }
-
                 let mut pick_idx: Option<usize> = None;
                 if total_density > 0.0 {
                     let mut r2 = self.rng() * total_density;
-                    let taper = math::TaperFunction::new(self.r_star, self.q);
                     for (i, sym) in self.symbols.iter().enumerate() {
                         if sym.recovered { continue; }
-                        let age = self.tick.saturating_sub(sym.tick);
-                        r2 -= taper.density(age as f64);
+                        r2 -= taper.density((self.tick.saturating_sub(sym.tick)) as f64);
                         if r2 <= 0.0 { pick_idx = Some(i); break; }
                     }
                 }
-
-                let lost = self.is_lost();
-                if lost { lost_n += 1; }
 
                 let mut did_arq = false;
                 if let Some(idx) = pick_idx {
@@ -244,59 +240,81 @@ impl Simulation {
                     let age_secs = age_ticks as f64 * 0.001;
                     let sym_lost = self.symbols[idx].lost;
                     let sym_arq_tick = self.symbols[idx].arq_tick;
+                    let sym_seq = self.symbols[idx].seq;
                     let pl = math::p_lost(age_secs, self.eps, self.srtt_secs, self.rttvar_secs);
                     let rng_val = self.rng();
                     if rng_val < pl && sym_lost
                         && age_ticks >= self.rtt_ticks
                         && (self.tick as i32 - sym_arq_tick) >= self.rtt_ticks as i32
                     {
+                        // ARQ: retransmit source symbol
                         self.symbols[idx].arq_tick = self.tick as i32;
                         self.total_arq += 1; arq_n += 1; self.cum_sent += 1;
                         if !lost {
+                            tick_survived += 1;
                             self.cum_arrived += 1;
+                            // Feed retransmitted source to decoder
+                            if let Some(src_data) = self.encoder.get_source(sym_seq) {
+                                let recovered = self.decoder.feed_source(sym_seq, src_data);
+                                self.cum_decoded += recovered.len() as u32;
+                            }
                             self.symbols[idx].recovered = true;
-                            self.cum_decoded += 1;
                             self.lost_pending -= 1;
                         }
                         did_arq = true;
                     }
                 }
                 if !did_arq {
+                    // FEC: generate real repair symbol from encoder
+                    let repair = self.encoder.generate_repair();
                     self.total_fec += 1; fec_n += 1; self.cum_sent += 1;
                     if !lost {
+                        tick_survived += 1;
                         self.cum_arrived += 1;
-                        if self.lost_pending > 0 { self.fec_pool += 1; }
+                        // Feed repair to real RLC decoder
+                        let recovered = self.decoder.feed_repair(
+                            repair.window_start, repair.window_count,
+                            repair.repair_index, &repair.coded_data,
+                        );
+                        // Mark recovered symbols
+                        for rseq in &recovered {
+                            for sym in &mut self.symbols {
+                                if sym.seq == *rseq && sym.lost && !sym.recovered {
+                                    sym.recovered = true;
+                                    self.lost_pending -= 1;
+                                }
+                            }
+                        }
+                        self.cum_decoded += recovered.len() as u32;
                     }
                 }
             } else if !self.source_done {
+                // --- Source slot ---
+                let dummy_data = vec![self.next_seq as u8; 8];
+                let seq = self.encoder.add_source(&dummy_data);
                 let lost = self.is_lost();
                 if lost { lost_n += 1; }
+                tick_sent += 1;
                 self.symbols.push(Symbol {
-                    tick: self.tick, lost, recovered: false, arq_tick: -1000,
+                    tick: self.tick, seq, lost, recovered: false, arq_tick: -1000,
                 });
                 self.total_src += 1; src_n += 1; self.cum_sent += 1;
-                if lost { self.total_lost += 1; self.lost_pending += 1; }
-                else { self.cum_arrived += 1; self.cum_decoded += 1; }
+                if lost {
+                    self.total_lost += 1; self.lost_pending += 1;
+                } else {
+                    tick_survived += 1;
+                    self.cum_arrived += 1;
+                    // Feed source directly to decoder
+                    let recovered = self.decoder.feed_source(seq, &dummy_data);
+                    self.cum_decoded += recovered.len() as u32;
+                }
                 self.next_seq += 1;
                 if self.next_seq >= self.num_source { self.source_done = true; }
             }
         }
 
-        // Incremental FEC decode
-        while self.fec_pool > 0 && self.lost_pending > 0 {
-            let mut found = false;
-            for sym in &mut self.symbols {
-                if sym.lost && !sym.recovered {
-                    sym.recovered = true;
-                    self.cum_decoded += 1;
-                    self.lost_pending -= 1;
-                    self.fec_pool -= 1;
-                    found = true;
-                    break;
-                }
-            }
-            if !found { break; }
-        }
+        // Update estimator with this tick's observations (adaptive r)
+        self.estimator.record_batch(tick_sent, tick_survived, self.tick as u64);
 
         // ACK non-lost symbols after RTT
         for sym in &mut self.symbols {
@@ -316,34 +334,32 @@ impl Simulation {
             }
         }
 
+        // Advance encoder window to prevent unbounded growth
+        if self.encoder.window_size() > 100 {
+            let oldest = self.encoder.next_seq().saturating_sub(80);
+            self.encoder.advance(oldest);
+        }
+
         // Finish condition
-        if self.source_done && self.cum_decoded >= self.num_source as u32 {
-            self.finished = true;
-        }
-        if self.source_done && self.lost_pending == 0 && !self.symbols.iter().any(|s| s.lost && !s.recovered) {
-            self.finished = true;
-        }
+        if self.source_done && self.cum_decoded >= self.num_source as u32 { self.finished = true; }
+        if self.source_done && self.lost_pending == 0
+            && !self.symbols.iter().any(|s| s.lost && !s.recovered) { self.finished = true; }
         if self.tick > 5000 { self.finished = true; }
 
         // Steady-state tracking
         if !self.source_done {
-            self.steady_src += src_n;
-            self.steady_fec += fec_n;
-            self.steady_arq += arq_n;
+            self.steady_src += src_n; self.steady_fec += fec_n; self.steady_arq += arq_n;
         }
 
-        // Prune resolved symbols
+        // Prune resolved symbols (keep lost unrecovered for ARQ)
         let tick = self.tick;
         self.symbols.retain(|s| (s.lost && !s.recovered) || tick.saturating_sub(s.tick) < 10);
 
-        self.last_src = src_n;
-        self.last_fec = fec_n;
-        self.last_arq = arq_n;
-        self.last_lost = lost_n;
+        self.last_src = src_n; self.last_fec = fec_n; self.last_arq = arq_n; self.last_lost = lost_n;
         self.tick += 1;
     }
 
-    // Accessors for JS
+    // Accessors
     pub fn is_finished(&self) -> bool { self.finished }
     pub fn channel_is_good(&self) -> bool { self.channel_good }
     pub fn get_tick(&self) -> u32 { self.tick }
@@ -363,16 +379,13 @@ impl Simulation {
     pub fn get_sigma2(&self) -> f64 { self.sigma2 }
     pub fn get_retx_buf_size(&self) -> u32 { self.lost_pending }
     pub fn get_num_source(&self) -> u32 { self.num_source }
-
+    pub fn get_estimated_loss(&self) -> f64 { self.estimator.loss_rate() }
     pub fn get_overhead(&self) -> f64 {
-        if self.steady_src > 0 {
-            (self.steady_fec + self.steady_arq) as f64 / self.steady_src as f64 * 100.0
-        } else { 0.0 }
+        if self.steady_src > 0 { (self.steady_fec + self.steady_arq) as f64 / self.steady_src as f64 * 100.0 }
+        else { 0.0 }
     }
-
     pub fn get_recovery(&self) -> f64 {
-        if self.total_src > 0 {
-            self.cum_decoded as f64 / self.total_src as f64 * 100.0
-        } else { 100.0 }
+        if self.total_src > 0 { self.cum_decoded as f64 / self.total_src as f64 * 100.0 }
+        else { 100.0 }
     }
 }
