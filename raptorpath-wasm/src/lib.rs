@@ -162,24 +162,28 @@ fn generate_channel_states(p: f64, q: f64, target_eps: f64, num_ticks: usize, se
 
     if actual_losses < target_losses {
         // Need more losses: flip Good→Bad, preferring ticks adjacent to existing Bad runs
-        let mut candidates: Vec<usize> = (0..num_ticks).filter(|&i| !states[i]).collect();
-        // Score: higher for ticks adjacent to Bad
-        candidates.sort_by_key(|&i| {
-            let adj_bad = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
-            std::cmp::Reverse(adj_bad * 1000 + (xorshift64(&mut rng) * 999.0) as u32)
-        });
-        for &i in candidates.iter().take(target_losses - actual_losses) {
+        let mut candidates: Vec<(usize, u32)> = (0..num_ticks)
+            .filter(|&i| !states[i])
+            .map(|i| {
+                let adj = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
+                let rand = (xorshift64(&mut rng) * 999.0) as u32;
+                (i, adj * 1000 + rand)
+            }).collect();
+        candidates.sort_by(|a, b| b.1.cmp(&a.1)); // highest score first (near bursts)
+        for &(i, _) in candidates.iter().take(target_losses - actual_losses) {
             states[i] = true;
         }
     } else if actual_losses > target_losses {
         // Need fewer losses: flip Bad→Good, preferring isolated Bad ticks
-        let mut candidates: Vec<usize> = (0..num_ticks).filter(|&i| states[i]).collect();
-        // Score: higher for isolated Bad ticks (fewer Bad neighbors)
-        candidates.sort_by_key(|&i| {
-            let adj_bad = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
-            adj_bad * 1000 + (xorshift64(&mut rng) * 999.0) as u32
-        });
-        for &i in candidates.iter().take(actual_losses - target_losses) {
+        let mut candidates: Vec<(usize, u32)> = (0..num_ticks)
+            .filter(|&i| states[i])
+            .map(|i| {
+                let adj = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
+                let rand = (xorshift64(&mut rng) * 999.0) as u32;
+                (i, adj * 1000 + rand)
+            }).collect();
+        candidates.sort_by(|a, b| a.1.cmp(&b.1)); // lowest score first (isolated)
+        for &(i, _) in candidates.iter().take(actual_losses - target_losses) {
             states[i] = false;
         }
     }
@@ -460,5 +464,88 @@ impl Simulation {
     pub fn get_recovery(&self) -> f64 {
         if self.total_src > 0 { self.cum_decoded as f64 / self.total_src as f64 * 100.0 }
         else { 100.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_channel_generation_loss_rate() {
+        // At eps=10%, the generated channel should have ~10% loss ticks
+        let states = generate_channel_states(0.0556, 0.5, 0.10, 4000, 42);
+        let losses = states.iter().filter(|&&l| l).count();
+        let rate = losses as f64 / states.len() as f64;
+        assert!((rate - 0.10).abs() < 0.01, "Expected ~10% loss, got {:.1}%", rate * 100.0);
+    }
+
+    #[test]
+    fn test_channel_generation_zero_loss() {
+        let states = generate_channel_states(0.0, 0.5, 0.0, 4000, 42);
+        let losses = states.iter().filter(|&&l| l).count();
+        assert_eq!(losses, 0, "0% loss should produce 0 lost ticks");
+    }
+
+    #[test]
+    fn test_channel_generation_high_loss() {
+        let p = 0.25 * 0.5 / 0.75; // eps=25%
+        let states = generate_channel_states(p, 0.5, 0.25, 4000, 42);
+        let losses = states.iter().filter(|&&l| l).count();
+        let rate = losses as f64 / states.len() as f64;
+        assert!((rate - 0.25).abs() < 0.01, "Expected ~25% loss, got {:.1}%", rate * 100.0);
+    }
+
+    #[test]
+    fn test_channel_burst_structure() {
+        // With q=0.1 (long bursts), there should be runs of consecutive Bad ticks
+        let p = 0.15 * 0.1 / 0.85;
+        let states = generate_channel_states(p, 0.1, 0.15, 4000, 42);
+        // Find longest consecutive Bad run
+        let mut max_run = 0;
+        let mut current_run = 0;
+        for &lost in &states {
+            if lost { current_run += 1; max_run = max_run.max(current_run); }
+            else { current_run = 0; }
+        }
+        assert!(max_run >= 3, "With q=0.1, should have burst runs >= 3, got {max_run}");
+    }
+
+    #[test]
+    fn test_channel_different_seeds() {
+        // Different params should produce different patterns
+        let s1 = generate_channel_states(0.05, 0.5, 0.10, 100, 1);
+        let s2 = generate_channel_states(0.05, 0.5, 0.10, 100, 2);
+        assert_ne!(s1, s2, "Different seeds should produce different patterns");
+    }
+
+    #[test]
+    fn test_simulation_creates() {
+        // Should not panic
+        let sim = Simulation::new(0.05, 0.5, 50, 50, None, Some(0.001), Some(1.0));
+        assert!(!sim.is_finished());
+        assert_eq!(sim.get_tick(), 0);
+    }
+
+    #[test]
+    fn test_simulation_runs() {
+        let mut sim = Simulation::new(0.10, 0.5, 50, 50, Some(0.15), None, Some(1.0));
+        for _ in 0..100 {
+            if sim.is_finished() { break; }
+            sim.step();
+        }
+        assert!(sim.get_tick() > 0);
+        assert!(sim.get_total_src() > 0);
+    }
+
+    #[test]
+    fn test_simulation_fixed_r() {
+        let mut sim = Simulation::new(0.10, 0.5, 10, 50, Some(0.20), None, Some(1.0));
+        // Run to completion
+        while !sim.is_finished() && sim.get_tick() < 5000 { sim.step(); }
+        let overhead = sim.get_overhead();
+        // With fixed r=0.20, overhead should be roughly 20% (±10%)
+        assert!(overhead > 10.0 && overhead < 40.0,
+            "Fixed r=0.20 should give ~20% overhead, got {overhead:.1}%");
     }
 }
