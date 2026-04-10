@@ -93,7 +93,8 @@ pub struct Simulation {
     rttvar_secs: f64,
     t_cut: f64,
     capacity: u32,
-    channel_good: bool,
+    /// Pre-generated channel states: true = lost (Bad state)
+    channel_states: Vec<bool>,
     tick: u32,
     source_done: bool,
     finished: bool,
@@ -135,21 +136,67 @@ struct Symbol {
     arq_tick: i32,
 }
 
-impl Simulation {
-    fn rng(&mut self) -> f64 {
-        let mut x = self.rng_state;
-        x ^= x << 13; x ^= x >> 7; x ^= x << 17;
-        self.rng_state = x;
-        (x as f64) / (u64::MAX as f64)
-    }
-    fn channel_step(&mut self) {
-        if self.channel_good {
-            if self.rng() < self.p { self.channel_good = false; }
+/// xorshift64 RNG
+fn xorshift64(state: &mut u64) -> f64 {
+    let mut x = *state;
+    x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+    *state = x;
+    (x as f64) / (u64::MAX as f64)
+}
+
+/// Pre-generate channel states using GE model, then calibrate to exact epsilon.
+fn generate_channel_states(p: f64, q: f64, target_eps: f64, num_ticks: usize, seed: u64) -> Vec<bool> {
+    let mut rng = seed;
+    let mut good = true;
+    let mut states: Vec<bool> = (0..num_ticks).map(|_| {
+        if good {
+            if xorshift64(&mut rng) < p { good = false; }
         } else {
-            if self.rng() < self.q { self.channel_good = true; }
+            if xorshift64(&mut rng) < q { good = true; }
+        }
+        !good // true = lost
+    }).collect();
+
+    let actual_losses = states.iter().filter(|&&l| l).count();
+    let target_losses = (target_eps * num_ticks as f64).round() as usize;
+
+    if actual_losses < target_losses {
+        // Need more losses: flip Good→Bad, preferring ticks adjacent to existing Bad runs
+        let mut candidates: Vec<usize> = (0..num_ticks).filter(|&i| !states[i]).collect();
+        // Score: higher for ticks adjacent to Bad
+        candidates.sort_by_key(|&i| {
+            let adj_bad = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
+            std::cmp::Reverse(adj_bad * 1000 + (xorshift64(&mut rng) * 999.0) as u32)
+        });
+        for &i in candidates.iter().take(target_losses - actual_losses) {
+            states[i] = true;
+        }
+    } else if actual_losses > target_losses {
+        // Need fewer losses: flip Bad→Good, preferring isolated Bad ticks
+        let mut candidates: Vec<usize> = (0..num_ticks).filter(|&i| states[i]).collect();
+        // Score: higher for isolated Bad ticks (fewer Bad neighbors)
+        candidates.sort_by_key(|&i| {
+            let adj_bad = (i > 0 && states[i-1]) as u32 + (i + 1 < num_ticks && states[i+1]) as u32;
+            adj_bad * 1000 + (xorshift64(&mut rng) * 999.0) as u32
+        });
+        for &i in candidates.iter().take(actual_losses - target_losses) {
+            states[i] = false;
         }
     }
-    fn is_lost(&self) -> bool { !self.channel_good }
+
+    states
+}
+
+impl Simulation {
+    fn rng(&mut self) -> f64 {
+        xorshift64(&mut self.rng_state)
+    }
+    fn is_lost_at_tick(&self, tick: u32) -> bool {
+        self.channel_states.get(tick as usize).copied().unwrap_or(false)
+    }
+    fn channel_is_good_at_tick(&self, tick: u32) -> bool {
+        !self.is_lost_at_tick(tick)
+    }
 }
 
 #[wasm_bindgen]
@@ -184,6 +231,12 @@ impl Simulation {
         };
 
         let symbol_size = 8;
+        let num_source = 2000u32;
+        // Pre-generate calibrated channel states
+        let seed = eps.to_bits() ^ q.to_bits().rotate_left(32) ^ (rtt_ms as u64).wrapping_mul(0x517cc1b727220a95);
+        let num_ticks = num_source as usize * 2; // generous margin for FEC/ARQ tail
+        let channel_states = generate_channel_states(p, q, eps, num_ticks, seed);
+
         Self {
             eps, q, p, sigma2,
             r_star: initial_r, r_star_auto, r_static: initial_r,
@@ -191,8 +244,8 @@ impl Simulation {
             srtt_secs: rtt_ms as f64 / 1000.0,
             rttvar_secs: rtt_ms as f64 / 4000.0,
             t_cut, capacity: 4,
-            channel_good: true, tick: 0,
-            source_done: false, finished: false, num_source: 200,
+            channel_states, tick: 0,
+            source_done: false, finished: false, num_source,
             mode,
             estimator: math::LossEstimator::new(),
             fec_controller: math::FecRateController::new(0.5, 0.004),
@@ -211,7 +264,6 @@ impl Simulation {
 
     pub fn step(&mut self) {
         if self.finished { return; }
-        self.channel_step();
 
         let mut src_n: u32 = 0;
         let mut fec_n: u32 = 0;
@@ -234,7 +286,7 @@ impl Simulation {
             if !force_source && self.fec_debt >= 1.0 && (!self.source_done || has_unrecovered) {
                 // --- Correction slot ---
                 self.fec_debt -= 1.0;
-                let lost = self.is_lost();
+                let lost = self.is_lost_at_tick(self.tick);
                 if lost { lost_n += 1; }
                 tick_sent += 1;
 
@@ -313,7 +365,7 @@ impl Simulation {
                 // --- Source slot ---
                 let dummy_data = vec![self.next_seq as u8; 8];
                 let seq = self.encoder.add_source(&dummy_data);
-                let lost = self.is_lost();
+                let lost = self.is_lost_at_tick(self.tick);
                 if lost { lost_n += 1; }
                 tick_sent += 1;
                 self.symbols.push(Symbol {
@@ -382,7 +434,7 @@ impl Simulation {
 
     // Accessors
     pub fn is_finished(&self) -> bool { self.finished }
-    pub fn channel_is_good(&self) -> bool { self.channel_good }
+    pub fn channel_is_good(&self) -> bool { self.channel_is_good_at_tick(self.tick.saturating_sub(1)) }
     pub fn get_tick(&self) -> u32 { self.tick }
     pub fn get_src(&self) -> u32 { self.last_src }
     pub fn get_fec(&self) -> u32 { self.last_fec }

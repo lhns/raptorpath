@@ -65,7 +65,7 @@ function solveRhoFromRDelta(eps,q,W,s2,r,delta) {{
 }}
 
 // --- Simulation wrapper ---
-const NUM_SOURCE = 200;
+const NUM_SOURCE = 2000;
 const SMOOTH_WINDOW = 6;
 
 class SimWrapper {{
