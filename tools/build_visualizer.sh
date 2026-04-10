@@ -50,6 +50,20 @@ const wasmBytes = Uint8Array.from(atob(WASM_B64), c => c.charCodeAt(0));
 
 initSync({{ module: wasmBytes }});
 
+// CamelCase wrappers for three-var solvers (UI uses camelCase, glue uses snake_case)
+function solveRFromDeltaRho(eps,q,W,s2,delta,rho) {{
+  const a = solve_r_from_delta_rho(eps,q,W,s2,delta,rho);
+  return {{r:a[0], delta:a[1], rho:a[2], tCut:a[3]}};
+}}
+function solveDeltaFromRRho(eps,q,W,s2,r,rho) {{
+  const a = solve_delta_from_r_rho(eps,q,W,s2,r,rho);
+  return {{r:a[0], delta:a[1], rho:a[2], tCut:a[3]}};
+}}
+function solveRhoFromRDelta(eps,q,W,s2,r,delta) {{
+  const a = solve_rho_from_r_delta(eps,q,W,s2,r,delta);
+  return {{r:a[0], delta:a[1], rho:a[2], tCut:a[3]}};
+}}
+
 // --- Simulation wrapper ---
 const NUM_SOURCE = 200;
 const SMOOTH_WINDOW = 6;
