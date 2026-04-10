@@ -99,9 +99,11 @@ pub struct Simulation {
     finished: bool,
     num_source: u32,
 
-    // Adaptive r
+    // Triangle mode + adaptive r
+    mode: math::TriangleMode,
     estimator: math::LossEstimator,
     fec_controller: math::FecRateController,
+    w: u32,
 
     // Real RLC codec
     encoder: math::RlcEncoder,
@@ -153,24 +155,48 @@ impl Simulation {
 #[wasm_bindgen]
 impl Simulation {
     #[wasm_bindgen(constructor)]
-    pub fn new(eps: f64, q: f64, rtt_ms: u32, w: u32, r: f64, rho: f64) -> Self {
+    pub fn new(eps: f64, q: f64, rtt_ms: u32, w: u32,
+               r: Option<f64>, delta: Option<f64>, rho: Option<f64>) -> Self {
         let p = eps * q / (1.0 - eps);
         let sigma2 = math::burst_variance_factor(p, q);
         let r_star_auto = math::compute_r_star(eps, sigma2, w as f64);
-        let t_cut = math::find_t_cut(eps, q, r, w as f64, sigma2, rho);
-        // Symbol size 8 bytes: small for wasm efficiency, content doesn't matter for viz
+
+        // Determine triangle mode from which param is None
+        let mode = match (r, delta, rho) {
+            (None, Some(d), Some(p)) => math::TriangleMode::ComputeR { delta: d, rho: p },
+            (Some(r), None, Some(p)) => math::TriangleMode::ComputeDelta { r, rho: p },
+            (Some(r), Some(d), None) => math::TriangleMode::ComputeRho { r, delta: d },
+            _ => math::TriangleMode::ComputeR { delta: 0.001, rho: 1.0 }, // fallback
+        };
+
+        // Initial r from triangle (using static channel params)
+        let initial_r = match &mode {
+            math::TriangleMode::ComputeR { delta, rho } =>
+                math::solve_r_from_delta_rho(eps, q, w as f64, sigma2, *delta, *rho).r,
+            math::TriangleMode::ComputeDelta { r, .. } => *r,
+            math::TriangleMode::ComputeRho { r, .. } => *r,
+        };
+
+        let t_cut = match &mode {
+            math::TriangleMode::ComputeR { rho, .. } | math::TriangleMode::ComputeDelta { rho, .. } =>
+                math::find_t_cut(eps, q, initial_r, w as f64, sigma2, *rho),
+            math::TriangleMode::ComputeRho { .. } => f64::INFINITY, // computed dynamically
+        };
+
         let symbol_size = 8;
         Self {
             eps, q, p, sigma2,
-            r_star: r, r_star_auto, r_static: r,
+            r_star: initial_r, r_star_auto, r_static: initial_r,
             rtt_ticks: rtt_ms.max(2),
             srtt_secs: rtt_ms as f64 / 1000.0,
             rttvar_secs: rtt_ms as f64 / 4000.0,
             t_cut, capacity: 4,
             channel_good: true, tick: 0,
             source_done: false, finished: false, num_source: 200,
+            mode,
             estimator: math::LossEstimator::new(),
-            fec_controller: math::FecRateController::new(1e-5, 0.5, 0.004),
+            fec_controller: math::FecRateController::new(0.5, 0.004),
+            w,
             encoder: math::RlcEncoder::new(symbol_size),
             decoder: math::RlcDecoder::new(symbol_size),
             symbols: Vec::new(), next_seq: 0,
@@ -194,14 +220,9 @@ impl Simulation {
         let mut tick_sent: u32 = 0;
         let mut tick_survived: u32 = 0;
 
-        // Adaptive r from estimator (updates every tick)
-        let w = self.encoder.window_size();
-        let r = if w > 0 {
-            let adaptive = self.fec_controller.compute_repair_rate(&self.estimator, w);
-            if adaptive > 0.001 { adaptive } else { self.r_static }
-        } else {
-            self.r_static
-        };
+        // Compute r from triangle mode + live estimator (paper Section 1.4, 8.6)
+        let w = self.encoder.window_size().max(1);
+        let r = self.fec_controller.compute_repair_rate(&self.estimator, &self.mode, w);
         self.r_star = r;
         let c = self.capacity;
 

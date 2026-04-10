@@ -70,8 +70,7 @@ const SMOOTH_WINDOW = 6;
 
 class SimWrapper {{
   constructor(params) {{
-    const rho = params.rho || 1.0;
-    this.inner = new Simulation(params.eps, params.q, params.rttMs, params.W, params.r, rho);
+    this.inner = new Simulation(params.eps, params.q, params.rttMs, params.W, params.r, params.delta, params.rho);
     this.rateHistory = [];
     this.channelStates = [];
     this.lossEvents = [];

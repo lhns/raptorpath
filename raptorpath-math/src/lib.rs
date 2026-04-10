@@ -15,6 +15,18 @@ pub use estimator::LossEstimator;
 pub use fec_rate_controller::FecRateController;
 pub use rlc::{RlcEncoder, RlcDecoder};
 
+/// Triangle mode: which variable to compute from the other two.
+/// See paper Section 1.4, 8.6.
+#[derive(Debug, Clone)]
+pub enum TriangleMode {
+    /// Fix delta (tail latency) + rho (reliability) → compute r (bandwidth).
+    ComputeR { delta: f64, rho: f64 },
+    /// Fix r (bandwidth) + rho (reliability) → compute delta (tail latency).
+    ComputeDelta { r: f64, rho: f64 },
+    /// Fix r (bandwidth) + delta (tail latency) → compute rho (reliability).
+    ComputeRho { r: f64, delta: f64 },
+}
+
 /// Standard normal survival function: P(Z > z) = 1 - Phi(z).
 /// Abramowitz & Stegun rational approximation.
 pub fn normal_survival(z: f64) -> f64 {
