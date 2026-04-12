@@ -6,3 +6,7 @@ description = "Pure math functions for the raptorpath FEC/ARQ model"
 
 [dependencies]
 gf256 = { path = "../gf256" }
+
+[dev-dependencies]
+rand = "0.8"
+rand_chacha = "0.3"

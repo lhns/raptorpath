@@ -92,10 +92,16 @@ pub fn burst_variance_factor(p: f64, q: f64) -> f64 {
 ///
 /// where z = 2.33 (99th percentile). See paper Section 8.4.
 pub fn compute_r_star(epsilon: f64, sigma2: f64, window_size: f64) -> f64 {
+    compute_r_star_with_z(epsilon, sigma2, window_size, 2.33)
+}
+
+/// Compute r* with a custom z_delta quantile value.
+/// z_delta = normal_quantile(1 - delta) for the target tail loss probability.
+pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delta: f64) -> f64 {
     if epsilon <= 0.0 || epsilon >= 1.0 { return 0.0; }
     let base = epsilon / (1.0 - epsilon);
     let margin = if window_size > 0.0 {
-        2.33 * (epsilon * sigma2 / (window_size * (1.0 - epsilon))).sqrt()
+        z_delta * (epsilon * sigma2 / (window_size * (1.0 - epsilon))).sqrt()
     } else {
         0.0
     };
