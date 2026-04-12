@@ -23,6 +23,9 @@ pub struct LossEstimator {
     ge: GilbertElliottEstimator,
     /// BOCD for regime-aware prediction
     bocd: BayesianChangepoint,
+    /// Reorder tracking for sequence-aware P_lost
+    reorder_count: u64,
+    total_arrivals: u64,
     /// Bookkeeping
     total_sent: u64,
     total_received: u64,
@@ -42,6 +45,8 @@ impl LossEstimator {
             in_burst: false,
             ge: GilbertElliottEstimator::new(),
             bocd: BayesianChangepoint::default_fec(),
+            reorder_count: 0,
+            total_arrivals: 0,
             total_sent: 0,
             total_received: 0,
             last_update_tick: 0,
@@ -106,6 +111,16 @@ impl LossEstimator {
     pub fn ge_estimator(&self) -> &GilbertElliottEstimator { &self.ge }
     pub fn bocd(&self) -> &BayesianChangepoint { &self.bocd }
     pub fn is_in_burst(&self) -> bool { self.in_burst }
+
+    /// Record an out-of-order arrival (for reorder rate estimation).
+    pub fn record_reorder(&mut self) { self.reorder_count += 1; self.total_arrivals += 1; }
+    /// Record an in-order arrival.
+    pub fn record_in_order_arrival(&mut self) { self.total_arrivals += 1; }
+    /// Current reorder rate estimate.
+    pub fn reorder_rate(&self) -> f64 {
+        if self.total_arrivals == 0 { 0.0 }
+        else { self.reorder_count as f64 / self.total_arrivals as f64 }
+    }
 }
 
 impl Default for LossEstimator {

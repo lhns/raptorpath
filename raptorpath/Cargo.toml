@@ -6,6 +6,9 @@ description = "Multipath transport with RaptorQ fountain codes for erasure-resil
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+# Math (shared with wasm visualizer)
+raptorpath-math = { path = "../raptorpath-math" }
+
 # FEC
 raptorq = "2"
 mettle = { path = "../mettle" }

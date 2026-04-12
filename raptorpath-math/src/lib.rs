@@ -263,6 +263,126 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
     ThreeVarResult { r, delta, rho, t_cut, buffer_max: compute_buffer_max(epsilon, q, r, t_cut) }
 }
 
+// =========================================================================
+// FEC Latency Distribution (Paper Section 14.3)
+// =========================================================================
+
+/// Poisson CDF: P(X ≥ m) where X ~ Poisson(lambda).
+/// Uses the regularized incomplete gamma function via direct summation.
+fn poisson_cdf_ge(m: u32, lambda: f64) -> f64 {
+    if lambda <= 0.0 { return if m == 0 { 1.0 } else { 0.0 }; }
+    // P(X ≥ m) = 1 - P(X < m) = 1 - Σ_{k=0}^{m-1} e^(-λ) λ^k / k!
+    let mut sum = 0.0;
+    let mut term = (-lambda).exp();
+    for k in 0..m {
+        sum += term;
+        term *= lambda / (k + 1) as f64;
+    }
+    1.0 - sum
+}
+
+/// P(FEC recovers m losses by time T) using the Poisson taper model.
+///
+/// λ(T) = A × (1-ε) × (1 - (1-q)^(T+1)) / q
+/// P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
+///
+/// See paper Section 14.3.
+pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, q: f64, epsilon: f64) -> f64 {
+    if m == 0 { return 1.0; }
+    if epsilon <= 0.0 || r <= 0.0 { return if m == 0 { 1.0 } else { 0.0 }; }
+    let q_clamped = q.clamp(0.01, 1.0);
+    let amplitude = r * q_clamped;
+    let decay = 1.0 - q_clamped;
+    let lambda = amplitude * (1.0 - epsilon) * (1.0 - decay.powf(t + 1.0)) / q_clamped;
+    poisson_cdf_ge(m, lambda)
+}
+
+/// Unconditional P(FEC recovers by T), marginalized over burst length.
+///
+/// P(t_fec ≤ T) = Σ_{m=1}^{B_99} (1-q)^{m-1} × q × Q(m, λ(T))
+///
+/// See paper Section 14.14.
+pub fn p_fec_recovery_marginalized(t: f64, r: f64, q: f64, epsilon: f64) -> f64 {
+    let q_clamped = q.clamp(0.01, 1.0);
+    let b99 = b_max(((q_clamped * 100.0).round() as u64).max(1) as f64 / 100.0) as u32; // approximate
+    let b99 = ((0.01_f64.ln() / (1.0 - q_clamped).max(0.001).ln()).ceil() as u32).max(1);
+    let mut total = 0.0;
+    let mut burst_prob = q_clamped; // P(burst=1) = q
+    for m in 1..=b99 {
+        let p_recover = p_fec_recovery_by_time(t, m, r, q_clamped, epsilon);
+        total += burst_prob * p_recover;
+        burst_prob *= 1.0 - q_clamped; // P(burst=m+1) = (1-q)^m × q
+    }
+    total
+}
+
+/// P(symbol delivered by time T) combining FEC and ARQ.
+///
+/// P(delivered by T) = (1-ε) + ε × P_fec(T) + ε × (1-P_fec(T)) × I(T ≥ L_arq)
+///
+/// See paper Section 14.9.
+pub fn p_delivered_by_time(t: f64, epsilon: f64, q: f64, r: f64, srtt: f64) -> f64 {
+    if epsilon <= 0.0 { return 1.0; }
+    let p_not_lost = 1.0 - epsilon;
+    let p_fec = p_fec_recovery_marginalized(t, r, q, epsilon);
+    let l_arq = 1.5 * srtt; // ARQ recovery time
+    let p_arq = if t >= l_arq { 1.0 } else { 0.0 };
+    p_not_lost + epsilon * p_fec + epsilon * (1.0 - p_fec) * p_arq
+}
+
+/// Sequence-aware P_lost: uses SACK evidence (k subsequent ACKs).
+///
+/// P_lost_seq(k) = 1 - reorder_rate^k
+///
+/// On a FIFO channel (reorder_rate=0): P_lost_seq(1) = 1.0.
+/// See paper Section 14.22.
+pub fn p_lost_seq(k: u32, reorder_rate: f64) -> f64 {
+    if k == 0 { return 0.0; }
+    1.0 - reorder_rate.powi(k as i32)
+}
+
+/// Combined P_lost from time AND sequence evidence.
+pub fn p_lost_combined(age_secs: f64, epsilon: f64, srtt: f64, rttvar: f64,
+                       subsequent_acks: u32, reorder_rate: f64) -> f64 {
+    let p_time = p_lost(age_secs, epsilon, srtt, rttvar);
+    let p_seq = p_lost_seq(subsequent_acks, reorder_rate);
+    p_time.max(p_seq)
+}
+
+/// Compute correction deficit after a burst (Section 14.23).
+pub fn burst_deficit(burst_length: u32, r: f64, epsilon: f64, time_in_window: f64) -> f64 {
+    let pipeline = r * (1.0 - epsilon) * time_in_window / (1.0 + r);
+    (burst_length as f64 - pipeline).max(0.0)
+}
+
+/// Compute boost parameters to recover deficit.
+/// Returns (boosted_r, boost_duration_ticks).
+pub fn boost_params(deficit: f64, r: f64, epsilon: f64) -> (f64, f64) {
+    if deficit <= 0.0 { return (r, 0.0); }
+    let duration = (deficit / (r * (1.0 - epsilon)).max(0.001)).max(1.0);
+    let boost_r = r + deficit / duration;
+    (boost_r, duration)
+}
+
+/// Solve for minimum r given a time budget and reliability target.
+///
+/// Binary search: find r such that P(delivered by T_budget) ≥ 1 - delta_target.
+/// See paper Section 14.9.
+pub fn solve_r_from_time_budget(
+    epsilon: f64, q: f64, t_budget: f64, rho: f64, srtt: f64,
+) -> f64 {
+    let mut lo = epsilon / (1.0 - epsilon); // IT minimum
+    let mut hi = 2.0;
+    let target = rho; // P(delivered by T_budget) ≥ rho
+    for _ in 0..100 {
+        if hi - lo < 1e-6 { break; }
+        let mid = (lo + hi) / 2.0;
+        let p = p_delivered_by_time(t_budget, epsilon, q, mid, srtt);
+        if p < target { lo = mid; } else { hi = mid; }
+    }
+    hi
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

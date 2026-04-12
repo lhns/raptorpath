@@ -160,20 +160,18 @@ impl FecRateController {
             0.0
         };
 
-        // --- Random loss term: information-theoretic minimum + σ²_burst margin ---
-        // r* = ε/(1-ε) + z_δ × √(ε × σ²_burst / (W × (1-ε)))
-        // The z_δ comes from the confidence quantile (already in p via BOCD).
-        // σ²_burst inflates the margin for bursty channels.
-        let sigma2 = burst_variance_factor(estimator);
-        let margin = if window_size > 0 {
-            let w = window_size as f64;
-            // Statistical margin: accounts for finite window variance
-            // Uses z=2.33 (99th percentile) scaled by σ²_burst
-            2.33 * (p * sigma2 / (w * (1.0 - p))).sqrt()
+        // --- Random loss term: r* from raptorpath-math (shared with wasm) ---
+        // Uses compute_r_star_with_z for the core formula:
+        //   r* = ε/(1-ε) + z × √(ε × σ²_burst / (W × (1-ε)))
+        let ge = estimator.ge_estimator();
+        let sigma2 = if ge.is_valid() {
+            raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg())
         } else {
-            0.0
+            1.0
         };
-        let random_rate = p / (1.0 - p) + margin + effective_codec_overhead;
+        let random_rate = raptorpath_math::compute_r_star_with_z(
+            p, sigma2, window_size as f64, 2.33,
+        ) + effective_codec_overhead;
 
         // --- Burst loss term: delay-constrained capacity B/T ---
         let ge = estimator.ge_estimator();

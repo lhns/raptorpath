@@ -1577,17 +1577,24 @@ The margin term is: `z_δ × √(ε × σ²_burst / (W × (1-ε)))`
 
 **WiFi (ε=0.025, W=50, σ²_burst=2.9):**
 ```
-   Bulk (δ=1e-2):     r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% + 2.8% = 5.4%
-   Auto (δ=1e-4):     r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 4.5% = 7.1%
-   Realtime (δ=1e-6): r* = 2.6% + 4.75x√(0.025x2.9/48.75) = 2.6% + 5.8% = 8.4%
+   Bulk (δ=1e-2):     r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% +  9.0% = 11.5%
+   Auto (δ=1e-4):     r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 14.3% = 16.9%
+   Realtime (δ=1e-6): r* = 2.6% + 4.75x√(0.025x2.9/48.75) = 2.6% + 18.3% = 20.9%
 ```
 
 **Satellite (ε=0.09, W=50, σ²_burst=5.1):**
 ```
-   Bulk (δ=1e-2):     r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% +  7.4% = 17.3%
-   Auto (δ=1e-4):     r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 11.8% = 21.7%
-   Realtime (δ=1e-6): r* = 9.9% + 4.75x√(0.09x5.1/45.5) = 9.9% + 15.1% = 25.0%
+   Bulk (δ=1e-2):     r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% + 23.4% = 33.3%
+   Auto (δ=1e-4):     r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 37.4% = 47.3%
+   Realtime (δ=1e-6): r* = 9.9% + 4.75x√(0.09x5.1/45.5) = 9.9% + 47.7% = 57.6%
 ```
+
+**Note:** These corrected values show that the σ²_burst margin dominates for
+lossy/bursty channels. At WiFi 2.5% loss, the margin (9-18%) exceeds the
+IT minimum (2.6%). At Satellite 9% loss, the margin (23-48%) far exceeds
+the IT minimum (9.9%). This reflects the cost of burst correlation — the
+system needs substantial extra capacity to handle worst-case burst patterns
+with high confidence.
 
 ### 8.6 Three-Variable Optimization
 
