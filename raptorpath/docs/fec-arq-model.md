@@ -135,6 +135,18 @@ ACK absence.
     - [14.9 Reconceived Delivery Time Distribution](#149-reconceived-delivery-time-distribution)
     - [14.10 Latency vs Throughput Trade-off](#1410-latency-tail-vs-throughput-not-always-a-trade-off)
     - [14.11 Application Profiles Revisited](#1411-application-profiles-revisited)
+    - [14.12 ARQ After FEC Decode](#1412-arq-after-fec-decode-not-redundant-for-the-decoder)
+    - [14.13 Proactive Retransmit vs FEC](#1413-proactive-retransmit-vs-fec-fec-is-strictly-better)
+    - [14.14 Marginalizing Over Burst Length](#1414-marginalizing-over-burst-length)
+    - [14.15 In-Burst FEC Survival](#1415-in-burst-fec-survival)
+    - [14.16 The FEC/ARQ Race](#1416-the-fecarq-race)
+    - [14.17 Decode-Induced Jitter](#1417-decode-induced-jitter)
+    - [14.18 Estimator-Rate Feedback Stability](#1418-estimator-rate-feedback-stability)
+    - [14.19 Consistency of P_fec Models](#1419-consistency-of-p_fec-models)
+    - [14.20 The δ Definition Question](#1420-the-δ-definition-question)
+    - [14.21 Sub-Capacity Operation](#1421-sub-capacity-operation-emergent-behavior)
+    - [14.22 Sequence-Aware P_lost](#1422-sequence-aware-p_lost)
+    - [14.23 Post-Burst FEC Boost](#1423-post-burst-fec-boost-reactive-deficit-recovery)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -2663,6 +2675,339 @@ Section 1.4 gain additional precision:
   r kept minimal to maximize source throughput.
   W_optimal: small (save memory on constrained device).
 ```
+
+### 14.12 ARQ After FEC Decode: Not Redundant for the Decoder
+
+When the decoder recovers a lost symbol S3 via FEC, the application can
+consume S3 immediately. But if an ARQ retransmit of S3 was already in
+flight, the retransmit still arrives at the receiver.
+
+**This ARQ is NOT redundant at the receiver.** The decoder should still
+feed it as an equation — it is a source symbol (unit vector, guaranteed
+linearly independent) that can help decode OTHER lost symbols still in
+the decoder window. From the receiver's perspective, every arriving
+symbol is useful to the decoder until the window slides past it.
+
+**The ARQ IS redundant at the sender** — once the sender knows (via ACK)
+that the receiver has decoded S3, further retransmits of S3 waste
+bandwidth. The sender should stop retransmitting ACKed symbols. This is
+already handled by the existing ACK mechanism: once the sender receives
+an ACK covering S3, it removes S3 from the retransmit buffer.
+
+The interesting case: the sender sends an ARQ for S3 BEFORE learning
+that FEC decoded it. This is unavoidable due to ACK delay (~RTT). The
+"wasted" bandwidth is bounded by one RTT worth of unnecessary ARQ.
+But the receiver still benefits from the equation — so the waste is
+only sender-side bandwidth, not receiver-side utility.
+
+### 14.13 Proactive Retransmit vs FEC: FEC is Strictly Better
+
+At the same overhead, FEC is strictly superior to proactive retransmit
+(sending every source symbol twice):
+
+- One FEC repair covers ANY single loss in the window (W positions)
+- One retransmit covers exactly ONE specific position
+
+For a window of W=50, a single FEC repair is 50x more flexible than a
+single retransmit. Proactive retransmit only approaches FEC efficiency
+when ε → 50% (half of all symbols are lost, so random "insurance" is
+as good as targeted repair). At typical loss rates (1-20%), FEC
+dominates by a factor of W/1.
+
+Many real-world systems use packet duplication for simplicity. This model
+shows the quantitative cost of that simplicity.
+
+### 14.14 Marginalizing Over Burst Length
+
+The FEC latency CDF (Section 14.3) conditions on m (burst length). The
+unconditional CDF marginalizes over the GE burst length distribution:
+
+```
+  P(t_fec ≤ T) = Σ_{m=1}^{∞} P(burst = m) × P(t_fec ≤ T | m)
+               = Σ_{m=1}^{∞} (1-q)^{m-1} × q × Q(m, λ(T))
+```
+
+where Q(m, λ) is the regularized incomplete gamma function.
+
+In practice, truncate at m_max = B_99 (99th percentile burst length).
+The tail P(burst > B_99) < 1% contributes negligibly to the CDF.
+
+### 14.15 In-Burst FEC Survival
+
+The Poisson model uses (1-ε) survival probability for all repairs. But
+during a burst (channel in Bad state), ALL symbols are lost — including
+FEC repairs. Only POST-burst repairs survive.
+
+The corrected λ(T) should split into two phases:
+
+```
+  For a burst starting at t=0 with length B:
+
+    λ(T) = 0                                         for T < B (in-burst)
+          = Σ_{t=B}^{T} τ(t) × (1-ε_good)           for T ≥ B (post-burst)
+
+  where ε_good = p (loss rate in Good state) ≈ 0 for packet erasure
+```
+
+The practical effect: recovery begins only after the burst ends. The
+longer the burst, the later recovery starts. This makes burst length m
+doubly important — it determines both HOW MANY repairs are needed AND
+HOW LONG before repairs start arriving.
+
+For the ambient pipeline (Section 14.4): repairs generated BEFORE the
+burst that are still in transit may arrive during or after the burst.
+These contribute if they survive the channel at the receiver — which
+they do, because they were transmitted during the Good state before the
+burst. The pipeline effect thus provides a head start on recovery.
+
+### 14.16 The FEC/ARQ Race
+
+FEC and ARQ work in parallel for a lost symbol. The actual delivery
+time is min(t_fec, L_arq) — whichever recovers the symbol first.
+
+```
+  P(delivered by T) = 1 - P(t_fec > T) × P(L_arq > T)
+```
+
+P_lost(t) (Section 3.4) currently decides the MIX in correction slots —
+FEC or ARQ per slot. But both mechanisms are running simultaneously:
+FEC repairs accumulate regardless of whether ARQ fires, and ARQ
+retransmits arrive regardless of FEC state.
+
+The min() combination means the actual tail latency is BETTER than
+either mechanism alone. The two mechanisms are complementary, not
+alternatives. The P_lost mix controls the bandwidth split, but both
+contribute to recovery probability.
+
+### 14.17 Decode-Induced Jitter
+
+FEC cascade decoding produces micro-bursts: when the m-th repair arrives
+and the decoder resolves a pivot row, cascade recovery may immediately
+decode several other symbols. Multiple symbols become available to the
+application simultaneously.
+
+This creates "negative jitter" — symbols arriving too close together.
+While not harmful (data is available earlier than expected), it means
+the delivery time distribution has a step-function component at decode
+events, not a smooth CDF.
+
+For jitter-sensitive applications (VoIP): a de-jitter buffer after the
+decoder smooths the micro-bursts into a steady stream. The buffer adds
+a constant baseline latency (typically one frame period). The net effect
+on jitter depends on whether the tail improvement from FEC exceeds the
+baseline latency added by the de-jitter buffer.
+
+Tail latency improvement always reduces jitter in the upward direction
+(fewer late symbols). Decode micro-bursts create jitter in the downward
+direction (symbols arriving early). The de-jitter buffer absorbs the
+downward jitter at the cost of baseline latency. As long as:
+
+```
+  de_jitter_buffer_delay < tail_latency_improvement
+```
+
+the net result is lower jitter. For most FEC-protected links, this
+condition holds because FEC reduces tail latency by an RTT (replacing
+ARQ with FEC recovery), while the de-jitter buffer adds only a few ms.
+
+### 14.18 Estimator-Rate Feedback Stability
+
+In "compute r" mode, the estimator's ε feeds into the triangle solver
+which produces r. But r affects correction volume, which affects how
+many symbols the ESTIMATOR observes as lost-and-recovered vs lost-
+permanently.
+
+Potential oscillation:
+
+```
+  high r → good recovery → estimator sees low ε → solver reduces r
+  → poor recovery → estimator sees high ε → solver increases r → ...
+```
+
+This feedback loop is stabilized by two properties:
+
+1. **BOCD's inertia**: the Bayesian changepoint detector maintains a
+   run-length distribution with prior mass. It doesn't react instantly
+   to a few ticks of different ε — it integrates over many observations
+   before shifting the predictive quantile.
+
+2. **The estimator observes CHANNEL loss, not APPLICATION loss**: the
+   estimator tracks which symbols were lost on the channel (not received
+   at the receiver), not which symbols the application eventually got
+   (via FEC recovery). FEC recovery doesn't reduce the estimator's ε.
+
+Property 2 is critical. If the estimator instead measured "application-
+level loss" (post-FEC), the feedback loop would be unstable. The
+estimator must measure RAW channel loss, independent of FEC recovery.
+
+### 14.19 Consistency of P_fec Models
+
+The paper has two FEC recovery models:
+
+- **Section 8.2**: P_fec = Φ(√W × (r(1-ε)-ε) / √(ε(1-ε)(r+σ²_burst)))
+  Normal approximation to binomial. Answers: "given r and W, what's the
+  probability that FEC recovers ALL losses in the window?"
+
+- **Section 14.3**: P(t_fec ≤ T | m) = Q(m, λ(T))
+  Poisson CDF of the taper process. Answers: "given m losses, what's the
+  probability that m surviving repairs arrive by time T?"
+
+These answer different questions:
+
+- Section 8.2: probability of FEC success (regardless of time)
+- Section 14.3: time distribution of FEC recovery
+
+They should be consistent: as T → ∞, the Poisson CDF should approach
+the Section 8.2 P_fec (since all taper corrections eventually arrive).
+
+Verify: λ(∞) = A/q × (1-ε) = r × (1-ε). The Poisson probability of
+≥ m events with mean r×(1-ε)×W should approximate the binomial-normal
+P_fec from Section 8.2. This needs formal verification or numerical
+comparison across scenarios.
+
+### 14.20 The δ Definition Question
+
+The paper currently has two candidate definitions for δ:
+
+- **Section 6.3**: δ = P(late delivery) / ρ — a probability (dimensionless)
+- **Section 14.9**: δ(T) = P(delivery > T) — a function of time
+
+These serve different purposes:
+
+- The probability definition is useful for the triangle solver (binary
+  search on r to achieve target δ)
+- The time-based definition connects directly to application requirements
+  ("99% of packets within 33ms")
+
+**Recommendation**: keep both. The probability δ is the triangle variable.
+T_budget is the application requirement. They're connected by:
+
+```
+  δ = δ(T_budget) = P(delivery > T_budget)
+```
+
+The user specifies T_budget (from application requirements). The system
+computes δ = δ(T_budget) using the delivery time CDF, then uses δ in
+the triangle solver. This preserves the triangle's mathematical
+structure while connecting to real-world requirements.
+
+### 14.21 Sub-Capacity Operation (Emergent Behavior)
+
+When the application data rate is below link capacity, the model should
+handle this naturally without a separate code path.
+
+In the current model, Copa (Section 12) controls the total sending rate
+C. The taper determines the source/correction split: source_rate =
+C/(1+r). If the application produces data at rate S < C/(1+r), the
+sender has idle capacity.
+
+In the current architecture, Copa already handles this: if the
+application has no data to send, Copa's window isn't fully utilized,
+and the sending rate naturally drops to match. FEC symbols are only
+generated when source symbols are sent (the taper is driven by source
+symbols entering the window).
+
+An interesting possibility: when idle slots exist, the sender COULD
+generate additional FEC repairs proactively — filling spare capacity
+with extra protection. The taper's r determines the minimum FEC rate;
+spare capacity allows exceeding it at no throughput cost.
+
+This should emerge from the triangle solver: when solving for r with a
+tight δ target, the solver may compute r > r_min. If the link has
+capacity for this higher r without reducing source throughput (because
+source_rate < C/(1+r)), the system naturally operates at the higher r.
+
+The diminishing return: when the FEC pipeline λ ≫ B_99 (more ambient
+repairs than any likely burst needs), additional FEC provides negligible
+improvement. The marginal benefit approaches zero exponentially (Poisson
+tail). The triangle solver would compute r at this saturation point
+when δ is set very tight — the solver naturally stops increasing r when
+further increase doesn't improve δ.
+
+**Open question**: should the taper continue generating repairs during
+idle periods (no source data)? These repairs cover the existing window
+and strengthen the pipeline. The current model ties correction slots to
+source slots — decoupling them would allow "idle FEC" without changing
+the architecture, only the scheduling policy.
+
+### 14.22 Sequence-Aware P_lost
+
+The current P_lost(t) (Section 3.4) uses only time since send. But SACK
+feedback (Section 6.2) provides stronger evidence: if subsequent symbols
+have been ACKed, an un-ACKed symbol is almost certainly lost.
+
+```
+  P_lost_seq(k) = P(S_n lost | S_{n+1}..S_{n+k} all received)
+```
+
+On a FIFO channel (no reordering), if the next symbol arrived, the
+previous one was lost — P_lost_seq(1) ≈ 1.0. Real links are not
+perfectly FIFO: network jitter, multipath, and switch buffering can
+reorder packets.
+
+**Reorder probability estimation**: the system should track the observed
+reorder rate (fraction of symbols that arrive out of order) as a running
+estimate. Starting assumption: FIFO (reorder_rate = 0). The SACK ranges
+provide the observation data — each out-of-order arrival updates the
+estimate.
+
+```
+  P_lost_seq(k, reorder_rate) = 1 - reorder_rate^k
+
+  For FIFO (reorder_rate = 0):     P_lost_seq(1) = 1.0
+  For mild reorder (rate = 0.05):  P_lost_seq(1) = 0.95
+                                   P_lost_seq(3) = 0.9999
+```
+
+The combined P_lost uses both time AND sequence evidence:
+
+```
+  P_lost_combined = max(P_lost_time(t), P_lost_seq(k, reorder_rate))
+```
+
+This makes the FEC/ARQ decision faster: instead of waiting for P_lost_time
+to rise (which takes ~SRTT), a single subsequent ACK gives near-certain
+evidence on a FIFO link. Correction slots can switch to ARQ sooner for
+confirmed losses, freeing FEC capacity for uncertain losses.
+
+### 14.23 Post-Burst FEC Boost (Reactive Deficit Recovery)
+
+After an unexpectedly long burst (longer than the taper was provisioned
+for), the system has a correction deficit — more losses occurred than
+the ambient FEC pipeline can cover. The BOCD estimator will adapt ε
+within 5-15 batches, but during that lag the system is under-protected.
+
+The GE model's state transitions provide a faster signal: the Bad→Good
+transition indicates burst end. At that moment, the deficit is known:
+
+```
+  On Bad→Good transition:
+    burst_length = observed consecutive losses
+    repairs_in_pipeline = λ_prior (ambient FEC accumulated)
+    deficit = max(0, burst_length - repairs_in_pipeline)
+```
+
+If deficit > 0, the system should temporarily boost FEC:
+
+```
+  boost_duration = deficit / (r × (1-ε))    ticks
+  boost_r = r + deficit / boost_duration    (spread the extra FEC)
+```
+
+This is faster than waiting for BOCD to increase ε → solver to increase
+r → taper to generate more corrections. The GE state transition is
+observable within one symbol interval; BOCD takes 5-15 batches.
+
+**Interaction with ARQ**: at burst end, the oldest lost symbols are
+~burst_length ticks old. If burst_length > SRTT, P_lost_time is already
+high for those symbols — ARQ fires naturally. The boost is needed for
+the symbols where FEC should have covered them but didn't (pipeline
+was insufficient).
+
+**Open question**: should the boost be additive (extra FEC on top of
+normal taper) or multiplicative (temporarily higher r)? Additive is
+simpler and doesn't affect the taper shape for new symbols. The extra
+repairs specifically target the deficit, not general protection.
 
 ---
 
