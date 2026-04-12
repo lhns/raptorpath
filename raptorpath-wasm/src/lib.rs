@@ -124,6 +124,12 @@ pub struct Simulation {
     // Per-tick output
     last_src: u32, last_fec: u32, last_arq: u32, last_lost: u32,
 
+    // Burst detection + FEC boost (Section 14.23)
+    prev_lost: bool,
+    consecutive_losses: u32,
+    boost_r: f64,         // boosted r (0 = no boost active)
+    boost_ticks_left: u32,
+
     // RNG
     rng_state: u64,
 }
@@ -262,6 +268,8 @@ impl Simulation {
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
             fec_debt: 0.0, lost_pending: 0,
             last_src: 0, last_fec: 0, last_arq: 0, last_lost: 0,
+            prev_lost: false, consecutive_losses: 0,
+            boost_r: 0.0, boost_ticks_left: 0,
             rng_state: 0xdeadbeef12345678,
         }
     }
@@ -276,9 +284,37 @@ impl Simulation {
         let mut tick_sent: u32 = 0;
         let mut tick_survived: u32 = 0;
 
+        // Burst detection (Section 14.23): track consecutive losses
+        let current_lost = self.is_lost_at_tick(self.tick);
+        if current_lost {
+            self.consecutive_losses += 1;
+        } else if self.prev_lost {
+            // Bad→Good transition: burst just ended
+            let burst_len = self.consecutive_losses;
+            if burst_len > 0 {
+                let deficit = math::burst_deficit(
+                    burst_len, self.r_star, self.eps,
+                    self.encoder.window_size() as f64,
+                );
+                if deficit > 0.5 {
+                    let (br, dur) = math::boost_params(deficit, self.r_star, self.eps);
+                    self.boost_r = br;
+                    self.boost_ticks_left = dur.ceil() as u32;
+                }
+            }
+            self.consecutive_losses = 0;
+        }
+        self.prev_lost = current_lost;
+
         // Compute r from triangle mode + live estimator (paper Section 1.4, 8.6)
         let w = self.encoder.window_size().max(1);
-        let r = self.fec_controller.compute_repair_rate(&self.estimator, &self.mode, w);
+        let mut r = self.fec_controller.compute_repair_rate(&self.estimator, &self.mode, w);
+
+        // Apply post-burst FEC boost if active
+        if self.boost_ticks_left > 0 {
+            r = r.max(self.boost_r);
+            self.boost_ticks_left -= 1;
+        }
         self.r_star = r;
         let c = self.capacity;
 

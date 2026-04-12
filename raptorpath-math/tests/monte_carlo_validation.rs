@@ -435,3 +435,214 @@ fn test_p_fec_model_consistency() {
         "P_fec models should be roughly consistent: 8.2={p_fec_82:.4}, 14.3={p_fec_143:.4}"
     );
 }
+
+// =========================================================================
+// 2.10 FEC vs ARQ break-even (Section 14.7)
+// =========================================================================
+
+#[test]
+fn test_fec_vs_arq_breakeven() {
+    // For various RTTs, compute t_fec and L_arq, find crossover
+    let eps = 0.05;
+    let q = 0.5;
+    let r = 0.10;
+
+    println!("FEC vs ARQ break-even:");
+    let mut last_fec_wins = true;
+    for rtt_ms in [1, 5, 10, 50, 100, 200, 500] {
+        let srtt = rtt_ms as f64 / 1000.0;
+        let l_arq = 1.5 * srtt;
+
+        // t_fec: time for P(FEC recovery) > 0.5 for a single loss
+        // Find T where p_fec_recovery_by_time(T, 1, r, q, eps) > 0.5
+        let mut t_fec = 0.0;
+        for t_ms in 0..10000 {
+            let t = t_ms as f64 / 1000.0;
+            if p_fec_recovery_by_time(t, 1, r, q, eps) > 0.5 {
+                t_fec = t;
+                break;
+            }
+        }
+
+        let fec_wins = t_fec < l_arq && t_fec > 0.0;
+        println!("  RTT={rtt_ms}ms: t_fec={:.1}ms, L_arq={:.1}ms → {}",
+            t_fec * 1000.0, l_arq * 1000.0,
+            if fec_wins { "FEC wins" } else { "ARQ wins" });
+
+        if fec_wins != last_fec_wins {
+            println!("  *** CROSSOVER between RTT={}ms and previous ***", rtt_ms);
+        }
+        last_fec_wins = fec_wins;
+    }
+}
+
+// =========================================================================
+// 2.11 Sequence-aware P_lost validation
+// =========================================================================
+
+#[test]
+fn test_p_lost_seq_fifo() {
+    // On FIFO channel: 1 subsequent ACK → certainty of loss
+    assert_close(p_lost_seq(1, 0.0), 1.0, 0.001);
+    assert_close(p_lost_seq(3, 0.0), 1.0, 0.001);
+}
+
+#[test]
+fn test_p_lost_seq_reorder() {
+    // With 5% reorder rate
+    assert_close(p_lost_seq(1, 0.05), 0.95, 0.001);
+    assert_close(p_lost_seq(3, 0.05), 0.999875, 0.001);
+}
+
+#[test]
+fn test_p_lost_combined() {
+    // Combined should be max of time and seq evidence
+    let eps = 0.05;
+    let srtt = 0.050;
+    let rttvar = 0.005;
+
+    // At t=0 with 1 subsequent ACK on FIFO: seq evidence dominates
+    let p = p_lost_combined(0.0, eps, srtt, rttvar, 1, 0.0);
+    assert_close(p, 1.0, 0.001); // seq says lost
+
+    // At t=0 with 0 subsequent ACKs: time evidence only
+    let p = p_lost_combined(0.0, eps, srtt, rttvar, 0, 0.0);
+    assert_close(p, eps, 0.005); // time says ~eps
+}
+
+// =========================================================================
+// 2.12 Post-burst FEC boost
+// =========================================================================
+
+#[test]
+fn test_burst_deficit() {
+    let r = 0.15;
+    let eps = 0.05;
+
+    // Short burst (3 symbols), window=50 → pipeline should cover it
+    let d1 = burst_deficit(3, r, eps, 50.0);
+    println!("Burst=3, W=50: deficit={d1:.1}");
+    // pipeline = 0.15 * 0.95 * 50 / 1.15 = 6.2 → covers burst of 3
+    assert!(d1 < 0.1, "Short burst should have no deficit: {d1}");
+
+    // Long burst (20 symbols), window=50 → deficit
+    let d2 = burst_deficit(20, r, eps, 50.0);
+    println!("Burst=20, W=50: deficit={d2:.1}");
+    assert!(d2 > 10.0, "Long burst should have deficit: {d2}");
+}
+
+#[test]
+fn test_boost_params() {
+    let (boost_r, duration) = boost_params(10.0, 0.15, 0.05);
+    println!("Deficit=10: boost_r={boost_r:.3}, duration={duration:.1} ticks");
+    assert!(boost_r > 0.15, "Boosted r should exceed base r");
+    assert!(duration > 0.0, "Boost should have positive duration");
+}
+
+// =========================================================================
+// 2.13 Estimator feedback stability
+// =========================================================================
+
+#[test]
+fn test_estimator_feedback_stability() {
+    // Run estimator + FecRateController in a feedback loop for 10000 ticks.
+    // Verify r doesn't oscillate wildly.
+    let eps = 0.10;
+    let q = 0.3;
+    let p = eps * q / (1.0 - eps);
+
+    let mut est = LossEstimator::new();
+    let ctrl = FecRateController::new(0.5, 0.004);
+    let mode = TriangleMode::ComputeR { delta: 0.01, rho: 1.0 };
+
+    let mut rng = ChaCha8Rng::seed_from_u64(42);
+    let channel = generate_ge_sequence(p, q, 10000, &mut rng);
+
+    let mut r_values = Vec::new();
+    for tick in 0..10000u64 {
+        let batch_size = 10;
+        let lost = channel[tick as usize..(tick as usize + batch_size).min(10000)]
+            .iter().filter(|&&l| l).count() as u32;
+        let received = batch_size as u32 - lost;
+        est.record_batch(batch_size as u32, received, tick);
+
+        let r = ctrl.compute_repair_rate(&est, &mode, 50);
+        r_values.push(r);
+    }
+
+    // Check: no wild oscillation (coefficient of variation < 1.0)
+    let mean_r: f64 = r_values.iter().skip(100).sum::<f64>() / (r_values.len() - 100) as f64;
+    let var_r: f64 = r_values.iter().skip(100).map(|r| (r - mean_r).powi(2)).sum::<f64>()
+        / (r_values.len() - 100) as f64;
+    let cv = var_r.sqrt() / mean_r.max(0.001);
+
+    println!("Feedback stability: mean_r={mean_r:.4}, std={:.4}, CV={cv:.3}", var_r.sqrt());
+    assert!(cv < 1.0, "r should not oscillate wildly: CV={cv:.3}");
+    assert!(mean_r > 0.05, "r should be positive for 10% loss: {mean_r:.4}");
+}
+
+// =========================================================================
+// 2.14 FEC latency CDF validation
+// =========================================================================
+
+#[test]
+fn test_fec_latency_cdf_properties() {
+    let r = 0.15;
+    let q = 0.5;
+    let eps = 0.05;
+
+    // P(recovery) should increase with T
+    let mut prev = 0.0;
+    for t in 0..100 {
+        let p = p_fec_recovery_by_time(t as f64, 1, r, q, eps);
+        assert!(p >= prev - 1e-10, "FEC CDF should be monotone: t={t}, p={p}, prev={prev}");
+        prev = p;
+    }
+
+    // P(recovery by T=∞) should approach 1.0 for adequate r
+    let p_inf = p_fec_recovery_by_time(10000.0, 1, r, q, eps);
+    assert!(p_inf > 0.99, "FEC should eventually recover: P={p_inf}");
+
+    // More losses need more time
+    let p_m1 = p_fec_recovery_by_time(10.0, 1, r, q, eps);
+    let p_m5 = p_fec_recovery_by_time(10.0, 5, r, q, eps);
+    assert!(p_m1 > p_m5, "More losses should take longer: m=1:{p_m1:.3}, m=5:{p_m5:.3}");
+}
+
+#[test]
+fn test_delivered_by_time_properties() {
+    let eps = 0.10;
+    let q = 0.3;
+    let r = 0.20;
+    let srtt = 0.050;
+
+    // Should be monotone increasing
+    let mut prev = 0.0;
+    for t_ms in 0..500 {
+        let p = p_delivered_by_time(t_ms as f64 / 1000.0, eps, q, r, srtt);
+        assert!(p >= prev - 1e-10, "Delivery CDF should be monotone");
+        prev = p;
+    }
+
+    // At T=0: P = 1-eps (only non-lost symbols)
+    let p0 = p_delivered_by_time(0.0, eps, q, r, srtt);
+    assert_close(p0, 1.0 - eps, 0.02);
+
+    // At T >> RTT: P → 1.0
+    let p_large = p_delivered_by_time(10.0, eps, q, r, srtt);
+    assert!(p_large > 0.99, "Should approach 1.0 at large T: {p_large}");
+}
+
+#[test]
+fn test_solve_r_from_time_budget() {
+    let eps = 0.10;
+    let q = 0.3;
+    let srtt = 0.050;
+
+    // Tight budget (20ms) should need more r than loose budget (200ms)
+    let r_tight = solve_r_from_time_budget(eps, q, 0.020, 0.99, srtt);
+    let r_loose = solve_r_from_time_budget(eps, q, 0.200, 0.99, srtt);
+
+    println!("Time budget solver: tight(20ms) r={r_tight:.4}, loose(200ms) r={r_loose:.4}");
+    assert!(r_tight >= r_loose, "Tighter budget should need more r");
+}

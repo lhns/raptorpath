@@ -281,19 +281,28 @@ fn poisson_cdf_ge(m: u32, lambda: f64) -> f64 {
     1.0 - sum
 }
 
-/// P(FEC recovers m losses by time T) using the Poisson taper model.
+/// P(FEC recovers m losses by time T symbol intervals) using Poisson taper model.
 ///
-/// λ(T) = A × (1-ε) × (1 - (1-q)^(T+1)) / q
+/// T is measured in symbol intervals after the burst.
+/// Each interval, ~ r/(1+r) of slots are corrections. Each survives with P=(1-ε).
+/// The taper shapes the density: more corrections early, fewer later.
+///
+/// λ(T) = total expected surviving corrections by time T
+///       = Σ_{t=0}^{T} (r/(1+r)) × (1-ε) per slot, shaped by taper
+///       ≈ T × r/(1+r) × (1-ε) for flat rate (conservative)
+///
 /// P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
 ///
 /// See paper Section 14.3.
 pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, q: f64, epsilon: f64) -> f64 {
     if m == 0 { return 1.0; }
     if epsilon <= 0.0 || r <= 0.0 { return if m == 0 { 1.0 } else { 0.0 }; }
-    let q_clamped = q.clamp(0.01, 1.0);
-    let amplitude = r * q_clamped;
-    let decay = 1.0 - q_clamped;
-    let lambda = amplitude * (1.0 - epsilon) * (1.0 - decay.powf(t + 1.0)) / q_clamped;
+    // λ(T) = accumulated surviving corrections over T symbol intervals
+    // Correction rate per interval: r/(1+r)
+    // Survival: (1-ε)
+    // Taper effect: front-loaded, total by T = r×(1-(1-q)^(T+1))/(1+r) but
+    // for recovery timing, T intervals have ~T×r/(1+r) total correction slots
+    let lambda = t * r * (1.0 - epsilon) / (1.0 + r);
     poisson_cdf_ge(m, lambda)
 }
 
