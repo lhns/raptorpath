@@ -75,6 +75,11 @@ pub struct FecRateController {
     /// and stretch the recovery window faster than the shrinking FEC-miss
     /// cost pays back — more FEC hurts the tail.
     saturation_cap_enabled: bool,
+    /// P4a: Bulk maps the tail target to "late is fine" (δ = min(0.1, ε̂)),
+    /// so the continuous r* glides to 0 in the steady state — pure ARQ,
+    /// volume parity with retransmission transports (paper Sections 5.3,
+    /// 12.5, 14.25). Public setter exists for ablation.
+    bulk_pure_arq: bool,
 }
 
 impl FecRateController {
@@ -125,12 +130,20 @@ impl FecRateController {
             hint,
             symbol_size,
             saturation_cap_enabled: true,
+            bulk_pure_arq: true,
         }
     }
 
     /// Enable/disable the saturation cap (paper Section 14.21). Default: on.
     pub fn set_saturation_cap(&mut self, enabled: bool) {
         self.saturation_cap_enabled = enabled;
+    }
+
+    /// Enable/disable the Bulk pure-ARQ tail target (P4a, on by default).
+    /// Exposed for ablation: with it off, Bulk falls back to the plain
+    /// 100×-loosened `target_tail_loss`.
+    pub fn set_bulk_pure_arq(&mut self, enabled: bool) {
+        self.bulk_pure_arq = enabled;
     }
 
     /// Compute the number of repair symbols needed for `k` source symbols
@@ -204,7 +217,19 @@ impl FecRateController {
         // improves relative to the hint-adjusted target, and the core rate
         // decreases to 0 (max(0,·) floor inside compute_r_star_with_z) when
         // pure ARQ already meets the tail target. No cutoff branch anywhere.
-        let z_delta = raptorpath_math::z_for_tail_target(self.target_tail_loss, p);
+        //
+        // P4a (paper 5.3/12.5): Bulk's effective tail target is "late is
+        // fine" — δ_eff = min(0.1, ε̂). With δ_eff ≥ p the formula yields
+        // r ≈ 0: pure ARQ steady state, volume parity with retransmission
+        // transports. Mid-transfer recovery overlaps ongoing sends, so
+        // lateness costs a bulk transfer nothing; the completion-critical
+        // final window is covered separately by tail FEC (paper 14.25).
+        let delta_eff = if self.hint == ProtocolHint::Bulk && self.bulk_pure_arq {
+            (0.1f64).min(p)
+        } else {
+            self.target_tail_loss
+        };
+        let z_delta = raptorpath_math::z_for_tail_target(delta_eff, p);
         let core_rate =
             raptorpath_math::compute_r_star_with_z(p, sigma2, window_size as f64, z_delta);
         // Codec overhead only applies when repairs are actually flowing
@@ -221,7 +246,7 @@ impl FecRateController {
         // Decreases continuously to 0 as the target loosens relative to the
         // channel, consistent with the r* margin above.
         let ge = estimator.ge_estimator();
-        let required_fec_fraction = (1.0 - self.target_tail_loss / p).clamp(0.0, 1.0);
+        let required_fec_fraction = (1.0 - delta_eff / p).clamp(0.0, 1.0);
         let burst_rate = if ge.is_valid() && estimator.throughput() > 0.0 {
             let burst_length = ge.mean_burst_length().max(1.0);
             let rtt_secs = estimator.rtt().as_secs_f64();
@@ -983,6 +1008,36 @@ mod tests {
             (capped - r_sat).abs() < 1e-9,
             "capped rate must equal r_sat: capped={capped}, r_sat={r_sat}"
         );
+    }
+
+    #[test]
+    fn test_bulk_pure_arq_zero_steady_state_rate() {
+        // P4a: Bulk's effective tail target is δ = min(0.1, ε̂) — "late is
+        // fine" — so even at 5% loss the steady-state rate glides to ~0
+        // (pure ARQ, volume parity with retransmission transports).
+        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(100, 95); // 5% loss
+        }
+        let r_bulk = ctrl_bulk.compute_repair_rate(&est, W);
+        assert!(r_bulk < 0.01, "Bulk at 5% loss must be ~pure ARQ: {r_bulk}");
+
+        // Ablation arm: with the flag off, Bulk falls back to the plain
+        // 100×-loosened target and pays steady-state FEC again.
+        let mut ctrl_off = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+        ctrl_off.set_bulk_pure_arq(false);
+        let r_off = ctrl_off.compute_repair_rate(&est, W);
+        assert!(r_off > r_bulk, "flag off must restore steady-state FEC: on={r_bulk}, off={r_off}");
+
+        // Realtime is untouched by the flag (Bulk-only mapping).
+        let ctrl_rt_on = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+        let mut ctrl_rt_off = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+        ctrl_rt_off.set_bulk_pure_arq(false);
+        let rt_on = ctrl_rt_on.compute_repair_rate(&est, W);
+        let rt_off = ctrl_rt_off.compute_repair_rate(&est, W);
+        assert_eq!(rt_on, rt_off, "Realtime must be unaffected: on={rt_on}, off={rt_off}");
+        assert!(rt_on > 0.05, "Realtime at 5% loss still carries FEC: {rt_on}");
     }
 
     #[test]

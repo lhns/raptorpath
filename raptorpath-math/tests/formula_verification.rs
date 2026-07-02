@@ -326,3 +326,86 @@ fn test_w_min_table() {
     let b99_sat = (0.01_f64.ln() / (1.0 - 0.3_f64).ln()).ceil() as u64;
     assert_eq!(b99_sat, 13);
 }
+
+// =========================================================================
+// 1.13 Exact P_fec via transfer-matrix DP (Paper Section 8.7)
+// =========================================================================
+
+#[test]
+fn test_p_fec_exact_boundaries() {
+    // No loss → always succeeds
+    assert!(p_fec_exact(0.0, 0.5, 0.1, 50) > 0.999);
+    // Zero window → vacuous success
+    assert_eq!(p_fec_exact(0.013, 0.5, 0.1, 0), 1.0);
+    // Generous repairs beat sparse repairs (WiFi)
+    let hi = p_fec_exact(0.013, 0.5, 0.5, 50);
+    let lo = p_fec_exact(0.013, 0.5, 0.04, 50);
+    assert!(hi > 0.99, "r=0.5 should nearly always recover: {hi}");
+    assert!(hi > lo, "more repairs → higher P_fec: {hi} vs {lo}");
+    // Monotone in the repair count (sampled at exact R steps)
+    let mut prev = 0.0;
+    for repairs in 1..=25 {
+        let r = repairs as f64 / 50.0;
+        let pf = p_fec_exact(0.013, 0.5, r, 50);
+        assert!(pf >= prev - 1e-12, "P_fec must not decrease with repairs: r={r}, {pf} < {prev}");
+        prev = pf;
+    }
+}
+
+#[test]
+fn test_p_fec_exact_iid_matches_binomial() {
+    // p + q = 1 → memoryless chain (next state independent of current):
+    // K ~ Bin(W, ε) and C ~ Bin(R, 1−ε) independent, ε = p/(p+q) = 0.05.
+    // The DP must reproduce the independent-Binomial reference exactly.
+    let (p, q, r, w) = (0.05, 0.95, 0.12, 50usize);
+    let eps = p / (p + q);
+    let repairs = (r * w as f64).round() as usize;
+    let binom_pmf = |n: usize, k: usize, pr: f64| -> f64 {
+        let mut c = 1.0f64;
+        for i in 0..k {
+            c = c * (n - i) as f64 / (i + 1) as f64;
+        }
+        c * pr.powi(k as i32) * (1.0 - pr).powi((n - k) as i32)
+    };
+    let mut reference = 0.0;
+    for k in 0..=w {
+        let pk = binom_pmf(w, k, eps);
+        let psucc: f64 = if k > repairs {
+            0.0
+        } else {
+            (k..=repairs).map(|c| binom_pmf(repairs, c, 1.0 - eps)).sum()
+        };
+        reference += pk * psucc;
+    }
+    let exact = p_fec_exact(p, q, r, w);
+    assert_close(exact, reference, 1e-9);
+}
+
+#[test]
+fn test_p_fec_exact_paper_table() {
+    // Section 8.7 table values (W=50)
+    assert_close(p_fec_exact(0.013, 0.5, 0.10, 50), 0.9522, 0.001);
+    assert_close(p_fec_exact(0.02, 0.4, 0.12, 50), 0.8868, 0.001);
+    // Sat: R = round(0.25 × 50) = 13 (half rounds away from zero)
+    assert_close(p_fec_exact(0.03, 0.3, 0.25, 50), 0.9180, 0.001);
+}
+
+#[test]
+fn test_r_star_exact_exceeds_normal_on_bursty() {
+    // Section 8.7: the closed-form r* under-provisions the tail on bursty
+    // channels (Gaussian tail + ignored loss/repair correlation).
+    for (p, q) in [(0.013, 0.5), (0.02, 0.4), (0.03, 0.3)] {
+        let eps = p / (p + q);
+        let s2 = burst_variance_factor(p, q);
+        let r_normal = compute_r_star_with_z(eps, s2, 50.0, normal_quantile(0.99));
+        let r_exact = compute_r_star_exact(p, q, 50, 0.01);
+        assert!(
+            r_exact > r_normal,
+            "exact r* should exceed the closed form: exact={r_exact}, normal={r_normal}"
+        );
+    }
+    // Specific values from the Section 8.7 table (resolved in 1/W steps)
+    assert_close(compute_r_star_exact(0.013, 0.5, 50, 0.01), 0.170, 0.005);
+    assert_close(compute_r_star_exact(0.02, 0.4, 50, 0.01), 0.270, 0.005);
+    assert_close(compute_r_star_exact(0.03, 0.3, 50, 0.01), 0.450, 0.005);
+}

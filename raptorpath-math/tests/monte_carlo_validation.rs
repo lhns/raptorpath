@@ -646,3 +646,68 @@ fn test_solve_r_from_time_budget() {
     println!("Time budget solver: tight(20ms) r={r_tight:.4}, loose(200ms) r={r_loose:.4}");
     assert!(r_tight >= r_loose, "Tighter budget should need more r");
 }
+
+// =========================================================================
+// 2.19 Exact P_fec (Section 8.7) vs Monte Carlo of the same process
+// =========================================================================
+
+#[test]
+fn test_p_fec_exact_matches_monte_carlo() {
+    // Simulate exactly the process Section 8.7 describes: one GE chain
+    // walking the interleaved wire sequence; success iff surviving
+    // repairs >= source losses. The DP should match to sampling error —
+    // much tighter than the 0.20 tolerance the normal approximation needs.
+    let scenarios: Vec<(&str, f64, f64, f64)> = vec![
+        ("WiFi", 0.013, 0.5, 0.10),
+        ("LTE", 0.02, 0.4, 0.12),
+        ("Sat", 0.03, 0.3, 0.25),
+    ];
+    let w = 50usize;
+    let trials = 20000;
+    for (name, p, q, r) in scenarios {
+        let repairs = (r * w as f64).round() as usize;
+        let n = w + repairs;
+        let pi_b = p / (p + q);
+        let mut rng = ChaCha8Rng::seed_from_u64(87);
+        let mut ok = 0u32;
+        for _ in 0..trials {
+            let mut bad = rng.gen::<f64>() < pi_b;
+            let (mut k, mut c) = (0u32, 0u32);
+            for i in 0..n {
+                bad = if bad { rng.gen::<f64>() >= q } else { rng.gen::<f64>() < p };
+                let is_repair = (i + 1) * repairs / n > i * repairs / n;
+                if is_repair {
+                    if !bad { c += 1; }
+                } else if bad {
+                    k += 1;
+                }
+            }
+            if c >= k { ok += 1; }
+        }
+        let mc = ok as f64 / trials as f64;
+        let exact = p_fec_exact(p, q, r, w);
+        println!("{name}: exact={exact:.4} mc={mc:.4} err={:.4}", (exact - mc).abs());
+        assert_close(exact, mc, 0.015);
+    }
+}
+
+#[test]
+fn test_p_fec_exact_vs_normal_divergence() {
+    // Document the normal approximation's error against the exact DP
+    // (Section 8.7 table: 1.7–2.8% at these operating points).
+    let scenarios: Vec<(&str, f64, f64, f64)> = vec![
+        ("WiFi", 0.013, 0.5, 0.10),
+        ("LTE", 0.02, 0.4, 0.12),
+        ("Sat", 0.03, 0.3, 0.25),
+    ];
+    for (name, p, q, r) in scenarios {
+        let eps = p / (p + q);
+        let s2 = burst_variance_factor(p, q);
+        let exact = p_fec_exact(p, q, r, 50);
+        let normal = p_fec_normal(r, eps, 50.0, s2);
+        let err = (exact - normal).abs();
+        println!("{name}: exact={exact:.4} normal={normal:.4} err={err:.4}");
+        assert!(err > 0.005, "{name}: exact should differ measurably from normal here: {err}");
+        assert!(err < 0.05, "{name}: normal should still be within 5% here: {err}");
+    }
+}

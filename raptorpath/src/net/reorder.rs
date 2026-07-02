@@ -39,6 +39,13 @@ impl ReorderBuffer {
     /// Push a recovered symbol with an explicit timestamp (for MockClock-driven tests).
     /// Returns a contiguous prefix of deliverable entries.
     pub fn push_with_time(&mut self, seq: u64, data: Bytes, now: Instant) -> Vec<(u64, Bytes)> {
+        if seq < self.next_deliver_seq {
+            // The in-order gate has already advanced past this sequence (an
+            // expiry gave up on the hole). Holding a late fill buys no
+            // ordering — it would only strand for a full extra timeout
+            // until the next drain_expired sweep. Deliver immediately.
+            return vec![(seq, data)];
+        }
         self.pending.insert(seq, (data, now));
 
         // Force-drain oldest if over capacity

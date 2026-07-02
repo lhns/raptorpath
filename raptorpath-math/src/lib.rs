@@ -230,6 +230,76 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     best_r
 }
 
+/// Exact P_fec over the GE channel via transfer-matrix dynamic programming.
+///
+/// Walks the two-state GE chain across the interleaved wire sequence of
+/// W source symbols and R = round(r × W) repairs (slot i is a repair iff
+/// ⌊(i+1)R/N⌋ > ⌊iR/N⌋, N = W + R), tracking the joint distribution of
+/// channel state and running deficit D = (#source losses) − (#surviving
+/// repairs). FEC succeeds iff D ≤ 0 at the end of the window — the same
+/// criterion as `p_fec_normal` (Section 8.2), but on the exact joint
+/// distribution: burst-correlated losses, burst-correlated repair
+/// erasures, and the negative loss/repair correlation are all captured.
+///
+/// `p_gb` = P(Good→Bad), `q_bg` = P(Bad→Good); implied ε = p/(p+q).
+/// O(W²) time, O(W) space. Codec overhead is NOT modeled here.
+/// See paper Section 8.7.
+pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
+    if window_size == 0 || p_gb <= 0.0 { return 1.0; }
+    let p = p_gb.min(1.0);
+    let q = q_bg.clamp(1e-9, 1.0);
+    let w = window_size;
+    let repairs = (r.max(0.0) * w as f64).round() as usize;
+    let n = w + repairs;
+    // Deficit index: d ∈ [−repairs, w] stored at d + repairs ∈ [0, w+repairs].
+    let dmax = w + repairs + 1;
+    let off = repairs;
+    let pi_b = p / (p + q);
+    let mut f = vec![[0.0f64; 2]; dmax]; // [Good, Bad] per deficit
+    f[off][0] = 1.0 - pi_b;
+    f[off][1] = pi_b;
+    let mut next = vec![[0.0f64; 2]; dmax];
+    for i in 0..n {
+        let is_repair = (i + 1) * repairs / n > i * repairs / n;
+        for row in next.iter_mut() { *row = [0.0, 0.0]; }
+        for d in 0..dmax {
+            let [fg, fb] = f[d];
+            if fg == 0.0 && fb == 0.0 { continue; }
+            let to_good = fg * (1.0 - p) + fb * q;
+            let to_bad = fg * p + fb * (1.0 - q);
+            if is_repair {
+                next[d.saturating_sub(1)][0] += to_good; // repair survives → deficit−1
+                next[d][1] += to_bad;                    // repair lost → no help
+            } else {
+                next[d][0] += to_good;                   // source arrives
+                next[(d + 1).min(dmax - 1)][1] += to_bad; // source lost → deficit+1
+            }
+        }
+        std::mem::swap(&mut f, &mut next);
+    }
+    let p_fail: f64 = f[off + 1..].iter().map(|row| row[0] + row[1]).sum();
+    (1.0 - p_fail).clamp(0.0, 1.0)
+}
+
+/// Exact minimum correction rate: smallest r with 1 − p_fec_exact ≤ delta.
+///
+/// Binary search on r; P_fail(r) is monotone nonincreasing up to the 1/W
+/// rounding of the repair count, so r* is resolved in steps of 1/W.
+/// Returns 2.0 (the search ceiling) if even 200% overhead cannot meet the
+/// target. See paper Section 8.7.
+pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
+    if window_size == 0 || p_gb <= 0.0 { return 0.0; }
+    let fail = |r: f64| 1.0 - p_fec_exact(p_gb, q_bg, r, window_size);
+    let mut hi = 2.0f64;
+    if fail(hi) > delta { return hi; }
+    let mut lo = 0.0f64;
+    for _ in 0..40 {
+        let mid = (lo + hi) / 2.0;
+        if fail(mid) > delta { lo = mid; } else { hi = mid; }
+    }
+    hi
+}
+
 /// Compute delta (tail latency) from r and rho.
 ///
 /// delta = P(late delivery) / rho. See paper Section 6.3.

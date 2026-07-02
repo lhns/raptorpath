@@ -90,6 +90,7 @@ ACK absence.
    - [8.4 The Corrected Optimal Correction Rate](#84-the-corrected-optimal-correction-rate)
    - [8.5 Worked Examples](#85-worked-examples)
    - [8.6 Three-Variable Optimization](#86-three-variable-optimization)
+   - [8.7 Exact P_fec via Transfer-Matrix DP](#87-exact-p_fec-via-transfer-matrix-dp)
 9. [Codec Overhead Integration](#9-codec-overhead-integration)
    - [9.1 Decoder Invocation Probability](#91-decoder-invocation-probability)
    - [9.2 Effective Codec Overhead](#92-effective-codec-overhead)
@@ -148,6 +149,7 @@ ACK absence.
     - [14.22 Sequence-Aware P_lost](#1422-sequence-aware-p_lost)
     - [14.23 Post-Burst FEC Boost](#1423-post-burst-fec-boost-reactive-deficit-recovery)
     - [14.24 Jitter-Horizon Encoder Lag](#1424-jitter-horizon-encoder-lag)
+    - [14.25 Completion-Tail FEC](#1425-completion-tail-fec)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -312,6 +314,12 @@ Three properties are linked by the channel. Fix any two, the third is determined
 | **Live video** | δ (frame deadline), ρ (≥99.9%) | r (bandwidth) | Streaming, conferencing |
 | **Gaming** | δ (tight), ρ (≥99%) | r (bandwidth) | Real-time game state |
 | **Sensor/IoT** | r (minimal), ρ (≥95%) | δ (tail latency) | Periodic telemetry |
+
+For Bulk transfer, "minimize r" is taken literally: the tail target is
+"late is fine" (δ_bulk = min(0.1, ε̂), Section 5.3), so r ≈ 0 in the
+steady state and the residual is pure ARQ — except for the final window
+at end-of-stream, where a small tail burst buys completion time
+(Section 14.25).
 
 The protocol hint selects the mode and constraints:
 
@@ -982,6 +990,18 @@ split. P_lost(t) controls the repair/retransmit split within corrections.
     -> low P_retx (prefer repair over retransmit, less duplicate risk)
     -> Mix: lots of source, some repair, little retransmit
 
+    Concretely, Bulk's tail target is "late is fine":
+
+      delta_bulk = min(0.1, epsilon_hat)
+
+    With delta >= epsilon the continuous r* formula (Section 8.4,
+    z_{delta/epsilon} = Phi^-1(1 - delta/epsilon)) yields r ≈ 0 in the
+    steady state: pure ARQ, wire volume at parity with retransmission
+    transports (~1 + epsilon/(1-epsilon) per source symbol). A
+    mid-transfer loss recovered one RTT late costs a bulk transfer
+    nothing — recovery overlaps ongoing sends. The one place FEC still
+    buys completion time is the final window (Section 14.25).
+
   VoIP (fixed bandwidth + latency, variable reliability):
     -> r constrained by bandwidth budget
     -> high P_retx when confident (immediate decode matters)
@@ -1627,8 +1647,8 @@ widen Var(K - C) beyond what the formula assumes, making P_fec optimistic
 in exactly the bursty regime σ²_burst is meant to protect. Monte Carlo
 validation shows the normal approximation diverging by up to ~12% on
 high-loss/long-burst channels (LTE-like). For implementation-grade
-precision, use the exact O(W²) transfer-matrix computation (Appendix D,
-item 4), which captures loss/repair correlation exactly.
+precision, use the exact O(W²) transfer-matrix computation (Section 8.7),
+which captures loss/repair correlation exactly.
 
 ### 8.4 The Corrected Optimal Correction Rate
 
@@ -1661,6 +1681,9 @@ no mode switch anywhere on the path from "heavy FEC" to "pure ARQ".
 - Tail margin scales as 1/√W — larger windows need proportionally less margin
 - z_{δ/ε} controls the margin: tighter δ RELATIVE to ε → larger z → more margin
 - σ²_burst amplifies the margin for bursty channels (large for small p+q)
+- On strongly bursty channels this closed form UNDER-provisions the tail
+  (Gaussian tail + ignored loss/repair correlation) — see Section 8.7 for
+  the exact computation and the size of the gap
 
 **Note:** This formula uses the raw loss rate e. For the canonical production
 formula including codec overhead, replace e with e_hat = e + e_codec x
@@ -1895,6 +1918,77 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    δ ≈ 15% (15% of delivered symbols arrive late)
    Acceptable for periodic sensor readings.
 ```
+
+### 8.7 Exact P_fec via Transfer-Matrix DP
+
+Both gaps in the normal model — burst-inflated repair variance and the
+negative K–C correlation (Section 8.3) — vanish if we compute the joint
+distribution of losses and surviving repairs EXACTLY, by walking the GE
+chain across the interleaved wire sequence.
+
+**Setup.** A window of W source symbols with R = round(r × W) repairs
+interleaved evenly: N = W + R wire slots with fixed types T_i ∈ {source,
+repair} (slot i is a repair iff ⌊(i+1)R/N⌋ > ⌊iR/N⌋). The channel is the
+two-state GE chain started from its stationary distribution; a symbol is
+lost iff the chain is Bad at its slot. Because ONE chain walks across
+both slot types, burst-correlated source losses, burst-correlated repair
+erasures, and the negative correlation between them are all captured.
+
+**Recursion.** Track the running deficit D = (#source losses) −
+(#surviving repairs). FEC succeeds for the window iff D ≤ 0 at the end —
+the same criterion as Section 8.2, applied to the exact joint
+distribution. With f_i(x, d) = P(chain in state x, deficit d after slot i):
+
+```
+  f_0(G, 0) = π_G = q/(p+q),   f_0(B, 0) = π_B = p/(p+q)
+
+  step to slot i+1 of type T:
+    mass arriving in state x':  Σ_x f_i(x, d) × P(x → x')
+    d' = d + 1   if T = source and x' = B     (source lost)
+    d' = d − 1   if T = repair and x' = G     (repair survives)
+    d' = d       otherwise
+
+  P_fec = 1 − Σ_{d > 0} Σ_x f_N(x, d)
+```
+
+State space 2 × (W+R+1) over N slots → O(W²) work (≈ 6,000 operations at
+W = 50, r = 0.1) — trivially cheap. Validation: on a memoryless channel
+(p + q = 1) the DP reproduces the independent-Binomial reference to
+machine precision, and against Monte Carlo it agrees to sampling error
+(< 0.002 at 20k trials), where the normal approximation errs by ≈ 1–2%:
+
+```
+  Scenario (W=50)          r      exact    normal(8.2)  |error|
+  WiFi  (p=.013, q=.5)    0.10   0.9522    0.9695       0.017
+  LTE   (p=.02,  q=.4)    0.12   0.8868    0.8694       0.017
+  Sat   (p=.03,  q=.3)    0.25   0.9180    0.9272       0.009
+```
+
+(R = round(r × W), half rounding away from zero — e.g. Sat: R = 13.)
+
+**Exact r*.** P_fail(r) = 1 − P_fec(r) decreases in r (up to the 1/W
+rounding of R), so binary search yields the exact minimum rate for
+P_fail ≤ δ. The tail is where the normal approximation is weakest, and
+the effect is material:
+
+```
+  δ = 1e-2, W = 50       r*_exact    r*_normal (8.4)
+  WiFi                     0.170       0.116
+  LTE                      0.270       0.193
+  Satellite                0.450       0.334
+```
+
+The closed-form r* UNDER-provisions by ~30–50% of itself on bursty
+channels: the K–C correlation widens Var(K − C) beyond the model, and
+the true tail of K − C is heavier than Gaussian. The closed form remains
+valuable for insight and cheap incremental updates; rate selection on
+strongly bursty channels should use the exact computation (implemented
+as `p_fec_exact` / `compute_r_star_exact` in raptorpath-math).
+
+**Caveats.** Codec overhead is not modeled (apply ε_codec_eff from
+Section 9.2 on top). The success criterion inherits Section 8.2's
+per-window block view of the sliding-window code. R is rounded to an
+integer, so r* is resolved in steps of 1/W.
 
 ---
 
@@ -2237,6 +2331,13 @@ The two controllers are orthogonal:
 
 Neither needs to know about the other. Copa sees total traffic; taper sees
 loss rate. They compose naturally.
+
+**Bulk operating point.** Under the Bulk hint the taper side degenerates
+by design: the tail target is "late is fine" (δ_bulk = min(0.1, ε̂), see
+Section 5.3), so the continuous r* glides to 0 and the steady state is
+pure ARQ — source_rate ≈ total_rate, wire volume at parity with a
+retransmission transport. FEC reappears only as the end-of-stream tail
+burst (Section 14.25), where recovery can no longer overlap sending.
 
 ### 12.6 ECN as Opportunistic Enhancement
 
@@ -3284,6 +3385,72 @@ coincide. This composes with Section 14.5's window sizing: the effective
 protection span for fresh symbols shrinks by L, which matters only if
 L approaches W.
 
+### 14.25 Completion-Tail FEC
+
+For a finite transfer, completion time decomposes as:
+
+```
+  T_completion = T_send  +  T_tail_recovery
+
+  T_send          = N x t_sym / (1 + r)⁻¹-adjusted source rate
+                    (the time to push all N source symbols)
+  T_tail_recovery = the time to recover losses among the LAST
+                    window's symbols after the send stream ends
+```
+
+The two terms have completely different loss economics. A mid-transfer
+loss is recovered in parallel with ongoing sends: ARQ (or a later
+repair) rides alongside new source symbols, so the recovery consumes
+wire budget but adds ZERO completion time — the link never goes idle
+waiting for it. A tail loss is different: once the last source symbol
+has been sent there is nothing left to overlap with, so every ARQ round
+on a final-window hole is serial — ~1.5 RTT each (detection at ~9/8
+SRTT plus the retransmit flight), and a retransmit that is itself lost
+pays the full round again.
+
+This yields an end-of-stream policy that is nearly free:
+
+```
+  At end-of-stream (last source symbol sent), send a burst of
+  n_tail = ceil(r_tail x W) repair symbols covering the final window.
+
+  Cost:    r_tail x W symbols  ≈ negligible vs N for a large transfer
+           (e.g. 0.2 x 64 = 13 symbols on a 1500-symbol transfer < 1%)
+  Saving:  P(≥1 tail loss) x ~1.5 RTT of completion time per avoided
+           serial ARQ round, where
+           P(≥1 tail loss) = 1 - (1-ε)^W    (≈ 80% at ε=2.5%, W=64)
+```
+
+r_tail comes from the exact transfer-matrix computation (Section 8.7):
+the smallest r such that P_fail(r, W) ≤ δ_tail for a modest tail-failure
+budget (e.g. δ_tail = 0.05 — one residual serial ARQ round in 20
+transfers). The exact DP matters here: the tail burst is a one-shot,
+small-W event where the normal approximation's 30-50% tail
+under-provisioning (Section 8.7) directly converts into completion
+regressions.
+
+**Composition with Bulk's r → 0 steady state (Sections 5.3, 12.5).**
+Bulk maps δ to "late is fine" (δ_bulk = min(0.1, ε̂)), so the continuous
+r* formula (Section 8.4) glides to 0 mid-transfer: pure ARQ, volume
+parity with retransmission transports. Completion-tail FEC is the
+complement, not a contradiction: FEC vanishes in the steady state
+(where recovery overlaps sending and buys nothing) and reappears
+exactly at the one place it buys completion time — the final window.
+The r-δ-ρ triangle is respected at both operating points; only the
+effective δ differs, because the COST MODEL differs between
+mid-transfer (parallel recovery, late is genuinely fine) and the tail
+(serial recovery, late is 1.5 RTT each).
+
+**Multipath corollary — tail reinjection.** On asymmetric paths the same
+end-of-stream logic applies to slow-path IN-FLIGHTS, not just losses:
+once nothing overlaps recovery, an undelivered symbol whose path's
+residual wait (queue + propagation) exceeds a fast-path flight is worth
+duplicating onto the fast path (cross-path retransmit, Section 13.10).
+The duplicate rides spare end-of-stream tokens, so the cost is a few
+symbols of fast-path capacity against a saving of the slow path's queue
+drain (~10-25 ms measured on WiFi+LTE). Same principle, ARQ flavor:
+completion is bought exactly at the stream tail, nowhere else.
+
 ---
 
 ## Appendix A: Summary of Key Formulas
@@ -3307,6 +3474,7 @@ L approaches W.
      z_{delta/e} = normal_quantile(1 - delta/e)  (r* -> 0 smoothly as delta -> e)
      With codec: replace e with e_hat (see Section 9.2)
      P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))      [probability]
+     Exact P_fec: transfer-matrix DP over the GE chain (Section 8.7)   [probability]
 
    Codec overhead (Section 9.2):
      e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead     [probability]
@@ -3528,11 +3696,11 @@ probabilities depending on GE state and repair density. This is computable
 (finite-state Markov chain) though not as simple as the closed-form formula.
 
 **Status:** The normal formula is used in the paper for analytical insight.
-For implementation, the exact O(W²) transfer matrix computation (see open
-point #4, resolved) provides the same precision as the debt model. Both
-are finite-state Markov chain computations over the GE channel — the debt
-model tracks decoder state, the transfer matrix tracks loss counts. Either
-gives exact P_fec for implementation use.
+For implementation, the exact O(W²) transfer matrix computation (Section
+8.7, implemented as `p_fec_exact`) provides the same precision as the debt
+model. Both are finite-state Markov chain computations over the GE channel
+— the debt model tracks decoder state, the transfer matrix tracks the
+loss-minus-repair deficit. Either gives exact P_fec for implementation use.
 
 ### C.3 Analytical P_fec Bounds [Vajha2020]
 
@@ -3726,7 +3894,10 @@ Preserved here for future reference if extreme burst scenarios require it.
    computable via transfer matrix dynamic programming in O(W^2) — trivially
    cheap (2500 operations for W=50). The normal formula provides analytical
    insight (clean, closed-form); the exact computation is recommended for
-   implementation and validation.
+   implementation and validation. IMPLEMENTED: Section 8.7 specifies the
+   recursion; `p_fec_exact` / `compute_r_star_exact` in raptorpath-math
+   implement it, verified against Monte Carlo and an independent-Binomial
+   reference.
 
 5. **Optimal retransmit timing (resolved):** Replaced by the P_lost(t) model
    (Section 3.4). No hard timeout — the repair/retransmit mix is determined
