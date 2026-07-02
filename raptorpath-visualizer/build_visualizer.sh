@@ -104,6 +104,12 @@ class SimWrapper {
   get totalLost() { return this.inner.get_total_lost(); }
   get cumDecoded() { return this.inner.get_cum_decoded(); }
   get tick() { return this.inner.get_tick(); }
+  // delivery latency (ms): send -> decode + one-way propagation; given-up excluded
+  get latLast() { return this.inner.get_lat_last(); }
+  get latAvg()  { return this.inner.get_lat_avg(); }
+  get latP50()  { return this.inner.get_lat_percentile(0.5); }
+  get latP99()  { return this.inner.get_lat_percentile(0.99); }
+  get jitter()  { return this.inner.get_jitter(); }
   retxBufSize() { return this.inner.get_retx_buf_size(); }
   step() {
     if (this.finished) return;
