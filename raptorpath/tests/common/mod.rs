@@ -119,7 +119,12 @@ impl Ord for SimPacket {
 pub struct LinkModel {
     capacity_bps: f64,     // link capacity in bytes/sec
     max_queue: usize,      // max queue depth in packets
-    link_free_at: Instant,  // when current transmission completes
+    // When the current transmission completes. None until the first enqueue:
+    // anchoring to Instant::now() at construction would mix REAL time into
+    // the MockClock's virtual timeline (a machine-load-dependent, one-time
+    // offset on the first packet's queue delay). All simulation time must
+    // derive from the `now` passed in by the caller.
+    link_free_at: Option<Instant>,
     queue_depth: usize,     // current queue depth
     pub tail_drops: u64,    // stats
 }
@@ -129,7 +134,7 @@ impl LinkModel {
         Self {
             capacity_bps,
             max_queue,
-            link_free_at: Instant::now(),
+            link_free_at: None,
             queue_depth: 0,
             tail_drops: 0,
         }
@@ -141,24 +146,21 @@ impl LinkModel {
             self.tail_drops += 1;
             return None;
         }
+        let link_free_at = *self.link_free_at.get_or_insert(now);
 
         let serialization_time =
             Duration::from_secs_f64(pkt_size as f64 / self.capacity_bps);
 
         // Queue delay: how long until the link is free
-        let queue_delay = if self.link_free_at > now {
-            self.link_free_at - now
+        let queue_delay = if link_free_at > now {
+            link_free_at - now
         } else {
             Duration::ZERO
         };
 
         // Update link availability
-        let start = if self.link_free_at > now {
-            self.link_free_at
-        } else {
-            now
-        };
-        self.link_free_at = start + serialization_time;
+        let start = if link_free_at > now { link_free_at } else { now };
+        self.link_free_at = Some(start + serialization_time);
         self.queue_depth += 1;
 
         Some(queue_delay + serialization_time)
