@@ -3106,6 +3106,78 @@ and strengthen the pipeline. The current model ties correction slots to
 source slots — decoupling them would allow "idle FEC" without changing
 the architecture, only the scheduling policy.
 
+**A quantitative saturation model.** The L0 gate measured the
+diminishing return turning NEGATIVE: at C4-Satellite, Realtime
+(δ = 1e-7 → r ≈ 0.49) has a WORSE p99 than Auto (412 ms vs 297 ms).
+Past ~43% overhead the extra repairs displace source symbols and
+pressure the queue — more FEC hurts the tail. The controller increases
+r monotonically with hint tightness and needs a saturation point. The
+model below is continuous (no mode switch) and uses only
+estimator-known quantities: ε (loss), σ²_burst (Section 8.3), W
+(window), SRTT, and t_sym = symbol_size / throughput (the wire slot
+time).
+
+The p99 tail has components that pull in opposite directions in r:
+
+```
+  tail_fec(r) = (1 - P_fec(r)) × L_arq                       [decreasing]
+      FEC-miss cost: misses fall through to ARQ. P_fec from the
+      Section 8.2 normal formula; L_arq ≈ 1.5 × SRTT (Section 14.9).
+
+  tail_rec(r) = B × t_sym × (1+r) / (r × (1-ε)),  B = (σ²+1)/2 [decreasing]
+      Recovery wait: repairs occupy an r/(1+r) share of wire slots and
+      survive with probability (1-ε), so the wait for the B surviving
+      repairs a mean burst needs is B × t_sym × (1+r)/(r(1-ε)). This is
+      why moderate r keeps helping even after P_fec ≈ 1: repairs arrive
+      SOONER. B is the mean burst length recovered from the variance
+      factor (σ² = 2B - 1 when p ≪ q, Section 8.3).
+
+  tail_svc(r) = c × (1+r) × W × t_sym,  c = 1/2                [increasing]
+      Dilution cost: corrections consume wire share r/(1+r), stretching
+      the effective per-source service time — the recovery window
+      passes at the diluted source rate, taking (1+r) × W × t_sym.
+
+  p99_model(r) = tail_fec(r) + tail_rec(r) + tail_svc(r)
+```
+
+The sum has an interior minimum r_sat, and the controller should emit
+`min(r_hint, r_sat)`: the hint still picks the operating point on the
+rising side of reliability, but cannot push past the point where more
+FEC hurts. The cap is hint-independent — saturation is a channel
+property, not a preference.
+
+**Worked example (C4-Satellite).** ε ≈ 9%, σ² ≈ 5 (B = 3), W = 64,
+SRTT ≈ 0.21 s (L_arq = 315 ms), throughput 2.5 MB/s, symbol 1225 B →
+t_sym = 4.9e-4 s, W × t_sym = 31.4 ms:
+
+```
+  r      tail_fec   tail_rec   tail_svc   total
+  0.20    40.9 ms     9.7 ms    18.8 ms    69.4 ms
+  0.30     4.1 ms     7.0 ms    20.4 ms    31.5 ms
+  0.35     0.9 ms     6.2 ms    21.2 ms    28.3 ms
+  0.40     0.2 ms     5.7 ms    22.0 ms    27.8 ms   <- r_sat
+  0.49     0.0 ms     4.9 ms    23.4 ms    28.3 ms
+```
+
+r_sat = 0.40, below Realtime's uncapped 0.49 — consistent with the
+measured reversal. At C2-WiFi-like numbers (ε = 2.5%, σ² = 3, W = 64,
+SRTT = 13 ms, t_sym = 1e-4 s) the minimum sits at r_sat ≈ 0.255, ABOVE
+Realtime's ~0.20 request there: the cap is non-binding exactly where
+the measurements show more FEC still helping (C2 Realtime p99 28.1 ms
+beats Bulk's 31.5 ms).
+
+**Honesty about roughness.** The dilution constant c = 1/2 is a fitted
+scale, not derived; queueing is ignored beyond linear dilution, so the
+model's minimum is much shallower than the measured one (the model says
++0.5 ms from r_sat to 0.49 at C4; the gate measured +115 ms — the real
+cost past saturation is a queueing knee, not a line). The model is
+therefore trusted for the LOCATION of the minimum, not the depth. B
+from σ² assumes p ≪ q. Estimation error in ε moves r_sat by a few
+percent (higher ε → later saturation), which is the safe direction:
+when in doubt the cap loosens. When the estimator has no throughput
+sample, t_sym is unknown and no cap applies (degenerate inputs → no
+cap): the monotone hint behavior of the base model is preserved.
+
 ### 14.22 Sequence-Aware P_lost
 
 The current P_lost(t) (Section 3.4) uses only time since send. But SACK

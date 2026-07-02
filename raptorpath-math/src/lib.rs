@@ -178,6 +178,58 @@ pub fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -
     1.0 - normal_survival(z)
 }
 
+/// Saturation point r_sat of the p99(r) tail model (paper Section 14.21).
+///
+/// The tail latency has decreasing and increasing components in r:
+///
+///   tail_fec(r) = (1 - P_fec(r)) x L_arq,       L_arq = 1.5 x SRTT
+///                 (FEC-miss cost: the Section 8.2 normal P_fec; misses
+///                 fall through to ARQ)                       [decreasing]
+///   tail_rec(r) = B x t_sym x (1+r) / (r x (1-eps)), B = (sigma2+1)/2
+///                 (wait for B surviving repairs: repairs occupy an
+///                 r/(1+r) share of wire slots)               [decreasing]
+///   tail_svc(r) = c x (1+r) x W x t_sym,        c = 0.5
+///                 (dilution cost: corrections stretch the recovery
+///                 window traversal at the diluted source rate) [increasing]
+///
+/// p99_model(r) = tail_fec + tail_rec + tail_svc has an interior minimum
+/// r_sat; past it, more FEC HURTS the tail. The controller should emit
+/// min(r_hint, r_sat). All inputs are estimator-known. The model is rough:
+/// c is a constant and queueing is ignored beyond linear dilution — see
+/// the paper for caveats.
+///
+/// Returns the argmin over r in [0.01, 1.0] (step 0.005). Degenerate
+/// inputs return 1.0 (no cap).
+pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f64) -> f64 {
+    let valid = epsilon.is_finite() && epsilon > 0.0 && epsilon < 1.0
+        && sigma2.is_finite() && sigma2 > 0.0
+        && window.is_finite() && window > 0.0
+        && srtt.is_finite() && srtt > 0.0
+        && t_sym.is_finite() && t_sym > 0.0;
+    if !valid {
+        return 1.0; // no cap
+    }
+    let l_arq = 1.5 * srtt;
+    // Mean burst length implied by the GE variance factor (sigma2 = 2B - 1
+    // when p << q, Section 8.3), so B is recoverable from estimator state.
+    let b_hat = (sigma2 + 1.0) / 2.0;
+    const C_DILUTION: f64 = 0.5;
+    let mut best_r = 1.0;
+    let mut best_cost = f64::INFINITY;
+    for i in 0..=198u32 {
+        let r = 0.01 + 0.005 * i as f64;
+        let tail_fec = (1.0 - p_fec_normal(r, epsilon, window, sigma2)) * l_arq;
+        let tail_rec = b_hat * t_sym * (1.0 + r) / (r * (1.0 - epsilon));
+        let tail_svc = C_DILUTION * (1.0 + r) * window * t_sym;
+        let cost = tail_fec + tail_rec + tail_svc;
+        if cost < best_cost {
+            best_cost = cost;
+            best_r = r;
+        }
+    }
+    best_r
+}
+
 /// Compute delta (tail latency) from r and rho.
 ///
 /// delta = P(late delivery) / rho. See paper Section 6.3.
@@ -445,6 +497,43 @@ mod tests {
         let taper = TaperFunction::new(0.08, 0.5);
         assert!(taper.density(0.0) > taper.density(1.0));
         assert!(taper.density(1.0) > taper.density(2.0));
+    }
+
+    #[test]
+    fn test_r_saturation_c4_interior_minimum() {
+        // C4-Satellite numbers (paper Section 14.21 worked example):
+        // eps ~ 9%, sigma2 ~ 5, W = 64, SRTT ~ 0.21s, throughput 2.5 MB/s,
+        // symbol 1225 B -> t_sym = 4.9e-4 s. The saturation point must land
+        // below Realtime's uncapped request (~0.49) — consistent with the
+        // measured p99 reversal (412ms vs Auto's 297ms).
+        let r_sat = r_saturation(0.09, 5.0, 64.0, 0.21, 1225.0 / 2.5e6);
+        println!("r_sat(C4) = {r_sat}");
+        assert!(
+            (0.2..=0.45).contains(&r_sat),
+            "C4 r_sat must be in [0.2, 0.45]: {r_sat}"
+        );
+    }
+
+    #[test]
+    fn test_r_saturation_c2_non_binding() {
+        // C2-WiFi-like numbers: eps = 2.5%, sigma2 = 3, W = 64,
+        // srtt = 13ms, t_sym = 0.1ms. Realtime requests ~0.2 here and the
+        // measured tail does NOT revert (more FEC still helps at C2), so
+        // the cap must sit ABOVE the request — non-binding.
+        let r_sat = r_saturation(0.025, 3.0, 64.0, 0.013, 0.0001);
+        println!("r_sat(C2) = {r_sat}");
+        assert!(r_sat > 0.2, "C2 r_sat must be above the ~0.2 Realtime request: {r_sat}");
+    }
+
+    #[test]
+    fn test_r_saturation_degenerate_inputs_no_cap() {
+        assert_eq!(r_saturation(0.0, 5.0, 64.0, 0.21, 5e-4), 1.0);
+        assert_eq!(r_saturation(1.0, 5.0, 64.0, 0.21, 5e-4), 1.0);
+        assert_eq!(r_saturation(0.09, 0.0, 64.0, 0.21, 5e-4), 1.0);
+        assert_eq!(r_saturation(0.09, 5.0, 0.0, 0.21, 5e-4), 1.0);
+        assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.0, 5e-4), 1.0);
+        assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.21, 0.0), 1.0);
+        assert_eq!(r_saturation(f64::NAN, 5.0, 64.0, 0.21, 5e-4), 1.0);
     }
 
     #[test]
