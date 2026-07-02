@@ -149,6 +149,7 @@ ACK absence.
     - [14.22 Sequence-Aware P_lost](#1422-sequence-aware-p_lost)
     - [14.23 Post-Burst FEC Boost](#1423-post-burst-fec-boost-reactive-deficit-recovery)
     - [14.24 Jitter-Horizon Encoder Lag](#1424-jitter-horizon-encoder-lag)
+    - [14.25 Completion-Tail FEC](#1425-completion-tail-fec)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -313,6 +314,12 @@ Three properties are linked by the channel. Fix any two, the third is determined
 | **Live video** | δ (frame deadline), ρ (≥99.9%) | r (bandwidth) | Streaming, conferencing |
 | **Gaming** | δ (tight), ρ (≥99%) | r (bandwidth) | Real-time game state |
 | **Sensor/IoT** | r (minimal), ρ (≥95%) | δ (tail latency) | Periodic telemetry |
+
+For Bulk transfer, "minimize r" is taken literally: the tail target is
+"late is fine" (δ_bulk = min(0.1, ε̂), Section 5.3), so r ≈ 0 in the
+steady state and the residual is pure ARQ — except for the final window
+at end-of-stream, where a small tail burst buys completion time
+(Section 14.25).
 
 The protocol hint selects the mode and constraints:
 
@@ -982,6 +989,18 @@ split. P_lost(t) controls the repair/retransmit split within corrections.
     -> loose delta -> low r (fewer corrections, more source)
     -> low P_retx (prefer repair over retransmit, less duplicate risk)
     -> Mix: lots of source, some repair, little retransmit
+
+    Concretely, Bulk's tail target is "late is fine":
+
+      delta_bulk = min(0.1, epsilon_hat)
+
+    With delta >= epsilon the continuous r* formula (Section 8.4,
+    z_{delta/epsilon} = Phi^-1(1 - delta/epsilon)) yields r ≈ 0 in the
+    steady state: pure ARQ, wire volume at parity with retransmission
+    transports (~1 + epsilon/(1-epsilon) per source symbol). A
+    mid-transfer loss recovered one RTT late costs a bulk transfer
+    nothing — recovery overlaps ongoing sends. The one place FEC still
+    buys completion time is the final window (Section 14.25).
 
   VoIP (fixed bandwidth + latency, variable reliability):
     -> r constrained by bandwidth budget
@@ -2313,6 +2332,13 @@ The two controllers are orthogonal:
 Neither needs to know about the other. Copa sees total traffic; taper sees
 loss rate. They compose naturally.
 
+**Bulk operating point.** Under the Bulk hint the taper side degenerates
+by design: the tail target is "late is fine" (δ_bulk = min(0.1, ε̂), see
+Section 5.3), so the continuous r* glides to 0 and the steady state is
+pure ARQ — source_rate ≈ total_rate, wire volume at parity with a
+retransmission transport. FEC reappears only as the end-of-stream tail
+burst (Section 14.25), where recovery can no longer overlap sending.
+
 ### 12.6 ECN as Opportunistic Enhancement
 
 If the network path supports ECN [RFC3168], congestion is signaled by router
@@ -3286,6 +3312,72 @@ jitter and send rate; on a jitter-free channel L → 0 and the windows
 coincide. This composes with Section 14.5's window sizing: the effective
 protection span for fresh symbols shrinks by L, which matters only if
 L approaches W.
+
+### 14.25 Completion-Tail FEC
+
+For a finite transfer, completion time decomposes as:
+
+```
+  T_completion = T_send  +  T_tail_recovery
+
+  T_send          = N x t_sym / (1 + r)⁻¹-adjusted source rate
+                    (the time to push all N source symbols)
+  T_tail_recovery = the time to recover losses among the LAST
+                    window's symbols after the send stream ends
+```
+
+The two terms have completely different loss economics. A mid-transfer
+loss is recovered in parallel with ongoing sends: ARQ (or a later
+repair) rides alongside new source symbols, so the recovery consumes
+wire budget but adds ZERO completion time — the link never goes idle
+waiting for it. A tail loss is different: once the last source symbol
+has been sent there is nothing left to overlap with, so every ARQ round
+on a final-window hole is serial — ~1.5 RTT each (detection at ~9/8
+SRTT plus the retransmit flight), and a retransmit that is itself lost
+pays the full round again.
+
+This yields an end-of-stream policy that is nearly free:
+
+```
+  At end-of-stream (last source symbol sent), send a burst of
+  n_tail = ceil(r_tail x W) repair symbols covering the final window.
+
+  Cost:    r_tail x W symbols  ≈ negligible vs N for a large transfer
+           (e.g. 0.2 x 64 = 13 symbols on a 1500-symbol transfer < 1%)
+  Saving:  P(≥1 tail loss) x ~1.5 RTT of completion time per avoided
+           serial ARQ round, where
+           P(≥1 tail loss) = 1 - (1-ε)^W    (≈ 80% at ε=2.5%, W=64)
+```
+
+r_tail comes from the exact transfer-matrix computation (Section 8.7):
+the smallest r such that P_fail(r, W) ≤ δ_tail for a modest tail-failure
+budget (e.g. δ_tail = 0.05 — one residual serial ARQ round in 20
+transfers). The exact DP matters here: the tail burst is a one-shot,
+small-W event where the normal approximation's 30-50% tail
+under-provisioning (Section 8.7) directly converts into completion
+regressions.
+
+**Composition with Bulk's r → 0 steady state (Sections 5.3, 12.5).**
+Bulk maps δ to "late is fine" (δ_bulk = min(0.1, ε̂)), so the continuous
+r* formula (Section 8.4) glides to 0 mid-transfer: pure ARQ, volume
+parity with retransmission transports. Completion-tail FEC is the
+complement, not a contradiction: FEC vanishes in the steady state
+(where recovery overlaps sending and buys nothing) and reappears
+exactly at the one place it buys completion time — the final window.
+The r-δ-ρ triangle is respected at both operating points; only the
+effective δ differs, because the COST MODEL differs between
+mid-transfer (parallel recovery, late is genuinely fine) and the tail
+(serial recovery, late is 1.5 RTT each).
+
+**Multipath corollary — tail reinjection.** On asymmetric paths the same
+end-of-stream logic applies to slow-path IN-FLIGHTS, not just losses:
+once nothing overlaps recovery, an undelivered symbol whose path's
+residual wait (queue + propagation) exceeds a fast-path flight is worth
+duplicating onto the fast path (cross-path retransmit, Section 13.10).
+The duplicate rides spare end-of-stream tokens, so the cost is a few
+symbols of fast-path capacity against a saving of the slow path's queue
+drain (~10-25 ms measured on WiFi+LTE). Same principle, ARQ flavor:
+completion is bought exactly at the stream tail, nowhere else.
 
 ---
 
