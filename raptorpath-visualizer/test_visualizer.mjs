@@ -68,6 +68,9 @@ function runSim(hint, { fixedR, delta, rho } = {}) {
     fec: sim.get_total_fec(),
     arq: sim.get_total_arq(),
     overhead: sim.get_overhead(),
+    latAvg: sim.get_lat_avg(),
+    latP99: sim.get_lat_percentile(0.99),
+    jitter: sim.get_jitter(),
   };
 }
 
@@ -91,6 +94,17 @@ check("bulk completes faster than realtime", bulk.ticks < rt.ticks,
 // --- 3. Hint semantics: Bulk mostly ARQ, Realtime FEC-heavy ---
 check("bulk sends less FEC than realtime", bulk.fec < rt.fec,
   `bulk fec=${bulk.fec}, realtime fec=${rt.fec}`);
+
+// --- 3b. Latency metrics show the latency/throughput trade ---
+const ONE_WAY = 25; // rtt 50ms in runSim
+check("avg latency >= one-way propagation",
+  bulk.latAvg >= ONE_WAY && rt.latAvg >= ONE_WAY,
+  `bulk=${bulk.latAvg.toFixed(1)}ms, rt=${rt.latAvg.toFixed(1)}ms`);
+check("realtime p99 latency beats bulk", rt.latP99 < bulk.latP99,
+  `rt=${rt.latP99.toFixed(1)}ms, bulk=${bulk.latP99.toFixed(1)}ms`);
+check("jitter finite and non-negative",
+  Number.isFinite(rt.jitter) && rt.jitter >= 0,
+  `rt jitter=${rt.jitter.toFixed(2)}ms`);
 
 // --- 4. Custom triangle mode: rho < 1 gives up cleanly ---
 const custom = runSim("custom", { delta: 0.05, rho: 0.95 });

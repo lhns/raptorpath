@@ -151,6 +151,15 @@ pub struct Simulation {
     /// Seqs the receiver has pruned (paper 6.2): late data for them is
     /// discarded, not delivered.
     given_up_seqs: std::collections::BTreeSet<u64>,
+    /// Send tick per source seq (for delivery-latency measurement).
+    send_tick: Vec<u32>,
+    /// Delivery latency (ms) per delivered source symbol, in delivery order:
+    /// (recovery_tick - send_tick) + one-way propagation.
+    delivered_lat_ms: Vec<f64>,
+    /// RFC 3550-style smoothed jitter over successive delivery latencies:
+    /// J += (|D| - J) / 16.
+    jitter_ms: f64,
+    prev_lat_ms: f64,
 
     rtt_ticks: u32,
     srtt_secs: f64,
@@ -306,12 +315,34 @@ impl Simulation {
                 repair.repair_index, &repair.coded_data,
             );
             self.mark_recovered(&recovered);
+            self.record_delivery(&recovered);
             self.cum_decoded += recovered
                 .iter()
                 .filter(|q| !self.given_up_seqs.contains(q))
                 .count() as u32;
         }
         !lost
+    }
+
+    /// Record delivery latencies for decoder outputs (excluding pruned
+    /// seqs). Latency = time from send to decode plus one-way propagation
+    /// (arrived symbols decode at their send tick, so their latency is the
+    /// one-way delay; recovered symbols add the recovery wait).
+    fn record_delivery(&mut self, seqs: &[u64]) {
+        let one_way = self.srtt_secs * 500.0; // ms: RTT/2
+        for q in seqs {
+            if self.given_up_seqs.contains(q) {
+                continue;
+            }
+            let st = self.send_tick.get(*q as usize).copied().unwrap_or(self.tick);
+            let lat = (self.tick.saturating_sub(st)) as f64 + one_way;
+            if self.prev_lat_ms >= 0.0 {
+                let d = (lat - self.prev_lat_ms).abs();
+                self.jitter_ms += (d - self.jitter_ms) / 16.0;
+            }
+            self.prev_lat_ms = lat;
+            self.delivered_lat_ms.push(lat);
+        }
     }
 
     fn mark_recovered(&mut self, seqs: &[u64]) {
@@ -367,6 +398,10 @@ impl Simulation {
             rho,
             given_up: 0,
             given_up_seqs: std::collections::BTreeSet::new(),
+            send_tick: Vec::new(),
+            delivered_lat_ms: Vec::new(),
+            jitter_ms: 0.0,
+            prev_lat_ms: -1.0,
             rtt_ticks: rtt_ms.max(2),
             srtt_secs: rtt_ms as f64 / 1000.0,
             rttvar_secs: rtt_ms as f64 / 8000.0,
@@ -482,6 +517,7 @@ impl Simulation {
                         // Cascade outputs may resolve OTHER lost symbols;
                         // pruned (given-up) seqs are discarded, not counted.
                         self.mark_recovered(&rec);
+                        self.record_delivery(&rec);
                         self.cum_decoded += rec
                             .iter()
                             .filter(|q| !self.given_up_seqs.contains(q))
@@ -509,6 +545,7 @@ impl Simulation {
                 let data = vec![self.next_seq as u8; 8];
                 let seq = self.encoder.add_source(&data);
                 self.source_store.push(data.clone());
+                self.send_tick.push(self.tick);
                 // Slide the encoder window (paper W).
                 if self.encoder.window_size() > self.w as usize {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
@@ -539,6 +576,7 @@ impl Simulation {
                     let rec = self.decoder.feed_source(seq, &data);
                     // Cascade outputs may resolve OTHER lost symbols.
                     self.mark_recovered(&rec);
+                    self.record_delivery(&rec);
                     self.cum_decoded += rec
                         .iter()
                         .filter(|q| !self.given_up_seqs.contains(q))
@@ -690,6 +728,25 @@ impl Simulation {
     }
     /// Symbols permanently given up (rho < 1.0 age eviction).
     pub fn get_given_up(&self) -> u32 { self.given_up }
+    /// Latency (ms) of the most recently delivered source symbol.
+    pub fn get_lat_last(&self) -> f64 {
+        self.delivered_lat_ms.last().copied().unwrap_or(0.0)
+    }
+    /// Mean delivery latency (ms) over all delivered source symbols.
+    pub fn get_lat_avg(&self) -> f64 {
+        if self.delivered_lat_ms.is_empty() { return 0.0; }
+        self.delivered_lat_ms.iter().sum::<f64>() / self.delivered_lat_ms.len() as f64
+    }
+    /// Delivery latency percentile (ms), pct in [0, 1].
+    pub fn get_lat_percentile(&self, pct: f64) -> f64 {
+        if self.delivered_lat_ms.is_empty() { return 0.0; }
+        let mut v = self.delivered_lat_ms.clone();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let idx = ((v.len() as f64 - 1.0) * pct.clamp(0.0, 1.0)).round() as usize;
+        v[idx.min(v.len() - 1)]
+    }
+    /// RFC 3550-style smoothed delivery jitter (ms).
+    pub fn get_jitter(&self) -> f64 { self.jitter_ms }
     /// Achieved reliability so far: delivered / sent source symbols.
     pub fn get_reliability(&self) -> f64 {
         if self.total_src > 0 {
@@ -773,6 +830,31 @@ mod tests {
             bulk.get_tick() < rt.get_tick(),
             "bulk ({} ticks) must complete before realtime ({} ticks)",
             bulk.get_tick(), rt.get_tick()
+        );
+    }
+
+    #[test]
+    fn test_latency_metrics_show_the_trade() {
+        // Realtime buys a tighter latency tail with FEC; Bulk gives the
+        // wire to source and pays the tail via ARQ waits. Both should have
+        // avg latency >= one-way propagation.
+        let mut rt = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None, None, None);
+        let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        while !rt.is_finished() && rt.get_tick() < 20_000 { rt.step(); }
+        while !bulk.is_finished() && bulk.get_tick() < 20_000 { bulk.step(); }
+        let one_way = 25.0;
+        assert!(rt.get_lat_avg() >= one_way && bulk.get_lat_avg() >= one_way);
+        let rt_p99 = rt.get_lat_percentile(0.99);
+        let bulk_p99 = bulk.get_lat_percentile(0.99);
+        assert!(
+            rt_p99 < bulk_p99,
+            "realtime p99 latency ({rt_p99:.1}ms) must beat bulk ({bulk_p99:.1}ms)"
+        );
+        assert!(rt.get_jitter() >= 0.0 && rt.get_jitter().is_finite());
+        assert_eq!(
+            rt.delivered_lat_ms.len(),
+            rt.get_num_source() as usize,
+            "every delivered symbol has a latency sample"
         );
     }
 
