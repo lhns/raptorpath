@@ -567,7 +567,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
         ramping.push(true);
     }
 
-    let ctrl = FecRateController::new(1e-5, 0.5, cfg.hint, FecBackend::Rlc, SYMBOL_SIZE);
+    let mut ctrl = FecRateController::new(1e-5, 0.5, cfg.hint, FecBackend::Rlc, SYMBOL_SIZE);
+    // P5: cap r at the p99(r) saturation point (paper 14.21).
+    ctrl.set_saturation_cap(cfg.saturation_cap);
     let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
     let mut decoder = RlcWindowDecoder::new(SYMBOL_SIZE);
     let max_delay = paths.iter().map(|c| c.one_way_ms + c.jitter_ms).max().unwrap();
@@ -1895,4 +1897,76 @@ fn ablation_p1_hint_delay_target() {
         "Bulk completion with hint delay target ({:.3}s) > 1.05x off ({:.3}s)",
         bk_on_c.mean(), bk_off_c.mean()
     );
+}
+
+/// P5 ablation (paper 14.21): cap r at the saturation point of the p99(r)
+/// tail model. Measured problem: at C4-Sat, Realtime's uncapped r (~0.49)
+/// has WORSE p99 than Auto (412ms vs 297ms) — past the saturation point,
+/// extra repairs displace source symbols and pressure the queue. With the
+/// cap, both hints emit min(r_hint, r_sat) and the reversal disappears. At
+/// C2 the cap sits above every request (r_sat ~ 0.25) and must be inert.
+#[test]
+#[ignore]
+fn ablation_p5_saturation_cap() {
+    let trials = 6usize;
+    let run = |ch: GateChannel, hint: ProtocolHint, flag: bool| {
+        let mut compl = TrialStats::new();
+        let mut p99 = TrialStats::new();
+        let mut oh = TrialStats::new();
+        for t in 0..trials {
+            let seed = 64_000 + t as u64 * 137 + 42;
+            let c = FecConfig { saturation_cap: flag, ..cfg(hint) };
+            let f = run_fec(&[ch], seed, &c);
+            compl.push(f.completion_s);
+            p99.push(f.p99_ms);
+            oh.push(f.wire_per_source - 1.0);
+        }
+        (compl, p99, oh)
+    };
+    let print_arm = |name: &str, arm: &(TrialStats, TrialStats, TrialStats)| {
+        println!(
+            "{name}: completion={:.3}s p99={:.1}ms overhead={:.1}%",
+            arm.0.mean(), arm.1.mean(), arm.2.mean() * 100.0
+        );
+    };
+
+    // --- C4-Sat: the measured p99 reversal ---
+    let rt_on = run(C4_SAT, ProtocolHint::Realtime, true);
+    let rt_off = run(C4_SAT, ProtocolHint::Realtime, false);
+    let au_on = run(C4_SAT, ProtocolHint::Auto, true);
+    let au_off = run(C4_SAT, ProtocolHint::Auto, false);
+    print_arm("C4 Realtime cap=on ", &rt_on);
+    print_arm("C4 Realtime cap=off", &rt_off);
+    print_arm("C4 Auto     cap=on ", &au_on);
+    print_arm("C4 Auto     cap=off", &au_off);
+
+    // The reversal is gone: Realtime's tighter hint must no longer buy a
+    // WORSE tail than Auto.
+    assert!(
+        rt_on.1.mean() <= 1.10 * au_on.1.mean(),
+        "C4: capped Realtime p99 ({:.1}ms) must be <= 1.10x capped Auto p99 ({:.1}ms)",
+        rt_on.1.mean(), au_on.1.mean()
+    );
+    // And the cap must be a real improvement over uncapped Realtime.
+    assert!(
+        rt_on.1.mean() < 0.9 * rt_off.1.mean(),
+        "C4: capped Realtime p99 ({:.1}ms) must be < 0.9x uncapped ({:.1}ms)",
+        rt_on.1.mean(), rt_off.1.mean()
+    );
+
+    // --- C2-WiFi: the cap must not bind where saturation is not reached ---
+    let c2_on = run(C2_WIFI, ProtocolHint::Realtime, true);
+    let c2_off = run(C2_WIFI, ProtocolHint::Realtime, false);
+    print_arm("C2 Realtime cap=on ", &c2_on);
+    print_arm("C2 Realtime cap=off", &c2_off);
+    for (on, off, metric) in [
+        (c2_on.0.mean(), c2_off.0.mean(), "completion"),
+        (c2_on.1.mean(), c2_off.1.mean(), "p99"),
+        (c2_on.2.mean(), c2_off.2.mean(), "overhead"),
+    ] {
+        assert!(
+            (on - off).abs() <= 0.05 * off,
+            "C2 Realtime: cap must be inert, {metric} differs >5%: on={on:.4} off={off:.4}"
+        );
+    }
 }

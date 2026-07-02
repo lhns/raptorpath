@@ -70,6 +70,11 @@ pub struct FecRateController {
     hint: ProtocolHint,
     /// Symbol size in bytes (needed to compute T = RTT × throughput / symbol_size)
     symbol_size: u16,
+    /// P5: cap the repair rate at the p99(r) saturation point (paper
+    /// Section 14.21). Past r_sat, extra repairs displace source symbols
+    /// and stretch the recovery window faster than the shrinking FEC-miss
+    /// cost pays back — more FEC hurts the tail.
+    saturation_cap_enabled: bool,
 }
 
 impl FecRateController {
@@ -119,7 +124,13 @@ impl FecRateController {
             rq_overhead: codec_overhead,
             hint,
             symbol_size,
+            saturation_cap_enabled: true,
         }
+    }
+
+    /// Enable/disable the saturation cap (paper Section 14.21). Default: on.
+    pub fn set_saturation_cap(&mut self, enabled: bool) {
+        self.saturation_cap_enabled = enabled;
     }
 
     /// Compute the number of repair symbols needed for `k` source symbols
@@ -156,6 +167,10 @@ impl FecRateController {
     /// The protocol hint enters only through z_δ — feeding it into the
     /// estimation confidence as well would double-count the tail target.
     /// Codec overhead is weighted by P(decoder_invoked) for systematic codecs.
+    ///
+    /// When enabled (default), the result is capped at the p99 saturation
+    /// point r_sat (paper Section 14.21): past it, extra repairs hurt the
+    /// tail by displacing source symbols. See `set_saturation_cap`.
     ///
     /// `window_size`: current encoder window or block size.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator, window_size: usize) -> f64 {
@@ -217,7 +232,25 @@ impl FecRateController {
         };
 
         // --- Optimal rate: max of random and burst ---
-        let rate = random_rate.max(burst_rate);
+        let mut rate = random_rate.max(burst_rate);
+
+        // --- P5: saturation cap (paper Section 14.21) ---
+        // The p99(r) model has an interior minimum r_sat: past it, extra
+        // repairs dilute the wire share of source symbols (stretching the
+        // recovery window traversal) faster than the shrinking FEC-miss
+        // cost pays back. Saturation is a channel property, so the cap is
+        // hint-independent: the controller emits min(r_hint, r_sat).
+        // Requires a throughput estimate for t_sym; skipped without one.
+        if self.saturation_cap_enabled && estimator.throughput() > 0.0 {
+            let r_sat = raptorpath_math::r_saturation(
+                p,
+                sigma2,
+                window_size as f64,
+                estimator.rtt().as_secs_f64(),
+                self.symbol_size as f64 / estimator.throughput().max(1.0),
+            );
+            rate = rate.min(r_sat);
+        }
         rate.clamp(0.0, self.max_overhead)
     }
 
@@ -900,6 +933,56 @@ mod tests {
         assert!(r_bulk <= r_auto && r_auto <= r_rt,
             "rate must be monotone in tail tightness: bulk={r_bulk}, auto={r_auto}, rt={r_rt}");
         assert!(r_rt > 0.0, "Realtime at 0.1% loss should still use FEC: {r_rt}");
+    }
+
+    #[test]
+    fn test_saturation_cap_binds_with_throughput() {
+        // C4-like estimator state: 5% loss, long RTT, known throughput.
+        // Realtime's aggressive request must be capped at r_sat; without
+        // the flag (or without a throughput estimate) it must not be.
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(100, 95); // 5% loss
+            est.record_rtt(std::time::Duration::from_millis(210));
+        }
+
+        // No throughput estimate -> cap skipped even when enabled.
+        let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+        let uncapped_no_tput = ctrl.compute_repair_rate(&est, 64);
+
+        for _ in 0..100 {
+            est.record_throughput(2_500_000.0);
+        }
+        let capped = ctrl.compute_repair_rate(&est, 64);
+
+        let mut ctrl_off = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+        ctrl_off.set_saturation_cap(false);
+        let uncapped = ctrl_off.compute_repair_rate(&est, 64);
+
+        assert!(
+            (uncapped - uncapped_no_tput).abs() < 1e-9,
+            "cap must be inert without a throughput estimate: {uncapped_no_tput} vs {uncapped}"
+        );
+        assert!(
+            capped < uncapped,
+            "saturation cap must bind for an aggressive request: capped={capped}, uncapped={uncapped}"
+        );
+        // The capped rate must be exactly r_sat (mirroring the controller's
+        // inputs) when the request exceeds it.
+        let p = est.predictive_loss_upper(0.95);
+        let ge = est.ge_estimator();
+        let sigma2 = if ge.is_valid() {
+            raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+        } else {
+            1.0
+        };
+        let r_sat = raptorpath_math::r_saturation(
+            p, sigma2, 64.0, est.rtt().as_secs_f64(), 1200.0 / est.throughput(),
+        );
+        assert!(
+            (capped - r_sat).abs() < 1e-9,
+            "capped rate must equal r_sat: capped={capped}, r_sat={r_sat}"
+        );
     }
 
     #[test]
