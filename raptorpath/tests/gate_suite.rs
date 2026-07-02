@@ -370,6 +370,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     // transient serialization bursts to the standing queue; an EWMA stays
     // inflated long after the queue drains and causes a backoff spiral.
     let mut min_rtt_win: Vec<f64> = Vec::new();
+    // P2 (estimated_floor): running lifetime-min RTT sample = the endpoint's
+    // ESTIMATE of the propagation floor. Copa uses a 10s min window, which
+    // exceeds any trial here, so lifetime min is the faithful analogue. The
+    // ground-truth paths[i].rtt() is a simulation cheat a real endpoint
+    // cannot make.
+    let mut rtt_floor: Vec<f64> = Vec::new();
     // Startup ramp flag: exponential until the queue first shows, then
     // gentle additive/multiplicative oscillation around the BDP (Copa's
     // steady-state behavior; the ramp is its slow-start analogue).
@@ -401,6 +407,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
         last_flush.push(t0);
         last_probe.push(t0);
         min_rtt_win.push(f64::INFINITY);
+        rtt_floor.push(f64::INFINITY);
         ramping.push(true);
     }
 
@@ -654,6 +661,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                     + paths[i].one_way_ms as f64 / 1000.0;
                 srtt[i] = 0.875 * srtt[i] + 0.125 * sample;
                 min_rtt_win[i] = min_rtt_win[i].min(sample);
+                rtt_floor[i] = rtt_floor[i].min(sample);
                 if i == 0 {
                     if let Some((_, end)) = cfg.outage {
                         if path0_recovery.is_none() && pkt.delivery_time >= t0 + end {
@@ -708,7 +716,17 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 // MIN sample rises above the floor, back off. Continuous
                 // oscillation, no phases, no loss reaction — channel loss
                 // is FEC's job, not CC's (paper Section 12).
-                let base = paths[i].rtt().as_secs_f64();
+                // P2: with estimated_floor the propagation floor is the
+                // running min RTT sample, not ground truth. The estimate is
+                // slightly LOWER than rtt() (a min sample carries ~zero
+                // jitter while rtt() includes the jitter term), so the
+                // effective queue target tightens a little — honest, not
+                // compensated.
+                let base = if cfg.estimated_floor && rtt_floor[i].is_finite() {
+                    rtt_floor[i]
+                } else {
+                    paths[i].rtt().as_secs_f64()
+                };
                 if min_rtt_win[i].is_finite() {
                     let cap = paths[i].bdp_cwnd() as f64 * 2.0;
                     if min_rtt_win[i] > base * 1.125 {
@@ -1393,5 +1411,64 @@ fn quality_hint_sweep() {
                 oh.mean() * 100.0
             );
         }
+    }
+}
+
+/// Ablation for P2 (estimated_floor): Copa's propagation floor comes from
+/// the running min RTT sample instead of ground-truth paths[i].rtt(). This
+/// is an honesty fix (L0 → L1 transfer), not a performance change, so the
+/// gate is equivalence-or-better: small shifts are expected, big
+/// regressions are not.
+#[test]
+#[ignore]
+fn ablation_p2_estimated_floor() {
+    let cells: &[(&str, GateChannel)] = &[("C2-WiFi", C2_WIFI), ("C4-Sat", C4_SAT)];
+    let trials = 6usize;
+    for (name, ch) in cells {
+        let mut on_compl = TrialStats::new();
+        let mut on_p50 = TrialStats::new();
+        let mut on_p99 = TrialStats::new();
+        let mut off_compl = TrialStats::new();
+        let mut off_p50 = TrialStats::new();
+        let mut off_p99 = TrialStats::new();
+        for t in 0..trials {
+            let seed = 61_000 + t as u64 * 137 + 42;
+            let on = run_fec(
+                &[*ch],
+                seed,
+                &FecConfig { estimated_floor: true, ..cfg(ProtocolHint::Auto) },
+            );
+            on_compl.push(on.completion_s);
+            on_p50.push(on.p50_ms);
+            on_p99.push(on.p99_ms);
+            let off = run_fec(
+                &[*ch],
+                seed,
+                &FecConfig { estimated_floor: false, ..cfg(ProtocolHint::Auto) },
+            );
+            off_compl.push(off.completion_s);
+            off_p50.push(off.p50_ms);
+            off_p99.push(off.p99_ms);
+        }
+        println!(
+            "{name} floor=est  : completion={:.3}s p50={:.1}ms p99={:.1}ms",
+            on_compl.mean(), on_p50.mean(), on_p99.mean()
+        );
+        println!(
+            "{name} floor=truth: completion={:.3}s p50={:.1}ms p99={:.1}ms",
+            off_compl.mean(), off_p50.mean(), off_p99.mean()
+        );
+        assert!(
+            on_compl.mean() <= 1.10 * off_compl.mean(),
+            "{name}: estimated floor regresses completion: {:.3}s vs {:.3}s",
+            on_compl.mean(),
+            off_compl.mean()
+        );
+        assert!(
+            on_p99.mean() <= 1.15 * off_p99.mean(),
+            "{name}: estimated floor regresses p99: {:.1}ms vs {:.1}ms",
+            on_p99.mean(),
+            off_p99.mean()
+        );
     }
 }
