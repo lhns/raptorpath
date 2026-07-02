@@ -72,36 +72,52 @@ Model/driver findings (documented in the paper):
 
 ## Quality sweep (protocol hints, diagnostic `quality_hint_sweep`)
 
-Completion = flow-completion time of the 1.8 MB transfer to application
-delivery. Ratios vs SimRetx on the same seeds (6 trials).
+Post-improvement numbers (P1-P5 all on; 6 trials, same seeds). Completion =
+flow-completion time of the 1.8 MB transfer to application delivery.
+Ratios vs SimRetx.
 
 | Cell | Hint | Completion | p50 | p99 | Overhead |
 |------|------|-----------:|----:|----:|---------:|
 | C2-WiFi | SimRetx | 0.860s | 8.1ms | 46.2ms | 2.5% |
-| C2-WiFi | Bulk | 0.183s (0.21×) | 18.6ms | 31.5ms (0.68×) | 9.9% |
-| C2-WiFi | Realtime | 0.200s (0.23×) | 17.3ms | 28.1ms (0.61×) | 19.6% |
+| C2-WiFi | Bulk | 0.163s (0.19x) | 29.5ms | 46.0ms | **3.4%** |
+| C2-WiFi | Realtime | 0.187s (0.22x) | 13.4ms | 23.8ms (0.52x) | 20.1% |
 | C3-LTE | SimRetx | 3.80s | 28.8ms | 277ms | 5.2% |
-| C3-LTE | Bulk | 0.90s (0.24×) | 47.5ms | 98ms (0.35×) | 18.7% |
-| C3-LTE | Realtime | 1.07s (0.28×) | 41.6ms | 85ms (0.31×) | 33.2% |
+| C3-LTE | Bulk | 0.79s (0.21x) | 74ms | 134ms | **6.5%** |
+| C3-LTE | Realtime | 0.96s (0.25x) | 35.3ms | 78ms (0.28x) | 30.1% |
 | C4-Sat | SimRetx | 22.3s | 367ms | 1556ms | 9.3% |
-| C4-Sat | Bulk | 1.45s (0.07×) | 139ms | 317ms (0.20×) | 31.0% |
-| C4-Sat | Realtime | 1.80s (0.08×) | 144ms | 412ms (0.27×) | 48.6% |
+| C4-Sat | Bulk | 1.22s (0.05x) | 284ms | 410ms | **12.6%** |
+| C4-Sat | Realtime | 1.21s (0.05x) | 139ms | 259ms (0.17x) | 41.9% |
 | C5-BadWiFi | SimRetx | 2.25s | 14.6ms | 80ms | 17.2% |
-| C5-BadWiFi | Bulk | 0.39s (0.17×) | 15.7ms | 31ms (0.38×) | 46.0% |
-| C5-BadWiFi | Realtime | 0.42s (0.19×) | 15.6ms | 28ms (0.34×) | 50.1% |
+| C5-BadWiFi | Bulk | 0.34s (0.15x) | 25.6ms | 46ms | 31.6% |
+| C5-BadWiFi | Realtime | 0.39s (0.17x) | 13.2ms | 28ms (0.35x) | 48.5% |
 
-Reading (see also the caveats below):
-- Bulk runs at ~85–90% of the channel's information-theoretic floor
-  (capacity ÷ (1+r)); the AIMD baseline manages 17–25% of capacity on
-  lossy links. Measured overhead tracks the paper's r* worked examples
-  (e.g., WiFi Realtime: predicted 17.8%, measured 19.6% incl. retx).
-- Known refinements exposed: (1) our MEDIAN latency is ~2× the (idle)
-  baseline's because Copa-lite tolerates a standing queue at high
-  utilization — the latency hint should also tighten the CC delay target
-  (paper §12.4 d_copa mapping), not just raise r; (2) at satellite,
-  Realtime's overhead past ~43% HURTS the tail (diminishing returns,
-  §14.21) — the solver should detect saturation instead of monotonically
-  increasing r with hint tightness.
+Reading:
+- **Bulk now runs at volume parity**: overhead ~= the channel's own loss
+  rate (3.4% at eps=2.5%, 6.5% at 4.8%, 12.6% at 9.1%) — the continuous
+  r* glides to ~0 steady-state FEC and the completion-tail burst (14.25)
+  buys back the last RTTs. Bulk completion BEATS SimQuic on 3 of 4 cells
+  (see below).
+- **Realtime pays for the tail, as designed**: p99 = 0.17-0.52x of SimRetx
+  (0.38-0.47x of SimQuic) at the paper-predicted overhead; the saturation
+  cap (14.21) removed the C4 reversal — Realtime == Auto there instead of
+  worse.
+- Hints now separate cleanly: Bulk = min volume + deep queue, Realtime =
+  min tail + near-empty queue, Auto between.
+
+## Improvement ablations (each flag isolated, same seeds)
+
+| Flag | Target metric | Off | On |
+|------|---------------|----:|---:|
+| P2 estimated_floor | C2 Auto p50 | 17.7ms | 13.0ms |
+| P1 hint_delay_target | C2 Realtime p50 | (post-P2) 12.8ms | 12.8ms (no-regression; Bulk trades p50 18.8ms for best completion) |
+| P4a bulk_arq_delta | C2 Bulk overhead | 11.0% | 3.3% (completion also improved) |
+| P4b tail_fec | C2/C4 Bulk completion | — | -7.7ms / -10.5ms |
+| P5 saturation_cap | C4 Realtime p99 | 378.7ms | 332.3ms (reversal vs Auto gone; C2 bit-identical, cap non-binding) |
+
+Notable: most of the median-latency win came from P2 (the ground-truth
+floor hid the jitter bound); P1's hint mapping is retained for semantics.
+P4's branch also found and fixed a second ReorderBuffer stranding bug
+(late fills below next_deliver_seq).
 
 ## SimQuic (L0.5 adversary)
 
