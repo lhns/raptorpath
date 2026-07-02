@@ -187,96 +187,47 @@ impl FecRateController {
     ///
     /// `window_size`: current encoder window or block size.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator, window_size: usize) -> f64 {
-        let p = estimator.predictive_loss_upper(0.95);
-        if p < 1e-10 {
-            return 0.0;
-        }
-
-        // --- Codec overhead weighted by P(decoder invoked) ---
-        // For systematic codecs, the decoder is only invoked when ≥1 source
-        // symbol in the window is lost. No point paying full codec overhead
-        // when the decoder runs only a fraction of the time.
-        let effective_codec_overhead = if self.rq_overhead > 0.0 && window_size > 0 {
-            let p_decoder_invoked = 1.0 - (1.0 - p).powi(window_size as i32);
-            self.rq_overhead * p_decoder_invoked
-        } else {
-            0.0
-        };
-
-        // --- Random loss term: r* from raptorpath-math (shared with wasm) ---
-        // Uses compute_r_star_with_z for the core formula:
-        //   r* = ε/(1-ε) + z × √(ε × σ²_burst / (W × (1-ε)))
+        // The formula itself lives in raptorpath-math::controller_rate — a
+        // SINGLE shared implementation used by both this production
+        // controller and the visualizer (raptorpath-wasm), so the two
+        // cannot drift. This method only extracts the estimator state.
         let ge = estimator.ge_estimator();
-        let sigma2 = if ge.is_valid() {
-            raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+        let (sigma2, mean_burst) = if ge.is_valid() {
+            (
+                raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg()),
+                ge.mean_burst_length(),
+            )
         } else {
-            1.0
+            (1.0, 1.0)
         };
-        // Continuous tail margin (paper Section 8.4): the quantile is taken
-        // at 1 - δ/ε, so the margin shrinks continuously as the channel
-        // improves relative to the hint-adjusted target, and the core rate
-        // decreases to 0 (max(0,·) floor inside compute_r_star_with_z) when
-        // pure ARQ already meets the tail target. No cutoff branch anywhere.
-        //
-        // P4a (paper 5.3/12.5): Bulk's effective tail target is "late is
-        // fine" — δ_eff = min(0.1, ε̂). With δ_eff ≥ p the formula yields
-        // r ≈ 0: pure ARQ steady state, volume parity with retransmission
-        // transports. Mid-transfer recovery overlaps ongoing sends, so
-        // lateness costs a bulk transfer nothing; the completion-critical
-        // final window is covered separately by tail FEC (paper 14.25).
-        let delta_eff = if self.hint == ProtocolHint::Bulk && self.bulk_pure_arq {
-            (0.1f64).min(p)
-        } else {
-            self.target_tail_loss
-        };
-        let z_delta = raptorpath_math::z_for_tail_target(delta_eff, p);
-        let core_rate =
-            raptorpath_math::compute_r_star_with_z(p, sigma2, window_size as f64, z_delta);
-        // Codec overhead only applies when repairs are actually flowing
-        // (no repairs → the decoder never runs → no overhead to pay).
-        let random_rate = if core_rate > 0.0 {
-            core_rate + effective_codec_overhead
+        let tput = estimator.throughput();
+        let rtt_secs = estimator.rtt().as_secs_f64();
+        // Burst B/T term requires valid GE data AND a throughput estimate.
+        let t_symbols = if ge.is_valid() && tput > 0.0 {
+            (rtt_secs * tput / self.symbol_size as f64).max(1.0)
         } else {
             0.0
         };
-
-        // --- Burst loss term: delay-constrained capacity B/T ---
-        // Scaled by the required FEC fraction (1 - δ/p)⁺ — the fraction of
-        // losses that must be recovered proactively to meet the tail target.
-        // Decreases continuously to 0 as the target loosens relative to the
-        // channel, consistent with the r* margin above.
-        let ge = estimator.ge_estimator();
-        let required_fec_fraction = (1.0 - delta_eff / p).clamp(0.0, 1.0);
-        let burst_rate = if ge.is_valid() && estimator.throughput() > 0.0 {
-            let burst_length = ge.mean_burst_length().max(1.0);
-            let rtt_secs = estimator.rtt().as_secs_f64();
-            let t_symbols = (rtt_secs * estimator.throughput() / self.symbol_size as f64).max(1.0);
-            (burst_length / t_symbols) * required_fec_fraction
+        // Saturation cap requires a throughput estimate for t_sym.
+        let t_sym = if tput > 0.0 {
+            self.symbol_size as f64 / tput
         } else {
             0.0
         };
-
-        // --- Optimal rate: max of random and burst ---
-        let mut rate = random_rate.max(burst_rate);
-
-        // --- P5: saturation cap (paper Section 14.21) ---
-        // The p99(r) model has an interior minimum r_sat: past it, extra
-        // repairs dilute the wire share of source symbols (stretching the
-        // recovery window traversal) faster than the shrinking FEC-miss
-        // cost pays back. Saturation is a channel property, so the cap is
-        // hint-independent: the controller emits min(r_hint, r_sat).
-        // Requires a throughput estimate for t_sym; skipped without one.
-        if self.saturation_cap_enabled && estimator.throughput() > 0.0 {
-            let r_sat = raptorpath_math::r_saturation(
-                p,
-                sigma2,
-                window_size as f64,
-                estimator.rtt().as_secs_f64(),
-                self.symbol_size as f64 / estimator.throughput().max(1.0),
-            );
-            rate = rate.min(r_sat);
-        }
-        rate.clamp(0.0, self.max_overhead)
+        raptorpath_math::controller_rate(&raptorpath_math::RateInputs {
+            p_upper: estimator.predictive_loss_upper(0.95),
+            sigma2,
+            mean_burst,
+            window: window_size as f64,
+            t_symbols,
+            srtt: rtt_secs,
+            t_sym,
+            codec_overhead: self.rq_overhead,
+            tail_target: self.target_tail_loss,
+            bulk_late_is_fine: self.hint == ProtocolHint::Bulk && self.bulk_pure_arq,
+            saturation_cap: self.saturation_cap_enabled,
+            max_overhead: self.max_overhead,
+        })
     }
 
     /// Compute repair rate with spare capacity constraint.

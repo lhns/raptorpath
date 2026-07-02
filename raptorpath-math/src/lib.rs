@@ -119,6 +119,97 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
     (base + margin).max(0.0)
 }
 
+/// Inputs to the shared production rate controller (see `controller_rate`).
+/// All values are estimator-known; unknowns use their documented sentinels.
+#[derive(Debug, Clone, Copy)]
+pub struct RateInputs {
+    /// Conservative loss estimate (BOCD posterior upper quantile at 95%).
+    pub p_upper: f64,
+    /// Burst variance factor sigma2_burst (1.0 when no GE data).
+    pub sigma2: f64,
+    /// GE mean burst length (1.0 when unknown).
+    pub mean_burst: f64,
+    /// Encoder window W.
+    pub window: f64,
+    /// Symbols per RTT = rtt x throughput / symbol_size (0.0 = unknown;
+    /// disables the burst B/T term).
+    pub t_symbols: f64,
+    /// Smoothed RTT in seconds (used by the saturation model).
+    pub srtt: f64,
+    /// Symbol serialization time = symbol_size / throughput in seconds
+    /// (0.0 = unknown; disables the saturation cap).
+    pub t_sym: f64,
+    /// Raw codec decode overhead (weighted by P(decoder invoked) inside).
+    pub codec_overhead: f64,
+    /// Hint-adjusted tail-latency target delta.
+    pub tail_target: f64,
+    /// Bulk "late is fine" (P4a): the effective target becomes
+    /// min(0.1, p_upper) so the continuous r* glides to ~0 steady-state.
+    pub bulk_late_is_fine: bool,
+    /// Cap the rate at the p99(r) saturation point (paper 14.21).
+    pub saturation_cap: bool,
+    /// Hard overhead ceiling.
+    pub max_overhead: f64,
+}
+
+/// The production FEC rate formula (paper Sections 8.4, 9.2, 14.21; ADR-0050
+/// architecture with the continuous z_{delta/eps} margin). This is the SINGLE
+/// implementation shared by the production controller and the visualizer --
+/// they cannot drift.
+///
+///   delta_eff = min(0.1, p)                      if bulk_late_is_fine
+///             = tail_target                      otherwise
+///   z         = normal_quantile(1 - delta_eff/p)
+///   random    = max(0, p/(1-p) + z*sqrt(p*sigma2/(W(1-p)))) [+ codec_eff]
+///   burst     = (B / t_symbols) x (1 - delta_eff/p)+
+///   rate      = min( max(random, burst), r_sat if enabled, max_overhead )
+pub fn controller_rate(inp: &RateInputs) -> f64 {
+    let p = inp.p_upper;
+    if p < 1e-10 {
+        return 0.0;
+    }
+
+    let delta_eff = if inp.bulk_late_is_fine {
+        (0.1f64).min(p)
+    } else {
+        inp.tail_target
+    };
+
+    // Codec overhead weighted by P(decoder invoked) for systematic codecs.
+    let effective_codec_overhead = if inp.codec_overhead > 0.0 && inp.window > 0.0 {
+        let p_decoder_invoked = 1.0 - (1.0 - p).powi(inp.window as i32);
+        inp.codec_overhead * p_decoder_invoked
+    } else {
+        0.0
+    };
+
+    // Continuous tail margin (paper Section 8.4).
+    let z = z_for_tail_target(delta_eff, p);
+    let core = compute_r_star_with_z(p, inp.sigma2, inp.window, z);
+    let random_rate = if core > 0.0 {
+        core + effective_codec_overhead
+    } else {
+        0.0
+    };
+
+    // Burst term B/T, scaled by the required FEC fraction (continuous).
+    let required_fec_fraction = (1.0 - delta_eff / p).clamp(0.0, 1.0);
+    let burst_rate = if inp.t_symbols > 0.0 {
+        (inp.mean_burst.max(1.0) / inp.t_symbols) * required_fec_fraction
+    } else {
+        0.0
+    };
+
+    let mut rate = random_rate.max(burst_rate);
+
+    // Saturation cap (paper Section 14.21): past r_sat more FEC hurts p99.
+    if inp.saturation_cap && inp.t_sym > 0.0 && inp.srtt > 0.0 {
+        rate = rate.min(r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym));
+    }
+
+    rate.clamp(0.0, inp.max_overhead)
+}
+
 /// Continuous z for the r* margin: normal_quantile(1 - delta/epsilon).
 ///
 /// Returns a large negative value when delta >= epsilon (the tail target is
