@@ -144,6 +144,13 @@ pub struct Simulation {
     hint_bulk: bool,
     tail_target: f64,
     fixed_r: Option<f64>,
+    /// Reliability target (rho). Below 1.0, losses older than T_cut are
+    /// given up (paper 6.1 age eviction) — the third triangle corner.
+    rho: f64,
+    given_up: u32,
+    /// Seqs the receiver has pruned (paper 6.2): late data for them is
+    /// discarded, not delivered.
+    given_up_seqs: std::collections::BTreeSet<u64>,
 
     rtt_ticks: u32,
     srtt_secs: f64,
@@ -299,7 +306,10 @@ impl Simulation {
                 repair.repair_index, &repair.coded_data,
             );
             self.mark_recovered(&recovered);
-            self.cum_decoded += recovered.len() as u32;
+            self.cum_decoded += recovered
+                .iter()
+                .filter(|q| !self.given_up_seqs.contains(q))
+                .count() as u32;
         }
         !lost
     }
@@ -318,9 +328,15 @@ impl Simulation {
 
 #[wasm_bindgen]
 impl Simulation {
-    /// hint: "bulk" | "auto" | "realtime" | "fixed" (uses fixed_r).
+    /// hint: "bulk" | "auto" | "realtime" | "fixed" (uses fixed_r as r) |
+    /// "custom" (uses custom_delta + custom_rho — the full triangle).
+    /// rho < 1.0 enables T_cut age eviction (losses older than T_cut are
+    /// given up; reliability becomes the emergent third variable).
     #[wasm_bindgen(constructor)]
-    pub fn new(eps: f64, q: f64, rtt_ms: u32, w: u32, hint: String, fixed_r: Option<f64>) -> Self {
+    pub fn new(
+        eps: f64, q: f64, rtt_ms: u32, w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+    ) -> Self {
         let p = if eps < 1.0 { eps * q / (1.0 - eps) } else { q };
         let sigma2_true = math::burst_variance_factor(p, q);
 
@@ -328,10 +344,15 @@ impl Simulation {
         let (tail_target, hint_bulk) = match hint.as_str() {
             "bulk" => ((BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1), true),
             "realtime" => ((BASE_TAIL_TARGET * 0.01).clamp(1e-9, 0.1), false),
-            "fixed" => (BASE_TAIL_TARGET, false),
-            _ => (BASE_TAIL_TARGET, false), // auto
+            "custom" => (custom_delta.unwrap_or(BASE_TAIL_TARGET).clamp(1e-9, 0.1), false),
+            _ => (BASE_TAIL_TARGET, false), // auto / fixed
         };
         let fixed_r = if hint == "fixed" { Some(fixed_r.unwrap_or(0.1)) } else { None };
+        let rho = if hint == "custom" {
+            custom_rho.unwrap_or(1.0).clamp(0.9, 1.0)
+        } else {
+            1.0
+        };
 
         let capacity = 4u32;
         let num_source = 2000u32;
@@ -343,6 +364,9 @@ impl Simulation {
         Self {
             eps, q, sigma2_true,
             hint_bulk, tail_target, fixed_r,
+            rho,
+            given_up: 0,
+            given_up_seqs: std::collections::BTreeSet::new(),
             rtt_ticks: rtt_ms.max(2),
             srtt_secs: rtt_ms as f64 / 1000.0,
             rttvar_secs: rtt_ms as f64 / 8000.0,
@@ -413,67 +437,72 @@ impl Simulation {
         self.rate = self.controller_rate_now();
 
         // --- Wire slots ---
+        // Per-slot priority (paper C.1 + 5.4): (1) a P_lost-confirmed
+        // retransmit — ARQ is driven by loss confidence, INDEPENDENT of the
+        // FEC budget (Bulk's r ~ 0 must not delay recovery to end of
+        // stream); (2) a repair when the taper debt says one is due;
+        // (3) new source. Retransmits scan ALL outstanding candidates so a
+        // single symbol waiting out its retry timer cannot head-of-line
+        // stall the drain.
         for _ in 0..self.capacity {
-            // Correction preemption (paper C.1): corrections go out BEFORE
-            // new source when the debt says one is due (or after EOS while
-            // losses remain outstanding).
-            let outstanding = self.symbols.iter().any(|s| s.lost && !s.recovered);
-            let correction_due = self.debt >= 1.0 || (self.source_done && outstanding);
-
-            if correction_due && self.encoder.window_size() > 0 {
-                if self.debt >= 1.0 {
-                    self.debt -= 1.0;
+            // (1) P_lost-gated retransmit across all candidates.
+            let mut did_retx = false;
+            let mut cand: Option<usize> = None;
+            for (i, sym) in self.symbols.iter().enumerate() {
+                if sym.lost
+                    && !sym.recovered
+                    && (self.tick as i64 - sym.last_retx_tick) >= self.rtt_ticks as i64
+                {
+                    cand = Some(i);
+                    break;
                 }
-
-                // Per-slot decision (paper 5.4): retransmit with probability
-                // P_lost(age of the oldest un-ACKed symbol), else repair.
-                let mut cand: Option<usize> = None;
-                for (i, sym) in self.symbols.iter().enumerate() {
-                    if sym.lost && !sym.recovered {
-                        cand = Some(i);
-                        break;
-                    }
-                }
-                let mut did_retx = false;
-                if let Some(i) = cand {
-                    let age_ticks = self.tick.saturating_sub(self.symbols[i].tick);
-                    let pl = math::p_lost(
-                        age_ticks as f64 * TICK_SECS,
-                        self.estimator.loss_rate().clamp(1e-4, 0.99),
-                        self.srtt_secs,
-                        self.rttvar_secs,
-                    );
-                    let retx_ok = (self.tick as i64 - self.symbols[i].last_retx_tick)
-                        >= self.rtt_ticks as i64;
-                    if retx_ok && self.rng() < pl {
-                        // Retransmit the exact source symbol (immediately
-                        // decodable at the receiver).
-                        let seq = self.symbols[i].seq;
-                        self.symbols[i].last_retx_tick = self.tick as i64;
-                        let lost = self.wire_lost();
-                        self.total_arq += 1;
-                        arq_n += 1;
-                        self.cum_sent += 1;
-                        self.feedback_queue.push_back((self.tick, !lost));
-                        if lost {
-                            lost_n += 1;
-                        } else {
-                            self.cum_arrived += 1;
-                            let data = self.source_store[seq as usize].clone();
-                            let rec = self.decoder.feed_source(seq, &data);
-                            self.cum_decoded += rec.len() as u32;
-                            self.symbols[i].recovered = true;
-                            self.lost_pending = self.lost_pending.saturating_sub(1);
-                        }
-                        did_retx = true;
-                    }
-                }
-                if !did_retx {
-                    let ok = self.send_repair();
-                    fec_n += 1;
-                    if !ok {
+            }
+            if let Some(i) = cand {
+                let age_ticks = self.tick.saturating_sub(self.symbols[i].tick);
+                let pl = math::p_lost(
+                    age_ticks as f64 * TICK_SECS,
+                    self.estimator.loss_rate().clamp(1e-4, 0.99),
+                    self.srtt_secs,
+                    self.rttvar_secs,
+                );
+                if self.rng() < pl {
+                    let seq = self.symbols[i].seq;
+                    self.symbols[i].last_retx_tick = self.tick as i64;
+                    let lost = self.wire_lost();
+                    self.total_arq += 1;
+                    arq_n += 1;
+                    self.cum_sent += 1;
+                    self.feedback_queue.push_back((self.tick, !lost));
+                    if lost {
                         lost_n += 1;
+                    } else {
+                        self.cum_arrived += 1;
+                        let data = self.source_store[seq as usize].clone();
+                        let rec = self.decoder.feed_source(seq, &data);
+                        // Cascade outputs may resolve OTHER lost symbols;
+                        // pruned (given-up) seqs are discarded, not counted.
+                        self.mark_recovered(&rec);
+                        self.cum_decoded += rec
+                            .iter()
+                            .filter(|q| !self.given_up_seqs.contains(q))
+                            .count() as u32;
+                        self.symbols[i].recovered = true;
+                        self.lost_pending = self.lost_pending.saturating_sub(1);
                     }
+                    did_retx = true;
+                }
+            }
+            if did_retx {
+                continue;
+            }
+
+            // (2) Repair when the taper debt says one is due.
+            if self.debt >= 1.0 && self.encoder.window_size() > 0 {
+                self.debt -= 1.0;
+                let ok = self.send_repair();
+                fec_n += 1;
+                if !ok {
+                    lost_n += 1;
                 }
             } else if !self.source_done {
                 // --- Source slot ---
@@ -508,7 +537,12 @@ impl Simulation {
                 } else {
                     self.cum_arrived += 1;
                     let rec = self.decoder.feed_source(seq, &data);
-                    self.cum_decoded += rec.len() as u32;
+                    // Cascade outputs may resolve OTHER lost symbols.
+                    self.mark_recovered(&rec);
+                    self.cum_decoded += rec
+                        .iter()
+                        .filter(|q| !self.given_up_seqs.contains(q))
+                        .count() as u32;
                 }
                 self.next_seq += 1;
                 if self.next_seq >= self.num_source {
@@ -531,6 +565,29 @@ impl Simulation {
             }
         }
 
+        // T_cut age eviction (paper 6.1): for rho < 1.0, losses older than
+        // T_cut are given up — reliability bends instead of latency.
+        if self.rho < 1.0 {
+            let p_up = self.estimator.loss_rate().clamp(1e-4, 0.99);
+            let sig = self.get_sigma2_est();
+            let t_cut = math::find_t_cut(
+                p_up, self.q, self.rate.max(1e-3),
+                self.encoder.window_size().max(1) as f64, sig, self.rho,
+            );
+            if t_cut.is_finite() {
+                let cut_ticks = (t_cut as u32).max(self.rtt_ticks * 2);
+                let now = self.tick;
+                for sym in &mut self.symbols {
+                    if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) > cut_ticks {
+                        sym.recovered = true; // given up
+                        self.given_up += 1;
+                        self.given_up_seqs.insert(sym.seq);
+                        self.lost_pending = self.lost_pending.saturating_sub(1);
+                    }
+                }
+            }
+        }
+
         // ACK arrived-but-unmarked symbols after one RTT (SACK view).
         let rtt = self.rtt_ticks;
         let tick = self.tick;
@@ -540,8 +597,9 @@ impl Simulation {
             }
         }
 
-        // Finish conditions (rho = 100%: retransmit until everything is in).
-        if self.source_done && self.cum_decoded >= self.num_source {
+        // Finish conditions (rho = 100%: retransmit until everything is in;
+        // rho < 100%: given-up symbols count as resolved, not delivered).
+        if self.source_done && self.cum_decoded + self.given_up >= self.num_source {
             self.finished = true;
         }
         if self.source_done
@@ -630,6 +688,18 @@ impl Simulation {
             TICK_SECS / self.capacity as f64,
         )
     }
+    /// Symbols permanently given up (rho < 1.0 age eviction).
+    pub fn get_given_up(&self) -> u32 { self.given_up }
+    /// Achieved reliability so far: delivered / sent source symbols.
+    pub fn get_reliability(&self) -> f64 {
+        if self.total_src > 0 {
+            self.cum_decoded as f64 / self.total_src as f64
+        } else {
+            1.0
+        }
+    }
+    /// Configured reliability target rho.
+    pub fn get_rho(&self) -> f64 { self.rho }
     pub fn get_overhead(&self) -> f64 {
         if self.steady_src > 0 {
             (self.steady_fec + self.steady_arq) as f64 / self.steady_src as f64 * 100.0
@@ -660,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_simulation_runs_to_completion_auto() {
-        let mut sim = Simulation::new(0.05, 0.5, 50, 64, "auto".into(), None);
+        let mut sim = Simulation::new(0.05, 0.5, 50, 64, "auto".into(), None, None, None);
         while !sim.is_finished() && sim.get_tick() < 20_000 {
             sim.step();
         }
@@ -673,8 +743,8 @@ mod tests {
 
     #[test]
     fn test_bulk_is_mostly_arq() {
-        let mut sim_bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None);
-        let mut sim_auto = Simulation::new(0.05, 0.5, 50, 64, "auto".into(), None);
+        let mut sim_bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        let mut sim_auto = Simulation::new(0.05, 0.5, 50, 64, "auto".into(), None, None, None);
         while !sim_bulk.is_finished() && sim_bulk.get_tick() < 20_000 { sim_bulk.step(); }
         while !sim_auto.is_finished() && sim_auto.get_tick() < 20_000 { sim_auto.step(); }
         assert!(sim_bulk.is_finished() && sim_auto.is_finished());
@@ -688,9 +758,44 @@ mod tests {
     }
 
     #[test]
+    fn test_bulk_completes_faster_than_realtime() {
+        // Bulk sends ~no FEC (wire budget goes to source) and recovers via
+        // P_lost-driven ARQ in parallel with the stream + tail FEC — its
+        // completion must BEAT Realtime's (which pays r ~ 20%+ of the wire
+        // for corrections). Mirrors the L0 gate result (0.163s vs 0.187s).
+        let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        let mut rt = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None, None, None);
+        while !bulk.is_finished() && bulk.get_tick() < 20_000 { bulk.step(); }
+        while !rt.is_finished() && rt.get_tick() < 20_000 { rt.step(); }
+        assert!(bulk.is_finished() && rt.is_finished());
+        assert_eq!(bulk.get_cum_decoded(), bulk.get_num_source());
+        assert!(
+            bulk.get_tick() < rt.get_tick(),
+            "bulk ({} ticks) must complete before realtime ({} ticks)",
+            bulk.get_tick(), rt.get_tick()
+        );
+    }
+
+    #[test]
+    fn test_custom_rho_gives_up_late_losses() {
+        // Custom triangle mode: rho < 1 -> T_cut eviction; some symbols are
+        // given up instead of retransmitted forever.
+        let mut sim = Simulation::new(
+            0.10, 0.3, 80, 64, "custom".into(), None, Some(0.05), Some(0.95),
+        );
+        while !sim.is_finished() && sim.get_tick() < 20_000 { sim.step(); }
+        assert!(sim.is_finished());
+        assert!(sim.get_reliability() >= 0.90, "reliability {}", sim.get_reliability());
+        assert_eq!(
+            sim.get_cum_decoded() + sim.get_given_up(),
+            sim.get_num_source()
+        );
+    }
+
+    #[test]
     fn test_realtime_more_fec_than_bulk() {
-        let mut rt = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None);
-        let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None);
+        let mut rt = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None, None, None);
+        let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
         while !rt.is_finished() && rt.get_tick() < 20_000 { rt.step(); }
         while !bulk.is_finished() && bulk.get_tick() < 20_000 { bulk.step(); }
         assert!(rt.get_total_fec() > bulk.get_total_fec(),
@@ -700,7 +805,7 @@ mod tests {
 
     #[test]
     fn test_fixed_r_mode() {
-        let mut sim = Simulation::new(0.10, 0.5, 20, 64, "fixed".into(), Some(0.2));
+        let mut sim = Simulation::new(0.10, 0.5, 20, 64, "fixed".into(), Some(0.2), None, None);
         while !sim.is_finished() && sim.get_tick() < 20_000 { sim.step(); }
         assert!(sim.is_finished());
         let overhead = sim.get_overhead();
@@ -710,7 +815,7 @@ mod tests {
 
     #[test]
     fn test_estimator_converges_in_sim() {
-        let mut sim = Simulation::new(0.10, 0.5, 20, 64, "auto".into(), None);
+        let mut sim = Simulation::new(0.10, 0.5, 20, 64, "auto".into(), None, None, None);
         for _ in 0..1500 {
             if sim.is_finished() { break; }
             sim.step();
