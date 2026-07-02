@@ -2041,6 +2041,16 @@ To verify the model:
 3. The gap between r* and measured overhead = estimation tax + implementation overhead
 4. Track this gap across benchmark runs — it should decrease as we improve the implementation
 
+**Canonical evaluation suite.** The scenario matrix, baseline fidelity
+ladder (in-process model → real TCP/QUIC/MPTCP stacks over netem → real
+links), and the quantitative win conditions that make "surpasses TCP/MPTCP"
+a falsifiable claim are defined in ADR-0051 (canonical evaluation
+scenarios). The channel rows there are exactly the Section 2.4
+parameterizations, so the model, the simulator, and the benchmarks share
+one vocabulary. The suite deliberately includes cells where naive FEC
+loses (clean links, congestion-dominant loss with a competing TCP flow,
+mid-transfer path outage) — ties are the win condition there.
+
 ---
 
 ## 12. Congestion Control Integration

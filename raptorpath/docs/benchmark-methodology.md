@@ -181,7 +181,9 @@ Metrics per cell (10, stable — never changes):
 | in_order_rate       | Fraction of consecutive deliveries in ascending order (%)  |
 | tail_drops          | Packets dropped by bottleneck link queue                   |
 
-All cells use **8% FEC budget** (MATRIX_FEC_OVERHEAD = 0.08).
+All cells use **12% FEC budget** (`MATRIX_FEC_OVERHEAD = 0.12` in
+`tests/bench_suite.rs`). (Earlier revisions of this doc said 8% — the code
+has since changed; the code is authoritative.)
 
 Key questions answered by the matrix:
 - "Which backend should I use for this scenario?"
@@ -334,8 +336,9 @@ under more realistic conditions:
   approach is conservative by design (95th percentile upper bound). Real
   overhead may differ with different estimator tuning.
 - **Feature ablation deltas**: the relative impact of NACK, reorder, and PI
-  depends on the loss rate and FEC budget. The 8% budget was chosen to
-  maximize differentiation; at 20% budget, all features show near-zero deltas.
+  depends on the loss rate and FEC budget. A moderate budget (the current
+  12%) was chosen to maximize differentiation; at 20% budget, all features
+  show near-zero deltas.
 - **Congestion impact**: tail-drop queuing increases effective loss, but the
   lack of real congestion control means send rates are unrealistically high,
   which inflates queue occupancy.
