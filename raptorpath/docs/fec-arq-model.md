@@ -90,6 +90,7 @@ ACK absence.
    - [8.4 The Corrected Optimal Correction Rate](#84-the-corrected-optimal-correction-rate)
    - [8.5 Worked Examples](#85-worked-examples)
    - [8.6 Three-Variable Optimization](#86-three-variable-optimization)
+   - [8.7 Exact P_fec via Transfer-Matrix DP](#87-exact-p_fec-via-transfer-matrix-dp)
 9. [Codec Overhead Integration](#9-codec-overhead-integration)
    - [9.1 Decoder Invocation Probability](#91-decoder-invocation-probability)
    - [9.2 Effective Codec Overhead](#92-effective-codec-overhead)
@@ -1612,8 +1613,8 @@ widen Var(K - C) beyond what the formula assumes, making P_fec optimistic
 in exactly the bursty regime σ²_burst is meant to protect. Monte Carlo
 validation shows the normal approximation diverging by up to ~12% on
 high-loss/long-burst channels (LTE-like). For implementation-grade
-precision, use the exact O(W²) transfer-matrix computation (Appendix D,
-item 4), which captures loss/repair correlation exactly.
+precision, use the exact O(W²) transfer-matrix computation (Section 8.7),
+which captures loss/repair correlation exactly.
 
 ### 8.4 The Corrected Optimal Correction Rate
 
@@ -1633,6 +1634,9 @@ item 4), which captures loss/repair correlation exactly.
 - Tail margin scales as 1/√W — larger windows need proportionally less margin
 - z_δ controls the margin: tighter δ → larger z_δ → more margin
 - σ²_burst amplifies the margin for bursty channels (large for small p+q)
+- On strongly bursty channels this closed form UNDER-provisions the tail
+  (Gaussian tail + ignored loss/repair correlation) — see Section 8.7 for
+  the exact computation and the size of the gap
 
 **Note:** This formula uses the raw loss rate e. For the canonical production
 formula including codec overhead, replace e with e_hat = e + e_codec x
@@ -1865,6 +1869,77 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    δ ≈ 15% (15% of delivered symbols arrive late)
    Acceptable for periodic sensor readings.
 ```
+
+### 8.7 Exact P_fec via Transfer-Matrix DP
+
+Both gaps in the normal model — burst-inflated repair variance and the
+negative K–C correlation (Section 8.3) — vanish if we compute the joint
+distribution of losses and surviving repairs EXACTLY, by walking the GE
+chain across the interleaved wire sequence.
+
+**Setup.** A window of W source symbols with R = round(r × W) repairs
+interleaved evenly: N = W + R wire slots with fixed types T_i ∈ {source,
+repair} (slot i is a repair iff ⌊(i+1)R/N⌋ > ⌊iR/N⌋). The channel is the
+two-state GE chain started from its stationary distribution; a symbol is
+lost iff the chain is Bad at its slot. Because ONE chain walks across
+both slot types, burst-correlated source losses, burst-correlated repair
+erasures, and the negative correlation between them are all captured.
+
+**Recursion.** Track the running deficit D = (#source losses) −
+(#surviving repairs). FEC succeeds for the window iff D ≤ 0 at the end —
+the same criterion as Section 8.2, applied to the exact joint
+distribution. With f_i(x, d) = P(chain in state x, deficit d after slot i):
+
+```
+  f_0(G, 0) = π_G = q/(p+q),   f_0(B, 0) = π_B = p/(p+q)
+
+  step to slot i+1 of type T:
+    mass arriving in state x':  Σ_x f_i(x, d) × P(x → x')
+    d' = d + 1   if T = source and x' = B     (source lost)
+    d' = d − 1   if T = repair and x' = G     (repair survives)
+    d' = d       otherwise
+
+  P_fec = 1 − Σ_{d > 0} Σ_x f_N(x, d)
+```
+
+State space 2 × (W+R+1) over N slots → O(W²) work (≈ 6,000 operations at
+W = 50, r = 0.1) — trivially cheap. Validation: on a memoryless channel
+(p + q = 1) the DP reproduces the independent-Binomial reference to
+machine precision, and against Monte Carlo it agrees to sampling error
+(< 0.002 at 20k trials), where the normal approximation errs by ≈ 1–2%:
+
+```
+  Scenario (W=50)          r      exact    normal(8.2)  |error|
+  WiFi  (p=.013, q=.5)    0.10   0.9522    0.9695       0.017
+  LTE   (p=.02,  q=.4)    0.12   0.8868    0.8694       0.017
+  Sat   (p=.03,  q=.3)    0.25   0.9180    0.9272       0.009
+```
+
+(R = round(r × W), half rounding away from zero — e.g. Sat: R = 13.)
+
+**Exact r*.** P_fail(r) = 1 − P_fec(r) decreases in r (up to the 1/W
+rounding of R), so binary search yields the exact minimum rate for
+P_fail ≤ δ. The tail is where the normal approximation is weakest, and
+the effect is material:
+
+```
+  δ = 1e-2, W = 50       r*_exact    r*_normal (8.4)
+  WiFi                     0.170       0.116
+  LTE                      0.270       0.193
+  Satellite                0.450       0.334
+```
+
+The closed-form r* UNDER-provisions by ~30–50% of itself on bursty
+channels: the K–C correlation widens Var(K − C) beyond the model, and
+the true tail of K − C is heavier than Gaussian. The closed form remains
+valuable for insight and cheap incremental updates; rate selection on
+strongly bursty channels should use the exact computation (implemented
+as `p_fec_exact` / `compute_r_star_exact` in raptorpath-math).
+
+**Caveats.** Codec overhead is not modeled (apply ε_codec_eff from
+Section 9.2 on top). The success criterion inherits Section 8.2's
+per-window block view of the sliding-window code. R is rounded to an
+integer, so r* is resolved in steps of 1/W.
 
 ---
 
@@ -3157,6 +3232,7 @@ repairs specifically target the deficit, not general protection.
      With codec: replace e with e_hat (see Section 9.2)
      P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))      [probability]
      z_delta = normal_quantile(1-delta)                                [dimensionless]
+     Exact P_fec: transfer-matrix DP over the GE chain (Section 8.7)   [probability]
 
    Codec overhead (Section 9.2):
      e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead     [probability]
@@ -3378,11 +3454,11 @@ probabilities depending on GE state and repair density. This is computable
 (finite-state Markov chain) though not as simple as the closed-form formula.
 
 **Status:** The normal formula is used in the paper for analytical insight.
-For implementation, the exact O(W²) transfer matrix computation (see open
-point #4, resolved) provides the same precision as the debt model. Both
-are finite-state Markov chain computations over the GE channel — the debt
-model tracks decoder state, the transfer matrix tracks loss counts. Either
-gives exact P_fec for implementation use.
+For implementation, the exact O(W²) transfer matrix computation (Section
+8.7, implemented as `p_fec_exact`) provides the same precision as the debt
+model. Both are finite-state Markov chain computations over the GE channel
+— the debt model tracks decoder state, the transfer matrix tracks the
+loss-minus-repair deficit. Either gives exact P_fec for implementation use.
 
 ### C.3 Analytical P_fec Bounds [Vajha2020]
 
@@ -3576,7 +3652,10 @@ Preserved here for future reference if extreme burst scenarios require it.
    computable via transfer matrix dynamic programming in O(W^2) — trivially
    cheap (2500 operations for W=50). The normal formula provides analytical
    insight (clean, closed-form); the exact computation is recommended for
-   implementation and validation.
+   implementation and validation. IMPLEMENTED: Section 8.7 specifies the
+   recursion; `p_fec_exact` / `compute_r_star_exact` in raptorpath-math
+   implement it, verified against Monte Carlo and an independent-Binomial
+   reference.
 
 5. **Optimal retransmit timing (resolved):** Replaced by the P_lost(t) model
    (Section 3.4). No hard timeout — the repair/retransmit mix is determined
