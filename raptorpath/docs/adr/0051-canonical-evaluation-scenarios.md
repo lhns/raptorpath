@@ -72,6 +72,7 @@ seeds (`trial × 137 + 42` convention) and reports mean ± 95% CI.
 | Level | Baseline | Where it runs | What it's for |
 |-------|----------|---------------|---------------|
 | L0 | `ReliableSimChannel` (current) | in-process sim, all platforms | Development signal + regression tracking only. **Never cite as "TCP".** Rename its output label from "Retransmit/QUIC" to "SimRetx". |
+| L0.5 | SimQuic: loss-blind delay-based CC + SACK-timed ARQ, no FEC, in-order stream, single path | in-process sim (gate_suite) | The honest QUIC/BBR-class adversary: removes the AIMD-collapse advantage, isolating what FEC/multipath actually buy. Win conditions: tie on bulk completion, win on p99, win on multipath aggregation. |
 | L1 | Real stacks: Linux TCP CUBIC and BBR, quinn (QUIC), Linux MPTCP v1 | network namespaces + veth + netem/tc (WSL2 or Linux CI) | **Claim-grade.** netem configured to the same GE/RTT/capacity parameters as the sim channels |
 | L2 | Real links (WiFi + LTE modem) | manual field runs | Sanity anchor; anecdotal, not gating |
 
