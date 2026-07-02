@@ -60,30 +60,35 @@ impl ReorderBuffer {
     }
 
     /// Deliver entries held longer than `timeout`, plus any contiguous prefix.
+    ///
+    /// Expiring seq k means giving up on the holes before it — so every
+    /// pending entry up to k is released too, in order. (Advancing
+    /// `next_deliver_seq` past k while younger entries were still pending
+    /// used to STRAND them: a hole filled by FEC/retransmit just after a
+    /// later entry expired would sit for a full extra timeout.)
     pub fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes)> {
         let mut result = Vec::new();
 
-        // Collect expired entries
-        let expired: Vec<u64> = self
+        // The largest expired sequence determines how far we give up.
+        let max_expired = self
             .pending
             .iter()
             .filter(|(_, (_, buffered_at))| now.duration_since(*buffered_at) >= self.timeout)
             .map(|(&seq, _)| seq)
-            .collect();
+            .max();
 
-        if expired.is_empty() {
+        let Some(k) = max_expired else {
             return result;
-        }
+        };
 
-        // Deliver expired entries in order, advancing next_deliver_seq past them
-        for seq in expired {
+        // Release every pending entry up to and including k, in order.
+        let to_deliver: Vec<u64> = self.pending.range(..=k).map(|(&seq, _)| seq).collect();
+        for seq in to_deliver {
             if let Some((data, _)) = self.pending.remove(&seq) {
                 result.push((seq, data));
-                if seq >= self.next_deliver_seq {
-                    self.next_deliver_seq = seq + 1;
-                }
             }
         }
+        self.next_deliver_seq = self.next_deliver_seq.max(k + 1);
 
         // Also drain any newly contiguous entries
         result.extend(self.drain_contiguous());

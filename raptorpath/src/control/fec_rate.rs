@@ -144,8 +144,11 @@ impl FecRateController {
     /// r* formula (Section 8.4) for the rate:
     ///
     ///   p    = BOCD posterior upper quantile at 95% (estimation margin)
-    ///   z_δ  = normal_quantile(1 - target_tail_loss) (channel-tail margin)
-    ///   rate = max(p/(1-p) + z_δ·√(p·σ²_burst/(W·(1-p))) + codec, B/T)
+    ///   z    = normal_quantile(1 - δ/p) — fluid: margin shrinks continuously
+    ///          as the channel improves relative to the hint's tail target δ,
+    ///          and the rate glides to 0 when pure ARQ meets it
+    ///   rate = max( max(0, p/(1-p) + z·√(p·σ²_burst/(W·(1-p)))) + codec,
+    ///               (B/T) × (1 - δ/p)⁺ )
     ///
     /// The two margins cover distinct variance sources: the BOCD quantile
     /// covers uncertainty about the TRUE loss rate (regime changes widen it
@@ -181,20 +184,34 @@ impl FecRateController {
         } else {
             1.0
         };
-        // z_δ from the hint-adjusted tail target (paper Section 8.4).
-        // target_tail_loss is clamped to [1e-9, 0.1], so z_δ ∈ [1.28, 6.0].
-        let z_delta = raptorpath_math::normal_quantile(1.0 - self.target_tail_loss);
-        let random_rate = raptorpath_math::compute_r_star_with_z(
-            p, sigma2, window_size as f64, z_delta,
-        ) + effective_codec_overhead;
+        // Continuous tail margin (paper Section 8.4): the quantile is taken
+        // at 1 - δ/ε, so the margin shrinks continuously as the channel
+        // improves relative to the hint-adjusted target, and the core rate
+        // decreases to 0 (max(0,·) floor inside compute_r_star_with_z) when
+        // pure ARQ already meets the tail target. No cutoff branch anywhere.
+        let z_delta = raptorpath_math::z_for_tail_target(self.target_tail_loss, p);
+        let core_rate =
+            raptorpath_math::compute_r_star_with_z(p, sigma2, window_size as f64, z_delta);
+        // Codec overhead only applies when repairs are actually flowing
+        // (no repairs → the decoder never runs → no overhead to pay).
+        let random_rate = if core_rate > 0.0 {
+            core_rate + effective_codec_overhead
+        } else {
+            0.0
+        };
 
         // --- Burst loss term: delay-constrained capacity B/T ---
+        // Scaled by the required FEC fraction (1 - δ/p)⁺ — the fraction of
+        // losses that must be recovered proactively to meet the tail target.
+        // Decreases continuously to 0 as the target loosens relative to the
+        // channel, consistent with the r* margin above.
         let ge = estimator.ge_estimator();
+        let required_fec_fraction = (1.0 - self.target_tail_loss / p).clamp(0.0, 1.0);
         let burst_rate = if ge.is_valid() && estimator.throughput() > 0.0 {
             let burst_length = ge.mean_burst_length().max(1.0);
             let rtt_secs = estimator.rtt().as_secs_f64();
             let t_symbols = (rtt_secs * estimator.throughput() / self.symbol_size as f64).max(1.0);
-            burst_length / t_symbols
+            (burst_length / t_symbols) * required_fec_fraction
         } else {
             0.0
         };
@@ -426,6 +443,12 @@ pub fn burst_variance_factor(estimator: &LossEstimator) -> f64 {
     }
     let p = ge.p_gb(); // P(Good→Bad)
     let q = ge.p_bg(); // P(Bad→Good)
+    // q = 0 / p = 0 are NO-DATA sentinels (decayed counters below 1 on very
+    // clean channels), not measurements — no data means iid (σ² = 1).
+    // Otherwise σ² ≈ 2/p̂ explodes and over-provisions the cleanest links.
+    if p <= 0.0 || q <= 0.0 {
+        return 1.0;
+    }
     let sum = p + q;
     if sum < 1e-10 {
         return 1.0;
@@ -854,6 +877,29 @@ mod tests {
             (r_rt - r_auto).abs() < 0.001,
             "Realtime(1e-5) should equal Auto(1e-7): rt={r_rt}, auto={r_auto}"
         );
+    }
+
+    #[test]
+    fn test_continuous_rate_no_fec_when_target_met() {
+        // Paper Section 8.4 continuity: the z_{δ/ε} margin lets the rate
+        // decrease to 0 when pure ARQ meets the tail target — no cutoff
+        // branch. Clean link (0.1% loss) under Bulk (δ = 1e-5 × 100 = 1e-3).
+        let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+        let ctrl_auto = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
+        let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+        let mut est = LossEstimator::new();
+        for _ in 0..100 {
+            est.record_batch(1000, 999); // 0.1% loss
+        }
+        let r_bulk = ctrl_bulk.compute_repair_rate(&est, 50);
+        let r_auto = ctrl_auto.compute_repair_rate(&est, 50);
+        let r_rt = ctrl_rt.compute_repair_rate(&est, 50);
+        // Bulk target (1e-3) ≈ channel loss → essentially no FEC
+        assert!(r_bulk < 0.01, "Bulk at 0.1% loss should carry ~no FEC: {r_bulk}");
+        // Tighter hints → continuously more FEC
+        assert!(r_bulk <= r_auto && r_auto <= r_rt,
+            "rate must be monotone in tail tightness: bulk={r_bulk}, auto={r_auto}, rt={r_rt}");
+        assert!(r_rt > 0.0, "Realtime at 0.1% loss should still use FEC: {r_rt}");
     }
 
     #[test]

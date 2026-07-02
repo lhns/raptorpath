@@ -80,6 +80,12 @@ pub fn p_lost(age_secs: f64, epsilon: f64, srtt_secs: f64, rttvar_secs: f64) -> 
 /// Returns 1.0 (iid) when parameters are degenerate.
 /// See paper Section 8.3.
 pub fn burst_variance_factor(p: f64, q: f64) -> f64 {
+    // q = 0 (or p = 0) is the estimator's NO-DATA sentinel (no observed
+    // Bad-state transitions on very clean channels), not a measurement of
+    // infinite bursts — treating it as one makes sigma2 ~ 2/p explode and
+    // over-provisions the cleanest links. No data => iid default.
+    // See paper Section 8.3.
+    if p <= 0.0 || q <= 0.0 { return 1.0; }
     let sum = p + q;
     if sum < 1e-10 { return 1.0; }
     let factor = 1.0 + 2.0 * (1.0 - p - q) / sum;
@@ -95,8 +101,13 @@ pub fn compute_r_star(epsilon: f64, sigma2: f64, window_size: f64) -> f64 {
     compute_r_star_with_z(epsilon, sigma2, window_size, 2.33)
 }
 
-/// Compute r* with a custom z_delta quantile value.
-/// z_delta = normal_quantile(1 - delta) for the target tail loss probability.
+/// Compute r* with a custom z quantile value.
+///
+/// Canonical (continuous) choice: z = normal_quantile(1 - delta/epsilon),
+/// so the margin shrinks continuously as the channel improves relative to
+/// the target and r* decreases to 0 (paper Section 8.4). Negative z (delta
+/// close to epsilon) is allowed; the result is clamped at the physical
+/// floor 0.
 pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delta: f64) -> f64 {
     if epsilon <= 0.0 || epsilon >= 1.0 { return 0.0; }
     let base = epsilon / (1.0 - epsilon);
@@ -105,7 +116,18 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
     } else {
         0.0
     };
-    base + margin
+    (base + margin).max(0.0)
+}
+
+/// Continuous z for the r* margin: normal_quantile(1 - delta/epsilon).
+///
+/// Returns a large negative value when delta >= epsilon (the tail target is
+/// met by pure ARQ; r* evaluates to 0 through the max(0, ..) floor) and a
+/// large positive value when delta << epsilon. See paper Section 8.4.
+pub fn z_for_tail_target(delta: f64, epsilon: f64) -> f64 {
+    if epsilon <= 0.0 { return f64::NEG_INFINITY; }
+    let ratio = (delta / epsilon).clamp(1e-15, 1.0 - 1e-15);
+    normal_quantile(1.0 - ratio)
 }
 
 /// Taper function: time-decaying correction density tau(t) = A * (1-q)^t.

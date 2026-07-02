@@ -61,53 +61,57 @@ fn test_sigma2_burst_table() {
 
 #[test]
 fn test_r_star_worked_examples() {
+    // Paper Section 8.5 (continuous z_{δ/ε} convention): the quantile is
+    // taken at 1 - δ/ε, so the margin responds to the ratio δ/ε and the
+    // rate decreases continuously to 0 when δ ≥ ε.
     let w = 50.0;
-
-    // z_δ values: Bulk=2.33, Auto=3.72, Realtime=4.75
-    let z_bulk = normal_quantile(0.99);
-    let z_auto = normal_quantile(0.9999);
-    let z_rt = normal_quantile(0.999999);
+    let (d_bulk, d_auto, d_rt) = (1e-2, 1e-4, 1e-6);
 
     // DC: ε=0.001, σ²=3.0
+    let e = 0.001;
     let s_dc = burst_variance_factor(0.001, 0.5);
-    let dc_bulk = compute_r_star_with_z(0.001, s_dc, w, z_bulk);
-    let dc_auto = compute_r_star_with_z(0.001, s_dc, w, z_auto);
-    let dc_rt = compute_r_star_with_z(0.001, s_dc, w, z_rt);
-    assert_close(dc_bulk, 0.019, 0.005);  // paper: 1.9%
-    assert_close(dc_auto, 0.030, 0.005);  // paper: 3.0%
-    assert_close(dc_rt, 0.038, 0.005);    // paper: 3.8%
+    let dc_bulk = compute_r_star_with_z(e, s_dc, w, z_for_tail_target(d_bulk, e));
+    let dc_auto = compute_r_star_with_z(e, s_dc, w, z_for_tail_target(d_auto, e));
+    let dc_rt = compute_r_star_with_z(e, s_dc, w, z_for_tail_target(d_rt, e));
+    assert_eq!(dc_bulk, 0.0, "δ ≥ ε → pure ARQ, r* = 0");
+    assert_close(dc_auto, 0.011, 0.002); // paper: 1.1%
+    assert_close(dc_rt, 0.025, 0.002);   // paper: 2.5%
 
     // WiFi: ε=0.025, σ²≈2.9
-    // Paper Section 8.5 (corrected) now matches the formula:
-    // r* = ε/(1-ε) + z√(ε×σ²/(W×(1-ε))) → WiFi Bulk = 2.6% + 9.0% = 11.5%.
-    // We verify against the formula, which equals the paper's values.
+    let e = 0.025;
     let s_wifi = burst_variance_factor(0.013, 0.5);
-    let wifi_bulk = compute_r_star_with_z(0.025, s_wifi, w, z_bulk);
-    let wifi_auto = compute_r_star_with_z(0.025, s_wifi, w, z_auto);
-    let wifi_rt = compute_r_star_with_z(0.025, s_wifi, w, z_rt);
-    // Verify formula: base = 0.025/0.975 = 0.0256
-    // margin(bulk) = 2.33 × √(0.025 × 2.9 / (50 × 0.975)) = 2.33 × 0.0386 = 0.0899
-    // total(bulk) = 0.0256 + 0.0899 = 0.1155
-    let expected_base = 0.025 / 0.975;
-    let expected_margin = z_bulk * (0.025 * s_wifi / (w * 0.975)).sqrt();
-    assert_close(wifi_bulk, expected_base + expected_margin, 0.001);
-    // Monotonicity: rt > auto > bulk
-    assert!(wifi_rt > wifi_auto && wifi_auto > wifi_bulk, "Monotone in z_δ");
+    let wifi_bulk = compute_r_star_with_z(e, s_wifi, w, z_for_tail_target(d_bulk, e));
+    let wifi_auto = compute_r_star_with_z(e, s_wifi, w, z_for_tail_target(d_auto, e));
+    let wifi_rt = compute_r_star_with_z(e, s_wifi, w, z_for_tail_target(d_rt, e));
+    assert_close(wifi_bulk, 0.035, 0.003); // paper: 3.5%
+    assert_close(wifi_auto, 0.128, 0.005); // paper: 12.8%
+    assert_close(wifi_rt, 0.178, 0.005);   // paper: 17.8%
+    assert!(wifi_rt > wifi_auto && wifi_auto > wifi_bulk, "Monotone in tail tightness");
 
     // Satellite: ε=0.09, (p, q) = (0.03, 0.3) from paper Section 2.4.
-    // Consistency: ε = p/(p+q) = 0.03/0.33 ≈ 0.091, and
-    // σ² = 1 + 2(1-p-q)/(p+q) = 1 + 2(0.67)/0.33 ≈ 5.06 ≈ paper's 5.1. ✓
+    // σ² = 1 + 2(1-p-q)/(p+q) = 1 + 2(0.67)/0.33 ≈ 5.06 ≈ paper's 5.1.
+    let e = 0.09;
     let s_sat = burst_variance_factor(0.03, 0.3);
-    let sat_bulk = compute_r_star_with_z(0.09, s_sat, w, z_bulk);
-    let sat_auto = compute_r_star_with_z(0.09, s_sat, w, z_auto);
-    let sat_rt = compute_r_star_with_z(0.09, s_sat, w, z_rt);
-    // Verify formula: base = 0.09/0.91 = 0.0989
-    // margin(bulk) = 2.33 × √(0.09 × 5.06 / (50 × 0.91)) ≈ 0.233
-    // total ≈ 0.332 — matches paper Section 8.5 (corrected): 33.3%.
-    let expected_base = 0.09 / 0.91;
-    let expected_margin = z_bulk * (0.09 * s_sat / (w * 0.91)).sqrt();
-    assert_close(sat_bulk, expected_base + expected_margin, 0.001);
-    assert!(sat_rt > sat_auto && sat_auto > sat_bulk, "Monotone in z_δ");
+    let sat_bulk = compute_r_star_with_z(e, s_sat, w, z_for_tail_target(d_bulk, e));
+    let sat_auto = compute_r_star_with_z(e, s_sat, w, z_for_tail_target(d_auto, e));
+    let sat_rt = compute_r_star_with_z(e, s_sat, w, z_for_tail_target(d_rt, e));
+    assert_close(sat_bulk, 0.222, 0.005); // paper: 22.2%
+    assert_close(sat_auto, 0.406, 0.005); // paper: 40.6%
+    assert_close(sat_rt, 0.525, 0.005);   // paper: 52.5%
+    assert!(sat_rt > sat_auto && sat_auto > sat_bulk, "Monotone in tail tightness");
+
+    // Continuity: r*(δ) decreases smoothly to 0 as δ approaches ε (WiFi)
+    let e = 0.025;
+    let mut prev = f64::INFINITY;
+    let mut reached_zero = false;
+    for k in 1..=24 {
+        let delta = e * k as f64 / 25.0; // δ sweeps toward ε
+        let r = compute_r_star_with_z(e, s_wifi, w, z_for_tail_target(delta, e));
+        assert!(r <= prev + 1e-12, "r*(δ) must be nonincreasing in δ: {r} > {prev}");
+        if r == 0.0 { reached_zero = true; }
+        prev = r;
+    }
+    assert!(reached_zero, "r* must reach 0 before δ = ε (continuous boundary)");
 }
 
 // =========================================================================

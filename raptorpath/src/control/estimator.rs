@@ -94,7 +94,30 @@ impl LossEstimator {
     }
 
     /// Record that `received` out of `sent` symbols arrived in a batch.
+    ///
+    /// The Gilbert-Elliott estimator is fed a LUMPED approximation (`lost`
+    /// Bad symbols followed by `received` Good ones), which overestimates
+    /// burstiness — the conservative direction. Callers that know the true
+    /// per-symbol pattern (SACK gaps) should use `record_counts` +
+    /// `record_symbol` instead for an unbiased burst estimate.
     pub fn record_batch(&mut self, sent: u32, received: u32) {
+        let lost = sent.saturating_sub(received);
+        self.record_counts(sent, received);
+
+        // Feed Gilbert-Elliott HMM: approximate as `lost` Bad symbols
+        // followed by `received` Good symbols within this batch
+        for _ in 0..lost {
+            self.ge.record_symbol(false);
+        }
+        for _ in 0..received {
+            self.ge.record_symbol(true);
+        }
+    }
+
+    /// Count-only update (EWMA + Beta + BOCD + burst flag) WITHOUT the
+    /// lumped Gilbert-Elliott approximation. Pair with per-symbol
+    /// `record_symbol` calls carrying the actual arrival pattern.
+    pub fn record_counts(&mut self, sent: u32, received: u32) {
         let lost = sent.saturating_sub(received);
         let batch_loss = if sent > 0 {
             lost as f64 / sent as f64
@@ -125,18 +148,16 @@ impl LossEstimator {
             self.in_burst = false;
         }
 
-        // Feed Gilbert-Elliott HMM: approximate as `lost` Bad symbols
-        // followed by `received` Good symbols within this batch
-        for _ in 0..lost {
-            self.ge.record_symbol(false);
-        }
-        for _ in 0..received {
-            self.ge.record_symbol(true);
-        }
-
         self.total_sent += sent as u64;
         self.total_received += received as u64;
         self.last_update = Instant::now();
+    }
+
+    /// Record one wire-symbol outcome (true = received) into the
+    /// Gilbert-Elliott estimator, preserving the true loss interleaving —
+    /// e.g., reconstructed from SACK gap patterns (paper Section 7.5).
+    pub fn record_symbol(&mut self, received: bool) {
+        self.ge.record_symbol(received);
     }
 
     /// Update RX (reverse path) loss estimate from NackAck feedback.

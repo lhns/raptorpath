@@ -147,6 +147,7 @@ ACK absence.
     - [14.21 Sub-Capacity Operation](#1421-sub-capacity-operation-emergent-behavior)
     - [14.22 Sequence-Aware P_lost](#1422-sequence-aware-p_lost)
     - [14.23 Post-Burst FEC Boost](#1423-post-burst-fec-boost-reactive-deficit-recovery)
+    - [14.24 Jitter-Horizon Encoder Lag](#1424-jitter-horizon-encoder-lag)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -1531,14 +1532,22 @@ Constraint: P(repairs < K) ≤ δ.
 
 **Which δ is this?** Section 6.3 defines δ as P(late delivery) =
 e × (1 - P_fec). Since a symbol can only be late if it was lost first, the
-per-symbol constraint would be P(repairs < K) ≤ δ/e, i.e. z_{δ/e} in the
-margin. We deliberately impose the STRICTER per-window constraint
-P(repairs < K) ≤ δ, for two reasons: (1) conditioning on "this symbol was
-lost" size-biases K upward — a window known to contain a loss has more
-losses than average — which the unconditional P(C ≥ K) does not capture;
-the extra strictness compensates. (2) It keeps z_δ independent of e. The
-cost is modest over-provisioning: at WiFi (e = 0.025, δ = 1e-4), z_δ = 3.72
-vs z_{δ/e} = 2.65. Treat the resulting r* as conservative by construction.
+constraint on the window is P(repairs < K) ≤ δ/e — the canonical form used
+in Section 8.4, giving z_{δ/e} in the margin. Two consequences:
+
+1. **Continuity.** As the channel improves relative to the target
+   (e → δ), z_{δ/e} falls through zero and the required rate decreases
+   continuously to r* = 0 — pure ARQ already meets the tail target. No
+   cutoff rule is needed; the δ = e boundary behavior of Section 11.3
+   emerges from the closed form.
+2. **A conservative variant exists.** Imposing P(repairs < K) ≤ δ
+   directly (z_δ instead of z_{δ/e}) is stricter — it partially
+   compensates for the size-bias of conditioning on "this symbol was
+   lost" (a window known to contain a loss has more losses than average).
+   At WiFi (e = 0.025, δ = 1e-4): z_{δ/e} = 2.65 vs z_δ = 3.72.
+   Deployments wanting extra safety can use z_δ; for exactness, use the
+   transfer-matrix computation (Appendix D, item 4) instead of either
+   approximation.
 
 Using normal approximation:
 ```
@@ -1601,7 +1610,13 @@ in a window of size W is:
 | LTE       | 0.42  | 3.8      | significant inflation                    |
 | Satellite | 0.33  | 5.1      | iid approximation seriously wrong        |
 
-We compute σ²_burst directly from the GE estimator's p̂ and q̂.
+We compute σ²_burst directly from the GE estimator's p̂ and q̂. Degenerate
+estimates need care: when the estimator has observed no Bad-state
+transitions (very clean channels — the decayed counters empty out), q̂ = 0
+is a NO-DATA sentinel, not a measurement of infinite bursts. Treating it
+as a measurement makes σ²_burst = 1 + 2(1-p̂)/p̂ ≈ 2/p̂ explode (≈4000 at
+ε = 0.1%) and massively over-provisions exactly the cleanest links.
+No-data must map to the iid default σ² = 1.
 
 **Known limitation — repair survival is treated as i.i.d.** The model
 inflates the variance of the loss count K by σ²_burst but keeps the repair
@@ -1618,20 +1633,33 @@ item 4), which captures loss/repair correlation exactly.
 ### 8.4 The Corrected Optimal Correction Rate
 
 ```
-  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))
-       '--v--'   '------------------v---------------------'
-    IT minimum                 tail margin
-                     (accounts for burst correlation)
+  r* = max(0,  e/(1-e) + z_{delta/e} x sqrt(e x s2_burst / (W x (1-e))) )
+              '--v--'   '--------------------v----------------------'
+            IT minimum                  tail margin
+                              (accounts for burst correlation)
 
   s2_burst = 1 + 2(1-p-q)/(p+q)
 
-  z_delta = standard normal quantile for (1-delta)
+  z_{delta/e} = standard normal quantile at (1 - delta/e)
 ```
 
+**Continuity — no cutoffs, the boundary emerges from the closed form.**
+The quantile is taken at 1 - δ/e: the margin depends on how tight the
+target is RELATIVE to the channel. When δ << e (target much tighter than
+the loss rate), z is large and the margin dominates. As the channel
+improves toward the target (e → δ), z falls through zero, r* drops below
+the IT minimum, and reaches 0 continuously — at which point pure ARQ
+meets the tail target with no FEC at all. The max(0, ·) is the physical
+floor (repair counts cannot be negative), not a policy cutoff; there is
+no mode switch anywhere on the path from "heavy FEC" to "pure ARQ".
+
 **Properties:**
-- IT minimum ε/(1-ε) is the dominant term
+- r*(δ, e) is continuous — it decreases to 0 as δ → e (Section 11.3
+  boundary) with no branch or threshold; all regime behavior comes from
+  one closed-form expression
+- IT minimum ε/(1-ε) is the dominant term when the margin is active
 - Tail margin scales as 1/√W — larger windows need proportionally less margin
-- z_δ controls the margin: tighter δ → larger z_δ → more margin
+- z_{δ/ε} controls the margin: tighter δ RELATIVE to ε → larger z → more margin
 - σ²_burst amplifies the margin for bursty channels (large for small p+q)
 
 **Note:** This formula uses the raw loss rate e. For the canonical production
@@ -1641,37 +1669,39 @@ invocation probability on systematic codes.
 
 ### 8.5 Worked Examples
 
-Using z_δ values: z(1e-2) = 2.33, z(1e-4) = 3.72, z(1e-6) = 4.75
+Using z_{δ/ε} = Φ⁻¹(1 - δ/ε) — the margin depends on how tight the target
+is relative to the channel loss rate.
 
-The margin term is: `z_δ × √(ε × σ²_burst / (W × (1-ε)))`
+The margin term is: `z_{δ/ε} × √(ε × σ²_burst / (W × (1-ε)))`
 
 **DC (ε=0.001, W=50, σ²_burst=3.0):**
 ```
-   Bulk (δ=1e-2):     r* = 0.001 + 2.33x√(0.001x3.0/49.95) = 0.1% + 1.8% = 1.9%
-   Auto (δ=1e-4):     r* = 0.001 + 3.72x√(0.001x3.0/49.95) = 0.1% + 2.9% = 3.0%
-   Realtime (δ=1e-6): r* = 0.001 + 4.75x√(0.001x3.0/49.95) = 0.1% + 3.7% = 3.8%
+   Bulk (δ=1e-2):     δ ≥ ε → r* = 0   (pure ARQ already meets the target)
+   Auto (δ=1e-4):     r* = 0.1% + 1.28x0.78% = 0.1% + 1.0% = 1.1%
+   Realtime (δ=1e-6): r* = 0.1% + 3.09x0.78% = 0.1% + 2.4% = 2.5%
 ```
 
 **WiFi (ε=0.025, W=50, σ²_burst=2.9):**
 ```
-   Bulk (δ=1e-2):     r* = 2.6% + 2.33x√(0.025x2.9/48.75) = 2.6% +  9.0% = 11.5%
-   Auto (δ=1e-4):     r* = 2.6% + 3.72x√(0.025x2.9/48.75) = 2.6% + 14.3% = 16.9%
-   Realtime (δ=1e-6): r* = 2.6% + 4.75x√(0.025x2.9/48.75) = 2.6% + 18.3% = 20.9%
+   Bulk (δ=1e-2):     r* = 2.6% + 0.25x3.86% = 2.6% +  1.0% =  3.5%
+   Auto (δ=1e-4):     r* = 2.6% + 2.65x3.86% = 2.6% + 10.2% = 12.8%
+   Realtime (δ=1e-6): r* = 2.6% + 3.94x3.86% = 2.6% + 15.2% = 17.8%
 ```
 
 **Satellite (ε=0.09, W=50, σ²_burst=5.1):**
 ```
-   Bulk (δ=1e-2):     r* = 9.9% + 2.33x√(0.09x5.1/45.5) = 9.9% + 23.4% = 33.3%
-   Auto (δ=1e-4):     r* = 9.9% + 3.72x√(0.09x5.1/45.5) = 9.9% + 37.4% = 47.3%
-   Realtime (δ=1e-6): r* = 9.9% + 4.75x√(0.09x5.1/45.5) = 9.9% + 47.7% = 57.6%
+   Bulk (δ=1e-2):     r* = 9.9% + 1.22x10.0% =  9.9% + 12.3% = 22.2%
+   Auto (δ=1e-4):     r* = 9.9% + 3.06x10.0% =  9.9% + 30.7% = 40.6%
+   Realtime (δ=1e-6): r* = 9.9% + 4.24x10.0% =  9.9% + 42.6% = 52.5%
 ```
 
-**Note:** These corrected values show that the σ²_burst margin dominates for
-lossy/bursty channels. At WiFi 2.5% loss, the margin (9-18%) exceeds the
-IT minimum (2.6%). At Satellite 9% loss, the margin (23-48%) far exceeds
-the IT minimum (9.9%). This reflects the cost of burst correlation — the
-system needs substantial extra capacity to handle worst-case burst patterns
-with high confidence.
+**Note the emergent behavior across rows.** At DC, a Bulk target is looser
+than the channel loss itself, so FEC vanishes entirely — ARQ suffices. On
+satellite the SAME δ = 1e-2 sits 9× below ε, so even Bulk needs a 12%
+margin. The margin responds to the ratio δ/ε, not to δ alone — one
+protocol hint adapts continuously across channels. The σ²_burst
+factor still amplifies the margin on bursty channels (satellite's unit
+margin is 10% vs WiFi's 3.9% per unit z).
 
 ### 8.6 Three-Variable Optimization
 
@@ -1801,14 +1831,14 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Fix: ρ = 100%, minimize r
    Compute: δ (tail latency)
 
-   r* = 2.6% + z_δ x 3.9%     (from Section 8.5, WiFi row)
+   r* = 2.6% + z_{δ/ε} x 3.9%     (from Section 8.5, WiFi row)
 
    At minimum r = r_IT = 2.6%:  P_fec = 0.5 (Section 8.2: z = 0), so
    δ = e x (1-P_fec) = 1.25% — half the lost symbols go to ARQ
    Tail latency ≈ T_retx + RTT/2 for those symbols
    For RTT = 50ms: L_arq ≈ 100ms for 1.25% of symbols
 
-   To get δ = 1e-2: r* = 11.5% (Section 8.5, WiFi Bulk row)
+   To get δ = 1e-2: r* = 3.5% (Section 8.5, WiFi Bulk row)
 ```
 
 **Example 2: VoIP (WiFi, ε=0.025)**
@@ -1838,7 +1868,7 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Need 99.9% of symbols delivered within 33ms.
    T_cut determined by ρ = 99.9%: T_cut ≈ 3 x RTT
    A determined by δ: need P(recovery within 33ms) ≥ 0.999
-   33ms < L_arq, so recovery must be FEC — r* ≈ 17-21%
+   33ms < L_arq, so recovery must be FEC — r* ≈ 13-18%
    (between the Auto and Realtime rows of Section 8.5)
 ```
 
@@ -1850,8 +1880,8 @@ reliability achievable within the bandwidth budget r at tail latency δ.
 
    Very tight latency + moderate reliability → aggressive FEC
    T_cut ≈ 2 x RTT (short: accept 1% loss)
-   r* ≈ 15-20% (most budget goes to proactive FEC within 20ms;
-   the ρ = 99% cutoff trims the taper tail below the full 20% margin)
+   r* ≈ 11% (δ/ε = 0.2 → z = 0.84 → margin ≈ 5.3% over the 5.3% IT
+   minimum; the ρ = 99% cutoff trims the taper tail further)
 ```
 
 **Example 5: Sensor telemetry (Satellite, ε=0.09)**
@@ -1907,21 +1937,24 @@ Weighted by decoder invocation probability:
 The corrected correction rate becomes:
 
 ```
-   r* = (e + e_codec_eff)/(1-e) + z_δ x √((e + e_codec_eff) x σ²_burst / (W x (1-e)))
+   r* = max(0, (e + e_codec_eff)/(1-e)
+               + z_{δ/e_hat} x √((e + e_codec_eff) x σ²_burst / (W x (1-e))))
 ```
 
 (the same margin structure as Section 8.4, with e replaced by
-e_hat = e + e_codec_eff).
+e_hat = e + e_codec_eff — including inside the quantile ratio δ/e_hat).
 
 ### 9.3 Impact on METTLE at DC
 
-At DC (ε=0.1%, W=50, σ²=3.0, Bulk δ=1e-2):
+At DC (ε=0.1%, W=50, σ²=3.0, Auto δ=1e-4 — under Bulk the DC rate is
+0 with or without weighting, so Auto is the informative case):
 
-Without weighting: ε_hat = 0.1% + 15% = 15.1% → r* = 15.1% + 22.2% = 37.3%.
-With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74%, ε_hat = 0.84%
-→ r* = 0.8% + 5.2% = 6.0%.
+Without weighting: ε_hat = 0.1% + 15% = 15.1%, z_{δ/ε_hat} = 3.21
+→ r* = 15.1% + 30.6% = 45.7%.
+With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74%, ε_hat = 0.84%,
+z_{δ/ε_hat} = 2.26 → r* = 0.8% + 5.1% = 5.9%.
 
-The weighting reduces METTLE's DC overhead by ~6×.
+The weighting reduces METTLE's DC overhead by ~8×.
 
 ---
 
@@ -3144,6 +3177,33 @@ normal taper) or multiplicative (temporarily higher r)? Additive is
 simpler and doesn't affect the taper shape for new symbols. The extra
 repairs specifically target the deficit, not general protection.
 
+### 14.24 Jitter-Horizon Encoder Lag
+
+Discovered while building the L0 gate suite (ADR-0051): with per-packet
+jitter J, a repair symbol can overtake up to J × send_rate of the source
+symbols it covers. At arrival, those covered-but-still-in-flight symbols
+are unknowns to the decoder, so the repair parks as a deep pivot equation
+instead of decoding the actual loss — measured hole-fill p50 at C2-WiFi
+was ~21 ms instead of the expected ~2 ms.
+
+A repair covering symbols that cannot yet have arrived carries no usable
+information at arrival time. The encoder should therefore TRAIL the send
+stream by the jitter horizon:
+
+```
+  L = ceil(J × send_rate)          [symbols; 2..48 in practice]
+
+  repairs cover [sent − L − W, sent − L]   instead of  [sent − W, sent]
+```
+
+With the lag, a repair's unknowns at arrival are true losses, decodable
+immediately. The correction budget is unchanged (Section 4.2 shape
+invariance) — only the window placement moves. L adapts with measured
+jitter and send rate; on a jitter-free channel L → 0 and the windows
+coincide. This composes with Section 14.5's window sizing: the effective
+protection span for fresh symbols shrinks by L, which matters only if
+L approaches W.
+
 ---
 
 ## Appendix A: Summary of Key Formulas
@@ -3163,10 +3223,10 @@ repairs specifically target the deficit, not general protection.
      Var_GE(K) = W x e x (1-e) x σ²_burst  loss count variance         [symbols^2]
 
    Optimal correction rate (Section 8.4):
-     Base:  r* = e/(1-e) + z_delta x sqrt(e x s2_burst / (W x (1-e)))  [ratio]
+     r* = max(0, e/(1-e) + z_{delta/e} x sqrt(e x s2_burst / (W x (1-e))))  [ratio]
+     z_{delta/e} = normal_quantile(1 - delta/e)  (r* -> 0 smoothly as delta -> e)
      With codec: replace e with e_hat (see Section 9.2)
      P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))      [probability]
-     z_delta = normal_quantile(1-delta)                                [dimensionless]
 
    Codec overhead (Section 9.2):
      e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead     [probability]
