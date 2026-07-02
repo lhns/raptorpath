@@ -73,7 +73,8 @@ const SMOOTH_WINDOW = 6;
 class SimWrapper {
   constructor(params) {
     const fixedR = params.hint === 'fixed' ? params.fixedR : undefined;
-    this.inner = new Simulation(params.eps, params.q, params.rttMs, params.W, params.hint, fixedR);
+    this.inner = new Simulation(params.eps, params.q, params.rttMs, params.W, params.hint,
+                                fixedR, params.customDelta, params.customRho);
     this.rateHistory = [];
     this.channelStates = [];
     this.eps = params.eps;
@@ -93,6 +94,10 @@ class SimWrapper {
   get sigma2Est() { return this.inner.get_sigma2_est(); }
   get deltaEff()  { return this.inner.get_delta_eff(); }
   get rSat()      { return this.inner.get_r_sat(); }
+  // custom triangle mode (rho < 1 enables T_cut give-up eviction)
+  get givenUp()     { return this.inner.get_given_up(); }
+  get reliability() { return this.inner.get_reliability(); }
+  get rho()         { return this.inner.get_rho(); }
   get totalSrc() { return this.inner.get_total_src(); }
   get totalFec() { return this.inner.get_total_fec(); }
   get totalArq() { return this.inner.get_total_arq(); }
@@ -150,6 +155,10 @@ PYEOF
 
 python3 "$TMPFILE"
 rm -f "$TMPFILE"
+
+echo "Running engine tests against the built file..."
+node raptorpath-visualizer/test_visualizer.mjs
+echo "Engine tests passed."
 
 echo "Done! Visualizer updated: raptorpath-visualizer/interactive-visualizer.html"
 echo "Open it directly in a browser (file:// works)."
