@@ -70,6 +70,39 @@ Model/driver findings (documented in the paper):
    rate (paper C.6 ε_burst) into path selection detects outage recovery
    within one delivery instead of ~6 estimator batches.
 
+## Quality sweep (protocol hints, diagnostic `quality_hint_sweep`)
+
+Completion = flow-completion time of the 1.8 MB transfer to application
+delivery. Ratios vs SimRetx on the same seeds (6 trials).
+
+| Cell | Hint | Completion | p50 | p99 | Overhead |
+|------|------|-----------:|----:|----:|---------:|
+| C2-WiFi | SimRetx | 0.860s | 8.1ms | 46.2ms | 2.5% |
+| C2-WiFi | Bulk | 0.183s (0.21×) | 18.6ms | 31.5ms (0.68×) | 9.9% |
+| C2-WiFi | Realtime | 0.200s (0.23×) | 17.3ms | 28.1ms (0.61×) | 19.6% |
+| C3-LTE | SimRetx | 3.80s | 28.8ms | 277ms | 5.2% |
+| C3-LTE | Bulk | 0.90s (0.24×) | 47.5ms | 98ms (0.35×) | 18.7% |
+| C3-LTE | Realtime | 1.07s (0.28×) | 41.6ms | 85ms (0.31×) | 33.2% |
+| C4-Sat | SimRetx | 22.3s | 367ms | 1556ms | 9.3% |
+| C4-Sat | Bulk | 1.45s (0.07×) | 139ms | 317ms (0.20×) | 31.0% |
+| C4-Sat | Realtime | 1.80s (0.08×) | 144ms | 412ms (0.27×) | 48.6% |
+| C5-BadWiFi | SimRetx | 2.25s | 14.6ms | 80ms | 17.2% |
+| C5-BadWiFi | Bulk | 0.39s (0.17×) | 15.7ms | 31ms (0.38×) | 46.0% |
+| C5-BadWiFi | Realtime | 0.42s (0.19×) | 15.6ms | 28ms (0.34×) | 50.1% |
+
+Reading (see also the caveats below):
+- Bulk runs at ~85–90% of the channel's information-theoretic floor
+  (capacity ÷ (1+r)); the AIMD baseline manages 17–25% of capacity on
+  lossy links. Measured overhead tracks the paper's r* worked examples
+  (e.g., WiFi Realtime: predicted 17.8%, measured 19.6% incl. retx).
+- Known refinements exposed: (1) our MEDIAN latency is ~2× the (idle)
+  baseline's because Copa-lite tolerates a standing queue at high
+  utilization — the latency hint should also tighten the CC delay target
+  (paper §12.4 d_copa mapping), not just raise r; (2) at satellite,
+  Realtime's overhead past ~43% HURTS the tail (diminishing returns,
+  §14.21) — the solver should detect saturation instead of monotonically
+  increasing r with hint tightness.
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,

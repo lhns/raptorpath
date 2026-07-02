@@ -1300,3 +1300,64 @@ fn debug_c2_nojitter() {
     println!("nojitter: completion={:.3}s p50={:.1} p99={:.1} overhead={:.1}%",
         out.completion_s, out.p50_ms, out.p99_ms, (out.wire_per_source - 1.0) * 100.0);
 }
+
+/// Diagnostic (non-gating): the quality trade-off per protocol hint.
+/// Answers: does Bulk actually finish transfers faster than the baseline,
+/// and does Realtime buy lower latency at moderate overhead?
+#[test]
+#[ignore]
+fn quality_hint_sweep() {
+    let cells: &[(&str, GateChannel)] = &[
+        ("C2-WiFi", C2_WIFI),
+        ("C3-LTE", C3_LTE),
+        ("C4-Sat", C4_SAT),
+        ("C5-BadWiFi", C5_BADWIFI),
+    ];
+    let hints = [
+        ("Bulk", ProtocolHint::Bulk),
+        ("Auto", ProtocolHint::Auto),
+        ("Realtime", ProtocolHint::Realtime),
+    ];
+    let trials = 6usize;
+    for (name, ch) in cells {
+        let mut b_compl = TrialStats::new();
+        let mut b_p50 = TrialStats::new();
+        let mut b_p99 = TrialStats::new();
+        let mut b_oh = TrialStats::new();
+        for t in 0..trials {
+            let seed = 50_000 + t as u64 * 137 + 42;
+            let b = run_baseline(&[*ch], seed);
+            b_compl.push(b.completion_s);
+            b_p50.push(b.p50_ms);
+            b_p99.push(b.p99_ms);
+            b_oh.push(b.wire_per_source - 1.0);
+        }
+        println!(
+            "{name} SimRetx: completion={:.3}s p50={:.1}ms p99={:.1}ms overhead={:.1}%",
+            b_compl.mean(), b_p50.mean(), b_p99.mean(), b_oh.mean() * 100.0
+        );
+        for (hname, hint) in &hints {
+            let mut compl = TrialStats::new();
+            let mut p50 = TrialStats::new();
+            let mut p99 = TrialStats::new();
+            let mut oh = TrialStats::new();
+            for t in 0..trials {
+                let seed = 50_000 + t as u64 * 137 + 42;
+                let f = run_fec(&[*ch], seed, &FecConfig { hint: *hint, outage: None });
+                compl.push(f.completion_s);
+                p50.push(f.p50_ms);
+                p99.push(f.p99_ms);
+                oh.push(f.wire_per_source - 1.0);
+            }
+            println!(
+                "{name} {hname:8}: completion={:.3}s ({:.2}x) p50={:.1}ms p99={:.1}ms ({:.2}x) overhead={:.1}%",
+                compl.mean(),
+                compl.mean() / b_compl.mean(),
+                p50.mean(),
+                p99.mean(),
+                p99.mean() / b_p99.mean(),
+                oh.mean() * 100.0
+            );
+        }
+    }
+}
