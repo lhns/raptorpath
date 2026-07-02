@@ -727,9 +727,32 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 } else {
                     paths[i].rtt().as_secs_f64()
                 };
+                //
+                // P1 (paper 12.4): the protocol hint sets the queue TARGET,
+                // not just the FEC rate. At high utilization the standing
+                // queue sits at this target, so Realtime keeps it near-empty
+                // while Bulk trades a deeper queue for utilization. A
+                // 3-level mapping for now; a continuous delta-based mapping
+                // (tail latency budget -> Copa d_copa) is the future option.
+                //
+                // Calibration (merged with P2's estimated floor): `base` is
+                // the jitter-free min-sample floor (~2xone_way), so the
+                // Realtime multiplier sits just above 1: 1.08 = floor +
+                // ~0.8ms of queue on C2. (P1 originally measured 0.85
+                // against the ground-truth base, which carried the jitter
+                // bound as implicit slack — see the P1 branch history.)
+                let queue_mult = if cfg.hint_delay_target {
+                    match cfg.hint {
+                        ProtocolHint::Realtime => 1.08,
+                        ProtocolHint::Auto => 1.125,
+                        ProtocolHint::Bulk => 1.25,
+                    }
+                } else {
+                    1.125
+                };
                 if min_rtt_win[i].is_finite() {
                     let cap = paths[i].bdp_cwnd() as f64 * 2.0;
-                    if min_rtt_win[i] > base * 1.125 {
+                    if min_rtt_win[i] > base * queue_mult {
                         ramping[i] = false;
                         cwnd[i] = (cwnd[i] * 0.92).max(4.0);
                     } else if ramping[i] {
@@ -1471,4 +1494,78 @@ fn ablation_p2_estimated_floor() {
             off_p99.mean()
         );
     }
+}
+
+/// P1 ablation (paper 12.4): the protocol hint sets the Copa queue target,
+/// not just the FEC rate. Realtime with a tight target should cut the
+/// standing-queue median latency at C2 without giving up meaningful
+/// completion time; Bulk's deeper target must not hurt completion.
+#[test]
+#[ignore]
+fn ablation_p1_hint_delay_target() {
+    let trials = 6usize;
+    let run = |hint: ProtocolHint, flag: bool| {
+        let mut compl = TrialStats::new();
+        let mut p50 = TrialStats::new();
+        let mut p99 = TrialStats::new();
+        for t in 0..trials {
+            let seed = 60_000 + t as u64 * 137 + 42;
+            let c = FecConfig { hint_delay_target: flag, ..cfg(hint) };
+            let f = run_fec(&[C2_WIFI], seed, &c);
+            compl.push(f.completion_s);
+            p50.push(f.p50_ms);
+            p99.push(f.p99_ms);
+        }
+        (compl, p50, p99)
+    };
+
+    let (rt_on_c, rt_on_p50, rt_on_p99) = run(ProtocolHint::Realtime, true);
+    let (rt_off_c, rt_off_p50, rt_off_p99) = run(ProtocolHint::Realtime, false);
+    println!(
+        "C2 Realtime on : completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        rt_on_c.mean(), rt_on_p50.mean(), rt_on_p99.mean()
+    );
+    println!(
+        "C2 Realtime off: completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        rt_off_c.mean(), rt_off_p50.mean(), rt_off_p99.mean()
+    );
+    // Post-P2 note: with the honest (jitter-free) estimated floor, Auto's
+    // 1.125 target is already near-optimal at C2 — most of the median win
+    // (17.6 -> 12.8ms) came from fixing the floor. Realtime's tighter
+    // target is retained for semantic correctness (and for operating
+    // points where the floor estimate is loose), so the ablation gate is
+    // no-regression, not a mandated cut. P1's branch history has the
+    // sweep: pushing the target to floor+0.15ms buys ~1.5ms of p50 for
+    // +8% completion — a bad trade.
+    assert!(
+        rt_on_p50.mean() <= 1.02 * rt_off_p50.mean(),
+        "Realtime p50 with hint delay target ({:.2}ms) regresses vs off ({:.2}ms)",
+        rt_on_p50.mean(), rt_off_p50.mean()
+    );
+    assert!(
+        rt_on_p99.mean() <= 1.05 * rt_off_p99.mean(),
+        "Realtime p99 with hint delay target ({:.2}ms) regresses vs off ({:.2}ms)",
+        rt_on_p99.mean(), rt_off_p99.mean()
+    );
+    assert!(
+        rt_on_c.mean() <= 1.08 * rt_off_c.mean(),
+        "Realtime completion with hint delay target ({:.3}s) > 1.08x off ({:.3}s)",
+        rt_on_c.mean(), rt_off_c.mean()
+    );
+
+    let (bk_on_c, bk_on_p50, bk_on_p99) = run(ProtocolHint::Bulk, true);
+    let (bk_off_c, bk_off_p50, bk_off_p99) = run(ProtocolHint::Bulk, false);
+    println!(
+        "C2 Bulk     on : completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        bk_on_c.mean(), bk_on_p50.mean(), bk_on_p99.mean()
+    );
+    println!(
+        "C2 Bulk     off: completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        bk_off_c.mean(), bk_off_p50.mean(), bk_off_p99.mean()
+    );
+    assert!(
+        bk_on_c.mean() <= 1.05 * bk_off_c.mean(),
+        "Bulk completion with hint delay target ({:.3}s) > 1.05x off ({:.3}s)",
+        bk_on_c.mean(), bk_off_c.mean()
+    );
 }

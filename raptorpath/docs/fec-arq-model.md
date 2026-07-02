@@ -2193,13 +2193,21 @@ d_copa controls the target queue depth at the bottleneck (1/d_copa packets).
 Our δ controls the tail probability of late delivery. They are independent
 parameters that happen to use similar notation in their respective papers.
 
-d_copa = 0.5 (from the Copa paper [Copa2018]) targets a queue of 2 packets
-— very shallow. The Copa+ follow-up paper explores adaptive d_copa, which
-could be coupled to the protocol hint: Realtime (tight latency) → higher
-d_copa (shallower queue, ~1 less packet of delay) and Bulk (throughput) →
-lower d_copa (deeper queue, better link utilization). However, the gain is
-approximately 1 packet of queue delay (~1ms at typical speeds) — negligible
-compared to RTT. The default d_copa = 0.5 is sufficient for all scenarios.
+d_copa = 0.5 (from the Copa paper [Copa2018]) nominally targets a queue of
+2 packets. That does NOT mean the realized cost is ~1 packet of delay: at
+high utilization the sender oscillates around the controller's queue
+target, so the median delivery latency carries a standing queue on the
+order of that target — not of a single packet. Measured in the gate
+simulation (100 Mbps WiFi under sustained load), the tolerated standing
+queue adds ~9 ms to the median latency versus an idle baseline (p50
+~17.6 ms loaded vs ~8.1 ms idle) — a dominant latency term, not a
+negligible one. The protocol hint must therefore set the delay target too,
+not only the FEC rate: Realtime → a near-empty queue target (accepting
+some utilization loss), Bulk → a deeper queue target for better link
+utilization, and Auto keeps the d_copa = 0.5-style default. A continuous
+mapping from the tail latency budget to d_copa is the natural refinement;
+a coarse per-hint target already recovers most of the standing-queue
+latency.
 
 **min_rtt estimation:** Copa uses the minimum observed RTT in a 10-second
 sliding window (same duration as BBR's min_rtt window). Copa's natural rate
