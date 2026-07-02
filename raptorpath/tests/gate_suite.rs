@@ -274,6 +274,16 @@ fn run_baseline(paths: &[GateChannel], seed: u64) -> Outcome {
 }
 
 // ---------------------------------------------------------------------------
+// SimQuic baseline (P3): loss-blind delay-based CC + SACK-timed ARQ, no FEC,
+// in-order stream delivery, single path. The honest QUIC-class adversary.
+// ---------------------------------------------------------------------------
+
+#[allow(dead_code, unused_variables)]
+fn run_baseline_quic(paths: &[GateChannel], seed: u64) -> Outcome {
+    todo!("P3 worker: implement SimQuic (see plan)")
+}
+
+// ---------------------------------------------------------------------------
 // raptorpath L0 driver: RLC window FEC + taper-driven corrections +
 // P_lost-gated exact-source retransmit, per-path estimators, E_i scheduling.
 // ---------------------------------------------------------------------------
@@ -307,6 +317,30 @@ struct FecConfig {
     hint: ProtocolHint,
     /// Outage on path 0: (start, end) after t0.
     outage: Option<(Duration, Duration)>,
+    /// P1: protocol hint also tightens the Copa queue target (paper 12.4).
+    hint_delay_target: bool,
+    /// P2: Copa floor is a running min estimate, not ground truth.
+    estimated_floor: bool,
+    /// P4a: Bulk maps to a "late is fine" tail target (pure-ARQ steady state).
+    bulk_arq_delta: bool,
+    /// P4b: burst of repairs covering the final window at end-of-stream.
+    tail_fec: bool,
+    /// P5: cap r at the p99(r) saturation point.
+    saturation_cap: bool,
+}
+
+/// Default configuration: all improvements ON (each worker's flag gates its
+/// own change; ablations flip individual flags off against the same seeds).
+fn cfg(hint: ProtocolHint) -> FecConfig {
+    FecConfig {
+        hint,
+        outage: None,
+        hint_delay_target: true,
+        estimated_floor: true,
+        bulk_arq_delta: true,
+        tail_fec: true,
+        saturation_cap: true,
+    }
 }
 
 fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
@@ -829,7 +863,7 @@ fn run_cells(
     };
     for t in 0..TRIALS {
         let seed = cell_id * 100_000 + t as u64 * 137 + 42;
-        let f = run_fec(fec_paths, seed, &FecConfig { hint, outage: None });
+        let f = run_fec(fec_paths, seed, &cfg(hint));
         let b = run_baseline(base_paths, seed);
         fec.completion.push(f.completion_s);
         fec.p99.push(f.p99_ms);
@@ -996,8 +1030,8 @@ fn gate_c9_outage_recovery() {
             &paths,
             seed,
             &FecConfig {
-                hint: ProtocolHint::Auto,
                 outage: Some((outage_start, outage_end)),
+                ..cfg(ProtocolHint::Auto)
             },
         );
         // Steady-state goodput: buckets fully inside [40ms, 150ms).
@@ -1218,7 +1252,7 @@ fn debug_dc_rate() {
 #[test]
 #[ignore]
 fn debug_c2_tail() {
-    let out = run_fec(&[C2_WIFI], 242, &FecConfig { hint: ProtocolHint::Auto, outage: None });
+    let out = run_fec(&[C2_WIFI], 242, &cfg(ProtocolHint::Auto));
     println!("completion={:.3}s p50={:.1} p99={:.1} overhead={:.1}%",
         out.completion_s, out.p50_ms, out.p99_ms, (out.wire_per_source - 1.0) * 100.0);
 }
@@ -1296,7 +1330,7 @@ fn debug_rlc_stream_decode() {
 fn debug_c2_nojitter() {
     let mut ch = C2_WIFI;
     ch.jitter_ms = 0;
-    let out = run_fec(&[ch], 242, &FecConfig { hint: ProtocolHint::Auto, outage: None });
+    let out = run_fec(&[ch], 242, &cfg(ProtocolHint::Auto));
     println!("nojitter: completion={:.3}s p50={:.1} p99={:.1} overhead={:.1}%",
         out.completion_s, out.p50_ms, out.p99_ms, (out.wire_per_source - 1.0) * 100.0);
 }
@@ -1343,7 +1377,7 @@ fn quality_hint_sweep() {
             let mut oh = TrialStats::new();
             for t in 0..trials {
                 let seed = 50_000 + t as u64 * 137 + 42;
-                let f = run_fec(&[*ch], seed, &FecConfig { hint: *hint, outage: None });
+                let f = run_fec(&[*ch], seed, &cfg(*hint));
                 compl.push(f.completion_s);
                 p50.push(f.p50_ms);
                 p99.push(f.p99_ms);
