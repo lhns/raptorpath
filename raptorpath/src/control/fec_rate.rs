@@ -2,13 +2,19 @@
 //!
 //! Uses a principled budget architecture (ADR-0050):
 //!
-//! 1. **Predictive upper bound**: BOCD posterior quantile at target confidence
-//!    provides the loss rate estimate WITH built-in uncertainty margin.
-//!    No separate PI controller or margin multiplication needed.
+//! 1. **Predictive upper bound**: BOCD posterior quantile at fixed 95%
+//!    confidence provides the loss rate estimate WITH built-in
+//!    estimation-uncertainty margin. No separate PI controller needed.
 //!
-//! 2. **Protocol hint → tail reliability**: The protocol hint (Realtime/Bulk/Auto)
-//!    maps to `target_tail_loss`, controlling the FEC/NACK balance. Tighter tail
-//!    = more proactive FEC = less NACK latency. No magic additive offsets.
+//! 2. **Protocol hint → tail quantile**: The protocol hint (Realtime/Bulk/Auto)
+//!    maps to `target_tail_loss`, which sets z_δ in the r* margin (paper
+//!    Section 8.4), controlling the FEC/NACK balance. Tighter tail = more
+//!    proactive FEC = less NACK latency. No magic additive offsets.
+//!
+//!    The two margins cover distinct variance sources and do not stack on
+//!    the same quantity: the BOCD quantile covers uncertainty about the
+//!    TRUE loss rate (estimation), while z_δ covers channel stochasticity
+//!    GIVEN that rate (window-tail variance).
 //!
 //! 3. **Budget allocation**: Total repair budget is split between proactive FEC
 //!    and NACK-based reactive repair, coordinated to avoid double-spending.
@@ -134,17 +140,23 @@ impl FecRateController {
     /// Compute the repair rate for sliding-window mode: how many repair symbols
     /// to generate per source symbol. E.g., 0.1 = 1 repair per 10 source symbols.
     ///
-    /// Uses BOCD predictive quantile as the loss estimate (ADR-0050):
-    ///   rate = max(p/(1-p) + effective_codec_overhead, B/T)
+    /// Uses the BOCD predictive quantile as the loss estimate and the paper's
+    /// r* formula (Section 8.4) for the rate:
     ///
-    /// The posterior quantile IS the margin — no separate safety factor needed.
-    /// The protocol hint controls tail loss (and thus the quantile), not an offset.
+    ///   p    = BOCD posterior upper quantile at 95% (estimation margin)
+    ///   z_δ  = normal_quantile(1 - target_tail_loss) (channel-tail margin)
+    ///   rate = max(p/(1-p) + z_δ·√(p·σ²_burst/(W·(1-p))) + codec, B/T)
+    ///
+    /// The two margins cover distinct variance sources: the BOCD quantile
+    /// covers uncertainty about the TRUE loss rate (regime changes widen it
+    /// automatically); z_δ covers window-tail loss variance GIVEN that rate.
+    /// The protocol hint enters only through z_δ — feeding it into the
+    /// estimation confidence as well would double-count the tail target.
     /// Codec overhead is weighted by P(decoder_invoked) for systematic codecs.
     ///
     /// `window_size`: current encoder window or block size.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator, window_size: usize) -> f64 {
-        let confidence = 1.0 - self.target_tail_loss;
-        let p = estimator.predictive_loss_upper(confidence);
+        let p = estimator.predictive_loss_upper(0.95);
         if p < 1e-10 {
             return 0.0;
         }
@@ -169,8 +181,11 @@ impl FecRateController {
         } else {
             1.0
         };
+        // z_δ from the hint-adjusted tail target (paper Section 8.4).
+        // target_tail_loss is clamped to [1e-9, 0.1], so z_δ ∈ [1.28, 6.0].
+        let z_delta = raptorpath_math::normal_quantile(1.0 - self.target_tail_loss);
         let random_rate = raptorpath_math::compute_r_star_with_z(
-            p, sigma2, window_size as f64, 2.33,
+            p, sigma2, window_size as f64, z_delta,
         ) + effective_codec_overhead;
 
         // --- Burst loss term: delay-constrained capacity B/T ---

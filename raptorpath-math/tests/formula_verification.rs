@@ -78,10 +78,9 @@ fn test_r_star_worked_examples() {
     assert_close(dc_rt, 0.038, 0.005);    // paper: 3.8%
 
     // WiFi: ε=0.025, σ²≈2.9
-    // NOTE: Paper Section 8.5 has arithmetic errors in WiFi/Satellite examples.
-    // The formula r* = ε/(1-ε) + z√(ε×σ²/(W×(1-ε))) gives different values
-    // than the paper's claimed percentages. We verify against the FORMULA, not
-    // the paper's incorrect worked examples.
+    // Paper Section 8.5 (corrected) now matches the formula:
+    // r* = ε/(1-ε) + z√(ε×σ²/(W×(1-ε))) → WiFi Bulk = 2.6% + 9.0% = 11.5%.
+    // We verify against the formula, which equals the paper's values.
     let s_wifi = burst_variance_factor(0.013, 0.5);
     let wifi_bulk = compute_r_star_with_z(0.025, s_wifi, w, z_bulk);
     let wifi_auto = compute_r_star_with_z(0.025, s_wifi, w, z_auto);
@@ -95,19 +94,16 @@ fn test_r_star_worked_examples() {
     // Monotonicity: rt > auto > bulk
     assert!(wifi_rt > wifi_auto && wifi_auto > wifi_bulk, "Monotone in z_δ");
 
-    // Satellite: ε=0.09, σ²=5.1 (paper's value — verify against formula)
-    // NOTE: The paper's (p, q) for satellite give σ² much higher than 5.1.
-    // This is another paper discrepancy — the σ² table values may use
-    // different (p, q) than the stationary ε=p/(p+q)=0.09 implies.
-    // We verify using the paper's stated σ²=5.1 directly.
-    let s_sat = 5.1; // paper's value
+    // Satellite: ε=0.09, (p, q) = (0.03, 0.3) from paper Section 2.4.
+    // Consistency: ε = p/(p+q) = 0.03/0.33 ≈ 0.091, and
+    // σ² = 1 + 2(1-p-q)/(p+q) = 1 + 2(0.67)/0.33 ≈ 5.06 ≈ paper's 5.1. ✓
+    let s_sat = burst_variance_factor(0.03, 0.3);
     let sat_bulk = compute_r_star_with_z(0.09, s_sat, w, z_bulk);
     let sat_auto = compute_r_star_with_z(0.09, s_sat, w, z_auto);
     let sat_rt = compute_r_star_with_z(0.09, s_sat, w, z_rt);
     // Verify formula: base = 0.09/0.91 = 0.0989
-    // margin(bulk) = 2.33 × √(0.09 × 5.1 / (50 × 0.91)) = 2.33 × √(0.01009) = 2.33 × 0.1005 = 0.234
-    // total = 0.0989 + 0.234 = 0.333 — NOT 17.3% as paper claims!
-    // Paper Section 8.5 has systematic arithmetic errors in the margin calculation.
+    // margin(bulk) = 2.33 × √(0.09 × 5.06 / (50 × 0.91)) ≈ 0.233
+    // total ≈ 0.332 — matches paper Section 8.5 (corrected): 33.3%.
     let expected_base = 0.09 / 0.91;
     let expected_margin = z_bulk * (0.09 * s_sat / (w * 0.91)).sqrt();
     assert_close(sat_bulk, expected_base + expected_margin, 0.001);
@@ -308,19 +304,21 @@ fn test_find_t_cut_monotone_in_rho() {
 
 #[test]
 fn test_w_min_table() {
-    // W_min = 1 / (q × ε) for mean burst with r = ε/(1-ε)
-    // WiFi: ε=5%, q=0.5 → W_min=40
-    assert_close(1.0 / (0.5 * 0.05), 40.0, 1.0);
-    // LTE: ε=10%, q=0.2 → W_min=50
-    assert_close(1.0 / (0.2 * 0.10), 50.0, 1.0);
-    // Satellite: ε=9%, q=0.1 → W_min=111
-    assert_close(1.0 / (0.1 * 0.09), 111.1, 1.0);
+    // W_min ≈ 1 / (q × ε) for mean burst with r = ε/(1-ε)
+    // (exact: 1/(q·ε·(1-ε)); the paper table drops the (1-ε) correction).
+    // Section 2.4 scenario parameters (paper Section 14.5 table):
+    // WiFi: ε=2.5%, q=0.5 → W_min=80
+    assert_close(1.0 / (0.5 * 0.025), 80.0, 1.0);
+    // LTE: ε=5%, q=0.4 → W_min=50
+    assert_close(1.0 / (0.4 * 0.05), 50.0, 1.0);
+    // Satellite: ε=9%, q=0.3 → W_min≈37
+    assert_close(1.0 / (0.3 * 0.09), 37.0, 1.0);
 
     // B_99 = ceil(ln(0.01) / ln(1-q))
     let b99_wifi = (0.01_f64.ln() / (1.0 - 0.5_f64).ln()).ceil() as u64;
     assert_eq!(b99_wifi, 7);
-    let b99_lte = (0.01_f64.ln() / (1.0 - 0.2_f64).ln()).ceil() as u64;
-    assert_eq!(b99_lte, 21);
-    let b99_sat = (0.01_f64.ln() / (1.0 - 0.1_f64).ln()).ceil() as u64;
-    assert_eq!(b99_sat, 44);
+    let b99_lte = (0.01_f64.ln() / (1.0 - 0.4_f64).ln()).ceil() as u64;
+    assert_eq!(b99_lte, 10);
+    let b99_sat = (0.01_f64.ln() / (1.0 - 0.3_f64).ln()).ceil() as u64;
+    assert_eq!(b99_sat, 13);
 }

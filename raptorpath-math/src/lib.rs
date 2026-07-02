@@ -180,7 +180,10 @@ pub fn p_recovered_within(t: f64, epsilon: f64, q: f64, r: f64, window_size: f64
 }
 
 /// Find T_cut from target reliability rho via binary search.
-/// Returns Infinity at rho=1.0. See paper Section 9.4.
+/// Returns Infinity at rho=1.0. See paper Section 8.6 (Mode 1, Step 1).
+///
+/// Search range is capped at 10×W: if the true T_cut exceeds that (rho
+/// very close to 1 with marginal r), the capped value is returned.
 pub fn find_t_cut(epsilon: f64, q: f64, r: f64, window_size: f64, sigma2_burst: f64, target_rho: f64) -> f64 {
     if target_rho >= 1.0 { return f64::INFINITY; }
     if target_rho <= 0.0 || epsilon <= 0.0 { return 0.0; }
@@ -281,27 +284,25 @@ fn poisson_cdf_ge(m: u32, lambda: f64) -> f64 {
     1.0 - sum
 }
 
-/// P(FEC recovers m losses by time T symbol intervals) using Poisson taper model.
+/// P(FEC recovers m losses by time T wire slots) using the Poisson model.
 ///
-/// T is measured in symbol intervals after the burst.
-/// Each interval, ~ r/(1+r) of slots are corrections. Each survives with P=(1-ε).
-/// The taper shapes the density: more corrections early, fewer later.
+/// T is measured in wire slots after the loss. Every repair covers the
+/// entire encoder window, so the useful-equation arrival rate is the
+/// AGGREGATE correction rate — a fraction r/(1+r) of wire slots, each
+/// surviving with probability (1-ε):
 ///
-/// λ(T) = total expected surviving corrections by time T
-///       = Σ_{t=0}^{T} (r/(1+r)) × (1-ε) per slot, shaped by taper
-///       ≈ T × r/(1+r) × (1-ε) for flat rate (conservative)
+/// λ(T) = T × r/(1+r) × (1-ε)
 ///
 /// P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
 ///
+/// The taper shape (q) deliberately does NOT enter: in steady state the
+/// aggregate correction rate per slot is shape-invariant (paper Section
+/// 4.2); the parameter is kept for API stability.
+///
 /// See paper Section 14.3.
-pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, q: f64, epsilon: f64) -> f64 {
+pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, _q: f64, epsilon: f64) -> f64 {
     if m == 0 { return 1.0; }
     if epsilon <= 0.0 || r <= 0.0 { return if m == 0 { 1.0 } else { 0.0 }; }
-    // λ(T) = accumulated surviving corrections over T symbol intervals
-    // Correction rate per interval: r/(1+r)
-    // Survival: (1-ε)
-    // Taper effect: front-loaded, total by T = r×(1-(1-q)^(T+1))/(1+r) but
-    // for recovery timing, T intervals have ~T×r/(1+r) total correction slots
     let lambda = t * r * (1.0 - epsilon) / (1.0 + r);
     poisson_cdf_ge(m, lambda)
 }
@@ -313,7 +314,8 @@ pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, q: f64, epsilon: f64) -> f
 /// See paper Section 14.14.
 pub fn p_fec_recovery_marginalized(t: f64, r: f64, q: f64, epsilon: f64) -> f64 {
     let q_clamped = q.clamp(0.01, 1.0);
-    let b99 = b_max(((q_clamped * 100.0).round() as u64).max(1) as f64 / 100.0) as u32; // approximate
+    // B_99: 99th-percentile burst length, ceil(ln(0.01)/ln(1-q)).
+    // (Not b_max(), which uses the 99.99th percentile for buffer sizing.)
     let b99 = ((0.01_f64.ln() / (1.0 - q_clamped).max(0.001).ln()).ceil() as u32).max(1);
     let mut total = 0.0;
     let mut burst_prob = q_clamped; // P(burst=1) = q

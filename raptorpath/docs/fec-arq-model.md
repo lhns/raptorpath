@@ -170,8 +170,8 @@ ACK absence.
 | B      | Mean burst length = 1/q | symbols (count) | 2.0 |
 | W      | Encoder window size | symbols (count) | 50 |
 | RTT    | Round-trip time | seconds | 0.050 (50ms) |
-| P_lost(t) | P(symbol lost given no ACK after time t) | probability (0-1) | 0.5 at t=SRTT |
-| t_fec  | FEC recovery time = m / (A × (1-ε)) × t_sym | seconds | 0.003 (3ms) |
+| P_lost(t) | P(symbol lost given no ACK after time t) | probability (0-1) | ≈2ε at t=SRTT |
+| t_fec  | FEC recovery time = m × (1+r) / (r × (1-ε)) × t_sym | seconds | 0.0013 (1.3ms) |
 | t_sym  | Symbol transmission time = symbol_size / throughput | seconds | 0.000096 (96μs at 100Mbps) |
 | SRTT   | Smoothed RTT estimate | seconds | 0.050 (50ms) |
 | RTTVAR | RTT variance estimate (standard deviation) | seconds | 0.005 (5ms) |
@@ -182,8 +182,8 @@ ACK absence.
 | δ      | Tail latency target: P(late delivery) ≤ δ | probability (0-1) | 1e-4 |
 | ρ      | Reliability target: P(symbol delivered) ≥ ρ | probability (0-1) | 1.0 (100%) |
 | T_cut  | Taper cutoff time (stop corrections after this) | seconds | ∞ (100% reliability) |
-| B_max  | 99.99th percentile burst length = ceil(ln(0.0001)/ln(1-q)) | symbols (count) | 19 (WiFi, q=0.5) |
-| buffer_max | Max retransmit buffer size (derived) | symbols (count) | 750 (WiFi 100Mbps) |
+| B_max  | 99.99th percentile burst length = ceil(ln(0.0001)/ln(1-q)) | symbols (count) | 14 (WiFi, q=0.5) |
+| buffer_max | Max retransmit buffer size (derived) | symbols (count) | 700 (WiFi 100Mbps) |
 | L_prop | Propagation delay (base latency) | seconds | 0.025 (25ms) |
 | L_arq  | ARQ recovery latency (time from loss to retransmit arrival) | seconds | 0.075-0.100 |
 | σ²_burst | Burst variance inflation factor | dimensionless | 2.9 |
@@ -428,11 +428,14 @@ started, how likely it is to still be ongoing after t symbols.
 
 | Scenario   | ε (loss) | p (G→B)  | q (B→G) | B = 1/q | Character          |
 |------------|----------|----------|---------|---------|---------------------|
-| DC         | 0.1%     | 0.001    | 0.5     | 2.0     | Rare, short bursts  |
+| DC         | 0.1%     | 0.0005   | 0.5     | 2.0     | Rare, short bursts  |
 | WiFi       | 2.5%     | 0.013    | 0.5     | 2.0     | Moderate, short     |
 | LTE        | 5%       | 0.02     | 0.4     | 2.5     | Moderate, medium    |
 | Satellite  | 9%       | 0.03     | 0.3     | 3.3     | Frequent, long      |
-| Bad WiFi   | 15%      | 0.05     | 0.3     | 3.3     | Frequent, long      |
+| Bad WiFi   | 15%      | 0.053    | 0.3     | 3.3     | Frequent, long      |
+
+(Consistency check: ε = p/(p+q). E.g. DC: 0.0005/0.5005 ≈ 0.1%;
+WiFi: 0.013/0.513 ≈ 2.5%; Satellite: 0.03/0.33 ≈ 9.1%.)
 
 ---
 
@@ -588,30 +591,33 @@ A lost symbol is recovered by whichever mechanism finishes first — FEC or ARQ.
 Rather than a hard timeout threshold, the choice between repair and retransmit
 is **probabilistic**, based on the sender's confidence that a symbol was lost.
 
-**FEC recovery time (t_fec):** The taper function generates repair symbols
-continuously after a source symbol is sent. Each repair that covers the lost
-symbol AND survives the channel gives the decoder one more equation. For m
-lost symbols in the window, the decoder needs m surviving repairs:
+**FEC recovery time (t_fec):** After a loss, repair symbols keep arriving.
+Every repair is a linear combination of the entire encoder window (Section
+3.2), so every surviving repair gives the decoder one more equation for the
+lost symbol — not just the repairs "attributed" to that symbol by its own
+taper. In steady state, corrections occupy a fraction r/(1+r) of wire slots
+(Section 5.3), so useful equations arrive at rate r/(1+r) × (1-e) per slot.
+For m lost symbols in the window, the decoder needs m surviving repairs:
 
 ```
-  t_fec = m / (A x (1-e)) x t_sym
+  t_fec = m x (1+r) / (r x (1-e)) x t_sym
 
   where:
     m     = number of lost symbols in the window (usually 1)
-    A     = taper amplitude (corrections/symbol at offset 0)
+    r     = total correction rate (corrections per source symbol)
     1-e   = probability each repair survives the channel
     t_sym = symbol_size / throughput (time to transmit one symbol)
 ```
 
-Concrete examples for a single loss (m=1), A=0.04, e=0.025:
+Concrete examples for a single loss (m=1), r=0.08, e=0.025:
 
 ```
-  At 100 Mbps, 1200-byte symbols:  t_sym = 0.096ms, t_fec = 2.5ms
-  At  10 Mbps, 1200-byte symbols:  t_sym = 0.96ms,  t_fec = 24.6ms
-  At   1 Mbps, 1200-byte symbols:  t_sym = 9.6ms,   t_fec = 245ms
+  At 100 Mbps, 1200-byte symbols:  t_sym = 0.096ms, t_fec = 1.3ms
+  At  10 Mbps, 1200-byte symbols:  t_sym = 0.96ms,  t_fec = 13.3ms
+  At   1 Mbps, 1200-byte symbols:  t_sym = 9.6ms,   t_fec = 133ms
 ```
 
-For burst loss (m=5 on WiFi at 100 Mbps): t_fec = 5 x 2.5ms = 12.5ms.
+For burst loss (m=5 on WiFi at 100 Mbps): t_fec = 5 x 1.3ms = 6.6ms.
 
 **P_lost(t): the probability a symbol was lost.** At time t after sending a
 symbol, given no ACK has arrived, what is the probability it was actually lost?
@@ -639,20 +645,26 @@ This gives a smooth transition from "probably fine" to "certainly lost":
 ```
   t = 0:            P_lost = e              (just the base loss rate)
   t = SRTT:         P_lost ≈ 2e             (ACK expected by now)
-  t = SRTT + 2s:    P_lost ≈ 0.98           (very confident it's lost)
+  t = SRTT + 2s:    P_lost ≈ 0.5            (loss is now the likelier explanation)
+  t = SRTT + 4s:    P_lost > 0.99           (very confident it's lost)
   t >> SRTT:        P_lost -> 1.0            (certainly lost)
 ```
 
-Concrete example (WiFi, e = 0.025, SRTT = 50ms):
+Concrete example (WiFi, e = 0.025, SRTT = 50ms, RTTVAR = 5ms):
 
 ```
   t = 0ms:    P_lost = 0.025    -> 97.5% repair, 2.5% retransmit
-  t = 40ms:   P_lost = 0.08     -> 92% repair, 8% retransmit
-  t = 50ms:   P_lost = 0.05     -> 95% repair, 5% retransmit
-  t = 60ms:   P_lost = 0.35     -> 65% repair, 35% retransmit
-  t = 70ms:   P_lost = 0.85     -> 15% repair, 85% retransmit
-  t = 80ms:   P_lost = 0.98     -> 2% repair, 98% retransmit
+  t = 40ms:   P_lost = 0.026    -> 97% repair, 3% retransmit
+  t = 50ms:   P_lost = 0.049    -> 95% repair, 5% retransmit
+  t = 55ms:   P_lost = 0.14     -> 86% repair, 14% retransmit
+  t = 60ms:   P_lost = 0.53     -> 47% repair, 53% retransmit
+  t = 70ms:   P_lost = 0.999    -> ~0% repair, ~100% retransmit
 ```
+
+Note how sharp the transition is: P_lost stays near ε until roughly SRTT +
+1×RTTVAR, then rises to near-certainty within another 2-3×RTTVAR. The
+smoothness of the mix in practice comes from the spread of symbol ages in
+the retransmit buffer, not from the curve itself being gradual.
 
 The per-slot decision uses P_lost(t) directly:
 
@@ -703,7 +715,7 @@ faster than ARQ recovery (waiting for P_lost to rise + RTT/2):
   |     (gradually shifting from repair to retransmit)   |
 ```
 
-At 100 Mbps on WiFi: t_fec = 2.5ms. Most losses are FEC-recovered long
+At 100 Mbps on WiFi: t_fec = 1.3ms. Most losses are FEC-recovered long
 before P_lost rises high enough for retransmission. ARQ retransmit is only
 relevant for burst losses that overwhelm the FEC budget.
 
@@ -754,24 +766,54 @@ a source symbol. At offset t after symbol s enters the window, we generate
 
 ### 4.2 Why Match the Loss Distribution?
 
-The taper should allocate more correction where loss is more likely. Given that a
-symbol was lost (we're in a burst), the conditional probability that the burst
-is still active at offset t is:
+The taper should allocate more correction where it does the most good. Given
+that a symbol was lost (we're in a burst), the conditional probability that
+the burst is still active at offset t is:
 
 ```
    P(burst active at offset t | burst at offset 0) = (1-q)^t
 ```
 
-The optimal correction allocation is proportional to this conditional probability.
-This is the **water-filling solution**: given a fixed budget, allocate resources
-proportional to the probability of needing them.
+A correction at offset t is useful only if BOTH (a) the lost symbol still
+needs help at t, and (b) the correction itself survives the channel. These
+pull in opposite directions: (a) decays like the burst survival function
+(1-q)^t, while (b) — conditioned on the loss at offset 0 — is the
+probability the burst has ENDED by t, roughly 1 - (1-q)^t. Corrections sent
+into an ongoing burst are themselves lost (Section 14.15). The product
 
-**Proof sketch (Lagrange multipliers):** We want to maximize P_fec given a
-fixed total correction budget r. The marginal benefit of a correction symbol at
-offset t is proportional to P(burst still active at t). The Lagrangian is
-maximized when the correction density is proportional to (1-q)^t. This
-water-filling principle is analogous to the delay-optimal streaming code
-constructions in [Badr2017] and [Fong2019].
+```
+   benefit(t) ∝ (1-q)^t × (1 - (1-q)^t)
+```
+
+is hump-shaped: zero at t = 0, peaking around one mean burst length
+(t ≈ B), then decaying like (1-q)^t. The taper's exponential decay matches
+the correct TAIL behavior; its peak at t = 0 is an approximation that
+over-weights the first few offsets, where corrections have the lowest
+conditional survival probability. Two effects limit the cost of this
+approximation:
+
+1. **Repairs are window-fungible.** Every repair covers the whole encoder
+   window (Section 3.2), so a correction "attributed" to offset 0 of a fresh
+   symbol simultaneously sits at larger offsets for every older symbol in
+   the window. Per-symbol attribution is bookkeeping, not physics — recovery
+   depends on the aggregate correction rate (Section 8.2), which the shape
+   does not change in steady state (see below).
+
+2. **The exponential tail is the operationally important part.** The (1-q)^t
+   decay controls how long un-ACKed (increasingly likely lost) symbols keep
+   drawing correction coverage after everything else has been ACKed.
+
+**Steady-state shape invariance.** With a continuous source stream, the
+aggregate correction rate per wire slot is Σ_t τ(t) = r regardless of the
+taper's shape — every in-window symbol contributes its taper at a different
+age, and the sum over ages telescopes to the same total. The shape only
+affects behavior in transients: when the source pauses, when the window is
+not yet full, and — most importantly — through ACK truncation (Section 4.4):
+once a symbol is ACKed, its taper contribution stops, so beyond one RTT only
+un-ACKed (likely lost) symbols continue to generate corrections. The decay
+rate q determines how aggressively that residual coverage tapers off. The
+taper shape is therefore a policy for allocating corrections across
+UNCERTAIN symbols, not a mechanism that changes the steady-state budget.
 
 For an i.i.d. channel (q = 1, no burst memory): τ(t) = constant (flat taper).
 This is correct — every position is equally likely to need correction.
@@ -989,8 +1031,9 @@ This naturally produces Mehrotra & Li's optimal policy [Mehrotra2010]:
 during bursts (before RTT elapses), P_lost stays low → mostly repair.
 After bursts (ACKs reveal gaps), P_lost rises → targeted retransmit.
 
-P_retx is zero at the extremes (P_lost = 0: all repair, no waste; P_lost = 1:
-all retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
+The expected WASTE, E[waste] = P_lost × (1 - P_lost) (Section 3.4), is zero
+at the extremes (P_lost = 0: all repair, no waste; P_lost = 1: all
+retransmit, definitely lost so no waste) and maximized at P_lost = 0.5
 (maximum uncertainty). The model automatically allocates the right mix.
 
 See Appendix C.6 for an optional channel-state discount (ε_burst) that
@@ -1053,8 +1096,9 @@ buffer_max is derived, not configured:
                    (eviction keeps buffer within this bound)
 
     For ρ = 100%:  buffer_max = source_rate x (RTT + B_max / (r* x (1-e)) x t_sym)
-                   where B_max = ceil(ln(0.0001) / ln(1-q)) ≈ 9.2/q
-                   (99.99th percentile burst length from GE model)
+                   where B_max = ceil(ln(0.0001) / ln(1-q))
+                   (99.99th percentile burst length from GE model;
+                    ≈ 9.2/q for small q, = 14 exactly at q = 0.5)
 
 Both mechanisms always run. T_cut determines which triggers first:
 - Finite T_cut → eviction keeps buffer small → backpressure rarely triggers
@@ -1070,8 +1114,14 @@ The receiver sends an **ACK per received symbol** — every incoming symbol
 triggers an immediate ACK in the reverse direction. This provides the
 fastest possible loss detection and the most RTT samples for estimation.
 
-**Overhead:** Each ACK is ~80 bytes (fields + QUIC/UDP headers). At any
-link speed, ACK traffic is approximately 0.6% of the data rate — negligible.
+**Overhead:** Each ACK is ~80 bytes (fields + QUIC/UDP headers). With
+1200-byte symbols, per-symbol ACKs generate reverse-path traffic of about
+80/1200 ≈ 6.7% of the forward data rate. On symmetric links this is an
+acceptable price for per-symbol loss detection and RTT sampling. On
+strongly asymmetric uplinks (LTE, satellite, DOCSIS) it can be
+significant, and the per-batch or piggyback alternatives below become
+attractive; the model itself is agnostic to ACK batching (it only slows
+the P_lost transition by the batch interval).
 
 **Alternatives considered:**
 - Per-batch ACK: lower overhead, but slower loss detection (batch granularity)
@@ -1262,7 +1312,7 @@ Exponentially Weighted Moving Average of the loss rate:
 ```
    e_hat_ewma(n) = α x (lost/sent) + (1-α) x e_hat_ewma(n-1)
 
-   α = 0.1 → approximately 10-sample half-life
+   α = 0.1 → time constant of 10 samples (half-life ≈ 7 samples)
 ```
 
 **Strengths:** Simple, fast, responsive to changes.
@@ -1427,6 +1477,10 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 
 **Output:** A* (optimal taper amplitude), r* = A*/q (optimal correction rate)
 
+**Note on the constraint:** Section 8.2 actually derives r* from the
+stricter per-window surrogate P(repairs < K) ≤ δ rather than
+e × (1 - P_fec) ≤ δ — see the "Which δ is this?" note there.
+
 ### 8.2 Corrected Model (canonical)
 
 Let's reconsider. The taper generates correction symbols at known positions. For a
@@ -1474,6 +1528,17 @@ For recovery: number of arriving repairs ≥ K.
 Repairs arrive = Binomial(r × W, 1-ε), approximately Normal(rW(1-ε), rW(1-ε)ε).
 
 Constraint: P(repairs < K) ≤ δ.
+
+**Which δ is this?** Section 6.3 defines δ as P(late delivery) =
+e × (1 - P_fec). Since a symbol can only be late if it was lost first, the
+per-symbol constraint would be P(repairs < K) ≤ δ/e, i.e. z_{δ/e} in the
+margin. We deliberately impose the STRICTER per-window constraint
+P(repairs < K) ≤ δ, for two reasons: (1) conditioning on "this symbol was
+lost" size-biases K upward — a window known to contain a loss has more
+losses than average — which the unconditional P(C ≥ K) does not capture;
+the extra strictness compensates. (2) It keeps z_δ independent of e. The
+cost is modest over-provisioning: at WiFi (e = 0.025, δ = 1e-4), z_δ = 3.72
+vs z_{δ/e} = 2.65. Treat the resulting r* as conservative by construction.
 
 Using normal approximation:
 ```
@@ -1529,14 +1594,26 @@ in a window of size W is:
    σ²_burst = 1 + 2(1-p-q)/(p+q)                  (variance inflation factor)
 ```
 
-| Scenario  | p+q   | σ²_burst | Meaning                                  |
-|-----------|-------|----------|------------------------------------------|
-| DC        | 0.501 | 3.0      | 3× wider variance than iid assumption    |
+| Scenario  | p+q    | σ²_burst | Meaning                                  |
+|-----------|--------|----------|------------------------------------------|
+| DC        | 0.5005 | 3.0      | 3× wider variance than iid assumption    |
 | WiFi      | 0.513 | 2.9      | similar                                  |
 | LTE       | 0.42  | 3.8      | significant inflation                    |
 | Satellite | 0.33  | 5.1      | iid approximation seriously wrong        |
 
 We compute σ²_burst directly from the GE estimator's p̂ and q̂.
+
+**Known limitation — repair survival is treated as i.i.d.** The model
+inflates the variance of the loss count K by σ²_burst but keeps the repair
+count C ~ Binomial(rW, 1-ε) with independent survival. Repairs cross the
+same GE channel: a burst that inflates K simultaneously kills interleaved
+repairs, so Var(C) is also burst-inflated and Cov(K, C) < 0. Both effects
+widen Var(K - C) beyond what the formula assumes, making P_fec optimistic
+in exactly the bursty regime σ²_burst is meant to protect. Monte Carlo
+validation shows the normal approximation diverging by up to ~12% on
+high-loss/long-burst channels (LTE-like). For implementation-grade
+precision, use the exact O(W²) transfer-matrix computation (Appendix D,
+item 4), which captures loss/repair correlation exactly.
 
 ### 8.4 The Corrected Optimal Correction Rate
 
@@ -1636,13 +1713,16 @@ increasing in T_cut (more time = more corrections = higher recovery):
 ```
   Algorithm: find T_cut from ρ
 
+  P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))   (Section 8.2, time-independent)
+
   lo = 0
   hi = W x 10                        (upper bound: many window lengths)
   while hi - lo > tolerance:
       mid = (lo + hi) / 2
-      corrections = A x (1-(1-q)^(mid+1)) / q x (1-e)
-      P_recovered = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))    (Section 8.2)
-      if P_recovered < ρ:
+      corrections_by_mid = r x (1 - (1-q)^(mid+1))       (taper integral up to mid)
+      P_arq(mid) = min(corrections_by_mid / (e/(1-e)), 1) (fraction of needed corrections available)
+      P_recovered(mid) = 1 - e x (1-P_fec) x (1-P_arq(mid))
+      if P_recovered(mid) < ρ:
           lo = mid                   (need more time)
       else:
           hi = mid                   (enough time)
@@ -1684,26 +1764,30 @@ Fix bandwidth r and tail latency δ. Compute resulting reliability ρ.
    From A and the taper integral: ρ = total recovery probability within T_cut
 ```
 
-This mode requires solving for T_cut and A simultaneously (they're coupled).
-Binary search on T_cut works: ρ is monotone in T_cut (larger T_cut = more
-recovery time = higher ρ), and r is monotone in T_cut (larger T_cut =
-more corrections needed = higher r). For a given r budget:
+With r fixed, the implied tail latency is monotone in ρ: writing
+F = e(1-P_fec), Mode 2 gives δ(ρ) = F x P_arq(ρ) / ρ = 1 - (1-F)/ρ, which
+increases with ρ (demanding higher reliability forces more of the FEC
+misses to be recovered late by ARQ instead of dropped). So binary search
+on ρ finds the largest reliability whose implied lateness stays within
+the δ budget:
 
 ```
   Algorithm: find ρ given (r, δ)
 
-  lo = 0
-  hi = W x 10
+  P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))   (Section 8.2)
+
+  lo = 0.5
+  hi = 1 - 1e-12
   while hi - lo > tolerance:
-      mid = (lo + hi) / 2
-      A = r x q / (1 - (1-q)^(mid+1))
-      P_fec = Phi(sqrt(W) x (r(1-e)-e) / sqrt(e(1-e)(r+s2_burst)))   (Section 8.2)
-      if A produces rate > r:
-          hi = mid        (T_cut too large for budget)
+      mid = (lo + hi) / 2                        (candidate ρ)
+      P_arq(mid) = clamp(1 - (1-mid)/(e x (1-P_fec)), 0, 1)   (Section 6.3)
+      δ(mid) = e x (1-P_fec) x P_arq(mid) / mid   (Mode 2 with ρ = mid)
+      if δ(mid) > δ:
+          hi = mid        (candidate ρ implies more lateness than allowed)
       else:
-          lo = mid        (can afford more T_cut)
-  T_cut = lo
-  ρ = P(recovered within T_cut)                     (from taper integral)
+          lo = mid        (budget allows higher ρ)
+  ρ = lo
+  T_cut = find T_cut from ρ                       (Mode 1, Step 1)
 ```
 
 Convergence guaranteed by monotonicity. The resulting ρ is the maximum
@@ -1717,13 +1801,14 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Fix: ρ = 100%, minimize r
    Compute: δ (tail latency)
 
-   r* = 2.6% + z_δ x 1.2%     (from Section 8.5, WiFi row)
+   r* = 2.6% + z_δ x 3.9%     (from Section 8.5, WiFi row)
 
-   At minimum r = r_IT = 2.6%:  δ = e = 2.5% (every lost symbol goes to ARQ)
-   Tail latency ≈ T_retx + RTT/2 for 2.5% of symbols
-   For RTT = 50ms: L_arq ≈ 100ms for 2.5% of symbols
+   At minimum r = r_IT = 2.6%:  P_fec = 0.5 (Section 8.2: z = 0), so
+   δ = e x (1-P_fec) = 1.25% — half the lost symbols go to ARQ
+   Tail latency ≈ T_retx + RTT/2 for those symbols
+   For RTT = 50ms: L_arq ≈ 100ms for 1.25% of symbols
 
-   To get δ = 1e-2: r* = 5.4% (from worked examples)
+   To get δ = 1e-2: r* = 11.5% (Section 8.5, WiFi Bulk row)
 ```
 
 **Example 2: VoIP (WiFi, ε=0.025)**
@@ -1733,13 +1818,15 @@ reliability achievable within the bandwidth budget r at tail latency δ.
         r = 5% (codec + small overhead)
    Compute: ρ (reliability)
 
-   With r = 5%, the taper generates enough correction symbols that:
-   - P_fec ≈ 0.90 (90% of lost symbols FEC-recovered, zero latency)
-   - P_arq within 150ms ≈ 0.08 (8% recovered by retransmit)
-   - P_lost = 0.02 (2% permanently lost)
-   - ρ = 98%
+   With r = 5%, the correction budget gives (Section 8.2, W=50, σ²=2.9):
+   - P_fec ≈ 0.73 (73% of lost symbols FEC-recovered, no added latency)
+   - Remaining 0.68% of all symbols go to ARQ; one retransmit round
+     (L_arq ≈ 100ms) fits the 150ms budget, succeeding w.p. ≈ 1-e
+   - P(miss deadline) ≈ e x (1-P_fec) x e ≈ 0.02%  ->  ρ(150ms) ≈ 99.98%
 
-   The VoIP codec conceals the 2% frame loss.
+   The 150ms budget is generous at RTT = 50ms: reliability is limited by
+   double losses (symbol AND its retransmit both lost), not by the
+   correction budget. The VoIP codec conceals the residual frame loss.
 ```
 
 **Example 3: Live video (WiFi, ε=0.025)**
@@ -1751,7 +1838,8 @@ reliability achievable within the bandwidth budget r at tail latency δ.
    Need 99.9% of symbols delivered within 33ms.
    T_cut determined by ρ = 99.9%: T_cut ≈ 3 x RTT
    A determined by δ: need P(recovery within 33ms) ≥ 0.999
-   r* ≈ 8.4% (close to Realtime from Section 8.5)
+   33ms < L_arq, so recovery must be FEC — r* ≈ 17-21%
+   (between the Auto and Realtime rows of Section 8.5)
 ```
 
 **Example 4: Gaming (LTE, ε=0.05)**
@@ -1762,7 +1850,8 @@ reliability achievable within the bandwidth budget r at tail latency δ.
 
    Very tight latency + moderate reliability → aggressive FEC
    T_cut ≈ 2 x RTT (short: accept 1% loss)
-   r* ≈ 12% (most budget goes to proactive FEC within 20ms)
+   r* ≈ 15-20% (most budget goes to proactive FEC within 20ms;
+   the ρ = 99% cutoff trims the taper tail below the full 20% margin)
 ```
 
 **Example 5: Sensor telemetry (Satellite, ε=0.09)**
@@ -1818,15 +1907,21 @@ Weighted by decoder invocation probability:
 The corrected correction rate becomes:
 
 ```
-   r* = (e + e_codec_eff)/(1-e) + z_δ x √((e + e_codec_eff) / (W x (1-e)))
+   r* = (e + e_codec_eff)/(1-e) + z_δ x √((e + e_codec_eff) x σ²_burst / (W x (1-e)))
 ```
+
+(the same margin structure as Section 8.4, with e replaced by
+e_hat = e + e_codec_eff).
 
 ### 9.3 Impact on METTLE at DC
 
-Without weighting: r* includes 15% codec overhead → 16.1% correction rate.
-With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74% → 1.8% correction rate.
+At DC (ε=0.1%, W=50, σ²=3.0, Bulk δ=1e-2):
 
-The weighting reduces METTLE's DC overhead by ~9×.
+Without weighting: ε_hat = 0.1% + 15% = 15.1% → r* = 15.1% + 22.2% = 37.3%.
+With weighting: ε_codec_eff = 0.15 × 0.049 = 0.74%, ε_hat = 0.84%
+→ r* = 0.8% + 5.2% = 6.0%.
+
+The weighting reduces METTLE's DC overhead by ~6×.
 
 ---
 
@@ -1923,7 +2018,7 @@ and measure whether the actual tail latency matches the theoretical prediction.
 | Tail margin scales as 1/√W | r*(W=200) < r*(W=50) | Compare window sizes |
 | Taper shape matches GE | Decay rate = q̂ from estimator | Compare simulated vs theoretical |
 | Codec overhead weighting | METTLE DC overhead ~ 0.74% not 15% | DC scenario with METTLE |
-| Protocol hint only affects δ | Realtime(1e-5) = Auto(1e-7) | Same estimator, different hints |
+| Protocol hint only affects δ | r*(Realtime, δ=1e-6) vs r*(Auto, δ=1e-4) differ only via z_δ | Same estimator, different hints |
 
 ### 11.3 Boundary Cases
 
@@ -2447,16 +2542,28 @@ completion time matters, and the approximation is acceptable.
 ### 14.3 Unified FEC Latency Distribution
 
 For m concurrent losses (a burst of length m), the time until all m are
-recovered follows a counting process. Using the Poisson approximation
-(valid when per-slot correction probabilities are small):
+recovered follows a counting process. Every repair covers the entire encoder
+window (Section 3.2), so the useful-equation arrival rate after a loss is
+the AGGREGATE correction rate — corrections occupy a fraction r/(1+r) of
+wire slots, each surviving with probability (1-ε) — not the lost symbol's
+own taper density. Using the Poisson approximation (valid when per-slot
+correction probabilities are small):
 
 ```
-  λ(T) = Σ_{t=0}^{T} τ(t) × (1-ε)
-       = A × (1-ε) × (1 - (1-q)^(T+1)) / q
+  λ(T) = r × (1-ε) × T / (1+r)          T in wire slots after the loss
 
   P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
                     = 1 - Σ_{k=0}^{m-1} e^{-λ(T)} × λ(T)^k / k!
 ```
+
+λ(T) grows linearly until the window slides past the lost symbol — after
+W further source symbols, i.e. T ≈ W(1+r) wire slots — at which point
+λ = rW(1-ε), exactly the per-window Binomial mean of Section 8.2.
+
+(An earlier formulation summed only the lost symbol's own taper,
+λ(T) = A(1-ε)(1-(1-q)^(T+1))/q, which saturates at r(1-ε) < 1 and wrongly
+predicts that even a single loss is usually unrecoverable — the same
+per-symbol undercount that invalidates Appendix E.)
 
 This is the regularized incomplete gamma function Q(m, λ(T)).
 
@@ -2491,8 +2598,8 @@ For a symbol that has been in the window for T_w ticks before loss:
 
   λ_prior(T_w) = accumulated surviving repairs from before the loss
                = r × (1-ε) × T_w / (1+r)
-  λ_new(T)     = new taper corrections after the loss
-               = A × (1-ε) × (1-(1-q)^(T+1)) / q
+  λ_new(T)     = new corrections generated after the loss (Section 14.3)
+               = r × (1-ε) × T / (1+r)
 ```
 
 **Larger windows accumulate more ambient FEC → faster recovery.** This
@@ -2510,19 +2617,27 @@ For a burst of length B, we need B surviving repairs in the pipeline:
   W_min(B) = B × (1+r) / (r × (1-ε))
 ```
 
-For the mean burst (B = 1/q) with r = ε/(1-ε):
+With r = ε/(1-ε): r(1-ε) = ε and 1+r = 1/(1-ε), so W_min(B) = B/(ε(1-ε)).
+For the mean burst (B = 1/q), dropping the small (1-ε) correction:
 
 ```
-  W_min = 1 / (q × ε)
+  W_min = 1 / (q × ε × (1-ε)) ≈ 1 / (q × ε)
 ```
+
+Using the Section 2.4 scenario parameters (W_min ≈ B/ε):
 
 ```
   Scenario          ε      q     W_min(mean)   B_99   W_min(p99)
   ---------------------------------------------------------------
-  WiFi              5%    0.50        40          7       ~60
-  LTE              10%    0.20        50         21      ~150
-  Satellite         9%    0.10       111         44      ~350
+  WiFi            2.5%   0.50        80          7       ~280
+  LTE               5%   0.40        50         10       ~200
+  Satellite         9%   0.30        37         13       ~144
 ```
+
+Note the two opposing effects: longer bursts (small q) raise W_min via B,
+but higher loss ALSO means more repairs per window at r = ε/(1-ε), which
+lowers it — so satellite (high ε) needs a smaller minimum window than
+WiFi (low ε) despite its longer bursts.
 
 Setting W so that W × t_sym ≈ RTT gives FEC and ARQ roughly equal
 recovery latency. Below that threshold, FEC is strictly faster than ARQ
@@ -2534,17 +2649,17 @@ ARQ latency is well-defined: L_arq = T_retx + RTT/2 ≈ 1.5 × RTT.
 But T_retx depends on confidence that the symbol is actually lost.
 P_lost(t) (Section 3.4) models this confidence.
 
-As T_cut shrinks (retransmit sooner):
+As T_retx shrinks (retransmit sooner):
 
 - ↑ Faster recovery for truly lost symbols
 - ↓ More false-positive retransmits (duplicates)
 - ↓ Duplicates waste bandwidth → worse long-window latency
 
 P_lost(t) is exactly this probability/waste trade-off curve. The sweet
-spot is where P_lost(T_cut) is high enough that few retransmits are
+spot is where P_lost(T_retx) is high enough that few retransmits are
 wasted, but low enough for timely recovery.
 
-For T_cut < RTT: **proactive retransmit** territory. We retransmit
+For T_retx < RTT: **proactive retransmit** territory. We retransmit
 before knowing if the symbol was lost. This is bandwidth-expensive but
 latency-optimal for the individual symbol. Viable only at high ε where
 most symbols are lost anyway (P_lost(0) = ε is already high).
@@ -2753,7 +2868,8 @@ The corrected λ(T) should split into two phases:
     λ(T) = 0                                         for T < B (in-burst)
           = Σ_{t=B}^{T} τ(t) × (1-ε_good)           for T ≥ B (post-burst)
 
-  where ε_good = p (loss rate in Good state) ≈ 0 for packet erasure
+  where ε_good ≈ p (probability of re-entering Bad at a post-burst slot;
+  the Good state itself is loss-free, h_G = 0) ≈ 0 for packet erasure
 ```
 
 The practical effect: recovery begins only after the burst ends. The
@@ -2856,21 +2972,23 @@ The paper has two FEC recovery models:
   probability that FEC recovers ALL losses in the window?"
 
 - **Section 14.3**: P(t_fec ≤ T | m) = Q(m, λ(T))
-  Poisson CDF of the taper process. Answers: "given m losses, what's the
-  probability that m surviving repairs arrive by time T?"
+  Poisson CDF of the correction arrival process. Answers: "given m losses,
+  what's the probability that m surviving repairs arrive by time T?"
 
 These answer different questions:
 
 - Section 8.2: probability of FEC success (regardless of time)
 - Section 14.3: time distribution of FEC recovery
 
-They should be consistent: as T → ∞, the Poisson CDF should approach
-the Section 8.2 P_fec (since all taper corrections eventually arrive).
+They should be consistent: by the time the window slides past the lost
+symbol, the Poisson CDF should approach the Section 8.2 P_fec.
 
-Verify: λ(∞) = A/q × (1-ε) = r × (1-ε). The Poisson probability of
-≥ m events with mean r×(1-ε)×W should approximate the binomial-normal
-P_fec from Section 8.2. This needs formal verification or numerical
-comparison across scenarios.
+Verify: the lost symbol stays in the window for W further source symbols
+= W(1+r) wire slots, so λ(window exit) = r(1-ε)/(1+r) × W(1+r) = rW(1-ε)
+— exactly the mean of the Binomial repair count in Section 8.2. The
+Poisson(λ) tail P(≥ m) matches the first moment with a slightly wider
+distribution than the Binomial. The Monte Carlo suite compares the two
+models numerically across scenarios (tolerance 0.15).
 
 ### 14.20 The δ Definition Question
 
@@ -3059,7 +3177,7 @@ repairs specifically target the deficit, not general protection.
 
    Recovery latency (Section 3.4):
      t_sym = symbol_size / throughput      symbol transmission time    [seconds]
-     t_fec = m / (A x (1-e)) x t_sym       FEC recovery time           [seconds]
+     t_fec = m x (1+r) / (r x (1-e)) x t_sym   FEC recovery time       [seconds]
      t_recovery_i = P_fec_i x t_fec_i + (1-P_fec_i) x L_arq_i          [seconds]
      P_lost(t) = e / [e + (1-e) x P(RTT>t)]  loss confidence           [probability]
      P(RTT > t) = 1 - Phi((t - SRTT) / RTTVAR)                         [probability]
@@ -3491,9 +3609,9 @@ a paragraph or derivation, HIGH = needs new analysis or algorithm design.
 
 9. **Poisson model error not characterized (resolved).** (Appendix E.4) [LOW]
    The transition from Poisson (Appendix E.3) to corrected (Section 8.2) says "too
-   pessimistic" but doesn't explain why. The error: Poisson treats each
-   repair as independent, ignoring that repairs are deterministically
-   generated by the taper. One paragraph.
+   pessimistic" but doesn't explain why. The error: per-symbol accounting
+   counts only the lost symbol's own taper (~r corrections) instead of all
+   window-covering repairs (~rW) — a factor-of-W undercount. See E.4.
 
 10. **r* formula: which version is canonical (resolved)?** (Section 8.4 vs 9.2) [LOW]
     Section 8.4 uses raw ε. Section 9.2 adds codec overhead ε_codec.
@@ -3708,13 +3826,16 @@ For ε = 0.025 (WiFi), δ = 1e-4 (Realtime):
 This seems very high. Let's check: r_IT = 0.025/0.975 = 0.0256, so r* = 0.0256 × 221 = 5.66.
 That's 566% overhead — clearly too much.
 
-**The issue:** The Poisson model (Appendix E.1-E.2) treats each repair symbol
-as an independent random event with probability tau(t) of existing. In
-reality, repair symbols are generated deterministically by the taper schedule
-— their positions are known, not random. The taper generates exactly r*W
-repair symbols in a window of W, and each survives independently with
-probability (1-e). This is a Binomial process, not Poisson. The corrected
-model in Section 8.2 uses the Binomial/Normal approximation instead.
+**The issue:** The dominant error is not Poisson-vs-Binomial — it is
+per-symbol accounting. E.1 counts only the corrections attributed to the
+lost symbol by its own taper, Σ_t τ(t) = r per source symbol, so the
+expected help is R ≈ r(1-e) < 1 and the model concludes that even a single
+loss usually cannot be recovered. But every repair is a combination of the
+ENTIRE window (Section 3.2): while the lost symbol remains in the window,
+roughly rW repairs are generated that all cover it. The corrected model in
+Section 8.2 counts repairs per window — Binomial(rW, 1-e) — and compares
+them against the per-window loss count K. (The secondary Poisson-vs-Binomial
+distinction matters far less than this factor-of-W undercount.)
 
 ---
 

@@ -1,6 +1,13 @@
 # ADR-0023: Gilbert-Elliott HMM Loss Model
 
-## Status: Resolved
+## Status: Resolved (burst multiplier superseded)
+
+> **Note (2026-07):** The `GilbertElliottEstimator` itself remains in use, but
+> the multiplicative `burst_factor = 1 + ln(mean_burst_length − 1) × 0.3`
+> described below was removed by ADR-0043 (replaced with the additive B/T
+> burst term) and the controller was redesigned again in ADR-0050
+> (BOCD quantile + r* with σ²_burst = 1 + 2(1−p−q)/(p+q)). See those ADRs
+> for the current burst handling.
 
 ## Context
 

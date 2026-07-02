@@ -77,6 +77,12 @@ impl LossEstimator {
             self.in_burst = false;
         }
 
+        // Replay the batch to the GE estimator as all-losses-then-all-receives.
+        // The true interleaving is unknown from (sent, received) counts alone;
+        // lumping losses assumes maximal burstiness, which biases q̂ down /
+        // burst length up — the CONSERVATIVE direction (more burst margin).
+        // Callers with per-symbol loss patterns (SACK gaps) should feed
+        // ge.record_symbol() directly in arrival order instead.
         for _ in 0..lost { self.ge.record_symbol(false); }
         for _ in 0..received { self.ge.record_symbol(true); }
 

@@ -46,19 +46,34 @@ Original (unencoded) symbols are sent first. This lets the receiver:
 - Only invoke the fountain decoder when packets are actually lost
 - Achieve near-zero added latency on good links
 
-### FEC Rate Control (Hybrid Feedforward + Feedback)
+### FEC Rate Control (BOCD + r*, ADR-0050)
 
-**Feedforward**: Statistical computation from the binomial loss model.
-Given loss rate `p` and target tail loss `δ`:
+The rate controller (`src/control/fec_rate.rs`) uses:
+
+**Loss estimate**: BOCD (Bayesian Online Changepoint Detection) posterior
+upper quantile at 95% confidence — the quantile widens automatically at
+regime changes, providing the estimation-uncertainty margin. There is no
+PI controller (removed by ADR-0050; `feedback_update*()` are no-ops).
+
+**Rate formula** (paper Section 8.4, shared with `raptorpath-math`):
 
 ```
-r = k·p/(1-p) + z_δ · √(n·p·(1-p))
+r = max( p/(1-p) + z_δ·√(p·σ²_burst/(W·(1-p))) + codec_eff,  B/T )
 ```
 
-This gives the exact redundancy for constant tail loss probability.
+where `z_δ = normal_quantile(1 - target_tail_loss)` (the protocol hint
+enters here), `σ²_burst = 1 + 2(1-p-q)/(p+q)` from the GE estimator,
+`codec_eff` is codec overhead weighted by `P(decoder invoked) =
+1-(1-p)^W`, and `B/T` is the burst term (mean burst length over
+symbols-per-RTT).
 
-**Feedback**: PI controller on residual block failure rate.
-Compensates for model mismatch (correlated losses, estimation lag).
+**Spare-capacity gate**: repair rate is clamped to `(cwnd − in_flight) /
+in_flight` so FEC never causes congestion ("never hurts" guarantee).
+
+Note: the visualizer (`raptorpath-wasm`) currently drives the
+triangle-solver controller from `raptorpath-math` (EWMA mean + δ/ρ
+modes), which is NOT the production controller above — treat visualizer
+results as illustrating the model, not validating production behavior.
 
 ### Multipath Scheduling
 - Source symbols → lowest-RTT paths (minimize latency)
@@ -256,11 +271,11 @@ coding**:
 
 ## Protocol Hints
 
-| Mode     | FEC Strategy                          | Use Case           |
-|----------|---------------------------------------|-------------------|
-| Realtime | Aggressive FEC, +10% during bursts   | VoIP, gaming      |
-| Bulk     | Conservative FEC (70%), retransmit    | File transfer     |
-| Auto     | Standard feedforward+feedback         | General traffic   |
+| Mode     | Effect (ADR-0050)                          | Use Case           |
+|----------|--------------------------------------------|-------------------|
+| Realtime | target_tail_loss × 0.01 (100× tighter z_δ) | VoIP, gaming      |
+| Bulk     | target_tail_loss × 100 (100× looser z_δ)   | File transfer     |
+| Auto     | target_tail_loss unchanged                 | General traffic   |
 
 ## Platforms
 
@@ -346,10 +361,11 @@ For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-
 - [x] **Runtime backend switching** — ADR-0030
 
 - [x] **Hybrid proactive/reactive FEC** — Fractional repair accumulator replaces burst and
-  interval repairs. Each source adds `loss_rate × 4.0` to a debt counter; when debt ≥ 1.0, one
-  repair is emitted. ACK feedback and NACKs reduce debt, so proactive overhead approaches zero at
-  low loss. NACK handler retransmits exact source symbols (via `get_source()`) instead of random
-  repairs, with repair margin for retransmission losses. ADR-0037.
+  interval repairs (ADR-0037). *The original `loss_rate × 4.0` debt heuristic has since been
+  superseded by ADR-0050:* the debt increment now comes from
+  `compute_repair_rate_capped()` (BOCD + r*) shaped by the `TaperFunction`. ACK feedback and
+  NACKs still reduce debt, so proactive overhead approaches zero at low loss. NACK handler
+  retransmits exact source symbols (via `get_source()`) instead of random repairs.
 
 - [x] **Sliding window FEC (streaming codes)** — Implemented three window backends: RLC (ADR-0022),
   METTLE window mode, and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
@@ -385,9 +401,11 @@ raptorpath's FEC-based recovery against retransmission-based QUIC/MPTCP across 6
 overhead (padding, headers, metadata serialization). QUIC retransmissions are internal to the channel
 model and appear as increased latency, not explicit overhead.
 
-The benchmark uses the production-equivalent **fractional repair accumulator** (`repair_debt += batch *
-loss_rate * 4.0`), not the PI controller. This ensures overhead scales proportionally with actual loss
-rate. See [ADR-0040](docs/adr/0040-benchmark-repair-alignment.md) for the repair alignment fix.
+The benchmark uses a **fractional repair accumulator** aligned with the production send loop.
+(Historical note: at the time of ADR-0040 this was `repair_debt += batch * loss_rate * 4.0`;
+production now derives the debt increment from the ADR-0050 controller — BOCD + r* via
+`compute_repair_rate_capped()` — so benchmark numbers predating that change reflect the old
+heuristic.) See [ADR-0040](docs/adr/0040-benchmark-repair-alignment.md) for the repair alignment fix.
 
 **Multi-backend comparison** (ADR-0040): the benchmark tests three FEC backends across all scenarios:
 - **RLC** (window mode) — GF(2^8) Gaussian elimination, ~0% coding overhead, O(k^3) decode
