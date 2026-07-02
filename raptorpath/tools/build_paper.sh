@@ -129,7 +129,7 @@ TYPST_FILE=$(mktemp --suffix=.typ)
     --toc-depth=3 \
     --metadata title="FEC/ARQ Unified Correction Symbol Model" \
     --metadata author="Pierre Kisters" \
-    --metadata date="April 2026" \
+    --metadata date="$(date +'%B %Y')" \
     2>&1
 
 # Step 2: fix table columns — replace percentage widths with equal fractions
