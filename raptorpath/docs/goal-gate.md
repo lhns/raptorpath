@@ -103,6 +103,47 @@ Reading (see also the caveats below):
   §14.21) — the solver should detect saturation instead of monotonically
   increasing r with hint tightness.
 
+## SimQuic (L0.5 adversary)
+
+SimRetx collapses on random loss because AIMD treats channel loss as
+congestion. The honest modern adversary is QUIC/BBR-class: **loss-blind**.
+`run_baseline_quic` models QUIC-as-deployed at L0 fidelity: single path,
+Copa-lite delay-based CC (identical pacing/window structure to the
+raptorpath driver — loss never shrinks the window), sender-side SACK-timed
+ARQ with RFC 9002 time-threshold loss detection (retransmit after
+9/8 × SRTT without delivery, no oracle), and single-stream in-order
+delivery. Sanity (`simquic_sanity`): SimQuic completion is < 0.7× SimRetx
+on C2/C4 and its retransmit volume tracks ε — the model behaves like a
+competent transport, not a strawman.
+
+Measured (gate cells 22/23/25/27/28, 10 trials; sanity cells 6 trials;
+completion s / p99 ms):
+
+| Cell | raptorpath (Auto) | SimQuic | SimRetx | rp p99 vs SimQuic |
+|------|------------------:|--------:|--------:|------------------:|
+| C2 WiFi | 0.187 s / 28.2 ms | 0.172 s / 60.7 ms | 0.818 s / 53 ms | 0.47× |
+| C3 LTE | 0.955 s / 82.1 ms | 0.830 s / 215.0 ms | 3.76 s / 272 ms | 0.38× |
+| C5 BadWiFi | 0.419 s / 35.6 ms | 0.335 s / 83.3 ms | 2.26 s / 81 ms | 0.43× |
+| C4 Sat (sanity) | 1.60 s / 356 ms | 1.446 s / 883 ms | 24.5 s / 1528 ms | — |
+| C7 dual sym (completion) | 0.113 s | 0.172 s (single C2) | 0.405 s (dual) | 0.66× compl |
+| C8 dual asym (completion) | 0.171 s | 0.170 s (single C2) | 0.695 s (dual) | 1.01× compl |
+
+Reading:
+- **The latency claim survives the honest adversary**: raptorpath p99 is
+  0.38–0.47× SimQuic's (gate `gate_vs_simquic_p99`, ≤ 0.7×, CI-separated).
+  SimQuic keeps queues empty, so its entire tail IS the ARQ head-of-line
+  stall (≥ 9/8 SRTT per hole) — exactly what proactive FEC removes.
+- **The completion claim mostly does not**: SimQuic runs within ~15% of the
+  channel serialization floor, so on single paths it finishes 5–15% sooner
+  than Auto-hint raptorpath (the FEC overhead tax). This is the P4 gap:
+  Bulk should converge to pure ARQ + tail FEC
+  (`gate_vs_simquic_bulk_completion`, ignored until P4 lands).
+- **Multipath is the structural win only when the added path adds real
+  capacity**: C7 (2× WiFi) completes at 0.66× single-path SimQuic (gate
+  bound 0.75×, CI-separated; the 0.6× target is under the physical floor
+  ratio once FEC overhead is counted). C8 (WiFi+LTE, +20% capacity) is
+  parity (1.01×) — gate bound is no-regression (≤ 1.1×, CI-separated).
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,
