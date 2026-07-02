@@ -708,10 +708,37 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 // MIN sample rises above the floor, back off. Continuous
                 // oscillation, no phases, no loss reaction — channel loss
                 // is FEC's job, not CC's (paper Section 12).
+                //
+                // P1 (paper 12.4): the protocol hint sets the queue TARGET,
+                // not just the FEC rate. At high utilization the standing
+                // queue sits at this target, so Realtime keeps it near-empty
+                // while Bulk trades a deeper queue for utilization. A
+                // 3-level mapping for now; a continuous δ-based mapping
+                // (tail latency budget → Copa d_copa) is the future option.
+                //
+                // Calibration note: `base` = 2*one_way + jitter, while the
+                // empty-queue MIN sample is ~2*one_way (the min sees ~zero
+                // jitter), so the multiplier carries implicit slack of the
+                // full jitter bound. On C2 (10ms floor, 13ms base) the
+                // threshold only starts to bind below ~0.94x; 0.85x ≈ floor
+                // + ~1ms of queue. Measured on C2: p50 17.3 -> 12.8ms at
+                // unchanged completion; 0.78x reaches 11.3ms but costs +8%
+                // completion and sits 0.14ms above the floor (fragile). If
+                // `base` becomes an estimated (jitter-free) floor, the
+                // Realtime constant must be re-tuned upward (> 1).
+                let queue_mult = if cfg.hint_delay_target {
+                    match cfg.hint {
+                        ProtocolHint::Realtime => 0.85,
+                        ProtocolHint::Auto => 1.125,
+                        ProtocolHint::Bulk => 1.25,
+                    }
+                } else {
+                    1.125
+                };
                 let base = paths[i].rtt().as_secs_f64();
                 if min_rtt_win[i].is_finite() {
                     let cap = paths[i].bdp_cwnd() as f64 * 2.0;
-                    if min_rtt_win[i] > base * 1.125 {
+                    if min_rtt_win[i] > base * queue_mult {
                         ramping[i] = false;
                         cwnd[i] = (cwnd[i] * 0.92).max(4.0);
                     } else if ramping[i] {
@@ -1394,4 +1421,65 @@ fn quality_hint_sweep() {
             );
         }
     }
+}
+
+/// P1 ablation (paper 12.4): the protocol hint sets the Copa queue target,
+/// not just the FEC rate. Realtime with a tight target should cut the
+/// standing-queue median latency at C2 without giving up meaningful
+/// completion time; Bulk's deeper target must not hurt completion.
+#[test]
+#[ignore]
+fn ablation_p1_hint_delay_target() {
+    let trials = 6usize;
+    let run = |hint: ProtocolHint, flag: bool| {
+        let mut compl = TrialStats::new();
+        let mut p50 = TrialStats::new();
+        let mut p99 = TrialStats::new();
+        for t in 0..trials {
+            let seed = 60_000 + t as u64 * 137 + 42;
+            let c = FecConfig { hint_delay_target: flag, ..cfg(hint) };
+            let f = run_fec(&[C2_WIFI], seed, &c);
+            compl.push(f.completion_s);
+            p50.push(f.p50_ms);
+            p99.push(f.p99_ms);
+        }
+        (compl, p50, p99)
+    };
+
+    let (rt_on_c, rt_on_p50, rt_on_p99) = run(ProtocolHint::Realtime, true);
+    let (rt_off_c, rt_off_p50, rt_off_p99) = run(ProtocolHint::Realtime, false);
+    println!(
+        "C2 Realtime on : completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        rt_on_c.mean(), rt_on_p50.mean(), rt_on_p99.mean()
+    );
+    println!(
+        "C2 Realtime off: completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        rt_off_c.mean(), rt_off_p50.mean(), rt_off_p99.mean()
+    );
+    assert!(
+        rt_on_p50.mean() < 0.8 * rt_off_p50.mean(),
+        "Realtime p50 with hint delay target ({:.2}ms) not < 0.8x off ({:.2}ms)",
+        rt_on_p50.mean(), rt_off_p50.mean()
+    );
+    assert!(
+        rt_on_c.mean() <= 1.08 * rt_off_c.mean(),
+        "Realtime completion with hint delay target ({:.3}s) > 1.08x off ({:.3}s)",
+        rt_on_c.mean(), rt_off_c.mean()
+    );
+
+    let (bk_on_c, bk_on_p50, bk_on_p99) = run(ProtocolHint::Bulk, true);
+    let (bk_off_c, bk_off_p50, bk_off_p99) = run(ProtocolHint::Bulk, false);
+    println!(
+        "C2 Bulk     on : completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        bk_on_c.mean(), bk_on_p50.mean(), bk_on_p99.mean()
+    );
+    println!(
+        "C2 Bulk     off: completion={:.3}s p50={:.2}ms p99={:.2}ms",
+        bk_off_c.mean(), bk_off_p50.mean(), bk_off_p99.mean()
+    );
+    assert!(
+        bk_on_c.mean() <= 1.05 * bk_off_c.mean(),
+        "Bulk completion with hint delay target ({:.3}s) > 1.05x off ({:.3}s)",
+        bk_on_c.mean(), bk_off_c.mean()
+    );
 }
