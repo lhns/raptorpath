@@ -1628,4 +1628,90 @@ mod tests {
         path.record_rtt_sample(millis(100));
         assert_eq!(path.copa_target_cwnd(), 2000);
     }
+
+    #[test]
+    fn test_paced_ramp_reaches_block_scale_without_spurious_backoff() {
+        // P7 follow-up regression: with SYMBOL-paced sends the standing
+        // queue stays near zero, so at C2-like parameters (10ms floor, no
+        // competing traffic) the ramp must sail past one 64KB block
+        // (~56 symbols) within 15 SRTTs and never back off. The first L1
+        // run of batch-granular pacing failed exactly this: every block
+        // burst self-queued ~5.4ms > Bulk's 2.5ms threshold and cwnd
+        // pinned at ~34, just under one block.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone()); // Auto: 1.125 target
+        sched.add_path(0);
+
+        for round in 0..15 {
+            // Token-paced send phase across one RTT: consume only what
+            // the bucket allows, in 1ms steps (never a whole-block burst).
+            for _ in 0..12 {
+                let p = sched.path_mut(0).unwrap();
+                p.pace_refill();
+                let budget = p.pace_tokens().max(0.0) as u32;
+                if budget > 0 {
+                    p.consume_pace_tokens(budget);
+                }
+                clock.advance(millis(1));
+            }
+            // Paced sends leave only sub-threshold jitter over the floor
+            // (alternating 10.0/10.5ms; Auto's backoff needs > 11.25ms).
+            let sample = if round % 2 == 0 { 10_000 } else { 10_500 };
+            let p = sched.path_mut(0).unwrap();
+            p.record_rtt_sample(Duration::from_micros(sample));
+
+            let before = sched.path(0).unwrap().cwnd;
+            sched.ack(0, before.min(64));
+            let after = sched.path(0).unwrap().cwnd;
+            assert!(
+                after >= before,
+                "paced sends must not trigger a backoff (round {round}): {before} -> {after}"
+            );
+        }
+        let cwnd = sched.path(0).unwrap().cwnd;
+        assert!(
+            cwnd > 100,
+            "ramp must clear one 64KB block (~56 symbols) at C2, got {cwnd}"
+        );
+    }
+
+    #[test]
+    fn test_low_floor_clamp_no_spurious_backoff() {
+        // LAN-class floor (200us): the backoff threshold clamps at 0.1ms
+        // and dq clamps at the SAME 0.1ms, so sub-clamp jitter (raw dq
+        // 80us) can never back off — while a genuine standing queue
+        // (raw dq 200us > clamp) still does.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        for round in 0..10 {
+            let sample = if round % 2 == 0 { 200 } else { 280 };
+            let p = sched.path_mut(0).unwrap();
+            p.record_rtt_sample(Duration::from_micros(sample));
+            clock.advance(millis(1)); // >> sub-ms SRTT: update every round
+            let before = sched.path(0).unwrap().cwnd;
+            sched.ack(0, 8);
+            let after = sched.path(0).unwrap().cwnd;
+            assert!(
+                after >= before,
+                "jitter below the dq clamp must not back off (round {round}): {before} -> {after}"
+            );
+        }
+        assert!(
+            sched.path(0).unwrap().cwnd > PathState::INITIAL_CWND,
+            "LAN ramp should have grown"
+        );
+
+        // Sanity: a real standing queue above the clamp DOES back off.
+        let p = sched.path_mut(0).unwrap();
+        p.record_rtt_sample(Duration::from_micros(400)); // raw dq 200us
+        clock.advance(millis(1));
+        let before = sched.path(0).unwrap().cwnd;
+        sched.ack(0, 8);
+        assert!(
+            sched.path(0).unwrap().cwnd < before,
+            "genuine LAN queue must still back off"
+        );
+    }
 }

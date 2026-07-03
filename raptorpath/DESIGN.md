@@ -318,10 +318,12 @@ coding**:
 
 - [x] **Pacing / burst smoothing** — Implemented (P7, paper 12.4 implementation notes).
   Token-bucket pacer at `cwnd/SRTT` symbols per second with burst allowance
-  `max(10, cwnd/8)`, gating the interleaver drain in `net/mod.rs` (batch-granular:
-  the final batch may overdraft; the debt is repaid before the next drain). Ported
-  together with the gate-proven Copa-lite window dynamics (windowed-min queue signal,
-  hint-coupled queue target, two-speed ramp, cwnd floor 8).
+  `max(10, cwnd/8)`, gating the interleaver drain in `net/mod.rs` at SYMBOL
+  granularity: drained symbols land in a per-path carry queue and each pace tick
+  sends only floor(tokens) symbols (carried symbols count toward the TUN-read
+  gate). Ported together with the gate-proven Copa-lite window dynamics
+  (windowed-min queue signal, hint-coupled queue target, two-speed ramp,
+  cwnd floor 8).
 
 - [ ] **BLEST-style receive-side reordering awareness** — The scheduler sends source symbols to
   the lowest-RTT path, but when path RTTs differ significantly (e.g. 10ms WiFi vs 80ms LTE),

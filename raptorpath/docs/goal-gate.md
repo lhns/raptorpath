@@ -149,9 +149,18 @@ the very first burst (observed: tx_paused=true, in_flight=41, cwnd=2).
 The port mirrors the gate driver's semantics in
 `src/scheduler/mod.rs` (windowed-min queue signal, 10 s floor window,
 hint queue targets 1.08/1.125/1.25, ×1.5+1 → +2/×0.92 two-speed ramp,
-cwnd floor 8) and adds batch-granular token-bucket pacing (cwnd/SRTT,
-burst max(10, cwnd/8)) to the interleaver drain in `src/net/mod.rs`.
-Unit-tested at L0 (burst spike costs one ×0.92 backoff, not a collapse);
+cwnd floor 8) and adds token-bucket pacing (cwnd/SRTT, burst
+max(10, cwnd/8)) to the interleaver drain in `src/net/mod.rs`. The first
+L1 round confirmed the CC fix (cwnd no longer collapses; ACKs flow,
+blocks decode) but exposed the batch-granular pacing approximation:
+whole 64KB blocks (~56 symbols) overdrafted as one burst, self-queueing
+~5.4ms at C2 — above Bulk's 2.5ms backoff threshold — pinning cwnd at
+~34. The follow-up made pacing SYMBOL-level (per-path carry queue;
+partial sends up to floor(tokens); carried symbols count toward the
+TUN gate) and cut the Bulk flush timeout 50ms → 5ms, which had been
+serializing block assembly with the CC gate into ~300ms ACK clumps.
+Unit-tested at L0 (paced ramp reaches >100 symbols in 15 SRTTs with no
+spurious backoff; burst spike costs one ×0.92 backoff, not a collapse);
 L1 throughput verification on the VM pending.
 
 ## SimQuic (L0.5 adversary)

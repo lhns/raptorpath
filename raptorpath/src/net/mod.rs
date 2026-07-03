@@ -98,7 +98,13 @@ impl BlockProfile {
             },
             ProtocolHint::Bulk => Self {
                 max_block_size: 64 * 1024,          // 64KB — max throughput
-                flush_timeout: Duration::from_millis(50),
+                // 5ms, not 50ms (P7 follow-up): while the Copa gate pauses
+                // TUN reads, block assembly stalls mid-block; a 50ms flush
+                // then serialized with the CC window and clumped the whole
+                // pipeline into ~300ms ack bursts at C2 (L1 measurement).
+                // 5ms bounds the assembly wait well under one C2 RTT while
+                // still filling 64KB blocks at any bulk-transfer rate.
+                flush_timeout: Duration::from_millis(5),
                 symbol_size: 1200,
             },
             ProtocolHint::Auto => Self {
@@ -484,9 +490,13 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut last_tx_paused = false;
         let mut flush_deadline: Option<tokio::time::Instant> = None;
-        // Pacing retry: set when a drain was blocked by the token bucket
-        // (P7); the select loop retries the drain when it fires.
+        // Pacing retry: set when the token bucket left symbols in the
+        // carry (P7); the select loop resumes the paced drain when it fires.
         let mut pace_deadline: Option<tokio::time::Instant> = None;
+        // Symbol-level pacing carry: drained-but-not-yet-sendable symbols
+        // wait here between pace ticks (P7 follow-up — the interleaver
+        // drain is all-or-nothing, so partial sends need their own queue).
+        let mut pace_carry: PaceCarry = PaceCarry::new();
         let mut shutting_down = false;
         let mut ileave = if sender_interleave_depth >= 2 {
             interleave::InterleavingBuffer::new_tapered(
@@ -524,7 +534,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     .fold((0u64, 0u64), |(f, c), p| {
                         (f + p.in_flight as u64, c + p.cwnd as u64)
                     });
-                (fl >= cw.max(4), fl, cw)
+                // Carried symbols are committed-to-send but not yet on the
+                // wire; counting them keeps the encoder from running ahead
+                // of the pacer unboundedly (P7 follow-up).
+                let committed = fl + carry_len(&pace_carry) as u64;
+                (committed >= cw.max(4), fl, cw)
             };
             if tx_paused != last_tx_paused {
                 debug!(tx_paused, in_flight = dbg_fl, cwnd = dbg_cw, "backpressure state change");
@@ -562,6 +576,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         // the blocked drain.
                         pace_deadline = send_interleaved_batches(
                             &mut ileave,
+                            &mut pace_carry,
                             &sender_batch_counter,
                             &sender_transport,
                             &sender_scheduler,
@@ -576,6 +591,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         if ileave.should_drain() || !ileave.is_empty() {
                             pace_deadline = send_interleaved_batches(
                                 &mut ileave,
+                                &mut pace_carry,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
@@ -613,6 +629,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 // the pacing gate — shutdown flush must not strand data)
                 send_interleaved_batches(
                     &mut ileave,
+                    &mut pace_carry,
                     &sender_batch_counter,
                     &sender_transport,
                     &sender_scheduler,
@@ -666,6 +683,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         if ileave.should_drain() {
                             pace_deadline = send_interleaved_batches(
                                 &mut ileave,
+                                &mut pace_carry,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
@@ -699,6 +717,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         if ileave.should_drain() {
                             pace_deadline = send_interleaved_batches(
                                 &mut ileave,
+                                &mut pace_carry,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
@@ -2279,70 +2298,89 @@ fn encode_to_interleave_buf(
     ileave.push_block(block_id, assignments);
 }
 
+/// Per-path carry queue for symbol-level pacing: symbols drained from the
+/// interleaver but not yet sendable under the token bucket wait here, in
+/// send order, until the next pace tick.
+type PaceCarry = std::collections::HashMap<u32, std::collections::VecDeque<crate::fec::WireSymbol>>;
+
+/// Total symbols waiting in the pacing carry queue.
+fn carry_len(carry: &PaceCarry) -> usize {
+    carry.values().map(|q| q.len()).sum()
+}
+
 /// Drain interleaved symbols from the buffer and send them on the wire.
 ///
-/// Token-bucket pacing (paper Section 12.5, P7): the drain only proceeds
-/// while pacing tokens are available (refilled at cwnd/SRTT per path with
-/// burst allowance max(10, cwnd/8)). The interleaver's drain is
-/// all-or-nothing (it empties every buffered slot), so the gate is
-/// batch-granular: a drain needs at least one token on some live path,
-/// and the symbols actually sent are charged against each path's bucket,
-/// which may go negative — the debt is repaid before the next drain, so
-/// the average offered rate stays at cwnd/SRTT. This is the documented
-/// approximation of per-symbol pacing; the TUN-read gate
-/// (in_flight >= cwnd) remains the outer backpressure.
+/// Token-bucket pacing (paper Section 12.5, P7), SYMBOL-level: the
+/// interleaver's drain is all-or-nothing, so drained symbols first land in
+/// the per-path `carry` queue; each call then sends only up to
+/// floor(tokens) symbols per path (tokens refill at cwnd/SRTT with burst
+/// allowance max(10, cwnd/8)) and the remainder stays in the carry for the
+/// next pace tick. No whole-block overdrafts: the first L1 run of the
+/// batch-granular gate showed every 56-symbol block serializing into
+/// ~5.4ms of self-queue at C2 — above Bulk's 2.5ms backoff threshold — so
+/// EVERY block bought a ×0.92 backoff and cwnd pinned just under one
+/// block. The TUN-read gate (in_flight + carried >= cwnd) remains the
+/// outer backpressure.
 ///
-/// Returns `Some(delay)` if pacing blocked the drain (retry after
-/// `delay`), `None` if the buffer was drained (or was empty).
-/// `force` bypasses the pacing gate (shutdown flush).
+/// Returns `Some(delay)` when symbols remain in the carry — the caller
+/// should retry after `delay`, the refill time for the next token on the
+/// most-ready pending path. Returns `None` when everything is sent.
+/// `force` bypasses the pacing gate entirely (shutdown flush).
 fn send_interleaved_batches(
     ileave: &mut interleave::InterleavingBuffer,
+    carry: &mut PaceCarry,
     batch_counter: &AtomicU64,
     transport: &Arc<QuicTransport>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
     force: bool,
 ) -> Option<std::time::Duration> {
-    if ileave.is_empty() {
+    // 1) Move any drainable interleaver content into the carry queue.
+    if !ileave.is_empty() {
+        // Worst-path loss rate for tapered interleaving decay.
+        let loss_rate = {
+            let sched = scheduler.lock();
+            sched
+                .active_paths()
+                .iter()
+                .filter_map(|id| sched.path(*id))
+                .map(|p| p.estimator.loss_rate())
+                .fold(0.0f64, f64::max)
+        };
+        let batches = if ileave.should_drain() {
+            ileave.drain(loss_rate)
+        } else {
+            ileave.drain_all(loss_rate)
+        };
+        for (path_id, symbols) in batches {
+            carry.entry(path_id).or_default().extend(symbols);
+        }
+    }
+    carry.retain(|_, q| !q.is_empty());
+    if carry.is_empty() {
         return None;
     }
 
-    // Compute worst-path loss rate for tapered interleaving decay, and
-    // apply the pacing gate under the same lock.
-    let loss_rate = {
+    // 2) Per-path send budgets from the token buckets. Budgets are
+    //    computed (not consumed) here; actual sends are charged in step 4.
+    //    Unknown paths (removed mid-flight) get flushed unconditionally —
+    //    their sends fail at the transport with a warn, as before.
+    let budgets: Vec<(u32, usize)> = {
         let mut sched = scheduler.lock();
-        if !force {
-            let mut any_token = false;
-            let mut min_delay = std::time::Duration::from_millis(50);
-            for id in sched.live_paths() {
-                if let Some(p) = sched.path_mut(id) {
-                    p.pace_refill();
-                    if p.pace_tokens() >= 1.0 {
-                        any_token = true;
-                    } else {
-                        min_delay = min_delay.min(p.pace_delay());
-                    }
-                }
-            }
-            if !any_token {
-                // Paced out: leave the buffer intact and tell the caller
-                // when the next token arrives (clamped to 1ms..50ms so a
-                // long-SRTT path cannot wedge the drain loop).
-                return Some(min_delay.max(std::time::Duration::from_millis(1)));
-            }
-        }
-        sched
-            .active_paths()
+        carry
             .iter()
-            .filter_map(|id| sched.path(*id))
-            .map(|p| p.estimator.loss_rate())
-            .fold(0.0f64, f64::max)
-    };
-
-    let batches = if ileave.should_drain() {
-        ileave.drain(loss_rate)
-    } else {
-        ileave.drain_all(loss_rate)
+            .map(|(pid, q)| {
+                let n = if force {
+                    q.len()
+                } else if let Some(p) = sched.path_mut(*pid) {
+                    p.pace_refill();
+                    p.pace_tokens().max(0.0) as usize
+                } else {
+                    q.len()
+                };
+                (*pid, n.min(q.len()))
+            })
+            .collect()
     };
 
     let now = now_us();
@@ -2350,10 +2388,15 @@ fn send_interleaved_batches(
     // never tracked it, so cwnd gating had nothing to gate on).
     let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
 
-    for (path_id, symbols) in batches {
-        if symbols.is_empty() {
+    // 3) Send up to the budget per path, chunked to the path MTU.
+    for (path_id, budget_syms) in budgets {
+        if budget_syms == 0 {
             continue;
         }
+        let symbols: Vec<crate::fec::WireSymbol> = {
+            let q = carry.get_mut(&path_id).expect("budget from carry key");
+            q.drain(..budget_syms).collect()
+        };
         // QUIC datagrams have a hard size limit (1200 bytes initial MTU
         // until PMTUD raises it). Chunk the drain so every serialized
         // SymbolBatch fits — L1 harness finding: multi-symbol batches were
@@ -2404,18 +2447,30 @@ fn send_interleaved_batches(
         }
     }
 
-    if !sent_per_path.is_empty() {
-        let mut sched = scheduler.lock();
-        for (pid, n) in sent_per_path {
-            if let Some(p) = sched.path_mut(pid) {
-                p.in_flight = p.in_flight.saturating_add(n);
-                // Charge pacing tokens for what actually left (may push
-                // the bucket negative — batch-granular overdraft).
-                p.consume_pace_tokens(n);
-            }
+    // 4) Charge in_flight + pacing tokens for what actually left, and
+    //    compute the next pace tick if symbols remain in the carry.
+    carry.retain(|_, q| !q.is_empty());
+    let mut sched = scheduler.lock();
+    for (pid, n) in sent_per_path {
+        if let Some(p) = sched.path_mut(pid) {
+            p.in_flight = p.in_flight.saturating_add(n);
+            p.consume_pace_tokens(n);
         }
     }
-    None
+    if carry.is_empty() {
+        return None;
+    }
+    // Wake when the most-ready pending path refills its next token
+    // (clamped to 500us..50ms: the lower bound coalesces sub-timer-
+    // resolution wakeups into small runs the burst allowance absorbs; the
+    // upper bound keeps a long-SRTT path from wedging the drain loop).
+    let mut delay = std::time::Duration::from_millis(50);
+    for pid in carry.keys() {
+        if let Some(p) = sched.path(*pid) {
+            delay = delay.min(p.pace_delay());
+        }
+    }
+    Some(delay.max(std::time::Duration::from_micros(500)))
 }
 
 /// Per-path batch sequence tracker for loss detection on receiver side.

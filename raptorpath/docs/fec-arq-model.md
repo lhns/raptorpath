@@ -2343,11 +2343,21 @@ honest deviations in constants and mechanics:
 - **Ramp fast-exit**: during the ramp the backoff check also runs per
   ACK (not only per SRTT), so the exponential phase ends within one
   feedback message of the first standing-queue evidence.
-- **Pacing is batch-granular**: the interleaver's drain is all-or-nothing,
-  so the token bucket gates the drain and lets the final batch overdraft
-  (negative balance repaid before the next drain). Average offered rate
-  is still cwnd/SRTT; the TUN-read gate (in_flight >= cwnd) remains the
-  outer backpressure.
+- **Pacing is symbol-level via a carry queue**: the interleaver's drain
+  is all-or-nothing, so drained symbols land in a per-path carry queue
+  and each pace tick sends only floor(tokens) symbols; the remainder
+  waits for the next tick (wakeup = next-token refill time, clamped
+  0.5-50 ms). The first cut gated at batch granularity and let a whole
+  block overdraft; measured at L1 (C2, Bulk) every 56-symbol block
+  burst serialized ~5.4 ms of self-queue — above Bulk's 2.5 ms backoff
+  threshold — so every block bought a x0.92 backoff and cwnd pinned
+  just under one block (~34 symbols). Symbol-level pacing removes the
+  self-queue entirely. Carried symbols count toward the TUN-read gate
+  (in_flight + carried >= cwnd), which remains the outer backpressure.
+- **Bulk flush timeout 5 ms** (was 50 ms): while the CC gate pauses TUN
+  reads, 64KB block assembly stalls mid-block; a 50 ms flush serialized
+  with the congestion window and clumped the pipeline into ~300 ms ACK
+  bursts at L1. 5 ms bounds the assembly wait well under one C2 RTT.
 - **Loss reaction** (the driver has none, by design): a decode FAILURE
   with the standing queue above target takes the same x0.92 backoff as
   the delay signal; a decode failure with an empty queue ends the ramp
