@@ -113,6 +113,11 @@ impl FecEncoder for ReedSolomonEncoder {
             })
             .collect()
     }
+
+    /// RS is fixed-rate: only the pre-generated parity shards exist.
+    fn max_repairs(&self) -> u32 {
+        self.repair_shards.len() as u32
+    }
 }
 
 /// Reed-Solomon decoder.

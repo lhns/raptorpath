@@ -18,6 +18,7 @@ fn test_wire_message_has_version_header() {
 fn test_wire_message_roundtrip_with_version() {
     let msg = WireMessage::Control(ControlMessage::Ack {
         block_id: 99,
+        batch_seq: 4,
         received_ids: vec![1, 2, 3],
         echo_send_timestamp_us: 12345,
         expected_count: 10,

@@ -42,6 +42,22 @@ pub trait FecEncoder: Send {
     /// Rateless codes (RaptorQ, RLC) return `u32::MAX`; fixed-rate codes
     /// return the actual coded symbol count.
     fn max_repairs(&self) -> u32 { u32::MAX }
+    /// Generate `count` repair symbols starting at repair index `start`.
+    ///
+    /// Used by block-mode ARQ (P8) to mint FRESH repairs after loss: the
+    /// initial proactive repairs occupy indices `0..repair_count`, so
+    /// post-hoc corrections start at `repair_count` and never repeat an
+    /// already-sent symbol. The default implementation works for any
+    /// encoder whose `repair_symbols(n)` is deterministic and prefix-stable
+    /// (all current backends): generate `start + count` and skip the first
+    /// `start`. Fixed-rate codes self-clamp — they return fewer (or zero)
+    /// symbols when `start + count` exceeds their capacity.
+    fn repair_symbols_from(&self, start: u32, count: u32) -> Vec<WireSymbol> {
+        self.repair_symbols(start.saturating_add(count))
+            .into_iter()
+            .skip(start as usize)
+            .collect()
+    }
 }
 
 /// Trait for FEC block decoders.
