@@ -160,6 +160,33 @@ Reading:
   ratio once FEC overhead is counted). C8 (WiFi+LTE, +20% capacity) is
   parity (1.01×) — gate bound is no-regression (≤ 1.1×, CI-separated).
 
+## L1 Phase 1 — REAL kernel TCP over netem (first real-world data)
+
+Fedora VM, netns+veth+netem with the paper 2.4 GE parameters verbatim
+(tools/l1). transfer_bench.py measures full object delivery (app-level
+ack) at microsecond resolution. 1.8 MB objects, 10 runs, seed 42.
+
+| Cell | CUBIC median / max | BBR median / max | Steady goodput C/B |
+|------|--------------------|------------------|--------------------|
+| C1 DC | 0.027s / 0.15s | 0.028s / 0.028s | 930 / 929 Mbit/s |
+| C2 WiFi | 0.64s / 1.25s | 0.22s / 0.92s | 10.5 / 93 Mbit/s |
+| C3 LTE | 5.2s / 37s | 1.00s / 1.09s | 1.4 / 18.1 Mbit/s |
+| C4 Sat | 52.5s / 191s | 6.9s / 131s | DNF(>20min/10MB) / 11.0 Mbit/s |
+| C5 BadWiFi | see note | 1.00s / 6.4s | pending / 9.9 Mbit/s |
+
+Reading:
+- **CUBIC's collapse is real and worse than L0 modeled** (L0 SimRetx:
+  17-25% of capacity; reality: 10% at C2, 7% at C3, RTO-dominated
+  near-zero at C4/C5 — retransmits themselves get lost).
+- **BBR validates the SimQuic adversary class** (loss-blind, ~93% of
+  capacity at C2) — but its SMALL-OBJECT TAILS explode with RTT x loss
+  (C4: median 6.9s, max 131s): serial-ARQ pathology, exactly the tail
+  FEC exists to remove. That tail is the L1 target raptorpath must beat.
+- C5 CUBIC note: two attempts could not finish 10 x 1.8 MB inside 15
+  minutes (recorded as DNF; single-run measurement pending). Harness
+  lesson: collapsed CCs need DNF-as-result semantics (sweep_tcp.sh and
+  run_cell.sh now record timeouts as results).
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,
