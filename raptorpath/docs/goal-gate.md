@@ -172,7 +172,7 @@ ack) at microsecond resolution. 1.8 MB objects, 10 runs, seed 42.
 | C2 WiFi | 0.64s / 1.25s | 0.22s / 0.92s | 10.5 / 93 Mbit/s |
 | C3 LTE | 5.2s / 37s | 1.00s / 1.09s | 1.4 / 18.1 Mbit/s |
 | C4 Sat | 52.5s / 191s | 6.9s / 131s | DNF(>20min/10MB) / 11.0 Mbit/s |
-| C5 BadWiFi | see note | 1.00s / 6.4s | pending / 9.9 Mbit/s |
+| C5 BadWiFi | 131s / 149s (3 runs) | 1.00s / 6.4s | ~0.14 / 9.9 Mbit/s |
 
 Reading:
 - **CUBIC's collapse is real and worse than L0 modeled** (L0 SimRetx:
@@ -182,10 +182,11 @@ Reading:
   capacity at C2) — but its SMALL-OBJECT TAILS explode with RTT x loss
   (C4: median 6.9s, max 131s): serial-ARQ pathology, exactly the tail
   FEC exists to remove. That tail is the L1 target raptorpath must beat.
-- C5 CUBIC note: two attempts could not finish 10 x 1.8 MB inside 15
-  minutes (recorded as DNF; single-run measurement pending). Harness
-  lesson: collapsed CCs need DNF-as-result semantics (sweep_tcp.sh and
-  run_cell.sh now record timeouts as results).
+- C5 CUBIC: median 131 s for 1.8 MB on a 50 Mbit link (0.14 Mbit/s
+  effective, 130x slower than BBR) — RTO-dominated at 15% bursty loss.
+  Two earlier attempts could not finish 10 objects inside 15 minutes.
+  Harness lesson: collapsed CCs need DNF-as-result semantics (sweep_tcp.sh
+  and run_cell.sh now record timeouts as results).
 
 ## Honest scope
 
