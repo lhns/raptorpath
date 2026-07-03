@@ -159,9 +159,20 @@ whole 64KB blocks (~56 symbols) overdrafted as one burst, self-queueing
 partial sends up to floor(tokens); carried symbols count toward the
 TUN gate) and cut the Bulk flush timeout 50ms → 5ms, which had been
 serializing block assembly with the CC gate into ~300ms ACK clumps.
-Unit-tested at L0 (paced ramp reaches >100 symbols in 15 SRTTs with no
-spurious backoff; burst spike costs one ×0.92 backoff, not a collapse);
-L1 throughput verification on the VM pending.
+The second L1 round (post symbol-pacing) still crawled at ~30 KB/s with
+the TUN gate cycling at the 2 s leak-guard cadence: root cause was a
+DOUBLE CHARGE of the in_flight budget — Scheduler::schedule charged at
+schedule time and the paced drain charged the same symbols again at
+wire time, leaking +1 per symbol until the gate jammed and only the
+2 s 25% decay let trickles through (also the pre-P7 in_flight=41 at
+cwnd=2). Fixed: budget charged once at schedule time; ACK releases go
+through a FIFO charge log; stranded charges (lost best-effort ACK
+datagrams) expire after max(4×SRTT, 250 ms). Echo-timestamp RTT was
+checked and is honest (batches are stamped at wire time, after the
+carry). Unit-tested at L0 (C2-loop sim with lossy ACKs must ramp cwnd
+past 200 in 5 s and stay ack-clocked; budget conservation; stranded-
+budget expiry; paced ramp reaches >100 symbols in 15 SRTTs with no
+spurious backoff); L1 throughput verification on the VM pending.
 
 ## SimQuic (L0.5 adversary)
 

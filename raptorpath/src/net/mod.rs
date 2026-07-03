@@ -526,19 +526,24 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             // QUIC timers/liveness, and any bulk transfer killed the
             // tunnel within DEAD_PATH_TIMEOUT (L1 harness finding).
             let (tx_paused, dbg_fl, dbg_cw) = {
-                let sched = sender_scheduler.lock();
-                let (fl, cw) = sched
-                    .live_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .fold((0u64, 0u64), |(f, c), p| {
-                        (f + p.in_flight as u64, c + p.cwnd as u64)
-                    });
-                // Carried symbols are committed-to-send but not yet on the
-                // wire; counting them keeps the encoder from running ahead
-                // of the pacer unboundedly (P7 follow-up).
-                let committed = fl + carry_len(&pace_carry) as u64;
-                (committed >= cw.max(4), fl, cw)
+                let mut sched = sender_scheduler.lock();
+                let mut fl = 0u64;
+                let mut cw = 0u64;
+                for id in sched.live_paths() {
+                    if let Some(p) = sched.path_mut(id) {
+                        // Time-based budget release first: stranded charges
+                        // (lost best-effort ACK datagrams) must reopen the
+                        // gate at RTT timescale, not the 2s leak-guard
+                        // cadence (P7 follow-up 2, L1 finding).
+                        p.expire_in_flight();
+                        fl += p.in_flight as u64;
+                        cw += p.cwnd as u64;
+                    }
+                }
+                // in_flight is charged once at SCHEDULE time, so it already
+                // covers interleaver + pacing carry + wire — the whole
+                // committed pipeline.
+                (fl >= cw.max(4), fl, cw)
             };
             if tx_paused != last_tx_paused {
                 debug!(tx_paused, in_flight = dbg_fl, cwnd = dbg_cw, "backpressure state change");
@@ -1287,10 +1292,14 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 }
             }
 
-            // in_flight leak guard: unACKed budget (dropped ACK datagrams,
-            // dead peers) decays instead of jamming the Copa gate forever.
+            // in_flight leak guard (backstop): time-based expiry
+            // (PathState::expire_in_flight, RTT-timescale) is the primary
+            // release for stranded budget; the 25% decay remains as a
+            // last-resort backstop for anything the expiry can't see
+            // (e.g. direct in_flight writes that bypassed the charge log).
             for pid in sched.all_path_ids() {
                 if let Some(path) = sched.path_mut(pid) {
+                    path.expire_in_flight();
                     if path.in_flight > path.cwnd {
                         path.in_flight -= path.in_flight / 4;
                     }
@@ -1584,7 +1593,7 @@ async fn run_window_sender(
             {
                 let mut sched = scheduler.lock();
                 if let Some(p) = sched.path_mut(source_path) {
-                    p.in_flight += 1;
+                    p.charge_in_flight(1);
                 }
             }
             if let Some(ps) = stats.path(source_path) {
@@ -1632,7 +1641,7 @@ async fn run_window_sender(
                     {
                         let mut sched = scheduler.lock();
                         if let Some(p) = sched.path_mut(alt) {
-                            p.in_flight += 1;
+                            p.charge_in_flight(1);
                         }
                     }
                     if let Some(ps) = stats.path(alt) {
@@ -1730,7 +1739,7 @@ async fn run_window_sender(
                     {
                         let mut sched = scheduler.lock();
                         if let Some(p) = sched.path_mut(correction_path) {
-                            p.in_flight += 1;
+                            p.charge_in_flight(1);
                         }
                     }
                     if let Some(ps) = stats.path(correction_path) {
@@ -2301,13 +2310,9 @@ fn encode_to_interleave_buf(
 
 /// Per-path carry queue for symbol-level pacing: symbols drained from the
 /// interleaver but not yet sendable under the token bucket wait here, in
-/// send order, until the next pace tick.
+/// send order, until the next pace tick. Carried symbols are already
+/// counted in the in_flight budget (charged at schedule time).
 type PaceCarry = std::collections::HashMap<u32, std::collections::VecDeque<crate::fec::WireSymbol>>;
-
-/// Total symbols waiting in the pacing carry queue.
-fn carry_len(carry: &PaceCarry) -> usize {
-    carry.values().map(|q| q.len()).sum()
-}
 
 /// Drain interleaved symbols from the buffer and send them on the wire.
 ///
@@ -2320,7 +2325,8 @@ fn carry_len(carry: &PaceCarry) -> usize {
 /// batch-granular gate showed every 56-symbol block serializing into
 /// ~5.4ms of self-queue at C2 — above Bulk's 2.5ms backoff threshold — so
 /// EVERY block bought a ×0.92 backoff and cwnd pinned just under one
-/// block. The TUN-read gate (in_flight + carried >= cwnd) remains the
+/// block. The TUN-read gate (in_flight >= cwnd, where in_flight is the
+/// schedule-time budget covering interleaver + carry + wire) remains the
 /// outer backpressure.
 ///
 /// Returns `Some(delay)` when symbols remain in the carry — the caller
@@ -2385,8 +2391,7 @@ fn send_interleaved_batches(
     };
 
     let now = now_us();
-    // in_flight accounting for Copa backpressure (block mode previously
-    // never tracked it, so cwnd gating had nothing to gate on).
+    // Sent counts per path, for pacing-token charges below.
     let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
 
     // 3) Send up to the budget per path, chunked to the path MTU.
@@ -2448,13 +2453,16 @@ fn send_interleaved_batches(
         }
     }
 
-    // 4) Charge in_flight + pacing tokens for what actually left, and
-    //    compute the next pace tick if symbols remain in the carry.
+    // 4) Charge pacing tokens for what actually left, and compute the next
+    //    pace tick if symbols remain in the carry. in_flight is NOT charged
+    //    here: the budget was already charged once at SCHEDULE time
+    //    (Scheduler::schedule → charge_in_flight); charging again at send
+    //    time double-counted every symbol and leaked the gate shut (L1
+    //    finding: 2s leak-guard duty cycles at ~30 KB/s).
     carry.retain(|_, q| !q.is_empty());
     let mut sched = scheduler.lock();
     for (pid, n) in sent_per_path {
         if let Some(p) = sched.path_mut(pid) {
-            p.in_flight = p.in_flight.saturating_add(n);
             p.consume_pace_tokens(n);
         }
     }
@@ -2592,9 +2600,7 @@ fn handle_control_message(
                     // Lost symbols also left the wire: release them from
                     // in_flight (sched.ack above only subtracts received),
                     // otherwise losses leak budget and the Copa gate jams.
-                    path.in_flight = path
-                        .in_flight
-                        .saturating_sub(expected_count.saturating_sub(received_count));
+                    path.release_in_flight(expected_count.saturating_sub(received_count));
                 }
 
                 // ADR-0013: update path monitoring stats
