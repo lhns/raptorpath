@@ -1067,8 +1067,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         .map(|p| p.estimator.record_batch(expected, symbol_count));
 
                     // ADR-0005: send ACK as datagram (best-effort, low overhead)
-                    if let Err(e) = recv_transport.send_control_datagram(path_id, ack) {
-                        debug!(?e, path_id, "failed to send ACK datagram");
+                    match recv_transport.send_control_datagram(path_id, ack) {
+                        Err(e) => debug!(?e, path_id, "failed to send ACK datagram"),
+                        Ok(()) => debug!(path_id, batch_seq, symbol_count, "ack sent"),
                     }
                 }
                 WireMessage::Control(ctrl_msg) => {
@@ -2510,6 +2511,16 @@ fn handle_control_message(
             let mut sched = scheduler.lock();
             sched.touch_path(path_id);
             sched.ack(path_id, received_ids.len() as u32);
+            if let Some(p) = sched.path(path_id) {
+                debug!(
+                    path_id,
+                    acked = received_ids.len(),
+                    expected_count,
+                    in_flight = p.in_flight,
+                    cwnd = p.cwnd,
+                    "ack processed"
+                );
+            }
 
             // ADR-0007: RTT from echoed sender timestamp (same clock, no skew)
             let now = now_us();
