@@ -2318,6 +2318,42 @@ period (>20s), the system can force a brief rate reduction as a fallback
 — though this is rarely needed because Copa's oscillation provides
 natural refreshing.
 
+**Production implementation notes (P7 port).** The production scheduler
+implements the Copa-lite scheme exactly as proven in the gate driver
+(windowed-min queue signal, hint-coupled queue target x{1.08, 1.125,
+1.25}, two-speed ramp x1.5+1 then +2/x0.92, per-SRTT update cadence,
+token-bucket pacing at cwnd/SRTT with burst max(10, cwnd/8)), with these
+honest deviations in constants and mechanics:
+
+- **Propagation floor** = min RTT sample over the 10 s sliding window
+  (the driver used the lifetime min because its trials were shorter than
+  any sane window; the 10 s window is the faithful production analogue
+  and self-heals after a route change).
+- **dq clamp at 0.1 ms**, applied to BOTH the queuing-delay estimate and
+  the backoff threshold (queue_mult - 1) x floor. This keeps the
+  closed-form rate 1/(d_copa x dq) finite on LAN-class floors and makes
+  the backoff comparison continuous there (dq at the clamp cannot exceed
+  a threshold at the same clamp) — no branch cliffs. The rate formula
+  itself is retained as a diagnostic only; the cwnd dynamics are the
+  ramp/backoff scheme.
+- **cwnd floor = 8 symbols** (the driver backed off to >= 4). An L1 run
+  on a real emulated link (100 Mbit, 10 ms RTT) showed the pre-P7
+  rate-formula collapse crawling at cwnd = 2; the raised floor guarantees
+  a trickle that keeps RTT samples, and therefore recovery, flowing.
+- **Ramp fast-exit**: during the ramp the backoff check also runs per
+  ACK (not only per SRTT), so the exponential phase ends within one
+  feedback message of the first standing-queue evidence.
+- **Pacing is batch-granular**: the interleaver's drain is all-or-nothing,
+  so the token bucket gates the drain and lets the final batch overdraft
+  (negative balance repaid before the next drain). Average offered rate
+  is still cwnd/SRTT; the TUN-read gate (in_flight >= cwnd) remains the
+  outer backpressure.
+- **Loss reaction** (the driver has none, by design): a decode FAILURE
+  with the standing queue above target takes the same x0.92 backoff as
+  the delay signal; a decode failure with an empty queue ends the ramp
+  and steps cwnd down by 1 (FEC under-provision, not congestion). Loss
+  that FEC recovered never touches cwnd.
+
 ### 12.5 CC + Taper: The Complete Architecture
 
 ```

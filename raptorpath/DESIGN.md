@@ -316,12 +316,12 @@ coding**:
 - [x] **ProbeRTT phase** — Implemented (ADR-0024). 10s interval, 200ms hold at cwnd=4.
   Prevents min_rtt drift from standing queues.
 
-- [ ] **Pacing / burst smoothing** — Currently `on_ack` can grow cwnd aggressively during startup
-  (`cwnd + acked`), causing micro-bursts that overwhelm WiFi buffers and trigger transient
-  congestion. Real BBR uses pacing — spacing packets evenly across one RTT. QUIC itself has
-  pacing at the datagram level, but our scheduler dumps a full cwnd-worth of symbols in a burst.
-  A token-bucket pacer (one symbol every `RTT / cwnd` interval) would smooth transmission and
-  reduce buffer bloat at WiFi access points and cellular base stations.
+- [x] **Pacing / burst smoothing** — Implemented (P7, paper 12.4 implementation notes).
+  Token-bucket pacer at `cwnd/SRTT` symbols per second with burst allowance
+  `max(10, cwnd/8)`, gating the interleaver drain in `net/mod.rs` (batch-granular:
+  the final batch may overdraft; the debt is repaid before the next drain). Ported
+  together with the gate-proven Copa-lite window dynamics (windowed-min queue signal,
+  hint-coupled queue target, two-speed ramp, cwnd floor 8).
 
 - [ ] **BLEST-style receive-side reordering awareness** — The scheduler sends source symbols to
   the lowest-RTT path, but when path RTTs differ significantly (e.g. 10ms WiFi vs 80ms LTE),

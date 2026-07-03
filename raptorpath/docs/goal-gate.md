@@ -114,6 +114,7 @@ Reading:
 | P4b tail_fec | C2/C4 Bulk completion | — | -7.7ms / -10.5ms (pre-P6; the P6 χ ramp now subsumes the burst for Bulk) |
 | P5 saturation_cap | C4 Realtime p99 | 378.7ms | 332.3ms (reversal vs Auto gone; C2 bit-identical, cap non-binding) |
 | P6 completion-exposure δ | wasm Bulk vs old min(0.1, ε̂) | see below | completion -6%/-8%, excess overhead 5.99→0.04% / 8.21→0.91% |
+| P7 production Copa-lite port | real-link (C2 netem) tunnel throughput — production scheduler, not the driver | cwnd collapsed 10→2 symbols on the first burst (rate-formula target) | implemented, L1-verified pending |
 
 Notable: most of the median-latency win came from P2 (the ground-truth
 floor hid the jitter bound); P1's hint mapping is retained for semantics.
@@ -137,6 +138,21 @@ cold-start prior governs both arms; documented in 14.26). Bulk now beats
 fixed(0.01) on both completion (562 vs 598) and overhead (5.31% vs
 6.11%). The production tunnel keeps χ = 0 (endless stream, T_rem
 unknown); an idle-onset heuristic is future work.
+
+P7 (production Copa-lite port, paper 12.4 implementation notes) closes
+the documented driver-vs-production CC gap: the production scheduler's
+Copa used instantaneous dq = RTT − min_RTT with no min-RTT windowing, no
+ramp discipline, and no pacing, so on a real emulated link (C2: 100 Mbit,
+10 ms RTT, netem) the initial burst inflated its own RTT samples and the
+rate-formula target crushed cwnd from 10 to its floor of 2 symbols on
+the very first burst (observed: tx_paused=true, in_flight=41, cwnd=2).
+The port mirrors the gate driver's semantics in
+`src/scheduler/mod.rs` (windowed-min queue signal, 10 s floor window,
+hint queue targets 1.08/1.125/1.25, ×1.5+1 → +2/×0.92 two-speed ramp,
+cwnd floor 8) and adds batch-granular token-bucket pacing (cwnd/SRTT,
+burst max(10, cwnd/8)) to the interleaver drain in `src/net/mod.rs`.
+Unit-tested at L0 (burst spike costs one ×0.92 backoff, not a collapse);
+L1 throughput verification on the VM pending.
 
 ## SimQuic (L0.5 adversary)
 

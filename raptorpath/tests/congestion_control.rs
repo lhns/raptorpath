@@ -37,8 +37,9 @@ fn test_startup_grows_cwnd() {
     sched.schedule(source, vec![]);
     let cwnd_before = sched.path(0).unwrap().cwnd;
 
-    // Advance mock clock so delivery rate is computable
-    clock.advance(millis(2));
+    // P7 Copa-lite: cwnd updates run once per SRTT, driven by RTT samples.
+    sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+    clock.advance(millis(60));
     sched.ack(0, 5);
     let cwnd_after = sched.path(0).unwrap().cwnd;
 
@@ -49,23 +50,24 @@ fn test_startup_grows_cwnd() {
 }
 
 #[test]
-fn test_startup_doubles_per_rtt() {
+fn test_startup_ramp_multiplicative_per_rtt() {
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
 
-    // In startup, cwnd should grow aggressively
+    // In the startup ramp, cwnd should grow multiplicatively per RTT
     let initial = sched.path(0).unwrap().cwnd;
     assert_eq!(initial, PathState::INITIAL_CWND);
 
-    clock.advance(millis(2));
+    sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+    clock.advance(millis(60));
     sched.ack(0, initial);
     let after_first = sched.path(0).unwrap().cwnd;
 
-    // Startup adds acked to cwnd (like slow-start)
+    // P7 Copa-lite ramp: cwnd = cwnd × 1.5 + 1 per window update
     assert!(
-        after_first >= initial * 2,
-        "Startup should at least double cwnd: {initial} -> {after_first}"
+        after_first >= initial * 3 / 2,
+        "Ramp should grow cwnd at least 1.5x per RTT: {initial} -> {after_first}"
     );
 }
 
@@ -171,7 +173,7 @@ fn test_cwnd_never_below_minimum() {
     }
 
     let cwnd = sched.path(0).unwrap().cwnd;
-    assert!(cwnd >= PathState::MIN_CWND, "cwnd should never go below MIN_CWND=2, got {cwnd}");
+    assert!(cwnd >= PathState::MIN_CWND, "cwnd should never go below MIN_CWND, got {cwnd}");
 }
 
 #[test]
@@ -291,27 +293,25 @@ fn test_multipath_independent_cc() {
 
 #[test]
 fn test_copa_cwnd_tracks_queuing_delay() {
-    // Copa: rate = 1/(d_copa × dq). When RTT rises (dq grows), cwnd should drop.
+    // Copa-lite: when the windowed-min RTT rises above the propagation
+    // floor times the queue target, cwnd backs off.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
 
-    // Baseline: low RTT → large Copa target
-    let path = sched.path_mut(0).unwrap();
-    path.record_rtt_sample(millis(50));
-
-    // Grow cwnd in startup
+    // Baseline: RTT at the floor → ramp grows cwnd (one update per SRTT)
     for _ in 0..10 {
-        clock.advance(millis(2));
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(50));
+        clock.advance(millis(60));
         sched.ack(0, 20);
     }
     let cwnd_low_rtt = sched.path(0).unwrap().cwnd;
 
-    // Now RTT rises significantly (queue building)
+    // Now RTT rises significantly (queue building) → per-update backoffs
     for _ in 0..5 {
         let path = sched.path_mut(0).unwrap();
         path.record_rtt_sample(millis(200));
-        clock.advance(millis(2));
+        clock.advance(millis(250));
         sched.ack(0, 5);
     }
     let cwnd_high_rtt = sched.path(0).unwrap().cwnd;
@@ -399,20 +399,26 @@ fn test_copa_startup_exits_on_congestion() {
 
     assert!(sched.path(0).unwrap().in_slow_start, "should start in startup");
 
-    // Record increasing RTTs to trigger congestion detection
+    // Establish the propagation floor and complete one clean update.
+    sched.path_mut(0).unwrap().record_rtt_sample(millis(50));
+    clock.advance(millis(60));
+    sched.ack(0, 10);
+    assert!(sched.path(0).unwrap().in_slow_start, "clean window keeps ramping");
+
+    // A full window of inflated samples: even the windowed MIN is above
+    // floor × queue target → congestion → ramp ends.
     let path = sched.path_mut(0).unwrap();
-    path.record_rtt_sample(millis(50));
-    path.record_rtt_sample(millis(70));
     path.record_rtt_sample(millis(95));
+    path.record_rtt_sample(millis(110));
     path.record_rtt_sample(millis(120));
 
-    // ACK to trigger startup exit check
-    clock.advance(millis(2));
+    // ACK to trigger the backoff check
+    clock.advance(millis(60));
     sched.ack(0, 10);
 
     assert!(
         !sched.path(0).unwrap().in_slow_start,
-        "should exit startup when RTT is rising"
+        "should exit startup when the standing queue shows"
     );
 }
 
@@ -426,18 +432,24 @@ fn test_copa_steady_state_convergence() {
     let path = sched.path_mut(0).unwrap();
     path.record_rtt_sample(millis(50));
 
-    // Exit startup
-    for _ in 0..10 {
-        clock.advance(millis(2));
+    // Ramp for a few RTTs, then exit via one inflated window (first backoff)
+    for _ in 0..6 {
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(50));
+        clock.advance(millis(60));
         sched.ack(0, 20);
     }
+    sched.path_mut(0).unwrap().record_rtt_sample(millis(100));
+    clock.advance(millis(60));
+    sched.ack(0, 20);
+    assert!(!sched.path(0).unwrap().in_slow_start, "backoff ends the ramp");
 
-    // Record stable RTTs and keep ACKing — cwnd should stabilize
+    // Record near-floor RTTs and keep ACKing — cwnd stabilizes into the
+    // gentle additive oscillation (+2 per RTT)
     let mut cwnds = vec![];
     for _ in 0..20 {
         let path = sched.path_mut(0).unwrap();
-        path.record_rtt_sample(millis(55)); // slight queuing
-        clock.advance(millis(2));
+        path.record_rtt_sample(millis(55)); // slight queuing, below target
+        clock.advance(millis(60));
         sched.ack(0, 5);
         cwnds.push(sched.path(0).unwrap().cwnd);
     }
