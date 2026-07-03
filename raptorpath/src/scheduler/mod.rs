@@ -67,6 +67,12 @@ const BACKOFF_MULT: f64 = 0.92;
 /// SRTT assumed before the first RTT sample arrives (update cadence only).
 const DEFAULT_SRTT: Duration = Duration::from_millis(50);
 
+/// Floor on the in_flight expiry horizon (see `PathState::expire_in_flight`).
+/// max(4×SRTT, this): stranded budget (lost best-effort ACK datagrams)
+/// releases within ~a quarter second instead of jamming the TUN gate until
+/// the 2s leak-guard decay.
+const IN_FLIGHT_EXPIRY_MIN: Duration = Duration::from_millis(250);
+
 /// Hint-coupled queue-target multiplier (P1, paper Section 12.4): the
 /// standing queue is allowed to raise the windowed min RTT to
 /// floor × mult before Copa-lite backs off. Realtime keeps the queue
@@ -464,6 +470,12 @@ pub struct PathState {
     pace_tokens: f64,
     /// Last time pacing tokens were replenished.
     last_pace_refill: Instant,
+    /// FIFO log of in_flight charges (charge instant, symbols) backing the
+    /// time-based release in `expire_in_flight`. Invariant (best-effort):
+    /// sum of counts == in_flight; direct writes to `in_flight` (tests,
+    /// the leak-guard backstop) break it temporarily and all helpers
+    /// saturate rather than trust it.
+    in_flight_log: VecDeque<(Instant, u32)>,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -503,6 +515,7 @@ impl PathState {
             copa: CopaState::new(clock.clone(), hint),
             pace_tokens: Self::INITIAL_CWND as f64,
             last_pace_refill: now,
+            in_flight_log: VecDeque::new(),
             clock,
         }
     }
@@ -699,6 +712,68 @@ impl PathState {
         let rate = (self.cwnd as f64 / srtt).max(1.0); // symbols per second
         Duration::from_secs_f64((1.0 - self.pace_tokens) / rate)
     }
+
+    // --- in_flight budget accounting (P7 follow-up 2) ---
+    //
+    // in_flight is a BUDGET GAUGE (symbols committed: interleaver + pacing
+    // carry + wire), charged exactly once per symbol at SCHEDULE time and
+    // released by ACK feedback. ACKs are best-effort datagrams: a lost ACK
+    // strands its release forever, and stranded budget compounds until the
+    // TUN gate jams (L1 finding: the gate cycled at the 2s leak-guard
+    // cadence instead of the RTT). The FIFO charge log makes releases
+    // robust: budget older than max(4×SRTT, 250ms) is delivered-or-lost
+    // either way (RFC 9002-style time-threshold, at gauge granularity) and
+    // expires. Pacing (cwnd/SRTT tokens) remains the actual rate limiter,
+    // so an early expiry can only let the encoder run ahead, never the
+    // wire.
+
+    /// Charge `n` symbols against the in_flight budget (at schedule time).
+    pub fn charge_in_flight(&mut self, n: u32) {
+        if n == 0 {
+            return;
+        }
+        self.in_flight = self.in_flight.saturating_add(n);
+        self.in_flight_log.push_back((self.clock.now(), n));
+    }
+
+    /// Release `n` symbols of budget (ACK feedback: received or
+    /// gap-inferred lost). Pops the OLDEST charges first.
+    pub fn release_in_flight(&mut self, n: u32) {
+        self.in_flight = self.in_flight.saturating_sub(n);
+        let mut remaining = n;
+        while remaining > 0 {
+            match self.in_flight_log.front_mut() {
+                Some((_, c)) if *c > remaining => {
+                    *c -= remaining;
+                    remaining = 0;
+                }
+                Some((_, c)) => {
+                    remaining -= *c;
+                    self.in_flight_log.pop_front();
+                }
+                None => break,
+            }
+        }
+    }
+
+    /// Expire budget charged longer than max(4×SRTT, 250ms) ago: its ACK
+    /// (or the loss evidence) would have arrived by now — the datagram was
+    /// delivered with the ACK lost, or lost with no later batch to reveal
+    /// the gap. Either way it is no longer on the wire.
+    pub fn expire_in_flight(&mut self) {
+        if self.in_flight_log.is_empty() {
+            return;
+        }
+        let horizon = (self.srtt() * 4).max(IN_FLIGHT_EXPIRY_MIN);
+        let now = self.clock.now();
+        while let Some(&(t, c)) = self.in_flight_log.front() {
+            if now.duration_since(t) < horizon {
+                break;
+            }
+            self.in_flight = self.in_flight.saturating_sub(c);
+            self.in_flight_log.pop_front();
+        }
+    }
 }
 
 /// The multipath scheduler.
@@ -876,10 +951,13 @@ impl Scheduler {
             }
         }
 
-        // Update in_flight counters
+        // Charge the in_flight budget at SCHEDULE time — the single charge
+        // point for block-mode symbols (the paced drain in net/mod.rs must
+        // NOT charge again at send time; double-charging leaked +1 per
+        // symbol and jammed the TUN gate — L1 finding, P7 follow-up 2).
         for (path_id, syms) in &assignments {
             if let Some(path) = self.paths.get_mut(path_id) {
-                path.in_flight += syms.len() as u32;
+                path.charge_in_flight(syms.len() as u32);
             }
         }
 
@@ -889,7 +967,7 @@ impl Scheduler {
     /// Acknowledge received symbols on a path.
     pub fn ack(&mut self, path_id: PathId, count: u32) {
         if let Some(path) = self.paths.get_mut(&path_id) {
-            path.in_flight = path.in_flight.saturating_sub(count);
+            path.release_in_flight(count);
             path.on_ack(count);
         }
     }
@@ -913,13 +991,16 @@ impl Scheduler {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
                 // Reset to startup on recovery (Copa reset keeps the hint's
-                // queue target; pacing restarts at the initial burst).
+                // queue target; pacing restarts at the initial burst; the
+                // dead path's in-flight budget is gone with it).
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
                 path.copa.reset();
                 path.pace_tokens = PathState::INITIAL_CWND as f64;
                 path.last_pace_refill = path.last_report;
+                path.in_flight = 0;
+                path.in_flight_log.clear();
             }
         }
     }
@@ -1672,6 +1753,159 @@ mod tests {
         assert!(
             cwnd > 100,
             "ramp must clear one 64KB block (~56 symbols) at C2, got {cwnd}"
+        );
+    }
+
+    #[test]
+    fn test_schedule_ack_roundtrip_conserves_in_flight() {
+        // The in_flight budget is charged ONCE, at schedule time. The L1
+        // stall (P7 follow-up 2) was a double charge: schedule() charged,
+        // then the paced drain charged the same symbols again at send
+        // time — +1 leak per symbol, TUN gate jammed shut, throughput
+        // throttled to the 2s leak-guard decay (~30 KB/s at C2).
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock);
+        sched.add_path(0);
+
+        let source: Vec<_> = (0..8).map(|i| make_symbol(i, false)).collect();
+        let assignments = sched.schedule(source, vec![]);
+        let scheduled: u32 = assignments.iter().map(|(_, s)| s.len() as u32).sum();
+        assert_eq!(scheduled, 8);
+        assert_eq!(sched.path(0).unwrap().in_flight, 8);
+
+        // The paced drain charges TOKENS only — in_flight must not move
+        // between schedule and ack (this is what net/mod.rs does now).
+        sched.path_mut(0).unwrap().consume_pace_tokens(8);
+        assert_eq!(sched.path(0).unwrap().in_flight, 8);
+
+        // ACK feedback releases everything: budget conserved, gate opens.
+        sched.ack(0, 8);
+        assert_eq!(
+            sched.path(0).unwrap().in_flight,
+            0,
+            "schedule → send → ack must conserve the in_flight budget"
+        );
+    }
+
+    #[test]
+    fn test_in_flight_expiry_releases_stranded_budget() {
+        // ACKs are best-effort datagrams: a lost ACK strands its release
+        // forever. The time-based expiry (max(4×SRTT, 250ms)) must reopen
+        // the gate at RTT timescale without any feedback at all.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        let path = sched.path_mut(0).unwrap();
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(10)); // srtt 10ms → horizon 250ms
+        }
+        path.charge_in_flight(56);
+        assert_eq!(path.in_flight, 56);
+
+        // Well before the horizon: nothing expires.
+        clock.advance(millis(100));
+        let path = sched.path_mut(0).unwrap();
+        path.expire_in_flight();
+        assert_eq!(path.in_flight, 56);
+
+        // A partial ACK releases FIFO; the stranded remainder expires
+        // once the horizon passes.
+        path.release_in_flight(50);
+        assert_eq!(path.in_flight, 6);
+        clock.advance(millis(200)); // total 300ms > 250ms horizon
+        let path = sched.path_mut(0).unwrap();
+        path.expire_in_flight();
+        assert_eq!(
+            path.in_flight, 0,
+            "stranded budget must expire at RTT timescale, not the 2s guard"
+        );
+    }
+
+    #[test]
+    fn test_c2_loop_cwnd_grows_past_200_within_5s() {
+        // Full C2 loop at the scheduler level (100 Mbit / 10ms RTT / Bulk),
+        // mirroring the production wiring: schedule-time budget charge,
+        // token-paced sends stamped at WIRE time (echo-timestamp RTT
+        // therefore excludes pacing-queue delay — verified hypothesis:
+        // batches are built at send time from the carry), per-datagram
+        // ACKs with ~1.3% of them lost (stranding releases), and
+        // time-based expiry. cwnd must ramp past 200 symbols within 5
+        // simulated seconds and the sender must be ACK-clocked, not
+        // leak-guard throttled.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
+        sched.add_path(0);
+
+        const OWD: Duration = Duration::from_millis(5); // 10ms RTT
+        let mut carry: u32 = 0; // interleaver + pacing carry (already charged)
+        // (ack_arrival, symbols, wire_send_instant)
+        let mut acks: VecDeque<(Instant, u32, Instant)> = VecDeque::new();
+        let mut wire_counter: u64 = 0;
+        let mut total_sent: u64 = 0;
+
+        for _tick in 0..5000 {
+            let now = clock.now();
+
+            // Encoder + TUN gate: schedule one 56-symbol block (64KB /
+            // 1200B) whenever the committed budget is under cwnd.
+            {
+                let p = sched.path_mut(0).unwrap();
+                p.expire_in_flight();
+                if p.in_flight < p.cwnd {
+                    p.charge_in_flight(56);
+                    carry += 56;
+                }
+            }
+
+            // Pacer: send from the carry under tokens; the batch timestamp
+            // is stamped HERE (wire time), as in send_interleaved_batches.
+            {
+                let p = sched.path_mut(0).unwrap();
+                p.pace_refill();
+                let budget = (p.pace_tokens().max(0.0) as u32).min(carry);
+                if budget > 0 {
+                    p.consume_pace_tokens(budget);
+                    carry -= budget;
+                    total_sent += budget as u64;
+                    // Receiver ACKs each datagram after one RTT; ~1.3% of
+                    // ACK datagrams are lost (their releases stranded).
+                    let mut acked = 0;
+                    for _ in 0..budget {
+                        wire_counter += 1;
+                        if wire_counter % 77 != 0 {
+                            acked += 1;
+                        }
+                    }
+                    if acked > 0 {
+                        acks.push_back((now + OWD * 2, acked, now));
+                    }
+                }
+            }
+
+            // Deliver due ACKs: RTT = now − echoed wire timestamp.
+            while acks.front().is_some_and(|(t, _, _)| *t <= now) {
+                let (_, n, sent_at) = acks.pop_front().unwrap();
+                let rtt = now.duration_since(sent_at);
+                let p = sched.path_mut(0).unwrap();
+                p.record_rtt_sample(rtt);
+                p.release_in_flight(n);
+                p.on_ack(n);
+            }
+
+            clock.advance(millis(1));
+        }
+
+        let cwnd = sched.path(0).unwrap().cwnd;
+        assert!(
+            cwnd > 200,
+            "C2 loop must ramp cwnd past 200 symbols within 5s, got {cwnd}"
+        );
+        // Ack-clocked throughput, not the 2s leak-guard trickle (the L1
+        // stall sent ~450 symbols in 15s; here 5s must move far more).
+        assert!(
+            total_sent > 20_000,
+            "sender must be ack-clocked, not gate-starved: sent {total_sent}"
         );
     }
 

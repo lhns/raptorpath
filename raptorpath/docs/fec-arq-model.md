@@ -2358,6 +2358,17 @@ honest deviations in constants and mechanics:
   reads, 64KB block assembly stalls mid-block; a 50 ms flush serialized
   with the congestion window and clumped the pipeline into ~300 ms ACK
   bursts at L1. 5 ms bounds the assembly wait well under one C2 RTT.
+- **in_flight is a schedule-time budget with time-based release.** Each
+  symbol is charged exactly once when scheduled (covering interleaver +
+  pacing carry + wire) and released by ACK feedback. Because ACKs are
+  best-effort datagrams, a lost ACK strands its release; stranded budget
+  expires after max(4 x SRTT, 250 ms) (RFC 9002-style time threshold at
+  budget granularity) instead of jamming the TUN gate until a 2 s decay
+  backstop. The second L1 round found the gate cycling at exactly that
+  2 s cadence (~30 KB/s): the send path was charging the budget a SECOND
+  time at wire time, leaking +1 per symbol. Pacing tokens, not the gate,
+  remain the wire-rate limiter, so an early expiry can only let the
+  encoder run ahead, never the wire.
 - **Loss reaction** (the driver has none, by design): a decode FAILURE
   with the standing queue above target takes the same x0.92 backoff as
   the delay signal; a decode failure with an empty queue ends the ramp
