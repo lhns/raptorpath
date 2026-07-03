@@ -32,7 +32,7 @@ for scen in c1 c2 c3 c4 c5; do
     sleep 1
     timeout 150 ip netns exec "$NS_CLI" "$PERF" client \
         raptorpath:4433 --ip 10.77.0.2 \
-        --download-size 1800K --upload-size 0 \
+        --download-size 1800k --upload-size 0 \
         --duration 60 --interval 60 --json "$RES/quinn_${scen}.json" \
         >/dev/null 2>/tmp/rp-quinn-client.log \
         || echo "quinn $scen FAILED: $(tail -2 /tmp/rp-quinn-client.log)"
