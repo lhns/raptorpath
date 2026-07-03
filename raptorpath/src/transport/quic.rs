@@ -421,7 +421,8 @@ impl QuicTransport {
         let transport = Arc::get_mut(&mut server_config.transport).unwrap();
         transport.max_concurrent_bidi_streams(100u32.into());
         transport.max_concurrent_uni_streams(100u32.into());
-        transport.datagram_receive_buffer_size(Some(65536));
+        transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
+        transport.datagram_send_buffer_size(4 * 1024 * 1024);
 
         Ok((server_config, vec![cert_der]))
     }
@@ -445,7 +446,8 @@ impl QuicTransport {
         ));
 
         let mut transport = quinn::TransportConfig::default();
-        transport.datagram_receive_buffer_size(Some(65536));
+        transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
+        transport.datagram_send_buffer_size(4 * 1024 * 1024);
         config.transport_config(Arc::new(transport));
         config
     }

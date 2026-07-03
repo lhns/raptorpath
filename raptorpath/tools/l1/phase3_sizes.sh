@@ -1,8 +1,5 @@
 #!/bin/bash
-# Phase-3 TCP diagnosis: capture on BOTH TUN interfaces during a tb
-# connect attempt to see where the SYN dies (checksum? routing? never
-# read from the TUN?). Also capture the client's TUN with -v for
-# checksum validation.
+# Size bisection: where does the tunnel transfer break?
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -11,7 +8,6 @@ BIN="/home/vibe/raptorpath/target/release/raptorpath"
 
 cleanup() {
     pkill -f "raptorpath run" 2>/dev/null || true
-    pkill -x tcpdump 2>/dev/null || true
     pkill -f "transfer_bench.py server" 2>/dev/null || true
     ip netns del "$NS_C" 2>/dev/null || true
     ip netns del "$NS_S" 2>/dev/null || true
@@ -40,21 +36,16 @@ for i in $(seq 1 20); do
 done
 echo "tunnel up"
 
-# Captures: client TUN (SYN leaving the client stack), server TUN (SYN
-# arriving after decode+inject), with checksum verification (-vv).
-ip netns exec "$NS_C" tcpdump -i rps3cli -vv -n -c 6 tcp > /tmp/dump-cli.txt 2>&1 &
-ip netns exec "$NS_S" tcpdump -i rps3srv -vv -n -c 6 tcp > /tmp/dump-srv.txt 2>&1 &
-sleep 1
-
 ip netns exec "$NS_S" nohup python3 /home/vibe/l1/transfer_bench.py server \
     --bind 10.99.3.2 --port 9902 >/tmp/rp3-tb.log 2>&1 &
 sleep 0.5
-timeout 12 ip netns exec "$NS_C" python3 /home/vibe/l1/transfer_bench.py client \
-    --host 10.99.3.2 --port 9902 --bytes 100000 --runs 1 2>&1 | tail -1
 
-sleep 2
-pkill -x tcpdump 2>/dev/null; sleep 0.5
-echo "=== CLIENT TUN (rps3cli):"
-head -14 /tmp/dump-cli.txt
-echo "=== SERVER TUN (rps3srv):"
-head -14 /tmp/dump-srv.txt
+for bytes in 100000 400000 1800000 1800000 1800000; do
+    out=$(timeout 60 ip netns exec "$NS_C" python3 /home/vibe/l1/transfer_bench.py client \
+        --host 10.99.3.2 --port 9902 --bytes "$bytes" --runs 1 2>&1 | tail -1)
+    echo "SIZE $bytes -> $out"
+    # Path still alive?
+    ip netns exec "$NS_C" ping -c 1 -W 2 10.99.3.2 >/dev/null 2>&1 \
+        && echo "  tunnel alive" || { echo "  TUNNEL DEAD"; break; }
+done
+grep -c "path timed out" /tmp/rp3-client.log /tmp/rp3-server.log 2>/dev/null || true

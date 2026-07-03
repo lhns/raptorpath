@@ -600,6 +600,21 @@ impl Scheduler {
             .collect()
     }
 
+    /// Paths that are up, regardless of remaining cwnd budget.
+    ///
+    /// Use for CONTROL-PLANE traffic (reports, pings, BlockStart) and
+    /// congestion bookkeeping. `active_paths()` filters by spare capacity
+    /// (for scheduling DATA) — using it for liveness made a saturated path
+    /// invisible: no pings were sent while in_flight >= cwnd, so the peer
+    /// declared the path dead mid-transfer (L1 harness finding).
+    pub fn live_paths(&self) -> Vec<PathId> {
+        self.paths
+            .iter()
+            .filter(|(_, p)| p.active)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Schedule symbols across paths using the interpolated objective.
     ///
     /// Objective (paper Section 13.8):

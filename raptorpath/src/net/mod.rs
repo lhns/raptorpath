@@ -515,7 +515,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             let (tx_paused, dbg_fl, dbg_cw) = {
                 let sched = sender_scheduler.lock();
                 let (fl, cw) = sched
-                    .active_paths()
+                    .live_paths()
                     .iter()
                     .filter_map(|id| sched.path(*id))
                     .fold((0u64, 0u64), |(f, c), p| {
@@ -1215,6 +1215,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 _ = report_shutdown_rx.recv() => break,
             }
 
+            debug!("report tick");
             let reports: Vec<_> = {
             let mut sched = report_scheduler.lock();
 
@@ -1245,8 +1246,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 }
             }
 
-            // Send PathReport + Ping on each active path
-            let path_ids = sched.active_paths();
+            // Send PathReport + Ping on each LIVE path (not active_paths:
+            // that filters by spare cwnd, and a saturated path still needs
+            // its liveness heartbeats — see Scheduler::live_paths).
+            let path_ids = sched.live_paths();
             path_ids.iter().filter_map(|&pid| {
                 let path = sched.path(pid)?;
                 let ps = report_stats.path(pid)?;
@@ -1272,14 +1275,28 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 // (L1 finding: every bulk transfer killed the tunnel in
                 // ~6 s). The reliable control stream has its own flow
                 // control, so reports and pings survive saturation.
-                if let Err(e) = report_transport.send_control(pid, report).await {
-                    warn!(pid, ?e, "failed to send PathReport on control stream");
-                }
-                if let Err(e) = report_transport
-                    .send_control(pid, ControlMessage::Ping { timestamp_us: now_us() })
-                    .await
+                // Hard deadline on control sends: this task also runs the
+                // dead-path checker, so it must NEVER wedge (open_uni can
+                // block indefinitely once stream credit is exhausted).
+                match tokio::time::timeout(
+                    Duration::from_millis(500),
+                    report_transport.send_control(pid, report),
+                )
+                .await
                 {
-                    warn!(pid, ?e, "failed to send Ping on control stream");
+                    Err(_) => warn!(pid, "PathReport send timed out (stream credit?)"),
+                    Ok(Err(e)) => warn!(pid, ?e, "failed to send PathReport on control stream"),
+                    Ok(Ok(())) => {}
+                }
+                match tokio::time::timeout(
+                    Duration::from_millis(500),
+                    report_transport.send_control(pid, ControlMessage::Ping { timestamp_us: now_us() }),
+                )
+                .await
+                {
+                    Err(_) => warn!(pid, "Ping send timed out (stream credit?)"),
+                    Ok(Err(e)) => warn!(pid, ?e, "failed to send Ping on control stream"),
+                    Ok(Ok(())) => debug!(pid, "ping sent on control stream"),
                 }
             }
         }
@@ -1317,8 +1334,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     );
                 }
                 other => {
-                    if ctrl_forward_tx.send((path_id, other)).await.is_err() {
-                        break;
+                    // NEVER await into the data channel: under a symbol
+                    // flood it is full, an awaited send here stalls the
+                    // uni-stream accept loop, stream credit (100) runs
+                    // out, and the report task wedges inside
+                    // send_control — taking the dead-path checker with
+                    // it. Dropping a forwarded stream message under
+                    // overload is survivable; wedging liveness is not.
+                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
+                        ctrl_forward_tx.try_send((path_id, other))
+                    {
+                        warn!(path_id, "data channel full — dropping forwarded control message");
                     }
                 }
             }
@@ -2175,7 +2201,9 @@ fn encode_to_interleave_buf(
     // and replayed by the receiver (pre_start_symbols).
     {
         let sched = scheduler.lock();
-        for path_id in sched.active_paths() {
+        // live_paths: a saturated path still receives symbols already
+        // scheduled/interleaved for it — it must get the BlockStart too.
+        for path_id in sched.live_paths() {
             let msg = ControlMessage::BlockStart {
                 params,
                 transfer_length: block_data.len() as u64,
