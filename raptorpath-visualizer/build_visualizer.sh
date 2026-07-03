@@ -98,6 +98,9 @@ class SimWrapper {
   get givenUp()     { return this.inner.get_given_up(); }
   get reliability() { return this.inner.get_reliability(); }
   get rho()         { return this.inner.get_rho(); }
+  // overhead decomposition: floor is the channel's fault, excess is the protocol's
+  get overheadFloor()  { return this.inner.get_overhead_floor(); }
+  get excessOverhead() { return this.inner.get_excess_overhead(); }
   get totalSrc() { return this.inner.get_total_src(); }
   get totalFec() { return this.inner.get_total_fec(); }
   get totalArq() { return this.inner.get_total_arq(); }
