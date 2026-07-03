@@ -9,9 +9,12 @@
 //! Receiver:
 //!   QUIC paths → FEC decode → packet extraction → TUN injection
 
+pub mod block_arq;
 pub mod framing;
 pub mod interleave;
 pub mod reorder;
+
+use block_arq::BlockArq;
 
 use crate::control::FecRateController;
 use crate::control::backend_selector::BackendSelector;
@@ -411,6 +414,12 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // Maps (block_id, path_id) → symbols_sent_count
     let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
 
+    // Block-mode ARQ (P8): sender-side batch ledger + retained blocks for
+    // Ack-diff-driven repair. Unused in window mode (which has its own
+    // retransmit buffer / SACK machinery).
+    let block_arq: Arc<parking_lot::Mutex<BlockArq>> =
+        Arc::new(parking_lot::Mutex::new(BlockArq::new()));
+
     // Channel for received messages from all paths
     // ADR-0011: larger message channel to avoid stalling under load
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
@@ -434,6 +443,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_sent_counts = sent_counts.clone();
     let ctrl_sent_counts = sent_counts.clone();
     let sender_stats = stats.clone();
+    let sender_block_arq = block_arq.clone();
 
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
@@ -586,6 +596,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             &sender_transport,
                             &sender_scheduler,
                             &sender_stats,
+                            &sender_block_arq,
                             false,
                         )
                         .map(|d| tokio::time::Instant::now() + d);
@@ -601,6 +612,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
+                                &sender_block_arq,
                                 false,
                             )
                             .map(|d| tokio::time::Instant::now() + d);
@@ -628,6 +640,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         sender_profile_max_block,
                         &mut ileave,
                         &mut backend_selector,
+                        &sender_block_arq,
                     );
                 }
                 // Force-drain all remaining interleaved symbols (bypasses
@@ -639,6 +652,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     &sender_transport,
                     &sender_scheduler,
                     &sender_stats,
+                    &sender_block_arq,
                     true,
                 );
                 // Send Shutdown control message to peer on all paths
@@ -682,6 +696,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             sender_profile_max_block,
                             &mut ileave,
                             &mut backend_selector,
+                            &sender_block_arq,
                         );
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
@@ -693,6 +708,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
+                                &sender_block_arq,
                                 false,
                             )
                             .map(|d| tokio::time::Instant::now() + d);
@@ -716,6 +732,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             sender_profile_max_block,
                             &mut ileave,
                             &mut backend_selector,
+                            &sender_block_arq,
                         );
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
@@ -727,6 +744,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
+                                &sender_block_arq,
                                 false,
                             )
                             .map(|d| tokio::time::Instant::now() + d);
@@ -747,6 +765,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let recv_decoders = active_decoders.clone();
     let recv_fec_backend = effective_fec_backend;
     let recv_transport = transport_arc.clone();
+    // Block-mode ARQ: Ack handling (which drives repair) runs in the
+    // receiver task, so it needs the shared ledger + the batch counter
+    // (repair batches use the same per-path-monotonic sequence space).
+    let recv_block_arq = block_arq.clone();
+    let recv_batch_counter = batch_counter.clone();
     // Per-path: track last seen batch_seq and total symbols received for loss detection
     let path_batch_tracking: Arc<DashMap<u32, PathBatchTracker>> = Arc::new(DashMap::new());
 
@@ -805,6 +828,16 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut pre_start_symbols: std::collections::HashMap<u64, Vec<crate::fec::WireSymbol>> =
             std::collections::HashMap::new();
 
+        // Recently decoded block ids (P8): late ARQ repairs — or spurious
+        // ones after a lost Ack — arrive AFTER the decoder was removed and
+        // would otherwise be buffered as "pre-BlockStart" symbols, wasting
+        // pre_start_symbols slots on blocks that are already done.
+        // (parking_lot::Mutex, not RefCell: the spawned future must be Send.
+        // Single-task access — never contended.)
+        let completed_blocks: parking_lot::Mutex<(std::collections::VecDeque<u64>, std::collections::HashSet<u64>)> =
+            parking_lot::Mutex::new((std::collections::VecDeque::new(), std::collections::HashSet::new()));
+        const COMPLETED_RING_CAP: usize = 512;
+
         // Feed one block-mode symbol into its (existing) decoder; on
         // completion: stats, FEC feedback, BlockResult, packet extraction,
         // TUN inject, decoder removal. Returns false iff the TUN inject
@@ -849,6 +882,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 }
 
                 recv_decoders.remove(&block_id);
+                {
+                    let mut done = completed_blocks.lock();
+                    if done.1.insert(block_id) {
+                        done.0.push_back(block_id);
+                        while done.0.len() > COMPLETED_RING_CAP {
+                            if let Some(old) = done.0.pop_front() {
+                                done.1.remove(&old);
+                            }
+                        }
+                    }
+                }
                 recv_stats
                     .blocks
                     .pending
@@ -1043,6 +1087,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         // ----- Block-mode receive path (existing) -----
                         for symbol in &batch.symbols {
                             if !recv_decoders.contains_key(&symbol.block_id) {
+                                // Late/spurious ARQ repair for a block that
+                                // already decoded: drop, don't buffer (P8).
+                                if completed_blocks.lock().1.contains(&symbol.block_id) {
+                                    continue;
+                                }
                                 // Pre-BlockStart symbol: buffer for replay.
                                 // (Creating a decoder without the real
                                 // params here would make the block
@@ -1078,6 +1127,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             .first()
                             .map(|s| s.block_id)
                             .unwrap_or(0),
+                        batch_seq,
                         received_ids,
                         echo_send_timestamp_us: batch_send_ts,
                         expected_count: expected,
@@ -1135,6 +1185,8 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         recv_fec_backend,
                         &recv_stats,
                         recv_nack_tx.as_ref(),
+                        if recv_window_mode { None } else { Some(&recv_block_arq) },
+                        Some(&recv_batch_counter),
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -1189,6 +1241,54 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 warn!(
                     count = timed_out.len(),
                     "evicted timed-out decoders (block decode failures)"
+                );
+            }
+        }
+    });
+
+    // Block-mode ARQ sweeper (P8): the Ack-diff path needs LATER acks on
+    // the same path to reveal a lost batch; the tail of a transfer has
+    // none, so a timeout sweep declares those batches delivered-or-lost at
+    // SRTT timescale (mirrors the in_flight expiry) and repairs them.
+    let sweep_block_arq = block_arq.clone();
+    let sweep_scheduler = scheduler_arc.clone();
+    let sweep_transport = transport_arc.clone();
+    let sweep_stats = stats.clone();
+    let sweep_batch_counter = batch_counter.clone();
+    let sweep_window_mode = window_mode;
+    let mut sweep_shutdown_rx = shutdown_tx.subscribe();
+    let arq_sweep_handle = tokio::spawn(async move {
+        if sweep_window_mode {
+            return;
+        }
+        let mut interval = tokio::time::interval(Duration::from_millis(25));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {}
+                _ = sweep_shutdown_rx.recv() => break,
+            }
+            let timeouts: std::collections::HashMap<u32, Duration> = {
+                let sched = sweep_scheduler.lock();
+                sched
+                    .all_path_ids()
+                    .into_iter()
+                    .filter_map(|pid| sched.path(pid).map(|p| (pid, arq_loss_timeout(p.srtt()))))
+                    .collect()
+            };
+            let events = sweep_block_arq.lock().sweep(Instant::now(), &|pid| {
+                timeouts
+                    .get(&pid)
+                    .copied()
+                    .unwrap_or(Duration::from_millis(200))
+            });
+            if !events.is_empty() {
+                send_arq_repairs(
+                    events,
+                    &sweep_block_arq,
+                    &sweep_scheduler,
+                    &sweep_transport,
+                    &sweep_batch_counter,
+                    &sweep_stats,
                 );
             }
         }
@@ -1391,6 +1491,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         ctrl_fec_backend,
                         &ctrl_stats,
                         None,
+                        // The fast path only handles PathReport/Ping/Pong;
+                        // Acks (which drive block ARQ) go through the data
+                        // loop, so no ledger access is needed here.
+                        None,
+                        None,
                     );
                 }
                 other => {
@@ -1418,6 +1523,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         _ = report_handle => {}
         _ = cmd_handle => {}
         _ = ctrl_handle => {}
+        _ = arq_sweep_handle => {}
     }
 
     // Clean up routes and DNS on shutdown
@@ -2157,12 +2263,15 @@ fn encode_to_interleave_buf(
     max_block_size: usize,
     ileave: &mut interleave::InterleavingBuffer,
     backend_selector: &mut BackendSelector,
+    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
 ) {
     let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
 
     if block_data.is_empty() {
         return;
     }
+    // P8: Bytes so the ARQ retention can share the buffer refcounted.
+    let block_data = Bytes::from(block_data);
 
     // ADR-0030: evaluate backend selector before encoding each block
     {
@@ -2280,6 +2389,12 @@ fn encode_to_interleave_buf(
     let source = fec_stream.take_source_symbols();
     let repair = fec_stream.generate_repair(repair_count);
 
+    // P8: retain the source data so Ack-diff-detected losses can be
+    // repaired with fresh symbols (LRU, byte-capped — see block_arq).
+    block_arq
+        .lock()
+        .on_block_encoded(block_id, block_data.clone(), params, fec_backend);
+
     debug!(
         block_id,
         source_count = source.len(),
@@ -2340,6 +2455,7 @@ fn send_interleaved_batches(
     transport: &Arc<QuicTransport>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
+    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
     force: bool,
 ) -> Option<std::time::Duration> {
     // 1) Move any drainable interleaver content into the carry queue.
@@ -2393,6 +2509,10 @@ fn send_interleaved_batches(
     let now = now_us();
     // Sent counts per path, for pacing-token charges below.
     let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    // P8: (batch_seq, path, symbol ids) of every batch that left, for the
+    // ARQ ledger (recorded in one lock at the end).
+    let mut sent_records: Vec<(u64, u32, Vec<(u64, u32)>)> = Vec::new();
+    let send_instant = Instant::now();
 
     // 3) Send up to the budget per path, chunked to the path MTU.
     for (path_id, budget_syms) in budgets {
@@ -2419,6 +2539,8 @@ fn send_interleaved_batches(
             let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
             if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let ids: Vec<(u64, u32)> =
+                    chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
                 let batch = SymbolBatch {
                     symbols: std::mem::take(&mut chunk),
                     send_timestamp_us: now,
@@ -2430,6 +2552,7 @@ fn send_interleaved_batches(
                     warn!(path_id, ?e, "failed to send interleaved batch");
                 } else {
                     *sent_per_path.entry(path_id).or_default() += n;
+                    sent_records.push((batch_seq, path_id, ids));
                 }
                 chunk_bytes = 0;
             }
@@ -2438,6 +2561,7 @@ fn send_interleaved_batches(
         }
         if !chunk.is_empty() {
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+            let ids: Vec<(u64, u32)> = chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
             let batch = SymbolBatch {
                 symbols: chunk,
                 send_timestamp_us: now,
@@ -2449,7 +2573,17 @@ fn send_interleaved_batches(
                 warn!(path_id, ?e, "failed to send interleaved batch");
             } else {
                 *sent_per_path.entry(path_id).or_default() += n;
+                sent_records.push((batch_seq, path_id, ids));
             }
+        }
+    }
+
+    // P8: record what left the wire in the ARQ ledger (Ack diff + timeout
+    // sweep drive repair from these entries).
+    if !sent_records.is_empty() {
+        let mut arq = block_arq.lock();
+        for (batch_seq, path_id, ids) in sent_records {
+            arq.on_batch_sent(batch_seq, path_id, ids, send_instant);
         }
     }
 
@@ -2526,6 +2660,150 @@ impl PathBatchTracker {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Block-mode ARQ repair dispatch (P8)
+// ---------------------------------------------------------------------------
+
+/// Loss-declaration timeout for un-acked batches: delivered-or-lost either
+/// way once the Ack would have arrived (RFC 9002-style time threshold,
+/// aligned with — and never longer than — the in_flight budget expiry).
+fn arq_loss_timeout(srtt: Duration) -> Duration {
+    (srtt.mul_f64(1.5))
+        .max(Duration::from_millis(50))
+        .min(Duration::from_secs(2))
+}
+
+/// Worst-path loss estimate (the same ε̂ the proactive FEC sizing uses).
+fn worst_loss_rate(scheduler: &Arc<parking_lot::Mutex<Scheduler>>) -> f64 {
+    let sched = scheduler.lock();
+    sched
+        .active_paths()
+        .iter()
+        .filter_map(|id| sched.path(*id))
+        .map(|p| p.estimator.loss_rate())
+        .fold(0.0f64, f64::max)
+}
+
+/// Turn loss events into repair sends: plan under the ARQ lock, then send
+/// paced/charged like normal corrections, then record the repair batches
+/// back into the ledger (a lost repair triggers the next round).
+fn send_arq_repairs(
+    events: Vec<block_arq::LossEvent>,
+    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    transport: &Arc<QuicTransport>,
+    batch_counter: &AtomicU64,
+    stats: &Arc<SharedStats>,
+) {
+    let eps_hat = worst_loss_rate(scheduler);
+    let plans = block_arq.lock().plan_repairs(events, eps_hat);
+    dispatch_repair_plans(plans, block_arq, scheduler, transport, batch_counter, stats);
+}
+
+fn dispatch_repair_plans(
+    plans: Vec<block_arq::RepairPlan>,
+    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    transport: &Arc<QuicTransport>,
+    batch_counter: &AtomicU64,
+    stats: &Arc<SharedStats>,
+) {
+    for plan in plans {
+        // Cross-path diversity: prefer a path other than the one the loss
+        // was observed on (it may be in a GE burst).
+        let path_id = {
+            let sched = scheduler.lock();
+            select_repair_path_avoiding(&sched, plan.avoid_path, plan.avoid_path)
+        };
+
+        // Defensive BlockStart re-announce: covers the case where the
+        // original BlockStart datagram was itself lost (the symbols would
+        // otherwise sit in the receiver's pre-start buffer forever).
+        let _ = transport.send_control_datagram(
+            path_id,
+            ControlMessage::BlockStart {
+                params: plan.params,
+                transfer_length: plan.transfer_length,
+                backend: plan.backend,
+            },
+        );
+
+        // Chunk to the path MTU, exactly like the normal drain path.
+        let max_dgram = transport.max_datagram_size(path_id).unwrap_or(1200).max(256);
+        let budget = max_dgram - BATCH_WIRE_HEADER;
+        let now = now_us();
+        let send_instant = Instant::now();
+        let mut sent_total = 0u32;
+        let mut sent_records: Vec<(u64, Vec<(u64, u32)>)> = Vec::new();
+        let mut chunk: Vec<crate::fec::WireSymbol> = Vec::new();
+        let mut chunk_bytes = 0usize;
+        let flush =
+            |chunk: &mut Vec<crate::fec::WireSymbol>, records: &mut Vec<(u64, Vec<(u64, u32)>)>, total: &mut u32| {
+                if chunk.is_empty() {
+                    return;
+                }
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let ids: Vec<(u64, u32)> =
+                    chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
+                let n = chunk.len() as u32;
+                let batch = SymbolBatch {
+                    symbols: std::mem::take(chunk),
+                    send_timestamp_us: now,
+                    batch_seq,
+                    path_id,
+                };
+                if let Err(e) = transport.send_symbols(path_id, batch) {
+                    warn!(path_id, ?e, "failed to send ARQ repair batch");
+                } else {
+                    *total += n;
+                    records.push((batch_seq, ids));
+                }
+            };
+        for sym in plan.symbols {
+            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
+                flush(&mut chunk, &mut sent_records, &mut sent_total);
+                chunk_bytes = 0;
+            }
+            chunk_bytes += sym_bytes;
+            chunk.push(sym);
+        }
+        flush(&mut chunk, &mut sent_records, &mut sent_total);
+
+        if sent_total > 0 {
+            // Charge like any correction: in_flight budget (released by the
+            // repair batch's own Ack or the expiry) + pacing tokens (may go
+            // negative — recovery latency wins over strict pacing for these
+            // few symbols; the debt delays the next paced drain instead).
+            {
+                let mut sched = scheduler.lock();
+                if let Some(p) = sched.path_mut(path_id) {
+                    p.charge_in_flight(sent_total);
+                    p.consume_pace_tokens(sent_total);
+                }
+            }
+            if let Some(ps) = stats.path(path_id) {
+                ps.symbols_sent.fetch_add(sent_total as u64, Ordering::Relaxed);
+            }
+            stats
+                .fec
+                .total_repair_symbols
+                .fetch_add(sent_total as u64, Ordering::Relaxed);
+
+            let mut arq = block_arq.lock();
+            for (batch_seq, ids) in sent_records {
+                arq.on_batch_sent(batch_seq, path_id, ids, send_instant);
+            }
+            debug!(
+                block_id = plan.block_id,
+                path_id,
+                count = sent_total,
+                "sent ARQ repair symbols"
+            );
+        }
+    }
+}
+
 fn handle_control_message(
     path_id: u32,
     msg: ControlMessage,
@@ -2537,6 +2815,9 @@ fn handle_control_message(
     fec_backend: FecBackend,
     stats: &Arc<SharedStats>,
     nack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    // P8: Some(..) in block mode — Ack diffs drive repair sends.
+    block_arq: Option<&Arc<parking_lot::Mutex<BlockArq>>>,
+    batch_counter: Option<&Arc<AtomicU64>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -2566,6 +2847,7 @@ fn handle_control_message(
         // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
         ControlMessage::Ack {
             block_id: _,
+            batch_seq,
             received_ids,
             echo_send_timestamp_us,
             expected_count,
@@ -2614,6 +2896,28 @@ fn handle_control_message(
                     ps.symbols_received.fetch_add(received_ids.len() as u64, Ordering::Relaxed);
                 }
             }
+
+            // P8: the Ack is P_lost evidence at probability ≈ 1 — diff the
+            // batch ledger and repair immediately (one-RTT recovery). The
+            // per-path SRTT feeds the timeout leg for older un-acked
+            // batches on this path.
+            let loss_timeout = sched
+                .path(path_id)
+                .map(|p| arq_loss_timeout(p.srtt()))
+                .unwrap_or(Duration::from_millis(200));
+            drop(sched);
+            if let (Some(arq), Some(bc)) = (block_arq, batch_counter) {
+                let events = arq.lock().on_ack(
+                    batch_seq,
+                    path_id,
+                    &received_ids,
+                    Instant::now(),
+                    loss_timeout,
+                );
+                if !events.is_empty() {
+                    send_arq_repairs(events, arq, scheduler, transport, bc, stats);
+                }
+            }
         }
 
         ControlMessage::BlockResult {
@@ -2658,6 +2962,29 @@ fn handle_control_message(
                 symbols_needed,
                 "block result from peer"
             );
+
+            // P8: block decoded → drop retained data and suppress pending
+            // loss events; block failed → one more repair round with
+            // doubled margin (rateless backends only — see block_arq).
+            if let Some(arq) = block_arq {
+                if success {
+                    arq.lock().on_block_done(block_id);
+                } else if let Some(bc) = batch_counter {
+                    let deficit = symbols_needed.saturating_sub(symbols_received);
+                    let eps_hat = worst_loss_rate(scheduler);
+                    let plan = arq.lock().on_block_failed(block_id, deficit, path_id, eps_hat);
+                    if let Some(plan) = plan {
+                        dispatch_repair_plans(
+                            vec![plan],
+                            arq,
+                            scheduler,
+                            transport,
+                            bc,
+                            stats,
+                        );
+                    }
+                }
+            }
 
             // Clean up sent_counts for this block
             sent_counts.retain(|(bid, _), _| *bid != block_id);

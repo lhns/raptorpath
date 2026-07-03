@@ -10,6 +10,7 @@ use raptorpath::transport::{ControlMessage, WireMessage};
 fn test_ack_serialization_roundtrip() {
     let ack = ControlMessage::Ack {
         block_id: 42,
+        batch_seq: 7,
         received_ids: vec![0, 1, 3, 5, 7],
         echo_send_timestamp_us: 1_000_000,
         expected_count: 10,
@@ -22,12 +23,14 @@ fn test_ack_serialization_roundtrip() {
     match decoded {
         WireMessage::Control(ControlMessage::Ack {
             block_id,
+            batch_seq,
             received_ids,
             echo_send_timestamp_us,
             expected_count,
             received_count,
         }) => {
             assert_eq!(block_id, 42);
+            assert_eq!(batch_seq, 7);
             assert_eq!(received_ids, vec![0, 1, 3, 5, 7]);
             assert_eq!(echo_send_timestamp_us, 1_000_000);
             assert_eq!(expected_count, 10);
@@ -107,6 +110,7 @@ fn test_ping_pong_pair() {
 fn test_ack_with_empty_received_ids() {
     let ack = ControlMessage::Ack {
         block_id: 0,
+        batch_seq: 0,
         received_ids: vec![],
         echo_send_timestamp_us: 0,
         expected_count: 10,
@@ -130,6 +134,7 @@ fn test_ack_with_large_received_ids() {
     let ids: Vec<u32> = (0..1000).collect();
     let ack = ControlMessage::Ack {
         block_id: 7,
+        batch_seq: 1,
         received_ids: ids.clone(),
         echo_send_timestamp_us: 5_000_000,
         expected_count: 1000,
@@ -216,6 +221,7 @@ fn test_control_message_as_datagram_size() {
     // Verify that ACK messages fit in a typical QUIC datagram
     let ack = ControlMessage::Ack {
         block_id: u64::MAX,
+        batch_seq: u64::MAX,
         received_ids: (0..100).collect(),
         echo_send_timestamp_us: u64::MAX,
         expected_count: u32::MAX,

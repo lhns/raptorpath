@@ -81,6 +81,7 @@ fn test_block_start_roundtrip() {
 fn test_ack_roundtrip() {
     let msg = WireMessage::Control(ControlMessage::Ack {
         block_id: 10,
+        batch_seq: 3,
         received_ids: vec![0, 1, 3, 5, 7],
         echo_send_timestamp_us: 9999999,
         expected_count: 10,
@@ -93,12 +94,14 @@ fn test_ack_roundtrip() {
     match decoded {
         WireMessage::Control(ControlMessage::Ack {
             block_id,
+            batch_seq,
             received_ids,
             echo_send_timestamp_us,
             expected_count,
             received_count,
         }) => {
             assert_eq!(block_id, 10);
+            assert_eq!(batch_seq, 3);
             assert_eq!(received_ids, vec![0, 1, 3, 5, 7]);
             assert_eq!(echo_send_timestamp_us, 9999999);
             assert_eq!(expected_count, 10);
@@ -286,6 +289,7 @@ fn test_oversized_ack_rejected() {
     let received_ids: Vec<u32> = (0..2001).collect();
     let msg = WireMessage::Control(ControlMessage::Ack {
         block_id: 1,
+        batch_seq: 0,
         received_ids,
         echo_send_timestamp_us: 0,
         expected_count: 100,

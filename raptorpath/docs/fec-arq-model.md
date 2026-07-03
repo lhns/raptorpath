@@ -151,6 +151,7 @@ ACK absence.
     - [14.24 Jitter-Horizon Encoder Lag](#1424-jitter-horizon-encoder-lag)
     - [14.25 Completion-Tail FEC](#1425-completion-tail-fec)
     - [14.26 Completion-Exposure δ](#1426-completion-exposure-δ-the-bulk-glide)
+    - [14.27 Block-Mode ARQ via Batch Acknowledgements](#1427-block-mode-arq-via-batch-acknowledgements)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -3637,6 +3638,82 @@ mapping cuts completion 599 → 562 ticks and excess overhead 5.99% →
 Bulk now beats the fixed r = 0.01 floor on BOTH completion (562 vs 598
 ticks) and overhead (5.31% vs 6.11%) at the reference cell — the
 mapping the 20/24 finding said it must at least match.
+
+### 14.27 Block-Mode ARQ via Batch Acknowledgements
+
+Section 5 defines corrections as repairs ∪ retransmits, both driven by
+P_lost; Section 14.26 then makes mid-stream r* = 0 for Bulk on the
+grounds that a mid-stream loss recovers "for free" through the reactive
+path. The production BLOCK pipeline implemented neither reactive leg:
+on a decode failure the sender only updated stats and congestion
+control, and the receiver evicted the incomplete decoder after a
+timeout. Nothing was ever retransmitted. Under the glide this is not a
+degraded mode but a contradiction — r* = 0 is only correct BECAUSE the
+retransmit path exists — and the L1 harness measured the consequence
+directly: at C2 (100 Mbit, 10 ms RTT, GE 1.3%/50% ≈ 2.6% loss) the
+production tunnel completed a 1.8 MB transfer in ~8 s against quinn's
+0.175 s. The inner TCP saw the raw 2.6% loss and collapsed; every
+block with a hole waited out the 30 s decoder eviction. The window
+pipeline has its own retransmit buffer (Section 6.1); this section
+specifies the block-mode equivalent.
+
+**The Ack IS the P_lost evidence.** The block receiver already
+acknowledges every SymbolBatch it receives — each QUIC datagram is one
+batch, so batch loss is symbol loss. The v4 Ack echoes the batch's
+`batch_seq`, which keys a sender-side ledger of
+(batch_seq → path, [(block, symbol)], send time). This is the SACK
+limiting case of the Section 3.4 P_lost model: an Ack for batch j on a
+path, with none for an earlier batch i on the same path, drives
+P(lost_i) → 1 without waiting for a timer. Concretely a batch is
+declared lost when 3 later same-path batches have been acked (the
+dup-ACK analogue; tolerates datagram reordering) or when
+max(1.5·SRTT, 50 ms) elapses without an Ack (the timeout leg — needed
+for transfer tails, where no later traffic exists to accuse the loss;
+a 25 ms sweep task covers that case). The ledger is keyed by
+`batch_seq` and NOT by anything already in the v3 Ack: the echoed send
+timestamp is shared by every chunk of one drain call, and a batch may
+interleave symbols of several blocks, so the v3 fields identify neither
+the batch nor the victims. Adding the 8-byte field (protocol v4) was
+the robust option.
+
+**Fresh repairs beat resends.** The sender retains source data for the
+last 64 blocks (LRU, ≤ 4 MB). On a loss event it re-derives the block
+encoder and, for rateless codes (RaptorQ, RLC), mints repair symbols at
+ESIs beyond anything previously sent: any repair fills any hole, so a
+fresh repair strictly dominates resending the specific lost symbol
+(which a burst may kill again — fresh repairs also compose across
+multiple holes in one block). Fixed-rate codes (RS, METTLE) cannot mint
+post-hoc, so they fall back to resending the exact missing symbols from
+the retained data, which every decoder accepts. Correction volume per
+event is missing + ⌊accumulated ε̂ margin⌋ — the margin is fractional
+and carried continuously across events (at MTU-sized batches an event
+is typically ONE symbol; a per-event ceil would double the correction
+volume, i.e. cost 2ε instead of ε(1+ε)). Repair batches re-enter the
+ledger, so a lost repair triggers the next round with doubled margin,
+capped at 3 rounds per block; the receiver's eviction timeout remains
+the final backstop.
+
+**Recovery bound.** Detection costs one RTT (the Ack of the next
+surviving batch), repair transmission another half: a mid-stream hole
+closes in ~1.5 RTT wall time WITHOUT stalling the send stream — which
+is exactly the "parallel recovery" the 14.25 cost model prices at zero
+completion cost, now actually implemented. Ack loss (~ε̂ of batches) is
+indistinguishable from batch loss and costs one spurious repair event,
+bounded overhead ~ε̂²; the receiver drops symbols for already-decoded
+blocks, so spurious repairs are harmless. Corrections are charged
+against the same in_flight budget and pacing tokens as scheduled
+symbols (Section 12.5), and the estimator is NOT fed from the ledger —
+the receiver-side batch-gap accounting already reports these losses,
+and double-feeding would bias ε̂ upward.
+
+Honest constants: 64 retained blocks / 4 MB, dup-ACK threshold 3, loss
+timeout max(1.5·SRTT, 50 ms) clamped to 2 s, sweep cadence 25 ms,
+margin ε̂·2^round continuous, 3 rounds max, 4096-entry ledger cap.
+L1 verification of the C2 completion gap (8 s → competitive with the
+0.175 s quinn bound) is pending; the mechanism is unit-verified at L0
+(Ack-diff, dup-ACK and timeout legs, mixed-block batches, lost-Ack
+non-amplification, lost-repair second round, LRU caps, margin math,
+fresh-vs-resend per backend, decode-after-repair for RaptorQ and RS).
 
 ---
 

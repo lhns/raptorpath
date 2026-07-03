@@ -115,6 +115,7 @@ Reading:
 | P5 saturation_cap | C4 Realtime p99 | 378.7ms | 332.3ms (reversal vs Auto gone; C2 bit-identical, cap non-binding) |
 | P6 completion-exposure δ | wasm Bulk vs old min(0.1, ε̂) | see below | completion -6%/-8%, excess overhead 5.99→0.04% / 8.21→0.91% |
 | P7 production Copa-lite port | real-link (C2 netem) tunnel throughput — production scheduler, not the driver | cwnd collapsed 10→2 symbols on the first burst (rate-formula target) | implemented, L1-verified pending |
+| P8 block-mode ARQ (paper 14.27) | real-link (C2 netem) tunnel completion — 1.8 MB took ~8 s vs quinn 0.175 s with NO block-mode loss recovery (Bulk mid-stream r*=0 relies on this path existing) | lost symbols waited out the 30 s decoder eviction; inner TCP saw raw 2.6% loss | implemented, L1-verified pending |
 
 Notable: most of the median-latency win came from P2 (the ground-truth
 floor hid the jitter bound); P1's hint mapping is retained for semantics.
@@ -173,6 +174,27 @@ carry). Unit-tested at L0 (C2-loop sim with lossy ACKs must ramp cwnd
 past 200 in 5 s and stay ack-clocked; budget conservation; stranded-
 budget expiry; paced ramp reaches >100 symbols in 15 SRTTs with no
 spurious backoff); L1 throughput verification on the VM pending.
+
+P8 (block-mode ARQ via batch acknowledgements, paper 14.27) implements
+the missing retransmission half of the §5 correction model in the
+production block pipeline. The receiver already acked every SymbolBatch;
+v4 Acks now echo `batch_seq` (protocol version 3 → 4), keying a
+sender-side ledger of (batch_seq → path, symbols, send time). A batch is
+declared lost on 3 later same-path acks (dup-ACK analogue) or
+max(1.5×SRTT, 50 ms) timeout (25 ms sweep task for transfer tails). The
+sender retains source data for the last 64 blocks (≤ 4 MB LRU) and mints
+FRESH repairs (RaptorQ/RLC — new ESIs past everything sent; RS/METTLE
+fall back to exact source resends) sized missing + continuous-fractional
+ε̂ margin, charged against the same in_flight/pacing budgets as scheduled
+symbols. Repair batches re-enter the ledger (lost repair → next round,
+doubled margin, 3 rounds max); the receiver drops symbols for
+already-decoded blocks so lost-Ack spurious repairs (~ε̂²) are harmless,
+and estimator feeds are unchanged (no double counting). Unit-tested at
+L0 (ledger diff incl. mixed-block batches, dup-ACK/timeout legs, lost-Ack
+non-amplification, LRU caps, margin math, fresh-vs-resend per backend)
+plus end-to-end loss→Ack-diff→repair→decode tests with r = 0 proactive
+FEC (`tests/block_arq_recovery_test.rs`); the C2 completion re-measure on
+the VM is pending.
 
 ## SimQuic (L0.5 adversary)
 

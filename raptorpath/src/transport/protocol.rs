@@ -21,7 +21,12 @@ fn bincode_options() -> impl Options {
 }
 
 /// Protocol version. Increment on breaking changes.
-pub const PROTOCOL_VERSION: u32 = 3;
+/// v4: `Ack` carries `batch_seq` (block-mode ARQ, P8) — the acked batch is
+/// identified exactly instead of by the first symbol's block_id. Required
+/// because `send_timestamp_us` is shared by every chunk of one drain call
+/// and a batch may mix symbols from several blocks, so neither field keys
+/// the sender-side batch ledger unambiguously.
+pub const PROTOCOL_VERSION: u32 = 4;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -84,6 +89,10 @@ pub enum ControlMessage {
     /// Acknowledge received symbols (receiver → sender).
     Ack {
         block_id: u64,
+        /// The `batch_seq` of the SymbolBatch this Ack covers (v4, P8).
+        /// Keys the sender's per-batch ledger: sent-vs-received diff tells
+        /// the sender exactly which symbols died, one RTT after sending.
+        batch_seq: u64,
         /// Which payload_ids were received
         received_ids: Vec<u32>,
         /// Echo the sender's timestamp for RTT calculation (sender's clock, not receiver's)

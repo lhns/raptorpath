@@ -80,11 +80,15 @@ impl FecEncoder for RlcEncoder {
     }
 
     fn repair_symbols(&self, count: u32) -> Vec<WireSymbol> {
+        self.repair_symbols_from(0, count)
+    }
+
+    fn repair_symbols_from(&self, start: u32, count: u32) -> Vec<WireSymbol> {
         let block_id = self.params.block_id;
         let k = self.params.source_symbols as usize;
         let symbol_size = self.params.symbol_size as usize;
 
-        (0..count)
+        (start..start.saturating_add(count))
             .map(|i| {
                 let coeffs = generate_coefficients(block_id, i, k);
 

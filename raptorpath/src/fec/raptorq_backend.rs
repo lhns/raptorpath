@@ -62,13 +62,17 @@ impl FecEncoder for RaptorqEncoder {
     }
 
     fn repair_symbols(&self, count: u32) -> Vec<WireSymbol> {
+        self.repair_symbols_from(0, count)
+    }
+
+    fn repair_symbols_from(&self, start: u32, count: u32) -> Vec<WireSymbol> {
         let block_id = self.params.block_id;
         self.rq_encoder
             .get_block_encoders()
             .iter()
             .flat_map(move |block: &SourceBlockEncoder| {
                 block
-                    .repair_packets(0, count)
+                    .repair_packets(start, count)
                     .into_iter()
                     .map(move |pkt: EncodingPacket| {
                         let serialized = pkt.serialize();
