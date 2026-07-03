@@ -7,6 +7,11 @@
 # Usage: nohup sudo bash sweep_phase2.sh > ~/l1/results/phase2.log 2>&1 &
 
 set -uo pipefail   # NOT -e: a failed cell is recorded, not fatal
+# Death instrumentation: any exit/signal reports itself; silence = SIGKILL.
+trap 'echo "SWEEP EXIT rc=$? at line $LINENO ($(date +%T))"' EXIT
+trap 'echo "SWEEP GOT SIGTERM at line $LINENO ($(date +%T))"' TERM
+trap 'echo "SWEEP GOT SIGHUP at line $LINENO ($(date +%T))"' HUP
+trap 'echo "SWEEP GOT SIGINT at line $LINENO ($(date +%T))"' INT
 cd "$(dirname "$0")"
 source ./lib.sh
 
@@ -23,10 +28,10 @@ echo "=== phase2 start $(date -Is)"
 
 # --- 2a: quinn across single-path cells ---
 for scen in c1 c2 c3 c4 c5; do
-    echo "--- quinn $scen"
+    echo "--- quinn $scen start=$(date +%T)"
     bash ./topo.sh down >/dev/null 2>&1
     bash ./topo.sh up "$scen" --seed 42 >/dev/null 2>&1
-    pkill -f quinn-perf 2>/dev/null; sleep 0.5
+    pkill -x quinn-perf 2>/dev/null || true; sleep 0.5
     ip netns exec "$NS_SRV" nohup "$PERF" server --listen 10.77.0.2:4433 \
         >/tmp/rp-quinn-server.log 2>&1 &
     sleep 1
@@ -36,17 +41,18 @@ for scen in c1 c2 c3 c4 c5; do
         --duration 60 --interval 60 --json "$RES/quinn_${scen}.json" \
         >/dev/null 2>/tmp/rp-quinn-client.log \
         || echo "quinn $scen FAILED: $(tail -2 /tmp/rp-quinn-client.log)"
-    pkill -f quinn-perf 2>/dev/null
+    pkill -x quinn-perf 2>/dev/null || true
+    echo "    cell done $(date +%T)"
 done
 bash ./topo.sh down >/dev/null 2>&1
 
 # --- 2b: kernel MPTCP over dual-path cells ---
 run_mptcp() { # label scenA scenB
     local label="$1" a="$2" b="$3"
-    echo "--- mptcp $label ($a + $b)"
+    echo "--- mptcp $label ($a + $b) start=$(date +%T)"
     bash ./topo_dual.sh down >/dev/null 2>&1
     bash ./topo_dual.sh up "$a" "$b" --seed 42 >/dev/null 2>&1
-    ip netns exec "$NS_SRV" pkill -f transfer_bench 2>/dev/null; sleep 0.5
+    ip netns exec "$NS_SRV" pkill -f 'python3 ./transfer_bench.py' 2>/dev/null || true; sleep 0.5
     ip netns exec "$NS_SRV" nohup python3 ./transfer_bench.py server --port 9901 \
         --proto mptcp >/tmp/rp-mptcp-server.log 2>&1 &
     sleep 1
@@ -58,7 +64,7 @@ run_mptcp() { # label scenA scenB
         --host 10.77.0.2 --port 9901 --bytes 50000000 --runs 2 --proto mptcp \
         > "$RES/mptcp_${label}_big.jsonl" 2>&1 \
         || echo "{\"dnf\":true}" >> "$RES/mptcp_${label}_big.jsonl"
-    ip netns exec "$NS_SRV" pkill -f transfer_bench 2>/dev/null
+    ip netns exec "$NS_SRV" pkill -f 'python3 ./transfer_bench.py' 2>/dev/null || true
     grep '"summary"' "$RES/mptcp_${label}_small.jsonl" | tail -1
     grep '"summary"' "$RES/mptcp_${label}_big.jsonl" | tail -1
 }
@@ -75,7 +81,7 @@ timeout 900 ip netns exec "$NS_CLI" python3 ./transfer_bench.py client \
     --host 10.77.0.2 --port 9901 --bytes 50000000 --runs 2 --proto mptcp \
     > "$RES/mptcp_c2single_big.jsonl" 2>&1 || true
 grep '"summary"' "$RES/mptcp_c2single_big.jsonl" | tail -1
-ip netns exec "$NS_SRV" pkill -f transfer_bench 2>/dev/null
+ip netns exec "$NS_SRV" pkill -f 'python3 ./transfer_bench.py' 2>/dev/null || true
 bash ./topo.sh down >/dev/null 2>&1
 
 echo "=== phase2 done $(date -Is)"

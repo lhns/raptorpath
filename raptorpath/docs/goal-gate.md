@@ -232,6 +232,32 @@ Reading:
   Harness lesson: collapsed CCs need DNF-as-result semantics (sweep_tcp.sh
   and run_cell.sh now record timeouts as results).
 
+## L1 Phase 2 — real QUIC (quinn) + kernel MPTCP
+
+quinn-perf, one warm connection, sequential 1.8 MB requests over 60 s
+(mean completion = window/requests; cold-connection TCP numbers above
+are not directly comparable — noted). Kernel MPTCP v1 via python
+IPPROTO_MPTCP, dual-path topologies per ADR-0051.
+
+| Cell | quinn mean completion | quinn goodput |
+|------|----------------------|---------------|
+| C1 DC | 0.027 s | 545 Mbit/s |
+| C2 WiFi | 0.175 s | 84 Mbit/s |
+| C3 LTE | 0.94 s | 15.5 Mbit/s |
+| C4 Sat | 1.09 s | 13.5 Mbit/s |
+| C5 BadWiFi | 0.46 s | 31.8 Mbit/s |
+
+Real QUIC is the strongest small-object adversary measured: its loss
+recovery avoids kernel BBR's serial-tail blowups (C4 1.09 s vs BBR
+median 6.9 s) and CUBIC's collapse entirely.
+
+MPTCP (50 MB bulk): C7 dual-WiFi 15.4 Mbit/s vs 10.6 single-path — only
++45% from a second identical 100 Mbit path, because CUBIC subflows
+collapse under the 2.6% loss (single-path BBR does 93 Mbit/s!). C8
+WiFi+LTE: 12.6 Mbit/s. Kernel multipath does NOT solve lossy-path
+aggregation — the structural opening ADR-0051's C7/C8 win conditions
+target. Small objects: C7 0.256 s mean, C8 0.64 s.
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,
