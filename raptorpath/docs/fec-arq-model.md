@@ -150,6 +150,7 @@ ACK absence.
     - [14.23 Post-Burst FEC Boost](#1423-post-burst-fec-boost-reactive-deficit-recovery)
     - [14.24 Jitter-Horizon Encoder Lag](#1424-jitter-horizon-encoder-lag)
     - [14.25 Completion-Tail FEC](#1425-completion-tail-fec)
+    - [14.26 Completion-Exposure δ](#1426-completion-exposure-δ-the-bulk-glide)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -316,10 +317,11 @@ Three properties are linked by the channel. Fix any two, the third is determined
 | **Sensor/IoT** | r (minimal), ρ (≥95%) | δ (tail latency) | Periodic telemetry |
 
 For Bulk transfer, "minimize r" is taken literally: the tail target is
-"late is fine" (δ_bulk = min(0.1, ε̂), Section 5.3), so r ≈ 0 in the
-steady state and the residual is pure ARQ — except for the final window
-at end-of-stream, where a small tail burst buys completion time
-(Section 14.25).
+"late is fine" (δ_bulk = ε̂ + (0.05 − ε̂)·χ, Sections 5.3 and 14.26), so
+r = 0 identically in the steady state (χ = 0) and the residual is pure
+ARQ — except over the final ~1.5 SRTT of a known-length transfer, where
+the completion-exposure χ ramps r up to the tail budget and buys
+completion time (Sections 14.25, 14.26).
 
 The protocol hint selects the mode and constraints:
 
@@ -990,17 +992,22 @@ split. P_lost(t) controls the repair/retransmit split within corrections.
     -> low P_retx (prefer repair over retransmit, less duplicate risk)
     -> Mix: lots of source, some repair, little retransmit
 
-    Concretely, Bulk's tail target is "late is fine":
+    Concretely, Bulk's tail target is "late is fine", weighted by the
+    completion exposure chi (Section 14.26):
 
-      delta_bulk = min(0.1, epsilon_hat)
+      delta_bulk = epsilon_hat + (delta_tail - epsilon_hat) x chi(T_rem)
 
-    With delta >= epsilon the continuous r* formula (Section 8.4,
-    z_{delta/epsilon} = Phi^-1(1 - delta/epsilon)) yields r ≈ 0 in the
-    steady state: pure ARQ, wire volume at parity with retransmission
-    transports (~1 + epsilon/(1-epsilon) per source symbol). A
-    mid-transfer loss recovered one RTT late costs a bulk transfer
-    nothing — recovery overlaps ongoing sends. The one place FEC still
-    buys completion time is the final window (Section 14.25).
+    Mid-stream chi = 0, so delta_bulk = epsilon_hat and the continuous
+    r* formula (Section 8.4, z_{delta/epsilon} = Phi^-1(1 -
+    delta/epsilon) = Phi^-1(0) = -inf) yields r = 0 IDENTICALLY in the
+    steady state — independent of estimator uncertainty: pure ARQ, wire
+    volume at parity with retransmission transports (~1 +
+    epsilon/(1-epsilon) per source symbol). A mid-transfer loss
+    recovered one RTT late costs a bulk transfer nothing — recovery
+    overlaps ongoing sends. The one place FEC still buys completion
+    time is the stream tail, where chi rises smoothly to 1 and
+    delta_bulk glides to the delta_tail = 0.05 completion budget
+    (Sections 14.25, 14.26).
 
   VoIP (fixed bandwidth + latency, variable reliability):
     -> r constrained by bandwidth budget
@@ -2333,11 +2340,13 @@ Neither needs to know about the other. Copa sees total traffic; taper sees
 loss rate. They compose naturally.
 
 **Bulk operating point.** Under the Bulk hint the taper side degenerates
-by design: the tail target is "late is fine" (δ_bulk = min(0.1, ε̂), see
-Section 5.3), so the continuous r* glides to 0 and the steady state is
+by design: the tail target is "late is fine" weighted by completion
+exposure (δ_bulk = ε̂ + (0.05 − ε̂)·χ, see Sections 5.3, 14.26), so the
+continuous r* is 0 identically mid-stream (χ = 0) and the steady state is
 pure ARQ — source_rate ≈ total_rate, wire volume at parity with a
-retransmission transport. FEC reappears only as the end-of-stream tail
-burst (Section 14.25), where recovery can no longer overlap sending.
+retransmission transport. FEC reappears only near a known end of stream,
+where χ ramps to 1 and recovery can no longer overlap sending
+(Sections 14.25, 14.26).
 
 ### 12.6 ECN as Opportunistic Enhancement
 
@@ -3430,16 +3439,19 @@ under-provisioning (Section 8.7) directly converts into completion
 regressions.
 
 **Composition with Bulk's r → 0 steady state (Sections 5.3, 12.5).**
-Bulk maps δ to "late is fine" (δ_bulk = min(0.1, ε̂)), so the continuous
-r* formula (Section 8.4) glides to 0 mid-transfer: pure ARQ, volume
-parity with retransmission transports. Completion-tail FEC is the
-complement, not a contradiction: FEC vanishes in the steady state
+Bulk maps δ to "late is fine" (δ_bulk = ε̂ mid-stream, Section 14.26),
+so the continuous r* formula (Section 8.4) is 0 mid-transfer: pure ARQ,
+volume parity with retransmission transports. Completion-tail FEC is
+the complement, not a contradiction: FEC vanishes in the steady state
 (where recovery overlaps sending and buys nothing) and reappears
-exactly at the one place it buys completion time — the final window.
+exactly at the one place it buys completion time — the stream tail.
 The r-δ-ρ triangle is respected at both operating points; only the
 effective δ differs, because the COST MODEL differs between
 mid-transfer (parallel recovery, late is genuinely fine) and the tail
-(serial recovery, late is 1.5 RTT each).
+(serial recovery, late is 1.5 RTT each). Section 14.26 makes this
+composition CONTINUOUS: the one-shot burst described above is the
+limiting case of a δ glide driven by a completion-exposure kernel χ,
+and the glide supersedes the burst wherever T_rem is known.
 
 **Multipath corollary — tail reinjection.** On asymmetric paths the same
 end-of-stream logic applies to slow-path IN-FLIGHTS, not just losses:
@@ -3450,6 +3462,124 @@ The duplicate rides spare end-of-stream tokens, so the cost is a few
 symbols of fast-path capacity against a saving of the slow path's queue
 drain (~10-25 ms measured on WiFi+LTE). Same principle, ARQ flavor:
 completion is bought exactly at the stream tail, nowhere else.
+
+### 14.26 Completion-Exposure δ (the Bulk glide)
+
+Section 14.25 established the two-regime cost model for Bulk: a
+mid-transfer loss recovers in parallel with ongoing sends (zero
+completion cost), a tail loss recovers serially (~1.5 SRTT per ARQ
+round). It implemented the tail side as a one-shot repair burst at
+end-of-stream. This section replaces the sharp mid/tail boundary with a
+continuous kernel and, in doing so, fixes two measured flaws in the
+original Bulk hint mapping δ_bulk = min(0.1, ε̂).
+
+**The two flaws of min(0.1, ε̂)** (measured in the wasm simulator, which
+shares `controller_rate` with production):
+
+```
+  M1 — cold start. The loss estimator's Beta(1,1) prior puts the 95%
+  predictive upper quantile at ε̂₉₅ ≈ 0.975 for the first ~1.5-3 RTT.
+  The clamp maps this to δ_eff = 0.1 << ε̂₉₅, so z_{δ/ε} is large, the
+  IT term ε̂/(1-ε̂) ≈ 39 dominates, and r pins at max_overhead = 0.5 —
+  wasting ~1/3 of the wire for 2-3 RTTs on a channel about which
+  nothing bad is actually known. Measured: a FIXED r = 0.01 floor beat
+  Bulk on completion in 20/24 grid cells (median +5%, worst +17%,
+  gap growing with RTT) and on overhead in 24/24 (excess overhead
+  2-14% vs ~0-1%).
+
+  M2 — moderate loss. At ε ≥ ~0.1 the upper quantile sits above the
+  0.1 clamp FOREVER, so δ_eff = 0.1 < ε̂₉₅ permanently and r* > 0 in
+  the steady state: Bulk pays FEC ≈ the IT floor AND ARQ for the same
+  losses — double payment, directly against the 14.25 cost model in
+  which mid-stream lateness is free.
+```
+
+Both flaws share one root: any δ_eff strictly below ε̂ re-activates the
+margin machinery, whose entire purpose Bulk rejects mid-stream.
+
+**The completion-exposure kernel.** What actually distinguishes a loss
+that costs completion time from one that does not is whether its ARQ
+round (~1.5 SRTT, Section 3.4) can still hide behind remaining sends.
+Let T_rem be the remaining send time (in seconds, like Section 5.4's
+timing quantities: T_rem = remaining source symbols / send rate).
+Reusing the Section 3.4/5.4 normal-RTT-tail machinery (Φ̄ = normal
+survival function):
+
+```
+  chi(T_rem) = Phi_bar( (T_rem - 1.5 x SRTT) / sigma_arq )
+
+  sigma_arq  = max(4 x RTTVAR, SRTT / 4)
+```
+
+χ is the probability that a loss suffered NOW is EXPOSED — that its
+recovery outlives the send stream and becomes serial completion time.
+The 1.5·SRTT center is the Section 14.25 serial-round cost; σ_arq
+aggregates detection and flight-time variance (4×RTTVAR, floored at
+SRTT/4 against degenerate RTTVAR estimates). Mid-stream (T_rem ≫ SRTT)
+χ = 0; over the final ~1.5 SRTT it rises smoothly to 1. No cutoff
+anywhere: χ inherits its continuity from Φ̄.
+
+**The δ glide.** Bulk's effective tail target is the exposure-weighted
+blend of "the channel itself" and the 14.25 tail budget:
+
+```
+  delta_bulk = eps_hat + (delta_tail - eps_hat) x chi,   delta_tail = 0.05
+```
+
+- **Mid-stream (χ = 0):** δ_bulk = ε̂ exactly, so z_{δ/ε} = Φ⁻¹(0) = −∞
+  and r* = 0 IDENTICALLY — independent of the estimator's uncertainty,
+  because the target tracks the estimate ITSELF rather than a constant
+  the estimate is compared against. This kills M1 (ε̂₉₅ ≈ 0.975 → δ_eff
+  = 0.975 → r* = 0) and M2 (ε̂₉₅ = 0.12 → δ_eff = 0.12 → r* = 0) in one
+  stroke. It is exactly the "late is fine" semantics of the 14.25 cost
+  model: mid-stream recovery is parallel and therefore free, so NO
+  channel state justifies steady-state FEC under Bulk.
+- **Stream tail (χ → 1):** δ_bulk → δ_tail = 0.05 regardless of ε̂, and
+  r ramps continuously to the exact rate that meets the completion
+  budget — reaching it about 1.5 SRTT before the last source symbol,
+  precisely when losses start being exposed.
+- **T_rem unknown:** a production tunnel is an endless stream — there
+  is no "last symbol" the sender can see, so χ = 0 permanently and the
+  steady state is pure ARQ (existing production tail behavior is
+  unchanged). Feeding χ from an application-known transfer size, or
+  from an idle-onset heuristic (send queue drained = provisional end of
+  stream, retracted if new data arrives), is future work; simulation
+  drivers that know the transfer length feed χ directly.
+
+**The tail burst as the glide's limiting case.** The 14.25 one-shot
+burst is what the χ ramp degenerates to as σ_arq → 0: a step from r = 0
+to the tail rate at T_rem = 1.5 SRTT. The glide is therefore not a
+second mechanism but the burst made continuous — and it supersedes the
+burst wherever T_rem is known (firing both would double-pay the tail
+budget). Beyond removing the discontinuity, the ramp fixes a coverage
+gap of the burst at high RTT: with in-flight span (symbols per RTT)
+≫ W, the last-window burst cannot protect late-stream losses that fall
+OUTSIDE the final window yet inside the final serial-recovery horizon.
+The ramp's repairs are emitted across the whole final ~1.5 SRTT of the
+send stream, each covering the sliding window at its emission time, so
+the entire exposed span gets coverage. The same mechanism suppresses
+the pure-ARQ (r = 0 floor) serial-retransmit tail outliers: a tail hole
+whose retransmit is itself lost pays full serial rounds (one observed
+865-tick outlier vs 559 ticks with a 1% floor); ramped repairs give
+those holes a parallel recovery path.
+
+**Scope of the mid-stream guarantee.** χ = 0 requires T_rem to exceed
+the exposure horizon ~1.5·SRTT + 8·σ_arq (≈ 3.5-5.5 SRTT). A transfer
+SHORTER than that never has a mid-stream phase: χ > 0 from the first
+symbol, and during the estimator cold start the glide inherits M1's
+inflated ε̂₉₅ (measured at 150 ms RTT with a 0.5 s transfer: neither
+mapping wins — the early rate is governed by the cold-start prior in
+both). The glide's guarantee is for streams long enough to HAVE a
+middle; the cold-start prior itself is estimator work, not δ-mapping
+work.
+
+**Verification** (wasm simulator, shared formula, same seeds per cell;
+ε = 0.05/0.10, q = 0.5, RTT = 50 ms, W = 64): the glide vs the old
+mapping cuts completion 599 → 562 ticks and excess overhead 5.99% →
+0.04% at ε = 0.05, and 674 → 620 ticks / 8.21% → 0.91% at ε = 0.10;
+Bulk now beats the fixed r = 0.01 floor on BOTH completion (562 vs 598
+ticks) and overhead (5.31% vs 6.11%) at the reference cell — the
+mapping the 20/24 finding said it must at least match.
 
 ---
 
@@ -3479,6 +3609,12 @@ completion is bought exactly at the stream tail, nowhere else.
    Codec overhead (Section 9.2):
      e_codec_eff = e_codec x (1-(1-e)^W)   weighted codec overhead     [probability]
      e_hat = e + e_codec_eff               effective loss rate         [probability]
+
+   Bulk completion-exposure glide (Section 14.26):
+     chi(T_rem) = Phi_bar((T_rem - 1.5 x SRTT) / sigma_arq)            [probability]
+     sigma_arq = max(4 x RTTVAR, SRTT/4)                               [seconds]
+     delta_bulk = e_hat + (delta_tail - e_hat) x chi,  delta_tail=0.05 [probability]
+     (chi = 0 mid-stream / unknown T_rem -> delta_bulk = e_hat -> r* = 0)
 
    Three-variable optimization (Section 8.6):
      Taper cutoff: τ(t) = 0 for t > T_cut                (ρ<100%)

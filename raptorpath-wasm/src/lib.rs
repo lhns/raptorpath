@@ -78,19 +78,28 @@ pub fn b_max(q: f64) -> u64 {
 
 /// The SHARED production rate formula (raptorpath-math::controller_rate) —
 /// the exact code path the real transport runs. Flat-args wrapper for JS.
+/// `completion_exposure` is the P6 chi in [0,1] (paper 14.26); pass 0 for
+/// mid-stream / unknown T_rem.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn controller_rate(
     p_upper: f64, sigma2: f64, mean_burst: f64, window: f64,
     t_symbols: f64, srtt: f64, t_sym: f64, codec_overhead: f64,
-    tail_target: f64, bulk_late_is_fine: bool, saturation_cap: bool,
-    max_overhead: f64,
+    tail_target: f64, bulk_late_is_fine: bool, completion_exposure: f64,
+    saturation_cap: bool, max_overhead: f64,
 ) -> f64 {
     math::controller_rate(&math::RateInputs {
         p_upper, sigma2, mean_burst, window, t_symbols, srtt, t_sym,
-        codec_overhead, tail_target, bulk_late_is_fine, saturation_cap,
-        max_overhead,
+        codec_overhead, tail_target, bulk_late_is_fine, completion_exposure,
+        saturation_cap, max_overhead,
     })
+}
+
+/// Completion-exposure kernel chi(T_rem) (paper 14.26): the probability a
+/// loss NOW can no longer hide behind ongoing sends.
+#[wasm_bindgen]
+pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
+    math::completion_exposure(t_rem_secs, srtt_secs, rttvar_secs)
 }
 
 // =========================================================================
@@ -124,7 +133,10 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 //   - per-slot repair/retransmit mix by P_lost (paper 5.4)
 //   - honest feedback: the estimator learns outcomes one RTT after send,
 //     fed with the TRUE loss pattern (record_counts + record_symbol)
-//   - completion-tail FEC burst at end of stream (paper 14.25, exact 8.7 DP)
+//   - completion-tail FEC: for Bulk, the continuous completion-exposure
+//     ramp (paper 14.26 — the sim KNOWS T_rem, so chi is fed per tick);
+//     for the other hints, the one-shot end-of-stream burst (paper 14.25,
+//     exact 8.7 DP), which the chi ramp subsumes as its limiting case
 //
 // Simplifications vs the L0 gate (documented): single path, fixed wire
 // capacity (slots/tick) instead of a queue+Copa model, no jitter (so no
@@ -144,6 +156,10 @@ pub struct Simulation {
     hint_bulk: bool,
     tail_target: f64,
     fixed_r: Option<f64>,
+    /// Ablation-only: revert Bulk to the pre-P6 mapping (delta_eff =
+    /// min(0.1, p_hat) + one-shot tail burst). Never exposed to JS; set
+    /// directly by native tests to isolate the completion-exposure change.
+    legacy_bulk_delta: bool,
     /// Reliability target (rho). Below 1.0, losses older than T_cut are
     /// given up (paper 6.1 age eviction) — the third triangle corner.
     rho: f64,
@@ -268,6 +284,20 @@ impl Simulation {
         lost
     }
 
+    /// Completion exposure chi (paper 14.26): the sim KNOWS the transfer
+    /// length, so T_rem = remaining source symbols / send rate. The send
+    /// rate is approximated by the wire capacity (Bulk mid-stream is
+    /// nearly all source). Non-bulk hints keep chi = 0 (their tail target
+    /// is a constant; the 14.25 burst covers their stream tail).
+    fn completion_chi(&self) -> f64 {
+        if !self.hint_bulk || self.legacy_bulk_delta {
+            return 0.0;
+        }
+        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let t_rem_secs = remaining / self.capacity as f64 * TICK_SECS;
+        math::completion_exposure(t_rem_secs, self.srtt_secs, self.rttvar_secs)
+    }
+
     /// Rate from the SHARED production formula — identical code to the
     /// real transport's FecRateController (via raptorpath-math).
     fn controller_rate_now(&self) -> f64 {
@@ -285,8 +315,17 @@ impl Simulation {
         } else {
             0.0
         };
+        let p_upper = self.estimator.predictive_loss_upper(0.95);
+        // Ablation arm: the pre-P6 Bulk mapping delta_eff = min(0.1, p_hat)
+        // expressed through the plain tail_target path (equivalent by
+        // construction; see test_ablation_p6_completion_exposure).
+        let (tail_target, bulk_late_is_fine) = if self.legacy_bulk_delta && self.hint_bulk {
+            ((0.1f64).min(p_upper), false)
+        } else {
+            (self.tail_target, self.hint_bulk)
+        };
         math::controller_rate(&math::RateInputs {
-            p_upper: self.estimator.predictive_loss_upper(0.95),
+            p_upper,
             sigma2,
             mean_burst,
             window: self.encoder.window_size().max(1) as f64,
@@ -294,8 +333,9 @@ impl Simulation {
             srtt: self.srtt_secs,
             t_sym: TICK_SECS / self.capacity as f64,
             codec_overhead: CODEC_OVERHEAD_RLC,
-            tail_target: self.tail_target,
-            bulk_late_is_fine: self.hint_bulk,
+            tail_target,
+            bulk_late_is_fine,
+            completion_exposure: self.completion_chi(),
             saturation_cap: true,
             max_overhead: MAX_OVERHEAD,
         })
@@ -395,6 +435,7 @@ impl Simulation {
         Self {
             eps, q, sigma2_true,
             hint_bulk, tail_target, fixed_r,
+            legacy_bulk_delta: false,
             rho,
             given_up: 0,
             given_up_seqs: std::collections::BTreeSet::new(),
@@ -587,7 +628,12 @@ impl Simulation {
                     self.source_done = true;
                     // Completion-tail FEC (paper 14.25): burst of repairs
                     // covering the final window, sized by the exact 8.7 DP.
-                    if !self.tail_flushed {
+                    // NOT for Bulk under P6 (paper 14.26): the continuous
+                    // chi ramp already raised r over the final ~1.5 SRTT —
+                    // the burst is the ramp's limiting case, so firing both
+                    // would double-pay the tail budget.
+                    let chi_replaces_burst = self.hint_bulk && !self.legacy_bulk_delta;
+                    if !self.tail_flushed && !chi_replaces_burst {
                         self.tail_flushed = true;
                         let ge = self.estimator.ge_estimator();
                         let (pg, qg) = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
@@ -708,13 +754,21 @@ impl Simulation {
             1.0
         }
     }
-    /// Effective tail target after the hint mapping (Bulk: min(0.1, p̂)).
+    /// Effective tail target after the hint mapping. Bulk (paper 14.26):
+    /// the completion-exposure glide p̂ + (0.05 − p̂)·χ — equals p̂
+    /// mid-stream (pure ARQ) and the 14.25 tail budget as χ → 1.
     pub fn get_delta_eff(&self) -> f64 {
         if self.hint_bulk {
-            (0.1f64).min(self.get_p_upper())
+            let p = self.get_p_upper();
+            p + (math::BULK_TAIL_BUDGET - p) * self.completion_chi()
         } else {
             self.tail_target
         }
+    }
+    /// Live completion exposure chi (paper 14.26): 0 mid-stream, ramps to
+    /// 1 over the final ~1.5 SRTT of the transfer (Bulk only).
+    pub fn get_completion_exposure(&self) -> f64 {
+        self.completion_chi()
     }
     /// Saturation cap for the current estimator state (paper 14.21).
     pub fn get_r_sat(&self) -> f64 {
@@ -763,6 +817,17 @@ impl Simulation {
         } else {
             0.0
         }
+    }
+    /// Channel overhead floor in percent: with loss ε, ANY reliable
+    /// transport must send at least ε/(1−ε) extra — the channel's fault,
+    /// not the protocol's.
+    pub fn get_overhead_floor(&self) -> f64 {
+        if self.eps < 1.0 { self.eps / (1.0 - self.eps) * 100.0 } else { 100.0 }
+    }
+    /// Excess overhead in percent: what was spent BEYOND the channel
+    /// floor — the protocol's true inefficiency (0 = IT-perfect).
+    pub fn get_excess_overhead(&self) -> f64 {
+        (self.get_overhead() - self.get_overhead_floor()).max(0.0)
     }
     pub fn get_recovery(&self) -> f64 {
         if self.total_src > 0 {
@@ -893,6 +958,135 @@ mod tests {
         let overhead = sim.get_overhead();
         assert!(overhead > 10.0 && overhead < 45.0,
             "fixed r=0.2 should give ~20-30% overhead incl. retx, got {overhead:.1}%");
+    }
+
+    fn run_to_end(sim: &mut Simulation) {
+        while !sim.is_finished() && sim.get_tick() < 20_000 {
+            sim.step();
+        }
+        assert!(sim.is_finished());
+    }
+
+    #[test]
+    fn test_bulk_beats_fixed_001() {
+        // P6 acceptance (paper 14.26): the old min(0.1, p_hat) mapping lost
+        // to a fixed r = 0.01 floor on completion in 20/24 grid cells
+        // (median +5%) and on overhead in 24/24 (excess overhead 2-14% vs
+        // ~0-1%) — the M1 cold-start pin at max_overhead plus the M2
+        // permanent-FEC leak. With the completion-exposure glide, Bulk must
+        // match fixed(0.01) on completion (within 5%) and beat it on
+        // overhead at the representative cell.
+        let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        let mut fixed = Simulation::new(0.05, 0.5, 50, 64, "fixed".into(), Some(0.01), None, None);
+        run_to_end(&mut bulk);
+        run_to_end(&mut fixed);
+        assert_eq!(bulk.get_cum_decoded(), bulk.get_num_source());
+        println!(
+            "eps=0.05 rtt=50: bulk {} ticks / {:.2}% overhead vs fixed(0.01) {} ticks / {:.2}%",
+            bulk.get_tick(), bulk.get_overhead(), fixed.get_tick(), fixed.get_overhead()
+        );
+        assert!(
+            (bulk.get_tick() as f64) <= fixed.get_tick() as f64 * 1.05,
+            "bulk completion {} ticks must be within 5% of fixed(0.01) {} ticks",
+            bulk.get_tick(), fixed.get_tick()
+        );
+        assert!(
+            bulk.get_overhead() < fixed.get_overhead() + 1.0,
+            "bulk overhead {:.2}% must be < fixed(0.01) {:.2}% + 1pt",
+            bulk.get_overhead(), fixed.get_overhead()
+        );
+
+        // M2 cell (eps = 0.10 >= the old 0.1 clamp): the old mapping paid
+        // permanent FEC ~ the IT floor on top of ARQ (excess overhead
+        // 8-14%); the chi glide must keep excess overhead under 2%.
+        let mut bulk10 = Simulation::new(0.10, 0.5, 50, 64, "bulk".into(), None, None, None);
+        run_to_end(&mut bulk10);
+        assert_eq!(bulk10.get_cum_decoded(), bulk10.get_num_source());
+        assert!(
+            bulk10.get_excess_overhead() < 2.0,
+            "bulk excess overhead at eps=0.10 must be < 2%: {:.2}% (total {:.2}%, floor {:.2}%)",
+            bulk10.get_excess_overhead(), bulk10.get_overhead(), bulk10.get_overhead_floor()
+        );
+    }
+
+    #[test]
+    fn test_bulk_chi_ramps_at_stream_tail() {
+        // chi must be exactly 0 mid-stream (r* = 0 identically, even during
+        // the estimator cold start) and ramp toward 1 by end of stream.
+        let mut sim = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        // Cold start: first ticks have p_upper ~ 0.975 but chi = 0 -> r = 0.
+        sim.step();
+        assert_eq!(sim.get_completion_exposure(), 0.0);
+        assert!(
+            sim.get_p_upper() > 0.5,
+            "cold-start upper quantile is pessimistic: {}",
+            sim.get_p_upper()
+        );
+        assert_eq!(sim.get_r_star(), 0.0, "M1: cold-start Bulk rate must be 0");
+        // Mid-stream: still 0.
+        for _ in 0..200 { sim.step(); }
+        assert_eq!(sim.get_completion_exposure(), 0.0);
+        // Run until the source is done: chi must have ramped up.
+        while !sim.source_done && sim.get_tick() < 20_000 { sim.step(); }
+        assert!(
+            sim.get_completion_exposure() > 0.95,
+            "chi at end of stream: {}",
+            sim.get_completion_exposure()
+        );
+        run_to_end(&mut sim);
+        assert_eq!(sim.get_cum_decoded(), sim.get_num_source());
+    }
+
+    #[test]
+    fn test_ablation_p6_completion_exposure() {
+        // Old mapping (delta_eff = min(0.1, p_hat) + one-shot tail burst)
+        // vs the P6 chi glide, same seeds (the channel seed derives from
+        // eps/q/rtt only). Run with --nocapture to record the deltas.
+        //
+        // The rtt=150 cell is the documented horizon caveat (paper 14.26):
+        // a 2000-symbol transfer (~0.5 s) fits entirely inside the chi
+        // exposure horizon (~5.5 x SRTT at 150 ms), so chi > 0 from the
+        // first tick and the cold-start estimator still pins the early
+        // rate in BOTH arms — the glide's r* = 0 guarantee needs a genuine
+        // mid-stream phase. Gate: improvement where mid-stream exists
+        // (rtt=50 cells), no-regression elsewhere.
+        for (eps, q, rtt) in [(0.05, 0.5, 50u32), (0.10, 0.5, 50u32), (0.05, 0.5, 150u32)] {
+            let mut new = Simulation::new(eps, q, rtt, 64, "bulk".into(), None, None, None);
+            let mut old = Simulation::new(eps, q, rtt, 64, "bulk".into(), None, None, None);
+            old.legacy_bulk_delta = true;
+            run_to_end(&mut new);
+            run_to_end(&mut old);
+            assert_eq!(new.get_cum_decoded(), new.get_num_source());
+            assert_eq!(old.get_cum_decoded(), old.get_num_source());
+            println!(
+                "eps={eps} rtt={rtt}: completion {} -> {} ticks, overhead {:.2}% -> {:.2}% (excess {:.2}% -> {:.2}%)",
+                old.get_tick(), new.get_tick(),
+                old.get_overhead(), new.get_overhead(),
+                old.get_excess_overhead(), new.get_excess_overhead()
+            );
+            // The glide must not regress completion anywhere...
+            assert!(
+                (new.get_tick() as f64) <= old.get_tick() as f64 * 1.05,
+                "eps={eps} rtt={rtt}: completion regressed {} -> {}",
+                old.get_tick(), new.get_tick()
+            );
+            // ...and must cut overhead wherever a mid-stream (chi = 0)
+            // phase exists; at rtt=150 (horizon caveat above) the gate is
+            // no-regression within noise.
+            if rtt <= 50 {
+                assert!(
+                    new.get_overhead() < old.get_overhead(),
+                    "eps={eps} rtt={rtt}: overhead must improve: {:.2}% -> {:.2}%",
+                    old.get_overhead(), new.get_overhead()
+                );
+            } else {
+                assert!(
+                    new.get_overhead() <= old.get_overhead() + 1.0,
+                    "eps={eps} rtt={rtt}: overhead regressed: {:.2}% -> {:.2}%",
+                    old.get_overhead(), new.get_overhead()
+                );
+            }
+        }
     }
 
     #[test]

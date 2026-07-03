@@ -119,6 +119,32 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
     (base + margin).max(0.0)
 }
 
+/// Bulk completion-tail budget delta_tail (paper Sections 14.25/14.26):
+/// the residual probability of one serial ARQ round at end-of-stream.
+pub const BULK_TAIL_BUDGET: f64 = 0.05;
+
+/// Completion-exposure kernel chi(T_rem) (paper Section 14.26).
+///
+/// chi is the probability that a loss suffered NOW can no longer hide
+/// behind ongoing sends: its ~1.5 x SRTT ARQ recovery would outlive the
+/// remaining send time T_rem and become serial completion time. Reuses
+/// the Section 3.4/5.4 P_lost machinery (normal RTT tail):
+///
+///   chi(T_rem) = Phi_bar((T_rem - 1.5 x SRTT) / sigma_arq)
+///   sigma_arq  = max(4 x RTTVAR, SRTT / 4)     (floor avoids div-by-0)
+///
+/// Mid-stream (T_rem >> SRTT) chi = 0; over the final ~1.5 SRTT it rises
+/// smoothly to 1. Unknown T_rem (endless tunnel stream) must be passed
+/// as infinity (or the caller keeps chi = 0): both yield 0 — pure ARQ.
+pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
+    if !(srtt_secs > 0.0) || t_rem_secs.is_nan() || t_rem_secs == f64::INFINITY {
+        return 0.0;
+    }
+    let t_rem = t_rem_secs.max(0.0);
+    let sigma_arq = (4.0 * rttvar_secs.max(0.0)).max(srtt_secs / 4.0);
+    normal_survival((t_rem - 1.5 * srtt_secs) / sigma_arq)
+}
+
 /// Inputs to the shared production rate controller (see `controller_rate`).
 /// All values are estimator-known; unknowns use their documented sentinels.
 #[derive(Debug, Clone, Copy)]
@@ -143,9 +169,18 @@ pub struct RateInputs {
     pub codec_overhead: f64,
     /// Hint-adjusted tail-latency target delta.
     pub tail_target: f64,
-    /// Bulk "late is fine" (P4a): the effective target becomes
-    /// min(0.1, p_upper) so the continuous r* glides to ~0 steady-state.
+    /// Bulk "late is fine" (P4a/P6, paper 14.26): the effective target
+    /// becomes the completion-exposure glide
+    /// delta_eff = p + (BULK_TAIL_BUDGET - p) x chi, so mid-stream
+    /// (chi = 0) delta_eff = p and r* = 0 IDENTICALLY — independent of
+    /// estimator uncertainty — and near completion (chi -> 1) delta_eff
+    /// glides to the 14.25 tail budget.
     pub bulk_late_is_fine: bool,
+    /// Completion exposure chi in [0, 1] (paper 14.26, see
+    /// `completion_exposure`). 0 = mid-stream or T_rem unknown (endless
+    /// tunnel stream); 1 = final ~1.5 SRTT of the transfer. Only read
+    /// when `bulk_late_is_fine`.
+    pub completion_exposure: f64,
     /// Cap the rate at the p99(r) saturation point (paper 14.21).
     pub saturation_cap: bool,
     /// Hard overhead ceiling.
@@ -157,7 +192,10 @@ pub struct RateInputs {
 /// implementation shared by the production controller and the visualizer --
 /// they cannot drift.
 ///
-///   delta_eff = min(0.1, p)                      if bulk_late_is_fine
+///   delta_eff = p + (0.05 - p) x chi             if bulk_late_is_fine
+///                                                (paper 14.26: chi = 0
+///                                                mid-stream -> r* = 0;
+///                                                chi -> 1 -> tail budget)
 ///             = tail_target                      otherwise
 ///   z         = normal_quantile(1 - delta_eff/p)
 ///   random    = max(0, p/(1-p) + z*sqrt(p*sigma2/(W(1-p)))) [+ codec_eff]
@@ -170,7 +208,15 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     }
 
     let delta_eff = if inp.bulk_late_is_fine {
-        (0.1f64).min(p)
+        // Completion-exposure glide (paper 14.26): a convex combination of
+        // "late is fine" (delta = p, exactly the channel: pure ARQ) and the
+        // 14.25 completion-tail budget. chi = NaN is treated as unknown.
+        let chi = if inp.completion_exposure.is_nan() {
+            0.0
+        } else {
+            inp.completion_exposure.clamp(0.0, 1.0)
+        };
+        p + (BULK_TAIL_BUDGET - p) * chi
     } else {
         inp.tail_target
     };
@@ -212,13 +258,18 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
 
 /// Continuous z for the r* margin: normal_quantile(1 - delta/epsilon).
 ///
-/// Returns a large negative value when delta >= epsilon (the tail target is
-/// met by pure ARQ; r* evaluates to 0 through the max(0, ..) floor) and a
-/// large positive value when delta << epsilon. See paper Section 8.4.
+/// Returns NEG_INFINITY when delta >= epsilon — the exact value of
+/// Phi^-1(0): the tail target is met by pure ARQ, so r* evaluates to 0
+/// through the max(0, ..) floor REGARDLESS of the size of the IT term
+/// epsilon/(1-epsilon). (A finite clamp here breaks the Bulk chi = 0
+/// identity r*(delta = p) = 0 at cold-start p close to 1, where no
+/// finite z can cancel the IT term — paper 14.26.) Returns a large
+/// positive value when delta << epsilon. See paper Section 8.4.
 pub fn z_for_tail_target(delta: f64, epsilon: f64) -> f64 {
     if epsilon <= 0.0 { return f64::NEG_INFINITY; }
-    let ratio = (delta / epsilon).clamp(1e-15, 1.0 - 1e-15);
-    normal_quantile(1.0 - ratio)
+    let ratio = delta / epsilon;
+    if ratio >= 1.0 { return f64::NEG_INFINITY; }
+    normal_quantile(1.0 - ratio.max(1e-15))
 }
 
 /// Taper function: time-decaying correction density tau(t) = A * (1-q)^t.
@@ -695,6 +746,107 @@ mod tests {
         assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.0, 5e-4), 1.0);
         assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.21, 0.0), 1.0);
         assert_eq!(r_saturation(f64::NAN, 5.0, 64.0, 0.21, 5e-4), 1.0);
+    }
+
+    fn bulk_inputs(p: f64, chi: f64) -> RateInputs {
+        RateInputs {
+            p_upper: p,
+            sigma2: 1.0,
+            mean_burst: 1.0,
+            window: 64.0,
+            t_symbols: 0.0,
+            srtt: 0.05,
+            t_sym: 0.0,
+            codec_overhead: 0.0,
+            tail_target: 1e-5,
+            bulk_late_is_fine: true,
+            completion_exposure: chi,
+            saturation_cap: false,
+            max_overhead: 0.5,
+        }
+    }
+
+    #[test]
+    fn test_completion_exposure_kernel() {
+        let srtt = 0.05;
+        let rttvar = srtt / 8.0; // sigma_arq = 4*rttvar = srtt/2
+        // Mid-stream: T_rem far beyond 1.5 SRTT + 8 sigma -> exactly 0.
+        assert_eq!(completion_exposure(10.0, srtt, rttvar), 0.0);
+        // At the ARQ horizon T_rem = 1.5 SRTT: chi = 1/2.
+        let mid = completion_exposure(1.5 * srtt, srtt, rttvar);
+        assert!((mid - 0.5).abs() < 0.01, "chi(1.5 SRTT) ~ 0.5: {mid}");
+        // T_rem = 0 (source exhausted): chi ~ 1.
+        assert!(completion_exposure(0.0, srtt, rttvar) > 0.99);
+        // Monotone nonincreasing in T_rem.
+        let mut prev = 1.0;
+        for i in 0..200 {
+            let chi = completion_exposure(i as f64 * 0.002, srtt, rttvar);
+            assert!(chi <= prev + 1e-12);
+            prev = chi;
+        }
+        // sigma_arq floor: rttvar = 0 must not divide by zero.
+        let chi0 = completion_exposure(0.0, srtt, 0.0);
+        assert!(chi0.is_finite() && chi0 > 0.99);
+        // Unknown T_rem (endless tunnel) -> 0 (pure ARQ steady state).
+        assert_eq!(completion_exposure(f64::INFINITY, srtt, rttvar), 0.0);
+        assert_eq!(completion_exposure(f64::NAN, srtt, rttvar), 0.0);
+    }
+
+    #[test]
+    fn test_bulk_chi_zero_rate_zero_even_at_cold_start() {
+        // M1 (paper 14.26): mid-stream chi = 0 -> delta_eff = p -> r* = 0
+        // IDENTICALLY, even at the estimator's Beta(1,1) cold-start upper
+        // quantile p ~ 0.975 (the old min(0.1, p) clamp pinned r at
+        // max_overhead here, wasting ~1/3 of the wire for 2-3 RTTs).
+        assert_eq!(controller_rate(&bulk_inputs(0.975, 0.0)), 0.0);
+        // M2 (paper 14.26): p above the old 0.1 clamp forever -> the old
+        // mapping paid permanent FEC on top of ARQ; chi = 0 -> 0 now.
+        assert_eq!(controller_rate(&bulk_inputs(0.12, 0.0)), 0.0);
+        // And an ordinary steady state.
+        assert_eq!(controller_rate(&bulk_inputs(0.05, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn test_bulk_chi_one_matches_tail_target_rate() {
+        // chi = 1 -> delta_eff = BULK_TAIL_BUDGET regardless of p: the rate
+        // equals the plain controller at tail_target = 0.05 (the 14.25 tail
+        // budget) — the tail burst as the glide's limiting case.
+        for p in [0.05, 0.10, 0.20] {
+            let bulk = controller_rate(&bulk_inputs(p, 1.0));
+            let mut plain = bulk_inputs(p, 0.0);
+            plain.bulk_late_is_fine = false;
+            plain.tail_target = BULK_TAIL_BUDGET;
+            let reference = controller_rate(&plain);
+            assert!(
+                (bulk - reference).abs() < 1e-12,
+                "chi=1 must equal the delta=0.05 tail rate at p={p}: {bulk} vs {reference}"
+            );
+        }
+        // At p above the budget the tail rate is genuinely positive.
+        assert!(controller_rate(&bulk_inputs(0.10, 1.0)) > 0.05);
+    }
+
+    #[test]
+    fn test_bulk_chi_glide_is_continuous() {
+        // Sweep chi 0 -> 1 at the M2 operating point: the rate must rise
+        // from 0 to the tail rate with no jumps (continuity — the hard
+        // project principle; the ramp REPLACES the one-shot tail burst).
+        let p = 0.12;
+        let mut prev = controller_rate(&bulk_inputs(p, 0.0));
+        assert_eq!(prev, 0.0);
+        let mut max_step = 0.0f64;
+        for i in 1..=1000 {
+            let chi = i as f64 / 1000.0;
+            let r = controller_rate(&bulk_inputs(p, chi));
+            assert!(r >= prev - 1e-12, "rate must be nondecreasing in chi");
+            max_step = max_step.max(r - prev);
+            prev = r;
+        }
+        assert!(prev > 0.1, "chi=1 tail rate must be positive: {prev}");
+        assert!(
+            max_step < 0.01,
+            "no jumps along the chi glide: max step {max_step}"
+        );
     }
 
     #[test]
