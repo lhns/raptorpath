@@ -4,11 +4,27 @@
 //! Unlike round-robin MPTCP, we schedule symbols proportional to each path's
 //! effective goodput and route repair symbols preferentially to better paths.
 //!
-//! Congestion control uses Copa (delay-based): it tracks the minimum RTT
-//! (propagation baseline) and computes rate = 1/(d_copa × dq), where
-//! dq = RTT - min_RTT is the queuing delay.  Loss alone does NOT reduce
-//! the window — only rising RTT does.  This prevents wireless random loss
-//! from collapsing throughput.  No ProbeRTT phase (natural oscillation).
+//! Congestion control is Copa-lite (delay-based, paper Sections 12.4-12.5),
+//! ported from the L0-proven gate-suite driver (P1+P2 semantics):
+//!
+//!   - Propagation floor = min RTT sample in a sliding ~10s window.
+//!   - Queuing-delay signal = min RTT sample since the last cwnd update
+//!     (a windowed MIN, not an EWMA: the min sees through transient
+//!     serialization bursts to the standing queue; an EWMA stays inflated
+//!     long after the queue drains and causes a backoff spiral).
+//!   - Hint-coupled queue target (P1): back off when the windowed min
+//!     exceeds floor × {1.08 Realtime, 1.125 Auto, 1.25 Bulk}.
+//!   - Two-speed ramp: multiplicative ×1.5+1 per RTT until the first
+//!     backoff, then additive +2 / multiplicative ×0.92.
+//!   - Token-bucket pacing at cwnd/SRTT with burst allowance max(10, cwnd/8)
+//!     (state lives here; the drain in net/mod.rs consumes the tokens).
+//!
+//! Loss alone does NOT reduce the window — only a standing queue does.
+//! This prevents wireless random loss from collapsing throughput.
+//! No ProbeRTT phase (natural oscillation refreshes the floor).
+//!
+//! UNITS: `cwnd`, `in_flight`, and pacing tokens are all in SYMBOLS.
+//! Pacing rate = cwnd [symbols] / SRTT [s] = symbols/second.
 
 pub mod clock;
 pub use clock::*;
@@ -26,7 +42,42 @@ pub type PathId = u32;
 
 /// Copa congestion control parameter: target queue depth.
 /// d_copa = 0.5 targets ~2 packets of queue. See paper Section 12.4.
+/// Units: 1/symbols — rate = 1/(d_copa [1/sym] × dq [s]) is symbols/second.
 const COPA_DELTA: f64 = 0.5;
+
+/// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
+///
+/// Two jobs, both continuity guards (no branch cliffs):
+///   - `copa_target_cwnd()` divides by dq; on a LAN where a sample can equal
+///     the floor exactly, dq → 0 would explode the target to infinity.
+///   - The backoff threshold (queue_mult − 1) × floor collapses toward 0 on
+///     sub-millisecond-RTT links; flooring both dq and the threshold at the
+///     same 0.1 ms means jitter at the clamp boundary cannot trigger a
+///     spurious backoff (dq == threshold is not > threshold).
+const DQ_FLOOR_SECS: f64 = 1e-4;
+
+/// Startup ramp: multiplicative growth factor per window update, until the
+/// first backoff (gate driver P1: cwnd = cwnd × 1.5 + 1).
+const RAMP_GAIN: f64 = 1.5;
+/// Steady state: additive increase per window update (symbols).
+const ADDITIVE_STEP: f64 = 2.0;
+/// Backoff: multiplicative decrease when the windowed min RTT exceeds the
+/// hint-coupled queue target.
+const BACKOFF_MULT: f64 = 0.92;
+/// SRTT assumed before the first RTT sample arrives (update cadence only).
+const DEFAULT_SRTT: Duration = Duration::from_millis(50);
+
+/// Hint-coupled queue-target multiplier (P1, paper Section 12.4): the
+/// standing queue is allowed to raise the windowed min RTT to
+/// floor × mult before Copa-lite backs off. Realtime keeps the queue
+/// near-empty; Bulk trades a deeper queue for utilization.
+fn queue_target_mult(hint: ProtocolHint) -> f64 {
+    match hint {
+        ProtocolHint::Realtime => 1.08,
+        ProtocolHint::Auto => 1.125,
+        ProtocolHint::Bulk => 1.25,
+    }
+}
 
 /// Scheduling weights derived from protocol hint.
 /// Controls the latency vs bandwidth trade-off in the interpolated objective.
@@ -141,10 +192,18 @@ struct RttSample {
     timestamp: Instant,
 }
 
-/// Copa delay-based congestion control state.
+/// Copa-lite delay-based congestion control state.
 ///
-/// Copa (Arun & Balakrishnan, NSDI 2018) computes the sending rate from
-/// the queuing delay: rate = 1 / (d_copa × dq), where dq = RTT - min_RTT.
+/// Copa (Arun & Balakrishnan, NSDI 2018), simplified to the semantics that
+/// won the L0 goal gate (tests/gate_suite.rs run_fec driver, P1+P2):
+///
+///   - Propagation floor: min RTT sample over a sliding ~10s window (P2's
+///     estimated floor; windowed rather than lifetime so a route change
+///     re-learns within one window).
+///   - Queuing-delay signal: min RTT sample since the LAST cwnd update.
+///   - Two-speed ramp: ×1.5+1 per update until first backoff, then +2/×0.92.
+///   - Backoff when the windowed min exceeds the hint-coupled queue target
+///     floor × queue_mult (P1).
 ///
 /// Key properties:
 ///   - No phases (no Startup/ProbeBw/ProbeRtt state machine)
@@ -161,30 +220,34 @@ pub struct CopaState {
     rtt_samples: VecDeque<RttSample>,
     /// How long to keep samples in sliding windows (10s).
     window_duration: Duration,
-    /// Minimum RTT seen in the current window (propagation baseline).
+    /// Minimum RTT in the sliding window = estimated propagation floor.
     min_rtt: Option<Duration>,
     /// Maximum delivery rate seen in the current window.
     max_bw: f64,
-    /// Previous RTT for detecting trends.
-    prev_rtt: Option<Duration>,
-    /// Consecutive RTT increases (congestion signal).
-    rtt_increases: u32,
-    /// Number of RTT increases that count as congestion.
-    congestion_threshold: u32,
+    /// Smoothed RTT (EWMA 7/8 old + 1/8 new) — pacing-rate denominator and
+    /// cwnd-update cadence.
+    srtt: Option<Duration>,
+    /// Minimum RTT sample since the last cwnd update — the queuing-delay
+    /// signal (windowed min, NOT an EWMA; see module docs).
+    min_rtt_since_update: Option<Duration>,
+    /// True until the first congestion backoff (multiplicative ramp phase).
+    ramping: bool,
+    /// Hint-coupled queue-target multiplier (P1): 1.08/1.125/1.25.
+    queue_mult: f64,
+    /// When the cwnd was last updated (updates run once per SRTT).
+    last_cwnd_update: Instant,
     /// Delivered symbols counter for delivery rate calculation.
     delivered: u64,
     /// Timestamp of last delivery measurement.
     last_delivered_time: Instant,
     /// Delivered count at last measurement.
     last_delivered: u64,
-    /// Whether we're still in initial ramp-up (first few RTTs).
-    in_startup: bool,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
 
 impl CopaState {
-    fn new(clock: Arc<dyn Clock>) -> Self {
+    fn new(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         let now = clock.now();
         Self {
             bw_samples: VecDeque::new(),
@@ -192,13 +255,14 @@ impl CopaState {
             window_duration: Duration::from_secs(10),
             min_rtt: None,
             max_bw: 0.0,
-            prev_rtt: None,
-            rtt_increases: 0,
-            congestion_threshold: 3,
+            srtt: None,
+            min_rtt_since_update: None,
+            ramping: true,
+            queue_mult: queue_target_mult(hint),
             delivered: 0,
             last_delivered_time: now,
             last_delivered: 0,
-            in_startup: true,
+            last_cwnd_update: now,
             clock,
         }
     }
@@ -237,19 +301,22 @@ impl CopaState {
         rate
     }
 
-    /// Record an RTT sample.
+    /// Record an RTT sample: SRTT EWMA, 10s floor window, and the
+    /// since-last-update min (queuing-delay signal).
     fn record_rtt(&mut self, rtt: Duration) {
         let now = self.clock.now();
 
-        // Detect RTT trend
-        if let Some(prev) = self.prev_rtt {
-            if rtt > prev + prev / 10 {
-                self.rtt_increases += 1;
-            } else {
-                self.rtt_increases = self.rtt_increases.saturating_sub(1);
-            }
-        }
-        self.prev_rtt = Some(rtt);
+        // SRTT EWMA (RFC 6298 weights, same as the gate driver).
+        self.srtt = Some(match self.srtt {
+            Some(s) => s.mul_f64(0.875) + rtt.mul_f64(0.125),
+            None => rtt,
+        });
+
+        // Windowed min for the queuing-delay signal.
+        self.min_rtt_since_update = Some(match self.min_rtt_since_update {
+            Some(m) => m.min(rtt),
+            None => rtt,
+        });
 
         self.rtt_samples.push_back(RttSample {
             rtt,
@@ -259,33 +326,86 @@ impl CopaState {
         self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
     }
 
-    /// Whether RTT is trending upward (congestion detected).
-    fn is_congested(&self) -> bool {
-        self.rtt_increases >= self.congestion_threshold
+    /// Smoothed RTT, defaulting to 50ms before the first sample.
+    fn srtt(&self) -> Duration {
+        self.srtt.unwrap_or(DEFAULT_SRTT)
     }
 
-    /// Copa cwnd target: rate = 1/(d_copa × dq), cwnd = rate × min_rtt.
+    /// Whether the standing-queue signal is above the hint-coupled target:
+    /// windowed-min RTT − floor (= dq, clamped ≥ 0.1ms) exceeds
+    /// (queue_mult − 1) × floor (also clamped ≥ 0.1ms).
     ///
-    /// dq = current_rtt - min_rtt (queuing delay).
-    /// When dq is small (queue empty): rate is high → large cwnd.
-    /// When dq is large (queue full): rate drops → small cwnd.
-    fn copa_cwnd(&self) -> u32 {
-        let min_rtt = self.min_rtt.unwrap_or(Duration::from_millis(50));
-        let min_rtt_secs = min_rtt.as_secs_f64();
-        let current_rtt_secs = self.prev_rtt
-            .unwrap_or(min_rtt)
-            .as_secs_f64();
+    /// Equivalent to the gate driver's `min_rtt_win > floor × queue_mult`
+    /// except for the dq clamp, which keeps sub-millisecond-RTT links from
+    /// backing off on jitter (see DQ_FLOOR_SECS).
+    fn queue_above_target(&self) -> bool {
+        let (Some(win_min), Some(floor)) = (self.min_rtt_since_update, self.min_rtt) else {
+            return false;
+        };
+        let floor_s = floor.as_secs_f64();
+        let dq = (win_min.as_secs_f64() - floor_s).max(DQ_FLOOR_SECS);
+        let dq_target = ((self.queue_mult - 1.0) * floor_s).max(DQ_FLOOR_SECS);
+        dq > dq_target
+    }
 
-        let dq = (current_rtt_secs - min_rtt_secs).max(0.0001); // avoid div by zero
+    /// Whether a cwnd window update is due (once per SRTT).
+    fn should_update(&self, now: Instant) -> bool {
+        now.duration_since(self.last_cwnd_update) >= self.srtt()
+    }
+
+    /// Per-SRTT window update (gate driver semantics):
+    ///   - windowed min above the queue target → backoff ×0.92, end ramp
+    ///   - ramping → ×1.5 + 1
+    ///   - steady state → +2
+    /// Resets the queuing-delay window. Returns the new cwnd (unclamped
+    /// against MIN/MAX — the caller clamps).
+    fn update_cwnd(&mut self, cwnd: u32) -> u32 {
+        self.last_cwnd_update = self.clock.now();
+        // No RTT samples since the last update → no signal, hold.
+        if self.min_rtt_since_update.is_none() {
+            return cwnd;
+        }
+        let above = self.queue_above_target();
+        self.min_rtt_since_update = None;
+        let c = cwnd as f64;
+        let next = if above {
+            self.ramping = false;
+            c * BACKOFF_MULT
+        } else if self.ramping {
+            c * RAMP_GAIN + 1.0
+        } else {
+            c + ADDITIVE_STEP
+        };
+        next.round() as u32
+    }
+
+    /// Immediate backoff (ramp fast-exit or decode-failure congestion):
+    /// ×0.92, end the ramp, restart the update window.
+    fn backoff(&mut self, cwnd: u32) -> u32 {
+        self.ramping = false;
+        self.min_rtt_since_update = None;
+        self.last_cwnd_update = self.clock.now();
+        (cwnd as f64 * BACKOFF_MULT).round() as u32
+    }
+
+    /// Classic Copa rate target — DIAGNOSTIC ONLY (the cwnd dynamics above
+    /// are the ramp/backoff scheme; this is the closed-form equilibrium).
+    ///
+    /// Units:
+    ///   dq   [s]         = SRTT − floor, clamped ≥ DQ_FLOOR_SECS
+    ///   rate [symbols/s] = 1 / (COPA_DELTA [1/symbols] × dq [s])
+    ///   cwnd [symbols]   = rate [symbols/s] × SRTT [s]
+    ///
+    /// (The pre-P7 code multiplied rate by min_rtt and doubled it during
+    /// startup; rate × SRTT is the pipe-plus-standing-queue the rate can
+    /// keep full over one feedback delay.)
+    fn copa_target_cwnd(&self) -> u32 {
+        let floor = self.min_rtt.unwrap_or(DEFAULT_SRTT).as_secs_f64();
+        let srtt = self.srtt().as_secs_f64();
+        let dq = (srtt - floor).max(DQ_FLOOR_SECS);
         let rate = 1.0 / (COPA_DELTA * dq); // symbols per second
-
-        // cwnd = rate × min_rtt (how many symbols fill the pipe)
-        let cwnd = rate * min_rtt_secs;
-
-        // During startup, allow aggressive growth (2x gain)
-        let gain = if self.in_startup { 2.0 } else { 1.0 };
-        let target = (cwnd * gain) as u32;
-        target.clamp(PathState::MIN_CWND, PathState::MAX_CWND)
+        let cwnd = rate * srtt; // symbols
+        (cwnd.round() as u32).clamp(PathState::MIN_CWND, PathState::MAX_CWND)
     }
 
     /// Expire samples older than the sliding window.
@@ -299,17 +419,15 @@ impl CopaState {
         }
     }
 
-    fn in_startup(&self) -> bool {
-        self.in_startup
-    }
-
-    fn exit_startup(&mut self) {
-        self.in_startup = false;
+    fn set_queue_mult(&mut self, mult: f64) {
+        self.queue_mult = mult;
     }
 
     fn reset(&mut self) {
         let clock = self.clock.clone();
-        *self = Self::new(clock);
+        let queue_mult = self.queue_mult;
+        *self = Self::new(clock, ProtocolHint::Auto);
+        self.queue_mult = queue_mult; // hint survives a path reset
     }
 
     /// Read the current min_rtt estimate (for diagnostics/benchmarking).
@@ -338,13 +456,25 @@ pub struct PathState {
     pub max_datagram_size: Option<usize>,
     /// Copa delay-based congestion control state.
     copa: CopaState,
+    /// Token-bucket pacing: symbols sendable right now. Replenished at
+    /// cwnd/SRTT symbols per second, capped at the burst allowance
+    /// max(10, cwnd/8). May go NEGATIVE: the drain in net/mod.rs is
+    /// batch-granular and lets the final batch overdraft; the debt is
+    /// repaid before the next drain, so the average rate stays cwnd/SRTT.
+    pace_tokens: f64,
+    /// Last time pacing tokens were replenished.
+    last_pace_refill: Instant,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
 
 impl PathState {
-    /// Minimum congestion window (never go below this).
-    pub const MIN_CWND: u32 = 2;
+    /// Minimum congestion window in symbols (never go below this).
+    /// 8 rather than the historical 2: an L1 run on a real emulated link
+    /// showed the old collapse-to-target dynamics crawling at 2 symbols/RTT
+    /// after the first burst; the floor guarantees a usable trickle that
+    /// keeps RTT samples (and thus recovery) flowing.
+    pub const MIN_CWND: u32 = 8;
     /// Initial congestion window.
     pub const INITIAL_CWND: u32 = 10;
     /// Maximum congestion window.
@@ -353,6 +483,12 @@ impl PathState {
 
 impl PathState {
     pub fn new(id: PathId, clock: Arc<dyn Clock>) -> Self {
+        Self::new_with_hint(id, clock, ProtocolHint::Auto)
+    }
+
+    /// Create path state with a protocol hint (sets Copa-lite's
+    /// hint-coupled queue target, paper Section 12.4 / P1).
+    pub fn new_with_hint(id: PathId, clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         let now = clock.now();
         Self {
             id,
@@ -364,9 +500,16 @@ impl PathState {
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
-            copa: CopaState::new(clock.clone()),
+            copa: CopaState::new(clock.clone(), hint),
+            pace_tokens: Self::INITIAL_CWND as f64,
+            last_pace_refill: now,
             clock,
         }
+    }
+
+    /// Update the hint-coupled queue target when the protocol hint changes.
+    pub fn set_hint(&mut self, hint: ProtocolHint) {
+        self.copa.set_queue_mult(queue_target_mult(hint));
     }
 
     /// Correction rate r = epsilon / (1 - epsilon).
@@ -434,89 +577,63 @@ impl PathState {
         self.cwnd.saturating_sub(self.in_flight) as f64 / self.in_flight as f64
     }
 
-    /// Copa congestion control: handle acknowledgements.
+    /// Copa-lite congestion control: handle acknowledgements.
     ///
-    /// Records delivery and adjusts cwnd via Copa's delay-based formula:
-    /// rate = 1/(d_copa × dq), cwnd = rate × min_rtt.
-    /// During startup, cwnd grows aggressively (2× gain).
-    /// Once RTT starts rising, transitions to steady state.
+    /// The cwnd update runs once per SRTT (gate driver cadence):
+    ///   - windowed-min RTT above the queue target → ×0.92, end ramp
+    ///   - ramping (before the first backoff) → ×1.5 + 1
+    ///   - steady state → +2
+    ///
+    /// During the ramp the backoff check additionally runs per ACK, so the
+    /// exponential phase ends within one feedback message of the first
+    /// standing-queue evidence rather than waiting out the SRTT window.
     pub fn on_ack(&mut self, acked: u32) {
         let _rate = self.copa.record_delivery(acked);
+        let now = self.clock.now();
 
-        // Startup exit: if RTT is rising (queue building)
-        if self.copa.in_startup() {
-            if self.copa.is_congested() {
-                self.copa.exit_startup();
-            }
-            // Also exit startup if we've had enough samples
-            if self.copa.bw_samples.len() >= 4 && self.copa.min_rtt.is_some() {
-                let copa_target = self.copa.copa_cwnd();
-                if self.cwnd >= copa_target {
-                    self.copa.exit_startup();
-                }
-            }
-        }
-
-        // Copa cwnd: purely delay-based, no phases
-        let copa_target = self.copa.copa_cwnd();
-
-        if self.copa.in_startup() {
-            // During startup, grow toward Copa target but also allow
-            // traditional slow-start growth if estimate is too low
-            self.cwnd = std::cmp::max(self.cwnd + acked, copa_target);
-        } else {
-            // Steady state: converge toward Copa target
-            // Smooth transition: move 25% toward target per ACK
-            if copa_target > self.cwnd {
-                let step = std::cmp::max(1, (copa_target - self.cwnd) / 4);
-                self.cwnd += step;
-            } else if copa_target < self.cwnd {
-                let step = std::cmp::max(1, (self.cwnd - copa_target) / 4);
-                self.cwnd = self.cwnd.saturating_sub(step);
-            }
+        if self.copa.ramping && self.copa.queue_above_target() {
+            // Fast ramp exit: gentle ×0.92, NOT a collapse to a
+            // rate-formula target (the pre-P7 bug: the initial burst
+            // inflated its own RTT samples, dq exploded, and the target
+            // dropped to the floor on the very first burst).
+            self.cwnd = self.copa.backoff(self.cwnd);
+        } else if self.copa.should_update(now) {
+            self.cwnd = self.copa.update_cwnd(self.cwnd);
         }
 
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
 
         // Sync legacy fields
-        self.in_slow_start = self.copa.in_startup();
+        self.in_slow_start = self.copa.ramping;
         if !self.in_slow_start && self.ssthresh > self.cwnd {
             self.ssthresh = self.cwnd;
         }
     }
 
-    /// Copa congestion control: handle loss events.
+    /// Copa-lite congestion control: handle loss events.
     ///
-    /// Unlike AIMD, loss alone does NOT reduce cwnd.  The key insight:
-    ///   - Loss + stable RTT → wireless/random loss → ignore (FEC handles it)
-    ///   - Loss + rising RTT → real congestion → drain toward Copa target
-    ///   - Decode failure + rising RTT → severe congestion → drain to 0.75 × Copa target
+    /// Loss alone does NOT reduce cwnd — channel loss is FEC's job, not
+    /// CC's (paper Section 12). The key insight:
+    ///   - Loss + FEC recovered → wireless/random loss → ignore entirely
+    ///   - Decode failure + standing queue above target → real congestion
+    ///     → backoff ×0.92 (same speed as the delay backoff; a decode
+    ///     failure adds no extra information beyond the delay signal)
+    ///   - Decode failure + empty queue → borderline FEC under-provision,
+    ///     not congestion → end the ramp and step down by 1
     pub fn on_loss(&mut self, fec_recovered: bool) {
-        if self.copa.is_congested() {
-            // RTT is rising → real congestion
-            self.copa.exit_startup();
-            let copa_target = self.copa.copa_cwnd();
-
-            if fec_recovered {
-                // Congestion but FEC saved us — drain to Copa target
-                self.cwnd = std::cmp::max(copa_target, Self::MIN_CWND);
-            } else {
-                // Decode failure + congestion — aggressive drain to 75% Copa target
-                let target = (copa_target as f64 * 0.75) as u32;
-                self.cwnd = std::cmp::max(target, Self::MIN_CWND);
-                self.ssthresh = self.cwnd;
-                self.in_slow_start = false;
-            }
+        if fec_recovered {
+            return;
+        }
+        if self.copa.queue_above_target() {
+            self.cwnd = self.copa.backoff(self.cwnd);
         } else {
-            // RTT is stable → wireless/random loss, not congestion
-            if fec_recovered {
-                // FEC recovered, no congestion signal → do nothing
-            } else {
-                // Decode failure without congestion is unusual.
-                // Gently reduce: this might be a borderline case where
-                // we need slightly more FEC, not less bandwidth.
-                self.cwnd = std::cmp::max(self.cwnd.saturating_sub(1), Self::MIN_CWND);
-            }
+            self.copa.ramping = false;
+            self.cwnd = self.cwnd.saturating_sub(1);
+        }
+        self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
+        self.in_slow_start = false;
+        if self.ssthresh > self.cwnd {
+            self.ssthresh = self.cwnd;
         }
     }
 
@@ -529,6 +646,58 @@ impl PathState {
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
+    }
+
+    /// Smoothed RTT estimate (Copa's EWMA; the loss estimator's EWMA as a
+    /// fallback before the first Copa sample).
+    pub fn srtt(&self) -> Duration {
+        match self.copa.srtt {
+            Some(s) => s,
+            None => self.estimator.rtt(),
+        }
+    }
+
+    /// Classic Copa equilibrium target, for diagnostics (see
+    /// `CopaState::copa_target_cwnd` for the units derivation).
+    pub fn copa_target_cwnd(&self) -> u32 {
+        self.copa.copa_target_cwnd()
+    }
+
+    // --- Token-bucket pacing (paper Section 12.5, gate driver P1) ---
+    //
+    // UNITS: tokens are SYMBOLS. Refill rate = cwnd [symbols] / SRTT [s]
+    // = symbols/second; burst allowance = max(10, cwnd/8) symbols.
+
+    /// Replenish pacing tokens for elapsed wall time.
+    pub fn pace_refill(&mut self) {
+        let now = self.clock.now();
+        let elapsed = now.duration_since(self.last_pace_refill).as_secs_f64();
+        self.last_pace_refill = now;
+        let srtt = self.srtt().as_secs_f64().max(1e-3);
+        let rate = self.cwnd as f64 / srtt; // symbols per second
+        let burst = (self.cwnd as f64 / 8.0).max(10.0);
+        self.pace_tokens = (self.pace_tokens + rate * elapsed).min(burst);
+    }
+
+    /// Current pacing token balance (symbols; may be negative — see field).
+    pub fn pace_tokens(&self) -> f64 {
+        self.pace_tokens
+    }
+
+    /// Consume tokens for `n` symbols just sent (may push balance negative).
+    pub fn consume_pace_tokens(&mut self, n: u32) {
+        self.pace_tokens -= n as f64;
+    }
+
+    /// Time until at least one pacing token is available at the current
+    /// refill rate (zero if a token is already available).
+    pub fn pace_delay(&self) -> Duration {
+        if self.pace_tokens >= 1.0 {
+            return Duration::ZERO;
+        }
+        let srtt = self.srtt().as_secs_f64().max(1e-3);
+        let rate = (self.cwnd as f64 / srtt).max(1.0); // symbols per second
+        Duration::from_secs_f64((1.0 - self.pace_tokens) / rate)
     }
 }
 
@@ -544,25 +713,25 @@ pub struct Scheduler {
     pub deficit: CorrectionDeficit,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
+    /// Protocol hint — also sets Copa-lite's queue target on each path
+    /// (paper Section 12.4 / P1).
+    hint: ProtocolHint,
 }
 
 impl Scheduler {
     pub fn new(clock: Arc<dyn Clock>) -> Self {
-        Self {
-            paths: HashMap::new(),
-            clock,
-            deficit: CorrectionDeficit::new(),
-            weights: SchedulingWeights::from_hint(ProtocolHint::Auto),
-        }
+        Self::new_with_hint(clock, ProtocolHint::Auto)
     }
 
-    /// Create scheduler with protocol hint for weight configuration.
+    /// Create scheduler with protocol hint for weight configuration and
+    /// the per-path Copa-lite queue target.
     pub fn new_with_hint(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         Self {
             paths: HashMap::new(),
             clock,
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
+            hint,
         }
     }
 
@@ -577,7 +746,8 @@ impl Scheduler {
     }
 
     pub fn add_path(&mut self, id: PathId) {
-        self.paths.insert(id, PathState::new(id, self.clock.clone()));
+        self.paths
+            .insert(id, PathState::new_with_hint(id, self.clock.clone(), self.hint));
     }
 
     pub fn remove_path(&mut self, id: PathId) {
@@ -742,11 +912,14 @@ impl Scheduler {
             if !path.active {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
-                // Reset to startup on recovery
+                // Reset to startup on recovery (Copa reset keeps the hint's
+                // queue target; pacing restarts at the initial burst).
                 path.cwnd = PathState::INITIAL_CWND;
                 path.ssthresh = 64;
                 path.in_slow_start = true;
                 path.copa.reset();
+                path.pace_tokens = PathState::INITIAL_CWND as f64;
+                path.last_pace_refill = path.last_report;
             }
         }
     }
@@ -867,9 +1040,14 @@ impl Default for Scheduler {
 }
 
 impl Scheduler {
-    /// Set protocol hint (updates scheduling weights).
+    /// Set protocol hint (updates scheduling weights and each path's
+    /// Copa-lite queue target).
     pub fn set_protocol_hint(&mut self, hint: ProtocolHint) {
         self.weights = SchedulingWeights::from_hint(hint);
+        self.hint = hint;
+        for path in self.paths.values_mut() {
+            path.set_hint(hint);
+        }
     }
 }
 
@@ -1215,5 +1393,239 @@ mod tests {
             .unwrap_or(0);
 
         assert!(path0_count > 0, "Realtime should send source on fast path");
+    }
+
+    // -----------------------------------------------------------------------
+    // P7: Copa-lite production port (paper Sections 12.4-12.5, gate P1+P2)
+    // -----------------------------------------------------------------------
+
+    fn millis(ms: u64) -> Duration {
+        Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn test_copa_lite_cwnd_never_below_floor() {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        // Establish a 10ms propagation floor.
+        for _ in 0..3 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(10));
+        }
+
+        // Hammer with inflated-RTT windows (delay backoffs) ...
+        for _ in 0..50 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(100));
+            clock.advance(millis(150));
+            sched.ack(0, 4);
+            assert!(
+                sched.path(0).unwrap().cwnd >= PathState::MIN_CWND,
+                "delay backoffs must never take cwnd below the floor"
+            );
+        }
+        // ... and with decode failures (loss steps).
+        for _ in 0..100 {
+            sched.on_loss(0, false);
+        }
+        let cwnd = sched.path(0).unwrap().cwnd;
+        assert_eq!(cwnd, PathState::MIN_CWND);
+        assert!(cwnd >= 8, "floor is 8 symbols, never the historical 2");
+    }
+
+    #[test]
+    fn test_burst_rtt_spike_does_not_collapse_cwnd() {
+        // The pre-P7 failure mode: the initial burst inflates its own RTT
+        // samples, dq explodes, and the rate-formula target collapses cwnd
+        // to the floor. With the windowed-min filter remembering the
+        // propagation floor, a burst costs one gentle ×0.92 backoff.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        // Learn the 10ms floor and ramp for a few clean RTTs.
+        for _ in 0..6 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(10));
+            clock.advance(millis(15));
+            sched.ack(0, 8);
+        }
+        let pre_burst = sched.path(0).unwrap().cwnd;
+        assert!(
+            pre_burst > PathState::INITIAL_CWND,
+            "ramp should have grown cwnd, got {pre_burst}"
+        );
+
+        // A burst inflates a full update window of RTT samples 4x.
+        for _ in 0..4 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(40));
+        }
+        clock.advance(millis(50));
+        sched.ack(0, 8);
+
+        let post_burst = sched.path(0).unwrap().cwnd;
+        let one_backoff = (pre_burst as f64 * BACKOFF_MULT) as u32;
+        assert!(
+            post_burst + 1 >= one_backoff,
+            "burst must cost at most one gentle backoff: pre={pre_burst}, post={post_burst}"
+        );
+        assert!(
+            post_burst > 2 * PathState::MIN_CWND,
+            "burst must not collapse cwnd toward the floor: post={post_burst}"
+        );
+
+        // After the burst drains, samples return to the floor and cwnd
+        // recovers additively (+2 per update).
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(10));
+        clock.advance(millis(50));
+        sched.ack(0, 8);
+        let recovered = sched.path(0).unwrap().cwnd;
+        assert_eq!(
+            recovered,
+            post_burst + ADDITIVE_STEP as u32,
+            "post-backoff growth is additive"
+        );
+    }
+
+    #[test]
+    fn test_ramp_multiplicative_until_backoff_then_additive() {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        // Clean RTTs at the floor: each per-SRTT update multiplies ×1.5+1.
+        let mut prev = sched.path(0).unwrap().cwnd;
+        for _ in 0..4 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+            clock.advance(millis(30));
+            sched.ack(0, prev);
+            let cur = sched.path(0).unwrap().cwnd;
+            assert_eq!(
+                cur,
+                (prev as f64 * RAMP_GAIN + 1.0).round() as u32,
+                "ramp phase is multiplicative"
+            );
+            assert!(sched.path(0).unwrap().in_slow_start);
+            prev = cur;
+        }
+
+        // First backoff: inflated window ends the ramp.
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(80));
+        clock.advance(millis(50));
+        sched.ack(0, prev);
+        let after_backoff = sched.path(0).unwrap().cwnd;
+        assert_eq!(after_backoff, (prev as f64 * BACKOFF_MULT).round() as u32);
+        assert!(!sched.path(0).unwrap().in_slow_start);
+
+        // Subsequent clean updates are additive +2 — never multiplicative.
+        let mut prev = after_backoff;
+        for _ in 0..3 {
+            sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+            clock.advance(millis(50));
+            sched.ack(0, prev);
+            let cur = sched.path(0).unwrap().cwnd;
+            assert_eq!(cur, prev + ADDITIVE_STEP as u32, "steady state is additive");
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn test_hint_changes_backoff_threshold() {
+        // P1 (paper 12.4): the protocol hint sets the queue target.
+        // floor = 100ms, windowed min = 115ms → dq = 15ms:
+        //   Realtime target  8ms → backoff
+        //   Auto target   12.5ms → backoff
+        //   Bulk target     25ms → keep growing
+        fn run(hint: ProtocolHint) -> (u32, u32) {
+            let clock = Arc::new(MockClock::new());
+            let mut sched = Scheduler::new_with_hint(clock.clone(), hint);
+            sched.add_path(0);
+            for _ in 0..3 {
+                sched.path_mut(0).unwrap().record_rtt_sample(millis(100));
+                clock.advance(millis(150));
+                sched.ack(0, 8);
+            }
+            let pre = sched.path(0).unwrap().cwnd;
+            for _ in 0..3 {
+                sched.path_mut(0).unwrap().record_rtt_sample(millis(115));
+            }
+            clock.advance(millis(150));
+            sched.ack(0, 8);
+            (pre, sched.path(0).unwrap().cwnd)
+        }
+
+        let (rt_pre, rt_post) = run(ProtocolHint::Realtime);
+        let (auto_pre, auto_post) = run(ProtocolHint::Auto);
+        let (bulk_pre, bulk_post) = run(ProtocolHint::Bulk);
+
+        assert!(rt_post < rt_pre, "Realtime backs off at dq=15ms: {rt_pre}->{rt_post}");
+        assert!(auto_post < auto_pre, "Auto backs off at dq=15ms: {auto_pre}->{auto_post}");
+        assert!(bulk_post > bulk_pre, "Bulk tolerates dq=15ms: {bulk_pre}->{bulk_post}");
+    }
+
+    #[test]
+    fn test_hint_plumbed_to_paths() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        assert_eq!(sched.path(0).unwrap().copa.queue_mult, 1.25);
+
+        sched.set_protocol_hint(ProtocolHint::Realtime);
+        assert_eq!(sched.path(0).unwrap().copa.queue_mult, 1.08);
+
+        // New paths pick up the current hint.
+        sched.add_path(1);
+        assert_eq!(sched.path(1).unwrap().copa.queue_mult, 1.08);
+    }
+
+    #[test]
+    fn test_pacing_token_bucket_rate_and_burst() {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+
+        let path = sched.path_mut(0).unwrap();
+        // SRTT = 100ms exactly (EWMA of identical samples).
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(100));
+        }
+        path.cwnd = 200; // rate = 200/0.1 = 2000 symbols/sec
+        path.pace_tokens = 0.0;
+
+        clock.advance(millis(5)); // 2000/s × 5ms = 10 tokens
+        sched.path_mut(0).unwrap().pace_refill();
+        let tokens = sched.path(0).unwrap().pace_tokens();
+        assert!((tokens - 10.0).abs() < 1e-6, "refill rate is cwnd/SRTT, got {tokens}");
+
+        clock.advance(millis(100)); // would add 200 → capped at burst
+        sched.path_mut(0).unwrap().pace_refill();
+        let tokens = sched.path(0).unwrap().pace_tokens();
+        // burst allowance = max(10, cwnd/8) = max(10, 25) = 25
+        assert!((tokens - 25.0).abs() < 1e-6, "burst cap is max(10, cwnd/8), got {tokens}");
+
+        // Batch-granular overdraft: consumption may push the bucket negative.
+        let path = sched.path_mut(0).unwrap();
+        path.consume_pace_tokens(30);
+        assert!(path.pace_tokens() < 0.0);
+        assert!(path.pace_delay() > Duration::ZERO);
+
+        // Small-cwnd burst floor: max(10, cwnd/8) = 10.
+        let path = sched.path_mut(0).unwrap();
+        path.cwnd = 16;
+        path.pace_tokens = 0.0;
+        clock.advance(millis(1000));
+        path.pace_refill();
+        assert!((path.pace_tokens() - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_copa_target_cwnd_units() {
+        // Units doc-test: floor = SRTT = 100ms → dq clamps at 0.1ms.
+        // rate = 1/(0.5 [1/sym] × 1e-4 [s]) = 20000 symbols/s
+        // cwnd = 20000 [sym/s] × 0.1 [s] = 2000 symbols
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock);
+        sched.add_path(0);
+        let path = sched.path_mut(0).unwrap();
+        path.record_rtt_sample(millis(100));
+        assert_eq!(path.copa_target_cwnd(), 2000);
     }
 }

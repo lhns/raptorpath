@@ -484,6 +484,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
         let mut last_tx_paused = false;
         let mut flush_deadline: Option<tokio::time::Instant> = None;
+        // Pacing retry: set when a drain was blocked by the token bucket
+        // (P7); the select loop retries the drain when it fires.
+        let mut pace_deadline: Option<tokio::time::Instant> = None;
         let mut shutting_down = false;
         let mut ileave = if sender_interleave_depth >= 2 {
             interleave::InterleavingBuffer::new_tapered(
@@ -542,22 +545,44 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         None => std::future::pending().await,
                     }
                 };
+                let pace_sleep = async {
+                    match pace_deadline {
+                        Some(d) => tokio::time::sleep_until(d).await,
+                        None => std::future::pending().await,
+                    }
+                };
                 tokio::select! {
                     _ = tokio::time::sleep(std::time::Duration::from_millis(1)), if tx_paused => {
                         continue;
                     }
                     p = tun.read_packet(), if !tx_paused => p,
                     _ = flush_sleep => None,
+                    _ = pace_sleep => {
+                        // Pacing tokens should be available again — retry
+                        // the blocked drain.
+                        pace_deadline = send_interleaved_batches(
+                            &mut ileave,
+                            &sender_batch_counter,
+                            &sender_transport,
+                            &sender_scheduler,
+                            &sender_stats,
+                            false,
+                        )
+                        .map(|d| tokio::time::Instant::now() + d);
+                        continue;
+                    }
                     _ = ileave_sleep => {
                         // Interleave timeout — drain and send buffered symbols
                         if ileave.should_drain() || !ileave.is_empty() {
-                            send_interleaved_batches(
+                            pace_deadline = send_interleaved_batches(
                                 &mut ileave,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
-                            );
+                                false,
+                            )
+                            .map(|d| tokio::time::Instant::now() + d);
                         }
                         continue;
                     }
@@ -584,13 +609,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &mut backend_selector,
                     );
                 }
-                // Force-drain all remaining interleaved symbols
+                // Force-drain all remaining interleaved symbols (bypasses
+                // the pacing gate — shutdown flush must not strand data)
                 send_interleaved_batches(
                     &mut ileave,
                     &sender_batch_counter,
                     &sender_transport,
                     &sender_scheduler,
                     &sender_stats,
+                    true,
                 );
                 // Send Shutdown control message to peer on all paths
                 {
@@ -637,13 +664,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
                         if ileave.should_drain() {
-                            send_interleaved_batches(
+                            pace_deadline = send_interleaved_batches(
                                 &mut ileave,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
-                            );
+                                false,
+                            )
+                            .map(|d| tokio::time::Instant::now() + d);
                         }
                     }
                 }
@@ -668,13 +697,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         flush_deadline = None;
                         // Check if interleave buffer is ready to drain
                         if ileave.should_drain() {
-                            send_interleaved_batches(
+                            pace_deadline = send_interleaved_batches(
                                 &mut ileave,
                                 &sender_batch_counter,
                                 &sender_transport,
                                 &sender_scheduler,
                                 &sender_stats,
-                            );
+                                false,
+                            )
+                            .map(|d| tokio::time::Instant::now() + d);
                         }
                     } else if flush_deadline.is_none() {
                         // TUN closed (read_packet returned None without timeout)
@@ -2249,16 +2280,57 @@ fn encode_to_interleave_buf(
 }
 
 /// Drain interleaved symbols from the buffer and send them on the wire.
+///
+/// Token-bucket pacing (paper Section 12.5, P7): the drain only proceeds
+/// while pacing tokens are available (refilled at cwnd/SRTT per path with
+/// burst allowance max(10, cwnd/8)). The interleaver's drain is
+/// all-or-nothing (it empties every buffered slot), so the gate is
+/// batch-granular: a drain needs at least one token on some live path,
+/// and the symbols actually sent are charged against each path's bucket,
+/// which may go negative — the debt is repaid before the next drain, so
+/// the average offered rate stays at cwnd/SRTT. This is the documented
+/// approximation of per-symbol pacing; the TUN-read gate
+/// (in_flight >= cwnd) remains the outer backpressure.
+///
+/// Returns `Some(delay)` if pacing blocked the drain (retry after
+/// `delay`), `None` if the buffer was drained (or was empty).
+/// `force` bypasses the pacing gate (shutdown flush).
 fn send_interleaved_batches(
     ileave: &mut interleave::InterleavingBuffer,
     batch_counter: &AtomicU64,
     transport: &Arc<QuicTransport>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
-) {
-    // Compute worst-path loss rate for tapered interleaving decay
+    force: bool,
+) -> Option<std::time::Duration> {
+    if ileave.is_empty() {
+        return None;
+    }
+
+    // Compute worst-path loss rate for tapered interleaving decay, and
+    // apply the pacing gate under the same lock.
     let loss_rate = {
-        let sched = scheduler.lock();
+        let mut sched = scheduler.lock();
+        if !force {
+            let mut any_token = false;
+            let mut min_delay = std::time::Duration::from_millis(50);
+            for id in sched.live_paths() {
+                if let Some(p) = sched.path_mut(id) {
+                    p.pace_refill();
+                    if p.pace_tokens() >= 1.0 {
+                        any_token = true;
+                    } else {
+                        min_delay = min_delay.min(p.pace_delay());
+                    }
+                }
+            }
+            if !any_token {
+                // Paced out: leave the buffer intact and tell the caller
+                // when the next token arrives (clamped to 1ms..50ms so a
+                // long-SRTT path cannot wedge the drain loop).
+                return Some(min_delay.max(std::time::Duration::from_millis(1)));
+            }
+        }
         sched
             .active_paths()
             .iter()
@@ -2337,9 +2409,13 @@ fn send_interleaved_batches(
         for (pid, n) in sent_per_path {
             if let Some(p) = sched.path_mut(pid) {
                 p.in_flight = p.in_flight.saturating_add(n);
+                // Charge pacing tokens for what actually left (may push
+                // the bucket negative — batch-granular overdraft).
+                p.consume_pace_tokens(n);
             }
         }
     }
+    None
 }
 
 /// Per-path batch sequence tracker for loss detection on receiver side.
