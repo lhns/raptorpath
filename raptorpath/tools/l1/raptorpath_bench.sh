@@ -44,11 +44,16 @@ ip netns exec "$NS_SRV" "$BIN" run --server \
     > /tmp/rp-server.log 2>&1 &
 sleep 1.5
 
-# Client: one peer per path
+# Client: one peer per path (explicit --bind required: the client does
+# not default to an ephemeral endpoint — L1 finding, improvement B1)
 PEERS="10.77.0.2:7000"
-[[ "$DUAL" == "--dual" ]] && PEERS="10.77.0.2:7000,10.78.0.2:7000"
+CLI_BIND="10.77.0.1:0"
+if [[ "$DUAL" == "--dual" ]]; then
+    PEERS="10.77.0.2:7000,10.78.0.2:7000"
+    CLI_BIND="10.77.0.1:0,10.78.0.1:0"
+fi
 ip netns exec "$NS_CLI" "$BIN" run \
-    --peer "$PEERS" \
+    --peer "$PEERS" --bind "$CLI_BIND" \
     --tun-name rpcli0 --tun-addr 10.99.0.1/24 \
     --protocol-hint "$HINT" \
     > /tmp/rp-client.log 2>&1 &

@@ -113,12 +113,18 @@ struct StatusArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("raptorpath=info".parse()?),
-        )
-        .init();
+    // rustls 0.23: quinn's dependency graph enables both ring and
+    // aws-lc-rs, so provider auto-detection fails at the first TLS config
+    // built without an explicit provider (client panic found by the L1
+    // harness). Install ring process-wide up front.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // RUST_LOG wins when set; the info default applies only otherwise
+    // (an added directive at equal specificity overrides the env one, so
+    // RUST_LOG=raptorpath=debug used to be silently ignored).
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("raptorpath=info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let cli = Cli::parse();
 

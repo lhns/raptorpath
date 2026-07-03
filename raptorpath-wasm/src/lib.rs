@@ -757,6 +757,24 @@ impl Simulation {
     }
     /// Configured reliability target rho.
     pub fn get_rho(&self) -> f64 { self.rho }
+    /// The channel's information-theoretic overhead floor: with loss rate
+    /// eps, EVERY reliable scheme must send at least 1/(1-eps) symbols per
+    /// delivered symbol -- a floor of eps/(1-eps) extra, no matter how
+    /// clever. As a percentage of source symbols.
+    pub fn get_overhead_floor(&self) -> f64 {
+        if self.eps < 1.0 {
+            self.eps / (1.0 - self.eps) * 100.0
+        } else {
+            0.0
+        }
+    }
+    /// Excess overhead: what we actually spent BEYOND the channel floor --
+    /// the honest inefficiency measure (0% = information-theoretically
+    /// perfect; the floor itself is the channel's fault, not the
+    /// protocol's).
+    pub fn get_excess_overhead(&self) -> f64 {
+        (self.get_overhead() - self.get_overhead_floor()).max(0.0)
+    }
     pub fn get_overhead(&self) -> f64 {
         if self.steady_src > 0 {
             (self.steady_fec + self.steady_arq) as f64 / self.steady_src as f64 * 100.0
@@ -855,6 +873,21 @@ mod tests {
             rt.delivered_lat_ms.len(),
             rt.get_num_source() as usize,
             "every delivered symbol has a latency sample"
+        );
+    }
+
+    #[test]
+    fn test_excess_overhead_metric() {
+        // Floor at eps=0.05: 5/95 = 5.26%. Bulk (mostly ARQ) should sit
+        // close to the floor; excess = overhead - floor >= 0 always.
+        let mut sim = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
+        while !sim.is_finished() && sim.get_tick() < 20_000 { sim.step(); }
+        let floor = sim.get_overhead_floor();
+        assert!((floor - 5.263).abs() < 0.01, "floor {floor}");
+        assert!(sim.get_excess_overhead() >= 0.0);
+        assert!(
+            sim.get_excess_overhead() <= sim.get_overhead(),
+            "excess cannot exceed total"
         );
     }
 

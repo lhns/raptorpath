@@ -181,11 +181,16 @@ impl QuicTransport {
         path_id: PathId,
         conn: quinn::Connection,
         tx: mpsc::Sender<(PathId, WireMessage)>,
+        ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = vec![];
 
         let conn_uni = conn.clone();
-        let tx_uni = tx.clone();
+        // Stream-origin control messages go to a DEDICATED channel: the
+        // data channel backs up under symbol floods, and liveness
+        // (PathReport/Ping) queued behind it starved the dead-path check
+        // (L1 finding: bulk transfers killed the tunnel in ~6 s).
+        let tx_uni = ctrl_tx;
 
         // Datagram receiver
         let handle = tokio::spawn(async move {
@@ -215,8 +220,10 @@ impl QuicTransport {
             loop {
                 match conn_uni.accept_uni().await {
                     Ok(mut recv) => {
+                        tracing::debug!(path_id, "uni stream accepted");
                         let mut len_buf = [0u8; 4];
-                        if recv.read_exact(&mut len_buf).await.is_err() {
+                        if let Err(e) = recv.read_exact(&mut len_buf).await {
+                            tracing::debug!(path_id, ?e, "uni stream length read failed");
                             continue;
                         }
                         let len = u32::from_be_bytes(len_buf) as usize;
@@ -381,13 +388,19 @@ impl QuicTransport {
     pub fn spawn_receivers(
         &self,
         tx: mpsc::Sender<(PathId, WireMessage)>,
+        ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = vec![];
 
         for entry in self.connections.iter() {
             let path_id = *entry.key();
             let conn = entry.value().clone();
-            handles.extend(self.spawn_receiver_for_path(path_id, conn, tx.clone()));
+            handles.extend(self.spawn_receiver_for_path(
+                path_id,
+                conn,
+                tx.clone(),
+                ctrl_tx.clone(),
+            ));
         }
 
         handles

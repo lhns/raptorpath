@@ -225,6 +225,10 @@ const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
 /// 8 bytes wire header + ~40 bytes bincode overhead estimate.
 const WIRE_OVERHEAD: usize = 48;
+/// Serialized SymbolBatch envelope (WireMessage tag + timestamps + seq).
+const BATCH_WIRE_HEADER: usize = 48;
+/// Per-symbol serialization overhead inside a batch (ids + flags + len).
+const PER_SYMBOL_WIRE_OVERHEAD: usize = 32;
 
 /// Map FecBackend to u8 for atomic stats storage.
 fn backend_to_u8(backend: FecBackend) -> u8 {
@@ -404,7 +408,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // Channel for received messages from all paths
     // ADR-0011: larger message channel to avoid stalling under load
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
-    let _recv_handles = transport.spawn_receivers(msg_tx.clone());
+    // Dedicated channel for stream-origin control: liveness must not queue
+    // behind the data flood (see spawn_receiver_for_path).
+    let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
+    let _recv_handles = transport.spawn_receivers(msg_tx.clone(), ctrl_tx.clone());
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
@@ -419,6 +426,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_block_counter = block_counter.clone();
     let sender_batch_counter = batch_counter.clone();
     let sender_sent_counts = sent_counts.clone();
+    let ctrl_sent_counts = sent_counts.clone();
     let sender_stats = stats.clone();
 
     let sender_profile_max_block = profile.max_block_size;
@@ -474,6 +482,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 
         // ----- Block-mode sender (existing) -----
         let mut block_buf = Vec::with_capacity(sender_profile_max_block);
+        let mut last_tx_paused = false;
         let mut flush_deadline: Option<tokio::time::Instant> = None;
         let mut shutting_down = false;
         let mut ileave = if sender_interleave_depth >= 2 {
@@ -497,6 +506,28 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 tokio::time::Instant::now() + remaining
             });
 
+            // Copa backpressure (paper 12 / ADR-0050): stop reading the
+            // TUN while the wire budget is exhausted — the inner flow's own
+            // CC sees the growing TUN queue and slows down. Without this
+            // the encoder ran at TUN speed, saturated the runtime, starved
+            // QUIC timers/liveness, and any bulk transfer killed the
+            // tunnel within DEAD_PATH_TIMEOUT (L1 harness finding).
+            let (tx_paused, dbg_fl, dbg_cw) = {
+                let sched = sender_scheduler.lock();
+                let (fl, cw) = sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .fold((0u64, 0u64), |(f, c), p| {
+                        (f + p.in_flight as u64, c + p.cwnd as u64)
+                    });
+                (fl >= cw.max(4), fl, cw)
+            };
+            if tx_paused != last_tx_paused {
+                debug!(tx_paused, in_flight = dbg_fl, cwnd = dbg_cw, "backpressure state change");
+                last_tx_paused = tx_paused;
+            }
+
             // ADR-0001: select between packet arrival, flush timeout, interleave drain, and shutdown
             let packet = {
                 let flush_sleep = async {
@@ -512,7 +543,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     }
                 };
                 tokio::select! {
-                    p = tun.read_packet() => p,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(1)), if tx_paused => {
+                        continue;
+                    }
+                    p = tun.read_packet(), if !tx_paused => p,
                     _ = flush_sleep => None,
                     _ = ileave_sleep => {
                         // Interleave timeout — drain and send buffered symbols
@@ -705,6 +739,69 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut last_pi_repairs_fed: u64 = 0;
         let mut last_pi_repairs_useful: u64 = 0;
 
+        // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
+        // routinely outrace the reliable control stream). A decoder created
+        // without the real params can never decode -- its OTI transfer
+        // length is wrong and its source array is empty -- so such symbols
+        // are buffered here and replayed when BlockStart arrives. L1
+        // harness finding: on a real link every small block lost this race
+        // and timed out; the tunnel never carried a single packet.
+        // Bounds: 32 blocks x 128 symbols x ~1.2 KB ~ 5 MB worst case.
+        let mut pre_start_symbols: std::collections::HashMap<u64, Vec<crate::fec::WireSymbol>> =
+            std::collections::HashMap::new();
+
+        // Feed one block-mode symbol into its (existing) decoder; on
+        // completion: stats, FEC feedback, BlockResult, packet extraction,
+        // TUN inject, decoder removal. Returns false iff the TUN inject
+        // channel is closed (receiver must exit). Shared by the data-arm
+        // fast path and the BlockStart replay path.
+        let feed_block_symbol = |symbol: &crate::fec::WireSymbol, path_id: u32| -> bool {
+            let Some(mut decoder) = recv_decoders.get_mut(&symbol.block_id) else {
+                return true;
+            };
+            if let Some(data) = decoder.add_symbol(symbol) {
+                let block_id = symbol.block_id;
+                let total_fed = decoder.total_fed();
+                let source_symbols = decoder.params().source_symbols;
+                drop(decoder);
+
+                debug!(block_id, "block decoded");
+                recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
+                recv_fec.lock().feedback_update(true);
+
+                let result_msg = ControlMessage::BlockResult {
+                    block_id,
+                    success: true,
+                    symbols_received: total_fed,
+                    symbols_needed: source_symbols,
+                };
+                if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
+                    debug!(?e, path_id, "failed to send BlockResult");
+                }
+
+                let packets = framing::extract_packets(&data);
+                for pkt_data in packets {
+                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
+                        Ok(()) => {}
+                        Err(mpsc::error::TrySendError::Full(_)) => {
+                            warn!("TUN inject channel full, dropping packet");
+                        }
+                        Err(mpsc::error::TrySendError::Closed(_)) => {
+                            error!("TUN inject channel closed");
+                            return false;
+                        }
+                    }
+                }
+
+                recv_decoders.remove(&block_id);
+                recv_stats
+                    .blocks
+                    .pending
+                    .store(recv_decoders.len() as u64, Ordering::Relaxed);
+            }
+            true
+        };
+
         loop {
             // ADR-0015: select between message arrival and shutdown signal
             let (path_id, msg) = tokio::select! {
@@ -890,72 +987,25 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     } else {
                         // ----- Block-mode receive path (existing) -----
                         for symbol in &batch.symbols {
-                            // Evict oldest decoder if at capacity (DoS protection)
-                            if !recv_decoders.contains_key(&symbol.block_id)
-                                && recv_decoders.len() >= MAX_CONCURRENT_DECODERS
-                            {
-                                evict_oldest_decoder(&recv_decoders);
-                            }
-
-                            // ADR-0008: get or create decoder with proper params
-                            // ADR-0030: use symbol's backend for fallback decoder creation
-                            let mut decoder = recv_decoders
-                                .entry(symbol.block_id)
-                                .or_insert_with(|| {
-                                    symbol.backend.create_decoder(
-                                        EncodingParams {
-                                            source_symbols: 0,
-                                            symbol_size: recv_symbol_size,
-                                            repair_count: 0,
-                                            block_id: symbol.block_id,
-                                        },
-                                        DEFAULT_MAX_BLOCK_SIZE as u64,
-                                    )
-                                });
-
-                            if let Some(data) = decoder.add_symbol(symbol) {
-                                let block_id = symbol.block_id;
-                                let total_fed = decoder.total_fed();
-                                let source_symbols = decoder.params().source_symbols;
-                                drop(decoder);
-
-                                debug!(block_id, "block decoded");
-
-                                // ADR-0013: update monitoring stats
-                                recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
-
-                                // Feed back to FEC controller
-                                recv_fec.lock().feedback_update(true);
-
-                                // ADR-0005: send BlockResult to sender
-                                let result_msg = ControlMessage::BlockResult {
-                                    block_id,
-                                    success: true,
-                                    symbols_received: total_fed,
-                                    symbols_needed: source_symbols,
-                                };
-                                if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
-                                    debug!(?e, path_id, "failed to send BlockResult");
-                                }
-
-                                // ADR-0002: extract individual packets from decoded block
-                                let packets = framing::extract_packets(&data);
-                                for pkt_data in packets {
-                                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
-                                        Ok(()) => {}
-                                        Err(mpsc::error::TrySendError::Full(_)) => {
-                                            warn!("TUN inject channel full, dropping packet");
-                                        }
-                                        Err(mpsc::error::TrySendError::Closed(_)) => {
-                                            error!("TUN inject channel closed");
-                                            return;
-                                        }
+                            if !recv_decoders.contains_key(&symbol.block_id) {
+                                // Pre-BlockStart symbol: buffer for replay.
+                                // (Creating a decoder without the real
+                                // params here would make the block
+                                // undecodable -- see pre_start_symbols.)
+                                if pre_start_symbols.len() < 32
+                                    || pre_start_symbols.contains_key(&symbol.block_id)
+                                {
+                                    let buf = pre_start_symbols
+                                        .entry(symbol.block_id)
+                                        .or_default();
+                                    if buf.len() < 128 {
+                                        buf.push(symbol.clone());
                                     }
                                 }
-
-                                // ADR-0004: remove completed decoder
-                                recv_decoders.remove(&block_id);
-                                recv_stats.blocks.pending.store(recv_decoders.len() as u64, Ordering::Relaxed);
+                                continue;
+                            }
+                            if !feed_block_symbol(symbol, path_id) {
+                                return;
                             }
                         }
                     }
@@ -1013,6 +1063,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         }
                     }
 
+                    let started_block = match &ctrl_msg {
+                        ControlMessage::BlockStart { params, .. } => Some(params.block_id),
+                        _ => None,
+                    };
+
                     handle_control_message(
                         path_id,
                         ctrl_msg,
@@ -1025,6 +1080,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                         &recv_stats,
                         recv_nack_tx.as_ref(),
                     );
+
+                    // Replay symbols that outraced this BlockStart -- the
+                    // decoder now exists with real params, and small blocks
+                    // are often already complete at this point.
+                    if let Some(bid) = started_block {
+                        if let Some(buffered) = pre_start_symbols.remove(&bid) {
+                            debug!(block_id = bid, count = buffered.len(),
+                                "replaying pre-BlockStart symbols");
+                            for sym in &buffered {
+                                if !feed_block_symbol(sym, path_id) {
+                                    return;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1087,6 +1157,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let cmd_scheduler = scheduler_arc.clone();
     let cmd_stats = stats.clone();
     let cmd_msg_tx = msg_tx.clone();
+    let cmd_ctrl_tx = ctrl_tx.clone();
     let next_path_id = Arc::new(AtomicU64::new(config.bind_addrs.len() as u64));
     let mut cmd_shutdown_rx = shutdown_tx.subscribe();
     let cmd_handle = tokio::spawn(async move {
@@ -1109,6 +1180,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                                         path_id,
                                         conn,
                                         cmd_msg_tx.clone(),
+                                        cmd_ctrl_tx.clone(),
                                     );
                                     info!(path_id, "path added successfully");
                                 }
@@ -1143,6 +1215,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 _ = report_shutdown_rx.recv() => break,
             }
 
+            let reports: Vec<_> = {
             let mut sched = report_scheduler.lock();
 
             // Check for dead paths
@@ -1162,9 +1235,19 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 }
             }
 
+            // in_flight leak guard: unACKed budget (dropped ACK datagrams,
+            // dead peers) decays instead of jamming the Copa gate forever.
+            for pid in sched.all_path_ids() {
+                if let Some(path) = sched.path_mut(pid) {
+                    if path.in_flight > path.cwnd {
+                        path.in_flight -= path.in_flight / 4;
+                    }
+                }
+            }
+
             // Send PathReport + Ping on each active path
             let path_ids = sched.active_paths();
-            let reports: Vec<_> = path_ids.iter().filter_map(|&pid| {
+            path_ids.iter().filter_map(|&pid| {
                 let path = sched.path(pid)?;
                 let ps = report_stats.path(pid)?;
                 Some((pid, ControlMessage::PathReport {
@@ -1176,15 +1259,68 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
                     symbols_received: ps.symbols_received.load(Ordering::Relaxed),
                 }))
-            }).collect();
-            drop(sched);
+            }).collect()
+            // guard dropped by scope end: the report sends below await on
+            // the reliable stream and must not hold the scheduler lock
+            };
 
             for (pid, report) in reports {
-                let _ = report_transport.send_control_datagram(pid, report);
-                let _ = report_transport.send_control_datagram(
-                    pid,
-                    ControlMessage::Ping { timestamp_us: now_us() },
-                );
+                // Liveness must not share fate with the data flood: under
+                // load the datagram queue is saturated by symbol batches
+                // and report datagrams get dropped, so the peer declares
+                // the path dead after DEAD_PATH_TIMEOUT and QUIC idles out
+                // (L1 finding: every bulk transfer killed the tunnel in
+                // ~6 s). The reliable control stream has its own flow
+                // control, so reports and pings survive saturation.
+                if let Err(e) = report_transport.send_control(pid, report).await {
+                    warn!(pid, ?e, "failed to send PathReport on control stream");
+                }
+                if let Err(e) = report_transport
+                    .send_control(pid, ControlMessage::Ping { timestamp_us: now_us() })
+                    .await
+                {
+                    warn!(pid, ?e, "failed to send Ping on control stream");
+                }
+            }
+        }
+    });
+
+    // Control fast path: liveness-critical messages (PathReport, Ping,
+    // Pong) are handled immediately; anything else that arrives via the
+    // reliable stream is forwarded to the ordered data loop.
+    let ctrl_scheduler = scheduler_arc.clone();
+    let ctrl_fec = fec_controller.clone();
+    let ctrl_decoders = active_decoders.clone();
+    let ctrl_transport = transport_arc.clone();
+    let ctrl_stats = stats.clone();
+    let ctrl_fec_backend = effective_fec_backend;
+    let ctrl_forward_tx = msg_tx.clone();
+    let ctrl_handle = tokio::spawn(async move {
+        while let Some((path_id, msg)) = ctrl_rx.recv().await {
+            match msg {
+                WireMessage::Control(
+                    cm @ (ControlMessage::PathReport { .. }
+                    | ControlMessage::Ping { .. }
+                    | ControlMessage::Pong { .. }),
+                ) => {
+                    handle_control_message(
+                        path_id,
+                        cm,
+                        &ctrl_scheduler,
+                        &ctrl_fec,
+                        &ctrl_decoders,
+                        &ctrl_sent_counts,
+                        &ctrl_transport,
+                        ctrl_fec_backend,
+                        &ctrl_stats,
+                        None,
+                    );
+                }
+                other => {
+                    if ctrl_forward_tx.send((path_id, other)).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });
@@ -1195,6 +1331,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         _ = cleanup_handle => {}
         _ = report_handle => {}
         _ = cmd_handle => {}
+        _ = ctrl_handle => {}
     }
 
     // Clean up routes and DNS on shutdown
@@ -1991,7 +2128,10 @@ fn encode_to_interleave_buf(
                 // Clamp: don't go below 64 bytes or above the profile default
                 mtu_based.clamp(64, symbol_size)
             }
-            _ => symbol_size,
+            // Pre-PMTUD: assume QUIC's 1200-byte initial MTU, not the
+            // profile default (L1 finding: symbol 1200 + overhead never
+            // fit a fresh connection's datagram limit).
+            _ => symbol_size.min((1200 - total_overhead.min(1136)) as u16),
         }
     };
     let source_symbols = (block_data.len() as f64 / effective_symbol_size as f64).ceil() as u32;
@@ -2026,17 +2166,22 @@ fn encode_to_interleave_buf(
         block_id,
     };
 
-    // ADR-0008: send BlockStart on all paths before symbols
+    // ADR-0008: send BlockStart on all paths before symbols. This must be
+    // the REAL control message — a regression had replaced it with an
+    // empty SymbolBatch, so no receiver ever learned block params and
+    // block mode could not decode over a real link (found by the L1
+    // harness; in-process L0 tests bypass this wire layer). Sent as a
+    // datagram for latency; symbols that still outrace it are buffered
+    // and replayed by the receiver (pre_start_symbols).
     {
         let sched = scheduler.lock();
         for path_id in sched.active_paths() {
-            let start_batch = SymbolBatch {
-                symbols: vec![],
-                send_timestamp_us: now_us(),
-                batch_seq: batch_counter.fetch_add(1, Ordering::Relaxed),
-                path_id,
+            let msg = ControlMessage::BlockStart {
+                params,
+                transfer_length: block_data.len() as u64,
+                backend: fec_backend,
             };
-            if let Err(e) = transport.send_symbols(path_id, start_batch) {
+            if let Err(e) = transport.send_control_datagram(path_id, msg) {
                 warn!(path_id, ?e, "failed to send BlockStart");
             }
         }
@@ -2101,20 +2246,70 @@ fn send_interleaved_batches(
     };
 
     let now = now_us();
+    // in_flight accounting for Copa backpressure (block mode previously
+    // never tracked it, so cwnd gating had nothing to gate on).
+    let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
 
     for (path_id, symbols) in batches {
         if symbols.is_empty() {
             continue;
         }
-        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-        let batch = SymbolBatch {
-            symbols,
-            send_timestamp_us: now,
-            batch_seq,
-            path_id,
-        };
-        if let Err(e) = transport.send_symbols(path_id, batch) {
-            warn!(path_id, ?e, "failed to send interleaved batch");
+        // QUIC datagrams have a hard size limit (1200 bytes initial MTU
+        // until PMTUD raises it). Chunk the drain so every serialized
+        // SymbolBatch fits — L1 harness finding: multi-symbol batches were
+        // dropped with "datagram too large" on any real-MTU link, killing
+        // the tunnel entirely.
+        let max_dgram = transport
+            .max_datagram_size(path_id)
+            .unwrap_or(1200)
+            .max(256);
+        let budget = max_dgram - BATCH_WIRE_HEADER;
+        let mut chunk: Vec<crate::fec::WireSymbol> = Vec::new();
+        let mut chunk_bytes = 0usize;
+        for sym in symbols {
+            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch = SymbolBatch {
+                    symbols: std::mem::take(&mut chunk),
+                    send_timestamp_us: now,
+                    batch_seq,
+                    path_id,
+                };
+                let n = batch.symbols.len() as u32;
+                if let Err(e) = transport.send_symbols(path_id, batch) {
+                    warn!(path_id, ?e, "failed to send interleaved batch");
+                } else {
+                    *sent_per_path.entry(path_id).or_default() += n;
+                }
+                chunk_bytes = 0;
+            }
+            chunk_bytes += sym_bytes;
+            chunk.push(sym);
+        }
+        if !chunk.is_empty() {
+            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+            let batch = SymbolBatch {
+                symbols: chunk,
+                send_timestamp_us: now,
+                batch_seq,
+                path_id,
+            };
+            let n = batch.symbols.len() as u32;
+            if let Err(e) = transport.send_symbols(path_id, batch) {
+                warn!(path_id, ?e, "failed to send interleaved batch");
+            } else {
+                *sent_per_path.entry(path_id).or_default() += n;
+            }
+        }
+    }
+
+    if !sent_per_path.is_empty() {
+        let mut sched = scheduler.lock();
+        for (pid, n) in sent_per_path {
+            if let Some(p) = sched.path_mut(pid) {
+                p.in_flight = p.in_flight.saturating_add(n);
+            }
         }
     }
 }
@@ -2224,6 +2419,12 @@ fn handle_control_message(
                 if expected_count > 0 {
                     path.estimator
                         .record_batch(expected_count, received_count);
+                    // Lost symbols also left the wire: release them from
+                    // in_flight (sched.ack above only subtracts received),
+                    // otherwise losses leak budget and the Copa gate jams.
+                    path.in_flight = path
+                        .in_flight
+                        .saturating_sub(expected_count.saturating_sub(received_count));
                 }
 
                 // ADR-0013: update path monitoring stats
