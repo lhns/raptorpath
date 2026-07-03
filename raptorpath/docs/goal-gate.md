@@ -269,6 +269,27 @@ WiFi+LTE: 12.6 Mbit/s. Kernel multipath does NOT solve lossy-path
 aggregation — the structural opening ADR-0051's C7/C8 win conditions
 target. Small objects: C7 0.256 s mean, C8 0.64 s.
 
+## L1 Phase 3 — raptorpath itself (bring-up log)
+
+First-ever runs of the production binary over real links. Eight
+transport bugs found and fixed during bring-up (see commits b57a202,
+804101a): tunnel now stable, zero liveness deaths, blocks decode, CC
+ramps (P7 + single-charge fix: 19 blocks/15s vs 8 pre-fix at C2).
+
+Pre-P8 baseline (Bulk, 1.8 MB objects, WITHOUT block-mode ARQ — the
+correction model's retransmit half was missing in production):
+| Cell | raptorpath median | best baseline (quinn) |
+|------|-------------------|----------------------|
+| C2 | 7.97 s | 0.175 s |
+| C3 | 20.5 s | 0.94 s |
+
+Cause (measured): block mode abandoned failed blocks (BlockResult
+false -> stats only); under the P6 Bulk glide r*=0 mid-stream, the
+inner TCP saw the raw 2.6-4% loss and collapsed; additionally ~77% of
+56-symbol blocks contain a loss at C2, each firing a false congestion
+backoff (cwnd suppressed to ~16 vs BDP ~104). P8 (block-mode ARQ via
+batch-Ack diff) addresses both; L1 re-measurement follows its merge.
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,
