@@ -75,11 +75,22 @@ pub struct FecRateController {
     /// and stretch the recovery window faster than the shrinking FEC-miss
     /// cost pays back — more FEC hurts the tail.
     saturation_cap_enabled: bool,
-    /// P4a: Bulk maps the tail target to "late is fine" (δ = min(0.1, ε̂)),
-    /// so the continuous r* glides to 0 in the steady state — pure ARQ,
-    /// volume parity with retransmission transports (paper Sections 5.3,
-    /// 12.5, 14.25). Public setter exists for ablation.
+    /// P4a/P6: Bulk maps the tail target to the completion-exposure glide
+    /// δ_eff = ε̂ + (0.05 − ε̂)·χ (paper Section 14.26): mid-stream (χ = 0)
+    /// δ_eff = ε̂ and r* = 0 identically — pure ARQ, volume parity with
+    /// retransmission transports (paper Sections 5.3, 12.5) — and near a
+    /// KNOWN end of stream χ → 1 ramps r to the 14.25 tail budget.
+    /// Public setter exists for ablation.
     bulk_pure_arq: bool,
+    /// P6: completion exposure χ ∈ [0, 1] (paper Section 14.26). The
+    /// production tunnel is an ENDLESS stream — there is no known T_rem,
+    /// so χ stays 0 and Bulk's steady state is pure ARQ; the existing
+    /// production tail behavior is unchanged. Future work: feed this from
+    /// an application-known transfer size, or an idle-onset heuristic
+    /// (send-queue drained = provisional end of stream). Drivers that DO
+    /// know T_rem (the L0 gate, the wasm sim) set it per tick via
+    /// `set_completion_exposure` with `raptorpath_math::completion_exposure`.
+    completion_exposure: f64,
 }
 
 impl FecRateController {
@@ -131,6 +142,7 @@ impl FecRateController {
             symbol_size,
             saturation_cap_enabled: true,
             bulk_pure_arq: true,
+            completion_exposure: 0.0,
         }
     }
 
@@ -144,6 +156,14 @@ impl FecRateController {
     /// 100×-loosened `target_tail_loss`.
     pub fn set_bulk_pure_arq(&mut self, enabled: bool) {
         self.bulk_pure_arq = enabled;
+    }
+
+    /// P6: set the completion exposure χ ∈ [0, 1] (paper Section 14.26)
+    /// for callers that know the remaining send time T_rem — compute it
+    /// with `raptorpath_math::completion_exposure(t_rem, srtt, rttvar)`.
+    /// The production tunnel never calls this (endless stream ⇒ χ = 0).
+    pub fn set_completion_exposure(&mut self, chi: f64) {
+        self.completion_exposure = chi.clamp(0.0, 1.0);
     }
 
     /// Compute the number of repair symbols needed for `k` source symbols
@@ -225,6 +245,10 @@ impl FecRateController {
             codec_overhead: self.rq_overhead,
             tail_target: self.target_tail_loss,
             bulk_late_is_fine: self.hint == ProtocolHint::Bulk && self.bulk_pure_arq,
+            // P6 (paper 14.26): 0.0 unless a T_rem-aware caller set it —
+            // the production tunnel is an endless stream, so mid-stream
+            // semantics (δ_eff = ε̂, r* = 0) apply permanently.
+            completion_exposure: self.completion_exposure,
             saturation_cap: self.saturation_cap_enabled,
             max_overhead: self.max_overhead,
         })
@@ -963,9 +987,11 @@ mod tests {
 
     #[test]
     fn test_bulk_pure_arq_zero_steady_state_rate() {
-        // P4a: Bulk's effective tail target is δ = min(0.1, ε̂) — "late is
-        // fine" — so even at 5% loss the steady-state rate glides to ~0
-        // (pure ARQ, volume parity with retransmission transports).
+        // P4a/P6 (paper 14.26): Bulk's effective tail target is the
+        // completion-exposure glide δ_eff = ε̂ + (0.05 − ε̂)·χ; the tunnel
+        // never sets χ, so δ_eff = ε̂ ("late is fine") and even at 5% loss
+        // the steady-state rate is 0 identically (pure ARQ, volume parity
+        // with retransmission transports).
         let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
         let mut est = LossEstimator::new();
         for _ in 0..100 {

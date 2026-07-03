@@ -478,9 +478,13 @@ struct FecConfig {
     hint_delay_target: bool,
     /// P2: Copa floor is a running min estimate, not ground truth.
     estimated_floor: bool,
-    /// P4a: Bulk maps to a "late is fine" tail target (pure-ARQ steady state).
+    /// P4a/P6: Bulk maps to the completion-exposure glide (paper 14.26):
+    /// pure-ARQ steady state (χ = 0 ⇒ r* = 0), ramping to the 14.25 tail
+    /// budget over the final ~1.5 SRTT (χ is fed per tick).
     bulk_arq_delta: bool,
     /// P4b: burst of repairs covering the final window at end-of-stream.
+    /// Under the Bulk χ glide (bulk_arq_delta) the burst is subsumed by
+    /// the ramp and skipped; non-Bulk hints keep it.
     tail_fec: bool,
     /// P5: cap r at the p99(r) saturation point.
     saturation_cap: bool,
@@ -571,9 +575,14 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     let mut ctrl = FecRateController::new(1e-5, 0.5, cfg.hint, FecBackend::Rlc, SYMBOL_SIZE);
     // P5: cap r at the p99(r) saturation point (paper 14.21).
     ctrl.set_saturation_cap(cfg.saturation_cap);
-    // P4a: Bulk maps δ to "late is fine" (min(0.1, ε̂)) → pure-ARQ steady
-    // state. Flag-gated for ablation; no-op for non-Bulk hints.
+    // P4a/P6: Bulk maps δ to the completion-exposure glide
+    // δ_eff = ε̂ + (0.05 − ε̂)·χ (paper 14.26): pure ARQ mid-stream (χ = 0,
+    // r* = 0 identically), ramping to the 14.25 tail budget over the final
+    // ~1.5 SRTT. χ is fed per tick below (the driver KNOWS N_SYMBOLS).
+    // Flag-gated for ablation; no-op for non-Bulk hints.
     ctrl.set_bulk_pure_arq(cfg.bulk_arq_delta);
+    // P6 rides P4a's flag: χ only matters under the Bulk glide.
+    let chi_active = cfg.hint == ProtocolHint::Bulk && cfg.bulk_arq_delta;
     let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
     let mut decoder = RlcWindowDecoder::new(SYMBOL_SIZE);
     let max_delay = paths.iter().map(|c| c.one_way_ms + c.jitter_ms).max().unwrap();
@@ -711,6 +720,25 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 }
                 outage_active = active;
             }
+        }
+
+        // P6 — completion exposure (paper 14.26): the driver knows the
+        // transfer length, so T_rem = (N − sent) / aggregate send rate.
+        // SRTT is the slowest path's (its ARQ round is the one that can
+        // no longer overlap sends); RTTVAR mirrors the retx gate's
+        // 0.125 × SRTT. Unknown rate ⇒ T_rem = ∞ ⇒ χ = 0 (pure ARQ).
+        if chi_active {
+            let srtt_max = srtt.iter().cloned().fold(0.0f64, f64::max);
+            let t_rem = if total_rate > 0.0 {
+                (N_SYMBOLS - sent) as f64 / total_rate
+            } else {
+                f64::INFINITY
+            };
+            ctrl.set_completion_exposure(raptorpath_math::completion_exposure(
+                t_rem,
+                srtt_max,
+                0.125 * srtt_max,
+            ));
         }
 
         // Correction preemption (paper C.1 / Mehrotra): due corrections are
@@ -952,7 +980,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
         // symbols (negligible), saving P(≥1 tail loss) × ~1.5 RTT. r_tail
         // from the exact transfer-matrix computation (paper 8.7): smallest
         // r with P_fail ≤ 0.05.
-        if cfg.tail_fec && !tail_flushed && sent == N_SYMBOLS {
+        //
+        // NOT under the Bulk χ glide (P6, paper 14.26): the ramp already
+        // raised r continuously over the final ~1.5 SRTT — the one-shot
+        // burst is the ramp's limiting case, and firing both would
+        // double-pay the tail budget. Non-Bulk hints keep the burst.
+        if cfg.tail_fec && !chi_active && !tail_flushed && sent == N_SYMBOLS {
             tail_flushed = true;
             let ge = ests[0].ge_estimator();
             // p_gb/q_bg = 0 are NO-DATA sentinels (decayed counters on very
@@ -2122,10 +2155,12 @@ fn ablation_p2_estimated_floor() {
     }
 }
 
-/// P4a ablation (paper 5.3/12.5): Bulk's tail target maps to "late is
-/// fine" (δ = min(0.1, ε̂)), so the continuous r* glides to ~0 in the
-/// steady state — pure ARQ, volume parity with retransmission transports.
-/// tail_fec is OFF in both arms to isolate the steady-state effect.
+/// P4a/P6 ablation (paper 5.3/12.5/14.26): Bulk's tail target maps to the
+/// completion-exposure glide δ_eff = ε̂ + (0.05 − ε̂)·χ, so the continuous
+/// r* is 0 identically in the steady state (χ = 0) — pure ARQ, volume
+/// parity with retransmission transports — and ramps only over the final
+/// ~1.5 SRTT. tail_fec is OFF in both arms (it is a no-op under the glide
+/// anyway; the ramp subsumes the burst).
 #[test]
 #[ignore]
 fn ablation_p4a_bulk_pure_arq() {
@@ -2179,6 +2214,11 @@ fn ablation_p4a_bulk_pure_arq() {
 /// from the exact transfer-matrix computation (paper 8.7). Expected
 /// saving: P(≥1 tail loss) × ~1.5 RTT of completion (~10-25 ms at C2);
 /// gate is no-regression, the measured saving is reported.
+///
+/// NOTE (P6, paper 14.26): under the default Bulk config the χ glide
+/// subsumes the burst, so tail_fec is a no-op here and both arms are
+/// identical — kept as a historical record of the pre-P6 measurement
+/// (-7.7 ms / -10.5 ms) and as a regression tripwire for the flag wiring.
 #[test]
 #[ignore]
 fn ablation_p4b_tail_fec() {

@@ -130,8 +130,10 @@ check("continuous r*: delta >= eps -> 0 (pure ARQ)", rLoose === 0,
   `r(0.03)=${rLoose}`);
 
 // --- 7. Shared controller + saturation are callable and sane ---
+// (args: ..., tail_target, bulk_late_is_fine, completion_exposure (P6 chi),
+//  saturation_cap, max_overhead)
 const rate = api.controller_rate(
-  0.09, 5.1, 3.3, 64, 400, 0.2, 5e-4, 0.004, 1e-7, false, true, 0.5
+  0.09, 5.1, 3.3, 64, 400, 0.2, 5e-4, 0.004, 1e-7, false, 0, true, 0.5
 );
 const rsat = api.r_saturation(0.09, 5.1, 64, 0.2, 5e-4);
 check("controller_rate finite and capped", rate > 0 && rate <= rsat + 1e-12,

@@ -111,13 +111,32 @@ Reading:
 | P2 estimated_floor | C2 Auto p50 | 17.7ms | 13.0ms |
 | P1 hint_delay_target | C2 Realtime p50 | (post-P2) 12.8ms | 12.8ms (no-regression; Bulk trades p50 18.8ms for best completion) |
 | P4a bulk_arq_delta | C2 Bulk overhead | 11.0% | 3.3% (completion also improved) |
-| P4b tail_fec | C2/C4 Bulk completion | — | -7.7ms / -10.5ms |
+| P4b tail_fec | C2/C4 Bulk completion | — | -7.7ms / -10.5ms (pre-P6; the P6 χ ramp now subsumes the burst for Bulk) |
 | P5 saturation_cap | C4 Realtime p99 | 378.7ms | 332.3ms (reversal vs Auto gone; C2 bit-identical, cap non-binding) |
+| P6 completion-exposure δ | wasm Bulk vs old min(0.1, ε̂) | see below | completion -6%/-8%, excess overhead 5.99→0.04% / 8.21→0.91% |
 
 Notable: most of the median-latency win came from P2 (the ground-truth
 floor hid the jitter bound); P1's hint mapping is retained for semantics.
 P4's branch also found and fixed a second ReorderBuffer stranding bug
 (late fills below next_deliver_seq).
+
+P6 (completion-exposure δ, paper 14.26) replaces Bulk's δ_eff =
+min(0.1, ε̂) with the glide δ_eff = ε̂ + (0.05 − ε̂)·χ, where
+χ(T_rem) = Φ̄((T_rem − 1.5·SRTT)/σ_arq) is the probability a loss NOW can
+no longer hide behind remaining sends. Mid-stream χ = 0 gives r* = 0
+IDENTICALLY (kills the M1 cold-start pin at max_overhead — the old
+mapping lost to a fixed r = 0.01 floor in 20/24 wasm grid cells on
+completion, 24/24 on overhead — and the M2 permanent FEC leak at
+ε ≥ 0.1); the χ ramp over the final ~1.5 SRTT subsumes the P4b one-shot
+tail burst as its continuous limiting case. Measured in the wasm sim
+(same seeds, `test_ablation_p6_completion_exposure`): ε=0.05/RTT=50
+completion 599→562 ticks, excess overhead 5.99→0.04%; ε=0.10/RTT=50
+674→620 ticks, 8.21→0.91%; ε=0.05/RTT=150 is a wash (724→720, 16.1→16.2%
+excess — a 0.5 s transfer fits inside the χ horizon at 150 ms RTT, so the
+cold-start prior governs both arms; documented in 14.26). Bulk now beats
+fixed(0.01) on both completion (562 vs 598) and overhead (5.31% vs
+6.11%). The production tunnel keeps χ = 0 (endless stream, T_rem
+unknown); an idle-onset heuristic is future work.
 
 ## SimQuic (L0.5 adversary)
 
