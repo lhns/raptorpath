@@ -105,6 +105,12 @@ struct RunArgs {
     /// 1.0 to enable the floor.
     #[arg(long)]
     inner_feedback_weight: Option<f64>,
+
+    /// Block-granular multipath source affinity (paper 13.8 in-order
+    /// coupling refinement). Default true; pass false for the striping
+    /// ablation.
+    #[arg(long)]
+    mp_block_affinity: Option<bool>,
 }
 
 #[derive(Parser, Debug)]
@@ -152,6 +158,7 @@ async fn main() -> anyhow::Result<()> {
         pin_cert: None,
         fec_backend: None,
         inner_feedback_weight: None,
+        mp_block_affinity: None,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
@@ -214,6 +221,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         reorder_timeout_ms: None,
         reorder_max_size: None,
         inner_feedback_weight: args.inner_feedback_weight,
+        mp_block_affinity: args.mp_block_affinity,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;
