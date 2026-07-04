@@ -263,12 +263,48 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let (tun_ip, prefix_len) = parse_cidr(&config.tun_addr)?;
     let netmask = prefix_to_netmask(prefix_len);
 
+    // Auto-select streaming backend for Realtime when no explicit backend chosen.
+    // Streaming codes are delay-optimal for bursty channels, which Realtime traffic
+    // typically traverses (WiFi + LTE paths with GE burst loss patterns).
+    // Computed before TUN creation because window mode constrains the TUN MTU.
+    let effective_fec_backend = if config.protocol_hint == ProtocolHint::Realtime
+        && !config.fec_backend_explicit
+    {
+        info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
+        FecBackend::Streaming
+    } else {
+        config.fec_backend
+    };
+
+    // ADR-0006: derive block assembly profile from protocol hint
+    let profile = BlockProfile::from_hint(config.protocol_hint);
+    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend);
+
+    // Window mode carries at most ONE packet per source symbol: SymbolPacker
+    // frames each packet with a 2-byte length prefix and closes the symbol
+    // with a 2-byte end sentinel, and packets that don't fit are TRUNCATED
+    // (corrupted on the wire, silently dropped by the peer's IP stack).
+    // Clamp the TUN MTU so the inner stack never emits a packet larger than
+    // one symbol can carry (L1 realtime finding: MSS-sized TCP segments were
+    // truncated at symbol_size=512 and every transfer stalled).
+    let tun_mtu: u16 = if window_mode {
+        let mtu = profile.symbol_size.saturating_sub(4);
+        info!(
+            mtu,
+            symbol_size = profile.symbol_size,
+            "window mode: clamping TUN MTU to fit one packet per symbol"
+        );
+        mtu
+    } else {
+        1500
+    };
+
     // Create TUN interface
     let mut tun = TunInterface::create(TunConfig {
         name: config.tun_name.clone(),
         address: tun_ip,
         netmask,
-        mtu: 1500,
+        mtu: tun_mtu,
     })
     .await?;
     info!("TUN interface {} ready", config.tun_name);
@@ -334,21 +370,6 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     }
     info!("all paths connected");
 
-    // Auto-select streaming backend for Realtime when no explicit backend chosen.
-    // Streaming codes are delay-optimal for bursty channels, which Realtime traffic
-    // typically traverses (WiFi + LTE paths with GE burst loss patterns).
-    let effective_fec_backend = if config.protocol_hint == ProtocolHint::Realtime
-        && !config.fec_backend_explicit
-    {
-        info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
-        FecBackend::Streaming
-    } else {
-        config.fec_backend
-    };
-
-    // ADR-0006: derive block assembly profile from protocol hint
-    let profile = BlockProfile::from_hint(config.protocol_hint);
-
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(AtomicU64::new(0));
@@ -393,7 +414,6 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         }
     });
 
-    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend);
     // Shared window ACK: receiver writes, sender reads to advance the encoder window
     let window_ack_seq = Arc::new(AtomicU64::new(0));
 
@@ -448,8 +468,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
     let sender_profile_symbol_size = profile.symbol_size;
-    // ADR-0030: BackendSelector for runtime switching
-    let forced_backend = if config.fec_backend_explicit && !config.fec_auto_switch {
+    // ADR-0030: BackendSelector for runtime switching.
+    //
+    // Window-mode limitation: runtime switching is PINNED OFF. The switch
+    // path rebuilds the encoder with sequence numbers restarting at 0 while
+    // the receiver's delivery/ACK state (highest_delivered_seq, SACK ranges,
+    // shared window ACK) and the sender's retransmit buffer keep the old
+    // numbering — after a mid-session switch the ACK/NACK repair machinery
+    // goes blind until the new seq space overtakes the old one (~a full
+    // window of traffic). At lossy cells that repair blackout wedged TCP for
+    // minutes (L1 realtime c3/c5 DNF). Until the switch protocol carries
+    // state across (WindowSwitchAck is currently ignored), the backend
+    // chosen at startup stays pinned in window mode.
+    let forced_backend = if window_mode
+        || (config.fec_backend_explicit && !config.fec_auto_switch)
+    {
         Some(effective_fec_backend)
     } else {
         None
@@ -1259,6 +1292,12 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let mut sweep_shutdown_rx = shutdown_tx.subscribe();
     let arq_sweep_handle = tokio::spawn(async move {
         if sweep_window_mode {
+            // Window mode has its own SACK/NACK repair machinery — there is
+            // no block-ARQ ledger to sweep. Park until shutdown instead of
+            // returning: main()'s select! treats ANY task completing as
+            // tunnel shutdown, and an instant return here tore the tunnel
+            // down right after startup (L1 realtime bring-up failure).
+            let _ = sweep_shutdown_rx.recv().await;
             return;
         }
         let mut interval = tokio::time::interval(Duration::from_millis(25));
@@ -1516,14 +1555,18 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         }
     });
 
+    // Any task completing — even cleanly — ends the tunnel, so every arm
+    // must say WHICH task exited and why. A silent `_ = handle => {}` arm
+    // hid the L1 realtime bring-up failure (arq_sweep returned instantly
+    // in window mode and the tunnel shut down with no log line).
     tokio::select! {
-        r = sender_handle => { r?; }
-        r = receiver_handle => { r?; }
-        _ = cleanup_handle => {}
-        _ = report_handle => {}
-        _ = cmd_handle => {}
-        _ = ctrl_handle => {}
-        _ = arq_sweep_handle => {}
+        r = sender_handle => { log_task_exit("sender", &r); r?; }
+        r = receiver_handle => { log_task_exit("receiver", &r); r?; }
+        r = cleanup_handle => { log_task_exit("decoder-cleanup", &r); r?; }
+        r = report_handle => { log_task_exit("path-report", &r); r?; }
+        r = cmd_handle => { log_task_exit("path-cmd", &r); r?; }
+        r = ctrl_handle => { log_task_exit("control-fastpath", &r); r?; }
+        r = arq_sweep_handle => { log_task_exit("arq-sweep", &r); r?; }
     }
 
     // Clean up routes and DNS on shutdown
@@ -1535,6 +1578,17 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Log why a top-level tunnel task exited. main()'s select! treats any task
+/// completing as tunnel shutdown, so the exit must never be silent: a panic
+/// or cancellation is an error, a clean return is at least info-worthy.
+fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
+    match r {
+        Ok(()) => info!(task, "tunnel task exited — shutting down tunnel"),
+        Err(e) if e.is_panic() => error!(task, %e, "tunnel task PANICKED — shutting down tunnel"),
+        Err(e) => error!(task, %e, "tunnel task failed — shutting down tunnel"),
+    }
 }
 
 // ReorderBuffer extracted to src/net/reorder.rs
@@ -2118,9 +2172,15 @@ async fn run_window_sender(
             source_path_map.retain(|&seq, _| seq >= win_start);
         }
 
-        // Update repair interval from FEC rate controller
-        {
-            let ctrl = fec_controller.lock();
+        // ADR-0030: evaluate window-mode backend switching.
+        // The decision is computed under the scheduler lock, but the guard
+        // MUST be dropped before acting on it: select_repair_path,
+        // create_window_encoder and update_backend all re-lock the scheduler
+        // / fec_controller, and parking_lot mutexes are not reentrant — a
+        // nested lock here self-deadlocked the sender (holding the scheduler
+        // lock, wedging the report task, killing path liveness) the first
+        // time a switch fired (L1 realtime finding).
+        let switch_decision = {
             let sched = scheduler.lock();
             let worst_estimator = sched
                 .active_paths()
@@ -2133,67 +2193,65 @@ async fn run_window_sender(
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .map(|p| &p.estimator);
+            worst_estimator.map(|est| (backend_selector.evaluate(est), est.loss_rate()))
+        };
 
-            if let Some(est) = worst_estimator {
-                // ADR-0030: evaluate window-mode backend switching
-                if let Some(new_backend) = backend_selector.evaluate(est) {
-                    let old_backend = fec_backend;
-                    info!(
-                        ?old_backend,
-                        ?new_backend,
-                        loss = est.loss_rate(),
-                        "FEC backend switch (window mode) — initiating flush"
+        if let Some((Some(new_backend), loss)) = switch_decision {
+            let old_backend = fec_backend;
+            info!(
+                ?old_backend,
+                ?new_backend,
+                loss,
+                "FEC backend switch (window mode) — initiating flush"
+            );
+
+            // Get current highest source seq as flush point
+            let (_, flush_seq) = encoder.window_span();
+
+            // Generate extra repair burst before switching (2x normal)
+            let flush_repair_count = (encoder.window_size() * 2).min(MAX_WINDOW_SIZE);
+            let flush_path = {
+                let fsched = scheduler.lock();
+                select_repair_path(&fsched, last_source_path)
+            };
+            for _ in 0..flush_repair_count {
+                if encoder.window_size() == 0 { break; }
+                let flush_sym = encoder.generate_repair();
+                let flush_batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let flush_batch = SymbolBatch {
+                    symbols: vec![flush_sym],
+                    send_timestamp_us: now_us(),
+                    batch_seq: flush_batch_seq,
+                    path_id: flush_path,
+                };
+                let _ = transport.send_symbols(flush_path, flush_batch);
+                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+            }
+
+            // Send WindowSwitch message on all paths
+            {
+                let switch_sched = scheduler.lock();
+                for pid in switch_sched.active_paths() {
+                    let _ = transport.send_control_datagram(
+                        pid,
+                        ControlMessage::WindowSwitch {
+                            flush_seq,
+                            new_backend,
+                            symbol_size,
+                        },
                     );
-
-                    // Get current highest source seq as flush point
-                    let (_, flush_seq) = encoder.window_span();
-
-                    // Generate extra repair burst before switching (2x normal)
-                    let flush_repair_count = (encoder.window_size() * 2).min(MAX_WINDOW_SIZE);
-                    let flush_path = {
-                        let fsched = scheduler.lock();
-                        select_repair_path(&fsched, last_source_path)
-                    };
-                    for _ in 0..flush_repair_count {
-                        if encoder.window_size() == 0 { break; }
-                        let flush_sym = encoder.generate_repair();
-                        let flush_batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                        let flush_batch = SymbolBatch {
-                            symbols: vec![flush_sym],
-                            send_timestamp_us: now_us(),
-                            batch_seq: flush_batch_seq,
-                            path_id: flush_path,
-                        };
-                        let _ = transport.send_symbols(flush_path, flush_batch);
-                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-                    }
-
-                    // Send WindowSwitch message on all paths
-                    {
-                        let switch_sched = scheduler.lock();
-                        for pid in switch_sched.active_paths() {
-                            let _ = transport.send_control_datagram(
-                                pid,
-                                ControlMessage::WindowSwitch {
-                                    flush_seq,
-                                    new_backend,
-                                    symbol_size,
-                                },
-                            );
-                        }
-                    }
-
-                    // Rebuild encoder with new backend
-                    encoder = create_window_encoder(new_backend, symbol_size, fec_controller, scheduler);
-
-                    // Update FEC rate controller overhead
-                    fec_controller.lock().update_backend(new_backend);
-
-                    // Update stats
-                    stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
-                    stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
                 }
             }
+
+            // Rebuild encoder with new backend
+            encoder = create_window_encoder(new_backend, symbol_size, fec_controller, scheduler);
+
+            // Update FEC rate controller overhead
+            fec_controller.lock().update_backend(new_backend);
+
+            // Update stats
+            stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
+            stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
         }
     }
 }
