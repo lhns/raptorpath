@@ -3048,6 +3048,14 @@ fn send_interleaved_batches(
     let now = now_us();
     // Sent counts per path, for pacing-token charges below.
     let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    // Symbols individually larger than their path's CURRENT datagram
+    // limit (quinn PMTUD can shrink a path's limit mid-flight on
+    // blackhole suspicion — the lossy-path GE channel triggers this;
+    // symbols were sized at encode time against the then-current
+    // min-MTU). Dropping them silently orphaned whole blocks (L1 C8
+    // finding: 529 drops in one run, mass decoder timeouts); instead
+    // they are rerouted to a path whose limit still fits them.
+    let mut oversized: Vec<(u32, crate::fec::WireSymbol)> = Vec::new();
     // P8: (batch_seq, path, symbol ids) of every batch that left, for the
     // ARQ ledger (recorded in one lock at the end).
     let mut sent_records: Vec<(u64, u32, Vec<(u64, u32)>)> = Vec::new();
@@ -3076,6 +3084,11 @@ fn send_interleaved_batches(
         let mut chunk_bytes = 0usize;
         for sym in symbols {
             let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            if sym_bytes > budget {
+                // Cannot fit this path's datagram limit at any chunking.
+                oversized.push((path_id, sym));
+                continue;
+            }
             if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let ids: Vec<(u64, u32)> =
@@ -3113,6 +3126,55 @@ fn send_interleaved_batches(
             } else {
                 *sent_per_path.entry(path_id).or_default() += n;
                 sent_records.push((batch_seq, path_id, ids));
+            }
+        }
+    }
+
+    // Reroute oversized symbols to the widest live path that fits them
+    // (in_flight bookkeeping moves with the symbol; the rerouted symbols
+    // ride the target's carry queue and go out on the next pace tick).
+    if !oversized.is_empty() {
+        let live: Vec<u32> = scheduler.lock().live_paths();
+        let mut moved: std::collections::HashMap<u32, Vec<crate::fec::WireSymbol>> =
+            std::collections::HashMap::new();
+        let mut moves: Vec<(u32, u32)> = Vec::new(); // (from, to)
+        let mut dropped = 0usize;
+        for (from, sym) in oversized {
+            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            let target = live
+                .iter()
+                .copied()
+                .filter(|pid| {
+                    let lim = transport.max_datagram_size(*pid).unwrap_or(1200).max(256);
+                    lim - BATCH_WIRE_HEADER.min(lim) >= sym_bytes
+                })
+                .max_by_key(|pid| transport.max_datagram_size(*pid).unwrap_or(1200));
+            match target {
+                Some(to) => {
+                    moved.entry(to).or_default().push(sym);
+                    moves.push((from, to));
+                }
+                None => dropped += 1,
+            }
+        }
+        let mut n_moved = 0usize;
+        for (to, syms) in moved {
+            n_moved += syms.len();
+            let q = carry.entry(to).or_default();
+            for sym in syms.into_iter().rev() {
+                q.push_front(sym);
+            }
+        }
+        if n_moved > 0 || dropped > 0 {
+            warn!(n_moved, dropped, "oversized symbols rerouted (path datagram limit shrank)");
+        }
+        let mut sched = scheduler.lock();
+        for (from, to) in moves {
+            if let Some(p) = sched.path_mut(from) {
+                p.release_in_flight(1);
+            }
+            if let Some(p) = sched.path_mut(to) {
+                p.charge_in_flight(1);
             }
         }
     }
