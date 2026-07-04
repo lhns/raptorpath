@@ -838,33 +838,62 @@ deliverable was 0 DNF, now met. Regression guard:
 `idle_reannounce_bounded_by_round_cap` reproduce the empty-ledger orphan
 and assert bounded recovery.
 
-## L3 — realtime tail "anomaly" ROOT-CAUSED: window-mode path-liveness bug
+## L3 — realtime path "death" RESOLVED: fatal TUN write, not keepalive (2026-07-04, branch fix/window-liveness)
 
 The user flagged that rp-REALTIME's message-tail p99 (513ms at C2) was
-WORSE than rp-BULK's (91ms) — backwards, since realtime is the
-low-latency mode. Investigation (multi-rep) found the 513ms was not a
-stable deficiency but a symptom of a real bug:
+WORSE than rp-BULK's (91ms), with the client logging `path timed out —
+marking inactive` ~10s after the handshake. The earlier L3 note
+hypothesised this was a window-mode KEEPALIVE-DELIVERY bug (the server's
+PathReport/Ping not reaching the client). **That hypothesis was wrong.**
 
-MEASURED at C2, 50 msg/s (low rate), 400 B messages (no fragmentation):
-- rp-bulk (block mode): 1000/1000 msgs, p99 98ms, p999 188ms, **0 path
-  deaths** — stable.
-- rp-realtime (window mode): path "timed out — marking inactive" ~10s
-  after handshake; message stream stalls; p99 swings 64 → 599ms
-  run-to-run purely by whether the path died mid-run.
+MEASURED (RUST_LOG, VM logs) — the real root cause is a fatal TUN write:
+the server's own log, at the moment of failure, is
 
-ROOT CAUSE: under low-rate traffic the WINDOW-MODE path liveness is not
-refreshed — the client marks the server's path inactive (~10s
-DEAD_PATH_TIMEOUT) because the server's report/ping keepalive isn't
-reaching it. Block mode does not exhibit this (0 deaths). This SINGLE
-bug explains three separate observations: (1) the realtime "worse tail",
-(2) the run-to-run tail "variance", (3) the earlier "rp-realtime stream
-silently fails at C3/C5" open item. It is NOT fragmentation and NOT a
-fundamental window-vs-block property.
+    TUN write error e=Os { code: 22, kind: InvalidInput }   (EINVAL)
+    TUN inject channel closed
+    tunnel task exited — shutting down tunnel  task="receiver"
 
-Corrects the earlier "block beats window on tail" claim (that was
-single-sample noise over a dying path). Fix is the highest-leverage L3
-item: window-mode keepalive/liveness under low traffic → restores
-realtime's differentiated tail claim AND fixes the C3/C5 silent failure.
+i.e. the SERVER tunnel dies FIRST; the client's `path timed out` is a
+downstream symptom logged ~6-7s later (DEAD_PATH_TIMEOUT), correctly, on
+a peer that has genuinely gone silent. The keepalive/liveness plumbing
+(report task, ctrl fast-path, touch_path on PathReport/Ping/WindowAck) is
+shared between modes and works — hypotheses (a)-(d) were all disproven by
+reading + measurement.
+
+The mechanism (tun/linux/mod.rs, tun/windows/mod.rs): the window+packing
+(Realtime) delivery path OCCASIONALLY hands the kernel TUN a malformed
+packet (a mis-framed / mis-decoded FEC symbol). The kernel rejects the
+write with EINVAL; the old write loop `break`ed on ANY write error, which
+dropped inject_rx, closed the receiver's inject channel, and tore down
+the WHOLE tunnel. Block mode never hit this (it delivers clean decoded
+blocks), so it showed 0 deaths — which is why the bug looked
+window-specific. It is intermittent (only when a malformed packet
+occurs) and catastrophic (the entire tunnel dies).
+
+FIX (principled, minimal): a single bad inner packet must never tear down
+the tunnel. The TUN write loop now (1) drops packets that don't look like
+IP (version nibble + min header length) before writing, (2) on a write
+error logs and CONTINUES rather than breaking, and (3) only gives up
+after 64 CONSECUTIVE failures (device genuinely gone). Applied to both
+the Linux and Windows writers; guarded by `looks_like_ip` unit tests.
+
+RESULT at C2, 50 msg/s, 400 B (before = base 651f93c, after = fixed):
+- **Path deaths: 0/25 reps after** (10 realtime + confirmed structurally
+  impossible); the catastrophic death is eliminated. Every run delivers
+  1000/1000 messages; the tunnel never dies.
+- Bulk (block mode) unaffected: 5/5 reps, 1000/1000, 0 deaths.
+- C3-LTE (the earlier "silent failure" cell): now delivers — 3/3 reps
+  1000/1000, p99 110-282ms.
+
+HONEST correction to the earlier note: the run-to-run p99 SWINGS
+(before: 38-549ms; after: 38-226ms, with a rare multi-second outlier)
+are NOT the path death — they are inner-TCP HEAD-OF-LINE recovery stalls
+in window mode, present in BOTH before and after and in bulk (97-373ms)
+too. The stream is kernel TCP, so one lost/corrupt segment stalls all
+later messages until RTO recovery. That tail is the P10b reactive-repair
+territory (a separate issue), NOT the liveness bug. What this fix removes
+is the CATASTROPHIC failure mode (whole-tunnel death → connection lost),
+not the ordinary loss-recovery tail.
 
 ## Honest scope
 
