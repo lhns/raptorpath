@@ -107,6 +107,70 @@ def client(args) -> None:
     }), flush=True)
 
 
+def stream_server(args) -> None:
+    """Receive a fixed-rate message stream; report one-way latency
+    percentiles (send timestamps embedded; namespaces share the kernel
+    clock, so one-way latency is directly measurable)."""
+    s = make_socket(args.proto)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((args.bind, args.port))
+    s.listen(4)
+    print(f"stream server on {args.bind}:{args.port}", flush=True)
+    while True:
+        conn, _ = s.accept()
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        lats = []
+        buf = b""
+        try:
+            while True:
+                b_ = conn.recv(65536)
+                if not b_:
+                    break
+                buf += b_
+                while len(buf) >= 4:
+                    n = int.from_bytes(buf[:4], "big")
+                    if len(buf) < 4 + n:
+                        break
+                    msg, buf = buf[4:4+n], buf[4+n:]
+                    sent_ns = int.from_bytes(msg[:8], "big")
+                    lats.append((time.time_ns() - sent_ns) / 1e6)
+        finally:
+            conn.close()
+        if lats:
+            v = sorted(lats)
+            q = lambda p_: v[min(len(v)-1, int(len(v)*p_))]
+            print(json.dumps({
+                "summary": True, "mode": "stream", "count": len(v),
+                "p50_ms": round(q(0.50), 3), "p90_ms": round(q(0.90), 3),
+                "p99_ms": round(q(0.99), 3), "p999_ms": round(q(0.999), 3),
+                "max_ms": round(v[-1], 3), "mean_ms": round(sum(v)/len(v), 3),
+            }), flush=True)
+
+
+def stream_client(args) -> None:
+    """Send fixed-size messages at a fixed rate for a duration."""
+    c = make_socket(args.proto)
+    if args.cc and args.proto == "tcp":
+        c.setsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, args.cc.encode())
+    c.connect((args.host, args.port))
+    c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    payload = b"Z" * max(0, args.size - 8)
+    interval = 1.0 / args.rate
+    end = time.perf_counter() + args.duration
+    sent = 0
+    nxt = time.perf_counter()
+    while time.perf_counter() < end:
+        msg = time.time_ns().to_bytes(8, "big") + payload
+        c.sendall(len(msg).to_bytes(4, "big") + msg)
+        sent += 1
+        nxt += interval
+        d = nxt - time.perf_counter()
+        if d > 0:
+            time.sleep(d)
+    c.close()
+    print(json.dumps({"stream_client_done": True, "sent": sent}), flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="mode", required=True)
@@ -121,9 +185,25 @@ def main() -> None:
     c.add_argument("--runs", type=int, default=10)
     c.add_argument("--proto", default="tcp", choices=["tcp", "mptcp"])
     c.add_argument("--cc", default=None)
+    ss = sub.add_parser("stream-server")
+    ss.add_argument("--bind", default="0.0.0.0")
+    ss.add_argument("--port", type=int, default=9910)
+    ss.add_argument("--proto", default="tcp", choices=["tcp", "mptcp"])
+    sc = sub.add_parser("stream-client")
+    sc.add_argument("--host", required=True)
+    sc.add_argument("--port", type=int, default=9910)
+    sc.add_argument("--size", type=int, default=1200)
+    sc.add_argument("--rate", type=float, default=50.0)
+    sc.add_argument("--duration", type=float, default=30.0)
+    sc.add_argument("--proto", default="tcp", choices=["tcp", "mptcp"])
+    sc.add_argument("--cc", default=None)
     args = ap.parse_args()
     if args.mode == "server":
         server(args)
+    elif args.mode == "stream-server":
+        stream_server(args)
+    elif args.mode == "stream-client":
+        stream_client(args)
     else:
         client(args)
 
