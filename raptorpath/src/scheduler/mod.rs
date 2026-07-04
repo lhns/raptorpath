@@ -297,6 +297,15 @@ pub struct CopaState {
     /// for the ramp fast-exit (a min over ≥3 samples; a min-of-1 is just
     /// one jittery sample and fired false ramp exits at L1's C2).
     samples_since_update: u32,
+    /// Window-level jitter estimate (seconds): EWMA (gain 1/4) of
+    /// |win_min_i − win_min_{i−1}| between consecutive cwnd updates.
+    /// Under correlated jitter the raw-sample consecutive differences
+    /// collapse (~0.85ms at C2) while the window min wanders 3-5ms per
+    /// update; this estimator sees that amplitude and stays shift-robust
+    /// (a standing queue is ONE transition sample).
+    win_jitter_est: f64,
+    /// Previous update's window min (for the window-level difference).
+    prev_win_min: Option<Duration>,
     /// True until the first congestion backoff (multiplicative ramp phase).
     ramping: bool,
     /// Hint-coupled queue-target multiplier (P1): 1.08/1.125/1.25.
@@ -328,6 +337,8 @@ impl CopaState {
             prev_rtt_sample: None,
             win_min_history: VecDeque::new(),
             samples_since_update: 0,
+            win_jitter_est: 0.0,
+            prev_win_min: None,
             ramping: true,
             queue_mult: queue_target_mult(hint),
             delivered: 0,
@@ -447,7 +458,18 @@ impl CopaState {
         };
         let floor_s = floor.as_secs_f64();
         let dq = (win_min.as_secs_f64() - floor_s).max(DQ_FLOOR_SECS);
-        let dq_target = ((self.queue_mult - 1.0) * floor_s + JITTER_HEADROOM * self.jitter_est)
+        // Headroom covers whichever jitter evidence is larger: per-sample
+        // (consecutive raw-sample differences) or per-window (consecutive
+        // window-min differences) — under correlated jitter (a slow RTT
+        // wave) only the window-level estimator sees the true amplitude:
+        // measured at L1 C2, raw diffs ~0.85ms while window mins wander
+        // ~3-5ms between updates. Both are consecutive-difference EWMAs,
+        // hence shift-robust: a standing queue contributes ONE transition
+        // sample, not a persistent inflation, so congestion detection
+        // survives (unlike a quantile-spread term, which a level shift
+        // would inflate for a full window).
+        let jitter = self.jitter_est.max(self.win_jitter_est);
+        let dq_target = ((self.queue_mult - 1.0) * floor_s + JITTER_HEADROOM * jitter)
             .max(DQ_FLOOR_SECS);
         dq > dq_target
     }
@@ -478,6 +500,7 @@ impl CopaState {
             floor_us = self.min_rtt.map(|d| d.as_micros() as u64),
             qfloor_us = self.queue_floor().map(|d| d.as_micros() as u64),
             jitter_us = (self.jitter_est * 1e6) as u64,
+            win_jitter_us = (self.win_jitter_est * 1e6) as u64,
             srtt_us = self.srtt().as_micros() as u64,
             n_samples = self.samples_since_update,
             "copa cwnd update"
@@ -488,6 +511,12 @@ impl CopaState {
         while self.win_min_history.front().is_some_and(|&(t, _)| t < cutoff) {
             self.win_min_history.pop_front();
         }
+        // Window-level consecutive-difference jitter (see field doc).
+        if let Some(prev) = self.prev_win_min {
+            let diff = if win_min > prev { win_min - prev } else { prev - win_min };
+            self.win_jitter_est += (diff.as_secs_f64() - self.win_jitter_est) * 0.25;
+        }
+        self.prev_win_min = Some(win_min);
         self.min_rtt_since_update = None;
         self.samples_since_update = 0;
         let c = cwnd as f64;

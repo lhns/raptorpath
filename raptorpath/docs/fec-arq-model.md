@@ -2361,10 +2361,17 @@ honest deviations in constants and mechanics:
   SUSTAINED longer than the window becomes the new baseline (the same
   staleness bound the 10 s min floor already had).
   (2) **Jitter headroom**: threshold = (queue_mult - 1) x queue_floor
-  + k x jitter_est, k = 2, jitter_est an EWMA (gain 1/8) of
-  |consecutive RTT sample differences| (RFC 3550-style) — covers the
-  residual within-window spread at small N; shift-robust because a
-  standing queue leaves consecutive differences at jitter scale.
+  + k x max(jitter_est, win_jitter_est), k = 2. jitter_est is an EWMA
+  (gain 1/8) of |consecutive RTT sample differences| (RFC 3550-style);
+  win_jitter_est is the SAME consecutive-difference EWMA one level up
+  (gain 1/4, over per-update window minima) — under correlated jitter
+  the raw differences collapse (~0.85 ms at C2) while window minima
+  wander 3-5 ms per update, and only the window-level estimator sees
+  that amplitude. Both are shift-robust: a standing queue contributes
+  one transition sample, not persistent inflation (a quantile-spread
+  term was rejected for exactly this reason — a level shift inflates
+  it for a full window and kills congestion detection; caught by the
+  cwnd-floor unit test).
   (3) **Ramp fast-exit needs >= 3 samples**: a partial window's min
   can be a single draw from the jitter tail; one sample must not end
   the exponential ramp.

@@ -350,6 +350,81 @@ adaptivity; block size/latency tradeoff at high RTT (56-symbol blocks
 serialize 5.4 ms at 100 Mbit); inner-flow interplay study (the tunnel
 is TCP-friendly only if recovery latency < inner RTO).
 
+### P9b — closing the C2 gap (2026-07-04, this session)
+
+Measure → hypothesize → fix → measure, one variable at a time, all at
+C2 (bulk, 1.8 MB, seed 42, 5 runs each). Sequence of MEASURED causes
+and fixes:
+
+1. **Jitter-blind Copa queue signal** (the dominant term). Debug
+   counters showed 60% of cwnd updates taking a ×0.92 backoff with an
+   empty queue; client cwnd histogram pinned at 8-14 symbols vs BDP
+   ~160. Root cause: the queue signal compares a min-of-~10-samples
+   statistic against the 10 s min-of-thousands floor — under C2 jitter
+   (RTT samples 7-22 ms, floor 7.0 ms, typical window min 12-13 ms)
+   that gap is ~5 ms of pure statistics, twice Bulk's 2.5 ms threshold.
+   netem's jitter FIFO correlates consecutive samples (raw consecutive
+   diffs ~0.85 ms), so no per-sample jitter estimator can bridge it.
+   Fix (paper §12.4 "jitter-robust queue signal"): quantile queue floor
+   (P10 of window-min history — same statistic as the signal), jitter
+   headroom 2×max(sample-level, window-level consecutive-difference
+   EWMA), ramp fast-exit needs ≥3 samples. All vanish on clean links.
+   3.21 s → **1.42 s median** (backoff rate 60% → ~30%).
+2. **Cross-block reordering broke the inner TCP** (delivery contract).
+   /proc/net deltas in the client ns: 879 inner fast-retransmits, 733
+   SACK-reorder events, 263 DSACKs (spurious) per 3 transfers — block
+   mode injected each block on decode, so a block waiting one ARQ round
+   was overtaken and the inner TCP saw 64 KB holes. Fix: in-order block
+   delivery via reorder buffer keyed by (per-peer sequential) block_id,
+   SRTT-adaptive hold 4×SRTT clamp [60,300] ms (must survive TWO ARQ
+   rounds — GE burst kills the first repair with ~50% probability).
+   Retransmits → ~25/3 transfers, reorder events → 0. Completion flat
+   in isolation (TCP waits instead of retransmitting) but unlocks 3.
+3. **Interleave depth 4 inflated inner RTT** (latency chain). Depth-4
+   interleaving delays every block by 3 block-serialization times; in
+   the TCP-in-tunnel closed loop that feeds back (slow TCP → low rate →
+   longer block time). With ARQ + in-order delivery covering bursts,
+   Bulk default depth 4 → 1: **1.63 → 1.38 s median**; with the 4×SRTT
+   hold: **1.17 s**; win-jitter headroom: **1.14 s median / 1.18 s
+   mean** (stdev 0.24, min 0.94). Inner TCP now clean (0 reorder, ~2-3
+   SACK recoveries per 5 transfers, 0 RTOs).
+
+Net: rp-bulk C2 **3.21 s → 1.11 s median (2.9×)** (final build
+confirmation: median 1.11 / mean 1.23 / min 0.944, 16 inner
+retransmits per 5 runs); quinn 0.20 s (gap 16× → 5.5×). The ≤1.0 s
+P9 target is narrowly missed at the median; individual runs reach
+0.89-0.96 s. Stopped per the diminishing-returns rule (last two
+bulk-affecting changes < 10% each). Non-findings (measured, ruled
+out): RLC decode cost (p50 37 µs, p99 < 1 ms); block size at current
+rates (the 5 ms flush already caps blocks at rate×5 ms ≪ 64 KB).
+
+rp-realtime (window mode) at C2 remains erratic: 3.0-5.1 s median
+across builds, 380-500 inner retransmits, 4-8 inner RTOs per 5 runs —
+its 20 ms static reorder hold sits below one NACK/repair round (the
+same delivery-contract bug block mode had). Making the window hold
+SRTT-adaptive exposed a LATENT DEADLOCK: the window reorder drain ran
+only on symbol arrival, so a held hole could wedge the whole tunnel
+(hole → no delivery advance → no WindowAck → sender window full → no
+sends → no arrivals → no drain; captured live with ss -ti: inner TCP
+lastrcv 174 s). Fixed with a drain timer in the receiver select! (both
+modes) + a bare WindowAck on expiry (echo sentinel 0, guarded against
+SRTT poisoning). Realtime C2 after: median 1.89 s / mean 2.24 (was
+2.18 mean pre-session, but with the deadlock hazard now structurally
+gone and inner RTOs 8 → 1). Remaining realtime gap: ~430 inner
+retransmits per 5 runs — window NACK repair leaves real holes; window-
+mode recovery latency needs its own P9c pass.
+
+What remains for parity with quinn at C2 (~1.14 s vs 0.20 s, in
+suspected-leverage order): (a) each GE loss event still stalls delivery
+~1 ARQ round (~15-25 ms × ~20 events/transfer) — the paper's §14.26
+"mid-stream recovery is free" holds for tunnel throughput but not for
+the inner flow's delivery latency; a small mid-stream r_min for
+TCP-in-tunnel Bulk is the candidate model revision (unmeasured).
+(b) Residual ~30% Copa backoff rate under the jitter wave caps cwnd
+p50 at ~80-110 vs BDP 160 (gate-full only 8-24% of ACKs, so (a) binds
+first). (c) Inner slow-start: quinn IS the transport; we carry a whole
+extra TCP.
+
 ## Honest scope
 
 - L0's baseline is our own simulation model. It now includes slow-start,

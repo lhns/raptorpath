@@ -978,12 +978,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         };
 
         loop {
-            // Block-mode in-order hold: refresh the SRTT-adaptive timeout
-            // and compute the oldest-entry expiry (drain timer). Only when
-            // entries are pending — the common case skips the locks.
-            let block_reorder_deadline: Option<tokio::time::Instant> = if block_inorder_enabled {
-                let mut rb = block_reorder.lock();
-                if rb.pending_count() > 0 {
+            // In-order hold drain timer (BOTH modes): refresh the
+            // SRTT-adaptive timeout and compute the oldest-entry expiry.
+            // Only when entries are pending — the common case skips the
+            // locks. Window mode MUST have this timer too: its drain used
+            // to run only on symbol arrival, and a hole could deadlock the
+            // whole tunnel (hole → no delivery advance → no WindowAck →
+            // sender window full → no sends → no arrivals → no drain;
+            // measured at L1 realtime C2: inner TCP wedged for minutes).
+            let reorder_deadline: Option<tokio::time::Instant> = {
+                let pending = if block_inorder_enabled {
+                    block_reorder.lock().pending_count() > 0
+                } else {
+                    reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
+                };
+                if pending {
                     let srtt = {
                         let sched = recv_scheduler.lock();
                         sched
@@ -992,18 +1001,28 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
                             .max()
                     };
-                    if let Some(s) = srtt {
-                        rb.set_timeout((s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
-                    }
-                    rb.oldest_deadline().map(|d| {
+                    let hold = srtt
+                        .map(|s| (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
+                    let deadline = if block_inorder_enabled {
+                        let mut rb = block_reorder.lock();
+                        if let Some(h) = hold {
+                            rb.set_timeout(h);
+                        }
+                        rb.oldest_deadline()
+                    } else {
+                        let rb = reorder_buf.as_mut().expect("pending implies Some");
+                        if let Some(h) = hold {
+                            rb.set_timeout(h);
+                        }
+                        rb.oldest_deadline()
+                    };
+                    deadline.map(|d| {
                         let remaining = d.saturating_duration_since(Instant::now());
                         tokio::time::Instant::now() + remaining
                     })
                 } else {
                     None
                 }
-            } else {
-                None
             };
 
             // ADR-0015: select between message arrival, in-order-hold expiry,
@@ -1016,19 +1035,55 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     }
                 }
                 _ = async {
-                    match block_reorder_deadline {
+                    match reorder_deadline {
                         Some(d) => tokio::time::sleep_until(d).await,
                         None => std::future::pending().await,
                     }
                 } => {
-                    // Give up on the hole(s): force-deliver expired blocks
+                    // Give up on the hole(s): force-deliver expired entries
                     // (plus everything they unblock) so the tunnel never
-                    // stalls on an unrecoverable block.
-                    let expired = block_reorder.lock().drain_expired(Instant::now());
-                    for (bid, bdata) in expired {
-                        debug!(block_id = bid, "in-order hold expired — force-delivering");
-                        for pkt_data in framing::extract_packets(&bdata) {
-                            let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                    // stalls on an unrecoverable block/symbol.
+                    if block_inorder_enabled {
+                        let expired = block_reorder.lock().drain_expired(Instant::now());
+                        for (bid, bdata) in expired {
+                            debug!(block_id = bid, "in-order hold expired — force-delivering");
+                            for pkt_data in framing::extract_packets(&bdata) {
+                                let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                            }
+                        }
+                    } else if let Some(ref mut reorder) = reorder_buf {
+                        let expired = reorder.drain_expired(Instant::now());
+                        for (dseq, ddata) in expired {
+                            debug!(seq = dseq, "window hold expired — force-delivering");
+                            let packets: Vec<Vec<u8>> = if window_packed {
+                                framing::extract_packets(&ddata)
+                            } else {
+                                framing::extract_window_packet(&ddata).into_iter().collect()
+                            };
+                            for pkt_data in packets {
+                                let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                            }
+                            if dseq > highest_delivered_seq {
+                                highest_delivered_seq = dseq;
+                            }
+                        }
+                        // Advance the shared window ACK so the sender's
+                        // window opens even with no further arrivals (the
+                        // deadlock cycle above) — the next WindowAck the
+                        // Data arm sends carries the new cumulative point;
+                        // send a bare one now in case no arrival ever comes.
+                        if highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed) {
+                            recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+                            let ack_msg = ControlMessage::WindowAck {
+                                received_up_to: highest_delivered_seq,
+                                sack_ranges: Vec::new(),
+                                echo_send_timestamp_us: 0,
+                                jitter_us: 0,
+                                cumulative_received: 0,
+                            };
+                            for pid in recv_scheduler.lock().live_paths() {
+                                let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                            }
                         }
                     }
                     continue;
@@ -1116,8 +1171,29 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             }
                         }
 
-                        // Drain expired reorder buffer entries
+                        // Drain expired reorder buffer entries.
+                        // SRTT-adaptive hold (same delivery contract as
+                        // block mode): the static 20ms default sat below
+                        // one C2 NACK/repair round, so holes were force-
+                        // delivered just before their repair arrived and
+                        // the inner TCP retransmitted them (measured:
+                        // realtime C2 502 retransmits / 44 SACK recoveries
+                        // / 8 RTOs per 5×1.8MB vs bulk's ~66/3/0 with the
+                        // 4×SRTT hold).
                         if let Some(ref mut reorder) = reorder_buf {
+                            let srtt = {
+                                let sched = recv_scheduler.lock();
+                                sched
+                                    .live_paths()
+                                    .into_iter()
+                                    .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
+                                    .max()
+                            };
+                            if let Some(s) = srtt {
+                                reorder.set_timeout(
+                                    (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD),
+                                );
+                            }
                             let expired = reorder.drain_expired(Instant::now());
                             for (dseq, ddata) in expired {
                                 let packets: Vec<Vec<u8>> = if window_packed {
@@ -3198,22 +3274,28 @@ fn handle_control_message(
 
         ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received } => {
             debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
-            // Update RTT from echoed timestamp
+            // Update RTT from echoed timestamp. echo == 0 is the sentinel
+            // for timer-driven acks (hold-expiry unwedge) that echo no
+            // batch — recording now−0 would poison SRTT with a huge sample.
             let now = now_us();
             let rtt_us = now.saturating_sub(echo_send_timestamp_us);
             {
                 let mut sched = scheduler.lock();
                 sched.touch_path(path_id);
-                if let Some(path) = sched.path_mut(path_id) {
-                    let rtt_duration = Duration::from_micros(rtt_us);
-                    path.estimator.record_rtt(rtt_duration);
-                    path.record_rtt_sample(rtt_duration);
+                if echo_send_timestamp_us > 0 {
+                    if let Some(path) = sched.path_mut(path_id) {
+                        let rtt_duration = Duration::from_micros(rtt_us);
+                        path.estimator.record_rtt(rtt_duration);
+                        path.record_rtt_sample(rtt_duration);
+                    }
                 }
             }
             // Update monitoring stats
-            if let Some(ps) = stats.path(path_id) {
-                ps.rtt_us.store(rtt_us, Ordering::Relaxed);
-                ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
+            if echo_send_timestamp_us > 0 {
+                if let Some(ps) = stats.path(path_id) {
+                    ps.rtt_us.store(rtt_us, Ordering::Relaxed);
+                    ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
+                }
             }
             // The sender reads window_ack_seq via AtomicU64 in the sender loop.
             // SACK ranges are available here for future gap-based retransmit
