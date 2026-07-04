@@ -608,6 +608,7 @@ earlier C5-realtime DNF). Honest scope: the tail win is demonstrated
 where capacity headroom exists; low-rate and extreme-loss cells need
 the block-latency and FEC-rate work items.
 
+<<<<<<< HEAD
 ## L2 claim table (re-issued, fair geometry — 2026-07-04)
 
 1.8 MB objects at C2, median, matched geometry where possible:
@@ -642,6 +643,53 @@ CLAIM STATUS after L2 (all L1/L2, real stacks, reproducible):
 5. Where TCP dies, rp lives: C5 objects complete (17.4 s) where CUBIC
    DNFs; message streams at C2 stay functional where kernel TCP
    spends 13 s per retransmission cascade.
+=======
+## L2 workstream — visualizer-driven model refinements (2026-07-04)
+
+Two MODEL questions raised from the interactive visualizer, both fixed
+continuous (no hard cutoffs) per project convention. Gate re-run GREEN
+(15/15 release) — the saturation change is in the shared controller.
+
+1. **Soft saturation (paper §14.21.1).** The saturation cap was a hard
+   `min(r, r_sat)` — a kink, shown as a binary "CAP BINDING" badge.
+   Physically the p99 curve has a smooth interior minimum, so the cost of
+   exceeding r_sat grows continuously (queue-delay-like), not as a wall.
+   Replaced with a one-sided softplus cap
+   `r_eff = r_sat − s·softplus((r_sat − r)/s)`, `s = 0.1·r_sat`, which
+   approaches r_sat asymptotically, never crosses it, is ≤ min(r, r_sat)
+   everywhere, and → the old hard min as s → 0. Its derivative complement
+   `σ((r − r_sat)/s)` is a continuous **saturation pressure** ∈ [0,1] (0
+   slack, ½ at r_sat, →1 held) that supersedes the binary badge. The
+   smoothing width is a deliberately narrow honest constant, NOT the
+   model's curvature: §14.21 distrusts the model's DEPTH, so a
+   curvature-derived width would over-soften the gate-validated cap. C4:
+   hard cap emitted exactly 0.400, soft cap emits 0.398 at pressure 0.90 —
+   same ceiling, now continuous. Shared `controller_rate`, so production +
+   visualizer inherit; `get_saturation_pressure` added to the wasm sim.
+
+2. **End-of-stream taper completion (paper §4.2 note + §14.29).** The
+   taper's forward integral is TRUNCATED at the stream end — a symbol at
+   distance j < W from the last source symbol misses ~r·(W−j) of its
+   steady repairs (no future source symbols → no future debt), so the last
+   window suffers a serial-ARQ latency cliff. §14.26's χ glide fixed this
+   for Bulk only; Auto/Realtime relied on the ad-hoc one-shot burst
+   (§14.25). Generalized to ALL hints: meter the SAME budget B_tail =
+   r_tail·W (exact-DP rate at the hint's own δ) as a Stieltjes measure
+   `B_tail·dχ_trunc` over a SOURCE-POSITION kernel
+   `χ_trunc = Φ̄((remaining − W/2)/(W/4))` concentrated on the truncated
+   region — the burst is its σ → 0 limit. Wall-time spreading (Bulk's χ)
+   would dilute the final window and regress it (measured 27 → 49 ms), so
+   the truncation term is source-position, distinct from Bulk's wall-time
+   economics χ. Wasm sim: last-window p99 now ≈ mid-stream (no cliff) for
+   auto (27 vs 29 ms) and realtime (25 vs 29 ms); vs the burst it is at
+   parity at RTT 50 and IMPROVES at RTT 150 (80 → 76 ms, the burst's
+   single-window coverage gap) for ≤ 2% overhead. Production window mode is
+   unchanged (endless stream → χ_trunc = 0; tail holes close via
+   NACK/tail-sweep, §14.27). The gate driver keeps its already-paced
+   end-of-stream burst (n_pre + n_tail over pacing tokens) as the discrete
+   limiting case of the ramp; the wasm sim carries the reference continuous
+   implementation.
+>>>>>>> feat/soft-saturation-taper
 
 ## Honest scope
 

@@ -1035,8 +1035,9 @@ mod tests {
             capped < uncapped,
             "saturation cap must bind for an aggressive request: capped={capped}, uncapped={uncapped}"
         );
-        // The capped rate must be exactly r_sat (mirroring the controller's
-        // inputs) when the request exceeds it.
+        // The capped rate must be the SOFT saturation of the uncapped request
+        // (paper 14.21.1): it sits just below r_sat, approaching it
+        // asymptotically rather than pinning to it exactly.
         let p = est.predictive_loss_upper(0.95);
         let ge = est.ge_estimator();
         let sigma2 = if ge.is_valid() {
@@ -1047,9 +1048,14 @@ mod tests {
         let r_sat = raptorpath_math::r_saturation(
             p, sigma2, 64.0, est.rtt().as_secs_f64(), 1200.0 / est.throughput(),
         );
+        let expected = raptorpath_math::soft_saturate(uncapped, r_sat);
         assert!(
-            (capped - r_sat).abs() < 1e-9,
-            "capped rate must equal r_sat: capped={capped}, r_sat={r_sat}"
+            (capped - expected).abs() < 1e-9,
+            "capped rate must equal soft_saturate(uncapped, r_sat): capped={capped}, expected={expected}"
+        );
+        assert!(
+            capped < r_sat && capped > r_sat * (1.0 - raptorpath_math::SAT_SOFTNESS),
+            "soft cap sits just below r_sat: capped={capped}, r_sat={r_sat}"
         );
     }
 
