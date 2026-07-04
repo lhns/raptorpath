@@ -2594,7 +2594,10 @@ async fn run_window_sender(
         if ack > prev_ack {
             // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
             let newly_acked = ack - prev_ack;
-            let repair_rate = {
+            // Compute the repair rate AND the derived window target (paper
+            // Section 8.8) from the worst (highest-loss) active path, under a
+            // single lock acquisition.
+            let (repair_rate, derived_window) = {
                 let ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
                 let path_est = sched.active_paths().iter()
@@ -2602,14 +2605,23 @@ async fn run_window_sender(
                     .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|p| &p.estimator);
                 match path_est {
-                    Some(est) => ctrl.compute_repair_rate(est, encoder.window_size()),
-                    None => 0.0,
+                    Some(est) => (
+                        ctrl.compute_repair_rate(est, encoder.window_size()),
+                        ctrl.derive_window(est),
+                    ),
+                    None => (0.0, None),
                 }
             };
             let debt_reduction = newly_acked as f64 * repair_rate;
             repair_debt = (repair_debt - debt_reduction).max(0.0);
 
-            encoder.advance(ack.saturating_sub(MAX_WINDOW_SIZE as u64 / 2));
+            // Keep the encoder window at the derived W* (paper 8.8), bounded by
+            // the sender's hard ceiling; fall back to MAX_WINDOW_SIZE/2 when the
+            // estimator has no throughput/RTT sample yet (cold start).
+            let keep_behind = derived_window
+                .map(|w| w.clamp(16, MAX_WINDOW_SIZE))
+                .unwrap_or(MAX_WINDOW_SIZE / 2) as u64;
+            encoder.advance(ack.saturating_sub(keep_behind));
 
             // Reset budget period counters on significant window advancement
             if newly_acked >= 10 {

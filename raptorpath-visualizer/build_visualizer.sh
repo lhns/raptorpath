@@ -94,6 +94,8 @@ class SimWrapper {
   get sigma2Est() { return this.inner.get_sigma2_est(); }
   get deltaEff()  { return this.inner.get_delta_eff(); }
   get rSat()      { return this.inner.get_r_sat(); }
+  // derived window W* (paper 8.8) from the LIVE estimator state
+  get derivedW()  { return this.inner.get_derived_w(); }
   // custom triangle mode (rho < 1 enables T_cut give-up eviction)
   get givenUp()     { return this.inner.get_given_up(); }
   get reliability() { return this.inner.get_reliability(); }

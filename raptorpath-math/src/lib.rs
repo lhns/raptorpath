@@ -495,6 +495,105 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     best_r
 }
 
+/// Lower bound on the derived encoder window (`derive_window`).
+pub const WINDOW_MIN: f64 = 16.0;
+/// Upper bound on the derived encoder window (`derive_window`).
+pub const WINDOW_MAX: f64 = 512.0;
+/// Overhead knee fraction alpha (`derive_window`): the window is sized so the
+/// residual variance margin of r* (Section 8.4) is within alpha of the
+/// information-theoretic floor eps/(1-eps). Smaller alpha demands a larger
+/// window (the margin must be pushed further below the floor).
+pub const WINDOW_KNEE_ALPHA: f64 = 0.25;
+
+/// Derive the encoder window size W* (paper Section 8.8).
+///
+/// W enters the model through THREE opposing channels, each giving a bound:
+///
+///   1. Overhead knee (upper target, favours large W). The r* margin
+///      (Section 8.4) is `z * sqrt(eps*sigma2 / (W*(1-eps)))`, decaying as
+///      W^-1/2 with slope d(r*)/dW ~ W^-3/2 — diminishing returns. Sizing
+///      the window so the residual margin sits within a fraction alpha of the
+///      IT floor eps/(1-eps) gives a closed form:
+///
+///        margin(W) <= alpha * eps/(1-eps)
+///        => W_over = z^2 * sigma2 * (1-eps) / (eps * alpha^2)
+///
+///      z = z_for_tail_target(delta, eps). When delta >= eps there is no
+///      margin to amortise (z <= 0) and W_over = 0: nothing pulls the window
+///      up, so the burst floor / latency ceiling decide (this is the Bulk
+///      regime — smallest window that still catches bursts).
+///
+///   2. Latency ceiling (upper bound, favours small W). A window loss waits
+///      for a covering repair within the window horizon, traversed at the
+///      source rate: recovery latency ~ W / send_rate = W * t_sym. Keeping it
+///      within the latency budget (the Realtime hint's budget, else ~1 RTT so
+///      FEC and ARQ horizons align, Section 14.5) bounds
+///
+///        W_lat = budget * send_rate.
+///
+///      With no throughput/RTT sample the ceiling is disabled (WINDOW_MAX).
+///
+///   3. Burst floor (lower bound, favours large-enough W). Ambient FEC at
+///      r = eps/(1-eps) must accumulate B surviving repairs to absorb a mean
+///      burst (Section 14.5): W_bur = B / (eps*(1-eps)), B = (sigma2+1)/2.
+///      The floor never overrides the latency ceiling — if a burst cannot be
+///      absorbed within budget, no window size fixes it and latency wins.
+///
+/// Combined: W* = clamp( W_over, min(W_bur, W_lat), W_lat ), then clamped to
+/// [WINDOW_MIN, WINDOW_MAX]. Continuous (piecewise-linear via min/max/clamp)
+/// and finite in every input by construction. The three regimes read out as:
+/// loose delta -> burst-floor-bound (small W); tight delta -> latency-bound
+/// (W rises to the ceiling); moderate delta/eps -> overhead-knee-bound.
+///
+/// Inputs: `delta` reliability tail target; `eps` loss rate; `sigma2` burst
+/// variance factor (Section 8.3); `srtt` smoothed RTT (s); `send_rate` source
+/// symbols per second; `latency_budget` seconds (<= 0 => fall back to srtt).
+pub fn derive_window(
+    delta: f64,
+    eps: f64,
+    sigma2: f64,
+    srtt: f64,
+    send_rate: f64,
+    latency_budget: f64,
+) -> f64 {
+    let sigma2 = if sigma2.is_finite() && sigma2 >= 1.0 { sigma2 } else { 1.0 };
+
+    // Latency budget: explicit Realtime budget, else ~1 RTT (Section 14.5).
+    let budget = if latency_budget.is_finite() && latency_budget > 0.0 {
+        latency_budget
+    } else if srtt.is_finite() && srtt > 0.0 {
+        srtt
+    } else {
+        0.0
+    };
+    let w_lat = if send_rate.is_finite() && send_rate > 0.0 && budget > 0.0 {
+        budget * send_rate
+    } else {
+        WINDOW_MAX // no throughput/RTT sample => no latency ceiling
+    };
+
+    // Overhead knee and burst floor need a valid loss rate.
+    let (w_over, w_bur) = if eps.is_finite() && eps > 0.0 && eps < 1.0 {
+        let z = z_for_tail_target(delta, eps);
+        let w_over = if z.is_finite() && z > 0.0 {
+            z * z * sigma2 * (1.0 - eps) / (eps * WINDOW_KNEE_ALPHA * WINDOW_KNEE_ALPHA)
+        } else {
+            0.0 // no margin pressure (delta >= eps): let floor/ceiling decide
+        };
+        let b_hat = (sigma2 + 1.0) / 2.0;
+        let w_bur = b_hat / (eps * (1.0 - eps));
+        (w_over, w_bur)
+    } else {
+        (0.0, 0.0)
+    };
+
+    // Burst floor, but never above the latency ceiling (latency is the hard
+    // constraint). clamp() needs lo <= hi, which min(., w_lat) guarantees.
+    let lo = w_bur.min(w_lat);
+    let w = w_over.clamp(lo, w_lat);
+    w.clamp(WINDOW_MIN, WINDOW_MAX)
+}
+
 /// Exact P_fec over the GE channel via transfer-matrix dynamic programming.
 ///
 /// Walks the two-state GE chain across the interleaved wire sequence of
@@ -1092,5 +1191,102 @@ mod tests {
         let m1 = solve_r_from_delta_rho(eps, q, w, s2, 0.05, 0.999);
         let m2 = solve_delta_from_r_rho(eps, q, w, s2, m1.r, 0.999);
         assert!((m1.delta - m2.delta).abs() < 0.01);
+    }
+
+    // --- derive_window (paper Section 8.8) ---------------------------------
+
+    // Reference channels (paper Sections 2.4 / 8.5 / 14.21). send_rate in
+    // symbols/s = throughput / symbol_size; srtt in seconds.
+    // WiFi:  eps=0.025, sigma2=3.0, srtt=13 ms,  send_rate=10_000 (t_sym=1e-4)
+    // Sat:   eps=0.09,  sigma2=5.0, srtt=210 ms, send_rate=2_041  (t_sym=4.9e-4)
+
+    #[test]
+    fn test_derive_window_finite_and_bounded_everywhere() {
+        // Sweep a wide grid including degenerate inputs; W* must stay in
+        // [WINDOW_MIN, WINDOW_MAX] and be finite.
+        for &delta in &[1e-9, 1e-6, 1e-4, 1e-2, 0.05, 0.2, 0.9] {
+            for &eps in &[0.0, 1e-6, 0.001, 0.025, 0.09, 0.3, 0.5, 0.999, 1.0] {
+                for &sigma2 in &[0.0, 1.0, 3.0, 5.0, 50.0] {
+                    for &srtt in &[0.0, 0.001, 0.013, 0.21] {
+                        for &send_rate in &[0.0, 100.0, 2_041.0, 10_000.0] {
+                            for &budget in &[-1.0, 0.0, 0.01, 0.2] {
+                                let w = derive_window(delta, eps, sigma2, srtt, send_rate, budget);
+                                assert!(w.is_finite(), "W* not finite at eps={eps} delta={delta}");
+                                assert!((WINDOW_MIN..=WINDOW_MAX).contains(&w),
+                                    "W*={w} out of bounds at eps={eps} delta={delta} s2={sigma2}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_derive_window_nondecreasing_as_delta_tightens() {
+        // Tighter delta => larger variance margin => a larger window is
+        // wanted to amortise it (until the latency ceiling caps it). W* must
+        // be non-decreasing as delta shrinks. Use a loose latency budget so
+        // the overhead knee, not the ceiling, is the binding term.
+        let (eps, sigma2, srtt, send_rate, budget) = (0.05, 3.0, 0.05, 5_000.0, 10.0);
+        let mut prev = 0.0;
+        for &delta in &[0.05, 1e-2, 1e-3, 1e-4, 1e-6, 1e-9] {
+            let w = derive_window(delta, eps, sigma2, srtt, send_rate, budget);
+            assert!(w >= prev - 1e-9, "W* dropped as delta tightened: {prev} -> {w} at delta={delta}");
+            prev = w;
+        }
+    }
+
+    #[test]
+    fn test_derive_window_increases_with_burst_variance() {
+        // Higher sigma2 (burstier channel) => the burst-absorbency floor
+        // W_bur = (sigma2+1)/2 / (eps(1-eps)) grows => larger window. Use a
+        // loose delta so the burst floor (not the unreachable knee) governs,
+        // and a loose budget so the latency ceiling does not cap it.
+        let (delta, eps, srtt, send_rate, budget) = (0.15, 0.05, 0.05, 5_000.0, 10.0);
+        let mut prev = 0.0;
+        for &sigma2 in &[1.0, 2.0, 3.0, 5.0, 8.0] {
+            let w = derive_window(delta, eps, sigma2, srtt, send_rate, budget);
+            assert!(w >= prev - 1e-9, "W* dropped as sigma2 grew: {prev} -> {w} at sigma2={sigma2}");
+            prev = w;
+        }
+    }
+
+    #[test]
+    fn test_derive_window_latency_ceiling_binds_for_tight_delta() {
+        // WiFi, Realtime-tight delta: the overhead knee is unreachable (the
+        // margin dominates the small IT floor), so the window rides the
+        // latency ceiling W_lat = budget * send_rate. With budget = srtt and
+        // send_rate = 10_000, W_lat = 130 -> W* = 130.
+        let w = derive_window(1e-6, 0.025, 3.0, 0.013, 10_000.0, 0.0);
+        assert!((w - 130.0).abs() < 1.0, "expected latency-bound ~130, got {w}");
+    }
+
+    #[test]
+    fn test_derive_window_tighter_budget_shrinks_window() {
+        // A tighter (Realtime) latency budget must shrink the window vs an
+        // Auto ~1 RTT budget, all else equal — the latency/overhead tradeoff.
+        let auto = derive_window(1e-6, 0.025, 3.0, 0.013, 10_000.0, 0.013);
+        let realtime = derive_window(1e-6, 0.025, 3.0, 0.013, 10_000.0, 0.005);
+        assert!(realtime < auto, "tighter budget did not shrink W*: rt={realtime} auto={auto}");
+        assert!(realtime >= WINDOW_MIN);
+    }
+
+    #[test]
+    fn test_derive_window_loose_delta_is_burst_floor_bound() {
+        // Bulk (delta >= eps): no margin pressure (z <= 0, W_over = 0), so the
+        // window collapses to the burst-absorbency floor min(W_bur, W_lat),
+        // i.e. a small window — NOT the latency ceiling. At eps=0.09,
+        // sigma2=5, W_bur = 3/(0.09*0.91) = 36.6; W_lat huge (loose budget).
+        let w = derive_window(0.2, 0.09, 5.0, 0.21, 5_000.0, 10.0);
+        assert!((30.0..45.0).contains(&w), "expected burst-floor ~37, got {w}");
+    }
+
+    #[test]
+    fn test_derive_window_no_throughput_disables_ceiling() {
+        // No send_rate sample => latency ceiling disabled => the overhead knee
+        // (unbounded here) pushes to WINDOW_MAX, not a degenerate small value.
+        let w = derive_window(1e-6, 0.025, 3.0, 0.013, 0.0, 0.0);
+        assert!(w >= WINDOW_MAX - 1e-9, "expected WINDOW_MAX with no ceiling, got {w}");
     }
 }

@@ -286,6 +286,42 @@ impl FecRateController {
         })
     }
 
+    /// Derive the encoder window size W* from the current channel estimate
+    /// (paper Section 8.8). Returns `None` when the estimator lacks the
+    /// throughput/RTT sample the latency ceiling needs, so the caller can
+    /// keep its default window. The formula lives in
+    /// `raptorpath_math::derive_window` — the same code the visualizer reads.
+    ///
+    /// Balances overhead (larger W shrinks the r* margin as 1/sqrt(W)),
+    /// recovery latency (W / send_rate must stay within ~1 RTT), and burst
+    /// absorbency. The result is clamped to [16, 512] by the math layer; the
+    /// window-mode sender additionally caps it at its own MAX_WINDOW_SIZE.
+    pub fn derive_window(&self, estimator: &LossEstimator) -> Option<usize> {
+        let tput = estimator.throughput();
+        let rtt_secs = estimator.rtt().as_secs_f64();
+        if !(tput > 0.0) || !(rtt_secs > 0.0) {
+            return None; // no latency ceiling => keep the default window
+        }
+        let ge = estimator.ge_estimator();
+        let sigma2 = if ge.is_valid() {
+            raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+        } else {
+            1.0
+        };
+        let eps = estimator.predictive_loss_upper(0.95).max(1e-6);
+        let send_rate = tput / self.symbol_size as f64; // source symbols per second
+        // latency_budget = 0 => the math layer aligns W to ~1 RTT (Section 14.5).
+        let w = raptorpath_math::derive_window(
+            self.target_tail_loss,
+            eps,
+            sigma2,
+            rtt_secs,
+            send_rate,
+            0.0,
+        );
+        Some(w.round() as usize)
+    }
+
     /// Compute repair rate with spare capacity constraint.
     ///
     /// This is the primary method for the "never hurts" guarantee:
