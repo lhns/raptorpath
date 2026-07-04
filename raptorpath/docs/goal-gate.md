@@ -310,7 +310,37 @@ false -> stats only); under the P6 Bulk glide r*=0 mid-stream, the
 inner TCP saw the raw 2.6-4% loss and collapsed; additionally ~77% of
 56-symbol blocks contain a loss at C2, each firing a false congestion
 backoff (cwnd suppressed to ~16 vs BDP ~104). P8 (block-mode ARQ via
-batch-Ack diff) addresses both; L1 re-measurement follows its merge.
+batch-Ack diff) addresses both.
+
+### Full post-P8 sweep (sweep_l1.sh, 10 objects, seed 42, 2026-07-04)
+
+Median 1.8 MB completion (mean for quinn):
+| Cell | CUBIC | BBR | quinn | rp-bulk | rp-realtime |
+|------|-------|-----|-------|---------|-------------|
+| C2 | 0.24 | 0.22 | 0.20 | 3.21 (was 7.97 pre-P8) | tunnel failed |
+| C3 | 6.31 | 1.00 | 0.90 | 9.61 (was 20.5) | tunnel failed |
+| C4 | 42.2 | 3.64 (max 125) | 1.30 | 56.5 | tunnel failed |
+| C5 | DNF | 0.56 (max 57) | 0.55 | 17.4 | tunnel failed |
+
+HONEST READING (the L1 milestone's central lesson):
+- P8 doubled rp-bulk everywhere it runs and made completion consistent,
+  and rp-bulk now finishes cells where CUBIC cannot (C5). But the L0
+  model-level wins have NOT yet transferred to L1 system-level wins:
+  rp-bulk is 10-45x slower than quinn across lossy cells. The gap is
+  production data-plane engineering, not the model: block-assembly
+  latency + TCP-in-tunnel dynamics + 20 ms reorder buffer + residual
+  false congestion backoffs (repair-batch RTT samples) + a young CC.
+- rp-realtime (window mode) fails tunnel bring-up entirely at L1 —
+  needs the same bring-up debugging bulk received (P9 candidate #1).
+- Baselines reproduce within noise across runs (quinn 0.20 vs 0.175;
+  BBR C3 1.00 vs 1.00) — the harness is claim-grade even where our
+  numbers are not yet.
+
+P9 roadmap (in order of measured leverage): rp-realtime bring-up;
+repair-RTT purity in Copa samples; reorder_timeout_ms reduction/
+adaptivity; block size/latency tradeoff at high RTT (56-symbol blocks
+serialize 5.4 ms at 100 Mbit); inner-flow interplay study (the tunnel
+is TCP-friendly only if recovery latency < inner RTO).
 
 ## Honest scope
 
