@@ -31,6 +31,20 @@ pub struct TunConfig {
     pub mtu: u16,
 }
 
+/// App-side handle for a memory-backed TUN (see [`TunInterface::memory`]).
+///
+/// Lets an in-process application feed "packets" into the multipath engine
+/// (as if the OS emitted them) and receive packets the engine delivers (as
+/// if injecting into the OS). Used by `raptorpath perf` to drive objects
+/// over the real transport without a kernel TUN or an inner TCP stack —
+/// the apples-to-apples comparison against native QUIC perf tools.
+pub struct MemTun {
+    /// Packets the app wants the engine to send (app → engine).
+    pub feed: mpsc::Sender<Bytes>,
+    /// Packets the engine delivered (engine → app).
+    pub delivered: mpsc::Receiver<Bytes>,
+}
+
 impl TunInterface {
     /// Create and configure a TUN interface.
     #[cfg(target_os = "linux")]
@@ -46,6 +60,28 @@ impl TunInterface {
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     pub async fn create(_config: TunConfig) -> anyhow::Result<Self> {
         anyhow::bail!("TUN interface not supported on this platform")
+    }
+
+    /// Create a memory-backed TUN: no kernel device, no routing/DNS. The
+    /// engine treats it exactly like an OS TUN (opaque `Bytes` packets in
+    /// and out); the returned [`MemTun`] is the app-side of both channels.
+    pub fn memory(_mtu: u16) -> (Self, MemTun) {
+        // app → engine (the engine reads these via read_packet)
+        let (feed_tx, feed_rx) = mpsc::channel(8192);
+        // engine → app (the engine injects via self.tx)
+        let (deliver_tx, deliver_rx) = mpsc::channel(8192);
+        let tun = TunInterface {
+            name: "mem".to_string(),
+            rx: feed_rx,
+            tx: deliver_tx,
+        };
+        (
+            tun,
+            MemTun {
+                feed: feed_tx,
+                delivered: deliver_rx,
+            },
+        )
     }
 
     /// Read a packet from the TUN device (packet sent by the OS).
