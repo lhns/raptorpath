@@ -77,6 +77,10 @@ pub struct PeerConfig {
     pub reorder_timeout_ms: u64,
     /// Reorder buffer max capacity
     pub reorder_max_size: usize,
+    /// Inner-feedback weight in [0,1] (paper 14.28): mid-stream repair
+    /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
+    /// measured the floor completion-neutral at C2, regressive at C3.
+    pub inner_feedback_weight: f64,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -387,14 +391,25 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(AtomicU64::new(0));
-    let fec_controller = Arc::new(parking_lot::Mutex::new(FecRateController::new_with_toggles(
-        config.target_tail_loss,
-        config.max_fec_overhead,
-        config.protocol_hint,
-        effective_fec_backend,
-        config.enable_pi_feedback,
-        profile.symbol_size,
-    )));
+    let fec_controller = Arc::new(parking_lot::Mutex::new({
+        let mut ctrl = FecRateController::new_with_toggles(
+            config.target_tail_loss,
+            config.max_fec_overhead,
+            config.protocol_hint,
+            effective_fec_backend,
+            config.enable_pi_feedback,
+            profile.symbol_size,
+        );
+        // P10a (paper 14.28): inner-feedback repair floor for
+        // TCP-in-tunnel payloads. Default weight 0.0 (config::resolve):
+        // the L1 C2/C3 ablation measured the floor active but
+        // completion-neutral at C2 and regressive at C3 — post-P8/P9b the
+        // inner flow absorbs the residual ARQ stalls, and floor repairs
+        // displace source symbols in the same inner-limited loop. The
+        // knob remains for payloads that measure differently.
+        ctrl.set_inner_feedback(config.inner_feedback_weight);
+        ctrl
+    }));
     info!(
         max_block_size = profile.max_block_size,
         flush_timeout_ms = profile.flush_timeout.as_millis() as u64,
@@ -1567,9 +1582,14 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     let report_transport = transport_arc.clone();
     let report_scheduler = scheduler_arc.clone();
     let report_stats = stats.clone();
+    let report_symbol_size = profile.symbol_size;
     let mut report_shutdown_rx = shutdown_tx.subscribe();
     let report_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(REPORT_INTERVAL);
+        // P10a: local send-rate measurement state (per path): previous
+        // symbols_sent counter and the last sample instant.
+        let mut sent_prev: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut sent_prev_t = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 _ = interval.tick() => {}
@@ -1579,6 +1599,42 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             debug!("report tick");
             let reports: Vec<_> = {
             let mut sched = report_scheduler.lock();
+
+            // P10a (paper 14.28): feed the estimator a LOCAL throughput
+            // measurement — the achieved send rate over the report
+            // interval. Production previously had NO local feed: the only
+            // record_throughput call took the peer's PathReport value,
+            // which is the peer's estimator.throughput() — circular, so
+            // both sides sat at 0.0 forever and every throughput-gated
+            // model term (t_sym: the 14.28 inner-feedback floor, the
+            // 14.21 saturation cap, the 8.4 burst B/T term) was silently
+            // sentinel-disabled on real links. The send rate is the right
+            // t_sym semantics anyway: T_arq counts wire slots of the send
+            // process the repairs are interleaved into.
+            {
+                let now_t = tokio::time::Instant::now();
+                let dt = now_t.duration_since(sent_prev_t).as_secs_f64();
+                if dt > 0.2 {
+                    for pid in sched.all_path_ids() {
+                        let sent = report_stats
+                            .path(pid)
+                            .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
+                            .unwrap_or(0);
+                        let prev = sent_prev.insert(pid, sent).unwrap_or(sent);
+                        let delta = sent.saturating_sub(prev);
+                        // Only feed while actually sending: an idle tunnel
+                        // must not decay the operating-rate estimate to 0
+                        // (t_sym would blow up and re-disable the floor).
+                        if delta > 0 {
+                            if let Some(path) = sched.path_mut(pid) {
+                                let bps = delta as f64 * report_symbol_size as f64 / dt;
+                                path.estimator.record_throughput(bps);
+                            }
+                        }
+                    }
+                    sent_prev_t = now_t;
+                }
+            }
 
             // Check for dead paths
             let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
@@ -3231,7 +3287,15 @@ fn handle_control_message(
                 let rtt_duration = Duration::from_micros(avg_rtt_us);
                 path.estimator.record_rtt(rtt_duration);
                 path.record_rtt_sample(rtt_duration);
-                path.estimator.record_throughput(throughput_bps);
+                // P10a: do NOT feed the peer's reported throughput into
+                // the estimator. The field carries the PEER's estimator
+                // value — historically 0.0 (circular feed, see the report
+                // task), and now the peer's own SEND rate, which for an
+                // asymmetric workload (bulk up, ACK trickle down) would
+                // drag this side's t_sym estimate toward the reverse
+                // direction's rate. Local send-rate measurement in the
+                // report task is the sole throughput feed.
+                let _ = throughput_bps;
                 // Record peer's reported loss for cross-validation
                 if loss_rate > 0.0 {
                     let approx_sent = 100u32;

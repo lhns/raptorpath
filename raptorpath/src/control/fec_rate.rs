@@ -91,6 +91,24 @@ pub struct FecRateController {
     /// know T_rem (the L0 gate, the wasm sim) set it per tick via
     /// `set_completion_exposure` with `raptorpath_math::completion_exposure`.
     completion_exposure: f64,
+    /// P10a: inner-feedback weight in [0, 1] (paper Section 14.28). The
+    /// Bulk glide's mid-stream r* = 0 prices VOLUME; when the payload is
+    /// itself a latency-sensitive control loop (TCP inside the tunnel),
+    /// each unrepaired loss stalls the inner flow's in-order delivery
+    /// ~min(1.5×SRTT_outer, RTO_inner) and that stall feeds back into the
+    /// inner send rate (L1 C2: ~20 events per 1.8 MB transfer). Weight 1
+    /// enables the `inner_feedback_floor` mid-stream repair floor — the
+    /// smallest r whose residual stall fraction sits within delivery-jitter
+    /// noise; weight 0 (default) is the old pure-glide behavior, kept for
+    /// FILE-TRANSFER payload semantics (the L0 gate driver, bench_suite):
+    /// there the transfer is the payload and mid-stream ARQ recovery is
+    /// genuinely free. The production tunnel ALSO defaults to 0 (config
+    /// `inner_feedback_weight`): the L1 C2/C3 ablation measured the floor
+    /// active (FEC volume 2.5% -> 4.7%) but completion-neutral at C2 and
+    /// 28% regressive at C3 — post-14.27/P9b the inner flow absorbs the
+    /// residual stalls, and floor repairs displace source symbols inside
+    /// the same inner-limited loop (paper 14.28, L1 verification).
+    inner_feedback: f64,
 }
 
 impl FecRateController {
@@ -143,6 +161,7 @@ impl FecRateController {
             saturation_cap_enabled: true,
             bulk_pure_arq: true,
             completion_exposure: 0.0,
+            inner_feedback: 0.0,
         }
     }
 
@@ -164,6 +183,16 @@ impl FecRateController {
     /// The production tunnel never calls this (endless stream ⇒ χ = 0).
     pub fn set_completion_exposure(&mut self, chi: f64) {
         self.completion_exposure = chi.clamp(0.0, 1.0);
+    }
+
+    /// P10a: set the inner-feedback weight ∈ [0, 1] (paper Section 14.28).
+    /// 1.0 = the payload's delivery latency feeds back into its own
+    /// throughput (TCP-in-tunnel) — enables the mid-stream repair floor;
+    /// 0.0 (default everywhere, including the production tunnel after the
+    /// negative L1 C2/C3 ablation) = pure Bulk glide. Config knob:
+    /// `inner_feedback_weight`.
+    pub fn set_inner_feedback(&mut self, weight: f64) {
+        self.inner_feedback = weight.clamp(0.0, 1.0);
     }
 
     /// Compute the number of repair symbols needed for `k` source symbols
@@ -249,6 +278,9 @@ impl FecRateController {
             // the production tunnel is an endless stream, so mid-stream
             // semantics (δ_eff = ε̂, r* = 0) apply permanently.
             completion_exposure: self.completion_exposure,
+            // P10a (paper 14.28): mid-stream repair floor for payloads
+            // whose latency feeds back (TCP-in-tunnel). 0.0 default.
+            inner_feedback: self.inner_feedback,
             saturation_cap: self.saturation_cap_enabled,
             max_overhead: self.max_overhead,
         })
@@ -1015,6 +1047,51 @@ mod tests {
         let rt_off = ctrl_rt_off.compute_repair_rate(&est, W);
         assert_eq!(rt_on, rt_off, "Realtime must be unaffected: on={rt_on}, off={rt_off}");
         assert!(rt_on > 0.05, "Realtime at 5% loss still carries FEC: {rt_on}");
+    }
+
+    #[test]
+    fn test_inner_feedback_floor_tunnel_bulk() {
+        // P10a (paper 14.28): at the L1 C2 operating point (ε ≈ 2.6%,
+        // SRTT ≈ 13 ms, 100 Mbit) the Bulk glide alone is pure ARQ
+        // mid-stream, but with the inner-feedback weight set (TCP-in-tunnel
+        // payload) the repair floor keeps a small proactive rate that
+        // covers loss events within the inner flow's stall horizon.
+        let mut est = LossEstimator::new();
+        for _ in 0..200 {
+            est.record_batch(1000, 974); // 2.6% loss (C2 GE average)
+            est.record_rtt(std::time::Duration::from_millis(13));
+            est.record_throughput(12_500_000.0); // 100 Mbit/s
+        }
+
+        let mut ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+        let base = ctrl.compute_repair_rate(&est, 56);
+        assert!(base < 0.005, "weight 0 keeps the pure Bulk glide: {base}");
+
+        ctrl.set_inner_feedback(1.0);
+        let floored = ctrl.compute_repair_rate(&est, 56);
+        assert!(
+            (0.01..=0.06).contains(&floored),
+            "C2 tunnel floor must sit in the sane band: {floored}"
+        );
+
+        // Continuous in the weight: half weight lands strictly between.
+        ctrl.set_inner_feedback(0.5);
+        let half = ctrl.compute_repair_rate(&est, 56);
+        assert!(
+            base < half && half < floored,
+            "floor must scale continuously with the weight: {base} < {half} < {floored}"
+        );
+
+        // No throughput estimate -> floor inert (same sentinel convention
+        // as the burst term): a fresh estimator has no t_sym.
+        let mut est_no_tput = LossEstimator::new();
+        for _ in 0..200 {
+            est_no_tput.record_batch(1000, 974);
+            est_no_tput.record_rtt(std::time::Duration::from_millis(13));
+        }
+        ctrl.set_inner_feedback(1.0);
+        let no_tput = ctrl.compute_repair_rate(&est_no_tput, 56);
+        assert!(no_tput < 0.005, "floor needs a throughput estimate: {no_tput}");
     }
 
     #[test]

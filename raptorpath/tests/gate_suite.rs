@@ -581,6 +581,13 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     // ~1.5 SRTT. χ is fed per tick below (the driver KNOWS N_SYMBOLS).
     // Flag-gated for ablation; no-op for non-Bulk hints.
     ctrl.set_bulk_pure_arq(cfg.bulk_arq_delta);
+    // P10a (paper 14.28): inner-feedback weight stays at its default 0 —
+    // the gate's payload IS the transfer (file-transfer semantics), its
+    // delivery latency does not feed back into its own throughput, so
+    // mid-stream ARQ recovery is genuinely free and Bulk keeps the pure
+    // glide. (The production tunnel also defaults to 0 after the L1
+    // ablation measured the floor completion-neutral at C2 / regressive
+    // at C3; `inner_feedback_weight` opts in.)
     // P6 rides P4a's flag: χ only matters under the Bulk glide.
     let chi_active = cfg.hint == ProtocolHint::Bulk && cfg.bulk_arq_delta;
     let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
