@@ -661,6 +661,25 @@ delivery contract for bulk (deadline-aware hold release past
 slow-path blocks) — rejected for now, it reintroduces inner reordering
 that P9b measurably fixed (879 spurious fast-retransmits per 3x1.8MB).
 
+**Sharpened C8 claim (paper §16, Fountain Multipath Aggregation).** The
+in-order hold IS why we only tie MPTCP: paper §16.2 makes it a theorem —
+under in-order delivery the aggregate is bounded by the order-ELIGIBLE
+paths' goodput (T_inorder ≥ K/Σ_{i∈E} g_i), and on C8's heterogeneity
+E collapses to {fast path}, i.e. K/g_A = fast-path-alone (12.6–14.0). No
+in-order schedule can beat 14.0 here; MPTCP hits the same wall. The
+unlock is OUT-OF-ORDER fountain delivery (§16.1): pour rateless RaptorQ
+symbols across ALL paths, decode on K·(1+φ) symbols TOTAL, completion
+T_fountain = K(1+φ)/Σ_i C_i(1−ε_i) with no dependence on the slow path's
+RTT and no HOL coupling — so the LTE path's g_B ≈ 19 Mbit/s is recovered
+instead of forfeited. This requires dropping the P9b hold, which the
+NATIVE object API (perf/MemTun, no inner TCP) already permits (a
+TCP-in-tunnel cannot — documented boundary). Bulk's optimal code is
+therefore PATH-COUNT dependent (§16.4): N=1 → pure ARQ (r*=0, the §14.26
+glide); N≥2 heterogeneous → rateless fountain. Proving experiment (§16.6):
+`raptorpath perf` native object over C8, out-of-order, target completion
+goodput > 14.0 (fast-path-alone) → toward Σ; vs current in-order 12.6 and
+MPTCP 12.6. Pass = strictly beats 14.0 (which in-order provably cannot).
+
 ## L2 workstream 2 — small-message latency percentiles (first tail data)
 
 stream_bench.sh: 1200 B messages at 50/s for 30 s, one-way delivery
