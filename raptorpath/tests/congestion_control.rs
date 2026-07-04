@@ -423,6 +423,81 @@ fn test_copa_startup_exits_on_congestion() {
 }
 
 #[test]
+fn test_btlbw_anchor_establishes_after_samples() {
+    // Section 12.6: the BtlBw×RTprop anchor needs both a min-RTT sample and
+    // ANCHOR_MIN_SAMPLES delivery samples before it is trusted.
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+
+    // One RTT + one ack: not enough delivery samples yet → no anchor.
+    sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+    clock.advance(millis(20));
+    sched.ack(0, 40);
+    assert!(
+        sched.path(0).unwrap().copa_bdp_anchor().is_none(),
+        "anchor must not establish on a single sample"
+    );
+
+    // A steady 40-symbol/20ms stream (rate ~2000 sym/s, min_rtt 20ms →
+    // BDP ~40 symbols) establishes the anchor.
+    for _ in 0..12 {
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+        clock.advance(millis(20));
+        sched.ack(0, 40);
+    }
+    let bdp = sched.path(0).unwrap().copa_bdp_anchor();
+    assert!(bdp.is_some(), "anchor should establish after enough samples");
+    let bdp = bdp.unwrap();
+    assert!(
+        (25.0..=60.0).contains(&bdp),
+        "BDP estimate ~40 symbols (2000 sym/s × 20ms), got {bdp}"
+    );
+}
+
+#[test]
+fn test_btlbw_anchor_floors_cwnd_under_backoff() {
+    // Section 12.6: once the BtlBw anchor is established, repeated delay
+    // backoffs must NOT crawl cwnd below the BtlBw×RTprop floor (the pre-
+    // anchor behavior collapsed toward MIN_CWND = 8; measured L1 C2 root
+    // cause of cwnd 80-110 vs BDP ~160).
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+
+    // Establish the anchor with a steady stream (BDP ~40 symbols).
+    for _ in 0..12 {
+        sched.path_mut(0).unwrap().record_rtt_sample(millis(20));
+        clock.advance(millis(20));
+        sched.ack(0, 40);
+    }
+    let bdp = sched.path(0).unwrap().copa_bdp_anchor().expect("anchor set");
+
+    // Now drive the RTT far above the floor: every per-SRTT update backs
+    // off ×0.92. min_rtt (10s window) still holds 20ms and max_bw still
+    // holds the high rate, so the floor stays ~BDP.
+    for _ in 0..12 {
+        let path = sched.path_mut(0).unwrap();
+        path.record_rtt_sample(millis(200));
+        clock.advance(millis(220));
+        sched.ack(0, 5);
+    }
+
+    let cwnd = sched.path(0).unwrap().cwnd;
+    // Floor is ANCHOR_FLOOR_GAIN (0.85) × BDP; every update here is a
+    // backoff (above target), so cwnd rests at the floor, ~0.85×BDP.
+    assert!(
+        cwnd as f64 >= bdp * 0.8,
+        "anchor floor should hold cwnd near BDP under backoff pressure: \
+         cwnd={cwnd}, bdp={bdp}"
+    );
+    assert!(
+        cwnd > PathState::MIN_CWND,
+        "cwnd must not collapse to MIN_CWND with the anchor established"
+    );
+}
+
+#[test]
 fn test_copa_steady_state_convergence() {
     // In steady state, Copa should converge cwnd toward the delay-based target.
     let clock = Arc::new(MockClock::new());

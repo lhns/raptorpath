@@ -112,8 +112,9 @@ ACK absence.
     - [12.3 Copa vs BBR](#123-copa-vs-bbr)
     - [12.4 Copa's Rate Formula](#124-copas-rate-formula)
     - [12.5 CC + Taper: The Complete Architecture](#125-cc--taper-the-complete-architecture)
-    - [12.6 ECN as Opportunistic Enhancement](#126-ecn-as-opportunistic-enhancement)
-    - [12.7 Application Back-Pressure](#127-application-back-pressure)
+    - [12.6 BtlBw-Anchored Recovery](#126-btlbw-anchored-recovery)
+    - [12.7 ECN as Opportunistic Enhancement](#127-ecn-as-opportunistic-enhancement)
+    - [12.8 Application Back-Pressure](#128-application-back-pressure)
 13. [Multi-Path Scheduling](#13-multi-path-scheduling)
     - [13.1 Why FEC Beats MPTCP](#131-why-fec-beats-mptcp)
     - [13.2 Per-Path Model](#132-per-path-model)
@@ -2588,7 +2589,130 @@ retransmission transport. FEC reappears only near a known end of stream,
 where χ ramps to 1 and recovery can no longer overlap sending
 (Sections 14.25, 14.26).
 
-### 12.6 ECN as Opportunistic Enhancement
+### 12.6 BtlBw-Anchored Recovery
+
+Copa-lite's steady-state recovery is additive: after a ×0.92 delay
+backoff, cwnd climbs at +2/SRTT. From a trough at half the pipe that is
+dozens of SRTTs of under-utilization. Measured at L1 C2 (100 Mbit, 5 ms
+one-way, ±3 ms jitter, 1.3% loss): cwnd p50 sat at ~80-110 symbols against
+a BDP of ~160 — the additive climb never caught up before the next
+jitter-driven backoff (the residual ~30% backoff rate the §12.4
+jitter-robust signal could only halve).
+
+BBR does not crawl: it holds an explicit operating point BtlBw × RTprop
+and returns *to* it [BBR-Queue]. We already track both quantities — a
+delivery-rate max-filter `max_bw` and the 10 s min-RTT floor `min_rtt`
+(§12.4) — but they fed only the diagnostic rate formula. This section
+promotes their product to an active recovery anchor, keeping the
+continuous, phase-free character of Copa-lite (no Startup/Drain/ProbeBW
+state machine, no ProbeRTT drain — §12.3's taper-compatibility argument is
+preserved because nothing here drains the pipe).
+
+**The estimator.**
+
+```
+  BtlBw  = max_bw  = windowed MAX of per-update delivery-rate samples
+                     (symbols/s), 10 s window
+  RTprop = min_rtt = windowed MIN of RTT samples (s), 10 s window
+  BDP    = BtlBw × RTprop                              (symbols)
+```
+
+Units check: (symbols/s) × s = symbols — the in-flight the bottleneck
+rate keeps outstanding over one propagation RTT, i.e. a congestion window.
+
+**The continuous anchor pull.** In the steady-state (post-first-backoff)
+per-SRTT update, the additive step is replaced by a proportional pull
+toward the BDP target that decays into the additive probe as cwnd
+approaches it:
+
+```
+  target = cwnd_gain · BDP                             (cwnd_gain = 1.0)
+  cwnd  += max( ADDITIVE_STEP, α · (target − cwnd) )   when cwnd < target
+  cwnd  +=      ADDITIVE_STEP                           when cwnd ≥ target
+```
+
+with α = 0.25. This is a first-order relaxation toward the operating
+point: from a trough at 0.5·BDP it closes ~90% of the gap in ~8 SRTTs
+versus ~40 for +2, and the pull term vanishes smoothly into the gentle +2
+probe as cwnd → target (no discontinuity, no phase counter). cwnd_gain is
+1.0, not BBR's ProbeBW cwnd_gain = 2: BBR sizes cwnd to 2·BDP so it keeps
+sending through one RTT of delayed ACKs and deliberately tolerates a
+1·BDP standing queue [CACM]; here the standing queue ABOVE BDP is still
+governed by the §12.4 hint-coupled delay backoff, so the anchor only needs
+to restore the pipe, not to buffer a second one.
+
+**Why it is a FLOOR, not a cap — the app-limited caveat.** BBR's BtlBw is
+trustworthy only because of two mechanisms we do not have: **per-packet**
+delivery-rate sampling, and **app-limited detection** that *discards*
+samples taken while the sender was application- (or window-) limited,
+because such samples measure the application's send rate, not the
+bottleneck's [BBR-Draft, delivery-rate-estimation]. Our `record_delivery`
+divides coarse ACK-batch counts by wall-clock elapsed and has no
+app-limited flag. For a warm-up-limited transfer — the dominant regime for
+a 1.8 MB object, which spends much of its life in inner-flow slow-start —
+`max_bw` reads LOW exactly when we would want it high. A BtlBw used as a
+*cap* would then throttle a flow that could have gone faster; a BtlBw used
+only as a *floor* can, at worst, fail to lift cwnd — it can never suppress
+it. So the anchor is applied strictly to RAISE cwnd:
+
+- the recovery pull only ever increases the additive step (never below
+  +2);
+- an explicit floor `cwnd ≥ ANCHOR_FLOOR_GAIN · BDP` ratchets cwnd up
+  after any backoff, bounded above by the hard cwnd ceiling.
+
+Both are gated: the anchor is `None` until the delivery-rate window holds
+≥ 8 samples AND a min-RTT sample exists (a handful of coarse samples is
+too noisy to steer cwnd; before an RTT floor there is no RTprop). A
+stale or over-read `max_bw` (ACK aggregation can momentarily inflate a
+batch rate, the mirror risk to under-read) is bounded by
+`ANCHOR_FLOOR_GAIN < 1` and by the delay backoff retaining authority above
+the floor.
+
+**Honest constants (and how ANCHOR_FLOOR_GAIN was set).**
+
+| Symbol | Value | Meaning |
+|--------|------:|---------|
+| `ANCHOR_MIN_SAMPLES` | 8 | delivery samples before the anchor is trusted |
+| `ANCHOR_RECOVERY_GAIN` (cwnd_gain) | 1.0 | pull target = 1·BDP |
+| `ANCHOR_PULL_ALPHA` (α) | 0.25 | relaxation rate toward the target per SRTT |
+| `ANCHOR_FLOOR_GAIN` | 0.85 | floor = 0.85·BDP |
+
+The floor gain started at 1.0 (floor = full BDP) and was corrected to 0.85
+by L1 measurement. At 1.0 the floor pinned cwnd exactly at the BDP
+estimate even when the delay signal reported queue-above-target — the C2
+cwnd trace showed `above=true` on ~100% of updates with cwnd held at
+bdp_anchor, i.e. the floor was *maintaining* a ~16 ms standing queue the
+backoff could no longer drain. 0.85 leaves the §12.4 delay backoff ~15%
+of authority around BDP: the above-target update fraction fell to ~52% (the
+queue drains on roughly half the updates), while the recovery pull still
+re-fills toward full BDP each clean update, so cwnd oscillates just under
+the pipe instead of sitting in standing bufferbloat.
+
+**Interaction with the taper.** None — this changes only the cwnd
+trajectory, not the correction ratio r*, and introduces no drain phase, so
+the §12.5 taper coverage stays continuous (the reason §12.3 rejected BBR's
+ProbeRTT does not apply). The two controllers remain orthogonal (§12.5):
+Copa-lite-with-anchor sets HOW FAST, the taper sets HOW MUCH redundancy.
+
+**Measured result — mechanism confirmed, completion refuted.** L1
+rp-native (`perf`, no inner TCP, 1.8 MB, seed 42, 10 runs/arm) at C2:
+cwnd p50 rose from the ~80-110 baseline to **139** (peaks 165, bdp_anchor
+p50 137) — cwnd now reaches BDP as intended. But the C2 median completion
+was flat: 0.883 s baseline → 0.911 s anchored, inside one run-to-run
+standard deviation (~0.2 s), and each aggressiveness step moved the median
+<10% (converged). C3 was flat within its larger variance. This matches the
+bounded-leverage prediction that motivated the change
+(`docs/research/bbr-lessons.md` #1): the 1.8 MB completion is dominated by
+the tunnel-pipeline / inner-flow warm-up term (L2 ws3, fair-geometry), and
+the delay backoff binds only 8-24% of ACKs, so re-filling the window to
+BDP does not move that headline. The change fixes a genuine, measured cwnd
+deficiency and is retained for that reason — its expected payoff is the
+sustained-throughput and multipath-aggregation cells, where `B_eff` reads
+cwnd/SRTT directly (§13.5) — but the completion improvement is a
+**refutation**, recorded honestly alongside P10a (`docs/goal-gate.md`,
+P-CC).
+
+### 12.7 ECN as Opportunistic Enhancement
 
 If the network path supports ECN [RFC3168], congestion is signaled by router
 marking (CE bit) instead of dropping. This provides:
@@ -2599,7 +2723,7 @@ marking (CE bit) instead of dropping. This provides:
 QUIC validates ECN support at connection startup. If supported, use it.
 If not (common on wireless), fall back to Copa's delay-based detection.
 
-### 12.7 Application Back-Pressure
+### 12.8 Application Back-Pressure
 
 When r* is so high that source_rate = total_rate/(1+r*) drops below the
 application's minimum (e.g., VoIP codec needs 64kbps), the system signals
