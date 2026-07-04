@@ -297,6 +297,22 @@ fn now_us() -> u64 {
 
 /// Main entry point.
 pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
+    run_impl(config, None).await
+}
+
+/// Run the engine with a caller-provided TUN (e.g. [`TunInterface::memory`]).
+///
+/// Skips OS TUN creation and ALL routing/DNS management (setup and cleanup) —
+/// nothing OS-touching happens for the injected interface. Everything else is
+/// byte-identical to [`run`]. Window-mode note: the MTU clamp only sizes the
+/// OS TUN device; with an injected TUN the caller must size its packets to
+/// fit one symbol (`profile.symbol_size - 4`) itself.
+pub async fn run_with_tun(config: PeerConfig, tun: TunInterface) -> anyhow::Result<()> {
+    run_impl(config, Some(tun)).await
+}
+
+async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> anyhow::Result<()> {
+    let tun_injected = injected_tun.is_some();
     // Parse TUN address
     let (tun_ip, prefix_len) = parse_cidr(&config.tun_addr)?;
     let netmask = prefix_to_netmask(prefix_len);
@@ -337,20 +353,32 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         1500
     };
 
-    // Create TUN interface
-    let mut tun = TunInterface::create(TunConfig {
-        name: config.tun_name.clone(),
-        address: tun_ip,
-        netmask,
-        mtu: tun_mtu,
-    })
-    .await?;
-    info!("TUN interface {} ready", config.tun_name);
+    // Create TUN interface (or use the injected one — memory TUNs need no
+    // OS device and no routing/DNS management)
+    let mut tun = match injected_tun {
+        Some(t) => {
+            info!(name = %t.name, "using injected TUN interface (no routes/DNS)");
+            t
+        }
+        None => {
+            let tun = TunInterface::create(TunConfig {
+                name: config.tun_name.clone(),
+                address: tun_ip,
+                netmask,
+                mtu: tun_mtu,
+            })
+            .await?;
+            info!("TUN interface {} ready", config.tun_name);
+            tun
+        }
+    };
 
-    // Set up routes through the tunnel
+    // Set up routes through the tunnel (skipped for injected TUNs)
     let peer_gateway = routing::infer_peer_ip(tun_ip, prefix_len);
     let mut managed_routes: Vec<ManagedRoute> = Vec::new();
-    if let Some(gw) = peer_gateway {
+    if tun_injected {
+        // no OS interface — nothing to route
+    } else if let Some(gw) = peer_gateway {
         for route_cidr in &config.routes {
             let route = ManagedRoute {
                 destination: route_cidr.clone(),
@@ -367,19 +395,23 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         warn!("cannot infer peer gateway IP — routes not added");
     }
 
-    // Configure DNS on tunnel interface
+    // Configure DNS on tunnel interface (skipped for injected TUNs)
     let mut managed_dns: Option<ManagedDns> = None;
     if let Some(dns_server) = config.dns {
-        let mut dns = ManagedDns {
-            server: dns_server,
-            iface: config.tun_name.clone(),
-            #[cfg(target_os = "linux")]
-            previous_resolv_conf: None,
-        };
-        if let Err(e) = routing::set_dns(&mut dns).await {
-            warn!(%e, "failed to configure DNS");
+        if tun_injected {
+            warn!("injected TUN: ignoring DNS configuration");
         } else {
-            managed_dns = Some(dns);
+            let mut dns = ManagedDns {
+                server: dns_server,
+                iface: config.tun_name.clone(),
+                #[cfg(target_os = "linux")]
+                previous_resolv_conf: None,
+            };
+            if let Err(e) = routing::set_dns(&mut dns).await {
+                warn!(%e, "failed to configure DNS");
+            } else {
+                managed_dns = Some(dns);
+            }
         }
     }
 

@@ -3,6 +3,7 @@ pub mod control;
 pub mod fec;
 pub mod monitor;
 pub mod net;
+pub mod perf;
 pub mod preflight;
 pub mod routing;
 pub mod scheduler;
