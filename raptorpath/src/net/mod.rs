@@ -81,6 +81,10 @@ pub struct PeerConfig {
     /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
     /// measured the floor completion-neutral at C2, regressive at C3.
     pub inner_feedback_weight: f64,
+    /// Block-granular multipath source affinity (paper 13.8 in-order
+    /// coupling refinement, L2 ws1). Default true; false = per-symbol
+    /// striping (ablation).
+    pub mp_block_affinity: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -388,6 +392,7 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 
     // Set up paths with protocol-hint-derived scheduling weights
     let mut scheduler = Scheduler::new_with_hint(Arc::new(WallClock), config.protocol_hint);
+    scheduler.set_block_affinity(config.mp_block_affinity);
     for (i, _addr) in config.bind_addrs.iter().enumerate() {
         scheduler.add_path(i as u32);
     }
@@ -935,6 +940,15 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             ReorderBuffer::new(BLOCK_REORDER_MIN_HOLD.as_millis() as u64, BLOCK_REORDER_MAX_BLOCKS),
         );
 
+        // Instrumentation (L2 ws1, temp): per-block arrival tracking —
+        // first-symbol instant + per-path symbol counts — and in-order
+        // hold timestamps. Emitted as debug logs on decode/release.
+        let block_arrival: parking_lot::Mutex<
+            std::collections::HashMap<u64, (Instant, std::collections::HashMap<u32, u32>)>,
+        > = parking_lot::Mutex::new(std::collections::HashMap::new());
+        let block_held_at: parking_lot::Mutex<std::collections::HashMap<u64, Instant>> =
+            parking_lot::Mutex::new(std::collections::HashMap::new());
+
         // Feed one block-mode symbol into its (existing) decoder; on
         // completion: stats, FEC feedback, BlockResult, packet extraction,
         // TUN inject, decoder removal. Returns false iff the TUN inject
@@ -956,6 +970,18 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     decode_us = feed_start.elapsed().as_micros() as u64,
                     "block decoded"
                 );
+                // Instrumentation (L2 ws1): block completion time from
+                // first symbol arrival + per-path arrival composition.
+                if let Some((first, counts)) = block_arrival.lock().remove(&block_id) {
+                    let mut per_path: Vec<(u32, u32)> = counts.into_iter().collect();
+                    per_path.sort_unstable();
+                    debug!(
+                        block_id,
+                        complete_ms = first.elapsed().as_millis() as u64,
+                        paths = ?per_path,
+                        "block completed"
+                    );
+                }
                 recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
                 recv_fec.lock().feedback_update(true);
 
@@ -976,6 +1002,26 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                 } else {
                     vec![(block_id, data)]
                 };
+                // Instrumentation (L2 ws1): who waits on whom, for how long.
+                if block_inorder_enabled {
+                    if deliverable.is_empty() {
+                        let waiting_on = block_reorder.lock().next_deliver_seq();
+                        block_held_at.lock().insert(block_id, Instant::now());
+                        debug!(block_id, waiting_on, "in-order held");
+                    } else {
+                        let mut held = block_held_at.lock();
+                        for (bid, _) in &deliverable {
+                            if let Some(t) = held.remove(bid) {
+                                debug!(
+                                    block_id = *bid,
+                                    held_ms = t.elapsed().as_millis() as u64,
+                                    unblocked_by = block_id,
+                                    "in-order hold released"
+                                );
+                            }
+                        }
+                    }
+                }
                 for (_bid, bdata) in deliverable {
                     let packets = framing::extract_packets(&bdata);
                     for pkt_data in packets {
@@ -1081,7 +1127,11 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     if block_inorder_enabled {
                         let expired = block_reorder.lock().drain_expired(Instant::now());
                         for (bid, bdata) in expired {
-                            debug!(block_id = bid, "in-order hold expired — force-delivering");
+                            let held_ms = block_held_at
+                                .lock()
+                                .remove(&bid)
+                                .map(|t| t.elapsed().as_millis() as u64);
+                            debug!(block_id = bid, held_ms, "in-order hold expired — force-delivering");
                             for pkt_data in framing::extract_packets(&bdata) {
                                 let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                             }
@@ -1333,6 +1383,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     } else {
                         // ----- Block-mode receive path (existing) -----
                         for symbol in &batch.symbols {
+                            // Instrumentation (L2 ws1): per-path arrival counts.
+                            // Debug-gated: the map update stays off the hot
+                            // path unless composition logging is wanted.
+                            if tracing::enabled!(tracing::Level::DEBUG)
+                                && !completed_blocks.lock().1.contains(&symbol.block_id)
+                            {
+                                let mut arr = block_arrival.lock();
+                                let entry = arr
+                                    .entry(symbol.block_id)
+                                    .or_insert_with(|| (Instant::now(), Default::default()));
+                                *entry.1.entry(path_id).or_insert(0) += 1;
+                                if arr.len() > 2048 {
+                                    arr.clear(); // leak guard (failed blocks)
+                                }
+                            }
                             if !recv_decoders.contains_key(&symbol.block_id) {
                                 // Late/spurious ARQ repair for a block that
                                 // already decoded: drop, don't buffer (P8).
@@ -2882,6 +2947,15 @@ fn encode_to_interleave_buf(
             ps.symbols_sent.fetch_add(symbols.len() as u64, Ordering::Relaxed);
         }
         sent_counts.insert((block_id, *path_id), symbols.len() as u32);
+        // Instrumentation (L2 ws1): per-block per-path source/repair split.
+        let rep = symbols.iter().filter(|s| s.is_repair).count();
+        debug!(
+            block_id,
+            path_id = *path_id,
+            src = symbols.len() - rep,
+            rep,
+            "block path assignment"
+        );
     }
 
     // Push into interleaving buffer instead of sending directly
@@ -2974,6 +3048,14 @@ fn send_interleaved_batches(
     let now = now_us();
     // Sent counts per path, for pacing-token charges below.
     let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    // Symbols individually larger than their path's CURRENT datagram
+    // limit (quinn PMTUD can shrink a path's limit mid-flight on
+    // blackhole suspicion — the lossy-path GE channel triggers this;
+    // symbols were sized at encode time against the then-current
+    // min-MTU). Dropping them silently orphaned whole blocks (L1 C8
+    // finding: 529 drops in one run, mass decoder timeouts); instead
+    // they are rerouted to a path whose limit still fits them.
+    let mut oversized: Vec<(u32, crate::fec::WireSymbol)> = Vec::new();
     // P8: (batch_seq, path, symbol ids) of every batch that left, for the
     // ARQ ledger (recorded in one lock at the end).
     let mut sent_records: Vec<(u64, u32, Vec<(u64, u32)>)> = Vec::new();
@@ -3002,6 +3084,11 @@ fn send_interleaved_batches(
         let mut chunk_bytes = 0usize;
         for sym in symbols {
             let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            if sym_bytes > budget {
+                // Cannot fit this path's datagram limit at any chunking.
+                oversized.push((path_id, sym));
+                continue;
+            }
             if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let ids: Vec<(u64, u32)> =
@@ -3039,6 +3126,55 @@ fn send_interleaved_batches(
             } else {
                 *sent_per_path.entry(path_id).or_default() += n;
                 sent_records.push((batch_seq, path_id, ids));
+            }
+        }
+    }
+
+    // Reroute oversized symbols to the widest live path that fits them
+    // (in_flight bookkeeping moves with the symbol; the rerouted symbols
+    // ride the target's carry queue and go out on the next pace tick).
+    if !oversized.is_empty() {
+        let live: Vec<u32> = scheduler.lock().live_paths();
+        let mut moved: std::collections::HashMap<u32, Vec<crate::fec::WireSymbol>> =
+            std::collections::HashMap::new();
+        let mut moves: Vec<(u32, u32)> = Vec::new(); // (from, to)
+        let mut dropped = 0usize;
+        for (from, sym) in oversized {
+            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
+            let target = live
+                .iter()
+                .copied()
+                .filter(|pid| {
+                    let lim = transport.max_datagram_size(*pid).unwrap_or(1200).max(256);
+                    lim - BATCH_WIRE_HEADER.min(lim) >= sym_bytes
+                })
+                .max_by_key(|pid| transport.max_datagram_size(*pid).unwrap_or(1200));
+            match target {
+                Some(to) => {
+                    moved.entry(to).or_default().push(sym);
+                    moves.push((from, to));
+                }
+                None => dropped += 1,
+            }
+        }
+        let mut n_moved = 0usize;
+        for (to, syms) in moved {
+            n_moved += syms.len();
+            let q = carry.entry(to).or_default();
+            for sym in syms.into_iter().rev() {
+                q.push_front(sym);
+            }
+        }
+        if n_moved > 0 || dropped > 0 {
+            warn!(n_moved, dropped, "oversized symbols rerouted (path datagram limit shrank)");
+        }
+        let mut sched = scheduler.lock();
+        for (from, to) in moves {
+            if let Some(p) = sched.path_mut(from) {
+                p.release_in_flight(1);
+            }
+            if let Some(p) = sched.path_mut(to) {
+                p.charge_in_flight(1);
             }
         }
     }

@@ -2699,6 +2699,117 @@ One parameterized objective with weights from the protocol hint:
   Bulk:       w_lat = 0.0,  w_bw = 1.0   minimize bandwidth waste (overhead)
 ```
 
+**In-order delivery coupling (L2 refinement — measured, asymmetric
+paths).** The objective above assumes per-symbol delivery costs are
+independent: latency composes linearly in the allocation x_i. Two
+delivery mechanisms break that assumption:
+
+1. **Block decode coupling.** A block decodes only when enough of its
+   symbols have arrived across ALL the paths it was striped over. Its
+   completion time is not a weighted sum but a max:
+
+   ```
+     T_blk(b) = max_{i : b_i > 0} ( b_i/C_i + E_i )
+
+     b_i = the block's symbols on path i (serialization + delivery)
+   ```
+
+   Any nonzero share on the slowest path makes the WHOLE block pay that
+   path's delivery time — and losses in that share recover at that
+   path's RTT (its FEC/ARQ round), not the fast path's.
+
+2. **Cross-block in-order delivery.** Decoded blocks are released in
+   block-id order (the delivery contract that shields an inner TCP from
+   tunnel-induced reordering; hold H = 4 x SRTT_max, clamped). A slow
+   block at the head of the sequence delays every faster block behind
+   it, and a block slower than H is force-delivered as a HOLE in the
+   inner byte stream — the latency skew converts into inner
+   retransmissions and cwnd collapse, i.e. into THROUGHPUT loss. This
+   is how Bulk (w_bw = 1), which nominally ignores latency, still pays
+   for latency skew: under in-order delivery there is no allocation
+   whose latency cost is free.
+
+Measured at L1 C8 (path A 100 Mbit / 10 ms RTT / eps 2.5%, path B
+20 Mbit / 40 ms RTT / eps 4.8%, bulk 50 MB, per-symbol striping):
+27% of source landed on B, 15% of blocks striped across both paths;
+striped blocks completed at mean 189 ms vs 17.5 ms for A-only blocks
+(p50 131 vs 13 ms); 92% of in-order head-of-line waits were caused by
+blocks touching B; 151 holds per 100 MB expired at the 300 ms cap and
+were force-delivered as holes. Aggregate 8.8 Mbit/s — BELOW the fast
+path alone (14.0). The linear objective cannot see any of this.
+
+**Refinement: allocation granularity must match the delivery unit.**
+Realize x_i per BLOCK, not per symbol: block k rides one path, and y_i
+is the long-run fraction of blocks assigned to path i. Per block of K
+symbols the delivery time on path i is D_i = K/C_i + E_i, and:
+
+```
+  striping:        EVERY block pays   max_i (b_i/C_i + E_i)
+  block-granular:  y_i of blocks pay  D_i        (their own path only)
+```
+
+The block delivery time needs the per-BLOCK recovery term, not the
+per-symbol one: a block of K symbols on a path with loss eps needs a
+recovery round at THAT path's RTT with probability
+
+```
+  P_blk = 1 - (1-eps)^K        (~1 for realistic K: K=56, eps=4.8% -> 0.94)
+
+  D_i = K/C_i + RTT_i/2 + P_blk x 2 x RTT_i
+```
+
+The per-symbol E_i (Section 13.5) undercounts this by roughly an order
+of magnitude (measured C8: E_B = 22 ms vs B-blocks actually completing
+at p50 94 ms). The interpolated objective keeps its form, evaluated per
+delivery unit:
+
+```
+  minimize: w_lat x SUM(y_i x D_i) + w_bw x SUM(y_i x r_i)
+
+  subject to: SUM(y_i) = 1
+              y_i x block_rate <= B_eff_i / K            per-path capacity
+              D_i - min_j D_j <= H/4  for all y_i > 0    in-order hold horizon
+```
+
+The third constraint is the in-order coupling term: a path whose block
+delivery time exceeds the fastest path's by more than the reorder hold
+budget cannot carry source at all — its blocks would be force-delivered
+as holes — but it remains fully useful for corrections and cross-path
+retransmit (Section 13.10), which have no ordering deadline (this also
+keeps its estimators warm for re-admission when it improves). The H/4
+factor maps the MEDIAN estimate D_i onto the TAIL event the constraint
+guards against: an expiry fires when a single block exceeds H, ARQ
+rounds stack the delivery tail to ~3-4x the median (measured C8:
+median 134 ms with expiries at 301+ ms), so a median skew above H/4
+already pushes the tail past the horizon. For Bulk the solution is y_i
+proportional to B_eff_i over the feasible paths (fill capacities at
+block granularity); for Realtime it degenerates to the lowest-D_i path
+with capacity spill. Note this does NOT violate the Section 13.3 rule
+(source and corrections must not be separated per path): correction
+placement is unchanged, and burst protection on a source-carrying path
+is provided by cross-path diversity (Sections 13.7, 13.10).
+
+The production scheduler realizes y_i with a smooth weighted
+round-robin on B_eff_i (Copa pacing rate deflated by 1 + r_i): the
+long-run shares converge to the capacity split while consecutive
+blocks alternate paths as evenly as the weights allow, minimizing the
+skew the reorder buffer must absorb.
+
+**Measured after the refinement (same C8, one arm at a time):**
+block-granular affinity alone lifted 8.8 -> 11.4 Mbit/s (striped
+blocks 15% -> 0, but B-blocks still delivered at p50 94-134 ms — the
+ARQ round at B's own RTT); adding the D_i eligibility constraint
+starved B of source (6% residual, estimator warm-up only) and reached
+12.6 Mbit/s on 50 MB bulk and cut 1.8 MB object median completion
+from 3.07 s to 1.15 s (2.7x). Hold expiries fell 151 -> 96 per
+100 MB. Symmetric C7 is unaffected (23.3 vs 23.9). At these
+parameters the model's optimum is fast-path source + slow-path
+corrections; the ~10% residual gap to the fast path alone (14.0) is
+warm-up admission plus tail expiries. Kernel MPTCP aggregates beyond
+its own single path here (12.6 vs 10.6) because its receiver absorbs
+cross-subflow reordering inside one sequence space — an option the
+tunnel's inner-TCP in-order delivery contract forecloses.
+
 ### 13.9 QoS Priority Cascade
 
 When multiple protocol classes share the same paths, they pick in priority

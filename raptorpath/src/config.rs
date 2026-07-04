@@ -53,6 +53,11 @@ pub struct RaptorpathConfig {
     /// throughput (TCP-in-tunnel). Default 0.0 (L1-measured: neutral at
     /// C2, regressive at C3); set 1.0 to enable the floor.
     pub inner_feedback_weight: Option<f64>,
+    /// Block-granular multipath source affinity (paper 13.8 in-order
+    /// coupling refinement, L2 ws1): a whole block's source symbols ride
+    /// one path; blocks are WRR-distributed by capacity share. Default
+    /// true; false restores legacy per-symbol striping (ablation).
+    pub mp_block_affinity: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -130,6 +135,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         reorder_timeout_ms: overlay.reorder_timeout_ms.or(base.reorder_timeout_ms),
         reorder_max_size: overlay.reorder_max_size.or(base.reorder_max_size),
         inner_feedback_weight: overlay.inner_feedback_weight.or(base.inner_feedback_weight),
+        mp_block_affinity: overlay.mp_block_affinity.or(base.mp_block_affinity),
     }
 }
 
@@ -240,6 +246,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
             .inner_feedback_weight
             .unwrap_or(0.0)
             .clamp(0.0, 1.0),
+        mp_block_affinity: config.mp_block_affinity.unwrap_or(true),
     };
 
     Ok((peer_config, status_addr))
@@ -311,6 +318,7 @@ mod tests {
             reorder_timeout_ms: Some(0),
             reorder_max_size: Some(200),
             inner_feedback_weight: Some(0.0),
+            mp_block_affinity: Some(true),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

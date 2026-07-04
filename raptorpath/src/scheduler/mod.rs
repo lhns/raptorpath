@@ -934,6 +934,17 @@ impl PathState {
 /// Uses the interpolated objective function from paper Section 13.8:
 ///   minimize: w_lat × SUM(x_i × E_i) + w_bw × SUM(x_i × r_i)
 /// where E_i is effective delivery time and r_i is correction rate per path.
+///
+/// Source placement is BLOCK-granular (paper Section 13.8 in-order coupling
+/// refinement, L2 ws1): one schedule() call = one FEC block = one delivery
+/// unit, and under the cross-block in-order delivery contract a block's
+/// delivery time is the MAX over the paths its source symbols touch — the
+/// linear per-symbol objective silently assumed independent delivery.
+/// Measured at L1 C8 (100mbit/10ms + 20mbit/40ms): blocks striped across
+/// both paths completed at mean 189 ms vs 17.5 ms for fast-path-only blocks,
+/// and 92% of in-order head-of-line waits were caused by blocks touching the
+/// slow path. Whole-block affinity bounds the damage to the y_i fraction of
+/// blocks actually assigned to the slow path (smooth WRR on B_eff_i).
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
     clock: Arc<dyn Clock>,
@@ -944,6 +955,11 @@ pub struct Scheduler {
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper Section 12.4 / P1).
     hint: ProtocolHint,
+    /// Block-granular source affinity (see struct docs). On by default;
+    /// `false` restores per-symbol greedy striping (ablation).
+    block_affinity: bool,
+    /// Smooth-WRR credit per path for the block-affinity pick.
+    affinity_credit: HashMap<PathId, f64>,
 }
 
 impl Scheduler {
@@ -960,7 +976,15 @@ impl Scheduler {
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
             hint,
+            block_affinity: true,
+            affinity_credit: HashMap::new(),
         }
+    }
+
+    /// Enable/disable block-granular source affinity (ablation switch;
+    /// `false` = legacy per-symbol greedy striping).
+    pub fn set_block_affinity(&mut self, enabled: bool) {
+        self.block_affinity = enabled;
     }
 
     /// Update scheduling weights (e.g., when protocol hint changes).
@@ -1054,19 +1078,37 @@ impl Scheduler {
             .collect();
         path_costs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Distribute source symbols to lowest-cost paths first
-        let mut source_iter = source_symbols.into_iter();
-        for &(pid, _, avail) in &path_costs {
-            let batch: Vec<_> = source_iter.by_ref().take(avail as usize).collect();
-            if batch.is_empty() {
-                break;
+        // Distribute source symbols.
+        //
+        // Block-granular affinity (default; see struct docs): one call =
+        // one block = one delivery unit — ALL source symbols ride one
+        // path, picked by smooth WRR on source-carrying capacity, so a
+        // block's completion time is a single path's delivery time rather
+        // than the max over every path touched. The pick may exceed the
+        // path's remaining cwnd budget: in_flight is charged anyway and
+        // the aggregate TUN gate + token-bucket pacing provide the
+        // backpressure (same contract as the old overflow-to-best-path).
+        if self.block_affinity && !source_symbols.is_empty() {
+            let k = source_symbols.len();
+            if let Some(pid) = self.pick_affinity_path(k) {
+                assignments.entry(pid).or_default().extend(source_symbols);
             }
-            assignments.entry(pid).or_default().extend(batch);
-        }
-        // Overflow to best path
-        for sym in source_iter {
-            if let Some(&(pid, _, _)) = path_costs.first() {
-                assignments.entry(pid).or_default().push(sym);
+        } else {
+            // Legacy per-symbol striping: lowest-cost paths first, up to
+            // each path's spare cwnd budget (ablation mode).
+            let mut source_iter = source_symbols.into_iter();
+            for &(pid, _, avail) in &path_costs {
+                let batch: Vec<_> = source_iter.by_ref().take(avail as usize).collect();
+                if batch.is_empty() {
+                    break;
+                }
+                assignments.entry(pid).or_default().extend(batch);
+            }
+            // Overflow to best path
+            for sym in source_iter {
+                if let Some(&(pid, _, _)) = path_costs.first() {
+                    assignments.entry(pid).or_default().push(sym);
+                }
             }
         }
 
@@ -1115,6 +1157,163 @@ impl Scheduler {
         }
 
         assignments.into_iter().collect()
+    }
+
+    /// Pick the path for a whole block's source symbols — the block-granular
+    /// solution of the Section 13.8 objective (in-order coupling refinement):
+    ///
+    ///   - w_lat > 0 (Realtime/Auto): the LP solution is degenerate — the
+    ///     minimum interpolated-cost path carries blocks until its cwnd
+    ///     budget is exhausted, then spills to the next-cheapest (block-
+    ///     granular spill; per-symbol spill is what striped blocks across
+    ///     paths and made every block pay max_i D_i).
+    ///   - w_lat == 0 (Bulk): demand saturates capacity, so the optimum is
+    ///     y_i ∝ B_eff_i (Section 13.5, with C_i = the live Copa pacing
+    ///     rate cwnd/SRTT — always defined, unlike the delivery-rate EWMA
+    ///     which is cold at startup), realized by smooth WRR so consecutive
+    ///     blocks alternate as evenly as the weights allow (minimal
+    ///     in-order skew). Paths whose delivery time exceeds the fastest
+    ///     path's by more than the in-order hold horizon are source-
+    ///     ineligible (their blocks would be force-delivered as holes);
+    ///     they keep serving corrections/retransmits.
+    ///
+    /// Paths with exhausted cwnd budget are skipped while any path has
+    /// budget (WRR credit keeps accruing, so a briefly-full path gets its
+    /// share back later); if ALL budgets are exhausted the pick falls back
+    /// to every active path (the TUN gate is the real backpressure —
+    /// schedule() must never drop a block).
+    fn pick_affinity_path(&mut self, block_symbols: usize) -> Option<PathId> {
+        /// In-order hold horizon (mirrors BLOCK_REORDER_MAX_HOLD in
+        /// net/mod.rs): a block delivered later than this past its
+        /// predecessors expires the receiver hold and surfaces as an
+        /// inner-stream hole.
+        const HOLD_HORIZON_SECS: f64 = 0.3;
+        /// Source-eligibility threshold as a fraction of the horizon.
+        /// Eligibility must gate on the block-delivery TAIL (an expiry is
+        /// a tail event), but the estimate below is a median-ish model;
+        /// ARQ rounds stack the tail to ~3-4x the median (measured C8:
+        /// median 134 ms, expiries at 301+ ms), so a median skew above
+        /// H/4 already pushes the tail past the horizon.
+        const ELIGIBLE_SKEW: f64 = HOLD_HORIZON_SECS / 4.0;
+
+        /// Expected delivery time of a WHOLE block of `k` source symbols
+        /// on this path (paper 13.8 refinement, D_i): serialization at
+        /// the Copa pacing rate + one-way propagation + an ARQ round at
+        /// THIS path's RTT weighted by the per-BLOCK loss probability
+        /// 1-(1-eps)^k. The per-symbol E_i (Section 13.5) undercounts by
+        /// ~an order of magnitude here: k*eps expected losses make a
+        /// recovery round nearly certain for realistic k (measured C8:
+        /// eps=4.8%, k=56 -> P_blk = 0.94; B-blocks p50 94 ms vs
+        /// E_B = 22 ms).
+        fn block_delivery_time(p: &PathState, k: f64) -> f64 {
+            let srtt = p.srtt().as_secs_f64().max(1e-3);
+            let rate = (p.cwnd as f64 / srtt).max(1.0); // symbols/sec
+            // Long-run loss, not the instantaneous EWMA: under GE bursts
+            // the EWMA decays to ~0 between bursts and flip-flops the
+            // eligibility gate open exactly long enough for the next
+            // burst to catch a freshly admitted block (measured C8: B
+            // still carried 12% of source, mixed-block p99 1.0 s). The
+            // Beta-posterior mean spans bursts and gaps alike.
+            let eps = p
+                .estimator
+                .loss_rate()
+                .max(p.estimator.loss_rate_mean())
+                .clamp(0.0, 0.99);
+            let p_blk = 1.0 - (1.0 - eps).powf(k);
+            k / rate + srtt / 2.0 + p_blk * 2.0 * srtt
+        }
+
+        let with_budget: Vec<&PathState> = self
+            .paths
+            .values()
+            .filter(|p| p.active && p.available() > 0)
+            .collect();
+        let cands: Vec<&PathState> = if with_budget.is_empty() {
+            self.paths.values().filter(|p| p.active).collect()
+        } else {
+            with_budget
+        };
+        if cands.is_empty() {
+            return None;
+        }
+
+        if self.weights.w_lat > 0.0 {
+            // Latency-weighted: min interpolated cost, deterministic
+            // tie-break by id.
+            return cands
+                .iter()
+                .min_by(|a, b| {
+                    let ca = self.path_cost(a);
+                    let cb = self.path_cost(b);
+                    ca.partial_cmp(&cb)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.id.cmp(&b.id))
+                })
+                .map(|p| p.id);
+        }
+
+        // Bulk: capacity-share WRR over hold-feasible paths (HOL-cost
+        // source eligibility: a path whose per-block delivery skew
+        // threatens the in-order hold horizon carries NO source — it
+        // keeps its repair/retransmit role, which has no ordering
+        // deadline and keeps its estimators warm for re-admission).
+        //
+        // Eligibility is computed over ALL active paths, not just the
+        // budget-filtered candidates: when the fast path's cwnd is
+        // momentarily full, the slow path used to become the only
+        // candidate and pass the skew test against itself (measured C8:
+        // B still carried 12% of source through exactly this hole). An
+        // ineligible path must not carry source even then — the pick
+        // over-commits the eligible path instead (pacing keeps the wire
+        // rate at cwnd/SRTT; the aggregate TUN gate closes as the
+        // over-commit accumulates).
+        let k = (block_symbols as f64).max(1.0);
+        let active: Vec<&PathState> = self.paths.values().filter(|p| p.active).collect();
+        let d_min = active
+            .iter()
+            .map(|p| block_delivery_time(p, k))
+            .fold(f64::INFINITY, f64::min);
+        let eligible: Vec<&&PathState> = active
+            .iter()
+            .filter(|p| block_delivery_time(p, k) - d_min <= ELIGIBLE_SKEW)
+            .collect();
+        let cands: Vec<&&PathState> = {
+            let with_budget: Vec<&&PathState> = eligible
+                .iter()
+                .copied()
+                .filter(|p| p.available() > 0)
+                .collect();
+            if with_budget.is_empty() { eligible } else { with_budget }
+        };
+        let mut weighted: Vec<(PathId, f64)> = cands
+            .iter()
+            .map(|p| {
+                let srtt = p.srtt().as_secs_f64().max(1e-3);
+                let rate = p.cwnd as f64 / srtt; // symbols/sec (Copa pacing rate)
+                let r = p.correction_rate();
+                let r = if r.is_infinite() { 10.0 } else { r };
+                (p.id, rate / (1.0 + r)) // B_eff (Section 13.5)
+            })
+            .collect();
+        weighted.sort_unstable_by(|a, b| a.0.cmp(&b.0)); // deterministic order
+        let total: f64 = weighted.iter().map(|(_, w)| w).sum();
+        if total <= 0.0 {
+            return weighted.first().map(|&(id, _)| id);
+        }
+        // Drop credit for removed paths so a re-added id starts fresh.
+        let paths = &self.paths;
+        self.affinity_credit.retain(|id, _| paths.contains_key(id));
+        let mut pick: Option<(PathId, f64)> = None;
+        for &(id, w) in &weighted {
+            let credit = self.affinity_credit.entry(id).or_insert(0.0);
+            *credit += w / total;
+            if pick.is_none() || *credit > pick.unwrap().1 {
+                pick = Some((id, *credit));
+            }
+        }
+        let (id, _) = pick?;
+        *self.affinity_credit.get_mut(&id).unwrap() -= 1.0;
+        Some(id)
     }
 
     /// Acknowledge received symbols on a path.
