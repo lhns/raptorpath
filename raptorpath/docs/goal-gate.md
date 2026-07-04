@@ -482,6 +482,78 @@ derivation + refutation: paper §14.28.
 
 ## Honest scope
 
+### P10b — realtime (window-mode) reactive repair (2026-07-04)
+
+Target: cut rp-realtime's ~430 inner retransmits / 5×1.8MB and its
+completion time at C2 (goal ≤1.2 s median, <100 retransmits).
+
+Root cause (code reading first, then confirmed on the wire): window
+mode had NO functioning reactive repair path — three independent
+breaks stacked so that only proactive FEC ever repaired a loss, and
+anything FEC missed waited out the 4×SRTT reorder hold and was
+force-delivered as a HOLE to the inner TCP:
+
+1. WindowNack is deprecated and never sent; the SACK-extended
+   WindowAck that replaced it carried the gap info, but the sender's
+   WindowAck handler explicitly ignored sack_ranges — and nack_tx (the
+   channel driving the entire NACK retransmission machinery) had no
+   producer at all. Dead code since the SACK migration.
+2. The receiver only sent WindowAck when the cumulative delivery point
+   advanced — a hole silences ALL acks exactly while the gap signal is
+   needed (no dupack analog).
+3. The sender drained the NACK channel only after a TUN read — the
+   inner TCP stalls on the hole → no TUN packets → no repair
+   processing, precisely when repair is the only way to unstall.
+
+Fixes (raptorpath/src/net/mod.rs), each verified by RUST_LOG=debug
+event counts on an isolated build:
+- Dupack-style gap acks: WindowAck also sent while the cumulative
+  point is stalled but higher seqs keep arriving (rate-limited 2 ms).
+- sack_to_gaps(): the WindowAck handler inverts SACK ranges into
+  missing-seq gaps and feeds nack_tx (age gate SRTT/2 against
+  cross-path skew; per-seq cooldown 1×SRTT so repeated gap acks
+  cannot flood, but a lost repair is re-sent one SRTT later).
+- Sender select! now wakes on nack_rx AND a tail ARQ sweep timer
+  (2×SRTT clamp [25,100] ms, block-mode P8 sweeper analog): the LAST
+  symbols of a burst have no successors, so the receiver can never
+  SACK a gap behind them; the sweep synthesizes a gap report for the
+  oldest un-ACKed seq. The sweep MUST rearm on every fire even when
+  the retransmit is skipped — a past deadline left the timer arm
+  permanently ready and would spin the select loop.
+- ADR-0050 NACK budget floored at one repair burst per 5 ms refresh:
+  the raw cap (≈ loss/2 × sources-this-period) truncated to 0 almost
+  always because the period resets every 10 acked seqs — silently
+  suppressing the whole reactive path. Congestion safety stays with
+  the ADR-0046 multiplier (which can still zero repairs).
+
+Measured at L1 C2 (1.8 MB × 5, seed 42, isolated build dir — the
+shared ~/raptorpath tree was being concurrently modified by another
+session, which invalidated two intermediate runs; all numbers below
+are from ~/rp-p10b builds verified by debug event counts):
+
+  baseline (a7c20d7):        median 3.49 s / mean 3.35, 496 inner
+                             retransmits, 52 SACK recoveries
+  + SACK reactive repair:    median 2.34 s / mean 2.27, 287 retrans
+    (gap acks + gap wiring;  (2nd sample: median 1.74 / mean 1.80,
+    budget still suppressed)  171 retrans — variance is real)
+  + tail sweep + budget      median 1.57 s / mean 1.63, 38 inner
+    floor + sweep rearm      retransmits, 13 SACK recoveries, 0 RTOs
+    (full P10b):
+
+Debug-instrumented run (same code, RUST_LOG=debug): 637 gap reports →
+526 targeted retransmits + 159 tail sweeps per 5 transfers on the
+data sender; 0 "TUN inject channel full" drops. Retransmit goal met
+5× over (38 « 100); the ≤1.2 s median is not reached (1.57) — the
+remaining gap is no longer inner-TCP recovery (only ~13 halvings per
+5 runs) but window-mode goodput + inner slow-start, i.e. the same
+(a)/(b)/(c) list as bulk above.
+
+Not separately ablated (VM occupied by a concurrent session for the
+remainder of the window): tail sweep vs budget floor within the last
+step — they ship together; the sweep depends on the floor (a
+budget=0 drop must not stall the sweep's rearm, see the
+last_tail_sweep_us comment in net/mod.rs).
+
 - L0's baseline is our own simulation model. It now includes slow-start,
   AIMD, and in-order semantics, but it is not CUBIC/BBR. **The claim this
   gate supports is "surpasses the SimRetx model under ADR-0051 conditions",

@@ -159,8 +159,24 @@ const BLOCK_REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
 pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
 const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
-/// Minimum interval between NACK-triggered repair bursts (microseconds).
+/// Minimum interval between NACK budget/congestion-state refreshes (microseconds).
 const NACK_REPAIR_COOLDOWN_US: u64 = 5_000;
+/// Minimum interval between gap-advertising WindowAcks while the cumulative
+/// delivery point is stalled on a hole (P10b). The dupack analog: without
+/// these, a hole silences ALL acks (the cumulative point can't advance), the
+/// sender never learns which seqs are missing, and the only reactive repair
+/// left is the reorder-hold expiry force-delivery — which the inner TCP sees
+/// as a hole and retransmits (measured L1 realtime C2: ~430 inner
+/// retransmits / 5×1.8MB with proactive FEC alone).
+const GAP_ACK_MIN_INTERVAL: Duration = Duration::from_millis(2);
+/// Fallback per-seq retransmit cooldown when no SRTT sample exists (µs).
+const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
+/// Tail ARQ sweep timeout clamp (µs): 2×SRTT bounded to [25ms, 100ms].
+/// Must sit above the ack arrival time (~1×SRTT + jitter, or the sweep
+/// fires spuriously on every in-flight symbol) and below the receiver's
+/// reorder hold (60ms floor) plus the inner-TCP RTO (~200ms).
+const TAIL_SWEEP_MIN_US: u64 = 25_000;
+const TAIL_SWEEP_MAX_US: u64 = 100_000;
 
 /// Congestion-aware NACK repair throttle (ADR-0046).
 ///
@@ -875,6 +891,10 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
+        // P10b dupack analog: highest_seen at the last gap-advertising ack,
+        // and when it was sent (rate limit) — see GAP_ACK_MIN_INTERVAL.
+        let mut last_gap_ack_seen: u64 = 0;
+        let mut last_gap_ack_time = Instant::now() - GAP_ACK_MIN_INTERVAL;
         // ADR-0035: PI feedback tracking for window mode
         let mut last_pi_repairs_fed: u64 = 0;
         let mut last_pi_repairs_useful: u64 = 0;
@@ -1227,9 +1247,22 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                             }
                         }
 
-                        // Send SACK-extended WindowAck to sender
-                        if highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed) {
+                        // Send SACK-extended WindowAck to sender.
+                        // P10b: ALSO send while the cumulative point is
+                        // stalled on a hole but new (higher) seqs keep
+                        // arriving — the dupack analog. The SACK ranges are
+                        // the sender's only gap signal; without them a hole
+                        // was repaired solely by proactive FEC or the
+                        // hold-expiry force-delivery.
+                        let cumulative_advanced =
+                            highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed);
+                        let gap_report_due = highest_seen_seq > highest_delivered_seq
+                            && highest_seen_seq > last_gap_ack_seen
+                            && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
+                        if cumulative_advanced || gap_report_due {
                             recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+                            last_gap_ack_seen = highest_seen_seq;
+                            last_gap_ack_time = Instant::now();
 
                             // Compute SACK ranges: received sequences beyond cumulative_ack
                             let sack = compute_gap_ranges(
@@ -1847,6 +1880,28 @@ pub fn compute_gap_ranges(
     gaps
 }
 
+/// Invert SACK ranges into missing-seq gaps (P10b).
+///
+/// `sack_ranges` are inclusive, ascending, disjoint ranges of seqs the
+/// receiver HAS beyond the cumulative point `received_up_to`. Every seq
+/// between the cumulative point and a sacked range that is not itself
+/// sacked is missing at the receiver. (Seqs above the last sacked range
+/// are NOT reported — they may simply still be in flight.)
+pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    let mut gaps = Vec::new();
+    let mut expected = received_up_to + 1;
+    for &(start, end) in sack_ranges {
+        if start > expected {
+            gaps.push((expected, start - 1));
+            if gaps.len() >= MAX_NACK_GAPS {
+                return gaps;
+            }
+        }
+        expected = expected.max(end.saturating_add(1));
+    }
+    gaps
+}
+
 /// Select the best source path for a window-mode symbol: lowest RTT with capacity.
 /// Falls back to path 0 if no active paths.
 fn select_source_path(scheduler: &Scheduler) -> u32 {
@@ -1914,7 +1969,6 @@ async fn run_window_sender(
         _ => Box::new(RlcWindowEncoder::new(symbol_size)),
     };
     let mut prev_ack: u64 = 0;
-    let mut last_nack_repair_us: u64 = 0;
     // Fractional repair accumulator: tracks sub-symbol repair debt.
     // Driven by TaperFunction density when GE data is available,
     // falls back to flat rate from compute_repair_rate_capped.
@@ -1931,6 +1985,22 @@ async fn run_window_sender(
     let mut nack_repairs_this_period: u64 = 0;
     /// Source symbols sent in the current reporting period.
     let mut source_symbols_this_period: u64 = 0;
+    /// P10b: seq → last NACK-retransmit time (µs). Repeated gap acks for the
+    /// same hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists)
+    /// must not resend the symbol more than once per SRTT — but MAY resend
+    /// after an SRTT, which escalates naturally if the retransmit itself dies.
+    let mut nack_retx_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    /// P10b: cached ADR-0046/0050 budget state, refreshed every
+    /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+    /// budget inputs move; recomputing per ack would just churn locks).
+    let mut last_budget_refresh_us: u64 = 0;
+    let mut cached_max_repairs: u64 = MAX_NACK_REPAIRS_PER_NACK as u64;
+    let mut cached_nack_budget: u64 = MAX_NACK_REPAIRS_PER_NACK as u64;
+    /// P10b: when the tail sweep last FIRED (µs) — rearm point. Must advance
+    /// on every fire even if the retransmit was skipped (cooldown/budget
+    /// exhausted), or a past deadline keeps the timer arm permanently ready
+    /// and the select! busy-spins, starving TUN reads.
+    let mut last_tail_sweep_us: u64 = 0;
 
     /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
     /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
@@ -2137,8 +2207,62 @@ async fn run_window_sender(
         // Determine if packer has pending data for flush timer
         let packer_pending = use_packing && packer.is_pending();
 
+        // P10b: gap reports must wake this loop even when the TUN is idle.
+        // The inner TCP stalls exactly when a hole blocks delivery — no new
+        // TUN packets — and the old structure only drained the NACK channel
+        // after a TUN read, so repairs stalled precisely when they were the
+        // only thing that could unstall the tunnel.
+        let mut pending_gaps: Option<Vec<(u64, u64)>> = None;
+
+        // P10b tail sweep: the LAST symbols of a burst have no successors,
+        // so the receiver can never SACK a gap behind them — the sender must
+        // detect that stall itself (block mode's P8 ARQ sweeper analog).
+        // When un-ACKed symbols exist, arm a timer at oldest-activity +
+        // 2×SRTT; on expiry synthesize a gap report for the cumulative
+        // blocker (per-seq cooldown + budgets all apply downstream).
+        let tail_deadline: Option<tokio::time::Instant> =
+            retransmit_buffer.iter().next().map(|(&seq, &(send_us, _, _))| {
+                let last_activity_us = nack_retx_at
+                    .get(&seq)
+                    .map_or(send_us, |&r| r.max(send_us))
+                    .max(last_tail_sweep_us);
+                let srtt_us = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id))
+                        .map(|p| p.estimator.rtt().as_micros() as u64)
+                        .max()
+                        .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+                };
+                let timeout_us = (srtt_us * 2).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US);
+                let deadline_us = last_activity_us + timeout_us;
+                let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
+                tokio::time::Instant::now() + remaining
+            });
+
         let packet = tokio::select! {
-            p = tun.read_packet() => p,
+            p = tun.read_packet() => Some(p),
+            gaps = nack_rx.recv() => {
+                if let Some(g) = gaps {
+                    pending_gaps = Some(g);
+                }
+                None
+            }
+            _ = async {
+                match tail_deadline {
+                    Some(d) => tokio::time::sleep_until(d).await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                last_tail_sweep_us = now_us();
+                if let Some((&seq, _)) = retransmit_buffer.iter().next() {
+                    debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
+                    pending_gaps = Some(vec![(seq, seq)]);
+                }
+                None
+            }
             _ = shutdown_rx.recv() => {
                 // Flush any remaining packed data before shutdown
                 if use_packing {
@@ -2159,39 +2283,45 @@ async fn run_window_sender(
                 if let Some(packed) = packer.flush() {
                     send_source_symbol!(packed);
                 }
-                continue;
+                None
             }
         };
 
-        let pkt = match packet {
-            Some(p) => p,
-            None => {
-                // Flush remaining packed data before exit
-                if use_packing {
-                    if let Some(packed) = packer.flush() {
-                        send_source_symbol!(packed);
+        if let Some(packet) = packet {
+            let pkt = match packet {
+                Some(p) => p,
+                None => {
+                    // Flush remaining packed data before exit
+                    if use_packing {
+                        if let Some(packed) = packer.flush() {
+                            send_source_symbol!(packed);
+                        }
                     }
+                    info!("TUN closed");
+                    return;
                 }
-                info!("TUN closed");
-                return;
-            }
-        };
+            };
 
-        if use_packing {
-            // Pack multiple small packets into one symbol
-            if let Some(packed) = packer.push(&pkt) {
-                send_source_symbol!(packed);
+            if use_packing {
+                // Pack multiple small packets into one symbol
+                if let Some(packed) = packer.push(&pkt) {
+                    send_source_symbol!(packed);
+                }
+            } else {
+                // Legacy: one packet per symbol (padded)
+                let framed = framing::frame_window_packet(&pkt, symbol_size);
+                send_source_symbol!(framed);
             }
-        } else {
-            // Legacy: one packet per symbol (padded)
-            let framed = framing::frame_window_packet(&pkt, symbol_size);
-            send_source_symbol!(framed);
         }
 
-        // Drain NACK channel → retransmit exact source symbols + repair margin
-        // ADR-0046: congestion-aware NACK backoff
+        // Process gap reports → retransmit exact source symbols + repair margin.
+        // ADR-0046 congestion backoff + ADR-0050 budget state is refreshed at
+        // NACK_REPAIR_COOLDOWN_US cadence; processing itself is NOT gated on
+        // the cadence — per-seq cooldowns already bound the send rate, and
+        // delaying a repair round costs a reorder-hold expiry at the receiver.
         let now_repair_us = now_us();
-        if now_repair_us.saturating_sub(last_nack_repair_us) >= NACK_REPAIR_COOLDOWN_US {
+        if now_repair_us.saturating_sub(last_budget_refresh_us) >= NACK_REPAIR_COOLDOWN_US {
+            last_budget_refresh_us = now_repair_us;
             // Update congestion state from scheduler
             let (current_loss, current_rtt) = {
                 let sched = scheduler.lock();
@@ -2211,11 +2341,11 @@ async fn run_window_sender(
                 }
             };
             let nack_multiplier = nack_congestion.update(current_loss, current_rtt);
-            let effective_max_repairs =
+            cached_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
 
             // ADR-0050: compute NACK budget from BudgetAllocator
-            let nack_budget_remaining = {
+            cached_nack_budget = {
                 let ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
                 let worst_est = sched
@@ -2232,113 +2362,166 @@ async fn run_window_sender(
                             p_upper, ctrl.codec_overhead(), current_loss * 0.5, nack_eff,
                         );
                         let nack_cap_symbols = (budget.nack_cap() * source_symbols_this_period as f64) as u64;
-                        nack_cap_symbols.saturating_sub(nack_repairs_this_period)
+                        // P10b: floor at one full repair burst per refresh
+                        // interval. The raw cap is nack_cap (≈ loss_rate/2)
+                        // × sources-this-period, but the period resets every
+                        // 10 acked seqs, so the u64 cast truncated it to 0
+                        // almost always — silently suppressing the entire
+                        // reactive repair path. Congestion safety lives
+                        // in the ADR-0046 multiplier (cached_max_repairs),
+                        // which can still zero out repairs under real
+                        // congestion; this floor only guarantees wireless-
+                        // loss repairs are never starved by quantization.
+                        // (L1 C2: floor+sweep took 287 → 38 inner
+                        // retransmits per 5×1.8MB.)
+                        nack_cap_symbols
+                            .saturating_sub(nack_repairs_this_period)
+                            .max(MAX_NACK_REPAIRS_PER_NACK as u64)
                     }
-                    None => effective_max_repairs,
+                    None => cached_max_repairs,
                 }
             };
+        }
 
-            while let Ok(gaps) = nack_rx.try_recv() {
-                if effective_max_repairs == 0 || nack_budget_remaining == 0 {
-                    // Fully suppressed or budget exhausted — drain NACK queue
+        loop {
+            let gaps = match pending_gaps.take() {
+                Some(g) => g,
+                None => match nack_rx.try_recv() {
+                    Ok(g) => g,
+                    Err(_) => break,
+                },
+            };
+            if cached_max_repairs == 0 || cached_nack_budget == 0 {
+                // Fully suppressed or budget exhausted — drain NACK queue
+                continue;
+            }
+
+            // SRTT drives the per-seq retransmit cooldown and the age gate.
+            let srtt_us = {
+                let sched = scheduler.lock();
+                sched
+                    .active_paths()
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .map(|p| p.estimator.rtt().as_micros() as u64)
+                    .max()
+                    .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+            };
+            let retx_cooldown_us = srtt_us.max(NACK_RETX_COOLDOWN_FLOOR_US);
+
+            let (win_start, win_end) = encoder.window_span();
+            let mut retransmitted: u64 = 0;
+            let mut nacked_count: u64 = 0;
+
+            'gaps: for &(gap_start, gap_end) in &gaps {
+                let clamped_start = gap_start.max(win_start);
+                let clamped_end = gap_end.min(win_end);
+                if clamped_start > clamped_end {
                     continue;
                 }
+                nacked_count += clamped_end - clamped_start + 1;
 
-                let (win_start, win_end) = encoder.window_span();
-                let mut retransmitted: u64 = 0;
-                let mut nacked_count: u64 = 0;
-
-                for &(gap_start, gap_end) in &gaps {
-                    let clamped_start = gap_start.max(win_start);
-                    let clamped_end = gap_end.min(win_end);
-                    if clamped_start > clamped_end {
-                        continue;
+                for seq in clamped_start..=clamped_end {
+                    if retransmitted >= cached_max_repairs || cached_nack_budget == 0 {
+                        break 'gaps;
                     }
-                    nacked_count += clamped_end - clamped_start + 1;
-
-                    for seq in clamped_start..=clamped_end {
-                        if retransmitted >= effective_max_repairs {
-                            break;
+                    // Per-seq cooldown: repeated gap acks for the same
+                    // hole must not resend more than once per SRTT.
+                    if let Some(&last) = nack_retx_at.get(&seq) {
+                        if now_repair_us.saturating_sub(last) < retx_cooldown_us {
+                            continue;
                         }
-                        // Cross-path: avoid the path that originally carried this symbol
-                        let original_path = source_path_map.get(&seq).copied().unwrap_or(last_source_path);
-                        let nack_path = {
-                            let sched = scheduler.lock();
-                            select_repair_path_avoiding(&sched, original_path, last_source_path)
-                        };
-
-                        // Try exact source retransmission first, fall back to repair
-                        let sym = encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair());
-
-                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                        let batch = SymbolBatch {
-                            symbols: vec![sym],
-                            send_timestamp_us: now_us(),
-                            batch_seq,
-                            path_id: nack_path,
-                        };
-                        if let Err(e) = transport.send_symbols(nack_path, batch) {
-                            warn!(nack_path, ?e, "failed to send NACK retransmission");
-                        }
-                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-                        nack_repairs_this_period += 1;
-                        retransmitted += 1;
                     }
-                }
-
-                // Repair margin: extra repairs proportional to loss rate
-                if retransmitted > 0 {
-                    let current_loss = {
+                    // Age gate: cross-path/jitter skew can report a seq
+                    // that is merely late, not lost — only repair
+                    // symbols old enough that an in-flight copy would
+                    // already have been sacked.
+                    if let Some(&(send_time_us, _, _)) = retransmit_buffer.get(&seq) {
+                        if now_repair_us.saturating_sub(send_time_us) < srtt_us / 2 {
+                            continue;
+                        }
+                    }
+                    // Cross-path: avoid the path that originally carried this symbol
+                    let original_path = source_path_map.get(&seq).copied().unwrap_or(last_source_path);
+                    let nack_path = {
                         let sched = scheduler.lock();
-                        sched
-                            .active_paths()
-                            .iter()
-                            .filter_map(|id| sched.path(*id))
-                            .map(|p| p.estimator.loss_rate())
-                            .fold(0.0f64, f64::max)
+                        select_repair_path_avoiding(&sched, original_path, last_source_path)
                     };
-                    let margin = (retransmitted as f64 * current_loss).ceil() as u64;
-                    let margin_path = {
-                        let sched = scheduler.lock();
-                        select_repair_path(&sched, last_source_path)
-                    };
-                    for _ in 0..margin {
-                        if encoder.window_size() == 0 {
-                            break;
-                        }
-                        let repair_sym = encoder.generate_repair();
-                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                        let batch = SymbolBatch {
-                            symbols: vec![repair_sym],
-                            send_timestamp_us: now_us(),
-                            batch_seq,
-                            path_id: margin_path,
-                        };
-                        if let Err(e) = transport.send_symbols(margin_path, batch) {
-                            warn!(margin_path, ?e, "failed to send NACK repair margin");
-                        }
-                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-                        nack_repairs_this_period += 1;
-                    }
-                }
 
-                // Reduce repair_debt — NACK'd symbols are handled reactively now
-                let repair_rate = {
-                    let ctrl = fec_controller.lock();
-                    let sched = scheduler.lock();
-                    let path_est = sched.active_paths().iter()
-                        .filter_map(|id| sched.path(*id))
-                        .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                        .map(|p| &p.estimator);
-                    match path_est {
-                        Some(est) => ctrl.compute_repair_rate(est, encoder.window_size()),
-                        None => 0.0,
+                    // Try exact source retransmission first, fall back to repair
+                    let sym = encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair());
+
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: nack_path,
+                    };
+                    if let Err(e) = transport.send_symbols(nack_path, batch) {
+                        warn!(nack_path, ?e, "failed to send NACK retransmission");
                     }
-                };
-                let debt_reduction = nacked_count as f64 * repair_rate;
-                repair_debt = (repair_debt - debt_reduction).max(0.0);
+                    debug!(seq, nack_path, "SACK-gap retransmit");
+                    nack_retx_at.insert(seq, now_repair_us);
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    nack_repairs_this_period += 1;
+                    cached_nack_budget = cached_nack_budget.saturating_sub(1);
+                    retransmitted += 1;
+                }
             }
-            last_nack_repair_us = now_repair_us;
+
+            // Repair margin: extra repairs proportional to loss rate
+            if retransmitted > 0 {
+                let current_loss = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id))
+                        .map(|p| p.estimator.loss_rate())
+                        .fold(0.0f64, f64::max)
+                };
+                let margin = (retransmitted as f64 * current_loss).ceil() as u64;
+                let margin_path = {
+                    let sched = scheduler.lock();
+                    select_repair_path(&sched, last_source_path)
+                };
+                for _ in 0..margin {
+                    if encoder.window_size() == 0 {
+                        break;
+                    }
+                    let repair_sym = encoder.generate_repair();
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![repair_sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: margin_path,
+                    };
+                    if let Err(e) = transport.send_symbols(margin_path, batch) {
+                        warn!(margin_path, ?e, "failed to send NACK repair margin");
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    nack_repairs_this_period += 1;
+                    cached_nack_budget = cached_nack_budget.saturating_sub(1);
+                }
+            }
+
+            // Reduce repair_debt — NACK'd symbols are handled reactively now
+            let repair_rate = {
+                let ctrl = fec_controller.lock();
+                let sched = scheduler.lock();
+                let path_est = sched.active_paths().iter()
+                    .filter_map(|id| sched.path(*id))
+                    .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|p| &p.estimator);
+                match path_est {
+                    Some(est) => ctrl.compute_repair_rate(est, encoder.window_size()),
+                    None => 0.0,
+                }
+            };
+            let debt_reduction = nacked_count as f64 * repair_rate;
+            repair_debt = (repair_debt - debt_reduction).max(0.0);
         }
 
         // Advance encoder window based on receiver ACKs
@@ -2374,6 +2557,8 @@ async fn run_window_sender(
             source_path_map.retain(|&seq, _| seq >= win_start);
             // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
             retransmit_buffer = retransmit_buffer.split_off(&(ack + 1));
+            // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
+            nack_retx_at.retain(|&seq, _| seq > ack);
             // Update correction deficit: ACKed symbols no longer need coverage
             {
                 let mut sched = scheduler.lock();
@@ -3362,9 +3547,23 @@ fn handle_control_message(
                 }
             }
             // The sender reads window_ack_seq via AtomicU64 in the sender loop.
-            // SACK ranges are available here for future gap-based retransmit
-            // optimization but the current P_lost model handles this via the
-            // retransmit buffer age mechanism.
+            // P10b: SACK ranges drive reactive repair. Sacked-but-undelivered
+            // seqs imply the seqs BETWEEN them are missing at the receiver —
+            // invert the ranges into gaps and feed the window sender's NACK
+            // repair machinery (exact source retransmission, ADR-0046/0050
+            // budgets, per-seq cooldown). Before this the gap info was
+            // dropped here and the nack channel had no producer at all
+            // (WindowNack is deprecated and never sent), so window mode had
+            // NO functioning reactive repair path.
+            if !sack_ranges.is_empty() {
+                let gaps = sack_to_gaps(received_up_to, &sack_ranges);
+                if !gaps.is_empty() {
+                    debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
+                    if let Some(tx) = nack_tx {
+                        let _ = tx.try_send(gaps);
+                    }
+                }
+            }
         }
 
         ControlMessage::WindowNack { gaps } => {
@@ -3493,5 +3692,65 @@ mod tests {
         let (expected, received) = tracker.record_batch(2, 10);
         assert_eq!(expected, 20); // gap of 2, estimates 2*10 expected
         assert_eq!(received, 10);
+    }
+
+    // ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
+
+    #[test]
+    fn test_sack_to_gaps_single_hole() {
+        // Delivered up to 4; receiver has 7..=9 → 5..=6 missing.
+        assert_eq!(sack_to_gaps(4, &[(7, 9)]), vec![(5, 6)]);
+    }
+
+    #[test]
+    fn test_sack_to_gaps_multiple_holes() {
+        // Delivered up to 0; has 2..=3 and 6..=6 → 1 and 4..=5 missing.
+        assert_eq!(sack_to_gaps(0, &[(2, 3), (6, 6)]), vec![(1, 1), (4, 5)]);
+    }
+
+    #[test]
+    fn test_sack_to_gaps_adjacent_range_no_gap() {
+        // Sack range starts right after the cumulative point → nothing
+        // missing below it, and seqs above it are NOT reported (may be
+        // in flight).
+        assert!(sack_to_gaps(4, &[(5, 9)]).is_empty());
+    }
+
+    #[test]
+    fn test_sack_to_gaps_round_trips_receiver_encoding() {
+        // The receiver converts its missing-gap view into received
+        // (SACK) ranges; sack_to_gaps must invert that exactly.
+        let mut received = BTreeSet::new();
+        for seq in [11u64, 12, 15, 18, 19, 20] {
+            received.insert(seq);
+        }
+        let highest_delivered = 10u64; // 0..=10 contiguous
+        let highest_seen = 20u64;
+        let gaps = compute_gap_ranges(&received, highest_delivered, highest_seen);
+        // Receiver-side conversion (as in the WindowAck send path)
+        let mut sack_ranges = Vec::new();
+        let mut cursor = highest_delivered + 1;
+        for &(gap_start, gap_end) in &gaps {
+            if cursor < gap_start {
+                sack_ranges.push((cursor, gap_start - 1));
+            }
+            cursor = gap_end + 1;
+        }
+        if cursor <= highest_seen {
+            sack_ranges.push((cursor, highest_seen));
+        }
+        assert_eq!(sack_ranges, vec![(11, 12), (15, 15), (18, 20)]);
+        // Sender-side inversion recovers the missing seqs 13..=14, 16..=17
+        assert_eq!(sack_to_gaps(highest_delivered, &sack_ranges), vec![(13, 14), (16, 17)]);
+    }
+
+    #[test]
+    fn test_sack_to_gaps_caps_at_max_gaps() {
+        // 2×MAX_NACK_GAPS isolated received seqs → gap list is capped.
+        let sack: Vec<(u64, u64)> = (0..(MAX_NACK_GAPS as u64 * 2))
+            .map(|i| (2 + i * 2, 2 + i * 2))
+            .collect();
+        let gaps = sack_to_gaps(0, &sack);
+        assert_eq!(gaps.len(), MAX_NACK_GAPS);
     }
 }
