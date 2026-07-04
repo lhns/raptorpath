@@ -597,8 +597,9 @@ C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%):
 **HEADLINE: the tail claim is VALIDATED vs kernel TCP at C2** — both
 kernel CCs suffer 13-SECOND p99 tails (RTO cascades under GE bursts);
 raptorpath holds 91-513 ms at equal p50: 26-147x. This is the model's
-thesis measured on real stacks. (quinn message-tail comparison needs a
-QUIC echo tool — object-level quinn numbers stand in until then.)
+thesis measured on real stacks. (The quinn message-tail comparison — the
+stronger claim, rp beats real QUIC's tail, not just kernel TCP — is now
+measured directly; see "quinn message-tail vs raptorpath" below.)
 
 C3 (20 Mbit): bbr p99 198 ms vs rp-bulk 569 ms — BBR WINS; tunnel
 block latency dominates at low rate. C5 (15% loss): rp-bulk breaks
@@ -607,6 +608,64 @@ produced NO summary at c3/c5 (silent failure — open item, echoes the
 earlier C5-realtime DNF). Honest scope: the tail win is demonstrated
 where capacity headroom exists; low-rate and extreme-loss cells need
 the block-latency and FEC-rate work items.
+
+### quinn message-tail vs raptorpath (2026-07-04)
+
+Completes the strongest form of the tail claim: rp beats REAL QUIC's
+tail, not just kernel TCP. `msg_lat` (a quinn *example* built on the VM
+from the same proven quinn checkout as quinn-perf — source archived at
+tools/l1/quic_msg_lat.rs, runner tools/l1/quic_stream_bench.sh) is the
+QUIC analogue of transfer_bench.py's stream mode: 1200 B messages at
+50/s for 30 s over ONE ordered, reliable QUIC stream (QUIC's own loss
+recovery = the fair comparison for rp's in-order delivery), each carrying
+an 8-byte CLOCK_REALTIME send stamp; one-way latency over the shared
+kernel clock. Direct QUIC over the netem veth (server in rp-srv bound
+10.77.0.2, client in rp-cli) — the SAME geometry and parameters as the
+kernel-TCP and rp stream runs. seed 42.
+
+Message-latency percentiles (ms), one QUIC stream, all 1500 messages
+delivered:
+| Cell | quinn p50 | quinn p99 | quinn p999 | quinn max |
+|------|----------:|----------:|-----------:|----------:|
+| C2 WiFi (1.3% GE) | 6.2 | 2824 | 3010 | 3017 |
+| C3 LTE (2% GE) | 22.0 | 1393 | 1474 | 1480 |
+| C5 BadWiFi (5.3% GE) | 8.6 | 45,152 | 45,349 | 45,365 |
+
+Tail (p99, ms) side by side with the recorded rp + kernel-TCP stream runs:
+| Cell | cubic | bbr | quinn | rp-realtime | rp-bulk |
+|------|------:|----:|------:|------------:|--------:|
+| C2 | 13,252 | 13,426 | **2824** | **513** | **91** |
+| C3 | — | 198 | 1393 | (silent fail) | 569 |
+| C5 | — | — | 45,152† | DNF | 24,000† (359 msg missing) |
+
+† C5: both reliable stacks melt down at 5.3% burst loss. quinn delivers
+all 1500 but a single GE-burst hole head-of-line-blocks the ordered
+stream for tens of seconds (p90 already 42.8 s); rp-bulk drops 359
+messages with 24 s tails. This is the ARQ/HOL pathology proactive FEC
+exists to remove, at a loss level past both stacks' current headroom.
+(With a shorter idle timeout quinn instead sheds the stuck tail: 1290/1500
+delivered, p99 2.7 s — same pathology, reported either as a latency
+cliff or a delivery cliff.)
+
+**VERDICT — does rp-realtime/rp-bulk beat quinn's tail?**
+- **C2 (headline): YES, decisively.** Real QUIC's p99 is 2.82 s — 4.7×
+  better than kernel TCP's 13.3 s (QUIC's loss recovery avoids the RTO
+  cascades), but it STILL suffers multi-second in-order-delivery tails
+  under GE bursts. rp-realtime p99 513 ms = **0.18× quinn (5.5× lower)**;
+  rp-bulk p99 91 ms = **0.032× quinn (31× lower)**, at equal p50. The tail
+  claim now stands against the strongest real adversary, not just kernel
+  TCP.
+- **C3: rp-bulk beats quinn** (569 ms vs 1393 ms, 2.4×) but NEITHER beats
+  kernel BBR (198 ms) — at 20 Mbit the tunnel's block latency dominates,
+  and quinn's own tail is worse than BBR's here too. rp-realtime C3 data
+  is still missing (the open silent-failure item).
+- **C5: no winner** — both reliable stacks break down at 5.3% burst loss
+  (quinn 45 s HOL cascade / rp-bulk 359 dropped). Extreme-loss cells
+  remain the FEC-rate / block-latency work item for both.
+
+Bottom line: the model's central tail thesis is validated at C2 against
+real QUIC (rp 5.5–31× lower p99); it holds partially at C3 (bulk beats
+quinn but not BBR) and not yet at C5.
 
 <<<<<<< HEAD
 ## L2 claim table (re-issued, fair geometry — 2026-07-04)
