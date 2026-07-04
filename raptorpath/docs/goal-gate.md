@@ -581,6 +581,33 @@ delivery contract for bulk (deadline-aware hold release past
 slow-path blocks) — rejected for now, it reintroduces inner reordering
 that P9b measurably fixed (879 spurious fast-retransmits per 3x1.8MB).
 
+## L2 workstream 2 — small-message latency percentiles (first tail data)
+
+stream_bench.sh: 1200 B messages at 50/s for 30 s, one-way delivery
+latency (shared kernel clock), seed 42.
+
+C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%):
+| stack | p50 | p90 | p99 | p999 | max (ms) |
+|-------|-----|-----|-----|------|----------|
+| cubic | 9.1 | 120 | 13,252 | 13,452 | 13,471 |
+| bbr | 8.2 | 74.6 | 13,426 | 13,669 | 13,689 |
+| rp-realtime | 8.6 | 15.6 | 513 | 727 | 747 |
+| rp-bulk | 12.3 | 14.8 | **91** | 173 | 187 |
+
+**HEADLINE: the tail claim is VALIDATED vs kernel TCP at C2** — both
+kernel CCs suffer 13-SECOND p99 tails (RTO cascades under GE bursts);
+raptorpath holds 91-513 ms at equal p50: 26-147x. This is the model's
+thesis measured on real stacks. (quinn message-tail comparison needs a
+QUIC echo tool — object-level quinn numbers stand in until then.)
+
+C3 (20 Mbit): bbr p99 198 ms vs rp-bulk 569 ms — BBR WINS; tunnel
+block latency dominates at low rate. C5 (15% loss): rp-bulk breaks
+down (24 s tails, 359 messages missing). rp-realtime stream runs
+produced NO summary at c3/c5 (silent failure — open item, echoes the
+earlier C5-realtime DNF). Honest scope: the tail win is demonstrated
+where capacity headroom exists; low-rate and extreme-loss cells need
+the block-latency and FEC-rate work items.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
