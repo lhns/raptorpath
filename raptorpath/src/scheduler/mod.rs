@@ -1089,7 +1089,8 @@ impl Scheduler {
         // the aggregate TUN gate + token-bucket pacing provide the
         // backpressure (same contract as the old overflow-to-best-path).
         if self.block_affinity && !source_symbols.is_empty() {
-            if let Some(pid) = self.pick_affinity_path() {
+            let k = source_symbols.len();
+            if let Some(pid) = self.pick_affinity_path(k) {
                 assignments.entry(pid).or_default().extend(source_symbols);
             }
         } else {
@@ -1181,12 +1182,36 @@ impl Scheduler {
     /// share back later); if ALL budgets are exhausted the pick falls back
     /// to every active path (the TUN gate is the real backpressure —
     /// schedule() must never drop a block).
-    fn pick_affinity_path(&mut self) -> Option<PathId> {
+    fn pick_affinity_path(&mut self, block_symbols: usize) -> Option<PathId> {
         /// In-order hold horizon (mirrors BLOCK_REORDER_MAX_HOLD in
-        /// net/mod.rs): a path slower than the fastest by more than this
-        /// cannot deliver source in order — its blocks would expire the
-        /// receiver hold and surface as inner-stream holes.
+        /// net/mod.rs): a block delivered later than this past its
+        /// predecessors expires the receiver hold and surfaces as an
+        /// inner-stream hole.
         const HOLD_HORIZON_SECS: f64 = 0.3;
+        /// Source-eligibility threshold as a fraction of the horizon.
+        /// Eligibility must gate on the block-delivery TAIL (an expiry is
+        /// a tail event), but the estimate below is a median-ish model;
+        /// ARQ rounds stack the tail to ~3-4x the median (measured C8:
+        /// median 134 ms, expiries at 301+ ms), so a median skew above
+        /// H/4 already pushes the tail past the horizon.
+        const ELIGIBLE_SKEW: f64 = HOLD_HORIZON_SECS / 4.0;
+
+        /// Expected delivery time of a WHOLE block of `k` source symbols
+        /// on this path (paper 13.8 refinement, D_i): serialization at
+        /// the Copa pacing rate + one-way propagation + an ARQ round at
+        /// THIS path's RTT weighted by the per-BLOCK loss probability
+        /// 1-(1-eps)^k. The per-symbol E_i (Section 13.5) undercounts by
+        /// ~an order of magnitude here: k*eps expected losses make a
+        /// recovery round nearly certain for realistic k (measured C8:
+        /// eps=4.8%, k=56 -> P_blk = 0.94; B-blocks p50 94 ms vs
+        /// E_B = 22 ms).
+        fn block_delivery_time(p: &PathState, k: f64) -> f64 {
+            let srtt = p.srtt().as_secs_f64().max(1e-3);
+            let rate = (p.cwnd as f64 / srtt).max(1.0); // symbols/sec
+            let eps = p.estimator.loss_rate().clamp(0.0, 0.99);
+            let p_blk = 1.0 - (1.0 - eps).powf(k);
+            k / rate + srtt / 2.0 + p_blk * 2.0 * srtt
+        }
 
         let with_budget: Vec<&PathState> = self
             .paths
@@ -1217,14 +1242,19 @@ impl Scheduler {
                 .map(|p| p.id);
         }
 
-        // Bulk: capacity-share WRR over hold-feasible paths.
-        let e_min = cands
+        // Bulk: capacity-share WRR over hold-feasible paths (HOL-cost
+        // source eligibility: a path whose per-block delivery skew
+        // threatens the in-order hold horizon carries NO source — it
+        // keeps its repair/retransmit role, which has no ordering
+        // deadline and keeps its estimators warm for re-admission).
+        let k = (block_symbols as f64).max(1.0);
+        let d_min = cands
             .iter()
-            .map(|p| p.effective_delivery_time())
+            .map(|p| block_delivery_time(p, k))
             .fold(f64::INFINITY, f64::min);
         let mut weighted: Vec<(PathId, f64)> = cands
             .iter()
-            .filter(|p| p.effective_delivery_time() - e_min <= HOLD_HORIZON_SECS)
+            .filter(|p| block_delivery_time(p, k) - d_min <= ELIGIBLE_SKEW)
             .map(|p| {
                 let srtt = p.srtt().as_secs_f64().max(1e-3);
                 let rate = p.cwnd as f64 / srtt; // symbols/sec (Copa pacing rate)
