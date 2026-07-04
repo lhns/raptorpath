@@ -3,7 +3,7 @@
 //! Uses GF(2^8) arithmetic from the gf256 crate. No bytes::Bytes,
 //! no WireSymbol trait, no BTreeMap — optimized for wasm size.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 /// RLC sliding window encoder.
 pub struct RlcEncoder {
@@ -97,8 +97,15 @@ impl PivotRow {
 /// RLC sliding window decoder with incremental Gaussian elimination.
 pub struct RlcDecoder {
     symbol_size: u16,
-    /// Recovered source data: indexed by seq (sparse via Vec of Option)
+    /// Recovered source data, in recovery order.
     recovered: Vec<(u64, Vec<u8>)>,
+    /// seq -> index into `recovered` for O(1) membership/lookup. Without
+    /// this the linear scans in insert_equation/cascade cost O(W·N) per
+    /// repair and O(N) per source feed (N = symbols recovered so far); at
+    /// W=512 over a 2000-symbol stream that dominated decode wall-time
+    /// (visualizer realtime-high-saturation slowdown; also real transport
+    /// decode latency).
+    recovered_idx: HashMap<u64, usize>,
     /// Pivot table for incremental GE
     pivots: Vec<PivotRow>,
     /// Total symbols fed
@@ -112,6 +119,7 @@ impl RlcDecoder {
         Self {
             symbol_size,
             recovered: Vec::new(),
+            recovered_idx: HashMap::new(),
             pivots: Vec::new(),
             total_fed: 0,
             repairs_fed: 0,
@@ -119,12 +127,21 @@ impl RlcDecoder {
         }
     }
 
+    /// Record a recovered symbol, keeping the index in sync. All writes to
+    /// `recovered` go through here so the two never diverge.
+    fn add_recovered(&mut self, seq: u64, data: Vec<u8>) {
+        self.recovered_idx.insert(seq, self.recovered.len());
+        self.recovered.push((seq, data));
+    }
+
     fn is_recovered(&self, seq: u64) -> bool {
-        self.recovered.iter().any(|(s, _)| *s == seq)
+        self.recovered_idx.contains_key(&seq)
     }
 
     fn get_recovered(&self, seq: u64) -> Option<&[u8]> {
-        self.recovered.iter().find(|(s, _)| *s == seq).map(|(_, d)| d.as_slice())
+        self.recovered_idx
+            .get(&seq)
+            .map(|&i| self.recovered[i].1.as_slice())
     }
 
     /// Feed a source symbol that arrived directly. Returns newly recovered seqs.
@@ -134,7 +151,7 @@ impl RlcDecoder {
         let mut padded = vec![0u8; self.symbol_size as usize];
         let copy_len = data.len().min(self.symbol_size as usize);
         padded[..copy_len].copy_from_slice(&data[..copy_len]);
-        self.recovered.push((seq, padded));
+        self.add_recovered(seq, padded);
 
         let mut result = vec![seq];
         result.extend(self.cascade(seq));
@@ -205,7 +222,7 @@ impl RlcDecoder {
             let inv = gf256::inv(coeff);
             let mut rd = vec![0u8; ss];
             gf256::mul_slice(inv, &data, &mut rd);
-            self.recovered.push((seq, rd));
+            self.add_recovered(seq, rd);
             self.repairs_useful += 1;
 
             let mut result = vec![seq];
@@ -254,7 +271,7 @@ impl RlcDecoder {
             for (rseq, rdata) in newly_recovered {
                 self.pivots.retain(|p| p.pivot_seq != rseq);
                 if !self.is_recovered(rseq) {
-                    self.recovered.push((rseq, rdata));
+                    self.add_recovered(rseq, rdata);
                     self.repairs_useful += 1;
                     result.push(rseq);
                     queue.push_back(rseq);
