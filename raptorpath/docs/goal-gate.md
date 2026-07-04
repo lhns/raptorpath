@@ -523,12 +523,63 @@ ONLY by the L1 harness — the milestone's core value.
 - **C7 VALIDATED**: aggregation 1.71x over own single path (MPTCP: 1.45x),
   +55% over kernel MPTCP on the identical topology. The structural claim
   holds where paths are symmetric.
-- **C8 REFUTED (current scheduler)**: the slow lossy LTE path drags the
-  aggregate BELOW the fast path alone. Hypothesis: block striping across
-  asymmetric paths + P9b's cross-block in-order hold turns slow-path
-  blocks into head-of-line stalls for fast-path data — MPTCP's
-  per-subflow scheduling avoids this. Improvement cycle required
-  (paper 13.8 scheduling objective vs its production port).
+- **C8 REFUTED (per-symbol striping scheduler)**: the slow lossy LTE path
+  dragged the aggregate BELOW the fast path alone. Fixed by the
+  improvement cycle below.
+
+### L2 ws1 improvement cycle — C8 asymmetric regression (2026-07-04)
+
+Mechanism (measured, per-block debug instrumentation; not hypothesis):
+per-symbol striping put 27% of source on the slow path and striped 15%
+of blocks across BOTH paths; a striped block completes at the MAX over
+the paths it touches, and its losses recover at the slow path's own RTT
+(per-BLOCK loss probability 1-(1-eps)^K = 0.94 at K=56, eps=4.8% — the
+per-symbol E_i undercounts ~10x). Striped blocks: mean 189 ms vs
+17.5 ms A-only; 92% of P9b in-order head-of-line waits were caused by
+slow-path blocks; 151 holds per 100 MB expired the 300 ms cap and were
+force-delivered as inner-stream HOLES (inner TCP retransmit/cwnd
+collapse). Paper verdict: the 13.8 objective itself was blind — its
+latency term composes linearly, which silently assumes independent
+per-symbol delivery; under block decode + cross-block in-order release
+it must be evaluated per DELIVERY UNIT. Section 13.8 extended
+(in-order delivery coupling: block-granular y_i, per-block delivery
+time D_i with the P_blk ARQ term, hold-horizon eligibility constraint
+D_i - D_min <= H/4); production implements the extension.
+
+Ablation (C8 = c2+c3, seed 42, one arm at a time, same binary):
+
+| arm | 50 MB x2 mean | 1.8 MB x5 median | B src share | striped blocks | hold expiries/100 MB |
+|-----|---------------|------------------|-------------|----------------|----------------------|
+| per-symbol striping (ablation flag) | 9.82 Mbit/s | 3.07 s | 26.7% | 14.6% | 151 |
+| + block-granular affinity (WRR on B_eff) | 11.39 | — | 13.6% | 0% | 118 |
+| + HOL eligibility (per-block D_i, EWMA loss) | ~12.5 (dbg) | — | 12.0% | 0% | 102 |
+| + long-run loss + strict eligibility (final) | **12.61** | **1.15 s** | 6.1% (warm-up only) | 0% | 96 |
+
+(original striping baseline at beae05b: 8.81; the striping arm above
+additionally carries the PMTU-shrink reroute fix, which is orthogonal:
+quinn PMTUD blackhole suspicion shrank a path's datagram limit
+mid-flight and 529 already-encoded symbols per run were dropped as
+"datagram too large", orphaning whole blocks — they are now rerouted
+to the widest live path.)
+
+Regression checks: C7 (c2+c2) 23.28 Mbit/s (was 23.9, gate >= 22 OK);
+gate_suite 15/15 release; cargo test --lib 224 green.
+
+Honest verdict on C8: 12.61 reaches kernel-MPTCP-dual parity (12.6)
+and closes 43% of the gap from 8.81, but stays ~10% below rp's own
+single fast path (14.0). With the in-order delivery contract, the
+extended model says the slow path's optimal SOURCE share at these
+parameters is ~zero (hold-infeasible: D_B - D_A ~ 130 ms > H/4); the
+tunnel converges to fast-path source + slow-path repair/retransmit
+diversity. The residual gap vs single-path is warm-up blocks admitted
+before the loss posterior stabilizes (6.1% of source) plus the
+remaining ~96 tail expiries. MPTCP aggregates at C8 (12.6 > its 10.6
+single) because its receiver tolerates cross-subflow reordering in the
+SAME sequence space — an option the tunnel's inner-TCP delivery
+contract forecloses. Candidate next lever (unmeasured): distinct
+delivery contract for bulk (deadline-aware hold release past
+slow-path blocks) — rejected for now, it reintroduces inner reordering
+that P9b measurably fixed (879 spurious fast-retransmits per 3x1.8MB).
 
 ## Honest scope
 

@@ -2795,6 +2795,21 @@ long-run shares converge to the capacity split while consecutive
 blocks alternate paths as evenly as the weights allow, minimizing the
 skew the reorder buffer must absorb.
 
+**Measured after the refinement (same C8, one arm at a time):**
+block-granular affinity alone lifted 8.8 -> 11.4 Mbit/s (striped
+blocks 15% -> 0, but B-blocks still delivered at p50 94-134 ms — the
+ARQ round at B's own RTT); adding the D_i eligibility constraint
+starved B of source (6% residual, estimator warm-up only) and reached
+12.6 Mbit/s on 50 MB bulk and cut 1.8 MB object median completion
+from 3.07 s to 1.15 s (2.7x). Hold expiries fell 151 -> 96 per
+100 MB. Symmetric C7 is unaffected (23.3 vs 23.9). At these
+parameters the model's optimum is fast-path source + slow-path
+corrections; the ~10% residual gap to the fast path alone (14.0) is
+warm-up admission plus tail expiries. Kernel MPTCP aggregates beyond
+its own single path here (12.6 vs 10.6) because its receiver absorbs
+cross-subflow reordering inside one sequence space — an option the
+tunnel's inner-TCP in-order delivery contract forecloses.
+
 ### 13.9 QoS Priority Cascade
 
 When multiple protocol classes share the same paths, they pick in priority
