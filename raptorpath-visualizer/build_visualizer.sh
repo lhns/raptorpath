@@ -97,8 +97,8 @@ class SimWrapper {
   // derived window W* (paper 8.8) from the LIVE estimator state
   get derivedW()  { return this.inner.get_derived_w(); }
 
-  // saturation pressure in [0,1] (paper 14.21.1): continuous replacement for
-  // the binary CAP BINDING badge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
+  // saturation pressure in [0,1] (paper 14.21.1), shown as the continuous
+  // saturation-pressure gauge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
   get satPressure() { return this.inner.get_saturation_pressure(); }
   // custom triangle mode (rho < 1 enables T_cut give-up eviction)
   get givenUp()     { return this.inner.get_given_up(); }

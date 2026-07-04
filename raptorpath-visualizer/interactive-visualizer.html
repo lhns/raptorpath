@@ -77,10 +77,14 @@ table.cmp th { color: var(--muted); font-weight: normal; text-align: right;
 table.cmp th:first-child, table.cmp td:first-child { text-align: left; color: var(--muted); }
 table.cmp td { padding: 2px 4px; text-align: right; font-weight: bold; }
 table.cmp td small { font-weight: normal; color: var(--muted); }
-.badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10px;
-  font-weight: bold; margin-left: 4px; }
-.badge.cap-on { background: var(--bad); color: #fff; }
-.badge.cap-off { background: var(--border); color: var(--muted); font-weight: normal; }
+.sat-gauge-wrap { display: flex; align-items: center; gap: 6px; font-size: 10px;
+  color: var(--muted); margin: 2px 0 8px; }
+.sat-gauge { flex: 1; height: 8px; background: var(--border); border-radius: 4px;
+  overflow: hidden; }
+.sat-gauge-fill { height: 100%; width: 0%; background: var(--good);
+  border-radius: 4px; transition: width .12s linear; }
+.sat-gauge-pct { color: var(--text); font-size: 11px; font-weight: bold;
+  min-width: 32px; text-align: right; }
 .tri-svg { display: block; margin: 4px auto; }
 .tri-fixed { fill: var(--text); font-size: 11px; }
 .tri-computed { fill: var(--accent); font-size: 12px; font-weight: bold; }
@@ -101,7 +105,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
   <input type="range" id="sl-q" min="0.02" max="1.0" step="0.01" value="0.50">
   <label class="slider-label" data-tip="Round-trip time. A retransmit costs one extra RTT of delivery latency, and the sender only learns each symbol's fate one RTT after sending it — so every estimate the controller uses is at least this stale.">RTT (ms) <span class="val" id="v-rtt">50</span></label>
   <input type="range" id="sl-rtt" min="1" max="500" step="1" value="50">
-  <label class="slider-label" data-tip="Encoder window: each repair (FEC) symbol protects the last W source symbols. A larger W averages losses over more symbols (thinner tail, less overhead needed) but a lost symbol may wait up to W symbols for a repair that covers it.">Window W <span class="val" id="v-w">50</span></label>
+  <label class="slider-label" data-tip="Encoder window: each repair (FEC) symbol protects the last W source symbols. Any manual position explores the tradeoff by hand — larger W averages losses over more symbols (thinner tail, less overhead needed) but a lost symbol may wait up to W symbols for a repair that covers it. Drag all the way LEFT for Auto: the sim is constructed with the derived window W* (paper 8.8) computed from the true channel parameters, recomputed as the channel sliders move.">Window W <span class="val" id="v-w">50</span></label>
   <input type="range" id="sl-w" min="10" max="200" step="1" value="50">
   <div class="derived" id="derived-vals" data-tip="Derived Gilbert-Elliott parameters: p is the Good-to-Bad transition probability implied by ε and q; burst = 1/q is the mean loss-burst length in symbols; sigma2 = 1 + 2(1-p-q)/(p+q) is the burst variance inflation — how much bursts widen the loss distribution versus independent losses (1.0 means independent).">p=0.026 | burst=2.0 | sigma2=2.8</div>
 
@@ -189,16 +193,25 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
       <tr><td data-tip="Repair symbols per source symbol: the closed-form ideal on the left, the live controller output on the right.">FEC rate</td>
           <td data-tip="Closed-form reference r* computed from the TRUE channel parameters — what the controller would choose with perfect knowledge. The live r converges to this as the estimator locks on.">r* = <span id="r-rref">&ndash;</span> <small>closed form</small></td>
           <td data-tip="Live controller output: correction symbols per source symbol, from the shared production formula (raptorpath-math::controller_rate) fed by the delayed estimates p̂₉₅ and σ̂² — not by the truth.">r = <span id="r-rlive">&ndash;</span></td></tr>
+      <tr><td data-tip="Encoder window in force: the value the running sim was constructed with (left) versus the window the controller would derive right now from its live estimator state (right).">window</td>
+          <td data-tip="The W this run was constructed with: the slider value, or — with the slider at its leftmost Auto position — the derived W* (paper 8.8) computed from the TRUE channel parameters at Reset time.">W = <span id="r-wcfg">&ndash;</span></td>
+          <td data-tip="Live W* is the window the controller WOULD derive this tick from its estimator state (p̂₉₅, σ̂², paper 8.8). It can drift from the construction-time W on the left — the estimates evolve while the encoder window stays fixed for the run.">live W* &sim; <span id="r-wstar">&ndash;</span></td></tr>
       <tr><td data-tip="Guard against self-defeating FEC: adding repairs beyond the saturation point makes the latency tail worse, not better.">saturation</td>
           <td><small>paper 14.21</small></td>
-          <td data-tip="r_sat is the saturation cap (paper §14.21): past this rate, extra repair symbols displace source symbols in the shared capacity and push the latency tail up instead of down — beyond r_sat, FEC cannot beat simply waiting for a retransmit. CAP BINDING means the formula asked for more FEC than r_sat allows and r is pinned at the cap; cap slack means the cap is not limiting.">r<sub>sat</sub> = <span id="r-rsat">&ndash;</span><span class="badge cap-off" id="r-capbadge">cap slack</span></td></tr>
+          <td data-tip="r_sat is the saturation cap (paper §14.21): past this rate, extra repair symbols displace source symbols in the shared capacity and push the latency tail up instead of down — beyond r_sat, FEC cannot beat simply waiting for a retransmit. The gauge below shows continuously how hard the soft cap (paper 14.21.1) is working.">r<sub>sat</sub> = <span id="r-rsat">&ndash;</span></td></tr>
     </table>
+    <div class="sat-gauge-wrap" data-tip="How much of a marginal repair the saturation cap absorbs: 0% = cap slack (more FEC still buys tail), 50% = exactly at r_sat, &rarr;100% = the cap is holding the rate at r_sat (paper 14.21.1).">
+      <span>saturation pressure</span>
+      <div class="sat-gauge"><div class="sat-gauge-fill" id="sat-fill"></div></div>
+      <span class="sat-gauge-pct" id="sat-pct">0%</span>
+    </div>
     <div class="note" style="margin-bottom:6px">
       &epsilon;&#770; and &sigma;&#770;&sup2; come from the live estimator fed by
       RTT-delayed feedback; p&#770;<sub>95</sub> is the conservative BOCD 95%
-      estimate the controller actually plans with. When r pins to
-      r<sub>sat</sub> the cap is binding: FEC beyond this cannot beat waiting
-      for a retransmit.
+      estimate the controller actually plans with. The saturation-pressure
+      gauge is continuous: as it fills, an ever-larger share of any marginal
+      repair is absorbed by the soft cap &mdash; FEC beyond r<sub>sat</sub>
+      cannot beat waiting for a retransmit.
     </div>
     <dl class="metrics-grid">
       <dt data-tip="Bandwidth spent beyond the source data over ALL sends — steady stream AND the post-stream drain (tail-FEC burst + final retransmits): (FEC + ARQ) / source symbols, in percent. This INCLUDES the unavoidable channel floor — see channel floor and excess overhead for the split.">Overhead</dt><dd id="m-overhead">0.0%</dd>
@@ -1159,8 +1172,8 @@ class SimWrapper {
   // derived window W* (paper 8.8) from the LIVE estimator state
   get derivedW()  { return this.inner.get_derived_w(); }
 
-  // saturation pressure in [0,1] (paper 14.21.1): continuous replacement for
-  // the binary CAP BINDING badge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
+  // saturation pressure in [0,1] (paper 14.21.1), shown as the continuous
+  // saturation-pressure gauge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
   get satPressure() { return this.inner.get_saturation_pressure(); }
   // custom triangle mode (rho < 1 enables T_cut give-up eviction)
   get givenUp()     { return this.inner.get_given_up(); }
@@ -1240,16 +1253,30 @@ const HINT_NOTE = {
 };
 const HINT_DELTA = { realtime: 1e-7, auto: 1e-5 };
 
+// send rate seen by the wire: capacity (4 symbols/tick) / tick length (1 ms),
+// matching the sim's own derive_window call (see Simulation::get_derived_w).
+const SEND_RATE = 4 / 0.001; // source symbols per second
+
 function getParams() {
   const eps = Math.max(parseFloat(slEps.value), 0.001);
   const hint = selHint.value;
-  return {
+  const p = {
     eps, q: parseFloat(slQ.value),
-    rttMs: parseInt(slRtt.value), W: parseInt(slW.value),
+    rttMs: parseInt(slRtt.value),
     hint, fixedR: parseFloat(slFixedR.value),
     customDelta: hint === 'custom' ? Math.pow(10, parseFloat(slCDelta.value)) : undefined,
     customRho:   hint === 'custom' ? parseFloat(slCRho.value) : undefined,
   };
+  // Window slider at its LEFTMOST position = Auto: construct the sim with the
+  // derived window W* (paper 8.8) from the TRUE channel params and the hint's
+  // tail target (latency budget 0 => align to ~1 RTT). Recomputed whenever a
+  // channel slider moves. Any other position = manual W.
+  p.wAuto = parseInt(slW.value) <= parseInt(slW.min);
+  p.W = p.wAuto
+    ? Math.max(1, Math.round(derive_window(hintDelta(p), p.eps, trueSigma2(p),
+                                           p.rttMs / 1000, SEND_RATE, 0)))
+    : parseInt(slW.value);
+  return p;
 }
 function trueSigma2(p) {
   const pp = p.eps * p.q / (1 - p.eps);
@@ -1266,7 +1293,7 @@ function updateLabels() {
   $id('v-eps').textContent = (parseFloat(slEps.value)*100).toFixed(1)+'%';
   $id('v-q').textContent = parseFloat(slQ.value).toFixed(2);
   $id('v-rtt').textContent = slRtt.value+' ms';
-  $id('v-w').textContent = slW.value;
+  $id('v-w').textContent = p.wAuto ? 'Auto (W*=' + p.W + ')' : slW.value;
   $id('v-fixedr').textContent = parseFloat(slFixedR.value).toFixed(2);
   $id('v-r').textContent = parseFloat(slR.value).toFixed(2);
   $id('v-delta').textContent = Math.pow(10,parseFloat(slDelta.value)).toExponential(1);
@@ -1605,6 +1632,16 @@ function drawStrip() {
 // =========================================================================
 // READOUTS
 // =========================================================================
+// Continuous green -> amber -> red for the saturation-pressure gauge, built
+// from the app's own status colors (--good, decoded amber, --bad).
+function satColor(t) {
+  const stops = [[25,158,112], [201,133,0], [230,103,103]];
+  const x = Math.min(Math.max(t, 0), 1) * 2;      // 0..2 across two segments
+  const i = x < 1 ? 0 : 1, f = x - i;
+  const c = stops[i].map((v,k) => Math.round(v + (stops[i+1][k] - v) * f));
+  return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+}
+
 function updateReadouts() {
   if (!sim) return;
   const p = getParams();
@@ -1618,12 +1655,18 @@ function updateReadouts() {
   $id('r-deltanote').textContent = sim.hint === 'bulk' ? ' (late is fine)' : '';
   $id('r-rlive').textContent = sim.rLive.toFixed(3);
   $id('r-rref').textContent = sim.rStarRef.toFixed(3);
+  // window: construction-time W (slider or Auto W*) vs live estimator-derived W*
+  $id('r-wcfg').textContent = sim.cfgW + (sim.cfgWAuto ? ' (auto)' : '');
+  $id('r-wstar').textContent = Math.round(sim.derivedW);
   const rSat = sim.rSat;
   $id('r-rsat').textContent = isFinite(rSat) ? rSat.toFixed(3) : '∞';
-  const binding = isFinite(rSat) && rSat > 0 && sim.rLive >= rSat*0.995;
-  const badge = $id('r-capbadge');
-  badge.textContent = binding ? 'CAP BINDING' : 'cap slack';
-  badge.className = 'badge ' + (binding ? 'cap-on' : 'cap-off');
+  // continuous saturation-pressure gauge (paper 14.21.1) — always visible,
+  // replaces the old binary CAP BINDING badge
+  const spRaw = sim.satPressure;
+  const sp = isFinite(spRaw) ? Math.min(Math.max(spRaw, 0), 1) : 0;
+  $id('sat-fill').style.width = (sp*100).toFixed(1) + '%';
+  $id('sat-fill').style.background = satColor(sp);
+  $id('sat-pct').textContent = Math.round(sp*100) + '%';
 
   $id('m-overhead').textContent = sim.inner.get_overhead().toFixed(1)+'%';
   $id('m-ohfloor').innerHTML = sim.overheadFloor.toFixed(1)+'%'
@@ -1667,7 +1710,11 @@ function resetSim() {
   $id('btn-play').classList.remove('active');
   if (animId) { cancelAnimationFrame(animId); animId = null; }
   hoverIdx = null; tooltipEl.style.display = 'none';
-  sim = new SimWrapper(getParams());
+  const cp = getParams();
+  sim = new SimWrapper(cp);
+  // remember the construction-time window for the readout: with the slider at
+  // Auto, later channel-slider moves change getParams().W but not this run's W
+  sim.cfgW = cp.W; sim.cfgWAuto = cp.wAuto;
   drawMainChart(); drawStrip(); updateReadouts();
   drawRstarChart(); drawTaperChart(); solveTri();
 }
