@@ -32,6 +32,8 @@ const factory = new Function(
     controller_rate,
     burst_variance_factor,
     r_saturation,
+    soft_saturate,
+    saturation_pressure,
     p_fec_exact,
     compute_r_star_exact,
     p_lost,
@@ -138,6 +140,27 @@ const rate = api.controller_rate(
 const rsat = api.r_saturation(0.09, 5.1, 64, 0.2, 5e-4);
 check("controller_rate finite and capped", rate > 0 && rate <= rsat + 1e-12,
   `rate=${rate.toFixed(3)}, r_sat=${rsat.toFixed(3)}`);
+
+// --- 7b. Soft saturation + pressure (paper 14.21.1) ---
+// soft_saturate never exceeds min(rate, r_sat); pressure is 0.5 at r_sat and
+// monotone. This is the continuous cap the CAP badge now reflects.
+check("soft_saturate never exceeds r_sat",
+  api.soft_saturate(5.0, rsat) <= rsat + 1e-12
+    && api.soft_saturate(0.02, rsat) <= 0.02 + 1e-9,
+  `soft(5,rsat)=${api.soft_saturate(5.0, rsat).toFixed(3)}`);
+check("saturation_pressure = 0.5 at r_sat",
+  Math.abs(api.saturation_pressure(rsat, rsat) - 0.5) < 1e-9);
+check("saturation_pressure monotone (low < high)",
+  api.saturation_pressure(0.05, rsat) < api.saturation_pressure(0.9, rsat)
+    && api.saturation_pressure(0.9, rsat) <= 1.0);
+// The live Simulation exposes the pressure accessor in [0,1].
+{
+  const s = new api.Simulation(0.09, 0.5, 200, 64, "realtime", undefined, undefined, undefined);
+  for (let i = 0; i < 300 && !s.is_finished(); i++) s.step();
+  const p = s.get_saturation_pressure();
+  check("Simulation.get_saturation_pressure in [0,1]",
+    Number.isFinite(p) && p >= 0 && p <= 1, `pressure=${p.toFixed(3)}`);
+}
 
 const pfx = api.p_fec_exact(0.013, 0.5, 0.1, 64);
 check("exact P_fec sane", pfx > 0.9 && pfx <= 1.0, `p_fec_exact=${pfx.toFixed(4)}`);

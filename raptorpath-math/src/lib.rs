@@ -306,7 +306,8 @@ pub struct RateInputs {
 ///   z         = normal_quantile(1 - delta_eff/p)
 ///   random    = max(0, p/(1-p) + z*sqrt(p*sigma2/(W(1-p)))) [+ codec_eff]
 ///   burst     = (B / t_symbols) x (1 - delta_eff/p)+
-///   rate      = min( max(random, burst), r_sat if enabled, max_overhead )
+///   rate      = clamp( soft_saturate(max(random, burst), r_sat), 0, max_overhead )
+///               (soft_saturate = kink-free approach to r_sat, Section 14.21.1)
 pub fn controller_rate(inp: &RateInputs) -> f64 {
     let p = inp.p_upper;
     if p < 1e-10 {
@@ -372,8 +373,12 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     }
 
     // Saturation cap (paper Section 14.21): past r_sat more FEC hurts p99.
+    // Soft, kink-free (Section 14.21.1): the rate eases ASYMPTOTICALLY toward
+    // r_sat instead of hitting a wall, modeling the p99 curve's smooth
+    // interior minimum. `soft_saturate` <= min(rate, r_sat) always, so the
+    // cap never adds FEC, and -> the old hard min as SAT_SOFTNESS -> 0.
     if inp.saturation_cap && inp.t_sym > 0.0 && inp.srtt > 0.0 {
-        rate = rate.min(r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym));
+        rate = soft_saturate(rate, r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym));
     }
 
     rate.clamp(0.0, inp.max_overhead)
@@ -493,6 +498,75 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
         }
     }
     best_r
+}
+
+/// Soft-saturation smoothing scale as a fraction of r_sat (paper 14.21.1).
+///
+/// The hard cap `min(r, r_sat)` has a kink at r = r_sat. The soft cap
+/// approaches r_sat asymptotically over a rate band of width ~SAT_SOFTNESS x
+/// r_sat. Deliberately NARROW: the p99 model is trusted for the LOCATION of
+/// r_sat, not the DEPTH of the penalty past it (Section 14.21 caveat: the
+/// real cost is a queueing knee much steeper than the model's shallow
+/// quadratic). A curvature-derived width (s = C'_svc/C'' at r_sat) would
+/// track the model's OWN shallow curvature and over-soften the cap, letting
+/// FEC drift into the measured +115 ms regime. A small fixed fraction keeps
+/// the soft cap faithful to the gate-validated hard min while removing the
+/// discontinuity. As SAT_SOFTNESS -> 0 the hard min is recovered exactly.
+pub const SAT_SOFTNESS: f64 = 0.1;
+
+/// Numerically stable softplus: ln(1 + e^x) = max(x,0) + ln1p(e^-|x|).
+fn softplus(x: f64) -> f64 {
+    x.max(0.0) + (-x.abs()).exp().ln_1p()
+}
+
+/// Soft saturation cap (paper Section 14.21.1): a continuous, kink-free
+/// replacement for `min(rate, r_sat)`.
+///
+///   r_eff = r_sat - s x softplus((r_sat - rate) / s),   s = SAT_SOFTNESS x r_sat
+///
+/// Properties (all exact):
+///   - rate << r_sat  -> r_eff -> rate           (unsaturated: request honored)
+///   - rate  = r_sat  -> r_eff = r_sat - s x ln2 (smoothly just below)
+///   - rate >> r_sat  -> r_eff -> r_sat          (asymptote, never crossed)
+///   - r_eff <= min(rate, r_sat) always          (the cap never ADDS FEC)
+///   - dr_eff/drate = 1 - sigmoid((rate - r_sat)/s) in (0,1): C-infinity,
+///     monotone. The complement sigmoid IS the saturation pressure below.
+///
+/// The asymptotic approach models the p99 curve's smooth interior minimum
+/// (Section 14.21): past r_sat the marginal p99 penalty grows continuously
+/// (queue-delay-like), so the effective rate eases toward r_sat instead of
+/// hitting a wall. Degenerate r_sat (<= 0) falls back to the hard min.
+pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
+    let s = SAT_SOFTNESS * r_sat;
+    if !(s > 0.0) {
+        return rate.min(r_sat);
+    }
+    // softplus(x) > x by O(e^-x), so at rate = 0 the closed form dips a few
+    // ×1e-6 below 0; floor at 0 (a rate is nonnegative). The excursion is far
+    // below any operating rate, so this does not perturb the smooth interior.
+    (r_sat - s * softplus((r_sat - rate) / s)).max(0.0)
+}
+
+/// Saturation pressure in [0, 1] (paper Section 14.21.1): the continuous
+/// indicator that supersedes the binary "CAP BINDING" badge.
+///
+///   pressure = sigmoid((rate_requested - r_sat) / s),  s = SAT_SOFTNESS x r_sat
+///
+/// It is exactly 1 - dr_eff/drate of `soft_saturate`: the fraction of a
+/// marginal repair-rate increment that the cap is currently absorbing.
+///   - 0   : deep sub-saturation (more FEC still helps the tail)
+///   - 0.5 : exactly at r_sat (marginal p99 benefit = marginal harm)
+///   - ->1 : past r_sat (more FEC hurts the tail; the cap holds r near r_sat)
+///
+/// `rate_requested` is the UNCAPPED controller output (what the hint asked
+/// for); pass the rate computed with the saturation cap disabled. Degenerate
+/// r_sat returns 0 (no cap, no pressure).
+pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
+    let s = SAT_SOFTNESS * r_sat;
+    if !(s > 0.0) {
+        return 0.0;
+    }
+    1.0 / (1.0 + (-(rate_requested - r_sat) / s).exp())
 }
 
 /// Exact P_fec over the GE channel via transfer-matrix dynamic programming.
@@ -869,6 +943,106 @@ mod tests {
         assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.0, 5e-4), 1.0);
         assert_eq!(r_saturation(0.09, 5.0, 64.0, 0.21, 0.0), 1.0);
         assert_eq!(r_saturation(f64::NAN, 5.0, 64.0, 0.21, 5e-4), 1.0);
+    }
+
+    #[test]
+    fn test_soft_saturate_limits_and_shape() {
+        let r_sat = 0.40;
+        // Deep sub-saturation: r_eff -> rate (request honored).
+        assert!((soft_saturate(0.05, r_sat) - 0.05).abs() < 1e-3);
+        // At r_sat: smoothly just below (r_sat - s*ln2).
+        let s = SAT_SOFTNESS * r_sat;
+        assert!((soft_saturate(r_sat, r_sat) - (r_sat - s * 2f64.ln())).abs() < 1e-12);
+        // Far above: asymptotes to r_sat (reaches it to machine precision),
+        // never crossing it.
+        let hi = soft_saturate(5.0, r_sat);
+        assert!(hi <= r_sat && hi > r_sat - 1e-6, "asymptote to r_sat: {hi}");
+        // r_eff <= min(rate, r_sat) everywhere on a fine sweep, and monotone.
+        let mut prev = 0.0;
+        for i in 0..=500 {
+            let rate = i as f64 * 0.002; // 0 .. 1.0
+            let e = soft_saturate(rate, r_sat);
+            assert!(e <= rate.min(r_sat) + 1e-12, "cap must not add FEC at {rate}: {e}");
+            assert!(e >= prev - 1e-12, "monotone nondecreasing in rate");
+            prev = e;
+        }
+        // Continuity: no jump anywhere (bounded finite differences).
+        let mut max_step = 0.0f64;
+        let mut last = soft_saturate(0.0, r_sat);
+        for i in 1..=1000 {
+            let e = soft_saturate(i as f64 * 0.001, r_sat);
+            max_step = max_step.max((e - last).abs());
+            last = e;
+        }
+        assert!(max_step < 0.002, "kink-free: max step {max_step}");
+        // Degenerate r_sat: falls back to hard min.
+        assert_eq!(soft_saturate(0.3, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_saturation_pressure_monotone_half_at_rsat() {
+        let r_sat = 0.40;
+        // 0.5 exactly at r_sat; -> 0 far below; -> 1 far above.
+        assert!((saturation_pressure(r_sat, r_sat) - 0.5).abs() < 1e-12);
+        assert!(saturation_pressure(0.05, r_sat) < 0.01);
+        assert!(saturation_pressure(1.0, r_sat) > 0.99);
+        // Monotone increasing in the requested rate, in [0,1].
+        let mut prev = 0.0;
+        for i in 0..=500 {
+            let req = i as f64 * 0.003;
+            let pi = saturation_pressure(req, r_sat);
+            assert!((0.0..=1.0).contains(&pi));
+            assert!(pi >= prev - 1e-12, "pressure monotone in request");
+            prev = pi;
+        }
+        // Consistency with soft_saturate: pressure = 1 - dr_eff/drate.
+        let h = 1e-6;
+        let d = (soft_saturate(0.42 + h, r_sat) - soft_saturate(0.42 - h, r_sat)) / (2.0 * h);
+        assert!((saturation_pressure(0.42, r_sat) - (1.0 - d)).abs() < 1e-4);
+        // Degenerate r_sat: no pressure.
+        assert_eq!(saturation_pressure(0.3, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_controller_soft_cap_continuous_across_rsat() {
+        // C4-like inputs (Section 14.21 worked example) with saturation on.
+        // Sweep the tail target from loose to very tight: the emitted rate
+        // must rise CONTINUOUSLY and approach r_sat without a kink where the
+        // uncapped request crosses it (the old hard min had a corner there).
+        let mk = |tail: f64| RateInputs {
+            p_upper: 0.09,
+            sigma2: 5.0,
+            mean_burst: 3.0,
+            window: 64.0,
+            t_symbols: 0.0,
+            srtt: 0.21,
+            t_sym: 1225.0 / 2.5e6,
+            codec_overhead: 0.0,
+            tail_target: tail,
+            bulk_late_is_fine: false,
+            completion_exposure: 0.0,
+            inner_feedback: 0.0,
+            saturation_cap: true,
+            max_overhead: 0.6,
+        };
+        let r_sat = r_saturation(0.09, 5.0, 64.0, 0.21, 1225.0 / 2.5e6);
+        // Geometric sweep of the tail target from ~eps (uncapped r = 0) down
+        // to 9e-11 (very aggressive request, uncapped r well past r_sat), so
+        // the INPUT moves smoothly and any kink is the function's own.
+        let mut prev = controller_rate(&mk(0.09));
+        let mut max_step = 0.0f64;
+        for i in 1..=2000 {
+            let tail = 0.09 * (1e-9f64).powf(i as f64 / 2000.0);
+            let r = controller_rate(&mk(tail));
+            assert!(r <= r_sat + 1e-9, "soft cap holds below r_sat: {r} vs {r_sat}");
+            max_step = max_step.max((r - prev).abs());
+            prev = r;
+        }
+        assert!(max_step < 0.01, "no kink across r_sat: max step {max_step}");
+        // The tightest request presses hard against the cap (pressure high),
+        // yet the emitted rate stays just under r_sat.
+        let tight = controller_rate(&mk(1e-9));
+        assert!(tight > 0.9 * r_sat && tight < r_sat);
     }
 
     fn bulk_inputs(p: f64, chi: f64) -> RateInputs {

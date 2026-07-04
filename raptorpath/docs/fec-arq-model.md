@@ -828,6 +828,22 @@ rate q determines how aggressively that residual coverage tapers off. The
 taper shape is therefore a policy for allocating corrections across
 UNCERTAIN symbols, not a mechanism that changes the steady-state budget.
 
+**Truncation at the stream end (forward integral).** The shape-invariance
+argument assumes the sum telescopes over a FULL window of ages — every
+in-window symbol present at every offset. That holds mid-stream but breaks at
+the END of a finite transfer. A symbol at source position i draws correction
+coverage from repairs generated while it is in the encoder window, i.e. over
+the FUTURE source positions [i, i+W). When i+W exceeds the last source
+position N, those future positions never arrive, so the symbol's forward
+taper integral is TRUNCATED: a symbol at distance j = N − i from the end
+(j < W) receives coverage from only j of its W window-lifetimes, i.e. it is
+missing ≈ r·(W − j) of its steady-state repairs. The last W symbols are
+therefore progressively under-covered (full at j = W, ~none at j = 0), and
+because end-of-stream losses have nothing to overlap their recovery with,
+each falls to a serial ARQ round (~1.5 RTT). This is the end-of-stream
+reliability cliff; Section 14.29 derives the loss and the completion term
+that refills it for every hint (Section 14.26 is the Bulk special case).
+
 For an i.i.d. channel (q = 1, no burst memory): τ(t) = constant (flat taper).
 This is correct — every position is equally likely to need correction.
 
@@ -3504,6 +3520,86 @@ when in doubt the cap loosens. When the estimator has no throughput
 sample, t_sym is unknown and no cap applies (degenerate inputs → no
 cap): the monotone hint behavior of the base model is preserved.
 
+### 14.21.1 Soft Saturation (Continuous Approach to r_sat)
+
+Section 14.21 emits `min(r_hint, r_sat)`. That hard minimum has a KINK at
+r_hint = r_sat: the emitted rate tracks the hint on the low side and then
+flat-lines the instant the request crosses r_sat. Physically nothing is
+discontinuous there — the p99 curve has a SMOOTH interior minimum, so the
+cost of one more repair grows CONTINUOUSLY as r passes r_sat (queue delay
+rises smoothly toward the knee; there is no wall). The hard min was an
+implementation shortcut. This section replaces it with a kink-free cap and,
+as a by-product, turns the binary "cap binding / not binding" signal into a
+continuous **saturation pressure**.
+
+**What the p99 model implies.** Near its interior minimum the tail model is
+locally quadratic, p99(r) ≈ p99(r_sat) + ½·p99''(r_sat)·(r − r_sat)², so the
+marginal p99 cost of exceeding r_sat is p99'(r) ≈ p99''(r_sat)·(r − r_sat) —
+zero at r_sat and rising linearly past it. A controller that "does not want
+to pay p99" should therefore not hit a wall at r_sat; it should ease off as
+the marginal penalty accrues. The natural kink-free family is a one-sided
+**softplus** cap:
+
+```
+  r_eff = r_sat − s · softplus( (r_sat − r_hint) / s ),   softplus(x)=ln(1+eˣ)
+
+    s = SAT_SOFTNESS · r_sat        (smoothing scale, a rate)
+```
+
+with the exact properties (all provable from softplus(x) ≥ max(x,0)):
+
+```
+  r_hint ≪ r_sat : r_eff → r_hint           (unsaturated: request honored)
+  r_hint = r_sat : r_eff = r_sat − s·ln2     (smoothly just below)
+  r_hint ≫ r_sat : r_eff → r_sat             (asymptote — never crossed)
+  r_eff ≤ min(r_hint, r_sat)   ALWAYS        (the cap never ADDS FEC)
+  dr_eff/dr_hint = 1 − σ((r_hint−r_sat)/s) ∈ (0,1)   (C^∞, monotone)
+```
+
+The last line is the key: the derivative eases from 1 (below saturation, every
+requested increment is admitted) through ½ (at r_sat) to 0 (deep in
+saturation, the cap absorbs the whole increment). Its complement is a natural
+[0,1] indicator,
+
+```
+  saturation_pressure(r_hint) = σ( (r_hint − r_sat) / s )
+                              = 1 − dr_eff/dr_hint
+```
+
+— the fraction of a marginal repair-rate increment the cap is currently
+absorbing: 0 far below r_sat (more FEC still helps the tail), ½ exactly at
+r_sat (marginal p99 benefit = marginal harm — the Section 14.21 balance
+point), → 1 past it. This is the continuous quantity the visualizer now
+shows in place of the binary CAP BINDING badge.
+
+**Choosing the smoothing scale s (honest constant).** The width over which
+the cap bends could be derived from the model's own curvature. Matching the
+softplus pressure slope dσ/dr = 1/(4s) at r_sat to the balance-point slope of
+the marginal terms gives s = C'_svc(r_sat) / p99''(r_sat) — the ratio of the
+(linear) dilution slope to the p99 curvature. But Section 14.21 is explicit
+that the model's DEPTH — hence its curvature — is NOT trusted: the true cost
+past r_sat is a queueing knee far steeper than the model's shallow quadratic
+(+115 ms measured vs +0.5 ms modeled at C4). A curvature-derived s would
+therefore track the model's OWN shallow curvature and pick too WIDE a band,
+softening the cap so much that FEC drifts into the measured-disaster regime.
+The safe, honest choice is a deliberately NARROW fixed fraction,
+SAT_SOFTNESS = 0.1, so the soft cap stays within 10 % of the gate-validated
+hard min while removing the discontinuity. As SAT_SOFTNESS → 0 the hard min
+`min(r_hint, r_sat)` is recovered exactly; the constant trades a hair of
+faithfulness to the hard cap for a continuous rate and a continuous pressure
+signal. (This mirrors the c = ½ dilution constant of 14.21: a fitted scale,
+declared as such.)
+
+**Effect.** At the C4 worked example (r_sat = 0.40, Realtime's uncapped
+request 0.49, s = 0.04) the soft cap emits 0.396 with pressure σ(2.25) = 0.90
+— indistinguishable from the hard cap's 0.40 in rate, but now the rate is a
+smooth function of every input and the operator sees a 0.90 pressure reading
+(“the cap is holding, hard”) rather than a lit boolean. Where the request
+sits well below r_sat the soft cap is inert to O(e^−1/SAT_SOFTNESS); where it
+sits well above, r_eff pins to r_sat to machine precision. The change is
+purely in HOW the same ceiling is approached, so the 14.21 gate results are
+preserved.
+
 ### 14.22 Sequence-Aware P_lost
 
 The current P_lost(t) (Section 3.4) uses only time since send. But SACK
@@ -4076,6 +4172,102 @@ mid-stream ARQ (with 14.27 implemented) beats ARQ + repair floor. What
 remains of the C2 gap (P9b: ~1.1 s vs quinn 0.20 s) is NOT unrepaired-
 loss stalls; the suspects are the residual Copa backoff ceiling and the
 inner flow's own slow-start (goal-gate P9b items b and c).
+
+### 14.29 The End-of-Stream Taper Completion Term (All Hints)
+
+Section 4.2's truncation note established the problem: at a finite transfer's
+end the taper's forward integral is cut, so the last W source symbols are
+progressively under-covered and their losses fall to serial ARQ — an
+end-of-stream reliability cliff. Section 14.25 patched it for Bulk with a
+one-shot repair burst at end-of-stream, and Section 14.26 made THAT
+continuous via the completion-exposure δ glide — but only for Bulk. The tight
+hints (Auto, Realtime) were left with the ad-hoc one-shot burst. This section
+derives the truncation loss and gives one continuous completion term that
+serves every hint, of which the 14.25 burst is the discrete limiting case.
+
+**The truncation loss.** Let a symbol sit at distance j = N − i from the last
+source position N. Mid-stream a symbol accumulates coverage r·W over its W
+window-lifetimes (r = the hint's steady correction rate); at distance j < W
+only j of those lifetimes occur before the stream ends, so its coverage is
+r·j and its DEFICIT is
+
+```
+  Δcov(j) = r · (W − j),     0 ≤ j ≤ W       (0 for j ≥ W)
+```
+
+Repairs are window-fungible (Section 3.2), so what matters for the final
+window is the TOTAL repair mass emitted into [N−W, N): mid-stream that mass is
+r·W, at the tail it is only what the truncated positions provide. The
+expected uncovered tail loss is the probability that the final window carries
+more losses than its (deficient) repairs cover — for the whole window,
+
+```
+  P(uncovered tail) = P_fail(r_eff, W),   r_eff = coverage mass / W
+```
+
+with P_fail the exact transfer-matrix tail (Section 8.7; the normal
+approximation under-provisions small-W one-shot events by 30–50 %, Section
+14.25). Untreated, r_eff → 0 as the window empties and P_fail → 1 − (1−ε)^W ≈
+80 % at ε = 2.5 %, W = 64 — every finite transfer ends with a near-certain
+serial-ARQ round. The position dependence is entirely through j: the loss is
+concentrated in the last W symbols and is RTT-independent (the final window
+has nothing to overlap recovery with, at any RTT).
+
+**The completion term.** Restore the final window to its full repair mass by
+injecting the missing budget. The 14.25 burst does this in one shot:
+B_tail = r_tail·W repairs, r_tail = the exact-DP rate meeting the hint's tail
+target δ_hint on a window of W (for Bulk, δ_tail = 0.05). The continuous
+generalization meters that SAME budget as a Stieltjes measure over a
+completion kernel χ_trunc that rises 0 → 1 across the truncated region:
+
+```
+  completion debt per source symbol = B_tail · dχ_trunc
+
+  χ_trunc(remaining) = Φ̄( (remaining − W/2) / (W/4) )      remaining = N − i
+```
+
+Because χ_trunc is monotone 0 → 1 as the window empties, the total metered is
+exactly B_tail — one window's worth, released continuously instead of dumped
+at an instant. Two properties make this the RIGHT kernel:
+
+- **It is over SOURCE POSITION, not wall time.** The truncation is a
+  source-position phenomenon (only the last W symbols), unlike Section
+  14.26's completion-exposure χ(T_rem), which is a wall-time ECONOMICS kernel
+  ("is this loss's recovery serial?"). Driving the metering by T_rem would
+  spread the fixed budget over the final ~1.5 SRTT of WALL time — a span of
+  many W at high RTT — diluting the final window and REGRESSING its tail
+  (measured: Realtime last-window p99 27 → 49 ms). The source-position kernel
+  concentrates the budget on exactly the deficient symbols.
+- **The one-shot burst is its σ → 0 limit.** As the kernel width W/4 → 0,
+  χ_trunc becomes a step at remaining = W/2 and the whole budget releases at
+  once — the 14.25 burst. The continuous form additionally covers late-stream
+  losses that the burst's single final window misses but that still recover
+  serially at high RTT (the Section 14.26 high-RTT coverage gap), because its
+  repairs are emitted ACROSS the tail rather than only at [N−W, N).
+
+**Relation to the Bulk glide (14.26).** Bulk and the tight hints now both get
+a continuous, χ-driven completion term, but through different channels that
+must not double-fire. Bulk maps completion exposure into δ_eff (the glide
+raises r from 0 mid-stream to the tail-budget rate), which is simultaneously
+its "late is fine → r = 0 mid-stream" economics AND its truncation refill;
+that is correct BECAUSE Bulk's mid-stream rate is 0, so its final-window
+refill is the whole of its tail FEC. The tight hints already run r > 0
+mid-stream (their δ is tight), so their truncation refill is ADDITIVE on top
+of the steady rate — the B_tail·dχ_trunc term — and their δ is untouched. In
+both cases mid-stream coverage is unchanged and exactly one window's worth of
+extra repairs lands at the tail.
+
+**Scope.** Like 14.26 this needs a KNOWN end of stream: the driver (or an
+application-declared transfer size) supplies N. An endless production stream
+has no last window, so remaining = ∞, χ_trunc = 0, and the term vanishes —
+production window mode instead closes tail holes with its NACK/tail-sweep
+path (Sections 6.1, 14.27). Verification (wasm simulator, ε = 5 %/8 %,
+RTT 50/150 ms, W = 64, shared seeds): replacing the one-shot burst with the
+metered ramp holds last-window p99 at parity mid-stream (Auto 25 → 26 ms,
+Realtime 27 → 27 ms at RTT 50) and IMPROVES it where the burst's single
+window under-covers the exposed span (both hints 80 → 76 ms at RTT 150), for
+≤ 2 % extra overhead. The end-of-stream cliff test (last-window p99 ≈
+mid-stream p99) passes for both tight hints.
 
 ---
 

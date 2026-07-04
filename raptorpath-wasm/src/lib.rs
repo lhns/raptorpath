@@ -41,6 +41,20 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     math::r_saturation(epsilon, sigma2, window, srtt, t_sym)
 }
 
+/// Soft saturation cap (paper 14.21.1): kink-free approach to r_sat.
+#[wasm_bindgen]
+pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
+    math::soft_saturate(rate, r_sat)
+}
+
+/// Saturation pressure in [0,1] (paper 14.21.1): the continuous indicator
+/// that supersedes the binary CAP BINDING badge. `rate_requested` is the
+/// UNCAPPED controller output.
+#[wasm_bindgen]
+pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
+    math::saturation_pressure(rate_requested, r_sat)
+}
+
 #[wasm_bindgen]
 pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     math::p_fec_exact(p_gb, q_bg, r, window_size)
@@ -165,6 +179,10 @@ pub struct Simulation {
     /// min(0.1, p_hat) + one-shot tail burst). Never exposed to JS; set
     /// directly by native tests to isolate the completion-exposure change.
     legacy_bulk_delta: bool,
+    /// Ablation-only (paper 14.29): revert NON-Bulk hints to the pre-14.29
+    /// one-shot end-of-stream burst (disabling the continuous completion
+    /// ramp), to isolate the taper-truncation fix. Never exposed to JS.
+    legacy_tail_burst: bool,
     /// Reliability target (rho). Below 1.0, losses older than T_cut are
     /// given up (paper 6.1 age eviction) — the third triangle corner.
     rho: f64,
@@ -177,6 +195,10 @@ pub struct Simulation {
     /// Delivery latency (ms) per delivered source symbol, in delivery order:
     /// (recovery_tick - send_tick) + one-way propagation.
     delivered_lat_ms: Vec<f64>,
+    /// Delivery latency (ms) indexed BY SOURCE SEQ (NaN until delivered).
+    /// Used to compare last-window vs mid-stream tail latency (paper 14.29:
+    /// the end-of-stream reliability cliff must vanish).
+    lat_by_seq: Vec<f64>,
     /// RFC 3550-style smoothed jitter over successive delivery latencies:
     /// J += (|D| - J) / 16.
     jitter_ms: f64,
@@ -217,6 +239,9 @@ pub struct Simulation {
     // Rate state
     rate: f64,
     debt: f64,
+    /// Last completion-exposure chi (paper 14.29): the Stieltjes metering of
+    /// the completion-tail budget accrues B_tail x (chi - prev_chi).
+    prev_completion_chi: f64,
 
     // Counters
     total_src: u32, total_fec: u32, total_arq: u32, total_lost: u32,
@@ -292,23 +317,83 @@ impl Simulation {
     /// Completion exposure chi (paper 14.26): the sim KNOWS the transfer
     /// length, so T_rem = remaining source symbols / send rate. The send
     /// rate is approximated by the wire capacity (Bulk mid-stream is
-    /// nearly all source). Non-bulk hints keep chi = 0 (their tail target
-    /// is a constant; the 14.25 burst covers their stream tail).
-    fn completion_chi(&self) -> f64 {
-        if !self.hint_bulk || self.legacy_bulk_delta {
-            return 0.0;
-        }
+    /// nearly all source). Computed for EVERY hint — mid-stream it is 0, and
+    /// over the final ~1.5 SRTT it ramps to 1 (Phi_bar of the RTT tail).
+    fn completion_chi_raw(&self) -> f64 {
         let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
         let t_rem_secs = remaining / self.capacity as f64 * TICK_SECS;
         math::completion_exposure(t_rem_secs, self.srtt_secs, self.rttvar_secs)
     }
 
-    /// Rate from the SHARED production formula — identical code to the
-    /// real transport's FecRateController (via raptorpath-math).
-    fn controller_rate_now(&self) -> f64 {
-        if let Some(r) = self.fixed_r {
-            return r;
+    /// Bulk's chi for the delta glide (paper 14.26): only Bulk maps chi into
+    /// delta_eff. The legacy-ablation arm keeps chi = 0 (old one-shot burst).
+    fn completion_chi(&self) -> f64 {
+        if !self.hint_bulk || self.legacy_bulk_delta {
+            return 0.0;
         }
+        self.completion_chi_raw()
+    }
+
+    /// Completion-tail debt increment for NON-Bulk hints (paper Section
+    /// 14.29: the taper-truncation completion term). Near a known
+    /// end-of-stream the final window's symbols never receive their FUTURE
+    /// repairs — the taper integral is truncated (Section 4.2 note) — so
+    /// their late-window coverage is cut and tail losses fall to serial ARQ.
+    ///
+    /// The fix delivers the SAME budget as the 14.25 one-shot burst,
+    /// B_tail = r_tail x W repairs (r_tail = the exact-DP rate meeting
+    /// delta_hint on the final window, Section 8.7), but METERED OUT
+    /// continuously as a Stieltjes measure over a completion kernel chi_trunc:
+    /// each source symbol accrues B_tail x d(chi_trunc). Since chi_trunc rises
+    /// monotonically 0 -> 1 as the window empties, the total accrued is
+    /// exactly B_tail — one window's worth, released continuously instead of
+    /// dumped at a single instant.
+    ///
+    /// The kernel is over SOURCE POSITION, not wall time: the taper
+    /// truncation is a source-position phenomenon (only the last W symbols
+    /// lose future coverage — a symbol at distance j < W from the end misses
+    /// repairs from W - j future positions), whereas Bulk's completion
+    /// exposure chi(T_rem) is a wall-time economics kernel. Concentrating the
+    /// budget on exactly the truncated region avoids diluting the final
+    /// window (which a wide wall-time spread would do) while still ramping
+    /// smoothly (no kink):
+    ///
+    ///   chi_trunc(remaining) = Phi_bar( (remaining - W/2) / (W/4) )
+    ///
+    /// Mid-stream (remaining >> W) chi_trunc = 0 (no completion FEC, exactly
+    /// as chi = 0); over the final window it rises to ~1. As W/4 -> 0 the
+    /// kernel becomes a step at remaining = W/2 and the whole budget releases
+    /// at once: the one-shot burst is the limiting case.
+    ///
+    /// Bulk uses its delta glide instead (returns 0); fixed-r and the legacy
+    /// ablation keep the one-shot burst (return 0).
+    fn completion_debt_increment(&mut self) -> f64 {
+        if self.hint_bulk || self.legacy_tail_burst || self.fixed_r.is_some() {
+            return 0.0;
+        }
+        let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
+        let w = self.w as f64;
+        let chi_trunc = math::normal_survival((remaining - 0.5 * w) / (0.25 * w));
+        let dchi = (chi_trunc - self.prev_completion_chi).max(0.0);
+        self.prev_completion_chi = chi_trunc;
+        if dchi <= 0.0 {
+            return 0.0;
+        }
+        let ge = self.estimator.ge_estimator();
+        let (pg, qg) = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
+            (ge.p_gb(), ge.p_bg())
+        } else {
+            (self.eps * self.q / (1.0 - self.eps).max(1e-6), self.q)
+        };
+        let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
+        r_tail * w * dchi
+    }
+
+    /// Build the shared production `RateInputs` from the live estimator
+    /// state (identical to the real transport's FecRateController path).
+    /// `saturation_cap` is a parameter so the pressure accessor can request
+    /// the UNCAPPED rate.
+    fn rate_inputs(&self, saturation_cap: bool) -> math::RateInputs {
         let ge = self.estimator.ge_estimator();
         let (sigma2, mean_burst) = if ge.is_valid() {
             (math::burst_variance_factor(ge.p_gb(), ge.p_bg()), ge.mean_burst_length())
@@ -329,7 +414,7 @@ impl Simulation {
         } else {
             (self.tail_target, self.hint_bulk)
         };
-        math::controller_rate(&math::RateInputs {
+        math::RateInputs {
             p_upper,
             sigma2,
             mean_burst,
@@ -347,9 +432,18 @@ impl Simulation {
             // and mid-stream Bulk remains pure ARQ (production defaults to
             // 0 too after the negative L1 C2/C3 ablation).
             inner_feedback: 0.0,
-            saturation_cap: true,
+            saturation_cap,
             max_overhead: MAX_OVERHEAD,
-        })
+        }
+    }
+
+    /// Rate from the SHARED production formula — identical code to the
+    /// real transport's FecRateController (via raptorpath-math).
+    fn controller_rate_now(&self) -> f64 {
+        if let Some(r) = self.fixed_r {
+            return r;
+        }
+        math::controller_rate(&self.rate_inputs(true))
     }
 
     /// Send one repair symbol. Returns whether it survived the channel.
@@ -393,6 +487,11 @@ impl Simulation {
             }
             self.prev_lat_ms = lat;
             self.delivered_lat_ms.push(lat);
+            if let Some(slot) = self.lat_by_seq.get_mut(*q as usize) {
+                if slot.is_nan() {
+                    *slot = lat;
+                }
+            }
         }
     }
 
@@ -447,11 +546,13 @@ impl Simulation {
             eps, q, sigma2_true,
             hint_bulk, tail_target, fixed_r,
             legacy_bulk_delta: false,
+            legacy_tail_burst: false,
             rho,
             given_up: 0,
             given_up_seqs: std::collections::BTreeSet::new(),
             send_tick: Vec::new(),
             delivered_lat_ms: Vec::new(),
+            lat_by_seq: vec![f64::NAN; num_source as usize],
             jitter_ms: 0.0,
             prev_lat_ms: -1.0,
             rtt_ticks: rtt_ms.max(2),
@@ -478,6 +579,7 @@ impl Simulation {
             pending_ok: 0,
             rate: 0.0,
             debt: 0.0,
+            prev_completion_chi: 0.0,
             total_src: 0, total_fec: 0, total_arq: 0, total_lost: 0,
             steady_src: 0, steady_fec: 0, steady_arq: 0,
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
@@ -617,8 +719,13 @@ impl Simulation {
                 self.cum_sent += 1;
                 // Steady-state debt accrual: r per SOURCE symbol — the
                 // aggregate correction rate is taper-shape-invariant
-                // (paper 4.2).
-                self.debt = (self.debt + self.rate).min(8.0);
+                // (paper 4.2). Plus the completion-tail term (paper 14.29):
+                // near a known end-of-stream, B_tail x dchi extra debt refills
+                // the truncated taper integral, metering one window's worth of
+                // repairs across the exposed span (non-Bulk hints; 0
+                // mid-stream). Continuous replacement for the one-shot burst.
+                let completion = self.completion_debt_increment();
+                self.debt = (self.debt + self.rate + completion).min(8.0);
                 if lost {
                     lost_n += 1;
                     self.total_lost += 1;
@@ -637,14 +744,18 @@ impl Simulation {
                 self.next_seq += 1;
                 if self.next_seq >= self.num_source {
                     self.source_done = true;
-                    // Completion-tail FEC (paper 14.25): burst of repairs
-                    // covering the final window, sized by the exact 8.7 DP.
-                    // NOT for Bulk under P6 (paper 14.26): the continuous
-                    // chi ramp already raised r over the final ~1.5 SRTT —
-                    // the burst is the ramp's limiting case, so firing both
-                    // would double-pay the tail budget.
-                    let chi_replaces_burst = self.hint_bulk && !self.legacy_bulk_delta;
-                    if !self.tail_flushed && !chi_replaces_burst {
+                    // Legacy one-shot completion-tail burst (paper 14.25):
+                    // kept ONLY for the ablation arms (legacy Bulk delta, or
+                    // legacy non-Bulk tail burst) that reproduce the pre-14.29
+                    // behavior for A/B comparison. Every live hint now uses
+                    // the continuous chi-driven completion term instead — Bulk
+                    // via its delta glide (14.26), the others via the
+                    // `completion_debt_increment` folded into the debt accrual
+                    // above (14.29). Firing the burst on top of either would
+                    // double-pay the tail budget.
+                    let legacy_burst = (self.legacy_bulk_delta && self.hint_bulk)
+                        || (self.legacy_tail_burst && !self.hint_bulk);
+                    if !self.tail_flushed && legacy_burst {
                         self.tail_flushed = true;
                         let ge = self.estimator.ge_estimator();
                         let (pg, qg) = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
@@ -776,8 +887,11 @@ impl Simulation {
             self.tail_target
         }
     }
-    /// Live completion exposure chi (paper 14.26): 0 mid-stream, ramps to
-    /// 1 over the final ~1.5 SRTT of the transfer (Bulk only).
+    /// Live completion exposure chi (paper 14.26): 0 mid-stream, ramps to 1
+    /// over the final ~1.5 SRTT of the transfer. This is Bulk's wall-time
+    /// glide kernel (delta_eff); non-Bulk hints refill the truncated taper
+    /// via the SOURCE-POSITION completion term (paper 14.29), a separate
+    /// metering, so this display stays 0 for them.
     pub fn get_completion_exposure(&self) -> f64 {
         self.completion_chi()
     }
@@ -790,6 +904,18 @@ impl Simulation {
             self.srtt_secs,
             TICK_SECS / self.capacity as f64,
         )
+    }
+    /// Saturation pressure in [0, 1] (paper 14.21.1): the continuous
+    /// indicator that supersedes the binary CAP BINDING badge. 0 = far below
+    /// the cap (more FEC still helps), 0.5 = exactly at r_sat, ->1 = the cap
+    /// is holding r near r_sat. Computed from the UNCAPPED request (what the
+    /// hint asked for before the soft cap) vs r_sat.
+    pub fn get_saturation_pressure(&self) -> f64 {
+        if self.fixed_r.is_some() {
+            return 0.0;
+        }
+        let uncapped = math::controller_rate(&self.rate_inputs(false));
+        math::saturation_pressure(uncapped, self.get_r_sat())
     }
     /// Symbols permanently given up (rho < 1.0 age eviction).
     pub fn get_given_up(&self) -> u32 { self.given_up }
@@ -1132,5 +1258,101 @@ mod tests {
         let est = sim.get_estimated_loss();
         assert!((est - 0.10).abs() < 0.05,
             "estimator should converge to ~10%: got {est:.3}");
+    }
+
+    /// p99 of the delivered latencies for source seqs in [lo, hi).
+    fn p99_range(sim: &Simulation, lo: u32, hi: u32) -> f64 {
+        let mut v: Vec<f64> = (lo..hi)
+            .filter_map(|s| sim.lat_by_seq.get(s as usize).copied())
+            .filter(|x| x.is_finite())
+            .collect();
+        assert!(!v.is_empty(), "no delivered latencies in [{lo},{hi})");
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let idx = ((v.len() as f64 - 1.0) * 0.99).round() as usize;
+        v[idx.min(v.len() - 1)]
+    }
+
+    fn mean_range(sim: &Simulation, lo: u32, hi: u32) -> f64 {
+        let v: Vec<f64> = (lo..hi)
+            .filter_map(|s| sim.lat_by_seq.get(s as usize).copied())
+            .filter(|x| x.is_finite())
+            .collect();
+        v.iter().sum::<f64>() / v.len() as f64
+    }
+
+    #[test]
+    fn test_no_end_of_stream_cliff_auto_realtime() {
+        // Paper 14.29: the taper integral is truncated for the final window's
+        // symbols (no future source symbols -> no future repair coverage), so
+        // WITHOUT a completion term the last-window symbols suffer a latency
+        // cliff (serial ARQ). The continuous chi-driven completion ramp
+        // (replacing the one-shot burst) must bring last-window recovery back
+        // in line with mid-stream — for BOTH the tight (realtime) and the
+        // balanced (auto) hints, whose steady rate does NOT already saturate
+        // the tail.
+        for hint in ["auto", "realtime"] {
+            let mut sim = Simulation::new(0.05, 0.5, 50, 64, hint.into(), None, None, None);
+            let w = 64u32;
+            let n = sim.get_num_source();
+            while !sim.is_finished() && sim.get_tick() < 20_000 {
+                sim.step();
+            }
+            assert_eq!(sim.get_cum_decoded(), n, "{hint} must deliver all");
+            // Mid-stream band [W, N-2W) vs last-window band [N-W, N).
+            let mid_p99 = p99_range(&sim, w, n - 2 * w);
+            let tail_p99 = p99_range(&sim, n - w, n);
+            let mid_mean = mean_range(&sim, w, n - 2 * w);
+            let tail_mean = mean_range(&sim, n - w, n);
+            println!(
+                "{hint}: mid p99={mid_p99:.1}ms tail p99={tail_p99:.1}ms | mid mean={mid_mean:.1} tail mean={tail_mean:.1}"
+            );
+            // No cliff: the last window's tail latency must not blow past the
+            // mid-stream tail (allow a modest 1.6x band for the residual
+            // serial-ARQ few at the very last symbols).
+            assert!(
+                tail_p99 <= mid_p99 * 1.6 + 5.0,
+                "{hint} end-of-stream cliff: tail p99 {tail_p99:.1}ms vs mid {mid_p99:.1}ms"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ablation_completion_ramp_vs_burst() {
+        // Paper 14.29: the continuous chi-driven completion ramp REPLACES the
+        // pre-14.29 one-shot end-of-stream burst for non-Bulk hints. At high
+        // RTT the in-flight span (symbols per RTT) exceeds W, so the burst
+        // (which only covers the final window W) leaves late-stream losses
+        // OUTSIDE the final window but inside the serial-recovery horizon
+        // exposed; the ramp covers the whole exposed span. Same seeds per
+        // cell (derived from eps/q/rtt only). Gate: the ramp must not regress
+        // the last-window tail vs the burst, and must not blow up overhead.
+        for (eps, rtt) in [(0.05, 50u32), (0.08, 150u32)] {
+            for hint in ["auto", "realtime"] {
+                let w = 64u32;
+                let mut ramp = Simulation::new(eps, 0.5, rtt, w, hint.into(), None, None, None);
+                let mut burst = Simulation::new(eps, 0.5, rtt, w, hint.into(), None, None, None);
+                burst.legacy_tail_burst = true;
+                run_to_end(&mut ramp);
+                run_to_end(&mut burst);
+                let n = ramp.get_num_source();
+                assert_eq!(ramp.get_cum_decoded(), n);
+                assert_eq!(burst.get_cum_decoded(), n);
+                let ramp_tail = p99_range(&ramp, n - w, n);
+                let burst_tail = p99_range(&burst, n - w, n);
+                println!(
+                    "eps={eps} rtt={rtt} {hint}: last-window p99 burst={burst_tail:.1}ms ramp={ramp_tail:.1}ms | overhead burst={:.2}% ramp={:.2}%",
+                    burst.get_overhead(), ramp.get_overhead()
+                );
+                assert!(
+                    ramp_tail <= burst_tail * 1.15 + 3.0,
+                    "eps={eps} rtt={rtt} {hint}: ramp tail p99 {ramp_tail:.1} must not regress vs burst {burst_tail:.1}"
+                );
+                assert!(
+                    ramp.get_overhead() <= burst.get_overhead() + 6.0,
+                    "eps={eps} rtt={rtt} {hint}: ramp overhead {:.2}% vs burst {:.2}%",
+                    ramp.get_overhead(), burst.get_overhead()
+                );
+            }
+        }
     }
 }

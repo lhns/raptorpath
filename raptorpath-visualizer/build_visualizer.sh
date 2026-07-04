@@ -94,6 +94,9 @@ class SimWrapper {
   get sigma2Est() { return this.inner.get_sigma2_est(); }
   get deltaEff()  { return this.inner.get_delta_eff(); }
   get rSat()      { return this.inner.get_r_sat(); }
+  // saturation pressure in [0,1] (paper 14.21.1): continuous replacement for
+  // the binary CAP BINDING badge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
+  get satPressure() { return this.inner.get_saturation_pressure(); }
   // custom triangle mode (rho < 1 enables T_cut give-up eviction)
   get givenUp()     { return this.inner.get_given_up(); }
   get reliability() { return this.inner.get_reliability(); }
