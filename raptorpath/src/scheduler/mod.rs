@@ -1257,14 +1257,36 @@ impl Scheduler {
         // threatens the in-order hold horizon carries NO source — it
         // keeps its repair/retransmit role, which has no ordering
         // deadline and keeps its estimators warm for re-admission).
+        //
+        // Eligibility is computed over ALL active paths, not just the
+        // budget-filtered candidates: when the fast path's cwnd is
+        // momentarily full, the slow path used to become the only
+        // candidate and pass the skew test against itself (measured C8:
+        // B still carried 12% of source through exactly this hole). An
+        // ineligible path must not carry source even then — the pick
+        // over-commits the eligible path instead (pacing keeps the wire
+        // rate at cwnd/SRTT; the aggregate TUN gate closes as the
+        // over-commit accumulates).
         let k = (block_symbols as f64).max(1.0);
-        let d_min = cands
+        let active: Vec<&PathState> = self.paths.values().filter(|p| p.active).collect();
+        let d_min = active
             .iter()
             .map(|p| block_delivery_time(p, k))
             .fold(f64::INFINITY, f64::min);
-        let mut weighted: Vec<(PathId, f64)> = cands
+        let eligible: Vec<&&PathState> = active
             .iter()
             .filter(|p| block_delivery_time(p, k) - d_min <= ELIGIBLE_SKEW)
+            .collect();
+        let cands: Vec<&&PathState> = {
+            let with_budget: Vec<&&PathState> = eligible
+                .iter()
+                .copied()
+                .filter(|p| p.available() > 0)
+                .collect();
+            if with_budget.is_empty() { eligible } else { with_budget }
+        };
+        let mut weighted: Vec<(PathId, f64)> = cands
+            .iter()
             .map(|p| {
                 let srtt = p.srtt().as_secs_f64().max(1e-3);
                 let rate = p.cwnd as f64 / srtt; // symbols/sec (Copa pacing rate)
