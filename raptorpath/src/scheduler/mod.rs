@@ -1208,7 +1208,17 @@ impl Scheduler {
         fn block_delivery_time(p: &PathState, k: f64) -> f64 {
             let srtt = p.srtt().as_secs_f64().max(1e-3);
             let rate = (p.cwnd as f64 / srtt).max(1.0); // symbols/sec
-            let eps = p.estimator.loss_rate().clamp(0.0, 0.99);
+            // Long-run loss, not the instantaneous EWMA: under GE bursts
+            // the EWMA decays to ~0 between bursts and flip-flops the
+            // eligibility gate open exactly long enough for the next
+            // burst to catch a freshly admitted block (measured C8: B
+            // still carried 12% of source, mixed-block p99 1.0 s). The
+            // Beta-posterior mean spans bursts and gaps alike.
+            let eps = p
+                .estimator
+                .loss_rate()
+                .max(p.estimator.loss_rate_mean())
+                .clamp(0.0, 0.99);
             let p_blk = 1.0 - (1.0 - eps).powf(k);
             k / rate + srtt / 2.0 + p_blk * 2.0 * srtt
         }
