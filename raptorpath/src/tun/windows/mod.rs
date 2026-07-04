@@ -78,15 +78,32 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
 
     // Write loop: raptorpath → OS
     tokio::spawn(async move {
+        // A single bad inner packet must NEVER tear down the tunnel (see the
+        // Linux writer for the full rationale — one malformed FEC-delivered
+        // packet used to kill the whole tunnel). Drop malformed packets and
+        // continue; only give up after a run of consecutive write failures,
+        // which signals the device itself is gone.
+        const MAX_CONSECUTIVE_WRITE_ERRORS: u32 = 64;
+        let mut consecutive_errors: u32 = 0;
         while let Some(packet) = inject_rx.recv().await {
+            if !super::looks_like_ip(&packet) {
+                tracing::debug!(len = packet.len(), "dropping non-IP TUN packet");
+                continue;
+            }
             match session_write.allocate_send_packet(packet.len() as u16) {
                 Ok(mut send_packet) => {
                     send_packet.bytes_mut().copy_from_slice(&packet);
                     session_write.send_packet(send_packet);
+                    consecutive_errors = 0;
                 }
                 Err(e) => {
-                    tracing::error!(?e, "WinTUN write error");
-                    break;
+                    consecutive_errors += 1;
+                    tracing::warn!(?e, len = packet.len(), consecutive_errors,
+                        "WinTUN write error — dropping packet");
+                    if consecutive_errors >= MAX_CONSECUTIVE_WRITE_ERRORS {
+                        tracing::error!("too many consecutive WinTUN write errors — device gone");
+                        break;
+                    }
                 }
             }
         }
