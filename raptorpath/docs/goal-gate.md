@@ -838,6 +838,34 @@ deliverable was 0 DNF, now met. Regression guard:
 `idle_reannounce_bounded_by_round_cap` reproduce the empty-ledger orphan
 and assert bounded recovery.
 
+## L3 — realtime tail "anomaly" ROOT-CAUSED: window-mode path-liveness bug
+
+The user flagged that rp-REALTIME's message-tail p99 (513ms at C2) was
+WORSE than rp-BULK's (91ms) — backwards, since realtime is the
+low-latency mode. Investigation (multi-rep) found the 513ms was not a
+stable deficiency but a symptom of a real bug:
+
+MEASURED at C2, 50 msg/s (low rate), 400 B messages (no fragmentation):
+- rp-bulk (block mode): 1000/1000 msgs, p99 98ms, p999 188ms, **0 path
+  deaths** — stable.
+- rp-realtime (window mode): path "timed out — marking inactive" ~10s
+  after handshake; message stream stalls; p99 swings 64 → 599ms
+  run-to-run purely by whether the path died mid-run.
+
+ROOT CAUSE: under low-rate traffic the WINDOW-MODE path liveness is not
+refreshed — the client marks the server's path inactive (~10s
+DEAD_PATH_TIMEOUT) because the server's report/ping keepalive isn't
+reaching it. Block mode does not exhibit this (0 deaths). This SINGLE
+bug explains three separate observations: (1) the realtime "worse tail",
+(2) the run-to-run tail "variance", (3) the earlier "rp-realtime stream
+silently fails at C3/C5" open item. It is NOT fragmentation and NOT a
+fundamental window-vs-block property.
+
+Corrects the earlier "block beats window on tail" claim (that was
+single-sample noise over a dying path). Fix is the highest-leverage L3
+item: window-mode keepalive/liveness under low traffic → restores
+realtime's differentiated tail claim AND fixes the C3/C5 silent failure.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
