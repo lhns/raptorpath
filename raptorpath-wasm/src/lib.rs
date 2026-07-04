@@ -49,6 +49,7 @@ pub fn derive_window(
     delta: f64, epsilon: f64, sigma2: f64, srtt: f64, send_rate: f64, latency_budget: f64,
 ) -> f64 {
     math::derive_window(delta, epsilon, sigma2, srtt, send_rate, latency_budget)
+}
 
 /// Soft saturation cap (paper 14.21.1): kink-free approach to r_sat.
 #[wasm_bindgen]
@@ -920,6 +921,7 @@ impl Simulation {
             self.capacity as f64 / TICK_SECS, // source symbols per second
             0.0,                              // budget = 0 => align to ~1 RTT
         )
+    }
 
     /// Saturation pressure in [0, 1] (paper 14.21.1): the continuous
     /// indicator that supersedes the binary CAP BINDING badge. 0 = far below
