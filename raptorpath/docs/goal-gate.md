@@ -512,6 +512,24 @@ transfer documented honestly above. Ten latent production bugs plus
 two dead subsystems (block ARQ, window reactive repair) were found
 ONLY by the L1 harness — the milestone's core value.
 
+## L2 workstream 1 — multipath at L1 (first measurement)
+
+50 MB goodput, seed 42, 2 runs:
+| Topology | rp dual | rp single (fast path) | kernel MPTCP dual | MPTCP single |
+|----------|---------|----------------------|-------------------|--------------|
+| C7 WiFi+WiFi | **23.9 Mbit/s** | 14.0 | 15.4 | 10.6 |
+| C8 WiFi+LTE | 8.81 | 14.0 | **12.6** | 10.6 |
+
+- **C7 VALIDATED**: aggregation 1.71x over own single path (MPTCP: 1.45x),
+  +55% over kernel MPTCP on the identical topology. The structural claim
+  holds where paths are symmetric.
+- **C8 REFUTED (current scheduler)**: the slow lossy LTE path drags the
+  aggregate BELOW the fast path alone. Hypothesis: block striping across
+  asymmetric paths + P9b's cross-block in-order hold turns slow-path
+  blocks into head-of-line stalls for fast-path data — MPTCP's
+  per-subflow scheduling avoids this. Improvement cycle required
+  (paper 13.8 scheduling objective vs its production port).
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
