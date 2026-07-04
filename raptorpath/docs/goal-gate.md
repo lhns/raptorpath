@@ -895,6 +895,60 @@ territory (a separate issue), NOT the liveness bug. What this fix removes
 is the CATASTROPHIC failure mode (whole-tunnel death → connection lost),
 not the ordinary loss-recovery tail.
 
+## L3 REGIME MAP — where raptorpath wins, ties, loses (vs best-of-baseline)
+
+Synthesis of all L1/L2/L3 measurements. Each cell marks raptorpath vs
+the BEST of {quinn, kernel BBR, kernel MPTCP, CUBIC} for that metric.
+Cells: loss/RTT per paper §2.4 (C1 DC 0.05%/1ms → C5 BadWiFi 5.3%/10ms,
+C4 Sat 3%/100ms; C7/C8 dual-path).
+
+### Metric A — message TAIL latency, single path (p99, 50 msg/s stream)
+| cell | rp p99 | best baseline | verdict |
+|------|--------|---------------|---------|
+| C2 WiFi | 44–226 ms (realtime) / 91 ms (bulk) | quinn 2824 / BBR 13,400 | **rp WINS 12–60×** |
+| C3 LTE | 569 ms (bulk) | BBR **198** (quinn 1393) | rp LOSES to BBR, beats quinn 2.4× |
+| C5 BadWiFi | melts (24 s) | quinn melts (45 s) | NO WINNER (both break >5% loss) |
+
+### Metric B — object COMPLETION, single path (1.8 MB median)
+| cell | rp-native | best baseline | verdict |
+|------|-----------|---------------|---------|
+| C1 DC | ~0.025 s | quinn 0.027 / BBR 0.028 | **PARITY** (rp ≈ or slightly ahead) |
+| C2 WiFi | 0.83 s | quinn **0.20** / BBR 0.22 | rp LOSES ~4× |
+| C3 LTE | ~7.3 s | quinn **0.90** / BBR 1.0 | rp LOSES ~8× |
+| C4 Sat | ~56 s (tunnel) | quinn **1.09** / BBR 3.6 | rp LOSES badly |
+| C5 BadWiFi | 17.4 s | quinn/BBR **0.55**; CUBIC **DNF** | rp LOSES to quinn/BBR; **BEATS CUBIC** |
+
+### Metric C — MULTIPATH goodput, dual path (50 MB)
+| cell | rp dual | best baseline | verdict |
+|------|---------|---------------|---------|
+| C7 WiFi+WiFi (sym) | **23.9 Mbit/s** | MPTCP 15.4 | **rp WINS 1.55×** |
+| C8 WiFi+LTE (asym) | 12.6 | MPTCP 12.6 | **PARITY** |
+
+### "raptorpath is the right transport when…"
+
+**raptorpath is the right transport when your traffic is latency-sensitive
+over lossy links, or when you can aggregate multiple lossy paths, or when
+the alternative is loss-reactive TCP that collapses.** Concretely it WINS
+in three regimes: (1) message-tail latency on lossy moderate-RTT single
+links — its p99 is 44–226 ms at WiFi-class loss where QUIC spikes to 2.8 s
+and kernel TCP to 13 s (12–60×), because FEC recovers loss in-band instead
+of head-of-line-blocking an ordered stream; (2) multipath aggregation over
+symmetric lossy paths — 1.55× kernel MPTCP, whose subflows collapse under
+the loss that raptorpath's FEC absorbs; (3) any link lossy enough to break
+loss-reactive CUBIC, which it outlasts (completes at C5 where CUBIC DNFs).
+It reaches PARITY on clean/low-loss links and asymmetric multipath. It is
+NOT (yet) the right choice for maximum single-path BULK THROUGHPUT/
+completion against a tuned QUIC or BBR — it trails 4–8× on lossy single
+paths (worse at satellite RTT), and BBR wins the low-rate tail at C3.
+Crucially, that completion deficit is a userspace-tunnel PIPELINE cost
+(block assembly, CC ramp, decode — confirmed by native + warm-flow
+geometry), NOT the model: at L0 the principled controller beats both
+TCP-class and QUIC-class adversaries; the L1 gap is engineering the data
+plane up to the model, which the CC/pipeline work (P-CC, §12.6) is
+attacking. Boundary rule of thumb: **choose raptorpath above ~1% loss when
+tail latency or multipath matters; choose QUIC/BBR for single-path bulk on
+a low-loss or very-high-RTT path.**
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
