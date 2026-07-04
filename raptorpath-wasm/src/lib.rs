@@ -220,7 +220,6 @@ pub struct Simulation {
 
     // Counters
     total_src: u32, total_fec: u32, total_arq: u32, total_lost: u32,
-    steady_src: u32, steady_fec: u32, steady_arq: u32,
     cum_sent: u32, cum_arrived: u32, cum_decoded: u32,
     lost_pending: u32,
     last_src: u32, last_fec: u32, last_arq: u32, last_lost: u32,
@@ -479,7 +478,6 @@ impl Simulation {
             rate: 0.0,
             debt: 0.0,
             total_src: 0, total_fec: 0, total_arq: 0, total_lost: 0,
-            steady_src: 0, steady_fec: 0, steady_arq: 0,
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
             lost_pending: 0,
             last_src: 0, last_fec: 0, last_arq: 0, last_lost: 0,
@@ -707,12 +705,6 @@ impl Simulation {
             self.finished = true;
         }
 
-        if !self.source_done {
-            self.steady_src += src_n;
-            self.steady_fec += fec_n;
-            self.steady_arq += arq_n;
-        }
-
         // Prune resolved symbols (keep lost unrecovered for ARQ).
         self.symbols
             .retain(|s| (s.lost && !s.recovered) || tick.saturating_sub(s.tick) < 10);
@@ -833,16 +825,39 @@ impl Simulation {
             0.0
         }
     }
-    /// Excess overhead: what we actually spent BEYOND the channel floor --
-    /// the honest inefficiency measure (0% = information-theoretically
-    /// perfect; the floor itself is the channel's fault, not the
-    /// protocol's).
-    pub fn get_excess_overhead(&self) -> f64 {
-        (self.get_overhead() - self.get_overhead_floor()).max(0.0)
+    /// The REALIZED channel floor for this specific run: over the wire slots
+    /// actually consumed, the loss rate was (sent - arrived)/sent, which
+    /// differs from the nominal eps because a finite run samples only a
+    /// prefix of the (expectation-calibrated) channel. The nominal floor is
+    /// unbeatable only in expectation; this one is what THIS channel forced.
+    /// As a percentage of delivered symbols: lost/arrived = eps_real/(1-eps_real).
+    pub fn get_overhead_floor_realized(&self) -> f64 {
+        if self.cum_arrived > 0 {
+            (self.cum_sent.saturating_sub(self.cum_arrived)) as f64 / self.cum_arrived as f64
+                * 100.0
+        } else {
+            0.0
+        }
     }
+    /// Excess overhead: what we actually spent BEYOND the channel floor THIS
+    /// run forced -- the honest inefficiency measure (0% = information-
+    /// theoretically perfect; the floor itself is the channel's fault, not
+    /// the protocol's). Measured against the REALIZED floor so it is a true
+    /// invariant: overhead (all sends) >= realized floor always, because
+    /// decoding N source symbols needs >= N arrived symbols, giving
+    /// overhead - floor = sent*(arrived - N)/(N*arrived) >= 0.
+    pub fn get_excess_overhead(&self) -> f64 {
+        (self.get_overhead() - self.get_overhead_floor_realized()).max(0.0)
+    }
+    /// Total overhead over ALL sends (steady stream AND post-stream drain):
+    /// (FEC + ARQ) / source symbols, in percent. Counting only the steady
+    /// phase (as an earlier version did) undercounts, because corrections
+    /// fired during the drain -- the tail-FEC burst and the final ARQ
+    /// retransmits -- are real bandwidth and can push realized loss recovery
+    /// below the floor's whole-transfer semantics.
     pub fn get_overhead(&self) -> f64 {
-        if self.steady_src > 0 {
-            (self.steady_fec + self.steady_arq) as f64 / self.steady_src as f64 * 100.0
+        if self.total_src > 0 {
+            (self.total_fec + self.total_arq) as f64 / self.total_src as f64 * 100.0
         } else {
             0.0
         }
@@ -1118,6 +1133,69 @@ mod tests {
                     "eps={eps} rtt={rtt}: overhead regressed: {:.2}% -> {:.2}%",
                     old.get_overhead(), new.get_overhead()
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_fixed_r_sets_realized_rate() {
+        // "Fixed r" pins the CONTROLLER (correction) rate: the realized FEC
+        // rate tracks the target within noise. Overhead and excess-overhead
+        // are DIFFERENT metrics -- overhead adds the ARQ that recovers the
+        // channel's losses (the floor); excess = overhead - realized floor,
+        // which comes out near r only because at small r the FEC barely
+        // displaces ARQ. This test asserts the realized FEC rate == target r,
+        // NOT that overhead == r (the naming trap the UI must not imply).
+        for &fr in &[0.01f64, 0.05, 0.10] {
+            for &eps in &[0.02f64, 0.05, 0.10] {
+                for &rtt in &[20u32, 50, 100] {
+                    let mut sim = Simulation::new(
+                        eps, 0.5, rtt, 64, "fixed".into(), Some(fr), None, None,
+                    );
+                    run_to_end(&mut sim);
+                    let fec_rate = sim.total_fec as f64 / sim.total_src as f64;
+                    // Realized FEC rate is r plus a small, bounded tail-flush
+                    // constant (the end-of-stream burst, <= 24 repairs over
+                    // 2000 source ~ +0.012); never a systematic multiple.
+                    assert!(
+                        fec_rate >= fr - 0.005 && fec_rate <= fr + 0.02,
+                        "fixed r={fr} eps={eps} rtt={rtt}: realized FEC rate \
+                         {fec_rate:.4} must track target (not diverge)"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_overhead_never_below_realized_floor() {
+        // The reported user bug: "overhead below the channel floor
+        // (theoretically impossible)". Two confirmed causes: (a) overhead
+        // was measured over the steady phase only, dropping the drain-phase
+        // corrections; (b) the nominal floor uses eps, but a finite run
+        // samples only a prefix of the expectation-calibrated channel, so
+        // realized loss can sit below eps. Fix: overhead counts ALL sends,
+        // and the invariant is stated against the REALIZED floor -- which is
+        // exact: decoding N source symbols requires >= N arrived symbols.
+        for hint in ["bulk", "auto", "realtime", "fixed"] {
+            for &eps in &[0.02f64, 0.05, 0.10, 0.15] {
+                for &q in &[0.3f64, 0.5] {
+                    for &rtt in &[20u32, 50, 100] {
+                        let fr = if hint == "fixed" { Some(0.03) } else { None };
+                        let mut sim = Simulation::new(eps, q, rtt, 64, hint.into(), fr, None, None);
+                        run_to_end(&mut sim);
+                        // rho = 1: every source symbol delivered.
+                        assert_eq!(sim.get_cum_decoded(), sim.get_num_source());
+                        let oh = sim.get_overhead();
+                        let floor_real = sim.get_overhead_floor_realized();
+                        assert!(
+                            oh + 1e-9 >= floor_real,
+                            "hint={hint} eps={eps} q={q} rtt={rtt}: overhead \
+                             {oh:.4}% dropped below realized floor {floor_real:.4}%"
+                        );
+                        assert!(sim.get_excess_overhead() >= 0.0);
+                    }
+                }
             }
         }
     }
