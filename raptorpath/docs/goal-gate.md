@@ -134,6 +134,7 @@ Reading:
 | P7 production Copa-lite port | real-link (C2 netem) tunnel throughput — production scheduler, not the driver | cwnd collapsed 10→2 symbols on the first burst (rate-formula target) | implemented, L1-verified pending |
 | P8 block-mode ARQ (paper 14.27) | real-link (C2 netem) tunnel completion — 1.8 MB took ~8 s vs quinn 0.175 s with NO block-mode loss recovery (Bulk mid-stream r*=0 relies on this path existing) | lost symbols waited out the 30 s decoder eviction; inner TCP saw raw 2.6% loss | implemented, L1-verified pending |
 | P10a inner-feedback repair floor (paper 14.28) | L1 C2/C3 rp-bulk median completion (TCP-in-tunnel), weight 0 vs 1 | C2 1.179 s, C3 5.34 s (pure glide) | C2 1.192 s, C3 6.82 s — floor verified ACTIVE (+2.2% FEC volume), NEGATIVE result: neutral at C2, −28% at C3; production default stays weight 0 |
+| P-CC BtlBw-anchored recovery (paper §12.6, bbr-lessons #1) | L1 C2/C3 rp-native 1.8 MB median completion + does cwnd reach BDP ~160 | C2 0.883 s, C3 10.43 s; cwnd p50 ~80-110 (P9b measured) | C2 0.911 s, C3 10.00 s (flat, within run stdev); cwnd p50 **139** / max 165 (reaches BDP). cwnd deficiency FIXED; completion REFUTED (structural bottleneck). Floor gain converged 1.0→0.85 (drains the standing queue floor 1.0 held). Shipped, gate 15/15 |
 
 Notable: most of the median-latency win came from P2 (the ground-truth
 floor hid the jitter bound); P1's hint mapping is retained for semantics.
@@ -494,6 +495,70 @@ displace source symbols in the same inner-limited closed loop —
 regression. Production default: `inner_feedback_weight = 0` (knob kept
 for genuinely stall-brittle payloads; measure before enabling). Full
 derivation + refutation: paper §14.28.
+
+### P-CC — BtlBw-anchored recovery (paper §12.6): cwnd deficiency fixed, completion refuted
+
+Directly tests loose end (b) from P10a ("the remaining C2 gap belongs to
+the Copa backoff ceiling"). Proposal #1 of `docs/research/bbr-lessons.md`:
+`max_bw` (a delivery-rate max-filter) and `min_rtt` were tracked but fed
+only the diagnostic `copa_target_cwnd()`. Now their product is an active
+**BtlBw×RTprop = BDP anchor** with two effects on the post-backoff
+trajectory: (1) a continuous proportional recovery pull toward BDP
+(`cwnd += max(2, α·(BDP−cwnd))`, α=0.25, decaying into the +2 probe as
+cwnd→BDP — no discrete phase), and (2) a cwnd **floor** at
+`ANCHOR_FLOOR_GAIN×BDP`. Floor, NOT cap: `record_delivery` is coarse
+ACK-batch sampling with no app-limited detection, so `max_bw`
+structurally underestimates a warm-up-limited flow — the anchor is
+therefore gated on ≥8 delivery samples + a min-RTT sample and is only
+ever allowed to RAISE cwnd, never suppress it.
+
+Measured (rp-native `perf`, no inner TCP — isolates the wire CC from the
+tunnel/inner-TCP pipeline; 1.8 MB, seed 42, 10 runs, fresh topo per arm;
+anchor presence confirmed via `strings` on the binary + `bdp_anchor=`
+trace fields, and a stale-mtime rebuild trap caught and fixed — cargo had
+skipped the recompile until the shipped sources were `touch`ed):
+
+| Metric | BASE (33d5a79) | FLOOR gain 1.0 | FLOOR gain 0.85 (shipped) |
+|--------|---------------:|---------------:|--------------------------:|
+| C2 median | 0.883 s | 0.901 s | 0.911 s |
+| C2 mean (stdev) | 0.847 (0.170) | 0.888 (0.172) | 0.890 (0.231) |
+| C3 median | 10.43 s | 9.12 s (1 DNF) | 10.00 s (0 DNF, stdev 1.41) |
+| C2 cwnd p50 / max (trace) | ~80-110 (P9b) | 126 / 194 | **139 / 165** |
+| C2 bdp_anchor p50 / max | — | 126 / 194 | 137 / 164 |
+| C2 above-target update frac | — | ~100% | 52% |
+
+**cwnd reaches BDP — YES.** Post-change cwnd sits at p50 139 (up from the
+P9b-measured 80-110), tracking bdp_anchor 137, with peaks at 165 — at/above
+the BDP ~160 target. The mechanistic deficiency in bbr-lessons #1 is real
+and now closed.
+
+**Completion — REFUTED (flat).** C2 medians 0.883 / 0.901 / 0.911 s are all
+inside one run-to-run stdev (~0.2 s ≈ 22%); each configuration step moves
+the C2 median <10% (base→1.0 +2%, 1.0→0.85 +1%) → **converged** by the
+stop rule. C3 is flat within its large variance. This is exactly the
+prediction bbr-lessons #1 made against its own proposal: "bounded on the
+C2 1.8 MB headline (gate binds 8-24% of ACKs; structural term dominates)."
+Driving cwnd to BDP does not move the 1.8 MB completion because that
+metric is bottlenecked by the tunnel pipeline / inner-flow warm-up (L2 ws3
+fair-geometry), not by the congestion window. A refutation of the
+*completion* leverage, like P10a — not a refutation of the mechanism.
+
+**Floor-gain iteration.** At gain 1.0 the floor pinned cwnd exactly at
+bdp_anchor even while the delay signal reported queue-above-target
+(`above=true` on ~100% of updates): the floor was maintaining a ~16 ms
+standing queue the backoff could no longer drain. Gain 0.85 leaves the
+delay backoff ~15% of authority around BDP (above-target fraction
+100%→52%, so the queue drains on half the updates) at identical completion
+and with the C3 DNF gone and variance cut — shipped default. The recovery
+pull (gain 1.0) still re-fills toward full BDP each clean update, so cwnd
+oscillates just under the pipe rather than in standing bufferbloat.
+
+**Kept** despite the completion refutation: it fixes a real, documented
+deficiency (cwnd now reaches BDP), is safe by construction (floor-not-cap,
+underestimate-tolerant, gated), keeps the gate at 15/15 and lib+CC tests
+green, and its expected payoff is the sustained-throughput / multipath-
+aggregation cells (C7/C8 `B_eff` reads cwnd/SRTT) rather than the 1.8 MB
+completion headline. Full derivation + honest constants: paper §12.6.
 
 ## L1 convergence assessment (end of P10, 2026-07-04)
 

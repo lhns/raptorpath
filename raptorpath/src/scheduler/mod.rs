@@ -111,6 +111,56 @@ const BACKOFF_MULT: f64 = 0.92;
 /// SRTT assumed before the first RTT sample arrives (update cadence only).
 const DEFAULT_SRTT: Duration = Duration::from_millis(50);
 
+// --- BtlBw-anchored recovery (paper Section 12.6) ---
+//
+// The additive +2/SRTT recovery after a delay backoff crawls: from a
+// ×0.92 trough it takes dozens of SRTTs to re-fill the pipe, so cwnd sits
+// well below BDP (measured L1 C2: p50 ~80-110 symbols vs BDP ~160). We
+// already maintain a delivery-rate max-filter (`max_bw`) and a 10s min-RTT
+// (`min_rtt`); their product is a BtlBw×RTprop = BDP estimate. Use it to
+// (a) pull post-backoff recovery TOWARD BDP proportionally (decaying to
+// the gentle +2 probe as cwnd → BDP) and (b) floor cwnd at the estimate so
+// a backoff (or a jitter false-positive) cannot crawl cwnd below the pipe.
+//
+// CRITICAL: `max_bw` is a windowed MAX of COARSE ACK-batch delivery rates
+// — no per-packet sampling and no app-limited detection (BBR discards
+// app-limited samples precisely because they underestimate BtlBw). For a
+// warm-up-limited transfer (the dominant 1.8MB regime) the estimate reads
+// LOW exactly when we would want it high. So the anchor is used ONLY to
+// RAISE cwnd — a recovery target and a floor, never a cap. A stale/under-
+// estimated BtlBw can then only fail to help; it can never suppress cwnd.
+
+/// Minimum delivery-rate samples in the 10s window before the BtlBw anchor
+/// is trusted. A handful of coarse samples is too noisy to floor cwnd on.
+const ANCHOR_MIN_SAMPLES: usize = 8;
+/// cwnd_gain on the BtlBw×RTprop BDP estimate for the post-backoff recovery
+/// TARGET. 1.0 = aim to re-fill exactly the pipe; the gentle +2 probe (and
+/// the hint-coupled queue target) still governs the standing queue ABOVE
+/// BDP, so this is not BBR's cwnd_gain=2 (which deliberately buffers 1×BDP).
+const ANCHOR_RECOVERY_GAIN: f64 = 1.0;
+/// Proportional pull toward the recovery target per SRTT update: the
+/// increment is max(ADDITIVE_STEP, α·(target − cwnd)). Continuous and
+/// self-decaying — at α=0.25 a trough at 0.5×BDP closes ~90% of the gap in
+/// ~8 SRTTs (vs ~40 SRTTs for +2), and the term vanishes into +2 as
+/// cwnd → target (no discrete phase, no cliff).
+const ANCHOR_PULL_ALPHA: f64 = 0.25;
+/// cwnd floor as a multiple of the BtlBw×RTprop estimate. cwnd is never
+/// driven below this once the anchor is established (floor, NOT cap).
+///
+/// 0.85, not 1.0: a floor AT the full BDP estimate pins cwnd there even
+/// when the delay signal reports queue-above-target — the L1 C2 cwnd trace
+/// showed `above=true` on nearly every update with cwnd held exactly at
+/// bdp_anchor, i.e. the floor was maintaining a ~16 ms standing queue the
+/// backoff could no longer drain. Flooring at 0.85×BDP keeps cwnd off the
+/// 8-symbol collapse (the measured deficiency) while leaving the delay
+/// backoff ~15% of authority around BDP to drain a genuine queue; the
+/// recovery pull (gain 1.0) still re-fills toward full BDP each clean
+/// update, so cwnd oscillates just under the pipe rather than sitting in
+/// standing bufferbloat. Because `max_bw` also underestimates during
+/// warm-up, the realized floor sits further below true BDP — the safety
+/// (see the risk note above and Section 12.6).
+const ANCHOR_FLOOR_GAIN: f64 = 0.85;
+
 /// Floor on the in_flight expiry horizon (see `PathState::expire_in_flight`).
 /// max(4×SRTT, this): stranded budget (lost best-effort ACK datagrams)
 /// releases within ~a quarter second instead of jamming the TUN gate until
@@ -503,6 +553,9 @@ impl CopaState {
             win_jitter_us = (self.win_jitter_est * 1e6) as u64,
             srtt_us = self.srtt().as_micros() as u64,
             n_samples = self.samples_since_update,
+            max_bw = self.max_bw as u64,
+            bdp_anchor = self.bdp_anchor().map(|b| b.round() as u64),
+            anchor_floor = self.anchor_floor(),
             "copa cwnd update"
         );
         // Record this window's min in the queue-floor history.
@@ -526,7 +579,22 @@ impl CopaState {
         } else if self.ramping {
             c * RAMP_GAIN + 1.0
         } else {
-            c + ADDITIVE_STEP
+            // Steady state: gentle additive probe, but when a trusted BtlBw
+            // anchor says cwnd is below the BDP target (post-backoff trough),
+            // pull toward it proportionally — a fast catch-up that decays
+            // into the +2 probe as cwnd → target (paper Section 12.6). Only
+            // ever RAISES the step above +2 (the anchor never suppresses).
+            match self.bdp_anchor() {
+                Some(bdp) => {
+                    let target = ANCHOR_RECOVERY_GAIN * bdp;
+                    if c < target {
+                        c + (ANCHOR_PULL_ALPHA * (target - c)).max(ADDITIVE_STEP)
+                    } else {
+                        c + ADDITIVE_STEP
+                    }
+                }
+                None => c + ADDITIVE_STEP,
+            }
         };
         next.round() as u32
     }
@@ -559,6 +627,36 @@ impl CopaState {
         let rate = 1.0 / (COPA_DELTA * dq); // symbols per second
         let cwnd = rate * srtt; // symbols
         (cwnd.round() as u32).clamp(PathState::MIN_CWND, PathState::MAX_CWND)
+    }
+
+    /// BtlBw×RTprop BDP estimate in symbols — the active recovery anchor
+    /// (paper Section 12.6), or None until it is trustworthy.
+    ///
+    /// UNITS: max_bw [symbols/s] × min_rtt [s] = symbols (in-flight the
+    /// bottleneck rate keeps outstanding over one propagation RTT).
+    ///
+    /// Gated on ANCHOR_MIN_SAMPLES delivery samples AND a min-RTT sample:
+    /// `max_bw` is a windowed MAX of coarse ACK-batch rates with no
+    /// per-packet/app-limited accounting, so a handful of samples (or no
+    /// RTT floor yet) is not enough to steer cwnd. It STRUCTURALLY
+    /// underestimates a warm-up/app-limited flow, which is exactly why it
+    /// is only ever used to RAISE cwnd (recovery target + floor), never as
+    /// a cap — an underestimate can only fail to help, never suppress.
+    fn bdp_anchor(&self) -> Option<f64> {
+        if self.bw_samples.len() < ANCHOR_MIN_SAMPLES || self.max_bw <= 0.0 {
+            return None;
+        }
+        let rtprop = self.min_rtt?.as_secs_f64();
+        Some(self.max_bw * rtprop)
+    }
+
+    /// The cwnd floor from the BtlBw anchor (symbols), or None if not yet
+    /// established. A floor, NOT a cap — it only ratchets cwnd UP toward the
+    /// pipe, so a stale/underestimated BtlBw cannot suppress the window
+    /// (paper Section 12.6). Caller clamps against MAX_CWND.
+    fn anchor_floor(&self) -> Option<u32> {
+        self.bdp_anchor()
+            .map(|bdp| (ANCHOR_FLOOR_GAIN * bdp).round() as u32)
     }
 
     /// Expire samples older than the sliding window.
@@ -767,7 +865,7 @@ impl PathState {
             self.cwnd = self.copa.update_cwnd(self.cwnd);
         }
 
-        self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
+        self.clamp_cwnd_with_anchor();
 
         // Sync legacy fields
         self.in_slow_start = self.copa.ramping;
@@ -796,7 +894,7 @@ impl PathState {
             self.copa.ramping = false;
             self.cwnd = self.cwnd.saturating_sub(1);
         }
-        self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
+        self.clamp_cwnd_with_anchor();
         self.in_slow_start = false;
         if self.ssthresh > self.cwnd {
             self.ssthresh = self.cwnd;
@@ -827,6 +925,24 @@ impl PathState {
     /// `CopaState::copa_target_cwnd` for the units derivation).
     pub fn copa_target_cwnd(&self) -> u32 {
         self.copa.copa_target_cwnd()
+    }
+
+    /// BtlBw×RTprop BDP anchor estimate in symbols, once established
+    /// (paper Section 12.6). None during warm-up / before a min-RTT
+    /// sample. Diagnostic/benchmarking accessor.
+    pub fn copa_bdp_anchor(&self) -> Option<f64> {
+        self.copa.bdp_anchor()
+    }
+
+    /// Clamp cwnd to [MIN_CWND, MAX_CWND] and then raise it to the BtlBw
+    /// anchor floor if one is established (paper Section 12.6). The floor
+    /// only ratchets cwnd UP (never a cap) and is itself bounded by
+    /// MAX_CWND, so an over-read BtlBw cannot exceed the hard ceiling.
+    fn clamp_cwnd_with_anchor(&mut self) {
+        self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
+        if let Some(floor) = self.copa.anchor_floor() {
+            self.cwnd = self.cwnd.max(floor.min(Self::MAX_CWND));
+        }
     }
 
     // --- Token-bucket pacing (paper Section 12.5, gate driver P1) ---
