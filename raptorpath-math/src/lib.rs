@@ -145,6 +145,103 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
     normal_survival((t_rem - 1.5 * srtt_secs) / sigma_arq)
 }
 
+/// Mid-stream repair floor for inner-feedback flows (paper Section 14.28).
+///
+/// Bulk's completion-exposure glide (Section 14.26) sets r* = 0 mid-stream
+/// on the grounds that ARQ recovery runs in parallel with ongoing sends and
+/// costs no completion time. That argument prices VOLUME, not delivery
+/// latency: when the payload is itself a latency-sensitive control loop
+/// (TCP inside the tunnel), every unrepaired loss stalls the inner flow's
+/// in-order delivery for one outer ARQ round, and — IF the stall exceeds
+/// the inner loss-detection tolerance — the inner congestion controller
+/// feeds it back into its send rate. The P9b analysis attributed the
+/// residual L1 C2 gap to ~20 such events per 1.8 MB transfer.
+///
+/// HONEST STATUS (paper 14.28, L1 verification): the premise was REFUTED
+/// post-14.27 — with block-mode ARQ (~1.5 RTT recovery) and in-order
+/// delivery in place, the inner TCP absorbs the residual stalls (its RTO
+/// floor is 200 ms >> the 20-60 ms stalls). The floor, measured ACTIVE
+/// (+2.2% FEC volume at C2), was completion-neutral at C2 and 28%
+/// REGRESSIVE at C3 (floor repairs displace source symbols in the same
+/// inner-limited closed loop). Production therefore defaults the weight
+/// to 0; the derivation and mechanism are kept for payloads whose inner
+/// loop is genuinely stall-brittle — measure before enabling.
+///
+/// Derivation (Section 14.28). Per unrepaired loss event the inner flow
+/// stalls for
+///
+///   L_stall = min(1.5 x SRTT_outer, RTO_inner),
+///            RTO_inner >= max(RTO_MIN = 200 ms, SRTT_inner)
+///
+/// Loss events (GE burst onsets) arrive at rate eps x q_hat per wire slot
+/// (q_hat = 1/mean_burst), and a proactive repair stream at rate r repairs
+/// an m-loss event within the stall horizon T_arq = L_stall / t_sym slots
+/// with probability C(r) = p_fec_recovery_marginalized(T_arq, r, q_hat,
+/// eps) (the Section 14.14 race, run against the ARQ horizon). The
+/// expected fraction of wall time the inner flow spends stalled is
+///
+///   S(r) = eps x q_hat x T_arq x (1 - C(r))
+///
+/// and the floor is the smallest r whose residual stall is at or below the
+/// delivery-jitter scale the inner flow already absorbs:
+///
+///   S(r_min) <= theta,   theta = sigma_j / L_stall,   sigma_j = SRTT/4
+///
+/// (sigma_j is the Section 14.26 sigma_arq evaluated at its SRTT/4 floor —
+/// the sender cannot observe the inner flow's tolerance, and the outer
+/// RTTVAR estimate is a heuristic in production, so the floor uses the
+/// deterministic branch). Everything is continuous: S is continuous and
+/// nonincreasing in r, so r_min is continuous in every input, and when
+/// S(0) <= theta already (clean channel, short stall horizon) the floor is
+/// 0 with no cutoff. Unknown t_sym (no throughput estimate) disables the
+/// floor — same sentinel convention as the burst B/T term.
+///
+/// Returns r_min in [0, r_cap]; the caller weights it by the
+/// inner-feedback weight and takes max() against the base rate.
+pub fn inner_feedback_floor(p: f64, mean_burst: f64, srtt: f64, t_sym: f64, r_cap: f64) -> f64 {
+    let valid = p.is_finite()
+        && p > 0.0
+        && p < 1.0
+        && srtt.is_finite()
+        && srtt > 0.0
+        && t_sym.is_finite()
+        && t_sym > 0.0
+        && r_cap.is_finite()
+        && r_cap > 0.0;
+    if !valid {
+        return 0.0;
+    }
+    // GE burst-onset probability per slot is ~eps * q_hat (p_GB weighted by
+    // time in Good); mean_burst = 1 (no GE data) degenerates to iid.
+    let q_hat = (1.0 / mean_burst.max(1.0)).clamp(0.01, 1.0);
+    // Inner stall per unrepaired event: one outer ARQ round, clamped at a
+    // conservative lower bound for the inner RTO (Linux RTO_MIN = 200 ms;
+    // RTO_inner >= SRTT_inner >= SRTT_outer).
+    const TCP_RTO_MIN: f64 = 0.2;
+    let l_stall = (1.5 * srtt).min(TCP_RTO_MIN.max(srtt));
+    let t_arq = l_stall / t_sym; // stall horizon in wire slots
+    let theta = (srtt / 4.0) / l_stall; // jitter-scale tolerance (dimensionless)
+    // Residual stall fraction: events/slot x P(unrepaired) x stall slots.
+    let stall = |r: f64| p * q_hat * t_arq * (1.0 - p_fec_recovery_marginalized(t_arq, r, q_hat, p));
+    if stall(0.0) <= theta {
+        return 0.0; // pure ARQ already within jitter noise — floor vanishes
+    }
+    if stall(r_cap) > theta {
+        return r_cap; // even the cap cannot meet it; caller's clamp governs
+    }
+    let mut lo = 0.0_f64;
+    let mut hi = r_cap;
+    for _ in 0..50 {
+        let mid = 0.5 * (lo + hi);
+        if stall(mid) > theta {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
+}
+
 /// Inputs to the shared production rate controller (see `controller_rate`).
 /// All values are estimator-known; unknowns use their documented sentinels.
 #[derive(Debug, Clone, Copy)]
@@ -181,6 +278,15 @@ pub struct RateInputs {
     /// tunnel stream); 1 = final ~1.5 SRTT of the transfer. Only read
     /// when `bulk_late_is_fine`.
     pub completion_exposure: f64,
+    /// Inner-feedback weight in [0, 1] (paper 14.28): how strongly the
+    /// payload's delivery latency feeds back into its own throughput.
+    /// 1 = tunnel carrying TCP (an unrepaired loss stalls the inner
+    /// control loop ~one ARQ round); 0 = file-transfer semantics (the L0
+    /// gate, the wasm sim, true bulk objects), where mid-stream ARQ
+    /// recovery is genuinely free and the old behavior is preserved
+    /// exactly. The weight scales the `inner_feedback_floor` repair floor,
+    /// so the rate is continuous in it.
+    pub inner_feedback: f64,
     /// Cap the rate at the p99(r) saturation point (paper 14.21).
     pub saturation_cap: bool,
     /// Hard overhead ceiling.
@@ -247,6 +353,23 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     };
 
     let mut rate = random_rate.max(burst_rate);
+
+    // Inner-feedback repair floor (paper Section 14.28): for payloads whose
+    // delivery latency feeds back into their own throughput (TCP inside the
+    // tunnel), the Bulk glide's mid-stream r* = 0 leaves every loss to stall
+    // the INNER flow one ARQ round. The floor is the smallest r whose
+    // residual stall fraction sits within delivery-jitter noise, weighted
+    // by inner_feedback (0 = old behavior, exactly). Applied before the
+    // saturation cap: 14.21's "more FEC hurts the tail" still overrides.
+    let w = if inp.inner_feedback.is_nan() {
+        0.0
+    } else {
+        inp.inner_feedback.clamp(0.0, 1.0)
+    };
+    if w > 0.0 {
+        let floor = inner_feedback_floor(p, inp.mean_burst, inp.srtt, inp.t_sym, inp.max_overhead);
+        rate = rate.max(w * floor);
+    }
 
     // Saturation cap (paper Section 14.21): past r_sat more FEC hurts p99.
     if inp.saturation_cap && inp.t_sym > 0.0 && inp.srtt > 0.0 {
@@ -761,9 +884,120 @@ mod tests {
             tail_target: 1e-5,
             bulk_late_is_fine: true,
             completion_exposure: chi,
+            inner_feedback: 0.0,
             saturation_cap: false,
             max_overhead: 0.5,
         }
+    }
+
+    /// C2-tunnel operating point (paper 14.28): eps ~ 2.6% (GE 1.3%/50%,
+    /// mean burst 2), SRTT ~ 13 ms, 100 Mbit with 1200 B symbols.
+    fn tunnel_inputs(p: f64, w: f64) -> RateInputs {
+        RateInputs {
+            p_upper: p,
+            sigma2: 2.9,
+            mean_burst: 2.0,
+            window: 56.0,
+            t_symbols: 0.0,
+            srtt: 0.013,
+            t_sym: 1200.0 * 8.0 / 100e6,
+            codec_overhead: 0.0,
+            tail_target: 1e-5,
+            bulk_late_is_fine: true,
+            completion_exposure: 0.0,
+            inner_feedback: w,
+            saturation_cap: false,
+            max_overhead: 0.5,
+        }
+    }
+
+    #[test]
+    fn test_inner_feedback_floor_c2_band() {
+        // At the L1 C2 operating point the floor must land in the sane
+        // band the P6 fixed-floor ablation suggested (~0.01-0.04), and
+        // stay there across the plausible p_upper range.
+        for p in [0.026, 0.035, 0.045] {
+            let r = controller_rate(&tunnel_inputs(p, 1.0));
+            println!("r_floor(C2, p={p}) = {r}");
+            assert!(
+                (0.01..=0.05).contains(&r),
+                "C2 floor out of band at p={p}: {r}"
+            );
+        }
+        // Without the weight the Bulk glide keeps r* = 0 (old behavior).
+        assert_eq!(controller_rate(&tunnel_inputs(0.026, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn test_inner_feedback_floor_continuous_in_weight_and_loss() {
+        // Continuous & monotone in the weight.
+        let mut prev = controller_rate(&tunnel_inputs(0.026, 0.0));
+        assert_eq!(prev, 0.0);
+        let mut max_step = 0.0f64;
+        for i in 1..=100 {
+            let w = i as f64 / 100.0;
+            let r = controller_rate(&tunnel_inputs(0.026, w));
+            assert!(r >= prev - 1e-12, "rate must be nondecreasing in w");
+            max_step = max_step.max(r - prev);
+            prev = r;
+        }
+        assert!(prev > 0.01);
+        assert!(max_step < 0.005, "no jumps along the weight: {max_step}");
+
+        // Continuous in eps, and vanishes (r -> 0) on clean channels with
+        // no cutoff: the floor is 0 well before p reaches 0.
+        let mut prev = 0.0f64;
+        let mut max_step = 0.0f64;
+        for i in 0..=400 {
+            let p = i as f64 * 1e-4; // 0 .. 4%
+            let r = controller_rate(&tunnel_inputs(p, 1.0));
+            if i > 0 {
+                max_step = max_step.max((r - prev).abs());
+            }
+            prev = r;
+        }
+        assert!(max_step < 0.005, "no jumps along eps: {max_step}");
+        let clean = controller_rate(&tunnel_inputs(5e-4, 1.0));
+        assert_eq!(clean, 0.0, "clean channel keeps pure ARQ: {clean}");
+    }
+
+    #[test]
+    fn test_inner_feedback_floor_sentinels() {
+        // No throughput estimate (t_sym = 0) disables the floor — same
+        // convention as the burst B/T term.
+        let mut inp = tunnel_inputs(0.026, 1.0);
+        inp.t_sym = 0.0;
+        assert_eq!(controller_rate(&inp), 0.0);
+        // Degenerate srtt likewise.
+        assert_eq!(inner_feedback_floor(0.026, 2.0, 0.0, 1e-4, 0.5), 0.0);
+        assert_eq!(inner_feedback_floor(0.026, 2.0, f64::NAN, 1e-4, 0.5), 0.0);
+        assert_eq!(inner_feedback_floor(0.0, 2.0, 0.013, 1e-4, 0.5), 0.0);
+        // NaN weight is treated as 0 (unknown).
+        let mut inp = tunnel_inputs(0.026, f64::NAN);
+        inp.inner_feedback = f64::NAN;
+        assert_eq!(controller_rate(&inp), 0.0);
+        // The floor respects the cap.
+        let r = inner_feedback_floor(0.4, 2.0, 0.013, 1e-4, 0.05);
+        assert!(r <= 0.05 + 1e-12);
+    }
+
+    #[test]
+    fn test_inner_feedback_floor_never_reduces_rate() {
+        // max() semantics: where the base controller already exceeds the
+        // floor (Realtime-tight target), the weight changes nothing.
+        let mut tight = tunnel_inputs(0.026, 0.0);
+        tight.bulk_late_is_fine = false;
+        tight.tail_target = 1e-7;
+        let base = controller_rate(&tight);
+        let mut tight_w = tight;
+        tight_w.inner_feedback = 1.0;
+        let with_floor = controller_rate(&tight_w);
+        assert!(with_floor >= base - 1e-12);
+        assert!(
+            base > 0.05,
+            "tight target should already exceed the floor: {base}"
+        );
+        assert_eq!(with_floor, base, "floor must be inert below the base rate");
     }
 
     #[test]

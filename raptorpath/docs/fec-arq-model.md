@@ -152,6 +152,7 @@ ACK absence.
     - [14.25 Completion-Tail FEC](#1425-completion-tail-fec)
     - [14.26 Completion-Exposure δ](#1426-completion-exposure-δ-the-bulk-glide)
     - [14.27 Block-Mode ARQ via Batch Acknowledgements](#1427-block-mode-arq-via-batch-acknowledgements)
+    - [14.28 Inner-Feedback Flows and the Repair Floor](#1428-inner-feedback-flows-and-the-repair-floor)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -3675,7 +3676,15 @@ inflated ε̂₉₅ (measured at 150 ms RTT with a 0.5 s transfer: neither
 mapping wins — the early rate is governed by the cold-start prior in
 both). The glide's guarantee is for streams long enough to HAVE a
 middle; the cold-start prior itself is estimator work, not δ-mapping
-work.
+work. A second CANDIDATE scope limit is the PAYLOAD's dynamics:
+"parallel recovery is free" prices the outer stream's volume, not
+delivery latency, so a payload whose own delivery latency feeds back
+into its throughput (TCP inside the tunnel) could in principle pay for
+every unrepaired loss. Section 14.28 derives the mid-stream repair
+floor for those inner-feedback flows — and reports the L1 measurement
+that, once 14.27's reactive leg and in-order delivery exist, the inner
+flow absorbs the residual stalls and the floor buys nothing (C2) or
+actively hurts (C3). The glide as stated survives that test.
 
 **Verification** (wasm simulator, shared formula, same seeds per cell;
 ε = 0.05/0.10, q = 0.5, RTT = 50 ms, W = 64): the glide vs the old
@@ -3761,6 +3770,202 @@ L1 verification of the C2 completion gap (8 s → competitive with the
 non-amplification, lost-repair second round, LRU caps, margin math,
 fresh-vs-resend per backend, decode-after-repair for RaptorQ and RS).
 
+### 14.28 Inner-Feedback Flows and the Repair Floor
+
+Section 14.26's mid-stream guarantee — δ_bulk = ε̂, r* = 0, pure ARQ —
+rests on the 14.25 cost model: a mid-stream loss recovers in parallel
+with ongoing sends, so lateness costs no completion time. This section
+derives the model revision that argument SEEMED to demand for
+tunneled control-loop payloads, and then reports the L1 measurement
+that refuted the revision's premise — kept in full because both the
+derivation and the refutation constrain the model. The suspicion: at
+C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%) the production tunnel carrying a
+kernel-TCP transfer completed 1.8 MB in 1.11 s median against quinn's
+0.20 s, WITH block-mode ARQ (14.27) closing every hole in ~1.5 RTT;
+the P9b analysis attributed the residual gap to each GE loss event
+stalling the inner flow's in-order delivery ~1 ARQ round, ~20 events
+per transfer. A similar effect had appeared at L0 in the P6 goal-gate
+ablation: a small FIXED r = 0.01 floor beat pure ARQ on completion
+through straggler coverage.
+
+**Why "parallel recovery is free" could fail here.** The 14.25/14.26
+argument prices the VOLUME of the outer stream: while a hole waits for
+its repair, other symbols keep flowing, so outer throughput is
+unharmed and outer completion is untouched. But the tunnel's payload
+is not inert bytes — it is a control loop. Inner TCP consumes the
+tunnel's output IN ORDER; an unrepaired outer loss halts that delivery
+for one outer ARQ round, the inner ACK clock stalls with it, and — IF
+the stall exceeds the inner loss-detection tolerance — the inner
+congestion controller converts the stall into a rate cut. Late is fine
+for a file; late is potentially a throughput signal for a flow that
+watches its own latency. (The L1 verification below measures that
+"if": post-14.27 the stalls stay inside the inner tolerance.)
+
+**The stall cost model.** Per unrepaired loss event the inner flow
+stalls for one outer ARQ round, capped by the inner transport's own
+patience (its RTO — after which it retransmits through the tunnel and
+eats the loss the expensive way):
+
+```
+  L_stall = min(1.5 x SRTT_outer, RTO_inner)
+
+  RTO_inner >= max(RTO_MIN, SRTT_inner),  RTO_MIN = 200 ms (Linux),
+  SRTT_inner >= SRTT_outer (the inner path IS the outer path plus
+  tunnel processing), so the implementation uses the observable bound
+  L_stall = min(1.5 x SRTT, max(0.2, SRTT)).
+```
+
+Loss events are GE burst onsets: probability ≈ ε̂ · q̂ per wire slot
+(q̂ = 1/B̂ from the estimator; q̂ = 1 degenerates to iid). A proactive
+repair stream at rate r races each event against the ARQ horizon
+T_arq = L_stall / t_sym wire slots exactly as in Section 14.16, with
+the Section 14.14 burst-marginalized recovery probability:
+
+```
+  C(r) = P(event repaired within T_arq)
+       = sum_m (1-q̂)^{m-1} q̂ x P(Poisson(lambda) >= m),
+         lambda = T_arq x r(1-ε̂)/(1+r)
+```
+
+The expected fraction of wall time the inner delivery spends stalled
+is then
+
+```
+  S(r) = ε̂ x q̂ x T_arq x (1 - C(r))        [stalled slots per slot]
+```
+
+**The floor.** A stall is invisible to the inner flow when it is
+indistinguishable from the delivery jitter the flow already absorbs.
+The repair floor is the smallest rate whose residual stall sits at or
+below that jitter scale — a continuous trade, not a cutoff:
+
+```
+  r_min = min { r >= 0 : S(r) <= theta },   theta = sigma_j / L_stall,
+  sigma_j = SRTT/4
+```
+
+σ_j is the 14.26 σ_arq evaluated at its SRTT/4 floor: the sender
+cannot observe the inner flow's actual tolerance, and the production
+RTTVAR estimate is a fixed-fraction heuristic, so the deterministic
+branch is the honest choice (it errs toward slightly more repair).
+S is continuous and nonincreasing in r, so r_min is continuous in
+every input; when S(0) ≤ θ already — clean channel, short horizon —
+the floor is exactly 0 with no branch. At C2 timescales the floor
+engages only above ε̂ ≈ 0.0016; at the operating point it solves to
+
+```
+  ε̂ = 0.026 → r_min = 0.029      (T_arq ≈ 200 slots, theta = 1/6)
+  ε̂ = 0.035 → r_min = 0.033
+  ε̂ = 0.045 → r_min = 0.036
+```
+
+— the 0.01-0.04 band the P6 fixed-floor ablation pointed at, now
+derived rather than tuned. An unknown t_sym (no throughput estimate)
+disables the floor, the same sentinel convention as the burst B/T
+term. The floor composes with the rest of the controller by max():
+the χ glide still owns the stream tail, and the 14.21 saturation cap
+still overrides (where more FEC hurts the tail, the floor must not
+insist).
+
+**Who gets the floor: the weight w ∈ [0, 1].** The protocol hint alone
+cannot decide this. Bulk's "late is fine" is a statement about the
+PAYLOAD BYTES; whether lateness feeds back is a statement about the
+PAYLOAD'S DYNAMICS — a second, orthogonal input:
+
+```
+  rate = max(rate_glide, w x r_min)
+
+  w = 1: inner-feedback payload (TCP-in-tunnel: the payload is a
+         control loop). Opt-in via the tunnel's inner_feedback_weight
+         config; the ORIGINAL plan made this the Bulk-tunnel default,
+         retracted after the L1 verification below.
+  w = 0: file-transfer semantics — the L0 gate driver, the wasm
+         simulator, bench_suite, and any payload that is itself the
+         object being measured. There mid-stream ARQ recovery is
+         GENUINELY free and 14.26 applies unweakened; the gate's Bulk
+         volume-parity claims are stated at w = 0. Also the production
+         tunnel default (see the verification).
+```
+
+Intermediate w scales the floor linearly (a mixed payload tolerates
+proportionally more stall); the rate is continuous in w, and w = 0
+reproduces the old controller identically. When the future
+idle-onset/T_rem heuristics of 14.26 land, χ and w remain independent:
+χ says WHERE in the stream you are, w says WHAT the stream carries.
+
+**What the floor is not.** It is not a retreat from 14.26: M1 and M2
+(cold-start pin, permanent double payment) stay dead because the floor
+is finite, derived from the stall budget, and vanishes on clean
+channels — unlike the old min(0.1, ε̂) target, which re-activated the
+full margin machinery against an arbitrary constant. Nor does it
+replace 14.27's reactive leg: ARQ still recovers every hole; the floor
+only buys back the ~1.5-RTT DETECTION latency that no reactive scheme
+can remove, and only where that latency is a cost. The honest price is
+volume parity: with w = 1 the tunnel pays ~r_min ≈ ε̂ extra overhead
+mid-stream, conceding 14.26's parity claim for inner-feedback payloads
+— measured against the stall cost it removes (L1 ablation, w = 0 vs
+w = 1 at C2, below).
+
+**L1 verification — the premise is refuted post-14.27 (negative
+result).** Measured on the L1 harness (rp-bulk tunnel, 1.8 MB objects,
+seed 42, fresh topology per arm, cross-session interference audited
+via the sudo journal):
+
+```
+  Instrumentation first: the floor was initially INERT at L1 — the
+  production estimator had no local throughput measurement (the only
+  record_throughput feed was the peer's PathReport value, which is the
+  peer's estimator.throughput(): circular, both sides 0.0 forever), so
+  t_sym = 0 sentinel-disabled the floor — and, silently, the 14.21
+  saturation cap and the 8.4 burst B/T term on every real link. Fixed:
+  the report task now feeds the achieved send rate (symbols sent per
+  report interval), which is also the correct T_arq slot semantics.
+  The peer-feed is removed (it would mix the REVERSE direction's send
+  rate — an ACK trickle — into the data direction's t_sym).
+
+  C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%, eps ~ 2.6%), 10 runs/arm:
+    w = 0:  median 1.179 s, mean 1.107   (second arm, 5 runs: 0.784/0.955)
+    w = 1:  median 1.192 s, mean 1.121   (second arm, 5 runs: 1.158/1.171)
+    client FEC volume: 2.46% (w=0, reactive 14.27 repairs only)
+                       4.66% (w=1, floor verified ACTIVE on top)
+    inner TCP RetransSegs per 5 transfers: 11 (w=0) vs 21 (w=1)
+  C3 (20 Mbit, 40 ms RTT, GE 2%/40%, eps ~ 4.8%), 5 runs/arm:
+    w = 0:  median 5.34 s, mean 5.90
+    w = 1:  median 6.82 s, mean 7.00     (+28% median — the floor HURTS)
+```
+
+The floor demonstrably fires and pays its budget, and buys nothing:
+completion is flat at C2, the inner flow's loss-recovery signature does
+not shrink, and C3 regresses 28%. Two lessons, honestly taken:
+
+1. **The stall premise over-priced lateness.** The P9b residual
+   analysis (~20 events × ~1.5 SRTT) dated from before 14.27's
+   reactive leg and the P9b in-order delivery hold worked TOGETHER: a
+   mid-stream hole now closes in ~1.5 RTT while the receiver's
+   SRTT-adaptive hold delivers around it, so the inner TCP sees
+   delivery jitter well inside its own tolerance (RTO_inner ≥ 200 ms ≫
+   the 20-60 ms stalls; 11 retransmits per 9 MB). The model priced
+   EVERY unrepaired loss at L_stall; the true cost gates on
+   P(stall exceeds the inner loss-detection tolerance), which
+   post-14.27 is ~0 at C2/C3 — i.e. the honest r_min is 0, which is
+   what production now defaults to (inner_feedback_weight = 0, knob
+   kept for genuinely brittle payloads — measure before enabling).
+2. **Floor repairs are not free in the closed loop.** Repairs are
+   charged against the same cwnd/pacing budget as source symbols
+   (12.5), so at inner-limited rates they displace the very traffic
+   whose latency they protect — the 14.21 dilution cost made
+   system-visible. Worse, T_arq is measured in SEND-PROCESS slots: at
+   low operating rates the horizon holds few slots, r_min grows
+   (5-10% at C3's 2-3 Mbit/s effective rate), and the tax compounds
+   exactly where the link is tightest. That is the C3 regression.
+
+The 14.26 mid-stream guarantee therefore survives its hardest test to
+date: even for the TCP-in-tunnel payload it was suspected to fail, pure
+mid-stream ARQ (with 14.27 implemented) beats ARQ + repair floor. What
+remains of the C2 gap (P9b: ~1.1 s vs quinn 0.20 s) is NOT unrepaired-
+loss stalls; the suspects are the residual Copa backoff ceiling and the
+inner flow's own slow-start (goal-gate P9b items b and c).
+
 ---
 
 ## Appendix A: Summary of Key Formulas
@@ -3795,6 +4000,16 @@ fresh-vs-resend per backend, decode-after-repair for RaptorQ and RS).
      sigma_arq = max(4 x RTTVAR, SRTT/4)                               [seconds]
      delta_bulk = e_hat + (delta_tail - e_hat) x chi,  delta_tail=0.05 [probability]
      (chi = 0 mid-stream / unknown T_rem -> delta_bulk = e_hat -> r* = 0)
+
+   Inner-feedback repair floor (Section 14.28):
+     L_stall = min(1.5 x SRTT, max(0.2, SRTT))                         [seconds]
+     T_arq = L_stall / t_sym                                           [slots]
+     C(r) = sum_m (1-q)^{m-1} q x P(Poisson(T_arq x r(1-e)/(1+r)) >= m) [probability]
+     S(r) = e x q x T_arq x (1 - C(r))                                 [stall fraction]
+     r_min = min{ r : S(r) <= theta },  theta = (SRTT/4) / L_stall     [ratio]
+     rate = max(rate_glide, w x r_min),  w = inner-feedback weight     [ratio]
+     (w = 0 everywhere by default: the L1 ablation refuted the premise
+      post-14.27 — completion-neutral at C2, -28% at C3; opt-in knob)
 
    Three-variable optimization (Section 8.6):
      Taper cutoff: τ(t) = 0 for t > T_cut                (ρ<100%)

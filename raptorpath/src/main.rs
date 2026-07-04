@@ -98,6 +98,13 @@ struct RunArgs {
     /// FEC backend: raptorq (default), mettle, rs, rlc, or streaming
     #[arg(long)]
     fec_backend: Option<String>,
+
+    /// Inner-feedback weight in [0,1] (paper 14.28): mid-stream repair
+    /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
+    /// measured it completion-neutral at C2 and regressive at C3; pass
+    /// 1.0 to enable the floor.
+    #[arg(long)]
+    inner_feedback_weight: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -144,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
         interleave_depth: None,
         pin_cert: None,
         fec_backend: None,
+        inner_feedback_weight: None,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
@@ -205,6 +213,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         realtime_burst_extra: None,
         reorder_timeout_ms: None,
         reorder_max_size: None,
+        inner_feedback_weight: args.inner_feedback_weight,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

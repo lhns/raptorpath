@@ -91,6 +91,11 @@ pub fn controller_rate(
     math::controller_rate(&math::RateInputs {
         p_upper, sigma2, mean_burst, window, t_symbols, srtt, t_sym,
         codec_overhead, tail_target, bulk_late_is_fine, completion_exposure,
+        // Paper 14.28: the visualizer models a raw transfer (file-transfer
+        // semantics — no latency-feedback payload inside), so the
+        // inner-feedback repair floor stays off (as does production by
+        // default after the negative L1 C2/C3 ablation).
+        inner_feedback: 0.0,
         saturation_cap, max_overhead,
     })
 }
@@ -336,6 +341,12 @@ impl Simulation {
             tail_target,
             bulk_late_is_fine,
             completion_exposure: self.completion_chi(),
+            // Paper 14.28: the sim's payload IS the transfer (file-transfer
+            // semantics) — its delivery latency does not feed back into its
+            // own throughput, so the inner-feedback repair floor stays off
+            // and mid-stream Bulk remains pure ARQ (production defaults to
+            // 0 too after the negative L1 C2/C3 ablation).
+            inner_feedback: 0.0,
             saturation_cap: true,
             max_overhead: MAX_OVERHEAD,
         })
@@ -835,17 +846,6 @@ impl Simulation {
         } else {
             0.0
         }
-    }
-    /// Channel overhead floor in percent: with loss ε, ANY reliable
-    /// transport must send at least ε/(1−ε) extra — the channel's fault,
-    /// not the protocol's.
-    pub fn get_overhead_floor(&self) -> f64 {
-        if self.eps < 1.0 { self.eps / (1.0 - self.eps) * 100.0 } else { 100.0 }
-    }
-    /// Excess overhead in percent: what was spent BEYOND the channel
-    /// floor — the protocol's true inefficiency (0 = IT-perfect).
-    pub fn get_excess_overhead(&self) -> f64 {
-        (self.get_overhead() - self.get_overhead_floor()).max(0.0)
     }
     pub fn get_recovery(&self) -> f64 {
         if self.total_src > 0 {

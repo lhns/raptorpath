@@ -48,6 +48,11 @@ pub struct RaptorpathConfig {
     pub reorder_timeout_ms: Option<u64>,
     /// Reorder buffer max capacity (default: 500)
     pub reorder_max_size: Option<usize>,
+    /// Inner-feedback weight in [0,1] (paper 14.28): mid-stream repair
+    /// floor for payloads whose delivery latency feeds back into their own
+    /// throughput (TCP-in-tunnel). Default 0.0 (L1-measured: neutral at
+    /// C2, regressive at C3); set 1.0 to enable the floor.
+    pub inner_feedback_weight: Option<f64>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -124,6 +129,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         realtime_burst_extra: overlay.realtime_burst_extra.or(base.realtime_burst_extra),
         reorder_timeout_ms: overlay.reorder_timeout_ms.or(base.reorder_timeout_ms),
         reorder_max_size: overlay.reorder_max_size.or(base.reorder_max_size),
+        inner_feedback_weight: overlay.inner_feedback_weight.or(base.inner_feedback_weight),
     }
 }
 
@@ -221,6 +227,19 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         symbol_size_override: 0, // use profile default
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
         reorder_max_size: config.reorder_max_size.unwrap_or(500),
+        // Paper 14.28 (P10a): mid-stream repair floor for inner-feedback
+        // payloads (TCP-in-tunnel). Default 0.0 — the L1 ablation MEASURED
+        // the floor active (client FEC volume 2.5% -> 4.7% at C2) with NO
+        // completion or inner-retransmit improvement at C2 and a 28%
+        // median REGRESSION at C3: post-P8/P9b the inner flow absorbs the
+        // residual ARQ stalls, and the floor's repair volume displaces
+        // source symbols inside the same inner-limited closed loop. The
+        // knob is kept for payload semantics that measure differently; see
+        // docs/fec-arq-model.md 14.28 and docs/goal-gate.md P10a.
+        inner_feedback_weight: config
+            .inner_feedback_weight
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0),
     };
 
     Ok((peer_config, status_addr))
@@ -291,6 +310,7 @@ mod tests {
             realtime_burst_extra: Some(0.05),
             reorder_timeout_ms: Some(0),
             reorder_max_size: Some(200),
+            inner_feedback_weight: Some(0.0),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
@@ -304,6 +324,34 @@ mod tests {
         assert_eq!(parsed.realtime_burst_extra, Some(0.05));
         assert_eq!(parsed.reorder_timeout_ms, Some(0));
         assert_eq!(parsed.reorder_max_size, Some(200));
+        assert_eq!(parsed.inner_feedback_weight, Some(0.0));
+    }
+
+    #[test]
+    fn test_inner_feedback_weight_defaults() {
+        // Default OFF (paper 14.28: the L1 ablation measured the floor
+        // active but completion-neutral at C2 and regressive at C3).
+        let bulk = RaptorpathConfig {
+            protocol_hint: Some("bulk".into()),
+            ..Default::default()
+        };
+        let (pc, _) = resolve(&bulk).unwrap();
+        assert_eq!(pc.inner_feedback_weight, 0.0);
+        // Explicit opt-in wins (the L1 ablation arm / future payloads).
+        let opt_in = RaptorpathConfig {
+            protocol_hint: Some("bulk".into()),
+            inner_feedback_weight: Some(1.0),
+            ..Default::default()
+        };
+        let (pc, _) = resolve(&opt_in).unwrap();
+        assert_eq!(pc.inner_feedback_weight, 1.0);
+        // Out-of-range values clamp.
+        let clamped = RaptorpathConfig {
+            inner_feedback_weight: Some(3.0),
+            ..Default::default()
+        };
+        let (pc, _) = resolve(&clamped).unwrap();
+        assert_eq!(pc.inner_feedback_weight, 1.0);
     }
 
     #[test]

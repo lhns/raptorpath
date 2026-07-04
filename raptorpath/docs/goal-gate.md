@@ -7,8 +7,10 @@ simulation per ADR-0051). Run:
 cargo test --test gate_suite -p raptorpath --release -- --test-threads 1
 ```
 
-**Status: GREEN** (2026-07-02, 12/12 tests, 10 trials/cell, fixed seeds,
-95%-CI separation required for every win).
+**Status: GREEN** (2026-07-04, 15/15 tests, 10 trials/cell, fixed seeds,
+95%-CI separation required for every win; re-run on the P10a branch —
+the inner-feedback floor is weight 0 in the gate driver, so the gate
+path is bit-identical).
 
 ## G1 — surpass the SimRetx baseline (ADR-0051 win conditions)
 
@@ -116,6 +118,7 @@ Reading:
 | P6 completion-exposure δ | wasm Bulk vs old min(0.1, ε̂) | see below | completion -6%/-8%, excess overhead 5.99→0.04% / 8.21→0.91% |
 | P7 production Copa-lite port | real-link (C2 netem) tunnel throughput — production scheduler, not the driver | cwnd collapsed 10→2 symbols on the first burst (rate-formula target) | implemented, L1-verified pending |
 | P8 block-mode ARQ (paper 14.27) | real-link (C2 netem) tunnel completion — 1.8 MB took ~8 s vs quinn 0.175 s with NO block-mode loss recovery (Bulk mid-stream r*=0 relies on this path existing) | lost symbols waited out the 30 s decoder eviction; inner TCP saw raw 2.6% loss | implemented, L1-verified pending |
+| P10a inner-feedback repair floor (paper 14.28) | L1 C2/C3 rp-bulk median completion (TCP-in-tunnel), weight 0 vs 1 | C2 1.179 s, C3 5.34 s (pure glide) | C2 1.192 s, C3 6.82 s — floor verified ACTIVE (+2.2% FEC volume), NEGATIVE result: neutral at C2, −28% at C3; production default stays weight 0 |
 
 Notable: most of the median-latency win came from P2 (the ground-truth
 floor hid the jitter bound); P1's hint mapping is retained for semantics.
@@ -424,6 +427,58 @@ TCP-in-tunnel Bulk is the candidate model revision (unmeasured).
 p50 at ~80-110 vs BDP 160 (gate-full only 8-24% of ACKs, so (a) binds
 first). (c) Inner slow-start: quinn IS the transport; we carry a whole
 extra TCP.
+
+### P10a — inner-feedback repair floor (paper 14.28): measured, refuted
+
+Hypothesis (a) above, formalized and tested. Paper §14.28 derives a
+mid-stream repair floor r_min for payloads whose delivery latency
+feeds back into their own throughput (TCP-in-tunnel): the smallest r
+whose residual stall fraction S(r) = ε̂·q̂·T_arq·(1−C(r)) sits within
+delivery-jitter noise, with C(r) the §14.14 burst-marginalized
+recovery race against the ARQ horizon T_arq = min(1.5·SRTT,
+max(0.2 s, SRTT))/t_sym. At the C2 operating point it solves to
+r_min ≈ 0.029-0.036 across ε̂ = 2.6-4.5% — the same 0.01-0.04 band the
+P6 fixed-floor ablation had pointed at. Continuous in every input,
+0 on clean channels, weighted by a new `inner_feedback` input in the
+shared `controller_rate` (weight 0 = old behavior bit-identically; L0
+gate driver, wasm sim, bench_suite all stay 0 — their payloads ARE the
+measured object).
+
+Instrumentation found a real production bug first: the floor never
+fired because the estimator had NO local throughput feed — the only
+`record_throughput` call took the peer's PathReport value, which is
+the peer's own `estimator.throughput()`: circular, so both sides sat
+at 0.0 forever and every throughput-gated model term (§14.28 floor,
+P5/§14.21 saturation cap, §8.4 burst B/T term) was silently
+sentinel-disabled on real links. Fixed: the report task feeds the
+achieved send rate (symbols-sent delta per 2 s report interval); the
+circular peer-feed is removed (it would mix the reverse direction's
+ACK-trickle rate into the data direction's t_sym).
+
+Ablation (1.8 MB × runs, seed 42, fresh topo per arm, sudo-journal
+audited for cross-session interference; verified per-arm via resolved
+config in /tmp/rp-client.log and client /status FEC counters):
+
+| Cell | weight 0 (pure glide) | weight 1 (floor on) |
+|------|----------------------|---------------------|
+| C2 median (10 runs) | 1.179 s (mean 1.107) | 1.192 s (mean 1.121) |
+| C2 median (5-run repeat) | 0.784 s | 1.158 s |
+| C2 client FEC volume | 2.46% (reactive P8 only) | 4.66% (floor active) |
+| C2 inner TCP RetransSegs / 5 runs | 11 | 21 |
+| C3 median (5 runs) | 5.34 s (mean 5.90) | 6.82 s (mean 7.00), +28% |
+
+NEGATIVE, and informative: the floor verifiably fires and pays its
+budget, yet completion is flat at C2, the inner loss-recovery
+signature does not shrink, and C3 regresses 28%. Post-P8 + P9b the
+inner TCP absorbs the residual ~20-60 ms stalls (its RTO floor is
+200 ms; the in-order hold already smooths reordering), so hypothesis
+(a) is now RULED OUT (measured): the remaining C2 gap belongs to (b)
+the Copa backoff ceiling and (c) inner slow-start. Floor repairs also
+displace source symbols in the same inner-limited closed loop —
+§14.21's dilution cost made system-visible, which is the C3
+regression. Production default: `inner_feedback_weight = 0` (knob kept
+for genuinely stall-brittle payloads; measure before enabling). Full
+derivation + refutation: paper §14.28.
 
 ## Honest scope
 
