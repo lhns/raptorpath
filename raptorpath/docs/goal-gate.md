@@ -691,6 +691,41 @@ continuous (no hard cutoffs) per project convention. Gate re-run GREEN
    implementation.
 >>>>>>> feat/soft-saturation-taper
 
+## L2 workstream 3 — rp-NATIVE object geometry (the fair-geometry verdict)
+
+`raptorpath perf`: objects straight over the transport (FEC/ARQ/CC via a
+memory TUN), NO inner TCP, NO kernel TUN — the true apples-to-apples
+endpoint vs quinn-perf. C2, bulk, seed 42:
+
+| object | rp-native | reliability | vs tunnel | vs quinn |
+|--------|-----------|-------------|-----------|----------|
+| 4 KB | 0.024 s | 5/5 | — | — |
+| 100 KB | 0.094 s (8.5 Mbit/s) | 5/5 | — | — |
+| 500 KB | 0.170 s (23.5 Mbit/s) | 5/5 | — | — |
+| 1.8 MB | 0.92 s first-object (15.7 Mbit/s) | see bug | tunnel 1.05 s | quinn 0.20 s |
+
+**THE VERDICT (why this exercise existed):** removing the inner TCP moved
+the 1.8 MB completion only 1.05 s -> 0.92 s (~13%). The remaining ~4.5x
+to quinn is the rp PIPELINE itself — block-assembly latency, CC ramp,
+decode — NOT measurement geometry. This is the SAME conclusion the
+warm-flow test reached (warm barely moved rp), now confirmed a second,
+independent way (native transport). The "5x gap is geometry" hypothesis
+is REFUTED; the gap is real and owned. Encouraging signal: native
+goodput climbs with object size (8.5 -> 23.5 Mbit/s at 100 KB -> 500 KB)
+as the engine fills, so the pipeline's fixed per-object latency (warm-up
++ first-block) is the dominant small-object cost.
+
+**Bug found by the native harness (real transport, not a harness
+artifact):** large objects (>~500 KB) probabilistically STALL when the
+sender idles after the final chunk — the last block's unrecovered loss
+waits for ARQ, but there is no ongoing traffic to carry the repair and
+the block-mode idle tail-flush does not fire in the native path
+(TCP-in-tunnel masked this by ACKing continuously). 500 KB reliable
+5/5; 1 MB flaky; 1.8 MB usually stalls on run 2. Next transport work
+item: idle-triggered final-block recovery (tail sweep / NACK on
+send-idle) for block mode. Small/medium objects and all streaming are
+unaffected.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
