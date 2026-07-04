@@ -747,7 +747,6 @@ Bottom line: the model's central tail thesis is validated at C2 against
 real QUIC (rp 5.5–31× lower p99); it holds partially at C3 (bulk beats
 quinn but not BBR) and not yet at C5.
 
-<<<<<<< HEAD
 ## L2 claim table (re-issued, fair geometry — 2026-07-04)
 
 1.8 MB objects at C2, median, matched geometry where possible:
@@ -782,7 +781,6 @@ CLAIM STATUS after L2 (all L1/L2, real stacks, reproducible):
 5. Where TCP dies, rp lives: C5 objects complete (17.4 s) where CUBIC
    DNFs; message streams at C2 stay functional where kernel TCP
    spends 13 s per retransmission cascade.
-=======
 ## L2 workstream — visualizer-driven model refinements (2026-07-04)
 
 Two MODEL questions raised from the interactive visualizer, both fixed
@@ -828,7 +826,6 @@ continuous (no hard cutoffs) per project convention. Gate re-run GREEN
    end-of-stream burst (n_pre + n_tail over pacing tokens) as the discrete
    limiting case of the ramp; the wasm sim carries the reference continuous
    implementation.
->>>>>>> feat/soft-saturation-taper
 
 ## L2 workstream 3 — rp-NATIVE object geometry (the fair-geometry verdict)
 
