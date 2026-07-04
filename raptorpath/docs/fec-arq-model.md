@@ -2748,28 +2748,46 @@ symbols the delivery time on path i is D_i = K/C_i + E_i, and:
   block-granular:  y_i of blocks pay  D_i        (their own path only)
 ```
 
-The interpolated objective keeps its form, evaluated per delivery unit:
+The block delivery time needs the per-BLOCK recovery term, not the
+per-symbol one: a block of K symbols on a path with loss eps needs a
+recovery round at THAT path's RTT with probability
+
+```
+  P_blk = 1 - (1-eps)^K        (~1 for realistic K: K=56, eps=4.8% -> 0.94)
+
+  D_i = K/C_i + RTT_i/2 + P_blk x 2 x RTT_i
+```
+
+The per-symbol E_i (Section 13.5) undercounts this by roughly an order
+of magnitude (measured C8: E_B = 22 ms vs B-blocks actually completing
+at p50 94 ms). The interpolated objective keeps its form, evaluated per
+delivery unit:
 
 ```
   minimize: w_lat x SUM(y_i x D_i) + w_bw x SUM(y_i x r_i)
 
   subject to: SUM(y_i) = 1
               y_i x block_rate <= B_eff_i / K            per-path capacity
-              D_i - min_j D_j <= H   for all y_i > 0     in-order hold horizon
+              D_i - min_j D_j <= H/4  for all y_i > 0    in-order hold horizon
 ```
 
 The third constraint is the in-order coupling term: a path whose block
 delivery time exceeds the fastest path's by more than the reorder hold
-H cannot carry source at all — its blocks would be force-delivered as
-holes — but it remains fully useful for corrections and cross-path
-retransmit (Section 13.10), which have no ordering deadline. For Bulk
-the solution is y_i proportional to B_eff_i over the feasible paths
-(fill capacities at block granularity); for Realtime it degenerates to
-the lowest-D_i path with capacity spill. Note this does NOT violate the
-Section 13.3 rule (source and corrections must not be separated per
-path): correction placement is unchanged, and burst protection on a
-source-carrying path is provided by cross-path diversity
-(Sections 13.7, 13.10).
+budget cannot carry source at all — its blocks would be force-delivered
+as holes — but it remains fully useful for corrections and cross-path
+retransmit (Section 13.10), which have no ordering deadline (this also
+keeps its estimators warm for re-admission when it improves). The H/4
+factor maps the MEDIAN estimate D_i onto the TAIL event the constraint
+guards against: an expiry fires when a single block exceeds H, ARQ
+rounds stack the delivery tail to ~3-4x the median (measured C8:
+median 134 ms with expiries at 301+ ms), so a median skew above H/4
+already pushes the tail past the horizon. For Bulk the solution is y_i
+proportional to B_eff_i over the feasible paths (fill capacities at
+block granularity); for Realtime it degenerates to the lowest-D_i path
+with capacity spill. Note this does NOT violate the Section 13.3 rule
+(source and corrections must not be separated per path): correction
+placement is unchanged, and burst protection on a source-carrying path
+is provided by cross-path diversity (Sections 13.7, 13.10).
 
 The production scheduler realizes y_i with a smooth weighted
 round-robin on B_eff_i (Copa pacing rate deflated by 1 + r_i): the
