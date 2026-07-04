@@ -3,6 +3,7 @@ mod control;
 mod fec;
 mod monitor;
 mod net;
+mod perf;
 mod preflight;
 mod routing;
 mod scheduler;
@@ -33,6 +34,10 @@ enum Commands {
     Check,
     /// Query status of a running raptorpath instance
     Status(StatusArgs),
+    /// rp-native object benchmark: objects over the real engine via a
+    /// memory TUN (no inner TCP, no kernel TUN) — fair geometry vs
+    /// quinn-perf
+    Perf(PerfArgs),
     /// Download and install platform dependencies (e.g. wintun.dll on Windows)
     Setup,
 }
@@ -114,6 +119,38 @@ struct RunArgs {
 }
 
 #[derive(Parser, Debug)]
+struct PerfArgs {
+    /// Run as perf server (reassemble + ack objects)
+    #[arg(long)]
+    server: bool,
+
+    /// Run as perf client (send objects, measure completion)
+    #[arg(long)]
+    client: bool,
+
+    /// Local bind addresses (one per path; server requires it, client
+    /// defaults to 0.0.0.0:0 per peer)
+    #[arg(long, value_delimiter = ',')]
+    bind: Vec<SocketAddr>,
+
+    /// Remote peer addresses (one per path, client mode)
+    #[arg(long, value_delimiter = ',')]
+    peer: Vec<SocketAddr>,
+
+    /// Object size in bytes (client)
+    #[arg(long, default_value_t = 1_800_000)]
+    bytes: usize,
+
+    /// Number of sequential timed runs (client)
+    #[arg(long, default_value_t = 10)]
+    runs: u32,
+
+    /// Protocol hint: "realtime", "bulk", "auto"
+    #[arg(long)]
+    protocol_hint: Option<String>,
+}
+
+#[derive(Parser, Debug)]
 struct StatusArgs {
     /// Address of the running raptorpath status endpoint
     #[arg(long, default_value = "127.0.0.1:9820")]
@@ -163,7 +200,56 @@ async fn main() -> anyhow::Result<()> {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
         Commands::Status(args) => cmd_status(args).await,
+        Commands::Perf(args) => cmd_perf(args).await,
         Commands::Setup => cmd_setup().await,
+    }
+}
+
+async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
+    if args.server == args.client {
+        anyhow::bail!("specify exactly one of --server / --client");
+    }
+    if args.server && args.bind.is_empty() {
+        anyhow::bail!("--server requires --bind");
+    }
+    if args.client && args.peer.is_empty() {
+        anyhow::bail!("--client requires --peer");
+    }
+
+    // Same resolution path as cmd_run (defaults incl. the dummy
+    // tun_addr 10.99.0.1/24 — parsed but never applied to the OS: the
+    // injected memory TUN skips device/route/DNS setup entirely).
+    let cfg = config::RaptorpathConfig {
+        server: if args.server { Some(true) } else { None },
+        bind: if args.bind.is_empty() {
+            None
+        } else {
+            Some(args.bind.iter().map(|a| a.to_string()).collect())
+        },
+        peer: if args.peer.is_empty() {
+            None
+        } else {
+            Some(args.peer.iter().map(|a| a.to_string()).collect())
+        },
+        protocol_hint: args.protocol_hint,
+        ..Default::default()
+    };
+    let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
+
+    // Client convenience: one wildcard bind per peer path.
+    if !peer_config.is_server && peer_config.bind_addrs.is_empty() {
+        peer_config.bind_addrs = peer_config
+            .peer_addrs
+            .iter()
+            .map(|_| "0.0.0.0:0".parse().unwrap())
+            .collect();
+    }
+
+    info!(?peer_config, "perf configuration");
+    if args.server {
+        perf::server(peer_config).await
+    } else {
+        perf::client(peer_config, args.bytes, args.runs).await
     }
 }
 
