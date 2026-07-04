@@ -317,10 +317,10 @@ batch-Ack diff) addresses both.
 Median 1.8 MB completion (mean for quinn):
 | Cell | CUBIC | BBR | quinn | rp-bulk | rp-realtime |
 |------|-------|-----|-------|---------|-------------|
-| C2 | 0.24 | 0.22 | 0.20 | 3.21 (was 7.97 pre-P8) | tunnel failed |
-| C3 | 6.31 | 1.00 | 0.90 | 9.61 (was 20.5) | tunnel failed |
+| C2 | 0.24 | 0.22 | 0.20 | 3.21 (was 7.97 pre-P8) | 2.18 mean (P9a) |
+| C3 | 6.31 | 1.00 | 0.90 | 9.61 (was 20.5) | 25.5 mean (P9a) |
 | C4 | 42.2 | 3.64 (max 125) | 1.30 | 56.5 | tunnel failed |
-| C5 | DNF | 0.56 (max 57) | 0.55 | 17.4 | tunnel failed |
+| C5 | DNF | 0.56 (max 57) | 0.55 | 17.4 | DNF (P9a note) |
 
 HONEST READING (the L1 milestone's central lesson):
 - P8 doubled rp-bulk everywhere it runs and made completion consistent,
@@ -330,8 +330,16 @@ HONEST READING (the L1 milestone's central lesson):
   production data-plane engineering, not the model: block-assembly
   latency + TCP-in-tunnel dynamics + 20 ms reorder buffer + residual
   false congestion backoffs (repair-batch RTT samples) + a young CC.
-- rp-realtime (window mode) fails tunnel bring-up entirely at L1 —
-  needs the same bring-up debugging bulk received (P9 candidate #1).
+- rp-realtime (window mode): P9a fixed three stacked bring-up bugs
+  (silent task-exit in select! — arq sweep returned instantly in window
+  mode and took the tunnel down; backend-switch self-deadlock on
+  non-reentrant locks; TUN MTU 1500 vs 508-byte window symbols silently
+  truncating TCP segments). Realtime now runs at L1: C2 2.18 s mean
+  (beats rp-bulk's 3.21), C3 25.5 s, C5 DNF (TCP-in-tunnel stalls at
+  15% loss — FEC-rate work item). Window-mode runtime backend switching
+  pinned off until the switch protocol carries seq state (hazard note
+  in net/mod.rs). Keeper: every select! task exit is now logged —
+  silent exits are structurally gone.
 - Baselines reproduce within noise across runs (quinn 0.20 vs 0.175;
   BBR C3 1.00 vs 1.00) — the harness is claim-grade even where our
   numbers are not yet.
