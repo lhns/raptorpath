@@ -608,6 +608,41 @@ earlier C5-realtime DNF). Honest scope: the tail win is demonstrated
 where capacity headroom exists; low-rate and extreme-loss cells need
 the block-latency and FEC-rate work items.
 
+## L2 claim table (re-issued, fair geometry — 2026-07-04)
+
+1.8 MB objects at C2, median, matched geometry where possible:
+| stack | cold conn | warm conn |
+|-------|-----------|-----------|
+| quinn (native QUIC) | — | 0.20 s |
+| kernel BBR | 0.22 | 0.166 |
+| kernel CUBIC | 0.24 | — |
+| rp-bulk (tunnel) | 1.05 | 1.02 |
+
+Geometry finding: warm vs cold moved BBR 25% but rp only ~3% — the
+inner-TCP cold-start term was NOT rp's bottleneck; the residual ~5x is
+the tunnel's own pipeline (residual Copa backoff rate ~30%, block
+pipeline latency). The prior "structural" scoping is CORRECTED
+accordingly: an rp-native object API remains the right fair-geometry
+endpoint, but the pipeline gap is real and owned.
+
+CLAIM STATUS after L2 (all L1/L2, real stacks, reproducible):
+1. Multipath aggregation (C7 symmetric): VALIDATED — 23.9 Mbit/s vs
+   kernel MPTCP 15.4, aggregation 1.71x vs MPTCP's 1.45x.
+2. Asymmetric multipath (C8): kernel-MPTCP PARITY (12.61 vs 12.6)
+   after the 13.8 order-coupling extension; full aggregation above the
+   fast path is foreclosed by the inner-TCP in-order contract
+   (model-scoped, paper-documented).
+3. Tail latency (the model's thesis): VALIDATED vs kernel TCP at C2 —
+   p99 91 ms (bulk) / 513 ms (realtime) vs 13,300-13,400 ms for BOTH
+   kernel CCs at equal p50. Open: quinn message-tail comparison
+   (needs a QUIC echo tool), C3/C5 tails not yet won, realtime
+   streams silently fail at c3/c5 (open diagnostic).
+4. Object completion vs modern stacks: NOT YET WON at L1/L2 (5-6x to
+   quinn at C2 even warm); the improvement loop owns the pipeline gap.
+5. Where TCP dies, rp lives: C5 objects complete (17.4 s) where CUBIC
+   DNFs; message streams at C2 stay functional where kernel TCP
+   spends 13 s per retransmission cascade.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
