@@ -44,12 +44,17 @@ def server(args) -> None:
     while True:
         conn, _ = s.accept()
         try:
+          # Objects loop on one connection (warm-flow, L2 ws3); clean
+          # EOF at a header boundary ends the connection.
+          while True:
             # First 16 bytes: decimal object size, space padded.
             hdr = b""
             while len(hdr) < 16:
                 b = conn.recv(16 - len(hdr))
                 if not b:
-                    raise ConnectionError("short header")
+                    if hdr:
+                        raise ConnectionError("short header")
+                    raise EOFError
                 hdr += b
             n = int(hdr.decode().strip())
             got = 0
@@ -59,6 +64,8 @@ def server(args) -> None:
                     raise ConnectionError(f"short body {got}/{n}")
                 got += len(b)
             conn.sendall(b"A")  # application-level delivery ack
+        except EOFError:
+            pass
         except ConnectionError as e:
             print(f"conn error: {e}", file=sys.stderr, flush=True)
         finally:
@@ -68,13 +75,27 @@ def server(args) -> None:
 def client(args) -> None:
     payload = b"\xa5" * CHUNK
     times = []
-    for run in range(1, args.runs + 1):
-        c = make_socket(args.proto)
+    warm = getattr(args, "warm", False)
+    wc = None
+    if warm:
+        # Warm-flow geometry (L2 ws3): one connection for all objects,
+        # comparable to quinn-perf's warm QUIC connection.
+        wc = make_socket(args.proto)
         if args.cc and args.proto == "tcp":
-            c.setsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, args.cc.encode())
-        c.settimeout(300)
-        t0 = time.perf_counter()
-        c.connect((args.host, args.port))
+            wc.setsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, args.cc.encode())
+        wc.settimeout(300)
+        wc.connect((args.host, args.port))
+    for run in range(1, args.runs + 1):
+        if warm:
+            c = wc
+            t0 = time.perf_counter()
+        else:
+            c = make_socket(args.proto)
+            if args.cc and args.proto == "tcp":
+                c.setsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, args.cc.encode())
+            c.settimeout(300)
+            t0 = time.perf_counter()
+            c.connect((args.host, args.port))
         c.sendall(f"{args.bytes:<16d}".encode())
         left = args.bytes
         while left > 0:
@@ -83,7 +104,8 @@ def client(args) -> None:
             left -= k
         ack = c.recv(1)
         t1 = time.perf_counter()
-        c.close()
+        if not warm:
+            c.close()
         if ack != b"A":
             raise RuntimeError("missing delivery ack")
         secs = t1 - t0
@@ -185,6 +207,8 @@ def main() -> None:
     c.add_argument("--runs", type=int, default=10)
     c.add_argument("--proto", default="tcp", choices=["tcp", "mptcp"])
     c.add_argument("--cc", default=None)
+    c.add_argument("--warm", action="store_true",
+                   help="reuse one connection for all objects")
     ss = sub.add_parser("stream-server")
     ss.add_argument("--bind", default="0.0.0.0")
     ss.add_argument("--port", type=int, default=9910)
