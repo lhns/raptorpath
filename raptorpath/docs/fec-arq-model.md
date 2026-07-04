@@ -91,6 +91,7 @@ ACK absence.
    - [8.5 Worked Examples](#85-worked-examples)
    - [8.6 Three-Variable Optimization](#86-three-variable-optimization)
    - [8.7 Exact P_fec via Transfer-Matrix DP](#87-exact-p_fec-via-transfer-matrix-dp)
+   - [8.8 Choosing the Window](#88-choosing-the-window)
 9. [Codec Overhead Integration](#9-codec-overhead-integration)
    - [9.1 Decoder Invocation Probability](#91-decoder-invocation-probability)
    - [9.2 Effective Codec Overhead](#92-effective-codec-overhead)
@@ -1998,6 +1999,116 @@ as `p_fec_exact` / `compute_r_star_exact` in raptorpath-math).
 Section 9.2 on top). The success criterion inherits Section 8.2's
 per-window block view of the sliding-window code. R is rounded to an
 integer, so r* is resolved in steps of 1/W.
+
+### 8.8 Choosing the Window
+
+Every rate formula so far takes W as a given. But W is itself a knob with
+large, opposing effects, and picking it by hand ("W = 64") leaves free
+overhead or free latency on the table. This section derives W* from the
+same channel state the rate uses, closing the last free parameter.
+
+**W pulls three ways.** All three appear elsewhere in this document; here
+they are read as bounds on a single choice.
+
+```
+  1. Overhead  (Section 8.4).  The r* margin is
+        margin(W) = z x sqrt(eps x sigma2 / (W (1-eps))),   z = z_{delta/eps}
+     It decays as W^{-1/2}, with slope d(r*)/dW ~ -W^{-3/2}: strong at
+     small W, flattening fast. Bigger W => less overhead. (favours large W)
+
+  2. Latency   (Sections 14.5, 14.21, 14.25).  A window loss waits for a
+     covering repair within the window horizon, which is traversed at the
+     source rate: recovery latency ~ W x t_sym = W / send_rate. It is also
+     the tail_svc dilution term of Section 14.21 and the coverage span of
+     the completion glide (Section 14.26). Bigger W => slower recovery,
+     and once in-flight span >> W the last window cannot cover the exposed
+     tail (Section 14.25). (favours small W)
+
+  3. Burst absorbency (Section 14.5).  Ambient FEC at r = eps/(1-eps) must
+     accumulate B surviving repairs to cover a mean burst B = (sigma2+1)/2.
+     (needs W at least a floor)
+```
+
+There is no scale-free "knee" in a bare W^{-1/2} law — diminishing returns
+appear only RELATIVE to a fixed scale. The natural scale is the IT floor
+eps/(1-eps): keep sizing the window up while the margin is a meaningful
+fraction of the floor it sits on; stop once the margin has been pushed to
+a fraction alpha of it. That, the latency ceiling, and the burst floor give
+three closed-form bounds:
+
+```
+  W_over = z^2 x sigma2 x (1-eps) / (eps x alpha^2)      (margin <= alpha x floor)
+  W_lat  = budget x send_rate                            (recovery <= budget)
+  W_bur  = B / (eps x (1-eps)),   B = (sigma2+1)/2        (absorb a mean burst)
+
+  W* = clamp( W_over,  min(W_bur, W_lat),  W_lat ),  then clamp to [16, 512]
+```
+
+with z = z_{delta/eps} = Phi^{-1}(1 - delta/eps) (the SAME quantile as r*,
+Section 8.4), alpha = 0.25, and `budget` the Realtime hint's latency budget
+or ~1 RTT otherwise — the Section 14.5 setting W x t_sym ~ RTT that aligns
+the FEC and ARQ recovery horizons. The burst floor never overrides the
+latency ceiling (`min(W_bur, W_lat)`): if a mean burst cannot be absorbed
+within the budget, no window size fixes it and latency wins — the Realtime
+reliability/latency trade made explicit.
+
+**Continuity and the three regimes.** `clamp`/`min`/`max` are continuous
+(piecewise-linear), so W* is continuous in every input and finite by the
+[16, 512] clamp. Which term binds is itself the story:
+
+- **Loose delta (Bulk, delta >= eps).** z <= 0, so W_over = 0: no margin to
+  amortise. The window collapses to the burst floor min(W_bur, W_lat) — the
+  SMALLEST window that still catches a mean burst, minimising recovery
+  latency and decode cost. This is exactly the "no steady-state FEC" stance
+  of Sections 14.25/14.26 read through W instead of r.
+- **Tight delta (Auto/Realtime).** The margin dominates the small IT floor,
+  W_over is large (often unreachable), and W* rides the latency ceiling
+  W_lat: as large as the budget allows, to shrink the overhead as far as
+  latency permits.
+- **Moderate delta/eps.** W_over lands between the floor and the ceiling and
+  the overhead knee itself binds (WiFi-Bulk below).
+
+**Monotonicities** (verified as unit tests in raptorpath-math): tighter
+delta raises z and W_over, so W* is non-decreasing as delta tightens (until
+capped by W_lat); higher sigma2 raises both W_over and W_bur, so W*
+increases with burst variance; a tighter latency budget lowers W_lat and
+shrinks W*. Degenerate inputs are safe: no throughput/RTT sample disables
+the latency ceiling (W_lat = 512, overhead knee governs), and eps -> 0
+leaves the burst/overhead terms inert so latency alone sets W.
+
+**Worked examples.** Per-hint delta and latency budget: Bulk (delta = 1e-2,
+budget = 2 RTT), Auto (1e-4, 1 RTT), Realtime (1e-6, 0.5 RTT). `r*(W*)` is
+the resulting overhead at the derived window; `r*(64)` is the overhead a
+fixed W = 64 would pay at the same target; `recov` = W* / send_rate.
+
+```
+  DC          eps=0.001  sigma2=3.0  RTT=1 ms    send_rate=100k/s
+    hint       delta     W*    r*(W*)   r*(64)   recov    binding
+    Bulk       1e-2     200     0.0%     0.0%    2.0 ms   latency (pure ARQ)
+    Auto       1e-4     100     0.8%     1.0%    1.0 ms   latency
+    Realtime   1e-6      50     2.5%     2.2%    0.5 ms   latency
+
+  WiFi        eps=0.025  sigma2=3.0  RTT=13 ms   send_rate=10k/s
+    hint       delta     W*    r*(W*)   r*(64)   recov    binding
+    Bulk       1e-2     120     3.2%     3.4%   12.0 ms   overhead knee
+    Auto       1e-4     130     9.0%    11.8%   13.0 ms   latency
+    Realtime   1e-6      65    16.1%    16.2%    6.5 ms   latency
+
+  Satellite   eps=0.09   sigma2=5.0  RTT=210 ms  send_rate=2.04k/s
+    hint       delta     W*    r*(W*)   r*(64)   recov    binding
+    Bulk       1e-2     512    13.7%    20.6%  250.9 ms   overhead (W_max)
+    Auto       1e-4     429    20.3%    36.8%  210.0 ms   latency
+    Realtime   1e-6     214    30.3%    47.2%  105.0 ms   latency
+```
+
+The overhead saving is largest exactly where W matters most: on Satellite
+the derived window nearly halves the fixed-64 overhead (Auto 20.3% vs
+36.8%) because the 1/sqrt(W) margin is fattest at high eps, while recovery
+latency stays within the hint's budget by construction. On DC every hint is
+latency-bound — the channel is clean enough that overhead is negligible at
+any window, so W* simply maximises the window the budget allows. `derive_window`
+in raptorpath-math is the shared implementation; the production window-mode
+sender and the visualizer both read W* from it.
 
 ---
 

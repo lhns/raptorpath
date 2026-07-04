@@ -41,6 +41,16 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     math::r_saturation(epsilon, sigma2, window, srtt, t_sym)
 }
 
+/// Derived encoder window W* (paper 8.8): balances overhead (1/sqrt(W)
+/// margin), recovery latency (W/send_rate within budget), and burst
+/// absorbency. Clamped to [16, 512]. See `math::derive_window`.
+#[wasm_bindgen]
+pub fn derive_window(
+    delta: f64, epsilon: f64, sigma2: f64, srtt: f64, send_rate: f64, latency_budget: f64,
+) -> f64 {
+    math::derive_window(delta, epsilon, sigma2, srtt, send_rate, latency_budget)
+}
+
 #[wasm_bindgen]
 pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     math::p_fec_exact(p_gb, q_bg, r, window_size)
@@ -791,6 +801,21 @@ impl Simulation {
             TICK_SECS / self.capacity as f64,
         )
     }
+    /// Derived encoder window W* (paper 8.8) for the current estimator state
+    /// and hint tail target — the window the controller WOULD choose. The UI
+    /// shows this next to the user's slider W so the tradeoff is visible:
+    /// larger W thins the r* overhead margin (1/sqrt(W)) but stretches
+    /// recovery latency (W/send_rate). send_rate = capacity / tick.
+    pub fn get_derived_w(&self) -> f64 {
+        math::derive_window(
+            self.tail_target,
+            self.get_p_upper().max(1e-6),
+            self.get_sigma2_est(),
+            self.srtt_secs,
+            self.capacity as f64 / TICK_SECS, // source symbols per second
+            0.0,                              // budget = 0 => align to ~1 RTT
+        )
+    }
     /// Symbols permanently given up (rho < 1.0 age eviction).
     pub fn get_given_up(&self) -> u32 { self.given_up }
     /// Latency (ms) of the most recently delivered source symbol.
@@ -879,6 +904,54 @@ mod tests {
             "all source symbols must be delivered");
         // Auto at 5% loss should carry meaningful FEC
         assert!(sim.get_total_fec() > 0, "Auto must send repairs");
+    }
+
+    // Paper 8.8 quality check: derived W vs a fixed W = 64 across the three
+    // reference channels. Runs the SAME simulator both ways and reports
+    // overhead (FEC/source) and p99 delivery latency. Prints a table with
+    // `--nocapture`; asserts the derived window never loses on overhead where
+    // the 1/sqrt(W) margin is fattest (Satellite) while staying complete.
+    #[test]
+    fn test_derived_window_quality_vs_fixed64() {
+        struct Ch { name: &'static str, eps: f64, q: f64, rtt: u32 }
+        let channels = [
+            Ch { name: "DC",        eps: 0.001, q: 0.5, rtt: 5 },
+            Ch { name: "WiFi",      eps: 0.025, q: 0.5, rtt: 13 },
+            Ch { name: "Satellite", eps: 0.09,  q: 0.3, rtt: 210 },
+        ];
+        // Hint "auto" => tail_target = BASE_TAIL_TARGET. send_rate = capacity/tick.
+        let delta = BASE_TAIL_TARGET;
+        let send_rate = 4.0 / TICK_SECS;
+
+        let run = |eps: f64, q: f64, rtt: u32, w: u32| -> (f64, f64, bool) {
+            let mut sim = Simulation::new(eps, q, rtt, w, "auto".into(), None, None, None);
+            while !sim.is_finished() && sim.get_tick() < 200_000 { sim.step(); }
+            let overhead = sim.get_total_fec() as f64 / sim.get_total_src().max(1) as f64;
+            let p99 = sim.get_lat_percentile(0.99);
+            let complete = sim.get_cum_decoded() == sim.get_num_source();
+            (overhead, p99, complete)
+        };
+
+        println!("\npaper 8.8 quality: derived W vs fixed W=64 (hint=auto, delta={delta:.0e})");
+        println!("  {:<10} {:>4} {:>6} | {:>8} {:>8} | {:>8} {:>8}",
+            "channel", "W64", "W*", "oh(64)", "oh(W*)", "p99(64)", "p99(W*)");
+        for ch in &channels {
+            let p = ch.eps * ch.q / (1.0 - ch.eps);
+            let sigma2 = math::burst_variance_factor(p, ch.q);
+            let srtt = ch.rtt as f64 / 1000.0;
+            let wstar = math::derive_window(delta, ch.eps, sigma2, srtt, send_rate, 0.0).round() as u32;
+            let (oh64, p99_64, c64) = run(ch.eps, ch.q, ch.rtt, 64);
+            let (ohw, p99_w, cw) = run(ch.eps, ch.q, ch.rtt, wstar);
+            println!("  {:<10} {:>4} {:>6} | {:>7.1}% {:>7.1}% | {:>6.1}ms {:>6.1}ms",
+                ch.name, 64, wstar, oh64 * 100.0, ohw * 100.0, p99_64, p99_w);
+            assert!(c64 && cw, "{}: both runs must deliver all source", ch.name);
+            if ch.name == "Satellite" {
+                // High-eps channel: the derived (larger) window must not cost
+                // MORE overhead than fixed 64 — the 1/sqrt(W) margin is fattest here.
+                assert!(ohw <= oh64 + 0.005,
+                    "Satellite derived-W overhead {ohw:.3} should not exceed fixed-64 {oh64:.3}");
+            }
+        }
     }
 
     #[test]
