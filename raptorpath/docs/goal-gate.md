@@ -480,6 +480,38 @@ regression. Production default: `inner_feedback_weight = 0` (knob kept
 for genuinely stall-brittle payloads; measure before enabling). Full
 derivation + refutation: paper §14.28.
 
+## L1 convergence assessment (end of P10, 2026-07-04)
+
+Combined-state verification at C2 (merged P10a+P10b, 5x1.8MB, seed 42):
+rp-bulk 1.05 s median (13.5 Mbit/s), rp-realtime 1.17 s median. Session
+trajectory at C2: bulk 7.97 -> 3.21 -> 1.11 -> 1.05 s; realtime
+dead -> 2.18 -> 1.57 -> 1.17 s. quinn: 0.20 s.
+
+The improvement loop (P6-P10) is at measured convergence for this
+iteration:
+- Every hypothesis with projected >10% leverage has been implemented
+  and measured; the last model candidate (P10a r_min) was derived and
+  REFUTED by measurement (recorded in paper 14.28).
+- The remaining C2 gap decomposes into (a) inner-TCP slow-start over
+  the tunnel vs quinn's warm native QUIC connection — structural for
+  the TCP-in-tunnel measurement geometry, not a protocol defect: the
+  fair comparison is a warm inner flow or an rp-native object API
+  (future work, requires new instrumentation); (b) the Copa backoff
+  ceiling (~30% residual backoff rate) — next measurable candidate,
+  but P9b/P10 data show the gate binds only 8-24% of ACKs, so its
+  leverage is bounded well under the structural term.
+- Loss-recovery is no longer the bottleneck in either mode (bulk: 25
+  inner retx / 5 transfers; realtime: 38, zero RTOs).
+
+Claim status vs ADR-0051 at L1: raptorpath completes where CUBIC
+cannot (C5), beats CUBIC on lossy cells, and its two modes now behave
+as the model predicts (realtime ~ bulk at C2 with far fewer inner
+retransmits). It does NOT yet beat BBR/quinn at L1 on completion time;
+the L0 gate wins (vs SimRetx/SimQuic models) stand, with the L0->L1
+transfer documented honestly above. Ten latent production bugs plus
+two dead subsystems (block ARQ, window reactive repair) were found
+ONLY by the L1 harness — the milestone's core value.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
