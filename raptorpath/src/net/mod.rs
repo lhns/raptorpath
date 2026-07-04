@@ -137,6 +137,20 @@ const DEFAULT_REORDER_TIMEOUT_MS: u64 = 20;
 const MAX_REORDER_BUFFERED: usize = 500;
 /// Reorder buffer drain interval (how often we check for expired entries).
 const REORDER_DRAIN_INTERVAL: Duration = Duration::from_millis(5);
+/// Block-mode in-order delivery: max decoded blocks held for ordering
+/// (64 × 64KB ≈ 4MB worst case) before force-drain.
+const BLOCK_REORDER_MAX_BLOCKS: usize = 64;
+/// Bounds for the SRTT-adaptive in-order hold (4×SRTT, clamped). The hold
+/// must survive TWO ARQ repair rounds, not one: each round is ~2×SRTT
+/// (loss declared after ~1.5×SRTT via Ack diff/timeout + 0.5×SRTT for the
+/// repair flight) and under GE burst loss the first repair itself dies
+/// with the in-burst probability (~50% at C2) — measured at L1: with a
+/// 2×SRTT hold, 4 expiries per 3×1.8MB transfer, each one a REAL hole
+/// for the inner TCP (SACK recovery halves the inner cwnd for the rest
+/// of the transfer). The cost of a longer hold is paid only when a block
+/// is truly unrecoverable (bounded stall, then force-delivery).
+const BLOCK_REORDER_MIN_HOLD: Duration = Duration::from_millis(60);
+const BLOCK_REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
 /// Maximum number of gap ranges in a WindowNack message.
 pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
@@ -871,6 +885,21 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             parking_lot::Mutex::new((std::collections::VecDeque::new(), std::collections::HashSet::new()));
         const COMPLETED_RING_CAP: usize = 512;
 
+        // Block-mode IN-ORDER delivery (L1 C2 finding): block ids are
+        // strictly sequential per peer, but blocks decode out of order —
+        // a block waiting on an ARQ repair round (~2×SRTT) was overtaken
+        // by later blocks and the inner TCP saw a 64KB hole: measured
+        // 879 spurious fast-retransmits / 733 SACK-reorder events per
+        // 3×1.8MB at C2, halving the inner cwnd repeatedly. Decoded
+        // payloads therefore pass through a reorder buffer keyed by
+        // block_id (SRTT-adaptive hold, force-delivery on expiry — the
+        // same delivery contract window mode already had).
+        // (parking_lot::Mutex for the same Send reason as above.)
+        let block_inorder_enabled = !recv_window_mode && config.reorder_timeout_ms > 0;
+        let block_reorder: parking_lot::Mutex<ReorderBuffer> = parking_lot::Mutex::new(
+            ReorderBuffer::new(BLOCK_REORDER_MIN_HOLD.as_millis() as u64, BLOCK_REORDER_MAX_BLOCKS),
+        );
+
         // Feed one block-mode symbol into its (existing) decoder; on
         // completion: stats, FEC feedback, BlockResult, packet extraction,
         // TUN inject, decoder removal. Returns false iff the TUN inject
@@ -905,16 +934,25 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
                     debug!(?e, path_id, "failed to send BlockResult");
                 }
 
-                let packets = framing::extract_packets(&data);
-                for pkt_data in packets {
-                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
-                        Ok(()) => {}
-                        Err(mpsc::error::TrySendError::Full(_)) => {
-                            warn!("TUN inject channel full, dropping packet");
-                        }
-                        Err(mpsc::error::TrySendError::Closed(_)) => {
-                            error!("TUN inject channel closed");
-                            return false;
+                // In-order delivery: hold out-of-order blocks (see
+                // block_reorder above); inject the contiguous prefix.
+                let deliverable = if block_inorder_enabled {
+                    block_reorder.lock().push(block_id, data)
+                } else {
+                    vec![(block_id, data)]
+                };
+                for (_bid, bdata) in deliverable {
+                    let packets = framing::extract_packets(&bdata);
+                    for pkt_data in packets {
+                        match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
+                            Ok(()) => {}
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                warn!("TUN inject channel full, dropping packet");
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                error!("TUN inject channel closed");
+                                return false;
+                            }
                         }
                     }
                 }
@@ -940,13 +978,60 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
         };
 
         loop {
-            // ADR-0015: select between message arrival and shutdown signal
+            // Block-mode in-order hold: refresh the SRTT-adaptive timeout
+            // and compute the oldest-entry expiry (drain timer). Only when
+            // entries are pending — the common case skips the locks.
+            let block_reorder_deadline: Option<tokio::time::Instant> = if block_inorder_enabled {
+                let mut rb = block_reorder.lock();
+                if rb.pending_count() > 0 {
+                    let srtt = {
+                        let sched = recv_scheduler.lock();
+                        sched
+                            .live_paths()
+                            .into_iter()
+                            .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
+                            .max()
+                    };
+                    if let Some(s) = srtt {
+                        rb.set_timeout((s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
+                    }
+                    rb.oldest_deadline().map(|d| {
+                        let remaining = d.saturating_duration_since(Instant::now());
+                        tokio::time::Instant::now() + remaining
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // ADR-0015: select between message arrival, in-order-hold expiry,
+            // and shutdown signal
             let (path_id, msg) = tokio::select! {
                 msg = msg_rx.recv() => {
                     match msg {
                         Some(m) => m,
                         None => break, // channel closed
                     }
+                }
+                _ = async {
+                    match block_reorder_deadline {
+                        Some(d) => tokio::time::sleep_until(d).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    // Give up on the hole(s): force-deliver expired blocks
+                    // (plus everything they unblock) so the tunnel never
+                    // stalls on an unrecoverable block.
+                    let expired = block_reorder.lock().drain_expired(Instant::now());
+                    for (bid, bdata) in expired {
+                        debug!(block_id = bid, "in-order hold expired — force-delivering");
+                        for pkt_data in framing::extract_packets(&bdata) {
+                            let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
+                        }
+                    }
+                    continue;
                 }
                 _ = recv_shutdown_rx.recv() => {
                     info!("receiver shutting down");

@@ -126,6 +126,21 @@ impl ReorderBuffer {
         self.pending.len()
     }
 
+    /// Update the hold timeout (block-mode uses an SRTT-adaptive hold:
+    /// the hole must survive two ARQ repair rounds ≈ 4×SRTT).
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
+
+    /// When the oldest pending entry expires (drives the drain timer).
+    /// None if nothing is pending.
+    pub fn oldest_deadline(&self) -> Option<Instant> {
+        self.pending
+            .values()
+            .map(|&(_, buffered_at)| buffered_at + self.timeout)
+            .min()
+    }
+
     /// The next sequence number expected for in-order delivery.
     pub fn next_deliver_seq(&self) -> u64 {
         self.next_deliver_seq

@@ -167,10 +167,19 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         .transpose()
         .map_err(|e| anyhow::anyhow!("invalid DNS address: {e}"))?;
 
-    // Default interleave depth based on protocol hint
+    // Default interleave depth based on protocol hint.
+    //
+    // Bulk was 4 and is now 1 (L1 C2 measurement): interleaving delays
+    // every block's completion by (depth-1) block serialization times, and
+    // for TCP-in-tunnel that inflates the inner RTT in a closed loop
+    // (slower inner TCP → lower rate → longer block serialization → higher
+    // latency). With block-mode ARQ (P8) + in-order block delivery
+    // handling burst loss reactively, the burst-spreading insurance no
+    // longer pays its latency cost: median 1.8MB completion 1.38s
+    // (depth 1) vs 1.63s (depth 4) at C2, same inner-TCP retransmits.
     let default_interleave = match protocol_hint {
         ProtocolHint::Realtime => 2,
-        ProtocolHint::Bulk => 4,
+        ProtocolHint::Bulk => 1,
         ProtocolHint::Auto => 3,
     };
 
