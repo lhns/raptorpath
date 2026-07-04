@@ -181,6 +181,13 @@ const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 /// reorder hold (60ms floor) plus the inner-TCP RTO (~200ms).
 const TAIL_SWEEP_MIN_US: u64 = 25_000;
 const TAIL_SWEEP_MAX_US: u64 = 100_000;
+/// Upper clamp on the block-mode idle re-announce cadence (P8). The
+/// re-announce timeout is otherwise 1.5×SRTT, but under a stalled block the
+/// per-path SRTT estimate inflates well past the true RTT (L1 C3: 40 ms link,
+/// SRTT seen at 250–460 ms), which would stretch each recovery round to
+/// ~0.7 s and risk exhausting the round budget before the block recovers.
+/// Capping the cadence keeps recovery brisk (~sub-second) regardless.
+const REANNOUNCE_TIMEOUT_MAX: Duration = Duration::from_millis(200);
 
 /// Congestion-aware NACK repair throttle (ADR-0046).
 ///
@@ -1518,6 +1525,27 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         _ => None,
                     };
 
+                    // Re-announced BlockStart for a block we already delivered:
+                    // the sender's success BlockResult was lost (best-effort
+                    // datagram) so its idle re-announce keeps probing this
+                    // block. Re-ack (idempotent) so it stops, and do NOT let
+                    // handle_control_message re-create a zombie decoder for a
+                    // done block (which the re-announce spares would then feed
+                    // forever until the 30 s eviction). P8 idle-recovery.
+                    if let Some(bid) = started_block {
+                        if completed_blocks.lock().1.contains(&bid) {
+                            let reack = ControlMessage::BlockResult {
+                                block_id: bid,
+                                success: true,
+                                symbols_received: 0,
+                                symbols_needed: 0,
+                            };
+                            let _ = recv_transport.send_control_datagram(path_id, reack);
+                            pre_start_symbols.remove(&bid);
+                            continue;
+                        }
+                    }
+
                     handle_control_message(
                         path_id,
                         ctrl_msg,
@@ -1634,6 +1662,41 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             if !events.is_empty() {
                 send_arq_repairs(
                     events,
+                    &sweep_block_arq,
+                    &sweep_scheduler,
+                    &sweep_transport,
+                    &sweep_batch_counter,
+                    &sweep_stats,
+                );
+            }
+
+            // Idle re-announce (P8, send-idle recovery): a lost BlockStart
+            // orphans a block whose symbols were all delivered-and-acked — the
+            // ledger is empty, so `sweep` above sees nothing, yet the block
+            // never decodes. Re-send BlockStart + a small spare for any block
+            // still retained (un-decoded) and quiet past the loss timeout. The
+            // re-announce is driven by THIS timer (not TUN reads), so it fires
+            // while the sender is idle awaiting the app-level ack.
+            let default_path = {
+                let sched = sweep_scheduler.lock();
+                sched.best_repair_path_avoiding(u32::MAX).unwrap_or(0)
+            };
+            let eps_hat = worst_loss_rate(&sweep_scheduler);
+            let reann = sweep_block_arq.lock().idle_reannounce(
+                Instant::now(),
+                &|pid| {
+                    timeouts
+                        .get(&pid)
+                        .copied()
+                        .unwrap_or(Duration::from_millis(200))
+                        .min(REANNOUNCE_TIMEOUT_MAX)
+                },
+                default_path,
+                eps_hat,
+            );
+            if !reann.is_empty() {
+                dispatch_repair_plans(
+                    reann,
                     &sweep_block_arq,
                     &sweep_scheduler,
                     &sweep_transport,
@@ -2967,7 +3030,7 @@ fn encode_to_interleave_buf(
     // repaired with fresh symbols (LRU, byte-capped — see block_arq).
     block_arq
         .lock()
-        .on_block_encoded(block_id, block_data.clone(), params, fec_backend);
+        .on_block_encoded(block_id, block_data.clone(), params, fec_backend, Instant::now());
 
     debug!(
         block_id,

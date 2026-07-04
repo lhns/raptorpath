@@ -776,7 +776,7 @@ endpoint vs quinn-perf. C2, bulk, seed 42:
 | 4 KB | 0.024 s | 5/5 | — | — |
 | 100 KB | 0.094 s (8.5 Mbit/s) | 5/5 | — | — |
 | 500 KB | 0.170 s (23.5 Mbit/s) | 5/5 | — | — |
-| 1.8 MB | 0.92 s first-object (15.7 Mbit/s) | see bug | tunnel 1.05 s | quinn 0.20 s |
+| 1.8 MB | 0.83 s mean, 10/10 (17.3 Mbit/s) | 10/10 (was "see bug", now fixed) | tunnel 1.05 s | quinn 0.20 s |
 
 **THE VERDICT (why this exercise existed):** removing the inner TCP moved
 the 1.8 MB completion only 1.05 s -> 0.92 s (~13%). The remaining ~4.5x
@@ -790,15 +790,53 @@ as the engine fills, so the pipeline's fixed per-object latency (warm-up
 + first-block) is the dominant small-object cost.
 
 **Bug found by the native harness (real transport, not a harness
-artifact):** large objects (>~500 KB) probabilistically STALL when the
-sender idles after the final chunk — the last block's unrecovered loss
-waits for ARQ, but there is no ongoing traffic to carry the repair and
-the block-mode idle tail-flush does not fire in the native path
-(TCP-in-tunnel masked this by ACKing continuously). 500 KB reliable
-5/5; 1 MB flaky; 1.8 MB usually stalls on run 2. Next transport work
-item: idle-triggered final-block recovery (tail sweep / NACK on
-send-idle) for block mode. Small/medium objects and all streaming are
-unaffected.
+artifact) — RESOLVED (2026-07-04, branch fix/block-idle-tail):** large
+objects (>~500 KB) probabilistically STALLED when the sender idled after
+the final chunk. 500 KB reliable 5/5; 1 MB flaky; 1.8 MB usually stalled
+on run 2. Small/medium objects and all streaming were unaffected.
+
+ROOT CAUSE (measured, instrumented at L1 C2): NOT a tail-flush/ARQ gap —
+the batch ledger and its 25 ms sweeper (a separate task, fires while
+idle) both work. The real cause is a **lost BlockStart datagram**. A
+block's BlockStart is a single best-effort datagram; if it is lost but
+the block's symbols are delivered, the receiver buffers those symbols
+pre-decoder (`pre_start_symbols`) AND acks every batch anyway. Those acks
+clear the sender's ARQ ledger, so neither the dup-ack diff nor the tail
+sweep ever fires — yet the block never decodes (no decoder without its
+params). The block is orphaned with an EMPTY ledger. With 28 blocks per
+1.8 MB object at ~2.5 % datagram loss, P(some block loses its BlockStart
+while its symbols survive) ≈ 50 %, matching "usually stalls on run 2".
+TCP-in-tunnel masked it by never idling (continuous ACK traffic).
+
+FIX (P8 idle re-announce, §14.27): a **send-idle re-announce** driven by
+the existing 25 ms sweeper timer (fires during idle, not gated on TUN
+reads). While any block is still retained (not `on_block_done`) and quiet
+past ~max(1.5·SRTT, 50 ms) (cadence clamped ≤200 ms so an inflated SRTT
+cannot stall recovery), it re-sends BlockStart + a capped-geometric spare
+of fresh rateless repairs (round 0 = ε̂ probe → the receiver replays its
+full pre-start buffer and decodes the common pure-orphan case; ramps to a
+deficit-covering resend, per-round burst capped so a constrained path is
+not flooded). Bounded by `MAX_REANNOUNCE_ROUNDS`. Two supporting fixes:
+(1) the receiver re-acks (BlockResult success) a re-announced BlockStart
+for an already-delivered block — recovers a lost success-ack and prevents
+a zombie decoder being re-created; (2) reannounce cadence clamp.
+
+VERIFIED at L1 (seed 42, rp-native `perf`, bulk):
+
+| cell | object | runs | DNF | mean / median |
+|------|--------|------|-----|---------------|
+| C2 (100 Mbit, GE 1.3/50) | 1.8 MB | 10 | **0** | 0.83 s / 0.88 s |
+| C2 | 500 KB | 5 | **0** | 0.27 s / 0.26 s |
+| C3 (20 Mbit, GE 2/40) | 1.8 MB | 10 | **0** | 7.30 s / 4.57 s |
+
+Pre-fix: C2 1.8 MB DNF'd ~1/2 runs; C3 1.8 MB DNF'd. C2 numbers unchanged
+by the fix (recovery only engages on the rare orphan). C3 is throughput-
+constrained by the cell itself (kernel CUBIC there: 1.4 Mbit/s, 5.2 s
+median; rp-native max here 31.8 s on the worst run, still 0 DNF) — the
+deliverable was 0 DNF, now met. Regression guard:
+`block_arq` unit tests `idle_reannounce_recovers_orphaned_block` and
+`idle_reannounce_bounded_by_round_cap` reproduce the empty-ledger orphan
+and assert bounded recovery.
 
 ## Honest scope
 
