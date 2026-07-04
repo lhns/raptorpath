@@ -154,6 +154,14 @@ ACK absence.
     - [14.26 Completion-Exposure δ](#1426-completion-exposure-δ-the-bulk-glide)
     - [14.27 Block-Mode ARQ via Batch Acknowledgements](#1427-block-mode-arq-via-batch-acknowledgements)
     - [14.28 Inner-Feedback Flows and the Repair Floor](#1428-inner-feedback-flows-and-the-repair-floor)
+    - [14.29 The End-of-Stream Taper Completion Term (All Hints)](#1429-the-end-of-stream-taper-completion-term-all-hints)
+15. [The Unified Sliding-Window Model (Blocks and Streams as Two Knobs)](#15-the-unified-sliding-window-model-blocks-and-streams-as-two-knobs)
+    - [15.1 The Defect: One Triangle per Tunnel](#151-the-defect-one-triangle-per-tunnel)
+    - [15.2 The Unified Sliding-Window RLC Model](#152-the-unified-sliding-window-rlc-model)
+    - [15.3 Block Mode as a Limiting Case](#153-block-mode-as-a-limiting-case)
+    - [15.4 Per-Stream Triangle Multiplexing](#154-per-stream-triangle-multiplexing)
+    - [15.5 Cost and Benefit (Honest)](#155-cost-and-benefit-honest)
+    - [15.6 Migration Sketch](#156-migration-sketch)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -4379,6 +4387,326 @@ Realtime 27 → 27 ms at RTT 50) and IMPROVES it where the burst's single
 window under-covers the exposed span (both hints 80 → 76 ms at RTT 150), for
 ≤ 2 % extra overhead. The end-of-stream cliff test (last-window p99 ≈
 mid-stream p99) passes for both tight hints.
+
+---
+
+## 15. The Unified Sliding-Window Model (Blocks and Streams as Two Knobs)
+
+The document so far has treated FEC and ARQ as one correction stream (Section
+5) but has left a second split standing: the transport still carries *two*
+FEC data paths, chosen once per tunnel by protocol hint. This section removes
+that split. It shows that the BLOCK path and the WINDOW path are not two
+codes but one sliding-window RLC evaluated at two settings of two continuous
+knobs — window advance and repair timing — and that block mode is the
+limiting case of streaming under exactly the σ → 0 collapse the paper already
+uses for the end-of-stream burst (Section 14.29) and the χ glide (Section
+14.26). Making them one code makes *per-stream* triangles possible: one
+tunnel carrying a tight-δ realtime flow and a loose-δ bulk flow over the same
+paths at the same time, which the global-mode design structurally cannot do.
+
+This is a design section (no measured implementation yet); it reuses the
+existing `RlcEncoder`/`RlcDecoder` (raptorpath-math/src/rlc.rs), `TaperFunction`
+(Section 4), `derive_window` (Section 8.8), and the Section 13.8 scheduler,
+and states honestly what it costs and buys.
+
+### 15.1 The Defect: One Triangle per Tunnel
+
+Two independent FEC data paths exist today, selected per tunnel by the
+protocol hint:
+
+- **BLOCK mode.** Accumulate K source symbols into a block, FEC-encode the
+  block (RaptorQ / Reed-Solomon / block-RLC backends), send source + repairs,
+  and recover holes reactively with the batch-ACK ARQ of Section 14.27. A
+  dedicated block decoder runs per block.
+- **WINDOW / streaming mode.** A sliding-window RLC (the `RlcEncoder` /
+  `RlcDecoder` of raptorpath-math/src/rlc.rs) emits repairs continuously per
+  the taper τ(t) and recovers holes reactively via the NACK / SACK-gap path
+  (Section 14.27's window analogue, P10b).
+
+Because the choice is **global to the tunnel**, the transport commits to a
+single point of the bandwidth/latency/reliability triangle (δ, ρ, r) of
+Section 1.4. A tunnel in block mode is optimising one (δ, ρ, r); a tunnel in
+window mode is optimising another. Neither can carry a realtime stream (tight
+δ, small W, high r) *and* a bulk stream (loose δ, large W, r → 0) at the same
+time over the same paths. That is the core defect: the triangle is a
+per-tunnel constant when it should be a per-stream one.
+
+### 15.2 The Unified Sliding-Window RLC Model
+
+Fix a single mechanism: the sliding-window RLC of Section 3.2, exactly as
+`RlcEncoder` implements it. The encoder holds a **live window** of the source
+symbols whose sequence numbers lie in [w_start, w_start + W). A **repair** is
+a random linear combination over GF(256) of the live window,
+
+```
+  p = Σ_{j ∈ window} c_j · s_j ,   c_j = gf256::generate_window_coefficients(w_start, W, k)
+```
+
+(`RlcEncoder::generate_repair`), carrying its (w_start, W, repair_index) so
+the decoder can reconstruct the coefficients. The window advances by dropping
+symbols below a new oldest sequence (`RlcEncoder::advance`), and source data
+is retained for exact ARQ resends (`RlcEncoder::get_source`). Two continuous
+knobs parameterise the whole design:
+
+```
+  (a) advance / overlap.  Per emitted window state, move w_start forward by a
+      source positions, a ∈ [1, W]. Define overlap o = (W − a)/W ∈ [0, 1−1/W].
+        a = 1  (o → 1):  slide-by-1  → consecutive windows overlap in W−1
+                          symbols; a symbol is covered by ~W successive windows.
+        a = W  (o = 0):  RESET       → consecutive windows are DISJOINT; a
+                          repair never mixes symbols across the boundary.
+                          Disjoint windows ARE blocks (K = W).
+
+  (b) repair schedule.  A per-window-lifetime measure dμ(t) of repair mass,
+      total r per source symbol (Section 4.3):
+        continuous:  dμ(t) = τ(t) dt = A(1−q)^t dt,  A = r·q   → streaming
+        spike:       dμ(t) = (r·W) · δ_Dirac(t − W)           → block batch
+```
+
+**One decoder subsumes both.** `RlcDecoder` runs incremental Gaussian
+elimination over equations keyed by sequence number: a source symbol is an
+identity equation, a repair is the window combination above. It recovers a
+hole the instant the pivot table spans it — the number of linearly
+independent equations touching the unknown reaches the number of unknowns.
+This single procedure *is* both decoders of Section 15.1:
+
+- **Block decode** is the special case where the fed equations partition by
+  disjoint window (o = 0): the K × K submatrix over one block reaches full
+  rank exactly at the classic "K-of-N present" condition, and the block's
+  pivots complete together.
+- **Streaming decode** is the overlapping case (o → 1): pivots complete
+  incrementally as repairs arrive, each covering the whole live window
+  (Section 3.2 window-fungibility).
+
+There is no second code and no second decoder. Block and stream differ only
+in (a) and (b).
+
+### 15.3 Block Mode as a Limiting Case
+
+The reduction is exact. Take the unified encoder of Section 15.2 and set
+
+```
+  BLOCK     = ( advance a = W  [reset, o = 0],
+                repair schedule = a spike of mass r·W at the window boundary )
+
+  STREAMING = ( advance a = 1  [slide, o = 1−1/W],
+                repair schedule = τ(t) = A(1−q)^t at rate r,  A = r·q )
+```
+
+Both feed the *same* `RlcDecoder`. What differs is (a) which symbols a repair
+may combine — a reset window's repair is a random linear combination over
+exactly the K = W symbols of one block, i.e. a block fountain/RLC repair;
+a slid window's repair is a combination over the W most-recent symbols — and
+(b) *when* the r·W repairs per window are emitted.
+
+**Block is the σ → 0 limit of the continuous schedule.** The block batch
+"emit nothing until the window is full, then dump r·W repairs at the
+boundary" is the repair schedule collapsed to a Dirac spike of mass r·W. This
+is precisely the limiting-case pattern the paper already uses twice:
+
+- Section 14.29 meters the end-of-stream completion budget B_tail = r_tail·W
+  as a Stieltjes measure B_tail · dχ_trunc over a source-position kernel of
+  width W/4, and calls the one-shot burst its **σ → 0 (width → 0) limit**.
+- Section 14.26's χ glide raises Bulk's r from 0 to the tail-budget rate over
+  the final ~1.5 SRTT, with the discrete burst as the width → 0 endpoint.
+
+The block repair batch is the *same* width → 0 spike of the *same* mass r·W —
+here applied at every window boundary (period W) rather than only once at
+end-of-stream. Block mode is therefore not a different mechanism; it is
+streaming with the repair kernel's width taken to zero and its period set to
+W. The continuous knob is the kernel width σ (and the advance a); block and
+stream are its two endpoints, with every intermediate (a partial-overlap
+window emitting a narrow but non-zero repair burst) a valid operating point.
+
+**The latency difference falls out of (a) and (b).** Under the boundary
+spike, no repair for source symbol s_i exists until its window fills, so s_i
+has *no proactive protection* until W − 1 further source symbols arrive:
+
+```
+  block fill latency   L_fill = W · t_sym = W / send_rate      (before ANY repair)
+  streaming fill latency ≈ 0   (τ(0) = A > 0: protection from offset 0)
+```
+
+L_fill is the same quantity as the Section 8.8 W_lat term and the Section
+14.5 W·t_sym recovery span — but paid **up front as encode latency**, not as
+recovery span. Streaming pays ≈ 0 fill latency and instead *spreads* the same
+r·W repairs across the window lifetime (each early repair covers fewer
+already-present symbols; the Section 4.4 taper-never-zero and Section 14.24
+encoder-lag considerations apply). The trade is continuous in a: at a = 1 the
+fill wait is ~t_sym, at a = W it is W·t_sym, and every batch size in between
+interpolates.
+
+**Where each is optimal — as a knob setting, not a mode.** Batching
+amortises: one decode per W symbols instead of incremental GE per symbol
+(Sections 9, 14.17), and one batch-ACK per block (Section 14.27) instead of
+per-symbol SACK accounting. So
+
+```
+  block-like (large a, spike):  optimal when W·t_sym ≪ latency budget AND
+                                amortisation matters (high send_rate, non-
+                                negligible per-symbol decode/ACK cost).
+  stream-like (a = 1, τ(t)):    optimal when W·t_sym is a meaningful fraction
+                                of the budget (tight δ, low rate, or high RTT).
+```
+
+This is exactly the Section 8.8 W* binding logic read through the advance
+knob: loose-δ Bulk rides a large W with the overhead/latency slack to batch
+(→ block-like), tight-δ Realtime rides a small W at slide-1 (→ stream-like).
+The current binary mode is just these two endpoints with the interior of the
+(a, σ) square deleted.
+
+### 15.4 Per-Stream Triangle Multiplexing
+
+Once block and stream are one code, a tunnel need not pick one triangle. Give
+each application stream m ∈ {1..N} its own sliding-window context with its own
+triangle (δ_m, ρ_m, r_m, W_m): W_m from `derive_window` at δ_m (Section 8.8),
+r_m from the controller at δ_m and the stream's own operating point (Section
+8.4), advance/repair schedule from where (δ_m, W_m) lands on the Section 15.3
+knobs. Each context is an independent `RlcEncoder` / `RlcDecoder` pair.
+
+**Independent coding = budget isolation.** A repair for stream m combines only
+stream m's live window, so a bulk stream's burst of losses draws down only the
+bulk stream's repair budget — it cannot consume the realtime stream's
+repairs. This is the property the global mode cannot provide and the reason
+mixed-δ streams need separate contexts (below).
+
+**The scheduler multiplexes; it does not block-align.** There are no blocks to
+align across streams: a small message emits its symbols on arrival, into its
+own window. The Section 13.8 objective already ranks a mixed source+repair
+symbol stream across paths; it gains a per-stream weight. For a symbol i
+belonging to stream m = m(i), the per-symbol scheduling cost becomes
+
+```
+  cost_i = w_lat^{m} · u_m(i) · E_i  +  w_bw^{m} · r_m
+
+    w_lat^{m}, w_bw^{m} : stream m's hint weights (Section 13.8; Realtime
+                          1/0, Balanced ½/½, Bulk 0/1)
+    u_m(i)              : δ-urgency of symbol i — a monotone function of how
+                          close i is to stream m's deadline relative to δ_m.
+```
+
+A principled u_m reuses existing machinery: the Section 14.26 exposure kernel
+χ evaluated at stream m's δ_m and remaining slack, so a symbol whose recovery
+is about to become serial for a *tight-δ* stream outranks a bulk symbol with
+ample slack. The scheduler then interleaves all streams' source and repair
+symbols across paths in urgency order, subject to the Section 13.8 per-path
+capacity and (for any block-like stream) the in-order delivery-unit coupling
+already derived there.
+
+**N = 1 recovers today's behaviour.** One stream, u ≡ 1, weights = the tunnel
+hint: cost_i reduces to the Section 13.8 objective verbatim, and the single
+context reduces to the current single global-δ mode. The unification is a
+strict generalisation — the present design is its degenerate point.
+
+**Coding gain vs isolation — stated honestly.** Per-stream contexts *lose*
+cross-stream coding gain: a single shared window over stream A ∪ B would let
+one repair cover a hole in either, and the combined loss process has lower
+relative variance (statistical multiplexing), so a shared window needs
+slightly less *total* overhead for the same aggregate reliability — the
+Section 8.4 margin scales as z·√(ε σ² / (W(1−ε))), and W_A + W_B > either W
+alone, so the shared-window margin is O(1/√W) smaller. Against that, the
+isolation failure of a shared window is a *δ violation on the tight stream*:
+a loose-δ flow's loss burst consuming the shared repair budget pushes the
+realtime flow past its δ_m — a latency-class breach the triangle treats as
+categorical, not marginal. Trading a bounded O(1/√W) overhead saving for a
+categorical latency-class guarantee favours **isolation whenever the streams'
+δ differ materially**. When the δ's are equal (homogeneous streams), they
+*should* share a window — which is simply N = 1 at a larger W, no contradiction.
+
+**UEP as a named advanced variant.** The alternative that keeps shared coding
+gain *and* δ-differentiation is unequal error protection: one shared window,
+but repair coefficients weighted to preferentially protect the tight-δ
+symbols. It recovers the O(1/√W) gain, at the cost of a coupled encoder
+(repairs are no longer independent per stream, a shared-window decode failure
+can strand both classes, and the weighting is an extra continuous knob to
+tune and estimate). Per-stream contexts are the **recommended default** — they
+are the principled construction (clean isolation, and they reuse the existing
+single-window encoder N times with no new coding machinery); UEP is future
+work for capacity-critical links where the coding-gain term is worth the
+coupling.
+
+### 15.5 Cost and Benefit (Honest)
+
+**What it costs.**
+
+- **Per-stream state.** N encoder/decoder contexts, N triangles, N
+  `derive_window` / controller evaluations, and a stream demultiplexer on the
+  receive side. Memory and decode work scale with the number of *active*
+  streams, not tunnels.
+- **Scheduler changes.** Section 13.8 must carry per-stream weights and the
+  u_m urgency term, and the interleaver must tag every symbol with its stream
+  id (already needed for demultiplexing).
+- **The block backends.** RaptorQ and Reed-Solomon are *not* sliding-window
+  RLC. Two honest options: (i) retire them, accepting RLC's higher decode
+  overhead (Section 9) as the price of one code path; or (ii) keep them as the
+  o = 0 (reset), spike-schedule special case of Section 15.3 — a "large-W
+  batched-repair" backend selected when a stream lands on the block-like
+  corner — behind the same context interface. Option (ii) preserves RaptorQ's
+  low codec overhead for bulk while still presenting one decoder abstraction
+  to the scheduler; it is the recommended migration target.
+
+**What it buys.**
+
+- **Mixed-δ streams on one tunnel** — the defect of Section 15.1 removed: a
+  realtime and a bulk flow share the paths with their own triangles, isolated
+  budgets, and urgency-ranked multiplexing.
+- **One decoder, block and stream as continuous limits** — fewer latent bugs.
+  The two worst FEC bugs the L1 harness found were both artefacts of the *two
+  separate paths*: (1) a **dead reactive-repair path** in window mode —
+  `WindowNack` deprecated with no producer, the SACK-gap wiring cut, the
+  sender draining NACKs only after a TUN read, so *only* proactive FEC ever
+  repaired a window-mode loss (P10b); and (2) a **mis-wired BlockStart**
+  (ADR-0008) — the sender never emitted `BlockStart` and the receiver had no
+  match arm, so block decoders were created with `source_symbols = 0` and
+  silently produced empty data. Neither failure mode exists in a single
+  code path where source and repair feed one incremental decoder.
+- **The split is not even delivering its intended benefit** — the measured
+  motivation. At C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%), 1200 B messages at
+  50/s (goal-gate L2 workstream 2), block mode (Bulk) held a **91 ms p99**
+  tail while window mode (Realtime) — the mode whose entire purpose is the low
+  tail — sat at **513 ms p99**, at equal p50. The mode meant to be the
+  low-latency path had the *worse* tail, for two path-specific reasons the
+  unification erases: 508-byte window-mode MTU symbols fragmenting inner
+  segments (P9a) and window mode's late-maturing NACK path (P10b, item above).
+
+### 15.6 Migration Sketch
+
+Paper-level, not code. Three phases, each shippable and reversible, ordered so
+that the risky decoder change lands first behind the existing behaviour.
+
+```
+  Phase 1 — unify DECODE on the sliding-window RLC decoder.
+      Route both paths' received symbols through one RlcDecoder. Block mode
+      becomes "feed a disjoint window, decode when the block's pivots
+      complete" (Section 15.2). Behaviour-preserving: the reset/spike setting
+      reproduces block decode exactly. Retires the separate block decoder.
+
+  Phase 2 — express block mode as batched-repair, large-W streaming.
+      Move the block ENCODER onto the unified (advance, repair-schedule)
+      knobs: block = (reset advance, spike of mass r·W at the boundary),
+      Section 15.3. RaptorQ/RS survive as the o = 0 spike-schedule backend
+      (option (ii) above) behind the context interface. The binary hint
+      switch becomes a point in the continuous (a, σ) square.
+
+  Phase 3 — per-stream contexts + scheduler urgency weighting.
+      Give each stream its own context and triangle; extend the Section 13.8
+      objective with the per-stream weights and u_m urgency term (Section
+      15.4). N = 1 stays bit-identical to today; N > 1 unlocks mixed-δ tunnels.
+      UEP (shared window, weighted repairs) is a later, optional variant.
+```
+
+**Already exists** (reused, not built): `RlcEncoder` / `RlcDecoder` with
+GF(256) window combinations and incremental Gaussian elimination
+(raptorpath-math/src/rlc.rs); `TaperFunction` for τ(t) (Section 4); the
+block-mode batch-ACK ARQ (Section 14.27) and window SACK-gap recovery (P10b);
+`derive_window` for W_m (Section 8.8); the Section 13.8 multipath scheduler
+and its delivery-unit coupling.
+
+**New** (to build): the (advance, repair-schedule) knob generalisation of the
+encoder emit loop; the per-stream context table and receive-side stream
+demultiplexer; the per-stream weight and u_m urgency term in the scheduler;
+and the RaptorQ/RS wrapper that presents the o = 0 spike-schedule backend
+through the context interface (or their retirement, per Section 15.5).
 
 ---
 

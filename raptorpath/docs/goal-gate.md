@@ -12,6 +12,21 @@ cargo test --test gate_suite -p raptorpath --release -- --test-threads 1
 the inner-feedback floor is weight 0 in the gate driver, so the gate
 path is bit-identical).
 
+## Design note — unified sliding-window model (paper §15)
+
+Paper §15 ("The Unified Sliding-Window Model") formalizes that BLOCK and
+WINDOW FEC are one sliding-window RLC at two settings of two continuous knobs
+(window advance/overlap and repair schedule), with block mode the σ→0
+spike-limit of the streaming taper (same pattern as §14.29 / §14.26). It
+exists to enable **per-stream triangles**: one tunnel carrying a tight-δ
+realtime flow and a loose-δ bulk flow over the same paths simultaneously —
+which the current global-per-tunnel mode structurally cannot do. Motivation
+is measured here: at C2 the split does not even deliver its intended latency
+benefit — block/Bulk holds a 91 ms message p99 while window/Realtime, the
+mode whose purpose IS the low tail, sits at 513 ms (L2 workstream 2 below),
+for path-specific reasons (508 B window MTU fragmentation, late-maturing NACK
+path) the unification erases. Design-only; no code change on that branch.
+
 ## G1 — surpass the SimRetx baseline (ADR-0051 win conditions)
 
 Baseline = **SimRetx**, NOT "real TCP": reliable ARQ transport model with
