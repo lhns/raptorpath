@@ -50,6 +50,20 @@ pub const LATER_ACK_LOSS_THRESHOLD: u8 = 3;
 /// Maximum repair rounds per block; beyond this the receiver's decoder
 /// eviction timeout is the backstop.
 pub const MAX_REPAIR_ROUNDS: u8 = 3;
+/// Maximum idle re-announce rounds per block (BlockStart + spare repair for a
+/// still-un-decoded block once the sender goes quiet — see `idle_reannounce`).
+/// Kept generous: a lost BlockStart with all its symbols delivered-and-acked
+/// leaves the ARQ ledger empty, so this is the ONLY recovery path for that
+/// block, and each round only clears if the re-announced BlockStart datagram
+/// itself survives the channel (~ε̂ loss per try).
+pub const MAX_REANNOUNCE_ROUNDS: u8 = 16;
+/// Per-round cap on idle re-announce spare symbols. The spare ramps
+/// geometrically toward a block's deficit (unknown to the sender), but each
+/// round's burst is capped small so a stuck block cannot flood a constrained
+/// path or jam the in_flight budget — the L1 C3 (20 Mbit) failure mode when a
+/// full-block resend went out every round. A deficit up to k recovers in a
+/// handful of capped rounds at the (clamped) re-announce cadence.
+pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// Completed/failed block ids remembered to suppress late spurious repairs.
 const DONE_RING_CAP: usize = 1024;
 
@@ -74,6 +88,14 @@ struct RetainedBlock {
     rounds: u8,
     /// Lazily rebuilt encoder, cached across rounds for this block.
     encoder: Option<Box<dyn FecEncoder>>,
+    /// Last time any symbol of this block hit the wire (encode, normal send,
+    /// repair, or re-announce). Drives the idle re-announce: a block quiet for
+    /// longer than the loss timeout while still un-decoded is stuck.
+    last_activity: Instant,
+    /// Idle re-announce rounds already spent (separate from `rounds`: a lost
+    /// BlockStart is orphaned with an EMPTY ledger, so ARQ repair rounds never
+    /// engage — this is its own recovery budget).
+    reannounce_rounds: u8,
 }
 
 /// Symbols of `block_id` presumed lost on `path_id`.
@@ -149,6 +171,7 @@ impl BlockArq {
         data: Bytes,
         params: EncodingParams,
         backend: FecBackend,
+        now: Instant,
     ) {
         if self.done_set.contains(&block_id) || self.retained.contains_key(&block_id) {
             return;
@@ -163,6 +186,8 @@ impl BlockArq {
                 next_repair_esi: params.repair_count,
                 rounds: 0,
                 encoder: None,
+                last_activity: now,
+                reannounce_rounds: 0,
             },
         );
         self.retain_order.push_back(block_id);
@@ -224,6 +249,14 @@ impl BlockArq {
     ) {
         if sent.is_empty() {
             return;
+        }
+        // Refresh idle-reannounce activity for every block this batch carried:
+        // a block is "quiet" (candidate for re-announce) only once none of its
+        // symbols have hit the wire for the loss timeout.
+        for &(bid, _) in &sent {
+            if let Some(rb) = self.retained.get_mut(&bid) {
+                rb.last_activity = now;
+            }
         }
         self.ledger.insert(
             batch_seq,
@@ -319,6 +352,101 @@ impl BlockArq {
             self.push_events(&mut events, entry.path_id, entry.sent);
         }
         events
+    }
+
+    /// Idle re-announce (paper §14.27, send-idle recovery leg).
+    ///
+    /// A block whose BlockStart datagram was lost is orphaned in a way the
+    /// batch ledger cannot see: the receiver buffers its symbols pre-decoder
+    /// and ACKs them anyway, so every batch clears the ledger and neither the
+    /// dup-ack diff nor the tail `sweep` ever fires — yet the block never
+    /// decodes (no decoder without its params). Once the sender goes quiet,
+    /// this re-sends BlockStart (via the RepairPlan's defensive re-announce)
+    /// plus a small ε̂-sized spare repair for any block still retained (i.e.
+    /// not `on_block_done`) and quiet for `timeout_for(path)`. Bounded by
+    /// `MAX_REANNOUNCE_ROUNDS`; stops the instant the block completes.
+    ///
+    /// `now - last_activity >= timeout` gates it above normal completion (a
+    /// healthy block is acked+decoded, hence `on_block_done`-removed, within
+    /// ~1 RTT ≪ the loss timeout), so this does not fire during steady
+    /// pipelining. `default_path` is the loss-path hint stamped on each plan
+    /// (dispatch prefers a different live path when one exists).
+    pub fn idle_reannounce(
+        &mut self,
+        now: Instant,
+        timeout_for: &dyn Fn(u32) -> Duration,
+        default_path: u32,
+        eps_hat: f64,
+    ) -> Vec<RepairPlan> {
+        let mut plans = Vec::new();
+        // Snapshot ids first (mutable borrow of each rb happens in the loop).
+        let candidates: Vec<u64> = self
+            .retained
+            .iter()
+            .filter(|(_, rb)| {
+                rb.reannounce_rounds < MAX_REANNOUNCE_ROUNDS
+                    && now.duration_since(rb.last_activity) >= timeout_for(default_path)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for block_id in candidates {
+            if self.done_set.contains(&block_id) {
+                continue;
+            }
+            let Some(rb) = self.retained.get_mut(&block_id) else {
+                continue;
+            };
+            // Capped geometric spare. The receiver's deficit is unknown (its
+            // symbols were "acked" pre-decoder, so no feedback reveals how many
+            // it actually holds — a lost BlockStart can leave it with anywhere
+            // from k down to 0 usable symbols after its pre-start buffer caps
+            // drop the overflow). Round 0 is a cheap probe: BlockStart
+            // re-announce + a ε̂ spare, which recovers the common pure-orphan
+            // case outright (the receiver replays its full pre-start buffer).
+            // If still short, ramp the spare geometrically but cap each round
+            // (`REANNOUNCE_PER_ROUND_CAP`) so the burst stays small — a deficit
+            // up to k accumulates across a few capped rounds without flooding a
+            // constrained path. Rateless repairs are universal, so the receiver
+            // decodes once the cumulative fresh repairs cover its hole;
+            // BlockResult stops the ramp the instant it completes.
+            let k = rb.params.source_symbols.max(1);
+            let margin = (eps_hat * k as f64).ceil() as u32 + 1;
+            let n_spare = if rb.reannounce_rounds == 0 {
+                margin
+            } else {
+                (1u32 << (rb.reannounce_rounds.min(5) + 1))
+                    .min(REANNOUNCE_PER_ROUND_CAP)
+                    .max(margin)
+                    .min(k + margin)
+            };
+            let encoder = rb
+                .encoder
+                .get_or_insert_with(|| rb.backend.create_encoder(&rb.data, rb.params));
+            let symbols: Vec<WireSymbol> = if encoder.max_repairs() == u32::MAX {
+                let s = encoder.repair_symbols_from(rb.next_repair_esi, n_spare);
+                rb.next_repair_esi += s.len() as u32;
+                s
+            } else {
+                // Fixed-rate: a few source symbols are always decoder-accepted.
+                encoder
+                    .source_symbols()
+                    .into_iter()
+                    .take(n_spare as usize)
+                    .collect()
+            };
+            rb.reannounce_rounds += 1;
+            rb.last_activity = now;
+            plans.push(RepairPlan {
+                block_id,
+                avoid_path: default_path,
+                symbols,
+                params: rb.params,
+                backend: rb.backend,
+                transfer_length: rb.data.len() as u64,
+            });
+            self.touch_retained(block_id);
+        }
+        plans
     }
 
     /// Group missing (block_id, payload_id) pairs into per-block events,
@@ -518,7 +646,7 @@ mod tests {
     fn retain_block(arq: &mut BlockArq, block_id: u64, len: usize, backend: FecBackend) -> Bytes {
         let data = Bytes::from(vec![(block_id & 0xff) as u8; len]);
         let k = (len as f64 / 64.0).ceil() as u32;
-        arq.on_block_encoded(block_id, data.clone(), params(k, 64, 2, block_id), backend);
+        arq.on_block_encoded(block_id, data.clone(), params(k, 64, 2, block_id), backend, Instant::now());
         data
     }
 
@@ -679,7 +807,7 @@ mod tests {
         let mut arq = BlockArq::new();
         let data = Bytes::from(vec![7u8; 640]);
         let p = params(10, 64, 3, 42);
-        arq.on_block_encoded(42, data, p, FecBackend::RaptorQ);
+        arq.on_block_encoded(42, data, p, FecBackend::RaptorQ, Instant::now());
 
         let ev = vec![LossEvent {
             block_id: 42,
@@ -713,7 +841,7 @@ mod tests {
         let mut arq = BlockArq::new();
         let data = Bytes::from(vec![9u8; 640]);
         let p = params(10, 64, 3, 43);
-        arq.on_block_encoded(43, data, p, FecBackend::ReedSolomon);
+        arq.on_block_encoded(43, data, p, FecBackend::ReedSolomon, Instant::now());
 
         // Missing: source 4 and repair 11 (k=10 → repair ids 10..13).
         let ev = vec![LossEvent {
@@ -733,7 +861,7 @@ mod tests {
         let mut arq = BlockArq::new();
         for b in 0..20u64 {
             let data = Bytes::from(vec![b as u8; 640]);
-            arq.on_block_encoded(b, data, params(10, 64, 2, b), FecBackend::RaptorQ);
+            arq.on_block_encoded(b, data, params(10, 64, 2, b), FecBackend::RaptorQ, Instant::now());
         }
         // ε̂ = 0.25, 1 missing per event, round 0 → 0.25 margin per event:
         // every 4th event carries one extra symbol.
@@ -774,7 +902,7 @@ mod tests {
     fn repair_rounds_capped() {
         let mut arq = BlockArq::new();
         let data = Bytes::from(vec![1u8; 640]);
-        arq.on_block_encoded(50, data, params(10, 64, 2, 50), FecBackend::RaptorQ);
+        arq.on_block_encoded(50, data, params(10, 64, 2, 50), FecBackend::RaptorQ, Instant::now());
         for round in 0..MAX_REPAIR_ROUNDS + 2 {
             let plans = arq.plan_repairs(
                 vec![LossEvent {
@@ -807,13 +935,79 @@ mod tests {
     fn block_failed_mints_deficit_repairs() {
         let mut arq = BlockArq::new();
         let data = Bytes::from(vec![3u8; 640]);
-        arq.on_block_encoded(60, data, params(10, 64, 2, 60), FecBackend::RaptorQ);
+        arq.on_block_encoded(60, data, params(10, 64, 2, 60), FecBackend::RaptorQ, Instant::now());
         let plan = arq.on_block_failed(60, 3, 0, 0.0).expect("plan");
         assert_eq!(plan.symbols.len(), 3);
         assert!(plan.symbols.iter().all(|s| s.is_repair));
         // Fixed-rate backends cannot mint post-hoc without ids.
         let data = Bytes::from(vec![3u8; 640]);
-        arq.on_block_encoded(61, data, params(10, 64, 2, 61), FecBackend::ReedSolomon);
+        arq.on_block_encoded(61, data, params(10, 64, 2, 61), FecBackend::ReedSolomon, Instant::now());
         assert!(arq.on_block_failed(61, 3, 0, 0.0).is_none());
+    }
+
+    #[test]
+    fn idle_reannounce_recovers_orphaned_block() {
+        // Reproduce the L1 idle-stall: a block's BlockStart datagram is lost,
+        // its symbols are all delivered-and-acked, so the ARQ ledger is EMPTY
+        // and `sweep` sees nothing — yet the block never decoded. The idle
+        // re-announce must re-send BlockStart (+ spare) once the block has been
+        // quiet past the loss timeout, and stop the instant it completes.
+        let mut arq = BlockArq::new();
+        let t0 = Instant::now();
+        let data = Bytes::from(vec![7u8; 640]);
+        arq.on_block_encoded(70, data, params(10, 64, 2, 70), FecBackend::RaptorQ, t0);
+        // Its batch was sent AND acked (ledger cleared): activity at t0.
+        arq.on_batch_sent(1, 0, vec![(70, 0)], t0);
+        arq.on_ack(1, 0, &[0], t0, TIMEOUT);
+        assert_eq!(arq.ledger_len(), 0, "ledger empty — sweep is blind here");
+        assert!(arq.sweep(t0 + TIMEOUT, &|_| TIMEOUT).is_empty());
+
+        // Before the timeout: no re-announce (block might still be pipelining).
+        let early = arq.idle_reannounce(t0 + Duration::from_millis(20), &|_| TIMEOUT, 0, 0.1);
+        assert!(early.is_empty(), "must not fire during normal pipelining");
+
+        // Past the timeout: re-announce fires with a BlockStart + spare.
+        let plans = arq.idle_reannounce(t0 + Duration::from_millis(150), &|_| TIMEOUT, 0, 0.1);
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].block_id, 70);
+        assert!(!plans[0].symbols.is_empty(), "spare repair accompanies re-announce");
+
+        // It backs off within a round (last_activity refreshed): immediate
+        // re-call is a no-op until the next timeout elapses.
+        assert!(arq
+            .idle_reannounce(t0 + Duration::from_millis(160), &|_| TIMEOUT, 0, 0.1)
+            .is_empty());
+
+        // Block completes → re-announce stops permanently.
+        arq.on_block_done(70);
+        assert!(arq
+            .idle_reannounce(t0 + Duration::from_millis(400), &|_| TIMEOUT, 0, 0.1)
+            .is_empty());
+    }
+
+    #[test]
+    fn idle_reannounce_bounded_by_round_cap() {
+        let mut arq = BlockArq::new();
+        let t0 = Instant::now();
+        let data = Bytes::from(vec![1u8; 640]);
+        arq.on_block_encoded(71, data, params(10, 64, 2, 71), FecBackend::RaptorQ, t0);
+        let mut fired = 0u8;
+        let mut counts: Vec<usize> = Vec::new();
+        // Keep the block un-done and always past-timeout: it must fire at most
+        // MAX_REANNOUNCE_ROUNDS times, then give way to the receiver backstop.
+        for r in 0..(MAX_REANNOUNCE_ROUNDS as u32 + 4) {
+            let now = t0 + Duration::from_millis(200 * (r as u64 + 1));
+            let plans = arq.idle_reannounce(now, &|_| TIMEOUT, 0, 0.1);
+            if let Some(p) = plans.first() {
+                fired += 1;
+                counts.push(p.symbols.len());
+            }
+        }
+        assert_eq!(fired, MAX_REANNOUNCE_ROUNDS, "re-announce is bounded");
+        // Escalation: the spare grows across rounds (cheap probe -> full block).
+        assert!(
+            counts.last().unwrap() > counts.first().unwrap(),
+            "spare must escalate: {counts:?}"
+        );
     }
 }

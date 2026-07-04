@@ -46,7 +46,7 @@ fn loss_ack_diff_repair_decode_raptorq() {
     let block = encode_block(1, 1280, FecBackend::RaptorQ); // k = 20
 
     // Sender retains the block (as encode_to_interleave_buf does).
-    arq.on_block_encoded(1, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ);
+    arq.on_block_encoded(1, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ, Instant::now());
 
     // Receiver-side decoder (created by BlockStart).
     let mut decoder = FecBackend::RaptorQ.create_decoder(block.params, block.data.len() as u64);
@@ -96,7 +96,7 @@ fn tail_loss_recovered_by_sweep() {
     let now = Instant::now();
     let mut arq = BlockArq::new();
     let block = encode_block(2, 640, FecBackend::RaptorQ); // k = 10
-    arq.on_block_encoded(2, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ);
+    arq.on_block_encoded(2, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ, Instant::now());
     let mut decoder = FecBackend::RaptorQ.create_decoder(block.params, block.data.len() as u64);
 
     let last = block.source.len() - 1;
@@ -140,7 +140,7 @@ fn lost_repair_triggers_second_round() {
     let now = Instant::now();
     let mut arq = BlockArq::new();
     let block = encode_block(3, 640, FecBackend::RaptorQ);
-    arq.on_block_encoded(3, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ);
+    arq.on_block_encoded(3, Bytes::from(block.data.clone()), block.params, FecBackend::RaptorQ, Instant::now());
     let mut decoder = FecBackend::RaptorQ.create_decoder(block.params, block.data.len() as u64);
 
     let mut decoded: Option<Bytes> = None;
@@ -193,7 +193,7 @@ fn fixed_rate_backend_source_resend_decodes() {
     let now = Instant::now();
     let mut arq = BlockArq::new();
     let block = encode_block(4, 640, FecBackend::ReedSolomon);
-    arq.on_block_encoded(4, Bytes::from(block.data.clone()), block.params, FecBackend::ReedSolomon);
+    arq.on_block_encoded(4, Bytes::from(block.data.clone()), block.params, FecBackend::ReedSolomon, Instant::now());
     let mut decoder =
         FecBackend::ReedSolomon.create_decoder(block.params, block.data.len() as u64);
 
