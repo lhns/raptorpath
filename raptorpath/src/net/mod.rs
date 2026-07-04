@@ -880,13 +880,18 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
             let Some(mut decoder) = recv_decoders.get_mut(&symbol.block_id) else {
                 return true;
             };
+            let feed_start = Instant::now();
             if let Some(data) = decoder.add_symbol(symbol) {
                 let block_id = symbol.block_id;
                 let total_fed = decoder.total_fed();
                 let source_symbols = decoder.params().source_symbols;
                 drop(decoder);
 
-                debug!(block_id, "block decoded");
+                debug!(
+                    block_id,
+                    decode_us = feed_start.elapsed().as_micros() as u64,
+                    "block decoded"
+                );
                 recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
                 recv_fec.lock().feedback_update(true);
 
@@ -2928,6 +2933,7 @@ fn handle_control_message(
             // ADR-0007: RTT from echoed sender timestamp (same clock, no skew)
             let now = now_us();
             let rtt_us = now.saturating_sub(echo_send_timestamp_us);
+            debug!(path_id, rtt_us, batch_seq, "ack rtt sample");
             if let Some(path) = sched.path_mut(path_id) {
                 let rtt_duration = Duration::from_micros(rtt_us);
                 path.estimator.record_rtt(rtt_duration);

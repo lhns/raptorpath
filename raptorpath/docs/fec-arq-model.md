@@ -2337,6 +2337,45 @@ honest deviations in constants and mechanics:
   a threshold at the same clamp) — no branch cliffs. The rate formula
   itself is retained as a diagnostic only; the cwnd dynamics are the
   ramp/backoff scheme.
+- **Jitter-robust queue signal** (three coupled changes, one cause).
+  The P1 mapping implicitly assumed path jitter << the queue target;
+  the L1 C2 cell (10 ms floor, netem +-3 ms per direction) violates
+  it, and the sender took a x0.92 backoff on ~60% of updates — cwnd
+  pinned near the 8-symbol floor vs BDP ~160 (the dominant term in the
+  16x rp-vs-quinn gap at C2). Measured root cause: the queue signal
+  compares a min-of-N statistic (N ~ 4-30 ACK samples per SRTT window)
+  against the 10 s propagation floor, a min-of-thousands. Under jitter
+  these are different statistics: at C2 the 10 s floor found 7.0 ms
+  while a typical window min sits at 12-13 ms — a permanent apparent
+  dq of ~5 ms with an EMPTY queue, which no windowed min can see
+  through (and the link's jitter FIFO correlates consecutive samples,
+  so consecutive-difference jitter measures only ~0.85 ms of the
+  ~6 ms spread). The production remedy:
+  (1) **Quantile queue floor**: the backoff comparison uses
+  queue_floor = P10 of the per-update window-min history (10 s
+  window) instead of the raw 10 s min — the floor becomes the same
+  min-of-N statistic as the signal, so it is self-calibrating under
+  any jitter correlation structure. A genuine standing queue shifts
+  every window min within one SRTT while the 10 s quantile lags, so
+  congestion is still detected within a few updates; a queue
+  SUSTAINED longer than the window becomes the new baseline (the same
+  staleness bound the 10 s min floor already had).
+  (2) **Jitter headroom**: threshold = (queue_mult - 1) x queue_floor
+  + k x jitter_est, k = 2, jitter_est an EWMA (gain 1/8) of
+  |consecutive RTT sample differences| (RFC 3550-style) — covers the
+  residual within-window spread at small N; shift-robust because a
+  standing queue leaves consecutive differences at jitter scale.
+  (3) **Ramp fast-exit needs >= 3 samples**: a partial window's min
+  can be a single draw from the jitter tail; one sample must not end
+  the exponential ramp.
+  Continuity: on a clean link every window min equals the floor, the
+  quantile equals the floor, jitter_est -> 0, and P1 semantics are
+  recovered exactly; no cliff in any variable. Honest cost: the
+  tolerated standing queue grows to ~(queue_mult - 1) x queue_floor +
+  2 x jitter above the TYPICAL window min rather than the extreme
+  min; for Realtime this is fundamental, not incidental — a queue
+  smaller than the jitter spread is statistically indistinguishable
+  from jitter at windowed-min sample counts.
 - **cwnd floor = 8 symbols** (the driver backed off to >= 4). An L1 run
   on a real emulated link (100 Mbit, 10 ms RTT) showed the pre-P7
   rate-formula collapse crawling at cwnd = 2; the raised floor guarantees

@@ -56,6 +56,50 @@ const COPA_DELTA: f64 = 0.5;
 ///     spurious backoff (dq == threshold is not > threshold).
 const DQ_FLOOR_SECS: f64 = 1e-4;
 
+/// Jitter headroom multiplier k in the backoff threshold
+/// (queue_mult − 1) × floor + k × jitter_est (paper Section 12.4,
+/// jitter-adjusted queue target).
+///
+/// The P1 mapping assumed path jitter ≪ the queue target. Real links
+/// violate that: at L1's C2 cell (10ms floor, ±3ms/direction netem
+/// jitter) the Bulk threshold was 2.5ms while a typical RTT sample sat
+/// ~6ms above the 10s floor — the windowed-min queue signal measured
+/// JITTER, not queue, and every per-SRTT update bought a ×0.92 backoff
+/// (cwnd pinned near the floor; measured L1 root cause of the 16x
+/// rp-vs-quinn gap at C2). Widening the threshold by k×jitter makes the
+/// comparison read "queue above target AND above what jitter alone
+/// explains". k = 2 puts the false-backoff rate for a min-of-N window
+/// at the few-percent level for the N ≈ 4-30 ACK batches an SRTT holds,
+/// while a genuine standing queue (which shifts ALL samples, leaving
+/// the consecutive-difference jitter estimate unchanged) still crosses
+/// the widened threshold within a few updates. Continuity: jitter → 0
+/// recovers the P1 threshold exactly.
+const JITTER_HEADROOM: f64 = 2.0;
+/// EWMA gain for the consecutive-difference jitter estimator (RFC
+/// 3550-style interarrival jitter, gain 1/8 rather than 1/16: the ramp
+/// fast-exit consults the threshold from the first ACKs on, so the
+/// estimate must converge within tens of samples).
+const JITTER_GAIN: f64 = 0.125;
+/// Quantile of the per-update window-min history used as the QUEUE floor
+/// (paper Section 12.4, jitter-robust queue floor).
+///
+/// The queuing-delay signal compares a min-of-N statistic (N ≈ the ACK
+/// samples in one SRTT window) against the propagation floor, a
+/// min-of-thousands over 10s. On a jittery link those are DIFFERENT
+/// statistics: at L1's C2 cell the 10s floor found 7.0ms while a
+/// typical window min sits at 12-13ms — a permanent apparent dq of
+/// ~5ms with an empty queue (and netem's jitter FIFO correlates
+/// consecutive samples, so the consecutive-difference jitter estimate
+/// ~0.85ms cannot bridge the gap). Comparing the window min against a
+/// low QUANTILE of its own recent distribution is self-calibrating
+/// under any jitter correlation structure: queue-free windows sit near
+/// their own P10 by construction, while a genuine standing queue
+/// shifts every window min up within one SRTT and the 10s-window
+/// quantile lags behind — the signal survives. On a clean link every
+/// window min equals the floor, the quantile equals the floor, and
+/// the P1 semantics are recovered exactly.
+const QUEUE_FLOOR_QUANTILE: f64 = 0.10;
+
 /// Startup ramp: multiplicative growth factor per window update, until the
 /// first backoff (gate driver P1: cwnd = cwnd × 1.5 + 1).
 const RAMP_GAIN: f64 = 1.5;
@@ -236,6 +280,23 @@ pub struct CopaState {
     /// Minimum RTT sample since the last cwnd update — the queuing-delay
     /// signal (windowed min, NOT an EWMA; see module docs).
     min_rtt_since_update: Option<Duration>,
+    /// Consecutive-difference jitter estimate (seconds): EWMA of
+    /// |rtt_i − rtt_{i−1}| at gain 1/8 (RFC 3550-style). Shift-robust by
+    /// construction — a standing queue shifts ALL samples and leaves the
+    /// consecutive differences at jitter scale, so this measures jitter,
+    /// never queue. Widens the backoff threshold (JITTER_HEADROOM).
+    jitter_est: f64,
+    /// Previous raw RTT sample (for the consecutive difference).
+    prev_rtt_sample: Option<Duration>,
+    /// Per-update window-min history over the sliding window: the queue
+    /// floor is a low quantile of these (QUEUE_FLOOR_QUANTILE) — the same
+    /// statistic as the queue signal itself, so jitter cannot open a
+    /// permanent gap between signal and floor (see const docs).
+    win_min_history: VecDeque<(Instant, Duration)>,
+    /// RTT samples recorded since the last cwnd update — evidence count
+    /// for the ramp fast-exit (a min over ≥3 samples; a min-of-1 is just
+    /// one jittery sample and fired false ramp exits at L1's C2).
+    samples_since_update: u32,
     /// True until the first congestion backoff (multiplicative ramp phase).
     ramping: bool,
     /// Hint-coupled queue-target multiplier (P1): 1.08/1.125/1.25.
@@ -263,6 +324,10 @@ impl CopaState {
             max_bw: 0.0,
             srtt: None,
             min_rtt_since_update: None,
+            jitter_est: 0.0,
+            prev_rtt_sample: None,
+            win_min_history: VecDeque::new(),
+            samples_since_update: 0,
             ramping: true,
             queue_mult: queue_target_mult(hint),
             delivered: 0,
@@ -324,6 +389,14 @@ impl CopaState {
             None => rtt,
         });
 
+        // Consecutive-difference jitter EWMA (shift-robust; see field doc).
+        if let Some(prev) = self.prev_rtt_sample {
+            let diff = if rtt > prev { rtt - prev } else { prev - rtt };
+            self.jitter_est += (diff.as_secs_f64() - self.jitter_est) * JITTER_GAIN;
+        }
+        self.prev_rtt_sample = Some(rtt);
+        self.samples_since_update += 1;
+
         self.rtt_samples.push_back(RttSample {
             rtt,
             timestamp: now,
@@ -337,20 +410,45 @@ impl CopaState {
         self.srtt.unwrap_or(DEFAULT_SRTT)
     }
 
+    /// The queue floor: QUEUE_FLOOR_QUANTILE of the recent window-min
+    /// history — the same min-of-N statistic as the queue signal itself
+    /// (see const docs; falls back to the propagation floor before any
+    /// history accumulates). Never below the propagation floor by
+    /// construction (every window min is itself an RTT sample).
+    fn queue_floor(&self) -> Option<Duration> {
+        if self.win_min_history.is_empty() {
+            return self.min_rtt;
+        }
+        let mut v: Vec<Duration> = self.win_min_history.iter().map(|&(_, d)| d).collect();
+        let idx = (((v.len() - 1) as f64) * QUEUE_FLOOR_QUANTILE).round() as usize;
+        let (_, nth, _) = v.select_nth_unstable(idx);
+        Some(*nth)
+    }
+
     /// Whether the standing-queue signal is above the hint-coupled target:
-    /// windowed-min RTT − floor (= dq, clamped ≥ 0.1ms) exceeds
-    /// (queue_mult − 1) × floor (also clamped ≥ 0.1ms).
+    /// windowed-min RTT − queue_floor (= dq, clamped ≥ 0.1ms) exceeds
+    /// (queue_mult − 1) × queue_floor + k × jitter_est (also clamped
+    /// ≥ 0.1ms).
     ///
     /// Equivalent to the gate driver's `min_rtt_win > floor × queue_mult`
-    /// except for the dq clamp, which keeps sub-millisecond-RTT links from
-    /// backing off on jitter (see DQ_FLOOR_SECS).
+    /// except for three continuity guards (all vanish on a clean link,
+    /// where queue_floor == floor and jitter_est == 0):
+    ///   - the dq clamp keeps sub-millisecond-RTT links from backing off
+    ///     on sub-clamp noise (see DQ_FLOOR_SECS),
+    ///   - the queue floor is a low quantile of the window-min history
+    ///     rather than the extreme-value 10s min, so jitter cannot open a
+    ///     permanent gap between signal and floor (QUEUE_FLOOR_QUANTILE —
+    ///     measured L1 root cause of the C2 throughput collapse), and
+    ///   - the k × jitter_est term covers the residual within-window
+    ///     spread at small sample counts (JITTER_HEADROOM).
     fn queue_above_target(&self) -> bool {
-        let (Some(win_min), Some(floor)) = (self.min_rtt_since_update, self.min_rtt) else {
+        let (Some(win_min), Some(floor)) = (self.min_rtt_since_update, self.queue_floor()) else {
             return false;
         };
         let floor_s = floor.as_secs_f64();
         let dq = (win_min.as_secs_f64() - floor_s).max(DQ_FLOOR_SECS);
-        let dq_target = ((self.queue_mult - 1.0) * floor_s).max(DQ_FLOOR_SECS);
+        let dq_target = ((self.queue_mult - 1.0) * floor_s + JITTER_HEADROOM * self.jitter_est)
+            .max(DQ_FLOOR_SECS);
         dq > dq_target
     }
 
@@ -366,13 +464,32 @@ impl CopaState {
     /// Resets the queuing-delay window. Returns the new cwnd (unclamped
     /// against MIN/MAX — the caller clamps).
     fn update_cwnd(&mut self, cwnd: u32) -> u32 {
-        self.last_cwnd_update = self.clock.now();
+        let now = self.clock.now();
+        self.last_cwnd_update = now;
         // No RTT samples since the last update → no signal, hold.
-        if self.min_rtt_since_update.is_none() {
+        let Some(win_min) = self.min_rtt_since_update else {
             return cwnd;
-        }
+        };
         let above = self.queue_above_target();
+        tracing::debug!(
+            cwnd,
+            above,
+            win_min_us = win_min.as_micros() as u64,
+            floor_us = self.min_rtt.map(|d| d.as_micros() as u64),
+            qfloor_us = self.queue_floor().map(|d| d.as_micros() as u64),
+            jitter_us = (self.jitter_est * 1e6) as u64,
+            srtt_us = self.srtt().as_micros() as u64,
+            n_samples = self.samples_since_update,
+            "copa cwnd update"
+        );
+        // Record this window's min in the queue-floor history.
+        self.win_min_history.push_back((now, win_min));
+        let cutoff = now.checked_sub(self.window_duration).unwrap_or(now);
+        while self.win_min_history.front().is_some_and(|&(t, _)| t < cutoff) {
+            self.win_min_history.pop_front();
+        }
         self.min_rtt_since_update = None;
+        self.samples_since_update = 0;
         let c = cwnd as f64;
         let next = if above {
             self.ramping = false;
@@ -390,6 +507,7 @@ impl CopaState {
     fn backoff(&mut self, cwnd: u32) -> u32 {
         self.ramping = false;
         self.min_rtt_since_update = None;
+        self.samples_since_update = 0;
         self.last_cwnd_update = self.clock.now();
         (cwnd as f64 * BACKOFF_MULT).round() as u32
     }
@@ -604,11 +722,17 @@ impl PathState {
         let _rate = self.copa.record_delivery(acked);
         let now = self.clock.now();
 
-        if self.copa.ramping && self.copa.queue_above_target() {
+        if self.copa.ramping
+            && self.copa.samples_since_update >= 3
+            && self.copa.queue_above_target()
+        {
             // Fast ramp exit: gentle ×0.92, NOT a collapse to a
             // rate-formula target (the pre-P7 bug: the initial burst
             // inflated its own RTT samples, dq exploded, and the target
-            // dropped to the floor on the very first burst).
+            // dropped to the floor on the very first burst). Requires
+            // ≥3 samples of evidence: a partial window's min can be a
+            // single jittery sample, and one draw from the jitter tail
+            // must not end the exponential ramp (L1 C2 finding).
             self.cwnd = self.copa.backoff(self.cwnd);
         } else if self.copa.should_update(now) {
             self.cwnd = self.copa.update_cwnd(self.cwnd);
@@ -1612,10 +1736,12 @@ mod tests {
     #[test]
     fn test_hint_changes_backoff_threshold() {
         // P1 (paper 12.4): the protocol hint sets the queue target.
-        // floor = 100ms, windowed min = 115ms → dq = 15ms:
-        //   Realtime target  8ms → backoff
-        //   Auto target   12.5ms → backoff
-        //   Bulk target     25ms → keep growing
+        // floor = 100ms, windowed min = 118ms → dq = 18ms. The 100→118
+        // step also charges the jitter estimator (18/8 = 2.25ms decaying
+        // to ~1.72ms over the three samples → ~3.4ms threshold widening):
+        //   Realtime target  8ms + 3.4ms → backoff
+        //   Auto target   12.5ms + 3.4ms → backoff
+        //   Bulk target     25ms + 3.4ms → keep growing
         fn run(hint: ProtocolHint) -> (u32, u32) {
             let clock = Arc::new(MockClock::new());
             let mut sched = Scheduler::new_with_hint(clock.clone(), hint);
@@ -1627,7 +1753,7 @@ mod tests {
             }
             let pre = sched.path(0).unwrap().cwnd;
             for _ in 0..3 {
-                sched.path_mut(0).unwrap().record_rtt_sample(millis(115));
+                sched.path_mut(0).unwrap().record_rtt_sample(millis(118));
             }
             clock.advance(millis(150));
             sched.ack(0, 8);
@@ -1638,9 +1764,70 @@ mod tests {
         let (auto_pre, auto_post) = run(ProtocolHint::Auto);
         let (bulk_pre, bulk_post) = run(ProtocolHint::Bulk);
 
-        assert!(rt_post < rt_pre, "Realtime backs off at dq=15ms: {rt_pre}->{rt_post}");
-        assert!(auto_post < auto_pre, "Auto backs off at dq=15ms: {auto_pre}->{auto_post}");
-        assert!(bulk_post > bulk_pre, "Bulk tolerates dq=15ms: {bulk_pre}->{bulk_post}");
+        assert!(rt_post < rt_pre, "Realtime backs off at dq=18ms: {rt_pre}->{rt_post}");
+        assert!(auto_post < auto_pre, "Auto backs off at dq=18ms: {auto_pre}->{auto_post}");
+        assert!(bulk_post > bulk_pre, "Bulk tolerates dq=18ms: {bulk_pre}->{bulk_post}");
+    }
+
+    #[test]
+    fn test_jitter_widens_backoff_threshold_c2() {
+        // Jitter-adjusted queue target (paper 12.4). C2-like link: 10ms
+        // floor with ±6ms RTT jitter (netem 3ms/direction). Bulk's raw P1
+        // threshold is 2.5ms — smaller than the jitter — so the pre-fix
+        // windowed-min signal read jitter as a standing queue and backed
+        // off nearly every update (measured at L1: cwnd pinned at the
+        // floor for 60% of ACKs, 16x throughput gap vs quinn). With the
+        // k×jitter_est widening, a jittery-but-queue-free link must ramp.
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
+        sched.add_path(0);
+
+        // Deterministic jitter pattern with min 10ms, spread 6ms — every
+        // update window's min sample sits 2-4ms above the 10s floor once
+        // the floor has seen a 10ms sample.
+        let pattern_ms = [10u64, 14, 12, 16, 13, 15, 12, 14];
+        let mut cwnd_track = Vec::new();
+        for round in 0..40 {
+            // 4 ACK batches per SRTT window, one RTT sample each; skip
+            // the true-floor sample in most windows (the windowed min
+            // usually does NOT reach the floor — that is the trap).
+            for k in 0..4 {
+                let idx = (round * 4 + k) % pattern_ms.len();
+                let ms = if round == 0 && k == 0 { 10 } else { pattern_ms[idx].max(12) };
+                sched.path_mut(0).unwrap().record_rtt_sample(millis(ms));
+            }
+            clock.advance(millis(15));
+            sched.ack(0, 8);
+            cwnd_track.push(sched.path(0).unwrap().cwnd);
+        }
+        let final_cwnd = *cwnd_track.last().unwrap();
+        assert!(
+            final_cwnd > 100,
+            "jittery queue-free C2 link must ramp past 100 symbols, got {final_cwnd} (track: {cwnd_track:?})"
+        );
+
+        // Sanity: a genuine standing queue on the SAME jittery link still
+        // triggers backoff within a few updates — the queue shifts every
+        // sample up by 12ms, while the consecutive-difference jitter
+        // estimate stays at jitter scale.
+        let before = sched.path(0).unwrap().cwnd;
+        let mut backed_off = false;
+        for round in 0..6 {
+            for k in 0..4 {
+                let idx = (round * 4 + k) % pattern_ms.len();
+                sched
+                    .path_mut(0)
+                    .unwrap()
+                    .record_rtt_sample(millis(pattern_ms[idx] + 12));
+            }
+            clock.advance(millis(25));
+            sched.ack(0, 8);
+            if sched.path(0).unwrap().cwnd < before {
+                backed_off = true;
+                break;
+            }
+        }
+        assert!(backed_off, "a genuine 12ms standing queue must still back off");
     }
 
     #[test]
