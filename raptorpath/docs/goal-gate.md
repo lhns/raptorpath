@@ -1030,6 +1030,101 @@ attacking. Boundary rule of thumb: **choose raptorpath above ~1% loss when
 tail latency or multipath matters; choose QUIC/BBR for single-path bulk on
 a low-loss or very-high-RTT path.**
 
+
+## Windowed-RLC-all-profiles experiment (branch `exp/windowed-rlc-all`, 2026-07-05)
+
+**Question.** Only Realtime uses the sliding-window RLC pipeline in
+production; Bulk/Auto use block mode (RaptorQ, 64 KB blocks, per-block
+per-path affinity scheduler). Does unifying ALL hints on windowed RLC — the
+code path the visualizer + paper model center on — help bulk single-path
+and multipath?
+
+**Change (reversible, opt-out kept).** `is_window_mode` → `backend.is_streaming()`
+for every hint (was Realtime-only); Bulk/Auto auto-select `FecBackend::Rlc`
+when no `--fec-backend` is given, so they take the window pipeline. Block
+mode stays reachable for the A/B via `--fec-backend raptorq`. Added
+`--fec-backend` to `raptorpath perf`; fixed the perf harness bulk chunk size
+1400 → 1196 B so `frame_window_packet` (symbol_size 1200 → MTU 1196) does
+not truncate chunks. `cargo test --lib` 235 green; gate_suite unaffected
+(it is a pure in-process `run_fec` sim and never calls `net::run` /
+`is_window_mode`).
+
+### Phase 0 — reconnaissance (two blocking questions)
+
+1. **Does the window sender spread symbols across paths?** No. Every source
+   symbol goes to `select_source_path` = `Scheduler::best_source_path()`, the
+   single lowest-cost path *that has cwnd capacity*; when that path saturates
+   (`available()==0`) it spills to the next-best. It does **not** stripe via
+   `scheduler.schedule()` the way block mode's affinity scheduler does. Repair
+   symbols go to `best_repair_path()` (single highest-goodput path); Realtime
+   additionally *duplicates* source onto a redundant path. So windowed RLC has
+   **no proactive multipath aggregation for source data** — it is
+   single-path-with-congestion-spillover. True windowed multipath would need
+   the sender to stripe source symbols across paths (a large new effort).
+
+2. **Symbol size / MTU.** The bulk `BlockProfile` already uses
+   `symbol_size = 1200`, so window mode clamps the TUN MTU to 1196 — full-size
+   packets are **not** fragmented. (The 512 B → 508 B → 3× fragmentation
+   problem is Realtime-specific.) Symbol size was therefore *not* the obstacle
+   for bulk; no profile change was needed.
+
+### Phase 1 — windowed RLC for bulk, single path (rp-native perf, C2)
+
+| arm | backend / mode | 1.8 MB × 10 | completion |
+|-----|----------------|-------------|------------|
+| windowed-RLC-bulk (`--protocol-hint bulk`, default) | Rlc / **window** | **0 / 10 (all DNF)** | only 64 B warmup completed; client hit the 600 s wall |
+| block-mode-bulk (`--protocol-hint bulk --fec-backend raptorq`) | RaptorQ / block | 10 / 10 | mean **0.895 s** / median 0.93 / min 0.51 / max 1.16 (16.1 Mbit/s) |
+
+Both arms same binary, C2 (100 Mbit, 10 ms RTT, GE 1.3 %/50 %), seed 42.
+The block arm reproduces the existing baseline (0.83–0.88 s). Windowed bulk
+**cannot complete a single 1.8 MB object**.
+
+**Root cause (structural, not a tuning miss).** The window pipeline is
+*loss-tolerant by design*, which is correct for Realtime (a dropped packet is
+fine) and fatal for bulk (every byte must arrive):
+- The sender never blocks on window fullness. When
+  `encoder.window_size() > MAX_WINDOW_SIZE` (200) it **force-advances,
+  evicting un-acked source symbols** (`net/mod.rs` ~2763). Evicted source
+  symbols can no longer be regenerated or retransmitted.
+- The receiver's reorder buffer **force-delivers past unrecoverable holes**
+  on expiry (~20 ms), skipping the missing packet and advancing the cumulative
+  point.
+- At C2's 1.3 % GE loss a 1.8 MB object is ~1520 symbols → ~20 loss events.
+  Any symbol lost and not NACK-repaired within ~200 symbols (the window drains
+  in ≈19 ms, near one RTT) is evicted → the packet is permanently dropped →
+  the perf object (which needs every chunk) never assembles → DNF.
+
+C3 (20 Mbit, GE 2 %/40 %) was not separately run: it is strictly lossier, so
+windowed bulk DNFs there a fortiori for the identical reason. The 50 msg/s
+message-tail run and any C3 windowed sweep were scoped out for the same
+foregone-conclusion reason — a hard single-path DNF is the ceiling.
+
+### Phase 2 — windowed RLC multipath: not feasible in scope
+
+Phase 0 shows the window sender does not stripe source symbols across paths,
+and Phase 1 shows single-path windowed bulk already DNFs. Dual-path would DNF
+*harder*: cross-path reordering widens the holes the reorder buffer must
+cover, and the eviction/force-deliver loss remains. Making the sender stripe
+(the prerequisite) is a large effort and pointless until windowed RLC delivers
+reliably at all. This also matches §16 (Fountain Multipath Aggregation): the
+in-order delivery contract the window receiver enforces caps aggregation at
+fast-path-alone (C8 14.0) regardless — so even a striping windowed sender
+could not beat the block-affinity 12.6 / 23.9 numbers without *out-of-order*
+delivery, which the window receiver does not do.
+
+### Verdict — windowed RLC does NOT help bulk (it breaks it)
+
+Unifying on windowed RLC regresses bulk from **10/10 @ 0.90 s to 0/10 (total
+DNF)** single-path at C2, and offers nothing for multipath (the sender does
+not aggregate). The window pipeline's loss-tolerance (source-symbol eviction +
+force-deliver-past-holes) is fundamentally incompatible with bulk's
+every-byte-required contract. Block mode (RaptorQ + P8 block-ARQ) stays the
+correct choice for Bulk/Auto. Do **not** ship windowed-all as a default; a
+prerequisite for any future windowed-bulk is a reliable-delivery mode that
+never evicts an un-acked source symbol before it is delivered/acked (bulk ARQ
+inside the window), plus a striping sender before multipath is even meaningful.
+The experiment stays on this branch, unmerged, as the record.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
