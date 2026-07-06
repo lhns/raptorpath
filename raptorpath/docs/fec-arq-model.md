@@ -5393,6 +5393,102 @@ which the send-time-windowed RLC does not provide. That is a named,
 scoped next mechanism, not a knob; §16.5's W_mp sizing is necessary (it lifted
 the number from 2 to 4.5) but not sufficient.
 
+**Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
+`feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
+×1.19 achievability above came from an oracle
+(`multipath_oracle.rs::oracle_c8_fungible_wmp_window`) that
+**abstracted away time**: it credited every arrived coded symbol with useful
+rank over its whole window, with no notion that a coded symbol is a
+combination over the sender's window *as of its send time* and lands a
+path-delay later.  A corrected oracle was built that models the send-time
+window, per-path one-way delay, a finite store, per-generation rank decode,
+and the production reliability layer.  Two findings, one correcting the record
+and one rendering the verdict:
+
+1. **The pure temporal-drift hypothesis does NOT, by itself, explain L1
+   (DERIVED).**  At W ≈ W_mp = 640 the send-time-vs-arrival drift is
+   negligible — a slow-path symbol's window-top exceeds the receiver frontier
+   by ≈ W − D·owd ≈ 640 − 7·20 ≈ 500 ≫ 0, so nothing is stranded — and a
+   faithful *ideal* fungible model aggregates.  This is consistent with the L1
+   observation that the drag is **W-insensitive** (W = 200 → ×0.13, W = 640 →
+   ×0.29, W = 2048 → ×0.16 in raw goodput; all deep sub-parity).  The L1
+   ×0.26 is therefore not an information-theoretic alignment barrier of coded
+   multipath; it is a **realization pathology**: beneath the fungible coding
+   the production stack runs a *per-seq* reliability/ARQ/reorder layer, so a
+   moving coding anchor makes each window's per-path shares behave
+   **path-affine** (the fast path's fresh symbols code the current window and
+   cannot retroactively supply a prior window's stranded position — only a
+   targeted, congestion-throttled per-seq ARQ can), and the per-seq in-order
+   delivery beneath the code imposes a per-window cross-path reorder/ARQ tax
+   present *even on symmetric paths*.
+
+2. **With that realization layer modeled, the corrected oracle REPRODUCES the
+   L1 refutation (MEASURED against L1).**  A single fitted constant — the
+   throttled-recovery collapse stall (the ADR-0046 congestion-multiplier
+   collapse), 190 ms — reproduces *both* L1 numbers at once, the het/sym ratio
+   falling out rather than fit:
+
+   ```
+     signature                    L1 measured   corrected oracle
+     C8 het dual / fast-alone         ×0.26          ×0.259
+     C7 sym dual / fast-alone         ×0.36          ×0.362
+     coded single / systematic        ×0.85          ×0.94 (codec cost only)
+     dual < single on BOTH?            YES            YES  (0.259 & 0.362 < 1)
+   ```
+
+   Only a corrected oracle that reproduces the failure is trustworthy to
+   judge the fix.  This one does.
+
+The earlier ×1.19 "achievable" claim is therefore **corrected**: it was from
+an oracle lacking temporal alignment and the per-seq realization layer, so it
+described an *idealization*, not the transport that was built.  What is true —
+and now measured in the faithful oracle — is that the idealization's ×1.19 is
+recoverable, but only under a **stable coding anchor** (next paragraph), not
+under the moving sliding window that was actually shipped.
+
+**Verdict — heterogeneous aggregation IS achievable, via generation-based
+coding with a stable anchor (MEASURED in the faithful oracle; a BUILD
+recommendation, not built here).**  In the corrected oracle, replacing the
+moving window with **fixed generations** — partition the source into
+generations of ≈ W_mp symbols, code coded symbols *within* each generation
+(a stable target), stripe each generation's coded symbols ∝ goodput across
+paths, decode generation *g* on any K_g independent symbols from any paths,
+pipeline generations — removes both drag mechanisms *by construction*: a
+slow-path symbol for generation *g* stays useful until *g* decodes regardless
+of arrival time (no stranding, no per-seq throttle), and a lost or late symbol
+is replaced by the next coded symbol for the *same* generation from *either*
+path (fungible cross-path recovery).  The measured result at C8 (K = 20 000,
+r = 0.10):
+
+```
+  aligned generation coding, C8 het, sweep G × pipeline depth M:
+    G = 256  384  512  640  768 1024      (all M ∈ {2,3,4})
+       1.19 1.19 1.19 1.18 1.17 1.17      → best ×1.194 at G ≈ 384–512
+  C7 symmetric control (G = 640, M = 3):  ×1.96   (ideal 2.0, no drag)
+  lever decomposition (C8 het, W = 640):
+    moving anchor + throttled recovery, M=1  ×0.21   (== L1 refutation)
+    moving anchor + throttled recovery, M=3  ×0.60   (pipelining alone: partial)
+    stable anchor + fungible recovery,  M=1  ×1.13   (stable anchor alone: works)
+    stable anchor + fungible recovery,  M=3  ×1.18   (full fix → ceiling)
+```
+
+Aligned generations reach the goodput ceiling (×1.195) *without* the
+dual-worse-than-single drag, and the lever decomposition isolates the cause:
+the **stable anchor is the dominant lever** (×0.21 → ×1.13), pipelining is
+secondary (×0.21 → ×0.60).  So the grounded position is:
+
+- **Heterogeneous aggregation-above-fast-path is achievable (DERIVED + oracle-
+  MEASURED), and the required production mechanism is named:**
+  generation-based cross-path fungible coding with a **stable per-generation
+  anchor** (generation size ≈ W_mp / 384–512 symbols at C8, pipeline depth
+  M ≥ 2, ∝-goodput striping of each generation's coded symbols, out-of-order
+  per-generation decode, fungible cross-path recovery — *no* per-seq targeted
+  ARQ beneath the code).  This is a BUILD recommendation for a future arm; it
+  is *not* built in this task (oracle/model work only).
+- The shipped coded-*sliding*-window (moving anchor) cannot reach it and is
+  correctly recorded as REFUTED at L1 (×0.26); the barrier it hit is the
+  moving anchor + per-seq throttled recovery, not fungible coding as such.
+
 ### 16.4 One Pipeline, Not Mode Switching
 
 The two-pipeline structure (Section 15.1) invites a tempting patch: keep
@@ -5815,6 +5911,19 @@ ACHIEVABLE in principle (oracle ×1.19)** with a named, scoped mechanism —
 sharper than "unproven open problem." (Caveat: the oracle's per-path GE chains
 are independent; shared-bottleneck path CORRELATION — where pull placement may
 matter more — is not modeled and is flagged for real-trace validation.)
+
+**Superseded by the temporal correction (see §16.3, `feat/oracle-temporal`).**
+The ×1.19 figures in this block are from an oracle that abstracts away *time*
+(it credits every arrived symbol with whole-window rank, ignoring send-time vs
+arrival-time drift and the per-seq realization layer).  The corrected temporal
+oracle (`temporal_oracle.rs`) shows two things this one could not: (a) that
+oracle's ×1.19 is an *idealization* — the shipped moving-window realization is
+correctly REFUTED, reproduced at ×0.259 (het) / ×0.362 (sym), matching the L1
+×0.26 / ×0.36 with one fitted constant; and (b) the ×1.19 is nonetheless
+recoverable, but only under a **stable per-generation anchor** (measured
+×1.194 at C8, no drag), not the moving sliding window.  Read the §16.3
+"Corrected oracle" and "Verdict" paragraphs for the adjudicated position;
+this block is retained for the L0/L1 reconciliation history.
 
 ---
 

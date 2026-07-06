@@ -789,7 +789,12 @@ CLAIM STATUS after L2 (all L1/L2, real stacks, reproducible):
 2. Asymmetric multipath (C8): kernel-MPTCP PARITY (12.61 vs 12.6)
    after the 13.8 order-coupling extension; full aggregation above the
    fast path is foreclosed by the inner-TCP in-order contract
-   (model-scoped, paper-documented).
+   (model-scoped, paper-documented).  Native coded-window aggregation was
+   attempted and REFUTED at L1 (coded-only ×0.26); the corrected temporal
+   oracle (below, "Corrected Oracle / Final Aggregation Verdict")
+   reproduces that refutation and shows the fix is generation-based coding
+   with a stable anchor (oracle ×1.19, no drag) — ACHIEVABLE, a build
+   recommendation, not yet built.
 3. Tail latency (the model's thesis): VALIDATED vs kernel TCP at C2 —
    p99 91 ms (bulk) / 513 ms (realtime) vs 13,300-13,400 ms for BOTH
    kernel CCs at equal p50. Open: quinn message-tail comparison
@@ -1670,9 +1675,111 @@ arrivals pool over the *same* live window, which send-time-windowed RLC does
 not provide. That is the named next mechanism; the multipath regime-map row
 is NOT rewritten to a win.
 
+**UPDATE (Corrected Oracle / Final Aggregation Verdict, 2026-07-07).** The
+"named next mechanism" above is now MADE PRECISE and oracle-tested. The
+corrected temporal oracle (`temporal_oracle.rs`) reproduces the L1 refutation
+faithfully (×0.259 het / ×0.362 sym, dual < single on both) and shows the
+alignment fix is **generation-based coding with a STABLE per-generation anchor**
+(oracle ×1.19 at C8, no drag; stable anchor is the dominant lever). Regime-map
+multipath row, honest final position:
+- **C7 symmetric: aggregates** (L1 ×1.71; oracle ×1.96) — unchanged.
+- **C8 heterogeneous: aggregation-above-fast-path is ACHIEVABLE (oracle-proven
+  ×1.19 under stable-anchor generation coding), OPEN/unbuilt in production.**
+  The shipped moving-window coded-only design is REFUTED (×0.26) and the
+  barrier is identified (moving anchor + per-seq throttled recovery), not
+  fungible coding as such. The row is a *scoped build recommendation*, not a
+  demonstrated production win and not an unbounded open problem.
+
 ### Verification
 `cargo test --lib` 253 green + `perf_loopback_coded_object` (Linux/loopback);
 `cargo test -p raptorpath-math` green incl. new `oracle_c8_fungible_wmp_window`;
 gate_suite 15/15 release. Reproduce: `RWM_WINDOW=640 RWM_MIN_R=0.10
 RWM_EXTRA="--window-coded-only" tools/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6
 dual` (one measurement at a time).
+
+## Corrected Oracle / Final Aggregation Verdict (branch `feat/oracle-temporal`, 2026-07-07)
+
+The Fungible-Frontier oracle above (`multipath_oracle.rs::oracle_c8_fungible_
+wmp_window`) predicted a coded fungible window reaches ×1.19 at C8; L1 REFUTED
+it (coded-only C8 = 3.93 Mbit/s = ×0.26, and the decisive signature: DUAL is
+worse than SINGLE on both symmetric AND heterogeneous paths). Per the /goal's
+own rule — "no model term is trusted until the oracle confirms fidelity" — the
+oracle FAILED FIDELITY and was corrected before it may render any verdict. The
+correction adds the temporal dynamics the old oracle abstracted away
+(`raptorpath-math/tests/temporal_oracle.rs`, 3 tests, all green).
+
+**The temporal correction (what the old oracle lacked).** A coded symbol is a
+combination over the sender's window *as of its send time*; it is striped to a
+path and arrives one path-delay later. The old oracle credited every arrival
+with whole-window rank, ignoring this. The corrected oracle models: send-time
+window, per-path one-way delay, finite store, per-generation rank decode, and
+the production *per-seq* reliability/ARQ/reorder layer that lives beneath the
+coding.
+
+**FIDELITY REPRODUCTION (corrected oracle vs L1, side by side).** A single
+fitted constant — the throttled-recovery collapse stall (the ADR-0046
+congestion-multiplier collapse), 190 ms — reproduces BOTH L1 numbers at once
+(the het/sym ratio falls out, not fit). It reproduces the ×0.26 AND the
+dual-worse-than-single signature:
+
+| signature | L1 measured | corrected oracle |
+|-----------|------------:|-----------------:|
+| C8 het dual / fast-alone | ×0.26 | **×0.259** |
+| C7 sym dual / fast-alone | ×0.36 | **×0.362** |
+| coded single / systematic | ×0.85 | ×0.94 (codec cost only) |
+| dual < single on BOTH sym & het? | YES (drag) | **YES** (0.259 & 0.362 < 1) |
+
+The fidelity-reproduction test is `temporal_fidelity_reproduces_l1_refutation`.
+Note (DERIVED): at W = W_mp = 640 the pure send-time *stranding* is negligible
+(W ≫ D·owd_slow ≈ 140), so the drag is NOT information-theoretic temporal
+misalignment — it is W-insensitive (matches L1's W = 200→2.0, W = 2048→2.4) and
+is a **realization pathology**: the moving coding anchor makes each window's
+per-path shares behave path-affine (fast path cannot cover a stranded slow
+position — only a congestion-throttled per-seq ARQ can), plus a per-window
+cross-path reorder tax present even on symmetric paths. The oracle reproduces
+L1 only when this per-seq realization layer is modeled; the *ideal* fungible
+temporal model aggregates. Honest: the fitted 190 ms sets the drag magnitude,
+but the VERDICT below does not depend on it — only on generations structurally
+avoiding the per-seq throttle.
+
+**ALIGNMENT-FIX RESULT (does generation-based coding reach ×1.19?).** YES.
+Replacing the moving window with fixed generations (code within each fixed
+generation, stripe ∝ goodput, decode per-generation on any K_g symbols from any
+paths, pipeline; fungible cross-path recovery) reaches the goodput ceiling with
+NO drag (`temporal_alignment_fix_generation_coding`, `temporal_lever_
+decomposition`):
+
+| config (C8 het, K=20k, r=0.10) | factor |
+|--------------------------------|-------:|
+| goodput ceiling Σg/g_fast | ×1.195 |
+| aligned generations, best (G≈384–512, M≥2) | **×1.194** |
+| aligned generations, G=640 M=3 | ×1.181 |
+| C7 symmetric control (G=640, M=3) | ×1.96 (no drag) |
+| — lever decomposition — | |
+| moving anchor + throttled recovery, M=1 (== L1) | ×0.21 |
+| moving anchor + throttled recovery, M=3 | ×0.60 (pipelining alone: partial) |
+| stable anchor + fungible recovery, M=1 | ×1.13 (stable anchor alone: works) |
+| stable anchor + fungible recovery, M=3 (FULL FIX) | ×1.18 |
+
+The **stable anchor is the dominant lever** (×0.21 → ×1.13); pipelining is
+secondary (×0.21 → ×0.60).
+
+**VERDICT: heterogeneous aggregation-above-fast-path IS ACHIEVABLE.** The
+required production mechanism is **generation-based cross-path fungible coding
+with a stable per-generation anchor**: generation size ≈ W_mp (best ×1.19 at
+G ≈ 384–512 symbols at C8), pipeline depth M ≥ 2, ∝-goodput striping of each
+generation's coded symbols, out-of-order per-generation decode, fungible
+cross-path recovery, and — critically — NO per-seq targeted ARQ beneath the
+code (the per-seq layer is what makes the moving window path-affine and invokes
+the ADR-0046 throttle). This is a BUILD recommendation for a future arm; it is
+NOT built here (oracle/model work only). The earlier ×1.19 "achievable" claim
+was from an UNFAITHFUL oracle (no temporal alignment, no per-seq layer) — that
+record is corrected in paper §16.3/§16.7: the ×1.19 was an idealization; the
+shipped moving-window realization is correctly REFUTED (×0.26); the ×1.19 is
+recoverable only under the stable-anchor generation design.
+
+**Verification.** `cargo test -p raptorpath-math` green (4 existing
+multipath_oracle tests + 3 new temporal_oracle tests: fidelity-reproduces-L1,
+alignment-fix, lever-decomposition). No production code changed —
+`cargo test -p raptorpath --lib` untouched/green. Reproduce:
+`cargo test -p raptorpath-math --test temporal_oracle -- --nocapture`.
