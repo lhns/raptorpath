@@ -1516,6 +1516,69 @@ OPEN problem, not a demonstrated win (paper §16.7).
   and the netem C8 transfers never DNF. It is a Windows-loopback timing
   artifact of a real recovery gap; the proper fix (a cheap idle-triggered
   sweep, not a per-round floor) is deferred RWM hardening.
+  **UPDATE (verification-oracle, Phase 4): the idle-triggered fix is now
+  LANDED** — `NackCongestionState::effective_multiplier(idle)` floors the
+  multiplier only when no new source has been sent for > 2×SRTT (idle ⇒ no
+  straggler load to protect); active-transfer behavior is bit-for-bit
+  unchanged. Unit-tested (`test_idle_triggered_recovery_floor`).
+
+### ORACLE VERDICT (formula- AND wasm-sim-independent MC; verification-oracle)
+
+An independent Monte-Carlo oracle (`raptorpath-math/tests/multipath_oracle.rs`
+— does NOT call `compute_r_star`/`p_fec`/`controller_rate` or the wasm sim;
+models per-path capacity + one-way delay + GE loss, striped placement,
+fungible repairs over a sliding horizon with eviction, cross-path ARQ, and
+in-order frontier decode) was run at the EXACT C8 netem params (c2+c3). It
+RECONCILES the L0/L1 contradiction:
+
+| oracle config (C8, K≈20k) | factor | reads as |
+|---|---:|---|
+| goodput ceiling Σg_i/g_fast | **×1.195** | physical max |
+| FUNGIBLE cross-path RWM, whole-object horizon | **×1.19** | == L0 wasm (×1.18) |
+| ATOMIC path-affine (regime 2) + cross-path ARQ | ×0.92–0.94 | sub-unity |
+| ATOMIC + SAME-path recovery | ×0.48–0.57 | broken recovery |
+
+**The true out-of-order object case AGGREGATES to the goodput ceiling
+(×1.19), matching L0 — so heterogeneous aggregation-above-fast-path is NOT
+fundamentally fork-join-bounded.** L1's ×0.76 sits INSIDE the broken-transport
+band (between atomic-clean ×0.92 and atomic+same-path ×0.48–0.57), reproducible
+in the oracle ONLY by breaking fungibility AND cross-path recovery. VERDICT:
+**×0.76 is a PRODUCTION limitation, not a fundamental bound** — block/path-affine
+atomicity + same-path/suppressed recovery + eviction, exactly the §16.2(i)/(ii)
+caps.
+
+**Lever decomposition (which fix buys how much aggregation), independent-GE
+oracle, best→worst:**
+- **FUNGIBILITY = cross-path frontier decode (RWM, §16.2)** is the DOMINANT
+  lever: ATOMIC ×0.92 → FUNGIBLE ×1.19. Without it, even perfect pull +
+  cross-path recovery caps at ×0.92 (sub-unity).
+- **CROSS-PATH recovery** is next: same-path ×0.48 → cross-path ×0.92.
+- **PLACEMENT (pull vs push) is NEGLIGIBLE** here: ×1.190 (pull) vs ×1.190
+  (static push) in the fungible case — fungible frontier fill MASKS the
+  slow-path long pole. (This CORRECTS the intuition that pull placement is
+  the big lever; in the independent-GE oracle it is ~0. Placement/push may
+  still matter under shared-bottleneck path CORRELATION, which this oracle's
+  independent GE chains do not model — flagged for real-trace validation.)
+
+**r-sweep (oracle):** at the whole-object horizon the dual beats fast-alone at
+r=0 ALREADY (×1.19); raising r only matters when the coding window is too
+small (H=256 crosses fast-alone at r≈0.18; H≥1024 aggregates at any r). This
+EXPLAINS Phase C's raise-r=0.18 "no unlock": the C8 bottleneck is
+fungibility + cross-path recovery, not repair volume — raising r cannot make a
+path-affine atomic unit fungible.
+
+**Grounded position for the regime map:** symmetric multipath aggregates
+(C7 ×1.71 measured; oracle symmetric ×1.99). Heterogeneous OBJECT completion
+aggregates to the goodput ceiling (~×1.19 at C8) **iff** the transport realizes
+windowed FUNGIBLE cross-path frontier decode (RWM = the §16.3 EMPTY quadrant).
+Production BULK today is RaptorQ 64 KB atomic blocks (path-affine) → oracle-
+capped at ~×0.92 even with perfect pull + cross-path recovery; the measured
+×0.76 is that ceiling dragged down by same-path/suppressed recovery + eviction.
+The path to ×1.19 is the RWM subsystem (fungible sliding-window frontier decode
++ never-suppressed cross-path repair supply — the idle-recovery fix is one
+prerequisite of the latter), NOT a placement tweak or a modest r. Aggregation-
+above-fast-path at C8 remains OPEN **in production**, but is now proven
+ACHIEVABLE in principle (oracle ×1.19) with a named, scoped mechanism.
 
 ### Verification
 `cargo test --lib` 252 green (new: 3 `deliver_packet` policy tests); the ooo
