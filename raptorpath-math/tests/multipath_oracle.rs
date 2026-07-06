@@ -52,7 +52,14 @@ impl Ge {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Place { WorkConserving, GoodputProp }
+enum Place {
+    WorkConserving, // pull: any path with a free slot takes the next source
+    GoodputProp,    // work-conserving WRR weighted by goodput
+    PushStatic,     // NON-work-conserving: each source seq is statically bound
+                    // to a path (capacity-weighted); a path may send ONLY its
+                    // own queue — a slow path that falls behind (loss) becomes
+                    // the long pole and the fast path CANNOT steal its backlog.
+}
 
 enum Ev { Source(usize), Repair(usize), Arq(usize) }
 
@@ -78,6 +85,10 @@ struct Oracle {
     arrivals: BTreeMap<u64, Vec<Ev>>,
     repair_pool: BTreeMap<usize, u32>, // gen_pos -> unconsumed arrived repairs
     arq_ready: BinaryHeap<Reverse<(u64, usize)>>,
+    // PushStatic: per-path static source assignment (seq bound to a path).
+    push_owner: Vec<usize>,   // seq -> owning path (capacity-weighted)
+    push_next: Vec<usize>,    // per-path next-unsent index into its owned seqs
+    push_queue: Vec<Vec<usize>>, // per-path owned seqs, in order
     rng: ChaCha8Rng,
 }
 
@@ -90,6 +101,21 @@ impl Oracle {
         let n = paths.len();
         let mut order: Vec<usize> = (0..n).collect();
         order.sort_by(|&a, &b| paths[b].goodput().partial_cmp(&paths[a].goodput()).unwrap());
+        // Static capacity-weighted assignment for PushStatic (WRR by capacity).
+        let mut push_owner = vec![0usize; k];
+        let mut push_queue = vec![Vec::new(); n];
+        if place == Place::PushStatic {
+            let cap: Vec<f64> = paths.iter().map(|p| p.rate).collect();
+            let sum: f64 = cap.iter().sum();
+            let mut cred = vec![0.0f64; n];
+            for seq in 0..k {
+                let mut best = 0usize; let mut bc = f64::NEG_INFINITY;
+                for i in 0..n { cred[i] += cap[i] / sum; if cred[i] > bc { bc = cred[i]; best = i; } }
+                cred[best] -= 1.0;
+                push_owner[seq] = best;
+                push_queue[best].push(seq);
+            }
+        }
         Oracle {
             ge: (0..n).map(|_| Ge { bad: false }).collect(),
             credit: vec![0.0; n],
@@ -102,6 +128,9 @@ impl Oracle {
             arrivals: BTreeMap::new(),
             repair_pool: BTreeMap::new(),
             arq_ready: BinaryHeap::new(),
+            push_owner,
+            push_next: vec![0; n],
+            push_queue,
             rng: ChaCha8Rng::seed_from_u64(seed),
         }
     }
@@ -263,7 +292,27 @@ impl Oracle {
                 }
 
                 // (c) new source within the window [frontier, frontier+h).
-                if self.injected < self.k && self.injected < self.frontier.saturating_add(self.h) {
+                let window_ok = self.injected < self.frontier.saturating_add(self.h);
+                if self.place == Place::PushStatic {
+                    // `path` may ONLY send the front of its OWN static queue,
+                    // and only if that seq is inside the window. If its queue
+                    // is empty/blocked, it does NOT steal — falls through to
+                    // spare (the long-pole pathology).
+                    let owned = self.push_next[path] < self.push_queue[path].len();
+                    if owned {
+                        let seq = self.push_queue[path][self.push_next[path]];
+                        if seq < self.frontier.saturating_add(self.h) {
+                            self.push_next[path] += 1;
+                            self.injected += 1;
+                            self.repair_debt += self.r;
+                            free[path] -= 1;
+                            let lost = self.ge[path].draw(&self.paths[path], &mut self.rng);
+                            self.src_send[seq] = (path, tick);
+                            if !lost { self.schedule(tick + self.paths[path].owd, Ev::Source(seq)); }
+                            continue;
+                        }
+                    }
+                } else if self.injected < self.k && window_ok {
                     // choose carrying path per placement law
                     let dest = if self.place == Place::WorkConserving {
                         path
@@ -415,11 +464,26 @@ fn oracle_c8_reconciliation() {
         println!("{row}");
     }
 
-    // (3) Placement law sensitivity (fungible, H=inf, r=0.10).
-    println!("\n-- placement law (fungible, H=inf, r=0.10) --");
+    // (3) Placement law sensitivity (fungible, H=inf, r=0.10): PULL vs PUSH.
+    println!("\n-- placement law (fungible, H=inf, r=0.10) : PULL vs PUSH --");
     let (_a, _b, fw) = factor(&dual, k, 0.10, usize::MAX, false, Place::WorkConserving);
     let (_c, _d, fg) = factor(&dual, k, 0.10, usize::MAX, false, Place::GoodputProp);
-    println!("  work-conserving (=marginal-cost fixed pt) x{fw:.3} | goodput-proportional x{fg:.3}");
+    let (_e, _f2, fp) = factor(&dual, k, 0.10, usize::MAX, false, Place::PushStatic);
+    println!("  work-conserving PULL x{fw:.3} | goodput-prop WRR x{fg:.3} | static PUSH x{fp:.3}");
+
+    // (3b) LEVER DECOMPOSITION at C8 (each lever isolated, best -> worst):
+    println!("\n-- LEVER DECOMPOSITION (which fix buys how much) --");
+    let (_g1, _g2, l_full) = factor_cfg(&dual, k, 0.10, usize::MAX, false, true, Place::WorkConserving);
+    let (_h1, _h2, l_push) = factor_cfg(&dual, k, 0.10, usize::MAX, false, true, Place::PushStatic);
+    let (_i1, _i2, l_atom) = factor_cfg(&dual, k, 0.10, usize::MAX, true, true, Place::WorkConserving);
+    let (_j1, _j2, l_same) = factor_cfg(&dual, k, 0.10, 4096, true, false, Place::WorkConserving);
+    let (_k1, _k2, l_atom_push) = factor_cfg(&dual, k, 0.10, usize::MAX, true, true, Place::PushStatic);
+    println!("  TARGET  fungible + pull + cross-path        : x{l_full:.3}  (reachable ceiling)");
+    println!("  fungible + PUSH + cross-path                : x{l_push:.3}  (placement MASKED by fungibility)");
+    println!("  ATOMIC   + pull + cross-path                : x{l_atom:.3}  (DOMINANT lever = fungibility)");
+    println!("  ATOMIC   + PUSH + cross-path                : x{l_atom_push:.3}  (placement effect in atomic regime)");
+    println!("  ATOMIC   + pull + SAME-path recovery        : x{l_same:.3}  (cross-path recovery lever)");
+    println!("  => ordering (independent-GE oracle): FUNGIBILITY(frontier decode) >> CROSS-PATH recovery >> placement");
 
     // (4) Find the r-crossing of fast-path-alone at H=inf (whole object).
     let mut cross = None;
