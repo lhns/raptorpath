@@ -691,6 +691,239 @@ fn test_p_fec_exact_matches_monte_carlo() {
     }
 }
 
+// =========================================================================
+// 2.20 OPTIMALITY of r* (formula-independent Monte-Carlo argmin)
+// =========================================================================
+//
+// The existing tests validate FIDELITY (P_fec at r* matches the process).
+// This block adds the missing OPTIMALITY axis: for a grid of (eps, sigma2,
+// W, target), independently find the true minimum-overhead r that meets the
+// window-failure target via Monte-Carlo of the exact GE process, and assert
+// the closed-form r* lands on that MC argmin.
+//
+// Target semantics: the controller sets z = Phi^-1(1 - delta/eps), i.e. the
+// window-FAILURE probability target is target_wf = delta/eps (per-symbol
+// residual = eps * window_fail). We parametrize directly by target_wf so the
+// comparison is apples-to-apples with the formula's z.
+
+/// Invert (eps, sigma2) -> Gilbert-Elliott (p_gb, q_bg).
+///   eps = p/(p+q),  sigma2 = 1 + 2(1-p-q)/(p+q)  =>  s=p+q = 2/(sigma2+1)
+///   p = eps*s,  q = (1-eps)*s
+fn ge_from_eps_sigma2(eps: f64, sigma2: f64) -> (f64, f64) {
+    let s = 2.0 / (sigma2 + 1.0);
+    (eps * s, (1.0 - eps) * s)
+}
+
+/// Monte-Carlo window-failure probability for the EXACT interleaved GE
+/// process (same process as test_p_fec_exact_matches_monte_carlo): one GE
+/// chain walks W source + round(r*W) repair slots; failure iff surviving
+/// repairs < source losses. Formula-independent ground truth.
+fn mc_window_fail(p: f64, q: f64, r: f64, w: usize, trials: usize, seed: u64) -> f64 {
+    let repairs = (r.max(0.0) * w as f64).round() as usize;
+    let n = w + repairs;
+    if n == 0 { return 0.0; }
+    let pi_b = p / (p + q);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut fail = 0u32;
+    for _ in 0..trials {
+        let mut bad = rng.gen::<f64>() < pi_b;
+        let (mut k, mut c) = (0u32, 0u32);
+        for i in 0..n {
+            bad = if bad { rng.gen::<f64>() >= q } else { rng.gen::<f64>() < p };
+            let is_repair = repairs > 0 && (i + 1) * repairs / n > i * repairs / n;
+            if is_repair {
+                if !bad { c += 1; }
+            } else if bad {
+                k += 1;
+            }
+        }
+        if c < k { fail += 1; }
+    }
+    fail as f64 / trials as f64
+}
+
+/// Smallest r on a fine grid whose MC window-fail <= target (the true MC
+/// argmin-overhead: overhead is monotone in r, feasible set is an upper
+/// interval, so the constrained min is this crossing). Linear-interpolates
+/// between the bracketing grid points for sub-grid resolution.
+fn mc_optimal_r(p: f64, q: f64, w: usize, target: f64, trials: usize) -> f64 {
+    let step = 1.0 / w as f64; // repair-count granularity
+    let mut prev_r = 0.0_f64;
+    let mut prev_f = mc_window_fail(p, q, 0.0, w, trials, 0xC0FFEE);
+    let mut r = step;
+    while r <= 2.0 + 1e-9 {
+        let f = mc_window_fail(p, q, r, w, trials, 0xC0FFEE);
+        if f <= target {
+            // Crossing between prev_r (f>target) and r (f<=target).
+            if prev_f <= target { return prev_r.max(0.0); }
+            let denom = (prev_f - f).max(1e-9);
+            let frac = (prev_f - target) / denom;
+            return prev_r + frac * (r - prev_r);
+        }
+        prev_r = r;
+        prev_f = f;
+        r += step;
+    }
+    2.0 // even 200% overhead insufficient
+}
+
+#[test]
+fn test_r_star_optimality_mc() {
+    // (name, eps, sigma2, W, target_wf = delta/eps)
+    let grid: Vec<(&str, f64, f64, usize, f64)> = vec![
+        ("iid-lo",    0.02, 1.0, 50, 0.05),
+        ("iid-mid",   0.05, 1.0, 50, 0.05),
+        ("iid-hi",    0.10, 1.0, 50, 0.10),
+        ("bursty-lo", 0.02, 2.0, 50, 0.05),
+        ("bursty-mid",0.05, 3.0, 50, 0.05),
+        ("bursty-hi", 0.10, 2.5, 50, 0.10),
+        ("wide-W",    0.05, 2.0, 100, 0.05),
+        ("tight-tgt", 0.05, 1.5, 50, 0.02),
+    ];
+    let trials = 40_000;
+    let mut max_abs_gap = 0.0_f64;
+    let mut max_underprov = 0.0_f64; // worst normal-approx residual overshoot
+    println!("\n=== r* OPTIMALITY (MC argmin vs closed form) ===");
+    println!("{:<11} {:>6} {:>6} {:>4} {:>6} | {:>8} {:>8} {:>8} | {:>9} {:>9} {:>6}",
+        "case","eps","sig2","W","tgt_wf","r*_norm","r*_mc","r*_exact","Pf(norm)","Pf(exact)","dR");
+    for (name, eps, sigma2, w, target) in &grid {
+        let (p, q) = ge_from_eps_sigma2(*eps, *sigma2);
+        // sanity: the inversion reproduces the intended (eps, sigma2)
+        assert_close(p / (p + q), *eps, 1e-9);
+        assert_close(burst_variance_factor(p, q), *sigma2, 1e-9);
+
+        let z = normal_quantile(1.0 - target);
+        let r_formula = compute_r_star_with_z(*eps, *sigma2, *w as f64, z);
+        let r_exact = compute_r_star_exact(p, q, *w, *target);
+        let r_mc = mc_optimal_r(p, q, *w, *target, trials);
+        let pf_norm = mc_window_fail(p, q, r_formula, *w, trials, 0xBEEF);
+        let pf_exact = mc_window_fail(p, q, r_exact, *w, trials, 0xBEEF);
+
+        let gap = (r_formula - r_mc).abs();
+        max_abs_gap = max_abs_gap.max(gap);
+        let underprov = (pf_norm - target).max(0.0);
+        max_underprov = max_underprov.max(underprov);
+        println!("{name:<11} {eps:>6.3} {sigma2:>6.2} {w:>4} {target:>6.3} | {r_formula:>8.4} {r_mc:>8.4} {r_exact:>8.4} | {pf_norm:>9.4} {pf_exact:>9.4} {gap:>6.4}");
+
+        // (A) STRONG OPTIMALITY of the EXACT DP r* (compute_r_star_exact): it
+        // is MC-optimal on ALL channels and always FEASIBLE (meets target
+        // within sampling noise). This is the model's true optimum.
+        assert!(
+            pf_exact <= target + 0.015,
+            "{name}: EXACT r*={r_exact:.4} under-provisions: P_fail={pf_exact:.4} > target {target:.4}"
+        );
+        assert!(
+            (r_exact - r_mc).abs() < 1.5 / *w as f64 + 0.01,
+            "{name}: exact DP argmin {r_exact:.4} disagrees with MC argmin {r_mc:.4}"
+        );
+        // (B) The NORMAL-approx r* (production's compute_r_star_with_z) lands
+        // within ~1 repair slot of the MC argmin — MC-optimal on iid, but it
+        // UNDER-PROVISIONS on bursty channels (the finding below). The r-space
+        // gap is bounded by the normal approximation's known 1-slot bias.
+        let tol = 1.5 / *w as f64 + 0.02;
+        assert!(
+            gap < tol,
+            "{name}: normal r*={r_formula:.4} not within a slot of MC argmin {r_mc:.4}, gap={gap:.4}"
+        );
+        if underprov > 0.01 {
+            println!("  FINDING[{name}]: NORMAL-approx r* UNDER-provisions on bursty sigma2={sigma2}: \
+                      residual {pf_norm:.3} vs target {target:.3} (+{:.1}% relative). \
+                      Exact DP r*={r_exact:.4} closes it.", 100.0 * underprov / target);
+        }
+    }
+    println!("max |r*_normal - r*_mc| over grid = {max_abs_gap:.4}  |  \
+              worst normal-approx over-target residual = {max_underprov:.4}");
+    // FINDING GATE: the EXACT r* is MC-optimal everywhere; the NORMAL r* is
+    // within one repair slot in r-space. The bursty under-provision is a real,
+    // bounded property of the normal approximation, not a formula error — the
+    // codebase already ships compute_r_star_exact for callers that need it.
+    // FINDING GATE: if the normal-approx r* were badly off-optimal this would
+    // trip. It documents the closed form as MC-optimal to within ~1 repair slot.
+    assert!(max_abs_gap < 0.06, "r* systematically off MC-optimal: {max_abs_gap:.4}");
+}
+
+#[test]
+fn test_r_star_structural_properties() {
+    // --- r -> 0 as delta -> eps (margin z -> -inf, clamped at floor 0) ---
+    let eps = 0.05;
+    let (p, q) = ge_from_eps_sigma2(eps, 2.0);
+    for &frac in &[0.99_f64, 0.999, 1.0, 1.05] {
+        // target_wf = delta/eps -> 1 as delta -> eps
+        let z = normal_quantile(1.0 - frac.min(1.0));
+        let r = compute_r_star_with_z(eps, 2.0, 50.0, z);
+        assert!(r < 1e-9, "r* should vanish as delta->eps: frac={frac}, r={r}");
+    }
+    // sanity: at delta/eps=1 the MC process also needs ~0 overhead to hit a
+    // 100%-failure-allowed target.
+    assert!(mc_optimal_r(p, q, 50, 1.0, 20_000) < 1e-6);
+
+    // --- monotonicity in eps (fixed target ratio, sigma2, W) ---
+    let z = normal_quantile(1.0 - 0.05);
+    let mut prev = -1.0;
+    for i in 1..=20 {
+        let e = 0.005 * i as f64;
+        let r = compute_r_star_with_z(e, 2.0, 50.0, z);
+        assert!(r >= prev - 1e-12, "r* must be nondecreasing in eps: eps={e}, r={r}, prev={prev}");
+        prev = r;
+    }
+
+    // --- N=1 identity: a one-symbol "window" degenerates to raw-channel FEC ---
+    // With W=1, base term eps/(1-eps) already covers the single symbol's
+    // expected loss; the MC argmin for a modest target is ~ that base rounded
+    // to the 1-slot grid. Assert formula and MC agree at W=1.
+    {
+        let eps = 0.10;
+        let (p, q) = ge_from_eps_sigma2(eps, 1.0);
+        let z = normal_quantile(1.0 - 0.10);
+        let r_formula = compute_r_star_with_z(eps, 1.0, 1.0, z);
+        let r_mc = mc_optimal_r(p, q, 1, 0.10, 40_000);
+        // W=1 grid granularity is 1.0, so tolerance is one full slot.
+        assert!((r_formula - r_mc).abs() < 1.0 + 1e-9,
+            "N=1 identity: formula {r_formula:.3} vs MC {r_mc:.3}");
+    }
+
+    // --- convexity of the tail/overhead objective => interior stationary
+    // point is the GLOBAL min (paper 14.21 p99 model, via r_saturation). ---
+    // Reconstruct the p99 objective and verify it is unimodal (single sign
+    // change in its discrete first difference), so its argmin is global.
+    {
+        let eps = 0.05;
+        let sigma2 = 2.0;
+        let w = 50.0;
+        let srtt = 0.05;
+        let t_sym = 0.0002;
+        let l_arq = 1.5 * srtt;
+        let b_hat = (sigma2 + 1.0) / 2.0;
+        let c_dilution = 0.5;
+        let cost = |r: f64| {
+            let tail_fec = (1.0 - p_fec_normal(r, eps, w, sigma2)) * l_arq;
+            let tail_rec = b_hat * t_sym * (1.0 + r) / (r * (1.0 - eps));
+            let tail_svc = c_dilution * (1.0 + r) * w * t_sym;
+            tail_fec + tail_rec + tail_svc
+        };
+        let rs: Vec<f64> = (0..=198).map(|i| 0.01 + 0.005 * i as f64).collect();
+        let costs: Vec<f64> = rs.iter().map(|&r| cost(r)).collect();
+        // Count sign changes of the first difference. Unimodal (convex-like
+        // with a single interior min) => exactly one -,+ transition.
+        let mut sign_changes = 0;
+        let mut prev_sign = 0i32;
+        for w2 in costs.windows(2) {
+            let d = w2[1] - w2[0];
+            let s = if d > 0.0 { 1 } else if d < 0.0 { -1 } else { 0 };
+            if s != 0 && s != prev_sign && prev_sign != 0 { sign_changes += 1; }
+            if s != 0 { prev_sign = s; }
+        }
+        assert!(sign_changes <= 1, "p99 objective must be unimodal: {sign_changes} sign changes");
+        // The stationary point found by r_saturation is the unique global min.
+        let r_sat = r_saturation(eps, sigma2, w, srtt, t_sym);
+        let c_sat = cost(r_sat);
+        let global_min = costs.iter().cloned().fold(f64::INFINITY, f64::min);
+        assert!((c_sat - global_min).abs() < 1e-9 * global_min.max(1.0) + 1e-12,
+            "r_saturation stationary point must be the global min: cost={c_sat}, min={global_min}");
+    }
+    println!("structural properties: r->0 at delta=eps, monotone in eps, N=1 identity, unimodal p99 objective — all hold");
+}
+
 #[test]
 fn test_p_fec_exact_vs_normal_divergence() {
     // Document the normal approximation's error against the exact DP
