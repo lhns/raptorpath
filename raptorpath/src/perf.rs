@@ -34,16 +34,19 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Max payload bytes per chunk for a protocol hint.
 ///
-/// Bulk/auto run in block mode where inner packets are length-prefixed
-/// into 64 KB blocks — any MTU-ish packet works; use 1400 B total.
-/// Realtime (with the auto-selected streaming backend) runs in window
-/// mode, which carries at most ONE packet per 512 B symbol and silently
-/// truncates larger ones (see the TUN MTU clamp in net::run); size to
-/// symbol_size - 4 = 508 B total.
+/// Bulk/auto under `--window-reliable` (RWM Phase A) ride the sliding-
+/// window pipeline, which carries at most ONE packet per symbol and
+/// silently TRUNCATES larger packets (see the TUN MTU clamp in net::run —
+/// a memory TUN skips the clamp, so perf must size its own packets).
+/// Bulk/auto use symbol_size=1200 → chunks must fit 1196 B total. The
+/// same size is used for the block-mode arm (which length-prefixes any
+/// MTU-ish packet into 64 KB blocks) so both A/B arms share identical
+/// chunk geometry — the flag is the ONLY difference.
+/// Realtime uses symbol_size=512 → 508 B total.
 fn chunk_payload_len(hint: ProtocolHint) -> usize {
     match hint {
         ProtocolHint::Realtime => 508 - HDR_LEN,
-        _ => 1400 - HDR_LEN,
+        _ => 1196 - HDR_LEN,
     }
 }
 
@@ -321,6 +324,10 @@ mod tests {
         // window mode: packet total (header + payload) must fit
         // symbol_size(512) - 4 framing bytes
         assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Realtime) <= 508);
-        assert_eq!(HDR_LEN + chunk_payload_len(ProtocolHint::Bulk), 1400);
+        // Bulk/auto may ride the window pipeline (--window-reliable,
+        // symbol_size 1200 → usable 1196): packet total must fit one
+        // symbol or frame_window_packet truncates it silently.
+        assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Bulk) <= 1196);
+        assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Auto) <= 1196);
     }
 }

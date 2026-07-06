@@ -1,5 +1,14 @@
 //! Runtime FEC backend selection based on channel conditions.
 //!
+//! DEPRECATED — NOT WIRED TO THE PIPELINE (paper §16.4). Mid-stream
+//! backend switching was removed from net::run: a switch strands every
+//! in-flight symbol of the old code (no cross-code algebra), discards
+//! estimator/ARQ state, and the hard loss thresholds violated the paper's
+//! no-hard-cutoffs convention. The codec is chosen once at startup and
+//! pinned for the stream's life. This module is retained only as the
+//! reference implementation of the threshold heuristic (and for its
+//! tests); nothing in the data path calls it.
+//!
 //! Evaluates loss estimates and selects the optimal FEC backend:
 //! - Low loss → RaptorQ (near-MDS, lowest overhead)
 //! - Moderate loss → RLC (rateless, good moderate-loss recovery)

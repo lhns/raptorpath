@@ -30,14 +30,32 @@ pub struct RaptorpathConfig {
     pub pin_cert: Option<String>,
     /// FEC backend: "raptorq" (default) or "mettle"
     pub fec_backend: Option<String>,
-    /// Low threshold for FEC backend switching (below → RaptorQ), default 0.01
+    /// DEPRECATED (parsed, warned, ignored): mid-stream FEC backend
+    /// auto-switching was removed (paper §16.4). A switch strands every
+    /// in-flight symbol of the old code (no cross-code algebra), discards
+    /// estimator/ARQ state, and the hard 0.01/0.12 loss thresholds violated
+    /// the no-hard-cutoffs convention. The codec is chosen once at startup
+    /// (per config/hint) and never changes mid-stream.
     pub fec_switch_threshold_low: Option<f64>,
-    /// High threshold for FEC backend switching (above → Mettle), default 0.10
+    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_switch_threshold_high: Option<f64>,
-    /// Minimum seconds between FEC backend switches, default 5
+    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_switch_interval: Option<u64>,
-    /// Enable automatic FEC backend switching (default: true unless fec_backend is set)
+    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_auto_switch: Option<bool>,
+    /// RWM Phase A (paper §15.7/§16.3): run the sliding-window pipeline
+    /// with the RETAIN-UNTIL-ACKED policy for this stream. Retention is the
+    /// ARQ layer's contract: sent source bytes are retained in a store
+    /// until the peer acks them (removal by ack only), aged SACK-confirmed
+    /// holes are recovered by targeted retransmits from the store, and a
+    /// full store becomes TUN-read backpressure — never data loss. The
+    /// coding window keeps sliding freely (it is only the FEC horizon).
+    /// The receiver holds delivery at holes until they are recovered
+    /// (NACK/repair), never force-delivering past them. Also routes
+    /// Bulk/Auto hints onto the window pipeline (RLC codec unless
+    /// fec_backend says otherwise). Default false: Bulk/Auto stay on block
+    /// mode, Realtime keeps its lossy EVICT window (correct for its δ).
+    pub window_reliable: Option<bool>,
     /// Enable PI feedback loop in FEC rate controller (default: true)
     pub enable_pi_feedback: Option<bool>,
     /// GE burst scaling multiplier; 0.0 = disabled (default: 0.10)
@@ -129,6 +147,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         fec_switch_threshold_high: overlay.fec_switch_threshold_high.or(base.fec_switch_threshold_high),
         fec_switch_interval: overlay.fec_switch_interval.or(base.fec_switch_interval),
         fec_auto_switch: overlay.fec_auto_switch.or(base.fec_auto_switch),
+        window_reliable: overlay.window_reliable.or(base.window_reliable),
         enable_pi_feedback: overlay.enable_pi_feedback.or(base.enable_pi_feedback),
         ge_burst_factor: overlay.ge_burst_factor.or(base.ge_burst_factor),
         realtime_burst_extra: overlay.realtime_burst_extra.or(base.realtime_burst_extra),
@@ -206,8 +225,25 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 
     let fec_backend_explicit = config.fec_backend.is_some();
 
-    // Auto-switching: disabled if fec_backend is explicitly set and fec_auto_switch is not explicitly true
-    let fec_auto_switch = config.fec_auto_switch.unwrap_or(!fec_backend_explicit);
+    // Mid-stream FEC backend auto-switching was REMOVED (paper §16.4): the
+    // codec is pinned at startup. The old knobs are still parsed so existing
+    // configs keep loading, but they are ignored — warn when set.
+    if config.fec_auto_switch == Some(true) {
+        tracing::warn!(
+            "config: fec_auto_switch is deprecated and ignored — mid-stream FEC \
+             backend switching was removed (codec is pinned at startup; paper §16.4)"
+        );
+    }
+    if config.fec_switch_threshold_low.is_some()
+        || config.fec_switch_threshold_high.is_some()
+        || config.fec_switch_interval.is_some()
+    {
+        tracing::warn!(
+            "config: fec_switch_threshold_low/high and fec_switch_interval are \
+             deprecated and ignored — mid-stream FEC backend switching was removed \
+             (paper §16.4)"
+        );
+    }
 
     let peer_config = PeerConfig {
         bind_addrs,
@@ -225,10 +261,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
         fec_backend,
         fec_backend_explicit,
-        fec_switch_threshold_low: config.fec_switch_threshold_low.unwrap_or(0.01),
-        fec_switch_threshold_high: config.fec_switch_threshold_high.unwrap_or(0.12),
-        fec_switch_interval: config.fec_switch_interval.unwrap_or(5),
-        fec_auto_switch,
+        window_reliable: config.window_reliable.unwrap_or(false),
         enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
         symbol_size_override: 0, // use profile default
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
@@ -312,6 +345,7 @@ mod tests {
             fec_switch_threshold_high: Some(0.10),
             fec_switch_interval: Some(5),
             fec_auto_switch: Some(true),
+            window_reliable: Some(false),
             enable_pi_feedback: Some(false),
             ge_burst_factor: Some(0.0),
             realtime_burst_extra: Some(0.05),
@@ -360,6 +394,38 @@ mod tests {
         };
         let (pc, _) = resolve(&clamped).unwrap();
         assert_eq!(pc.inner_feedback_weight, 1.0);
+    }
+
+    #[test]
+    fn test_window_reliable_default_off_and_opt_in() {
+        // Default OFF: bulk stays on block mode (no big-bang switch).
+        let bulk = RaptorpathConfig {
+            protocol_hint: Some("bulk".into()),
+            ..Default::default()
+        };
+        let (pc, _) = resolve(&bulk).unwrap();
+        assert!(!pc.window_reliable);
+        // Explicit opt-in (the RWM Phase A A/B arm).
+        let opt_in = RaptorpathConfig {
+            protocol_hint: Some("bulk".into()),
+            window_reliable: Some(true),
+            ..Default::default()
+        };
+        let (pc, _) = resolve(&opt_in).unwrap();
+        assert!(pc.window_reliable);
+    }
+
+    #[test]
+    fn test_deprecated_switch_fields_still_parse() {
+        // Old configs with auto-switch knobs must keep loading (warned,
+        // ignored) — paper §16.4 removal is not allowed to break configs.
+        let cfg: RaptorpathConfig = toml::from_str(
+            "fec_auto_switch = true\nfec_switch_threshold_low = 0.01\n\
+             fec_switch_threshold_high = 0.12\nfec_switch_interval = 5\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.fec_auto_switch, Some(true));
+        assert!(resolve(&cfg).is_ok());
     }
 
     #[test]

@@ -1133,6 +1133,105 @@ the user corrections: reliability is pipeline POLICY (evict vs
 retain-until-acked), not codec; and per-path-affine ATOMIC UNITS, not
 in-order delivery, are what cap multipath aggregation.
 
+## RWM Phase A — reliable window pipeline (branch `feat/rwm-phase-a`, 2026-07-06)
+
+**Goal.** Make the window pipeline RELIABLE as a per-stream POLICY (paper
+§15.7/§16.3 RETAIN-UNTIL-ACKED) and verify at L1 that bulk on the reliable
+window reaches completion parity with the block baseline — the prerequisite
+the windowed-RLC-all experiment above identified before any Phase B
+(striping/multipath) work is meaningful.
+
+**Design as shipped (per the §16.3 user correction: retention lives at the
+ARQ layer, not in the coding window).**
+- **Sent-data store (sender).** Every sent source symbol's bytes are
+  retained in a store until the peer's cumulative WindowAck passes them —
+  removal by ack ONLY, never timeout, never pressure. The coding window
+  keeps sliding freely (cap eviction stays): it is only the FEC horizon.
+  An aged SACK-confirmed hole that slid out of the window is recovered by
+  a TARGETED retransmit of exactly that symbol from the store (NACK gaps
+  are no longer clamped to the window span in reliable mode).
+- **Backpressure, not loss.** Store full (RELIABLE_STORE_MAX = 1024
+  symbols ≈ 1.2 MB ≈ 10× the C2 BDP) ⇒ the sender stops reading the TUN
+  (same contract as the block path's cwnd gate) while still servicing
+  acks/NACKs/tail sweeps; a 1 ms poll arm re-checks store drain.
+- **Receiver holds at holes.** `ReorderBuffer::new_reliable()`: no expiry
+  force-delivery, no capacity force-drain — delivery advances only through
+  the recovered in-order prefix. While stalled, the receiver re-advertises
+  the gap (SACK-bearing WindowAck) every 2×SRTT (25–100 ms clamp); the
+  sender's tail sweep is the backstop. Realtime's EVICT policy is
+  untouched (policy is per-config, not global).
+- **WindowAck seq-space fix (both policies).** The sender's shared
+  `window_ack_seq` atomic was only ever written with the LOCAL receiver's
+  inbound delivery counter — a different seq space — so ack-driven advance
+  / retransmit pruning ran on garbage. The peer's `received_up_to` is now
+  published from `handle_control_message` (fetch_max across paths); the
+  receiver keeps a local dedupe counter instead.
+- **Opt-in.** `--window-reliable` flag / `window_reliable` config field;
+  Bulk/Auto then auto-select windowed RLC (codec-agnostic policy — RLC is
+  just the natural sliding-window codec). Default remains block mode.
+  perf chunk geometry unified at 1196 B for both A/B arms.
+
+**Mid-stream backend auto-switching REMOVED (paper §16.4).** The runtime
+FEC backend switch (hard ε̂ thresholds 0.01/0.12 + debounce; `fec_auto_switch`)
+violated the no-hard-cutoffs convention and its switch cost is structural
+(no cross-code algebra ⇒ in-flight data stranded; P9a measured the window
+variant blinding the ACK/NACK machinery for ~a window of traffic). The
+block-mode evaluate-per-block call and the P9a-pinned window switch block
+are deleted; the codec is pinned at startup. Config fields still parse
+(deprecated, warn-if-set) so existing configs keep loading; the receiver
+ignores WindowSwitch with a warning; `BackendSelector` survives only as an
+unwired reference implementation with its tests.
+
+**L1 A/B (rp-native `perf`, 1.8 MB × 10, seed 42, same binary, flag-only
+difference; per-measurement hard timeouts).**
+
+C2 (100 Mbit, 10 ms RTT, GE 1.3 %/50 %):
+| arm | completion | median | mean | min | max | stdev |
+|-----|-----------|--------|------|-----|-----|-------|
+| block (baseline) | 10/10 | 0.884 s | 0.890 s | 0.437 | 1.357 | 0.263 |
+| reliable window | **10/10** | **1.092 s** | 1.157 s | 0.397 | 2.382 | 0.637 |
+
+Median ratio **1.23×** — within the ~1.3× parity gate. **GATE PASSED**:
+the same pipeline that DNF'd 0/10 under EVICT completes 10/10 under
+retention, at C2 the policy axis alone flips the result (the §15.7 claim,
+now measured in both directions). The reliable arm carries more variance
+(stdev 0.64 vs 0.26; worst run 2.38 s) — recovery of aged holes costs a
+tail-sweep/NACK round trip where block-ARQ's ledger repairs ride batch
+acks.
+
+C3 (20 Mbit, 40 ms RTT, GE 2 %/40 %):
+| arm | completion | median | mean | min | max |
+|-----|-----------|--------|------|-----|-----|
+| block (baseline) | 10/10 | 9.964 s | 9.198 s | 5.328 | 11.594 |
+| reliable window | **10/10** | **5.113 s** | 5.347 s | 3.868 | 7.868 |
+
+Reliable window is ~1.9× FASTER at C3 (5.1 vs 10.0 s median): the known
+block-mode C3 structural bottleneck (64 KB block serialization at 20 Mbit,
+see the P-CC row above — 10.4 s median, flat across CC work) does not
+apply to the streaming window, whose per-symbol pipeline keeps the link
+filled. First measured instance of the window pipeline beating block mode
+on a bulk contract.
+
+**Realtime regression check** (stream_bench c2 rp-realtime, 50 msg/s ×
+30 s, seed 42): 1500/1500 delivered, p50 8.4 ms / p90 12.9 / p99 54.9 /
+p999 95.4 / max 111.9; zero path deaths. Baseline (P10b record): p50 8.6 /
+p99 513 / p999 727. No regression — the tail is ~10× BETTER; plausibly
+the WindowAck seq-space fix (reactive repair now keyed to real peer acks),
+though single-run variance means the improvement is indicative, not a
+measured claim.
+
+**Verification.** `cargo test --lib` 243 green (new: store retention
+survives window eviction + removal-by-ack-only, store backpressure
+engagement, reliable reorder holds past holes / never force-drains, SACK
+range helper round-trip); gate_suite --release 15/15; new in-process
+`perf_loopback_reliable_window` exercises the full reliable pipeline over
+real QUIC loopback.
+
+**Scope.** Phase A only: no striping (the window sender remains
+single-path-with-spillover; Phase B implements the §16.3 marginal-cost
+placement law), no frontier-decode changes beyond what reliability
+requires, block mode untouched as the default.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)

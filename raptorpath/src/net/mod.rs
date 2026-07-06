@@ -17,7 +17,6 @@ pub mod reorder;
 use block_arq::BlockArq;
 
 use crate::control::FecRateController;
-use crate::control::backend_selector::BackendSelector;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
 use crate::fec::{MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
@@ -61,14 +60,15 @@ pub struct PeerConfig {
     pub fec_backend: FecBackend,
     /// Whether the user explicitly set fec_backend (vs defaulting to RaptorQ)
     pub fec_backend_explicit: bool,
-    /// Low threshold for auto FEC backend switching
-    pub fec_switch_threshold_low: f64,
-    /// High threshold for auto FEC backend switching
-    pub fec_switch_threshold_high: f64,
-    /// Minimum seconds between FEC backend switches
-    pub fec_switch_interval: u64,
-    /// Whether auto FEC backend switching is enabled
-    pub fec_auto_switch: bool,
+    /// RWM Phase A (paper §15.7/§16.3): RETAIN-UNTIL-ACKED policy on the
+    /// sliding-window pipeline. Routes Bulk/Auto onto the window pipeline
+    /// (RLC unless fec_backend overrides). Retention lives at the ARQ
+    /// layer: a sent-data store retains source bytes until acked (targeted
+    /// retransmit for aged holes; store-full ⇒ TUN-read backpressure) while
+    /// the coding window slides freely as the FEC horizon; the receiver
+    /// holds delivery at holes until recovered, never force-delivering
+    /// past them. Default false.
+    pub window_reliable: bool,
     /// Enable PI feedback loop in FEC rate controller
     pub enable_pi_feedback: bool,
     /// Symbol size override (0 = use profile default)
@@ -173,6 +173,12 @@ const NACK_REPAIR_COOLDOWN_US: u64 = 5_000;
 /// as a hole and retransmits (measured L1 realtime C2: ~430 inner
 /// retransmits / 5×1.8MB with proactive FEC alone).
 const GAP_ACK_MIN_INTERVAL: Duration = Duration::from_millis(2);
+/// Reliable window (RWM Phase A): cadence for re-advertising a stalled
+/// hole via a SACK-bearing WindowAck (2×SRTT, clamped). The receiver never
+/// force-delivers past the hole, so this refresh — with the sender's tail
+/// sweep as backstop — is the recovery engine when gap acks are lost.
+const HOLE_NACK_REFRESH_MIN: Duration = Duration::from_millis(25);
+const HOLE_NACK_REFRESH_MAX: Duration = Duration::from_millis(100);
 /// Fallback per-seq retransmit cooldown when no SRTT sample exists (µs).
 const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 /// Tail ARQ sweep timeout clamp (µs): 2×SRTT bounded to [25ms, 100ms].
@@ -269,10 +275,52 @@ impl NackCongestionState {
 /// Returns true if this config should use sliding-window mode instead of block mode.
 ///
 /// The pipeline shape follows from the algorithm's capabilities: streaming-native
-/// backends (RLC, METTLE) use the sliding-window pipeline for realtime traffic;
-/// block-only backends (RaptorQ, Reed-Solomon) always use the block pipeline.
-fn is_window_mode(hint: ProtocolHint, backend: FecBackend) -> bool {
-    hint == ProtocolHint::Realtime && backend.is_streaming()
+/// backends (RLC, METTLE) use the sliding-window pipeline; block-only backends
+/// (RaptorQ, Reed-Solomon) always use the block pipeline. By default only
+/// Realtime rides the window pipeline; `window_reliable` (RWM Phase A) opts
+/// Bulk/Auto onto it with the RETAIN-UNTIL-ACKED policy.
+fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool) -> bool {
+    (hint == ProtocolHint::Realtime || window_reliable) && backend.is_streaming()
+}
+
+// ---------------------------------------------------------------------------
+// RWM Phase A retention policy (paper §15.7/§16.3), unit-tested below.
+//
+// Reliability is a PIPELINE POLICY, not a codec property — and it lives at
+// the ARQ layer, not in the coding window. The coding window keeps sliding
+// freely under BOTH policies: it is only the FEC horizon (fungible repair
+// coverage for recent, not-yet-localized losses). What differs:
+//
+//   EVICT              — production Realtime. The retransmit buffer holds
+//                        metadata only; source bytes die with window
+//                        eviction, losses past the horizon become holes
+//                        (bounded memory, bounded delay — correct for δ).
+//   RETAIN-UNTIL-ACKED — a sent-data STORE retains every sent source
+//                        symbol's bytes until the peer acks it (removal by
+//                        ack ONLY — never timeout, never pressure). An aged
+//                        SACK-confirmed hole that slid out of the window is
+//                        recovered by a TARGETED retransmit of exactly that
+//                        symbol from the store (once a loss is localized,
+//                        fungibility has no value). Store fullness becomes
+//                        backpressure on the TUN — the same contract as the
+//                        block path's cwnd gate — never data loss (the
+//                        measured F2 failure: dropping un-acked source
+//                        flipped bulk 10/10 → 0/10 DNF).
+// ---------------------------------------------------------------------------
+
+/// Sent-data store capacity (symbols) for the RETAIN-UNTIL-ACKED policy.
+/// Sized to a few BDPs of plain bytes (no coding cost): 1024 × 1200 B
+/// ≈ 1.2 MB ≈ 10× the C2 BDP (100 Mbit × 10 ms ≈ 104 symbols). When
+/// full, the sender stops reading the TUN until acks drain it (flow
+/// control, not loss).
+const RELIABLE_STORE_MAX: usize = 1024;
+
+/// Reliable-policy backpressure: when the sent-data store is full of
+/// un-acked symbols, stop reading the TUN (the same contract as the block
+/// path's cwnd gate) instead of dropping retention. EVICT mode never
+/// backpressures on retention (Realtime's correct spend of the budget).
+fn store_backpressure(reliable: bool, store_len: usize) -> bool {
+    reliable && store_len >= RELIABLE_STORE_MAX
 }
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
@@ -324,22 +372,44 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (tun_ip, prefix_len) = parse_cidr(&config.tun_addr)?;
     let netmask = prefix_to_netmask(prefix_len);
 
-    // Auto-select streaming backend for Realtime when no explicit backend chosen.
-    // Streaming codes are delay-optimal for bursty channels, which Realtime traffic
-    // typically traverses (WiFi + LTE paths with GE burst loss patterns).
-    // Computed before TUN creation because window mode constrains the TUN MTU.
-    let effective_fec_backend = if config.protocol_hint == ProtocolHint::Realtime
-        && !config.fec_backend_explicit
-    {
-        info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
-        FecBackend::Streaming
+    // Backend selection happens ONCE, here, and is pinned for the life of
+    // the stream (paper §16.4: no cross-code algebra ⇒ any mid-stream
+    // switch strands in-flight data; the old runtime auto-switch was
+    // removed). Computed before TUN creation because window mode
+    // constrains the TUN MTU.
+    //
+    // Realtime auto-selects the streaming backend (delay-optimal on bursty
+    // GE channels). Bulk/Auto under `window_reliable` (RWM Phase A)
+    // auto-select windowed RLC — the natural sliding-window codec; the
+    // bulk profile's symbol_size=1200 puts the window-mode TUN MTU clamp
+    // at 1196, so full-size packets are not fragmented.
+    let effective_fec_backend = if !config.fec_backend_explicit {
+        if config.protocol_hint == ProtocolHint::Realtime {
+            info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
+            FecBackend::Streaming
+        } else if config.window_reliable {
+            info!("reliable window mode (RWM Phase A): auto-selecting RLC windowed backend");
+            FecBackend::Rlc
+        } else {
+            config.fec_backend
+        }
     } else {
         config.fec_backend
     };
 
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
-    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend);
+    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend, config.window_reliable);
+    // The retention policy is per-stream/per-config, NOT global: Realtime
+    // keeps its lossy EVICT window unless explicitly opted in.
+    let window_reliable = window_mode && config.window_reliable;
+    if config.window_reliable && !window_mode {
+        warn!(
+            backend = ?effective_fec_backend,
+            "window_reliable set but the configured FEC backend is not \
+             streaming-capable — falling back to the block pipeline"
+        );
+    }
 
     // Window mode carries at most ONE packet per source symbol: SymbolPacker
     // frames each packet with a 2-byte length prefix and closes the symbol
@@ -557,46 +627,24 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_profile_max_block = profile.max_block_size;
     let sender_profile_flush = profile.flush_timeout;
     let sender_profile_symbol_size = profile.symbol_size;
-    // ADR-0030: BackendSelector for runtime switching.
-    //
-    // Window-mode limitation: runtime switching is PINNED OFF. The switch
-    // path rebuilds the encoder with sequence numbers restarting at 0 while
-    // the receiver's delivery/ACK state (highest_delivered_seq, SACK ranges,
-    // shared window ACK) and the sender's retransmit buffer keep the old
-    // numbering — after a mid-session switch the ACK/NACK repair machinery
-    // goes blind until the new seq space overtakes the old one (~a full
-    // window of traffic). At lossy cells that repair blackout wedged TCP for
-    // minutes (L1 realtime c3/c5 DNF). Until the switch protocol carries
-    // state across (WindowSwitchAck is currently ignored), the backend
-    // chosen at startup stays pinned in window mode.
-    let forced_backend = if window_mode
-        || (config.fec_backend_explicit && !config.fec_auto_switch)
-    {
-        Some(effective_fec_backend)
-    } else {
-        None
-    };
-    let sender_backend_selector = BackendSelector::new(
-        effective_fec_backend,
-        forced_backend,
-        config.protocol_hint,
-        config.fec_switch_threshold_low,
-        config.fec_switch_threshold_high,
-        config.fec_switch_interval,
-        window_mode,
-    );
+    // Mid-stream FEC backend switching was REMOVED (paper §16.4): a switch
+    // strands every in-flight symbol of the old code (no cross-code
+    // algebra) and discards the estimator/ARQ state recovery needs — the
+    // P9a bring-up measured exactly this (a window-mode switch restarted
+    // seq numbering at 0, blinding the ACK/NACK machinery for ~a window of
+    // traffic; at lossy cells the repair blackout wedged TCP for minutes).
+    // The backend chosen above is pinned for the life of the stream.
     let sender_fec_backend = effective_fec_backend;
     let sender_interleave_depth = config.interleave_depth;
     // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
     let sender_interleave_timeout = profile.flush_timeout * 2;
     let sender_window_mode = window_mode;
+    let sender_window_reliable = window_reliable;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let sender_protocol_hint = config.protocol_hint;
 
     let sender_handle = tokio::spawn(async move {
-        let mut backend_selector = sender_backend_selector;
-
         // ----- Sliding-window sender mode -----
         if sender_window_mode {
             run_window_sender(
@@ -612,7 +660,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_nack_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
-                &mut backend_selector,
+                sender_window_reliable,
             )
             .await;
             return;
@@ -761,7 +809,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         sender_profile_symbol_size,
                         sender_profile_max_block,
                         &mut ileave,
-                        &mut backend_selector,
+                        sender_fec_backend,
                         &sender_block_arq,
                     );
                 }
@@ -817,7 +865,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             sender_profile_symbol_size,
                             sender_profile_max_block,
                             &mut ileave,
-                            &mut backend_selector,
+                            sender_fec_backend,
                             &sender_block_arq,
                         );
                         flush_deadline = None;
@@ -853,7 +901,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             sender_profile_symbol_size,
                             sender_profile_max_block,
                             &mut ileave,
-                            &mut backend_selector,
+                            sender_fec_backend,
                             &sender_block_arq,
                         );
                         flush_deadline = None;
@@ -899,6 +947,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let recv_stats = stats.clone();
     let recv_symbol_size = profile.symbol_size;
     let recv_window_mode = window_mode;
+    let recv_window_reliable = window_reliable;
     let recv_window_ack = window_ack_seq.clone();
     let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> = if window_mode {
         Some(nack_tx)
@@ -907,17 +956,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     };
 
     let receiver_handle = tokio::spawn(async move {
-        // Window decoder: created once, long-lived (only used in window mode)
+        // Window decoder: created once, long-lived (only used in window
+        // mode; codec pinned at startup, §16.4 — never rebuilt).
         let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
-            let decoder: Box<dyn WindowDecoder> = match recv_fec_backend {
-                FecBackend::Mettle => Box::new(MettleWindowDecoder::new(recv_symbol_size)),
-                FecBackend::Streaming => {
-                    let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
-                    Box::new(crate::fec::StreamingDecoder::new(recv_symbol_size, params))
-                }
-                _ => Box::new(RlcWindowDecoder::new(recv_symbol_size)),
-            };
-            Some(decoder)
+            Some(create_window_decoder(recv_fec_backend, recv_symbol_size))
         } else {
             None
         };
@@ -925,12 +967,26 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut window_packed: bool = false;
         // Track highest delivered seq for window ACK
         let mut highest_delivered_seq: u64 = 0;
-        // Reorder buffer for window mode — delivers packets in sequence order
-        let mut reorder_buf = if recv_window_mode && config.reorder_timeout_ms > 0 {
+        // The highest delivered seq we last advertised in a WindowAck (dedupe
+        // for ack sends; the shared window_ack_seq atomic carries the PEER's
+        // acks for the local sender and must not be conflated with this).
+        let mut last_advertised_ack: u64 = 0;
+        // Reorder buffer for window mode — delivers packets in sequence order.
+        // Reliable policy (RWM Phase A): holes are held until recovered,
+        // never force-delivered past (the buffer is mandatory — in-order
+        // delivery IS the reliability contract at the receiver).
+        let mut reorder_buf = if recv_window_mode && recv_window_reliable {
+            Some(ReorderBuffer::new_reliable())
+        } else if recv_window_mode && config.reorder_timeout_ms > 0 {
             Some(ReorderBuffer::new(config.reorder_timeout_ms, config.reorder_max_size))
         } else {
             None
         };
+        // Reliable mode: when delivery is stalled on a hole, periodically
+        // re-advertise the gap (SACK-bearing WindowAck) — acks are
+        // best-effort datagrams, and a lost gap report must not leave
+        // recovery to the sender's single-seq tail sweep alone.
+        let mut last_hole_nack_at = Instant::now();
         // Track received seqs for WindowNack gap reporting
         let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
         let mut highest_seen_seq: u64 = 0;
@@ -1121,20 +1177,30 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
                             .max()
                     };
-                    let hold = srtt
-                        .map(|s| (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
-                    let deadline = if block_inorder_enabled {
-                        let mut rb = block_reorder.lock();
-                        if let Some(h) = hold {
-                            rb.set_timeout(h);
-                        }
-                        rb.oldest_deadline()
+                    let deadline = if recv_window_reliable {
+                        // Reliable policy: the hole is never given up on —
+                        // this timer instead re-advertises the gap (SACK
+                        // WindowAck) at 2×SRTT cadence until recovered.
+                        let refresh = srtt
+                            .map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
+                            .unwrap_or(HOLE_NACK_REFRESH_MAX);
+                        Some(last_hole_nack_at + refresh)
                     } else {
-                        let rb = reorder_buf.as_mut().expect("pending implies Some");
-                        if let Some(h) = hold {
-                            rb.set_timeout(h);
+                        let hold = srtt
+                            .map(|s| (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
+                        if block_inorder_enabled {
+                            let mut rb = block_reorder.lock();
+                            if let Some(h) = hold {
+                                rb.set_timeout(h);
+                            }
+                            rb.oldest_deadline()
+                        } else {
+                            let rb = reorder_buf.as_mut().expect("pending implies Some");
+                            if let Some(h) = hold {
+                                rb.set_timeout(h);
+                            }
+                            rb.oldest_deadline()
                         }
-                        rb.oldest_deadline()
                     };
                     deadline.map(|d| {
                         let remaining = d.saturating_duration_since(Instant::now());
@@ -1160,6 +1226,37 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         None => std::future::pending().await,
                     }
                 } => {
+                    // Reliable window (RWM Phase A): never give up on a
+                    // hole. Re-advertise the gap with a SACK-bearing
+                    // WindowAck so the sender's targeted-retransmit /
+                    // repair machinery races it until recovered — the
+                    // hold-expiry force-delivery below is the EVICT
+                    // policy's move and is structurally skipped here.
+                    if recv_window_reliable {
+                        last_hole_nack_at = Instant::now();
+                        let sack_ranges = received_sack_ranges(
+                            &received_seqs,
+                            highest_delivered_seq,
+                            highest_seen_seq,
+                        );
+                        debug!(
+                            delivered = highest_delivered_seq,
+                            seen = highest_seen_seq,
+                            ranges = sack_ranges.len(),
+                            "reliable window: hole stalled — re-advertising gap"
+                        );
+                        let ack_msg = ControlMessage::WindowAck {
+                            received_up_to: highest_delivered_seq,
+                            sack_ranges,
+                            echo_send_timestamp_us: 0,
+                            jitter_us: 0,
+                            cumulative_received: 0,
+                        };
+                        for pid in recv_scheduler.lock().live_paths() {
+                            let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                        }
+                        continue;
+                    }
                     // Give up on the hole(s): force-deliver expired entries
                     // (plus everything they unblock) so the tunnel never
                     // stalls on an unrecoverable block/symbol.
@@ -1191,13 +1288,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 highest_delivered_seq = dseq;
                             }
                         }
-                        // Advance the shared window ACK so the sender's
-                        // window opens even with no further arrivals (the
-                        // deadlock cycle above) — the next WindowAck the
-                        // Data arm sends carries the new cumulative point;
-                        // send a bare one now in case no arrival ever comes.
-                        if highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed) {
-                            recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+                        // Advertise the advanced cumulative point to the
+                        // PEER so its sender-side ack state (retransmit
+                        // buffer, window advance) opens even with no
+                        // further arrivals (the deadlock cycle above) —
+                        // send a bare WindowAck now in case none comes.
+                        if highest_delivered_seq > last_advertised_ack {
+                            last_advertised_ack = highest_delivered_seq;
                             let ack_msg = ControlMessage::WindowAck {
                                 received_up_to: highest_delivered_seq,
                                 sack_ranges: Vec::new(),
@@ -1344,34 +1441,25 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // was repaired solely by proactive FEC or the
                         // hold-expiry force-delivery.
                         let cumulative_advanced =
-                            highest_delivered_seq > recv_window_ack.load(Ordering::Relaxed);
+                            highest_delivered_seq > last_advertised_ack;
                         let gap_report_due = highest_seen_seq > highest_delivered_seq
                             && highest_seen_seq > last_gap_ack_seen
                             && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
                         if cumulative_advanced || gap_report_due {
-                            recv_window_ack.store(highest_delivered_seq, Ordering::Relaxed);
+                            last_advertised_ack = highest_delivered_seq;
                             last_gap_ack_seen = highest_seen_seq;
                             last_gap_ack_time = Instant::now();
+                            // A gap-bearing ack IS a hole re-advertisement:
+                            // push the reliable-mode refresh timer out.
+                            last_hole_nack_at = last_gap_ack_time;
 
-                            // Compute SACK ranges: received sequences beyond cumulative_ack
-                            let sack = compute_gap_ranges(
+                            // SACK ranges: what WAS received beyond the
+                            // cumulative point (not what's missing).
+                            let sack_ranges = received_sack_ranges(
                                 &received_seqs,
                                 highest_delivered_seq,
                                 highest_seen_seq,
                             );
-                            // Convert gaps to received ranges for SACK
-                            // (SACK reports what WAS received, not what's missing)
-                            let mut sack_ranges = Vec::new();
-                            let mut cursor = highest_delivered_seq + 1;
-                            for &(gap_start, gap_end) in &sack {
-                                if cursor < gap_start {
-                                    sack_ranges.push((cursor, gap_start - 1));
-                                }
-                                cursor = gap_end + 1;
-                            }
-                            if cursor <= highest_seen_seq {
-                                sack_ranges.push((cursor, highest_seen_seq));
-                            }
 
                             let jitter = {
                                 let sched = recv_scheduler.lock();
@@ -1416,8 +1504,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             }
 
                             // Prune old entries from received_seqs tracking
+                            // AND the window decoder's recovered/pivot/seen
+                            // state (it was never advanced before — an
+                            // unbounded leak over long streams). Everything
+                            // below the delivered prefix minus two windows
+                            // is decode-inert: repairs only reference the
+                            // sender's current window, which sits at or
+                            // above its ack (= our delivered point).
                             let prune_before = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64 * 2);
                             received_seqs = received_seqs.split_off(&prune_before);
+                            if let Some(ref mut wd) = window_decoder {
+                                wd.advance(prune_before);
+                            }
                         }
                     } else {
                         // ----- Block-mode receive path (existing) -----
@@ -1503,21 +1601,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         window_packed = *packed;
                     }
 
-                    // ADR-0030: handle WindowSwitch in receiver loop to swap decoder
-                    if let ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size: switch_sym_size } = &ctrl_msg {
-                        info!(
+                    // Mid-stream backend switching was REMOVED (paper §16.4):
+                    // no peer running this code sends WindowSwitch anymore,
+                    // and acting on one (rebuilding the decoder mid-stream)
+                    // is exactly the seq-space/state hazard that got the
+                    // switch pinned off in P9a. Ignore it, loudly.
+                    if let ControlMessage::WindowSwitch { flush_seq, new_backend, .. } = &ctrl_msg {
+                        warn!(
                             flush_seq,
                             ?new_backend,
-                            switch_sym_size,
-                            "received WindowSwitch — rebuilding decoder"
+                            "ignoring WindowSwitch: mid-stream FEC backend switching \
+                             was removed (codec is pinned at stream setup; paper §16.4)"
                         );
-                        // Rebuild window decoder with new backend
-                        window_decoder = Some(create_window_decoder(*new_backend, *switch_sym_size));
-                        // Send WindowSwitchAck
-                        let ack_msg = ControlMessage::WindowSwitchAck { flush_seq: *flush_seq };
-                        if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
-                            debug!(?e, path_id, "failed to send WindowSwitchAck");
-                        }
                     }
 
                     let started_block = match &ctrl_msg {
@@ -1559,6 +1654,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         recv_nack_tx.as_ref(),
                         if recv_window_mode { None } else { Some(&recv_block_arq) },
                         Some(&recv_batch_counter),
+                        if recv_window_mode { Some(&recv_window_ack) } else { None },
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -1946,8 +2042,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         &ctrl_stats,
                         None,
                         // The fast path only handles PathReport/Ping/Pong;
-                        // Acks (which drive block ARQ) go through the data
-                        // loop, so no ledger access is needed here.
+                        // Acks (which drive block ARQ) and WindowAcks go
+                        // through the data loop, so neither the ledger nor
+                        // the peer-ack atomic is needed here.
+                        None,
                         None,
                         None,
                     );
@@ -2062,6 +2160,30 @@ pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64
     gaps
 }
 
+/// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
+/// of seqs the receiver HAS in (`delivered`, `seen`] — the inverse of
+/// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
+/// window's stalled-hole re-advertisement (RWM Phase A).
+pub fn received_sack_ranges(
+    received: &BTreeSet<u64>,
+    delivered: u64,
+    seen: u64,
+) -> Vec<(u64, u64)> {
+    let gaps = compute_gap_ranges(received, delivered, seen);
+    let mut sack_ranges = Vec::new();
+    let mut cursor = delivered + 1;
+    for &(gap_start, gap_end) in &gaps {
+        if cursor < gap_start {
+            sack_ranges.push((cursor, gap_start - 1));
+        }
+        cursor = gap_end + 1;
+    }
+    if cursor <= seen {
+        sack_ranges.push((cursor, seen));
+    }
+    sack_ranges
+}
+
 /// Select the best source path for a window-mode symbol: lowest RTT with capacity.
 /// Falls back to path 0 if no active paths.
 fn select_source_path(scheduler: &Scheduler) -> u32 {
@@ -2095,39 +2217,13 @@ async fn run_window_sender(
     nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
-    backend_selector: &mut BackendSelector,
+    // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
+    // policy block above RELIABLE_STORE_MAX).
+    reliable: bool,
 ) {
-    let mut encoder: Box<dyn WindowEncoder> = match fec_backend {
-        FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
-            mettle::MettleConfig::small_window(),
-            symbol_size,
-            42, // seed — deterministic for reproducibility
-        )),
-        FecBackend::Streaming => {
-            // Compute initial streaming params from current channel estimate
-            let params = {
-                let ctrl = fec_controller.lock();
-                let sched = scheduler.lock();
-                let estimator = sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .max_by(|a, b| {
-                        a.estimator
-                            .loss_rate()
-                            .partial_cmp(&b.estimator.loss_rate())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .map(|p| &p.estimator);
-                match estimator {
-                    Some(est) => ctrl.compute_streaming_params(est),
-                    None => crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15),
-                }
-            };
-            Box::new(crate::fec::StreamingEncoder::new(symbol_size, params))
-        }
-        _ => Box::new(RlcWindowEncoder::new(symbol_size)),
-    };
+    // Codec pinned at startup (§16.4) — created once, never rebuilt.
+    let mut encoder: Box<dyn WindowEncoder> =
+        create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler);
     let mut prev_ack: u64 = 0;
     // Fractional repair accumulator: tracks sub-symbol repair debt.
     // Driven by TaperFunction density when GE data is available,
@@ -2164,7 +2260,17 @@ async fn run_window_sender(
 
     /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
     /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
+    /// METADATA only — under EVICT the source bytes die with window eviction.
     let mut retransmit_buffer: std::collections::BTreeMap<u64, (u64, f64, u32)> = std::collections::BTreeMap::new();
+
+    /// RWM Phase A sent-data store (reliable mode only): seq → the exact
+    /// source WireSymbol as sent. This is the retention contract — bytes
+    /// retained until the peer's cumulative ack passes them (removal by ack
+    /// ONLY), so an aged SACK-confirmed hole that slid out of the coding
+    /// window is recovered by a targeted retransmit of exactly this symbol.
+    /// Bounded by RELIABLE_STORE_MAX via TUN-read backpressure, never by
+    /// eviction.
+    let mut sent_store: BTreeMap<u64, crate::fec::WireSymbol> = BTreeMap::new();
 
     // Symbol packer: accumulate small packets into packed symbols for Realtime mode
     let use_packing = protocol_hint == ProtocolHint::Realtime;
@@ -2185,6 +2291,13 @@ async fn run_window_sender(
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
             let wire_sym = encoder.add_source(&$framed);
+
+            // RWM Phase A retention: the store keeps the sent bytes until
+            // the peer acks them — the coding window may slide past this
+            // symbol, but the data can no longer be destroyed by eviction.
+            if reliable {
+                sent_store.insert(wire_sym.block_id, wire_sym.clone());
+            }
 
             // Send source symbol — pick best path by lowest RTT with capacity
             let source_path = {
@@ -2326,8 +2439,14 @@ async fn run_window_sender(
                         }
 
                         if use_retransmit {
-                            // Retransmit: try to get exact source symbol from encoder
-                            encoder.get_source(retransmit_seq).unwrap_or_else(|| encoder.generate_repair())
+                            // Retransmit: exact source symbol — from the
+                            // sent-data store (reliable: survives window
+                            // eviction) or the encoder window (EVICT).
+                            sent_store
+                                .get(&retransmit_seq)
+                                .cloned()
+                                .or_else(|| encoder.get_source(retransmit_seq))
+                                .unwrap_or_else(|| encoder.generate_repair())
                         } else {
                             // Repair: generate a new FEC symbol
                             encoder.generate_repair()
@@ -2363,9 +2482,27 @@ async fn run_window_sender(
         }};
     }
 
+    // Retention backpressure state (reliable mode), for edge-triggered logs.
+    let mut last_tx_paused = false;
+
     loop {
         // Determine if packer has pending data for flush timer
         let packer_pending = use_packing && packer.is_pending();
+
+        // RWM Phase A backpressure: when the sent-data store is full of
+        // un-acked symbols, stop reading the TUN — the inner flow sees the
+        // growing TUN queue and slows down (flow control), and this loop
+        // keeps servicing acks/NACKs/tail sweeps so the store drains.
+        // Retention is never released by pressure, only by acks.
+        let tx_paused = store_backpressure(reliable, sent_store.len());
+        if tx_paused != last_tx_paused {
+            debug!(
+                tx_paused,
+                store_len = sent_store.len(),
+                "reliable-window backpressure state change"
+            );
+            last_tx_paused = tx_paused;
+        }
 
         // P10b: gap reports must wake this loop even when the TUN is idle.
         // The inner TCP stalls exactly when a hole blocks delivery — no new
@@ -2403,7 +2540,11 @@ async fn run_window_sender(
             });
 
         let packet = tokio::select! {
-            p = tun.read_packet() => Some(p),
+            // Backpressure poll (reliable): with TUN reads gated off, wake
+            // at ack timescale to observe store drain via the ack path
+            // below (mirrors the block sender's 1 ms backpressure poll).
+            _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => None,
+            p = tun.read_packet(), if !tx_paused => Some(p),
             gaps = nack_rx.recv() => {
                 if let Some(g) = gaps {
                     pending_gaps = Some(g);
@@ -2574,8 +2715,15 @@ async fn run_window_sender(
             let mut nacked_count: u64 = 0;
 
             'gaps: for &(gap_start, gap_end) in &gaps {
-                let clamped_start = gap_start.max(win_start);
-                let clamped_end = gap_end.min(win_end);
+                // EVICT: only the coding window can serve a gap — older
+                // seqs are gone. RETAIN: the sent-data store serves ANY
+                // un-acked seq (targeted ARQ for holes that aged out of
+                // the FEC horizon), so gaps are not clamped to the window.
+                let (clamped_start, clamped_end) = if reliable {
+                    (gap_start, gap_end)
+                } else {
+                    (gap_start.max(win_start), gap_end.min(win_end))
+                };
                 if clamped_start > clamped_end {
                     continue;
                 }
@@ -2608,8 +2756,21 @@ async fn run_window_sender(
                         select_repair_path_avoiding(&sched, original_path, last_source_path)
                     };
 
-                    // Try exact source retransmission first, fall back to repair
-                    let sym = encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair());
+                    // Exact source retransmission first — reliable mode
+                    // serves from the sent-data store (survives window
+                    // eviction; a stale gap for an already-acked seq has
+                    // nothing to serve and is skipped) — else fall back
+                    // to the encoder window, then to a fungible repair.
+                    let sym = if reliable {
+                        match sent_store.get(&seq) {
+                            Some(s) => s.clone(),
+                            // Not in the store ⇒ already acked (removal is
+                            // by ack only): the receiver has it; skip.
+                            None => continue,
+                        }
+                    } else {
+                        encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair())
+                    };
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
@@ -2724,11 +2885,17 @@ async fn run_window_sender(
                 source_symbols_this_period = 0;
             }
 
-            // Clean up source_path_map and retransmit buffer for ACKed/evicted sequences
+            // Clean up source_path_map and retransmit buffer for ACKed/evicted
+            // sequences. Reliable mode keeps path attribution for everything
+            // still in the store (aged holes retransmit cross-path too).
             let (win_start, _) = encoder.window_span();
-            source_path_map.retain(|&seq, _| seq >= win_start);
+            let path_map_floor = if reliable { ack + 1 } else { win_start };
+            source_path_map.retain(|&seq, _| seq >= path_map_floor);
             // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
             retransmit_buffer = retransmit_buffer.split_off(&(ack + 1));
+            // RWM Phase A: the sent-data store is drained by acks ONLY —
+            // this is the whole retention contract.
+            sent_store = sent_store.split_off(&(ack + 1));
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             nack_retx_at.retain(|&seq, _| seq > ack);
             // Update correction deficit: ACKed symbols no longer need coverage
@@ -2742,96 +2909,27 @@ async fn run_window_sender(
             prev_ack = ack;
         }
 
-        // Cap window size
+        // Cap window size — the coding window slides freely under BOTH
+        // policies (it is only the FEC horizon). Under RETAIN this eviction
+        // destroys no data: the sent-data store still holds the bytes, and
+        // an aged hole is recovered by a targeted retransmit from it.
         if encoder.window_size() > MAX_WINDOW_SIZE {
             let (oldest, _) = encoder.window_span();
             encoder.advance(oldest + (encoder.window_size() - MAX_WINDOW_SIZE) as u64);
-            // Clean up source_path_map for evicted sequences
-            let (win_start, _) = encoder.window_span();
-            source_path_map.retain(|&seq, _| seq >= win_start);
+            // Clean up source_path_map for evicted sequences (EVICT only:
+            // reliable mode keeps attribution while the store holds them).
+            if !reliable {
+                let (win_start, _) = encoder.window_span();
+                source_path_map.retain(|&seq, _| seq >= win_start);
+            }
         }
 
-        // ADR-0030: evaluate window-mode backend switching.
-        // The decision is computed under the scheduler lock, but the guard
-        // MUST be dropped before acting on it: select_repair_path,
-        // create_window_encoder and update_backend all re-lock the scheduler
-        // / fec_controller, and parking_lot mutexes are not reentrant — a
-        // nested lock here self-deadlocked the sender (holding the scheduler
-        // lock, wedging the report task, killing path liveness) the first
-        // time a switch fired (L1 realtime finding).
-        let switch_decision = {
-            let sched = scheduler.lock();
-            let worst_estimator = sched
-                .active_paths()
-                .iter()
-                .filter_map(|id| sched.path(*id))
-                .max_by(|a, b| {
-                    a.estimator
-                        .loss_rate()
-                        .partial_cmp(&b.estimator.loss_rate())
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|p| &p.estimator);
-            worst_estimator.map(|est| (backend_selector.evaluate(est), est.loss_rate()))
-        };
-
-        if let Some((Some(new_backend), loss)) = switch_decision {
-            let old_backend = fec_backend;
-            info!(
-                ?old_backend,
-                ?new_backend,
-                loss,
-                "FEC backend switch (window mode) — initiating flush"
-            );
-
-            // Get current highest source seq as flush point
-            let (_, flush_seq) = encoder.window_span();
-
-            // Generate extra repair burst before switching (2x normal)
-            let flush_repair_count = (encoder.window_size() * 2).min(MAX_WINDOW_SIZE);
-            let flush_path = {
-                let fsched = scheduler.lock();
-                select_repair_path(&fsched, last_source_path)
-            };
-            for _ in 0..flush_repair_count {
-                if encoder.window_size() == 0 { break; }
-                let flush_sym = encoder.generate_repair();
-                let flush_batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let flush_batch = SymbolBatch {
-                    symbols: vec![flush_sym],
-                    send_timestamp_us: now_us(),
-                    batch_seq: flush_batch_seq,
-                    path_id: flush_path,
-                };
-                let _ = transport.send_symbols(flush_path, flush_batch);
-                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
-            }
-
-            // Send WindowSwitch message on all paths
-            {
-                let switch_sched = scheduler.lock();
-                for pid in switch_sched.active_paths() {
-                    let _ = transport.send_control_datagram(
-                        pid,
-                        ControlMessage::WindowSwitch {
-                            flush_seq,
-                            new_backend,
-                            symbol_size,
-                        },
-                    );
-                }
-            }
-
-            // Rebuild encoder with new backend
-            encoder = create_window_encoder(new_backend, symbol_size, fec_controller, scheduler);
-
-            // Update FEC rate controller overhead
-            fec_controller.lock().update_backend(new_backend);
-
-            // Update stats
-            stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
-            stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
-        }
+        // NOTE (paper §16.4): the window-mode runtime backend switch that
+        // lived here (ADR-0030, pinned off since the P9a bring-up measured
+        // its seq-space restart blinding the ACK/NACK machinery) has been
+        // DELETED. The codec is chosen at startup and never changes
+        // mid-stream — a new stream gets a new context, so no cross-code
+        // boundary can exist inside one.
     }
 }
 
@@ -2899,7 +2997,8 @@ fn encode_to_interleave_buf(
     symbol_size: u16,
     max_block_size: usize,
     ileave: &mut interleave::InterleavingBuffer,
-    backend_selector: &mut BackendSelector,
+    // Pinned at startup — mid-stream backend switching was removed (§16.4).
+    fec_backend: FecBackend,
     block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
 ) {
     let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
@@ -2909,37 +3008,6 @@ fn encode_to_interleave_buf(
     }
     // P8: Bytes so the ARQ retention can share the buffer refcounted.
     let block_data = Bytes::from(block_data);
-
-    // ADR-0030: evaluate backend selector before encoding each block
-    {
-        let sched = scheduler.lock();
-        let worst_estimator = sched
-            .active_paths()
-            .iter()
-            .filter_map(|id| sched.path(*id))
-            .max_by(|a, b| {
-                a.estimator
-                    .loss_rate()
-                    .partial_cmp(&b.estimator.loss_rate())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|p| &p.estimator);
-        if let Some(est) = worst_estimator {
-            if let Some(new_backend) = backend_selector.evaluate(est) {
-                let old = backend_selector.current();
-                info!(
-                    ?old,
-                    ?new_backend,
-                    loss = est.loss_rate(),
-                    "FEC backend switch (block mode)"
-                );
-                fec_controller.lock().update_backend(new_backend);
-                stats.fec.backend_switches.fetch_add(1, Ordering::Relaxed);
-                stats.fec.current_backend.store(backend_to_u8(new_backend), Ordering::Relaxed);
-            }
-        }
-    }
-    let fec_backend = backend_selector.current();
 
     let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
 
@@ -3526,6 +3594,13 @@ fn handle_control_message(
     // P8: Some(..) in block mode — Ack diffs drive repair sends.
     block_arq: Option<&Arc<parking_lot::Mutex<BlockArq>>>,
     batch_counter: Option<&Arc<AtomicU64>>,
+    // Some(..) in window mode: the PEER's cumulative WindowAck point, read
+    // by the local window sender (ack-driven advance, retransmit-buffer and
+    // sent-store pruning). Historically this atomic was only ever written
+    // with the LOCAL receiver's inbound delivery counter — a different seq
+    // space entirely — so the sender's ack state was fed garbage; the RWM
+    // Phase A retention contract (removal by ack ONLY) needs the real ack.
+    peer_window_ack: Option<&Arc<AtomicU64>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -3766,6 +3841,11 @@ fn handle_control_message(
 
         ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received } => {
             debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
+            // Publish the peer's cumulative ack point for the window sender
+            // (fetch_max: acks arrive on multiple paths, out of order).
+            if let Some(pa) = peer_window_ack {
+                pa.fetch_max(received_up_to, Ordering::Relaxed);
+            }
             // Update RTT from echoed timestamp. echo == 0 is the sentinel
             // for timer-driven acks (hold-expiry unwedge) that echo no
             // batch — recording now−0 would poison SRTT with a huge sample.
@@ -3995,5 +4075,69 @@ mod tests {
             .collect();
         let gaps = sack_to_gaps(0, &sack);
         assert_eq!(gaps.len(), MAX_NACK_GAPS);
+    }
+
+    #[test]
+    fn test_received_sack_ranges_inverts_to_gaps() {
+        // The extracted helper must produce exactly what the data-arm
+        // WindowAck used to compute inline, and round-trip via sack_to_gaps.
+        let mut received = BTreeSet::new();
+        for seq in [3u64, 4, 7] {
+            received.insert(seq);
+        }
+        let ranges = received_sack_ranges(&received, 2, 7);
+        assert_eq!(ranges, vec![(3, 4), (7, 7)]);
+        assert_eq!(sack_to_gaps(2, &ranges), vec![(5, 6)]);
+    }
+
+    // ----- RWM Phase A: RETAIN-UNTIL-ACKED retention (paper §15.7/§16.3) -----
+
+    #[test]
+    fn test_store_backpressure_engages_at_store_full() {
+        // Reliable: TUN reads stop exactly when the store fills — flow
+        // control, not eviction.
+        assert!(!store_backpressure(true, RELIABLE_STORE_MAX - 1));
+        assert!(store_backpressure(true, RELIABLE_STORE_MAX));
+        assert!(store_backpressure(true, RELIABLE_STORE_MAX + 1));
+        // EVICT mode never backpressures on retention.
+        assert!(!store_backpressure(false, RELIABLE_STORE_MAX * 10));
+    }
+
+    #[test]
+    fn test_sent_store_retention_survives_window_eviction() {
+        // The sender-loop invariant: the coding window slides freely (cap
+        // eviction), but the sent-data store still serves the EXACT bytes
+        // of any un-acked symbol for targeted retransmit — and entries
+        // leave the store by ack ONLY (the same split_off the loop runs).
+        use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
+        let mut encoder = RlcWindowEncoder::new(64);
+        let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
+
+        for i in 0..(MAX_WINDOW_SIZE as u64 + 100) {
+            let framed = vec![i as u8; 32];
+            let sym = encoder.add_source(&framed);
+            sent_store.insert(sym.block_id, sym.clone());
+            // The loop's cap eviction (identical arithmetic).
+            if encoder.window_size() > MAX_WINDOW_SIZE {
+                let (oldest, _) = encoder.window_span();
+                encoder.advance(oldest + (encoder.window_size() - MAX_WINDOW_SIZE) as u64);
+            }
+        }
+
+        // Seq 10 slid out of the coding window (EVICT would have lost it —
+        // the measured F2 failure)…
+        assert!(encoder.get_source(10).is_none(), "seq 10 must be past the FEC horizon");
+        // …but the store still holds the exact sent bytes for targeted ARQ.
+        let held = sent_store.get(&10).expect("store retains un-acked symbol bytes");
+        assert_eq!(held.block_id, 10);
+        assert!(!held.is_repair);
+        assert_eq!(&held.data[..32], &[10u8; 32]);
+
+        // Removal by ack ONLY: pruning at ack=49 drops exactly seqs 0..=49.
+        let ack = 49u64;
+        sent_store = sent_store.split_off(&(ack + 1));
+        assert!(sent_store.get(&ack).is_none());
+        assert!(sent_store.get(&(ack + 1)).is_some());
+        assert_eq!(sent_store.len(), (MAX_WINDOW_SIZE + 100) - 50);
     }
 }
