@@ -5186,21 +5186,33 @@ cross-path striped:
    is fungible-repair (in-window) versus targeted-ARQ (aged), so an
    undersized window costs recovery latency on aged holes, not
    correctness.
-2. **Striping — by pull, not by split.** No proportional (and certainly
-   no equal-weight) splitter: under backlog each path *pulls* symbols
-   from the shared window up to its own CC budget (work-conserving), so
-   the allocation converges to per-path sustainable goodput
-   automatically, self-correcting on path degradation — water-filling
-   in effect, with no g_i estimator in the placement loop. Under
-   partial load, placement follows the Section 13.8 cost order (best
-   path first, spill on saturation); a continuous refinement is
-   probabilistic dithering P(i) ∝ exp(−cost_i/T) (T→0 recovers the
-   strict order, per the no-cutoffs convention), whose purpose is burst
-   decorrelation: deterministic order maps consecutive window positions
-   to one path, so a GE burst punches a contiguous window hole;
-   dithering scatters the damage (PREDICTION — measure before
-   claiming). Repairs keep the best-goodput preference plus fate
-   diversity (avoid the path that carried the symbols they protect).
+2. **Striping — one continuous placement law, no load regimes.** No
+   proportional (and certainly no equal-weight) splitter, and no
+   backlog-vs-partial-load case split either: every symbol is placed by
+   a single marginal-cost rule — the Section 13.8 objective completed
+   with live congestion and fate terms,
+   `cost_i(s) = w_lat·E_i(load) + w_bw·r_i + w_div·ρ_fate(s,i)`,
+   sampled as P(i) ∝ exp(−cost_i/T). Because E_i includes the path's
+   CURRENT queueing delay (the dq the delay-based CC already measures),
+   the apparent regimes are equilibria of this one rule, not modes:
+   under light load the empty best path has lowest cost and traffic
+   concentrates there; as its queue builds, its marginal cost rises
+   continuously until the next path's cost is crossed and symbols spill
+   gradually; under backlog all marginal costs equalize at the capacity
+   waterlines — water-filling is the FIXED POINT of marginal-cost
+   equalization, and per-path CC-gated pull is its distributed
+   implementation (each path's token availability IS its marginal-cost
+   signal). The temperature T is the one dial from strict ordering
+   (T→0) to burst-decorrelating dithering (deterministic order maps
+   consecutive window positions to one path, so a GE burst punches a
+   contiguous window hole; dithering scatters the damage — PREDICTION,
+   measure before claiming). Repair placement uses the SAME law: the
+   old hard avoid-rule becomes the continuous ρ_fate penalty
+   (fate-correlation with the symbols the repair covers). Block
+   affinity dissolves per-symbol (no block unit remains to bind).
+   Convention note: hard sets remain legitimate inside derived BOUNDS
+   (e.g. the 16.2 eligibility set is an analysis device); the
+   no-cutoffs rule binds MECHANISMS — no control law may case-split.
    No symbol is bound to a path.
 3. **Frontier decode.** The receiver delivers the in-order prefix the
    moment any sufficient symbol subset decodes it; holes at the frontier
