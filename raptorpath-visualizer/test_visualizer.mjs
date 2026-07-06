@@ -165,6 +165,85 @@ check("saturation_pressure monotone (low < high)",
 const pfx = api.p_fec_exact(0.013, 0.5, 0.1, 64);
 check("exact P_fec sane", pfx > 0.9 && pfx <= 1.0, `p_fec_exact=${pfx.toFixed(4)}`);
 
+// --- 8. Multipath (paper §16, Reliable Windowed Multipath at L0) ---
+function runInner(sim) {
+  let ticks = 0;
+  while (!sim.is_finished() && ticks < 20000) {
+    sim.step();
+    ticks++;
+  }
+  return ticks;
+}
+// 8a. N = 1 via the multipath constructor must be IDENTICAL to the classic
+// single-path constructor (the regression contract).
+{
+  const a = new api.Simulation(0.05, 0.5, 50, 64, "auto", undefined, undefined, undefined);
+  const b = api.Simulation.multipath(
+    [0.05], [0.5], new Uint32Array([50]), new Uint32Array([4]),
+    64, "auto", undefined, undefined, undefined
+  );
+  const ta = runInner(a), tb = runInner(b);
+  check(
+    "multipath N=1 identical to single-path",
+    ta === tb &&
+      a.get_total_fec() === b.get_total_fec() &&
+      a.get_total_arq() === b.get_total_arq() &&
+      a.get_cum_decoded() === b.get_cum_decoded() &&
+      b.get_num_paths() === 1,
+    `ticks ${ta}/${tb}, fec ${a.get_total_fec()}/${b.get_total_fec()}`
+  );
+}
+// 8b. Symmetric 2-path: one shared window over two equal paths completes
+// ~2x faster than one path (order-statistic aggregation, §16.3), and the
+// per-path accessors are live.
+{
+  const single = new api.Simulation(0.05, 0.5, 50, 64, "bulk", undefined, undefined, undefined);
+  const dual = api.Simulation.multipath(
+    [0.05, 0.05], [0.5, 0.5], new Uint32Array([50, 50]), new Uint32Array([4, 4]),
+    64, "bulk", undefined, undefined, undefined
+  );
+  const ts = runInner(single), td = runInner(dual);
+  const factor = ts / td;
+  check(
+    "2-path symmetric aggregation ~2x",
+    dual.get_cum_decoded() === dual.get_num_source() && factor > 1.7 && factor <= 2.1,
+    `single=${ts} ticks, dual=${td} ticks, x${factor.toFixed(2)}`
+  );
+  const af = dual.get_aggregation_factor();
+  check(
+    "aggregation factor accessor > 1 (beats best single path)",
+    Number.isFinite(af) && af > 1.0,
+    `factor=x${af.toFixed(2)} (agg ${dual.get_agg_goodput().toFixed(2)} vs best ${dual.get_best_single_goodput().toFixed(2)} sym/tick)`
+  );
+  const s0 = dual.get_path_src(0), s1 = dual.get_path_src(1);
+  check(
+    "symmetric striping ~50/50",
+    Math.abs(s0 / (s0 + s1) - 0.5) < 0.05,
+    `src split ${s0}/${s1}`
+  );
+}
+// 8c. Heterogeneous C8-like (§16.6 P1 at L0): the shared window over
+// fast+slow must STRICTLY beat the fast path alone — the §16.2 ceiling of
+// every per-path-affine in-order transport. Measured vs measured, same
+// engine, same hint/W.
+{
+  const fastAlone = api.Simulation.multipath(
+    [0.026], [0.5], new Uint32Array([10]), new Uint32Array([5]),
+    64, "bulk", undefined, undefined, undefined
+  );
+  const rwm = api.Simulation.multipath(
+    [0.026, 0.048], [0.5, 0.5], new Uint32Array([10, 40]), new Uint32Array([5, 1]),
+    64, "bulk", undefined, undefined, undefined
+  );
+  const tf = runInner(fastAlone), tr = runInner(rwm);
+  const factor = tf / tr;
+  check(
+    "heterogeneous C8: RWM strictly beats fast path alone (P1)",
+    rwm.get_cum_decoded() === rwm.get_num_source() && factor > 1.0,
+    `fast-alone=${tf} ticks, RWM=${tr} ticks, x${factor.toFixed(3)} (asymptote ~x1.20)`
+  );
+}
+
 if (failures > 0) {
   console.error(`\n${failures} check(s) FAILED`);
   process.exit(1);

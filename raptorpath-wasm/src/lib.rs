@@ -167,9 +167,26 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 //     for the other hints, the one-shot end-of-stream burst (paper 14.25,
 //     exact 8.7 DP), which the chi ramp subsumes as its limiting case
 //
-// Simplifications vs the L0 gate (documented): single path, fixed wire
-// capacity (slots/tick) instead of a queue+Copa model, no jitter (so no
-// encoder lag needed — the channel is FIFO).
+// MULTIPATH (paper Section 16, Reliable Windowed Multipath — L0 prototype):
+// the Simulation carries N independent GE channels (own calibrated state
+// array, own seed, own capacity, own RTT/feedback delay, own estimator)
+// POURING INTO ONE shared reliable window (one RlcEncoder/RlcDecoder).
+// Source symbols are striped across paths proportional to the ESTIMATED
+// per-path goodput g_i = capacity_i * (1 - eps_hat_i) (estimated, not true —
+// the sender cannot see the channel; smooth weighted round-robin);
+// repairs/retransmits go preferentially to the highest-goodput path with a
+// spare slot (the Section 13.8 preference), and a symbol lost on path i may
+// be repaired via ANY path — the in-order frontier advances when the window
+// prefix decodes from any combination of arrivals (Section 16.3: frontier
+// rate -> sum of g_i). Controller inputs (p_upper, sigma2, SRTT, ...) are
+// capacity-weighted aggregates of the per-path estimators: the window sees
+// a mixture channel. N = 1 reduces exactly to the single-path simulation
+// (bit-identical: same seed derivation, same RNG stream, same slot order).
+//
+// Simplifications vs the L0 gate (documented): fixed wire capacity
+// (slots/tick) instead of a queue+Copa model, no jitter (so no encoder lag
+// needed — each path's channel is FIFO), delivery one-way latency uses the
+// capacity-weighted mean SRTT.
 // =========================================================================
 
 const BASE_TAIL_TARGET: f64 = 1e-5;
@@ -177,10 +194,53 @@ const CODEC_OVERHEAD_RLC: f64 = 0.004;
 const MAX_OVERHEAD: f64 = 0.5;
 const TICK_SECS: f64 = 0.001;
 
-#[wasm_bindgen]
-pub struct Simulation {
+/// Per-path state (paper Section 16): an independent GE channel with its own
+/// capacity, RTT (feedback delay), estimator feed and traffic counters.
+struct PathState {
     eps: f64,
     q: f64,
+    capacity: u32, // wire symbols per tick on THIS path
+    rtt_ticks: u32,
+    srtt_secs: f64,
+    rttvar_secs: f64,
+    /// Pre-generated per-WIRE-SYMBOL channel states: true = lost.
+    channel_states: Vec<bool>,
+    wire_idx: usize,
+    estimator: math::LossEstimator,
+    /// Wire outcomes awaiting THIS path's ACK round-trip: (send_tick, arrived).
+    feedback_queue: std::collections::VecDeque<(u32, bool)>,
+    last_flush_tick: u32,
+    pending_sent: u32,
+    pending_ok: u32,
+    // Per-path traffic counters.
+    sent: u32,
+    arrived: u32,
+    src: u32,
+    fec: u32,
+    arq: u32,
+    lost: u32,
+    /// Smooth weighted-round-robin credit for goodput-proportional striping.
+    stripe_credit: f64,
+}
+
+impl PathState {
+    /// ESTIMATED goodput g_i = capacity_i * (1 - eps_hat_i), the striping
+    /// weight. Estimated, not true: the sender only has its RTT-delayed
+    /// estimator (documented honesty choice).
+    fn goodput_est(&self) -> f64 {
+        self.capacity as f64 * (1.0 - self.estimator.loss_rate().clamp(0.0, 0.99))
+    }
+    /// TRUE goodput capacity_i * (1 - eps_i) — for the truth-side readouts
+    /// and the aggregation-factor denominator only, never for decisions.
+    fn goodput_true(&self) -> f64 {
+        self.capacity as f64 * (1.0 - self.eps)
+    }
+}
+
+#[wasm_bindgen]
+pub struct Simulation {
+    paths: Vec<PathState>,
+    /// Capacity-weighted true burst variance factor (aggregate).
     sigma2_true: f64,
     hint_bulk: bool,
     tail_target: f64,
@@ -214,15 +274,7 @@ pub struct Simulation {
     jitter_ms: f64,
     prev_lat_ms: f64,
 
-    rtt_ticks: u32,
-    srtt_secs: f64,
-    rttvar_secs: f64,
-    capacity: u32, // wire symbols per tick
-    w: u32,        // encoder window
-
-    /// Pre-generated per-WIRE-SYMBOL channel states: true = lost.
-    channel_states: Vec<bool>,
-    wire_idx: usize,
+    w: u32, // encoder window (shared across paths — ONE reliable window)
 
     tick: u32,
     source_done: bool,
@@ -230,7 +282,6 @@ pub struct Simulation {
     finished: bool,
     num_source: u32,
 
-    estimator: math::LossEstimator,
     encoder: math::RlcEncoder,
     decoder: math::RlcDecoder,
 
@@ -239,12 +290,6 @@ pub struct Simulation {
     /// encoder window (a retransmit long after eviction must still work).
     source_store: Vec<Vec<u8>>,
     next_seq: u32,
-
-    /// Wire outcomes awaiting the ACK round-trip: (send_tick, arrived).
-    feedback_queue: std::collections::VecDeque<(u32, bool)>,
-    last_flush_tick: u32,
-    pending_sent: u32,
-    pending_ok: u32,
 
     // Rate state
     rate: f64,
@@ -268,6 +313,10 @@ struct Symbol {
     lost: bool,
     recovered: bool,
     last_retx_tick: i64,
+    /// Path the symbol was LAST sent on (original send, then updated per
+    /// retransmit): its RTT gates the retry timer and the SACK ack, its
+    /// estimator feeds the P_lost retransmit decision.
+    path: usize,
 }
 
 fn xorshift64(state: &mut u64) -> f64 {
@@ -316,11 +365,92 @@ impl Simulation {
         xorshift64(&mut self.rng_state)
     }
 
-    /// Consume the next wire-slot channel outcome. true = lost.
-    fn wire_lost(&mut self) -> bool {
-        let lost = self.channel_states.get(self.wire_idx).copied().unwrap_or(false);
-        self.wire_idx += 1;
+    /// Consume the next wire-slot channel outcome on path `pi`. true = lost.
+    fn wire_lost(&mut self, pi: usize) -> bool {
+        let p = &mut self.paths[pi];
+        let lost = p.channel_states.get(p.wire_idx).copied().unwrap_or(false);
+        p.wire_idx += 1;
         lost
+    }
+
+    // --- Capacity-weighted aggregates over paths (paper 16.3: the shared
+    // window sees a mixture channel; each path contributes in proportion to
+    // its share of the wire). For N = 1 every aggregate reduces EXACTLY to
+    // the single path's value (weight = 1.0, x * 1.0 == x in IEEE754).
+    fn total_capacity(&self) -> u32 {
+        self.paths.iter().map(|p| p.capacity).sum()
+    }
+    fn agg<F: Fn(&PathState) -> f64>(&self, f: F) -> f64 {
+        let tot: f64 = self.paths.iter().map(|p| p.capacity as f64).sum();
+        self.paths.iter().map(|p| p.capacity as f64 / tot * f(p)).sum()
+    }
+    fn agg_eps(&self) -> f64 {
+        self.agg(|p| p.eps)
+    }
+    fn agg_q(&self) -> f64 {
+        self.agg(|p| p.q)
+    }
+    fn agg_srtt(&self) -> f64 {
+        self.agg(|p| p.srtt_secs)
+    }
+    fn agg_rttvar(&self) -> f64 {
+        self.agg(|p| p.rttvar_secs)
+    }
+    fn agg_rtt_ticks(&self) -> u32 {
+        self.agg(|p| p.rtt_ticks as f64).round() as u32
+    }
+    fn agg_loss_est(&self) -> f64 {
+        self.agg(|p| p.estimator.loss_rate())
+    }
+    fn agg_p_upper(&self) -> f64 {
+        self.agg(|p| p.estimator.predictive_loss_upper(0.95))
+    }
+
+    /// Highest-estimated-goodput path with a spare slot this tick: repairs
+    /// and retransmits prefer the best path (the Section 13.8 preference —
+    /// corrections ride the path most likely to deliver them).
+    fn best_correction_path(&self, free: &[u32]) -> usize {
+        let mut best = 0usize;
+        let mut bg = f64::NEG_INFINITY;
+        for (i, p) in self.paths.iter().enumerate() {
+            if free[i] == 0 {
+                continue;
+            }
+            let g = p.goodput_est();
+            if g > bg {
+                bg = g;
+                best = i;
+            }
+        }
+        best
+    }
+
+    /// Goodput-proportional striping for SOURCE symbols: smooth weighted
+    /// round-robin over the paths with spare slots, weights g_i / sum g
+    /// (estimated goodput). N = 1 degenerates to "always path 0" with zero
+    /// credit drift.
+    fn next_source_path(&mut self, free: &[u32]) -> usize {
+        let g: Vec<f64> = self
+            .paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| if free[i] > 0 { p.goodput_est().max(1e-9) } else { 0.0 })
+            .collect();
+        let sum: f64 = g.iter().sum();
+        let mut best = 0usize;
+        let mut best_c = f64::NEG_INFINITY;
+        for i in 0..self.paths.len() {
+            if free[i] == 0 {
+                continue;
+            }
+            self.paths[i].stripe_credit += g[i] / sum;
+            if self.paths[i].stripe_credit > best_c {
+                best_c = self.paths[i].stripe_credit;
+                best = i;
+            }
+        }
+        self.paths[best].stripe_credit -= 1.0;
+        best
     }
 
     /// Completion exposure chi (paper 14.26): the sim KNOWS the transfer
@@ -330,8 +460,8 @@ impl Simulation {
     /// over the final ~1.5 SRTT it ramps to 1 (Phi_bar of the RTT tail).
     fn completion_chi_raw(&self) -> f64 {
         let remaining = self.num_source.saturating_sub(self.next_seq) as f64;
-        let t_rem_secs = remaining / self.capacity as f64 * TICK_SECS;
-        math::completion_exposure(t_rem_secs, self.srtt_secs, self.rttvar_secs)
+        let t_rem_secs = remaining / self.total_capacity() as f64 * TICK_SECS;
+        math::completion_exposure(t_rem_secs, self.agg_srtt(), self.agg_rttvar())
     }
 
     /// Bulk's chi for the delta glide (paper 14.26): only Bulk maps chi into
@@ -388,14 +518,32 @@ impl Simulation {
         if dchi <= 0.0 {
             return 0.0;
         }
-        let ge = self.estimator.ge_estimator();
-        let (pg, qg) = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
-            (ge.p_gb(), ge.p_bg())
-        } else {
-            (self.eps * self.q / (1.0 - self.eps).max(1e-6), self.q)
-        };
+        let (pg, qg) = self.agg_ge_params();
         let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
         r_tail * w * dchi
+    }
+
+    /// Capacity-weighted GE (p_gb, p_bg) across paths, each path falling
+    /// back to its TRUE parameters while its estimator is cold (exactly the
+    /// single-path fallback rule, applied per path).
+    fn agg_ge_params(&self) -> (f64, f64) {
+        let pg = self.agg(|p| {
+            let ge = p.estimator.ge_estimator();
+            if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
+                ge.p_gb()
+            } else {
+                p.eps * p.q / (1.0 - p.eps).max(1e-6)
+            }
+        });
+        let qg = self.agg(|p| {
+            let ge = p.estimator.ge_estimator();
+            if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
+                ge.p_bg()
+            } else {
+                p.q
+            }
+        });
+        (pg, qg)
     }
 
     /// Build the shared production `RateInputs` from the live estimator
@@ -403,18 +551,36 @@ impl Simulation {
     /// `saturation_cap` is a parameter so the pressure accessor can request
     /// the UNCAPPED rate.
     fn rate_inputs(&self, saturation_cap: bool) -> math::RateInputs {
-        let ge = self.estimator.ge_estimator();
-        let (sigma2, mean_burst) = if ge.is_valid() {
-            (math::burst_variance_factor(ge.p_gb(), ge.p_bg()), ge.mean_burst_length())
-        } else {
-            (1.0, 1.0)
-        };
-        let t_symbols = if ge.is_valid() {
-            (self.rtt_ticks as f64 * self.capacity as f64).max(1.0)
-        } else {
-            0.0
-        };
-        let p_upper = self.estimator.predictive_loss_upper(0.95);
+        // Capacity-weighted aggregates over the per-path estimators: the
+        // shared window rides a mixture of the paths. Each path contributes
+        // its estimate when its GE estimator is valid, the same cold-start
+        // fallback (sigma2 = 1, mean_burst = 1, no t_symbols contribution)
+        // otherwise. N = 1 reduces exactly to the single-path inputs.
+        let sigma2 = self.agg(|p| {
+            let ge = p.estimator.ge_estimator();
+            if ge.is_valid() {
+                math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+            } else {
+                1.0
+            }
+        });
+        let mean_burst = self.agg(|p| {
+            let ge = p.estimator.ge_estimator();
+            if ge.is_valid() { ge.mean_burst_length() } else { 1.0 }
+        });
+        let t_symbols_raw: f64 = self
+            .paths
+            .iter()
+            .map(|p| {
+                if p.estimator.ge_estimator().is_valid() {
+                    p.rtt_ticks as f64 * p.capacity as f64
+                } else {
+                    0.0
+                }
+            })
+            .sum();
+        let t_symbols = if t_symbols_raw > 0.0 { t_symbols_raw.max(1.0) } else { 0.0 };
+        let p_upper = self.agg_p_upper();
         // Ablation arm: the pre-P6 Bulk mapping delta_eff = min(0.1, p_hat)
         // expressed through the plain tail_target path (equivalent by
         // construction; see test_ablation_p6_completion_exposure).
@@ -429,8 +595,8 @@ impl Simulation {
             mean_burst,
             window: self.encoder.window_size().max(1) as f64,
             t_symbols,
-            srtt: self.srtt_secs,
-            t_sym: TICK_SECS / self.capacity as f64,
+            srtt: self.agg_srtt(),
+            t_sym: TICK_SECS / self.total_capacity() as f64,
             codec_overhead: CODEC_OVERHEAD_RLC,
             tail_target,
             bulk_late_is_fine,
@@ -455,13 +621,24 @@ impl Simulation {
         math::controller_rate(&self.rate_inputs(true))
     }
 
-    /// Send one repair symbol. Returns whether it survived the channel.
-    fn send_repair(&mut self) -> bool {
+    /// Send one repair symbol on path `pi`. Returns whether it survived.
+    fn send_repair(&mut self, pi: usize) -> bool {
         let repair = self.encoder.generate_repair();
-        let lost = self.wire_lost();
+        let lost = self.wire_lost(pi);
         self.total_fec += 1;
         self.cum_sent += 1;
-        self.feedback_queue.push_back((self.tick, !lost));
+        let tick = self.tick;
+        {
+            let p = &mut self.paths[pi];
+            p.sent += 1;
+            p.fec += 1;
+            p.feedback_queue.push_back((tick, !lost));
+            if lost {
+                p.lost += 1;
+            } else {
+                p.arrived += 1;
+            }
+        }
         if !lost {
             self.cum_arrived += 1;
             let recovered = self.decoder.feed_repair(
@@ -483,7 +660,7 @@ impl Simulation {
     /// (arrived symbols decode at their send tick, so their latency is the
     /// one-way delay; recovered symbols add the recovery wait).
     fn record_delivery(&mut self, seqs: &[u64]) {
-        let one_way = self.srtt_secs * 500.0; // ms: RTT/2
+        let one_way = self.agg_srtt() * 500.0; // ms: RTT/2 (capacity-weighted)
         for q in seqs {
             if self.given_up_seqs.contains(q) {
                 continue;
@@ -527,8 +704,29 @@ impl Simulation {
         eps: f64, q: f64, rtt_ms: u32, w: u32, hint: String,
         fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
     ) -> Self {
-        let p = if eps < 1.0 { eps * q / (1.0 - eps) } else { q };
-        let sigma2_true = math::burst_variance_factor(p, q);
+        Self::multipath(
+            vec![eps], vec![q], vec![rtt_ms], vec![4], w, hint,
+            fixed_r, custom_delta, custom_rho,
+        )
+    }
+
+    /// Multipath constructor (paper Section 16, RWM at L0): N independent GE
+    /// channels (per-path eps / q / RTT / capacity in slots-per-tick) pouring
+    /// into ONE shared reliable window. `Simulation::new(e,q,rtt,w,...)` is
+    /// exactly `multipath([e],[q],[rtt],[4],w,...)` — the single-path
+    /// simulation is the N = 1 special case, bit for bit (same per-path seed
+    /// derivation, same RNG stream, same slot order).
+    #[allow(clippy::too_many_arguments)]
+    pub fn multipath(
+        eps: Vec<f64>, q: Vec<f64>, rtt_ms: Vec<u32>, capacity: Vec<u32>,
+        w: u32, hint: String,
+        fixed_r: Option<f64>, custom_delta: Option<f64>, custom_rho: Option<f64>,
+    ) -> Self {
+        let n = eps.len().max(1).min(8);
+        assert!(
+            q.len() >= n && rtt_ms.len() >= n && capacity.len() >= n,
+            "per-path parameter arrays must have equal length"
+        );
 
         // Hint -> tail target, mirroring the production constructor.
         let (tail_target, hint_bulk) = match hint.as_str() {
@@ -544,15 +742,55 @@ impl Simulation {
             1.0
         };
 
-        let capacity = 4u32;
         let num_source = 2000u32;
-        let seed = eps.to_bits() ^ q.to_bits().rotate_left(32)
-            ^ (rtt_ms as u64).wrapping_mul(0x517cc1b727220a95);
-        let num_wire = num_source as usize * 4; // generous margin incl. corrections
-        let channel_states = generate_channel_states(p, q, eps, num_wire, seed);
+        let mut paths = Vec::with_capacity(n);
+        for i in 0..n {
+            let (e, qq) = (eps[i], q[i]);
+            let rtt = rtt_ms[i];
+            let cap = capacity[i].clamp(1, 16);
+            let p = if e < 1.0 { e * qq / (1.0 - e) } else { qq };
+            // Path 0 keeps EXACTLY the historical seed (i * salt == 0);
+            // sibling paths get decorrelated streams even with identical
+            // channel parameters (the symmetric 2-path case).
+            let seed = e.to_bits() ^ qq.to_bits().rotate_left(32)
+                ^ (rtt as u64).wrapping_mul(0x517cc1b727220a95)
+                ^ (i as u64).wrapping_mul(0x9e3779b97f4a7c15);
+            let num_wire = num_source as usize * 4; // generous margin incl. corrections
+            paths.push(PathState {
+                eps: e,
+                q: qq,
+                capacity: cap,
+                rtt_ticks: rtt.max(2),
+                srtt_secs: rtt as f64 / 1000.0,
+                rttvar_secs: rtt as f64 / 8000.0,
+                channel_states: generate_channel_states(p, qq, e, num_wire, seed),
+                wire_idx: 0,
+                estimator: math::LossEstimator::new(),
+                feedback_queue: std::collections::VecDeque::new(),
+                last_flush_tick: 0,
+                pending_sent: 0,
+                pending_ok: 0,
+                sent: 0,
+                arrived: 0,
+                src: 0,
+                fec: 0,
+                arq: 0,
+                lost: 0,
+                stripe_credit: 0.0,
+            });
+        }
+        let tot_cap: f64 = paths.iter().map(|p| p.capacity as f64).sum();
+        let sigma2_true = paths
+            .iter()
+            .map(|pp| {
+                let p = if pp.eps < 1.0 { pp.eps * pp.q / (1.0 - pp.eps) } else { pp.q };
+                pp.capacity as f64 / tot_cap * math::burst_variance_factor(p, pp.q)
+            })
+            .sum();
 
         Self {
-            eps, q, sigma2_true,
+            paths,
+            sigma2_true,
             hint_bulk, tail_target, fixed_r,
             legacy_bulk_delta: false,
             legacy_tail_burst: false,
@@ -564,28 +802,17 @@ impl Simulation {
             lat_by_seq: vec![f64::NAN; num_source as usize],
             jitter_ms: 0.0,
             prev_lat_ms: -1.0,
-            rtt_ticks: rtt_ms.max(2),
-            srtt_secs: rtt_ms as f64 / 1000.0,
-            rttvar_secs: rtt_ms as f64 / 8000.0,
-            capacity,
             w,
-            channel_states,
-            wire_idx: 0,
             tick: 0,
             source_done: false,
             tail_flushed: false,
             finished: false,
             num_source,
-            estimator: math::LossEstimator::new(),
             encoder: math::RlcEncoder::new(8),
             decoder: math::RlcDecoder::new(8),
             symbols: Vec::new(),
             source_store: Vec::new(),
             next_seq: 0,
-            feedback_queue: std::collections::VecDeque::new(),
-            last_flush_tick: 0,
-            pending_sent: 0,
-            pending_ok: 0,
             rate: 0.0,
             debt: 0.0,
             prev_completion_chi: 0.0,
@@ -606,28 +833,30 @@ impl Simulation {
         let mut arq_n = 0u32;
         let mut lost_n = 0u32;
 
-        // --- Feedback path: outcomes become known one RTT after send. ---
-        // Fed with the TRUE per-symbol pattern (paper 7.5); flushed once
-        // per RTT — the estimator honestly lags reality.
-        while let Some(&(t, ok)) = self.feedback_queue.front() {
-            if self.tick.saturating_sub(t) < self.rtt_ticks {
-                break;
+        // --- Feedback path: outcomes become known one RTT after send, PER
+        // PATH (each path has its own ACK delay and its own estimator). Fed
+        // with the TRUE per-symbol pattern (paper 7.5); flushed once per
+        // that path's RTT — each estimator honestly lags its own path.
+        for pi in 0..self.paths.len() {
+            let tick = self.tick;
+            let p = &mut self.paths[pi];
+            while let Some(&(t, ok)) = p.feedback_queue.front() {
+                if tick.saturating_sub(t) < p.rtt_ticks {
+                    break;
+                }
+                p.feedback_queue.pop_front();
+                p.estimator.record_symbol(ok);
+                p.pending_sent += 1;
+                if ok {
+                    p.pending_ok += 1;
+                }
             }
-            self.feedback_queue.pop_front();
-            self.estimator.record_symbol(ok);
-            self.pending_sent += 1;
-            if ok {
-                self.pending_ok += 1;
+            if tick.saturating_sub(p.last_flush_tick) >= p.rtt_ticks && p.pending_sent > 0 {
+                p.estimator.record_counts(p.pending_sent, p.pending_ok, tick as u64);
+                p.pending_sent = 0;
+                p.pending_ok = 0;
+                p.last_flush_tick = tick;
             }
-        }
-        if self.tick.saturating_sub(self.last_flush_tick) >= self.rtt_ticks
-            && self.pending_sent > 0
-        {
-            self.estimator
-                .record_counts(self.pending_sent, self.pending_ok, self.tick as u64);
-            self.pending_sent = 0;
-            self.pending_ok = 0;
-            self.last_flush_tick = self.tick;
         }
 
         // --- Rate from the shared production formula ---
@@ -641,35 +870,66 @@ impl Simulation {
         // (3) new source. Retransmits scan ALL outstanding candidates so a
         // single symbol waiting out its retry timer cannot head-of-line
         // stall the drain.
-        for _ in 0..self.capacity {
-            // (1) P_lost-gated retransmit across all candidates.
+        //
+        // MULTIPATH (paper 16.3): the tick's slot budget is the union of all
+        // paths' capacities. Each action then picks its carrying path:
+        // corrections (repairs AND retransmits — a symbol lost on path i may
+        // be resent on any path j) ride the highest-goodput path with a
+        // spare slot (13.8 preference); source symbols are striped across
+        // spare-slot paths proportional to ESTIMATED goodput g_i (smooth
+        // WRR). With N = 1 every choice is path 0 and the loop is exactly
+        // the historical single-path loop.
+        let mut free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
+        let total_slots: u32 = free.iter().sum();
+        for _ in 0..total_slots {
+            // (1) P_lost-gated retransmit across all candidates. Retry timer
+            // and loss belief come from the path the symbol was LAST sent on
+            // (that is where its feedback lives).
             let mut did_retx = false;
             let mut cand: Option<usize> = None;
             for (i, sym) in self.symbols.iter().enumerate() {
                 if sym.lost
                     && !sym.recovered
-                    && (self.tick as i64 - sym.last_retx_tick) >= self.rtt_ticks as i64
+                    && (self.tick as i64 - sym.last_retx_tick)
+                        >= self.paths[sym.path].rtt_ticks as i64
                 {
                     cand = Some(i);
                     break;
                 }
             }
             if let Some(i) = cand {
+                let sp = self.symbols[i].path;
                 let age_ticks = self.tick.saturating_sub(self.symbols[i].tick);
                 let pl = math::p_lost(
                     age_ticks as f64 * TICK_SECS,
-                    self.estimator.loss_rate().clamp(1e-4, 0.99),
-                    self.srtt_secs,
-                    self.rttvar_secs,
+                    self.paths[sp].estimator.loss_rate().clamp(1e-4, 0.99),
+                    self.paths[sp].srtt_secs,
+                    self.paths[sp].rttvar_secs,
                 );
                 if self.rng() < pl {
+                    // Cross-path recovery: resend the EXACT stored bytes on
+                    // the best currently-available path, not necessarily the
+                    // one that lost them.
+                    let dest = self.best_correction_path(&free);
                     let seq = self.symbols[i].seq;
                     self.symbols[i].last_retx_tick = self.tick as i64;
-                    let lost = self.wire_lost();
+                    self.symbols[i].path = dest;
+                    let lost = self.wire_lost(dest);
+                    free[dest] -= 1;
                     self.total_arq += 1;
                     arq_n += 1;
                     self.cum_sent += 1;
-                    self.feedback_queue.push_back((self.tick, !lost));
+                    {
+                        let p = &mut self.paths[dest];
+                        p.sent += 1;
+                        p.arq += 1;
+                        p.feedback_queue.push_back((self.tick, !lost));
+                        if lost {
+                            p.lost += 1;
+                        } else {
+                            p.arrived += 1;
+                        }
+                    }
                     if lost {
                         lost_n += 1;
                     } else {
@@ -694,16 +954,21 @@ impl Simulation {
                 continue;
             }
 
-            // (2) Repair when the taper debt says one is due.
+            // (2) Repair when the taper debt says one is due — on the best
+            // available path (repairs are path-agnostic: ANY path's arrival
+            // advances the shared window decode).
             if self.debt >= 1.0 && self.encoder.window_size() > 0 {
+                let dest = self.best_correction_path(&free);
                 self.debt -= 1.0;
-                let ok = self.send_repair();
+                let ok = self.send_repair(dest);
+                free[dest] -= 1;
                 fec_n += 1;
                 if !ok {
                     lost_n += 1;
                 }
             } else if !self.source_done {
-                // --- Source slot ---
+                // --- Source slot: striped proportional to estimated goodput ---
+                let dest = self.next_source_path(&free);
                 let data = vec![self.next_seq as u8; 8];
                 let seq = self.encoder.add_source(&data);
                 self.source_store.push(data.clone());
@@ -713,14 +978,26 @@ impl Simulation {
                     let oldest = self.encoder.next_seq().saturating_sub(self.w as u64);
                     self.encoder.advance(oldest);
                 }
-                let lost = self.wire_lost();
-                self.feedback_queue.push_back((self.tick, !lost));
+                let lost = self.wire_lost(dest);
+                free[dest] -= 1;
+                {
+                    let p = &mut self.paths[dest];
+                    p.sent += 1;
+                    p.src += 1;
+                    p.feedback_queue.push_back((self.tick, !lost));
+                    if lost {
+                        p.lost += 1;
+                    } else {
+                        p.arrived += 1;
+                    }
+                }
                 self.symbols.push(Symbol {
                     tick: self.tick,
                     seq,
                     lost,
                     recovered: false,
                     last_retx_tick: -1_000_000,
+                    path: dest,
                 });
                 self.total_src += 1;
                 src_n += 1;
@@ -765,12 +1042,7 @@ impl Simulation {
                         || (self.legacy_tail_burst && !self.hint_bulk);
                     if !self.tail_flushed && legacy_burst {
                         self.tail_flushed = true;
-                        let ge = self.estimator.ge_estimator();
-                        let (pg, qg) = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
-                            (ge.p_gb(), ge.p_bg())
-                        } else {
-                            (self.eps * self.q / (1.0 - self.eps).max(1e-6), self.q)
-                        };
+                        let (pg, qg) = self.agg_ge_params();
                         let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, 0.05);
                         let n_tail = (r_tail * self.w as f64).ceil().min(24.0);
                         self.debt += n_tail;
@@ -782,14 +1054,14 @@ impl Simulation {
         // T_cut age eviction (paper 6.1): for rho < 1.0, losses older than
         // T_cut are given up — reliability bends instead of latency.
         if self.rho < 1.0 {
-            let p_up = self.estimator.loss_rate().clamp(1e-4, 0.99);
+            let p_up = self.agg_loss_est().clamp(1e-4, 0.99);
             let sig = self.get_sigma2_est();
             let t_cut = math::find_t_cut(
-                p_up, self.q, self.rate.max(1e-3),
+                p_up, self.agg_q(), self.rate.max(1e-3),
                 self.encoder.window_size().max(1) as f64, sig, self.rho,
             );
             if t_cut.is_finite() {
-                let cut_ticks = (t_cut as u32).max(self.rtt_ticks * 2);
+                let cut_ticks = (t_cut as u32).max(self.agg_rtt_ticks() * 2);
                 let now = self.tick;
                 for sym in &mut self.symbols {
                     if sym.lost && !sym.recovered && now.saturating_sub(sym.tick) > cut_ticks {
@@ -802,12 +1074,18 @@ impl Simulation {
             }
         }
 
-        // ACK arrived-but-unmarked symbols after one RTT (SACK view).
-        let rtt = self.rtt_ticks;
+        // ACK arrived-but-unmarked symbols after one RTT of THEIR path
+        // (SACK view; per-path ack delay).
         let tick = self.tick;
-        for sym in &mut self.symbols {
-            if !sym.lost && !sym.recovered && tick.saturating_sub(sym.tick) >= rtt {
-                sym.recovered = true;
+        {
+            let paths = &self.paths;
+            for sym in &mut self.symbols {
+                if !sym.lost
+                    && !sym.recovered
+                    && tick.saturating_sub(sym.tick) >= paths[sym.path].rtt_ticks
+                {
+                    sym.recovered = true;
+                }
             }
         }
 
@@ -839,8 +1117,79 @@ impl Simulation {
 
     // --- Accessors (superset of the old API; UI-compatible names) ---
     pub fn is_finished(&self) -> bool { self.finished }
+    /// Last consumed wire slot's channel state on path 0 (legacy name).
     pub fn channel_is_good(&self) -> bool {
-        !self.channel_states.get(self.wire_idx.saturating_sub(1)).copied().unwrap_or(false)
+        self.path_channel_is_good(0)
+    }
+    /// Last consumed wire slot's channel state on path `i`.
+    pub fn path_channel_is_good(&self, i: usize) -> bool {
+        let p = match self.paths.get(i) { Some(p) => p, None => return true };
+        !p.channel_states.get(p.wire_idx.saturating_sub(1)).copied().unwrap_or(false)
+    }
+
+    // --- Multipath accessors (paper Section 16 — RWM at L0) ---
+    pub fn get_num_paths(&self) -> usize { self.paths.len() }
+    pub fn get_path_capacity(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.capacity)
+    }
+    pub fn get_path_rtt_ms(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.rtt_ticks)
+    }
+    /// Estimated per-path loss eps_hat_i (the striping input).
+    pub fn get_path_eps_hat(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(0.0, |p| p.estimator.loss_rate())
+    }
+    /// ESTIMATED per-path goodput g_i = capacity_i * (1 - eps_hat_i)
+    /// (symbols/tick) — the live striping weight.
+    pub fn get_path_goodput_est(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(0.0, |p| p.goodput_est())
+    }
+    /// TRUE per-path goodput capacity_i * (1 - eps_i) (symbols/tick).
+    pub fn get_path_goodput_true(&self, i: usize) -> f64 {
+        self.paths.get(i).map_or(0.0, |p| p.goodput_true())
+    }
+    pub fn get_path_sent(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.sent)
+    }
+    pub fn get_path_arrived(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.arrived)
+    }
+    pub fn get_path_src(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.src)
+    }
+    pub fn get_path_fec(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.fec)
+    }
+    pub fn get_path_arq(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.arq)
+    }
+    pub fn get_path_lost(&self, i: usize) -> u32 {
+        self.paths.get(i).map_or(0, |p| p.lost)
+    }
+    pub fn get_total_capacity(&self) -> u32 { self.total_capacity() }
+    /// Measured AGGREGATE delivery goodput so far: decoded source symbols
+    /// per tick. After completion this is the completion goodput
+    /// num_source / completion_ticks.
+    pub fn get_agg_goodput(&self) -> f64 {
+        if self.tick == 0 { return 0.0; }
+        self.cum_decoded as f64 / self.tick as f64
+    }
+    /// The BEST single path's TRUE goodput max_i capacity_i * (1 - eps_i)
+    /// (symbols/tick): the Section 16.2 resequencing ceiling for every
+    /// per-path-affine in-order transport on this path set.
+    pub fn get_best_single_goodput(&self) -> f64 {
+        self.paths.iter().map(|p| p.goodput_true()).fold(0.0, f64::max)
+    }
+    /// THE Section 16 readout: measured aggregate goodput over the best
+    /// single path's true goodput. > 1 means the shared window is
+    /// delivering in-order faster than ANY single path could — the
+    /// order-statistic aggregation (frontier rate -> sum g_i) made visible.
+    /// (Includes ramp-up and drain, so it is an honest lower bound on the
+    /// steady-state frontier-rate ratio.)
+    pub fn get_aggregation_factor(&self) -> f64 {
+        let best = self.get_best_single_goodput();
+        if best <= 0.0 { return 0.0; }
+        self.get_agg_goodput() / best
     }
     pub fn get_tick(&self) -> u32 { self.tick }
     pub fn get_src(&self) -> u32 { self.last_src }
@@ -856,27 +1205,34 @@ impl Simulation {
     pub fn get_total_lost(&self) -> u32 { self.total_lost }
     /// Live controller rate (the shared production formula's output).
     pub fn get_r_star(&self) -> f64 { self.rate }
-    /// Reference: the closed-form continuous r* at the TRUE channel params.
+    /// Reference: the closed-form continuous r* at the TRUE channel params
+    /// (capacity-weighted aggregates for N > 1).
     pub fn get_r_star_auto(&self) -> f64 {
+        let eps = self.agg_eps();
         math::compute_r_star_with_z(
-            self.eps, self.sigma2_true, self.w as f64,
-            math::z_for_tail_target(self.tail_target, self.eps),
+            eps, self.sigma2_true, self.w as f64,
+            math::z_for_tail_target(self.tail_target, eps),
         )
     }
     pub fn get_sigma2(&self) -> f64 { self.sigma2_true }
     pub fn get_retx_buf_size(&self) -> u32 { self.lost_pending }
     pub fn get_num_source(&self) -> u32 { self.num_source }
-    pub fn get_estimated_loss(&self) -> f64 { self.estimator.loss_rate() }
-    /// Conservative loss estimate the controller actually uses (BOCD 95%).
-    pub fn get_p_upper(&self) -> f64 { self.estimator.predictive_loss_upper(0.95) }
-    /// Estimated burst variance factor (from the live GE estimator).
+    /// Capacity-weighted aggregate loss estimate across paths.
+    pub fn get_estimated_loss(&self) -> f64 { self.agg_loss_est() }
+    /// Conservative loss estimate the controller actually uses (BOCD 95%,
+    /// capacity-weighted across paths).
+    pub fn get_p_upper(&self) -> f64 { self.agg_p_upper() }
+    /// Estimated burst variance factor (capacity-weighted across the live
+    /// per-path GE estimators; cold paths contribute 1.0).
     pub fn get_sigma2_est(&self) -> f64 {
-        let ge = self.estimator.ge_estimator();
-        if ge.is_valid() {
-            math::burst_variance_factor(ge.p_gb(), ge.p_bg())
-        } else {
-            1.0
-        }
+        self.agg(|p| {
+            let ge = p.estimator.ge_estimator();
+            if ge.is_valid() {
+                math::burst_variance_factor(ge.p_gb(), ge.p_bg())
+            } else {
+                1.0
+            }
+        })
     }
     /// Effective tail target after the hint mapping. Bulk (paper 14.26):
     /// the completion-exposure glide p̂ + (0.05 − p̂)·χ — equals p̂
@@ -903,8 +1259,8 @@ impl Simulation {
             self.get_p_upper(),
             self.get_sigma2_est(),
             self.encoder.window_size().max(1) as f64,
-            self.srtt_secs,
-            TICK_SECS / self.capacity as f64,
+            self.agg_srtt(),
+            TICK_SECS / self.total_capacity() as f64,
         )
     }
     /// Derived encoder window W* (paper 8.8) for the current estimator state
@@ -917,9 +1273,9 @@ impl Simulation {
             self.tail_target,
             self.get_p_upper().max(1e-6),
             self.get_sigma2_est(),
-            self.srtt_secs,
-            self.capacity as f64 / TICK_SECS, // source symbols per second
-            0.0,                              // budget = 0 => align to ~1 RTT
+            self.agg_srtt(),
+            self.total_capacity() as f64 / TICK_SECS, // source symbols per second
+            0.0, // budget = 0 => align to ~1 RTT
         )
     }
 
@@ -971,8 +1327,9 @@ impl Simulation {
     /// delivered symbol -- a floor of eps/(1-eps) extra, no matter how
     /// clever. As a percentage of source symbols.
     pub fn get_overhead_floor(&self) -> f64 {
-        if self.eps < 1.0 {
-            self.eps / (1.0 - self.eps) * 100.0
+        let eps = self.agg_eps();
+        if eps < 1.0 {
+            eps / (1.0 - eps) * 100.0
         } else {
             0.0
         }
@@ -1026,6 +1383,156 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// N = 1 identical-behavior regression: golden fingerprints captured
+    /// from the PRE-multipath simulation (commit 4663c38, the last
+    /// single-path engine). Both the legacy constructor and the multipath
+    /// constructor with one path must reproduce them EXACTLY — the
+    /// multipath refactor may not perturb single-path behavior by one
+    /// tick or one symbol.
+    #[test]
+    fn test_multipath_n1_identical_golden() {
+        // (hint, eps, q, rtt) -> (ticks, src, fec, arq, lost, decoded, sent, arrived)
+        let goldens: [(&str, f64, f64, u32, [u32; 8]); 6] = [
+            ("auto",     0.05, 0.5, 50, [672, 2000, 668,  12,  100, 2000, 2680, 2542]),
+            ("auto",     0.10, 0.3, 80, [750, 2000, 984,  15,  183, 2000, 2999, 2719]),
+            ("bulk",     0.05, 0.5, 50, [562, 2000, 0,    116, 114, 2000, 2116, 2000]),
+            ("bulk",     0.10, 0.3, 80, [619, 2000, 85,   190, 197, 2000, 2275, 2061]),
+            ("realtime", 0.05, 0.5, 50, [680, 2000, 710,  9,   98,  2000, 2719, 2577]),
+            ("realtime", 0.10, 0.3, 80, [757, 2000, 1014, 14,  179, 2000, 3028, 2747]),
+        ];
+        for (hint, eps, q, rtt, g) in goldens {
+            let mut arms = [
+                Simulation::new(eps, q, rtt, 64, hint.into(), None, None, None),
+                Simulation::multipath(
+                    vec![eps], vec![q], vec![rtt], vec![4], 64, hint.into(),
+                    None, None, None,
+                ),
+            ];
+            for (ai, s) in arms.iter_mut().enumerate() {
+                while !s.is_finished() && s.get_tick() < 20_000 { s.step(); }
+                let got = [
+                    s.get_tick(), s.get_total_src(), s.get_total_fec(), s.get_total_arq(),
+                    s.get_total_lost(), s.get_cum_decoded(), s.get_cum_sent(),
+                    s.get_cum_arrived(),
+                ];
+                assert_eq!(
+                    got, g,
+                    "N=1 regression (arm {ai}) {hint} eps={eps} q={q} rtt={rtt}: \
+                     [ticks,src,fec,arq,lost,decoded,sent,arrived] diverged from \
+                     the pre-multipath engine"
+                );
+            }
+        }
+    }
+
+    /// Section 16 P2-analog at L0: two SYMMETRIC paths through ONE shared
+    /// window must complete ~2x faster than one path (minus the drain tail,
+    /// which is RTT-bound, not capacity-bound).
+    #[test]
+    fn test_multipath_symmetric_aggregation() {
+        for hint in ["bulk", "auto"] {
+            let mut single = Simulation::new(0.05, 0.5, 50, 64, hint.into(), None, None, None);
+            let mut dual = Simulation::multipath(
+                vec![0.05, 0.05], vec![0.5, 0.5], vec![50, 50], vec![4, 4],
+                64, hint.into(), None, None, None,
+            );
+            run_to_end(&mut single);
+            run_to_end(&mut dual);
+            assert_eq!(single.get_cum_decoded(), single.get_num_source());
+            assert_eq!(dual.get_cum_decoded(), dual.get_num_source());
+            // rho = 1 contract: full retention, NOTHING is ever given up.
+            assert_eq!(dual.get_given_up(), 0, "[{hint}] rho=1 must never give up");
+            let factor = single.get_tick() as f64 / dual.get_tick() as f64;
+            println!(
+                "symmetric 2-path [{hint}]: single {} ticks, dual {} ticks -> speedup x{:.2} \
+                 (agg factor accessor: x{:.2})",
+                single.get_tick(), dual.get_tick(), factor, dual.get_aggregation_factor()
+            );
+            assert!(
+                factor > 1.7 && factor <= 2.1,
+                "[{hint}] symmetric aggregation x{factor:.2} outside ~1.8-2x"
+            );
+            // Striping is goodput-proportional: symmetric paths carry ~equal
+            // source shares.
+            let s0 = dual.get_path_src(0) as f64;
+            let s1 = dual.get_path_src(1) as f64;
+            assert!(
+                (s0 / (s0 + s1) - 0.5).abs() < 0.05,
+                "[{hint}] symmetric striping skewed: {s0} vs {s1}"
+            );
+        }
+    }
+
+    /// The reliability contract is CONFIGURABLE via rho on multipath too
+    /// (paper 6.1/6.2): rho < 1 gives up losses older than T_cut (counted,
+    /// receiver-pruned), rho = 1 retains until acked — same triangle
+    /// semantics as single-path, now across N paths.
+    #[test]
+    fn test_multipath_custom_rho_semantics() {
+        // rho < 1: bounded retention — give-ups counted, reliability >= target.
+        let mut lossy = Simulation::multipath(
+            vec![0.10, 0.10], vec![0.3, 0.3], vec![80, 80], vec![4, 4],
+            64, "custom".into(), None, Some(0.05), Some(0.95),
+        );
+        run_to_end(&mut lossy);
+        assert_eq!(
+            lossy.get_cum_decoded() + lossy.get_given_up(),
+            lossy.get_num_source(),
+            "every source symbol is either delivered or explicitly given up"
+        );
+        assert!(
+            lossy.get_reliability() >= 0.90,
+            "reliability {}",
+            lossy.get_reliability()
+        );
+        // rho = 1 (same channels): ack-only retention — NEVER gives up.
+        let mut full = Simulation::multipath(
+            vec![0.10, 0.10], vec![0.3, 0.3], vec![80, 80], vec![4, 4],
+            64, "custom".into(), None, Some(0.05), Some(1.0),
+        );
+        run_to_end(&mut full);
+        assert_eq!(full.get_given_up(), 0, "rho=1 must never give up");
+        assert_eq!(full.get_cum_decoded(), full.get_num_source());
+    }
+
+    /// Section 16.6 P1 at L0 (C8-like heterogeneity, scaled to sim units:
+    /// 100 Mbit/10 ms/2.6% -> cap 5, and 20 Mbit/40 ms/4.8% -> cap 1):
+    /// aggregate goodput of the shared window over BOTH paths must be
+    /// STRICTLY greater than the fast path alone — the (16.2) resequencing
+    /// ceiling of every per-path-affine in-order transport. The expected
+    /// factor is ~(g_A+g_B)/g_A ~ 1.20 at this heterogeneity.
+    #[test]
+    fn test_multipath_heterogeneous_beats_fast_path_alone() {
+        for hint in ["bulk", "auto"] {
+            let mut fast_alone = Simulation::multipath(
+                vec![0.026], vec![0.5], vec![10], vec![5],
+                64, hint.into(), None, None, None,
+            );
+            let mut rwm = Simulation::multipath(
+                vec![0.026, 0.048], vec![0.5, 0.5], vec![10, 40], vec![5, 1],
+                64, hint.into(), None, None, None,
+            );
+            run_to_end(&mut fast_alone);
+            run_to_end(&mut rwm);
+            assert_eq!(fast_alone.get_cum_decoded(), fast_alone.get_num_source());
+            assert_eq!(rwm.get_cum_decoded(), rwm.get_num_source());
+            let factor = fast_alone.get_tick() as f64 / rwm.get_tick() as f64;
+            println!(
+                "heterogeneous C8-like [{hint}]: fast-alone {} ticks, RWM {} ticks -> x{:.3} \
+                 (P1 pass line: > 1.0; sum-goodput asymptote ~1.20) | slow-path share: \
+                 src {}/{} | agg-factor accessor x{:.2}",
+                fast_alone.get_tick(), rwm.get_tick(), factor,
+                rwm.get_path_src(1), rwm.get_total_src(), rwm.get_aggregation_factor()
+            );
+            assert!(
+                factor > 1.0,
+                "[{hint}] P1 FAILED at L0: adding the slow path made completion SLOWER \
+                 (x{factor:.3}) — the RWM aggregation claim does not survive \
+                 the sim; investigate before building production code"
+            );
+        }
+    }
 
     #[test]
     fn test_channel_generation_loss_rate() {
