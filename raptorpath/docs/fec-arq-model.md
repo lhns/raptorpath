@@ -5128,6 +5128,17 @@ This yields the correction that renames this section (DERIVED):
 > sent; and (ii) in the lossy window pipeline, **eviction** — which converts
 > a late repair into a permanent hole (Section 15.7).
 
+**Caveat measured after the fact (see Section 16.7).** The claim above —
+frontier at Σ g_i — holds only when the window is **rateless-fungible**
+(the frontier advances on ANY sufficient K_h(1+φ) symbols). At bulk's
+operating point r ≈ ε (~2%), the sliding window is *systematic* (source
+striped in sequence order, tiny redundancy), so a source symbol on the slow
+path IS a specific in-order position the fast path cannot decode around, and
+the frontier reverts to fork-join. Section 16.7 states this r-regime
+qualifier precisely and gives the measured pivot (RWM Phase B: symmetric
+1.41×, heterogeneous 12.5). Two dials — the reorder horizon H and the repair
+rate r — restore aggregation; the triangle's δ picks which.
+
 The earlier draft's theorem ("FEC-multipath beats ARQ-multipath **iff**
 delivery is out-of-order") overclaimed. What the eligibility argument
 actually proves is bound (16.2) *for per-path-affine atomic units*; it says
@@ -5383,13 +5394,21 @@ MPTCP 15.4 (C7) and 12.6 (C8); the eviction DNF (10/10 → 0/10, Section 15.7); 
 switch hazard; no striping sender in window mode; sim-vs-production
 correspondence (Section 16.3).
 
-PREDICTION (the experiment below decides):
-- **P1 — aggregation.** RWM at C8, 50 MB native bulk: completion goodput
+MEASURED AFTER THE FACT (RWM Phase C, see Section 16.7 — this P1 prediction
+was tested and REFUTED):
+- **P1 — aggregation. REFUTED.** RWM at C8, 50 MB native bulk out-of-order
+  (the H → ∞ corner) measured **11.9 Mbit/s** — 0.76× fast-path-alone
+  (15.7), i.e. it does NOT cross the (16.2) ceiling; it lands at kernel-MPTCP
+  parity (12.6). Out-of-order is 1.42× the in-order mean and far steadier
+  (stdev 3.2 vs 6.9) — a real robustness gain — but not the aggregation-
+  above-fast-path the prediction claimed. The raise-r companion (r ≈ 0.18)
+  did not cross it either (7.9). Full numbers and mechanism: Section 16.7.
+
+Superseded PREDICTION (kept for the record, now MEASURED-refuted above):
+- ~~**P1 — aggregation.** RWM at C8, 50 MB native bulk: completion goodput
   **strictly > 14.0 Mbit/s** — beyond the (16.2) ceiling of every
   per-path-affine in-order transport measured on this topology — trending
-  toward Σ ≈ g_A + g_B (≈ 116 Mbit/s of raw goodput, realistically
-  Copa-sub-capacity-limited well below that; the pass line is the ceiling
-  crossing, not the asymptote).
+  toward Σ ≈ g_A + g_B.~~
 - **P2 — no regression.** C7 symmetric control stays ≈ 23 Mbit/s: where
   E = {all}, affinity already aggregates, and RWM must not lose to it
   (the order-statistic gain → 0 on symmetric paths, so parity is the
@@ -5436,6 +5455,183 @@ The Bulk strategy therefore remains **path-count dependent**: N = 1 → r* = 0
 pure ARQ (the χ glide); N ≥ 2 heterogeneous → cross-path window coding (RWM)
 — the same result as before, with "rateless fountain, out-of-order" replaced
 by its implementable form.
+
+### 16.7 The Reorder Horizon H as the Aggregation Dial; Ordering as a Delivery Policy
+
+Section 16.2 asserted, unqualified, that "in-order delivery is not the
+bottleneck" — cross-path window coding advances the frontier at Σ g_i. RWM
+Phase B measured the qualifier the claim was missing.
+
+**MEASURED (goal-gate, RWM Phase B — the striping placement law §16.3, built
+and run at C8, seed 42):**
+
+```
+  symmetric  C7 (c2+c2):  21.7 Mbit/s = 1.41× fast-path-alone (15.4)  — aggregates
+  heterog.   C8 (c2+c3):  12.5 Mbit/s = 0.81× fast-path-alone (15.4)  — FAILS
+```
+
+The symmetric win proves the striping MECHANISM is sound; the heterogeneous
+failure localizes the missing assumption. §16.2's frontier-at-Σg holds only
+when the window is **rateless-fungible** — the frontier advances on ANY
+sufficient K_h(1+φ) symbols, so no symbol is a specific position anyone must
+wait for. At bulk's operating point r ≈ ε (~2%, loss-matched), the sliding
+window is **systematic** (source striped in sequence order, tiny
+redundancy): a source symbol placed on the slow path IS a specific in-order
+position, and the fast path lacks the coded degrees of freedom to decode
+around it. The frontier is then fork-join (§16.1 regime 1, the §16.2 bound),
+and the aggregate collapses to the order-eligible set E = {fast} = 14.0.
+This **reconciles the section's two prior framings**, each of which was one
+regime of a single dial (DERIVED):
+
+- *"out-of-order is the unlock"* (the pre-§16 draft) — TRUE at low r / for
+  objects;
+- *"in-order is fine; per-path affinity is the bottleneck"* (§16.2) — TRUE
+  only in the rateless (high-r) regime, where the window is fungible and
+  affinity is the last thing binding.
+
+**H, the reorder horizon, is the continuous dial.** §16.2's eligibility set
+E = {i : D_i − D_min ≤ H} already contains it: H is the delivery-latency
+budget the CONSUMER tolerates before a lagging path's unit counts as a hole.
+It is not binary (DERIVED):
+
+- Small H (tight latency) ⇒ the slow path is excluded, E = {fast}, aggregate
+  = fork-join/MPTCP parity — **MEASURED 12.5 at C8**.
+- Large H ⇒ the slow path is admitted, completion → K / Σ_{all} g_i.
+- **Out-of-order delivery is simply H → ∞** — the limit of the same dial,
+  not a separate mechanism.
+
+**The equivalence that makes this precise (DERIVED).** For a bounded OBJECT,
+these two are IDENTICAL in completion time:
+
+1. deliver each decoded symbol immediately, out of order, and reassemble by
+   offset;
+2. deliver strictly in order through a reorder buffer deep enough to hold to
+   completion.
+
+Both finish at **decode-on-total** — the instant the last still-missing
+symbol decodes anywhere, on any path. The in-order frontier costs throughput
+ONLY for a consumer that must eat bytes incrementally, in order, at low
+latency (an inner TCP byte stream, live media). A file has no such consumer:
+nothing reads offset k before the file is whole. Phase B's 12.5 therefore
+measured the frontier under the WRONG completion metric for an object — it
+imposed a small-H incremental-consumer contract on a workload whose correct
+metric is decode-on-total (H = ∞). **The L0 visualizer, whose completion
+metric IS decode-on-total, already shows ×1.18 at C8** (goal-gate L0) — same
+topology, same code, the H → ∞ metric.
+
+**Two knobs buy heterogeneous aggregation; δ picks between them.**
+Fungibility can be bought with latency OR with bandwidth (DERIVED):
+
+```
+  knob  what it buys                        cost           free in    right for
+  ────  ──────────────────────────────────  ─────────────  ─────────  ──────────────────
+  H     admit the slow path by tolerating   LATENCY        bandwidth  files / loose-δ
+        its lag (H→∞ = out-of-order =                                 (bulk objects)
+        decode-on-total)
+  r     make the window rateless-fungible    BANDWIDTH      latency    tight-δ streams
+        so no symbol is a fixed position     (≈ slow path's            (live media,
+        (raise r to K_h(1+φ), §16.5)         share ≈16% @C8)           TCP-in-tunnel)
+```
+
+At C8 the slow path carries ≈ g_B/Σg ≈ 16% of the symbols, so making the
+window rateless-fungible costs ≈ 16% repair overhead (the §16.5 K_h(1+φ)
+provisioning) — paid in bandwidth, buying aggregation with NO added latency,
+so even a tight-δ in-order stream can aggregate. Conversely H → ∞ buys the
+same aggregation FREE in bandwidth, paid in delivery latency a file does not
+feel. This is one **(H, r) surface**, and the triangle's **δ selects the
+operating point**: loose δ ⇒ raise H (out-of-order the natural limit); tight
+δ ⇒ raise r (§16.5). The multipath dial collapses into the same (δ, ρ, r)
+triangle as the rest of §15/§16, with H a fourth axis dual to r through the
+fungibility each buys.
+
+**Ordering is a per-stream delivery POLICY, orthogonal to the coding
+triangle.** It composes with the reliability policy ρ (§15.7) into four real,
+all-useful modes (DERIVED):
+
+```
+                  reliable (ρ=1, retain)         lossy (ρ<1, evict)
+  ordered         file / TCP-in-tunnel           ordered media
+  (H = ∞)         (byte stream — must wait)      (live video, skip stale)
+  unordered       reliable messaging / objects   datagram / telemetry
+  (H = 0 hold)    (reassemble-by-offset,         (fire-and-forget,
+                   all delivered)                 newest wins)
+```
+
+The two readings of H are dual: the reorder HOLD you impose at the receiver
+(H = 0 unordered ↔ H = ∞ strict in-order) is the same quantity as the
+delivery LAG you tolerate from a path (the eligibility H of §16.2), read from
+the receiver vs the scheduler side. **Ordering and multipath eligibility are
+one horizon seen from two workloads.** And crucially **unordered is the
+SIMPLER implementation**: it REMOVES the reorder buffer (deliver each decoded
+unit the instant it decodes) rather than adding machinery — reinforcing the
+profiles-as-parameters thesis (§16.4). RWM Phase C implements exactly this
+general unordered-delivery capability on the reliable window as a delivery
+policy flag (off = today's in-order); the native object API is its first
+consumer (reassemble-by-offset), but message / datagram / RPC / telemetry
+streams are equally served.
+
+**Phase C result (MEASURED, goal-gate RWM Phase C — native `perf`, C8 =
+c2+c3, 50 MB × 8, seed 42, floor-free binary; single-path fast-alone
+15.68 Mbit/s this binary).** The prediction that the H → ∞ corner would
+**strictly beat fast-path-alone** is **REFUTED**:
+
+```
+  C8 in-order (H bounded)   8.4 Mbit/s mean / 8.1 median   stdev 6.9  (8 runs)
+  C8 out-of-order (H→∞)    11.9 Mbit/s mean / 12.0 median   stdev 3.2  (8 runs)
+  fast-path-alone (c2)     15.7 Mbit/s
+  C7 symmetric o-o-o (ctl) 21.6 Mbit/s                      stdev 0.5  (3 runs)
+```
+
+Three things the numbers say, honestly:
+
+1. **H → ∞ does NOT reach Σ g_i, and does not beat fast-alone.** Out-of-order
+   completion goodput is 11.9 Mbit/s — 0.76× the single fast path, ≈ kernel-
+   MPTCP / whole-block-affinity parity (12.6). The §16.1(3)/§16.2 picture
+   that a bounded object at H → ∞ completes at K/Σ g_i is **not realized at
+   L1**: the slow path's *source* symbols still gate decode-on-total (at
+   bulk's systematic r the window is not fungible, so the fast path cannot
+   reconstruct them), and the straggler drag holds the aggregate below one
+   fast path. The earlier expectation (and the L0 sim's ×1.18) overstated
+   what H alone buys on a real heterogeneous link.
+2. **The equivalence holds in direction, not in constant.** Out-of-order and
+   in-order-with-retention are *supposed* to be identical (both decode-on-
+   total). Measured, out-of-order is **1.42× the in-order mean and ~2× lower
+   variance** (stdev 3.2 vs 6.9). The gap is implementation overhead, not
+   theory: the in-order reorder buffer accumulates the entire out-of-order
+   suffix behind each hole and drains it in bursts, and its recovery
+   interacts with the CC/ARQ timing more erratically; removing the buffer
+   (H = 0 hold, deliver-on-decode) removes that overhead and its tail. So
+   out-of-order is the **more robust** realization of decode-on-total, but it
+   moves the median from 8 to 12, not past 15 — it buys stability, not
+   aggregation.
+3. **The r knob did not unlock it either (at the level tried).** The
+   companion raise-r arm — in-order frontier, per-symbol repair floor
+   r ≈ 0.18 (the slow path's symbol share) — measured **7.9 Mbit/s**, no
+   better than r ≈ 0 (8.4): forcing 18% repair added straggler load without
+   making the window fungible enough to recover the slow-path source
+   positions from fast-path repairs. Raising r on a genuinely congested
+   lossy path spends bandwidth the straggler cannot afford (the same reason a
+   blanket reactive-repair floor was measured to *regress* C8 14→9, goal-gate
+   Phase C). Whether a much larger r (with repairs pinned to the slow path so
+   they are fungible degrees of freedom, not straggler load) crosses
+   fast-alone is **open** — neither knob crossed it here.
+
+**Regression control (MEASURED).** C7 symmetric out-of-order = 21.6 Mbit/s
+(≈ Phase B's 21.7), stdev 0.5 — where the paths match there is no straggler,
+the order-statistic gain is zero, and out-of-order neither helps nor hurts.
+The mechanism is sound; C8 heterogeneity is where both knobs fall short.
+
+**Standing interpretation.** Out-of-order delivery is a correct, useful,
+lower-variance *general* capability (the four-mode table above — objects,
+messaging, datagram), and it is the right delivery policy for bulk objects.
+But at C8 it does **not** deliver the heterogeneous aggregation the earlier
+draft and the L0 sim advertised: the H → ∞ corner lands at MPTCP parity,
+not above the fast path. The honest §16 position is therefore weaker than
+"out-of-order is the unlock" and weaker than "either knob aggregates" — it
+is: *for a file, deliver out-of-order (it is simpler and more stable); the
+heterogeneous-aggregation-above-fast-path result is unproven on this stack by
+either H or a modest r, and is a measured open problem, not a demonstrated
+win.*
 
 ---
 

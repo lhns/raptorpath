@@ -85,6 +85,14 @@ pub struct PeerConfig {
     /// coupling refinement, L2 ws1). Default true; false = per-symbol
     /// striping (ablation).
     pub mp_block_affinity: bool,
+    /// RWM Phase C (paper §16.2, H→∞ corner): out-of-order OBJECT delivery
+    /// on the reliable window. Requires `window_reliable`; set only by the
+    /// native object API (perf/MemTun), never the TCP-in-tunnel path. The
+    /// receiver delivers each decoded source symbol the instant it decodes
+    /// (any order — the consumer reassembles by offset), and the sender's
+    /// retention backpressure is relaxed so the in-order frontier's lag on
+    /// a slow path no longer throttles the fast path. Default false.
+    pub window_out_of_order: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -319,6 +327,19 @@ const RELIABLE_STORE_MAX: usize = 1024;
 /// un-acked symbols, stop reading the TUN (the same contract as the block
 /// path's cwnd gate) instead of dropping retention. EVICT mode never
 /// backpressures on retention (Realtime's correct spend of the budget).
+///
+/// NOTE (RWM Phase C, MEASURED). Relaxing this cap in out-of-order object
+/// mode — the hypothesis that the store's cumulative-ack backpressure was
+/// coupling the fast path to the slow path's frontier — was tried and
+/// REFUTED: with backpressure off the sender drains the whole object into
+/// the encoder, the O(200) coding window slides to the newest source and
+/// away from the un-received holes, so proactive repairs stop covering them
+/// and every hole falls to rate-limited targeted retransmit — C8 collapsed
+/// to 2.5 Mbit/s (worse than the 11.4 in-order baseline). The store cap
+/// keeps the coding window near the recovery frontier; it is kept. The
+/// object-completion equivalence (§16.2) is why out-of-order delivery is a
+/// no-op here anyway: in-order-with-retention already completes at
+/// decode-on-total. See goal-gate "RWM Phase C".
 fn store_backpressure(reliable: bool, store_len: usize) -> bool {
     reliable && store_len >= RELIABLE_STORE_MAX
 }
@@ -948,6 +969,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let recv_symbol_size = profile.symbol_size;
     let recv_window_mode = window_mode;
     let recv_window_reliable = window_reliable;
+    // RWM Phase C (paper §16.2, H→∞): out-of-order object delivery is only
+    // meaningful on the reliable window (it needs retention to guarantee
+    // every hole is eventually recovered). The run() tunnel path never sets
+    // window_out_of_order — only the native object API does.
+    let recv_window_ooo = window_reliable && config.window_out_of_order;
     let recv_window_ack = window_ack_seq.clone();
     let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> = if window_mode {
         Some(nack_tx)
@@ -975,13 +1001,31 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // Reliable policy (RWM Phase A): holes are held until recovered,
         // never force-delivered past (the buffer is mandatory — in-order
         // delivery IS the reliability contract at the receiver).
-        let mut reorder_buf = if recv_window_mode && recv_window_reliable {
+        //
+        // ORDERING is a per-stream delivery POLICY, independent of the codec
+        // triangle (paper §16.2). Two limits of the reorder horizon H:
+        //   - in-order (H = ∞): hold at holes → the reorder buffer.
+        //   - unordered (H = 0): emit each decoded unit the instant it
+        //     decodes → NO reorder buffer at all (RWM Phase C). Correct and
+        //     lowest-latency for any consumer that does not need byte-stream
+        //     order (objects reassembled by offset, datagrams, RPC/telemetry)
+        //     — the object/perf path is just one such consumer.
+        // Unordered is the SIMPLER implementation: the buffer is removed, not
+        // added to. The in-order RECEIVED prefix (for retention/ack) is
+        // tracked by a lightweight frontier over `received_seqs` instead.
+        let mut reorder_buf = if recv_window_ooo {
+            None
+        } else if recv_window_mode && recv_window_reliable {
             Some(ReorderBuffer::new_reliable())
         } else if recv_window_mode && config.reorder_timeout_ms > 0 {
             Some(ReorderBuffer::new(config.reorder_timeout_ms, config.reorder_max_size))
         } else {
             None
         };
+        // RWM Phase C unordered delivery: next in-order seq NOT yet received
+        // (the frontier). Walks `received_seqs` to drive the cumulative
+        // WindowAck (retention pruning) while delivery itself is unordered.
+        let mut ooo_frontier: u64 = 0;
         // Reliable mode: when delivery is stalled on a hole, periodically
         // re-advertise the gap (SACK-bearing WindowAck) — acks are
         // best-effort datagrams, and a lost gap report must not leave
@@ -1165,6 +1209,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             let reorder_deadline: Option<tokio::time::Instant> = {
                 let pending = if block_inorder_enabled {
                     block_reorder.lock().pending_count() > 0
+                } else if recv_window_ooo {
+                    // Unordered delivery holds nothing, but a hole in the
+                    // received prefix still needs the tail-recovery timer to
+                    // re-advertise the gap (SACK WindowAck) so the sender
+                    // retransmits it — the same reliability backstop the
+                    // in-order buffer's pending_count provided.
+                    highest_seen_seq > highest_delivered_seq
                 } else {
                     reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
                 };
@@ -1276,12 +1327,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         let expired = reorder.drain_expired(Instant::now());
                         for (dseq, ddata) in expired {
                             debug!(seq = dseq, "window hold expired — force-delivering");
-                            let packets: Vec<Vec<u8>> = if window_packed {
-                                framing::extract_packets(&ddata)
-                            } else {
-                                framing::extract_window_packet(&ddata).into_iter().collect()
-                            };
-                            for pkt_data in packets {
+                            for pkt_data in extract_window_packets(&ddata, window_packed) {
                                 let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                             }
                             if dseq > highest_delivered_seq {
@@ -1356,7 +1402,62 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                     highest_seen_seq = seq;
                                 }
 
-                                // Route through reorder buffer if available
+                                // RWM Phase C (paper §16.2, H→∞ corner):
+                                // out-of-order OBJECT delivery. Hand each
+                                // decoded symbol to the consumer the instant
+                                // it decodes — in ANY order. The native object
+                                // API reassembles by offset and completes on
+                                // total-decoded, so no in-order frontier gates
+                                // delivery. Reliability is unchanged: the
+                                // reorder buffer still tracks the in-order
+                                // RECEIVED prefix (holes held as seq-only
+                                // placeholders) that drives the cumulative
+                                // WindowAck, so the sender keeps retaining +
+                                // retransmitting every hole until acked.
+                                // Equivalence (§16.2): identical in completion
+                                // time to an in-order buffer deep enough to
+                                // hold to completion — the frontier only costs
+                                // an INCREMENTAL, low-latency consumer (inner
+                                // TCP), never a file.
+                                if recv_window_ooo {
+                                    for pkt_data in extract_window_packets(&sym_data, window_packed) {
+                                        // Deliver immediately (any order). Full
+                                        // channel drops rather than blocks: the
+                                        // object/native consumer drains far
+                                        // faster than the wire, so the bounded
+                                        // (8192) channel only fills under a
+                                        // pathological burst; blocking here
+                                        // instead would wedge the loopback's
+                                        // client-feeds-and-drains feedback loop
+                                        // (MEASURED deadlock). A rare drop is
+                                        // recovered by the sender's retransmit
+                                        // (the reliability floor keeps recovery
+                                        // from ever being fully suppressed).
+                                        if deliver_packet(&recv_tun_tx, Bytes::from(pkt_data), false)
+                                            .await
+                                            .is_err()
+                                        {
+                                            error!("TUN inject channel closed");
+                                            return;
+                                        }
+                                    }
+                                    // Advance the in-order RECEIVED prefix for
+                                    // the cumulative WindowAck (retention
+                                    // pruning) — no reorder buffer: the
+                                    // frontier walks `received_seqs` (seq was
+                                    // inserted just above). Delivery already
+                                    // happened, out of order; this only tells
+                                    // the sender what it may prune, so holes
+                                    // stay retained + retransmitted.
+                                    while received_seqs.contains(&ooo_frontier) {
+                                        ooo_frontier += 1;
+                                    }
+                                    highest_delivered_seq = ooo_frontier.saturating_sub(1);
+                                    continue;
+                                }
+
+                                // ----- in-order delivery (default: TCP-in-
+                                // tunnel and Realtime need the frontier) -----
                                 let deliverable = if let Some(ref mut reorder) = reorder_buf {
                                     reorder.push(seq, sym_data)
                                 } else {
@@ -1364,16 +1465,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 };
 
                                 for (dseq, ddata) in deliverable {
-                                    // Extract packets: packed mode uses block-mode framing,
-                                    // unpacked mode uses single-packet window framing.
-                                    let packets: Vec<Vec<u8>> = if window_packed {
-                                        framing::extract_packets(&ddata)
-                                    } else {
-                                        framing::extract_window_packet(&ddata)
-                                            .into_iter()
-                                            .collect()
-                                    };
-                                    for pkt_data in packets {
+                                    for pkt_data in extract_window_packets(&ddata, window_packed) {
                                         match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
                                             Ok(()) => {}
                                             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -1417,14 +1509,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             }
                             let expired = reorder.drain_expired(Instant::now());
                             for (dseq, ddata) in expired {
-                                let packets: Vec<Vec<u8>> = if window_packed {
-                                    framing::extract_packets(&ddata)
-                                } else {
-                                    framing::extract_window_packet(&ddata)
-                                        .into_iter()
-                                        .collect()
-                                };
-                                for pkt_data in packets {
+                                for pkt_data in extract_window_packets(&ddata, window_packed) {
                                     let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                                 }
                                 if dseq > highest_delivered_seq {
@@ -2184,6 +2269,49 @@ pub fn received_sack_ranges(
     sack_ranges
 }
 
+/// Deliver a decoded packet to the TUN inject channel under the stream's
+/// delivery policy.
+///
+/// - **Reliable** streams must NOT silently drop: the delivery frontier/ack
+///   advances over DECODED seqs, so a dropped packet would advance the ack
+///   past a symbol the consumer never received — a permanent hole. A full
+///   channel therefore BACKPRESSURES the receiver (await). The consumer
+///   (object app / kernel-TUN writer) always drains, so this cannot wedge.
+/// - **Lossy** streams (EVICT / δ < ∞, and lossy-unordered datagram) must
+///   NEVER block — a stale packet is worthless and blocking would stall the
+///   whole stream on one slow consumer, so a full channel DROPS.
+///
+/// Returns `Err(())` only when the channel is permanently closed.
+async fn deliver_packet(
+    tx: &mpsc::Sender<Bytes>,
+    pkt: Bytes,
+    reliable: bool,
+) -> Result<(), ()> {
+    if reliable {
+        tx.send(pkt).await.map_err(|_| ())
+    } else {
+        match tx.try_send(pkt) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                warn!("TUN inject channel full, dropping packet (lossy stream)");
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(()),
+        }
+    }
+}
+
+/// Extract application packets from a delivered window symbol's payload.
+/// Packed mode carries block-mode framing (multiple packets per symbol);
+/// unpacked mode carries a single window-framed packet.
+fn extract_window_packets(data: &Bytes, packed: bool) -> Vec<Vec<u8>> {
+    if packed {
+        framing::extract_packets(data)
+    } else {
+        framing::extract_window_packet(data).into_iter().collect()
+    }
+}
+
 /// Select the best source path for a window-mode symbol: lowest RTT with capacity.
 /// Falls back to path 0 if no active paths.
 fn select_source_path(scheduler: &Scheduler) -> u32 {
@@ -2241,6 +2369,20 @@ async fn run_window_sender(
     let mut encoder: Box<dyn WindowEncoder> =
         create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler);
     let mut prev_ack: u64 = 0;
+    // RWM Phase C (paper §16.5, the BANDWIDTH knob r): experimental
+    // per-symbol repair-rate FLOOR. The Bulk χ glide drives r*→0 mid-stream
+    // (§14.26), leaving the window systematic (not rateless-fungible), so a
+    // heterogeneous slow path's source symbols are fixed positions the fast
+    // path cannot decode around (the measured Phase B C8 wall). Raising r
+    // makes the pooled window fungible so completion → K/Σg. Env-gated
+    // (RWM_MIN_R, repairs per source symbol, e.g. 0.18 ≈ the slow path's
+    // symbol share at C8); 0 = production default (unchanged glide). Test
+    // instrument for the raise-r arm, not a shipped control law.
+    let repair_rate_floor: f64 = std::env::var("RWM_MIN_R")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0)
+        .clamp(0.0, 2.0);
     // Fractional repair accumulator: tracks sub-symbol repair debt.
     // Driven by TaperFunction density when GE data is available,
     // falls back to flat rate from compute_repair_rate_capped.
@@ -2425,6 +2567,11 @@ async fn run_window_sender(
                         None => 0.0,
                     }
                 };
+                // RWM Phase C raise-r arm (§16.5): floor the per-symbol
+                // repair rate to make the window rateless-fungible. Applied
+                // AFTER the spare cap on purpose — the experiment forces the
+                // bandwidth spend to test aggregation, on links with headroom.
+                let repair_rate = repair_rate.max(repair_rate_floor);
                 repair_debt += repair_rate;
                 taper_offset += 1;
 
@@ -2678,6 +2825,20 @@ async fn run_window_sender(
             let nack_multiplier = nack_congestion.update(current_loss, current_rtt);
             cached_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
+            // NOTE (RWM Phase C): a `cached_max_repairs.max(1)` reliability
+            // floor here (so the ADR-0046 congestion multiplier can never
+            // fully suppress recovery of a confirmed hole) was tried and
+            // REJECTED. It targets a rare stall — on the near-zero-RTT
+            // loopback a datagram-loss burst can collapse the multiplier to 0
+            // and wedge a reliable transfer until the QUIC idle timeout — but
+            // that stall is a Windows-loopback timing artifact (Linux/VM
+            // loopback passes 6/6 and the netem C8 transfers never hit it),
+            // and forcing a retransmit every round on a genuinely congested
+            // lossy path MEASURABLY regressed C8 goodput (14.0 → 9.3 Mbit/s):
+            // the forced repairs add load to the straggler. Congestion safety
+            // must win here. The real fix for the rare stall is a smarter,
+            // cheaper backstop (e.g. an idle-triggered single sweep), left as
+            // RWM hardening — not a blanket per-round floor.
 
             // ADR-0050: compute NACK budget from BudgetAllocator
             cached_nack_budget = {
@@ -4012,6 +4173,58 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 mod tests {
     use super::*;
 
+    /// Lossy stream (EVICT / datagram): a full inject channel must DROP and
+    /// return immediately — delivery must never block a lossy stream on a
+    /// slow consumer (the user requirement: "if loss is allowed it doesn't
+    /// actually block").
+    #[tokio::test]
+    async fn deliver_packet_lossy_drops_never_blocks() {
+        let (tx, mut rx) = mpsc::channel::<Bytes>(1);
+        tx.try_send(Bytes::from_static(b"a")).unwrap(); // fill to capacity
+        let r = tokio::time::timeout(
+            Duration::from_millis(250),
+            deliver_packet(&tx, Bytes::from_static(b"b"), false),
+        )
+        .await;
+        assert!(r.is_ok(), "lossy delivery must not block on a full channel");
+        assert_eq!(r.unwrap(), Ok(()));
+        // "b" was dropped: only the original "a" is queued.
+        assert_eq!(rx.try_recv().unwrap(), Bytes::from_static(b"a"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Reliable stream: a full inject channel must BACKPRESSURE (await), not
+    /// drop — otherwise the frontier/ack advances past an undelivered symbol
+    /// and leaves a permanent hole (the flaky-loopback bug this fixes).
+    #[tokio::test]
+    async fn deliver_packet_reliable_backpressures_then_delivers() {
+        let (tx, mut rx) = mpsc::channel::<Bytes>(1);
+        tx.send(Bytes::from_static(b"a")).await.unwrap(); // fill to capacity
+        // Must block while full...
+        let blocked = tokio::time::timeout(
+            Duration::from_millis(150),
+            deliver_packet(&tx, Bytes::from_static(b"b"), true),
+        )
+        .await;
+        assert!(blocked.is_err(), "reliable delivery must block on a full channel");
+        // ...and lose nothing once the consumer drains a slot.
+        assert_eq!(rx.recv().await.unwrap(), Bytes::from_static(b"a"));
+        deliver_packet(&tx, Bytes::from_static(b"b"), true)
+            .await
+            .unwrap();
+        assert_eq!(rx.recv().await.unwrap(), Bytes::from_static(b"b"));
+    }
+
+    /// A permanently closed channel errors under both policies (the caller
+    /// tears the receiver down).
+    #[tokio::test]
+    async fn deliver_packet_closed_channel_errors() {
+        let (tx, rx) = mpsc::channel::<Bytes>(1);
+        drop(rx);
+        assert!(deliver_packet(&tx, Bytes::from_static(b"x"), true).await.is_err());
+        assert!(deliver_packet(&tx, Bytes::from_static(b"x"), false).await.is_err());
+    }
+
     #[test]
     fn test_parse_cidr() {
         let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
@@ -4145,7 +4358,9 @@ mod tests {
     #[test]
     fn test_store_backpressure_engages_at_store_full() {
         // Reliable: TUN reads stop exactly when the store fills — flow
-        // control, not eviction.
+        // control, not eviction. (Out-of-order object mode keeps this cap:
+        // relaxing it was MEASURED harmful — the coding window slid off the
+        // recovery frontier; see the store_backpressure NOTE.)
         assert!(!store_backpressure(true, RELIABLE_STORE_MAX - 1));
         assert!(store_backpressure(true, RELIABLE_STORE_MAX));
         assert!(store_backpressure(true, RELIABLE_STORE_MAX + 1));
