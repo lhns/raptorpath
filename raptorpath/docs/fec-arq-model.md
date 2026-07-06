@@ -163,7 +163,7 @@ ACK absence.
     - [15.4 Per-Stream Triangle Multiplexing](#154-per-stream-triangle-multiplexing)
     - [15.5 Cost and Benefit (Honest)](#155-cost-and-benefit-honest)
     - [15.6 Migration Sketch](#156-migration-sketch)
-    - [15.7 Amendment: Reliability Policy Is a Third, Primary Axis (measured)](#157-amendment-reliability-policy-is-a-third-primary-axis-measured)
+    - [15.7 Amendment: Retention Is the Triangle's ρ, Not a New Axis (measured)](#157-amendment-retention-is-the-triangles-ρ-not-a-new-axis-measured)
 16. [Reliable Windowed Multipath: an Order-Statistic Formulation](#16-reliable-windowed-multipath-an-order-statistic-formulation)
     - [16.1 Three Regimes, Three Decode Predicates](#161-three-regimes-three-decode-predicates)
     - [16.2 The Sliding-Window Realization (In-Order Is Not the Bottleneck)](#162-the-sliding-window-realization-in-order-is-not-the-bottleneck)
@@ -4537,7 +4537,7 @@ tunnel carrying a tight-δ realtime flow and a loose-δ bulk flow over the same
 paths at the same time, which the global-mode design structurally cannot do.
 (A measured amendment, Section 15.7: the two knobs capture the shared coding
 *algebra* but not the delivery *semantics* — retention policy turned out to
-be a third, primary axis.)
+be primary — and Section 15.7 further resolves it INTO the triangle: it is ρ, not a new dimension.)
 
 This is a design section (no measured implementation yet); it reuses the
 existing `RlcEncoder`/`RlcDecoder` (raptorpath-math/src/rlc.rs), `TaperFunction`
@@ -4860,11 +4860,25 @@ demultiplexer; the per-stream weight and u_m urgency term in the scheduler;
 and the RaptorQ/RS wrapper that presents the o = 0 spike-schedule backend
 through the context interface (or their retirement, per Section 15.5).
 
-### 15.7 Amendment: Reliability Policy Is a Third, Primary Axis (measured)
+### 15.7 Amendment: Retention Is the Triangle's ρ, Not a New Axis (measured)
 
 This subsection amends Sections 15.2–15.3 in light of a negative experiment
 (branch `exp/windowed-rlc-all`, goal-gate 2026-07-05) that tested the
 unification's implicit premise directly.
+
+An earlier draft of this amendment called retention "a third, primary
+axis" with two values {evict | retain-until-acked}. That was a new binary
+where the model already has a continuum: **retention is the triangle's ρ,
+realized by T_cut** (Section 6.1 age-based give-up; Section 6.2 receiver
+pruning). The sent-data store's removal rule is: remove on ACK, or when
+the entry's age exceeds T_cut(ρ) — with ρ = 1 giving T_cut = ∞ (ack-only,
+the bulk contract) and ρ < 1 giving bounded retention continuously.
+"Reliable" and "lossy" are not policies to switch between; they are the
+ρ → 1 limit and the finite-T_cut interior of one dial. A corollary that
+the current window pipeline violates: give-up must be AGE-based (T_cut,
+from ρ), never SPACE-based — buffer fullness is a flow-control signal
+(backpressure), not a licence to destroy data. The measured failure below
+is exactly a space-based eviction masquerading as a reliability policy.
 
 **The experiment.** Production Bulk/Auto were switched onto the window
 pipeline — `is_window_mode` extended from Realtime-only to all hints, RLC
@@ -5169,8 +5183,9 @@ cross-path striped:
 1. **Retention — at the ARQ layer, not in the coding window.** The window
    slides freely: it is only the FEC horizon (fungible repair coverage for
    recent, not-yet-localized losses). Reliability is the contract of a
-   **sent-data store**: every sent source symbol's bytes are retained until
-   ACKed (removal by ack ONLY — never timeout, never pressure); a
+   **sent-data store**: every sent source symbol's bytes are retained
+   until ACKed or until age exceeds T_cut(ρ) (Section 6.1) — ρ = 1 gives
+   T_cut = ∞, i.e. ack-only removal; never removal by space pressure; a
    SACK-confirmed hole that has aged out of the window is recovered by a
    targeted retransmit of exactly that symbol from the store, on the best
    available path — once a loss is localized, fungibility has no value and
@@ -5391,7 +5406,8 @@ PREDICTION (the experiment below decides):
 experiment requires building, in order:
 
 1. **ARQ-layer retention** — a sent-data store in the window pipeline:
-   sent source bytes retained until acked (ack-only removal), targeted
+   sent source bytes retained until acked or T_cut(ρ)-aged (ρ = 1 ⇒
+   ack-only; Section 6.1 — one dial, no reliable/lossy mode), targeted
    retransmit from the store for aged SACK-confirmed holes on the best
    path, store-full ⇒ source backpressure; receiver never force-delivers
    past a hole on a reliable stream. The coding window keeps sliding
