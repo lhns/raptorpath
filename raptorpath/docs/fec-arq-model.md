@@ -5085,7 +5085,10 @@ is known and bounded (Section 16.6).
 **The realistic carrier of the order-statistic gain is a sliding window**
 spanning multiple former blocks. Repairs are combinations over the current
 window (the Section 15.2 algebra, unchanged); source and repair symbols are
-striped across paths ∝ g_i; and the receiver maintains an **in-order
+distributed across paths by work-conserving pull (Section 16.6,
+prerequisite 2 — each path drains the shared window at its own CC-gated
+rate, so allocation converges to per-path goodput without an explicit
+splitter); and the receiver maintains an **in-order
 delivery frontier** that advances whenever the window *prefix* decodes from
 ANY sufficient subset of received symbols. A gap at the frontier does not
 wait for a specific path's retransmit: it is filled by whichever path's
@@ -5166,10 +5169,22 @@ cross-path striped:
    data. The Section 14.27 batch-ACK ledger machinery (retained source,
    ACK-diff loss detection, fresh-repair minting, sweep timer) is the
    natural donor: it already implements retain-until-acked for blocks.
-2. **Striping.** Source AND repair symbols are scheduled across paths
-   ∝ g_i — the same proportional-goodput rule `Scheduler::schedule` already
-   applies to block-mode *repairs* (only source placement is block-atomic
-   today), extended to everything. No symbol is bound to a path.
+2. **Striping — by pull, not by split.** No proportional (and certainly
+   no equal-weight) splitter: under backlog each path *pulls* symbols
+   from the shared window up to its own CC budget (work-conserving), so
+   the allocation converges to per-path sustainable goodput
+   automatically, self-correcting on path degradation — water-filling
+   in effect, with no g_i estimator in the placement loop. Under
+   partial load, placement follows the Section 13.8 cost order (best
+   path first, spill on saturation); a continuous refinement is
+   probabilistic dithering P(i) ∝ exp(−cost_i/T) (T→0 recovers the
+   strict order, per the no-cutoffs convention), whose purpose is burst
+   decorrelation: deterministic order maps consecutive window positions
+   to one path, so a GE burst punches a contiguous window hole;
+   dithering scatters the damage (PREDICTION — measure before
+   claiming). Repairs keep the best-goodput preference plus fate
+   diversity (avoid the path that carried the symbols they protect).
+   No symbol is bound to a path.
 3. **Frontier decode.** The receiver delivers the in-order prefix the
    moment any sufficient symbol subset decodes it; holes at the frontier
    are raced by all paths' repairs (Section 16.2).
