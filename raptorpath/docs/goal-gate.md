@@ -1315,3 +1315,106 @@ last_tail_sweep_us comment in net/mod.rs).
 - Next fidelity level (L1, ADR-0051): real CUBIC/BBR/quinn/MPTCP stacks
   over netns + netem — requires Linux/WSL2; the win conditions transfer
   unchanged.
+
+## RWM Phase B — striping window sender (per-symbol placement law, paper §16.3)
+
+Phase A gave the reliable window pipeline retention (RETAIN-UNTIL-ACKED,
+ρ = 1) but left the sender SINGLE-PATH. Phase B adds the striping sender:
+every source AND repair symbol is placed across paths by ONE continuous
+marginal-cost rule (`Scheduler::place_symbol`, no load regimes, no case
+splits), wiring it into `run_window_sender` for the reliable window only
+(single-path is byte-identical — the law with N=1 is that path always).
+
+### The placement law as implemented
+
+For each active path i, softmax over a marginal cost:
+
+```
+  cost_i = Ê_i(load)/ref_srtt  +  w_bw·r_i  +  w_div·ρ_fate(s,i)
+  P(i) ∝ exp(−cost_i / T)          T = PLACE_TEMPERATURE = 0.15 (RWM_PLACE_T override)
+```
+
+- **Ê_i(load)** = `in_flight_i/(cwnd_i/SRTT_i) + SRTT_i/2 + eps_i·RTT_i` — the
+  expected frontier-completion-TIME. The queue term drains at the path's live
+  PACING RATE, so a backlog on a slow/low-capacity path costs proportionally
+  more real time. This is what water-fills by CAPACITY. Unit-weighted (not
+  `w_lat`): on a reliable IN-ORDER stream, latency-to-frontier is the
+  completion cost itself, not a per-hint preference. Normalised by the fastest
+  SRTT so it is O(1). (A dimensionless `in_flight/cwnd` fill — equal-fraction,
+  capacity-BLIND — was tried first and MEASURED catastrophic at C8: 3.4 Mbit/s,
+  §below.)
+- **r_i** — correction/loss burden, the hint's `w_bw` dial (Bulk = 1).
+- **ρ_fate(s,i)** — repairs only: the fraction of the window symbols this repair
+  covers that path i already carried (continuous form of the old hard
+  `best_repair_path_avoiding`).
+- **T** — the one dial §16.3 names; T → 0 = strict best-path (unit-tested argmin).
+
+`place_symbol` unit-tested (6 tests, all green): (a) idle → concentrates on
+cheapest; (b) monotonic continuous spillover as in_flight rises (no threshold
+jump — the congestion term is the continuous form of "skip a full path");
+(c) water-filling equilibrium (equal fill fraction ⇒ balanced placement ⇒
+throughput ∝ capacity); (d) repair fate steers off the covered path; (e) T → 0
+= argmin; plus single-path = identity. Receiver needed NO change: it already
+decodes every path into one window decoder + one seq-keyed reorder buffer, so
+in-order delivery is path-agnostic (the aggregation is structural).
+
+### GATE numbers (rp-native `perf`, --window-reliable bulk, seed 42, this binary)
+
+| arm | workload | goodput | vs fast-path-alone |
+|-----|----------|---------|--------------------|
+| Fast-path-alone (single c2) | 50 MB ×3 | **15.42 Mbit/s** | 1.00× (the §16.2 ceiling ref) |
+| Single-path (c2, no regression) | 1.8 MB ×10 | 14.57, **10/10** | Phase-A parity |
+| **GATE 1** C7 sym (c2+c2) dual | 50 MB ×3 | **21.73 Mbit/s** | **1.41×** |
+| **GATE 2** C8 het (c2+c3) dual | 50 MB ×3 | **12.55 Mbit/s** (T=0.15 best) | **0.81× — FAILS** |
+
+C8 T-sweep (50 MB ×2): T=0.05 → 10.6, 0.15 → 12.5, 0.30 → 11.3, 0.60 → 7.6
+Mbit/s. No temperature beats fast-path-alone.
+
+**GATE 1 (no-regression): PARTIAL PASS.** RWM aggregates 1.41× on symmetric
+paths (21.73 vs 15.42 single) — the striping MECHANISM is sound. It sits ~9%
+under block-affinity's 23.9 (a different pipeline: block-ARQ carries no
+fountain overhead φ; the window/RLC pipeline's single-path is itself 15.4, so
+this is parity-minus-φ, not a striping regression). Below the strict 2×/23.9
+bar but no catastrophe.
+
+**GATE 2 (the point): FAIL, mechanism identified.** RWM at C8 = 12.5 Mbit/s,
+BELOW the 15.42 fast-path-alone ceiling, ≈ the block-affinity/kernel-MPTCP
+in-order parity (12.6). Aggregation factor 0.81× vs L0's predicted ×1.18.
+
+### Mechanism: why C8 fails (the assumption that broke)
+
+The order-statistic aggregation of §16.3 predicate (3) requires the coding
+window to be RATELESS across paths — the frontier advances on ANY sufficient
+K_h(1+φ) symbols regardless of which path carried which. In this
+implementation source symbols are striped in SEQUENCE order and the bulk
+repair rate is loss-driven (~2%), far too low to make the window fungible. So
+a source symbol placed on the slow path is a specific in-order position the
+frontier must WAIT for — the fast path cannot decode around it (not enough
+coded degrees of freedom). Striping thus recreates the exact per-path-affine
+head-of-line penalty §16.2 bounds at ≤ Σ_{E={fast}} g = 14.0, which is why the
+number lands on the in-order parity, not above it.
+
+Two measured signatures confirm this is HOL, not a scheduling bug:
+1. **Symmetric works (GATE 1: 1.41×).** With equal paths there is no
+   fork-join asymmetry, so striping aggregates — the law is correct.
+2. **Capacity-blindness is catastrophic, capacity-awareness merely parity.**
+   The first cut used a dimensionless `in_flight/cwnd` load term (equal
+   window-fraction): it over-loaded the 5×-smaller slow path and collapsed the
+   frontier to **3.4 Mbit/s** (116 s/50 MB). Switching Ê_i(load) to
+   frontier-completion-TIME (pacing-rate-aware) recovered it to 12.5 — i.e. the
+   best the placement law can do is stop the slow path from HURTING; it cannot
+   make the slow path HELP an in-order frontier without fungible coding.
+
+**The next lever (not placement).** Beating 14.0 at C8 needs the rateless
+frontier itself: multipath repair provisioning raised so the fast path carries
+enough coded symbols to decode each window independently (paper §16.5 W-sizing
+/ the K_h(1+φ) overhead), with the slow path contributing fungible degrees of
+freedom rather than in-order source positions. That is a codec/rate-control
+change beyond Phase B's placement-law scope. Phase B's honest result: the
+striping law is implemented, unit-tested, aggregates on symmetric paths, and
+is safe on heterogeneous paths (no collapse) — but the decisive C8 aggregation
+the paper predicts is gated on rateless-window provisioning, which Phase B does
+not add.
+
+Reproduce: `tools/l1/perf_rwm.sh <scenA> <scenB> <hint> <bytes> <runs>
+<dual|single> [T]` (topo_dual up/down per arm, one measurement at a time).

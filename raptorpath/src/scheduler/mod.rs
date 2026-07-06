@@ -180,6 +180,38 @@ fn queue_target_mult(hint: ProtocolHint) -> f64 {
 }
 
 /// Scheduling weights derived from protocol hint.
+/// RWM placement (paper §16.3) softmax temperature.
+///
+/// The placement cost is measured in units of the FASTEST path's SRTT (the
+/// load term is `E_i(load)/ref_srtt`, ≈ 0.5 for the idle fast path). `T` is
+/// therefore the softness of the water-filling transition in units of a fast
+/// one-way delay: two paths whose costs differ by `T` place at odds e:1 ≈
+/// 2.7:1. `T → 0` is the paper's strict best-path (argmin) limit; larger `T`
+/// dithers and pulls more traffic onto a slower path (more aggregation, more
+/// head-of-line risk on a reliable in-order stream). This is the one dial
+/// §16.3 names as a documented constant; L1 measurement tunes it.
+pub(crate) const PLACE_TEMPERATURE: f64 = 0.15;
+
+/// The effective placement temperature: `PLACE_TEMPERATURE`, overridable once
+/// per process via the `RWM_PLACE_T` env var (the §16.3 dial exposed for L1
+/// tuning without a rebuild). Read once and cached.
+fn place_temperature() -> f64 {
+    use std::sync::OnceLock;
+    static T: OnceLock<f64> = OnceLock::new();
+    *T.get_or_init(|| {
+        std::env::var("RWM_PLACE_T")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .filter(|t| *t > 0.0 && t.is_finite())
+            .unwrap_or(PLACE_TEMPERATURE)
+    })
+}
+
+/// Floor (seconds) for the SRTT reference that de-dimensionalises the
+/// propagation-preference term — a div-by-zero guard for the pre-first-sample
+/// window, NOT a tuning knob (any positive value cancels once real RTTs land).
+pub(crate) const PLACE_REF_FLOOR_SECS: f64 = 0.001;
+
 /// Controls the latency vs bandwidth trade-off in the interpolated objective.
 /// See paper Section 13.8.
 #[derive(Debug, Clone, Copy)]
@@ -188,14 +220,23 @@ pub struct SchedulingWeights {
     pub w_lat: f64,
     /// Weight for bandwidth overhead cost: SUM(x_i × r_i)
     pub w_bw: f64,
+    /// Weight for the fate-diversity penalty ρ_fate (RWM per-symbol placement,
+    /// paper Section 16.3). Applies to REPAIR symbols only: it is the
+    /// continuous form of the old hard `best_repair_path_avoiding` rule — a
+    /// repair placed on a path that already carried the window symbols it
+    /// covers gains no diversity, so its marginal cost rises. Zero for source.
+    pub w_div: f64,
 }
 
 impl SchedulingWeights {
     pub fn from_hint(hint: ProtocolHint) -> Self {
+        // w_div is hint-independent: fate diversity for a repair is worth the
+        // same across workloads (a repair correlated with its coverage is
+        // wasted regardless of the (δ, ρ, r) triangle). See place_symbol.
         match hint {
-            ProtocolHint::Realtime => Self { w_lat: 1.0, w_bw: 0.0 },
-            ProtocolHint::Bulk => Self { w_lat: 0.0, w_bw: 1.0 },
-            ProtocolHint::Auto => Self { w_lat: 0.5, w_bw: 0.5 },
+            ProtocolHint::Realtime => Self { w_lat: 1.0, w_bw: 0.0, w_div: 1.0 },
+            ProtocolHint::Bulk => Self { w_lat: 0.0, w_bw: 1.0, w_div: 1.0 },
+            ProtocolHint::Auto => Self { w_lat: 0.5, w_bw: 0.5, w_div: 1.0 },
         }
     }
 }
@@ -795,6 +836,33 @@ impl PathState {
         // t_recovery ≈ RTT (one round-trip for ARQ recovery)
         let t_recovery = rtt_secs;
         rtt_secs / 2.0 + eps * t_recovery
+    }
+
+    /// Load-DEPENDENT expected frontier-completion-time `E_i(load)` (seconds) —
+    /// the always-on load term of the RWM placement law (paper Section 16.3).
+    /// The time a symbol handed to this path now takes to reach the receiver:
+    ///
+    ///   E_i(load) = in_flight_i / (cwnd_i/SRTT_i)   ← drain the current backlog
+    ///             + SRTT_i / 2                        ← one-way propagation
+    ///             + eps_i · RTT_i                     ← expected loss recovery
+    ///
+    /// The queue term uses the path's live PACING RATE (`cwnd/SRTT`), so a
+    /// backlog on a low-capacity / high-RTT path costs proportionally MORE real
+    /// time than the same backlog on the fast path — this is what makes the law
+    /// water-fill by CAPACITY (arrival rate matches drain rate at equilibrium),
+    /// not by equal window-fraction (which over-loads the slow path and, on a
+    /// reliable in-order stream, collapses the frontier — MEASURED at C8:
+    /// dimensionless fill gave 3.4 Mbit/s vs 15.4 fast-path-alone). It rises
+    /// CONTINUOUSLY with `in_flight` (past cwnd under overdraft), so spillover
+    /// is a smooth equilibrium, not a regime switch. Because it is the delivery
+    /// latency of a reliable in-order stream (the completion cost itself), it
+    /// carries UNIT weight independent of the protocol hint.
+    pub fn expected_delivery_load(&self) -> f64 {
+        let srtt = self.srtt().as_secs_f64();
+        let eps = self.estimator.loss_rate();
+        let cwnd = self.cwnd.max(1) as f64;
+        let queue_wait = (self.in_flight as f64 / cwnd) * srtt;
+        queue_wait + srtt / 2.0 + eps * srtt
     }
 
     /// Source-carrying capacity: B_eff = throughput / (1 + r).
@@ -1543,6 +1611,182 @@ impl Scheduler {
             })
             .map(|p| p.id);
         alt.or_else(|| self.best_repair_path())
+    }
+
+    /// RWM per-symbol placement law (paper Section 16.3) — the ONE continuous
+    /// marginal-cost rule that stripes source AND repair symbols across paths
+    /// with no load regimes and no case splits. Replaces the single-path
+    /// `best_source_path` / `best_repair_path` pair for the reliable window
+    /// pipeline.
+    ///
+    /// For each active path `i`:
+    ///
+    ///   cost_i = Ê_i(load) / ref_srtt            ← frontier-completion-time
+    ///          + w_bw · r_i                       ← correction/bandwidth burden
+    ///          + w_div · ρ_fate(s, i)             ← repair diversity
+    ///   P(i) ∝ exp(−cost_i / T)
+    ///
+    /// The paper (§16.3) writes `w_lat·E_i(load) + w_bw·r_i + w_div·ρ_fate`. Two
+    /// implementation choices make it work for a reliable in-order stream:
+    ///
+    /// (1) `E_i(load)` is the expected frontier-completion-TIME
+    ///     (`expected_delivery_load`): queue drain at the path's PACING RATE
+    ///     `cwnd/SRTT`, plus propagation, plus loss recovery. Being in time, it
+    ///     is capacity-aware — a backlog on the slow path costs more real time —
+    ///     so the law water-fills by CAPACITY. A dimensionless `in_flight/cwnd`
+    ///     fill instead fills both paths to equal FRACTION, over-loading the
+    ///     low-capacity path; on an in-order stream that collapses the frontier
+    ///     (MEASURED C8: 3.4 Mbit/s vs 15.4 fast-path-alone).
+    ///
+    /// (2) `E_i(load)` carries UNIT weight, not `w_lat`. The paper's `w_lat ≈ 0`
+    ///     for Bulk is a lossy-throughput heuristic; on a RELIABLE in-order
+    ///     stream latency-to-frontier is the completion cost itself, so it is
+    ///     always weighted. `w_bw` still adds the wire-waste (loss) penalty that
+    ///     is the Bulk-vs-Realtime dial. This also satisfies §16.3's requirement
+    ///     that the queue signal drive water-filling ("token availability IS the
+    ///     marginal-cost signal") — the queue term is never gated away.
+    ///
+    /// Terms:
+    ///   - `Ê_i(load)/ref_srtt`: de-dimensionalised by the fastest path's SRTT,
+    ///     O(1) and comparable across heterogeneous RTTs; rises continuously
+    ///     with `in_flight`, equalised across paths at the water-filling point.
+    ///   - `r_i`: correction rate / loss burden (clamped for dead paths).
+    ///   - `ρ_fate(s,i)`: REPAIR symbols only — the fraction of the symbols this
+    ///     repair covers that path `i` already carried (a repair riding its own
+    ///     coverage adds no diversity). `covered_paths` holds one entry per
+    ///     covered source symbol (with multiplicity); the continuous form of
+    ///     `best_repair_path_avoiding`. Zero for source symbols.
+    ///
+    /// Temperature `T = PLACE_TEMPERATURE` is the one dial from strict best-path
+    /// (T → 0 ⇒ argmin) to dithering. Single path ⇒ that path always (byte-
+    /// identical to the pre-RWM single-path sender).
+    ///
+    /// Returns the sampled `PathId`, or `None` if no path is up at all.
+    pub fn place_symbol(&self, is_repair: bool, covered_paths: &[PathId]) -> Option<PathId> {
+        let probs = self.place_probs(is_repair, covered_paths);
+        if probs.is_empty() {
+            return None;
+        }
+        let u: f64 = rand::random();
+        let mut acc = 0.0;
+        for (pid, p) in &probs {
+            acc += p;
+            if u <= acc {
+                return Some(*pid);
+            }
+        }
+        // Floating-point slack: fall through to the last candidate.
+        probs.last().map(|(pid, _)| *pid)
+    }
+
+    /// The softmax placement distribution over paths (paper §16.3). Exposed for
+    /// unit-testing the placement law (concentration, continuous spillover,
+    /// water-filling, fate steering, T → 0 argmin) without sampling noise.
+    /// Returns `(PathId, probability)` summing to 1 over the candidate set.
+    pub fn place_probs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
+        self.place_probs_with_temperature(is_repair, covered_paths, place_temperature())
+    }
+
+    /// `place_probs` with an explicit temperature — the T dial exposed for
+    /// tests (T → 0 ⇒ argmin, the no-cutoffs strict-best-path limit).
+    pub fn place_probs_with_temperature(
+        &self,
+        is_repair: bool,
+        covered_paths: &[PathId],
+        temperature: f64,
+    ) -> Vec<(PathId, f64)> {
+        let costs = self.place_costs(is_repair, covered_paths);
+        if costs.is_empty() {
+            return vec![];
+        }
+        // The costs from `place_costs` are already dimensionless (the latency
+        // term is normalised by the fastest SRTT), so the temperature is a pure
+        // dimensionless dial. Shift by the min cost for numerical stability
+        // (softmax is shift-invariant).
+        let t_eff = temperature.max(f64::MIN_POSITIVE);
+        let min_cost = costs
+            .iter()
+            .map(|(_, c)| *c)
+            .fold(f64::INFINITY, f64::min);
+        let mut weights: Vec<(PathId, f64)> = costs
+            .iter()
+            .map(|(pid, c)| (*pid, (-(c - min_cost) / t_eff).exp()))
+            .collect();
+        let z: f64 = weights.iter().map(|(_, w)| w).sum();
+        if z <= 0.0 || !z.is_finite() {
+            // Degenerate (T → 0 with ties, or overflow): argmin gets all mass.
+            let arg = costs
+                .iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(pid, _)| *pid);
+            return costs
+                .iter()
+                .map(|(pid, _)| (*pid, if Some(*pid) == arg { 1.0 } else { 0.0 }))
+                .collect();
+        }
+        for (_, w) in &mut weights {
+            *w /= z;
+        }
+        weights
+    }
+
+    /// Per-path marginal placement cost (paper §16.3), over ALL active paths.
+    ///
+    /// We deliberately do NOT hard-filter on spare capacity. The paper phrases
+    /// a full path as "skipped (∞ cost)", but its own no-cutoffs convention
+    /// binds mechanisms ("no control law may case-split"), and a hard filter
+    /// would make a path vanish discontinuously at `in_flight == cwnd` — the
+    /// exact threshold jump the monotonic-spillover requirement forbids. The
+    /// `in_flight/cwnd` congestion term IS the continuous form: it climbs past
+    /// 1.0 under overdraft, driving a saturated path's softmax mass toward zero
+    /// smoothly without ever removing it, so placement never drops a symbol
+    /// (the send loop's pacing/backpressure remains the real capacity gate).
+    fn place_costs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
+        let ref_srtt = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .map(|p| p.srtt().as_secs_f64().max(PLACE_REF_FLOOR_SECS))
+            .fold(f64::INFINITY, f64::min);
+        let ref_srtt = if ref_srtt.is_finite() {
+            ref_srtt
+        } else {
+            PLACE_REF_FLOOR_SECS
+        };
+
+        let w_bw = self.weights.w_bw;
+        let w_div = self.weights.w_div;
+
+        let covered_total = covered_paths.len() as f64;
+
+        let cost_of = |p: &PathState| -> f64 {
+            // Frontier-completion-time — the always-on load term (unit weight),
+            // de-dimensionalised by the fastest SRTT so it is O(1). This single
+            // term carries BOTH the congestion signal (queue drain at the pacing
+            // rate) and the propagation preference; because it is expressed in
+            // TIME it is capacity-aware, so it water-fills by capacity rather
+            // than over-loading the slow path.
+            let load = p.expected_delivery_load() / ref_srtt;
+            // Bandwidth/correction burden (loss/wire waste); the hint's w_bw
+            // dial. w_lat does NOT gate placement: on a reliable in-order stream
+            // latency-to-frontier is the completion cost itself, already carried
+            // by `load` at unit weight, not a per-hint preference.
+            let r = p.correction_rate();
+            let r = if r.is_infinite() { 10.0 } else { r };
+            // Fate diversity (repairs only): fraction of covered symbols on p.
+            let fate = if is_repair && covered_total > 0.0 {
+                covered_paths.iter().filter(|&&c| c == p.id).count() as f64 / covered_total
+            } else {
+                0.0
+            };
+            load + w_bw * r + w_div * fate
+        };
+
+        self.paths
+            .values()
+            .filter(|p| p.active)
+            .map(|p| (p.id, cost_of(p)))
+            .collect()
     }
 
     /// Pick a secondary path for redundant source scheduling (different from primary).
@@ -2478,5 +2722,164 @@ mod tests {
             sched.path(0).unwrap().cwnd < before,
             "genuine LAN queue must still back off"
         );
+    }
+
+    // ===================================================================
+    // RWM Phase B — per-symbol placement law (paper §16.3). The cost is
+    //   in_flight/cwnd + w_lat·(E_prop/ref_srtt) + w_bw·r + w_div·fate,
+    // sampled as P(i) ∝ exp(−cost/T).
+    // ===================================================================
+
+    /// Look up a path's probability in a place_probs distribution.
+    fn prob_of(dist: &[(PathId, f64)], id: PathId) -> f64 {
+        dist.iter().find(|(p, _)| *p == id).map(|(_, w)| *w).unwrap_or(0.0)
+    }
+
+    fn set_rtt(sched: &mut Scheduler, id: PathId, ms: u64) {
+        // The estimator RTT is an EWMA (α = 0.125) seeded at 50 ms; feed enough
+        // samples to converge so tests exercise the intended RTT, not a warm-up
+        // blend of it and the seed.
+        let p = sched.path_mut(id).unwrap();
+        for _ in 0..60 {
+            p.estimator.record_rtt(std::time::Duration::from_millis(ms));
+        }
+    }
+
+    /// (a) Idle 2-path → placement concentrates on the cheapest (lowest-RTT)
+    /// path. Softmax "concentrate" = the vast majority of the mass.
+    #[test]
+    fn place_idle_concentrates_on_cheapest() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 50); // path 1 is 5× slower
+        // both idle (in_flight = 0)
+        let dist = sched.place_probs(false, &[]);
+        let p0 = prob_of(&dist, 0);
+        let p1 = prob_of(&dist, 1);
+        assert!(p0 > 0.95, "cheapest path must take the mass, got p0={p0}");
+        assert!(p0 > p1);
+    }
+
+    /// (b) As the chosen path's in_flight rises, placement shifts CONTINUOUSLY
+    /// to the other path — no threshold jump. Assert strict monotonic shift.
+    #[test]
+    fn place_shifts_monotonically_with_load() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 10); // symmetric: isolate the load term
+        let cwnd = sched.path(0).unwrap().cwnd; // 10
+
+        let mut prev_p0 = f64::INFINITY;
+        // Sweep in_flight from empty to 2× cwnd (into overdraft) — the path is
+        // never removed from the distribution (no capacity filter), so the
+        // shift is continuous THROUGH saturation, not a jump at cwnd.
+        for infl in 0..=(2 * cwnd) {
+            sched.path_mut(0).unwrap().in_flight = infl;
+            let dist = sched.place_probs(false, &[]);
+            let p0 = prob_of(&dist, 0);
+            let p1 = prob_of(&dist, 1);
+            assert!(
+                p0 < prev_p0,
+                "p0 must strictly decrease as path-0 load rises: infl={infl} p0={p0} prev={prev_p0}"
+            );
+            // p1 is its complement (two paths) → strictly increasing.
+            assert!((p0 + p1 - 1.0).abs() < 1e-9);
+            prev_p0 = p0;
+        }
+        // Ended favouring the unloaded path.
+        assert!(prev_p0 < 0.1, "heavily loaded path should be largely abandoned");
+    }
+
+    /// (c) Water-filling equilibrium: the fixed point of marginal-cost
+    /// equalisation is `in_flight/cwnd` equal across paths, i.e. in_flight ∝
+    /// cwnd ∝ capacity. At that stock ratio placement is BALANCED (both paths
+    /// used equally) — the signature that the law fills proportional to
+    /// capacity rather than concentrating.
+    #[test]
+    fn place_backlog_waterfills_proportional_to_capacity() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 10);
+        // Path 0 has 2× the capacity of path 1.
+        sched.path_mut(0).unwrap().cwnd = 20;
+        sched.path_mut(1).unwrap().cwnd = 10;
+        // Equilibrium stock: in_flight ∝ cwnd ⇒ equal fill fraction 0.4.
+        sched.path_mut(0).unwrap().in_flight = 8;
+        sched.path_mut(1).unwrap().in_flight = 4;
+        let dist = sched.place_probs(false, &[]);
+        let p0 = prob_of(&dist, 0);
+        let p1 = prob_of(&dist, 1);
+        assert!(p0 > 0.1 && p1 > 0.1, "both paths used at equilibrium: p0={p0} p1={p1}");
+        assert!((p0 - p1).abs() < 0.05, "balanced at the capacity-proportional fixed point");
+
+        // And off-equilibrium (equal stock, unequal capacity) the law pushes
+        // MORE toward the higher-capacity (lower-fill) path.
+        sched.path_mut(0).unwrap().in_flight = 6;
+        sched.path_mut(1).unwrap().in_flight = 6;
+        let dist2 = sched.place_probs(false, &[]);
+        assert!(prob_of(&dist2, 0) > prob_of(&dist2, 1));
+    }
+
+    /// (d) Repair fate steers a repair OFF the path that carried the window
+    /// symbols it covers; source placement ignores fate.
+    #[test]
+    fn place_repair_fate_steers_off_covered_path() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 10); // identical paths — only fate differs
+
+        // Source ignores fate → balanced even when all coverage is on path 0.
+        let src = sched.place_probs(false, &[0, 0, 0, 0]);
+        assert!((prob_of(&src, 0) - prob_of(&src, 1)).abs() < 0.05);
+
+        // Repair whose coverage is entirely on path 0 → steered to path 1.
+        let rep = sched.place_probs(true, &[0, 0, 0, 0]);
+        assert!(
+            prob_of(&rep, 1) > 0.95,
+            "repair must avoid its own coverage: p1={}",
+            prob_of(&rep, 1)
+        );
+
+        // Split coverage → fate equal → balanced again.
+        let rep_split = sched.place_probs(true, &[0, 0, 1, 1]);
+        assert!((prob_of(&rep_split, 0) - prob_of(&rep_split, 1)).abs() < 0.05);
+    }
+
+    /// (e) T → 0 collapses the softmax to argmin (strict best-path, the
+    /// no-cutoffs limit).
+    #[test]
+    fn place_temperature_zero_is_argmin() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10); // cheaper
+        set_rtt(&mut sched, 1, 50);
+        let dist = sched.place_probs_with_temperature(false, &[], 1e-9);
+        assert!(prob_of(&dist, 0) > 0.999, "T→0 → argmin all mass on path 0");
+        assert!(prob_of(&dist, 1) < 1e-3);
+    }
+
+    /// Single path ⇒ that path always (byte-identical to the pre-RWM
+    /// single-path sender — the law with N=1 is a no-op).
+    #[test]
+    fn place_single_path_is_identity() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        set_rtt(&mut sched, 0, 20);
+        let dist = sched.place_probs(false, &[]);
+        assert_eq!(dist.len(), 1);
+        assert_eq!(dist[0].0, 0);
+        assert!((dist[0].1 - 1.0).abs() < 1e-12);
+        // Even heavily overdrafted, the lone path is still chosen.
+        sched.path_mut(0).unwrap().in_flight = 10_000;
+        assert_eq!(sched.place_symbol(false, &[]), Some(0));
     }
 }
