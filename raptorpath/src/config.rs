@@ -88,6 +88,17 @@ pub struct RaptorpathConfig {
     /// frontier). Not a codec/rate change — just the delivery latency
     /// budget H raised to ∞ for a bounded object.
     pub window_out_of_order: Option<bool>,
+    /// Fungible frontier (paper §16.3 "empty quadrant", coded-object mode):
+    /// on the reliable sliding window, emit ONLY coded (random-linear-
+    /// combination) symbols over the window — no raw systematic source. Any
+    /// K linearly independent coded symbols from ANY path reconstruct the K
+    /// window sources (GF(256), MDS-tight), so no symbol is a fixed in-order
+    /// position a slow path can long-pole (the §16.7 systematic-window cap).
+    /// Bulk-object / loose-δ ONLY: pays a window-fill decode latency before
+    /// any delivery, so it implies out-of-order delivery and requires
+    /// `window_reliable`. Realtime / in-order streams stay systematic.
+    /// Default false.
+    pub window_coded_only: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -168,6 +179,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         inner_feedback_weight: overlay.inner_feedback_weight.or(base.inner_feedback_weight),
         mp_block_affinity: overlay.mp_block_affinity.or(base.mp_block_affinity),
         window_out_of_order: overlay.window_out_of_order.or(base.window_out_of_order),
+        window_coded_only: overlay.window_coded_only.or(base.window_coded_only),
     }
 }
 
@@ -297,6 +309,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         // set only by the perf/native-object path (which is bounded and
         // reassembles by offset). The run() tunnel path keeps in-order.
         window_out_of_order: config.window_out_of_order.unwrap_or(false),
+        // Fungible frontier (§16.3 coded-object mode). Default false — set
+        // only by the native object / perf path (bulk, loose-δ). Coded-only
+        // implies out-of-order delivery (it pays window-fill decode latency).
+        window_coded_only: config.window_coded_only.unwrap_or(false),
     };
 
     Ok((peer_config, status_addr))
@@ -371,6 +387,7 @@ mod tests {
             inner_feedback_weight: Some(0.0),
             mp_block_affinity: Some(true),
             window_out_of_order: Some(false),
+            window_coded_only: Some(false),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

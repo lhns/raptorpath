@@ -93,6 +93,14 @@ pub struct PeerConfig {
     /// retention backpressure is relaxed so the in-order frontier's lag on
     /// a slow path no longer throttles the fast path. Default false.
     pub window_out_of_order: bool,
+    /// Fungible frontier (paper §16.3 "empty quadrant"): coded-object mode.
+    /// On the reliable window, the sender emits ONLY coded (random-linear-
+    /// combination) symbols over the window — no raw systematic source — so
+    /// any K independent coded symbols from ANY path reconstruct the K
+    /// sources and no symbol is a fixed in-order position a slow path can
+    /// long-pole. Implies out-of-order delivery; requires `window_reliable`.
+    /// Bulk-object / loose-δ ONLY. Default false.
+    pub window_coded_only: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -461,6 +469,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // The retention policy is per-stream/per-config, NOT global: Realtime
     // keeps its lossy EVICT window unless explicitly opted in.
     let window_reliable = window_mode && config.window_reliable;
+    // Fungible frontier (§16.3 coded-object): coded-only presupposes the
+    // reliable window (retention is the ARQ backstop for aged holes). It is a
+    // bulk-object mode that pays a window-fill decode latency, so it always
+    // implies out-of-order object delivery.
+    let window_coded_only = window_reliable && config.window_coded_only;
     if config.window_reliable && !window_mode {
         warn!(
             backend = ?effective_fec_backend,
@@ -698,6 +711,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_interleave_timeout = profile.flush_timeout * 2;
     let sender_window_mode = window_mode;
     let sender_window_reliable = window_reliable;
+    let sender_window_coded_only = window_coded_only;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let sender_protocol_hint = config.protocol_hint;
@@ -719,6 +733,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
                 sender_window_reliable,
+                sender_window_coded_only,
             )
             .await;
             return;
@@ -1009,8 +1024,25 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // RWM Phase C (paper §16.2, H→∞): out-of-order object delivery is only
     // meaningful on the reliable window (it needs retention to guarantee
     // every hole is eventually recovered). The run() tunnel path never sets
-    // window_out_of_order — only the native object API does.
-    let recv_window_ooo = window_reliable && config.window_out_of_order;
+    // window_out_of_order — only the native object API does. Coded-only
+    // (fungible frontier, §16.3) ALSO forces out-of-order delivery: with no
+    // systematic source on the wire the decoder emits each source seq only
+    // when it is recovered by GE, in arbitrary order, so the receiver must
+    // deliver-on-decode (there is no systematic in-order arrival to hold to).
+    let recv_window_ooo =
+        window_reliable && (config.window_out_of_order || window_coded_only);
+    // Fungible frontier (§16.5): the decoder must retain the wider W_mp coding
+    // window so a coded symbol can still combine over its full span; mirror
+    // the sender's win_cap (default 640, RWM_WINDOW override) or keep 200.
+    let recv_win_cap: u64 = if window_coded_only {
+        std::env::var("RWM_WINDOW")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(640)
+            .clamp(MAX_WINDOW_SIZE, 4096) as u64
+    } else {
+        MAX_WINDOW_SIZE as u64
+    };
     let recv_window_ack = window_ack_seq.clone();
     let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> = if window_mode {
         Some(nack_tx)
@@ -1633,7 +1665,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             // is decode-inert: repairs only reference the
                             // sender's current window, which sits at or
                             // above its ack (= our delivered point).
-                            let prune_before = highest_delivered_seq.saturating_sub(MAX_WINDOW_SIZE as u64 * 2);
+                            let prune_before = highest_delivered_seq.saturating_sub(recv_win_cap * 2);
                             received_seqs = received_seqs.split_off(&prune_before);
                             if let Some(ref mut wd) = window_decoder {
                                 wd.advance(prune_before);
@@ -2401,6 +2433,14 @@ async fn run_window_sender(
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
     // policy block above RELIABLE_STORE_MAX).
     reliable: bool,
+    // Fungible frontier (§16.3 "empty quadrant"): emit ONLY coded (random-
+    // linear-combination) symbols over the window in place of raw systematic
+    // source. The source bytes are still fed to the encoder window and the
+    // retention store (so ARQ can retransmit the exact symbol for an aged,
+    // localized hole), but nothing systematic goes on the wire during normal
+    // flow — every transmitted payload symbol is a fungible combination, so
+    // no specific symbol is a fixed in-order position a slow path long-poles.
+    coded_only: bool,
 ) {
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
     let mut encoder: Box<dyn WindowEncoder> =
@@ -2420,6 +2460,45 @@ async fn run_window_sender(
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0)
         .clamp(0.0, 2.0);
+    // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
+    // at the frontier is raced by coded symbols that combine over the CURRENT
+    // window; sustained Σg aggregation needs the window to span the cross-path
+    // recovery horizon, W_mp ≳ Σg·(RTT_max+t_slack) ≈ 600 symbols at C8 — 3×
+    // the systematic pipeline's MAX_WINDOW_SIZE=200, which §16.5 states would
+    // "starve RWM at C8 by construction". Coded-only therefore widens the
+    // coding window to W_mp (default 640, RWM_WINDOW override for the sweep);
+    // the oracle (oracle_c8_fungible_wmp_window) confirms W≥384 reaches the
+    // ×1.19 ceiling while W=200 does not. Systematic modes keep 200.
+    let win_cap: usize = if coded_only {
+        std::env::var("RWM_WINDOW")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(640)
+            .clamp(MAX_WINDOW_SIZE, 4096)
+    } else {
+        MAX_WINDOW_SIZE
+    };
+    // Fungible-frontier retention bound = the coding window itself. This is
+    // the §16.5 W_mp bound doing double duty: the backpressure cap must keep
+    // the SEND frontier within ONE window of the cumulative ack, so every
+    // not-yet-decoded seq stays INSIDE the current coding window and is raced
+    // by ongoing coded symbols (fungible in-window refill) rather than aging
+    // out and forcing a congestion-throttled targeted ARQ. At the systematic
+    // RELIABLE_STORE_MAX=1024 > W the frontier runs ~1024 ahead while the
+    // window covers only the last 640, so a lost DOF at the ack ages out to
+    // slow ARQ (MEASURED ~4.7 Mbit/s, 80% idle); lifting the cap entirely
+    // decouples them and DNFs. Sizing the store to W_mp is what makes the
+    // window rateless-fungible in practice. W_mp also comfortably exceeds the
+    // BDP (~190 sym at C8), so both paths stay saturated. RWM_STORE overrides.
+    let store_max: usize = if coded_only {
+        std::env::var("RWM_STORE")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(win_cap)
+            .clamp(win_cap, 1 << 20)
+    } else {
+        RELIABLE_STORE_MAX
+    };
     // Fractional repair accumulator: tracks sub-symbol repair debt.
     // Driven by TaperFunction density when GE data is available,
     // falls back to flat rate from compute_repair_rate_capped.
@@ -2517,9 +2596,23 @@ async fn run_window_sender(
             // would load a congested path) from "idle except for a hole"
             // (targeted recovery is free).
             last_source_send_us = now_us();
+            // Fungible frontier (§16.3): in coded-only mode the wire carries a
+            // fresh random linear combination over the CURRENT window (which
+            // now includes this just-added source) instead of the raw
+            // systematic symbol. Any K independent such combinations, from any
+            // path, reconstruct the K window sources — so a coded symbol lost
+            // on the slow path is one interchangeable degree of freedom, not a
+            // fixed in-order position (removing the §16.7 long-pole cap). The
+            // systematic bytes remain in the encoder window + retention store
+            // for the targeted-ARQ backstop on aged holes.
+            let on_wire = if coded_only {
+                encoder.generate_repair()
+            } else {
+                wire_sym.clone()
+            };
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
             let batch = SymbolBatch {
-                symbols: vec![wire_sym.clone()],
+                symbols: vec![on_wire],
                 send_timestamp_us: now_us(),
                 batch_seq,
                 path_id: source_path,
@@ -2721,7 +2814,7 @@ async fn run_window_sender(
         // growing TUN queue and slows down (flow control), and this loop
         // keeps servicing acks/NACKs/tail sweeps so the store drains.
         // Retention is never released by pressure, only by acks.
-        let tx_paused = store_backpressure(reliable, sent_store.len());
+        let tx_paused = reliable && sent_store.len() >= store_max;
         if tx_paused != last_tx_paused {
             debug!(
                 tx_paused,
@@ -3145,8 +3238,8 @@ async fn run_window_sender(
             // the sender's hard ceiling; fall back to MAX_WINDOW_SIZE/2 when the
             // estimator has no throughput/RTT sample yet (cold start).
             let keep_behind = derived_window
-                .map(|w| w.clamp(16, MAX_WINDOW_SIZE))
-                .unwrap_or(MAX_WINDOW_SIZE / 2) as u64;
+                .map(|w| w.clamp(16, win_cap))
+                .unwrap_or(win_cap / 2) as u64;
             encoder.advance(ack.saturating_sub(keep_behind));
 
             // Reset budget period counters on significant window advancement
@@ -3183,9 +3276,9 @@ async fn run_window_sender(
         // policies (it is only the FEC horizon). Under RETAIN this eviction
         // destroys no data: the sent-data store still holds the bytes, and
         // an aged hole is recovered by a targeted retransmit from it.
-        if encoder.window_size() > MAX_WINDOW_SIZE {
+        if encoder.window_size() > win_cap {
             let (oldest, _) = encoder.window_span();
-            encoder.advance(oldest + (encoder.window_size() - MAX_WINDOW_SIZE) as u64);
+            encoder.advance(oldest + (encoder.window_size() - win_cap) as u64);
             // Clean up source_path_map for evicted sequences (EVICT only:
             // reliable mode keeps attribution while the store holds them).
             if !reliable {

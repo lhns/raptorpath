@@ -1588,3 +1588,91 @@ gate_suite 15/15 release.
 Reproduce: `tools/l1/perf_rwm_c.sh <scenA> <scenB> <hint> <bytes> <runs>
 <dual|single>` with `RWM_OOO=1` (out-of-order) and/or `RWM_MIN_R=<r>`
 (raise-r), one measurement at a time.
+
+## Fungible Frontier — coded-object mode (§16.3 empty quadrant, branch `feat/fungible-frontier`, 2026-07-07)
+
+The culmination of the RWM arc: build the FUNGIBLE cross-path frontier the
+verification oracle proved is required for heterogeneous aggregation (~×1.19),
+and measure it at L1. RWM Phase B/C established that a SYSTEMATIC striped
+window caps at fork-join parity (a slow-path source symbol is a fixed in-order
+position — §16.7). The fix (§16.3): emit CODED-ONLY symbols (random linear
+combinations over the window); any K independent coded symbols from ANY path
+reconstruct the K sources, so no symbol is a long-pole.
+
+### PART 2 — ORACLE-CONFIRMED reachable (before building)
+`multipath_oracle.rs::oracle_c8_fungible_wmp_window` (new), exact C8 params:
+a coded fungible window at the §16.5 W_mp bound reaches the aggregation
+ceiling. **W≥384 → ×1.186–1.190 at r≥0.05** (ceiling ×1.195); W=600–1024 →
+×1.15–1.18 even at r=0. The earlier ×0.99 at H=256 was simply W < W_mp. So
+×1.19 is reachable by a FINITE-window coded design, not only H→∞. (Full
+oracle reconciliation unchanged: fungibility is the dominant lever.)
+
+### PART 3 — implementation (built, correct)
+`window_coded_only` flag (config + PeerConfig + `--window-coded-only`; requires
+`window_reliable`, implies out-of-order). In `run_window_sender`, coded-only
+sends `encoder.generate_repair()` (a fresh RLC combination over the current
+window) on the wire IN PLACE of the raw systematic source; the source bytes
+still populate the encoder window + retention store for the targeted-ARQ
+backstop. Window widened to W_mp (default 640, `RWM_WINDOW`); backpressure
+store sized to the window (`RWM_STORE`). Receiver reuses the Phase-C
+out-of-order decode-and-deliver path (the decoder emits each seq as GE
+recovers it). Loopback test `perf_loopback_coded_object` passes: 1 MB across
+many windows, ZERO systematic passthrough, all bytes, decode-on-K.
+
+### PART 4 — DECISIVE L1 MEASUREMENT (rp-native `perf`, seed 42, this binary)
+
+| arm | workload | goodput | vs fast-alone |
+|-----|----------|--------:|--------------------|
+| systematic fast-path-alone (single c2) | 50 MB ×3 | **15.24 Mbit/s** | 1.00× (the bar) |
+| **coded-only C8 het (c2+c3) dual** | 50 MB ×6 | **3.93 mean / ~4.5 med** (stdev_s 58) | **0.26× — FAILS** |
+| coded-only C7 sym (c2+c2) dual | 50 MB ×3 | 5.46 | 0.36× (symmetric collapse) |
+| coded-only SINGLE c2 | 50 MB ×2 | 12.88 | 0.85× (codec cost only) |
+| systematic C7 ooo dual (regression) | 50 MB ×2 | 21.74 | ≈ Phase B/C 21.6 ✓ no regression |
+| systematic C8 ooo dual (regression) | 50 MB ×2 | 10.34 | ≈ Phase C 11.9 within C8 variance |
+
+W/r/store sweep at C8 (all ≪ bar): W=200 r=0 → **2.0** (ARQ-starved, §16.5
+predicted); W=640 r=0 → ~2; W=640 r=0.10 → **4.5**; r=0.20/0.30 → no better,
+extremes DNF; store lifted (no backpressure) → **DNF**; W=2048 → **2.4 + DNF**
+(decode O(W) cost). CPU during a run: ~1 core, ~80 % idle — **stalling, not
+compute-bound**.
+
+### DECISIVE VERDICT: FAIL the strict bar (>15.68), with a sharp mechanism
+
+- **C8 coded-only = 3.93 Mbit/s = 0.26× fast-alone.** Does NOT beat 15.68/15.24;
+  does not reach the oracle's ×1.19 (~18.5). **FAIL.**
+- **The failure is cross-path coding itself, NOT heterogeneity.** Coded-only
+  *single-path* = 12.9 (works; the ~18 % gap under systematic is the
+  O(W)-per-symbol codec cost of 100 %-coded vs ~2 %). But DUAL is WORSE than
+  single on BOTH symmetric (5.5) and heterogeneous (3.9) paths — adding any
+  second path *drags*, the opposite of the oracle's monotone aggregation. The
+  independent-GE oracle's ×1.19 is **not realized** on the real
+  sliding-window + per-path-timing + CC + ARQ stack.
+- **Mechanism (DERIVED).** A coded symbol combines over the sender's window
+  *at send time*; a symbol striped to a path lands one path-delay later, by
+  which point the window/frontier has advanced (on the fast path by
+  ~Σg·RTT ≫ W_mp), so a second path's symbols cover already-decoded /
+  misaligned windows — little useful pooled rank, plus cross-path reordering
+  and congestion-throttled ARQ on every transient undecoded seq. §16.5's W_mp
+  sizing is NECESSARY (lifted 2 → 4.5) but not sufficient.
+- **No regression.** `window_coded_only` is default-off; the win_cap/store
+  changes only apply when it is set. Systematic C7 21.74 (= Phase B/C 21.6),
+  systematic C8 10.34 (≈ Phase C within variance), fast-alone 15.24.
+
+### Standing position for the regime map (for the merger)
+The §16.3 empty quadrant now has a *correct implementation* and an
+*independent-GE proof of achievability* (oracle ×1.19), but the L1 transport
+does not realize it — coded-only over the current per-path-timed sliding
+window aggregates *negatively*. Heterogeneous aggregation-above-fast-path
+stays **OPEN and unrealized in production**. What oracle-×1.19 vs L1-×0.26
+together isolate: the missing piece is not fungibility-in-the-abstract (built,
+proven) but **cross-path window ALIGNMENT** — coding horizons whose per-path
+arrivals pool over the *same* live window, which send-time-windowed RLC does
+not provide. That is the named next mechanism; the multipath regime-map row
+is NOT rewritten to a win.
+
+### Verification
+`cargo test --lib` 253 green + `perf_loopback_coded_object` (Linux/loopback);
+`cargo test -p raptorpath-math` green incl. new `oracle_c8_fungible_wmp_window`;
+gate_suite 15/15 release. Reproduce: `RWM_WINDOW=640 RWM_MIN_R=0.10
+RWM_EXTRA="--window-coded-only" tools/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6
+dual` (one measurement at a time).

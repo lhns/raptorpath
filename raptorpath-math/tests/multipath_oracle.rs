@@ -414,6 +414,62 @@ fn oracle_symmetric_two_path_aggregates() {
 }
 
 // =========================================================================
+// FUNGIBLE FRONTIER (goal /goal): confirm the SPECIFIC production config —
+// a coded fungible sliding window of size W_mp (the §16.5 lower bound, ~600
+// symbols at C8) — reaches ~x1.19, BEFORE building it. The §16.7 r-sweep
+// already showed H=256 caps at ~0.99 while H>=1024 hits ~1.19; W_mp lands in
+// that gap, so we must pin the exact window that suffices.
+// =========================================================================
+#[test]
+fn oracle_c8_fungible_wmp_window() {
+    let k = 20_000usize; // scale-invariant ratio
+    let dual = [c8_fast(), c8_slow()];
+    let g_ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+
+    // §16.5 worked bound with THIS oracle's params (1500 B symbols):
+    // W_mp ≈ Σ g_i · (RTT_max + t_slack).  Σ g_i in sym/ms; RTT_max = 40 ms,
+    // t_slack ≈ RTT_fast = 10 ms.
+    let sum_g = c8_fast().goodput() + c8_slow().goodput(); // sym/ms
+    let rtt_max = c8_slow().rtt() as f64;                  // 40 ms
+    let t_slack = c8_fast().rtt() as f64;                  // 10 ms
+    let w_mp = sum_g * (rtt_max + t_slack);
+    println!("\n=== C8 FUNGIBLE W_mp WINDOW (K={k}) ===");
+    println!("goodput ceiling x{g_ceiling:.3} ; §16.5 W_mp = {:.0} sym (Σg={:.2} sym/ms × {:.0} ms)",
+        w_mp, sum_g, rtt_max + t_slack);
+    println!("  {:>6} | {:>8} {:>8} {:>8} {:>8}", "W", "r=0.00", "r=0.05", "r=0.10", "r=0.18");
+    let rs = [0.00, 0.05, 0.10, 0.18];
+    let windows = [384usize, 512, 600, 640, 768, 896, 1024];
+    let mut best_at_wmp = 0.0f64;
+    for &h in &windows {
+        let mut row = format!("  {h:>6} |");
+        for &r in &rs {
+            let (_tf, _td, fac) = factor(&dual, k, r, h, false, Place::WorkConserving);
+            row.push_str(&format!(" {:>7.3}x", fac));
+            if h == 640 && r == 0.10 { best_at_wmp = fac; }
+        }
+        println!("{row}");
+    }
+    // Find the smallest window (at modest r=0.10) that reaches within 1% of ceiling.
+    let mut min_win = None;
+    for &h in &windows {
+        let (_tf, _td, fac) = factor(&dual, k, 0.10, h, false, Place::WorkConserving);
+        if fac >= g_ceiling - 0.01 { min_win = Some((h, fac)); break; }
+    }
+    match min_win {
+        Some((w, f)) => println!("\nSMALLEST window reaching ceiling (r=0.10): W={w} -> x{f:.3}"),
+        None => println!("\nNo tested window reached ceiling at r=0.10"),
+    }
+    println!("W_mp≈{:.0} (use 640) at r=0.10 -> x{best_at_wmp:.3}", w_mp);
+
+    // VERDICT: a window at/above the §16.5 W_mp bound (~600, we test 640)
+    // reaches the aggregation ceiling — the production target IS reachable by
+    // THIS finite-window design, not only by the H→∞ whole-object horizon.
+    let (_a, _b, at_wmp) = factor(&dual, k, 0.05, 640, false, Place::WorkConserving);
+    assert!(at_wmp >= 1.15,
+        "coded fungible window at W_mp≈640 must aggregate to ~ceiling: got x{at_wmp:.3}");
+}
+
+// =========================================================================
 // PHASE 3 — RECONCILE the L0/L1 contradiction at C8
 //   L0 wasm sim predicted x1.18 (aggregates); L1 netem measured x0.76.
 //   The oracle is independent ground truth. Which does it match, and does a
