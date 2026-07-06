@@ -116,6 +116,13 @@ struct RunArgs {
     /// ablation.
     #[arg(long)]
     mp_block_affinity: Option<bool>,
+
+    /// RWM Phase A (paper §15.7/§16.3): reliable sliding-window pipeline
+    /// for Bulk/Auto — sent-data store retained until acked (targeted
+    /// retransmit for aged holes, store-full ⇒ backpressure), receiver
+    /// holds at holes until recovered. Default off (block mode).
+    #[arg(long)]
+    window_reliable: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -148,6 +155,12 @@ struct PerfArgs {
     /// Protocol hint: "realtime", "bulk", "auto"
     #[arg(long)]
     protocol_hint: Option<String>,
+
+    /// RWM Phase A A/B arm: run bulk/auto on the reliable sliding-window
+    /// pipeline (RLC). Omit for the block-mode baseline — same binary,
+    /// same chunk geometry, flag-only difference.
+    #[arg(long)]
+    window_reliable: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -196,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
         fec_backend: None,
         inner_feedback_weight: None,
         mp_block_affinity: None,
+        window_reliable: false,
     })) {
         Commands::Run(args) => cmd_run(cli.config, args).await,
         Commands::Check => cmd_check(cli.config).await,
@@ -232,6 +246,7 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
             Some(args.peer.iter().map(|a| a.to_string()).collect())
         },
         protocol_hint: args.protocol_hint,
+        window_reliable: if args.window_reliable { Some(true) } else { None },
         ..Default::default()
     };
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
@@ -308,6 +323,7 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         reorder_max_size: None,
         inner_feedback_weight: args.inner_feedback_weight,
         mp_block_affinity: args.mp_block_affinity,
+        window_reliable: if args.window_reliable { Some(true) } else { None },
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

@@ -18,6 +18,13 @@ pub struct ReorderBuffer {
     timeout: Duration,
     /// Maximum entries to buffer before force-draining
     max_buffered: usize,
+    /// RWM Phase A (paper 15.7/16.3 RETAIN-UNTIL-ACKED): when true, the
+    /// buffer NEVER delivers past a hole — no expiry force-delivery, no
+    /// capacity force-drain. Holes are recovered by NACK/repair (the sender
+    /// retains sent bytes in its ARQ store and retransmits until
+    /// delivered); memory stays bounded by that store's backpressure cap
+    /// (un-acked in flight ≤ RELIABLE_STORE_MAX), not by this buffer.
+    reliable: bool,
 }
 
 impl ReorderBuffer {
@@ -27,6 +34,19 @@ impl ReorderBuffer {
             next_deliver_seq: 0,
             timeout: Duration::from_millis(timeout_ms),
             max_buffered,
+            reliable: false,
+        }
+    }
+
+    /// Reliable-policy buffer (RWM Phase A): in-order delivery with holes
+    /// held until recovered — never force-delivered, never force-drained.
+    pub fn new_reliable() -> Self {
+        Self {
+            pending: BTreeMap::new(),
+            next_deliver_seq: 0,
+            timeout: Duration::ZERO, // unused: expiry never gives up on a hole
+            max_buffered: usize::MAX,
+            reliable: true,
         }
     }
 
@@ -48,8 +68,10 @@ impl ReorderBuffer {
         }
         self.pending.insert(seq, (data, now));
 
-        // Force-drain oldest if over capacity
-        if self.pending.len() > self.max_buffered {
+        // Force-drain oldest if over capacity (EVICT policy only — the
+        // reliable policy never delivers past a hole; its memory bound is
+        // the sender's sent-data store cap, enforced by backpressure there).
+        if !self.reliable && self.pending.len() > self.max_buffered {
             return self.force_drain_oldest();
         }
 
@@ -75,6 +97,13 @@ impl ReorderBuffer {
     /// later entry expired would sit for a full extra timeout.)
     pub fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes)> {
         let mut result = Vec::new();
+
+        // Reliable policy: a hole is never given up on — recovery (NACK /
+        // repair / sender tail sweep) fills it, and delivery resumes via
+        // the contiguous drain in push. Nothing ever "expires".
+        if self.reliable {
+            return result;
+        }
 
         // The largest expired sequence determines how far we give up.
         let max_expired = self
@@ -133,8 +162,12 @@ impl ReorderBuffer {
     }
 
     /// When the oldest pending entry expires (drives the drain timer).
-    /// None if nothing is pending.
+    /// None if nothing is pending — or under the reliable policy, where
+    /// nothing ever expires (the recovery timer is armed separately).
     pub fn oldest_deadline(&self) -> Option<Instant> {
+        if self.reliable {
+            return None;
+        }
         self.pending
             .values()
             .map(|&(_, buffered_at)| buffered_at + self.timeout)
@@ -144,5 +177,63 @@ impl ReorderBuffer {
     /// The next sequence number expected for in-order delivery.
     pub fn next_deliver_seq(&self) -> u64 {
         self.next_deliver_seq
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn b(x: u8) -> Bytes {
+        Bytes::from(vec![x])
+    }
+
+    /// RWM Phase A: the reliable receiver holds delivery at a hole until the
+    /// hole is recovered — expiry never force-delivers past it.
+    #[test]
+    fn reliable_holds_past_hole_until_recovered() {
+        let mut rb = ReorderBuffer::new_reliable();
+        assert_eq!(rb.push(0, b(0)).len(), 1); // in order → delivered
+        // seq 1 lost: 2..=5 arrive and must be held
+        for seq in 2..=5u64 {
+            assert!(rb.push(seq, b(seq as u8)).is_empty(), "seq {seq} must be held behind the hole");
+        }
+        // No amount of elapsed time gives up on the hole
+        let far_future = Instant::now() + Duration::from_secs(3600);
+        assert!(rb.drain_expired(far_future).is_empty());
+        assert!(rb.oldest_deadline().is_none(), "reliable buffer never arms an expiry");
+        assert_eq!(rb.next_deliver_seq(), 1);
+        // The hole is recovered → everything drains in order
+        let out = rb.push(1, b(1));
+        let seqs: Vec<u64> = out.iter().map(|(s, _)| *s).collect();
+        assert_eq!(seqs, vec![1, 2, 3, 4, 5]);
+        assert_eq!(rb.next_deliver_seq(), 6);
+    }
+
+    /// RWM Phase A: the reliable receiver never force-drains on capacity —
+    /// buffering is bounded by the sender's ack-gated window, not evicted here.
+    #[test]
+    fn reliable_never_force_drains_at_capacity() {
+        let mut rb = ReorderBuffer::new_reliable();
+        // hole at seq 0; buffer far more than the lossy default cap (500)
+        for seq in 1..=800u64 {
+            assert!(rb.push(seq, b(0)).is_empty());
+        }
+        assert_eq!(rb.pending_count(), 800);
+        assert_eq!(rb.next_deliver_seq(), 0, "no eviction may skip the hole");
+        let out = rb.push(0, b(0));
+        assert_eq!(out.len(), 801, "recovering the hole releases the whole prefix");
+    }
+
+    /// Contrast: the EVICT-policy buffer force-delivers past holes on expiry
+    /// (correct for Realtime's δ — a stale packet is worthless).
+    #[test]
+    fn evict_policy_force_delivers_on_expiry() {
+        let mut rb = ReorderBuffer::new(10, 500);
+        let now = Instant::now();
+        assert!(rb.push_with_time(1, b(1), now).is_empty()); // hole at 0
+        let out = rb.drain_expired(now + Duration::from_millis(20));
+        assert_eq!(out.len(), 1, "lossy policy gives up on the hole");
+        assert_eq!(rb.next_deliver_seq(), 2);
     }
 }

@@ -48,3 +48,46 @@ async fn perf_loopback_small_object() {
 
     srv.abort();
 }
+
+/// RWM Phase A: the same loopback exchange over the RELIABLE sliding-window
+/// pipeline (`window_reliable`, bulk hint → windowed RLC). Guards the
+/// retention path end to end: the sent-data store fills and drains on real
+/// peer WindowAcks (removal by ack only), the receiver's reliable reorder
+/// buffer delivers in order, and completion still happens — i.e. the policy
+/// plumbing itself never wedges a clean link.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn perf_loopback_reliable_window() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let srv_cfg = config::RaptorpathConfig {
+        server: Some(true),
+        bind: Some(vec!["127.0.0.1:47833".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        ..Default::default()
+    };
+    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    assert!(srv_pc.window_reliable);
+    let srv = tokio::spawn(perf::server(srv_pc));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let cli_cfg = config::RaptorpathConfig {
+        bind: Some(vec!["127.0.0.1:0".into()]),
+        peer: Some(vec!["127.0.0.1:47833".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        ..Default::default()
+    };
+    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        perf::client(cli_pc, 200_000, 2),
+    )
+    .await
+    .expect("reliable-window perf loopback timed out")
+    .expect("reliable-window perf client failed");
+
+    srv.abort();
+}
