@@ -163,13 +163,14 @@ ACK absence.
     - [15.4 Per-Stream Triangle Multiplexing](#154-per-stream-triangle-multiplexing)
     - [15.5 Cost and Benefit (Honest)](#155-cost-and-benefit-honest)
     - [15.6 Migration Sketch](#156-migration-sketch)
-16. [Fountain Multipath Aggregation (Out-of-Order is the Unlock)](#16-fountain-multipath-aggregation-out-of-order-is-the-unlock)
-    - [16.1 The Fountain Aggregation Model](#161-the-fountain-aggregation-model)
-    - [16.2 The Head-of-Line Aggregation Theorem](#162-the-head-of-line-aggregation-theorem)
-    - [16.3 Cross-Path Repair Coding](#163-cross-path-repair-coding)
-    - [16.4 Where It Does Not Win, and What It Costs](#164-where-it-does-not-win-and-what-it-costs)
-    - [16.5 The Aggregate Completion Formula (summary)](#165-the-aggregate-completion-formula-summary)
-    - [16.6 Implementation and Measurement Plan](#166-implementation-and-measurement-plan)
+    - [15.7 Amendment: Reliability Policy Is a Third, Primary Axis (measured)](#157-amendment-reliability-policy-is-a-third-primary-axis-measured)
+16. [Reliable Windowed Multipath: an Order-Statistic Formulation](#16-reliable-windowed-multipath-an-order-statistic-formulation)
+    - [16.1 Three Regimes, Three Decode Predicates](#161-three-regimes-three-decode-predicates)
+    - [16.2 The Sliding-Window Realization (In-Order Is Not the Bottleneck)](#162-the-sliding-window-realization-in-order-is-not-the-bottleneck)
+    - [16.3 The Missing Quadrant: Reliable Windowed Multipath](#163-the-missing-quadrant-reliable-windowed-multipath)
+    - [16.4 One Pipeline, Not Mode Switching](#164-one-pipeline-not-mode-switching)
+    - [16.5 Choosing W for Multipath: a Fourth Bound](#165-choosing-w-for-multipath-a-fourth-bound)
+    - [16.6 Predictions, Prerequisites, and the Experiment](#166-predictions-prerequisites-and-the-experiment)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -4534,6 +4535,9 @@ uses for the end-of-stream burst (Section 14.29) and the χ glide (Section
 14.26). Making them one code makes *per-stream* triangles possible: one
 tunnel carrying a tight-δ realtime flow and a loose-δ bulk flow over the same
 paths at the same time, which the global-mode design structurally cannot do.
+(A measured amendment, Section 15.7: the two knobs capture the shared coding
+*algebra* but not the delivery *semantics* — retention policy turned out to
+be a third, primary axis.)
 
 This is a design section (no measured implementation yet); it reuses the
 existing `RlcEncoder`/`RlcDecoder` (raptorpath-math/src/rlc.rs), `TaperFunction`
@@ -4594,7 +4598,20 @@ knobs parameterise the whole design:
         spike:       dμ(t) = (r·W) · δ_Dirac(t − W)           → block batch
 ```
 
-**One decoder subsumes both.** `RlcDecoder` runs incremental Gaussian
+**A third axis this section originally missed: retention policy.** As first
+written, this section claimed the two knobs above were sufficient — that block
+and window mode "are one sliding-window RLC at two settings of two continuous
+knobs." A subsequent experiment (the windowed-RLC-all-profiles run, Section
+15.7) refuted the sufficiency: the two production modes also differ in
+*reliability policy* — whether un-acked source symbols may be **evicted**
+(window mode force-advances past MAX_WINDOW_SIZE and force-delivers past
+unrecoverable holes) or must be **retained until acked/decoded** (block mode's
+Section 14.27 ledger). That policy is a delivery-semantics contract, not a
+schedule, and switching it changes outcomes categorically (10/10 completions
+→ 0/10 DNF, Section 15.7). The knob algebra of (a) and (b) stands; it is just
+not the whole state. Section 15.7 amends this section accordingly.
+
+**One decoder subsumes both — algebraically.** `RlcDecoder` runs incremental Gaussian
 elimination over equations keyed by sequence number: a source symbol is an
 identity equation, a repair is the window combination above. It recovers a
 hole the instant the pivot table spans it — the number of linearly
@@ -4609,8 +4626,12 @@ This single procedure *is* both decoders of Section 15.1:
   incrementally as repairs arrive, each covering the whole live window
   (Section 3.2 window-fungibility).
 
-There is no second code and no second decoder. Block and stream differ only
-in (a) and (b).
+There is no second code and no second decoder — *as decoders*. But "one
+decoder subsumes both" is a statement about the shared linear algebra, not
+about the delivery semantics wrapped around it: the same decoder embedded in
+an evicting pipeline and in a retaining pipeline produces categorically
+different transports (Section 15.7). Block and stream differ in (a), (b),
+**and** in retention policy.
 
 ### 15.3 Block Mode as a Limiting Case
 
@@ -4839,428 +4860,508 @@ demultiplexer; the per-stream weight and u_m urgency term in the scheduler;
 and the RaptorQ/RS wrapper that presents the o = 0 spike-schedule backend
 through the context interface (or their retirement, per Section 15.5).
 
+### 15.7 Amendment: Reliability Policy Is a Third, Primary Axis (measured)
+
+This subsection amends Sections 15.2–15.3 in light of a negative experiment
+(branch `exp/windowed-rlc-all`, goal-gate 2026-07-05) that tested the
+unification's implicit premise directly.
+
+**The experiment.** Production Bulk/Auto were switched onto the window
+pipeline — `is_window_mode` extended from Realtime-only to all hints, RLC
+selected — exactly the "one sliding-window code for everything" this section
+argues for. Result at C2 (100 Mbit, 10 ms RTT, GE 1.3%/50%, seed 42, rp-native
+`perf`, 1.8 MB × 10, same binary A/B):
+
+```
+  block-mode Bulk (RaptorQ + §14.27 batch-ACK ARQ):  10/10 complete,
+                                                     mean 0.895 s (16.1 Mbit/s)
+  window-pipeline Bulk (RLC, the realtime pipeline): 0/10 — ALL DNF
+                                                     (600 s wall)
+```
+
+**Root cause — a policy, not the code.** The window pipeline is
+*loss-tolerant by design*: the sender never blocks on window fullness — past
+`MAX_WINDOW_SIZE = 200` it force-advances, **evicting un-acked source
+symbols** that can then never be regenerated or retransmitted — and the
+receiver **force-delivers past unrecoverable holes** on reorder-buffer expiry.
+Both behaviours are *correct* for Realtime's triangle (a drop-tolerant δ: a
+stale packet is worthless, so eviction is the right spend of the budget) and
+*fatal* for bulk's every-byte contract: at C2's loss rate a 1.8 MB object is
+~1520 symbols with ~20 loss events, and any loss not repaired within the ~200
+symbols the window spans (≈ one RTT at line rate) is permanently gone → DNF.
+
+**The amendment.** Sections 15.2–15.3 present block and window as *two
+settings of two knobs* (advance/overlap, repair schedule) over one decoder.
+That is true of the coding algebra and remains the basis for the migration
+sketch — but the experiment shows the two production modes ALSO differ in a
+third property the knobs do not capture:
+
+```
+  retention policy ∈ { EVICT              (advance unconditionally; losses
+                                           past the horizon become holes;
+                                           bounded memory, bounded delay)
+                     | RETAIN-UNTIL-ACKED (advance only on ack/decode;
+                                           window fullness becomes back-
+                                           pressure on the source, never
+                                           data loss) }
+```
+
+This axis is **primary, not a tuning knob**: moving a bulk flow across it
+flipped completions from 10/10 to 0/10. It is a *delivery-semantics contract*
+— the ρ corner of the Section 1.4 triangle made structural — where (a) and
+(b) merely reshape latency and overhead within a fixed contract.
+
+**Policy is not codec.** The failure was NOT "RLC is unreliable": RLC with a
+retention policy (advance gated on ack/decode, repair/retransmit until
+delivered — exactly what the wasm visualizer sim implements at ρ = 1, and
+what the Section 6.1 retransmit buffer provides) is a fully reliable code.
+Conversely RaptorQ blocks are reliable only because the Section 14.27
+retention machinery (64-block LRU ledger, batch-ACK diff, fresh-repair
+minting) around them makes them so — strip it (the pre-P8 production state)
+and block mode abandoned failed blocks too. The reliability axis lives in the
+*pipeline policy*; the codec (RLC / RaptorQ / RS / METTLE) is orthogonal
+symbol algebra. Any unified design must therefore carry retention as an
+explicit per-stream policy parameter alongside (a) and (b) — the per-stream
+contexts of Section 15.4 are its natural home (Realtime streams run EVICT at
+their δ; bulk streams run RETAIN-UNTIL-ACKED), and the Section 15.6 migration
+phases inherit it as a third context field. Section 16.3 builds on exactly
+this axis; Section 16.4 explains why the resolution is one
+policy-parameterised pipeline rather than mode/backend switching.
+
 ---
 
-## 16. Fountain Multipath Aggregation (Out-of-Order is the Unlock)
+## 16. Reliable Windowed Multipath: an Order-Statistic Formulation
 
-Section 13 argues FEC beats MPTCP on multipath because the decoder needs
-*how many* symbols, not *which* — no head-of-line (HOL) blocking. Section
-13.8 then measured the opposite on heterogeneous paths: once decoded blocks
-are released **in block-id order** (the P9b cross-block hold that shields an
-inner TCP from tunnel-induced reordering), a slow-path block stalls the
-faster blocks queued behind it, and the aggregate collapses to a function of
-the *slowest* path — the very HOL pathology FEC was supposed to remove. At
-L1 C8 (WiFi 100 Mbit / 10 ms / ε 2.5% + LTE 20 Mbit / 40 ms / ε 4.8%) this
-capped raptorpath at 12.6 Mbit/s: kernel-MPTCP **parity**, and *below* the
-fast path alone (14.0). We built a fountain transport and then made it
-behave like ARQ at the delivery layer.
+This section replaces an earlier draft ("Fountain Multipath Aggregation —
+Out-of-Order is the Unlock") whose central claim — that *in-order delivery*
+is the structural obstacle to heterogeneous multipath aggregation, and that
+out-of-order fountain delivery is the unlock — did not survive scrutiny. Two
+things overturned it. First, a negative experiment: moving bulk onto the
+window pipeline (the paper's own unification, Section 15) regressed 10/10
+completions at 0.90 s to 0/10 DNF, because the pipeline's *eviction policy*,
+not its ordering, destroyed the transfer (Section 15.7). Second, a sharper
+reading of the measured C8 numbers: what caps aggregation is not the in-order
+contract itself but **per-path-affine atomic delivery units** — with
+cross-path coding over a sliding window, an in-order frontier can aggregate
+at the full Σ g_i (Section 16.2). Out-of-order delivery survives only in two
+subordinate roles: as the mechanism *within* the coding window, and as a
+convenience for native whole-object delivery.
 
-This section formalises the fix. The claim is sharp: **FEC-multipath
-structurally beats ARQ-multipath (MPTCP) on bulk if and only if delivery is
-out-of-order.** Encode the object as a rateless stream (RaptorQ, already a
-backend — [RFC6330]), pour encoded symbols across all paths each at its own
-goodput, and decode when the receiver holds enough symbols *in total*
-regardless of which path carried them. Completion then depends on the sum of
-per-path goodputs with no dependence on the slowest path's RTT and no
-cross-path ordering coupling. The price is the fountain overhead (RaptorQ
-≈ 0.5–1%), paid once, for orderlessness. This is a **native-mode**
-capability: it requires an application that tolerates out-of-order object
-delivery (the `raptorpath perf` / MemTun object API, Section 16.6), and is
-foreclosed for a TCP-in-tunnel flow, whose in-order contract is exactly the
-P9b hold.
+**Epistemic convention for this section.** Every quantitative claim is
+tagged:
 
-Notation extends Section 13.2 and reuses Section 1.1. For path i:
+- **MEASURED** — a number from the goal-gate record (L1/L2 harness, real
+  links, seeds stated there).
+- **DERIVED** — follows from the stated model (bounds, functionals); no new
+  measurement needed.
+- **PREDICTION** — awaits the Section 16.6 experiment; falsifiable as stated.
 
-```
-  C_i     path capacity (deliverable symbol rate)              [sym/s]
-  ε_i     path loss rate (Section 1.1)                         [prob]
-  RTT_i   path round-trip time                                 [s]
-  g_i     path GOODPUT = C_i·(1−ε_i)   (surviving symbols/s)   [sym/s]
-  K       object size in source symbols                        [count]
-  φ       rateless decode overhead (RaptorQ ≈ 0.005–0.01)      [ratio]
-  s       symbol size                                          [bytes]
-```
-
-### 16.1 The Fountain Aggregation Model
-
-Fix an object of K source symbols. A rateless encoder (Section 15.2's RLC at
-window W = K, or the RaptorQ backend) can emit an unbounded stream of
-encoded symbols, each a fresh combination over the whole object; the decoder
-recovers all K sources once it has collected any K·(1+φ) linearly useful
-symbols (Section 9's codec overhead ε_codec, here written φ). Crucially the
-symbols are **fungible**: no encoded symbol is bound to a path, a position,
-or an ordering.
-
-The scheduler pours encoded symbols across the N paths, path i at its own
-send rate C_i (Copa-paced, Section 12.4). Surviving symbols therefore arrive
-at the receiver from path i at rate g_i = C_i·(1−ε_i), and the **total**
-useful arrival rate is the sum
+The measured baseline this section builds on (all at L2 workstream 1,
+topology C8 = WiFi 100 Mbit / 10 ms RTT / GE ε ≈ 2.5% + LTE 20 Mbit / 40 ms
+RTT / GE ε ≈ 4.8%; 50 MB bulk, seed 42):
 
 ```
-  G_fountain = Σ_{i=1}^{N} g_i = Σ_i C_i·(1−ε_i)               [sym/s]
+  within-block per-symbol striping     8.8 Mbit/s   (below fast path alone)
+  whole-block path affinity (§13.8)   12.6 Mbit/s   (= kernel-MPTCP parity)
+  fast path alone                     14.0 Mbit/s
+  kernel MPTCP dual                   12.6 Mbit/s
+  C7 symmetric dual (control)         23.9 Mbit/s   (MPTCP: 15.4)
 ```
 
-because arrivals on different paths are interchangeable inputs to one
-decoder. Collecting K·(1+φ) symbols at rate G_fountain and then decoding
-gives the completion time
+Notation as in Sections 1.1 and 13.2: g_i = C_i·(1−ε_i) the per-path goodput
+[sym/s], d_i the one-way delay, K the object size in source symbols, s the
+symbol size, W the window, φ the rateless/codec overhead (Section 9), δ/ρ/r
+the Section 1.4 triangle.
+
+### 16.1 Three Regimes, Three Decode Predicates
+
+A transport delivers data in **units** — a packet, a 64 KB block, a coding
+window, a whole object. Multipath completion is governed by *which symbols
+the decoder must wait for* before a unit (or the stream frontier) can
+advance. The three schedules measured at C8 correspond to three decode
+predicates, and each predicate has a known queueing-theoretic shape.
+
+**(1) Within-unit striping across paths = fork-join.** The unit's K_u
+symbols are split x_i·K_u to path i; the decoder needs **all of these
+specific symbols, scattered over paths**. Per-unit completion is a maximum:
 
 ```
-  T_fountain = K·(1+φ) / Σ_i C_i·(1−ε_i)  +  Θ(RTT_max)        (16.1)
-                └── steady-state fill ──┘     └── tail ──┘
+  T_unit = max_i ( x_i·K_u / g_i + d_i + a_i·RTT_i )            (16.1)
 ```
 
-**The tail Θ(RTT_max)** collects three unavoidable one-shot terms, all
-O(RTT) and none scaling with K: (i) startup — the first symbol on path i
-takes RTT_i/2 to arrive, so the pour reaches full aggregate rate after
-≤ RTT_max/2; (ii) decode granularity — completion fires on the K·(1+φ)-th
-useful symbol plus one decode pass (Section 14.17); (iii) fountain
-short-fall — with probability decaying geometrically in the overhead margin
-(RaptorQ: P(decode fails at K+2 symbols) < 10⁻²; RFC 6330 Table), the stream
-comes up a few symbols short and one extra flight tops it up. None of these
-depend on the slowest path's *recovery* round; a straggler path simply
-contributes fewer symbols to the sum, never a stall.
+— path i's share serialised at its goodput, plus its delay, plus a_i ≥ 0
+recovery rounds at *its own* RTT when its share contains a loss (per-unit
+loss probability 1−(1−ε_i)^{x_i·K_u}: at C8, 1−(1−ε_B)^{K_u} = 0.94 for a
+whole K_u = 56 unit at ε_B = 4.8% — the Section 13.8 measured mechanism). Completion pays the **expectation of a
+maximum, once per unit**. This is the classic fork-join queue: for
+homogeneous branches the mean response grows as ~H_N (the harmonic-number
+law of [Nelson1988]); for heterogeneous branches the slowest leg dominates
+and E[max] ≫ max_i E[·] because the max concentrates on the straggler's
+*tail*, not its mean — the redundant-request literature quantifies exactly
+this penalty ([Joshi2017]). Heterogeneous delays and losses therefore make
+striping strictly worse than not using the slow path at all. **MEASURED:
+8.8 Mbit/s at C8 — below the 14.0 fast path alone.**
 
-**Independence from ordering — the key property.** Equation (16.1) contains
-no per-path ordering term and no max over paths. Permuting which path
-carries which encoded symbol, or the order symbols arrive within or across
-paths, changes nothing: only the *count* K·(1+φ) and the *rate* Σ g_i enter.
-Formally, T_fountain is invariant under any relabelling of the arrival
-sequence, because the decoder's completion predicate — rank of the received
-equation system reaches K — is a symmetric function of the received set
-(Section 15.2's incremental Gaussian elimination reaches full rank on the
-same set regardless of feed order). This is precisely what an in-order byte
-stream cannot offer, and Section 16.2 makes the gap a theorem.
-
-**The overhead φ is the price of orderlessness.** Against a hypothetical
-zero-overhead in-order code, fountain pays a constant φ ≈ 0.5–1% more wire
-(Section 9). Equation (16.1) shows what it buys: the denominator becomes the
-*full* sum Σ g_i instead of a single path's goodput (Section 16.2). Whenever
-the second-and-beyond paths contribute more than φ of aggregate goodput —
-i.e. essentially always for N ≥ 2 — the trade is overwhelmingly favourable.
-
-### 16.2 The Head-of-Line Aggregation Theorem
-
-We show in-order delivery bounds the aggregate by a *single path's* usable
-goodput, while fountain aggregates over *all* paths. The separation is
-structural, not a scheduler-tuning gap.
-
-**Setup.** An object is delivered over N paths. Under **in-order** delivery
-the receiver must release source symbols (equivalently the reassembled byte
-stream) in object order; a symbol may not be handed up until every
-lower-indexed symbol has been. Under **fountain** delivery the receiver
-releases the whole object atomically on decode (Section 16.1). Let a
-schedule assign each path i a long-run fraction x_i of the object's ordered
-delivery units (Section 13.8's y_i), Σ x_i = 1.
-
-**The reorder budget.** The in-order receiver holds an out-of-order unit for
-at most H before force-delivering it as a HOLE (Section 13.8; production
-H = 4·SRTT_max clamped to [60, 300] ms, `net/mod.rs`
-`BLOCK_REORDER_{MIN,MAX}_HOLD`). A hole is not free: for a feedback-coupled
-consumer (inner TCP) it converts to a retransmit and a cwnd halving —
-negative throughput. So a path may carry ordered units only while its
-per-unit delivery time stays within the budget of the fastest path. Define
-the per-path delivery time of a unit of K_u symbols (Section 13.8),
+**(2) Whole-unit path affinity + in-order release = resequencing queue.**
+Each unit rides one path (block-granular affinity), so units complete
+independently at their path's own rate — but they must be *released* in unit
+order. The delivery frontier is then a **running maximum** over unit
+completion times: frontier(n) = max_{m ≤ n} T_m. This is the resequencing
+buffer of the multipath literature ([Xia2003]); kernel MPTCP is the same
+queue with unit = packet. The receiver holds an out-of-order unit at most H
+(production: 4·SRTT clamped [60, 300] ms) before force-delivering a hole, so
+a path may carry ordered units only while its per-unit delivery time stays
+within H of the fastest path's. Define the **eligibility set**
 
 ```
-  D_i = K_u/C_i + RTT_i/2 + P_blk,i · 2·RTT_i,   P_blk,i = 1−(1−ε_i)^{K_u}
+  E = { i : D_i − min_j D_j ≤ H },   D_i = K_u/C_i + d_i + P_blk,i·2·RTT_i
 ```
 
-the K_u/C_i serialisation plus a recovery round at path i's *own* RTT with
-probability P_blk,i (≈ 1 for realistic K_u: C8 K_u = 56, ε = 4.8% ⇒ 0.94).
-Call path i **order-eligible** iff D_i − min_j D_j ≤ H; let E = { eligible
-paths }.
-
-**Proposition (HOL aggregation bound).** For any in-order schedule x,
+Then for any affinity schedule the sustained in-order rate collapses to the
+eligible paths' goodput (DERIVED — the ordered frontier can make progress
+at most as fast as ordered units arrive, and an ineligible path's units
+arrive as holes, contributing zero or negative useful throughput):
 
 ```
-  T_inorder(x)  ≥  K / Σ_{i ∈ E} g_i            (16.2a)
-
-and for every path i that carries ordered source (x_i > 0),
-
-  T_inorder(x)  ≥  x_i·K / g_i  +  N_i · 2·RTT_i        (16.2b)
+  T_inorder ≥ K / Σ_{i ∈ E} g_i                                 (16.2)
 ```
 
-where N_i ≥ 1 is the number of serial recovery rounds path i's ordered units
-incur (≥ 1 whenever P_blk,i is bounded away from 0). Consequently
+On sufficiently heterogeneous paths E collapses to {fast} (at C8:
+D_B − D_A ≈ 130 ms > H/4 — the slow path is hold-infeasible, Section 13.8)
+and the bound degenerates to K/g_A — **the fast path alone**. MEASURED:
+12.6 Mbit/s at C8, kernel-MPTCP parity (MPTCP: 12.6), below fast-path-alone
+14.0 — both transports sitting on the same resequencing bound. On
+*homogeneous* paths E = {all} and affinity aggregates fine — MEASURED: C7
+symmetric dual 23.9 Mbit/s vs MPTCP 15.4.
+
+**(3) Rateless coding over a horizon = K-of-N.** Code over a horizon of K_h
+source symbols (a window, or a whole object) and pour encoded symbols across
+all paths. The decoder needs **any K_h·(1+φ) useful symbols from the pooled
+arrival process** — no symbol is bound to a path or a position within the
+horizon. Completion is the **K_h·(1+φ)-th order statistic of the superposed
+arrival process**, whose rate is Σ_i g_i:
 
 ```
-  inf_x  T_inorder(x)  ≥  K / Σ_{i ∈ E} g_i   >   K / Σ_{i=1}^{N} g_i  =  T_fountain / (1+φ)
-                                              └ strict whenever E ⊊ {1..N} ┘
+  T_horizon ≈ K_h·(1+φ) / Σ_i g_i  +  skew term paid ONCE per horizon (16.3)
 ```
 
-*Proof sketch.* (16.2a): the ordered receiver can only make forward progress
-by delivering units in index order; an ineligible path (i ∉ E) cannot carry
-ordered source at all — its units breach H and are force-delivered as holes,
-contributing zero (indeed negative) useful in-order throughput — so the
-in-order aggregate goodput is at most Σ_{i∈E} g_i, and completion of K
-symbols takes at least K over that rate. (16.2b): the head-of-line pointer
-cannot pass a stalled unit on path i; that path's own share x_i·K
-serialises at g_i, and each of its N_i loss rounds adds a full 2·RTT_i
-because the retransmit is *on path i* at path i's RTT (ordered delivery
-cannot substitute a fast-path repair for the missing low-index byte — it
-needs *that* byte). Taking the infimum over schedules, the best in-order
-strategy still cannot recruit ineligible paths, giving the strict gap
-whenever some path is ineligible. ∎
+The skew term (startup d_i spread, one decode pass, geometric short-fall
+top-up) is O(RTT_max) and does not scale with K_h. The structural difference
+from (1) and (2): there is **no per-unit max and no resequencing coupling**.
+The coding gain for multipath is exactly the move from *the expectation of a
+per-unit maximum* (paid K/K_u times) to *one interior order statistic of the
+pooled process* (paid once per horizon) — a **mean AND variance win, and one
+that grows with path heterogeneity**, because E[max] − (interior order
+statistic) widens as the per-path delay/loss distributions spread apart,
+while on symmetric paths the two coincide and the gain vanishes. That
+monotonicity is this section's sharp, testable signature (PREDICTION for our
+stack; the functional forms themselves are DERIVED, and are the transport
+analogue of the coded-download latency results of [Joshi2014, Joshi2017]).
 
-**Two regimes, both measured at C8.** The bound has two faces, matching the
-two schedules Section 13.8 measured:
+Summary:
 
 ```
-  (a) Naïve striping over the slow path (per-symbol, MPTCP-like).
-      x_B > 0 with B ineligible ⇒ (16.2b) bites: every slow-path hole
-      stalls the queue for 2·RTT_B. Aggregate bounded by worst-path
-      recovery. MEASURED C8: 8.8 Mbit/s — BELOW the fast path alone.
-
-  (b) Order-protecting schedule (§13.8 fix; BLEST-like).
-      Starve the ineligible slow path of source (x_B → 0): (16.2a) gives
-      E = {A}, so T_inorder → K/g_A = the FAST PATH ALONE. MEASURED C8:
-      12.6 Mbit/s = kernel-MPTCP parity, no aggregation over path A.
+  schedule                predicate            completion functional   C8 measured
+  ─────────────────────── ──────────────────── ─────────────────────── ───────────
+  within-unit striping    ALL of these,        Σ_units E[max_i(...)]    8.8 Mbit/s
+                          scattered            (max per unit)
+  whole-unit affinity +   units independent,   running max ⇒            12.6 Mbit/s
+  in-order release        released in order    K/Σ_{E} g_i              (= MPTCP)
+  rateless over horizon   ANY K_h(1+φ) of      K_h(1+φ)/Σ_all g_i +     — (§16.6)
+                          the pooled arrivals  skew once
 ```
 
-Either way in-order delivery cannot exceed the fastest single path's
-goodput on a sufficiently heterogeneous topology (E = {fast}), which is
-exactly why raptorpath ties MPTCP at C8 and cannot beat 14.0. **Fountain
-removes E entirely** (Section 16.1): every path is a fungible symbol source,
-so the denominator is the full Σ_i g_i. The predicted separation at C8:
+### 16.2 The Sliding-Window Realization (In-Order Is Not the Bottleneck)
+
+Regime (3) as stated assumes a horizon. The earlier draft took the horizon
+to be the *whole object* — encode the object as one fountain, deliver
+out-of-order, decode on total. That is **not implementable as the general
+mechanism**: a tunnel does not know object boundaries or sizes ahead of
+time, streams are unbounded, and a whole-object horizon means unbounded
+encoder/decoder memory and a decode that cannot begin until the end. It
+survives only as a special case for the native object API, where the object
+is known and bounded (Section 16.6).
+
+**The realistic carrier of the order-statistic gain is a sliding window**
+spanning multiple former blocks. Repairs are combinations over the current
+window (the Section 15.2 algebra, unchanged); source and repair symbols are
+striped across paths ∝ g_i; and the receiver maintains an **in-order
+delivery frontier** that advances whenever the window *prefix* decodes from
+ANY sufficient subset of received symbols. A gap at the frontier does not
+wait for a specific path's retransmit: it is filled by whichever path's
+repair lands first — the fill rate is the pooled Σ g_i, not the losing
+path's RTT. In-order delivery-delay analyses of exactly this construction
+(streaming code + in-order release) exist in the literature and show the
+frontier delay collapsing once repairs are cross-scheduled [Cloud2014].
+
+This yields the correction that renames this section (DERIVED):
+
+> **In-order delivery is not the bottleneck.** With cross-path coding over a
+> sliding window and a retention policy (Section 15.7), the in-order frontier
+> advances at ≈ Σ_i g_i — the full aggregate. What caps aggregation in the
+> measured system is (i) **per-path-affine atomic units**: a 64 KB block
+> whose source symbols ride exactly one path makes the *unit*, not the
+> ordering, the thing that serialises at one path's rate and recovers at one
+> path's RTT — the eligibility set E and the resequencing bound (16.2) are
+> consequences of block atomicity, and MPTCP hits the same bound because its
+> unit (the packet with a fixed sequence number) is equally path-atomic once
+> sent; and (ii) in the lossy window pipeline, **eviction** — which converts
+> a late repair into a permanent hole (Section 15.7).
+
+The earlier draft's theorem ("FEC-multipath beats ARQ-multipath **iff**
+delivery is out-of-order") overclaimed. What the eligibility argument
+actually proves is bound (16.2) *for per-path-affine atomic units*; it says
+nothing about in-order delivery of a cross-path-coded window, which evades
+the bound not by dropping order but by making symbols fungible across paths
+*within the horizon*. Out-of-order delivery retains two legitimate roles:
+
+- **Within the window horizon** symbols arrive in any order, from any path,
+  and are fungible inputs to the prefix decode — this is where the
+  order-statistic gain (16.3) lives, W symbols at a time.
+- **Whole-object atomic release** remains a convenience for the native
+  object API (`raptorpath perf` reassembles by (obj_id, chunk_idx) and
+  tolerates arbitrary reordering) — it lets the frontier machinery be
+  skipped entirely, but it is an API simplification, not the source of the
+  aggregation gain.
+
+### 16.3 The Missing Quadrant: Reliable Windowed Multipath
+
+Two independent design axes emerged from the measured record — and neither
+is the codec. The **reliability policy** axis (Section 15.7):
+{ EVICT | RETAIN-UNTIL-ACKED } — a pipeline policy; RLC under retention is
+fully reliable, RaptorQ under the pre-P8 pipeline (no ledger) silently
+abandoned failed blocks. The **unit structure** axis (Section 16.1):
+{ atomic blocks, path-affine | sliding window, cross-path striped }. The
+production system and the experiments populate three of the four quadrants:
 
 ```
-  T_inorder  →  K/g_A               (≈ fast path alone, 12.6–14.0 Mbit/s)
-  T_fountain →  K(1+φ)/(g_A+g_B)    (> 14.0, toward Σ = g_A+g_B)
+                       atomic blocks,             sliding window,
+                       path-affine                cross-path striped
+  ─────────────────────────────────────────────────────────────────────────
+  EVICT                (uninteresting: lossy      production REALTIME.
+  (lossy by policy)    blocks would drop 64 KB    Correct for its δ —
+                       at a time)                 MEASURED working; single
+                                                  path by construction (F3:
+                                                  no striping sender exists)
+  ─────────────────────────────────────────────────────────────────────────
+  RETAIN-UNTIL-ACKED   production BULK/AUTO       ── EMPTY ──
+  (reliable)           (RaptorQ 64 KB blocks +    Reliable Windowed
+                       §14.27 batch-ACK ARQ).     Multipath (RWM):
+                       Correct single-path —      the code this section
+                       MEASURED 10/10 @ 0.90 s;   proposes. Exists nowhere
+                       multipath capped by        in production today.
+                       (16.2) — MEASURED 12.6
+  ─────────────────────────────────────────────────────────────────────────
+  and the measured anti-diagonal: EVICT × window for BULK — the
+  exp/windowed-rlc-all experiment — 10/10 @ 0.90 s → 0/10 DNF (Section
+  15.7). Reliability policy is a PRIMARY axis, not a tuning knob.
 ```
 
-with the aggregation gain G_fountain/g_A = 1 + g_B/g_A. At C8 the LTE path
-adds g_B = 20·(1−0.048) ≈ 19 Mbit/s of raw goodput on top of the WiFi path's
-g_A ≈ 97.5 — a would-be ~20% aggregate lift that in-order delivery
-structurally forfeits and fountain structurally captures. (The realised
-numbers ride the Copa sub-capacity pipeline, Section 14.21: the falsifiable
-line is simply *fountain > fast-path-alone*, which in-order provably cannot
-reach — Section 16.6.)
+**RWM defined.** Reliable Windowed Multipath = RETAIN × sliding window ×
+cross-path striped:
 
-### 16.3 Cross-Path Repair Coding
+1. **Retention.** The window advances ONLY on ack/decode of its prefix.
+   Window fullness becomes **backpressure** on the source (flow control),
+   never data loss — the exact place the evicting pipeline instead destroys
+   data. The Section 14.27 batch-ACK ledger machinery (retained source,
+   ACK-diff loss detection, fresh-repair minting, sweep timer) is the
+   natural donor: it already implements retain-until-acked for blocks.
+2. **Striping.** Source AND repair symbols are scheduled across paths
+   ∝ g_i — the same proportional-goodput rule `Scheduler::schedule` already
+   applies to block-mode *repairs* (only source placement is block-atomic
+   today), extended to everything. No symbol is bound to a path.
+3. **Frontier decode.** The receiver delivers the in-order prefix the
+   moment any sufficient symbol subset decodes it; holes at the frontier
+   are raced by all paths' repairs (Section 16.2).
 
-Section 13.10 routes retransmits across paths through the shared buffer;
-fountain makes the same idea exact and removes the buffer's per-symbol
-bookkeeping. Because every encoded symbol is a rateless combination over the
-whole object (Section 16.1), a symbol emitted on the *fast* path is a valid
-repair for a loss suffered on the *slow* path. There is no "retransmit of
-S_k on path B"; there is only "one more encoded symbol on whichever path has
-a free slot." The deficit is global and scalar:
+RWM is the transport that realises predicate (3) for bulk: completion
+governed by the pooled order statistic (16.3) window-by-window, target rate
+Σ_i g_i.
 
-```
-  deficit(t) = K·(1+φ) − (useful symbols received so far)      [count]
-```
+**What exists today, honestly.** Production window mode has **no
+multipath**: every source symbol goes to `best_source_path()` — the single
+lowest-cost path with cwnd headroom, spilling to the next-best only on
+saturation — and repairs to `best_repair_path()`; nothing stripes (MEASURED
+code fact, Phase-0 reconnaissance of the windowed-RLC experiment). Bulk
+never touches the window pipeline (Section 15.1). And the closest existing
+relative of RWM is not in production at all: it is the **wasm visualizer
+simulation**, which runs a sliding-window RLC for all hints with ρ = 1 —
+retransmit-until-delivered, no forced eviction — i.e. a *reliable sliding
+window*, but single-path. The sim therefore models RWM's reliability
+semantics and window mechanics while modelling neither its striping nor,
+for bulk, anything production actually runs — a correspondence gap the
+paper's earlier sections (which lean on the sim) inherit and that is now
+stated explicitly.
 
-and the scheduler fills it from the path with the lowest marginal delivery
-cost — in Bulk, the path with spare Copa capacity (Section 13.10's
-work-stealing); in Realtime, the lowest-RTT path (Section 13.8's objective).
-The slow, lossy path therefore **never retransmits at its own RTT**: a
-symbol lost on path B is made up by an extra symbol on path A and recovered
-within RTT_A, not RTT_B. Formally the effective recovery latency of a
-slow-path loss is
+### 16.4 One Pipeline, Not Mode Switching
 
-```
-  L_recover = min_i RTT_i   (fast path)   ≪   2·RTT_slow  (MPTCP's ARQ round)
-```
+The two-pipeline structure (Section 15.1) invites a tempting patch: keep
+both pipelines and *switch* between them — or between codecs — as conditions
+change. The record says the switching itself is the defect, for four
+reasons, while *codec choice per stream* is legitimate and cheap:
 
-**The lossy path's loss is covered by the aggregate's spare, not its own
-ARQ.** To meet completion the pour must place K·(1+φ) surviving symbols
-total; the loss budget it must cover is Σ_i x_i^{enc}·ε_i·C_i·T (expected
-erasures across the pour), and this is absorbed by minting φ·K + (that
-budget) extra symbols anywhere in the aggregate. There is no per-path repair
-floor (Section 13.7) and no per-path ARQ round on the critical path. Two
-paths burst simultaneously with probability ε_A·ε_B (Section 13.10:
-≈ 0.0012 at C8) — the only event that forces an actual extra flight, and
-even then it is one aggregate round, not a per-path stall. This is the
-cross-path diversity of Section 13.7/13.10 stated as a coding property: the
-repair stream protects the *union* of the paths' losses because it is
-generated over the *union* of the object.
+**(a) No cross-code algebra.** A repair symbol of one code cannot help
+decode another code's in-flight data. Any mid-stream switch therefore either
+strands every in-flight symbol of the old code or forces a drain barrier
+(stop, flush, restart) — a latency cliff by construction. MEASURED: the P9a
+bring-up found window-mode backend switching had to be **pinned off** in
+production — a switch rebuilt the encoder with sequence numbers restarting
+at 0 while the receiver's delivery/ACK state (highest_delivered_seq, SACK
+ranges) and the sender's retransmit buffer kept the old numbering, leaving
+the ACK/NACK repair machinery blind for ~a full window of traffic; at lossy
+cells that repair blackout wedged the inner TCP for minutes (the hazard
+note in net/mod.rs stands).
 
-### 16.4 Where It Does Not Win, and What It Costs
+**(b) State does not transfer.** The estimator, controller, and ARQ ledgers
+carry code-specific semantics — a block ledger keyed by (block, batch) has
+no meaning to a window's per-seq SACK state, a window's taper phase has no
+block analogue. A switch discards exactly the state the next seconds of
+recovery need.
 
-Stated plainly, so the boundary is unambiguous.
+**(c) The existing auto-switch is a threshold machine.** Block mode today
+selects its backend by hard loss thresholds: ε̂ < 0.01 → RaptorQ,
+0.01 ≤ ε̂ < 0.12 → RLC, ε̂ ≥ 0.12 → METTLE, re-evaluated with a ≥ 5 s
+minimum interval plus debounce (`config.rs`, `backend_selector.rs`). This
+violates the paper's own no-hard-cutoffs convention (the same discipline
+that replaced the r* cutoff branch in Section 8.4 and the hard saturation
+cap in Section 14.21.1) and carries the standard oscillation hazard: an ε̂
+sitting near a threshold buys periodic switches, each paying cost (a). An
+honest note: this existing mechanism deserves reconsideration on the same
+grounds as this section — it predates the switching analysis above.
 
-**Single path: fountain ties ARQ at best, and the overhead is pure loss.**
-With N = 1 there is nothing to aggregate: Σ_i g_i = g_1, and (16.1) reduces
-to K(1+φ)/g_1 versus ARQ's K/g_1 for a bulk transfer whose mid-stream losses
-recover *in parallel* with ongoing sends at zero completion cost (Section
-14.25–14.26). Single-path bulk is information-theoretically an ARQ problem —
-retransmit exactly the erasures, overhead → ε, and mid-stream recovery is
-free — so the φ fountain overhead is wasted wire. **The fountain win is a
-property of the topology (N ≥ 2), not of the channel.** This yields a clean
-result:
+**(d) Two pipelines means everything is built twice — and debugged never.**
+MEASURED: window mode's reactive repair path was *dead code* (no NACK
+producer, SACK gaps ignored, drain gated on TUN reads — P10b) while the
+block pipeline received P7 pacing and P8 ARQ; the two worst L1 FEC bugs were
+each single-mode artefacts (Section 15.5). Every subsystem — CC coupling,
+ARQ, reorder delivery, MTU handling — exists twice and diverges.
 
-```
-  Single-vs-multipath Bulk strategy (reconciling the P6 glide, §14.26):
+**The principled resolution** (strengthening Section 15.4): **one pipeline,
+parameterised by the policy axes** — retention (Section 15.7), advance/
+overlap a, window W, the (δ, ρ, r) triangle, and striping — with codecs as
+per-STREAM plug-ins behind the context interface, chosen once at stream
+setup by workload economics: RaptorQ where its near-optimal overhead at
+large K pays (bulk objects), RLC where the natural sliding window fits
+(streams), and **never switched mid-stream**. A new stream gets a new
+context, so no cross-code boundary ever exists *inside* a stream — cost (a)
+becomes structurally impossible rather than carefully avoided. Profiles
+(Realtime/Bulk/Auto) become parameter points of one machine, not modes of
+two; mixed-profile streams coexist on one tunnel via the Section 15.4
+per-stream contexts.
 
-    N = 1  Bulk  →  r* = 0  (pure ARQ; the §14.26 χ-glide: mid-stream
-                             recovery is parallel, so no channel state
-                             justifies steady-state FEC)
-    N ≥ 2  Bulk  →  rateless fountain (constant overhead r = φ, delivered
-           heterogeneous  OUT-OF-ORDER; pay φ to buy the Σ_i g_i denominator)
-```
+### 16.5 Choosing W for Multipath: a Fourth Bound
 
-The Bulk hint's optimal correction strategy is therefore **path-count
-dependent**: the same loose-δ objective that drives r* to 0 on one path
-drives it to a constant rateless φ on two heterogeneous paths, because the
-aggregation gain 1 + g_B/g_A (tens of %) dwarfs the φ ≈ 0.5% cost. This
-inverts the naïve reading of §14.26 ("Bulk wants zero FEC") and is, to our
-knowledge, a new observation: the optimal code for bulk is selected by the
-number of paths, not by the loss process. (When the N ≥ 2 paths are
-*homogeneous* — C7 symmetric — in-order striping already aggregates cleanly
-because E = {all}, so the fountain's advantage there is robustness to
-skew/loss asymmetry rather than a first-order rate gain; Section 16.6's C7
-control confirms no regression.)
+Section 8.8 derives W* from three bounds — the overhead knee W_over, the
+latency ceiling W_lat, the burst floor W_bur. RWM adds a fourth, a **lower**
+bound: the window must span the cross-path recovery horizon, or the frontier
+starves on skew.
 
-**Compute and memory of rateless decode at rate.** Decoding a K-symbol
-object is not free. A full-object *RLC* window (Section 15.2) costs O(K²)
-Gaussian elimination and O(K²) coefficient memory — prohibitive for a
-50 MB object (K ≈ 37k symbols at 1400 B). This is why the backend must be
-**RaptorQ** (RFC 6330), whose belief-propagation + small dense inactivation
-decode is near-linear O(K) with ~0.5% overhead, not the RLC O(W²) code
-(Section 9, Section 14.17 decode-jitter). Objects beyond RaptorQ's
-single-block limit (56 403 source symbols) use its native interleaved
-sub-blocks; each sub-block is still poured across *all* paths, so the
-aggregation property holds per sub-block and the object inherits it. Decode
-is one-shot per object (or sub-block), amortised over the whole transfer —
-cheaper per byte than the per-block incremental GE of window mode.
-
-**The application must tolerate out-of-order object delivery — a
-native-mode boundary.** The entire win rests on releasing the object
-atomically on decode rather than as an in-order byte prefix. The native
-object API (`raptorpath perf` over MemTun, Section 16.6) already reassembles
-by (obj_id, chunk_idx) and tolerates arbitrary intra-object reordering; it
-loses nothing by dropping the P9b hold. A **TCP-in-tunnel** flow cannot: its
-in-order contract *is* the P9b hold, and forgoing it reintroduces the
-879-spurious-retransmit / 3×1.8 MB inner-cwnd collapse P9b was added to fix
-(Section 13.8). So this is documented as a **native-mode capability**:
-fountain multipath for the object API; in-order block delivery (Section
-13.8's eligibility-constrained schedule) remains the correct — and
-MPTCP-parity — behaviour for tunnelled TCP.
-
-**Reconciliation with the unified model (§15).** Fountain multipath is not a
-new mechanism; it is the Section 15 unified sliding-window code evaluated at
-a specific corner, delivered through the Section 13.8 multipath scheduler
-with the in-order coupling term switched off:
+The argument (DERIVED): a hole at the frontier is raced by repairs that are
+combinations over the *current window*. The race takes up to one feedback
+round on the slowest useful path, ≈ RTT_max, plus scheduling slack t_slack
+(one repair-generation + pacing interval, of order the fast path's RTT).
+During that race the aggregate keeps arriving at Σ_i g_i; if those arrivals
+overrun the window span, the encoder faces exactly the choice Section 15.7
+forbids resolving by eviction — and under retention the window instead
+stalls the source (backpressure), collapsing the pour to stop-and-wait on
+skew events. So sustained Σ g_i aggregation requires
 
 ```
-  fountain object = §15 code at  ( window W = K  [the whole object is one
-                                    window], reset advance a = W  [one
-                                    window per object], rateless repair
-                                    schedule [RaptorQ / continuous RLC] )
-                  + §13.8 pour across paths by goodput
-                  + out-of-order atomic release (P9b hold OFF, native API)
+  W_mp ≳ Σ_i g_i · (RTT_max + t_slack)        [g_i in sym/s]     (16.4)
+
+  W*   = clamp( max(W_over, W_mp),  min(W_bur, W_lat),  W_lat ) — multipath
+         reading of §8.8; single path leaves W_mp = g·RTT ≈ the §14.5 term
 ```
 
-In Section 15.3's terms it is the o = 0 (reset), large-W, spike-or-rateless
-repair corner — the "block-like" backend — with K taken to the object size
-and the delivery unit taken to the *object* rather than the 64 KB block. The
-per-block affinity and eligibility machinery of Section 13.8 then vanishes:
-with one object-spanning window there are no blocks to bind to paths, no
-per-block D_i, and no E ⊊ {1..N} exclusion — which is exactly why the HOL
-bound (16.2) no longer applies and Σ_i g_i is recovered. Section 15's
-per-stream contexts compose orthogonally: each native object rides its own
-RaptorQ context, poured across all paths, decoded on total.
-
-### 16.5 The Aggregate Completion Formula (summary)
-
-Collecting Sections 16.1–16.3, the native out-of-order object completion on
-N heterogeneous paths is
+**Worked C8 example.** g_A = 100 Mbit/s·(1−0.025) ≈ 10 160 sym/s at
+s = 1200 B; g_B = 20·(1−0.048) ≈ 1 980 sym/s; Σ ≈ 12 100 sym/s.
+RTT_max = 40 ms, t_slack ≈ RTT_A = 10 ms:
 
 ```
-  T_fountain  =  K·(1+φ) / Σ_{i=1}^{N} C_i·(1−ε_i)  +  Θ(RTT_max)      (16.3)
-
-     φ         RaptorQ overhead ≈ 0.005–0.01   (Section 9 ε_codec)
-     Σ C_i(1−ε_i)   aggregate goodput over ALL paths (no eligibility set)
-     Θ(RTT_max)     one-shot startup + decode + short-fall tail, O(RTT),
-                    independent of K and of the slowest path's RTT
-
-  contrast (Section 16.2, in-order / MPTCP):
-
-  T_inorder   ≥  K / Σ_{i ∈ E} C_i·(1−ε_i),   E = order-eligible paths
-              →  K / g_fast   when heterogeneity makes E = {fast}
+  W_mp ≈ 12 100 × 0.050 ≈ 600 symbols
 ```
 
-The aggregation gain of going out-of-order is
-Σ_{all} g_i / Σ_{E} g_i ≥ 1, strict exactly when some path is order-
-ineligible — the heterogeneous-multipath regime this section targets.
+— i.e. **3× the window pipeline's MAX_WINDOW_SIZE = 200 and above Section
+8.8's [16, 512] clamp ceiling**. The current constants would starve RWM at
+C8 by construction; this is a paper-level extension of the Section 8.8
+derivation (the production `derive_window` is not changed here). The upper
+bounds still apply and now genuinely bind: W remains capped by the latency
+budget (W_lat), by memory (W symbols retained per stream under the retention
+policy), and by decode cost — RLC's incremental pivot GE grows ~O(W²) in
+the window, though the measured costs at production windows leave headroom
+(MEASURED, P9b non-finding: RLC decode p50 37 µs, p99 < 1 ms; it was
+explicitly ruled out as a bottleneck at C2 rates). A W ≈ 600 window at C8's
+symbol rate is ~50 ms of traffic and ~0.7 MB retained — well within all
+three ceilings; the binding constraint at satellite-class RTT × high rate
+would be memory and decode, and (16.4) says such links need either a larger
+W or an honest admission that Σ g_i is not reachable there.
 
-### 16.6 Implementation and Measurement Plan
+### 16.6 Predictions, Prerequisites, and the Experiment
 
-**What already exists (reused, not built).**
+**Claim ledger.**
 
-- **RaptorQ backend** — `raptorpath/src/fec/raptorq_backend.rs` (RFC 6330):
-  rateless, near-linear decode, ~0.5% overhead. The right code for
-  object-spanning fountain (Section 16.4).
-- **Native object API** — `raptorpath/src/perf.rs` over `TunInterface::memory`
-  (MemTun): no inner TCP, no kernel TUN. The object protocol already
-  reassembles by (obj_id, chunk_idx) and *tolerates out-of-order and
-  duplicate* chunks (see the module header). This is the consumer that can
-  drop the in-order hold with no correctness change.
-- **§13.8 multipath scheduler** — block-granular affinity + weighted
-  round-robin on B_eff (`raptorpath/src/net/mod.rs`, `config.block_source_affinity`);
-  Copa per-path pacing (Section 12.4).
-- **Cross-path shared buffer** — `raptorpath/src/net/block_arq.rs` (Section
-  13.10).
-- **The in-order hold with a bypass already present** —
-  `net/mod.rs`: `block_inorder_enabled = !recv_window_mode && reorder_timeout_ms > 0`,
-  and the delivery site already has the out-of-order branch
-  `else { vec![(block_id, data)] }`. Flipping this flag off is the minimal
-  experiment (arm B below).
+DERIVED (no new measurement needed):
+- The resequencing bound (16.2): no per-path-affine in-order transport can
+  exceed Σ_{i∈E} g_i; at C8's heterogeneity E = {fast}, so 14.0 Mbit/s
+  (fast-path-alone) is a ceiling for that whole design class — raptorpath's
+  affinity scheduler and kernel MPTCP both sit under it (12.6 ≈ 12.6).
+- The fork-join penalty (16.1): striping atomic units across heterogeneous
+  paths pays E[max] per unit; consistent with the measured 8.8 < 14.0.
+- The frontier rate: cross-path window coding + retention advances the
+  in-order frontier at ≈ Σ g_i (16.3), window-by-window (16.4 sizing).
 
-**What is new (to build).**
+MEASURED (goal-gate, cited above): 8.8 / 12.6 / 14.0 / 23.9 Mbit/s;
+MPTCP 15.4 (C7) and 12.6 (C8); the eviction DNF (10/10 → 0/10, Section 15.7); the P9a
+switch hazard; no striping sender in window mode; sim-vs-production
+correspondence (Section 16.3).
 
-1. **Out-of-order native release (small change).** When the receive
-   consumer is the native object API (MemTun/perf, not a kernel TUN feeding
-   inner TCP), set `block_inorder_enabled = false` so decoded blocks release
-   immediately via the existing out-of-order branch. Correctness is already
-   covered by perf's (obj_id, chunk_idx) reassembly. This tests the
-   *block-level* HOL removal (regime (a)→(b)→OOO of Section 16.2).
-2. **Object-as-fountain encode (the full mechanism).** Encode the whole
-   object as one RaptorQ source block of K symbols (or its native
-   interleaved sub-blocks for K > 56 403), not independent 64 KB blocks, so
-   every encoded symbol combines the whole object and no symbol is bound to
-   a path. New: an object-level RaptorQ context spanning the transfer, wired
-   through the Section 15.4 per-stream context interface.
-3. **Pour-by-goodput scheduling (decode-on-total).** A scheduler mode that
-   emits *fungible* encoded symbols weighted by each path's goodput
-   g_i = C_i·(1−ε_i) (Copa rate deflated by the loss estimate), with the
-   Section 13.8 per-block D_i / max / eligibility terms **removed** — there
-   are no ordered delivery units, so the linear-independence assumption the
-   objective needs is restored. Completion fires on the receiver collecting
-   K·(1+φ) useful symbols (decode-on-total), signalled by an
-   application-level ack that closes the loop (as perf already does).
+PREDICTION (the experiment below decides):
+- **P1 — aggregation.** RWM at C8, 50 MB native bulk: completion goodput
+  **strictly > 14.0 Mbit/s** — beyond the (16.2) ceiling of every
+  per-path-affine in-order transport measured on this topology — trending
+  toward Σ ≈ g_A + g_B (≈ 116 Mbit/s of raw goodput, realistically
+  Copa-sub-capacity-limited well below that; the pass line is the ceiling
+  crossing, not the asymptote).
+- **P2 — no regression.** C7 symmetric control stays ≈ 23 Mbit/s: where
+  E = {all}, affinity already aggregates, and RWM must not lose to it
+  (the order-statistic gain → 0 on symmetric paths, so parity is the
+  prediction, not improvement).
+- **P3 — the signature scaling law.** RWM's advantage over whole-unit
+  affinity **grows with path heterogeneity** (sweep RTT_B and ε_B upward
+  from C7-symmetric toward C8 and beyond): the E[max]-to-order-statistic
+  gap widens with skew while both schemes coincide at zero skew. This
+  monotonicity is the falsifiable fingerprint that distinguishes the
+  order-statistic mechanism from generic "more tuning" — a flat or
+  non-monotone curve refutes the formulation even if P1 happens to pass.
 
-**The experiment that proves it.** Topology **C8** per ADR-0051 on the L1
-netem harness — path A: 100 Mbit / 10 ms RTT / GE ε ≈ 2.5%; path B:
-20 Mbit / 40 ms RTT / GE ε ≈ 4.8%. Workload: `raptorpath perf` native
-object, RaptorQ backend, **50 MB** bulk (aggregate goodput) plus **1.8 MB
-× N** (completion-percentile distribution). Seed 42, ≥ 2 runs, same binary,
-one arm at a time:
+**Implementation prerequisites, plainly.** None of this exists today; the
+experiment requires building, in order:
 
-```
-  Arm 0  in-order block affinity (today's §13.8)      expect 12.6 Mbit/s
-                                                       (= kernel-MPTCP parity)
-  Arm B  + out-of-order native release (new-1)         expect > 12.6, the
-                                                       block-HOL removal
-  Arm F  + object-fountain pour-by-goodput (new-2,3)   expect > 14.0, toward
-                                                       Σ = g_A + g_B
-```
+1. **A reliable window** — retention policy in the window pipeline: no
+   forced eviction, advance gated on ack/decode, repair/retransmit until
+   delivered. The Section 14.27 P8 ledger (retained source, ACK-diff,
+   fresh repairs, sweep) is the natural donor machinery.
+2. **A striping window sender** — window mode has none (16.3): stripe
+   source + repairs ∝ g_i, reusing the proportional-goodput logic
+   `Scheduler::schedule` already applies to block repairs.
+3. **Frontier decode** — deliver the in-order prefix on any sufficient
+   subset; the RlcDecoder's incremental GE already exposes exactly this
+   (Section 15.2); what is new is wiring delivery to pivot-completion of
+   the prefix rather than to per-block completion.
 
-External references measured on the identical topology: **fast path alone**
-14.0 Mbit/s; **kernel MPTCP dual** 12.6 Mbit/s. Regression control:
-**C7 symmetric** (WiFi+WiFi) must stay ≈ 23 Mbit/s (fountain must not
-regress the case in-order already aggregates, Section 16.4).
+Workload: C8 per ADR-0051 (netem harness), `raptorpath perf` native
+objects, 50 MB (aggregate goodput) + 1.8 MB × N (completion distribution),
+seed 42, one arm at a time against the affinity baseline; C7 as the P2
+control; then the P3 heterogeneity sweep.
 
-**Pass / fail — the falsifiable line.** The claim is *aggregation that
-in-order provably cannot reach*, so the pass criterion is completion goodput
-**strictly greater than the fast path alone (14.0 Mbit/s)** on C8 50 MB — a
-value the HOL bound (16.2) forbids any in-order schedule from reaching on
-this topology. Arm F ≤ 14.0 (merely tying in-order / MPTCP at 12.6) refutes
-the section. The stretch target is the aggregate goodput
-Σ_i C_i·(1−ε_i) modulo Copa sub-capacity headroom (Section 14.21). The
-distributional check: 1.8 MB object median completion should fall below the
-in-order arm's 1.15 s (Section 13.8) and its tail should lose the hold-
-expiry outliers entirely, since there is no hold.
+**What carries over unchanged from the earlier draft.** Single-path bulk
+stays ARQ: with N = 1 there is nothing to pool — Σ g_i = g_1 — and the
+fountain/window overhead φ is wasted wire against ARQ's retransmit-exactly-
+the-erasures, whose mid-stream recovery is completion-free (Section 14.26).
+The Bulk strategy therefore remains **path-count dependent**: N = 1 → r* = 0
+pure ARQ (the χ glide); N ≥ 2 heterogeneous → cross-path window coding (RWM)
+— the same result as before, with "rateless fountain, out-of-order" replaced
+by its implementable form.
 
 ---
 
@@ -5430,6 +5531,47 @@ latency by 60-75% in commodity datacenters. Different setting (datacenter LAN
 vs our WAN/wireless focus) but the same core insight: proactive FEC-coded
 packets spread across paths, recovered from the first arrivals. They use
 rateless fountain codes; we use windowed RLC/streaming codes with a taper.
+
+### Fork-Join Queues, Coded Queueing, and Resequencing Delay
+
+Section 16's three-regime formulation grounds each multipath delivery
+discipline in a known queueing-theoretic object.
+
+**Fork-join queues.** Nelson & Tantawi [Nelson1988] give the classic
+approximate analysis of fork/join synchronisation in parallel queues — the
+mean response of a job forked to K servers grows with the *maximum* of the
+branch times (harmonic growth for homogeneous exponential branches). This is
+Section 16.1's regime (1): a delivery unit striped across paths completes at
+the max over the paths it touches, and heterogeneity inflates E[max] well
+past any single path's mean.
+
+**Coded queueing / redundancy for latency.** Joshi, Liu & Soljanin
+[Joshi2014] analyse content download from (n, k) coded storage as a fork-join
+system where the job completes when ANY k of n branches finish — the k-th
+order statistic replaces the maximum, trading storage/traffic redundancy for
+latency. Joshi, Soljanin & Wornell [Joshi2017] generalise to full/partial
+forking and quantify when redundancy reduces both mean latency and cost.
+Section 16.1's regime (3) is the transport-layer analogue: rateless symbols
+poured over N paths make completion the K(1+φ)-th order statistic of the
+superposed arrival process, and the E[max] → interior-order-statistic gap is
+exactly the coded-queueing gain, growing with branch heterogeneity.
+
+**Resequencing delay.** Xia & Tse [Xia2003] analyse the resequencing buffer
+of reliable protocols under out-of-order arrivals — packets delivered over
+parallel channels wait for the in-order point to catch up. Section 16.1's
+regime (2) (whole-unit path affinity + in-order release) is this queue at
+block granularity: the delivery frontier is a running max over per-unit
+completion times, which is why raptorpath's affinity scheduler and kernel
+MPTCP (the same queue with unit = packet) measure identically at C8 (12.6
+Mbit/s parity).
+
+**In-order delivery of transport-layer coding.** Cloud, Leith & Médard
+[Cloud2014] analyse the in-order delivery delay of a streaming code that
+inserts coded packets into the stream — showing coding shrinks head-of-line
+waits without abandoning in-order semantics. This is the direct antecedent
+of Section 16.2's claim that in-order delivery is NOT the aggregation
+bottleneck once repairs are fungible across the window: the frontier
+advances on any sufficient subset, at the pooled arrival rate.
 
 ### Joint FEC/ARQ under Gilbert-Elliott
 
@@ -6063,6 +6205,38 @@ distinction matters far less than this factor-of-W undercount.)
 - **[Ferlin2016]** S. Ferlin et al., "BLEST: Blocking Estimation-based MPTCP
   Scheduler," IFIP Networking, 2016.
   Skip slow paths that would stall receiver.
+
+- **[Xia2003]** Y. Xia, D.N.C. Tse, "Analysis on Packet Resequencing for
+  Reliable Network Protocols," *IEEE INFOCOM*, San Francisco, 2003,
+  pp. 990-1000.
+  Resequencing-buffer delay of reliable protocols under out-of-order
+  arrivals — the queue behind Section 16.1's regime (2) bound.
+
+- **[Cloud2014]** J. Cloud, D. Leith, M. Médard, "In-Order Delivery Delay of
+  Transport Layer Coding," arXiv:1408.1440, 2014.
+  Expected in-order delivery delay (and variance) when coded packets are
+  inserted into a reliable stream — coding shrinks head-of-line waits
+  without dropping in-order semantics (Section 16.2).
+
+### Fork-Join and Coded Queueing
+
+- **[Nelson1988]** R. Nelson, A.N. Tantawi, "Approximate Analysis of
+  Fork/Join Synchronization in Parallel Queues," *IEEE Trans. Computers*,
+  vol. 37, no. 6, pp. 739-743, 1988.
+  Classic fork-join response-time analysis: completion is the max over
+  parallel branches (Section 16.1 regime (1)).
+
+- **[Joshi2014]** G. Joshi, Y. Liu, E. Soljanin, "On the Delay-Storage
+  Trade-off in Content Download from Coded Distributed Storage Systems,"
+  *IEEE JSAC*, vol. 32, no. 5, May 2014.
+  (n, k) fork-join: download completes on ANY k of n coded branches — the
+  k-th order statistic replaces the fork-join max (Section 16.1 regime (3)).
+
+- **[Joshi2017]** G. Joshi, E. Soljanin, G.W. Wornell, "Efficient Redundancy
+  Techniques for Latency Reduction in Cloud Systems," *ACM ToMPECS*,
+  vol. 2, no. 2, 2017. arXiv:1508.03599.
+  When and how much redundancy reduces latency and cost in (n, k) fork-join
+  service; quantifies the E[max] vs order-statistic gap Section 16.1 uses.
 
 - **[Facenda2022]** T. Facenda, M.N. Krishnan et al., "Error-correcting codes
   for low latency streaming over multiple link relay networks,"

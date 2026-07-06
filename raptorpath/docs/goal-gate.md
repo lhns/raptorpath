@@ -1125,6 +1125,14 @@ never evicts an un-acked source symbol before it is delivered/acked (bulk ARQ
 inside the window), plus a striping sender before multipath is even meaningful.
 The experiment stays on this branch, unmerged, as the record.
 
+**Paper follow-up (2026-07-06, branch paper/rwm-rewrite).** Paper §16 was
+rewritten to the converged Reliable Windowed Multipath (RWM) formulation and
+§15 gained the reliability-policy axis (§15.7), superseding the earlier
+"out-of-order is the unlock" framing — motivated by this negative result plus
+the user corrections: reliability is pipeline POLICY (evict vs
+retain-until-acked), not codec; and per-path-affine ATOMIC UNITS, not
+in-order delivery, are what cap multipath aggregation.
+
 ## Honest scope
 
 ### P10b — realtime (window-mode) reactive repair (2026-07-04)
