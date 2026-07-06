@@ -5290,7 +5290,16 @@ budget (W_lat), by memory (W symbols retained per stream under the retention
 policy), and by decode cost — RLC's incremental pivot GE grows ~O(W²) in
 the window, though the measured costs at production windows leave headroom
 (MEASURED, P9b non-finding: RLC decode p50 37 µs, p99 < 1 ms; it was
-explicitly ruled out as a bottleneck at C2 rates). A W ≈ 600 window at C8's
+explicitly ruled out as a bottleneck at C2 rates). A direct
+decode-throughput measurement at bulk-realistic parameters (MEASURED,
+2026-07-06: 1200 B symbols, 2.6 % GE loss, r = 5 %, single core,
+encode + decode combined) gives 2.84 Gbit/s at W = 64, 1.28 Gbit/s at
+W = 256, and 708 Mbit/s at W = 512 — 7–140× headroom over the 20–100
+Mbit/s lossy cells, and reception overhead is effectively MDS
+(expected excess ≈ 1/255 of one symbol over GF(256), tighter than
+RaptorQ's ~+1–2 symbols per block at K = 56). Compute, not overhead,
+is therefore RLC's only scaling cost, and it does not bind below
+roughly gigabit line rates at these windows. A W ≈ 600 window at C8's
 symbol rate is ~50 ms of traffic and ~0.7 MB retained — well within all
 three ceilings; the binding constraint at satellite-class RTT × high rate
 would be memory and decode, and (16.4) says such links need either a larger
