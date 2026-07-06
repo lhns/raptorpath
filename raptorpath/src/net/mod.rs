@@ -2202,6 +2202,22 @@ fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32)
     scheduler.best_repair_path_avoiding(avoid).unwrap_or(fallback)
 }
 
+/// The source paths that carried the symbols currently in the coding window —
+/// the `covered_paths` argument for RWM repair placement (§16.3 ρ_fate). One
+/// entry per in-window source symbol (with multiplicity), so the placement
+/// law's fate term is the fraction of the repair's coverage on each path. A
+/// fungible repair covers the whole window; entries that predate the window
+/// (still in the retained map) are excluded by the span filter.
+fn window_source_paths(
+    encoder: &dyn WindowEncoder,
+    source_path_map: &std::collections::HashMap<u64, u32>,
+) -> Vec<u32> {
+    let (win_start, win_end) = encoder.window_span();
+    (win_start..=win_end)
+        .filter_map(|seq| source_path_map.get(&seq).copied())
+        .collect()
+}
+
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
 /// source symbols, sends them immediately, and periodically generates repair symbols.
 async fn run_window_sender(
@@ -2299,10 +2315,18 @@ async fn run_window_sender(
                 sent_store.insert(wire_sym.block_id, wire_sym.clone());
             }
 
-            // Send source symbol — pick best path by lowest RTT with capacity
+            // Send source symbol. RWM Phase B (§16.3): in reliable multipath
+            // mode, stripe by the per-symbol placement law (softmax over
+            // marginal cost); single path collapses to that path (byte-
+            // identical to Phase A). Non-reliable (realtime/EVICT) mode keeps
+            // the single best-path pick + redundant duplicate, unchanged.
             let source_path = {
                 let sched = scheduler.lock();
-                select_source_path(&sched)
+                if reliable {
+                    sched.place_symbol(false, &[]).unwrap_or(0)
+                } else {
+                    select_source_path(&sched)
+                }
             };
             last_source_path = source_path;
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
@@ -2453,9 +2477,19 @@ async fn run_window_sender(
                         }
                     };
 
+                    // RWM Phase B (§16.3): reliable multipath places the
+                    // correction by the law with the ρ_fate penalty against the
+                    // paths that carried the window symbols it covers (the
+                    // continuous form of best_repair_path_avoiding). Single path
+                    // ⇒ that path. Non-reliable keeps the best-goodput pick.
                     let correction_path = {
                         let sched = scheduler.lock();
-                        select_repair_path(&sched, source_path)
+                        if reliable {
+                            let covered = window_source_paths(&*encoder, &source_path_map);
+                            sched.place_symbol(true, &covered).unwrap_or(source_path)
+                        } else {
+                            select_repair_path(&sched, source_path)
+                        }
                     };
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
@@ -2749,11 +2783,19 @@ async fn run_window_sender(
                             continue;
                         }
                     }
-                    // Cross-path: avoid the path that originally carried this symbol
+                    // Cross-path: avoid the path that originally carried this
+                    // symbol. RWM Phase B (§16.3): the targeted retransmit is
+                    // placed by the law with a ρ_fate penalty on the original
+                    // path (best path for the exact symbol, minus its fate) —
+                    // the continuous form of select_repair_path_avoiding.
                     let original_path = source_path_map.get(&seq).copied().unwrap_or(last_source_path);
                     let nack_path = {
                         let sched = scheduler.lock();
-                        select_repair_path_avoiding(&sched, original_path, last_source_path)
+                        if reliable {
+                            sched.place_symbol(true, &[original_path]).unwrap_or(last_source_path)
+                        } else {
+                            select_repair_path_avoiding(&sched, original_path, last_source_path)
+                        }
                     };
 
                     // Exact source retransmission first — reliable mode
@@ -2803,9 +2845,17 @@ async fn run_window_sender(
                         .fold(0.0f64, f64::max)
                 };
                 let margin = (retransmitted as f64 * current_loss).ceil() as u64;
+                // RWM Phase B (§16.3): place the extra repair margin by the law
+                // (fungible repairs cover the whole window → fate over the
+                // window's source paths). Single path ⇒ that path.
                 let margin_path = {
                     let sched = scheduler.lock();
-                    select_repair_path(&sched, last_source_path)
+                    if reliable {
+                        let covered = window_source_paths(&*encoder, &source_path_map);
+                        sched.place_symbol(true, &covered).unwrap_or(last_source_path)
+                    } else {
+                        select_repair_path(&sched, last_source_path)
+                    }
                 };
                 for _ in 0..margin {
                     if encoder.window_size() == 0 {
