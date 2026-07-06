@@ -143,3 +143,55 @@ async fn perf_loopback_out_of_order_object() {
 
     srv.abort();
 }
+
+/// Fungible frontier (paper §16.3 "empty quadrant"): the reliable-window
+/// loopback in CODED-ONLY mode (`window_coded_only`). The sender emits ONLY
+/// coded (random-linear-combination) symbols over the window — no raw
+/// systematic source on the wire during normal flow — and the receiver
+/// reconstructs every source seq by Gaussian elimination and delivers it
+/// out-of-order (reassemble by offset). Guards the coded-object path end to
+/// end: with NO systematic passthrough the object must still complete with
+/// all bytes (the perf server only acks when st.got.len() == total, so
+/// completion IS the all-bytes-present, decode-on-K check). The LOSSY
+/// exercise is the L1 C8 measurement (real GE loss on the netem harness),
+/// where the fungible window aggregates across the two paths.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn perf_loopback_coded_object() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let srv_cfg = config::RaptorpathConfig {
+        server: Some(true),
+        bind: Some(vec!["127.0.0.1:47837".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_coded_only: Some(true),
+        ..Default::default()
+    };
+    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    assert!(srv_pc.window_reliable && srv_pc.window_coded_only);
+    let srv = tokio::spawn(perf::server(srv_pc));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let cli_cfg = config::RaptorpathConfig {
+        bind: Some(vec!["127.0.0.1:0".into()]),
+        peer: Some(vec!["127.0.0.1:47837".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_coded_only: Some(true),
+        ..Default::default()
+    };
+    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+
+    // A multi-window object: coded-only must reconstruct every seq purely by
+    // GE (no systematic passthrough) across window boundaries and complete.
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        perf::client(cli_pc, 1_000_000, 2),
+    )
+    .await
+    .expect("coded-object perf loopback timed out")
+    .expect("coded-object perf client failed");
+
+    srv.abort();
+}

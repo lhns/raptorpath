@@ -168,6 +168,15 @@ struct PerfArgs {
     /// offset and completes on total-decoded — no in-order frontier wait.
     #[arg(long)]
     window_out_of_order: bool,
+
+    /// Fungible frontier (paper §16.3 "empty quadrant", coded-object mode).
+    /// Requires --window-reliable; implies out-of-order delivery. Emits ONLY
+    /// coded (random-linear-combination) symbols over the window — no raw
+    /// systematic source — so any K independent coded symbols from ANY path
+    /// reconstruct the K sources and no symbol is a fixed position a slow
+    /// path can long-pole. Bulk-object / loose-δ ONLY.
+    #[arg(long)]
+    window_coded_only: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -255,10 +264,16 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         protocol_hint: args.protocol_hint,
         window_reliable: if args.window_reliable { Some(true) } else { None },
         window_out_of_order: if args.window_out_of_order { Some(true) } else { None },
+        window_coded_only: if args.window_coded_only { Some(true) } else { None },
         ..Default::default()
     };
     if args.window_out_of_order && !args.window_reliable {
         anyhow::bail!("--window-out-of-order requires --window-reliable (RWM Phase C)");
+    }
+    if args.window_coded_only && !args.window_reliable {
+        anyhow::bail!(
+            "--window-coded-only requires --window-reliable (fungible frontier, §16.3)"
+        );
     }
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
 
@@ -338,6 +353,9 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         // Out-of-order object delivery is a perf/native-object mode only;
         // the run() tunnel path always delivers in order (see cmd_perf).
         window_out_of_order: None,
+        // Coded-only (fungible frontier) is likewise a bulk-object mode; the
+        // in-order tunnel stream stays systematic.
+        window_coded_only: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

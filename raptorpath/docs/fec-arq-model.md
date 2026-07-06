@@ -5263,6 +5263,136 @@ for bulk, anything production actually runs — a correspondence gap the
 paper's earlier sections (which lean on the sim) inherit and that is now
 stated explicitly.
 
+**The fungible construction, made concrete (the coded-object mode this task
+builds).** §16.7 measured that the reliable striped window, at bulk's
+systematic operating point, caps at fork-join parity (≈ ×0.92 in the oracle,
+0.76–0.81 at L1) — and localized *why*: a **systematic** window sends raw
+source symbols in sequence order plus sparse repair, so a source symbol
+striped onto the slow path IS a specific in-order position the fast path
+holds no degrees of freedom to decode around. It arrives at the slow path's
+rate; the frontier waits for it; the aggregate collapses to the order-
+eligible set E = {fast}. That specific-symbol **long pole** is the whole of
+the cap. The empty quadrant is filled by removing it at the source:
+
+> **Emit CODED symbols only.** In coded-object mode every transmitted symbol
+> is a random linear combination over the *current sliding window* of K_W
+> source symbols (the §15.2 RLC algebra the encoder already generates as
+> "repairs"; the change is that this mode sends **no raw systematic source at
+> all** — the systematic pass-through is switched off). Each coded symbol
+> carries its window coordinates + coefficient seed on the existing repair
+> wire, so it is self-describing to the decoder.
+
+Three consequences make this the fungible regime (3) of §16.1, not the
+fork-join regime (1):
+
+1. **No symbol is specific → no long pole (DERIVED).** Any K_W linearly
+   independent coded symbols — *from any path, in any order* — reconstruct
+   the K_W window sources by one bounded Gaussian elimination. Nothing waits
+   for a *particular* symbol, so a slow-path symbol is never a position the
+   fast path must stall on; it is one interchangeable degree of freedom among
+   many. Reception overhead is effectively MDS over GF(256): expected excess
+   ≈ 1/255 of a symbol for independence (tighter than RaptorQ's +1–2 per
+   block), so completion is the K_W(1+φ)-th order statistic of the *pooled*
+   cross-path arrival process — rate Σ_i g_i (16.3), not the straggler's rate.
+   This is exactly why the systematic window caps at ≈0.92 (a source symbol is
+   a fixed position → §16.2 fork-join bound) while the coded window reaches
+   Σ g_i (no fixed position exists). The two differ only in whether a
+   transmitted symbol is raw-and-positional or coded-and-fungible; everything
+   else — retention, placement, frontier — is shared.
+
+2. **Window sized to the cross-path lag: W ≈ W_mp (DERIVED + oracle-checked).**
+   The §16.5 lower bound W_mp ≳ Σ_i g_i·(RTT_max + t_slack) ≈ 600 symbols at
+   C8 sets how far the window must span so a slow-path symbol's lag still
+   falls inside the fungible horizon (covered by a later coded symbol, not
+   stranded as aged ARQ). The independent-GE oracle
+   (`multipath_oracle.rs::oracle_c8_fungible_wmp_window`), run at the exact C8
+   netem params, confirms the *finite* window suffices: a coded fungible
+   window aggregates to **×1.19** (the goodput ceiling ×1.195) for every
+   W ≥ 384 at a modest repair rate r ≥ 0.05, and to ×1.15–1.18 even at r = 0
+   for W = 600–1024 (MEASURED, oracle). The earlier §16.7 sweep's ×0.99 at
+   H = 256 was simply W < W_mp; at and above W_mp the fungible ceiling is
+   reached. So the production target is proven reachable by *this specific
+   finite-window design*, not only by the unbounded whole-object horizon.
+
+3. **Object completion out-of-order; ARQ backstops the tail (DERIVED).** The
+   receiver decodes each window on any sufficient K_W-subset and delivers the
+   recovered symbols out-of-order, reassembled by offset (the §16.7 Phase C
+   delivery policy, H → ∞ for a file). The retention/ARQ layer (§16.3 point 1,
+   Phase A) remains the backstop for the last partial window and any window
+   that never accumulates K_W in-flight.
+
+**Decode-cost bound (MEASURED).** Coded-only decode is one incremental RLC
+Gaussian elimination over W_mp, cost ~O(W²) in the window. The direct
+throughput measurement (§16.5: 1200 B symbols, single core, encode+decode)
+gives **708 Mbit/s at W = 512** and 1.28 Gbit/s at W = 256 — 7–35× headroom
+over the 20–100 Mbit/s lossy cells at W ≈ W_mp, so compute does not bind
+below roughly gigabit line rates at these windows.
+
+**Scope caveat — bulk / loose-δ only (DERIVED).** Coded-only pays a K_W-symbol
+**decode latency before *any* byte is delivered**: nothing decodes until the
+window accumulates K_W(1+φ) independent symbols. That is correct for a bulk
+object (no consumer reads offset k before the file is whole — §16.7's
+decode-on-total equivalence) but **wrong for realtime or in-order low-latency
+byte streams**, which need the systematic window's immediate per-symbol
+pass-through. So coded-object is a *bulk-object, loose-δ* mode, composed
+behind a flag with the reliable window (Phase A) and out-of-order delivery
+(Phase C); realtime and in-order-stream profiles stay on their existing
+systematic modes untouched (§16.4's one-pipeline, per-stream-parameterised
+thesis — coded-vs-systematic is one more parameter point, not a new pipeline).
+
+**Status — built, oracle-confirmed reachable, MEASURED at L1, and REFUTED
+there (goal-gate "Fungible Frontier", 2026-07-07).** The coded-object mode was
+implemented exactly as above (coded-only wire symbols, W widened to W_mp = 640,
+retention/ARQ backstop, out-of-order object completion; behind a
+`window_coded_only` flag composing with `window_reliable` + out-of-order) and
+measured at C8 = c2+c3 netem (independent qdiscs, 50 MB native `perf`). The
+prediction that it would strictly beat fast-path-alone (15.68 Mbit/s) is
+**REFUTED**:
+
+```
+  coded-only C8 het  (c2+c3) dual    3.9 Mbit/s mean (median 4.5, stdev high, x6)
+  coded-only C7 sym  (c2+c2) dual    5.5 Mbit/s mean                        (x3)
+  coded-only         SINGLE c2       12.9 Mbit/s                            (x2)
+  systematic fast-path-alone c2      15.68 Mbit/s   (the bar)
+```
+
+Three facts localize the failure and are sharper than "it did not aggregate":
+
+1. **The coded-object mechanism is CORRECT.** Loopback and netem both complete
+   with all bytes, decode-on-K, zero systematic passthrough. It is a working
+   fungible transport, not a broken build.
+2. **The bottleneck is NOT heterogeneity/straggler — it is cross-path coding
+   itself.** Coded-only *single-path* runs at 12.9 (near systematic, the ~18 %
+   gap is the O(W)-per-symbol codec cost of making 100 % of symbols
+   W_mp-wide combinations instead of ~2 %). But *dual* is WORSE than single on
+   BOTH symmetric (5.5) and heterogeneous (3.9) paths. Adding any second path
+   drags the coded pipeline down — the opposite of the oracle's monotone
+   aggregation. So the independent-GE oracle's ×1.19 is **not realized on the
+   real sliding-window + per-path-timing + CC + ARQ stack**.
+3. **The mechanism of the drag (DERIVED from the above).** A coded symbol is a
+   combination over the sender's window *at send time*; a symbol striped to a
+   path arrives one path-delay later, by which point the sender's window (and
+   the receiver's decoded frontier) has advanced — on the fast path by
+   ~Σg·RTT ≫ W_mp — so a second path's symbols land covering windows already
+   decoded past (redundant) or misaligned, contributing little useful pooled
+   rank while adding decode load, cross-path reordering, and NACK/recovery
+   churn (each transient undecoded seq is congestion-throttled ARQ, §16.7).
+   The oracle abstracts all of this away (instantaneous pooled decode over a
+   fixed horizon); the gap between ×1.19 (oracle) and ×0.25 (L1) is precisely
+   that abstraction.
+
+**Honest §16 position (updated).** The §16.3 empty quadrant now has a *correct
+implementation* and an *independent-GE proof of achievability* (×1.19), but
+the L1 transport does not realize it: heterogeneous aggregation-above-fast-path
+remains **OPEN and unrealized in production**, and coded-only over the current
+per-path-timed sliding window aggregates *negatively*. What the oracle's ×1.19
+and the L1's ×0.25 together establish is that the missing piece is not
+fungibility-in-the-abstract (built, proven) but **cross-path window alignment**
+— coding horizons whose per-path arrivals pool over the *same* live window —
+which the send-time-windowed RLC does not provide. That is a named,
+scoped next mechanism, not a knob; §16.5's W_mp sizing is necessary (it lifted
+the number from 2 to 4.5) but not sufficient.
+
 ### 16.4 One Pipeline, Not Mode Switching
 
 The two-pipeline structure (Section 15.1) invites a tempting patch: keep
