@@ -67,22 +67,81 @@ function solveRhoFromRDelta(eps,q,W,s2,r,delta) {
 // --- Simulation wrapper ---
 // The inner Simulation runs the SAME rate-controller code as the production
 // transport (shared raptorpath-math::controller_rate), fed by an honest
-// RTT-delayed estimator (BOCD p-hat, GE sigma2-hat).
+// RTT-delayed estimator (BOCD p-hat, GE sigma2-hat). MULTIPATH (paper §16,
+// RWM at L0): params.paths = [{eps,q,rttMs,cap}, ...] builds N independent
+// GE channels pouring into ONE shared reliable window; a single-entry array
+// (or legacy flat params) reproduces the classic single-path sim exactly.
 const SMOOTH_WINDOW = 6;
 
 class SimWrapper {
   constructor(params) {
     const fixedR = params.hint === 'fixed' ? params.fixedR : undefined;
-    this.inner = new Simulation(params.eps, params.q, params.rttMs, params.W, params.hint,
-                                fixedR, params.customDelta, params.customRho);
+    // Accept both shapes: params.paths array (new) or flat single-path
+    // params (compat shim for any old caller).
+    const paths = params.paths && params.paths.length
+      ? params.paths
+      : [{ eps: params.eps, q: params.q, rttMs: params.rttMs, cap: 4 }];
+    this.inner = Simulation.multipath(
+      paths.map(c => c.eps), paths.map(c => c.q),
+      new Uint32Array(paths.map(c => c.rttMs)),
+      new Uint32Array(paths.map(c => c.cap)),
+      params.W, params.hint, fixedR, params.customDelta, params.customRho);
     this.rateHistory = [];
-    this.channelStates = [];
-    this.eps = params.eps;
-    this.q = params.q;
+    // Per-path channel-state traces (the strip shows the selected path).
+    this.channelStates = paths.map(() => []);
+    // Truth-side aggregates (capacity-weighted — what the shared window
+    // rides; equals the single path's values for N = 1).
+    const totalCap = paths.reduce((s, c) => s + c.cap, 0);
+    this.eps = paths.reduce((s, c) => s + c.cap / totalCap * c.eps, 0);
+    this.q   = paths.reduce((s, c) => s + c.cap / totalCap * c.q, 0);
     this.hint = params.hint;
-    const pp = params.eps * params.q / (1 - params.eps);
-    this.sigma2True = burst_variance_factor(pp, params.q);
+    this.sigma2True = this.inner.get_sigma2();
     this.srcDoneTick = null;  // tick of the last source symbol (tail FEC starts here)
+    // §16.6 P1 baseline, measured-vs-measured: run each path ALONE through
+    // the same engine (same hint, same W, that path's own channel) and take
+    // the best completion goodput. The aggregation factor compares the
+    // multipath run against this — what a single-path transfer would
+    // actually achieve, not the loss-free theoretical ceiling (which no
+    // real run reaches: overhead, ramp and drain are paid on both sides).
+    this.bestSingleMeasured = 0;
+    if (paths.length > 1) {
+      for (const c of paths) {
+        const s = Simulation.multipath(
+          [c.eps], [c.q], new Uint32Array([c.rttMs]), new Uint32Array([c.cap]),
+          params.W, params.hint, fixedR, params.customDelta, params.customRho);
+        let guard = 0;
+        while (!s.is_finished() && guard++ < 25000) s.step();
+        const gp = s.get_num_source() / Math.max(s.get_tick(), 1);
+        if (gp > this.bestSingleMeasured) this.bestSingleMeasured = gp;
+        if (s.free) s.free();
+      }
+    }
+  }
+  // measured aggregate goodput vs the best MEASURED single-path run (>1 =
+  // the §16.2 per-path-affine ceiling is broken in like-for-like terms)
+  get aggregationFactorMeasured() {
+    return this.bestSingleMeasured > 0 ? this.aggGoodput / this.bestSingleMeasured : 0;
+  }
+  // --- Multipath accessors (paper §16) ---
+  get numPaths() { return this.inner.get_num_paths(); }
+  pathCapacity(i)   { return this.inner.get_path_capacity(i); }
+  pathRttMs(i)      { return this.inner.get_path_rtt_ms(i); }
+  pathEpsHat(i)     { return this.inner.get_path_eps_hat(i); }
+  pathGoodputEst(i) { return this.inner.get_path_goodput_est(i); }
+  pathGoodputTrue(i){ return this.inner.get_path_goodput_true(i); }
+  pathSrc(i)  { return this.inner.get_path_src(i); }
+  pathFec(i)  { return this.inner.get_path_fec(i); }
+  pathArq(i)  { return this.inner.get_path_arq(i); }
+  pathLost(i) { return this.inner.get_path_lost(i); }
+  // aggregate delivery goodput (decoded/tick) vs the best single path's
+  // TRUE goodput — the §16.6 P1 readout (>1 breaks the §16.2 ceiling)
+  get aggGoodput()        { return this.inner.get_agg_goodput(); }
+  get bestSingleGoodput() { return this.inner.get_best_single_goodput(); }
+  get aggregationFactor() { return this.inner.get_aggregation_factor(); }
+  get sumGoodputTrue() {
+    let s = 0;
+    for (let i = 0; i < this.numPaths; i++) s += this.pathGoodputTrue(i);
+    return s;
   }
   get finished() { return this.inner.is_finished(); }
   // live controller output vs closed-form reference at TRUE channel params
@@ -126,7 +185,9 @@ class SimWrapper {
   step() {
     if (this.finished) return;
     this.inner.step();
-    this.channelStates.push(this.inner.channel_is_good() ? "good" : "bad");
+    for (let i = 0; i < this.channelStates.length; i++) {
+      this.channelStates[i].push(this.inner.path_channel_is_good(i) ? "good" : "bad");
+    }
     const lost = this.inner.get_lost();
     const pct = 100 / this.inner.get_num_source();
     this.rateHistory.push({
