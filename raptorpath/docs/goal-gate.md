@@ -1783,3 +1783,88 @@ multipath_oracle tests + 3 new temporal_oracle tests: fidelity-reproduces-L1,
 alignment-fix, lever-decomposition). No production code changed —
 `cargo test -p raptorpath --lib` untouched/green. Reproduce:
 `cargo test -p raptorpath-math --test temporal_oracle -- --nocapture`.
+
+## Real-Trace Validation — is Gilbert-Elliott adequate for REAL loss? (branch `feat/real-trace-validation`, 2026-07-07)
+
+The whole ladder above (formula ← oracle ← netem) is proven *for a GE world*.
+This rung tests the bottom assumption itself: does the two-state Gilbert-Elliott
+chain (§2.1) capture REAL link loss well enough for our r\*? Harness:
+`raptorpath-math/tests/real_trace_validation.rs` (analysis/oracle only; no
+production code changed — only new tests + vendored traces).
+
+**Traces (provenance).** Five REAL U.S. cellular capacity traces —
+Verizon-LTE-short, ATT-LTE-driving-2016, TMobile-UMTS-driving,
+TMobile-LTE-short, Verizon-LTE-driving (down-link) — from the *Saturator*
+tool (Winstein et al., NSDI 2013) via the mahimahi repo, vendored under
+`tests/data/traces/` (see `PROVENANCE.md`; long traces time-truncated to bound
+repo size). These are CAPACITY traces (per-ms 1500 B delivery opportunities),
+so loss is DERIVED honestly: a drop-tail queue (offer ρ=0.5 of mean capacity,
+64-packet buffer, drained at the trace's instantaneous capacity) turns each real
+capacity fade into a real loss burst. Derived ε = 5.2%–24.5%.
+
+**PART 1 — what GE misses** (`real_trace_ge_mismatch_structure`). Fit GE per
+trace, compare its own predictions to the trace:
+
+| structure | GE prediction | real measurement |
+|-----------|---------------|------------------|
+| autocorrelation, lag-20 | (1−p−q)²⁰ ≈ 0 | **5×–4104×** higher (e.g. 0.54 vs 0.0001) — long memory |
+| burst-length tail | geometric | **3.8×–26×** heavier extreme tail (max bursts 210–597 sym) |
+| stationarity | one (p,q) | ε swings 0%–87%, q̂ swings up to 0.47 within a trace |
+
+**PART 2 — r\* fidelity on real loss** (`real_trace_r_star_fidelity`). Compute
+r\* from the closed form (§8.4) fitted to each trace's (ε, σ²_burst), full
+burst-variance margin, then run the ACTUAL real loss sequence through the FEC/ARQ
+window process (W=50). Achieved residual window-failure vs target δ/ε vs the
+GE-ideal (1 − P_fec exact DP, §8.7) at the same r\*:
+
+| trace | ε | σ² | tgt δ/ε | r\* | real WF | GE-ideal WF | real/GE |
+|-------|---|----|---------|-----|---------|-------------|---------|
+| Verizon-LTE-short | 8.0% | 4.6 | 0.02 | 0.27 | 0.135 | 0.043 | 3.1× |
+| ATT-LTE-2016 | 13.5% | 12.6 | 0.02 | 0.56 | 0.161 | 0.067 | 2.4× |
+| TMobile-UMTS | 24.5% | 20.5 | 0.02 | 1.07 | 0.255 | 0.082 | 3.1× |
+| TMobile-LTE-short | 8.4% | 19.9 | 0.02 | 0.49 | 0.106 | 0.067 | 1.6× |
+| Verizon-LTE-driving | 5.2% | 6.3 | 0.02 | 0.23 | 0.086 | 0.056 | 1.5× |
+
+Worst case: real residual = **12.8× the target**, and **3.1× worse than the
+GE-ideal** the model predicts for the SAME r\* — even at r\* up to ~100% overhead
+and even with the exact-DP r\*. The gap beyond GE-ideal is pure channel-model
+mismatch: σ²_burst inflates lag-1 variance but cannot cover long memory / heavy
+fade tails / regime shifts.
+
+**PART 3 — generation-coding aggregation on real per-path traces**
+(`real_trace_generation_oracle_aggregation`). Two DIFFERENT real traces
+(Verizon-LTE-short fast + ATT-LTE-2016 slow) as two independent paths through the
+validated stable-generation design, at the C8 rates/OWD that produced the ×1.19
+GE reference, with per-path GE draw replaced by real loss replay:
+
+| config | factor | efficiency (factor/ceiling ×1.188) |
+|--------|-------:|-----------------------------------:|
+| REAL per-path loss | **×1.178** | 0.991 |
+| GE control (fitted p,q) | ×1.180 | 0.994 |
+
+Real per-path burst structure does NOT break the aggregation mechanic — it
+tracks its GE control and the real goodput ceiling.
+
+**VERDICT.**
+- **GE is INADEQUATE for real single-path loss w.r.t. r\*.** It under-provisions
+  the tail by ~2×–4× beyond its own GE-ideal prediction (up to 12.8× the target),
+  because real loss has long memory, heavy fade tails, and non-stationarity that
+  a stationary two-state Markov chain omits. σ²_burst is only a partial fix.
+- **Generation-coding aggregation IS ROBUST** on real independent per-path
+  dynamics (×1.178 ≈ GE ×1.19).
+- **Recommended enrichment** (recommendation only, not built): move beyond a
+  single stationary GE to a semi-Markov/heavy-tailed-sojourn burst model (fade
+  tail + long memory) or a regime-switching hierarchical model (non-stationarity),
+  and provision r\* against the *empirical* window-loss quantile rather than the
+  Gaussian/GE tail.
+
+**CORRELATION GAP (open milestone).** Public single-path traces are independent
+by construction — this tests real per-path *dynamics*, NOT path *correlation*
+(shared-bottleneck WiFi+LTE losing together). Settling correlation needs
+simultaneous dual-link capture or a dual-radio hardware testbed. Not claimed
+here.
+
+**Verification.** `cargo test -p raptorpath-math` green (all suites; 4 new
+`real_trace_validation` tests). No production code changed —
+`cargo test -p raptorpath --lib` untouched. Reproduce:
+`cargo test -p raptorpath-math --test real_trace_validation -- --nocapture`.
