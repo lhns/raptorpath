@@ -4912,9 +4912,12 @@ flipped completions from 10/10 to 0/10. It is a *delivery-semantics contract*
 (b) merely reshape latency and overhead within a fixed contract.
 
 **Policy is not codec.** The failure was NOT "RLC is unreliable": RLC with a
-retention policy (advance gated on ack/decode, repair/retransmit until
-delivered — exactly what the wasm visualizer sim implements at ρ = 1, and
-what the Section 6.1 retransmit buffer provides) is a fully reliable code.
+retention policy — sent source bytes retained in an ARQ-layer store until
+acked, retransmitted until delivered (exactly what the wasm visualizer sim
+implements at ρ = 1, and what the Section 6.1 retransmit machinery provides
+once it carries data, not just metadata) — is a fully reliable code. The
+coding window itself need not be gated: reliability is the ARQ store's
+contract, the window is only the FEC horizon (see 16.3).
 Conversely RaptorQ blocks are reliable only because the Section 14.27
 retention machinery (64-block LRU ledger, batch-ACK diff, fresh-repair
 minting) around them makes them so — strip it (the pre-P8 production state)
@@ -5163,12 +5166,26 @@ production system and the experiments populate three of the four quadrants:
 **RWM defined.** Reliable Windowed Multipath = RETAIN × sliding window ×
 cross-path striped:
 
-1. **Retention.** The window advances ONLY on ack/decode of its prefix.
-   Window fullness becomes **backpressure** on the source (flow control),
-   never data loss — the exact place the evicting pipeline instead destroys
-   data. The Section 14.27 batch-ACK ledger machinery (retained source,
-   ACK-diff loss detection, fresh-repair minting, sweep timer) is the
-   natural donor: it already implements retain-until-acked for blocks.
+1. **Retention — at the ARQ layer, not in the coding window.** The window
+   slides freely: it is only the FEC horizon (fungible repair coverage for
+   recent, not-yet-localized losses). Reliability is the contract of a
+   **sent-data store**: every sent source symbol's bytes are retained until
+   ACKed (removal by ack ONLY — never timeout, never pressure); a
+   SACK-confirmed hole that has aged out of the window is recovered by a
+   targeted retransmit of exactly that symbol from the store, on the best
+   available path — once a loss is localized, fungibility has no value and
+   one exact symbol is the cheapest correction (Section 5's
+   corrections = repairs ∪ retransmits, with the window/ARQ split falling
+   out of loss-localization). Store fullness (~ a few × BDP of plain
+   bytes, no coding cost) becomes **backpressure** on the source (flow
+   control), never data loss — the exact place the evicting pipeline
+   instead destroys data. The Section 14.27 batch-ACK ledger (retained
+   source, ACK-diff, targeted resend) is the donor: it already implements
+   this for blocks. A consequence: the W_mp bound of 16.5 SOFTENS from a
+   requirement to a continuous trade — W sets the share of recovery that
+   is fungible-repair (in-window) versus targeted-ARQ (aged), so an
+   undersized window costs recovery latency on aged holes, not
+   correctness.
 2. **Striping — by pull, not by split.** No proportional (and certainly
    no equal-weight) splitter: under backlog each path *pulls* symbols
    from the shared window up to its own CC budget (work-conserving), so
@@ -5361,10 +5378,15 @@ PREDICTION (the experiment below decides):
 **Implementation prerequisites, plainly.** None of this exists today; the
 experiment requires building, in order:
 
-1. **A reliable window** — retention policy in the window pipeline: no
-   forced eviction, advance gated on ack/decode, repair/retransmit until
-   delivered. The Section 14.27 P8 ledger (retained source, ACK-diff,
-   fresh repairs, sweep) is the natural donor machinery.
+1. **ARQ-layer retention** — a sent-data store in the window pipeline:
+   sent source bytes retained until acked (ack-only removal), targeted
+   retransmit from the store for aged SACK-confirmed holes on the best
+   path, store-full ⇒ source backpressure; receiver never force-delivers
+   past a hole on a reliable stream. The coding window keeps sliding
+   freely (today's retransmit buffer holds metadata only — the data dies
+   with window eviction; carrying the bytes is the change). The Section
+   14.27 P8 ledger (retained source, ACK-diff, targeted resend, sweep) is
+   the natural donor machinery.
 2. **A striping window sender** — window mode has none (16.3): stripe
    source + repairs ∝ g_i, reusing the proportional-goodput logic
    `Scheduler::schedule` already applies to block repairs.
