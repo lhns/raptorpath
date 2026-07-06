@@ -76,6 +76,18 @@ pub struct RaptorpathConfig {
     /// one path; blocks are WRR-distributed by capacity share. Default
     /// true; false restores legacy per-symbol striping (ablation).
     pub mp_block_affinity: Option<bool>,
+    /// RWM Phase C (paper §16.2, H→∞ corner): out-of-order OBJECT delivery
+    /// on the reliable sliding window. When set (object/perf path only,
+    /// requires `window_reliable`), the receiver hands each decoded source
+    /// symbol to the consumer the instant it decodes — in ANY order — and
+    /// the sender's retention backpressure is relaxed so a stalled in-order
+    /// frontier no longer throttles the fast path. The native object API
+    /// reassembles by offset and completes on total-decoded, so no in-order
+    /// frontier is needed. Default false: the TCP-in-tunnel path keeps its
+    /// in-order delivery contract (a live inner stream DOES need the
+    /// frontier). Not a codec/rate change — just the delivery latency
+    /// budget H raised to ∞ for a bounded object.
+    pub window_out_of_order: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -155,6 +167,7 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         reorder_max_size: overlay.reorder_max_size.or(base.reorder_max_size),
         inner_feedback_weight: overlay.inner_feedback_weight.or(base.inner_feedback_weight),
         mp_block_affinity: overlay.mp_block_affinity.or(base.mp_block_affinity),
+        window_out_of_order: overlay.window_out_of_order.or(base.window_out_of_order),
     }
 }
 
@@ -280,6 +293,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
             .unwrap_or(0.0)
             .clamp(0.0, 1.0),
         mp_block_affinity: config.mp_block_affinity.unwrap_or(true),
+        // RWM Phase C: out-of-order object delivery (H→∞). Default false —
+        // set only by the perf/native-object path (which is bounded and
+        // reassembles by offset). The run() tunnel path keeps in-order.
+        window_out_of_order: config.window_out_of_order.unwrap_or(false),
     };
 
     Ok((peer_config, status_addr))
@@ -353,6 +370,7 @@ mod tests {
             reorder_max_size: Some(200),
             inner_feedback_weight: Some(0.0),
             mp_block_affinity: Some(true),
+            window_out_of_order: Some(false),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

@@ -161,6 +161,13 @@ struct PerfArgs {
     /// same chunk geometry, flag-only difference.
     #[arg(long)]
     window_reliable: bool,
+
+    /// RWM Phase C: out-of-order object delivery (paper §16.2 H→∞ corner).
+    /// Requires --window-reliable. Decoded symbols are delivered the
+    /// instant they decode (any order); the perf server reassembles by
+    /// offset and completes on total-decoded — no in-order frontier wait.
+    #[arg(long)]
+    window_out_of_order: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -247,8 +254,12 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         },
         protocol_hint: args.protocol_hint,
         window_reliable: if args.window_reliable { Some(true) } else { None },
+        window_out_of_order: if args.window_out_of_order { Some(true) } else { None },
         ..Default::default()
     };
+    if args.window_out_of_order && !args.window_reliable {
+        anyhow::bail!("--window-out-of-order requires --window-reliable (RWM Phase C)");
+    }
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
 
     // Client convenience: one wildcard bind per peer path.
@@ -324,6 +335,9 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         inner_feedback_weight: args.inner_feedback_weight,
         mp_block_affinity: args.mp_block_affinity,
         window_reliable: if args.window_reliable { Some(true) } else { None },
+        // Out-of-order object delivery is a perf/native-object mode only;
+        // the run() tunnel path always delivers in order (see cmd_perf).
+        window_out_of_order: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

@@ -91,3 +91,55 @@ async fn perf_loopback_reliable_window() {
 
     srv.abort();
 }
+
+/// RWM Phase C (paper §16.2, H→∞ corner): the reliable-window loopback with
+/// OUT-OF-ORDER object delivery (`window_out_of_order`). The receiver hands
+/// each decoded symbol to the consumer the instant it decodes (bypassing the
+/// in-order frontier) and the sender's retention backpressure is relaxed;
+/// the perf server reassembles by offset and acks on total-decoded. Guards
+/// the Phase C plumbing end to end: it must complete (every chunk delivered
+/// and reassembled — the object protocol only acks when st.got.len() ==
+/// total, so completion IS the all-bytes-present check) without wedging.
+/// The LOSSY exercise of the same path is the L1 C8 measurement (real GE
+/// loss on the netem harness), where holes are recovered by NACK/retransmit
+/// under retention and the object still completes with all bytes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn perf_loopback_out_of_order_object() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let srv_cfg = config::RaptorpathConfig {
+        server: Some(true),
+        bind: Some(vec!["127.0.0.1:47835".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_out_of_order: Some(true),
+        ..Default::default()
+    };
+    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    assert!(srv_pc.window_reliable && srv_pc.window_out_of_order);
+    let srv = tokio::spawn(perf::server(srv_pc));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let cli_cfg = config::RaptorpathConfig {
+        bind: Some(vec!["127.0.0.1:0".into()]),
+        peer: Some(vec!["127.0.0.1:47835".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_out_of_order: Some(true),
+        ..Default::default()
+    };
+    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+
+    // A larger object (spans many windows, so out-of-order delivery is
+    // actually exercised across window boundaries) still completes.
+    tokio::time::timeout(
+        Duration::from_secs(60),
+        perf::client(cli_pc, 1_000_000, 2),
+    )
+    .await
+    .expect("out-of-order perf loopback timed out")
+    .expect("out-of-order perf client failed");
+
+    srv.abort();
+}

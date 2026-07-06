@@ -1418,3 +1418,110 @@ not add.
 
 Reproduce: `tools/l1/perf_rwm.sh <scenA> <scenB> <hint> <bytes> <runs>
 <dual|single> [T]` (topo_dual up/down per arm, one measurement at a time).
+
+## RWM Phase C — out-of-order object delivery (branch `feat/rwm-phase-c`, 2026-07-06)
+
+Phase B proved the striping law aggregates symmetric paths (C7 1.41×) but at
+C8 the reliable in-order frontier hit MPTCP parity — for a systematic (low-r)
+window the slow path's SOURCE symbols are fixed positions the fast path
+cannot decode around. Phase C implements the FREE unlock for the OBJECT case:
+**out-of-order delivery** — decode each source symbol and hand it to the
+consumer the instant it decodes, reassemble by offset, complete on
+total-decoded — the H → ∞ corner of paper §16.7 (H = the reorder/latency
+horizon; out-of-order = H → ∞; ordering is a per-stream POLICY, off = today's
+in-order). This is the correct metric for a file (nothing reads offset k
+before the file is whole) and never for a live in-order stream, so the flag
+is OFF by default and set only by the native object path.
+
+### What shipped
+- **General unordered-delivery policy** (`window_out_of_order`, requires
+  `window_reliable`; `perf --window-out-of-order`). The reliable receiver
+  BYPASSES the reorder buffer entirely (`reorder_buf = None`) and delivers
+  each decoded symbol immediately; a lightweight frontier over `received_seqs`
+  drives the cumulative WindowAck so retention/retransmit stay correct (holes
+  are still retransmitted until acked — reliability is unchanged, only the
+  DELIVERY wait is removed). The object/perf path is one consumer; datagram /
+  RPC / telemetry are equally served. Sender path untouched (byte-identical).
+- **`deliver_packet` policy helper + tests** (the user's requirement:
+  "if loss is allowed it doesn't actually block"): reliable delivery
+  backpressures on a full channel (never drop → no phantom hole); lossy
+  delivery drops (never block → a slow consumer can't stall the stream).
+  Unit-tested both directions + closed-channel. (The ooo object path uses the
+  lossy policy: the bounded 8192 inject channel only fills under a
+  pathological burst, and blocking there deadlocks the loopback's
+  feeds-and-drains feedback loop — MEASURED; a rare drop is recovered by
+  retransmit.)
+- **`RWM_MIN_R` env repair-rate floor** — a TEST-ONLY instrument (default 0,
+  never a production control law; per the standing "reactive repair floors
+  are bad in production" finding) to drive the paper's raise-r arm.
+
+### GATE numbers (rp-native `perf`, seed 42, this binary; C8 = c2+c3, C7 = c2+c2)
+
+| arm | workload | goodput | notes |
+|-----|----------|--------:|-------|
+| Fast-path-alone (single c2) | 50 MB ×3 | **15.68 Mbit/s** | the §16.2 ceiling ref |
+| **C8 in-order** (H bounded) | 50 MB ×8 | 8.39 mean / 8.1 med | stdev 6.9 (variable) |
+| **C8 out-of-order** (H→∞) | 50 MB ×8 | **11.87 mean / 12.0 med** | **stdev 3.2** (stable) |
+| C8 in-order **raise-r=0.18** | 50 MB ×5 | 7.87 | no unlock (≈ r≈0) |
+| **C7 out-of-order** (regression) | 50 MB ×3 | **21.61** | ≈ Phase B 21.73 ✓ stdev 0.5 |
+
+### DECISIVE VERDICT: FAIL the strict bar, with mechanism
+
+- **Does C8 out-of-order beat 15.42 (fast-alone)? NO.** 11.87 Mbit/s = 0.76×
+  fast-alone. It does not beat 15.42, and its median 12.0 does not beat the
+  14.0 goal-gate ceiling either. **Aggregation factor vs fast-alone: 0.76×**
+  (vs L0's predicted ×1.18 ≈ 18.5 Mbit/s — **not met at L1**). It lands at
+  kernel-MPTCP / whole-block-affinity parity (12.6).
+- **Does out-of-order help vs in-order? YES, modestly and STABLY.** 11.87 vs
+  8.39 = **1.42× the in-order mean, ~2× lower variance** (stdev 3.2 vs 6.9).
+  The gain is implementation overhead removed, not new aggregation: the
+  in-order reorder buffer accumulates the whole out-of-order suffix behind
+  each hole and drains it in erratic bursts; deliver-on-decode removes that
+  buffer and its tail. So out-of-order is the **more robust** realization of
+  decode-on-total — it buys stability, not aggregation above the fast path.
+  This REFINES the §16.2 equivalence (ooo ≡ deep-buffer in-order): identical
+  in theory, but ooo is measurably steadier in practice.
+- **Does the r-knob unlock it? NO (at r=0.18).** In-order + forced r≈0.18
+  measured 7.87 — no better than r≈0. Forcing 18% repair adds straggler load
+  without making the window fungible enough to reconstruct the slow-path
+  source positions from fast-path repairs. (A blanket reactive-repair floor
+  was separately measured to REGRESS C8 14→9 — congestion safety must win;
+  the floor was removed.) Whether a much larger r with repairs pinned to the
+  slow path crosses fast-alone is OPEN — neither knob crossed it here.
+- **C7 symmetric regression: PASS.** 21.61 ≈ Phase B 21.73, stdev 0.5 — where
+  paths match there is no straggler and out-of-order is neutral (mechanism
+  sound; C8 heterogeneity is where both knobs fall short).
+
+**Regime-map note (for the merger).** The multipath row is NOT the clean
+"out-of-order → aggregation" headline the plan hoped for. The measured
+position is: out-of-order is the correct, simpler, lower-variance delivery
+policy for bulk objects, but at C8 it reaches MPTCP parity, not above the
+fast path — heterogeneous aggregation-above-fast-path is unproven on this
+stack by either the H knob (out-of-order) or a modest r, and is a measured
+OPEN problem, not a demonstrated win (paper §16.7).
+
+### Honest caveats
+- **C8 is high-variance** (individual 50 MB runs 28–95 s across the session).
+  The earlier one-off "14.0" out-of-order sample (3 runs) did not reproduce;
+  the x8 numbers above are the robust estimate. Phase B's in-order 12.5 (3
+  runs) was likewise an optimistic sample vs the x8 in-order 8.4 here — the
+  in-order path is byte-identical to Phase B, so the delta is run/session
+  variance, not a regression.
+- **Pre-existing loss-recovery fragility** (NOT introduced by Phase C):
+  reliable-window transfers occasionally stall on the near-zero-RTT loopback
+  when a datagram-loss burst collapses the ADR-0046 congestion multiplier to
+  0, fully suppressing recovery until the QUIC idle timeout. MEASURED ~1/6 on
+  the WINDOWS dev loopback for BOTH the in-order (`perf_loopback_reliable_
+  window`) and out-of-order tests; on LINUX (VM) `perf_loopback` passes 6/6
+  and the netem C8 transfers never DNF. It is a Windows-loopback timing
+  artifact of a real recovery gap; the proper fix (a cheap idle-triggered
+  sweep, not a per-round floor) is deferred RWM hardening.
+
+### Verification
+`cargo test --lib` 252 green (new: 3 `deliver_packet` policy tests); the ooo
+loopback object test `perf_loopback_out_of_order_object` passes on Linux;
+gate_suite 15/15 release.
+
+Reproduce: `tools/l1/perf_rwm_c.sh <scenA> <scenB> <hint> <bytes> <runs>
+<dual|single>` with `RWM_OOO=1` (out-of-order) and/or `RWM_MIN_R=<r>`
+(raise-r), one measurement at a time.
