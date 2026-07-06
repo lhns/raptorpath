@@ -468,6 +468,78 @@ started, how likely it is to still be ongoing after t symbols.
 (Consistency check: ε = p/(p+q). E.g. DC: 0.0005/0.5005 ≈ 0.1%;
 WiFi: 0.013/0.513 ≈ 2.5%; Satellite: 0.03/0.33 ≈ 9.1%.)
 
+### 2.5 GE Adequacy vs Real Traces (MEASURED-against-real-traces)
+
+Every result downstream of this section is proven *for a GE world*: the
+formula, the oracles, and the netem rung all draw loss from the two-state chain
+above. This subsection tests the assumption itself against **real** cellular
+link traces and reports where GE is — and is not — adequate.
+
+**Traces and loss derivation.** Five real U.S. cellular capacity traces
+(Verizon/AT&T/T-Mobile LTE/UMTS, recorded with the *Saturator* tool,
+Winstein et al., NSDI 2013; via the mahimahi repository) are replayed. These
+are *capacity* traces (per-ms 1500-byte delivery opportunities), so a loss
+process is derived honestly with a drop-tail queue: a rate-controlled sender
+offers ρ = 0.5 of the trace's mean capacity into a 64-packet buffer drained at
+the trace's *instantaneous* capacity; a packet arriving to a full buffer is
+dropped. A real capacity fade (an outage in the trace) backs the queue up and
+overflows a burst of packets — the real-world "outage → loss burst" GE is meant
+to model. Derived loss rates span ε = 5.2%–24.5%. (Harness:
+`raptorpath-math/tests/real_trace_validation.rs`; provenance:
+`tests/data/traces/PROVENANCE.md`.)
+
+**What GE misses (structure).** Fitting GE to each real loss sequence the way
+production does (transition-count p̂, q̂) and comparing the fit's own
+predictions against the trace:
+
+- **Long memory.** GE is Markov: autocorrelation decays as ρ(L) = (1−p−q)^L,
+  effectively zero by lag 20. Real loss stays strongly correlated far beyond
+  lag 1 — measured lag-20 autocorrelation is **5×–4100×** what the fitted GE
+  predicts (e.g. Verizon-LTE-short: real 0.54 vs GE 0.0001). This is the
+  headline mismatch: GE is memoryless beyond the current state; real fades are
+  not.
+- **Heavy burst tail.** GE burst lengths are geometric; real fade bursts are
+  **3.8×–26×** heavier in the extreme tail (max real bursts of 210–597 symbols
+  vs a geometric expectation of tens).
+- **Non-stationarity.** Within a single trace, ε drifts across regimes (0%–87%
+  across sixths) and q̂ swings by up to 0.47 — a single stationary (p, q) cannot
+  represent the process.
+
+**Consequence for r\* (fidelity).** Feeding the *actual* real loss sequence
+through the FEC/ARQ window process at the r\* the closed form (§8.4) prescribes —
+fitted to the trace's own (ε, σ²_burst), with the full burst-variance margin —
+the achieved residual window-failure **under-provisions**: it runs up to **12.8×**
+the target δ/ε, and **1.2×–3.7×** worse than the GE-ideal that the model predicts
+for the *same* r\* (1 − P_fec via the §8.7 exact DP). The gap beyond the GE-ideal
+is *pure channel-model mismatch*: it persists even at r\* ≈ 55%–100% overhead and
+even when the exact-DP r\* (§8.7) is used, because both target the GE curve. The
+σ²_burst correction (§8.3) is a **partial** answer — it inflates the *lag-1*
+variance but cannot capture long memory, heavy fade tails, or regime shifts.
+
+**Verdict.** For our r\*, **GE is INADEQUATE on real single-path loss**: it
+systematically under-provisions the tail (by ~2×–4× beyond its own prediction),
+because real loss carries structure — long memory, heavy fade tails,
+non-stationarity — that a stationary two-state Markov chain omits. The
+*aggregation* result is more robust: replaying two independent real traces as
+two paths through the stable-generation design (§16.3) still aggregates above
+the fast path (×1.178, tracking the GE control ×1.180 and the real goodput
+ceiling ×1.188), so real per-path *dynamics* do not break the coding mechanic.
+
+**Recommended enrichment (not built here).** The channel model should be
+enriched beyond a single stationary GE toward either (a) a **higher-order /
+semi-Markov** burst model with a heavy-tailed (e.g. Pareto) sojourn in the Bad
+state to capture the fade tail and long memory, or (b) a **hierarchical /
+regime-switching** model (a slow outer chain over fade regimes modulating an
+inner GE) to capture non-stationarity — with r\* provisioned against the
+*empirical* window-loss quantile rather than the Gaussian/GE tail. This is a
+model recommendation; production code is unchanged.
+
+**Correlation gap (open).** Public single-path traces are independent by
+construction, so the multipath result above tests real per-path *dynamics* but
+**not** path *correlation* (shared-bottleneck WiFi+LTE losing together).
+Settling the correlation question needs simultaneous dual-link capture or a
+dual-radio hardware testbed — the remaining rung of the validation ladder.
+
 ---
 
 ## 3. Recovery Fundamentals
