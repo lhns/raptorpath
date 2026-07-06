@@ -278,7 +278,44 @@ impl NackCongestionState {
     fn multiplier(&self) -> f64 {
         self.repair_multiplier
     }
+
+    /// Idle-triggered recovery floor (ADR-0046 hardening; the fix the P10b
+    /// NOTE at the call site asked for). The blanket per-round `.max(1)` floor
+    /// was correctly REJECTED because forcing a retransmit every round on a
+    /// genuinely congested straggler adds load to the long pole (C8 14.0 ->
+    /// 9.3 Mbit/s). But full suppression (`multiplier == 0`) can WEDGE a
+    /// reliable transfer whose only remaining work is recovering a confirmed
+    /// hole — the transfer stalls until the QUIC idle timeout.
+    ///
+    /// The resolution keys on the ONE state that distinguishes the two: is the
+    /// sender still pushing new data (so repairs would pile onto a congested
+    /// path), or is it IDLE-except-for-the-hole (no new source in flight ->
+    /// no congestion WE are causing -> a targeted retransmit is free)? When
+    /// idle, recovery is never fully suppressed: the multiplier is floored so
+    /// the confirmed hole gets at least one retransmit per round. When active,
+    /// the congestion multiplier governs unchanged — congestion safety still
+    /// wins on the straggler. Continuous: `idle == false` returns the raw
+    /// multiplier exactly (old behavior, bit for bit).
+    fn effective_multiplier(&self, idle: bool) -> f64 {
+        if idle {
+            self.repair_multiplier.max(IDLE_RECOVERY_FLOOR)
+        } else {
+            self.repair_multiplier
+        }
+    }
 }
+
+/// Minimum NACK-repair multiplier when the sender is idle-except-for-recovery
+/// (ADR-0046 idle-triggered floor). Scaled by `MAX_NACK_REPAIRS_PER_NACK`
+/// (10) it yields >= 1 retransmit per round, enough to unwedge a stalled
+/// reliable transfer without the rejected blanket floor's straggler load.
+const IDLE_RECOVERY_FLOOR: f64 = 0.1;
+
+/// Idle threshold floor (µs) below which `2×SRTT` would be too twitchy: a
+/// sender that has sent no new source for at least this long (or 2×SRTT,
+/// whichever is larger) is idle-except-for-recovery. 20 ms comfortably
+/// exceeds a LAN RTT while staying well under the QUIC idle timeout.
+const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 
 /// Returns true if this config should use sliding-window mode instead of block mode.
 ///
@@ -2395,6 +2432,10 @@ async fn run_window_sender(
     let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
     /// Last source path used (for NACK repair path selection outside the send macro).
     let mut last_source_path: u32 = 0;
+    /// Wall-clock (us) of the last NEW source-symbol send (ADR-0046
+    /// idle-triggered recovery). Initialized to "now" so a transfer that
+    /// stalls before sending anything is treated as active until it idles.
+    let mut last_source_send_us: u64 = now_us();
     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
     let mut nack_repairs_this_period: u64 = 0;
     /// Source symbols sent in the current reporting period.
@@ -2471,6 +2512,11 @@ async fn run_window_sender(
                 }
             };
             last_source_path = source_path;
+            // ADR-0046 idle-triggered recovery: stamp the last NEW-source send
+            // so the NACK throttle can tell "actively pushing data" (repairs
+            // would load a congested path) from "idle except for a hole"
+            // (targeted recovery is free).
+            last_source_send_us = now_us();
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
             let batch = SymbolBatch {
                 symbols: vec![wire_sym.clone()],
@@ -2822,23 +2868,36 @@ async fn run_window_sender(
                     None => (0.0, None),
                 }
             };
-            let nack_multiplier = nack_congestion.update(current_loss, current_rtt);
+            nack_congestion.update(current_loss, current_rtt);
+            // ADR-0046 idle-triggered recovery: if no NEW source symbol has
+            // been sent for > 2×SRTT, the sender is idle-except-for-recovery —
+            // no traffic WE emit is contributing to congestion, so a stalled
+            // confirmed hole must not stay suppressed. The idle floor lifts the
+            // multiplier just enough for >=1 targeted retransmit per round;
+            // while actively pushing data the raw multiplier governs unchanged
+            // (congestion safety still wins on a straggler).
+            let srtt_us_recent = current_rtt
+                .map(|d| d.as_micros() as u64)
+                .unwrap_or(IDLE_RECOVERY_GAP_FLOOR_US);
+            let idle_gap_us = (2 * srtt_us_recent).max(IDLE_RECOVERY_GAP_FLOOR_US);
+            let sender_idle =
+                now_us().saturating_sub(last_source_send_us) > idle_gap_us;
+            let nack_multiplier = nack_congestion.effective_multiplier(sender_idle);
             cached_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
-            // NOTE (RWM Phase C): a `cached_max_repairs.max(1)` reliability
-            // floor here (so the ADR-0046 congestion multiplier can never
-            // fully suppress recovery of a confirmed hole) was tried and
-            // REJECTED. It targets a rare stall — on the near-zero-RTT
-            // loopback a datagram-loss burst can collapse the multiplier to 0
-            // and wedge a reliable transfer until the QUIC idle timeout — but
-            // that stall is a Windows-loopback timing artifact (Linux/VM
-            // loopback passes 6/6 and the netem C8 transfers never hit it),
-            // and forcing a retransmit every round on a genuinely congested
-            // lossy path MEASURABLY regressed C8 goodput (14.0 → 9.3 Mbit/s):
-            // the forced repairs add load to the straggler. Congestion safety
-            // must win here. The real fix for the rare stall is a smarter,
-            // cheaper backstop (e.g. an idle-triggered single sweep), left as
-            // RWM hardening — not a blanket per-round floor.
+            // NOTE (RWM Phase C -> ADR-0046 hardening): a *blanket*
+            // `cached_max_repairs.max(1)` floor here (recovery on EVERY round
+            // regardless of load) was tried and REJECTED — forcing a
+            // retransmit every round on a genuinely congested lossy path
+            // MEASURABLY regressed C8 goodput (14.0 → 9.3 Mbit/s): the forced
+            // repairs add load to the straggler. The rare stall it targeted —
+            // a datagram-loss burst collapses the multiplier to 0 and wedges a
+            // reliable transfer until the QUIC idle timeout — is now handled by
+            // the IDLE-TRIGGERED floor above (`effective_multiplier`): it only
+            // fires when no new source has been sent for > 2×SRTT, i.e. exactly
+            // when there is no straggler load to protect. Active-transfer
+            // behavior is unchanged (raw multiplier), so congestion safety
+            // still wins on the straggler.
 
             // ADR-0050: compute NACK budget from BudgetAllocator
             cached_nack_budget = {
@@ -4404,5 +4463,47 @@ mod tests {
         assert!(sent_store.get(&ack).is_none());
         assert!(sent_store.get(&(ack + 1)).is_some());
         assert_eq!(sent_store.len(), (MAX_WINDOW_SIZE + 100) - 50);
+    }
+
+    /// ADR-0046 idle-triggered recovery (Phase 4 fix). The congestion
+    /// multiplier may fully suppress NACK repairs (correct on a congested
+    /// straggler), but must NEVER stay suppressed when the sender is idle
+    /// except for a confirmed hole — that wedges a reliable transfer.
+    #[test]
+    fn test_idle_triggered_recovery_floor() {
+        let mut st = NackCongestionState::new();
+        // Drive congestion: both loss AND RTT rising for >= threshold periods.
+        let mut rtt = Duration::from_millis(20);
+        let mut loss = 0.02;
+        for _ in 0..8 {
+            loss += 0.02;
+            rtt += Duration::from_millis(5);
+            st.update(loss, Some(rtt));
+        }
+        // Multiplier has collapsed toward 0 (full suppression).
+        assert!(st.multiplier() < 0.05, "congestion must suppress: {}", st.multiplier());
+
+        // ACTIVE sender: suppression stands — congestion safety wins, so a
+        // retransmit would NOT be forced onto the straggler.
+        let active = st.effective_multiplier(false);
+        assert_eq!(active, st.multiplier(), "active transfer keeps raw multiplier");
+        assert_eq!((MAX_NACK_REPAIRS_PER_NACK as f64 * active).round() as u64, 0,
+            "active + suppressed => 0 forced repairs");
+
+        // IDLE sender (no new source in flight): recovery is never fully
+        // suppressed — the floor yields >= 1 targeted retransmit per round so
+        // the confirmed hole is recovered and the transfer un-wedges.
+        let idle = st.effective_multiplier(true);
+        assert!(idle >= IDLE_RECOVERY_FLOOR, "idle floor lifts the multiplier: {idle}");
+        assert!((MAX_NACK_REPAIRS_PER_NACK as f64 * idle).round() as u64 >= 1,
+            "idle floor must permit >= 1 retransmit/round");
+
+        // Continuity: on a clean/uncongested channel the idle floor is a NO-OP
+        // (raw multiplier already >= floor), so behavior is unchanged.
+        let mut clean = NackCongestionState::new();
+        for _ in 0..5 { clean.update(0.0, Some(Duration::from_millis(20))); }
+        assert_eq!(clean.effective_multiplier(true), clean.multiplier(),
+            "idle floor is a no-op when not suppressed");
+        assert!((clean.multiplier() - 1.0).abs() < 1e-9);
     }
 }

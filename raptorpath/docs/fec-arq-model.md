@@ -5633,6 +5633,59 @@ heterogeneous-aggregation-above-fast-path result is unproven on this stack by
 either H or a modest r, and is a measured open problem, not a demonstrated
 win.*
 
+**Oracle adjudication of the L0/L1 contradiction (formula- AND sim-independent
+Monte-Carlo; `raptorpath-math/tests/multipath_oracle.rs`).** The L0 sim said
+×1.18, L1 measured ×0.76 — a hard contradiction. An independent oracle (models
+per-path capacity + one-way delay + GE loss, striped placement, fungible
+repairs over a sliding horizon *with eviction*, cross-path ARQ, in-order
+frontier decode; calls none of the model formulas or the sim) was run at the
+exact C8 netem params. It reproduces BOTH numbers as different transport
+configs, and thereby localizes the cause:
+
+```
+  goodput ceiling  Σg_i/g_fast                              ×1.195   physical max
+  FUNGIBLE cross-path RWM, whole-object horizon (H→∞)       ×1.19    == L0 sim
+  ATOMIC path-affine (regime 1/2) + cross-path ARQ          ×0.92    sub-unity
+  ATOMIC + SAME-path recovery                               ×0.48–0.57
+```
+
+The physically-correct object case (fungible, H → ∞) AGGREGATES to the goodput
+ceiling — so §16.1(3)/§16.2's K/Σg_i is REALIZABLE and heterogeneous
+aggregation is **NOT fundamentally fork-join-bounded**. L1's ×0.76 sits inside
+the *broken-transport* band (between atomic-clean ×0.92 and atomic+same-path
+×0.48–0.57), reproducible only by removing fungibility AND cross-path recovery.
+So the measured refutation is a **production limitation, not a theorem**:
+block/path-affine atomic units (§16.2(i)) + same-path/suppressed recovery +
+eviction (§16.2(ii)) — precisely the two caps §16.2 already names.
+
+**Lever ordering (oracle, independent-GE), best→worst — a correction to the
+intuition:** (1) **fungible cross-path frontier decode (RWM) is DOMINANT** —
+atomic ×0.92 → fungible ×1.19; without it even perfect pull + cross-path
+recovery caps sub-unity. (2) **cross-path recovery** — same-path ×0.48 →
+cross-path ×0.92. (3) **placement (pull vs push) is NEGLIGIBLE** — ×1.190 vs
+×1.190 in the fungible case, because fungible frontier fill masks the
+slow-path long pole. The r-sweep confirms the raise-r finding mechanistically:
+at H → ∞ the dual beats fast-alone at r = 0 already; raising r only helps a
+too-small coding window (crosses fast-alone at r ≈ 0.18 only when H ≈ 256).
+Thus Phase C's raise-r = 0.18 "no unlock" is expected — r cannot make a
+path-affine atomic unit fungible.
+
+**Updated §16 position (oracle-grounded).** Symmetric aggregates (measured C7
+×1.71; oracle ×1.99). Heterogeneous OBJECT completion aggregates to ~×1.19 at
+C8 **iff** the transport realizes windowed fungible cross-path frontier decode
+— the §16.3 RWM (the EMPTY quadrant). Production BULK (RaptorQ 64 KB atomic
+blocks) is path-affine → oracle-capped at ~×0.92 even with perfect pull +
+cross-path recovery; the measured ×0.76 is that ceiling dragged down by
+same-path/suppressed recovery + eviction. The route to ×1.19 is the RWM
+subsystem (fungible sliding-window frontier decode + never-suppressed
+cross-path repair supply; the ADR-0046 idle-triggered recovery fix, now landed,
+is one prerequisite of the latter), NOT a placement change or a modest r.
+Heterogeneous aggregation-above-fast-path is **OPEN in production but proven
+ACHIEVABLE in principle (oracle ×1.19)** with a named, scoped mechanism —
+sharper than "unproven open problem." (Caveat: the oracle's per-path GE chains
+are independent; shared-bottleneck path CORRELATION — where pull placement may
+matter more — is not modeled and is flagged for real-trace validation.)
+
 ---
 
 ## Appendix A: Summary of Key Formulas
