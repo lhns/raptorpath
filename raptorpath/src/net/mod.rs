@@ -666,6 +666,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // NACK gap channel: handle_control_message sends gap ranges, window sender receives for targeted repair
     let (nack_tx, nack_rx) = tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(16);
 
+    // Generation-deficit channel (§16.3): the data-arm's control handler parses
+    // inbound GenerationDeficit messages and forwards the (anchor, deficit)
+    // vector to the local window sender, which emits exactly the residual coded
+    // symbols each frontier generation still needs (bounded, targeted recovery).
+    let (deficit_tx, deficit_rx) =
+        tokio::sync::mpsc::channel::<Vec<(u64, u32)>>(64);
+
     if window_mode {
         info!(
             symbol_size = profile.symbol_size,
@@ -731,6 +738,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_generation = window_generation;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
+    let mut sender_deficit_rx = deficit_rx;
     let sender_protocol_hint = config.protocol_hint;
 
     let sender_handle = tokio::spawn(async move {
@@ -747,6 +755,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &sender_stats,
                 &sender_window_ack,
                 &mut sender_nack_rx,
+                &mut sender_deficit_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
                 sender_window_reliable,
@@ -1071,6 +1080,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         MAX_WINDOW_SIZE as u64
     };
     let recv_window_ack = window_ack_seq.clone();
+    let recv_window_generation = window_generation;
+    // Receiver arm of the deficit-feedback loop: the data-arm control handler
+    // forwards inbound GenerationDeficit vectors to the LOCAL sender's recovery
+    // loop over this clone (generation mode only).
+    let recv_deficit_tx = deficit_tx.clone();
     // Generation coding (§16.3) turns the per-seq targeted ARQ OFF beneath the
     // code — the per-seq reliability layer is exactly what made the moving
     // window path-affine and invoked the ADR-0046 throttle (measured ×0.26).
@@ -1136,6 +1150,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut last_hole_nack_at = Instant::now();
         // Track received seqs for WindowNack gap reporting
         let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+        // Generation-deficit feedback (§16.3), receiver arm. `gen_widths[anchor]`
+        // = the generation's K_g, learned self-describingly from the wire header
+        // (`window_count`) of any coded symbol for that anchor. Deficit_g =
+        // K_g − rank_in(anchor, K_g). `last_deficit_send` paces the reports to
+        // ~once per SRTT (plus an immediate report on decode progress).
+        let mut gen_widths: BTreeMap<u64, u16> = BTreeMap::new();
+        let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
         // P10b dupack analog: highest_seen at the last gap-advertising ack,
@@ -1300,7 +1321,73 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             true
         };
 
+        // GENERATION-DEFICIT report (§16.3). Compute each frontier generation's
+        // residual deficit from the decoder's current rank and send it to the
+        // sender. `$force` sends even an empty vector (used on decode progress so
+        // the sender clears wants for just-completed generations, and on the
+        // periodic timer so a stalled/silent sender is re-pulled). Shared by the
+        // data-arm (progress) and the timer arm (liveness) so a sender that has
+        // gone quiet keeps being told the true deficit until every generation
+        // decodes — the loop that makes deficit-driven recovery robust.
+        macro_rules! send_gen_deficits {
+            ($dec:expr, $force:expr) => {{
+                if recv_window_generation && !gen_widths.is_empty() {
+                    gen_widths.retain(|&a, &mut k| a + k as u64 > ooo_frontier);
+                    const MAX_REPORTED_GENS: usize = 6;
+                    let mut deficits: Vec<(u64, u32)> = Vec::new();
+                    for (&anchor, &k) in gen_widths.iter() {
+                        if deficits.len() >= MAX_REPORTED_GENS {
+                            break;
+                        }
+                        let rank = $dec.rank_in(anchor, k as u64);
+                        let deficit = (k as u64).saturating_sub(rank);
+                        if deficit > 0 {
+                            deficits.push((anchor, deficit as u32));
+                        }
+                    }
+                    if !deficits.is_empty() || $force {
+                        last_deficit_send = Instant::now();
+                        if std::env::var("RWM_TRACE").is_ok() {
+                            let total: u32 = deficits.iter().map(|(_, d)| d).sum();
+                            eprintln!(
+                                "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={}",
+                                ooo_frontier, gen_widths.len(), deficits, total
+                            );
+                        }
+                        let msg = ControlMessage::GenerationDeficit { deficits };
+                        for pid in recv_scheduler.lock().live_paths() {
+                            let _ = recv_transport.send_control_datagram(pid, msg.clone());
+                        }
+                    }
+                }
+            }};
+        }
+
         loop {
+            // Periodic generation-deficit report deadline (§16.3): re-report the
+            // frontier deficit ~once per SRTT even absent new data, so a sender
+            // that emitted its budget and went quiet is always re-pulled and a
+            // lost report is retransmitted. Only armed once a generation is known.
+            let deficit_deadline: Option<tokio::time::Instant> =
+                if recv_window_generation && !gen_widths.is_empty() {
+                    let srtt = {
+                        let sched = recv_scheduler.lock();
+                        sched
+                            .live_paths()
+                            .into_iter()
+                            .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
+                            .max()
+                    };
+                    let interval = srtt
+                        .map(|s| s.clamp(Duration::from_millis(3), Duration::from_millis(50)))
+                        .unwrap_or(Duration::from_millis(10));
+                    let elapsed = last_deficit_send.elapsed();
+                    let remaining = interval.saturating_sub(elapsed);
+                    Some(tokio::time::Instant::now() + remaining)
+                } else {
+                    None
+                };
+
             // In-order hold drain timer (BOTH modes): refresh the
             // SRTT-adaptive timeout and compute the oldest-entry expiry.
             // Only when entries are pending — the common case skips the
@@ -1373,6 +1460,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         Some(m) => m,
                         None => break, // channel closed
                     }
+                }
+                _ = async {
+                    match deficit_deadline {
+                        Some(d) => tokio::time::sleep_until(d).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    // Periodic generation-deficit report (liveness): re-tell the
+                    // sender the true residual deficit for every frontier
+                    // generation, even with no new arrivals, so a sender that
+                    // emitted its budget and stalled is re-pulled to completion.
+                    if let Some(ref dec) = window_decoder {
+                        send_gen_deficits!(dec, true);
+                    }
+                    continue;
                 }
                 _ = async {
                     match reorder_deadline {
@@ -1497,8 +1599,35 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     // Route symbols to window decoder or block decoder
                     if let Some(ref mut win_dec) = window_decoder {
                         // ----- Window-mode receive path -----
+                        // Generation-deficit feedback: learn each generation's
+                        // K_g self-describingly from the wire header (window_start
+                        // = anchor, window_count = K_g) of every coded symbol, and
+                        // note whether this batch made any decode progress (drives
+                        // an immediate deficit report).
+                        let mut recovered_any = false;
+                        if recv_window_generation {
+                            for symbol in &batch.symbols {
+                                if symbol.is_repair && symbol.data.len() >= 10 {
+                                    let anchor = u64::from_le_bytes(
+                                        symbol.data[0..8].try_into().unwrap(),
+                                    );
+                                    let count = u16::from_le_bytes(
+                                        symbol.data[8..10].try_into().unwrap(),
+                                    );
+                                    if count > 0 {
+                                        let e = gen_widths.entry(anchor).or_insert(0);
+                                        if count > *e {
+                                            *e = count;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         for symbol in &batch.symbols {
                             let recovered = win_dec.add_symbol(symbol);
+                            if !recovered.is_empty() {
+                                recovered_any = true;
+                            }
                             for (seq, sym_data) in recovered {
                                 received_seqs.insert(seq);
                                 if seq > highest_seen_seq {
@@ -1585,6 +1714,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                     }
                                 }
                             }
+                        }
+
+                        // GENERATION-DEFICIT FEEDBACK (§16.3, receiver arm): on
+                        // decode progress, report each frontier generation's
+                        // residual deficit immediately (progress → the deficit
+                        // shrank → tell the sender promptly so it stops over-
+                        // sending). The periodic timer arm below drives it
+                        // otherwise — crucially even when NO data is arriving, so
+                        // a sender that emitted its budget and went quiet is still
+                        // re-pulled (the measured silent-sender deadlock).
+                        if recv_window_generation && recovered_any {
+                            send_gen_deficits!(win_dec, true);
                         }
 
                         // Drain expired reorder buffer entries.
@@ -1843,6 +1984,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         if recv_window_mode { None } else { Some(&recv_block_arq) },
                         Some(&recv_batch_counter),
                         if recv_window_mode { Some(&recv_window_ack) } else { None },
+                        if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -2236,6 +2378,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         None,
                         None,
                         None,
+                        None,
                     );
                 }
                 other => {
@@ -2462,6 +2605,10 @@ async fn run_window_sender(
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
+    // Generation-deficit feedback (§16.3): each element is the receiver's
+    // reported (generation_anchor, residual_deficit) vector. Drives the
+    // bounded, targeted recovery emission that replaces the feedback-free cap.
+    deficit_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u32)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
@@ -2526,6 +2673,32 @@ async fn run_window_sender(
     // generation buffered under backpressure keeps accumulating its K_G.
     let mut gen_coded_total: u64 = 0; // cumulative coded symbols emitted
     let mut gen_last_source_us: u64 = now_us(); // last source-intake time
+    // Delivered-goodput pacing (§16.3): clock the token-bucket refill to the
+    // measured ack (decode) rate rather than a fixed ceiling, so coded emission
+    // never outruns the receiver's O(G²) decode/intake — the fix for the bursty
+    // overrun that drops coded on the droppable datagram path. EWMA of ack
+    // deltas; a bootstrap floor primes the first generation before any ack.
+    let mut gen_rate_ewma: f64 = 0.0;
+    let mut gen_rate_sample_us: u64 = now_us();
+    let mut gen_rate_sample_ack: u64 = 0;
+    // Per-generation deficit-feedback recovery state (§16.3). This closes the
+    // rateless-with-feedback loop that the feedback-free recovery cap could not:
+    //   * `gen_want[a]`  — coded symbols still to emit for generation anchored at
+    //                      `a`, from the LAST deficit report (= reported deficit
+    //                      minus what was already in flight). Consumed, paced,
+    //                      round-robin, by the recovery-emission block below.
+    //   * `gen_emitted[a]` — cumulative coded symbols this sender has put on the
+    //                      wire for generation `a` (proactive + recovery). The
+    //                      receiver's reported deficit reflects everything it has
+    //                      RECEIVED, so `emitted − emitted_at_report` is the count
+    //                      still in flight (not yet reflected) — subtracted from
+    //                      the fresh deficit so we never double-send. "Send the
+    //                      deficit, wait ~RTT for the updated deficit, re-evaluate."
+    let mut gen_want: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut gen_trace_last_us: u64 = 0;
+    let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    let mut gen_emitted_at_report: std::collections::HashMap<u64, u64> =
+        std::collections::HashMap::new();
     // Fixed-rate pacing (token bucket) for coded emission: without it the flow
     // window is spent as one instantaneous burst of datagrams, which the QUIC
     // datagram path DROPS (unreliable, droppable) faster than the receiver can
@@ -2536,6 +2709,12 @@ async fn run_window_sender(
     let mut gen_tok_last_us: u64 = now_us();
     let gen_rate: f64 = std::env::var("RWM_GEN_RATE")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(9000.0);
+    // Bootstrap pacing floor (symbols/sec): the rate used before the ack-rate
+    // estimator has a sample (primes the first generation). Kept modest so the
+    // startup burst can't overrun a bandwidth-limited link's datagram intake;
+    // once the ack rate is known the pacing clocks to delivered goodput × 1.5.
+    let gen_rate_floor: f64 = std::env::var("RWM_GEN_RATE_FLOOR")
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2000.0).clamp(1.0, gen_rate);
     // In-flight coded allowance W (coded symbols the pipe may hold ahead of the
     // decode frontier). MUST be ≥ pipeline·gen_size: coded symbols are striped
     // round-robin across the M active generations, so to let the FIRST
@@ -2974,6 +3153,20 @@ async fn run_window_sender(
         // (∝-goodput striping via place_symbol; fungible cross-path, no per-seq
         // ARQ). This is the mechanism that turns the serialized stop-and-wait
         // into a pipelined transfer.
+        if generation && std::env::var("RWM_TRACE").is_ok() {
+            let now = now_us();
+            if now.saturating_sub(gen_trace_last_us) > 200_000 {
+                gen_trace_last_us = now;
+                let ack_now = window_ack_seq.load(Ordering::Relaxed);
+                let want_sum: u64 = gen_want.values().sum();
+                let (ws, we) = encoder.window_span();
+                eprintln!(
+                    "[SND] ack={} coded_total={} wants={} win={} span=({},{}) want_gens={} want_sum={} tx_paused={}",
+                    ack_now, gen_coded_total, encoder.wants_coding(), encoder.window_size(),
+                    ws, we, gen_want.len(), want_sum, tx_paused
+                );
+            }
+        }
         if generation && encoder.window_size() > 0 {
             let now = now_us();
             // Object tail: intake is idle (not just paused by backpressure — no
@@ -3002,10 +3195,32 @@ async fn run_window_sender(
             // filling generation — the two together give startup-safe, recovery-
             // capable, ack-clocked emission.
             let target = (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window;
+            // Clock the pacing rate to the DELIVERED goodput (ack rate): sample
+            // the ack advance over a ~20 ms window into an EWMA, and pace at
+            // 1.5× that (headroom for loss/overhead), clamped to [floor, ceiling].
+            // This keeps coded emission from outrunning the receiver's decode so
+            // the datagram intake is not overrun and bursts are not dropped
+            // (§16.3 the named failure). Before the first sample the floor primes
+            // the first generation.
+            {
+                let dt = now.saturating_sub(gen_rate_sample_us);
+                if dt >= 20_000 {
+                    let dack = ack_now.saturating_sub(gen_rate_sample_ack) as f64;
+                    let inst = dack / (dt as f64 / 1_000_000.0);
+                    gen_rate_ewma = if gen_rate_ewma <= 0.0 {
+                        inst
+                    } else {
+                        0.7 * gen_rate_ewma + 0.3 * inst
+                    };
+                    gen_rate_sample_us = now;
+                    gen_rate_sample_ack = ack_now;
+                }
+            }
+            let eff_rate = (gen_rate_ewma * 1.5).clamp(gen_rate_floor, gen_rate);
             // Refill the pacing token bucket (capped at a small burst).
             let tok_dt = now.saturating_sub(gen_tok_last_us);
             gen_tok_last_us = now;
-            gen_tokens = (gen_tokens + gen_rate * (tok_dt as f64 / 1_000_000.0)).min(64.0);
+            gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(64.0);
             let burst_cap = 256u32;
             let mut emitted = 0u32;
             while (gen_coded_total as f64) < target
@@ -3017,6 +3232,13 @@ async fn run_window_sender(
                 emitted += 1;
                 gen_tokens -= 1.0;
                 let sym = encoder.generate_repair();
+                // Count this proactive emission toward the per-generation
+                // in-flight accounting so the deficit loop never double-sends
+                // what proactive already covered.
+                if sym.data.len() >= 8 {
+                    let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
+                    *gen_emitted.entry(anchor).or_insert(0) += 1;
+                }
                 let path = {
                     let sched = scheduler.lock();
                     sched.place_symbol(true, &[]).unwrap_or(0)
@@ -3041,6 +3263,89 @@ async fn run_window_sender(
                     ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                 }
                 stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+            }
+
+            // DEFICIT-DRIVEN RECOVERY EMISSION (§16.3, the named missing
+            // mechanism). Emit the residual coded symbols each stalled frontier
+            // generation still needs, PACED by the same token bucket, round-
+            // robin so no generation starves — but NOT gated by the ack-clocked
+            // `target`. That is the crux of the fix: the cumulative ack is
+            // stalled EXACTLY when the frontier generation needs recovery, so
+            // gating recovery on the ack (as the feedback-free proxy did) is the
+            // deadlock. The receiver's per-generation deficit BOUNDS the total
+            // (we send only the residual it reports, minus what is already in
+            // flight — tracked in gen_want), so bypassing the ack-clock here
+            // cannot flood: recovery is bounded AND funds the frontier at once.
+            if !gen_want.is_empty() {
+                let rec_burst = 256u32;
+                let mut rec_emitted = 0u32;
+                'recover: loop {
+                    if gen_tokens < 1.0 || rec_emitted >= rec_burst {
+                        break;
+                    }
+                    let anchors: Vec<u64> = gen_want.keys().copied().collect();
+                    if anchors.is_empty() {
+                        break;
+                    }
+                    let mut progressed = false;
+                    for a in anchors {
+                        if gen_tokens < 1.0 || rec_emitted >= rec_burst {
+                            break 'recover;
+                        }
+                        let want = gen_want.get(&a).copied().unwrap_or(0);
+                        if want == 0 {
+                            gen_want.remove(&a);
+                            continue;
+                        }
+                        let sym = match encoder.generate_repair_for(a) {
+                            Some(s) => s,
+                            None => {
+                                // Generation no longer retained/sealed (decoded
+                                // and advanced, or not yet sealed) — drop its want.
+                                gen_want.remove(&a);
+                                continue;
+                            }
+                        };
+                        *gen_emitted.entry(a).or_insert(0) += 1;
+                        let nw = want - 1;
+                        if nw == 0 {
+                            gen_want.remove(&a);
+                        } else {
+                            gen_want.insert(a, nw);
+                        }
+                        gen_tokens -= 1.0;
+                        rec_emitted += 1;
+                        progressed = true;
+
+                        let path = {
+                            let sched = scheduler.lock();
+                            sched.place_symbol(true, &[]).unwrap_or(0)
+                        };
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch = SymbolBatch {
+                            symbols: vec![sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq,
+                            path_id: path,
+                        };
+                        if let Err(e) = transport.send_symbols(path, batch) {
+                            warn!(path, ?e, "failed to send generation recovery symbol");
+                        }
+                        {
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(path) {
+                                p.charge_in_flight(1);
+                            }
+                        }
+                        if let Some(ps) = stats.path(path) {
+                            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                        }
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if !progressed {
+                        break;
+                    }
+                }
             }
         }
         if tx_paused != last_tx_paused {
@@ -3103,6 +3408,40 @@ async fn run_window_sender(
             gaps = nack_rx.recv() => {
                 if let Some(g) = gaps {
                     pending_gaps = Some(g);
+                }
+                None
+            }
+            // Generation-deficit feedback (§16.3): the receiver reports how many
+            // MORE coded symbols each frontier generation still needs. Rebuild
+            // the per-generation want from the report, subtracting what is
+            // already in flight (emitted since the last report), then reset the
+            // in-flight baseline. The recovery-emission block above drains these
+            // wants, paced. A generation ABSENT from the report has decoded (or
+            // is not yet frontier), so its want is cleared by the rebuild.
+            dv = deficit_rx.recv(), if generation => {
+                if let Some(dv) = dv {
+                    gen_want.clear();
+                    for (anchor, deficit) in dv {
+                        let emitted = gen_emitted.get(&anchor).copied().unwrap_or(0);
+                        // In-flight = coded emitted for this generation that the
+                        // receiver's CURRENT deficit does not yet reflect (sent
+                        // since the last report). On the FIRST report there is no
+                        // baseline: the proactive emissions are already reflected
+                        // in the reported deficit (the receiver counted them), so
+                        // in-flight is 0 — send the full deficit. (Initialising the
+                        // baseline to 0 instead would wrongly treat the whole
+                        // proactive budget as in flight and send nothing — the
+                        // measured first-report deadlock.)
+                        let in_flight = match gen_emitted_at_report.get(&anchor) {
+                            Some(&b) => emitted.saturating_sub(b),
+                            None => 0,
+                        };
+                        let to_send = (deficit as u64).saturating_sub(in_flight);
+                        gen_emitted_at_report.insert(anchor, emitted);
+                        if to_send > 0 {
+                            gen_want.insert(anchor, to_send);
+                        }
+                    }
                 }
                 None
             }
@@ -3479,6 +3818,14 @@ async fn run_window_sender(
             // (the coding target is the generation, not a sliding W).
             if generation {
                 encoder.advance(ack + 1);
+                // Drop per-generation deficit bookkeeping for generations that
+                // have now been fully delivered + dropped (anchors below the
+                // retained window start). Keeps the maps bounded to the M
+                // in-flight generations.
+                let (win_start, _) = encoder.window_span();
+                gen_want.retain(|&a, _| a >= win_start);
+                gen_emitted.retain(|&a, _| a >= win_start);
+                gen_emitted_at_report.retain(|&a, _| a >= win_start);
             } else {
                 let keep_behind = derived_window
                     .map(|w| w.clamp(16, win_cap))
@@ -4213,6 +4560,9 @@ fn handle_control_message(
     // space entirely — so the sender's ack state was fed garbage; the RWM
     // Phase A retention contract (removal by ack ONLY) needs the real ack.
     peer_window_ack: Option<&Arc<AtomicU64>>,
+    // Some(..) in generation mode: forwards an inbound GenerationDeficit's
+    // (anchor, deficit) vector to the local window sender's recovery loop.
+    deficit_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -4512,6 +4862,21 @@ fn handle_control_message(
             );
             if let Some(tx) = nack_tx {
                 let _ = tx.try_send(gaps);
+            }
+        }
+
+        ControlMessage::GenerationDeficit { deficits } => {
+            debug!(
+                path_id,
+                gen_count = deficits.len(),
+                first = ?deficits.first(),
+                "generation deficit feedback received"
+            );
+            // Forward to the local window sender's recovery loop (generation
+            // mode only). Best-effort: a dropped report is re-sent by the
+            // receiver next SRTT, and the in-flight accounting self-corrects.
+            if let Some(tx) = deficit_tx {
+                let _ = tx.try_send(deficits);
             }
         }
 

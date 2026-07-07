@@ -209,7 +209,6 @@ async fn perf_loopback_coded_object() {
 /// st.got.len() == total, so completion IS the all-bytes-present, decode-on-K
 /// check). A 1 MB object at the default G=384 spans ~3 generations decoded out
 /// of order.
-#[ignore = "generation coding: codec is verified by fec::generation unit tests; the full-transport multi-generation object does not yet complete over the real QUIC datagram path (bursty coded emission is dropped and the feedback-free recovery cap can deadlock the frontier generation — the design needs per-generation deficit feedback; see docs/goal-gate.md 'Generation Coding'). Tracked as an open transport bug."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_generation_object() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -260,7 +259,6 @@ async fn perf_loopback_generation_object() {
 /// (fungible cross-path). Guards that the object completes with all bytes when
 /// coded symbols for one generation are split across two independent paths —
 /// the cross-path fungibility the C8 L1 measurement then quantifies under loss.
-#[ignore = "generation coding: codec is verified by fec::generation unit tests; the full-transport multi-generation object does not yet complete over the real QUIC datagram path (bursty coded emission is dropped and the feedback-free recovery cap can deadlock the frontier generation — the design needs per-generation deficit feedback; see docs/goal-gate.md 'Generation Coding'). Tracked as an open transport bug."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_generation_dual_path() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -295,6 +293,61 @@ async fn perf_loopback_generation_dual_path() {
     .await
     .expect("dual-path generation perf loopback timed out")
     .expect("dual-path generation perf client failed");
+
+    srv.abort();
+}
+
+/// Multi-generation (≥3 generations) completion over a DUAL path, driven by the
+/// per-generation deficit-feedback loop (paper §16.3, the named missing
+/// mechanism). A 2 MB object at the default G=384 (~1.4 kB symbols) spans ≥3
+/// generations, so the sealed-generation FRONTIER must advance repeatedly:
+/// generation g completes on the pooled K_g coded arrivals from BOTH paths
+/// (fungible cross-path), the receiver reports each frontier generation's
+/// residual deficit, and the sender emits exactly that residual for the stalled
+/// generation — bounded recovery that funds the frontier, with per-seq ARQ OFF
+/// (generation mode installs NO NACK producer, so completion is achieved PURELY
+/// by generation-level recovery). This is the end-to-end proof that the deficit
+/// loop pipelines many generations to completion, not just the first — the exact
+/// multi-generation stall the prior build hit. (In-proc loopback is lossless;
+/// the LOSSY cross-path aggregation win is measured at L1 with netem.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn perf_loopback_generation_multi_dual_path() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let srv_cfg = config::RaptorpathConfig {
+        server: Some(true),
+        bind: Some(vec!["127.0.0.1:47843".into(), "127.0.0.1:47844".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_generation_coding: Some(true),
+        ..Default::default()
+    };
+    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    assert!(srv_pc.window_reliable && srv_pc.window_generation_coding);
+    let srv = tokio::spawn(perf::server(srv_pc));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let cli_cfg = config::RaptorpathConfig {
+        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
+        peer: Some(vec!["127.0.0.1:47843".into(), "127.0.0.1:47844".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_generation_coding: Some(true),
+        ..Default::default()
+    };
+    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+
+    // 2 MB → ≥3 generations at the default G=384. Completion (the perf server
+    // acks only when every byte is present) IS the ≥3-generation, frontier-
+    // advancing, deficit-loop proof.
+    tokio::time::timeout(
+        Duration::from_secs(90),
+        perf::client(cli_pc, 2_000_000, 1),
+    )
+    .await
+    .expect("multi-generation dual-path perf loopback timed out")
+    .expect("multi-generation dual-path perf client failed");
 
     srv.abort();
 }

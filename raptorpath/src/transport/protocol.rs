@@ -204,6 +204,21 @@ pub enum ControlMessage {
     NackAck {
         nack_id: u32,
     },
+
+    /// Per-generation deficit feedback (receiver → sender, generation coding
+    /// mode; paper §16.3). For each in-flight / frontier generation the receiver
+    /// still needs, carries `(anchor, deficit)` where `anchor` is the
+    /// generation's stable coding anchor (= `window_start`, a multiple of the
+    /// generation size) and `deficit = K_g − rank_g` is how many MORE independent
+    /// coded symbols that generation needs to decode. This closes the rateless-
+    /// with-feedback loop: the sender emits exactly the residual deficit for each
+    /// generation (bounding recovery — no bursty flood) while a stalled frontier
+    /// generation keeps a nonzero deficit until it decodes (funding it), which
+    /// the feedback-free cumulative-ack proxy could not do simultaneously.
+    GenerationDeficit {
+        /// `(generation_anchor, residual_deficit)` for the frontier generations.
+        deficits: Vec<(u64, u32)>,
+    },
 }
 
 /// Top-level wire message.
@@ -257,6 +272,17 @@ impl WireMessage {
                     return Err(Box::new(bincode::ErrorKind::Custom(format!(
                         "ack received_ids too large: {} > {}",
                         received_ids.len(),
+                        MAX_ACK_IDS
+                    ))));
+                }
+            }
+            WireMessage::Control(ControlMessage::GenerationDeficit { deficits }) => {
+                // Only the M frontier generations are ever reported (M ~ 2–4);
+                // reject anything absurd as a malformed/hostile message.
+                if deficits.len() > MAX_ACK_IDS {
+                    return Err(Box::new(bincode::ErrorKind::Custom(format!(
+                        "generation deficits too large: {} > {}",
+                        deficits.len(),
                         MAX_ACK_IDS
                     ))));
                 }
