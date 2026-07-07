@@ -5492,6 +5492,38 @@ performance (a fast dense/SIMD GF(256) solver)** rather than transport plumbing 
 a scoped codec-perf step. Regression: the non-generation modes are untouched
 (single-path coded 15.66, C7 21.25 Mbit/s at 50 MB).
 
+**MEASURED (fast dense generation decoder, branch `feat/fast-gen-decoder`,
+2026-07-07).** The named codec-perf step above is DONE: a dense per-generation
+GF(256) Gauss–Jordan decoder (`GenerationDecoder`: fused `[coeffs|payload]`
+rows, incremental RREF over the SIMD `mul_acc_slice` kernel, per-generation
+independent, decode-on-K) replaces the sparse `RlcWindowDecoder` on the
+generation path. Microbench (1200 B, single core, AVX2): at G=384 it decodes at
+**83 Mbit/s vs the sparse path's 3.1 (27×)**, clearing the link rate — decode is
+**provably no longer the binding constraint**, and the oracle's G=384 config
+that DNF'd at 20 MB now **COMPLETES** at L1 (16/16 isolated single-object 25 MB
+transfers). **But the DECISIVE C8 goodput STILL FAILS the >15.7 bar: dual C8
+G=384 = 8.90 Mbit/s (8/8), single-path c2 = 9.11, aggregation factor 0.98
+(NONE).** The binding constraint has moved one layer DOWN AGAIN — off decode
+(now 9× the achieved rate) onto the **coded-datagram transport control loop**.
+A client trace shows the uploader `tx_paused` ~90 % of the time with coded
+emission ack-clocked at ~1.3× delivered: coded symbols ride QUIC's DROPPABLE
+datagram path, so the pacing is deliberately clocked to the delivered-ack rate
+to avoid overrunning it — and pushing harder confirms the tension (forcing
+~57 Mbit/s coded via `RWM_GEN_RATE_FLOOR` DROPS C8 to 5.2 Mbit/s: overrun →
+datagram drops → generations stall). Combined with per-generation decode-on-K /
+deficit-feedback RTT serialization (the M=2 pipeline hides only 2 generations of
+the slow path's 40 ms straggler latency; deepening to M=8 lifts it only to 10.6),
+the generation transport tops out at ~9–12 Mbit/s and the second heterogeneous
+path adds nothing. So the oracle's ×1.19 is **still proven-but-not-realized**,
+now bottlenecked on the coded-datagram emission model rather than decode or
+plumbing — the fundamental tension of racing a rateless coded stream over a
+droppable, bandwidth-limited, high-RTT datagram path. Closing it needs a
+different emission substrate (systematic-symbol pass-through to kill the
+decode-on-K latency, or coded-over-a-reliable-substream), not more decode or
+feedback work. Regression: non-generation modes untouched (the dense decoder is
+gated on generation mode; single-path / C7 systematic and coded-only paths use
+the unchanged `RlcWindowDecoder`).
+
 **Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
 `feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
 ×1.19 achievability above came from an oracle
@@ -5748,6 +5780,45 @@ symbol rate is ~50 ms of traffic and ~0.7 MB retained — well within all
 three ceilings; the binding constraint at satellite-class RTT × high rate
 would be memory and decode, and (16.4) says such links need either a larger
 W or an honest admission that Σ g_i is not reachable there.
+
+**CORRECTION — the 708 Mbit/s figure is a DENSE-solver number; the sliding-
+window and generation decoders in production were NOT dense (MEASURED,
+2026-07-07).** The throughput quoted above (2.84 Gbit/s / 1.28 Gbit/s / 708
+Mbit/s at W = 64 / 256 / 512) was measured with a *dense* Gaussian-elimination
+solver. The production **`RlcWindowDecoder`** (used by both the sliding window
+and, until this build, the generation-coding decode path) is NOT that solver:
+it stores each pivot row's coefficients in a per-pivot `BTreeMap<u64,u8>` and
+resolves single-unknowns by cascade — allocation-heavy and pointer-chasing.
+Direct microbench of the two on identical generation-coded 1200 B streams
+(single core, AVX2) shows the gap widens with the generation size G (= the
+per-generation K):
+
+```
+   G     dense (Gauss–Jordan, SIMD GF(256))   sparse (RlcWindowDecoder)   ratio
+   96              405 Mbit/s                        67 Mbit/s             6×
+  192              201 Mbit/s                        16 Mbit/s            13×
+  384               83 Mbit/s                       3.1 Mbit/s            27×
+  512               66 Mbit/s                       1.7 Mbit/s            38×
+```
+
+At the oracle's aggregating **G = 384** the sparse decoder runs at **3.1
+Mbit/s — BELOW the 20–100 Mbit/s cells** (it was the binding constraint, not
+the network: goal-gate "Generation Coding" measured C8 = 10.97 Mbit/s,
+aggregation factor 1.00, network-independent). So the §16.5 "compute does not
+bind" claim holds ONLY for a **dense/SIMD GF(256)** solver; **generation coding
+REQUIRES it**, and this build ships one (`GenerationDecoder`: dense fused
+`[coeffs|payload]` rows, incremental reduced-row-echelon Gauss–Jordan over the
+existing SIMD `mul_acc_slice` kernel, per-generation independent, decode-on-K,
+out-of-order). The dense decoder clears the link rate at G = 384 (83 Mbit/s,
+27× the sparse path) and unblocks *completion* at that G (which DNF'd on the
+sparse decoder at 20 MB). The effective ~3.8 GB/s of the dense kernel is
+per-call PSHUFB-table-build bound; it is O(G) per delivered byte (O(G²) per
+symbol, K/G generations), so the dense figure still falls with G but stays far
+above the cells for every G ≤ 512. **This corrects the achievability argument:
+the 708 Mbit/s headroom was real but only for the dense solver the generation
+path did not use; with the dense solver now in place, decode is no longer the
+generation-coding bottleneck (the constraint moves one layer down to the
+coded-datagram transport control loop — see §16.3).**
 
 ### 16.6 Predictions, Prerequisites, and the Experiment
 

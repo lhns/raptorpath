@@ -2097,3 +2097,148 @@ are byte-for-byte unchanged and still meet their bars.
   `RlcWindowDecoder` is ~200× slower), a scoped codec-performance step — not more
   transport work.
 - **Regression:** none (single-path 15.66, C7 21.25; non-generation modes intact).
+
+## Generation Coding — FAST DENSE DECODER landed; decode UNBLOCKED but C8 aggregation still fails (branch `feat/fast-gen-decoder`, 2026-07-07)
+
+The named blocker from the build above — **RLC generation-decode throughput** — is
+now removed: a dense per-generation GF(256) Gauss–Jordan decoder replaces the
+sparse `RlcWindowDecoder` on the generation path, **27× faster at G=384**, and
+the oracle's G=384 config that previously **DNF'd at 20 MB now COMPLETES**. But
+the **DECISIVE C8 goodput still FAILS the >15.7 Mbit/s bar** — and the binding
+constraint has moved AGAIN, one layer below decode: to the **coded-datagram
+transport control loop** (ack-clocked pacing over the unreliable QUIC datagram
+path + per-generation decode-on-K / deficit-feedback RTT). Decode is no longer
+the bottleneck; the second path still adds no capacity. Honest
+FAIL-WITH-MECHANISM, one layer deeper than before. The number was NOT forced.
+
+### PART 1 — the fast decoder (route (b): densify the generation decode path)
+Route (a) — reuse the "708 Mbit/s bench" decoder — was NOT viable: that bench
+used a *dense* solver, whereas BOTH the production `RlcWindowDecoder` (sliding
+window) AND `raptorpath-math`'s `RlcDecoder` store per-pivot coefficients
+**sparsely** (`BTreeMap<u64,u8>` / `Vec<(u64,u8)>`) with cascade — there was no
+existing dense decoder to reuse. So I built one: **`GenerationDecoder`**
+(`raptorpath/src/fec/generation.rs`, impl `WindowDecoder`):
+- **Dense fused rows.** Each pivot row is ONE contiguous `[coeffs (K_G) | payload
+  (symbol_size)]` buffer, so a single SIMD `mul_acc_slice` (the existing
+  AVX2/SSSE3 PSHUFB GF(256) kernel) eliminates both the coefficient and payload
+  halves per pivot — halving the per-call table-build/dispatch overhead.
+- **Incremental reduced-row-echelon Gauss–Jordan**, keyed by `(anchor, K_G)`.
+  Each generation is a self-contained K_G×K_G system; at full rank every source
+  is already an identity row and delivered in one shot (no cascade, no back-sub).
+  Per-generation independent, decode-on-K, out-of-order — identical contract to
+  the sparse path (unit test `gen_decoder_matches_rlc_window` asserts byte-exact
+  parity vs `RlcWindowDecoder` on a lossy, reordered stream).
+- **Known-source pre-loading.** A fresh generation pre-loads any already-recovered
+  source in its span as a unit pivot row (the sparse decoder's Step-1
+  elimination), so an overlapping trickle channel (the reverse per-object ACK
+  stream re-codes the same anchor at widths 1,2,3,…) still makes progress. Zero
+  cost for the disjoint-span large-object case. **This was load-bearing** — two
+  real bugs surfaced and were fixed here: (1) the object stream reuses the
+  absolute seq space across objects, so one anchor hosts different-K_G
+  generations — keying by `(anchor,K_G)` (not anchor alone) stops them
+  thrashing; (2) without known-source pre-loading the reverse ACK channel
+  deadlocked (the 2nd object never acked). All three generation loopback tests
+  green (`perf_loopback_generation_{object,dual_path,multi_dual_path}`).
+
+**Decode microbench (dev box, AVX2; `fec::generation::tests::bench_generation_decode_throughput`, 1200 B symbols, single core):**
+
+| G   | dense (this build) | sparse `RlcWindowDecoder` | speedup |
+|-----|-------------------:|--------------------------:|--------:|
+| 96  | 405 Mbit/s | 67 Mbit/s | 6.1× |
+| 192 | 201 Mbit/s | 16 Mbit/s | 12.8× |
+| **384** | **83 Mbit/s** | **3.1 Mbit/s** | **27×** |
+| 512 | 66 Mbit/s | 1.7 Mbit/s | 38× |
+
+At the oracle's **G=384 the dense decoder does 83 Mbit/s — clear of the 100 Mbit
+link and ~9× the 8.9 Mbit/s the transport actually achieves**, so decode is
+provably NO LONGER the binding constraint. (Effective ~3.8 GB/s is per-call
+PSHUFB-table-build bound; throughput is O(G) per delivered byte, so it falls with
+G but stays far above the cells for every G ≤ 512.)
+
+### PART 2 — L1 MEASURED (C8 = c2+c3, native perf, VM AVX2)
+
+**FIRST: G=384 now COMPLETES.** Isolated single-object 25 MB transfers at
+G=384/M=2: **16/16 completed, dnf:0** (8 dual + 8 single). The prior build DNF'd
+G=384 at 20 MB (300 s timeout); the fast decoder closes that. (Caveat: a *warm
+connection carrying 6 sequential* 50 MB objects still intermittently stalls on a
+later object — a multi-object-on-one-connection transport issue, NOT single-object
+decode; single-object completion is now reliable.)
+
+**DECISIVE C8 (c2+c3), G=384/M=2, 25 MB × 8 isolated:**
+
+| config | mean Mbit/s | median | stdev | completion | vs 15.7 |
+|--------|------------:|-------:|------:|-----------:|--------:|
+| **C8 dual, generation G=384/M=2** | **8.90** | 8.94 | 0.31 | 8/8 | **✗ 0.57×** |
+| single c2, generation G=384/M=2 | 9.11 | 9.13 | 0.14 | 8/8 | ✗ |
+
+**Aggregation factor = 8.90 / 9.11 = 0.98 — NO aggregation** (dual marginally
+BELOW single, as before). Adding the second heterogeneous path (c3) yields zero
+extra goodput even though decode now has ~9× headroom. So decode was necessary
+but NOT sufficient: the ×1.19 the oracle predicts is still unreachable in
+production.
+
+### The mechanism of the (remaining) shortfall: CONTROL-LOOP BOUND, not decode
+Client-side trace (`RWM_TRACE`, G=384 dual) shows the uploader is
+**`tx_paused=true` in ~90% of samples** with the retention window pinned at
+`win=1152` (= 3 generations) and coded emission running only ~1.3× the delivered
+ack. The sender is not decode-limited (decode is 83 Mbit/s) — it is throttled by
+the generation-mode control loop:
+- **Ack-clocked coded pacing over the DROPPABLE datagram path.** Coded symbols
+  ride QUIC's unreliable datagram path; the pacing is deliberately clocked to the
+  delivered-ack rate (×1.5) so it does not overrun the datagram intake. Pushing
+  it faster does not help — it hurts: `RWM_GEN_RATE_FLOOR=6000` (force ~57 Mbit/s
+  coded) DROPPED C8 dual to **5.2 Mbit/s** (overrun → datagram drops → generations
+  stall); `RWM_GEN_INFLIGHT=6000` left it unchanged (8.3). The knob that would
+  raise throughput is exactly the one that overruns the path.
+- **Per-generation decode-on-K / deficit RTT serialization.** Nothing in a
+  generation delivers until all K_G=384 independent symbols arrive; the frontier
+  advances in 384-symbol jumps gated by the slow path's (c3: 40 ms RTT, 4.8 %
+  loss) stragglers, and the deficit-feedback top-up costs a further RTT. With
+  M=2, only 2 generations hide that latency. Deepening M helps only weakly
+  (G=384: M=2→8.9, M=4→8.4, **M=8→10.6** Mbit/s) and never reaches the bar.
+
+### G-sweep (C8 dual, 25 MB × 3 isolated) — smaller G is faster, none aggregate
+| G | mean Mbit/s | completion | note |
+|---|------------:|-----------:|------|
+| 96 | **12.03** | 3/3 | L1 sweet spot, but forfeits the W_mp≳384 fungibility horizon |
+| 192 | 9.65 | 2/3 (1 DNF) | flaky |
+| 384 | 8.90 | 8/8 | the oracle's aggregating config |
+| 512 | 9.16 | 3/3 | |
+
+Throughput FALLS with G and NONE aggregate (all < 15.7, dual ≈ single). Even the
+best (G=96, 12.0) forfeits the cross-path fungibility horizon (W_mp ≳ 384, §16.5)
+and still misses the bar. This is the *inverse* of the prior build's signature
+(which was decode-bound, ∝1/G): here decode has huge headroom at every G, so the
+falloff with G is the per-generation decode-on-K/RTT serialization, not decode
+cost.
+
+### Regression (systematic / non-generation modes — RE-CONFIRMED clean)
+| baseline (plain `--window-reliable`, no generation flag) | mean Mbit/s | target | status |
+|----------------------------------------------------------|------------:|-------:|:------:|
+| single-path c2, 50 MB ×3 | **15.55** | ~14.5–15.7 | ✓ |
+| C7 (c2+c2), 50 MB ×3 | **21.39** | ~21.6 | ✓ |
+| C8 (c2+c3), 50 MB ×3 | 12.11 | ~12.6 | ✓ |
+
+The dense decoder is gated on generation mode (`create_window_decoder(…,
+generation)`), so systematic / coded-only / realtime / in-order-stream are
+byte-for-byte unchanged and meet their bars. (Note the fast-path-alone bar
+*is* the 15.55 single-path systematic number here; generation C8 dual at 8.90 is
+0.57× of it — and even plain systematic C8 dual, 12.11, beats generation C8.)
+
+### VERDICT
+- **Decode: FIXED and PROVEN.** Dense `GenerationDecoder` is 27× the sparse path
+  at G=384 (83 vs 3.1 Mbit/s), clears the link rate, and unblocks G=384
+  completion at L1 (16/16 isolated). `cargo test -p raptorpath --lib` 261 green
+  (incl. 3 new dense-decoder unit tests), all generation loopback tests green,
+  gate suite 15/15 release, `temporal_oracle` 3 green.
+- **L1 DECISIVE (>15.7 Mbit/s): NOT MET.** C8 dual G=384 = **8.90 Mbit/s** (8/8),
+  aggregation factor **0.98**. Honest FAIL-WITH-MECHANISM — number NOT forced.
+- **The blocker moved one layer DOWN AGAIN:** from generation-decode throughput
+  (fixed here) to the **coded-datagram transport control loop** — ack-clocked
+  pacing over the unreliable datagram path + per-generation decode-on-K/deficit
+  RTT. This is not a decode or a plumbing gap; it is the fundamental tension of
+  racing a rateless coded stream over a droppable datagram path at a
+  bandwidth-limited, high-RTT heterogeneous cell. Closing it would need a
+  different emission model (e.g. systematic-symbol pass-through to kill the
+  decode-on-K latency, or coded-on-a-reliable-substream), beyond this goal's
+  decode-fix scope.
