@@ -693,6 +693,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (deficit_tx, deficit_rx) =
         tokio::sync::mpsc::channel::<Vec<(u64, u32)>>(64);
 
+    // SACK flow-control channel (feat/sack-flow-control): forwards the
+    // receiver's RECEIVED-above-frontier ranges (the SACK ranges themselves,
+    // NOT the inverted gaps) to the plain-reliable window sender. The sender
+    // prunes its sent-store for out-of-order-received symbols so its flow
+    // control keys on TRUE outstanding-unacked, not the in-order cumulative-ack
+    // frontier that freezes on every hole. Plain-reliable only (generation /
+    // coded-only have their own structural backpressure and are left as-is).
+    let (sack_tx, sack_rx) =
+        tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(64);
+
     if window_mode {
         info!(
             symbol_size = profile.symbol_size,
@@ -760,6 +770,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
+    let mut sender_sack_rx = sack_rx;
     let sender_protocol_hint = config.protocol_hint;
 
     let sender_handle = tokio::spawn(async move {
@@ -777,6 +788,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &sender_window_ack,
                 &mut sender_nack_rx,
                 &mut sender_deficit_rx,
+                &mut sender_sack_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
                 sender_window_reliable,
@@ -1116,6 +1128,31 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
         if window_mode && !window_generation {
             Some(nack_tx)
+        } else {
+            None
+        };
+    // SACK flow-control producer (feat/sack-flow-control), GATED OFF by default.
+    //
+    // Rationale / MEASURED finding (L1, 2026-07-07): decoupling the sender's
+    // flow control from the in-order cumulative-ack frontier by pruning the
+    // sent-store for out-of-order-received (SACKed) symbols does NOT lift lossy
+    // single-path throughput (c2 single 16.09 vs 16.07 baseline — the limiter is
+    // the receiver-side in-order RECOVERY LATENCY, not sender store
+    // backpressure) and is UNSAFE for in-order delivery: with the sender no
+    // longer held near the frontier it races the whole object ahead, but the
+    // receiver's in-order reassembly window is BOUNDED (MAX_WINDOW_SIZE), so a
+    // symbol can be received (→ SACKed → pruned here) and then EVICTED at the
+    // receiver before the in-order frontier consumes it — destroying the only
+    // retained copy and wedging completion (MEASURED: C7/C8 in-order dual DNF;
+    // the OOO-completion arms, which are not frontier-bound, complete). The
+    // frontier-coupled backpressure this would remove is precisely what keeps
+    // the send frontier inside the receiver's reassembly window. Kept as an
+    // env-gated experiment (RWM_SACK_PRUNE=1); default is byte-for-byte base.
+    // Only plain-reliable has a per-seq sent-store to prune.
+    let sack_prune_enabled = std::env::var("RWM_SACK_PRUNE").is_ok();
+    let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
+        if sack_prune_enabled && window_reliable && !window_generation && !window_coded_only {
+            Some(sack_tx)
         } else {
             None
         };
@@ -2050,6 +2087,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         Some(&recv_batch_counter),
                         if recv_window_mode { Some(&recv_window_ack) } else { None },
                         if recv_window_generation { Some(&recv_deficit_tx) } else { None },
+                        recv_sack_tx.as_ref(),
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -2444,6 +2482,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         None,
                         None,
                         None,
+                        None,
                     );
                 }
                 other => {
@@ -2674,6 +2713,12 @@ async fn run_window_sender(
     // reported (generation_anchor, residual_deficit) vector. Drives the
     // bounded, targeted recovery emission that replaces the feedback-free cap.
     deficit_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u32)>>,
+    // SACK flow-control (feat/sack-flow-control): the receiver's RECEIVED-above-
+    // frontier ranges. Draining these prunes the sent-store for out-of-order
+    // deliveries so the plain-reliable flow-control gate (store_len) tracks TRUE
+    // outstanding, decoupling the sender from the in-order cumulative frontier.
+    // Only fed in plain-reliable mode; empty (never producing) otherwise.
+    sack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
@@ -3326,6 +3371,34 @@ async fn run_window_sender(
     let mut diag_eff_rate: f64 = 0.0;
 
     loop {
+        // SACK flow control (feat/sack-flow-control): drain the receiver's
+        // RECEIVED-above-frontier ranges NON-BLOCKING at the top of every
+        // iteration (never as a select! branch — a frequently-ready channel
+        // there would race, and cancel, the `tun.read_packet()` future and
+        // starve/stall intake). An out-of-order-received symbol is DELIVERED:
+        // drop it from the retention store and the per-seq ARQ bookkeeping even
+        // though the in-order cumulative frontier still sits below it on an
+        // unfilled hole. The flow-control gate below keys on `sent_store.len()`
+        // (= TRUE outstanding after this pruning), so the send window tracks the
+        // real pipe rather than freezing at the frozen frontier. The hole itself
+        // (NOT in any received range) stays retained and recovers in the
+        // background via the orthogonal NACK / tail-sweep path. The loop wakes at
+        // least every 1 ms (backpressure/emission poll) so drains stay prompt.
+        while let Ok(ranges) = sack_rx.try_recv() {
+            for (start, end) in ranges {
+                if end < start {
+                    continue;
+                }
+                let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
+                for k in acked {
+                    sent_store.remove(&k);
+                    retransmit_buffer.remove(&k);
+                    source_path_map.remove(&k);
+                    nack_retx_at.remove(&k);
+                }
+            }
+        }
+
         // Determine if packer has pending data for flush timer
         let packer_pending = use_packing && packer.is_pending();
 
@@ -4904,6 +4977,10 @@ fn handle_control_message(
     // Some(..) in generation mode: forwards an inbound GenerationDeficit's
     // (anchor, deficit) vector to the local window sender's recovery loop.
     deficit_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
+    // Some(..) in plain-reliable mode: forwards the WindowAck's RECEIVED-above-
+    // frontier ranges to the local window sender so it can prune the sent-store
+    // for out-of-order deliveries (SACK flow control). None disables it.
+    sack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -5182,6 +5259,15 @@ fn handle_control_message(
             // (WindowNack is deprecated and never sent), so window mode had
             // NO functioning reactive repair path.
             if !sack_ranges.is_empty() {
+                // SACK flow control (feat/sack-flow-control): the RECEIVED
+                // ranges themselves let the plain-reliable sender prune its
+                // sent-store for out-of-order deliveries, so its flow-control
+                // window tracks TRUE outstanding rather than freezing on the
+                // in-order cumulative frontier. Forward before inverting to
+                // gaps (which drive the orthogonal targeted-retransmit path).
+                if let Some(tx) = sack_tx {
+                    let _ = tx.try_send(sack_ranges.clone());
+                }
                 let gaps = sack_to_gaps(received_up_to, &sack_ranges);
                 if !gaps.is_empty() {
                     debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
@@ -5511,6 +5597,61 @@ mod tests {
         assert!(sent_store.get(&ack).is_none());
         assert!(sent_store.get(&(ack + 1)).is_some());
         assert_eq!(sent_store.len(), (MAX_WINDOW_SIZE + 100) - 50);
+    }
+
+    #[test]
+    fn test_sack_pruning_advances_sender_past_a_hole() {
+        // ROOT-CAUSE FIX (feat/sack-flow-control): the plain-reliable sender's
+        // flow control keys on `sent_store.len()` (= outstanding-unacked). Under
+        // the OLD contract the store drained by the in-order cumulative frontier
+        // ONLY (split_off(&(ack+1))), so a single hole froze the frontier, the
+        // store stayed full, and TUN reads stalled for a reactive round-trip —
+        // goodput collapsed to window/RTT. This asserts the new SACK-pruning
+        // arm: out-of-order-received symbols leave the store immediately, so
+        // outstanding tracks TRUE in-flight and the sender keeps injecting.
+        use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
+        let mut encoder = RlcWindowEncoder::new(64);
+        let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
+
+        // Send 100 source symbols (seqs 0..=99), all retained.
+        let n = 100u64;
+        for i in 0..n {
+            let sym = encoder.add_source(&vec![i as u8; 32]);
+            sent_store.insert(sym.block_id, sym.clone());
+        }
+        assert_eq!(sent_store.len(), n as usize);
+
+        // Receiver got 0..=9 contiguously (cumulative ack = 9), then a HOLE at
+        // seq 10, then received EVERYTHING above it (11..=99) out of order.
+        let ack = 9u64;
+        // Cumulative frontier prune (removal below the contiguous frontier).
+        sent_store = sent_store.split_off(&(ack + 1));
+        // Under the OLD contract this is where it ends: the frozen frontier
+        // leaves 90 symbols (10..=99) pinned in the store → still "full",
+        // sender stalls behind the hole.
+        assert_eq!(sent_store.len(), (n - (ack + 1)) as usize); // 90 pinned
+
+        // NEW: the SACK ranges (received-above-frontier) prune the store for the
+        // out-of-order deliveries — exactly the sender-loop arm's arithmetic.
+        let sack_ranges: Vec<(u64, u64)> = vec![(11, 99)];
+        for (start, end) in sack_ranges {
+            if end < start {
+                continue;
+            }
+            let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
+            for k in acked {
+                sent_store.remove(&k);
+            }
+        }
+
+        // Only the genuine hole (seq 10) remains retained — outstanding drops
+        // from 90 to 1, well under any BDP-scaled cap, so the sender is FREE to
+        // read the TUN and inject fresh source instead of freezing on the hole.
+        assert_eq!(sent_store.len(), 1, "only the unfilled hole stays retained");
+        assert!(sent_store.contains_key(&10), "the hole is retained for ARQ");
+        // The hole's exact bytes survive for a targeted retransmit (reliability
+        // contract intact: the hole is recovered in the background).
+        assert_eq!(&sent_store.get(&10).unwrap().data[..32], &[10u8; 32]);
     }
 
     /// ADR-0046 idle-triggered recovery (Phase 4 fix). The congestion
