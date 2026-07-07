@@ -3050,3 +3050,102 @@ tests); `raptorpath-math` all green; `gate_suite` **15/15** release.
 **Harness.** `~/l1/perf_rwm_c.sh <A> <B> bulk <bytes> <runs> single|dual`;
 `RWM_FDIAG=1` prints the receiver frontier diagnosis to the server log;
 `RWM_FRONTIER_R=<r>` / `RWM_FRONTIER=<w>` / `RWM_FRONTIER_OFFSET=<n>` enable the experiment.
+
+## FEC-vs-ARQ Crossover — the RTT sweep that settles the over-claim (branch `feat/fec-arq-crossover`, 2026-07-08)
+
+**The over-claim under challenge.** The Proactive-Frontier verdict above (and §8/§14.7
+of the paper) was read as "ARQ beats FEC / the ~16 Mbit lossy cap is FUNDAMENTAL." That
+was generalized from ONE regime (C2, ~10 ms RTT) with the stated mechanism "MEASURED FEC
+decode ~25-67 ms > the ~13 ms ARQ retransmit." Two hypotheses were put under test:
+**H1 (scenario):** at HIGHER RTT the ARQ round (~1.3-1.5·RTT) should EXCEED the FEC decode,
+so proactive frontier repair should BEAT pure-ARQ above some crossover RTT.
+**H2 (error):** the ~25-67 ms is suspiciously high — the dense GF(256) decoder runs a symbol
+in microseconds — so it is not raw decode but either the slow SPARSE decoder on the frontier
+path (a) or symbol-arrival WAITING to isolate the hole (b, entanglement), either of which
+would drop the crossover.
+
+### H2 — the "decode latency" is WAITING, not compute (measurement corrected)
+Added a receiver probe (`RWM_FDIAG`, net/mod.rs) that times the RAW `win_dec.add_symbol()`
+GF(256) call separately from the per-hole RESOLUTION wall-time the prior branch reported.
+The prior "DECODE avg" spanned hole-armed → frontier-passes and thus **included the wait for
+enough rank to isolate the hole**; it was never decode compute. Measured (native perf,
+1.8 MB, seed 42):
+
+- **Raw decode compute = 6-10 µs/call, 33-54 ms TOTAL over the WHOLE 1.8 MB transfer**
+  (`COMPUTE calls≈5300 avg=10us total=54ms`). Compute is < 1 % of a 5-11 s transfer.
+- The sparse `RlcWindowDecoder` IS the decoder on the plain-reliable frontier path
+  (net/mod.rs `create_window_decoder`, generation-off arm) — **H2(a) is a true fact but a
+  false cause**: at 10 µs/call it is not the bottleneck, so routing frontier decode through
+  the dense `GenerationDecoder` (generation-aligned; not even a drop-in for arbitrary
+  sliding windows) would change nothing. No hot-path decoder swap is warranted.
+- The real per-hole latency is **WAITING for rank** — **H2(b) confirmed**. At the moment a
+  hole sticks, `present_at_stall = 0` in EVERY run: a covering equation is never buffered
+  (the pre-position-vs-isolate catch-22). Under bursty loss the recent window holds MORE
+  holes than buffered equations (`probe_holes 19` vs `probe_buffered 4`), so a covering
+  repair lands as a multi-unknown pivot and cannot isolate until neighbours arrive.
+
+So the prior "decode ~25-67 ms > ARQ" was **doubly wrong**: (a) it was resolution wall-time,
+not compute; and (b) — see H1 below — at high RTT a decode-resolved hole is FASTER than ARQ,
+not slower.
+
+### H1 — the RTT sweep: NO crossover (single-path, 100 mbit, GE 1.3/50 ≈ 2.5 % loss, jitter=0, seed 42, 1.8 MB × 5)
+Pure-ARQ (default) vs proactive frontier-FEC (`RWM_FRONTIER=32 RWM_FRONTIER_R=0.10`),
+RTT swept via netem one-way delay (cells `c2r10…c2r200` in `lib.sh`):
+
+| RTT (ms) | ARQ (Mbit/s) | FEC W32/r0.10 (Mbit/s) | FEC/ARQ |
+|---|---|---|---|
+| 10  | 20.32 | 14.94 | 0.74 |
+| 30  |  9.94 |  6.51 | 0.65 |
+| 50  |  6.81 |  4.19 | 0.61 |
+| 100 |  3.22 |  2.01 | 0.62 |
+| 200 |  1.62 |  1.21 | 0.75 |
+
+**FEC never beats ARQ. The ratio is ~0.61-0.75, FLAT across a 20× RTT range — it does not
+narrow toward 1.0 at high RTT.** Throughput ∝ 1/RTT for BOTH arms (window/RTT frontier
+serialization; the window is not BDP-scaled at high RTT), and frontier-FEC is a roughly
+constant ~35 % throughput TAX on top. Config robustness at RTT=200 (the most FEC-favorable
+point, 5 reps each): ARQ 1.77; FEC r0.05/W16/off2 **1.36**, r0.05/W48/off8 **1.38**,
+r0.10/W16/off2 1.09, r0.15/W64/off2 0.83, r0.20/W32/off4 0.79. **Best FEC = 0.78× ARQ;
+higher r monotonically worse. No W/offset/r combination crosses.**
+
+### Why FEC loses even though its decode IS faster at high RTT
+The RTT=200 FDIAG is decisive: **DECODE-resolved holes take 8.5 ms vs the ARQ SOURCE round
+279 ms (≈ 1.4·RTT) — FEC decode is 33× FASTER, exactly as H1 predicted.** But it never
+converts to throughput because of the catch-22, now fully instrumented:
+1. **`present_at_stall = 0`:** only **3 of 86** frontier holes actually decode; the other 83
+   still resolve by the slow ARQ round. The fast path fires on ~3 % of holes.
+2. **97 % of repair is wasted** (`rf=486 ru=16`): the covering repair almost always arrives
+   AFTER the ARQ retransmit already cleared the hole, so it is pure displacement — it
+   competes for the shared cwnd/pacing budget with the new source AND the ARQ retransmits
+   that actually advance the window/RTT-limited frontier, slowing them.
+
+### HONEST VERDICT — the throughput claim SUPPORTED, the stated mechanism REFUTED and corrected
+- **Is "ARQ beats FEC on throughput" over-claimed? NO — it holds across a 20× RTT sweep
+  (10-200 ms) with real multi-point evidence, not one data point. There is NO crossover, and
+  no crossover appears under 6 tuned FEC configs at the most-favorable RTT.** In THAT narrow
+  sense the "fundamental" reading is EMPIRICALLY SUPPORTED for plain-reliable frontier-FEC.
+- **But the STATED MECHANISM was wrong and is corrected:** (a) decode COMPUTE is 10 µs, not
+  25-67 ms; (b) at high RTT a decode-resolved hole (8.5 ms) is 33× FASTER than the ARQ round
+  (279 ms). FEC loses NOT because "decode is slow at low RTT" but because the sliding-window
+  **pre-position-vs-isolate catch-22** makes the fast decode fire on only ~3 % of holes while
+  its 97 %-wasted repair displaces the frontier-advancing traffic — structural to proactive
+  sliding-window RLC over an in-order frontier, confirmed across the whole RTT range.
+- **Paper record (§14.7 / §8):** the analytical rule "FEC wins when t_fec(W) < 1.5·RTT" is
+  CONTRADICTED at L1 for frontier repair — it assumes the covering repair is present and
+  isolating at decode time (true for a stable/systematic window, i.e. generation mode) and
+  ignores the shared-budget displacement. Corrected in §8.9 / §14.7 with the sweep.
+- The proactive-FEC premise lives in the generation/systematic modes (fungible cross-path
+  recovery, no fixed-position frontier hole), not plain-reliable frontier repair — consistent
+  with, and now mechanistically explained by, the prior verdict.
+
+**Shipped state.** Frontier-repair machinery unchanged and still gated OFF
+(`RWM_FRONTIER`/`RWM_FRONTIER_R`). Added only the `RWM_FDIAG` COMPUTE-time probe (gated on
+`RWM_FDIAG`; default hot path is a plain `add_symbol` call). No production hot-path behaviour
+change — the "decode-latency error" was a measurement mislabel, not a code inefficiency, so
+there was nothing to fix in the transport.
+**Controls.** clean single **76.3 Mbit/s** (no regression vs ~76.9 baseline);
+`cargo test -p raptorpath --lib` 267 green; `raptorpath-math` all green;
+`gate_suite` **15/15** release; ALL sweep/tune arms dnf:0 (reliability intact).
+**Harness.** `~/l1/rtt_sweep.sh <reps> <bytes>` (the ARQ-vs-FEC RTT curve);
+`~/l1/fec_tune.sh <reps> <scen>` (config robustness); cells `c2r10…c2r200` in `lib.sh`
+(c2 loss/bw, jitter=0, one_way=RTT/2); `RWM_FDIAG=1` now also reports `COMPUTE calls/avg/total`.

@@ -1263,6 +1263,14 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // ALREADY present when the stall began (present-but-waiting-for-rank)
         // vs the covering repair only arrived mid-stall.
         let mut fdiag_present_at_stall: u64 = 0;
+        // H2 probe: RAW decoder-call wall-time. `fdiag_addsym_us` accumulates the
+        // time spent INSIDE `win_dec.add_symbol()` (GF(256) GE compute) across the
+        // whole transfer; `fdiag_addsym_n` is the call count. Compared against the
+        // per-hole RESOLUTION wall-time (fdiag_decode_us, which spans hole-armed →
+        // frontier-passes and thus includes symbol-arrival WAITING), this isolates
+        // whether the "~25-67 ms decode" is compute or waiting-for-rank.
+        let mut fdiag_addsym_us: u64 = 0;
+        let mut fdiag_addsym_n: u64 = 0;
 
         // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
         // routinely outrace the reliable control stream). A decoder created
@@ -1749,7 +1757,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             }
                         }
                         for symbol in &batch.symbols {
-                            let recovered = win_dec.add_symbol(symbol);
+                            let recovered = if fdiag_on {
+                                let t_dec = Instant::now();
+                                let r = win_dec.add_symbol(symbol);
+                                fdiag_addsym_us += t_dec.elapsed().as_micros() as u64;
+                                fdiag_addsym_n += 1;
+                                r
+                            } else {
+                                win_dec.add_symbol(symbol)
+                            };
                             if !recovered.is_empty() {
                                 recovered_any = true;
                             }
@@ -1941,13 +1957,22 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 } else {
                                     0
                                 };
+                                // H2: mean RAW decode-call compute time (µs) and
+                                // TOTAL compute over the transfer — contrast with
+                                // the per-hole DECODE resolution wall-time above.
+                                let addsym_avg = if fdiag_addsym_n > 0 {
+                                    fdiag_addsym_us / fdiag_addsym_n
+                                } else {
+                                    0
+                                };
                                 eprintln!(
-                                    "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | rf={} ru={}",
+                                    "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | COMPUTE calls={} avg={}us total={}ms | rf={} ru={}",
                                     f, highest_seen_seq,
                                     highest_seen_seq.saturating_sub(f),
                                     holes, buffered,
                                     fdiag_decode_n, dec_avg, fdiag_present_at_stall,
                                     fdiag_source_n, src_avg,
+                                    fdiag_addsym_n, addsym_avg, fdiag_addsym_us / 1000,
                                     win_dec.repairs_fed(), win_dec.repairs_useful(),
                                 );
                             }

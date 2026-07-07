@@ -2218,6 +2218,22 @@ sender and the visualizer both read W* from it.
 
 ### 8.9 The Unified Deadline-Constrained r* (single- and multi-path)
 
+> **MEASURED breakeven note (branch `feat/fec-arq-crossover`, 2026-07-08).** The
+> `R_recover` term below charges 0 for an FEC-covered symbol and 1.5·RTT for an
+> ARQ-recovered one, so the model predicts proactive FEC dominating ARQ as RTT
+> grows (§14.7 crossover). An L1 RTT sweep {10,30,50,100,200} ms (single path,
+> 100 mbit, GE ≈ 2.5 %) shows this is **NOT** realized for a *plain-reliable
+> in-order frontier* hole: pure-ARQ beats proactive frontier-FEC at every RTT
+> (FEC/ARQ ≈ 0.61-0.75, no crossover). The `R_recover = 0` assumption for FEC only
+> holds when the covering repair is present AND isolating at decode time; under
+> bursty loss at an in-order frontier a pre-position-vs-isolate catch-22 forces
+> ~97 % of proactive repair to arrive after ARQ (`present_at_stall = 0`), so the
+> hole pays the ARQ term anyway PLUS the displaced-bandwidth tax. The `R_recover=0`
+> FEC branch is therefore valid for systematic/generation coding (all window
+> members received; §16.3) — where the value prop actually lives — not for frontier
+> repair. Decode COMPUTE is never the limiter (~10 µs/symbol measured). Details:
+> §14.7 and goal-gate "FEC-vs-ARQ Crossover".
+
 Sections 8.4–8.8 solve for r\* on ONE path: pick the least FEC that keeps a
 symbol's *within-window-or-ARQ* miss below δ. Section 16.7 introduced a
 second knob, the reorder horizon H, and asserted the two are dual — both buy
@@ -3622,6 +3638,28 @@ The crossover point t_fec(W) = 1.5 × RTT determines the optimal
 FEC/ARQ balance for a given link. The window size optimization
 (Section 14.5) can be tuned to align this crossover with the link's
 RTT, making FEC optimal for all bursts shorter than the pipeline.
+
+**MEASURED CORRECTION (L1, branch `feat/fec-arq-crossover`, 2026-07-08).** This
+analytic crossover is a per-hole LATENCY comparison and it holds in isolation:
+at RTT 200 ms an L1 decode-resolved frontier hole recovers in **8.5 ms** vs the
+ARQ round **279 ms** (≈ 1.4 · RTT) — FEC decode is 33× faster, and raw GF(256)
+decode COMPUTE is only ~10 µs/symbol (≈ 54 ms total per 1.8 MB transfer, < 1 %).
+But t_fec(W) < 1.5·RTT does NOT make FEC win on THROUGHPUT for a *proactive
+sliding-window* frontier repair. An RTT sweep {10,30,50,100,200} ms (single
+path, 100 mbit, GE ≈ 2.5 %) shows pure-ARQ beating frontier-FEC at EVERY RTT,
+FEC/ARQ ≈ 0.61-0.75 flat, **no crossover**, and no win under six tuned W/offset/r
+configs at RTT 200. Two effects the isolated latency model omits: (i) a
+**pre-position-vs-isolate catch-22** — to arrive before the frontier reaches the
+hole a repair must code fresh (still-in-flight) neighbours, so it cannot isolate;
+to isolate it must code already-received neighbours, so it arrives after ARQ
+already fired. Measured `present_at_stall = 0` always; only ~3 of 86 holes decode,
+the rest fall back to ARQ. (ii) **Displacement** — the ~97 %-wasted proactive
+repair (rf 486 / ru 16) competes for the shared cwnd/pacing budget with the source
+and ARQ retransmits that actually advance the window/RTT-limited frontier. The
+model's crossover therefore applies to a window whose members are all RECEIVED at
+decode time (systematic / generation coding, §16.3 — fungible cross-path recovery
+with no fixed-position in-order hole), NOT to a plain-reliable in-order frontier
+hole under bursty loss. See §8.9 and goal-gate "FEC-vs-ARQ Crossover".
 
 ### 14.8 Per-Symbol Recovery Probability Function
 
