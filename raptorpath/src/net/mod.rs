@@ -2823,7 +2823,29 @@ async fn run_window_sender(
         // generations are in flight. TUN reads pause here (flow control), never
         // dropping data. Generation mode uses the encoder's retained size as the
         // backpressure signal (no sent_store), so this matches win_cap.
-        win_cap
+        //
+        // Transport-ceiling fix (MEASURED at L1): win_cap = G·(M+1) as the
+        // BACKPRESSURE point is 14× the BDP at C2, so the unacked pipeline is a
+        // multi-hundred-ms standing queue (RTT inflated to 0.5–1.3 s). That
+        // bufferbloat does NOT cap single-path throughput (it is window-
+        // INDEPENDENT — a per-symbol processing limit) but it (a) produces
+        // catastrophic slow-run outliers (single-path 50 MB×6 stdev 24.8 s at
+        // G·(M+1)) and (b) SERIALIZES dual-path aggregation: the fast path
+        // stalls on the bloated in-order-frontier cross-path feedback, so
+        // symmetric C7 falls BELOW single (×0.65, anti-aggregation).
+        //
+        // The send frontier needs only TWO generations outstanding to pipeline
+        // — one filling head + one sealed-and-recovering — not M+1. Backpressure
+        // at 2·G (retention stays at win_cap = G·(M+1) for decode headroom)
+        // decouples the standing queue from the retention horizon. MEASURED
+        // (G=480, 50 MB×6): single 11.2→15.6 Mbit (stdev 24.8→0.7 s), symmetric
+        // C7 9.8→22.3 (×1.43 aggregation), heterogeneous C8 9.45→14.55 — all
+        // up, tighter, 0 DNF. RWM_STORE overrides for the sweep.
+        std::env::var("RWM_STORE")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(2 * gen_size)
+            .clamp(gen_size, win_cap)
     } else if coded_only {
         std::env::var("RWM_STORE")
             .ok()
@@ -3181,6 +3203,45 @@ async fn run_window_sender(
     // Retention backpressure state (reliable mode), for edge-triggered logs.
     let mut last_tx_paused = false;
 
+    // RWM_DIAG (transport-ceiling diagnosis): once per ~250 ms emit one line
+    // isolating the binding single-connection constraint — window occupancy vs
+    // store_max, tx_paused duty cycle, cumulative-ack goodput (Mbit/s), the
+    // ack-clocked pacing rate vs the link, cwnd/in_flight vs BDP, and the
+    // source/coded send rates. Gated on the RWM_DIAG env so the hot path is
+    // untouched when off.
+    let diag_on = std::env::var("RWM_DIAG").is_ok();
+    // Transport-ceiling fix (generation mode): bound the in-flight (unacked)
+    // symbols to ~BDP instead of the fixed store_max = G·(M+1). The oversized
+    // store_max is decoupled from the pipe (14× BDP at C2), so unpaced source
+    // emission builds a multi-hundred-ms standing queue (MEASURED RTT inflated
+    // to 0.5–1.3 s), which turns every hole into a ~1 s recovery stall. Cap
+    // total in-flight at a BDP-scaled bound so the queue — and thus the
+    // recovery-stall latency — stays small. 0 = off (legacy store-only
+    // backpressure). The deficit-recovery emission is EXEMPT (it must always be
+    // able to fund a frontier hole, else a full-window pipe deadlocks).
+    let infl_cap: u64 = std::env::var("RWM_INFL_CAP")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // Transport-ceiling fix (generation mode): clock the coded-emission budget
+    // to the SENT source frontier instead of the ACKED frontier. The
+    // ack-clocked `target = ack·(1+r) + W` DEADLOCKS a small generation: once
+    // the proactive budget W is spent, coded stops until the ack advances — but
+    // the ack is stalled precisely because the frontier generation is missing
+    // the coded it needs to decode (MEASURED: G=96 wedges with in_flight=0,
+    // src=0, cod=0). Sourcing the budget from the sent frontier lets the
+    // encoder's own per-generation ceil(K_g·(1+r)) cap + the M-generation
+    // retention bound govern coded emission (both already bound the datagram
+    // buffer), so proactive coverage always completes and small generations —
+    // which keep the store near BDP and avoid the bufferbloat stall — work.
+    let coded_src_clock = std::env::var("RWM_CODED_SRC").is_ok();
+    let diag_start_us = now_us();
+    let mut diag_last_us = now_us();
+    let mut diag_last_ack: u64 = 0;
+    let mut diag_last_src: u64 = 0;
+    let mut diag_last_cod: u64 = 0;
+    let mut diag_paused_iters: u64 = 0;
+    let mut diag_total_iters: u64 = 0;
+    let mut diag_eff_rate: f64 = 0.0;
+
     loop {
         // Determine if packer has pending data for flush timer
         let packer_pending = use_packing && packer.is_pending();
@@ -3195,7 +3256,90 @@ async fn run_window_sender(
         // of M generations). Pausing TUN reads at store_max holds the send
         // frontier ~M generations ahead of the cumulative-decode frontier.
         let store_len = if generation { encoder.window_size() } else { sent_store.len() };
-        let tx_paused = reliable && store_len >= store_max;
+        // In-flight (unacked) symbols across the pipe, for the BDP in-flight cap.
+        let pipe_infl: u64 = if infl_cap > 0 {
+            let mut sched = scheduler.lock();
+            let mut infl = 0u64;
+            for id in sched.active_paths() {
+                if let Some(p) = sched.path_mut(id) {
+                    p.expire_in_flight();
+                    infl += p.in_flight as u64;
+                }
+            }
+            infl
+        } else {
+            0
+        };
+        let cwnd_full = infl_cap > 0 && pipe_infl >= infl_cap;
+        let tx_paused = reliable && (store_len >= store_max || cwnd_full);
+
+        // RWM_DIAG periodic constraint report (see decls above the loop).
+        if diag_on {
+            diag_total_iters += 1;
+            if tx_paused {
+                diag_paused_iters += 1;
+            }
+            let dnow = now_us();
+            let ddt = dnow.saturating_sub(diag_last_us);
+            if ddt >= 250_000 {
+                let ack_now = window_ack_seq.load(Ordering::Relaxed);
+                let src_now = stats.fec.total_source_symbols.load(Ordering::Relaxed);
+                let cod_now = stats.fec.total_repair_symbols.load(Ordering::Relaxed);
+                let secs = ddt as f64 / 1_000_000.0;
+                // Goodput = cumulative-ack advance (delivered source symbols).
+                let dack = ack_now.saturating_sub(diag_last_ack) as f64;
+                let good_mbit = dack * (symbol_size as f64) * 8.0 / secs / 1e6;
+                let src_rate = src_now.saturating_sub(diag_last_src) as f64 / secs;
+                let cod_rate = cod_now.saturating_sub(diag_last_cod) as f64 / secs;
+                let paused_frac = diag_paused_iters as f64 / diag_total_iters.max(1) as f64;
+                let (cw, fl, np, min_rtt_us) = {
+                    let mut sched = scheduler.lock();
+                    let mut cw = 0u64;
+                    let mut fl = 0u64;
+                    let mut np = 0u64;
+                    let mut rtt = 0u64;
+                    let ids = sched.active_paths();
+                    for id in &ids {
+                        if let Some(p) = sched.path_mut(*id) {
+                            p.expire_in_flight();
+                            cw += p.cwnd as u64;
+                            fl += p.in_flight as u64;
+                            np += 1;
+                            rtt = rtt.max(p.estimator.rtt().as_micros() as u64);
+                        }
+                    }
+                    (cw, fl, np, rtt)
+                };
+                // BDP in symbols = goodput-rate(sym/s) × RTT — but report the
+                // link-capacity BDP too from the measured min RTT and a nominal
+                // 100 Mbit (diagnostic reference only).
+                let bdp_100m = if min_rtt_us > 0 {
+                    (100e6 / 8.0 / symbol_size as f64) * (min_rtt_us as f64 / 1e6)
+                } else {
+                    0.0
+                };
+                let eff = if generation { diag_eff_rate } else { 0.0 };
+                eprintln!(
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym",
+                    dnow.saturating_sub(diag_start_us) as f64 / 1e6,
+                    store_len, store_max,
+                    paused_frac * 100.0,
+                    good_mbit,
+                    if generation { gen_rate_ewma } else { 0.0 },
+                    eff,
+                    src_rate, cod_rate,
+                    cw, fl, np,
+                    min_rtt_us as f64 / 1000.0,
+                    bdp_100m,
+                );
+                diag_last_us = dnow;
+                diag_last_ack = ack_now;
+                diag_last_src = src_now;
+                diag_last_cod = cod_now;
+                diag_paused_iters = 0;
+                diag_total_iters = 0;
+            }
+        }
 
         // Generation coding: paced coded emission (see gen_tokens above). Runs
         // every iteration — including the tx_paused 1 ms wakeups — so coded
@@ -3245,7 +3389,16 @@ async fn run_window_sender(
             // window is never spent producing low-rank symbols over a still-
             // filling generation — the two together give startup-safe, recovery-
             // capable, ack-clocked emission.
-            let target = (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window;
+            let target = if coded_src_clock {
+                // Source-clocked: budget grows with the SENT frontier (highest
+                // retained seq), never freezing on an ack stall. The encoder's
+                // per-generation (1+r) cap + M-generation retention keep this
+                // from over-emitting; the pacing token bucket keeps it smooth.
+                let (_, wend) = encoder.window_span();
+                (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+            } else {
+                (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+            };
             // Clock the pacing rate to the DELIVERED goodput (ack rate): sample
             // the ack advance over a ~20 ms window into an EWMA, and pace at
             // 1.5× that (headroom for loss/overhead), clamped to [floor, ceiling].
@@ -3268,6 +3421,7 @@ async fn run_window_sender(
                 }
             }
             let eff_rate = (gen_rate_ewma * 1.5).clamp(gen_rate_floor, gen_rate);
+            diag_eff_rate = eff_rate;
             // Refill the pacing token bucket (capped at a small burst).
             let tok_dt = now.saturating_sub(gen_tok_last_us);
             gen_tok_last_us = now;
@@ -3277,6 +3431,7 @@ async fn run_window_sender(
             while (gen_coded_total as f64) < target
                 && emitted < burst_cap
                 && gen_tokens >= 1.0
+                && !cwnd_full
                 && encoder.wants_coding()
             {
                 gen_coded_total += 1;

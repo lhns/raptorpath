@@ -2438,3 +2438,106 @@ aggregation), and `fec::generation` / all generation loopback tests are green.
 **Verification.** `cargo test -p raptorpath --lib` 263 green; `temporal_oracle`
 7 green; `gate_suite` 15/15 release. L1: `RWM_GEN=480 RWM_EXTRA=
 "--window-systematic-repair" bash ~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual`.
+
+## Transport Ceiling — bufferbloat SERIALIZES dual-path aggregation (branch `feat/transport-ceiling`, 2026-07-07)
+
+The systematic+repair merge above isolated the residual blocker to the
+per-connection transport control loop (proven by a C7-symmetric control that
+did not aggregate). This branch DIAGNOSED that loop by instrumentation (a new
+`RWM_DIAG` per-250 ms constraint report) and L1 measurement, and landed a fix
+for the part that is tractable. Outcome: **symmetric dual-path aggregation is
+UNLOCKED (C7 c2+c2: 9.8 → 22.3 Mbit/s, ×1.43), and single-path is de-jittered
+(50 MB×6 stdev 24.8 → 1.0 s), by decoupling backpressure from the bloated
+retention window** — but the **DECISIVE heterogeneous C8 bar (>15.7) is STILL
+NOT met (best ~14.5, high-variance median ~8–10)**: the heterogeneous slow-path
+drag is a SEPARATE constraint that transport tuning does not touch. Number NOT
+forced.
+
+### DIAGNOSIS — the ~15 Mbit single-path ceiling is a per-symbol PROCESSING limit, NOT a window/CC problem
+Instrumented single-path c2 (`RWM_DIAG`, sender side) + a controlled sweep
+refute the "no CC ramping to BDP" hypothesis outright — throughput is
+**window-, bandwidth-, and RTT-INDEPENDENT**:
+| lever swept | result | conclusion |
+|-------------|--------|------------|
+| store_max (flow-control window) 1440→540 | throughput FLAT 15.0–15.7, RTT 700→74 ms | **not window-limited** (Little's law: only ~115 sym outstanding at store=540 ≫ below the 540 cap — rate-limited, not window-limited) |
+| link bandwidth 100 Mbit→1 Gbit (plain reliable single, clean) | 28.7 → 29.7 Mbit | **not bandwidth-limited** (10× BW, no change) |
+| RTT 10 ms (clean) vs 1 ms (c1) | 28.7 vs 29.7 | **not RTT-limited** |
+| loss 0 (clean) → 2.6% (c2) | 28.7 → 16.4 | **loss-sensitive** (in-order-frontier head-of-line stalls) |
+
+So the single-connection ceiling is a **per-symbol processing rate** (~3000
+sym/s ≈ 29 Mbit clean, ~1700 sym/s ≈ 16 Mbit at 2.6% loss), UNIVERSAL across
+window modes (plain reliable single 16.4, systematic-repair single 15.0) — it is
+the transport substrate, ~4.5× below native quinn stream (~72 Mbit at C2, the
+documented tunnel/processing gap), NOT the FEC and NOT a congestion window.
+
+### DIAGNOSIS — the store_max = G·(M+1) bufferbloat SERIALIZES aggregation
+`store_max = win_cap = G·(M+1) = 1440` at G=480/M=2 is **14× the C2 BDP (~104
+sym)**. Because generation-mode source emission is backpressured only by this
+(oversized) unacked-window bound, the unacked pipeline is a multi-hundred-ms
+standing queue — `RWM_DIAG` MEASURED the sender's estimator RTT inflated to
+**0.5–1.3 s** (true C2 RTT ≈ 10 ms), with the window pinned full and goodput
+oscillating in a stall-burst sawtooth (repeated 0.0 Mbit stretches for ~1 s,
+then 40–56 Mbit bursts). This bloat does NOT cap single-path throughput (it is
+window-independent, above) but it (a) produces catastrophic slow-run outliers
+and (b) **serializes dual-path aggregation**: the fast path stalls waiting on
+the slow, bloated in-order-frontier cross-path feedback, so a second path — even
+an IDENTICAL one — adds nothing (the C7-symmetric ×1.02 the merge reported), and
+heterogeneous C8 falls BELOW single.
+
+### THE FIX — backpressure at 2 generations (retention stays at M+1)
+The send frontier needs only TWO generations outstanding to pipeline (one
+filling head + one sealed-and-recovering), not M+1. Ship the generation-mode
+`store_max` DEFAULT as `2·G` (RETENTION `win_cap = G·(M+1)` unchanged for decode
+headroom), overridable by `RWM_STORE`. This decouples the standing queue from
+the retention horizon. Also added (env-gated, default-off, no behavior change):
+`RWM_DIAG` (the diagnostic instrument), `RWM_CODED_SRC` (clock the coded budget
+to the SENT frontier, removing a small-G ack-clocked deadlock), `RWM_INFL_CAP`.
+
+### L1 MEASURED (G=480/M=2, 50 MB, VM AVX2, netem independent qdiscs)
+| config | store=G·(M+1)=1440 (before) | store=2·G=960 (after, DEFAULT) | factor |
+|--------|----------------------------:|------------------------------:|-------:|
+| single c2 (×6) | 11.2 mean, **stdev 24.8 s** | **15.4 mean, stdev 1.0 s** | de-jittered |
+| **C7 c2+c2 symmetric (×6)** | **9.8 (×0.65 anti-agg)** | **22.4 (×1.43 AGG)** | **+128%** |
+| C8 c2+c3 heterogeneous (×6–8) | 9.45 | 8.1 / 9.8 / 14.5 (high-var) | ~neutral |
+
+- **Single-path RAISED + de-jittered**: the bloat's catastrophic slow-run
+  outliers (stdev 24.8 s over 6 reps) are gone (stdev 1.0 s); mean 11.2 → 15.4.
+- **Symmetric aggregation UNLOCKED**: C7 goes from BELOW single (9.8, ×0.65) to
+  **22.4 Mbit ×1.43** — robust (stdev_s 0.96), and now ABOVE plain reliable C7
+  (20.0). This PROVES the bufferbloat serialization was the binding constraint
+  on symmetric aggregation, and it is fixed. C7 store=540 (~1 generation) is
+  even tighter (22.0, stdev 0.93) — smaller store = less bloat = fewer stalls.
+- **DECISIVE C8 (heterogeneous c2+c3): NOT met.** Best ~14.5 (store=960, a
+  local peak at exactly 2 generations: 840→9.8, 960→14.5, 1200→11.5, 1440→9.4),
+  but HIGH-VARIANCE across batches (8.1 / 9.8 / 14.5; median-completion ~8–10
+  Mbit) and never robustly near 15.7. Store tuning, `RWM_CODED_SRC`, and a
+  raised proactive `r`=0.30 all fail to lift it. The heterogeneous slow-path
+  drag (FEC-layer slow-path coverage / striping, per the systematic-repair
+  verdict) is a SEPARATE constraint, independent of the transport store.
+
+### VERDICT
+- **Diagnosis CORRECTED and sharpened**: the single-path ~15 Mbit ceiling is a
+  per-symbol PROCESSING limit (window/BW/RTT-independent, loss-sensitive), NOT a
+  congestion-window that fails to ramp. The store_max = G·(M+1) BUFFERBLOAT
+  (RTT 0.5–1.3 s) is what SERIALIZES dual-path aggregation.
+- **Fix LANDED (symmetric)**: 2-generation backpressure (`store_max = 2·G`
+  default) unlocks symmetric aggregation (C7 9.8 → 22.4, ×1.43) and de-jitters
+  single-path (stdev 24.8 → 1.0 s), with no regression (`--lib` 261, `gate_suite`
+  15/15, `temporal_oracle` 7/7, math 37/37; the change is scoped to generation
+  mode, an opt-in flag).
+- **DECISIVE C8 (>15.7): NOT met** — best ~14.5, high-variance. Honest
+  FAIL-WITH-MECHANISM: the residual is the heterogeneous slow-path drag, one
+  layer above the transport (FEC striping / slow-path coverage), not the store.
+  A single generation is 4.6× the BDP, so the ONLY structural escape to
+  BDP-sized operation (small G) hits a LATENT generation-decoder frontier-advance
+  deadlock (receiver reports full rank / zero deficit yet the in-order frontier
+  wedges — traced at G=96); fixing that decoder bug + decoupling the sender's
+  retention/backpressure from the in-order frontier (prune on per-generation OOO
+  decode) is the identified next step, beyond this pass's safe scope.
+
+**Verification.** `cargo test -p raptorpath --lib` 261 green; `gate_suite` 15/15
+release; `temporal_oracle` 7 green; raptorpath-math 37 green. L1:
+`RWM_GEN=480 RWM_GEN_R=0.15 bash ~/l1/perf_rwm_c.sh c2 c2 bulk 50000000 6 dual`
+(C7, default store=2·G) and `RWM_STORE=` override for the sweep;
+`RWM_DIAG=1 bash ~/l1/diag_rwm.sh c2 c2 50000000 single` for the constraint
+report.
