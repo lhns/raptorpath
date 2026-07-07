@@ -1178,6 +1178,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // K_g − rank_in(anchor, K_g). `last_deficit_send` paces the reports to
         // ~once per SRTT (plus an immediate report on decode progress).
         let mut gen_widths: BTreeMap<u64, u16> = BTreeMap::new();
+        // Generation size G (mirrors the sender's RWM_GEN default). Lets the
+        // receiver SEED a provably-full generation's width (G) from the primary
+        // seqs alone — see the seeding in `send_gen_deficits`. This closes the
+        // small-G frontier-advance DEADLOCK: a generation whose ENTIRE proactive
+        // repair budget was lost on the wire otherwise never enters `gen_widths`
+        // (which learned widths only from repair headers), so the receiver
+        // reported ZERO deficit for it while the in-order frontier wedged on its
+        // hole — the sender was never told to recover it (MEASURED at G=96:
+        // in_flight=0/src=0/cod=0). At large G the whole ceil(G·r) budget is
+        // never fully lost, which is why only small G wedged.
+        let recv_gen_size: u64 = std::env::var("RWM_GEN")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(384)
+            .max(1);
         let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
@@ -1353,6 +1368,34 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // decodes — the loop that makes deficit-driven recovery robust.
         macro_rules! send_gen_deficits {
             ($dec:expr, $force:expr) => {{
+                if recv_window_generation {
+                    // ANTI-WEDGE SEEDING (small-G frontier-advance deadlock). Seed
+                    // the width (= G) of every generation that is PROVABLY FULL —
+                    // one whose end lies at or below the highest seq seen, so its
+                    // G source symbols certainly exist — starting at the frontier
+                    // generation (where `ooo_frontier` is stuck on a hole). The
+                    // deficit for such a generation is then computable from the
+                    // primary seqs alone (`rank_in`'s recovered-count branch),
+                    // WITHOUT ever having seen a repair for it. Without this, a
+                    // generation whose entire ceil(G·r) proactive repair was lost
+                    // never entered `gen_widths`, so the receiver reported zero
+                    // deficit while its hole wedged the frontier forever. The final
+                    // (possibly partial) generation is intentionally left to
+                    // repair-header learning (its true width is not yet known to be
+                    // G). Bounded to a few generations past the frontier (only the
+                    // first MAX_REPORTED_GENS are ever sent anyway).
+                    let g_front = ooo_frontier / recv_gen_size;
+                    let g_top = highest_seen_seq / recv_gen_size;
+                    let g_hi = g_top.min(g_front + 7);
+                    let mut g = g_front;
+                    while g <= g_hi {
+                        let anchor = g * recv_gen_size;
+                        if anchor + recv_gen_size <= highest_seen_seq + 1 {
+                            gen_widths.entry(anchor).or_insert(recv_gen_size as u16);
+                        }
+                        g += 1;
+                    }
+                }
                 if recv_window_generation && !gen_widths.is_empty() {
                     gen_widths.retain(|&a, &mut k| a + k as u64 > ooo_frontier);
                     const MAX_REPORTED_GENS: usize = 6;
@@ -3389,11 +3432,18 @@ async fn run_window_sender(
             // window is never spent producing low-rank symbols over a still-
             // filling generation — the two together give startup-safe, recovery-
             // capable, ack-clocked emission.
+            // The proactive budget is clocked to the DECODE frontier (cumulative
+            // ack): coded must not run more than `gen_inflight_window` ahead of
+            // what the receiver has decoded, which BOUNDS the QUIC datagram buffer
+            // (the transport-ceiling fix — loosening this to the sent frontier
+            // reintroduces datagram bufferbloat and SERIALIZES symmetric
+            // aggregation, MEASURED C7 22.4→14.9). The small-G frontier-advance
+            // deadlock is NOT closed here (that would bloat the datagram path) but
+            // by the receiver seeding a wedged generation's width so the DEFICIT
+            // loop — which is ack-clock-INDEPENDENT — always funds the frontier
+            // hole. `RWM_CODED_SRC` still offers the sent-frontier clock as an
+            // opt-in for experiments.
             let target = if coded_src_clock {
-                // Source-clocked: budget grows with the SENT frontier (highest
-                // retained seq), never freezing on an ack stall. The encoder's
-                // per-generation (1+r) cap + M-generation retention keep this
-                // from over-emitting; the pacing token bucket keeps it smooth.
                 let (_, wend) = encoder.window_span();
                 (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
             } else {
@@ -3523,6 +3573,14 @@ async fn run_window_sender(
                         rec_emitted += 1;
                         progressed = true;
 
+                        // SLOW-PATH COVERAGE (§16.3 intent). Deficit recovery funds
+                        // a frontier generation whose hole is the long pole — most
+                        // often a source lost on the SLOW path. Place it by the
+                        // ∝-goodput placement law (softmax over marginal cost),
+                        // which already biases the covering repair toward the FAST
+                        // path proportionally without STARVING a symmetric second
+                        // path — hard argmax concentration serializes symmetric
+                        // aggregation (MEASURED C7 regression) for no C8 gain.
                         let path = {
                             let sched = scheduler.lock();
                             sched.place_symbol(true, &[]).unwrap_or(0)

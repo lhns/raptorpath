@@ -1047,6 +1047,83 @@ mod tests {
         assert_eq!(delivered.len() as u64, k);
     }
 
+    /// SMALL-G FRONTIER-ADVANCE DEADLOCK regression (G=96). Reproduces the exact
+    /// wedge the `feat/c8-final` receiver-seeding fix targets: a FULL generation
+    /// whose ENTIRE proactive repair budget is lost on the wire. Before the fix
+    /// the receiver learned a generation's width ONLY from a repair header, so
+    /// such a generation never entered its deficit map — it reported ZERO deficit
+    /// while the in-order frontier wedged on its hole forever (MEASURED at G=96:
+    /// in_flight/src/cod all 0). The fix seeds the width (= G) from the PRIMARY
+    /// seqs of any provably-full generation, so the deficit is computable from the
+    /// primaries ALONE. This test asserts that invariant end to end against the
+    /// dense decoder:
+    ///   (1) with NO repair seen, `rank_in(anchor, G)` == (G − holes) — the
+    ///       deficit is computable from the delivered primaries alone (the
+    ///       receiver-seeding branch);
+    ///   (2) the deficit-driven `generate_repair_for` then completes the
+    ///       generation in EXACTLY `holes` coded symbols (≪ G);
+    ///   (3) every source is recovered byte-exact, no per-seq resend.
+    #[test]
+    fn small_g_generation_recovers_from_deficit_when_all_proactive_lost() {
+        let symbol_size = 64u16;
+        let g = 96usize; // the BDP-scale generation that wedged
+        let n_gen = 3u64;
+        let k = n_gen * g as u64;
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, n_gen as usize, 0.15);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        // Fill the encoder and capture each raw systematic source (the primary).
+        let sources: Vec<WireSymbol> = (0..k).map(|seq| enc.add_source(&payload(seq))).collect();
+
+        // Deliver every primary EXCEPT the holes. Crucially, deliver NO repair —
+        // model the wedge where the whole ceil(G·r) proactive budget was lost.
+        let is_hole = |seq: u64| seq % 13 == 5;
+        let mut delivered: BTreeSet<u64> = BTreeSet::new();
+        for s in &sources {
+            if is_hole(s.block_id) {
+                continue;
+            }
+            for (seq, _) in dec.add_symbol(s) {
+                delivered.insert(seq);
+            }
+        }
+
+        for gen in 0..n_gen {
+            let anchor = gen * g as u64;
+            let holes: u64 = (0..g as u64).filter(|&i| is_hole(anchor + i)).count() as u64;
+            assert!(holes > 0, "test needs a hole per generation");
+            // Claim (1): the receiver can compute the deficit from primaries alone,
+            // with NO repair header ever seen for this generation. This is the
+            // seeded-width path — `rank_in(anchor, G)` counts the recovered
+            // primaries (G − holes), so the reported deficit == holes.
+            assert_eq!(
+                dec.rank_in(anchor, g as u64),
+                g as u64 - holes,
+                "gen {gen}: deficit computable from primaries with zero repairs seen",
+            );
+            // Claim (2)+(3): the sender funds exactly that deficit via the
+            // generation-targeted recovery path; it completes in `holes` coded.
+            let mut coded_used = 0u64;
+            while dec.rank_in(anchor, g as u64) < g as u64 {
+                let c = enc
+                    .generate_repair_for(anchor)
+                    .expect("full generation must be codeable for deficit recovery");
+                assert!(c.is_repair, "recovery is coded repair, not a per-seq resend");
+                for (seq, data) in dec.add_symbol(&c) {
+                    assert_eq!(&data[..48], payload(seq).as_slice(), "byte-exact recovery");
+                    delivered.insert(seq);
+                }
+                coded_used += 1;
+                assert!(coded_used <= g as u64, "runaway recovery");
+            }
+            assert_eq!(coded_used, holes, "gen {gen}: recovered in exactly `holes` coded");
+        }
+
+        for seq in 0..k {
+            assert!(delivered.contains(&seq), "seq {seq} not delivered");
+        }
+    }
+
     #[test]
     fn advance_drops_whole_generations_only() {
         let symbol_size = 32u16;

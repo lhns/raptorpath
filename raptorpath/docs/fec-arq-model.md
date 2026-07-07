@@ -5801,6 +5801,27 @@ the in-order frontier; grow the datagram send window without overrun), below thi
 design's FEC scope. Full record: goal-gate "Systematic+Repair — PRODUCTION BUILD
 + L1 MEASURED".
 
+**C8 Final update (MEASURED, `feat/c8-final`).** The one remaining structural
+blocker to BDP-scale (small-G) operation — a generation-decoder **frontier-advance
+deadlock** — is FIXED. Root cause: the receiver learned a generation's width K_g
+only from a repair header, so a generation whose entire `ceil(G·r)` proactive
+repair was LOST never entered the deficit map — it reported ZERO deficit while its
+hole wedged the in-order frontier forever (only bit **small G**; at G=480 the whole
+budget is never lost). Fix: the receiver now **seeds K_g = G for any provably-full
+generation from the primary seqs alone**, so the ack-clock-INDEPENDENT deficit loop
+always funds the frontier hole. A/B on the same VM: clean base **WEDGES at G=96**
+(no 50 MB run completes in 210 s); the fix completes **6/6**. C8 (c2+c3, 50 MB ×6,
+store=2·G, r=0.15) now completes **6/6 at every G ∈ {96,192,384}** with low variance
+(stdev 1.3–1.9 s), best **15.07 Mbit/s at G=384** — but **still < 15.7 (aggregation
+factor 0.98** vs single c2 = 15.36). With the deadlock gone, the residual is
+unambiguously the **per-connection PROCESSING ceiling** (systematic-repair extracts
+~15 Mbit from one 100 Mbit path — window/BW/RTT-independent, loss-sensitive — and a
+heterogeneous second path adds nothing), a transport-substrate limit ~4.5× below
+native quinn, one layer below the FEC and below this deadlock. (The plain-reliable
+symmetric win C7 = 22.3 ×1.43 is intact and untouched — it does NOT run
+systematic-repair; systematic-repair itself has never aggregated, ×1.02.) Honest
+FAIL-WITH-MECHANISM. Full record: goal-gate "C8 Final".
+
 **Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
 `feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
 ×1.19 achievability above came from an oracle
