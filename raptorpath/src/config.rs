@@ -113,6 +113,17 @@ pub struct RaptorpathConfig {
     /// `window_reliable`. Bulk-object / loose-δ ONLY. `RWM_GEN` (default 384)
     /// and `RWM_PIPELINE` (default 2) tune G and M. Default false.
     pub window_generation_coding: Option<bool>,
+    /// Systematic + deficit-driven cross-path REPAIR (paper §16.3 oracle — the
+    /// cheaper realization of generation coding that reaches ×1.19 at C8 without
+    /// coded-only's two L1-killers). Reuses the generation machinery but sends
+    /// the RAW systematic source as primary (delivered on arrival, ZERO decode);
+    /// coded symbols are windowed REPAIR only (`ceil(len·r)` proactive per
+    /// generation of ~W_mp + deficit-driven top-up), so decode is O(deficit)
+    /// (the holes) not O(G) and nothing waits for K_G. NO per-seq ARQ; implies
+    /// out-of-order delivery; requires `window_reliable`. `RWM_GEN` (~480 at C8)
+    /// sets the repair window / fungibility horizon, `RWM_GEN_R` (default 0.15)
+    /// the proactive overhead. Bulk-object / loose-δ ONLY. Default false.
+    pub window_systematic_repair: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -197,6 +208,9 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         window_generation_coding: overlay
             .window_generation_coding
             .or(base.window_generation_coding),
+        window_systematic_repair: overlay
+            .window_systematic_repair
+            .or(base.window_systematic_repair),
     }
 }
 
@@ -334,6 +348,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         // false — set only by the native object / perf path (bulk, loose-δ).
         // Implies coded-only wire symbols + out-of-order delivery.
         window_generation_coding: config.window_generation_coding.unwrap_or(false),
+        // Systematic + deficit-repair (§16.3 oracle). Default false — set only by
+        // the native object / perf path (bulk, loose-δ). A submode of generation
+        // coding: source rides the wire as primary, coded is windowed repair only.
+        window_systematic_repair: config.window_systematic_repair.unwrap_or(false),
     };
 
     Ok((peer_config, status_addr))
@@ -410,6 +428,7 @@ mod tests {
             window_out_of_order: Some(false),
             window_coded_only: Some(false),
             window_generation_coding: Some(false),
+            window_systematic_repair: Some(false),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();

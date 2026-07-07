@@ -187,6 +187,18 @@ struct PerfArgs {
     /// recovery is generation-level, and per-seq ARQ is OFF. Bulk-object ONLY.
     #[arg(long)]
     window_generation_coding: bool,
+
+    /// Systematic + deficit-driven cross-path REPAIR (paper §16.3 oracle — the
+    /// cheaper realization of generation coding that reaches ×1.19 at C8 without
+    /// coded-only's decode-on-K latency + O(G²) decode). Requires
+    /// --window-reliable; implies out-of-order delivery. The raw systematic
+    /// source rides the wire as primary (delivered on arrival, ZERO decode);
+    /// coded symbols are windowed REPAIR only — ceil(len·r) proactive per
+    /// generation of ~W_mp (RWM_GEN) plus a deficit-driven top-up — so decode is
+    /// O(deficit) not O(G). NO per-seq ARQ. RWM_GEN_R (default 0.15) tunes r.
+    /// Bulk-object ONLY.
+    #[arg(long)]
+    window_systematic_repair: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -276,6 +288,7 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         window_out_of_order: if args.window_out_of_order { Some(true) } else { None },
         window_coded_only: if args.window_coded_only { Some(true) } else { None },
         window_generation_coding: if args.window_generation_coding { Some(true) } else { None },
+        window_systematic_repair: if args.window_systematic_repair { Some(true) } else { None },
         ..Default::default()
     };
     if args.window_out_of_order && !args.window_reliable {
@@ -289,6 +302,11 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
     if args.window_generation_coding && !args.window_reliable {
         anyhow::bail!(
             "--window-generation-coding requires --window-reliable (§16.3 stable anchor)"
+        );
+    }
+    if args.window_systematic_repair && !args.window_reliable {
+        anyhow::bail!(
+            "--window-systematic-repair requires --window-reliable (§16.3 systematic+repair)"
         );
     }
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
@@ -374,6 +392,8 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         window_coded_only: None,
         // Generation coding is a bulk-object mode; tunnel stream stays systematic.
         window_generation_coding: None,
+        // Systematic+repair is a bulk-object mode; tunnel stream stays systematic.
+        window_systematic_repair: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

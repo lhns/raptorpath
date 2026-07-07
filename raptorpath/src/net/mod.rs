@@ -110,6 +110,17 @@ pub struct PeerConfig {
     /// delivery; requires `window_reliable`. Bulk-object / loose-δ ONLY.
     /// Default false.
     pub window_generation_coding: bool,
+    /// Systematic + deficit-driven cross-path REPAIR (§16.3 oracle, the cheaper
+    /// realization of generation coding — ×1.19 at C8 without coded-only's two
+    /// L1-killers). Reuses the generation machinery (fixed-generation repair
+    /// anchors of ~W_mp, deficit feedback, dense `GenerationDecoder`, NO per-seq
+    /// ARQ, out-of-order delivery) but sends the RAW SYSTEMATIC SOURCE as primary
+    /// (delivered on arrival, ZERO decode) instead of coded-only. Coded symbols
+    /// are emitted ONLY as windowed repair (proactive `ceil(len·r)` per
+    /// generation + deficit top-up), so decode is O(deficit)≈holes not O(G) and
+    /// nothing waits for K_G. Implies generation-style receive + out-of-order;
+    /// requires `window_reliable`. Bulk-object / loose-δ ONLY. Default false.
+    pub window_systematic_repair: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -489,7 +500,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // the per-seq ARQ beneath the code is switched OFF (recovery is
     // generation-level). Implies coded-only wire symbols + out-of-order object
     // delivery.
-    let window_generation = window_reliable && config.window_generation_coding;
+    // Systematic + deficit-repair (§16.3 oracle): a submode of the generation
+    // machinery. `window_systematic` reuses ALL of generation mode's receive
+    // path (dense decoder, gen deficit feedback, out-of-order delivery, no
+    // per-seq ARQ) — so `window_generation` is TRUE whenever either flag is set
+    // — and differs only on the SENDER: raw source rides the wire as primary and
+    // the encoder emits only the `ceil(len·r)` repair overhead (see the
+    // `systematic` arg to `run_window_sender`).
+    let window_systematic = window_reliable && config.window_systematic_repair;
+    let window_generation =
+        window_reliable && (config.window_generation_coding || config.window_systematic_repair);
     if config.window_reliable && !window_mode {
         warn!(
             backend = ?effective_fec_backend,
@@ -736,6 +756,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_reliable = window_reliable;
     let sender_window_coded_only = window_coded_only;
     let sender_window_generation = window_generation;
+    let sender_window_systematic = window_systematic;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
@@ -761,6 +782,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 sender_window_reliable,
                 sender_window_coded_only,
                 sender_window_generation,
+                sender_window_systematic,
             )
             .await;
             return;
@@ -2632,6 +2654,17 @@ async fn run_window_sender(
     // never by resending a specific seq — the per-seq layer is what made the
     // moving window path-affine and drove the ×0.26 drag.
     generation: bool,
+    // Systematic + deficit-repair (§16.3 oracle). A submode of `generation`
+    // (the caller passes `generation=true` alongside this): the RAW SYSTEMATIC
+    // source rides the wire as PRIMARY (striped work-conserving, delivered
+    // out-of-order with ZERO decode at the receiver's dense decoder) instead of
+    // coded-only's "every symbol coded". The paced coded block still runs but,
+    // via `GenerationEncoder::new_systematic`, emits only the `ceil(len·r)`
+    // repair overhead per generation (plus the deficit-driven top-up) — coded
+    // symbols cover only the HOLES, so decode is O(deficit) not O(G). Removes
+    // the two coded-only L1-killers (decode-on-K latency + O(G²) decode) while
+    // keeping the same fungible cross-path recovery and no per-seq ARQ.
+    systematic: bool,
 ) {
     // Generation coding emits coded wire symbols exactly like coded-only; the
     // difference is the coding UNIT (a stable generation vs the moving window)
@@ -2650,13 +2683,20 @@ async fn run_window_sender(
     // Generation-coding proactive overhead r (coded per generation beyond K_G):
     // the encoder provisions each generation to ceil(len·(1+r)) coded before it
     // is only coded for recovery. Covers loss + the MDS margin. RWM_GEN_R env.
+    // Systematic-repair provisions only the loss-FEC overhead r (the K base DoF
+    // ride the wire as source), so its natural default is smaller than
+    // coded-only's (which must also fund the K base). r ≳ 1.5·ε keeps windowed
+    // repair ahead of loss (the oracle's provisioning floor; r < ε → DNF). At C8
+    // ε_slow ≈ 4.8 %, so 0.15 clears both paths with margin. RWM_GEN_R overrides.
     let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.20)
+        .unwrap_or(if systematic { 0.15 } else { 0.20 })
         .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
-    let mut encoder: Box<dyn WindowEncoder> = if generation {
+    let mut encoder: Box<dyn WindowEncoder> = if systematic {
+        Box::new(crate::fec::GenerationEncoder::new_systematic(symbol_size, gen_size, pipeline, gen_repair_floor))
+    } else if generation {
         Box::new(crate::fec::GenerationEncoder::new(symbol_size, gen_size, pipeline, gen_repair_floor))
     } else {
         create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler)
@@ -2910,8 +2950,19 @@ async fn run_window_sender(
             // to complete buffered generations even while TUN reads are paused by
             // backpressure — the source-driven emission alone serializes and
             // stalls). So skip the per-source wire send entirely in this mode.
-            if !generation {
-                let on_wire = if coded_wire {
+            // Systematic-repair (§16.3 oracle): the RAW source rides the wire as
+            // PRIMARY here (striped ∝-goodput via the place_symbol pick above,
+            // delivered out-of-order with ZERO decode). Coded repair is emitted
+            // separately in the paced generation block (only ceil(len·r) per
+            // generation + deficit top-up). Coded-only generation mode SKIPS the
+            // per-source send (all its emission is the paced coded block). Both
+            // generation submodes keep per-seq ARQ / sent_store / taper repair
+            // OFF (gated on `!generation` below), so systematic adds only the
+            // source wire-send, nothing else.
+            if systematic || !generation {
+                let on_wire = if systematic {
+                    wire_sym.clone() // raw systematic source is the primary
+                } else if coded_wire {
                     encoder.generate_repair()
                 } else {
                     wire_sym.clone()
