@@ -92,6 +92,7 @@ ACK absence.
    - [8.6 Three-Variable Optimization](#86-three-variable-optimization)
    - [8.7 Exact P_fec via Transfer-Matrix DP](#87-exact-p_fec-via-transfer-matrix-dp)
    - [8.8 Choosing the Window](#88-choosing-the-window)
+   - [8.9 The Unified Deadline-Constrained r*](#89-the-unified-deadline-constrained-r)
 9. [Codec Overhead Integration](#9-codec-overhead-integration)
    - [9.1 Decoder Invocation Probability](#91-decoder-invocation-probability)
    - [9.2 Effective Codec Overhead](#92-effective-codec-overhead)
@@ -2214,6 +2215,199 @@ latency-bound — the channel is clean enough that overhead is negligible at
 any window, so W* simply maximises the window the budget allows. `derive_window`
 in raptorpath-math is the shared implementation; the production window-mode
 sender and the visualizer both read W* from it.
+
+### 8.9 The Unified Deadline-Constrained r* (single- and multi-path)
+
+Sections 8.4–8.8 solve for r\* on ONE path: pick the least FEC that keeps a
+symbol's *within-window-or-ARQ* miss below δ. Section 16.7 introduced a
+second knob, the reorder horizon H, and asserted the two are dual — both buy
+"fungibility," one in latency, one in bandwidth. This section makes that
+precise: **H and r spend the SAME budget — one deadline D** — and the
+single-path r\* of §8.4 is the N = 1 limit of one deadline-constrained
+optimum. The result is DERIVED here and verified MEASURED-through-oracle
+(`raptorpath-math/tests/temporal_oracle.rs`, Part 4).
+
+**The one budget.** A symbol is LATE if its TOTAL delivery delay exceeds a
+deadline D. Decompose the delay of a symbol carried on path i (DERIVED — a
+first-order decomposition, in the spirit of §8.4's own approximation):
+
+```
+   T_delay =  d_i                         one-way propagation + queueing  [path-fixed]
+            + R_recover                    0                if arrived or FEC-covered
+                                           1.5·RTT_i = 3·d_i if ARQ-recovered   [FEC/ARQ]
+            + L_reorder                    cross-path resequencing wait    [ordering]
+```
+
+`L_reorder` is present only for **in-order** delivery: a symbol on a lagging
+path cannot be released until the frontier reaches it, and the receiver holds
+an out-of-order symbol at most H before force-delivering a hole (§16.2). Thus
+H is literally the *reorder-share of D*, and §16.2's **eligibility set**
+`E = { i : d_i − d_min ≤ H }` is the set of paths whose resequencing lag fits
+that share. Writing D = H + D_fec splits the deadline: H pays the reorder
+wait, D_fec = D − H pays the within-path arrival + FEC/ARQ recovery.
+
+**P(late) — the objective's constraint.** A symbol lands on path i with
+probability g_i/Σg (work-conserving pull, §16.2). It is late in one of two
+disjoint-to-first-order ways: its path is reorder-*ineligible* (the whole
+share is holes), or its path is eligible but a window FEC-miss forces an ARQ
+that overflows the remaining budget. Hence (DERIVED, union/first-order bound):
+
+```
+   P(late) ≈ Σ_i (g_i/Σg) · [  1{ d_i − d_min > H }                              (reorder)
+                             + 1{ d_i − d_min ≤ H } · e_i(1 − P_fec,i)
+                                                    · 1{ d_i + 1.5·RTT_i > D } ]  (FEC-miss ARQ)
+
+   P_fec,i = Φ( √W (r(1−e_i) − e_i) / √(e_i(1−e_i)(r + σ²_i)) )        (§8.2, per path)
+```
+
+**The controller's program.** Minimize overhead (proportional to the FEC rate
+r) subject to the deadline tail:
+
+```
+   minimize    r
+   subject to  P(late)(r, H; {e_i, d_i, C_i}, W, ordering) ≤ δ
+```
+
+**Convexity / KKT (DERIVED, where tractable).** For fixed H (so E and the
+reorder term are fixed), P(late) is a sum over eligible paths of
+e_i(1 − P_fec,i(r)). P_fec,i is Φ of an argument that is strictly increasing
+in r (∂/∂r of (r(1−e)−e)/√(r+σ²) > 0 for r ≥ 0), so each e_i(1 − P_fec,i) is
+strictly *decreasing* in r; P(late) is therefore strictly decreasing and
+continuous in r. The feasible set { r : P(late) ≤ δ } is thus an upper
+interval [r_min, ∞) — a convex set — and the objective r is linear, so the
+minimizer is the **unique boundary point** r\* = r_min where the constraint is
+active (P(late) = δ). This is the KKT stationary point: the overhead gradient
+(= 1) is balanced by the multiplier on the single active tail constraint. The
+Lagrangian ∂/∂r [ r + λ(P(late) − δ) ] = 0 has 1 = −λ ∂P(late)/∂r > 0, i.e.
+λ > 0 — the constraint binds, as expected for a minimal-overhead solution.
+
+Because each path must independently keep its own losses under budget (the
+conservative "all symbols meet D" contract; cross-path fungible repair is a
+separate throughput lever — see the scope note), the binding path is the
+worst one, and the unified rate is the **max over the eligible set**:
+
+```
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │  r*_unified  =  max_{ i ∈ E }  [  e_i/(1−e_i)                        │
+   │                                 + z_{δ_i/e_i} · √( e_i σ²_i /        │
+   │                                                    (W(1−e_i)) ) ]    │
+   │                                                                       │
+   │  E = { i : d_i − d_min ≤ H },   z_{δ_i/e_i} = Φ⁻¹(1 − δ_i/e_i)        │
+   │  δ_i = the per-path tail share of δ on the ARQ-overflow paths         │
+   └─────────────────────────────────────────────────────────────────────┘
+```
+
+with the convention max(0, ·) (§8.4's physical floor). H is chosen first (the
+reorder budget — loose δ admits more paths, §16.7); r covers the residual
+FEC-miss tail on the admitted paths. The two knobs are the two ways to spend
+D: raise H to admit a lagging path at the cost of latency, or raise r to make
+its window fungible at the cost of bandwidth (§16.7's (H, r) surface).
+
+#### Theorem (N = 1 reduction to §8.4)
+
+*With a single path, r\*_unified reduces EXACTLY to §8.4's r\*(δ, e, σ², W).*
+
+**Proof (DERIVED).** With N = 1, d_1 = d_min, so d_1 − d_min = 0 ≤ H for every
+H ≥ 0: the eligibility test is satisfied unconditionally and the reorder term
+1{d_i − d_min > H} is identically 0 — there is no cross-path skew to
+resequence, so L_reorder ≡ 0 and the whole deadline is available for recovery
+(D_fec = D). P(late) collapses to its second term for the one path,
+
+```
+   P(late) = e(1 − P_fec)      (on the ARQ-overflow deadline band d < D < d+1.5·RTT)
+```
+
+which is exactly §8.4's within-window-or-ARQ tail. The "max over E" degenerates
+to a single term, and requiring e(1 − P_fec) ≤ δ with equality gives
+P_fec = 1 − δ/e, i.e. the Gaussian argument equals z = Φ⁻¹(1 − δ/e). Solving
+§8.2's P_fec expression for r at that quantile yields, to first order,
+
+```
+   r*_unified |_{N=1}  =  e/(1−e) + z_{δ/e} · √( e σ² / (W(1−e)) )  =  r*_{§8.4}.   ∎
+```
+
+So §8.4 is not a special-cased formula — it *emerges* as the one-path limit of
+the deadline program, the moment the reorder term vanishes by construction.
+
+#### Limits and monotonicities (DERIVED)
+
+- **Loose deadline → pure ARQ.** As δ → e from below, δ/e → 1, z_{δ/e} =
+  Φ⁻¹(1 − δ/e) → −∞, the margin → −∞ and r\* → max(0, ·) = 0. When the deadline
+  budget is loose enough that a bare ARQ round fits (d_i + 1.5·RTT_i ≤ D on
+  every path), the ARQ-overflow indicator is 0, the FEC-miss term drops out
+  entirely, and r\* = 0 — FEC buys nothing the deadline needs (continuous with
+  §8.4's δ → e boundary and §11.3).
+- **Out-of-order is H → ∞.** As H → ∞, E = {all paths}, the reorder term
+  vanishes for every path, and the reorder-share of D goes to zero — the
+  §16.7 "out-of-order = decode-on-total" corner. Ordering is then a pure
+  delivery policy: the *unordered* flag removes L_reorder outright (deliver on
+  recovery), the *in-order* flag reinstates it (resequence through H). This is
+  §16.7's ordering-as-policy, now visible as a single indicator in P(late).
+- **Monotone in e.** Both the IT floor e/(1−e) and the margin √(e σ²/·)
+  increase with e, so r\*_i is increasing in each path's loss rate; the
+  binding path is the dirtiest eligible one.
+- **Monotone knobs.** P(late) is ↓ in r (more FEC) and the reorder share is ↓
+  in H (larger budget admits more paths) — the two levers of §16.7, now with
+  signs proven from the closed form.
+
+#### Verification through the corrected temporal oracle (MEASURED-through-oracle)
+
+`temporal_oracle.rs` Part 4 adds a per-symbol *deadline-lateness* process
+(distinct from Parts 1–3's throughput process): stripe K symbols ∝ goodput,
+run each path's continuous GE channel window-by-window with r·W repairs,
+assign each symbol prop-only or prop+1.5·RTT (ARQ) arrival by whether its
+window's surviving repairs cover its losses, then release in the requested
+order through an H-hold resequencing frontier and measure the tail. Four
+findings (K up to 1.2 M symbols, W = 64, seeded):
+
+```
+   check                                    result                              gate
+   ──────────────────────────────────────── ─────────────────────────────────── ──────
+   N=1 reduction (5 scenarios)   at r*(§8.4), measured late tail = 1.20–1.52×δ;  PASS
+   (4a)                          EVERY late symbol is an ARQ miss (reorder ≡ 0),
+                                 tail == e(1−P_fec) — §8.4 emerges exactly
+   reorder term & ordering flag  H<skew: p_reorder = 0.258 ≈ slow share 0.25     PASS
+   (4b)                          (E={fast}); H≥skew: 0.0025 (collapse);
+                                 unordered: 0.000 — ordering is a policy
+   monotonicities (4c)           P(late) ↓ in r, reorder ↓ in H, P(late) ↑ in e  PASS
+   full-grid union-bound (4d)    closed form tracks the measured tail; worst     PASS
+                                 ratio 1.37, and it OVER-estimates (conservative)
+```
+
+**The one honest discrepancy (reported, not forced).** At r = r\*(§8.4) the
+oracle's measured miss tail is **1.2–1.5× δ**, i.e. the closed form
+*under-provisions* — the oracle needs ≈ **1.51× r\*** to actually reach δ
+(Part 4c). This is not a new defect: it is exactly the Gaussian-tail +
+ignored loss/repair-correlation gap §8.4 already flags and §8.7's exact DP
+already corrects. The oracle CONFIRMS the sign and bounds the size (~1.5×,
+within the §8.7 exact-DP band). Production therefore uses r\*_unified as the
+analytic *floor* and closes the gap with `compute_min_rate_exact` (§8.7) on
+the binding path — the closed form never dangerously over-provisions
+(r_min ≥ 0.85·r\* always), and the multipath reorder term is faithful to the
+eligibility-set prediction to within 3% of the slow-path share.
+
+The union bound in P(late) OVER-estimates where the two late causes co-occur
+(a slow-path symbol can be *both* a reorder hole and an ARQ overflow — the
+bound double-counts). Over-estimation is the safe direction for a controller
+that must not under-provision; the oracle's worst-case 1.37× over-count is
+logged rather than tuned away.
+
+#### Scope: r\* is orthogonal to the throughput ceiling (honest)
+
+The L1 record (§16.7) showed heterogeneous **throughput** aggregation is
+transport-ceiling-limited: at bulk's systematic operating point the moving
+window strands slow-path source, and the aggregate sits at MPTCP parity, not
+Σg_i — a *transport* limitation (per-path-affine atomic units + throttled
+recovery), reproduced by Parts 1–3 of the same oracle. **That ceiling does
+not touch this derivation.** r\*_unified is the FEC-rate controller for the
+reliability/latency budget (the deadline tail), which is orthogonal to how
+much *goodput* the transport can extract from the path set. The r\* model
+assumes only that the transport can deliver at the per-path rates g_i; whether
+it aggregates those rates above one path is the separate, measured-open
+question of §16.7. Concretely: Part 4 credits each path's own FEC to its own
+budget (no cross-path fungible repair), so its verdict is independent of the
+Parts 1–3 aggregation result — the two processes share the channel model and
+nothing else.
 
 ---
 
