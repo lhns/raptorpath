@@ -39,6 +39,14 @@ scenario_params() {
         c4|sat)      echo "20mbit  100 10 3    30" ;;
         c5|badwifi)  echo "50mbit  5   3  5.3  30" ;;
         clean)       echo "100mbit 5   0  0    100" ;;
+        # FEC-vs-ARQ crossover RTT sweep (feat/fec-arq-crossover): c2 loss/bw
+        # (100mbit, GE 1.3/50 ≈ 2.5% mean loss) with jitter=0 so RTT is the ONLY
+        # swept variable. one_way = RTT/2.  RTT ∈ {10,30,50,100,200} ms.
+        c2r10)       echo "100mbit 5   0  1.3  50" ;;
+        c2r30)       echo "100mbit 15  0  1.3  50" ;;
+        c2r50)       echo "100mbit 25  0  1.3  50" ;;
+        c2r100)      echo "100mbit 50  0  1.3  50" ;;
+        c2r200)      echo "100mbit 100 0  1.3  50" ;;
         *) echo "unknown scenario: $1" >&2; exit 1 ;;
     esac
 }
