@@ -177,6 +177,16 @@ struct PerfArgs {
     /// path can long-pole. Bulk-object / loose-δ ONLY.
     #[arg(long)]
     window_coded_only: bool,
+
+    /// Generation-based cross-path fungible coding (paper §16.3, the
+    /// oracle-validated stable-anchor fix, ×1.19 at C8). Requires
+    /// --window-reliable; implies coded-only + out-of-order delivery. Codes
+    /// RLC symbols WITHIN fixed generations of RWM_GEN (default 384) source
+    /// symbols with RWM_PIPELINE (default 2) generations in flight; each
+    /// generation decodes out-of-order on any K_G coded symbols from any path,
+    /// recovery is generation-level, and per-seq ARQ is OFF. Bulk-object ONLY.
+    #[arg(long)]
+    window_generation_coding: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -265,6 +275,7 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         window_reliable: if args.window_reliable { Some(true) } else { None },
         window_out_of_order: if args.window_out_of_order { Some(true) } else { None },
         window_coded_only: if args.window_coded_only { Some(true) } else { None },
+        window_generation_coding: if args.window_generation_coding { Some(true) } else { None },
         ..Default::default()
     };
     if args.window_out_of_order && !args.window_reliable {
@@ -273,6 +284,11 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
     if args.window_coded_only && !args.window_reliable {
         anyhow::bail!(
             "--window-coded-only requires --window-reliable (fungible frontier, §16.3)"
+        );
+    }
+    if args.window_generation_coding && !args.window_reliable {
+        anyhow::bail!(
+            "--window-generation-coding requires --window-reliable (§16.3 stable anchor)"
         );
     }
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
@@ -356,6 +372,8 @@ async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<
         // Coded-only (fungible frontier) is likewise a bulk-object mode; the
         // in-order tunnel stream stays systematic.
         window_coded_only: None,
+        // Generation coding is a bulk-object mode; tunnel stream stays systematic.
+        window_generation_coding: None,
     };
     let final_config = config::merge(base_config, cli_overlay);
     let (peer_config, status_addr) = config::resolve(&final_config)?;

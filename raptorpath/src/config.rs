@@ -99,6 +99,20 @@ pub struct RaptorpathConfig {
     /// `window_reliable`. Realtime / in-order streams stay systematic.
     /// Default false.
     pub window_coded_only: Option<bool>,
+    /// Generation-based cross-path fungible coding (paper §16.3, the
+    /// oracle-validated fix for the coded-*sliding*-window drag). Partitions
+    /// the object's source symbols into FIXED generations of ~W_mp (384–512 at
+    /// C8) and emits RANDOM-LINEAR-COMBINATION symbols WITHIN each generation
+    /// (a STABLE coding anchor, unlike the moving sliding window). Any K_G
+    /// independent coded symbols from ANY path reconstruct generation g, which
+    /// decodes out-of-order the instant K_G arrive; recovery is generation-level
+    /// (more coded symbols for a short generation) with NO per-seq targeted ARQ
+    /// beneath the code — the per-seq layer is exactly what made the moving
+    /// window path-affine and invoked the ADR-0046 throttle (measured ×0.26 at
+    /// C8). Implies coded-only wire symbols + out-of-order delivery; requires
+    /// `window_reliable`. Bulk-object / loose-δ ONLY. `RWM_GEN` (default 384)
+    /// and `RWM_PIPELINE` (default 2) tune G and M. Default false.
+    pub window_generation_coding: Option<bool>,
 }
 
 /// Named configuration profiles with sensible defaults.
@@ -180,6 +194,9 @@ pub fn merge(base: RaptorpathConfig, overlay: RaptorpathConfig) -> RaptorpathCon
         mp_block_affinity: overlay.mp_block_affinity.or(base.mp_block_affinity),
         window_out_of_order: overlay.window_out_of_order.or(base.window_out_of_order),
         window_coded_only: overlay.window_coded_only.or(base.window_coded_only),
+        window_generation_coding: overlay
+            .window_generation_coding
+            .or(base.window_generation_coding),
     }
 }
 
@@ -313,6 +330,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         // only by the native object / perf path (bulk, loose-δ). Coded-only
         // implies out-of-order delivery (it pays window-fill decode latency).
         window_coded_only: config.window_coded_only.unwrap_or(false),
+        // Generation-based fungible coding (§16.3 stable anchor). Default
+        // false — set only by the native object / perf path (bulk, loose-δ).
+        // Implies coded-only wire symbols + out-of-order delivery.
+        window_generation_coding: config.window_generation_coding.unwrap_or(false),
     };
 
     Ok((peer_config, status_addr))
@@ -388,6 +409,7 @@ mod tests {
             mp_block_affinity: Some(true),
             window_out_of_order: Some(false),
             window_coded_only: Some(false),
+            window_generation_coding: Some(false),
         };
         let toml_str = toml::to_string(&config).unwrap();
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
