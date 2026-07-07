@@ -86,10 +86,32 @@ pub struct GenerationEncoder {
     /// full gen_size, but once no more sources are coming its coded symbols do
     /// span its full — final — width, so recovery supplies useful DoF).
     intake_idle: bool,
+    /// SYSTEMATIC-repair submode (§16.3 oracle "systematic + deficit repair").
+    /// When set, the raw source symbols ride the wire as PRIMARY (delivered
+    /// out-of-order with ZERO decode) and this encoder emits ONLY REPAIR: the
+    /// per-generation proactive budget is `ceil(len·r)` — just the loss-FEC
+    /// overhead — instead of the coded-only `ceil(len·(1+r))` that had to supply
+    /// EVERY degree of freedom. The K base DoF come from the systematic source
+    /// on the wire; coded symbols only cover the holes (deficit-driven top-up
+    /// via `generate_repair_for` handles the residual). This is the change that
+    /// makes decode O(deficit) not O(G) and delivers source on arrival — the two
+    /// L1-killers of coded-only, structurally removed.
+    systematic: bool,
 }
 
 impl GenerationEncoder {
     pub fn new(symbol_size: u16, gen_size: usize, pipeline: usize, overhead: f64) -> Self {
+        Self::new_mode(symbol_size, gen_size, pipeline, overhead, false)
+    }
+
+    /// Systematic-repair encoder: source rides the wire as primary; this encoder
+    /// emits only the `ceil(len·r)` repair overhead per generation (plus the
+    /// deficit-driven top-up). See the `systematic` field.
+    pub fn new_systematic(symbol_size: u16, gen_size: usize, pipeline: usize, overhead: f64) -> Self {
+        Self::new_mode(symbol_size, gen_size, pipeline, overhead, true)
+    }
+
+    fn new_mode(symbol_size: u16, gen_size: usize, pipeline: usize, overhead: f64, systematic: bool) -> Self {
         Self {
             symbol_size,
             gen_size: (gen_size.max(1)) as u64,
@@ -102,6 +124,7 @@ impl GenerationEncoder {
             overhead: overhead.max(0.0),
             emitted: BTreeMap::new(),
             intake_idle: false,
+            systematic,
         }
     }
 
@@ -112,8 +135,15 @@ impl GenerationEncoder {
     }
 
     /// Coded-symbol budget that "provisions" generation `g` at its current fill.
+    /// Coded-only mode must supply EVERY degree of freedom, so it provisions
+    /// `ceil(len·(1+r))` coded (the K base + the r overhead). Systematic-repair
+    /// mode gets the K base DoF from the raw source on the wire, so it provisions
+    /// only the `ceil(len·r)` loss-FEC overhead; the residual deficit is topped
+    /// up by `generate_repair_for`.
     fn gen_budget(&self, g: u64) -> u32 {
-        ((self.gen_len(g) as f64) * (1.0 + self.overhead)).ceil() as u32
+        let len = self.gen_len(g) as f64;
+        let factor = if self.systematic { self.overhead } else { 1.0 + self.overhead };
+        (len * factor).ceil() as u32
     }
 
     /// Whether generation `g` should be coded right now. A generation is coded
@@ -880,6 +910,141 @@ mod tests {
             g as u64,
             "deficit-driven recovery completed the generation"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // SYSTEMATIC + deficit-repair submode (§16.3 oracle). Source rides the wire
+    // as primary; the encoder emits only the ceil(len·r) repair overhead, and
+    // the dense decoder solves ONLY the holes (deficit), not the whole generation.
+    // -----------------------------------------------------------------------
+
+    /// The systematic encoder's PROACTIVE budget is the loss-FEC overhead ONLY
+    /// (`ceil(len·r)`), not coded-only's `ceil(len·(1+r))` — because the K base
+    /// degrees of freedom ride the wire as raw source, so coded need only cover
+    /// the r overhead. This is the one-line difference that turns φ from ≈(1+r)
+    /// into ≈r.
+    #[test]
+    fn systematic_budget_is_repair_overhead_only() {
+        let symbol_size = 32u16;
+        let g = 16usize;
+        let r = 0.5f64;
+
+        // Count PROACTIVE coded emitted per sealed generation in each mode.
+        let count_proactive = |enc: &mut GenerationEncoder| -> BTreeMap<u64, u32> {
+            for seq in 0..(2 * g as u64) {
+                enc.add_source(&payload(seq));
+            }
+            let mut per_gen: BTreeMap<u64, u32> = BTreeMap::new();
+            for _ in 0..1000 {
+                if !enc.wants_coding() {
+                    break;
+                }
+                let c = enc.generate_repair();
+                *per_gen
+                    .entry(u64::from_le_bytes(c.data[0..8].try_into().unwrap()) / g as u64)
+                    .or_insert(0) += 1;
+            }
+            per_gen
+        };
+
+        let mut sys = GenerationEncoder::new_systematic(symbol_size, g, 2, r);
+        let mut coded_only = GenerationEncoder::new(symbol_size, g, 2, r);
+        let sys_counts = count_proactive(&mut sys);
+        let co_counts = count_proactive(&mut coded_only);
+
+        // Systematic: ceil(16·0.5) = 8 proactive coded per sealed generation.
+        for (&gen, &n) in &sys_counts {
+            assert_eq!(n, (g as f64 * r).ceil() as u32, "systematic gen {gen} = ceil(len·r)");
+        }
+        // Coded-only: ceil(16·1.5) = 24 — it must fund the K base + r.
+        for (&gen, &n) in &co_counts {
+            assert_eq!(n, (g as f64 * (1.0 + r)).ceil() as u32, "coded-only gen {gen} = ceil(len·(1+r))");
+        }
+        assert!(
+            sys_counts.values().sum::<u32>() < co_counts.values().sum::<u32>(),
+            "systematic emits strictly less coded than coded-only"
+        );
+    }
+
+    /// End-to-end proof of the systematic+repair design's four claims over a
+    /// lossy stream, against the DENSE decoder:
+    ///   (1) a received source is delivered DIRECTLY (zero decode) — the raw
+    ///       symbol on the wire, placed on arrival;
+    ///   (2) windowed REPAIR (coded over the fixed generation) recovers the
+    ///       lost source (holes), fungibly — any coded for the generation works;
+    ///   (3) the DEFICIT-DECODE size == the number of holes, which is ≪ G (the
+    ///       dense solve is O(deficit²), not O(G²)); the known sources pre-load
+    ///       as unit pivots so a generation needs exactly `holes` coded to finish;
+    ///   (4) recovery is fungible repair — NO per-seq retransmit of a specific
+    ///       source symbol is ever used.
+    #[test]
+    fn systematic_source_primary_repair_recovers_deficit_only() {
+        let symbol_size = 64u16;
+        let g = 32usize;
+        let n_gen = 4u64;
+        let k = n_gen * g as u64;
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, n_gen as usize, 0.5);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        // Fill the encoder (retains sources for repair coding) and capture each
+        // raw systematic source symbol — this is what rides the wire as PRIMARY.
+        let sources: Vec<WireSymbol> = (0..k).map(|seq| enc.add_source(&payload(seq))).collect();
+        for s in &sources {
+            assert!(!s.is_repair, "primary is a RAW systematic source, not coded");
+        }
+
+        // Simulate loss: every 7th source is dropped on the wire (a hole). The
+        // rest are delivered DIRECTLY — claim (1): the decoder returns the source
+        // immediately, with ZERO decode (no matrix, no repair needed).
+        let is_hole = |seq: u64| seq % 7 == 3;
+        let mut delivered: BTreeSet<u64> = BTreeSet::new();
+        for s in &sources {
+            if is_hole(s.block_id) {
+                continue; // lost on the wire
+            }
+            let out = dec.add_symbol(s);
+            assert_eq!(out.len(), 1, "received source delivered directly (zero decode)");
+            assert_eq!(out[0].0, s.block_id);
+            assert_eq!(&out[0].1[..48], payload(s.block_id).as_slice(), "byte-exact source");
+            delivered.insert(s.block_id);
+        }
+
+        // Now recover the holes with WINDOWED REPAIR ONLY (claims 2–4). For each
+        // generation, drive the deficit loop exactly as production does: while the
+        // decoder's independent rank over the generation span is < K_G, emit ONE
+        // more coded symbol for that generation (fungible — over the whole span,
+        // not a specific seq) and feed it. Count how many coded each generation
+        // actually consumes to finish.
+        for gen in 0..n_gen {
+            let anchor = gen * g as u64;
+            let holes: u64 = (0..g as u64).filter(|&i| is_hole(anchor + i)).count() as u64;
+            assert!(holes > 0, "test needs at least one hole per generation to be meaningful");
+            let mut coded_used = 0u64;
+            while dec.rank_in(anchor, g as u64) < g as u64 {
+                let c = enc
+                    .generate_repair_for(anchor)
+                    .expect("sealed generation must be codeable for repair");
+                assert_eq!(u64::from_le_bytes(c.data[0..8].try_into().unwrap()), anchor);
+                assert!(c.is_repair, "repair is a coded combination, not a source resend");
+                for (seq, data) in dec.add_symbol(&c) {
+                    assert_eq!(&data[..48], payload(seq).as_slice(), "byte-exact repair recovery");
+                    delivered.insert(seq);
+                }
+                coded_used += 1;
+                assert!(coded_used <= g as u64, "runaway: a generation must finish in ≤ G coded");
+            }
+            // Claim (3): the deficit-decode consumed EXACTLY `holes` coded — the
+            // known sources pre-loaded as unit pivots, so the dense solve is over
+            // the holes only. holes ≪ G.
+            assert_eq!(coded_used, holes, "gen {gen}: deficit-decode == holes, not G");
+            assert!(holes < g as u64 / 2, "deficit ({holes}) must stay ≪ G ({g})");
+        }
+
+        // Every source recovered, byte-exact, with no per-seq ARQ anywhere.
+        for seq in 0..k {
+            assert!(delivered.contains(&seq), "seq {seq} not delivered");
+        }
+        assert_eq!(delivered.len() as u64, k);
     }
 
     #[test]

@@ -2312,3 +2312,129 @@ drop coded-only primary:
 `systematic_repair_aggregation`, `_volume_bounded`, `_deficit_decode_size`,
 `_provisioning_curve`). No production code changed. Reproduce:
 `cargo test -p raptorpath-math --test temporal_oracle systematic -- --nocapture`.
+
+## Systematic+Repair — PRODUCTION BUILD + L1 MEASURED (branch `feat/systematic-repair`, 2026-07-07)
+
+The oracle-validated systematic + deficit-repair design above, built into
+production as a MODIFICATION of the merged generation machinery and measured at
+L1. Outcome: the design's **structural claims are VALIDATED in production** — it
+completes robustly, decode is a non-factor, and the coded-only anti-aggregation
+DRAG is removed — but the **DECISIVE C8 >15.7 Mbit/s bar is NOT met (15.0
+Mbit/s, aggregation factor 0.99)**. Honest FAIL-WITH-MECHANISM, and the residual
+constraint is now cleanly isolated to the **per-connection transport control
+loop**, NOT the FEC: it is proven by a SYMMETRIC-path (C7 c2+c2) control that
+also does not aggregate. The number was NOT forced.
+
+### The production change (what shipped vs coded-only)
+A submode of the generation machinery — reuses the fixed-generation repair
+anchors, per-generation deficit feedback, dense `GenerationDecoder`,
+out-of-order delivery, and no-per-seq-ARQ contract UNCHANGED. Two differences:
+- **`GenerationEncoder::new_systematic`** (`fec/generation.rs`): the proactive
+  per-generation budget is `ceil(len·r)` — the loss-FEC overhead ONLY — instead
+  of coded-only's `ceil(len·(1+r))`. The K base degrees of freedom ride the wire
+  as raw source, so coded symbols cover only the holes; the deficit loop
+  (`generate_repair_for`) tops up the residual.
+- **Systematic source on the wire** (`run_window_sender`): the raw source
+  symbol is emitted as PRIMARY (striped ∝-goodput via `place_symbol`, delivered
+  out-of-order with ZERO decode) — the per-source wire send that coded-only
+  skipped, re-enabled with `sent_store`/retransmit/taper still OFF.
+- Behind **`--window-systematic-repair`** (requires `--window-reliable`;
+  `PeerConfig.window_systematic_repair`), composing with the perf/object bulk
+  path; realtime + in-order stream untouched. `RWM_GEN` (~480 at C8) sets the
+  repair-window / fungibility horizon, `RWM_GEN_R` (default 0.15 ≳ 1.5·ε) the r.
+
+### Codec + mechanism: VERIFIED
+- **`fec::generation` unit tests** (2 new): `systematic_budget_is_repair_overhead_only`
+  (budget = ceil(len·r), strictly less than coded-only) and
+  `systematic_source_primary_repair_recovers_deficit_only` — the four-claim proof
+  over a lossy stream: received source delivered DIRECTLY (zero decode), windowed
+  repair recovers the holes, the **deficit-decode == the hole count (≪ G)** (known
+  sources pre-load as unit pivots, so the dense solve is O(deficit) not O(G²)),
+  and NO per-seq resend anywhere.
+- **`perf_loopback_systematic_repair_dual_path`** — end-to-end over a dual
+  loopback link (source pass-through + windowed cross-path repair + deficit
+  frontier, composing with the perf object protocol).
+- `cargo test -p raptorpath --lib` **263** green (+2), `temporal_oracle` **7**
+  green, `gate_suite` **15/15** release.
+
+### DECISIVE C8 (c2+c3, 50 MB native perf, VM AVX2, G=480 / M=2 / r=0.15)
+| config | mean Mbit/s | median s | stdev s | completion | vs 15.7 |
+|--------|------------:|---------:|--------:|-----------:|--------:|
+| **C8 dual, systematic-repair, 50 MB ×6** | **15.045** | 26.78 | 1.54 | **6/6 (dnf:0)** | **✗ 0.96×** |
+| single c2, systematic-repair, 50 MB ×6 | 15.198 | 26.77 | 0.90 | 6/6 (dnf:0) | ✗ |
+
+**Aggregation factor = 15.045 / 15.198 = 0.99 — NONE.** BUT note the absolute
+rate: this is **1.24× the plain-systematic C8 dual (12.11)** and **1.69× the
+coded-only C8 dual (8.90)** — the design lands at the FULL single-path rate with
+**the anti-aggregation drag REMOVED** (coded-only and plain-systematic both put
+C8 dual BELOW single; this build puts it AT single). Completion is robust (6/6 vs
+coded-only's fragile G=384 stalls); φ ≈ **0.15** (= r, bounded) with the deficit
+loop essentially IDLE (holes covered inline by proactive r) — so **decode and the
+deficit loop are NOT the binding constraint**, unlike every coded-only build.
+
+### The binding constraint: per-connection control loop (proven by a SYMMETRIC control)
+| control config (50 MB ×6, G=480/M=2) | mean Mbit/s | vs single 15.2 |
+|--------------------------------------|------------:|---------------:|
+| **C7 SYMMETRIC dual (c2+c2), systematic-repair** | **15.445** | **×1.02 — NO aggregation** |
+
+Two IDENTICAL 100 Mbit paths (no slow-path long pole, no heterogeneity, no
+loss-rate skew) still yield only single-path throughput. This **rules out the
+FEC-layer explanations** (decode, deficit-RTT, striping ∝-goodput, slow-path
+laggard coverage, repair provisioning) — none of them apply on symmetric paths —
+and localizes the ceiling to the **per-connection transport control loop**: a
+single-path perf transfer extracts only ~15 Mbit from a 100 Mbit link (the same
+~15 for plain-systematic AND generation modes), and adding a second path — even
+an identical one — adds nothing. Client trace (`RWM_TRACE`, C8 dual): the sender
+is **`tx_paused=true` in ~87% of samples**, backpressured by the generation-mode
+store (`store_max = G·(M+1)`) which is pruned by the IN-ORDER cumulative ack —
+so even though DELIVERY is out-of-order, RETENTION/backpressure is coupled to the
+in-order frontier, serializing the paths to the single-path frontier-advance rate.
+
+**Slack does not help — it overruns.** M-sweep (25 MB ×3): M=4 → **0/3 DNF**,
+M=8 (single c2) → **0/3 DNF** (300 s timeout). Loosening the store lets the
+sender push MORE onto the droppable QUIC datagram path, which then overruns
+(drops → the object never completes) rather than aggregating. So the datagram
+path CAN carry more than 15 Mbit, but the control loop cannot use it
+productively — the exact "racing a rateless stream over a droppable datagram
+path" tension the coded-only verdict named, here isolated to the SENDER'S
+in-order-coupled backpressure rather than to decode.
+
+### Regression (non-systematic modes — my build, RE-CONFIRMED clean)
+| baseline (no `--window-systematic-repair`) | mean Mbit/s | target | status |
+|--------------------------------------------|------------:|-------:|:------:|
+| PLAIN reliable C7 dual (c2+c2), 50 MB ×3 | **20.006** | ~21.4 | ✓ (within variance; still ×1.3-aggregates) |
+| single-path systematic-repair (native parity) | 15.198 | ~14.5–15.7 | ✓ |
+
+The send-macro edit is byte-inert for non-systematic modes (the source-on-wire
+branch only diverges when `window_systematic_repair` is set, and
+`window_generation` only pulls systematic in when the flag is set): plain
+reliable STILL aggregates on C7 (20.0 ×1.3, vs systematic-repair's 15.4 ×1.02 —
+the crisp contrast that the generation-mode control loop is what forfeits
+aggregation), and `fec::generation` / all generation loopback tests are green.
+
+### VERDICT
+- **Design structural claims: VALIDATED in production.** Systematic source
+  delivers on arrival (zero decode), windowed repair recovers holes with a tiny
+  deficit-decode, per-seq ARQ is off, and it **removes the two coded-only
+  L1-killers** — proven by robust 6/6 completion at full single-path rate with an
+  idle deficit loop and decode a non-factor. It also **removes the
+  anti-aggregation DRAG** that put plain-systematic (12.11) and coded-only (8.90)
+  C8 dual BELOW single: this build sits AT single (15.0).
+- **L1 DECISIVE (>15.7 Mbit/s): NOT MET.** C8 dual = **15.045 Mbit/s** (6/6),
+  aggregation factor **0.99**. Honest FAIL-WITH-MECHANISM — number NOT forced.
+- **The binding constraint is the per-connection transport control loop, NOT the
+  FEC.** Proven by the C7 SYMMETRIC control (15.4, ×1.02 — no aggregation with
+  two identical paths) and the M-sweep overrun DNFs. A single perf connection
+  extracts ~15 Mbit from a 100 Mbit link regardless of path count; the residual
+  is the generation-mode sender's in-order-coupled backpressure + droppable-
+  datagram overrun, one layer below everything the oracle models (the oracle's
+  independent-GE model assumes each path delivers at its link goodput and uses an
+  unbounded store — production's per-connection cwnd/pacing ceiling and bounded
+  in-order-coupled store are outside that model). Closing it needs a transport
+  change — decouple retention/backpressure from the in-order frontier (prune on
+  per-generation completion) and/or grow the datagram-path send window without
+  overrunning — beyond this design's FEC scope.
+
+**Verification.** `cargo test -p raptorpath --lib` 263 green; `temporal_oracle`
+7 green; `gate_suite` 15/15 release. L1: `RWM_GEN=480 RWM_EXTRA=
+"--window-systematic-repair" bash ~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual`.

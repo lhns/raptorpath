@@ -351,3 +351,57 @@ async fn perf_loopback_generation_multi_dual_path() {
 
     srv.abort();
 }
+
+/// SYSTEMATIC + deficit-repair (paper §16.3 oracle) over a DUAL path — the
+/// cheaper realization of generation coding that the C8 L1 measurement then
+/// quantifies. The raw systematic source rides the wire as PRIMARY (striped
+/// ∝-goodput across both loopback links, delivered out-of-order with ZERO
+/// decode); coded symbols are windowed REPAIR only (ceil(len·r) proactive per
+/// generation + a deficit-driven top-up), with per-seq ARQ OFF (generation-mode
+/// receive path). A multi-MB object spans several generations, so this guards
+/// the whole systematic path end to end: source pass-through + windowed
+/// cross-path repair + the deficit-feedback frontier advance, all composing
+/// with the perf object protocol. (In-proc loopback is lossless — it proves the
+/// plumbing never wedges and every byte round-trips; the LOSSY cross-path
+/// aggregation win is measured at L1 with netem.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn perf_loopback_systematic_repair_dual_path() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let srv_cfg = config::RaptorpathConfig {
+        server: Some(true),
+        bind: Some(vec!["127.0.0.1:47845".into(), "127.0.0.1:47846".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_systematic_repair: Some(true),
+        ..Default::default()
+    };
+    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    assert!(srv_pc.window_reliable && srv_pc.window_systematic_repair);
+    let srv = tokio::spawn(perf::server(srv_pc));
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let cli_cfg = config::RaptorpathConfig {
+        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
+        peer: Some(vec!["127.0.0.1:47845".into(), "127.0.0.1:47846".into()]),
+        protocol_hint: Some("bulk".into()),
+        window_reliable: Some(true),
+        window_systematic_repair: Some(true),
+        ..Default::default()
+    };
+    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+
+    // 2 MB → several generations at the default G. Completion (the perf server
+    // acks only when every byte is present) IS the end-to-end systematic +
+    // windowed-repair + deficit-frontier proof over a dual path.
+    tokio::time::timeout(
+        Duration::from_secs(90),
+        perf::client(cli_pc, 2_000_000, 1),
+    )
+    .await
+    .expect("systematic-repair dual-path perf loopback timed out")
+    .expect("systematic-repair dual-path perf client failed");
+
+    srv.abort();
+}
