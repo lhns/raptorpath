@@ -31,11 +31,13 @@
 //! anchor arrive (decode-on-K), delivering its sources out-of-order — NO
 //! decoder change is needed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+
+use bytes::Bytes;
 
 use super::gf256;
 use super::traits::{FecBackend, WireSymbol};
-use super::window_traits::WindowEncoder;
+use super::window_traits::{WindowDecoder, WindowEncoder};
 
 pub use gf256::generate_window_coefficients;
 
@@ -362,6 +364,321 @@ impl WindowEncoder for GenerationEncoder {
     }
 }
 
+// ===========================================================================
+// Dense generation decoder — the FAST decode path for generation coding.
+// ===========================================================================
+//
+// WHY THIS EXISTS.  The generation *encoder* above produces RLC-repair symbols
+// with the identical self-describing wire header as the sliding window, so the
+// sparse `RlcWindowDecoder` CAN decode them (and does, in the unit tests).  But
+// that decoder stores each pivot row's coefficients as a `BTreeMap<u64,u8>` and
+// cascades single-unknown resolutions one at a time — allocation-heavy and
+// pointer-chasing, measured ~200× below a dense GF(256) solver.  At the oracle's
+// aggregating G=384 that put decode BELOW the link rate, so heterogeneous
+// multipath had no headroom to aggregate (goal-gate "Generation Coding": C8 =
+// 10.97 Mbit/s, aggregation factor 1.00 — DECODE-BOUND, not network-bound).
+//
+// THIS decoder is dense and per-generation.  Every generation-coded symbol's
+// coefficients lie inside ONE fixed generation span `[anchor, anchor+K_G)`, so a
+// generation is a self-contained K_G×K_G system: we keep a DENSE coefficient row
+// (`Vec<u8>` of length K_G, contiguous) per pivot and run Gauss–Jordan
+// elimination over GF(256) using the SIMD `mul_acc_slice` kernel (the same kernel
+// the encoder uses).  Reduced row-echelon is maintained incrementally, so when a
+// generation reaches rank K_G every source is already isolated (identity rows)
+// and delivered in one shot — no cascade, no back-substitution pass.  Decode is
+// per-generation independent and out-of-order: a later generation decodes the
+// instant it has K_G independent symbols, regardless of earlier ones.
+
+/// One reduced pivot row of a generation's Gauss–Jordan system, stored as ONE
+/// contiguous buffer `[coeffs (width bytes) | data (symbol_size bytes)]`.  Fusing
+/// the coefficient row and the payload row into a single allocation lets a single
+/// SIMD `mul_acc_slice` eliminate BOTH in one call — halving the per-call table-
+/// build + dispatch overhead that dominates the O(W²) inner loop.  After
+/// normalization the pivot column holds 1 and, by the RREF invariant, every OTHER
+/// pivot column holds 0.
+type GenRow = Vec<u8>;
+
+/// State of one generation's decode, keyed by `(anchor, width)` — see
+/// `GenerationDecoder::gens`.
+enum GenSlot {
+    /// Still accumulating independent degrees of freedom.
+    Solving {
+        width: usize,
+        /// `pivots[c]` is the reduced row whose pivot column is `c` (or `None`).
+        pivots: Vec<Option<GenRow>>,
+        rank: usize,
+    },
+    /// Fully decoded and delivered — further coded symbols for it are redundant.
+    Done,
+}
+
+/// Dense per-generation RLC decoder.  Drop-in `WindowDecoder` used in generation
+/// mode in place of the sparse `RlcWindowDecoder`.
+pub struct GenerationDecoder {
+    symbol_size: usize,
+    /// `(anchor, width)` → decode state.  Keying by BOTH anchor and width (not
+    /// anchor alone) is load-bearing: the object stream reuses the absolute seq
+    /// space across objects, so a single anchor legitimately hosts DIFFERENT
+    /// generations of different K_G at different times — the encoder's fixed
+    /// generation `g` accumulates one object's short tail (coded at that partial
+    /// width once intake goes idle) AND the next object's fill (coded at the full
+    /// width once sealed).  Those are distinct linear systems over different
+    /// source sets; keying by `(anchor, width)` lets them coexist instead of one
+    /// resetting/thrashing the other's pivots at the object boundary.
+    gens: BTreeMap<(u64, usize), GenSlot>,
+    /// Sources already recovered: seq → payload.  Two jobs: (1) the delivered-seq
+    /// set (its keys) for dedup and `rank_in`; (2) known-source ELIMINATION — when
+    /// a fresh generation is created, every already-recovered source in its span is
+    /// pre-loaded as a unit pivot row, so a coded symbol that introduces only ONE
+    /// new unknown resolves it immediately (the sparse decoder's Step-1 behaviour).
+    /// This is what lets a trickle channel that re-codes overlapping seqs at
+    /// growing widths (e.g. the reverse per-object ACK stream: widths 1,2,3 over
+    /// the same anchor) make progress instead of demanding a full-rank fresh solve
+    /// each width.  For the common large-object case, generation spans are
+    /// disjoint, so nothing is ever pre-known and this costs nothing.  Pruned on
+    /// `advance`.
+    recovered: BTreeMap<u64, Vec<u8>>,
+    /// Wire-symbol dedup: (block_id, payload_id, is_repair).
+    seen: HashSet<(u64, u32, bool)>,
+    total_fed: u64,
+    repairs_fed: u64,
+    repairs_useful: u64,
+}
+
+impl GenerationDecoder {
+    pub fn new(symbol_size: u16) -> Self {
+        Self {
+            symbol_size: symbol_size as usize,
+            gens: BTreeMap::new(),
+            recovered: BTreeMap::new(),
+            seen: HashSet::new(),
+            total_fed: 0,
+            repairs_fed: 0,
+            repairs_useful: 0,
+        }
+    }
+
+    /// Feed one fused equation row (`[coeffs (width) | data (symbol_size)]`, pivot
+    /// column at `width`-wide prefix) into a generation's Gauss–Jordan system.
+    /// Returns the whole generation's sources the instant it reaches full rank,
+    /// else empty.
+    fn insert_equation(
+        &mut self,
+        anchor: u64,
+        width: usize,
+        mut row: GenRow,
+    ) -> Vec<(u64, Bytes)> {
+        let ss = self.symbol_size;
+        if !self.gens.contains_key(&(anchor, width)) {
+            // Fresh generation: pre-load already-recovered sources in its span as
+            // unit pivot rows (RREF form). Zero-cost when the span is disjoint from
+            // everything recovered so far (the large-object common case).
+            let mut pivots: Vec<Option<GenRow>> = (0..width).map(|_| None).collect();
+            let mut rank = 0usize;
+            for (c, slot) in pivots.iter_mut().enumerate() {
+                if let Some(data) = self.recovered.get(&(anchor + c as u64)) {
+                    let mut prow = vec![0u8; width + ss];
+                    prow[c] = 1;
+                    let n = data.len().min(ss);
+                    prow[width..width + n].copy_from_slice(&data[..n]);
+                    *slot = Some(prow);
+                    rank += 1;
+                }
+            }
+            self.gens.insert((anchor, width), GenSlot::Solving { width, pivots, rank });
+        }
+        let slot = self.gens.get_mut(&(anchor, width)).expect("just inserted or present");
+
+        let (pivots, rank, width) = match slot {
+            // Done ⇒ this generation already delivered; symbol redundant.
+            GenSlot::Done => return vec![],
+            GenSlot::Solving { pivots, rank, width } => (pivots, rank, *width),
+        };
+
+        // Forward-reduce the incoming row against existing pivots. Because the
+        // system is in RREF, each pivot row is zero at every other pivot column,
+        // so a single left-to-right pass fully reduces the row against all of
+        // them (an elimination at column `c` can only touch NON-pivot columns).
+        // ONE fused `mul_acc_slice` clears both the coefficient and the payload
+        // halves of the row per pivot.
+        for c in 0..width {
+            let factor = row[c];
+            if factor == 0 {
+                continue;
+            }
+            if let Some(prow) = &pivots[c] {
+                gf256::mul_acc_slice(factor, prow, &mut row);
+            }
+        }
+
+        // First surviving nonzero coefficient is the new pivot column.
+        let pcol = match row[..width].iter().position(|&x| x != 0) {
+            Some(c) => c,
+            None => return vec![], // linearly dependent — no new information
+        };
+
+        // Normalize so the pivot coefficient is 1 (whole fused row at once).
+        let lead = row[pcol];
+        if lead != 1 {
+            scale_inplace(gf256::inv(lead), &mut row);
+        }
+
+        // Gauss–Jordan: eliminate the new pivot column from every existing pivot
+        // row so the RREF invariant is preserved (each pivot column appears in
+        // exactly one row). The new row is already zero at every existing pivot
+        // column, so this never disturbs another row's pivot.
+        for other in pivots.iter_mut().flatten() {
+            let f = other[pcol];
+            if f != 0 {
+                gf256::mul_acc_slice(f, &row, other);
+            }
+        }
+
+        pivots[pcol] = Some(row);
+        *rank += 1;
+
+        if *rank < width {
+            return vec![];
+        }
+
+        // Full rank: every column is a pivot, so by RREF each pivot row is the
+        // unit row for its column and its payload half IS the source symbol.
+        let mut out = Vec::with_capacity(width);
+        if let GenSlot::Solving { pivots, .. } =
+            std::mem::replace(slot, GenSlot::Done)
+        {
+            for (c, prow) in pivots.into_iter().enumerate() {
+                let mut sym = prow.expect("full rank ⇒ every pivot present");
+                // Keep only the payload half.
+                sym.drain(..width);
+                sym.truncate(ss);
+                let seq = anchor + c as u64;
+                // Deliver each seq exactly once: a pre-loaded (already recovered)
+                // source is re-derived here but must not be re-delivered.
+                if self.recovered.insert(seq, sym.clone()).is_none() {
+                    out.push((seq, Bytes::from(sym)));
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Recover a fused row's `width` (coefficient count) given the payload size.
+#[inline]
+fn width_of(row: &[u8], symbol_size: usize) -> usize {
+    row.len().saturating_sub(symbol_size)
+}
+
+/// Scale a byte slice in place by a GF(256) scalar. Scalar path is used only for
+/// the O(width) per-pivot normalization, negligible against the O(width²)
+/// elimination that runs on the SIMD kernel.
+#[inline]
+fn scale_inplace(coeff: u8, buf: &mut [u8]) {
+    if coeff == 1 {
+        return;
+    }
+    for b in buf.iter_mut() {
+        *b = gf256::mul(coeff, *b);
+    }
+}
+
+impl WindowDecoder for GenerationDecoder {
+    fn add_symbol(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)> {
+        if symbol.backend != FecBackend::Rlc {
+            return vec![];
+        }
+        let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
+        if !self.seen.insert(key) {
+            return vec![];
+        }
+        self.total_fed += 1;
+
+        if !symbol.is_repair {
+            // Generation mode is coded-only, so a raw source is unexpected; still,
+            // deliver it directly (and record it so any overlapping generation can
+            // eliminate it) to keep the trait correct if one ever arrives.
+            let seq = symbol.block_id;
+            if self.recovered.contains_key(&seq) {
+                return vec![];
+            }
+            let mut data = vec![0u8; self.symbol_size];
+            let copy_len = symbol.data.len().min(self.symbol_size);
+            data[..copy_len].copy_from_slice(&symbol.data[..copy_len]);
+            self.recovered.insert(seq, data.clone());
+            return vec![(seq, Bytes::from(data))];
+        }
+
+        if symbol.data.len() < REPAIR_HEADER_SIZE {
+            return vec![];
+        }
+        self.repairs_fed += 1;
+
+        let anchor = u64::from_le_bytes(symbol.data[0..8].try_into().unwrap());
+        let width = u16::from_le_bytes(symbol.data[8..10].try_into().unwrap()) as usize;
+        let repair_index = u32::from_le_bytes(symbol.data[10..14].try_into().unwrap());
+        if width == 0 {
+            return vec![];
+        }
+        let coded = &symbol.data[REPAIR_HEADER_SIZE..];
+
+        // Build the fused row: [coeffs (width) | payload (symbol_size)].
+        let coeffs = generate_window_coefficients(anchor, width as u16, repair_index);
+        let mut row = vec![0u8; width + self.symbol_size];
+        row[..width].copy_from_slice(&coeffs);
+        let copy_len = coded.len().min(self.symbol_size);
+        row[width..width + copy_len].copy_from_slice(&coded[..copy_len]);
+
+        let recovered = self.insert_equation(anchor, width, row);
+        if !recovered.is_empty() {
+            self.repairs_useful += 1;
+        }
+        recovered
+    }
+
+    fn advance(&mut self, oldest_seq: u64) {
+        // Drop whole generations that end at or before the retention frontier.
+        let drop: Vec<(u64, usize)> = self
+            .gens
+            .keys()
+            .filter(|&&(anchor, width)| anchor + width as u64 <= oldest_seq)
+            .copied()
+            .collect();
+        for k in drop {
+            self.gens.remove(&k);
+        }
+        let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&k, _)| k).collect();
+        for s in old {
+            self.recovered.remove(&s);
+        }
+        self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
+    }
+
+    fn rank_in(&self, start: u64, count: u64) -> u64 {
+        // Deficit feedback asks about the generation of exactly `count` = K_g.
+        match self.gens.get(&(start, count as usize)) {
+            Some(GenSlot::Done) => count,
+            Some(GenSlot::Solving { rank, .. }) => *rank as u64,
+            None => {
+                // No matrix yet: count any already-recovered sources in the span
+                // (they pre-load the generation the moment its first coded arrives).
+                let end = start.saturating_add(count);
+                self.recovered.range(start..end).count() as u64
+            }
+        }
+    }
+
+    fn total_fed(&self) -> u64 {
+        self.total_fed
+    }
+    fn repairs_fed(&self) -> u64 {
+        self.repairs_fed
+    }
+    fn repairs_useful(&self) -> u64 {
+        self.repairs_useful
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,5 +896,222 @@ mod tests {
         enc.advance(13);
         assert_eq!(enc.window_span().0, 10, "gen 0 dropped, gen 1 start retained");
         assert_eq!(enc.base_gen, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Dense GenerationDecoder — the fast decode path.
+    // -----------------------------------------------------------------------
+
+    /// Same core claim as `generations_decode_on_k_out_of_order_with_loss`, but
+    /// against the DENSE `GenerationDecoder`: coded symbols over stable
+    /// generations, with a fraction dropped and the rest delivered in reverse
+    /// order, still recover every source — each generation independently on K_G.
+    #[test]
+    fn gen_decoder_decode_on_k_out_of_order_with_loss() {
+        let symbol_size = 64u16;
+        let g = 8usize;
+        let n_gen = 5u64;
+        let k = n_gen * g as u64;
+        let m = n_gen as usize;
+
+        let mut enc = GenerationEncoder::new(symbol_size, g, m, 0.25);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        for seq in 0..k {
+            enc.add_source(&payload(seq));
+        }
+
+        let per_gen = g as u64 + 2;
+        let total_coded = per_gen * n_gen;
+        let mut coded: Vec<WireSymbol> = (0..total_coded).map(|_| enc.generate_repair()).collect();
+
+        // Drop 1 in 9, deliver the rest reversed (out-of-order / interleaved).
+        coded.retain({
+            let mut i = 0u64;
+            move |_| {
+                i += 1;
+                i % 9 != 0
+            }
+        });
+        coded.reverse();
+
+        let mut recovered: BTreeSet<u64> = BTreeSet::new();
+        for c in &coded {
+            for (seq, data) in dec.add_symbol(c) {
+                assert_eq!(&data[..48], payload(seq).as_slice(), "byte-exact recovery");
+                recovered.insert(seq);
+            }
+        }
+        for seq in 0..k {
+            assert!(recovered.contains(&seq), "seq {seq} not recovered");
+        }
+    }
+
+    /// A generation decodes on its OWN K_G symbols, independent of others, and
+    /// `rank_in` tracks its independent rank (the deficit-feedback signal).
+    #[test]
+    fn gen_decoder_independent_and_rank_in() {
+        let symbol_size = 64u16;
+        let g = 6usize;
+        let mut enc = GenerationEncoder::new(symbol_size, g, 4, 0.25);
+        for seq in 0..(3 * g as u64) {
+            enc.add_source(&payload(seq));
+        }
+
+        let mut by_gen: std::collections::HashMap<u64, Vec<WireSymbol>> = Default::default();
+        for _ in 0..(3 * (g + 3) as u64) {
+            let c = enc.generate_repair();
+            let anchor = u64::from_le_bytes(c.data[0..8].try_into().unwrap());
+            by_gen.entry(anchor).or_default().push(c);
+        }
+
+        let anchor2 = 2 * g as u64;
+        let mut dec = GenerationDecoder::new(symbol_size);
+        let syms = by_gen.get(&anchor2).unwrap();
+
+        // Feed K_G-1: rank climbs but nothing delivers yet.
+        let mut got: BTreeSet<u64> = BTreeSet::new();
+        for c in syms.iter().take(g - 1) {
+            for (seq, _) in dec.add_symbol(c) {
+                got.insert(seq);
+            }
+        }
+        assert!(got.is_empty(), "must not deliver before K_G");
+        assert_eq!(dec.rank_in(anchor2, g as u64), g as u64 - 1);
+
+        // The K_G-th independent symbol completes gen 2 (and only gen 2).
+        for c in syms.iter().skip(g - 1).take(1) {
+            for (seq, _) in dec.add_symbol(c) {
+                got.insert(seq);
+            }
+        }
+        assert_eq!(dec.rank_in(anchor2, g as u64), g as u64, "gen 2 full rank");
+        for seq in (2 * g as u64)..(3 * g as u64) {
+            assert!(got.contains(&seq), "gen 2 seq {seq} should decode independently");
+        }
+        assert!(got.iter().all(|&s| s >= 2 * g as u64), "no cross-generation leakage");
+    }
+
+    /// The dense decoder recovers EXACTLY the same sources as the reference
+    /// sparse `RlcWindowDecoder` from an identical lossy, reordered coded stream.
+    #[test]
+    fn gen_decoder_matches_rlc_window() {
+        let symbol_size = 96u16;
+        let g = 12usize;
+        let n_gen = 4u64;
+        let k = n_gen * g as u64;
+        let mut enc = GenerationEncoder::new(symbol_size, g, n_gen as usize, 0.5);
+        for seq in 0..k {
+            enc.add_source(&payload(seq));
+        }
+        let mut coded: Vec<WireSymbol> =
+            (0..(g as u64 + 4) * n_gen).map(|_| enc.generate_repair()).collect();
+        coded.retain({
+            let mut i = 0u64;
+            move |_| {
+                i += 1;
+                i % 7 != 0
+            }
+        });
+        coded.reverse();
+
+        let mut dense = GenerationDecoder::new(symbol_size);
+        let mut sparse = RlcWindowDecoder::new(symbol_size);
+        let mut dense_out: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+        let mut sparse_out: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+        for c in &coded {
+            for (seq, d) in dense.add_symbol(c) {
+                dense_out.insert(seq, d.to_vec());
+            }
+            for (seq, d) in sparse.add_symbol(c) {
+                sparse_out.insert(seq, d.to_vec());
+            }
+        }
+        assert_eq!(dense_out.keys().collect::<Vec<_>>(), sparse_out.keys().collect::<Vec<_>>());
+        for (seq, d) in &dense_out {
+            assert_eq!(&d[..48], payload(*seq).as_slice(), "dense byte-exact seq {seq}");
+            assert_eq!(d, sparse_out.get(seq).unwrap(), "dense == sparse seq {seq}");
+        }
+        assert_eq!(dense_out.len() as u64, k, "all sources recovered");
+    }
+
+    /// Microbenchmark: dense vs sparse generation decode throughput at
+    /// G ∈ {96,192,384,512}, 1200 B symbols. Run with:
+    ///   cargo test -p raptorpath --release --lib \
+    ///     fec::generation::tests::bench_generation_decode_throughput -- --ignored --nocapture
+    /// The dense decoder must clear the ~100 Mbit link rate with margin at G=384.
+    #[test]
+    #[ignore]
+    fn bench_generation_decode_throughput() {
+        use std::time::Instant;
+        let symbol_size = 1200u16;
+        let ss = symbol_size as usize;
+        // Enough generations that per-object setup is amortized.
+        println!("\n  generation decode throughput (1200 B symbols, single core)");
+        println!(
+            "  {:>5}  {:>8}  {:>12}  {:>12}  {:>7}",
+            "G", "gens", "dense Mbit/s", "sparse Mbit/s", "speedup"
+        );
+        for &g in &[96usize, 192, 384, 512] {
+            // Keep total payload roughly constant (~16 MB) across G.
+            let target_bytes = 16 * 1024 * 1024;
+            let n_gen = (target_bytes / (g * ss)).max(2) as u64;
+            let k = n_gen * g as u64;
+
+            // Build one exact coded set per generation (K_G symbols each; no loss —
+            // the decode cost is what we measure, delivered in arrival order).
+            let mut enc = GenerationEncoder::new(symbol_size, g, n_gen as usize, 0.0);
+            for seq in 0..k {
+                enc.add_source(&payload_ss(seq, ss));
+            }
+            // Exactly K_G coded per generation, grouped so each generation gets a
+            // solvable set.
+            let mut by_gen: BTreeMap<u64, Vec<WireSymbol>> = BTreeMap::new();
+            // Over-emit then take K_G independent per generation.
+            for _ in 0..(k * 2) {
+                let c = enc.generate_repair();
+                let anchor = u64::from_le_bytes(c.data[0..8].try_into().unwrap());
+                by_gen.entry(anchor).or_default().push(c);
+            }
+            let mut stream: Vec<WireSymbol> = Vec::new();
+            for (_, syms) in by_gen.iter() {
+                for c in syms.iter().take(g) {
+                    stream.push(c.clone());
+                }
+            }
+            let payload_bits = (k * ss as u64 * 8) as f64;
+
+            let t0 = Instant::now();
+            let mut dense = GenerationDecoder::new(symbol_size);
+            let mut dn = 0u64;
+            for c in &stream {
+                dn += dense.add_symbol(c).len() as u64;
+            }
+            let dense_s = t0.elapsed().as_secs_f64();
+            assert_eq!(dn, k, "dense must decode all sources (G={g})");
+
+            let t1 = Instant::now();
+            let mut sparse = RlcWindowDecoder::new(symbol_size);
+            let mut sn = 0u64;
+            for c in &stream {
+                sn += sparse.add_symbol(c).len() as u64;
+            }
+            let sparse_s = t1.elapsed().as_secs_f64();
+            assert_eq!(sn, k, "sparse must decode all sources (G={g})");
+
+            let dense_mbit = payload_bits / dense_s / 1e6;
+            let sparse_mbit = payload_bits / sparse_s / 1e6;
+            println!(
+                "  {:>5}  {:>8}  {:>12.1}  {:>12.1}  {:>6.1}×",
+                g, n_gen, dense_mbit, sparse_mbit, dense_mbit / sparse_mbit
+            );
+        }
+        println!();
+    }
+
+    fn payload_ss(seq: u64, ss: usize) -> Vec<u8> {
+        (0..ss)
+            .map(|j| (seq as u8).wrapping_mul(31).wrapping_add(j as u8))
+            .collect()
     }
 }

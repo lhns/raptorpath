@@ -1102,7 +1102,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // Window decoder: created once, long-lived (only used in window
         // mode; codec pinned at startup, §16.4 — never rebuilt).
         let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
-            Some(create_window_decoder(recv_fec_backend, recv_symbol_size))
+            Some(create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation))
         } else {
             None
         };
@@ -3932,13 +3932,26 @@ fn create_window_encoder(
 }
 
 /// Create a window decoder for the given backend.
-fn create_window_decoder(backend: FecBackend, symbol_size: u16) -> Box<dyn WindowDecoder> {
+///
+/// In GENERATION mode the RLC backend uses the dense per-generation
+/// `GenerationDecoder` (Gauss–Jordan over GF(256) with SIMD row ops) rather than
+/// the sparse sliding-window `RlcWindowDecoder`: the sparse decoder's
+/// BTreeMap-of-coefficients + cascade sat ~200× below the link rate at the
+/// oracle's aggregating G, making decode — not the network — the binding
+/// constraint (goal-gate "Generation Coding"). The wire format is identical, so
+/// this is a pure receiver-side swap.
+fn create_window_decoder(
+    backend: FecBackend,
+    symbol_size: u16,
+    generation: bool,
+) -> Box<dyn WindowDecoder> {
     match backend {
         FecBackend::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
         FecBackend::Streaming => {
             let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
             Box::new(crate::fec::StreamingDecoder::new(symbol_size, params))
         }
+        _ if generation => Box::new(crate::fec::GenerationDecoder::new(symbol_size)),
         _ => Box::new(RlcWindowDecoder::new(symbol_size)),
     }
 }
