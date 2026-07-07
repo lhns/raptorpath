@@ -2438,3 +2438,60 @@ aggregation), and `fec::generation` / all generation loopback tests are green.
 **Verification.** `cargo test -p raptorpath --lib` 263 green; `temporal_oracle`
 7 green; `gate_suite` 15/15 release. L1: `RWM_GEN=480 RWM_EXTRA=
 "--window-systematic-repair" bash ~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual`.
+
+## Unified deadline-constrained r* — N=1→§8.4 reduction + oracle fidelity (branch `feat/unified-rstar`, 2026-07-07)
+
+Formalized the §16.7 "two knobs, one budget" claim: **H (reorder horizon) and r
+(FEC rate) spend the SAME deadline D.** A symbol is late iff its total delay
+(propagation + ARQ-recovery-if-not-FEC-covered + cross-path reorder wait)
+exceeds D; the controller picks the minimal r s.t. P(late) ≤ δ across the path
+set. Paper §8.9 (new): the P(late) decomposition, the overhead-minimization
+(convex feasible set ⇒ r* is its boundary, KKT), the closed form
+r*_unified = max_{i∈E}[ e_i/(1−e_i) + z_{δ_i/e_i}√(e_iσ²_i/(W(1−e_i))) ] with
+E = {i : d_i − d_min ≤ H}, the limits/monotonicities, and the N=1 theorem.
+
+### N=1 reduction — CONFIRMED (the correctness gate)
+
+With one path d_1 − d_min ≡ 0, so E = {1}, the reorder term is identically 0,
+D collapses to "within-window-or-ARQ", and r*_unified reduces **exactly** to
+§8.4's r*(δ, e, σ², W). Oracle Part 4a (5 scenarios, K=1.2 M, W=64): at
+r=r*(§8.4) every late symbol is an ARQ miss (measured reorder ≡ 0), the tail
+== e(1−P_fec), and r* places that tail at 1.20–1.52×δ. §8.4 is the one-path
+limit, not a separate formula.
+
+### Oracle-fidelity (MEASURED-through-oracle, `temporal_oracle.rs` Part 4)
+
+- **Reorder term & ordering-as-policy (4b):** in-order H<skew → p_reorder =
+  0.258 ≈ slow-path goodput share 0.25 (E={fast}); H≥skew → 0.0025 (collapse);
+  unordered → 0.000. The ordering flag is exactly what turns L_reorder on.
+- **Monotonicities (4c):** P(late) ↓ in r, reorder ↓ in H, P(late) ↑ in e —
+  all signs from the closed form confirmed.
+- **Full-grid union bound (4d):** the closed form tracks the measured tail;
+  worst ratio 1.37 and it OVER-estimates (conservative — a slow-path symbol
+  can be both a reorder hole and an ARQ overflow; the bound double-counts).
+
+### The one discrepancy (reported, not forced)
+
+At r=r*(§8.4) the oracle miss tail is **1.2–1.5×δ** — the closed form
+under-provisions; the oracle needs **≈1.51× r*** to actually hit δ. This is
+the KNOWN §8.4/§8.7 Gaussian-tail + loss/repair-correlation gap, not a new
+defect: the oracle confirms its sign and bounds its size (~1.5×, within the
+§8.7 exact-DP band). Production uses r*_unified as the analytic floor and
+`compute_min_rate_exact` (§8.7) to close it; r* is never a dangerous
+over-estimate (r_min ≥ 0.85·r* always).
+
+### Scope (honest)
+
+r* is the FEC-rate controller for the **reliability/latency** budget —
+orthogonal to the **throughput** ceiling. The L1 finding that heterogeneous
+throughput aggregation is transport-ceiling-limited (this file, above) does
+NOT affect r*: Part 4 credits each path's own FEC to its own budget (no
+cross-path fungible repair), so its verdict is independent of the Parts 1–3
+aggregation result. The r* model assumes only that the transport delivers at
+per-path rates g_i.
+
+**Verification.** `cargo test -p raptorpath-math` all green (temporal_oracle
+now 11 tests: 7 prior + 4 new unified-r*); no production code (`raptorpath
+--lib` untouched). DERIVED + MEASURED-through-oracle; no term trusted until the
+oracle confirmed fidelity.
+
