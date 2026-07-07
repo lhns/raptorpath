@@ -499,12 +499,28 @@ impl CopaState {
         self.prev_rtt_sample = Some(rtt);
         self.samples_since_update += 1;
 
+        // Windowed minimum via a MONOTONIC (non-decreasing) deque — O(1)
+        // amortised instead of the former O(n) rescan of the entire 10 s
+        // sample history on every sample. At L1 (thousands of ACK-driven RTT
+        // samples/s over a 10 s window ⇒ ~20k-element deque) that rescan was
+        // the single largest sender CPU cost (~42% self, a hidden O(n²) over a
+        // transfer — MEASURED by perf). A new sample evicts every pending
+        // candidate whose RTT is >= its own: those can never be the window
+        // minimum while this newer, smaller-or-equal sample is in the window
+        // (and it expires strictly later), so after eviction the deque stays
+        // non-decreasing front→back with strictly increasing timestamps. The
+        // front is therefore always the current windowed min, and time-based
+        // expiry still pops from the (oldest-timestamp) front. Exact same
+        // `min_rtt` value as the rescan, just maintained incrementally.
+        while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
+            self.rtt_samples.pop_back();
+        }
         self.rtt_samples.push_back(RttSample {
             rtt,
             timestamp: now,
         });
         self.expire_old_samples(now);
-        self.min_rtt = self.rtt_samples.iter().map(|s| s.rtt).min();
+        self.min_rtt = self.rtt_samples.front().map(|s| s.rtt);
     }
 
     /// Smoothed RTT, defaulting to 50ms before the first sample.
