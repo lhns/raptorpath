@@ -567,3 +567,537 @@ fn temporal_lever_decomposition() {
     assert!(full > 1.15, "full fix must aggregate: {full:.3}");
     assert!(full > naive, "the fix must beat the naive design");
 }
+
+// =========================================================================
+// PART 3 — SYSTEMATIC SOURCE + DEFICIT-DRIVEN CROSS-PATH REPAIR
+//
+// A DIFFERENT, cheaper realization than the coded-only generation design that
+// failed at L1 (x0.98, 8.9 Mbit/s: whole-object O(G^2) decode + decode-on-K
+// latency + fragile ack-clocked coded emission).  The claim under test:
+//
+//   SYSTEMATIC source symbols (each source striped work-conserving to exactly
+//   ONE path; delivered DIRECTLY on arrival -- zero decode, out of order) give
+//   the SAME cross-path fungibility MORE CHEAPLY, PROVIDED a slow/lossy path's
+//   un-covered source is filled by a FUNGIBLE cross-path REPAIR -- an RLC
+//   combination over a BOUNDED live window W_span (the fungible horizon),
+//   deficit-driven, placed on the best path.  A received source is one dof used
+//   directly; a received repair is one dof substituting for ANY missing source
+//   in its window.  Object completes when d + repair-recovered == K, out of
+//   order, and the ONLY dense solve is over the local DEFICIT (confirmed holes
+//   inside the window), never the whole object.
+//
+// Faithful to the same temporal dynamics as PART 1/2 (send-time events, per-path
+// OWD, per-path independent GE matching netem, work-conserving pull, deficit
+// feedback riding the fast path).  Answers four questions:
+//   Q1 AGGREGATION  — factor vs fast-alone at C8 (~x1.19?), C7 (~x2 control).
+//   Q2 REPAIR VOLUME— is phi = repair/K bounded, structural part -> 0 with K?
+//   Q3 DECODE COST  — max concurrent unknowns (confirmed holes) vs G=384.
+//   Q4 CONTRAST     — provisioning curve; the fork-join long pole (paper's
+//      ~0.92) vs out-of-order + cross-path repair.
+
+#[derive(Clone, Copy)]
+struct SysCfg {
+    /// proactive repair provisioning rate (repair symbols per source), spread
+    /// through the body over the live window to cover losses inline — the
+    /// systematic-FEC r.  A repair emitted at frontier F is an RLC over
+    /// [F-w_span, F), so it clears any hole in that window.
+    r: f64,
+    /// repair coding span (fungible horizon).  Bounded => the dense solve is
+    /// local, O(deficit); a hole aged > w_span behind the frontier is beyond
+    /// the horizon (no repair covers it).
+    w_span: usize,
+    /// TRUE  = fungible cross-path repair (any path's repair recovers any hole);
+    /// FALSE = path-affine (a hole is recovered only by its own path's repair /
+    /// same-path ARQ — the slow path becomes the long pole).
+    cross_path: bool,
+    /// finite retention store: max outstanding (sent-but-un-acked) sources; the
+    /// sender stalls fresh source when the store is full (models store ~ W and
+    /// in-order-frontier coupling).  None = unbounded (bulk out-of-order case).
+    store: Option<usize>,
+    /// same-path targeted ARQ backstop for a hole that ages past the horizon
+    /// (the paper's §16.3 backstop / the shipped systematic window).  The design
+    /// under test runs with arq=false (fungible repair ONLY, no per-seq ARQ);
+    /// the contrast arm enables it to reproduce the ARQ-backstopped ~0.92.
+    arq: bool,
+    /// IN-ORDER delivery: flow-control (store) is measured against the in-order
+    /// delivered frontier df, not the count d.  A hole at df blocks df, so the
+    /// fast path fills the store then idles — the paper's ≈0.92 fork-join
+    /// collapse.  Cross-path repair advances df fungibly (a hole is recovered
+    /// early), so it survives in-order too.  The bulk/object design is
+    /// out-of-order (in_order=false): a hole never blocks progress.
+    in_order: bool,
+    /// deficit-feedback period (ms), riding the fast path's OWD.
+    fb_ms: u64,
+}
+
+enum SEv { Src(usize), Rep(usize, usize) } // Rep(path, cover_hi)
+
+struct Sys {
+    paths: Vec<Path>,
+    order: Vec<usize>,
+    ge: Vec<Ge>,
+    n: usize,
+    k: usize,
+    cfg: SysCfg,
+    rng: ChaCha8Rng,
+    credit: Vec<f64>,
+    slack: u64,
+
+    // sender
+    next_src: usize,
+    owner: Vec<usize>,
+    repair_debt: f64,
+    repair_sent: u64,
+    repair_tail: u64,
+    df: usize, // in-order delivered frontier
+    // sender's DELAYED view (feedback)
+    rep_d: usize,
+    rep_df: usize,
+    rep_deficit: usize,
+    rep_deficit_p: Vec<usize>,
+    rep_snapshot: u64,
+    fb_at: BTreeMap<u64, (usize, usize, usize, Vec<usize>, u64)>,
+    next_fb: u64,
+
+    // channel
+    arrivals: BTreeMap<u64, Vec<SEv>>,
+
+    // receiver
+    delivered: Vec<bool>,
+    d: usize,
+    arq_pending: Vec<bool>,
+    bank: BTreeMap<usize, u32>,
+    bank_p: Vec<BTreeMap<usize, u32>>,
+    pending: BinaryHeapRev,
+    holes: std::collections::BTreeSet<usize>,
+    max_deficit: usize,
+    hi_evidence: usize,
+}
+
+struct BinaryHeapRev(std::collections::BinaryHeap<std::cmp::Reverse<(u64, usize)>>);
+impl BinaryHeapRev {
+    fn new() -> Self { BinaryHeapRev(std::collections::BinaryHeap::new()) }
+    fn push(&mut self, t: u64, seq: usize) { self.0.push(std::cmp::Reverse((t, seq))); }
+    fn peek_le(&self, tick: u64) -> Option<(u64, usize)> {
+        self.0.peek().map(|r| r.0).filter(|&(t, _)| t <= tick)
+    }
+    fn pop(&mut self) { self.0.pop(); }
+}
+
+struct SysOut { t: u64, repair_sent: u64, repair_tail: u64, max_deficit: usize, arq_used: u64 }
+
+impl Sys {
+    fn new(paths: Vec<Path>, k: usize, cfg: SysCfg, seed: u64) -> Self {
+        let n = paths.len();
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&a, &b| paths[b].goodput().partial_cmp(&paths[a].goodput()).unwrap());
+        Sys {
+            ge: (0..n).map(|_| Ge { bad: false }).collect(),
+            credit: vec![0.0; n],
+            slack: 4,
+            paths, order, n, k, cfg,
+            rng: ChaCha8Rng::seed_from_u64(seed),
+            next_src: 0,
+            owner: vec![0; k],
+            repair_debt: 0.0,
+            repair_sent: 0,
+            repair_tail: 0,
+            df: 0,
+            rep_d: 0,
+            rep_df: 0,
+            rep_deficit: 0,
+            rep_deficit_p: vec![0; n],
+            rep_snapshot: 0,
+            fb_at: BTreeMap::new(),
+            next_fb: 0,
+            arrivals: BTreeMap::new(),
+            delivered: vec![false; k],
+            d: 0,
+            arq_pending: vec![false; k],
+            bank: BTreeMap::new(),
+            bank_p: (0..n).map(|_| BTreeMap::new()).collect(),
+            pending: BinaryHeapRev::new(),
+            holes: std::collections::BTreeSet::new(),
+            max_deficit: 0,
+            hi_evidence: 0,
+        }
+    }
+
+    fn ack_owd(&self) -> u64 { self.paths[self.order[0]].owd }
+
+    fn bank_take_low(b: &mut BTreeMap<usize, u32>) {
+        if let Some((&ch, c)) = b.iter_mut().next() {
+            *c -= 1; if *c == 0 { b.remove(&ch); }
+        }
+    }
+
+    fn schedule(&mut self, tick: u64, ev: SEv) {
+        self.arrivals.entry(tick).or_default().push(ev);
+    }
+
+    /// Local dense solve of the deficit + ARQ backstop.  Returns Some(perm) with
+    /// perm=true if a hole is permanently stranded (no ARQ, past horizon) => DNF.
+    fn decode(&mut self, tick: u64, arq_used: &mut u64) -> bool {
+        loop {
+            let h = match self.holes.iter().next().copied() { Some(h) => h, None => break };
+            let w = self.cfg.w_span;
+            let coverable = self.hi_evidence.saturating_sub(h) <= w
+                            || self.next_src.saturating_sub(h) <= w;
+            let op = self.owner[h];
+            let took = if !coverable {
+                false
+            } else if self.cfg.cross_path {
+                let usable: u32 = self.bank.range((std::ops::Bound::Excluded(h),
+                    std::ops::Bound::Included(h + w))).map(|(_, &c)| c).sum();
+                if usable > 0 { Self::bank_take_low(&mut self.bank); true } else { false }
+            } else {
+                let usable: u32 = self.bank_p[op].range((std::ops::Bound::Excluded(h),
+                    std::ops::Bound::Included(h + w))).map(|(_, &c)| c).sum();
+                if usable > 0 { Self::bank_take_low(&mut self.bank_p[op]); true } else { false }
+            };
+            if took {
+                self.holes.remove(&h);
+                self.delivered[h] = true;
+                self.d += 1;
+                continue;
+            }
+            // could not clear h this pass. Is it past the horizon (stranded)?
+            let stranded = self.next_src.saturating_sub(h) > w
+                && self.hi_evidence.saturating_sub(h) > w;
+            if stranded {
+                if self.cfg.arq {
+                    if !self.arq_pending[h] {
+                        self.arq_pending[h] = true;
+                        *arq_used += 1;
+                        // NACK trip + same-path resend; assume success within a
+                        // couple of RTTs (folds retry/loss into the latency).
+                        let rtt = 2 * self.paths[op].owd;
+                        self.schedule(tick + rtt + self.slack, SEv::Src(h));
+                    }
+                    // remove from active deficit; it is being recovered by ARQ.
+                    self.holes.remove(&h);
+                    continue;
+                } else {
+                    return true; // permanent strand, no backstop => DNF
+                }
+            }
+            break; // youngest coverable hole just needs a repair still in flight
+        }
+        false
+    }
+
+    fn run(&mut self) -> Option<SysOut> {
+        let max_tick: u64 = 40_000_000;
+        let ack = self.ack_owd();
+        let mut tick: u64 = 0;
+        let mut arq_used: u64 = 0;
+        loop {
+            if let Some((rd, rdf, rdef, rdefp, snap)) = self.fb_at.remove(&tick) {
+                self.rep_d = rd; self.rep_df = rdf; self.rep_deficit = rdef;
+                self.rep_deficit_p = rdefp; self.rep_snapshot = snap;
+            }
+            if let Some(evs) = self.arrivals.remove(&tick) {
+                for ev in evs {
+                    match ev {
+                        SEv::Src(seq) => {
+                            if seq + 1 > self.hi_evidence { self.hi_evidence = seq + 1; }
+                            if !self.delivered[seq] {
+                                self.delivered[seq] = true;
+                                self.d += 1;
+                                self.holes.remove(&seq);
+                            }
+                        }
+                        SEv::Rep(p, cover_hi) => {
+                            if cover_hi > self.hi_evidence { self.hi_evidence = cover_hi; }
+                            if self.cfg.cross_path {
+                                *self.bank.entry(cover_hi).or_insert(0) += 1;
+                            } else {
+                                *self.bank_p[p].entry(cover_hi).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            while let Some((_, seq)) = self.pending.peek_le(tick) {
+                self.pending.pop();
+                if !self.delivered[seq] && !self.arq_pending[seq] { self.holes.insert(seq); }
+            }
+            if self.decode(tick, &mut arq_used) { return None; } // permanent strand => DNF
+            // drop equations whose window is entirely behind the oldest hole.
+            let oldest = self.holes.iter().next().copied();
+            let keep_from = oldest.unwrap_or_else(|| self.hi_evidence.saturating_sub(self.cfg.w_span));
+            if self.cfg.cross_path {
+                while let Some((&ch, _)) = self.bank.iter().next() {
+                    if ch <= keep_from { self.bank.pop_first(); } else { break; }
+                }
+            } else {
+                for b in self.bank_p.iter_mut() {
+                    while let Some((&ch, _)) = b.iter().next() {
+                        if ch <= keep_from { b.pop_first(); } else { break; }
+                    }
+                }
+            }
+
+            while self.df < self.k && self.delivered[self.df] { self.df += 1; }
+
+            if self.d >= self.k {
+                return Some(SysOut { t: tick, repair_sent: self.repair_sent,
+                    repair_tail: self.repair_tail, max_deficit: self.max_deficit, arq_used });
+            }
+            if self.holes.len() > self.max_deficit { self.max_deficit = self.holes.len(); }
+
+            if tick >= self.next_fb {
+                self.next_fb = tick + self.cfg.fb_ms;
+                let dc = self.holes.len();
+                let mut dcp = vec![0usize; self.n];
+                for &h in &self.holes { dcp[self.owner[h]] += 1; }
+                self.fb_at.insert(tick + ack, (self.d, self.df, dc, dcp, self.repair_sent));
+            }
+
+            let mut free: Vec<u32> = vec![0; self.n];
+            for i in 0..self.n {
+                self.credit[i] += self.paths[i].rate;
+                free[i] = self.credit[i].floor() as u32;
+                self.credit[i] -= free[i] as f64;
+            }
+            let ackfrontier = if self.cfg.in_order { self.rep_df } else { self.rep_d };
+            let outstanding = self.next_src.saturating_sub(ackfrontier);
+            let store_ok = self.cfg.store.map_or(true, |w| outstanding < w);
+            let repair_inflight = (self.repair_sent - self.rep_snapshot) as i64;
+            let total: u32 = free.iter().sum();
+            'slots: for _ in 0..total {
+                let path = match self.order.iter().copied().find(|&i| free[i] > 0) {
+                    Some(p) => p, None => break,
+                };
+                let mut do_rep = false;
+                let mut is_tail = false;
+                let believed = if self.cfg.cross_path {
+                    self.rep_deficit as i64 - repair_inflight
+                } else {
+                    self.rep_deficit_p[path] as i64 - repair_inflight
+                };
+                // 1) proactive repair (systematic-FEC r): windowed, clears holes
+                //    inline before they age past the horizon.
+                if self.repair_debt >= 1.0 {
+                    do_rep = true; self.repair_debt -= 1.0;
+                }
+                // 2) fresh source (work-conserving pull), gated by finite store.
+                if !do_rep && self.next_src < self.k && store_ok {
+                    let seq = self.next_src;
+                    self.next_src += 1;
+                    self.owner[seq] = path;
+                    self.repair_debt += self.cfg.r;
+                    free[path] -= 1;
+                    let lost = self.ge[path].draw(&self.paths[path], &mut self.rng);
+                    self.pending.push(tick + self.paths[path].owd + self.slack, seq);
+                    if !lost { self.schedule(tick + self.paths[path].owd, SEv::Src(seq)); }
+                    continue;
+                }
+                // 3) tail/deficit repair: fill the residual genuine deficit with
+                //    fungible cross-path repair instead of idling (the headline).
+                if !do_rep && believed > 0 {
+                    do_rep = true; is_tail = true;
+                }
+                if do_rep {
+                    let cover_hi = self.next_src.max(1);
+                    free[path] -= 1;
+                    self.repair_sent += 1;
+                    if is_tail { self.repair_tail += 1; }
+                    let lost = self.ge[path].draw(&self.paths[path], &mut self.rng);
+                    if !lost { self.schedule(tick + self.paths[path].owd, SEv::Rep(path, cover_hi)); }
+                    continue;
+                }
+                free[path] = 0;
+                if (0..self.n).all(|i| free[i] == 0) { break 'slots; }
+            }
+
+            tick += 1;
+            if tick > max_tick { return None; }
+        }
+    }
+}
+
+fn sys_try(dual: &[Path], k: usize, cfg: SysCfg, seed: u64) -> Option<(SysOut, SysOut, f64)> {
+    let best = *dual.iter()
+        .max_by(|a, b| a.goodput().partial_cmp(&b.goodput()).unwrap()).unwrap();
+    let mut fa = Sys::new(vec![best], k, cfg, seed);
+    let mut du = Sys::new(dual.to_vec(), k, cfg, seed);
+    let of = fa.run()?;
+    let od = du.run()?;
+    let f = of.t as f64 / od.t as f64;
+    Some((of, od, f))
+}
+fn sys_factor(dual: &[Path], k: usize, cfg: SysCfg, seed: u64) -> (SysOut, SysOut, f64) {
+    sys_try(dual, k, cfg, seed).expect("must complete")
+}
+
+fn k_for_mb(mb: f64) -> usize { ((mb * 1_000_000.0) / 1500.0).round() as usize }
+
+fn c8_wspan() -> usize {
+    // §16.5 W_mp ≈ Σg·(RTT_max + t_slack); at C8 ≈ 500–640 symbols.
+    let sum_g = c8_fast().goodput() + c8_slow().goodput();
+    let rtt_max = 2.0 * c8_slow().owd as f64;
+    let t_slack = 2.0 * c8_fast().owd as f64;
+    (sum_g * (rtt_max + t_slack)).ceil() as usize
+}
+
+// -------------------------------------------------------------------------
+// Q1 — AGGREGATION at C8 (~x1.19?) and C7 (~x2, control).
+// -------------------------------------------------------------------------
+#[test]
+fn systematic_repair_aggregation() {
+    let k = k_for_mb(25.0);
+    let w = c8_wspan();
+    let dual_het = [c8_fast(), c8_slow()];
+    let dual_sym = [c8_fast(), c8_fast()];
+    let ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+    let cfg = SysCfg { r: 0.06, w_span: w, cross_path: true, store: None, arq: false, in_order: false, fb_ms: 5 };
+
+    println!("\n=== Q1 SYSTEMATIC + DEFICIT-DRIVEN CROSS-PATH REPAIR (K={k} ~25MB, r=0.06, W_span={w}) ===");
+    println!("goodput ceiling Sum g / g_fast = x{ceiling:.3}");
+
+    let (fh, dh, f_het) = sys_factor(&dual_het, k, cfg, 0xF00D);
+    let (_fs, _ds, f_sym) = sys_factor(&dual_sym, k, cfg, 0xF00D);
+
+    println!("\n  {:<40} {:>10}", "config", "factor");
+    println!("  {:<40} {:>9.3}x  (ceiling x{ceiling:.3})", "C8 HET dual (c2+c3)", f_het);
+    println!("  {:<40} {:>9.3}x  (ideal ~2.0)", "C7 SYM dual (c2+c2)", f_sym);
+    println!("  fast-alone t={} dual t={}", fh.t, dh.t);
+    println!("  phi_total={:.4}  phi_tail(structural)={:.5}  max_deficit={} ({:.1}% of G=384)  arq_used={}",
+        dh.repair_sent as f64 / k as f64, dh.repair_tail as f64 / k as f64, dh.max_deficit,
+        100.0 * dh.max_deficit as f64 / 384.0, dh.arq_used);
+
+    assert_eq!(dh.arq_used, 0, "the design uses NO per-seq ARQ — fungible repair only");
+    assert!(f_het > 1.15, "systematic + cross-path repair must aggregate to ~ceiling at C8: got x{f_het:.3}");
+    assert!(f_het <= ceiling + 0.03, "cannot exceed goodput ceiling x{ceiling:.3}: got x{f_het:.3}");
+    assert!(f_sym > 1.7, "C7 symmetric must ~2x (no drag): got x{f_sym:.3}");
+}
+
+// -------------------------------------------------------------------------
+// Q2 — REPAIR VOLUME bounded; structural (tail) part -> 0 as K grows.
+// -------------------------------------------------------------------------
+#[test]
+fn systematic_repair_volume_bounded() {
+    let w = c8_wspan();
+    let dual = [c8_fast(), c8_slow()];
+    let cfg = SysCfg { r: 0.06, w_span: w, cross_path: true, store: None, arq: false, in_order: false, fb_ms: 5 };
+    let in_flight = c8_slow().goodput() * c8_slow().owd as f64;
+
+    println!("\n=== Q2 REPAIR VOLUME vs OBJECT SIZE (r=0.06, W_span={w}) ===");
+    println!("slow-path in-flight window g_slow*OWD_slow = {:.1} symbols (K-independent)", in_flight);
+    println!("  {:>8} {:>10} | {:>10} {:>12} | {:>10} {:>10}",
+        "MB", "K", "phi_total", "repair_sent", "phi_tail", "tail_sent");
+    let mbs = [5.0, 25.0, 50.0, 200.0];
+    let mut phis_tail = vec![];
+    let mut phis_total = vec![];
+    for &mb in &mbs {
+        let k = k_for_mb(mb);
+        let (_fa, du, _f) = sys_factor(&dual, k, cfg, 0xBEEF);
+        phis_tail.push(du.repair_tail as f64 / k as f64);
+        phis_total.push(du.repair_sent as f64 / k as f64);
+        println!("  {:>8.0} {:>10} | {:>9.4}  {:>12} | {:>9.5}  {:>10}",
+            mb, k, du.repair_sent as f64 / k as f64, du.repair_sent, du.repair_tail as f64 / k as f64, du.repair_tail);
+    }
+    for &p in &phis_total { assert!(p < 0.20, "phi_total must be bounded < 0.20: {p:.4}"); }
+    let first = phis_tail[0];
+    let last = *phis_tail.last().unwrap();
+    println!("\n  structural phi_tail: 5MB={first:.5}  200MB={last:.5}");
+    assert!(last <= first + 1e-6, "structural phi_tail must not grow with K: 5MB={first:.5} 200MB={last:.5}");
+}
+
+// -------------------------------------------------------------------------
+// Q3 — DECODE COST: max concurrent unknowns (confirmed holes) vs G=384.
+// -------------------------------------------------------------------------
+#[test]
+fn systematic_repair_deficit_decode_size() {
+    let w = c8_wspan();
+    let dual = [c8_fast(), c8_slow()];
+    let cfg = SysCfg { r: 0.06, w_span: w, cross_path: true, store: None, arq: false, in_order: false, fb_ms: 5 };
+    let in_flight = c8_slow().goodput() * c8_slow().owd as f64;
+
+    println!("\n=== Q3 DEFICIT-DECODE SIZE (max concurrent unknowns) vs G=384 ===");
+    println!("  {:>8} {:>10} | {:>14} {:>12}", "MB", "K", "max_deficit", "vs G=384");
+    let mbs = [25.0, 50.0, 200.0];
+    let mut maxdef = 0usize;
+    for &mb in &mbs {
+        let k = k_for_mb(mb);
+        let (_fa, du, _f) = sys_factor(&dual, k, cfg, 0xBEEF);
+        maxdef = maxdef.max(du.max_deficit);
+        println!("  {:>8.0} {:>10} | {:>14} {:>11.1}%", mb, k, du.max_deficit,
+            100.0 * du.max_deficit as f64 / 384.0);
+    }
+    println!("\n  slow in-flight window ~ {:.0} symbols; whole-object generation G = 384.", in_flight);
+    println!("  deficit-decode is a small dense solve O(deficit^2) over ~{maxdef} unknowns,");
+    println!("  NOT O(G^2)=O(384^2), and it does NOT grow with object size K.");
+    assert!(maxdef < 200, "deficit-decode must stay << whole object (G=384): max {maxdef}");
+}
+
+// -------------------------------------------------------------------------
+// Q4 — CONTRAST: provisioning curve + the fork-join long pole.
+// -------------------------------------------------------------------------
+#[test]
+fn systematic_repair_provisioning_curve() {
+    let k = k_for_mb(25.0);
+    let w = c8_wspan();
+    let dual = [c8_fast(), c8_slow()];
+    let ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+
+    println!("\n=== Q4 CONTRAST at C8 het (K={k} ~25MB, W_span={w}) ===");
+    println!("goodput ceiling x{ceiling:.3}\n");
+
+    // The paper's ≈0.92 fork-join long pole is an IN-ORDER-delivery artifact:
+    // with an in-order frontier + finite store, a slow-path source is a fixed
+    // position that BLOCKS the frontier; the fast path fills the store then
+    // idles (E collapses to {fast}).  Two levers each remove it — going
+    // OUT-OF-ORDER, and CROSS-PATH repair (which advances even the in-order
+    // frontier by recovering the blocking hole early, fungibly).
+    let mk = |cross, store, arq, in_order| SysCfg { r: 0.06, w_span: w,
+        cross_path: cross, store, arq, in_order, fb_ms: 5 };
+
+    // (a) in-order + finite store + path-affine (+ARQ backstop) = the long pole.
+    let (_a, la, f_longpole) = sys_factor(&dual, k, mk(false, Some(w), true, true), 0xF00D);
+    // (b) in-order + finite store, but CROSS-PATH repair advances the frontier
+    //     fungibly (a blocking hole is recovered early) — the pole is removed.
+    let (_b, lb, f_cross_inorder) = sys_factor(&dual, k, mk(true, Some(w), false, true), 0xF00D);
+    // (c) OUT-OF-ORDER bulk + path-affine (no cross-path repair): a hole never
+    //     blocks progress, so even affine already aggregates — the pole is an
+    //     in-order artifact, NOT present in the bulk object regime.
+    let (_c, _lc, f_ooo_affine) = sys_factor(&dual, k, mk(false, Some(w), true, false), 0xF00D);
+    // (d) the design: out-of-order + cross-path fungible repair, NO ARQ.
+    let (_d, _ld, f_design) = sys_factor(&dual, k, mk(true, None, false, false), 0xF00D);
+
+    println!("  {:<52} {:>9}", "config", "factor");
+    println!("  {:<52} {:>8.3}x  (paper's fork-join ~0.92; ARQ backstop)", "IN-ORDER + store + path-affine", f_longpole);
+    println!("  {:<52} {:>8.3}x  (cross-path repair rescues in-order)", "IN-ORDER + store + cross-path repair", f_cross_inorder);
+    println!("  {:<52} {:>8.3}x  (out-of-order already avoids the pole)", "out-of-order + store + path-affine", f_ooo_affine);
+    println!("  {:<52} {:>8.3}x  (THE DESIGN: no ARQ, bulk)", "out-of-order + cross-path repair (design)", f_design);
+    println!("  long-pole arq_used={}   in-order-cross arq_used={}", la.arq_used, lb.arq_used);
+
+    // provisioning knob: cross-path repair ON (no ARQ), sweep proactive r.
+    println!("\n  --- cross-path repair ON, NO ARQ, sweep proactive r (bulk, unbounded store) ---");
+    let rs = [0.00, 0.01, 0.02, 0.03, 0.05, 0.08, 0.15];
+    let mut reached = 0.0f64;
+    for &r in &rs {
+        match sys_try(&dual, k, SysCfg { r, w_span: w, cross_path: true, store: None, arq: false, in_order: false, fb_ms: 5 }, 0xF00D) {
+            Some((_fa, du, f)) => {
+                println!("  r={r:<5}   factor {f:>7.3}x   phi_total={:>6.4}", du.repair_sent as f64 / k as f64);
+                if f > reached { reached = f; }
+            }
+            None => println!("  r={r:<5}   DNF (mid-object losses strand past the horizon — needs r >~ eps)"),
+        }
+    }
+    println!("\n  paper's fork-join long pole (in-order)  x{f_longpole:.3}  (phi={:.4})", la.repair_sent as f64 / k as f64);
+    println!("  cross-path repair (in-order, rescued)   x{f_cross_inorder:.3}");
+    println!("  out-of-order affine (no cross repair)   x{f_ooo_affine:.3}  (pole is an in-order artifact)");
+    println!("  best cross-path repair (bulk design)    x{reached:.3}  (ceiling x{ceiling:.3})");
+    println!("\n  Reading: the ≈0.92 fork-join long pole is an IN-ORDER artifact.  The");
+    println!("  bulk out-of-order object regime the design targets ALREADY avoids it,");
+    println!("  and cross-path fungible repair removes it even in-order — while keeping");
+    println!("  source pass-through (zero decode-on-K, tiny deficit solve).  Provisioning:");
+    println!("  needs proactive r >~ eps so windowed repair clears holes within the horizon.");
+
+    assert!(f_longpole < 1.05, "in-order + affine + store must cap at fork-join parity: x{f_longpole:.3}");
+    assert!(f_cross_inorder > 1.15, "cross-path repair must rescue the in-order frontier: x{f_cross_inorder:.3}");
+    assert!(reached > 1.15, "sufficient cross-path deficit-repair must reach ~ceiling: x{reached:.3}");
+    assert!(f_cross_inorder - f_longpole > 0.10, "the repair lever must move the factor materially");
+}

@@ -2242,3 +2242,73 @@ byte-for-byte unchanged and meet their bars. (Note the fast-path-alone bar
   different emission model (e.g. systematic-symbol pass-through to kill the
   decode-on-K latency, or coded-on-a-reliable-substream), beyond this goal's
   decode-fix scope.
+
+## Systematic+Repair Oracle — a cheaper realization than coded-only generations (branch `feat/oracle-systematic-repair`, 2026-07-07)
+
+The coded-only generation design above reached the oracle's ×1.19 but died at L1
+(×0.98, 8.9 Mbit/s) on three structural costs of making **every** symbol a coded
+combination: whole-object/whole-generation **O(G²) decode**, **decode-on-K
+latency** (nothing delivers until K_G independent symbols land), and a fragile
+**ack-clocked coded-datagram** emission loop. This rung validates — in the
+oracle, before anyone builds it — a DIFFERENT realization that keeps the same
+cross-path fungibility **more cheaply**: **SYSTEMATIC source + deficit-driven
+cross-path REPAIR**. Model: `raptorpath-math/tests/temporal_oracle.rs` PART 3
+(4 new tests; oracle/model only, no production code). It extends the same
+temporal machinery as the corrected oracle (send-time events, per-path OWD,
+per-path independent GE = netem, work-conserving pull, deficit feedback on the
+fast path).
+
+**The design modelled.** K source symbols are striped work-conserving (each
+source pulled by exactly ONE path at its rate; the fast path pulls ~83 %) and a
+delivered source is one degree of freedom used **directly** — zero decode,
+out-of-order (object = all K recovered, any order). A path with no fresh source
+emits **windowed REPAIR** — an RLC over the live window `[F−W_span, F)` — placed
+on the best path; a received repair is one dof that substitutes for ANY missing
+source in its window. The receiver's rank = distinct source + independent
+repair; it decodes the **deficit only** (a tiny dense solve over the local
+holes) and completes at rank K = K/(g_fast+g_slow) → full aggregation.
+
+### The four answers (DERIVED/MEASURED in-oracle, C8 = c2+c3, r=0.06, W_span≈486)
+| question | answer |
+|----------|--------|
+| **Q1 AGGREGATION** | C8 het **×1.188** (99.4 % of ceiling ×1.195); C7 sym **×1.992** (~2×, no drag); arq_used=0 (pure fungible repair, no per-seq ARQ) |
+| **Q2 REPAIR φ BOUNDED?** | φ_total = **0.060** (= r, the loss-FEC baseline, bounded); **structural φ_tail → 0** with K: 0.0030 (5 MB) → 0.0000 (25/50/200 MB). The deficit-driven cross-path repair ≈ the slow in-flight window (≈32 sym), K-independent ⇒ φ_tail = O(1/K). **No structural deficit.** |
+| **Q3 DECODE SIZE** | max concurrent unknowns = **7–10 symbols** (1.8–2.6 % of G=384), **K-independent** (7 at 25 MB, 7 at 50 MB, 10 at 200 MB). The dense solve is O(deficit²) over ≈10 unknowns, NOT O(384²), and does not grow with the object. |
+| **Q4 CONTRAST / knob** | in-order+affine+store = **×0.932** (faithfully reproduces the paper's ≈0.92 fork-join long pole); in-order+**cross-path repair** = **×1.188** (repair advances the frontier fungibly → pole removed); out-of-order affine = **×1.171** (the ≈0.92 pole is an **in-order artifact**, absent in the bulk regime); provisioning sweep: r < ~ε → **DNF** (mid-object losses strand past the W_span horizon), r ≥ 0.05 (≈1.5·ε) → ceiling. |
+
+### VERDICT: BUILD (this is the design to build)
+Systematic + deficit-driven cross-path windowed repair reaches the ×1.19 ceiling
+with (a) **bounded φ → r** and vanishing structural deficit, (b) a **tiny
+K-independent deficit-decode** (~10 unknowns vs 384), (c) **no decode-on-K**
+(source delivers on arrival with zero decode), and (d) **no per-seq ARQ**
+(recovery is fungible repair). It is strictly cheaper than coded-only on exactly
+the two axes that sank the L1 build — decode cost and delivery latency — while
+matching its aggregation. Honest caveat: the ×1.19 needs proactive **r ≳ ε** so
+the windowed repair clears holes within the horizon; pure end-of-object deficit
+repair (r=0) strands mid-object losses (DNF). And this is an independent-GE model
+(same fidelity class as the corrected oracle); it does not model the QUIC
+datagram control loop — but the two L1-killers are **structurally absent** here
+(systematic source rides the reliable path with zero decode; the solve is ~10
+symbols), so the residual risk is much smaller than for coded-only.
+
+### Minimal production change (a MODIFICATION of the merged generation machinery)
+Reuse striping + deficit-feedback + the dense GF(256) decoder already built;
+drop coded-only primary:
+1. **Systematic primary.** Send raw source symbols as primary (work-conserving
+   pull, one path per source), delivered directly out-of-order — replace the
+   coded-only-wire encoder's "every symbol coded" with source pass-through.
+2. **Windowed cross-path repair.** Emit RLC repair over a bounded live window
+   W_span ≈ W_mp (≈500 at C8) at a proactive rate r ≳ ε (covers losses inline)
+   plus a deficit-driven top-up placed on the best path. Reuse the existing
+   `GenerationDeficit` feedback, re-scoped from per-generation to per-window
+   rank deficit.
+3. **Deficit-only decode.** Solve just the local hole set (~10 symbols) with the
+   existing dense `GenerationDecoder`, sized to the deficit — not to G. Kills
+   both decode-on-K latency and the O(G²) per-object cost.
+4. **No per-seq ARQ.** Recovery is fungible windowed repair only.
+
+**Verification.** `cargo test -p raptorpath-math` green — all suites, incl.
+`temporal_oracle` **7** tests (3 corrected-oracle + 4 new systematic-repair:
+`systematic_repair_aggregation`, `_volume_bounded`, `_deficit_decode_size`,
+`_provisioning_curve`). No production code changed. Reproduce:
+`cargo test -p raptorpath-math --test temporal_oracle systematic -- --nocapture`.
