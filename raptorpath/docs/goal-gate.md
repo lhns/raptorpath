@@ -2953,3 +2953,100 @@ result. **>15.7 with factor > 1 NOT met; C2 collapse NOT closed.**
 raptorpath --lib` 265 green (adds the SACK-pruning test); `raptorpath-math` all green;
 `gate_suite` 15/15 release. **Harness.** `~/l1/sack_meas.sh <label> <reps>` (the A/B
 battery); `RWM_SACK_PRUNE=1` enables the experiment.
+
+## Proactive Frontier — proactive FEC decode at the in-order frontier TESTED, REFUTED (branch `feat/proactive-frontier`, 2026-07-07)
+
+**Hypothesis under test (the core value prop).** raptorpath's premise (§5–8): proactive
+FEC recovers holes WITHOUT a round-trip. The prior Loss-Recovery + SACK diagnosis pinned
+the C2 collapse (clean 76 → c2 ~16, 5.5×) on receiver-side in-order-frontier recovery
+latency: `window_ack_seq` freezes on every hole, recovery is a reactive ~1-RTT ARQ round,
+so goodput ≈ window/RTT. The hypothesis: with ~2.6 % loss the receiver has FAR more than
+enough in-flight proactive repair to decode any frontier hole THE INSTANT it appears — the
+frontier should advance at the DECODE rate, never stalling for a NACK RTT. If the receiver
+were NACK-and-waiting while decodable repair sat in its buffer, THAT would be the bug.
+
+### PART 1 — DIAGNOSIS (receiver frontier instrumented, `RWM_FDIAG`)
+Added a receiver probe (`WindowDecoder::frontier_probe` → `(holes, buffered_equations)`
+over `[frontier, highest_seen]`) and a per-hole recovery classifier (DECODE = a repair
+solved it, no round-trip; SOURCE = a retransmitted source arrived, a ~1-RTT ARQ round).
+c2 single, native `perf`, 1.8 MB, seed 42:
+
+- **DEFAULT (Bulk, r*→0 pure-ARQ):** `repairs_fed` reaches only ~7 over a whole 1.8 MB
+  transfer — proactive FEC is essentially OFF (§14.26 glide: mid-stream χ=0 ⇒ r*=0). Of
+  ~72 frontier holes, **71 resolve by SOURCE retransmit** (avg ~11–19 ms ≈ 1 RTT), **1 by
+  decode**. `probe_buffered = 0` at every stall. **VERDICT: the repair is genuinely ABSENT
+  at the frontier, NOT present-but-unused.** The "receiver NACK-and-waiting on decodable
+  buffered repair" bug does not exist — there is nothing buffered to decode.
+- **Prior RWM_MIN_R=0.15 (leading-window proactive repair):** `repairs_fed=576`, and holes
+  DO now decode (DECODE 14 > SOURCE 7) — but each decode takes **~19–32 ms, LONGER than the
+  ARQ round it replaces**, because a leading-window RLC repair entangles the frontier hole
+  with not-yet-received in-flight symbols: it lands as a multi-unknown GE pivot that cannot
+  resolve until the window TAIL arrives ~1 RTT later. Throughput fell to 10.8 Mbit. This is
+  WHY the earlier RWM_MIN_R arm regressed.
+
+### PART 2 — FIX BUILT: pre-positioned TRAILING-window frontier repair
+Implemented proactive repair coded over a small window that TRAILS the send frontier by a
+fixed offset (`build_frontier_repair` from the retain-until-acked `sent_store`, wire-identical
+to a normal RLC repair; `WindowEncoder::generate_repair_range` is the encoder-window analogue,
+unit-tested). Intent: cover a symbol WHILE it is fresh but whose window members are all
+already received by decode time, so a hole solves the instant a covering repair lands — no
+round-trip, no future-symbol entanglement. Knobs `RWM_FRONTIER` (width, default 32),
+`RWM_FRONTIER_OFFSET` (default 8), `RWM_FRONTIER_GAIN`/`RWM_FRONTIER_R` (rate = gain·ε̂, or
+forced). The **isolated mechanism is CORRECT** (unit test
+`test_frontier_range_repair_decodes_hole_no_retransmit`: one trailing-window repair decodes a
+mid-stream hole from received neighbours, no retransmit).
+
+### DECISIVE L1 MEASUREMENT — the fix does NOT lift throughput (c2 single, native perf, seed 42)
+| arm | 5-run mean Mbit |
+|---|---|
+| baseline (frontier OFF) | **15.0** |
+| ack-anchored r=0.10 | 12.1 (rf=718, **ru=4** — repairs redundant: arrive AFTER ARQ) |
+| trailing r=0.10/W32/off8 | 11.8 (rf=744, ru=20, but `present_at_stall`=0) |
+| trailing r=0.25/W24/off4 | 9.9 |
+| trailing r=0.15/W48/off6 | 11.4 |
+
+**Every proactive configuration REGRESSES; more proactive repair ⇒ worse.** The
+instrumentation shows why, decisively:
+
+1. **A pre-position-vs-isolate catch-22.** To arrive BEFORE the receiver's frontier reaches
+   a hole (≈½ RTT after the symbol is sent) a repair must code FRESH symbols — whose
+   neighbours are still in flight, so it can't isolate the hole. To ISOLATE the hole
+   (neighbours already received) it must code OLD symbols — so it arrives AFTER the hole has
+   already stuck and the ARQ retransmit is already in flight. `present_at_stall=0` in every
+   run: a covering equation is NEVER buffered at the instant a hole sticks.
+2. **Decode latency > ARQ at small RTT.** When a trailing repair does decode, it sits as a
+   multi-unknown GE pivot accumulating rank (bursty loss ⇒ holes>equations in-window,
+   `probe_holes` 7–35 vs `probe_buffered` 2–7); MEASURED decode ~25–67 ms vs the ~13–16 ms
+   ARQ retransmit. At C2's ~13 ms RTT, reactive ARQ is simply faster than sliding-window RLC.
+3. **Displacement.** The repair bandwidth competes for the pacing/cwnd budget with BOTH new
+   source AND the ARQ retransmits that actually clear the stuck oldest-hole frontier — so it
+   slows the very mechanism that advances the frontier.
+
+C8 (c2+c3 dual) with the fix on: 11.7 Mbit — within the (large) C8 variance of the ~9–15
+baseline, **not** a lift, still far below the >15.68 factor>1 bar.
+
+### HONEST VERDICT — the FEC value prop is UNREALIZABLE at this frontier via sliding-window RLC
+The prior diagnosis is CONFIRMED and SHARPENED, not overturned. The repair is genuinely
+ABSENT in the pure-ARQ default (not a present-but-unused receiver bug); and when MADE present
+(`repairs_fed` up to ~750) it does not help, for a now-instrumented structural reason:
+proactive sliding-window RLC frontier repair faces a pre-position-vs-isolate catch-22 and, at
+C2's small RTT, decodes SLOWER than the ARQ retransmit it would replace while displacing it.
+This deepens the Loss-Recovery verdict ("largely fundamental to the bulk / pure-ARQ design")
+with the receiver-side decode-latency evidence it previously lacked. The generation /
+systematic-repair modes sidestep the fixed-position hole entirely (fungible cross-path
+recovery, no in-order frontier) — that, not plain-reliable frontier repair, is where the
+proactive-FEC premise actually lives at L1.
+
+**Shipped state.** The frontier-repair machinery + `RWM_FDIAG` instrumentation are committed
+but **gated OFF** (`frontier_experiment` requires `RWM_FRONTIER`/`RWM_FRONTIER_R`); with no
+env the sender/receiver hot paths are byte-for-byte the baseline. Flags exist only to
+reproduce the diagnosis and negative result. **>15.68 with factor>1 NOT met; C2 collapse NOT
+closed.**
+
+**Controls (default, gated off).** clean single **76.9** (no regression); c2 single 14.6;
+C7 c2+c2 18.5 (**×1.27**); C8 c2+c3 0 DNF; ALL arms dnf:0 (reliability intact — every 1.8 MB
+object reassembles fully). `cargo test -p raptorpath --lib` 267 green (adds two frontier-repair
+tests); `raptorpath-math` all green; `gate_suite` **15/15** release.
+**Harness.** `~/l1/perf_rwm_c.sh <A> <B> bulk <bytes> <runs> single|dual`;
+`RWM_FDIAG=1` prints the receiver frontier diagnosis to the server log;
+`RWM_FRONTIER_R=<r>` / `RWM_FRONTIER=<w>` / `RWM_FRONTIER_OFFSET=<n>` enable the experiment.

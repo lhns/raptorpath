@@ -32,6 +32,22 @@ pub trait WindowEncoder: Send {
         None
     }
 
+    /// Generate one repair symbol coded over the SPECIFIC seq range
+    /// `[start, start + count)` (proactive-frontier repair). Unlike
+    /// `generate_repair` — which codes over the whole current (leading) window
+    /// and therefore entangles a frontier hole with not-yet-received in-flight
+    /// symbols at the receiver — this codes over a small TRAILING window at the
+    /// cumulative-ack frontier, whose members are all already received except
+    /// the hole(s), so the receiver's incremental GE solves the hole the instant
+    /// the repair arrives (no ARQ round-trip, no future-symbol entanglement).
+    /// Returns `None` if the full range is not currently retained (so the
+    /// equation would be inconsistent with the receiver's coefficients).
+    /// Default `None` for encoders without a retained per-seq window.
+    fn generate_repair_range(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
+        let _ = (start, count);
+        None
+    }
+
     /// Current window span: (oldest_seq, newest_seq).
     /// Returns (0, 0) if the window is empty.
     fn window_span(&self) -> (u64, u64);
@@ -89,6 +105,24 @@ pub trait WindowDecoder: Send + Sync {
     fn rank_in(&self, start: u64, count: u64) -> u64 {
         let _ = (start, count);
         0
+    }
+
+    /// Diagnostic probe over the in-order frontier window `[frontier, horizon]`
+    /// (proactive-frontier diagnosis, RWM_FDIAG). Returns
+    /// `(holes, buffered_equations)`:
+    ///   * `holes` — source seqs in the span neither received nor decoded (the
+    ///     un-recovered degrees of freedom the frontier is waiting on).
+    ///   * `buffered_equations` — independent coded equations the decoder already
+    ///     holds whose pivot lies in the span (repair present but not yet enough
+    ///     rank to solve). `buffered_equations == 0` with `holes > 0` means NO
+    ///     proactive repair covering the frontier hole is buffered — recovery can
+    ///     only come from a source retransmit (reactive ARQ). `0 < B < holes`
+    ///     means repair is present but insufficient. `B >= holes` would already
+    ///     have decoded (GE solves at full rank), so it is never observed stuck.
+    /// Default `(0, 0)` for decoders without incremental-GE structure.
+    fn frontier_probe(&self, frontier: u64, horizon: u64) -> (u64, u64) {
+        let _ = (frontier, horizon);
+        (0, 0)
     }
 
     /// Total symbols fed to this decoder.

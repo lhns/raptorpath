@@ -113,6 +113,56 @@ impl WindowEncoder for RlcWindowEncoder {
         }
     }
 
+    fn generate_repair_range(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
+        if count == 0 {
+            return None;
+        }
+        let (w_start, w_end) = self.window_span();
+        if self.window.is_empty() {
+            return None;
+        }
+        let end = start.saturating_add(count as u64);
+        // The full [start, end) range must be retained: the receiver derives a
+        // coefficient for EVERY window position from (start, count, index), so a
+        // missing (evicted) source would leave a phantom coefficient with no
+        // matching term — an inconsistent equation. Bail if not fully covered.
+        if start < w_start || end > w_end + 1 {
+            return None;
+        }
+        let symbol_size = self.symbol_size as usize;
+        let repair_index = self.repair_counter;
+        self.repair_counter += 1;
+
+        let coeffs = generate_window_coefficients(start, count, repair_index);
+        let mut coded = vec![0u8; symbol_size];
+        for i in 0..count as u64 {
+            let seq = start + i;
+            let offset = (seq - w_start) as usize;
+            match self.window.get(offset) {
+                Some((s, src_data)) if *s == seq => {
+                    gf256::mul_acc_slice(coeffs[i as usize], src_data, &mut coded);
+                }
+                // Window is dense & contiguous, so this cannot happen given the
+                // range check above; guard anyway rather than emit a bad symbol.
+                _ => return None,
+            }
+        }
+
+        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
+        wire_data.extend_from_slice(&start.to_le_bytes());
+        wire_data.extend_from_slice(&count.to_le_bytes());
+        wire_data.extend_from_slice(&repair_index.to_le_bytes());
+        wire_data.extend_from_slice(&coded);
+
+        Some(WireSymbol {
+            block_id: end - 1,
+            payload_id: repair_index,
+            is_repair: true,
+            data: wire_data,
+            backend: FecBackend::Rlc,
+        })
+    }
+
     fn window_span(&self) -> (u64, u64) {
         match (self.window.front(), self.window.back()) {
             (Some((start, _)), Some((end, _))) => (*start, *end),
@@ -478,6 +528,22 @@ impl WindowDecoder for RlcWindowDecoder {
         recovered + pivots
     }
 
+    fn frontier_probe(&self, frontier: u64, horizon: u64) -> (u64, u64) {
+        // Span is contiguous in seq space (sender numbers sources densely), so
+        // holes = span_len − recovered_in_span. Buffered equations = pivot rows
+        // whose pivot_seq lies in the span (each is one independent DoF the
+        // decoder is holding, waiting for enough rank to solve the frontier).
+        let end = horizon.saturating_add(1);
+        if end <= frontier {
+            return (0, 0);
+        }
+        let span = end - frontier;
+        let recovered = self.recovered.range(frontier..end).count() as u64;
+        let holes = span.saturating_sub(recovered);
+        let pivots = self.pivots.range(frontier..end).count() as u64;
+        (holes, pivots)
+    }
+
     fn total_fed(&self) -> u64 {
         self.total_fed
     }
@@ -727,6 +793,69 @@ mod tests {
             "Should recover seqs 1 and 3 via cascade, got: {:?}",
             recovered_seqs
         );
+    }
+
+    #[test]
+    fn test_frontier_range_repair_decodes_hole_no_retransmit() {
+        // Proactive-frontier mechanism (isolation): a repair coded over a small
+        // TRAILING window whose members are ALL already received EXCEPT the hole
+        // must decode that hole IMMEDIATELY from the single repair — no source
+        // retransmit. (At L1 this does not lift throughput; see goal-gate
+        // "Proactive Frontier" — but the coding/decoding mechanism is correct.)
+        let symbol_size = 64u16;
+        let mut encoder = RlcWindowEncoder::new(symbol_size);
+        let mut decoder = RlcWindowDecoder::new(symbol_size);
+
+        // 40 sources; the hole is seq 20 (an OLD, mid-stream position).
+        let mut syms = Vec::new();
+        for i in 0..40u64 {
+            let pkt = vec![(i as u8).wrapping_add(1); 40];
+            syms.push(encoder.add_source(&pkt));
+        }
+        // Feed every source EXCEPT the hole (seq 20). All neighbours received.
+        for (i, sym) in syms.iter().enumerate() {
+            if i as u64 != 20 {
+                decoder.add_symbol(sym);
+            }
+        }
+        assert!(
+            decoder.frontier_probe(20, 39).0 >= 1,
+            "seq 20 should register as a hole before repair"
+        );
+
+        // ONE frontier repair over a trailing window [16, 16+8) that contains
+        // the hole and 7 already-received members. It must isolate + solve 20.
+        let repair = encoder
+            .generate_repair_range(16, 8)
+            .expect("range fully retained");
+        assert!(repair.is_repair);
+        let recovered = decoder.add_symbol(&repair);
+
+        assert!(
+            recovered.iter().any(|(seq, _)| *seq == 20),
+            "one trailing-window repair must decode the hole, got: {:?}",
+            recovered.iter().map(|(s, _)| s).collect::<Vec<_>>()
+        );
+        let (_, data) = recovered.iter().find(|(seq, _)| *seq == 20).unwrap();
+        assert_eq!(&data[..40], vec![21u8; 40].as_slice());
+        // No hole remains in the window ⇒ proactive decode advanced it fully.
+        assert_eq!(decoder.frontier_probe(16, 39).0, 0);
+    }
+
+    #[test]
+    fn test_frontier_range_repair_rejects_unretained_range() {
+        let symbol_size = 64u16;
+        let mut encoder = RlcWindowEncoder::new(symbol_size);
+        for i in 0..10u8 {
+            encoder.add_source(&vec![i; 32]);
+        }
+        encoder.advance(5); // window now [5,9]
+        // Range starting below the retained window is inconsistent ⇒ None.
+        assert!(encoder.generate_repair_range(2, 4).is_none());
+        // Range extending past the newest retained seq ⇒ None.
+        assert!(encoder.generate_repair_range(8, 5).is_none());
+        // Fully-retained range ⇒ Some.
+        assert!(encoder.generate_repair_range(6, 3).is_some());
     }
 
     #[test]

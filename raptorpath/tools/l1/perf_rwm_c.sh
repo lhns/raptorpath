@@ -20,6 +20,9 @@ BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 TENV=""
 [[ -n "$PLACE_T" ]] && TENV="$TENV RWM_PLACE_T=$PLACE_T"
 [[ -n "${RWM_MIN_R:-}" ]] && TENV="$TENV RWM_MIN_R=$RWM_MIN_R"
+[[ -n "${RWM_FDIAG:-}" ]] && TENV="$TENV RWM_FDIAG=$RWM_FDIAG"
+[[ -n "${RWM_FRONTIER_R:-}" ]] && TENV="$TENV RWM_FRONTIER_R=$RWM_FRONTIER_R"
+[[ -n "${RWM_FRONTIER:-}" ]] && TENV="$TENV RWM_FRONTIER=$RWM_FRONTIER"
 [[ -n "${RWM_WINDOW:-}" ]] && TENV="$TENV RWM_WINDOW=$RWM_WINDOW"
 # Generation-coding knobs (§16.3): G, pipeline depth M, per-generation overhead
 # r. Propagated into the netns exec env so both server and client see them.
