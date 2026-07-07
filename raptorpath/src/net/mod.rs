@@ -1241,6 +1241,29 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut last_pi_repairs_fed: u64 = 0;
         let mut last_pi_repairs_useful: u64 = 0;
 
+        // ── Proactive-frontier diagnosis (RWM_FDIAG) ──────────────────────
+        // Answers PART 1: when the in-order frontier stalls on a hole p, is
+        // there already buffered proactive repair covering p (→ the receiver
+        // should decode NOW), or is it absent (→ the hole waits on a reactive
+        // ARQ source retransmit)? For each stall we record how long the
+        // frontier sat on p and how p was ultimately resolved: DECODE (a repair
+        // solved it, no round-trip) vs SOURCE (a retransmitted source symbol
+        // arrived, a ~1-RTT ARQ round). Off unless RWM_FDIAG is set.
+        let fdiag_on = std::env::var("RWM_FDIAG").is_ok();
+        // Current frontier hole being tracked: (seq, stall_start, saw_buffered_
+        // equation_during_stall, source_arrived_for_it). None = not stalled.
+        let mut fdiag_hole: Option<(u64, Instant, bool, bool)> = None;
+        let mut fdiag_report_at = Instant::now();
+        // Aggregate resolution counts + stall time (µs), split by mechanism.
+        let mut fdiag_decode_n: u64 = 0;
+        let mut fdiag_source_n: u64 = 0;
+        let mut fdiag_decode_us: u64 = 0;
+        let mut fdiag_source_us: u64 = 0;
+        // Of the DECODE resolutions, how many had a buffered equation covering p
+        // ALREADY present when the stall began (present-but-waiting-for-rank)
+        // vs the covering repair only arrived mid-stall.
+        let mut fdiag_present_at_stall: u64 = 0;
+
         // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
         // routinely outrace the reliable control stream). A decoder created
         // without the real params can never decode -- its OTI transfer
@@ -1861,6 +1884,72 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 if dseq > highest_delivered_seq {
                                     highest_delivered_seq = dseq;
                                 }
+                            }
+                        }
+
+                        // ── Proactive-frontier diagnosis (RWM_FDIAG) ──────
+                        if fdiag_on {
+                            let f = highest_delivered_seq;
+                            // Resolve a tracked hole once the frontier passes it.
+                            if let Some((hp, t0, present, saw_src)) = fdiag_hole {
+                                if f >= hp {
+                                    let by_source = saw_src
+                                        || batch.symbols.iter().any(|s| {
+                                            !s.is_repair && s.block_id == hp
+                                        });
+                                    let dt = t0.elapsed().as_micros() as u64;
+                                    if by_source {
+                                        fdiag_source_n += 1;
+                                        fdiag_source_us += dt;
+                                    } else {
+                                        fdiag_decode_n += 1;
+                                        fdiag_decode_us += dt;
+                                        if present {
+                                            fdiag_present_at_stall += 1;
+                                        }
+                                    }
+                                    fdiag_hole = None;
+                                } else if batch.symbols.iter().any(|s| {
+                                    !s.is_repair && s.block_id == hp
+                                }) {
+                                    // Still stalled, but the hole's source
+                                    // symbol (a retransmit) just arrived — mark
+                                    // so the eventual resolution is ARQ, not
+                                    // proactive decode.
+                                    fdiag_hole = Some((hp, t0, present, true));
+                                }
+                            }
+                            // Arm a new hole when stalled with none tracked.
+                            if fdiag_hole.is_none() && highest_seen_seq > f {
+                                let (_h, buffered) =
+                                    win_dec.frontier_probe(f + 1, highest_seen_seq);
+                                fdiag_hole =
+                                    Some((f + 1, Instant::now(), buffered > 0, false));
+                            }
+                            // Periodic aggregate report (~500 ms).
+                            if fdiag_report_at.elapsed() >= Duration::from_millis(500) {
+                                fdiag_report_at = Instant::now();
+                                let (holes, buffered) =
+                                    win_dec.frontier_probe(f + 1, highest_seen_seq);
+                                let dec_avg = if fdiag_decode_n > 0 {
+                                    fdiag_decode_us / fdiag_decode_n
+                                } else {
+                                    0
+                                };
+                                let src_avg = if fdiag_source_n > 0 {
+                                    fdiag_source_us / fdiag_source_n
+                                } else {
+                                    0
+                                };
+                                eprintln!(
+                                    "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | rf={} ru={}",
+                                    f, highest_seen_seq,
+                                    highest_seen_seq.saturating_sub(f),
+                                    holes, buffered,
+                                    fdiag_decode_n, dec_avg, fdiag_present_at_stall,
+                                    fdiag_source_n, src_avg,
+                                    win_dec.repairs_fed(), win_dec.repairs_useful(),
+                                );
                             }
                         }
 
@@ -2696,6 +2785,54 @@ fn window_source_paths(
         .collect()
 }
 
+/// Build one proactive-frontier repair (RLC over `[start, start+count)`) from
+/// the retain-until-acked `sent_store` rather than the encoder's coding window.
+/// The coding window ages a frontier hole out once the outstanding gap exceeds
+/// `win_cap` (MEASURED: gap→494 > win_cap 200 at C2), but `sent_store` retains
+/// EVERY un-acked source, so the frontier window is always fully covered here.
+/// Wire format is byte-identical to `RlcWindowEncoder::generate_repair`, so the
+/// receiver's `RlcWindowDecoder` handles it with no special case. Returns `None`
+/// if any source in the range is missing from the store (already acked/evicted).
+fn build_frontier_repair(
+    sent_store: &std::collections::BTreeMap<u64, crate::fec::WireSymbol>,
+    start: u64,
+    count: u16,
+    symbol_size: u16,
+    repair_index: u32,
+) -> Option<crate::fec::WireSymbol> {
+    if count == 0 {
+        return None;
+    }
+    let ss = symbol_size as usize;
+    let coeffs =
+        crate::fec::gf256::generate_window_coefficients(start, count, repair_index);
+    let mut coded = vec![0u8; ss];
+    for i in 0..count as u64 {
+        let seq = start + i;
+        let src = sent_store.get(&seq)?; // missing ⇒ inconsistent equation
+        if src.data.len() == ss {
+            crate::fec::gf256::mul_acc_slice(coeffs[i as usize], &src.data, &mut coded);
+        } else {
+            let mut padded = vec![0u8; ss];
+            let n = src.data.len().min(ss);
+            padded[..n].copy_from_slice(&src.data[..n]);
+            crate::fec::gf256::mul_acc_slice(coeffs[i as usize], &padded, &mut coded);
+        }
+    }
+    let mut wire = Vec::with_capacity(14 + ss);
+    wire.extend_from_slice(&start.to_le_bytes());
+    wire.extend_from_slice(&count.to_le_bytes());
+    wire.extend_from_slice(&repair_index.to_le_bytes());
+    wire.extend_from_slice(&coded);
+    Some(crate::fec::WireSymbol {
+        block_id: start + count as u64 - 1,
+        payload_id: repair_index,
+        is_repair: true,
+        data: wire,
+        backend: FecBackend::Rlc,
+    })
+}
+
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
 /// source symbols, sends them immediately, and periodically generates repair symbols.
 async fn run_window_sender(
@@ -2989,6 +3126,64 @@ async fn run_window_sender(
     let mut repair_debt: f64 = 0.0;
     // Source symbol counter for taper time offset (symbols since window start).
     let mut taper_offset: u64 = 0;
+    // ── Proactive-frontier repair (plain-reliable) ────────────────────────
+    // MEASURED root cause of the C2 lossy collapse (goal-gate "Proactive
+    // Frontier"): under Bulk's r*→0 pure-ARQ steady state there is NO proactive
+    // repair, so every in-order-frontier hole waits a full reactive ARQ round
+    // (~1 RTT) → goodput ≈ window/RTT (~16 Mbit). The prior RWM_MIN_R arm added
+    // repair over the LEADING window, which entangles the hole with not-yet-
+    // received in-flight symbols → the receiver can't solve it until the window
+    // tail arrives ~1 RTT later anyway (MEASURED decode stall ~25 ms > the ARQ
+    // round it replaced). This instead codes repair over a SMALL TRAILING window
+    // at the cumulative-ack frontier [ack+1, ack+1+W_front): all its members are
+    // already received EXCEPT the hole, so the receiver's incremental GE solves
+    // the hole the instant a covering repair arrives — recovery at the decode
+    // rate, no round-trip. Rate is loss-sized (r_front = gain·ε̂) so it is 0 on
+    // clean links (no regression) and ~gain·ε under loss. Env overrides:
+    //   RWM_FRONTIER      trailing window width (default 32; 0 disables)
+    //   RWM_FRONTIER_GAIN r_front = gain·ε̂ (default 4.0)
+    //   RWM_FRONTIER_R    force a fixed r_front (bypasses gain·ε̂; for the sweep)
+    let frontier_width: u64 = std::env::var("RWM_FRONTIER")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(32);
+    let frontier_gain: f64 = std::env::var("RWM_FRONTIER_GAIN")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(4.0)
+        .clamp(0.0, 64.0);
+    // Offset by which the frontier-repair window TRAILS the send frontier. The
+    // window must be pre-positioned: coded over a region whose members are all
+    // already RECEIVED by the time the repair arrives (so the receiver's GE can
+    // isolate a hole immediately), yet close enough to the send frontier that it
+    // covers a symbol WHILE it is still fresh — so a loss is decoded ~½ RTT
+    // after it is sent, before it can ever freeze the in-order frontier. Anchor
+    // at the receiver's ack instead (½-RTT stale) and the repair only starts
+    // covering a hole AFTER it has already stuck — losing the race to the ARQ
+    // retransmit (MEASURED: rf=718 emitted, ru=4 useful, all recovery via ARQ).
+    let frontier_offset: u64 = std::env::var("RWM_FRONTIER_OFFSET")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(8);
+    let frontier_r_forced: Option<f64> = std::env::var("RWM_FRONTIER_R")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok());
+    // GATED OFF by default (REFUTED at L1 — see goal-gate "Proactive Frontier").
+    // Enabled only when RWM_FRONTIER / RWM_FRONTIER_R is explicitly set, so the
+    // shipped default is byte-for-byte the pure-ARQ baseline. The flag exists to
+    // reproduce the negative result and to drive the FDIAG diagnosis.
+    let frontier_experiment =
+        std::env::var("RWM_FRONTIER").is_ok() || std::env::var("RWM_FRONTIER_R").is_ok();
+    let frontier_enabled = frontier_experiment
+        && frontier_width > 0
+        && reliable
+        && !generation
+        && !coded_only;
+    let mut frontier_debt: f64 = 0.0;
+    // Dedicated repair-index namespace for frontier repairs. Started high so it
+    // never collides with the encoder's own `repair_counter` for a coincident
+    // (block_id,payload_id) at the receiver's dedup set.
+    let mut frontier_ri: u32 = 1u32 << 30;
     /// Congestion-aware NACK repair throttle (ADR-0046).
     let mut nack_congestion = NackCongestionState::new();
     /// Maps source seq → path it was sent on (for cross-path retransmission).
@@ -3323,6 +3518,88 @@ async fn run_window_sender(
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            // ── Proactive-frontier repair (see decls above the loop) ──────
+            // Code repair over the SMALL TRAILING window at the cumulative-ack
+            // frontier [ack+1, ack+1+w) so a hole there decodes from in-flight
+            // repair the instant a covering repair arrives — no ARQ round-trip,
+            // and no entanglement with not-yet-received in-flight symbols (the
+            // failure mode of the leading-window taper repair above). Loss-sized
+            // rate ⇒ 0 on clean links (no regression). Bounded, cheap, and it
+            // FALLS BACK to the existing per-seq ARQ whenever the hole has aged
+            // out of the coding window (`generate_repair_range` → None).
+            if frontier_enabled {
+                let ack = window_ack_seq.load(Ordering::Relaxed);
+                let (_, newest) = encoder.window_span();
+                // Pre-positioned trailing window: end = newest − offset (tail is
+                // already received when the repair lands); start = end − width,
+                // clamped to the retained region (> ack). Covers the fresh region
+                // so a loss decodes ~½ RTT after send, before it can stick.
+                let end = newest.saturating_sub(frontier_offset);
+                if end > ack + 1 {
+                    let eps = {
+                        let sched = scheduler.lock();
+                        sched
+                            .active_paths()
+                            .iter()
+                            .filter_map(|id| sched.path(*id))
+                            .map(|p| p.estimator.loss_rate())
+                            .fold(0.0_f64, f64::max)
+                    };
+                    let r_front =
+                        frontier_r_forced.unwrap_or(frontier_gain * eps).clamp(0.0, 0.5);
+                    frontier_debt = (frontier_debt + r_front).min(8.0);
+                    // Widest window that stays within [ack+1, end).
+                    let avail = end - (ack + 1);
+                    while frontier_debt >= 1.0 {
+                        frontier_debt -= 1.0;
+                        let w = frontier_width.min(avail).max(1) as u16;
+                        let start = end - w as u64;
+                        let ri = frontier_ri;
+                        frontier_ri = frontier_ri.wrapping_add(1);
+                        let sym = match build_frontier_repair(
+                            &sent_store,
+                            start,
+                            w,
+                            symbol_size,
+                            ri,
+                        ) {
+                            Some(s) => s,
+                            None => break, // acked/evicted ⇒ ARQ fallback handles it
+                        };
+                        let fpath = {
+                            let sched = scheduler.lock();
+                            if reliable {
+                                let covered =
+                                    window_source_paths(&*encoder, &source_path_map);
+                                sched.place_symbol(true, &covered).unwrap_or(source_path)
+                            } else {
+                                source_path
+                            }
+                        };
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch = SymbolBatch {
+                            symbols: vec![sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq,
+                            path_id: fpath,
+                        };
+                        if let Err(e) = transport.send_symbols(fpath, batch) {
+                            warn!(fpath, ?e, "failed to send frontier repair");
+                        }
+                        {
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(fpath) {
+                                p.charge_in_flight(1);
+                            }
+                        }
+                        if let Some(ps) = stats.path(fpath) {
+                            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                        }
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }};
