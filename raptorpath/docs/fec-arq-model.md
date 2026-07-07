@@ -5465,6 +5465,33 @@ which the send-time-windowed RLC does not provide. That is a named,
 scoped next mechanism, not a knob; §16.5's W_mp sizing is necessary (it lifted
 the number from 2 to 4.5) but not sufficient.
 
+**MEASURED (generation coding + per-generation deficit feedback, branch
+`feat/gen-deficit-feedback`, 2026-07-07).** The stable-anchor generation codec
+(§16.3 "fungible construction") and its named missing mechanism, per-generation
+**deficit feedback**, are now both implemented and measured at L1. The deficit
+loop CLOSES the prior build's multi-generation stall: the receiver reports each
+frontier generation's residual rank `K_g − rank_g` (`WindowDecoder::rank_in` +
+a `GenerationDeficit` control message, paced on decode progress and a periodic
+~SRTT timer), and the sender emits exactly that residual per generation
+(`generate_repair_for`, in-flight-accounted so it never double-sends). C8 (c2+c3)
+50 MB transfers now **complete 6/6**, where the feedback-free build stalled at
+1–2 generations. **But the DECISIVE C8 goodput FAILS the >15.7 Mbit/s bar and
+the aggregation factor is 1.00 (NONE):** matched at 50 MB, dual C8 = 10.97 and
+single-path c2 = 10.95 Mbit/s. The binding constraint has moved one layer down,
+from a transport deadlock (now fixed) to the **RLC generation-DECODE throughput**:
+completion goodput scales inversely with G (G=384 → 3.4, G=192 → 11, G=96 → 12.6
+Mbit/s at C8) — the O(G) total-decode-work signature — and at the oracle's
+aggregating G=384 the decode is so slow (3.4 Mbit/s, network-INDEPENDENT: in-proc
+loopback gives the same) that the pipeline STALLS at 20 MB (0/3, timeout) and
+cross-path aggregation has zero headroom (the receiver already saturates its
+decode on one path). The `RlcWindowDecoder`'s incremental GE with per-pivot
+`BTreeMap<u64,u8>` coefficients runs ~200× below the §16.3 "708 Mbit/s" dense-GE
+decode-cost figure that the achievability argument assumed. So the oracle's ×1.19
+remains **proven-but-not-realized**, now bottlenecked on **generation-decode
+performance (a fast dense/SIMD GF(256) solver)** rather than transport plumbing —
+a scoped codec-perf step. Regression: the non-generation modes are untouched
+(single-path coded 15.66, C7 21.25 Mbit/s at 50 MB).
+
 **Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
 `feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
 ×1.19 achievability above came from an oracle

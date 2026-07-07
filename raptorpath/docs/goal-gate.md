@@ -1977,3 +1977,123 @@ receiver per-generation rank tracking — a scoped next step, not a redesign.
 (3). Reproduce the oracle: `cargo test -p raptorpath-math --test temporal_oracle
 -- --nocapture`. The generation transport is behind `--window-generation-coding`
 (requires `--window-reliable`); `RWM_GEN` / `RWM_PIPELINE` tune G / M.
+
+## Generation Coding — per-generation DEFICIT FEEDBACK landed + L1 MEASURED (branch `feat/gen-deficit-feedback`, 2026-07-07)
+
+The named missing mechanism from the build above — **per-generation deficit
+feedback** — is now implemented, and the multi-generation transport **COMPLETES
+end-to-end over real netem**, closing the prior build's stall. But the DECISIVE
+C8 goodput still **FAILS the >15.7 Mbit/s bar** — and the binding constraint has
+MOVED: it is no longer a transport-plumbing deadlock (fixed) but the **RLC
+generation DECODE throughput** (O(G²) incremental GE), which sits below the link
+rate at the oracle's aggregating G, so heterogeneous aggregation has no headroom.
+This is an **honest fail-with-mechanism**, one layer deeper than before.
+
+### The mechanism that shipped (deficit feedback, §16.3)
+- **Receiver rank tracking** (`WindowDecoder::rank_in`, impl in `rlc_window.rs`):
+  independent rank the decoder holds over a generation's span = solved sources +
+  un-resolved pivot rows in `[anchor, anchor+K_g)`. `deficit_g = K_g − rank_g`.
+- **Wire** (`ControlMessage::GenerationDeficit { deficits: Vec<(anchor, u32)> }`):
+  the receiver reports each frontier generation's residual deficit, learning K_g
+  self-describingly from the coded wire header (`window_count`). Sent on decode
+  progress AND on a periodic ~SRTT timer (the timer is essential — a sender that
+  emitted its budget and went quiet must still be re-pulled; without it the loop
+  deadlocks when no data is flowing).
+- **Sender** (`GenerationEncoder::generate_repair_for(anchor)` + the recovery loop
+  in `run_window_sender`): on a deficit report, emit exactly `deficit − in_flight`
+  MORE coded for each generation, round-robin, paced — bypassing the ack-clocked
+  target (the ack is stalled precisely when recovery is needed). In-flight
+  accounting (`emitted − emitted_at_last_report`) implements the classic
+  rateless-with-feedback loop: send the deficit, wait ~RTT, re-evaluate — never
+  re-send the full deficit each tick. Proactive emission is now capped at the
+  per-generation budget K_g(1+r); recovery beyond it is PURELY deficit-driven
+  (the fixed feedback-free recovery cap is removed). Per-seq ARQ stays OFF.
+- **Delivered-goodput pacing**: the token-bucket rate is clocked to the measured
+  ack (decode) rate ×1.5 (floor `RWM_GEN_RATE_FLOOR`), so coded emission does not
+  outrun the receiver's decode and overrun the droppable datagram path.
+
+### Multi-generation completion: YES (the prior build's stall is CLOSED)
+- **Loopback (in-proc, real QUIC):** all three generation loopback tests
+  un-ignored and green — `perf_loopback_generation_object` (1 MB, ~3 gens),
+  `_dual_path` (1 MB), and the new `_multi_dual_path` (2 MB, ≥5 gens over a dual
+  path), all `dnf:0`.
+- **L1 real netem, C8 (c2+c3):** multi-generation 50 MB transfers COMPLETE
+  **6/6 (`dnf:0`)** at G=96/M=2, and complete at the oracle's G=384/M=2 too. The
+  prior build stalled at 1–2 generations; the deficit loop pipelines all of them.
+
+### DECISIVE C8 (c2+c3, 50 MB native perf, dual path) — the number
+| config | mean Mbit/s | median s | stdev s | completion | vs 15.7 |
+|--------|------------:|---------:|--------:|-----------:|--------:|
+| **C8 dual, generation G=96 / M=2, 50 MB ×6** | **10.97** | 35.73 | 2.41 | **6/6** | **✗ 0.70×** |
+| single-path c2, generation G=96 / M=2, 50 MB ×3 | 10.95 | 36.64 | 0.50 | 3/3 | ✗ |
+| C8 dual, generation G=384 / M=2 (oracle cfg), 20 MB ×3 | — | — | — | **0/3 DNF (300 s timeout)** | ✗ |
+| C8 dual, generation G=384 / M=2, 10 MB ×2 | 3.43 | — | — | 2/2 | ✗ 0.22× |
+| C8 dual, generation G=192 / M=2, 10 MB ×2 | 11.05 | — | — | 2/2 | ✗ |
+
+**Aggregation factor = 10.97 / 10.95 = 1.00 (NONE), matched at 50 MB.** The
+decisive, apples-to-apples comparison: adding the second heterogeneous path (c3)
+to the fast path (c2) yields ZERO extra goodput. That is the failure signature —
+the receiver is already at its decode ceiling on one path. And at the oracle's
+**G=384 the decode is so slow the pipeline STALLS at 20 MB (0/3, 300 s timeout)** —
+it only "completes" at toy 10 MB objects (3.43 Mbit/s); it cannot sustain a real
+transfer, so the ×1.19-aggregating config is not viable in this decoder at all.
+
+### The mechanism of the shortfall: DECODE-BOUND (not the deficit loop)
+Three independent measurements localize it to the decoder, not the network or the
+feedback mechanism:
+1. **Throughput scales inversely with G** (C8 dual, 10 MB): G=384 → 3.4, G=192 →
+   11.0, G=96 → 12.6 Mbit/s — the O(G) total-decode-work signature (decode cost
+   per symbol ~O(G²), K/G generations ⇒ work ∝ G).
+2. **Network-independent ceiling at the oracle's G:** at G=384, in-proc loopback
+   (localhost, no bandwidth limit, no loss) delivers ~3.0 Mbit/s and the 100 Mbit
+   C8 fast path delivers ~3.4 — the SAME. The wall is CPU decode, not the link.
+3. **No aggregation headroom:** single-path c2 (10.95 Mbit/s, 50 MB) = dual C8
+   (10.97 Mbit/s, 50 MB) at G=96 — factor 1.00. The receiver cannot decode the
+   POOLED cross-path arrivals any faster than one path already supplies, so a
+   second path cannot help. Deepening the pipeline (M×G held at 384: G=96/M=4,
+   G=64/M=6, G=128/M=3) all give ~10 Mbit/s — it does not lift the ceiling.
+
+At the oracle's **G=384 — the exact config proven to reach ×1.19** — the RLC
+generation decode runs at 3.4 Mbit/s, ~4.6× BELOW the 15.7 fast-path bar, so the
+aggregation the oracle predicts is unreachable in this decoder. Shrinking to G=96
+lifts throughput to ~11 Mbit/s (now CC/loss-bound on the real paths) but forfeits
+the cross-path fungibility horizon (W_mp ≳ 384) AND still falls below 15.7 with no
+aggregation. The decode/aggregation tension is fundamental to THIS decoder
+(`RlcWindowDecoder`: incremental GE with per-pivot `BTreeMap<u64,u8>` coefficients
++ cascade — allocation-heavy, far below the paper's SIMD-dense-GE 708 Mbit/s claim).
+
+### Secondary finding (not the binding constraint)
+On C8 a coded symbol (1200 B + 14 B repair header + framing ≈ 1260 B) occasionally
+exceeds path-1's negotiated QUIC `max_datagram_size` → `WARN … datagram too large
+path=1` → that symbol is dropped. Rare in the runs measured (0 in the 50 MB single
+baseline), but on the aggregating G it further erodes the second path's
+contribution. A generation-mode symbol-size clamp to the min-PMTU across paths
+would remove it; it does not change the decode-bound verdict.
+
+### Regression (non-generation modes — untouched by the flag, RE-CONFIRMED)
+| baseline (my build, no `--window-generation-coding`) | mean Mbit/s | target | status |
+|------------------------------------------------------|------------:|-------:|:------:|
+| single-path c2, coded reliable, 50 MB ×3 | **15.66** | ~15.7 | ✓ |
+| C7 (c2+c2), coded reliable, 50 MB ×3 | **21.25** | ~21.6 | ✓ |
+
+The `GenerationDeficit` wire variant, the two new trait methods (`rank_in`,
+`generate_repair_for`), and the receiver/sender deficit plumbing are all additive
+and gated on generation mode; systematic / coded-only / realtime / in-order-stream
+are byte-for-byte unchanged and still meet their bars.
+
+### VERDICT (updated)
+- **Deficit-feedback mechanism: IMPLEMENTED + VERIFIED.** Completion is achieved
+  where the prior build stalled — 6/6 on C8 50 MB, all loopback generation tests
+  green, `cargo test -p raptorpath --lib` 258 green, gate suite 15/15 release,
+  `temporal_oracle` 3 green. The mechanism the goal named is DONE and works.
+- **L1 DECISIVE (>15.7 Mbit/s): NOT MET.** C8 = 10.97 Mbit/s (6/6), aggregation
+  factor ≈ 1.0. Honest FAIL-WITH-MECHANISM — the number was NOT forced.
+- **The blocker moved one layer down:** from a transport deadlock (fixed by the
+  deficit loop) to **RLC generation-decode throughput** (O(G²) incremental GE,
+  BTreeMap representation), which is CPU-bound below the link rate at the oracle's
+  aggregating G — so cross-path aggregation has no headroom. Realizing the
+  oracle's ×1.19 in production now requires a **fast dense/SIMD GF(256) generation
+  decoder** (the paper's 708 Mbit/s decode-cost claim assumes one; the shipped
+  `RlcWindowDecoder` is ~200× slower), a scoped codec-performance step — not more
+  transport work.
+- **Regression:** none (single-path 15.66, C7 21.25; non-generation modes intact).

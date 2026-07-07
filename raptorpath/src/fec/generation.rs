@@ -131,29 +131,54 @@ impl GenerationEncoder {
         if !sealed {
             return false;
         }
+        // PROACTIVE emission is capped at the per-generation provisioning budget
+        // `ceil(len·(1+r))` for EVERY generation, frontier included. Recovery
+        // BEYOND the budget (for a sealed generation that lost > r of its coded)
+        // is no longer a feedback-free fixed cap — it is driven by per-generation
+        // DEFICIT FEEDBACK (§16.3): the receiver reports each frontier
+        // generation's residual rank and the sender emits exactly that many more
+        // via `generate_repair_for`, which BYPASSES this budget. So the proactive
+        // path stays bounded (never floods a generation) and recovery is bounded
+        // AND targeted by the deficit loop — the two the feedback-free cap could
+        // not do at once (it either flooded or deadlocked the frontier).
         let emitted = self.emitted.get(&g).copied().unwrap_or(0);
-        let cap = if g == self.base_gen {
-            self.gen_recovery_cap(g)
-        } else {
-            self.gen_budget(g)
-        };
-        emitted < cap
+        emitted < self.gen_budget(g)
     }
 
-    /// Coded-symbol CAP for recovery of the frontier generation. Recovery
-    /// (emitting beyond the proactive budget for a sealed but still-undecoded
-    /// frontier generation) is BOUNDED — without a cap it would flood a
-    /// generation with coded until the outer flow-control window is exhausted
-    /// (an unbounded flood on a partial generation, or budget starvation of the
-    /// pipeline). The cap `ceil(len·(1+r+headroom))` funds recovery of the
-    /// worst per-generation loss (`headroom`) then stops, so `wants_coding`
-    /// reports false and the pipeline advances rather than wedging.
-    /// (The design's exact mechanism is per-generation DEFICIT feedback — the
-    /// receiver reporting each generation's residual rank; this fixed cap is the
-    /// feedback-free approximation.)
-    fn gen_recovery_cap(&self, g: u64) -> u32 {
-        const RECOVERY_HEADROOM: f64 = 0.5;
-        ((self.gen_len(g) as f64) * (1.0 + self.overhead + RECOVERY_HEADROOM)).ceil() as u32
+    /// Code one coded symbol over the STABLE span of generation `g`, advancing
+    /// the monotonic coded index and the per-generation emission counter. Shared
+    /// by the round-robin proactive path (`generate_repair`) and the deficit-
+    /// driven recovery path (`generate_repair_for`).
+    fn code_generation(&mut self, g: u64) -> WireSymbol {
+        let symbol_size = self.symbol_size as usize;
+        let coded_index = self.coded_index;
+        self.coded_index += 1;
+        *self.emitted.entry(g).or_insert(0) += 1;
+        let (gen_start, syms) = self.generation_symbols(g);
+        let gen_len = syms.len() as u16;
+
+        // Coefficients over the STABLE generation span [gen_start, gen_start +
+        // gen_len).  Seeded by (gen_start, gen_len, coded_index) — the decoder
+        // regenerates them from the wire header identically.
+        let coeffs = generate_window_coefficients(gen_start, gen_len, coded_index);
+        let mut coded = vec![0u8; symbol_size];
+        for (i, src) in syms.iter().enumerate() {
+            gf256::mul_acc_slice(coeffs[i], src, &mut coded);
+        }
+
+        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
+        wire_data.extend_from_slice(&gen_start.to_le_bytes());
+        wire_data.extend_from_slice(&gen_len.to_le_bytes());
+        wire_data.extend_from_slice(&coded_index.to_le_bytes());
+        wire_data.extend_from_slice(&coded);
+
+        WireSymbol {
+            block_id: gen_start + gen_len.saturating_sub(1) as u64,
+            payload_id: coded_index,
+            is_repair: true,
+            data: wire_data,
+            backend: FecBackend::Rlc,
+        }
     }
 
     /// Generation id that a source seq belongs to.
@@ -187,17 +212,17 @@ impl GenerationEncoder {
         (gen_start, out)
     }
 
-    /// Pick the next active generation to code for.  Over the `pipeline` oldest
-    /// retained generations, in TWO passes:
-    ///   1. round-robin over generations still UNDER their provisioning budget
-    ///      (`emitted < ceil(len·(1+r))`) — the normal proactive path, which
-    ///      keeps coded from outpacing a filling generation's width;
-    ///   2. if every active generation is at budget yet none has been dropped
-    ///      (i.e. a generation lost > r of its symbols and has not decoded),
-    ///      RECOVER the oldest active generation (emit beyond budget — fungible,
-    ///      cross-path, no per-seq ARQ).  The outer flow control bounds the
-    ///      total, so recovery only fires while the pipe has room.
-    /// Returns `None` only when nothing is retained.
+    /// Pick the next generation to PROACTIVELY code for: round-robin over the
+    /// `pipeline` oldest retained generations that are still under their
+    /// provisioning budget (`emitted < ceil(len·(1+r))`). This is the open-loop
+    /// path that provisions each sealed generation with its baseline K_G(1+r)
+    /// coded symbols so it decodes without waiting a feedback round for the
+    /// expected loss. RECOVERY beyond the budget (for a generation that lost more
+    /// than `r` of its coded) is NOT done here — it is driven by per-generation
+    /// deficit feedback via `generate_repair_for`, which the receiver bounds and
+    /// targets exactly. Returns `None` when every active generation is at budget
+    /// (or nothing is retained), at which point `wants_coding` is false and the
+    /// sender's emission is purely deficit-driven until a generation decodes.
     fn next_active_gen(&mut self) -> Option<u64> {
         let top = self.top_gen();
         let hi = (self.base_gen + self.pipeline).min(top + 1);
@@ -205,19 +230,10 @@ impl GenerationEncoder {
             return None;
         }
         let span = hi - self.base_gen;
-        // Round-robin over CODEABLE generations. A generation is codeable if it
-        // is either:
-        //   * UNDER its provisioning budget (proactive coding as it fills), or
-        //   * the FRONTIER generation (base_gen) that is SEALED (or tail-idle)
-        //     but still retained — i.e. blocking the cumulative-ack frontier
-        //     because it lost > r of its symbols. That generation needs
-        //     RECOVERY (more coded, fungible cross-path), and it is the long
-        //     pole: the object cannot complete until it decodes. Giving it a
-        //     slot in the round-robin recovers it while the newer generations in
-        //     the pipeline still provision (so the fast path never idles).
-        // Gating recovery to base_gen — not any sealed generation — avoids
-        // wasting coded on a later generation that has decoded out of order but
-        // whose ack is held back by the frontier.
+        // Round-robin over CODEABLE generations (sealed/tail-idle and still under
+        // their provisioning budget). Once a generation is at budget it drops out
+        // of the proactive round-robin; its residual, if any, is recovered by the
+        // deficit loop (fungible cross-path, no per-seq ARQ).
         for _ in 0..span {
             if self.rr < self.base_gen || self.rr >= hi {
                 self.rr = self.base_gen;
@@ -255,50 +271,41 @@ impl WindowEncoder for GenerationEncoder {
     }
 
     fn generate_repair(&mut self) -> WireSymbol {
-        let symbol_size = self.symbol_size as usize;
-        let g = match self.next_active_gen() {
-            Some(g) => g,
+        match self.next_active_gen() {
+            Some(g) => self.code_generation(g),
             None => {
                 // Nothing retained — emit an inert zero symbol (matches the
                 // sliding encoder's empty-window contract).
-                return WireSymbol {
+                WireSymbol {
                     block_id: 0,
                     payload_id: self.coded_index,
                     is_repair: true,
-                    data: vec![0u8; REPAIR_HEADER_SIZE + symbol_size],
+                    data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize],
                     backend: FecBackend::Rlc,
-                };
+                }
             }
-        };
-
-        let coded_index = self.coded_index;
-        self.coded_index += 1;
-        *self.emitted.entry(g).or_insert(0) += 1;
-        let (gen_start, syms) = self.generation_symbols(g);
-        let gen_len = syms.len() as u16;
-
-        // Coefficients over the STABLE generation span [gen_start, gen_start +
-        // gen_len).  Seeded by (gen_start, gen_len, coded_index) — the decoder
-        // regenerates them from the wire header identically.
-        let coeffs = generate_window_coefficients(gen_start, gen_len, coded_index);
-        let mut coded = vec![0u8; symbol_size];
-        for (i, src) in syms.iter().enumerate() {
-            gf256::mul_acc_slice(coeffs[i], src, &mut coded);
         }
+    }
 
-        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
-        wire_data.extend_from_slice(&gen_start.to_le_bytes());
-        wire_data.extend_from_slice(&gen_len.to_le_bytes());
-        wire_data.extend_from_slice(&coded_index.to_le_bytes());
-        wire_data.extend_from_slice(&coded);
-
-        WireSymbol {
-            block_id: gen_start + gen_len.saturating_sub(1) as u64,
-            payload_id: coded_index,
-            is_repair: true,
-            data: wire_data,
-            backend: FecBackend::Rlc,
+    fn generate_repair_for(&mut self, anchor: u64) -> Option<WireSymbol> {
+        // Deficit-driven recovery for a SPECIFIC generation (§16.3). Bypasses
+        // the proactive per-generation budget: the receiver's deficit already
+        // bounds how many are emitted, so there is no cap to apply here — the
+        // only gate is that the generation is retained and SEALED (its coded
+        // must span the full generation width, else they are low-rank and never
+        // help the generation reach K_G).
+        if self.gen_size == 0 || anchor % self.gen_size != 0 {
+            return None;
         }
+        let g = anchor / self.gen_size;
+        if !self.sources.contains_key(&anchor) {
+            return None; // generation not retained (already advanced past, or not yet started)
+        }
+        let sealed = self.gen_len(g) >= self.gen_size || self.intake_idle;
+        if !sealed {
+            return None;
+        }
+        Some(self.code_generation(g))
     }
 
     fn window_span(&self) -> (u64, u64) {
@@ -491,7 +498,12 @@ mod tests {
         assert_eq!(coded_gens, BTreeSet::from([0, 1]), "M=2 bounds the active set to gens 0,1");
 
         // Advance past generation 0 (it "completed"): the active window slides to
-        // {1,2}.
+        // {1,2}, rotating gen 2 into the pipeline while gen 3 stays excluded.
+        // Gen 1 was already PROACTIVELY provisioned to its budget in the first
+        // phase, so proactive coding no longer re-emits it (any residual for gen
+        // 1 now comes from the DEFICIT loop via `generate_repair_for`, not the
+        // proactive round-robin). So the newly-emitted proactive set is exactly
+        // {2}: gen 2 rotated in, gen 3 (beyond M) still excluded.
         enc.advance(g as u64);
         let mut after: BTreeSet<u64> = BTreeSet::new();
         for _ in 0..100 {
@@ -501,7 +513,56 @@ mod tests {
             let c = enc.generate_repair();
             after.insert(u64::from_le_bytes(c.data[0..8].try_into().unwrap()) / g as u64);
         }
-        assert_eq!(after, BTreeSet::from([1, 2]), "pipeline slid forward to gens 1,2");
+        assert_eq!(after, BTreeSet::from([2]), "gen 2 rotated into the pipeline; gen 3 excluded");
+        assert!(!after.contains(&3), "gen 3 is beyond pipeline depth M");
+    }
+
+    /// The deficit-driven recovery path (`generate_repair_for`) emits coded
+    /// symbols for a SPECIFIC sealed generation BEYOND its proactive budget, and
+    /// those extra coded symbols still let the decoder finish that generation —
+    /// the sender arm of per-generation deficit feedback (§16.3).
+    #[test]
+    fn generate_repair_for_recovers_beyond_budget() {
+        let symbol_size = 64u16;
+        let g = 8usize;
+        let mut enc = GenerationEncoder::new(symbol_size, g, 2, 0.0);
+        for seq in 0..(2 * g as u64) {
+            enc.add_source(&payload(seq));
+        }
+        // Anchor of generation 1.
+        let anchor = g as u64;
+        // With overhead r=0, the proactive budget for a sealed generation is
+        // exactly K_G, so proactive alone leaves NO slack for loss. Drop 2 of
+        // generation 1's proactive coded symbols, then top up via the deficit
+        // path — the recovery symbols must complete the generation.
+        let mut dec = RlcWindowDecoder::new(symbol_size);
+        // Proactive coded for gen 1 (budget = K_G = 8); deliver only 6 (drop 2).
+        let mut proactive: Vec<WireSymbol> = Vec::new();
+        for _ in 0..(4 * g) {
+            let c = enc.generate_repair();
+            let a = u64::from_le_bytes(c.data[0..8].try_into().unwrap());
+            if a == anchor {
+                proactive.push(c);
+            }
+        }
+        for c in proactive.iter().take(g - 2) {
+            dec.add_symbol(c);
+        }
+        // Generation 1 is short by ≥2 → not yet decoded.
+        assert!(dec.rank_in(anchor, g as u64) < g as u64);
+        // Deficit loop: emit 2 MORE coded for generation 1 via the anchor path.
+        for _ in 0..2 {
+            let c = enc
+                .generate_repair_for(anchor)
+                .expect("sealed generation must be codeable for recovery");
+            assert_eq!(u64::from_le_bytes(c.data[0..8].try_into().unwrap()), anchor);
+            dec.add_symbol(&c);
+        }
+        assert_eq!(
+            dec.rank_in(anchor, g as u64),
+            g as u64,
+            "deficit-driven recovery completed the generation"
+        );
     }
 
     #[test]

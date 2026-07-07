@@ -465,6 +465,19 @@ impl WindowDecoder for RlcWindowDecoder {
             .retain(|(block_id, _, _)| *block_id >= oldest_seq);
     }
 
+    fn rank_in(&self, start: u64, count: u64) -> u64 {
+        // Independent rank restricted to the generation span. In generation
+        // mode every coded symbol's coefficients lie inside one generation, so a
+        // pivot row pivoted in [start,end) is an independent DoF for exactly that
+        // generation, and a recovered source is a solved DoF. The two sets are
+        // disjoint (a recovered seq is never a live pivot), so their counts sum
+        // to the generation's current rank.
+        let end = start.saturating_add(count);
+        let recovered = self.recovered.range(start..end).count() as u64;
+        let pivots = self.pivots.range(start..end).count() as u64;
+        recovered + pivots
+    }
+
     fn total_fed(&self) -> u64 {
         self.total_fed
     }

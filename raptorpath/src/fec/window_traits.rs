@@ -17,6 +17,21 @@ pub trait WindowEncoder: Send {
     /// Generate one repair symbol covering the current window.
     fn generate_repair(&mut self) -> WireSymbol;
 
+    /// Generate one coded symbol for the SPECIFIC generation anchored at
+    /// `anchor` (= its `window_start`), bypassing the encoder's proactive
+    /// per-generation budget. This is the sender arm of the per-generation
+    /// deficit-feedback loop (§16.3): the receiver reports how many more coded
+    /// symbols each frontier generation needs, and the sender emits exactly that
+    /// residual for the named generation — recovery that is bounded (the deficit)
+    /// and targeted (the stalled generation), replacing the feedback-free cap.
+    /// Returns `None` if the generation is not retained or not yet codeable
+    /// (e.g. not sealed). Non-generation encoders have no stable anchor and
+    /// return `None`.
+    fn generate_repair_for(&mut self, anchor: u64) -> Option<WireSymbol> {
+        let _ = anchor;
+        None
+    }
+
     /// Current window span: (oldest_seq, newest_seq).
     /// Returns (0, 0) if the window is empty.
     fn window_span(&self) -> (u64, u64);
@@ -63,6 +78,18 @@ pub trait WindowDecoder: Send + Sync {
 
     /// Advance window: discard state for symbols older than `oldest_seq`.
     fn advance(&mut self, oldest_seq: u64);
+
+    /// Independent rank the decoder currently holds over the span
+    /// `[start, start + count)` — the number of independent degrees of freedom
+    /// it has for that generation (solved sources + un-resolved pivot rows whose
+    /// pivot lies in the span). When this reaches `K_g` (= `count`) the whole
+    /// generation decodes. This is the receiver arm of the per-generation
+    /// deficit-feedback loop (§16.3): `deficit_g = K_g − rank_in(anchor, K_g)`.
+    /// Default `0` for decoders without per-generation structure.
+    fn rank_in(&self, start: u64, count: u64) -> u64 {
+        let _ = (start, count);
+        0
+    }
 
     /// Total symbols fed to this decoder.
     fn total_fed(&self) -> u64;
