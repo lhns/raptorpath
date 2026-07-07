@@ -2694,3 +2694,104 @@ qdiscs): `RWM_GEN=<G> RWM_GEN_R=0.15 RWM_EXTRA="--window-systematic-repair" bash
 ~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual` (C8 sweep) and `... c2 c2 ... single`
 (single control); clean-base G=96 wedge reproduced by rebuilding without the
 receiver-seeding fix.
+
+## Per-Symbol Perf — the "processing ceiling" was ONE O(n²); low-loss single-path now 3–5.6× faster; C8 (lossy) still latency-bound (branch `feat/per-symbol-perf`, 2026-07-07)
+
+The three sections above isolated a per-connection **processing ceiling** (~15
+Mbit from a 100 Mbit link, ~4.5× below native quinn, framed as "per-symbol
+processing, window/BW/RTT-independent"). This branch **PROFILED** that ceiling
+(perf, VM AVX2, single-path C2 native-perf, systematic-repair) and found the
+premise is **half right and half wrong**:
+- **RIGHT:** there WAS a dominant per-symbol CPU cost — a single accidental
+  **O(n²)**. Fixing it makes **low-loss single-path 3.0–5.6× faster and it now
+  SCALES with bandwidth** (the old "not bandwidth-limited" evidence was an
+  artifact of this bug pegging the CPU).
+- **WRONG:** the ceiling is NOT a "per-symbol processing" limit in general. At
+  the rate it caps, the sender uses only **40% of one core** (20% after the
+  fix), the receiver 30% — **neither side is CPU-saturated**. The **lossy** C2 /
+  C8 ceiling is a SEPARATE mechanism: loss-recovery in-order-frontier latency,
+  which CPU headroom does not touch. **C8 (>15.7) still NOT met.** Number NOT
+  forced.
+
+### PROFILE — the top per-symbol costs (perf, single-path C2 systematic-repair)
+| rank | cost | self % of sender CPU | what it is |
+|-----:|------|---------------------:|------------|
+| 1 | `PathState::record_rtt_sample` → `CopaState::record_rtt` | **~42%** | **O(n) full rescan** of the entire 10 s RTT-sample deque to recompute the windowed min, on EVERY ACK. At L1 (~1700–3000 ACK-driven samples/s × 10 s ⇒ **~20–30k-element deque**) this is a hidden **O(n²)** over a transfer — the single largest cost by 4×. |
+| 2 | syscall + futex + epoll (`do_syscall_64`, `sendmsg`, `futex_wake`) | ~20% | the per-symbol/per-ACK async round-trip: one QUIC datagram per symbol, one `sendmsg` per ACK, cross-thread wakeups to the quinn driver. Latency, not a CPU wall. |
+| 3 | `gf256::simd::mul_acc_ssse3` / `ring` AEAD (gcm+vpaes) | ~10% / ~12% | FEC coded-symbol GF multiply + QUIC crypto — necessary work. |
+| 4 | `GenerationEncoder::gen_len` (BTreeMap `range().count()`) | ~5% | O(gen_size) retained-source count, called per coded emission. Identified, NOT fixed (irrelevant to the lossy bottleneck; cacheable later). |
+
+**Decisive framing fact:** sender **40% CPU**, receiver **30%** — the ~15 Mbit
+ceiling is reached with **>half a core idle on each side**. It is latency-bound,
+not CPU-bound.
+
+### THE FIX — windowed-min via a monotonic deque (O(1) amortised, exact same value)
+`net/scheduler/mod.rs`, `CopaState::record_rtt`: replace the O(n) `rtt_samples.iter().min()`
+rescan with a **monotonic non-decreasing deque**. A new sample evicts every
+pending candidate with RTT ≥ its own (they can never be the window min while a
+newer, smaller-or-equal sample is in the window, and it expires strictly later),
+so the front is always the current windowed min; time-expiry still pops the
+(oldest-timestamp) front. **Byte-identical `min_rtt`** (so congestion control is
+unchanged — verified: C7 aggregation intact), O(1) amortised. Sender CPU
+**40%→20%**; `record_rtt_sample` **vanishes** from the profile.
+
+### L1 MEASURED — single-path before/after (VM AVX2, netem, 50–60 MB)
+| config | before (documented / this branch base) | after | factor |
+|--------|---------------------------------------:|------:|-------:|
+| **clean 100 Mbit, plain-reliable single** | 28.7 | **86.4** (×5, stdev 0.02 s) | **3.0×** |
+| **c1 1 Gbit, plain-reliable single** | 29.7 | **166.3** (×5, stdev 0.17 s) | **5.6×** |
+| c2 (lossy) systematic-repair single | 15.0–15.4 | 15.24 (×6) | ~flat |
+| c2 (lossy) plain-reliable single | 16.4 | 15.76 (×6) | ~flat |
+
+The low-loss / high-BW regime — where the O(n²) actually pegged the CPU — is
+**3–5.6× faster and now tracks link bandwidth** (86 at 100 Mbit clean → 166 at 1
+Gbit), directly **overturning** the Transport-Ceiling section's "100 Mbit→1 Gbit:
+28.7→29.7, not bandwidth-limited" (that was the RTT quadratic capping CPU, not a
+processing ceiling). raptorpath clean-100 Mbit (86.4) now **exceeds** the quoted
+native-quinn-at-C2 rate (72). The **lossy** c2 rate is unchanged because it is
+gated by loss recovery, not CPU.
+
+### DECISIVE C8 (c2+c3, systematic-repair, store=2·G, r=0.15, 50 MB ×6, VM)
+| G | C8 dual Mbit/s | stdev s | completion | single c2 | agg factor | vs 15.7 |
+|--:|---------------:|--------:|-----------:|----------:|-----------:|:-------:|
+| 192 | 15.03 | 1.00 | **6/6** | 15.24 | **0.99** | ✗ |
+| 384 | 14.91 | 2.03 | **6/6** | 15.24 | **0.98** | **✗ 0.95×** |
+
+C8 rides at the single-path rate (factor 0.98–0.99), **unchanged** by the CPU fix
+— exactly as expected, since both c2 and c3 are lossy and the binding constraint
+is loss-recovery latency, not processing. **>15.7 NOT met.**
+
+### Controls (no regression)
+- **C7 plain-reliable c2+c2 = 21.88 Mbit/s** (×1.39 over single plain c2 = 15.76;
+  stdev 0.85 s, 6/6) — **symmetric aggregation INTACT** (the fix keeps `min_rtt`
+  byte-identical, so CC is unchanged). One earlier batch read 18.4 (high-variance
+  lossy dual); the tight rerun confirms 21.9.
+- `cargo test -p raptorpath --lib` **262 green, 0 failed** (scheduler RTT tests
+  included); `gate_suite` **15/15 release**; raptorpath-math **11 green**.
+- **6/6 completion, dnf:0** across every arm.
+
+### VERDICT
+- **The "processing ceiling" was a single O(n²)** — profiled, fixed, MEASURED.
+  Low-loss single-path is **3.0–5.6× faster** and **scales with bandwidth**; the
+  Transport-Ceiling "not bandwidth-limited / per-symbol processing" claim is
+  **overturned for the low-loss regime**. Sender CPU halved (40%→20%).
+- **The DECISIVE C8 heterogeneous bar (>15.7): STILL NOT MET** (best 15.03,
+  factor 0.99). Honest FAIL-WITH-MECHANISM: the c2/c3 ceiling is **not** CPU
+  (both sides <30% core) — it is **loss-recovery in-order-frontier latency**, a
+  layer above the transport CPU path this branch fixed. A 1.3% GE loss collapses
+  single-path from 86 (clean) to 15 (c2): a 5.6× loss-recovery penalty that the
+  CPU fix does not touch and that a second lossy path cannot parallelise. Closing
+  it is a loss-recovery-latency problem (the FEC/reliability design already
+  explored in the three sections above), NOT a per-symbol-processing one.
+- **Net:** a large, correct, low-risk transport-CPU win that lands the
+  low-loss/high-BW throughput but not the specific lossy-heterogeneous C8
+  aggregation bar, because that bar is latency-bound.
+
+**Verification.** perf (`perf record -F 999 -g` on the sender/receiver PIDs),
+per-process CPU via `/proc/<pid>/stat`. L1 (VM, netem independent qdiscs):
+`RWM_GEN=<G> RWM_GEN_R=0.15 RWM_EXTRA="--window-systematic-repair" bash
+~/l1/meas_rwm.sh c2 c3 50000000 6 dual` (C8), `... c2 c2 ... single` (single
+control), `RWM_GEN=none ... meas_rwm.sh clean clean … single` and `… c1 c1 …`
+(low-loss single before/after), `RWM_GEN=none … c2 c2 … dual` (C7 control).
+Profiling harness: `~/l1/prof_single.sh`.
+
