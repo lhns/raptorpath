@@ -2896,8 +2896,48 @@ async fn run_window_sender(
             .unwrap_or(win_cap)
             .clamp(win_cap, 1 << 20)
     } else {
-        RELIABLE_STORE_MAX
+        // Plain-reliable (systematic-free, non-generation) MEMORY ceiling for
+        // the retention store. RWM_STORE forces a STATIC window (disables the
+        // dynamic BDP cap below) for the sweep; the shipped default keeps the
+        // large retention ceiling and lets the delay-based `plain_dyn_cap`
+        // bound the *outstanding* window instead.
+        std::env::var("RWM_STORE")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(RELIABLE_STORE_MAX)
     };
+    // Delay-based send-window cap for the plain-reliable path (paper §12).
+    // The fixed RELIABLE_STORE_MAX (1024) is ≈12× the BDP at C2, so the
+    // unacked store builds a multi-hundred-ms standing queue (MEASURED RTT
+    // 0.41–0.52 s vs 10 ms base). On a CLEAN link that only adds latency, but
+    // under loss every hole must traverse that bloated queue to recover, the
+    // cumulative-ack (and thus the ack-clocked pacing) freezes for a full
+    // bufferbloat-RTT, and single-path throughput COLLAPSES (MEASURED 75→14
+    // Mbit at C2). The remedy is to bound the OUTSTANDING window to a
+    // BDP-scaled cap so the queue — and hence recovery latency — stays ~1 RTT.
+    // BtlBw×RTprop is bufferbloat-robust (windowed-max rate × min-RTT floor),
+    // so it tracks the true pipe even while the live RTT is inflated. Active
+    // only for the plain-reliable path and only when RWM_STORE is NOT forcing
+    // a static window; generation/coded-only keep their own structural caps.
+    let plain_dyn_cap = reliable && !generation && !coded_only
+        && std::env::var("RWM_STORE").is_err();
+    // Window = gain × BDP. ≥2 keeps the pipe full (≈1 BDP) while leaving ≈1
+    // BDP of headroom to keep sending fresh data during a one-RTT recovery
+    // round; 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
+    let store_bdp_gain: f64 = std::env::var("RWM_STORE_GAIN")
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2.0).clamp(1.0, 64.0);
+    // Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
+    // burst can't pre-bloat the queue and inflate the min-RTT floor (which
+    // would then inflate the anchor itself); the anchor takes over once
+    // samples land. ~1.5× a 100 Mbit / 10 ms BDP.
+    let store_boot_cap: usize = std::env::var("RWM_STORE_BOOT")
+        .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(128);
+    // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
+    let store_cap_floor: usize = 64;
+    // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
+    // most every 5 ms; the pipe/BDP move far slower than the select loop).
+    let mut dyn_store_cap: usize = store_boot_cap.min(store_max);
+    let mut dyn_cap_refresh_us: u64 = 0;
     // Fractional repair accumulator: tracks sub-symbol repair debt.
     // Driven by TaperFunction density when GE data is available,
     // falls back to flat rate from compute_repair_rate_capped.
@@ -3314,7 +3354,31 @@ async fn run_window_sender(
             0
         };
         let cwnd_full = infl_cap > 0 && pipe_infl >= infl_cap;
-        let tx_paused = reliable && (store_len >= store_max || cwnd_full);
+        // Plain-reliable delay-based window cap (paper §12): bound the
+        // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
+        // loss recovery does not stall behind a bloated queue. Refreshed off
+        // the scheduler lock at most every 5 ms.
+        if plain_dyn_cap {
+            let dnow = now_us();
+            if dnow.saturating_sub(dyn_cap_refresh_us) >= 5_000 {
+                dyn_cap_refresh_us = dnow;
+                let bdp: f64 = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
+                        .sum()
+                };
+                dyn_store_cap = if bdp > 0.0 {
+                    ((store_bdp_gain * bdp).ceil() as usize).clamp(store_cap_floor, store_max)
+                } else {
+                    store_boot_cap.min(store_max)
+                };
+            }
+        }
+        let effective_store_cap = if plain_dyn_cap { dyn_store_cap } else { store_max };
+        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full);
 
         // RWM_DIAG periodic constraint report (see decls above the loop).
         if diag_on {
@@ -3365,7 +3429,7 @@ async fn run_window_sender(
                 eprintln!(
                     "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
-                    store_len, store_max,
+                    store_len, effective_store_cap,
                     paused_frac * 100.0,
                     good_mbit,
                     if generation { gen_rate_ewma } else { 0.0 },

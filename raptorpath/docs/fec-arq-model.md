@@ -2833,6 +2833,32 @@ honest deviations in constants and mechanics:
   and steps cwnd down by 1 (FEC under-provision, not congestion). Loss
   that FEC recovered never touches cwnd.
 
+**Loss-blind claim — VERIFIED in code (L1, 2026-07-07).** The C2 single-path
+throughput collapse under ~2.5 % bursty GE loss (76 → 14 Mbit) was investigated
+as a suspected loss-triggered cwnd reduction (which would violate this section).
+It is NOT: `RWM_DIAG` cwnd traces under C2 show cwnd GROWING (plain 29→628,
+systematic 254→3390), never collapsing, and `on_loss` provably touches cwnd only
+on a decode FAILURE, never on FEC-recovered loss. The loss-blind, delay-only CC
+holds end to end. The collapse has two other causes, one an honest deviation from
+this section's intent:
+
+- **The reliable window sender BYPASSED the delay-based CC (bufferbloat).** Its
+  TUN-read backpressure gated on a fixed retention-store cap (`RELIABLE_STORE_MAX
+  = 1024` symbols ≈ 12× the C2 BDP), not on the Copa-lite window, so nothing bound
+  the standing queue to the pipe (MEASURED RTT 0.41–0.52 s vs a 10 ms base). §12's
+  premise — the delay-based CC sets the total wire rate — was not actually enforced
+  on this data path. FIX: the plain-reliable sender now caps its outstanding window
+  at gain × (BtlBw×RTprop) using the same anchor as §12.6 (bufferbloat-robust:
+  windowed-max rate × min-RTT floor), restoring RTT to ~40 ms with no clean-link
+  regression. The generation/systematic paths already carried an analogous
+  structural cap (store = 2·G).
+- **A recovery-latency floor at the in-order cumulative-ack frontier** (independent
+  of the CC): under the Bulk operating point (§12.5, r*→0, pure ARQ) a hole freezes
+  the contiguous ack frontier and recovery is one reactive round-trip, so goodput
+  ≈ window/RTT — a ~16 Mbit ceiling that the CC cannot lift and that the bufferbloat
+  fix does not change. This is a transport-pipeline limit (pipelined or rateless
+  frontier recovery), not a CC or FEC-sizing limit. See goal-gate "Loss-Recovery".
+
 ### 12.5 CC + Taper: The Complete Architecture
 
 ```
