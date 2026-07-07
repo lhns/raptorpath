@@ -5524,6 +5524,64 @@ feedback work. Regression: non-generation modes untouched (the dense decoder is
 gated on generation mode; single-path / C7 systematic and coded-only paths use
 the unchanged `RlcWindowDecoder`).
 
+**A cheaper realization — SYSTEMATIC source + deficit-driven cross-path REPAIR
+(oracle-VALIDATED; a BUILD recommendation, not built; branch
+`feat/oracle-systematic-repair`, `temporal_oracle.rs` PART 3).** The "systematic
+pass-through" substrate named just above is now made precise and adjudicated in
+the same faithful oracle class. The coded-only generation design pays its three
+L1-killing costs *because every symbol is a coded combination*: whole-generation
+**O(G²) decode**, **decode-on-K latency**, and an ack-clocked **coded-datagram**
+loop. A systematic realization avoids all three at once yet keeps the same
+cross-path fungibility. In the model, the K source symbols are striped
+work-conserving (one path per source; the fast path pulls ∝ its rate) and a
+delivered source is one degree of freedom used **directly** — zero decode,
+out-of-order. A path with no fresh source emits **windowed REPAIR** (an RLC over
+the live window `[F−W_span, F)`, W_span ≈ W_mp ≈ 500 at C8) on the best path; a
+received repair is one fungible dof for ANY missing source in its window. The
+receiver decodes only the **local deficit** (a tiny dense solve over the current
+holes) and completes at rank K = K/(Σg_i). Four questions, all
+DERIVED/MEASURED in-oracle at C8 (c2+c3), r = 0.06:
+
+1. **Aggregation (Q1).** C8 het **×1.188** (99.4 % of the ceiling ×1.195); C7
+   symmetric control **×1.992** (~2×, no drag). Recovery uses zero per-seq ARQ.
+2. **Repair volume bounded (Q2).** φ = repair/K = **0.060** (= r, the loss-FEC
+   baseline; bounded), and the *structural* deficit-driven cross-path repair
+   → **0** as K grows: φ_tail = 0.0030 (5 MB) → 0.0000 (25/50/200 MB), because
+   the repair needed ≈ the slow path's in-flight window (≈ g_slow·OWD_slow ≈ 32
+   symbols), which is INDEPENDENT of K. There is **no structural deficit** — the
+   fast path does not re-cover a growing fraction.
+3. **Decode cost small (Q3).** The dense solve's max concurrent unknowns is
+   **7–10 symbols** (1.8–2.6 % of a G = 384 generation), K-INDEPENDENT (7 at
+   25 MB, 7 at 50 MB, 10 at 200 MB). It is O(deficit²) over ≈ 10 unknowns, NOT
+   the whole-object O(384²) of coded-only, and it does not grow with the object.
+4. **Contrast / provisioning (Q4).** The paper's ≈0.92 fork-join long pole is an
+   **in-order-delivery artifact**: in-order + finite store + path-affine =
+   **×0.932** (reproduced), but the same config with **cross-path repair**
+   advances the frontier fungibly = **×1.188**, and the bulk out-of-order regime
+   the design targets avoids the pole even *without* cross-path repair (affine
+   out-of-order = ×1.171). The explicit knob is the proactive repair rate: r ≲ ε
+   strands mid-object losses past the W_span horizon (DNF), r ≥ ~1.5·ε reaches
+   the ceiling.
+
+**Verdict — BUILD.** Systematic source + deficit-driven cross-path windowed
+repair reaches ×1.19 with bounded φ (→ r), a tiny K-independent deficit-decode
+(~10 vs 384 unknowns), no decode-on-K (source delivers on arrival), and no
+per-seq ARQ — strictly cheaper than coded-only on exactly the two axes that sank
+its L1 build (decode cost, delivery latency), while matching its aggregation. The
+minimal production change is a *modification* of the merged generation machinery,
+reusing striping + deficit-feedback + the dense GF(256) decoder: (i) send raw
+**systematic source** as primary (drop coded-only primary), delivered
+out-of-order; (ii) emit **windowed RLC repair** at proactive r ≳ ε plus a
+deficit-driven top-up on the best path, reusing `GenerationDeficit` re-scoped to
+per-window rank deficit; (iii) **decode the deficit only** with the existing
+dense decoder, sized to the ~10-symbol hole set, not to G; (iv) **no per-seq
+ARQ**. Honest scope: this is an independent-GE model (same fidelity class as the
+corrected oracle) and does not simulate the QUIC datagram control loop — but the
+two coded-only L1-killers are *structurally absent* (systematic source rides the
+reliable path with zero decode; the solve is ~10 symbols), so the residual L1
+risk is materially smaller than for coded-only. `cargo test -p raptorpath-math`
+green incl. `temporal_oracle` 7 tests (3 corrected-oracle + 4 systematic-repair).
+
 **Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
 `feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
 ×1.19 achievability above came from an oracle
