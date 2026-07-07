@@ -5582,6 +5582,31 @@ reliable path with zero decode; the solve is ~10 symbols), so the residual L1
 risk is materially smaller than for coded-only. `cargo test -p raptorpath-math`
 green incl. `temporal_oracle` 7 tests (3 corrected-oracle + 4 systematic-repair).
 
+**MEASURED (production build + L1, branch `feat/systematic-repair`,
+2026-07-07).** Built behind `--window-systematic-repair` as the modification
+above (`GenerationEncoder::new_systematic` → proactive budget `ceil(len·r)`;
+raw source on the wire as primary striped ∝-goodput; deficit-only decode via the
+dense decoder; per-seq ARQ off). The design's **structural claims hold in
+production**: C8 (c2+c3, 50 MB ×6, G=480/M=2, r=0.15) COMPLETES **6/6 (dnf:0)**,
+the deficit loop is essentially IDLE (holes covered inline by proactive r), and
+decode is a non-factor — so the two coded-only L1-killers are confirmed removed,
+and the anti-aggregation *drag* is gone (C8 dual **15.0 Mbit/s** sits AT the
+single-path rate 15.2, vs plain-systematic 12.11 and coded-only 8.90, both of
+which fell BELOW single). BUT the **DECISIVE >15.7 bar is NOT met (×0.99
+aggregation)** — and the residual constraint is now cleanly the **per-connection
+transport control loop, not the FEC**: a SYMMETRIC-path control (C7 c2+c2) also
+does NOT aggregate (**15.4**, ×1.02 with two IDENTICAL paths), a single perf
+connection extracts only ~15 Mbit from a 100 Mbit link, and loosening the store
+(M=4, M=8) OVERRUNS the droppable datagram path to DNF rather than aggregating.
+The oracle's independent-GE model (each path delivers at its link goodput, store
+unbounded) does not capture production's per-connection cwnd/pacing ceiling and
+its bounded store pruned by the IN-ORDER cumulative ack (which serializes the
+paths even though delivery is out-of-order — sender `tx_paused` ~87 %). Honest
+FAIL-WITH-MECHANISM: closing it is a TRANSPORT change (decouple backpressure from
+the in-order frontier; grow the datagram send window without overrun), below this
+design's FEC scope. Full record: goal-gate "Systematic+Repair — PRODUCTION BUILD
++ L1 MEASURED".
+
 **Corrected oracle — the ×1.19 achievability claim, re-adjudicated (goal
 `feat/oracle-temporal`, `raptorpath-math/tests/temporal_oracle.rs`).** The
 ×1.19 achievability above came from an oracle
