@@ -5555,11 +5555,60 @@ secondary (×0.21 → ×0.60).  So the grounded position is:
   anchor** (generation size ≈ W_mp / 384–512 symbols at C8, pipeline depth
   M ≥ 2, ∝-goodput striping of each generation's coded symbols, out-of-order
   per-generation decode, fungible cross-path recovery — *no* per-seq targeted
-  ARQ beneath the code).  This is a BUILD recommendation for a future arm; it
-  is *not* built in this task (oracle/model work only).
+  ARQ beneath the code).
 - The shipped coded-*sliding*-window (moving anchor) cannot reach it and is
   correctly recorded as REFUTED at L1 (×0.26); the barrier it hit is the
   moving anchor + per-seq throttled recovery, not fungible coding as such.
+
+**Production realization — IMPLEMENTED (branch `feat/generation-coding`).** The
+stable-generation design above is now built in the transport, not only the
+oracle. A `GenerationEncoder` (`raptorpath/src/fec/generation.rs`) partitions the
+object's source symbols into FIXED generations of `RWM_GEN` (default 384)
+symbols and emits RANDOM-LINEAR-COMBINATION coded symbols WITHIN each generation
+(a stable anchor: `window_start = g·G` never moves). It is deliberately built on
+the EXISTING coded-only wire and decoder: a generation-coded symbol is an RLC
+repair over the fixed span `[g·G, g·G+gen_len)`, carrying the identical
+self-describing header (`window_start` = the generation anchor, `window_count` =
+K_G), so the existing `RlcWindowDecoder` solves each generation's K_G×K_G system
+independently the instant K_G independent symbols for that anchor arrive
+(decode-on-K), with ZERO decoder change. It is gated behind a
+`window_generation_coding` flag composing with the object/perf (bulk, loose-δ)
+path — realtime and the in-order TCP-in-tunnel stream are untouched. The three
+production specifics: (a) **generation framing** — coded symbols round-robin
+across the M in-flight generations, each provisioned to `ceil(len·(1+r))` before
+recovery, so no generation is a moving anchor; (b) **generation-level ARQ
+granularity** — the per-seq targeted-retransmit/NACK layer (the sent-data store,
+the ADR-0046 throttle) is switched OFF in this mode (the receiver installs no
+NACK producer); a short generation is recovered by MORE coded symbols for THAT
+generation (fungible, from either path), never by resending a specific seq;
+(c) **pipeline** — an ack-clocked flow-control window bounds coded to
+`ack·(1+r) + W_inflight` ahead of the decode frontier (bounding the QUIC
+datagram buffer), so M generations stay concurrently in flight. Verification:
+`fec::generation` codec unit tests (decode-on-K, out-of-order, per-generation
+independence, pipeline bound) and `perf_loopback_generation_object` /
+`perf_loopback_generation_dual_path` — a generation-coded 1 MB object completes
+over a real (in-process) dual-path QUIC link with every byte recovered purely by
+per-generation GE and NO per-seq retransmit (≈15–17 Mbit/s loopback).
+
+**L1 status — MEASURED, and it does NOT yet beat fast-path-alone: a
+fail-with-mechanism (goal-gate "Generation Coding", 2026-07-07).** At C8 = c2+c3
+netem the production build does NOT clear the 15.7 Mbit/s fast-path-alone bar.
+The mechanism is localized and sharp, and it is NOT the generation design:
+the **first generation decodes correctly end-to-end on real netem** (the full
+stable-anchor + out-of-order + generation-recovery + no-per-seq-ARQ pipeline
+works over real per-path timing/loss), but **generations after the first stall**
+— the cumulative-ack frontier advances one generation then wedges. Instrumented,
+the arriving coded for generation *g* > 0 span only the first few source symbols
+of the generation (decoder rank stalls ≈ K_G past the frontier) despite ample
+coded emission, zero send failures, and no datagram-size drops on the object
+path — i.e. a per-generation source-span anomaly in the emission/intake/advance
+interaction that appears only under real one-way delay (it does not reproduce on
+the zero-RTT loopback, which completes). So the ×1.19 remains **oracle-proven and
+loopback-realized but not yet L1-realized**: the generation *codec* and the
+*stable-anchor mechanism* are correct (proven), while a residual transport
+plumbing bug in the multi-generation pipeline over real-RTT netem holds
+production heterogeneous aggregation OPEN. This is an honest fail-with-mechanism,
+not a refutation of the design.
 
 ### 16.4 One Pipeline, Not Mode Switching
 

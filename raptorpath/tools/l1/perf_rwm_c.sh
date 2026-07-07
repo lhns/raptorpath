@@ -20,6 +20,12 @@ BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 TENV=""
 [[ -n "$PLACE_T" ]] && TENV="$TENV RWM_PLACE_T=$PLACE_T"
 [[ -n "${RWM_MIN_R:-}" ]] && TENV="$TENV RWM_MIN_R=$RWM_MIN_R"
+[[ -n "${RWM_WINDOW:-}" ]] && TENV="$TENV RWM_WINDOW=$RWM_WINDOW"
+# Generation-coding knobs (§16.3): G, pipeline depth M, per-generation overhead
+# r. Propagated into the netns exec env so both server and client see them.
+[[ -n "${RWM_GEN:-}" ]] && TENV="$TENV RWM_GEN=$RWM_GEN"
+[[ -n "${RWM_PIPELINE:-}" ]] && TENV="$TENV RWM_PIPELINE=$RWM_PIPELINE"
+[[ -n "${RWM_GEN_R:-}" ]] && TENV="$TENV RWM_GEN_R=$RWM_GEN_R"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

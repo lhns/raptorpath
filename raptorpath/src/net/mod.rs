@@ -101,6 +101,15 @@ pub struct PeerConfig {
     /// long-pole. Implies out-of-order delivery; requires `window_reliable`.
     /// Bulk-object / loose-δ ONLY. Default false.
     pub window_coded_only: bool,
+    /// Generation-based cross-path fungible coding (paper §16.3, the
+    /// oracle-validated stable-anchor fix). Coded symbols are RLC combinations
+    /// WITHIN fixed generations of ~W_mp source symbols; each generation is a
+    /// stable coding target that decodes out-of-order on any K_G independent
+    /// symbols from any path, with generation-level recovery and NO per-seq
+    /// ARQ beneath the code. Implies coded-only wire symbols + out-of-order
+    /// delivery; requires `window_reliable`. Bulk-object / loose-δ ONLY.
+    /// Default false.
+    pub window_generation_coding: bool,
 }
 
 // ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
@@ -474,6 +483,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // bulk-object mode that pays a window-fill decode latency, so it always
     // implies out-of-order object delivery.
     let window_coded_only = window_reliable && config.window_coded_only;
+    // Generation-based fungible coding (§16.3 stable anchor). Composes ON TOP
+    // of the reliable window: coded symbols are RLC combinations within FIXED
+    // generations (stable target) rather than the moving sliding window, and
+    // the per-seq ARQ beneath the code is switched OFF (recovery is
+    // generation-level). Implies coded-only wire symbols + out-of-order object
+    // delivery.
+    let window_generation = window_reliable && config.window_generation_coding;
     if config.window_reliable && !window_mode {
         warn!(
             backend = ?effective_fec_backend,
@@ -712,6 +728,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_mode = window_mode;
     let sender_window_reliable = window_reliable;
     let sender_window_coded_only = window_coded_only;
+    let sender_window_generation = window_generation;
     let sender_window_ack = window_ack_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let sender_protocol_hint = config.protocol_hint;
@@ -734,6 +751,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 sender_protocol_hint,
                 sender_window_reliable,
                 sender_window_coded_only,
+                sender_window_generation,
             )
             .await;
             return;
@@ -1029,12 +1047,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // systematic source on the wire the decoder emits each source seq only
     // when it is recovered by GE, in arbitrary order, so the receiver must
     // deliver-on-decode (there is no systematic in-order arrival to hold to).
-    let recv_window_ooo =
-        window_reliable && (config.window_out_of_order || window_coded_only);
+    // Generation coding (§16.3 stable anchor) is likewise out-of-order: each
+    // generation decodes on any K_G coded symbols and its sources are emitted
+    // as they are recovered, reassembled by offset at the object layer.
+    let recv_window_ooo = window_reliable
+        && (config.window_out_of_order || window_coded_only || window_generation);
     // Fungible frontier (§16.5): the decoder must retain the wider W_mp coding
     // window so a coded symbol can still combine over its full span; mirror
     // the sender's win_cap (default 640, RWM_WINDOW override) or keep 200.
-    let recv_win_cap: u64 = if window_coded_only {
+    // Generation mode retains the whole in-flight pipeline (M generations of
+    // G symbols) so no not-yet-decoded generation is ever pruned early.
+    let recv_win_cap: u64 = if window_generation {
+        let g = std::env::var("RWM_GEN").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(384);
+        let m = std::env::var("RWM_PIPELINE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2);
+        ((g.max(1) * (m.max(1) + 1)).max(MAX_WINDOW_SIZE)).min(1 << 20) as u64
+    } else if window_coded_only {
         std::env::var("RWM_WINDOW")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -1044,11 +1071,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         MAX_WINDOW_SIZE as u64
     };
     let recv_window_ack = window_ack_seq.clone();
-    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> = if window_mode {
-        Some(nack_tx)
-    } else {
-        None
-    };
+    // Generation coding (§16.3) turns the per-seq targeted ARQ OFF beneath the
+    // code — the per-seq reliability layer is exactly what made the moving
+    // window path-affine and invoked the ADR-0046 throttle (measured ×0.26).
+    // With no NACK producer, a short generation is recovered by MORE coded
+    // symbols for that generation (fungible, cross-path), never by resending a
+    // specific seq. So the SACK→gap producer is suppressed in generation mode.
+    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
+        if window_mode && !window_generation {
+            Some(nack_tx)
+        } else {
+            None
+        };
 
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
@@ -2441,11 +2475,79 @@ async fn run_window_sender(
     // flow — every transmitted payload symbol is a fungible combination, so
     // no specific symbol is a fixed in-order position a slow path long-poles.
     coded_only: bool,
+    // Generation-based coding (§16.3, the oracle-validated stable-anchor fix).
+    // Codes coded symbols WITHIN fixed generations of `RWM_GEN` (default 384)
+    // source symbols — a STABLE anchor, unlike the moving sliding window — with
+    // `RWM_PIPELINE` (default 2) generations concurrently in flight. Implies
+    // coded_only wire symbols. Crucially it turns the per-seq targeted ARQ OFF
+    // (no retransmit store, no NACK loop, no tail sweep): a short generation is
+    // recovered by MORE coded symbols for that generation (fungible cross-path),
+    // never by resending a specific seq — the per-seq layer is what made the
+    // moving window path-affine and drove the ×0.26 drag.
+    generation: bool,
 ) {
+    // Generation coding emits coded wire symbols exactly like coded-only; the
+    // difference is the coding UNIT (a stable generation vs the moving window)
+    // and that per-seq ARQ is disabled below.
+    let coded_wire = coded_only || generation;
+    let gen_size: usize = std::env::var("RWM_GEN")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(384)
+        .max(1);
+    let pipeline: usize = std::env::var("RWM_PIPELINE")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(2)
+        .max(1);
+    // Generation-coding proactive overhead r (coded per generation beyond K_G):
+    // the encoder provisions each generation to ceil(len·(1+r)) coded before it
+    // is only coded for recovery. Covers loss + the MDS margin. RWM_GEN_R env.
+    let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.20)
+        .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
-    let mut encoder: Box<dyn WindowEncoder> =
-        create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler);
+    let mut encoder: Box<dyn WindowEncoder> = if generation {
+        Box::new(crate::fec::GenerationEncoder::new(symbol_size, gen_size, pipeline, gen_repair_floor))
+    } else {
+        create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler)
+    };
     let mut prev_ack: u64 = 0;
+    // Generation-mode paced coded emission (see the emission block in the loop).
+    // The token bucket is clocked at the DELIVERED goodput — measured from the
+    // cumulative-ack (window_ack_seq) progress, i.e. the receiver-driven rate at
+    // which decoded source symbols are completing. This is the true link
+    // goodput and is NON-circular (unlike the send-rate estimator or the stuck
+    // window-mode cwnd, which never grows past INITIAL_CWND). A small headroom
+    // factor lets the rate ramp; a bootstrap floor primes the first generation
+    // before any ack exists. Decouples coded emission from TUN intake so a
+    // generation buffered under backpressure keeps accumulating its K_G.
+    let mut gen_coded_total: u64 = 0; // cumulative coded symbols emitted
+    let mut gen_last_source_us: u64 = now_us(); // last source-intake time
+    // Fixed-rate pacing (token bucket) for coded emission: without it the flow
+    // window is spent as one instantaneous burst of datagrams, which the QUIC
+    // datagram path DROPS (unreliable, droppable) faster than the receiver can
+    // decode — so a sealed generation never accumulates rank. The rate is a
+    // generous ceiling (RWM_GEN_RATE symbols/sec, ~100 Mbit at 1.5 kB); the
+    // ack-clocked flow window is the real limiter, this just spreads the bursts.
+    let mut gen_tokens: f64 = 0.0;
+    let mut gen_tok_last_us: u64 = now_us();
+    let gen_rate: f64 = std::env::var("RWM_GEN_RATE")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(9000.0);
+    // In-flight coded allowance W (coded symbols the pipe may hold ahead of the
+    // decode frontier). MUST be ≥ pipeline·gen_size: coded symbols are striped
+    // round-robin across the M active generations, so to let the FIRST
+    // generation accumulate its K_G (and thereby decode → advance the ack that
+    // grows the target) each of the M active generations needs ~gen_size coded
+    // in flight at once. Below M·G the first generation never reaches K_G, ack
+    // stays 0, and the target never grows — a startup deadlock. Default
+    // (M+1)·gen_size (matches the source-retention store_max) plus decode/loss
+    // slack. RWM_GEN_INFLIGHT overrides.
+    let gen_inflight_window: f64 = std::env::var("RWM_GEN_INFLIGHT")
+        .ok().and_then(|s| s.parse().ok())
+        .unwrap_or((2 * pipeline * gen_size) as f64);
     // RWM Phase C (paper §16.5, the BANDWIDTH knob r): experimental
     // per-symbol repair-rate FLOOR. The Bulk χ glide drives r*→0 mid-stream
     // (§14.26), leaving the window systematic (not rateless-fungible), so a
@@ -2469,7 +2571,13 @@ async fn run_window_sender(
     // coding window to W_mp (default 640, RWM_WINDOW override for the sweep);
     // the oracle (oracle_c8_fungible_wmp_window) confirms W≥384 reaches the
     // ×1.19 ceiling while W=200 does not. Systematic modes keep 200.
-    let win_cap: usize = if coded_only {
+    let win_cap: usize = if generation {
+        // Generation mode retains the whole in-flight pipeline: M generations
+        // of G symbols (plus one for the currently-filling head). This is the
+        // stable-anchor analogue of W_mp — every not-yet-decoded generation
+        // stays retained (and keeps getting coded symbols) until it decodes.
+        (gen_size * (pipeline + 1)).clamp(MAX_WINDOW_SIZE, 1 << 20)
+    } else if coded_only {
         std::env::var("RWM_WINDOW")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -2490,7 +2598,14 @@ async fn run_window_sender(
     // decouples them and DNFs. Sizing the store to W_mp is what makes the
     // window rateless-fungible in practice. W_mp also comfortably exceeds the
     // BDP (~190 sym at C8), so both paths stay saturated. RWM_STORE overrides.
-    let store_max: usize = if coded_only {
+    let store_max: usize = if generation {
+        // Backpressure at the pipeline bound: the send frontier may run at most
+        // ~M generations ahead of the cumulative-decode frontier, so exactly M
+        // generations are in flight. TUN reads pause here (flow control), never
+        // dropping data. Generation mode uses the encoder's retained size as the
+        // backpressure signal (no sent_store), so this matches win_cap.
+        win_cap
+    } else if coded_only {
         std::env::var("RWM_STORE")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -2569,11 +2684,16 @@ async fn run_window_sender(
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
             let wire_sym = encoder.add_source(&$framed);
+            gen_last_source_us = now_us();
 
             // RWM Phase A retention: the store keeps the sent bytes until
             // the peer acks them — the coding window may slide past this
             // symbol, but the data can no longer be destroyed by eviction.
-            if reliable {
+            // Generation coding turns per-seq ARQ OFF, so it needs NO sent
+            // store (recovery is more coded symbols for the generation, never
+            // an exact-seq resend); backpressure uses the encoder's retained
+            // size instead. The GenerationEncoder itself retains the sources.
+            if reliable && !generation {
                 sent_store.insert(wire_sym.block_id, wire_sym.clone());
             }
 
@@ -2605,38 +2725,50 @@ async fn run_window_sender(
             // fixed in-order position (removing the §16.7 long-pole cap). The
             // systematic bytes remain in the encoder window + retention store
             // for the targeted-ARQ backstop on aged holes.
-            let on_wire = if coded_only {
-                encoder.generate_repair()
-            } else {
-                wire_sym.clone()
-            };
-            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch {
-                symbols: vec![on_wire],
-                send_timestamp_us: now_us(),
-                batch_seq,
-                path_id: source_path,
-            };
-            if let Err(e) = transport.send_symbols(source_path, batch) {
-                warn!(source_path, ?e, "failed to send window source symbol");
-            }
-            {
-                let mut sched = scheduler.lock();
-                if let Some(p) = sched.path_mut(source_path) {
-                    p.charge_in_flight(1);
+            // Generation coding decouples coded emission from source intake:
+            // add_source only FILLS the generation here; the paced token-bucket
+            // block in the main loop does ALL wire sends (so coded keeps flowing
+            // to complete buffered generations even while TUN reads are paused by
+            // backpressure — the source-driven emission alone serializes and
+            // stalls). So skip the per-source wire send entirely in this mode.
+            if !generation {
+                let on_wire = if coded_wire {
+                    encoder.generate_repair()
+                } else {
+                    wire_sym.clone()
+                };
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch = SymbolBatch {
+                    symbols: vec![on_wire],
+                    send_timestamp_us: now_us(),
+                    batch_seq,
+                    path_id: source_path,
+                };
+                if let Err(e) = transport.send_symbols(source_path, batch) {
+                    warn!(source_path, ?e, "failed to send window source symbol");
                 }
+                {
+                    let mut sched = scheduler.lock();
+                    if let Some(p) = sched.path_mut(source_path) {
+                        p.charge_in_flight(1);
+                    }
+                }
+                if let Some(ps) = stats.path(source_path) {
+                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                }
+                stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
+                source_symbols_this_period += 1;
             }
-            if let Some(ps) = stats.path(source_path) {
-                ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
-            }
-            stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
-            source_symbols_this_period += 1;
 
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
 
-            // Add to retransmit buffer for P_lost-based retransmit decisions
-            {
+            // Add to retransmit buffer for P_lost-based retransmit decisions.
+            // Generation coding disables per-seq ARQ entirely — no retransmit
+            // buffer (so the P_lost retransmit branch never fires and the tail
+            // ARQ sweep never arms) and no per-seq deficit accounting. Recovery
+            // is generation-level (more coded symbols for a short generation).
+            if !generation {
                 let epsilon = {
                     let sched = scheduler.lock();
                     sched.active_paths().iter()
@@ -2683,7 +2815,10 @@ async fn run_window_sender(
             // Taper-driven repair accumulator with cwnd budget gate (ADR-0050).
             // Uses TaperFunction density τ(t) = A×(1-q)^t when GE data is available,
             // capped by spare capacity. Falls back to flat rate otherwise.
-            if encoder.window_size() > 1 {
+            // Generation coding does ALL coded emission in the ack-clocked
+            // flow-control block in the main loop, so the per-source taper repair
+            // is disabled here (it would double-emit and fight the flow control).
+            if !generation && encoder.window_size() > 1 {
                 let repair_rate = {
                     let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
@@ -2711,6 +2846,17 @@ async fn run_window_sender(
                 // AFTER the spare cap on purpose — the experiment forces the
                 // bandwidth spend to test aggregation, on links with headroom.
                 let repair_rate = repair_rate.max(repair_rate_floor);
+                // Generation coding: a small proactive overhead per generation
+                // (the oracle's r ≈ 0.10) so a generation carries K_G(1+r) coded
+                // symbols and decodes without waiting on a recovery round for
+                // the expected loss. Beyond this, the frontier-retention keeps
+                // coding any still-short generation until it decodes (fungible,
+                // no per-seq ARQ). RWM_GEN_R overrides.
+                let repair_rate = if generation {
+                    repair_rate.max(gen_repair_floor)
+                } else {
+                    repair_rate
+                };
                 repair_debt += repair_rate;
                 taper_offset += 1;
 
@@ -2814,11 +2960,93 @@ async fn run_window_sender(
         // growing TUN queue and slows down (flow control), and this loop
         // keeps servicing acks/NACKs/tail sweeps so the store drains.
         // Retention is never released by pressure, only by acks.
-        let tx_paused = reliable && sent_store.len() >= store_max;
+        // Generation mode keeps no sent_store — its backpressure signal is the
+        // encoder's retained source count (= symbols in the in-flight pipeline
+        // of M generations). Pausing TUN reads at store_max holds the send
+        // frontier ~M generations ahead of the cumulative-decode frontier.
+        let store_len = if generation { encoder.window_size() } else { sent_store.len() };
+        let tx_paused = reliable && store_len >= store_max;
+
+        // Generation coding: paced coded emission (see gen_tokens above). Runs
+        // every iteration — including the tx_paused 1 ms wakeups — so coded
+        // symbols for the in-flight generations keep flowing while TUN reads are
+        // paused, completing buffered generations and keeping M in flight
+        // (∝-goodput striping via place_symbol; fungible cross-path, no per-seq
+        // ARQ). This is the mechanism that turns the serialized stop-and-wait
+        // into a pipelined transfer.
+        if generation && encoder.window_size() > 0 {
+            let now = now_us();
+            // Object tail: intake is idle (not just paused by backpressure — no
+            // new source for a few RTTs while the pipe has room). Let the final
+            // partial generation recover; a mid-stream backpressure pause is NOT
+            // idle (tx_paused), so this never floods a still-filling generation.
+            encoder.set_intake_idle(!tx_paused && now.saturating_sub(gen_last_source_us) > 30_000);
+            // ACK-CLOCKED WINDOW FLOW CONTROL. Emit coded symbols up to
+            //   total_coded ≤ delivered·(1+r) + W_inflight
+            // where `delivered` = cumulative ack (decoded source symbols) and
+            // W_inflight is the in-flight coded allowance (≈ BDP + one
+            // generation). The delivered·(1+r) term is the steady coded budget
+            // to reconstruct what has been delivered (r covers loss + the MDS
+            // margin); W_inflight is the burst the pipe may hold ahead of the
+            // decode frontier. This self-clocks to the LINK GOODPUT (ack-driven,
+            // like a congestion window) and — crucially — BOUNDS the QUIC
+            // datagram buffer, so over-emission can't bloat it and strand fresh
+            // coded behind stale coded (the ×0.13 pathology of un-clocked
+            // emission). RWM_GEN_R (overhead r) and RWM_GEN_INFLIGHT tune it.
+            let ack_now = window_ack_seq.load(Ordering::Relaxed);
+            // FLOW-CONTROL bound: coded must not run more than W_inflight coded
+            // symbols ahead of the DECODE frontier (cumulative ack), which
+            // bounds the QUIC datagram buffer (no un-clocked bloat). The encoder
+            // itself caps per-generation emission to ceil(len·(1+r)) so this
+            // window is never spent producing low-rank symbols over a still-
+            // filling generation — the two together give startup-safe, recovery-
+            // capable, ack-clocked emission.
+            let target = (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window;
+            // Refill the pacing token bucket (capped at a small burst).
+            let tok_dt = now.saturating_sub(gen_tok_last_us);
+            gen_tok_last_us = now;
+            gen_tokens = (gen_tokens + gen_rate * (tok_dt as f64 / 1_000_000.0)).min(64.0);
+            let burst_cap = 256u32;
+            let mut emitted = 0u32;
+            while (gen_coded_total as f64) < target
+                && emitted < burst_cap
+                && gen_tokens >= 1.0
+                && encoder.wants_coding()
+            {
+                gen_coded_total += 1;
+                emitted += 1;
+                gen_tokens -= 1.0;
+                let sym = encoder.generate_repair();
+                let path = {
+                    let sched = scheduler.lock();
+                    sched.place_symbol(true, &[]).unwrap_or(0)
+                };
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch = SymbolBatch {
+                    symbols: vec![sym],
+                    send_timestamp_us: now_us(),
+                    batch_seq,
+                    path_id: path,
+                };
+                if let Err(e) = transport.send_symbols(path, batch) {
+                    warn!(path, ?e, "failed to send generation coded symbol");
+                }
+                {
+                    let mut sched = scheduler.lock();
+                    if let Some(p) = sched.path_mut(path) {
+                        p.charge_in_flight(1);
+                    }
+                }
+                if let Some(ps) = stats.path(path) {
+                    ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                }
+                stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+            }
+        }
         if tx_paused != last_tx_paused {
             debug!(
                 tx_paused,
-                store_len = sent_store.len(),
+                store_len,
                 "reliable-window backpressure state change"
             );
             last_tx_paused = tx_paused;
@@ -2865,6 +3093,13 @@ async fn run_window_sender(
             // below (mirrors the block sender's 1 ms backpressure poll).
             _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => None,
             p = tun.read_packet(), if !tx_paused => Some(p),
+            // Generation coding: a 1 ms emission poll so the loop keeps waking to
+            // run the paced coded-emission block even when no TUN packet is ready
+            // (the tail — all sources read but the last generations still need
+            // coded symbols to decode) and when not paused. Without it the loop
+            // would block in read_packet and the tail would never complete.
+            _ = tokio::time::sleep(Duration::from_millis(1)),
+                if generation && !tx_paused && encoder.window_size() > 0 => None,
             gaps = nack_rx.recv() => {
                 if let Some(g) = gaps {
                     pending_gaps = Some(g);
@@ -3237,10 +3472,19 @@ async fn run_window_sender(
             // Keep the encoder window at the derived W* (paper 8.8), bounded by
             // the sender's hard ceiling; fall back to MAX_WINDOW_SIZE/2 when the
             // estimator has no throughput/RTT sample yet (cold start).
-            let keep_behind = derived_window
-                .map(|w| w.clamp(16, win_cap))
-                .unwrap_or(win_cap / 2) as u64;
-            encoder.advance(ack.saturating_sub(keep_behind));
+            // Generation mode advances by GENERATION: the cumulative ack passes
+            // a seq only when its whole generation has decoded and delivered
+            // contiguously, so everything at or below `ack` is DONE — drop those
+            // generations (advance gen-aligns internally). No W*-behind retention
+            // (the coding target is the generation, not a sliding W).
+            if generation {
+                encoder.advance(ack + 1);
+            } else {
+                let keep_behind = derived_window
+                    .map(|w| w.clamp(16, win_cap))
+                    .unwrap_or(win_cap / 2) as u64;
+                encoder.advance(ack.saturating_sub(keep_behind));
+            }
 
             // Reset budget period counters on significant window advancement
             if newly_acked >= 10 {
@@ -3276,7 +3520,12 @@ async fn run_window_sender(
         // policies (it is only the FEC horizon). Under RETAIN this eviction
         // destroys no data: the sent-data store still holds the bytes, and
         // an aged hole is recovered by a targeted retransmit from it.
-        if encoder.window_size() > win_cap {
+        // Generation mode is EXEMPT: dropping a not-yet-decoded generation's
+        // sources would make its coded symbols unsolvable (there is no per-seq
+        // store to fall back on). Backpressure (store_max) already bounds the
+        // retained pipeline to M generations, and advance() only ever drops
+        // fully-decoded generations — so no size-pressure eviction is needed.
+        if !generation && encoder.window_size() > win_cap {
             let (oldest, _) = encoder.window_span();
             encoder.advance(oldest + (encoder.window_size() - win_cap) as u64);
             // Clean up source_path_map for evicted sequences (EVICT only:

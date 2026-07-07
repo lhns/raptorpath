@@ -34,6 +34,25 @@ pub trait WindowEncoder: Send {
         let _ = seq;
         None
     }
+
+    /// Whether the encoder currently has a generation it can usefully code a
+    /// symbol for (a not-yet-provisioned or recovery-eligible generation).
+    /// When false, `generate_repair` would only return an inert placeholder, so
+    /// the caller must NOT emit — emitting inert symbols would consume the send
+    /// budget and stall (they dedup to one at the decoder). Default: always true
+    /// (the sliding-window encoders always have the current window to code).
+    fn wants_coding(&self) -> bool {
+        true
+    }
+
+    /// Signal that source intake is idle (no new source symbols are arriving —
+    /// e.g. the object's tail, all bytes handed to the encoder). Generation
+    /// coding uses this to allow recovery coding of the final, partial
+    /// generation (which is never "sealed" to its full size); other encoders
+    /// ignore it. Default: no-op.
+    fn set_intake_idle(&mut self, _idle: bool) {
+        let _ = _idle;
+    }
 }
 
 /// Sliding window decoder — processes symbols as they arrive.

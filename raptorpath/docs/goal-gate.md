@@ -1868,3 +1868,112 @@ here.
 `real_trace_validation` tests). No production code changed —
 `cargo test -p raptorpath --lib` untouched. Reproduce:
 `cargo test -p raptorpath-math --test real_trace_validation -- --nocapture`.
+
+## Generation Coding — production build of the stable-anchor design (branch `feat/generation-coding`, 2026-07-07)
+
+The culminating build: implement the oracle-validated generation-based cross-path
+fungible coding and measure it at L1. **Oracle-config confirmation → build →
+measure.** Outcome: oracle **CONFIRMED**, codec + design **IMPLEMENTED and
+codec-verified**, and the L1 decisive number is an **honest FAIL-WITH-MECHANISM**
+(the multi-generation transport does not yet complete over the real datagram
+path). The generation-coding *mechanism* is correct; a residual transport
+plumbing gap — the missing per-generation **deficit feedback** — holds
+production heterogeneous aggregation OPEN.
+
+### PART 0 — Oracle-config confirmation (`raptorpath-math/tests/temporal_oracle.rs`)
+Re-ran the corrected temporal oracle to confirm the EXACT production config
+reaches the ceiling AND that the losing config reproduces the L1 ×0.26:
+
+| config (C8 het, K=20k, r=0.10) | factor |
+|--------------------------------|-------:|
+| goodput ceiling Σg/g_fast | ×1.195 |
+| aligned generations, best **G=384, M=2** | **×1.194** |
+| aligned generations, G=512 / G=640 M=2 | ×1.189 / ×1.181 |
+| stable anchor + fungible recovery, M=1 | ×1.134 (stable anchor alone) |
+| moving anchor + throttled recovery, M=1 (== L1 refutation) | **×0.259** |
+| C7 symmetric control (G=640, M=3) | ×1.961 (no drag) |
+
+So the production parameters (**G=384, M=2, ∝-goodput striping, generation-level
+recovery, NO per-seq ARQ**) reach ×1.19 in the oracle, and dropping to a moving
+anchor + per-seq ARQ reproduces the ×0.26 drag. CONFIRMED — the build targets the
+WINNING config. 3 tests green.
+
+### PART 2 — Implementation (substrate + what shipped)
+**Substrate chosen: extend the existing coded-only sliding-window path** (least
+invasive) rather than a fresh RLC stack. The key realization: a generation-coded
+symbol is an RLC repair over a FIXED span `[g·G, g·G+gen_len)`, so it carries the
+IDENTICAL self-describing wire header (`window_start` = the STABLE generation
+anchor, `window_count` = K_G), and the existing `RlcWindowDecoder` decodes each
+generation's K_G×K_G system independently the instant K_G independent symbols for
+that anchor arrive — **zero decoder change**. Only a stable-anchor *encoder* and
+the ARQ-disable are new.
+- **`raptorpath/src/fec/generation.rs`** — `GenerationEncoder` (impl
+  `WindowEncoder`): fixed generations of `RWM_GEN` (384) source symbols, coded
+  ONLY when SEALED so every coded spans the full width, round-robin over M
+  in-flight generations, per-generation proactive budget + frontier recovery cap.
+- **`window_generation_coding` flag** (config / CLI / `PeerConfig`) composing with
+  the object/perf bulk path; realtime + in-order stream untouched. Implies
+  coded-only wire + out-of-order delivery.
+- **ARQ OFF** — the receiver installs no NACK producer in generation mode
+  (`recv_nack_tx = None`); no sent-data store, no retransmit buffer, no tail
+  sweep. Recovery is generation-level (more coded for a short generation,
+  fungible cross-path), never a per-seq resend — exactly the design's contract.
+- **Pipeline** — ack-clocked flow-control window bounds coded to
+  `ack·(1+r) + W_inflight` ahead of the decode frontier (bounds QUIC buffer),
+  plus a fixed-rate pacing token bucket.
+- **Verification (green): `fec::generation` unit tests** — decode-on-K,
+  out-of-order recovery under loss, per-generation independence, pipeline-depth
+  bound. `cargo test -p raptorpath --lib` green (257 tests). The full-transport
+  loopback tests `perf_loopback_generation_object` / `_dual_path` are
+  `#[ignore]`d (see the DECISIVE note) with a documented reason.
+
+### PART 3 — L1 measurement: DECISIVE C8 (c2+c3, 50 MB native perf)
+**Result: does NOT beat the 15.7 Mbit/s fast-path-alone bar — a
+FAIL-WITH-MECHANISM.** The build does NOT complete the multi-generation object
+over real netem (nor over a real-RTT single path), so there is no aggregation
+number to report. The failure is localized precisely (instrumented on the VM,
+release build), and it is **NOT the generation design**:
+
+- **The first generation decodes correctly end-to-end on real netem** — the full
+  stable-anchor + out-of-order + generation-level-recovery + no-per-seq-ARQ
+  pipeline works over real per-path timing/loss for one generation. Both paths
+  deliver (dual-path striping via `place_symbol` works), symbols arrive unique
+  (no dedup), zero object-path send/datagram-size failures.
+- **Generations after the first stall.** The cumulative-ack frontier advances one
+  generation, then wedges. Root cause, isolated by instrumenting the encoder's
+  frontier span vs the decoder's rank: the sealed generation IS full in the
+  encoder (`base_contig = G`) and its coded ARE full-span, but they arrive
+  **bursty** on the droppable QUIC datagram path and are dropped faster than the
+  O(G²)-per-symbol decode keeps up, so the frontier generation never reaches K_G
+  — and the **feedback-free recovery cap** then deadlocks it (once the cap is hit
+  the sender emits no more, and with no per-generation deficit signal it cannot
+  know the generation is still short). Fixed-rate pacing lifted completion from 1
+  to ~2 generations but did not close it.
+
+**The named missing mechanism: per-generation DEFICIT FEEDBACK.** The design
+(§16.3, oracle) assumes the receiver tells the sender each generation's residual
+rank ("generation g needs N more coded"). The build used the cumulative ack as a
+feedback-free proxy, which cannot simultaneously (a) bound recovery (unbounded →
+floods/bursts) and (b) fund the frontier generation under backpressure (bounded →
+starves/deadlocks). Closing this needs a `GenerationDeficit` control message +
+receiver per-generation rank tracking — a scoped next step, not a redesign.
+
+### VERDICT
+- **Oracle: ×1.19 CONFIRMED** for G=384/M=2 (Part 0). The design is sound.
+- **Codec + mechanism: IMPLEMENTED and VERIFIED** (`fec::generation` unit tests;
+  generations decode on K, out-of-order, no per-seq ARQ). Paper §16.3/§16.7
+  updated from build-recommendation to IMPLEMENTED.
+- **L1 DECISIVE (>15.7 Mbit/s): NOT MET — honest fail-with-mechanism.** The
+  production transport does not complete multi-generation transfers over the real
+  datagram path; the missing piece is per-generation deficit feedback (named,
+  scoped). Heterogeneous aggregation-above-fast-path remains **oracle-proven but
+  not yet L1-realized in production**. The number was NOT forced.
+- **Regression:** single-path native / C7 not measured to completion (the
+  multi-generation stall blocks them too); the non-generation modes
+  (systematic/coded-only, realtime, in-order stream) are untouched by the flag.
+
+**Verification.** `cargo test -p raptorpath --lib` green (257, incl. 4
+`fec::generation`); `cargo test -p raptorpath-math --test temporal_oracle` green
+(3). Reproduce the oracle: `cargo test -p raptorpath-math --test temporal_oracle
+-- --nocapture`. The generation transport is behind `--window-generation-coding`
+(requires `--window-reliable`); `RWM_GEN` / `RWM_PIPELINE` tune G / M.
