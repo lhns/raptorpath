@@ -2694,3 +2694,84 @@ qdiscs): `RWM_GEN=<G> RWM_GEN_R=0.15 RWM_EXTRA="--window-systematic-repair" bash
 ~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual` (C8 sweep) and `... c2 c2 ... single`
 (single control); clean-base G=96 wedge reproduced by rebuilding without the
 receiver-seeding fix.
+
+## Loss-Recovery — the C2 single-path collapse DIAGNOSED (branch `feat/loss-recovery`, 2026-07-07)
+
+**Finding under test.** After the O(n²) CPU fix, plain-reliable single-path flies on
+a CLEAN 100 Mbit link (76 Mbit/s) but COLLAPSES to ~14 Mbit under C2's ~2.5 % bursty
+GE loss — a 5.5× drop. Hypothesis in the brief: this is loss-triggered cwnd reduction,
+which would VIOLATE the §12 loss-blind (delay-only) CC claim.
+
+Reproduced (this binary, `perf_rwm_c.sh … single`, 1.8 MB × 5, seed 42):
+- CLEAN single: **76.8 Mbit/s** (median 0.182 s).
+- C2 single (plain reliable): **13.7 Mbit/s** baseline → the 5.5× collapse. CONFIRMED.
+
+### The hypothesis is REFUTED — the CC IS loss-blind, §12 HOLDS in code
+cwnd traces (`RWM_DIAG=1`, per-250 ms) under C2 show cwnd is NOT collapsed — it GROWS:
+plain reliable cwnd 29→628, systematic-repair cwnd 254→**3390**. There is no
+loss-triggered reduction on the hot path: `PathState::on_loss(fec_recovered)` returns
+early whenever FEC recovered the loss and only touches cwnd on an actual decode
+FAILURE (net/mod.rs BlockResult). The large cwnd is RTT-INFLATED, not suppressed.
+**The Copa-lite loss-blind claim (paper §12.1/§12.4) is correct end-to-end; it is NOT
+the cause.** (Record corrected: the brief's prime suspect does not hold.)
+
+### Actual mechanism — two coupled defects, neither is the CC
+1. **Bufferbloat (the reliable window sender BYPASSES the delay-based CC).** TUN-read
+   backpressure gates on `sent_store.len()` capped at the fixed `RELIABLE_STORE_MAX =
+   1024` ≈ **12× the C2 BDP (~83 sym)**. Nothing bounds the standing queue to the pipe.
+   MEASURED RTT inflates to **410–518 ms** (plain) / **236–660 ms** (systematic) vs the
+   10 ms base — 40–66×. This is the same class of bug the generation path already fixed
+   (store = 2·G); the plain-reliable `else` branch was left at fixed 1024.
+2. **In-order cumulative-ack frontier serialization (the throughput cap).** Both
+   completion and the store-drain gate key on the CONTIGUOUS frontier `window_ack_seq`,
+   which FREEZES on every hole; recovery is reactive (gap-ack → retransmit, ~1
+   recovery-round/RTT). The frontier advances at ≈ window/RTT, and because bufferbloat
+   makes RTT scale WITH the window, goodput ≈ window/RTT is roughly constant — a
+   **window-INDEPENDENT ~16 Mbit ceiling**.
+
+Evidence the ceiling is frontier-bound, not queue-bound (C2 single, `diag_plain.sh`):
+- Throughput ≈ 16.5 Mbit INVARIANT across `store ∈ {96,160,256,512,1024}` and
+  `infl_cap ∈ {100,160}`. `store=96` drops RTT to ~40 ms but goodput stays 16.6.
+- `--window-out-of-order` (decode-on-total): NO improvement (13.6) — because
+  `window_ack_seq` is still the CONTIGUOUS frontier over `received_seqs`; OOO changes
+  app-delivery order, not the ack frontier that gates the sender.
+- Proactive repair `RWM_MIN_R ∈ {0.15,0.30}`: WORSE (12.5 / 10.3) — repair eats goodput
+  without pre-covering frontier holes.
+- It is NOT a "per-symbol processing ceiling": the SAME code path does 76 Mbit on a
+  clean link. The ceiling is loss-specific — recovery latency at the frontier.
+
+### Fix shipped — bound the reliable window to the delay-based BDP (§12)
+`PathState::copa_bdp_anchor()` (existing accessor) exposes BtlBw×RTprop (bufferbloat-
+robust: windowed-max rate × min-RTT floor). The plain-reliable sender now caps the
+OUTSTANDING store at
+`gain × BDP` (default gain 2.0; bootstrap 128 until the anchor warms; `RELIABLE_STORE_MAX`
+kept as the memory ceiling). `RWM_STORE` forces a static window; `RWM_STORE_GAIN` /
+`RWM_STORE_BOOT` tune. Effect: RTT **410 → 40–120 ms** (bufferbloat removed), clean
+single **unchanged 76.8** (no regression), C2 single **13.7 → 15.7 Mbit** (+15 %, modest).
+It fixes the queue/latency, NOT the throughput collapse — which is frontier-bound.
+
+### C8 (the aggregation bar) — still NOT met, same root
+`perf_rwm_c.sh … dual`, 1.8 MB × 6, seed 42:
+- C7 (c2+c2 symmetric) plain: **19.0 Mbit** = **1.21×** single (mild aggregation).
+- C8 (c2+c3 heterogeneous) plain: **13.3 Mbit** = **0.85×** single (15.7) — below bar.
+- C8 systematic-repair: **13.0 Mbit** = **0.89×** single (14.6) — below bar.
+
+C8 anti-aggregates because the fast path stalls on the SLOW path's in-order frontier
+holes — the cross-path form of defect (2). The 15.7 Mbit bar with factor > 1 is NOT met.
+
+### HONEST VERDICT
+The collapse is **not the congestion control** (loss-blind holds; §12 correct). It is
+(a) a real bufferbloat defect in the reliable window sender bypassing the delay-based CC
+— **FIXED** (RTT 410→~40 ms, no regression); and (b) a recovery-latency limit at the
+in-order cumulative-ack frontier under bursty loss that is largely **fundamental to the
+bulk / pure-ARQ (r*→0) design** — NOT reducible by the CC, by out-of-order delivery, by
+proactive repair, or by any window/in-flight cap tested. Closing (b) needs PIPELINED
+frontier recovery (recover all in-window holes per RTT) or a genuinely rateless frontier
+so a hole is never a fixed in-order position — a transport-pipeline change beyond this
+branch. C8 aggregation stays blocked by (b)'s cross-path form.
+
+**Controls.** clean single 76.8 (no regression); all runs dnf:0; `cargo test -p
+raptorpath --lib` 262 green; `raptorpath-math` all green; `gate_suite` 15/15 release.
+**Harness.** `~/l1/perf_rwm_c.sh` (default = plain reliable; `RWM_EXTRA=
+"--window-systematic-repair"` for systematic), `~/l1/diag_plain.sh` (RWM_DIAG constraint
+report; RWM_STORE / RWM_STORE_GAIN / RWM_STORE_BOOT / RWM_INFL_CAP / RWM_MIN_R).
