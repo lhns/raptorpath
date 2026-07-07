@@ -2597,3 +2597,100 @@ release; `temporal_oracle` 7 green; raptorpath-math 37 green. L1:
 (C7, default store=2·G) and `RWM_STORE=` override for the sweep;
 `RWM_DIAG=1 bash ~/l1/diag_rwm.sh c2 c2 50000000 single` for the constraint
 report.
+
+## C8 Final — small-G frontier-advance DEADLOCK fixed; C8 still transport-ceiling-bound (branch `feat/c8-final`, 2026-07-07)
+
+The Transport Ceiling section above named the last blocker to BDP-scale (small-G)
+operation: a generation-decoder **frontier-advance deadlock** traced at G=96, and
+a slow-path coverage question. This branch **FIXES the deadlock** — small G now
+completes robustly where it previously WEDGED — but the **DECISIVE C8 >15.7 Mbit/s
+bar is STILL NOT met (best 15.07 Mbit/s at G=384, aggregation factor 0.98)**.
+Honest FAIL-WITH-MECHANISM: with the deadlock gone, the residual is cleanly the
+per-connection processing ceiling (systematic-repair extracts ~15 Mbit from ONE
+100 Mbit path and a second heterogeneous path adds nothing), NOT the FEC, NOT the
+deadlock, NOT a slow-path drag. Number NOT forced.
+
+### The deadlock — ROOT CAUSE and FIX (the structural escape to small G)
+ROOT CAUSE (found by static trace + reproduced): in systematic-repair mode the
+receiver learned a generation's width K_g **only from a repair header**. A
+generation whose ENTIRE `ceil(G·r)` proactive repair budget was lost on the wire
+therefore never entered the receiver's deficit map — so the receiver reported
+**ZERO deficit** for it while its hole **wedged the in-order frontier forever**,
+and the sender (proactive budget spent, no deficit to fund) went idle
+(in_flight=0/src=0/cod=0, exactly the measured signature). At **large G** the whole
+`ceil(G·r)` budget (72 symbols at G=480) is never fully lost, which is why only
+**small G wedged** — and small G is precisely what BDP-scale operation needs.
+
+FIX (`net/mod.rs`, receiver arm, `send_gen_deficits`): **seed the width (= G) of
+every PROVABLY-FULL generation from the primary seqs alone** — a generation whose
+end lies at/below the highest seq seen certainly has G sources, so its deficit is
+computable from the delivered primaries WITHOUT ever seeing a repair for it. This
+closes the circular dependency: the receiver now always reports the frontier
+generation's true deficit, and the sender's **deficit-recovery loop — which is
+ack-clock-INDEPENDENT** — always funds the frontier hole. The fix is generation-
+mode-only and adds NO traffic to a healthy flow (a fully-received generation seeds
+deficit 0). Regression test `small_g_generation_recovers_from_deficit_when_all_proactive_lost`
+(G=96) asserts the invariant end to end: with NO repair seen, `rank_in(anchor,G)`
+== G−holes and the generation completes in exactly `holes` coded symbols.
+
+### The deadlock A/B (gold standard, same VM/netem, 50 MB, G=96)
+| build | C8 c2+c3 dual, G=96, 50 MB | outcome |
+|-------|---------------------------|---------|
+| **clean base** (no seeding) | warmup completes, then **NO 50 MB run finishes in 210 s** | **WEDGE** |
+| **this fix** (seeding) | **6/6 complete, 13.74 Mbit/s, stdev 1.27 s** | **robust** |
+
+### DECISIVE C8 (c2+c3, systematic-repair, store=2·G, r=0.15, 50 MB ×6, VM)
+| G | C8 dual Mbit/s | median s | stdev s | completion | single c2 | agg factor | vs 15.7 |
+|--:|---------------:|---------:|--------:|-----------:|----------:|-----------:|:-------:|
+| 96  | 13.74 | 30.03 | 1.27 | **6/6** | — | — | ✗ |
+| 192 | 14.92 | 26.95 | 1.34 | **6/6** | 15.04 | **0.99** | ✗ |
+| 384 | **15.07** | 26.59 | 1.93 | **6/6** | 15.36 | **0.98** | **✗ 0.96×** |
+
+C8 rides at the **full single-path rate** at every G (factor 0.98–0.99), monotone
+in G and flattening toward the ~15 Mbit single-connection ceiling — best **15.07 <
+15.7**. Completion is now **6/6 at EVERY G including G=96** (the deadlock is gone)
+with **low variance** (stdev 1.3–1.9 s), a marked improvement over Transport
+Ceiling's high-variance C8 (8.1/9.8/14.5, median-completion ~8–10).
+
+### Controls (no regression)
+- **Plain-reliable C7 (c2+c2) = 22.31 Mbit/s** (×1.43, 4 reps, stdev 1.07 s) —
+  the symmetric aggregation win is **INTACT** and untouched (the fix is
+  generation-mode-only). NOTE: the "C7 ×1.43 = 22.4" win is a **plain-reliable**
+  result (its measurement carries NO `--window-systematic-repair`); **systematic-
+  repair C7 has NEVER aggregated** (14.5–15.4, ×1.02 — as the systematic-repair
+  merge section already reported), so it is the SAME per-connection ceiling, not a
+  regression from this change.
+- **single c2 systematic-repair = 15.04–15.36** (≥15 parity ✓).
+- **6/6 completion, dnf:0** across all arms.
+
+### Slow-path coverage (residual #2) — addressed, not the binding constraint
+The deficit-recovery loop runs every iteration (incl. under backpressure) and
+places covering repair by the ∝-goodput placement law, which already biases toward
+the fast path proportionally. A hard best-path (argmax) concentration was tried and
+REVERTED: it changed C8 by nothing measurable and starves a symmetric second path.
+With the deadlock gone and the deficit loop always funded, the slow path is not the
+long pole — C8 tracks single-path rate, not below it.
+
+### VERDICT
+- **Deadlock: FIXED.** Small G completes 6/6 robustly (clean base WEDGES at G=96);
+  the receiver-seeding closes the circular width-learning dependency and the
+  ack-clock-independent deficit loop funds the frontier. This unlocks BDP-scale
+  (small-G) operation with low variance.
+- **L1 DECISIVE (>15.7): NOT MET.** C8 best **15.07 Mbit/s** (G=384, 6/6),
+  aggregation factor **0.98**. Honest FAIL-WITH-MECHANISM — number NOT forced.
+- **Binding residual: the per-connection PROCESSING ceiling** (systematic-repair
+  extracts ~15 Mbit from one 100 Mbit path — window/BW/RTT-independent, loss-
+  sensitive, documented above — and adding a heterogeneous second path adds
+  nothing). This is the transport substrate (~4.5× below native quinn), one layer
+  below the FEC and below this deadlock. It is the SAME ceiling that caps single
+  systematic-repair; heterogeneous C8 aggregation over the systematic-repair
+  transport is blocked by it, not by the FEC design (the plain-reliable path DOES
+  aggregate symmetrically to 22.3). Closing it needs a transport-throughput change
+  (per-symbol processing / datagram path), beyond this FEC branch's scope.
+
+**Verification.** `cargo test -p raptorpath --lib` 264 green (+1 regression test);
+raptorpath-math 11 green; `gate_suite` 15/15 release. L1 (VM, netem independent
+qdiscs): `RWM_GEN=<G> RWM_GEN_R=0.15 RWM_EXTRA="--window-systematic-repair" bash
+~/l1/perf_rwm_c.sh c2 c3 bulk 50000000 6 dual` (C8 sweep) and `... c2 c2 ... single`
+(single control); clean-base G=96 wedge reproduced by rebuilding without the
+receiver-seeding fix.
