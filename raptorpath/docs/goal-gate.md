@@ -2875,3 +2875,81 @@ raptorpath --lib` 262 green; `raptorpath-math` all green; `gate_suite` 15/15 rel
 **Harness.** `~/l1/perf_rwm_c.sh` (default = plain reliable; `RWM_EXTRA=
 "--window-systematic-repair"` for systematic), `~/l1/diag_plain.sh` (RWM_DIAG constraint
 report; RWM_STORE / RWM_STORE_GAIN / RWM_STORE_BOOT / RWM_INFL_CAP / RWM_MIN_R).
+
+## SACK Flow Control — the in-order-frontier decoupling TESTED, negative result (branch `feat/sack-flow-control`, 2026-07-07)
+
+**Hypothesis under test.** The prior Loss-Recovery diagnosis pinned the C2 collapse on
+the sender's flow control being gated by the IN-ORDER cumulative-ack frontier
+(`window_ack_seq`): the sent-store drains, and TUN-read backpressure gates, only on the
+CONTIGUOUS frontier, which freezes on every hole → the send window can't stay BDP-full →
+goodput ≈ window/RTT (~16 Mbit) instead of BDP/RTT. Proposed fix: make the sender's flow
+control SACK-based (selective) — prune the sent-store for ANY out-of-order-received
+(SACKed) symbol, so `sent_store.len()` tracks TRUE outstanding-unacked and the send window
+stays full across holes, with holes recovered in the background by the existing per-seq
+NACK/tail-sweep ARQ.
+
+**Implemented.** A SACK channel forwards the receiver's RECEIVED-above-frontier ranges
+(the `received_sack_ranges` the P10b SACK machinery already computes) to the plain-reliable
+window sender, which drains them non-blocking at the top of the send loop and prunes the
+sent-store + per-seq ARQ maps (`retransmit_buffer`, `source_path_map`, `nack_retx_at`) for
+each received seq. The hole itself (never in a received range) stays retained and recovers
+via the orthogonal NACK path. Gated behind `RWM_SACK_PRUNE` (see below); unit test
+`test_sack_pruning_advances_sender_past_a_hole` asserts a single hole leaves only the hole
+retained (outstanding 90→1) while the frozen contiguous frontier would pin 90.
+
+### The fix does NOT lift lossy throughput — and is UNSAFE for in-order delivery
+Matched in-session A/B, base `ae7f3a8` vs branch, 1.8 MB × 6, seed 42, `perf_rwm_c.sh`:
+
+| arm | BEFORE (base) | `RWM_SACK_PRUNE=1` | DEFAULT (gate off) |
+|---|---|---|---|
+| c2 single plain (Mbit) | 16.07 | **16.09 (×1.00)** | 16.54 |
+| c2 single OOO | — | 14.73 | 15.95 |
+| clean single (control) | 77.49 | 76.45 | 77.36 |
+| C7 c2+c2 dual plain | 20.15 (×1.25) | **DNF (stall)** | 20.98 (×1.27) |
+| C8 c2+c3 dual plain | 12.30 | **DNF (stall)** | 14.91 |
+| C8 dual OOO | — | 10.16 | 11.85 |
+| C8 dual systematic G384 | 11.15 | 12.99 | 13.28 |
+
+Two findings, both decisive:
+
+1. **No throughput lift.** SACK-decoupling the sender leaves c2 single-path EXACTLY at the
+   ~16 Mbit ceiling (16.09 vs 16.07). This CONFIRMS the prior diagnosis that the limiter is
+   NOT the sender's store backpressure but the receiver-side in-order RECOVERY LATENCY: the
+   sender was never the true bottleneck (throughput was already store-cap-invariant), so
+   letting it inject further ahead buys nothing — completion still waits for the in-order
+   frontier to walk each hole at ~1 recovery-round/RTT. OOO completion (`RWM_OOO=1`) does not
+   help either (14.73), same reason.
+
+2. **It BREAKS in-order reliability.** With the sender no longer held near the frontier it
+   races the whole object ahead, but the receiver's in-order reassembly window is BOUNDED
+   (`MAX_WINDOW_SIZE`). A symbol can be received (→ SACKed → pruned at the sender) and then
+   EVICTED at the receiver before the in-order frontier consumes it — destroying the ONLY
+   retained copy, so its seq can never be recovered and completion wedges. MEASURED: C7 and
+   C8 in-order dual **DNF** under `RWM_SACK_PRUNE=1`, while the OOO-completion arms (not
+   frontier-bound at the receiver) complete. The frontier-coupled backpressure the fix
+   removes is precisely what keeps the send frontier inside the receiver's reassembly
+   window — it is load-bearing for reliability, not just a throughput artifact.
+
+### HONEST VERDICT
+SACK-based sender flow control is **not** the fix. The freeze is on the RECEIVER side
+(bounded in-order reassembly + reactive per-hole recovery latency), not the sender's store.
+Decoupling the sender either (a) changes nothing (the sender was not the bottleneck) or
+(b) violates reliability for in-order delivery (receiver-window eviction of a pruned-but-
+un-consumed symbol). This SHARPENS the prior diagnosis: closing the C2 collapse needs
+PIPELINED receiver-side frontier recovery (recover all in-window holes per RTT) or a
+genuinely rateless frontier where a hole is never a fixed in-order position AND an
+unbounded/rateless receiver reassembly so no received symbol is ever evicted before use — a
+receiver-pipeline change, unchanged by any sender-side flow-control law. The generation /
+systematic-repair modes already avoid the fixed-position hole; their ceiling is decode/
+recovery latency, not this.
+
+**Shipped state.** The SACK mechanism is committed but **gated OFF** by `RWM_SACK_PRUNE`
+(unset = default): with the gate off the code path is byte-for-byte base — DEFAULT column
+above reproduces base with **0 DNF** across all 7 arms (c2 single 16.54, clean 77.36, C7
+×1.27, C8 plain/OOO/systematic all complete). The flag exists only to reproduce the negative
+result. **>15.7 with factor > 1 NOT met; C2 collapse NOT closed.**
+
+**Controls.** clean single 77.4 (no regression); DEFAULT all 6/6 dnf:0; `cargo test -p
+raptorpath --lib` 265 green (adds the SACK-pruning test); `raptorpath-math` all green;
+`gate_suite` 15/15 release. **Harness.** `~/l1/sack_meas.sh <label> <reps>` (the A/B
+battery); `RWM_SACK_PRUNE=1` enables the experiment.
