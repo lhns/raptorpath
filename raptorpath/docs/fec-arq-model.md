@@ -1806,6 +1806,13 @@ formula including codec overhead, replace e with e_hat = e + e_codec x
 (1-(1-e)^W) from Section 9.2. The codec-adjusted version accounts for decoder
 invocation probability on systematic codes.
 
+**Measured caveat (2026-07-08):** r* assumes each proactive repair symbol has a
+`(1-e)` chance of *arriving and being useful*. On the current droppable-datagram
+substrate that assumption fails — proactive repair is dropped/wasted such that the
+observed proactive-recovery fraction stays ≈0.3–0.6 at high RTT+loss regardless of
+r (r-sweep) or of receiver NACK timing (§12.9 repair-wait). Raising r* to compensate
+does not help because the added repair is dropped at the same rate. See §12.9.
+
 ### 8.5 Worked Examples
 
 Using z_{δ/ε} = Φ⁻¹(1 - δ/ε) — the margin depends on how tight the target
@@ -3103,6 +3110,30 @@ The API also allows overriding protocol characteristics mid-connection:
 - Force path preferences
 
 This API is implementation-specific and not part of the core model.
+
+### 12.9 Repair-wait / FEC-before-ARQ — a receiver-side discipline, MEASURED and refuted (2026-07-08)
+
+A natural refinement of the reactive/proactive interplay (§5.4, §12.6) is the
+classic FEC discipline: on a frontier hole, **wait for the covering proactive
+repair to arrive+decode before falling back to a reactive NACK** — a
+repair-coverage horizon ≈ one generation-span (NOT an RTT), so a hole proactive
+FEC would cover does not eat a redundant round-trip. This was implemented
+(`horizon_gate_deficits`, env `RWM_REPAIR_WAIT`, δ-aware clamp ≤ ½·SRTT) and
+measured at L1 to test whether it raises the proactive-recovery fraction toward 1.
+
+**It does not.** At RTT 100 / 10% loss the proactive fraction FALLS as the horizon
+grows (0.27 → 0.22 over 0–48 ms) and `recovery_coded` rises; at 2.6% it moves only
+marginally and noisily; throughput never improves. `FDIAG` isolates the reason:
+when the frontier stalls, a covering proactive equation is **never present**
+(`present_at_stall = 0`; `repairs_useful ≈ 7 / repairs_fed ≈ 4600`). The proactive
+repair is not late — it is **absent** (dropped or linearly useless on the
+droppable-datagram substrate). The reactive fraction is therefore governed by how
+often a generation's proactive budget is lost on the wire (a **substrate**
+property), not by *when* the receiver emits the NACK. This positively excludes the
+"NACK-fires-too-early" alternative to the substrate root cause: like raising r*
+(§8.4), delaying the NACK cannot recover coverage the substrate never delivered.
+The knob is retained env-gated + default-off; it helps only where the proactive
+fraction is already high (low RTT / low loss), where FEC does not need help.
 
 ---
 

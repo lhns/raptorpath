@@ -3493,3 +3493,104 @@ fecprior,fecwide,fectail` (tuned-narrow / wide-legacy / wide+receiver-tail);
 env `BSTORE_TAIL/OOORETAIN_TAIL/REPORTGENS/INFLBDP` + the Mode-B knobs. New GE
 higher-loss cells in `lib.sh`: `c2r{100,200}l{5,10}` (p solved for 5/10% mean at
 q=50). `perf_rwm_c.sh` propagates `RWM_REPORT_GENS/RWM_INFL_BDP`.
+
+## NACK-Timing / Repair-Wait — the timing-race hypothesis, tested and REFUTED (branch `feat/nack-timing`, 2026-07-08)
+
+The prior section left one loose end in the root-cause: proactive coded may be
+dropped at the link rate **and/or** "arrive after the receiver's reactive NACK
+timer." THIS rung isolates that second alternative — the **timing-race** theory:
+on gap detection the receiver's deficit report (which IS the reactive NACK in
+generation mode) fires immediately, *before* the in-flight proactive repair
+covering the hole (riding with the surrounding data, ~1 generation-span later)
+can decode it — so a hole proactive repair WOULD cover eats a redundant ARQ
+round-trip, pinning the proactive fraction at ~0.4. **The fix built: a
+repair-coverage horizon (`RWM_REPAIR_WAIT`, ms) that WITHHOLDS a frontier hole's
+deficit until the covering proactive repair has had time to arrive+decode; only
+on horizon expiry does the reactive NACK fire (FEC-before-ARQ discipline).**
+Result: **the timing-race hypothesis is REFUTED — a 5th refutation of the
+crossover.** Delaying the NACK does NOT raise the proactive fraction toward 0.9;
+at high loss it slightly LOWERS it. `FDIAG` nails why: when the frontier stalls,
+a covering proactive equation is **never present** (`present_at_stall=0`,
+`repairs_useful=7 / repairs_fed=4609`). There is nothing in flight to wait for —
+the proactive repair is dropped/wasted on the substrate, exactly as three prior
+sessions concluded. All knobs env-gated, **default-off** (shipped/gate path
+byte-identical); `gate_suite` **15/15**, lib **271** (incl.
+`horizon_withholds_nack_until_repair_window_then_falls_back`), math green.
+
+### The mechanism (built, VERIFIED active at L1)
+- **`horizon_gate_deficits` (pure, unit-tested).** Each frontier generation's
+  residual deficit is only ELIGIBLE to fire a reactive deficit report once it has
+  been outstanding ≥ `horizon`. A newly-deficient anchor is ARMED and WITHHELD; an
+  anchor that decodes within the horizon drops out (proactive win, no NACK); only
+  an anchor whose horizon expires is reported (reliability fallback). `horizon=0`
+  ⇒ byte-identical shipped path. δ-aware: clamped to ≤ ½·SRTT so low-RTT /
+  latency-tight (Realtime) paths never over-wait and the wait can never exceed the
+  round-trip it would save.
+- **Dose-response confirms the knob is live.** At RTT 100 / 10%, sweeping
+  `RWM_REPAIR_WAIT` monotonically moved `recovery_coded` and `proactive_fraction`
+  — so the gate is genuinely withholding reports; the effect is just the wrong
+  sign.
+
+### PRIMARY metric — the proactive fraction did NOT climb (single-path, 100 mbit, G=384, r=0.35, narrow store)
+| cell | wait ms | pfrac | recovery_coded | FEC Mbit/s | ARQ Mbit/s |
+|---|---:|---:|---:|---:|---:|
+| RTT100 / 10%  | 0  | 0.271 | 12709 | 0.659 | 0.816 |
+| RTT100 / 10%  | 16 | 0.262 | 13348 | 0.640 | — |
+| RTT100 / 10%  | 32 | 0.247 | 14421 | 0.661 | — |
+| RTT100 / 10%  | 48 | 0.224 | 16443 | 0.615 | — |
+| RTT100 / 2.6% | 0  | 0.619 | 2908  | 1.774 | 2.631 |
+| RTT100 / 2.6% | 16 | 0.641 | 2665  | 1.747 | — |
+| RTT100 / 2.6% | 32 | 0.406 | 6972  | 1.655 | — |
+| RTT100 / 2.6% | 48 | 0.600 | 3172  | 1.667 | — |
+| RTT10 / 2.6% (control) | 0  | 0.887 | 605 | 12.44 | 19.19 |
+| RTT10 / 2.6% (control) | 16 | 0.905 | 502 | 13.18 | — |
+
+- **High loss (10%): pfrac FALLS with the wait** (0.27→0.22), `recovery_coded`
+  RISES (12.7k→16.4k). Waiting the whole generation-span (48 ms > one 37 ms
+  generation at 100 mbit) recovered nothing proactively — it only delayed the
+  inevitable reactive pull and let more deficit accumulate.
+- **Low loss (2.6%): at best a marginal, noisy bump** (0.62→0.64 at 16 ms) then
+  regression (the 32 ms point is an unstable outlier, both reps pinned to an
+  identical time, `stdev 0.005 s`). Throughput monotonically DROPS with the wait.
+- **The horizon only helps where pfrac is already high** — the low-RTT/low-loss
+  control (already 0.89) ticks to 0.90. Exactly the regime where FEC does NOT need
+  help. Where FEC must win (high RTT + high loss) there is no proactive repair to
+  wait for.
+
+### Why — `FDIAG` isolates it definitively (RTT 100 / 10%)
+```
+wait=0 : DECODE n=5 present_at_stall=0 | SOURCE n=0 | rf=4609 ru=7  | pfrac=0.086
+wait=32: DECODE n=5 present_at_stall=0 | SOURCE n=0 | rf=4506 ru=8  | pfrac=0.080
+```
+`present_at_stall=0` in BOTH arms: when the in-order frontier stalls on a hole,
+there is **never** a buffered proactive equation covering it. `repairs_useful ≈ 7`
+of `repairs_fed ≈ 4600`: the proactive repair symbols that DO arrive are almost
+entirely useless (wrong generation / linearly dependent). So the hole is not
+"proactive-covered-but-NACKed-too-early" — the covering repair is simply absent.
+Waiting up to 48 ms (> a generation-span) changes nothing because **there is
+nothing in flight to decode it.** The binding constraint is the droppable-datagram
+SUBSTRATE, not NACK timing — the same root cause, now with the timing alternative
+positively excluded.
+
+### Verdict, controls, reliability
+- **Crossover REFUTED a 5th time; timing-race alternative positively excluded.**
+  FEC never beats ARQ (FEC/ARQ 0.65–0.81 at 10%, 0.63–0.67 at 2.6%, 0.65 at RTT10)
+  and the repair-wait does not move the crossover in any regime.
+- **Multipath: NOT warranted** (gated on a single-path FEC win; there is none).
+- **Controls / no regression.** `RWM_REPAIR_WAIT` env-gated, **default-off** →
+  shipped + gate path byte-identical; `gate_suite` **15/15** release, lib **271**,
+  math green. Low-RTT control (`c2r10`) does NOT regress — the ½·SRTT clamp holds
+  the wait to ~5 ms at RTT 10 (dnf:0, small improvement). **Reliability intact:**
+  `dnf:0` at every measured cell/wait, every rep completed (every byte delivered).
+- **The residual, stated honestly:** the proactive fraction is set by how often a
+  generation's proactive budget is dropped/insufficient on the wire (a substrate
+  property), NOT by when the receiver decides to NACK. Raising the coding rate
+  (prior r-sweep) and delaying the NACK (this rung) both fail for the same reason.
+  The only lever left that the physics points to is the transport substrate itself
+  (a non-droppable / retention-coupled coded channel), not any receiver-side
+  scheduling knob.
+
+**Harness.** `~/l1/rw_sweep.sh <reps> <bytes> <waits_ms> [scens…]` — per cell an
+ARQ baseline + the narrow-store FEC arm swept over `RWM_REPAIR_WAIT`; reports
+`pfrac/pcod/rcod/mbps/stdev`. `perf_rwm_c.sh` now also propagates
+`RWM_REPAIR_WAIT`. Mechanism via `RWM_FDIAG` (`present_at_stall`, `rf/ru`).

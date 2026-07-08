@@ -53,6 +53,10 @@ TENV=""
 # (RWM_REPORT_GENS) + PART 1.2 BDP-derived in-flight cap (RWM_INFL_BDP).
 [[ -n "${RWM_REPORT_GENS:-}" ]] && TENV="$TENV RWM_REPORT_GENS=$RWM_REPORT_GENS"
 [[ -n "${RWM_INFL_BDP:-}" ]] && TENV="$TENV RWM_INFL_BDP=$RWM_INFL_BDP"
+# Repair-coverage horizon (feat/nack-timing): delay the reactive NACK/deficit
+# by ~a generation-span so the in-flight proactive repair can decode the hole
+# first (FEC-before-ARQ discipline). Milliseconds; 0/unset = report immediately.
+[[ -n "${RWM_REPAIR_WAIT:-}" ]] && TENV="$TENV RWM_REPAIR_WAIT=$RWM_REPAIR_WAIT"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
