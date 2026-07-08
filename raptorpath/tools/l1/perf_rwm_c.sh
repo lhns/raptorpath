@@ -70,6 +70,11 @@ TENV=""
 # [REASM] occupancy probe (RWM_REASM_BDP).
 [[ -n "${RWM_SACK_PRUNE:-}" ]] && TENV="$TENV RWM_SACK_PRUNE=$RWM_SACK_PRUNE"
 [[ -n "${RWM_REASM_BDP:-}" ]] && TENV="$TENV RWM_REASM_BDP=$RWM_REASM_BDP"
+# FMTCP-class pure decode-on-total aggregation (feat/fmtcp-aggregation): the
+# composite gate — total-in-flight flow control + per-path BDP in-flight cap +
+# fungible fountain repair (no per-hole ARQ) + decode-on-total OOO. Self-selects
+# the systematic-repair generation submode on top of --window-reliable.
+[[ -n "${RWM_FMTCP:-}" ]] && TENV="$TENV RWM_FMTCP=$RWM_FMTCP"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

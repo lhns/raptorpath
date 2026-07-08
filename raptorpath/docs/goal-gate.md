@@ -129,6 +129,77 @@ reliable delivery: reliable throughput is recovery-latency-bound, and FEC
 cannot buy a round-trip back without spare bandwidth a saturated reliable
 path does not have.
 
+## FMTCP Aggregation Build (2026-07-08) — the literature-blessed retry, MEASURED
+
+Built and measured the FMTCP/SCDP-class **pure decode-on-total** config — the
+empty quadrant the arc never tested — behind the composite env-gate `RWM_FMTCP`
+(shipped path byte-untouched, default off). This flips BOTH capping levers at once
+on the systematic-repair generation submode and fixes the enumerated adjacent bugs
+(#64 summed-anchor BDP; #59/#60 deficit re-flood). **Result: REFUTES the oracle's
+×1.19 target at C8 — it REGRESSES heterogeneous C8 below parity — while confirming
+strong SYMMETRIC aggregation and the recovery-latency mechanism of the FINAL
+CONSOLIDATED VERDICT.**
+
+**The 4 changes (bulk/object profile only):** (1) total-in-flight flow control —
+the sender pipelines a BOUNDED number of generations past the in-order frontier
+(win-backstop `(pipeline+2)·G`), not stalling on a hole, and the receiver's total
+decode count `d` rides back on `WindowAck.cumulative_received` for observability;
+(2) per-path (not summed-anchor #64) BDP in-flight cap — each path capped at its
+OWN `gain·BtlBw_i·RTprop_i`, full only when NO path has room; (3) fungible cross-
+path fountain repair, per-seq ARQ off, once-per-RTT deficit coalesce; (4) OOO
+retention decouple + receiver reassembly clamp (never-evict), decode-on-total via
+the generation decoder. r = 0.10 (RWM_GEN_R).
+
+**Oracle param-confirm (temporal_oracle PART 5c, new test — PASSED).** The SHIPPED
+params (r=0.10, G=384, one-feedback-per-RTT, per-path BDP) reach **×1.190 at C8**
+(ceiling ×1.195), **0 ARQ, 0 idle slots, emergent in-flight 195 ≈ aggregate BDP
+145** (no #64 bufferbloat). So the design is sound IN THE MODEL at the exact
+production params.
+
+**DECISIVE L1 (25 MB × 6, independent netem GE qdiscs — favorable, no path
+correlation; VM shared, waited for free):**
+
+| Arm | mean | median | stdev | factor vs single-fast | dnf |
+|---|---:|---:|---:|---:|---:|
+| **C8 het (c2+c3) FMTCP r=0.10** | **7.58 Mbit/s** | 26.6 s | 12.3 s | **0.48×** | **0** |
+| C8 het FMTCP r=0.20 (raise ε) | 10.43 Mbit/s | 19.0 s | 4.2 s | 0.67× | 0 |
+| C8 het plain systematic (baseline) | 14.37 Mbit/s | 13.8 s | 1.7 s | 0.92× | 0 |
+| single-fast FMTCP (parity, denom) | 15.65 Mbit/s | 13.1 s | 0.55 s | — | 0 |
+| **C7 sym (c2+c2) FMTCP** | **25.39 Mbit/s** | 8.1 s | 0.57 s | **1.62×** | 0 |
+
+**Verdict: the C8 bar (>15.7, factor>1) is NOT met — and FMTCP is STRICTLY WORSE
+than the plain baseline at C8** (14.37 → 7.58, ×0.92 → ×0.48). The total-in-flight
+decouple AMPLIFIES the heterogeneous slow-path long pole rather than escaping it.
+
+**Occupancy / the oracle signature — which parts held, which failed:**
+- HELD: in-flight/reassembly bounded (`[REASM]` max_span ≈ 1520 ≈ 4·G, max_pending
+  ≈ 990 — NOT the whole object). The win-backstop anti-bufferbloat bound worked;
+  reliability held (dnf 0 every arm, every byte delivered/reassembled-by-offset).
+- FAILED: the oracle's **0 idle slots** — the C8 sender is TUN-paused **13–68 %**
+  of iterations (`RWM_DIAG`): the recovery-latency stall the oracle does not model,
+  measured directly. And the ×1.19 became ×0.48–0.67 (anti-aggregation).
+
+**Mechanism (the honest residual — real-vs-model, not path correlation).** The
+netem paths are independent qdiscs, so it is NOT path correlation. It is the
+production **recovery scheduling**: a heterogeneous-path generation that loses more
+than its budget strands, recovers over a bufferbloat-inflated RTT (MEASURED RTT
+spikes to ~2 s), and the total-in-flight decouple lets the frontier run past it so
+the object waits on the slow tail (high variance: min 13 s ≈ near-baseline, max
+45 s crawl). Two failure modes were traversed and are documented in-code: exempting
+recovery from the congestion cap → 2 s bufferbloat; gating it → the stranded
+generation starves/wedges. ε under-provisioning (GE, per Finding 5) is SECONDARY:
+r 0.10 → 0.20 lifted 7.58 → 10.43 and cut variance 12.3 → 4.2 s but did not reach
+parity. On SYMMETRIC paths (no slow path, no long pole) the identical build
+aggregates cleanly at ×1.62 — better than the arc's prior ×1.26–1.55.
+
+**This is exactly the FMTCP abstract's OWN stated pathology reproduced, not
+escaped** ("a subflow experiencing high delay and loss becomes the bottleneck").
+It doubly-confirms the FINAL CONSOLIDATED VERDICT: the C8 heterogeneous bound is
+production recovery-latency, and flipping both levers cleanly does not cross it.
+Gate 15/15 green; `cargo test -p raptorpath --lib` + `-p raptorpath-math` green
+(incl. PART 5c param-confirm + two FMTCP lever unit tests + the fmtcp_loopback
+reliability guard). Env-gated, default-off; shipped path byte-untouched.
+
 ## Design note — unified sliding-window model (paper §15)
 
 Paper §15 ("The Unified Sliding-Window Model") formalizes that BLOCK and

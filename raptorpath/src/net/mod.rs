@@ -408,6 +408,35 @@ const RELIABLE_STORE_MAX: usize = 1024;
 fn store_backpressure(reliable: bool, store_len: usize) -> bool {
     reliable && store_len >= RELIABLE_STORE_MAX
 }
+
+/// FMTCP total-in-flight flow-control gate (docs/research/fmtcp-retry-design.md,
+/// change 1 — the crux). The shipped generation gate pauses TUN intake when the
+/// retained-source store (`encoder.window_size()`, measured back to the IN-ORDER
+/// decode frontier) fills — so a hole freezes the frontier, the store fills to
+/// the cap, and the sender IDLES behind the hole (the oracle's in-order-frontier
+/// stall, PART 5: 4394 idle sender slots). The FMTCP gate instead pauses ONLY on
+/// the per-path BDP in-flight (`cwnd_full`, which drains on the RTT timescale via
+/// `expire_in_flight` and is decode-order-INDEPENDENT), so a frozen frontier
+/// never stalls intake. `store_len >= mem_ceiling` (ooo_gens·G ≫ BDP) is a LOOSE
+/// memory backstop that binds only if recovery genuinely stalls. Extracted pure
+/// so the "a frozen in-order frontier does not pause intake" invariant is
+/// unit-tested without driving the async sender loop.
+fn fmtcp_tx_paused(cwnd_full: bool, store_len: usize, mem_ceiling: usize) -> bool {
+    cwnd_full || store_len >= mem_ceiling
+}
+
+/// FMTCP per-path in-flight cap decision (change 2, the #64 fix). Given each
+/// active path's `(in_flight, per_path_cap)` where the cap = gain·BtlBw_i·RTprop_i
+/// (that path's OWN windowed-max bandwidth × its OWN min-RTT), the sender is
+/// "full" only when NO path is below its own cap. So the slow path's RTT-inflated
+/// cap bounds ONLY the slow path, and the fast path keeps pulling source while the
+/// slow path is full. The summed-anchor #64 bug was a single GLOBAL budget
+/// gain·Σ_i BtlBw_i·RTprop_i that the fast path stalled behind (and that let the
+/// slow path's inflated term over-drive its own queue into bufferbloat). Extracted
+/// pure for unit testing.
+fn fmtcp_percap_full(per_path: &[(u64, u64)]) -> bool {
+    !per_path.iter().any(|&(in_flight, cap)| in_flight < cap.max(1))
+}
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
@@ -586,9 +615,20 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // — and differs only on the SENDER: raw source rides the wire as primary and
     // the encoder emits only the `ceil(len·r)` repair overhead (see the
     // `systematic` arg to `run_window_sender`).
-    let window_systematic = window_reliable && config.window_systematic_repair;
-    let window_generation =
-        window_reliable && (config.window_generation_coding || config.window_systematic_repair);
+    // FMTCP-class pure decode-on-total aggregation (docs/research/fmtcp-retry-design.md).
+    // A single composite env-gate that turns on the oracle-confirmed pure config —
+    // total-in-flight flow control + fungible fountain redundancy (NO per-hole ARQ)
+    // + decode-on-total out-of-order — on TOP of the reliable window. It SELECTS the
+    // systematic-repair generation submode (raw source rides the wire out-of-order,
+    // ceil(len·r) fungible repair, stable per-generation anchor) so RWM_FMTCP=1 with
+    // --window-reliable is self-contained; the individual sub-levers (xpath repair,
+    // OOO retention decouple, per-path BDP in-flight cap, once-per-RTT deficit,
+    // receiver reassembly clamp) are forced on in run_window_sender / the receiver.
+    // Shipped path is byte-untouched (default config has window_reliable off).
+    let fmtcp = std::env::var("RWM_FMTCP").is_ok();
+    let window_systematic = window_reliable && (config.window_systematic_repair || fmtcp);
+    let window_generation = window_reliable
+        && (config.window_generation_coding || config.window_systematic_repair || fmtcp);
     if config.window_reliable && !window_mode {
         warn!(
             backend = ?effective_fec_backend,
@@ -761,6 +801,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Shared window ACK: receiver writes, sender reads to advance the encoder window
     let window_ack_seq = Arc::new(AtomicU64::new(0));
+    // FMTCP change 1: the peer's TOTAL DECODED count `d` (decoded source symbols
+    // across ALL generations, out of order) — distinct from window_ack_seq (the
+    // in-order frontier `df`). handle_control_message publishes it from each
+    // WindowAck's `cumulative_received` (which the OOO receiver sets to
+    // received_seqs.len()); the FMTCP sender gates outstanding = sent_src − d,
+    // so a hole that freezes df never stalls intake (total-in-flight FC).
+    let window_decoded_seq = Arc::new(AtomicU64::new(0));
 
     // NACK gap channel: handle_control_message sends gap ranges, window sender receives for targeted repair
     let (nack_tx, nack_rx) = tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(16);
@@ -847,6 +894,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_generation = window_generation;
     let sender_window_systematic = window_systematic;
     let sender_window_ack = window_ack_seq.clone();
+    let sender_window_decoded = window_decoded_seq.clone();
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
@@ -865,6 +913,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &sender_scheduler,
                 &sender_stats,
                 &sender_window_ack,
+                &sender_window_decoded,
                 &mut sender_nack_rx,
                 &mut sender_deficit_rx,
                 &mut sender_sack_rx,
@@ -1193,6 +1242,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         MAX_WINDOW_SIZE as u64
     };
     let recv_window_ack = window_ack_seq.clone();
+    let recv_window_decoded = window_decoded_seq.clone();
     let recv_window_generation = window_generation;
     // Receiver arm of the deficit-feedback loop: the data-arm control handler
     // forwards inbound GenerationDeficit vectors to the LOCAL sender's recovery
@@ -1249,7 +1299,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // reported (`[REASM]`). The reassembly stays BDP-bounded because the sender's
     // outstanding is bounded (plain_dyn_cap = gain·BDP store cap, default-on) and
     // working FEC recovers holes fast. Default-off; the shipped path is untouched.
-    let reasm_bdp_on = std::env::var("RWM_REASM_BDP").is_ok();
+    // FMTCP forces the receiver reassembly clamp on: decode-on-total delivers
+    // out of order and the sender runs far past the in-order frontier, so the
+    // receiver must (a) never evict an above-frontier symbol before it is
+    // delivered (reliability invariant) and (b) probe the reassembly occupancy
+    // (stays ≈ aggregate BDP because the total-in-flight FC bounds the sender).
+    let reasm_bdp_on = std::env::var("RWM_REASM_BDP").is_ok() || fmtcp;
 
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
@@ -2200,9 +2255,22 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 sack_ranges,
                                 echo_send_timestamp_us: batch_send_ts,
                                 jitter_us: jitter,
-                                cumulative_received: recv_stats.path(path_id)
-                                    .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
-                                    .unwrap_or(0),
+                                // FMTCP change 1 (total decode progress). In OOO /
+                                // generation mode carry the TOTAL count of decoded
+                                // source symbols across ALL generations (out of
+                                // order), so the sender can gate outstanding on
+                                // total decode progress `d` — NOT the contiguous
+                                // in-order frontier `received_up_to` that a hole
+                                // freezes. received_seqs holds every delivered seq
+                                // (decode-on-total), so its length IS d. Legacy
+                                // (in-order) modes keep the per-path received count.
+                                cumulative_received: if recv_window_ooo {
+                                    received_seqs.len() as u64
+                                } else {
+                                    recv_stats.path(path_id)
+                                        .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
+                                        .unwrap_or(0)
+                                },
                             };
                             if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                                 debug!(?e, path_id, "failed to send WindowAck");
@@ -2419,6 +2487,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         if recv_window_mode { Some(&recv_window_ack) } else { None },
                         if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         recv_sack_tx.as_ref(),
+                        if recv_window_mode { Some(&recv_window_decoded) } else { None },
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -2814,6 +2883,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         None,
                         None,
                         None,
+                        None,
                     );
                 }
                 other => {
@@ -3087,6 +3157,11 @@ async fn run_window_sender(
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
+    // FMTCP change 1: the peer's TOTAL DECODED count `d` (out-of-order,
+    // across all generations), published by handle_control_message from each
+    // WindowAck's `cumulative_received`. The FMTCP flow-control gate keys on
+    // sent_src − d (total decode progress), NOT the in-order frontier.
+    window_decoded_seq: &Arc<AtomicU64>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     // Generation-deficit feedback (§16.3): each element is the receiver's
     // reported (generation_anchor, residual_deficit) vector. Drives the
@@ -3155,10 +3230,26 @@ async fn run_window_sender(
     // coded-only's (which must also fund the K base). r ≳ 1.5·ε keeps windowed
     // repair ahead of loss (the oracle's provisioning floor; r < ε → DNF). At C8
     // ε_slow ≈ 4.8 %, so 0.15 clears both paths with margin. RWM_GEN_R overrides.
+    // FMTCP-class composite gate (docs/research/fmtcp-retry-design.md). When set
+    // (and in generation mode) it forces the oracle-confirmed pure config: OOO
+    // retention decouple, fungible cross-path repair, per-path BDP in-flight cap,
+    // once-per-RTT deficit coalesce, and — the crux — TOTAL-in-flight flow control
+    // (the tx_paused gate keys on the per-path BDP in-flight, NOT the in-order
+    // frontier store). Sub-levers below OR `fmtcp` into their own env gates.
+    let fmtcp = std::env::var("RWM_FMTCP").is_ok() && generation;
+    // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
+    // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
+    let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
+        .ok().and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or((pipeline + 2) * gen_size)
+        .max(2 * gen_size);
+    // Generation-coding proactive overhead r. FMTCP ships r=0.10 (oracle PART 5c:
+    // r≥0.05 reaches the ×1.19 ceiling, r<0.05 DNFs; 0.10 is ~2× the model floor,
+    // the margin covering GE's 2–4× under-provisioning of real bursty loss).
     let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(if systematic { 0.15 } else { 0.20 })
+        .unwrap_or(if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
         .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
     let mut encoder: Box<dyn WindowEncoder> = if systematic {
@@ -3295,8 +3386,11 @@ async fn run_window_sender(
     // Enabled by RWM_REACT_CAP (any value; the value optionally scales the
     // spacing — <1 = fraction of SRTT, >=1 = absolute µs). Unset = OFF (legacy
     // exempt behaviour), so Fix 1 measures alone and Fix 2 stacks on top.
+    // FMTCP forces once-per-RTT deficit coalescing (1.0·SRTT): the design's
+    // "ONE deficit feedback per RTT" — the #59/#60 lesson that a sub-RTT re-flood
+    // of the fungible top-up defeats aggregation. RWM_REACT_CAP still overrides.
     let react_cap_cfg: f64 = std::env::var("RWM_REACT_CAP")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(if fmtcp { 1.0 } else { 0.0 }).max(0.0);
     let react_cap_on = react_cap_cfg > 0.0;
     // anchor → wall-clock (µs) of the last reactive emission for that generation.
     let mut gen_recover_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
@@ -3340,7 +3434,7 @@ async fn run_window_sender(
     // of every not-yet-in-order-acked generation stay retained for reactive
     // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
     // generation count, default 16; unset = OFF, byte-identical legacy).
-    let ooo_retain = std::env::var("RWM_OOO_RETAIN").is_ok() && generation;
+    let ooo_retain = (std::env::var("RWM_OOO_RETAIN").is_ok() || fmtcp) && generation;
     let ooo_gens: usize = std::env::var("RWM_OOO_RETAIN")
         .ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(16);
     // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
@@ -3585,7 +3679,10 @@ async fn run_window_sender(
     // (C7) have equal spare, so `place_repair_spare_path` splits the near-tie set
     // uniformly (no hard-argmax concentration → no C7 regression). Generation/
     // systematic only; shipped path untouched. Default-OFF.
-    let xpath_repair = generation && std::env::var("RWM_XPATH_REPAIR").is_ok();
+    // FMTCP forces fungible cross-path repair placement: a fast-path hole is
+    // covered by repair already in flight on the SLOW (spare) path, so no block
+    // waits on a specific slow-path symbol (the FMTCP fungibility escape).
+    let xpath_repair = generation && (std::env::var("RWM_XPATH_REPAIR").is_ok() || fmtcp);
     let inline_w: u64 = std::env::var("RWM_INLINE_W")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -4106,9 +4203,21 @@ async fn run_window_sender(
     // non-exempt) reactive/deficit recovery via `cwnd_full`, so the parallel
     // tail flush cannot re-bloat the queue. Env RWM_INFL_BDP=gain (e.g. 2.0);
     // 0/unset = off (legacy static RWM_INFL_CAP / store-only backpressure).
+    // FMTCP ships gain 1.5 (oracle PART 5c: the bare aggregate BDP starves the
+    // recovery headroom and collapses to 0.93×; ~1.5× over the windowed-max —
+    // hence under-estimating — anchor gives the emergent ~1.3× BDP operating
+    // point). The FMTCP cap is enforced PER PATH (see `fmtcp_percap` below) —
+    // the #64 fix: the slow path's RTT-inflated BtlBw·RTprop bounds ONLY the
+    // slow path, never a single global budget the fast path stalls behind.
     let infl_bdp_gain: f64 = std::env::var("RWM_INFL_BDP")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(if fmtcp { 1.5 } else { 0.0 }).max(0.0);
     let infl_bdp_on = infl_bdp_gain > 0.0;
+    // FMTCP #64 fix: enforce the in-flight cap PER PATH (path i outstanding ≤
+    // gain·BtlBw_i·RTprop_i) rather than as one fungible global Σ budget. The
+    // sender is TUN-paused only when EVERY active path is at its own cap, so the
+    // fast path keeps pulling fresh source while the slow path is full — the
+    // total-in-flight escape from the in-order-frontier stall.
+    let fmtcp_percap = fmtcp;
     // Boot cap before the BtlBw anchor warms (a few RTTs); ~1.5× a 100 Mbit/
     // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
     let mut dyn_infl_cap: u64 = if infl_bdp_on { 128 } else { infl_cap };
@@ -4208,20 +4317,35 @@ async fn run_window_sender(
         }
         let eff_infl_cap = if infl_bdp_on { dyn_infl_cap } else { infl_cap };
         // In-flight (unacked) symbols across the pipe, for the BDP in-flight cap.
-        let pipe_infl: u64 = if eff_infl_cap > 0 {
+        // FMTCP (#64 fix): also decide fullness PER PATH — the sender is "full"
+        // (TUN-paused) only when NO active path is below its own cap
+        // (gain·BtlBw_i·RTprop_i), so the fast path keeps pulling source while
+        // the slow path is at its RTT-inflated cap. Non-FMTCP keeps the legacy
+        // global Σ in-flight ≥ Σ cap test.
+        let (pipe_infl, percap_full): (u64, bool) = if eff_infl_cap > 0 {
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
+            let mut per_path: Vec<(u64, u64)> = Vec::new();
             for id in sched.active_paths() {
                 if let Some(p) = sched.path_mut(id) {
                     p.expire_in_flight();
-                    infl += p.in_flight as u64;
+                    let fl = p.in_flight as u64;
+                    infl += fl;
+                    // Per-path cap = gain·(BtlBw_i·RTprop_i); fall back to the
+                    // global boot cap before the anchor warms.
+                    let cap_i = p
+                        .copa_bdp_anchor()
+                        .map(|b| ((infl_bdp_gain * b).ceil() as u64).max(1))
+                        .unwrap_or(eff_infl_cap);
+                    per_path.push((fl, cap_i));
                 }
             }
-            infl
+            (infl, fmtcp_percap_full(&per_path))
         } else {
-            0
+            (0, false)
         };
-        let cwnd_full = eff_infl_cap > 0 && pipe_infl >= eff_infl_cap;
+        let cwnd_full = eff_infl_cap > 0
+            && if fmtcp_percap { percap_full } else { pipe_infl >= eff_infl_cap };
         // Plain-reliable delay-based window cap (paper §12): bound the
         // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
         // loss recovery does not stall behind a bloated queue. Refreshed off
@@ -4246,7 +4370,33 @@ async fn run_window_sender(
             }
         }
         let effective_store_cap = if plain_dyn_cap { dyn_store_cap } else { store_max };
-        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full);
+        // TOTAL-IN-FLIGHT FLOW CONTROL (FMTCP change 1, the crux). The shipped
+        // generation gate is `store_len >= store_cap`, where store_len =
+        // encoder.window_size() = retained sources back to the IN-ORDER decode
+        // frontier — so a hole freezes the frontier, the store fills to the cap,
+        // and the sender idles behind the hole (the oracle's in-order-frontier
+        // stall, PART 5). FMTCP instead gates ONLY on the per-path BDP in-flight
+        // (`cwnd_full`), which drains on the RTT timescale (expire_in_flight),
+        // decode-order-INDEPENDENT — a hole never freezes it. Retention still
+        // drops on the in-order ack for reliability (memory bounded ≈ recovery
+        // window, since the hole decodes fungibly within ~1 RTT and the ack then
+        // advances), but it no longer gates intake. The whole-object memory
+        // ceiling win_cap = ooo_gens·G is the loose safety backstop.
+        let tx_paused = if fmtcp {
+            // FMTCP flow control. The sender pipelines a BOUNDED number of
+            // generations PAST the in-order frontier (fmtcp_win_backstop =
+            // (pipeline+2)·G): far enough to keep sending across a hole (the
+            // decouple that the in-order store gate forbids — the aggregation
+            // lever), but bounded so the receiver OOO backlog and the standing
+            // queue stay small (MEASURED: an unbounded decouple ballooned win to
+            // 4238 and the RTT to 2.5 s of bufferbloat; a decode-progress gate
+            // wedged). cwnd_full is the per-path BDP in-flight bound. The
+            // window_decoded_seq total-decode signal is published for DIAG /
+            // occupancy reporting (the oracle's `d`), not used to gate here.
+            reliable && fmtcp_tx_paused(cwnd_full, store_len, fmtcp_win_backstop)
+        } else {
+            reliable && (store_len >= effective_store_cap || cwnd_full)
+        };
 
         // RWM_DIAG periodic constraint report (see decls above the loop).
         if diag_on {
@@ -4294,8 +4444,14 @@ async fn run_window_sender(
                     0.0
                 };
                 let eff = if generation { diag_eff_rate } else { 0.0 };
+                // FMTCP: total-decode occupancy (the oracle's outstanding = sent_src
+                // − d). Bounded ≈ aggregate BDP is the FMTCP signature (vs the whole
+                // object). `d` = window_decoded_seq (out-of-order across all gens).
+                let fmtcp_out = if fmtcp {
+                    src_now.saturating_sub(window_decoded_seq.load(Ordering::Relaxed))
+                } else { 0 };
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -4306,6 +4462,7 @@ async fn run_window_sender(
                     cw, fl, np,
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,
+                    fmtcp_out, fmtcp_win_backstop,
                 );
                 diag_last_us = dnow;
                 diag_last_ack = ack_now;
@@ -4591,6 +4748,13 @@ async fn run_window_sender(
                     // and — when enabled — is NON-EXEMPT from the in-flight cap
                     // (cwnd_full), so it cannot burst the pipe past congestion
                     // control the way the old exempt loop did.
+                    // Recovery is NON-EXEMPT from cwnd_full (congestion control):
+                    // exempting it floods the pipe (MEASURED RTT 2.5 s
+                    // bufferbloat). The frontier is funded instead by (a) the win
+                    // backstop keeping the send frontier within a few generations
+                    // of the in-order frontier so the stranded generation is
+                    // recent, and (b) recovery running each iteration as the
+                    // in-flight budget expires on the RTT timescale.
                     if gen_tokens < 1.0 || rec_emitted >= rec_burst
                         || (react_cap_on && cwnd_full) {
                         break;
@@ -5990,6 +6154,10 @@ fn handle_control_message(
     // frontier ranges to the local window sender so it can prune the sent-store
     // for out-of-order deliveries (SACK flow control). None disables it.
     sack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    // Some(..) in window mode: the PEER's TOTAL DECODED count `d` (FMTCP change
+    // 1), published from each WindowAck's `cumulative_received` (monotonic
+    // fetch_max) and read by the local FMTCP sender for total-in-flight FC.
+    peer_decoded: Option<&Arc<AtomicU64>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -6234,6 +6402,13 @@ fn handle_control_message(
             // (fetch_max: acks arrive on multiple paths, out of order).
             if let Some(pa) = peer_window_ack {
                 pa.fetch_max(received_up_to, Ordering::Relaxed);
+            }
+            // FMTCP change 1: publish the peer's TOTAL DECODED count `d` (the OOO
+            // receiver sets cumulative_received = received_seqs.len()). Monotonic
+            // — d only grows — so fetch_max is correct across multi-path/out-of-
+            // order acks. The FMTCP sender gates outstanding = sent_src − d.
+            if let Some(pd) = peer_decoded {
+                pd.fetch_max(cumulative_received, Ordering::Relaxed);
             }
             // Update RTT from echoed timestamp. echo == 0 is the sentinel
             // for timer-driven acks (hold-expiry unwedge) that echo no
@@ -6639,6 +6814,69 @@ mod tests {
         assert!(store_backpressure(true, RELIABLE_STORE_MAX + 1));
         // EVICT mode never backpressures on retention.
         assert!(!store_backpressure(false, RELIABLE_STORE_MAX * 10));
+    }
+
+    // ----- FMTCP-class pure decode-on-total aggregation (change 1 + change 2) --
+
+    /// FMTCP change 1 (flow control decoupled from the in-order frontier, but
+    /// BOUNDED). The generation store gate pauses intake at ~2·G (the send
+    /// frontier pinned near the in-order frontier — a hole freezes it and the
+    /// sender idles: the oracle's in-order-frontier stall). FMTCP instead lets the
+    /// send frontier run a BOUNDED number of generations PAST the in-order
+    /// frontier (win backstop = (pipeline+2)·G), so the sender keeps sending
+    /// across a hole (the aggregation lever) — but not unboundedly (an unbounded
+    /// decouple bufferbloated the queue / wedged, MEASURED). store_len here is
+    /// `win` = retained back to the in-order frontier.
+    #[test]
+    fn fmtcp_flow_control_advances_past_a_frozen_frontier() {
+        let win_backstop = 1536; // (pipeline 2 + 2)·G, G=384
+        // A hole froze the in-order frontier; win has grown 2 generations (768)
+        // past it. FMTCP keeps sending — a frozen frontier does NOT immediately
+        // stall the sender (unlike the plain 2·G gate).
+        assert!(
+            !fmtcp_tx_paused(false, 768, win_backstop),
+            "FMTCP pipelines a few generations past a frozen frontier"
+        );
+        // Pauses at the bounded win backstop (anti-bufferbloat — the OOO backlog
+        // and standing queue cannot balloon).
+        assert!(
+            fmtcp_tx_paused(false, win_backstop, win_backstop),
+            "FMTCP pauses at the bounded win backstop (few generations)"
+        );
+        // … or when the per-path BDP in-flight (cwnd_full) is full.
+        assert!(
+            fmtcp_tx_paused(true, 100, win_backstop),
+            "FMTCP also pauses on the per-path BDP in-flight (cwnd_full)"
+        );
+    }
+
+    /// FMTCP change 2 (per-path BDP in-flight cap, the #64 fix). The sender is
+    /// "full" only when NO path is below its OWN cap (gain·BtlBw_i·RTprop_i). The
+    /// slow path's RTT-inflated cap bounds only the slow path; the fast path with
+    /// room keeps the pipe moving — unlike the summed-anchor #64 global budget the
+    /// fast path stalled behind.
+    #[test]
+    fn fmtcp_percap_bounds_each_path_independently() {
+        // Fast path (cap 100) has room at 40; slow path (RTT-inflated cap 60) is
+        // at its cap. NOT full — the fast path keeps pulling source.
+        assert!(
+            !fmtcp_percap_full(&[(40, 100), (60, 60)]),
+            "fast path with room ⇒ not full even when the slow path is at its cap"
+        );
+        // Every path at/above its own cap ⇒ full (total in-flight ≈ Σ per-path BDP).
+        assert!(
+            fmtcp_percap_full(&[(100, 100), (60, 60)]),
+            "all paths at their per-path cap ⇒ full"
+        );
+        assert!(
+            fmtcp_percap_full(&[(120, 100), (80, 60)]),
+            "all paths over their per-path cap ⇒ full"
+        );
+        // Degenerate zero-cap path never blocks (cap.max(1)); a fresh path with
+        // room keeps the sender open.
+        assert!(!fmtcp_percap_full(&[(0, 0), (10, 100)]));
+        // Single fast path with room ⇒ not full (single-path parity control).
+        assert!(!fmtcp_percap_full(&[(50, 145)]));
     }
 
     #[test]
