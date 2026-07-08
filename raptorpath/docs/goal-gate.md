@@ -3594,3 +3594,115 @@ positively excluded.
 ARQ baseline + the narrow-store FEC arm swept over `RWM_REPAIR_WAIT`; reports
 `pfrac/pcod/rcod/mbps/stdev`. `perf_rwm_c.sh` now also propagates
 `RWM_REPAIR_WAIT`. Mechanism via `RWM_FDIAG` (`present_at_stall`, `rf/ru`).
+
+## FEC Recovery Bug — the decoder DISCARDED late sources; repairs were 99.85% redundant (branch `feat/fec-recovery-bug`, 2026-07-08)
+
+THE bug behind "proactive FEC recovery is dead" was in the RECEIVER decoder, not
+the substrate and not NACK timing. Diagnosed per-generation, fixed, measured. The
+smoking gun (`rf≈4609 ru≈7`, 99.85 % of arriving repair symbols useless) is now
+**`rf=8383 ru=6053` — 72 % useful.** The waste was NOT fundamental; it was a
+one-spot decoder defect.
+
+### Per-generation trace — which of A/B/C/D
+Cause **(C)/(D) blend: the generation decode matrix froze its known-source set at
+slot-creation and never admitted late sources**, so arriving repairs were reduced
+against a STALE unknown space and were linearly redundant relative to the real
+holes. NOT (A) — there is NO raw-source ARQ in generation mode at all: `sent_store`
+is populated only `if reliable && !generation`, so the SACK-gap retransmit path
+`continue`s (no-op); recovery is coded-repair-only. NOT the substrate-drop theory:
+`repairs_fed≈4600` proves the repairs ARRIVE; they are simply wasted on arrival.
+
+Mechanism (`GenerationDecoder`, `fec/generation.rs`). Systematic sources ride the
+wire as primary and land in `recovered`. A generation's `(anchor,width)` Gauss–
+Jordan matrix is created only when its FIRST repair arrives, at which point it
+pre-loads the sources **then present** as unit pivots. In production, source and
+repair symbols INTERLEAVE and reorder, so a generation's own non-lost sources
+routinely arrive AFTER its first repair. Those late sources were written to
+`recovered` but **never injected into the live matrix** — the matrix kept treating
+them as unknowns forever. Consequences, all measured/derived:
+- `rank_in(anchor,K_g)` returns the MATRIX rank, so the receiver reports a deficit
+  of `K_g − rank` inflated by the late-source count, not the true `holes`.
+- the sender then floods `K_g − rank` coded repair where only `holes` were needed;
+  the surplus repairs merely re-derive already-received sources → linearly
+  dependent → `repairs_useful` (completions) pinned near zero.
+- a generation could only finish by re-solving its FULL width in coded repair —
+  which the proactive `ceil(K_g·r)` budget never supplies, so every hole fell to
+  the round-trip-bound reactive deficit loop. Proactive recovery therefore looked
+  dead, and every prior "FEC-vs-ARQ" number was ARQ-with-FEC-overhead.
+
+Isolated by a unit test reproducing the interleave (`diag_late_source_after_first_
+repair_still_recovers_from_coded`): a generation with **2 true holes + 4 non-lost
+late sources** needed **6** coded repairs to decode (= holes + late), not 2 —
+exactly `K_g − present_at_first_repair`. The frozen pre-load, proven in isolation.
+
+### The fix
+`GenerationDecoder::add_symbol` non-repair branch now calls
+`inject_source_into_active_gens(seq,data)`: for every existing Solving matrix whose
+fixed span covers `seq`, feed the unit equation `e_c·x = data` (c = seq−anchor)
+into it. The unknown space shrinks to the real holes the instant the source
+arrives; a late source that is the last missing DoF completes the generation and
+its holes are delivered. `insert_equation` now returns `(added_rank, delivered)`
+so `repairs_useful` counts rank-ADDS (the honest per-hole signal) not per-
+generation completions. Default/shipped path untouched — `GenerationDecoder` is
+instantiated only under `--window-systematic-repair`; the shipped non-generation
+decoder is byte-identical (ARQ/shipped clean control **84.4 Mbit/s**, in range).
+
+### PRIMARY metric — repairs_useful came alive (single-path, G=384, r=0.35, narrow store, `RWM_FDIAG`)
+| cell | rf (fed) | ru (useful) | useful % | pfrac |
+|---|---:|---:|---:|---:|
+| c2r100l10 (RTT100/10%) — BEFORE | 4609 | 7 | **0.15 %** | 0.27 |
+| c2r100l10 (RTT100/10%) — AFTER | 8383 | 6053 | **72 %** | 0.234 |
+| c2r200l10 (RTT200/10%) — AFTER | 6108 | 4016 | **66 %** | 0.127 |
+| c2r10 (RTT10/2.6%, control) — AFTER | 5240 | 1896 | **36 %** | 0.738 |
+
+Proactive/coded repair now genuinely recovers holes: `repairs_useful` climbed from
+0.15 % to 66–72 % of fed. **The decoder bug is fixed.**
+
+### THROUGHPUT — FEC still does NOT beat ARQ; the residual, stated honestly
+The decoder fix was NECESSARY but is NOT SUFFICIENT for the crossover.
+| cell | ARQ Mbit/s | FEC Mbit/s | FEC/ARQ | pfrac | dnf |
+|---|---:|---:|---:|---:|---:|
+| c2r100l10 (RTT100/10%) | 0.761 | 0.667 (wait32) | 0.88 | 0.28 | 0 |
+| c2r200l10 (RTT200/10%) | 0.448 | 0.262 | 0.58 | 0.13 | 0 |
+| c2r10 (RTT10/2.6%, control) | ~19.2 | 13.19 | 0.69 | 0.74 | 0 |
+
+**The next residual, exactly.** Recovery stays REACTIVE-dominated at high loss
+(`recovery_coded` ≫ `proactive_coded`; pfrac 0.13–0.28). The proactive repair for a
+generation is emitted at the send frontier and PACED OUT, so it arrives ~a
+generation-span AFTER the generation's sources — and the receiver's deficit report
+fires the instant the hole is seen, so the round-trip-bound reactive coded wins the
+race before the (now-useful) proactive repair can decode the hole. Re-tested post-
+fix, the two levers that failed pre-fix still don't cross it: the repair-wait
+horizon gives only +0.05 pfrac / +0.05 Mbit/s at RTT100/10% (and regresses past a
+generation-span), and RAISING r (0.35→0.60) LOWERS throughput (0.67→0.57) — the
+extra coded overhead congests the droppable datagram path and drops more, for +0.02
+pfrac. The binding constraint is now purely transport: to beat ARQ the proactive
+budget must ride in the SAME flight as the sources (so a hole decodes with zero
+round-trip), which the paced-after-the-fact coded channel structurally cannot do at
+high RTT. The decoder no longer wastes the repair — but the repair still arrives
+too late to pre-empt the reactive round-trip.
+
+### Controls / reliability
+- `cargo test -p raptorpath --lib` **271** green (incl. the new late-source
+  regression); `cargo test -p raptorpath-math` green; `gate_suite` **15/15**
+  release. `diag_late_source_after_first_repair_still_recovers_from_coded` now
+  passes (2 coded == 2 holes regardless of source arrival order).
+- **Reliability intact:** `dnf:0` at every measured cell; every transfer completed
+  byte-exact. Low-RTT control (c2r10) not regressed (13.2 Mbit/s, ~prior). Clean
+  shipped control **84.4 Mbit/s** (in the 76–84 band); systematic-FEC-arm clean
+  61.3 Mbit/s (its own transport-fix overhead, unchanged by the decoder fix).
+- **Multipath: NOT warranted** — gated on a single-path FEC win, which the
+  crossover still lacks.
+
+### Verdict
+**THE decoder bug is found and fixed — proactive FEC recovery is revived
+(`repairs_useful` 0.15 %→72 %).** But it does NOT by itself flip FEC past ARQ:
+throughput crossover is blocked by the reactive-vs-proactive RACE under high-RTT
+pacing (proactive repair arrives a generation-span late and loses to the deficit
+round-trip). Honest headline: the 99.85 %-wasted-repair pathology was real and is
+eliminated; the FEC-vs-ARQ crossover remains a TRANSPORT-substrate problem (deliver
+the proactive budget in-flight with the sources), not a decoder one — now proven
+with the decoder defect removed rather than masking it.
+
+**Harness.** Same `pf_sweep.sh` / `rw_sweep.sh` / `perf_rwm_c.sh`; `RWM_FDIAG` `rf/ru`
+now report rank-ADD usefulness. Fix in `raptorpath/src/fec/generation.rs`.
