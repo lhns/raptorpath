@@ -3903,3 +3903,100 @@ delivery in `insert_equation`, `FILL_FLAG` decode parse. `window_traits.rs`:
 `generate_repair_filling`/`wants_filling_coding` (defaults). `net/mod.rs`:
 `RWM_PROACTIVE_PACER` pacer loop + `gen_widths` FILL_FLAG guard. Harness:
 `pmeas.sh`/`pmeas2.sh`, `RWM_PROACTIVE_PACER` propagation in `perf_rwm_c.sh`.
+
+## C8 Cross-Path Repair — the pacer's early repair on the SPARE path, MEASURED: still does not aggregate (branch `feat/c8-crosspath-repair`, 2026-07-08)
+
+The "Present-at-Stall" section closed on the single-path presence⊥throughput
+tension (buying early repair costs source bandwidth) and named the exact untested
+residual: **cross-path fungibility** — the pacer's early proactive repair should
+ride the SECOND (spare) path while source rides the first, so presence is bought
+WITHOUT displacing source. This branch built and MEASURED that realization at C8.
+
+### PART 0 — ORACLE-CONFIRM (the config the identity implies)
+`temporal_oracle.rs::systematic_repair_aggregation` (independent Monte-Carlo, exact
+C8 netem params) confirms THIS placement in theory: systematic source striped
+work-conserving + FUNGIBLE cross-path deficit-driven repair (any path's repair
+clears any hole in the window), out-of-order frontier, NO per-seq ARQ, unbounded
+store → **C8 het ×1.188** (goodput ceiling ×1.195), C7 sym ×1.992, `phi_tail`→0,
+`max_deficit`=2 symbols, `arq_used`=0. So the oracle says the specific placement
+DOES beat fast-path-alone toward ~1.19. Confirmed before building.
+
+### The wiring (env-gated, default-OFF; shipped path byte-untouched)
+`Scheduler::place_repair_spare_path` (new): routes REPAIR to the max-spare-capacity
+path (`max spare_capacity()` = the underutilized path — the slow path once the fast
+path is source-saturated) instead of the marginal-cost softmax (which biases repair
+toward the FAST path, so it competes with systematic source). Symmetric paths (equal
+spare) → uniform split of the near-tie set (no hard-argmax concentration → no C7
+regression; unit-tested `place_repair_spare_routes_to_underutilized_path`). Wired
+into all three repair-emission sites (sealed batched proactive, `RWM_PROACTIVE_PACER`
+filling pacer, deficit recovery) behind `RWM_XPATH_REPAIR` (generation/systematic
+only). Loopback: 275 lib green (incl. the new placement test + the pacer
+filling-hole recovery test), `raptorpath-math` green, `gate_suite` 15/15 release.
+
+### PART 3 — DECISIVE C8 at L1 (VM, netem independent qdiscs, seed 42)
+Fast-alone reference **single c2 G=192 50 MB ×5 = 15.18 Mbit/s** (median 26.6 s,
+stdev 0.88, dnf 0). Bar: dual C8 (c2+c3) STRICTLY > 15.7 AND factor > 1.0. All arms
+G=192, 50 MB, dnf 0:
+
+| C8 dual (c2+c3) arm | Mbit/s | factor vs 15.18 | stdev s | note |
+|---|---:|---:|---:|---|
+| **baseline** plain systematic (no flags) | **14.70** | **0.97×** | 1.70 | BEST dual — slow path carries SOURCE |
+| XPATH + pacer + REACT_CAP + CC_PACE (no ooo) | 13.59 | 0.90× | 0.90 | stable, but below baseline |
+| XPATH + REACT_CAP only (deficit cross-path) | 11.26 | 0.74× | 4.37 | bounded reactive + tight store hurts |
+| XPATH + pacer + OOO_RETAIN=16 + REACT_CAP | 7.52 | 0.50× | **28.9** | wide retention → bufferbloat, 103 s outliers |
+
+(8 MB ×3 screen showed the opposite ranking — baseline 13.28, XPATH+pacer 14.07 —
+but that is a startup-dominated artifact of small objects; at the DECISIVE 50 MB the
+ranking inverts. The pacer's proactive fraction IS high on dual — 0.72–0.88, dnf 0,
+NO single-path wedge because the repair rides the slow path not the fast — so the
+mechanism works as designed; it just does not convert to throughput.)
+
+### DECISIVE VERDICT — NOT crossed; cross-path repair does not aggregate, it HURTS
+The C8 bar (>15.7, factor>1) is **NOT met by any arm**. The best dual is the
+**plain-systematic baseline at 14.70 (0.97×)** — and every cross-path-repair arm is
+STRICTLY WORSE. Cross-path proactive repair on the spare path does not lift C8; it
+lowers it.
+
+**Mechanism (per-path split, the honest why).** In the baseline the slow c3 path
+carries SOURCE (∝ goodput placement), so its ~10 Mbit goodput adds real aggregate
+throughput that roughly cancels the in-order-frontier drag its losses add → 0.97×,
+the near-parity ceiling the three prior C8 sections already hit. `RWM_XPATH_REPAIR`
+DIVERTS that same slow-path capacity from SOURCE to REPAIR. But the fast c2 path
+ALREADY recovers its own losses cheaply from its own `r`=0.15 proactive repair (it
+does 15.18 alone), so the cross-path repair it receives is largely redundant — while
+the SOURCE the slow path stops carrying is a real throughput loss. The trade is
+net-negative: **loss-presence bought from the slow path costs the source that
+capacity would otherwise carry** — the presence⊥throughput identity, now confirmed
+to hold in the cross-path case too, not just single-path. This is exactly the
+prediction the identity makes; the oracle's ×1.188 assumed the slow path's SOURCE
+is delivered out-of-order with zero frontier cost (Σg aggregation), but at L1 the
+in-order cumulative-ack frontier serialization (Loss-Recovery defect 2) caps the
+slow path's usable source contribution at ~parity, so repair cannot buy back more
+than it costs.
+
+**Grounded final verdict: heterogeneous throughput aggregation is bounded even with
+working FEC + cross-path proactive repair.** The bottleneck is NOT repair placement
+and NOT FEC recovery (which works — proactive fraction 0.72–0.88, repairs_useful
+~66 %): it is the in-order-frontier recovery latency that a second, slower, lossy
+path cannot parallelise. Closing it needs the transport-pipeline change the
+Loss-Recovery section named (pipelined per-RTT frontier recovery or a genuinely
+rateless ack-frontier so a hole is never a fixed in-order position), NOT a placement
+law. C8 stays at ~0.97× fast-alone.
+
+### Controls (no regression)
+- **C7 SHIPPED plain-reliable (c2+c2, default path):** dual **20.82** / single 16.42
+  = **×1.27 symmetric aggregation INTACT**, dnf 0 — the shipped path is byte-
+  identical (`RWM_XPATH_REPAIR` gated OFF), so no regression.
+- single c2 fast-alone 15.18 (reference); all C8/C7 arms **dnf 0**, every byte
+  delivered (reliability intact).
+- (C7 *systematic-mode* did not summarize — a pre-existing "datagram too large" on
+  the symmetric second path that the BASELINE systematic C7 hits identically,
+  independent of this branch's repair-placement flag; the DECISIVE-C8 section already
+  recorded "systematic-repair C7 has NEVER aggregated". Not caused here.)
+- `cargo test -p raptorpath --lib` **275 green**; `raptorpath-math` green;
+  `gate_suite` 15/15 release.
+
+**Impl.** `scheduler/mod.rs`: `place_repair_spare_path` + unit test. `net/mod.rs`:
+`RWM_XPATH_REPAIR` flag, applied at the three repair-placement sites. Harness:
+`RWM_XPATH_REPAIR` propagation in `perf_rwm_c.sh`. Oracle: `temporal_oracle.rs::
+systematic_repair_aggregation` (pre-existing, re-confirmed ×1.188).

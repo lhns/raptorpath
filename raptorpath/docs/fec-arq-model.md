@@ -6477,6 +6477,27 @@ was tested and REFUTED):
   (stdev 3.2 vs 6.9) — a real robustness gain — but not the aggregation-
   above-fast-path the prediction claimed. The raise-r companion (r ≈ 0.18)
   did not cross it either (7.9). Full numbers and mechanism: Section 16.7.
+- **P1b — cross-path proactive repair on the SPARE path. ALSO REFUTED**
+  (goal-gate "C8 Cross-Path Repair", 2026-07-08). The last untested lever: place
+  the proactive/deficit repair on the *underutilized* (slow) path — spare-capacity
+  placement, `RWM_XPATH_REPAIR` — so a fast-path loss is covered by repair already
+  in flight on the slow path WITHOUT displacing fast-path source (the presence⊥
+  throughput escape the single-path "present-at-stall" result named). The
+  independent temporal oracle CONFIRMS this placement in theory (systematic source
+  + fungible cross-path deficit repair, out-of-order, no per-seq ARQ → **×1.188**,
+  toward the Σg ceiling ×1.195). At L1 (VM, G=192, 50 MB ×5) it does NOT cross:
+  fast-alone 15.18; dual C8 **baseline** plain-systematic **14.70 (0.97×)** is the
+  BEST dual, and every cross-path-repair arm is STRICTLY worse (13.6 / 11.3 / 7.5).
+  Mechanism: diverting the slow path's capacity from SOURCE to REPAIR loses real
+  aggregate throughput, while the fast path already recovers its own losses cheaply
+  (r=0.15) so the cross-path repair is largely redundant — a net-negative trade.
+  The presence⊥throughput identity holds in the cross-path case too. The gap
+  between the oracle's ×1.188 and L1's 0.97× is the in-order cumulative-ack frontier
+  serialization (§16.7 / Loss-Recovery defect 2), which caps the slow path's usable
+  SOURCE contribution at ~parity, so repair cannot buy back more than it costs.
+  **Grounded verdict: heterogeneous throughput aggregation is bounded even with
+  working FEC + cross-path proactive repair; the bottleneck is frontier-recovery
+  latency, not repair placement or FEC recovery.**
 
 Superseded PREDICTION (kept for the record, now MEASURED-refuted above):
 - ~~**P1 — aggregation.** RWM at C8, 50 MB native bulk: completion goodput

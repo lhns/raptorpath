@@ -3514,6 +3514,18 @@ async fn run_window_sender(
     // fallback for holes the proactive repair still misses. Systematic only;
     // shipped path untouched.
     let proactive_pacer = systematic && std::env::var("RWM_PROACTIVE_PACER").is_ok();
+    // ── Cross-path repair placement (RWM_XPATH_REPAIR) — the C8 realization ────
+    // Route proactive (and deficit) REPAIR to the max-spare-capacity path (the
+    // underutilized path — the slow path once the fast path is source-saturated)
+    // instead of the marginal-cost softmax (which biases repair toward the fast
+    // path, so it competes with systematic source — the single-path
+    // presence⊥throughput tension). With this on, a fast-path loss is covered by
+    // repair already in flight on the SLOW path, WITHOUT displacing fast-path
+    // source: presence is bought from the spare path's capacity. Symmetric paths
+    // (C7) have equal spare, so `place_repair_spare_path` splits the near-tie set
+    // uniformly (no hard-argmax concentration → no C7 regression). Generation/
+    // systematic only; shipped path untouched. Default-OFF.
+    let xpath_repair = generation && std::env::var("RWM_XPATH_REPAIR").is_ok();
     let inline_w: u64 = std::env::var("RWM_INLINE_W")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -4414,7 +4426,11 @@ async fn run_window_sender(
                 proactive_coded_total += 1;
                 let path = {
                     let sched = scheduler.lock();
-                    sched.place_symbol(true, &[]).unwrap_or(0)
+                    if xpath_repair {
+                        sched.place_repair_spare_path().unwrap_or(0)
+                    } else {
+                        sched.place_symbol(true, &[]).unwrap_or(0)
+                    }
                 };
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let batch = SymbolBatch {
@@ -4467,7 +4483,11 @@ async fn run_window_sender(
                     proactive_coded_total += 1;
                     let path = {
                         let sched = scheduler.lock();
-                        sched.place_symbol(true, &[]).unwrap_or(0)
+                        if xpath_repair {
+                            sched.place_repair_spare_path().unwrap_or(0)
+                        } else {
+                            sched.place_symbol(true, &[]).unwrap_or(0)
+                        }
                     };
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
@@ -4567,7 +4587,11 @@ async fn run_window_sender(
                         // aggregation (MEASURED C7 regression) for no C8 gain.
                         let path = {
                             let sched = scheduler.lock();
-                            sched.place_symbol(true, &[]).unwrap_or(0)
+                            if xpath_repair {
+                                sched.place_repair_spare_path().unwrap_or(0)
+                            } else {
+                                sched.place_symbol(true, &[]).unwrap_or(0)
+                            }
                         };
                         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                         let batch = SymbolBatch {

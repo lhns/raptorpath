@@ -1695,6 +1695,55 @@ impl Scheduler {
         probs.last().map(|(pid, _)| *pid)
     }
 
+    /// Cross-path repair placement (§16.3, the C8 "repair rides the spare path"
+    /// realization; env `RWM_XPATH_REPAIR`).
+    ///
+    /// The marginal-cost `place_symbol(true, ..)` softmax biases repair toward
+    /// the FAST path (lowest frontier-completion-time), so proactive repair
+    /// competes with systematic source on the same link — the single-path
+    /// presence⊥throughput tension (goal-gate "Present-at-Stall"): buying early
+    /// presence costs source bandwidth. This instead routes repair to the path
+    /// with the MOST spare capacity relative to its load (`max spare_capacity`),
+    /// i.e. the UNDERUTILIZED path — the slow path once the fast path is
+    /// source-saturated. A fast-path loss is then covered by repair already in
+    /// flight on the slow path, WITHOUT displacing fast-path source.
+    ///
+    /// Symmetric paths (C7) have equal spare, so the near-tie set is picked
+    /// UNIFORMLY at random — no hard-argmax concentration (which measured a C7
+    /// regression). Only a genuine spare-capacity asymmetry (heterogeneous C8,
+    /// fast saturated / slow idle) steers repair to one path. Falls back to the
+    /// softmax placement when fewer than two paths are up.
+    pub fn place_repair_spare_path(&self) -> Option<PathId> {
+        let spares: Vec<(PathId, f64)> = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .map(|p| (p.id, p.spare_capacity()))
+            .collect();
+        if spares.len() < 2 {
+            return self.place_symbol(true, &[]);
+        }
+        let max_spare = spares.iter().map(|(_, s)| *s).fold(f64::NEG_INFINITY, f64::max);
+        // Near-tie set: within 80% of the max spare (or, for the unbounded
+        // in_flight==0 case, all INF paths). Absolute floor 0.25 keeps two
+        // lightly-loaded paths in the tie set so they split rather than concentrate.
+        let thresh = if max_spare.is_finite() {
+            (0.8 * max_spare).min(max_spare - 0.25)
+        } else {
+            f64::INFINITY // only INF-spare paths qualify
+        };
+        let candidates: Vec<PathId> = spares
+            .iter()
+            .filter(|(_, s)| if max_spare.is_finite() { *s >= thresh } else { s.is_infinite() })
+            .map(|(pid, _)| *pid)
+            .collect();
+        if candidates.is_empty() {
+            return self.place_symbol(true, &[]);
+        }
+        let idx = (rand::random::<f64>() * candidates.len() as f64) as usize;
+        Some(candidates[idx.min(candidates.len() - 1)])
+    }
+
     /// The softmax placement distribution over paths (paper §16.3). Exposed for
     /// unit-testing the placement law (concentration, continuous spillover,
     /// water-filling, fate steering, T → 0 argmin) without sampling noise.
@@ -2840,6 +2889,50 @@ mod tests {
         sched.path_mut(1).unwrap().in_flight = 6;
         let dist2 = sched.place_probs(false, &[]);
         assert!(prob_of(&dist2, 0) > prob_of(&dist2, 1));
+    }
+
+    /// Cross-path repair placement (RWM_XPATH_REPAIR, §16.3 C8 realization).
+    /// When the FAST path is source-saturated (spare≈0) and the SLOW path is
+    /// underutilized (high spare), `place_repair_spare_path` routes repair to the
+    /// SLOW path — so proactive repair rides the spare path instead of displacing
+    /// fast-path source. Symmetric spare → uniform split (no concentration).
+    #[test]
+    fn place_repair_spare_routes_to_underutilized_path() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0); // fast
+        sched.add_path(1); // slow
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 40);
+        // Fast path saturated with source: in_flight == cwnd ⇒ spare == 0.
+        // Slow path lightly loaded: spare high.
+        sched.path_mut(0).unwrap().cwnd = 40;
+        sched.path_mut(0).unwrap().in_flight = 40; // spare 0
+        sched.path_mut(1).unwrap().cwnd = 16;
+        sched.path_mut(1).unwrap().in_flight = 4; // spare 3.0
+        // Every repair should ride the SLOW (spare) path 1.
+        let mut to_slow = 0;
+        for _ in 0..200 {
+            if sched.place_repair_spare_path() == Some(1) {
+                to_slow += 1;
+            }
+        }
+        assert_eq!(to_slow, 200, "repair must ride the spare slow path, got {to_slow}/200 on path 1");
+
+        // Symmetric spare (equal fill fraction) ⇒ uniform split, no concentration.
+        sched.path_mut(0).unwrap().cwnd = 20;
+        sched.path_mut(0).unwrap().in_flight = 10; // spare 1.0
+        sched.path_mut(1).unwrap().cwnd = 20;
+        sched.path_mut(1).unwrap().in_flight = 10; // spare 1.0
+        let mut c0 = 0;
+        for _ in 0..2000 {
+            if sched.place_repair_spare_path() == Some(0) {
+                c0 += 1;
+            }
+        }
+        assert!(
+            (700..=1300).contains(&c0),
+            "symmetric spare must split ~evenly (no argmax concentration), got {c0}/2000 on path 0"
+        );
     }
 
     /// (d) Repair fate steers a repair OFF the path that carried the window
