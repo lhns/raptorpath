@@ -60,6 +60,10 @@ TENV=""
 # Present-at-stall proactive pacer (feat/present-at-stall): filling-generation
 # proactive repair on the generation grid, independent of source/ack-clock.
 [[ -n "${RWM_PROACTIVE_PACER:-}" ]] && TENV="$TENV RWM_PROACTIVE_PACER=$RWM_PROACTIVE_PACER"
+# Cross-path repair placement (feat/c8-crosspath-repair): route proactive/deficit
+# repair to the max-spare-capacity path (the slow path once fast is source-
+# saturated) so repair does not displace fast-path systematic source.
+[[ -n "${RWM_XPATH_REPAIR:-}" ]] && TENV="$TENV RWM_XPATH_REPAIR=$RWM_XPATH_REPAIR"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
