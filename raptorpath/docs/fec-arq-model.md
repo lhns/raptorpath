@@ -6905,6 +6905,68 @@ proven value on this stack is tail latency and predictability, not bulk
 throughput.** Full primary record: goal-gate.md, "FINAL CONSOLIDATED VERDICT
 (2026-07-08)".
 
+### 16.9 The FMTCP-class pure decode-on-total build (2026-07-08) — measured
+
+The literature-blessed retry: build the FMTCP/SCDP pure config — *total-in-flight
+flow control* + *fungible fountain redundancy (no per-hole ARQ)* + *decode-on-
+total, out of order* — the empty quadrant §16.7/16.8 named as the unbuilt fix, and
+which the temporal oracle (PART 5/5c) confirms reaches **×1.19 at C8** with 0 idle
+slots and in-flight bounded ≈ aggregate BDP. Built behind `RWM_FMTCP` (the four
+changes: total-in-flight FC gating on a bounded win-backstop past the in-order
+frontier; per-path — not summed-anchor #64 — BDP in-flight cap; forced cross-path
+fungible repair with per-seq ARQ off; forced OOO retention decouple + receiver
+reassembly clamp; r = 0.10). Oracle param-confirm passed (PART 5c: shipped params
+reach ×1.190, 0 ARQ, 0 idle, emergent in-flight 195 ≈ BDP 145). L1 (25 MB × 6,
+independent netem GE qdiscs, no path correlation):
+
+| Arm | Mbit/s | factor | stdev | dnf |
+|---|---:|---:|---:|---:|
+| **C8 het (c2+c3) FMTCP r=0.10** | **7.58** | **0.48×** | 12.3 s | 0 |
+| C8 het FMTCP r=0.20 | 10.43 | 0.67× | 4.2 s | 0 |
+| C8 het plain systematic (baseline) | 14.37 | 0.92× | 1.7 s | 0 |
+| single-fast FMTCP (parity denom) | 15.65 | — | 0.55 s | 0 |
+| **C7 sym (c2+c2) FMTCP** | **25.39** | **1.62×** | 0.57 s | 0 |
+
+**The result is a REFUTATION of the oracle target at C8, and a strong win at C7.**
+Reliability held everywhere (dnf 0, every byte delivered, reassembled by offset).
+Occupancy: the win-backstop kept the receiver OOO backlog bounded (`[REASM]`
+max_span ≈ 1520 ≈ 4·G, max_pending ≈ 990 — NOT the whole object), so change 1's
+anti-bufferbloat bound held. But two oracle-signature predictions FAILED in
+production at C8:
+
+1. **NOT 0 idle slots.** The oracle predicts the total-in-flight sender never
+   idles; the C8 sender is TUN-paused 13–68 % of iterations (`RWM_DIAG`) — the
+   recovery-latency stall the oracle does not model, now measured directly.
+2. **Anti-aggregation, not ×1.19.** C8 het regressed to 0.48× (r=0.10) / 0.67×
+   (r=0.20) — BELOW both the ×0.97 plain baseline and the ×1 bar. The high
+   variance (min 13 s ≈ near-baseline, max 45 s crawl) is generation STRANDING:
+   a heterogeneous-path generation that loses more than its budget recovers over
+   a bufferbloated RTT (MEASURED RTT spikes to 2 s), and the total-in-flight
+   decouple lets the send frontier run generations past the stranded one, so the
+   whole object waits on the slow tail. This is **exactly the FMTCP abstract's own
+   stated pathology** ("a subflow experiencing high delay and loss becomes the
+   bottleneck, significantly degrading aggregate goodput") — reproduced, not
+   escaped.
+
+**Why the model and production diverge (the residual, precisely).** The oracle
+models recovery as an idealized cross-path order statistic that clears a hole
+within the fungible horizon at 0 idle. Production recovery is a *scheduled,
+congestion-controlled, RTT-clocked* process that (a) contends with fresh proactive
+coding for the in-flight budget (exempting it floods → 2 s bufferbloat; gating it
+starves → the stranded generation crawls/wedges — both MEASURED), and (b) pays a
+real bufferbloat-inflated RTT per recovery round on the slow path. On SYMMETRIC
+paths (C7) there is no slow path, no stranding long-pole, and the same build
+aggregates cleanly at **×1.62** (better than the arc's prior ×1.26–1.55). ε
+under-provisioning is a contributing but secondary factor: raising r 0.10 → 0.20
+lifted C8 7.58 → 10.43 and cut variance 12.3 → 4.2 s, but did not reach parity.
+
+**Settled position, unchanged and now doubly-confirmed.** §16.8 stands: the C8
+heterogeneous bound is production recovery-latency, not any single sender-side
+law, and flipping *both* levers cleanly does not escape it — it makes C8 WORSE
+(the decouple amplifies the slow-path long pole) while confirming FEC's real value
+is symmetric aggregation + tail latency. The `RWM_FMTCP` path is env-gated and
+default-off; the shipped path is byte-untouched.
+
 ---
 
 ## Appendix A: Summary of Key Formulas
