@@ -2239,7 +2239,14 @@ sender and the visualizer both read W* from it.
 > FEC branch is therefore valid for systematic/generation coding (all window
 > members received; §16.3) — where the value prop actually lives — not for frontier
 > repair. Decode COMPUTE is never the limiter (~10 µs/symbol measured). Details:
-> §14.7 and goal-gate "FEC-vs-ARQ Crossover".
+> §14.7 and goal-gate "FEC-vs-ARQ Crossover". UPDATE (§14.33): even when the
+> covering repair IS forced present at the stall (a filling-generation pacer that
+> raises `present_at_stall` measurably), the single-path crossover still does not
+> materialize — the "displaced-bandwidth tax" above is not a side effect but the
+> binding constraint: `R_frontier = R_cc·(1 − φ_early(present))`, so buying
+> presence on one link necessarily lowers the frontier rate. The `R_recover = 0`
+> premium is realizable only across an ORTHOGONAL path, making the crossover a
+> multipath-aggregation result rather than a single-path timing one.
 
 Sections 8.4–8.8 solve for r\* on ONE path: pick the least FEC that keeps a
 symbol's *within-window-or-ARQ* miss below δ. Section 16.7 introduced a
@@ -5066,6 +5073,49 @@ force in-flight presence is refuted at the transport layer for two structural
 reasons (it cannot emit during a send stall; and a repair window narrower than the
 generation forms a disjoint linear system that cannot combine with the reactive
 generation repair), leaving smaller-G proactive as the only fungible lever.
+
+### 14.33 Present-at-stall is real but self-defeating on a single path: the presence/throughput tension
+
+Section 14.32 left the crossover as a `present_at_stall`-dominance problem. This
+section resolves what happens when you actually force presence, and it is a
+NEGATIVE result with a precise cause. The mechanism is a dedicated proactive-repair
+pacer that emits repair for a generation while it is still FILLING — coded over the
+retained contiguous prefix `[anchor, anchor+w)` but expressed at the full generation
+matrix width `G` (a wire `coded_width = w` field zeroes columns `[w, G)`), so every
+symbol for a generation keys to one `(anchor, G)` system and combines fungibly (no
+cross-width stranding, the defect that refuted the sub-generation inline repair of
+§14.31). Paced independently of source intake and of the ack-clock, the covering
+equation is buffered at the receiver BEFORE the in-order frontier reaches the hole,
+and a decoder change (deliver a source the instant its pivot row becomes an isolated
+unit row, not only at full generation rank) turns that buffered equation into an
+early recovered hole. The instrument confirms the intent: `present_at_stall` rises in
+every measured cell (present-fraction e.g. 0.04→0.26 at RTT100/10 %, 0.00→0.23 at
+RTT200/10 %) and the proactive fraction rises (reactive `recovery_coded` falls, e.g.
+435→335 at RTT200/10 %).
+
+But throughput does NOT follow presence — it regresses 3–21 % and, at RTT200,
+occasionally WEDGES (a generation never completes). The cause is a bandwidth identity
+the earlier sections did not make explicit. On a single path there is ONE CC-paced
+send budget shared by source and repair. To be PRESENT at the stall, repair must be
+sent EARLY — concurrently with the source of the very generation it protects — so
+early repair displaces source send capacity, the in-order frontier LAGS (measured
+frontier gap 0→507 symbols), and goodput falls by more than the round-trips saved are
+worth. The round-trip the presence eliminates is cheap here because the baseline
+already recovers most holes from late-but-still-proactive repair with zero per-seq
+ARQ (systematic mode never resends a source; `source_n = 0` throughout). Formally,
+presence `P` and frontier rate `R_f` trade off as `R_f = R_cc·(1 − φ_early(P))`,
+where `φ_early` is the fraction of the paced budget spent on early (filling-generation)
+repair to achieve presence `P`; raising `P` raises `φ_early` and lowers `R_f`. The
+model correction: **on a single path, present-at-stall and throughput are in direct
+tension — the crossover is not reachable by re-timing repair earlier on the same
+link.** The resolution the tension points to is orthogonal capacity: emit the early
+proactive repair on a SECOND path (cross-path fungible repair, Section 16.3) so
+presence is bought without displacing source on the first — i.e. the crossover is a
+multipath-aggregation result, not a single-path timing result. Testing that is gated
+on FEC first reaching parity-or-better single-path in the same cell (it does not
+here: single-path in-order systematic FEC runs at 0.7–0.9× ARQ across
+RTT∈{100,200}×loss∈{2.6,5,10}%), so it is left open. The pacer is retained
+env-gated, default-off, as a documented negative result.
 
 ---
 

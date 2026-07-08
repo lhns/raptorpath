@@ -46,6 +46,19 @@ pub use gf256::generate_window_coefficients;
 /// parses generation-coded symbols.
 const REPAIR_HEADER_SIZE: usize = 14;
 
+/// Marker bit set in the 4-byte wire coded-index of a FILLING-generation repair
+/// (see `code_generation_full` / the proactive pacer). When set, the decoder
+/// reads a 2-byte `coded_width` immediately after the 14-byte header (a 16-byte
+/// header total) and treats coefficient columns `[coded_width, window_count)` as
+/// ZERO — the sender only summed the retained contiguous prefix
+/// `[anchor, anchor+coded_width)`, but the MATRIX width on the wire is the full
+/// generation size `G`, so a filling-generation repair keys to the SAME
+/// `(anchor, G)` decoder system as the sealed repairs and the reactive deficit
+/// loop (no cross-width stranding — the refutation of the separate-grid inline
+/// repair). The real coded-index is the low 31 bits (it never reaches 2^31, so
+/// masking is lossless). Never set on the 14-byte sealed/legacy format.
+const FILL_FLAG: u32 = 0x8000_0000;
+
 /// Generation-based RLC encoder.  Retains every not-yet-advanced source symbol
 /// (partitioned into fixed generations) and emits coded symbols for the
 /// pipeline of in-flight generations, round-robin.
@@ -77,6 +90,10 @@ pub struct GenerationEncoder {
     code_base: u64,
     /// Round-robin cursor over the active generation set (a generation id).
     rr: u64,
+    /// Round-robin cursor for the FILLING-generation proactive pacer
+    /// (`generate_repair_filling`), independent of `rr` so the two emission
+    /// paths do not fight over one cursor.
+    fill_rr: u64,
     /// Monotonic coded-symbol index — distinguishes coded symbols (and their
     /// coefficient seeds) both within and across generations.
     coded_index: u32,
@@ -130,6 +147,7 @@ impl GenerationEncoder {
             base_gen: 0,
             code_base: 0,
             rr: 0,
+            fill_rr: 0,
             coded_index: 0,
             overhead: overhead.max(0.0),
             emitted: BTreeMap::new(),
@@ -292,6 +310,95 @@ impl GenerationEncoder {
         }
         None
     }
+
+    /// Whether generation `g` is eligible for FILLING-generation proactive
+    /// coding: it has at least one retained source and is still under its
+    /// per-generation provisioning budget `ceil(len·factor)` (systematic
+    /// `factor = r`). Unlike `codeable`, this does NOT require the generation to
+    /// be sealed — the whole point of the pacer is to emit repair over the
+    /// contiguous prefix while the generation is STILL FILLING, so the covering
+    /// equation is present at the receiver ~immediately after the hole is sent
+    /// (before/around when the in-order frontier detects it), not a full
+    /// generation-span later once the generation finally seals.
+    fn codeable_filling(&self, g: u64) -> bool {
+        if !self.sources.contains_key(&(g * self.gen_size)) {
+            return false;
+        }
+        let emitted = self.emitted.get(&g).copied().unwrap_or(0);
+        emitted < self.gen_budget(g)
+    }
+
+    /// Code ONE proactive symbol over the retained contiguous prefix of
+    /// generation `g` at the FULL generation MATRIX width `G`. The symbol sums
+    /// only the present prefix `[gen_start, gen_start + w)` (w = current fill)
+    /// with coefficients drawn from the full-width seed, and carries `w` as the
+    /// wire `coded_width` (with `FILL_FLAG` set) so the decoder zeroes columns
+    /// `[w, G)`. Because the wire `window_count` is `G` regardless of `w`, every
+    /// symbol for `g` — filling or sealed, proactive or reactive — lands in the
+    /// SAME `(anchor, G)` decoder matrix and combines fungibly. This is what
+    /// makes filling-generation repair present-at-stall WITHOUT the cross-grid
+    /// stranding that refuted the separate-block inline repair.
+    fn code_generation_full(&mut self, g: u64) -> WireSymbol {
+        let symbol_size = self.symbol_size as usize;
+        let coded_index = self.coded_index;
+        self.coded_index += 1;
+        *self.emitted.entry(g).or_insert(0) += 1;
+        let gen_start = g * self.gen_size;
+        let (_s, syms) = self.generation_symbols(g); // contiguous present prefix
+        let coded_width = syms.len() as u16;
+        let full = self.gen_size as u16; // stable MATRIX width
+
+        // Coefficients over the FULL generation span [gen_start, gen_start+G);
+        // only the first `coded_width` are actually applied (the rest map to
+        // not-yet-generated seqs and are zero on both sides).
+        let coeffs = generate_window_coefficients(gen_start, full, coded_index);
+        let mut coded = vec![0u8; symbol_size];
+        for (i, src) in syms.iter().enumerate() {
+            gf256::mul_acc_slice(coeffs[i], src, &mut coded);
+        }
+
+        let wire_index = coded_index | FILL_FLAG;
+        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + 2 + symbol_size);
+        wire_data.extend_from_slice(&gen_start.to_le_bytes()); // 8: anchor
+        wire_data.extend_from_slice(&full.to_le_bytes()); // 2: matrix width = G
+        wire_data.extend_from_slice(&wire_index.to_le_bytes()); // 4: index | FILL_FLAG
+        wire_data.extend_from_slice(&coded_width.to_le_bytes()); // 2: prefix width w
+        wire_data.extend_from_slice(&coded);
+
+        WireSymbol {
+            block_id: gen_start + full.saturating_sub(1) as u64,
+            payload_id: coded_index, // dedup uses the REAL index (no flag)
+            is_repair: true,
+            data: wire_data,
+            backend: FecBackend::Rlc,
+        }
+    }
+
+    /// Pick the next generation to code via the FILLING pacer: round-robin over
+    /// the `pipeline` oldest retained generations that are still under budget
+    /// (filling OR sealed). The oldest retained generations are exactly the ones
+    /// the receiver's in-order frontier is at (retention floor = cumulative ack),
+    /// so their coded repair is what must be present when the frontier stalls.
+    fn next_fill_gen(&mut self) -> Option<u64> {
+        let top = self.top_gen();
+        let floor = self.code_base.max(self.base_gen);
+        let hi = (floor + self.pipeline).min(top + 1);
+        if hi <= floor {
+            return None;
+        }
+        let span = hi - floor;
+        for _ in 0..span {
+            if self.fill_rr < floor || self.fill_rr >= hi {
+                self.fill_rr = floor;
+            }
+            let g = self.fill_rr;
+            self.fill_rr += 1;
+            if self.codeable_filling(g) {
+                return Some(g);
+            }
+        }
+        None
+    }
 }
 
 impl WindowEncoder for GenerationEncoder {
@@ -331,6 +438,29 @@ impl WindowEncoder for GenerationEncoder {
                 }
             }
         }
+    }
+
+    fn generate_repair_filling(&mut self) -> WireSymbol {
+        match self.next_fill_gen() {
+            Some(g) => self.code_generation_full(g),
+            None => WireSymbol {
+                block_id: 0,
+                payload_id: self.coded_index,
+                is_repair: true,
+                data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize],
+                backend: FecBackend::Rlc,
+            },
+        }
+    }
+
+    fn wants_filling_coding(&self) -> bool {
+        let top = self.top_gen();
+        let floor = self.code_base.max(self.base_gen);
+        let hi = (floor + self.pipeline).min(top + 1);
+        if hi <= floor {
+            return false;
+        }
+        (floor..hi).any(|g| self.codeable_filling(g))
     }
 
     fn generate_repair_for(&mut self, anchor: u64) -> Option<WireSymbol> {
@@ -643,38 +773,77 @@ impl GenerationDecoder {
         // Gauss–Jordan: eliminate the new pivot column from every existing pivot
         // row so the RREF invariant is preserved (each pivot column appears in
         // exactly one row). The new row is already zero at every existing pivot
-        // column, so this never disturbs another row's pivot.
-        for other in pivots.iter_mut().flatten() {
-            let f = other[pcol];
-            if f != 0 {
-                gf256::mul_acc_slice(f, &row, other);
+        // column, so this never disturbs another row's pivot. Track which rows we
+        // MODIFY: only those (plus the new pivot row) can have newly become UNIT
+        // rows — a single-nonzero-coefficient row whose payload IS its source —
+        // which enables INCREMENTAL delivery of a recovered hole BEFORE the whole
+        // generation reaches full rank. That is the present-at-stall path for a
+        // still-FILLING generation, whose matrix width `G` exceeds its current
+        // fill so it would otherwise never reach full rank to deliver anything.
+        let mut touched: Vec<usize> = Vec::new();
+        for c in 0..width {
+            if c == pcol {
+                continue;
+            }
+            if let Some(other) = pivots[c].as_mut() {
+                let f = other[pcol];
+                if f != 0 {
+                    gf256::mul_acc_slice(f, &row, other);
+                    touched.push(c);
+                }
             }
         }
 
         pivots[pcol] = Some(row);
         *rank += 1;
+        touched.push(pcol);
 
-        if *rank < width {
-            return (true, vec![]);
+        if *rank == width {
+            // Full rank: every column is a pivot, so by RREF each pivot row is the
+            // unit row for its column and its payload half IS the source symbol.
+            let mut out = Vec::with_capacity(width);
+            if let GenSlot::Solving { pivots, .. } =
+                std::mem::replace(slot, GenSlot::Done)
+            {
+                for (c, prow) in pivots.into_iter().enumerate() {
+                    let mut sym = prow.expect("full rank ⇒ every pivot present");
+                    // Keep only the payload half.
+                    sym.drain(..width);
+                    sym.truncate(ss);
+                    let seq = anchor + c as u64;
+                    // Deliver each seq exactly once: a pre-loaded (already
+                    // recovered) source is re-derived here but must not re-deliver.
+                    if self.recovered.insert(seq, sym.clone()).is_none() {
+                        out.push((seq, Bytes::from(sym)));
+                    }
+                }
+            }
+            return (true, out);
         }
 
-        // Full rank: every column is a pivot, so by RREF each pivot row is the
-        // unit row for its column and its payload half IS the source symbol.
-        let mut out = Vec::with_capacity(width);
-        if let GenSlot::Solving { pivots, .. } =
-            std::mem::replace(slot, GenSlot::Done)
-        {
-            for (c, prow) in pivots.into_iter().enumerate() {
-                let mut sym = prow.expect("full rank ⇒ every pivot present");
-                // Keep only the payload half.
-                sym.drain(..width);
-                sym.truncate(ss);
-                let seq = anchor + c as u64;
-                // Deliver each seq exactly once: a pre-loaded (already recovered)
-                // source is re-derived here but must not be re-delivered.
-                if self.recovered.insert(seq, sym.clone()).is_none() {
-                    out.push((seq, Bytes::from(sym)));
+        // Sub-full rank (typically a still-FILLING generation): deliver any pivot
+        // row that is now a UNIT row — its coefficient half is nonzero ONLY at its
+        // pivot column, so its payload half IS the source — and whose seq has not
+        // yet been delivered. Only `touched` rows can newly qualify. The matrix
+        // stays Solving (its rows remain needed for elimination); `recovered`
+        // guards single delivery per seq.
+        let mut pending: Vec<(u64, Vec<u8>)> = Vec::new();
+        for &c in &touched {
+            if let Some(prow) = &pivots[c] {
+                if prow[..width].iter().filter(|&&x| x != 0).count() == 1 {
+                    let seq = anchor + c as u64;
+                    if !self.recovered.contains_key(&seq) {
+                        let mut sym = prow[width..].to_vec();
+                        sym.truncate(ss);
+                        pending.push((seq, sym));
+                    }
                 }
+            }
+        }
+        let mut out = Vec::with_capacity(pending.len());
+        for (seq, sym) in pending {
+            if self.recovered.insert(seq, sym.clone()).is_none() {
+                out.push((seq, Bytes::from(sym)));
             }
         }
         (true, out)
@@ -824,16 +993,36 @@ impl WindowDecoder for GenerationDecoder {
 
         let anchor = u64::from_le_bytes(symbol.data[0..8].try_into().unwrap());
         let width = u16::from_le_bytes(symbol.data[8..10].try_into().unwrap()) as usize;
-        let repair_index = u32::from_le_bytes(symbol.data[10..14].try_into().unwrap());
+        let wire_index = u32::from_le_bytes(symbol.data[10..14].try_into().unwrap());
         if width == 0 {
             return vec![];
         }
-        let coded = &symbol.data[REPAIR_HEADER_SIZE..];
+        // FILLING-generation repair (FILL_FLAG): the sender summed only the
+        // contiguous prefix [anchor, anchor+coded_width), but the matrix width is
+        // the full generation `width` (= G). Read the 2-byte prefix width after
+        // the 14-byte header and zero coefficient columns [coded_width, width).
+        // The real coded-index (the coefficient seed) is the low 31 bits.
+        let (repair_index, coded_width, header_end) = if wire_index & FILL_FLAG != 0 {
+            if symbol.data.len() < REPAIR_HEADER_SIZE + 2 {
+                return vec![];
+            }
+            let cw = u16::from_le_bytes(
+                symbol.data[REPAIR_HEADER_SIZE..REPAIR_HEADER_SIZE + 2].try_into().unwrap(),
+            ) as usize;
+            (wire_index & !FILL_FLAG, cw.min(width), REPAIR_HEADER_SIZE + 2)
+        } else {
+            (wire_index, width, REPAIR_HEADER_SIZE)
+        };
+        let coded = &symbol.data[header_end..];
 
-        // Build the fused row: [coeffs (width) | payload (symbol_size)].
+        // Build the fused row: [coeffs (width) | payload (symbol_size)]. For a
+        // filling repair only the first `coded_width` coefficient columns are
+        // populated; the rest stay zero (their seqs were not yet generated when
+        // the sender coded this symbol), keeping the equation consistent while
+        // still living in the full-width (anchor, G) system.
         let coeffs = generate_window_coefficients(anchor, width as u16, repair_index);
         let mut row = vec![0u8; width + self.symbol_size];
-        row[..width].copy_from_slice(&coeffs);
+        row[..coded_width].copy_from_slice(&coeffs[..coded_width]);
         let copy_len = coded.len().min(self.symbol_size);
         row[width..width + copy_len].copy_from_slice(&coded[..copy_len]);
 
@@ -1792,5 +1981,113 @@ mod tests {
         // With correct late-source injection the generation completes in exactly
         // `holes` coded repairs regardless of the source arrival order.
         assert_eq!(coded_used, holes.len() as u64, "coded_used should equal holes ({}), got {coded_used}", holes.len());
+    }
+
+    /// PROACTIVE PACER (present-at-stall). The dedicated filling-generation pacer
+    /// must emit repair for an in-flight generation that is STILL FILLING —
+    /// under source backpressure (no further sources added) — and that repair,
+    /// coded over the retained contiguous PREFIX at the full generation width,
+    /// must recover an EARLY hole in the generation. This is the mechanism the
+    /// sealed-only proactive path structurally cannot do (it waits a full
+    /// generation-span for the seal). Verifies: (1) the pacer emits without the
+    /// generation ever sealing; (2) the filling repair keys to the (anchor, G)
+    /// matrix and recovers the early hole present-at-stall; (3) it combines with
+    /// a LATER sealed-generation deficit repair in the SAME matrix (no
+    /// cross-width stranding).
+    #[test]
+    fn proactive_pacer_recovers_filling_generation_hole_under_backpressure() {
+        let symbol_size = 64u16;
+        let g = 32usize;
+        let r = 0.5f64;
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, 2, r);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        // Fill ONLY the first HALF of generation 0 (a still-filling generation:
+        // 16 of 32 sources). Model backpressure: no more sources will be added
+        // for a while, but the receiver's frontier is already advancing over the
+        // sent prefix and will stall on a hole in it.
+        let w = g / 2; // 16 sources sent so far
+        let sources: Vec<WireSymbol> = (0..w as u64).map(|seq| enc.add_source(&payload(seq))).collect();
+
+        // The generation is NOT sealed: the sealed-only proactive path would emit
+        // nothing for it.
+        assert!(!enc.wants_coding(), "sealed-only path must have nothing to emit for a filling gen");
+        // But the FILLING pacer DOES want to code it.
+        assert!(enc.wants_filling_coding(), "pacer must want to code the in-flight generation");
+
+        // Deliver the sent prefix EXCEPT an early hole at seq 5.
+        let hole = 5u64;
+        let mut delivered: BTreeSet<u64> = BTreeSet::new();
+        for s in &sources {
+            if s.block_id == hole {
+                continue; // lost — the frontier stalls here
+            }
+            for (seq, _) in dec.add_symbol(s) {
+                delivered.insert(seq);
+            }
+        }
+        assert!(!delivered.contains(&hole), "hole not yet recovered");
+        // present-at-stall probe: one hole in [0, w), no buffered repair yet.
+        let (holes, buffered) = dec.frontier_probe(0, w as u64 - 1);
+        assert_eq!(holes, 1);
+        assert_eq!(buffered, 0, "no proactive repair present before the pacer runs");
+
+        // Run the pacer: emit filling repair until it recovers the hole. Each
+        // symbol codes over the present prefix [0, 16) at full width G=32.
+        let mut recovered_hole = false;
+        for _ in 0..(w as f64 * r).ceil() as u32 + 2 {
+            if !enc.wants_filling_coding() {
+                break;
+            }
+            let sym = enc.generate_repair_filling();
+            // Wire invariants: full width G, FILL_FLAG set, coded_width = prefix.
+            let width = u16::from_le_bytes(sym.data[8..10].try_into().unwrap());
+            let wire_index = u32::from_le_bytes(sym.data[10..14].try_into().unwrap());
+            assert_eq!(width as usize, g, "matrix width is the full generation G");
+            assert_ne!(wire_index & FILL_FLAG, 0, "FILL_FLAG must be set");
+            let coded_width = u16::from_le_bytes(sym.data[14..16].try_into().unwrap());
+            assert_eq!(coded_width as usize, w, "coded_width = current prefix fill");
+            for (seq, data) in dec.add_symbol(&sym) {
+                assert_eq!(&data[..48], payload(seq).as_slice(), "byte-exact recovery");
+                if seq == hole {
+                    recovered_hole = true;
+                }
+                delivered.insert(seq);
+            }
+            if recovered_hole {
+                break;
+            }
+        }
+        assert!(recovered_hole, "pacer must recover the early hole while the generation is still filling");
+
+        // Now SEAL the generation (add the remaining sources) and top up via the
+        // reactive deficit path over the SAME (anchor, G) matrix — the filling
+        // repair and the sealed deficit repair must combine (no stranding).
+        for seq in w as u64..g as u64 {
+            enc.add_source(&payload(seq));
+        }
+        // Deliver the second half except one late hole.
+        let hole2 = 20u64;
+        for seq in w as u64..g as u64 {
+            if seq == hole2 {
+                continue;
+            }
+            for (s, _) in dec.add_symbol(&enc.get_source(seq).unwrap()) {
+                delivered.insert(s);
+            }
+        }
+        // Deficit loop over the sealed generation completes it in the SAME matrix.
+        let mut guard = 0;
+        while dec.rank_in(0, g as u64) < g as u64 {
+            let c = enc.generate_repair_for(0).expect("sealed gen codeable");
+            for (seq, _) in dec.add_symbol(&c) {
+                delivered.insert(seq);
+            }
+            guard += 1;
+            assert!(guard <= g, "must complete in ≤ G coded (matrices combined)");
+        }
+        for seq in 0..g as u64 {
+            assert!(delivered.contains(&seq), "seq {seq} not delivered");
+        }
     }
 }

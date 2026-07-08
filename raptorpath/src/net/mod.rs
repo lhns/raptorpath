@@ -1876,6 +1876,28 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         if recv_window_generation {
                             for symbol in &batch.symbols {
                                 if symbol.is_repair && symbol.data.len() >= 10 {
+                                    // FILLING-generation repair (proactive pacer):
+                                    // its wire `window_count` is the FULL generation
+                                    // width G even though the generation is only
+                                    // partially sent, so it MUST NOT teach
+                                    // `gen_widths` — that would make the receiver
+                                    // report a K_g−rank deficit of (G − current fill)
+                                    // and flood reactive recovery for a generation
+                                    // that is not even fully sent yet. The FILL_FLAG
+                                    // is bit 31 of the 4-byte coded-index. A filling
+                                    // generation enters `gen_widths` only once it is
+                                    // PROVABLY FULL (anti-wedge seeding) or a
+                                    // sealed/deficit repair arrives — the honest
+                                    // deficit path. Present-at-stall recovery of its
+                                    // holes is proactive (no deficit needed).
+                                    let is_fill = symbol.data.len() >= 14
+                                        && (u32::from_le_bytes(
+                                            symbol.data[10..14].try_into().unwrap(),
+                                        ) & 0x8000_0000)
+                                            != 0;
+                                    if is_fill {
+                                        continue;
+                                    }
                                     let anchor = u64::from_le_bytes(
                                         symbol.data[0..8].try_into().unwrap(),
                                     );
@@ -3472,6 +3494,26 @@ async fn run_window_sender(
     // (raises present_at_stall 1→16 via the non-stalling fungible batched path).
     // RWM_INLINE_W tunes W. Systematic-repair path only; shipped path untouched.
     let inline_repair = systematic && std::env::var("RWM_INLINE_REPAIR").is_ok();
+    // ── Proactive-repair pacer (RWM_PROACTIVE_PACER) — present-at-stall ───────
+    // A DEDICATED proactive-repair emission on the GENERATION grid, decoupled
+    // from BOTH source availability and the ack-clock `target`. For each
+    // in-flight generation (still FILLING or recently sealed) it emits
+    // proactive repair over the retained contiguous PREFIX at the full
+    // generation width (`generate_repair_filling` → same (anchor, G) matrix, no
+    // cross-grid stranding), paced by the shared CC token bucket. Fixes BOTH
+    // refutations of the interspersed inline repair (goal-gate "Repair
+    // In-Flight"): (1) NOT stall-starved — it runs in the main loop every
+    // iteration incl. tx_paused wakeups, so repair flows under backpressure when
+    // the frontier most needs it; (2) NOT cross-grid stranded — it codes the
+    // generation grid, so a buffered filling equation combines directly with the
+    // reactive generation deficit. The covering equation reaches the receiver
+    // EARLY (around when the hole is sent, not a generation-span later at seal),
+    // so it is PRESENT when the frontier detects the hole → proactive decode, no
+    // round-trip. Supersedes the sealed batched proactive path when on; the
+    // reactive deficit (RWM_REACT_CAP + RWM_REPAIR_WAIT) stays the bounded
+    // fallback for holes the proactive repair still misses. Systematic only;
+    // shipped path untouched.
+    let proactive_pacer = systematic && std::env::var("RWM_PROACTIVE_PACER").is_ok();
     let inline_w: u64 = std::env::var("RWM_INLINE_W")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -4351,6 +4393,7 @@ async fn run_window_sender(
             // batched round-robin is disabled and only the reactive deficit loop
             // below runs (the fallback for bursts the inline block missed).
             while !inline_repair
+                && !proactive_pacer
                 && (gen_coded_total as f64) < target
                 && emitted < burst_cap
                 && gen_tokens >= 1.0
@@ -4393,6 +4436,60 @@ async fn run_window_sender(
                     ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                 }
                 stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+            }
+
+            // ── PROACTIVE PACER (RWM_PROACTIVE_PACER) — present-at-stall ──────
+            // Emit filling-generation proactive repair on the generation grid,
+            // paced by the SAME CC token bucket but WITHOUT the ack-clock
+            // `target` gate (the cumulative ack is stalled exactly when the
+            // frontier needs repair) and without any source-availability gate
+            // (this block runs every loop iteration, incl. tx_paused wakeups).
+            // Bounded by each generation's ceil(len·r) budget (wants_filling_
+            // coding turns false at budget), the CC rate (gen_tokens) and
+            // congestion (cwnd_full). Supersedes the sealed batched proactive
+            // path above; the reactive deficit below remains the fallback.
+            if proactive_pacer {
+                let mut fill_emitted = 0u32;
+                while fill_emitted < burst_cap
+                    && gen_tokens >= 1.0
+                    && !cwnd_full
+                    && encoder.wants_filling_coding()
+                {
+                    let sym = encoder.generate_repair_filling();
+                    fill_emitted += 1;
+                    gen_tokens -= 1.0;
+                    // Count against per-generation in-flight accounting so the
+                    // deficit loop never double-sends what proactive covered.
+                    if sym.data.len() >= 8 {
+                        let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
+                        *gen_emitted.entry(anchor).or_insert(0) += 1;
+                    }
+                    proactive_coded_total += 1;
+                    let path = {
+                        let sched = scheduler.lock();
+                        sched.place_symbol(true, &[]).unwrap_or(0)
+                    };
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch {
+                        symbols: vec![sym],
+                        send_timestamp_us: now_us(),
+                        batch_seq,
+                        path_id: path,
+                    };
+                    if let Err(e) = transport.send_symbols(path, batch) {
+                        warn!(path, ?e, "failed to send filling-generation repair");
+                    }
+                    {
+                        let mut sched = scheduler.lock();
+                        if let Some(p) = sched.path_mut(path) {
+                            p.charge_in_flight(1);
+                        }
+                    }
+                    if let Some(ps) = stats.path(path) {
+                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                }
             }
 
             // DEFICIT-DRIVEN RECOVERY EMISSION (§16.3, the named missing
