@@ -59,6 +59,23 @@ pub trait WindowEncoder: Send {
     /// Number of source symbols currently in the window.
     fn window_size(&self) -> usize;
 
+    /// Fix 3 (transport-substrate): move the PROACTIVE CODING floor to the
+    /// generation containing `anchor_seq`, DECOUPLED from the retention floor
+    /// (`advance`). By default the generation coder anchors its proactive
+    /// round-robin at the retention floor = the in-order cumulative ack, so when
+    /// one generation stalls on a hole the coder keeps re-coding it and reaches
+    /// only `pipeline` generations past the STALLED in-order frontier — the
+    /// ∝1/RTT serialization that makes FEC no better than ARQ at high RTT. This
+    /// lets the caller advance the coding floor to follow the SEND frontier
+    /// instead, so freshly-sent generations receive their upfront proactive
+    /// budget while the stalled generation is left to bounded reactive recovery
+    /// (its sources stay RETAINED — `advance` still keys on the in-order ack, so
+    /// reliability is unchanged). Clamped to `[retention_floor, top+1]`.
+    /// Default no-op (non-generation encoders have no stable generation anchor).
+    fn set_code_base(&mut self, anchor_seq: u64) {
+        let _ = anchor_seq;
+    }
+
     /// Retrieve an exact source symbol by sequence number.
     /// Returns `None` if the symbol has been evicted from the window.
     fn get_source(&self, seq: u64) -> Option<WireSymbol> {

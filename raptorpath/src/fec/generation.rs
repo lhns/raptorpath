@@ -66,6 +66,15 @@ pub struct GenerationEncoder {
     /// Lowest generation still retained (the retention frontier, in
     /// generations).  Coding never touches a generation below this.
     base_gen: u64,
+    /// Fix 3 (transport-substrate): PROACTIVE-CODING floor (in generations),
+    /// decoupled from `base_gen` (the retention floor). The proactive
+    /// round-robin codes `[code_base, code_base+pipeline)`. Defaults to
+    /// tracking `base_gen` (identical behaviour) unless `set_code_base` advances
+    /// it to follow the SEND frontier — which lets freshly-sent generations get
+    /// their upfront proactive budget while a stalled in-order-frontier
+    /// generation is left to bounded reactive recovery (its sources stay
+    /// retained). Always `>= base_gen`.
+    code_base: u64,
     /// Round-robin cursor over the active generation set (a generation id).
     rr: u64,
     /// Monotonic coded-symbol index — distinguishes coded symbols (and their
@@ -119,6 +128,7 @@ impl GenerationEncoder {
             sources: BTreeMap::new(),
             next_seq: 0,
             base_gen: 0,
+            code_base: 0,
             rr: 0,
             coded_index: 0,
             overhead: overhead.max(0.0),
@@ -257,18 +267,22 @@ impl GenerationEncoder {
     /// sender's emission is purely deficit-driven until a generation decodes.
     fn next_active_gen(&mut self) -> Option<u64> {
         let top = self.top_gen();
-        let hi = (self.base_gen + self.pipeline).min(top + 1);
-        if hi <= self.base_gen {
+        // Fix 3: proactive coding is anchored at `code_base` (>= base_gen), the
+        // SEND-frontier-tracking coding floor, not the retention floor. Default
+        // code_base == base_gen reproduces the original in-order-anchored window.
+        let floor = self.code_base.max(self.base_gen);
+        let hi = (floor + self.pipeline).min(top + 1);
+        if hi <= floor {
             return None;
         }
-        let span = hi - self.base_gen;
+        let span = hi - floor;
         // Round-robin over CODEABLE generations (sealed/tail-idle and still under
         // their provisioning budget). Once a generation is at budget it drops out
         // of the proactive round-robin; its residual, if any, is recovered by the
         // deficit loop (fungible cross-path, no per-seq ARQ).
         for _ in 0..span {
-            if self.rr < self.base_gen || self.rr >= hi {
-                self.rr = self.base_gen;
+            if self.rr < floor || self.rr >= hi {
+                self.rr = floor;
             }
             let g = self.rr;
             self.rr += 1;
@@ -356,6 +370,10 @@ impl WindowEncoder for GenerationEncoder {
             self.sources.remove(&k);
         }
         self.base_gen = self.gen_of(gen_floor);
+        // Fix 3: the coding floor never trails the retention floor.
+        if self.code_base < self.base_gen {
+            self.code_base = self.base_gen;
+        }
         if self.rr < self.base_gen {
             self.rr = self.base_gen;
         }
@@ -368,6 +386,21 @@ impl WindowEncoder for GenerationEncoder {
 
     fn window_size(&self) -> usize {
         self.sources.len()
+    }
+
+    fn set_code_base(&mut self, anchor_seq: u64) {
+        // Advance the proactive-coding floor toward the SEND frontier, clamped
+        // to [retention floor, top gen]. Monotonic (never retreats) so the
+        // round-robin stays ahead of already-provisioned generations.
+        let g = self.gen_of(anchor_seq);
+        let top = self.top_gen();
+        let want = g.clamp(self.base_gen, top);
+        if want > self.code_base {
+            self.code_base = want;
+            if self.rr < self.code_base {
+                self.rr = self.code_base;
+            }
+        }
     }
 
     fn get_source(&self, seq: u64) -> Option<WireSymbol> {
@@ -386,11 +419,12 @@ impl WindowEncoder for GenerationEncoder {
 
     fn wants_coding(&self) -> bool {
         let top = self.top_gen();
-        let hi = (self.base_gen + self.pipeline).min(top + 1);
-        if hi <= self.base_gen {
+        let floor = self.code_base.max(self.base_gen);
+        let hi = (floor + self.pipeline).min(top + 1);
+        if hi <= floor {
             return false;
         }
-        (self.base_gen..hi).any(|g| self.codeable(g))
+        (floor..hi).any(|g| self.codeable(g))
     }
 }
 
@@ -1138,6 +1172,50 @@ mod tests {
         enc.advance(13);
         assert_eq!(enc.window_span().0, 10, "gen 0 dropped, gen 1 start retained");
         assert_eq!(enc.base_gen, 1);
+    }
+
+    /// Fix 3 (transport-substrate): `set_code_base` moves the PROACTIVE coding
+    /// window to follow the SEND frontier, decoupled from the retention floor,
+    /// so a stalled in-order-frontier generation is left to reactive recovery
+    /// while fresh generations get their upfront proactive budget — the change
+    /// that breaks the ∝1/RTT serialization. Reliability is preserved: the
+    /// stalled generation stays retained and reactively codeable.
+    #[test]
+    fn set_code_base_moves_proactive_window_past_stalled_generation() {
+        let symbol_size = 32u16;
+        let g = 10usize;
+        let pipeline = 2usize;
+        // overhead 1.0 so every generation always "wants coding" (budget large).
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, pipeline, 1.0);
+        for seq in 0..60u64 {
+            enc.add_source(&payload(seq)); // 6 sealed generations (0..6)
+        }
+        let anchor_gen = |s: &WireSymbol| {
+            u64::from_le_bytes(s.data[0..8].try_into().unwrap()) / g as u64
+        };
+
+        // DEFAULT: coding anchored at the retention floor (base_gen = 0), so the
+        // proactive round-robin covers only gens [0, pipeline).
+        let a0 = anchor_gen(&enc.generate_repair());
+        assert!(a0 < pipeline as u64, "default coding at base_gen window, got gen {a0}");
+
+        // Fix 3: advance the coding floor toward the send frontier. Newest seq =
+        // 59 (gen 5); anchor at newest − pipeline·G = 39 (gen 3).
+        enc.set_code_base(59u64.saturating_sub((pipeline * g) as u64));
+        assert_eq!(enc.code_base, 3);
+        for _ in 0..20 {
+            let gg = anchor_gen(&enc.generate_repair());
+            assert!(gg >= 3, "proactive coding must follow the frontier (>=gen 3), got {gg}");
+        }
+
+        // Reliability: the stalled generation 0 is STILL reactively codeable even
+        // though proactive coding moved past it (its sources remain retained).
+        let rec = enc.generate_repair_for(0).expect("stalled gen 0 still codeable");
+        assert_eq!(anchor_gen(&rec), 0);
+
+        // The coding floor never trails the retention floor.
+        enc.advance(45); // retention floor → gen 4
+        assert!(enc.code_base >= enc.base_gen, "code_base must not trail base_gen");
     }
 
     // -----------------------------------------------------------------------

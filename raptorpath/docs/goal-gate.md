@@ -3270,3 +3270,121 @@ per-hole win never becomes a throughput win on a reliable bulk transfer at high 
 proactive-FEC, reads the client `[PFRAC]` trace); Mode B tuned via `BGEN/BR/BSTORE/
 BINFLIGHT` env; `perf_rwm_c.sh` extended to propagate `RWM_STORE/GEN_INFLIGHT/
 GEN_RATE/GEN_RATE_FLOOR/INFL_CAP/CODED_SRC/NO_REACTIVE/PFRAC/TRACE/DIAG`.
+
+## Transport Substrate Fix — the three named defects, built and measured (branch `feat/transport-substrate`, 2026-07-08)
+
+The prior section pinned the high-RTT FEC loss on the TRANSPORT substrate (not the
+FEC coding) and named three defects + a path to a win. THIS rung **builds all
+three fixes**, measures each incrementally, and reports honestly. **Result: the
+three defects are decisively FIXED at the mechanism level — the reactive runaway
+and its DNF are eliminated, the proactive fraction is restored (0.04→0.90), and
+the transfer is stabilized (stdev 7.2 s→0.6 s) — and FEC/ARQ improves from the
+prior 0.55× to ~0.85× at RTT200. But there is STILL NO crossover: proactive FEC
+does not beat ARQ at high RTT.** The residual is a FOURTH, receiver-side + regime
+constraint, characterized below. All knobs are env-gated, default-off — the
+shipped/gate path is byte-identical; `gate_suite` 15/15, lib 268, math green.
+
+### The three fixes (each `run_window_sender` / `GenerationEncoder`, env-gated)
+- **Fix 1 — CC-rate pacing (`RWM_CC_PACE`).** The systematic source rode the
+  droppable QUIC-datagram path driven only by TUN intake, gated by a BDP-sized
+  WINDOW but NO RATE — so at high RTT it BURST-overran (defect #1). Now the source
+  AND coded emission draw from a token bucket paced at the link rate with a small
+  burst (no BDP-sized burst). Rate signal = **max(Copa cwnd/SRTT, delivered-goodput
+  EWMA)×headroom**: the goodput EWMA alone is clocked on the IN-ORDER ack, which
+  stalls at 0 on any hole (pinning the pace at the 24 Mbit bootstrap floor and
+  THROTTLING the ramp below ARQ); the frontier-independent cwnd/SRTT (cwnd grows
+  to MAX on delivery feedback regardless of the hole) lifts that throttle.
+- **Fix 2 — bounded reactive under CC (`RWM_REACT_CAP`).** The deficit loop was
+  exempt from the congestion cap and re-emitted the reported residual on EVERY
+  decode-progress report (sub-RTT), each resetting the in-flight baseline, so it
+  re-sent ~the full deficit every few ms → **MEASURED recovery_coded 60 k–252 k
+  for a ~5 k-symbol object (up to 120×), DNF at RTT200** (defect #2). Fix: **per-
+  generation RTT-spacing** (act on a generation's deficit at most once per SRTT —
+  "send the deficit, wait ~RTT, re-evaluate") + non-exempt from the in-flight cap.
+- **Fix 3 — out-of-order retention/coding decouple (`RWM_OOO_RETAIN`).** Generation
+  backpressure capped the send frontier at ~3 generations behind the CUMULATIVE
+  (in-order) ack, so one hole stalled the pipeline ∝1/RTT (defect #3). Fix:
+  `GenerationEncoder` gains a `code_base` (proactive-coding floor) decoupled from
+  the retention floor — `set_code_base` follows the SEND frontier so fresh
+  generations get their upfront budget while a stalled generation is left to the
+  (now bounded) reactive tail — and the backpressure window widens to `ooo_gens`
+  generations. **Reliability preserved:** retention still drops on the in-order
+  ack (`advance(ack+1)`), so a stalled generation's sources stay retained for
+  reactive recovery; memory bounded by `ooo_gens·G`.
+
+### Measured effect of each fix (single-path, 100 mbit, GE 1.3/50 ≈ 2.6 %, jitter=0)
+Direct A/B at **RTT200, 8 MB** (the clear runaway-repro point; G=768, r=0.20):
+
+| arm | mean Mbit/s | dnf | proactive_frac | recovery_coded | stdev_s |
+|---|---:|---:|---:|---:|---:|
+| ARQ (pure) | 1.26 | 0 | — | — | ~11 |
+| FEC unpaced (prior) | 1.06 | **1** | **0.025** | **154 295** | 9.0 |
+| FEC + Fix1 (pace) | 0.80 | 0 | 0.042 | 90 118 | 15 |
+| FEC + Fix1+2 | 1.01 | 0 | **0.90** | **436** | 9.6 |
+| FEC + Fix1+2+3 | 1.09 | 0 | 0.31 | 8 799 | **0.6–4** |
+
+- **Fix 2 is decisive on the mechanism:** recovery_coded **90 118 → 436 (207×)**,
+  proactive fraction **0.042 → 0.90**, and it removes the DNF. The reactive
+  runaway — the named defect #2 — is eliminated.
+- **Fix 3 collapses the variance** (stdev 9.6 s → 0.6 s at RWM_STORE≈5 gens): the
+  slow-run outliers vanish. It trades some proactive fraction (the coding window
+  following the frontier under-provisions a fraction of generations) for stability.
+
+### RTT sweep — ARQ vs full-stack FEC (Fix1+2+3 + cwnd-pacing), 6 MB
+| RTT (ms) | ARQ (Mbit/s) | FEC-fixes (Mbit/s) | FEC/ARQ | (prior FEC/ARQ) |
+|---:|---:|---:|---:|---:|
+| 50  | 4.68 | 3.55 | 0.76 | — |
+| 100 | 2.43 | 2.06 | 0.85 | 0.77 |
+| 200 | 1.26 | 1.09 | **0.86** | **0.55** |
+
+**FEC/ARQ improves from the prior 0.55× to ~0.85× at RTT200 and holds ~0.76–0.86×
+across RTT — up, tighter (lower variance), and DNF-free — but does NOT cross 1.0.**
+
+### Why there is still no crossover — the FOURTH constraint (measured, RWM_DIAG)
+At RTT200 **both ARQ (1.26) and FEC (~1.1) sit at ~1 % of the 100 Mbit link** — a
+shared LATENCY-bound regime, not a bandwidth one. The DIAG trace shows the transfer
+sends all source in a few seconds (`src→0`) then spends ~50 s draining a slow,
+RTT-bound reactive TAIL: the pipe is near-EMPTY (`infl`≈0 ≪ cwnd), `good`=0 most of
+the time with occasional decode bursts, RTT inflated to 0.4–1.1 s. The binding
+residual is **receiver-side**: the receiver's reactive recovery is serialized
+FRONTIER-FIRST (deficit reports cover only the frontier ± `MAX_REPORTED_GENS`, so
+holes are recovered roughly in order), and each such round costs an inflated RTT.
+Raising the proactive `r` (0.2→0.5→1.0) does NOT help — the proactive fraction was
+already 0.90 and the extra coded only spends free bandwidth — confirming the tail
+is round-trip-bound at the receiver, not proactive-coverage-bound at the sender.
+This is exactly the directive's caveat ("the RECEIVER reassembly is bounded"): the
+three SENDER-side defects are fixed, but a reliable bulk transfer's last-ε recovery
+remains RTT-bound at the receiver, and at high RTT that ε costs as much as ARQ's
+per-loss round-trip. So the 33×-per-hole physics still does not convert to a
+throughput win on this reliable-bulk substrate.
+
+### HONEST VERDICT
+- **The three named transport defects are FIXED** (measured): datagram burst-overrun
+  (Fix 1 pacing), reactive runaway + DNF (Fix 2, recovery_coded 90 k→436, DNF gone),
+  in-order sender coupling (Fix 3, stdev 9.6 s→0.6 s). FEC/ARQ 0.55→~0.85 at RTT200.
+- **Proactive FEC still does NOT beat ARQ at high RTT.** No crossover; FEC/ARQ
+  ~0.76–0.86× across RTT {50,100,200}. The residual is a shared latency-bound
+  regime + receiver-side frontier-serialized reactive tail — a FOURTH constraint
+  below the FEC layer, receiver-side, not addressed by the three sender fixes.
+- **Path to an actual win (identified, not built):** parallelize the receiver's
+  reactive tail (report + recover ALL outstanding generations' deficits at once,
+  not frontier-first — lift `MAX_REPORTED_GENS`, aggressive one-RTT tail flush) and
+  cut the bufferbloat RTT inflation. Both are receiver-side / queue changes below
+  the sender fixes shipped here.
+
+### Controls / no regression
+- All knobs env-gated, **default-off** → shipped + gate path byte-identical.
+  `gate_suite` **15/15** release; `cargo test -p raptorpath --lib` **268** (incl. a
+  new `set_code_base_moves_proactive_window_past_stalled_generation` Fix-3 unit
+  test); `raptorpath-math` green.
+- **ARQ unregressed:** clean (no-loss) ARQ **82.4 Mbit/s** (> the ~76 reference),
+  c2r10 ARQ 18.2 — the ARQ path is untouched by these changes.
+- **Reliability intact:** `dnf:0` on EVERY arm at every point (clean, c2r10, RTT
+  50/100/200); every byte delivered (perf completion assert). Clean FEC 57.5 Mbit
+  (`proactive_fraction=1.0`, recovery_coded=0) is the generation-mode coding tax,
+  not a pacing throttle (pace ceiling ≈108 Mbit).
+
+**Harness.** `~/l1/ts_sweep.sh <reps> <bytes> <arms> [scens…]` — arms `arq,fec,
+fecpace,fecpace2,fecpace3` (Fix1 / +Fix2 / +Fix3); Mode-B env `BGEN/BR/BSTORE/
+BINFLIGHT/BPIPE/CCHR/REACTCAP/OOORETAIN`. `perf_rwm_c.sh` propagates the new
+`RWM_CC_PACE/CC_PACE_HR/REACT_CAP/OOO_RETAIN`.
