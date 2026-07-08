@@ -31,6 +31,18 @@ TENV=""
 [[ -n "${RWM_GEN:-}" ]] && TENV="$TENV RWM_GEN=$RWM_GEN"
 [[ -n "${RWM_PIPELINE:-}" ]] && TENV="$TENV RWM_PIPELINE=$RWM_PIPELINE"
 [[ -n "${RWM_GEN_R:-}" ]] && TENV="$TENV RWM_GEN_R=$RWM_GEN_R"
+# Proactive-FEC-vs-ARQ crossover knobs: BDP-scaled store/in-flight window,
+# coded pacing ceiling, and the proactive-vs-reactive fraction trace.
+[[ -n "${RWM_STORE:-}" ]] && TENV="$TENV RWM_STORE=$RWM_STORE"
+[[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
+[[ -n "${RWM_GEN_RATE:-}" ]] && TENV="$TENV RWM_GEN_RATE=$RWM_GEN_RATE"
+[[ -n "${RWM_GEN_RATE_FLOOR:-}" ]] && TENV="$TENV RWM_GEN_RATE_FLOOR=$RWM_GEN_RATE_FLOOR"
+[[ -n "${RWM_INFL_CAP:-}" ]] && TENV="$TENV RWM_INFL_CAP=$RWM_INFL_CAP"
+[[ -n "${RWM_CODED_SRC:-}" ]] && TENV="$TENV RWM_CODED_SRC=$RWM_CODED_SRC"
+[[ -n "${RWM_NO_REACTIVE:-}" ]] && TENV="$TENV RWM_NO_REACTIVE=$RWM_NO_REACTIVE"
+[[ -n "${RWM_DIAG:-}" ]] && TENV="$TENV RWM_DIAG=$RWM_DIAG"
+[[ -n "${RWM_PFRAC:-}" ]] && TENV="$TENV RWM_PFRAC=$RWM_PFRAC"
+[[ -n "${RWM_TRACE:-}" ]] && TENV="$TENV RWM_TRACE=$RWM_TRACE"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
@@ -73,8 +85,8 @@ echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} e
 timeout 700 ip netns exec "$NS_CLI" env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
     --window-reliable $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
-    --bytes "$BYTES" --runs "$RUNS" 2>&1 \
-    | grep -E "summary|warmup|dnf" | tail -6 \
+    --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
+    | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
     || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3

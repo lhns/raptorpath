@@ -3661,6 +3661,34 @@ decode time (systematic / generation coding, §16.3 — fungible cross-path reco
 with no fixed-position in-order hole), NOT to a plain-reliable in-order frontier
 hole under bursty loss. See §8.9 and goal-gate "FEC-vs-ARQ Crossover".
 
+**MEASURED CORRECTION 2 — the FUNGIBLE mode ALSO fails to cross (L1, branch
+`feat/proactive-fec-highrtt`, 2026-07-08).** The correction above deferred the
+crossover to the fungible systematic/generation mode. That mode was then measured
+head-to-head vs pure-ARQ across an RTT sweep {10,30,50,100,200} ms (single path,
+100 mbit, GE ≈ 2.6 %, systematic source + windowed generation repair + out-of-order
+completion). **The crossover does NOT appear for reliable bulk transfer — it
+INVERTS with RTT.** FEC/ARQ falls monotonically (≈1.0 tie at RTT 10, where a 1.8 MB
+object is warmup-dominated; 0.78 at 50; 0.55 at RTT 200) while the *proactive*
+recovery fraction collapses 0.95 → 0.23. Four measured mechanisms defeat the
+isolated latency model even in the fungible mode: (i) larger RTT ⇒ larger BDP ⇒
+bigger bursts on the DROPPABLE datagram path ⇒ overrun loss that exceeds the fixed
+`ceil(len·r)` proactive budget, so generations arrive short and recovery becomes
+REACTIVE (round-trip-bound); (ii) the reactive deficit loop, exempt from the
+congestion cap so it can always fund a hole, RUNS AWAY under ~RTT-stale feedback at
+high RTT (recovery symbols overrun, drop, and are re-sent — measured 30–120× the
+object); (iii) a PURE-proactive arm (reactive disabled, measured
+`proactive_fraction = 1.0000`, zero round-trips) is genuinely open-loop but DNFs —
+the coupon-collector tail leaves some generation a few DoF short of its fixed upfront
+budget and it wedges, so open-loop FEC cannot guarantee delivery without the feedback
+that reintroduces the round-trip; (iv) generation-mode sender retention prunes on the
+IN-ORDER cumulative ack, so a single hole stalls the send window for the recovery
+latency even under out-of-order delivery, reproducing ARQ's ∝1/RTT serialization. The
+per-hole latency advantage (8.5 ms decode vs 279 ms ARQ at RTT 200, 33×) is real but
+does not convert to a throughput win on a reliable bulk transfer at high RTT on the
+droppable-datagram transport substrate. The analytic §14.7 crossover holds only as a
+per-hole LATENCY statement; it is not a reliable-throughput crossover in EITHER the
+frontier or the fungible realization. See goal-gate "Proactive FEC vs ARQ (high RTT)".
+
 ### 14.8 Per-Symbol Recovery Probability Function
 
 Given GE parameters (p, q), the taper, and the encoder window size, we

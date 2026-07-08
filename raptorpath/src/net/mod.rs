@@ -2986,6 +2986,19 @@ async fn run_window_sender(
     //                      deficit, wait ~RTT for the updated deficit, re-evaluate."
     let mut gen_want: BTreeMap<u64, u64> = BTreeMap::new();
     let mut gen_trace_last_us: u64 = 0;
+    // PROACTIVE vs REACTIVE recovery accounting (proactive-FEC-vs-ARQ crossover
+    // instrumentation). `proactive_coded_total` counts coded symbols emitted by
+    // the open-loop per-generation provisioning round-robin (`generate_repair`,
+    // upfront repair — NO feedback round-trip). `recovery_coded_total` counts
+    // coded symbols emitted by the deficit-driven recovery loop
+    // (`generate_repair_for`, which fires ONLY after a receiver GenerationDeficit
+    // report — one feedback round-trip). The proactive-recovery FRACTION =
+    // proactive/(proactive+recovery) tells us whether Mode B genuinely recovers
+    // holes from upfront repair (fraction→1, zero round-trips) or is secretly
+    // paying reactive round-trips (fraction low). Printed on RWM_PFRAC/RWM_TRACE.
+    let mut proactive_coded_total: u64 = 0;
+    let mut recovery_coded_total: u64 = 0;
+    let mut pfrac_last_us: u64 = 0;
     let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     let mut gen_emitted_at_report: std::collections::HashMap<u64, u64> =
         std::collections::HashMap::new();
@@ -3663,6 +3676,18 @@ async fn run_window_sender(
     // buffer), so proactive coverage always completes and small generations —
     // which keep the store near BDP and avoid the bufferbloat stall — work.
     let coded_src_clock = std::env::var("RWM_CODED_SRC").is_ok();
+    // PURE-PROACTIVE demonstrator (proactive-FEC-vs-ARQ crossover, directive #4):
+    // when set, DISABLE the deficit-driven reactive recovery loop entirely. All
+    // recovery then comes from the UPFRONT proactive per-generation budget
+    // (ceil(len·r)) — no NACK/deficit round-trips, and (crucially) no
+    // recovery-emission path that is EXEMPT from the in-flight congestion cap, so
+    // every emitted symbol (systematic source + proactive coded) is bounded by
+    // RWM_INFL_CAP and cannot overrun the droppable datagram path. This isolates
+    // the clean question: with enough upfront repair (high r) that holes decode
+    // on arrival, does proactive FEC beat ARQ at high RTT? Requires r sized to
+    // cover the per-generation loss tail — a generation that loses more than its
+    // budget never decodes (the object DNFs), which is itself the honest result.
+    let no_reactive = std::env::var("RWM_NO_REACTIVE").is_ok();
     let diag_start_us = now_us();
     let mut diag_last_us = now_us();
     let mut diag_last_ack: u64 = 0;
@@ -3844,6 +3869,26 @@ async fn run_window_sender(
                 );
             }
         }
+        // Proactive-recovery FRACTION trace (RWM_PFRAC): the share of coded
+        // repair emitted PROACTIVELY (upfront, no round-trip) vs REACTIVELY
+        // (deficit-driven, one round-trip). Cumulative over the transfer. A high
+        // proactive fraction proves Mode B recovers holes from upfront repair.
+        if generation && std::env::var("RWM_PFRAC").is_ok() {
+            let now = now_us();
+            if now.saturating_sub(pfrac_last_us) > 500_000 {
+                pfrac_last_us = now;
+                let tot = proactive_coded_total + recovery_coded_total;
+                let frac = if tot > 0 {
+                    proactive_coded_total as f64 / tot as f64
+                } else {
+                    0.0
+                };
+                eprintln!(
+                    "[PFRAC] proactive_coded={} recovery_coded={} total_coded={} proactive_fraction={:.4}",
+                    proactive_coded_total, recovery_coded_total, tot, frac
+                );
+            }
+        }
         if generation && encoder.window_size() > 0 {
             let now = now_us();
             // Object tail: intake is idle (not just paused by backpressure — no
@@ -3934,6 +3979,7 @@ async fn run_window_sender(
                     let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
                     *gen_emitted.entry(anchor).or_insert(0) += 1;
                 }
+                proactive_coded_total += 1;
                 let path = {
                     let sched = scheduler.lock();
                     sched.place_symbol(true, &[]).unwrap_or(0)
@@ -3971,7 +4017,7 @@ async fn run_window_sender(
             // (we send only the residual it reports, minus what is already in
             // flight — tracked in gen_want), so bypassing the ack-clock here
             // cannot flood: recovery is bounded AND funds the frontier at once.
-            if !gen_want.is_empty() {
+            if !no_reactive && !gen_want.is_empty() {
                 let rec_burst = 256u32;
                 let mut rec_emitted = 0u32;
                 'recover: loop {
@@ -4002,6 +4048,7 @@ async fn run_window_sender(
                             }
                         };
                         *gen_emitted.entry(a).or_insert(0) += 1;
+                        recovery_coded_total += 1;
                         let nw = want - 1;
                         if nw == 0 {
                             gen_want.remove(&a);
@@ -4124,6 +4171,12 @@ async fn run_window_sender(
             dv = deficit_rx.recv(), if generation => {
                 if let Some(dv) = dv {
                     gen_want.clear();
+                    // Pure-proactive demonstrator: drain the channel but never
+                    // arm reactive recovery (no round-trips, no exempt-from-cap
+                    // emission). Proactive upfront budget is the ONLY recovery.
+                    if no_reactive {
+                        let _ = dv;
+                    } else {
                     for (anchor, deficit) in dv {
                         let emitted = gen_emitted.get(&anchor).copied().unwrap_or(0);
                         // In-flight = coded emitted for this generation that the
@@ -4144,6 +4197,7 @@ async fn run_window_sender(
                         if to_send > 0 {
                             gen_want.insert(anchor, to_send);
                         }
+                    }
                     }
                 }
                 None
