@@ -4991,6 +4991,44 @@ mid-stream p99) passes for both tight hints.
 
 ---
 
+### 14.31 The generation decoder must admit late sources (an implementation invariant, not a model term)
+
+The Section 16.3 systematic-repair recovery model assumes a generation of K_g
+sources with `h` holes decodes from exactly `h` windowed repair symbols — the
+deficit is the hole count, and the pre-received sources contribute their K_g − h
+degrees of freedom "for free." An L1 measurement (2026-07-08) exposed a decoder-
+side violation of this assumption that made proactive recovery appear DEAD: only
+`repairs_useful ~ 7` of `repairs_fed ~ 4600` arriving repair symbols ever added
+rank (0.15 %). The cause was NOT a modelling error and NOT the substrate — the
+repairs arrived — but an implementation defect. The dense per-generation decoder
+pre-loaded its known-source pivots ONLY when the generation's first repair
+created its matrix; because source and repair symbols interleave and reorder on
+the wire, a generation's own non-lost sources routinely arrive AFTER that first
+repair, and those late sources were recorded for delivery but never injected into
+the live matrix. The matrix therefore kept K_g − present unknowns instead of `h`,
+the reported deficit inflated by the late-source count, and the surplus repairs
+were linearly redundant (they re-derived already-received sources). The
+invariant, now enforced: every received source is fed into every live generation
+matrix whose span covers it, at the moment it arrives (the unit equation
+e_c·x = data), so the unknown space always equals the true hole set. With this,
+`repairs_useful` rose to 66–72 % of fed and the deficit collapsed to the hole
+count, restoring the model's `h`-repairs-per-generation prediction.
+
+This fix is necessary but does not by itself deliver the FEC-over-ARQ throughput
+crossover (Section 8's optimization presumes the proactive budget is IN FLIGHT
+when the hole is exposed). The measured residual is a transport-timing race: the
+proactive repair for a generation is paced out and arrives ~a generation-span
+after the generation's sources, so the receiver's reactive deficit report (which
+fires the instant the hole is seen) still triggers a round-trip-bound repair
+before the now-useful proactive repair can decode the hole. At RTT 100/10 % this
+pins the proactive fraction at 0.13–0.28 and FEC/ARQ at 0.58–0.88. Closing it is
+a substrate problem — co-schedule the proactive budget in the same flight as the
+sources — not a decoder or a rate (`r`) one: raising `r` post-fix LOWERS
+throughput (extra coded congests the droppable datagram path), confirming the
+bottleneck is delivery timing, not coding quantity.
+
+---
+
 ## 15. The Unified Sliding-Window Model (Blocks and Streams as Two Knobs)
 
 The document so far has treated FEC and ARQ as one correction stream (Section

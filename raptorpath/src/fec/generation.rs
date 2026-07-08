@@ -524,14 +524,17 @@ impl GenerationDecoder {
 
     /// Feed one fused equation row (`[coeffs (width) | data (symbol_size)]`, pivot
     /// column at `width`-wide prefix) into a generation's Gauss–Jordan system.
-    /// Returns the whole generation's sources the instant it reaches full rank,
-    /// else empty.
+    /// Returns `(added_rank, delivered)`: `added_rank` is true iff the row
+    /// contributed a new independent degree of freedom (i.e. it was NOT linearly
+    /// dependent on what the generation already knew — the honest "useful" signal,
+    /// counted per rank-add not per generation-completion); `delivered` is the
+    /// whole generation's sources the instant it reaches full rank, else empty.
     fn insert_equation(
         &mut self,
         anchor: u64,
         width: usize,
         mut row: GenRow,
-    ) -> Vec<(u64, Bytes)> {
+    ) -> (bool, Vec<(u64, Bytes)>) {
         let ss = self.symbol_size;
         if !self.gens.contains_key(&(anchor, width)) {
             // Fresh generation: pre-load already-recovered sources in its span as
@@ -555,7 +558,7 @@ impl GenerationDecoder {
 
         let (pivots, rank, width) = match slot {
             // Done ⇒ this generation already delivered; symbol redundant.
-            GenSlot::Done => return vec![],
+            GenSlot::Done => return (false, vec![]),
             GenSlot::Solving { pivots, rank, width } => (pivots, rank, *width),
         };
 
@@ -578,7 +581,7 @@ impl GenerationDecoder {
         // First surviving nonzero coefficient is the new pivot column.
         let pcol = match row[..width].iter().position(|&x| x != 0) {
             Some(c) => c,
-            None => return vec![], // linearly dependent — no new information
+            None => return (false, vec![]), // linearly dependent — no new information
         };
 
         // Normalize so the pivot coefficient is 1 (whole fused row at once).
@@ -602,7 +605,7 @@ impl GenerationDecoder {
         *rank += 1;
 
         if *rank < width {
-            return vec![];
+            return (true, vec![]);
         }
 
         // Full rank: every column is a pivot, so by RREF each pivot row is the
@@ -623,6 +626,57 @@ impl GenerationDecoder {
                     out.push((seq, Bytes::from(sym)));
                 }
             }
+        }
+        (true, out)
+    }
+
+    /// Inject an already-received RAW source (seq → payload) as a unit pivot into
+    /// EVERY existing Solving generation matrix whose fixed span covers `seq`.
+    ///
+    /// WHY THIS EXISTS (feat/fec-recovery-bug — the proactive-FEC-dead bug). A
+    /// generation's decode matrix pre-loads the sources it already knows ONLY at
+    /// slot creation (the first repair for that generation). In production, source
+    /// and repair symbols INTERLEAVE and reorder, so a generation's own non-lost
+    /// sources routinely arrive AFTER its first repair. Without this injection
+    /// those late sources land in `recovered` but are invisible to the matrix,
+    /// which then treats them as permanent unknowns: `rank_in` reports a deficit of
+    /// `G − matrix_rank` (inflated by the late-source count, NOT the true hole
+    /// count), the sender floods `G − rank` coded repairs where only `holes` were
+    /// needed, and the surplus repairs merely re-derive already-received sources —
+    /// linearly wasted (the measured repairs_useful ≈ 7 / repairs_fed ≈ 4600). By
+    /// feeding each late source into the live matrix as the unit equation
+    /// `e_c · x = data` (c = seq − anchor), the unknown space shrinks to the real
+    /// holes the instant the source arrives, so the reported deficit == holes and
+    /// coded repair actually recovers holes proactively. If the injection is the
+    /// last missing degree of freedom it completes the generation and returns its
+    /// remaining holes.
+    fn inject_source_into_active_gens(&mut self, seq: u64, data: &[u8]) -> Vec<(u64, Bytes)> {
+        let ss = self.symbol_size;
+        // Collect covering Solving slots first (avoid aliasing the &mut self used
+        // by insert_equation). A source is covered by slot (anchor,width) iff
+        // anchor ≤ seq < anchor+width. Widths are small in count, so this is cheap.
+        let covering: Vec<(u64, usize)> = self
+            .gens
+            .iter()
+            .filter(|(&(anchor, width), slot)| {
+                matches!(slot, GenSlot::Solving { .. })
+                    && anchor <= seq
+                    && seq < anchor + width as u64
+            })
+            .map(|(&k, _)| k)
+            .collect();
+        let mut out = Vec::new();
+        for (anchor, width) in covering {
+            let c = (seq - anchor) as usize;
+            let mut row = vec![0u8; width + ss];
+            row[c] = 1;
+            let n = data.len().min(ss);
+            row[width..width + n].copy_from_slice(&data[..n]);
+            // insert_equation reduces the unit row against the matrix: if column
+            // c is already known it is linearly dependent (no-op); otherwise it
+            // becomes the pivot for c, shrinking the deficit by one.
+            let (_added, delivered) = self.insert_equation(anchor, width, row);
+            out.extend(delivered);
         }
         out
     }
@@ -659,9 +713,9 @@ impl WindowDecoder for GenerationDecoder {
         self.total_fed += 1;
 
         if !symbol.is_repair {
-            // Generation mode is coded-only, so a raw source is unexpected; still,
-            // deliver it directly (and record it so any overlapping generation can
-            // eliminate it) to keep the trait correct if one ever arrives.
+            // SYSTEMATIC mode: the raw source rides the wire as PRIMARY. Deliver it
+            // directly (zero decode) and record it so overlapping generations can
+            // eliminate it.
             let seq = symbol.block_id;
             if self.recovered.contains_key(&seq) {
                 return vec![];
@@ -670,7 +724,15 @@ impl WindowDecoder for GenerationDecoder {
             let copy_len = symbol.data.len().min(self.symbol_size);
             data[..copy_len].copy_from_slice(&symbol.data[..copy_len]);
             self.recovered.insert(seq, data.clone());
-            return vec![(seq, Bytes::from(data))];
+            // feat/fec-recovery-bug FIX: a source that arrives AFTER a covering
+            // generation's matrix was created must be injected into that live
+            // matrix as a unit pivot — otherwise the matrix keeps treating it as
+            // an unknown, inflating the reported deficit and wasting coded repair
+            // (the proactive-FEC-dead bug). Inject now; if it completes a
+            // generation, deliver that generation's remaining holes too.
+            let mut out = vec![(seq, Bytes::from(data.clone()))];
+            out.extend(self.inject_source_into_active_gens(seq, &data));
+            return out;
         }
 
         if symbol.data.len() < REPAIR_HEADER_SIZE {
@@ -693,8 +755,12 @@ impl WindowDecoder for GenerationDecoder {
         let copy_len = coded.len().min(self.symbol_size);
         row[width..width + copy_len].copy_from_slice(&coded[..copy_len]);
 
-        let recovered = self.insert_equation(anchor, width, row);
-        if !recovered.is_empty() {
+        let (added_rank, recovered) = self.insert_equation(anchor, width, row);
+        // repairs_useful counts repairs that contributed a NEW degree of freedom
+        // (rank-add), the honest per-hole "useful" signal — not per-generation
+        // completions. With the late-source-injection fix the matrix's unknown
+        // space is the real holes, so a useful repair == a hole recovered.
+        if added_rank {
             self.repairs_useful += 1;
         }
         recovered
@@ -1433,5 +1499,68 @@ mod tests {
         (0..ss)
             .map(|j| (seq as u8).wrapping_mul(31).wrapping_add(j as u8))
             .collect()
+    }
+
+    /// DIAGNOSIS (feat/fec-recovery-bug). Reproduces the PRODUCTION arrival
+    /// pattern the existing tests DON'T: a generation's first repair arrives
+    /// BEFORE some of its own (non-lost) sources, which then arrive LATE. In
+    /// production, sources and repairs interleave and reorder, so this is the
+    /// common case, not the corner. If the decoder freezes its known-source
+    /// pre-load at slot-creation and never injects late sources into the
+    /// existing matrix, coded repair can NEVER complete the generation (it would
+    /// need `width − sources_present_at_first_repair` repairs, not `holes`), and
+    /// recovery is forced onto ARQ raw retransmit.
+    #[test]
+    fn diag_late_source_after_first_repair_still_recovers_from_coded() {
+        let symbol_size = 64u16;
+        let g = 32usize;
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, 2, 0.5);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        let sources: Vec<WireSymbol> = (0..g as u64).map(|seq| enc.add_source(&payload(seq))).collect();
+
+        // TRUE holes (lost on the wire, never delivered as raw): seq 5 and 20.
+        let holes: BTreeSet<u64> = [5u64, 20u64].into_iter().collect();
+        // LATE sources: not lost, but they arrive AFTER the first repair.
+        let late: BTreeSet<u64> = [10u64, 11u64, 12u64, 25u64].into_iter().collect();
+
+        // Phase 1: deliver the EARLY sources (not hole, not late).
+        for s in &sources {
+            if holes.contains(&s.block_id) || late.contains(&s.block_id) {
+                continue;
+            }
+            dec.add_symbol(s);
+        }
+
+        // Phase 2: first repair for the generation arrives NOW (creates the
+        // matrix slot, pre-loading only the early sources).
+        let anchor = 0u64;
+        let first_repair = enc.generate_repair_for(anchor).expect("sealed gen codeable");
+        dec.add_symbol(&first_repair);
+
+        // Phase 3: the LATE (non-lost) sources arrive.
+        for s in &sources {
+            if late.contains(&s.block_id) {
+                dec.add_symbol(s);
+            }
+        }
+
+        // Phase 4: deficit top-up — emit coded repair until the generation
+        // decodes, counting how many the decoder actually needed. The design
+        // intends `holes` (== 2); the frozen-pre-load bug would demand ~`late`
+        // more (matrix can't see the late sources) or never finish.
+        let mut coded_used = 1u64; // first_repair already fed
+        let mut delivered: BTreeSet<u64> = BTreeSet::new();
+        while dec.rank_in(anchor, g as u64) < g as u64 {
+            let c = enc.generate_repair_for(anchor).expect("codeable");
+            for (seq, _) in dec.add_symbol(&c) {
+                delivered.insert(seq);
+            }
+            coded_used += 1;
+            assert!(coded_used <= g as u64, "runaway: coded_used={coded_used} — generation cannot complete from coded repair (frozen pre-load bug)");
+        }
+        // With correct late-source injection the generation completes in exactly
+        // `holes` coded repairs regardless of the source arrival order.
+        assert_eq!(coded_used, holes.len() as u64, "coded_used should equal holes ({}), got {coded_used}", holes.len());
     }
 }
