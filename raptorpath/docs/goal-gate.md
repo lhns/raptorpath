@@ -3809,3 +3809,97 @@ timing fix is refuted as a separate mechanism; the crossover remains an open
 Fixes in `raptorpath/src/fec/generation.rs` (`frontier_probe`, `propagate`,
 `generate_repair_range`) + `raptorpath/src/net/mod.rs` (bounded-reactive levers,
 gated inline emission).
+
+## Present-at-Stall — the proactive pacer makes repair PRESENT but NOT a throughput win (branch `feat/present-at-stall`, 2026-07-08)
+
+Attacked the residual the "Repair In-Flight" section left open: `present_at_stall`
+is not dominant (proactive repair present for only ~a fifth of frontier holes), so
+FEC pays a round-trip for the rest and stays at parity, not a win. The named fix was
+a DEDICATED proactive-repair pacer that emits repair EARLY — while a generation is
+still FILLING — on the GENERATION grid, independent of source availability and of
+the ack-clock, so the covering equation is buffered at the receiver before the
+in-order frontier reaches the hole. It fixes both refutations of the earlier
+interspersed inline repair: it is not stall-starved (runs every loop iteration,
+incl. `tx_paused` wakeups) and not cross-grid stranded (codes the generation grid).
+
+### The mechanism WORKS (implemented + validated end to end)
+The pacer (`RWM_PROACTIVE_PACER`, systematic only, default-OFF) codes a filling
+generation over its retained contiguous PREFIX but emits at the FULL generation
+MATRIX width `G`, carrying a 2-byte `coded_width` (with a `FILL_FLAG` in the wire
+coded-index) so the decoder zeroes columns `[coded_width, G)`. Every symbol for a
+generation — filling, sealed, or reactive-deficit — therefore keys to the SAME
+`(anchor, G)` matrix and combines fungibly (no cross-width stranding). The dense
+decoder gained INCREMENTAL unit-row delivery (a source is delivered the instant its
+pivot row becomes isolated, not only at full generation rank) so a filling-generation
+repair recovers an early hole present-at-stall. Unit-tested
+(`proactive_pacer_recovers_filling_generation_hole_under_backpressure`): the pacer
+emits for an UNSEALED generation under backpressure and recovers its early hole,
+then combines with a later sealed deficit repair in the same matrix. 274 lib +
+`raptorpath-math` + `gate_suite` 15/15 all green. The receiver skips `gen_widths`
+learning for `FILL_FLAG` repairs so a still-filling generation is never mistaken for
+a full one and NACK-flooded.
+
+### At L1 the pacer raises presence + pfrac but LOSES throughput (and wedges at high RTT)
+Single path, in-order (`OOO=0`), systematic G=256, r=0.15, `RWM_GEN_INFLIGHT=1024`,
+`RWM_CC_PACE`+`RWM_REACT_CAP`+`RWM_REPAIR_WAIT`, 4 MB × 2. `present_at_stall` is the
+count of frontier holes with proactive repair buffered at detection / DECODE-resolved
+holes; `pfrac` = proactive_coded / (proactive+recovery), sender-side.
+
+| cell (loss) | ARQ Mbps | FEC Mbps (pfrac, present) | FEC+pacer Mbps (pfrac, present, dnf) | FEC/ARQ → pacer/ARQ |
+|---|---:|---:|---:|---:|
+| c2r100 (2.6%)  | 3.44 | 2.43 (0.91, 0/15) | 1.92 (0.93, 1/19)      | 0.71 → 0.56 |
+| c2r100l5 (5%)  | 1.52 | 1.22 (0.81, 0/23) | 1.19 (0.88, 4/32)      | 0.80 → 0.78 |
+| c2r100l10 (10%)| 0.92 | 0.83 (0.72, 1/26) | 0.71 (0.70, 10/39)     | 0.91 → 0.77 |
+| c2r200 (2.6%)  | 1.74 | 1.51 (0.89, 1/17) | 2.10 (0.98, 1/21) **dnf=1** | 0.87 → n/a |
+| c2r200l5 (5%)  | 0.68 | 0.61 (0.81, 0/22) | 0.59 (0.87, 4/27)      | 0.89 → 0.86 |
+| c2r200l10 (10%)| 0.45 | 0.40 (0.70, 0/24) | 0.32 (0.74, 7/31) **dnf=1** | 0.88 → 0.71 |
+
+Two robust facts, one of each sign:
+
+1. **Presence rose exactly as designed.** `present_at_stall` climbs in every cell
+   (present-fraction e.g. c2r100l10 0.04→0.26, c2r200l10 0.00→0.23), and the pacer
+   shifts recovery from reactive to proactive (`pfrac` up in 5/6 cells; reactive
+   `recovery_coded` drops, e.g. c2r100l10 403→380, c2r200 126→18, c2r200l10 435→335).
+   The instrument confirms the covering equation IS buffered earlier.
+
+2. **It does not convert to throughput; it regresses it (−3 % to −21 %), and it
+   WEDGES at high RTT (dnf=1 at c2r200 and c2r200l10).** On a SINGLE path the
+   pacer's advantage is self-defeating: to be present EARLY the repair must be sent
+   EARLY, which — under one shared CC-paced link budget — steals send capacity from
+   the SOURCE symbols, so the in-order frontier LAGS (measured frontier gap 0→507)
+   and net goodput falls. The reactive it removes (a round-trip saved) is worth less
+   than the source bandwidth it displaces, because the baseline already recovers most
+   holes from late-but-proactive repair with no round-trip (`source_n=0` throughout —
+   systematic mode never per-seq-ARQs). The `dnf=1` at RTT200 is a genuine
+   reliability regression of the gated path (a generation occasionally never
+   completes), a hard blocker on its own. `c2r200` pacer 2.10 > ARQ 1.74 is NOT a
+   win — it is one completing run of two, the other DNF.
+
+Low-RTT control c2r10 (RTT10/2.6 %): pacer 14.9 vs FEC 15.7 vs ARQ 19.7, dnf=0 — no
+low-RTT wedge, ~5 % cost. Baseline FEC (pacer OFF) reproduced the prior goal-gate
+numbers exactly (c2r100l10 pfrac 0.719 == the "Repair In-Flight" 0.72), confirming
+the new incremental-delivery decode path did NOT regress the default generation
+decoder. Shipped path byte-untouched (pacer/`FILL_FLAG` emission is `RWM_PROACTIVE_
+PACER`-gated, default-off); `gate_suite` 15/15 release.
+
+### Verdict — the crossover is a SINGLE-PATH bandwidth problem, not a presence problem
+The "Repair In-Flight" diagnosis said the crossover needs `present_at_stall`
+dominance. This branch shows that is necessary but NOT sufficient — and, more
+importantly, that on a single path presence and throughput are in DIRECT TENSION:
+buying presence (early repair) costs source bandwidth (later frontier), so pushing
+present-at-stall up pushes throughput DOWN. FEC stays at-or-below ARQ. The exact next
+residual is therefore **cross-path fungibility**: the pacer's early proactive repair
+should ride the SECOND path while source rides the first, so presence is bought
+withOUT displacing source — the C8 aggregation goal. That test is gated (per the
+brief) on FEC first beating ARQ single-path, which it does not here, so heterogeneous
+multipath was NOT run. HONEST HEADLINE: the present-at-stall mechanism is built,
+correct, and measurably raises presence, but it does not produce the throughput
+crossover on a single path and introduces a high-RTT wedge; kept env-gated,
+default-OFF, as a documented negative result alongside `RWM_INLINE_REPAIR`.
+
+**Impl.** `raptorpath/src/fec/generation.rs`: `FILL_FLAG`, `generate_repair_filling`
+/`code_generation_full`/`next_fill_gen`/`codeable_filling`, incremental unit-row
+delivery in `insert_equation`, `FILL_FLAG` decode parse. `window_traits.rs`:
+`generate_repair_filling`/`wants_filling_coding` (defaults). `net/mod.rs`:
+`RWM_PROACTIVE_PACER` pacer loop + `gen_widths` FILL_FLAG guard. Harness:
+`pmeas.sh`/`pmeas2.sh`, `RWM_PROACTIVE_PACER` propagation in `perf_rwm_c.sh`.

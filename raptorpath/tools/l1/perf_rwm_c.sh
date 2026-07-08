@@ -57,6 +57,9 @@ TENV=""
 # by ~a generation-span so the in-flight proactive repair can decode the hole
 # first (FEC-before-ARQ discipline). Milliseconds; 0/unset = report immediately.
 [[ -n "${RWM_REPAIR_WAIT:-}" ]] && TENV="$TENV RWM_REPAIR_WAIT=$RWM_REPAIR_WAIT"
+# Present-at-stall proactive pacer (feat/present-at-stall): filling-generation
+# proactive repair on the generation grid, independent of source/ack-clock.
+[[ -n "${RWM_PROACTIVE_PACER:-}" ]] && TENV="$TENV RWM_PROACTIVE_PACER=$RWM_PROACTIVE_PACER"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

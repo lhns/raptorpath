@@ -32,6 +32,27 @@ pub trait WindowEncoder: Send {
         None
     }
 
+    /// Generate one PROACTIVE repair symbol over the oldest in-flight generation
+    /// that is still under its per-generation budget, coding over its retained
+    /// contiguous PREFIX at the full generation width (so a still-FILLING
+    /// generation can be coded — its covering equation reaches the receiver
+    /// ~immediately after the hole is sent, present when the in-order frontier
+    /// detects it, rather than a full generation-span later once the generation
+    /// seals). Every symbol keys to the same `(anchor, G)` decoder matrix as the
+    /// sealed/reactive repairs, so it combines fungibly (no cross-grid
+    /// stranding). Unlike `generate_repair`, this is NOT gated on the generation
+    /// being sealed. Default: fall back to `generate_repair` (encoders without a
+    /// filling-prefix path).
+    fn generate_repair_filling(&mut self) -> WireSymbol {
+        self.generate_repair()
+    }
+
+    /// Whether the FILLING pacer has a generation it can usefully code right now
+    /// (an in-flight generation under budget). Default: `wants_coding`.
+    fn wants_filling_coding(&self) -> bool {
+        self.wants_coding()
+    }
+
     /// Generate one repair symbol coded over the SPECIFIC seq range
     /// `[start, start + count)` (proactive-frontier repair). Unlike
     /// `generate_repair` — which codes over the whole current (leading) window
