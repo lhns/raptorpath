@@ -3149,3 +3149,124 @@ there was nothing to fix in the transport.
 **Harness.** `~/l1/rtt_sweep.sh <reps> <bytes>` (the ARQ-vs-FEC RTT curve);
 `~/l1/fec_tune.sh <reps> <scen>` (config robustness); cells `c2r10…c2r200` in `lib.sh`
 (c2 loss/bw, jitter=0, one_way=RTT/2); `RWM_FDIAG=1` now also reports `COMPUTE calls/avg/total`.
+
+## Proactive FEC vs ARQ (high RTT) — the FUNGIBLE-mode RTT sweep (branch `feat/proactive-fec-highrtt`, 2026-07-08)
+
+The FEC-vs-ARQ Crossover section above tested the WRONG realization for the
+crossover hypothesis (plain-reliable in-order FRONTIER repair, which fires on only
+~3 % of holes — the pre-position-vs-isolate catch-22) and found no crossover. It
+explicitly deferred the premise to "the generation/systematic modes (fungible
+cross-path recovery, no fixed-position frontier hole)". THIS rung tests exactly
+that: **fungible PROACTIVE systematic FEC** (systematic source on the wire +
+windowed generation repair provisioned upfront + out-of-order object completion)
+vs pure-ARQ, swept across RTT, with the hypothesis that at HIGH RTT proactive FEC
+(≈ propagation + K(1+r)/rate, no per-loss round-trips) should BEAT ARQ (~1.5·RTT
+per loss-episode). **Result: the hypothesis is REFUTED — there is no high-RTT
+crossover, and the advantage runs the OTHER way (FEC loses MORE as RTT grows).**
+Honest FAIL-WITH-MECHANISM, fully instrumented; the win was actively searched for
+across ~12 configs and not forced.
+
+### Instrumentation added (proves proactive vs reactive; both env-gated, default-off)
+- **`RWM_PFRAC`** (`run_window_sender`): counts coded repair emitted PROACTIVELY
+  (the open-loop per-generation provisioning round-robin, `generate_repair` — NO
+  round-trip) vs REACTIVELY (the deficit-driven recovery loop, `generate_repair_for`,
+  which fires only after a receiver `GenerationDeficit` — one round-trip). Prints
+  `proactive_coded / recovery_coded / proactive_fraction`. This is the direct
+  measure of whether Mode B genuinely recovers holes from upfront repair.
+- **`RWM_NO_REACTIVE`** (`run_window_sender`): disables the deficit-driven reactive
+  loop entirely — the PURE-PROACTIVE demonstrator (systematic source + fixed upfront
+  r, out-of-order, zero round-trips). No production behaviour change (default off).
+
+### The RTT sweep — Mode A pure-ARQ vs Mode B fungible proactive FEC
+Single path, 100 mbit, GE 1.3/50 ≈ 2.6 % loss, jitter=0 (RTT the only variable),
+1.8 MB × reps. Mode B = `--window-systematic-repair` + `--window-out-of-order`,
+G=768, r=0.20, store=2·G, dnf:0 on BOTH arms at every point.
+
+| RTT (ms) | ARQ (Mbit/s) | proactive-FEC (Mbit/s) | FEC/ARQ | proactive fraction |
+|---:|---:|---:|---:|---:|
+| 10  | 19.3 / 22.3 | 28.3 / 17.8 | 1.47 / 0.80 | 0.95 / 0.92 |
+| 30  | 7.9 | 7.0 | 0.89 | 0.70 |
+| 50  | 7.4 | 5.7 | 0.78 | 0.88 |
+| 100 | 4.0 | 3.1 | 0.77 | 0.83 |
+| 200 | 1.9 | 1.1 | **0.55** | **0.23** |
+
+(RTT10 shown for two independent batches — the 1.8 MB object completes in <1 s
+there, so low-RTT throughput is warmup/ramp-dominated NOISE: FEC×1.47 in one batch,
+×0.80 in the other → a TIE at low RTT, not a win.) **The robust signal is the
+high-RTT trend: FEC/ARQ falls MONOTONICALLY with RTT (→ 0.55 at RTT200), the
+opposite of the hypothesis, and the proactive fraction COLLAPSES from 0.95 to
+0.23.** The reactive coded count explodes with RTT (rcod 63 → 160 → 255 → 4078)
+while the proactive budget is constant (pcod ≈ 1214): at high RTT recovery becomes
+REACTIVE-dominated and round-trip/overrun-bound — exactly ARQ's failure mode plus
+coding overhead.
+
+### Mechanism — why fungible proactive FEC LOSES at high RTT (four measured causes)
+1. **Proactive-fraction collapse via burst-overrun.** A larger RTT ⇒ larger BDP ⇒
+   the systematic source + coded ride the DROPPABLE QUIC-datagram path in bigger
+   bursts, which netem drops. Per-generation loss then exceeds the fixed `ceil(len·r)`
+   proactive budget, so generations arrive SHORT and the receiver reports deficits.
+   Proactive fraction 0.95 (RTT10) → 0.23 (RTT200).
+2. **Reactive runaway.** Deficit-driven recovery is EXEMPT from the in-flight
+   congestion cap (by design, so it can always fund a frontier hole) and paced at
+   ~86 Mbit; at RTT200 that overruns the 100 mbit link already carrying source, its
+   own recovery symbols drop, the stale (~RTT-old) deficit persists, and the sender
+   re-floods — MEASURED recovery_coded up to **252 k symbols for a 5 k-symbol object**
+   (30–120× the object). This collapses throughput below ARQ.
+3. **Pure-proactive (RWM_NO_REACTIVE) is genuinely proactive but DNFs.** With the
+   reactive loop OFF the trace confirms `proactive_fraction = 1.0000, recovery_coded
+   = 0` (zero round-trips — the clean demonstrator the directive asked for), but the
+   object **never completes**: the coupon-collector tail always leaves SOME generation
+   a few DoF short of its fixed upfront budget, and with no recovery that generation
+   wedges the in-order frontier forever (ack stuck; MEASURED at RTT200, both 1.8 MB
+   and 6 MB). Open-loop FEC cannot guarantee reliable delivery — it structurally
+   needs feedback for the last ε, and that feedback is the round-trip that erases the
+   high-RTT advantage.
+4. **In-order-coupled sender flow control.** Generation-mode retention/backpressure
+   prunes on the CUMULATIVE (in-order) decode ack (`encoder.advance(ack+1)`), so even
+   with out-of-order DELIVERY a single hole stalls the sender's window for the whole
+   recovery latency — reproducing ARQ's ∝1/RTT serialization. Decoupling it (advance
+   retention on out-of-order generation completion) is the documented "next step,
+   beyond scope" from the Transport-Ceiling / C8-Final sections; it is the same
+   binding constraint, here shown to also block the proactive-FEC-vs-ARQ crossover.
+
+### The per-hole physics ARE favorable — but do not convert to throughput
+Confirmed (prior + this branch): a decode-resolved hole at RTT200 recovers ~8.5 ms
+vs ARQ's ~279 ms — FEC is 33× FASTER PER HOLE. But sustaining a BDP-scaled pipe on
+the droppable-datagram substrate at high RTT is impossible without EITHER
+burst-overrun (→ reactive round-trips, cause 1+2) OR wedging (pure-proactive DNF,
+cause 3), and the sender window stalls in-order regardless (cause 4). So the 33×
+per-hole win never becomes a throughput win on a reliable bulk transfer at high RTT.
+
+### HONEST VERDICT
+- **The task hypothesis (fungible proactive FEC beats ARQ at HIGH RTT): REFUTED.**
+  No crossover; FEC/ARQ falls monotonically with RTT (1.47/0.80 tie at RTT10 →
+  0.55 at RTT200). raptorpath's reliable-bulk single-path FEC does NOT have a
+  high-RTT winning regime on this transport.
+- **Proven genuinely proactive where it matters:** the RWM_NO_REACTIVE demonstrator
+  ran at `proactive_fraction = 1.0000` (zero round-trips) and still could not win —
+  it DNFs — so the loss is NOT "it was secretly reactive"; it is the deeper
+  coupon-collector + transport-substrate mechanism above. When reactive IS enabled
+  to make it complete, the proactive fraction collapses at high RTT (0.23) and the
+  reactive loop runs away.
+- **The binding constraint is the transport substrate, not the FEC coding:**
+  droppable-datagram burst-overrun + reactive emission exempt from the congestion
+  cap + in-order-coupled sender backpressure + per-generation decode-on-K
+  intolerance to one short generation. Same root cause as the C8 aggregation ceiling.
+- **Path to an actual high-RTT win (identified, not built):** pace the systematic
+  SOURCE to link rate (kill burst-overrun so proactive stays ≈1.0 at BDP scale),
+  bound reactive to a low non-exempt rate (rare batched tail fallback, not runaway),
+  and decouple sender retention from the in-order frontier (advance on OOO generation
+  completion). All three are transport changes below the FEC layer.
+
+### Record corrected
+- **This section** + paper **§14.7 / §8.9** (the fungible-mode measured correction:
+  the crossover the isolated latency model predicts does NOT appear for reliable
+  bulk transfer even in the fungible mode — it inverts with RTT, mechanism above).
+- **Controls / no regression.** Changes are two env-gated, default-off sender knobs
+  (`RWM_PFRAC` trace, `RWM_NO_REACTIVE`) + harness plumbing; byte-inert to every
+  shipped path. `cargo test -p raptorpath --lib` green; `raptorpath-math` green;
+  `gate_suite` 15/15 release.
+**Harness.** `~/l1/pf_sweep.sh <reps> <bytes> [scens…]` (ARQ vs fungible
+proactive-FEC, reads the client `[PFRAC]` trace); Mode B tuned via `BGEN/BR/BSTORE/
+BINFLIGHT` env; `perf_rwm_c.sh` extended to propagate `RWM_STORE/GEN_INFLIGHT/
+GEN_RATE/GEN_RATE_FLOOR/INFL_CAP/CODED_SRC/NO_REACTIVE/PFRAC/TRACE/DIAG`.
