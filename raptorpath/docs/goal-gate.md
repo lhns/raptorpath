@@ -4088,3 +4088,119 @@ sender decoupling. Harness: `RWM_SACK_PRUNE`/`RWM_REASM_BDP` propagation in
 **Harness.** `sudo RWM_SACK_PRUNE=1 RWM_REASM_BDP=1 bash perf_rwm_c.sh c2 c2 bulk
 50000000 3 single`; `[REASM]` occupancy in the server log (`/tmp/rwm-s.log`, the
 bulk receiver — `perf --client` uploads).
+
+## Full Benchmark Re-Run (2026-07-08) — current numbers post-arc-fixes
+
+Fresh L1 re-measure of raptorpath's OWN numbers with the current binary built
+from `main` @ `6d2a05b` (all arc fixes in: O(n²) Copa `record_rtt` monotonic-
+deque fix, FEC decoder-revival, bufferbloat cap, bounded reactive ARQ). Branch
+`bench/full-rerun-20260708`. VM: fedora 6-core, `cargo 1.96.1`, release build
+`3m04s`. The external baselines (quinn / kernel-BBR / kernel-MPTCP / CUBIC) in
+the L3 REGIME MAP are UNCHANGED and kept as-is; only rp's rows are refreshed
+here. **Do not edit the stale L3 tables above — this section supersedes rp's
+rows in them.** Seed 42 throughout; per-measurement hard timeouts (perf 600 s,
+rwm 700 s). Total measurement wall-time ≈ 55 min.
+
+### Metric B — object COMPLETION, single path (rp-native `perf`, 1.8 MB × 6)
+
+The direct refresh of the STALE metric, apples-to-apples with the old table
+(same `perf_native.sh`, rp-native block pipeline — RaptorQ + P8 block-ARQ,
+which is the shipped default for `--protocol-hint bulk`). Both hints run.
+
+| cell | rp bulk (current) mean / median / mbps | dnf | rp realtime | best baseline (kept) | verdict (refreshed) |
+|------|----------------------------------------|-----|-------------|----------------------|---------------------|
+| C1 DC     | 0.127 / 0.117 s · 113.5 Mbit/s | 0/6 | 0.150 s · 95.8 Mbit/s (dnf 0) | quinn 0.027 / BBR 0.028 | rp trails (~0.13 s vs 0.027; 1.8 MB is slow-start-bound over 1 Gbit) |
+| C2 WiFi   | 0.862 / 0.969 s · 16.7 Mbit/s  | 0/6 | **DNF** (600 s, 6/6) | quinn 0.20 / BBR 0.22 | rp bulk ≈ stale (0.86 vs 0.83 s) — still ~4× behind quinn; block path NOT lifted by the CPU fix (loss-bound, not CPU-bound). realtime cannot complete a reliable object under loss. |
+| C3 LTE    | 9.91 / 11.12 s · 1.45 Mbit/s   | 0/6 | not run (DNFs, C2 mechanism) | quinn 0.90 / BBR 1.0 | rp ≈ stale / slightly worse (9.9 vs 7.3 s) — still ~11× behind. Recovery-bound at 40 ms RTT / 2 % loss. |
+| C4 Sat    | **DNF** (600 s, 6/6)           | 6/6 | not run | quinn 1.09 / BBR 3.6 | **REGRESSION/DNF** — block-mode bulk stalls at 200 ms RTT / 3 % loss (no run completed in 600 s). Flagged. |
+| C5 BadWiFi| 13.74 / 11.07 s · 1.05 Mbit/s (min 2.40, max 30.25, sd 9.69) | 0/6 | not run | quinn/BBR 0.55; CUBIC DNF | rp completes DNF-free (beats CUBIC) but ~25× behind quinn. Completes despite 5.3 % loss because RTT is low (10 ms); C4 shows RTT, not loss, is what breaks block completion. |
+
+**Headline correction to the optimistic pre-run expectation:** the CPU fix did
+NOT make single-path *completion* "much better" on the lossy cells. It lifted
+the CPU-bound CLEAN / high-BW regime (28 → 85 Mbit, confirmed below), but
+C2/C3/C4/C5 are RECOVERY-latency-bound, and the rp-native BLOCK pipeline
+(`perf_native`) is essentially UNCHANGED there (C2 0.86≈0.83 s, C3 9.9≳7.3 s)
+and C4 now DNFs at 200 ms RTT. The FEC→ARQ-parity gains the consolidation doc
+cites live in the WINDOW-RELIABLE + generation-coding path (`perf_rwm_c` with
+`RWM_GEN`), NOT in this block-mode completion metric.
+
+### Single-path THROUGHPUT — clean vs lossy (rp-native bulk, 20 MB × 5)
+
+| link | mean_mbps | median s | stdev s | dnf | note |
+|------|-----------|----------|---------|-----|------|
+| clean (100 Mbit, 0 % loss) | **85.5** | 1.860 | 0.023 | 0/5 | the "86" — CPU fix live; exceeds quoted native-quinn-at-C2 (72) |
+| c2 (100 Mbit, GE 1.3/50 ≈ 2.5 %) | **15.9** | 9.640 | 0.729 | 0/5 | the "15" — loss-bound |
+
+The **86 vs 15** story reproduces exactly (85.5 vs 15.9 Mbit/s). Clean-link
+throughput is not loss/recovery bound, so the CPU fix's 3× shows there;
+the lossy path collapses to recovery-latency-bound ~16 Mbit regardless.
+
+### Metric C — MULTIPATH goodput, dual path (window-reliable, 50 MB × 6)
+
+Both arms requested: **plain-reliable** (`--window-reliable`, pure ARQ over the
+window) and **systematic** (`+ --window-systematic-repair`). `topo_dual`,
+C7 = c2+c2, C8 = c2+c3. NOTE: these use the WINDOW pipeline, whose sender does
+NOT stripe source symbols across paths (documented Phase 0 finding) — so they
+measure LOWER aggregation than the regime map's kept C7 20.8–23.9 / C8 14.70,
+which came from the block-affinity scheduler / tuned generation coding.
+
+| cell | arm | rp dual mean_mbps | median s | stdev s | dnf | dual-over-single (÷15.9) |
+|------|-----|-------------------|----------|---------|-----|--------------------------|
+| C7 (c2+c2) | plain-reliable | 17.40 | 23.45 | 1.83 | 0/6 | 1.09× |
+| C7 (c2+c2) | systematic     | 15.40 | 26.25 | 0.98 | 0/6 | 0.97× (systematic worse than plain) |
+| C8 (c2+c3) | plain-reliable | 5.43  | 78.33 | 11.72 | 0/6 | 0.34× (REGRESSES below single c2) |
+| C8 (c2+c3) | **systematic** | **15.30** | 26.41 | 1.18 | 0/6 | **0.96×** (systematic recovers C8 to ~parity) |
+
+**Verdict (refreshed):** the two arms split cleanly by topology.
+- **C8 (heterogeneous c2+c3): systematic FEC is essential and reaches
+  parity.** Plain reactive-ARQ over the window collapses to 5.43 Mbit/s
+  (0.34×) because the slow c3 path drags the in-order cumulative-ack frontier;
+  adding `--window-systematic-repair` lifts it to **15.30 Mbit/s (0.96×
+  single-c2)** — matching the regime map's kept C8 baseline (14.70, 0.97×).
+  So the arc's "C8 bounded at ~parity" verdict REPRODUCES on the current
+  binary, and systematic repair is what buys the parity.
+- **C7 (symmetric c2+c2): window pipeline does NOT reach the aggregation
+  win.** Plain 17.40 (1.09×), systematic 15.40 (0.97×, worse — repair
+  displaces source on a path that had no spare deficit). Neither reaches the
+  regime map's kept C7 20.8–23.9 (1.26–1.55×), which came from the
+  BLOCK-affinity scheduler that stripes source across paths; the window
+  sender does not stripe (documented Phase 0). The C7 symmetric-aggregation
+  win therefore stands ONLY on the block path, not the window path.
+
+### Metric A — message TAIL latency, single path (tail_matrix, 50 msg/s × 20 s, p99 over 5 reps)
+
+Warm tunnel, `{realtime,bulk} × {400,1200}B`, p99 DISTRIBUTION over 5 reps
+(single-run p99 is variance-dominated). Values are p99 in ms: min / median / max.
+
+| cell | hint | 400 B (min/med/max) | 1200 B (min/med/max) | best baseline (kept) | verdict |
+|------|------|---------------------|----------------------|----------------------|---------|
+| C2 WiFi | realtime | 42 / **59** / 637 | 39 / **145** / 2655 | quinn 2824 / BBR 13,400 | **rp WINS ~12–48×** (median 59–145 ms vs quinn 2.8 s / BBR 13 s) |
+| C2 WiFi | bulk     | 84 / 102 / 120 | 71 / 154 / 481 | — | tight, DNF-free |
+| C3 LTE  | realtime | 105 / **209** / 1409 | 334 / **1771** / 3154 | BBR 198 / quinn 1393 | rp 400 B ≈ BBR (209 vs 198), beats quinn ~6×; 1200 B worse than BBR |
+| C3 LTE  | bulk     | 143 / 176 / 11022 | melts (NO_DATA, ≥3/5 reps no summary) | — | 400 B OK; 1200 B melts at C3 (20 Mbit / 2 % loss) |
+
+**Metric A verdict STANDS (refreshed on current binary):** raptorpath's
+message-tail p99 at C2 (realtime, 59–145 ms median) crushes quinn (2.8 s) and
+kernel-TCP (13 s) by ~12–48×, exactly the regime map's 12–60× win. At C3 the
+low-rate BBR still owns the tail (198 ms) — rp ties at 400 B, loses at 1200 B.
+Large frames (1200 B) at C3 melt, consistent with the "C3 melts" narrative.
+The tail-latency win is the headline that is UNAFFECTED by (and independent of)
+the throughput/completion story: it comes from in-band FEC recovery avoiding
+head-of-line blocking, not from CC throughput.
+
+### vs the stale pre-CPU-fix regime map: what changed
+
+**Nothing improved on single-path COMPLETION at the lossy cells, and C4 now
+DNFs — the optimistic "much better post-CPU-fix" completion expectation does
+NOT hold for the rp-native block pipeline.** The CPU fix is real and confirmed
+(clean throughput 85.5 Mbit/s, 3× the old 28), but it only helps the
+CPU-bound clean/high-BW regime; the loss/recovery-bound cells (C2 0.86≈0.83 s,
+C3 9.9≳7.3 s, C4 DNF, C5 13.7 s) are essentially the STALE numbers or worse.
+The genuine post-arc wins — clean-link throughput 3×, FEC→ARQ parity, C8
+systematic parity (15.30, 0.96×), and the 12–48× message-tail win — all
+REPRODUCE; but the "loses 4–8× on lossy completion" was NOT overturned for
+block-mode bulk (it lives in the window+generation path, a different code
+path than `perf_native`). Honest bottom line: single-path lossy BULK
+completion via the shipped block pipeline is unchanged-to-worse; the arc's
+gains are throughput-on-clean, tail-latency, and the window/systematic path.
+
