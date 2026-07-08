@@ -3142,6 +3142,61 @@ property), not by *when* the receiver emits the NACK. This positively excludes t
 The knob is retained env-gated + default-off; it helps only where the proactive
 fraction is already high (low RTT / low loss), where FEC does not need help.
 
+### 12.10 SACK sender-decoupling + BDP reassembly — the in-order frontier bound is RECOVERY-LATENCY, not backpressure (2026-07-08)
+
+The §12.8 back-pressure mechanism ("sender stops reading the source when the
+retransmit buffer reaches buffer_max") gates on the CONTIGUOUS in-order
+cumulative-ack frontier: the sent-store drains only for seqs at-or-below the
+frontier, so a single hole freezes the frontier, pins the store full, and stalls
+source intake — goodput collapses to ≈ window/RTT (the ~16 Mbit C2 single-path
+lossy ceiling, §14.7). This section tests the natural fix and reports the result.
+
+**The fix (two composed pieces, both env-gated, default-off).**
+*Sender* (`RWM_SACK_PRUNE`): SACK-based flow control — prune the sent-store (and
+the per-seq ARQ maps) for ANY out-of-order-received (SACKed) seq, so the store
+tracks TRUE outstanding-unacked and the send window stays BDP-full ACROSS a hole
+(the hole itself stays retained and recovers via the orthogonal NACK/tail-sweep).
+*Receiver* (`RWM_REASM_BDP`): a reliability guard clamping the decoder/received-seq
+prune so it can never advance ABOVE the delivered frontier (the reorder buffer is
+already non-evicting), so a symbol the sender has SACK-pruned is NEVER evicted at
+the receiver before its frontier passes — the invariant the prior SACK attempt
+violated. An occupancy probe (`[REASM]`) reports the held-behind-frontier symbols.
+
+**MEASURED (L1, netem, 50 MB × 3, seed 42).**
+- **Single-path C2 (~2.5 % GE loss): NO throughput lift.** baseline (gate off)
+  **16.54 Mbit/s** → SACK+REASM (in-order) **17.09** → +OOO completion **17.22** —
+  all within the ~5 % run-to-run stdev. Decoupling the sender buys nothing because
+  the sender was never the bottleneck: throughput is store-cap-invariant (§14.7),
+  and completion still waits for the in-order frontier to walk each hole at ≈ 1
+  ARQ round / RTT. **The bound is receiver-side RECOVERY LATENCY, not sender
+  backpressure.**
+- **The reliability invariant HOLDS on single-path.** dnf 0 on every arm; the
+  reassembly occupancy stays BOUNDED at ≈ BDP — peak held-behind-frontier = 1541–
+  1888 symbols out of a ~50 000-symbol object as the frontier advances — every byte
+  delivered. This fixes the #52 SACK break (which evicted a pruned-but-unconsumed
+  symbol); the composed guard makes the decoupling safe.
+- **Heterogeneous dual (C8, c2+c3): the BDP bound FAILS and it stalls.** With the
+  sender decoupled, it races the FAST path ahead while the SLOW path's frontier
+  hole lingers ≈ its (larger) RTT; the dual store cap = gain · Σ BtlBw×RTprop sums
+  BOTH paths' anchors (slow-path RTT-inflated), so outstanding is NOT bounded to
+  the fast path's BDP → the receiver reassembly grows toward the WHOLE object
+  (`max_pending` 38 820 / ~50 000 ≈ 78 %) and bufferbloat stalls the transfer
+  (single rep did not complete in 300 s vs baseline ~37 s). SACK+REASM makes C8
+  strictly WORSE than the plain baseline (10.86 Mbit/s, 0.66× fast-alone); the
+  >15.7 factor > 1 aggregation bar is not crossed.
+
+**Verdict.** Sender-side SACK flow control is safe (with the BDP reassembly guard)
+but is NOT the fix for the lossy-throughput collapse: the in-order cumulative-ack
+frontier's serialization is a RECOVERY-LATENCY bound, structural to reliable
+in-order-capable delivery on the droppable-datagram substrate, unmoved by any
+sender flow-control law — consistent with §14.7 and the six prior L1 investigations.
+On heterogeneous multipath the decoupling actively unbounds the receiver buffer
+(the slow path's RTT-inflated BDP anchor defeats the store cap), so it regresses
+C8. Closing the collapse still needs the transport-pipeline change named in §14.7
+(pipelined per-RTT frontier recovery, or a genuinely rateless ack-frontier where a
+hole is never a fixed in-order position) plus a per-path (not summed) outstanding
+cap. Both knobs are retained env-gated + default-off; the shipped path is untouched.
+
 ---
 
 ## 13. Multi-Path Scheduling
