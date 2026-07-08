@@ -32,8 +32,15 @@ for scen in $SCENS; do
   for arm in ARQ FEC; do
     while pgrep -x raptorpath >/dev/null; do sleep 2; done
     if [[ "$arm" == FEC ]]; then
+      # Transport-substrate fixes propagate via env when set by the caller:
+      #   CCPACE=1     -> RWM_CC_PACE (Fix 1: CC-rate source pacing)
+      #   CCHR=<f>     -> RWM_CC_PACE_HR (pacing headroom, default 1.1)
+      #   REACTCAP=<n> -> RWM_REACT_CAP (Fix 2: bounded reactive symbols/round)
+      #   OOORETAIN=1  -> RWM_OOO_RETAIN (Fix 3: OOO retention decouple)
       line=$(RWM_OOO=1 RWM_GEN="$BGEN" RWM_GEN_R="$BR" RWM_STORE="$BSTORE" \
              RWM_GEN_INFLIGHT="$BINFLIGHT" RWM_PFRAC=1 \
+             RWM_CC_PACE="${CCPACE:-}" RWM_CC_PACE_HR="${CCHR:-}" \
+             RWM_REACT_CAP="${REACTCAP:-}" RWM_OOO_RETAIN="${OOORETAIN:-}" \
              RWM_EXTRA="--window-systematic-repair" \
              timeout 700 sudo -E bash perf_rwm_c.sh "$scen" "$scen" bulk "$BYTES" "$REPS" single 2>&1 | grep -E '"summary"')
       pfrac=$(grep -oE 'proactive_fraction=[0-9.]+' /tmp/rwm-c.log 2>/dev/null | tail -1 | cut -d= -f2)

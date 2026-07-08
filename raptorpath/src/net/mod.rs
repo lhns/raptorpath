@@ -3018,6 +3018,71 @@ async fn run_window_sender(
     // once the ack rate is known the pacing clocks to delivered goodput × 1.5.
     let gen_rate_floor: f64 = std::env::var("RWM_GEN_RATE_FLOOR")
         .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2000.0).clamp(1.0, gen_rate);
+    // ── Fix 1 (transport-substrate): CC-RATE PACING of the SYSTEMATIC SOURCE ──
+    // PRIMARY high-RTT lever. The systematic source rides the DROPPABLE QUIC-
+    // datagram path driven only by TUN-read intake, gated by a BDP-scaled
+    // WINDOW (store_max / infl_cap) but NOT by a RATE. At high RTT the window is
+    // BDP-sized, so the source is spent as one big BURST that netem/QUIC drops
+    // faster than the receiver decodes — per-generation loss then exceeds the
+    // ceil(len·r) proactive budget and the proactive-recovery fraction
+    // COLLAPSES (0.95→0.23), forcing reactive round-trips (goal-gate "Proactive
+    // FEC vs ARQ"). This paces the source at the measured LINK rate, smoothed
+    // over the RTT with a SMALL burst, so no BDP-sized burst ever hits the wire.
+    //
+    // Rate signal: the delivered-goodput EWMA (`gen_rate_ewma`) is the achieved
+    // BtlBw in generation mode — the true CC anchor. The Copa `cwnd` is NOT
+    // usable here: window-mode WindowAcks do not drive `record_delivery`, so
+    // cwnd is pinned at INITIAL_CWND and cwnd/SRTT would strangle the pipe. The
+    // ack-clocked delivered-goodput EWMA already tracks the link and is what the
+    // coded bucket uses; the source now shares it. A small headroom lets the
+    // rate ramp without the 1.5× overshoot that itself overruns the datagram
+    // path. Env-gated (RWM_CC_PACE) so the A/B baseline is byte-identical.
+    let cc_pace = std::env::var("RWM_CC_PACE").is_ok();
+    let cc_pace_headroom: f64 = std::env::var("RWM_CC_PACE_HR")
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.1).clamp(1.0, 2.0);
+    // Source pacing token bucket (symbols). Refilled at the link rate each loop
+    // iteration; the TUN-read select branch is gated on a token being available
+    // and one token is consumed per source symbol put on the wire.
+    let mut src_tokens: f64 = 0.0;
+    let mut src_tok_last_us: u64 = now_us();
+    // Fix 1 (rate signal): the delivered-goodput EWMA is clocked on the IN-ORDER
+    // cumulative ack, which STALLS at 0 whenever a hole wedges the frontier —
+    // exactly the high-RTT-lossy case — so `eff_pace` collapses to the bootstrap
+    // FLOOR (2000 sym/s ≈ 24 Mbit) and THROTTLES the source ramp below the link
+    // (ARQ, unpaced, ramps freely → FEC loses). The Copa cwnd/SRTT is the
+    // frontier-INDEPENDENT CC rate (cwnd grows on delivery feedback regardless of
+    // the in-order hole); pace at max(cwnd/SRTT, goodput-EWMA)×headroom so a
+    // stalled in-order frontier can no longer starve the pace rate. Cached off
+    // the scheduler lock every 5 ms. This is the directive's "cwnd/RTT via Copa".
+    let mut cc_rate_cached: f64 = 0.0;
+    let mut cc_rate_refresh_us: u64 = 0;
+    // ── Fix 2 (transport-substrate): BOUNDED REACTIVE under congestion control ─
+    // The deficit-driven recovery loop was EXEMPT from the in-flight congestion
+    // cap and re-emitted the reported residual on EVERY deficit report. At high
+    // RTT the reports are ~RTT stale, so it re-sends the deficit faster than an
+    // updated report can shrink it, its own recovery symbols overrun the pipe
+    // and drop, the stale deficit persists, and it re-floods — MEASURED
+    // recovery_coded 60 k–252 k symbols for a ~5 k-symbol object (up to 120×),
+    // which DNFs at RTT200. Two bounds close the loop:
+    //   (a) PER-GENERATION RTT SPACING. After emitting recovery for a
+    //       generation, do NOT emit for it again for ~1 SRTT — long enough for
+    //       those symbols to arrive and the receiver's NEXT deficit report to
+    //       reflect them. This is the "send the deficit, wait ~RTT, re-evaluate"
+    //       the design intended but never TIMED, so a stale periodic re-report
+    //       could no longer trigger an immediate re-flood.
+    //   (b) NON-EXEMPT from the in-flight cap. Reactive now also stops at
+    //       `cwnd_full` (RWM_INFL_CAP) like proactive — it may not push the pipe
+    //       past the congestion cap. The in-flight budget expires on the RTT
+    //       timescale, so the frontier is still funded within a bounded delay
+    //       (no permanent deadlock), it just cannot BURST past the cap.
+    // Enabled by RWM_REACT_CAP (any value; the value optionally scales the
+    // spacing — <1 = fraction of SRTT, >=1 = absolute µs). Unset = OFF (legacy
+    // exempt behaviour), so Fix 1 measures alone and Fix 2 stacks on top.
+    let react_cap_cfg: f64 = std::env::var("RWM_REACT_CAP")
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
+    let react_cap_on = react_cap_cfg > 0.0;
+    // anchor → wall-clock (µs) of the last reactive emission for that generation.
+    let mut gen_recover_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     // In-flight coded allowance W (coded symbols the pipe may hold ahead of the
     // decode frontier). MUST be ≥ pipeline·gen_size: coded symbols are striped
     // round-robin across the M active generations, so to let the FIRST
@@ -3044,6 +3109,23 @@ async fn run_window_sender(
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0)
         .clamp(0.0, 2.0);
+    // ── Fix 3 (transport-substrate): OUT-OF-ORDER RETENTION DECOUPLE ──────────
+    // Defect #3: generation backpressure caps the send frontier at ~store_max =
+    // a few generations ahead of the CUMULATIVE (in-order) decode ack, so ONE
+    // hole stalls the whole pipeline even under out-of-order delivery — throughput
+    // ∝ generations/RTT = window/RTT, reproducing ARQ's serialization. This
+    // raises the retention/backpressure window to `ooo_gens` generations so the
+    // sender keeps sending (and proactively coding, via the send-frontier-tracking
+    // `set_code_base` below) MANY generations past a stalled in-order frontier;
+    // the stalled generation is recovered by the bounded reactive tail (Fix 2)
+    // while everything above it completes out of order. Retention still drops on
+    // the in-order ack (advance(ack+1)) so RELIABILITY IS UNCHANGED — the sources
+    // of every not-yet-in-order-acked generation stay retained for reactive
+    // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
+    // generation count, default 16; unset = OFF, byte-identical legacy).
+    let ooo_retain = std::env::var("RWM_OOO_RETAIN").is_ok() && generation;
+    let ooo_gens: usize = std::env::var("RWM_OOO_RETAIN")
+        .ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(16);
     // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
     // at the frontier is raced by coded symbols that combine over the CURRENT
     // window; sustained Σg aggregation needs the window to span the cross-path
@@ -3058,7 +3140,10 @@ async fn run_window_sender(
         // of G symbols (plus one for the currently-filling head). This is the
         // stable-anchor analogue of W_mp — every not-yet-decoded generation
         // stays retained (and keeps getting coded symbols) until it decodes.
-        (gen_size * (pipeline + 1)).clamp(MAX_WINDOW_SIZE, 1 << 20)
+        // Fix 3: RWM_OOO_RETAIN widens this to `ooo_gens` generations so the
+        // send frontier can run far past a stalled in-order frontier.
+        let gens = if ooo_retain { ooo_gens + 1 } else { pipeline + 1 };
+        (gen_size * gens).clamp(MAX_WINDOW_SIZE, 1 << 20)
     } else if coded_only {
         std::env::var("RWM_WINDOW")
             .ok()
@@ -3104,10 +3189,14 @@ async fn run_window_sender(
         // (G=480, 50 MB×6): single 11.2→15.6 Mbit (stdev 24.8→0.7 s), symmetric
         // C7 9.8→22.3 (×1.43 aggregation), heterogeneous C8 9.45→14.55 — all
         // up, tighter, 0 DNF. RWM_STORE overrides for the sweep.
+        // Fix 3: under OOO retention the backpressure window is the wide
+        // ooo_gens·G, so the send frontier decouples from the stalled in-order
+        // frontier. Otherwise the tight 2·G standing-queue bound.
+        let default_store = if ooo_retain { ooo_gens * gen_size } else { 2 * gen_size };
         std::env::var("RWM_STORE")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(2 * gen_size)
+            .unwrap_or(default_store)
             .clamp(gen_size, win_cap)
     } else if coded_only {
         std::env::var("RWM_STORE")
@@ -3371,6 +3460,11 @@ async fn run_window_sender(
                 }
                 stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
                 source_symbols_this_period += 1;
+                // Fix 1: charge the paced source send against the link-rate
+                // token bucket (the TUN-read gate refills + admits it).
+                if cc_pace {
+                    src_tokens -= 1.0;
+                }
             }
 
             // Track which path this source was sent on (for cross-path retransmission)
@@ -3896,6 +3990,19 @@ async fn run_window_sender(
             // partial generation recover; a mid-stream backpressure pause is NOT
             // idle (tx_paused), so this never floods a still-filling generation.
             encoder.set_intake_idle(!tx_paused && now.saturating_sub(gen_last_source_us) > 30_000);
+            // Fix 3: advance the PROACTIVE-CODING floor to follow the SEND
+            // frontier (the last `pipeline` sealed generations), decoupled from
+            // the stalled in-order retention floor. Under RWM_OOO_RETAIN the send
+            // frontier runs `ooo_gens` ahead of a stalled generation; without
+            // this the coder would keep re-coding the stalled generation and
+            // never provision the fresh ones — they would then need reactive
+            // recovery and re-serialize. No-op when ooo_retain is off (default).
+            if ooo_retain {
+                let (_, newest) = encoder.window_span();
+                let code_anchor =
+                    newest.saturating_sub((pipeline as u64) * (gen_size as u64));
+                encoder.set_code_base(code_anchor);
+            }
             // ACK-CLOCKED WINDOW FLOW CONTROL. Emit coded symbols up to
             //   total_coded ≤ delivered·(1+r) + W_inflight
             // where `delivered` = cumulative ack (decoded source symbols) and
@@ -3927,7 +4034,12 @@ async fn run_window_sender(
             // loop — which is ack-clock-INDEPENDENT — always funds the frontier
             // hole. `RWM_CODED_SRC` still offers the sent-frontier clock as an
             // opt-in for experiments.
-            let target = if coded_src_clock {
+            // Fix 3: under OOO retention the cumulative ack is stalled on a hole
+            // while the send frontier runs far ahead, so clock the proactive
+            // budget on the SENT frontier (like RWM_CODED_SRC) — else coded
+            // emission would freeze at the stalled ack and the fresh generations
+            // would never be provisioned.
+            let target = if coded_src_clock || ooo_retain {
                 let (_, wend) = encoder.window_span();
                 (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
             } else {
@@ -3954,13 +4066,25 @@ async fn run_window_sender(
                     gen_rate_sample_ack = ack_now;
                 }
             }
-            let eff_rate = (gen_rate_ewma * 1.5).clamp(gen_rate_floor, gen_rate);
+            // Fix 1: under CC-rate pacing the coded bucket shares the source's
+            // small headroom (the 1.5× overshoot itself overruns the datagram
+            // path — 50% more coded than the receiver can decode builds a queue
+            // that bursts-drops). Legacy 1.5× kept when cc_pace is off.
+            let eff_factor = if cc_pace { cc_pace_headroom } else { 1.5 };
+            // Fix 1: under cc_pace clock coded emission on the same frontier-
+            // independent CC rate (max with the goodput EWMA) so a stalled
+            // in-order ack does not starve coded emission below the link.
+            let eff_base = if cc_pace { gen_rate_ewma.max(cc_rate_cached) } else { gen_rate_ewma };
+            let eff_rate = (eff_base * eff_factor).clamp(gen_rate_floor, gen_rate);
             diag_eff_rate = eff_rate;
-            // Refill the pacing token bucket (capped at a small burst).
+            // Refill the pacing token bucket (capped at a small burst). Under
+            // cc_pace the cap is ≈ a few ms of link rate (not 64) so a caught-up
+            // bucket can't release a large coded burst onto the datagram path.
             let tok_dt = now.saturating_sub(gen_tok_last_us);
             gen_tok_last_us = now;
-            gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(64.0);
-            let burst_cap = 256u32;
+            let gen_tok_cap = if cc_pace { (eff_rate * 0.004).clamp(8.0, 64.0) } else { 64.0 };
+            gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(gen_tok_cap);
+            let burst_cap = if cc_pace { 64u32 } else { 256u32 };
             let mut emitted = 0u32;
             while (gen_coded_total as f64) < target
                 && emitted < burst_cap
@@ -4021,16 +4145,23 @@ async fn run_window_sender(
                 let rec_burst = 256u32;
                 let mut rec_emitted = 0u32;
                 'recover: loop {
-                    if gen_tokens < 1.0 || rec_emitted >= rec_burst {
+                    // Fix 2: reactive stops at the shared link budget (gen_tokens)
+                    // and — when enabled — is NON-EXEMPT from the in-flight cap
+                    // (cwnd_full), so it cannot burst the pipe past congestion
+                    // control the way the old exempt loop did.
+                    if gen_tokens < 1.0 || rec_emitted >= rec_burst
+                        || (react_cap_on && cwnd_full) {
                         break;
                     }
+                    let now_r = now_us();
                     let anchors: Vec<u64> = gen_want.keys().copied().collect();
                     if anchors.is_empty() {
                         break;
                     }
                     let mut progressed = false;
                     for a in anchors {
-                        if gen_tokens < 1.0 || rec_emitted >= rec_burst {
+                        if gen_tokens < 1.0 || rec_emitted >= rec_burst
+                            || (react_cap_on && cwnd_full) {
                             break 'recover;
                         }
                         let want = gen_want.get(&a).copied().unwrap_or(0);
@@ -4056,6 +4187,11 @@ async fn run_window_sender(
                             gen_want.insert(a, nw);
                         }
                         gen_tokens -= 1.0;
+                        if react_cap_on {
+                            // Stamp this generation's recovery time so the spacing
+                            // check above holds off further recovery for ~1 SRTT.
+                            gen_recover_at.insert(a, now_r);
+                        }
                         rec_emitted += 1;
                         progressed = true;
 
@@ -4107,6 +4243,41 @@ async fn run_window_sender(
             last_tx_paused = tx_paused;
         }
 
+        // Fix 1: refill the source-pacing token bucket at the measured link
+        // rate (delivered-goodput EWMA × headroom, clamped to the same
+        // [floor, ceiling] as the coded bucket). The SMALL burst cap (≈ a few
+        // ms of link rate, NOT the BDP) is what kills the datagram burst-
+        // overrun: at high RTT the flow window is BDP-sized, but emission is now
+        // metered to the link so no BDP-sized burst reaches the droppable path.
+        if cc_pace {
+            let now = now_us();
+            // Refresh the Copa cwnd/SRTT rate estimate (frontier-independent) at
+            // most every 5 ms.
+            if now.saturating_sub(cc_rate_refresh_us) >= 5_000 {
+                cc_rate_refresh_us = now;
+                let (cw, srtt_s) = {
+                    let sched = scheduler.lock();
+                    let mut cw = 0.0f64;
+                    let mut srtt = 0.0f64;
+                    for id in sched.active_paths() {
+                        if let Some(p) = sched.path(id) {
+                            cw += p.cwnd as f64;
+                            srtt = srtt.max(p.srtt().as_secs_f64());
+                        }
+                    }
+                    (cw, srtt)
+                };
+                cc_rate_cached = if srtt_s > 1e-4 { cw / srtt_s } else { 0.0 };
+            }
+            // Pace at the HIGHER of the CC rate and the delivered-goodput EWMA so
+            // a stalled in-order frontier (EWMA→0) can't throttle the source ramp.
+            let link_est = gen_rate_ewma.max(cc_rate_cached);
+            let src_rate = (link_est * cc_pace_headroom).clamp(gen_rate_floor, gen_rate);
+            let dt = now.saturating_sub(src_tok_last_us);
+            src_tok_last_us = now;
+            let burst = (src_rate * 0.004).clamp(8.0, 64.0);
+            src_tokens = (src_tokens + src_rate * (dt as f64 / 1_000_000.0)).min(burst);
+        }
         // P10b: gap reports must wake this loop even when the TUN is idle.
         // The inner TCP stalls exactly when a hole blocks delivery — no new
         // TUN packets — and the old structure only drained the NACK channel
@@ -4147,7 +4318,12 @@ async fn run_window_sender(
             // at ack timescale to observe store drain via the ack path
             // below (mirrors the block sender's 1 ms backpressure poll).
             _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => None,
-            p = tun.read_packet(), if !tx_paused => Some(p),
+            // Fix 1: pacing wake — when source sends are paced-off (bucket
+            // empty), wake at 1 ms to refill it. Without this the select could
+            // block in read_packet with the pacing gate closed and stall intake.
+            _ = tokio::time::sleep(Duration::from_millis(1)),
+                if cc_pace && !tx_paused && src_tokens < 1.0 => None,
+            p = tun.read_packet(), if !tx_paused && (!cc_pace || src_tokens >= 1.0) => Some(p),
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
             // run the paced coded-emission block even when no TUN packet is ready
             // (the tail — all sources read but the last generations still need
@@ -4177,7 +4353,37 @@ async fn run_window_sender(
                     if no_reactive {
                         let _ = dv;
                     } else {
+                    // Fix 2: RTT-spacing gate. Reports arrive on EVERY decode
+                    // progress (sub-RTT), each resetting the in-flight baseline —
+                    // so the in-flight subtraction shrinks to "sent since the last
+                    // (recent) report" and the sender re-sends ~the full deficit
+                    // every few ms → the measured 60k–252k reactive flood. Gate at
+                    // the report: a generation recovered < react_space_us ago is
+                    // SKIPPED (its recovery is still in flight, not yet reflected),
+                    // so we act on its deficit at most once per ~SRTT. Absent this
+                    // window the baseline logic alone cannot bound a sub-RTT report
+                    // stream. react_space_us = react_cap_cfg × SRTT (1.0 = 1 SRTT).
+                    let react_space_us: u64 = if react_cap_on {
+                        let srtt_us = {
+                            let sched = scheduler.lock();
+                            sched.active_paths().iter()
+                                .filter_map(|id| sched.path(*id).map(|p| p.srtt().as_micros() as u64))
+                                .max().unwrap_or(50_000)
+                        };
+                        ((srtt_us as f64) * react_cap_cfg).max(1_000.0) as u64
+                    } else {
+                        0
+                    };
+                    let now_d = now_us();
                     for (anchor, deficit) in dv {
+                        // Fix 2: hold off if we recovered this generation recently.
+                        if react_cap_on {
+                            if let Some(&last) = gen_recover_at.get(&anchor) {
+                                if now_d.saturating_sub(last) < react_space_us {
+                                    continue;
+                                }
+                            }
+                        }
                         let emitted = gen_emitted.get(&anchor).copied().unwrap_or(0);
                         // In-flight = coded emitted for this generation that the
                         // receiver's CURRENT deficit does not yet reflect (sent
@@ -4583,6 +4789,7 @@ async fn run_window_sender(
                 gen_want.retain(|&a, _| a >= win_start);
                 gen_emitted.retain(|&a, _| a >= win_start);
                 gen_emitted_at_report.retain(|&a, _| a >= win_start);
+                gen_recover_at.retain(|&a, _| a >= win_start);
             } else {
                 let keep_behind = derived_window
                     .map(|w| w.clamp(16, win_cap))

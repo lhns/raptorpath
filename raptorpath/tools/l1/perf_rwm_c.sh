@@ -43,6 +43,12 @@ TENV=""
 [[ -n "${RWM_DIAG:-}" ]] && TENV="$TENV RWM_DIAG=$RWM_DIAG"
 [[ -n "${RWM_PFRAC:-}" ]] && TENV="$TENV RWM_PFRAC=$RWM_PFRAC"
 [[ -n "${RWM_TRACE:-}" ]] && TENV="$TENV RWM_TRACE=$RWM_TRACE"
+# Transport-substrate fixes (feat/transport-substrate): CC-rate source pacing
+# (Fix 1), bounded reactive under CC (Fix 2), OOO retention decouple (Fix 3).
+[[ -n "${RWM_CC_PACE:-}" ]] && TENV="$TENV RWM_CC_PACE=$RWM_CC_PACE"
+[[ -n "${RWM_CC_PACE_HR:-}" ]] && TENV="$TENV RWM_CC_PACE_HR=$RWM_CC_PACE_HR"
+[[ -n "${RWM_REACT_CAP:-}" ]] && TENV="$TENV RWM_REACT_CAP=$RWM_REACT_CAP"
+[[ -n "${RWM_OOO_RETAIN:-}" ]] && TENV="$TENV RWM_OOO_RETAIN=$RWM_OOO_RETAIN"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

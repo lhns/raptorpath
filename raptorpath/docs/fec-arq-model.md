@@ -2617,6 +2617,22 @@ mid-transfer path outage) — ties are the win condition there.
 
 ## 12. Congestion Control Integration
 
+> **Amendment (measured, `feat/transport-substrate`): pace FEC emission — source
+> AND repair — at the CC rate, and put reactive recovery UNDER the CC.** The
+> window/generation FEC sender originally emitted the systematic SOURCE unpaced
+> (gated by a BDP-sized window, not a rate) and ran the reactive deficit loop
+> EXEMPT from the congestion cap. At high RTT this burst-overran the droppable
+> datagram path and let reactive recovery run away (measured `recovery_coded`
+> 90 k–252 k for a ~5 k-symbol object). The fix routes source + proactive + reactive
+> through a token bucket paced at **max(Copa cwnd/SRTT, delivered-goodput EWMA)** —
+> the cwnd/SRTT term is essential because the goodput EWMA is clocked on the
+> in-order ack, which stalls to 0 on any hole and would pin the pace at the
+> bootstrap floor — and bounds reactive to one deficit-batch per SRTT per
+> generation, non-exempt from the in-flight cap. This eliminates the runaway/DNF
+> and stabilizes throughput (see §14.7 "Transport-substrate correction" and
+> goal-gate "Transport Substrate Fix"). Note it does NOT by itself make FEC beat
+> ARQ at high RTT — a receiver-side frontier-serialized reactive tail remains.
+
 ### 12.1 Why Delay-Based CC is Required
 
 On lossy links (WiFi, LTE, satellite), loss-based CC (NewReno, CUBIC) is
@@ -3688,6 +3704,31 @@ does not convert to a throughput win on a reliable bulk transfer at high RTT on 
 droppable-datagram transport substrate. The analytic §14.7 crossover holds only as a
 per-hole LATENCY statement; it is not a reliable-throughput crossover in EITHER the
 frontier or the fungible realization. See goal-gate "Proactive FEC vs ARQ (high RTT)".
+
+**Transport-substrate correction (measured, branch `feat/transport-substrate`).**
+Mechanisms (i), (ii), (iv) above are TRANSPORT defects below the FEC layer, and all
+three were subsequently FIXED and measured: (i) CC-rate pacing of the source+repair
+(token bucket at max(Copa cwnd/SRTT, delivered-goodput EWMA), no BDP-sized burst)
+removes the datagram burst-overrun; (ii) per-generation RTT-spacing ("send the
+deficit, wait ~SRTT, re-evaluate") + a non-exempt congestion cap ELIMINATES the
+reactive runaway — measured `recovery_coded` **90 118 → 436** for a ~5 k-symbol
+object (207×) and removes the DNF, restoring `proactive_fraction` **0.042 → 0.90**;
+(iv) a coding floor (`code_base`) decoupled from the in-order retention floor lets
+proactive coding follow the send frontier while a stalled generation is left to the
+bounded reactive tail, collapsing the run-to-run variance (stdev **7.2 s → 0.6 s**).
+Together these lift **FEC/ARQ from 0.55 to ≈0.85 at RTT 200** (and hold 0.76–0.86
+across RTT 50/100/200) — up, DNF-free, and tighter — **but STILL do not cross 1.0.**
+The residual is a FOURTH, receiver-side constraint the three sender fixes do not
+touch: at RTT 200 both ARQ and FEC sit at ~1 % of link (a shared LATENCY-bound
+regime), and the reliable transfer's last-ε recovery is a reactive tail that the
+receiver serializes FRONTIER-FIRST (deficit reports cover only frontier ±
+`MAX_REPORTED_GENS`), each round costing an inflated RTT — so the last few DoF cost
+as much as ARQ's per-loss round-trip. Raising the proactive `r` (0.2→1.0) does not
+help (proactive fraction was already 0.90; the tail is round-trip-bound at the
+receiver, not coverage-bound at the sender). **Verdict: the isolated §14.7 crossover
+does not appear for reliable bulk transfer even after the three transport fixes; the
+remaining blocker is a receiver-side frontier-serialized reactive tail + the shared
+latency-bound regime.** See goal-gate "Transport Substrate Fix".
 
 ### 14.8 Per-Symbol Recovery Probability Function
 
