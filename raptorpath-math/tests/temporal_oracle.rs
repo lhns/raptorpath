@@ -1253,6 +1253,78 @@ fn fmtcp_flow_control_lever_isolated() {
         "in-order FC must idle the sender more than total-in-flight FC: {} vs {}", in_o.idle_slots, to_i.idle_slots);
 }
 
+// -------------------------------------------------------------------------
+// PART 5c — PRODUCTION-PARAM CONFIRM (the exact params the feat/fmtcp-aggregation
+//   build ships).  Before the L1 run the task requires confirming that the
+//   CHOSEN production parameters — NOT just the design's r=0.06 — still reach
+//   ~×1.19 with 0 idle slots and a bounded in-flight ≈ aggregate BDP.  The
+//   production build ships:
+//     * ε (RWM_GEN_R) = 0.10   — ~2× the model minimum (r≥0.05 reaches the
+//       ceiling in Q4; r<0.05 DNFs).  The margin covers the real-trace finding
+//       that GE under-provisions bursty loss 2–4× (design §5 risk item).
+//     * block/generation G (RWM_GEN) = 384 source symbols (stable anchor).
+//     * per-path in-flight cap: each path i capped at (gain·)BtlBw_i·RTprop_i,
+//       enforced PER PATH — the #64 fix (the summed-anchor bug over-drove the
+//       slow path because one GLOBAL 2×Σ-BDP budget was spendable on any path;
+//       per-path enforcement bounds each queue independently).  The aggregate
+//       operating in-flight then emerges near Σ_i BtlBw_i·RTprop_i.
+//     * one deficit-feedback per RTT (fb_ms = fast-path RTT ≈ 2·OWD_fast = 10ms).
+//   MODELLING NOTE.  The Sys model's `store` is a single GLOBAL outstanding cap
+//   (it cannot express per-path caps), so this test uses store=Some(w_span) —
+//   the loose fungibility/retention horizon that production provides as
+//   win_cap = ooo_gens·G — and CONFIRMS THE EMERGENT in-flight sits near the
+//   aggregate BDP (145), NOT the whole object, with the sender never idled.
+//   The tight per-path BDP cap is the production RWM_INFL_BDP enforcement; the
+//   oracle already showed (PART 5) that pinning the GLOBAL store to the bare
+//   aggregate BDP (145) STARVES the recovery headroom and collapses to 0.93×,
+//   so production must give the per-path cap ~1.5× headroom over the windowed-
+//   max (under-estimating) anchor — hence gain≈1.5, enforced per path.
+// -------------------------------------------------------------------------
+#[test]
+fn fmtcp_production_params_confirm() {
+    let k = k_for_mb(25.0);
+    let w = c8_wspan();
+    let bdp = c8_agg_bdp();
+    let dual = [c8_fast(), c8_slow()];
+    let ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+    // one feedback per RTT: fast-path RTT = 2·OWD_fast = 10 ms.
+    let rtt_fb = (2 * c8_fast().owd) as u64;
+
+    println!("\n=== PART 5c: PRODUCTION-PARAM CONFIRM (r=0.10, G=384, agg BDP={bdp}, fb=1·RTT={rtt_fb}ms) ===");
+    println!("goodput ceiling Σg/g_fast = x{ceiling:.3}\n");
+
+    // The PURE FMTCP config (total-in-flight FC + fungible fountain, NO ARQ) at
+    // the SHIPPED params: r=0.10, loose retention horizon (= production win_cap),
+    // one deficit-feedback per RTT.
+    let cfg = SysCfg {
+        r: 0.10, w_span: w, cross_path: true, store: Some(w), arq: false,
+        in_order: false, fb_ms: rtt_fb,
+    };
+    let (fa, du, f) = sys_factor(&dual, k, cfg, 0xF00D);
+
+    println!("  {:<40} {:>8} {:>8} {:>8} {:>8}", "config", "factor", "arq", "idle", "maxOut");
+    println!("  {:<40} {:>7.3}x {:>8} {:>8} {:>8}",
+        "PROD FMTCP (r=0.10, 1·RTT fb)", f, du.arq_used, du.idle_slots, du.max_outstanding);
+    println!("  fast-alone t={} dual t={}  phi_total={:.4}  emergent in-flight {} vs agg BDP {bdp}",
+        fa.t, du.t, du.repair_sent as f64 / k as f64, du.max_outstanding);
+
+    // reaches the ceiling with the shipped params …
+    assert!(f > 1.15, "PROD FMTCP params must reach ~×1.19 at C8: x{f:.3}");
+    assert!(f <= ceiling + 0.03, "cannot exceed the goodput ceiling x{ceiling:.3}: x{f:.3}");
+    // … with NO per-hole ARQ (fungible fountain absorbs the loss) …
+    assert_eq!(du.arq_used, 0, "PROD FMTCP uses NO per-hole ARQ — fountain redundancy only");
+    // … 0 idle sender slots (total-in-flight FC never stalls the sender) …
+    assert_eq!(du.idle_slots, 0, "PROD FMTCP must not idle the sender: {} idle slots", du.idle_slots);
+    // … and the EMERGENT in-flight sits near the aggregate BDP (no #64 bloat):
+    //     within ~1.5× the bare aggregate BDP, and ≪ the whole object.
+    assert!(du.max_outstanding <= (bdp as f64 * 1.5) as usize,
+        "emergent in-flight must sit near the aggregate BDP ({bdp}, ≤1.5×): {}", du.max_outstanding);
+    assert!(du.max_outstanding < k / 10,
+        "in-flight must be ≈BDP, not the whole object: {} of K={k}", du.max_outstanding);
+    println!("\n  CONFIRMED: shipped production params reach x{f:.3} (ceiling x{ceiling:.3}),");
+    println!("  0 ARQ, 0 idle slots, emergent in-flight {} ≈ aggregate BDP {bdp} (no #64 bufferbloat).", du.max_outstanding);
+}
+
 // =========================================================================
 // PART 4 — UNIFIED DEADLINE-CONSTRAINED r*  (paper §8.8).
 //
