@@ -354,6 +354,56 @@ impl WindowEncoder for GenerationEncoder {
         Some(self.code_generation(g))
     }
 
+    /// Interspersed trailing-window repair (goal-gate "Repair In-Flight"). Code
+    /// ONE coded symbol over the ARBITRARY seq range `[start, start+count)` — a
+    /// small trailing BLOCK of already-sent source, distinct from (and smaller
+    /// than) the fixed generation. Unlike `generate_repair` (which round-robins
+    /// SEALED generations, so a generation's repair only flows AFTER all G of its
+    /// sources are sent → arrives ~1 generation-span behind), this codes over a
+    /// block whose members were ALL just sent, so the covering repair arrives
+    /// ~immediately after the hole it covers — present when the receiver detects
+    /// the hole → proactive decode, no reactive round-trip. The wire header
+    /// carries `(start, count, coded_index)`, so the dense decoder solves it in a
+    /// `(start,count)` matrix exactly like a generation of that span (with the raw
+    /// sources injected as unit pivots). Returns `None` unless the FULL range is
+    /// retained — a missing source would make the coded equation inconsistent with
+    /// the receiver's regenerated coefficients.
+    fn generate_repair_range(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
+        if count == 0 {
+            return None;
+        }
+        let width = count as u64;
+        for seq in start..start + width {
+            if !self.sources.contains_key(&seq) {
+                return None;
+            }
+        }
+        let symbol_size = self.symbol_size as usize;
+        let coded_index = self.coded_index;
+        self.coded_index += 1;
+
+        let coeffs = generate_window_coefficients(start, count, coded_index);
+        let mut coded = vec![0u8; symbol_size];
+        for i in 0..width {
+            let src = self.sources.get(&(start + i)).expect("range checked present");
+            gf256::mul_acc_slice(coeffs[i as usize], src, &mut coded);
+        }
+
+        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
+        wire_data.extend_from_slice(&start.to_le_bytes());
+        wire_data.extend_from_slice(&count.to_le_bytes());
+        wire_data.extend_from_slice(&coded_index.to_le_bytes());
+        wire_data.extend_from_slice(&coded);
+
+        Some(WireSymbol {
+            block_id: start + width - 1,
+            payload_id: coded_index,
+            is_repair: true,
+            data: wire_data,
+            backend: FecBackend::Rlc,
+        })
+    }
+
     fn window_span(&self) -> (u64, u64) {
         match (self.sources.keys().next(), self.sources.keys().next_back()) {
             (Some(&s), Some(&e)) => (s, e),
@@ -680,6 +730,37 @@ impl GenerationDecoder {
         }
         out
     }
+
+    /// Transitively propagate just-delivered sources into EVERY other active
+    /// generation matrix, returning all sources delivered along the way.
+    ///
+    /// WHY (goal-gate "Repair In-Flight"). Two coding grids now coexist: the small
+    /// inline trailing-BLOCK (width W, the in-flight proactive channel) and the
+    /// wide GENERATION (width G, the reactive deficit loop's unit). A hole
+    /// recovered by a block repair lands in `recovered`, but the covering G-matrix
+    /// (created later, by a deficit repair) is only pre-loaded with `recovered`
+    /// AT CREATION and never after — so a hole recovered by the block AFTER the
+    /// G-matrix exists stays an unknown in it, `rank_in(G)` under-counts, the
+    /// receiver OVER-reports the generation's deficit, and the sender FLOODS
+    /// redundant reactive repair (MEASURED recovery_coded 30k→94k, pfrac
+    /// collapse). Feeding each block-recovered hole into the G-matrix (as a unit
+    /// pivot) keeps every matrix's rank consistent, so the deficit reflects the
+    /// true residual and the reactive flood is eliminated. A worklist handles the
+    /// transitive case (a G-matrix a block completion finishes delivers its own
+    /// holes, propagated in turn); each seq is delivered at most once (guarded by
+    /// `recovered`), so it terminates.
+    fn propagate(&mut self, initial: Vec<(u64, Bytes)>) -> Vec<(u64, Bytes)> {
+        let mut all: Vec<(u64, Bytes)> = Vec::new();
+        let mut queue: std::collections::VecDeque<(u64, Bytes)> = initial.into_iter().collect();
+        while let Some((seq, data)) = queue.pop_front() {
+            let more = self.inject_source_into_active_gens(seq, &data);
+            all.push((seq, data));
+            for m in more {
+                queue.push_back(m);
+            }
+        }
+        all
+    }
 }
 
 /// Recover a fused row's `width` (coefficient count) given the payload size.
@@ -731,7 +812,8 @@ impl WindowDecoder for GenerationDecoder {
             // (the proactive-FEC-dead bug). Inject now; if it completes a
             // generation, deliver that generation's remaining holes too.
             let mut out = vec![(seq, Bytes::from(data.clone()))];
-            out.extend(self.inject_source_into_active_gens(seq, &data));
+            let delivered = self.inject_source_into_active_gens(seq, &data);
+            out.extend(self.propagate(delivered));
             return out;
         }
 
@@ -763,7 +845,11 @@ impl WindowDecoder for GenerationDecoder {
         if added_rank {
             self.repairs_useful += 1;
         }
-        recovered
+        // Propagate any recovered holes into the OTHER coding grid's matrices
+        // (block ↔ generation) so every matrix's rank is consistent and the
+        // reactive deficit does not over-report holes the inline block already
+        // recovered — see `propagate`.
+        self.propagate(recovered)
     }
 
     fn advance(&mut self, oldest_seq: u64) {
@@ -796,6 +882,43 @@ impl WindowDecoder for GenerationDecoder {
                 self.recovered.range(start..end).count() as u64
             }
         }
+    }
+
+    fn frontier_probe(&self, frontier: u64, horizon: u64) -> (u64, u64) {
+        // Proactive-frontier diagnosis (RWM_FDIAG, `present_at_stall`). Span is
+        // contiguous in seq space, so holes = span_len − recovered_in_span.
+        // `buffered` = coded degrees of freedom already covering the span: pivot
+        // rows in any Solving matrix whose pivot column maps to a seq in the span
+        // that is NOT yet a recovered source. After the raw sources are injected
+        // as unit pivots, a coded equation reduces to a pivot at the FIRST free
+        // (hole) column — so a pivot at a hole column is a coded DoF that has
+        // advanced into hole territory and will complete the hole once enough
+        // accumulate. `buffered > 0` at a stall ⇒ proactive repair is PRESENT and
+        // the hole will decode without a reactive round-trip (the in-flight win).
+        let end = horizon.saturating_add(1);
+        if end <= frontier {
+            return (0, 0);
+        }
+        let span = end - frontier;
+        let recovered = self.recovered.range(frontier..end).count() as u64;
+        let holes = span.saturating_sub(recovered);
+        let mut buffered = 0u64;
+        for (&(anchor, width), slot) in &self.gens {
+            if let GenSlot::Solving { pivots, .. } = slot {
+                if anchor >= end || anchor + width as u64 <= frontier {
+                    continue; // matrix does not overlap the probe span
+                }
+                for (c, p) in pivots.iter().enumerate() {
+                    if p.is_some() {
+                        let seq = anchor + c as u64;
+                        if seq >= frontier && seq < end && !self.recovered.contains_key(&seq) {
+                            buffered += 1;
+                        }
+                    }
+                }
+            }
+        }
+        (holes, buffered)
     }
 
     fn total_fed(&self) -> u64 {
@@ -1282,6 +1405,113 @@ mod tests {
         // The coding floor never trails the retention floor.
         enc.advance(45); // retention floor → gen 4
         assert!(enc.code_base >= enc.base_gen, "code_base must not trail base_gen");
+    }
+
+    /// "Repair In-Flight" (goal-gate): interspersed trailing-window repair is
+    /// PRESENT when a hole is detected, so the hole decodes PROACTIVELY — no
+    /// reactive deficit round-trip. Mirrors the sender's inline emission: the
+    /// source rides the wire raw (all but one hole delivered), and a repair coded
+    /// over the trailing block `[anchor, anchor+W)` via `generate_repair_range`
+    /// arrives right after → the covering equation is BUFFERED at the stall
+    /// (`frontier_probe` buffered > 0) and the single repair completes the hole.
+    #[test]
+    fn interspersed_block_repair_present_at_hole_decodes_proactively() {
+        let symbol_size = 64u16;
+        let g = 384usize; // production generation
+        let w = 64u64; // inline trailing-block width
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, 2, 0.15);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        // Fill one generation's worth of source; capture the raw systematic
+        // symbols (what rides the wire as primary).
+        let sources: Vec<WireSymbol> = (0..g as u64).map(|seq| enc.add_source(&payload(seq))).collect();
+
+        // The hole: one source lost inside the first trailing block [0, W).
+        let hole = 21u64;
+        assert!(hole < w);
+
+        // Deliver every source of the block EXCEPT the hole (raw, zero decode).
+        let mut delivered: BTreeSet<u64> = BTreeSet::new();
+        for s in sources.iter().take(w as usize) {
+            if s.block_id == hole {
+                continue; // lost on the wire
+            }
+            for (seq, _) in dec.add_symbol(s) {
+                delivered.insert(seq);
+            }
+        }
+        assert!(!delivered.contains(&hole), "hole not yet recovered");
+
+        // The interspersed repair covering the block arrives. BEFORE feeding it,
+        // the block matrix does not yet exist (no repair seen) so nothing is
+        // buffered; feeding the FIRST repair creates the (0,W) matrix, injects the
+        // W−1 already-received sources as unit pivots, and — being the single
+        // missing DoF — completes the hole PROACTIVELY on arrival.
+        let repair = enc
+            .generate_repair_range(0, w as u16)
+            .expect("trailing block fully retained");
+        assert!(repair.is_repair);
+        assert_eq!(u64::from_le_bytes(repair.data[0..8].try_into().unwrap()), 0);
+        assert_eq!(u16::from_le_bytes(repair.data[8..10].try_into().unwrap()) as u64, w);
+
+        let out = dec.add_symbol(&repair);
+        let recovered: BTreeSet<u64> = out.iter().map(|(s, _)| *s).collect();
+        assert!(recovered.contains(&hole), "hole decoded PROACTIVELY from the block repair");
+        for (seq, data) in &out {
+            assert_eq!(&data[..48], payload(*seq).as_slice(), "byte-exact proactive recovery");
+        }
+
+        // The recovery was proactive: exactly ONE coded symbol (== the one hole),
+        // NOT a whole-generation re-solve and NOT a per-seq source retransmit.
+        assert_eq!(recovered.len(), 1, "one repair recovered exactly the one hole");
+
+        // And it needed no reactive round-trip: the block's deficit is now zero,
+        // so the sender's deficit loop would emit nothing for it.
+        assert_eq!(dec.rank_in(0, w), w, "block fully solved — no residual deficit");
+    }
+
+    /// `frontier_probe` on the dense decoder reports a BUFFERED coded equation
+    /// covering the frontier hole (the `present_at_stall` signal): with the block
+    /// matrix short by two holes and only one repair fed, the decoder holds one
+    /// independent DoF whose pivot lies at a hole column — buffered == 1 — so the
+    /// receiver knows proactive repair is present and in progress (no ARQ needed
+    /// yet). This is the metric the L1 harness reads as `present_at_stall`.
+    #[test]
+    fn frontier_probe_reports_buffered_proactive_equation() {
+        let symbol_size = 64u16;
+        let g = 384usize;
+        let w = 64u64;
+        let mut enc = GenerationEncoder::new_systematic(symbol_size, g, 2, 0.15);
+        let mut dec = GenerationDecoder::new(symbol_size);
+
+        let sources: Vec<WireSymbol> = (0..g as u64).map(|seq| enc.add_source(&payload(seq))).collect();
+        // TWO holes in the block so one repair cannot finish it (stays "stuck",
+        // holding a buffered equation exactly as at a real stall).
+        let holes = [10u64, 40u64];
+        for s in sources.iter().take(w as usize) {
+            if holes.contains(&s.block_id) {
+                continue;
+            }
+            dec.add_symbol(s);
+        }
+        // No repair yet: holes present, nothing buffered.
+        let (h0, b0) = dec.frontier_probe(0, w - 1);
+        assert_eq!(h0, 2, "two holes in the block");
+        assert_eq!(b0, 0, "no coded equation buffered before any repair");
+
+        // One block repair arrives — insufficient (two holes) so it is HELD as a
+        // buffered DoF at a hole column, not yet solving.
+        let r1 = enc.generate_repair_range(0, w as u16).expect("block retained");
+        assert!(dec.add_symbol(&r1).is_empty(), "one repair cannot finish two holes");
+        let (h1, b1) = dec.frontier_probe(0, w - 1);
+        assert_eq!(h1, 2, "still two holes");
+        assert_eq!(b1, 1, "one PROACTIVE equation buffered at a hole column (present_at_stall)");
+
+        // The second repair completes both holes proactively.
+        let r2 = enc.generate_repair_range(0, w as u16).expect("block retained");
+        let out = dec.add_symbol(&r2);
+        let rec: BTreeSet<u64> = out.iter().map(|(s, _)| *s).collect();
+        assert!(rec.contains(&10) && rec.contains(&40), "both holes recovered proactively");
     }
 
     // -----------------------------------------------------------------------

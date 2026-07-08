@@ -5027,6 +5027,46 @@ sources — not a decoder or a rate (`r`) one: raising `r` post-fix LOWERS
 throughput (extra coded congests the droppable datagram path), confirming the
 bottleneck is delivery timing, not coding quantity.
 
+### 14.32 The ARQ over-request: the reactive deficit must be requested once per RTT, not once per report
+
+The §14.31 residual was re-examined at L1 (2026-07-08) and partly RE-ATTRIBUTED.
+Two corrections. First, the instrument: the receiver-side `present_at_stall`
+probe — the count of frontier holes with a proactive repair already buffered —
+was reading the *default* `(0,0)` for the dense generation decoder (it never
+implemented the probe), so "proactive repair is never present" was in part a
+measurement artifact. With a real probe, `present_at_stall` is nonzero and rises
+as the generation size G shrinks (repair for a smaller generation flows sooner).
+
+Second, and materially: the dominant loss at high loss/RTT was NOT the proactive
+repair arriving late but the REACTIVE ARQ being OVER-REQUESTED. The deficit
+`d_g = K_g − rank(g)` is honest (rank counts buffered repair), but the receiver
+re-reports it on every sub-RTT decode-progress event, and the sender's in-flight
+subtraction resets each report, so the sender re-emits ~the full deficit faster
+than a round-trip can reflect the symbols already sent. This is a control-loop
+instability, not a coding one: the request rate exceeds the feedback rate. The
+model correction is a request-side stability condition — a generation's deficit
+may be acted upon at most once per RTT (the time for its recovery symbols to
+arrive and be reflected in the next report), with a brief coalescing window so
+in-flight/just-arrived repair shrinks the request before it fires:
+
+  request_g(t) = max(0, d_g(t) − in_flight_g),   acted on at most once per SRTT.
+
+MEASURED (c2r100l10, systematic single path): unbounded, `recovery_coded` = 30 703
+for a 6 k-symbol object (≈5 ARQ/source), throughput 0.32 Mbit/s; bounded to the
+once-per-SRTT honest deficit, `recovery_coded` = 437, throughput 0.913 Mbit/s
+against a pure-ARQ 0.919 — i.e. FEC/ARQ 0.35→0.99, from round-trip-flood to
+PARITY. Because FEC's advantage over ARQ (Section 14.7) is realized only when
+recovery is NOT round-trip-bound, an unbounded reactive request erases the entire
+FEC premium: the arm was paying ARQ round-trips AND FEC overhead. A decisive
+FEC>ARQ crossover additionally requires `present_at_stall` to dominate (proactive
+present for nearly all holes); with the request bounded, a smaller G lifts it
+(present_at_stall 1→16) and yields a slight 1.04× edge at RTT200/10 %, but not
+dominance — that remains open. The interspersed trailing-window repair proposed to
+force in-flight presence is refuted at the transport layer for two structural
+reasons (it cannot emit during a send stall; and a repair window narrower than the
+generation forms a disjoint linear system that cannot combine with the reactive
+generation repair), leaving smaller-G proactive as the only fungible lever.
+
 ---
 
 ## 15. The Unified Sliding-Window Model (Blocks and Streams as Two Knobs)

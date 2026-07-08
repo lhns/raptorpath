@@ -3442,6 +3442,44 @@ async fn run_window_sender(
         && !generation
         && !coded_only;
     let mut frontier_debt: f64 = 0.0;
+    // ── Interspersed trailing-window repair (RWM_INLINE_REPAIR) — REFUTED ─────
+    // GOAL: emit the systematic proactive repair INTERSPERSED with the source (at
+    // the source rate, coded over a small trailing BLOCK of width `inline_w` of
+    // already-sent source) so the covering repair arrives within ~1 block — not
+    // ~1 generation-span — and is PRESENT when the receiver detects the hole →
+    // proactive decode, no round-trip. The decode mechanism WORKS in isolation
+    // (see `generate_repair_range` + the generation.rs unit tests: a block repair
+    // present at a hole decodes it proactively, and `frontier_probe` reports it
+    // buffered). But at L1 (goal-gate "Repair In-Flight") the TRANSPORT-level
+    // emission is REFUTED for TWO structural reasons:
+    //   (1) STALL-STARVED. It emits from the source-send path, so during
+    //       backpressure / frontier-stall — exactly when the covering repair is
+    //       most needed — NO source is sent and NO repair is emitted. The batched
+    //       proactive block runs every loop iteration (incl. tx_paused wakeups)
+    //       and does not have this defect.
+    //   (2) CROSS-GRID STRANDING. For W < G the block (width W) and generation
+    //       (width G) repairs create SEPARATE Gaussian matrices, so a buffered
+    //       block equation cannot combine with reactive generation repair — the
+    //       fungible joint-solve is broken (MEASURED probe_buffered rising while
+    //       the frontier wedges, gap 900–1100). Unifying the grid (W = G) removes
+    //       the stranding but reduces to "small G" (which the batched path already
+    //       does, non-stalling). MEASURED: every inline config wedged or crawled;
+    //       the fungible small-G batched path reached parity, inline did not.
+    // Kept env-gated + default-OFF as a documented negative result (like
+    // RWM_FRONTIER). The effective levers for the same goal are (a) BOUNDING the
+    // reactive ARQ over-request (RWM_REACT_CAP + RWM_REPAIR_WAIT — the decisive
+    // win: recovery_coded 30k→437, FEC 0.32→0.913 = parity) and (b) a SMALLER G
+    // (raises present_at_stall 1→16 via the non-stalling fungible batched path).
+    // RWM_INLINE_W tunes W. Systematic-repair path only; shipped path untouched.
+    let inline_repair = systematic && std::env::var("RWM_INLINE_REPAIR").is_ok();
+    let inline_w: u64 = std::env::var("RWM_INLINE_W")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&w| w >= 2)
+        .unwrap_or(64);
+    // Sub-symbol repair debt: accrue `r` per source, emit one block repair per
+    // whole unit — spreads ceil(W·r) repairs across the block, same total r.
+    let mut inline_debt: f64 = 0.0;
     // Dedicated repair-index namespace for frontier repairs. Started high so it
     // never collides with the encoder's own `repair_counter` for a coincident
     // (block_id,payload_id) at the receiver's dedup set.
@@ -3599,6 +3637,59 @@ async fn run_window_sender(
                 // token bucket (the TUN-read gate refills + admits it).
                 if cc_pace {
                     src_tokens -= 1.0;
+                }
+            }
+
+            // ── Interspersed trailing-window repair (in-flight proactive) ──────
+            // Emit proactive repair coded over the most-recently-SEALED trailing
+            // block of width `inline_w`, paced at the loss overhead r, RIGHT HERE
+            // in the same flight as the source. So the repair covering a hole
+            // arrives within ~1 block of the hole (not a generation-span later) —
+            // present when the receiver detects the hole → proactive decode, no
+            // reactive round-trip. Same total overhead as the batched proactive
+            // path (which is disabled under this flag); only the timing changes.
+            if inline_repair {
+                let frontier = wire_sym.block_id + 1; // sources sent so far
+                let complete_blocks = frontier / inline_w;
+                if complete_blocks >= 1 {
+                    inline_debt += gen_repair_floor;
+                    // Code the block that JUST sealed and keep coding it while the
+                    // next block fills — spreads its ceil(W·r) DoF across a block
+                    // span (fungible: all repairs share the (anchor,W) matrix).
+                    let anchor = (complete_blocks - 1) * inline_w;
+                    while inline_debt >= 1.0 {
+                        inline_debt -= 1.0;
+                        let sym = match encoder.generate_repair_range(anchor, inline_w as u16) {
+                            Some(s) => s,
+                            None => break, // block not fully retained (shouldn't happen)
+                        };
+                        // Proactive (no round-trip) — counts toward the pfrac.
+                        proactive_coded_total += 1;
+                        let path = {
+                            let sched = scheduler.lock();
+                            sched.place_symbol(true, &[]).unwrap_or(0)
+                        };
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch = SymbolBatch {
+                            symbols: vec![sym],
+                            send_timestamp_us: now_us(),
+                            batch_seq,
+                            path_id: path,
+                        };
+                        if let Err(e) = transport.send_symbols(path, batch) {
+                            warn!(path, ?e, "failed to send inline repair symbol");
+                        }
+                        {
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(path) {
+                                p.charge_in_flight(1);
+                            }
+                        }
+                        if let Some(ps) = stats.path(path) {
+                            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                        }
+                        stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
 
@@ -4255,7 +4346,12 @@ async fn run_window_sender(
             gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(gen_tok_cap);
             let burst_cap = if cc_pace { 64u32 } else { 256u32 };
             let mut emitted = 0u32;
-            while (gen_coded_total as f64) < target
+            // Under RWM_INLINE_REPAIR the proactive budget is emitted INTERSPERSED
+            // with the source (in the send macro), not batched here — so the
+            // batched round-robin is disabled and only the reactive deficit loop
+            // below runs (the fallback for bursts the inline block missed).
+            while !inline_repair
+                && (gen_coded_total as f64) < target
                 && emitted < burst_cap
                 && gen_tokens >= 1.0
                 && !cwnd_full
