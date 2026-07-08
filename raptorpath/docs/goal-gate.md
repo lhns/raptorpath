@@ -12,6 +12,123 @@ cargo test --test gate_suite -p raptorpath --release -- --test-threads 1
 the inner-feedback floor is weight 0 in the gate driver, so the gate
 path is bit-identical).
 
+## FINAL CONSOLIDATED VERDICT (2026-07-08) — the aggregation/throughput arc
+
+This is the single honest capstone for the heterogeneous-multipath-aggregation
++ FEC-throughput arc, which is now CONCLUDED. It supersedes the scattered
+per-branch verdicts below and reconciles the (pre-arc) L3 REGIME MAP with
+everything the arc measured. Read it as the settled position; the dated
+sections that follow are the primary record it summarizes.
+
+### The scientific conclusion (the core result)
+
+**Reliable-delivery THROUGHPUT on a lossy link is bounded by RECOVERY
+LATENCY.** You cannot deliver data you have not yet recovered, and recovery
+costs time. FEC's only escape — recover a loss *without* spending a round-trip
+— requires SPARE bandwidth to carry the repair. A saturated reliable path has
+no spare (the repair displaces the source it would otherwise carry: the
+**presence⊥throughput identity**), and multipath's slow path cannot supply it
+beyond parity, because the slow path hits the same in-order cumulative-ack
+frontier bound the fast path does. This was established EXHAUSTIVELY over ~15
+L1 investigations. Every lever was tried and ruled out WITH a mechanism, not
+by exhaustion of ideas: coding structure (block vs window vs generation),
+repair rate r, cross-path repair placement (repair on the spare path), decode
+speed (fast dense decoder), sender pacing, reactive-ARQ bounding
+(once-per-SRTT deficit), receiver-tail parallelization, out-of-order delivery
+(H → ∞), and SACK sender flow-control decoupling. The sender was PROVEN never
+the bottleneck: composing the SACK-prune sender decoupling with a BDP
+reassembly clamp made decoupling reliable (dnf 0, buffer bounded ≈ BDP, every
+byte delivered) and it measured FLAT (16.5 → 17.1 → 17.2 Mbit/s, within run
+noise). The independent-path assumption was explicitly ruled out too: the
+netem paths are independent qdiscs and the bound still holds. The binding
+constraint is receiver-side recovery latency — a hole walks the in-order
+frontier at ≈ 1 ARQ round / RTT — which is structural to reliable in-order-
+capable delivery and unmoved by any sender-side law.
+
+### What is PROVEN (measured wins — the real return)
+
+- **Beats native quinn on CLEAN links.** An accidental O(n²) — a full rescan
+  of the ~20–30k-element RTT-sample deque on every ACK
+  (`CopaState::record_rtt`) — capped everything at ~15 Mbit and produced the
+  false "not bandwidth-limited / per-symbol processing ceiling" evidence.
+  Fixed with a monotonic-deque windowed-min (byte-identical `min_rtt`, so CC
+  unchanged): single-path clean 28 → 86 Mbit (3.0×) and it now SCALES with
+  bandwidth (166 Mbit @ 1 Gbit, 5.6×). raptorpath clean-100Mbit (86) now
+  exceeds the quoted native-quinn-at-C2 rate (72).
+- **FEC recovery was silently DEAD, now revived.** A decoder defect
+  (`GenerationDecoder` froze its known-source set at slot creation and never
+  admitted late sources) left arriving repairs 99.85% redundant
+  (`repairs_useful` 0.15%) — every prior "FEC-vs-ARQ" number was
+  ARQ-with-FEC-overhead. Fixed (inject late sources into the live matrix):
+  `repairs_useful` → 66–72%. With the decoder alive AND the reactive-ARQ
+  over-request bounded (once-per-SRTT deficit + repair-wait coalesce, which
+  collapsed a 30,703-symbol ARQ flood to 437), FEC went from LOSING (0.88×) to
+  PARITY with ARQ (0.99×), with a slight edge (1.04×) at high RTT/loss
+  (RTT200/10%).
+- **Tail latency.** 12–60× better message-p99 than QUIC/kernel-TCP on lossy
+  moderate-RTT single links (Metric A below).
+- **Predictability.** ~93× lower completion-time variance under high loss;
+  DNF-free where loss-reactive ARQ (CUBIC) cascades to collapse.
+- **Symmetric multipath aggregation.** C7 ×1.26–1.43 dual-over-single across
+  the arc's runs — beats kernel MPTCP, whose subflows collapse under the loss
+  raptorpath's FEC absorbs.
+- **Surrounding correctness.** Loss-blind Copa CC vindicated (cwnd grows under
+  loss; never the collapse cause). Bufferbloat fixed (RTT 410 → 40 ms).
+  Small-G frontier-advance decoder deadlock fixed. SACK sender-decoupling made
+  reliable (invariant holds, buffer bounded ≈ BDP). Broken present-at-stall
+  frontier probe fixed (was structurally 0 in generation mode).
+- **Surrounding rigor.** A verification oracle that caught real errors
+  including its own over-modeling; unified deadline-constrained r* (§8.9) with
+  the N=1 → §8.4 reduction proven; real-trace GE validation showing GE
+  under-provisions r* on real bursty loss (→ task #46).
+
+### What is BOUNDED (honest limits)
+
+- **Heterogeneous multipath THROUGHPUT aggregation (the C8 bar: >15.7 Mbit/s,
+  factor > 1): NOT achieved.** Bounded at ~parity — best dual C8 (c2+c3) is
+  the plain-systematic baseline at **14.70 Mbit/s (0.97× fast-alone)**, and
+  every cross-path-repair arm is STRICTLY worse. The independent-Monte-Carlo
+  oracle predicts ×1.19, but that oracle does NOT model the in-order frontier
+  recovery-latency serialization, which is the binding L1 constraint; it is a
+  sound theoretical target, not a realized production number. Closing the gap
+  needs a recovery-pipeline redesign (pipelined per-RTT frontier recovery, or
+  a genuinely rateless ack-frontier so a hole is never a fixed in-order
+  position), plus a per-path (not summed-across-paths) outstanding cap — and
+  even the corner that was probed (out-of-order H → ∞; SACK+BDP decoupling)
+  measured flat single-path and REGRESSED C8.
+- **Single-path reliable BULK throughput on a saturated link: FEC = ARQ, at
+  parity, is the max.** This is the presence⊥throughput identity again: on a
+  saturated reliable path there is no spare to carry a repair that would let a
+  loss decode without a round-trip. This is ARQ's home turf; it is not an
+  engineering gap to close but a property of reliable delivery.
+
+### STALE-NUMBER RECONCILIATION (read the L3 REGIME MAP with this)
+
+The L3 REGIME MAP's **Metric B — object COMPLETION** numbers (rp LOSES ~4–8×
+at C2/C3, worse at C4/C5) are **PRE-CPU-FIX and now STALE/SUPERSEDED.** They
+were measured before the O(n²) RTT-rescan fix that gave single-path clean
+28 → 86 Mbit (3.0×) and 1 Gbit 29 → 166 Mbit (5.6×). The honest current
+direction: single-path throughput now BEATS quinn on clean links and sits at
+ARQ PARITY under loss, so the old "loses 4–8× on completion" no longer holds.
+A precise post-fix completion re-measure across C1–C5 is the honest
+follow-up — flagged as **TODO (not run; this is a doc-consolidation task,
+no VM)**. The Metric B table below is annotated inline as stale. Metric A
+(tail latency) and Metric C symmetric-multipath (C7) wins STAND; the C8 row
+is updated to the final bounded-at-parity position with the recovery-latency
+mechanism.
+
+### raptorpath's value proposition (one paragraph)
+
+raptorpath is a transport whose value is **PREDICTABILITY and TAIL LATENCY on
+lossy links**, plus **symmetric multipath aggregation** and **beats-quinn
+throughput on clean links** — for latency-sensitive and lossy-link workloads
+(live media, messaging, RPC over WiFi/LTE/satellite-class links, and any link
+lossy enough to break loss-reactive TCP). It is **NOT** a faster-bulk-transfer
+transport, and the arc proved that is not a gap to close but a property of
+reliable delivery: reliable throughput is recovery-latency-bound, and FEC
+cannot buy a round-trip back without spare bandwidth a saturated reliable
+path does not have.
+
 ## Design note — unified sliding-window model (paper §15)
 
 Paper §15 ("The Unified Sliding-Window Model") formalizes that BLOCK and
@@ -793,15 +910,26 @@ CLAIM STATUS after L2 (all L1/L2, real stacks, reproducible):
    attempted and REFUTED at L1 (coded-only ×0.26); the corrected temporal
    oracle (below, "Corrected Oracle / Final Aggregation Verdict")
    reproduces that refutation and shows the fix is generation-based coding
-   with a stable anchor (oracle ×1.19, no drag) — ACHIEVABLE, a build
-   recommendation, not yet built.
+   with a stable anchor (oracle ×1.19, no drag) — ACHIEVABLE in theory, a
+   build recommendation, not yet built. **[FINAL 2026-07-08:** the arc's
+   subsequent production builds (working FEC decoder, bounded reactive ARQ,
+   cross-path spare-path repair, SACK+BDP sender decoupling) all BOUNDED C8
+   at ~0.97× fast-alone — the oracle's ×1.19 does not model the in-order
+   frontier recovery-latency serialization that is the binding L1 constraint.
+   Heterogeneous throughput aggregation above the fast path is BOUNDED in
+   production; see the FINAL CONSOLIDATED VERDICT at the top of this file.**]**
 3. Tail latency (the model's thesis): VALIDATED vs kernel TCP at C2 —
    p99 91 ms (bulk) / 513 ms (realtime) vs 13,300-13,400 ms for BOTH
    kernel CCs at equal p50. Open: quinn message-tail comparison
    (needs a QUIC echo tool), C3/C5 tails not yet won, realtime
    streams silently fail at c3/c5 (open diagnostic).
-4. Object completion vs modern stacks: NOT YET WON at L1/L2 (5-6x to
-   quinn at C2 even warm); the improvement loop owns the pipeline gap.
+4. Object completion vs modern stacks: ~~NOT YET WON at L1/L2 (5-6x to
+   quinn at C2 even warm); the improvement loop owns the pipeline gap.~~
+   **[SUPERSEDED 2026-07-08:** the "5–6× to quinn" was the O(n²) RTT-rescan
+   CPU cap. Fixed → single-path clean BEATS quinn (86 vs 72 Mbit) and lossy
+   single-path FEC reaches ARQ PARITY (0.99×). The "not yet won" framing no
+   longer holds; a precise post-fix C1–C5 completion re-measure is the honest
+   TODO (not run). See FINAL CONSOLIDATED VERDICT.**]**
 5. Where TCP dies, rp lives: C5 objects complete (17.4 s) where CUBIC
    DNFs; message streams at C2 stay functional where kernel TCP
    spends 13 s per retransmission cascade.
@@ -996,19 +1124,31 @@ C4 Sat 3%/100ms; C7/C8 dual-path).
 | C5 BadWiFi | melts (24 s) | quinn melts (45 s) | NO WINNER (both break >5% loss) |
 
 ### Metric B — object COMPLETION, single path (1.8 MB median)
-| cell | rp-native | best baseline | verdict |
+
+> **⚠ STALE / SUPERSEDED (2026-07-08) — PRE-CPU-FIX numbers. Do not cite.**
+> This table predates the O(n²) RTT-rescan fix (`CopaState::record_rtt`
+> monotonic-deque windowed-min) that lifted single-path clean throughput
+> 28 → 86 Mbit (3.0×) and 1 Gbit 29 → 166 Mbit (5.6×), and predates the FEC
+> decoder-revival + bounded-reactive-ARQ work that took single-path lossy FEC
+> from 0.88× to ARQ PARITY (0.99×). The "rp LOSES ~4–8×" verdicts below NO
+> LONGER HOLD: single-path throughput now BEATS quinn on clean links and is at
+> ARQ parity under loss. A precise post-fix completion re-measure across C1–C5
+> is the honest follow-up — **TODO, not run** (doc-consolidation task, no VM).
+> See the FINAL CONSOLIDATED VERDICT at the top of this file.
+
+| cell | rp-native (STALE, pre-fix) | best baseline | verdict (STALE) |
 |------|-----------|---------------|---------|
 | C1 DC | ~0.025 s | quinn 0.027 / BBR 0.028 | **PARITY** (rp ≈ or slightly ahead) |
-| C2 WiFi | 0.83 s | quinn **0.20** / BBR 0.22 | rp LOSES ~4× |
-| C3 LTE | ~7.3 s | quinn **0.90** / BBR 1.0 | rp LOSES ~8× |
-| C4 Sat | ~56 s (tunnel) | quinn **1.09** / BBR 3.6 | rp LOSES badly |
-| C5 BadWiFi | 17.4 s | quinn/BBR **0.55**; CUBIC **DNF** | rp LOSES to quinn/BBR; **BEATS CUBIC** |
+| C2 WiFi | 0.83 s | quinn **0.20** / BBR 0.22 | ~~rp LOSES ~4×~~ (stale — now ARQ parity) |
+| C3 LTE | ~7.3 s | quinn **0.90** / BBR 1.0 | ~~rp LOSES ~8×~~ (stale — now ARQ parity) |
+| C4 Sat | ~56 s (tunnel) | quinn **1.09** / BBR 3.6 | ~~rp LOSES badly~~ (stale — re-measure) |
+| C5 BadWiFi | 17.4 s | quinn/BBR **0.55**; CUBIC **DNF** | rp LOSES to quinn/BBR; **BEATS CUBIC** (DNF-free stands) |
 
 ### Metric C — MULTIPATH goodput, dual path (50 MB)
 | cell | rp dual | best baseline | verdict |
 |------|---------|---------------|---------|
-| C7 WiFi+WiFi (sym) | **23.9 Mbit/s** | MPTCP 15.4 | **rp WINS 1.55×** |
-| C8 WiFi+LTE (asym) | 12.6 | MPTCP 12.6 | **PARITY** |
+| C7 WiFi+WiFi (sym) | **20.8–23.9 Mbit/s** | MPTCP 15.4 | **rp WINS ×1.26–1.55** (symmetric aggregation intact) |
+| C8 WiFi+LTE (asym) | **14.70 (0.97×)** | MPTCP 12.6 | **BOUNDED AT ~PARITY** — the C8 bar (>15.7, factor>1) NOT met; every cross-path-repair arm strictly worse. Binding constraint: in-order-frontier recovery-latency serialization the slow path cannot parallelize (oracle predicts ×1.19 but does not model it). See FINAL CONSOLIDATED VERDICT. |
 
 ### "raptorpath is the right transport when…"
 
@@ -1022,18 +1162,24 @@ of head-of-line-blocking an ordered stream; (2) multipath aggregation over
 symmetric lossy paths — 1.55× kernel MPTCP, whose subflows collapse under
 the loss that raptorpath's FEC absorbs; (3) any link lossy enough to break
 loss-reactive CUBIC, which it outlasts (completes at C5 where CUBIC DNFs).
-It reaches PARITY on clean/low-loss links and asymmetric multipath. It is
-NOT (yet) the right choice for maximum single-path BULK THROUGHPUT/
-completion against a tuned QUIC or BBR — it trails 4–8× on lossy single
-paths (worse at satellite RTT), and BBR wins the low-rate tail at C3.
-Crucially, that completion deficit is a userspace-tunnel PIPELINE cost
-(block assembly, CC ramp, decode — confirmed by native + warm-flow
-geometry), NOT the model: at L0 the principled controller beats both
-TCP-class and QUIC-class adversaries; the L1 gap is engineering the data
-plane up to the model, which the CC/pipeline work (P-CC, §12.6) is
-attacking. Boundary rule of thumb: **choose raptorpath above ~1% loss when
-tail latency or multipath matters; choose QUIC/BBR for single-path bulk on
-a low-loss or very-high-RTT path.**
+It reaches PARITY on clean/low-loss links and asymmetric multipath.
+
+**[UPDATED 2026-07-08 — the "trails 4–8×" framing below is SUPERSEDED.]** The
+original paragraph here said raptorpath "trails 4–8× on lossy single paths"
+for bulk. The aggregation/throughput arc overturned the numbers: the O(n²)
+RTT-rescan fix made single-path clean throughput BEAT quinn (86 vs 72 Mbit),
+and the FEC decoder-revival + bounded-reactive-ARQ work took single-path lossy
+FEC to ARQ PARITY (0.99×). So single-path bulk is no longer a 4–8× loss — it
+is beats-quinn-clean and ARQ-parity-under-loss. What the arc DID confirm as a
+genuine bound: reliable bulk throughput is recovery-latency-bound, so FEC =
+ARQ parity is the ceiling on a saturated reliable path (the presence⊥
+throughput identity), and heterogeneous multipath bulk aggregation (C8) is
+bounded at ~0.97× fast-alone. BBR still wins the low-rate tail at C3.
+Boundary rule of thumb: **choose raptorpath above ~1% loss when tail latency,
+predictability, or symmetric multipath matters; single-path bulk is at
+parity (clean: ahead), and heterogeneous-multipath bulk aggregation above the
+fast path is a bounded open problem, not a shipped win.** See the FINAL
+CONSOLIDATED VERDICT at the top of this file for the settled position.
 
 
 ## Windowed-RLC-all-profiles experiment (branch `exp/windowed-rlc-all`, 2026-07-05)

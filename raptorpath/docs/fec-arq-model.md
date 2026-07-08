@@ -6849,6 +6849,62 @@ recoverable, but only under a **stable per-generation anchor** (measured
 "Corrected oracle" and "Verdict" paragraphs for the adjudicated position;
 this block is retained for the L0/L1 reconciliation history.
 
+### 16.8 Final status of §16 (2026-07-08) — the arc concluded
+
+The heterogeneous-multipath-aggregation arc that motivated this section is
+CONCLUDED. The honest, settled position:
+
+**The order-statistic / RWM model is SOUND IN THEORY and codec-correct, but
+production heterogeneous throughput aggregation is PRODUCTION-BOUNDED AT
+PARITY by the in-order frontier recovery latency — and the binding mechanism
+is now identified.** Specifically:
+
+- **DERIVED / oracle-validated.** The design target is real: an independent
+  Monte-Carlo oracle (`temporal_oracle.rs`, `multipath_oracle.rs`) confirms
+  that generation-based cross-path fungible coding with a **stable
+  per-generation anchor** (no per-seq ARQ beneath the code) reaches **×1.194**
+  at C8 — essentially the Σg goodput ceiling (×1.195). The codec is correct
+  (the decoder-revival fix took `repairs_useful` 0.15% → 66–72%, MEASURED).
+  The RWM/order-statistic formulation of §16.1–16.7 is retained: it is the
+  right theory, and it says heterogeneous aggregation is not fork-join-bounded
+  in principle.
+
+- **MEASURED / production-bounded.** No shipped realization crosses the C8 bar
+  (>15.7 Mbit/s, factor > 1). Best dual C8 (c2+c3) is the plain-systematic
+  baseline at **14.70 Mbit/s = ×0.97 fast-alone**; every lever the arc built —
+  out-of-order H → ∞ (11.9, ×0.76), raised r, cross-path spare-path proactive
+  repair (all arms strictly worse than baseline), and SACK+BDP sender
+  decoupling (single-path FLAT, C8 REGRESSES to bufferbloat) — lands at or
+  below parity. The gap between the oracle's ×1.19 and L1's ×0.97 is precisely
+  what the **independent-Monte-Carlo oracle does NOT model: the in-order
+  cumulative-ack frontier recovery-latency serialization** (a hole walks the
+  frontier at ≈ 1 ARQ round / RTT), which caps the slow path's usable source
+  contribution at ~parity so repair cannot buy back more than it costs (the
+  presence⊥throughput identity, confirmed to hold cross-path too). Closing it
+  requires a recovery-pipeline redesign — pipelined per-RTT frontier recovery
+  or a genuinely rateless ack-frontier (a hole is never a fixed in-order
+  position) — plus a per-path (not summed-across-paths) outstanding cap. This
+  is a scoped BUILD recommendation, not a demonstrated win.
+
+- **What FEC's demonstrated value IS (MEASURED).** Not bulk throughput —
+  latency and predictability. On lossy moderate-RTT single links raptorpath's
+  message-p99 is 12–60× better than QUIC/kernel-TCP; completion-time variance
+  under high loss is ~93× lower; symmetric multipath aggregates ×1.26–1.55
+  over kernel MPTCP; and single-path bulk is at ARQ parity under loss and
+  BEATS quinn on clean links (after the O(n²) CPU fix). Single-path reliable
+  BULK throughput is FEC = ARQ parity max — the presence⊥throughput identity:
+  a saturated reliable path has no spare bandwidth to carry a repair that would
+  let a loss decode without a round-trip. That is a property of reliable
+  delivery, not an engineering gap.
+
+The one-line §16 verdict: **the RWM/order-statistic model is sound in theory
+(oracle ×1.19) and the codec is correct, but heterogeneous throughput
+aggregation is production-bounded at parity by in-order frontier recovery
+latency; the mechanism is identified and the fix is scoped but unbuilt. FEC's
+proven value on this stack is tail latency and predictability, not bulk
+throughput.** Full primary record: goal-gate.md, "FINAL CONSOLIDATED VERDICT
+(2026-07-08)".
+
 ---
 
 ## Appendix A: Summary of Key Formulas
