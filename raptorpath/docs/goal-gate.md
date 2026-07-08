@@ -3388,3 +3388,108 @@ throughput win on this reliable-bulk substrate.
 fecpace,fecpace2,fecpace3` (Fix1 / +Fix2 / +Fix3); Mode-B env `BGEN/BR/BSTORE/
 BINFLIGHT/BPIPE/CCHR/REACTCAP/OOORETAIN`. `perf_rwm_c.sh` propagates the new
 `RWM_CC_PACE/CC_PACE_HR/REACT_CAP/OOO_RETAIN`.
+
+## Receiver Tail + FEC Regimes — the tail parallelized, and measured in FEC's favorable corners (branch `feat/receiver-tail`, 2026-07-08)
+
+The prior section pinned the residual on a FOURTH, RECEIVER-side constraint: the
+reactive tail is serialized FRONTIER-FIRST (deficit reports cover only frontier ±
+`MAX_REPORTED_GENS = 6`), so a lossy bulk transfer recovers ≈ one generation per
+round-trip. THIS rung **builds the receiver-tail parallelization + a BDP-derived
+recovery-queue cap** and measures in the regimes the physics says FEC should win
+(higher loss, higher RTT, larger/steady-state transfers). **Result: the receiver
+fix is mechanically real and DNF-free, and it buys dramatic tail-latency STABILITY
+— but proactive FEC STILL does not beat ARQ on mean throughput in any tested
+regime. The crossover is refuted a fourth time; the binding constraint is the
+droppable-datagram SUBSTRATE, not the receiver report bound and not the coding
+rate.** All knobs env-gated, default-off — shipped/gate path byte-identical;
+`gate_suite` 15/15, lib **269** (incl. `receiver_tail_reports_all_deficits_in_one_round`),
+math green.
+
+### PART 1 — the receiver-tail fix (built, mechanism VERIFIED at L1)
+- **Report ALL outstanding deficits (`RWM_REPORT_GENS`).** The `MAX_REPORTED_GENS = 6`
+  cap (and the +7 anti-wedge seeding bound) is lifted to a configurable
+  `report_gens`; the reporting logic is extracted to a pure `collect_gen_deficits`
+  fn and unit-tested (50 outstanding generations → all 50 reported in ONE round vs
+  6 under the legacy bound). Every in-flight hole is now NACKed in a single
+  round-trip (parallel tail flush), not ≈6-per-round serially.
+- **BDP-derived in-flight cap (`RWM_INFL_BDP`).** Total in-flight is bounded to
+  gain × Σ Copa `bdp_anchor` (BtlBw·RTprop, bufferbloat-robust), gating BOTH
+  proactive AND (Fix-2 non-exempt) reactive emission, so the parallel flush cannot
+  re-bloat the recovery-round queue. Generation mode previously had only a memory
+  bound (`store_max`), not a pipe bound.
+- **Mechanism VERIFIED (L1, `RWM_TRACE`).** With the fix active on a wide store the
+  `[RCV]` deficit reports were measured spanning **up to 11 generations in a single
+  report** (> the legacy 6-cap), total residual up to **~5.2 k symbols requested at
+  once** — the tail flush is genuinely parallel, not frontier-first.
+
+### PART 2 — measured in FEC's favorable regimes (single-path, 100 mbit, jitter=0, GE loss)
+**LOSS sweep, RTT 100, 25 MB, wide-store receiver-tail arm (r=0.20):**
+| loss | ARQ (Mbit/s) | FEC-tail (Mbit/s) | FEC/ARQ | ARQ stdev_s | FEC stdev_s |
+|---:|---:|---:|---:|---:|---:|
+| 2.6% | 2.216 | 1.997 | 0.90 | 3.6 | **1.4** |
+| 5%   | 1.395 | 1.250 | 0.90 | 12.3 | **1.3** |
+| 10%  | 0.845 | 0.742 (dnf 1/2) | 0.88 | 16.9 | — |
+
+**LOSS sweep, RTT 100, narrow-store receiver-tail arm (r=0.35, 15 MB):**
+| loss | ARQ | FEC-tail | FEC/ARQ | ARQ stdev_s | FEC stdev_s |
+|---:|---:|---:|---:|---:|---:|
+| 10% | 0.68 | 0.69 | **1.01 (TIE)** | **61.6** | **0.66** |
+
+**RTT sweep, r=0.35 narrow store, 15 MB:**
+| RTT | loss | ARQ | FEC-tail | FEC/ARQ |
+|---:|---:|---:|---:|---:|
+| 200 | 2.6% | 1.197 | 0.924 | 0.77 |
+| 200 | 10% | **DNF (2/2)** | **DNF (2/2)** | — (shared collapse) |
+
+**r-sweep at RTT 100 / 10% (narrow store):** r 0.35 → 0.69 Mbit/s (pfrac 0.35);
+r 0.60 → 0.62 Mbit/s (pfrac 0.40). **Raising r HURTS** — the extra proactive coded
+are dropped at the link loss rate on the droppable substrate (pfrac pinned ≈ 0.4
+regardless of r), adding overhead without buying coverage. This CONFIRMS the prior
+"raising r doesn't help" observation and locates the constraint in the transport,
+not the coding rate.
+
+### The verdict — crossover REFUTED (4th time); the win is STABILITY, not throughput
+- **No mean-throughput crossover in any tested regime.** FEC/ARQ ∈ [0.77, 1.01]:
+  ≈0.90 flat across RTT 100 loss {2.6,5,10}%, 0.77 at RTT 200/2.6%, a TIE at RTT
+  100/10%, and a shared DNF at RTT 200/10%. The receiver-tail parallelization
+  removed the frontier-first serialization (verified) but throughput did not move —
+  both arms remain recovery-round-bound at ~1% of link at high RTT.
+- **The measured GAIN is tail-latency STABILITY.** At RTT 100/10% the receiver-tail
+  arm completes with **stdev 0.66 s vs ARQ's 61.6 s (≈93× tighter)** at equal mean;
+  ARQ's completion-time variance EXPLODES with loss (stdev 3.6 → 12.3 → 16.9 → 61.6)
+  as it nears retransmit-cascade collapse, while FEC stays flat and DNF-free. FEC
+  here buys PREDICTABILITY under loss, not higher goodput.
+- **Root cause = the droppable-datagram SUBSTRATE (unchanged).** Proactive fraction
+  stays ≈ 0.35–0.50 even at r=0.6 because proactive coded symbols are themselves
+  dropped at the link loss rate (and/or arrive after the receiver's reactive NACK
+  timer). Neither the receiver report bound (PART 1, now lifted) nor the coding rate
+  (r-sweep) is binding; the QUIC-datagram loss substrate is. Same root cause as the
+  three prior sessions.
+- **A honest regression to note:** the WIDE store the parallelization exercises is
+  net-negative at high loss — it tanks the proactive fraction (0.44 → 0.16 at RTT
+  100) and floods reactive (rcod 10 k → 43 k), and at RTT 100/10% one rep DNFs. The
+  narrow store (≤ ~5 generations, where the 6-cap already sufficed) is strictly
+  better, which is itself evidence the receiver serialization was NOT the binding
+  constraint at the tuned operating point.
+
+### PART 3 — multipath: NOT warranted
+The directive gates multipath on a single-path FEC win. There is none (FEC/ARQ ≤
+1.01, a tie at best), so heterogeneous multipath was not run — there is no
+single-path advantage to aggregate.
+
+### Controls / no regression
+- All knobs (`RWM_REPORT_GENS`, `RWM_INFL_BDP`) env-gated, **default-off** →
+  shipped + gate path byte-identical. `gate_suite` **15/15** release; lib **269**
+  (new pure-fn unit test); `raptorpath-math` green.
+- **Clean-link controls (no loss, 20 MB):** ARQ **84.4 Mbit/s** (> the ~76
+  reference — ARQ path untouched), full receiver-tail FEC **58.4 Mbit/s** (the
+  generation-coding tax, matches the ~57.5 reference), **dnf:0** both.
+- **Reliability intact** at every feasible operating point (narrow store, RTT
+  50/100/200, loss 2.6/5%): `dnf:0`, every byte delivered. DNFs occur only in the
+  extreme corners (wide-store RTT 100/10%, and RTT 200/10% where ARQ ALSO DNFs).
+
+**Harness.** `~/l1/rt_sweep.sh <reps> <bytes> <arms> [scens…]` — arms `arq,
+fecprior,fecwide,fectail` (tuned-narrow / wide-legacy / wide+receiver-tail);
+env `BSTORE_TAIL/OOORETAIN_TAIL/REPORTGENS/INFLBDP` + the Mode-B knobs. New GE
+higher-loss cells in `lib.sh`: `c2r{100,200}l{5,10}` (p solved for 5/10% mean at
+q=50). `perf_rwm_c.sh` propagates `RWM_REPORT_GENS/RWM_INFL_BDP`.

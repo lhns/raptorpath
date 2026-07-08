@@ -47,6 +47,15 @@ scenario_params() {
         c2r50)       echo "100mbit 25  0  1.3  50" ;;
         c2r100)      echo "100mbit 50  0  1.3  50" ;;
         c2r200)      echo "100mbit 100 0  1.3  50" ;;
+        # Receiver-tail + FEC-favorable-regime sweep (feat/receiver-tail): the
+        # SAME c2 pipe (100mbit, jitter=0) at RTT{100,200} but with HIGHER GE
+        # loss. GE mean loss = p/(p+q); holding q=50 (burst structure) and
+        # solving for p: 5% ⇒ p=2.63, 10% ⇒ p=5.56. FEC's advantage grows with
+        # loss (ARQ retransmit-of-a-retransmit cascades; proactive FEC does not).
+        c2r100l5)    echo "100mbit 50  0  2.63 50" ;;
+        c2r100l10)   echo "100mbit 50  0  5.56 50" ;;
+        c2r200l5)    echo "100mbit 100 0  2.63 50" ;;
+        c2r200l10)   echo "100mbit 100 0  5.56 50" ;;
         *) echo "unknown scenario: $1" >&2; exit 1 ;;
     esac
 }

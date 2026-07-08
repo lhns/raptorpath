@@ -2632,6 +2632,18 @@ mid-transfer path outage) — ties are the win condition there.
 > and stabilizes throughput (see §14.7 "Transport-substrate correction" and
 > goal-gate "Transport Substrate Fix"). Note it does NOT by itself make FEC beat
 > ARQ at high RTT — a receiver-side frontier-serialized reactive tail remains.
+>
+> **Follow-on (measured, `feat/receiver-tail`): a BDP-derived in-flight cap for the
+> generation/FEC mode.** The plain-reliable path already bounds its outstanding
+> window to gain × BtlBw·RTprop (Copa `bdp_anchor`) so the standing queue — and thus
+> recovery-round RTT — stays ≈ 1 RTT (§12, delay-based window). The generation mode
+> lacked this: its store-based backpressure (`store_max`) is a memory bound, not a
+> pipe bound, so a wide retention store bloats the wire queue. `RWM_INFL_BDP` adds
+> the same BtlBw·RTprop-derived cap to total in-flight for the generation mode,
+> gating BOTH proactive AND (non-exempt) reactive/deficit emission, so the parallel
+> receiver-tail flush cannot re-bloat the queue. It bounds the queue as intended, but
+> — like the sender pacing above — does not by itself produce a throughput crossover
+> (§14.7 "Receiver-tail correction").
 
 ### 12.1 Why Delay-Based CC is Required
 
@@ -3729,6 +3741,33 @@ receiver, not coverage-bound at the sender). **Verdict: the isolated §14.7 cros
 does not appear for reliable bulk transfer even after the three transport fixes; the
 remaining blocker is a receiver-side frontier-serialized reactive tail + the shared
 latency-bound regime.** See goal-gate "Transport Substrate Fix".
+
+**Receiver-tail correction (measured, branch `feat/receiver-tail`).** The FOURTH
+constraint — the frontier-serialized reactive tail — was then addressed directly:
+the receiver now reports EVERY outstanding generation's residual deficit in one
+report (the `MAX_REPORTED_GENS = 6` cap lifted to a BDP-scaled `RWM_REPORT_GENS`),
+so all in-flight holes are NACKed/repaired in ONE round-trip (parallel tail flush)
+rather than ≈6 generations per round; and a BDP-derived in-flight cap
+(`RWM_INFL_BDP` × Σ Copa `bdp_anchor`) bounds the recovery-round queue so its RTT is
+not inflated. **The mechanism is verified at L1** — deficit reports were measured
+spanning up to 11 generations in a single round (> the legacy 6-cap), total residual
+up to ~5.2 k symbols requested at once. **But the throughput crossover STILL does not
+appear.** A single-path LOSS sweep (100 mbit, jitter=0, GE loss ∈ {2.6, 5, 10}%)
+gives FEC/ARQ ≈ **0.90** at RTT 100 (loss-independent) and **0.77** at RTT 200/2.6%;
+at RTT 100/10% the two TIE on mean (0.69 vs 0.68 Mbit/s) and at RTT 200/10% BOTH
+arms DNF (a shared collapse). Raising `r` (0.2 → 0.35 → 0.6) does NOT lift throughput
+or the proactive fraction (which stays ≈ 0.35–0.50 regardless): the extra proactive
+coded symbols are themselves dropped at the link loss rate on the droppable-datagram
+substrate (and/or arrive after the receiver's reactive NACK), so coverage cannot be
+bought — **confirming the binding constraint is the transport SUBSTRATE, not the
+receiver report bound and not the coding rate.** The one measured GAIN is
+tail-latency STABILITY: at RTT 100/10 % the receiver-tail arm's completion-time
+stdev is **0.66 s vs ARQ's 61.6 s (≈93× tighter)**, and it stays DNF-free where a
+wide send-store without the flush wedges — i.e. FEC buys PREDICTABILITY under loss,
+not higher mean goodput. **Verdict: the §14.7 crossover is REFUTED for reliable bulk
+transfer on this substrate across the sender fixes AND the receiver-tail fix; the
+FEC value proposition here is variance/reliability, not throughput.** See goal-gate
+"Receiver Tail + FEC Regimes".
 
 ### 14.8 Per-Symbol Recovery Probability Function
 
