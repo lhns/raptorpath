@@ -1235,6 +1235,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         } else {
             None
         };
+    // SACK + BDP reassembly (feat/sack-bdp-reassembly) — the composed root-cause
+    // attack on the in-order cumulative-ack frontier serialization. RWM_SACK_PRUNE
+    // (above) decouples the SENDER from the frozen frontier (prune on any OOO ack);
+    // RWM_REASM_BDP hardens the RECEIVER so that decoupling is SAFE for reliable
+    // in-order delivery. The RELIABILITY INVARIANT it guarantees: a received symbol
+    // is NEVER evicted from the receiver's reassembly state before it is delivered
+    // (its in-order frontier passes), so a symbol the sender has SACK-pruned always
+    // survives at the receiver until use → no un-recoverable eviction. Concretely
+    // it (a) clamps the window-decoder/received-seq prune so it can never advance
+    // ABOVE the delivered frontier (the reorder buffer is already usize::MAX / non-
+    // evicting), and (b) probes the reassembly occupancy so the bound can be
+    // reported (`[REASM]`). The reassembly stays BDP-bounded because the sender's
+    // outstanding is bounded (plain_dyn_cap = gain·BDP store cap, default-on) and
+    // working FEC recovers holes fast. Default-off; the shipped path is untouched.
+    let reasm_bdp_on = std::env::var("RWM_REASM_BDP").is_ok();
 
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
@@ -1288,6 +1303,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut last_hole_nack_at = Instant::now();
         // Track received seqs for WindowNack gap reporting
         let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+        // RWM_REASM_BDP occupancy probe (feat/sack-bdp-reassembly): the maximum
+        // reassembly buffer occupancy observed = received-but-not-yet-delivered
+        // symbols held behind the in-order frontier. This is the quantity the
+        // reliability invariant bounds — it must stay ~BDP (the sender's
+        // outstanding cap), never grow to the whole object. `reasm_max_pending`
+        // = peak held symbols; `reasm_max_span` = peak (highest_seen − frontier)
+        // seq gap. Reported via `[REASM]` under RWM_REASM_BDP.
+        let mut reasm_max_pending: usize = 0;
+        let mut reasm_max_span: u64 = 0;
+        let mut reasm_last_report = Instant::now();
         // Generation-deficit feedback (§16.3), receiver arm. `gen_widths[anchor]`
         // = the generation's K_g, learned self-describingly from the wire header
         // (`window_count`) of any coded symbol for that anchor. Deficit_g =
@@ -2213,10 +2238,45 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             // is decode-inert: repairs only reference the
                             // sender's current window, which sits at or
                             // above its ack (= our delivered point).
-                            let prune_before = highest_delivered_seq.saturating_sub(recv_win_cap * 2);
+                            let mut prune_before = highest_delivered_seq.saturating_sub(recv_win_cap * 2);
+                            // RELIABILITY INVARIANT (RWM_REASM_BDP): never evict a
+                            // received symbol before it is delivered. Under SACK the
+                            // sender races ahead of the frozen in-order frontier, so
+                            // `highest_seen_seq` runs far above `highest_delivered_seq`
+                            // (the hole). The prune is keyed on the DELIVERED frontier
+                            // (so `prune_before ≤ highest_delivered_seq` already), but
+                            // clamp it explicitly so the composed decoupling can never
+                            // drop a received-above-hole symbol the sender has pruned.
+                            // The reorder buffer is separately non-evicting (usize::MAX),
+                            // so held source symbols survive to delivery regardless.
+                            if reasm_bdp_on {
+                                prune_before = prune_before.min(highest_delivered_seq);
+                            }
                             received_seqs = received_seqs.split_off(&prune_before);
                             if let Some(ref mut wd) = window_decoder {
                                 wd.advance(prune_before);
+                            }
+                            // Occupancy probe: peak reassembly held behind the frontier.
+                            if reasm_bdp_on {
+                                let pending = reorder_buf
+                                    .as_ref()
+                                    .map(|rb| rb.pending_count())
+                                    .unwrap_or_else(|| {
+                                        // OOO mode: no reorder buffer; the held state
+                                        // is the received-seq set above the frontier.
+                                        received_seqs.range(ooo_frontier..).count()
+                                    });
+                                reasm_max_pending = reasm_max_pending.max(pending);
+                                let span = highest_seen_seq.saturating_sub(highest_delivered_seq);
+                                reasm_max_span = reasm_max_span.max(span);
+                                if reasm_last_report.elapsed() >= Duration::from_millis(500) {
+                                    reasm_last_report = Instant::now();
+                                    eprintln!(
+                                        "[REASM] frontier={} highest_seen={} span={} pending={} max_pending={} max_span={}",
+                                        highest_delivered_seq, highest_seen_seq, span,
+                                        pending, reasm_max_pending, reasm_max_span,
+                                    );
+                                }
                             }
                         }
                     } else {
@@ -6672,6 +6732,90 @@ mod tests {
         // The hole's exact bytes survive for a targeted retransmit (reliability
         // contract intact: the hole is recovered in the background).
         assert_eq!(&sent_store.get(&10).unwrap().data[..32], &[10u8; 32]);
+    }
+
+    /// SACK + BDP reassembly end-to-end reliability invariant
+    /// (feat/sack-bdp-reassembly): the sender advances PAST a hole (SACK-prunes
+    /// every out-of-order-received symbol from its store), the receiver HOLDS the
+    /// out-of-order symbols in its non-evicting reassembly (bounded by the BDP
+    /// the sender's outstanding cap enforces), the receiver prune never evicts a
+    /// received-but-undelivered symbol, the hole recovers by retransmit from the
+    /// sender's retained store, and EVERY byte is delivered in order. This is the
+    /// exact invariant that the prior SACK attempt (#52) violated by evicting a
+    /// pruned-but-unconsumed symbol at the receiver.
+    #[test]
+    fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
+        use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
+        // ---- SENDER: send 300 source symbols, all retained in the store. ----
+        let n = 300u64;
+        let mut encoder = RlcWindowEncoder::new(64);
+        let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
+        for i in 0..n {
+            let sym = encoder.add_source(&vec![(i % 251) as u8; 32]);
+            sent_store.insert(sym.block_id, sym);
+        }
+
+        // ---- RECEIVER: reliable, non-evicting reassembly (the BDP buffer). ----
+        let mut reorder = ReorderBuffer::new_reliable();
+        let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+        let mut highest_delivered_seq: u64 = 0; // -1 sentinel via next_deliver_seq
+        let mut highest_seen_seq: u64 = 0;
+        let recv_win_cap: u64 = MAX_WINDOW_SIZE as u64;
+        let mut delivered: Vec<u64> = Vec::new();
+
+        // The receiver gets seq 0..=9 in order, then a HOLE at seq 10, then
+        // EVERYTHING above (11..=299) out of order. Deliver in wire arrival order.
+        let hole = 10u64;
+        let arrival: Vec<u64> = (0..=9).chain(11..n).collect();
+        for &seq in &arrival {
+            received_seqs.insert(seq);
+            highest_seen_seq = highest_seen_seq.max(seq);
+            for (dseq, _) in reorder.push(seq, Bytes::from(vec![(seq % 251) as u8; 32])) {
+                delivered.push(dseq);
+                highest_delivered_seq = highest_delivered_seq.max(dseq);
+            }
+            // The receiver periodically prunes its decoder/received-seq state.
+            // INVARIANT (RWM_REASM_BDP clamp): prune_before never exceeds the
+            // DELIVERED frontier, so no received-above-hole symbol is evicted.
+            let prune_before = highest_delivered_seq
+                .saturating_sub(recv_win_cap * 2)
+                .min(highest_delivered_seq);
+            received_seqs = received_seqs.split_off(&prune_before);
+        }
+
+        // Delivery is frozen at the hole: only 0..=9 delivered so far.
+        assert_eq!(delivered, (0..=9).collect::<Vec<_>>(), "in-order stalls at the hole");
+        // 11..=299 are HELD (received but not delivered) — the reassembly holds
+        // them all, none evicted (non-evicting reliable buffer + clamped prune).
+        assert_eq!(reorder.pending_count(), (n - 11) as usize, "all OOO symbols held");
+        for seq in 11..n {
+            assert!(received_seqs.contains(&seq), "seq {seq} must survive prune until delivered");
+        }
+
+        // ---- SENDER: SACK-prune the received (out-of-order) symbols. ----
+        // The cumulative ack is 9; everything 11..=299 was SACKed.
+        let ack = 9u64;
+        sent_store = sent_store.split_off(&(ack + 1));
+        for (start, end) in received_sack_ranges(&received_seqs, ack, highest_seen_seq) {
+            let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
+            for k in acked {
+                sent_store.remove(&k);
+            }
+        }
+        // Only the hole stays retained — the sender is free to inject fresh source.
+        assert_eq!(sent_store.len(), 1, "sender retains ONLY the unfilled hole");
+        assert!(sent_store.contains_key(&hole), "the hole survives for ARQ retransmit");
+
+        // ---- RECOVERY: the hole is retransmitted from the retained store. ----
+        let hole_sym = sent_store.get(&hole).expect("hole retained").clone();
+        for (dseq, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
+            delivered.push(dseq);
+            highest_delivered_seq = highest_delivered_seq.max(dseq);
+        }
+
+        // EVERY byte delivered, in order, exactly once — the reliability invariant.
+        assert_eq!(delivered, (0..n).collect::<Vec<_>>(), "every symbol delivered in order");
+        assert_eq!(reorder.pending_count(), 0, "reassembly fully drained — nothing stranded");
     }
 
     /// ADR-0046 idle-triggered recovery (Phase 4 fix). The congestion

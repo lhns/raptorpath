@@ -64,6 +64,12 @@ TENV=""
 # repair to the max-spare-capacity path (the slow path once fast is source-
 # saturated) so repair does not displace fast-path systematic source.
 [[ -n "${RWM_XPATH_REPAIR:-}" ]] && TENV="$TENV RWM_XPATH_REPAIR=$RWM_XPATH_REPAIR"
+# SACK sender-decoupling + BDP reassembly (feat/sack-bdp-reassembly): prune the
+# sent-store on any out-of-order ack (RWM_SACK_PRUNE) + clamp the receiver prune
+# to the delivered frontier so no pruned symbol is evicted before use, with a
+# [REASM] occupancy probe (RWM_REASM_BDP).
+[[ -n "${RWM_SACK_PRUNE:-}" ]] && TENV="$TENV RWM_SACK_PRUNE=$RWM_SACK_PRUNE"
+[[ -n "${RWM_REASM_BDP:-}" ]] && TENV="$TENV RWM_REASM_BDP=$RWM_REASM_BDP"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

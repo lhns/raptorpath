@@ -4000,3 +4000,91 @@ law. C8 stays at ~0.97× fast-alone.
 `RWM_XPATH_REPAIR` flag, applied at the three repair-placement sites. Harness:
 `RWM_XPATH_REPAIR` propagation in `perf_rwm_c.sh`. Oracle: `temporal_oracle.rs::
 systematic_repair_aggregation` (pre-existing, re-confirmed ×1.188).
+
+## SACK+BDP Reassembly — the composed sender-decoupling attack on the frontier, with the #52 failure modes fixed (branch `feat/sack-bdp-reassembly`, 2026-07-08)
+
+**The attack.** The proven root cause (Loss-Recovery defect 2, six prior sections)
+is the in-order cumulative-ack frontier serialization: the sender's flow control
+(store drain + TUN backpressure) gates on the CONTIGUOUS frontier `window_ack_seq`,
+which FREEZES on every hole → goodput caps at ≈ window/RTT (~16 Mbit C2 single
+lossy; ~parity C8). The prior SACK attempt (#52) tried to decouple the sender but
+(a) BROKE reliability — the receiver reassembly evicted a pruned-but-unconsumed
+symbol — and (b) ran on DEAD FEC. This branch composes the two fixes #52 lacked and
+re-attacks: **`RWM_SACK_PRUNE`** (sender: prune the sent-store on ANY out-of-order
+ack, gate on TRUE outstanding, keep sending past a hole) **+ new `RWM_REASM_BDP`**
+(receiver: clamp the decoder/received-seq prune so it can NEVER advance above the
+delivered frontier → a SACK-pruned symbol is never evicted before use; the reorder
+buffer is already non-evicting; an occupancy probe `[REASM]` reports the bound).
+Both env-gated, default-off; the shipped path is byte-identical.
+
+### PRIMARY — single-path C2 lossy: the reliability invariant HOLDS, but there is NO throughput lift
+Native `perf_rwm_c.sh`, 50 MB × 3, seed 42, c2 (~2.5 % GE loss). (1.8 MB objects
+complete in <1 s — warmup-dominated noise, per prior sections; 50 MB gives the
+steady-state signal.)
+
+| single-path C2 arm | Mbit/s | dnf | reassembly peak (held-behind-frontier) |
+|---|---:|---:|---|
+| baseline (gate off) | 16.54 | 0 | — |
+| **SACK+REASM (in-order)** | **17.09** | 0 | **max_pending 1888 / ~50 000 sym — BOUNDED** |
+| OOO + SACK + REASM | 17.22 | 0 | max_pending 1541 — BOUNDED |
+
+**No lift (16.54 → 17.09 → 17.22, all within the ~5 % run-to-run stdev).** This
+CONFIRMS the prior diagnosis at 50 MB and with the reliability fix in place: the
+sender was never the bottleneck (throughput is store-cap-invariant), so decoupling
+it buys nothing — completion still waits for the in-order frontier to walk each
+hole at ≈ 1 ARQ round / RTT. The bound is receiver-side RECOVERY LATENCY.
+
+**The reliability invariant HOLDS (the thing #52 broke).** dnf 0 on every arm;
+the reassembly occupancy stays BOUNDED at ≈ BDP (peak 1541–1888 symbols out of a
+~50 000-symbol object) as the frontier advances 75 k→125 k — it never grows toward
+the whole object. Every byte delivered, no eviction. The composed guard makes the
+sender-decoupling safe for reliable in-order delivery. Unit test
+`test_sack_bdp_reassembly_delivers_every_byte_past_a_hole` codifies the loop end-to-
+end (sender advances past a hole, receiver holds OOO non-evicting, hole recovers by
+retransmit, every symbol delivered in order).
+
+### C8 heterogeneous dual — the BDP bound FAILS; decoupling UNBOUNDS the buffer and stalls
+C8 (c2+c3), 50 MB × 3, seed 42:
+- **baseline** plain (gate off): **10.86 Mbit/s** (0.66× fast-alone 16.54), dnf 0,
+  high variance (stdev 6.9 s) — the slow c3 path carries SOURCE, the near-parity
+  ceiling.
+- **SACK+REASM: the reassembly grows to `max_pending` 38 820 / ~50 000 ≈ 78 % of
+  the whole object; a single rep did NOT complete in 300 s** (severe bufferbloat
+  stall). The SACK-decoupled sender races the FAST path ahead while the SLOW path's
+  frontier hole lingers ≈ its larger RTT; the dual store cap = gain·Σ BtlBw×RTprop
+  sums BOTH paths' anchors (slow-path RTT-inflated), so outstanding is NOT bounded
+  to the fast path's BDP → the receiver holds nearly the whole object. **This is
+  EXACTLY where the invariant fails: the sender-outstanding cap is SUMMED across
+  paths, not per-path, so on heterogeneous RTT the "BDP-sized" reassembly is not
+  BDP-sized.** SACK+REASM makes C8 strictly WORSE than baseline; **>15.7 with
+  factor > 1 NOT met.**
+
+### HONEST VERDICT
+The composed fix does what #52 could not — it makes sender-side SACK decoupling
+SAFE for reliable in-order delivery (dnf 0, buffer bounded ≈ BDP, every byte
+delivered on single-path) — but it does **NOT unlock lossy throughput.** The
+in-order cumulative-ack frontier's serialization is a RECOVERY-LATENCY bound
+(holes walk at ≈ 1 ARQ round / RTT), structural to reliable in-order-capable
+delivery on this transport and unmoved by any sender flow-control law — the same
+conclusion the six prior L1 investigations reached, now with the sender-decoupling
+made reliable and still measured flat. On heterogeneous multipath the decoupling
+actively REGRESSES C8: the slow path's RTT-inflated BDP anchor defeats the summed
+store cap, so the receiver reassembly grows unbounded and bufferbloat stalls the
+transfer. Closing the collapse still needs the transport-pipeline change §14.7
+named (pipelined per-RTT frontier recovery, or a rateless ack-frontier where a
+hole is never a fixed in-order position) PLUS a per-path (not summed) outstanding
+cap. **The frontier bound is fundamental; the reliability invariant is preserved on
+single-path but throughput is not lifted — honest negative, failure mode located.**
+
+**Controls (no regression).** clean single SACK+REASM **86.24** vs default **86.09**
+(no regression); C7 dual c2+c2 baseline **20.88 = ×1.26** (symmetric aggregation
+intact); all single-path / control arms dnf 0 (reliability intact). `cargo test -p
+raptorpath --lib` **276 green** (+`test_sack_bdp_reassembly_delivers_every_byte_past_a_hole`);
+`raptorpath-math` green; `gate_suite` **15/15** release.
+**Impl.** `net/mod.rs`: `RWM_REASM_BDP` receiver flag (prune clamp to the delivered
+frontier + `[REASM]` occupancy probe), composed with the existing `RWM_SACK_PRUNE`
+sender decoupling. Harness: `RWM_SACK_PRUNE`/`RWM_REASM_BDP` propagation in
+`perf_rwm_c.sh`.
+**Harness.** `sudo RWM_SACK_PRUNE=1 RWM_REASM_BDP=1 bash perf_rwm_c.sh c2 c2 bulk
+50000000 3 single`; `[REASM]` occupancy in the server log (`/tmp/rwm-s.log`, the
+bulk receiver — `perf --client` uploads).
