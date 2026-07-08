@@ -3706,3 +3706,106 @@ with the decoder defect removed rather than masking it.
 
 **Harness.** Same `pf_sweep.sh` / `rw_sweep.sh` / `perf_rwm_c.sh`; `RWM_FDIAG` `rf/ru`
 now report rank-ADD usefulness. Fix in `raptorpath/src/fec/generation.rs`.
+
+## Repair In-Flight — the ARQ over-request was the real waste; FEC reaches PARITY (branch `feat/repair-inflight`, 2026-07-08)
+
+Chased the last residual ("proactive repair paced a generation-span LATE → reactive
+round-trip wins the race → pfrac stuck, no crossover"). Two things came out, one an
+instrumentation artifact and one a genuine — and DIFFERENT — win than the brief
+predicted. The decoder is (still) fixed; the crossover blocker was NOT the repair
+arriving late, it was the receiver OVER-REQUESTING ARQ.
+
+### FIRST: the `present_at_stall=0` residual was partly a BROKEN PROBE
+`GenerationDecoder` never implemented `frontier_probe` — it inherited the trait
+default `(0,0)`. So in generation/systematic mode `present_at_stall` and
+`probe_buffered` were **structurally 0 in every prior run**, regardless of whether
+proactive repair was actually buffered. The "present_at_stall≈0 → repair always
+arrives late" diagnosis that motivated this task was measuring a probe that could
+only ever return 0. Implemented a real `frontier_probe` for the dense decoder
+(`holes` = span − recovered; `buffered` = pivot rows at hole columns across the
+Solving matrices). With the instrument fixed, `present_at_stall` reads **1→16**,
+responsive to G — proactive repair IS sometimes present; the residual was overstated.
+
+### THE REAL WASTE: the reactive deficit OVER-REQUESTED ARQ (the coordinator's lever)
+At high loss the systematic FEC arm was NOT losing to late repair — it was FLOODING
+reactive ARQ. The deficit `K−rank_in` is honest (rank counts buffered repair), but
+the report fires on EVERY sub-RTT decode-progress, each resetting the in-flight
+baseline, so the sender re-sends ~the full deficit faster than a round-trip can
+reflect it. MEASURED at c2r100l10 (G=384, r=0.15, single path): `recovery_coded`
+**30 703** for a ~6 k-symbol object (≈5 ARQ/source), pfrac 0.035, **0.32 Mbit/s**.
+Bounding it — `RWM_REACT_CAP` (act on a generation's deficit at most once per SRTT)
++ `RWM_REPAIR_WAIT` (coalesce: let in-flight repair shrink the deficit before ARQ
+fires) — collapses the flood:
+
+| c2r100l10, single | recovery_coded | pfrac | present_at_stall | Mbit/s |
+|---|---:|---:|---:|---:|
+| unbounded (flood) | 30 703 | 0.035 | 1 | 0.32 |
+| **bounded** (react_cap + wait40) | **437** | **0.72** | 1 | **0.913** |
+| pure ARQ (same cell) | — | — | — | 0.919 |
+
+**FEC/ARQ 0.32→0.99 — from 0.88× (prior goal-gate) to PARITY.** The dominant prior
+"FEC-vs-ARQ" deficit was self-inflicted ARQ over-request, not late repair. Decoder
+change (`fec/generation.rs`): `propagate()` re-injects any hole recovered in one
+coding grid into every other active matrix, so the deficit stays honest when two
+grids coexist (without it, inline flooded `recovery_coded` to **94 141**).
+
+### SMALLER G raises proactive-at-stall, but only to PARITY (not a crossover)
+The fungible, non-stalling way to get repair in-flight is a smaller generation (it
+seals — and its proactive repair flows — sooner), via the proven batched path:
+
+| cell (bounded, single) | G | pfrac | present_at_stall | FEC Mbit/s | ARQ Mbit/s | FEC/ARQ |
+|---|---:|---:|---:|---:|---:|---:|
+| c2r100l10 | 384 | 0.72 | 1 | 0.913 | 0.919 | 0.99 |
+| c2r100l10 | 128 | 0.64 | 11 | 0.893 | 0.919 | 0.97 |
+| c2r200l10 | 128 | 0.65 | 10 | 0.417 | 0.400 | **1.04** |
+| c2r200l10 (r=0.30) | 128 | 0.53 | 16 | 0.377 | 0.400 | 0.94 |
+
+Smaller G lifts `present_at_stall` 1→16 (proactive decode now genuinely happens),
+and at RTT200 FEC **edges ahead (1.04×)**. But it is only an edge: ARQ at RTT200/10%
+is a hard `~window/RTT` **0.40 Mbit/s** (SAME at 1.8 MB and 5 MB — steady-state, not
+ramp), and FEC still pays a round-trip for the ~60 % of holes with NO proactive
+repair present at detection, so it does not decisively escape the serialization.
+Raising r buys more `present_at_stall` (16) but the extra coded overhead on the
+droppable path costs more than the round-trips it saves (0.417→0.377).
+
+### The interspersed separate-grid inline repair (`RWM_INLINE_REPAIR`) — REFUTED
+Implemented exactly as the brief specified (emit one proactive repair per ~1/r
+sources over a trailing block of width W of already-sent source). Decodes correctly
+in ISOLATION (unit tests: block repair present at a hole → proactive decode;
+`frontier_probe` reports it buffered). At L1 it is REFUTED for two structural
+reasons: **(1) stall-starved** — it emits from the source-send path, so under
+backpressure/frontier-stall (exactly when needed) no source ⇒ no repair, while the
+batched path emits every loop iteration; **(2) cross-grid stranding** — for W<G the
+block (W) and generation (G) repairs form SEPARATE Gaussian systems, so a buffered
+block equation cannot combine with reactive generation repair (MEASURED
+`probe_buffered` climbing while the frontier wedges, gap 900–1100). Unifying W=G
+removes the stranding but reduces to "small G" (above), which the non-stalling
+batched path already does. Kept env-gated, default-OFF, as a documented negative
+result (`net/mod.rs`, `generate_repair_range` in `fec/generation.rs`).
+
+### Controls / reliability
+- `cargo test -p raptorpath --lib` **273** green (+2: `interspersed_block_repair_
+  present_at_hole_decodes_proactively`, `frontier_probe_reports_buffered_proactive_
+  equation`); `raptorpath-math` green; `gate_suite` **15/15** release.
+- Low-RTT control c2r10 (RTT10/2.6 %): FEC bounded G=128 **21.9 Mbit/s**, pfrac 0.91
+  — no regression (above the prior 13–19). Clean shipped control **83.7 Mbit/s**
+  (76–84 band, shipped path byte-untouched); systematic-FEC clean 73.7. **dnf:0 at
+  every measured cell**, every transfer byte-exact.
+
+### Verdict
+The residual was mis-attributed. FEC was not losing to late repair — it was losing
+to its own **reactive ARQ over-request** (the probe that "proved" late repair was
+itself stuck at 0). Bounding the request to the honest once-per-SRTT deficit takes
+FEC from 0.88× to **PARITY** (1.0×), with a slight **1.04×** edge at RTT200/10 %.
+A decisive FEC>ARQ crossover still requires `present_at_stall` to DOMINATE (proactive
+present for ~all holes), which neither smaller-G nor the interspersed repair reaches
+here. HONEST HEADLINE: the ARQ-waste win is real and shippable (enable
+`RWM_REACT_CAP`+`RWM_REPAIR_WAIT` for the systematic arm); the interspersed-repair
+timing fix is refuted as a separate mechanism; the crossover remains an open
+`present_at_stall`-dominance problem, now measurable for the first time.
+
+**Harness.** `perf_rwm_c.sh` (+ `RWM_INLINE_REPAIR`/`RWM_INLINE_W` propagation);
+`RWM_FDIAG` `present_at_stall`/`probe_buffered` now REAL in generation mode.
+Fixes in `raptorpath/src/fec/generation.rs` (`frontier_probe`, `propagate`,
+`generate_repair_range`) + `raptorpath/src/net/mod.rs` (bounded-reactive levers,
+gated inline emission).
