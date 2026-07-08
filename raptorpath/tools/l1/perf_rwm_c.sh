@@ -49,6 +49,10 @@ TENV=""
 [[ -n "${RWM_CC_PACE_HR:-}" ]] && TENV="$TENV RWM_CC_PACE_HR=$RWM_CC_PACE_HR"
 [[ -n "${RWM_REACT_CAP:-}" ]] && TENV="$TENV RWM_REACT_CAP=$RWM_REACT_CAP"
 [[ -n "${RWM_OOO_RETAIN:-}" ]] && TENV="$TENV RWM_OOO_RETAIN=$RWM_OOO_RETAIN"
+# Receiver-tail parallelization (feat/receiver-tail): PART 1 report-all-deficits
+# (RWM_REPORT_GENS) + PART 1.2 BDP-derived in-flight cap (RWM_INFL_BDP).
+[[ -n "${RWM_REPORT_GENS:-}" ]] && TENV="$TENV RWM_REPORT_GENS=$RWM_REPORT_GENS"
+[[ -n "${RWM_INFL_BDP:-}" ]] && TENV="$TENV RWM_INFL_BDP=$RWM_INFL_BDP"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

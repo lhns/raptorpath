@@ -436,6 +436,39 @@ fn now_us() -> u64 {
         .as_micros() as u64
 }
 
+/// Collect per-generation residual deficits for the deficit-feedback report
+/// (§16.3), receiver arm. Walks `gen_widths` (anchor→K_g) in anchor order,
+/// skipping fully-decoded generations, and returns up to `report_gens`
+/// `(anchor, deficit)` pairs where `deficit = K_g − rank_in(anchor, K_g)`.
+///
+/// PART 1 (receiver-tail parallelization). The legacy bound was 6 — the
+/// receiver reported only the frontier ± a handful of generations, so a lossy
+/// bulk transfer's holes were NACKed/repaired FRONTIER-FIRST, roughly one
+/// generation per round-trip (serial tail, throughput ∝ window/RTT). Lifting
+/// `report_gens` to cover the whole in-flight range makes the receiver report
+/// EVERY outstanding generation's deficit in ONE report, so the sender repairs
+/// all holes in a single round-trip (parallel tail flush). Extracted as a pure
+/// function so the "all deficits recover in one round" invariant is unit-tested
+/// without driving the whole async receiver loop.
+fn collect_gen_deficits(
+    gen_widths: &BTreeMap<u64, u16>,
+    report_gens: usize,
+    mut rank_of: impl FnMut(u64, u64) -> u64,
+) -> Vec<(u64, u32)> {
+    let mut deficits: Vec<(u64, u32)> = Vec::new();
+    for (&anchor, &k) in gen_widths.iter() {
+        if deficits.len() >= report_gens {
+            break;
+        }
+        let rank = rank_of(anchor, k as u64);
+        let deficit = (k as u64).saturating_sub(rank);
+        if deficit > 0 {
+            deficits.push((anchor, deficit as u32));
+        }
+    }
+    deficits
+}
+
 /// Main entry point.
 pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     run_impl(config, None).await
@@ -1230,6 +1263,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(384)
             .max(1);
+        // Receiver-tail parallelization (PART 1). Number of outstanding
+        // generations whose deficit is reported (and anti-wedge-seeded) per
+        // round. Legacy = 6 (frontier-first serial tail); env RWM_REPORT_GENS
+        // lifts it to cover the whole in-flight range so EVERY hole is repaired
+        // in ONE round-trip (parallel tail flush). Unset = byte-identical
+        // shipped path. Clamped to the wire cap (MAX_ACK_IDS = 2000).
+        let report_gens: usize = std::env::var("RWM_REPORT_GENS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(6)
+            .clamp(1, 2000);
         let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
@@ -1454,7 +1498,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     // first MAX_REPORTED_GENS are ever sent anyway).
                     let g_front = ooo_frontier / recv_gen_size;
                     let g_top = highest_seen_seq / recv_gen_size;
-                    let g_hi = g_top.min(g_front + 7);
+                    // PART 1: seed the whole reportable range (not just +7) so a
+                    // generation whose entire proactive budget was lost is
+                    // NACKed in the SAME round as the frontier, not serially.
+                    let g_hi = g_top.min(g_front + report_gens as u64);
                     let mut g = g_front;
                     while g <= g_hi {
                         let anchor = g * recv_gen_size;
@@ -1466,18 +1513,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 }
                 if recv_window_generation && !gen_widths.is_empty() {
                     gen_widths.retain(|&a, &mut k| a + k as u64 > ooo_frontier);
-                    const MAX_REPORTED_GENS: usize = 6;
-                    let mut deficits: Vec<(u64, u32)> = Vec::new();
-                    for (&anchor, &k) in gen_widths.iter() {
-                        if deficits.len() >= MAX_REPORTED_GENS {
-                            break;
-                        }
-                        let rank = $dec.rank_in(anchor, k as u64);
-                        let deficit = (k as u64).saturating_sub(rank);
-                        if deficit > 0 {
-                            deficits.push((anchor, deficit as u32));
-                        }
-                    }
+                    // PART 1: report EVERY outstanding generation's deficit (up
+                    // to report_gens = the whole in-flight range) in one report,
+                    // so the sender repairs all holes in a single round-trip
+                    // (parallel tail flush) rather than frontier-first serially.
+                    let deficits = collect_gen_deficits(&gen_widths, report_gens, |anchor, k| {
+                        $dec.rank_in(anchor, k)
+                    });
                     if !deficits.is_empty() || $force {
                         last_deficit_send = Instant::now();
                         if std::env::var("RWM_TRACE").is_ok() {
@@ -3758,6 +3800,21 @@ async fn run_window_sender(
     // able to fund a frontier hole, else a full-window pipe deadlocks).
     let infl_cap: u64 = std::env::var("RWM_INFL_CAP")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // PART 1.2 (receiver-tail): BDP-DERIVED in-flight cap. A fixed RWM_INFL_CAP
+    // must be hand-tuned per RTT; instead bound total in-flight to
+    // gain × Σ copa_bdp_anchor (BtlBw×RTprop, bufferbloat-robust) recomputed
+    // live, so the standing queue — and thus the RECOVERY-ROUND RTT — stays
+    // ~gain·BDP at ANY RTT. It gates BOTH proactive emission AND (Fix-2
+    // non-exempt) reactive/deficit recovery via `cwnd_full`, so the parallel
+    // tail flush cannot re-bloat the queue. Env RWM_INFL_BDP=gain (e.g. 2.0);
+    // 0/unset = off (legacy static RWM_INFL_CAP / store-only backpressure).
+    let infl_bdp_gain: f64 = std::env::var("RWM_INFL_BDP")
+        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
+    let infl_bdp_on = infl_bdp_gain > 0.0;
+    // Boot cap before the BtlBw anchor warms (a few RTTs); ~1.5× a 100 Mbit/
+    // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
+    let mut dyn_infl_cap: u64 = if infl_bdp_on { 128 } else { infl_cap };
+    let mut dyn_infl_refresh_us: u64 = 0;
     // Transport-ceiling fix (generation mode): clock the coded-emission budget
     // to the SENT source frontier instead of the ACKED frontier. The
     // ack-clocked `target = ack·(1+r) + W` DEADLOCKS a small generation: once
@@ -3833,8 +3890,27 @@ async fn run_window_sender(
         // of M generations). Pausing TUN reads at store_max holds the send
         // frontier ~M generations ahead of the cumulative-decode frontier.
         let store_len = if generation { encoder.window_size() } else { sent_store.len() };
+        // PART 1.2: refresh the BDP-derived in-flight cap (throttled ~5 ms).
+        if infl_bdp_on {
+            let dnow = now_us();
+            if dnow.saturating_sub(dyn_infl_refresh_us) >= 5_000 {
+                dyn_infl_refresh_us = dnow;
+                let bdp: f64 = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
+                        .sum()
+                };
+                if bdp > 0.0 {
+                    dyn_infl_cap = ((infl_bdp_gain * bdp).ceil() as u64).max(64);
+                }
+            }
+        }
+        let eff_infl_cap = if infl_bdp_on { dyn_infl_cap } else { infl_cap };
         // In-flight (unacked) symbols across the pipe, for the BDP in-flight cap.
-        let pipe_infl: u64 = if infl_cap > 0 {
+        let pipe_infl: u64 = if eff_infl_cap > 0 {
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
             for id in sched.active_paths() {
@@ -3847,7 +3923,7 @@ async fn run_window_sender(
         } else {
             0
         };
-        let cwnd_full = infl_cap > 0 && pipe_infl >= infl_cap;
+        let cwnd_full = eff_infl_cap > 0 && pipe_infl >= eff_infl_cap;
         // Plain-reliable delay-based window cap (paper §12): bound the
         // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
         // loss recovery does not stall behind a bloated queue. Refreshed off
@@ -5928,6 +6004,39 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// PART 1 (receiver-tail parallelization). With the legacy bound (6) a
+    /// lossy bulk transfer reports only the first 6 outstanding generations'
+    /// deficits per round, so holes are repaired frontier-first — one round-
+    /// trip per ~6 generations (serial tail). Lifting `report_gens` to cover
+    /// the whole in-flight range reports EVERY outstanding generation's deficit
+    /// in ONE report, so the sender repairs all holes in a single round-trip.
+    /// This is the "all deficits recover in one round" invariant.
+    #[test]
+    fn receiver_tail_reports_all_deficits_in_one_round() {
+        // 50 outstanding generations, each K=384, each 3 DoF short (rank 381).
+        let mut gen_widths: BTreeMap<u64, u16> = BTreeMap::new();
+        for g in 0..50u64 {
+            gen_widths.insert(g * 384, 384);
+        }
+        let rank_of = |_anchor: u64, k: u64| k - 3; // deficit 3 in every gen
+
+        // Legacy bound: only the frontier-first 6 generations are reported —
+        // the tail is serialized (the remaining 44 wait for future rounds).
+        let d6 = collect_gen_deficits(&gen_widths, 6, rank_of);
+        assert_eq!(d6.len(), 6, "legacy bound reports only 6 generations");
+
+        // Parallel tail flush: ALL 50 holes reported in a single round.
+        let all = collect_gen_deficits(&gen_widths, 256, rank_of);
+        assert_eq!(all.len(), 50, "every outstanding generation reported at once");
+        assert!(all.iter().all(|&(_, d)| d == 3));
+        let total: u32 = all.iter().map(|(_, d)| d).sum();
+        assert_eq!(total, 150, "the full residual deficit is requested in one round");
+
+        // Fully-decoded generations (deficit 0) are omitted regardless of cap.
+        let none = collect_gen_deficits(&gen_widths, 256, |_a, k| k);
+        assert!(none.is_empty(), "decoded generations report no deficit");
+    }
 
     /// Lossy stream (EVICT / datagram): a full inject channel must DROP and
     /// return immediately — delivery must never block a lossy stream on a
