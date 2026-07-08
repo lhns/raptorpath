@@ -469,6 +469,52 @@ fn collect_gen_deficits(
     deficits
 }
 
+/// Repair-coverage horizon gate (branch `feat/nack-timing`): the classic
+/// FEC discipline of WAITING FOR THE CODED REPAIR before falling back to ARQ.
+///
+/// ROOT CAUSE it addresses (measured across 4 sessions). In generation mode the
+/// deficit report IS the reactive NACK — and it fires the instant a hole appears
+/// at the frontier, BEFORE the in-flight proactive repair covering that hole
+/// (which rides with the surrounding data and arrives ~1 generation-span later)
+/// has a chance to decode it. So a hole proactive repair WOULD have covered gets
+/// a redundant ARQ round-trip instead, pinning the proactive recovery fraction at
+/// ~0.4 and the throughput to the round-trip-bound regime at high RTT.
+///
+/// THE GATE. A generation's residual deficit is only ELIGIBLE to be reported
+/// (a reactive NACK) once it has been outstanding for at least `horizon` — the
+/// time for the covering proactive repair to arrive + decode (~the generation /
+/// window span at the current send rate, NOT an RTT). Newly-deficient anchors are
+/// ARMED (their first-seen instant recorded in `armed`) and WITHHELD; an anchor
+/// that decodes within the horizon drops out of `deficits` and is disarmed — a
+/// proactive recovery, NO round-trip. Only anchors whose horizon has expired are
+/// returned (the reactive fallback that keeps reliability intact).
+///
+/// `horizon == 0` restores the byte-identical shipped path (report immediately).
+/// Extracted pure so the "hole covered by proactive repair within the horizon
+/// fires no NACK" invariant is unit-tested without the async receiver loop.
+fn horizon_gate_deficits(
+    deficits: &[(u64, u32)],
+    armed: &mut BTreeMap<u64, Instant>,
+    horizon: Duration,
+    now: Instant,
+) -> Vec<(u64, u32)> {
+    if horizon.is_zero() {
+        return deficits.to_vec();
+    }
+    // Disarm anchors that no longer carry a deficit (decoded within the
+    // horizon → proactive win) so `armed` tracks only live holes.
+    let live: std::collections::BTreeSet<u64> = deficits.iter().map(|&(a, _)| a).collect();
+    armed.retain(|a, _| live.contains(a));
+    let mut ready: Vec<(u64, u32)> = Vec::new();
+    for &(anchor, deficit) in deficits {
+        let first = *armed.entry(anchor).or_insert(now);
+        if now.saturating_duration_since(first) >= horizon {
+            ready.push((anchor, deficit));
+        }
+    }
+    ready
+}
+
 /// Main entry point.
 pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
     run_impl(config, None).await
@@ -1274,6 +1320,24 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(6)
             .clamp(1, 2000);
+        // Repair-coverage horizon (branch `feat/nack-timing`). Base wait, in
+        // MILLISECONDS, before a frontier hole's deficit is allowed to fire a
+        // reactive NACK — the time for the in-flight proactive repair covering
+        // it to arrive + decode (~a generation-span at the send rate, NOT an
+        // RTT). Unset / 0 = byte-identical shipped path (report immediately).
+        // Small and bounded: a few ms at 100 Mbit buys the whole round-trip an
+        // ARQ pull would have cost. Made δ-aware at use: clamped to ≤ ½·SRTT so
+        // low-RTT / latency-tight (Realtime) paths never over-wait, and it can
+        // never exceed the round-trip it is trying to save.
+        let repair_wait_base: Duration = std::env::var("RWM_REPAIR_WAIT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::ZERO);
+        // Per-anchor first-armed instants for the horizon gate (see
+        // `horizon_gate_deficits`). Persists across reports so the wait
+        // accumulates; an anchor decoded within the horizon is disarmed there.
+        let mut deficit_armed: BTreeMap<u64, Instant> = BTreeMap::new();
         let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
         let mut highest_seen_seq: u64 = 0;
         let mut last_nack_time = Instant::now();
@@ -1517,16 +1581,45 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     // to report_gens = the whole in-flight range) in one report,
                     // so the sender repairs all holes in a single round-trip
                     // (parallel tail flush) rather than frontier-first serially.
-                    let deficits = collect_gen_deficits(&gen_widths, report_gens, |anchor, k| {
+                    let raw_deficits = collect_gen_deficits(&gen_widths, report_gens, |anchor, k| {
                         $dec.rank_in(anchor, k)
                     });
+                    // Repair-coverage horizon (branch `feat/nack-timing`): give
+                    // the in-flight proactive repair a chance to decode each hole
+                    // before its deficit fires a reactive NACK. δ-aware — clamped
+                    // to ≤ ½·SRTT so low-RTT / latency-tight paths never over-wait
+                    // and the wait can never exceed the round-trip it would save.
+                    let horizon = if repair_wait_base.is_zero() {
+                        Duration::ZERO
+                    } else {
+                        let srtt = {
+                            let sched = recv_scheduler.lock();
+                            sched
+                                .live_paths()
+                                .into_iter()
+                                .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
+                                .max()
+                        };
+                        match srtt {
+                            Some(s) => repair_wait_base.min(s / 2),
+                            None => repair_wait_base,
+                        }
+                    };
+                    let deficits = horizon_gate_deficits(
+                        &raw_deficits,
+                        &mut deficit_armed,
+                        horizon,
+                        Instant::now(),
+                    );
                     if !deficits.is_empty() || $force {
                         last_deficit_send = Instant::now();
                         if std::env::var("RWM_TRACE").is_ok() {
                             let total: u32 = deficits.iter().map(|(_, d)| d).sum();
+                            let withheld = raw_deficits.len().saturating_sub(deficits.len());
                             eprintln!(
-                                "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={}",
-                                ooo_frontier, gen_widths.len(), deficits, total
+                                "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={} withheld_by_horizon={} horizon_ms={}",
+                                ooo_frontier, gen_widths.len(), deficits, total,
+                                withheld, horizon.as_millis()
                             );
                         }
                         let msg = ControlMessage::GenerationDeficit { deficits };
@@ -6036,6 +6129,44 @@ mod tests {
         // Fully-decoded generations (deficit 0) are omitted regardless of cap.
         let none = collect_gen_deficits(&gen_widths, 256, |_a, k| k);
         assert!(none.is_empty(), "decoded generations report no deficit");
+    }
+
+    /// Repair-coverage horizon (branch `feat/nack-timing`): a hole covered by
+    /// the in-flight proactive repair WITHIN the horizon fires NO reactive NACK;
+    /// a hole still uncovered when the horizon EXPIRES falls back to the NACK.
+    #[test]
+    fn horizon_withholds_nack_until_repair_window_then_falls_back() {
+        use std::time::{Duration, Instant};
+        let horizon = Duration::from_millis(5);
+        let mut armed: BTreeMap<u64, Instant> = BTreeMap::new();
+        let t0 = Instant::now();
+
+        // A frontier generation just went deficient. First sight → ARMED and
+        // WITHHELD: no reactive NACK yet (give the proactive repair its horizon).
+        let d = vec![(0u64, 3u32)];
+        let ready = horizon_gate_deficits(&d, &mut armed, horizon, t0);
+        assert!(ready.is_empty(), "a fresh hole is withheld, not NACKed immediately");
+        assert_eq!(armed.len(), 1, "the fresh hole is armed");
+
+        // The proactive repair decodes it within the horizon → it drops out of
+        // the deficit set → disarmed, and NO NACK ever fired (the proactive win).
+        let none: Vec<(u64, u32)> = vec![];
+        let ready = horizon_gate_deficits(&none, &mut armed, horizon, t0 + Duration::from_millis(2));
+        assert!(ready.is_empty());
+        assert!(armed.is_empty(), "decoded-within-horizon hole is disarmed with no NACK");
+
+        // A hole that proactive repair does NOT cover: still deficient after the
+        // horizon expires → the reactive NACK fires (the reliability fallback).
+        let d2 = vec![(384u64, 2u32)];
+        let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0);
+        assert!(ready.is_empty(), "still withheld before the horizon");
+        let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0 + Duration::from_millis(6));
+        assert_eq!(ready, vec![(384, 2)], "horizon expired uncovered → reactive fallback fires");
+
+        // horizon == 0 restores the immediate (byte-identical) shipped path.
+        let mut armed0: BTreeMap<u64, Instant> = BTreeMap::new();
+        let ready = horizon_gate_deficits(&d, &mut armed0, Duration::ZERO, t0);
+        assert_eq!(ready, d, "horizon 0 reports immediately (shipped path)");
     }
 
     /// Lossy stream (EVICT / datagram): a full inject channel must DROP and
