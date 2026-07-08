@@ -673,6 +673,11 @@ struct Sys {
     holes: std::collections::BTreeSet<usize>,
     max_deficit: usize,
     hi_evidence: usize,
+    idle_slots: u64,       // free path-slots wasted because the store gate stalled
+                           // the sender with nothing else useful to send (the
+                           // in-order-frontier flow-control drag / #64 stall).
+    max_outstanding: usize, // peak (next_src − ackfrontier): the sender's in-flight
+                            // / receiver reassembly occupancy under the store cap.
 }
 
 struct BinaryHeapRev(std::collections::BinaryHeap<std::cmp::Reverse<(u64, usize)>>);
@@ -685,7 +690,8 @@ impl BinaryHeapRev {
     fn pop(&mut self) { self.0.pop(); }
 }
 
-struct SysOut { t: u64, repair_sent: u64, repair_tail: u64, max_deficit: usize, arq_used: u64 }
+struct SysOut { t: u64, repair_sent: u64, repair_tail: u64, max_deficit: usize, arq_used: u64,
+    idle_slots: u64, max_outstanding: usize }
 
 impl Sys {
     fn new(paths: Vec<Path>, k: usize, cfg: SysCfg, seed: u64) -> Self {
@@ -721,6 +727,8 @@ impl Sys {
             holes: std::collections::BTreeSet::new(),
             max_deficit: 0,
             hi_evidence: 0,
+            idle_slots: 0,
+            max_outstanding: 0,
         }
     }
 
@@ -843,7 +851,8 @@ impl Sys {
 
             if self.d >= self.k {
                 return Some(SysOut { t: tick, repair_sent: self.repair_sent,
-                    repair_tail: self.repair_tail, max_deficit: self.max_deficit, arq_used });
+                    repair_tail: self.repair_tail, max_deficit: self.max_deficit, arq_used,
+                    idle_slots: self.idle_slots, max_outstanding: self.max_outstanding });
             }
             if self.holes.len() > self.max_deficit { self.max_deficit = self.holes.len(); }
 
@@ -863,6 +872,7 @@ impl Sys {
             }
             let ackfrontier = if self.cfg.in_order { self.rep_df } else { self.rep_d };
             let outstanding = self.next_src.saturating_sub(ackfrontier);
+            if outstanding > self.max_outstanding { self.max_outstanding = outstanding; }
             let store_ok = self.cfg.store.map_or(true, |w| outstanding < w);
             let repair_inflight = (self.repair_sent - self.rep_snapshot) as i64;
             let total: u32 = free.iter().sum();
@@ -908,6 +918,10 @@ impl Sys {
                     if !lost { self.schedule(tick + self.paths[path].owd, SEv::Rep(path, cover_hi)); }
                     continue;
                 }
+                // this path has a free slot but nothing useful to send.  If source
+                // remains and the store gate is what blocked it, those slots are
+                // the flow-control drag (the sender idles behind the ack-frontier).
+                if self.next_src < self.k && !store_ok { self.idle_slots += free[path] as u64; }
                 free[path] = 0;
                 if (0..self.n).all(|i| free[i] == 0) { break 'slots; }
             }
@@ -1101,6 +1115,142 @@ fn systematic_repair_provisioning_curve() {
     assert!(f_cross_inorder > 1.15, "cross-path repair must rescue the in-order frontier: x{f_cross_inorder:.3}");
     assert!(reached > 1.15, "sufficient cross-path deficit-repair must reach ~ceiling: x{reached:.3}");
     assert!(f_cross_inorder - f_longpole > 0.10, "the repair lever must move the factor materially");
+}
+
+// =========================================================================
+// PART 5 — THE PURE FMTCP-CLASS CONFIG: total-in-flight flow control +
+//   fountain-redundancy loss absorption (NO per-hole ARQ) + decode-on-total.
+//
+// WHY THIS TEST EXISTS (the FMTCP retry, docs/research/fmtcp-retry-design.md).
+// FMTCP (Cui/Wang/Wang/Wang/Wang, IEEE/ACM ToN 23(2):465–478, 2015) aggregates
+// heterogeneous paths and its abstract states our exact C8 pathology — "a subflow
+// experiencing high delay and loss becomes the bottleneck, significantly degrading
+// the aggregate goodput."  Its escape is TWO simultaneous design choices our prior
+// attempts never combined:
+//   (FC)  flow control gated on TOTAL in-flight / per-block decode progress, NOT
+//         on an in-order cumulative-ack frontier;
+//   (LR)  losses ABSORBED by fountain redundancy (any-K-of-N decode, no round
+//         trip), NOT recovered per-hole by ARQ.
+// The production arc kept ONE foot in the in-order world in every attempt:
+//   * the coded/generation designs kept IN-ORDER FLOW CONTROL (store pruned on the
+//     cumulative-ack frontier → frontier serialization);  goal-gate "RWM Phase C".
+//   * the SACK designs kept PER-HOLE ARQ recovery AND a SUMMED-across-paths store
+//     cap (#64) → recovery-latency bound + bufferbloat;  goal-gate "SACK+BDP".
+// Nobody flipped BOTH (FC)+(LR) at once.  This test models that pure combination.
+//
+// THE LEVERS in the Sys model map exactly:
+//   in_order = true   → flow control gated on df (the IN-ORDER delivered frontier)
+//   in_order = false  → flow control gated on d  (TOTAL delivered = total-in-flight)
+//   cross_path=false, arq=true  → per-hole same-path ARQ recovery (the walk-the-
+//                                 frontier-at-1-ARQ-round/RTT bound)
+//   cross_path=true,  arq=false → fungible fountain redundancy absorbs the loss
+//   store = Some(w)             → finite in-flight cap (aggregate BDP); the sender
+//                                 STALLS when the gate is full (idle_slots probe).
+// =========================================================================
+
+// Aggregate BDP across the C8 path set = Σ g_i · RTT_i (per-path, NOT the summed-
+// anchor #64 bug).  This is the honest total-in-flight cap for the FMTCP config.
+fn c8_agg_bdp() -> usize {
+    let f = c8_fast();
+    let s = c8_slow();
+    (f.goodput() * 2.0 * f.owd as f64 + s.goodput() * 2.0 * s.owd as f64).ceil() as usize
+}
+
+#[test]
+fn fmtcp_pure_flow_control_and_redundancy() {
+    let k = k_for_mb(25.0);
+    let w = c8_wspan();
+    let bdp = c8_agg_bdp();
+    let dual = [c8_fast(), c8_slow()];
+    let ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+
+    println!("\n=== PART 5: PURE FMTCP-CLASS CONFIG at C8 het (K={k} ~25MB, W_span={w}, aggBDP={bdp}) ===");
+    println!("goodput ceiling Σg/g_fast = x{ceiling:.3}\n");
+
+    // 2×2 lever matrix, store held FINITE (= fungible horizon w, as Q4's 0.932).
+    //   FC axis:   in-order-frontier (df)  vs  total-in-flight (d)
+    //   LR axis:   per-hole ARQ (affine)   vs  fungible fountain redundancy
+    let mk = |cross, arq, in_order| SysCfg {
+        r: 0.06, w_span: w, cross_path: cross, store: Some(w), arq, in_order, fb_ms: 5,
+    };
+    //                                  cross  arq   in_order
+    let (_, o_ii_arq, f_ii_arq) = sys_factor(&dual, k, mk(false, true, true), 0xF00D);  // in-order  + ARQ  (PRODUCTION cap)
+    let (_, o_ti_arq, f_ti_arq) = sys_factor(&dual, k, mk(false, true, false), 0xF00D); // total-inflight + ARQ (flip FC only)
+    let (_, o_ii_fec, f_ii_fec) = sys_factor(&dual, k, mk(true, false, true), 0xF00D);  // in-order  + fountain (flip LR only)
+    let (_, o_ti_fec, f_ti_fec) = sys_factor(&dual, k, mk(true, false, false), 0xF00D); // total-inflight + fountain (PURE FMTCP)
+
+    println!("  {:<52} {:>8} {:>8} {:>8} {:>8}", "config (FC × LR)", "factor", "arq", "idle", "maxOut");
+    println!("  {:<52} {:>7.3}x {:>8} {:>8} {:>8}  <- PRODUCTION cap",
+        "in-order-frontier FC  ×  per-hole ARQ", f_ii_arq, o_ii_arq.arq_used, o_ii_arq.idle_slots, o_ii_arq.max_outstanding);
+    println!("  {:<52} {:>7.3}x {:>8} {:>8} {:>8}  <- flip FC only",
+        "TOTAL-in-flight FC    ×  per-hole ARQ", f_ti_arq, o_ti_arq.arq_used, o_ti_arq.idle_slots, o_ti_arq.max_outstanding);
+    println!("  {:<52} {:>7.3}x {:>8} {:>8} {:>8}  <- flip LR only",
+        "in-order-frontier FC  ×  fountain redundancy", f_ii_fec, o_ii_fec.arq_used, o_ii_fec.idle_slots, o_ii_fec.max_outstanding);
+    println!("  {:<52} {:>7.3}x {:>8} {:>8} {:>8}  <- PURE FMTCP",
+        "TOTAL-in-flight FC    ×  fountain redundancy", f_ti_fec, o_ti_fec.arq_used, o_ti_fec.idle_slots, o_ti_fec.max_outstanding);
+
+    println!("\n  Reading: the ×0.97 production cap is the CONJUNCTION of in-order-frontier");
+    println!("  flow control AND per-hole ARQ.  Flipping EITHER lever escapes it; the PURE");
+    println!("  FMTCP config flips BOTH — total-in-flight FC + fountain redundancy — reaching");
+    println!("  the Σg ceiling with ZERO ARQ and a bounded in-flight store (no #64 bufferbloat).");
+
+    // (a) the production cap: both capping levers set → ~parity (≤ ~1.0).
+    assert!(f_ii_arq < 1.05,
+        "in-order FC + per-hole ARQ must reproduce the ~parity production cap: x{f_ii_arq:.3}");
+    // (b) the PURE FMTCP config reaches the ×1.19 ceiling…
+    assert!(f_ti_fec > 1.15,
+        "PURE FMTCP (total-in-flight + fountain) must reach ~×1.19 at C8: x{f_ti_fec:.3}");
+    assert!(f_ti_fec <= ceiling + 0.03,
+        "cannot exceed the goodput ceiling x{ceiling:.3}: x{f_ti_fec:.3}");
+    // (c) …with NO per-hole ARQ (redundancy absorbs the loss).
+    assert_eq!(o_ti_fec.arq_used, 0, "PURE FMTCP uses NO per-hole ARQ — fountain redundancy only");
+    // (d) escapes the frontier serialization: total-in-flight lifts it materially
+    //     over the in-order-frontier cap even holding recovery FIXED (ARQ) …
+    assert!(f_ti_arq - f_ii_arq > 0.10,
+        "total-in-flight FC must lift the factor over the in-order cap (FC lever): {f_ii_arq:.3}→{f_ti_arq:.3}");
+    // … and the store stays BOUNDED (no bufferbloat): the pure config's peak
+    //     in-flight sits near aggregate BDP, not the whole object.
+    assert!(o_ti_fec.max_outstanding <= w,
+        "total-in-flight in-flight must stay bounded by the store cap ({w}): {}", o_ti_fec.max_outstanding);
+    assert!(o_ti_fec.max_outstanding < k / 10,
+        "in-flight must be ≈BDP, NOT the whole object (no #64 bufferbloat): {} of K={k}", o_ti_fec.max_outstanding);
+}
+
+// -------------------------------------------------------------------------
+// PART 5b — THE FLOW-CONTROL LEVER, ISOLATED, with the #64 sender-stall probe.
+//   Hold recovery at the CAPPING setting (per-hole same-path ARQ) and a FINITE
+//   store, and flip ONLY the flow-control model in-order-frontier → total-in-
+//   flight.  This isolates the claim that the flow-control model — not the
+//   recovery model — is one independent escape from the frontier serialization,
+//   and exhibits the mechanism: under in-order FC the sender IDLES behind the
+//   ack-frontier (idle_slots ≫ 0, in-flight pinned at the store cap); under
+//   total-in-flight FC the idle drag collapses and in-flight sits near BDP.
+// -------------------------------------------------------------------------
+#[test]
+fn fmtcp_flow_control_lever_isolated() {
+    let k = k_for_mb(25.0);
+    let w = c8_wspan();
+    let dual = [c8_fast(), c8_slow()];
+
+    println!("\n=== PART 5b: FLOW-CONTROL LEVER ISOLATED (K={k}, store=Some({w}), recovery=per-hole ARQ) ===\n");
+    let mk = |in_order| SysCfg {
+        r: 0.06, w_span: w, cross_path: false, store: Some(w), arq: true, in_order, fb_ms: 5,
+    };
+    let (_, in_o, f_in) = sys_factor(&dual, k, mk(true), 0xF00D);
+    let (_, to_i, f_to) = sys_factor(&dual, k, mk(false), 0xF00D);
+
+    println!("  {:<28} {:>8} {:>12} {:>12}", "flow control", "factor", "idle_slots", "max_inflight");
+    println!("  {:<28} {:>7.3}x {:>12} {:>12}", "in-order-frontier (df)", f_in, in_o.idle_slots, in_o.max_outstanding);
+    println!("  {:<28} {:>7.3}x {:>12} {:>12}", "total-in-flight (d)",    f_to, to_i.idle_slots, to_i.max_outstanding);
+    println!("\n  Reading: switching the modeled flow control from in-order-frontier to");
+    println!("  total-in-flight lifts the factor and COLLAPSES the sender idle drag — the");
+    println!("  in-order frontier stalls the sender behind a hole that walks at ≈1 ARQ");
+    println!("  round/RTT (the #64 mechanism); total-in-flight lets the sender keep the");
+    println!("  fast path busy while holes are still outstanding.");
+
+    assert!(f_to > f_in + 0.10, "total-in-flight FC must beat in-order-frontier FC: {f_in:.3}→{f_to:.3}");
+    assert!(in_o.idle_slots > to_i.idle_slots,
+        "in-order FC must idle the sender more than total-in-flight FC: {} vs {}", in_o.idle_slots, to_i.idle_slots);
 }
 
 // =========================================================================
