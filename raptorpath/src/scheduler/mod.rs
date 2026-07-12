@@ -1024,6 +1024,22 @@ impl PathState {
         self.copa.min_rtt()
     }
 
+    /// BtlBw (bottleneck rate) for this path in symbols/second — the path's
+    /// own drain rate = anchor / RTprop = (BtlBw·RTprop)/RTprop.  This is the
+    /// BBR-style per-path pacing rate: the slow path's future-offset data
+    /// emitted at BtlBw_slow flows at the slow path's drain rate WITHOUT
+    /// queuing, so no standing queue (bufferbloat) builds.  None during warm-up
+    /// (same trustworthiness gate as `copa_bdp_anchor`).
+    pub fn btlbw_sym_per_s(&self) -> Option<f64> {
+        let rtprop = self.copa.min_rtt()?.as_secs_f64();
+        let anchor = self.copa.bdp_anchor()?;
+        if rtprop > 0.0 {
+            Some(anchor / rtprop)
+        } else {
+            None
+        }
+    }
+
     /// Clamp cwnd to [MIN_CWND, MAX_CWND] and then raise it to the BtlBw
     /// anchor floor if one is established (paper Section 12.6). The floor
     /// only ratchets cwnd UP (never a cap) and is itself bounded by
@@ -1750,6 +1766,21 @@ impl Scheduler {
         Some(candidates[idx.min(candidates.len() - 1)])
     }
 
+    /// The fastest active path by RTprop (min windowed-min RTT) — the DAPS
+    /// reference (Δ=0) path and the pacing spill target.  Falls back to the
+    /// first active path when no RTprop sample exists yet (warm-up).
+    pub fn fastest_active_path(&self) -> Option<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active)
+            .min_by(|a, b| {
+                let ra = a.min_rtt().unwrap_or(Duration::MAX);
+                let rb = b.min_rtt().unwrap_or(Duration::MAX);
+                ra.cmp(&rb)
+            })
+            .map(|p| p.id)
+    }
+
     /// DAPS delay-skew offset Δ_j for path `pid`, in symbols (0 for warm-up /
     /// the fastest path).  Follows the published DAPS delay-alignment rule
     /// (G. Sarwar, R. Boreli, E. Lochin, A. Mifdaoui, G. Smith, "Mitigating
@@ -1804,10 +1835,41 @@ impl Scheduler {
     /// This is the published fix for DAPS's known static-schedule failure mode
     /// (a near-frontier slow-path symbol that stalls the delivered frontier).
     pub fn daps_eligible_paths(&self, lead_syms: f64) -> Vec<PathId> {
+        self.daps_eligible_paths_capped(lead_syms, 0.0)
+    }
+
+    /// `daps_eligible_paths` with a BLEST-style per-path in-flight BDP cap
+    /// (S. Ferlin, Ö. Alay, O. Mehani, R. Boreli, "BLEST: Blocking Estimation-
+    /// based MPTCP Scheduler for Heterogeneous Networks," IFIP Networking 2016):
+    /// bound each subflow's OUTSTANDING to its own BDP so no path is committed
+    /// beyond one bandwidth-delay product.  A path j is eligible iff
+    ///   `lead_syms ≥ Δ_j`  (the ECF future-offset guard)  AND
+    ///   `in_flight_j < ceil(bdp_gain · BtlBw_j·RTprop_j)`  (the BLEST bound).
+    ///
+    /// This is the fix for the DAPS slow-path bufferbloat: without it the
+    /// per-path cap only gated the aggregate TUN-read pause (the sender paused
+    /// only when EVERY path was full), so the softmax kept committing a share
+    /// to the slow path past its BDP — the slow path's standing queue grew to
+    /// ~834 ms and consumed the DAPS pre-fetch slack.  Bounding OUTSTANDING at
+    /// one BDP holds the standing queue near zero (RTT ≈ RTprop), so the slack
+    /// is preserved.  `bdp_gain ≤ 0` disables the cap (the shipped default).
+    /// A path whose anchor has not warmed yet is NOT capped (warm-up).  If the
+    /// cap would empty the set, the caller falls back to the uncapped set so
+    /// placement never wedges.
+    pub fn daps_eligible_paths_capped(&self, lead_syms: f64, bdp_gain: f64) -> Vec<PathId> {
         self.paths
             .values()
             .filter(|p| p.active)
             .filter(|p| lead_syms >= self.daps_offset_syms(p.id))
+            .filter(|p| {
+                if bdp_gain <= 0.0 {
+                    return true;
+                }
+                match p.copa_bdp_anchor() {
+                    Some(bdp) => (p.in_flight as f64) < (bdp_gain * bdp).max(1.0),
+                    None => true, // anchor not warm yet — do not restrict
+                }
+            })
             .map(|p| p.id)
             .collect()
     }
@@ -1819,8 +1881,24 @@ impl Scheduler {
     /// if lost it has the pre-fetch slack (Δ_j / ΣBtlBw seconds) to recover
     /// before df arrives — the long-pole escape the cost-based build lacked.
     pub fn place_source_daps(&self, lead_syms: f64) -> Option<PathId> {
-        let elig: std::collections::HashSet<PathId> =
-            self.daps_eligible_paths(lead_syms).into_iter().collect();
+        self.place_source_daps_capped(lead_syms, 0.0)
+    }
+
+    /// `place_source_daps` with the BLEST per-path in-flight BDP cap
+    /// (`daps_eligible_paths_capped`).  A path at its own BDP is dropped from
+    /// the eligible set, so the softmax steers fresh source to a path with
+    /// spare pipe instead of over-committing the slow path (the bufferbloat
+    /// fix).  If EVERY eligible path is at its cap, fall back to the uncapped
+    /// lead-eligible set (the fast path) so intake never wedges — the aggregate
+    /// per-path TUN-pause then throttles overall admission.
+    pub fn place_source_daps_capped(&self, lead_syms: f64, bdp_gain: f64) -> Option<PathId> {
+        let mut elig: std::collections::HashSet<PathId> = self
+            .daps_eligible_paths_capped(lead_syms, bdp_gain)
+            .into_iter()
+            .collect();
+        if elig.is_empty() {
+            elig = self.daps_eligible_paths(lead_syms).into_iter().collect();
+        }
         if elig.len() <= 1 {
             // only the fast path qualifies (or warm-up): send there.
             return elig.into_iter().next().or_else(|| self.place_symbol(false, &[]));
@@ -3143,6 +3221,54 @@ mod tests {
             "lead 400 ≥ Δ_slow 300 ⇒ both paths eligible (slow carries future data)");
         let slow_picks = (0..2000).filter(|_| sched.place_source_daps(400.0) == Some(1)).count();
         assert!(slow_picks > 0, "with sufficient lead the slow path must carry some future-offset data");
+    }
+
+    // BLEST per-path in-flight BDP cap (queue management): once the slow path's
+    // in_flight reaches its own BDP, it is dropped from the DAPS-eligible set so
+    // fresh source no longer piles onto it (the bufferbloat fix).  Below the cap
+    // it still carries future-offset data; at/above the cap all source goes to
+    // the fast path.  The cap-off default (gain 0) never restricts.
+    #[test]
+    fn daps_bdp_cap_bounds_slow_path_outstanding() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹, slow RTprop=40ms/1667 sym·s⁻¹.
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 40, 1667.0);
+        // Slow-path BDP = BtlBw·RTprop = 1667·0.040 ≈ 66.7 symbols.
+        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
+        assert!((slow_bdp - 66.7).abs() < 1.0, "slow BDP ≈ 66.7 syms: {slow_bdp}");
+
+        // Deep lead (≥ Δ_slow ≈ 300) so the ECF guard admits the slow path.
+        let lead = 4000.0;
+
+        // Below the cap (in_flight = 0): the slow path carries some future data.
+        let slow_below = (0..3000)
+            .filter(|_| sched.place_source_daps_capped(lead, 1.0) == Some(1))
+            .count();
+        assert!(slow_below > 0, "below its BDP the slow path must carry future data");
+
+        // At/above the cap: drive slow in_flight past its BDP, then it must be
+        // excluded — every source now goes to the fast path.
+        sched.path_mut(1).unwrap().in_flight = (slow_bdp.ceil() as u32) + 5;
+        assert_eq!(
+            sched.daps_eligible_paths_capped(lead, 1.0),
+            vec![0],
+            "slow path at its BDP cap must be dropped from the eligible set"
+        );
+        for _ in 0..200 {
+            assert_eq!(
+                sched.place_source_daps_capped(lead, 1.0),
+                Some(0),
+                "slow path over its BDP ⇒ all source to the fast path (no bufferbloat)"
+            );
+        }
+
+        // Cap OFF (gain 0, the shipped default): even over one BDP the slow path
+        // stays eligible — byte-identical to the pre-cap behaviour.
+        let elig_off = sched.daps_eligible_paths_capped(lead, 0.0);
+        assert!(elig_off.contains(&1), "gain 0 disables the cap (default unchanged)");
     }
 
     // Symmetric paths (skew 0 ⇒ all Δ_j = 0) must reduce EXACTLY to the
