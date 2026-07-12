@@ -7131,6 +7131,44 @@ queue bound is the correct mechanism (oracle-confirmed); the TRUE residual is no
 not placement queue depth — a per-path delivered-rate estimator (cumulative ack ×
 per-path ownership) is the follow-on.
 
+### 16.11 Pace-all traffic: pacing SOURCE + REPAIR at BtlBw_i (2026-07-12) — measured
+
+The per-path estimator (§16.10 follow-on) made BtlBw_i real and paced SOURCE
+placement at it, but §12.5's per-path pacer metered only source: the coded/repair
+emission (proactive budget, filling pacer, deficit top-up, inline) was placed by a
+separate law and clocked only by a GLOBAL delivered-goodput bucket. PART 6e's PACE
+scheduler, however, admits ≤ BtlBw_i **total** — it never split source vs repair —
+so the model already assumed total-pacing; the production gap was purely the
+source-only pacer. TOTAL per-path emission = source (paced) + repair (unpaced per
+path) exceeded BtlBw_i and a standing queue persisted on BOTH paths, fed by
+unpaced repair (the per-path SOURCE gauge `sinfl≈0` throughout — source drains
+promptly, so it is not the backlog).
+
+The fix routes every repair symbol through the SAME per-path BtlBw token bucket as
+source: emit on the candidate if its bucket is funded, else spill to the fast
+(min-RTprop) path, else HOLD. The HOLD (repair only ever draws from a bucket ≥ 1)
+enforces total-per-path-emission ≤ BtlBw_i on BOTH paths, giving source priority
+and repair the leftover capacity — realizing PART 6e's PACE assumption in
+production (the model is unchanged; `temporal_oracle` 19/19 stands).
+
+**L1 (VM, dual netns, 25 MB × 8, rp-native, same-binary A/B, seeds 42 & 7).**
+Recovery ceiling C8 = single-c2 (16.71) + single-c3 (3.13) = **19.84 Mbit/s**.
+Pace-all lifts C8 on BOTH seeds — seed42 7.67→11.88 (+55%), seed7 6.96→10.34
+(+49%), pooled ~7.31→~11.11 (**0.37→0.56 of the recovery ceiling**, ×0.44→×0.67
+single-fast) — and STABILIZES: within-arm σ_s collapses 4.5/9.6 s → 1.9/2.5 s. The
+per-path DIAG confirms the mechanism: the slow-path standing queue is ~halved
+(live RTT ~650–1030 ms → ~200–540 ms) with RTprop pinned at the 42–46 ms
+propagation base (min-filter clean), and the fast-path queue eases (~130 → ~90 ms).
+It does NOT reach the ceiling: the slow queue is halved not collapsed, and a
+~100 ms fast-path queue persists. The named residual is now the SOURCE spill (the
+source gate spills to the fast path but does NOT hold, so it can drive the fast
+bucket negative) + the fast-path source burst — a queue PART 6e abstracts away (it
+models only the slow path). C7 (symmetric) is unchanged (21.02, no regression),
+every arm dnf=0. The queue-management arc is thus: scheduling (DAPS) → per-path
+rate estimation (§16.10) → repair pacing (this section) → the residual source-spill
+/ fast-path queue — each bound realized in turn, C8 lifted and stabilized to 0.56
+of the recovery ceiling, not yet at the goodput ceiling.
+
 ---
 
 ## Appendix A: Summary of Key Formulas

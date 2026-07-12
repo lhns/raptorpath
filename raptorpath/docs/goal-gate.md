@@ -4809,3 +4809,116 @@ regime and stabilizes C8, lifting pooled C8 from 0.40→0.52 of the recovery cei
 residual. Regime-map: heterogeneous aggregation is scheduling-bound (DAPS) AND
 rate-estimation-bound (this work, now closed) AND still queue-bound on the
 non-source traffic — improved and stabilized materially, not yet at parity.
+
+## Pace-All Traffic (2026-07-12) — pace the CODED/REPAIR emission at BtlBw_i too; the standing queue that the SOURCE-only pacer left; C8 lifts + STABILIZES on BOTH seeds, does NOT reach the ceiling (branch `feat/pace-all-traffic`)
+
+The per-path estimator (above) made BtlBw_i real and paced SOURCE placement at it,
+but the CODED/REPAIR emission — the per-generation proactive budget, the filling
+proactive pacer, the deficit top-up, and inline repair — was emitted OUTSIDE that
+per-path pacer (path picked by `place_symbol`/`place_repair_spare_path`, metered
+only by the GLOBAL delivered-goodput `gen_tokens` bucket). So TOTAL per-path
+emission = source (paced at BtlBw_i) + repair (unpaced per-path) EXCEEDED BtlBw_i
+and a standing queue persisted on BOTH paths (`sinfl≈0` throughout confirmed the
+SOURCE gauge drains promptly — the queue is fed by unpaced REPAIR, not source
+backlog).
+
+### The fix (generation+DAPS-only; shipped non-DAPS default byte-identical)
+
+Route EVERY repair symbol through the SAME per-path BtlBw token bucket
+(`daps_pace_tok`) as source, via one pure gate `paced_repair_decision(tok, cand,
+fast)` applied at all four repair emission sites:
+- **candidate funded** (bucket ≥ 1) → emit there, consume one token;
+- **candidate dry, fast funded** → spill to the fast (min-RTprop) path so the slow
+  path never over-queues;
+- **BOTH dry** → HOLD (discard the rateless symbol WITHOUT decrementing the
+  deficit want; retry next loop as the buckets refill at BtlBw_i). The HOLD is what
+  bounds the FAST path too: source has priority, repair uses only the LEFTOVER
+  per-path capacity, so neither path is driven above BtlBw_i. Repair only ever
+  draws from a bucket that is ≥ 1, so it can never overdraw a path — the "total
+  per-path emission ≤ BtlBw_i incl. repair" invariant (unit-tested).
+The gate applies BEFORE the symbol is generated/charged, so a HOLD wastes no coded
+symbol. An un-warmed path (anchor not established) is transparent (emits, consumes
+nothing), mirroring the source gate. Gated `pace_all_on = daps_pace_on &&
+RWM_PACE_ALL != 0` (ON by default under DAPS pacing; `RWM_PACE_ALL=0` reproduces
+the SOURCE-only pacer — the same-binary A/B baseline).
+
+### Oracle re-confirm (temporal_oracle PART 6e) — the model ALREADY assumed total-pacing
+
+PART 6e's "PACE (BBR)" scheduler admits ≤ BtlBw_slow **total** (`the slow path
+admits <= BtlBw_slow -> outstanding ~ one BDP`) → queue 344 ms → 0, ×1.195. The
+model does not split source vs repair — it paces the TOTAL per-path admission. So
+the model already assumed total-pacing; the production gap was purely the
+SOURCE-only pacer. Routing repair through the same gate REALIZES PART 6e's PACE
+assumption — the model is unchanged (`-p raptorpath-math` 19/19). NOTE the model
+covers only the SLOW path (the fast path is its min-RTprop reference, assumed
+unbloated); the measured FAST-path queue is a residual the model abstracts away.
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, 25 MB × 8, rp-native perf, SAME-binary A/B, TWO seeds)
+
+Ceilings (post-change binary, single-path, DAPS off): `single-c2` (fast) =
+**16.71**, `single-c3` (slow) = **3.13** Mbit/s ⇒ recovery ceiling C8 = **19.84**,
+C7 = **33.41**; raw-link goodput ceiling C8 = 100(1−ε)+20(1−ε) ≈ **116** (not
+protocol-achievable). Every arm **dnf=0** (reliable, every byte).
+
+**C8 (c2+c3), same binary, `RWM_PACE_ALL` toggle, per seed:**
+
+| arm | seed42 Mbit/s (σ_s) | seed7 Mbit/s (σ_s) | pooled | ×fast | eff ÷19.84 |
+|---|---:|---:|---:|---:|---:|
+| source-only pacer (`RWM_PACE_ALL=0`) | 7.67 (4.46) | 6.96 (9.56) | ~7.31 | 0.44× | 0.37 |
+| **+ pace-all repair (this work)** | **11.88 (1.92)** | **10.34 (2.51)** | **~11.11** | **0.67×** | **0.56** |
+
+**THE RESULT (two-seed, same-binary, stabilize-before-comparing).** Pace-all lifts
+C8 on BOTH seeds — seed42 7.67→11.88 (**+55%**), seed7 6.96→10.34 (**+49%**),
+pooled ~7.31→~11.11 (**+52%**), from **0.37→0.56 of the recovery ceiling**
+(×0.44→×0.67 single-fast) — AND STRONGLY STABILIZES: within-arm σ_s collapses
+4.46/9.56 → 1.92/2.51 s and worst-run max_s 30.2/40.6 → 19.3/22.0 s. The
+source-only pacer is bimodal on both seeds this run (σ_s up to 9.6 s); pace-all
+removes that catastrophic-bloat tail. Median across seeds: pace-all 11.11 (range
+1.55) vs source-only 7.31 (range 0.71 in means, but σ_s 2–4× larger within arm).
+
+**Mechanism confirmed (sender per-path DIAG, base slow RTprop ~42–46 ms, fast
+~6–10 ms).** The slow-path standing queue is roughly HALVED and RTprop stays at
+the propagation base:
+- **Slow-path (p1) live RTT** — source-only ~650–1030 ms (RTprop polluting to
+  293→1902 ms); pace-all ~200–540 ms (seed42) / ~94–713 ms (seed7), **RTprop stays
+  at the 42–46 ms base** (min-filter clean).
+- **Fast-path (p0) live RTT** — source-only ~113–162 ms; pace-all ~63–136 ms.
+
+**REMAINING RESIDUAL (honest — lifts but does NOT reach the ceiling).** C8 is 0.56
+of the recovery ceiling, not ~1.0. The slow-path queue is halved (not collapsed to
+base: ~200–540 ms vs 42 ms) and a fast-path queue (~100 ms) persists. Pacing the
+REPAIR closed the dominant unpaced contributor, but a residual queue remains — the
+SOURCE spill still drives the fast path's bucket negative (the source gate spills
+but does not HOLD, unlike repair), and the fast-path source burst is not bounded.
+The next residual is a TRUE per-path hold on the SOURCE spill (bound the fast path
+for source too) + the fast-path burst — NOT the repair pacing this work fixed.
+
+**C7 (c2+c2) — symmetric control, no regression:** pace-all = **21.02** (σ_s 0.59,
+1.26× single-fast), within noise of the shipped DAPS+QM C7 (21.41) ⇒ no regression;
+the same-binary source-only was **12.08** (σ_s **14.29**, bimodal this run), so
+pace-all also STABILIZES C7 strongly (σ_s 14.3→0.6). Symmetric skew ⇒ repair
+spreads evenly across equal-BtlBw buckets, so the gate rarely holds and does not
+starve.
+
+### Controls / no regression
+
+`cargo test -p raptorpath --lib` 285/285 (2 new:
+`pace_all_traffic_bounds_total_per_path_emission_at_btlbw`,
+`pace_all_traffic_holds_when_both_paths_dry`); `-p raptorpath-math` 19/19 incl.
+temporal_oracle PART 6e (unchanged); gate_suite 15/15 release. Shipped non-DAPS
+default byte-identical (`pace_all_on` requires `RWM_DAPS`; the gate is a NO-OP
+otherwise, and the non-generation default never reaches the repair-emission blocks;
+the gate-first reorder is behaviour-neutral when it returns `Some(candidate)`). All
+L1 arms dnf=0. r*≈0.03 (RWM_GEN_R=0.03).
+
+**VERDICT.** The diagnosed residual (unpaced coded/repair emission) is CLOSED:
+total per-path emission (source + repair) is now metered at BtlBw_i, roughly halving
+the slow-path standing queue while RTprop stays at the propagation base. This lifts
+pooled C8 from 0.37→0.56 of the recovery ceiling (×0.44→×0.67 single-fast), holds on
+BOTH seeds (+49% / +55%), and strongly stabilizes C8 AND C7. It does NOT reach the
+ceiling — the SOURCE spill (which spills but does not hold) plus the fast-path burst
+leave a residual per-path queue (slow ~200–540 ms, fast ~100 ms). Regime-map:
+heterogeneous aggregation is scheduling-bound (DAPS) AND rate-estimation-bound
+(estimator, closed) AND repair-pacing-bound (this work, closed) AND still
+source-spill/fast-path queue-bound — improved and stabilized materially on every
+axis measured, not yet at the goodput ceiling.

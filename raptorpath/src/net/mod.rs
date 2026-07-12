@@ -437,6 +437,42 @@ fn fmtcp_tx_paused(cwnd_full: bool, store_len: usize, mem_ceiling: usize) -> boo
 fn fmtcp_percap_full(per_path: &[(u64, u64)]) -> bool {
     !per_path.iter().any(|&(in_flight, cap)| in_flight < cap.max(1))
 }
+
+/// Per-path pace-gate decision (feat/pace-all-traffic). Given a candidate path
+/// for a repair symbol, the fast (min-RTprop) path, and the per-path BtlBw pace
+/// token buckets (`daps_pace_tok`, refilled at BtlBw_i), decide where — if
+/// anywhere — the symbol may be emitted, so that TOTAL per-path emission
+/// (source + repair, both charged against the SAME buckets) never exceeds
+/// BtlBw_i on ANY path. Returns:
+///   * `Some(candidate)` — the candidate's bucket ≥ 1: emit there, one token
+///     consumed;
+///   * `Some(fast)` — candidate dry but the fast path has a token: spill so the
+///     slow path never over-queues;
+///   * `None` — BOTH the candidate and the fast path are dry: HOLD (the caller
+///     retries next loop as the buckets refill). This is what bounds the FAST
+///     path too — source has priority, repair uses only the leftover per-path
+///     capacity, so neither path is driven above BtlBw_i.
+/// A path with no warmed bucket (anchor not established) is transparent — it
+/// emits on the candidate and consumes nothing (mirrors the source pace gate).
+/// Extracted pure so the "total per-path emission ≤ BtlBw_i incl. repair"
+/// invariant is unit-tested without driving the async sender loop.
+fn paced_repair_decision(
+    tok: &mut std::collections::HashMap<crate::scheduler::PathId, f64>,
+    cand: crate::scheduler::PathId,
+    fast: crate::scheduler::PathId,
+) -> Option<crate::scheduler::PathId> {
+    let mut p = cand;
+    if p != fast && tok.get(&p).is_some_and(|&t| t < 1.0) {
+        p = fast;
+    }
+    if tok.get(&p).is_some_and(|&t| t < 1.0) {
+        return None;
+    }
+    if let Some(t) = tok.get_mut(&p) {
+        *t -= 1.0;
+    }
+    Some(p)
+}
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
@@ -3280,6 +3316,14 @@ async fn run_window_sender(
     };
     let daps_pace_on: bool =
         daps && std::env::var("RWM_DAPS_PACE").ok().map_or(true, |v| v != "0");
+    // feat/pace-all-traffic: route the CODED/REPAIR emission (proactive, filling,
+    // deficit top-up, inline) through the SAME per-path BtlBw pacer as source, so
+    // TOTAL per-path emission ≤ BtlBw_i and no standing queue builds (the residual
+    // the source-only pacer left).  Extends the DAPS/pace gate — ON by default
+    // whenever per-path pacing is on; RWM_PACE_ALL=0 reproduces the source-only
+    // pacer (the same-binary A/B baseline).  Shipped non-DAPS default untouched.
+    let pace_all_on: bool =
+        daps_pace_on && std::env::var("RWM_PACE_ALL").ok().map_or(true, |v| v != "0");
     // feat/per-path-estimator: drive per-path delivered-rate attribution.
     // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
     // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
@@ -3971,17 +4015,25 @@ async fn run_window_sender(
                     // span (fungible: all repairs share the (anchor,W) matrix).
                     let anchor = (complete_blocks - 1) * inline_w;
                     while inline_debt >= 1.0 {
-                        inline_debt -= 1.0;
                         let sym = match encoder.generate_repair_range(anchor, inline_w as u16) {
                             Some(s) => s,
                             None => break, // block not fully retained (shouldn't happen)
                         };
-                        // Proactive (no round-trip) — counts toward the pfrac.
-                        proactive_coded_total += 1;
+                        // pace-all-traffic: gate inline repair through the per-path
+                        // BtlBw pacer too.  HOLD (discard the rateless symbol, keep
+                        // inline_debt) when both paths' buckets are dry, so inline
+                        // repair also never drives a path above BtlBw_i.
                         let path = {
                             let sched = scheduler.lock();
-                            sched.place_symbol(true, &[]).unwrap_or(0)
+                            let cand = sched.place_symbol(true, &[]).unwrap_or(0);
+                            match paced_repair_path!(sched, cand) {
+                                Some(p) => p,
+                                None => break,
+                            }
                         };
+                        inline_debt -= 1.0;
+                        // Proactive (no round-trip) — counts toward the pfrac.
+                        proactive_coded_total += 1;
                         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
@@ -4272,6 +4324,41 @@ async fn run_window_sender(
                         stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     }
                 }
+            }
+        }};
+    }
+
+    // ── PACE-ALL-TRAFFIC (feat/pace-all-traffic) ──────────────────────────────
+    // The per-path BBR pacer (`daps_pace_tok`, refilled at BtlBw_i) meters only
+    // SOURCE placement; the CODED/REPAIR emission (batched proactive, filling
+    // proactive, deficit top-up, inline) was emitted OUTSIDE it — so TOTAL
+    // per-path emission (source + repair) exceeded BtlBw_i and a standing queue
+    // built on BOTH the slow (~300 ms) and the fast (~140 ms) path.  This gate
+    // routes every repair symbol through the SAME per-path bucket as source, so
+    // the aggregate per-path send rate never exceeds the path's drain rate (the
+    // temporal_oracle PART 6e "PACE" scheduler admits ≤ BtlBw_i *total*).  Given
+    // a candidate path it evaluates to:
+    //   * Some(candidate) — the candidate's bucket ≥ 1: emit there, one token
+    //                       consumed;
+    //   * Some(fast)      — candidate dry but the fast (min-RTprop) path has a
+    //                       token: spill so the slow path never over-queues;
+    //   * None            — BOTH the candidate and the fast path are dry: HOLD
+    //                       (retry next loop as the buckets refill at BtlBw_i).
+    //                       This is what bounds the FAST path too — source has
+    //                       priority, repair uses only the leftover per-path
+    //                       capacity, so neither path is driven above BtlBw_i.
+    // A path whose anchor has not warmed (no bucket entry yet) is transparent —
+    // it emits on the candidate and consumes nothing (mirrors the source gate).
+    // Active only when `daps_pace_on`, so the shipped non-DAPS default is
+    // byte-identical.  `$sched` is an already-held scheduler lock guard.
+    macro_rules! paced_repair_path {
+        ($sched:expr, $cand:expr) => {{
+            let cand = $cand;
+            if pace_all_on {
+                let fast = $sched.fastest_active_path().unwrap_or(0);
+                paced_repair_decision(&mut daps_pace_tok, cand, fast)
+            } else {
+                Some(cand)
             }
         }};
     }
@@ -4783,6 +4870,21 @@ async fn run_window_sender(
                 && !cwnd_full
                 && encoder.wants_coding()
             {
+                // pace-all-traffic: pick the candidate path + apply the per-path
+                // pace gate FIRST (before generating / charging), so a HOLD when
+                // both paths' BtlBw buckets are dry wastes no coded symbol.
+                let path = {
+                    let sched = scheduler.lock();
+                    let cand = if xpath_repair {
+                        sched.place_repair_spare_path().unwrap_or(0)
+                    } else {
+                        sched.place_symbol(true, &[]).unwrap_or(0)
+                    };
+                    match paced_repair_path!(sched, cand) {
+                        Some(p) => p,
+                        None => break, // both paths paced-out — retry next loop
+                    }
+                };
                 gen_coded_total += 1;
                 emitted += 1;
                 gen_tokens -= 1.0;
@@ -4795,14 +4897,6 @@ async fn run_window_sender(
                     *gen_emitted.entry(anchor).or_insert(0) += 1;
                 }
                 proactive_coded_total += 1;
-                let path = {
-                    let sched = scheduler.lock();
-                    if xpath_repair {
-                        sched.place_repair_spare_path().unwrap_or(0)
-                    } else {
-                        sched.place_symbol(true, &[]).unwrap_or(0)
-                    }
-                };
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let batch = SymbolBatch {
                     symbols: vec![sym],
@@ -4842,6 +4936,19 @@ async fn run_window_sender(
                     && !cwnd_full
                     && encoder.wants_filling_coding()
                 {
+                    // pace-all-traffic: candidate + per-path pace gate FIRST.
+                    let path = {
+                        let sched = scheduler.lock();
+                        let cand = if xpath_repair {
+                            sched.place_repair_spare_path().unwrap_or(0)
+                        } else {
+                            sched.place_symbol(true, &[]).unwrap_or(0)
+                        };
+                        match paced_repair_path!(sched, cand) {
+                            Some(p) => p,
+                            None => break, // both paths paced-out — retry next loop
+                        }
+                    };
                     let sym = encoder.generate_repair_filling();
                     fill_emitted += 1;
                     gen_tokens -= 1.0;
@@ -4852,14 +4959,6 @@ async fn run_window_sender(
                         *gen_emitted.entry(anchor).or_insert(0) += 1;
                     }
                     proactive_coded_total += 1;
-                    let path = {
-                        let sched = scheduler.lock();
-                        if xpath_repair {
-                            sched.place_repair_spare_path().unwrap_or(0)
-                        } else {
-                            sched.place_symbol(true, &[]).unwrap_or(0)
-                        }
-                    };
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
                         symbols: vec![sym],
@@ -4938,6 +5037,32 @@ async fn run_window_sender(
                                 continue;
                             }
                         };
+                        // SLOW-PATH COVERAGE (§16.3 intent). Deficit recovery funds
+                        // a frontier generation whose hole is the long pole — most
+                        // often a source lost on the SLOW path. Place it by the
+                        // ∝-goodput placement law (softmax over marginal cost),
+                        // which already biases the covering repair toward the FAST
+                        // path proportionally without STARVING a symmetric second
+                        // path — hard argmax concentration serializes symmetric
+                        // aggregation (MEASURED C7 regression) for no C8 gain.
+                        // pace-all-traffic: gate that placement through the per-path
+                        // BtlBw pacer.  The deficit top-up was the DOMINANT unpaced
+                        // repair feeding the standing queue; if BOTH paths are dry
+                        // HOLD — discard this (rateless) symbol WITHOUT decrementing
+                        // the want, so the generation is re-covered next loop as the
+                        // buckets refill (bounds deficit top-up to BtlBw_i per path).
+                        let path = {
+                            let sched = scheduler.lock();
+                            let cand = if xpath_repair {
+                                sched.place_repair_spare_path().unwrap_or(0)
+                            } else {
+                                sched.place_symbol(true, &[]).unwrap_or(0)
+                            };
+                            match paced_repair_path!(sched, cand) {
+                                Some(p) => p,
+                                None => break 'recover,
+                            }
+                        };
                         *gen_emitted.entry(a).or_insert(0) += 1;
                         recovery_coded_total += 1;
                         let nw = want - 1;
@@ -4954,23 +5079,6 @@ async fn run_window_sender(
                         }
                         rec_emitted += 1;
                         progressed = true;
-
-                        // SLOW-PATH COVERAGE (§16.3 intent). Deficit recovery funds
-                        // a frontier generation whose hole is the long pole — most
-                        // often a source lost on the SLOW path. Place it by the
-                        // ∝-goodput placement law (softmax over marginal cost),
-                        // which already biases the covering repair toward the FAST
-                        // path proportionally without STARVING a symmetric second
-                        // path — hard argmax concentration serializes symmetric
-                        // aggregation (MEASURED C7 regression) for no C8 gain.
-                        let path = {
-                            let sched = scheduler.lock();
-                            if xpath_repair {
-                                sched.place_repair_spare_path().unwrap_or(0)
-                            } else {
-                                sched.place_symbol(true, &[]).unwrap_or(0)
-                            }
-                        };
                         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
@@ -7292,5 +7400,125 @@ mod tests {
         assert_eq!(clean.effective_multiplier(true), clean.multiplier(),
             "idle floor is a no-op when not suppressed");
         assert!((clean.multiplier() - 1.0).abs() < 1e-9);
+    }
+
+    /// feat/pace-all-traffic: ALL per-path emission (source + repair) is metered
+    /// against the SAME per-path BtlBw token bucket, so the TOTAL per-path send
+    /// rate never exceeds BtlBw_i — closing the standing queue the SOURCE-only
+    /// pacer left (the coded/repair top-up was emitted outside it).
+    /// `paced_repair_decision` is the gate. Drive a fast+slow pair with a repair
+    /// FLOOD and assert: (a) repair never overdraws a bucket (so per-path repair
+    /// ≤ BtlBw_i); (b) TOTAL per-path emission (source + repair) ≤ BtlBw_i·ticks
+    /// + one burst; (c) an unpaced dump would blow the slow path's budget over.
+    #[test]
+    fn pace_all_traffic_bounds_total_per_path_emission_at_btlbw() {
+        use std::collections::HashMap;
+        let fast = 0u32;
+        let slow = 1u32;
+        // Heterogeneous C8 rates (symbols per tick). Fast ≫ slow, like c2+c3.
+        let btlbw = |id: u32| if id == fast { 20.0f64 } else { 2.0f64 };
+        let burst = 8.0; // token-bucket cap (a few ms of link)
+        let ticks = 1000u64;
+
+        let mut tok: HashMap<u32, f64> = HashMap::new();
+        tok.insert(fast, 0.0);
+        tok.insert(slow, 0.0);
+
+        let mut src_emitted: HashMap<u32, u64> = HashMap::new();
+        let mut rep_emitted: HashMap<u32, u64> = HashMap::new();
+
+        for _ in 0..ticks {
+            // Refill both buckets at BtlBw_i (one tick of link), capped at burst.
+            for &id in &[fast, slow] {
+                let t = tok.get_mut(&id).unwrap();
+                *t = (*t + btlbw(id)).min(burst);
+            }
+            // SOURCE first (has priority). DAPS offers source on the slow path
+            // (future-offset placement); the source pacer spills to fast when the
+            // slow bucket is dry — the production source gate (may go negative).
+            for _ in 0..3 {
+                let cand = slow;
+                let pick = if cand != fast && tok.get(&cand).is_some_and(|&t| t < 1.0) {
+                    fast
+                } else {
+                    cand
+                };
+                *tok.get_mut(&pick).unwrap() -= 1.0;
+                *src_emitted.entry(pick).or_insert(0) += 1;
+            }
+            // REPAIR next: offer a FLOOD (8/tick, far above capacity) on BOTH
+            // candidates — the gate must HOLD once the buckets dry.
+            for cand in [slow, fast, slow, fast, slow, fast, slow, fast] {
+                if let Some(p) = paced_repair_decision(&mut tok, cand, fast) {
+                    // (a) repair only ever consumes a bucket that was ≥ 1, so the
+                    //     bucket is never negative AFTER a repair emission — repair
+                    //     can never overdraw a path past BtlBw_i (any negative
+                    //     excursion is SOURCE, which has priority).
+                    assert!(
+                        *tok.get(&p).unwrap() >= -1e-9,
+                        "repair must never drive a per-path bucket negative (path {p})"
+                    );
+                    *rep_emitted.entry(p).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // (b) TOTAL per-path emission (source + repair) ≤ BtlBw_i·ticks + burst.
+        for &id in &[fast, slow] {
+            let total = src_emitted.get(&id).copied().unwrap_or(0)
+                + rep_emitted.get(&id).copied().unwrap_or(0);
+            let ceiling = (btlbw(id) * ticks as f64 + burst).ceil() as u64;
+            assert!(
+                total <= ceiling,
+                "path {id}: total emission {total} must be ≤ BtlBw_i·ticks+burst {ceiling}"
+            );
+        }
+        // (c) The slow path carries far less than an unpaced dump would place on
+        //     it (4 slow-candidate offers/tick = 4000), proving pacing bounds it.
+        let slow_total = src_emitted.get(&slow).copied().unwrap_or(0)
+            + rep_emitted.get(&slow).copied().unwrap_or(0);
+        let unpaced_slow_offer = 4 * ticks;
+        assert!(
+            (slow_total as f64) < 0.6 * unpaced_slow_offer as f64,
+            "pacing must cut slow-path emission ({slow_total}) far below an unpaced \
+             dump ({unpaced_slow_offer})"
+        );
+        // Sanity: the fast path still carries the bulk (aggregation preserved).
+        let fast_total = src_emitted.get(&fast).copied().unwrap_or(0)
+            + rep_emitted.get(&fast).copied().unwrap_or(0);
+        assert!(fast_total > slow_total, "fast path carries the bulk of the load");
+    }
+
+    /// feat/pace-all-traffic: the HOLD property that bounds the FAST path too.
+    /// When BOTH the candidate and the fast path are dry, the gate returns None
+    /// (hold) rather than spilling into a negative bucket; a warmed candidate
+    /// with a token emits there; a dry candidate spills to a funded fast path;
+    /// an un-warmed path (no bucket) is transparent (emits, consumes nothing).
+    #[test]
+    fn pace_all_traffic_holds_when_both_paths_dry() {
+        use std::collections::HashMap;
+        let (fast, slow) = (0u32, 1u32);
+
+        // Both dry ⇒ HOLD (this is what bounds the fast path).
+        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 0.5), (slow, 0.5)]);
+        assert_eq!(paced_repair_decision(&mut tok, slow, fast), None);
+        assert_eq!(paced_repair_decision(&mut tok, fast, fast), None);
+
+        // Slow dry, fast funded ⇒ spill to fast, consume a fast token.
+        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0), (slow, 0.0)]);
+        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(fast));
+        assert!((tok[&fast] - 2.0).abs() < 1e-9, "one fast token consumed");
+        assert!((tok[&slow] - 0.0).abs() < 1e-9, "slow bucket untouched");
+
+        // Candidate funded ⇒ emit there, consume its token.
+        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0), (slow, 2.0)]);
+        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(slow));
+        assert!((tok[&slow] - 1.0).abs() < 1e-9, "one slow token consumed");
+
+        // Un-warmed candidate (no bucket) ⇒ transparent: emit, consume nothing.
+        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0)]);
+        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(slow));
+        assert!(!tok.contains_key(&slow), "un-warmed path stays un-metered");
+        assert!((tok[&fast] - 3.0).abs() < 1e-9, "fast untouched when candidate transparent");
     }
 }

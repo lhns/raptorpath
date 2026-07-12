@@ -80,6 +80,13 @@ TENV=""
 # (RWM_DAPS_BDP=gain, default 1.0) + BBR per-path pacing (RWM_DAPS_PACE=0 off).
 [[ -n "${RWM_DAPS_BDP:-}" ]] && TENV="$TENV RWM_DAPS_BDP=$RWM_DAPS_BDP"
 [[ -n "${RWM_DAPS_PACE:-}" ]] && TENV="$TENV RWM_DAPS_PACE=$RWM_DAPS_PACE"
+# Pace-all-traffic (feat/pace-all-traffic): pace the CODED/REPAIR emission through
+# the SAME per-path BtlBw pacer as source (on by default under DAPS pacing;
+# RWM_PACE_ALL=0 reproduces the source-only pacer — the same-binary A/B baseline).
+[[ -n "${RWM_PACE_ALL:-}" ]] && TENV="$TENV RWM_PACE_ALL=$RWM_PACE_ALL"
+# Per-path estimator standalone (feat/per-path-estimator): establish per-path
+# BtlBw in a PLAIN generation multipath run (no DAPS) for the general-fix check.
+[[ -n "${RWM_PER_PATH_EST:-}" ]] && TENV="$TENV RWM_PER_PATH_EST=$RWM_PER_PATH_EST"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
@@ -97,7 +104,7 @@ if pgrep -x raptorpath >/dev/null 2>&1; then
     exit 3
 fi
 
-bash ./topo_dual.sh up "$SCENA" "$SCENB" --seed 42 >/dev/null 2>&1
+bash ./topo_dual.sh up "$SCENA" "$SCENB" --seed "${SEED:-42}" >/dev/null 2>&1
 
 if [[ "$MODE" == "dual" ]]; then
     SRV_BIND="10.77.0.2:7000,10.78.0.2:7000"
