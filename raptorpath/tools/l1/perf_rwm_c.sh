@@ -75,6 +75,7 @@ TENV=""
 # fungible fountain repair (no per-hole ARQ) + decode-on-total OOO. Self-selects
 # the systematic-repair generation submode on top of --window-reliable.
 [[ -n "${RWM_FMTCP:-}" ]] && TENV="$TENV RWM_FMTCP=$RWM_FMTCP"
+[[ -n "${RWM_DAPS:-}" ]] && TENV="$TENV RWM_DAPS=$RWM_DAPS"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
