@@ -1800,3 +1800,506 @@ fn unified_rstar_grid_fidelity() {
     assert!((0.6..2.5).contains(&worst_ratio.abs()),
         "union-bound r* prediction must track the oracle within the approx band: worst {worst_ratio:.3}");
 }
+
+// =========================================================================
+// PART 6 — DELAY-AWARE (DAPS) SCHEDULING vs COST-BASED-CURRENT PLACEMENT.
+//
+// WHY THIS TEST EXISTS.  The FMTCP-class build (§16.9 / goal-gate "FMTCP
+// Aggregation Build") placed CURRENT coded symbols by marginal cost (§16.3).
+// Slow-path symbols therefore carry data at the CURRENT stream frontier and
+// arrive one slow-path-delay LATE.  L1 measured C8 het = 0.48x fast-alone
+// (7.58 Mbit/s) — WORSE than single path — while PART 5/5c predicted x1.19.
+// The PART-5 Sys model missed TWO things this test adds:
+//   (1) the per-path LATENCY SKEW and the bounded in-order reassembly buffer
+//       (PART 5 completes on the out-of-order count `d`; production delivers a
+//       byte stream that must reassemble by offset within a bounded buffer, so
+//       a late slow-path frontier symbol stalls the delivered frontier `df`);
+//   (2) the bursty-loss STRAND (a burst on the slow path near the frontier
+//       that outruns the recovery slack).
+//
+// THE TWO SCHEDULERS UNDER TEST (published, cited):
+//   * COST-BASED-CURRENT  (the FMTCP build, §16.3 marginal-cost placement, and
+//     MPTCP default minRTT — pick the lowest-RTT path with free cwnd for the
+//     CURRENT segment).  The slow path is handed near-frontier stream
+//     positions; they land owd_slow late with ZERO recovery slack.
+//   * DAPS DELAY-ALIGNED  (Sarwar, Boreli, Lochin, Mifdaoui, Smith,
+//     "Mitigating Receiver's Buffer Blocking by Delay Aware Packet Scheduling
+//     in Multipath Data Transfer," WAINA/PAMS 2013, pp.1119-1124; and Kuhn,
+//     Lochin, Mifdaoui, Sarwar, Mehani, Boreli, "DAPS: Intelligent Delay-Aware
+//     Packet Scheduling for Multipath Transport," IEEE ICC 2014).  DAPS builds
+//     a schedule over the LCM of the per-path forward delays so segments ARRIVE
+//     IN ORDER: the slow path is assigned FUTURE stream positions spaced by the
+//     RTT ratio, so a slow-path symbol for position P is emitted early enough
+//     that it lands just as the frontier reaches P.  We adapt the two-subflow
+//     RTT-ratio form (ICC 2014): slow-path lead Delta = (skew + slack)*Sigma_g
+//     positions ahead of the frontier.  We add the ECF completion-time guard
+//     (Lim, Nahum, Towsley, Gibbens, "ECF: An MPTCP Path Scheduler to Manage
+//     Heterogeneous Paths," ACM CoNEXT 2017) — only place on the slow path a
+//     position the fast path could not deliver sooner — the published fix for
+//     DAPS's known static-schedule failure mode (a lost queued segment
+//     disturbing the schedule; ECF/BLEST report DAPS otherwise regresses).
+//     Our coded transport also carries fungible cross-path repair + out-of-
+//     order decode, which directly repairs DAPS's other failure mode: a lost
+//     FUTURE slow-path symbol has the pre-fetch slack (Delta/Sigma_g ms) to
+//     recover before df reaches it, so it never stalls completion.
+//
+// HONEST SCOPE.  A MODEL.  Per-path capacity/OWD/GE are the exact C7/C8 netem
+// params; the in-order frontier + bounded buffer + per-path recovery RTT are
+// structural.  Recovery folds one reactive round trip (NACK+resend ~ RTT_p)
+// into latency, as the Sys model (PART 3) does.  The verdict depends only on
+// WHERE the slow-path loss sits relative to df (at the frontier vs Delta
+// ahead), which is the scheduling claim under test.
+// =========================================================================
+
+#[derive(Clone, Copy, PartialEq)]
+enum Sched {
+    /// FMTCP marginal-cost / MPTCP minRTT: slow path carries near-frontier
+    /// (CURRENT) positions; they land owd_slow late with zero recovery slack.
+    CostCurrent,
+    /// DAPS delay-aligned + ECF guard: slow path carries FUTURE positions Delta
+    /// ahead of df, so they arrive in sync and a loss has Delta/Sigma_g ms slack.
+    DapsFuture,
+}
+
+#[derive(Clone, Copy)]
+struct DapsCfg {
+    r: f64,        // proactive FEC rate (repair / source) — the right-sized r*
+    buffer: usize, // reassembly buffer depth (positions df..df+buffer)
+    sched: Sched,
+    /// DAPS recovery slack in ms beyond the raw skew.  Slow-path lead
+    /// Delta = (skew + lead_ms)*Sigma_g positions.  Cost-based ignores it.
+    lead_ms: u64,
+}
+
+#[allow(dead_code)]
+struct DapsOut {
+    t: u64,
+    dnf: bool,
+    stall_ticks: u64,      // ticks df was frozen while object incomplete
+    idle_slots: u64,       // path slots wasted (buffer-full / nothing useful)
+    max_buffer_occ: usize, // peak reassembly occupancy (positions above df)
+    reactive: u64,         // reactive (round-trip) recoveries triggered
+    stalled_recov: u64,    // reactive recoveries that actually stalled df
+    delta: usize,          // DAPS pre-fetch offset used (positions)
+    repair_sent: u64,
+}
+
+struct Daps {
+    paths: Vec<Path>, // [0]=fast (min owd), [1]=slow
+    ge: Vec<Ge>,
+    k: usize,
+    cfg: DapsCfg,
+    rng: ChaCha8Rng,
+    credit: Vec<f64>,
+    sumg: f64,
+
+    committed: Vec<bool>,
+    delivered: Vec<bool>,
+    owner: Vec<usize>,
+    df: usize,       // in-order delivered frontier
+    fast_lo: usize,  // scan hint for lowest uncommitted (fast pull)
+    repair_debt: f64,
+    repair_sent: u64,
+    bank: BTreeMap<usize, u32>, // fungible repair bank: covers a hole in (hi-W, hi]
+    w_cov: usize,
+
+    events: BTreeMap<u64, Vec<DEv>>,
+    reactive_done: Vec<bool>,
+
+    stall_ticks: u64,
+    idle_slots: u64,
+    max_buffer_occ: usize,
+    reactive: u64,
+    stalled_recov: u64,
+}
+
+enum DEv { Deliver(usize), Detect(usize, usize), Repair(usize) }
+
+impl Daps {
+    fn new(mut paths: Vec<Path>, k: usize, cfg: DapsCfg, seed: u64) -> Self {
+        paths.sort_by(|a, b| a.owd.cmp(&b.owd)); // fast-first by min owd
+        let n = paths.len();
+        let sumg: f64 = paths.iter().map(|p| p.goodput()).sum();
+        Daps {
+            ge: (0..n).map(|_| Ge { bad: false }).collect(),
+            credit: vec![0.0; n],
+            paths, k, cfg, sumg,
+            rng: ChaCha8Rng::seed_from_u64(seed),
+            committed: vec![false; k],
+            delivered: vec![false; k],
+            owner: vec![0; k],
+            df: 0,
+            fast_lo: 0,
+            repair_debt: 0.0,
+            repair_sent: 0,
+            bank: BTreeMap::new(),
+            w_cov: 128,
+            events: BTreeMap::new(),
+            reactive_done: vec![false; k],
+            stall_ticks: 0,
+            idle_slots: 0,
+            max_buffer_occ: 0,
+            reactive: 0,
+            stalled_recov: 0,
+        }
+    }
+
+    fn delta(&self) -> usize {
+        match self.cfg.sched {
+            Sched::CostCurrent => 0,
+            Sched::DapsFuture => {
+                if self.paths.len() < 2 { return 0; } // single path: no skew, no offset
+                let skew = self.paths[1].owd.saturating_sub(self.paths[0].owd);
+                ((skew + self.cfg.lead_ms) as f64 * self.sumg).ceil() as usize
+            }
+        }
+    }
+
+    fn schedule(&mut self, tick: u64, ev: DEv) {
+        self.events.entry(tick).or_default().push(ev);
+    }
+
+    fn next_uncommitted(&self, from: usize, cap: usize) -> Option<usize> {
+        let mut l = from.max(self.df);
+        while l < self.k && l <= cap {
+            if !self.committed[l] { return Some(l); }
+            l += 1;
+        }
+        None
+    }
+
+    fn bank_cover(&mut self, h: usize) -> bool {
+        let lo = std::ops::Bound::Excluded(h);
+        let hi = std::ops::Bound::Included(h + self.w_cov);
+        let key = self.bank.range((lo, hi)).next().map(|(&k, _)| k);
+        if let Some(k) = key {
+            let c = self.bank.get_mut(&k).unwrap();
+            *c -= 1;
+            if *c == 0 { self.bank.remove(&k); }
+            true
+        } else { false }
+    }
+
+    fn advance_df(&mut self, tick: u64) {
+        loop {
+            if self.df >= self.k { break; }
+            if self.delivered[self.df] { self.df += 1; continue; }
+            if self.bank_cover(self.df) {
+                self.delivered[self.df] = true;
+                self.df += 1;
+                continue;
+            }
+            let h = self.df;
+            if !self.reactive_done[h] {
+                self.reactive_done[h] = true;
+                self.reactive += 1;
+                self.stalled_recov += 1;
+                let rtt = 2 * self.paths[self.owner[h]].owd;
+                self.schedule(tick + rtt, DEv::Deliver(h));
+            }
+            break;
+        }
+    }
+
+    fn run(&mut self) -> DapsOut {
+        let max_tick: u64 = 80_000_000;
+        let delta = self.delta();
+        let ack = self.paths[0].owd;
+        let mut tick: u64 = 0;
+        let mut slow_ptr: usize = 0;
+        loop {
+            if let Some(evs) = self.events.remove(&tick) {
+                for ev in evs {
+                    match ev {
+                        DEv::Deliver(l) => { if !self.delivered[l] { self.delivered[l] = true; } }
+                        DEv::Detect(l, p) => {
+                            if !self.delivered[l] && l > self.df {
+                                if self.bank_cover(l) {
+                                    self.delivered[l] = true;
+                                } else if !self.reactive_done[l] {
+                                    self.reactive_done[l] = true;
+                                    self.reactive += 1;
+                                    let rtt = 2 * self.paths[p].owd;
+                                    self.schedule(tick + rtt, DEv::Deliver(l));
+                                }
+                            }
+                        }
+                        DEv::Repair(hi) => { *self.bank.entry(hi).or_insert(0) += 1; }
+                    }
+                }
+            }
+
+            self.advance_df(tick);
+            if self.df >= self.k {
+                return DapsOut {
+                    t: tick, dnf: false, stall_ticks: self.stall_ticks,
+                    idle_slots: self.idle_slots, max_buffer_occ: self.max_buffer_occ,
+                    reactive: self.reactive, stalled_recov: self.stalled_recov,
+                    delta, repair_sent: self.repair_sent,
+                };
+            }
+
+            let occ_hi = self.k.min(self.df + self.cfg.buffer + delta + 8);
+            let occ = (self.df..occ_hi).filter(|&l| self.delivered[l]).count();
+            if occ > self.max_buffer_occ { self.max_buffer_occ = occ; }
+
+            let cap = self.df + self.cfg.buffer;
+
+            let mut free = vec![0u32; self.paths.len()];
+            for i in 0..self.paths.len() {
+                self.credit[i] += self.paths[i].rate;
+                free[i] = self.credit[i].floor() as u32;
+                self.credit[i] -= free[i] as f64;
+            }
+
+            let mut progressed = false;
+            let total: u32 = free.iter().sum();
+            'slots: for _ in 0..total {
+                let path = if free[0] > 0 { 0 } else if free.len() > 1 && free[1] > 0 { 1 } else { break };
+
+                let pos = if path == 0 {
+                    self.next_uncommitted(self.fast_lo, cap)
+                } else {
+                    match self.cfg.sched {
+                        Sched::CostCurrent => self.next_uncommitted(self.fast_lo, cap),
+                        Sched::DapsFuture => {
+                            let from = (self.df + delta).max(slow_ptr);
+                            self.next_uncommitted(from, cap)
+                        }
+                    }
+                };
+
+                let l = match pos {
+                    Some(l) => l,
+                    None => {
+                        if self.df < self.k { self.idle_slots += free[path] as u64; }
+                        free[path] = 0;
+                        if free.iter().all(|&f| f == 0) { break 'slots; }
+                        continue;
+                    }
+                };
+
+                self.committed[l] = true;
+                self.owner[l] = path;
+                if path == 1 {
+                    slow_ptr = l + 1;
+                } else if l == self.fast_lo {
+                    while self.fast_lo < self.k && self.committed[self.fast_lo] { self.fast_lo += 1; }
+                }
+                free[path] -= 1;
+                progressed = true;
+                self.repair_debt += self.cfg.r;
+
+                let lost = self.ge[path].draw(&self.paths[path], &mut self.rng);
+                if !lost {
+                    self.schedule(tick + self.paths[path].owd, DEv::Deliver(l));
+                } else {
+                    self.schedule(tick + self.paths[path].owd + ack, DEv::Detect(l, path));
+                }
+
+                if self.repair_debt >= 1.0 {
+                    self.repair_debt -= 1.0;
+                    self.repair_sent += 1;
+                    let lost_r = self.ge[0].draw(&self.paths[0], &mut self.rng);
+                    if !lost_r {
+                        let hi = (l + 1).max(1);
+                        self.schedule(tick + self.paths[0].owd, DEv::Repair(hi));
+                    }
+                }
+            }
+
+            if !progressed && self.df < self.k { self.stall_ticks += 1; }
+            tick += 1;
+            if tick > max_tick {
+                return DapsOut {
+                    t: tick, dnf: true, stall_ticks: self.stall_ticks,
+                    idle_slots: self.idle_slots, max_buffer_occ: self.max_buffer_occ,
+                    reactive: self.reactive, stalled_recov: self.stalled_recov,
+                    delta, repair_sent: self.repair_sent,
+                };
+            }
+        }
+    }
+}
+
+fn daps_factor(dual: &[Path], k: usize, cfg: DapsCfg, seed: u64) -> (DapsOut, DapsOut, f64) {
+    let best = *dual.iter().max_by(|a, b| a.goodput().partial_cmp(&b.goodput()).unwrap()).unwrap();
+    let mut fa = Daps::new(vec![best], k, cfg, seed);
+    let mut du = Daps::new(dual.to_vec(), k, cfg, seed);
+    let of = fa.run();
+    let od = du.run();
+    let f = of.t as f64 / od.t as f64;
+    (of, od, f)
+}
+
+// -------------------------------------------------------------------------
+// PART 6a — THE LONG POLE, as a BUFFER-DEPTH sweep.  The distinction between
+//   cost-based-current and DAPS lives in HOW MUCH reassembly buffer each needs
+//   to reach the ceiling, and in the slow-path stall it pays.  Cost-based
+//   places slow data AT the frontier: df must wait owd_slow for it and buffer
+//   THROUGH every loss-recovery RTT at the frontier, so a bounded buffer
+//   overflows and the sender pauses (the production TUN-pause 13-68% / 0.48x
+//   signature).  DAPS places slow data Delta AHEAD: it arrives in sync and a
+//   loss recovers within the pre-fetch slack, so df never freezes on the slow
+//   path and the ceiling is reached at a SHALLOWER peak occupancy.
+// -------------------------------------------------------------------------
+#[test]
+fn daps_escapes_the_long_pole_c8() {
+    let k = k_for_mb(25.0);
+    let dual = [c8_fast(), c8_slow()];
+    let ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
+    let sumg = c8_fast().goodput() + c8_slow().goodput();
+    let skew = (c8_slow().owd - c8_fast().owd) as f64;
+    let rtt_slow = 2.0 * c8_slow().owd as f64;
+    // right-sized r*: bulk/loose-delta profile at the C8 slow-path loss.
+    let eps_s = c8_slow().eps();
+    let sig2 = burst_variance_factor(c8_slow().p_gb, c8_slow().q_bg);
+    let r_star = compute_r_star_with_z(eps_s, sig2, 384.0, normal_quantile(0.5)).max(0.03);
+    let lead = 2 * c8_slow().owd; // DAPS recovery slack = one slow RTT
+
+    println!("\n=== PART 6a: DAPS vs COST-BASED-CURRENT at C8 het — BUFFER SWEEP (K={k} ~25MB) ===");
+    println!("goodput ceiling Sigma_g/g_fast = x{ceiling:.3}; right-sized r*={r_star:.3}; skew={skew}ms\n");
+    println!("  {:>8} | {:>10} {:>9} {:>9} | {:>10} {:>9} {:>9}",
+        "buffer", "cost fac", "cost occ", "cost st%", "DAPS fac", "DAPS occ", "DAPS st%");
+
+    let mut daps_ceiling_buf = None;
+    let mut cost_ceiling_buf = None;
+    let mut best_gap = 0.0f64;
+    for &b in &[192usize, 256, 384, 512, 768, 1024] {
+        let cost = DapsCfg { r: r_star, buffer: b, sched: Sched::CostCurrent, lead_ms: 0 };
+        let daps = DapsCfg { r: r_star, buffer: b, sched: Sched::DapsFuture, lead_ms: lead };
+        let (_a, cd, f_cost) = daps_factor(&dual, k, cost, 0xF00D);
+        let (_c, dd, f_daps) = daps_factor(&dual, k, daps, 0xF00D);
+        let cst = 100.0 * cd.stall_ticks as f64 / cd.t as f64;
+        let dst = 100.0 * dd.stall_ticks as f64 / dd.t as f64;
+        println!("  {:>8} | {:>9.3}x {:>9} {:>8.1}% | {:>9.3}x {:>9} {:>8.1}%",
+            b, f_cost, cd.max_buffer_occ, cst, f_daps, dd.max_buffer_occ, dst);
+        if f_daps > 1.15 && daps_ceiling_buf.is_none() { daps_ceiling_buf = Some(b); }
+        if f_cost > 1.15 && cost_ceiling_buf.is_none() { cost_ceiling_buf = Some(b); }
+        if f_daps - f_cost > best_gap { best_gap = f_daps - f_cost; }
+    }
+    println!("\n  DAPS reaches the ceiling at buffer >= {:?}; cost-based needs buffer >= {:?}.",
+        daps_ceiling_buf, cost_ceiling_buf);
+    println!("  max factor gain of DAPS over cost-based across the sweep: +{best_gap:.3}x");
+
+    // deep-buffer stall comparison (the mechanism, isolated).
+    let deep = ((skew + rtt_slow) * sumg).ceil() as usize + 256;
+    let (_a, cd, f_cost) = daps_factor(&dual, k, DapsCfg { r: r_star, buffer: deep, sched: Sched::CostCurrent, lead_ms: 0 }, 0xF00D);
+    let (_c, dd, f_daps) = daps_factor(&dual, k, DapsCfg { r: r_star, buffer: deep, sched: Sched::DapsFuture, lead_ms: lead }, 0xF00D);
+    println!("\n  at deep buffer={deep}: cost x{f_cost:.3} (stall {} tk, occ {}), DAPS x{f_daps:.3} (stall {} tk, occ {}), Delta={}",
+        cd.stall_ticks, cd.max_buffer_occ, dd.stall_ticks, dd.max_buffer_occ, dd.delta);
+    println!("  slow-path stall %: cost-based={:.2}%  DAPS={:.2}%  (DAPS escapes the long-pole freeze)",
+        100.0 * cd.stall_ticks as f64 / cd.t as f64, 100.0 * dd.stall_ticks as f64 / dd.t as f64);
+
+    // (a) DAPS reaches the C8 ceiling.
+    assert!(f_daps > 1.15, "DAPS delay-aligned must aggregate toward the C8 ceiling: got x{f_daps:.3}");
+    assert!(f_daps <= ceiling + 0.05, "cannot exceed goodput ceiling x{ceiling:.3}: x{f_daps:.3}");
+    // (b) THE MECHANISM: DAPS collapses the slow-path frontier-freeze that the
+    //     cost-based scheduler pays (this is the long-pole escape).
+    assert!(dd.stall_ticks * 3 < cd.stall_ticks.max(1),
+        "DAPS must materially cut the slow-path stall vs cost-based: cost {} tk -> DAPS {} tk",
+        cd.stall_ticks, dd.stall_ticks);
+    // (c) DAPS reaches the ceiling at no deeper a buffer than cost-based.
+    assert!(daps_ceiling_buf.is_some(), "DAPS must reach the ceiling within the swept buffers");
+    if let (Some(d), Some(c)) = (daps_ceiling_buf, cost_ceiling_buf) {
+        assert!(d <= c, "DAPS must reach the ceiling at <= the buffer cost-based needs: DAPS {d} cost {c}");
+    }
+}
+
+// -------------------------------------------------------------------------
+// PART 6b — C7 symmetric control: DAPS must NOT regress symmetric aggregation
+//   (skew=0 -> Delta=0 -> DAPS reduces to cost-based; both ~2x).
+// -------------------------------------------------------------------------
+#[test]
+fn daps_c7_symmetric_no_regression() {
+    let k = k_for_mb(25.0);
+    let dual = [c8_fast(), c8_fast()]; // c2+c2
+    let deep = 4096usize;
+    let cfg_cost = DapsCfg { r: 0.05, buffer: deep, sched: Sched::CostCurrent, lead_ms: 0 };
+    let cfg_daps = DapsCfg { r: 0.05, buffer: deep, sched: Sched::DapsFuture, lead_ms: 10 };
+
+    println!("\n=== PART 6b: C7 symmetric (c2+c2) — DAPS must not regress ===");
+    let (_a, _b, f_cost) = daps_factor(&dual, k, cfg_cost, 0xF00D);
+    let (_c, _d, f_daps) = daps_factor(&dual, k, cfg_daps, 0xF00D);
+    println!("  cost-based x{f_cost:.3}   DAPS x{f_daps:.3}   (ideal ~2.0)");
+    assert!(f_cost > 1.7, "C7 cost-based must ~2x: {f_cost:.3}");
+    assert!(f_daps > 1.7, "C7 DAPS must ~2x (skew=0 => no future offset): {f_daps:.3}");
+}
+
+// -------------------------------------------------------------------------
+// PART 6c — THE BURSTY STRAND + required buffer depth.  A burst on the slow
+//   path near the frontier that outruns the pre-fetch slack still stalls even
+//   DAPS.  Sweep the recovery-slack lead and report the buffer depth DAPS
+//   needs to keep the strand within the slack (the feasibility answer PART 0
+//   demands BEFORE building).
+// -------------------------------------------------------------------------
+#[test]
+fn daps_bursty_strand_buffer_depth() {
+    let k = k_for_mb(25.0);
+    // a burstier slow path: lower q_bg => longer bad runs (deeper strand).
+    let bursty_slow = Path { rate: sym_per_ms(20.0), owd: 20, p_gb: 0.02, q_bg: 0.20 };
+    let dual = [c8_fast(), bursty_slow];
+    let ceiling = (c8_fast().goodput() + bursty_slow.goodput()) / c8_fast().goodput();
+    let sumg = c8_fast().goodput() + bursty_slow.goodput();
+    let skew = (bursty_slow.owd - c8_fast().owd) as f64;
+
+    println!("\n=== PART 6c: BURSTY STRAND — required DAPS pre-fetch/buffer depth ===");
+    println!("bursty slow q_bg=0.20 (mean burst {:.1} syms); ceiling x{ceiling:.3}\n", 1.0 / 0.20);
+    println!("  {:>10} {:>10} {:>10} | {:>8} {:>10} {:>8}", "lead_ms", "Delta", "buffer", "factor", "stall_tk", "stalled");
+    let mut feasible_lead = None;
+    for &lead in &[0u64, 20, 40, 80, 120] {
+        let delta = ((skew + lead as f64) * sumg).ceil() as usize;
+        let buffer = delta + 512; // buffer must admit Delta + working set
+        let cfg = DapsCfg { r: 0.08, buffer, sched: Sched::DapsFuture, lead_ms: lead };
+        let (_a, du, f) = daps_factor(&dual, k, cfg, 0xBEEF);
+        println!("  {:>10} {:>10} {:>10} | {:>7.3}x {:>10} {:>8}", lead, delta, buffer, f, du.stall_ticks, du.stalled_recov);
+        if f > 1.10 && feasible_lead.is_none() { feasible_lead = Some((lead, delta, buffer)); }
+    }
+    match feasible_lead {
+        Some((lead, delta, buffer)) => println!(
+            "\n  FEASIBLE: DAPS crosses the strand at lead={lead}ms (Delta={delta}, buffer={buffer} syms ~ {} KB).",
+            buffer * 1500 / 1024),
+        None => println!("\n  INFEASIBLE at tested depths: strand exceeds slack — report to coordinator."),
+    }
+    // The point of PART 6c is the depth report; assert only that SOME tested
+    // depth aggregates (the strand is bridgeable with a deep enough buffer).
+    let deepest = {
+        let lead = 120u64;
+        let delta = ((skew + lead as f64) * sumg).ceil() as usize;
+        let cfg = DapsCfg { r: 0.08, buffer: delta + 512, sched: Sched::DapsFuture, lead_ms: lead };
+        daps_factor(&dual, k, cfg, 0xBEEF).2
+    };
+    assert!(deepest > 1.10, "a deep-enough buffer must bridge the bursty strand: x{deepest:.3}");
+}
+
+// -------------------------------------------------------------------------
+// PART 6d — RIGHT-SIZED r SWEEP: at the C7 2.6% loss, is the FMTCP fixed
+//   r=0.10 over-provisioned?  Sweep r and confirm lower r -> higher throughput
+//   at low loss (the over-FEC hypothesis), while too-low r starves recovery.
+// -------------------------------------------------------------------------
+#[test]
+fn daps_right_sized_r_sweep() {
+    let k = k_for_mb(25.0);
+    let dual = [c8_fast(), c8_slow()];
+    let sumg = c8_fast().goodput() + c8_slow().goodput();
+    let skew = (c8_slow().owd - c8_fast().owd) as f64;
+    let rtt_slow = 2.0 * c8_slow().owd as f64;
+    let deep = ((skew + 2.0 * rtt_slow) * sumg).ceil() as usize;
+    let lead = 2 * c8_slow().owd;
+
+    println!("\n=== PART 6d: RIGHT-SIZED r SWEEP (DAPS, C8 het, deep buffer={deep}) ===");
+    println!("  {:>7} | {:>8} {:>10} {:>10}", "r", "factor", "reactive", "phi=rep/K");
+    let mut best = (0.0f64, 0.0f64);
+    for &r in &[0.03f64, 0.05, 0.08, 0.10, 0.20] {
+        let cfg = DapsCfg { r, buffer: deep, sched: Sched::DapsFuture, lead_ms: lead };
+        let (_a, du, f) = daps_factor(&dual, k, cfg, 0xF00D);
+        let phi = du.repair_sent as f64 / k as f64;
+        println!("  {:>7.3} | {:>7.3}x {:>10} {:>10.4}", r, f, du.reactive, phi);
+        if f > best.1 { best = (r, f); }
+    }
+    println!("\n  throughput-optimal r on the grid = {:.3} (x{:.3})", best.0, best.1);
+    println!("  over-FEC hypothesis: r=0.10 spends ~{:.0}% more wire than r=0.05 for no gain at 2.6% loss.",
+        100.0 * (0.10 - 0.05));
+    // the throughput-optimal r must be at or below the shipped 0.10 (over-FEC).
+    assert!(best.0 <= 0.10 + 1e-9, "right-sized r must be <= the shipped 0.10: best r={:.3}", best.0);
+}

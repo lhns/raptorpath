@@ -20,6 +20,17 @@ per-branch verdicts below and reconciles the (pre-arc) L3 REGIME MAP with
 everything the arc measured. Read it as the settled position; the dated
 sections that follow are the primary record it summarizes.
 
+> **UPDATE (2026-07-12), see "DAPS + Right-Sized FEC" at the end of this file.**
+> The "bounded by recovery latency" conclusion is PARTIALLY REVISED for C8: the
+> heterogeneous cap was substantially the cost-based-CURRENT placement stranding
+> the slow path at the frontier, NOT purely recovery latency. Delay-aware (DAPS)
+> arrival-aligned scheduling — the slow path carries FUTURE data offset by the
+> latency skew — plus right-sized FEC (r*≈0.03 not 0.10) lift C8 from 0.48× to
+> **0.80× single-fast** (frontier pause 13–68% → 0%). It does not yet cross
+> parity; the residual is slow-path bufferbloat (queue-bound), a BLEST-style
+> follow-on. The regime is scheduling-bound AND queue-bound, not solely
+> recovery-latency-bound.
+
 ### The scientific conclusion (the core result)
 
 **Reliable-delivery THROUGHPUT on a lossy link is bounded by RECOVERY
@@ -4421,3 +4432,143 @@ path than `perf_native`). Honest bottom line: single-path lossy BULK
 completion via the shipped block pipeline is unchanged-to-worse; the arc's
 gains are throughput-on-clean, tail-latency, and the window/systematic path.
 
+
+---
+
+## DAPS + Right-Sized FEC (2026-07-12) — delay-aware scheduling escapes the frontier long pole; C8 0.48×→0.80×; over-FEC refuted (branch `feat/daps-rightsized-fec`)
+
+Tests the user's two ideas against the honest ceiling: **(A)** arrival-aligned
+(DAPS-style) scheduling — the slow path carries FUTURE stream data offset by the
+latency skew so it arrives in sync with the fast path reaching that position, and
+a slow-path loss is a loss of FUTURE data with pre-fetch slack to recover before
+the frontier catches up; **(B)** RIGHT-SIZED bulk FEC — replace the FMTCP fixed
+r=0.10 (≈4× the 2.6% loss) with the derived §8.4 r* for the bulk/loose-δ profile.
+Grounded in the PUBLISHED delay-aware MPTCP scheduling literature (see citations).
+
+### Published algorithms followed (not a naive re-derivation)
+
+- **DAPS** — G. Sarwar, R. Boreli, E. Lochin, A. Mifdaoui, G. Smith, "Mitigating
+  Receiver's Buffer Blocking by Delay Aware Packet Scheduling in Multipath Data
+  Transfer," WAINA/PAMS 2013, pp.1119–1124; and N. Kuhn, E. Lochin, A. Mifdaoui,
+  G. Sarwar, O. Mehani, R. Boreli, "DAPS: Intelligent Delay-Aware Packet
+  Scheduling for Multipath Transport," IEEE ICC 2014. DAPS precomputes a schedule
+  over the LCM of the per-path forward delays so segments ARRIVE IN ORDER; the
+  two-subflow form assigns the slow path sequence numbers spaced by the RTT ratio
+  (10× skew ⇒ segs 1..10 fast, seg 11 slow). We adapt the RTT-ratio offset to our
+  coded transport: slow-path delay-skew offset **Δ_j = (RTprop_j − RTprop_min)·Σ
+  BtlBw_i** symbols (from the Copa anchors).
+- **ECF** — Y. Lim, E. Nahum, D. Towsley, R. Gibbens, "ECF: An MPTCP Path
+  Scheduler to Manage Heterogeneous Paths," ACM CoNEXT 2017. Completion-time
+  guard `(1 + k/CWND_f)·RTT_f < RTT_s + σ` — only use the slow path for data the
+  fast path could not deliver sooner. We apply it as a placement gate (a path j
+  is eligible for a source at lead L iff L ≥ Δ_j), the published fix for DAPS's
+  known static-schedule failure mode (a near-frontier slow-path symbol stalling
+  the frontier; ECF/BLEST report plain DAPS otherwise regresses — it performed
+  WORST of the family in ECF's own evaluation).
+- **BLEST** (S. Ferlin, Ö. Alay, O. Mehani, R. Boreli, IFIP Networking 2016) and
+  MPTCP-default **minRTT** are the send-window-blocking and lowest-RTT baselines
+  the cost-based FMTCP build corresponds to (place CURRENT data on the min-RTT
+  path). Our coded transport adds fungible cross-path repair + out-of-order
+  decode, which repairs DAPS's other failure mode (a lost FUTURE slow-path symbol
+  recovers within the pre-fetch slack).
+
+### Oracle-confirm FIRST (temporal_oracle.rs PART 6, `cargo test -p raptorpath-math`)
+
+The FMTCP PART-5 oracle predicted ×1.19 at C8; L1 measured 0.48×. PART 6 adds
+the two things it skipped — the per-path LATENCY SKEW + bounded in-order
+reassembly buffer, and the bursty STRAND — and compares cost-based-current
+(minRTT/FMTCP marginal-cost placement) vs DAPS delay-aligned + ECF.
+
+- **PART 6a (buffer sweep, C8 het, K=25MB, ceiling ×1.195, right-sized r*=0.05):**
+  cost-based-current **anti-aggregates** at bounded buffers — reproducing the
+  production 0.48× regime — while DAPS never drops below 1.0× and reaches the
+  ceiling at HALF the buffer occupancy and 7× less stall:
+
+  ```
+    buffer |  cost fac  cost occ  cost st% |  DAPS fac  DAPS occ  DAPS st%
+       192 |    0.679x       192    42.2%  |    1.000x       121     0.2%
+       256 |    0.779x       256    34.6%  |    1.000x       121     0.2%
+       384 |    0.882x       384    25.7%  |    1.000x       121     0.2%
+       512 |    1.045x       501    11.8%  |    1.000x       121     0.2%
+       768 |    1.182x       566     1.7%  |    1.194x       252     0.2%
+      1024 |    1.182x       566     1.7%  |    1.194x       252     0.2%
+  ```
+  DAPS reaches the ×1.195 ceiling; the slow-path frontier-freeze collapses from
+  1.71% (cost-based) to 0.24% — this IS the long-pole escape. Cost-based needs
+  the deep buffer AND still stalls; DAPS needs only Δ (≈535 syms) and never
+  freezes df on the slow path.
+- **PART 6b (C7 symmetric):** skew 0 ⇒ Δ=0 ⇒ DAPS ≡ cost-based; both ×1.99 (no
+  regression).
+- **PART 6c (bursty strand):** a deep-enough buffer (pre-fetch lead ≥ skew)
+  bridges a q_bg=0.20 strand — feasible; the required depth is reported.
+- **PART 6d (r-sweep):** throughput-optimal r=0.05 at the C8 2.6% loss; r=0.10
+  spends ≈2× the wire for no gain — the over-FEC hypothesis, confirmed in-model.
+
+Verdict from the oracle: DAPS ESCAPES the slow-path long pole that capped the
+cost-based FMTCP build (frontier-freeze 1.71%→0.24%; anti-aggregation 0.68×→≥1.0×),
+and the right-sized r is throughput-optimal below 0.10. GREENLIT to build.
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, seed 42, 25MB × 5, rp-native perf)
+
+Baselines (ceiling denominators, single-path measured, same binary):
+`single-c2` (fast, 100Mbit/5ms/1.3%p) = **16.41 Mbit/s**; `single-c3` (slow,
+20Mbit/20ms/2%p) = **3.14 Mbit/s**. Recovery-bound ceiling C7 = 2·16.41 = 32.82;
+C8 = 16.41+3.14 = **19.55 Mbit/s**. Every arm dnf=0 (reliable, every byte).
+
+**C8 (c2+c3) — the heterogeneous aggregation bar:**
+
+| C8 arm | Mbit/s | ×single-fast | eff (÷19.55 ceiling) | stdev(s) |
+|---|---:|---:|---:|---:|
+| FMTCP r=0.10 (historical) | 7.58 | 0.48× | 0.39 | — |
+| shipped-default (no FMTCP/DAPS) | 8.70 | 0.53× | 0.45 | 8.79 |
+| FMTCP-only r=0.03 (right-sized r ALONE) | 7.14 | 0.44× | 0.37 | 10.45 |
+| DAPS r=0.10 (placement ALONE) | 8.65 | 0.53× | 0.44 | 2.13 |
+| **DAPS r=0.05** | 10.47 | 0.64× | 0.54 | 1.03 |
+| **DAPS r=0.03 (both levers)** | **13.12** | **0.80×** | **0.67** | 1.21 |
+| DAPS r=0.02 | 3.83 | 0.23× | 0.20 | 53.7 (under-FEC cliff) |
+
+**The headline:** DAPS delay-aware scheduling + right-sized r lift C8 from 0.48×
+(FMTCP) to **0.80× single-fast = 13.12 Mbit/s = 0.67 of the recovery ceiling**,
+and stabilize it (stdev 8.8→1.2). The two levers are SYNERGISTIC and each
+NECESSARY: right-sized r alone (FMTCP r=0.03) does NOT help (7.14, still 0.44×,
+unstable); DAPS placement alone (r=0.10) helps modestly (8.65); together they
+nearly double C8 (7.58→13.12, +73%). DIAG confirms the mechanism: the FMTCP build
+was TUN-paused 13–68% (frontier stall); **DAPS is paused=0%** — the long pole is
+gone. The r-sweep is monotone (0.03>0.05>0.10) — the fixed r=0.10 wasted ≈34% of
+C8 throughput; r=0.02 under-provisions (near-DNF, stdev 54s), so r*≈0.03 (= loss +
+small margin) is the throughput optimum, exactly the §8.4 bulk r*.
+
+**HONEST RESIDUAL:** 0.80× is still below parity (1.0×). DAPS removed the
+frontier-stall long pole (paused 0%), but a SECOND cap appears — the slow path
+bufferbloats to ~834ms RTT under the deep read-ahead, so the future-offset data's
+pre-fetch slack is partly consumed by queue latency. The remaining gap to parity
+/ ceiling is slow-path queue management (BLEST-style: cap the slow path at its
+BDP so it does not bloat), NOT the frontier serialization DAPS fixed. Reported,
+not forced.
+
+**C7 (c2+c2) — symmetric control, no regression:** DAPS r=0.03 = **20.87** (1.27×
+single-c2), r=0.10 = 20.88, vs shipped-default (no DAPS) = **20.29** (1.24×). DAPS
+matches/slightly beats the default on C7 (skew 0 ⇒ Δ=0 ⇒ the DAPS gate is inert),
+r-sweep flat (low symmetric loss has no over-FEC headroom to reclaim). The shipped
+default path is byte-identical (all DAPS code is RWM_DAPS-gated).
+
+### Controls / no regression
+
+- `cargo test -p raptorpath --lib` 280/280; `-p raptorpath-math` all green incl.
+  temporal_oracle PART 6 (4 DAPS tests). DAPS scheduler unit tests: slow path
+  carries future-offset data (lead<Δ_slow ⇒ fast-only; lead≥Δ_slow ⇒ slow admitted),
+  symmetric ⇒ no restriction. `daps_loopback` reliable completion (dnf 0, every byte).
+- Right-sized r wired from §8.4 (`compute_r_star_with_z`, bulk δ=0.2ε), NOT
+  hardcoded; RWM_GEN_R overrides for the sweep. Shipped default untouched (no
+  RWM_DAPS). Reliability intact: every arm dnf=0.
+
+**VERDICT:** BOTH user ideas partially validated against the honest ceiling.
+Arrival-aligned scheduling DOES escape the slow-path long pole that capped the
+cost-based FMTCP build (C8 0.48×→0.80×, frontier pause 13–68%→0%, +73%, stabilized);
+right-sized bulk FEC IS throughput-optimal below the fixed 0.10 (r*≈0.03, the fixed
+r=0.10 wasted ≈34% at C8) — but the two levers are synergistic, not independent.
+C8 does not yet cross parity/ceiling: the residual is a slow-path bufferbloat
+second-order cap, honestly a queue-management (BLEST) follow-on, not a scheduling
+failure. Merge as a measured build; regime-map: heterogeneous aggregation is
+scheduling-bound (delay-alignment lifts it materially) AND queue-bound (the
+residual), not recovery-latency-bound as the pre-DAPS arc concluded.

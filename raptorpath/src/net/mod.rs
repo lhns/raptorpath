@@ -3236,20 +3236,44 @@ async fn run_window_sender(
     // once-per-RTT deficit coalesce, and — the crux — TOTAL-in-flight flow control
     // (the tx_paused gate keys on the per-path BDP in-flight, NOT the in-order
     // frontier store). Sub-levers below OR `fmtcp` into their own env gates.
-    let fmtcp = std::env::var("RWM_FMTCP").is_ok() && generation;
+    // DAPS delay-aware scheduling (RWM_DAPS): the slow path carries FUTURE
+    // stream data offset by the per-path latency skew so it arrives IN SYNC with
+    // the fast path reaching that position (G. Sarwar, R. Boreli, E. Lochin,
+    // A. Mifdaoui, G. Smith, WAINA/PAMS 2013; N. Kuhn et al., IEEE ICC 2014),
+    // with the ECF completion-time guard (Y. Lim, E. Nahum, D. Towsley,
+    // R. Gibbens, ACM CoNEXT 2017).  It REUSES the FMTCP total-in-flight FC +
+    // per-path BDP cap + decode-on-total base, so RWM_DAPS implies that base.
+    let daps = std::env::var("RWM_DAPS").is_ok() && generation;
+    let fmtcp = (std::env::var("RWM_FMTCP").is_ok() || daps) && generation;
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
+    // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
+    // the slow path always has FUTURE data to carry (the deep app-side read-
+    // ahead + deep receiver reassembly the delay-alignment requires).
+    let daps_win_floor = if daps { (pipeline + 6) * gen_size } else { 0 };
     let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or((pipeline + 2) * gen_size)
+        .unwrap_or(((pipeline + 2) * gen_size).max(daps_win_floor))
         .max(2 * gen_size);
-    // Generation-coding proactive overhead r. FMTCP ships r=0.10 (oracle PART 5c:
-    // r≥0.05 reaches the ×1.19 ceiling, r<0.05 DNFs; 0.10 is ~2× the model floor,
-    // the margin covering GE's 2–4× under-provisioning of real bursty loss).
+    // Generation-coding proactive overhead r.  FMTCP shipped a FIXED r=0.10
+    // (~4× the ~2.6% operating loss — the over-FEC the DAPS work right-sizes).
+    // DAPS instead DERIVES r* from §8.4 for the bulk/loose-δ profile:
+    //   r* = ε/(1−ε) + z_{δ/ε}·√(εσ²_burst/(W(1−ε))),  z≈0 for the bulk δ≈ε.
+    // At the C7/C8 operating loss (c2 GE ε≈0.026) this lands ≈0.04–0.05, NOT
+    // 0.10; RWM_GEN_R overrides for the sweep {0.03,0.05,0.10}.
+    let daps_r_star: f64 = {
+        let eps = 0.026_f64; // c2 wifi operating loss (netem gemodel p=1.3% q=50%)
+        let sigma2 = raptorpath_math::burst_variance_factor(0.013, 0.50);
+        // bulk/loose tail δ = 0.2·ε (a small burst margin, not the tight δ the
+        // realtime profile budgets); z = Φ⁻¹(1 − δ/ε) = Φ⁻¹(0.8).
+        let z = raptorpath_math::normal_quantile(0.8);
+        raptorpath_math::compute_r_star_with_z(eps, sigma2, gen_size as f64, z)
+            .clamp(0.03, 0.10)
+    };
     let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
+        .unwrap_or(if daps { daps_r_star } else if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
         .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
     let mut encoder: Box<dyn WindowEncoder> = if systematic {
@@ -3778,10 +3802,21 @@ async fn run_window_sender(
             // identical to Phase A). Non-reliable (realtime/EVICT) mode keeps
             // the single best-path pick + redundant duplicate, unchanged.
             let source_path = {
-                let sched = scheduler.lock();
-                if reliable {
+                if reliable && daps {
+                    // DAPS delay-aware placement: the just-added source is at the
+                    // sender's leading edge, `encoder.window_size()` symbols ahead
+                    // of the in-order delivered frontier.  A slow path is eligible
+                    // only when this lead ≥ its delay-skew offset Δ_j, so the slow
+                    // path carries FUTURE data that arrives in sync (Sarwar 2013 /
+                    // Kuhn 2014) with the ECF completion guard (Lim 2017).
+                    let lead = encoder.window_size() as f64;
+                    let sched = scheduler.lock();
+                    sched.place_source_daps(lead).unwrap_or(0)
+                } else if reliable {
+                    let sched = scheduler.lock();
                     sched.place_symbol(false, &[]).unwrap_or(0)
                 } else {
+                    let sched = scheduler.lock();
                     select_source_path(&sched)
                 }
             };

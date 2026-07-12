@@ -1018,6 +1018,12 @@ impl PathState {
         self.copa.bdp_anchor()
     }
 
+    /// RTprop (Copa windowed-min RTT) for this path — the DAPS delay-skew
+    /// input (None during warm-up). Used by `daps_offset_syms`.
+    pub fn min_rtt(&self) -> Option<Duration> {
+        self.copa.min_rtt()
+    }
+
     /// Clamp cwnd to [MIN_CWND, MAX_CWND] and then raise it to the BtlBw
     /// anchor floor if one is established (paper Section 12.6). The floor
     /// only ratchets cwnd UP (never a cap) and is itself bounded by
@@ -1742,6 +1748,104 @@ impl Scheduler {
         }
         let idx = (rand::random::<f64>() * candidates.len() as f64) as usize;
         Some(candidates[idx.min(candidates.len() - 1)])
+    }
+
+    /// DAPS delay-skew offset Δ_j for path `pid`, in symbols (0 for warm-up /
+    /// the fastest path).  Follows the published DAPS delay-alignment rule
+    /// (G. Sarwar, R. Boreli, E. Lochin, A. Mifdaoui, G. Smith, "Mitigating
+    /// Receiver's Buffer Blocking by Delay Aware Packet Scheduling in Multipath
+    /// Data Transfer," WAINA/PAMS 2013; N. Kuhn, E. Lochin, A. Mifdaoui,
+    /// G. Sarwar, O. Mehani, R. Boreli, "DAPS: Intelligent Delay-Aware Packet
+    /// Scheduling for Multipath Transport," IEEE ICC 2014): the slow path
+    /// carries FUTURE stream positions so they arrive IN ORDER with the fast
+    /// path reaching that position.  The two-subflow RTT-ratio offset, expressed
+    /// in symbols, is the delay skew times the aggregate delivery rate:
+    ///   Δ_j = (RTprop_j − RTprop_min) · Σ_i BtlBw_i
+    /// with Σ BtlBw_i = Σ (anchor_i / RTprop_i) since anchor = BtlBw·RTprop.
+    pub fn daps_offset_syms(&self, pid: PathId) -> f64 {
+        let min_rtprop = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .filter_map(|p| p.min_rtt())
+            .min();
+        let (Some(min_rtprop), Some(p)) = (min_rtprop, self.paths.get(&pid)) else {
+            return 0.0;
+        };
+        if !p.active {
+            return 0.0;
+        }
+        let Some(rtprop_j) = p.min_rtt() else { return 0.0 };
+        let skew = rtprop_j.as_secs_f64() - min_rtprop.as_secs_f64();
+        if skew <= 0.0 {
+            return 0.0;
+        }
+        // Σ BtlBw over active paths (symbols/sec), from the Copa anchors.
+        let sum_btlbw: f64 = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .filter_map(|p| {
+                let anchor = p.copa_bdp_anchor()?;
+                let rtp = p.min_rtt()?.as_secs_f64();
+                if rtp > 0.0 { Some(anchor / rtp) } else { None }
+            })
+            .sum();
+        skew * sum_btlbw
+    }
+
+    /// The DAPS-eligible path set for a source symbol whose leading edge is
+    /// `lead_syms` ahead of the delivered frontier.  A path j is eligible iff
+    /// `lead_syms ≥ Δ_j` — the ECF completion-time guard (Y. Lim, E. Nahum,
+    /// D. Towsley, R. Gibbens, "ECF: An MPTCP Path Scheduler to Manage
+    /// Heterogeneous Paths," ACM CoNEXT 2017): only place on path j data the
+    /// fast path could not deliver sooner, so using j never delays completion.
+    /// The fastest path (Δ=0) is always eligible, so the set is never empty.
+    /// This is the published fix for DAPS's known static-schedule failure mode
+    /// (a near-frontier slow-path symbol that stalls the delivered frontier).
+    pub fn daps_eligible_paths(&self, lead_syms: f64) -> Vec<PathId> {
+        self.paths
+            .values()
+            .filter(|p| p.active)
+            .filter(|p| lead_syms >= self.daps_offset_syms(p.id))
+            .map(|p| p.id)
+            .collect()
+    }
+
+    /// DAPS delay-aware source placement: restrict the §16.3 marginal-cost
+    /// softmax to the DAPS-eligible set (`daps_eligible_paths`), then sample.
+    /// Symmetric paths (skew 0 ⇒ all Δ_j = 0) reduce EXACTLY to `place_symbol`
+    /// (no C7 regression).  A slow-path pick is therefore always FUTURE data:
+    /// if lost it has the pre-fetch slack (Δ_j / ΣBtlBw seconds) to recover
+    /// before df arrives — the long-pole escape the cost-based build lacked.
+    pub fn place_source_daps(&self, lead_syms: f64) -> Option<PathId> {
+        let elig: std::collections::HashSet<PathId> =
+            self.daps_eligible_paths(lead_syms).into_iter().collect();
+        if elig.len() <= 1 {
+            // only the fast path qualifies (or warm-up): send there.
+            return elig.into_iter().next().or_else(|| self.place_symbol(false, &[]));
+        }
+        let probs: Vec<(PathId, f64)> = self
+            .place_probs(false, &[])
+            .into_iter()
+            .filter(|(pid, _)| elig.contains(pid))
+            .collect();
+        if probs.is_empty() {
+            return self.place_symbol(false, &[]);
+        }
+        let z: f64 = probs.iter().map(|(_, p)| p).sum();
+        if z <= 0.0 || !z.is_finite() {
+            return probs.first().map(|(pid, _)| *pid);
+        }
+        let u: f64 = rand::random::<f64>() * z;
+        let mut acc = 0.0;
+        for (pid, p) in &probs {
+            acc += p;
+            if u <= acc {
+                return Some(*pid);
+            }
+        }
+        probs.last().map(|(pid, _)| *pid)
     }
 
     /// The softmax placement distribution over paths (paper §16.3). Exposed for
@@ -2990,5 +3094,70 @@ mod tests {
         // Even heavily overdrafted, the lone path is still chosen.
         sched.path_mut(0).unwrap().in_flight = 10_000;
         assert_eq!(sched.place_symbol(false, &[]), Some(0));
+    }
+
+    // Set a path's Copa RTprop + BtlBw anchor directly so DAPS can compute the
+    // delay-skew offset (bypasses the estimator warm-up).
+    fn set_anchor(sched: &mut Scheduler, id: PathId, rtprop_ms: u64, btlbw_sym_s: f64) {
+        let p = sched.path_mut(id).unwrap();
+        p.active = true;
+        p.copa.min_rtt = Some(Duration::from_millis(rtprop_ms));
+        p.copa.max_bw = btlbw_sym_s;
+        let now = Instant::now();
+        for _ in 0..ANCHOR_MIN_SAMPLES {
+            p.copa.bw_samples.push_back(BwSample { delivery_rate: btlbw_sym_s, timestamp: now });
+        }
+    }
+
+    // DAPS delay-aware scheduling (Sarwar WAINA 2013 / Kuhn ICC 2014 + ECF
+    // guard, Lim CoNEXT 2017): the slow path carries FUTURE-offset data, the
+    // receiver reassembles by offset, and near-frontier data (lead < Δ_slow)
+    // is force-routed to the fast path so arrivals stay in sync.
+    #[test]
+    fn daps_slow_path_carries_future_offset_data() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹ (100Mbit), slow RTprop=40ms/1667 (20Mbit).
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 40, 1667.0);
+
+        // Δ_fast = 0 (min RTprop); Δ_slow = (0.040−0.010)·(8333+1667) = 300 syms.
+        assert!(sched.daps_offset_syms(0).abs() < 1e-6, "fast path has zero skew offset");
+        let d_slow = sched.daps_offset_syms(1);
+        assert!((d_slow - 300.0).abs() < 1.0, "Δ_slow must be skew·ΣBtlBw = 300 syms: {d_slow}");
+
+        // ECF guard: near-frontier data (lead < Δ_slow) goes ONLY to the fast
+        // path — the slow path would land it late and stall the frontier.
+        assert_eq!(sched.daps_eligible_paths(100.0), vec![0],
+            "lead 100 < Δ_slow 300 ⇒ only the fast path is eligible");
+        for _ in 0..50 {
+            assert_eq!(sched.place_source_daps(100.0), Some(0),
+                "near-frontier source must never be placed on the slow path");
+        }
+
+        // FUTURE data (lead ≥ Δ_slow) admits the slow path: it now carries data
+        // Δ_slow ahead of the frontier, arriving in sync.
+        let elig = sched.daps_eligible_paths(400.0);
+        assert!(elig.contains(&0) && elig.contains(&1),
+            "lead 400 ≥ Δ_slow 300 ⇒ both paths eligible (slow carries future data)");
+        let slow_picks = (0..2000).filter(|_| sched.place_source_daps(400.0) == Some(1)).count();
+        assert!(slow_picks > 0, "with sufficient lead the slow path must carry some future-offset data");
+    }
+
+    // Symmetric paths (skew 0 ⇒ all Δ_j = 0) must reduce EXACTLY to the
+    // unrestricted placement — no C7 regression from the DAPS gate.
+    #[test]
+    fn daps_symmetric_paths_no_restriction() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 10, 8333.0);
+        assert!(sched.daps_offset_syms(0).abs() < 1e-6);
+        assert!(sched.daps_offset_syms(1).abs() < 1e-6);
+        // Both eligible even at zero lead (no future-offset requirement).
+        let elig = sched.daps_eligible_paths(0.0);
+        assert_eq!(elig.len(), 2, "symmetric skew ⇒ both paths always eligible");
     }
 }
