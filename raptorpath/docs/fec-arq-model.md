@@ -2466,6 +2466,42 @@ budget (no cross-path fungible repair), so its verdict is independent of the
 Parts 1–3 aggregation result — the two processes share the channel model and
 nothing else.
 
+> **UPDATE (2026-07-12) — the aggregation ceiling is being closed in stages, and
+> now reads ceiling-relative, not as a bare "parity" factor.** Against a *measured
+> recovery ceiling* (single-path, same binary) `C8 = single-c2 + single-c3 =
+> 16.54 + 3.26 = 19.80 Mbit/s` for the c2+c3 heterogeneous pair, three levers have
+> been added and measured at L1:
+> 1. **DAPS delay-aware scheduling + right-sized r** removed the slow-path
+>    frontier-serialization long pole (frontier pause 13–68%→0%): C8 0.48×→0.80×
+>    single-fast in that arc's conditions.
+> 2. **Per-path BLEST cap + BBR pacer** (queue management) — correct in-model
+>    (temporal_oracle PART 6e: given a correct per-path BDP, the queue collapses
+>    and C8 reaches ×1.195) but INERT in production because generation mode never
+>    *estimated* a per-path rate.
+> 3. **Per-path delivered-rate estimator** (branch `feat/per-path-estimator`):
+>    per-path ACK attribution (seq→path ownership) now drives a real per-path
+>    BtlBw/RTprop/BDP — established in **93%** of sender-DIAG windows vs **0%**
+>    before — and the min-filtered RTprop stays at the 44 ms propagation base, so
+>    the per-path source pacer drains the slow-path bufferbloat from **3734 ms to
+>    ~300 ms**. This ELIMINATES the catastrophic-bloat seed and STABILIZES C8:
+>    two-seed pooled C8 rises from **0.40 to 0.52 of the recovery ceiling**
+>    (×0.47→×0.62 single-fast; baseline was bimodal 5.88/9.81, post-estimator
+>    stable 9.58/10.90 Mbit/s), C7 no-regression (21.41, 1.29× single-c2), all
+>    arms dnf=0.
+>
+> **Revised verdict.** Heterogeneous throughput aggregation is *not one* ceiling
+> but a stack: scheduling-bound (DAPS, escaped), rate-estimation-bound (the
+> per-path estimator, now closed — a real per-path BtlBw exists where there was
+> none), and still queue-bound on the *non-source* traffic (the coded/repair
+> emission and the fast-path queue are not yet per-path pace-bounded, so live RTT
+> holds ~140–380 ms above the propagation base and C8 sits at 0.52, not 1.0, of
+> the recovery ceiling). The pre-estimator "sits at MPTCP parity" reading was a
+> *rate-signal* artifact — with a real per-path rate the aggregate is materially
+> above parity and stable, but the remaining gap to the ceiling is now a
+> non-source queue-management residual, not a rate-estimation or scheduling one.
+> None of this touches the r\*_unified derivation (it assumes only per-path
+> deliverability at g_i, which the estimator now measures directly).
+
 ---
 
 ## 9. Codec Overhead Integration

@@ -3089,7 +3089,7 @@ fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32)
 /// (still in the retained map) are excluded by the span filter.
 fn window_source_paths(
     encoder: &dyn WindowEncoder,
-    source_path_map: &std::collections::HashMap<u64, u32>,
+    source_path_map: &std::collections::BTreeMap<u64, u32>,
 ) -> Vec<u32> {
     let (win_start, win_end) = encoder.window_span();
     (win_start..=win_end)
@@ -3280,6 +3280,15 @@ async fn run_window_sender(
     };
     let daps_pace_on: bool =
         daps && std::env::var("RWM_DAPS_PACE").ok().map_or(true, |v| v != "0");
+    // feat/per-path-estimator: drive per-path delivered-rate attribution.
+    // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
+    // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
+    // also establishes per-path BtlBw (the general-fix check: the CC + the
+    // placement law get a stable per-path signal, not just DAPS).  Attribution
+    // is generation-mode-only (it keys on the source_path_map + OOO acks) and
+    // is a NO-OP for the shipped non-generation default (byte-identical).
+    let per_path_est: bool =
+        generation && (daps || std::env::var("RWM_PER_PATH_EST").is_ok());
     // Per-path BtlBw pace token buckets (symbols), refilled at BtlBw_i each loop.
     let mut daps_pace_tok: std::collections::HashMap<crate::scheduler::PathId, f64> =
         std::collections::HashMap::new();
@@ -3751,7 +3760,10 @@ async fn run_window_sender(
     /// Congestion-aware NACK repair throttle (ADR-0046).
     let mut nack_congestion = NackCongestionState::new();
     /// Maps source seq → path it was sent on (for cross-path retransmission).
-    let mut source_path_map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    // BTreeMap (not HashMap) so the per-path ack attribution can range-query
+    // the seqs in a SACK / cumulative-ack span efficiently (feat/per-path-
+    // estimator); all other uses (insert/get/remove/retain) are unaffected.
+    let mut source_path_map: std::collections::BTreeMap<u64, u32> = std::collections::BTreeMap::new();
     /// Last source path used (for NACK repair path selection outside the send macro).
     let mut last_source_path: u32 = 0;
     /// Wall-clock (us) of the last NEW source-symbol send (ADR-0046
@@ -3842,7 +3854,7 @@ async fn run_window_sender(
                     // path at its own BDP from the eligible set so the slow path is
                     // never over-committed (the bufferbloat fix).
                     let lead = encoder.window_size() as f64;
-                    let sched = scheduler.lock();
+                    let mut sched = scheduler.lock();
                     let mut chosen =
                         sched.place_source_daps_capped(lead, daps_bdp_gain).unwrap_or(0);
                     // BBR per-path pacing: if the picked path's BtlBw pace bucket
@@ -3859,6 +3871,12 @@ async fn run_window_sender(
                         if let Some(t) = daps_pace_tok.get_mut(&chosen) {
                             *t -= 1.0;
                         }
+                    }
+                    // feat/per-path-estimator: commit this source seq to `chosen`
+                    // and charge its per-path SOURCE outstanding gauge (BLEST
+                    // in_flight_i).  Released on per-path ack attribution below.
+                    if let Some(p) = sched.path_mut(chosen) {
+                        p.charge_src(1);
                     }
                     chosen
                 } else if reliable {
@@ -4365,6 +4383,30 @@ async fn run_window_sender(
                     source_path_map.remove(&k);
                     nack_retx_at.remove(&k);
                 }
+                // feat/per-path-estimator: OOO per-path ack attribution.  In
+                // generation mode sent_store is empty (the loop above is inert),
+                // and the in-order cumulative frontier STALLS on holes — exactly
+                // when the estimator is most starved.  A SACK range is OOO
+                // delivery evidence: attribute each newly-received source seq to
+                // the path its DAPS placement committed it to (`source_path_map`)
+                // and drive that path's delivered-rate estimator, so BtlBw_i
+                // keeps establishing even while the frontier is frozen.  Remove
+                // the seq so the cumulative pass below cannot double-count it.
+                if per_path_est {
+                    let attributed: Vec<u64> =
+                        source_path_map.range(start..=end).map(|(&k, _)| k).collect();
+                    if !attributed.is_empty() {
+                        let mut sched = scheduler.lock();
+                        for k in attributed {
+                            if let Some(&pid) = source_path_map.get(&k) {
+                                if let Some(p) = sched.path_mut(pid) {
+                                    p.on_src_delivered(1);
+                                }
+                                source_path_map.remove(&k);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -4528,9 +4570,19 @@ async fn run_window_sender(
                             let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
                             let rtprop_i =
                                 p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
+                            // feat/per-path-estimator DIAG: the SOURCE outstanding
+                            // gauge (BLEST in_flight_i, the value the cap now keys
+                            // on), the ack-attributed per-path BtlBw_i (sym/s), and
+                            // whether the per-path BDP anchor has ESTABLISHED — the
+                            // signals the DAPS residual was missing.  Piece 2 send-
+                            // buffer proxy: charged-source − src_inflight is drained,
+                            // so a growing src_inflight relative to bdp is the queue.
+                            let sinfl_i = p.src_inflight() as u64;
+                            let btlbw_i = p.btlbw_sym_per_s().unwrap_or(0.0);
+                            let est_i = if p.anchor_established() { "Y" } else { "n" };
                             pp.push_str(&format!(
-                                " p{}:infl={}/bdp{:.0}(cap{}) rtt={:.0}/rtp{:.0}ms",
-                                id, infl_i, bdp_i, cap_i, rtt_i, rtprop_i
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} est={} rtt={:.0}/rtp{:.0}ms",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, est_i, rtt_i, rtprop_i
                             ));
                         }
                     }
@@ -5479,6 +5531,31 @@ async fn run_window_sender(
         if ack > prev_ack {
             // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
             let newly_acked = ack - prev_ack;
+            // feat/per-path-estimator: cumulative-frontier per-path ack
+            // attribution.  Every source seq the in-order frontier just passed
+            // (prev_ack+1..=ack) that is still owned in source_path_map (i.e.
+            // NOT already attributed OOO via a SACK above) is now delivered:
+            // attribute it to its DAPS placement path and drive that path's
+            // delivered-rate estimator + release its SOURCE outstanding gauge.
+            // Range-query the map (BTreeMap) so the cost is O(unattributed in
+            // span), not O(span).  Runs before the source_path_map.retain below
+            // that drops the acked range wholesale.
+            if per_path_est {
+                let attributed: Vec<u64> = source_path_map
+                    .range((prev_ack + 1)..=ack)
+                    .map(|(&k, _)| k)
+                    .collect();
+                if !attributed.is_empty() {
+                    let mut sched = scheduler.lock();
+                    for k in attributed {
+                        if let Some(pid) = source_path_map.remove(&k) {
+                            if let Some(p) = sched.path_mut(pid) {
+                                p.on_src_delivered(1);
+                            }
+                        }
+                    }
+                }
+            }
             // Compute the repair rate AND the derived window target (paper
             // Section 8.8) from the worst (highest-loss) active path, under a
             // single lock acquisition.

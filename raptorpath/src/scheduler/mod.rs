@@ -752,6 +752,17 @@ pub struct PathState {
     pub cwnd: u32,
     /// Symbols currently in flight
     pub in_flight: u32,
+    /// Per-path SOURCE outstanding gauge (BLEST in_flight_i, feat/per-path-
+    /// estimator): source symbols whose DAPS placement committed them to THIS
+    /// path (`source_path_map`) but which the receiver has not yet
+    /// acked/decoded.  Charged at placement (`charge_src`) and released on
+    /// per-path ack attribution (`on_src_delivered`), so it tracks TRUE
+    /// sent-not-acked ON THIS PATH — the quantity the BLEST BDP cap bounds
+    /// (`in_flight_i ≤ gain·BtlBw_i·RTprop_i`).  Distinct from `in_flight`
+    /// (the coded-symbol budget released by time-expiry): the cap needs a
+    /// source-unit outstanding that matches the source-unit BtlBw the ack
+    /// attribution feeds `copa.record_delivery`.  Only driven under DAPS.
+    pub src_inflight: u32,
     /// Whether the path is considered usable
     pub active: bool,
     /// Slow-start threshold (kept for legacy test compatibility)
@@ -809,6 +820,7 @@ impl PathState {
             estimator: LossEstimator::new(),
             cwnd: Self::INITIAL_CWND,
             in_flight: 0,
+            src_inflight: 0,
             active: true,
             ssthresh: 64,
             in_slow_start: true,
@@ -956,6 +968,52 @@ impl PathState {
         if !self.in_slow_start && self.ssthresh > self.cwnd {
             self.ssthresh = self.cwnd;
         }
+    }
+
+    // --- Per-path delivered-rate estimator (feat/per-path-estimator) ---
+    //
+    // In generation mode WindowAcks do NOT drive `on_ack` (the block-ARQ
+    // path), so `copa.record_delivery` was never called per path and the
+    // Copa BtlBw/BDP anchor stayed `None` — the DAPS BLEST cap + BBR pacer,
+    // which key on `copa_bdp_anchor()` / `btlbw_sym_per_s()`, therefore had
+    // no per-path rate to act on (goal-gate "DAPS Queue Management" residual).
+    // These two entry points close that: the sender attributes each
+    // newly-acked SOURCE seq to the path its DAPS placement committed it to
+    // (`source_path_map`) and calls `on_src_delivered` on THAT path, which
+    // (a) feeds `copa.record_delivery` so BtlBw_i = the path's own delivered
+    // source-rate (BtlBw_i·RTprop_i = the per-path BDP), and (b) releases the
+    // per-path SOURCE outstanding gauge by ACK, not time-expiry.
+
+    /// Charge `n` source symbols to this path's outstanding gauge at DAPS
+    /// placement time (the seq→path commitment).  Pairs with
+    /// `on_src_delivered`.
+    pub fn charge_src(&mut self, n: u32) {
+        self.src_inflight = self.src_inflight.saturating_add(n);
+    }
+
+    /// Per-path ack attribution: `n` source symbols placed on this path have
+    /// now been delivered/decoded at the receiver.  Releases the outstanding
+    /// gauge (BLEST in_flight_i) and drives the Copa delivered-rate estimator
+    /// so BtlBw_i / the BDP anchor establish per path (they underpin the
+    /// DAPS cap, the BBR pacer, and the Δ_j offset's ΣBtlBw).
+    pub fn on_src_delivered(&mut self, n: u32) {
+        if n == 0 {
+            return;
+        }
+        self.src_inflight = self.src_inflight.saturating_sub(n);
+        self.copa.record_delivery(n);
+    }
+
+    /// Current per-path SOURCE outstanding (BLEST in_flight_i).
+    pub fn src_inflight(&self) -> u32 {
+        self.src_inflight
+    }
+
+    /// Whether the per-path Copa BtlBw/BDP anchor has established (≥
+    /// ANCHOR_MIN_SAMPLES delivered-rate samples AND a min-RTT sample) — the
+    /// per-path DIAG "established?" signal.
+    pub fn anchor_established(&self) -> bool {
+        self.copa.bdp_anchor().is_some()
     }
 
     /// Copa-lite congestion control: handle loss events.
@@ -1866,7 +1924,14 @@ impl Scheduler {
                     return true;
                 }
                 match p.copa_bdp_anchor() {
-                    Some(bdp) => (p.in_flight as f64) < (bdp_gain * bdp).max(1.0),
+                    // BLEST bound on SOURCE outstanding (`src_inflight`, ack-
+                    // attributed) vs the source-unit BDP (BtlBw_i·RTprop_i,
+                    // where BtlBw_i is the ack-attributed per-path delivered
+                    // source-rate) — both in source symbols, so the cap is
+                    // dimensionally consistent (feat/per-path-estimator).  The
+                    // former coded `in_flight` (time-expired) was a different
+                    // unit and never released by per-path ack.
+                    Some(bdp) => (p.src_inflight as f64) < (bdp_gain * bdp).max(1.0),
                     None => true, // anchor not warm yet — do not restrict
                 }
             })
@@ -3249,9 +3314,10 @@ mod tests {
             .count();
         assert!(slow_below > 0, "below its BDP the slow path must carry future data");
 
-        // At/above the cap: drive slow in_flight past its BDP, then it must be
-        // excluded — every source now goes to the fast path.
-        sched.path_mut(1).unwrap().in_flight = (slow_bdp.ceil() as u32) + 5;
+        // At/above the cap: drive slow SOURCE outstanding past its BDP (the
+        // BLEST in_flight_i the cap now keys on — feat/per-path-estimator),
+        // then it must be excluded — every source now goes to the fast path.
+        sched.path_mut(1).unwrap().src_inflight = (slow_bdp.ceil() as u32) + 5;
         assert_eq!(
             sched.daps_eligible_paths_capped(lead, 1.0),
             vec![0],
@@ -3285,5 +3351,97 @@ mod tests {
         // Both eligible even at zero lead (no future-offset requirement).
         let elig = sched.daps_eligible_paths(0.0);
         assert_eq!(elig.len(), 2, "symmetric skew ⇒ both paths always eligible");
+    }
+
+    // feat/per-path-estimator PIECE 1: per-path ack attribution must update the
+    // RIGHT path's delivered-rate estimator (BtlBw / BDP anchor) and release the
+    // RIGHT path's SOURCE outstanding gauge — never the other path's.
+    #[test]
+    fn per_path_ack_attribution_updates_only_the_owning_path() {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        // Give both paths an RTprop sample (needed for the BDP anchor product).
+        for id in [0u32, 1u32] {
+            let p = sched.path_mut(id).unwrap();
+            p.record_rtt_sample(Duration::from_millis(if id == 0 { 10 } else { 40 }));
+        }
+        // Charge SOURCE outstanding: 100 on the fast path, 100 on the slow path.
+        sched.path_mut(0).unwrap().charge_src(100);
+        sched.path_mut(1).unwrap().charge_src(100);
+        assert_eq!(sched.path(0).unwrap().src_inflight(), 100);
+        assert_eq!(sched.path(1).unwrap().src_inflight(), 100);
+
+        // Attribute deliveries: drive ≥ ANCHOR_MIN_SAMPLES rate samples on EACH
+        // path, spaced 5 ms apart, with the fast path delivering 5× the slow
+        // path per interval — so BtlBw_fast ≈ 5·BtlBw_slow.
+        for _ in 0..(ANCHOR_MIN_SAMPLES + 2) {
+            clock.advance(Duration::from_millis(5));
+            sched.path_mut(0).unwrap().on_src_delivered(50); // fast: 50/5ms
+            sched.path_mut(1).unwrap().on_src_delivered(10); // slow: 10/5ms
+        }
+        // Outstanding released ONLY on the owning path (never cross-attributed).
+        assert!(sched.path(0).unwrap().src_inflight() < 100);
+        assert!(sched.path(1).unwrap().src_inflight() < 100);
+
+        // Both per-path BDP anchors established (the DIAG "established?" signal).
+        assert!(sched.path(0).unwrap().anchor_established(), "fast anchor established");
+        assert!(sched.path(1).unwrap().anchor_established(), "slow anchor established");
+        let btlbw_fast = sched.path(0).unwrap().btlbw_sym_per_s().unwrap();
+        let btlbw_slow = sched.path(1).unwrap().btlbw_sym_per_s().unwrap();
+        // Rates are separated (fast ≈ 5× slow), proving attribution is per-path.
+        assert!(
+            btlbw_fast > 3.0 * btlbw_slow,
+            "per-path BtlBw must separate: fast={btlbw_fast} slow={btlbw_slow}"
+        );
+        // BDP_i = BtlBw_i·RTprop_i is a real, stable per-path value the cap reads.
+        let bdp_slow = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
+        assert!(bdp_slow > 0.0, "slow-path BDP is a real value: {bdp_slow}");
+    }
+
+    // feat/per-path-estimator PIECE 1+2: once the estimator establishes a real
+    // per-path BDP, the BLEST cap + the ack-attributed SOURCE outstanding
+    // together bound slow-path outstanding at ≈ one BDP — the send-queue bound.
+    #[test]
+    fn per_path_estimator_bounds_slow_path_outstanding_at_one_bdp() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 40, 1667.0);
+        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
+        let lead = 4000.0;
+        // Simulate the placement→charge / ack→release loop: every source the cap
+        // routes to the slow path charges its src_inflight; nothing is delivered
+        // yet. The cap MUST stop admitting the slow path once its outstanding
+        // reaches one BDP — so src_inflight never exceeds ceil(BDP)+1.
+        // The fast path DRAINS (it is not the bottleneck): deliver whatever is
+        // routed to it immediately, mirroring the live system where its acks keep
+        // its outstanding well below its own BDP. The slow path does NOT drain, so
+        // its src_inflight accumulates — and the BLEST cap must stop admitting it
+        // once it reaches one BDP.
+        let cap = (slow_bdp).ceil() as u32;
+        let mut fast_total = 0u32;
+        for _ in 0..5000 {
+            if let Some(pid) = sched.place_source_daps_capped(lead, 1.0) {
+                sched.path_mut(pid).unwrap().charge_src(1);
+                if pid == 0 {
+                    fast_total += 1;
+                    sched.path_mut(0).unwrap().on_src_delivered(1); // fast drains
+                }
+            }
+        }
+        let slow_out = sched.path(1).unwrap().src_inflight();
+        assert!(
+            slow_out <= cap + 1,
+            "slow-path outstanding bounded at ~1 BDP ({cap}); got {slow_out}"
+        );
+        // The fast path absorbed the overflow the slow-path cap rejected.
+        assert!(
+            fast_total > slow_out,
+            "fast path carries the overflow the slow-path cap rejected \
+             (fast={fast_total} slow_out={slow_out})"
+        );
     }
 }
