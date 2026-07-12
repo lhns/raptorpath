@@ -2525,3 +2525,128 @@ fn source_backpressure_collapses_fast_queue_and_slow_coupling() {
     println!("  repair->slow coupling ({q_s_coupled:.0}->{q_s_defer:.0}ms), lifting C8 x{f_burst:.3} (parity) -> x{f_defer:.3} (ceiling).");
     println!("  No queue residual remains after both paths are paced: the structural floor IS the ceiling.");
 }
+
+// PART 6g — THE RATE ANCHOR OVER-READ (why every pacer/cap was INERT).
+//   PARTs 6e/6f model the BLEST cap and the BBR pacer and show that, ONCE the
+//   per-path bucket binds, the queue collapses and C8 reaches the ×1.19 ceiling.
+//   But those parts ASSUME the pacer knows the true BtlBw_i (they pace the slow
+//   path at `rate_s` = the real bottleneck).  L1 DIAG on the fast path showed the
+//   per-path anchor does NOT: bdp 14509 sym / RTprop 12 ms ⇒ estimated BtlBw ≈
+//   1.2M sym/s vs the TRUE link ≈ 8.3k sym/s — a ~145× OVER-READ.  The estimator
+//   (#71) derived BtlBw from a delivered-count / ACK-ARRIVAL-interval ratio, so
+//   ack-aggregation (batched acks → tiny Δt) inflated the windowed-max.
+//
+//   CONSEQUENCE (the mechanism this part models).  A token bucket clocked at the
+//   ANCHOR rate R holds ~R·RTprop outstanding before ack feedback throttles it
+//   (the BtlBw×RTprop identity, evaluated at the ANCHOR's R, not the true BtlBw).
+//   With a correct anchor (R = BtlBw) that is exactly ONE true BDP → 6e/6f's PACE
+//   regime.  With a 145× over-read the bucket's steady occupancy is 145 BDP —
+//   FAR above the deep DAPS read-ahead share — so the read-ahead bound dominates
+//   and the path DUMPS its whole share (6e's DUMP regime).  The SAME pace/cap
+//   mechanism is therefore INERT under the over-read and BINDS only once the
+//   anchor is correct.  This is the ROOT residual: no pacer or cap can bind while
+//   the rate anchor is 145× too high.
+//
+//   THE FIX (BBR-correct delivery-rate sampling, Cardwell/Cheng draft-cheng-
+//   iccrg-delivery-rate-estimation).  Sample Δt over the SEND interval (elapsed
+//   between when the first and last newly-acked bytes were SENT = max(send_elapsed,
+//   ack_elapsed)), NOT the ack-arrival interval, and max-filter CORRECT samples.
+//   Then R → true BtlBw (×1), the bucket occupancy → one BDP, and 6e/6f's PACE
+//   regime is finally REALIZED on both paths.
+//
+//   HONESTY.  Pure queue model: a fast-path standing queue is LATENCY not
+//   throughput, so single-path THROUGHPUT floors at fast_g here.  L1's single-c2
+//   BIMODALITY (median 15.9 / mean 9.8) is the drops / RTT-driven CC instability
+//   the over-read's ~380 ms fast-path queue induces — which this model omits
+//   (it reports the RTT inflation; the DIRECTION is the point, as 6e/6f note for
+//   their own DUMP rows).  C8 is scored via the slow coupling (6f's `useful`).
+// -------------------------------------------------------------------------
+#[test]
+fn rate_anchor_overread_makes_pacer_inert() {
+    let f = c8_fast();
+    let s = c8_slow();
+    let rate_f = f.rate; // 8.33 sym/ms = 8333 sym/s (TRUE BtlBw_fast)
+    let rate_s = s.rate; // 1.667 sym/ms = 1667 sym/s (TRUE BtlBw_slow)
+    let rtprop_f = 2.0 * f.owd as f64; // 10 ms
+    let rtprop_s = 2.0 * s.owd as f64; // 40 ms
+    let skew = rtprop_s - rtprop_f; // 30 ms — the DAPS pre-fetch slack
+    let bdp_f = rate_f * rtprop_f; // 83 sym
+    let bdp_s = rate_s * rtprop_s; // 67 sym
+    let fast_g = f.goodput();
+    let slow_g = s.goodput();
+    let ceiling = (fast_g + slow_g) / fast_g;
+
+    // The measured over-read: DIAG estimated ~1.2M sym/s vs true 8.3k → ×145.
+    let over = 145.0;
+
+    // Deep DAPS read-ahead backstop (pipeline+6)*G, as in PARTs 6e/6f.
+    let g = 384.0;
+    let pipeline = 4.0;
+    let w_backstop = (pipeline + 6.0) * g;
+    let share_f = rate_f / (rate_f + rate_s);
+    let share_s = rate_s / (rate_f + rate_s);
+
+    // A path paced at anchor rate R holds ~R·RTprop outstanding (bucket occupancy
+    // at the ANCHOR's R), clamped by the deep read-ahead share (intake bound).
+    let occ = |anchor_rate: f64, rtprop: f64, share_cap: f64| (anchor_rate * rtprop).min(share_cap);
+    let q_delay_s = |o: f64| ((o - bdp_s).max(0.0)) / rate_s;
+    let q_delay_f = |o: f64| ((o - bdp_f).max(0.0)) / rate_f;
+    let useful = |q: f64| (1.0 - (q / skew)).clamp(0.0, 1.0);
+    let factor = |q_s: f64| (fast_g + slow_g * useful(q_s)) / fast_g;
+
+    // ---- OVER-READ arm (the #71 anchor: BtlBw read ×145) ---------------------
+    // Bucket occupancy = 145·BDP >> read-ahead share ⇒ clamped to the share ⇒ DUMP.
+    let out_f_over = occ(rate_f * over, rtprop_f, w_backstop * share_f);
+    let out_s_over = occ(rate_s * over, rtprop_s, w_backstop * share_s);
+    let (q_f_over, q_s_over) = (q_delay_f(out_f_over), q_delay_s(out_s_over));
+    let f_over = factor(q_s_over);
+    let anchor_f_over = rate_f * over; // reported: sym/ms
+
+    // ---- CORRECT arm (send-interval sampling: BtlBw read ×1) -----------------
+    // Bucket occupancy = 1·BDP << read-ahead share ⇒ PACE (6e/6f's regime realized).
+    let out_f_ok = occ(rate_f, rtprop_f, w_backstop * share_f);
+    let out_s_ok = occ(rate_s, rtprop_s, w_backstop * share_s);
+    let (q_f_ok, q_s_ok) = (q_delay_f(out_f_ok), q_delay_s(out_s_ok));
+    let f_ok = factor(q_s_ok);
+
+    println!("\n=== PART 6g: RATE ANCHOR OVER-READ (why the pacer/cap were INERT) ===");
+    println!("  TRUE BtlBw_fast={rate_f:.2} sym/ms ({:.0} sym/s)  BtlBw_slow={rate_s:.2} sym/ms  ceiling x{ceiling:.3}",
+        rate_f * 1000.0);
+    println!("  measured over-read ×{over:.0}: anchor reads BtlBw_fast≈{anchor_f_over:.0} sym/ms ({:.2}M sym/s) vs true {:.0} sym/s",
+        anchor_f_over * 1000.0 / 1e6, rate_f * 1000.0);
+    println!("  deep read-ahead W={w_backstop:.0}; fast share={share_f:.3}, slow share={share_s:.3}\n");
+    println!("  {:>14} | {:>9} {:>9} {:>11} | {:>9} {:>9} {:>11} | {:>8}",
+        "anchor", "out_fast", "q_f(ms)", "fastRTT(ms)", "out_slow", "q_s(ms)", "slowRTT(ms)", "factor");
+    println!("  {:>14} | {:>9.0} {:>9.0} {:>11.0} | {:>9.0} {:>9.0} {:>11.0} | {:>7.3}x",
+        "OVER (×145)", out_f_over, q_f_over, rtprop_f + q_f_over, out_s_over, q_s_over, rtprop_s + q_s_over, f_over);
+    println!("  {:>14} | {:>9.0} {:>9.0} {:>11.0} | {:>9.0} {:>9.0} {:>11.0} | {:>7.3}x",
+        "CORRECT (×1)", out_f_ok, q_f_ok, rtprop_f + q_f_ok, out_s_ok, q_s_ok, rtprop_s + q_s_ok, f_ok);
+
+    // (a) Over-read makes the bucket occupancy exceed the read-ahead share on BOTH
+    //     paths → the pace/cap is INERT (the path dumps its whole share).
+    assert!(rate_s * over * rtprop_s > w_backstop * share_s,
+        "over-read bucket occupancy must exceed the read-ahead share (pacer inert)");
+    assert!(out_s_over > 4.0 * bdp_s, "over-read must leave slow outstanding many BDPs (DUMP): {out_s_over:.0} vs BDP {bdp_s:.0}");
+    // (b) → the slow queue bufferbloats past the slack → C8 falls to ~parity
+    //     (matches the measured C8 14.99 ≈ single-c2 15.9 fast-path-alone).
+    assert!(q_s_over > skew, "over-read must bufferbloat the slow path past the slack: q_s={q_s_over:.0}ms");
+    assert!(f_over < 1.02, "over-read must collapse C8 to fast-path parity: x{f_over:.3}");
+    // (c) The fast path also bufferbloats (the single-c2 bimodality cause): live
+    //     RTT inflates far past the 10 ms base (the drops/CC-instability L1 pays).
+    assert!(q_f_over > 100.0, "over-read must inflate fast-path RTT (single-path bimodality): q_f={q_f_over:.0}ms");
+    // (d) THE FIX: the correct (×1) anchor makes the bucket bind at ONE BDP on
+    //     both paths → queues collapse → C8 reaches the ×1.19 ceiling.
+    assert!((out_s_ok - bdp_s).abs() < 1.0, "correct anchor must pace slow to one BDP: {out_s_ok:.0} vs {bdp_s:.0}");
+    assert!((out_f_ok - bdp_f).abs() < 1.0, "correct anchor must pace fast to one BDP: {out_f_ok:.0} vs {bdp_f:.0}");
+    assert!(q_s_ok <= skew && q_f_ok <= 1.0, "correct anchor must collapse both queues");
+    assert!(f_ok > ceiling - 0.02, "correct anchor must reach the C8 ceiling: x{f_ok:.3} vs x{ceiling:.3}");
+    // (e) THE ANCHOR IS THE LEVER: fixing the rate read (nothing else changed)
+    //     is what UNLOCKS the previously-inert pace-all/cap and lifts C8.
+    assert!(f_ok - f_over > 0.15, "the rate-sample fix must materially lift C8: over x{f_over:.3} -> correct x{f_ok:.3}");
+    println!("\n  VERDICT: the ROOT residual is the RATE ANCHOR, not the pace/cap mechanism.");
+    println!("  A ×145 over-read makes the bucket occupancy ({out_s_over:.0} slow / {out_f_over:.0} fast syms) swamp");
+    println!("  the read-ahead share → the pacer/cap is INERT → both paths DUMP → C8 x{f_over:.3} (parity).");
+    println!("  BBR send-interval sampling (×1) makes the bucket bind at one BDP ({bdp_s:.0}/{bdp_f:.0} syms) →");
+    println!("  queues collapse (slow {q_s_over:.0}->{q_s_ok:.0}ms, fast {q_f_over:.0}->{q_f_ok:.0}ms) → C8 x{f_ok:.3} (ceiling).");
+    println!("  The mechanism (6e/6f) was right all along; the rate anchor was the bug.");
+}

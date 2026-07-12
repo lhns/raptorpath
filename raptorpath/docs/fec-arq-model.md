@@ -7205,7 +7205,72 @@ closed); the remaining lift to the ceiling is NOT source spill but the **per-pat
 BtlBw anchor over-read under bufferbloat** (ack-aggregation / delivered-rate
 over-read) — the signal any per-path pacer needs to bind. Source backpressure is
 retained only as a default-off, oracle-modelled, unit-tested knob; the shipped
-default is byte-identical to §16.11.
+default is byte-identical to §16.11. §16.13 fixes that anchor over-read and reports
+what it does — and does NOT — buy.
+
+### 16.13 BtlBw rate-sample: the per-path anchor over-read, fixed — and the C8 residual it exposes (2026-07-12) — measured
+
+§16.10–16.12 each named the SAME residual: the per-path BtlBw anchor is over-read
+under bufferbloat, so no per-path pacer/cap can bind. This section fixes the anchor
+and reports the honest consequence.
+
+**The bug.** The per-path estimator (§16.10) derived BtlBw_i from a delivered-count
+ratio measured over the ACK-ARRIVAL interval (`Δdelivered/Δt_ack`). Under DAPS acks
+arrive BATCHED (ack-aggregation), collapsing Δt_ack toward zero, so the windowed-MAX
+filter locked onto the spike. L1 DIAG (client/sender side, C8 dual, 1200-B symbols ⇒
+true fast link 10 416 sym/s): the fast-path anchor read **1 644 200 sym/s — a ~158×
+over-read** — with the fast path bufferbloated to a **1 573 ms** live RTT (RTprop
+12 ms). A 158× rate anchor makes the fast-path BDP cap 19 403 symbols and the pace
+bucket refill ≫ drain, so the cap/pacer are INERT (temporal_oracle PART 6g models
+this: the over-read makes the bucket occupancy swamp the deep read-ahead share, so
+the path DUMPS its whole share — C8 falls to fast-path parity).
+
+**The fix (Cardwell/Cheng, draft-cheng-iccrg-delivery-rate-estimation).** Per-path
+BBR delivery-rate sampling: each source symbol snapshots `(sent_time, delivered,
+delivered_time, first_sent_time, app_limited)` at send; its ack yields ONE rate
+sample `Δdelivered / max(send_elapsed, ack_elapsed)` — Δt over the SEND interval, so
+a batched ack (tiny ack_elapsed) is overridden by the true send spacing. Samples
+spanning less than one RTprop are rejected (BBR's `interval < MinRTT` guard — the
+ack-aggregation / send-burst artefact), app-limited samples may only RAISE the
+max-filter, and BtlBw_i = the windowed-max over ~10·RTprop. Gated `RWM_RATE_SAMPLE`
+(on by default under the per-path estimator; =0 reproduces the legacy ack-interval
+anchor for a same-binary A/B). Shipped non-DAPS default byte-identical.
+
+**Anchor over-read — CLOSED (the primary metric).** Same DIAG, `RWM_RATE_SAMPLE=1`:
+the fast-path anchor reads **≈ 10 900 sym/s vs the true 10 416 — ~1.05×** (from
+158×), the fast-path BDP cap collapses 19 403 → ~90 symbols, and the fast-path live
+RTT collapses **1 573 ms → ~30 ms** (RTprop base 8 ms). The slow-path RTprop, which
+the queue had polluted to 128 ms, returns to the **41 ms** propagation base and its
+anchor over-read drops from ~9 700 to ~3 200–7 700 sym/s. On a SINGLE 100-Mbit path
+the over-read bufferbloat is pure LATENCY (the link drains at line rate regardless of
+buffer), so single-c2 throughput is UNCHANGED by the fix — 16.65 (fix) vs 16.29
+(legacy) Mbit/s, both σ_s ≈ 1.2 s on x8 — i.e. the corrected anchor is a latency/
+correctness win on single-path, not a throughput one.
+
+**C8 does NOT rise — the honest critical finding.** Same-binary A/B (25 MB × 8,
+seeds 42 & 7): correcting the anchor REGRESSES C8 under DAPS (fix pooled
+≈ 9.7 vs legacy-anchor ≈ 10.7 Mbit/s, seed-dependent: seed42 13.2→10.7 regresses, seed7 8.2→8.7 neutral). The reason is exactly what
+§16.12 measured: the fast-path SPILL the over-read enabled was BENIGN — the 100-Mbit
+fast link drained it, a latency not a throughput cost. Binding the fast pacer (via
+the correct anchor) REMOVES that benign spill and forces load onto the slow path,
+whose live RTT then bloats to **~3–4 s** even though its anchor and BDP cap are now
+correct and its per-path SOURCE gauge sits at the cap. The slow-path queue is
+therefore NOT the source rate anchor: it is the DEEP DAPS read-ahead
+(`(pipeline+6)·G`) + future-offset placement + coded/repair, which over-commits the
+slow path and holds the receiver's resequencing frontier — a queue the corrected
+per-path SOURCE pacer does not bound. Oracle PART 6g assumed a correct anchor on
+BOTH paths collapses BOTH queues; L1 corrects the anchor on the FAST path (×1) but
+the slow path carries a second, read-ahead-driven queue the model omits.
+
+**Verdict.** The rate anchor was genuinely broken and is now fixed (fast ×158→×1,
+fast-path bufferbloat 1573→30 ms) — a real correctness win (a truthful per-path rate
+signal + collapsed fast-path latency) and the necessary precondition for any binding
+per-path pacer. But it does
+NOT lift heterogeneous C8: the 0.76-of-ceiling gap is NOT the source rate anchor. The
+true C8 residual, with DIAG evidence, is the slow-path DEEP READ-AHEAD over-commit
+(DAPS future placement + coded/repair depth, not source pacing) — the next lever.
+The anchor fix ships on by default under the estimator (it is the correct rate); the
+DAPS C8 regression it exposes is the honest handoff to the read-ahead work.
 
 ---
 

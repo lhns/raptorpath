@@ -92,6 +92,10 @@ TENV=""
 # Per-path estimator standalone (feat/per-path-estimator): establish per-path
 # BtlBw in a PLAIN generation multipath run (no DAPS) for the general-fix check.
 [[ -n "${RWM_PER_PATH_EST:-}" ]] && TENV="$TENV RWM_PER_PATH_EST=$RWM_PER_PATH_EST"
+# BBR rate-sample anchor (feat/btlbw-rate-sample): send-interval delivery-rate
+# sampling (ack-aggregation robust); ON by default under the per-path estimator.
+# RWM_RATE_SAMPLE=0 reproduces the legacy ack-interval anchor (same-binary A/B).
+[[ -n "${RWM_RATE_SAMPLE:-}" ]] && TENV="$TENV RWM_RATE_SAMPLE=$RWM_RATE_SAMPLE"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

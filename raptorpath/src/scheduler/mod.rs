@@ -32,6 +32,7 @@ pub use clock::*;
 use crate::control::fec_rate::ProtocolHint;
 use crate::control::LossEstimator;
 use crate::fec::{FecBackend, WireSymbol};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -333,6 +334,30 @@ struct RttSample {
     timestamp: Instant,
 }
 
+/// Cap on rate-sample send records tracked per path (bounds the map when
+/// symbols are lost / attributed without a matching send record). ~a few
+/// aggregate BDPs + the deep DAPS read-ahead; oldest are dropped past this.
+const RS_MAX_TRACKED: usize = 8192;
+
+/// A sent SOURCE symbol's BBR delivery-rate-sample state
+/// (draft-cheng-iccrg-delivery-rate-estimation), snapshotted at send time and
+/// consumed when the symbol is acked to produce ONE rate sample whose Δt is the
+/// SEND interval — robust to ack-aggregation and a standing queue.
+#[derive(Clone, Copy, Debug)]
+struct RsPacket {
+    /// `C.delivered` (this path's delivered counter) at the moment of send.
+    delivered: u64,
+    /// `C.delivered_time` (time `delivered` last advanced) at send.
+    delivered_time: Instant,
+    /// `C.first_sent_time` (start of the current in-flight send burst) at send.
+    first_sent_time: Instant,
+    /// When this symbol was sent.
+    sent_time: Instant,
+    /// The sender was app-limited (starved, not cwnd/pace-limited) at send —
+    /// the sample may only RAISE the max-filter, never be read as bw dropping.
+    app_limited: bool,
+}
+
 /// Copa-lite delay-based congestion control state.
 ///
 /// Copa (Arun & Balakrishnan, NSDI 2018), simplified to the semantics that
@@ -409,6 +434,17 @@ pub struct CopaState {
     last_delivered_time: Instant,
     /// Delivered count at last measurement.
     last_delivered: u64,
+    // --- BBR delivery-rate sampling (feat/btlbw-rate-sample, RWM_RATE_SAMPLE) ---
+    /// Total SOURCE symbols delivered on this path (BBR `C.delivered`). Separate
+    /// from `delivered` so the =0 (legacy ack-interval anchor) A/B is byte-exact.
+    rs_delivered: u64,
+    /// Time `rs_delivered` last advanced (BBR `C.delivered_time`).
+    rs_delivered_time: Instant,
+    /// Send time of the packet that started the current in-flight send burst
+    /// (BBR `C.first_sent_time`); advances to each acked packet's send time.
+    rs_first_sent_time: Instant,
+    /// Outstanding rate-sample send records (seq → snapshot), consumed on ack.
+    rs_sent: BTreeMap<u64, RsPacket>,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -435,6 +471,10 @@ impl CopaState {
             delivered: 0,
             last_delivered_time: now,
             last_delivered: 0,
+            rs_delivered: 0,
+            rs_delivered_time: now,
+            rs_first_sent_time: now,
+            rs_sent: BTreeMap::new(),
             last_cwnd_update: now,
             clock,
         }
@@ -472,6 +512,126 @@ impl CopaState {
             .fold(0.0f64, f64::max);
 
         rate
+    }
+
+    // --- BBR delivery-rate sampling (feat/btlbw-rate-sample) ------------------
+    //
+    // The legacy `record_delivery` above computes rate = Δdelivered / Δt where
+    // Δt is the ACK-ARRIVAL interval (`now − last_delivered_time`).  Under DAPS,
+    // acks arrive BATCHED (ack-aggregation): a batch collapses Δt toward zero, so
+    // Δdelivered/Δt spikes and the windowed-MAX locks onto the spike — the ~145×
+    // over-read L1 DIAG measured (fast bdp 14509 / RTprop 12 ms ⇒ ≈1.2M sym/s vs
+    // true ≈8.3k).  A rate anchor 145× too high makes EVERY per-path pace bucket
+    // / BDP cap inert (the bucket never binds; outstanding bloats to the deep
+    // read-ahead — see temporal_oracle PART 6g).
+    //
+    // The fix (Cardwell/Cheng, draft-cheng-iccrg-delivery-rate-estimation):
+    // sample Δt over the SEND interval — max(send_elapsed, ack_elapsed) — so a
+    // batched ack (tiny ack_elapsed) is overridden by the true send spacing and
+    // the sample is a correct delivery-rate LOWER BOUND.  The max-filter then
+    // maxes over CORRECT samples and converges to the true BtlBw (×1).
+
+    /// BBR `SendPacket`: snapshot the rate-sample state for a sent SOURCE symbol.
+    fn rs_on_sent(&mut self, seq: u64, app_limited: bool) {
+        let now = self.clock.now();
+        // No packets in flight → (re)start the send burst window.
+        if self.rs_sent.is_empty() {
+            self.rs_first_sent_time = now;
+            self.rs_delivered_time = now;
+        }
+        self.rs_sent.insert(
+            seq,
+            RsPacket {
+                delivered: self.rs_delivered,
+                delivered_time: self.rs_delivered_time,
+                first_sent_time: self.rs_first_sent_time,
+                sent_time: now,
+                app_limited,
+            },
+        );
+        // Bound the map: drop the oldest snapshots for symbols that were lost or
+        // attributed cumulatively without ever matching a send record.
+        while self.rs_sent.len() > RS_MAX_TRACKED {
+            if let Some(&k) = self.rs_sent.keys().next() {
+                self.rs_sent.remove(&k);
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// BBR `UpdateRateSample` + `GenerateRateSample` for ONE acked SOURCE symbol.
+    /// Feeds the windowed-max delivery-rate filter (`max_bw`) a sample whose Δt is
+    /// the SEND interval, so batched acks / a standing queue cannot inflate it.
+    fn rs_on_delivered(&mut self, seq: u64) {
+        let now = self.clock.now();
+        let Some(p) = self.rs_sent.remove(&seq) else {
+            // No send record (attributed cumulatively past a dropped record):
+            // still advance the delivered cursor so later samples stay correct.
+            self.rs_delivered += 1;
+            self.rs_delivered_time = now;
+            return;
+        };
+        // Advance the connection delivered cursor (BBR: C.delivered += len).
+        self.rs_delivered += 1;
+        self.rs_delivered_time = now;
+        // send_elapsed spans the send spacing of the packets from the burst start
+        // to this packet; ack_elapsed spans the same deliveries in wall time.
+        let send_elapsed = p.sent_time.saturating_duration_since(p.first_sent_time);
+        let ack_elapsed = now.saturating_duration_since(p.delivered_time);
+        // Advance the burst-window start (BBR: C.first_sent_time = P.sent_time).
+        self.rs_first_sent_time = p.sent_time;
+        // max() is what makes the sample ack-aggregation robust: a batched ack
+        // shrinks ack_elapsed, but send_elapsed preserves the true spacing.
+        let interval = send_elapsed.max(ack_elapsed).as_secs_f64();
+        let delivered = self.rs_delivered.saturating_sub(p.delivered);
+        // Reject samples spanning less than one RTprop (BBR GenerateRateSample:
+        // `if interval < MinRTT: return`).  An interval below the propagation RTT
+        // cannot reliably estimate the bottleneck rate: it is the classic
+        // ack-aggregation / send-burst artefact (a batch of queued symbols acked
+        // together over a tiny window), which otherwise reads many× the true link
+        // (the DAPS slow-path over-read).  Requiring interval ≥ RTprop forces the
+        // sample to average over ≥ one pipe, so a drain burst reads the true
+        // bottleneck.  Falls back to a 1 ms absolute floor before an RTprop sample.
+        let min_interval = self
+            .min_rtt
+            .map(|r| r.as_secs_f64())
+            .unwrap_or(0.001)
+            .max(0.001);
+        if interval < min_interval || delivered == 0 {
+            return;
+        }
+        let rate = delivered as f64 / interval;
+        // App-limited samples underestimate bw (the pipe was starved, not full),
+        // so they may only RAISE the max-filter, never be read as bw dropping.
+        // In a pure windowed-max a low app-limited sample is simply not the max;
+        // admit one only when it exceeds the current max (BBR §app-limited).
+        if p.app_limited && rate <= self.max_bw {
+            return;
+        }
+        self.bw_samples.push_back(BwSample {
+            delivery_rate: rate,
+            timestamp: now,
+        });
+        // Max-filter window ≈ 10·RTprop (BBR's BtlBw filter), clamped to
+        // [1s, 10s]: long enough to hold the true BtlBw between acks, short
+        // enough that a genuine rate change is not pinned for the full 10s
+        // sample window.  Falls back to 10s before a min-RTT sample exists.
+        let win = self
+            .min_rtt
+            .map(|r| (r.as_secs_f64() * 10.0).clamp(1.0, 10.0))
+            .unwrap_or(10.0);
+        let cutoff = now
+            .checked_sub(Duration::from_secs_f64(win))
+            .unwrap_or(now);
+        while self.bw_samples.front().is_some_and(|s| s.timestamp < cutoff) {
+            self.bw_samples.pop_front();
+        }
+        self.max_bw = self
+            .bw_samples
+            .iter()
+            .map(|s| s.delivery_rate)
+            .fold(0.0f64, f64::max);
     }
 
     /// Record an RTT sample: SRTT EWMA, 10s floor window, and the
@@ -1002,6 +1162,24 @@ impl PathState {
         }
         self.src_inflight = self.src_inflight.saturating_sub(n);
         self.copa.record_delivery(n);
+    }
+
+    /// BBR `SendPacket` for the rate-sample anchor (RWM_RATE_SAMPLE): record this
+    /// source seq's send-time state so its ack yields a send-interval rate sample.
+    /// Called at DAPS placement/send time; pairs with `on_src_delivered_seq`.
+    pub fn on_src_sent(&mut self, seq: u64, app_limited: bool) {
+        self.copa.rs_on_sent(seq, app_limited);
+    }
+
+    /// Per-path ack attribution under the BBR rate-sample anchor: release the
+    /// SOURCE outstanding gauge and feed the delivery-rate max-filter a
+    /// SEND-INTERVAL sample (robust to ack-aggregation / a standing queue).  The
+    /// send-interval replacement for `on_src_delivered` — same gauge release,
+    /// correct BtlBw_i.  Under RWM_RATE_SAMPLE=0 the caller uses the legacy
+    /// `on_src_delivered` instead (byte-identical old ack-interval anchor).
+    pub fn on_src_delivered_seq(&mut self, seq: u64) {
+        self.src_inflight = self.src_inflight.saturating_sub(1);
+        self.copa.rs_on_delivered(seq);
     }
 
     /// Current per-path SOURCE outstanding (BLEST in_flight_i).
@@ -3442,6 +3620,152 @@ mod tests {
             fast_total > slow_out,
             "fast path carries the overflow the slow-path cap rejected \
              (fast={fast_total} slow_out={slow_out})"
+        );
+    }
+
+    // feat/btlbw-rate-sample: the BBR send-interval anchor must read the TRUE
+    // bottleneck rate under (a) ack-aggregation (batched acks) and (b) a deep
+    // standing queue — the exact conditions that made the legacy ack-interval
+    // anchor over-read ~145× at L1.  Driven by a bottleneck-link simulation: we
+    // SEND 3× the link rate (a standing queue builds without bound) and the link
+    // FIFO-drains at the true rate R; acks are processed in BATCHES (aggregation).
+    // The measured BtlBw must track R, NOT the send rate and NOT queue/interval.
+    #[test]
+    fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
+        use std::collections::{BTreeMap, VecDeque};
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
+        sched.add_path(0);
+        let prop = Duration::from_millis(5); // one-way; RTprop ~ 10ms
+        // Seed RTprop so the max-filter window (~10·RTprop) and btlbw product form.
+        for _ in 0..4 {
+            sched.path_mut(0).unwrap().record_rtt_sample(Duration::from_millis(10));
+        }
+
+        let link_r: u64 = 8; // TRUE bottleneck: 8 sym/ms = 8000 sym/s
+        let send_s: u64 = 24; // SEND 3× the link rate → standing queue grows
+        let tick = Duration::from_millis(1);
+        let mut seq: u64 = 0;
+        let mut link_fifo: VecDeque<u64> = VecDeque::new(); // waiting for link service
+        let mut deliver_due: BTreeMap<u64, Vec<u64>> = BTreeMap::new(); // arrival_us → seqs
+        let start = clock.now();
+        let us = |c: &MockClock| c.now().duration_since(start).as_micros() as u64;
+
+        for step in 0..300u64 {
+            // SEND send_s symbols this ms (overload).
+            for _ in 0..send_s {
+                sched.path_mut(0).unwrap().on_src_sent(seq, false);
+                link_fifo.push_back(seq);
+                seq += 1;
+            }
+            // The LINK serves link_r symbols this ms (the bottleneck); each served
+            // symbol arrives one propagation delay later.
+            let arrival = us(&clock) + prop.as_micros() as u64;
+            for _ in 0..link_r {
+                if let Some(s) = link_fifo.pop_front() {
+                    deliver_due.entry(arrival).or_default().push(s);
+                }
+            }
+            // ACK AGGREGATION: only "process acks" every 3 ms, delivering ALL due
+            // symbols at the SAME clock instant (a batched ack → tiny ack Δt).
+            if step % 3 == 0 {
+                let nowu = us(&clock);
+                let due: Vec<u64> = deliver_due
+                    .range(..=nowu)
+                    .flat_map(|(_, v)| v.iter().copied())
+                    .collect();
+                deliver_due.retain(|&t, _| t > nowu);
+                for s in due {
+                    sched.path_mut(0).unwrap().on_src_delivered_seq(s);
+                }
+            }
+            clock.advance(tick);
+        }
+
+        let btlbw = sched
+            .path(0)
+            .unwrap()
+            .btlbw_sym_per_s()
+            .expect("anchor must establish");
+        let true_rate = (link_r * 1000) as f64; // 8000 sym/s
+        // The standing queue is DEEP (send 3× drain for 300ms): outstanding is far
+        // above one BDP.  A queue/ack-interval anchor would read many× the link;
+        // the send-interval anchor must track the true bottleneck within ~2×.
+        assert!(
+            btlbw > 0.5 * true_rate && btlbw < 2.0 * true_rate,
+            "send-interval BtlBw must track the TRUE link rate {true_rate:.0} sym/s \
+             under batched acks + a standing queue, got {btlbw:.0} (send rate was \
+             {} sym/s)",
+            send_s * 1000
+        );
+        // Crucially, NOT the ~145× over-read the legacy ack-interval anchor gave.
+        assert!(
+            btlbw < 10.0 * true_rate,
+            "must NOT exhibit the legacy aggregation over-read: {btlbw:.0} vs true {true_rate:.0}"
+        );
+    }
+
+    // feat/btlbw-rate-sample: an APP-LIMITED (starved) sample that reads below the
+    // running max must NOT enter the max-filter (BBR: app-limited samples may only
+    // RAISE the anchor, never be read as bw dropping / corrupt a starved interval).
+    #[test]
+    fn rate_sample_excludes_app_limited_samples_below_the_max() {
+        let clock = Arc::new(MockClock::new());
+        let mut copa = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        copa.record_rtt(Duration::from_millis(10)); // RTprop = 10 ms
+
+        // Establish a healthy max with a valid sample spanning ≥ RTprop: send
+        // seq0, inject 50 deliveries, ack it one RTprop-plus later.
+        copa.rs_on_sent(0, false);
+        copa.rs_delivered += 50;
+        clock.advance(Duration::from_millis(20)); // ≥ RTprop
+        copa.rs_on_delivered(0); // rate ≈ 51 / 0.02 s
+        let max_before = copa.max_bw;
+        let samples_before = copa.bw_samples.len();
+        assert!(max_before > 0.0, "baseline max must establish: {max_before}");
+
+        // An APP-LIMITED sample reading BELOW the max must be EXCLUDED: send
+        // seq1 app-limited, deliver ONE symbol one RTprop-plus later (low rate,
+        // interval ≥ RTprop so the MinRTT guard passes and only app-limited
+        // gates it out).
+        copa.rs_on_sent(1, true);
+        clock.advance(Duration::from_millis(20));
+        copa.rs_on_delivered(1);
+        assert_eq!(
+            copa.bw_samples.len(),
+            samples_before,
+            "app-limited sample below the max must not enter the filter"
+        );
+        assert!(
+            (copa.max_bw - max_before).abs() < 1.0,
+            "app-limited low sample must not change the max: before={max_before} after={}",
+            copa.max_bw
+        );
+
+        // A non-app-limited sample at a genuinely HIGHER rate (interval ≥ RTprop)
+        // is still admitted and raises the max.
+        copa.rs_on_sent(2, false);
+        copa.rs_delivered += 100;
+        clock.advance(Duration::from_millis(20)); // ≥ RTprop
+        copa.rs_on_delivered(2); // rate ≈ 101 / 0.02 s > max_before
+        assert!(
+            copa.max_bw > max_before,
+            "a higher genuine sample (interval ≥ RTprop) must raise the max: \
+             before={max_before} after={}",
+            copa.max_bw
+        );
+
+        // A sub-RTprop burst (interval < RTprop) is REJECTED by the MinRTT guard —
+        // this is the ack-aggregation / send-burst over-read defence.
+        let max_after = copa.max_bw;
+        copa.rs_on_sent(3, false);
+        copa.rs_delivered += 10_000; // huge delivered count …
+        clock.advance(Duration::from_micros(100)); // … over a tiny interval
+        copa.rs_on_delivered(3);
+        assert!(
+            (copa.max_bw - max_after).abs() < 1.0,
+            "a sub-RTprop burst must be rejected (no over-read): before={max_after} after={}",
+            copa.max_bw
         );
     }
 }

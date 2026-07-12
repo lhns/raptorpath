@@ -3393,6 +3393,22 @@ async fn run_window_sender(
     // is a NO-OP for the shipped non-generation default (byte-identical).
     let per_path_est: bool =
         generation && (daps || std::env::var("RWM_PER_PATH_EST").is_ok());
+    // feat/btlbw-rate-sample: BBR-correct per-path delivery-rate sampling
+    // (send-interval Δt, ack-aggregation robust).  ON by default whenever the
+    // per-path estimator runs; RWM_RATE_SAMPLE=0 reproduces the legacy
+    // ack-interval anchor (same-binary A/B).  When on, each SOURCE seq is
+    // snapshotted at send (`on_src_sent`) and its ack drives `on_src_delivered_seq`
+    // (a send-interval rate sample) instead of the legacy `on_src_delivered`.
+    let rate_sample: bool = per_path_est
+        && std::env::var("RWM_RATE_SAMPLE")
+            .ok()
+            .map_or(true, |v| v != "0" && !v.is_empty());
+    // App-limited (BBR): the source pipeline was starved (idle gap) rather than
+    // cwnd/pace-limited when a symbol was sent — such a sample underestimates
+    // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
+    // it follows an idle gap longer than this (a post-idle burst, the classic
+    // starved interval).  Bulk back-to-back sends have ~0 gap ⇒ never flagged.
+    let rs_app_limited_gap_us: u64 = 5_000;
     // Per-path BtlBw pace token buckets (symbols), refilled at BtlBw_i each loop.
     let mut daps_pace_tok: std::collections::HashMap<crate::scheduler::PathId, f64> =
         std::collections::HashMap::new();
@@ -3928,6 +3944,11 @@ async fn run_window_sender(
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
             let wire_sym = encoder.add_source(&$framed);
+            // App-limited (BBR rate-sample): the idle gap SINCE THE PREVIOUS
+            // source send, captured before `last_source_send_us` is refreshed
+            // below.  A long gap ⇒ this send follows a starved interval.
+            let rs_src_app_limited =
+                now_us().saturating_sub(last_source_send_us) > rs_app_limited_gap_us;
             gen_last_source_us = now_us();
 
             // RWM Phase A retention: the store keeps the sent bytes until
@@ -4120,6 +4141,16 @@ async fn run_window_sender(
 
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
+
+            // feat/btlbw-rate-sample: snapshot this source seq's send-time state
+            // on its DAPS-committed path so its ack yields a SEND-INTERVAL
+            // delivery-rate sample (BBR).  Byte-identical when off.
+            if rate_sample {
+                let mut sched = scheduler.lock();
+                if let Some(p) = sched.path_mut(source_path) {
+                    p.on_src_sent(wire_sym.block_id, rs_src_app_limited);
+                }
+            }
 
             // Add to retransmit buffer for P_lost-based retransmit decisions.
             // Generation coding disables per-seq ARQ entirely — no retransmit
@@ -4547,7 +4578,11 @@ async fn run_window_sender(
                         for k in attributed {
                             if let Some(&pid) = source_path_map.get(&k) {
                                 if let Some(p) = sched.path_mut(pid) {
-                                    p.on_src_delivered(1);
+                                    if rate_sample {
+                                        p.on_src_delivered_seq(k);
+                                    } else {
+                                        p.on_src_delivered(1);
+                                    }
                                 }
                                 source_path_map.remove(&k);
                             }
@@ -5745,7 +5780,11 @@ async fn run_window_sender(
                     for k in attributed {
                         if let Some(pid) = source_path_map.remove(&k) {
                             if let Some(p) = sched.path_mut(pid) {
-                                p.on_src_delivered(1);
+                                if rate_sample {
+                                    p.on_src_delivered_seq(k);
+                                } else {
+                                    p.on_src_delivered(1);
+                                }
                             }
                         }
                     }
