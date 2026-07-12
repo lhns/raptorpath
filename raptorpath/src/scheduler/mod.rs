@@ -445,6 +445,21 @@ pub struct CopaState {
     rs_first_sent_time: Instant,
     /// Outstanding rate-sample send records (seq → snapshot), consumed on ack.
     rs_sent: BTreeMap<u64, RsPacket>,
+    // --- DIAG counters (diag/slow-path-anchor) -------------------------------
+    // Pure observation — these NEVER affect a control decision (read only at the
+    // RWM_DIAG print).  They trace WHY the per-path BtlBw anchor does or does not
+    // warm: how many source seqs were snapshotted at send, how many acks were
+    // attributed here, and how each attributed ack was classified by the BBR
+    // GenerateRateSample guards (interval<MinRTT / zero-delivered / app-limited)
+    // vs accepted into the windowed-max filter.
+    rs_sent_count: u64,
+    rs_applimited_sent: u64,
+    rs_attributions: u64,
+    rs_no_record: u64,
+    rs_rej_interval: u64,
+    rs_rej_zero: u64,
+    rs_rej_applimited: u64,
+    rs_generated: u64,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -475,6 +490,14 @@ impl CopaState {
             rs_delivered_time: now,
             rs_first_sent_time: now,
             rs_sent: BTreeMap::new(),
+            rs_sent_count: 0,
+            rs_applimited_sent: 0,
+            rs_attributions: 0,
+            rs_no_record: 0,
+            rs_rej_interval: 0,
+            rs_rej_zero: 0,
+            rs_rej_applimited: 0,
+            rs_generated: 0,
             last_cwnd_update: now,
             clock,
         }
@@ -533,6 +556,10 @@ impl CopaState {
 
     /// BBR `SendPacket`: snapshot the rate-sample state for a sent SOURCE symbol.
     fn rs_on_sent(&mut self, seq: u64, app_limited: bool) {
+        self.rs_sent_count += 1; // DIAG
+        if app_limited {
+            self.rs_applimited_sent += 1; // DIAG
+        }
         let now = self.clock.now();
         // No packets in flight → (re)start the send burst window.
         if self.rs_sent.is_empty() {
@@ -564,10 +591,12 @@ impl CopaState {
     /// Feeds the windowed-max delivery-rate filter (`max_bw`) a sample whose Δt is
     /// the SEND interval, so batched acks / a standing queue cannot inflate it.
     fn rs_on_delivered(&mut self, seq: u64) {
+        self.rs_attributions += 1; // DIAG
         let now = self.clock.now();
         let Some(p) = self.rs_sent.remove(&seq) else {
             // No send record (attributed cumulatively past a dropped record):
             // still advance the delivered cursor so later samples stay correct.
+            self.rs_no_record += 1; // DIAG
             self.rs_delivered += 1;
             self.rs_delivered_time = now;
             return;
@@ -598,7 +627,14 @@ impl CopaState {
             .map(|r| r.as_secs_f64())
             .unwrap_or(0.001)
             .max(0.001);
-        if interval < min_interval || delivered == 0 {
+        // DIAG: classify the rejection (split from the combined guard below for
+        // per-cause counting; behaviour identical — same early return).
+        if interval < min_interval {
+            self.rs_rej_interval += 1; // DIAG
+            return;
+        }
+        if delivered == 0 {
+            self.rs_rej_zero += 1; // DIAG
             return;
         }
         let rate = delivered as f64 / interval;
@@ -607,8 +643,10 @@ impl CopaState {
         // In a pure windowed-max a low app-limited sample is simply not the max;
         // admit one only when it exceeds the current max (BBR §app-limited).
         if p.app_limited && rate <= self.max_bw {
+            self.rs_rej_applimited += 1; // DIAG
             return;
         }
+        self.rs_generated += 1; // DIAG
         self.bw_samples.push_back(BwSample {
             delivery_rate: rate,
             timestamp: now,
@@ -902,6 +940,23 @@ impl CopaState {
     pub fn min_rtt(&self) -> Option<Duration> {
         self.min_rtt
     }
+
+    /// (diag/slow-path-anchor) Snapshot of the rate-sample anchor DIAG counters:
+    /// (sent, applimited_sent, attributions, no_record, rej_interval, rej_zero,
+    /// rej_applimited, generated, bw_fill).  Observation only.
+    fn rs_diag(&self) -> (u64, u64, u64, u64, u64, u64, u64, u64, usize) {
+        (
+            self.rs_sent_count,
+            self.rs_applimited_sent,
+            self.rs_attributions,
+            self.rs_no_record,
+            self.rs_rej_interval,
+            self.rs_rej_zero,
+            self.rs_rej_applimited,
+            self.rs_generated,
+            self.bw_samples.len(),
+        )
+    }
 }
 
 /// Per-path state tracked by the scheduler.
@@ -1192,6 +1247,15 @@ impl PathState {
     /// per-path DIAG "established?" signal.
     pub fn anchor_established(&self) -> bool {
         self.copa.bdp_anchor().is_some()
+    }
+
+    /// (diag/slow-path-anchor) Per-path rate-sample anchor DIAG counters:
+    /// (snapshotted-at-send, of-which-app-limited, acks-attributed-here,
+    /// no-send-record, rejected[interval<MinRTT], rejected[zero-delivered],
+    /// rejected[app-limited], samples-generated, windowed-max-fill).
+    /// Read only under RWM_DIAG; never gates control.
+    pub fn rs_diag(&self) -> (u64, u64, u64, u64, u64, u64, u64, u64, usize) {
+        self.copa.rs_diag()
     }
 
     /// Copa-lite congestion control: handle loss events.

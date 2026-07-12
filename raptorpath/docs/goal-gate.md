@@ -5279,3 +5279,120 @@ is correct in isolation and confirmed in the oracle, but the binding constraint 
 slow path's failure to establish a usable rate anchor in this regime — a channel/CC
 property no source-side scheduler can synthesize. Reproducible via the same-binary
 `RWM_DAPS_DEPTH=0` / `RWM_RATE_SAMPLE=0`.
+
+## Slow-Path Anchor Diagnosis (2026-07-13) — the §16.14 "slow anchor never establishes" is REFUTED: it establishes for the whole active transfer, but BtlBw_slow is a decode-clocked windowed-MAX that swings ~4000× (5–20950 sym/s) so no depth/pace bound can key on it — FIXABLE (stabilize the per-path rate signal), NOT fundamental (branch `diag/slow-path-anchor`, DIAG only, no feature)
+
+Diagnostic investigation of why the per-path SLOW-path BtlBw anchor "never
+establishes" (`est=n`, `btlbw=0`, `dbud=0`) that §16.14 named as the binding
+constraint before recommending CONSOLIDATE. Added temporary per-path DIAG
+counters that trace the BBR rate-sample pipeline end-to-end (snapshotted-at-send /
+attributed / generated / rejected-by-guard / windowed-max fill), gated under
+`RWM_DIAG`; shipped default byte-identical (the counters live in the
+`rate_sample` path, which is `generation && (DAPS || RWM_PER_PATH_EST)`-gated, and
+the DIAG print is `RWM_DIAG`-gated). One representative L1 C8 run (VM 10.1.5.16,
+dual netns, c2+c3, 12 MB × 3, seed 42, `RWM_DAPS=1 RWM_GEN_R=0.03
+RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=1`).
+
+### TWO HARNESS FINDINGS that invalidate the §16.14 mechanism evidence (not its C8 numbers, its DIAG story)
+
+1. **§16.14's per-path DIAG was read off the RECEIVER, not the sender.** The
+   depth battery `cp /tmp/rwm-s.log` captures the `--server`, which in
+   `perf_rwm_c.sh` is the perf RECEIVER of the bulk transfer; its sender loop
+   emits only a trickle of reverse traffic (measured `sent=3` source snapshots
+   over a whole run). So "slow path p1 `est=n`, `btlbw=0` throughout" was a
+   wrong-log artefact — the receiver legitimately places ~no source on any path.
+   The bulk SENDER is the `--client` (`/tmp/rwm-c.log`), where the anchor lives.
+2. **`perf_rwm_c.sh` never passes `--window-generation-coding`.** `generation`
+   requires that CLI flag (or `--window-systematic-repair`/`--window-coded-only`
+   +systematic/`RWM_FMTCP`); `RWM_DAPS`/`RWM_GEN_R` only *configure* generation,
+   they do not *enable* it (`daps = RWM_DAPS && generation`). The saved §16.14
+   server logs confirm it: `cod=0`, `eff_pace=0` everywhere ⇒ zero coded/
+   generation emission. So the depth battery ran PLAIN `--window-reliable` block
+   mode with DAPS + rate-sample + depth-bound ALL INERT (each gates on
+   `generation`). The `est=Y`/`est=n` it quoted was the legacy `on_ack →
+   record_delivery` anchor, which is a *different* estimator than the rate-sample
+   pipeline the section was reasoning about. This diagnosis re-ran with
+   `RWM_EXTRA=--window-generation-coding` so the mechanism under test actually
+   runs (`eff_pace=2000`, the pipeline activates).
+
+### The end-to-end trace (sender/client DIAG, generation actually ON)
+
+| path | sent | attr | gen (samples) | rej[iv/zr/al] | fill (max) | est | BtlBw (sym/s) |
+|---|---:|---:|---:|---:|---:|:--:|---:|
+| p0 FAST (c2, true ≈10 400) | 27 016 | 24 588 | 24 535 | 0 / 0 / 52 | 925 | **Y** (100% active) | 13 271 – **85 860** (×1.3–8) |
+| p1 SLOW (c3, true ≈2 083) | **3 444** | **3 443** | **3 435** | **0 / 0 / 8** | **17–2 589** | **Y (90/108 lines; 100% of the active transfer)** | **5 – 20 950 (~4000× swing)** |
+
+The slow path is **NOT starved** (`sent=3444` real source placed, ~230 sym/s
+delivered share), **NOT mis-attributed** (`attr=3443`, every ack resolves to p1),
+**NOT guard-rejected** (only 8 app-limited rejects; `iv=0` MinRTT never fires,
+`zr=0`), and it **GENERATES samples** (`gen=3435`) and **ESTABLISHES the anchor**
+(`est=Y` in 90/108 DIAG lines = 100% of the active transfer, t=0.3–22.9 s). This
+DIRECTLY REFUTES §16.14's "`est=n`/`btlbw=0`/`dbud=0` throughout, never warms."
+
+### The ONE proven root cause — an UNSTABLE (decode-clocked) per-path rate signal, not a missing one
+
+`BtlBw_slow` over one active transfer (sender DIAG time-series):
+`1116 → 5837 → 46 → 102 → 780 → 20751 → 20950 → 7000 → 59 → 592 → 5` sym/s — a
+**~4000× swing (5 … 20 950) around the true 2 083**, all while `est=Y`. The DAPS
+depth budget it feeds, `dbud = skew·BtlBw_slow`, swings **0 → 612** in lock-step
+(≈0 at BtlBw 5, 612 at BtlBw 20 950). A depth/pace bound cannot key on a signal
+that jumps 4000× per second: half the time `dbud≈0` (the bound is INERT — exactly
+§16.14's observed no-op), the other half `dbud` is large enough to not bind. The
+CAUSE: on the slow path the BBR send-interval delivery-rate sample measures the
+**generation DECODE cadence, not the slow-link drain**. The slow path carries
+FUTURE source that is delivered by fungible generation decode (gated by fast-path
+DoF arrival / OOO-frontier advance), so `Δdelivered/Δt` alternates between decode
+BURSTS (windowed-MAX latches a spike → over-read 20 950) and inter-burst gaps
+(sparse samples, the ~1 s min-clamped window decays → under-read 5). The estimator
+is measuring the wrong clock, and the windowed-MAX amplifies the burstiness rather
+than smoothing it. (The FAST path has the same burstiness — btlbw 13 k–86 k, ×1.3–8
+over-read — but its floor stays large enough that its pacer/cap always engage; only
+the slow path's swing straddles zero-utility.) The late-tail `est=n` (t≥23.6 s) is
+the same defect's other face: once the slow path idles, the sparse samples expire
+from the short window and `fill 17→3 (<ANCHOR_MIN_SAMPLES=8)` → the anchor decays.
+
+### VERDICT — FIXABLE (estimator-stability bug), NOT fundamental channel starvation
+
+The channel is fine: the slow link carries real source (3 444 symbols), its RTprop
+stays pinned at the 41 ms propagation base (never polluted on the sender side), and
+its ~230 sym/s delivered share is genuine. What is broken is the per-path rate
+SIGNAL — it is present but unusably NOISY because it is derived from decode-clocked
+source-seq attribution through a windowed-MAX. This is a source-side estimator
+design bug, not "a channel/CC property no source-side scheduler can synthesize"
+(§16.14). The §16.14 CONSOLIDATE call rested on (a) the wrong log and (b)
+generation-off inert mechanisms; on the correct sender log with generation on, the
+anchor establishes and the real residual is signal STABILITY.
+
+**Specific minimal fix (recommended next build — coordinator's call to build):**
+De-noise `BtlBw_slow`. Replace the short windowed-MAX of per-symbol decode-clocked
+samples with a rate estimate that is (i) robust to decode bursts and (ii) clocked
+by the slow link, in rough order of preference: **(1)** widen/robustify the
+per-path filter — use an EWMA or a high-quantile of the per-path DELIVERED rate
+over a multi-RTprop horizon (and raise the windowed-MAX min-window floor well above
+the slow path's decode-burst spacing, which the current `10·RTprop` clamp-to-1 s
+undershoots); **(2)** measure the per-path rate from the slow link's ACTUAL wire
+traffic — the coded/repair symbols physically sent on p1 and their per-path
+ack/delivery over the send interval (steadily link-clocked), instead of the
+fungible source-seq decode attribution; **(3)** seed a conservative per-path BtlBw
+prior (configured/probed link rate) so `dbud` is never 0/garbage and the anchor
+only refines it. Expected C8 effect: with a STABLE `BtlBw_slow`, the DAPS
+depth-bound (`skew·BtlBw_slow`, oracle-proven to reach ×1.195 in §16.14 PART 6h but
+INERT there because `dbud` swung through 0) can finally bind consistently — at
+minimum stopping the negative aggregation (dual C8 8.4–10.5 < fast-alone 16.45) and
+recovering toward the fast-alone floor, with upside toward the oracle ceiling IF
+the slow link's ~3.2 Mbit sustains under decode coupling. That last residual — is
+the slow marginal rate real throughput once stably paced, or latency-dominated — is
+the genuinely-open question, and it can only be answered AFTER the signal is stable
+(so it is not yet grounds to consolidate).
+
+### Controls
+
+DIAG-only change (counters + one DIAG print field); the guard split in
+`rs_on_delivered` (combined `interval<MinRTT || delivered==0` → two counted `if`s)
+is behaviourally identical (same early returns). `cargo test -p raptorpath --lib`
+green + gate_suite 15/15. Shipped non-generation default byte-identical (the
+counters only increment inside the `rate_sample` path; the DIAG line is
+`RWM_DIAG`-gated). Reproduce: `RWM_DAPS=1 RWM_GEN_R=0.03 RWM_RATE_SAMPLE=1
+RWM_DAPS_DEPTH=1 RWM_DIAG=1 RWM_EXTRA=--window-generation-coding SEED=42 bash
+perf_rwm_c.sh c2 c3 bulk 12000000 3 dual`, then read the p1 `ANCHOR …` counters in
+`/tmp/rwm-c.log` (the CLIENT/sender log, NOT `/tmp/rwm-s.log`).

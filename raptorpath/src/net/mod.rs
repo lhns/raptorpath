@@ -4807,9 +4807,16 @@ async fn run_window_sender(
                             // (skew·BtlBw_j) this path's read-ahead is bounded to,
                             // to compare the OBSERVED sinfl against Δ×BtlBw at L1.
                             let dbud_i = dbud.get(id).copied().unwrap_or(0.0);
+                            // diag/slow-path-anchor: the rate-sample anchor trace
+                            // (snapshotted-at-send / of-which-app-limited / acks-
+                            // attributed / no-record / rej[interval/zero/applim] /
+                            // generated / windowed-max-fill).  Cumulative counters.
+                            let (rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill) =
+                                p.rs_diag();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/rtp{:.0}ms",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, rtprop_i
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, rtprop_i,
+                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
                     }
