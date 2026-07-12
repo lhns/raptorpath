@@ -4688,3 +4688,124 @@ queue bound needs a per-path rate it currently lacks.
 `-p raptorpath-math` 19/19 incl. temporal_oracle PART 6e (`daps_queue_mgmt_lifts_c8_to_ceiling`);
 `daps_loopback` reliable (dnf 0). Shipped default untouched (all queue-mgmt code
 RWM_DAPS-gated; RWM_DAPS_BDP=0 RWM_DAPS_PACE=0 reproduces pre-QM behaviour).
+
+## Per-Path Estimator (2026-07-12) — the diagnosed rate-estimation residual, CLOSED: per-path BtlBw now establishes, RTprop stays at base, slow-path bufferbloat 3.7 s→~0.3 s; C8 lifts + STABILIZES (branch `feat/per-path-estimator`)
+
+Builds the two pieces the DAPS Queue Management work diagnosed as the true long
+pole: generation mode never ESTIMATED a per-path delivered rate (WindowAcks did
+not drive `record_delivery`; `in_flight` released by TIME-EXPIRY, not per-path
+ack), so the BLEST cap + BBR pacer keyed on a per-path BDP that was `None`/`bdp0`
+throughout — the queue bound was correct but INERT. And the queue hid in the QUIC
+datagram send buffer, below the `in_flight` gauge (which read 0).
+
+### The two pieces (both generation-mode-only; shipped non-generation default byte-identical)
+
+- **PIECE 1 — per-path delivered-rate estimator.** The sender already owns a
+  seq→path map (`source_path_map`: which path each SOURCE seq's DAPS placement
+  committed it to). New per-path ACK ATTRIBUTION drives it: on every SACK range
+  (OOO delivery — the frontier is frozen exactly when the estimator is most
+  starved) AND on each cumulative-frontier advance, every newly-acked source seq
+  is attributed to its owning path and calls `PathState::on_src_delivered`, which
+  (a) feeds `copa.record_delivery` so **BtlBw_i = that path's own delivered
+  source-rate** (BtlBw_i·RTprop_i = the per-path BDP the Copa anchor reports), and
+  (b) releases a new per-path SOURCE outstanding gauge `src_inflight` (the BLEST
+  `in_flight_i`) by ACK, not time-expiry. `source_path_map` became a `BTreeMap`
+  so the attribution range-queries a SACK/ack span in O(unattributed), not
+  O(span). The BLEST cap now reads `src_inflight` (source units, matching the
+  source-unit BtlBw) instead of the coded, time-expired `in_flight`. Gated
+  `generation && (RWM_DAPS || RWM_PER_PATH_EST)`.
+- **PIECE 2 — QUIC-send-buffer bounding.** quinn exposes no datagram-send-buffer
+  occupancy, so the bound is by PACING: with Piece 1's real per-path BtlBw the
+  existing BBR pacer meters SOURCE placement on each path at BtlBw_i, so the
+  sender never hands quinn more than the path drains and the send queue stays near
+  one ≤4 ms burst. RTprop is the min-filtered base (verified in the DIAG: it stays
+  at the 44 ms slow / 12 ms fast propagation floor, immune to the standing queue),
+  so a bloated RTT can never mis-size Δ_j or the BDP.
+- Per-path DIAG added: `sinfl` (BLEST in_flight_i), `btlbw` (sym/s), `est=Y/n`
+  (anchor established?), alongside the existing infl/bdp/rtt/rtprop.
+
+### Oracle re-confirm (temporal_oracle PART 6e) — the assumption is now MET
+
+PART 6e proved that GIVEN a correct per-path BDP the cap/pace collapse the queue
+and reach ×1.195. The estimator realizes EXACTLY that BDP — `BtlBw_i·RTprop_i`
+with the min-filtered RTprop — so PART 6e's assumption is now met, not changed;
+**PART 6e stands** (`-p raptorpath-math` 19/19 unchanged). What L1 adds below is
+that realizing the per-path BDP is necessary and materially helps, but a SECOND
+queue (coded/repair + fast-path) that PART 6e abstracts away keeps C8 short of the
+modelled ceiling.
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, 25 MB × 8, rp-native perf, TWO seeds)
+
+Ceilings (post-change binary, single-path, seed 42): `single-c2` (fast) =
+**16.54**, `single-c3` (slow) = **3.26** Mbit/s ⇒ recovery ceiling C8 =
+**19.80**, C7 = **33.08**; raw-link goodput ceiling C8 = 100(1−ε)+20(1−ε) ≈ **117**
+(not protocol-achievable). Every arm **dnf=0** (reliable, every byte).
+
+**C8 (c2+c3), DAPS+QM r=0.03, same-binary apples-to-apples, per seed:**
+
+| arm | seed42 Mbit/s (stdev_s) | seed7 Mbit/s (stdev_s) | pooled | ×fast | eff ÷19.80 |
+|---|---:|---:|---:|---:|---:|
+| baseline (pre-estimator: `bdp0`/`est=n`) | 5.88 (14.6) | 9.81 (4.8) | ~7.85 | 0.47× | 0.40 |
+| **+ per-path estimator (this work)** | **9.58 (5.8)** | **10.90 (3.5)** | **~10.24** | **0.62×** | **0.52** |
+
+**THE HONEST RESULT (two-seed, stabilize-before-comparing).** The baseline is
+BIMODAL across seeds — one seed bloats catastrophically (5.88, median 4.9 Mbit/s,
+slow-path RTT/RTprop both **3734 ms**), another is fine (9.81) — exactly the
+run-to-run variance the #69/#70 gap flagged. The per-path estimator (1) ELIMINATES
+the catastrophic-bloat regime (seed42 5.88→9.58, +63%), (2) lifts the already-OK
+seed modestly (seed7 9.81→10.90, +11%), and (3) STABILIZES: post-change seed
+means are 9.58/10.90 (range 1.3) vs baseline 5.88/9.81 (range 3.9). Pooled C8
+rises ~7.85→~10.24 Mbit/s (+30%), from **0.40→0.52 of the recovery ceiling**
+(×0.47→×0.62 single-fast).
+
+**Mechanism confirmed at L1 (sender DIAG).** The diagnosed residual is CLOSED:
+- **Per-path BtlBw/BDP now ESTABLISHES** — baseline `est=Y` in **0%** of DIAG
+  lines (`bdp0` throughout); post-change **618/663 = 93%** `est=Y`. Real per-path
+  rates: fast BtlBw ≈ 20 000 sym/s (BDP ≈ 240), slow ≈ 1 150–5 000 sym/s (BDP ≈
+  50–217).
+- **Slow-path RTprop stays at the 44 ms base** (min-filtered, immune to the
+  queue), vs baseline where it polluted to 3734 ms.
+- **Slow-path live RTT collapses 3734 ms → ~200–380 ms** (bufferbloat largely
+  drained by the per-path source pacing).
+
+**REMAINING RESIDUAL (honest — improves but does NOT reach the ceiling).** C8 is
+0.52 of the recovery ceiling, not ~1.0. A standing queue remains: slow-path live
+RTT ~200–380 ms (vs 44 ms base) and the FAST path also carries ~140 ms (live
+~150 ms vs 12 ms base). The per-path pacer meters only SOURCE placement; the
+coded/repair emission and the aggregate send buffer are not per-path
+pace-bounded, so a second queue persists. `sinfl≈0` throughout means the OOO
+attribution drains the SOURCE gauge promptly, so the PACER is the binding lever
+and the BLEST cap (proven correct in unit tests) rarely engages under it. The
+next residual is per-path pacing of the coded/repair traffic + the fast-path
+queue — NOT the rate estimation this work fixed.
+
+**C7 (c2+c2) — symmetric control, no regression:** DAPS+QM = **21.41** (stdev
+0.73, 1.29× single-c2), vs the DAPS-QM build's 20.68 — no regression (skew 0 ⇒
+Δ=0 ⇒ DAPS inert; the estimator is symmetric).
+
+**GENERAL-FIX CHECK (per-path signal beyond DAPS).** A PLAIN generation multipath
+run with `RWM_PER_PATH_EST=1` and NO DAPS also establishes per-path BtlBw
+consistently — **263/295 = 89%** `est=Y`, fast BtlBw ≈ 24 500 sym/s — so the CC
+and the placement law now get a stable per-path rate signal in plain multipath,
+not only under DAPS (C8 there = 8.08 Mbit/s; DAPS placement still adds on top).
+
+### Controls / no regression
+
+`cargo test -p raptorpath --lib` 283/283 (2 new: `per_path_ack_attribution_updates_only_the_owning_path`,
+`per_path_estimator_bounds_slow_path_outstanding_at_one_bdp`; the reworked
+`daps_bdp_cap_bounds_slow_path_outstanding` now drives `src_inflight`);
+`-p raptorpath-math` 19/19 incl. temporal_oracle PART 6e (unchanged); gate_suite
+15/15 release. Shipped non-generation default byte-identical (attribution gated
+`generation && (RWM_DAPS || RWM_PER_PATH_EST)`; `RWM_PER_PATH_EST` unset + no DAPS
+reproduces prior behaviour). All L1 arms dnf=0.
+
+**VERDICT.** The diagnosed rate-estimation residual is CLOSED: generation mode now
+estimates a real per-path BtlBw/RTprop/BDP (93% established vs 0%), the min-filter
+keeps RTprop at the propagation base, and the per-path source pacer drains the
+slow-path bufferbloat from 3.7 s to ~0.3 s. This eliminates the catastrophic-bloat
+regime and stabilizes C8, lifting pooled C8 from 0.40→0.52 of the recovery ceiling
+(×0.47→×0.62 single-fast). It does NOT reach the ceiling — a second queue
+(coded/repair + fast-path, not yet per-path pace-bounded) is the honest next
+residual. Regime-map: heterogeneous aggregation is scheduling-bound (DAPS) AND
+rate-estimation-bound (this work, now closed) AND still queue-bound on the
+non-source traffic — improved and stabilized materially, not yet at parity.
