@@ -2650,3 +2650,164 @@ fn rate_anchor_overread_makes_pacer_inert() {
     println!("  queues collapse (slow {q_s_over:.0}->{q_s_ok:.0}ms, fast {q_f_over:.0}->{q_f_ok:.0}ms) → C8 x{f_ok:.3} (ceiling).");
     println!("  The mechanism (6e/6f) was right all along; the rate anchor was the bug.");
 }
+
+// PART 6h — SLOW-PATH READ-AHEAD DEPTH BOUND vs RATE THROTTLE (the last lever).
+//   PART 6g CLOSED the rate anchor (fast over-read ×158→×1, fast bufferbloat
+//   1573→30 ms).  But L1 (§16.13) then showed C8 does NOT rise under DAPS — it
+//   REGRESSES — and the CLEAREST signal was the SYMMETRIC C7: binding both pacers
+//   at the correct (lower) rate dropped C7 20.96→16.97 (−19%) and left the link
+//   IDLE (a POLITENESS regression), while the heterogeneous SLOW path STILL
+//   bloated to ~3–4 s live RTT EVEN THOUGH its anchor + BDP cap were correct and
+//   its per-path SOURCE gauge (sinfl) sat AT the cap.  So the residual is NOT the
+//   source rate anchor and NOT the source outstanding — it is the DAPS read-ahead
+//   DEPTH: how far AHEAD of the fast frontier the slow path is committed (source
+//   placed deep + repair fed by the residual slow over-read), a queue the SOURCE
+//   pacer/cap does not bound.  6e/6f/6g all scored only "queue ≤ skew"; none
+//   distinguished a link kept FULL from a link RATE-THROTTLED idle.  This part
+//   adds the UTILIZATION axis so it can reproduce BOTH §16.13 failure modes and
+//   show the depth bound (not a rate throttle) is the escape.
+//
+//   TWO INDEPENDENT AXES the earlier parts conflated:
+//     * useful(q): the DAPS skew-alignment fraction — full while the slow queue
+//       fits the skew (q ≤ skew), ramping to 0 as the read-ahead arrives LATE.
+//       Bounding the queue keeps useful = 1.  (6e/6f/6g's only axis.)
+//     * util: the slow LINK utilization — how much of BtlBw_slow the scheduler
+//       actually DRIVES.  A DEPTH bound leaves the path emitting at its natural
+//       link rate (util = 1, never idle); a RATE throttle clocks emission at the
+//       ESTIMATE and idles the link between refills / under the min-filter's
+//       conservatism (util = η < 1).  THIS is the axis §16.13's C7 regression
+//       lives on and the axis a pure queue model (6e/6f/6g) cannot see.
+//   C8 realized slow goodput = slow_g · useful(q) · util.  A regime wins ONLY if
+//   BOTH are 1 — bounded queue AND full link.
+//
+//   THREE regimes for the SLOW path:
+//     A. DEPTH-UNBOUNDED (current DAPS read-ahead): emits at full link rate
+//        (util=1) but commits the whole send-buffer read-ahead depth d_unb ahead
+//        of the frontier (source deep + repair on the residual slow over-read) →
+//        q = d_unb/BtlBw_slow ≫ skew → useful→0 → C8 → PARITY (the slow path's
+//        3–4 s bloat is wasted; matches §16.13 measured ~3–4 s / C8 ≈ fast-alone).
+//     B. RATE-THROTTLE (§16.13 rate-sample, pace at BtlBw): the queue IS bounded
+//        (q ≤ skew, useful=1) — but clocking emission at the estimate leaves the
+//        link IDLE (util = η < 1).  Realized slow goodput = η·slow_g < slow_g →
+//        C8 below ceiling; applied SYMMETRICALLY to C7 (both paths ×η) it
+//        REPRODUCES the measured 20.96→16.97 (η ≈ 0.81).  This is the POLITENESS
+//        TRAP: a bounded queue bought by an under-driven link.
+//     C. DEPTH-BOUND (this work): emit at the FULL link rate (util=1, fill
+//        capacity, never idle) AND bound the read-ahead DEPTH to d = skew·BtlBw
+//        beyond the frontier → q = d/BtlBw_slow = skew ≤ skew → useful=1.  BOTH
+//        axes = 1 → C8 → the resequencing optimum ×1.195, C7 restored (no ×η).
+//        The depth bound is the PRIMARY limiter; it never lowers the emission
+//        rate below BtlBw within the budget — that is what escapes trap B.
+//
+//   HONESTY.  This is a first-order queue+utilization model; the magnitudes
+//   (d_unb, η) are pinned to the §16.13 measurements (slow bloat ~3–4 s; C7
+//   20.96→16.97).  The DIRECTION and the DISCRIMINATION (depth-bound beats BOTH
+//   traps; rate-throttle cannot, because it trades util for queue) are the point.
+//   If the depth bound did NOT beat BOTH in this model, the build would not
+//   proceed — L1 is the arbiter of whether it does so in production.
+// -------------------------------------------------------------------------
+#[test]
+fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
+    let f = c8_fast();
+    let s = c8_slow();
+    let rate_f = f.rate; // sym/ms = BtlBw_fast
+    let rate_s = s.rate; // sym/ms = BtlBw_slow
+    let rtprop_f = 2.0 * f.owd as f64; // 10 ms
+    let rtprop_s = 2.0 * s.owd as f64; // 40 ms
+    let skew = rtprop_s - rtprop_f; // 30 ms — the DAPS pre-fetch slack (depth budget in TIME)
+    let bdp_s = rate_s * rtprop_s; // slow-path BDP (symbols)
+    let fast_g = f.goodput();
+    let slow_g = s.goodput();
+    let ceiling = (fast_g + slow_g) / fast_g;
+
+    // §16.13 measured slow-path bloat under the CORRECT anchor + BDP cap: ~3.5 s
+    // live RTT.  The unbounded read-ahead depth that produces it (source deep +
+    // repair on the residual slow over-read), in symbols.
+    let slow_bloat_ms = 3500.0;
+    let d_unb = slow_bloat_ms * rate_s; // whole-send-buffer read-ahead depth
+    // The depth budget this work imposes: exactly the skew, in symbols.
+    let d_bound = skew * rate_s; // = skew·BtlBw_slow (the ECF/DAPS depth)
+    // §16.13 measured POLITENESS idle: C7 rate-throttle 20.96→16.97 ⇒ the link
+    // utilization the rate clock leaves = η.  A DEPTH bound does NOT incur it.
+    let eta = 16.97 / 20.96; // ≈ 0.81 — the rate-throttle utilization
+
+    // Queue delay of a committed read-ahead depth d (FIFO at BtlBw_slow beyond
+    // one BDP).  For the DEPTH regimes the whole depth queues; the RATE regime is
+    // paced to ≤ one BDP so its queue is ~0.
+    let q_of_depth = |d: f64| ((d - bdp_s).max(0.0)) / rate_s; // ms
+    // The read-ahead is IN-ORDER-ALIGNED while it arrives within one skew of the
+    // frontier (q ≤ skew ⇒ useful=1, the DAPS depth budget is exactly this
+    // boundary); beyond the skew it arrives LATE and is progressively wasted.
+    let useful = |q: f64| {
+        if q <= skew {
+            1.0
+        } else {
+            (1.0 - (q - skew) / skew).clamp(0.0, 1.0)
+        }
+    };
+    // C8 factor scoring BOTH axes: realized slow goodput = slow_g·useful·util.
+    let factor = |q: f64, util: f64| (fast_g + slow_g * useful(q) * util) / fast_g;
+
+    // ---- A. DEPTH-UNBOUNDED (current) : util=1 (full link) but q ≫ skew --------
+    let q_a = q_of_depth(d_unb);
+    let (util_a, f_a): (f64, f64) = (1.0, factor(q_a, 1.0));
+    // ---- B. RATE-THROTTLE (§16.13)    : q ≤ skew (bounded) but util=η (idle) ----
+    let q_b = q_of_depth(bdp_s); // paced to one BDP → ~0
+    let (util_b, f_b) = (eta, factor(q_b, eta));
+    // ---- C. DEPTH-BOUND (this work)   : q = skew (bounded) AND util=1 (full) ----
+    let q_c = q_of_depth(bdp_s + d_bound); // read-ahead skew ON TOP of the working BDP
+    let (util_c, f_c): (f64, f64) = (1.0, factor(q_c, 1.0));
+
+    println!("\n=== PART 6h: READ-AHEAD DEPTH BOUND vs RATE THROTTLE (the last lever) ===");
+    println!("  BtlBw_slow={rate_s:.2} sym/ms  RTprop_slow={rtprop_s:.0}ms  BDP_slow={bdp_s:.0} syms  skew={skew:.0}ms  ceiling x{ceiling:.3}");
+    println!("  unbounded read-ahead depth d_unb={d_unb:.0} syms (~{slow_bloat_ms:.0}ms bloat)  depth budget d_bound=skew·BtlBw={d_bound:.0} syms  rate-throttle util η={eta:.3}\n");
+    println!("  {:>16} | {:>8} {:>10} {:>8} {:>8} | {:>8}", "regime", "q(ms)", "slowRTT(ms)", "useful", "util", "factor");
+    println!("  {:>16} | {:>8.0} {:>10.0} {:>8.2} {:>8.2} | {:>7.3}x", "A DEPTH-UNBND", q_a, rtprop_s + q_a, useful(q_a), util_a, f_a);
+    println!("  {:>16} | {:>8.0} {:>10.0} {:>8.2} {:>8.2} | {:>7.3}x", "B RATE-THROTTLE", q_b, rtprop_s + q_b, useful(q_b), util_b, f_b);
+    println!("  {:>16} | {:>8.0} {:>10.0} {:>8.2} {:>8.2} | {:>7.3}x", "C DEPTH-BOUND", q_c, rtprop_s + q_c, useful(q_c), util_c, f_c);
+
+    // C7 symmetric reproduction: both paths carry equal capacity g each; C7 factor
+    // ×single-fast = (g + g·useful·util)/g.  Rate-throttle applies η to BOTH →
+    // reproduces the measured 20.96→16.97; depth-bound applies η=1 → C7 restored.
+    let c7_ceiling = 2.0; // both c2 → 2× single-fast (resequencing optimum)
+    let c7_rate_throttle = 2.0 * eta; // ×single-fast: BOTH paths clocked at η
+    let c7_depth_bound = 2.0 * 1.0; // ×single-fast: BOTH paths full (no idle)
+    println!("\n  C7 symmetric (c2+c2), ×single-fast: ceiling x{c7_ceiling:.2}  rate-throttle x{c7_rate_throttle:.3} (η both paths)  depth-bound x{c7_depth_bound:.3}");
+    println!("  → rate-throttle/ceiling = {:.3} reproduces the measured 16.97/20.96 = {:.3}", c7_rate_throttle / c7_ceiling, 16.97 / 20.96);
+
+    // (a) A DUMPS: full link but the read-ahead arrives far past the skew → wasted.
+    assert!(q_a > skew, "A: unbounded depth must bloat past the skew: q={q_a:.0}ms skew={skew:.0}ms");
+    assert!(f_a < 1.05, "A: unbounded depth must collapse C8 to ~parity (fast-alone): x{f_a:.3}");
+    // (b) B is the POLITENESS TRAP: the queue IS bounded (useful=1) but the link is
+    //     RATE-throttled idle (util=η<1) → C8 below ceiling.  This is the axis a
+    //     pure queue model cannot see.
+    assert!(q_b <= skew, "B: rate-throttle must bound the queue: q={q_b:.0}ms");
+    assert!((useful(q_b) - 1.0).abs() < 1e-9, "B: rate-throttle queue is skew-aligned (useful=1)");
+    assert!(util_b < 0.95, "B: rate-throttle must under-drive the link (idle): util={util_b:.2}");
+    assert!(f_b < ceiling - 0.02, "B: rate-throttle must fall below the ceiling despite a bounded queue: x{f_b:.3} vs x{ceiling:.3}");
+    // (c) B REPRODUCES the §16.13 C7 regression (the model is not too coarse).
+    assert!((c7_rate_throttle / c7_ceiling - 16.97 / 20.96).abs() < 0.01,
+        "B must reproduce the measured C7 rate-throttle regression 20.96->16.97");
+    // (d) C ESCAPES BOTH traps: bounded queue (useful=1) AND full link (util=1) →
+    //     the ceiling.  The depth bound is the PRIMARY limiter, not a rate cap.
+    assert!(q_c <= skew + 1e-9, "C: depth-bound must keep the read-ahead within the skew: q={q_c:.0}ms skew={skew:.0}ms");
+    assert!((useful(q_c) - 1.0).abs() < 0.02, "C: depth-bound queue is skew-aligned (useful≈1)");
+    assert!((util_c - 1.0).abs() < 1e-9, "C: depth-bound must keep the link FULL (util=1, not rate-throttled)");
+    assert!(f_c > ceiling - 0.02, "C: depth-bound must reach the C8 ceiling: x{f_c:.3} vs x{ceiling:.3}");
+    // (e) THE DISCRIMINATION: C beats A (the DUMP) AND B (the rate-throttle) — and
+    //     it beats B specifically on UTILIZATION, the axis that distinguishes a
+    //     depth bound from a rate throttle.
+    assert!(f_c - f_a > 0.15, "C must beat the DUMP: A x{f_a:.3} -> C x{f_c:.3}");
+    assert!(f_c > f_b + 0.02, "C must beat the RATE-THROTTLE: B x{f_b:.3} -> C x{f_c:.3}");
+    assert!(util_c > util_b, "the model must distinguish depth-bound (util=1) from rate-throttle (util<1)");
+    // (f) C7: depth-bound restores C7 (no ×η), rate-throttle regresses it.
+    assert!(c7_depth_bound > c7_rate_throttle + 0.1, "depth-bound must restore C7 vs rate-throttle: x{c7_depth_bound:.3} vs x{c7_rate_throttle:.3}");
+    assert!((c7_depth_bound - c7_ceiling).abs() < 1e-9, "depth-bound must reach the C7 ceiling (no politeness idle)");
+
+    println!("\n  VERDICT: the last residual is the READ-AHEAD DEPTH, and the escape is a DEPTH");
+    println!("  bound, NOT a rate throttle.  DEPTH-UNBOUNDED dumps (x{f_a:.3}, the 3–4 s bloat wasted);");
+    println!("  RATE-THROTTLE bounds the queue but idles the link (x{f_b:.3}, util η={eta:.2} — the §16.13");
+    println!("  politeness trap, C7 20.96→16.97).  DEPTH-BOUND keeps the link FULL (util=1) AND the");
+    println!("  read-ahead within the skew (useful=1) → C8 x{f_c:.3} (ceiling), C7 restored.  If L1");
+    println!("  confirms, the estimator→correct-anchor→depth-bound stack LANDS heterogeneous aggregation.");
+}

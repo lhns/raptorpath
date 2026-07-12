@@ -96,6 +96,10 @@ TENV=""
 # sampling (ack-aggregation robust); ON by default under the per-path estimator.
 # RWM_RATE_SAMPLE=0 reproduces the legacy ack-interval anchor (same-binary A/B).
 [[ -n "${RWM_RATE_SAMPLE:-}" ]] && TENV="$TENV RWM_RATE_SAMPLE=$RWM_RATE_SAMPLE"
+# DAPS read-ahead depth bound (feat/daps-readahead-depth): bound each non-fastest
+# path's read-ahead to skew·BtlBw_j (queue delay <= skew); ON by default under
+# DAPS+rate-sample. RWM_DAPS_DEPTH=0 reproduces the unbounded read-ahead (A/B).
+[[ -n "${RWM_DAPS_DEPTH:-}" ]] && TENV="$TENV RWM_DAPS_DEPTH=$RWM_DAPS_DEPTH"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

@@ -2061,6 +2061,63 @@ impl Scheduler {
         skew * sum_btlbw
     }
 
+    /// The DAPS read-ahead DEPTH budget for path `pid`, in SOURCE symbols: the
+    /// skew-depth `(RTprop_j − RTprop_min)·BtlBw_j`.  This is the MOST read-ahead
+    /// path j may carry beyond the fast-path frontier while its own queue delay
+    /// stays within the latency skew — so the slow-path segment ARRIVES
+    /// in-order-aligned (never later than the fast path would deliver that
+    /// region), the ECF/BLEST completion-time guard (Lim 2017 / Ferlin 2016) done
+    /// on DEPTH.  It is the correct DAPS/ECF depth: `daps_offset_syms` places the
+    /// slow path Δ_j = skew·ΣBtlBw AHEAD; the depth budget caps how much it may
+    /// pile up THERE at skew·BtlBw_j (path j's OWN drain), so outstanding/BtlBw_j
+    /// = queue delay ≤ skew ⇒ the read-ahead is skew-aligned, not bloated.
+    ///
+    /// This is DISTINCT from the BLEST BDP cap (`daps_eligible_paths_capped`):
+    /// that bounds outstanding to BtlBw_j·RTprop_j (one full BDP); the depth
+    /// budget bounds it to BtlBw_j·SKEW_j (skew ≤ RTprop), the TIGHTER DAPS-exact
+    /// bound.  Crucially it is a DEPTH limiter, NOT a rate throttle: the path
+    /// still emits at its natural BtlBw within the budget (never idled below
+    /// BtlBw), so the link stays FULL — it only STOPS placing FRESH read-ahead on
+    /// path j once the budget is exhausted (the fast path then carries it).  That
+    /// is what escapes the §16.13 rate-throttle politeness-idle regression.
+    /// None for the fastest path (skew 0 ⇒ no bound) or during warm-up (no
+    /// RTprop / BtlBw sample yet) — never restrict an un-warmed path.
+    pub fn daps_depth_budget_syms(&self, pid: PathId) -> Option<f64> {
+        let min_rtprop = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .filter_map(|p| p.min_rtt())
+            .min()?;
+        let p = self.paths.get(&pid)?;
+        if !p.active {
+            return None;
+        }
+        let rtprop_j = p.min_rtt()?;
+        let skew = rtprop_j.checked_sub(min_rtprop)?; // saturates to 0 if j is the min
+        let skew_s = skew.as_secs_f64();
+        if skew_s <= 0.0 {
+            return None; // the fastest path carries no read-ahead depth bound
+        }
+        let btlbw = p.btlbw_sym_per_s()?;
+        Some(skew_s * btlbw)
+    }
+
+    /// True iff path `pid`'s committed SOURCE read-ahead depth (`src_inflight`)
+    /// has reached its skew-depth budget (`daps_depth_budget_syms`).  Used to
+    /// steer BOTH source placement and repair emission off an over-committed
+    /// non-fastest path (the fast path carries it instead), so ALL per-path
+    /// look-ahead is bounded to one skew.  False for the fastest path / warm-up.
+    pub fn daps_depth_over_budget(&self, pid: PathId) -> bool {
+        match self.daps_depth_budget_syms(pid) {
+            Some(budget) => {
+                let infl = self.paths.get(&pid).map(|p| p.src_inflight).unwrap_or(0);
+                (infl as f64) >= budget.max(1.0)
+            }
+            None => false,
+        }
+    }
+
     /// The DAPS-eligible path set for a source symbol whose leading edge is
     /// `lead_syms` ahead of the delivered frontier.  A path j is eligible iff
     /// `lead_syms ≥ Δ_j` — the ECF completion-time guard (Y. Lim, E. Nahum,
@@ -2093,6 +2150,27 @@ impl Scheduler {
     /// cap would empty the set, the caller falls back to the uncapped set so
     /// placement never wedges.
     pub fn daps_eligible_paths_capped(&self, lead_syms: f64, bdp_gain: f64) -> Vec<PathId> {
+        self.daps_eligible_paths_capped_depth(lead_syms, bdp_gain, false)
+    }
+
+    /// `daps_eligible_paths_capped` with the additional DAPS read-ahead DEPTH
+    /// bound (feat/daps-readahead-depth).  When `depth_bound` is set, a path j is
+    /// additionally required to be WITHIN its skew-depth budget
+    /// (`daps_depth_over_budget(j)` false) — i.e. its committed read-ahead has not
+    /// piled up more than one skew beyond the frontier.  This is the correct
+    /// DAPS/ECF depth guard: once path j holds skew·BtlBw_j read-ahead it is
+    /// dropped from the eligible set so the FAST path carries the rest (never
+    /// placing on j data that would COMPLETE later than waiting for the fast
+    /// path).  It is a DEPTH limiter, not a rate throttle — the pace bucket still
+    /// refills at BtlBw_j, so within the budget path j emits at full link rate
+    /// (no idle); it only STOPS once the depth is exhausted.  `depth_bound=false`
+    /// reproduces the prior unbounded read-ahead exactly (same-binary A/B).
+    pub fn daps_eligible_paths_capped_depth(
+        &self,
+        lead_syms: f64,
+        bdp_gain: f64,
+        depth_bound: bool,
+    ) -> Vec<PathId> {
         self.paths
             .values()
             .filter(|p| p.active)
@@ -2112,6 +2190,11 @@ impl Scheduler {
                     Some(bdp) => (p.src_inflight as f64) < (bdp_gain * bdp).max(1.0),
                     None => true, // anchor not warm yet — do not restrict
                 }
+            })
+            .filter(|p| {
+                // DAPS read-ahead DEPTH bound: drop a non-fastest path once its
+                // committed read-ahead reaches skew·BtlBw_j (queue delay = skew).
+                !depth_bound || !self.daps_depth_over_budget(p.id)
             })
             .map(|p| p.id)
             .collect()
@@ -2135,11 +2218,30 @@ impl Scheduler {
     /// lead-eligible set (the fast path) so intake never wedges — the aggregate
     /// per-path TUN-pause then throttles overall admission.
     pub fn place_source_daps_capped(&self, lead_syms: f64, bdp_gain: f64) -> Option<PathId> {
+        self.place_source_daps_capped_depth(lead_syms, bdp_gain, false)
+    }
+
+    /// `place_source_daps_capped` with the DAPS read-ahead DEPTH bound
+    /// (feat/daps-readahead-depth).  When `depth_bound` is set, a non-fastest
+    /// path already holding its skew-depth budget (skew·BtlBw_j) is dropped from
+    /// the eligible set, so the softmax steers fresh source to the FAST path
+    /// instead of piling read-ahead onto the slow path past the point it would
+    /// arrive in-order-aligned.  Falls back exactly like the capped variant when
+    /// the depth bound empties the set, so intake never wedges.  `depth_bound=
+    /// false` is byte-identical to `place_source_daps_capped`.
+    pub fn place_source_daps_capped_depth(
+        &self,
+        lead_syms: f64,
+        bdp_gain: f64,
+        depth_bound: bool,
+    ) -> Option<PathId> {
         let mut elig: std::collections::HashSet<PathId> = self
-            .daps_eligible_paths_capped(lead_syms, bdp_gain)
+            .daps_eligible_paths_capped_depth(lead_syms, bdp_gain, depth_bound)
             .into_iter()
             .collect();
         if elig.is_empty() {
+            // depth/BDP bound emptied the set — fall back to the lead-eligible
+            // (uncapped) set so placement never wedges (the fast path qualifies).
             elig = self.daps_eligible_paths(lead_syms).into_iter().collect();
         }
         if elig.len() <= 1 {
@@ -3513,6 +3615,129 @@ mod tests {
         // stays eligible — byte-identical to the pre-cap behaviour.
         let elig_off = sched.daps_eligible_paths_capped(lead, 0.0);
         assert!(elig_off.contains(&1), "gain 0 disables the cap (default unchanged)");
+    }
+
+    // feat/daps-readahead-depth: the DAPS read-ahead DEPTH bound caps the slow
+    // path's committed read-ahead at skew·BtlBw_j — a TIGHTER bound than the
+    // BLEST BDP cap (skew ≤ RTprop) — so the slow segment arrives in-order-
+    // aligned (queue delay ≤ skew).  It BINDS in the window between the depth
+    // budget and the BDP where the BDP cap alone does NOT, and it is a DEPTH
+    // limiter (uses the full BtlBw), never a rate throttle.
+    #[test]
+    fn daps_depth_bound_caps_slow_path_readahead_at_skew_btlbw() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹, slow RTprop=40ms/1667 sym·s⁻¹.
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 40, 1667.0);
+
+        // Skew-depth budget = (0.040−0.010)·1667 = 50 syms.  The BLEST BDP =
+        // 1667·0.040 ≈ 66.7 syms — so the DEPTH bound is STRICTLY TIGHTER (uses
+        // the skew, not the full RTprop).  The fast path has no depth bound.
+        let budget = sched.daps_depth_budget_syms(1).unwrap();
+        assert!((budget - 50.0).abs() < 1.0, "slow depth budget = skew·BtlBw = 50 syms: {budget}");
+        assert!(sched.daps_depth_budget_syms(0).is_none(), "fastest path carries no depth bound");
+        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
+        assert!(budget < slow_bdp, "depth budget {budget} must be tighter than the BDP {slow_bdp}");
+
+        let lead = 4000.0; // ≥ Δ_slow ≈ 300 so the ECF guard admits the slow path
+
+        // Drive slow SOURCE outstanding INTO the window (depth_budget, BDP): 55
+        // syms — ABOVE the 50-sym depth budget but BELOW the 66.7-sym BDP cap.
+        sched.path_mut(1).unwrap().src_inflight = 55;
+        assert!(sched.daps_depth_over_budget(1), "slow path is over its skew-depth budget");
+        assert!(!sched.daps_depth_over_budget(0), "the fastest path is never over budget");
+
+        // depth_bound ON: the slow path is DROPPED (fresh source → fast path).
+        assert_eq!(
+            sched.daps_eligible_paths_capped_depth(lead, 1.0, true),
+            vec![0],
+            "over the skew-depth budget ⇒ slow path dropped (read-ahead bounded to one skew)"
+        );
+        for _ in 0..200 {
+            assert_eq!(
+                sched.place_source_daps_capped_depth(lead, 1.0, true),
+                Some(0),
+                "over the depth budget ⇒ all fresh source to the fast path"
+            );
+        }
+        // depth_bound OFF (same src_inflight): the BDP cap alone does NOT bind
+        // here (55 < 66.7) ⇒ the slow path is still eligible.  This is the exact
+        // same-binary A/B difference the depth bound makes.
+        assert!(
+            sched.daps_eligible_paths_capped_depth(lead, 1.0, false).contains(&1),
+            "with depth_bound OFF the BDP cap alone leaves the slow path eligible (the residual)"
+        );
+    }
+
+    // feat/daps-readahead-depth: WITHIN the depth budget the slow path must stay
+    // FULLY usable — the bound must not throttle the link below BtlBw.  Two
+    // checks: (1) below the budget the slow path is eligible and carries data;
+    // (2) the budget is computed from the FULL BtlBw (skew·BtlBw), so it is a
+    // DEPTH limiter, never a reduced-rate clock (the anti-politeness invariant).
+    #[test]
+    fn daps_depth_bound_does_not_rate_throttle_within_budget() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 40, 1667.0);
+        let lead = 4000.0;
+
+        // The budget is EXACTLY skew · BtlBw_slow (full drain rate) — not a
+        // throttled rate.  This is what keeps the link full within the budget.
+        let skew_s = 0.030_f64;
+        let btlbw_slow = sched.path(1).unwrap().btlbw_sym_per_s().unwrap();
+        let budget = sched.daps_depth_budget_syms(1).unwrap();
+        assert!((budget - skew_s * btlbw_slow).abs() < 1e-6,
+            "depth budget must be skew·BtlBw (full rate), not a throttle: {budget} vs {}", skew_s * btlbw_slow);
+
+        // Below the budget (20 < 50): the slow path is eligible AND carries some
+        // future-offset data under the depth bound — no idle, no throttle.
+        sched.path_mut(1).unwrap().src_inflight = 20;
+        assert!(!sched.daps_depth_over_budget(1), "20 < 50 ⇒ within the depth budget");
+        assert!(
+            sched.daps_eligible_paths_capped_depth(lead, 1.0, true).contains(&1),
+            "within the depth budget the slow path must stay eligible (link stays full)"
+        );
+        let slow_picks = (0..3000)
+            .filter(|_| sched.place_source_daps_capped_depth(lead, 1.0, true) == Some(1))
+            .count();
+        assert!(slow_picks > 0, "within the budget the slow path must carry future-offset data (not idled)");
+    }
+
+    // feat/daps-readahead-depth: symmetric paths (skew 0) and un-warmed paths
+    // carry NO depth bound — the depth-bound path is byte-identical to the
+    // unbounded path there (no C7 regression, no warm-up wedge).
+    #[test]
+    fn daps_depth_bound_noop_on_symmetric_and_warmup() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        // Symmetric skew 0: no depth budget on either path.
+        set_anchor(&mut sched, 0, 10, 8333.0);
+        set_anchor(&mut sched, 1, 10, 8333.0);
+        assert!(sched.daps_depth_budget_syms(0).is_none());
+        assert!(sched.daps_depth_budget_syms(1).is_none());
+        sched.path_mut(1).unwrap().src_inflight = 100_000; // arbitrarily deep
+        assert!(!sched.daps_depth_over_budget(1), "symmetric skew ⇒ no depth bound");
+        // BDP cap OFF (gain 0) to isolate the DEPTH bound: with symmetric skew the
+        // depth bound alone must not drop either path (no C7 regression).
+        assert_eq!(
+            sched.daps_eligible_paths_capped_depth(0.0, 0.0, true).len(),
+            2,
+            "symmetric skew ⇒ depth bound is a no-op (both paths eligible)"
+        );
+
+        // Warm-up (no anchor on path 1): no depth budget, no restriction.
+        let mut sched2 = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched2.add_path(0);
+        sched2.add_path(1);
+        set_anchor(&mut sched2, 0, 10, 8333.0);
+        sched2.path_mut(1).unwrap().active = true; // active but no min_rtt/anchor
+        assert!(sched2.daps_depth_budget_syms(1).is_none(), "un-warmed path has no depth budget");
+        assert!(!sched2.daps_depth_over_budget(1), "un-warmed path is never over budget");
     }
 
     // Symmetric paths (skew 0 ⇒ all Δ_j = 0) must reduce EXACTLY to the

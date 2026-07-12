@@ -7268,9 +7268,87 @@ signal + collapsed fast-path latency) and the necessary precondition for any bin
 per-path pacer. But it does
 NOT lift heterogeneous C8: the 0.76-of-ceiling gap is NOT the source rate anchor. The
 true C8 residual, with DIAG evidence, is the slow-path DEEP READ-AHEAD over-commit
-(DAPS future placement + coded/repair depth, not source pacing) — the next lever.
-The anchor fix ships on by default under the estimator (it is the correct rate); the
-DAPS C8 regression it exposes is the honest handoff to the read-ahead work.
+(DAPS future placement + coded/repair depth, not source pacing) — the next lever
+(§16.14). The anchor fix ships on by default under the estimator (it is the correct
+rate); the DAPS C8 regression it exposes is the honest handoff to the read-ahead work.
+
+A framing correction §16.11–16.13 earned in retrospect (§16.14): each of those pacers
+was inert or harmful because it bounded the wrong quantity. A per-path token bucket
+throttles the emission RATE; but the heterogeneous-aggregation queue is a DEPTH problem
+(how far ahead of the fast frontier the slow path is committed), and throttling rate to
+bound depth either leaves the link idle (§16.13's politeness regression) or cannot bind
+at all. The correct limiter is the read-ahead DEPTH, capped at the latency-skew — which
+§16.14 isolates, and finds bounded by a deeper blocker still.
+
+### 16.14 DAPS read-ahead depth: the correct lever, bounded by the missing slow anchor (2026-07-12) — measured
+
+§16.13 isolated the C8 residual as the slow-path DEEP READ-AHEAD: with the anchor
+correct, the BDP cap engaged, and the source gauge at the cap, the slow path still
+bloated to ~3–4 s. This section builds the intended fix, confirms it in the oracle, and
+reports the honest bound L1 returns.
+
+**The mechanism (correct DAPS/ECF, on DEPTH not RATE).** DAPS places future stream
+positions on the slow path offset by the skew Δ so they arrive in order (§16.10). The
+over-commit is DEPTH: the deep read-ahead pushes far more than `skew·BtlBw_slow` symbols
+onto the slow path, so they queue behind their own not-yet-due position and arrive after
+the fast path has already delivered that region — head-of-line-blocking the receiver's
+reassembly. The fix bounds each non-fastest path j to at most `skew_j·BtlBw_j` symbols
+of read-ahead beyond the frontier (queue delay = outstanding/BtlBw ≤ skew ⇒ in-order-
+aligned), dropping j from the DAPS-eligible set and steering repair off it once the
+budget is full. This is strictly tighter than the BLEST BDP cap (skew ≤ RTprop) and — the
+decisive distinction from §16.11–16.13 — it is a DEPTH limiter, not a rate throttle: the
+pace bucket still refills at BtlBw_j, so within the budget the path emits at full link
+rate and the link stays FULL. That is what escapes §16.13's rate-throttle idle. Gated
+`RWM_DAPS_DEPTH` (on under DAPS+rate-sample; =0 = unbounded read-ahead, same-binary A/B).
+
+**Oracle (temporal_oracle PART 6h).** PART 6h adds the UTILIZATION axis the pure queue
+model (6e–6g) lacked, so it can tell a DEPTH bound (link full) from a RATE throttle (link
+idle). Three regimes for the slow path: DEPTH-UNBOUNDED — full link but the whole
+read-ahead queues (~3.5 s) → useful→0 → **×1.000** (parity); RATE-THROTTLE — queue
+bounded but link idled at util η → **×1.158**, and applied symmetrically to C7 it
+reproduces the measured **20.96→16.97 exactly** (0.810), proving the model reproduces
+§16.13's failure; DEPTH-BOUND — full link AND read-ahead within one skew → **×1.195**
+(ceiling), C7 restored. Depth-bound beats both traps → the build proceeded.
+
+**L1 — best arm, most stable, but NO aggregation (25 MB × 8, seeds 42 & 7, same-binary
+three-arm, interleaved, dnf=0).** Ceilings (arm-C binary): single-c2 (fast) 16.45,
+single-c3 (slow) 3.24 ⇒ recovery ceiling 19.69 Mbit/s. Arms: A legacy (`RS=0`), B
+rate-sample only (`RS=1 DEPTH=0`), C rate-sample+depth (`RS=1 DEPTH=1`).
+
+| arm | C8 pooled Mbit/s | σ_s (worst run) | ×fast | eff ÷19.69 |
+|---|---:|---:|---:|---:|
+| A legacy | ~6.50 | 10.3 | 0.40× | 0.33 |
+| B rate-sample | ~7.22 | 26.8/29.7 (1.9–2.2) | 0.44× | 0.37 |
+| **C depth-bound** | **~8.40** | **5.6/9.1 (5.3–6.7)** | **0.51×** | **0.43** |
+
+Arm C is the best and by far the most stable of the three — σ_s collapses ~3–5× and it
+removes B's catastrophic bimodal bloat tail (worst-run floor ~1.9 → 5.3 Mbit/s). **But
+C8 = 8.40 is 0.51× fast-path-alone (16.45): adding the slow path leaves dual-path at
+HALF of using the fast path alone. It does not aggregate.** This holds across every arm
+and both sessions (§16.13's best C8 10.7 was already < its single-c2 16.65).
+
+**Why the correct lever is inert.** Sender per-path DIAG: the slow path's BtlBw anchor
+NEVER establishes (`est=n`, `btlbw=0`), so the depth budget `skew·BtlBw_slow` is
+UNDEFINED (`dbud=0`) throughout — there is no rate signal for the depth (or any per-path)
+bound to act on, and the slow RTT bloats unbounded to ~1.5 s. The chain
+estimator→correct-anchor→depth-bound breaks at the SLOW anchor, which does not warm in
+this loss (ε≈0.026) / skew (Δ≈30 ms) regime: the slow path is acked too sparsely and too
+batched for the BBR min-RTT-guarded sampler to populate a max-filter. C7 is
+noise-dominated (depth is a provable symmetric no-op, yet the two identical-behaviour
+arms differ 20% — implying §16.13's C7 "regression" was itself largely noise).
+
+**Verdict — the honest bound; consolidate.** The depth bound is the correct mechanism
+(oracle-confirmed to the ×1.195 ceiling, unit-tested, byte-identical default) and
+empirically the best, most stable, harmless arm; it ships on by default under
+DAPS+rate-sample. But it does not land heterogeneous aggregation, because the binding
+constraint is not a scheduler-side depth or rate over-commit — it is the slow path's
+failure to ESTABLISH a usable rate anchor in this regime, which no source-side scheduler
+can synthesize. Bulk C8 is bounded below fast-path-alone: the queue is
+latency-not-throughput (HoL/resequencing coupling) and the slow path's marginal
+~3.2 Mbit/s is not economically aggregatable for bulk under this loss/skew. This was the
+last structural scheduling lever; the recommendation is to consolidate the pacing/
+scheduling line with the full evidence chain (§16.10 DAPS → §16.11–16.13 pacers →
+§16.14 depth), reproducible via the same-binary `RWM_DAPS_DEPTH=0` / `RWM_RATE_SAMPLE=0`.
 
 ---
 

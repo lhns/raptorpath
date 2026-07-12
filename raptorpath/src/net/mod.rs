@@ -3403,6 +3403,26 @@ async fn run_window_sender(
         && std::env::var("RWM_RATE_SAMPLE")
             .ok()
             .map_or(true, |v| v != "0" && !v.is_empty());
+    // feat/daps-readahead-depth: bound each non-fastest path's DAPS read-ahead
+    // DEPTH to its skew-depth `skew_j·BtlBw_j` (queue delay ≤ skew ⇒ the slow
+    // segment arrives in-order-aligned, never later than the fast path would
+    // deliver that region — the ECF/BLEST completion guard done on DEPTH).  Once
+    // path j holds that budget of read-ahead, fresh SOURCE steers to the fast
+    // path and REPAIR spills/holds off j (`daps_depth_over_budget`).  This is the
+    // structural residual the three prior pacers (§16.11-13) converged on: NOT
+    // the source rate anchor (§16.13 fixed that, ×158→×1) but the deep read-ahead
+    // over-commit that survives a correct anchor + BDP cap and bloats the slow
+    // path to ~3-4 s.  Crucially a DEPTH limiter, NOT a rate throttle — within the
+    // budget the path still emits at BtlBw (pace bucket unchanged), so the link
+    // stays FULL (escapes §16.13's rate-throttle politeness-idle, C7 20.96→16.97).
+    // Requires the correct anchor (rate_sample) so skew·BtlBw_j is right-sized.
+    // ON by default under DAPS+rate-sample; RWM_DAPS_DEPTH=0 reproduces the
+    // current unbounded read-ahead (the same-binary A/B baseline).  Shipped
+    // non-DAPS default byte-identical (gated on rate_sample ⇒ generation && DAPS).
+    let daps_depth_on: bool = rate_sample
+        && std::env::var("RWM_DAPS_DEPTH")
+            .ok()
+            .map_or(true, |v| v != "0" && !v.is_empty());
     // App-limited (BBR): the source pipeline was starved (idle gap) rather than
     // cwnd/pace-limited when a symbol was sent — such a sample underestimates
     // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
@@ -3980,8 +4000,9 @@ async fn run_window_sender(
                     // never over-committed (the bufferbloat fix).
                     let lead = encoder.window_size() as f64;
                     let mut sched = scheduler.lock();
-                    let mut chosen =
-                        sched.place_source_daps_capped(lead, daps_bdp_gain).unwrap_or(0);
+                    let mut chosen = sched
+                        .place_source_daps_capped_depth(lead, daps_bdp_gain, daps_depth_on)
+                        .unwrap_or(0);
                     // BBR per-path pacing: if the picked path's BtlBw pace bucket
                     // is dry, spill to the fast (min-RTprop) path so no burst above
                     // the slow path's drain rate ever hits the wire.  Warm-up
@@ -4444,7 +4465,20 @@ async fn run_window_sender(
     // byte-identical.  `$sched` is an already-held scheduler lock guard.
     macro_rules! paced_repair_path {
         ($sched:expr, $cand:expr) => {{
-            let cand = $cand;
+            let mut cand = $cand;
+            // feat/daps-readahead-depth: repair is per-path read-ahead too.  If the
+            // chosen non-fastest path has already filled its skew-depth budget,
+            // redirect the repair to the fast path BEFORE pacing — bounding ALL
+            // per-path look-ahead to one skew, not just source.  A DEPTH steer, not
+            // a rate change; the pace gate below still meters the (possibly
+            // redirected) path at BtlBw.  When the fast path is itself dry the
+            // pace gate HOLDs (rateless repair is free to retry).
+            if daps_depth_on {
+                let fast = $sched.fastest_active_path().unwrap_or(0);
+                if cand != fast && $sched.daps_depth_over_budget(cand) {
+                    cand = fast;
+                }
+            }
             if pace_all_on {
                 let fast = $sched.fastest_active_path().unwrap_or(0);
                 paced_repair_decision(&mut daps_pace_tok, cand, fast)
@@ -4739,6 +4773,13 @@ async fn run_window_sender(
                     let cap_gain = if daps_bdp_gain > 0.0 { daps_bdp_gain } else { infl_bdp_gain };
                     let mut pp = String::new();
                     let ids = sched.active_paths();
+                    // feat/daps-readahead-depth: snapshot each path's skew-depth
+                    // budget (skew·BtlBw_j) under the immutable borrow, before the
+                    // per-path mutable loop below (borrow-checker).
+                    let dbud: std::collections::HashMap<crate::scheduler::PathId, f64> = ids
+                        .iter()
+                        .map(|id| (*id, sched.daps_depth_budget_syms(*id).unwrap_or(0.0)))
+                        .collect();
                     for id in &ids {
                         if let Some(p) = sched.path_mut(*id) {
                             p.expire_in_flight();
@@ -4762,9 +4803,13 @@ async fn run_window_sender(
                             let sinfl_i = p.src_inflight() as u64;
                             let btlbw_i = p.btlbw_sym_per_s().unwrap_or(0.0);
                             let est_i = if p.anchor_established() { "Y" } else { "n" };
+                            // feat/daps-readahead-depth DIAG: the skew-depth budget
+                            // (skew·BtlBw_j) this path's read-ahead is bounded to,
+                            // to compare the OBSERVED sinfl against Δ×BtlBw at L1.
+                            let dbud_i = dbud.get(id).copied().unwrap_or(0.0);
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} est={} rtt={:.0}/rtp{:.0}ms",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, est_i, rtt_i, rtprop_i
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/rtp{:.0}ms",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, rtprop_i
                             ));
                         }
                     }
@@ -5273,7 +5318,9 @@ async fn run_window_sender(
             let lead = encoder.window_size() as f64;
             let sched = scheduler.lock();
             let fast = sched.fastest_active_path().unwrap_or(0);
-            let cand = sched.place_source_daps_capped(lead, daps_bdp_gain).unwrap_or(fast);
+            let cand = sched
+                .place_source_daps_capped_depth(lead, daps_bdp_gain, daps_depth_on)
+                .unwrap_or(fast);
             source_pace_admit(&daps_pace_tok, cand, fast)
         } else {
             true

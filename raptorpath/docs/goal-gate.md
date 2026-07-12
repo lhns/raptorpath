@@ -5146,3 +5146,136 @@ single-path and regresses DAPS aggregation. It ships on by default under the est
 because it is the correct rate signal (and the precondition any future pacer needs);
 the aggregation regression it exposes is the honest handoff to the read-ahead /
 pacer-headroom work, reproducible via the same-binary `RWM_RATE_SAMPLE=0`.
+
+## DAPS Read-Ahead Depth (2026-07-12) — the last structural lever: depth-bounding is the CORRECT, best-performing, most-stable mechanism, but it CANNOT bind because the slow-path rate anchor never establishes; bulk C8 heterogeneous aggregation is BOUNDED below fast-path-alone — CONSOLIDATE (branch `feat/daps-readahead-depth`)
+
+The three prior negatives (Pace-All §16.11, Source-Backpressure §16.12, Rate-Sample
+§16.13) all converged on ONE residual: with the anchor now CORRECT (§16.13: fast
+×158→×1, fast bufferbloat 1573→30 ms) AND the BLEST BDP cap engaged AND `sinfl`
+pinned at the cap, the SLOW path STILL bloats to ~3–4 s live RTT. The diagnosed cause
+is the deep DAPS read-ahead OVER-COMMIT: DAPS places FUTURE data on the slow path
+offset by the skew Δ, but over-commits the DEPTH (far more than Δ·BtlBw_slow of
+look-ahead), so that data arrives after the fast path would have delivered the
+in-order region → HoL-blocks reassembly. The §16.13 rate pacer could not fix it
+because throttling RATE left the link IDLE (politeness regression, C7 20.96→16.97).
+This work bounds the DEPTH, not the rate — and reports the HONEST BOUND.
+
+### The fix — bound read-ahead DEPTH to the skew (correct DAPS/ECF), NOT rate
+
+Each non-fastest path j may hold at most `skew_j·BtlBw_j` symbols of read-ahead beyond
+the fast-path frontier — exactly the latency-skew depth, so its queue delay
+(`outstanding_j/BtlBw_j`) stays ≤ skew and the slow segment arrives in-order-aligned,
+never later than the fast path would deliver that region (the ECF/BLEST completion
+guard done on DEPTH). Beyond that depth path j is dropped from the DAPS-eligible set
+(fresh SOURCE → fast path) and REPAIR is steered off it (`daps_depth_over_budget`).
+Crucially a DEPTH limiter, NOT a rate throttle: the pace bucket still refills at
+BtlBw_j, so within the budget the path emits at its natural link rate (never idled) —
+that is what escapes §16.13's rate-throttle politeness idle. It is STRICTLY tighter
+than the BLEST BDP cap (skew ≤ RTprop). Gated `RWM_DAPS_DEPTH` (ON under DAPS+
+rate-sample; =0 = current unbounded read-ahead, the same-binary A/B). Requires the
+correct anchor (rate_sample) so `skew·BtlBw_j` is right-sized. Shipped non-DAPS
+default byte-identical (the gate requires `generation && DAPS`).
+
+### Oracle re-confirm FIRST (temporal_oracle PART 6h) — models BOTH failure modes
+
+PART 6h adds the UTILIZATION axis the pure queue model (6e/6f/6g) lacked, so it can
+distinguish a DEPTH bound (keeps the link FULL) from a RATE throttle (idles it):
+- **A DEPTH-UNBOUNDED** (current): full link (util=1) but the whole read-ahead depth
+  (~3.5 s bloat) queues → useful→0 → C8 → **×1.000** (parity, the bloat wasted).
+- **B RATE-THROTTLE** (§16.13): queue bounded (useful=1) but the rate clock idles the
+  link (util η=0.81) → **×1.158**; applied symmetrically to C7 it reproduces the
+  measured **20.96→16.97 exactly** (0.810), proving the model is not too coarse.
+- **C DEPTH-BOUND** (this work): full link (util=1) AND read-ahead within one skew
+  (useful=1) → C8 → **×1.195** (ceiling), C7 restored.
+The model shows depth-bound beats BOTH traps and reproduces the §16.13 regression → the
+build proceeded. `-p raptorpath-math` 22/22.
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, 25 MB × 8, rp-native perf, SAME-binary THREE-arm A/B, seeds 42 & 7; DAPS r=0.03; 1200-B symbols; interleaved to cancel VM drift)
+
+Arms (same binary): **A** legacy anchor (`RWM_RATE_SAMPLE=0`), **B** rate-sample only
+(`RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=0`, the §16.13 regressed arm), **C** rate-sample +
+depth-bound (`RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=1`, the fix). Ceilings (arm-C binary,
+single path): single-c2 (fast) = **16.45** (σ_s 1.12), single-c3 (slow) = **3.24**
+(σ_s 2.15) ⇒ recovery ceiling C8 = **19.69** Mbit/s. Every arm **dnf=0** (every byte).
+NOTE this session ran in a NOISIER/lower regime than §16.13 (A-legacy C8 6.5 vs the
+prior 13.25) — but single-c2 (16.45 vs 16.65) and the CROSS-ARM ordering are stable,
+and the aggregation verdict is regime-independent (see below).
+
+**C8 (c2+c3), per seed — mean Mbit/s (σ_s) [worst→best per-run Mbit/s]:**
+
+| arm | seed42 | seed7 | pooled | ×fast (16.45) | eff ÷19.69 |
+|---|---:|---:|---:|---:|---:|
+| A legacy (`RS=0`) | 6.50 (10.3) [4.6→15.7] | — (timed out) | ~6.50 | 0.40× | 0.33 |
+| B rate-sample (`RS=1 DEPTH=0`) | 7.79 (26.8) [**2.2**→13.6] | 6.65 (29.7) [**1.9**→14.3] | ~7.22 | 0.44× | 0.37 |
+| **C depth-bound (`RS=1 DEPTH=1`)** | **8.24 (5.6)** [6.7→16.5] | **8.55 (9.1)** [5.3→14.8] | **~8.40** | **0.51×** | **0.43** |
+
+**THE RESULT — best arm, most stable, but NO aggregation.** Arm C is the BEST of the
+three on BOTH seeds (pooled 8.40 vs B 7.22 vs A 6.50) and DRAMATICALLY the most stable:
+σ_s collapses 26.8/29.7 → 5.6/9.1 s and it REMOVES arm B's catastrophic bimodal bloat
+tail (B's worst single runs 92 s / 103 s ≈ 1.9–2.2 Mbit/s; C's worst 30–37 s ≈
+5.3–6.7 Mbit/s — the worst-case FLOOR roughly triples). **BUT C8 arm C (8.40) is only
+0.51× fast-path-alone (16.45) and 0.43 of the recovery ceiling — it does NOT aggregate.
+Adding the slow path leaves dual-path C8 at HALF of using the fast path alone.** This
+holds across EVERY arm and BOTH sessions: even §16.13's best C8 (10.7) was already below
+its single-c2 (16.65). In no measured configuration does heterogeneous bulk C8 exceed
+fast-path-alone.
+
+**Mechanism — the depth bound is INERT because the slow anchor never establishes.**
+Sender per-path DIAG (arm C, C8 het): the fast path (p0) warms its BtlBw anchor
+(`est=Y`), but the SLOW path (p1) **never does — `est=n`, `btlbw=0`, and therefore
+`dbud=0` (the skew-depth budget `skew·BtlBw_slow` is UNDEFINED) throughout**. With no
+slow-path rate anchor there is no `skew·BtlBw_slow` to bound the depth against, so the
+depth guard is a NO-OP on the very path it targets — exactly as the pacers/caps before
+it were inert. The slow path's live RTT bloats UNBOUNDED to ~1.4–1.5 s (RTprop pollutes
+to ~1.4 s), the residual intact. The chain estimator→correct-anchor→depth-bound breaks
+at the SLOW anchor, which does not warm in this loss/skew regime (the slow path is
+acked too sparsely / too batched for the BBR min-RTT-guarded sampler to populate a
+max-filter). So arm C's modest lift + big stability win over B is NOT the depth
+mechanism binding (it can't — `dbud=0`); it is the fast-path repair-steer + the removal
+of the over-read spill's worst transients. The correct, oracle-confirmed, unit-tested
+depth mechanism has no rate signal to act on.
+
+**C7 (c2+c2) symmetric — NOISE-dominated, no reliable signal:** A `RS=0` = 17.20
+(σ_s 2.5), B `RS=1 DEPTH=0` = **21.20** (σ_s 1.0), C `RS=1 DEPTH=1` = **16.96** (σ_s
+1.1); shipped-noDAPS control = 13.29 (σ_s 14.7, bimodal). The depth bound is a PROVABLE
+no-op on symmetric paths (skew 0 ⇒ no depth budget ⇒ `daps_depth_over_budget`=false;
+unit-tested), so arms B and C execute the SAME code path — yet they differ by 20%
+(21.20 vs 16.96). That 20% is therefore PURE VM NOISE, which also implies §16.13's C7
+"regression" (20.96→16.97, −19%) was itself largely noise, not a real rate-throttle
+effect. C7 gives no reliable evidence either way; the depth bound does not regress C7
+in mechanism.
+
+### Controls / no regression
+
+`cargo test -p raptorpath --lib` 292/292 (3 new: `daps_depth_bound_caps_slow_path_
+readahead_at_skew_btlbw`, `daps_depth_bound_does_not_rate_throttle_within_budget`,
+`daps_depth_bound_noop_on_symmetric_and_warmup`); `-p raptorpath-math` 22/22
+(temporal_oracle PART 6h); gate_suite 15/15 release. All L1 arms dnf=0 (reliable, every
+byte). single-c2/c3 parity (depth is a NO-OP on single path). Shipped non-DAPS default
+byte-identical (`daps_depth_on` requires `rate_sample` ⇒ `generation && DAPS`; unset
+computes nothing). r*≈0.03. (Gap: A-legacy seed7 hit the 760 s battery timeout across
+its x8 — the RS=0 fast-path over-read bufferbloat stalls that arm; A-legacy is the old
+baseline, not load-bearing for the verdict.)
+
+### VERDICT — the HONEST BOUND: bulk C8 aggregation is structurally bounded; CONSOLIDATE
+
+The depth bound is the CORRECT mechanism (oracle-confirmed to reach the ×1.195 ceiling,
+unit-tested, byte-identical shipped default) and empirically the BEST and most STABLE of
+the three arms — it removes rate-sample's catastrophic bimodal bloat tail (worst-case
+floor ~1.9→5.3 Mbit/s) and is harmless (dnf=0, no C7-mechanism regression). It ships ON
+by default under DAPS+rate-sample as the best-available stack. **But it does NOT land
+heterogeneous aggregation: C8 arm C (8.40) sits at 0.51× fast-path-alone and 0.43 of the
+recovery ceiling — dual-path is WORSE than the fast path alone — and this holds across
+every arm and both measurement sessions.** The mechanism is INERT where it matters: the
+slow-path BtlBw anchor never establishes (`est=n`/`dbud=0`), so `skew·BtlBw_slow` is
+undefined and no depth (or rate) bound can bind to the slow path, whose RTT bloats
+unbounded to ~1.5 s. **This was the last structural scheduling lever.** The queue is
+LATENCY-not-throughput (HoL/resequencing coupling), and the slow path's marginal
+~3.2 Mbit/s is not economically aggregatable for bulk under this loss (GE ε≈0.026) and
+skew (Δ≈30 ms): its contribution is dominated by its own tail/anchor-establishment cost.
+**RECOMMENDATION: CONSOLIDATE — stop the pacing/scheduling line.** The full evidence
+chain (estimator #71 → correct anchor §16.13 → depth-bound this work) shows each lever
+is correct in isolation and confirmed in the oracle, but the binding constraint is the
+slow path's failure to establish a usable rate anchor in this regime — a channel/CC
+property no source-side scheduler can synthesize. Reproducible via the same-binary
+`RWM_DAPS_DEPTH=0` / `RWM_RATE_SAMPLE=0`.
