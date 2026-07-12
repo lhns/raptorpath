@@ -2395,3 +2395,133 @@ fn daps_queue_mgmt_lifts_c8_to_ceiling() {
     println!("  slow outstanding at its BDP (BLEST) + pacing at BtlBw (BBR) collapses the");
     println!("  {q_dump:.0}ms queue to ~0 and lifts C8 from x{f_dump:.3} (parity) to x{f_cap:.3} (ceiling).");
 }
+
+// PART 6f — FAST-PATH SOURCE BURST + the SLOW-PATH COUPLING (the pace-all
+//   residual).  PART 6e paced the SLOW path and ABSTRACTED the fast path as the
+//   unbloated min-RTprop reference (the §16.11 caveat) — so it modelled the
+//   repair-pacing win but not the LAST standing-queue residual L1 measured
+//   (C8 = 0.56x, not the ceiling).  That residual is the SOURCE: pace-all held
+//   the REPAIR when both per-path buckets were dry, but the SOURCE placement
+//   gate still SPILLED to the fast path unconditionally and drove its BtlBw
+//   bucket NEGATIVE — an unmetered burst.  Two consequences this part models:
+//     (1) FAST-PATH QUEUE.  Source admitted faster than BtlBw_fast makes the
+//         fast path a FIFO server with outstanding >> BDP_fast → a standing
+//         queue q_f (live RTT = RTprop_fast + q_f, the measured ~100 ms).
+//     (2) COUPLING TO THE SLOW QUEUE.  Repair shares the SAME per-path buckets;
+//         a fast bucket driven negative by source reports "dry", so the repair
+//         gate spills repair onto the SLOW path — re-creating PART 6e's DUMP
+//         regime on the slow path (outstanding = its share of the deep read-
+//         ahead), UNDOING 6e's pacing.  This is why the slow queue was only
+//         HALVED, not collapsed.
+//   THE FIX (defer-source / backpressure): the source is payload, so when both
+//   buckets are dry it DEFERS (pauses the TUN read) instead of spilling.  Then
+//   total per-path emission (source + repair) ≤ BtlBw_i on BOTH paths:
+//     * fast outstanding → one BDP  ⇒ q_f → 0, live RTT → the RTprop base;
+//     * the fast bucket stays ≥ 0    ⇒ repair is NOT forced onto the slow path
+//       ⇒ slow outstanding → its BDP ⇒ q_s → 0 (PART 6e's PACE regime restored).
+//   Confirm the model reaches the resequencing optimum ×1.19 with BOTH paths
+//   paced, and REPORT any residual left after both are paced (there is none in
+//   the queue model — the structural floor IS the ceiling; the remaining
+//   measured gap is recovery-tail / rate-estimator warm-up, not queue).
+//
+//   HONESTY on the fast-path term.  A PURE standing queue on the fast path is a
+//   LATENCY cost (RTT), not a steady-state throughput cost — the link still
+//   drains N_fast symbols at BtlBw_fast regardless of buffer occupancy.  So the
+//   fast burst degrades C8 THROUGH the coupling (repair displaced to the slow
+//   path, whose future-offset data then arrives past the DAPS slack and is
+//   wasted — 6e's `useful()` mechanism), which the model scores, PLUS drops /
+//   RTT-driven CC instability the L1 pays and this queue model omits (so the
+//   model's burst floor is PARITY ~1.0, above the measured 0.56 — the DIRECTION
+//   is the point, exactly as 6e notes for its own DUMP row).
+// -------------------------------------------------------------------------
+#[test]
+fn source_backpressure_collapses_fast_queue_and_slow_coupling() {
+    let f = c8_fast();
+    let s = c8_slow();
+    let rate_f = f.rate; // sym/ms = BtlBw_fast
+    let rate_s = s.rate; // sym/ms = BtlBw_slow
+    let rtprop_f = 2.0 * f.owd as f64; // 10 ms
+    let rtprop_s = 2.0 * s.owd as f64; // 40 ms
+    let skew = rtprop_s - rtprop_f; // 30 ms — the DAPS pre-fetch slack
+    let bdp_f = rate_f * rtprop_f; // fast-path BDP (symbols)
+    let bdp_s = rate_s * rtprop_s; // slow-path BDP (symbols)
+    let fast_g = f.goodput();
+    let slow_g = s.goodput();
+    let ceiling = (fast_g + slow_g) / fast_g;
+
+    // Deep DAPS read-ahead backstop (pipeline+6)*G, as in PART 6e.
+    let g = 384.0;
+    let pipeline = 4.0;
+    let w_backstop = (pipeline + 6.0) * g;
+    let share_f = rate_f / (rate_f + rate_s); // fast path's share of the intake
+    let share_s = rate_s / (rate_f + rate_s); // slow path's share
+
+    // Slow-path queue physics (identical to PART 6e).
+    let q_delay_s = |outstanding: f64| ((outstanding - bdp_s).max(0.0)) / rate_s; // ms
+    // Fast-path queue physics (FIFO server at BtlBw_fast).
+    let q_delay_f = |outstanding: f64| ((outstanding - bdp_f).max(0.0)) / rate_f; // ms
+    // Useful fraction of the SLOW path's future-offset goodput: full while its
+    // queue fits the DAPS slack, ramping to 0 as it exceeds it (late arrivals
+    // miss the frontier).  The fast path's own goodput is not wasted by its
+    // queue (latency, not throughput) — so C8 is scored via the SLOW coupling.
+    let useful = |q: f64| (1.0 - (q / skew)).clamp(0.0, 1.0);
+    let factor = |q_s: f64| (fast_g + slow_g * useful(q_s)) / fast_g;
+
+    // ---- BURST (source spills, no backpressure) ------------------------------
+    // (1) Fast path: unpaced source reaches its share of the deep read-ahead.
+    let out_f_burst = w_backstop * share_f;
+    let q_f_burst = q_delay_f(out_f_burst);
+    // (2) Coupling: the fast bucket driven negative reports "dry", so repair
+    //     spills to the slow path — the slow path re-enters PART 6e's DUMP
+    //     (outstanding = its share of the deep read-ahead).
+    let out_s_coupled = w_backstop * share_s;
+    let q_s_coupled = q_delay_s(out_s_coupled);
+    let f_burst = factor(q_s_coupled);
+
+    // ---- DEFER-SOURCE (backpressure) -----------------------------------------
+    // Both paths paced: fast outstanding → one BDP (q_f → 0, RTT → base); the
+    // fast bucket stays ≥ 0, so repair is NOT displaced → slow outstanding →
+    // one BDP (q_s → 0).  PART 6e's PACE regime restored on BOTH paths.
+    let q_f_defer = q_delay_f(bdp_f); // 0
+    let q_s_defer = q_delay_s(bdp_s); // 0
+    let f_defer = factor(q_s_defer);
+
+    println!("\n=== PART 6f: FAST-PATH SOURCE BURST + SLOW-PATH COUPLING (pace-all residual) ===");
+    println!("  BtlBw_fast={rate_f:.2} sym/ms  RTprop_fast={rtprop_f:.0}ms  BDP_fast={bdp_f:.0} syms");
+    println!("  BtlBw_slow={rate_s:.2} sym/ms  RTprop_slow={rtprop_s:.0}ms  BDP_slow={bdp_s:.0} syms  skew={skew:.0}ms  ceiling x{ceiling:.3}");
+    println!("  deep read-ahead W={w_backstop:.0}; fast share={share_f:.3}, slow share={share_s:.3}\n");
+    println!("  {:>16} | {:>10} {:>11} | {:>10} {:>11} | {:>8}", "regime", "q_fast(ms)", "fastRTT(ms)", "q_slow(ms)", "slowRTT(ms)", "factor");
+    println!("  {:>16} | {:>10.0} {:>11.0} | {:>10.0} {:>11.0} | {:>7.3}x", "BURST (spill)", q_f_burst, rtprop_f + q_f_burst, q_s_coupled, rtprop_s + q_s_coupled, f_burst);
+    println!("  {:>16} | {:>10.0} {:>11.0} | {:>10.0} {:>11.0} | {:>7.3}x", "DEFER (backpr.)", q_f_defer, rtprop_f + q_f_defer, q_s_defer, rtprop_s + q_s_defer, f_defer);
+
+    // (a) BURST bufferbloats the FAST path far past the propagation base.
+    assert!(q_f_burst > skew, "source burst must bufferbloat the fast path past the slack: q_f={q_f_burst:.0}ms slack={skew:.0}ms");
+    // (b) COUPLING re-opens the slow queue past the slack (repair displaced) —
+    //     so C8 falls back toward parity (the pace-all 0.56x residual; the model
+    //     floors at parity as it omits the drops/instability L1 also pays).
+    assert!(q_s_coupled > skew, "the coupling must re-open the slow queue past the slack: q_s={q_s_coupled:.0}ms");
+    assert!(f_burst < ceiling - 0.10, "burst must cap well below the ceiling: x{f_burst:.3} vs x{ceiling:.3}");
+    // (c) DEFER-SOURCE collapses the FAST queue to the propagation base.
+    assert!(q_f_defer <= 1.0, "defer-source must collapse the fast queue: q_f={q_f_defer:.1}ms");
+    assert!((rtprop_f + q_f_defer - rtprop_f).abs() < 1.0, "fast live RTT must return to the RTprop base");
+    // (d) DEFER-SOURCE removes the coupling → the slow queue collapses too.
+    assert!(q_s_defer <= skew, "defer-source must keep the slow queue within the slack: q_s={q_s_defer:.0}ms");
+    // (e) With BOTH paths paced the model reaches the resequencing optimum ×1.19.
+    assert!(f_defer > ceiling - 0.02, "both paths paced must reach the C8 ceiling: x{f_defer:.3} vs x{ceiling:.3}");
+    // (f) The lift is material and is QUEUE, not recovery (nothing about
+    //     recovery changed between the two regimes).
+    assert!(f_defer - f_burst > 0.15, "defer-source must materially lift C8: burst x{f_burst:.3} -> defer x{f_defer:.3}");
+
+    // (g) STRUCTURAL FLOOR CHECK.  After BOTH paths are paced, is there a
+    //     residual queue term left in the model?  No — q_f and q_s are both ~0
+    //     and the factor equals the ceiling.  So the queue model's structural
+    //     floor IS the ceiling: any residual the L1 still measures after
+    //     defer-source is NOT a standing queue (it is recovery-tail straggler
+    //     latency / per-path rate-estimator warm-up), which this model omits.
+    let residual = ceiling - f_defer;
+    assert!(residual.abs() < 0.02, "no queue residual should remain after both paths paced: {residual:.3}");
+    println!("\n  VERDICT: the LAST standing-queue residual is the SOURCE.  Deferring it (backpressure,");
+    println!("  not spill) collapses the fast queue {q_f_burst:.0}->{q_f_defer:.0}ms (RTT -> base) AND removes the");
+    println!("  repair->slow coupling ({q_s_coupled:.0}->{q_s_defer:.0}ms), lifting C8 x{f_burst:.3} (parity) -> x{f_defer:.3} (ceiling).");
+    println!("  No queue residual remains after both paths are paced: the structural floor IS the ceiling.");
+}

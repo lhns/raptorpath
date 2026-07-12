@@ -473,6 +473,41 @@ fn paced_repair_decision(
     }
     Some(p)
 }
+
+/// Per-path pace-gate ADMISSION peek for SOURCE (feat/source-backpressure).
+/// SOURCE is payload — it cannot be dropped like a rateless repair symbol (a
+/// dropped repair costs nothing, retried on refill), so the repair HOLD of
+/// `paced_repair_decision` becomes DEFER (backpressure) here: when neither the
+/// DAPS-chosen candidate path NOR the fast (spill) path has a funded per-path
+/// BtlBw bucket, the caller must NOT read the next source from the TUN — it
+/// lets the app / QUIC send-buffer backpressure — rather than spilling onto the
+/// fast path and driving its bucket NEGATIVE (an unmetered burst that becomes
+/// the standing fast-path queue).  Returns whether a source symbol can be
+/// emitted on SOME path without overdrawing any bucket:
+///   * candidate funded (bucket ≥ 1) → admit (it will emit there);
+///   * candidate dry but the fast path funded → admit (it spills to fast);
+///   * BOTH dry → DEFER (do not admit; the buckets refill at BtlBw_i and the
+///     next poll re-checks).  This is the SOURCE analogue of the repair HOLD,
+///     making TOTAL per-path emission (source + repair) ≤ BtlBw_i on EVERY path.
+/// A path with no warmed bucket (anchor not established) is transparent — it
+/// admits (the source pacer decrements nothing there, mirroring the emit path).
+/// Pure so the "source deferred, not spilled, when the bucket is dry" invariant
+/// is unit-tested without driving the async sender loop.  Read-only (a peek):
+/// the actual token is consumed at emission by the source-placement gate.
+fn source_pace_admit(
+    tok: &std::collections::HashMap<crate::scheduler::PathId, f64>,
+    cand: crate::scheduler::PathId,
+    fast: crate::scheduler::PathId,
+) -> bool {
+    // Candidate funded (or unwarmed → transparent)?  Emit on the candidate.
+    if tok.get(&cand).map_or(true, |&t| t >= 1.0) {
+        return true;
+    }
+    // Candidate dry: source spills to the fast path — admit only if the fast
+    // bucket is funded (or unwarmed).  Both dry → DEFER (backpressure).
+    tok.get(&fast).map_or(true, |&t| t >= 1.0)
+}
+
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
 /// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
@@ -3324,6 +3359,31 @@ async fn run_window_sender(
     // pacer (the same-binary A/B baseline).  Shipped non-DAPS default untouched.
     let pace_all_on: bool =
         daps_pace_on && std::env::var("RWM_PACE_ALL").ok().map_or(true, |v| v != "0");
+    // feat/source-backpressure: bound the SOURCE emission by the per-path BtlBw
+    // bucket too.  Pace-all held the REPAIR when both buckets were dry, but the
+    // SOURCE placement gate still SPILLED to the fast path unconditionally and
+    // decremented its bucket NEGATIVE — an unmetered burst that became the
+    // residual ~100 ms fast-path standing queue (and, via the shared buckets,
+    // forced repair onto the slow path, re-opening the slow queue).  Source is
+    // payload (cannot be dropped), so the discipline is DEFER not discard: when
+    // neither the DAPS candidate nor the fast path has a funded bucket, PAUSE
+    // the TUN read (the app / QUIC send-buffer backpressures) instead of
+    // bursting.  This makes TOTAL per-path emission (source + repair) ≤ BtlBw_i
+    // on EVERY path — the source analogue of the repair HOLD.
+    //
+    // DEFAULT OFF (opt-in via RWM_SRC_BP=1).  L1 REFUTED the hypothesis: unlike
+    // the rateless repair HOLD (a dropped repair is free, retried on refill),
+    // DEFERRING the source stalls the generation-fill PIPELINE — the source read
+    // is the pipeline clock, so pausing it starves coded emission too, producing
+    // long paused=100% stalls.  Measured C8 REGRESSED ~53% on BOTH seeds
+    // (seed42 14.35→6.60, seed7 15.63→7.39 Mbit/s) and destabilized (σ_s
+    // 1.1/1.3→9.5/4.1 s).  The pace-all spill baseline is benign (the fast path
+    // drains the spilled source) and already stable at ~0.72–0.79 of the
+    // recovery ceiling.  Kept as a gated, unit-tested, oracle-modelled knob for
+    // the scientific record; shipped DEFAULT (RWM_SRC_BP unset/0) is the spill
+    // baseline — byte-identical to pace-all (the gate computes nothing when off).
+    let src_bp_on: bool =
+        daps_pace_on && std::env::var("RWM_SRC_BP").ok().map_or(false, |v| v != "0" && v != "");
     // feat/per-path-estimator: drive per-path delivered-rate attribution.
     // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
     // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
@@ -5167,6 +5227,23 @@ async fn run_window_sender(
                 }
             }
         }
+        // feat/source-backpressure: peek whether the NEXT source symbol can be
+        // admitted without overdrawing any per-path BtlBw bucket.  The source
+        // would be placed on the DAPS candidate (or spill to the fast path); if
+        // BOTH buckets are dry we DEFER the TUN read (backpressure) rather than
+        // spill the fast bucket negative.  Computed here (once per loop) so it
+        // gates the `read_packet` select arm below.  Transparent (admit) until
+        // the per-path anchors warm, and a NO-OP when src_bp is off.
+        let src_pace_ok: bool = if src_bp_on && !tx_paused {
+            let lead = encoder.window_size() as f64;
+            let sched = scheduler.lock();
+            let fast = sched.fastest_active_path().unwrap_or(0);
+            let cand = sched.place_source_daps_capped(lead, daps_bdp_gain).unwrap_or(fast);
+            source_pace_admit(&daps_pace_tok, cand, fast)
+        } else {
+            true
+        };
+
         // P10b: gap reports must wake this loop even when the TUN is idle.
         // The inner TCP stalls exactly when a hole blocks delivery — no new
         // TUN packets — and the old structure only drained the NACK channel
@@ -5212,7 +5289,17 @@ async fn run_window_sender(
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep(Duration::from_millis(1)),
                 if cc_pace && !tx_paused && src_tokens < 1.0 => None,
-            p = tun.read_packet(), if !tx_paused && (!cc_pace || src_tokens >= 1.0) => Some(p),
+            // feat/source-backpressure wake: with the TUN read deferred because
+            // every per-path bucket is dry, wake at 1 ms to let the buckets
+            // refill at BtlBw_i, then re-poll (the source-side analogue of the
+            // cc_pace refill wake above — without it the loop could block in
+            // read_packet with the source pace gate closed).
+            _ = tokio::time::sleep(Duration::from_millis(1)),
+                if src_bp_on && !tx_paused && !src_pace_ok
+                    && (!cc_pace || src_tokens >= 1.0) => None,
+            p = tun.read_packet(),
+                if !tx_paused && (!cc_pace || src_tokens >= 1.0)
+                    && (!src_bp_on || src_pace_ok) => Some(p),
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
             // run the paced coded-emission block even when no TUN packet is ready
             // (the tail — all sources read but the last generations still need
@@ -7520,5 +7607,132 @@ mod tests {
         assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(slow));
         assert!(!tok.contains_key(&slow), "un-warmed path stays un-metered");
         assert!((tok[&fast] - 3.0).abs() < 1e-9, "fast untouched when candidate transparent");
+    }
+
+    /// feat/source-backpressure: the SOURCE admission peek DEFERS (does not
+    /// admit) when neither the DAPS candidate nor the fast spill path has a
+    /// funded bucket — the source analogue of the repair HOLD, but as
+    /// backpressure (pause the TUN read) not discard, since source is payload.
+    #[test]
+    fn source_backpressure_defers_when_both_paths_dry() {
+        use std::collections::HashMap;
+        let (fast, slow) = (0u32, 1u32);
+
+        // Both dry ⇒ DEFER (do not admit): the source would otherwise spill to
+        // the fast path and drive its bucket negative (the residual burst).
+        let tok: HashMap<u32, f64> = HashMap::from([(fast, 0.5), (slow, 0.5)]);
+        assert!(!source_pace_admit(&tok, slow, fast), "both dry ⇒ defer source");
+        assert!(!source_pace_admit(&tok, fast, fast), "both dry (cand=fast) ⇒ defer");
+
+        // Candidate funded ⇒ admit (it will emit on the candidate).
+        let tok: HashMap<u32, f64> = HashMap::from([(fast, 0.0), (slow, 3.0)]);
+        assert!(source_pace_admit(&tok, slow, fast), "funded candidate ⇒ admit");
+
+        // Candidate dry but fast funded ⇒ admit (source spills to the fast path,
+        // landing on a bucket that IS ≥ 1 — so no negative excursion).
+        let tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0), (slow, 0.0)]);
+        assert!(source_pace_admit(&tok, slow, fast), "dry candidate + funded fast ⇒ admit");
+
+        // Un-warmed candidate (no bucket) ⇒ transparent: admit.
+        let tok: HashMap<u32, f64> = HashMap::from([(fast, 0.0)]);
+        assert!(source_pace_admit(&tok, slow, fast), "un-warmed candidate ⇒ transparent admit");
+    }
+
+    /// feat/source-backpressure: with source DEFERRED (not spilled) when both
+    /// buckets are dry, TOTAL per-path emission (source + repair) never drives a
+    /// bucket negative and stays ≤ BtlBw_i·ticks + one burst on EVERY path —
+    /// the fast-path bucket in particular is never bursted negative by source.
+    /// Contrast the pace-all baseline (source spills unconditionally), which
+    /// DOES drive the fast bucket negative under the same offer.
+    #[test]
+    fn source_backpressure_bounds_total_per_path_emission_no_negative_bucket() {
+        use std::collections::HashMap;
+        let (fast, slow) = (0u32, 1u32);
+        let btlbw = |id: u32| if id == fast { 20.0f64 } else { 2.0f64 };
+        let burst = 8.0;
+        let ticks = 1000u64;
+
+        // Offer MORE source than the aggregate link can carry (both paths), so
+        // the gate is forced to defer — the stress case for the fast bucket.
+        let src_offer_per_tick = 30u32; // > 20+2 aggregate BtlBw
+
+        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 0.0), (slow, 0.0)]);
+        let mut min_bucket = f64::INFINITY;
+        let mut src_emitted: HashMap<u32, u64> = HashMap::new();
+        let mut rep_emitted: HashMap<u32, u64> = HashMap::new();
+        let mut deferred = 0u64;
+
+        for _ in 0..ticks {
+            for &id in &[fast, slow] {
+                let t = tok.get_mut(&id).unwrap();
+                *t = (*t + btlbw(id)).min(burst);
+            }
+            // SOURCE with backpressure: DAPS offers each source on the slow path
+            // (future-offset); admit only if a bucket is funded, else DEFER.
+            for _ in 0..src_offer_per_tick {
+                let cand = slow;
+                if !source_pace_admit(&tok, cand, fast) {
+                    deferred += 1;
+                    continue; // backpressure — the TUN read pauses
+                }
+                // Admitted: emit on the candidate if funded, else spill to fast
+                // (guaranteed funded by the admission peek) — the production
+                // source-placement gate, now landing only on a funded bucket.
+                let pick = if tok.get(&cand).map_or(true, |&t| t >= 1.0) { cand } else { fast };
+                *tok.get_mut(&pick).unwrap() -= 1.0;
+                min_bucket = min_bucket.min(tok[&pick]);
+                *src_emitted.entry(pick).or_insert(0) += 1;
+            }
+            // REPAIR flood on the leftover capacity (held when dry).
+            for cand in [slow, fast, slow, fast] {
+                if let Some(p) = paced_repair_decision(&mut tok, cand, fast) {
+                    min_bucket = min_bucket.min(tok[&p]);
+                    *rep_emitted.entry(p).or_insert(0) += 1;
+                }
+            }
+        }
+
+        // (a) No bucket ever went negative — source is deferred, never bursted.
+        assert!(
+            min_bucket >= -1e-9,
+            "source backpressure must never drive a bucket negative (min {min_bucket})"
+        );
+        // (b) The gate actually engaged (the offer exceeded capacity).
+        assert!(deferred > 0, "the over-offer must have forced deferrals");
+        // (c) TOTAL per-path emission ≤ BtlBw_i·ticks + burst on EVERY path.
+        for &id in &[fast, slow] {
+            let total = src_emitted.get(&id).copied().unwrap_or(0)
+                + rep_emitted.get(&id).copied().unwrap_or(0);
+            let ceiling = (btlbw(id) * ticks as f64 + burst).ceil() as u64;
+            assert!(
+                total <= ceiling,
+                "path {id}: total emission {total} must be ≤ BtlBw_i·ticks+burst {ceiling}"
+            );
+        }
+
+        // Contrast: the pace-all BASELINE spills source unconditionally and DOES
+        // drive the fast bucket negative under the same over-offer (the residual
+        // this work closes).
+        let mut tok2: HashMap<u32, f64> = HashMap::from([(fast, 0.0), (slow, 0.0)]);
+        let mut min_bucket_baseline = f64::INFINITY;
+        for _ in 0..ticks {
+            for &id in &[fast, slow] {
+                let t = tok2.get_mut(&id).unwrap();
+                *t = (*t + btlbw(id)).min(burst);
+            }
+            for _ in 0..src_offer_per_tick {
+                let cand = slow;
+                // Baseline source gate: spill to fast when the candidate is dry,
+                // then decrement unconditionally (may go negative).
+                let pick = if tok2.get(&cand).map_or(false, |&t| t < 1.0) { fast } else { cand };
+                *tok2.get_mut(&pick).unwrap() -= 1.0;
+                min_bucket_baseline = min_bucket_baseline.min(tok2[&pick]);
+            }
+        }
+        assert!(
+            min_bucket_baseline < -1.0,
+            "baseline (spill) MUST drive a bucket negative (min {min_bucket_baseline}) — \
+             the residual that backpressure closes"
+        );
     }
 }

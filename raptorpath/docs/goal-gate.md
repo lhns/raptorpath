@@ -4922,3 +4922,99 @@ heterogeneous aggregation is scheduling-bound (DAPS) AND rate-estimation-bound
 (estimator, closed) AND repair-pacing-bound (this work, closed) AND still
 source-spill/fast-path queue-bound — improved and stabilized materially on every
 axis measured, not yet at the goodput ceiling.
+
+## Source Backpressure (2026-07-12) — REFUTED at L1: deferring the SOURCE to the per-path bucket REGRESSES C8 ~53% on BOTH seeds; the spill baseline is benign; kept as a default-OFF, oracle-modelled, unit-tested knob (branch `feat/source-backpressure`)
+
+Pace-all (above) held the rateless REPAIR when both per-path buckets were dry but
+the SOURCE placement gate still SPILLED to the fast path unconditionally and
+decremented its BtlBw bucket NEGATIVE (an unmetered burst). Hypothesis: source is
+payload (cannot be dropped), so the discipline should be DEFER not discard — when
+neither the DAPS candidate NOR the fast (spill) path has a funded bucket, PAUSE the
+TUN read (the app / QUIC send-buffer backpressures) instead of bursting, making
+TOTAL per-path emission (source + repair) ≤ BtlBw_i on EVERY path (the source
+analogue of the repair HOLD). **L1 REFUTED it.**
+
+### The fix (as implemented, now default OFF)
+
+One pure gate `source_pace_admit(tok, cand, fast)` (net/mod.rs ~476) peeks whether a
+source symbol can be emitted on SOME path without overdrawing any bucket (candidate
+funded → admit; candidate dry but fast funded → admit-spill; BOTH dry → DEFER).
+Wired into the sender's `read_packet` select arm (`src_pace_ok`) with a 1 ms refill
+wake, gated `src_bp_on = daps_pace_on && RWM_SRC_BP∈{1}`. Unit-tested
+(`source_backpressure_defers_when_both_paths_dry`,
+`source_backpressure_bounds_total_per_path_emission_no_negative_bucket` — the latter
+proves no bucket goes negative under over-offer AND that the pace-all spill baseline
+DOES go negative, the residual being targeted).
+
+### Oracle re-confirm (temporal_oracle PART 6f — the fast-path model 6e abstracted)
+
+PART 6e paced only the SLOW path (fast = unbloated min-RTprop reference). PART 6f
+(NEW) models the fast path under source burst: unpaced source → fast outstanding =
+share·(deep read-ahead) → q_f = 374 ms (>> the 30 ms DAPS slack); the fast bucket
+driven negative reports "dry" so repair spills to the slow path, re-creating 6e's
+DUMP (q_s = 344 ms) → C8 falls to **parity x1.000**. Deferring source → fast
+outstanding → one BDP (q_f → 0, RTT → base) AND the coupling removed (q_s → 0) →
+C8 → the resequencing optimum **x1.195**, no queue residual after both paced (the
+model's structural floor IS the ceiling). `-p raptorpath-math` 20/20 (6e unchanged,
+6f added). **The model predicts defer-source lifts C8; L1 measured the OPPOSITE.**
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, 25 MB × 8, rp-native, SAME-binary A/B via `RWM_SRC_BP`, seeds 42 AND 7)
+
+Ceilings (this binary): single-c2 (fast) median **15.9** (mean 9.8 bimodal — 1 stall
+outlier, prior 16.71), single-c3 (slow) **3.26** Mbit/s ⇒ recovery ceiling C8 ≈
+**19.8**; raw-link goodput ceiling ≈ 100(1−ε)+20(1−ε) ≈ **116** (not
+protocol-achievable). Every arm **dnf=0** (reliable, every byte).
+
+**C8 (c2+c3), same binary, `RWM_SRC_BP` toggle, per seed:**
+
+| arm | seed42 Mbit/s (σ_s) | seed7 Mbit/s (σ_s) | pooled | eff ÷19.8 |
+|---|---:|---:|---:|---:|
+| **spill baseline (`RWM_SRC_BP=0`, shipped default)** | **14.35 (1.11)** | **15.63 (1.35)** | **~14.99** | **0.76** |
+| + source backpressure (`RWM_SRC_BP=1`) | 6.60 (9.48) | 7.39 (4.13) | ~7.00 | 0.35 |
+
+**THE RESULT (two-seed, same-binary).** Source backpressure REGRESSES C8 on BOTH
+seeds — seed42 14.35→6.60 (**−54%**), seed7 15.63→7.39 (**−53%**), pooled
+~14.99→~7.00 (**−53%**, 0.76→0.35 of the recovery ceiling) — AND destabilizes it
+(σ_s 1.11/1.35 → 9.48/4.13 s, max_s 15/14 → 44/30 s). It is REFUTED. dnf=0 in both
+arms (reliability intact).
+
+**Mechanism (sender per-path DIAG).** (1) Deferring the source TUN read STALLS the
+generation-fill pipeline — the source read is the pipeline CLOCK, so pausing it
+starves coded emission too (long `paused=100% good=0` stretches). Unlike the
+rateless repair HOLD (a dropped repair is free), source is the pipeline input;
+holding it wedges the whole transfer. (2) The gate is also largely INERT: the
+per-path BtlBw ANCHOR is OVER-READ under fast-path bufferbloat (DIAG: fast bdp
+14509 sym / RTprop 12 ms ⇒ btlbw ≈ 1.2M sym/s vs the true ~8333 sym/s — ~145×), so
+the pace bucket (burst-cap 64, refill ≫ drain) almost never goes dry ⇒ the
+backpressure rarely engages where the queue actually is, and where it DOES engage it
+only stalls. The fast-path live RTT did NOT collapse under backpressure (~1000–1800
+ms in both arms) — confirming the residual is the anchor over-read, NOT the source
+spill.
+
+**The spill baseline is BENIGN.** Spilling source to the fast path when the slow
+bucket is dry is fine: the fast LINK (100 Mbit netem) drains it, so the fast queue
+is a LATENCY cost, not a throughput cost, for a bulk transfer. The baseline sits at
+**0.76 of the recovery ceiling**, stable (σ_s ~1.2 s), on both seeds — materially
+BETTER than the pace-all report's 0.56 (the binary/estimator lineage evolved; the
+full x8 is more favorable). Nothing about the fast-path SPILL needs fixing.
+
+### Controls / no regression
+
+`cargo test -p raptorpath --lib` 287/287 (2 new source-BP tests); `-p
+raptorpath-math` 20/20 (temporal_oracle 6f added, 6e unchanged); gate_suite 15/15
+release. **C7 (c2+c2) shipped default = 21.01** (σ_s 0.93, dnf=0) — matches prior
+21.02, NO regression. Single-c2/c3 parity (the source-BP gate is a NO-OP on single
+path: cand == fast, always admittable). Shipped DEFAULT byte-identical: `src_bp_on`
+requires `RWM_SRC_BP=1`; unset/0 computes nothing (the read-guard clause
+`(!src_bp_on || src_pace_ok)` short-circuits, `src_pace_ok` not evaluated). r*≈0.03.
+
+**VERDICT.** The hypothesis is REFUTED: source is NOT a droppable/holdable emitter —
+it is the generation-fill clock, so per-path backpressuring it stalls the pipeline
+and regresses C8 ~53% on both seeds; and the gate is inert anyway because the
+per-path BtlBw anchor is over-read under bufferbloat so the bucket never binds. The
+pace-all SPILL of source is benign (the fast link drains it) and the shipped default
+already sits at 0.76 of the recovery ceiling, stable on both seeds. The named NEXT
+residual is the **per-path BtlBw anchor over-read under fast-path bufferbloat**
+(ack-aggregation / delivered-rate over-read) — the signal that would let ANY per-path
+pacer (repair OR source) actually bind — NOT the source spill. Feature retained as a
+default-OFF, oracle-modelled, unit-tested knob for the scientific record.

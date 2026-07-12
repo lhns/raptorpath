@@ -84,6 +84,11 @@ TENV=""
 # the SAME per-path BtlBw pacer as source (on by default under DAPS pacing;
 # RWM_PACE_ALL=0 reproduces the source-only pacer — the same-binary A/B baseline).
 [[ -n "${RWM_PACE_ALL:-}" ]] && TENV="$TENV RWM_PACE_ALL=$RWM_PACE_ALL"
+# Source-backpressure (feat/source-backpressure): bound the SOURCE emission by
+# the per-path BtlBw bucket too — DEFER (pause the TUN read) instead of spilling
+# the fast bucket negative (on by default under DAPS pacing; RWM_SRC_BP=0
+# reproduces the pre-backpressure spill — the same-binary A/B baseline).
+[[ -n "${RWM_SRC_BP:-}" ]] && TENV="$TENV RWM_SRC_BP=$RWM_SRC_BP"
 # Per-path estimator standalone (feat/per-path-estimator): establish per-path
 # BtlBw in a PLAIN generation multipath run (no DAPS) for the general-fix check.
 [[ -n "${RWM_PER_PATH_EST:-}" ]] && TENV="$TENV RWM_PER_PATH_EST=$RWM_PER_PATH_EST"

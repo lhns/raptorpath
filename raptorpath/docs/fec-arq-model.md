@@ -7169,6 +7169,44 @@ rate estimation (§16.10) → repair pacing (this section) → the residual sour
 / fast-path queue — each bound realized in turn, C8 lifted and stabilized to 0.56
 of the recovery ceiling, not yet at the goodput ceiling.
 
+### 16.12 Source backpressure: REFUTED — source is the pipeline clock, not a holdable emitter (2026-07-12) — measured
+
+§16.11's residual named the SOURCE spill: pace-all held the rateless repair when both
+per-path buckets were dry, but the source placement gate still spilled to the fast
+path and drove its BtlBw bucket negative (an unmetered burst). The natural symmetry
+argument — source is payload, so DEFER (backpressure the send loop) rather than
+discard, admitting a source symbol only when some per-path bucket is funded — was
+implemented and tested. The temporal oracle was extended to model it: PART 6f adds
+the fast-path FIFO that PART 6e abstracted, and predicts that deferring source
+collapses the fast queue (374 ms → 0) and, by keeping the fast bucket non-negative,
+removes the repair-to-slow coupling (344 ms → 0), lifting C8 to the resequencing
+optimum ×1.195 with no queue residual left in the model.
+
+**L1 refuted the prediction.** Same-binary A/B (`RWM_SRC_BP`, 25 MB × 8, seeds 42 and
+7): source backpressure REGRESSED C8 ~53% on BOTH seeds (seed42 14.35 → 6.60, seed7
+15.63 → 7.39 Mbit/s, pooled ~14.99 → ~7.00, 0.76 → 0.35 of the recovery ceiling) and
+destabilized it (σ_s 1.1/1.3 → 9.5/4.1 s), every arm dnf=0. Two mechanisms, from the
+per-path DIAG: (i) unlike a rateless repair symbol, the source read is the
+generation-FILL clock — deferring it starves coded emission too (long paused-100 %
+stalls), so backpressuring source wedges the whole pipeline; and (ii) the gate is
+largely inert anyway, because the per-path BtlBw ANCHOR is over-read under fast-path
+bufferbloat (measured BtlBw ≈ 1.2 M sym/s vs the true ≈ 8.3 k sym/s, ~145×), so the
+pace bucket almost never goes dry and the backpressure rarely engages where the queue
+is. The fast-path live RTT did not collapse under backpressure — confirming the
+residual is the anchor over-read, not the source spill.
+
+Crucially, the source SPILL is BENIGN: the fast link drains the spilled source, so a
+fast-path queue is a latency cost, not a throughput cost, for a bulk transfer. The
+pace-all default (spill) already sits at 0.76 of the recovery ceiling, stable on both
+seeds — the assumed 0.56 residual was a lineage artefact the fuller x8 does not
+reproduce. The corrected regime map: heterogeneous aggregation is scheduling-bound
+(DAPS), rate-estimation-bound (§16.10, closed), and repair-pacing-bound (§16.11,
+closed); the remaining lift to the ceiling is NOT source spill but the **per-path
+BtlBw anchor over-read under bufferbloat** (ack-aggregation / delivered-rate
+over-read) — the signal any per-path pacer needs to bind. Source backpressure is
+retained only as a default-off, oracle-modelled, unit-tested knob; the shipped
+default is byte-identical to §16.11.
+
 ---
 
 ## Appendix A: Summary of Key Formulas
