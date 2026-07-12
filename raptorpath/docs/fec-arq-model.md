@@ -275,6 +275,33 @@ tail margin in the repair rate formula. See Section 8.4.
 channel: 1+2(1-p-q)/(p+q). Corrects the iid normal approximation for
 burst-correlated losses. See Section 8.3.
 
+**BDP (Bandwidth-Delay Product)** — link capacity × round-trip time:
+BDP = BtlBw × RTT. It is the amount of data that must be in flight
+(unacknowledged) to keep a path fully utilized — the ideal in-flight
+window. A congestion window near BDP fills the pipe with no standing
+queue; above BDP the excess sits in the bottleneck buffer (queuing
+delay, bufferbloat); below BDP the link is underutilized. Section 12's
+Copa-lite anchor sizes cwnd to ≈ 1·BDP. The quantity is foundational to
+congestion control: Jacobson & Karels observed that the largest sensible
+window for a path is the bottleneck bandwidth times the round-trip delay
+[Jacobson1988]. See Section 12.
+
+**DAPS (Delay-Aware Packet Scheduling)** — a multipath transport
+scheduler that assigns each packet to a subflow by its *expected arrival
+time*, deliberately sending out of order (a packet destined to arrive
+later goes earlier, offset by the RTT skew between paths) so that packets
+arrive at the receiver in order despite that skew. This proactively
+minimizes receiver-buffer blocking — the head-of-line (HOL) stall where a
+late packet on a slow path holds up already-arrived fast-path packets in a
+reliable in-order stream [Sarwar2013, Kuhn2014]. It is one of a family of
+blocking-aware MPTCP schedulers: BLEST [Ferlin2016] skips a slow subflow
+when using it would cause HOL blocking; ECF [Lim2017] (Earliest Completion
+First) sends on the subflow that delivers the data soonest under path
+heterogeneity; both contrast with MPTCP's default minRTT scheduler, which
+fills the lowest-RTT subflow's congestion window first. raptorpath sidesteps
+HOL blocking entirely — the FEC decoder needs any k of n symbols, so arrival
+order does not matter (Section 13.1).
+
 ### 1.3 Components
 
 ```
@@ -7806,9 +7833,31 @@ distinction matters far less than this factor-of-W undercount.)
 
 ### Multipath and Scheduling
 
-- **[Ferlin2016]** S. Ferlin et al., "BLEST: Blocking Estimation-based MPTCP
-  Scheduler," IFIP Networking, 2016.
-  Skip slow paths that would stall receiver.
+- **[Sarwar2013]** G. Sarwar, R. Boreli, E. Lochin, A. Mifdaoui, G. Smith,
+  "Mitigating Receiver's Buffer Blocking by Delay Aware Packet Scheduling in
+  Multipath Data Transfer," 3rd Intl. Workshop on Protocols and Applications
+  with Multi-Homing Support (PAMS), IEEE WAINA, Barcelona, 2013.
+  Origin of DAPS: schedule each packet by its expected arrival time so that
+  deliberately out-of-order sends arrive in order across RTT-skewed paths,
+  cutting receiver-buffer (head-of-line) blocking.
+
+- **[Kuhn2014]** N. Kuhn, E. Lochin, A. Mifdaoui, G. Sarwar, O. Mehani,
+  R. Boreli, "DAPS: Intelligent Delay-Aware Packet Scheduling For Multipath
+  Transport," IEEE ICC, 2014.
+  Extends DAPS with an analytical model of maximum receiver-buffer blocking
+  time; ns-2 evaluation vs CMT-SCTP.
+
+- **[Ferlin2016]** S. Ferlin, Ö. Alay, O. Mehani, R. Boreli, "BLEST:
+  Blocking Estimation-based MPTCP Scheduler for Heterogeneous Networks,"
+  IFIP Networking, 2016, pp. 431-439.
+  Estimates whether sending on a slow subflow would cause head-of-line
+  blocking when the fast subflow reopens, and skips it if so.
+
+- **[Lim2017]** Y. Lim, E.M. Nahum, D. Towsley, R.J. Gibbens, "ECF: An MPTCP
+  Path Scheduler to Manage Heterogeneous Paths," ACM CoNEXT, 2017.
+  Earliest Completion First: allocate each packet to the subflow that will
+  complete its delivery soonest, using more than RTT alone; better path
+  utilization than minRTT/BLEST under heterogeneity.
 
 - **[Xia2003]** Y. Xia, D.N.C. Tse, "Analysis on Packet Resequencing for
   Reliable Network Protocols," *IEEE INFOCOM*, San Francisco, 2003,
@@ -7885,6 +7934,14 @@ distinction matters far less than this factor-of-W undercount.)
   Proactive FEC over multipath reduces p99 latency by 60-75% in datacenters.
 
 ### Congestion Control
+
+- **[Jacobson1988]** V. Jacobson, M.J. Karels, "Congestion Avoidance and
+  Control," ACM SIGCOMM, 1988. (ACM SIGCOMM Comput. Commun. Rev. 18(4),
+  pp. 314-329.)
+  Introduced slow-start and congestion avoidance for TCP. Established the
+  bandwidth-delay product — bottleneck bandwidth × round-trip delay — as the
+  largest sensible in-flight window (cwnd ≈ BDP), the foundation of the
+  Section 12 anchor.
 
 - **[Copa2018]** V. Arun, H. Balakrishnan, "Copa: Practical Delay-Based
   Congestion Control for the Internet," NSDI 2018.
