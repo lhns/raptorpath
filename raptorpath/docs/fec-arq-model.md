@@ -7070,6 +7070,31 @@ that long pole and materially lifts C8; the heterogeneous regime is scheduling-
 bound (fixable) AND, at the residual, queue-bound — not recovery-latency-bound as
 previously concluded.
 
+**§16.10 — DAPS queue management (per-path BDP cap + BtlBw pacing).** The
+residual above bloats the slow path DESPITE the FMTCP per-path BDP cap because
+that cap only gates the aggregate TUN-read PAUSE (pause when EVERY path is full),
+not per-path PLACEMENT: the softmax keeps committing the slow path its capacity
+share of the deep DAPS read-ahead past its BDP, and there is no per-path pacing,
+so the read-ahead is dumped faster than BtlBw_slow drains. The two published
+bounds — BLEST (bound each subflow's outstanding to its BDP; Ferlin 2016) and
+BBR-style per-path pacing at BtlBw_i (Cardwell 2016) — are implemented and
+env-gated under DAPS. The temporal_oracle PART 6e queue model confirms that,
+GIVEN a correct per-path BDP, they collapse the standing queue (344 ms → 0) and
+lift C8 from parity (×1.00) to the ceiling (×1.195), with gain 1.0 optimal.
+**L1 (25 MB×5, seed 42), however, shows the fix is rate-signal-limited:** it lifts
+C8 modestly (~10.0 → ~11.5 Mbit/s) and cuts within-run stdev (~5.5 → ~2.9 s) with
+reliability intact (dnf 0), but does NOT bound the slow-path RTT (still bloats to
+~1.8 s). The RWM_DIAG per-path probe shows the per-path Copa BtlBw anchor is only
+intermittently established in generation mode (WindowAcks do not drive
+`record_delivery`; in_flight releases by time-expiry, not per-path ack), so the
+cap/pace have no stable per-path BDP; and the bufferbloat queue lives in the QUIC
+datagram send buffer BELOW the in_flight gauge (which reads 0), so the queue
+never drains within the min-RTT window and RTprop itself pollutes to ~1.8 s. The
+queue bound is the correct mechanism (oracle-confirmed); the TRUE residual is now
+**per-path BtlBw estimation + QUIC-send-buffer visibility in generation mode**,
+not placement queue depth — a per-path delivered-rate estimator (cumulative ack ×
+per-path ownership) is the follow-on.
+
 ---
 
 ## Appendix A: Summary of Key Formulas

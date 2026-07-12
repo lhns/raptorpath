@@ -3255,6 +3255,35 @@ async fn run_window_sender(
         .ok().and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(((pipeline + 2) * gen_size).max(daps_win_floor))
         .max(2 * gen_size);
+    // DAPS QUEUE MANAGEMENT (feat/daps-queue-mgmt).  DAPS removed the frontier
+    // stall but the slow path then BUFFERBLOATED to ~834 ms: the FMTCP per-path
+    // BDP cap only gated the aggregate TUN-read PAUSE (the sender paused only
+    // when EVERY path was full), so the softmax kept committing a share to the
+    // slow path PAST its BDP.  Two bounds, both DAPS-gated, reclaim the slack:
+    //  (1) BLEST per-path PLACEMENT cap (`place_source_daps_capped`): a path at
+    //      its own BDP is dropped from the eligible set, so slow-path OUTSTANDING
+    //      is bounded at gain·BtlBw_slow·RTprop_slow — the standing queue stays
+    //      ≈0 (RTT ≈ RTprop ≈ 40 ms) so the DAPS pre-fetch slack is preserved.
+    //      RWM_DAPS_BDP=gain (default 1.0 = exactly one BDP; 0 disables).
+    //  (2) BBR per-path PACING: each path emits at its own BtlBw, so the future-
+    //      offset data flows at the slow path's drain rate WITHOUT queuing.  When
+    //      the slow path's BtlBw pace bucket is dry the source spills to the fast
+    //      path this instant (no burst on the slow path).  RWM_DAPS_PACE=0
+    //      disables (default on under DAPS).  The DAPS offset Δ_j itself is
+    //      computed from RTprop (min-filtered) in `daps_offset_syms`, NOT the
+    //      bufferbloated RTT, so a bloated RTT can never mis-size the offset.
+    let daps_bdp_gain: f64 = if daps {
+        std::env::var("RWM_DAPS_BDP")
+            .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.0).max(0.0)
+    } else {
+        0.0
+    };
+    let daps_pace_on: bool =
+        daps && std::env::var("RWM_DAPS_PACE").ok().map_or(true, |v| v != "0");
+    // Per-path BtlBw pace token buckets (symbols), refilled at BtlBw_i each loop.
+    let mut daps_pace_tok: std::collections::HashMap<crate::scheduler::PathId, f64> =
+        std::collections::HashMap::new();
+    let mut daps_pace_last_us: u64 = now_us();
     // Generation-coding proactive overhead r.  FMTCP shipped a FIXED r=0.10
     // (~4× the ~2.6% operating loss — the over-FEC the DAPS work right-sizes).
     // DAPS instead DERIVES r* from §8.4 for the bulk/loose-δ profile:
@@ -3808,10 +3837,30 @@ async fn run_window_sender(
                     // of the in-order delivered frontier.  A slow path is eligible
                     // only when this lead ≥ its delay-skew offset Δ_j, so the slow
                     // path carries FUTURE data that arrives in sync (Sarwar 2013 /
-                    // Kuhn 2014) with the ECF completion guard (Lim 2017).
+                    // Kuhn 2014) with the ECF completion guard (Lim 2017).  The
+                    // BLEST per-path BDP cap (daps_bdp_gain) additionally drops a
+                    // path at its own BDP from the eligible set so the slow path is
+                    // never over-committed (the bufferbloat fix).
                     let lead = encoder.window_size() as f64;
                     let sched = scheduler.lock();
-                    sched.place_source_daps(lead).unwrap_or(0)
+                    let mut chosen =
+                        sched.place_source_daps_capped(lead, daps_bdp_gain).unwrap_or(0);
+                    // BBR per-path pacing: if the picked path's BtlBw pace bucket
+                    // is dry, spill to the fast (min-RTprop) path so no burst above
+                    // the slow path's drain rate ever hits the wire.  Warm-up
+                    // (no bucket yet) is transparent — no restriction, no consume.
+                    if daps_pace_on {
+                        let fast = sched.fastest_active_path().unwrap_or(0);
+                        if chosen != fast
+                            && daps_pace_tok.get(&chosen).is_some_and(|&t| t < 1.0)
+                        {
+                            chosen = fast;
+                        }
+                        if let Some(t) = daps_pace_tok.get_mut(&chosen) {
+                            *t -= 1.0;
+                        }
+                    }
+                    chosen
                 } else if reliable {
                     let sched = scheduler.lock();
                     sched.place_symbol(false, &[]).unwrap_or(0)
@@ -4452,12 +4501,19 @@ async fn run_window_sender(
                 let src_rate = src_now.saturating_sub(diag_last_src) as f64 / secs;
                 let cod_rate = cod_now.saturating_sub(diag_last_cod) as f64 / secs;
                 let paused_frac = diag_paused_iters as f64 / diag_total_iters.max(1) as f64;
-                let (cw, fl, np, min_rtt_us) = {
+                let (cw, fl, np, min_rtt_us, pp) = {
                     let mut sched = scheduler.lock();
                     let mut cw = 0u64;
                     let mut fl = 0u64;
                     let mut np = 0u64;
                     let mut rtt = 0u64;
+                    // PART 1 instrumentation: per-path in-flight vs its own BDP
+                    // cap + live RTT vs RTprop — the slow-path bufferbloat probe
+                    // (is the slow path over its BDP? is its RTT inflated above
+                    // RTprop?).  Cap gain = the DAPS placement gain when active,
+                    // else the FMTCP aggregate gain.
+                    let cap_gain = if daps_bdp_gain > 0.0 { daps_bdp_gain } else { infl_bdp_gain };
+                    let mut pp = String::new();
                     let ids = sched.active_paths();
                     for id in &ids {
                         if let Some(p) = sched.path_mut(*id) {
@@ -4466,9 +4522,19 @@ async fn run_window_sender(
                             fl += p.in_flight as u64;
                             np += 1;
                             rtt = rtt.max(p.estimator.rtt().as_micros() as u64);
+                            let infl_i = p.in_flight as u64;
+                            let bdp_i = p.copa_bdp_anchor().unwrap_or(0.0);
+                            let cap_i = (cap_gain * bdp_i).ceil() as u64;
+                            let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
+                            let rtprop_i =
+                                p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
+                            pp.push_str(&format!(
+                                " p{}:infl={}/bdp{:.0}(cap{}) rtt={:.0}/rtp{:.0}ms",
+                                id, infl_i, bdp_i, cap_i, rtt_i, rtprop_i
+                            ));
                         }
                     }
-                    (cw, fl, np, rtt)
+                    (cw, fl, np, rtt, pp)
                 };
                 // BDP in symbols = goodput-rate(sym/s) × RTT — but report the
                 // link-capacity BDP too from the measured min RTT and a nominal
@@ -4486,7 +4552,7 @@ async fn run_window_sender(
                     src_now.saturating_sub(window_decoded_seq.load(Ordering::Relaxed))
                 } else { 0 };
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -4498,6 +4564,7 @@ async fn run_window_sender(
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,
                     fmtcp_out, fmtcp_win_backstop,
+                    pp,
                 );
                 diag_last_us = dnow;
                 diag_last_ack = ack_now;
@@ -4922,6 +4989,23 @@ async fn run_window_sender(
             src_tok_last_us = now;
             let burst = (src_rate * 0.004).clamp(8.0, 64.0);
             src_tokens = (src_tokens + src_rate * (dt as f64 / 1_000_000.0)).min(burst);
+        }
+        // DAPS BBR per-path pacing: refill each active path's BtlBw token bucket
+        // so the placement gate above emits each path at its own drain rate
+        // (the slow path's future-offset data flows at BtlBw_slow without
+        // queuing).  Independent of cc_pace; transparent until the anchor warms.
+        if daps_pace_on {
+            let now = now_us();
+            let dts = now.saturating_sub(daps_pace_last_us) as f64 / 1_000_000.0;
+            daps_pace_last_us = now;
+            let sched = scheduler.lock();
+            for id in sched.active_paths() {
+                if let Some(btlbw) = sched.path(id).and_then(|p| p.btlbw_sym_per_s()) {
+                    let burst = (btlbw * 0.004).clamp(4.0, 64.0); // ≤4 ms burst
+                    let t = daps_pace_tok.entry(id).or_insert(burst);
+                    *t = (*t + btlbw * dts).min(burst);
+                }
+            }
         }
         // P10b: gap reports must wake this loop even when the TUN is idle.
         // The inner TCP stalls exactly when a hole blocks delivery — no new

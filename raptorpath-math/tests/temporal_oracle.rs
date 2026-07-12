@@ -2303,3 +2303,95 @@ fn daps_right_sized_r_sweep() {
     // the throughput-optimal r must be at or below the shipped 0.10 (over-FEC).
     assert!(best.0 <= 0.10 + 1e-9, "right-sized r must be <= the shipped 0.10: best r={:.3}", best.0);
 }
+
+// -------------------------------------------------------------------------
+// PART 6e — SLOW-PATH QUEUE MANAGEMENT (the DAPS residual).  DAPS removed the
+//   frontier stall (PART 6a) but L1 measured C8 = 0.80x, NOT the modelled
+//   ceiling — the slow path BUFFERBLOATED to ~834 ms RTT.  Why did PARTs 6a-d
+//   miss it?  They pace each path per tick (the per-path `free[i]` credit), so
+//   the slow path can never receive more than BtlBw_slow per tick and never
+//   bufferbloats — exactly the pacing the PRODUCTION path lacked.  This part
+//   adds the queue physics that per-tick pacing hid, reproduces the residual,
+//   and confirms the fix (BLEST per-path BDP cap + BBR per-path pacing).
+//
+//   MECHANISM.  The DAPS deep read-ahead (window backstop (pipeline+6)*G) is a
+//   large intake; the FMTCP per-path cap only gated the aggregate TUN-PAUSE
+//   (pause only when EVERY path is full), so the softmax kept committing the
+//   slow path its CAPACITY SHARE of that DEEP intake — many BDPs, not one.
+//   The slow path is a FIFO server at BtlBw_slow: standing queue
+//   Q = max(0, outstanding_slow - BDP_slow), queue delay q = Q / BtlBw_slow.
+//   The future-offset data placed Δ ahead then arrives q LATE, so it is useful
+//   only while q fits the DAPS pre-fetch slack (the skew).  Three schedulers:
+//     * DUMP (no cap/pace): outstanding_slow = share * W  (>> BDP_slow) => q >>
+//       slack => the slow path's future data is wasted => C8 caps at ~parity.
+//     * BDP-CAP (BLEST): outstanding_slow <= gain*BDP_slow => q <= (gain-1)*
+//       RTprop_slow ~ 0 at gain 1.0 => the slack is preserved => ceiling.
+//     * PACE (BBR): the slow path admits <= BtlBw_slow => outstanding ~ one BDP.
+// -------------------------------------------------------------------------
+#[test]
+fn daps_queue_mgmt_lifts_c8_to_ceiling() {
+    let f = c8_fast();
+    let s = c8_slow();
+    let rate_f = f.rate; // sym/ms = BtlBw_fast
+    let rate_s = s.rate; // sym/ms = BtlBw_slow
+    let rtprop_s = 2.0 * s.owd as f64; // 40 ms
+    let rtprop_f = 2.0 * f.owd as f64; // 10 ms
+    let skew = rtprop_s - rtprop_f; // 30 ms — the DAPS pre-fetch slack (time)
+    let bdp_s = rate_s * rtprop_s; // slow-path BDP (symbols)
+    let fast_g = f.goodput();
+    let slow_g = s.goodput();
+    let ceiling = (fast_g + slow_g) / fast_g;
+
+    // Deep DAPS read-ahead backstop (pipeline+6)*G, G=384, pipeline=4.
+    let g = 384.0;
+    let pipeline = 4.0;
+    let w_backstop = (pipeline + 6.0) * g;
+    let share_s = rate_s / (rate_f + rate_s); // slow path's capacity share of intake
+
+    let q_delay = |outstanding: f64| ((outstanding - bdp_s).max(0.0)) / rate_s; // ms
+    // useful fraction of slow-path goodput: full while q fits the slack, ramping
+    // to 0 as q exceeds it (late future arrivals miss the frontier, wasted).
+    let useful = |q: f64| (1.0 - (q / skew)).clamp(0.0, 1.0);
+    let factor = |outstanding: f64| (fast_g + slow_g * useful(q_delay(outstanding))) / fast_g;
+
+    // (1) DUMP — no per-path cap/pace: slow outstanding = its share of deep W.
+    let out_dump = w_backstop * share_s;
+    let (q_dump, f_dump) = (q_delay(out_dump), factor(out_dump));
+    // (2) BDP-CAP gain 1.0 (BLEST: exactly one BDP).
+    let out_cap = out_dump.min(1.0 * bdp_s);
+    let (q_cap, f_cap) = (q_delay(out_cap), factor(out_cap));
+    // (3) PACE (BBR): slow admits <= BtlBw_slow -> outstanding ~ one BDP.
+    let (q_pace, f_pace) = (q_delay(bdp_s), factor(bdp_s));
+
+    println!("\n=== PART 6e: SLOW-PATH QUEUE MANAGEMENT (DAPS residual) ===");
+    println!("  BtlBw_slow={rate_s:.2} sym/ms  RTprop_slow={rtprop_s:.0}ms  BDP_slow={bdp_s:.0} syms  skew(slack)={skew:.0}ms  ceiling x{ceiling:.3}");
+    println!("  deep read-ahead W=(pipeline+6)*G={w_backstop:.0}; slow share={share_s:.3} -> outstanding_dump={out_dump:.0} syms\n");
+    println!("  {:>10} | {:>12} {:>10} {:>11} {:>9}", "scheduler", "outstanding", "queue(ms)", "slowRTT(ms)", "factor");
+    println!("  {:>10} | {:>12.0} {:>10.0} {:>11.0} {:>8.3}x", "DUMP", out_dump, q_dump, rtprop_s + q_dump, f_dump);
+    println!("  {:>10} | {:>12.0} {:>10.0} {:>11.0} {:>8.3}x", "BDP-cap", out_cap, q_cap, rtprop_s + q_cap, f_cap);
+    println!("  {:>10} | {:>12.0} {:>10.0} {:>11.0} {:>8.3}x", "PACE", bdp_s, q_pace, rtprop_s + q_pace, f_pace);
+
+    println!("\n  gain sweep (BDP-cap):");
+    for &gain in &[0.5f64, 1.0, 1.5, 2.0, 4.0, 8.0] {
+        let out = out_dump.min(gain * bdp_s);
+        println!("    gain {gain:>4.1}: outstanding {:>6.0}  queue {:>5.0}ms  slowRTT {:>5.0}ms  x{:.3}",
+            out, q_delay(out), rtprop_s + q_delay(out), factor(out));
+    }
+
+    // (a) DUMP bufferbloats past the slack — the future data is wasted and C8
+    //     caps at ~parity (the L1 0.80x residual; the model reaches ~1.0 as it
+    //     omits the straggler tail L1 pays, but the DIRECTION is the point).
+    assert!(q_dump > skew, "DUMP must bufferbloat past the slack: q={q_dump:.0}ms slack={skew:.0}ms");
+    assert!(f_dump < ceiling - 0.15, "DUMP must cap well below the ceiling: x{f_dump:.3} vs x{ceiling:.3}");
+    // (b) THE FIX: the per-path BDP cap collapses the queue and reaches the ceiling.
+    assert!(q_cap <= skew, "BDP-cap must keep the queue within the slack: q={q_cap:.0}ms");
+    assert!(f_cap > ceiling - 0.02, "BDP-cap must reach the C8 ceiling: x{f_cap:.3} vs x{ceiling:.3}");
+    // (c) Pacing (BBR) also reaches the ceiling (outstanding ~ one BDP).
+    assert!(f_pace > ceiling - 0.02, "pacing must reach the ceiling: x{f_pace:.3}");
+    // (d) THE RESIDUAL IS QUEUE, NOT RECOVERY: bounding the queue (cap/pace),
+    //     with nothing changed about recovery, lifts C8 from ~parity to ceiling.
+    assert!(f_cap - f_dump > 0.15, "queue mgmt must materially lift C8: dump x{f_dump:.3} -> cap x{f_cap:.3}");
+    println!("\n  VERDICT: the DAPS residual is the slow-path QUEUE, not recovery.  Bounding");
+    println!("  slow outstanding at its BDP (BLEST) + pacing at BtlBw (BBR) collapses the");
+    println!("  {q_dump:.0}ms queue to ~0 and lifts C8 from x{f_dump:.3} (parity) to x{f_cap:.3} (ceiling).");
+}

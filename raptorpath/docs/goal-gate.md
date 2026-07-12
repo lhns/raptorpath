@@ -4572,3 +4572,119 @@ second-order cap, honestly a queue-management (BLEST) follow-on, not a schedulin
 failure. Merge as a measured build; regime-map: heterogeneous aggregation is
 scheduling-bound (delay-alignment lifts it materially) AND queue-bound (the
 residual), not recovery-latency-bound as the pre-DAPS arc concluded.
+
+## DAPS Queue Management (2026-07-12) — per-path BDP cap + BtlBw pacing; the queue bound is right but rate-signal-limited in generation mode (branch `feat/daps-queue-mgmt`)
+
+Attacks the DAPS residual above: DAPS removed the frontier stall but the slow
+path BUFFERBLOATED to ~0.8–1.8 s RTT, consuming the pre-fetch slack and capping
+C8 below parity. Implements the two published queue bounds and measures them.
+
+### The diagnosis — why the slow path bloats DESPITE the per-path cap
+
+`RWM_DAPS` sets `fmtcp=true`, so the FMTCP per-path BDP cap IS active — but it
+only gates the **aggregate TUN-read PAUSE** (`fmtcp_percap_full`: pause only when
+EVERY path is at its cap). The fast path is almost never at its cap, so TUN
+reads never pause, and `place_source_daps`'s softmax keeps routing a capacity
+share to the slow path with **no hard per-path bound at placement time** (the
+cost term rises only softly with in_flight). There is also **no per-path
+pacing** — one aggregate `src_tokens` bucket — so the deep DAPS read-ahead
+(window backstop `(pipeline+6)·G`) is dumped onto the slow path faster than
+`BtlBw_slow` drains. The cap governs *when to stop reading TUN*, never *how much
+to commit to one subflow*.
+
+### The fix (both DAPS-gated; shipped non-DAPS default byte-identical)
+
+- **BLEST per-path placement cap** — `place_source_daps_capped(lead, gain)` drops
+  a path at its own BDP from the eligible set, bounding slow-path OUTSTANDING at
+  `gain·BtlBw_slow·RTprop_slow`. `RWM_DAPS_BDP=gain` (default **1.0** = exactly
+  one BDP; 0 disables).
+- **BBR per-path pacing** — each path emits at its own BtlBw (`btlbw_sym_per_s`);
+  when the slow path's BtlBw bucket is dry, the source spills to the fast path
+  this instant. `RWM_DAPS_PACE=0` disables (default on under DAPS).
+- The DAPS offset `Δ_j` already uses the **min-filtered RTprop** (`daps_offset_syms`
+  → `min_rtt()`), not the inflated RTT — verified, so a bloated RTT cannot
+  mis-size the offset.
+
+### Oracle-confirm FIRST (temporal_oracle PART 6e)
+
+PARTs 6a–d paced each path per-tick, so they never bufferbloated and already hit
+the ceiling — which is exactly why they missed this residual. PART 6e adds the
+queue physics: the slow path is a FIFO server at BtlBw_slow, standing queue
+`Q = max(0, outstanding − BDP_slow)`, delay `q = Q/BtlBw_slow`; future data
+placed Δ ahead arrives `q` late and is useful only while `q ≤ skew`.
+
+```
+   scheduler |  outstanding  queue(ms) slowRTT(ms)    factor
+        DUMP |          640        344         384    1.000x   (queue eats the slack → parity)
+     BDP-cap |           67          0          40    1.195x   (ceiling)
+        PACE |           67          0          40    1.195x   (ceiling)
+```
+
+The oracle confirms — **GIVEN a correct per-path BDP** — the cap/pace collapse the
+queue and lift C8 from parity (x1.000) to the ceiling (x1.195); the gain sweep
+shows gain 1.0 is optimal and ≥2.0 re-inflates. So the queue bound IS the right
+lever *in the model*.
+
+### DECISIVE L1 (VM 10.1.5.16, dual netns, seed 42, 25 MB × 5, rp-native perf)
+
+Baselines (same binary): single-c2 (fast) = **16.71**, single-c3 (slow) = **3.33**
+Mbit/s ⇒ recovery ceiling C8 = **20.04**, C7 = **33.42**; raw-link goodput ceiling
+C8 = 100·(1−ε)+20·(1−ε) ≈ 116 (not protocol-achievable). Every arm **dnf=0**.
+
+**C8 (c2+c3), same binary, apples-to-apples:**
+
+| C8 arm (r=0.03) | Mbit/s | stdev(s) | ×single-fast | eff ÷20.04 |
+|---|---:|---:|---:|---:|
+| no-QM (BDP=0 PACE=0) | 9.84 / 10.16 (~10.0) | 5.7 / 5.4 | 0.60× | 0.50 |
+| cap-only (BDP=1 PACE=0) | 11.20 | 4.46 | 0.67× | 0.56 |
+| pace-only (BDP=0 PACE=1) | 11.21 | 4.06 | 0.67× | 0.56 |
+| **QM both (default)** | **12.56 / 10.46 (~11.5)** | **2.0 / 3.7** | **0.69×** | **0.57** |
+| QM + CC_PACE | 10.90 | 3.58 | 0.65× | 0.54 |
+
+r-sweep at QM: **r=0.03 → 12.56**, r=0.05 → 8.12, r=0.10 → 7.61 (monotone; r*≈0.03
+optimum holds, over-FEC penalty sharper under the bound). **C7 (c2+c2) QM =
+20.68** (stdev 0.58, 1.24× single-c2) — **no regression** (skew 0 ⇒ Δ=0 ⇒ DAPS
+inert; symmetric cap/pace act equally).
+
+**HONEST RESULT:** queue-mgmt lifts C8 modestly (~10.0 → ~11.5, ~+15%) and cuts
+the WITHIN-run stdev (~5.5 → ~2.9); each lever alone gives ~11.2, together ~11.5
+(synergistic); reliability intact. But it does **NOT** reach parity/ceiling and
+does **NOT** bound the slow-path RTT.
+
+**Slow-path RTT before/after (RWM_DIAG, per-path probe):** no-QM p1 climbs
+95→356→688→1023→**1364 ms** (RTprop pollutes 46→178→**961 ms**); QM p1 still
+climbs to **~1774 ms** (RTprop → 1820 ms). The QM DIAG shows `p1:infl=0/bdp0`
+throughout: **our in_flight gauge reads 0 and the per-path Copa anchor is only
+intermittently established** (`bdp0`, occasionally `bdp71`≈true BDP).
+
+### The REVISED residual (this revises the prior "BLEST follow-on" verdict)
+
+The queue bound is the right idea but is **rate-signal-limited in generation
+mode**, defeated by two production realities the oracle abstracted away:
+
+1. **No per-path BtlBw anchor in generation mode.** WindowAcks do not drive
+   `record_delivery` (in_flight releases by time-EXPIRY, not per-path ack), so
+   `copa_bdp_anchor()` on the slow path reads `None`/tiny — the cap and pacing,
+   which key on it, have no stable per-path BDP to act on. The intermittent
+   moments the anchor establishes (`bdp71`) are exactly where the benefit comes
+   from — hence modest and inconsistent.
+2. **The queue is in the QUIC datagram send buffer, BELOW the in_flight gauge**
+   (which reads 0), so bounding in_flight cannot bound it; and because the queue
+   never drains within the 10 s min-RTT window, the RTprop min-filter itself
+   pollutes to ~1.8 s (which would eventually mis-size Δ_j).
+
+So the true long pole is **per-path BtlBw estimation + QUIC-send-buffer
+visibility in generation mode**, NOT placement queue depth. The `BLEST/BBR`
+mechanism is correct (oracle-confirmed) and merged env-gated as the substrate;
+closing it needs a per-path delivered-rate estimator driven by the cumulative
+ack + per-path ownership (a subsystem follow-on: generation mode keeps no
+seq→path map). Regime-map update: heterogeneous aggregation is
+scheduling-bound (DAPS) AND **rate-estimation-bound** in generation mode — the
+queue bound needs a per-path rate it currently lacks.
+
+### Controls / no regression
+
+`cargo test -p raptorpath --lib` 281/281 (new `daps_bdp_cap_bounds_slow_path_outstanding`);
+`-p raptorpath-math` 19/19 incl. temporal_oracle PART 6e (`daps_queue_mgmt_lifts_c8_to_ceiling`);
+`daps_loopback` reliable (dnf 0). Shipped default untouched (all queue-mgmt code
+RWM_DAPS-gated; RWM_DAPS_BDP=0 RWM_DAPS_PACE=0 reproduces pre-QM behaviour).

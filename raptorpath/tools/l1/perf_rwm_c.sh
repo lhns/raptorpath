@@ -76,6 +76,10 @@ TENV=""
 # the systematic-repair generation submode on top of --window-reliable.
 [[ -n "${RWM_FMTCP:-}" ]] && TENV="$TENV RWM_FMTCP=$RWM_FMTCP"
 [[ -n "${RWM_DAPS:-}" ]] && TENV="$TENV RWM_DAPS=$RWM_DAPS"
+# DAPS queue management (feat/daps-queue-mgmt): BLEST per-path in-flight BDP cap
+# (RWM_DAPS_BDP=gain, default 1.0) + BBR per-path pacing (RWM_DAPS_PACE=0 off).
+[[ -n "${RWM_DAPS_BDP:-}" ]] && TENV="$TENV RWM_DAPS_BDP=$RWM_DAPS_BDP"
+[[ -n "${RWM_DAPS_PACE:-}" ]] && TENV="$TENV RWM_DAPS_PACE=$RWM_DAPS_PACE"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
