@@ -2987,6 +2987,71 @@ this section's intent:
   fix does not change. This is a transport-pipeline limit (pipelined or rateless
   frontier recovery), not a CC or FEC-sizing limit. See goal-gate "Loss-Recovery".
 
+**Wire-clocked delay term + the hint→δ mapping (feat/copa-wire-signal,
+2026-07-13, measured).** The §12.11 Copa-sole battery named the bulk gap's
+mechanism: the CC delay term was fed the APP-LAYER ECHO RTT (batch timestamp
+echoed by the receiver), which includes the sender's OWN store/reservoir
+dwell in quinn's datagram queue — Copa backed off against self-inflicted
+pipeline delay that is not in the network (§12.11 arm D proved the term:
+shrinking the reservoir raised throughput +13–23% AND tightened the queue).
+Active only when the engine owns/feeds the substrate window
+(`RWM_QUIC_CC=passthrough` or `RWM_COPA_FEED=1`; `RWM_COPA_WIRE=0` restores
+the app-echo behavior for A/B; everything unset = shipped path
+byte-identical), four coupled changes:
+
+1. **The wire clock.** Copa's queue signal is quinn's packet-timed path RTT
+   (`Connection::rtt()`, RFC 9002 estimator, ack-delay corrected): send of
+   an ack-eliciting packet → ACK receipt, measured BELOW the datagram queue,
+   so the sender's own reservoir dwell is structurally excluded. The
+   app-echo RTT stays with the reliability/tail machinery (LossEstimator,
+   ARQ timeouts), where end-to-end pipeline delay is the right quantity —
+   two clocks, each at its own layer. d_q = wire_standing − wire_RTTmin(10s)
+   − k·jitter, where wire_standing is the LATEST smoothed sample (Copa's
+   RTTstanding), NOT a per-window min: the δ-law's own drain trough falls
+   inside every update window, so a windowed min reads "queue empty" every
+   update and the direction ratchets (measured: cwnd pinned MAX_CWND).
+2. **The hint→δ mapping (no new constants).** Copa's utility is
+   U = log(throughput) − δ·log(delay): δ IS the marginal latency price. The
+   protocol hint already declares exactly one price ratio — the tail-loss
+   scale ζ ∈ {0.01 Realtime, 1 Auto, 100 Bulk} (this section's r* margin
+   knob). Anchoring Auto at the Copa-paper default δ = 0.5:
+
+       δ(hint) = 0.5 / ζ(hint)  ∈ {50 Realtime, 0.5 Auto, 0.005 Bulk}
+
+   Equilibrium standing queue = 1/δ packets (rate = 1/(δ·d_q) at bottleneck
+   rate μ ⇒ q = 1/δ), i.e. d_q* = 1/(δ·μ): Bulk tolerates 200 symbols
+   (≈19 ms at c2's 10.4 k sym/s — still ~3× tighter than BBR-under's
+   measured 35–50 ms wire queue), Realtime an essentially empty queue
+   (jitter headroom governs), Auto the classic 2-packet target. One
+   continuous knob (`RWM_COPA_DELTA` overrides for frontier measurement),
+   no mode switch.
+3. **The actual Copa update law** (replacing the ramp/±2 scheme, wire mode
+   only): per SRTT, direction = (cwnd/srtt ≤ 1/(δ·d_q)), step = v/δ with
+   velocity v doubling only after the direction persists ≥3 updates (Copa
+   §2.2 hysteresis; every-window doubling measured cwnd→MAX_CWND) and
+   resetting on a flip. The legacy +2 additive probe is exactly this law's
+   up-step at δ = 0.5, v = 1 — continuity with P1. Down-steps are capped at
+   the measured queue μ̂·d_q (never drain the pipe itself). Two supports:
+   a **coupling cap** cwnd ≤ BDP + 2/δ (fixed point + one dither amplitude;
+   above the sender's outstanding store the delay signal is DECOUPLED — the
+   queue no longer grows with cwnd — and the jitter-clamped d_q votes "up"
+   forever: measured ratchet to 4 000–7 800 vs the ≈300 fixed point, with
+   window/RTT bursts tail-dropping the 1000-packet qdisc); and **CC-rate
+   source pacing** (`RWM_CC_PACE`, default ON under the wire signal): Copa
+   assumes a paced wire, but quinn's pacer derives from the engine window
+   (≈5×BDP at Bulk's δ) and never binds — pure ack-clocking lets every GE
+   recovery micro-stall idle the bottleneck (measured: 55.7 → 67 Mbit/s at
+   c2 from the pacing default alone, wire queue p50 3–5 ms).
+4. **Floor freshness without ProbeRTT**: the ±v/δ dither drains the queue
+   to ~empty regularly, so the RAW 10 s min of the smoothed wire samples
+   stays at base (measured per path vs the known netem base: rtp = 10–12 ms
+   at c2's 10 ms, 40–42 ms at c3's 40 ms). The legacy quantile queue-floor
+   is NOT used in wire mode — under a deep Bulk standing queue it would
+   creep up to the queue itself within its 10 s window.
+
+Measured verdict and the arm table: goal-gate "Copa Wire-Signal"; §12.11
+addendum below for how it changes the Copa-sole conclusion.
+
 ### 12.5 CC + Taper: The Complete Architecture
 
 ```

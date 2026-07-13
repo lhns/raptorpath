@@ -3867,6 +3867,10 @@ async fn run_window_sender(
     // the scheduler lock every 5 ms. This is the directive's "cwnd/RTT via Copa".
     let mut cc_rate_cached: f64 = 0.0;
     let mut cc_rate_refresh_us: u64 = 0;
+    // Pace ceiling = gen_rate × live-path count (single-link burst guard,
+    // scaled so it cannot clamp a multi-path aggregate — see the refresh
+    // block below). Starts at one link's worth.
+    let mut cc_rate_ceiling: f64 = gen_rate;
     // ── Fix 2 (transport-substrate): BOUNDED REACTIVE under congestion control ─
     // The deficit-driven recovery loop was EXEMPT from the in-flight congestion
     // cap and re-emitted the reported residual on EVERY deficit report. At high
@@ -5847,24 +5851,39 @@ async fn run_window_sender(
             // most every 5 ms.
             if now.saturating_sub(cc_rate_refresh_us) >= 5_000 {
                 cc_rate_refresh_us = now;
-                let (cw, srtt_s) = {
+                // feat/copa-wire-signal: the aggregate CC rate is the SUM of
+                // per-path rates Σ cwnd_i/SRTT_i over LIVE paths. The old
+                // Σcwnd / max(SRTT) under-reads a heterogeneous aggregate
+                // (the fast path's rate divided by the slow path's SRTT),
+                // and active_paths()' spare-capacity filter dropped a
+                // saturated path from the sum entirely. Also scale the
+                // pace CEILING by the live path count: gen_rate (9 000
+                // sym/s ≈ 90 Mbit) is a single-link burst guard, and as an
+                // aggregate clamp it silently capped C7's two-path intake
+                // at one path's worth (MEASURED: C7 = ×1.00 of own single
+                // vs C0's ×1.7 aggregation).
+                let (rate, n_live) = {
                     let sched = scheduler.lock();
-                    let mut cw = 0.0f64;
-                    let mut srtt = 0.0f64;
-                    for id in sched.active_paths() {
+                    let mut r = 0.0f64;
+                    let mut n = 0usize;
+                    for id in sched.live_paths() {
                         if let Some(p) = sched.path(id) {
-                            cw += p.cwnd as f64;
-                            srtt = srtt.max(p.srtt().as_secs_f64());
+                            let s = p.srtt().as_secs_f64();
+                            if s > 1e-4 {
+                                r += p.cwnd as f64 / s;
+                            }
+                            n += 1;
                         }
                     }
-                    (cw, srtt)
+                    (r, n.max(1))
                 };
-                cc_rate_cached = if srtt_s > 1e-4 { cw / srtt_s } else { 0.0 };
+                cc_rate_cached = rate;
+                cc_rate_ceiling = gen_rate * n_live as f64;
             }
             // Pace at the HIGHER of the CC rate and the delivered-goodput EWMA so
             // a stalled in-order frontier (EWMA→0) can't throttle the source ramp.
             let link_est = gen_rate_ewma.max(cc_rate_cached);
-            let src_rate = (link_est * cc_pace_headroom).clamp(gen_rate_floor, gen_rate);
+            let src_rate = (link_est * cc_pace_headroom).clamp(gen_rate_floor, cc_rate_ceiling);
             let dt = now.saturating_sub(src_tok_last_us);
             src_tok_last_us = now;
             let burst = (src_rate * 0.004).clamp(8.0, 64.0);
