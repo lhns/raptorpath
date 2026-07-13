@@ -482,6 +482,11 @@ pub struct CopaState {
     // Off (default) => `effective_btlbw == max_bw` => byte-identical.
     rs_robust_bw: bool,
     rs_robust_q: f64,
+    /// RWM_RS_TRACE: eprintln each ACCEPTED rate sample above the given
+    /// symbols/s threshold with its (delivered, interval, send_elapsed,
+    /// ack_elapsed) decomposition — the over-read forensics instrument
+    /// (feat/copa-sole-cc). 0 = off (default, no cost on the sample path).
+    rs_trace_thresh: f64,
     /// Cached robust quantile of `bw_samples` (symbols/s), recomputed once per
     /// delivered sample in `rs_on_delivered`.  MUST be cached: `btlbw_sym_per_s`
     /// (hence `effective_btlbw`) is read once PER SEND-LOOP ITERATION by the DAPS
@@ -527,6 +532,10 @@ impl CopaState {
             rs_rej_zero: 0,
             rs_rej_applimited: 0,
             rs_generated: 0,
+            rs_trace_thresh: std::env::var("RWM_RS_TRACE")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0),
             rs_robust_bw: crate::config::env_flag("RWM_RATE_WIRE", false),
             rs_robust_q: std::env::var("RWM_RATE_Q")
                 .ok()
@@ -556,6 +565,15 @@ impl CopaState {
         self.last_delivered_time = now;
         self.last_delivered = self.delivered;
 
+        if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
+            eprintln!(
+                "[RSTRACE-LEGACY] rate={:.0} delta={} elapsed_ms={:.2} max_bw={:.0}",
+                rate,
+                delta_delivered,
+                elapsed * 1e3,
+                self.max_bw,
+            );
+        }
         // Add to sliding window
         self.bw_samples.push_back(BwSample {
             delivery_rate: rate,
@@ -683,6 +701,18 @@ impl CopaState {
             return;
         }
         self.rs_generated += 1; // DIAG
+        if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
+            eprintln!(
+                "[RSTRACE] seq={} rate={:.0} delivered={} interval_ms={:.2} send_ms={:.2} ack_ms={:.2} max_bw={:.0}",
+                seq,
+                rate,
+                delivered,
+                interval * 1e3,
+                send_elapsed.as_secs_f64() * 1e3,
+                ack_elapsed.as_secs_f64() * 1e3,
+                self.max_bw,
+            );
+        }
         self.bw_samples.push_back(BwSample {
             delivery_rate: rate,
             timestamp: now,
@@ -1244,6 +1274,19 @@ impl PathState {
     /// standing-queue evidence rather than waiting out the SRTT window.
     pub fn on_ack(&mut self, acked: u32) {
         let _rate = self.copa.record_delivery(acked);
+        self.on_delivery_signal();
+    }
+
+    /// The cwnd-dynamics half of `on_ack`, WITHOUT the legacy ack-interval
+    /// `record_delivery` sample (feat/copa-sole-cc). Callers that account
+    /// delivery through the BBR-correct send-interval rate sampler
+    /// (`on_src_delivered_seq`) use this so the windowed-max BtlBw filter is
+    /// fed ONLY clean send-interval samples — the ack-interval Δt spikes
+    /// (batched acks / frontier jumps) otherwise latch an over-read anchor
+    /// that pins cwnd above BDP via the anchor floor (§16.13's ×145-class
+    /// over-read, reproduced ×19 on the plain-mode L0 smoke). The update
+    /// rules themselves are byte-identical to `on_ack`'s.
+    pub fn on_delivery_signal(&mut self) {
         let now = self.clock.now();
 
         if self.copa.ramping

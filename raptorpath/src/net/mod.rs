@@ -551,6 +551,137 @@ const WIRE_OVERHEAD: usize = 48;
 const BATCH_WIRE_HEADER: usize = 48;
 /// Per-symbol serialization overhead inside a batch (ids + flags + len).
 const PER_SYMBOL_WIRE_OVERHEAD: usize = 32;
+/// feat/copa-sole-cc: symbols→bytes conversion for the pass-through substrate
+/// window (`RWM_QUIC_CC=passthrough`). Copa-lite's cwnd is in SYMBOLS; quinn's
+/// congestion window is in BYTES of packet payload. Plain window mode puts one
+/// ~1200-byte symbol per datagram plus wire framing (~30–50 B), so 1250 B per
+/// symbol converts the window with a few-percent tolerance — Copa's delay
+/// signal absorbs the residual (a slightly generous window shows up as queue
+/// and is backed off; a slightly tight one only shaves the probe overshoot).
+const COPA_SOLE_BYTES_PER_SYMBOL: u64 = 1250;
+
+/// feat/copa-sole-cc: plain-mode Copa delivery-feed state (see the creation
+/// site in `run_impl` for the full design note). Sender-side only: seq→path
+/// recorded at send, newly-delivered seqs derived from each WindowAck's
+/// cumulative frontier + SACK ranges, attributed per path into the
+/// BBR-correct send-interval rate sampler + the Copa cwnd dynamics.
+pub(crate) struct CopaFeed {
+    /// seq → path it was (last) sent on. Written at source send and at
+    /// targeted retransmit (a retransmit re-snapshots the rate sample, so
+    /// the eventual ack yields a truthful send-interval). Removed on
+    /// attribution; entries for seqs the frontier passed are gone by then.
+    seq_path: DashMap<u64, u32>,
+    /// Attribution cursor: the next in-order seq not yet attributed plus the
+    /// set of above-frontier seqs already attributed via SACK (so a seq is
+    /// attributed exactly once). Bounded by the sender's outstanding store.
+    cursor: parking_lot::Mutex<CopaFeedCursor>,
+}
+
+#[derive(Default)]
+struct CopaFeedCursor {
+    next: u64,
+    sacked: std::collections::BTreeSet<u64>,
+}
+
+impl CopaFeed {
+    fn new() -> Self {
+        Self {
+            seq_path: DashMap::new(),
+            cursor: parking_lot::Mutex::new(CopaFeedCursor::default()),
+        }
+    }
+
+    /// Record a (re)send of source seq `seq` on `path`.
+    fn on_sent(&self, seq: u64, path: u32) {
+        self.seq_path.insert(seq, path);
+    }
+
+    /// Diff one WindowAck against the cursor: returns the seqs this ack
+    /// NEWLY proves delivered (frontier advance up to `received_up_to`,
+    /// inclusive, plus never-before-seen SACKed seqs above it), each exactly
+    /// once across the whole ack stream. Out-of-order/duplicate acks yield
+    /// an empty diff — never a double attribution.
+    fn newly_delivered(&self, received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<u64> {
+        // Per-ack safety bound: a corrupt/hostile ack must not trap us in a
+        // multi-million-seq loop. Honest ranges are bounded by the sender's
+        // outstanding store (≤ a few thousand).
+        const MAX_PER_ACK: usize = 65_536;
+        let mut newly = Vec::new();
+        let mut c = self.cursor.lock();
+        while c.next <= received_up_to && newly.len() < MAX_PER_ACK {
+            let s = c.next;
+            c.next += 1;
+            // Already attributed via an earlier SACK → consume the marker.
+            if !c.sacked.remove(&s) {
+                newly.push(s);
+            }
+        }
+        for &(a, b) in sack_ranges {
+            let lo = a.max(c.next);
+            let hi = b.min(lo.saturating_add(MAX_PER_ACK as u64));
+            for q in lo..=hi {
+                if newly.len() >= MAX_PER_ACK {
+                    break;
+                }
+                if c.sacked.insert(q) {
+                    newly.push(q);
+                }
+            }
+        }
+        newly
+    }
+}
+
+/// feat/copa-sole-cc: attribute one WindowAck's newly-delivered seqs to their
+/// paths and run the per-path Copa machinery on them: send-interval rate
+/// sample per seq (`on_src_delivered_seq` — feeds the windowed-max BtlBw with
+/// clean Δt), in-flight release, the per-SRTT cwnd update/backoff
+/// (`on_delivery_signal`), and finally the pass-through substrate window
+/// write (no-op unless RWM_QUIC_CC=passthrough). Call AFTER recording the
+/// ack's RTT sample so the update sees the freshest queue signal.
+fn copa_feed_attribute(
+    feed: &CopaFeed,
+    ack_path: u32,
+    received_up_to: u64,
+    sack_ranges: &[(u64, u64)],
+    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    transport: &Arc<QuicTransport>,
+    stats: &Arc<SharedStats>,
+) {
+    let newly = feed.newly_delivered(received_up_to, sack_ranges);
+    if newly.is_empty() {
+        return;
+    }
+    let mut per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    let mut sched = scheduler.lock();
+    for seq in newly {
+        // Attribute to the path the seq was sent on; a seq without a send
+        // record (pre-feed traffic, evicted record) falls back to the path
+        // the ack arrived on — plain in-order acks ride the arrival path.
+        let p = feed
+            .seq_path
+            .remove(&seq)
+            .map(|(_, p)| p)
+            .unwrap_or(ack_path);
+        if let Some(ps) = sched.path_mut(p) {
+            ps.on_src_delivered_seq(seq);
+        }
+        *per_path.entry(p).or_insert(0) += 1;
+    }
+    for (p, _n) in per_path {
+        if let Some(ps) = sched.path_mut(p) {
+            // NOT release_in_flight here: the per-batch Ack arm keeps doing
+            // the wire-level in-flight release (it covers repairs too);
+            // releasing again per attributed source seq would double-count.
+            ps.on_delivery_signal();
+            transport.set_cc_window_bytes(p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
+            if let Some(st) = stats.path(p) {
+                st.cwnd.store(ps.cwnd as u64, Ordering::Relaxed);
+                st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
+            }
+        }
+    }
+}
 
 /// Map FecBackend to u8 for atomic stats storage.
 fn backend_to_u8(backend: FecBackend) -> u8 {
@@ -966,6 +1097,52 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let transport_arc = Arc::new(transport);
     let scheduler_arc = Arc::new(parking_lot::Mutex::new(scheduler));
 
+    // ── feat/copa-sole-cc: plain-mode Copa delivery feed ───────────────────
+    // PLAIN window-reliable mode never fed Copa's delivery-rate estimator:
+    // WindowAcks recorded RTT only (verdict-audit 2026-07-13 finding — only
+    // the block-path `ControlMessage::Ack` drives `Scheduler::ack →
+    // PathState::on_ack`), so the per-path Copa cwnd sat pinned at
+    // INITIAL_CWND and could not own a substrate window. This feed closes
+    // that, sender-side only (no wire/receiver change): each plain source
+    // send records seq→path + a BBR rate-sample snapshot (`on_src_sent`),
+    // and each WindowAck's cumulative-frontier advance + newly-SACKed seqs
+    // are attributed back to the path that carried them
+    // (`on_src_delivered_seq` — SEND-interval Δt, ack-aggregation robust)
+    // followed by the Copa cwnd dynamics (`on_delivery_signal`). The
+    // BBR-correct sampler and NOT the legacy ack-interval `record_delivery`:
+    // the ack-interval Δt spikes on frontier jumps and its windowed-max
+    // over-read (×19 on the plain L0 smoke; §16.13 measured ×145-class in
+    // gen mode) would pin cwnd ≫ BDP via the anchor floor — bufferbloat by
+    // estimator, exactly what Copa-sole must not do. RTT floor + delivery
+    // signal are then BOTH live in plain mode, per path (per connection =
+    // per path), and the resulting cwnd is written into the pass-through
+    // substrate window.
+    //
+    // Gated OFF by default (shipped plain path byte-identical): enabled by
+    // `RWM_QUIC_CC=passthrough` (Copa-sole flies blind without it) or
+    // standalone by `RWM_COPA_FEED=1` for the A/B. In-order plain mode ONLY:
+    // the OOO/generation modes deliver out of order (the in-order frontier
+    // is not their delivery signal) and generation mode has its own per-path
+    // attribution machinery (`per_path_est`).
+    let copa_feed_plain: Option<Arc<CopaFeed>> = {
+        let wanted = transport_arc.cc_passthrough_active()
+            || crate::config::env_flag("RWM_COPA_FEED", false);
+        let plain_inorder = window_reliable
+            && !window_generation
+            && !window_coded_only
+            && !config.window_out_of_order;
+        if wanted && plain_inorder {
+            info!(
+                "plain-mode Copa delivery feed ACTIVE (WindowAck frontier/SACK → per-path send-interval rate samples + cwnd dynamics)"
+            );
+            Some(Arc::new(CopaFeed::new()))
+        } else {
+            None
+        }
+    };
+    let sender_copa_feed = copa_feed_plain.clone();
+    let recv_copa_feed = copa_feed_plain.clone();
+
     // Clone tx before moving tun into the sender task
     let recv_tun_tx = tun.tx.clone();
 
@@ -1028,6 +1205,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 sender_window_coded_only,
                 sender_window_generation,
                 sender_window_systematic,
+                sender_copa_feed,
             )
             .await;
             return;
@@ -2607,6 +2785,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         recv_sack_tx.as_ref(),
                         if recv_window_mode { Some(&recv_window_decoded) } else { None },
+                        recv_copa_feed.as_ref(),
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -2996,7 +3175,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // The fast path only handles PathReport/Ping/Pong;
                         // Acks (which drive block ARQ) and WindowAcks go
                         // through the data loop, so neither the ledger nor
-                        // the peer-ack atomic is needed here.
+                        // the peer-ack atomic (nor the Copa feed) is needed
+                        // here.
+                        None,
                         None,
                         None,
                         None,
@@ -3326,6 +3507,11 @@ async fn run_window_sender(
     // the two coded-only L1-killers (decode-on-K latency + O(G²) decode) while
     // keeping the same fungible cross-path recovery and no per-seq ARQ.
     systematic: bool,
+    // feat/copa-sole-cc: Some(..) in plain in-order mode when the Copa
+    // delivery feed is on — source sends (and targeted retransmits) record
+    // seq→path + a BBR send-interval rate-sample snapshot so the WindowAck
+    // handler can attribute deliveries per path. None = shipped path.
+    copa_feed: Option<Arc<CopaFeed>>,
 ) {
     // Generation coding emits coded wire symbols exactly like coded-only; the
     // difference is the coding UNIT (a stable generation vs the moving window)
@@ -4232,6 +4418,17 @@ async fn run_window_sender(
                     let mut sched = scheduler.lock();
                     if let Some(p) = sched.path_mut(source_path) {
                         p.charge_in_flight(1);
+                        // feat/copa-sole-cc: record the seq→path commitment +
+                        // the BBR rate-sample send snapshot so this seq's
+                        // eventual WindowAck attribution yields a clean
+                        // SEND-interval delivery-rate sample on this path.
+                        // (Bulk back-to-back sends: app_limited = false; an
+                        // under-read sample can never lower the max filter.)
+                        if let Some(feed) = &copa_feed {
+                            feed.on_sent(wire_sym.block_id, source_path);
+                            p.charge_src(1);
+                            p.on_src_sent(wire_sym.block_id, false);
+                        }
                     }
                 }
                 if let Some(ps) = stats.path(source_path) {
@@ -4897,19 +5094,49 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_cap_refresh_us) >= 5_000 {
                 dyn_cap_refresh_us = dnow;
-                let bdp: f64 = {
-                    let sched = scheduler.lock();
-                    sched
-                        .active_paths()
-                        .iter()
-                        .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
-                        .sum()
-                };
-                dyn_store_cap = if bdp > 0.0 {
-                    ((store_bdp_gain * bdp).ceil() as usize).clamp(store_cap_floor, store_max)
+                if copa_feed.is_some() {
+                    // feat/copa-sole-cc: Copa OWNS the operating point, so the
+                    // outstanding window is keyed to Σ cwnd (the probe state),
+                    // not the BtlBw anchor. With the honest send-interval
+                    // sampler the old 2×anchor cap is CIRCULAR: samples can
+                    // never read above the store-capped delivered rate, so the
+                    // anchor could never grow toward the pipe (L0 MEASURED:
+                    // stuck at ~3.2k of 10.4k sym/s, throughput 18 of 66
+                    // Mbit/s — the legacy ack-interval over-read was
+                    // accidentally load-bearing for the old cap). cwnd escapes
+                    // the loop because Copa probes it upward (ramp ×1.5,
+                    // +2/SRTT, anchor pull) independent of the cap; gain×cwnd
+                    // keeps ~1 cwnd of recovery runway buffered above the
+                    // substrate window (quinn enforces cwnd on the wire).
+                    let cwnd_sum: f64 = {
+                        let sched = scheduler.lock();
+                        sched
+                            .active_paths()
+                            .iter()
+                            .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
+                            .sum()
+                    };
+                    dyn_store_cap = if cwnd_sum > 0.0 {
+                        ((store_bdp_gain * cwnd_sum).ceil() as usize)
+                            .clamp(store_cap_floor, store_max)
+                    } else {
+                        store_boot_cap.min(store_max)
+                    };
                 } else {
-                    store_boot_cap.min(store_max)
-                };
+                    let bdp: f64 = {
+                        let sched = scheduler.lock();
+                        sched
+                            .active_paths()
+                            .iter()
+                            .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
+                            .sum()
+                    };
+                    dyn_store_cap = if bdp > 0.0 {
+                        ((store_bdp_gain * bdp).ceil() as usize).clamp(store_cap_floor, store_max)
+                    } else {
+                        store_boot_cap.min(store_max)
+                    };
+                }
             }
         }
         let effective_store_cap = if plain_dyn_cap {
@@ -6041,6 +6268,17 @@ async fn run_window_sender(
                         warn!(nack_path, ?e, "failed to send NACK retransmission");
                     }
                     debug!(seq, nack_path, "SACK-gap retransmit");
+                    // feat/copa-sole-cc: a retransmit re-commits the seq to
+                    // its new path and re-snapshots the rate sample, so the
+                    // eventual ack is attributed to the path that actually
+                    // delivered it with a truthful send-interval.
+                    if let Some(feed) = &copa_feed {
+                        feed.on_sent(seq, nack_path);
+                        let mut sched = scheduler.lock();
+                        if let Some(p) = sched.path_mut(nack_path) {
+                            p.on_src_sent(seq, false);
+                        }
+                    }
                     nack_retx_at.insert(seq, now_repair_us);
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
@@ -6964,6 +7202,14 @@ fn handle_control_message(
     // 1), published from each WindowAck's `cumulative_received` (monotonic
     // fetch_max) and read by the local FMTCP sender for total-in-flight FC.
     peer_decoded: Option<&Arc<AtomicU64>>,
+    // feat/copa-sole-cc: Some(..) in PLAIN in-order window-reliable mode when
+    // the Copa delivery feed is enabled (RWM_QUIC_CC=passthrough or
+    // RWM_COPA_FEED=1). Each WindowAck's frontier/SACK diff is attributed
+    // per path into the send-interval rate sampler + the Copa cwnd dynamics
+    // (`copa_feed_attribute`), and the resulting per-path cwnd is written
+    // into the pass-through substrate window. None = shipped path,
+    // byte-identical.
+    copa_feed: Option<&Arc<CopaFeed>>,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -7001,7 +7247,25 @@ fn handle_control_message(
         } => {
             let mut sched = scheduler.lock();
             sched.touch_path(path_id);
-            sched.ack(path_id, received_ids.len() as u32);
+            // NOTE (feat/copa-sole-cc code-fact correction): these per-batch
+            // Acks are sent by the receiver's data arm in WINDOW mode too
+            // (the send site sits AFTER the window/block branch), so plain
+            // window mode has ALWAYS driven `on_ack → record_delivery` here —
+            // with the ack-interval Δt estimator, whose windowed max
+            // over-reads ~×10 under ack bunching (MEASURED on the L0 shim:
+            // btlbw 108k vs true ~10.4k sym/s) and pins cwnd/the plain store
+            // cap via the anchor floor. When the plain-mode Copa feed is
+            // active it owns delivery accounting + cwnd dynamics with clean
+            // SEND-interval samples (WindowAck frontier/SACK attribution), so
+            // this arm must release the wire-level in-flight budget WITHOUT
+            // polluting the max filter through `record_delivery`.
+            if copa_feed.is_some() {
+                if let Some(p) = sched.path_mut(path_id) {
+                    p.release_in_flight(received_ids.len() as u32);
+                }
+            } else {
+                sched.ack(path_id, received_ids.len() as u32);
+            }
             if let Some(p) = sched.path(path_id) {
                 debug!(
                     path_id,
@@ -7042,6 +7306,14 @@ fn handle_control_message(
                     ps.in_slow_start.store(path.in_slow_start, Ordering::Relaxed);
                     ps.symbols_received.fetch_add(received_ids.len() as u64, Ordering::Relaxed);
                 }
+
+                // feat/copa-sole-cc: block mode already drives Copa via
+                // `sched.ack` above — publish its cwnd as the pass-through
+                // substrate window too (no-op unless RWM_QUIC_CC=passthrough).
+                transport.set_cc_window_bytes(
+                    path_id,
+                    path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
+                );
             }
 
             // P8: the Ack is P_lost evidence at probability ≈ 1 — diff the
@@ -7231,6 +7503,23 @@ fn handle_control_message(
                         path.record_rtt_sample(rtt_duration);
                     }
                 }
+            }
+            // feat/copa-sole-cc: plain-mode Copa delivery feed. Diff this
+            // ack's cumulative frontier + SACK ranges against the attribution
+            // cursor and drive the per-path Copa machinery (send-interval
+            // rate samples, in-flight release, cwnd dynamics, pass-through
+            // window write). After the RTT recording above so the cwnd
+            // update sees the freshest queue signal.
+            if let Some(feed) = copa_feed {
+                copa_feed_attribute(
+                    feed,
+                    path_id,
+                    received_up_to,
+                    &sack_ranges,
+                    scheduler,
+                    transport,
+                    stats,
+                );
             }
             // Update monitoring stats
             if echo_send_timestamp_us > 0 {
@@ -7532,6 +7821,52 @@ mod tests {
         let (expected, received) = tracker.record_batch(2, 10);
         assert_eq!(expected, 20); // gap of 2, estimates 2*10 expected
         assert_eq!(received, 10);
+    }
+
+    // ----- CopaFeed attribution cursor (feat/copa-sole-cc) -----
+
+    /// Frontier advance attributes each seq exactly once, in order.
+    #[test]
+    fn copa_feed_frontier_attributes_once() {
+        let feed = CopaFeed::new();
+        assert_eq!(feed.newly_delivered(2, &[]), vec![0, 1, 2]);
+        // Duplicate/stale ack → empty diff, never a re-attribution.
+        assert!(feed.newly_delivered(2, &[]).is_empty());
+        assert!(feed.newly_delivered(1, &[]).is_empty());
+        assert_eq!(feed.newly_delivered(4, &[]), vec![3, 4]);
+    }
+
+    /// SACKed seqs above the frontier are attributed immediately and NOT
+    /// re-attributed when the frontier later passes them.
+    #[test]
+    fn copa_feed_sack_dedupes_against_frontier() {
+        let feed = CopaFeed::new();
+        // Frontier at 1, receiver also has 5..=6 (hole 2..=4).
+        assert_eq!(feed.newly_delivered(1, &[(5, 6)]), vec![0, 1, 5, 6]);
+        // Same SACK re-advertised → nothing new.
+        assert!(feed.newly_delivered(1, &[(5, 6)]).is_empty());
+        // Hole repaired: frontier jumps to 7 — only the gap seqs (2..=4)
+        // and 7 are new; 5..=6 were consumed from the sacked set.
+        assert_eq!(feed.newly_delivered(7, &[]), vec![2, 3, 4, 7]);
+    }
+
+    /// seq→path attribution: the seq is charged to the path it was (last)
+    /// sent on; unknown seqs fall back to the ack path.
+    #[test]
+    fn copa_feed_seq_path_last_send_wins() {
+        let feed = CopaFeed::new();
+        feed.on_sent(10, 0);
+        feed.on_sent(10, 1); // retransmit on the other path
+        assert_eq!(feed.seq_path.remove(&10).map(|(_, p)| p), Some(1));
+        assert_eq!(feed.seq_path.remove(&10).map(|(_, p)| p), None);
+    }
+
+    /// A hostile/corrupt ack cannot trap the diff in a huge loop.
+    #[test]
+    fn copa_feed_per_ack_work_is_bounded() {
+        let feed = CopaFeed::new();
+        let newly = feed.newly_delivered(u64::MAX - 1, &[]);
+        assert!(newly.len() <= 65_536);
     }
 
     // ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
