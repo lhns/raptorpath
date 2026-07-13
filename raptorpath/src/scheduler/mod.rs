@@ -586,10 +586,16 @@ pub struct CopaState {
     /// In legacy mode this stays COPA_DELTA so the diagnostic
     /// `copa_target_cwnd` is unchanged.
     delta: f64,
-    /// Copa velocity v: the per-SRTT step is v/δ symbols; v doubles while
-    /// the update direction persists and resets to 1 on a direction flip
-    /// (Copa §2.2's velocity parameter at per-SRTT granularity).
+    /// Copa velocity v: the per-SRTT step is v/δ symbols; v doubles once
+    /// per update while the direction has persisted ≥ 3 consecutive
+    /// updates, and resets to 1 on a direction flip (Copa §2.2's velocity
+    /// parameter at per-SRTT granularity — the 3-window hysteresis is what
+    /// bounds the overshoot of a pure every-window doubling, MEASURED at
+    /// the L1 smoke: cwnd pinned MAX_CWND with 130 ms app-RTT spikes
+    /// without it).
     velocity: f64,
+    /// Consecutive same-direction update count (velocity hysteresis).
+    dir_streak: u32,
     /// Direction of the previous wire-mode update (None = no update yet /
     /// after a backoff reset).
     last_dir_up: Option<bool>,
@@ -609,6 +615,7 @@ impl CopaState {
                 COPA_DELTA
             },
             velocity: 1.0,
+            dir_streak: 0,
             last_dir_up: None,
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
@@ -1104,8 +1111,10 @@ impl CopaState {
     ///   target_rate = 1/(δ·d_q)  ⇒  target_cwnd = srtt/(δ·d_q)
     ///   direction   = up if cwnd ≤ target_cwnd, else down
     ///   step        = v/δ symbols per SRTT (Copa: cwnd ± v/(δ·cwnd) per
-    ///                 ACK × cwnd ACKs/RTT = v/δ per RTT); v doubles while
-    ///                 the direction persists, resets to 1 on a flip.
+    ///                 ACK × cwnd ACKs/RTT = v/δ per RTT); v doubles once
+    ///                 per update after the direction has persisted ≥ 3
+    ///                 updates (Copa §2.2 hysteresis), resets to 1 on a
+    ///                 flip.
     ///
     /// Equilibrium: rate = μ (the bottleneck) at a standing queue of 1/δ
     /// packets; the ±v/δ dither around it drains the queue to ~empty every
@@ -1136,10 +1145,15 @@ impl CopaState {
         };
         let up = !above;
         if self.last_dir_up == Some(up) {
-            // Direction persisted → double the velocity (bounded so the
-            // step can never exceed the cwnd ceiling).
-            self.velocity = (self.velocity * 2.0).min(self.delta * PathState::MAX_CWND as f64);
+            self.dir_streak = self.dir_streak.saturating_add(1);
+            if self.dir_streak >= 3 {
+                // Direction persisted ≥ 3 updates → double the velocity
+                // (bounded so the step can never exceed the cwnd ceiling).
+                self.velocity =
+                    (self.velocity * 2.0).min(self.delta * PathState::MAX_CWND as f64);
+            }
         } else {
+            self.dir_streak = 1;
             self.velocity = 1.0;
         }
         self.last_dir_up = Some(up);
@@ -1167,6 +1181,7 @@ impl CopaState {
         // Wire mode: a backoff is a down move — reset the velocity streak so
         // the next windowed update re-measures direction from v = 1.
         self.velocity = 1.0;
+        self.dir_streak = 1;
         self.last_dir_up = Some(false);
         (cwnd as f64 * BACKOFF_MULT).round() as u32
     }
@@ -4604,26 +4619,31 @@ mod tests {
         path.on_ack(4);
         assert!(!path.in_slow_start, "queue evidence must end the ramp");
 
-        // Steady state, clean floor again: consecutive up-steps double
-        // (velocity), each bounded by the current cwnd.
+        // Steady state, clean floor again: base up-step is 1/δ = 200; the
+        // velocity doubles only after the direction has persisted ≥ 3
+        // updates (Copa §2.2 hysteresis — bounds the overshoot).
         let c0 = path.cwnd;
-        path.record_rtt_sample(millis(10));
-        clock.advance(millis(400)); // > srtt (spiked EWMA) → update due
-        path.on_ack(4);
-        let c1 = path.cwnd;
-        path.record_rtt_sample(millis(10));
-        clock.advance(millis(400));
-        path.on_ack(4);
-        let c2 = path.cwnd;
-        let step1 = c1 - c0;
-        let step2 = c2 - c1;
+        let mut cs = vec![c0];
+        for _ in 0..3 {
+            path.record_rtt_sample(millis(10));
+            clock.advance(millis(400)); // > srtt (spiked EWMA) → update due
+            path.on_ack(4);
+            cs.push(path.cwnd);
+        }
+        let step1 = cs[1] - cs[0];
+        let step2 = cs[2] - cs[1];
+        let step3 = cs[3] - cs[2];
         assert!(
-            step1 >= 190 || step1 as f64 >= c0 as f64 * 0.95,
-            "bulk-δ base step must be ~1/δ = 200 (or cwnd-capped): c0={c0} c1={c1}"
+            step1 >= 190 || step1 as f64 >= cs[0] as f64 * 0.95,
+            "bulk-δ base step must be ~1/δ = 200 (or cwnd-capped): {cs:?}"
         );
         assert!(
-            step2 >= 2 * step1 - 2 || step2 as f64 >= c1 as f64 * 0.95,
-            "persistent direction must double the velocity: step1={step1} step2={step2}"
+            step2 <= step1 + 2,
+            "velocity must NOT double before the 3-update streak: {cs:?}"
+        );
+        assert!(
+            step3 >= 2 * step1 - 2 || step3 as f64 >= cs[2] as f64 * 0.95,
+            "3-update persistent direction must double the velocity: {cs:?}"
         );
 
         // Down direction: the drain per update is capped at
