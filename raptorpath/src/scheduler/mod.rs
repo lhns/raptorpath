@@ -960,17 +960,25 @@ impl CopaState {
     ///     measured L1 root cause of the C2 throughput collapse), and
     ///   - the k × jitter_est term covers the residual within-window
     ///     spread at small sample counts (JITTER_HEADROOM).
-    /// Wire-mode queuing delay d_q (seconds): windowed-min wire RTT −
-    /// propagation floor − jitter headroom, clamped ≥ DQ_FLOOR_SECS.
+    /// Wire-mode queuing delay d_q (seconds): STANDING wire RTT (the most
+    /// recent packet-timed sample — quinn's srtt, already an EWMA over many
+    /// per-ack samples: Copa §2's RTTstanding) − propagation floor − jitter
+    /// headroom, clamped ≥ DQ_FLOOR_SECS.
     ///
-    /// Differences from the legacy signal, both consequences of the wire
+    /// Differences from the legacy signal, all consequences of the wire
     /// clock (feat/copa-wire-signal):
+    ///   - The signal is the CURRENT standing estimate, NOT the per-window
+    ///     min. MEASURED (L1 c2 smoke, v1 of this law): the δ-sawtooth's
+    ///     drain trough falls inside every update window, so a windowed min
+    ///     reads "queue empty" at every update — the direction stays up,
+    ///     the velocity compounds, and cwnd pins MAX_CWND with 130 ms
+    ///     app-RTT spikes. The smoothed standing sample tracks the queue
+    ///     the law is actually steering.
     ///   - The floor is the RAW 10 s min (`min_rtt`), not the quantile
-    ///     queue floor: the wire samples are quinn's smoothed packet-timed
-    ///     RTT (an EWMA — sample-level jitter is already averaged out), and
-    ///     the δ-law's sawtooth drains the queue to ~empty every few
-    ///     updates, so the raw min stays fresh (the quantile floor was an
-    ///     app-echo jitter fix, and under a deep Bulk standing queue it
+    ///     queue floor: wire samples are already smoothed (sample-level
+    ///     jitter averaged out), and the law's dither drains the queue to
+    ///     ~empty regularly, refreshing the raw min (the quantile floor was
+    ///     an app-echo jitter fix, and under a deep Bulk standing queue it
     ///     would creep up to the queue itself within its 10 s window —
     ///     staleness by construction).
     ///   - The jitter headroom is SUBTRACTED from the measured d_q rather
@@ -978,11 +986,11 @@ impl CopaState {
     ///     the above-target test and the target-rate law (continuity:
     ///     jitter → 0 recovers plain Copa exactly).
     fn wire_dq_secs(&self) -> Option<f64> {
-        let win_min = self.min_rtt_since_update?;
+        let standing = self.prev_rtt_sample?;
         let floor = self.min_rtt?;
         let jitter = self.jitter_est.max(self.win_jitter_est);
         Some(
-            (win_min.as_secs_f64() - floor.as_secs_f64() - JITTER_HEADROOM * jitter)
+            (standing.as_secs_f64() - floor.as_secs_f64() - JITTER_HEADROOM * jitter)
                 .max(DQ_FLOOR_SECS),
         )
     }
