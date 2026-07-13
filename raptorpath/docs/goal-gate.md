@@ -186,7 +186,69 @@ Second run: **15/15** (`cargo test --test gate_suite --release`,
 full suite (58 lib + formula 19 + monte-carlo 22 + multipath 4 +
 real-trace #43 4 + rstar-tail 3 + temporal 23) all green.
 
-<!-- #46 L1 RESULTS APPENDED BELOW -->
+### L1 spot check (VM 10.1.5.16, 2026-07-13 ~18:20–18:37 UTC): the wire arms are INDISTINGUISHABLE — the corrected r* is diluted by the plain-mode EMISSION path (a NEW, precisely-attributed instance of the §12.9/§8.4 substrate caveat), not refuted
+
+**Method (MEASUREMENT DISCIPLINE).** Binary sha256 f6c68660a9db… built on
+the VM from commit 4538a9b (COMMIT file records provenance). Cell: c3
+single-path (netem `gemodel 2% 40%`, 20 mbit, 40 ms RTT + 5 ms jitter,
+netem `seed $SEED`), hint=realtime, plain window mode. Same-binary
+interleaved arms per rep: T = `RWM_RSTAR_TAIL=1` (shipped), L = `=0`
+(legacy); x8 reps, seeds 42 AND 7. Full command + env per run in
+`/home/vibe/rstar/c3rt-s{42,7}.log`, per-run sender DIAG in `diag-*.log`;
+driver `tools/l1/rstar_battery.sh`. Delivered-reliability observable:
+realtime's 20 ms reorder horizon << the ~90 ms ARQ round, so a loss not
+recovered IN-WINDOW is force-delivered as an app hole and the 100 KB perf
+object (~203 chunks @508 B) can never complete → per-object DNF fraction
+IS app-level delivered reliability. `RWM_PERF_TIMEOUT_S=5` caps expected
+misses (new env knob, src/perf.rs).
+
+**Result (delivered reliability, objects completed):**
+
+| arm | seed 42 | seed 7 | pooled |
+|---|---|---|---|
+| L (legacy r*) | 116/160 (72.5%) | 43/60 (71.7%) | 72.3% |
+| T (corrected r*) | 115/160 (71.9%) | 68/100 (68.0%) | 70.4% |
+
+Per-invocation DNF counts are BIMODAL on seed 7 (0 and 5–9 within the
+same arm) and spread sd ≈ 1.7/20 runs on seed 42 — the noise floor is
+several points of delivered fraction; the −2 pp pooled delta is inside
+it. Harness caveat recorded: the 5 s timeout also applies to the WARM-UP
+object, and on seed 7 half the invocations (3 T vs 5 L — non-differential)
+aborted at warm-up ("tunnel not passing traffic") and are excluded; seed
+42 had 16/16 clean invocations.
+
+**Why the arms tie — the honest attribution.** Sender DIAG shows emitted
+repair overhead cod/src ≈ 0.03–0.10 in BOTH arms (mean T 0.058/0.083,
+L 0.060/0.098 by seed) — an order below either arm's r* (L 0.206, T 0.255
+at this cell, verified at the controller by unit probe; the L0 gate suite,
+which applies `compute_repair_rate` directly per symbol, DID shift — C8
+recalibration above — so the solver is live where the rate is consumed
+as computed). The plain-mode emission path is the diluting stage
+(net/mod.rs ~4605): per source symbol it adds
+`min(τ(taper_offset), spare)` to the repair debt with
+τ(t) = r·q̂·(1−q̂)^t, and `taper_offset` resets only on CUMULATIVE-ACK
+advancement — so total proactive repair ≈ Σ_t τ(t) = **r symbols per ack
+cycle**, and an ack cycle at c3 BDP is hundreds of symbols: the emitted
+overhead is ~r/cycle, nearly independent of r's magnitude. Raising r*
+therefore cannot reach the wire in plain window mode — the same class of
+substrate limitation §8.4's "Measured caveat (2026-07-08)"/§12.9 already
+document for proactive repair, now attributed to the taper-reset
+mechanism specifically.
+
+**Verdict, scoped honestly.** The claim "new r* meets ρ where old missed"
+is VALIDATED at the oracle rung (real traces + heavy-tail synthetic,
+tables above) and at L0 (gate suite consumes r* directly), and is NOT
+REALIZED at L1 in plain window mode because the emission scheduler — not
+the solver — is the binding stage there. (Also noted: netem `gemodel` IS
+GE, so even a faithful emission path would test the §8.7 closed-form-vs-
+exact gap at this rung, not the heavy-tail gap; heavier-than-GE loss is
+not expressible with netem.) Overhead delta at the wire: none measurable
+(cod/src equal within noise) — the corrected r* costs nothing at L1
+today for the same reason it fixes nothing there. FOLLOW-UP (out of #46
+scope, named): make the plain-mode emission path honor the computed rate
+per source symbol (or route realtime through the generation/pacer path
+that does), then re-run this cell — the L1 realization of the corrected
+contract lives or dies on that emission fix.
 
 ## FINAL CONSOLIDATED VERDICT (2026-07-08) — the aggregation/throughput arc
 

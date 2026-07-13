@@ -1989,6 +1989,17 @@ fades no in-window rate covers) — on those the ceiling still improves the
 residual (12.8× → 10.7× at worst) and the infeasibility is reported.
 Full tables: `rstar_tail_validation.rs`.
 
+**L1 status (MEASURED, 2026-07-13).** The corrected r\* is realized where
+the computed rate is consumed directly (the L0 gate suite; the oracle
+replay). At L1 in *plain window mode* it is currently INERT at the wire:
+the taper emission path resets its offset on cumulative-ack advancement,
+so emitted proactive repair ≈ Σ τ(t) = r symbols *per ack cycle*
+(~r/cycle-length overhead, nearly independent of r's magnitude), and an
+x8 two-seed A/B on c3-realtime shows the arms tied at equal emitted
+overhead — the same substrate class as the §8.4 "Measured caveat"/§12.9.
+Fixing the emission scheduler is the named follow-up; details in
+goal-gate "r\* Bursty-Loss Provisioning".
+
 **Cost and scoping (honest).** On heavy-tail channels the corrected r\* is
 large *because the contract is expensive there* — reliability against fades
 is bought with bandwidth. The (δ, ρ, r) contract itself scopes the cost: Bulk
