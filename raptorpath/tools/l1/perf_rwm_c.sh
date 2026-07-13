@@ -51,6 +51,12 @@ fi
 [[ -n "${RWM_CODED_SRC:-}" ]] && TENV="$TENV RWM_CODED_SRC=$RWM_CODED_SRC"
 [[ -n "${RWM_NO_REACTIVE:-}" ]] && TENV="$TENV RWM_NO_REACTIVE=$RWM_NO_REACTIVE"
 [[ -n "${RWM_DIAG:-}" ]] && TENV="$TENV RWM_DIAG=$RWM_DIAG"
+# r* burst-tail provisioning (task #46, paper 8.4.1): RWM_RSTAR_TAIL=0 is the
+# legacy GE-only r* arm (same-binary A/B); unset/1 = shipped tail-provisioned r*.
+[[ -n "${RWM_RSTAR_TAIL:-}" ]] && TENV="$TENV RWM_RSTAR_TAIL=$RWM_RSTAR_TAIL"
+# Per-run completion timeout override (reliability batteries where DNF is an
+# expected datum; see src/perf.rs run_timeout()).
+[[ -n "${RWM_PERF_TIMEOUT_S:-}" ]] && TENV="$TENV RWM_PERF_TIMEOUT_S=$RWM_PERF_TIMEOUT_S"
 [[ -n "${RWM_PFRAC:-}" ]] && TENV="$TENV RWM_PFRAC=$RWM_PFRAC"
 [[ -n "${RWM_TRACE:-}" ]] && TENV="$TENV RWM_TRACE=$RWM_TRACE"
 # Transport-substrate fixes (feat/transport-substrate): CC-rate source pacing

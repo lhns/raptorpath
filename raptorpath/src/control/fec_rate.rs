@@ -109,6 +109,15 @@ pub struct FecRateController {
     /// know T_rem (the L0 gate, the wasm sim) set it per tick via
     /// `set_completion_exposure` with `raptorpath_math::completion_exposure`.
     completion_exposure: f64,
+    /// #46: window-mass burst-tail provisioning (paper Section 8.4.1).
+    /// The GE geometric burst law under-provisions r* by 2-4x on real
+    /// bursty traces (Section 2.5, MEASURED); when enabled, the rate
+    /// includes the `r_star_mass` quantile term fed by the receiver's own
+    /// multi-scale window loss-mass statistics (GilbertElliottEstimator
+    /// mass_stats). Env gate RWM_RSTAR_TAIL (default ON — this is a
+    /// correctness fix to the reliability contract; =0 restores the
+    /// legacy GE-only provisioning for A/B).
+    tail_provision: bool,
     /// P10a: inner-feedback weight in [0, 1] (paper Section 14.28). The
     /// Bulk glide's mid-stream r* = 0 prices VOLUME; when the payload is
     /// itself a latency-sensitive control loop (TCP inside the tunnel),
@@ -175,6 +184,7 @@ impl FecRateController {
             saturation_cap_enabled: true,
             bulk_pure_arq: true,
             completion_exposure: 0.0,
+            tail_provision: crate::config::env_flag("RWM_RSTAR_TAIL", true),
             inner_feedback: 0.0,
         }
     }
@@ -182,6 +192,13 @@ impl FecRateController {
     /// Enable/disable the saturation cap (paper Section 14.21). Default: on.
     pub fn set_saturation_cap(&mut self, enabled: bool) {
         self.saturation_cap_enabled = enabled;
+    }
+
+    /// #46: enable/disable the window-mass burst-tail provisioning term
+    /// (paper Section 8.4.1). Default follows RWM_RSTAR_TAIL (ON).
+    /// Exposed for ablation.
+    pub fn set_tail_provision(&mut self, enabled: bool) {
+        self.tail_provision = enabled;
     }
 
     /// Enable/disable the Bulk pure-ARQ tail target (P4a, on by default).
@@ -281,6 +298,11 @@ impl FecRateController {
             p_upper: estimator.predictive_loss_upper(0.95),
             sigma2,
             mean_burst,
+            // #46 (paper 8.4.1): the receiver's measured window loss-mass
+            // tail; MassStats::default() until enough nonzero blocks are
+            // observed, keeping cold start identical to pre-#46.
+            mass: ge.mass_stats(),
+            tail_provision: self.tail_provision,
             window: window_size as f64,
             t_symbols,
             srtt: rtt_secs,
@@ -1148,6 +1170,65 @@ mod tests {
         ctrl.set_inner_feedback(1.0);
         let no_tput = ctrl.compute_repair_rate(&est_no_tput, 56);
         assert!(no_tput < 0.005, "floor needs a throughput estimate: {no_tput}");
+    }
+
+    #[test]
+    fn test_tail_provision_bursty_channel_raises_rate() {
+        // #46 (paper 8.4.1): feed a HEAVY-CLUSTERED per-symbol loss
+        // pattern (fade episodes of ~48 lost symbols every ~1500) so the
+        // measured window-mass tail is far beyond what the GE margin
+        // models. With the tail term ON (shipped default) the rate must
+        // rise materially above the legacy GE-only rate; with it OFF
+        // (RWM_RSTAR_TAIL=0 arm, via the setter) the legacy rate returns.
+        let mut est = LossEstimator::new();
+        for _ in 0..60 {
+            // one fade episode + clean stretch, fed with true interleaving
+            est.record_counts(1500, 1452);
+            for _ in 0..48 {
+                est.record_symbol(false);
+            }
+            for _ in 0..1452 {
+                est.record_symbol(true);
+            }
+        }
+        let ge = est.ge_estimator();
+        assert!(
+            ge.mass_stats().is_valid(),
+            "mass statistics must be live after 60 fade episodes"
+        );
+
+        let mut ctrl = FecRateController::new(1e-4, 1.0, ProtocolHint::Auto, FecBackend::Rlc, 1200);
+        ctrl.set_tail_provision(false);
+        let legacy = ctrl.compute_repair_rate(&est, 64);
+        ctrl.set_tail_provision(true);
+        let corrected = ctrl.compute_repair_rate(&est, 64);
+        println!("legacy={legacy:.3} corrected={corrected:.3}");
+        assert!(
+            corrected > 1.2 * legacy,
+            "clustered fades must raise the corrected rate materially: {corrected} vs {legacy}"
+        );
+
+        // On a NON-bursty channel of the same average loss the two arms
+        // stay close (no over-provisioning where GE is adequate): iid-fed
+        // pattern (isolated losses).
+        let mut est_iid = LossEstimator::new();
+        for _ in 0..2000 {
+            est_iid.record_counts(31, 30);
+            for _ in 0..30 {
+                est_iid.record_symbol(true);
+            }
+            est_iid.record_symbol(false);
+        }
+        let mut ctrl2 = FecRateController::new(1e-4, 1.0, ProtocolHint::Auto, FecBackend::Rlc, 1200);
+        ctrl2.set_tail_provision(false);
+        let legacy_iid = ctrl2.compute_repair_rate(&est_iid, 64);
+        ctrl2.set_tail_provision(true);
+        let corrected_iid = ctrl2.compute_repair_rate(&est_iid, 64);
+        println!("iid: legacy={legacy_iid:.3} corrected={corrected_iid:.3}");
+        assert!(
+            corrected_iid <= 1.35 * legacy_iid,
+            "near-iid channel must not be materially over-provisioned: {corrected_iid} vs {legacy_iid}"
+        );
     }
 
     #[test]

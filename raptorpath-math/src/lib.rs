@@ -123,6 +123,281 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
 /// the residual probability of one serial ARQ round at end-of-stream.
 pub const BULK_TAIL_BUDGET: f64 = 0.05;
 
+// =========================================================================
+// Burst-tail provisioning (paper Section 8.4.1): r* against heavy-tailed
+// burst-length distributions. The GE geometric burst law under-provisions
+// r* by 2-4x on real traces (paper Section 2.5, MEASURED); the corrected
+// solver provisions against the burst-length QUANTILE the (delta, rho)
+// contract implies, under a discrete-Weibull burst-tail model whose k = 1
+// special case IS the geometric (GE) law — so on a GE channel the
+// correction reproduces the Section 8.7 exact r*, and on heavy tails it
+// provisions for the fade bursts that actually kill windows.
+// =========================================================================
+
+/// Lower solver bound on the discrete-Weibull shape k (numerical range of
+/// the moment fit, not a behavioral constant): k = 0.2 corresponds to a
+/// second-moment ratio E[X^2]/E[X]^2 of ~252 — far beyond any measured
+/// trace. Heavier demands clamp here.
+pub const BURST_TAIL_K_MIN: f64 = 0.2;
+/// Upper solver bound on k: k = 8 is essentially deterministic burst
+/// lengths (ratio ~1.08); lighter-than-that demands clamp here.
+pub const BURST_TAIL_K_MAX: f64 = 8.0;
+/// Search ceiling of the tail solver (same convention as
+/// `compute_r_star_exact`): a burst quantile no in-window rate can cover
+/// returns this ceiling and the caller's max_overhead clamp governs.
+pub const R_STAR_TAIL_CEILING: f64 = 2.0;
+
+/// ln Gamma(x) for x > 0 (Lanczos approximation, g = 7, n = 9).
+/// Absolute error < 1e-10 over the range used here (x in [1, 12]).
+pub fn ln_gamma(x: f64) -> f64 {
+    // Coefficients for g = 7, n = 9 (Godfrey/Lanczos).
+    const COEF: [f64; 9] = [
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7,
+    ];
+    if x < 0.5 {
+        // Reflection: Gamma(x) Gamma(1-x) = pi / sin(pi x)
+        let pi = std::f64::consts::PI;
+        return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
+    }
+    let x = x - 1.0;
+    let mut a = COEF[0];
+    let t = x + 7.5;
+    for (i, &c) in COEF.iter().enumerate().skip(1) {
+        a += c / (x + i as f64);
+    }
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
+}
+
+/// Discrete-Weibull burst-length survival: S(t) = P(B > t) = theta^(t^k).
+///
+/// k = 1 is exactly geometric with persistence theta = 1 - q (the GE burst
+/// law, Section 2.3); k < 1 is a stretched-exponential heavy tail. t is
+/// real-valued (the survival extends continuously between integers).
+pub fn burst_tail_survival(theta: f64, k: f64, t: f64) -> f64 {
+    if t <= 0.0 { return 1.0; }
+    if theta <= 0.0 { return 0.0; }
+    if theta >= 1.0 { return 1.0; }
+    (t.powf(k) * theta.ln()).exp()
+}
+
+/// Fit the discrete-Weibull burst-tail (theta, k) from the first two
+/// moments of the observed burst lengths: m1 = E[B], m2 = E[B^2].
+///
+/// Both moments are online-estimable from the receiver's own loss runs
+/// with the SAME decayed-counter pattern as the GE transition counts —
+/// no new parameter enters the (delta, rho, r) contract.
+///
+/// Method (paper Section 8.4.1): midpoint-correct the discrete variable
+/// (X = B - 1/2 on (0, inf)), then moment-match the continuous Weibull
+/// exp(-c x^k):
+///
+///   ratio = E[X^2]/E[X]^2 = Gamma(1+2/k) / Gamma(1+1/k)^2   (solve k)
+///   c     = (Gamma(1+1/k) / E[X])^k,   theta = exp(-c)
+///
+/// The ratio is strictly decreasing in k, so a binary search suffices.
+/// Geometric bursts (GE) have ratio ~2 and fit k ~ 1; heavy-tailed real
+/// traces fit k < 1. Degenerate inputs (m2 <= m1, m1 < 1) fall back to
+/// the geometric fit k = 1, theta = 1 - 1/m1.
+pub fn fit_burst_tail(m1: f64, m2: f64) -> (f64, f64) {
+    let m1v = if m1.is_finite() { m1.max(1.0) } else { 1.0 };
+    let geometric = ((1.0 - 1.0 / m1v).clamp(1e-12, 1.0 - 1e-12), 1.0);
+    if !(m2.is_finite()) || m2 <= m1v || m1v <= 1.0 {
+        return geometric;
+    }
+    // Midpoint shift: B in {1,2,...} <-> X = B - 1/2 in (0, inf).
+    let mu = m1v - 0.5;
+    let x2 = m2 - m1v + 0.25; // E[(B-1/2)^2]
+    if x2 <= mu * mu {
+        return geometric; // sub-deterministic: no tail to fit
+    }
+    let ratio = x2 / (mu * mu);
+    let ratio_of_k =
+        |k: f64| (ln_gamma(1.0 + 2.0 / k) - 2.0 * ln_gamma(1.0 + 1.0 / k)).exp();
+    // ratio(k) is strictly decreasing; clamp into the solvable band.
+    let ratio = ratio.clamp(ratio_of_k(BURST_TAIL_K_MAX), ratio_of_k(BURST_TAIL_K_MIN));
+    let (mut lo, mut hi) = (BURST_TAIL_K_MIN, BURST_TAIL_K_MAX);
+    for _ in 0..60 {
+        let mid = 0.5 * (lo + hi);
+        if ratio_of_k(mid) > ratio {
+            lo = mid; // fitted tail heavier than mid => k below mid
+        } else {
+            hi = mid;
+        }
+    }
+    let k = 0.5 * (lo + hi);
+    let c = ((ln_gamma(1.0 + 1.0 / k).exp()) / mu).powf(k);
+    let theta = (-c).exp().clamp(1e-300, 1.0 - 1e-12);
+    (theta, k)
+}
+
+/// Number of block scales the window-mass estimator tracks: the tail of
+/// the sliding m-block loss mass is measured for m = 1..=MASS_SCALES.
+/// With the default block scale w0 = 64 this covers window spans up to
+/// 8 x 64 = 512 wire slots — the derive_window WINDOW_MAX.
+pub const MASS_SCALES: usize = 8;
+
+/// Multi-scale window loss-mass statistics (paper Section 8.4.1): for
+/// each m in 1..=MASS_SCALES, the tail of J_m = losses in m consecutive
+/// blocks of `block_scale` wire slots (sliding at block granularity),
+/// measured by the receiver with the same decayed counters as the GE
+/// transition counts:
+///
+///   nz[m-1] = P(J_m >= 1)         fraction of m-spans with any loss
+///   m1[m-1] = E[J_m | J_m >= 1]   conditional mean mass
+///   m2[m-1] = E[J_m^2 | J_m >= 1] conditional second moment
+///
+/// Scales with no valid data carry nz = 0 (the solver skips them).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MassStats {
+    /// Block scale w0 in wire slots (0.0 = no mass data).
+    pub block_scale: f64,
+    pub nz: [f64; MASS_SCALES],
+    pub m1: [f64; MASS_SCALES],
+    pub m2: [f64; MASS_SCALES],
+}
+
+impl MassStats {
+    /// True when the statistic is usable (block scale known and the
+    /// single-block scale has observed loss mass).
+    pub fn is_valid(&self) -> bool {
+        self.block_scale >= 1.0
+            && self.nz[0] > 0.0
+            && self.nz[0].is_finite()
+            && self.m1[0] > 0.0
+    }
+
+    /// Fitted tail of J_m: P(J_m > x) ~ nz_m x S(x; theta_m, k_m) with
+    /// the discrete-Weibull tail fit from the conditional moments.
+    fn tail(&self, idx: usize, x: f64) -> f64 {
+        let nz = self.nz[idx].clamp(0.0, 1.0);
+        if nz <= 0.0 {
+            return 0.0; // no data at this scale: skip (documented)
+        }
+        let (theta, k) = fit_burst_tail(self.m1[idx], self.m2[idx]);
+        nz * burst_tail_survival(theta, k, x)
+    }
+}
+
+/// Window-mass quantile r* (paper Section 8.4.1): the least rate whose
+/// repair count covers the measured window LOSS-MASS quantile the tail
+/// target implies.
+///
+/// THE EXACT FAILURE CRITERION. A coding window of W source symbols and
+/// R = rW repairs spans N = W + R wire slots. If K of those N slots are
+/// lost — x of them repairs — the window fails iff source losses exceed
+/// surviving repairs: K - x > R - x, i.e. **K > R, independent of x**.
+/// So the window-failure probability is EXACTLY the upper tail of the
+/// window loss mass K_N, and the right statistic to provision against is
+/// the receiver's own measured window-mass tail — not the single-burst
+/// length law (a window is killed just as dead by two clustered 20-loss
+/// bursts as by one 40-loss burst, and real traces cluster far beyond
+/// GE: the Section 2.5 "long memory" miss).
+///
+/// LAW. P(K_N > R) is read from the measured multi-scale mass tails at
+/// the scale matching N: with x = N / w0 in [1, MASS_SCALES],
+///
+///   F(r) = (1-f) T_lo(R) + f T_hi(R),   f = frac(x)
+///
+/// interpolating the fitted tails T_m(R) = P(J_m > R) of the two block
+/// scales bracketing x. Linear-in-probability interpolation dominates
+/// the log-linear reading (AM-GM), i.e. it takes the conservative side
+/// of the interpolation uncertainty; by stationarity T_ceil(x) is an
+/// upper bound on the true window tail, so F is sandwiched between the
+/// tight and the safe reading. Beyond the largest tracked scale the
+/// window is chunked and a union bound applies:
+/// F = c x T_max(R / c), c = ceil(x / MASS_SCALES). r* is the least r
+/// on [0, R_STAR_TAIL_CEILING] with F(r) <= delta_wf (= delta/eps, the
+/// same per-window mapping as Section 8.4).
+///
+/// Properties:
+/// - Measured mass tail at the window's own scale: heavy burst tails,
+///   burst CLUSTERING, and loss/repair correlation are all inside K, and
+///   there is no union-bound slack at the scales that matter — on a GE
+///   channel r* tracks the Section 8.7 exact r* (validated: no material
+///   over-provisioning where GE is adequate).
+/// - Continuous in delta_wf and in the measured moments; 0 when the
+///   measured tail already meets the target at r = 0 (pure ARQ), and
+///   R_STAR_TAIL_CEILING when even the ceiling cannot (the contract is
+///   infeasible in-window; the caller's max_overhead clamp governs and
+///   the miss is declared, not hidden).
+/// - This is an ESTIMATE of the window-failure tail (block-aligned
+///   measurement + Weibull-fit tail extension), validated against replay
+///   in rstar_tail_validation.rs — not a distribution-free bound.
+pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64) -> f64 {
+    let valid = stats.is_valid()
+        && window.is_finite()
+        && window >= 1.0
+        && delta_wf.is_finite()
+        && delta_wf > 0.0;
+    if !valid {
+        return 0.0;
+    }
+    if delta_wf >= 1.0 {
+        return 0.0; // contract met by pure ARQ: no within-window requirement
+    }
+    let w0 = stats.block_scale;
+    let bound = |r: f64| -> f64 {
+        let n = window * (1.0 + r);
+        let x = n / w0;
+        let rr = r * window; // repair count R
+        if x <= 1.0 {
+            return stats.tail(0, rr);
+        }
+        let max_m = MASS_SCALES as f64;
+        if x >= max_m {
+            // chunk + union bound beyond the tracked scales
+            let c = (x / max_m).ceil();
+            return (c * stats.tail(MASS_SCALES - 1, rr / c)).min(1.0);
+        }
+        let lo = x.floor() as usize - 1;
+        let hi = (lo + 1).min(MASS_SCALES - 1);
+        let f = x - x.floor();
+        let (t_lo, t_hi) = (stats.tail(lo, rr), stats.tail(hi, rr));
+        (1.0 - f) * t_lo + f * t_hi
+    };
+    if bound(0.0) <= delta_wf {
+        return 0.0;
+    }
+    if bound(R_STAR_TAIL_CEILING) > delta_wf {
+        return R_STAR_TAIL_CEILING; // infeasible in-window at the ceiling
+    }
+    // The bound is not perfectly monotone in r everywhere (the span grows
+    // with r before the survival decay bites), so find the LAST downward
+    // crossing on a grid (same 0.005 resolution as `r_saturation`), then
+    // bisect inside the bracket for continuity.
+    let step = 0.005;
+    let n_steps = (R_STAR_TAIL_CEILING / step) as usize;
+    let mut hi_idx = n_steps;
+    for i in (0..n_steps).rev() {
+        if bound(i as f64 * step) > delta_wf {
+            hi_idx = i + 1;
+            break;
+        }
+        hi_idx = i;
+    }
+    if hi_idx == 0 {
+        return 0.0;
+    }
+    let (mut lo, mut hi) = ((hi_idx - 1) as f64 * step, hi_idx as f64 * step);
+    for _ in 0..30 {
+        let mid = 0.5 * (lo + hi);
+        if bound(mid) > delta_wf {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
+}
+
 /// Completion-exposure kernel chi(T_rem) (paper Section 14.26).
 ///
 /// chi is the probability that a loss suffered NOW can no longer hide
@@ -252,6 +527,13 @@ pub struct RateInputs {
     pub sigma2: f64,
     /// GE mean burst length (1.0 when unknown).
     pub mean_burst: f64,
+    /// Measured multi-scale window loss-mass statistics (paper Section
+    /// 8.4.1). `MassStats::default()` (no data) leaves the tail term
+    /// inert and the controller behaves exactly as pre-#46.
+    pub mass: MassStats,
+    /// Enable the window-mass quantile provisioning term (paper Section
+    /// 8.4.1; production gates this on RWM_RSTAR_TAIL, default ON).
+    pub tail_provision: bool,
     /// Encoder window W.
     pub window: f64,
     /// Symbols per RTT = rtt x throughput / symbol_size (0.0 = unknown;
@@ -353,7 +635,20 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
         0.0
     };
 
-    let mut rate = random_rate.max(burst_rate);
+    // Window-mass quantile term (paper Section 8.4.1): provisions the
+    // repair count that covers the measured window loss-mass quantile the
+    // tail target implies (heavy burst tails AND burst clustering — the
+    // structures the GE margin misses on real traces, Section 2.5). Inert
+    // (0) without measured mass data, so cold start behaves exactly as
+    // pre-#46; delta_wf >= 1 (the Bulk chi = 0 identity delta_eff = p)
+    // returns 0 inside r_star_mass, keeping r*(delta = p) = 0.
+    let tail_rate = if inp.tail_provision && inp.mass.is_valid() {
+        r_star_mass(&inp.mass, inp.window, delta_eff / p)
+    } else {
+        0.0
+    };
+
+    let mut rate = random_rate.max(burst_rate).max(tail_rate);
 
     // Inner-feedback repair floor (paper Section 14.28): for payloads whose
     // delivery latency feeds back into their own throughput (TCP inside the
@@ -1112,6 +1407,8 @@ mod tests {
             p_upper: 0.09,
             sigma2: 5.0,
             mean_burst: 3.0,
+            mass: MassStats::default(),
+            tail_provision: false,
             window: 64.0,
             t_symbols: 0.0,
             srtt: 0.21,
@@ -1149,6 +1446,8 @@ mod tests {
             p_upper: p,
             sigma2: 1.0,
             mean_burst: 1.0,
+            mass: MassStats::default(),
+            tail_provision: false,
             window: 64.0,
             t_symbols: 0.0,
             srtt: 0.05,
@@ -1170,6 +1469,8 @@ mod tests {
             p_upper: p,
             sigma2: 2.9,
             mean_burst: 2.0,
+            mass: MassStats::default(),
+            tail_provision: false,
             window: 56.0,
             t_symbols: 0.0,
             srtt: 0.013,
@@ -1354,6 +1655,322 @@ mod tests {
             max_step < 0.01,
             "no jumps along the chi glide: max step {max_step}"
         );
+    }
+
+    // --- window-mass tail provisioning (paper Section 8.4.1) ---------------
+
+    /// Exact moments of a geometric burst law with exit probability q:
+    /// E[B] = 1/q, E[B^2] = (2-q)/q^2.
+    fn geom_moments(q: f64) -> (f64, f64) {
+        (1.0 / q, (2.0 - q) / (q * q))
+    }
+
+    /// Simulate a GE chain and collect the multi-scale sliding block-mass
+    /// statistics at block scale w0 — the estimator-side measurement.
+    fn ge_mass_stats(p: f64, q: f64, w0: usize, n: usize, seed: u64) -> MassStats {
+        use rand::prelude::*;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut bad = false;
+        let mut stats = MassStats { block_scale: w0 as f64, ..Default::default() };
+        let mut cnt = [0f64; MASS_SCALES];
+        let mut ring: Vec<f64> = Vec::new();
+        let mut k = 0f64;
+        for i in 0..n {
+            bad = if bad { rng.gen::<f64>() >= q } else { rng.gen::<f64>() < p };
+            if bad {
+                k += 1.0;
+            }
+            if (i + 1) % w0 == 0 {
+                ring.push(k);
+                k = 0.0;
+                for m in 1..=MASS_SCALES {
+                    if ring.len() >= m {
+                        let j: f64 = ring[ring.len() - m..].iter().sum();
+                        cnt[m - 1] += 1.0;
+                        if j > 0.0 {
+                            stats.nz[m - 1] += 1.0;
+                            stats.m1[m - 1] += j;
+                            stats.m2[m - 1] += j * j;
+                        }
+                    }
+                }
+            }
+        }
+        for m in 0..MASS_SCALES {
+            if stats.nz[m] > 0.0 {
+                stats.m1[m] /= stats.nz[m];
+                stats.m2[m] /= stats.nz[m];
+                stats.nz[m] /= cnt[m];
+            }
+        }
+        stats
+    }
+
+    /// MassStats with the SAME (nz, m1, m2) at every scale — a mechanical
+    /// fixture for controller-level tests (unphysical but well-defined).
+    fn uniform_mass(w0: f64, nz: f64, m1: f64, m2: f64) -> MassStats {
+        MassStats {
+            block_scale: w0,
+            nz: [nz; MASS_SCALES],
+            m1: [m1; MASS_SCALES],
+            m2: [m2; MASS_SCALES],
+        }
+    }
+
+    #[test]
+    fn test_ln_gamma_reference_values() {
+        // Gamma(1) = Gamma(2) = 1, Gamma(3) = 2, Gamma(11) = 3628800,
+        // Gamma(1.5) = sqrt(pi)/2.
+        assert!(ln_gamma(1.0).abs() < 1e-10);
+        assert!(ln_gamma(2.0).abs() < 1e-10);
+        assert!((ln_gamma(3.0) - 2.0f64.ln()).abs() < 1e-10);
+        assert!((ln_gamma(11.0) - 3628800.0f64.ln()).abs() < 1e-8);
+        let g15 = (std::f64::consts::PI.sqrt() / 2.0).ln();
+        assert!((ln_gamma(1.5) - g15).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_fit_burst_tail_recovers_geometric() {
+        // Feeding EXACT geometric moments must fit k ~ 1 and theta ~ 1-q:
+        // the geometric law is the k = 1 special case, so a GE-like
+        // measured tail is reproduced, not inflated.
+        for &q in &[0.5, 0.4, 0.3] {
+            let (m1, m2) = geom_moments(q);
+            let (theta, k) = fit_burst_tail(m1, m2);
+            assert!(
+                (0.85..=1.25).contains(&k),
+                "geometric moments must fit k ~ 1 at q={q}: k={k}"
+            );
+            assert!(
+                (theta - (1.0 - q)).abs() < 0.08,
+                "theta ~ 1-q at q={q}: theta={theta}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fit_burst_tail_heavy_tail_fits_small_k() {
+        // A heavy-tailed law (large E[X^2] relative to E[X]^2) must fit
+        // k < 1 and a heavier survival than the geometric of the same
+        // mean at large t.
+        let (m1, m2) = (4.0, 400.0);
+        let (theta, k) = fit_burst_tail(m1, m2);
+        assert!(k < 0.7, "heavy moments must fit k < 0.7: k={k}");
+        let s_fit = burst_tail_survival(theta, k, 50.0);
+        let (tg, kg) = fit_burst_tail(m1, geom_moments(1.0 / m1).1);
+        let s_geom = burst_tail_survival(tg, kg, 50.0);
+        assert!(
+            s_fit > 20.0 * s_geom,
+            "fitted tail must be far heavier at t=50: {s_fit} vs geometric {s_geom}"
+        );
+    }
+
+    #[test]
+    fn test_fit_burst_tail_degenerate_inputs() {
+        // Unknown / inconsistent moments fall back to the geometric law.
+        let (_, k) = fit_burst_tail(2.0, 0.0);
+        assert_eq!(k, 1.0);
+        let (_, k) = fit_burst_tail(2.0, f64::NAN);
+        assert_eq!(k, 1.0);
+        let (theta, k) = fit_burst_tail(1.0, 1.0);
+        assert_eq!(k, 1.0);
+        assert!(theta <= 1e-10, "all-singleton masses: theta ~ 0, got {theta}");
+        // m2 below the geometric spread (sub-geometric) still returns a
+        // valid, lighter-tailed model (k > 1).
+        let (theta, k) = fit_burst_tail(3.0, 9.5);
+        assert!(theta > 0.0 && theta < 1.0 && k > 1.0, "theta={theta} k={k}");
+    }
+
+    #[test]
+    fn test_r_star_mass_tracks_exact_ge() {
+        // On a GE channel the measured mass tail is what the Section 8.7
+        // exact DP predicts, so the mass-quantile r* must land in a band
+        // around r*_exact on the Section 2.4 scenarios: no material
+        // over-provisioning where GE is adequate (Weibull-fit slack and
+        // scale interpolation are the honest error bars).
+        let cases = [("WiFi", 0.013, 0.5), ("LTE", 0.02, 0.4), ("Sat", 0.03, 0.3)];
+        for &(name, p, q) in &cases {
+            let stats = ge_mass_stats(p, q, 50, 2_000_000, 42);
+            for &tgt in &[0.05, 0.02, 0.01] {
+                let r_exact = compute_r_star_exact(p, q, 50, tgt);
+                let r_mass = r_star_mass(&stats, 50.0, tgt);
+                let ratio = r_mass / r_exact;
+                println!(
+                    "{name} tgt={tgt}: exact={r_exact:.3} mass={r_mass:.3} ratio={ratio:.2}"
+                );
+                assert!(
+                    (0.6..=1.5).contains(&ratio),
+                    "{name} tgt={tgt}: mass r* {r_mass:.3} vs exact {r_exact:.3} (ratio {ratio:.2})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_r_star_mass_monotone_and_continuous_in_delta() {
+        // Tighter delta_wf => higher quantile => more rate; the sweep must
+        // be smooth (no jumps) and 0 at delta_wf >= 1 (pure ARQ meets the
+        // contract).
+        let stats = uniform_mass(64.0, 0.5, 3.0, 20.0);
+        assert_eq!(r_star_mass(&stats, 64.0, 1.0), 0.0);
+        assert_eq!(r_star_mass(&stats, 64.0, 2.0), 0.0);
+        let mut prev = r_star_mass(&stats, 64.0, 0.999);
+        let mut max_step = 0.0f64;
+        for i in 1..=800 {
+            let tgt = 0.999 * (1e-6f64 / 0.999).powf(i as f64 / 800.0);
+            let r = r_star_mass(&stats, 64.0, tgt);
+            assert!(r >= prev - 1e-9, "monotone as delta tightens: {prev} -> {r}");
+            max_step = max_step.max(r - prev);
+            prev = r;
+        }
+        assert!(max_step < 0.02, "no jumps along delta_wf: max step {max_step}");
+    }
+
+    #[test]
+    fn test_r_star_mass_heavier_tail_more_rate() {
+        // Same nonzero rate and mean mass, heavier tail (larger m2)
+        // => more provisioning; monotone and material.
+        let (w0, w, tgt) = (64.0, 64.0, 0.01);
+        let mut prev = 0.0f64;
+        for &m2 in &[30.0, 60.0, 120.0, 300.0] {
+            let r = r_star_mass(&uniform_mass(w0, 0.6, 4.0, m2), w, tgt);
+            assert!(
+                r >= prev - 1e-9,
+                "heavier mass tail must not need less rate: m2={m2} r={r} prev={prev}"
+            );
+            prev = r;
+        }
+        let r_light = r_star_mass(&uniform_mass(w0, 0.6, 4.0, 30.0), w, tgt);
+        assert!(
+            prev > 1.5 * r_light,
+            "m2=300 must demand >1.5x the light-tail rate: {prev} vs {r_light}"
+        );
+    }
+
+    #[test]
+    fn test_r_star_mass_degenerate_guards() {
+        let good = uniform_mass(64.0, 0.5, 3.0, 20.0);
+        assert_eq!(r_star_mass(&MassStats::default(), 64.0, 0.01), 0.0);
+        let mut s = good;
+        s.nz[0] = 0.0;
+        assert_eq!(r_star_mass(&s, 64.0, 0.01), 0.0);
+        let mut s = good;
+        s.block_scale = 0.0;
+        assert_eq!(r_star_mass(&s, 64.0, 0.01), 0.0);
+        assert_eq!(r_star_mass(&good, 0.0, 0.01), 0.0);
+        assert_eq!(r_star_mass(&good, 64.0, 0.0), 0.0);
+        assert_eq!(r_star_mass(&good, 64.0, f64::NAN), 0.0);
+        // Uncoverable mass quantile saturates at the declared ceiling and
+        // the caller's max_overhead clamp governs.
+        let heavy = uniform_mass(64.0, 0.9, 30.0, 3000.0);
+        let r = r_star_mass(&heavy, 64.0, 1e-6);
+        assert!(r >= R_STAR_TAIL_CEILING - 1e-9, "infeasible must hit ceiling: {r}");
+    }
+
+    #[test]
+    fn test_controller_tail_provision_identities() {
+        // The Bulk chi = 0 identity r*(delta = p) = 0 must survive with
+        // the tail term ON and mass data present; loose targets likewise.
+        let mk = |tail_on: bool, tgt: f64| RateInputs {
+            p_upper: 0.026,
+            sigma2: 2.9,
+            mean_burst: 2.0,
+            mass: uniform_mass(64.0, 0.6, 2.5, 10.0),
+            tail_provision: tail_on,
+            window: 64.0,
+            t_symbols: 0.0,
+            srtt: 0.013,
+            t_sym: 0.0,
+            codec_overhead: 0.0,
+            tail_target: tgt,
+            bulk_late_is_fine: false,
+            completion_exposure: 0.0,
+            inner_feedback: 0.0,
+            saturation_cap: false,
+            max_overhead: 0.6,
+        };
+        let mut bulk = mk(true, 1e-3);
+        bulk.bulk_late_is_fine = true;
+        assert_eq!(controller_rate(&bulk), 0.0, "Bulk chi=0 identity must survive");
+        // delta above eps: both 0 (delta_wf >= 1 short-circuits the term).
+        assert_eq!(controller_rate(&mk(true, 0.05)), 0.0);
+        assert_eq!(controller_rate(&mk(false, 0.05)), 0.0);
+        // No mass data => term inert => exactly the old rate.
+        let mut no_mass = mk(true, 1e-4);
+        no_mass.mass = MassStats::default();
+        let mut off = mk(false, 1e-4);
+        off.mass = MassStats::default();
+        assert_eq!(controller_rate(&no_mass), controller_rate(&off));
+    }
+
+    #[test]
+    fn test_controller_tail_provision_heavy_mass_raises_rate() {
+        // Same nonzero-block rate and mean mass, heavy measured mass tail:
+        // the corrected controller must provision materially more than
+        // the GE-only controller at a tight (Auto/Realtime-class) target.
+        let mk = |m2: f64, tail_on: bool| RateInputs {
+            p_upper: 0.09,
+            sigma2: 5.0,
+            mean_burst: 3.3,
+            mass: uniform_mass(64.0, 0.9, 6.4, m2),
+            tail_provision: tail_on,
+            window: 64.0,
+            t_symbols: 0.0,
+            srtt: 0.21,
+            t_sym: 0.0,
+            codec_overhead: 0.0,
+            tail_target: 1e-4,
+            bulk_late_is_fine: false,
+            completion_exposure: 0.0,
+            inner_feedback: 0.0,
+            saturation_cap: false,
+            max_overhead: 1.5,
+        };
+        let m2_geom = 6.4f64 * 6.4 * 2.0; // geometric-like spread
+        let r_old = controller_rate(&mk(m2_geom, false));
+        let r_ge = controller_rate(&mk(m2_geom, true));
+        let r_heavy = controller_rate(&mk(400.0, true));
+        println!("old={r_old:.3} ge-mass={r_ge:.3} heavy-mass={r_heavy:.3}");
+        assert!(
+            r_heavy > 1.2 * r_ge,
+            "heavy mass tail must raise r materially: {r_heavy} vs {r_ge}"
+        );
+        assert!(r_ge >= r_old - 1e-12, "tail term never lowers the rate");
+    }
+
+    #[test]
+    fn test_controller_tail_continuous_in_moments() {
+        // Sweep the measured second moment from geometric-like to heavy:
+        // the emitted rate must rise continuously (no fit-boundary jumps).
+        let mk = |m2: f64| RateInputs {
+            p_upper: 0.05,
+            sigma2: 3.8,
+            mean_burst: 2.5,
+            mass: uniform_mass(64.0, 0.7, 4.6, m2),
+            tail_provision: true,
+            window: 64.0,
+            t_symbols: 0.0,
+            srtt: 0.05,
+            t_sym: 0.0,
+            codec_overhead: 0.0,
+            tail_target: 1e-4,
+            bulk_late_is_fine: false,
+            completion_exposure: 0.0,
+            inner_feedback: 0.0,
+            saturation_cap: false,
+            max_overhead: 2.0,
+        };
+        let m2_lo = 4.6f64 * 4.6 * 1.5;
+        let mut prev = controller_rate(&mk(m2_lo));
+        let mut max_step = 0.0f64;
+        for i in 1..=4000 {
+            let m2 = m2_lo + (400.0 - m2_lo) * i as f64 / 4000.0;
+            let r = controller_rate(&mk(m2));
+            assert!(r >= prev - 1e-9, "rate nondecreasing in m2");
+            max_step = max_step.max(r - prev);
+            prev = r;
+        }
+        assert!(max_step < 0.005, "no jumps along m2: max step {max_step}");
     }
 
     #[test]

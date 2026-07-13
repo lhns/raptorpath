@@ -30,7 +30,18 @@ const MAGIC: u16 = 0x5250; // "RP"
 const HDR_LEN: usize = 14; // magic(2) + obj_id(4) + chunk_idx(4) + total_chunks(4)
 const ACK_IDX: u32 = u32::MAX;
 /// Per-run completion timeout; a run exceeding this is recorded as DNF.
-const RUN_TIMEOUT: Duration = Duration::from_secs(300);
+/// RWM_PERF_TIMEOUT_S overrides (harness knob for reliability batteries
+/// where a DNF is an EXPECTED datum — e.g. the realtime profile, where a
+/// hole force-delivered past the reorder horizon can never complete the
+/// object and burning 300 s per expected miss makes x8 batteries
+/// impractical; task #46 L1 spot check).
+fn run_timeout() -> Duration {
+    std::env::var("RWM_PERF_TIMEOUT_S")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(300))
+}
 
 /// Max payload bytes per chunk for a protocol hint.
 ///
@@ -218,7 +229,7 @@ pub async fn client(config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Res
 
     // Warm-up: a single-chunk object confirms both directions are up
     // before timing starts (the engine connects asynchronously).
-    match run_object(&mut mem, 0, 64, payload_len, RUN_TIMEOUT).await? {
+    match run_object(&mut mem, 0, 64, payload_len, run_timeout()).await? {
         RunOutcome::Acked(s) => {
             println!(
                 "{}",
@@ -231,7 +242,7 @@ pub async fn client(config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Res
     let mut times: Vec<f64> = Vec::new();
     let mut dnfs = 0u32;
     for run in 1..=runs {
-        match run_object(&mut mem, run, nbytes, payload_len, RUN_TIMEOUT).await? {
+        match run_object(&mut mem, run, nbytes, payload_len, run_timeout()).await? {
             RunOutcome::Acked(secs) => {
                 times.push(secs);
                 println!(
@@ -250,7 +261,7 @@ pub async fn client(config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Res
                     serde_json::json!({
                         "proto": "rp-native", "hint": hint_str, "bytes": nbytes,
                         "run": run, "dnf": true,
-                        "timeout_s": RUN_TIMEOUT.as_secs(),
+                        "timeout_s": run_timeout().as_secs(),
                     })
                 );
             }
