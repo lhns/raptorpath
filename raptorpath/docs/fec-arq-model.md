@@ -8015,6 +8015,79 @@ arithmetic, ~2× the CPU per bit, and it carries the battery's only DNFs.
 
 ---
 
+### 16.19 The bulk N× test on honest hardware: AES-NI moved the CPU and not one wall — the multipath binder was the flow-control pool, not the receiver thread; the path-scaled pool takes C7 to ×1.72–1.89 of single (0.86–0.94 of Σ) and C8 to 0.79–0.80 of Σ with σ halved (2026-07-14)
+
+**The hardware divide as an instrument.** Every prior L1 measurement ran on
+a qemu64 vCPU (SSSE3 only): quinn's TLS did software AES-GCM per packet,
+and §16.18 ended attributing gen-mode C7 parity to "the single-threaded
+receive/reassembly/delivery engine caps one sink at ≈72–93 Mbit/s". The VM
+now passes through the host CPU (E5-2650 v3: AES-NI, AVX2, PCLMULQDQ). The
+re-baseline (8 reps × 2 seeds, interleaved, same protocol as every recent
+battery) is a controlled experiment on the attribution itself: CPU per
+25 MB fell ~30–38 % on both sides (plain recv 2.97→1.99 s; gen-sys recv
+3.38→2.36 s) while **throughput did not move in any plain/Copa cell**
+(sc2 78.1/75.9 vs 76.1/72.6; C7 102.3/100.2 vs the historic 93–104; sc3 and
+C8 likewise inside spread). A CPU wall must move when the CPU gets faster;
+this one did not — the receiver-wall attribution is refuted by the upgrade
+it ignored. (The one honest mover: gen systematic-repair single-c2
+70.9→75.7 = 0.97× plain+BBR — on AVX2 the FEC tax is ~0.37 s recv CPU per
+25 MB, essentially free.)
+
+**Where the C7 wall actually lives.** The profile chain, each step
+measured: (i) perf on the C7 receiver is FLAT (top symbol 3.9 %; AES-GCM
+1.31 % — crypto is noise now); (ii) pinned to ONE core the receiver still
+does 95.5 Mbit/s at 0.66 core busy (unpinned −8 % only); (iii) the engine
+sink ceiling is **187.7 Mbit/s** (single-path c1; dual-c1 185.3 — the same
+wall), ~1.9× the C7 plateau, through the same single receiver task;
+(iv) out-of-order delivery does not move C7 (105.6 vs 103) — not the
+frontier; (v) the sender DIAG shows `win=1024/1024` pegged with per-path
+in-flight collapsing to zero: the plain-reliable OUTSTANDING pool —
+`RELIABLE_STORE_MAX` = 1024 symbols, which the delay-based dynamic cap
+latches at because the legacy anchor over-reads (§16.13) — is a
+per-TRANSFER constant. Little's law closes the case: 1024·1250 B·8 /
+80–100 ms echo-RTT ≈ 100–128 Mbit/s — the historic "receiver wall" ~93–104,
+CPU-invariant by construction. The same-binary static sweep proves the
+mechanism: C7 1024→103, 2048→122.7, 4096→141.3, 8192→143.7 (saturation);
+C8 4096→71.5 but 8192→31.8 (slow-path bufferbloat collapse); singles
+collapse past 4096 (sc2@8192 = 43). The knee: **≈2048 outstanding symbols
+per live path**.
+
+**The fix (measured, gated, minimal).** `RWM_STORE_PATHS` (default OFF,
+shipped byte-identical): for N ≥ 2 live paths the dynamic cap becomes
+clamp(gain·N·pipe_sum, floor, N·2048); N = 1 is the legacy law bit-exactly
+(singles measured inert with the flag ON). Receiver parallelization —
+the lever this task was expected to need — was NOT built: the profile
+refutes it below ~150 Mbit per sink, and dead mechanisms measure noise
+(§16.15's lesson).
+
+**The N× verdict (same-binary A/B, interleaved, 8×2 seeds).** C7 plain+BBR
+100.4/101.2 → **136.0/142.1** = ×1.72/×1.89 of the same-session single
+(0.86/0.94 of Σ per-path singles 157.7/150.5), Δ = 3–6× the arm σ_s. C8
+64.9/55.9 → **75.8/72.3** = 0.80/0.79 of Σ (from 0.69/0.61) with σ halved
+(8.9/14.4 → 4.0/6.1) — the historic C8 bimodality was largely
+store-starvation. Copa-sole C7 rides the same unlock (×1.44/×1.71 of its
+single, from ×1.16/×1.13); Copa C8 is unchanged (its own cwnd law is the
+binder there). **The user's bulk claim substantially lands, with the
+mechanism chain now honest end-to-end: CC substrate (§16.17) → PMTU floor
+(§12.12) → wire mode (§16.18) → decode (§16.18) → crypto (this section:
+never the wall on real silicon) → threading (refuted) → FLOW CONTROL (the
+actual multipath binder).** Bulk multipath ARQ striping approaches N× once
+nothing artificial serializes it — and every "wall" so far has been an
+unscaled constant or a hidden substrate controller, not the architecture.
+
+**Residual, named.** C7's last 6–14 %: the pooled flow control's self-queue
+equilibrium (deeper pools buy queue, not rate — 4096→8192 is +2.4 Mbit) and,
+exactly at that operating point, the engine begins to bind (server pinned
+to 1 CPU at pool 4096: 125.6 vs 138.8 on 2 — the first true engine-CPU
+signal, at ~140+ Mbit). C8's gap to 0.9: a SHARED pool cannot be sized for
+a c2 and a c3 path at once (the slow path needs it shallow — 8192
+collapses; the fast path wants it deep). Both point at the same next
+lever: PER-PATH outstanding accounting (the FMTCP percap structure) instead
+of a pooled cap — after which receiver/sender task parallelization becomes
+the relevant frontier above ~150–190 Mbit per sink.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```

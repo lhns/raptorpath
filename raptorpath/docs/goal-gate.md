@@ -7112,3 +7112,241 @@ invariant: max repair batch = 1279 B ≤ 1305 B floor budget) +
 < 40 s; control arm via `RWM_WEDGE_CONTROL=1`: asserts the 60 s wedge
 reproduces, 63.5 s measured); `copa_sole_loopback` + `congestion_control`
 unchanged.
+
+## Hardware-Honest Re-Baseline + Receiver Parallelization (2026-07-14) — the bulk N× test on real silicon: AES-NI moved the CPU but NOT ONE WALL (the "single-thread receiver ceiling ~93–104" attribution is REFUTED — the engine sinks 187.7 Mbit/s single-path); the true C7/C8 binder is the plain-reliable OUTSTANDING POOL not scaling with path count (`win=1024/1024` pegged), and the path-scaled pool (`RWM_STORE_PATHS`) takes C7 plain+BBR 100→136/142 (×1.72/×1.89 of the same-session single, 0.86/0.94 of Σ singles) and C8 65/56→75.8/72.3 with σ halved; receiver parallelization NOT built — the profile refutes it (task #84, branch `feat/recv-parallel`)
+
+════════════════════════════════════════════════════════════════════════
+**HARDWARE DIVIDE.** Every L1 number in the sections ABOVE this line was
+measured on a qemu64-model vCPU (`QEMU Virtual CPU 2.5+`: SSSE3 only — no
+AES-NI, no AVX2, no PCLMULQDQ), i.e. quinn's TLS did SOFTWARE AES-GCM on
+every packet. The VM is now host passthrough — **Intel Xeon E5-2650 v3,
+6 cores, `aes avx2 pclmulqdq` live** (confirmed at battery start; `lscpu`
+recorded in every log header). Numbers below this banner are the honest
+hardware; any cross-banner comparison must name the divide.
+════════════════════════════════════════════════════════════════════════
+
+Task #84 — the user's bulk N× claim: bulk mode is not latency-constrained,
+so multipath ARQ striping should approach N× the per-path rate (the
+resequencing buffer absorbs skew; mid-transfer losses recover in parallel;
+only the tail pays serially). Historic C7 sat at ×1.35, "pinned exactly at
+the single-thread receiver wall ~93–104", so the task shipped with a
+receiver-parallelization plan. Measure first, build what the numbers demand
+— the numbers demanded something else entirely. Paper §16.19.
+
+### STEP 0 — re-baseline (VM 10.1.5.16, 2026-07-13 21:35–22:00 UTC; binary sha256 84a1f014… = main aba1a52 unmodified; 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42+7, wedge fix ON = shipped default, `cod>0` GUARD OK on every gen run, full env+command per run in `/home/vibe/recvpar/step0/*.log`, driver `/home/vibe/rebase_battery.sh`)
+
+Arms: **PB** = plain+`RWM_QUIC_CC=bbr` · **C1** = plain+`RWM_QUIC_CC=
+passthrough` (Copa wire-signal defaults) · **GS** (sc2 only) = generation
+systematic-repair on the GPB stack (`RWM_GEN_R=0.03 RWM_GEN_PIPE=1
+RWM_QUIC_CC=bbr --window-systematic-repair`).
+
+| cell | PB new (σ_s) | PB qemu64 | C1 new (σ_s) | C1 qemu64 | GS new (σ_s) | GS qemu64 |
+|---|---|---|---|---|---|---|
+| sc2 s42 | 78.08 (3.09) | 76.1–77.1 | 67.96 (1.97) | 68.1 | **75.71 (2.82)** | 70.9 |
+| sc2 s7 | 75.85 (1.97) | 72.6–77.6 | 66.27 (0.89, n=7) | 64.3 | **75.46 (1.04, n=7)** | 70.8 |
+| sc3 s42 | 15.74 (0.53) | 15.60 | 11.65 (0.51) | 12.0 | — | — |
+| sc3 s7 | 15.70 (0.41, n=6) | 15.87 | 12.21 (0.15, n=5) | 12.3 | — | — |
+| c7 s42 | 102.29 (4.00) | 93.1–103.2 | 82.90 (3.18) | 75.2 modal | — | — |
+| c7 s7 | 100.17 (7.69, n=5) | 94.5–104.4 | 81.83 (2.79, n=7) | 79.3 modal | — | — |
+| c8 s42 | 46.47 (5.69) | 54.6–61.9 | 51.48 (7.93) | 54.9–55.0 | — | — |
+| c8 s7 | 48.73 (8.09, n=7) | 45.4–58.1 | 57.09 (2.16, n=5) | 54.2–55.3 | — | — |
+
+**CPU per 25 MB invocation (recv·send), new vs qemu64:** PB sc2 1.99·1.26
+vs 2.97·2.02 (recv −33 %, send −38 %); GS sc2 2.36·1.52 vs 3.38·2.25
+(−30 %/−32 %); PB sc3 2.26·2.10 vs 3.54·3.17.
+
+**The finding: hardware crypto moved the CPU and not one wall.** Every
+plain/Copa cell replicates its qemu64 value inside the recorded
+session-to-session spread (PB C8, the documented bimodal arm, drifts within
+its historic 29–76 envelope). The only real mover is gen-sys single (+4.8 →
+**0.97×/0.995× of PB's own single** — on AVX2 the whole FEC machine now
+costs ~0.37 s recv CPU per 25 MB over plain; the coding tax is essentially
+free). And the divide itself is an instrument: a CPU-bound wall must move
+when the CPU gets ~35 % faster per byte. C7's "~93–104 receiver wall"
+reproduced at 100–102 — **the qemu64-era receiver-wall attribution is
+refuted by the hardware upgrade it failed to react to.**
+
+### STEP 1 — profile: the C7 wall is NOT the receiver engine
+
+(200 MB single-run probes at C7 PB, VM 22:00–22:50 UTC; `perf record` dwarf
++ per-thread CPU + affinity pinning; artifacts `/home/vibe/recvpar/profile/`.)
+
+1. **Flat profile.** At C7 = 104.9 Mbit/s the receiver process burns 1.12
+   cores / sender 0.89 — but the samples are FLAT: top symbol 3.9 %
+   (`__ieee754_exp_fma`), estimator math ~11 %, allocator ~7 %,
+   `WireMessage::deserialize` 2.7 %, decoder+GF(256) ~4.5 %,
+   `_aesni_ctr32_ghash_6x` **1.3 %** (crypto is now noise), spread evenly
+   over all 6 tokio workers. No stage to parallelize.
+2. **Pinning kills the CPU hypothesis.** Server pinned to ONE core: 95.5
+   Mbit/s (−8 %) at 0.66 core busy. Client pinned: 96.6. Neither side is
+   CPU-starved at the default operating point (the unpinned 1.1 cores is
+   ~⅓ scheduler/migration overhead).
+3. **The engine sink ceiling is 187.7 Mbit/s** — single-path c1 (1 Gbit,
+   GE 0.1 %) PB runs 187.7 (dual-c1 185.3, same wall) with the receiver at
+   ~1.05 cores. The single-threaded receive/reassembly/delivery task sinks
+   ~1.9× the C7 wall on this hardware. C7's limiter cannot be the engine.
+4. **Not the frontier either**: C7 with OOO delivery = 105.6 ≈ in-order 103.
+5. **The sender DIAG names it**: `win=1024/1024` PEGGED — the plain-reliable
+   OUTSTANDING pool at its ceiling — with `infl=0` idle spikes on both
+   paths and np flapping 2→1. `RELIABLE_STORE_MAX` = 1024 symbols ≈ 1.28 MB
+   is a per-TRANSFER constant; the delay-based dynamic cap (2·Σ anchor-BDP)
+   latches at it on fast paths because the legacy ack-interval anchor
+   over-reads ×7 (§16.13). The pool that must fund Σ_paths (BDP + one
+   recovery round × aggregate rate) does not scale with path count:
+   C7 at the pegged pool is Little's law, 1024·1250 B·8 / ~80–100 ms
+   echo-RTT ≈ 100–128 Mbit/s — **CPU-invariant, which is exactly why the
+   "wall" survived the hardware upgrade and every historic CPU lever.**
+6. **Same-binary static-store proof** (PB, s42, 100 MB, `RWM_STORE`):
+
+| RWM_STORE | sc2 | sc3 | C7 | C8 |
+|---|---|---|---|---|
+| default (1024 latch) | 76–78 | 15.7 | ~103 | ~47–65 |
+| 2048 | 81.6 | 14.0 | 122.7 | 51.8 |
+| 4096 | 75.6 | 12.0 | **141.3** | **71.5** |
+| 8192 | **43.0 COLLAPSE** | — | 143.7 (sat.) | **31.8 COLLAPSE** |
+
+The knee is ≈**2048 outstanding symbols per live path**; deeper static
+pools re-enter the documented bufferbloat/recovery collapse (§12), and at
+the knee the wall moves exactly as Little's law predicts. Sender side
+checked (task requirement): sender CPU is 0.9–1.1 cores at the raised pool
+— within ~15 % of the receiver, as historically; neither binds below ~140.
+
+### STEP 2 — the minimal change the profile justifies
+
+**Receiver parallelization was NOT built.** The profile refutes it as the
+binder: the engine sink (187.7) exceeds both cell targets (2×sc2 ≈ 152,
+Σ-C8 ≈ 92), the pinned receiver runs at 0.66 core, and the flat profile
+offers no stage whose parallelization buys anything at this operating
+point. An `RWM_RECV_PAR` arm would have measured noise (the
+generation-inert-era lesson: dead mechanisms measure session drift).
+
+Built instead — **the path-scaled outstanding pool** (`RWM_STORE_PATHS`,
+default OFF = shipped byte-identical; commit 5cace52): for N ≥ 2 live
+paths, `cap = clamp(gain·N·pipe_sum, floor, N·2048)` where `pipe_sum` is
+the existing dynamic base (Σ anchor-BDP; Σ Copa cwnd under the feed) and
+2048 (`RWM_STORE_PATH_POOL`) is the measured per-path knee; **N = 1 keeps
+the legacy law bit-exactly**, so singles are unchanged even with the flag
+ON (measured below). Mechanism-liveness config echo; unit tests
+(`path_scaled_store_cap_*`); harness forwards the knobs.
+
+### STEP 3 — the N× verdict (VM, 2026-07-13 22:52–23:16 UTC; binary sha256 961e377b… = commit 5cace52, SAME binary in every arm; 25 MB × 1 run/invocation × 8 reps, arms interleaved per rep, seeds 42+7, `path-scaled … ACTIVE` liveness echo on every S run and echo=0 asserted on every baseline run; logs `/home/vibe/recvpar/step3/*.log`, driver `/home/vibe/step3_battery.sh`)
+
+Arms: PB / C1 as STEP 0 · **PBS / C1S** = same + `RWM_STORE_PATHS=1`.
+
+**Singles (the N=1 identity control — the flag must be inert):**
+
+| cell | PB (σ_s) | PBS (σ_s) |
+|---|---|---|
+| sc2 s42 | 78.85 (2.90) | 77.51 (3.12) |
+| sc2 s7 | 75.23 (2.80, n=7) | 74.49 (4.61, n=7) |
+| sc3 s42 | 15.61 (0.43) | 15.74 (0.36) |
+| sc3 s7 | 15.78 (0.19, n=6) | 15.63 (0.31) |
+
+Identity holds everywhere (every Δ ≪ σ_s). Ceilings for the verdict
+(same-session Σ of per-path singles): C7 = 157.7 / 150.5; C8 = 94.5 / 91.0.
+
+**Duals (mean (σ_s) [runs]; ratio = arm / same-session single; Σ-ratio =
+arm / Σ singles):**
+
+| cell | PB | PBS | PB | PBS | PBS Σ-ratio |
+|---|---|---|---|---|---|
+| c7 s42 | 100.40 (9.84) [95.6 115.8 80.0 95.1 102.6 107.1 105.0 101.8] | **135.98 (6.91)** [131.7 133.0 145.0 141.6 125.3 132.5 146.2 132.6] | ×1.27 | **×1.72** | 0.86 |
+| c7 s7 | 101.19 (13.09) [104.5 111.8 95.1 112.2 110.5 77.1 84.7 113.5] | **142.13 (6.34)** [138.0 146.8 127.3 142.9 146.4 147.4 146.2 142.0] | ×1.35 | **×1.89** | 0.94 |
+| c8 s42 | 64.91 (8.87) [51.2 72.1 61.2 76.5 54.7 75.8 67.0 60.9] | **75.77 (4.01)** [75.6 75.7 68.5 81.4 74.4 71.9 80.2 78.4] | 0.69 Σ | 0.80 Σ | **0.80** |
+| c8 s7 | 55.90 (14.41) [66.0 38.4 44.6 68.5 39.7 76.3 68.7 44.9] | **72.33 (6.05, n=7)** [75.6 83.6 68.1 63.2 70.9 75.3 69.6] | 0.61 Σ | 0.79 Σ | **0.79** |
+
+| cell | C1 | C1S | C1S / C1-single |
+|---|---|---|---|
+| c7 s42 | 78.96 (8.63) | **97.58 (5.76)** | ×1.44 (single 67.96) |
+| c7 s7 | 74.96 (6.12, n=7) | **113.37 (7.22, n=7)** | ×1.71 (single 66.27) |
+| c8 s42 | 53.33 (5.80) | 51.39 (8.31) | — (no change) |
+| c8 s7 | 57.37 (1.84) | 56.13 (7.30) | — (no change) |
+
+(C1 singles are the same-day STEP 0 cells; the flag is measured inert at
+N = 1 and the C1 code path is untouched by the commit.)
+
+### VERDICT — the bulk N× claim, against the NEW ceilings
+
+1. **C7 plain+BBR: the aggregation unlock is REAL and the claim
+   substantially LANDS** — ×1.27/×1.35 → **×1.72/×1.89** of the
+   same-session single (0.86/0.94 of Σ singles); Δ +35.6/+40.9 at arm σ_s
+   6.3–13. The user's mechanism was right all along — bulk striping WAS
+   being serialized by an artificial constraint, just not the conjectured
+   one: flow control, not receiver threading.
+2. **C8 heterogeneous: real but partial** — 0.69/0.61 → **0.80/0.79 of Σ**
+   (Δ +10.9/+16.4) **with σ halved** (8.9/14.4 → 4.0/6.1: the historic PB-C8
+   bimodality is largely a store-starvation artifact). The 0.9 target is
+   not reached; residual named below.
+3. **Copa-sole C7 rides the same unlock**: ×1.16→×1.44 (s42) / ×1.13→×1.71
+   (s7) of its own single — the pool was ALSO part of #82's "recovery-idle"
+   C7 residual. Copa C8 is unchanged (Copa's own cwnd law, already at
+   parity with its single, is the binder there — not the pool).
+4. **CPU per bit FELL while throughput rose** (PBS c7 recv 1.98 s at 136
+   vs PB 2.14 s at 100): the starved sender was burning cycles idling.
+5. **The N× threading hypothesis is answered with instruments, not code**:
+   AES-NI freed ~35 % CPU and moved nothing; the engine sinks 187.7 single-
+   path; the receiver at C7 idles 34 % of one core. Parallelization would
+   become the lever only above ~150–190 Mbit aggregate per sink.
+
+### Residual (named, with evidence)
+
+- **C7 (0.86–0.94 of Σ)**: at the raised pool the operating point is
+  saturating — static 4096→141.3, 8192→143.7 (deeper pool buys queue, not
+  rate: the pooled flow control's self-queue equilibrium), and the engine
+  begins to matter exactly there: server pinned to 1 CPU at pool 4096 =
+  125.6 vs 138.8 on 2 CPUs (receiver process 1.33 cores at 141; sender
+  1.13). PBS DIAG residual signature: pool episodically re-pegged
+  (`win=4096/4096` on ~⅓ of ticks) and np flaps 2→1 (the live-path filter
+  drops a saturated path; the dyn cap sags with it: `win=2058/2982`).
+  The next TWO levers, in evidence order: per-path outstanding accounting
+  (a hole on path A should not starve path B's pool share — the FMTCP
+  percap structure, giving the recovery-latency bound per path instead of
+  pooled), THEN receiver/sender task parallelization (relevant above ~150).
+- **C8 (0.79–0.80 of Σ)**: the shared pool cannot be sized for both paths
+  at once — the c3 slow path needs it shallow (its recovery latency scales
+  with pool dwell: static 8192 → 31.8 collapse) while the c2 fast path
+  wants it deep. Same named lever: per-path accounting.
+- The `np` 2→1 flap under saturation (live-path spare-capacity filter) is
+  recorded as a contributor at both cells — the v2b copa-sole lesson
+  applies to the plain scheduler too.
+
+### Controls / caveats / discipline items
+
+- **Liveness**: `path-scaled outstanding pool ACTIVE` echo on every PBS/C1S
+  run; echo=0 recorded on every PB/C1 run (both checked per-run in the
+  logs); GUARD OK (cod>0) on every STEP-0 GS run.
+- **Noise floor**: claimed C7 effects (+35.6/+40.9) are 3–6× the largest
+  same-arm σ_s and >2× the worst cross-session drift observed this session
+  (PB-C8 46.5→64.9 across STEP 0→3, the known bimodal arm — which is why
+  all verdicts are same-session interleaved A/B only). C8 effects
+  (+10.9/+16.4) are 1.2–2.7× the baseline arm's σ_s — smaller, but both
+  seeds agree in sign and the PBS arms' σ collapse supports the mechanism.
+- **DNFs: zero in 124 STEP-3 runs.** n<8 arms (c7-s7 C1/C1S n=7, c8-s7 PBS
+  n=7, sc2-s7 n=7, sc3-s7 PB n=6) are the known seed-7 topo-ping
+  double-abort, recorded per log (RETRY lines); no result was discarded.
+- **Shipped default byte-identical**: `RWM_STORE_PATHS` unset ⇒ the dyn-cap
+  branch is the pre-commit expression verbatim (helper returns None);
+  gate_suite 15/15 release + full lib/loopback suites green on this tree.
+  The flag is an EXPERIMENT knob; flipping any default (and per-path
+  accounting) is follow-on work with its own battery.
+- **Static sweep caveat**: `RWM_STORE=n` disables the dynamic cap, so its
+  sc3 rows measure static-vs-dynamic, not just depth; the shipped dynamic
+  law is the right one for slow singles (binds at ~684 there) — which is
+  why the fix scales the DYNAMIC law instead of adopting a static pool.
+- **VM lock** `/tmp/rwm-vm.lock` held 21:30–23:5x UTC for the whole session
+  (STEP 0 → profile → STEP 3 → DIAG probe), released after teardown; only
+  rp-* netns + `pkill -x raptorpath` used; binaries/tree in
+  `/home/vibe/rp-recv/`.
+- **What this does NOT claim**: no cell exceeds its link-class Σ ceiling;
+  C8 remains below target; gen-mode multipath (own structural caps,
+  untouched by this flag) was re-baselined at sc2 only; BBR fairness and
+  the flag's default remain unevaluated/unflipped.
+
+### Tests
+
+`cargo test -p raptorpath --lib` 316/316 (2 new: `path_scaled_store_cap_is_
+legacy_for_singles_and_off`, `path_scaled_store_cap_scales_value_and_
+ceiling_with_paths`); `-p raptorpath-math` all green; `gate_suite` 15/15
+release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
+`apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
+`copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
