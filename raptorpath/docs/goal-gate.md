@@ -5525,7 +5525,7 @@ RWM_DAPS_DEPTH=1 RWM_DIAG=1 RWM_EXTRA=--window-generation-coding SEED=42 bash
 perf_rwm_c.sh c2 c3 bulk 12000000 3 dual`, then read the p1 `ANCHOR …` counters in
 `/tmp/rwm-c.log` (the CLIENT/sender log, NOT `/tmp/rwm-s.log`).
 
-## Generation-ON Re-Baseline (2026-07-13) — the FIRST VALID heterogeneous C8 measurement: the §16.11–16.14 arc was measured with the coded path DEAD (the harness never enabled generation); ceilings + C8/C7 re-measured with generation ACTUALLY ON, and a hard guard so the class of bug cannot recur (branch `feat/gen-on-rebaseline`)
+## Generation-ON Re-Baseline (2026-07-13) — the FIRST VALID heterogeneous C8 measurement: the arc's coded path was DEAD in measurement (PROVEN for §16.14; §16.10–16.13 UNVERIFIABLE — no recorded env; the harness never enabled generation by itself); ceilings + C8/C7 re-measured with generation ACTUALLY ON, and a hard guard so the class of bug cannot recur (branch `feat/gen-on-rebaseline`)
 
 > **CRITICAL — the entire recent arc is SUSPECT.** The §16.10–16.14 goal-gate
 > results (DAPS, pace-all §16.11, source-backpressure §16.12, rate-sample §16.13,

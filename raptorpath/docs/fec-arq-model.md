@@ -7379,7 +7379,7 @@ scheduling line with the full evidence chain (§16.10 DAPS → §16.11–16.13 p
 
 ---
 
-### 16.15 Methodology correction + the generation-ON re-baseline: the §16.11–16.14 arc was measured with the coded path DEAD (2026-07-13) — measured
+### 16.15 Methodology correction + the generation-ON re-baseline: the arc's coded path was DEAD in measurement (proven for §16.14; §16.10–16.13 unverifiable) (2026-07-13)
 
 **The bug (a measurement-harness bug, not a model bug).** The L1 aggregation harness
 `perf_rwm_c.sh` passed only `--window-reliable`. Generation is enabled ONLY by
@@ -7390,7 +7390,9 @@ scheduling line with the full evidence chain (§16.10 DAPS → §16.11–16.13 p
 `rate_sample = per_path_est && …`, `daps_depth_on = rate_sample && …`. So the entire
 DAPS + per-path-estimator + rate-sample + read-ahead-depth + source-backpressure stack
 was **INERT** in the very measurements that evaluated it — the saved §16.14 sender logs
-show `cod=0`/`eff_pace=0`. The arc's C8 arms ran plain `--window-reliable` block/ARQ mode.
+show `cod=0`/`eff_pace=0`. The arc's C8 arms ran plain `--window-reliable` mode — the
+windowed-RLC streaming backend + ARQ (bulk with `--window-reliable` auto-selects RLC; NOT
+block mode).
 **Every §16.11–16.14 mechanism verdict is therefore SUSPECT** and must be re-established
 generation-ON. A hard guard now fails any generation run with `cod=0` loudly (asserting
 cumulative `total_coded>0` on the SENDER `/tmp/rwm-c.log`, not the receiver log — the
