@@ -6082,3 +6082,252 @@ estimator (§16.15's deferred option 2) would tighten it.
 one_deficit_round`, `set_pipeline_depth_widens_the_proactive_span`);
 `-p raptorpath-math` 47/47; gate_suite 15/15 release. L0 bench + loopback suite
 (perf_loopback 8/8, fmtcp/daps loopbacks) pass with the shim off and on.
+
+
+## Decode-CPU Ceiling (2026-07-13) — the ~34 Mbit/s generation machine was the CODED-ONLY WIRE's O(G²·S), not the solver: the systematic-repair wire is the O(k·G·S+k³) machine — gen single-c2 33.9→70.9 (×2.1, = 0.92× plain+BBR), c3 13.0→15.0 (0.95× the plain+BBR recovery ceiling), C8 het 30.0→69.8 (beats plain+BBR's own C8 ×1.25–1.5 with σ halved); sparse-aware decoder (pure speedup, output-identical, differential-tested) (branch `feat/decode-cpu-ceiling`)
+
+§16.17 left ONE binder: the generation machine capped the whole gen transport at
+~34 Mbit/s regardless of path count (single 33.9 ≈ C7 32.1 ≈ C8 30.0 = the L0
+shim ceiling), attributed to the receiver's dense per-generation Gauss–Jordan
+(O(G²·S)). This section profiles that machine at L0 (JOB 1), finds the
+attribution HALF right — the quadratic is real but lives in the WIRE MODE, not
+the solver — fixes it (JOB 2), and re-measures at L1 (JOB 3).
+
+### JOB 1 — profile: the coding machine alone (tests/gen_decode_bench.rs, new)
+
+`#[ignore]` micro-bench of encoder+decoder on L1-shaped parameters (G=384,
+S=1200 bulk symbols, r=0.03, ε=2.6 %, 10 % late/reordered source, 30
+generations, SplitMix64 seed 42), per-call attribution into buckets [src =
+source with no covering matrix | src+mat = late source into a live matrix (the
+#59 injection) | rep0 = first repair of a generation (slot creation) | rep =
+subsequent repairs]. Run on the dev box AND the L1 VM — whose CPU is
+`QEMU Virtual CPU 2.5+` exposing **SSSE3 only, no AVX2** (GF(256) mul-acc
+kernel: 4.1 GB/s there; dev AVX2 4.2–7.1 GB/s).
+
+**VM numbers, pre-rewrite decoder (the machine §16.17 measured):**
+
+| trace | delivered sym/s | dominant per-call costs |
+|---|---:|---|
+| coded-only ε=2.6 % (the L1 gen-arm wire) | **5 943 ≈ 57 Mbit/s** | rep 166 µs/row ⇒ ~64 ms/generation |
+| encoder, coded-only | **4 922 (203 µs/coded sym)** | the SENDER pays the same quadratic |
+| systematic ε=2.6 %+late | 125 479 | src 1.2 µs, inject 23 µs, rep0 257 µs, rep 106 µs |
+| systematic clean in-order | 128 564 | rep0 1 262 µs (slot preload), rep 95 µs — ALL of it redundant work |
+| systematic fill-flag-heavy | 66 221 | every source pays an 11 µs injection |
+
+**The KEY answer — why O(G²·S) instead of O(k·G·S):** the generation arm every
+battery measures (`--window-generation-coding`) is **coded-only on the wire**:
+NO raw source rides it (§16.17's own arithmetic — 38 280 coded emitted for
+~21 800 source symbols). Every one of the G DoF per generation arrives as a
+dense combination, so ~G dense rows × O(G) row-ops × (G+S) bytes at the
+receiver AND ~G coded emissions × O(G·S) at the sender are
+information-structural for that wire — no SIMD (already PSHUFB AVX2/SSSE3,
+ADR-0041) or thread pool changes the asymptotic. enc 4.9 k + dec 5.9 k sym/s
+per VM core ≈ the 34 Mbit/s ceiling exactly. At ε=2.6 % only k ≈ ε·G ≈ 10 DoF
+per generation are actually missing. The O(k·G·S + k³) machine is the EXISTING
+systematic-repair submode (`--window-systematic-repair`, §16.3's oracle pick):
+source delivers as unit rows in O(S); only ~⌈G·r⌉+deficit ≈ 13 repair rows per
+generation are dense — 125 k sym/s (≈1.2 Gbit/s·core) on the SAME VM before
+any new code.
+
+### JOB 2 — the fix, in increments (each measured at L0)
+
+**Increment 1 — sparse-aware decoder (pure speedup, UNCONDITIONAL, delivered
+set byte-identical).** The old decoder still wasted work in systematic mode:
+every known source was materialized as a full-width fused unit pivot row (slot
+creation copied O(G·(G+S)) bytes), every dense repair was reduced against all
+G rows with (G+S)-byte fused SIMD calls even when 374/384 of them meant
+"subtract a known source", late-source injection built and reduced full-width
+rows, and unit-row detection re-counted whole coefficient rows. Rewrite
+(src/fec/generation.rs): a per-slot `known` bitmap — known sources NEVER enter
+the matrix; incoming rows eliminate known columns PAYLOAD-ONLY against the
+shared `recovered` store (S bytes, not G+S); only coded rows (≤ k + deficit
+margin) are kept, in incremental RREF; a row that turns UNIT is delivered on
+the spot and converted to `known` (the active system stays k×k; completion =
+`known_count == width`, no separate full-rank pass); a span already fully
+recovered never creates a matrix — a redundant repair costs O(G) with ZERO GF
+work (the k=0 case); `advance` keeps `recovered` entries alive for the span of
+any live Solving slot (the payloads the old code privately copied). Cost per
+generation: O(k·G·S + k²·(G+S)). On the coded-only wire nothing is ever known,
+the arithmetic degenerates to the same dense elimination as before (plus an
+early-exit unit scan) — measured 1.2× faster, no regression.
+  The pre-rewrite decoder is kept VERBATIM as `fec::generation::reference`
+(doc-hidden, never constructed by the engine) and a NEW differential test
+(`sparse_decoder_matches_reference_on_random_traces`) drives both on random
+traces — systematic AND coded-only wires, 5–25 % loss, late sources, FILL_FLAG
+filling repairs, duplicates, deficit top-ups, mid-trace `advance`, 4 seeds —
+asserting per-call delivered sets + payload bytes + `rank_in` + `total_fed` /
+`repairs_fed` / `repairs_useful` equality at every step. (One documented
+divergence: the ORDER of seqs within a single completing `add_symbol` return;
+every consumer keys on seq.)
+
+L0 micro gains, same-run old→new:
+
+| trace | VM (SSSE3) | dev (AVX2) |
+|---|---|---|
+| sys ε+late | 125 k → **160 k** sym/s (×1.27) | 154 k → 171 k (×1.11) |
+| sys clean in-order (k=0 path) | 129 k → **643 k** (×5.0) | 163 k → 604 k (×3.7) |
+| sys fill-heavy | 66 k → 86 k (×1.29) | 63 k → 73 k (×1.15) |
+| coded-only | 5.9 k → 7.2 k (×1.20) | 5.7 k → 7.2 k (×1.27) |
+
+**Increment 2 (SIMD) — already present; SKIPPED with numbers:** ADR-0041's
+PSHUFB nibble-table kernel with runtime AVX2/SSSE3 dispatch is in place; the
+VM has no AVX2 yet still does 4.1 GB/s, and the systematic-mode floor
+(known-elimination ≈ 105 µs × ~13 repairs/gen ≈ 1.4 ms/gen ≈ 280 k sym/s) is
+far above link rate — the kernel is not the binder. **Increments 3 (parallel
+decode) and 4 (G-shrink) — NOT NEEDED** (L1 below: the decode machine no
+longer sets the clock).
+
+**Increment 2' — the algorithmic lever at the system level (EXISTING flag, no
+new semantics):** run generation mode with the systematic-repair wire. L0
+full-engine bench (gen_substrate_l0, netem shim, 12.5 MB × 3, Windows,
+before-binary vs after-binary):
+
+| mode | c2 before | c2 after | c3 after |
+|---|---:|---:|---:|
+| gen (coded-only) | 32.5 | 33.4 | 11.3 |
+| sys (systematic-repair) | **70.1** | **68.3** | 12.3 |
+| plain | 70.4 | 68.2 | 15.5 |
+
+**sys == plain at L0** — the coding machine's CPU tax is structurally gone
+(and c3 is link/loss-bound for every mode, as it should be).
+
+### JOB 3 — L1 A/B (VM 10.1.5.16, 2026-07-13 ~09:13–12:08 UTC; 25 MB × 1
+run/invocation × 8 reps, arms interleaved round-robin per rep, fresh tunnel
+each invocation, seeds 42 AND 7, `cod>0` GUARD OK on every gen run, dnf and n
+recorded, full env+command+binary-md5 per run in VM `/home/vibe/gendec/*.log`,
+driver `/home/vibe/decode_battery.sh`, harness copy `/home/vibe/l1d` with
+per-invocation CPU capture; shared-VM lock `/tmp/rwm-vm.lock` held for the
+session; binaries: before = 02d240c, after = da926a5)
+
+Arms (every gen arm on the GPB stack `RWM_GEN_R=0.03 RWM_GEN_PIPE=1
+RWM_QUIC_CC=bbr`): **PB** = plain+BBR (after-binary; the plain path is
+untouched by this branch) · **Bgen/Agen** = coded-only generation wire on
+before/after binary (§16.17's GPB arm; the pure-speedup A/B) · **Bsys/Asys** =
+same + `--window-systematic-repair` (the algorithmic arm; same-binary flag
+A/B against the gen arms).
+
+**single-c2 (PRIMARY; §16.17 GPB = 33.9; target ≥60). CPU = mean seconds per
+25 MB invocation, srv=receiver/decoder · cli=sender/encoder:**
+
+| arm | seed42 mean (σ_s) [runs] | seed7 mean (σ_s) [runs] | CPU srv·cli |
+|---|---|---|---|
+| PB | 77.11 (2.74) [75.9 72.9 78.4 74.7 75.6 80.6 80.1 78.6] | 77.63 (3.57, n=6) [80.3 76.2 79.4 77.9 71.2 80.7] | 2.97 · 2.02 |
+| Bgen | 33.53 (1.39) [32.6 35.5 34.3 32.6 34.9 34.3 31.9 32.1] | 33.06 (1.21, n=7) [32.1 34.3 31.7 34.4 33.3 33.9 31.7] | 5.54 · 4.45 |
+| Agen | 36.66 (1.88) [39.3 35.2 33.6 37.4 38.4 36.2 37.7 35.5] | 35.42 (0.93, n=6) [33.9 35.9 35.1 35.5 36.7 35.4] | 4.98 · 4.36 |
+| Bsys | 70.09 (3.17) [67.3 75.8 71.9 66.1 68.2 68.6 71.7 71.2] | 71.08 (2.32, n=6) [66.7 72.9 71.1 73.1 71.7 70.9] | 3.37 · 2.24 |
+| **Asys** | **70.93 (3.21)** [70.3 67.2 68.5 70.4 76.6 70.2 75.0 69.4] | **70.77 (2.59, n=7)** [72.0 67.0 68.8 74.2 73.3 69.3 70.8] | 3.38 · 2.25 |
+
+Bgen replicates §16.17's 33.9 exactly (33.5/33.1 — session comparability
+anchored; PB replicates 76.1 → 77.1/77.6). The systematic wire is **×2.1
+(70.9/70.8, σ ≤ 3.2, dnf 0) = 0.92×/0.91× of plain+BBR's own single** — the
+≥60 target is cleared with the link-class control in sight. The decoder
+rewrite alone moves the coded-only arm +3.1/+2.4 (2–3× its σ_s — real, small,
+exactly as the profile predicted: the coded wire is the quadratic, not the
+solver). Bsys ≈ Asys at L1 (+0.8/−0.3, inside noise): at 70 Mbit the old
+decoder's systematic-mode waste did not yet bind the wall — it binds CPU
+(below) and the next rate class.
+
+**single-c3 (the lossy 4×-win; §16.17 GPB = 13.0; plain+BBR-c3 measured here
+as the honest recovery ceiling):**
+
+| arm | seed42 (σ_s) [runs] | seed7 (σ_s) [runs] | CPU srv·cli |
+|---|---|---|---|
+| PB | 15.63 (0.45) [14.9 15.9 15.2 16.3 15.4 15.7 15.9 15.7] | 15.84 (0.20, n=7) [15.5 15.9 16.0 15.7 15.8 16.1 15.7] | 3.54 · 3.17 |
+| Bgen | 12.75 (0.24, n=7, **1 DNF**) [12.8 12.7 12.6 13.1 12.4 13.0 12.8] | 12.80 (0.21, n=6) [12.9 12.5 12.9 12.6 13.0 12.9] | 8.50 · 6.26 |
+| Agen | 12.92 (0.26) [12.6 12.7 13.2 13.0 13.0 13.0 12.5 13.2] | 12.61 (0.47, n=7, **1 DNF**) [12.6 12.6 12.6 11.6 13.0 13.0 12.7] | 7.72 · 6.13 |
+| **Asys** | 13.33 (4.32, median **14.9**, 1 collapse-run 2.7) [14.9 14.9 14.6 14.7 2.7 15.6 15.1 14.1] | **15.06 (0.50)** [15.0 15.4 14.7 15.6 15.6 14.9 14.2] | 4.92 · 4.01 |
+
+The 4× lossy-path FEC win (vs plain-Cubic 3.2/3.7) HOLDS and improves:
+13.0 → 14.9-median/15.1 = **0.95× of plain+BBR-c3's 15.6/15.8** — generation
+recovery now rides essentially at the substrate's own recovery ceiling. One
+collapse-run (2.7, counted in the mean) — the same low-run class PB-c3 itself
+showed in §16.17 (2.8/2.2). CPU on the deficit-hot path: srv 8.5→4.9 s,
+cli 6.3→4.0 s.
+
+**C7 (c2+c2) symmetric and C8 (c2+c3) heterogeneous (after-binary arms):**
+
+| arm | C7 s42 (σ) [runs] | C7 s7 (σ) [runs] | C8 s42 (σ) [runs] | C8 s7 (σ) [runs] |
+|---|---|---|---|---|
+| PB | 93.08 (14.3) [87.0 110.3 62.5 93.8 99.3 98.3 90.8 102.7] | 94.51 (11.2) [101.2 99.5 106.0 69.2 97.9 90.4 97.7 94.2] | 55.73 (13.2) [62.9 70.1 54.2 70.9 56.7 57.1 33.6 40.4] | 45.42 (12.0, n=7) [29.3 63.5 33.5 45.4 44.0 56.6 45.8] |
+| Agen | 34.63 (2.91) [36.4 33.2 34.4 37.6 36.6 28.4 36.1 34.4] | 33.44 (3.04) [33.9 33.8 37.4 27.8 30.3 34.6 33.7 35.9] | 34.87 (3.34) [27.0 37.3 35.6 36.0 34.4 36.7 35.0 37.2] | 36.70 (0.81, n=4, **1 DNF**) [35.5 36.8 37.2 37.3] |
+| **Asys** | 72.31 (4.05) [72.1 75.0 78.8 67.1 70.2 73.6 67.0 74.6] | 72.42 (3.80) [67.4 72.9 76.7 68.5 78.2 73.3 72.6 69.6] | **69.77 (5.04)** [62.8 67.6 62.1 72.5 74.8 73.8 70.8 73.7] | **69.10 (5.49, n=6)** [68.9 74.0 58.7 73.2 69.5 70.3] |
+
+### VERDICT — every factor WITH its control
+
+1. **The decode-CPU ceiling is DISSOLVED.** Gen single-c2 33.9 → **70.9/70.8**
+   (×2.1, 10–14× the arm's σ_s) = 0.92× of plain+BBR's same-session 77.1/77.6.
+   The mechanism: the O(G²·S) was the coded-only WIRE (both ends), and the
+   systematic-repair wire + sparse decoder is the O(k·G·S+k³) machine.
+2. **The c3 lossy-path win holds and improves:** 13.0 → 14.9-median/15.1 =
+   0.95× of the plain+BBR-c3 recovery ceiling (15.6/15.8) measured same-
+   session; ~4.1× plain-Cubic's historic 3.2/3.7.
+3. **C8 heterogeneous: gen+sys is now the BEST C8 config measured on this
+   testbed** — 69.8/69.1 (σ 5.0/5.5, dnf 0) vs plain+BBR's own C8 55.7/45.4
+   (σ 13.2/12.0, runs swinging 29–71): **×1.25/×1.52 with the variance halved
+   and no bimodality**, and the first C8 in link-class territory
+   (0.90×/0.89× of plain+BBR fast-alone 77.1/77.6). Honest ceiling stack-up:
+   vs gen's OWN single 70.9 it is 0.98× — parity, still not aggregation —
+   and vs the per-path plain+BBR singles summed (92.7/93.4) it is 0.75×.
+   The FEC value at C8 is *stability + the slow path costing nothing*, where
+   plain+BBR pays a 0.72×/0.59× bimodal penalty for touching the lossy path.
+4. **C7 symmetric: no aggregation above gen's own single** (72.3/72.4 =
+   ×1.02 of 70.9) while plain+BBR does aggregate (93.1/94.5 = ×1.21). The
+   next binder is NOT decode: see CPU below.
+5. **Pure decoder speedup (binary A/B, coded-only arm): +3.1/+2.4** — real
+   (2–3× σ_s) but small at L1, as the profile predicted; its L1 value is the
+   CPU headroom and the k=0/injection paths, its headline is the L0 ×1.3–5.0.
+
+### CPU — the binder visibly moved (per-25 MB CPU seconds, whole invocation)
+
+| config | recv (decoder) | send (encoder) | rate |
+|---|---:|---:|---:|
+| gen coded-only (Bgen sc2) | 5.54 s | 4.45 s | 33.5 |
+| gen systematic (Asys sc2) | **3.38 s** | **2.25 s** | **70.9** |
+| plain+BBR (PB sc2) | 2.97 s | 2.02 s | 77.1 |
+
+Coded-only at 33.5 Mbit/s burns CPU-seconds ≈ 0.8× its (stretched) wall on
+each side — the machine IS the clock. Systematic at 70.9 sits within 14 %
+(recv) / 11 % (send) of plain+BBR's CPU at the same link-class rate: the FEC
+tax at r=0.03 is now ~0.41 s recv + 0.23 s send per 25 MB. Per delivered bit,
+recv CPU fell ×3.4 and send ×4.2. **The residual per-core limit:** in Asys
+C7/C8 (and PB C7) the RECEIVER process runs at ~1.0 core (3.6–3.7 s CPU over
+~3.5 s wall) — the single-threaded receive/reassembly/delivery engine caps
+one gen-sys sink at ≈72 Mbit/s on this VM core (plain ≈93); decode itself is
+now ≤ ~15 % of that budget (micro: 160 k sym/s available vs ~7.3 k consumed).
+C7 aggregation for gen mode is receiver-engine-bound, not decode-bound.
+
+### Controls / caveats / discipline items
+
+- **Liveness:** GUARD OK (cod>0) on every gen run; sys arms emit only repair
+  (coded ≈ 1 000–2 300 per 25 MB ≈ r+deficit — the wire is really systematic;
+  coded-only arms ≈ 22 500–28 700).
+- **Noise floor:** headline arm σ_s 0.2–5.5; the claimed effects are +37
+  (single), +2.1/+2.3 c3, +14.0/+23.7 C8-vs-PB-C8 — 3–14× the respective σ_s.
+  PB dual arms remain the noisy ones (σ 11–14), reported not hidden.
+- **DNFs (all 3, all on coded-only gen arms):** Bgen sc3-s42 rep6, Agen
+  sc3-s7 rep1, Agen c8-s7 rep3 (300 s timeouts — the §16.16/16.17 gen-arm
+  tail-wedge class). **Sys arms: 60/60 runs, dnf 0**; one Asys sc3 collapse-
+  run (2.7) counted in its mean. n<8 arms lost reps to the seed-7 topo-ping
+  double-abort (harness caveat, recorded; 9 RETRYs in c8-s7 alone).
+- **Shipped default byte-identical in behavior:** the decoder rewrite is a
+  pure speedup with a byte-identical delivered SET (differential-tested;
+  intra-call ordering divergence documented above); `--window-systematic-
+  repair` is a pre-existing CLI mode, default OFF; RWM_GEN_PIPE/RWM_QUIC_CC
+  remain default-OFF experiment knobs (BBR fairness still unevaluated).
+- **VM shared with a second worker** (feat/copa-sole-cc): `/tmp/rwm-vm.lock`
+  protocol honored — lock held 09:13–12:08 UTC incl. builds, released after
+  teardown; my binaries/tree in `/home/vibe/rp-decode` (the other worker's
+  `/home/vibe/raptorpath` tree was left untouched).
+- **What this does NOT claim:** no multipath aggregation above the best
+  single path anywhere (gen C7/C8 ≈ gen single ≈ 0.9× plain fast-alone);
+  the harness gen default is still the coded-only flag — flipping the
+  battery default to systematic is a separate (recommended) decision.
+
+### Tests
+
+`cargo test -p raptorpath --lib` 299/299 (new: the old-vs-new differential
+`sparse_decoder_matches_reference_on_random_traces`); `-p raptorpath-math`
+all green (47/19/22/4/4/23); `gate_suite` 15/15 release; `perf_loopback` 8/8,
+fmtcp/daps loopbacks green; L0 engine bench green before/after. Micro-bench:
+`cargo test --test gen_decode_bench --release -- --ignored --nocapture`
+(RWM_B_* knobs documented in the file).

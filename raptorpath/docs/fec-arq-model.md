@@ -7564,6 +7564,87 @@ but not yet validated in its engagement regime.
 
 ---
 
+### 16.18 The decode-CPU ceiling dissolved: the O(G²·S) was the coded-only WIRE, not the solver — the systematic-repair wire is the O(k·G·S+k³) machine, and generation mode now rides at 0.92× of the plain link-class rate (2026-07-13)
+
+§16.17 ended with the generation machine binding the whole transport at ~34
+Mbit/s regardless of path count, attributed to the receiver's dense
+per-generation Gauss–Jordan (O(G²·S) ≈ 90 ms CPU per G=384 generation ≈
+4 000 sym/s). Profiling the coding machine ALONE (a new L0 micro-bench with
+per-call bucket attribution; G=384, S=1200, r=0.03, ε=2.6 %) shows that
+attribution to be half right — and locates the quadratic one level up.
+
+**The profile (L1 VM — `QEMU Virtual CPU 2.5+`, SSSE3 only, GF(256) kernel
+4.1 GB/s).** On the coded-only wire the decoder does 5 943 sym/s (166 µs per
+dense row ⇒ ~64 ms/generation) and the ENCODER does 4 922 sym/s (203 µs per
+coded symbol — the sender sums ~G sources into every symbol): enc+dec
+together are the measured ~34 Mbit/s ceiling, exactly. On the SAME VM, the
+same decoder fed the systematic wire (raw source as unit rows + only
+⌈G·r⌉+deficit dense repairs) does 125 000 sym/s ≈ 1.2 Gbit/s·core. **The
+quadratic is the WIRE MODE:** the L1 generation arm (`--window-generation-
+coding`) is coded-only — no raw source rides it (§16.17's waste arithmetic:
+38 280 coded for ~21 800 source) — so all G DoF per generation arrive AND
+depart as dense combinations, making Ω(G²·S) work per generation
+information-structural on both ends. At ε=2.6 % only k ≈ ε·G ≈ 10 DoF are
+actually missing; O(k·G·S + k³) is achievable only if the other G−k DoF ride
+the wire raw — which is precisely §16.3's systematic-repair submode
+(`--window-systematic-repair`), implemented and idle since that section.
+
+**Fix 1 — sparse-aware decoder (pure speedup, unconditional,
+output-identical).** The decoder still wasted systematic-mode work: known
+sources were materialized as full-width fused unit pivot rows (slot creation
+alone copied O(G·(G+S)) bytes — measured 1.26 ms), every dense repair reduced
+against all G rows with (G+S)-byte SIMD calls where 374 of 384 merely
+subtracted a known source, and late-source injection (#59) built full-width
+rows. The rewrite keeps known sources OUT of the matrix (a `known` bitmap;
+payload-only elimination against the recovered store), keeps only the ≤ k
+coded rows in incremental RREF, converts unit rows to `known` on the spot
+(the active system stays k×k; completion needs no back-substitution pass),
+and recognizes an already-complete span in O(G) with zero GF work — the k=0
+common case never builds a matrix. Per generation: O(k·G·S + k²·(G+S)). The
+pre-rewrite decoder is kept verbatim as a reference oracle; a differential
+test drives both over randomized traces (both wires, 5–25 % loss, reorder,
+FILL_FLAG, duplicates, `advance`) asserting identical delivered sets, bytes,
+rank and useful-repair accounting per call. Micro gains (VM): ×5.0 on
+in-order clean (129 k→643 k sym/s), ×1.27–1.29 on lossy/fill traces, ×1.20
+even on coded-only (early-exit unit detection).
+
+**Fix 2 — the systematic wire as the generation arm.** L0 full-engine (netem
+shim, c2): coded-only 32.5 → systematic 70.1 = plain's 70.4. SIMD was already
+present (ADR-0041); parallel decode and G-shrink were not needed.
+
+**L1 (VM, 25 MB×8, seeds 42/7, interleaved, guard-verified, CPU recorded;
+full tables in goal-gate "Decode-CPU Ceiling"; before=02d240c,
+after=da926a5).** Single-c2: coded-only replicates 33.5/33.1; the decoder
+rewrite alone +3.1/+2.4 (2–3σ — the wire, not the solver, was the wall);
+**systematic 70.9/70.8 (σ ≤ 3.2, dnf 0) = ×2.1 = 0.92× of plain+BBR's
+same-session 77.1/77.6**. Single-c3: 13.0 → 14.9-median/15.1 = **0.95× of
+plain+BBR-c3's own 15.6/15.8** (the recovery ceiling, measured as a control
+for the first time) — the lossy-path FEC win (~4× plain-Cubic) holds. C7:
+72.3/72.4 ≈ ×1.02 of gen's single (still parity; plain+BBR aggregates ×1.21
+to 93/95). **C8 heterogeneous: 69.8/69.1 (σ 5.0/5.5, dnf 0) vs plain+BBR's
+own C8 55.7/45.4 (σ 12–13, bimodal 29–71) — ×1.25/×1.52 with half the
+variance, 0.90× of the fast-alone control, 0.98× of gen's own single: the
+best C8 configuration measured on this testbed.** CPU (per 25 MB): receiver
+5.54→3.38 s, sender 4.45→2.25 s while throughput doubled — within 14 %/11 %
+of plain+BBR's CPU at the same rate; per delivered bit the coding machine's
+CPU fell ×3.4/×4.2. All 3 battery DNFs were on coded-only gen arms; the
+systematic arms ran 60/60.
+
+**Where the machine binds NOW.** In every link-class arm (gen-sys C7/C8 AND
+plain C7) the RECEIVER process saturates ~1.0 core (3.6 s CPU / 3.5 s wall):
+the single-threaded receive/reassembly/delivery engine caps one sink at ≈72
+Mbit/s (gen-sys) / ≈93 (plain) on this VM core — decode is now ≤ ~15 % of
+that budget (160 k sym/s available vs ~7.3 k consumed at 72 Mbit/s). Gen-mode
+C7 aggregation above its single is therefore a receiver-ENGINE problem
+(parallelize/offload the receive path), not a coding problem. The remaining
+honest gap to plain (0.92× single) is the r+deficit repair overhead plus the
+generation bookkeeping — a real but constant tax. The coded-only wire remains
+available where its property (no positional source at all) is wanted, but as
+a THROUGHPUT configuration it is dominated: same recovery, ~29× the decode
+arithmetic, ~2× the CPU per bit, and it carries the battery's only DNFs.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```
