@@ -44,6 +44,12 @@ fi
 # Proactive-FEC-vs-ARQ crossover knobs: BDP-scaled store/in-flight window,
 # coded pacing ceiling, and the proactive-vs-reactive fraction trace.
 [[ -n "${RWM_STORE:-}" ]] && TENV="$TENV RWM_STORE=$RWM_STORE"
+# Path-scaled outstanding pool (task #84, feat/recv-parallel): the plain-
+# reliable multipath store-starvation fix — cap = clamp(gain·N·pipe, floor,
+# N·pool) for N>=2 live paths; N=1 / unset = legacy byte-identical.
+[[ -n "${RWM_STORE_PATHS:-}" ]] && TENV="$TENV RWM_STORE_PATHS=$RWM_STORE_PATHS"
+[[ -n "${RWM_STORE_PATH_POOL:-}" ]] && TENV="$TENV RWM_STORE_PATH_POOL=$RWM_STORE_PATH_POOL"
+[[ -n "${RWM_STORE_GAIN:-}" ]] && TENV="$TENV RWM_STORE_GAIN=$RWM_STORE_GAIN"
 [[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
 [[ -n "${RWM_GEN_RATE:-}" ]] && TENV="$TENV RWM_GEN_RATE=$RWM_GEN_RATE"
 [[ -n "${RWM_GEN_RATE_FLOOR:-}" ]] && TENV="$TENV RWM_GEN_RATE_FLOOR=$RWM_GEN_RATE_FLOOR"

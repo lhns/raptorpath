@@ -3398,6 +3398,37 @@ pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64
     gaps
 }
 
+/// Path-scaled outstanding-pool cap (task #84, env `RWM_STORE_PATHS`).
+///
+/// The plain-reliable OUTSTANDING ceiling was a per-transfer constant
+/// (`RELIABLE_STORE_MAX` = 1024): the dynamic delay cap latches at it on
+/// fast paths (the legacy anchor over-reads), so a MULTIPATH sender is
+/// store-starved — the pool that must fund Σ per-path (BDP + one recovery
+/// round of runway) does not grow with the path count. Measured same-binary
+/// at L1 (see the decl site): the knee is ≈2048 outstanding symbols PER
+/// LIVE PATH at both C7 and C8, deeper pools re-enter the bufferbloat
+/// collapse.
+///
+/// Returns `Some(cap)` when the path-scaled law applies — flag on, N ≥ 2
+/// live paths, and a positive dynamic base (`pipe_sum` = Σ anchor-BDP, or
+/// Σ Copa cwnd under the feed): cap = clamp(gain·N·pipe_sum, floor,
+/// N·pool). Returns `None` when the caller must use the legacy single-path
+/// law — so N = 1 is bit-exact legacy even with the flag ON.
+pub fn path_scaled_store_cap(
+    on: bool,
+    n_live: usize,
+    pipe_sum: f64,
+    gain: f64,
+    floor: usize,
+    pool: usize,
+) -> Option<usize> {
+    if !on || n_live < 2 || pipe_sum <= 0.0 {
+        return None;
+    }
+    let ceiling = n_live.saturating_mul(pool).max(floor);
+    Some(((gain * n_live as f64 * pipe_sum).ceil() as usize).clamp(floor, ceiling))
+}
+
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
 /// of seqs the receiver HAS in (`delivered`, `seen`] — the inverse of
 /// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
@@ -4166,6 +4197,37 @@ async fn run_window_sender(
         .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(128);
     // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
     let store_cap_floor: usize = 64;
+    // ── Path-scaled outstanding pool (task #84, env RWM_STORE_PATHS) ──────
+    // MEASURED at L1 (2026-07-14, host-passthrough E5-2650v3): the plain-
+    // reliable OUTSTANDING ceiling is a per-TRANSFER constant
+    // (RELIABLE_STORE_MAX = 1024, which the 2×Σanchor dynamic cap latches at
+    // on fast paths because the legacy ack-interval anchor over-reads), so a
+    // multipath sender is store-starved: the DIAG shows win=1024/1024 pegged
+    // while both paths idle (infl=0 spikes). Same-binary static-store sweep,
+    // C7 plain+BBR: 1024→103 Mbit, 2048→122.7, 4096→141.3, 8192→143.7
+    // (saturated); C8: 4096→71.5, 8192→31.8 (slow-path bufferbloat collapse);
+    // singles: sc2 2048→81.6 / 4096→75.6 / 8192→43.0 (collapse), sc3
+    // degrades monotonically with a static pool (the dynamic cap binds at
+    // ~684 there and is the right law). The knee is 2048 PER LIVE PATH.
+    // Under RWM_STORE_PATHS=1 and N = live_paths ≥ 2 the dynamic-cap value
+    // scales ×N and its clamp ceiling becomes N × 2048 (RWM_STORE_PATH_POOL
+    // overrides); N = 1 keeps the legacy law bit-exactly, so singles are
+    // unaffected even with the flag ON. Default OFF: shipped byte-identical.
+    // The engine sink is NOT the binder here: single-path c1 sinks 187.7
+    // Mbit/s through the same receiver task, and pinning the C7 receiver to
+    // one core costs only −8% at the default store.
+    let store_paths_on = crate::config::env_flag("RWM_STORE_PATHS", false);
+    let store_path_pool: usize = std::env::var("RWM_STORE_PATH_POOL")
+        .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2048);
+    if store_paths_on && plain_dyn_cap {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): the recorded run
+        // must show which outstanding-pool law was active.
+        info!(
+            pool_per_path = store_path_pool,
+            gain = store_bdp_gain,
+            "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
+        );
+    }
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
     let mut dyn_store_cap: usize = store_boot_cap.min(store_max);
@@ -5242,30 +5304,56 @@ async fn run_window_sender(
                     // c2 smoke: effective cap flapping 1024↔128 every few
                     // DIAG ticks, store swinging 400–1024, goodput dips to
                     // 20 Mbit).
-                    let cwnd_sum: f64 = {
+                    let (cwnd_sum, n_live): (f64, usize) = {
                         let sched = scheduler.lock();
-                        sched
-                            .live_paths()
-                            .iter()
-                            .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
-                            .sum()
+                        let live = sched.live_paths();
+                        (
+                            live.iter()
+                                .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
+                                .sum(),
+                            live.len().max(1),
+                        )
                     };
-                    dyn_store_cap = if cwnd_sum > 0.0 {
+                    dyn_store_cap = if let Some(cap) = path_scaled_store_cap(
+                        store_paths_on,
+                        n_live,
+                        cwnd_sum,
+                        store_bdp_gain,
+                        store_cap_floor,
+                        store_path_pool,
+                    ) {
+                        cap
+                    } else if cwnd_sum > 0.0 {
                         ((store_bdp_gain * cwnd_sum).ceil() as usize)
                             .clamp(store_cap_floor, store_max)
                     } else {
                         store_boot_cap.min(store_max)
                     };
                 } else {
-                    let bdp: f64 = {
+                    let (bdp, n_live): (f64, usize) = {
                         let sched = scheduler.lock();
-                        sched
-                            .active_paths()
-                            .iter()
-                            .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
-                            .sum()
+                        let n = sched.live_paths().len().max(1);
+                        (
+                            sched
+                                .active_paths()
+                                .iter()
+                                .filter_map(|id| {
+                                    sched.path(*id).and_then(|p| p.copa_bdp_anchor())
+                                })
+                                .sum(),
+                            n,
+                        )
                     };
-                    dyn_store_cap = if bdp > 0.0 {
+                    dyn_store_cap = if let Some(cap) = path_scaled_store_cap(
+                        store_paths_on,
+                        n_live,
+                        bdp,
+                        store_bdp_gain,
+                        store_cap_floor,
+                        store_path_pool,
+                    ) {
+                        cap
+                    } else if bdp > 0.0 {
                         ((store_bdp_gain * bdp).ceil() as usize).clamp(store_cap_floor, store_max)
                     } else {
                         store_boot_cap.min(store_max)
@@ -8145,6 +8233,42 @@ mod tests {
         assert!(store_backpressure(true, RELIABLE_STORE_MAX + 1));
         // EVICT mode never backpressures on retention.
         assert!(!store_backpressure(false, RELIABLE_STORE_MAX * 10));
+    }
+
+    // ----- Path-scaled outstanding pool (task #84, RWM_STORE_PATHS) -----------
+
+    #[test]
+    fn path_scaled_store_cap_is_legacy_for_singles_and_off() {
+        // Flag OFF: always legacy, regardless of path count.
+        assert_eq!(path_scaled_store_cap(false, 2, 1000.0, 2.0, 64, 2048), None);
+        // Flag ON but a single live path: legacy law bit-exactly (the
+        // property that keeps singles byte-identical with the flag set).
+        assert_eq!(path_scaled_store_cap(true, 1, 1000.0, 2.0, 64, 2048), None);
+        // No dynamic base yet (anchor cold): legacy boot-cap path decides.
+        assert_eq!(path_scaled_store_cap(true, 2, 0.0, 2.0, 64, 2048), None);
+    }
+
+    #[test]
+    fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
+        // C7-shaped: Σ anchor-BDP ≈ 1076, gain 2, N = 2 → 2·2·1076 = 4304,
+        // clamped at the N×2048 = 4096 ceiling (the measured knee: C7
+        // 4096 → 141.3 Mbit vs 1024 → 103; deeper pools saturate/collapse).
+        assert_eq!(
+            path_scaled_store_cap(true, 2, 1076.0, 2.0, 64, 2048),
+            Some(4096)
+        );
+        // Below the ceiling the dynamic value rules (transient anchor sag).
+        assert_eq!(
+            path_scaled_store_cap(true, 2, 500.0, 2.0, 64, 2048),
+            Some(2000)
+        );
+        // Floor guards a transiently-tiny estimate.
+        assert_eq!(path_scaled_store_cap(true, 2, 1.0, 2.0, 64, 2048), Some(64));
+        // Three paths: ceiling 3×2048.
+        assert_eq!(
+            path_scaled_store_cap(true, 3, 4000.0, 2.0, 64, 2048),
+            Some(3 * 2048)
+        );
     }
 
     // ----- FMTCP-class pure decode-on-total aggregation (change 1 + change 2) --
