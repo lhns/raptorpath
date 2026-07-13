@@ -12,6 +12,33 @@ cargo test --test gate_suite -p raptorpath --release -- --test-threads 1
 the inner-feedback floor is weight 0 in the gate driver, so the gate
 path is bit-identical).
 
+## MEASUREMENT DISCIPLINE (2026-07-13) — required for every future L1 verdict
+
+The lesson of the generation-inert era (the 2026-07-12 DAPS-era sections below;
+paper §16.10–16.14; see "Methodology Audit (2026-07-13)" at the end of this
+file): six mechanism verdicts were merged on measurements in which the
+mechanism under test never executed, because nobody checked. No L1 verdict is
+eligible for merge unless ALL of the following are in the ledger section:
+
+1. **Mechanism-liveness proof.** The recorded run shows the mechanism under
+   test actually executed: the harness `cod>0` guard output (`GUARD OK`)
+   and/or the enabling flag echoed in the recorded command line. Dead code
+   measures noise.
+2. **Full command line + env recorded.** The exact harness invocation, every
+   `RWM_*` env var, and the binary/commit hash. (The DAPS-era sections
+   recorded none of this — that absence is why they can only be classified
+   UNCERTAIN rather than retro-validated or definitively voided.)
+3. **Interleaved same-binary arms.** A/B arms alternate within one session to
+   cancel VM/session drift (documented same-nominal-config drift: 2.3×).
+4. **Both seeds + per-run distributions.** Per-seed means AND per-run values;
+   pooled means alone hide bimodality.
+5. **Effect must exceed the recorded noise floor.** A claimed delta must
+   exceed the measured same-config spread (σ_s and cross-session drift).
+   Every DAPS-era "effect" (+15%, +30%, +52%, −53%, −19%) was inside it.
+
+Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
+as SET (`.is_ok()` gates) — only some knobs treat "0" as off.
+
 ## FINAL CONSOLIDATED VERDICT (2026-07-08) — the aggregation/throughput arc
 
 This is the single honest capstone for the heterogeneous-multipath-aggregation
@@ -19,6 +46,16 @@ This is the single honest capstone for the heterogeneous-multipath-aggregation
 per-branch verdicts below and reconciles the (pre-arc) L3 REGIME MAP with
 everything the arc measured. Read it as the settled position; the dated
 sections that follow are the primary record it summarizes.
+
+**[AUDIT 2026-07-13: the UPDATE blockquote below is VOIDED — generation-inert
+measurement.]** The §16.10 DAPS battery it cites was (at best) unverified: the
+harness never enabled generation and the DAPS arms are classified UNCERTAIN,
+leaning INVALID (see "Methodology Audit (2026-07-13)"). The 0.48×→0.80× lift,
+paused 13–68%→0%, and the "scheduling-bound AND queue-bound, not solely
+recovery-latency-bound" revision are not validly established. The 2026-07-08
+verdict body below rests on the systematic-repair era (flags recorded in the
+ledger) and STANDS. Valid generation-ON numbers: "Generation-ON Re-Baseline
+(2026-07-13)".
 
 > **UPDATE (2026-07-12), see "DAPS + Right-Sized FEC" at the end of this file.**
 > The "bounded by recovery latency" conclusion is PARTIALLY REVISED for C8: the
@@ -4437,6 +4474,18 @@ gains are throughput-on-clean, tail-latency, and the window/systematic path.
 
 ## DAPS + Right-Sized FEC (2026-07-12) — delay-aware scheduling escapes the frontier long pole; C8 0.48×→0.80×; over-FEC refuted (branch `feat/daps-rightsized-fec`)
 
+**[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
+measurement.]** The DAPS arms recorded no generation-enabling flag; on this
+code `RWM_DAPS=1` alone leaves generation OFF (`daps = RWM_DAPS &&
+generation`), so the headline C8 0.48×→0.80× (13.12), the monotone r-sweep /
+r*≈0.03, and "paused=0%" are voided as unverified — under the inert reading the
+whole r-sweep spread is noise (recorded σ_s reaches 8.8–53.7 s). The FMTCP arms
+(7.58, 7.14) remain VALID (`RWM_FMTCP` self-enables generation). Survives:
+unit tests, the citations, and oracle PART 6 as a model (its claimed L1
+confirmation does not). The "revision to §16.8/16.9" is unsupported. Valid
+numbers: "Generation-ON Re-Baseline (2026-07-13)"; classification:
+"Methodology Audit (2026-07-13)".
+
 Tests the user's two ideas against the honest ceiling: **(A)** arrival-aligned
 (DAPS-style) scheduling — the slow path carries FUTURE stream data offset by the
 latency skew so it arrives in sync with the fast path reaching that position, and
@@ -4575,6 +4624,17 @@ residual), not recovery-latency-bound as the pre-DAPS arc concluded.
 
 ## DAPS Queue Management (2026-07-12) — per-path BDP cap + BtlBw pacing; the queue bound is right but rate-signal-limited in generation mode (branch `feat/daps-queue-mgmt`)
 
+**[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
+measurement.]** `RWM_DAPS_BDP`/`RWM_DAPS_PACE` are dead without generation,
+which the harness never enabled — under the inert reading all four arms ran
+identical code, and the +15% (~10.0→~11.5, σ_s 2.0–5.7 on 5-run arms) is
+within noise either way; the throughput deltas are voided. The quoted
+"occasionally bdp71" DIAG is impossible on an inert sender (wrong log or an
+unrecorded generation-on run). Survives: unit tests, oracle PART 6e as a model;
+the "rate-signal-limited" residual diagnosis happens to be code-true in plain
+mode too (WindowAcks never feed `record_delivery`) but was not validly
+established here. Valid numbers: "Generation-ON Re-Baseline (2026-07-13)".
+
 Attacks the DAPS residual above: DAPS removed the frontier stall but the slow
 path BUFFERBLOATED to ~0.8–1.8 s RTT, consuming the pre-fetch slack and capping
 C8 below parity. Implements the two published queue bounds and measures them.
@@ -4690,6 +4750,19 @@ queue bound needs a per-path rate it currently lacks.
 RWM_DAPS-gated; RWM_DAPS_BDP=0 RWM_DAPS_PACE=0 reproduces pre-QM behaviour).
 
 ## Per-Path Estimator (2026-07-12) — the diagnosed rate-estimation residual, CLOSED: per-path BtlBw now establishes, RTprop stays at base, slow-path bufferbloat 3.7 s→~0.3 s; C8 lifts + STABILIZES (branch `feat/per-path-estimator`)
+
+**[AUDIT 2026-07-13: UNCERTAIN — generation-inert measurement; mechanism DIAG
+internally inconsistent.]** The throughput claims (+30% pooled, 7.85→10.24,
+"stabilizes") are voided as unverified: the lift is smaller than documented
+same-config session swings (up to 2.3×), and the "baseline (pre-estimator)"
+arm was necessarily a different binary (no same-binary off-toggle exists under
+DAPS), so this was never the same-binary A/B the table implies. If generation
+was off, "est=Y 93%" is impossible on the sender in EITHER arm — the DIAG
+comes from an unrecorded generation-on run or a misread log and cannot be
+attached to the throughput battery. Survives: unit tests; the estimator code
+itself (the later Slow-Path Anchor Diagnosis shows the anchor DOES establish
+generation-ON — but is decode-clocked and unstable). Valid numbers:
+"Generation-ON Re-Baseline (2026-07-13)".
 
 Builds the two pieces the DAPS Queue Management work diagnosed as the true long
 pole: generation mode never ESTIMATED a per-path delivered rate (WindowAcks did
@@ -4812,6 +4885,16 @@ non-source traffic — improved and stabilized materially, not yet at parity.
 
 ## Pace-All Traffic (2026-07-12) — pace the CODED/REPAIR emission at BtlBw_i too; the standing queue that the SOURCE-only pacer left; C8 lifts + STABILIZES on BOTH seeds, does NOT reach the ceiling (branch `feat/pace-all-traffic`)
 
+**[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
+measurement.]** `RWM_PACE_ALL` is dead without generation, which the harness
+never enabled — under the inert reading both "same-binary A/B" arms ran
+identical code, and the +52% pooled lift (7.31→11.11), the σ_s collapse, and
+the C7 12.08→21.02 split would be session drift (documented same-config swings
+reach 2.3×; arms were not interleaved). The two-seed consistency is the
+strongest pro-validity signal of the era but does not establish the mechanism;
+the throughput deltas are voided as unverified. Survives: unit tests, oracle
+PART 6e as a model. Valid numbers: "Generation-ON Re-Baseline (2026-07-13)".
+
 The per-path estimator (above) made BtlBw_i real and paced SOURCE placement at it,
 but the CODED/REPAIR emission — the per-generation proactive budget, the filling
 proactive pacer, the deficit top-up, and inline repair — was emitted OUTSIDE that
@@ -4925,6 +5008,20 @@ axis measured, not yet at the goodput ceiling.
 
 ## Source Backpressure (2026-07-12) — REFUTED at L1: deferring the SOURCE to the per-path bucket REGRESSES C8 ~53% on BOTH seeds; the spill baseline is benign; kept as a default-OFF, oracle-modelled, unit-tested knob (branch `feat/source-backpressure`)
 
+**[AUDIT 2026-07-13: UNCERTAIN — the REFUTED verdict is UNSAFE either way;
+generation-inert measurement.]** `RWM_SRC_BP` is dead without generation
+(`src_bp_on = daps_pace_on && …`; the TUN-read defer is entirely inside
+`src_bp_on`), which the harness never enabled: if inert, both arms were
+byte-identical and the code CANNOT explain the −53% — only session drift can
+(the same nominal config measured 14.99 / 10.74 / 6.50 across three sessions).
+The quoted `paused=100%` stretches occur in plain mode in BOTH arms (ordinary
+store-gate stalls), and the section itself says the gate "rarely engages" —
+inconsistent with it causing −53%. VOIDED: the scientific REFUTED verdict and
+the "source is the pipeline clock" mechanism (re-measure interleaved,
+generation-verified, before citing either). SURVIVES: the #73 default-OFF ship
+decision, on prudence alone; unit tests; oracle PART 6f as a model. Valid
+numbers: "Generation-ON Re-Baseline (2026-07-13)".
+
 Pace-all (above) held the rateless REPAIR when both per-path buckets were dry but
 the SOURCE placement gate still SPILLED to the fast path unconditionally and
 decremented its BtlBw bucket NEGATIVE (an unmetered burst). Hypothesis: source is
@@ -5020,6 +5117,22 @@ pacer (repair OR source) actually bind — NOT the source spill. Feature retaine
 default-OFF, oracle-modelled, unit-tested knob for the scientific record.
 
 ## BtlBw Rate-Sample Fix (2026-07-12) — the per-path anchor over-read CLOSED (fast ×158→×1, fast bufferbloat 1573→30ms); but C8 does NOT rise under DAPS — it REGRESSES; the true residual is the slow-path deep read-ahead, not the source anchor (branch `feat/btlbw-rate-sample`)
+
+**[AUDIT 2026-07-13: UNCERTAIN — generation-inert measurement; the C7
+"politeness regression" sub-claim is refuted-as-noise.]** If generation was
+off (the harness never enabled it), `rate_sample` was dead AND the legacy
+anchor was equally unfed in both arms — the sender DIAG could show neither
+×158 nor ×1.05, so the anchor-DIAG contrast comes from an unrecorded
+generation-on run or a wrong log and cannot be attached to the throughput
+battery; the ×158→×1.05 "CLOSED" and fast-bufferbloat 1573→30 ms claims are
+unverified. The C7 20.96→16.97 "rate-throttle politeness" regression is
+refuted-as-noise by §16.14's own symmetric identical-code arms (21.20 vs
+16.96, a 20% pure-noise swing) — which also voids oracle PART 6h's claimed
+calibration ("reproduces 0.810 exactly"). C8 −9.5% pooled is inside session
+noise. Survives: unit tests; PART 6g as a model. The later Slow-Path Anchor
+Diagnosis found the anchor DOES establish generation-ON but swings ~4000× — a
+different story from both arms here. Valid numbers: "Generation-ON Re-Baseline
+(2026-07-13)".
 
 The prior three sections (Per-Path Estimator, Pace-All, Source Backpressure) each
 named the SAME residual: the per-path BtlBw anchor is over-read under bufferbloat so
@@ -5148,6 +5261,21 @@ the aggregation regression it exposes is the honest handoff to the read-ahead /
 pacer-headroom work, reproducible via the same-binary `RWM_RATE_SAMPLE=0`.
 
 ## DAPS Read-Ahead Depth (2026-07-12) — the last structural lever: depth-bounding is the CORRECT, best-performing, most-stable mechanism, but it CANNOT bind because the slow-path rate anchor never establishes; bulk C8 heterogeneous aggregation is BOUNDED below fast-path-alone — CONSOLIDATE (branch `feat/daps-readahead-depth`)
+
+**[AUDIT 2026-07-13: INVALID (PROVEN) — generation-inert measurement +
+wrong-log DIAG.]** The saved battery sender logs show `cod=0`/`eff_pace=0`
+everywhere: DAPS, rate-sample, and the depth bound were ALL inert; arms A/B/C
+executed identical transfer code, so the A<B<C ordering and the stability
+story are draws from one distribution — the throughput verdict is void.
+"Slow anchor never establishes" was read from the RECEIVER log
+(`/tmp/rwm-s.log`) and is directly REFUTED by the Slow-Path Anchor Diagnosis
+(generation-ON, sender log: it establishes for the whole active transfer).
+The CONSOLIDATE recommendation is VOID (withdrawn by that diagnosis). The one
+survivable observation — dual C8 below single-c2 — holds only for PLAIN
+window-reliable (already known: 5.43 vs 15.9), NOT as a bound on the
+DAPS/generation stack. Survives: unit tests; oracle PART 6h as a model (its
+claimed L1 calibration target was a noise artifact). Valid numbers:
+"Generation-ON Re-Baseline (2026-07-13)".
 
 The three prior negatives (Pace-All §16.11, Source-Backpressure §16.12, Rate-Sample
 §16.13) all converged on ONE residual: with the anchor now CORRECT (§16.13: fast
@@ -5541,3 +5669,47 @@ burst_over_read_latch`); `-p raptorpath-math` 23/23 (1 new oracle: PART 6i
 release. The de-noise (`RWM_RATE_WIRE`, robust per-path rate for the DAPS pace/offset/
 depth signal) is DEFAULT OFF ⇒ `effective_btlbw == max_bw` ⇒ byte-identical shipped
 default; the cwnd recovery anchor (`bdp_anchor`) is untouched. Every battery arm dnf=0.
+
+## Methodology Audit (2026-07-13) — how the generation-inert era happened
+
+Full reports, in-repo verbatim:
+[audits/2026-07-13-verdict-audit.md](audits/2026-07-13-verdict-audit.md)
+(section-by-section VALID/INVALID/UNCERTAIN classification, the env-gate table,
+the baseline non-reconciliation, the tainted-paper-claims list) and
+[audits/2026-07-13-session-audit.md](audits/2026-07-13-session-audit.md)
+(the full session error audit, top-10 misses, systemic patterns). The
+per-section status banners above quote these classifications.
+
+Summary of findings:
+
+- **The harness never enabled generation.** `perf_rwm_c.sh` passed only
+  `--window-reliable`; `window_generation = window_reliable &&
+  (window_generation_coding || window_systematic_repair || fmtcp)` — `RWM_DAPS`
+  does not appear in that gate and never has. Every DAPS-era mechanism
+  (`daps → daps_pace_on → {pace_all_on, src_bp_on}`; `per_path_est →
+  rate_sample → daps_depth_on`) chains off `generation`, so one false at the
+  root made every A/B toggle compare byte-identical behaviour against itself.
+- **Env `=0` counted as ON.** `RWM_FMTCP` and `RWM_DAPS` are `.is_ok()` gates:
+  `RWM_FMTCP=0` still enables generation and `RWM_DAPS=0` still counts as set.
+- **The DAPS-era ledger sections recorded no command lines/env** (unlike the
+  systematic-repair-era sections, which recorded
+  `RWM_EXTRA="--window-systematic-repair"`). That absence is the central
+  ledger-discipline failure: it is why §16.10–16.13 can only be classified
+  UNCERTAIN rather than retro-validated or definitively voided. §16.14 alone
+  is INVALID-proven, because its saved sender logs show `cod=0`/`eff_pace=0`.
+- **Era noise exceeded every claimed effect.** The same nominal config
+  measured 14.99 → 10.74 → 6.50 Mbit/s across three sessions (2.3× spread);
+  plain window-reliable dual C8 is heavy-tailed/bimodal (mean 5.43, σ_s 11.7,
+  single runs ~2–16 Mbit/s). Every claimed DAPS-era delta (+15%, +30%, +52%,
+  −53%, −19%, the §16.14 arm ordering) fits inside that spread.
+- **§16.14 read the wrong log.** Its mechanism DIAG ("est=n/btlbw=0
+  throughout") came from `/tmp/rwm-s.log` — the perf `--server`, i.e. the
+  RECEIVER — not the bulk sender (`--client`, `/tmp/rwm-c.log`). The follow-up
+  sender-log diagnosis showed the anchor DOES establish.
+- **The correction:** (1) the harness now passes `--window-generation-coding`
+  to server and client by default, gated `RWM_GEN` (`=0` = the plain-window
+  control); (2) a HARD GUARD fails any generation-requested run whose sender
+  log shows cumulative `total_coded = 0` (`FATAL: … mechanism inert`);
+  (3) the "Generation-ON Re-Baseline (2026-07-13)" section records the first
+  valid generation-ON ceilings + C8/C7. The MEASUREMENT DISCIPLINE checklist
+  at the top of this file is now binding for every future L1 verdict.

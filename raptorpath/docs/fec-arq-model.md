@@ -7031,11 +7031,19 @@ is symmetric aggregation + tail latency. The `RWM_FMTCP` path is env-gated and
 default-off; the shipped path is byte-untouched. **§16.10 revises this:** the C8
 cap was NOT purely recovery-latency — it was the cost-based-CURRENT placement
 stranding the slow path at the frontier. Delay-aware (DAPS) scheduling lifts C8
-0.48× → 0.80×.
+0.48× → 0.80×. *[AUDIT 2026-07-13: that revision note is WITHDRAWN — the §16.10
+DAPS measurement was generation-inert (see §16.15); the 0.48×→0.80× lift and the
+"not purely recovery-latency" revision are not validly established. §16.9's own
+FMTCP numbers stand.]*
 
 ---
 
 ### 16.10 Delay-aware (DAPS) scheduling + right-sized FEC (2026-07-12) — measured
+
+> **[STATUS, AUDIT 2026-07-13: DAPS arms measured generation-inert — UNCERTAIN,
+> not validly established; superseded by §16.15; retained for the record. The
+> FMTCP arms stand (`RWM_FMTCP` self-enables generation); the 0.48×→0.80×
+> headline, the r-sweep, and the queue-management addendum are unverified.]**
 
 §16.9's FMTCP build placed CURRENT coded symbols by marginal cost (§16.3): the
 slow path carried near-frontier data that landed one slow-RTT late, so the object
@@ -7133,6 +7141,9 @@ per-path ownership) is the follow-on.
 
 ### 16.11 Pace-all traffic: pacing SOURCE + REPAIR at BtlBw_i (2026-07-12) — measured
 
+> **[STATUS, AUDIT 2026-07-13: measured generation-inert — UNCERTAIN, not
+> validly established; superseded by §16.15; retained for the record.]**
+
 The per-path estimator (§16.10 follow-on) made BtlBw_i real and paced SOURCE
 placement at it, but §12.5's per-path pacer metered only source: the coded/repair
 emission (proactive budget, filling pacer, deficit top-up, inline) was placed by a
@@ -7170,6 +7181,11 @@ rate estimation (§16.10) → repair pacing (this section) → the residual sour
 of the recovery ceiling, not yet at the goodput ceiling.
 
 ### 16.12 Source backpressure: REFUTED — source is the pipeline clock, not a holdable emitter (2026-07-12) — measured
+
+> **[STATUS, AUDIT 2026-07-13: measured generation-inert — UNCERTAIN; the
+> REFUTED verdict and the "source is the pipeline clock" mechanism are not
+> validly established (unsafe either way); the default-OFF ship decision
+> stands on prudence alone; superseded by §16.15; retained for the record.]**
 
 §16.11's residual named the SOURCE spill: pace-all held the rateless repair when both
 per-path buckets were dry, but the source placement gate still spilled to the fast
@@ -7209,6 +7225,11 @@ default is byte-identical to §16.11. §16.13 fixes that anchor over-read and re
 what it does — and does NOT — buy.
 
 ### 16.13 BtlBw rate-sample: the per-path anchor over-read, fixed — and the C8 residual it exposes (2026-07-12) — measured
+
+> **[STATUS, AUDIT 2026-07-13: measured generation-inert — UNCERTAIN, not
+> validly established; the C7 "politeness regression" leg is refuted-as-noise
+> by §16.14's own symmetric identical-code arms; superseded by §16.15;
+> retained for the record.]**
 
 §16.10–16.12 each named the SAME residual: the per-path BtlBw anchor is over-read
 under bufferbloat, so no per-path pacer/cap can bind. This section fixes the anchor
@@ -7281,6 +7302,12 @@ at all. The correct limiter is the read-ahead DEPTH, capped at the latency-skew 
 §16.14 isolates, and finds bounded by a deeper blocker still.
 
 ### 16.14 DAPS read-ahead depth: the correct lever, bounded by the missing slow anchor (2026-07-12) — measured
+
+> **[STATUS, AUDIT 2026-07-13: INVALID (proven) — measured generation-inert
+> (saved sender logs: `cod=0`/`eff_pace=0`; arms A/B/C ran identical code) and
+> the mechanism DIAG was read from the RECEIVER log; "slow anchor never
+> establishes" is refuted and the CONSOLIDATE recommendation is void;
+> superseded by §16.15; retained for the record.]**
 
 §16.13 isolated the C8 residual as the slow-path DEEP READ-AHEAD: with the anchor
 correct, the BDP cap engaged, and the source gauge at the cap, the slow path still
@@ -7405,6 +7432,27 @@ with the mechanism genuinely ON, heterogeneous bulk C8 is at parity-to-slightly-
 fast-alone (not the inert 0.51× bound, not aggregating), and the residual is BOTH the
 decode-clocked rate signal (needs a wire-clocked estimator, not a filter) AND a newly-exposed
 symmetric dual-path generation-mode coding tax (C7 ≤ fast-alone), not only the slow anchor.
+
+**Audit addendum (2026-07-13).** A read-only audit (in-repo:
+`docs/audits/2026-07-13-verdict-audit.md`, `docs/audits/2026-07-13-session-audit.md`;
+summarized in goal-gate.md "Methodology Audit (2026-07-13)") classified the era
+section-by-section. Precision on "measured with the coded path DEAD": it is
+*proven* only for §16.14 (its saved sender logs show `cod=0`/`eff_pace=0`);
+§16.10 (DAPS arms) through §16.13 are classified **UNCERTAIN** — their ledger
+sections recorded no command lines or env, so generation-ON can neither be
+established nor definitively excluded for them (their FMTCP arms, which
+self-enable generation, stand). Either way none of their verdicts is validly
+established, for a second, independent reason: **era noise exceeded every
+claimed effect** — the same nominal config measured 14.99 / 10.74 / 6.50 Mbit/s
+across three sessions (2.3× spread), and plain window-reliable dual C8 is
+heavy-tailed/bimodal (mean 5.43, σ_s 11.7), covering every claimed §16.10–16.14
+delta (+15%, +30%, +52%, −53%, −19%, the §16.14 arm ordering). Two env footguns
+compound the hazard: `RWM_FMTCP=0` and `RWM_DAPS=0` still count as SET
+(`.is_ok()` gates); the harness fix's `RWM_GEN=0` sentinel avoids this. Future
+L1 verdicts are bound by the MEASUREMENT DISCIPLINE checklist at the top of
+goal-gate.md (mechanism-liveness proof, recorded command line + env,
+interleaved same-binary arms, both seeds + distributions, effect above the
+recorded noise floor).
 
 ---
 
