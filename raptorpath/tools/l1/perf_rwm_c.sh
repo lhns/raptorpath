@@ -181,12 +181,26 @@ done
 sleep 1
 
 echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
-timeout 700 ip netns exec "$NS_CLI" env $TENV "$BIN" perf --client \
+# CPU accounting (goal-gate "Decode-CPU Ceiling"): the CLIENT (bulk sender /
+# encoder) is wrapped in /usr/bin/time -v; the SERVER's (receiver / decoder)
+# cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
+# teardown.  Reported as CPUCLI/CPUSRV seconds so utilization = cpu/elapsed.
+rm -f /tmp/rwm-cli-time
+timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
     --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
     | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
     || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+SRV_TICKS=0
+for P in $(pgrep -x raptorpath); do
+    T=$(awk '{print $14+$15}' /proc/$P/stat 2>/dev/null || echo 0)
+    SRV_TICKS=$((SRV_TICKS + T))
+done
+HZ=$(getconf CLK_TCK)
+CLI_U=$(grep -oP 'User time \(seconds\): \K[0-9.]+' /tmp/rwm-cli-time 2>/dev/null || echo 0)
+CLI_S=$(grep -oP 'System time \(seconds\): \K[0-9.]+' /tmp/rwm-cli-time 2>/dev/null || echo 0)
+echo "    CPU: CPUSRV=$(awk "BEGIN{printf \"%.2f\", $SRV_TICKS/$HZ}")s CPUCLI=$(awk "BEGIN{printf \"%.2f\", $CLI_U+$CLI_S}")s (srv=decoder cli=sender; whole-invocation incl warmup)"
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
 
