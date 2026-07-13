@@ -7506,6 +7506,64 @@ stable anchor is worthless while the substrate caps ×0.64 below the link.
 
 ---
 
+### 16.17 The generation substrate ceiling named and raised: the wall was quinn's loss-reactive Cubic under the datagram path × generation-mode queue-bloat, not the coding pipeline; plus the derived pipeline depth M* (discharging most of #61) (2026-07-13)
+
+**Diagnosis method (L0 first).** Two instruments separate the app pipeline from the
+transport substrate: (a) an env-gated netem shim INSIDE the QUIC transport's
+datagram send path (`RWM_L0_NETEM` — per-path rate/delay/jitter/GE-loss with the
+L1 scenario parameters) lets the in-process loopback bench run the full engine
+under c2/c3 shaping while quinn's own congestion controller still sees a clean
+loopback; (b) a DIAG-gated stall attribution over the generation data plane's
+gates + per-generation lifecycle timing. The L0 result is the pivot: the app
+generation machine does **34 Mbit/s** under c2 parameters (plain 67) — the L1 wall
+(9.7) is not in the app. The instrumented L1 run then names it: sender gates open,
+**RTT 312–802 ms vs RTprop 12–41 ms** (a multi-second standing queue draining
+through quinn's loss-collapsed CUBIC window — quinn gates every send, datagram
+frames included, on its congestion window), per-generation coded phase 410–874 ms,
+pace EWMA pinned at its floor between decode-clocked acks, and 1.76× coded waste
+from deficit re-sends at the bloated RTT. Per connection = per path — hence
+§16.16's per-path signature (C7 ×2 while single/C8-fast hit the same wall).
+
+**The fix (both env-gated, defaults byte-identical).** (1) `RWM_QUIC_CC=bbr`:
+the substrate CC of a loss-tolerant FEC transport must not be loss-reactive;
+quinn's BBR is delivery-rate-based. (2) `RWM_GEN_PIPE=1`: per-path BDP in-flight
+cap (1.5, the FMTCP mechanism — RTT stays ≈ RTprop, which is what made DAPS's
+window-floor accidentally help); derived pipeline depth
+**M\* = ceil(rate·2·RTprop/G) + 1** clamped [2,32] — task #61's
+A\* = clamp(D·rate, 1, W) quantized to generations, with D = one delivery + one
+deficit round, rate = windowed-MAX delivered rate (§16.15's statistic), RTprop
+not live-SRTT (self-inflation); sent-frontier coded budget clock; windowed-max
+×1.25 pacing (BBR probe gain) replacing the decaying EWMA ×1.5; once-per-SRTT
+deficit action.
+
+**Measured (VM, 25 MB×8, seeds 42/7, interleaved, guard-verified; full tables in
+goal-gate "Gen Substrate Ceiling").** Gen-bare single-c2 9.77/9.87 (exact §16.16
+replication) → app fix alone **14.3/14.6** (the ≥14 target, still on Cubic;
+coded waste 1.76→1.15×) → BBR alone **32.9/33.7** → both **33.8/34.1** = the L0
+app ceiling. Single-c3 bare collapse (0.78-DNF) → **13.0/12.7, σ ≤ 0.26, dnf 0** (plain c3 is 3.2–3.7).
+C8 het 9.4/9.1 → **32.3/27.7** = ×1.9/×1.5 the same-day plain fast-alone — the
+first C8 above the historic link-class fast-alone. C7 20.6→33.2/31.1.
+**And the control that reframes the arc: plain+BBR single-c2 = 76, C7 = 89.5,
+C8 = 45.5 (bimodal σ 25)** — the 15–17 "link ceiling" every prior section
+measured against was itself the Cubic substrate, not the 100 Mbit link.
+
+**Honest framing.** On the SAME (BBR) substrate nothing changes structurally:
+gen C8 = 0.95× of gen's own single (parity, not aggregation), plain C8 = 0.61×
+of plain's single (bimodal); the gen machine now caps ≈34 Mbit/s TOTAL regardless
+of path count (single 33.9 ≈ C7 32.1 ≈ C8 30.0 = the L0 ceiling) — the next
+binder is the app/decode machine: per-generation dense Gauss–Jordan is
+O(G²·S) ≈ 90 ms CPU per G=384 generation ≈ 4 000 sym/s ≈ 39 Mbit/s on one core,
+plus the residual fill/serialization. Raising THAT (smaller effective decode
+cost, overlap, or G) is the next lever; it is CPU work, not networking.
+`RWM_QUIC_CC=bbr` remains an experiment knob — BBR's fairness on shared lossy
+bottlenecks was not evaluated and flipping the shipped default is a separate
+decision. **What remains of #61:** the M\* depth term only engages when
+BDP > G (RTT100/200 classes) — at c2/c3 M\* = 2 and GP's +47 % came from the
+queue/pacing/reactive discipline; the depth law is implemented and unit-tested
+but not yet validated in its engagement regime.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```

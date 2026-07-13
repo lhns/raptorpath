@@ -110,6 +110,12 @@ fi
 # path's read-ahead to skew·BtlBw_j (queue delay <= skew); ON by default under
 # DAPS+rate-sample. RWM_DAPS_DEPTH=0 reproduces the unbounded read-ahead (A/B).
 [[ -n "${RWM_DAPS_DEPTH:-}" ]] && TENV="$TENV RWM_DAPS_DEPTH=$RWM_DAPS_DEPTH"
+# Gen-substrate ceiling (feat/gen-substrate-ceiling): derived pipeline depth
+# M* + per-path BDP in-flight cap + sent-clock target + windowed-max pace
+# (RWM_GEN_PIPE=1), and the QUIC substrate congestion-controller override
+# (RWM_QUIC_CC=bbr|newreno|cubic) — the per-path ~10 Mbit/s wall A/B levers.
+[[ -n "${RWM_GEN_PIPE:-}" ]] && TENV="$TENV RWM_GEN_PIPE=$RWM_GEN_PIPE"
+[[ -n "${RWM_QUIC_CC:-}" ]] && TENV="$TENV RWM_QUIC_CC=$RWM_QUIC_CC"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

@@ -597,6 +597,10 @@ impl WindowEncoder for GenerationEncoder {
         self.intake_idle = idle;
     }
 
+    fn set_pipeline_depth(&mut self, m: usize) {
+        self.pipeline = (m.max(1)) as u64;
+    }
+
     fn wants_coding(&self) -> bool {
         let top = self.top_gen();
         let floor = self.code_base.max(self.base_gen);
@@ -1274,6 +1278,45 @@ mod tests {
         }
         assert_eq!(after, BTreeSet::from([2]), "gen 2 rotated into the pipeline; gen 3 excluded");
         assert!(!after.contains(&3), "gen 3 is beyond pipeline depth M");
+    }
+
+    /// feat/gen-substrate-ceiling: `set_pipeline_depth` (the derived M*, #61's
+    /// dynamic advance quantized to generations) WIDENS the proactive
+    /// round-robin span at runtime — deepening from M=2 to M=4 makes gens
+    /// {2,3} (previously beyond the pipeline) proactively codeable, and
+    /// narrowing back restores the original bound. Retention is untouched.
+    #[test]
+    fn set_pipeline_depth_widens_the_proactive_span() {
+        let symbol_size = 32u16;
+        let g = 4usize;
+        let mut enc = GenerationEncoder::new(symbol_size, g, 2, 0.25);
+        for seq in 0..(4 * g as u64) {
+            enc.add_source(&payload(seq));
+        }
+        // M=2: gens {0,1} only (as pipeline_bounds_active_generations proves).
+        let mut coded: BTreeSet<u64> = BTreeSet::new();
+        for _ in 0..100 {
+            if !enc.wants_coding() {
+                break;
+            }
+            let c = enc.generate_repair();
+            coded.insert(u64::from_le_bytes(c.data[0..8].try_into().unwrap()) / g as u64);
+        }
+        assert_eq!(coded, BTreeSet::from([0, 1]));
+        // Deepen to M*=4: gens {2,3} become proactively codeable (0,1 are at
+        // budget already), covering the whole retained span.
+        enc.set_pipeline_depth(4);
+        let mut deeper: BTreeSet<u64> = BTreeSet::new();
+        for _ in 0..200 {
+            if !enc.wants_coding() {
+                break;
+            }
+            let c = enc.generate_repair();
+            deeper.insert(u64::from_le_bytes(c.data[0..8].try_into().unwrap()) / g as u64);
+        }
+        assert_eq!(deeper, BTreeSet::from([2, 3]), "M*=4 rotates gens 2,3 into the pipeline");
+        // Retention unchanged: every source is still retained.
+        assert_eq!(enc.window_size(), 4 * g);
     }
 
     /// The deficit-driven recovery path (`generate_repair_for`) emits coded

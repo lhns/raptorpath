@@ -20,6 +20,233 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
+// ───────────────────────────────────────────────────────────────────────────
+// L0 netem shim (env `RWM_L0_NETEM`, DEFAULT OFF ⇒ byte-identical shipped
+// path). Emulates the L1 harness's per-path netem qdisc (rate + delay +
+// jitter + Gilbert-Elliott loss) INSIDE the transport's datagram send path so
+// the in-process loopback tests (tests/perf_loopback.rs and the gen-substrate
+// L0 bench) can reproduce the L1 window/RTT/loss dynamics locally — the JOB-1
+// diagnosis instrument for the generation-mode per-path substrate ceiling.
+//
+//   RWM_L0_NETEM=c2        every path shaped like the L1 `c2` scenario
+//   RWM_L0_NETEM=c2,c3     path 0 = c2, path 1 = c3 (the C8 topology)
+//   RWM_L0_SEED=42         GE/jitter RNG seed (default 42)
+//
+// Semantics mirror tools/l1/topo_dual.sh: rate+delay+jitter shape BOTH
+// directions; GE loss applies only to the CLIENT egress (the bulk-data
+// direction — topo_dual shapes loss on the cli qdiscs only). FIFO release
+// (rate stage then delay stage, monotonic per path — netem with a rate does
+// not reorder), tail-drop at the netem default 1000-packet limit.
+//
+// NOTE the fidelity boundary: drops/delay happen BEFORE quinn, so quinn's own
+// congestion controller sees a clean sub-ms loopback. This shim reproduces
+// the raptorpath-layer dynamics (flow windows, pacing, deficit rounds); it
+// deliberately does NOT reproduce quinn-internal CC behaviour under loss —
+// if L1 measures a wall the shim cannot, the residual is quinn-level.
+#[derive(Clone, Copy, Debug)]
+struct L0PathCfg {
+    rate_bps: f64,
+    delay_us: u64,
+    jitter_us: u64,
+    ge_p: f64, // P(good→bad) per packet
+    ge_q: f64, // P(bad→good) per packet; bad state drops (h=1)
+}
+
+fn l0_scenario(name: &str) -> Option<L0PathCfg> {
+    // Mirrors tools/l1/lib.sh scenario_params: rate one_way jitter ge_p ge_q.
+    let f = |rate_mbit: f64, ow_ms: u64, jit_ms: u64, p: f64, q: f64| L0PathCfg {
+        rate_bps: rate_mbit * 1e6,
+        delay_us: ow_ms * 1000,
+        jitter_us: jit_ms * 1000,
+        ge_p: p / 100.0,
+        ge_q: q / 100.0,
+    };
+    match name.trim() {
+        "c2" | "wifi" => Some(f(100.0, 5, 3, 1.3, 50.0)),
+        "c3" | "lte" => Some(f(20.0, 20, 5, 2.0, 40.0)),
+        "clean" => Some(f(100.0, 5, 0, 0.0, 100.0)),
+        other => {
+            // custom:rate_mbit,ow_ms,jit_ms,ge_p,ge_q
+            let spec = other.strip_prefix("custom:")?;
+            let v: Vec<f64> = spec.split(';').filter_map(|s| s.parse().ok()).collect();
+            if v.len() == 5 {
+                Some(f(v[0], v[1] as u64, v[2] as u64, v[3], v[4]))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// QUIC substrate congestion-controller override (env `RWM_QUIC_CC`, DEFAULT
+// UNSET ⇒ quinn's stock Cubic — byte-identical shipped path).
+//
+// WHY (feat/gen-substrate-ceiling JOB 1): quinn gates EVERY packet send —
+// including DATAGRAM frames, which carry all raptorpath wire symbols — on its
+// own congestion window (quinn-proto connection/mod.rs "blocked by congestion
+// control"), default CUBIC. On a GE-lossy path the loss-reactive Cubic window
+// is a hard substrate ceiling underneath raptorpath's own loss-tolerant
+// FEC/CC design — the exact per-connection (= per-path) wall the L1
+// generation-mode measurements hit. This knob lets an A/B name that binder:
+//   RWM_QUIC_CC=bbr    quinn BBR (model-based, loss-tolerant)
+//   RWM_QUIC_CC=newreno
+//   RWM_QUIC_CC=cubic  explicit default
+// Applied to BOTH client and server configs (each direction's sends are
+// governed by the sender-side controller of that connection).
+fn quic_cc_factory(
+) -> Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>> {
+    let name = std::env::var("RWM_QUIC_CC").ok()?;
+    match name.trim().to_ascii_lowercase().as_str() {
+        "bbr" => {
+            info!("RWM_QUIC_CC=bbr: quinn congestion controller overridden to BBR");
+            Some(Arc::new(quinn::congestion::BbrConfig::default()))
+        }
+        "newreno" => {
+            info!("RWM_QUIC_CC=newreno: quinn congestion controller overridden to NewReno");
+            Some(Arc::new(quinn::congestion::NewRenoConfig::default()))
+        }
+        "cubic" => Some(Arc::new(quinn::congestion::CubicConfig::default())),
+        other => {
+            warn!(%other, "RWM_QUIC_CC unrecognized — keeping quinn default (cubic)");
+            None
+        }
+    }
+}
+
+/// SplitMix64 — deterministic, dependency-free RNG for the shim.
+fn l0_rand(state: &mut u64) -> f64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z = z ^ (z >> 31);
+    (z >> 11) as f64 / (1u64 << 53) as f64
+}
+
+struct L0PathState {
+    ge_bad: bool,
+    rng: u64,
+    link_free_at_us: u64,
+    last_release_us: u64,
+    queued: Arc<std::sync::atomic::AtomicUsize>,
+    tx: Option<mpsc::UnboundedSender<(u64, bytes::Bytes)>>,
+}
+
+struct L0Netem {
+    cfgs: Vec<L0PathCfg>,
+    states: DashMap<PathId, parking_lot::Mutex<L0PathState>>,
+    epoch: std::time::Instant,
+    seed: u64,
+}
+
+impl L0Netem {
+    fn from_env() -> Option<Arc<Self>> {
+        let spec = std::env::var("RWM_L0_NETEM").ok()?;
+        if spec.trim().is_empty() {
+            return None;
+        }
+        let cfgs: Vec<L0PathCfg> = spec.split(',').filter_map(l0_scenario).collect();
+        if cfgs.is_empty() {
+            warn!(%spec, "RWM_L0_NETEM set but no scenario parsed — shim OFF");
+            return None;
+        }
+        let seed: u64 = std::env::var("RWM_L0_SEED")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(42);
+        info!(?cfgs, seed, "L0 netem shim ACTIVE on the datagram path");
+        Some(Arc::new(Self {
+            cfgs,
+            states: DashMap::new(),
+            epoch: std::time::Instant::now(),
+            seed,
+        }))
+    }
+
+    fn now_us(&self) -> u64 {
+        self.epoch.elapsed().as_micros() as u64
+    }
+
+    fn cfg(&self, path_id: PathId) -> L0PathCfg {
+        let i = (path_id as usize).min(self.cfgs.len() - 1);
+        self.cfgs[i]
+    }
+
+    /// Shape + (maybe) drop + schedule one datagram for delayed send.
+    fn send(&self, path_id: PathId, is_server: bool, conn: &quinn::Connection, data: bytes::Bytes) {
+        let cfg = self.cfg(path_id);
+        let now = self.now_us();
+        let entry = self.states.entry(path_id).or_insert_with(|| {
+            parking_lot::Mutex::new(L0PathState {
+                ge_bad: false,
+                rng: self.seed ^ ((path_id as u64 + 1) * 0x9E37) ^ ((is_server as u64) << 32),
+                link_free_at_us: 0,
+                last_release_us: 0,
+                queued: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                tx: None,
+            })
+        });
+        let mut st = entry.lock();
+        // GE loss on the bulk-data direction only (client egress), like the
+        // L1 topo (loss on the cli qdiscs; the ack direction is clean).
+        if !is_server && cfg.ge_p > 0.0 {
+            let drop = st.ge_bad;
+            let u = l0_rand(&mut st.rng);
+            if st.ge_bad {
+                if u < cfg.ge_q {
+                    st.ge_bad = false;
+                }
+            } else if u < cfg.ge_p {
+                st.ge_bad = true;
+            }
+            if drop {
+                return;
+            }
+        }
+        // netem default packet limit: tail-drop beyond 1000 queued.
+        if st.queued.load(std::sync::atomic::Ordering::Relaxed) >= 1000 {
+            return;
+        }
+        // Rate stage (serialization through the shaped link), then delay+jitter.
+        let ser_us = (data.len() as f64 * 8.0 / cfg.rate_bps * 1e6) as u64;
+        let start = now.max(st.link_free_at_us);
+        st.link_free_at_us = start + ser_us;
+        let jitter = if cfg.jitter_us > 0 {
+            let u = l0_rand(&mut st.rng) * 2.0 - 1.0;
+            (u * cfg.jitter_us as f64) as i64
+        } else {
+            0
+        };
+        let mut release =
+            (st.link_free_at_us as i64 + cfg.delay_us as i64 + jitter).max(0) as u64;
+        // FIFO (a netem rate stage does not reorder).
+        release = release.max(st.last_release_us);
+        st.last_release_us = release;
+        // Lazily spawn the per-path forwarder that sleeps until each packet's
+        // release time and performs the REAL quinn send.
+        if st.tx.is_none() {
+            let (tx, mut rx) = mpsc::unbounded_channel::<(u64, bytes::Bytes)>();
+            let conn = conn.clone();
+            let epoch = self.epoch;
+            let queued = st.queued.clone();
+            tokio::spawn(async move {
+                while let Some((rel_us, data)) = rx.recv().await {
+                    let now = epoch.elapsed().as_micros() as u64;
+                    if rel_us > now {
+                        tokio::time::sleep(std::time::Duration::from_micros(rel_us - now)).await;
+                    }
+                    queued.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    let _ = conn.send_datagram(data);
+                }
+            });
+            st.tx = Some(tx);
+        }
+        st.queued.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let _ = st.tx.as_ref().unwrap().send((release, data));
+    }
+}
+
 /// A QUIC-based multipath transport.
 ///
 /// Uses DashMap for connections so paths can be added/removed at runtime.
@@ -33,6 +260,8 @@ pub struct QuicTransport {
     /// Optional pinned certificate for client-side verification.
     /// When set, the client verifies the server's cert matches this fingerprint.
     pinned_cert_hash: Option<[u8; 32]>,
+    /// L0 netem shim (env `RWM_L0_NETEM`; None = shipped path, byte-identical).
+    l0_netem: Option<Arc<L0Netem>>,
 }
 
 impl QuicTransport {
@@ -79,7 +308,28 @@ impl QuicTransport {
             connections: DashMap::new(),
             is_server,
             pinned_cert_hash,
+            l0_netem: L0Netem::from_env(),
         })
+    }
+
+    /// Datagram send seam: the L0 netem shim (when active) shapes + schedules
+    /// the send; otherwise this is exactly `conn.send_datagram`.
+    fn send_datagram_shaped(
+        &self,
+        path_id: PathId,
+        conn: &quinn::Connection,
+        data: Vec<u8>,
+    ) -> anyhow::Result<()> {
+        match &self.l0_netem {
+            Some(shim) => {
+                shim.send(path_id, self.is_server, conn, data.into());
+                Ok(())
+            }
+            None => {
+                conn.send_datagram(data.into())?;
+                Ok(())
+            }
+        }
     }
 
     /// Connect to a peer on a specific path.
@@ -328,8 +578,7 @@ impl QuicTransport {
         let msg = WireMessage::Data(batch);
         let data = msg.serialize()?;
 
-        conn.send_datagram(data.into())?;
-        Ok(())
+        self.send_datagram_shaped(path_id, &conn, data)
     }
 
     /// Send a control message as a datagram (best-effort, low latency).
@@ -340,8 +589,7 @@ impl QuicTransport {
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         let wire = WireMessage::Control(msg);
         let data = wire.serialize()?;
-        conn.send_datagram(data.into())?;
-        Ok(())
+        self.send_datagram_shaped(path_id, &conn, data)
     }
 
     /// Send a control message over a path's reliable stream.
@@ -423,6 +671,9 @@ impl QuicTransport {
         transport.max_concurrent_uni_streams(100u32.into());
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        if let Some(cc) = quic_cc_factory() {
+            transport.congestion_controller_factory(cc);
+        }
 
         Ok((server_config, vec![cert_der]))
     }
@@ -448,6 +699,9 @@ impl QuicTransport {
         let mut transport = quinn::TransportConfig::default();
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        if let Some(cc) = quic_cc_factory() {
+            transport.congestion_controller_factory(cc);
+        }
         config.transport_config(Arc::new(transport));
         config
     }

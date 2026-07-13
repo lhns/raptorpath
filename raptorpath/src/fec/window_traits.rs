@@ -122,6 +122,17 @@ pub trait WindowEncoder: Send {
     fn set_intake_idle(&mut self, _idle: bool) {
         let _ = _idle;
     }
+
+    /// feat/gen-substrate-ceiling: set the PIPELINE DEPTH M — how many
+    /// generations past the coding floor the proactive round-robin covers.
+    /// The derived-depth control law (`gen_pipe_depth`, task #61's
+    /// A* = clamp(D·rate, 1, W) quantized to generations) recomputes M from
+    /// the measured delivery rate and SRTT so generations-in-flight cover
+    /// BDP + one deficit-feedback round instead of a fixed constant.
+    /// Monotone-safe: the encoder only widens/narrows its round-robin span;
+    /// retention/reliability are governed by `advance` and are unchanged.
+    /// Default no-op (non-generation encoders have no pipeline).
+    fn set_pipeline_depth(&mut self, _m: usize) {}
 }
 
 /// Sliding window decoder — processes symbols as they arrive.

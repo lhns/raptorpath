@@ -5872,3 +5872,213 @@ defaults-for-unset preserved; A/B'd at the runtime surface with `RWM_FMTCP=0`).
 dnf=0 in every arm except the two recorded gen-substrate DNFs (G2 c8s42 ×1;
 G0 single-c3 — both reported above, not hidden). Env + command line recorded per arm
 in the battery logs; every gen-arm run GUARD-verified `cod>0` on the SENDER log.
+
+## Gen Substrate Ceiling (2026-07-13) — the ~10 Mbit/s per-path generation wall NAMED and RAISED: the binder is quinn's loss-reactive CUBIC underneath the datagram path × generation-mode's own standing-queue RTT inflation; `RWM_QUIC_CC=bbr` alone ×3.4 (9.77→33), `RWM_GEN_PIPE` app fix alone 9.77→14.3, together 33.8; single-c3 bare collapse 0.78→13.0 FIXED; C8 gen 32.3 = ×1.9 the plain fast-alone link control — and the SAME lever exposes that plain's own 15–17 "link ceiling" was the substrate too (plain+BBR single 76, C7 94.6) (branch `feat/gen-substrate-ceiling`)
+
+§16.16 ended pointing at one lever: gen mode has a ~10 Mbit/s PER-PATH substrate
+ceiling (gen-bare single-c2 9.70 vs plain 15.15; gen C8 pinned at 0.95× of gen's own
+single; C7 = ×2.15 of gen's own single ⇒ per-path wall). This section names the
+binding stage with instrument numbers, builds the principled fix, and re-measures.
+
+### JOB 1 — diagnosis: L0 first, then the instrumented L1 run
+
+**New instruments (all default-OFF / DIAG-gated; shipped path byte-identical):**
+(1) an L0 netem shim in the QUIC transport (`RWM_L0_NETEM=c2|c3|c2,c3|custom:…`,
+src/transport/quic.rs) that reproduces the L1 per-path rate+delay+jitter+GE-loss
+INSIDE the datagram send path, so the in-process loopback bench
+(tests/gen_substrate_l0.rs, `#[ignore]`) runs the full engine under c2/c3 shaping
+locally — crucially the shim drops/delays BEFORE quinn, so quinn's own congestion
+controller still sees a clean loopback (that asymmetry is the diagnostic);
+(2) GDIAG/GLIFE sender stall attribution under `RWM_DIAG` — per-250 ms time-weighted
+split of the generation data plane across its gates
+[emit/budget/fill/target/tokens/cwnd] + per-generation lifecycle
+(fill→code→ack-wait ms); (3) `RWM_QUIC_CC=bbr|newreno|cubic` — quinn
+congestion-controller override (quinn gates EVERY send, datagrams included, on its
+congestion window; default Cubic — quinn-proto connection/mod.rs "blocked by
+congestion control").
+
+**L0 result (Windows loopback, shim = c2 params, gen-bare r=0.03, 12.5 MB):** the
+app-level generation machine does **34.0 Mbit/s** — NOT 9.7 — and plain does 67.
+Same knobs, same RTT/loss/rate. c3-shim gen-bare: 12.2, no collapse. ⇒ the L1 wall
+is NOT the app pipeline (window-fill/decode serialization exists but binds ~34);
+it lives in what the shim bypasses: quinn seeing the lossy link.
+
+**L1 instrumented run (gen-bare single-c2, RWM_DIAG=1, seed 42 — the wall
+reproduces at 9.69):** the sender's own gates are OPEN most of the time
+(stall: emit 46–80%, budget/ack-wait 17–67%, tokens/target ≈ 0) while
+**rtt = 312–802 ms vs rtprop 12–41 ms** — a multi-second standing queue between
+the app pacer and the wire (our emission enqueues into quinn's 4 MB datagram buffer
+faster than quinn's loss-collapsed Cubic window drains it) — and each generation's
+coded phase takes **410–874 ms** (GLIFE), with eff_pace pinned at the 2000 sym/s
+floor (the decode-clocked EWMA decays between generation acks). Total coded:
+38 280 emitted for ~21 800 needed = **1.76× waste** (deficit re-sends at the
+bloated RTT). So THE stage: **quinn's loss-reactive Cubic is the per-path
+substrate ceiling, and bare generation mode makes it worse by bufferbloating the
+RTT Cubic's throughput divides by.** Per-connection = per-path — exactly why C7
+scaled ×2 while single/C8-fast hit the same wall, and why no app-level scheduler
+lever could ever lift it.
+
+### JOB 2 — the fix (two orthogonal, env-gated levers; no new magic constants)
+
+1. **`RWM_QUIC_CC=bbr` (substrate):** a loss-tolerant FEC transport must not ride a
+   hidden loss-reactive CC underneath its own CC; BBR is quinn's model-based
+   (delivery-rate) controller, still congestion-safe at the bottleneck. Default
+   UNSET = stock Cubic, byte-identical.
+2. **`RWM_GEN_PIPE=1` (app, generation-gated, default OFF):** composes
+   (a) the per-path BDP in-flight cap (gain 1.5, the existing FMTCP mechanism) so
+   the standing queue — and the RTT any substrate CC sees — stays ≈ RTprop;
+   (b) DERIVED pipeline depth **M\* = ceil(rate·2·RTprop/G)+1** (task #61's
+   A\* = clamp(D·rate, 1, W) quantized to generations; `gen_pipe_depth`,
+   net/mod.rs), recomputed every 5 ms from the windowed-MAX delivered rate
+   (§16.15's statistic — the decode-clocked samples are mostly-low) and RTprop
+   (min-RTT, NOT the self-inflated live SRTT — the BBR discipline), clamped
+   [2, 32]; drives the encoder round-robin span (`set_pipeline_depth`), the
+   intake cap M\*·G, retention, the receiver reassembly span, and the deficit
+   report width; (c) coded budget clocked on the SENT frontier (the stalled
+   cumulative ack must not freeze fresh generations' provisioning);
+   (d) pace = windowed-max × 1.25 (BBR probe gain; wire must fund
+   (1+r)/(1−ε) ≈ 1.08× delivered + ramp) instead of the decaying EWMA × 1.5;
+   (e) once-per-SRTT deficit action (react_cap 1.0, the FMTCP bound).
+   Constants audit: 1.5 (BDP gain) and 1.0 (react spacing) inherited from the
+   FMTCP arm; 1.25 = BBR probe gain; 2 s rate bucket derived from the ack-burst
+   quantum (bucket ≥ 4·G/R for ≤25 % quantization); 32 = memory backstop.
+
+### JOB 3 — L1 A/B (VM 10.1.5.16, 2026-07-13, ~06:39–08:30 UTC; binary = this branch;
+25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh
+tunnel each invocation, seeds 42 AND 7, r=0.03 on every gen arm, `cod>0` GUARD OK
+on every gen run, full env+command per run in `/home/vibe/gensub/*.log`; driver
+`/home/vibe/gensub_battery.sh`)
+
+Arms: P = plain (`RWM_GEN=0`) · PB = plain+`RWM_QUIC_CC=bbr` · G0 = gen-bare
+(`RWM_GEN_R=0.03`) · GP = +`RWM_GEN_PIPE=1` · GB = +`RWM_QUIC_CC=bbr` ·
+GPB = both.
+
+**single-c2 (the PRIMARY; target was ≥14):**
+
+| arm | seed42 mean (σ_s) [runs] | seed7 mean (σ_s) [runs] | pooled |
+|---|---|---|---:|
+| P | 17.01 (0.31) [17.3 16.5 17.0 16.7 17.1 17.0 17.4 17.0] | 18.94 (0.34, n=3) [18.7 18.8 19.3] | 17.5 |
+| PB | **76.06** (2.01) [77.8 72.9 79.5 75.6 75.4 75.7 74.6 76.9] | **72.62** (5.11, n=7) [73.2 74.2 74.4 75.1 77.2 61.5 72.9] | **74.5** |
+| G0 | 9.77 (0.16) [9.7 10.1 9.6 9.9 9.8 9.8 9.7 9.6] | 9.87 (0.31) [9.5 9.9 9.8 10.2 9.5 9.8 9.9 10.4] | 9.82 |
+| GP | 14.33 (0.37) [14.6 13.8 14.2 14.1 14.3 14.2 14.3 15.1] | 14.63 (0.39, n=7) [15.3 14.6 14.7 14.1 14.8 14.6 14.2] | 14.5 |
+| GB | 32.91 (1.28) [34.4 32.1 32.4 34.3 30.4 32.9 33.4 33.3] | 33.66 (1.01) [34.5 34.2 33.4 34.6 31.5 33.3 33.7 34.1] | 33.3 |
+| GPB | **33.83** (1.11) [34.1 33.1 34.6 34.4 31.6 34.3 33.4 35.2] | **34.11** (1.05, n=7, **1 DNF**) [34.3 33.3 33.0 33.4 35.5 35.5 33.8] | **33.9** |
+
+G0 replicates §16.16's 9.70 exactly (9.77/9.87). The app fix alone (GP) clears the
+≥14 target under the Cubic substrate (+47 %, and coded waste 1.76×→1.15×); the
+substrate lever alone (GB) is ×3.4; together 33.9 — which equals the L0
+app-machine ceiling (34), i.e. the substrate is FIXED and the next binder is the
+app/decode machine. **And the control that reframes the whole arc: plain+BBR = 76
+— plain's 15–17 was never the link, it was the same Cubic substrate.** GPB seed7
+rep1 was 1 honest DNF (300 s timeout with all data coded — a tail wedge;
+1/16 GPB runs).
+
+**single-c3 (the bare-collapse case; §16.16: G0 = 0.78 then DNF; plain 3.31):**
+
+| arm | seed42 mean (σ_s) [runs] | seed7 mean (σ_s) [runs] |
+|---|---|---|
+| P | 3.20 (0.09) [3.1 3.4 3.2 3.1 3.2 3.2 3.2 3.3] | 3.72 (0.07) [3.7 3.8 3.8 3.8 3.7 3.6 3.6 3.7] |
+| PB | 14.14 (4.61, 1 low-run 2.8) [2.8 15.7 16.0 15.3 15.7 15.4 16.2 16.1] | 13.95 (4.75, 1 low-run 2.2) [15.7 2.2 15.8 15.6 15.8 15.2 15.6 15.7] |
+| GB | 8.66 (2.72, 1 low-run 2.5, **1 DNF**) [2.5 9.6 9.7 9.7 9.6 9.7 9.9 0.0] | 9.69 (0.06, n=7) [9.7 9.7 9.7 9.7 9.7 9.8 9.6] |
+| GPB | **13.00** (0.18) [12.6 13.0 13.1 13.0 13.2 13.1 13.0 13.0] | **12.68** (0.26, n=5) [12.3 12.6 12.8 12.8 13.0] |
+
+The bare collapse (§16.16: 0.78 then DNF) is FIXED: GPB = **13.0/12.7, σ ≤ 0.26,
+dnf = 0** on the 20 Mbit lossy path — ~3.9× plain's own 3.2/3.7, and 0.83× of
+plain+BBR's ~15.7 link-class. Note GPB > GB (+3.6): on c3 the deficit path is hot
+(ε ≈ 4.8 % > r = 0.03), so the app-side queue/reactive discipline earns real
+throughput even on the fixed substrate — and GB without it still throws the
+gen-bare-class low-run/DNF (seed42). **G0-c3 collapse control on THIS binary
+(post-battery, seed 42, ×1): 1.06 Mbit/s (189 s for 25 MB), 232 521 coded emitted
+for ~21 800 needed = 10.7× reactive waste** — the §16.16 collapse class
+reproduces, so the fix is measured against a live failure, not a stale record.
+
+**Fix-arm mechanism snapshot (GPB single-c2, RWM_DIAG, post-battery, 33.7 Mbit/s):**
+rtt 35–100 ms vs G0's 312–802 ms (the standing queue is GONE, ~8×), per-generation
+code phase 82–290 ms vs 410–874 ms, stall[emit 70–93 %, budget ≤ 18 %], eff_pace
+tracking 3 600–9 000 (no floor-pinning). Caveat recorded: the per-path BtlBw
+max-filter still over-reads at L1 under BBR (btlbw 79–98 k sym/s vs true ~10.4 k;
+decode-burst spikes), so the 1.5·BDP per-path cap is loose (~1 600 sym) — the
+queue discipline is carried by the pace/store bounds; a wire-clocked per-path
+estimator (§16.15's deferred option 2) would tighten it.
+
+**C7 (c2+c2) symmetric:**
+
+| arm | seed42 (σ_s) [runs] | seed7 (σ_s) [runs] | pooled |
+|---|---|---|---:|
+| P | 20.99 (0.45) [21.1 21.1 20.8 21.1 20.1 21.6 21.0 21.1] | 24.76 (1.68, n=6) [26.2 27.1 24.6 22.8 23.1 24.9] | 22.9 |
+| PB | 84.36 (29.4) [12.5 99.5 96.4 95.4 92.4 87.2 101.2 90.2] | **94.62** (15.6) [97.6 93.3 97.9 59.8 115.4 95.2 99.8 97.9] | **89.5** |
+| G0 | 20.56 (0.51) [20.5 21.2 20.2 19.7 21.0 20.9 20.2 20.9] | 20.16 (1.65, n=6) [21.2 19.7 17.5 22.4 20.5 19.5] | 20.4 |
+| GPB | 33.23 (2.59) [29.4 36.1 35.7 30.9 35.5 34.8 31.7 31.7] | 31.05 (2.82, n=7) [29.6 34.0 30.8 32.0 31.3 25.8 33.8] | 32.1 |
+
+**C8 (c2+c3) heterogeneous:**
+
+| arm | seed42 (σ_s) [runs] | seed7 (σ_s) [runs] | pooled |
+|---|---|---|---:|
+| P | 14.67 (0.99) [14.0 14.8 15.1 13.0 14.6 14.3 14.9 16.5] | 13.43 (2.95, n=7) [14.9 14.3 10.1 16.5 9.6 16.9 11.8] | 14.1 |
+| PB | 37.51 (24.7, BIMODAL) [3.2 36.1 51.7 2.5 61.2 43.8 32.2 69.5] | 54.59 (10.0, n=7) [49.9 65.4 61.3 36.5 49.1 60.2 59.8] | 45.5 |
+| G0 | 9.40 (0.21, n=7, **1 DNF**) [9.1 9.3 9.2 9.4 9.7 9.6 9.5] | 9.07 (0.49) [9.2 9.2 8.3 9.2 9.2 8.5 9.9 8.9] | 9.22 |
+| GPB | **32.33** (5.00) [35.7 25.2 33.7 35.0 35.8 23.5 34.7 35.1] | 27.70 (11.0) [35.2 27.9 35.2 27.2 33.7 3.0 23.2 36.2] | **30.0** |
+
+### VERDICT — what was won, and the honest framing
+
+1. **The per-path substrate ceiling is NAMED (quinn Cubic × queue-bloat) and
+   RAISED ×3.5** (gen single-c2 9.77→33.9, σ ~1; single-c3 0.78-DNF→13.0;
+   C8 9.2→30.0). The primary target (≥14, link-class 15.15) is exceeded 2.2×.
+2. **C8 gen vs fast-alone:** GPB C8 = 32.3/27.7 vs the same-day plain fast-alone
+   17.0/18.9 ⇒ **×1.9/×1.5 — the first C8 numbers above the historic link-class
+   fast-alone, per §16.16's own framing** (against the plain link control). BUT
+   the same lever moves the goalposts honestly: on the SAME (BBR) substrate,
+   plain fast-alone is 74.5, so gen C8 = 0.42× of the new single — and gen C8 ≈
+   0.95× of gen's OWN single (33.9) exactly as before, one level up. C8 still
+   does not aggregate above its own single-path ceiling; neither does plain+BBR
+   (C8 45.5 bimodal σ 25 vs single 74.5 = 0.61×, vs gen's σ 5–11).
+3. **The gen machine is now the binder at ~34 total regardless of path count**
+   (single 33.9 ≈ C7 32.1 ≈ C8 30.0, and = the L0 shim ceiling 34 on a faster
+   CPU): the substrate is no longer the wall; the residual is the app/decode
+   machine — the receiver's per-generation Gauss-Jordan (O(G²·S) ≈ 90 ms CPU per
+   384-symbol generation ≈ 4 000 sym/s ≈ 39 Mbit/s) plus the remaining
+   fill/decode serialization. That is the next lever, and it is CPU, not
+   networking.
+4. **M\* engaged honestly:** at c2/c3 BDP < G so M\* stays 2 — GP's +47 % came
+   from the queue discipline (in-flight cap), the sent-frontier clock, the
+   windowed-max pace, and the once-per-SRTT reactive bound, NOT extra depth.
+   The depth term of #61 is implemented and unit-tested but only engages at
+   higher BDP (RTT100/200) — unvalidated there; that is what remains of #61.
+5. **C7 symmetric:** bare gen keeps ×1.37-class aggregation under Cubic
+   (G0 20.4 ≈ §16.16); with BBR the gen machine's ~34 ceiling swallows the
+   aggregation (GPB C7 32.1 ≈ single 33.9 = ×0.95) while plain+BBR aggregates
+   ×1.2–1.3 (89.5 vs 74.5). Gen aggregation needs the decode ceiling raised
+   before C7 can show it again on the fast substrate.
+
+### Controls / caveats / discipline items
+
+- **Plain arms unchanged:** P single 17.0/18.9, C7 21.0/24.8, C8 14.7/13.4 —
+  all within the recorded historic ranges (15.15/20.5–25.1/14.96 §16.16).
+- **Shipped default byte-identical:** `RWM_GEN_PIPE`/`RWM_QUIC_CC`/`RWM_L0_NETEM`
+  unset ⇒ stock paths (gate_suite 15/15 release, lib 298/298, math 47/47 confirm);
+  the two ablation-recommended default flips (RWM_RATE_SAMPLE, RWM_DAPS_DEPTH now
+  default OFF, explicit =1 to enable) only affect the generation+DAPS opt-in
+  stack, not the shipped non-generation default.
+- **Noise floor:** same-config σ_s ≤ 1.3 on the headline arms (G0 0.16–0.49,
+  GB/GPB 1.0–1.3 single); every claimed effect (+4.6, +23, +24 Mbit/s single) is
+  10–100× that. Cross-seed spread ~2 Mbit/s. PB/GPB dual arms are the noisy ones
+  (σ 5–29, PB C8 outright bimodal 2.5–69.5) — reported, not hidden.
+- **DNFs (all reported):** GPB single-c2 seed7 rep1 (300 s timeout, all data
+  coded — tail wedge, 1/16); G0 C8 seed42 rep4 (the §16.16-class gen-bare C8
+  substrate DNF); GPB C8 seed7 rep6 ran at 3.0 (collapse-run, counted in the
+  mean). Everything else dnf=0.
+- **Harness caveat (pre-existing):** seed-7 GE occasionally eats the topo
+  verification ping (§16.16's caveat); the driver retries once — arms with n<8
+  (P-sc2-s7 n=3, GP-s7 n=7, …) lost those reps to double aborts; all n recorded.
+- **`RWM_QUIC_CC=bbr` is an EXPERIMENT knob, not yet a shipped default** —
+  fairness/safety of BBR-under-loss on shared bottlenecks is not evaluated here;
+  flipping the default is a separate decision with its own battery.
+- Full logs: VM `/home/vibe/gensub/{sc2,sc3,c7,c8}-s{42,7}.log` + the probe runs;
+  instrument runs `/tmp/rwm-c.log` (GDIAG lines quoted above).
+
+### Tests
+
+`cargo test -p raptorpath --lib` 298/298 (2 new: `gen_pipe_depth_covers_bdp_plus_
+one_deficit_round`, `set_pipeline_depth_widens_the_proactive_span`);
+`-p raptorpath-math` 47/47; gate_suite 15/15 release. L0 bench + loopback suite
+(perf_loopback 8/8, fmtcp/daps loopbacks) pass with the shim off and on.

@@ -425,6 +425,40 @@ fn fmtcp_tx_paused(cwnd_full: bool, store_len: usize, mem_ceiling: usize) -> boo
     cwnd_full || store_len >= mem_ceiling
 }
 
+/// feat/gen-substrate-ceiling: hard ceiling on the derived generation-pipeline
+/// depth (bounds sender retention, the receiver reassembly span, and the
+/// deficit-report width; 32·G ≈ 12k symbols ≈ 15 MB at 1200 B — the loose
+/// memory backstop, ~the ooo_retain default ×2).
+const GEN_PIPE_MAX_GENS: usize = 32;
+
+/// feat/gen-substrate-ceiling: DERIVED generation-pipeline depth M* — task
+/// #61's dynamic window advance A* = clamp(D·rate, 1, W), quantized to
+/// generations (the stable-anchor code advances in whole generations, so the
+/// depth of the in-flight generation pipeline IS the window advance).
+///
+/// First principles: for the decode frontier to keep advancing at the link
+/// rate, the generations in flight must cover the time D from a generation's
+/// first coded emission to its ack: D = delivery (≈ 1 RTT, the pipe) + one
+/// deficit-feedback round for the loss-shortfall tail (≈ 1 RTT: report waits
+/// ~SRTT cadence + top-up flight). Hence
+///   M* = ceil(rate · 2·RTT / G) + 1
+/// (+1 = the currently-filling head generation). `rate` is the windowed-MAX
+/// delivered rate (decode-clocked samples are mostly-low with the true rate
+/// at the burst top — §16.15's finding — so MAX is the recovery statistic);
+/// `rtt_s` is RTprop (min-RTT), NOT the live SRTT — the live RTT includes the
+/// queue this pipeline itself creates (positive feedback), while the
+/// in-flight cap holds the actual RTT near RTprop (the BBR discipline).
+/// Clamped to [2, GEN_PIPE_MAX_GENS]: 2 reproduces the legacy fixed pipeline
+/// when the anchors have no sample yet (cold start).
+fn gen_pipe_depth(rate_sym_per_s: f64, rtt_s: f64, gen_size: usize) -> usize {
+    if rate_sym_per_s <= 0.0 || rtt_s <= 0.0 {
+        return 2;
+    }
+    let d = 2.0 * rtt_s; // delivery + one repair round
+    let m = ((rate_sym_per_s * d) / gen_size.max(1) as f64).ceil() as usize + 1;
+    m.clamp(2, GEN_PIPE_MAX_GENS)
+}
+
 /// FMTCP per-path in-flight cap decision (change 2, the #64 fix). Given each
 /// active path's `(in_flight, per_path_cap)` where the cap = gain·BtlBw_i·RTprop_i
 /// (that path's OWN windowed-max bandwidth × its OWN min-RTT), the sender is
@@ -1301,7 +1335,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // G symbols) so no not-yet-decoded generation is ever pruned early.
     let recv_win_cap: u64 = if window_generation {
         let g = std::env::var("RWM_GEN").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(384);
-        let m = std::env::var("RWM_PIPELINE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2);
+        let mut m = std::env::var("RWM_PIPELINE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2);
+        // feat/gen-substrate-ceiling: under the derived-depth pipeline the
+        // sender may run up to GEN_PIPE_MAX_GENS generations of read-ahead, so
+        // the receiver must retain that whole span (prune bound only).
+        if crate::config::env_flag("RWM_GEN_PIPE", false) {
+            m = m.max(GEN_PIPE_MAX_GENS);
+        }
         ((g.max(1) * (m.max(1) + 1)).max(MAX_WINDOW_SIZE)).min(1 << 20) as u64
     } else if window_coded_only {
         std::env::var("RWM_WINDOW")
@@ -1466,10 +1506,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // lifts it to cover the whole in-flight range so EVERY hole is repaired
         // in ONE round-trip (parallel tail flush). Unset = byte-identical
         // shipped path. Clamped to the wire cap (MAX_ACK_IDS = 2000).
+        // feat/gen-substrate-ceiling: under the derived-depth pipeline the
+        // whole M*-generation in-flight range must be reportable in ONE round
+        // (a 6-generation frontier-first report would re-serialize the deeper
+        // pipeline's recovery — the PART-1 receiver-tail lesson).
         let report_gens: usize = std::env::var("RWM_REPORT_GENS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(6)
+            .unwrap_or(if crate::config::env_flag("RWM_GEN_PIPE", false) {
+                GEN_PIPE_MAX_GENS + 1
+            } else {
+                6
+            })
             .clamp(1, 2000);
         // Repair-coverage horizon (branch `feat/nack-timing`). Base wait, in
         // MILLISECONDS, before a frontier hole's deficit is allowed to fire a
@@ -3316,6 +3364,34 @@ async fn run_window_sender(
     // per-path BDP cap + decode-on-total base, so RWM_DAPS implies that base.
     let daps = crate::config::env_flag("RWM_DAPS", false) && generation;
     let fmtcp = (crate::config::env_flag("RWM_FMTCP", false) || daps) && generation;
+    // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
+    // shipped non-generation default byte-identical — every use is generation-
+    // gated). The JOB-1 diagnosis: the L1 per-path ~10 Mbit/s generation
+    // ceiling is the SUBSTRATE — quinn's loss-reactive Cubic window under the
+    // datagram path (per connection = per path), COLLAPSED further by bare
+    // generation mode's own standing queue (uncapped in-flight → RTT inflated
+    // 3–5× → Cubic throughput ∝ 1/RTT). The L0 netem-shim bench (which
+    // reproduces RTT/rate/GE-loss but hides them from quinn) measures the app
+    // machine at 34 Mbit/s on the same c2 parameters — the wall is NOT the
+    // app pipeline. This gate composes the app-side remedies so the substrate
+    // sees a queue-lean, BDP-covering pipeline:
+    //   1. per-path BDP in-flight cap (infl_bdp 1.5, percap) — queue ≈ 0,
+    //      RTT ≈ RTprop (the mechanism behind DAPS's accidental +44% single);
+    //   2. DERIVED pipeline depth M* (gen_pipe_depth above, #61's A*) —
+    //      generations in flight cover BDP + one deficit round, recomputed
+    //      from measured rate/SRTT (no fixed M);
+    //   3. coded-emission budget clocked on the SENT frontier (the stalled
+    //      cumulative ack must not freeze emission for the still-recovering
+    //      oldest generation while M* fresh generations have budget);
+    //   4. pace anchored to the windowed-MAX delivered rate (§16.15: the
+    //      decode-clocked samples are mostly-low; the legacy decaying EWMA
+    //      under-reads between generation decodes and throttles emission);
+    //   5. once-per-SRTT deficit action (react_cap 1.0 — the known-good
+    //      bounded reactive from the FMTCP arm).
+    // The substrate CC itself is A/B-able independently via RWM_QUIC_CC (bbr)
+    // in transport/quic.rs. Excluded under FMTCP/DAPS (they compose their own
+    // window/cap stack).
+    let gen_pipe = crate::config::env_flag("RWM_GEN_PIPE", false) && generation && !fmtcp;
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
     // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
@@ -3396,7 +3472,10 @@ async fn run_window_sender(
     // ack-interval anchor (same-binary A/B).  When on, each SOURCE seq is
     // snapshotted at send (`on_src_sent`) and its ack drives `on_src_delivered_seq`
     // (a send-interval rate sample) instead of the legacy `on_src_delivered`.
-    let rate_sample: bool = per_path_est && crate::config::env_flag("RWM_RATE_SAMPLE", true);
+    // DEFAULT FLIPPED OFF (gen-ON stack ablation §16.16: rate-sample costs
+    // −22% on symmetric C7 with generation actually ON; explicit =1 re-enables
+    // for the A/B). The legacy ack-interval anchor is the default again.
+    let rate_sample: bool = per_path_est && crate::config::env_flag("RWM_RATE_SAMPLE", false);
     // feat/daps-readahead-depth: bound each non-fastest path's DAPS read-ahead
     // DEPTH to its skew-depth `skew_j·BtlBw_j` (queue delay ≤ skew ⇒ the slow
     // segment arrives in-order-aligned, never later than the fast path would
@@ -3413,7 +3492,11 @@ async fn run_window_sender(
     // ON by default under DAPS+rate-sample; RWM_DAPS_DEPTH=0 reproduces the
     // current unbounded read-ahead (the same-binary A/B baseline).  Shipped
     // non-DAPS default byte-identical (gated on rate_sample ⇒ generation && DAPS).
-    let daps_depth_on: bool = rate_sample && crate::config::env_flag("RWM_DAPS_DEPTH", true);
+    // DEFAULT FLIPPED OFF (gen-ON stack ablation §16.16: the depth bound costs
+    // −17…−30% on symmetric C7 — the decode-clocked anchors hand one path a
+    // garbage skew budget; its one win is hetero C8 (+8%), so it is a
+    // heterogeneous-topology OPT-IN via RWM_DAPS_DEPTH=1).
+    let daps_depth_on: bool = rate_sample && crate::config::env_flag("RWM_DAPS_DEPTH", false);
     // App-limited (BBR): the source pipeline was starved (idle gap) rather than
     // cwnd/pace-limited when a symbol was sent — such a sample underestimates
     // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
@@ -3472,6 +3555,21 @@ async fn run_window_sender(
     let mut gen_rate_ewma: f64 = 0.0;
     let mut gen_rate_sample_us: u64 = now_us();
     let mut gen_rate_sample_ack: u64 = 0;
+    // ── gen_pipe state (feat/gen-substrate-ceiling; inert unless RWM_GEN_PIPE) ─
+    // Derived pipeline depth M* + dynamic intake cap, recomputed every ~5 ms
+    // from the windowed-MAX delivered rate and SRTT (gen_pipe_depth above).
+    let mut gen_pipe_m: usize = 2;
+    let mut gen_pipe_store_cap: usize = 2 * gen_size;
+    let mut gen_pipe_refresh_us: u64 = 0;
+    // Windowed-MAX delivered-rate filter. The cumulative ack advances in
+    // whole-generation bursts, so a rate bucket must span MANY generations to
+    // read the true rate rather than the burst/gap alternation: bucket span
+    // 2 s (≥ 4·G/R for R ≥ 768 sym/s ⇒ ≤ 25% quantization), max over the
+    // last 4 buckets (8 s window, ≫ any deficit round).
+    let mut gp_bucket_start_us: u64 = now_us();
+    let mut gp_bucket_ack: u64 = 0;
+    let mut gp_rates: std::collections::VecDeque<f64> = std::collections::VecDeque::new();
+    let mut gp_rate_max: f64 = 0.0;
     // Per-generation deficit-feedback recovery state (§16.3). This closes the
     // rateless-with-feedback loop that the feedback-free recovery cap could not:
     //   * `gen_want[a]`  — coded symbols still to emit for generation anchored at
@@ -3583,7 +3681,8 @@ async fn run_window_sender(
     // "ONE deficit feedback per RTT" — the #59/#60 lesson that a sub-RTT re-flood
     // of the fungible top-up defeats aggregation. RWM_REACT_CAP still overrides.
     let react_cap_cfg: f64 = std::env::var("RWM_REACT_CAP")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(if fmtcp { 1.0 } else { 0.0 }).max(0.0);
+        .ok().and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(if fmtcp || gen_pipe { 1.0 } else { 0.0 }).max(0.0);
     let react_cap_on = react_cap_cfg > 0.0;
     // anchor → wall-clock (µs) of the last reactive emission for that generation.
     let mut gen_recover_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
@@ -3646,7 +3745,15 @@ async fn run_window_sender(
         // stays retained (and keeps getting coded symbols) until it decodes.
         // Fix 3: RWM_OOO_RETAIN widens this to `ooo_gens` generations so the
         // send frontier can run far past a stalled in-order frontier.
-        let gens = if ooo_retain { ooo_gens + 1 } else { pipeline + 1 };
+        // gen_pipe: retention ceiling = the M* hard cap (the DYNAMIC intake
+        // cap `gen_pipe_store_cap` below is what actually bounds the queue).
+        let gens = if gen_pipe {
+            GEN_PIPE_MAX_GENS + 1
+        } else if ooo_retain {
+            ooo_gens + 1
+        } else {
+            pipeline + 1
+        };
         (gen_size * gens).clamp(MAX_WINDOW_SIZE, 1 << 20)
     } else if coded_only {
         std::env::var("RWM_WINDOW")
@@ -3696,7 +3803,15 @@ async fn run_window_sender(
         // Fix 3: under OOO retention the backpressure window is the wide
         // ooo_gens·G, so the send frontier decouples from the stalled in-order
         // frontier. Otherwise the tight 2·G standing-queue bound.
-        let default_store = if ooo_retain { ooo_gens * gen_size } else { 2 * gen_size };
+        // gen_pipe: the static cap is the M* ceiling; the DYNAMIC per-loop cap
+        // (`gen_pipe_store_cap` = M*·G) is what gates intake each iteration.
+        let default_store = if gen_pipe {
+            GEN_PIPE_MAX_GENS * gen_size
+        } else if ooo_retain {
+            ooo_gens * gen_size
+        } else {
+            2 * gen_size
+        };
         std::env::var("RWM_STORE")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
@@ -3951,10 +4066,51 @@ async fn run_window_sender(
         }
     }
 
+    // RWM_DIAG (transport-ceiling diagnosis) master gate — declared BEFORE the
+    // send macro below so the macro body (GLIFE fill tracking) can see it.
+    let diag_on = crate::config::env_flag("RWM_DIAG", false);
+    // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ──────────────────────────
+    // Time-weighted attribution of the generation-mode sender loop to the
+    // gate that is BINDING its wire emission each instant. In coded-wire
+    // generation mode the paced coded block IS the data plane, so whichever
+    // gate stops it is the throughput binder. States (post-emission):
+    //   emit    — emitted ≥1 coded this iteration (link-flowing)
+    //   budget  — wants_coding=false with sealed gens retained: every active
+    //             generation is at its ceil(len·(1+r)) proactive budget and
+    //             the sender is WAITING ON THE ACK/deficit round (the
+    //             window-advance serialization)
+    //   fill    — wants_coding=false because the head generation has not
+    //             sealed yet (waiting on TUN intake / store backpressure)
+    //   target  — ack-clocked flow window `target` exhausted
+    //   tokens  — pace token bucket dry (the delivered-rate-EWMA pacer)
+    //   cwnd    — in-flight congestion cap
+    // Also per-generation lifecycle (GLIFE): anchor → (first_src, sealed,
+    // last_emit) µs; on the ack passing a generation its fill/code/ack-wait
+    // phases are accumulated. All gated on RWM_DIAG (shipped path untouched).
+    let mut gd_last_us = now_us();
+    let mut gd_us = [0u64; 6]; // [emit, budget, fill, target, tokens, cwnd]
+    let mut gl: std::collections::HashMap<u64, (u64, u64, u64)> =
+        std::collections::HashMap::new();
+    // (fill_us, code_us, wait_us, n) accumulated over completed generations.
+    let mut gl_sum: (u64, u64, u64, u64) = (0, 0, 0, 0);
+
     // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
             let wire_sym = encoder.add_source(&$framed);
+            // GDIAG/GLIFE fill tracking: stamp the generation's first-source
+            // and sealed instants (RWM_DIAG only; no-op on the shipped path).
+            if diag_on && generation {
+                let seq = wire_sym.block_id;
+                let anchor = seq - (seq % gen_size as u64);
+                let e = gl.entry(anchor).or_insert((0, 0, 0));
+                if e.0 == 0 {
+                    e.0 = now_us();
+                }
+                if seq % gen_size as u64 == gen_size as u64 - 1 {
+                    e.1 = now_us();
+                }
+            }
             // App-limited (BBR rate-sample): the idle gap SINCE THE PREVIOUS
             // source send, captured before `last_source_send_us` is refreshed
             // below.  A long gap ⇒ this send follows a starved interval.
@@ -4487,8 +4643,7 @@ async fn run_window_sender(
     // store_max, tx_paused duty cycle, cumulative-ack goodput (Mbit/s), the
     // ack-clocked pacing rate vs the link, cwnd/in_flight vs BDP, and the
     // source/coded send rates. Gated on the RWM_DIAG env so the hot path is
-    // untouched when off.
-    let diag_on = crate::config::env_flag("RWM_DIAG", false);
+    // untouched when off. (`diag_on` itself is declared above the send macro.)
     // Transport-ceiling fix (generation mode): bound the in-flight (unacked)
     // symbols to ~BDP instead of the fixed store_max = G·(M+1). The oversized
     // store_max is decoupled from the pipe (14× BDP at C2), so unpaced source
@@ -4514,15 +4669,19 @@ async fn run_window_sender(
     // point). The FMTCP cap is enforced PER PATH (see `fmtcp_percap` below) —
     // the #64 fix: the slow path's RTT-inflated BtlBw·RTprop bounds ONLY the
     // slow path, never a single global budget the fast path stalls behind.
+    // gen_pipe remedy 1: the per-path BDP in-flight cap ON (gain 1.5, same
+    // rationale as FMTCP's) so the standing queue — and the RTT the SUBSTRATE
+    // CC sees — stays ≈ RTprop.
     let infl_bdp_gain: f64 = std::env::var("RWM_INFL_BDP")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(if fmtcp { 1.5 } else { 0.0 }).max(0.0);
+        .ok().and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(if fmtcp || gen_pipe { 1.5 } else { 0.0 }).max(0.0);
     let infl_bdp_on = infl_bdp_gain > 0.0;
     // FMTCP #64 fix: enforce the in-flight cap PER PATH (path i outstanding ≤
     // gain·BtlBw_i·RTprop_i) rather than as one fungible global Σ budget. The
     // sender is TUN-paused only when EVERY active path is at its own cap, so the
     // fast path keeps pulling fresh source while the slow path is full — the
     // total-in-flight escape from the in-order-frontier stall.
-    let fmtcp_percap = fmtcp;
+    let fmtcp_percap = fmtcp || gen_pipe;
     // Boot cap before the BtlBw anchor warms (a few RTTs); ~1.5× a 100 Mbit/
     // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
     let mut dyn_infl_cap: u64 = if infl_bdp_on { 128 } else { infl_cap };
@@ -4630,6 +4789,57 @@ async fn run_window_sender(
         // of M generations). Pausing TUN reads at store_max holds the send
         // frontier ~M generations ahead of the cumulative-decode frontier.
         let store_len = if generation { encoder.window_size() } else { sent_store.len() };
+        // gen_pipe: roll the windowed-MAX rate filter + recompute the derived
+        // pipeline depth M* (throttled ~5 ms; the encoder setter is O(1)).
+        if gen_pipe {
+            let nowp = now_us();
+            if nowp.saturating_sub(gp_bucket_start_us) >= 2_000_000 {
+                let ack_now = window_ack_seq.load(Ordering::Relaxed);
+                let dt_s = (nowp - gp_bucket_start_us) as f64 / 1e6;
+                let r = ack_now.saturating_sub(gp_bucket_ack) as f64 / dt_s;
+                gp_bucket_start_us = nowp;
+                gp_bucket_ack = ack_now;
+                gp_rates.push_back(r);
+                while gp_rates.len() > 4 {
+                    gp_rates.pop_front();
+                }
+                gp_rate_max = gp_rates.iter().copied().fold(0.0, f64::max);
+            }
+            if nowp.saturating_sub(gen_pipe_refresh_us) >= 5_000 {
+                gen_pipe_refresh_us = nowp;
+                // RTprop (min-RTT), NOT the live SRTT: the live RTT includes
+                // the queue this very pipeline creates — deriving depth from
+                // it is positive feedback (deeper ⇒ more queue ⇒ deeper). The
+                // in-flight cap holds the actual RTT near RTprop, so RTprop is
+                // the self-consistent anchor (the BBR discipline).
+                let rtprop_s = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| {
+                            sched.path(*id).map(|p| {
+                                p.min_rtt()
+                                    .map(|d| d.as_secs_f64())
+                                    .unwrap_or_else(|| p.srtt().as_secs_f64())
+                            })
+                        })
+                        .fold(0.0, f64::max)
+                };
+                let m = gen_pipe_depth(gp_rate_max, rtprop_s, gen_size);
+                if m != gen_pipe_m {
+                    if diag_on {
+                        eprintln!(
+                            "[GPIPE] M* {}→{} (rate_max={:.0}sym/s rtprop={:.1}ms)",
+                            gen_pipe_m, m, gp_rate_max, rtprop_s * 1000.0
+                        );
+                    }
+                    gen_pipe_m = m;
+                    encoder.set_pipeline_depth(m);
+                }
+                gen_pipe_store_cap = (gen_pipe_m * gen_size).min(store_max);
+            }
+        }
         // PART 1.2: refresh the BDP-derived in-flight cap (throttled ~5 ms).
         if infl_bdp_on {
             let dnow = now_us();
@@ -4702,7 +4912,15 @@ async fn run_window_sender(
                 };
             }
         }
-        let effective_store_cap = if plain_dyn_cap { dyn_store_cap } else { store_max };
+        let effective_store_cap = if plain_dyn_cap {
+            dyn_store_cap
+        } else if gen_pipe {
+            // gen_pipe remedy 2: intake bounded at the DERIVED M*·G — deep
+            // enough to cover BDP + one deficit round, no deeper (queue-lean).
+            gen_pipe_store_cap
+        } else {
+            store_max
+        };
         // TOTAL-IN-FLIGHT FLOW CONTROL (FMTCP change 1, the crux). The shipped
         // generation gate is `store_len >= store_cap`, where store_len =
         // encoder.window_size() = retained sources back to the IN-ORDER decode
@@ -4828,8 +5046,27 @@ async fn run_window_sender(
                 let fmtcp_out = if fmtcp {
                     src_now.saturating_sub(window_decoded_seq.load(Ordering::Relaxed))
                 } else { 0 };
+                // GDIAG: stall attribution + generation lifecycle for this
+                // window (percentages of attributed wall time; GLIFE means).
+                let gd_tot: u64 = gd_us.iter().sum::<u64>().max(1);
+                let pct = |i: usize| gd_us[i] as f64 * 100.0 / gd_tot as f64;
+                let gln = gl_sum.3.max(1);
+                let gdiag = if generation {
+                    format!(
+                        " stall[emit={:.0}% budget={:.0}% fill={:.0}% target={:.0}% tok={:.0}% cwnd={:.0}%] glife[n={} fill={:.0}ms code={:.0}ms wait={:.0}ms]",
+                        pct(0), pct(1), pct(2), pct(3), pct(4), pct(5),
+                        gl_sum.3,
+                        gl_sum.0 as f64 / gln as f64 / 1000.0,
+                        gl_sum.1 as f64 / gln as f64 / 1000.0,
+                        gl_sum.2 as f64 / gln as f64 / 1000.0,
+                    )
+                } else {
+                    String::new()
+                };
+                gd_us = [0; 6];
+                gl_sum = (0, 0, 0, 0);
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -4841,6 +5078,7 @@ async fn run_window_sender(
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,
                     fmtcp_out, fmtcp_win_backstop,
+                    gdiag,
                     pp,
                 );
                 diag_last_us = dnow;
@@ -4893,6 +5131,8 @@ async fn run_window_sender(
                 );
             }
         }
+        // GDIAG: did ANY coded symbol go on the wire this iteration?
+        let mut gd_flow = false;
         if generation && encoder.window_size() > 0 {
             let now = now_us();
             // Object tail: intake is idle (not just paused by backpressure — no
@@ -4949,7 +5189,11 @@ async fn run_window_sender(
             // budget on the SENT frontier (like RWM_CODED_SRC) — else coded
             // emission would freeze at the stalled ack and the fresh generations
             // would never be provisioned.
-            let target = if coded_src_clock || ooo_retain {
+            // gen_pipe remedy 3: same sent-frontier clock — the intake cap
+            // (M*·G) + per-generation ceil(len·(1+r)) budgets already bound
+            // the outstanding coded, so the stalled ack must not freeze the
+            // M*−1 fresh generations' provisioning.
+            let target = if coded_src_clock || ooo_retain || gen_pipe {
                 let (_, wend) = encoder.window_span();
                 (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
             } else {
@@ -4980,11 +5224,30 @@ async fn run_window_sender(
             // small headroom (the 1.5× overshoot itself overruns the datagram
             // path — 50% more coded than the receiver can decode builds a queue
             // that bursts-drops). Legacy 1.5× kept when cc_pace is off.
-            let eff_factor = if cc_pace { cc_pace_headroom } else { 1.5 };
+            // gen_pipe remedy 4: anchor the pace to the windowed-MAX delivered
+            // rate. The decode-clocked EWMA decays toward the floor between
+            // generation acks (samples are mostly-low, §16.15), throttling
+            // emission exactly while the pipe is waiting; the windowed max is
+            // the recovery statistic. Headroom 1.25 (the BBR probe gain — the
+            // wire must fund (1+r)/(1−ε) ≈ 1.08× the delivered rate plus ramp
+            // margin) instead of the legacy 1.5 whose overshoot bursts drop.
+            let eff_factor = if cc_pace {
+                cc_pace_headroom
+            } else if gen_pipe {
+                1.25
+            } else {
+                1.5
+            };
             // Fix 1: under cc_pace clock coded emission on the same frontier-
             // independent CC rate (max with the goodput EWMA) so a stalled
             // in-order ack does not starve coded emission below the link.
-            let eff_base = if cc_pace { gen_rate_ewma.max(cc_rate_cached) } else { gen_rate_ewma };
+            let eff_base = if cc_pace {
+                gen_rate_ewma.max(cc_rate_cached)
+            } else if gen_pipe {
+                gen_rate_ewma.max(gp_rate_max)
+            } else {
+                gen_rate_ewma
+            };
             let eff_rate = (eff_base * eff_factor).clamp(gen_rate_floor, gen_rate);
             diag_eff_rate = eff_rate;
             // Refill the pacing token bucket (capped at a small burst). Under
@@ -5025,6 +5288,7 @@ async fn run_window_sender(
                 };
                 gen_coded_total += 1;
                 emitted += 1;
+                gd_flow = true;
                 gen_tokens -= 1.0;
                 let sym = encoder.generate_repair();
                 // Count this proactive emission toward the per-generation
@@ -5033,6 +5297,9 @@ async fn run_window_sender(
                 if sym.data.len() >= 8 {
                     let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
                     *gen_emitted.entry(anchor).or_insert(0) += 1;
+                    if diag_on {
+                        gl.entry(anchor).or_insert((0, 0, 0)).2 = now_us();
+                    }
                 }
                 proactive_coded_total += 1;
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
@@ -5203,6 +5470,10 @@ async fn run_window_sender(
                         };
                         *gen_emitted.entry(a).or_insert(0) += 1;
                         recovery_coded_total += 1;
+                        gd_flow = true;
+                        if diag_on {
+                            gl.entry(a).or_insert((0, 0, 0)).2 = now_us();
+                        }
                         let nw = want - 1;
                         if nw == 0 {
                             gen_want.remove(&a);
@@ -5243,6 +5514,45 @@ async fn run_window_sender(
                     }
                 }
             }
+        }
+        // ── GDIAG attribution: which gate is binding wire emission NOW? ──────
+        // Runs every iteration (RWM_DIAG only). See the state legend at the
+        // declarations above. In coded-wire generation mode the paced coded
+        // block is the whole data plane, so the gate that stopped it this
+        // iteration is the throughput binder for the elapsed slice.
+        if diag_on && generation {
+            let now_g = now_us();
+            let dt = now_g.saturating_sub(gd_last_us);
+            gd_last_us = now_g;
+            let idx = if gd_flow {
+                0 // emit: coded flowed
+            } else if encoder.window_size() == 0 {
+                2 // fill: nothing retained yet (startup/tail)
+            } else if !encoder.wants_coding() {
+                // Every active generation at budget (ack/deficit round-trip
+                // wait) vs the head generation not yet sealed (intake-bound).
+                // advance() is generation-aligned, so ≥2·G retained means the
+                // two active generations are both full ⇒ sealed-at-budget.
+                if store_len >= 2 * gen_size { 1 } else { 2 }
+            } else {
+                let ack_now = window_ack_seq.load(Ordering::Relaxed);
+                let tgt = if coded_src_clock || ooo_retain || gen_pipe {
+                    let (_, wend) = encoder.window_span();
+                    (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                } else {
+                    (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                };
+                if cwnd_full {
+                    5 // cwnd
+                } else if (gen_coded_total as f64) >= tgt {
+                    3 // target (ack-clocked coded flow window)
+                } else if gen_tokens < 1.0 {
+                    4 // tokens (delivered-rate pacer)
+                } else {
+                    0
+                }
+            };
+            gd_us[idx] += dt;
         }
         if tx_paused != last_tx_paused {
             debug!(
@@ -5866,6 +6176,27 @@ async fn run_window_sender(
             // (the coding target is the generation, not a sliding W).
             if generation {
                 encoder.advance(ack + 1);
+                // GLIFE: fold completed generations into the lifecycle sums
+                // (fill = first-source→sealed, code = sealed→last-emit,
+                // wait = last-emit→acked). RWM_DIAG only.
+                if diag_on {
+                    let now_g = now_us();
+                    let done: Vec<u64> = gl
+                        .keys()
+                        .copied()
+                        .filter(|&a| a + gen_size as u64 <= ack + 1)
+                        .collect();
+                    for a in done {
+                        if let Some((f, s, e)) = gl.remove(&a) {
+                            if f > 0 && s >= f && e >= s {
+                                gl_sum.0 += s - f;
+                                gl_sum.1 += e - s;
+                                gl_sum.2 += now_g.saturating_sub(e);
+                                gl_sum.3 += 1;
+                            }
+                        }
+                    }
+                }
                 // Drop per-generation deficit bookkeeping for generations that
                 // have now been fully delivered + dropped (anchors below the
                 // retained window start). Keeps the maps bounded to the M
@@ -7323,6 +7654,28 @@ mod tests {
             fmtcp_tx_paused(true, 100, win_backstop),
             "FMTCP also pauses on the per-path BDP in-flight (cwnd_full)"
         );
+    }
+
+    /// feat/gen-substrate-ceiling: the derived pipeline depth M* =
+    /// ceil(rate·2·SRTT/G)+1 — #61's A* = clamp(D·rate, 1, W) quantized to
+    /// generations — covers BDP + one deficit round, clamps to the legacy 2 on
+    /// cold start, and to GEN_PIPE_MAX_GENS at the top.
+    #[test]
+    fn gen_pipe_depth_covers_bdp_plus_one_deficit_round() {
+        // Cold start (no rate / no srtt sample) → the legacy fixed depth 2.
+        assert_eq!(gen_pipe_depth(0.0, 0.016, 384), 2);
+        assert_eq!(gen_pipe_depth(1500.0, 0.0, 384), 2);
+        // c2-class: rate 1500 sym/s, SRTT 16 ms → D·rate = 48 sym ≪ G ⇒
+        // ceil(48/384)+1 = 2 — a small-BDP link needs no extra depth.
+        assert_eq!(gen_pipe_depth(1500.0, 0.016, 384), 2);
+        // Link-class c2: rate 10 000 sym/s, SRTT 40 ms (queue/jitter-inflated)
+        // → D·rate = 800 ⇒ ceil(800/384)+1 = 4 generations in flight.
+        assert_eq!(gen_pipe_depth(10_000.0, 0.040, 384), 4);
+        // High-BDP (RTT200 @ 100 Mbit): 10 000 sym/s × 0.4 s = 4000 sym ⇒
+        // ceil(4000/384)+1 = 12.
+        assert_eq!(gen_pipe_depth(10_000.0, 0.200, 384), 12);
+        // Monotone in rate·srtt, and hard-capped at GEN_PIPE_MAX_GENS.
+        assert_eq!(gen_pipe_depth(1e9, 1.0, 384), GEN_PIPE_MAX_GENS);
     }
 
     /// FMTCP change 2 (per-path BDP in-flight cap, the #64 fix). The sender is
