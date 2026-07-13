@@ -7406,6 +7406,52 @@ fast-alone (not the inert 0.51× bound, not aggregating), and the residual is BO
 decode-clocked rate signal (needs a wire-clocked estimator, not a filter) AND a newly-exposed
 symmetric dual-path generation-mode coding tax (C7 ≤ fast-alone), not only the slow anchor.
 
+### 16.16 Generation-ON stack ablation: the symmetric collapse is the STACK, not the code; gen-mode throughput is substrate-bound at ≈10 Mbit/s per path (2026-07-13) — measured
+
+§16.15 left the attribution open: with generation ON, symmetric C7 collapsed 21→12 —
+coding-intrinsic, or the DAPS-era stack live for the first time? A five-arm same-binary
+ablation (P plain control; G0 generation BARE; G1 +DAPS; G2 +rate-sample; G3 +depth =
+the §16.15 config; r=0.03, 25 MB × 8 reps, seeds 42 & 7, arms interleaved per rep,
+`cod>0` guard on every gen run) answers it. Prerequisite fix: every boolean `RWM_*`
+gate parsed with `.is_ok()`, so `=0` counted as ON and "explicitly off" arms were
+inexpressible; one `env_flag` helper now parses all 22 boolean gates (unset → shipped
+default; ""/"0"/"false" → OFF), defaults for unset unchanged.
+
+**C7 symmetric (pooled both seeds):** P **22.8** · G0 **20.7** · G1 20.4 · G2 15.9 ·
+G3 **11.7** (G3 replicates §16.15's 12.1/12.6 — consistency PASS). Attribution:
+coding intrinsic (P→G0) is 0…−18 % seed-dependent and G0 keeps REAL aggregation
+(×1.37 fast-alone, plain-class); DAPS placement (G0→G1) is free; **rate-sample
+(G1→G2) costs −22 % on both seeds; the depth bound (G2→G3) another −17…−30 %** —
+§16.14/16.15's "depth is a symmetric no-op" is false in practice because the
+decode-clocked anchors make one path always look transiently slower and it gets
+depth-throttled on garbage skew. The §16.15 symmetric-collapse question resolves to:
+**the stack, ~45 % of it, on top of a nearly-free code.**
+
+**C8 heterogeneous (pooled):** P **14.96** (0.99× same-day fast-alone 15.15, σ_s 2.0) ·
+G0 9.19 (σ_s **0.14/0.48** — the most repeatable multipath number on this rig) ·
+G1 8.10 · G2 8.30 (one DNF) · G3 **10.04** (the depth bound's one real win: +0.85 vs
+G0 on hetero). Plain beats every gen arm ×1.5–1.8; nothing has ever exceeded fast-alone
+on C8 when measured against the LINK ceiling (§16.15's "0.96× parity" was against
+gen's own depressed 13.99).
+
+**The structural finding.** Singles (same day): plain-c2 15.15, gen-bare-c2 **9.70**
+(σ 0.32), plain-c3 3.31, gen-bare-c3 COLLAPSED (0.78 then DNF — bare r=0.03 is not
+viable on the lossy path alone; §16.15's 3.04 needed the DAPS-deepened window). Line
+up gen-bare: single 9.70 ≈ C8 9.19–9.27 ≪ C7 20.7 (×2.15 its own single). In
+generation mode each path delivers ≈10 Mbit/s regardless of link capacity — the
+binder is the generation pipeline itself (in-flight window / window-fill decode
+serialization; C7's two source-carrying paths fill generations in parallel, single
+and C8-fast hit the same wall). Gen C8 = 0.95× of gen's OWN substrate ceiling: the
+scheduler was never the constraint; **no DAPS-era lever could have lifted C8.**
+
+**Where this points.** (1) Don't ship the stack ON under generation: rate-sample+depth
+tax symmetric duals −45 %; depth is at most a hetero-specific opt-in. (2) The next
+lever is the SUBSTRATE: raise the per-path ~10 Mbit/s generation ceiling — deepen/
+overlap the generation pipeline (DAPS's window-floor already demonstrates +44 %
+single-path headroom: 9.70→13.99), and/or reduce decode-gating via the systematic-
+source submode. (3) The wire-clocked estimator (§16.15's deferred fix) is third: a
+stable anchor is worthless while the substrate caps ×0.64 below the link.
+
 ---
 
 ## Appendix A: Summary of Key Formulas
