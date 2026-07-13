@@ -28,7 +28,17 @@ TENV=""
 [[ -n "${RWM_WINDOW:-}" ]] && TENV="$TENV RWM_WINDOW=$RWM_WINDOW"
 # Generation-coding knobs (§16.3): G, pipeline depth M, per-generation overhead
 # r. Propagated into the netns exec env so both server and client see them.
-[[ -n "${RWM_GEN:-}" ]] && TENV="$TENV RWM_GEN=$RWM_GEN"
+#
+# feat/gen-on-rebaseline NAME-COLLISION NOTE: the binary reads RWM_GEN as the
+# generation SIZE G (net/mod.rs:1303/1458/3286, default 384).  This harness ALSO
+# uses RWM_GEN as the on/off GATE for --window-generation-coding (see GEN_FLAG
+# below): RWM_GEN=0 -> plain-window control, unset/1 -> generation ON at default G.
+# To keep both meanings we forward RWM_GEN to the binary as a SIZE only when it is
+# a REAL generation size (>=2); the gate sentinels 0 and 1 are NOT forwarded (=1
+# would otherwise set a catastrophic 1-symbol generation, =0 a 0-symbol one).
+if [[ -n "${RWM_GEN:-}" && "${RWM_GEN}" != "0" && "${RWM_GEN}" != "1" ]]; then
+    TENV="$TENV RWM_GEN=$RWM_GEN"
+fi
 [[ -n "${RWM_PIPELINE:-}" ]] && TENV="$TENV RWM_PIPELINE=$RWM_PIPELINE"
 [[ -n "${RWM_GEN_R:-}" ]] && TENV="$TENV RWM_GEN_R=$RWM_GEN_R"
 # Proactive-FEC-vs-ARQ crossover knobs: BDP-scaled store/in-flight window,
@@ -105,6 +115,26 @@ OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"
 EXTRA="${RWM_EXTRA:-}"
 
+# feat/gen-on-rebaseline: GENERATION is FIRST-CLASS in the aggregation harness.
+# The coded/generation pipeline (and therefore DAPS, the per-path rate-sample
+# estimator, the read-ahead depth bound, source-backpressure — EVERYTHING the
+# §16.11-16.14 arc measured) is enabled ONLY by the --window-generation-coding CLI
+# flag: net/mod.rs:701 gates window_generation on
+#   window_reliable && (window_generation_coding || window_systematic_repair || fmtcp)
+# and RWM_DAPS/RWM_GEN_R/RWM_RATE_SAMPLE only *configure* generation, they do NOT
+# *enable* it (`daps = RWM_DAPS && generation`).  The §16.14 diagnosis proved this
+# harness NEVER passed that flag, so the entire recent arc ran with the coded path
+# DEAD (cod=0).  Generation now DEFAULTS ON here; set RWM_GEN=0 for the plain-window
+# control.  --window-reliable is kept (generation requires it, main.rs:302).
+GEN_FLAG="--window-generation-coding"
+[[ "${RWM_GEN:-1}" == "0" ]] && GEN_FLAG=""
+# Force the cumulative coded-emission counter on so the HARD SANITY GUARD (below)
+# can assert cod>0 on the SENDER.  RWM_PFRAC makes run_window_sender print
+# "[PFRAC] ... total_coded=N ..." every 500 ms (generation-gated, cheap).
+if [[ -n "$GEN_FLAG" && -z "${RWM_PFRAC:-}" ]]; then
+    TENV="$TENV RWM_PFRAC=1"
+fi
+
 cleanup() {
     pkill -x raptorpath 2>/dev/null || true
     bash ./topo_dual.sh down >/dev/null 2>&1 || true
@@ -129,8 +159,14 @@ else
     CLI_BIND="10.77.0.1:0"
 fi
 
+# LOG SOURCES (feat/gen-on-rebaseline; the §16.14 wrong-log trap): the --server is
+# the perf RECEIVER of the bulk transfer (its reverse sender loop places ~no source,
+# ~no coded — reading sender-side counters here is the §16.14 error) -> /tmp/rwm-s.log.
+# The --client is the bulk SENDER; the per-path anchor, pacer, depth budget, and the
+# coded-emission counters all live here -> /tmp/rwm-c.log.  Sender-side DIAG (btlbw,
+# dbud, cod, eff_pace, ANCHOR ...) MUST be scraped from /tmp/rwm-c.log.
 ip netns exec "$NS_SRV" env $TENV "$BIN" perf --server --bind "$SRV_BIND" \
-    --window-reliable $OOO_FLAG $EXTRA --protocol-hint "$HINT" >/tmp/rwm-s.log 2>&1 &
+    --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" >/tmp/rwm-s.log 2>&1 &
 
 for _ in $(seq 1 20); do
     ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -q ':7000' && break
@@ -141,9 +177,26 @@ sleep 1
 echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
 timeout 700 ip netns exec "$NS_CLI" env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
-    --window-reliable $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
+    --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
     | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
     || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
+
+# --- HARD SANITY GUARD (feat/gen-on-rebaseline) -----------------------------------
+# A measurement where the mechanism under test did not run must FAIL LOUDLY, not
+# silently report a number.  When generation is requested (GEN_FLAG set, i.e.
+# RWM_GEN!=0), assert that CODED symbols actually flowed on the SENDER.  The sender
+# is the --client => /tmp/rwm-c.log (NOT the --server/receiver /tmp/rwm-s.log — the
+# §16.14 wrong-log trap).  Coded count = max total_coded over the run's [PFRAC] lines.
+if [[ -n "$GEN_FLAG" ]]; then
+    CODED=$(sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-c.log 2>/dev/null \
+        | grep -oE 'total_coded=[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)
+    CODED="${CODED:-0}"
+    if [[ "$CODED" -le 0 ]]; then
+        echo "FATAL: generation requested but cod=0 (mechanism inert) -- NO coded symbols flowed on the sender (/tmp/rwm-c.log). The measured binary ran the coded path DEAD; the numbers above are INVALID. Check that --window-generation-coding is on the wire and RWM_GEN!=0." >&2
+        exit 7
+    fi
+    echo "    GUARD OK: generation ACTIVE on the sender (total_coded=$CODED coded symbols flowed)"
+fi

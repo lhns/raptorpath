@@ -5396,3 +5396,148 @@ counters only increment inside the `rate_sample` path; the DIAG line is
 RWM_DAPS_DEPTH=1 RWM_DIAG=1 RWM_EXTRA=--window-generation-coding SEED=42 bash
 perf_rwm_c.sh c2 c3 bulk 12000000 3 dual`, then read the p1 `ANCHOR …` counters in
 `/tmp/rwm-c.log` (the CLIENT/sender log, NOT `/tmp/rwm-s.log`).
+
+## Generation-ON Re-Baseline (2026-07-13) — the FIRST VALID heterogeneous C8 measurement: the §16.11–16.14 arc was measured with the coded path DEAD (the harness never enabled generation); ceilings + C8/C7 re-measured with generation ACTUALLY ON, and a hard guard so the class of bug cannot recur (branch `feat/gen-on-rebaseline`)
+
+> **CRITICAL — the entire recent arc is SUSPECT.** The §16.10–16.14 goal-gate
+> results (DAPS, pace-all §16.11, source-backpressure §16.12, rate-sample §16.13,
+> read-ahead depth §16.14) and their paper entries were measured on a binary
+> running the **coded/generation path DEAD**. DAPS + the per-path estimator +
+> rate-sample + the depth bound + source-backpressure ALL gate on `generation`
+> (`daps = RWM_DAPS && generation`, `per_path_est = generation && …`,
+> `rate_sample = per_path_est && …`, `daps_depth_on = rate_sample && …`), and the
+> harness never turned generation on — so every one of those mechanisms was INERT
+> in the very measurements that "evaluated" it. Verdicts overturned below.
+
+### THE METHODOLOGY BUG (code evidence)
+
+`perf_rwm_c.sh` passed only `--window-reliable` to both the server and client.
+`net/mod.rs:701-702` gates `window_generation` on
+`window_reliable && (window_generation_coding || window_systematic_repair || fmtcp)`.
+The `RWM_DAPS` / `RWM_GEN_R` / `RWM_RATE_SAMPLE` / `RWM_DAPS_DEPTH` envs only
+*configure* generation; they do NOT *enable* it. So the arc's C8 arms ran PLAIN
+`--window-reliable` block/ARQ mode with the whole DAPS+estimator+rate-sample+depth
+stack switched off — confirmed by the §16.14 saved sender logs (`cod=0`,
+`eff_pace=0`). The §16.14 diagnosis (previous section) proved this end-to-end.
+
+### THE FIX + HARD ANTI-REGRESSION GUARD
+
+- `perf_rwm_c.sh` now adds `--window-generation-coding` to BOTH the server and the
+  client, DEFAULT ON, gated by `RWM_GEN` (`=0` → the plain-window control). The
+  name-collision with the binary's generation-SIZE `RWM_GEN` is handled: the gate
+  sentinels `0`/`1` are not forwarded as a size (=1 would set a 1-symbol generation).
+- **HARD SANITY GUARD:** after each run the SENDER log (`--client` =
+  `/tmp/rwm-c.log` — NOT the `--server`/receiver `/tmp/rwm-s.log`, the §16.14
+  wrong-log trap) is parsed for cumulative `total_coded`; if it is 0 when
+  generation was requested the run prints `FATAL: generation requested but cod=0
+  (mechanism inert)` and exits non-zero. A measurement where the mechanism under
+  test did not run now FAILS LOUDLY instead of silently reporting a number.
+  Validated: the guard reports `GUARD OK` (coded 178 k–191 k symbols) on EVERY arm
+  of the battery below.
+
+### THE FIRST-VALID CEILINGS + C8/C7 (generation ON, current-main stack `RWM_DAPS=1 RWM_GEN_R=0.03 RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=1`, 25 MB × 8, seeds 42 & 7, VM 10.1.5.16, dnf=0 every arm, GUARD OK every arm)
+
+**Ceilings (re-measured with generation ON — the old §16.14 ceilings are from a generation-inert binary):**
+
+| single arm | seed42 mean Mbit/s (σ_s) [min→max run] | seed7 mean (σ_s) [min→max] | pooled |
+|---|---|---|---:|
+| single-c2 (FAST) | 13.90 (0.97) [12.43→15.20] | 14.09 (0.57) [13.34→15.14] | **13.99** |
+| single-c3 (SLOW) | 3.03 (4.01) [2.83→3.49] | 3.06 (6.03) [2.73→3.49] | **3.04** |
+| **recovery ceiling** (fast+slow) | 16.93 | 17.15 | **17.03** |
+
+Note the fast single-path ceiling is LOWER than §16.14's generation-inert 16.45 —
+generation coding carries a single-path throughput tax (~15 %, the coding overhead +
+decode latency). The §16.14 ceilings were not comparable (different binary).
+
+**C8 (c2+c3) heterogeneous — per seed, mean Mbit/s (σ_s) [per-run distribution]:**
+
+| seed | C8 mean (σ_s) | per-run Mbit/s | ×fast (÷13.99) | eff ÷ceiling |
+|---|---|---|---:|---:|
+| 42 | 9.97 (3.43) | 7.76 8.01 9.70 11.63 11.16 11.18 11.04 11.07 | 0.72× | 0.59 |
+| 7 | 13.52 (0.67) | 13.26 13.51 14.86 12.92 13.28 13.19 13.20 14.17 | 0.96× | 0.79 |
+| **pooled** | **~11.74** | (seed42 shows a clear warm-up ramp 7.8→11.1) | **~0.84×** | **~0.69** |
+
+**C7 (c2+c2) symmetric — per seed:**
+
+| seed | C7 mean (σ_s) | per-run Mbit/s | ×fast | eff ÷2×fast |
+|---|---|---|---:|---:|
+| 42 | 12.05 (1.41) | 10.20 12.56 12.42 11.24 12.88 12.49 12.29 12.85 | 0.87× | 0.43 |
+| 7 | 12.59 (1.02) | 13.66 12.06 11.38 12.49 13.25 13.28 13.05 11.95 | 0.89× | 0.45 |
+
+### DOES IT AGGREGATE? — NO (still ≤ fast-alone), but FAR above the inert §16.14 bound; and a NEW finding: even SYMMETRIC C7 is below fast-alone
+
+- **C8 does NOT exceed fast-alone** on either seed (0.72× / 0.96×) — so heterogeneous
+  bulk aggregation is still not landed. BUT this is a very different picture from the
+  inert §16.14 "0.51× / 8.40 Mbit/s": with generation genuinely ON, C8 is 11.74 pooled
+  and reaches **0.96× (parity) on seed7**. The §16.14 quantitative bound (0.51×) and
+  its "channel starvation no source-side scheduler can fix" framing are overturned;
+  what remains is a much narrower parity-vs-slightly-below gap, and it is SEED-UNSTABLE
+  (0.72 vs 0.96, seed42 σ_s 3.43 with a multi-run warm-up ramp) → STEP 3 warranted.
+- **NEW, load-bearing finding: C7 SYMMETRIC (c2+c2) is ALSO below fast-alone
+  (0.87–0.89×).** The depth bound is a provable no-op on symmetric skew (skew 0 ⇒ no
+  depth budget), so this penalty is INDEPENDENT of the slow-anchor de-noise: there is
+  a residual dual-path **generation-mode** throughput tax (coding overhead + cross-path
+  reassembly/decode coupling) that caps even two identical paths below one of them.
+  This bounds what any slow-anchor fix can buy for C8, and is the honest new open item.
+
+### OVERTURNED / SUSPECT VERDICTS
+
+- **§16.14 "slow anchor NEVER establishes (`est=n`/`btlbw=0`/`dbud=0`), CONSOLIDATE,
+  C8 structurally bounded at 0.51× fast":** overturned. The anchor DOES establish
+  (already shown by the diagnosis); the §16.14 numbers were generation-inert; gen-ON
+  C8 is 0.84× pooled / 0.96× seed7, not 0.51×.
+- **§16.11 pace-all, §16.12 source-backpressure (REFUTED), §16.13 rate-sample
+  (the "C8 regresses" finding):** all measured generation-inert — the A/B arms compared
+  binaries with the coded path DEAD, so those mechanism verdicts are SUSPECT and are not
+  validly established. They must be re-run generation-ON before any conclusion stands.
+- **§16.14 C7 "20 % is pure VM noise":** the actual gen-ON C7 is 12.3 Mbit/s (0.88× fast),
+  a different regime; the old C7 numbers (17–21) were the inert block mode.
+
+### STEP 3 — De-noise BtlBw_slow (robust quantile): REFUTED at L1 — the generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles the path (same-binary `RWM_RATE_WIRE` A/B)
+
+Because STEP 2 left C8 ≤ fast-alone and seed-unstable, the diagnosed de-noise was built
+and A/B-tested. It is gated `RWM_RATE_WIRE` (robust quantile `RWM_RATE_Q`, default median,
+of the per-path delivered-rate samples for the DAPS pace/offset/depth signal; the cwnd
+anchor untouched), DEFAULT OFF ⇒ byte-identical.
+
+**Same-binary A/B (seed42, C8 het):**
+
+| arm | C8 Mbit/s | fast-path anchor `btlbw` (true ≈10 400 sym/s) | slow-path |
+|---|---:|---|---|
+| **OFF** (`RATE_WIRE=0`, = STEP 2 stack, 25 MB × 8) | **7.80** (σ_s 2.79) | max-filter (correct) | est=Y |
+| ON (`RATE_WIRE=1` median, 6 MB × 3) | **~1.3** | **159** (65× UNDER-read) | starved sinfl=3, est=n |
+| ON (`RATE_WIRE=1` q=0.9, 6 MB × 3) | ~2.7 (6.1→3.2→1.6) | 198 | starved |
+
+**The de-noise REGRESSES C8 3–6×.** Mechanism (the decisive finding): in generation mode
+the per-path delivery-rate samples are **decode-FRONTIER-clocked** — a source seq is
+"delivered" when the OOO frontier passes it (fungible decode), which advances in BURSTS with
+long inter-decode gaps — so the sample distribution is **mostly LOW with the true link rate
+at the burst-peak TOP**. The windowed-**MAX is therefore the near-correct recovery statistic**
+(it grabs the peak ≈ true rate); ANY sub-max quantile (median → 159, even p90 → 198) lands
+in the low cluster and under-reads the fast path ~65×, collapsing the DAPS pace bucket →
+throughput collapse. The §16.15-diagnosis "over-read to 20 950" is a rare UPPER-TAIL spike,
+not the bulk — rejecting the top removes the signal itself. (First implementation also
+hard-STALLED (dnf): `btlbw_sym_per_s` is read once per send-loop iteration by the DAPS pacer,
+so an O(n log n) quantile sort there made the sender CPU-bound; fixed by caching the quantile
+once per delivered sample — the throughput-collapse result above is the corrected, cached
+version, so the regression is the mechanism, not the perf bug.)
+
+**Verdict:** the robust-quantile de-noise is **REFUTED at L1** — the correct fix is NOT a
+filter over the decode-clocked samples but the task's option (2): measure per-path rate from
+the path's OWN WIRE acks (link-clocked source+coded ACKed on path i), which the current
+attribution (decode-frontier source-seq) does not do — a larger change, DEFERRED. The knob
+ships gated OFF (byte-identical), unit-tested, and oracle-modelled (PART 6i: a STABLE anchor
+WOULD reach the ×1.195 depth-bound ceiling — but the quantile does not PRODUCE a stable
+anchor, it under-reads). Combined with the STEP 2 finding that even symmetric C7 is below
+fast-alone, the honest standing conclusion is that gen-ON heterogeneous C8 is at
+parity-to-slightly-below fast-alone, and the residual is BOTH the decode-clocked rate signal
+(needs a wire-clocked estimator, not a filter) AND a symmetric dual-path coding tax.
+
+### Controls / tests
+
+`cargo test -p raptorpath --lib` 293/293 (1 new: `robust_btlbw_rejects_the_decode_
+burst_over_read_latch`); `-p raptorpath-math` 23/23 (1 new oracle: PART 6i
+`anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it`); gate_suite 15/15
+release. The de-noise (`RWM_RATE_WIRE`, robust per-path rate for the DAPS pace/offset/
+depth signal) is DEFAULT OFF ⇒ `effective_btlbw == max_bw` ⇒ byte-identical shipped
+default; the cwnd recovery anchor (`bdp_anchor`) is untouched. Every battery arm dnf=0.

@@ -2811,3 +2811,87 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
     println!("  read-ahead within the skew (useful=1) → C8 x{f_c:.3} (ceiling), C7 restored.  If L1");
     println!("  confirms, the estimator→correct-anchor→depth-bound stack LANDS heterogeneous aggregation.");
 }
+
+// PART 6i — THE ANCHOR-NOISE AXIS (why the depth bound was INERT despite being
+//   the correct lever).  PART 6h proved a DEPTH bound beats both the DUMP and the
+//   rate-throttle IF the depth budget d_bound = skew·BtlBw_slow is well-defined.
+//   §16.15 (generation actually ON) measured the missing precondition: the slow
+//   path's BtlBw_slow ESTABLISHES but is a decode-clocked windowed-MAX that swings
+//   ~4000× (5 .. 20 950 sym/s around a true ~2 083).  The depth budget it feeds,
+//   dbud = skew·BtlBw_slow_est, swings 0 .. 612 in lock-step — so half the time
+//   dbud≈0 (bound INERT: read-ahead UNBOUNDED → the DUMP, PART 6h regime A) and
+//   the other half dbud is many× too large (bound does not bind).  A bound cannot
+//   key on a signal that jumps 4000×/s.  This part models the anchor as a NOISY
+//   estimate and shows: (a) the swing makes the depth bound inert (C8 → parity, the
+//   §16.15 bound); (b) a STABLE (de-noised) anchor restores dbud ≈ skew·true → the
+//   depth bound binds → the PART 6h ×1.195 ceiling.  The de-noise (RWM_RATE_WIRE)
+//   is a robust QUANTILE that rejects the over-read latch.  HONESTY: this shows the
+//   anchor-stability fix is NECESSARY (unlocks the oracle-proven depth bound); it is
+//   not SUFFICIENT proof of L1 aggregation — L1 is the arbiter (see §16.15, which
+//   measured a residual dual-path generation-mode penalty the pure queue model omits).
+#[test]
+fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
+    let f = c8_fast();
+    let s = c8_slow();
+    let rate_s = s.rate; // sym/ms = TRUE BtlBw_slow
+    let rtprop_f = 2.0 * f.owd as f64;
+    let rtprop_s = 2.0 * s.owd as f64;
+    let skew = rtprop_s - rtprop_f; // ms — the depth budget in TIME
+    let bdp_s = rate_s * rtprop_s;
+    let fast_g = f.goodput();
+    let slow_g = s.goodput();
+    let ceiling = (fast_g + slow_g) / fast_g;
+    let d_unb = 3500.0 * rate_s; // §16.13/16.15 unbounded read-ahead depth (~3.5 s)
+
+    // §16.15 slow-path BtlBw_slow_est time-series (sym/s; the sender DIAG trace):
+    // swings 5 .. 20 950 around the true ~2 083.
+    let est_series_sym_s = [
+        1116.0, 5837.0, 46.0, 102.0, 780.0, 20751.0, 20950.0, 7000.0, 59.0, 592.0, 5.0,
+    ];
+    let true_sym_s = rate_s * 1000.0;
+
+    let q_of_depth = |d: f64| ((d - bdp_s).max(0.0)) / rate_s;
+    let useful = |q: f64| if q <= skew { 1.0 } else { (1.0 - (q - skew) / skew).clamp(0.0, 1.0) };
+
+    // NOISY anchor: at each tick dbud = skew·est.  The depth cap binds only when the
+    // estimate is in a usable band [0.5×,2×] of truth: below → dbud≈0 (inert → the
+    // read-ahead reverts to d_unb, the DUMP); above → dbud so large the cap never
+    // binds (also d_unb).  Realized read-ahead depth per tick:
+    let realized_depth = |est_sym_s: f64| {
+        let dbud = skew * (est_sym_s / 1000.0); // symbols (skew ms × sym/ms)
+        if est_sym_s >= 0.5 * true_sym_s && est_sym_s <= 2.0 * true_sym_s {
+            bdp_s + dbud
+        } else {
+            d_unb
+        }
+    };
+    let noisy_factor: f64 = est_series_sym_s
+        .iter()
+        .map(|&e| (fast_g + slow_g * useful(q_of_depth(realized_depth(e)))) / fast_g)
+        .sum::<f64>()
+        / est_series_sym_s.len() as f64;
+
+    // STABLE anchor (de-noised, RWM_RATE_WIRE): est ≈ true, dbud = skew·true steady,
+    // realized depth = bdp_s + skew·rate_s → q = skew → useful=1 → the ceiling.
+    let stable_factor = (fast_g + slow_g * useful(q_of_depth(bdp_s + skew * rate_s))) / fast_g;
+
+    let est_min = est_series_sym_s.iter().cloned().fold(f64::INFINITY, f64::min);
+    let est_max = est_series_sym_s.iter().cloned().fold(0.0, f64::max);
+    println!("\n=== PART 6i: ANCHOR NOISE makes the depth bound INERT; a STABLE anchor restores it ===");
+    println!("  TRUE BtlBw_slow={true_sym_s:.0} sym/s  skew={skew:.0}ms  ceiling x{ceiling:.3}");
+    println!("  NOISY est swings {est_min:.0}..{est_max:.0} sym/s (~{:.0}x) -> depth-bound INERT -> C8 x{noisy_factor:.3} (~parity, the §16.15 bound)", est_max / est_min);
+    println!("  STABLE est≈true -> dbud=skew·true steady -> depth-bound BINDS -> C8 x{stable_factor:.3} (ceiling)");
+
+    // (a) the noisy anchor collapses C8 toward parity (the depth bound is inert).
+    assert!(noisy_factor < 1.15, "noisy anchor must leave C8 near parity (inert bound): x{noisy_factor:.3}");
+    // (b) the stable anchor lets the depth bound reach the PART 6h ceiling ×1.195.
+    assert!(stable_factor > ceiling - 0.02, "stable anchor must reach the depth-bound ceiling: x{stable_factor:.3} vs x{ceiling:.3}");
+    // (c) THE POINT: de-noising the anchor is what unlocks the (already-correct,
+    //     oracle-proven) depth bound — a signal-STABILITY fix, not a new mechanism.
+    assert!(stable_factor > noisy_factor + 0.15, "the stable anchor must beat the noisy one decisively: x{stable_factor:.3} vs x{noisy_factor:.3}");
+
+    println!("\n  VERDICT: the §16.14 CONSOLIDATE rested on a MISSING anchor; §16.15 shows the anchor is");
+    println!("  PRESENT but decode-clock NOISY (~4000x swing) -> dbud through 0 -> the correct depth bound");
+    println!("  is inert.  De-noising BtlBw_slow (robust quantile) is the NECESSARY signal-stability fix");
+    println!("  that lets the oracle-proven depth bound bind toward x{stable_factor:.3}; L1 is the arbiter.");
+}

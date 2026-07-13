@@ -7352,6 +7352,62 @@ scheduling line with the full evidence chain (§16.10 DAPS → §16.11–16.13 p
 
 ---
 
+### 16.15 Methodology correction + the generation-ON re-baseline: the §16.11–16.14 arc was measured with the coded path DEAD (2026-07-13) — measured
+
+**The bug (a measurement-harness bug, not a model bug).** The L1 aggregation harness
+`perf_rwm_c.sh` passed only `--window-reliable`. Generation is enabled ONLY by
+`--window-generation-coding` (or `--window-systematic-repair`/`RWM_FMTCP`):
+`window_generation = window_reliable && (window_generation_coding || window_systematic_repair
+|| fmtcp)`. Every §16.10–16.14 mechanism gates on `generation` —
+`daps = RWM_DAPS && generation`, `per_path_est = generation && (daps || RWM_PER_PATH_EST)`,
+`rate_sample = per_path_est && …`, `daps_depth_on = rate_sample && …`. So the entire
+DAPS + per-path-estimator + rate-sample + read-ahead-depth + source-backpressure stack
+was **INERT** in the very measurements that evaluated it — the saved §16.14 sender logs
+show `cod=0`/`eff_pace=0`. The arc's C8 arms ran plain `--window-reliable` block/ARQ mode.
+**Every §16.11–16.14 mechanism verdict is therefore SUSPECT** and must be re-established
+generation-ON. A hard guard now fails any generation run with `cod=0` loudly (asserting
+cumulative `total_coded>0` on the SENDER `/tmp/rwm-c.log`, not the receiver log — the
+§16.14 wrong-log trap).
+
+**The first VALID measurement (generation ON, current-main stack, 25 MB × 8, seeds 42 & 7,
+dnf=0, guard OK every arm).** Ceilings: single-c2 (fast) **13.99** Mbit/s, single-c3 (slow)
+**3.04** ⇒ recovery ceiling **17.03** (the fast ceiling is LOWER than §16.14's inert 16.45 —
+generation coding costs ~15 % single-path, the coding/decode tax). C8 (c2+c3): seed42
+**9.97** (σ_s 3.43, a warm-up ramp 7.8→11.1), seed7 **13.52** (σ_s 0.67) ⇒ **0.72× / 0.96×
+fast-alone**, pooled ~11.74 (0.84×). C7 (c2+c2): **12.05 / 12.59** ⇒ **0.87–0.89× fast-alone**.
+
+**What this overturns.** (1) §16.14's quantitative "C8 = 0.51× fast, 8.40 Mbit/s,
+structurally bounded, consolidate" is invalid — measured on dead code; gen-ON C8 is 0.84×
+pooled and reaches **parity (0.96×) on seed7**, a far narrower gap. Its "channel starvation
+no source-side scheduler can synthesise" framing is overturned (the §16.15-prior diagnosis
+already showed the anchor establishes). (2) §16.11 pace-all / §16.12 source-backpressure
+(REFUTED) / §16.13 rate-sample verdicts were all generation-inert A/Bs and do not stand.
+(3) A NEW, load-bearing finding the inert regime hid: **symmetric C7 is ALSO below
+fast-alone (0.88×)**. The depth bound is a provable no-op on symmetric skew, so this is a
+residual dual-path **generation-mode** throughput tax (coding overhead + cross-path
+reassembly/decode coupling) independent of the slow-anchor — it caps even two identical
+paths below one, and bounds what any slow-anchor fix can buy for C8. C8 het is
+seed-unstable and ≤ fast-alone, so the slow-anchor de-noise (BtlBw_slow, §16.15
+diagnosis) was built and A/B-tested (same-binary `RWM_RATE_WIRE`, robust quantile of the
+per-path delivered-rate samples for the DAPS pace/offset/depth signal, gated default-off).
+**Result — REFUTED:** the de-noise REGRESSES C8 3–6× (seed42: OFF 7.80 → ON ~1.3 Mbit/s
+median / ~2.7 at q=0.9), because the generation-mode per-path rate samples are
+**decode-FRONTIER-clocked** — mostly-low with the true link rate at the burst-peak TOP — so
+the windowed-MAX is the near-correct recovery statistic and any sub-max quantile lands in the
+low cluster and UNDER-reads the fast path ~65× (btlbw 159–198 sym/s vs true ~10 400),
+collapsing the pace bucket. The §16.15-diagnosis "over-read to 20 950" is a rare upper-tail
+spike, not the bulk; rejecting the top removes the signal. The correct fix is therefore NOT a
+filter over the decode-clocked samples but a per-path rate measured from the path's OWN WIRE
+acks (link-clocked) — a larger change, deferred; the knob ships default-off (byte-identical),
+unit-tested, oracle-modelled (temporal_oracle PART 6i: a STABLE anchor WOULD reach the ×1.195
+depth-bound ceiling, but the quantile does not produce one). The honest standing conclusion:
+with the mechanism genuinely ON, heterogeneous bulk C8 is at parity-to-slightly-below
+fast-alone (not the inert 0.51× bound, not aggregating), and the residual is BOTH the
+decode-clocked rate signal (needs a wire-clocked estimator, not a filter) AND a newly-exposed
+symmetric dual-path generation-mode coding tax (C7 ≤ fast-alone), not only the slow anchor.
+
+---
+
 ## Appendix A: Summary of Key Formulas
 
 ```
