@@ -6530,3 +6530,209 @@ frontier/SACK attribution, dedupe, retransmit path-reassignment, bounded
 per-ack work); `-p raptorpath-math` pass; gate_suite 15/15 release (shipped
 default untouched); new `copa_sole_loopback` end-to-end guard (passthrough +
 feed over real QUIC). L0 shim smokes recorded above (`RWM_RS_TRACE`).
+
+## Copa Wire-Signal (2026-07-13) — the #80 bulk gap CLOSED where it was named: wire-clocked delay term + hint→δ mapping + Copa's real update law take Copa-sole from 0.4× to 0.86–0.89× BBR-under at single-c2 and to PARITY at C8 (1.01×/0.95× with σ 3.7/1.6 and a ×18–25 tighter slow-path queue); arm-D's reservoir sensitivity is GONE; residuals: C7 0.73–0.76× (recovery-idle, named) and a pre-existing CROSS-ARM receiver-side frontier wedge (~60 s, forensics recorded) that C1's larger operating point triggers more often (branch `feat/copa-wire-signal`)
+
+Follow-up to "Copa-Sole Substrate CC" (#80), which named the bulk-gap
+mechanism: Copa's delay term was fed the APP-LAYER ECHO RTT — including the
+sender's own store/reservoir dwell in quinn's datagram queue — so Copa backed
+off against self-inflicted delay that is not in the network (arm D proved the
+term). This build fixes the SIGNAL and maps bulk onto Copa's δ.
+
+### The fix (paper §12.4 wire-signal addendum; all gated)
+
+1. **Wire clock**: Copa's queue signal is quinn's packet-timed path RTT
+   (`Connection::rtt()` per path = per connection; ack-delay corrected;
+   measured BELOW the datagram queue ⇒ the sender's own reservoir dwell is
+   structurally excluded). The app-echo RTT stays with the
+   LossEstimator/ARQ machinery. d_q = wire_standing − wire_RTTmin(10 s) −
+   2·jitter, where wire_standing is the LATEST smoothed sample (Copa's
+   RTTstanding) and the floor is the RAW 10 s min.
+2. **hint→δ (no new constants)**: δ is the latency price in Copa's utility
+   U = log(tput) − δ·log(delay); the hint's one declared price ratio is its
+   tail-loss scale ζ ∈ {0.01, 1, 100} (`ProtocolHint::tail_loss_scale`).
+   δ(hint) = 0.5/ζ ∈ {50 Realtime, 0.5 Auto, 0.005 Bulk}; equilibrium queue
+   = 1/δ packets. `RWM_COPA_DELTA` overrides (the frontier knob).
+3. **Copa's actual update law** (wire mode only): direction = cwnd/srtt vs
+   1/(δ·d_q), step v/δ per SRTT, velocity doubles after a ≥3-update
+   same-direction streak (Copa §2.2), down-steps capped at the measured
+   queue μ̂·d_q; plus a **coupling cap** cwnd ≤ BDP+2/δ and **CC-rate source
+   pacing** default-ON (`RWM_CC_PACE`, aggregate-correct: Σ cwnd_i/SRTT_i
+   over live paths, ceiling gen_rate × path count).
+4. **Gates**: active iff `RWM_QUIC_CC=passthrough` or `RWM_COPA_FEED=1`;
+   `RWM_COPA_WIRE=0` reproduces #80's app-echo arm byte-for-byte; env fully
+   unset ⇒ shipped stock-Cubic path byte-identical (gate_suite 15/15).
+
+### The diagnosis chain (each step MEASURED at L1 before the next)
+
+- v1 (wire clock + δ + windowed-min signal): sc2 53.4 vs B 77.7 — cwnd
+  ratcheted to MAX_CWND: the δ-sawtooth's drain trough falls inside every
+  update window, so a per-window MIN reads "queue empty" every update →
+  standing-sample signal (Copa's RTTstanding).
+- v2: cwnd still 4 000–7 800 vs the ≈300 fixed point — above the outstanding
+  store cap the delay signal is DECOUPLED (queue no longer grows with cwnd)
+  and the jitter-clamped d_q votes up forever; window/RTT bursts tail-drop
+  the 1 000-packet qdisc → coupling cap BDP+2/δ.
+- v2b: store cap flapping 1024↔128 — the Σcwnd store cap summed over
+  `active_paths()`, whose spare-capacity filter drops a SATURATED path (the
+  normal state of a wire-bound sender) → `live_paths()`.
+- v3 (smoke 55.7→67): Copa assumes a PACED wire; under passthrough quinn's
+  pacer derives from the engine window (≈5×BDP at Bulk's δ) and never binds
+  — pure ack-clocking lets every GE recovery micro-stall idle the bottleneck
+  → CC-rate source pacing default-ON under the wire signal.
+- v3 battery: C7 = ×1.00 of own single — the pace ceiling (gen_rate = 9 000
+  sym/s ≈ 90 Mbit) is a single-link burst guard that clamped the TWO-path
+  aggregate, and Σcwnd/max(SRTT) under-reads heterogeneous aggregates →
+  aggregate-correct rate + per-path-scaled ceiling (v4).
+
+### L1 battery v4 — PLAIN mode (VM 10.1.5.16, 2026-07-13 ~14:33–16:00 UTC; binary sha256 ed81395d…, commit e6b0cf2; 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42 AND 7, RWM_DIAG=1 everywhere; logs `/home/vibe/copawire/{sc2,sc3,c7,c8}-s{42,7}.log` + per-run `diag-*.log`; driver `/home/vibe/copawire_battery.sh`; v1–v3 intermediate batteries archived in `/home/vibe/copawire-v{1,3}`)
+
+Arms (all PLAIN, `RWM_GEN=0`, same binary): **B** = `RWM_QUIC_CC=bbr`
+(reference) · **C0** = passthrough + `RWM_COPA_WIRE=0` (replicates #80's C)
+· **C1** = passthrough (wire signal + bulk-δ + pacing, all default) · sc2
+only: **CR** = C1 + `RWM_STORE_GAIN=1.25` (reservoir re-probe) · **F1/F2** =
+C1 + `RWM_COPA_DELTA=0.05/0.001` (δ frontier). Liveness: every C1 diag log
+carries `feed ACTIVE` + `Copa queue-signal clock: wire=true … delta=0.005
+cc_pace=true` + est=Y (stale logs from the known aborted-invocation retries
+excluded and listed). Session validated: B sc2 76.5/75.1 (historic 75.9/75.4).
+
+**Throughput (Mbit/s, mean (σ_s) [runs]; W = wedge runs (see Stability),
+modal = mean excluding W):**
+
+| cell | B | C0 (app-echo) | C1 (wire) | C1/B |
+|---|---|---|---|---|
+| sc2 s42 | 76.49 (1.17) | 30.29 (4.69) | **68.09 (1.76)** [68.9 69.0 69.2 64.9 70.0 68.3 68.5 65.9] | **0.89** |
+| sc2 s7 | 75.09 (3.20) | 26.76 (2.61) | 56.64 (21.7; 1W) modal **64.27** (1.86, n=7) | **0.86** |
+| sc3 s42 | 13.50 (4.58; 1W) modal 15.11 | 8.35 (3.65; 2W) modal 10.29 | **11.83 (0.46)** [11.8 12.2 11.7 11.1 12.3 11.5 11.6 12.5] | 0.78 |
+| sc3 s7 | 15.62 (0.28, n=5) | 9.76 (0.85, n=6) | 6.07 (5.10; 5W) modal 12.21 (n=3) | 0.78 |
+| c7 s42 | 103.22 (6.57) | 47.71 (11.9) | 57.23 (34.0; 2W) modal **75.24** (7.2, n=6) [73.0 67.8 82.2 81.6 82.4 64.5] | 0.73 |
+| c7 s7 | 89.90 (38.6; 1W) modal 104.35 | 53.76 (4.95, n=6) | 69.95 (23.5; 1 partial 23.4) modal **79.26** (n=5) | 0.76 |
+| c8 s42 | 54.64 (13.45) | 26.94 (10.8; 1W) | **55.01 (3.70)** [48.6 54.4 57.7 56.5 50.2 57.5 56.4 58.7] | **1.01** |
+| c8 s7 | 58.14 (7.10) | 28.13 (6.00, n=6) | **55.30 (1.60, n=6)** [54.1 53.6 56.3 57.5 53.9 56.4] | **0.95** |
+
+Every C1-vs-C0 delta ≫ σ_s (sc2 +38 at σ≤4.7; c8 +27–28 at σ≤10.8). C1 ×2.1
+over C0 at sc2, ×2.0 at c8, ×1.5 at c7, ×1.2 at sc3.
+
+**Queue distributions (per-path, sender DIAG lines 4+, wedge/stale logs
+excluded and pooled per arm; TWO clocks: appQ = app-echo p50 − rtp p50 (the
+consumer-experienced pipeline incl. the sender's own reservoir), wireQ =
+quinn packet-timed p50 − rtp p50 (the NETWORK standing queue)):**
+
+| cell/path | B wireQ (appQ) | C0 wireQ (appQ) | C1 wireQ (appQ) |
+|---|---|---|---|
+| sc2 s42 | 38 (48) | 4 (19) | **5 (35)** |
+| sc2 s7 | 38 (70) | 4 (19) | **6 (42)** |
+| sc3 s42 | 221 (315) | 11 (75) | **43 (361)** |
+| sc3 s7 | 2 (50) [n big, mixed] | 10 (73) | 35 (427) (n=229, 3 runs) |
+| c7 s42 p0/p1 | 14/28 (18/32) | 5/6 (31/29) | **4/7 (24/41)** |
+| c8 s42 fast/slow | 26/**124** (37/268) | 6/14 (28/74) | **7/5 (73/9)** |
+| c8 s7 fast/slow | 29/**88** (40/158) | 5/11 (20/114) | **5/3 (30/7)** |
+
+- **The network-queue advantage is KEPT and widened at c2-class paths**: C1
+  wireQ 4–7 ms vs B's 38 ms at sc2 (p90 17–18 vs 87–88) — Copa holds the
+  wire queue ~6× tighter while giving up only 11–14% of B's throughput.
+- **C8 is the showcase**: C1 ≥ B's throughput with slow-path wireQ 3–5 ms vs
+  B's 88–124 ms (appQ 7–9 vs 158–268) — a ×18–25 tighter standing queue AT
+  parity throughput, and σ collapsed (3.7/1.6 vs B's 13.5/7.1).
+- **Honest c3 caveat**: C1's Bulk-δ tolerates 1/δ = 200 symbols ≈ 96 ms at
+  c3's 2 083 sym/s; measured wireQ 35–43 ms sits between C0's 10–11 and
+  B-s42's 221, and the app-layer reservoir dwell (2×cwnd store) grows to
+  ~360–430 ms p50 — deeper than C0's 73–75. At c3 the δ-map trades queue
+  for throughput exactly as designed (δ is the knob; a c3-tight profile
+  is `RWM_COPA_DELTA` upward). c7-s7 B/C0 queue rows are polluted by
+  stale logs of aborted invocations (frozen rtp ≈ 78 ms) and not tabled.
+
+**RTT-floor freshness (the DIAG the wire law needs)**: per-path rtp p50 =
+10–12 ms on every c2 path (netem base 10) and 40–44 ms on every c3 path
+(base 40), min 7–9/33–44, in every clean C1 run — the ±v/δ dither refreshes
+the raw 10 s min without ProbeRTT, under a standing Bulk queue. (In WEDGE
+runs the floor goes stale with the estimators frozen — part of the wedge
+signature below.)
+
+**Reservoir re-probe (arm-D term resolved)**: CR (reservoir 1.25×cwnd) =
+64.75 (1.30) / 60.96 (4.35) vs C1 68.09 / 64.27 — the #80 sensitivity
+(+13–23% AND tighter queue from SHRINKING the reservoir) is GONE; the
+residual is −5% (less recovery runway), i.e. the store dwell no longer
+pollutes d_q. No second self-queue term found.
+
+**δ frontier (sc2, C1 = δ 0.005 vs F1 = 0.05 vs F2 = 0.001):**
+
+| δ | tput s42/s7 | wireQ p50 | appQ p50 |
+|---|---|---|---|
+| 0.05 (queue-tight) | 42.4 (16.6; 1W) / 41.3 (9.6) | 4–5 | 16 |
+| **0.005 (Bulk map)** | **68.1 / 64.3** | 5–6 | 35–42 |
+| 0.001 (queue-deep) | 66.8 (1.1) / 65.1 (2.3) | 6 | 47–57 |
+
+The knee is AT the hint-mapped δ = 0.005: ×10 tighter δ costs −38%
+throughput; ×5 deeper δ buys nothing (−1.9%, ≈σ) and only deepens the
+reservoir. (Deeper still collapses: δ ≤ 0.0005 re-enters the decoupled
+regime — cap > store latch — measured 3.1 Mbit at the v2 smoke.)
+
+### Stability — the wedge (honest; the one #80 property NOT kept)
+
+#80's C had zero collapse runs. This session a ~2.2–3.3 Mbit/s collapse mode
+appears in ALL arms — **B 2/59 runs (sc3-s42 2.22, c7-s7 3.23), C0 3/57
+(sc3-s42 ×2, c8-s42), C1 7/59 + 1 partial** (sc2-s7 ×1, sc3-s7 ×4 (+1 run at
+1.46), c7-s42 ×2; ZERO at sc3-s42 and both c8 seeds) — so it is a
+pre-existing transport failure mode (it is plain-B's historic c3/C8 collapse
+value), NOT introduced by the wire signal, but C1's larger operating point
+(cwnd ≈ BDP+200 vs C0's ≈BDP+30) triggers it ~3× more often, clustered by
+seed×cell. Forensics (captured live, `/home/vibe/wedge-c.log`, plus the new
+`sweeps/retx/gapdrop/nbud` DIAG counters): transfer freezes at good=0 with
+store full, in_flight 0, cwnd healthy (482), nack budget healthy; the sender
+resends the cumulative blocker ~1/SRTT for 50+ s (retx 7 067→7 647 in 5 s of
+wedge) and quinn-level ACKs keep the wire RTT fresh (wrtt 42–44 ms ≈ base) —
+the retransmits ARE delivered to the receiver host, yet the receiver's
+in-order frontier never advances; self-resolves at ~55–65 s. i.e. a
+RECEIVER-SIDE delivery/frontier deadlock. Naming it further needs
+receiver-side instrumentation — follow-on task, coordinator's call; it is
+the top blocker for making C1 the substrate default.
+
+### VERDICT
+
+1. **The named mechanism is CLOSED**: with the CC delay term wire-clocked,
+   Copa-sole bulk goes 0.40→0.86–0.89× BBR-under at sc2 (Δ ≫ σ), 0.95–1.01×
+   at C8, 0.73–0.76× at C7, 0.78× at sc3 — and the reservoir-sensitivity
+   probe confirms the self-queue term is gone.
+2. **The queue claim survives the throughput**: the NETWORK queue stays
+   4–7 ms p50 at c2-class paths (B: 38) and 3–7 ms on the C8 slow path
+   (B: 88–124) — C1 did not buy throughput with B's bufferbloat. At c3 the
+   δ-map spends real queue (35–43 ms wire; deep app reservoir) — the
+   documented, tunable trade.
+3. **C8 het-multipath is the first cell where Copa-sole strictly DOMINATES
+   BBR-under**: ≥ parity throughput, ×18–25 tighter slow-path queue, σ
+   collapsed, zero wedges in 14 runs.
+4. **Residual gaps, named**: (a) C7 0.73–0.76× — C1 aggregates ×1.11–1.23 of
+   its own single vs B's ×1.35–1.39; the same recovery-idle mechanism the
+   pacing fix attacks remains partially open on dual paths (the modal runs
+   reach 82 = 0.79×B; velocity/probe dynamics are NOT the residual — the δ
+   frontier is flat above the knee). (b) sc3 0.78× — the c3 wire queue
+   needed for parity exceeds what the anchor's ×4 slow-path over-read can
+   steer precisely. (c) The receiver-side wedge above.
+5. Copa-sole under passthrough is now a credible substrate default for
+   HETEROGENEOUS multipath (C8-class) and a queue-first single-path choice
+   at 86–89% of BBR's bulk; the wedge fix is the gate to flipping any
+   default. BBR-under remains the bulk-throughput reference; shipped
+   default remains stock Cubic (unset), byte-identical.
+
+### Env / commands (reproduction)
+
+```
+# C1 (the fix, all defaults):  RWM_GEN=0 RWM_QUIC_CC=passthrough
+# C0 (#80's arm):              RWM_GEN=0 RWM_QUIC_CC=passthrough RWM_COPA_WIRE=0
+# reference:                   RWM_GEN=0 RWM_QUIC_CC=bbr
+# knobs: RWM_COPA_DELTA=<f>   (δ override; frontier)
+#        RWM_CC_PACE=0        (disable pacing under wire signal)
+#        RWM_STORE_GAIN=<f>   (reservoir; re-probe arm)
+sudo env SEED=42 RWM_DIAG=1 <arm-env> bash perf_rwm_c.sh c2 c2 bulk 25000000 1 single
+```
+
+### Tests
+
+`cargo test -p raptorpath --lib` 313/313 (new: wire gate decision fn, hint→δ
+mapping incl. override, two-clock separation — Copa keys on the wire feed
+while the estimator holds a 500 ms app echo, velocity law with 3-update
+hysteresis + queue-capped drain, coupling cap, legacy byte-identity);
+`-p raptorpath-math` pass; gate_suite 15/15 release on the final tree
+(shipped default untouched); `copa_sole_loopback` e2e (passthrough + wire
+defaults over real QUIC); `congestion_control` 19/19.

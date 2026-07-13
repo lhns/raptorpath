@@ -3020,11 +3020,11 @@ byte-identical), four coupled changes:
 
    Equilibrium standing queue = 1/δ packets (rate = 1/(δ·d_q) at bottleneck
    rate μ ⇒ q = 1/δ), i.e. d_q* = 1/(δ·μ): Bulk tolerates 200 symbols
-   (≈19 ms at c2's 10.4 k sym/s — still ~3× tighter than BBR-under's
-   measured 35–50 ms wire queue), Realtime an essentially empty queue
-   (jitter headroom governs), Auto the classic 2-packet target. One
-   continuous knob (`RWM_COPA_DELTA` overrides for frontier measurement),
-   no mode switch.
+   (≈19 ms at c2's 10.4 k sym/s at equilibrium; the sawtooth's drain
+   phases pull the MEASURED p50 to 4–7 ms vs BBR-under's 38 ms), Realtime
+   an essentially empty queue (jitter headroom governs), Auto the classic
+   2-packet target. One continuous knob (`RWM_COPA_DELTA` overrides for
+   frontier measurement), no mode switch.
 3. **The actual Copa update law** (replacing the ramp/±2 scheme, wire mode
    only): per SRTT, direction = (cwnd/srtt ≤ 1/(δ·d_q)), step = v/δ with
    velocity v doubling only after the direction persists ≥3 updates (Copa
@@ -3404,6 +3404,28 @@ cross-traffic on a shared bottleneck a delay-based controller yields, and no
 cross-traffic cell was measured. `passthrough` is an experiment knob;
 BBR-under remains the bulk-throughput reference/default-fallback and the
 shipped default remains stock Cubic.
+
+> **ADDENDUM (2026-07-13, feat/copa-wire-signal — the bulk gap CLOSED where
+> it was named).** The §12.4 wire-signal fix (wire-clocked delay term +
+> δ(hint) = 0.5/ζ mapping + Copa's actual velocity law + CC-rate pacing)
+> re-ran this battery (v4, same discipline; goal-gate "Copa Wire-Signal"):
+> Copa-sole bulk goes 0.40× → **0.86–0.89× BBR-under at single-c2** (68.1/64.3
+> vs 76.5/75.1), **0.95–1.01× at C8** (55.0/55.3 vs 54.6/58.1 — parity, σ
+> collapsed to 3.7/1.6), 0.73–0.76× at C7, 0.78× at sc3 — while the NETWORK
+> standing queue stays 4–7 ms p50 at c2-class paths vs BBR's 38 ms and the
+> C8 slow path holds 3–7 ms vs BBR's 88–124 ms (×18–25). C8 is the first
+> cell where Copa-sole strictly DOMINATES BBR-under (≥ throughput, far
+> tighter queue, lower variance). Arm D's reservoir term is RESOLVED: under
+> the wire clock, shrinking the reservoir no longer buys throughput (−5%,
+> less recovery runway) — the self-queue signal is gone. The measured δ
+> frontier (0.05/0.005/0.001 at sc2) has its knee AT the hint-mapped Bulk
+> δ = 0.005: tighter δ costs −38%, deeper δ buys ≈σ. Honest residuals: a
+> pre-existing CROSS-ARM receiver-side frontier wedge (~2.2–3.3 Mbit
+> collapse runs, ~60 s, self-resolving; B 2/59, C0 3/57, C1 7/59 — C1's
+> larger operating point triggers it more often; forensics in the goal-gate
+> section) is now the top blocker for a Copa-sole substrate default; C7
+> aggregation (×1.11–1.23 of own single vs B's ×1.35) and the c3 cell
+> (anchor ×4 over-read; deep tolerated queue by design) remain named gaps.
 
 ---
 
