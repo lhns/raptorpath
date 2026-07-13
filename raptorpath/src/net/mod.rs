@@ -1142,6 +1142,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 copa_wire = crate::scheduler::copa_wire_active(),
                 hint = ?config.protocol_hint,
                 delta = crate::scheduler::copa_delta_for_hint(config.protocol_hint),
+                cc_pace = crate::config::env_flag(
+                    "RWM_CC_PACE",
+                    crate::scheduler::copa_wire_active()
+                ),
                 "Copa queue-signal clock: wire={} (quinn packet-timed RTT; =false is the #80 app-echo arm)",
                 crate::scheduler::copa_wire_active(),
             );
@@ -3832,7 +3836,19 @@ async fn run_window_sender(
     // coded bucket uses; the source now shares it. A small headroom lets the
     // rate ramp without the 1.5× overshoot that itself overruns the datagram
     // path. Env-gated (RWM_CC_PACE) so the A/B baseline is byte-identical.
-    let cc_pace = crate::config::env_flag("RWM_CC_PACE", false);
+    //
+    // feat/copa-wire-signal: DEFAULT ON under the wire-clocked Copa signal.
+    // Copa's model assumes a PACED wire (the paper paces at 2·cwnd/RTT; our
+    // §12.5 token bucket does the same for the block path), but under
+    // RWM_QUIC_CC=passthrough quinn's own pacer derives from the engine
+    // window — at Copa's Bulk operating point (cwnd ≈ BDP + 1/δ ≈ 5×BDP at
+    // c2) that pacer never binds, the send process degrades to pure
+    // ack-clocking, and each GE loss burst's recovery micro-stall idles the
+    // bottleneck (MEASURED at the L1 c2 smoke: 55.7 → 67 Mbit/s from this
+    // default alone, store no longer pinned at the cap, wire queue p50
+    // 3–5 ms). RWM_CC_PACE=0 still forces it off (the #80 A/B arms are
+    // reproduced by RWM_COPA_WIRE=0, under which this default is false).
+    let cc_pace = crate::config::env_flag("RWM_CC_PACE", crate::scheduler::copa_wire_active());
     let cc_pace_headroom: f64 = std::env::var("RWM_CC_PACE_HR")
         .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.1).clamp(1.0, 2.0);
     // Source pacing token bucket (symbols). Refilled at the link rate each loop
