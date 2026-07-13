@@ -696,7 +696,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // OOO retention decouple, per-path BDP in-flight cap, once-per-RTT deficit,
     // receiver reassembly clamp) are forced on in run_window_sender / the receiver.
     // Shipped path is byte-untouched (default config has window_reliable off).
-    let fmtcp = std::env::var("RWM_FMTCP").is_ok();
+    let fmtcp = crate::config::env_flag("RWM_FMTCP", false);
     let window_systematic = window_reliable && (config.window_systematic_repair || fmtcp);
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair || fmtcp);
@@ -1349,7 +1349,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // the send frontier inside the receiver's reassembly window. Kept as an
     // env-gated experiment (RWM_SACK_PRUNE=1); default is byte-for-byte base.
     // Only plain-reliable has a per-seq sent-store to prune.
-    let sack_prune_enabled = std::env::var("RWM_SACK_PRUNE").is_ok();
+    let sack_prune_enabled = crate::config::env_flag("RWM_SACK_PRUNE", false);
     let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
         if sack_prune_enabled && window_reliable && !window_generation && !window_coded_only {
             Some(sack_tx)
@@ -1375,7 +1375,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // receiver must (a) never evict an above-frontier symbol before it is
     // delivered (reliability invariant) and (b) probe the reassembly occupancy
     // (stays ≈ aggregate BDP because the total-in-flight FC bounds the sender).
-    let reasm_bdp_on = std::env::var("RWM_REASM_BDP").is_ok() || fmtcp;
+    let reasm_bdp_on = crate::config::env_flag("RWM_REASM_BDP", false) || fmtcp;
 
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
@@ -1508,7 +1508,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // frontier sat on p and how p was ultimately resolved: DECODE (a repair
         // solved it, no round-trip) vs SOURCE (a retransmitted source symbol
         // arrived, a ~1-RTT ARQ round). Off unless RWM_FDIAG is set.
-        let fdiag_on = std::env::var("RWM_FDIAG").is_ok();
+        let fdiag_on = crate::config::env_flag("RWM_FDIAG", false);
         // Current frontier hole being tracked: (seq, stall_start, saw_buffered_
         // equation_during_stall, source_arrived_for_it). None = not stalled.
         let mut fdiag_hole: Option<(u64, Instant, bool, bool)> = None;
@@ -1764,7 +1764,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     );
                     if !deficits.is_empty() || $force {
                         last_deficit_send = Instant::now();
-                        if std::env::var("RWM_TRACE").is_ok() {
+                        if crate::config::env_flag("RWM_TRACE", false) {
                             let total: u32 = deficits.iter().map(|(_, d)| d).sum();
                             let withheld = raw_deficits.len().saturating_sub(deficits.len());
                             eprintln!(
@@ -3314,8 +3314,8 @@ async fn run_window_sender(
     // with the ECF completion-time guard (Y. Lim, E. Nahum, D. Towsley,
     // R. Gibbens, ACM CoNEXT 2017).  It REUSES the FMTCP total-in-flight FC +
     // per-path BDP cap + decode-on-total base, so RWM_DAPS implies that base.
-    let daps = std::env::var("RWM_DAPS").is_ok() && generation;
-    let fmtcp = (std::env::var("RWM_FMTCP").is_ok() || daps) && generation;
+    let daps = crate::config::env_flag("RWM_DAPS", false) && generation;
+    let fmtcp = (crate::config::env_flag("RWM_FMTCP", false) || daps) && generation;
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
     // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
@@ -3349,16 +3349,14 @@ async fn run_window_sender(
     } else {
         0.0
     };
-    let daps_pace_on: bool =
-        daps && std::env::var("RWM_DAPS_PACE").ok().map_or(true, |v| v != "0");
+    let daps_pace_on: bool = daps && crate::config::env_flag("RWM_DAPS_PACE", true);
     // feat/pace-all-traffic: route the CODED/REPAIR emission (proactive, filling,
     // deficit top-up, inline) through the SAME per-path BtlBw pacer as source, so
     // TOTAL per-path emission ≤ BtlBw_i and no standing queue builds (the residual
     // the source-only pacer left).  Extends the DAPS/pace gate — ON by default
     // whenever per-path pacing is on; RWM_PACE_ALL=0 reproduces the source-only
     // pacer (the same-binary A/B baseline).  Shipped non-DAPS default untouched.
-    let pace_all_on: bool =
-        daps_pace_on && std::env::var("RWM_PACE_ALL").ok().map_or(true, |v| v != "0");
+    let pace_all_on: bool = daps_pace_on && crate::config::env_flag("RWM_PACE_ALL", true);
     // feat/source-backpressure: bound the SOURCE emission by the per-path BtlBw
     // bucket too.  Pace-all held the REPAIR when both buckets were dry, but the
     // SOURCE placement gate still SPILLED to the fast path unconditionally and
@@ -3382,8 +3380,7 @@ async fn run_window_sender(
     // recovery ceiling.  Kept as a gated, unit-tested, oracle-modelled knob for
     // the scientific record; shipped DEFAULT (RWM_SRC_BP unset/0) is the spill
     // baseline — byte-identical to pace-all (the gate computes nothing when off).
-    let src_bp_on: bool =
-        daps_pace_on && std::env::var("RWM_SRC_BP").ok().map_or(false, |v| v != "0" && v != "");
+    let src_bp_on: bool = daps_pace_on && crate::config::env_flag("RWM_SRC_BP", false);
     // feat/per-path-estimator: drive per-path delivered-rate attribution.
     // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
     // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
@@ -3392,17 +3389,14 @@ async fn run_window_sender(
     // is generation-mode-only (it keys on the source_path_map + OOO acks) and
     // is a NO-OP for the shipped non-generation default (byte-identical).
     let per_path_est: bool =
-        generation && (daps || std::env::var("RWM_PER_PATH_EST").is_ok());
+        generation && (daps || crate::config::env_flag("RWM_PER_PATH_EST", false));
     // feat/btlbw-rate-sample: BBR-correct per-path delivery-rate sampling
     // (send-interval Δt, ack-aggregation robust).  ON by default whenever the
     // per-path estimator runs; RWM_RATE_SAMPLE=0 reproduces the legacy
     // ack-interval anchor (same-binary A/B).  When on, each SOURCE seq is
     // snapshotted at send (`on_src_sent`) and its ack drives `on_src_delivered_seq`
     // (a send-interval rate sample) instead of the legacy `on_src_delivered`.
-    let rate_sample: bool = per_path_est
-        && std::env::var("RWM_RATE_SAMPLE")
-            .ok()
-            .map_or(true, |v| v != "0" && !v.is_empty());
+    let rate_sample: bool = per_path_est && crate::config::env_flag("RWM_RATE_SAMPLE", true);
     // feat/daps-readahead-depth: bound each non-fastest path's DAPS read-ahead
     // DEPTH to its skew-depth `skew_j·BtlBw_j` (queue delay ≤ skew ⇒ the slow
     // segment arrives in-order-aligned, never later than the fast path would
@@ -3419,10 +3413,7 @@ async fn run_window_sender(
     // ON by default under DAPS+rate-sample; RWM_DAPS_DEPTH=0 reproduces the
     // current unbounded read-ahead (the same-binary A/B baseline).  Shipped
     // non-DAPS default byte-identical (gated on rate_sample ⇒ generation && DAPS).
-    let daps_depth_on: bool = rate_sample
-        && std::env::var("RWM_DAPS_DEPTH")
-            .ok()
-            .map_or(true, |v| v != "0" && !v.is_empty());
+    let daps_depth_on: bool = rate_sample && crate::config::env_flag("RWM_DAPS_DEPTH", true);
     // App-limited (BBR): the source pipeline was starved (idle gap) rather than
     // cwnd/pace-limited when a symbol was sent — such a sample underestimates
     // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
@@ -3547,7 +3538,7 @@ async fn run_window_sender(
     // coded bucket uses; the source now shares it. A small headroom lets the
     // rate ramp without the 1.5× overshoot that itself overruns the datagram
     // path. Env-gated (RWM_CC_PACE) so the A/B baseline is byte-identical.
-    let cc_pace = std::env::var("RWM_CC_PACE").is_ok();
+    let cc_pace = crate::config::env_flag("RWM_CC_PACE", false);
     let cc_pace_headroom: f64 = std::env::var("RWM_CC_PACE_HR")
         .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.1).clamp(1.0, 2.0);
     // Source pacing token bucket (symbols). Refilled at the link rate each loop
@@ -3636,7 +3627,7 @@ async fn run_window_sender(
     // of every not-yet-in-order-acked generation stay retained for reactive
     // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
     // generation count, default 16; unset = OFF, byte-identical legacy).
-    let ooo_retain = (std::env::var("RWM_OOO_RETAIN").is_ok() || fmtcp) && generation;
+    let ooo_retain = (crate::config::env_flag("RWM_OOO_RETAIN", false) || fmtcp) && generation;
     let ooo_gens: usize = std::env::var("RWM_OOO_RETAIN")
         .ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(16);
     // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
@@ -3849,7 +3840,7 @@ async fn run_window_sender(
     // win: recovery_coded 30k→437, FEC 0.32→0.913 = parity) and (b) a SMALLER G
     // (raises present_at_stall 1→16 via the non-stalling fungible batched path).
     // RWM_INLINE_W tunes W. Systematic-repair path only; shipped path untouched.
-    let inline_repair = systematic && std::env::var("RWM_INLINE_REPAIR").is_ok();
+    let inline_repair = systematic && crate::config::env_flag("RWM_INLINE_REPAIR", false);
     // ── Proactive-repair pacer (RWM_PROACTIVE_PACER) — present-at-stall ───────
     // A DEDICATED proactive-repair emission on the GENERATION grid, decoupled
     // from BOTH source availability and the ack-clock `target`. For each
@@ -3869,7 +3860,7 @@ async fn run_window_sender(
     // reactive deficit (RWM_REACT_CAP + RWM_REPAIR_WAIT) stays the bounded
     // fallback for holes the proactive repair still misses. Systematic only;
     // shipped path untouched.
-    let proactive_pacer = systematic && std::env::var("RWM_PROACTIVE_PACER").is_ok();
+    let proactive_pacer = systematic && crate::config::env_flag("RWM_PROACTIVE_PACER", false);
     // ── Cross-path repair placement (RWM_XPATH_REPAIR) — the C8 realization ────
     // Route proactive (and deficit) REPAIR to the max-spare-capacity path (the
     // underutilized path — the slow path once the fast path is source-saturated)
@@ -3884,7 +3875,7 @@ async fn run_window_sender(
     // FMTCP forces fungible cross-path repair placement: a fast-path hole is
     // covered by repair already in flight on the SLOW (spare) path, so no block
     // waits on a specific slow-path symbol (the FMTCP fungibility escape).
-    let xpath_repair = generation && (std::env::var("RWM_XPATH_REPAIR").is_ok() || fmtcp);
+    let xpath_repair = generation && (crate::config::env_flag("RWM_XPATH_REPAIR", false) || fmtcp);
     let inline_w: u64 = std::env::var("RWM_INLINE_W")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -4497,7 +4488,7 @@ async fn run_window_sender(
     // ack-clocked pacing rate vs the link, cwnd/in_flight vs BDP, and the
     // source/coded send rates. Gated on the RWM_DIAG env so the hot path is
     // untouched when off.
-    let diag_on = std::env::var("RWM_DIAG").is_ok();
+    let diag_on = crate::config::env_flag("RWM_DIAG", false);
     // Transport-ceiling fix (generation mode): bound the in-flight (unacked)
     // symbols to ~BDP instead of the fixed store_max = G·(M+1). The oversized
     // store_max is decoupled from the pipe (14× BDP at C2), so unpaced source
@@ -4547,7 +4538,7 @@ async fn run_window_sender(
     // retention bound govern coded emission (both already bound the datagram
     // buffer), so proactive coverage always completes and small generations —
     // which keep the store near BDP and avoid the bufferbloat stall — work.
-    let coded_src_clock = std::env::var("RWM_CODED_SRC").is_ok();
+    let coded_src_clock = crate::config::env_flag("RWM_CODED_SRC", false);
     // PURE-PROACTIVE demonstrator (proactive-FEC-vs-ARQ crossover, directive #4):
     // when set, DISABLE the deficit-driven reactive recovery loop entirely. All
     // recovery then comes from the UPFRONT proactive per-generation budget
@@ -4559,7 +4550,7 @@ async fn run_window_sender(
     // on arrival, does proactive FEC beat ARQ at high RTT? Requires r sized to
     // cover the per-generation loss tail — a generation that loses more than its
     // budget never decodes (the object DNFs), which is itself the honest result.
-    let no_reactive = std::env::var("RWM_NO_REACTIVE").is_ok();
+    let no_reactive = crate::config::env_flag("RWM_NO_REACTIVE", false);
     let diag_start_us = now_us();
     let mut diag_last_us = now_us();
     let mut diag_last_ack: u64 = 0;
@@ -4868,7 +4859,7 @@ async fn run_window_sender(
         // (∝-goodput striping via place_symbol; fungible cross-path, no per-seq
         // ARQ). This is the mechanism that turns the serialized stop-and-wait
         // into a pipelined transfer.
-        if generation && std::env::var("RWM_TRACE").is_ok() {
+        if generation && crate::config::env_flag("RWM_TRACE", false) {
             let now = now_us();
             if now.saturating_sub(gen_trace_last_us) > 200_000 {
                 gen_trace_last_us = now;
@@ -4886,7 +4877,7 @@ async fn run_window_sender(
         // repair emitted PROACTIVELY (upfront, no round-trip) vs REACTIVELY
         // (deficit-driven, one round-trip). Cumulative over the transfer. A high
         // proactive fraction proves Mode B recovers holes from upfront repair.
-        if generation && std::env::var("RWM_PFRAC").is_ok() {
+        if generation && crate::config::env_flag("RWM_PFRAC", false) {
             let now = now_us();
             if now.saturating_sub(pfrac_last_us) > 500_000 {
                 pfrac_last_us = now;
