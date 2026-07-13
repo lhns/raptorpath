@@ -1139,6 +1139,27 @@ impl CopaState {
     ///     0.08·cwnd floor keeps drain progress alive before a BtlBw
     ///     estimate exists.
     fn wire_update_cwnd(&mut self, c: f64, above: bool, wire_dq: Option<f64>) -> f64 {
+        let next = self.wire_update_cwnd_uncapped(c, above, wire_dq);
+        // Coupling cap (MEASURED at the L1 c2 smoke, v1/v2 of this law):
+        // Copa's fixed point is cwnd* = BDP + 1/δ. Once cwnd exceeds the
+        // sender's outstanding store cap, it is DECOUPLED from the wire —
+        // the delay signal cannot punish further growth (the queue no
+        // longer grows with cwnd) and the jitter-clamped d_q keeps voting
+        // "up", so cwnd ratchets to MAX_CWND and the burst tail-drops the
+        // path qdisc (cwnd 4 000–7 800 observed vs fixed point ≈ 300).
+        // Cap at BDP + 2/δ — the fixed point plus one dither amplitude
+        // (the up phase still probes a full base step past equilibrium).
+        // max_bw's windowed-MAX under-reads only app-limited flows, and an
+        // under-read cap is still > BDP at Bulk's 1/δ (the pipe stays
+        // fillable and the samples can read the true rate back up — not
+        // the §12.11 circular-cap case, which capped AT the anchor).
+        match self.bdp_anchor() {
+            Some(bdp) => next.min(bdp + 2.0 / self.delta),
+            None => next,
+        }
+    }
+
+    fn wire_update_cwnd_uncapped(&mut self, c: f64, above: bool, wire_dq: Option<f64>) -> f64 {
         if self.ramping {
             if above {
                 // Ramp exit: same gentle ×0.92 first step as the legacy /
@@ -4609,22 +4630,23 @@ mod tests {
         let mut path = PathState::new(0, clock.clone());
         path.force_wire_for_test(0.005);
 
-        // Ramp on a clean 10 ms floor, then exit the ramp with a moderate
-        // standing-queue window (40 ms — well above the jitter the square
-        // transition charges into the headroom estimators, but not so large
-        // that the window-jitter EWMA masks the later down-phase signal).
+        // Drive the PURE law via on_delivery_signal (no delivery samples ⇒
+        // no BtlBw anchor ⇒ the coupling cap stays out of the picture —
+        // covered by its own test below). Ramp on a clean 10 ms floor, then
+        // exit the ramp with a moderate standing queue (40 ms — well above
+        // the jitter the square transition charges into the headroom
+        // estimators).
         for _ in 0..10 {
             path.record_rtt_sample(millis(10));
             clock.advance(millis(15));
-            let c = path.cwnd;
-            path.on_ack(c);
+            path.on_delivery_signal();
         }
         assert!(path.cwnd > 100, "ramp must have grown: {}", path.cwnd);
         for _ in 0..4 {
             path.record_rtt_sample(millis(40)); // rate ≫ 1/(δ·dq) at this cwnd
         }
         clock.advance(millis(60));
-        path.on_ack(4);
+        path.on_delivery_signal();
         assert!(!path.in_slow_start, "queue evidence must end the ramp");
 
         // Steady state, clean floor again: base up-step is 1/δ = 200; the
@@ -4635,39 +4657,68 @@ mod tests {
         for _ in 0..3 {
             path.record_rtt_sample(millis(10));
             clock.advance(millis(400)); // > srtt (spiked EWMA) → update due
-            path.on_ack(4);
+            path.on_delivery_signal();
             cs.push(path.cwnd);
         }
         let step1 = cs[1] - cs[0];
         let step2 = cs[2] - cs[1];
         let step3 = cs[3] - cs[2];
         assert!(
-            step1 >= 190 || step1 as f64 >= cs[0] as f64 * 0.95,
-            "bulk-δ base step must be ~1/δ = 200 (or cwnd-capped): {cs:?}"
+            step1 >= 190,
+            "bulk-δ base step must be ~1/δ = 200: {cs:?}"
         );
         assert!(
             step2 <= step1 + 2,
             "velocity must NOT double before the 3-update streak: {cs:?}"
         );
         assert!(
-            step3 >= 2 * step1 - 2 || step3 as f64 >= cs[2] as f64 * 0.95,
+            step3 >= 2 * step1 - 2,
             "3-update persistent direction must double the velocity: {cs:?}"
         );
 
-        // Down direction: the drain per update is capped at
-        // max(measured queue μ̂·d_q, 0.08·cwnd) — cwnd falls, but never
-        // collapses (the pipe itself is not drained).
+        // Down direction: one v/δ step down (velocity resets on the flip),
+        // never a collapse.
         let pre = path.cwnd;
         for _ in 0..4 {
             path.record_rtt_sample(millis(60)); // real queue: dq ≈ 50 ms
         }
         clock.advance(millis(400));
-        path.on_ack(4);
+        path.on_delivery_signal();
         let post = path.cwnd;
         assert!(post < pre, "above-target must step down: {pre}->{post}");
         assert!(
-            post as f64 >= pre as f64 * (1.0 - 2.0 * (1.0 - BACKOFF_MULT)),
-            "drain must be queue-capped, not a collapse: {pre}->{post}"
+            post + 210 >= pre,
+            "a single down move is one v/δ step: {pre}->{post}"
+        );
+    }
+
+    #[test]
+    fn wire_coupling_cap_bounds_cwnd_at_bdp_plus_two_over_delta() {
+        // Once cwnd exceeds the sender's outstanding store, the delay signal
+        // is decoupled and a jitter-clamped d_q votes "up" forever (measured
+        // v1/v2 ratchet to MAX_CWND). The coupling cap bounds cwnd at the
+        // Copa fixed point plus one dither amplitude: BDP + 2/δ.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+        // 25 clean-floor updates with a live delivery rate: μ̂ ≈ 50/15 ms ≈
+        // 3 333 sym/s, RTprop 10 ms ⇒ BDP ≈ 33; cap ≈ 33 + 400 = 433.
+        for _ in 0..25 {
+            path.record_rtt_sample(millis(10));
+            clock.advance(millis(15));
+            path.on_ack(50);
+        }
+        let bdp = path.copa_bdp_anchor().expect("anchor must be warm");
+        let cap = bdp + 2.0 / 0.005;
+        assert!(
+            (path.cwnd as f64) <= cap + 1.0,
+            "cwnd must stay coupled: cwnd={} cap={cap:.0} (bdp={bdp:.0})",
+            path.cwnd
+        );
+        assert!(
+            path.cwnd > PathState::MIN_CWND,
+            "the cap must not collapse the window: {}",
+            path.cwnd
         );
     }
 
