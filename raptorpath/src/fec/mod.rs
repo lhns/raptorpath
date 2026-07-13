@@ -28,6 +28,8 @@ pub use stream::{FecStream, RepairStream};
 pub use window_traits::{WindowEncoder, WindowDecoder};
 pub use rlc_window::{RlcWindowEncoder, RlcWindowDecoder};
 pub use generation::{GenerationDecoder, GenerationEncoder};
+#[doc(hidden)]
+pub use generation::reference;
 pub use mettle_window::{MettleWindowEncoder, MettleWindowDecoder};
 pub use raptorq_backend::{RaptorqEncoder, RaptorqDecoder};
 pub use streaming::{StreamingEncoder, StreamingDecoder, StreamingParams};

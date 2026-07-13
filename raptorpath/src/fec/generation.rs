@@ -613,7 +613,7 @@ impl WindowEncoder for GenerationEncoder {
 }
 
 // ===========================================================================
-// Dense generation decoder — the FAST decode path for generation coding.
+// Sparse-aware generation decoder — the FAST decode path for generation coding.
 // ===========================================================================
 //
 // WHY THIS EXISTS.  The generation *encoder* above produces RLC-repair symbols
@@ -626,24 +626,54 @@ impl WindowEncoder for GenerationEncoder {
 // multipath had no headroom to aggregate (goal-gate "Generation Coding": C8 =
 // 10.97 Mbit/s, aggregation factor 1.00 — DECODE-BOUND, not network-bound).
 //
-// THIS decoder is dense and per-generation.  Every generation-coded symbol's
-// coefficients lie inside ONE fixed generation span `[anchor, anchor+K_G)`, so a
-// generation is a self-contained K_G×K_G system: we keep a DENSE coefficient row
-// (`Vec<u8>` of length K_G, contiguous) per pivot and run Gauss–Jordan
-// elimination over GF(256) using the SIMD `mul_acc_slice` kernel (the same kernel
-// the encoder uses).  Reduced row-echelon is maintained incrementally, so when a
-// generation reaches rank K_G every source is already isolated (identity rows)
-// and delivered in one shot — no cascade, no back-substitution pass.  Decode is
-// per-generation independent and out-of-order: a later generation decodes the
-// instant it has K_G independent symbols, regardless of earlier ones.
+// THE COST MODEL (goal-gate "Decode-CPU Ceiling").  The previous dense decoder
+// (kept verbatim in `reference` below) materialized EVERY known source as a
+// full-width unit pivot row and reduced every incoming row against ALL of them
+// with fused (G+S)-byte SIMD ops: O(G·(G+S)) per row even when the row's only
+// job was to eliminate already-known sources.  In systematic mode — where G−k
+// of a generation's DoF arrive as raw source and only k ≈ ε·G repair rows carry
+// new information — that turned an O(k·G·S + k³) problem into O(G²·S)-class
+// work (~90 ms CPU per 384-symbol generation ≈ 4 000 sym/s ≈ 39 Mbit/s/core on
+// the L1 VM), which bound the whole generation transport at ~34 Mbit/s.
+//
+// THIS decoder is sparse-aware and per-generation:
+//   • KNOWN sources never enter the matrix.  A generation slot keeps a `known`
+//     bitmap; an incoming row's known columns are eliminated PAYLOAD-ONLY
+//     (S bytes per known column, against `recovered`) instead of via fused
+//     (G+S)-byte unit-row ops — and slot creation stores NO payload copies.
+//   • Only CODED rows are matrix rows (`pivots`, ≤ k + deficit extras in
+//     systematic mode), kept in reduced row-echelon form over the non-known
+//     columns exactly as before, using the same fused-row SIMD elimination.
+//   • A pivot row that reduces to a UNIT row is delivered immediately and
+//     CONVERTED to a `known` column (dropped from the matrix), so the active
+//     system stays k×k.  Completion is `known_count == width` — the moment the
+//     last column is known the whole generation has been delivered, with no
+//     separate full-rank back-substitution pass (the RREF invariant makes the
+//     final sweep deliver every remaining row; see `insert_equation`).
+//   • A generation whose span is FULLY recovered before its first repair
+//     arrives (k = 0, the common case at low ε) never creates a matrix at all:
+//     the repair is recognized as redundant in O(G) with zero GF work.
+// Per generation the cost is O(k·G·S + k²·(G+S)): the irreducible payload-only
+// elimination of the known mass from each of ~k dense repair rows, plus the
+// k×k active elimination.  In coded-only mode (no raw source on the wire)
+// nothing is ever known, every row is a coded pivot, and the arithmetic
+// degenerates to exactly the previous dense decoder's O(G²·(G+S)) — that mode's
+// cost is information-theoretic (all G DoF arrive dense), not implementation.
+//
+// DELIVERED OUTPUT is the same (seq, payload) SET with identical bytes as the
+// reference decoder on any consistent symbol stream (asserted by the
+// old-vs-new differential test below); the only observable difference is the
+// ORDER of seqs *within* one `add_symbol` return on the call that completes a
+// generation (incremental sweep order vs the old ascending full-rank sweep).
+// Every consumer keys on seq (reassembly/reorder buffers), so ordering within
+// a call is semantically inert.
 
-/// One reduced pivot row of a generation's Gauss–Jordan system, stored as ONE
-/// contiguous buffer `[coeffs (width bytes) | data (symbol_size bytes)]`.  Fusing
-/// the coefficient row and the payload row into a single allocation lets a single
-/// SIMD `mul_acc_slice` eliminate BOTH in one call — halving the per-call table-
-/// build + dispatch overhead that dominates the O(W²) inner loop.  After
-/// normalization the pivot column holds 1 and, by the RREF invariant, every OTHER
-/// pivot column holds 0.
+/// One reduced CODED pivot row of a generation's system, stored as ONE
+/// contiguous buffer `[coeffs (width bytes) | data (symbol_size bytes)]`.
+/// Fusing the coefficient row and the payload row into a single allocation lets
+/// a single SIMD `mul_acc_slice` eliminate BOTH in one call.  After
+/// normalization the pivot column holds 1 and, by the RREF invariant, every
+/// OTHER pivot column (and every `known` column) holds 0.
 type GenRow = Vec<u8>;
 
 /// State of one generation's decode, keyed by `(anchor, width)` — see
@@ -652,16 +682,31 @@ enum GenSlot {
     /// Still accumulating independent degrees of freedom.
     Solving {
         width: usize,
-        /// `pivots[c]` is the reduced row whose pivot column is `c` (or `None`).
+        /// Source-KNOWN columns.  `known[c]` ⇒ the source payload for
+        /// `anchor + c` lives in `GenerationDecoder::recovered` and every
+        /// matrix row is zero at column `c` (incoming rows are reduced
+        /// payload-only against `recovered` before insertion).  Known columns
+        /// are never materialized as matrix rows — this is the sparse-aware
+        /// core: the G−k known DoF cost O(S) each instead of a fused
+        /// (G+S)-byte row op against a stored unit row.
+        known: Vec<bool>,
+        /// Number of `true` entries in `known`.
+        known_count: usize,
+        /// `pivots[c]` is the reduced CODED row whose pivot column is `c`
+        /// (or `None`).  Only coded rows live here (≤ holes + deficit margin
+        /// in systematic mode); a row that becomes UNIT is delivered and
+        /// converted to a `known` column immediately.
         pivots: Vec<Option<GenRow>>,
-        rank: usize,
+        /// Number of `Some` entries in `pivots`.  The generation's rank is
+        /// `known_count + coded_rows`.
+        coded_rows: usize,
     },
     /// Fully decoded and delivered — further coded symbols for it are redundant.
     Done,
 }
 
-/// Dense per-generation RLC decoder.  Drop-in `WindowDecoder` used in generation
-/// mode in place of the sparse `RlcWindowDecoder`.
+/// Sparse-aware per-generation RLC decoder.  Drop-in `WindowDecoder` used in
+/// generation mode in place of the sparse `RlcWindowDecoder`.
 pub struct GenerationDecoder {
     symbol_size: usize,
     /// `(anchor, width)` → decode state.  Keying by BOTH anchor and width (not
@@ -674,17 +719,14 @@ pub struct GenerationDecoder {
     /// source sets; keying by `(anchor, width)` lets them coexist instead of one
     /// resetting/thrashing the other's pivots at the object boundary.
     gens: BTreeMap<(u64, usize), GenSlot>,
-    /// Sources already recovered: seq → payload.  Two jobs: (1) the delivered-seq
-    /// set (its keys) for dedup and `rank_in`; (2) known-source ELIMINATION — when
-    /// a fresh generation is created, every already-recovered source in its span is
-    /// pre-loaded as a unit pivot row, so a coded symbol that introduces only ONE
-    /// new unknown resolves it immediately (the sparse decoder's Step-1 behaviour).
-    /// This is what lets a trickle channel that re-codes overlapping seqs at
-    /// growing widths (e.g. the reverse per-object ACK stream: widths 1,2,3 over
-    /// the same anchor) make progress instead of demanding a full-rank fresh solve
-    /// each width.  For the common large-object case, generation spans are
-    /// disjoint, so nothing is ever pre-known and this costs nothing.  Pruned on
-    /// `advance`.
+    /// Sources already recovered: seq → payload.  Three jobs: (1) the
+    /// delivered-seq set (its keys) for dedup and `rank_in`; (2) known-source
+    /// ELIMINATION — a fresh generation slot marks every already-recovered
+    /// source in its span `known`, and incoming rows are reduced against these
+    /// payloads directly (payload-only, no unit pivot rows); (3) the payload
+    /// store those eliminations read from — which is why `advance` never prunes
+    /// a seq still covered by a live Solving slot (the old dense decoder held
+    /// private copies in its unit rows; this one holds none).
     recovered: BTreeMap<u64, Vec<u8>>,
     /// Wire-symbol dedup: (block_id, payload_id, is_repair).
     seen: HashSet<(u64, u32, bool)>,
@@ -706,13 +748,13 @@ impl GenerationDecoder {
         }
     }
 
-    /// Feed one fused equation row (`[coeffs (width) | data (symbol_size)]`, pivot
-    /// column at `width`-wide prefix) into a generation's Gauss–Jordan system.
-    /// Returns `(added_rank, delivered)`: `added_rank` is true iff the row
-    /// contributed a new independent degree of freedom (i.e. it was NOT linearly
-    /// dependent on what the generation already knew — the honest "useful" signal,
-    /// counted per rank-add not per generation-completion); `delivered` is the
-    /// whole generation's sources the instant it reaches full rank, else empty.
+    /// Feed one fused equation row (`[coeffs (width) | data (symbol_size)]`)
+    /// into a generation's system.  Returns `(added_rank, delivered)`:
+    /// `added_rank` is true iff the row contributed a new independent degree of
+    /// freedom (the honest "useful" signal, counted per rank-add); `delivered`
+    /// is every source this row's information newly resolved — incrementally
+    /// (unit rows deliver the instant they isolate) AND at completion (the last
+    /// row's sweep delivers the rest; no separate full-rank pass exists).
     fn insert_equation(
         &mut self,
         anchor: u64,
@@ -721,43 +763,60 @@ impl GenerationDecoder {
     ) -> (bool, Vec<(u64, Bytes)>) {
         let ss = self.symbol_size;
         if !self.gens.contains_key(&(anchor, width)) {
-            // Fresh generation: pre-load already-recovered sources in its span as
-            // unit pivot rows (RREF form). Zero-cost when the span is disjoint from
-            // everything recovered so far (the large-object common case).
-            let mut pivots: Vec<Option<GenRow>> = (0..width).map(|_| None).collect();
-            let mut rank = 0usize;
-            for (c, slot) in pivots.iter_mut().enumerate() {
-                if let Some(data) = self.recovered.get(&(anchor + c as u64)) {
-                    let mut prow = vec![0u8; width + ss];
-                    prow[c] = 1;
-                    let n = data.len().min(ss);
-                    prow[width..width + n].copy_from_slice(&data[..n]);
-                    *slot = Some(prow);
-                    rank += 1;
-                }
+            // Fresh generation: mark already-recovered sources in its span as
+            // KNOWN columns (flags only — no payload copies, no unit rows).
+            // k = 0 fast path: a span that is already fully recovered needs no
+            // matrix at all — the row is necessarily dependent (every column
+            // eliminates against a known source), so skip slot creation and
+            // all GF work.  This is the common case at low loss: a complete
+            // generation's proactive repairs cost O(width) each, not O(G·S).
+            let have = self.recovered.range(anchor..anchor + width as u64).count();
+            if have == width {
+                return (false, vec![]);
             }
-            self.gens.insert((anchor, width), GenSlot::Solving { width, pivots, rank });
+            let mut known = vec![false; width];
+            for (&seq, _) in self.recovered.range(anchor..anchor + width as u64) {
+                known[(seq - anchor) as usize] = true;
+            }
+            self.gens.insert(
+                (anchor, width),
+                GenSlot::Solving {
+                    width,
+                    known,
+                    known_count: have,
+                    pivots: (0..width).map(|_| None).collect(),
+                    coded_rows: 0,
+                },
+            );
         }
         let slot = self.gens.get_mut(&(anchor, width)).expect("just inserted or present");
 
-        let (pivots, rank, width) = match slot {
+        let (known, known_count, pivots, coded_rows, width) = match slot {
             // Done ⇒ this generation already delivered; symbol redundant.
             GenSlot::Done => return (false, vec![]),
-            GenSlot::Solving { pivots, rank, width } => (pivots, rank, *width),
+            GenSlot::Solving { known, known_count, pivots, coded_rows, width } => {
+                (known, known_count, pivots, coded_rows, *width)
+            }
         };
 
-        // Forward-reduce the incoming row against existing pivots. Because the
-        // system is in RREF, each pivot row is zero at every other pivot column,
-        // so a single left-to-right pass fully reduces the row against all of
-        // them (an elimination at column `c` can only touch NON-pivot columns).
-        // ONE fused `mul_acc_slice` clears both the coefficient and the payload
-        // halves of the row per pivot.
+        // Forward-reduce the incoming row.  KNOWN columns are eliminated
+        // payload-only against `recovered` (S bytes, the sparse-aware saving);
+        // coded pivot columns use the fused (width+S)-byte row op.  Because the
+        // coded rows are in RREF over the non-known columns (and zero at every
+        // known column), a single left-to-right pass fully reduces the row.
         for c in 0..width {
             let factor = row[c];
             if factor == 0 {
                 continue;
             }
-            if let Some(prow) = &pivots[c] {
+            if known[c] {
+                let src = self
+                    .recovered
+                    .get(&(anchor + c as u64))
+                    .expect("known column ⇒ payload retained while the slot lives");
+                gf256::mul_acc_slice(factor, src, &mut row[width..]);
+                row[c] = 0;
+            } else if let Some(prow) = &pivots[c] {
                 gf256::mul_acc_slice(factor, prow, &mut row);
             }
         }
@@ -774,16 +833,10 @@ impl GenerationDecoder {
             scale_inplace(gf256::inv(lead), &mut row);
         }
 
-        // Gauss–Jordan: eliminate the new pivot column from every existing pivot
-        // row so the RREF invariant is preserved (each pivot column appears in
-        // exactly one row). The new row is already zero at every existing pivot
-        // column, so this never disturbs another row's pivot. Track which rows we
-        // MODIFY: only those (plus the new pivot row) can have newly become UNIT
-        // rows — a single-nonzero-coefficient row whose payload IS its source —
-        // which enables INCREMENTAL delivery of a recovered hole BEFORE the whole
-        // generation reaches full rank. That is the present-at-stall path for a
-        // still-FILLING generation, whose matrix width `G` exceeds its current
-        // fill so it would otherwise never reach full rank to deliver anything.
+        // Gauss–Jordan: eliminate the new pivot column from every existing
+        // coded row so the RREF invariant is preserved.  Track which rows we
+        // MODIFY: only those (plus the new pivot row) can have newly become
+        // UNIT rows.
         let mut touched: Vec<usize> = Vec::new();
         for c in 0..width {
             if c == pcol {
@@ -799,65 +852,60 @@ impl GenerationDecoder {
         }
 
         pivots[pcol] = Some(row);
-        *rank += 1;
+        *coded_rows += 1;
         touched.push(pcol);
 
-        if *rank == width {
-            // Full rank: every column is a pivot, so by RREF each pivot row is the
-            // unit row for its column and its payload half IS the source symbol.
-            let mut out = Vec::with_capacity(width);
-            if let GenSlot::Solving { pivots, .. } =
-                std::mem::replace(slot, GenSlot::Done)
-            {
-                for (c, prow) in pivots.into_iter().enumerate() {
-                    let mut sym = prow.expect("full rank ⇒ every pivot present");
-                    // Keep only the payload half.
-                    sym.drain(..width);
-                    sym.truncate(ss);
-                    let seq = anchor + c as u64;
-                    // Deliver each seq exactly once: a pre-loaded (already
-                    // recovered) source is re-derived here but must not re-deliver.
-                    if self.recovered.insert(seq, sym.clone()).is_none() {
-                        out.push((seq, Bytes::from(sym)));
-                    }
-                }
-            }
-            return (true, out);
-        }
-
-        // Sub-full rank (typically a still-FILLING generation): deliver any pivot
-        // row that is now a UNIT row — its coefficient half is nonzero ONLY at its
-        // pivot column, so its payload half IS the source — and whose seq has not
-        // yet been delivered. Only `touched` rows can newly qualify. The matrix
-        // stays Solving (its rows remain needed for elimination); `recovered`
-        // guards single delivery per seq.
-        let mut pending: Vec<(u64, Vec<u8>)> = Vec::new();
+        // UNIT sweep: a touched row whose coefficient half has a single nonzero
+        // (its own pivot, normalized to 1) IS its column's source.  Deliver it,
+        // mark the column KNOWN, and DROP the row — the matrix stays k×k and the
+        // RREF invariant is untouched (every other row is already zero at a
+        // pivot column).  When the last column turns known the generation is
+        // COMPLETE: by RREF, pivots over ALL remaining free columns force every
+        // remaining row to be unit, so this same sweep delivers the whole tail —
+        // the old dense decoder's full-rank pass, folded into the increment.
+        let mut out: Vec<(u64, Bytes)> = Vec::new();
         for &c in &touched {
-            if let Some(prow) = &pivots[c] {
-                if prow[..width].iter().filter(|&&x| x != 0).count() == 1 {
-                    let seq = anchor + c as u64;
-                    if !self.recovered.contains_key(&seq) {
-                        let mut sym = prow[width..].to_vec();
-                        sym.truncate(ss);
-                        pending.push((seq, sym));
+            let Some(prow) = pivots[c].as_ref() else { continue };
+            // Early-exit nonzero count: dense rows bail at the second nonzero.
+            let mut nz = 0u32;
+            for &x in &prow[..width] {
+                if x != 0 {
+                    nz += 1;
+                    if nz > 1 {
+                        break;
                     }
                 }
             }
-        }
-        let mut out = Vec::with_capacity(pending.len());
-        for (seq, sym) in pending {
-            if self.recovered.insert(seq, sym.clone()).is_none() {
+            if nz != 1 {
+                continue;
+            }
+            let mut sym = pivots[c].take().expect("checked Some above");
+            *coded_rows -= 1;
+            known[c] = true;
+            *known_count += 1;
+            sym.drain(..width);
+            sym.truncate(ss);
+            let seq = anchor + c as u64;
+            // Deliver each seq exactly once (a source another slot/path already
+            // recovered must not re-deliver).
+            if !self.recovered.contains_key(&seq) {
+                self.recovered.insert(seq, sym.clone());
                 out.push((seq, Bytes::from(sym)));
             }
+        }
+
+        if *known_count == width {
+            *slot = GenSlot::Done;
         }
         (true, out)
     }
 
-    /// Inject an already-received RAW source (seq → payload) as a unit pivot into
-    /// EVERY existing Solving generation matrix whose fixed span covers `seq`.
+    /// Inject an already-received RAW source (seq → payload) as a unit equation
+    /// into EVERY existing Solving generation matrix whose fixed span covers
+    /// `seq`.
     ///
     /// WHY THIS EXISTS (feat/fec-recovery-bug — the proactive-FEC-dead bug). A
-    /// generation's decode matrix pre-loads the sources it already knows ONLY at
+    /// generation's decode matrix learns the sources it already knows ONLY at
     /// slot creation (the first repair for that generation). In production, source
     /// and repair symbols INTERLEAVE and reorder, so a generation's own non-lost
     /// sources routinely arrive AFTER its first repair. Without this injection
@@ -873,18 +921,32 @@ impl GenerationDecoder {
     /// coded repair actually recovers holes proactively. If the injection is the
     /// last missing degree of freedom it completes the generation and returns its
     /// remaining holes.
+    ///
+    /// COST (sparse-aware): the injected unit row reduces against nothing (its
+    /// column is free), pivots at `c`, and the elimination touches only the ≤ k
+    /// coded rows with a nonzero at `c` — O(k·S), not the old O(k·(G+S)) plus a
+    /// full-width unit-row insert.  A column that is already `known` is skipped
+    /// before any row is built.
     fn inject_source_into_active_gens(&mut self, seq: u64, data: &[u8]) -> Vec<(u64, Bytes)> {
         let ss = self.symbol_size;
         // Collect covering Solving slots first (avoid aliasing the &mut self used
         // by insert_equation). A source is covered by slot (anchor,width) iff
         // anchor ≤ seq < anchor+width. Widths are small in count, so this is cheap.
+        // Skip slots that already KNOW this column — the unit equation would be
+        // linearly dependent (the old decoder discovered that with a fused row op;
+        // the known bitmap answers it for free).
         let covering: Vec<(u64, usize)> = self
             .gens
             .iter()
             .filter(|(&(anchor, width), slot)| {
-                matches!(slot, GenSlot::Solving { .. })
-                    && anchor <= seq
-                    && seq < anchor + width as u64
+                match slot {
+                    GenSlot::Solving { known, .. } => {
+                        anchor <= seq
+                            && seq < anchor + width as u64
+                            && !known[(seq - anchor) as usize]
+                    }
+                    _ => false,
+                }
             })
             .map(|(&k, _)| k)
             .collect();
@@ -896,7 +958,7 @@ impl GenerationDecoder {
             let n = data.len().min(ss);
             row[width..width + n].copy_from_slice(&data[..n]);
             // insert_equation reduces the unit row against the matrix: if column
-            // c is already known it is linearly dependent (no-op); otherwise it
+            // c is already resolved it is linearly dependent (no-op); otherwise it
             // becomes the pivot for c, shrinking the deficit by one.
             let (_added, delivered) = self.insert_equation(anchor, width, row);
             out.extend(delivered);
@@ -911,16 +973,16 @@ impl GenerationDecoder {
     /// inline trailing-BLOCK (width W, the in-flight proactive channel) and the
     /// wide GENERATION (width G, the reactive deficit loop's unit). A hole
     /// recovered by a block repair lands in `recovered`, but the covering G-matrix
-    /// (created later, by a deficit repair) is only pre-loaded with `recovered`
-    /// AT CREATION and never after — so a hole recovered by the block AFTER the
-    /// G-matrix exists stays an unknown in it, `rank_in(G)` under-counts, the
-    /// receiver OVER-reports the generation's deficit, and the sender FLOODS
-    /// redundant reactive repair (MEASURED recovery_coded 30k→94k, pfrac
-    /// collapse). Feeding each block-recovered hole into the G-matrix (as a unit
-    /// pivot) keeps every matrix's rank consistent, so the deficit reflects the
-    /// true residual and the reactive flood is eliminated. A worklist handles the
-    /// transitive case (a G-matrix a block completion finishes delivers its own
-    /// holes, propagated in turn); each seq is delivered at most once (guarded by
+    /// (created later, by a deficit repair) only learns `recovered` AT CREATION
+    /// and never after — so a hole recovered by the block AFTER the G-matrix
+    /// exists stays an unknown in it, `rank_in(G)` under-counts, the receiver
+    /// OVER-reports the generation's deficit, and the sender FLOODS redundant
+    /// reactive repair (MEASURED recovery_coded 30k→94k, pfrac collapse). Feeding
+    /// each block-recovered hole into the G-matrix (as a unit equation) keeps
+    /// every matrix's rank consistent, so the deficit reflects the true residual
+    /// and the reactive flood is eliminated. A worklist handles the transitive
+    /// case (a G-matrix a block completion finishes delivers its own holes,
+    /// propagated in turn); each seq is delivered at most once (guarded by
     /// `recovered`), so it terminates.
     fn propagate(&mut self, initial: Vec<(u64, Bytes)>) -> Vec<(u64, Bytes)> {
         let mut all: Vec<(u64, Bytes)> = Vec::new();
@@ -934,12 +996,6 @@ impl GenerationDecoder {
         }
         all
     }
-}
-
-/// Recover a fused row's `width` (coefficient count) given the payload size.
-#[inline]
-fn width_of(row: &[u8], symbol_size: usize) -> usize {
-    row.len().saturating_sub(symbol_size)
 }
 
 /// Scale a byte slice in place by a GF(256) scalar. Scalar path is used only for
@@ -980,9 +1036,9 @@ impl WindowDecoder for GenerationDecoder {
             self.recovered.insert(seq, data.clone());
             // feat/fec-recovery-bug FIX: a source that arrives AFTER a covering
             // generation's matrix was created must be injected into that live
-            // matrix as a unit pivot — otherwise the matrix keeps treating it as
-            // an unknown, inflating the reported deficit and wasting coded repair
-            // (the proactive-FEC-dead bug). Inject now; if it completes a
+            // matrix as a unit equation — otherwise the matrix keeps treating it
+            // as an unknown, inflating the reported deficit and wasting coded
+            // repair (the proactive-FEC-dead bug). Inject now; if it completes a
             // generation, deliver that generation's remaining holes too.
             let mut out = vec![(seq, Bytes::from(data.clone()))];
             let delivered = self.inject_source_into_active_gens(seq, &data);
@@ -1056,7 +1112,22 @@ impl WindowDecoder for GenerationDecoder {
         for k in drop {
             self.gens.remove(&k);
         }
-        let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&k, _)| k).collect();
+        // Prune recovered payloads below the frontier — EXCEPT the span of any
+        // surviving Solving slot: its `known` columns eliminate against these
+        // payloads (the old dense decoder held private copies inside its unit
+        // pivot rows; this decoder holds none, so the store must outlive the
+        // slot).  Memory is the same order either way — one payload per known
+        // column per live span — and a live slot's span is bounded (slots drop
+        // above the moment their whole span passes the frontier).
+        let live_floor = self
+            .gens
+            .iter()
+            .filter(|(_, slot)| matches!(slot, GenSlot::Solving { .. }))
+            .map(|(&(anchor, _), _)| anchor)
+            .min()
+            .unwrap_or(u64::MAX);
+        let prune_to = oldest_seq.min(live_floor);
+        let old: Vec<u64> = self.recovered.range(..prune_to).map(|(&k, _)| k).collect();
         for s in old {
             self.recovered.remove(&s);
         }
@@ -1067,10 +1138,13 @@ impl WindowDecoder for GenerationDecoder {
         // Deficit feedback asks about the generation of exactly `count` = K_g.
         match self.gens.get(&(start, count as usize)) {
             Some(GenSlot::Done) => count,
-            Some(GenSlot::Solving { rank, .. }) => *rank as u64,
+            Some(GenSlot::Solving { known_count, coded_rows, .. }) => {
+                (*known_count + *coded_rows) as u64
+            }
             None => {
                 // No matrix yet: count any already-recovered sources in the span
-                // (they pre-load the generation the moment its first coded arrives).
+                // (they mark the generation `known` the moment its first coded
+                // symbol arrives).
                 let end = start.saturating_add(count);
                 self.recovered.range(start..end).count() as u64
             }
@@ -1080,14 +1154,15 @@ impl WindowDecoder for GenerationDecoder {
     fn frontier_probe(&self, frontier: u64, horizon: u64) -> (u64, u64) {
         // Proactive-frontier diagnosis (RWM_FDIAG, `present_at_stall`). Span is
         // contiguous in seq space, so holes = span_len − recovered_in_span.
-        // `buffered` = coded degrees of freedom already covering the span: pivot
-        // rows in any Solving matrix whose pivot column maps to a seq in the span
-        // that is NOT yet a recovered source. After the raw sources are injected
-        // as unit pivots, a coded equation reduces to a pivot at the FIRST free
-        // (hole) column — so a pivot at a hole column is a coded DoF that has
-        // advanced into hole territory and will complete the hole once enough
-        // accumulate. `buffered > 0` at a stall ⇒ proactive repair is PRESENT and
-        // the hole will decode without a reactive round-trip (the in-flight win).
+        // `buffered` = coded degrees of freedom already covering the span: coded
+        // pivot rows in any Solving matrix whose pivot column maps to a seq in
+        // the span that is NOT yet a recovered source.  (Known columns ARE
+        // recovered sources, so — exactly as in the old dense decoder, where
+        // unit pivots were filtered by the `recovered` check — only coded rows
+        // count.)  A pivot at a hole column is a coded DoF that has advanced
+        // into hole territory and will complete the hole once enough accumulate.
+        // `buffered > 0` at a stall ⇒ proactive repair is PRESENT and the hole
+        // will decode without a reactive round-trip (the in-flight win).
         let end = horizon.saturating_add(1);
         if end <= frontier {
             return (0, 0);
@@ -1124,6 +1199,505 @@ impl WindowDecoder for GenerationDecoder {
         self.repairs_useful
     }
 }
+
+
+// ===========================================================================
+// REFERENCE decoder (pre-sparse rewrite) -- differential-test oracle only.
+// ===========================================================================
+
+/// Byte-exact copy of the dense `GenerationDecoder` as of commit 02d240c,
+/// KEPT ONLY as the oracle for the old-vs-new differential test and the
+/// old-vs-new L0 micro-bench (`tests/gen_decode_bench.rs`). Never constructed
+/// by the engine. Do not modify: its value is that it preserves the exact
+/// pre-rewrite behaviour.
+#[doc(hidden)]
+#[allow(dead_code)]
+pub mod reference {
+    use super::*;
+    use std::collections::HashSet;
+
+    type GenRow = Vec<u8>;
+
+    /// State of one generation's decode, keyed by `(anchor, width)` — see
+    /// `RefGenerationDecoder::gens`.
+    enum GenSlot {
+        /// Still accumulating independent degrees of freedom.
+        Solving {
+            width: usize,
+            /// `pivots[c]` is the reduced row whose pivot column is `c` (or `None`).
+            pivots: Vec<Option<GenRow>>,
+            rank: usize,
+        },
+        /// Fully decoded and delivered — further coded symbols for it are redundant.
+        Done,
+    }
+
+    /// Dense per-generation RLC decoder.  Drop-in `WindowDecoder` used in generation
+    /// mode in place of the sparse `RlcWindowDecoder`.
+    pub struct RefGenerationDecoder {
+        symbol_size: usize,
+        /// `(anchor, width)` → decode state.  Keying by BOTH anchor and width (not
+        /// anchor alone) is load-bearing: the object stream reuses the absolute seq
+        /// space across objects, so a single anchor legitimately hosts DIFFERENT
+        /// generations of different K_G at different times — the encoder's fixed
+        /// generation `g` accumulates one object's short tail (coded at that partial
+        /// width once intake goes idle) AND the next object's fill (coded at the full
+        /// width once sealed).  Those are distinct linear systems over different
+        /// source sets; keying by `(anchor, width)` lets them coexist instead of one
+        /// resetting/thrashing the other's pivots at the object boundary.
+        gens: BTreeMap<(u64, usize), GenSlot>,
+        /// Sources already recovered: seq → payload.  Two jobs: (1) the delivered-seq
+        /// set (its keys) for dedup and `rank_in`; (2) known-source ELIMINATION — when
+        /// a fresh generation is created, every already-recovered source in its span is
+        /// pre-loaded as a unit pivot row, so a coded symbol that introduces only ONE
+        /// new unknown resolves it immediately (the sparse decoder's Step-1 behaviour).
+        /// This is what lets a trickle channel that re-codes overlapping seqs at
+        /// growing widths (e.g. the reverse per-object ACK stream: widths 1,2,3 over
+        /// the same anchor) make progress instead of demanding a full-rank fresh solve
+        /// each width.  For the common large-object case, generation spans are
+        /// disjoint, so nothing is ever pre-known and this costs nothing.  Pruned on
+        /// `advance`.
+        recovered: BTreeMap<u64, Vec<u8>>,
+        /// Wire-symbol dedup: (block_id, payload_id, is_repair).
+        seen: HashSet<(u64, u32, bool)>,
+        total_fed: u64,
+        repairs_fed: u64,
+        repairs_useful: u64,
+    }
+
+    impl RefGenerationDecoder {
+        pub fn new(symbol_size: u16) -> Self {
+            Self {
+                symbol_size: symbol_size as usize,
+                gens: BTreeMap::new(),
+                recovered: BTreeMap::new(),
+                seen: HashSet::new(),
+                total_fed: 0,
+                repairs_fed: 0,
+                repairs_useful: 0,
+            }
+        }
+
+        /// Feed one fused equation row (`[coeffs (width) | data (symbol_size)]`, pivot
+        /// column at `width`-wide prefix) into a generation's Gauss–Jordan system.
+        /// Returns `(added_rank, delivered)`: `added_rank` is true iff the row
+        /// contributed a new independent degree of freedom (i.e. it was NOT linearly
+        /// dependent on what the generation already knew — the honest "useful" signal,
+        /// counted per rank-add not per generation-completion); `delivered` is the
+        /// whole generation's sources the instant it reaches full rank, else empty.
+        fn insert_equation(
+            &mut self,
+            anchor: u64,
+            width: usize,
+            mut row: GenRow,
+        ) -> (bool, Vec<(u64, Bytes)>) {
+            let ss = self.symbol_size;
+            if !self.gens.contains_key(&(anchor, width)) {
+                // Fresh generation: pre-load already-recovered sources in its span as
+                // unit pivot rows (RREF form). Zero-cost when the span is disjoint from
+                // everything recovered so far (the large-object common case).
+                let mut pivots: Vec<Option<GenRow>> = (0..width).map(|_| None).collect();
+                let mut rank = 0usize;
+                for (c, slot) in pivots.iter_mut().enumerate() {
+                    if let Some(data) = self.recovered.get(&(anchor + c as u64)) {
+                        let mut prow = vec![0u8; width + ss];
+                        prow[c] = 1;
+                        let n = data.len().min(ss);
+                        prow[width..width + n].copy_from_slice(&data[..n]);
+                        *slot = Some(prow);
+                        rank += 1;
+                    }
+                }
+                self.gens.insert((anchor, width), GenSlot::Solving { width, pivots, rank });
+            }
+            let slot = self.gens.get_mut(&(anchor, width)).expect("just inserted or present");
+
+            let (pivots, rank, width) = match slot {
+                // Done ⇒ this generation already delivered; symbol redundant.
+                GenSlot::Done => return (false, vec![]),
+                GenSlot::Solving { pivots, rank, width } => (pivots, rank, *width),
+            };
+
+            // Forward-reduce the incoming row against existing pivots. Because the
+            // system is in RREF, each pivot row is zero at every other pivot column,
+            // so a single left-to-right pass fully reduces the row against all of
+            // them (an elimination at column `c` can only touch NON-pivot columns).
+            // ONE fused `mul_acc_slice` clears both the coefficient and the payload
+            // halves of the row per pivot.
+            for c in 0..width {
+                let factor = row[c];
+                if factor == 0 {
+                    continue;
+                }
+                if let Some(prow) = &pivots[c] {
+                    gf256::mul_acc_slice(factor, prow, &mut row);
+                }
+            }
+
+            // First surviving nonzero coefficient is the new pivot column.
+            let pcol = match row[..width].iter().position(|&x| x != 0) {
+                Some(c) => c,
+                None => return (false, vec![]), // linearly dependent — no new information
+            };
+
+            // Normalize so the pivot coefficient is 1 (whole fused row at once).
+            let lead = row[pcol];
+            if lead != 1 {
+                scale_inplace(gf256::inv(lead), &mut row);
+            }
+
+            // Gauss–Jordan: eliminate the new pivot column from every existing pivot
+            // row so the RREF invariant is preserved (each pivot column appears in
+            // exactly one row). The new row is already zero at every existing pivot
+            // column, so this never disturbs another row's pivot. Track which rows we
+            // MODIFY: only those (plus the new pivot row) can have newly become UNIT
+            // rows — a single-nonzero-coefficient row whose payload IS its source —
+            // which enables INCREMENTAL delivery of a recovered hole BEFORE the whole
+            // generation reaches full rank. That is the present-at-stall path for a
+            // still-FILLING generation, whose matrix width `G` exceeds its current
+            // fill so it would otherwise never reach full rank to deliver anything.
+            let mut touched: Vec<usize> = Vec::new();
+            for c in 0..width {
+                if c == pcol {
+                    continue;
+                }
+                if let Some(other) = pivots[c].as_mut() {
+                    let f = other[pcol];
+                    if f != 0 {
+                        gf256::mul_acc_slice(f, &row, other);
+                        touched.push(c);
+                    }
+                }
+            }
+
+            pivots[pcol] = Some(row);
+            *rank += 1;
+            touched.push(pcol);
+
+            if *rank == width {
+                // Full rank: every column is a pivot, so by RREF each pivot row is the
+                // unit row for its column and its payload half IS the source symbol.
+                let mut out = Vec::with_capacity(width);
+                if let GenSlot::Solving { pivots, .. } =
+                    std::mem::replace(slot, GenSlot::Done)
+                {
+                    for (c, prow) in pivots.into_iter().enumerate() {
+                        let mut sym = prow.expect("full rank ⇒ every pivot present");
+                        // Keep only the payload half.
+                        sym.drain(..width);
+                        sym.truncate(ss);
+                        let seq = anchor + c as u64;
+                        // Deliver each seq exactly once: a pre-loaded (already
+                        // recovered) source is re-derived here but must not re-deliver.
+                        if self.recovered.insert(seq, sym.clone()).is_none() {
+                            out.push((seq, Bytes::from(sym)));
+                        }
+                    }
+                }
+                return (true, out);
+            }
+
+            // Sub-full rank (typically a still-FILLING generation): deliver any pivot
+            // row that is now a UNIT row — its coefficient half is nonzero ONLY at its
+            // pivot column, so its payload half IS the source — and whose seq has not
+            // yet been delivered. Only `touched` rows can newly qualify. The matrix
+            // stays Solving (its rows remain needed for elimination); `recovered`
+            // guards single delivery per seq.
+            let mut pending: Vec<(u64, Vec<u8>)> = Vec::new();
+            for &c in &touched {
+                if let Some(prow) = &pivots[c] {
+                    if prow[..width].iter().filter(|&&x| x != 0).count() == 1 {
+                        let seq = anchor + c as u64;
+                        if !self.recovered.contains_key(&seq) {
+                            let mut sym = prow[width..].to_vec();
+                            sym.truncate(ss);
+                            pending.push((seq, sym));
+                        }
+                    }
+                }
+            }
+            let mut out = Vec::with_capacity(pending.len());
+            for (seq, sym) in pending {
+                if self.recovered.insert(seq, sym.clone()).is_none() {
+                    out.push((seq, Bytes::from(sym)));
+                }
+            }
+            (true, out)
+        }
+
+        /// Inject an already-received RAW source (seq → payload) as a unit pivot into
+        /// EVERY existing Solving generation matrix whose fixed span covers `seq`.
+        ///
+        /// WHY THIS EXISTS (feat/fec-recovery-bug — the proactive-FEC-dead bug). A
+        /// generation's decode matrix pre-loads the sources it already knows ONLY at
+        /// slot creation (the first repair for that generation). In production, source
+        /// and repair symbols INTERLEAVE and reorder, so a generation's own non-lost
+        /// sources routinely arrive AFTER its first repair. Without this injection
+        /// those late sources land in `recovered` but are invisible to the matrix,
+        /// which then treats them as permanent unknowns: `rank_in` reports a deficit of
+        /// `G − matrix_rank` (inflated by the late-source count, NOT the true hole
+        /// count), the sender floods `G − rank` coded repairs where only `holes` were
+        /// needed, and the surplus repairs merely re-derive already-received sources —
+        /// linearly wasted (the measured repairs_useful ≈ 7 / repairs_fed ≈ 4600). By
+        /// feeding each late source into the live matrix as the unit equation
+        /// `e_c · x = data` (c = seq − anchor), the unknown space shrinks to the real
+        /// holes the instant the source arrives, so the reported deficit == holes and
+        /// coded repair actually recovers holes proactively. If the injection is the
+        /// last missing degree of freedom it completes the generation and returns its
+        /// remaining holes.
+        fn inject_source_into_active_gens(&mut self, seq: u64, data: &[u8]) -> Vec<(u64, Bytes)> {
+            let ss = self.symbol_size;
+            // Collect covering Solving slots first (avoid aliasing the &mut self used
+            // by insert_equation). A source is covered by slot (anchor,width) iff
+            // anchor ≤ seq < anchor+width. Widths are small in count, so this is cheap.
+            let covering: Vec<(u64, usize)> = self
+                .gens
+                .iter()
+                .filter(|(&(anchor, width), slot)| {
+                    matches!(slot, GenSlot::Solving { .. })
+                        && anchor <= seq
+                        && seq < anchor + width as u64
+                })
+                .map(|(&k, _)| k)
+                .collect();
+            let mut out = Vec::new();
+            for (anchor, width) in covering {
+                let c = (seq - anchor) as usize;
+                let mut row = vec![0u8; width + ss];
+                row[c] = 1;
+                let n = data.len().min(ss);
+                row[width..width + n].copy_from_slice(&data[..n]);
+                // insert_equation reduces the unit row against the matrix: if column
+                // c is already known it is linearly dependent (no-op); otherwise it
+                // becomes the pivot for c, shrinking the deficit by one.
+                let (_added, delivered) = self.insert_equation(anchor, width, row);
+                out.extend(delivered);
+            }
+            out
+        }
+
+        /// Transitively propagate just-delivered sources into EVERY other active
+        /// generation matrix, returning all sources delivered along the way.
+        ///
+        /// WHY (goal-gate "Repair In-Flight"). Two coding grids now coexist: the small
+        /// inline trailing-BLOCK (width W, the in-flight proactive channel) and the
+        /// wide GENERATION (width G, the reactive deficit loop's unit). A hole
+        /// recovered by a block repair lands in `recovered`, but the covering G-matrix
+        /// (created later, by a deficit repair) is only pre-loaded with `recovered`
+        /// AT CREATION and never after — so a hole recovered by the block AFTER the
+        /// G-matrix exists stays an unknown in it, `rank_in(G)` under-counts, the
+        /// receiver OVER-reports the generation's deficit, and the sender FLOODS
+        /// redundant reactive repair (MEASURED recovery_coded 30k→94k, pfrac
+        /// collapse). Feeding each block-recovered hole into the G-matrix (as a unit
+        /// pivot) keeps every matrix's rank consistent, so the deficit reflects the
+        /// true residual and the reactive flood is eliminated. A worklist handles the
+        /// transitive case (a G-matrix a block completion finishes delivers its own
+        /// holes, propagated in turn); each seq is delivered at most once (guarded by
+        /// `recovered`), so it terminates.
+        fn propagate(&mut self, initial: Vec<(u64, Bytes)>) -> Vec<(u64, Bytes)> {
+            let mut all: Vec<(u64, Bytes)> = Vec::new();
+            let mut queue: std::collections::VecDeque<(u64, Bytes)> = initial.into_iter().collect();
+            while let Some((seq, data)) = queue.pop_front() {
+                let more = self.inject_source_into_active_gens(seq, &data);
+                all.push((seq, data));
+                for m in more {
+                    queue.push_back(m);
+                }
+            }
+            all
+        }
+    }
+
+    /// Recover a fused row's `width` (coefficient count) given the payload size.
+    #[inline]
+    fn width_of(row: &[u8], symbol_size: usize) -> usize {
+        row.len().saturating_sub(symbol_size)
+    }
+
+    /// Scale a byte slice in place by a GF(256) scalar. Scalar path is used only for
+    /// the O(width) per-pivot normalization, negligible against the O(width²)
+    /// elimination that runs on the SIMD kernel.
+    #[inline]
+    fn scale_inplace(coeff: u8, buf: &mut [u8]) {
+        if coeff == 1 {
+            return;
+        }
+        for b in buf.iter_mut() {
+            *b = gf256::mul(coeff, *b);
+        }
+    }
+
+    impl WindowDecoder for RefGenerationDecoder {
+        fn add_symbol(&mut self, symbol: &WireSymbol) -> Vec<(u64, Bytes)> {
+            if symbol.backend != FecBackend::Rlc {
+                return vec![];
+            }
+            let key = (symbol.block_id, symbol.payload_id, symbol.is_repair);
+            if !self.seen.insert(key) {
+                return vec![];
+            }
+            self.total_fed += 1;
+
+            if !symbol.is_repair {
+                // SYSTEMATIC mode: the raw source rides the wire as PRIMARY. Deliver it
+                // directly (zero decode) and record it so overlapping generations can
+                // eliminate it.
+                let seq = symbol.block_id;
+                if self.recovered.contains_key(&seq) {
+                    return vec![];
+                }
+                let mut data = vec![0u8; self.symbol_size];
+                let copy_len = symbol.data.len().min(self.symbol_size);
+                data[..copy_len].copy_from_slice(&symbol.data[..copy_len]);
+                self.recovered.insert(seq, data.clone());
+                // feat/fec-recovery-bug FIX: a source that arrives AFTER a covering
+                // generation's matrix was created must be injected into that live
+                // matrix as a unit pivot — otherwise the matrix keeps treating it as
+                // an unknown, inflating the reported deficit and wasting coded repair
+                // (the proactive-FEC-dead bug). Inject now; if it completes a
+                // generation, deliver that generation's remaining holes too.
+                let mut out = vec![(seq, Bytes::from(data.clone()))];
+                let delivered = self.inject_source_into_active_gens(seq, &data);
+                out.extend(self.propagate(delivered));
+                return out;
+            }
+
+            if symbol.data.len() < REPAIR_HEADER_SIZE {
+                return vec![];
+            }
+            self.repairs_fed += 1;
+
+            let anchor = u64::from_le_bytes(symbol.data[0..8].try_into().unwrap());
+            let width = u16::from_le_bytes(symbol.data[8..10].try_into().unwrap()) as usize;
+            let wire_index = u32::from_le_bytes(symbol.data[10..14].try_into().unwrap());
+            if width == 0 {
+                return vec![];
+            }
+            // FILLING-generation repair (FILL_FLAG): the sender summed only the
+            // contiguous prefix [anchor, anchor+coded_width), but the matrix width is
+            // the full generation `width` (= G). Read the 2-byte prefix width after
+            // the 14-byte header and zero coefficient columns [coded_width, width).
+            // The real coded-index (the coefficient seed) is the low 31 bits.
+            let (repair_index, coded_width, header_end) = if wire_index & FILL_FLAG != 0 {
+                if symbol.data.len() < REPAIR_HEADER_SIZE + 2 {
+                    return vec![];
+                }
+                let cw = u16::from_le_bytes(
+                    symbol.data[REPAIR_HEADER_SIZE..REPAIR_HEADER_SIZE + 2].try_into().unwrap(),
+                ) as usize;
+                (wire_index & !FILL_FLAG, cw.min(width), REPAIR_HEADER_SIZE + 2)
+            } else {
+                (wire_index, width, REPAIR_HEADER_SIZE)
+            };
+            let coded = &symbol.data[header_end..];
+
+            // Build the fused row: [coeffs (width) | payload (symbol_size)]. For a
+            // filling repair only the first `coded_width` coefficient columns are
+            // populated; the rest stay zero (their seqs were not yet generated when
+            // the sender coded this symbol), keeping the equation consistent while
+            // still living in the full-width (anchor, G) system.
+            let coeffs = generate_window_coefficients(anchor, width as u16, repair_index);
+            let mut row = vec![0u8; width + self.symbol_size];
+            row[..coded_width].copy_from_slice(&coeffs[..coded_width]);
+            let copy_len = coded.len().min(self.symbol_size);
+            row[width..width + copy_len].copy_from_slice(&coded[..copy_len]);
+
+            let (added_rank, recovered) = self.insert_equation(anchor, width, row);
+            // repairs_useful counts repairs that contributed a NEW degree of freedom
+            // (rank-add), the honest per-hole "useful" signal — not per-generation
+            // completions. With the late-source-injection fix the matrix's unknown
+            // space is the real holes, so a useful repair == a hole recovered.
+            if added_rank {
+                self.repairs_useful += 1;
+            }
+            // Propagate any recovered holes into the OTHER coding grid's matrices
+            // (block ↔ generation) so every matrix's rank is consistent and the
+            // reactive deficit does not over-report holes the inline block already
+            // recovered — see `propagate`.
+            self.propagate(recovered)
+        }
+
+        fn advance(&mut self, oldest_seq: u64) {
+            // Drop whole generations that end at or before the retention frontier.
+            let drop: Vec<(u64, usize)> = self
+                .gens
+                .keys()
+                .filter(|&&(anchor, width)| anchor + width as u64 <= oldest_seq)
+                .copied()
+                .collect();
+            for k in drop {
+                self.gens.remove(&k);
+            }
+            let old: Vec<u64> = self.recovered.range(..oldest_seq).map(|(&k, _)| k).collect();
+            for s in old {
+                self.recovered.remove(&s);
+            }
+            self.seen.retain(|(block_id, _, _)| *block_id >= oldest_seq);
+        }
+
+        fn rank_in(&self, start: u64, count: u64) -> u64 {
+            // Deficit feedback asks about the generation of exactly `count` = K_g.
+            match self.gens.get(&(start, count as usize)) {
+                Some(GenSlot::Done) => count,
+                Some(GenSlot::Solving { rank, .. }) => *rank as u64,
+                None => {
+                    // No matrix yet: count any already-recovered sources in the span
+                    // (they pre-load the generation the moment its first coded arrives).
+                    let end = start.saturating_add(count);
+                    self.recovered.range(start..end).count() as u64
+                }
+            }
+        }
+
+        fn frontier_probe(&self, frontier: u64, horizon: u64) -> (u64, u64) {
+            // Proactive-frontier diagnosis (RWM_FDIAG, `present_at_stall`). Span is
+            // contiguous in seq space, so holes = span_len − recovered_in_span.
+            // `buffered` = coded degrees of freedom already covering the span: pivot
+            // rows in any Solving matrix whose pivot column maps to a seq in the span
+            // that is NOT yet a recovered source. After the raw sources are injected
+            // as unit pivots, a coded equation reduces to a pivot at the FIRST free
+            // (hole) column — so a pivot at a hole column is a coded DoF that has
+            // advanced into hole territory and will complete the hole once enough
+            // accumulate. `buffered > 0` at a stall ⇒ proactive repair is PRESENT and
+            // the hole will decode without a reactive round-trip (the in-flight win).
+            let end = horizon.saturating_add(1);
+            if end <= frontier {
+                return (0, 0);
+            }
+            let span = end - frontier;
+            let recovered = self.recovered.range(frontier..end).count() as u64;
+            let holes = span.saturating_sub(recovered);
+            let mut buffered = 0u64;
+            for (&(anchor, width), slot) in &self.gens {
+                if let GenSlot::Solving { pivots, .. } = slot {
+                    if anchor >= end || anchor + width as u64 <= frontier {
+                        continue; // matrix does not overlap the probe span
+                    }
+                    for (c, p) in pivots.iter().enumerate() {
+                        if p.is_some() {
+                            let seq = anchor + c as u64;
+                            if seq >= frontier && seq < end && !self.recovered.contains_key(&seq) {
+                                buffered += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            (holes, buffered)
+        }
+
+        fn total_fed(&self) -> u64 {
+            self.total_fed
+        }
+        fn repairs_fed(&self) -> u64 {
+            self.repairs_fed
+        }
+        fn repairs_useful(&self) -> u64 {
+            self.repairs_useful
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -2131,6 +2705,162 @@ mod tests {
         }
         for seq in 0..g as u64 {
             assert!(delivered.contains(&seq), "seq {seq} not delivered");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Differential test: sparse-aware decoder vs the pre-rewrite reference.
+    // -----------------------------------------------------------------------
+
+    /// The sparse-aware `GenerationDecoder` must deliver EXACTLY the same
+    /// (seq, payload) set as the pre-rewrite dense `reference::RefGenerationDecoder`
+    /// on randomized traces — per `add_symbol` CALL (as a seq-sorted set; the
+    /// intra-call ORDER on a completing call is the one documented divergence),
+    /// with identical `added-rank` accounting (`repairs_useful`), `rank_in`,
+    /// and `total_fed`/`repairs_fed` at every step.  Traces randomize:
+    /// systematic vs coded-only wire, loss, reordering (late sources), FILL_FLAG
+    /// filling repairs, duplicate symbols, deficit top-ups, and `advance`.
+    #[test]
+    fn sparse_decoder_matches_reference_on_random_traces() {
+        use crate::fec::window_traits::WindowDecoder as _;
+
+        let symbol_size = 96u16;
+
+        // SplitMix64 (deterministic, seeds 42 and 7 — the L1 discipline pair).
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+                z ^ (z >> 31)
+            }
+            fn chance(&mut self, p: f64) -> bool {
+                (self.next() as f64 / u64::MAX as f64) < p
+            }
+            fn below(&mut self, n: u64) -> u64 {
+                self.next() % n
+            }
+        }
+
+        for seed in [42u64, 7, 1337, 2026] {
+            let mut rng = Rng(seed);
+            let g = 8 + rng.below(12) as usize; // generation size 8..19
+            let n_gen = 4u64;
+            let systematic = rng.chance(0.6);
+            let eps = 0.05 + (rng.below(20) as f64) / 100.0; // 5..25 % loss
+            let late = 0.15;
+            let r = if systematic { 0.25 } else { 1.0 + 0.25 };
+
+            let mut enc = if systematic {
+                GenerationEncoder::new_systematic(symbol_size, g, n_gen as usize, 0.25)
+            } else {
+                GenerationEncoder::new(symbol_size, g, n_gen as usize, 0.25)
+            };
+            let _ = r;
+
+            // Build the wire trace.
+            let mut trace: Vec<WireSymbol> = Vec::new();
+            for gen in 0..n_gen {
+                let anchor = gen * g as u64;
+                let mut late_src: Vec<WireSymbol> = Vec::new();
+                for i in 0..g as u64 {
+                    let seq = anchor + i;
+                    let sym = enc.add_source(&payload(seq));
+                    // Occasional FILL_FLAG filling repair mid-fill.
+                    if rng.chance(0.15) && enc.wants_filling_coding() {
+                        let rep = enc.generate_repair_filling();
+                        if !rng.chance(eps) {
+                            trace.push(rep);
+                        }
+                    }
+                    if systematic {
+                        if rng.chance(eps) {
+                            // lost on the wire
+                        } else if rng.chance(late) {
+                            late_src.push(sym);
+                        } else {
+                            trace.push(sym);
+                        }
+                    }
+                }
+                // Sealed proactive repairs (round-robin budget).
+                while enc.wants_coding() {
+                    let rep = enc.generate_repair();
+                    if !rng.chance(eps) {
+                        trace.push(rep);
+                    }
+                }
+                // Deficit top-up: enough full-width coded DoF to complete the
+                // generation regardless of what was lost above.
+                for _ in 0..(g + 3) {
+                    if let Some(rep) = enc.generate_repair_for(anchor) {
+                        if !rng.chance(eps / 2.0) {
+                            trace.push(rep);
+                        }
+                    }
+                }
+                trace.extend(late_src);
+                // Occasional duplicates (dedup path must behave identically).
+                if rng.chance(0.5) && !trace.is_empty() {
+                    let dup = trace[trace.len() - 1 - (rng.below(trace.len().min(5) as u64) as usize)].clone();
+                    trace.push(dup);
+                }
+            }
+
+            let mut dnew = GenerationDecoder::new(symbol_size);
+            let mut dref = reference::RefGenerationDecoder::new(symbol_size);
+            let total = n_gen * g as u64;
+
+            let mut got_new: BTreeSet<u64> = BTreeSet::new();
+            for (i, sym) in trace.iter().enumerate() {
+                let mut out_new = dnew.add_symbol(sym);
+                let mut out_ref = dref.add_symbol(sym);
+                out_new.sort_by_key(|(s, _)| *s);
+                out_ref.sort_by_key(|(s, _)| *s);
+                assert_eq!(
+                    out_new.len(),
+                    out_ref.len(),
+                    "seed {seed} sym {i}: delivered-count mismatch (new {:?} vs ref {:?})",
+                    out_new.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    out_ref.iter().map(|(s, _)| *s).collect::<Vec<_>>()
+                );
+                for ((sn, dn), (sr, dr)) in out_new.iter().zip(out_ref.iter()) {
+                    assert_eq!(sn, sr, "seed {seed} sym {i}: seq mismatch");
+                    assert_eq!(dn, dr, "seed {seed} sym {i} seq {sn}: payload mismatch");
+                    got_new.insert(*sn);
+                }
+                assert_eq!(dnew.total_fed(), dref.total_fed(), "seed {seed} sym {i}: total_fed");
+                assert_eq!(dnew.repairs_fed(), dref.repairs_fed(), "seed {seed} sym {i}: repairs_fed");
+                assert_eq!(
+                    dnew.repairs_useful(),
+                    dref.repairs_useful(),
+                    "seed {seed} sym {i}: repairs_useful (added-rank accounting)"
+                );
+                // Deficit-feedback signal must agree for every generation.
+                for gen in 0..n_gen {
+                    let anchor = gen * g as u64;
+                    assert_eq!(
+                        dnew.rank_in(anchor, g as u64),
+                        dref.rank_in(anchor, g as u64),
+                        "seed {seed} sym {i}: rank_in(gen {gen})"
+                    );
+                }
+                // Mid-trace advance (retention prune) once per trace.
+                if i == trace.len() / 2 {
+                    let adv = g as u64; // one whole generation behind
+                    dnew.advance(adv);
+                    dref.advance(adv);
+                }
+            }
+
+            // Every source must have been recovered byte-exactly by BOTH.
+            assert_eq!(
+                got_new.len() as u64,
+                total,
+                "seed {seed}: not all sources recovered (systematic={systematic} eps={eps:.2})"
+            );
         }
     }
 }
