@@ -4944,6 +4944,14 @@ async fn run_window_sender(
     let mut diag_last_cod: u64 = 0;
     let mut diag_paused_iters: u64 = 0;
     let mut diag_total_iters: u64 = 0;
+    // feat/copa-wire-signal wedge forensics (RWM_DIAG only): cumulative tail
+    // ARQ sweeps fired, SACK-gap retransmits actually sent, gaps discarded
+    // for exhausted budget, and the live budget/cap values — the wedge shows
+    // good=0 with in_flight=0 for tens of seconds and these name which stage
+    // of the reactive-repair chain is dead.
+    let mut diag_sweeps: u64 = 0;
+    let mut diag_retx: u64 = 0;
+    let mut diag_gaps_dropped: u64 = 0;
     let mut diag_eff_rate: f64 = 0.0;
 
     loop {
@@ -5342,7 +5350,7 @@ async fn run_window_sender(
                 gd_us = [0; 6];
                 gl_sum = (0, 0, 0, 0);
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -5354,6 +5362,7 @@ async fn run_window_sender(
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,
                     fmtcp_out, fmtcp_win_backstop,
+                    diag_sweeps, diag_retx, diag_gaps_dropped, cached_nack_budget,
                     gdiag,
                     pp,
                 );
@@ -6074,6 +6083,7 @@ async fn run_window_sender(
                 last_tail_sweep_us = now_us();
                 if let Some((&seq, _)) = retransmit_buffer.iter().next() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
+                    diag_sweeps += 1;
                     pending_gaps = Some(vec![(seq, seq)]);
                 }
                 None
@@ -6235,6 +6245,7 @@ async fn run_window_sender(
             };
             if cached_max_repairs == 0 || cached_nack_budget == 0 {
                 // Fully suppressed or budget exhausted — drain NACK queue
+                diag_gaps_dropped += 1;
                 continue;
             }
 
@@ -6347,6 +6358,7 @@ async fn run_window_sender(
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
+                    diag_retx += 1;
                     retransmitted += 1;
                 }
             }
