@@ -515,6 +515,18 @@ impl QuicTransport {
         self.cc_passthrough
     }
 
+    /// Packet-timed path RTT for `path_id` from quinn's RFC 9002 estimator
+    /// (feat/copa-wire-signal): measured at the QUIC packet layer — send of
+    /// an ack-eliciting packet to receipt of its ACK, ack-delay corrected —
+    /// so it EXCLUDES the sender's own app-layer store/reservoir dwell in
+    /// the datagram queue (which sits BEFORE packetization). This is the
+    /// wire clock for Copa's queue term d_q = wire_rtt − wire_RTTmin; the
+    /// app-layer echo RTT stays with the reliability/tail machinery where
+    /// end-to-end (pipeline-inclusive) delay is the right quantity.
+    pub fn wire_rtt(&self, path_id: PathId) -> Option<std::time::Duration> {
+        self.connections.get(&path_id).map(|c| c.rtt())
+    }
+
     /// Read back the pass-through window (bytes) for diagnostics; None when
     /// passthrough is off or the path has no handle.
     pub fn cc_window_bytes(&self, path_id: PathId) -> Option<u64> {

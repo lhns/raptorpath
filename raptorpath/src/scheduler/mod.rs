@@ -46,6 +46,88 @@ pub type PathId = u32;
 /// Units: 1/symbols — rate = 1/(d_copa [1/sym] × dq [s]) is symbols/second.
 const COPA_DELTA: f64 = 0.5;
 
+// --- Wire-clocked Copa signal + hint→δ mapping (feat/copa-wire-signal) ---
+//
+// Task #80 named Copa-sole's bulk gap: the CC's delay term was fed the
+// APP-LAYER ECHO RTT, which includes the sender's own store/reservoir dwell
+// in quinn's datagram queue — Copa backed off against self-inflicted delay
+// that is not in the network (arm D: shrinking the reservoir raised
+// throughput +13–23% AND tightened the queue — the self-signal term proven).
+// Under the wire signal the CC delay term is quinn's PACKET-TIMED path RTT
+// (Connection::rtt — measured at the QUIC packet layer, excludes app store
+// dwell), and Copa runs its ACTUAL update law around the target rate
+// 1/(δ·d_q) with δ mapped continuously from the protocol hint's latency
+// price (see `copa_delta`, paper §12.4). Gated: active only when the engine
+// owns/feeds the substrate window (RWM_QUIC_CC=passthrough or
+// RWM_COPA_FEED=1); RWM_COPA_WIRE=0 forces the legacy app-echo behavior
+// (the #80 A/B arm), =1 forces on. Env fully unset ⇒ OFF ⇒ the shipped
+// path is byte-identical.
+
+/// Pure decision function for the wire-signal gate (unit-testable without
+/// process-global env state): `qcc` = RWM_QUIC_CC, `feed` = RWM_COPA_FEED
+/// as a flag, `wire` = RWM_COPA_WIRE raw value.
+fn copa_wire_from_env(qcc: Option<&str>, feed: bool, wire: Option<&str>) -> bool {
+    let feed_active = qcc
+        .map(|v| v.trim().eq_ignore_ascii_case("passthrough"))
+        .unwrap_or(false)
+        || feed;
+    match wire {
+        Some(v) => {
+            let v = v.trim();
+            !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false"))
+        }
+        None => feed_active,
+    }
+}
+
+/// Whether the wire-clocked Copa queue signal (+ the δ-mapped update law) is
+/// active for this process. Read once and cached — consulted on the ack hot
+/// path.
+pub fn copa_wire_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let qcc = std::env::var("RWM_QUIC_CC").ok();
+        let wire = std::env::var("RWM_COPA_WIRE").ok();
+        copa_wire_from_env(
+            qcc.as_deref(),
+            crate::config::env_flag("RWM_COPA_FEED", false),
+            wire.as_deref(),
+        )
+    })
+}
+
+/// Hint→δ mapping (paper §12.4, wire-signal addendum): Copa's utility is
+/// U = log(throughput) − δ·log(delay), so δ IS the marginal latency price.
+/// The protocol hint already declares exactly one price ratio — the
+/// tail-loss-target scale ζ (`ProtocolHint::tail_loss_scale`, Realtime 0.01
+/// / Auto 1 / Bulk 100: Realtime prices lateness 100× dearer, Bulk 100×
+/// cheaper). Anchoring Auto at the Copa-paper default δ = 0.5 gives the
+/// continuous, constant-free mapping
+///
+///   δ(hint) = COPA_DELTA / ζ(hint)   ∈ {50 (Realtime), 0.5 (Auto),
+///                                        0.005 (Bulk)}
+///
+/// Equilibrium standing queue = 1/δ packets (rate = 1/(δ·d_q) at the
+/// bottleneck rate μ ⇒ q = 1/δ), i.e. d_q* = 1/(δ·μ): Bulk tolerates 200
+/// symbols of queue (≈19 ms at the c2 cell's 10.4 k sym/s — still ~3×
+/// tighter than BBR-under's measured 65–87 ms), Realtime targets an
+/// essentially empty queue (jitter headroom governs), Auto reproduces the
+/// classic δ = 0.5 two-packet target. `over` = RWM_COPA_DELTA (the
+/// δ-frontier measurement knob), which overrides the hint when set.
+fn copa_delta(hint: ProtocolHint, over: Option<f64>) -> f64 {
+    over.filter(|d| d.is_finite() && *d > 0.0)
+        .unwrap_or(COPA_DELTA / hint.tail_loss_scale())
+}
+
+/// `copa_delta` with the RWM_COPA_DELTA env override applied.
+pub(crate) fn copa_delta_for_hint(hint: ProtocolHint) -> f64 {
+    let over = std::env::var("RWM_COPA_DELTA")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok());
+    copa_delta(hint, over)
+}
+
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
@@ -494,14 +576,40 @@ pub struct CopaState {
     /// makes the sender CPU-bound and STALLS the transfer.  Only maintained when
     /// `rs_robust_bw` (else 0.0, unused).
     rs_robust_cached: f64,
+    // --- Wire-clocked δ-mapped update law (feat/copa-wire-signal) -----------
+    /// Wire mode: the delay term is the packet-timed wire RTT (fed by the
+    /// transport seam) and the cwnd update law is Copa's actual
+    /// target-rate/velocity dynamics around rate = 1/(δ·d_q). False (default,
+    /// env unset) ⇒ every legacy path byte-identical.
+    wire_mode: bool,
+    /// Copa δ (1/symbols): the hint-mapped latency price (`copa_delta`).
+    /// In legacy mode this stays COPA_DELTA so the diagnostic
+    /// `copa_target_cwnd` is unchanged.
+    delta: f64,
+    /// Copa velocity v: the per-SRTT step is v/δ symbols; v doubles while
+    /// the update direction persists and resets to 1 on a direction flip
+    /// (Copa §2.2's velocity parameter at per-SRTT granularity).
+    velocity: f64,
+    /// Direction of the previous wire-mode update (None = no update yet /
+    /// after a backoff reset).
+    last_dir_up: Option<bool>,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
 
 impl CopaState {
     fn new(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
+        let wire_mode = copa_wire_active();
         let now = clock.now();
         Self {
+            wire_mode,
+            delta: if wire_mode {
+                copa_delta_for_hint(hint)
+            } else {
+                COPA_DELTA
+            },
+            velocity: 1.0,
+            last_dir_up: None,
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
@@ -845,7 +953,46 @@ impl CopaState {
     ///     measured L1 root cause of the C2 throughput collapse), and
     ///   - the k × jitter_est term covers the residual within-window
     ///     spread at small sample counts (JITTER_HEADROOM).
-    fn queue_above_target(&self) -> bool {
+    /// Wire-mode queuing delay d_q (seconds): windowed-min wire RTT −
+    /// propagation floor − jitter headroom, clamped ≥ DQ_FLOOR_SECS.
+    ///
+    /// Differences from the legacy signal, both consequences of the wire
+    /// clock (feat/copa-wire-signal):
+    ///   - The floor is the RAW 10 s min (`min_rtt`), not the quantile
+    ///     queue floor: the wire samples are quinn's smoothed packet-timed
+    ///     RTT (an EWMA — sample-level jitter is already averaged out), and
+    ///     the δ-law's sawtooth drains the queue to ~empty every few
+    ///     updates, so the raw min stays fresh (the quantile floor was an
+    ///     app-echo jitter fix, and under a deep Bulk standing queue it
+    ///     would creep up to the queue itself within its 10 s window —
+    ///     staleness by construction).
+    ///   - The jitter headroom is SUBTRACTED from the measured d_q rather
+    ///     than added to a threshold, so one adjusted quantity feeds both
+    ///     the above-target test and the target-rate law (continuity:
+    ///     jitter → 0 recovers plain Copa exactly).
+    fn wire_dq_secs(&self) -> Option<f64> {
+        let win_min = self.min_rtt_since_update?;
+        let floor = self.min_rtt?;
+        let jitter = self.jitter_est.max(self.win_jitter_est);
+        Some(
+            (win_min.as_secs_f64() - floor.as_secs_f64() - JITTER_HEADROOM * jitter)
+                .max(DQ_FLOOR_SECS),
+        )
+    }
+
+    /// Wire-mode congestion test: is the current rate above Copa's target
+    /// rate 1/(δ·d_q)?  cwnd/srtt > 1/(δ·d_q)  ⇔  cwnd·δ·d_q > srtt.
+    fn wire_above_target(&self, cwnd: u32) -> bool {
+        match self.wire_dq_secs() {
+            Some(dq) => cwnd as f64 * self.delta * dq > self.srtt().as_secs_f64(),
+            None => false,
+        }
+    }
+
+    fn queue_above_target(&self, cwnd: u32) -> bool {
+        if self.wire_mode {
+            return self.wire_above_target(cwnd);
+        }
         let (Some(win_min), Some(floor)) = (self.min_rtt_since_update, self.queue_floor()) else {
             return false;
         };
@@ -885,7 +1032,7 @@ impl CopaState {
         let Some(win_min) = self.min_rtt_since_update else {
             return cwnd;
         };
-        let above = self.queue_above_target();
+        let above = self.queue_above_target(cwnd);
         tracing::debug!(
             cwnd,
             above,
@@ -899,6 +1046,9 @@ impl CopaState {
             max_bw = self.max_bw as u64,
             bdp_anchor = self.bdp_anchor().map(|b| b.round() as u64),
             anchor_floor = self.anchor_floor(),
+            wire = self.wire_mode,
+            delta = self.delta,
+            velocity = self.velocity,
             "copa cwnd update"
         );
         // Record this window's min in the queue-floor history.
@@ -913,9 +1063,15 @@ impl CopaState {
             self.win_jitter_est += (diff.as_secs_f64() - self.win_jitter_est) * 0.25;
         }
         self.prev_win_min = Some(win_min);
+        // Capture the wire-mode queue signal BEFORE the window reset below
+        // (wire_dq_secs reads min_rtt_since_update).
+        let wire_dq = if self.wire_mode { self.wire_dq_secs() } else { None };
         self.min_rtt_since_update = None;
         self.samples_since_update = 0;
         let c = cwnd as f64;
+        if self.wire_mode {
+            return self.wire_update_cwnd(c, above, wire_dq).round() as u32;
+        }
         let next = if above {
             self.ramping = false;
             c * BACKOFF_MULT
@@ -942,6 +1098,65 @@ impl CopaState {
         next.round() as u32
     }
 
+    /// Wire-mode per-SRTT update (feat/copa-wire-signal): Copa's actual
+    /// dynamics (Arun & Balakrishnan, NSDI 2018 §2) at per-SRTT granularity.
+    ///
+    ///   target_rate = 1/(δ·d_q)  ⇒  target_cwnd = srtt/(δ·d_q)
+    ///   direction   = up if cwnd ≤ target_cwnd, else down
+    ///   step        = v/δ symbols per SRTT (Copa: cwnd ± v/(δ·cwnd) per
+    ///                 ACK × cwnd ACKs/RTT = v/δ per RTT); v doubles while
+    ///                 the direction persists, resets to 1 on a flip.
+    ///
+    /// Equilibrium: rate = μ (the bottleneck) at a standing queue of 1/δ
+    /// packets; the ±v/δ dither around it drains the queue to ~empty every
+    /// few updates, which is what keeps the 10 s RTT floor fresh (no
+    /// ProbeRTT needed). The legacy +2 additive probe IS this law's up-step
+    /// at δ = 0.5, v = 1 — continuity with the P1 semantics.
+    ///
+    /// Two safety caps, both continuity-preserving:
+    ///   - up-step ≤ cwnd (at most double per SRTT — Copa's slow-start
+    ///     bound), and the ramp itself stays ×1.5+1 until first above;
+    ///   - down-step ≤ max(measured queue μ̂·d_q, (1−0.92)·cwnd): draining
+    ///     more than the standing queue would empty the PIPE (utilization
+    ///     loss for nothing) — the queue cap lands the trough at ≈BDP; the
+    ///     0.08·cwnd floor keeps drain progress alive before a BtlBw
+    ///     estimate exists.
+    fn wire_update_cwnd(&mut self, c: f64, above: bool, wire_dq: Option<f64>) -> f64 {
+        if self.ramping {
+            if above {
+                // Ramp exit: same gentle ×0.92 first step as the legacy /
+                // per-ACK fast exit; the velocity law takes over next update.
+                self.ramping = false;
+                return c * BACKOFF_MULT;
+            }
+            return c * RAMP_GAIN + 1.0;
+        }
+        let Some(dq) = wire_dq else {
+            return c; // no queue signal this window — hold
+        };
+        let up = !above;
+        if self.last_dir_up == Some(up) {
+            // Direction persisted → double the velocity (bounded so the
+            // step can never exceed the cwnd ceiling).
+            self.velocity = (self.velocity * 2.0).min(self.delta * PathState::MAX_CWND as f64);
+        } else {
+            self.velocity = 1.0;
+        }
+        self.last_dir_up = Some(up);
+        let step = (self.velocity / self.delta).max(1.0);
+        if up {
+            c + step.min(c)
+        } else {
+            let queue_syms = if self.max_bw > 0.0 {
+                self.max_bw * dq
+            } else {
+                f64::INFINITY
+            };
+            let drain = step.min(queue_syms.max(c * (1.0 - BACKOFF_MULT)));
+            (c - drain).max(0.0)
+        }
+    }
+
     /// Immediate backoff (ramp fast-exit or decode-failure congestion):
     /// ×0.92, end the ramp, restart the update window.
     fn backoff(&mut self, cwnd: u32) -> u32 {
@@ -949,6 +1164,10 @@ impl CopaState {
         self.min_rtt_since_update = None;
         self.samples_since_update = 0;
         self.last_cwnd_update = self.clock.now();
+        // Wire mode: a backoff is a down move — reset the velocity streak so
+        // the next windowed update re-measures direction from v = 1.
+        self.velocity = 1.0;
+        self.last_dir_up = Some(false);
         (cwnd as f64 * BACKOFF_MULT).round() as u32
     }
 
@@ -967,7 +1186,9 @@ impl CopaState {
         let floor = self.min_rtt.unwrap_or(DEFAULT_SRTT).as_secs_f64();
         let srtt = self.srtt().as_secs_f64();
         let dq = (srtt - floor).max(DQ_FLOOR_SECS);
-        let rate = 1.0 / (COPA_DELTA * dq); // symbols per second
+        // `delta` == COPA_DELTA in legacy mode (byte-identical diagnostic);
+        // in wire mode it is the hint-mapped δ the live law targets.
+        let rate = 1.0 / (self.delta * dq); // symbols per second
         let cwnd = rate * srtt; // symbols
         (cwnd.round() as u32).clamp(PathState::MIN_CWND, PathState::MAX_CWND)
     }
@@ -1045,11 +1266,31 @@ impl CopaState {
         self.queue_mult = mult;
     }
 
+    /// Wire mode: re-derive δ when the protocol hint changes (paired with
+    /// `set_queue_mult` from `PathState::set_hint`). No-op in legacy mode —
+    /// δ stays COPA_DELTA there.
+    fn set_hint_delta(&mut self, hint: ProtocolHint) {
+        if self.wire_mode {
+            self.delta = copa_delta_for_hint(hint);
+        }
+    }
+
+    /// Test hook: force wire mode with an explicit δ. Unit tests must not
+    /// depend on the process-global env cache (`copa_wire_active`), which
+    /// other tests' env vars could race.
+    #[cfg(test)]
+    fn force_wire(&mut self, delta: f64) {
+        self.wire_mode = true;
+        self.delta = delta;
+    }
+
     fn reset(&mut self) {
         let clock = self.clock.clone();
         let queue_mult = self.queue_mult;
+        let delta = self.delta;
         *self = Self::new(clock, ProtocolHint::Auto);
         self.queue_mult = queue_mult; // hint survives a path reset
+        self.delta = delta; // (wire mode: the hint-mapped δ survives too)
     }
 
     /// Read the current min_rtt estimate (for diagnostics/benchmarking).
@@ -1168,6 +1409,7 @@ impl PathState {
     /// Update the hint-coupled queue target when the protocol hint changes.
     pub fn set_hint(&mut self, hint: ProtocolHint) {
         self.copa.set_queue_mult(queue_target_mult(hint));
+        self.copa.set_hint_delta(hint);
     }
 
     /// Correction rate r = epsilon / (1 - epsilon).
@@ -1291,7 +1533,7 @@ impl PathState {
 
         if self.copa.ramping
             && self.copa.samples_since_update >= 3
-            && self.copa.queue_above_target()
+            && self.copa.queue_above_target(self.cwnd)
         {
             // Fast ramp exit: gentle ×0.92, NOT a collapse to a
             // rate-formula target (the pre-P7 bug: the initial burst
@@ -1401,7 +1643,7 @@ impl PathState {
         if fec_recovered {
             return;
         }
-        if self.copa.queue_above_target() {
+        if self.copa.queue_above_target(self.cwnd) {
             self.cwnd = self.copa.backoff(self.cwnd);
         } else {
             self.copa.ramping = false;
@@ -1418,6 +1660,13 @@ impl PathState {
     /// Call this when processing ACKs/reports that include RTT.
     pub fn record_rtt_sample(&mut self, rtt: Duration) {
         self.copa.record_rtt(rtt);
+    }
+
+    /// Test hook: force the wire-clocked δ-mapped update law with an
+    /// explicit δ (bypasses the process-global env gate).
+    #[cfg(test)]
+    pub(crate) fn force_wire_for_test(&mut self, delta: f64) {
+        self.copa.force_wire(delta);
     }
 
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
@@ -4241,6 +4490,185 @@ mod tests {
         assert!(
             e_on < e_off / 4.0,
             "robust must sit far below the over-read max: on={e_on} off={e_off}"
+        );
+    }
+
+    // ----- Wire-clocked Copa signal + hint→δ mapping (feat/copa-wire-signal) -----
+
+    #[test]
+    fn copa_wire_gate_from_env() {
+        // Default ON exactly when the engine owns/feeds the substrate window.
+        assert!(copa_wire_from_env(Some("passthrough"), false, None));
+        assert!(copa_wire_from_env(Some(" Passthrough "), false, None));
+        assert!(copa_wire_from_env(None, true, None)); // RWM_COPA_FEED=1 A/B
+        // Shipped default: everything unset ⇒ OFF (byte-identical).
+        assert!(!copa_wire_from_env(None, false, None));
+        assert!(!copa_wire_from_env(Some("bbr"), false, None));
+        assert!(!copa_wire_from_env(Some("cubic"), false, None));
+        // RWM_COPA_WIRE=0 reproduces the #80 app-echo arm even under passthrough.
+        assert!(!copa_wire_from_env(Some("passthrough"), false, Some("0")));
+        assert!(!copa_wire_from_env(Some("passthrough"), true, Some("false")));
+        // RWM_COPA_WIRE=1 forces on (e.g. RWM_COPA_FEED-less diagnostics).
+        assert!(copa_wire_from_env(None, false, Some("1")));
+    }
+
+    #[test]
+    fn copa_delta_hint_mapping() {
+        // δ(hint) = COPA_DELTA / ζ(hint): the hint's ONE declared price
+        // ratio (tail_loss_scale ζ = 0.01/1/100) is the latency price, δ
+        // (paper §12.4). No constants beyond the Copa-paper δ=0.5 anchor.
+        assert_eq!(copa_delta(ProtocolHint::Auto, None), COPA_DELTA);
+        assert_eq!(copa_delta(ProtocolHint::Bulk, None), COPA_DELTA / 100.0);
+        assert_eq!(copa_delta(ProtocolHint::Realtime, None), COPA_DELTA * 100.0);
+        // Equilibrium queue = 1/δ packets: Bulk 200, Auto 2, Realtime 0.02.
+        assert_eq!(1.0 / copa_delta(ProtocolHint::Bulk, None), 200.0);
+        // The RWM_COPA_DELTA frontier knob overrides the hint; garbage is ignored.
+        assert_eq!(copa_delta(ProtocolHint::Bulk, Some(0.05)), 0.05);
+        assert_eq!(copa_delta(ProtocolHint::Bulk, Some(-1.0)), COPA_DELTA / 100.0);
+        assert_eq!(
+            copa_delta(ProtocolHint::Bulk, Some(f64::NAN)),
+            COPA_DELTA / 100.0
+        );
+    }
+
+    #[test]
+    fn wire_dq_keys_on_wire_clock_not_app_echo() {
+        // The #80 named mechanism: the app-layer echo RTT includes the
+        // sender's OWN store/reservoir dwell, so Copa backed off against
+        // self-inflicted delay. Under the wire signal the CC delay term
+        // comes ONLY from record_rtt_sample (the packet-timed wire feed);
+        // the estimator's app-echo RTT — dwell included — must have zero
+        // influence on the cwnd dynamics.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(COPA_DELTA);
+
+        // App echo reads a huge 500 ms (store dwell); the wire reads a clean
+        // 10 ms floor. Copa must RAMP — the dwell is not network queue.
+        let mut prev = path.cwnd;
+        for _ in 0..5 {
+            path.estimator.record_rtt(millis(500)); // app echo incl. dwell
+            path.record_rtt_sample(millis(10)); // wire clock
+            clock.advance(millis(15));
+            path.on_ack(prev);
+            let cur = path.cwnd;
+            assert!(
+                cur > prev,
+                "wire-clocked Copa must grow through app-layer dwell: {prev}->{cur}"
+            );
+            prev = cur;
+        }
+
+        // Inverse direction: the wire clock now shows a REAL standing queue
+        // (60 ms over the 10 ms floor) while the app echo is quiet — Copa
+        // must back off on the wire evidence alone.
+        for _ in 0..4 {
+            path.estimator.record_rtt(millis(10));
+            path.record_rtt_sample(millis(60));
+        }
+        clock.advance(millis(80));
+        let pre = path.cwnd;
+        path.on_ack(4);
+        assert!(
+            path.cwnd < pre,
+            "a wire-clock queue must back cwnd off: {pre}->{}",
+            path.cwnd
+        );
+    }
+
+    #[test]
+    fn wire_velocity_law_doubles_step_and_caps_drain() {
+        // Copa's actual update law (paper §12.4 wire addendum): step v/δ per
+        // SRTT, v doubling while the direction persists. δ = 0.005 (Bulk) ⇒
+        // base step 200 symbols — the small-δ/high-BDP exploitation the +2
+        // additive probe could never provide.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+
+        // Ramp on a clean 10 ms floor, then exit the ramp with a moderate
+        // standing-queue window (40 ms — well above the jitter the square
+        // transition charges into the headroom estimators, but not so large
+        // that the window-jitter EWMA masks the later down-phase signal).
+        for _ in 0..10 {
+            path.record_rtt_sample(millis(10));
+            clock.advance(millis(15));
+            let c = path.cwnd;
+            path.on_ack(c);
+        }
+        assert!(path.cwnd > 100, "ramp must have grown: {}", path.cwnd);
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(40)); // rate ≫ 1/(δ·dq) at this cwnd
+        }
+        clock.advance(millis(60));
+        path.on_ack(4);
+        assert!(!path.in_slow_start, "queue evidence must end the ramp");
+
+        // Steady state, clean floor again: consecutive up-steps double
+        // (velocity), each bounded by the current cwnd.
+        let c0 = path.cwnd;
+        path.record_rtt_sample(millis(10));
+        clock.advance(millis(400)); // > srtt (spiked EWMA) → update due
+        path.on_ack(4);
+        let c1 = path.cwnd;
+        path.record_rtt_sample(millis(10));
+        clock.advance(millis(400));
+        path.on_ack(4);
+        let c2 = path.cwnd;
+        let step1 = c1 - c0;
+        let step2 = c2 - c1;
+        assert!(
+            step1 >= 190 || step1 as f64 >= c0 as f64 * 0.95,
+            "bulk-δ base step must be ~1/δ = 200 (or cwnd-capped): c0={c0} c1={c1}"
+        );
+        assert!(
+            step2 >= 2 * step1 - 2 || step2 as f64 >= c1 as f64 * 0.95,
+            "persistent direction must double the velocity: step1={step1} step2={step2}"
+        );
+
+        // Down direction: the drain per update is capped at
+        // max(measured queue μ̂·d_q, 0.08·cwnd) — cwnd falls, but never
+        // collapses (the pipe itself is not drained).
+        let pre = path.cwnd;
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(60)); // real queue: dq ≈ 50 ms
+        }
+        clock.advance(millis(400));
+        path.on_ack(4);
+        let post = path.cwnd;
+        assert!(post < pre, "above-target must step down: {pre}->{post}");
+        assert!(
+            post as f64 >= pre as f64 * (1.0 - 2.0 * (1.0 - BACKOFF_MULT)),
+            "drain must be queue-capped, not a collapse: {pre}->{post}"
+        );
+    }
+
+    #[test]
+    fn wire_mode_off_is_byte_identical_legacy() {
+        // Env fully unset in the test process ⇒ wire mode off ⇒ the legacy
+        // dynamics: steady state is the additive +2, exactly as before.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(20));
+            clock.advance(millis(30));
+            let c = path.cwnd;
+            path.on_ack(c);
+        }
+        // End the ramp with an inflated window.
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(80));
+        }
+        clock.advance(millis(100));
+        path.on_ack(4);
+        let after = path.cwnd;
+        path.record_rtt_sample(millis(20));
+        clock.advance(millis(100));
+        path.on_ack(4);
+        assert_eq!(
+            path.cwnd,
+            after + ADDITIVE_STEP as u32,
+            "legacy steady state must remain the additive +2"
         );
     }
 }

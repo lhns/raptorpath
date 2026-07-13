@@ -1135,6 +1135,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             info!(
                 "plain-mode Copa delivery feed ACTIVE (WindowAck frontier/SACK → per-path send-interval rate samples + cwnd dynamics)"
             );
+            // feat/copa-wire-signal mechanism-liveness echo (MEASUREMENT
+            // DISCIPLINE): which clock feeds Copa's delay term, and the
+            // hint-mapped δ the update law targets.
+            info!(
+                copa_wire = crate::scheduler::copa_wire_active(),
+                hint = ?config.protocol_hint,
+                delta = crate::scheduler::copa_delta_for_hint(config.protocol_hint),
+                "Copa queue-signal clock: wire={} (quinn packet-timed RTT; =false is the #80 app-echo arm)",
+                crate::scheduler::copa_wire_active(),
+            );
             Some(Arc::new(CopaFeed::new()))
         } else {
             None
@@ -5249,9 +5259,20 @@ async fn run_window_sender(
                             // generated / windowed-max-fill).  Cumulative counters.
                             let (rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill) =
                                 p.rs_diag();
+                            // feat/copa-wire-signal: the wire clock next to the
+                            // app-echo clock — wrtt = quinn packet-timed path RTT
+                            // (what Copa's queue term reads under RWM_COPA_WIRE),
+                            // rtt = app-layer echo (store-dwell inclusive), rtp =
+                            // Copa's floor (wire-clocked when the gate is on; its
+                            // distance from the known netem base per path is the
+                            // FLOOR-FRESHNESS check).
+                            let wrtt_i = transport
+                                .wire_rtt(*id)
+                                .map(|d| d.as_secs_f64() * 1000.0)
+                                .unwrap_or(0.0);
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, rtprop_i,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -7284,7 +7305,16 @@ fn handle_control_message(
             if let Some(path) = sched.path_mut(path_id) {
                 let rtt_duration = Duration::from_micros(rtt_us);
                 path.estimator.record_rtt(rtt_duration);
-                path.record_rtt_sample(rtt_duration);
+                // feat/copa-wire-signal: the CC delay term is wire-clocked
+                // (quinn packet-timed RTT — excludes the sender's own store
+                // dwell); the estimator above keeps the app-echo RTT for the
+                // reliability/tail machinery. Gate off ⇒ app echo, as ever.
+                let cc_rtt = if crate::scheduler::copa_wire_active() {
+                    transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                } else {
+                    rtt_duration
+                };
+                path.record_rtt_sample(cc_rtt);
 
                 // ADR-0003: update loss stats from ACK
                 if expected_count > 0 {
@@ -7424,7 +7454,14 @@ fn handle_control_message(
             if let Some(path) = sched.path_mut(report_path_id) {
                 let rtt_duration = Duration::from_micros(avg_rtt_us);
                 path.estimator.record_rtt(rtt_duration);
-                path.record_rtt_sample(rtt_duration);
+                // feat/copa-wire-signal: wire-clocked CC delay term (see the
+                // Ack arm above).
+                let cc_rtt = if crate::scheduler::copa_wire_active() {
+                    transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
+                } else {
+                    rtt_duration
+                };
+                path.record_rtt_sample(cc_rtt);
                 // P10a: do NOT feed the peer's reported throughput into
                 // the estimator. The field carries the PEER's estimator
                 // value — historically 0.0 (circular feed, see the report
@@ -7500,7 +7537,17 @@ fn handle_control_message(
                     if let Some(path) = sched.path_mut(path_id) {
                         let rtt_duration = Duration::from_micros(rtt_us);
                         path.estimator.record_rtt(rtt_duration);
-                        path.record_rtt_sample(rtt_duration);
+                        // feat/copa-wire-signal: wire-clocked CC delay term —
+                        // the #80 battery proved the app-echo RTT reads the
+                        // sender's OWN reservoir dwell as network queue (arm
+                        // D). The estimator keeps the app echo (end-to-end
+                        // tail machinery); Copa gets the packet-timed RTT.
+                        let cc_rtt = if crate::scheduler::copa_wire_active() {
+                            transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                        } else {
+                            rtt_duration
+                        };
+                        path.record_rtt_sample(cc_rtt);
                     }
                 }
             }

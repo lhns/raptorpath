@@ -58,6 +58,24 @@ impl std::str::FromStr for ProtocolHint {
     }
 }
 
+impl ProtocolHint {
+    /// The hint's tail-loss-target scale ζ: `effective_tail_loss =
+    /// target_tail_loss × ζ` (the FEC/NACK balance knob, see
+    /// `FecRateController::new_with_toggles`). ζ is the hint's ONE declared
+    /// price ratio — Realtime prices a late symbol 100× dearer than Auto,
+    /// Bulk 100× cheaper — and everything else hint-coupled should derive
+    /// from it rather than adding independent magic constants. The Copa δ
+    /// mapping (scheduler, paper §12.4) consumes it as the latency price:
+    /// δ(hint) = δ_auto / ζ(hint).
+    pub fn tail_loss_scale(self) -> f64 {
+        match self {
+            ProtocolHint::Realtime => 0.01, // 100× tighter tail
+            ProtocolHint::Bulk => 100.0,    // 100× looser tail
+            ProtocolHint::Auto => 1.0,
+        }
+    }
+}
+
 /// FEC rate controller.
 pub struct FecRateController {
     /// Effective target tail loss probability (after hint adjustment)
@@ -145,11 +163,7 @@ impl FecRateController {
 
         // Protocol hint maps to target_tail_loss, not an additive offset.
         // This is the only principled knob: tighter tail = more proactive FEC.
-        let effective_tail_loss = match hint {
-            ProtocolHint::Realtime => target_tail_loss * 0.01,  // 100× tighter
-            ProtocolHint::Bulk => target_tail_loss * 100.0,     // 100× looser
-            ProtocolHint::Auto => target_tail_loss,
-        };
+        let effective_tail_loss = target_tail_loss * hint.tail_loss_scale();
         let effective_tail_loss = effective_tail_loss.clamp(1e-9, 0.1);
 
         Self {
