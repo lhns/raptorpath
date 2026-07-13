@@ -5118,10 +5118,18 @@ async fn run_window_sender(
                     // +2/SRTT, anchor pull) independent of the cap; gain×cwnd
                     // keeps ~1 cwnd of recovery runway buffered above the
                     // substrate window (quinn enforces cwnd on the wire).
+                    // live_paths(), NOT active_paths(): the latter filters by
+                    // spare capacity (available() > 0), and a cwnd-SATURATED
+                    // path — the normal state of a wire-bound sender — made
+                    // cwnd_sum read 0, collapsing the cap to the 128 boot
+                    // value and whiplashing the TUN gate (MEASURED at the L1
+                    // c2 smoke: effective cap flapping 1024↔128 every few
+                    // DIAG ticks, store swinging 400–1024, goodput dips to
+                    // 20 Mbit).
                     let cwnd_sum: f64 = {
                         let sched = scheduler.lock();
                         sched
-                            .active_paths()
+                            .live_paths()
                             .iter()
                             .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
                             .sum()
