@@ -174,6 +174,21 @@ pub trait WindowDecoder: Send + Sync {
         (0, 0)
     }
 
+    /// Wedge-forensics probe for a single source seq (fix/frontier-wedge):
+    /// `(seen_as_source, recovered, output)` —
+    ///   * `seen_as_source` — the dup-filter has recorded a SOURCE arrival of
+    ///     this seq (any later exact retransmit of it is silently discarded).
+    ///   * `recovered` — the decoder holds recovered data for the seq.
+    ///   * `output` — the seq was returned to the caller at least once.
+    /// `seen && !recovered` (or `seen && !output`) at a stalled frontier is
+    /// the dup-filter wedge signature: the blocker's retransmits arrive and
+    /// are eaten while the hole persists. Default all-false for decoders
+    /// without this structure.
+    fn seq_probe(&self, seq: u64) -> (bool, bool, bool) {
+        let _ = seq;
+        (false, false, false)
+    }
+
     /// Total symbols fed to this decoder.
     fn total_fed(&self) -> u64;
 

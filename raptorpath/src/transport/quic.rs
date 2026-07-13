@@ -527,6 +527,23 @@ impl QuicTransport {
         self.connections.get(&path_id).map(|c| c.rtt())
     }
 
+    /// Quinn-level DATAGRAM frame counters for `path_id`:
+    /// `(datagram_frames_rx, datagram_frames_tx)` from `Connection::stats()`.
+    ///
+    /// Wedge forensics (fix/frontier-wedge): `frame_rx.datagram` counts every
+    /// DATAGRAM frame quinn ACCEPTED at the packet layer — BEFORE the app's
+    /// `read_datagram()` and before quinn's bounded incoming datagram buffer
+    /// (which silently drops the OLDEST buffered datagram on overflow). If
+    /// this counter advances while the app-level receive loop sees nothing,
+    /// arriving datagrams are being destroyed between quinn's packet layer
+    /// and the application (buffer overflow), not lost on the wire.
+    pub fn datagram_frame_stats(&self, path_id: PathId) -> Option<(u64, u64)> {
+        self.connections.get(&path_id).map(|c| {
+            let s = c.stats();
+            (s.frame_rx.datagram, s.frame_tx.datagram)
+        })
+    }
+
     /// Read back the pass-through window (bytes) for diagnostics; None when
     /// passthrough is off or the path has no handle.
     pub fn cc_window_bytes(&self, path_id: PathId) -> Option<u64> {
@@ -896,6 +913,62 @@ impl QuicTransport {
         handles
     }
 
+    /// Apply the symbol-datagram MTU floor to a quinn transport config
+    /// (fix/frontier-wedge — the c3/C8 ~60 s "collapse run" root cause).
+    ///
+    /// THE WEDGE: every wire symbol rides ONE QUIC datagram of ~1261–1275
+    /// bytes (1200-byte symbol + repair header + bincode/batch framing).
+    /// quinn's defaults are `initial_mtu = min_mtu = 1200`; PMTUD raises the
+    /// path MTU to ~1452 right after the handshake, which is the ONLY reason
+    /// those datagrams are sendable at all. quinn also runs an MTU
+    /// BLACK-HOLE DETECTOR: a burst of lost large packets (GE loss at c3
+    /// looks exactly like an MTU black hole) resets `current_mtu` to
+    /// `min_mtu` (1200) and pauses discovery for `black_hole_cooldown`
+    /// (default 60 s). During that window `max_datagram_size` ≈ 1170 <
+    /// every symbol datagram, so EVERY data send — source, repair, and
+    /// every targeted retransmit of the frontier blocker — fails at the
+    /// sender with `SendDatagramError::TooLarge` (measured: 8 077
+    /// consecutive failures over 60 s in the wedge forensics), while small
+    /// control datagrams (acks) still flow and keep the wire RTT fresh.
+    /// The transfer freezes for exactly the cooldown, then self-resolves
+    /// when PMTUD re-probes. Cross-arm (BBR / Copa / stock) because it is
+    /// below the CC layer.
+    ///
+    /// THE FIX: the engine structurally REQUIRES ~1275-byte datagrams (a
+    /// symbol is never fragmented), so declare that floor to quinn:
+    /// `min_mtu = initial_mtu = MTU_FLOOR`. A (possibly spurious)
+    /// black-hole reset then lands AT the floor and symbol sends keep
+    /// working; PMTUD and the black-hole detector otherwise stay active
+    /// (upward probing unchanged — the 60 s cooldown remains as quinn's
+    /// safety net, no longer wedging ours). A path that truly cannot carry
+    /// MTU_FLOOR-byte UDP payloads could never carry a symbol anyway —
+    /// before this fix it failed as a silent send blackout; now it fails
+    /// loudly as persistent large-packet loss.
+    ///
+    /// `RWM_MTU_FLOOR` overrides (A/B instrument): `0` restores stock quinn
+    /// defaults (the wedge-prone control arm), any other value sets the
+    /// floor explicitly.
+    fn apply_mtu_floor(transport: &mut quinn::TransportConfig) {
+        // A max-size repair-symbol batch serializes to 1279 datagram bytes
+        // (1200 symbol + 14 repair header + 65 magic/bincode-fixint batch
+        // framing — measured by `mtu_floor_covers_symbol_batch`), + ~33
+        // QUIC 1-RTT overhead (short header + CID + PN + AEAD tag +
+        // DATAGRAM frame header) = ~1312 minimum UDP payload; 1350 leaves
+        // margin for CID/PN-length variation.
+        const MTU_FLOOR: u16 = 1350;
+        let floor: u16 = std::env::var("RWM_MTU_FLOOR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(MTU_FLOOR);
+        if floor == 0 {
+            info!("MTU floor OFF (RWM_MTU_FLOOR=0): stock quinn MTUD — black-hole reset lands at 1200 < symbol datagram (wedge-reproduction arm)");
+            return; // stock quinn MTU behavior (wedge-reproduction arm)
+        }
+        info!(floor, "MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (fix/frontier-wedge)");
+        transport.initial_mtu(floor);
+        transport.min_mtu(floor);
+    }
+
     fn generate_self_signed_config(
         cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<(ServerConfig, Vec<CertificateDer<'static>>)> {
@@ -914,6 +987,7 @@ impl QuicTransport {
         transport.max_concurrent_uni_streams(100u32.into());
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        Self::apply_mtu_floor(transport);
         if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);
         }
@@ -945,6 +1019,7 @@ impl QuicTransport {
         let mut transport = quinn::TransportConfig::default();
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
+        Self::apply_mtu_floor(&mut transport);
         if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);
         }

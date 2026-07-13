@@ -1771,6 +1771,29 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut fdiag_addsym_us: u64 = 0;
         let mut fdiag_addsym_n: u64 = 0;
 
+        // ── Receiver wedge forensics (fix/frontier-wedge, RWM_DIAG) ────────
+        // Names the mechanism when the in-order frontier freezes while the
+        // sender demonstrably keeps retransmitting the blocker (the historic
+        // c3/C8 ~60 s collapse run). Reported from the reliable hole-refresh
+        // timer arm (which fires every 25–100 ms during any stall), once per
+        // second after the frontier has been frozen > 1 s:
+        //   * blocker seq + its decoder state (seen-as-source / recovered /
+        //     output) + received_seqs membership → dup-filter wedge if
+        //     seen && hole persists;
+        //   * Data batches/symbols processed since the previous report → the
+        //     intake rate, distinguishing "retransmits reach the decoder and
+        //     are eaten" from "retransmits never reach the receive loop";
+        //   * quinn DATAGRAM frame rx/tx per path → whether the wire is
+        //     delivering frames that then die before `read_datagram()`.
+        let wdiag_on = crate::config::env_flag("RWM_DIAG", false);
+        let mut wdiag_frontier_val: u64 = 0;
+        let mut wdiag_frontier_at = Instant::now();
+        let mut wdiag_last_report = Instant::now();
+        let mut wdiag_batches: u64 = 0; // Data batches processed (total)
+        let mut wdiag_syms: u64 = 0; // symbols fed (total)
+        let mut wdiag_batches_last: u64 = 0;
+        let mut wdiag_syms_last: u64 = 0;
+
         // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
         // routinely outrace the reliable control stream). A decoder created
         // without the real params can never decode -- its OTI transfer
@@ -2149,6 +2172,67 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     // policy's move and is structurally skipped here.
                     if recv_window_reliable {
                         last_hole_nack_at = Instant::now();
+                        // Wedge forensics (fix/frontier-wedge): the frontier
+                        // is stalled (this arm only fires with a pending
+                        // hole). Once frozen > 1 s, name the blocker's
+                        // receiver-side state once per second.
+                        if wdiag_on {
+                            if highest_delivered_seq != wdiag_frontier_val {
+                                wdiag_frontier_val = highest_delivered_seq;
+                                wdiag_frontier_at = Instant::now();
+                            }
+                            let stall = wdiag_frontier_at.elapsed();
+                            if stall >= Duration::from_secs(1)
+                                && wdiag_last_report.elapsed() >= Duration::from_secs(1)
+                            {
+                                wdiag_last_report = Instant::now();
+                                let blocker = reorder_buf
+                                    .as_ref()
+                                    .map(|rb| rb.next_deliver_seq())
+                                    .unwrap_or(ooo_frontier);
+                                let (b_seen, b_rec, b_out) = window_decoder
+                                    .as_ref()
+                                    .map(|d| d.seq_probe(blocker))
+                                    .unwrap_or((false, false, false));
+                                let pending = reorder_buf
+                                    .as_ref()
+                                    .map(|rb| rb.pending_count())
+                                    .unwrap_or(0);
+                                let d_batches = wdiag_batches - wdiag_batches_last;
+                                let d_syms = wdiag_syms - wdiag_syms_last;
+                                wdiag_batches_last = wdiag_batches;
+                                wdiag_syms_last = wdiag_syms;
+                                let mut dg = String::new();
+                                for pid in recv_scheduler.lock().live_paths() {
+                                    if let Some((rx, tx)) =
+                                        recv_transport.datagram_frame_stats(pid)
+                                    {
+                                        dg.push_str(&format!(
+                                            " p{pid}:dg_rx={rx}/dg_tx={tx}"
+                                        ));
+                                    }
+                                }
+                                eprintln!(
+                                    "[WEDGE] stall={:.1}s frontier={} blocker={} \
+                                     seen_src={} recovered={} output={} in_rseqs={} \
+                                     pending={} highest_seen={} span={} \
+                                     batches/s={} syms/s={}{}",
+                                    stall.as_secs_f64(),
+                                    highest_delivered_seq,
+                                    blocker,
+                                    b_seen,
+                                    b_rec,
+                                    b_out,
+                                    received_seqs.contains(&blocker),
+                                    pending,
+                                    highest_seen_seq,
+                                    highest_seen_seq.saturating_sub(highest_delivered_seq),
+                                    d_batches,
+                                    d_syms,
+                                    dg,
+                                );
+                            }
+                        }
                         let sack_ranges = received_sack_ranges(
                             &received_seqs,
                             highest_delivered_seq,
@@ -2230,6 +2314,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     let batch_seq = batch.batch_seq;
                     let batch_path_id = batch.path_id;
                     let symbol_count = batch.symbols.len() as u32;
+                    if wdiag_on {
+                        wdiag_batches += 1;
+                        wdiag_syms += symbol_count as u64;
+                    }
 
                     // Touch path as keepalive (received data = path is alive)
                     recv_scheduler.lock().touch_path(path_id);

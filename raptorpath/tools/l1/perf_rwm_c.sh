@@ -116,6 +116,11 @@ fi
 # (RWM_QUIC_CC=bbr|newreno|cubic) — the per-path ~10 Mbit/s wall A/B levers.
 [[ -n "${RWM_GEN_PIPE:-}" ]] && TENV="$TENV RWM_GEN_PIPE=$RWM_GEN_PIPE"
 [[ -n "${RWM_QUIC_CC:-}" ]] && TENV="$TENV RWM_QUIC_CC=$RWM_QUIC_CC"
+# MTU floor (fix/frontier-wedge): min_mtu=initial_mtu=1350 so quinn's MTU
+# black-hole reset can never drop max_datagram_size below a symbol datagram
+# (the ~60 s c3/C8 collapse-run mechanism). Default ON in the binary;
+# RWM_MTU_FLOOR=0 restores stock quinn MTUD (the wedge-reproduction arm).
+[[ -n "${RWM_MTU_FLOOR:-}" ]] && TENV="$TENV RWM_MTU_FLOOR=$RWM_MTU_FLOOR"
 
 OOO_FLAG=""
 [[ "${RWM_OOO:-0}" == "1" ]] && OOO_FLAG="--window-out-of-order"

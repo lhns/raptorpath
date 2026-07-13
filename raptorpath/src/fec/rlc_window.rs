@@ -544,6 +544,14 @@ impl WindowDecoder for RlcWindowDecoder {
         (holes, pivots)
     }
 
+    fn seq_probe(&self, seq: u64) -> (bool, bool, bool) {
+        (
+            self.seen.contains(&(seq, 0, false)),
+            self.recovered.contains_key(&seq),
+            self.output.contains(&seq),
+        )
+    }
+
     fn total_fed(&self) -> u64 {
         self.total_fed
     }
