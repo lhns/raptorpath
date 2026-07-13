@@ -216,9 +216,12 @@ fn r_old(eps: f64, s2: f64, tgt_wf: f64) -> f64 {
 }
 
 /// NEW solver: old PLUS the window-mass quantile term, composed exactly
-/// as production `controller_rate` composes it.
+/// as production `controller_rate` composes it (level rescale to the
+/// current loss estimate; on a full-trace fit eps / eps_mass ~ 1, the
+/// stationary case).
 fn r_new(eps: f64, s2: f64, stats: &MassStats, tgt_wf: f64) -> f64 {
-    r_old(eps, s2, tgt_wf).max(r_star_mass(stats, W as f64, tgt_wf))
+    let scale = eps / stats.eps_mass().max(1e-12);
+    r_old(eps, s2, tgt_wf).max(r_star_mass(stats, W as f64, tgt_wf, scale))
 }
 
 const TARGETS: [f64; 2] = [0.05, 0.02];

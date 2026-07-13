@@ -80,6 +80,18 @@ identity r*(δ=ε̂)=0 survives; term inert until 30 nonzero-mass blocks =
 cold start unchanged). Infeasible contracts (fades no in-window rate ≤ 2.0
 covers) return the ceiling — DECLARED, not silently missed.
 
+**Level rescale (added after `test_full_control_loop` caught it).** The
+mass moments decay once per BLOCK sample (long memory — rare tails need
+samples), which made regime-DOWN adaptation ~64× slower than the BOCD
+level estimate (10%→1% regime: r stuck at max_overhead). Fix: level
+equivariance — the tail is read at the current level,
+P(K>R) = T(R·ε_mass/ε̂_now) with ε_mass = p_nz·m1/w0 the level the mass
+stats embody and ε̂_now the BOCD upper quantile. The term now follows
+level changes at estimator speed while the tail SHAPE keeps its long
+memory; ε̂_now being the conservative upper keeps the architecture's
+estimation-uncertainty layering. (Paper 8.4.1 "Level rescaling";
+`test_r_star_mass_level_rescale`; control_loop suite green again.)
+
 ### Trace-suite delivered reliability (oracle, `rstar_tail_validation.rs`, W=50)
 
 Old = §8.4 closed form (production pre-#46); New = max(old, r*_mass), both
@@ -138,10 +150,10 @@ cap active, max_overhead 0.5, target_tail_loss 1e-5):
 | cell | hint | r_old | r_new |
 |---|---|---|---|
 | c2-WiFi | Bulk | 0.000 | 0.000 (χ=0 identity intact) |
-| c2-WiFi | Auto | 0.119 | 0.224 |
+| c2-WiFi | Auto | 0.119 | 0.213 |
 | c2-WiFi | Realtime | 0.150 | 0.230 |
 | c3-LTE | Bulk | 0.000 | 0.000 |
-| c3-LTE | Auto | 0.167 | 0.255 |
+| c3-LTE | Auto | 0.167 | 0.244 |
 | c3-LTE | Realtime | 0.206 | 0.255 |
 
 The Auto/Realtime increases are BY DESIGN: on a GE cell the legacy closed

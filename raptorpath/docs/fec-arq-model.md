@@ -1927,7 +1927,27 @@ and production emits
 ```
 
 (`r_star_mass` / `MassStats` in raptorpath-math; composition in
-`controller_rate`). Properties, all preserved from Section 8.4: continuous
+`controller_rate`).
+
+**Level rescaling (regime adaptation).** The mass moments deliberately
+carry a LONG memory (rare tails need many samples: one decay step per
+block sample, not per symbol), so after a loss-regime change they would
+lag the fast BOCD level estimate by ~64× — a reactivity regression the
+control-loop tests catch. The resolution is level equivariance: a regime
+LEVEL shift rescales the whole mass distribution while the tail SHAPE
+keeps its long memory. The solver reads the tail at the current level,
+
+```
+   P(K > R) = T( R / s ),    s = ε̂_now / ε_mass,
+   ε_mass = p_nz(1)·m1(1) / w0     (the level the mass stats embody)
+```
+
+with ε̂_now the BOCD posterior upper quantile — so the term follows
+regime changes at estimator speed and inherits the architecture's
+estimation-uncertainty margin (ε̂_now is the conservative upper, making
+s ≳ 1 on stationary channels). s → 0 (channel now clean) sends the term
+to 0 continuously; the oracle-side full-trace fits have s ≈ 1 by
+construction. Properties, all preserved from Section 8.4: continuous
 in δ and in the measured moments; r\*_mass = 0 when the measured tail
 already meets the target at r = 0 (pure ARQ) and identically when δ_wf ≥ 1 —
 so the Bulk χ = 0 identity r\*(δ = ε̂) = 0 survives; inert (exactly the old

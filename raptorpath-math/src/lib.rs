@@ -274,6 +274,16 @@ impl MassStats {
             && self.m1[0] > 0.0
     }
 
+    /// The mean loss level the mass statistics embody:
+    /// eps_mass = P(K_1 >= 1) x E[K_1 | K_1 >= 1] / w0. Used for the
+    /// level rescale in `r_star_mass` (see there). 0.0 when invalid.
+    pub fn eps_mass(&self) -> f64 {
+        if !self.is_valid() {
+            return 0.0;
+        }
+        (self.nz[0] * self.m1[0] / self.block_scale).clamp(0.0, 1.0)
+    }
+
     /// Fitted tail of J_m: P(J_m > x) ~ nz_m x S(x; theta_m, k_m) with
     /// the discrete-Weibull tail fit from the conditional moments.
     fn tail(&self, idx: usize, x: f64) -> f64 {
@@ -331,12 +341,27 @@ impl MassStats {
 /// - This is an ESTIMATE of the window-failure tail (block-aligned
 ///   measurement + Weibull-fit tail extension), validated against replay
 ///   in rstar_tail_validation.rs — not a distribution-free bound.
-pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64) -> f64 {
+///
+/// LEVEL RESCALING (`level_scale`). The mass moments carry a LONG memory
+/// (they estimate rare tails), so after a loss-REGIME change they lag the
+/// fast BOCD level estimate. The caller passes
+/// level_scale = eps_now / eps_mass, where eps_mass = nz_1 x m1_1 / w0 is
+/// the mean loss level the mass statistics themselves embody; the tail is
+/// then read as P(K > R) = T(R / level_scale) — the level-equivariant
+/// family assumption (a regime LEVEL shift rescales the whole mass
+/// distribution; the SHAPE keeps its long memory). With eps_now the BOCD
+/// posterior upper quantile this also inherits the architecture's
+/// estimation-uncertainty margin. level_scale -> 0 (channel now clean)
+/// sends the term to 0 continuously; 1.0 = no rescale (stationary case,
+/// e.g. the oracle-side full-trace fits).
+pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64, level_scale: f64) -> f64 {
     let valid = stats.is_valid()
         && window.is_finite()
         && window >= 1.0
         && delta_wf.is_finite()
-        && delta_wf > 0.0;
+        && delta_wf > 0.0
+        && level_scale.is_finite()
+        && level_scale > 0.0;
     if !valid {
         return 0.0;
     }
@@ -347,7 +372,7 @@ pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64) -> f64 {
     let bound = |r: f64| -> f64 {
         let n = window * (1.0 + r);
         let x = n / w0;
-        let rr = r * window; // repair count R
+        let rr = r * window / level_scale; // repair count R, level-rescaled
         if x <= 1.0 {
             return stats.tail(0, rr);
         }
@@ -643,7 +668,15 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     // pre-#46; delta_wf >= 1 (the Bulk chi = 0 identity delta_eff = p)
     // returns 0 inside r_star_mass, keeping r*(delta = p) = 0.
     let tail_rate = if inp.tail_provision && inp.mass.is_valid() {
-        r_star_mass(&inp.mass, inp.window, delta_eff / p)
+        // Level rescale (see r_star_mass): read the long-memory mass tail
+        // at the CURRENT BOCD loss level, so the term follows regime
+        // changes at estimator speed (level-equivariant tail family).
+        let eps_mass = inp.mass.eps_mass();
+        if eps_mass > 0.0 {
+            r_star_mass(&inp.mass, inp.window, delta_eff / p, p / eps_mass)
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -1793,7 +1826,7 @@ mod tests {
             let stats = ge_mass_stats(p, q, 50, 2_000_000, 42);
             for &tgt in &[0.05, 0.02, 0.01] {
                 let r_exact = compute_r_star_exact(p, q, 50, tgt);
-                let r_mass = r_star_mass(&stats, 50.0, tgt);
+                let r_mass = r_star_mass(&stats, 50.0, tgt, 1.0);
                 let ratio = r_mass / r_exact;
                 println!(
                     "{name} tgt={tgt}: exact={r_exact:.3} mass={r_mass:.3} ratio={ratio:.2}"
@@ -1812,13 +1845,13 @@ mod tests {
         // be smooth (no jumps) and 0 at delta_wf >= 1 (pure ARQ meets the
         // contract).
         let stats = uniform_mass(64.0, 0.5, 3.0, 20.0);
-        assert_eq!(r_star_mass(&stats, 64.0, 1.0), 0.0);
-        assert_eq!(r_star_mass(&stats, 64.0, 2.0), 0.0);
-        let mut prev = r_star_mass(&stats, 64.0, 0.999);
+        assert_eq!(r_star_mass(&stats, 64.0, 1.0, 1.0), 0.0);
+        assert_eq!(r_star_mass(&stats, 64.0, 2.0, 1.0), 0.0);
+        let mut prev = r_star_mass(&stats, 64.0, 0.999, 1.0);
         let mut max_step = 0.0f64;
         for i in 1..=800 {
             let tgt = 0.999 * (1e-6f64 / 0.999).powf(i as f64 / 800.0);
-            let r = r_star_mass(&stats, 64.0, tgt);
+            let r = r_star_mass(&stats, 64.0, tgt, 1.0);
             assert!(r >= prev - 1e-9, "monotone as delta tightens: {prev} -> {r}");
             max_step = max_step.max(r - prev);
             prev = r;
@@ -1833,14 +1866,14 @@ mod tests {
         let (w0, w, tgt) = (64.0, 64.0, 0.01);
         let mut prev = 0.0f64;
         for &m2 in &[30.0, 60.0, 120.0, 300.0] {
-            let r = r_star_mass(&uniform_mass(w0, 0.6, 4.0, m2), w, tgt);
+            let r = r_star_mass(&uniform_mass(w0, 0.6, 4.0, m2), w, tgt, 1.0);
             assert!(
                 r >= prev - 1e-9,
                 "heavier mass tail must not need less rate: m2={m2} r={r} prev={prev}"
             );
             prev = r;
         }
-        let r_light = r_star_mass(&uniform_mass(w0, 0.6, 4.0, 30.0), w, tgt);
+        let r_light = r_star_mass(&uniform_mass(w0, 0.6, 4.0, 30.0), w, tgt, 1.0);
         assert!(
             prev > 1.5 * r_light,
             "m2=300 must demand >1.5x the light-tail rate: {prev} vs {r_light}"
@@ -1850,21 +1883,51 @@ mod tests {
     #[test]
     fn test_r_star_mass_degenerate_guards() {
         let good = uniform_mass(64.0, 0.5, 3.0, 20.0);
-        assert_eq!(r_star_mass(&MassStats::default(), 64.0, 0.01), 0.0);
+        assert_eq!(r_star_mass(&MassStats::default(), 64.0, 0.01, 1.0), 0.0);
         let mut s = good;
         s.nz[0] = 0.0;
-        assert_eq!(r_star_mass(&s, 64.0, 0.01), 0.0);
+        assert_eq!(r_star_mass(&s, 64.0, 0.01, 1.0), 0.0);
         let mut s = good;
         s.block_scale = 0.0;
-        assert_eq!(r_star_mass(&s, 64.0, 0.01), 0.0);
-        assert_eq!(r_star_mass(&good, 0.0, 0.01), 0.0);
-        assert_eq!(r_star_mass(&good, 64.0, 0.0), 0.0);
-        assert_eq!(r_star_mass(&good, 64.0, f64::NAN), 0.0);
+        assert_eq!(r_star_mass(&s, 64.0, 0.01, 1.0), 0.0);
+        assert_eq!(r_star_mass(&good, 0.0, 0.01, 1.0), 0.0);
+        assert_eq!(r_star_mass(&good, 64.0, 0.0, 1.0), 0.0);
+        assert_eq!(r_star_mass(&good, 64.0, f64::NAN, 1.0), 0.0);
         // Uncoverable mass quantile saturates at the declared ceiling and
         // the caller's max_overhead clamp governs.
         let heavy = uniform_mass(64.0, 0.9, 30.0, 3000.0);
-        let r = r_star_mass(&heavy, 64.0, 1e-6);
+        let r = r_star_mass(&heavy, 64.0, 1e-6, 1.0);
         assert!(r >= R_STAR_TAIL_CEILING - 1e-9, "infeasible must hit ceiling: {r}");
+    }
+
+    #[test]
+    fn test_r_star_mass_level_rescale() {
+        // Level equivariance: halving the current loss level (scale 0.5)
+        // must need materially less rate than scale 1, doubling more; and
+        // scale -> 0 sends the term to 0 (clean-now channel), all
+        // continuously and monotonically.
+        let stats = uniform_mass(64.0, 0.6, 4.0, 60.0);
+        let r_half = r_star_mass(&stats, 64.0, 0.01, 0.5);
+        let r_one = r_star_mass(&stats, 64.0, 0.01, 1.0);
+        let r_two = r_star_mass(&stats, 64.0, 0.01, 2.0);
+        assert!(r_half < r_one && r_one < r_two, "{r_half} < {r_one} < {r_two}");
+        assert!(r_half < 0.7 * r_one, "halved level must materially relax: {r_half} vs {r_one}");
+        let mut prev = 0.0f64;
+        let mut max_step = 0.0f64;
+        for i in 1..=400 {
+            let s = i as f64 / 100.0; // 0.01 .. 4.0
+            let r = r_star_mass(&stats, 64.0, 0.01, s);
+            assert!(r >= prev - 1e-9, "monotone in level scale");
+            max_step = max_step.max(r - prev);
+            prev = r;
+        }
+        assert!(max_step < 0.05, "no jumps along the level scale: {max_step}");
+        // Degenerate scales are guarded.
+        assert_eq!(r_star_mass(&stats, 64.0, 0.01, 0.0), 0.0);
+        assert_eq!(r_star_mass(&stats, 64.0, 0.01, f64::NAN), 0.0);
+        // eps_mass helper consistency.
+        assert!((stats.eps_mass() - 0.6 * 4.0 / 64.0).abs() < 1e-12);
+        assert_eq!(MassStats::default().eps_mass(), 0.0);
     }
 
     #[test]
