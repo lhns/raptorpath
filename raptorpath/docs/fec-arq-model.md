@@ -88,6 +88,7 @@ ACK absence.
    - [8.2 Corrected Model (canonical)](#82-corrected-model-canonical)
    - [8.3 Burst Variance Correction](#83-burst-variance-correction)
    - [8.4 The Corrected Optimal Correction Rate](#84-the-corrected-optimal-correction-rate)
+   - [8.4.1 Burst-Tail Provisioning: r* Against the Measured Window-Mass Quantile](#841-burst-tail-provisioning-r-against-the-measured-window-mass-quantile)
    - [8.5 Worked Examples](#85-worked-examples)
    - [8.6 Three-Variable Optimization](#86-three-variable-optimization)
    - [8.7 Exact P_fec via Transfer-Matrix DP](#87-exact-p_fec-via-transfer-matrix-dp)
@@ -553,14 +554,24 @@ two paths through the stable-generation design (§16.3) still aggregates above
 the fast path (×1.178, tracking the GE control ×1.180 and the real goodput
 ceiling ×1.188), so real per-path *dynamics* do not break the coding mechanic.
 
-**Recommended enrichment (not built here).** The channel model should be
-enriched beyond a single stationary GE toward either (a) a **higher-order /
-semi-Markov** burst model with a heavy-tailed (e.g. Pareto) sojourn in the Bad
-state to capture the fade tail and long memory, or (b) a **hierarchical /
-regime-switching** model (a slow outer chain over fade regimes modulating an
-inner GE) to capture non-stationarity — with r\* provisioned against the
-*empirical* window-loss quantile rather than the Gaussian/GE tail. This is a
-model recommendation; production code is unchanged.
+**Enrichment (BUILT — Section 8.4.1, task #46).** The recommendation that
+closed this section's earlier revisions — *provision r\* against the empirical
+window-loss quantile rather than the Gaussian/GE tail* — is now implemented and
+shipped. The receiver measures the multi-scale tail of its own **window
+loss-mass** (losses per m-block span; the exact window-failure statistic — a
+window fails iff its total loss mass exceeds its repair count, Section 8.4.1),
+fits a discrete-Weibull tail to it (the k = 1 case is exactly GE's geometric
+law), and r\* is the larger of the Section 8.4 closed form and the mass-quantile
+rate. Validation through the same replay machinery as this section
+(`raptorpath-math/tests/rstar_tail_validation.rs`): on GE draws the corrected
+r\* tracks the Section 8.7 exact optimum (×0.92–1.11, no over-provisioning); on
+the five real traces the worst delivered residual over feasible cells improves
+from **2.88× to 1.41×** the target (the remainder is non-stationarity), and
+cells no in-window rate ≤ 200 % can meet (deep multi-window fades) are
+**declared infeasible** by the solver rather than silently missed. What remains
+open beyond the tail fix: regime-switching non-stationarity (partially absorbed
+by the BOCD posterior and the decayed counters) and cross-path correlation
+(below).
 
 **Correlation gap (open).** Public single-path traces are independent by
 construction, so the multipath result above tests real per-path *dynamics* but
@@ -1826,7 +1837,9 @@ no mode switch anywhere on the path from "heavy FEC" to "pure ARQ".
 - σ²_burst amplifies the margin for bursty channels (large for small p+q)
 - On strongly bursty channels this closed form UNDER-provisions the tail
   (Gaussian tail + ignored loss/repair correlation) — see Section 8.7 for
-  the exact computation and the size of the gap
+  the exact GE computation and the size of the gap, and Section 8.4.1 for
+  the measured-tail correction that production applies on top (real
+  traces are 2-4× worse than even the GE-exact prediction; Section 2.5)
 
 **Note:** This formula uses the raw loss rate e. For the canonical production
 formula including codec overhead, replace e with e_hat = e + e_codec x
@@ -1839,6 +1852,165 @@ substrate that assumption fails — proactive repair is dropped/wasted such that
 observed proactive-recovery fraction stays ≈0.3–0.6 at high RTT+loss regardless of
 r (r-sweep) or of receiver NACK timing (§12.9 repair-wait). Raising r* to compensate
 does not help because the added repair is dropped at the same rate. See §12.9.
+
+### 8.4.1 Burst-Tail Provisioning: r* Against the Measured Window-Mass Quantile
+
+> **Status: DERIVED + MEASURED-through-oracle + SHIPPED (task #46).** The
+> Section 8.4 closed form (and even the Section 8.7 exact GE computation)
+> provisions against *GE-geometric* bursts. Real traces carry heavier burst
+> tails AND burst clustering (long memory), and the delivered window-failure
+> misses the δ/ε target by 2–4× beyond the GE-ideal (Section 2.5, task #43).
+> This subsection derives the corrected provisioning and is what production
+> ships (env gate `RWM_RSTAR_TAIL`, default ON; `=0` restores legacy GE-only
+> provisioning for A/B).
+
+**The exact failure statistic.** A window of W source symbols with R = rW
+repairs spans N = W + R wire slots. Let K be the number of lost slots and x
+of them repairs. The window fails iff source losses exceed surviving repairs:
+
+```
+   K − x  >  R − x      ⟺      K > R          (independent of x!)
+```
+
+A loss that hits a repair removes one loss AND one repair — the deficit is
+unchanged. So the per-window failure probability is EXACTLY the upper tail
+of the window loss mass K_N, and the right quantity to provision against is
+the receiver's own measured window-mass distribution. This also explains why
+a *single-burst-length* quantile is not enough: a window is killed just as
+dead by two clustered 20-loss bursts as by one 40-loss burst, and real loss
+clusters far beyond GE (the Section 2.5 long-memory miss — lag-20
+autocorrelation 5×–4100× the GE prediction). The mass statistic contains the
+burst-length tail, the clustering, and the loss/repair correlation at once.
+
+**Measurement (all online, no new contract parameters).** The receiver bins
+its per-symbol loss observations into blocks of w0 = 64 wire slots and, with
+the same decayed-counter pattern as the GE transition counts, tracks for
+each span length m = 1..8 blocks (sliding at block granularity):
+
+```
+   p_nz(m)  = P(J_m ≥ 1)            fraction of m-spans with any loss
+   m1(m)    = E[J_m | J_m ≥ 1]      conditional mean mass
+   m2(m)    = E[J_m² | J_m ≥ 1]     conditional second moment
+```
+
+where J_m = losses in m consecutive blocks. Each conditional tail is
+extended parametrically with a **discrete Weibull**: S(t) = P(J > t) =
+θ^(t^k). k = 1 is *exactly* the geometric law (θ = 1−q) — GE is the special
+case, not a competitor — and k < 1 is the stretched-exponential heavy tail
+real fades show. (θ, k) come from midpoint-corrected moment matching (X =
+J − ½):
+
+```
+   E[X²]/E[X]² = Γ(1+2/k) / Γ(1+1/k)²        (strictly decreasing in k
+                                              → binary search)
+   c = (Γ(1+1/k) / E[X])^k,   θ = e^(−c)
+```
+
+On geometric moments this fit returns k ≈ 1, θ ≈ 1−q (unit-tested): a GE
+channel measures itself back.
+
+**The corrected rate.** P(window fails) = P(K_N > R) is read from the
+measured tails at the window's own scale x = N/w0 ∈ [1, 8], interpolating
+linearly between the two bracketing spans (the conservative side of the
+log-linear reading); beyond the largest tracked span the window is chunked
+with a union bound:
+
+```
+   F(r) = (1−f)·T_lo(R) + f·T_hi(R),     T_m(R) = p_nz(m)·S_m(R)
+   r*_mass = min { r ∈ [0, 2] : F(r) ≤ δ_wf },   δ_wf = δ/ε
+```
+
+and production emits
+
+```
+   r* = max( r*_{8.4} ,  r*_mass )
+```
+
+(`r_star_mass` / `MassStats` in raptorpath-math; composition in
+`controller_rate`).
+
+**Level rescaling (regime adaptation).** The mass moments deliberately
+carry a LONG memory (rare tails need many samples: one decay step per
+block sample, not per symbol), so after a loss-regime change they would
+lag the fast BOCD level estimate by ~64× — a reactivity regression the
+control-loop tests catch. The resolution is level equivariance: a regime
+LEVEL shift rescales the whole mass distribution while the tail SHAPE
+keeps its long memory. The solver reads the tail at the current level,
+
+```
+   P(K > R) = T( R / s ),    s = ε̂_now / ε_mass,
+   ε_mass = p_nz(1)·m1(1) / w0     (the level the mass stats embody)
+```
+
+with ε̂_now the BOCD posterior upper quantile — so the term follows
+regime changes at estimator speed and inherits the architecture's
+estimation-uncertainty margin (ε̂_now is the conservative upper, making
+s ≳ 1 on stationary channels). s → 0 (channel now clean) sends the term
+to 0 continuously; the oracle-side full-trace fits have s ≈ 1 by
+construction. Properties, all preserved from Section 8.4: continuous
+in δ and in the measured moments; r\*_mass = 0 when the measured tail
+already meets the target at r = 0 (pure ARQ) and identically when δ_wf ≥ 1 —
+so the Bulk χ = 0 identity r\*(δ = ε̂) = 0 survives; inert (exactly the old
+controller) until the receiver has observed 30 nonzero-mass blocks — cold
+start is unchanged. When even the r = 2 ceiling cannot meet δ_wf (a fade
+deeper than any in-window budget), the solver returns the ceiling: the
+contract is **declared infeasible in-window** and the max_overhead clamp
+governs — the miss is explicit, not silent.
+
+**Worked example (old vs new on a heavy-tail channel).** Semi-Markov
+channel, geometric Good sojourns, discrete-Weibull(k = 0.5, θ = 0.55) Bad
+sojourns, ε = 12.5%, max burst 310 — the controlled version of the real
+traces. A GE fit sees σ²_burst = 9.8. At W = 50, δ_wf = 0.02:
+
+```
+                     r*        delivered WF/target   (replay, 27k windows)
+   old (§8.4)       0.486            5.1×    MISS
+   new (§8.4.1)     1.268            0.99×   HIT
+```
+
+The same comparison on a *GE-generated* WiFi/LTE/Sat draw shows why this is
+not blanket over-provisioning — the corrected r\* lands ON the Section 8.7
+exact GE optimum (which the closed form itself under-shoots):
+
+```
+   GE draw (W=50, δ_wf=0.02)   r*_old   r*_new   r*_exact(§8.7)   WF_old  WF_new
+   WiFi  (ε=2.5%)               0.105    0.137      0.130          2.4×    0.90×
+   LTE   (ε=4.8%)               0.177    0.239      0.230          2.2×    0.80×
+   Sat   (ε=9.1%)               0.306    0.434      0.390          2.7×    0.60×
+```
+
+**Validation on the real traces (task #43 machinery, all five traces).**
+Worst delivered residual over cells where the contract is feasible in-window
+improves from **2.88× to 1.41×** the target; the residual above 1× is
+non-stationarity (the moments are one number for a drifting trace). Six of
+ten trace/target cells are declared infeasible at W = 50 (e.g.
+TMobile-UMTS-driving at ε = 24.5%: even r = 2 leaves ~21% of windows inside
+fades no in-window rate covers) — on those the ceiling still improves the
+residual (12.8× → 10.7× at worst) and the infeasibility is reported.
+Full tables: `rstar_tail_validation.rs`.
+
+**L1 status (MEASURED, 2026-07-13).** The corrected r\* is realized where
+the computed rate is consumed directly (the L0 gate suite; the oracle
+replay). At L1 in *plain window mode* it is currently INERT at the wire:
+the taper emission path resets its offset on cumulative-ack advancement,
+so emitted proactive repair ≈ Σ τ(t) = r symbols *per ack cycle*
+(~r/cycle-length overhead, nearly independent of r's magnitude), and an
+x8 two-seed A/B on c3-realtime shows the arms tied at equal emitted
+overhead — the same substrate class as the §8.4 "Measured caveat"/§12.9.
+Fixing the emission scheduler is the named follow-up; details in
+goal-gate "r\* Bursty-Loss Provisioning".
+
+**Cost and scoping (honest).** On heavy-tail channels the corrected r\* is
+large *because the contract is expensive there* — reliability against fades
+is bought with bandwidth. The (δ, ρ, r) contract itself scopes the cost: Bulk
+(δ_eff = ε̂) pays nothing (identity above); loose targets on GE-like channels
+pay ≤ a few points of r (the term tracks the exact GE requirement); only
+tight-δ profiles on measured-heavy channels pay materially — which is exactly
+the regime the contract demands be paid for. The saturation cap
+(Section 14.21) still overrides where more FEC measurably hurts the tail.
+Remaining limits: non-stationarity (~1.4× residual), the block-aligned
+measurement (alignment slack absorbed by the conservative interpolation), and
+the decayed-moment memory horizon.
 
 ### 8.5 Worked Examples
 

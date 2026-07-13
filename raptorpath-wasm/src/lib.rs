@@ -115,6 +115,11 @@ pub fn controller_rate(
     math::controller_rate(&math::RateInputs {
         p_upper, sigma2, mean_burst, window, t_symbols, srtt, t_sym,
         codec_overhead, tail_target, bulk_late_is_fine, completion_exposure,
+        // #46 (paper 8.4.1): the flat JS wrapper carries no measured
+        // window-mass statistics; the tail term is inert without them
+        // (identical to production cold start).
+        mass: math::MassStats::default(),
+        tail_provision: true,
         // Paper 14.28: the visualizer models a raw transfer (file-transfer
         // semantics — no latency-feedback payload inside), so the
         // inner-feedback repair floor stays off (as does production by
@@ -593,6 +598,14 @@ impl Simulation {
             p_upper,
             sigma2,
             mean_burst,
+            // #46 (paper 8.4.1): the sim aggregates several per-path
+            // estimators and a capacity-weighted mixture of mass QUANTILES
+            // is not defined (unlike the moment aggregates above), so the
+            // sim does not feed the window-mass tail term yet — it stays
+            // inert, matching production cold start. Single-path parity
+            // with the production term is covered by the math-crate tests.
+            mass: math::MassStats::default(),
+            tail_provision: true,
             window: self.encoder.window_size().max(1) as f64,
             t_symbols,
             srtt: self.agg_srtt(),

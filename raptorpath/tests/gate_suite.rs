@@ -1629,9 +1629,20 @@ fn gate_vs_simquic_multipath() {
     //   overhead eats most of it — 0.6x is IMPOSSIBLE (floor ratio ~0.85)
     //   and measured is parity (1.01x). Loosened to a no-regression bound:
     //   aggregation must not LOSE to the best single path (1.1x with CI).
+    //   #46 RECALIBRATION (r* burst-tail provisioning, paper 8.4.1): the
+    //   corrected Auto r* tracks the Section 8.7 EXACT GE requirement
+    //   (~0.22-0.26 on these cells) instead of the under-provisioning
+    //   closed form (~0.12-0.17) — the old bound was calibrated on a rate
+    //   that missed its own delivered-reliability target 2x+. The dual
+    //   source capacity with corrected overhead is 15/1.24 ~ 12.1 MB/s vs
+    //   the FEC-free single-path 12.5 MB/s, a floor ratio ~1.03x (measured
+    //   1.04x; legacy arm RWM_RSTAR_TAIL=0 still passes 1.1). The declared
+    //   overhead price of the honest Auto contract moves the C8
+    //   no-regression bound 1.1 -> 1.15 (goal-gate "r* Bursty-Loss
+    //   Provisioning").
     let cells: &[(&str, [GateChannel; 2], u64, f64)] = &[
         ("C7-dual-sym", [C2_WIFI, C2_WIFI], 27, 0.75),
-        ("C8-dual-asym", [C2_WIFI, C3_LTE], 28, 1.1),
+        ("C8-dual-asym", [C2_WIFI, C3_LTE], 28, 1.15),
     ];
     for (name, dual, cell_id, factor) in cells {
         let mut fec_compl = TrialStats::new();
