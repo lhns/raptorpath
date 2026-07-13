@@ -2745,6 +2745,13 @@ channel loss (random drops = stable RTT). This is essential for raptorpath.
 
 ### 12.2 QUIC Datagrams Bypass Quinn's CC
 
+> **REFUTED (2026-07-13, §16.17 / §12.11).** Datagrams bypass quinn's
+> RELIABILITY machinery but NOT its congestion controller: quinn gates every
+> packet send on its congestion window. The paragraph below is retained as
+> the original (incorrect) design assumption; see §12.11 for the corrected
+> model (substrate CC as policy) and §16.17 for the measurement that exposed
+> it.
+
 Raptorpath sends symbol data as QUIC unreliable datagrams, which bypass
 Quinn's built-in congestion control (NewReno). Our own CC is the sole rate
 limiter for data traffic. Quinn's CC only applies to QUIC streams (handshake,
@@ -3259,6 +3266,79 @@ C8. Closing the collapse still needs the transport-pipeline change named in §14
 (pipelined per-RTT frontier recovery, or a genuinely rateless ack-frontier where a
 hole is never a fixed in-order position) plus a per-path (not summed) outstanding
 cap. Both knobs are retained env-gated + default-off; the shipped path is untouched.
+
+### 12.11 Substrate CC is POLICY: the pass-through window and Copa-sole ownership (2026-07-13, measured)
+
+> **Correction to §12.2.** "QUIC datagrams bypass Quinn's CC" is FALSE on the
+> send side: quinn gates EVERY packet send — DATAGRAM frames included — on its
+> congestion window (§16.17 named this as the generation substrate ceiling, and
+> the same lever exposed that plain mode's 15–17 Mbit/s "link ceiling" was
+> quinn's stock Cubic, not the link: plain+BBR = 76). The engine's CC was never
+> the sole rate limiter; the effective window was min(app CC, quinn CC) — a
+> hidden loss-reactive controller UNDERNEATH a loss-tolerant FEC transport.
+
+With that finding, the substrate controller becomes an explicit POLICY surface
+(`RWM_QUIC_CC`, default UNSET = stock Cubic, byte-identical):
+
+```
+  cubic | newreno   loss-reactive stock controllers (the old hidden default)
+  bbr               quinn's model-based controller (§16.17's ×3.4 lever)
+  passthrough       quinn's controller is a pass-through shim: window() reads
+                    a per-path atomic OUR engine writes — the raptorpath
+                    Copa-lite per-path cwnd (per connection = per path) IS the
+                    substrate congestion window. Loss events are recorded,
+                    never acted on (loss is FEC's job, §12.1; congestion
+                    safety is Copa's delay backoff); quinn's pacer derives
+                    from the window, so the wire is paced at Copa's cwnd/RTT.
+```
+
+Copa-sole rationale (vs leaving BBR underneath): (a) **the δ-triangle
+mapping** — Copa's δ is our hint-coupled queue target (§12.4/P1:
+1.08/1.125/1.25), so the substrate's operating point inherits the stream's
+declared latency/throughput profile instead of a fixed BBR gain; (b) **no
+phases** — Copa's natural oscillation drains its own standing queue within
+~5 RTT continuously, where BBR's ProbeRTT is a forced 200 ms drain (a FEC
+protection gap, §12.3) and ProbeBW overshoots by design; (c) **one
+controller, one signal path** — min()-coupling two independent controllers
+makes the tighter one the binder in an uncontrolled way (§16.17's wall was
+exactly that).
+
+Prerequisite (the plain-mode feeding fix, and a code-fact correction): plain
+window-reliable mode was believed to leave Copa delivery-blind; in fact the
+receiver's per-batch Ack fires in window mode too, so Copa was fed the
+ACK-INTERVAL Δt estimator all along — whose windowed max over-reads ~×10
+under ack bunching (measured: 108 k vs true 10.4 k sym/s on the c2-shaped L0
+shim), pinning cwnd and the plain outstanding cap via the anchor floor:
+bufferbloat by estimator. The Copa-sole feed replaces it with BBR-correct
+SEND-interval rate samples (the §16.13 machinery) attributed per path from
+each WindowAck's cumulative-frontier/SACK diff, suppresses the legacy
+samples, and re-keys the plain outstanding cap to gain×Σcwnd (with honest
+samples an anchor-keyed cap is circular — samples can never read above the
+cap they themselves set).
+
+Measured (L1 plain mode, 25 MB ×8 ×2 seeds, arms interleaved; full tables in
+goal-gate "Copa-Sole Substrate CC"): Copa-sole does NOT reach BBR-under's
+bulk throughput — single-c2 28.9/31.2 vs 75.9/75.4 (0.4×), C7 57.1/51.1 vs
+96.7/99.9, C8 28.4/29.4 vs 54.5/52.9 — the named mechanism being Copa's own
+delay-targeting (it equilibrates perceived queue at the hint target while BBR
+runs 2×BDP and eats the queue) compounded by the app-layer echo-RTT reading
+the sender's own store reservoir as queue (shrinking the reservoir from
+2×cwnd to 1.25×cwnd raised throughput +13–23 % AND tightened the queue).
+What Copa-sole DELIVERS: a 3–6× tighter standing queue than BBR-under in
+every cell with dramatically better tails (single-c2 p90 78/38 ms vs 512 ms;
+C8 slow-path p90 321 ms vs 2 474 ms — no ProbeBW overshoot, no
+ProbeRTT-class stalls), elimination of plain-BBR's c3 bimodal collapse mode
+(σ 6.5 → 0.63, zero collapse runs), and near-perfect symmetric aggregation
+relative to its own single (C7 = ×1.98). The rate is genuinely OWNED: the
+substrate window tracked Copa's cwnd end to end with GE loss present and no
+loss-reactive collapse.
+
+Deployment caveat: Copa-lite has no TCP-competitive mode (Copa §4 mode
+switching not built — deliberately out of scope here); against loss-based
+cross-traffic on a shared bottleneck a delay-based controller yields, and no
+cross-traffic cell was measured. `passthrough` is an experiment knob;
+BBR-under remains the bulk-throughput reference/default-fallback and the
+shipped default remains stock Cubic.
 
 ---
 
@@ -7560,7 +7640,11 @@ bottlenecks was not evaluated and flipping the shipped default is a separate
 decision. **What remains of #61:** the M\* depth term only engages when
 BDP > G (RTT100/200 classes) — at c2/c3 M\* = 2 and GP's +47 % came from the
 queue/pacing/reactive discipline; the depth law is implemented and unit-tested
-but not yet validated in its engagement regime.
+but not yet validated in its engagement regime. **Follow-on:** §12.11 turns
+the substrate controller into an explicit policy surface and measures the
+third policy — `RWM_QUIC_CC=passthrough`, our Copa-lite owning the quinn
+window outright (plain mode: 0.4–0.6× BBR-under's bulk throughput, 3–6×
+tighter standing queue, c3 collapse mode eliminated).
 
 ---
 

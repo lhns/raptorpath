@@ -89,28 +89,159 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
 // is a hard substrate ceiling underneath raptorpath's own loss-tolerant
 // FEC/CC design — the exact per-connection (= per-path) wall the L1
 // generation-mode measurements hit. This knob lets an A/B name that binder:
-//   RWM_QUIC_CC=bbr    quinn BBR (model-based, loss-tolerant)
+//   RWM_QUIC_CC=bbr          quinn BBR (model-based, loss-tolerant)
 //   RWM_QUIC_CC=newreno
-//   RWM_QUIC_CC=cubic  explicit default
+//   RWM_QUIC_CC=cubic        explicit default
+//   RWM_QUIC_CC=passthrough  OUR engine owns the window (see below)
 // Applied to BOTH client and server configs (each direction's sends are
 // governed by the sender-side controller of that connection).
+//
+// PASSTHROUGH (feat/copa-sole-cc, task #80): substrate CC as POLICY. quinn's
+// controller becomes a pass-through shim whose window() simply reads an
+// Arc<AtomicU64> (bytes) that the raptorpath engine writes per path — the
+// engine's own Copa-lite per-path cwnd becomes THE congestion window of the
+// substrate (per connection = per path), instead of min(app CC, quinn CC)
+// double control. quinn's loss events are recorded (stats only), never acted
+// on — loss handling is the FEC layer's job (paper §12); congestion safety is
+// Copa's delay backoff, which the engine writes into the atomic. quinn's own
+// pacer derives its rate from this window, so pacing stays consistent with
+// the engine's cwnd. The atomic starts at PASSTHROUGH_INITIAL_WINDOW so the
+// TLS handshake and pre-feed traffic are never starved before Copa's first
+// cwnd write; connections that never get a Copa feed (ack-only reverse
+// direction) simply keep that static window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QuicCcMode {
+    /// Env unset/unrecognized: quinn stock Cubic, byte-identical shipped path.
+    Stock,
+    Bbr,
+    NewReno,
+    Cubic,
+    Passthrough,
+}
+
+fn quic_cc_mode() -> QuicCcMode {
+    let Ok(name) = std::env::var("RWM_QUIC_CC") else {
+        return QuicCcMode::Stock;
+    };
+    match name.trim().to_ascii_lowercase().as_str() {
+        "bbr" => QuicCcMode::Bbr,
+        "newreno" => QuicCcMode::NewReno,
+        "cubic" => QuicCcMode::Cubic,
+        "passthrough" => QuicCcMode::Passthrough,
+        other => {
+            warn!(%other, "RWM_QUIC_CC unrecognized — keeping quinn default (cubic)");
+            QuicCcMode::Stock
+        }
+    }
+}
+
+/// Initial pass-through window (bytes). Generous on purpose: it covers the
+/// TLS handshake and the first RTTs before the engine's first Copa cwnd
+/// write (a starved handshake would deadlock the tunnel), and it is the
+/// permanent window for connections whose direction carries only control
+/// traffic (no Copa feed). Once the engine writes, Copa owns the value.
+const PASSTHROUGH_INITIAL_WINDOW: u64 = 256 * 1024;
+
+/// Absolute floor for the pass-through window: never below two datagrams, so
+/// a zero/garbage write can never wedge the connection entirely (ACK and
+/// control packets keep flowing at a trickle).
+const PASSTHROUGH_MIN_WINDOW_MTUS: u64 = 2;
+
+/// Record-only counters for what quinn WOULD have reacted to (RWM_DIAG-class
+/// observability; never gates anything).
+#[derive(Debug, Default)]
+pub struct PassthroughCcStats {
+    pub congestion_events: std::sync::atomic::AtomicU64,
+    pub lost_bytes: std::sync::atomic::AtomicU64,
+    pub persistent_congestion: std::sync::atomic::AtomicU64,
+}
+
+/// The pass-through `quinn::congestion::Controller`: `window()` reads the
+/// shared atomic; every congestion signal is a recorded no-op.
+struct PassthroughController {
+    window: Arc<std::sync::atomic::AtomicU64>,
+    stats: Arc<PassthroughCcStats>,
+    mtu: u16,
+}
+
+impl quinn::congestion::Controller for PassthroughController {
+    fn on_congestion_event(
+        &mut self,
+        _now: std::time::Instant,
+        _sent: std::time::Instant,
+        is_persistent_congestion: bool,
+        lost_bytes: u64,
+    ) {
+        use std::sync::atomic::Ordering;
+        self.stats.congestion_events.fetch_add(1, Ordering::Relaxed);
+        self.stats.lost_bytes.fetch_add(lost_bytes, Ordering::Relaxed);
+        if is_persistent_congestion {
+            self.stats.persistent_congestion.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn on_mtu_update(&mut self, new_mtu: u16) {
+        self.mtu = new_mtu;
+    }
+
+    fn window(&self) -> u64 {
+        self.window
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .max(PASSTHROUGH_MIN_WINDOW_MTUS * self.mtu as u64)
+    }
+
+    fn clone_box(&self) -> Box<dyn quinn::congestion::Controller> {
+        Box::new(Self {
+            window: self.window.clone(),
+            stats: self.stats.clone(),
+            mtu: self.mtu,
+        })
+    }
+
+    fn initial_window(&self) -> u64 {
+        PASSTHROUGH_INITIAL_WINDOW
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
+/// Factory handing every connection built from it the SAME per-path window
+/// atomic (one factory per path/endpoint — per-connection = per-path).
+struct PassthroughFactory {
+    window: Arc<std::sync::atomic::AtomicU64>,
+    stats: Arc<PassthroughCcStats>,
+}
+
+impl quinn::congestion::ControllerFactory for PassthroughFactory {
+    fn build(
+        self: Arc<Self>,
+        _now: std::time::Instant,
+        current_mtu: u16,
+    ) -> Box<dyn quinn::congestion::Controller> {
+        Box::new(PassthroughController {
+            window: self.window.clone(),
+            stats: self.stats.clone(),
+            mtu: current_mtu,
+        })
+    }
+}
+
 fn quic_cc_factory(
 ) -> Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>> {
-    let name = std::env::var("RWM_QUIC_CC").ok()?;
-    match name.trim().to_ascii_lowercase().as_str() {
-        "bbr" => {
+    match quic_cc_mode() {
+        QuicCcMode::Bbr => {
             info!("RWM_QUIC_CC=bbr: quinn congestion controller overridden to BBR");
             Some(Arc::new(quinn::congestion::BbrConfig::default()))
         }
-        "newreno" => {
+        QuicCcMode::NewReno => {
             info!("RWM_QUIC_CC=newreno: quinn congestion controller overridden to NewReno");
             Some(Arc::new(quinn::congestion::NewRenoConfig::default()))
         }
-        "cubic" => Some(Arc::new(quinn::congestion::CubicConfig::default())),
-        other => {
-            warn!(%other, "RWM_QUIC_CC unrecognized — keeping quinn default (cubic)");
-            None
-        }
+        QuicCcMode::Cubic => Some(Arc::new(quinn::congestion::CubicConfig::default())),
+        // Passthrough needs a PER-PATH handle — built in cc_factory_for_path.
+        QuicCcMode::Passthrough | QuicCcMode::Stock => None,
     }
 }
 
@@ -262,6 +393,14 @@ pub struct QuicTransport {
     pinned_cert_hash: Option<[u8; 32]>,
     /// L0 netem shim (env `RWM_L0_NETEM`; None = shipped path, byte-identical).
     l0_netem: Option<Arc<L0Netem>>,
+    /// `RWM_QUIC_CC=passthrough`: the engine owns the substrate window.
+    cc_passthrough: bool,
+    /// Per-path pass-through window handles (bytes) — one per endpoint/path,
+    /// created when that path's endpoint config is built; the engine writes
+    /// its Copa cwnd here via `set_cc_window_bytes`.
+    cc_windows: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
+    /// Per-path record-only pass-through congestion stats (diagnostics).
+    cc_stats: DashMap<PathId, Arc<PassthroughCcStats>>,
 }
 
 impl QuicTransport {
@@ -283,11 +422,27 @@ impl QuicTransport {
             info!(fingerprint = %hex::encode(hash), "TLS cert pinning enabled");
         }
 
+        let cc_passthrough = quic_cc_mode() == QuicCcMode::Passthrough;
+        if cc_passthrough {
+            info!(
+                initial_window = PASSTHROUGH_INITIAL_WINDOW,
+                "RWM_QUIC_CC=passthrough: quinn congestion window is engine-owned (per path)"
+            );
+        }
+        let cc_windows: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>> = DashMap::new();
+        let cc_stats: DashMap<PathId, Arc<PassthroughCcStats>> = DashMap::new();
+
         let endpoints = DashMap::new();
 
         for (i, addr) in bind_addrs.iter().enumerate() {
+            let cc = Self::cc_factory_for_path(
+                cc_passthrough,
+                &cc_windows,
+                &cc_stats,
+                i as PathId,
+            );
             let endpoint = if is_server {
-                let (server_config, cert_der) = Self::generate_self_signed_config()?;
+                let (server_config, cert_der) = Self::generate_self_signed_config(cc)?;
                 // Log the server cert fingerprint so the user can pin it on the client
                 let fingerprint = sha256_fingerprint(&cert_der[0]);
                 info!(%addr, path_id = i, fingerprint = %hex::encode(fingerprint),
@@ -295,7 +450,7 @@ impl QuicTransport {
                 Endpoint::server(server_config, *addr)?
             } else {
                 let mut ep = Endpoint::client(*addr)?;
-                let client_config = Self::make_client_config(pinned_cert_hash);
+                let client_config = Self::make_client_config(pinned_cert_hash, cc);
                 ep.set_default_client_config(client_config);
                 info!(%addr, path_id = i, "client endpoint bound");
                 ep
@@ -309,6 +464,75 @@ impl QuicTransport {
             is_server,
             pinned_cert_hash,
             l0_netem: L0Netem::from_env(),
+            cc_passthrough,
+            cc_windows,
+            cc_stats,
+        })
+    }
+
+    /// Per-path congestion-controller factory. Passthrough mode gets a
+    /// PER-PATH factory sharing that path's window atomic (per-connection =
+    /// per-path: each endpoint serves exactly one path, and any reconnect on
+    /// it correctly inherits the same engine-owned window); the other modes
+    /// use the stock env-selected factory.
+    fn cc_factory_for_path(
+        cc_passthrough: bool,
+        cc_windows: &DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
+        cc_stats: &DashMap<PathId, Arc<PassthroughCcStats>>,
+        path_id: PathId,
+    ) -> Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>> {
+        if !cc_passthrough {
+            return quic_cc_factory();
+        }
+        let window = cc_windows
+            .entry(path_id)
+            .or_insert_with(|| {
+                Arc::new(std::sync::atomic::AtomicU64::new(PASSTHROUGH_INITIAL_WINDOW))
+            })
+            .clone();
+        let stats = cc_stats
+            .entry(path_id)
+            .or_insert_with(|| Arc::new(PassthroughCcStats::default()))
+            .clone();
+        Some(Arc::new(PassthroughFactory { window, stats }))
+    }
+
+    /// Engine write side of the pass-through window: set path `path_id`'s
+    /// substrate congestion window in BYTES. No-op unless
+    /// `RWM_QUIC_CC=passthrough` created a handle for this path.
+    pub fn set_cc_window_bytes(&self, path_id: PathId, bytes: u64) {
+        if !self.cc_passthrough {
+            return;
+        }
+        if let Some(w) = self.cc_windows.get(&path_id) {
+            w.store(bytes, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Whether the pass-through substrate CC is active (the engine owns the
+    /// per-path quinn window and should be feeding it).
+    pub fn cc_passthrough_active(&self) -> bool {
+        self.cc_passthrough
+    }
+
+    /// Read back the pass-through window (bytes) for diagnostics; None when
+    /// passthrough is off or the path has no handle.
+    pub fn cc_window_bytes(&self, path_id: PathId) -> Option<u64> {
+        self.cc_windows
+            .get(&path_id)
+            .map(|w| w.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Record-only pass-through congestion stats for diagnostics:
+    /// (congestion_events, lost_bytes, persistent_congestion).
+    pub fn cc_passthrough_stats(&self, path_id: PathId) -> Option<(u64, u64, u64)> {
+        use std::sync::atomic::Ordering;
+        self.cc_stats.get(&path_id).map(|s| {
+            (
+                s.congestion_events.load(Ordering::Relaxed),
+                s.lost_bytes.load(Ordering::Relaxed),
+                s.persistent_congestion.load(Ordering::Relaxed),
+            )
         })
     }
 
@@ -391,12 +615,18 @@ impl QuicTransport {
         peer_addr: Option<SocketAddr>,
     ) -> anyhow::Result<quinn::Connection> {
         // Create and bind new endpoint
+        let cc = Self::cc_factory_for_path(
+            self.cc_passthrough,
+            &self.cc_windows,
+            &self.cc_stats,
+            path_id,
+        );
         let endpoint = if self.is_server {
-            let (server_config, _cert) = Self::generate_self_signed_config()?;
+            let (server_config, _cert) = Self::generate_self_signed_config(cc)?;
             Endpoint::server(server_config, bind_addr)?
         } else {
             let mut ep = Endpoint::client(bind_addr)?;
-            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash));
+            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash, cc));
             ep
         };
         self.endpoints.insert(path_id, endpoint);
@@ -655,6 +885,7 @@ impl QuicTransport {
     }
 
     fn generate_self_signed_config(
+        cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<(ServerConfig, Vec<CertificateDer<'static>>)> {
         let cert = rcgen::generate_simple_self_signed(vec!["raptorpath".into()])?;
         let cert_der = CertificateDer::from(cert.cert);
@@ -671,7 +902,7 @@ impl QuicTransport {
         transport.max_concurrent_uni_streams(100u32.into());
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
-        if let Some(cc) = quic_cc_factory() {
+        if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);
         }
 
@@ -680,7 +911,10 @@ impl QuicTransport {
 
     /// Build a client config with either pinned cert verification or
     /// insecure mode (skip verification) for dev/testing.
-    fn make_client_config(pinned_hash: Option<[u8; 32]>) -> ClientConfig {
+    fn make_client_config(
+        pinned_hash: Option<[u8; 32]>,
+        cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
+    ) -> ClientConfig {
         let verifier: Arc<dyn rustls::client::danger::ServerCertVerifier> = match pinned_hash {
             Some(hash) => Arc::new(PinnedCertVerifier { expected_hash: hash }),
             None => Arc::new(SkipCertVerification),
@@ -699,7 +933,7 @@ impl QuicTransport {
         let mut transport = quinn::TransportConfig::default();
         transport.datagram_receive_buffer_size(Some(4 * 1024 * 1024));
         transport.datagram_send_buffer_size(4 * 1024 * 1024);
-        if let Some(cc) = quic_cc_factory() {
+        if let Some(cc) = cc {
             transport.congestion_controller_factory(cc);
         }
         config.transport_config(Arc::new(transport));
@@ -831,5 +1065,76 @@ impl rustls::client::danger::ServerCertVerifier for SkipCertVerification {
             rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
             rustls::SignatureScheme::ED25519,
         ]
+    }
+}
+
+#[cfg(test)]
+mod passthrough_cc_tests {
+    use super::*;
+    use quinn::congestion::{Controller, ControllerFactory};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    fn build(window: &Arc<AtomicU64>, mtu: u16) -> Box<dyn Controller> {
+        let f = Arc::new(PassthroughFactory {
+            window: window.clone(),
+            stats: Arc::new(PassthroughCcStats::default()),
+        });
+        f.build(Instant::now(), mtu)
+    }
+
+    /// The shim's window() follows the engine-owned atomic: what our engine
+    /// writes IS the substrate congestion window.
+    #[test]
+    fn window_follows_the_atomic() {
+        let w = Arc::new(AtomicU64::new(PASSTHROUGH_INITIAL_WINDOW));
+        let c = build(&w, 1200);
+        assert_eq!(c.window(), PASSTHROUGH_INITIAL_WINDOW);
+        w.store(37_500, Ordering::Relaxed); // Copa cwnd 30 sym x 1250 B
+        assert_eq!(c.window(), 37_500);
+        w.store(1_000_000, Ordering::Relaxed);
+        assert_eq!(c.window(), 1_000_000);
+    }
+
+    /// The handshake is never starved: the initial window is generous (the
+    /// atomic starts at PASSTHROUGH_INITIAL_WINDOW, well above quinn's stock
+    /// RFC-9002 initial ~14 720 B) and a zero/garbage write floors at two
+    /// datagrams instead of wedging the connection.
+    #[test]
+    fn handshake_not_starved_and_zero_write_floors() {
+        let w = Arc::new(AtomicU64::new(PASSTHROUGH_INITIAL_WINDOW));
+        let c = build(&w, 1500);
+        assert!(c.initial_window() >= 64 * 1024);
+        assert!(c.window() >= 64 * 1024, "pre-feed window must cover the handshake");
+        w.store(0, Ordering::Relaxed);
+        assert_eq!(c.window(), 2 * 1500, "zero write floors at 2 MTUs, never 0");
+    }
+
+    /// clone_box (quinn clones controllers for path state) keeps sharing the
+    /// SAME engine-owned atomic.
+    #[test]
+    fn clone_box_shares_the_atomic() {
+        let w = Arc::new(AtomicU64::new(50_000));
+        let c = build(&w, 1200);
+        let c2 = c.clone_box();
+        w.store(80_000, Ordering::Relaxed);
+        assert_eq!(c.window(), 80_000);
+        assert_eq!(c2.window(), 80_000);
+    }
+
+    /// Congestion events are recorded, never acted on: window unchanged.
+    #[test]
+    fn congestion_events_are_recorded_noops() {
+        let w = Arc::new(AtomicU64::new(100_000));
+        let stats = Arc::new(PassthroughCcStats::default());
+        let f = Arc::new(PassthroughFactory { window: w.clone(), stats: stats.clone() });
+        let mut c = f.build(Instant::now(), 1200);
+        let now = Instant::now();
+        c.on_congestion_event(now, now, false, 3_600);
+        c.on_congestion_event(now, now, true, 1_200);
+        assert_eq!(c.window(), 100_000, "loss must not move the engine-owned window");
+        assert_eq!(stats.congestion_events.load(Ordering::Relaxed), 2);
+        assert_eq!(stats.lost_bytes.load(Ordering::Relaxed), 4_800);
+        assert_eq!(stats.persistent_congestion.load(Ordering::Relaxed), 1);
     }
 }

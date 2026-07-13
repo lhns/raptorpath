@@ -6331,3 +6331,202 @@ all green (47/19/22/4/4/23); `gate_suite` 15/15 release; `perf_loopback` 8/8,
 fmtcp/daps loopbacks green; L0 engine bench green before/after. Micro-bench:
 `cargo test --test gen_decode_bench --release -- --ignored --nocapture`
 (RWM_B_* knobs documented in the file).
+
+## Copa-Sole Substrate CC (2026-07-13) — `RWM_QUIC_CC=passthrough`: the engine's per-path Copa-lite cwnd IS quinn's congestion window, fed for the first time with CLEAN plain-mode delivery samples; Copa-sole does NOT earn bulk-throughput parity with BBR-under (0.4–0.6×, mechanism named) but holds a 3–6× tighter standing queue everywhere (slow-path tail up to ×8), kills plain-BBR's c3 collapse mode (σ 6.5→0.63), and aggregates C7 at ×1.98 of its own single (branch `feat/copa-sole-cc`, code commit a895205)
+
+Task #80. The Gen Substrate Ceiling section proved quinn gates every datagram
+send on its own congestion controller — so the effective window was always
+min(app CC, quinn CC), with quinn's loss-reactive Cubic silently the binder.
+This build makes the substrate controller an explicit POLICY surface and
+measures the third policy: OUR Copa-lite owning the window outright.
+
+### Design (as built)
+
+1. **Pass-through shim** (`src/transport/quic.rs`): a
+   `quinn::congestion::Controller` whose `window()` reads an `Arc<AtomicU64>`
+   (bytes) the engine writes; `on_congestion_event` etc. are recorded
+   (per-path counters) and never acted on — loss is the FEC layer's job
+   (paper §12.1), congestion safety is Copa's delay backoff. One factory per
+   endpoint = per connection = per path; the transport keeps the handles
+   (`set_cc_window_bytes(path, bytes)`). Initial window 256 KB (handshake and
+   pre-feed traffic never starved; ack-only reverse connections simply keep
+   it), floor 2 MTUs (a zero write can never wedge the connection). quinn's
+   own pacer derives from the window, so the wire send process is paced at
+   Copa's cwnd/RTT. `RWM_QUIC_CC` accepts `passthrough` next to
+   `bbr|newreno|cubic`; default UNSET = stock Cubic, byte-identical
+   (gate_suite 15/15 release on this tree).
+2. **Conversion**: Copa cwnd [symbols] × 1250 B/symbol (plain mode = one
+   ~1200 B symbol per datagram + framing) → window bytes, written after every
+   Copa update (WindowAck feed; the block-mode Ack arm writes it too).
+
+### The plain-mode Copa feeding fix — and a code-fact CORRECTION to the 2026-07-13 verdict audit
+
+The verdict audit claimed plain window-reliable mode never feeds Copa's
+`record_delivery` (WindowAcks record RTT only; only the block-path
+`ControlMessage::Ack` drives it). HALF right: WindowAcks are indeed RTT-only,
+BUT the per-batch `ControlMessage::Ack` send site (net/mod.rs, "ADR-0005:
+send ACK with echo timestamp") sits AFTER the window/block receive branch and
+fires in WINDOW mode too — plain mode has ALWAYS driven
+`Scheduler::ack -> on_ack -> record_delivery`, just with the ACK-INTERVAL Δt
+estimator. MEASURED on the L0 netem shim (c2 params, shipped plain default,
+`RWM_RS_TRACE` forensic): that estimator's windowed max over-reads ~×10
+(btlbw 108 739 vs true ~10.4 k sym/s; spike anatomy: Δ≈101 symbols over a
+~1 ms ack-bunch), est=Y, cwnd pinned 4 793 by the anchor floor, and the plain
+`plain_dyn_cap` (2×anchor) store cap latched at RELIABLE_STORE_MAX 1024 — the
+plain-mode standing queue (203–356 ms at L1 c2) is the OVER-READ, not a
+missing feed. Copa was never blind in plain mode; it was fed garbage.
+
+The feed (active only under `RWM_QUIC_CC=passthrough` or standalone
+`RWM_COPA_FEED=1`; in-order plain window-reliable only; shipped default
+byte-identical):
+
+- **Send side**: every plain source send (and targeted retransmit) records
+  seq→path (`CopaFeed`) + a BBR rate-sample snapshot (`on_src_sent` — the
+  existing §16.13 send-interval machinery, previously generation-gated).
+- **Ack side**: each WindowAck's cumulative-frontier advance + newly-SACKed
+  seqs are diffed against an attribution cursor (each seq attributed exactly
+  once, out-of-order/duplicate-ack safe, per-ack work bounded) and attributed
+  to the path that carried them: `on_src_delivered_seq` (SEND-interval Δt —
+  ack-aggregation robust) + `on_delivery_signal` (the `record_delivery`-free
+  half of `on_ack`; update rules byte-identical) + the pass-through window
+  write. RTT floor and delivery signal are then BOTH live per path (DIAG:
+  est=Y, btlbw 8 048–10 659 ≈ true 10.4 k at c2 — over-read CLOSED at L0 and
+  at L1 on the fast path; the c3/slow path still over-reads ~×4, decode/ack-
+  burst clocked, recorded below).
+- **Legacy pollution suppressed**: under the feed the per-batch Ack arm
+  releases the wire-level in-flight budget only (no `record_delivery`).
+- **Store-cap re-key**: with honest samples the 2×anchor outstanding cap is
+  CIRCULAR (samples can never read above the cap they set — L0 measured the
+  collapse: anchor stuck ~3.2 k of 10.4 k, throughput 18.5 of 66 Mbit/s; the
+  legacy over-read was accidentally load-bearing). Under the feed the cap is
+  `RWM_STORE_GAIN × Σcwnd` (Copa's probe state escapes the loop; default
+  gain 2.0) — L0 restored 47.5.
+
+### L1 battery — PLAIN mode only (VM 10.1.5.16, 2026-07-13 ~12:19–13:20 UTC; binary sha256 c2248e40a1db0b… built from commit a895205; 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42 AND 7, `RWM_DIAG=1` on every arm; full env + command per run in `/home/vibe/copasole/{sc2,sc3,c7,c8}-s{42,7}.log`, per-run sender DIAG in `diag-*.log`; driver `/home/vibe/copasole_battery.sh`)
+
+Arms (all PLAIN, `RWM_GEN=0`, same binary): **A** = stock Cubic-under
+(shipped default) · **B** = `RWM_QUIC_CC=bbr` (the §16.17 reference) ·
+**C** = `RWM_QUIC_CC=passthrough` (Copa-sole) · **D** (sc2 only) = C +
+`RWM_STORE_GAIN=1.25` (reservoir probe). Mechanism liveness: every completed
+C/D run's sender log carries the `passthrough` + `feed ACTIVE` config echo
+and est=Y DIAG; the 9 seed-7 invocations lost to the known topo-ping abort
+(the n<8 entries) are exactly the runs with no result. Session validated
+against the same-day §16.17 references: A 17.0/19.5 (historic 17.0/18.9),
+B 75.9/75.4 (historic 76.1/72.6).
+
+**single-c2** (Mbit/s, mean (σ_s) [runs]):
+
+| arm | seed42 | seed7 |
+|---|---|---|
+| A | 17.02 (0.26) [17.3 16.9 16.9 17.5 17.1 17.0 16.7 16.9] | 19.45 (2.29, n=7) [18.8 24.6 19.4 18.2 18.9 18.2 18.2] |
+| B | **75.89** (1.92) [76.8 76.1 77.1 74.1 76.5 74.1 79.1 73.4] | **75.43** (3.08, n=7) [77.8 75.6 73.6 72.8 72.5 74.8 81.0] |
+| C | 28.86 (5.95) [39.2 34.3 24.3 28.7 20.0 30.9 26.2 27.4] | 31.22 (8.42, n=6) [33.2 15.4 40.0 33.6 35.2 30.0] |
+| D | 32.60 (2.87) [32.4 31.6 33.4 38.1 34.9 31.2 30.1 29.0] | 38.39 (2.56) [39.5 33.5 38.1 42.3 37.8 37.6 40.4 38.0] |
+
+**single-c3**:
+
+| arm | seed42 | seed7 |
+|---|---|---|
+| A | 3.19 (0.10) | 3.63 (0.13, n=7) |
+| B | 10.60 (**6.51, BIMODAL**: 3× ~2.75 + 5× ~15.3) | 15.53 (0.28, n=7) |
+| C | **9.54 (0.63)** [10.5 10.1 9.4 9.5 8.4 9.5 9.3 9.8] | **9.87 (0.74, n=6)** [9.2 10.9 9.3 9.8 9.4 10.6] |
+
+**C7 (c2+c2)**:
+
+| arm | seed42 | seed7 |
+|---|---|---|
+| A | 20.56 (0.82) | 24.67 (1.70, n=6) |
+| B | **96.73** (13.68) [69.7 110.7 84.6 108.0 99.3 106.9 97.4 97.3] | **99.93** (6.56) |
+| C | 57.05 (9.34) [51.3 72.0 45.9 67.7 55.7 48.0 61.8 54.1] | 51.08 (3.72, n=6) |
+
+**C8 (c2+c3)**:
+
+| arm | seed42 | seed7 |
+|---|---|---|
+| A | 14.25 (2.05) | 12.93 (2.25, n=6) |
+| B | **54.50** (9.50) [49.2 49.1 61.5 45.6 57.3 48.1 74.1 51.0] | **52.94** (10.64, n=7) [63.3 38.7 56.7 45.7 41.6 62.7 61.9] |
+| C | 28.35 (8.21) [37.3 24.5 14.0 40.2 27.1 30.1 30.0 23.6] | 29.35 (4.13, n=5) [29.0 31.9 34.5 27.8 23.6] |
+
+**Queue behavior (Copa's selling point) — per-path live RTT vs RTprop from the
+sender DIAG, pooled steady-state (per-run lines 4+), p50 queue = rtt p50 −
+rtp p50 (ms). NOTE: this echo-RTT includes the sender's OWN store reservoir
+buffered in quinn's datagram queue — the app-layer pipeline delay a consumer
+actually experiences — in all arms alike:**
+
+| cell/path | A | B | C | D |
+|---|---|---|---|---|
+| sc2 s42 | 203 (rtt p50/p90 216/330) | 65 (77/102) | **23 (33/77)** | **16 (25/79)** |
+| sc2 s7 | 356 (370/654) | 87 (99/**512**) | **21 (32/78)** | **12 (22/38)** |
+| sc3 s42 | 1501 (1572/2892) | 120 (162/436) | **77 (116/336)** | — |
+| sc3 s7 | 1536 (1584/2757) | 430 (474/**2450**) | **83 (124/438)** | — |
+| c7 s42 (p0/p1) | 197/180 | 33/42 | **31/28** | — |
+| c7 s7 (p0/p1) | 226/207 | 26/31 | **34/23** | — |
+| c8 s42 fast/slow | 101/**1146** | 33/313 | **30/70** | — |
+| c8 s7 fast/slow | 99/**1615** | 52/395 (slow p90 **2474**) | **23/131** (slow p90 321) | — |
+
+### VERDICT — honest
+
+1. **Copa-sole does NOT earn bulk-throughput parity with BBR-under**: C/B =
+   0.38–0.41 (sc2), 0.51–0.59 (C7), 0.52–0.55 (C8), 0.62–0.90 (sc3). Every
+   delta ≫ the recorded arm σ_s. The MECHANISM is Copa working as designed
+   plus one structural coupling: Copa equilibrates its perceived queuing
+   delay at the hint target (+jitter headroom, ~10 ms at c2), and its
+   app-layer echo-RTT signal includes the sender's own (gain−1)×cwnd store
+   reservoir draining through quinn — a self-signal that caps the equilibrium
+   cwnd near BDP + target·BtlBw, i.e. ~40–60% utilization at the wire, where
+   BBR runs 2×BDP cwnd and simply eats 65–430 ms of queue. Arm D (reservoir
+   1.25×cwnd instead of 2×) confirms the self-signal term is real: +13/+23%
+   throughput AND a tighter queue (p50 16/12 ms, p90 38 ms at s7).
+2. **The queue claim is decisively DELIVERED**: standing queue p50 3–6×
+   tighter than BBR-under in every cell (23 vs 65–87 at sc2; 77–83 vs
+   120–430 at sc3; c8 slow path 70–131 vs 313–395), and the TAILS are the
+   headline — no PROBE_BW overshoot / PROBE_RTT-class stalls: sc2-s7 p90 78
+   (C) / 38 (D) vs 512 (B); c8-s7 slow p90 321 vs 2474. Cubic-under for
+   scale: 203–1615 ms p50.
+3. **Stability**: Copa-sole never DNF'd and never entered plain-B's c3
+   collapse mode — sc3 σ_s 0.63/0.74 vs B's bimodal 6.51 (3/8 runs at
+   ~2.75); C8 σ 4.1–8.2 vs B 9.5–10.6 (historic plain-B C8 was outright
+   bimodal σ 25, 2.5–69).
+4. **Aggregation preserved**: C7 = ×1.98/×1.64 of C's own single (per-path
+   Copa fills each pipe independently; B aggregates ×1.27/×1.32 over its
+   single). C8 = 0.94–0.98× of C's single (parity with its own fast-alone,
+   like every substrate before it).
+5. **Ownership demonstrated**: the substrate window followed Copa's cwnd end
+   to end (est=Y everywhere, fast-path anchor honest ×1.0–1.05, no
+   loss-reactive collapse with GE loss present) — the min()-coupling is
+   gone; what remains is Copa's own operating point.
+
+### Caveats / deployment
+
+- **Competitive-mode gap (deployment caveat)**: Copa-lite has NO
+  TCP-competitive mode (Copa §4 mode switching was deliberately not built —
+  out of scope for this build). Against loss-based cross-traffic on a shared
+  bottleneck a delay-based controller yields; no cross-traffic cell was
+  measured. `passthrough` is an experiment knob; **BBR-under remains the
+  bulk-throughput reference and the sensible default-fallback**; shipped
+  default remains stock Cubic (unset), byte-identical.
+- **Slow-path anchor still over-reads ~×4 under the feed at c3** (btlbw 8 547
+  vs true ~2 083; rej[iv] high — decode/ack-burst clocked): the send-interval
+  sampler needs a paced wire to be exact, and c3's ack cadence is bursty. It
+  no longer matters for the window (cwnd, not the anchor, owns the rate) but
+  is recorded for the record.
+- **The echo-RTT conflation is structural**: any app-layer CC over a buffered
+  substrate reads its own reservoir as queue. D shows the reservoir gain is
+  the right lever if Copa-sole throughput ever matters; flipping
+  RWM_STORE_GAIN's default is NOT done here (it also affects legacy plain).
+- **Ack-only / pre-feed connections** keep the 256 KB static window (no Copa
+  feed on that direction) — fine for control traffic; a bulk reverse flow
+  gets a feed of its own by symmetry.
+- n<8 arms: the known seed-7 GE topo-ping abort (driver retries once; double
+  aborts drop the rep) — all n recorded, all losses accounted (9 aborted
+  invocations = the 9 diag files without a config echo).
+
+### Tests
+
+`cargo test -p raptorpath --lib` 306/306 (new: 4 pass-through shim — window
+follows the atomic, handshake not starved + zero-write floor, clone shares
+the atomic, congestion events are recorded no-ops; 4 CopaFeed — exactly-once
+frontier/SACK attribution, dedupe, retransmit path-reassignment, bounded
+per-ack work); `-p raptorpath-math` pass; gate_suite 15/15 release (shipped
+default untouched); new `copa_sole_loopback` end-to-end guard (passthrough +
+feed over real QUIC). L0 shim smokes recorded above (`RWM_RS_TRACE`).
