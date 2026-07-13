@@ -527,9 +527,7 @@ impl CopaState {
             rs_rej_zero: 0,
             rs_rej_applimited: 0,
             rs_generated: 0,
-            rs_robust_bw: std::env::var("RWM_RATE_WIRE")
-                .ok()
-                .map_or(false, |v| v != "0" && !v.is_empty()),
+            rs_robust_bw: crate::config::env_flag("RWM_RATE_WIRE", false),
             rs_robust_q: std::env::var("RWM_RATE_Q")
                 .ok()
                 .and_then(|s| s.parse::<f64>().ok())

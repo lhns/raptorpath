@@ -357,6 +357,73 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     Ok((peer_config, status_addr))
 }
 
+/// Boolean `RWM_*` env gate parser — the ONE way to read an on/off experiment
+/// gate.
+///
+/// Semantics (fixes the `.is_ok()` footgun where `RWM_FMTCP=0` / `RWM_DAPS=0`
+/// counted as ON):
+///   - unset → `default` (shipped default preserved)
+///   - set to "" / "0" / "false" (case-insensitive, trimmed) → OFF
+///   - set to "1" / anything else → ON
+///
+/// Numeric-VALUE knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do NOT use
+/// this — they parse their value, and 0 may be a legitimate value there.
+pub fn env_flag(name: &str, default: bool) -> bool {
+    match std::env::var(name) {
+        Err(_) => default,
+        Ok(v) => {
+            let v = v.trim();
+            !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod env_flag_tests {
+    use super::env_flag;
+
+    // Each test uses UNIQUE var names so parallel test threads never race.
+
+    #[test]
+    fn unset_returns_the_default() {
+        std::env::remove_var("RWM_TEST_EF_UNSET");
+        assert!(!env_flag("RWM_TEST_EF_UNSET", false));
+        assert!(env_flag("RWM_TEST_EF_UNSET", true));
+    }
+
+    #[test]
+    fn zero_false_and_empty_are_off_even_when_default_on() {
+        for (var, val) in [
+            ("RWM_TEST_EF_ZERO", "0"),
+            ("RWM_TEST_EF_FALSE", "false"),
+            ("RWM_TEST_EF_FALSE_UC", "FALSE"),
+            ("RWM_TEST_EF_FALSE_MC", "False"),
+            ("RWM_TEST_EF_EMPTY", ""),
+            ("RWM_TEST_EF_WS", "  0  "),
+        ] {
+            std::env::set_var(var, val);
+            assert!(!env_flag(var, false), "{var}={val:?} must be OFF");
+            assert!(!env_flag(var, true), "{var}={val:?} must be OFF");
+            std::env::remove_var(var);
+        }
+    }
+
+    #[test]
+    fn one_and_anything_else_are_on_even_when_default_off() {
+        for (var, val) in [
+            ("RWM_TEST_EF_ONE", "1"),
+            ("RWM_TEST_EF_TRUE", "true"),
+            ("RWM_TEST_EF_YES", "yes"),
+            ("RWM_TEST_EF_NUM", "16"),
+        ] {
+            std::env::set_var(var, val);
+            assert!(env_flag(var, false), "{var}={val:?} must be ON");
+            assert!(env_flag(var, true), "{var}={val:?} must be ON");
+            std::env::remove_var(var);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5713,3 +5713,162 @@ Summary of findings:
   (3) the "Generation-ON Re-Baseline (2026-07-13)" section records the first
   valid generation-ON ceilings + C8/C7. The MEASUREMENT DISCIPLINE checklist
   at the top of this file is now binding for every future L1 verdict.
+
+## Gen-ON Stack Ablation (2026-07-13) — FIRST ablation of the DAPS-era stack with generation actually ON: the symmetric C7 collapse 21→12 is the STACK (rate-sample −22%, depth −20…−30%), NOT the coding (gen-bare ≈ plain, keeps ×1.35 aggregation); gen-mode C8 is SUBSTRATE-bound (per-path ≈10 Mbit/s generation ceiling), and PLAIN C8 beats every gen arm ×1.6 same-day; plus the env-parse footgun fixed (`RWM_*=0` now truly OFF) (branch `feat/gen-on-ablation`)
+
+The §16.15 re-baseline left an open attribution: with generation ON, symmetric C7
+collapsed 21→12 (0.88× fast-alone). Was that (a) generation coding's intrinsic
+coordination cost, (b) the DAPS-era stack live for the FIRST time and actively
+harmful, or (c) split? Nobody had ever measured gen-ON *bare*. This section answers
+it with a five-arm same-binary ablation, both topologies, both seeds, interleaved.
+
+### JOB 1 — the env-parse fix (prerequisite: "explicitly OFF" arms were inexpressible)
+
+Every `RWM_*` boolean gate that used `std::env::var(..).is_ok()` counted `=0` (and
+`=false`) as ON — `RWM_FMTCP=0` *enabled* generation (net/mod.rs:699), `RWM_DAPS=0`
+counted as set (net/mod.rs:3317) — the verdict-audit footgun. ONE helper now parses
+every boolean gate, `config::env_flag(name, default)`: unset → shipped default;
+`""`/`"0"`/`"false"` (case-insensitive, trimmed) → OFF; `"1"`/anything else → ON.
+Converted 21 gates in net/mod.rs (`RWM_FMTCP`×2, `RWM_DAPS`, `RWM_SACK_PRUNE`,
+`RWM_REASM_BDP`, `RWM_FDIAG`, `RWM_TRACE`×2, `RWM_DAPS_PACE`, `RWM_PACE_ALL`,
+`RWM_SRC_BP`, `RWM_PER_PATH_EST`, `RWM_RATE_SAMPLE`, `RWM_DAPS_DEPTH`,
+`RWM_CC_PACE`, `RWM_OOO_RETAIN`, `RWM_INLINE_REPAIR`, `RWM_PROACTIVE_PACER`,
+`RWM_XPATH_REPAIR`, `RWM_DIAG`, `RWM_CODED_SRC`, `RWM_NO_REACTIVE`, `RWM_PFRAC`)
++ `RWM_RATE_WIRE` (scheduler/mod.rs). Numeric-VALUE knobs (`RWM_GEN_R`, `RWM_STORE`,
+`RWM_FRONTIER*`, …) untouched — 0 is a legitimate value there. Shipped defaults for
+UNSET are identical everywhere; behaviour changes only for anyone who passed `=0`
+expecting OFF — which is the fix. 3 unit tests (`config::env_flag_tests`). Verified
+at the runtime surface: `RWM_FMTCP=0` + plain run → 0 coded lines (pre-fix it
+self-enabled generation).
+
+### JOB 2 — method (VM 10.1.5.16, dual netns, same binary, interleaved, guard-verified)
+
+Arms (r=0.03 for all gen arms; after JOB 1, `=0` truly means OFF):
+
+| arm | env | meaning |
+|---|---|---|
+| P | `RWM_GEN=0` | plain window-reliable control (harness gate; no `--window-generation-coding`) |
+| G0 | `RWM_GEN_R=0.03` | generation ON, BARE — no DAPS, no per-path est, no rate-sample, no depth |
+| G1 | + `RWM_DAPS=1 RWM_RATE_SAMPLE=0 RWM_DAPS_DEPTH=0` | + DAPS (legacy ack-interval anchor) |
+| G2 | + `RWM_DAPS=1 RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=0` | + BBR rate-sample estimator chain |
+| G3 | + `RWM_DAPS=1 RWM_RATE_SAMPLE=1 RWM_DAPS_DEPTH=1` | FULL stack = the §16.15/161aff1 config |
+
+25 MB × 1 run per invocation × 8 reps, arm order P,G0,G1,G2,G3 round-robin per rep
+(cancels session drift *within* each battery — the §16.14 lesson), seeds 42 AND 7,
+C7 (c2+c2) and C8 (c2+c3), fresh tunnel per invocation, hard timeouts, `cod>0`
+GUARD asserted on the SENDER log for every gen-arm run (GUARD OK on ALL of them;
+plain arms have no guard by construction). Singles (25 MB × 8, seed 42) once per
+mode for the ceilings. Runtimes: build 3 min; c7s42 10 min; c7s7 12.5 min; singles
+46 min; c8s42 21 min; c8s7 17 min (~2 h total). Full logs on the VM under
+`/home/vibe/ablation/results-*.log`.
+
+Two harness caveats, recorded honestly: (1) `topo_dual.sh`'s verification `ping -c 2`
+runs under `set -e` and seed-7's GE loss occasionally eats both echoes → instant
+pre-measurement abort; the driver retries ×3 per invocation (31 retries C7/19 C8 at
+seed 7; 2 reps lost in c7s7 — G0 n=7, G3 n=7 — and 2 in c8s7 — G0 n=6). (2) Because
+every rep is a fresh 1-run invocation, each sample is a "run-1" (cold engine); the
+§16.15 battery ran 8 warm runs per invocation, so LEVELS here sit slightly below
+§16.15's for the same config (G3 C8 9.27/10.80 vs 9.97/13.52) — cross-arm
+comparisons within this battery are unaffected (that is what interleaving buys).
+
+### C7 (c2+c2) SYMMETRIC — the tax attribution table
+
+| arm | seed42 mean (σ_s) [runs] | seed7 mean (σ_s) [runs] | pooled | ×fast-alone (15.15) |
+|---|---|---|---:|---:|
+| P | 20.47 (1.20) [19.28 20.96 22.03 18.25 20.40 20.89 20.58 21.37] | 25.09 (0.82) [26.15 25.24 23.87 24.52 24.32 25.46 25.10 26.10] | **22.78** | **1.50×** |
+| G0 | 20.83 (0.81) [20.63 21.71 19.41 20.11 20.85 21.89 20.86 21.15] | 20.54 (2.28, n=7) [22.26 21.10 20.41 15.61 21.37 22.26 20.76] | **20.70** | **1.37×** |
+| G1 | 20.22 (0.35) [19.80 20.57 20.64 20.11 20.17 20.62 20.01 19.84] | 20.64 (0.23) [20.44 21.10 20.61 20.85 20.49 20.47 20.45 20.71] | 20.43 | 1.35× |
+| G2 | 15.55 (0.66) [16.33 15.40 14.20 15.48 15.40 15.43 16.09 16.04] | 16.16 (1.19) [14.51 16.66 14.91 18.32 15.54 16.31 16.42 16.63] | 15.86 | 1.05× |
+| G3 | 12.12 (2.18) [8.27 10.43 11.75 13.91 13.90 13.37 10.77 14.53] | 11.29 (2.33, n=7) [8.03 13.00 8.08 12.35 13.36 11.14 13.06] | **11.73** | **0.77×** |
+
+**Attribution (the answer to the §16.15 open question): it is (b) — the stack.**
+- **Coding intrinsic (P→G0): ~0 to −18 %, seed-dependent** (s42 +0.4, within noise;
+  s7 −4.6). Bare generation KEEPS plain-class aggregation: G0 = 20.7 = ×1.37
+  fast-alone — real symmetric aggregation, on par with plain's historic ×1.28–1.35.
+- **DAPS placement alone (G0→G1): FREE** (−0.3 pooled, within noise, both seeds).
+- **Rate-sample estimator (G1→G2): −22 %** (−4.7 s42 / −4.5 s7 — consistent).
+- **Depth bound (G2→G3): −17 % (s42) / −30 % (s7)** — and NOTE: §16.15 claimed depth
+  is "a provable no-op on symmetric skew"; it is NOT in practice, because the
+  decode-clocked per-path anchors swing so hard that one path always *looks*
+  transiently slower, acquires a garbage skew/budget, and gets depth-throttled.
+- G3 replicates §16.15's C7 (12.12/11.29 vs 12.05/12.59) — consistency check PASS;
+  the whole −45 % symmetric collapse is rate-sample+depth stacked on a free base.
+
+### C8 (c2+c3) HETEROGENEOUS
+
+| arm | seed42 mean (σ_s) [runs] | seed7 mean (σ_s) [runs] | pooled | ×fast-alone (15.15) |
+|---|---|---|---:|---:|
+| P | 14.99 (2.01) [11.83 16.44 16.65 16.90 12.42 16.55 14.18 14.95] | 14.93 (2.10) [14.60 16.01 14.80 12.95 15.88 16.33 11.11 17.78] | **14.96** | **0.99×** |
+| G0 | 9.27 (0.14) [9.24 9.16 9.38 9.15 9.47 9.25 9.42 9.10] | 9.11 (0.48, n=6) [9.16 8.85 8.94 10.04 8.94 8.73] | 9.19 | 0.61× |
+| G1 | 8.05 (0.77) [7.13 7.60 8.33 9.17 8.76 7.00 8.47 7.97] | 8.15 (0.68) [8.69 7.31 8.47 8.00 7.71 8.67 7.28 9.07] | 8.10 | 0.53× |
+| G2 | 7.33 (0.78, n=7, **1 DNF**) [7.51 6.82 8.81 6.87 7.59 6.42 7.26] | 9.27 (2.13) [9.78 8.05 8.19 8.14 14.32 8.21 8.39 9.07] | 8.30 | 0.55× |
+| G3 | 9.27 (1.57) [9.33 7.14 7.36 11.45 10.61 10.24 8.14 9.87] | 10.80 (2.46) [12.29 13.04 12.02 9.19 9.05 14.34 7.18 9.31] | **10.04** | 0.66× |
+
+### Ceilings (singles, 25 MB × 8, seed 42, same day/binary)
+
+| single arm | mean (σ_s) [runs] |
+|---|---|
+| PLAIN single-c2 | **15.15** (5.26) [17.27 14.86 17.50 15.40 18.74 16.54 **2.56** 18.35] — median 16.90; one bimodal-low run (the known plain tail) |
+| GEN-BARE single-c2 | **9.70** (0.32) [9.72 9.02 9.63 9.64 9.60 9.98 10.02 9.96] — GUARD OK |
+| PLAIN single-c3 | **3.31** (0.15) [3.24 3.16 3.34 3.28 3.57 3.23 3.50 3.15] |
+| GEN-BARE single-c3 | **COLLAPSED**: run1 0.78 Mbit/s then DNF (GUARD OK, 764 k coded — generation ran). Bare gen at r=0.03 is NOT viable on the lossy slow path alone; §16.15's full-stack 3.04 needed the DAPS-deepened window. |
+
+### THE LOAD-BEARING STRUCTURAL FINDING — gen-mode C8 is SUBSTRATE-bound, not scheduling-bound
+
+Line up three numbers: gen-bare single-c2 **9.70** (σ 0.32) · gen-bare C8 **9.27/9.11**
+(σ 0.14/0.48) · gen-bare C7 **20.7** (≈ ×2.15 its own single). In generation mode each
+path delivers ≈10 Mbit/s regardless of what the link can carry (plain c2 does 15–17
+alone): the binder is the generation pipeline itself (the (pipeline+2)·G in-flight
+window / window-fill decode serialization — on C7 both paths fill generations in
+parallel and per-path throughput stays ~10.3; single-path and C8-fast-path hit the same
+~9.7–10 wall, and the slow path adds ≈0 net). That is why gen C8 sits pinned at
+9.2 ± 0.1 — it IS the substrate ceiling (0.95× of gen's own fast-alone), and why no
+DAPS-era scheduling lever could ever have lifted it. It also explains §16.15's
+"single-path coding tax": bare gen single is 9.70 (−36 % vs plain); the full stack's
+13.99 was DAPS's deeper (pipeline+6)·G read-ahead partially relieving the window
+serialization ON SINGLE PATH — the same knobs that tax duals.
+
+### Best-achievable C8 today + does ANYTHING beat fast-alone? — NO
+
+- **Best absolute C8 config: PLAIN window-reliable, 14.96 pooled** — 0.99× same-day
+  fast-alone mean (0.89× its 16.90 median): parity, NOT aggregation. Every gen arm is
+  ×1.5–1.8 below plain on C8 same-day. (Today's plain C8 never collapsed — min 11.1
+  across 16 runs; the historical bimodal 5–8.7 did not manifest in these sessions.)
+- **Best GEN C8: G3 (full stack), 10.04 pooled** (s7 10.80) — the depth bound DOES
+  help hetero gen mode (+0.85 pooled vs G0, +1.7 on s7), the one place the stack
+  earns anything — but it starts 0.61× down and lands at 0.66×.
+- **Stability: generation is the stabilizer.** G0 C8 σ_s 0.14/0.48 vs plain's 2.01/2.10
+  same-day (and 5–15 Mbit/s bimodal across the historical record). Gen-bare C8 is the
+  most repeatable multipath number ever measured on this rig — at a −38 % mean cost.
+- Efficiency vs recovery ceilings: plain C8 14.96 / (15.15+3.31=18.46) = **0.81**;
+  gen-bare C8 9.19 / its own substrate ceiling ≈9.7+ε = **0.95** (the gen pipeline is
+  nearly perfectly utilized — there is simply less pipe).
+
+### VERDICT + the recommended next lever
+
+1. **The DAPS-era stack should not ship ON under generation.** Rate-sample (−22 % C7)
+   and depth (−17…−30 % C7, +8 % C8) are a bad trade; DAPS placement alone is free but
+   buys nothing measurable (G1 ≤ G0 on C8 too). If generation ships, ship it BARE for
+   symmetric/unknown topologies; the depth bound is only defensible as a
+   hetero-C8-specific opt-in.
+2. **The next lever is the SUBSTRATE, not the scheduler: raise the per-path ~10 Mbit/s
+   generation ceiling.** Candidates, in the order the data points: (i) deepen/overlap
+   the generation pipeline on single/few-path configs (DAPS's window-floor already
+   proves +44 % single-path headroom exists — decouple that from the harmful pacer
+   levers); (ii) reduce decode/window-fill serialization (systematic-source submode so
+   source rides the wire un-decode-gated); (iii) only then re-visit a wire-clocked
+   per-path estimator (§16.15's deferred option 2) — a stable anchor is worthless
+   while the substrate caps ×0.64 below the link.
+3. **Honest C8 position: still no aggregation** — plain = parity-with-fast-alone
+   (0.99×/0.89×), gen = substrate-capped 0.61–0.66×. The §16.15 "parity on seed7
+   (0.96×)" was measured against gen's own depressed 13.99 ceiling; against the LINK
+   (plain fast-alone) nothing has ever exceeded 1.0 on C8.
+
+### Controls / tests
+
+`cargo test -p raptorpath --lib` 296/296 (3 new `env_flag` tests); `-p raptorpath-math`
+47/47; gate_suite 15/15 release — env-parse fix does not break gate defaults (all
+defaults-for-unset preserved; A/B'd at the runtime surface with `RWM_FMTCP=0`).
+dnf=0 in every arm except the two recorded gen-substrate DNFs (G2 c8s42 ×1;
+G0 single-c3 — both reported above, not hidden). Env + command line recorded per arm
+in the battery logs; every gen-arm run GUARD-verified `cod>0` on the SENDER log.
