@@ -5943,7 +5943,7 @@ lever could ever lift it.
    FMTCP arm; 1.25 = BBR probe gain; 2 s rate bucket derived from the ack-burst
    quantum (bucket ≥ 4·G/R for ≤25 % quantization); 32 = memory backstop.
 
-### JOB 3 — L1 A/B (VM 10.1.5.16, 2026-07-13, ~06:39–08:30 UTC; binary = this branch;
+### JOB 3 — L1 A/B (VM 10.1.5.16, 2026-07-13, ~06:39–08:30 UTC; binary = this branch tree as committed in 0d9f26e (source files identical; docs finalized after the runs);
 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh
 tunnel each invocation, seeds 42 AND 7, r=0.03 on every gen arm, `cod>0` GUARD OK
 on every gen run, full env+command per run in `/home/vibe/gensub/*.log`; driver
