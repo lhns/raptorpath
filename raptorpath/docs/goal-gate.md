@@ -6736,3 +6736,168 @@ hysteresis + queue-capped drain, coupling cap, legacy byte-identity);
 `-p raptorpath-math` pass; gate_suite 15/15 release on the final tree
 (shipped default untouched); `copa_sole_loopback` e2e (passthrough + wire
 defaults over real QUIC); `congestion_control` 19/19.
+
+## Frontier Wedge (2026-07-13) — the cross-arm c3/C8 ~60 s "collapse run" ROOT-CAUSED and FIXED: not a receiver frontier bug at all — quinn's PMTU BLACK-HOLE DETECTOR misreads a GE all-large loss burst as an MTU black hole, resets the path MTU to 1200 < the 1279-byte symbol datagram, and EVERY data send (incl. every retransmit of the blocker) fails sender-side with `TooLarge` for exactly `black_hole_cooldown` = 60 s; fix = `min_mtu = initial_mtu = 1350` (the engine's real floor), deterministic same-binary repro 63.5 s → 5.8 s (branch `fix/frontier-wedge`)
+
+Follow-up to "Copa Wire-Signal" (#82), whose battery recorded the collapse
+mode in EVERY substrate arm (B 2/59, C0 3/57, C1 7/59 + 1 partial) and
+captured live sender forensics (`/home/vibe/wedge-c.log`). The working
+hypothesis going in — a RECEIVER-side frontier/dup-filter wedge — is
+REFUTED by the evidence below; the receiver's frozen frontier is the
+symptom, the sender's silent MTU collapse is the disease.
+
+### The forensic chain (each step from the captured wedge log / quinn source)
+
+1. **The wedge window is a total data blackout, not a frontier stall**: in
+   `/home/vibe/wedge-c.log` (sc3-s7 C1, wedge t≈14→74 s) the sender's
+   app-echo SRTT decays 661→54 ms in a geometric ×0.917-per-2 s staircase —
+   exactly ONE fresh RTT sample per REPORT_INTERVAL (2 s). The only 2 s-cadence
+   RTT feed is the PathReport circular echo (net/mod.rs `PathReport` arm →
+   `record_rtt`) riding the reliable CONTROL STREAM; per-batch data `Ack`s —
+   which would sample at 100+/s — are absent for the whole window, i.e. the
+   receiver processed ~ZERO data batches for ~59 s, while quinn-level acks
+   kept `wrtt` fresh at 41–45 ms (small control datagrams still crossing).
+2. **The sender's sends were failing, not being ignored**: the same log
+   holds **8 077 `failed to send NACK retransmission … e=datagram too
+   large` WARNs at ~130/s from 14:29:06 to 14:30:06** — every targeted
+   retransmit of the receiver-advertised holes AND every window repair for
+   exactly 60 s. `diag_retx`/`sweeps` kept rising because they count
+   attempts (budget/cooldown bookkeeping precedes the send result).
+3. **The mechanism, in quinn-proto 0.11.14 source**: every wire symbol is
+   ONE ~1279-byte QUIC datagram (measured: `mtu_floor_covers_symbol_batch`);
+   quinn's defaults are `initial_mtu = min_mtu = 1200`, so symbol datagrams
+   are only sendable because post-handshake PMTUD raises `current_mtu` to
+   ~1452. quinn's `BlackHoleDetector` calls a loss burst "suspicious" iff it
+   contains no packet smaller than min_mtu / smaller than a more recently
+   acked packet — a GE burst on a bulk wire (where essentially every packet
+   is a 1305-byte symbol datagram) matches by construction. At
+   BLACK_HOLE_THRESHOLD suspicious bursts it resets `current_mtu :=
+   min_mtu` (1200) and pauses discovery for `black_hole_cooldown` (default
+   **60 s**). `max_datagram_size` (~1170) < 1279 ⇒ `SendDatagramError::
+   TooLarge` on every symbol until the cooldown expires and PMTUD re-probes.
+4. **Every observed property follows**: cross-arm (below the CC layer — B,
+   C0, C1 all ride the same datagram path); loss-timing-dependent
+   (needs enough all-large suspicious bursts; C1's larger operating point
+   ⇒ longer tail-drop bursts ⇒ ~3× the trigger rate); ~60 s self-resolve
+   (the cooldown, to the second); wire acks fresh + path alive (control
+   datagrams are small and unaffected); the historic 2.2–3.3 Mbit/s
+   "collapse throughput" is just 25 MB / (60 s + normal transfer time);
+   and the wedge NEVER reproduced under the L0 netem shim because the shim
+   drops ABOVE quinn's packet layer — quinn never sees the large-packet
+   loss pattern (the fidelity boundary, now proven load-bearing).
+
+### The deterministic reproduction (tests/mtu_blackhole_wedge.rs, new)
+
+An in-process lossy UDP proxy drops every UDP payload ≥ 1280 bytes for a
+3-second window mid-transfer (a REAL transient MTU black hole below quinn;
+QUIC Initials are padded to exactly 1200 and pass). 8 MB plain reliable
+window transfer over real QUIC loopback, same binary, same hole:
+
+| arm | env | elapsed | mean rate |
+|---|---|---|---|
+| stock quinn MTUD | `RWM_MTU_FLOOR=0` (`RWM_WEDGE_CONTROL=1` test arm) | **63.5 s** | 1.0 Mbit/s |
+| MTU floor (fix, default) | — | **5.8 s** | 11.1 Mbit/s |
+
+63.5 s = 3 s hole + ~60 s cooldown + transfer: the collapse run, on demand.
+
+### The fix (`QuicTransport::apply_mtu_floor`, transport/quic.rs — ships default-ON)
+
+`min_mtu = initial_mtu = 1350` on both client and server transport configs.
+The engine structurally REQUIRES ~1279-byte datagrams (a symbol is never
+fragmented), so 1350 (= 1279 + ~33 QUIC 1-RTT overhead + margin) is a
+requirement the code already had, now declared to quinn: a black-hole reset
+lands AT the floor and symbol sends keep working; PMTUD upward probing and
+the black-hole detector stay active (quinn's 60 s cooldown remains as its
+own safety net — it just can't take our datagrams below the floor). This is
+a transport-correctness fix in the shipped path and ships UNCONDITIONALLY
+(the wedge exists in stock-Cubic mode too); `RWM_MTU_FLOOR=<n>` overrides,
+`=0` restores stock quinn (the control arm). A path that truly cannot carry
+1350-byte UDP payloads could never carry a symbol anyway — before the fix
+that failed as a silent 60 s-cycle send blackout, now it fails loudly as
+persistent large-packet loss. Config echo (`MTU floor: …`/`MTU floor OFF`)
+logged at every endpoint creation.
+
+Receiver-side wedge DIAG added while falsifying the frontier hypothesis
+(kept, RWM_DIAG-gated): when the in-order frontier is frozen > 1 s the
+reliable hole-refresh arm prints `[WEDGE]` once per second with the blocker
+seq's decoder state (`seq_probe`: seen-as-source / recovered / output — the
+dup-filter signature probe), reorder-buffer pending, intake batches/s, and
+quinn DATAGRAM frame rx/tx per path (`datagram_frame_stats`) — the line
+that discriminates "retransmits eaten by the decoder" from "retransmits
+never arrive" in one read.
+
+### L1 battery (VM 10.1.5.16, 25 MB × 1 run/invocation, arms interleaved per rep, fresh tunnel per invocation, seeds 42+7, RWM_DIAG=1 everywhere; binary sha256 9ec7eef8…; logs `/home/vibe/wedgefix/`; driver `/home/vibe/wedge_battery.sh`)
+
+Arms: **B** = plain + `RWM_QUIC_CC=bbr` (fix on) · **C1** = plain +
+passthrough (fix on) · **C1o** = sc3 only: C1 + `RWM_MTU_FLOOR=0`
+(same-binary stock-quinn control). Per-run forensics: `toobig` (sender
+TooLarge count) + `[WEDGE]` receiver lines + MTU config echo both sides.
+
+**Throughput (Mbit/s, mean (σ_s) [n]; W = collapse runs < 5 Mbit/s; historic
+= the v4 battery same cell/arm):**
+
+| cell | B (fix) | B historic | C1 (fix) | C1 historic | C1o (stock, control) |
+|---|---|---|---|---|---|
+| sc3 s42 | **15.60 (0.52) [8] W=0** | 13.50 (4.58; 1W) | **11.99 (0.44) [8] W=0** | 11.83 (0.46) | 11.82 (0.73) [8] W=0 (2 runs toobig=1 — black-hole flirts) |
+| sc3 s7 | **15.87 (0.39) [8] W=0** | 15.62 (0.28, n=5) | **12.26 (0.18) [6] W=0** | 6.07 (5.10; **5W**) modal 12.21 | 11.00 (3.70) [7] **W=1**: 2.63 Mbit / 76.1 s, toobig=6127, 58 [WEDGE] lines |
+| c8 s42 | 61.90 (8.55) [8] W=0 | 54.64 (13.45) | **54.89 (3.23) [8] W=0** | 55.01 (3.70) | — |
+| c8 s7 | 53.09 (8.78) [7] W=0 | 58.14 (7.10) | **54.22 (7.40) [7] W=0** | 55.30 (1.60, n=6) | — |
+| sc2 s42 (spot) | 75.46 (3.73) [4] | 76.49 (1.17) | 66.37 (0.99) [4] | 68.09 (1.76) | — |
+
+- **Collapse count, fix arms: 0/68 runs** (B+C1 pooled over all cells)
+  vs the historic pooled incidence 9/118 (B 2/59 + C1 7/59, ≈7.6%);
+  P(0/68 | p=0.076) ≈ 0.005 — and the SAME-DAY stock control reproduced the
+  collapse (sc3-s7 C1o r7: 2.63 Mbit/s, 76.1 s — the historic collapse value
+  exactly) with the full mechanism signature: 6 127 sender TooLarge + 58
+  receiver [WEDGE] lines reading `blocker seen_src=false recovered=false
+  … batches/s=0 syms/s=0` for 59.9 s (intake ZERO, blocker NEVER arrived —
+  the dup-filter/receiver hypotheses refuted in the same line that proves
+  the send blackout) + self-resolve at the 60 s cooldown. Two more stock
+  runs show toobig=1 flirts (detector armed, single failed send).
+- **The C1 sc3-s7 cell is the cleanest before/after**: 6.07 (σ 5.10, 5/8
+  collapsed) → 12.26 (σ 0.18, 0/6) — the mean doubles to exactly the
+  historic modal value and σ collapses ×28; the fix removed the collapse
+  mode and touched nothing else (C1o non-wedge runs average 12.28 ≈ C1 —
+  the floor costs nothing when the detector stays quiet).
+- B's sc3 bimodality is likewise gone (s42: 13.50 σ4.58 1W → 15.60 σ0.52).
+- **No regression in clean cells**: sc2 B 75.5 vs 76.5, C1 66.4 vs 68.1
+  (≈1σ_s); c8 at historic levels both arms.
+- Integrity: several invocations aborted in < 7 s with no result (known
+  harness BUSY/setup race, listed per cell in the logs as RETRY/topup) —
+  they started no transfer and cannot mask a collapse (a collapse run
+  COMPLETES at ~76 s with a low-mbps result); n per arm reported honestly.
+
+### VERDICT
+
+1. **The mechanism is PROVEN, not conjectured**: quinn PMTU black-hole
+   reset below the symbol datagram size, cooldown-timed. Every link of the
+   chain is measured — sender TooLarge storm (8 077 historic / 6 127 wild
+   control), receiver intake zero with the blocker never-seen ([WEDGE]
+   probe), 60 s self-resolve matching `black_hole_cooldown`, deterministic
+   same-binary repro (63.5 s stock vs 5.8 s floor), and a wild same-day
+   control-arm reproduction under netem GE.
+2. **The fix kills the collapse mode**: 0/68 fix-arm collapse runs across
+   the historically wedge-prone cells (vs 7.6% pooled baseline, p≈0.005),
+   C1 sc3-s7 σ ×28 tighter at the historic modal mean, no clean-cell
+   regression. It ships default-ON (transport correctness; the wedge
+   exists under stock Cubic too); `RWM_MTU_FLOOR=0` preserves the stock
+   arm for reproduction.
+3. **The Copa-sole default-flip blocker named in #82 is CLEARED**: the
+   "receiver-side frontier wedge" was never a frontier bug and is fixed
+   below the CC layer, for every arm. The remaining Copa-sole gaps (C7
+   aggregation 0.73–0.76×, sc3 0.78×) are unchanged and already named.
+4. The L0 netem shim's fidelity boundary is now proven load-bearing: the
+   shim drops above quinn's packet layer, so quinn-level pathologies
+   (CC, PMTUD) are structurally invisible at L0 — quinn-loop hypotheses
+   must be tested with sub-quinn loss (the new UDP-proxy repro) or at L1.
+
+### Tests
+
+`cargo test -p raptorpath --lib` (all pass, incl. the untouched frontier /
+reorder / SACK machinery); `-p raptorpath-math`; gate_suite 15/15 release;
+`mtu_blackhole_wedge` (new): `mtu_floor_covers_symbol_batch` (hard size
+invariant: max repair batch = 1279 B ≤ 1305 B floor budget) +
+`mtu_black_hole_does_not_wedge_transfer` (fix arm, CI: 3 s hole → completes
+< 40 s; control arm via `RWM_WEDGE_CONTROL=1`: asserts the 60 s wedge
+reproduces, 63.5 s measured); `copa_sole_loopback` + `congestion_control`
+unchanged.

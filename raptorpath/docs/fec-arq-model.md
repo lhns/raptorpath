@@ -3427,6 +3427,33 @@ shipped default remains stock Cubic.
 > aggregation (×1.11–1.23 of own single vs B's ×1.35) and the c3 cell
 > (anchor ×4 over-read; deep tolerated queue by design) remain named gaps.
 
+### 12.12 The substrate's OTHER control loops: the ~60 s "collapse run" was quinn's PMTU black-hole detector, not the frontier (2026-07-13, fix/frontier-wedge)
+
+The §12.11-era "receiver-side frontier wedge" is root-caused and the lesson
+generalizes §12.2/§16.17: the CC window was not the only hidden substrate
+controller under the datagram path — PMTUD is another. Every wire symbol is
+one ~1279-byte QUIC datagram, sendable only because post-handshake PMTUD
+raises quinn's MTU above its 1200-byte default floor; on a GE-lossy bulk
+wire, where essentially every packet is symbol-sized, a loss burst is
+indistinguishable (to quinn's black-hole heuristic, which looks for lost
+bursts containing no small packets) from an MTU black hole, so it resets the
+MTU to 1200 and pauses discovery for its 60 s cooldown — during which every
+symbol send, including every ARQ retransmit of the frontier blocker, fails
+sender-side as `TooLarge` while small control datagrams keep the connection
+looking healthy. That is the entire "collapse run": deterministic same-binary
+repro 63.5 s vs 5.8 s (tests/mtu_blackhole_wedge.rs). The fix declares the
+requirement the code always had: `min_mtu = initial_mtu = 1350`, so a
+black-hole reset lands at a floor that still carries a symbol. The
+state-machine lesson: a transport composed OVER another transport must
+enumerate the substrate's autonomous control loops (CC, PMTUD, pacing, idle
+timers) and pin every one whose failure mode silently violates an invariant
+the overlay's design assumes (here: "a datagram that fit yesterday fits
+today"); an unpinned substrate loop is a hidden state machine that will
+eventually take a transition the overlay cannot observe — the overlay saw
+only its symptom, 60 s of inexplicably inert retransmits, and the first
+forensic hypothesis (receiver dup-filter) was wrong precisely because the
+failing component was invisible from both endpoints' application state.
+
 ---
 
 ## 13. Multi-Path Scheduling
