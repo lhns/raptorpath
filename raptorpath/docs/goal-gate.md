@@ -39,6 +39,190 @@ eligible for merge unless ALL of the following are in the ledger section:
 Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
 as SET (`.is_ok()` gates) — only some knobs treat "0" as off.
 
+## Unified Decoder (built, L1 pending) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved); shipped default LEGACY until the queued L1 parity battery — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop) (branch `feat/decoder-unify`)
+
+**The derivation (paper §16.20, written BEFORE the code).** The two RLC-family
+decoders decode the SAME self-describing wire equations; they differ only in
+algebra SCOPE: `RlcWindowDecoder` computes the global closure (any spans
+combine — but ~200× cost, and a newly-found rank-loss defect: it DISCARDS a
+still-informative row when a late source hits its pivot), `GenerationDecoder`
+a block-restricted closure keyed by `(anchor,width)` (the §16.18 sparse-aware
+cost — but it provably strands the generic 2-loss burst on moving-span wires:
+two covering repairs with different sliding spans never combine). The unified
+machine (`fec/unified.rs`) computes the FULL global closure WITH the
+sparse-aware cost model: known columns eliminated payload-only (never in the
+matrix), coded rows dense over interval spans (union growth), unit rows
+deliver per-arrival, O(k·L·S + k²·(L+S)) — block-diagonalizes to §16.18's
+bound on aligned wires. **The realtime tail property is (a) per-arrival
+incremental decode and (b) span freshness; both are preserved by
+construction** (delivered-set equality with legacy-RLC is a differential
+assertion, not an aspiration). The SENDER carries the rest: span width
+A\* = clamp(rate·D, 1, W), D = min(H, 2·RTprop) (H = the hint's §8.8 latency
+budget, b·RTprop with b ∈ {½, 1, 2}), depth M\* = ceil(rate·2·RTprop/A\*_q)+1
+(§16.17's law, now the large-δ limit of the same formula), trailing offset
+Δ = clamp(ceil(rate·jitter), 1, 64) — every parameter from (δ,ρ,r) + measured
+anchors (constants audit §16.20.5). Realtime = the small-δ limit; bulk = the
+large-δ limit; NO machine switch anywhere on the axis.
+
+**Honest re-examination — the #85 span-probe datum is VOID.** The #85
+differential probe (RWM_FRONTIER trailing-span repair, 62.5% vs taper's
+50–57.5%) emitted `FecBackend::Rlc` repairs into a tunnel whose Realtime hint
+had auto-selected the STREAMING backend; `StreamingDecoder::add_symbol` drops
+mismatched-backend symbols on entry, so the probe's repairs never reached any
+decoder — it measured trailing-span repair as PURE WIRE LOAD (empirically
+re-confirmed this session via the engine's backend echo). Binder #3 (emission
+span) stays PLAUSIBLE but its L0 confirmation is withdrawn; this battery
+re-ran the comparison with the whole RLC family end-to-end (below).
+MEASUREMENT DISCIPLINE lesson: mechanism liveness must be proven at the
+RECEIVER (repairs decoded), not just the sender (cod/src).
+
+**Differential evidence (unit, all green).**
+- Aligned generation wires (systematic + coded-only, 5–25% loss, late
+  sources, FILL_FLAG, dups, deficit top-ups, advance; 5 seeds): unified is
+  EXACTLY equal per `add_symbol` call to `GenerationDecoder` AND the
+  pre-§16.18 `reference` oracle — sets, bytes, `total_fed`/`repairs_fed`/
+  `repairs_useful` (added-rank), `rank_in`
+  (generation.rs `unified_matches_generation_and_reference_on_aligned_traces`).
+- Moving-span wires, in-order (loss only; 20 seeds): EXACT per-call equality
+  vs `RlcWindowDecoder` (sets + bytes).
+- Moving-span wires under reorder/dup (30 seeds): superset-or-equal, bytes
+  identical on common seqs; the 6 extra deliveries across 30 traces are the
+  LEGACY RANK-LOSS DEFECT (rlc_window drops the displaced pivot row on a
+  late source), isolated in `unified_recovers_rank_legacy_drops_on_late_source`.
+- The §16.20.1 minimal trap (2 holes × 2 different spans, jointly
+  determining): unified solves both; the keyed machine strands.
+
+**Oracle (temporal_oracle PART 7, math suite green).** δ sweep at the
+c3-class cell with r = r*(W=A\*): H=20 ms arm p99 48 ms vs pure-ARQ 62 ms and
+deadline-miss 1.37% vs 4.77% (the in-band-recovery tail property); H=∞ lands
+on legacy gen(384,2) within 0.1%; every adjacent δ step bounded (no cliff);
+the moving→pinned anchor handoff at D = 2·RTprop is metric-inert (×1.000
+completion, ×1.03 p99); the bulk point at realtime δ misses ×3.2 more
+deadlines (the cliff the formula replaces). **Depth term VALIDATED in-model
+in its engagement regime (BDP > G):** RTT100 knee exactly at M\*=6
+(m=2: 63.1 → M\*: 99.0 Mbit/s = the m=32 ceiling), RTT200 at M\*=10
+(37.3 → 96.4); saturating shape, no regression as m grows.
+
+### L0 battery (2026-07-18, local, MEASUREMENT DISCIPLINE)
+
+Same test binary all arms (`unified_l0-61de866448147a56.exe`, sha256
+`ac74054c2d3df554…`, built from the 28138b9 tree), transport netem shim
+(`RWM_L0_NETEM`), seeds 42 AND 7, arms interleaved within one session,
+NOTHING else running, `RWM_DIAG=1`, engine mechanism echoes surfaced
+(backend selection, "unified global decoder", "span law ACTIVE"). Per-object
+completion seconds = the local tail proxy (100 KB ≈ 197 chunks @508 B,
+`RWM_PERF_TIMEOUT_S=5` ⇒ DNF).
+
+**Realtime cell (c3heavy — the #85 heavy-tail cell; 40 objects/arm):**
+
+| arm (env) | family | cod/src s42/s7 | dnf s42/s7 | p50 s42/s7 | p90 s42/s7 | max s42/s7 |
+|---|---|---|---|---|---|---|
+| S shipped legacy (none) | streaming | 0.065/0.049 | **25**/**14** | 0.249/0.174 | 0.391/0.313 | 0.75/0.78 |
+| A legacy RLC (`RWM_L0_BACKEND=rlc`) | RLC | 0.088/0.060 | 0/0 | 0.189/0.174 | 0.423/0.283 | 2.83/0.42 |
+| B legacy RLC + leading taper (`+RWM_TAPER_R=1`) | RLC | 0.434/0.419 | 0/0 | 0.189/0.142 | 0.936/0.313 | 2.62/0.52 |
+| C unified (`RWM_UNIFIED=1`) | RLC | 0.465/0.431 | 0/0 | 0.190/0.189 | 0.405/0.263 | 3.03/1.28 |
+
+- The quantity law is LIVE at the wire in B and C (cod/src 0.42–0.47 vs
+  0.06–0.09), and in C the repairs are Rlc-family end-to-end (decoder echo) —
+  the receiver-side liveness #85 lacked.
+- **The #85 −22 pp does NOT reproduce on the RLC family.** Every RLC arm
+  delivers 40/40 with 0 DNFs at the very cell where the streaming arms DNF
+  35–62%: consuming r as computed does not degrade RLC-family delivery here
+  (B ≈ A), so the #85 degradation was a property of the streaming-family
+  arms (decoded two-layer leading-window repairs + its delivery machinery),
+  not of r-consumption per se. The −22 pp attribution is therefore RESCOPED,
+  not merely the probe: at this cell the RLC family is ARQ-complete and the
+  span question moves to the completion TAIL, where the trailing span (C)
+  beats the leading window (B) at p90 on BOTH seeds (0.405 vs 0.936;
+  0.263 vs 0.313) with medians tied; p99/max at n=40 is 1–2 outliers and
+  inconclusive — the L1 tail battery is the arbiter.
+- Tail class preserved: unified (C) matches legacy-RLC (A) at p50 exactly
+  and at p90 (better both seeds); no bulk-class batching signature. The
+  12–48× L1 crown jewel belongs to the SHIPPED streaming machine, which this
+  build does not touch (default legacy); tail parity of the unified small-δ
+  machine vs it is exactly what the queued L1 battery must prove before any
+  default flip.
+
+**δ sweep (c3 GE cell, hints realtime/auto/bulk = b ∈ {½,1,2}·RTprop;
+30 objects/arm; U = `RWM_UNIFIED=1`, L = legacy `RWM_L0_BACKEND=rlc`):**
+
+| hint | U p50 s42/s7 | L p50 s42/s7 | U mean s42/s7 | L mean s42/s7 | dnf |
+|---|---|---|---|---|---|
+| realtime | 0.249/0.298 | 0.313/0.423 | 0.375/0.539 | 0.436/0.516 | 0 all |
+| auto     | 0.171/0.172 | 0.157/0.158 | 0.214/0.220 | 0.178/0.176 | 0 all |
+| bulk     | 0.157/0.158 | 0.158/0.157 | 0.171/0.159 | 0.175/0.156 | 0 all |
+
+No cliff between adjacent δ points in either machine (adjacent-hint median
+ratios ≤ 1.5/1.7, same shape as legacy); realtime-U beats realtime-L at p50
+on both seeds; the auto-U arm pays a small mean/tail premium (+20% mean,
+max 0.58/0.70 vs 0.28/0.41) — the honest bandwidth price of consuming r at a
+mid-δ point where the legacy taper emits ~nothing; bulk ties exactly.
+
+**Bulk gen-sys parity (c2, `--window-systematic-repair` wire, 5 MB × 8,
+timeout 60 s):**
+
+| arm | s42 mean Mbit/s (median s) | s7 mean Mbit/s (median s) |
+|---|---|---|
+| L legacy machine | 75.8 (0.531) | 78.2 (0.514) |
+| U unified (+M\* pipe) | 72.6 (0.521) | 69.7 (0.520) |
+| U + `RWM_GEN_PIPE=0` (decoder-only attribution) | 75.3 (0.533) | 74.5 (0.534) |
+
+Median parity ≤ 1.2% in BOTH directions; the U-arm mean dips are single-run
+outliers (max 0.68/0.93 s once per arm, σ 0.07–0.14 vs legacy 0.006–0.027) —
+at c2 the M\* law sits at its cold-start floor (BDP ≪ G ⇒ M\*=2) so the
+decoder swap is the only live delta; the depth term's engagement cells
+(RTT 100/200) are L1-only and queued.
+
+**Suites (all green, this tree):** lib 332; math full (incl. PART 7);
+gate_suite 15/15 release (1118 s); mtu_blackhole_wedge 2/2; fmtcp/copa_sole/
+daps loopbacks; perf_loopback 8/8.
+
+**Verdict, scoped honestly.** The RLC-family unification is BUILT and
+locally validated: one decoder (differential-exact on both legacy wires, and
+a strict improvement under reorder — the legacy rank-loss defect), one span
+law continuous in δ (oracle + L0 sweep, no cliff), bulk parity at the
+median, tail class preserved vs legacy-RLC. NOT claimed: parity with the
+shipped STREAMING realtime machine's L1 message-tail (the 12–48×) — that
+comparison is the queued battery's job, and `RWM_UNIFIED` stays DEFAULT OFF
+(shipped path byte-identical) until it passes. The streaming two-layer code
+and the block pipeline remain separate machines by declared scope
+(§16.20.6).
+
+### Queued L1 parity battery (VM; protocol — run when VM access returns)
+
+Binary from `feat/decoder-unify` (or main after merge), sha256 + commit in
+the log; seeds 42 AND 7; interleaved same-binary arms; full MEASUREMENT
+DISCIPLINE (cod/src + the RWM_UNIFIED/backend engine echoes per arm; the
+unified arms must show "unified global decoder" at the RECEIVER).
+
+1. **Realtime tail parity** — `tools/l1/tail_matrix.sh c2 5` (+ c3):
+   {shipped legacy realtime (streaming)} × {unified realtime
+   (`RWM_UNIFIED=1`)} × {legacy plain-RLC realtime (`fec_backend=rlc`)},
+   400 B and 1200 B, p50/p99 distributions over ≥5 reps. GATE: unified p99
+   within the legacy-RLC arm's distribution AND no regression class vs the
+   shipped streaming arm (the 12–48× property). A unified arm losing the
+   tail win ⇒ default stays legacy, finding recorded.
+2. **rt_sweep / rstar-battery realtime cell** — `tools/l1/rstar_battery.sh`
+   c3 single-path × {legacy, RWM_UNIFIED=1}: delivered reliability + cod/src
+   (the #85 spot-check EXPECTations updated: the RLC-family arms should be
+   ARQ-complete; the observable is the completion tail).
+3. **Bulk parity** — `tools/l1/perf_rwm_c.sh c2 c2 bulk 25000000 8` single +
+   C7/C8 dual, gen-sys wire × {legacy, RWM_UNIFIED=1}: throughput within σ_s
+   of the legacy arm (goal-gate "Decode-CPU Ceiling" numbers are the
+   reference class), receiver CPU recorded (the unified decoder must not
+   regress the §16.18 sparse-aware budget).
+4. **Depth-term engagement cells** — `c2r100` / `c2r200` (+`l5` loss
+   variants) single-path gen-sys × {RWM_GEN_PIPE=0, RWM_GEN_PIPE=1}× 
+   {legacy, unified}: the oracle PART 7b knee (m=2 ≈ 0.64×/0.39× of M\*)
+   must appear on the wire — the §16.17 depth law's first L1 validation in
+   its engagement regime.
+5. Full-suite regression on the VM (gate_suite release, loopbacks) with
+   RWM_UNIFIED unset — byte-identical shipped path proof.
+
+Flip decision: all of 1–4 green ⇒ RWM_UNIFIED default ON in a follow-up
+session and the legacy machines are scheduled for removal; any red ⇒ the
+specific property that blocks unification is the deliverable.
+
 ## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check queued. (task #85, branch `fix/taper-emission`)
 
 **The bug (located by #46, fixed here).** Plain-mode proactive repair accrues

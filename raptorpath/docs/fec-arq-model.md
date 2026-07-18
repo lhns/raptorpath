@@ -8342,6 +8342,18 @@ trailing-span repairs demonstrably enter the decoder (repairs_useful > 0
 is the liveness gate). This is what MEASUREMENT DISCIPLINE rule 1
 (mechanism liveness at the RECEIVER, not just the sender) exists to catch.
 
+**MEASURED (the re-run, goal-gate "Unified Decoder", 2026-07-18).** On the
+RLC family at the same c3heavy cell (seeds 42/7, 40 objects/arm,
+interleaved, same binary) the #85 −22 pp does not exist AT ALL: every RLC
+arm — taper off, leading-window taper ON (cod/src 0.42–0.43), and the
+unified trailing span (0.43–0.47) — delivers 40/40 with 0 DNFs, at the
+very cell where the shipped streaming arms DNF 35–62%. The #85
+degradation was therefore a property of the STREAMING-family arms, not of
+r-consumption per se; on the RLC family the question moves to the
+completion TAIL, where the trailing span beats the leading window at p90
+on both seeds (0.405 vs 0.936 s; 0.263 vs 0.313 s, medians tied) and the
+p99 verdict (1–2 outliers at n = 40) is queued to L1.
+
 #### 16.20.5 Constants audit
 
 Every parameter of the unified machine, and where it comes from:
@@ -8380,6 +8392,20 @@ unified vs keyed + pre-§16.18 reference oracle on aligned traces) and the
 local L0 δ-sweep are the evidence rung; the L1 parity battery (realtime
 tail p50/p99 vs legacy, bulk throughput vs gen-sys, RTT 100/200 depth-term
 cells) is QUEUED — the shipped default stays legacy until it passes.
+
+**Evidence status (2026-07-18, goal-gate "Unified Decoder"):** the
+differential suite is green on all three legacy machines — EXACT per-call
+equality on the aligned wire (vs the keyed machine AND the reference
+oracle, including the added-rank accounting) and on in-order moving-span
+traces (vs the sliding machine); under reorder the unified machine is a
+strict superset because the sliding machine measurably LOSES RANK when a
+late source arrives for a seq already held as a row pivot (it discards
+the displaced, still-informative row — a legacy defect found by this
+unification, isolated in its own unit test). Oracle PART 7: δ continuum
+with no cliff, anchor handoff metric-inert, M* knee at RTT100 (m=2 0.64×
+of M*=6) and RTT200 (0.39× of M*=10). L0: δ-sweep no-cliff on both
+machines, bulk gen-sys median parity ≤ 1.2%, realtime cell tail class
+preserved (p50 tie, p90 ≤ legacy on both seeds).
 
 **Not unified, honestly:** (a) the STREAMING two-layer code remains a
 separate family — its diagonal burst layer is a genuinely different
