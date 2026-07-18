@@ -8086,6 +8086,30 @@ lever: PER-PATH outstanding accounting (the FMTCP percap structure) instead
 of a pooled cap — after which receiver/sender task parallelization becomes
 the relevant frontier above ~150–190 Mbit per sink.
 
+**Addendum (2026-07-18, built, L1 pending).** The named lever is now built
+(`RWM_STORE_PERCAP`, default OFF, byte-identical; task #86, branch
+`feat/store-percap`): per-path Little's law on the retention store itself.
+Each live path gets its own outstanding ACCOUNT with a derived cap
+
+    cap_i = clamp(gain × BtlBw_i × echoRTT_i, floor, pool_knee)
+
+— the per-path delivered-rate anchor times that path's smoothed ack-ECHO
+RTT (the account's residence clock is the ack, so the echo RTT, not
+RTprop, is the Little's-law time constant; the measured 2048-per-path pool
+knee is the ceiling that bounds the echo-RTT positive feedback). A symbol
+placed on path i draws account i and releases on the ack that removes it
+from the store (SACK/OOO or cumulative); admission pauses only when NO
+account has headroom, and a cap-full placement redirects to the path with
+headroom — the `fmtcp_percap_full` per-path in-flight structure (§16.7's
+#64 fix), generalized to the plain-reliable store. Warm-up inherits an
+equal share of the legacy pooled cap and converges as the anchor
+establishes; N = 1 keeps the legacy pooled law bit-exactly. This is the
+shape that can hold a c3-shallow account at its own pipe while the
+c2-deep account deepens — the configuration no SHARED pool can express.
+Unit-tested (incl. the deep+shallow C8 conflict in miniature) and
+L0-validated at the mechanism level; the C7/C8 verdict awaits the queued
+L1 battery (goal-gate "Per-Path Outstanding Accounting").
+
 ---
 
 ## Appendix A: Summary of Key Formulas

@@ -49,6 +49,10 @@ fi
 # N·pool) for N>=2 live paths; N=1 / unset = legacy byte-identical.
 [[ -n "${RWM_STORE_PATHS:-}" ]] && TENV="$TENV RWM_STORE_PATHS=$RWM_STORE_PATHS"
 [[ -n "${RWM_STORE_PATH_POOL:-}" ]] && TENV="$TENV RWM_STORE_PATH_POOL=$RWM_STORE_PATH_POOL"
+# Per-path outstanding accounting (task #86): cap_i = clamp(gain·rate_i·echoRTT_i,
+# floor, pool) per live path for N>=2; supersedes RWM_STORE_PATHS' pooled gate;
+# N=1 / unset = legacy byte-identical.
+[[ -n "${RWM_STORE_PERCAP:-}" ]] && TENV="$TENV RWM_STORE_PERCAP=$RWM_STORE_PERCAP"
 [[ -n "${RWM_STORE_GAIN:-}" ]] && TENV="$TENV RWM_STORE_GAIN=$RWM_STORE_GAIN"
 [[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
 [[ -n "${RWM_GEN_RATE:-}" ]] && TENV="$TENV RWM_GEN_RATE=$RWM_GEN_RATE"

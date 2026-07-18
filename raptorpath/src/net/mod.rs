@@ -3429,6 +3429,137 @@ pub fn path_scaled_store_cap(
     Some(((gain * n_live as f64 * pipe_sum).ceil() as usize).clamp(floor, ceiling))
 }
 
+/// Per-path outstanding-account cap (task #86, env `RWM_STORE_PERCAP`).
+///
+/// The #84 residual, named at L1: ONE shared pool cannot be sized for a
+/// c2-deep (fast) and a c3-shallow (slow) path at once — the slow path's
+/// recovery latency scales with pool dwell (static 8192 collapsed it to
+/// 31.8 Mbit/s) while the fast path wants the depth. So each path gets its
+/// OWN account, sized to ITS pipe by Little's law on the store itself:
+///
+///   cap_i = clamp(gain × rate_i × echoRTT_i, floor, pool)
+///
+/// where `pipe_i` = rate_i × echoRTT_i is passed in by the caller —
+/// BtlBw_i (the per-path delivered-rate anchor) × that path's smoothed
+/// ack-ECHO RTT (NOT RTprop: the store drains at the ack clock, so the
+/// account's residence time includes the queue + ack path; the `pool`
+/// ceiling — the measured 2048-per-path knee — bounds the echo-RTT
+/// positive feedback). Under the Copa-sole feed the caller passes cwnd_i
+/// (Copa's operating point IS the per-path pipe, mirroring the pooled
+/// Σcwnd law).
+///
+/// Warm-up (`pipe_i` = None / non-positive, the anchor not yet
+/// established): inherit an equal share of the LEGACY pooled cap
+/// (`legacy_cap` / n_live, bounded to [floor, pool]) — converges to the
+/// derived cap as the anchor warms. The FMTCP per-path in-flight cap
+/// (`fmtcp_percap_full`) is the structural pattern, generalized here to
+/// the plain-reliable retention store.
+///
+/// N = 1 bit-exactness is CALLER-side: the percap law is only engaged for
+/// N ≥ 2 live paths (this function is never consulted at N = 1), so
+/// singles keep the legacy pooled law even with the flag ON.
+pub fn percap_store_cap(
+    pipe_i: Option<f64>,
+    legacy_cap: usize,
+    n_live: usize,
+    gain: f64,
+    floor: usize,
+    pool: usize,
+) -> usize {
+    let ceiling = pool.max(floor);
+    match pipe_i {
+        Some(p) if p > 0.0 => ((gain * p).ceil() as usize).clamp(floor, ceiling),
+        _ => (legacy_cap / n_live.max(1)).clamp(floor, ceiling),
+    }
+}
+
+/// Per-path admission gate (task #86): TUN intake is paused only when NO
+/// path's outstanding account has headroom below its own cap — one path's
+/// full (or recovery-stalled) account never starves another path's
+/// admission. `accounts` = (outstanding_i, cap_i) per live path. The exact
+/// mirror of [`fmtcp_percap_full`] for the retention store.
+pub fn percap_store_full(accounts: &[(usize, usize)]) -> bool {
+    !accounts.iter().any(|&(out, cap)| out < cap.max(1))
+}
+
+/// Per-path placement redirect (task #86): the admission gate only admits
+/// while SOME account has headroom — make the placement land there. Keeps
+/// `chosen` when its account is below its cap; otherwise redirects to the
+/// path with the most RELATIVE headroom (1 − out/cap), so the deep path
+/// keeps deepening while the shallow path is never over-committed past its
+/// own pipe. All-full (racing the gate): keep `chosen` (the gate pauses
+/// intake next iteration; the slop is one placement). `accounts` =
+/// (path, outstanding_i, cap_i).
+pub fn percap_place_path(
+    chosen: crate::scheduler::PathId,
+    accounts: &[(crate::scheduler::PathId, usize, usize)],
+) -> crate::scheduler::PathId {
+    if accounts
+        .iter()
+        .any(|&(p, out, cap)| p == chosen && out < cap.max(1))
+    {
+        return chosen;
+    }
+    accounts
+        .iter()
+        .filter(|&&(_, out, cap)| out < cap.max(1))
+        .max_by(|a, b| {
+            let h = |&(_, out, cap): &(crate::scheduler::PathId, usize, usize)| {
+                1.0 - out as f64 / cap.max(1) as f64
+            };
+            h(a).partial_cmp(&h(b)).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|&(p, _, _)| p)
+        .unwrap_or(chosen)
+}
+
+/// Charge one retained seq to its placement path's outstanding account
+/// (task #86). Called in lockstep with the `sent_store` insert; paired
+/// with [`percap_release_seq`] (SACK/OOO removal) and
+/// [`percap_release_cumulative`] (frontier advance) — release is by ack
+/// ONLY, exactly the retention contract.
+pub fn percap_charge(
+    acct: &mut BTreeMap<u64, u32>,
+    out: &mut std::collections::HashMap<u32, usize>,
+    seq: u64,
+    path: u32,
+) {
+    if acct.insert(seq, path).is_none() {
+        *out.entry(path).or_insert(0) += 1;
+    }
+}
+
+/// Release one seq from its account on OOO (SACK-range) removal from the
+/// retention store. Idempotent: a seq not (or no longer) in the account
+/// map releases nothing — so SACK + cumulative can never double-release.
+pub fn percap_release_seq(
+    acct: &mut BTreeMap<u64, u32>,
+    out: &mut std::collections::HashMap<u32, usize>,
+    seq: u64,
+) {
+    if let Some(pid) = acct.remove(&seq) {
+        if let Some(o) = out.get_mut(&pid) {
+            *o = o.saturating_sub(1);
+        }
+    }
+}
+
+/// Release every account entry at or below the cumulative ack (the
+/// in-order frontier advance — the `sent_store.split_off(ack+1)` twin).
+pub fn percap_release_cumulative(
+    acct: &mut BTreeMap<u64, u32>,
+    out: &mut std::collections::HashMap<u32, usize>,
+    ack: u64,
+) {
+    let keep = acct.split_off(&(ack + 1));
+    for pid in acct.values() {
+        if let Some(o) = out.get_mut(pid) {
+            *o = o.saturating_sub(1);
+        }
+    }
+    *acct = keep;
+}
+
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
 /// of seqs the receiver HAS in (`delivered`, `seen`] — the inverse of
 /// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
@@ -4228,6 +4359,43 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
+    // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
+    // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
+    // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
+    // 0.79–0.80 of Σ; raising the shared cap to 8192 collapsed the slow
+    // path to 31.8 Mbit/s). Here each path gets its OWN account sized to
+    // ITS pipe (percap_store_cap: gain·rate_i·echoRTT_i, clamped to
+    // [floor, pool]); a symbol placed on path i draws path i's account and
+    // is released on the ack that removes it from the retention store
+    // (SACK/OOO or cumulative). Admission pauses only when NO live path
+    // has account headroom (percap_store_full — the fmtcp_percap_full
+    // pattern), and the plain-reliable placement redirects a cap-full pick
+    // to the path with headroom (percap_place_path). Engaged only for
+    // N ≥ 2 live paths — N = 1 keeps the legacy pooled law bit-exactly.
+    // Default OFF: shipped byte-identical. Supersedes RWM_STORE_PATHS'
+    // pooled GATE when both are set (the warm-up share still inherits from
+    // whichever pooled law is configured, so STORE_PATHS composes as the
+    // warm-up baseline rather than conflicting).
+    let percap_on = crate::config::env_flag("RWM_STORE_PERCAP", false) && plain_dyn_cap;
+    if percap_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
+        info!(
+            pool_per_path = store_path_pool,
+            gain = store_bdp_gain,
+            floor = store_cap_floor,
+            "per-path outstanding accounting ACTIVE (RWM_STORE_PERCAP: cap_i = clamp(gain*rate_i*echoRTT_i, floor, pool) per live path for N>=2, warm-up = legacy-pool/N; supersedes RWM_STORE_PATHS' pooled gate; N=1 legacy)"
+        );
+    }
+    // seq → account path, in lockstep with `sent_store` (charge on insert,
+    // release on ack-removal ONLY — the retention contract).
+    let mut percap_acct: BTreeMap<u64, u32> = BTreeMap::new();
+    // path → outstanding gauge (Σ over percap_acct; DIAG `sout=`).
+    let mut percap_out: std::collections::HashMap<u32, usize> =
+        std::collections::HashMap::new();
+    // path → cap_i, refreshed with the dynamic-cap throttle. NON-EMPTY is
+    // the "percap law engaged" signal (flag on AND N ≥ 2 live paths).
+    let mut percap_caps: std::collections::HashMap<u32, usize> =
+        std::collections::HashMap::new();
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
     let mut dyn_store_cap: usize = store_boot_cap.min(store_max);
@@ -4539,8 +4707,30 @@ async fn run_window_sender(
                     }
                     chosen
                 } else if reliable {
-                    let sched = scheduler.lock();
-                    sched.place_symbol(false, &[]).unwrap_or(0)
+                    let picked = {
+                        let sched = scheduler.lock();
+                        sched.place_symbol(false, &[]).unwrap_or(0)
+                    };
+                    // task #86 (RWM_STORE_PERCAP): the admission gate only
+                    // admits while SOME path's account has headroom — land
+                    // the symbol there. A cap-full pick is redirected to the
+                    // live path with the most relative account headroom, so
+                    // the shallow path is never over-committed past its own
+                    // pipe while the deep path keeps deepening. (DAPS
+                    // placement above keeps its own delay-aware law; the
+                    // accounts are still charged and gated.)
+                    if !percap_caps.is_empty() {
+                        let accounts: Vec<(crate::scheduler::PathId, usize, usize)> =
+                            percap_caps
+                                .iter()
+                                .map(|(&pid, &cap)| {
+                                    (pid, percap_out.get(&pid).copied().unwrap_or(0), cap)
+                                })
+                                .collect();
+                        percap_place_path(picked, &accounts)
+                    } else {
+                        picked
+                    }
                 } else {
                     let sched = scheduler.lock();
                     select_source_path(&sched)
@@ -4686,6 +4876,17 @@ async fn run_window_sender(
 
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
+
+            // task #86: charge this seq to its placement path's outstanding
+            // account, in lockstep with the sent_store insert above (percap_on
+            // ⊆ plain_dyn_cap ⊆ the reliable && !generation retention mode).
+            // Released only by the ack that removes it from the store. A
+            // cross-path retransmit does NOT re-attribute: the account bounds
+            // the pipe the symbol was ADMITTED against (its dwell there ends
+            // at the same ack either way).
+            if percap_on {
+                percap_charge(&mut percap_acct, &mut percap_out, wire_sym.block_id, source_path);
+            }
 
             // feat/btlbw-rate-sample: snapshot this source seq's send-time state
             // on its DAPS-committed path so its ack yields a SEND-INTERVAL
@@ -5129,6 +5330,11 @@ async fn run_window_sender(
                     retransmit_buffer.remove(&k);
                     source_path_map.remove(&k);
                     nack_retx_at.remove(&k);
+                    // task #86: OOO release — the account frees on THIS
+                    // path's delivery evidence, not the in-order frontier.
+                    if percap_on {
+                        percap_release_seq(&mut percap_acct, &mut percap_out, k);
+                    }
                 }
                 // feat/per-path-estimator: OOO per-path ack attribution.  In
                 // generation mode sent_store is empty (the loop above is inert),
@@ -5359,6 +5565,60 @@ async fn run_window_sender(
                         store_boot_cap.min(store_max)
                     };
                 }
+                // ── task #86: per-path account caps (RWM_STORE_PERCAP) ────
+                // Computed AFTER the pooled laws above so (a) the shipped /
+                // STORE_PATHS expressions stay verbatim (default byte-
+                // identical), and (b) the warm-up share inherits the pooled
+                // cap in force (`dyn_store_cap` as just computed). Engaged
+                // only for N ≥ 2 live paths: percap_caps stays EMPTY at
+                // N = 1, so singles run the legacy gate bit-exactly even
+                // with the flag ON. pipe_i = Copa cwnd_i under the feed
+                // (Copa's operating point is the per-path pipe), else
+                // BtlBw_i × echo-SRTT_i — the delivered-rate anchor times
+                // the ACK-clock residence time (Little's law on the store;
+                // the per-path pool knee bounds the echo-RTT feedback).
+                percap_caps.clear();
+                if percap_on {
+                    let pipes: Vec<(u32, Option<f64>)> = {
+                        let sched = scheduler.lock();
+                        sched
+                            .live_paths()
+                            .iter()
+                            .map(|id| {
+                                let pipe = sched.path(*id).and_then(|p| {
+                                    if copa_feed.is_some() {
+                                        Some(p.cwnd as f64)
+                                    } else {
+                                        let rate = p.btlbw_sym_per_s()?;
+                                        Some(rate * p.srtt().as_secs_f64())
+                                    }
+                                });
+                                (*id, pipe)
+                            })
+                            .collect()
+                    };
+                    if pipes.len() >= 2 {
+                        let legacy_cap = dyn_store_cap;
+                        let n = pipes.len();
+                        for (pid, pipe) in pipes {
+                            percap_caps.insert(
+                                pid,
+                                percap_store_cap(
+                                    pipe,
+                                    legacy_cap,
+                                    n,
+                                    store_bdp_gain,
+                                    store_cap_floor,
+                                    store_path_pool,
+                                ),
+                            );
+                        }
+                        // Σ cap_i becomes the pooled MEMORY backstop (binds
+                        // only via stranded accounts, e.g. a path that died
+                        // with symbols still retained).
+                        dyn_store_cap = percap_caps.values().sum();
+                    }
+                }
             }
         }
         let effective_store_cap = if plain_dyn_cap {
@@ -5394,6 +5654,20 @@ async fn run_window_sender(
             // window_decoded_seq total-decode signal is published for DIAG /
             // occupancy reporting (the oracle's `d`), not used to gate here.
             reliable && fmtcp_tx_paused(cwnd_full, store_len, fmtcp_win_backstop)
+        } else if !percap_caps.is_empty() {
+            // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
+            // only when NO live path's account has headroom below its own
+            // cap. The pooled store_len test is retained as the Σcap_i
+            // memory backstop (effective_store_cap = Σcap_i while percap is
+            // engaged): it binds only through stranded accounts.
+            let accounts: Vec<(usize, usize)> = percap_caps
+                .iter()
+                .map(|(pid, &cap)| (percap_out.get(pid).copied().unwrap_or(0), cap))
+                .collect();
+            reliable
+                && (percap_store_full(&accounts)
+                    || store_len >= effective_store_cap
+                    || cwnd_full)
         } else {
             reliable && (store_len >= effective_store_cap || cwnd_full)
         };
@@ -5482,9 +5756,15 @@ async fn run_window_sender(
                                 .wire_rtt(*id)
                                 .map(|d| d.as_secs_f64() * 1000.0)
                                 .unwrap_or(0.0);
+                            // task #86 DIAG: the per-path outstanding ACCOUNT
+                            // (store symbols charged to this path / its cap_i)
+                            // — the mechanism gauge for RWM_STORE_PERCAP
+                            // (zeros when the percap law is not engaged).
+                            let sout_i = percap_out.get(id).copied().unwrap_or(0);
+                            let scap_i = percap_caps.get(id).copied().unwrap_or(0);
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{} btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -6720,6 +7000,12 @@ async fn run_window_sender(
             // RWM Phase A: the sent-data store is drained by acks ONLY —
             // this is the whole retention contract.
             sent_store = sent_store.split_off(&(ack + 1));
+            // task #86: cumulative release of the per-path accounts (the
+            // split_off twin; seqs already SACK-released are gone from the
+            // account map, so no double-release).
+            if percap_on {
+                percap_release_cumulative(&mut percap_acct, &mut percap_out, ack);
+            }
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             nack_retx_at.retain(|&seq, _| seq > ack);
             // Update correction deficit: ACKed symbols no longer need coverage
@@ -8269,6 +8555,183 @@ mod tests {
             path_scaled_store_cap(true, 3, 4000.0, 2.0, 64, 2048),
             Some(3 * 2048)
         );
+    }
+
+    // ----- Per-path outstanding accounting (task #86, RWM_STORE_PERCAP) -------
+
+    #[test]
+    fn percap_store_cap_is_rate_x_echo_rtt_with_floor_and_ceiling() {
+        // Derived, not tuned: cap_i = gain × rate_i × echoRTT_i. A c2-like
+        // fast path (BtlBw ≈ 10 400 sym/s, echo RTT ≈ 80 ms): pipe = 832,
+        // gain 2 → 1664 — inside [64, 2048].
+        assert_eq!(
+            percap_store_cap(Some(10_400.0 * 0.080), 1024, 2, 2.0, 64, 2048),
+            1664
+        );
+        // A c3-like slow path (BtlBw ≈ 2000 sym/s, echo RTT ≈ 60 ms): pipe
+        // = 120, gain 2 → 240 — its OWN shallow cap, independent of the
+        // fast path's.
+        assert_eq!(
+            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
+            240
+        );
+        // Ceiling: the measured 2048-per-path knee bounds a deep pipe (and
+        // the echo-RTT positive feedback).
+        assert_eq!(percap_store_cap(Some(4000.0), 1024, 2, 2.0, 64, 2048), 2048);
+        // Floor: a transiently-tiny anchor cannot strangle the account.
+        assert_eq!(percap_store_cap(Some(3.0), 1024, 2, 2.0, 64, 2048), 64);
+    }
+
+    #[test]
+    fn percap_store_cap_warmup_inherits_equal_legacy_share() {
+        // Anchor not established (None): equal share of the legacy pooled
+        // cap, bounded — converges to the derived cap once the anchor warms.
+        assert_eq!(percap_store_cap(None, 1024, 2, 2.0, 64, 2048), 512);
+        assert_eq!(percap_store_cap(None, 1024, 4, 2.0, 64, 2048), 256);
+        // Non-positive pipe is warm-up too (cold Copa cwnd cannot happen,
+        // but the law must not divide into nonsense).
+        assert_eq!(percap_store_cap(Some(0.0), 1024, 2, 2.0, 64, 2048), 512);
+        // Share is bounded by the same [floor, pool] clamp.
+        assert_eq!(percap_store_cap(None, 100, 2, 2.0, 64, 2048), 64);
+        assert_eq!(percap_store_cap(None, 100_000, 2, 2.0, 64, 2048), 2048);
+    }
+
+    #[test]
+    fn percap_store_full_pauses_only_when_no_account_has_headroom() {
+        // One account below its cap ⇒ admit (the fmtcp_percap_full pattern:
+        // the slow path's full account never starves the fast path).
+        assert!(!percap_store_full(&[(240, 240), (100, 1664)]));
+        // Every account at/over its cap ⇒ paused.
+        assert!(percap_store_full(&[(240, 240), (1664, 1664)]));
+        assert!(percap_store_full(&[(300, 240), (1700, 1664)]));
+        // A zero cap counts as cap 1 (never a permanently-closed account).
+        assert!(!percap_store_full(&[(0, 0)]));
+        assert!(percap_store_full(&[(1, 0)]));
+    }
+
+    #[test]
+    fn percap_place_redirects_capfull_pick_to_headroom_path() {
+        let accounts = [(0u32, 240usize, 240usize), (1u32, 100usize, 1664usize)];
+        // Slow path (p0) at ITS cap: a p0 pick redirects to the deep path.
+        assert_eq!(percap_place_path(0, &accounts), 1);
+        // A pick with its own headroom stays.
+        assert_eq!(percap_place_path(1, &accounts), 1);
+        // All full (racing the gate): keep the pick — the gate pauses next
+        // iteration; the slop is one placement.
+        assert_eq!(
+            percap_place_path(0, &[(0, 240, 240), (1, 1664, 1664)]),
+            0
+        );
+        // Redirect goes to the MOST relative headroom.
+        assert_eq!(
+            percap_place_path(2, &[(0, 200, 240), (1, 100, 1664), (2, 50, 50)]),
+            1
+        );
+    }
+
+    /// The C8 conflict in miniature (the #84 residual this feature exists
+    /// for): a deep c2-like account and a shallow c3-like account coexist —
+    /// the shallow path's cap does NOT inflate when the deep path's does,
+    /// its outstanding never exceeds its own cap (placements past it
+    /// redirect to the deep account), and out-of-order acks release the
+    /// right account.
+    #[test]
+    fn percap_deep_and_shallow_accounts_coexist_without_coupling() {
+        // Caps from the derivation itself: fast pipe deepens ×2 mid-run,
+        // the slow cap must not move (per-path independence — the exact
+        // failure of the SHARED pool, where raising the cap for the fast
+        // path collapsed the slow one).
+        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
+        let fast_cap0 = percap_store_cap(Some(5000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
+        let fast_cap1 = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
+        assert_eq!(slow_cap, 240);
+        assert_eq!(fast_cap0, 800);
+        assert_eq!(fast_cap1, 1600);
+        assert_eq!(
+            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
+            slow_cap,
+            "shallow cap must not inflate when the deep path's pipe grows"
+        );
+
+        // Draw/release accounting: stripe placements 50/50 (the scheduler's
+        // pick), with the redirect enforcing the accounts.
+        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
+        let mut out: std::collections::HashMap<u32, usize> =
+            std::collections::HashMap::new();
+        const SLOW: u32 = 0;
+        const FAST: u32 = 1;
+        let caps = |out: &std::collections::HashMap<u32, usize>| {
+            [
+                (SLOW, out.get(&SLOW).copied().unwrap_or(0), 240usize),
+                (FAST, out.get(&FAST).copied().unwrap_or(0), 1600usize),
+            ]
+        };
+        let mut seq = 0u64;
+        // Admit while ANY account has headroom (the gate), place round-robin
+        // through the redirect (the placement law).
+        loop {
+            let accounts: Vec<(usize, usize)> =
+                caps(&out).iter().map(|&(_, o, c)| (o, c)).collect();
+            if percap_store_full(&accounts) {
+                break;
+            }
+            let pick = if seq % 2 == 0 { SLOW } else { FAST };
+            let placed = percap_place_path(pick, &caps(&out));
+            percap_charge(&mut acct, &mut out, seq, placed);
+            seq += 1;
+        }
+        // The shallow account sits exactly at ITS pipe-derived cap; the deep
+        // account filled to ITS OWN cap — the overflow went to the deep
+        // path, the shallow path was never over-committed.
+        assert_eq!(out[&SLOW], 240, "slow outstanding pinned at its own cap");
+        assert_eq!(out[&FAST], 1600, "fast account absorbed the redirect");
+        assert_eq!(acct.len(), 240 + 1600);
+
+        // Out-of-order acks (SACK ranges land fast-path seqs first): only
+        // the fast account drains; the slow account is untouched.
+        let fast_seqs: Vec<u64> = acct
+            .iter()
+            .filter(|&(_, &p)| p == FAST)
+            .map(|(&s, _)| s)
+            .take(600)
+            .collect();
+        for s in &fast_seqs {
+            percap_release_seq(&mut acct, &mut out, *s);
+        }
+        assert_eq!(out[&FAST], 1000);
+        assert_eq!(out[&SLOW], 240, "OOO fast acks must not drain the slow account");
+        // Idempotence: re-releasing a SACKed seq is a no-op (no
+        // double-release when the cumulative frontier passes it later).
+        percap_release_seq(&mut acct, &mut out, fast_seqs[0]);
+        assert_eq!(out[&FAST], 1000);
+
+        // Cumulative frontier passes the first 300 seqs: each releases its
+        // OWN account (already-SACKed ones release nothing).
+        let below: (usize, usize) = acct.range(..=299u64).fold((0, 0), |m, (_, &p)| {
+            if p == SLOW { (m.0 + 1, m.1) } else { (m.0, m.1 + 1) }
+        });
+        percap_release_cumulative(&mut acct, &mut out, 299);
+        assert_eq!(out[&SLOW], 240 - below.0);
+        assert_eq!(out[&FAST], 1000 - below.1);
+        // Gauges stay Σ-consistent with the account map (the invariant the
+        // sender loop's charge/release lockstep preserves).
+        assert_eq!(out.values().sum::<usize>(), acct.len());
+        // With headroom restored, admission resumes.
+        let accounts: Vec<(usize, usize)> =
+            caps(&out).iter().map(|&(_, o, c)| (o, c)).collect();
+        assert!(!percap_store_full(&accounts));
+    }
+
+    /// N = 1 identity: the percap law is engaged only for N ≥ 2 live paths
+    /// (caller gates on `pipes.len() >= 2`, so `percap_caps` stays empty and
+    /// the tx_paused expression is the legacy branch verbatim). What CAN be
+    /// asserted purely: warm-up at N = 1 would be the full legacy cap — the
+    /// share degenerates to the pool itself, no behavior cliff on a 2→1
+    /// live-path flap while accounts drain.
+    #[test]
+    fn percap_warmup_share_degenerates_to_legacy_at_n1() {
+        assert_eq!(percap_store_cap(None, 1024, 1, 2.0, 64, 2048), 1024);
+        assert_eq!(percap_store_cap(None, 0, 1, 2.0, 64, 2048), 64);
     }
 
     // ----- FMTCP-class pure decode-on-total aggregation (change 1 + change 2) --

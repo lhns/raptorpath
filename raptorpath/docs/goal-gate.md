@@ -7350,3 +7350,210 @@ ceiling_with_paths`); `-p raptorpath-math` all green; `gate_suite` 15/15
 release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
+
+## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN, **L1 pending — the C7/C8 verdict is NOT claimed** (task #86, branch `feat/store-percap`, NO-VM session)
+
+**Why (proven by #84).** The multipath binder was flow control: the
+per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
+Little's law. The path-scaled pool (`RWM_STORE_PATHS`) landed C7 at
+0.86–0.94 of Σ but C8 stuck at 0.79–0.80: ONE shared pool cannot fit a
+c2-deep (fast) and a c3-shallow (slow) path simultaneously — static 8192
+collapsed the slow path to 31.8 Mbit/s while the fast path wanted the
+depth. Knee ≈ 2048 outstanding per live path. Both #84 residual bullets
+named the same lever: per-path outstanding accounting, the FMTCP percap
+structure (`fmtcp_percap_full`, the #64 fix) generalized to the
+plain-reliable store. Paper §16.19 addendum.
+
+### The derivation as built (env `RWM_STORE_PERCAP`, default OFF = shipped byte-identical)
+
+Derived, not tuned — per-path Little's law on the retention store itself:
+
+    cap_i = clamp(gain × BtlBw_i × echoSRTT_i, floor, pool)
+
+- **rate_i** = `btlbw_sym_per_s()` — that path's OWN delivered-rate
+  anchor. Honesty note: in plain (non-generation) mode this is the LEGACY
+  ack-interval anchor (the #79 send-interval sampler is generation-only),
+  which over-reads on fast paths (§16.13) — there the cap clamps at the
+  knee and the account degrades gracefully to a per-path-knee bound.
+- **echoRTT_i** = that path's smoothed app-echo SRTT, NOT RTprop: the
+  account's residence clock is the ACK (store dwell = delivery + queue +
+  ack path), so Little's law needs the echo RTT. The echo-RTT positive
+  feedback (deeper store → longer echo → bigger cap) is bounded by…
+- **pool** = 2048 (`RWM_STORE_PATH_POOL`), the #84 MEASURED per-path knee,
+  as the per-account ceiling; **floor** = 64 (the existing dyn-cap floor).
+- **gain** = `RWM_STORE_GAIN` (2.0): ~1 pipe full + ~1 recovery round of
+  runway, per path — the same gain law as the pooled cap, now per account.
+- **Copa-sole feed**: pipe_i = Copa cwnd_i (Copa's operating point IS the
+  per-path pipe — mirrors the pooled Σcwnd law per-path).
+- **Warm-up** (anchor not established): the account inherits an equal
+  share of the LEGACY pooled cap (legacy/N, clamped to [floor, pool]) and
+  converges to the derived cap as the anchor warms. With STORE_PATHS also
+  set, the warm-up share inherits the path-scaled pool (the two compose:
+  percap supersedes the pooled GATE; STORE_PATHS shapes only the warm-up
+  baseline).
+- **N = 1 is bit-exact legacy**: the percap law engages only for ≥ 2 live
+  paths (`percap_caps` stays empty at N = 1 — the tx_paused expression is
+  the legacy branch verbatim), so singles are unchanged even with the flag
+  ON. Same identity-control obligation as #84's STEP 3.
+
+**Accounting.** A symbol placed on path i charges account i at the
+`sent_store` insert (`percap_charge`, seq→path in lockstep with retention);
+released ONLY by the ack that removes it from the store —
+`percap_release_seq` on SACK/OOO ranges (the account frees on THAT path's
+delivery evidence, not the in-order frontier) and
+`percap_release_cumulative` on the frontier advance (split_off twin;
+SACK-then-cumulative cannot double-release — seq ownership moves out of the
+account map on first release). A cross-path retransmit does NOT
+re-attribute (the account bounds the pipe the symbol was ADMITTED against;
+dwell ends at the same ack either way). **Admission** pauses TUN intake
+only when NO live account has headroom (`percap_store_full` — the exact
+`fmtcp_percap_full` mirror), with the pooled `store_len ≥ Σcap_i` test
+retained as a stranded-account memory backstop. **Placement**: a cap-full
+softmax pick is redirected to the live path with the most relative account
+headroom (`percap_place_path`) — so the shallow account is never
+over-committed past its own pipe while the deep account keeps deepening
+(DAPS placement, when on, keeps its own delay-aware law; accounts still
+charge and gate). Mechanism-liveness `info!` echo (“per-path outstanding
+accounting ACTIVE”) per MEASUREMENT DISCIPLINE; harness forwards
+`RWM_STORE_PERCAP` (tools/l1/perf_rwm_c.sh).
+
+### Unit evidence (`cargo test -p raptorpath --lib` 322/322, 6 new)
+
+- `percap_store_cap_is_rate_x_echo_rtt_with_floor_and_ceiling` — the
+  derivation: c2-like (10 400 sym/s × 80 ms × 2 = 1664), c3-like (2000 ×
+  60 ms × 2 = 240), knee ceiling 2048, floor 64.
+- `percap_store_cap_warmup_inherits_equal_legacy_share` — legacy/N bounded,
+  converges to derived on warm.
+- `percap_store_full_pauses_only_when_no_account_has_headroom` — the slow
+  path's full account never starves the fast path's admission.
+- `percap_place_redirects_capfull_pick_to_headroom_path` — redirect to max
+  relative headroom; all-full keeps the pick (gate closes next iteration).
+- `percap_deep_and_shallow_accounts_coexist_without_coupling` — **the C8
+  conflict in miniature**: fast pipe deepens ×2 (800→1600) while the slow
+  cap does NOT move (240 — per-path independence, the exact property the
+  shared pool lacks); striped placement fills slow to EXACTLY its own 240
+  and overflows to the deep account (1600); OOO fast-path acks drain ONLY
+  the fast account; re-release idempotent; cumulative release attributes
+  per path; gauges stay Σ-consistent with the account map.
+- `percap_warmup_share_degenerates_to_legacy_at_n1` — a 2→1 live-path flap
+  has no behavior cliff (share → the full legacy cap).
+
+### L0 mechanism evidence (loopback + RWM_L0_NETEM shim — LOCAL, not L1)
+
+Dual-path L0 cells via the existing shim (`RWM_L0_DUAL=1`,
+`RWM_L0_NETEM=c2,c3` / `c2,c2`; no infra extension needed), release
+binary, plain mode, 12.5 MB × 1 run/invocation × 3 reps, arms interleaved
+per rep (base / SP=`RWM_STORE_PATHS=1` / PC=`RWM_STORE_PERCAP=1`), logs in
+the session scratchpad (`l0out/*.log`). Windows dev box, default quinn CC
+(the shim drops BEFORE quinn — see caveats).
+
+| cell | base (runs) | SP (runs) | PC (runs) |
+|---|---|---|---|
+| c7-like c2,c2 | 70.8 [62.2 79.7 70.5] | 23.1 [36.2 16.8 16.4] | **33.1** [34.5 36.9 28.1] |
+| c8-like c2,c3 | 65.3 [64.6 67.6 63.7] | 6.3 [10.9 5.0 3.1] | **18.5** [24.4 12.1 18.8] |
+| sc2 single (identity) | 66.4 | — | 67.6 (flag inert at N=1 ✓) |
+
+Reading these for what they are (Mbit/s, LOCAL):
+
+1. **The mechanism gauges behave as derived** (RWM_DIAG `sout=out_i/cap_i`
+   per path): accounts charge on placement and release on SACK/cumulative
+   acks per path (drain phases show differentiated occupancy, e.g.
+   `p0 sout=1097/2048, p1 sout=113/2048`); warm-up accounts show the
+   legacy-share caps (`sout=0/64` on the cold reverse channel, boot 128/2);
+   when both accounts fill, `paused=100%` with `sout=2048/2048` on BOTH
+   paths — per-path admission binding exactly at the caps, then reopening
+   on drain. Liveness echo + gauges confirm the mechanism EXECUTES.
+2. **PC vs SP — the per-path bound does its job**: in the heterogeneous
+   c8-like cell percap is ~2.9× the pooled path-scaled arm (18.5 vs 6.3;
+   same ranking all 3 interleaved reps) and ~1.4× at c7-like (33.1 vs
+   23.1). Locally, the pooled N×2048 lets any one path's symbols bloat the
+   whole budget (the L1 static-8192 collapse mode, reproduced in
+   miniature); the per-path accounts bound each path individually.
+3. **base > both deep-pool arms locally — expected, and it is why L0
+   CANNOT deliver the C7/C8 verdict**: on the loopback shim the ack-echo
+   RTT is tens of ms and the per-path pipe is ~100 symbols, so the legacy
+   1024-latch pool NEVER binds (`paused=0%` on base runs) — deep pools buy
+   only queue + slower GE recovery here. The L1 regime (80–100 ms echo,
+   pool = the Little's-law wall) is exactly what the shim does not
+   reproduce (drops before quinn, no substrate CC dynamics, dev-box
+   timers). The L0 deltas are MECHANISM evidence (accounts vs pool), not
+   throughput evidence.
+4. **Anchor honesty caveat (named for L1)**: in plain mode the per-path
+   rate anchor is the LEGACY ack-interval one (the rate-sample machinery
+   is generation-mode-only), which over-reads on fast paths (§16.13) — so
+   plain-mode caps typically clamp at the 2048 knee and the derivation
+   degrades gracefully to per-path-knee ACCOUNTS (still per-path
+   draw/release + admission, unlike the pooled cap; the slow path's cap
+   differentiates whenever `2·BtlBw_i·echoSRTT_i < 2048`). Under Copa-sole
+   the pipe is cwnd_i — honest per path by construction.
+
+### The queued L1 battery (NEXT VM SESSION — copy of the discipline)
+
+Run on the L1 VM (host-passthrough E5-2650v3; record `lscpu` in every log
+header; note the #84 HARDWARE DIVIDE — compare only against post-divide
+numbers). Binary = this branch's commit, sha256 recorded; same binary in
+EVERY arm.
+
+1. **Arms (same binary, interleaved round-robin per rep):**
+   - `PB`  = plain + `RWM_QUIC_CC=bbr` (baseline)
+   - `PBS` = PB + `RWM_STORE_PATHS=1` (the #84 pooled fix — the bar to beat)
+   - `PBP` = PB + `RWM_STORE_PERCAP=1` (the percap arm)
+   - `C1`  = plain + `RWM_QUIC_CC=passthrough` (Copa wire-signal defaults)
+   - `C1P` = C1 + `RWM_STORE_PERCAP=1` (Copa C8 was cwnd-bound, not
+     pool-bound, in #84 — percap should be ≈inert there; that PREDICTION is
+     part of the test)
+2. **Cells**: c7 (dual-c2 symmetric), c8 (c2+c3 heterogeneous), PLUS the
+   N = 1 identity controls sc2 and sc3 with `RWM_STORE_PERCAP=1` vs unset
+   (the flag must be inert at N = 1; every Δ ≪ σ_s).
+3. **Protocol**: 25 MB × 1 run/invocation × 8 reps per arm×cell×seed,
+   seeds 42 AND 7, arms interleaved within one session (cancels the
+   documented 2.3× session drift), fresh tunnel per invocation.
+4. **Per-run recording (MEASUREMENT DISCIPLINE, all five items):**
+   mechanism-liveness echo (`per-path outstanding accounting ACTIVE` on
+   every PBP/C1P run; its ABSENCE asserted on every baseline run), full
+   command line + env + binary sha256, per-run distributions (not just
+   means), both seeds, and RWM_DIAG `sout=out_i/cap_i` gauges on ≥1 probe
+   run per cell — the mechanism assertion is the slow path's account
+   holding near ITS pipe (sout_slow ≈ cap_slow ≪ cap_fast) while the fast
+   account deepens, AND `win=` no longer pegged at a shared ceiling.
+5. **Targets/verdict frame**: same-session Σ of per-path singles as the
+   ceiling; C7 target ≈ 1.0×Σ (from 0.86–0.94 under PBS — does per-path
+   accounting close the pooled self-queue equilibrium?); C8 target ≈
+   0.9×Σ (from 0.79–0.80). Claimed deltas must exceed the recorded σ_s /
+   drift floor; PB-C8 is the documented bimodal arm — report per-run
+   values. Also record CPU (recv/send) per invocation: the #84 finding
+   predicts engine CPU begins to matter above ~140 Mbit — if C7 lands
+   ≈150+, the next lever (receiver/sender task parallelization) becomes
+   live and should be noted, not built.
+   Interpretation guard: in the PB arms the legacy anchor over-read means
+   PBP's caps will often sit at the per-path knee (2048 each) — so a
+   PBP−PBS delta there is attributable to per-path DRAW/RELEASE +
+   admission, not cap sizing; the DIAG `sout=` probe runs are what
+   separate the two. C1P (cwnd_i pipes) is the honest-derivation arm.
+6. **VM hygiene**: `/tmp/rwm-vm.lock`, rp-* netns only, `pkill -x
+   raptorpath`, logs + driver script under `/home/vibe/percap/`.
+
+### Controls / caveats
+
+- Shipped default byte-identical: env unset ⇒ no charge, no gate change,
+  legacy dyn-cap expressions verbatim (percap computed AFTER them, only
+  overriding when engaged). Suites green (below).
+- **L0 numbers are mechanism evidence, NOT the C7/C8 verdict**: the L0
+  netem shim drops BEFORE quinn (quinn sees a clean loopback — no
+  substrate-CC dynamics), timers/CPU are a dev Windows box, and the L1
+  operating point (BBR-under, real netem, real crypto) is not reproduced.
+  What L0 CAN show: the accounts exist, size per-path, draw/release
+  correctly, and the admission gate keys on them — which it does (DIAG
+  gauges above).
+- The `np` 2→1 live-path flap under saturation (#84 residual bullet 3) is
+  untouched by this feature and remains a shared contributor at both cells.
+
+### Tests
+
+`cargo test -p raptorpath --lib` 322/322 (6 new, listed above);
+`-p raptorpath-math` all green (134 across suites); `gate_suite` 15/15
+release; `mtu_blackhole_wedge` 2/2 (wedge fix untouched); `perf_loopback`
+8/8; `copa_sole_loopback` 1/1, `fmtcp_loopback` 1/1, `daps_loopback` 1/1
+— all release. Shipped default byte-identical: env unset ⇒ the percap
+block computes nothing, the legacy dyn-cap expressions and the tx_paused
+gate are verbatim pre-commit.
