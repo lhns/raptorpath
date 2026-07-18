@@ -39,6 +39,128 @@ eligible for merge unless ALL of the following are in the ledger section:
 Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
 as SET (`.is_ok()` gates) — only some knobs treat "0" as off.
 
+## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check queued. (task #85, branch `fix/taper-emission`)
+
+**The bug (located by #46, fixed here).** Plain-mode proactive repair accrues
+emission debt from the taper density τ(t) = r·q̂(1−q̂)^t (net/mod.rs) and the
+offset t resets on every cumulative-ack advance, so emitted proactive repair
+sums to Σ_t τ(t) = **r symbols per ACK CYCLE** — an ack cycle at BDP is
+hundreds of symbols, so wire overhead was ~r/cycle, nearly independent of r's
+computed magnitude. #46 L1 measured the consequence: legacy r* = 0.206 and
+corrected 0.255 both emitted cod/src ≈ 0.03–0.10; the whole r* control loop
+(including the §8.4.1 burst-tail correction) was inert at the wire.
+
+**The budget law (`TaperBudget`, control/fec_rate.rs; consumed in the
+net/mod.rs plain-mode emission block; env `RWM_TAPER_R`, default OFF ⇒
+byte-identical).** Per source symbol the computed rate is BANKED
+(`owed += r`; Σ grants tracks r × source — the wire consumes r AS COMPUTED,
+per coding window) and the emission grant is
+
+```
+   grant = min( owed, max(desire, r), spare, 1.0 )
+   desire = r · shape(t mod W),  shape(t) = W·q̂(1−q̂)^t / (1−(1−q̂)^W)
+```
+
+— the SAME GE-survival taper shape renormalized to mean 1 over the coding
+window W, so the taper's intent (repair concentrated right after the frontier
+advances) survives as a RE-TIMING while the TOTAL is governed by the budget,
+not the ack cadence. No new constants: floor r (the desire tail cannot strand
+the budget), `spare` = the legacy headroom anchor, 1.0 = ≤ 1 repair per
+source send (the source clock paces — no bursts), owed cap = max(r·W, 1)
+(a spare-starved window's budget expires; the budget IS r×W).
+
+**Unit evidence (fec_rate.rs, 4 tests, green).** (i) emitted tracks r×source
+within 15% for r ∈ {0.05, 0.25} (measured 5.0× apart) where the legacy law
+emits ~r per ack cycle for BOTH (r-invariant, ~50× less at 200-symbol
+cycles); (ii) ack-cadence invariance: per-symbol acks, 300-symbol cycles, and
+one endless cycle all emit ≈ r×source (legacy endless cycle emits ~r TOTAL —
+the executable statement of the bug); (iii) spare-starved ⇒ zero grants, owed
+expires at r·W, backlog drains ≤ 1 symbol per source send on recovery;
+(iv) frontier grant > mid-span grant (concentration kept).
+
+### L0 2x2 (2026-07-18, local, MEASUREMENT DISCIPLINE): the heavy-tail wire rung
+
+Netem `gemodel` IS GE, so the L1 VM cannot express the §8.4.1 heavy-tail
+claim at all; the transport L0 netem shim was therefore EXTENDED with the
+#46 ARM-3 heavy-tail loss law (semi-Markov: geometric Good sojourns,
+discrete-Weibull(θ=0.55, k=0.5) Bad sojourns, E[burst]=6.2 — quic.rs, plus a
+`c3heavy` scenario) — this L0 shim is the correct local rung for the tail
+claim. Harness `tests/taper_emission_l0.rs`: realtime hint, plain
+window-reliable, single path, 100 KB objects (~197 chunks @508 B), per-object
+DNF = app-level delivered reliability (same observable as
+tools/l1/rstar_battery.sh), `RWM_PERF_TIMEOUT_S=5`. Cell
+`heavy:20;20;5;0.6;0.55;0.5` (c3 rate/RTT/jitter, onset 0.6% ⇒ ε ≈ 3.6%;
+onset 2.3% = the #46 ε=12.5% synthetic kills every object in every arm —
+recorded, not used). Same test binary all 8 arms (taper_emission_l0 sha256
+928de1a20165fc22…, built from d190b29 + this branch's working tree),
+40 objects/arm, seeds 42 AND 7, NOTHING else running
+(a first battery that overlapped concurrent builds was DISCARDED — the DNF
+observable is wall-clock sensitive; its numbers reproduced anyway).
+Mechanism liveness: `RWM_TAPER_R` echo + per-arm cod/src (DIAG lines with
+src ≥ 100 sym/s — the bulk sender during feed).
+
+| arm (RWM_TAPER_R × RWM_RSTAR_TAIL) | s42 delivered | s7 delivered | pooled | cod/src s42 | cod/src s7 |
+|---|---|---|---|---|---|
+| fix OFF × legacy    | 25/40 (62.5%) | 30/40 (75.0%) | 68.8% | 0.050 | 0.032 |
+| fix OFF × corrected | 24/40 (60.0%) | 26/40 (65.0%) | 62.5% | 0.052 | 0.028 |
+| fix ON  × legacy    | 13/40 (32.5%) | 20/40 (50.0%) | 41.3% | 0.317 | 0.209 |
+| fix ON  × corrected | 13/40 (32.5%) | 23/40 (57.5%) | 45.0% | 0.344 | 0.247 |
+
+- **The emission fix is LIVE at the wire.** cod/src 0.03–0.05 → 0.21–0.34
+  (~6–10×), replicating #46's L1 inertness locally in the OFF arms and
+  breaking it in the ON arms. This is the build's claim, and it holds.
+- **The r* arms stay TIED in delivered reliability in BOTH emission modes**
+  (fix OFF 68.8 vs 62.5%, fix ON 41.3 vs 45.0% — both inside the per-arm
+  spread). Controller attribution (unit probe
+  `probe_rstar_arms_c3heavy`, this cell's loss law + c3 anchors):
+  r_legacy = 0.248 vs r_corrected = 0.445 — the arms DIFFER 1.8× at the
+  controller, but the wire shows only +0.03–0.04: the **spare-capacity gate**
+  (`compute_repair_rate_capped`: r ≤ spare = (cwnd−in_flight)/in_flight)
+  compresses both arms to ≈ the same consumed rate. The never-hurts gate is
+  a real contract, but it means corrected provisioning cannot be expressed
+  on a saturated realtime flow — binder #2, now named.
+- **Consuming r DEGRADES delivered reliability at this profile** (−22 pp
+  pooled, consistent across both seeds). Attribution: plain-mode taper
+  repair codes over the LEADING sliding window (up to ~1024 symbols,
+  including in-flight) — the documented RWM_MIN_R entanglement defect — so
+  a covering repair is not solvable at the receiver until the window tail
+  arrives (~½–1 RTT ≫ realtime's 20 ms reorder horizon): the repair is
+  recovery-inert, pure wire load. Differential probe: trailing-window
+  frontier repair at the SAME consumed rate (RWM_FRONTIER=32
+  RWM_FRONTIER_R=0.25, taper off, seed 7, cod/src 0.271) delivers 25/40
+  (62.5%) vs the taper arms' 50–57.5% — the SPAN, not the quantity, is
+  binder #3 — and still ≤ the 75% no-proactive baseline: at this cell every
+  proactive-repair form tested has negative marginal reliability value
+  under the horizon. Binder #3 (emission span) confirmed.
+
+**Verdict, scoped honestly.** #46's located defect (quantity: r per ack
+cycle) is REAL and is FIXED — the wire now consumes r as computed (unit
+proof + wire liveness above). The EXPECTED 2×2 separation did NOT appear:
+realizing r* at the realtime plain-mode wire is blocked one layer deeper by
+two further, now-measured binders — the spare-cap compression of the r*
+arms, and the leading-window (unsolvable-span) coding of the emitted repair.
+`RWM_TAPER_R` therefore stays DEFAULT OFF (shipped path byte-identical);
+flipping it is gated on the solvable-span emission follow-up (code plain-mode
+proactive repair over a decodable trailing span, or route realtime through
+the generation/pacer path, and revisit whether contract-priced repair should
+bypass the spare gate) — not on L1 alone.
+
+### Queued L1 spot check (VM; protocol — run when VM access returns)
+
+Re-run #46's cell: `tools/l1/rstar_battery.sh` seeds 42+7, x8 interleaved
+same-binary reps, c3 single-path netem, realtime, plain window mode, with the
+2×2 env (`RWM_RSTAR_TAIL` × `RWM_TAPER_R`), sender DIAG preserved per run.
+EXPECT (from this L0 evidence): (a) fix-ON arms emit cod/src ≈ 0.2–0.35 vs
+fix-OFF 0.03–0.10 — the wire-consumption claim, the only thing netem-L1 can
+prove (netem `gemodel` is GE: L1 tests the §8.7 closed-form-vs-exact gap,
+NOT the heavy-tail claim — that claim's wire rung is THIS L0 shim);
+(b) delivered reliability in the fix-ON arms does NOT improve (L0 predicts
+degradation) — if L1 reproduces that, the leading-window entanglement is
+confirmed on the real substrate and the solvable-span follow-up is the
+named next task; (c) r* arms tied at the wire (spare-cap compression).
+A fix-ON arm that IMPROVES delivered reliability at L1 would falsify the
+entanglement attribution and reopen the default-flip question.
+
 ## r* Bursty-Loss Provisioning (2026-07-13) — the GE 2-4x under-provisioning FIXED: r* now provisions against the receiver's MEASURED window loss-mass quantile (paper §8.4.1); oracle-validated on the #43 real traces (feasible-cell worst residual 2.88x → 1.41x, GE control tracks §8.7 exact, heavy-tail synthetic 5.1x-miss → 0.99x-hit); shipped default RWM_RSTAR_TAIL=1 (branch `feat/rstar-bursty`, task #46)
 
 **The problem (from #43 / paper §2.5).** r* was derived for GE-geometric
@@ -248,7 +370,11 @@ today for the same reason it fixes nothing there. FOLLOW-UP (out of #46
 scope, named): make the plain-mode emission path honor the computed rate
 per source symbol (or route realtime through the generation/pacer path
 that does), then re-run this cell — the L1 realization of the corrected
-contract lives or dies on that emission fix.
+contract lives or dies on that emission fix. [DONE 2026-07-18, task #85:
+built (`RWM_TAPER_R` budget law) and L0-validated — the wire now consumes
+r as computed, but the 2×2 did NOT separate: two further binders measured
+(spare-cap compression, leading-window entanglement). See "Taper Emission
+Fix" above.]
 
 ## FINAL CONSOLIDATED VERDICT (2026-07-08) — the aggregation/throughput arc
 

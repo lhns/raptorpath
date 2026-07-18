@@ -48,8 +48,16 @@ struct L0PathCfg {
     rate_bps: f64,
     delay_us: u64,
     jitter_us: u64,
-    ge_p: f64, // P(good→bad) per packet
+    ge_p: f64, // P(good→bad) per packet (heavy-tail mode: burst-onset prob)
     ge_q: f64, // P(bad→good) per packet; bad state drops (h=1)
+    // #85 heavy-tail loss (the #46 ARM-3 semi-Markov synthetic,
+    // raptorpath-math/tests/rstar_tail_validation.rs): geometric Good
+    // sojourns (onset = ge_p), discrete-Weibull(theta, k) Bad sojourns by
+    // inverse transform — the burst-tail structure netem `gemodel` (GE)
+    // cannot express, which is why THIS shim is the local rung for the
+    // §8.4.1 heavy-tail claim. wb_k = 0 ⇒ plain GE (byte-identical).
+    wb_theta: f64,
+    wb_k: f64,
 }
 
 fn l0_scenario(name: &str) -> Option<L0PathCfg> {
@@ -60,12 +68,40 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
         jitter_us: jit_ms * 1000,
         ge_p: p / 100.0,
         ge_q: q / 100.0,
+        wb_theta: 0.0,
+        wb_k: 0.0,
+    };
+    // Heavy-tail semi-Markov: p = burst-onset %, Weibull(theta, k) bursts.
+    let h = |rate_mbit: f64, ow_ms: u64, jit_ms: u64, p: f64, theta: f64, k: f64| L0PathCfg {
+        rate_bps: rate_mbit * 1e6,
+        delay_us: ow_ms * 1000,
+        jitter_us: jit_ms * 1000,
+        ge_p: p / 100.0,
+        ge_q: 0.0,
+        wb_theta: theta,
+        wb_k: k,
     };
     match name.trim() {
         "c2" | "wifi" => Some(f(100.0, 5, 3, 1.3, 50.0)),
         "c3" | "lte" => Some(f(20.0, 20, 5, 2.0, 40.0)),
+        // #85: c3's rate/RTT/jitter shape with the #46 documented heavy-tail
+        // burst law (Weibull k = 0.5, theta = 0.55 ⇒ E[burst] = 6.2). Onset
+        // 1.0% ⇒ eps ≈ 5.8% — LTE-class average like c3's 4.8% but with the
+        // burst tail GE cannot represent. (The #46 ARM-3 synthetic's onset
+        // 2.3% ⇒ eps = 12.5% is reachable via heavy:20;20;5;2.3;0.55;0.5 —
+        // too deep for a per-object delivered-reliability observable: at
+        // 12.5% heavy-tail every 100 KB realtime object dies in EVERY arm.)
+        "c3heavy" => Some(h(20.0, 20, 5, 1.0, 0.55, 0.5)),
         "clean" => Some(f(100.0, 5, 0, 0.0, 100.0)),
         other => {
+            if let Some(spec) = other.strip_prefix("heavy:") {
+                // heavy:rate_mbit;ow_ms;jit_ms;onset_pct;theta;k
+                let v: Vec<f64> = spec.split(';').filter_map(|s| s.parse().ok()).collect();
+                if v.len() == 6 {
+                    return Some(h(v[0], v[1] as u64, v[2] as u64, v[3], v[4], v[5]));
+                }
+                return None;
+            }
             // custom:rate_mbit,ow_ms,jit_ms,ge_p,ge_q
             let spec = other.strip_prefix("custom:")?;
             let v: Vec<f64> = spec.split(';').filter_map(|s| s.parse().ok()).collect();
@@ -257,6 +293,8 @@ fn l0_rand(state: &mut u64) -> f64 {
 
 struct L0PathState {
     ge_bad: bool,
+    /// #85 heavy-tail mode: packets left in the current Weibull burst.
+    wb_bad_left: u64,
     rng: u64,
     link_free_at_us: u64,
     last_release_us: u64,
@@ -311,6 +349,7 @@ impl L0Netem {
         let entry = self.states.entry(path_id).or_insert_with(|| {
             parking_lot::Mutex::new(L0PathState {
                 ge_bad: false,
+                wb_bad_left: 0,
                 rng: self.seed ^ ((path_id as u64 + 1) * 0x9E37) ^ ((is_server as u64) << 32),
                 link_free_at_us: 0,
                 last_release_us: 0,
@@ -322,15 +361,41 @@ impl L0Netem {
         // GE loss on the bulk-data direction only (client egress), like the
         // L1 topo (loss on the cli qdiscs; the ack direction is clean).
         if !is_server && cfg.ge_p > 0.0 {
-            let drop = st.ge_bad;
-            let u = l0_rand(&mut st.rng);
-            if st.ge_bad {
-                if u < cfg.ge_q {
-                    st.ge_bad = false;
+            let drop = if cfg.wb_k > 0.0 {
+                // #85 heavy-tail semi-Markov (see L0PathCfg): geometric Good
+                // sojourns, discrete-Weibull(theta, k) Bad sojourns drawn by
+                // inverse transform B = ceil((ln U / ln theta)^(1/k)) — the
+                // same generator as rstar_tail_validation.rs ARM 3.
+                if st.wb_bad_left > 0 {
+                    st.wb_bad_left -= 1;
+                    true
+                } else {
+                    let u = l0_rand(&mut st.rng);
+                    if u < cfg.ge_p {
+                        let uu = l0_rand(&mut st.rng).max(1e-300);
+                        let b = (uu.ln() / cfg.wb_theta.ln())
+                            .powf(1.0 / cfg.wb_k)
+                            .ceil()
+                            .max(1.0)
+                            .min(10_000.0) as u64;
+                        st.wb_bad_left = b - 1; // this packet is the burst's first
+                        true
+                    } else {
+                        false
+                    }
                 }
-            } else if u < cfg.ge_p {
-                st.ge_bad = true;
-            }
+            } else {
+                let drop = st.ge_bad;
+                let u = l0_rand(&mut st.rng);
+                if st.ge_bad {
+                    if u < cfg.ge_q {
+                        st.ge_bad = false;
+                    }
+                } else if u < cfg.ge_p {
+                    st.ge_bad = true;
+                }
+                drop
+            };
             if drop {
                 return;
             }

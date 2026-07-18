@@ -498,6 +498,98 @@ impl TaperFunction {
     }
 }
 
+/// #85: budget-conserving taper accrual for the plain-mode proactive-repair
+/// emission (env `RWM_TAPER_R`, default OFF).
+///
+/// MEASURED bug (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13):
+/// the legacy accrual feeds the emission debt with the raw taper density
+/// τ(t) = r·q·(1−q)^t and t resets on every cumulative-ack advance, so the
+/// emitted proactive repair sums to Σ_t τ(t) = r symbols PER ACK CYCLE —
+/// nearly independent of r's magnitude (an ack cycle at BDP is hundreds of
+/// symbols; measured cod/src ≈ 0.03–0.10 for BOTH r* = 0.206 and 0.255).
+/// The whole r* control loop, including the §8.4.1 burst-tail correction,
+/// was therefore INERT on the plain-mode wire.
+///
+/// The budget law: emitted repair must track r × (source symbols) — the
+/// wire consumes r AS COMPUTED, per coding window. Per source symbol the
+/// computed rate is banked into `owed` (Σ grants ≤ Σ rates, conserved up
+/// to the expiry cap below) and the grant handed to the emission debt is
+///
+///     grant = min( owed, max(desire, rate), spare, 1.0 )
+///
+/// where desire = rate · shape(t mod W) re-times the spend with the SAME
+/// GE-survival taper shape, renormalized to mean weight 1 over a W-span:
+/// shape(t) = W·q·(1−q)^t / (1−(1−q)^W). The taper's intent — repair
+/// concentrated right after the frontier advances, where a covering repair
+/// recovers a hole without a round-trip — is preserved as a RE-TIMING;
+/// the TOTAL is governed by the budget, not by the ack cadence. No new
+/// constants: the floor at `rate` guarantees the budget drains at least
+/// uniformly (the desire tail cannot strand it), `spare` is the same
+/// link-headroom anchor the legacy path capped with, and the 1.0 cap paces
+/// backlog at ≤ 1 repair per source send (the source clock is the emission
+/// clock — no bursts). `owed` is capped at one coding window's budget,
+/// max(r·W, 1): repair budget for source older than a window has expired
+/// (the window has slid), so spare-starved budget cannot accumulate
+/// unboundedly.
+#[derive(Debug, Default)]
+pub struct TaperBudget {
+    /// Banked, not-yet-granted repair budget (in symbols).
+    owed: f64,
+}
+
+impl TaperBudget {
+    pub fn new() -> Self {
+        Self { owed: 0.0 }
+    }
+
+    /// Un-granted budget currently banked (diagnostics/tests).
+    pub fn owed(&self) -> f64 {
+        self.owed
+    }
+
+    /// Per SOURCE symbol: bank the computed rate and return the grant to
+    /// add to the emission debt this symbol.
+    ///
+    /// * `rate`   — computed per-source repair rate r (already spare-capped
+    ///              upstream by `compute_repair_rate_capped`)
+    /// * `offset` — source symbols since the last cumulative-ack advance
+    ///              (the taper phase; the caller keeps resetting it — under
+    ///              the budget law the reset re-times, it no longer sizes)
+    /// * `taper`  — the GE taper shape (q, decay) for this estimator state
+    /// * `span`   — the coding window W (shape renormalization span)
+    /// * `spare`  — link spare capacity (legacy cap anchor)
+    pub fn accrue(
+        &mut self,
+        rate: f64,
+        offset: u64,
+        taper: &TaperFunction,
+        span: usize,
+        spare: f64,
+    ) -> f64 {
+        let rate = rate.max(0.0);
+        let span_u = span.max(1) as u64;
+        let span_f = span_u as f64;
+        // Bank this symbol's budget; expire beyond one window's worth.
+        self.owed = (self.owed + rate).min((rate * span_f).max(1.0));
+        // Span-normalized taper shape at the current phase (mean 1 over W).
+        let t = (offset % span_u) as f64;
+        let norm = 1.0 - taper.decay.powf(span_f);
+        let shape = if norm > 1e-12 && taper.q > 0.0 {
+            span_f * taper.q * taper.decay.powf(t) / norm
+        } else {
+            1.0
+        };
+        let desire = rate * shape;
+        let grant = self
+            .owed
+            .min(desire.max(rate))
+            .min(spare.max(0.0))
+            .min(1.0);
+        self.owed -= grant;
+        grant
+    }
+}
+
 /// Compute P_lost(t): probability a symbol was lost given no ACK after time t.
 ///
 /// Uses Bayes' theorem with the channel loss rate as prior:
@@ -1357,6 +1449,266 @@ mod tests {
             (sum - taper.total_rate).abs() < 0.001,
             "geometric sum ≈ A/q = total_rate: sum={sum}, expected={}",
             taper.total_rate
+        );
+    }
+
+    // --- #85 TaperBudget tests (RWM_TAPER_R budget law) ---
+
+    /// #85 attribution probe (not a gate; `--ignored`): the controller-level
+    /// r for the two RWM_RSTAR_TAIL arms on the L0 2x2 battery cell
+    /// (heavy:20;20;5;0.6;0.55;0.5 — semi-Markov, Weibull k=0.5 theta=0.55
+    /// bursts, onset 0.6% => eps ~3.6%), realtime hint, W=64, with the c3
+    /// rate/RTT anchors so the saturation cap is live. Prints legacy vs
+    /// corrected r — the number the emission path consumes per arm.
+    #[test]
+    #[ignore = "measurement probe for the #85 L0 cell, not a CI gate"]
+    fn probe_rstar_arms_c3heavy() {
+        let mut est = LossEstimator::new();
+        // Deterministic semi-Markov replay of the c3heavy law (splitmix-ish
+        // LCG for portability; the exact stream is irrelevant — the SHAPE
+        // is the cell's).
+        let mut state = 42u64;
+        let mut rand = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+        let (onset, theta, k) = (0.006f64, 0.55f64, 0.5f64);
+        let mut sent = 0u64;
+        let mut got = 0u64;
+        let mut batch = Vec::with_capacity(64);
+        let mut n = 0usize;
+        while n < 200_000 {
+            // Good sojourn
+            let g = ((rand().max(1e-12).ln() / (1.0 - onset).ln()).ceil()).max(1.0) as usize;
+            for _ in 0..g {
+                batch.push(true);
+                n += 1;
+            }
+            // Weibull bad sojourn
+            let b = ((rand().max(1e-300).ln() / theta.ln()).powf(1.0 / k).ceil()).max(1.0)
+                .min(10_000.0) as usize;
+            for _ in 0..b {
+                batch.push(false);
+                n += 1;
+            }
+            // Feed in 64-symbol batches like the receiver's block cadence.
+            while batch.len() >= 64 {
+                let chunk: Vec<bool> = batch.drain(..64).collect();
+                let ok = chunk.iter().filter(|&&x| x).count() as u32;
+                sent += 64;
+                got += ok as u64;
+                est.record_counts(64, ok);
+                for &x in &chunk {
+                    est.record_symbol(x);
+                }
+            }
+        }
+        // c3 anchors: 20 mbit, 40 ms RTT, realtime symbol size 512.
+        for _ in 0..100 {
+            est.record_rtt(std::time::Duration::from_millis(40));
+            est.record_throughput(2_500_000.0);
+        }
+        let eps = 1.0 - got as f64 / sent as f64;
+        let mut ctrl =
+            FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 512);
+        ctrl.set_tail_provision(false);
+        let r_legacy = ctrl.compute_repair_rate(&est, 64);
+        ctrl.set_tail_provision(true);
+        let r_corrected = ctrl.compute_repair_rate(&est, 64);
+        println!(
+            "c3heavy probe: eps={:.3} mass_valid={} r_legacy={r_legacy:.3} r_corrected={r_corrected:.3}",
+            eps,
+            est.ge_estimator().mass_stats().is_valid()
+        );
+    }
+
+    /// Replicates the plain-mode emission loop's accounting: per source
+    /// symbol accrue into the fractional debt, emit whole symbols, reset
+    /// the taper offset at each ack (per `ack_every`; 0 = never = one
+    /// endless cycle). Returns emitted repair symbols.
+    ///
+    /// `budget = true` runs the #85 TaperBudget law; `false` runs the
+    /// legacy density accrual (τ at the offset, spare-capped) — the
+    /// measured-inert arm, kept here as the executable statement of the
+    /// bug this law fixes.
+    fn simulate_emission(
+        rate: f64,
+        q: f64,
+        span: usize,
+        n_sources: u64,
+        ack_every: u64,
+        spare: f64,
+        budget: bool,
+    ) -> u64 {
+        let taper = TaperFunction {
+            amplitude: rate * q,
+            decay: 1.0 - q,
+            total_rate: rate,
+            q,
+        };
+        let mut tb = TaperBudget::new();
+        let mut debt = 0.0f64;
+        let mut emitted = 0u64;
+        let mut offset = 0u64;
+        for i in 0..n_sources {
+            let add = if budget {
+                tb.accrue(rate, offset, &taper, span, spare)
+            } else {
+                taper.density(offset as f64).min(spare.max(0.0))
+            };
+            debt += add;
+            offset += 1;
+            while debt >= 1.0 {
+                debt -= 1.0;
+                emitted += 1;
+            }
+            // Cumulative-ack advancement resets the taper phase (the
+            // net/mod.rs `taper_offset = 0` on window advancement).
+            if ack_every > 0 && (i + 1) % ack_every == 0 {
+                offset = 0;
+            }
+        }
+        emitted
+    }
+
+    #[test]
+    fn test_taper_budget_tracks_r_magnitude() {
+        // The bug (#46 L1): with the legacy law, r = 0.05 and r = 0.25
+        // emit the SAME repair (≈ r per ack cycle → cycle-count-sized, not
+        // r-sized). The budget law must emit ~5x apart and ≈ r × source.
+        let (q, span, n, ack_every) = (0.4, 64, 20_000u64, 200u64);
+        let lo = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, true);
+        let hi = simulate_emission(0.25, q, span, n, ack_every, f64::INFINITY, true);
+        // Budget law: emitted ≈ r × n within 15%.
+        let (exp_lo, exp_hi) = (0.05 * n as f64, 0.25 * n as f64);
+        assert!(
+            (lo as f64) > 0.85 * exp_lo && (lo as f64) < 1.15 * exp_lo,
+            "budget law must emit ~r x source at r=0.05: {lo} vs {exp_lo}"
+        );
+        assert!(
+            (hi as f64) > 0.85 * exp_hi && (hi as f64) < 1.15 * exp_hi,
+            "budget law must emit ~r x source at r=0.25: {hi} vs {exp_hi}"
+        );
+        let ratio = hi as f64 / lo.max(1) as f64;
+        assert!(
+            (4.0..=6.0).contains(&ratio),
+            "5x the rate must emit ~5x the repair: {ratio:.2}x ({lo} vs {hi})"
+        );
+
+        // The legacy arm documents the pathology: BOTH rates emit ≈ r per
+        // ack cycle (n/ack_every cycles), an order below the budget and
+        // nearly invariant in r.
+        let lo_legacy = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, false);
+        let hi_legacy = simulate_emission(0.25, q, span, n, ack_every, f64::INFINITY, false);
+        let cycles = (n / ack_every) as f64;
+        assert!(
+            (hi_legacy as f64) < 1.5 * 0.25 * cycles + 2.0,
+            "legacy emits ~r per ack cycle, not r per source: {hi_legacy} vs {} cycles",
+            cycles
+        );
+        assert!(
+            (hi as f64) > 10.0 * (hi_legacy.max(1) as f64),
+            "the budget law must break the per-ack-cycle ceiling: budget={hi} legacy={hi_legacy}"
+        );
+    }
+
+    #[test]
+    fn test_taper_budget_ack_cadence_invariance() {
+        // The budget must be governed by SOURCE COUNT, not ack cadence:
+        // burst acks (reset every symbol — the old reset pathology's fast
+        // edge), a c3-like cycle (hundreds of symbols), and sparse acks
+        // (one endless cycle) must all emit ≈ r × source.
+        let (r, q, span, n) = (0.23, 0.4, 64, 20_000u64);
+        let expect = r * n as f64;
+        for (name, ack_every) in [("burst(1)", 1u64), ("cycle(300)", 300), ("sparse(0)", 0)] {
+            let e = simulate_emission(r, q, span, n, ack_every, f64::INFINITY, true);
+            assert!(
+                (e as f64) > 0.8 * expect && (e as f64) < 1.2 * expect,
+                "budget law must emit ~r x source under {name} acks: {e} vs {expect:.0}"
+            );
+        }
+        // Contrast: legacy under burst acks pins the phase at 0 → emits
+        // A = r·q per symbol (under), and under sparse acks emits ~r TOTAL.
+        let sparse_legacy = simulate_emission(r, q, span, n, 0, f64::INFINITY, false);
+        assert!(
+            sparse_legacy <= 1,
+            "legacy sparse-ack cycle emits ~r total (the pathology): {sparse_legacy}"
+        );
+    }
+
+    #[test]
+    fn test_taper_budget_spare_cap_and_expiry() {
+        // Zero spare ⇒ zero grants (the never-hurts anchor is respected)
+        // and the banked budget must EXPIRE at one window's worth
+        // (max(r·W, 1)) instead of accumulating unboundedly.
+        let (r, q, span) = (0.25, 0.4, 64usize);
+        let taper = TaperFunction {
+            amplitude: r * q,
+            decay: 1.0 - q,
+            total_rate: r,
+            q,
+        };
+        let mut tb = TaperBudget::new();
+        for t in 0..10_000u64 {
+            let g = tb.accrue(r, t, &taper, span, 0.0);
+            assert_eq!(g, 0.0, "no spare ⇒ no grant");
+        }
+        let cap = (r * span as f64).max(1.0);
+        assert!(
+            tb.owed() <= cap + 1e-9,
+            "starved budget must expire at one window's budget: owed={} cap={cap}",
+            tb.owed()
+        );
+
+        // When spare returns, the backlog drains paced at <= 1 repair per
+        // source send (the source clock), never a burst.
+        let mut max_grant = 0.0f64;
+        let mut drained = 0.0;
+        for t in 0..64u64 {
+            let g = tb.accrue(r, t, &taper, span, f64::INFINITY);
+            assert!(g <= 1.0 + 1e-9, "grant must never exceed 1 per source send");
+            max_grant = max_grant.max(g);
+            drained += g;
+        }
+        assert!(
+            drained > cap * 0.9,
+            "backlog must drain once spare returns: drained={drained:.2} of cap={cap}"
+        );
+        assert!(max_grant > r, "frontier drain must front-load above the flat rate");
+    }
+
+    #[test]
+    fn test_taper_budget_front_loads_at_frontier() {
+        // The taper's INTENT survives: with banked budget, the grant right
+        // after a frontier advance (offset 0) exceeds the mid-span grant —
+        // repair is still concentrated where it recovers a hole without a
+        // round-trip. (Total is budget-governed; only the timing is shaped.)
+        let (r, q, span) = (0.10, 0.4, 64usize);
+        let taper = TaperFunction {
+            amplitude: r * q,
+            decay: 1.0 - q,
+            total_rate: r,
+            q,
+        };
+        let mut tb = TaperBudget::new();
+        // Bank some budget under zero spare.
+        for t in 0..40u64 {
+            tb.accrue(r, t, &taper, span, 0.0);
+        }
+        let g_frontier = tb.accrue(r, 0, &taper, span, f64::INFINITY);
+        // Re-bank, then read a mid-span grant with the same backlog.
+        let mut tb2 = TaperBudget::new();
+        for t in 0..40u64 {
+            tb2.accrue(r, t, &taper, span, 0.0);
+        }
+        let g_mid = tb2.accrue(r, 32, &taper, span, f64::INFINITY);
+        assert!(
+            g_frontier > g_mid,
+            "frontier grant must exceed mid-span grant: {g_frontier} vs {g_mid}"
+        );
+        assert!(
+            (g_mid - r).abs() < 1e-9,
+            "mid-span drains at the uniform budget rate r: {g_mid}"
         );
     }
 

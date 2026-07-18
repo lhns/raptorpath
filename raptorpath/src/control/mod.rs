@@ -14,4 +14,4 @@ pub mod fec_rate;
 pub mod gilbert_elliott;
 
 pub use estimator::LossEstimator;
-pub use fec_rate::{FecRateController, TaperFunction};
+pub use fec_rate::{FecRateController, TaperBudget, TaperFunction};

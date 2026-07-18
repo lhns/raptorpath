@@ -1852,6 +1852,11 @@ substrate that assumption fails — proactive repair is dropped/wasted such that
 observed proactive-recovery fraction stays ≈0.3–0.6 at high RTT+loss regardless of
 r (r-sweep) or of receiver NACK timing (§12.9 repair-wait). Raising r* to compensate
 does not help because the added repair is dropped at the same rate. See §12.9.
+*(Update 2026-07-18, task #85: one instance of this class — the plain-mode taper
+reset that emitted r per ack cycle instead of r per source — is FIXED as a
+mechanism (`RWM_TAPER_R` budget law, Section 8.4.1 "L1 status"); the measured L0
+2×2 shows the remaining binders are the spare-capacity gate and the
+leading-window coding span, not the emission quantity.)*
 
 ### 8.4.1 Burst-Tail Provisioning: r* Against the Measured Window-Mass Quantile
 
@@ -1989,16 +1994,28 @@ fades no in-window rate covers) — on those the ceiling still improves the
 residual (12.8× → 10.7× at worst) and the infeasibility is reported.
 Full tables: `rstar_tail_validation.rs`.
 
-**L1 status (MEASURED, 2026-07-13).** The corrected r\* is realized where
-the computed rate is consumed directly (the L0 gate suite; the oracle
-replay). At L1 in *plain window mode* it is currently INERT at the wire:
-the taper emission path resets its offset on cumulative-ack advancement,
-so emitted proactive repair ≈ Σ τ(t) = r symbols *per ack cycle*
-(~r/cycle-length overhead, nearly independent of r's magnitude), and an
-x8 two-seed A/B on c3-realtime shows the arms tied at equal emitted
-overhead — the same substrate class as the §8.4 "Measured caveat"/§12.9.
-Fixing the emission scheduler is the named follow-up; details in
-goal-gate "r\* Bursty-Loss Provisioning".
+**L1 status (MEASURED 2026-07-13; emission fix built + L0-measured
+2026-07-18, task #85).** The corrected r\* is realized where the computed
+rate is consumed directly (the L0 gate suite; the oracle replay). At L1 in
+*plain window mode* it was INERT at the wire: the taper emission path
+resets its offset on cumulative-ack advancement, so emitted proactive
+repair ≈ Σ τ(t) = r symbols *per ack cycle* (~r/cycle-length overhead,
+nearly independent of r's magnitude), and an x8 two-seed A/B on
+c3-realtime showed the arms tied at equal emitted overhead. That QUANTITY
+defect is now FIXED: the budget-conserving taper (`TaperBudget`, env
+`RWM_TAPER_R`, default OFF) banks the computed rate per source symbol and
+re-times the spend with the same taper shape renormalized over the coding
+window, so emitted repair tracks r × source — unit-proven, and measured
+live at the wire on the heavy-tail L0 shim (cod/src 0.03–0.05 → 0.21–0.34
+on a 2×2 A/B). The full claim is still NOT realized there, honestly: the
+2×2 shows two further binders — the spare-capacity gate compresses the
+legacy/corrected arms (controller 0.248 vs 0.445 → wire Δ ≈ +0.03), and
+the emitted repair codes over the LEADING sliding window (in-flight
+entanglement), making it recovery-inert within realtime's reorder horizon
+(delivered reliability *degrades* −22 pp with the fix on; a trailing-span
+differential at the same rate recovers over half the gap). The flag stays
+default-off; the solvable-span emission follow-up and the queued L1
+re-run are specified in goal-gate "Taper Emission Fix".
 
 **Cost and scoping (honest).** On heavy-tail channels the corrected r\* is
 large *because the contract is expensive there* — reliability against fades

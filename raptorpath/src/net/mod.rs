@@ -4406,6 +4406,35 @@ async fn run_window_sender(
     let mut repair_debt: f64 = 0.0;
     // Source symbol counter for taper time offset (symbols since window start).
     let mut taper_offset: u64 = 0;
+    // ── #85 budget-conserving taper (RWM_TAPER_R, default OFF) ────────────
+    // MEASURED (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13): the
+    // legacy taper accrual below sums to Σ τ(t) = r symbols PER ACK CYCLE
+    // (taper_offset resets on cumulative-ack advancement), so the emitted
+    // plain-mode proactive overhead is ~r/cycle-length — nearly independent
+    // of r's computed magnitude. Legacy r*=0.206 and corrected r*=0.255 both
+    // emitted cod/src ≈ 0.03–0.10 at c3-realtime: the whole r* control loop
+    // (incl. the §8.4.1 burst-tail correction) was INERT at the wire. With
+    // the flag ON, `TaperBudget` makes emission consume r as computed: a
+    // per-window budget (emitted ≈ r × source per coding window), the taper
+    // shape kept as a re-timing (repair still concentrated at the frontier),
+    // paced ≤ 1 repair per source send and spare-capped (existing anchors,
+    // no new constants). OFF ⇒ byte-identical legacy emission (A/B arm).
+    // L0 VERDICT (2026-07-18, goal-gate "Taper Emission Fix"): the budget
+    // law is LIVE at the wire (cod/src 0.03-0.05 → 0.21-0.34 on the
+    // c3heavy 2x2) but delivered reliability DEGRADES at realtime and the
+    // r* arms stay tied — the emitted repair codes over the LEADING sliding
+    // window (in-flight entanglement, the RWM_MIN_R defect class above), so
+    // it is recovery-inert within realtime's reorder horizon; quantity was
+    // not the only binder. Default stays OFF; flipping it is gated on the
+    // solvable-span emission follow-up, not on L1 alone.
+    let taper_r_budget = crate::config::env_flag("RWM_TAPER_R", false);
+    let mut taper_budget = crate::control::TaperBudget::new();
+    if taper_r_budget {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
+        info!(
+            "budget-conserving taper emission ACTIVE (RWM_TAPER_R: plain-mode proactive repair budgeted at r x source per coding window; legacy = r per ack cycle)"
+        );
+    }
     // ── Proactive-frontier repair (plain-reliable) ────────────────────────
     // MEASURED root cause of the C2 lossy collapse (goal-gate "Proactive
     // Frontier"): under Bulk's r*→0 pure-ARQ steady state there is NO proactive
@@ -4967,11 +4996,25 @@ async fn run_window_sender(
                     match path_estimator {
                         Some(est) => {
                             let flat_rate = ctrl.compute_repair_rate_capped(est, spare, encoder.window_size());
-                            // Use taper density at current offset if GE model is valid
                             let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
-                            let density = taper.density(taper_offset as f64);
-                            // Cap by spare capacity (never exceed link headroom)
-                            density.min(spare.max(0.0))
+                            if taper_r_budget {
+                                // #85 budget law (see TaperBudget decl above):
+                                // emission tracks r × source per coding window
+                                // — the computed r* is consumed at the wire.
+                                taper_budget.accrue(
+                                    flat_rate,
+                                    taper_offset,
+                                    &taper,
+                                    encoder.window_size(),
+                                    spare,
+                                )
+                            } else {
+                                // LEGACY (measured-inert): taper density at the
+                                // current offset; Σ over an ack cycle = r once.
+                                let density = taper.density(taper_offset as f64);
+                                // Cap by spare capacity (never exceed link headroom)
+                                density.min(spare.max(0.0))
+                            }
                         }
                         None => 0.0,
                     }
