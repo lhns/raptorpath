@@ -2439,6 +2439,15 @@ any window, so W* simply maximises the window the budget allows. `derive_window`
 in raptorpath-math is the shared implementation; the production window-mode
 sender and the visualizer both read W* from it.
 
+> **Unified-machine extension (§16.20, 2026-07-18).** Under the unified
+> span machine the same per-hint (δ, budget) rows additionally derive the
+> emission-span parameters — quantum width A\* = clamp(rate·D, 1, W\*)
+> with D = min(H, 2·RTprop), pipeline depth M\* = ceil(rate·2·RTprop/A\*_q)+1,
+> and trailing offset Δ = ceil(rate·J). The hint stops selecting a decoder
+> machine; it selects a point on the δ axis and every machine parameter
+> follows from that point plus the measured anchors. See the §16.20.5
+> constants audit.
+
 ### 8.9 The Unified Deadline-Constrained r* (single- and multi-path)
 
 > **MEASURED breakeven note (branch `feat/fec-arq-crossover`, 2026-07-08).** The
@@ -3213,7 +3222,11 @@ byte-identical), four coupled changes:
    phases pull the MEASURED p50 to 4–7 ms vs BBR-under's 38 ms), Realtime
    an essentially empty queue (jitter headroom governs), Auto the classic
    2-packet target. One continuous knob (`RWM_COPA_DELTA` overrides for
-   frontier measurement), no mode switch.
+   frontier measurement), no mode switch. (§16.20 extends the same
+   principle to the coding machine itself: the hint's δ point also derives
+   the emission-span parameters A*/M*/Δ — the CC price knob and the span
+   law are the two consumers of ONE hint→δ mapping, and neither selects a
+   different machine.)
 3. **The actual Copa update law** (replacing the ramp/±2 scheme, wire mode
    only): per SRTT, direction = (cwnd/srtt ≤ 1/(δ·d_q)), step = v/δ with
    velocity v doubling only after the direction persists ≥3 updates (Copa
@@ -8126,6 +8139,260 @@ c2-deep account deepens — the configuration no SHARED pool can express.
 Unit-tested (incl. the deep+shallow C8 conflict in miniature) and
 L0-validated at the mechanism level; the C7/C8 verdict awaits the queued
 L1 battery (goal-gate "Per-Path Outstanding Accounting").
+
+---
+
+### 16.20 One decoder, one continuous mechanism: the unified span machine (task #61, the principle debt) (2026-07-18)
+
+**The debt, stated exactly.** The axiom of this whole document is ONE
+mechanism parameterized by the (δ, ρ, r) triangle (§1.4, §15). The
+implementation has instead accreted THREE receive machines and a HARD
+protocol switch between them:
+
+1. the **sliding-window RLC machine** (`RlcWindowDecoder`): per-seq
+   incremental Gaussian elimination over a moving window — the plain
+   window-reliable path (Bulk/Auto + `--window-reliable`, generation off);
+2. the **generation machine** (`GenerationDecoder`, §16.3/§16.18): dense
+   per-(anchor, width) systems with the sparse-aware known-column
+   elimination — the bulk generation/systematic path;
+3. the **streaming two-layer code** (`StreamingDecoder`, wrapping the
+   `streaming-codes` crate): the code the Realtime hint actually
+   auto-selects (`net/mod.rs` backend selection) — a genuinely different
+   code family (diagonal burst layer + random layer, its own 15-byte
+   repair header).
+
+The switch is at the PROFILE level: hint = Realtime picks machine (3);
+`--window-generation-coding`/`--window-systematic-repair` pick machine (2);
+otherwise machine (1). Nothing continuous connects them, double (triple)
+maintenance, and the M*/A* depth law of §16.17 engages only in machine (2)
+and only at BDP > G — unvalidated in exactly the regime it was derived for.
+
+This section derives the unification for the RLC family — machines (1) and
+(2), which already share one wire format by design — and states honestly
+where machine (3) stands.
+
+#### 16.20.1 Both RLC machines decode the same equation set — the difference is algebra SCOPE, not code
+
+Every RLC-family wire symbol is a self-describing linear equation over the
+global source-sequence variable space:
+
+```
+   repair (a, w, i):   Σ_{c=0}^{w-1} coeff(a,w,i)[c] · x_{a+c} = payload
+   source s:           x_s = payload            (a unit equation)
+```
+
+(the FILL_FLAG variant is the same equation with columns [cw, w) zeroed —
+§16.3). The receiver holds a consistent affine system; linear algebra fixes,
+uniquely, the **maximal determined subset** of variables — the delivered
+set is a property of the EQUATIONS, not of the decoder. The two machines
+differ only in how much of that closure they compute:
+
+- `RlcWindowDecoder` computes the FULL closure: one global incremental GE;
+  any two equations that overlap on an unknown can eliminate against each
+  other, whatever spans they came from.
+- `GenerationDecoder` computes a **block-restricted closure**: equations
+  are keyed by `(anchor, width)`, each key gets an isolated RREF system,
+  and only **rank-1 information** (fully solved sources) propagates between
+  systems (`inject_source_into_active_gens` / `propagate`).
+
+**Where they provably coincide:** when the wire's spans are ALIGNED (every
+equation for a region carries the same `(anchor, width)`) the global system
+is block-diagonal, cross-block elimination is vacuous, and the two closures
+are equal. That is generation mode by construction — which is why the
+sliding decoder could decode the generation wire unchanged (§16.3) and the
+old-vs-new differential test could demand set equality (§16.18).
+
+**Where they provably differ:** two or more UNDERDETERMINED equations with
+different `(a, w)` keys whose unknown sets overlap and are jointly
+determining. Minimal trap: holes {h₁, h₂}, repair A over a span covering
+both, repair B over a DIFFERENT span also covering both. Global GE: rank 2
+over 2 unknowns ⇒ both solve. Keyed machine: two systems, each rank 1 over
+2 unknowns, no partial-row propagation ⇒ both strand (until ARQ). On a
+MOVING-window wire this is not a corner case — it is the generic 2-loss
+burst: consecutive repairs are emitted over the current window, whose
+anchor slides with every source symbol, so the two covering repairs of a
+burst almost always carry different spans. **The keyed machine is therefore
+not a valid drop-in for the sliding wire; the sliding machine IS valid for
+the aligned wire (only slow — §16.18's measured ~200×).** The `(anchor,
+width)` keying is an OPTIMIZATION exploiting block-diagonal structure, not
+a semantic.
+
+#### 16.20.2 The unified decoder: global incremental RREF with the sparse-aware cost model
+
+The unified machine (`UnifiedDecoder`, `src/fec/unified.rs`) is the global
+closure of (1) computed with the cost model of (2):
+
+- **Known columns never enter the matrix.** Received/recovered sources
+  live in a payload store; an incoming row's known columns are eliminated
+  payload-only (S bytes each) — §16.18's sparse-aware core, now global.
+- **Only coded rows are matrix rows**, kept in RREF, stored as one fused
+  contiguous buffer `[coeffs over the row's SPAN | payload]`. A row's span
+  is an interval `[start, start+len)`; eliminating two overlapping rows
+  yields a row whose span is the union — still an interval — so rows stay
+  dense-over-span (no per-coefficient BTreeMap, no cascade allocation: the
+  two measured killers of the old sliding decoder).
+- **Unit rows deliver immediately** and convert to known columns
+  (payload-only back-elimination through every covering row, worklist for
+  the transitive cascade). A source symbol arriving late is just a unit
+  equation — the whole `inject/propagate` apparatus of the keyed machine
+  becomes a one-line invariant.
+- **k = 0 fast path:** a repair whose span is fully known is recognized
+  redundant in O(w) with zero GF work.
+
+Cost per solve involving k coded rows of span ≤ L: **O(k·L·S + k²·(L+S))**
+— identical to §16.18's per-generation bound when the wire is aligned
+(L = G, systems block-diagonalize automatically), and bounded by L ≤ W on
+the sliding wire. Delivered set: the full closure — **equal to
+`RlcWindowDecoder` on every wire** (both compute the maximal set, per
+arrival), and **⊇ `GenerationDecoder` on the aligned wire** with equality
+whenever blocks are disjoint (the extra deliveries appear exactly in the
+mixed-width same-anchor overlap the keyed machine documents as separate
+systems — the object-tail case). Both statements are enforced by
+differential test (below), with the pre-§16.18 dense decoder kept as the
+third, reference oracle.
+
+**The A\*=1 degeneracy, stated precisely.** At the decoder there is nothing
+left to degenerate: sliding-window and generation wires are the SAME input
+language, and the machine is span-agnostic. The two "machines" were the two
+extreme SENDER span policies: moving anchor with w = W (sliding) vs pinned
+anchor with w = G, M deep (generation). The realtime/bulk switch was never
+about decode — it was an emission-span policy switch. So the unification
+lives on the sender:
+
+#### 16.20.3 The sender span law: (δ, ρ, r) → (A*, M*, Δ) with no mode bit
+
+All emission-span structure derives from one dimensionless quantity, the
+**recovery budget in symbols** `N_δ = rate · D`, with
+
+```
+   D  = min(H, 2·RTprop)          the recovery deadline:
+        H       = the delivery horizon the receiver will actually wait
+                  (EVICT/realtime: reorder_timeout, the δ dial; RETAIN/ρ=1: ∞)
+        2·RTprop = delivery + one feedback round — past this, recovery
+                  belongs to ARQ/deficit anyway (§16.17's D)
+   rate = the windowed-MAX delivered rate (§16.15's statistic), RTprop
+          min-filtered — the two measured anchors, never live-SRTT
+```
+
+and three derived parameters, all continuous in δ:
+
+```
+   A* = clamp(N_δ, 1, W)                     the coding-quantum / span width
+   M* = ceil(rate · 2·RTprop / A*_q) + 1     quanta in flight (A*_q = A*
+                                             quantized to the retained grid)
+   Δ  = ceil(rate · J)                       trailing offset: the span must
+                                             end Δ behind the send frontier
+                                             so every member has LANDED when
+                                             the repair does (J = jitter
+                                             anchor; same-path FIFO makes
+                                             Δ small, not zero)
+```
+
+Emission: per source symbol the quantity law banks `owed += r` (the #85
+`TaperBudget` — the wire consumes r as computed, §16.17/goal-gate "Taper
+Emission Fix"), and each granted repair is coded over the TRAILING span
+`[F, F+A*)` with `F+A* ≤ sent − Δ`, `F` = the oldest unresolved position
+(cumulative ack + 1, clamped into the retained window). This is #85's
+solvable-span requirement made structural: a repair is solvable AT ARRIVAL
+iff its span contains no still-in-flight member, i.e. iff it trails the
+frontier by Δ — the leading-window emission (the measured −22 pp defect)
+violates exactly this.
+
+**The two limits.**
+
+- **Realtime (small δ):** H ≈ 20 ms ⇒ D = H ⇒ A* = rate·H (e.g. ~4 at
+  200 sym/s voice, ~98 at c3-class 20 Mbit) — small fresh spans trailing
+  the frontier, solvable on arrival, delivery at the k-th covering
+  equation's ARRIVAL; M* ≤ 2 (the depth term is inert below BDP ≈ A*).
+  This IS the sliding-window machine's behaviour, now derived instead of
+  hard-coded — **the property that buys the tail win is (a) per-arrival
+  incremental decode and (b) span freshness (spans the receiver can solve
+  inside H), both of which the unified machine preserves by construction
+  (delivered-set-and-timing equality with the legacy sliding machine is
+  the differential test's assertion, not an aspiration).**
+- **Bulk (large δ, ρ = 1):** H = ∞ ⇒ D = 2·RTprop ⇒ A* = 2·BDP clamped by
+  W → the retained-grid quantum G (§16.5's four bounds cap W; A*_q = G),
+  M* = ceil(rate·2·RTprop/G)+1 — **verbatim §16.17's derived pipeline
+  depth**, now reached as the large-δ limit of the same formula that
+  yields the realtime span. Stable anchors (the generation grid) are the
+  A*_q quantization, kept because fungible cross-path DoF (§16.3) requires
+  a pinned span, not because "bulk is a different machine."
+
+Between the limits δ moves A* and M* smoothly; there is no value of δ at
+which a different machine takes over — the oracle's continuity sweep
+(temporal_oracle PART 7) checks precisely that no completion/tail cliff
+appears at any δ between the two limits, and validates the M* depth term
+in its engagement regime (RTT 100/200, BDP > G — the §16.17 residual).
+
+#### 16.20.4 Honest re-examination of the #85 span probe
+
+Re-deriving the span law forced a re-read of the #85 differential probe,
+and it does not survive: the probe emitted trailing-span repairs tagged
+`FecBackend::Rlc` (`build_frontier_repair`) into a tunnel whose Realtime
+hint had auto-selected the STREAMING backend — the receiver's
+`StreamingDecoder` drops mismatched-backend symbols on entry
+(`add_symbol`'s backend guard), so the probe's repairs were **never fed to
+any decoder**. The 62.5%-vs-50–57.5% "span, not quantity" datum therefore
+measured trailing-span repair as PURE WIRE LOAD, not as recovery; binder #3
+(emission span) remains PLAUSIBLE — the taper arms' leading-window repairs
+WERE decoded and still degraded delivery — but its L0 confirmation is VOID.
+The span law above is re-established in this task's L0 battery with the
+whole RLC family end-to-end (encoder, wire, unified decoder), where the
+trailing-span repairs demonstrably enter the decoder (repairs_useful > 0
+is the liveness gate). This is what MEASUREMENT DISCIPLINE rule 1
+(mechanism liveness at the RECEIVER, not just the sender) exists to catch.
+
+#### 16.20.5 Constants audit
+
+Every parameter of the unified machine, and where it comes from:
+
+```
+  parameter        derivation                                   anchor/source
+  ─────────────    ──────────────────────────────────────────   ─────────────
+  r                §8.4/§8.4.1 r* (GE + measured tail mass)     ε̂, σ²_burst, δ
+  taper shape      GE survival (1−q̂)^t renorm. over window      q̂ (GE estimator)
+  owed cap         r·W (the budget IS r × window)               r, W
+  A*               clamp(rate·D, 1, W)                          rate, D(δ)
+  D                min(H, 2·RTprop)                             δ (H), RTprop
+  M*               ceil(rate·2·RTprop/A*_q)+1                   rate, RTprop, A*_q
+  Δ                ceil(rate·J)                                 jitter anchor
+  W                §16.5 four bounds (latency/burst/mem/decode)  δ, ε̂, memory
+  H                hint δ dial (EVICT) / ∞ (ρ=1 RETAIN)          δ, ρ
+  retention        ρ = 1 ⇒ RETAIN-UNTIL-ACKED, else EVICT       ρ
+  RESIDUAL CONSTANTS (named, not derived):
+  M* clamp [2,32]  cold-start floor / memory ceiling            GEN_PIPE_MAX_GENS
+  pacing ×1.25     BBR probe gain (§16.17)                      literature const
+  Δ floor 1        FIFO-per-path minimum                        structural
+  grant ≤ 1/src    source clock paces repair (no bursts)        structural (#85)
+```
+
+#### 16.20.6 What is and is not unified (status)
+
+**Built (this task, branch `feat/decoder-unify`, env `RWM_UNIFIED`, default
+OFF = legacy byte-identical):** the unified decoder replaces BOTH RLC-family
+decoders behind the gate; plain-mode proactive emission becomes
+quantity-lawed (TaperBudget) trailing-span emission with A*/Δ from the
+derivation; generation mode keeps its machine (it already IS the aligned
+large-δ limit) with the M* law active; the Realtime hint under the gate
+rides the RLC family (δ-parameterized) instead of switching code families.
+Differential tests (unified vs legacy sliding on moving-span traces;
+unified vs keyed + pre-§16.18 reference oracle on aligned traces) and the
+local L0 δ-sweep are the evidence rung; the L1 parity battery (realtime
+tail p50/p99 vs legacy, bulk throughput vs gen-sys, RTT 100/200 depth-term
+cells) is QUEUED — the shipped default stays legacy until it passes.
+
+**Not unified, honestly:** (a) the STREAMING two-layer code remains a
+separate family — its diagonal burst layer is a genuinely different
+construction (deterministic burst-optimal interleaving) that the random
+RLC span machine does not reproduce; the shipped Realtime hint still
+selects it by default, and the 12–48× message-tail crown jewel (goal-gate
+"Full Benchmark Re-Run", Metric A) was measured ON it — retiring it in
+favour of the unified small-δ machine is gated on the queued L1 tail
+parity, not asserted here. (b) The block pipeline (RaptorQ bulk default
+without `--window-reliable`) is §15's other knob and untouched. The
+principle debt this section discharges is the RLC-family fork — the two
+machines that were one mechanism all along, split only by an emission-span
+policy that is now a formula.
 
 ---
 
