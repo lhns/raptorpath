@@ -2895,3 +2895,636 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
     println!("  is inert.  De-noising BtlBw_slow (robust quantile) is the NECESSARY signal-stability fix");
     println!("  that lets the oracle-proven depth bound bind toward x{stable_factor:.3}; L1 is the arbiter.");
 }
+
+// =========================================================================
+// PART 7 — THE UNIFIED SPAN MACHINE ACROSS THE δ CONTINUUM (task #61,
+// paper §16.20).
+//
+// The two RLC-family production machines are two SENDER SPAN POLICIES over
+// one decode algebra (§16.20.1-2): the realtime-class sliding machine emits
+// MOVING trailing spans (anchor advances with every symbol — the A*-advance
+// → 1 limit) and delivers per-arrival; the generation bulk machine emits
+// PINNED aligned spans (anchor advance = the span itself, quantized to the
+// G grid) M deep. §16.20.3 derives all parameters from one law:
+//
+//    A* = clamp(rate·D, 1, W),  D = min(H, 2·RTprop),
+//    M* = ceil(rate·2·RTprop / A*_q) + 1
+//
+// with H the delivery horizon (the δ dial) and rate/RTprop the measured
+// anchors; the anchor GRANULARITY (moving vs pinned) is a fungibility/
+// decode-batching optimization that is only available once D ≥ 2·RTprop
+// (a deficit round fits the deadline) — and the continuity claim must
+// therefore also show the HANDOFF is metric-inert (moving and pinned spans
+// of the same width measure the same at the crossover δ).
+//
+// This PART models both span policies on the temporal single-path channel
+// (per-symbol send/loss/arrival dynamics, GE loss, per-seq ARQ backstop —
+// the realtime plain machine's NACK; the generation deficit round has the
+// same time constant, one RTT, and is modeled by the same backstop) and
+// asserts the continuum claims BEFORE the build:
+//
+//   (a) small-δ limit: the law's tail (per-symbol p99 and deadline-miss)
+//       beats the pure-ARQ reference — the in-band-recovery property that
+//       carries the realtime tail win (recovery ≈ covering-span arrival,
+//       no NACK round);
+//   (b) large-δ limit: the law lands on the legacy generation operating
+//       point (fixed G, fixed M) within tolerance;
+//   (c) CONTINUITY: on a log-spaced δ grid every adjacent step moves
+//       completion and p99 by a bounded factor — no cliff at any δ — and
+//       the moving→pinned anchor handoff at D = 2·RTprop is metric-inert;
+//   (d) the cliff the continuum removes: the BULK operating point evaluated
+//       at the realtime δ multiplies the deadline-miss fraction (this is
+//       what the old profile switch protected by fiat, now by formula);
+//   (e) the M* depth term IN ITS ENGAGEMENT REGIME (BDP > G: RTT 100/200,
+//       the §16.17 unvalidated residual): throughput(m) rises to a knee at
+//       m = M* and saturates — M* is sufficient (≈ the m=32 ceiling) and
+//       the legacy fixed m=2 is far below it.
+//
+// HONEST SCOPE. Same discipline as PART 1-6: structural dynamics (send
+// serialization, OWD, GE loss, ack latency, finite pipeline) are modeled;
+// decode is DoF-counting — a pinned quantum solves when its distinct
+// arrived DoF reach its width; a moving-span system solves a connected
+// hole/repair component when its repair count reaches its hole count with
+// every hole covered (generic full rank, whp for random GF(256)
+// coefficients) — and singles resolve immediately (the incremental-GE
+// per-arrival property). The ARQ backstop is the production 1-detect +
+// 1-RTT round with lossy retransmits. L1 is the arbiter; this PART's job
+// is the SHAPE of the continuum, which no L1 cell can sweep.
+// =========================================================================
+
+#[derive(Clone, Copy)]
+struct SpanArm {
+    q: usize,     // span width A*, symbols
+    m: usize,     // pipeline depth (quanta in flight / store in q-units)
+    r: f64,       // proactive repair overhead
+    moving: bool, // true = moving trailing spans (advance 1); false = pinned aligned quanta
+}
+
+struct SpanOut {
+    complete_ms: u64,
+    lats: Vec<u64>, // per-symbol delivery latency (send→deliver), ms
+}
+
+/// The unified span law (paper §16.20.3): A* = clamp(rate·D, 1, W) with
+/// D = min(H, 2·RTprop); M* = ceil(rate·2·RTprop/A*)+1 clamped [2, 32];
+/// pinned anchors once a deficit round fits the deadline (D ≥ 2·RTprop,
+/// i.e. H no longer binds), moving trailing spans below.
+fn span_law(path: &Path, h_ms: f64, w_cap: usize, r: f64) -> SpanArm {
+    let rtprop = 2.0 * path.owd as f64;
+    let d = h_ms.min(2.0 * rtprop);
+    let q = ((path.rate * d).ceil() as usize).clamp(1, w_cap);
+    let m = (((path.rate * 2.0 * rtprop) / q as f64).ceil() as usize + 1).clamp(2, 32);
+    SpanArm { q, m, r, moving: h_ms < 2.0 * rtprop }
+}
+
+/// Per-symbol temporal simulation of the span machine on one path.
+fn span_sim(path: Path, k: usize, arm: SpanArm, seed: u64) -> SpanOut {
+    #[derive(Clone, Copy)]
+    enum Ev {
+        SrcArr(usize),        // source seq arrives
+        RepArr(usize, usize), // repair with span [start, end) arrives
+        Ack(usize),           // sender learns receiver progress (symbols)
+        Retx(usize),          // ARQ retransmit attempt for seq arrives
+    }
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut ge = Ge { bad: false };
+    let q = arm.q.max(1);
+    let n_q = k.div_ceil(q);
+    let qlen = |g: usize| (k - g * q).min(q);
+
+    let mut events: BTreeMap<u64, Vec<Ev>> = BTreeMap::new();
+    let mut sent_at = vec![0u64; k];
+    let mut delivered_at: Vec<Option<u64>> = vec![None; k];
+    let mut done = 0usize;
+    // pinned-machine state
+    let mut dof = vec![0u32; n_q];
+    let mut delivered_in = vec![0u32; n_q];
+    let mut solved = vec![false; n_q];
+    let mut emitted = vec![0u32; n_q];
+    // moving-machine state: outstanding holes + buffered repair spans
+    let mut holes: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    let mut buf_reps: Vec<(usize, usize)> = Vec::new(); // (start, end)
+    // progress the sender acks on: pinned = solved quanta prefix (in q units);
+    // moving = delivered in-order prefix (symbols)
+    let mut rx_prefix = 0usize; // pinned: quanta; moving: symbols
+    let mut tx_prefix = 0usize;
+    let mut next_seq = 0usize;
+    let mut credit = 0.0f64;
+    let mut debt = 0.0f64;
+    let owd = path.owd;
+    let rtt = 2 * owd;
+    let detect_gap = 2u64;
+
+    let mut t: u64 = 0;
+    macro_rules! deliver {
+        ($seq:expr, $now:expr) => {{
+            if delivered_at[$seq].is_none() {
+                delivered_at[$seq] = Some($now);
+                delivered_in[$seq / q] += 1;
+                done += 1;
+                true
+            } else {
+                false
+            }
+        }};
+    }
+
+    loop {
+        if let Some(evs) = events.remove(&t) {
+            let mut touched = false; // moving: re-run resolution
+            let mut solved_now: Vec<usize> = Vec::new();
+            for ev in evs {
+                match ev {
+                    Ev::SrcArr(seq) | Ev::Retx(seq) => {
+                        if let Ev::Retx(_) = ev {
+                            // the retransmit rides the lossy channel too
+                            // (independent draw; the main GE chain clocks the
+                            // forward stream)
+                            if delivered_at[seq].is_some() {
+                                continue;
+                            }
+                            if rng.gen::<f64>() < path.eps() {
+                                events.entry(t + rtt).or_default().push(Ev::Retx(seq));
+                                continue;
+                            }
+                        }
+                        if deliver!(seq, t) {
+                            if arm.moving {
+                                holes.remove(&seq);
+                                touched = true;
+                            } else {
+                                let g = seq / q;
+                                if !solved[g] {
+                                    dof[g] += 1;
+                                    if dof[g] >= qlen(g) as u32 {
+                                        solved_now.push(g);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ev::RepArr(start, end) => {
+                        if arm.moving {
+                            buf_reps.push((start, end));
+                            touched = true;
+                        } else {
+                            let g = start / q;
+                            if !solved[g] {
+                                dof[g] += 1;
+                                if dof[g] >= qlen(g) as u32 {
+                                    solved_now.push(g);
+                                }
+                            }
+                        }
+                    }
+                    Ev::Ack(p) => {
+                        if p > tx_prefix {
+                            tx_prefix = p;
+                        }
+                    }
+                }
+            }
+            if arm.moving && touched {
+                // Incremental interval-GE resolution (whp-generic):
+                //  1. a repair whose span holds EXACTLY ONE unresolved hole
+                //     isolates it (payload-only elimination of the known
+                //     mass — delivery at arrival, the per-arrival property);
+                //  2. a connected hole/repair component whose repair count
+                //     reaches its hole count (every hole covered) solves
+                //     whole (full rank whp).
+                loop {
+                    let mut progress = false;
+                    // pass 1: singles
+                    let mut i = 0;
+                    while i < buf_reps.len() {
+                        let (s, e) = buf_reps[i];
+                        let inside: Vec<usize> = holes.range(s..e).copied().collect();
+                        match inside.len() {
+                            0 => {
+                                buf_reps.swap_remove(i); // redundant
+                            }
+                            1 => {
+                                let h = inside[0];
+                                buf_reps.swap_remove(i);
+                                holes.remove(&h);
+                                deliver!(h, t);
+                                progress = true;
+                            }
+                            _ => i += 1,
+                        }
+                    }
+                    // pass 2: components (holes linked by overlapping spans)
+                    if !holes.is_empty() && !buf_reps.is_empty() {
+                        let hs: Vec<usize> = holes.iter().copied().collect();
+                        let mut comp_of = vec![usize::MAX; hs.len()];
+                        let mut ncomp = 0usize;
+                        for ci in 0..hs.len() {
+                            if comp_of[ci] != usize::MAX {
+                                continue;
+                            }
+                            // BFS over holes sharing a covering repair
+                            let mut stack = vec![ci];
+                            comp_of[ci] = ncomp;
+                            while let Some(x) = stack.pop() {
+                                for &(s, e) in buf_reps.iter() {
+                                    if hs[x] >= s && hs[x] < e {
+                                        for (yi, &hy) in hs.iter().enumerate() {
+                                            if comp_of[yi] == usize::MAX && hy >= s && hy < e {
+                                                comp_of[yi] = ncomp;
+                                                stack.push(yi);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ncomp += 1;
+                        }
+                        for c in 0..ncomp {
+                            let members: Vec<usize> = (0..hs.len())
+                                .filter(|&i| comp_of[i] == c)
+                                .map(|i| hs[i])
+                                .collect();
+                            let covering: Vec<usize> = (0..buf_reps.len())
+                                .filter(|&ri| {
+                                    let (s, e) = buf_reps[ri];
+                                    members.iter().any(|&h| h >= s && h < e)
+                                })
+                                .collect();
+                            let all_covered = members
+                                .iter()
+                                .all(|&h| covering.iter().any(|&ri| {
+                                    let (s, e) = buf_reps[ri];
+                                    h >= s && h < e
+                                }));
+                            if all_covered && covering.len() >= members.len() {
+                                for &h in &members {
+                                    holes.remove(&h);
+                                    deliver!(h, t);
+                                }
+                                // consume |members| repairs (rank spent)
+                                let mut consumed = 0;
+                                let mut keep = Vec::new();
+                                for (ri, &(s, e)) in buf_reps.iter().enumerate() {
+                                    if covering.contains(&ri) && consumed < members.len() {
+                                        consumed += 1;
+                                    } else {
+                                        keep.push((s, e));
+                                    }
+                                }
+                                buf_reps = keep;
+                                progress = true;
+                            }
+                        }
+                    }
+                    if !progress {
+                        break;
+                    }
+                }
+                // in-order delivered prefix → ack
+                let mut p = rx_prefix;
+                while p < k && delivered_at[p].is_some() {
+                    p += 1;
+                }
+                if p > rx_prefix {
+                    rx_prefix = p;
+                    events.entry(t + owd).or_default().push(Ev::Ack(p));
+                }
+            }
+            for g in solved_now {
+                if solved[g] {
+                    continue;
+                }
+                solved[g] = true;
+                for seq in g * q..g * q + qlen(g) {
+                    deliver!(seq, t);
+                }
+                let mut p = rx_prefix;
+                while p < n_q && solved[p] {
+                    p += 1;
+                }
+                if p > rx_prefix {
+                    rx_prefix = p;
+                    events.entry(t + owd).or_default().push(Ev::Ack(p));
+                }
+            }
+        }
+        if done == k {
+            break;
+        }
+
+        credit += path.rate;
+        let mut slots = credit.floor() as u32;
+        credit -= slots as f64;
+        while slots > 0 {
+            // flow control: pinned = m quanta past the acked solved prefix;
+            // moving = m·q symbols past the acked in-order prefix
+            let admissible = if arm.moving {
+                next_seq < k && next_seq < tx_prefix + arm.m * q
+            } else {
+                next_seq < k && next_seq / q < tx_prefix + arm.m
+            };
+            if admissible {
+                let seq = next_seq;
+                next_seq += 1;
+                sent_at[seq] = t;
+                let lost = ge.draw(&path, &mut rng);
+                if lost {
+                    if arm.moving {
+                        holes.insert(seq);
+                    }
+                    // per-seq ARQ backstop: detect at expected arrival + gap,
+                    // NACK rides back owd, retx arrives owd later; further
+                    // rounds every RTT (Retx re-arms itself).
+                    events
+                        .entry(t + 3 * owd + detect_gap)
+                        .or_default()
+                        .push(Ev::Retx(seq));
+                } else {
+                    events.entry(t + owd).or_default().push(Ev::SrcArr(seq));
+                }
+                debt += arm.r;
+                slots -= 1;
+            } else {
+                slots = 0;
+            }
+            // repair debt → emit
+            while debt >= 1.0 {
+                if arm.moving {
+                    // moving trailing span [sent−q, sent): every member is
+                    // already sent (FIFO ⇒ landed by the repair's arrival —
+                    // the solvable-at-arrival requirement, Δ = 0 in-model)
+                    if next_seq == 0 {
+                        break;
+                    }
+                    debt -= 1.0;
+                    let e = next_seq;
+                    let s = e.saturating_sub(q);
+                    let lost = ge.draw(&path, &mut rng);
+                    if !lost {
+                        events.entry(t + owd).or_default().push(Ev::RepArr(s, e));
+                    }
+                } else {
+                    // pinned aligned quanta, sealed-only (trailing by
+                    // construction), oldest unsolved under budget
+                    let sealed_hi = if next_seq >= k { n_q } else { next_seq / q };
+                    let mut target = None;
+                    for g in tx_prefix..sealed_hi {
+                        if !solved[g] && emitted[g] < (qlen(g) as f64 * arm.r).ceil() as u32 {
+                            target = Some(g);
+                            break;
+                        }
+                    }
+                    let Some(g) = target else { break };
+                    debt -= 1.0;
+                    emitted[g] += 1;
+                    let lost = ge.draw(&path, &mut rng);
+                    if !lost {
+                        events
+                            .entry(t + owd)
+                            .or_default()
+                            .push(Ev::RepArr(g * q, g * q + qlen(g)));
+                    }
+                }
+            }
+        }
+
+        t += 1;
+        assert!(
+            t < 40_000_000,
+            "span_sim wedged (q={} m={} r={} moving={})",
+            arm.q, arm.m, arm.r, arm.moving
+        );
+    }
+
+    let lats: Vec<u64> = (0..k)
+        .map(|s| delivered_at[s].unwrap() - sent_at[s])
+        .collect();
+    SpanOut { complete_ms: t, lats }
+}
+
+fn pctl(lats: &[u64], p: f64) -> u64 {
+    let mut v = lats.to_vec();
+    v.sort_unstable();
+    v[((v.len() as f64 * p) as usize).min(v.len() - 1)]
+}
+fn miss_frac(lats: &[u64], deadline_ms: u64) -> f64 {
+    lats.iter().filter(|&&l| l > deadline_ms).count() as f64 / lats.len() as f64
+}
+
+/// c3-class lossy single path (20 Mbit, OWD 20 ms, GE ⇒ ε ≈ 4.8%) — the
+/// standard bursty realtime cell (the #46/#85 battery cell class).
+fn c3_path() -> Path {
+    Path { rate: sym_per_ms(20.0), owd: 20, p_gb: 0.02, q_bg: 0.40 }
+}
+
+#[test]
+fn unified_span_continuum_delta_sweep() {
+    let path = c3_path();
+    let k = 20_000; // ~30 MB at 1500 B — long enough for steady state
+    let w_cap = 384; // the §16.5 W bound / production G — the A* clamp
+    let seeds = [42u64, 7u64];
+    // r is DERIVED, not fixed: r*(W = A*) from §8.4 with the burst variance
+    // factor — the span machine's overhead is a function of its own span
+    // (small fresh spans pay a fatter 1/√W margin: the honest bandwidth
+    // price of a tight δ).
+    let eps = path.eps();
+    let sigma2 = burst_variance_factor(path.p_gb, path.q_bg);
+    let z = normal_quantile(1.0 - 1e-3 / eps); // per-symbol tail target 1e-3
+    let r_of = |q: usize| compute_r_star_with_z(eps, sigma2, q as f64, z);
+    let rtprop = 2.0 * path.owd as f64;
+
+    // δ grid: delivery horizon H in ms, log-spaced; ∞ = bulk (ρ=1). The
+    // moving→pinned anchor handoff sits at H = 2·RTprop = 80 ms here.
+    let grid_ms: [f64; 8] = [5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 320.0, f64::INFINITY];
+    // the realtime deadline observable: force-deliver horizon + one OWD
+    let rt_deadline = 20 + path.owd; // ms
+
+    println!("\n=== PART 7: UNIFIED SPAN MACHINE — δ CONTINUUM (c3-class, k={k}, ε={eps:.3}, σ²={sigma2:.2}, z={z:.2}, W={w_cap}) ===");
+    println!("  law: A*=clamp(rate·min(H,2RTprop),1,W)  M*=ceil(rate·2RTprop/A*)+1  r=r*(W=A*)  anchors move below H=2RTprop");
+
+    // legacy references, same channel/seeds:
+    //   ARQ-only  (r=0): the pure per-seq NACK machine — the tail reference
+    //   legacy gen (q=G=384, m=2 fixed, r*(G)): the hand-tuned bulk machine
+    let (mut arq_p99, mut arq_miss) = (0.0, 0.0);
+    let (mut gen_complete, mut gen_p99, mut gen_miss) = (0.0, 0.0, 0.0);
+    for &s in &seeds {
+        let arq = span_sim(path, k, SpanArm { q: 384, m: 2, r: 0.0, moving: false }, s);
+        let gen = span_sim(path, k, SpanArm { q: 384, m: 2, r: r_of(384), moving: false }, s);
+        arq_p99 += pctl(&arq.lats, 0.99) as f64 / seeds.len() as f64;
+        arq_miss += miss_frac(&arq.lats, rt_deadline) / seeds.len() as f64;
+        gen_complete += gen.complete_ms as f64 / seeds.len() as f64;
+        gen_p99 += pctl(&gen.lats, 0.99) as f64 / seeds.len() as f64;
+        gen_miss += miss_frac(&gen.lats, rt_deadline) / seeds.len() as f64;
+    }
+    println!("  ARQ-only:  p99={arq_p99:.0}ms miss@{rt_deadline}={:.2}%   legacy-gen(384,2,r*={:.3}): complete={gen_complete:.0}ms p99={gen_p99:.0}ms miss={:.2}%",
+        arq_miss * 100.0, r_of(384), gen_miss * 100.0);
+
+    let mut completes: Vec<f64> = Vec::new();
+    let mut p99s: Vec<f64> = Vec::new();
+    let mut rt_miss = 0.0;
+    for (gi, &h) in grid_ms.iter().enumerate() {
+        let arm = {
+            let a = span_law(&path, h, w_cap, 0.0);
+            SpanArm { r: r_of(a.q), ..a }
+        };
+        let (mut c, mut p50, mut p99, mut miss) = (0.0, 0.0, 0.0, 0.0);
+        for &s in &seeds {
+            let o = span_sim(path, k, arm, s);
+            c += o.complete_ms as f64 / seeds.len() as f64;
+            p50 += pctl(&o.lats, 0.50) as f64 / seeds.len() as f64;
+            p99 += pctl(&o.lats, 0.99) as f64 / seeds.len() as f64;
+            miss += miss_frac(&o.lats, rt_deadline) / seeds.len() as f64;
+        }
+        println!(
+            "  H={h:>6.0}ms -> A*={:>3} M*={:>2} r*={:.3} {}  complete={c:>7.0}ms  p50={p50:>3.0}ms  p99={p99:>4.0}ms  miss@{rt_deadline}={:>5.2}%",
+            arm.q, arm.m, arm.r,
+            if arm.moving { "moving" } else { "pinned" },
+            miss * 100.0
+        );
+        completes.push(c);
+        p99s.push(p99);
+        if gi == 2 {
+            rt_miss = miss; // H = 20 ms, the realtime horizon
+        }
+    }
+
+    // (a) SMALL-δ LIMIT: in-band moving-span recovery must beat the ARQ
+    // reference on BOTH tail observables at the realtime point (H = 20 ms):
+    // p99 strictly better, and the deadline-miss fraction (the realtime
+    // force-deliver observable) at least halved.
+    let rt_p99 = p99s[2];
+    assert!(
+        rt_p99 * 1.25 < arq_p99,
+        "small-δ law p99 ({rt_p99:.0}ms) must beat ARQ-only p99 ({arq_p99:.0}ms) by ≥1.25×"
+    );
+    assert!(
+        rt_miss * 2.0 < arq_miss,
+        "small-δ law deadline-miss ({:.2}%) must at least halve ARQ-only's ({:.2}%)",
+        rt_miss * 100.0, arq_miss * 100.0
+    );
+
+    // (b) LARGE-δ LIMIT: the law must land on the legacy generation
+    // machine's completion within 10% (the hand-tuned bulk operating point
+    // is RECOVERED by the formula, not approximated from afar).
+    let bulk = *completes.last().unwrap();
+    let dev = (bulk - gen_complete).abs() / gen_complete;
+    assert!(
+        dev < 0.10,
+        "large-δ law completion {bulk:.0}ms must match legacy gen {gen_complete:.0}ms (dev {:.1}%)",
+        dev * 100.0
+    );
+
+    // (c) CONTINUITY: no cliff anywhere on the δ axis — every adjacent grid
+    // step (including the moving→pinned handoff at H = 2·RTprop) moves
+    // completion by ≤20% and p99 by ≤2.2×.
+    for i in 1..grid_ms.len() {
+        let cr = completes[i].max(completes[i - 1]) / completes[i].min(completes[i - 1]);
+        let pr = p99s[i].max(p99s[i - 1]) / p99s[i].min(p99s[i - 1]);
+        assert!(
+            cr < 1.20,
+            "completion cliff between δ grid points {} and {} (×{cr:.2})",
+            grid_ms[i - 1], grid_ms[i]
+        );
+        assert!(
+            pr < 2.2,
+            "p99 cliff between δ grid points {} and {} (×{pr:.2})",
+            grid_ms[i - 1], grid_ms[i]
+        );
+    }
+    // the anchor handoff itself, at matched width: moving vs pinned spans of
+    // the SAME A*/M*/r at the crossover δ must measure the same (the anchor
+    // granularity is a fungibility/batching choice, not a latency mechanism)
+    {
+        let a = span_law(&path, 2.0 * rtprop, w_cap, 0.0);
+        let arm_mv = SpanArm { r: r_of(a.q), moving: true, ..a };
+        let arm_pin = SpanArm { r: r_of(a.q), moving: false, ..a };
+        let (mut c_mv, mut c_pin, mut p_mv, mut p_pin) = (0.0, 0.0, 0.0, 0.0);
+        for &s in &seeds {
+            let mv = span_sim(path, k, arm_mv, s);
+            let pin = span_sim(path, k, arm_pin, s);
+            c_mv += mv.complete_ms as f64 / seeds.len() as f64;
+            c_pin += pin.complete_ms as f64 / seeds.len() as f64;
+            p_mv += pctl(&mv.lats, 0.99) as f64 / seeds.len() as f64;
+            p_pin += pctl(&pin.lats, 0.99) as f64 / seeds.len() as f64;
+        }
+        let cr = c_mv.max(c_pin) / c_mv.min(c_pin);
+        let pr = p_mv.max(p_pin) / p_mv.min(p_pin);
+        println!("  handoff @H=2RTprop: moving c={c_mv:.0}/p99={p_mv:.0} vs pinned c={c_pin:.0}/p99={p_pin:.0} (×{cr:.3}/×{pr:.2})");
+        assert!(cr < 1.05, "anchor handoff must be completion-inert (×{cr:.3})");
+        assert!(pr < 1.35, "anchor handoff must be tail-inert (×{pr:.2})");
+    }
+
+    // (d) THE REMOVED CLIFF: the bulk operating point evaluated at the
+    // realtime δ multiplies the deadline-miss fraction — what the old hard
+    // profile switch protected by fiat, the law now protects by formula.
+    assert!(
+        gen_miss > 2.0 * rt_miss.max(1e-4),
+        "bulk machine at realtime δ must show the deadline cliff the law removes: gen miss {:.2}% vs law {:.2}%",
+        gen_miss * 100.0, rt_miss * 100.0
+    );
+
+    println!("  VERDICT: small-δ = in-band tail (p99 {rt_p99:.0} vs ARQ {arq_p99:.0}; miss {:.2}% vs {:.2}%), large-δ = legacy gen (dev {:.1}%),",
+        rt_miss * 100.0, arq_miss * 100.0, dev * 100.0);
+    println!("  no adjacent-step cliff incl. the anchor handoff; gen-at-realtime-δ misses ×{:.1} more — the switch the formula replaces.",
+        gen_miss / rt_miss.max(1e-4));
+}
+
+#[test]
+fn unified_span_depth_term_rtt100_200() {
+    // The §16.17 residual: M* only engages when BDP > G — RTT 100/200 at
+    // link rate. Model exactly that regime and check the SHAPE: throughput
+    // rises with m to a knee at M* and saturates (M* ≈ the m=32 ceiling);
+    // the legacy fixed m=2 is far below.
+    let k = 60_000;
+    let r = 0.05;
+    let g = 384usize;
+    let seeds = [42u64, 7u64];
+    println!("\n=== PART 7b: DEPTH TERM M* AT RTT 100/200 (BDP > G — the unvalidated regime) ===");
+    for (rtt_ms, owd) in [(100u64, 50u64), (200u64, 100u64)] {
+        // clean-ish long-haul link: 100 Mbit, mild loss (ε ≈ 0.5%)
+        let path = Path { rate: sym_per_ms(100.0), owd, p_gb: 0.0025, q_bg: 0.50 };
+        let rtprop = 2.0 * owd as f64;
+        let m_star = (((path.rate * 2.0 * rtprop) / g as f64).ceil() as usize + 1).clamp(2, 32);
+        let mut tput = std::collections::BTreeMap::new();
+        let mut ms: Vec<usize> = vec![2, 4, m_star.saturating_sub(2), m_star, 16, 32];
+        ms.sort_unstable();
+        ms.dedup();
+        for m in ms.clone() {
+            if m < 2 {
+                continue;
+            }
+            let mut c = 0.0;
+            for &s in &seeds {
+                let o = span_sim(path, k, SpanArm { q: g, m, r, moving: false }, s);
+                c += o.complete_ms as f64 / seeds.len() as f64;
+            }
+            let mbit = k as f64 * 12.0 / c; // 12 kbit per symbol, c in ms
+            tput.insert(m, mbit);
+            println!("  RTT{rtt_ms}: m={m:>2}{} -> {mbit:>6.1} Mbit/s", if m == m_star { " (=M*)" } else { "      " });
+        }
+        let at_mstar = tput[&m_star];
+        let ceiling = tput[&32];
+        let legacy = tput[&2];
+        // (e1) M* is SUFFICIENT: within 10% of the deep-pipeline ceiling.
+        assert!(
+            at_mstar > 0.90 * ceiling,
+            "RTT{rtt_ms}: M*={m_star} must reach ≥90% of the m=32 ceiling ({at_mstar:.1} vs {ceiling:.1})"
+        );
+        // (e2) the depth term ENGAGES: legacy m=2 is far below M*.
+        let engage = if rtt_ms == 100 { 0.75 } else { 0.60 };
+        assert!(
+            legacy < engage * at_mstar,
+            "RTT{rtt_ms}: legacy m=2 ({legacy:.1}) must sit below {engage}× of M* ({at_mstar:.1}) — the depth term must matter here"
+        );
+        // (e3) saturating shape: throughput non-decreasing in m (2% noise).
+        let vals: Vec<f64> = tput.values().copied().collect();
+        for i in 1..vals.len() {
+            assert!(
+                vals[i] > vals[i - 1] * 0.98,
+                "RTT{rtt_ms}: throughput must not regress as m grows: {} -> {}",
+                vals[i - 1], vals[i]
+            );
+        }
+        println!("  RTT{rtt_ms} VERDICT: knee at M*={m_star} ({at_mstar:.1} ≈ ceiling {ceiling:.1}); legacy m=2 = {:.2}× of M*.", legacy / at_mstar);
+    }
+}
