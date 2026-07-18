@@ -19,6 +19,7 @@ pub(crate) mod rlc_backend;
 pub(crate) mod window_traits;
 pub(crate) mod rlc_window;
 pub(crate) mod generation;
+pub(crate) mod unified;
 pub(crate) mod mettle_window;
 pub(crate) mod streaming;
 mod stream;
@@ -28,6 +29,7 @@ pub use stream::{FecStream, RepairStream};
 pub use window_traits::{WindowEncoder, WindowDecoder};
 pub use rlc_window::{RlcWindowEncoder, RlcWindowDecoder};
 pub use generation::{GenerationDecoder, GenerationEncoder};
+pub use unified::UnifiedDecoder;
 #[doc(hidden)]
 pub use generation::reference;
 pub use mettle_window::{MettleWindowEncoder, MettleWindowDecoder};

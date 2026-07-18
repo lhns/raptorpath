@@ -2863,4 +2863,156 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Differential test: UNIFIED global decoder vs the keyed generation
+    // machine AND the pre-§16.18 reference oracle on ALIGNED generation
+    // wires (task #61, paper §16.20). On span-aligned traces the global
+    // system is block-diagonal, so the unified machine must agree EXACTLY —
+    // per call, sets, bytes, rank_in, and the added-rank accounting.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn unified_matches_generation_and_reference_on_aligned_traces() {
+        use crate::fec::unified::UnifiedDecoder;
+        use crate::fec::window_traits::WindowDecoder as _;
+
+        let symbol_size = 96u16;
+
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+                let mut z = self.0;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+                z ^ (z >> 31)
+            }
+            fn chance(&mut self, p: f64) -> bool {
+                (self.next() as f64 / u64::MAX as f64) < p
+            }
+            fn below(&mut self, n: u64) -> u64 {
+                self.next() % n
+            }
+        }
+
+        for seed in [42u64, 7, 1337, 2026, 61] {
+            let mut rng = Rng(seed ^ 0x0061);
+            let g = 8 + rng.below(12) as usize;
+            let n_gen = 4u64;
+            let systematic = rng.chance(0.6);
+            let eps = 0.05 + (rng.below(20) as f64) / 100.0;
+            let late = 0.15;
+
+            let mut enc = if systematic {
+                GenerationEncoder::new_systematic(symbol_size, g, n_gen as usize, 0.25)
+            } else {
+                GenerationEncoder::new(symbol_size, g, n_gen as usize, 0.25)
+            };
+
+            let mut trace: Vec<WireSymbol> = Vec::new();
+            for gen in 0..n_gen {
+                let anchor = gen * g as u64;
+                let mut late_src: Vec<WireSymbol> = Vec::new();
+                for i in 0..g as u64 {
+                    let seq = anchor + i;
+                    let sym = enc.add_source(&payload(seq));
+                    if rng.chance(0.15) && enc.wants_filling_coding() {
+                        let rep = enc.generate_repair_filling();
+                        if !rng.chance(eps) {
+                            trace.push(rep);
+                        }
+                    }
+                    if systematic {
+                        if rng.chance(eps) {
+                            // lost on the wire
+                        } else if rng.chance(late) {
+                            late_src.push(sym);
+                        } else {
+                            trace.push(sym);
+                        }
+                    }
+                }
+                while enc.wants_coding() {
+                    let rep = enc.generate_repair();
+                    if !rng.chance(eps) {
+                        trace.push(rep);
+                    }
+                }
+                for _ in 0..(g + 3) {
+                    if let Some(rep) = enc.generate_repair_for(anchor) {
+                        if !rng.chance(eps / 2.0) {
+                            trace.push(rep);
+                        }
+                    }
+                }
+                trace.extend(late_src);
+                if rng.chance(0.5) && !trace.is_empty() {
+                    let dup = trace
+                        [trace.len() - 1 - (rng.below(trace.len().min(5) as u64) as usize)]
+                    .clone();
+                    trace.push(dup);
+                }
+            }
+
+            let mut dgen = GenerationDecoder::new(symbol_size);
+            let mut dref = reference::RefGenerationDecoder::new(symbol_size);
+            let mut duni = UnifiedDecoder::new(symbol_size);
+            let total = n_gen * g as u64;
+
+            let mut got_uni: BTreeSet<u64> = BTreeSet::new();
+            for (i, sym) in trace.iter().enumerate() {
+                let mut out_gen = dgen.add_symbol(sym);
+                let mut out_ref = dref.add_symbol(sym);
+                let mut out_uni = duni.add_symbol(sym);
+                out_gen.sort_by_key(|(s, _)| *s);
+                out_ref.sort_by_key(|(s, _)| *s);
+                out_uni.sort_by_key(|(s, _)| *s);
+                assert_eq!(
+                    out_uni.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    out_gen.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    "seed {seed} sym {i}: unified vs generation delivered set"
+                );
+                assert_eq!(
+                    out_uni.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    out_ref.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+                    "seed {seed} sym {i}: unified vs reference delivered set"
+                );
+                for ((su, du), (sg, dg)) in out_uni.iter().zip(out_gen.iter()) {
+                    assert_eq!(su, sg);
+                    assert_eq!(du, dg, "seed {seed} sym {i} seq {su}: payload bytes");
+                    got_uni.insert(*su);
+                }
+                assert_eq!(duni.total_fed(), dgen.total_fed(), "seed {seed} sym {i}: total_fed");
+                assert_eq!(
+                    duni.repairs_fed(),
+                    dgen.repairs_fed(),
+                    "seed {seed} sym {i}: repairs_fed"
+                );
+                assert_eq!(
+                    duni.repairs_useful(),
+                    dgen.repairs_useful(),
+                    "seed {seed} sym {i}: repairs_useful (added-rank accounting)"
+                );
+                for gen in 0..n_gen {
+                    let anchor = gen * g as u64;
+                    assert_eq!(
+                        duni.rank_in(anchor, g as u64),
+                        dgen.rank_in(anchor, g as u64),
+                        "seed {seed} sym {i}: rank_in(gen {gen})"
+                    );
+                }
+                if i == trace.len() / 2 {
+                    let adv = g as u64;
+                    dgen.advance(adv);
+                    dref.advance(adv);
+                    duni.advance(adv);
+                }
+            }
+            assert_eq!(
+                got_uni.len() as u64,
+                total,
+                "seed {seed}: unified did not recover all sources (systematic={systematic} eps={eps:.2})"
+            );
+        }
+    }
 }
