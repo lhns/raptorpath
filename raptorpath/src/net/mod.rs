@@ -350,6 +350,21 @@ const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 /// The pipeline shape follows from the algorithm's capabilities: streaming-native
 /// backends (RLC, METTLE) use the sliding-window pipeline; block-only backends
 /// (RaptorQ, Reed-Solomon) always use the block pipeline. By default only
+/// Task #61 (paper §16.20): the UNIFIED machine gate. When set, (a) the
+/// receive path uses ONE decoder (`UnifiedDecoder` — the global sparse-aware
+/// closure) for BOTH the sliding-window and generation wires, (b) the
+/// Realtime hint rides the RLC family (δ-parameterization) instead of
+/// switching code families, (c) plain-mode proactive repair follows the
+/// quantity law (TaperBudget, #85) + the trailing solvable-span placement
+/// with A* = clamp(rate·D, 1, W), D = b(hint)·RTprop (§8.8 budgets:
+/// Realtime ½, Auto 1, Bulk 2 RTT), and (d) generation mode runs the derived
+/// M* pipeline depth (RWM_GEN_PIPE defaults ON). Default OFF = every legacy
+/// path byte-identical; the flip is gated on the queued L1 parity battery
+/// (goal-gate "Unified Decoder").
+pub(crate) fn unified_active() -> bool {
+    crate::config::env_flag("RWM_UNIFIED", false)
+}
+
 /// Realtime rides the window pipeline; `window_reliable` (RWM Phase A) opts
 /// Bulk/Auto onto it with the RETAIN-UNTIL-ACKED policy.
 fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool) -> bool {
@@ -815,8 +830,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // at 1196, so full-size packets are not fragmented.
     let effective_fec_backend = if !config.fec_backend_explicit {
         if config.protocol_hint == ProtocolHint::Realtime {
-            info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
-            FecBackend::Streaming
+            if unified_active() {
+                // §16.20: one code family across the δ axis — Realtime is the
+                // small-δ parameterization of the RLC span machine, not a
+                // different code. (Mechanism-liveness echo for the A/B.)
+                info!("RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)");
+                FecBackend::Rlc
+            } else {
+                info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
+                FecBackend::Streaming
+            }
         } else if config.window_reliable {
             info!("reliable window mode (RWM Phase A): auto-selecting RLC windowed backend");
             FecBackend::Rlc
@@ -1531,7 +1554,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // feat/gen-substrate-ceiling: under the derived-depth pipeline the
         // sender may run up to GEN_PIPE_MAX_GENS generations of read-ahead, so
         // the receiver must retain that whole span (prune bound only).
-        if crate::config::env_flag("RWM_GEN_PIPE", false) {
+        if crate::config::env_flag("RWM_GEN_PIPE", unified_active()) {
             m = m.max(GEN_PIPE_MAX_GENS);
         }
         ((g.max(1) * (m.max(1) + 1)).max(MAX_WINDOW_SIZE)).min(1 << 20) as u64
@@ -1705,7 +1728,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let report_gens: usize = std::env::var("RWM_REPORT_GENS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(if crate::config::env_flag("RWM_GEN_PIPE", false) {
+            .unwrap_or(if crate::config::env_flag("RWM_GEN_PIPE", unified_active()) {
                 GEN_PIPE_MAX_GENS + 1
             } else {
                 6
@@ -3841,7 +3864,11 @@ async fn run_window_sender(
     // The substrate CC itself is A/B-able independently via RWM_QUIC_CC (bbr)
     // in transport/quic.rs. Excluded under FMTCP/DAPS (they compose their own
     // window/cap stack).
-    let gen_pipe = crate::config::env_flag("RWM_GEN_PIPE", false) && generation && !fmtcp;
+    // §16.20 (d): under RWM_UNIFIED the derived-depth law (M* =
+    // ceil(rate·2·RTprop/G)+1, the large-δ limit of A*) is the DEFAULT for
+    // generation mode; RWM_GEN_PIPE=0 still reproduces the fixed legacy
+    // pipeline as the same-binary A/B arm.
+    let gen_pipe = crate::config::env_flag("RWM_GEN_PIPE", unified_active()) && generation && !fmtcp;
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
     // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
@@ -4427,12 +4454,30 @@ async fn run_window_sender(
     // it is recovery-inert within realtime's reorder horizon; quantity was
     // not the only binder. Default stays OFF; flipping it is gated on the
     // solvable-span emission follow-up, not on L1 alone.
-    let taper_r_budget = crate::config::env_flag("RWM_TAPER_R", false);
+    // §16.20 (c): under RWM_UNIFIED the quantity law is the default (the #85
+    // fix composes with the trailing solvable-span placement below, which
+    // removes the leading-window entanglement that kept it OFF); RWM_TAPER_R=0
+    // still reproduces the legacy accrual as the same-binary A/B arm.
+    let taper_r_budget = crate::config::env_flag("RWM_TAPER_R", unified_active());
     let mut taper_budget = crate::control::TaperBudget::new();
     if taper_r_budget {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
             "budget-conserving taper emission ACTIVE (RWM_TAPER_R: plain-mode proactive repair budgeted at r x source per coding window; legacy = r per ack cycle)"
+        );
+    }
+    // §16.20 (c): trailing solvable-span placement for plain-mode proactive
+    // repair — span width A* = clamp(rate·D, 1, W) with D = b(hint)·RTprop
+    // (§8.8 budgets: Realtime ½, Auto 1, Bulk 2 RTT — capped at 2·RTprop, the
+    // deficit-round limit) and trailing offset Δ = ceil(rate·jitter) ≥ 1, so
+    // every covered member has LANDED when the repair does (solvable at
+    // arrival — the #85 leading-window entanglement removed structurally).
+    let unified_span = unified_active();
+    if unified_span {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
+        info!(
+            hint = ?protocol_hint,
+            "unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ)"
         );
     }
     // ── Proactive-frontier repair (plain-reliable) ────────────────────────
@@ -4983,7 +5028,7 @@ async fn run_window_sender(
             // flow-control block in the main loop, so the per-source taper repair
             // is disabled here (it would double-emit and fight the flow control).
             if !generation && encoder.window_size() > 1 {
-                let repair_rate = {
+                let (repair_rate, span_params) = {
                     let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
                     let spare = sched.spare_capacity();
@@ -4997,7 +5042,7 @@ async fn run_window_sender(
                         Some(est) => {
                             let flat_rate = ctrl.compute_repair_rate_capped(est, spare, encoder.window_size());
                             let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
-                            if taper_r_budget {
+                            let rr = if taper_r_budget {
                                 // #85 budget law (see TaperBudget decl above):
                                 // emission tracks r × source per coding window
                                 // — the computed r* is consumed at the wire.
@@ -5014,9 +5059,31 @@ async fn run_window_sender(
                                 let density = taper.density(taper_offset as f64);
                                 // Cap by spare capacity (never exceed link headroom)
                                 density.min(spare.max(0.0))
-                            }
+                            };
+                            // §16.20.3 span parameters (A*, Δ) from the same
+                            // measured anchors — see the unified_span decl.
+                            let span = if unified_span {
+                                let rate_sym =
+                                    (est.throughput() / symbol_size.max(1) as f64).max(0.0);
+                                let rtprop = est.rtt().as_secs_f64();
+                                let b = match protocol_hint {
+                                    ProtocolHint::Realtime => 0.5,
+                                    ProtocolHint::Auto => 1.0,
+                                    ProtocolHint::Bulk => 2.0,
+                                };
+                                let d = (b * rtprop).min(2.0 * rtprop);
+                                let a_star = ((rate_sym * d).ceil() as u64)
+                                    .clamp(1, encoder.window_size() as u64);
+                                let delta = ((rate_sym * (est.jitter_us() / 1e6)).ceil()
+                                    as u64)
+                                    .clamp(1, 64);
+                                Some((a_star, delta))
+                            } else {
+                                None
+                            };
+                            (rr, span)
                         }
-                        None => 0.0,
+                        None => (0.0, None),
                     }
                 };
                 // RWM Phase C raise-r arm (§16.5): floor the per-symbol
@@ -5081,8 +5148,32 @@ async fn run_window_sender(
                                 .cloned()
                                 .or_else(|| encoder.get_source(retransmit_seq))
                                 .unwrap_or_else(|| encoder.generate_repair())
+                        } else if let Some((a_star, delta)) = span_params {
+                            // §16.20.3 trailing solvable-span placement: code
+                            // over [max(ws, end−A*), end) with end = newest+1−Δ
+                            // — every member already landed when the repair
+                            // does (FIFO + jitter guard), so the receiver's
+                            // incremental GE solves a covered hole AT ARRIVAL
+                            // instead of entangling it with in-flight symbols
+                            // (the #85 leading-window defect, removed
+                            // structurally). Falls back to the leading-window
+                            // repair when the window is too young to trail.
+                            let (ws, we) = encoder.window_span();
+                            let end = (we + 1).saturating_sub(delta);
+                            let start = end.saturating_sub(a_star).max(ws);
+                            if end > start {
+                                encoder
+                                    .generate_repair_range(
+                                        start,
+                                        (end - start).min(u16::MAX as u64) as u16,
+                                    )
+                                    .unwrap_or_else(|| encoder.generate_repair())
+                            } else {
+                                encoder.generate_repair()
+                            }
                         } else {
-                            // Repair: generate a new FEC symbol
+                            // Repair: generate a new FEC symbol (legacy
+                            // leading-window emission)
                             encoder.generate_repair()
                         }
                     };
@@ -7149,6 +7240,16 @@ fn create_window_decoder(
         FecBackend::Streaming => {
             let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
             Box::new(crate::fec::StreamingDecoder::new(symbol_size, params))
+        }
+        // Task #61 (paper §16.20): under RWM_UNIFIED the whole RLC family —
+        // sliding-window AND generation wires — decodes on ONE machine, the
+        // global sparse-aware closure. Differential-proven equal to both
+        // legacy decoders on their own wires (fec::unified / fec::generation
+        // differential tests); the legacy machines stay compilable below as
+        // the A/B arms until the queued L1 parity battery flips the default.
+        _ if unified_active() => {
+            info!(generation, "RWM_UNIFIED: receive path on the unified global decoder (one machine, both wires)");
+            Box::new(crate::fec::UnifiedDecoder::new(symbol_size))
         }
         _ if generation => Box::new(crate::fec::GenerationDecoder::new(symbol_size)),
         _ => Box::new(RlcWindowDecoder::new(symbol_size)),
