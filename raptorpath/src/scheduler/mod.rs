@@ -650,6 +650,9 @@ pub struct CopaState {
     /// ack_elapsed) decomposition — the over-read forensics instrument
     /// (feat/copa-sole-cc). 0 = off (default, no cost on the sample path).
     rs_trace_thresh: f64,
+    /// DIAG label for the RSTRACE prints: the owning path's id (u32::MAX
+    /// until the owner stamps it). Never read by any control decision.
+    pub(crate) rs_trace_path: u32,
     /// Cached robust quantile of `bw_samples` (symbols/s), recomputed once per
     /// delivered sample in `rs_on_delivered`.  MUST be cached: `btlbw_sym_per_s`
     /// (hence `effective_btlbw`) is read once PER SEND-LOOP ITERATION by the DAPS
@@ -766,6 +769,7 @@ impl CopaState {
                 .ok()
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(0.0),
+            rs_trace_path: u32::MAX,
             rs_robust_bw: crate::config::env_flag("RWM_RATE_WIRE", false),
             rs_robust_q: std::env::var("RWM_RATE_Q")
                 .ok()
@@ -797,7 +801,8 @@ impl CopaState {
 
         if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
             eprintln!(
-                "[RSTRACE-LEGACY] rate={:.0} delta={} elapsed_ms={:.2} max_bw={:.0}",
+                "[RSTRACE-LEGACY] path={} rate={:.0} delta={} elapsed_ms={:.2} max_bw={:.0}",
+                self.rs_trace_path,
                 rate,
                 delta_delivered,
                 elapsed * 1e3,
@@ -933,7 +938,8 @@ impl CopaState {
         self.rs_generated += 1; // DIAG
         if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
             eprintln!(
-                "[RSTRACE] seq={} rate={:.0} delivered={} interval_ms={:.2} send_ms={:.2} ack_ms={:.2} max_bw={:.0}",
+                "[RSTRACE] path={} seq={} rate={:.0} delivered={} interval_ms={:.2} send_ms={:.2} ack_ms={:.2} max_bw={:.0}",
+                self.rs_trace_path,
                 seq,
                 rate,
                 delivered,
@@ -1691,7 +1697,11 @@ impl PathState {
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
-            copa: CopaState::new(clock.clone(), hint),
+            copa: {
+                let mut c = CopaState::new(clock.clone(), hint);
+                c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)
+                c
+            },
             pace_tokens: Self::INITIAL_CWND as f64,
             last_pace_refill: now,
             in_flight_log: VecDeque::new(),

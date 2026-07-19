@@ -56,6 +56,13 @@ fi
 # Roadmap item 1 (#86 c8 fix): delay-aware redirect guard — default ON under
 # percap; =0 restores the unguarded redirect (the c8-regression control arm).
 [[ -n "${RWM_PERCAP_GUARD:-}" ]] && TENV="$TENV RWM_PERCAP_GUARD=$RWM_PERCAP_GUARD"
+# feat/store-borrowing (paper 16.22): bounded account borrowing — a cap-full
+# pick flies on its picked pipe charged to the lender, bounded by
+# lend_i->j <= cap_i - out_i - rate_i*T_return(j). Default OFF; requires percap.
+[[ -n "${RWM_STORE_BORROW:-}" ]] && TENV="$TENV RWM_STORE_BORROW=$RWM_STORE_BORROW"
+# Residual (iii) flight-witness attribution fix (rides RWM_PLAIN_RS; =0 is the
+# legacy last-sent-path control arm).
+[[ -n "${RWM_RS_ATTR:-}" ]] && TENV="$TENV RWM_RS_ATTR=$RWM_RS_ATTR"
 # feat/anchor-hygiene: the honest plain-mode send-interval BtlBw sampler
 # (RWM_PLAIN_RS) and the hygiene umbrella — the honest-anchor measurement arm.
 [[ -n "${RWM_PLAIN_RS:-}" ]] && TENV="$TENV RWM_PLAIN_RS=$RWM_PLAIN_RS"

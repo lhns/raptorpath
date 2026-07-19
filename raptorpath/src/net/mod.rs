@@ -595,11 +595,14 @@ const COPA_SOLE_BYTES_PER_SYMBOL: u64 = 1250;
 /// cumulative frontier + SACK ranges, attributed per path into the
 /// BBR-correct send-interval rate sampler + the Copa cwnd dynamics.
 pub(crate) struct CopaFeed {
-    /// seq → path it was (last) sent on. Written at source send and at
-    /// targeted retransmit (a retransmit re-snapshots the rate sample, so
-    /// the eventual ack yields a truthful send-interval). Removed on
-    /// attribution; entries for seqs the frontier passed are gone by then.
-    seq_path: DashMap<u64, u32>,
+    /// seq → its send commitments: the LAST (re)send's path + timestamp,
+    /// plus the previous DISTINCT-path commitment when the seq was
+    /// retransmitted cross-path (the flight-witness input, residual (iii)).
+    /// Written at source send and at targeted retransmit (a retransmit
+    /// re-snapshots the rate sample, so the eventual ack yields a truthful
+    /// send-interval). Removed on attribution; entries for seqs the
+    /// frontier passed are gone by then.
+    seq_path: DashMap<u64, SendCommit>,
     /// Attribution cursor: the next in-order seq not yet attributed plus the
     /// set of above-frontier seqs already attributed via SACK (so a seq is
     /// attributed exactly once). Bounded by the sender's outstanding store.
@@ -614,6 +617,18 @@ pub(crate) struct CopaFeed {
     /// substrate window: no pass-through window writes, and the cwnd
     /// dynamics keep their legacy per-batch-Ack call site/cadence.
     sampling_only: bool,
+    /// Residual (iii) fix live: apply the flight-time witness
+    /// ([`resolve_flight_path`]) at attribution. Follows `RWM_PLAIN_RS`
+    /// (sampling-only feed; `RWM_RS_ATTR=0` = the same-binary legacy
+    /// last-sent-path control). The full Copa-sole feed keeps legacy
+    /// attribution (its arms are study baselines).
+    attr_witness: bool,
+    /// DIAG: attributed seqs whose commit history crossed paths.
+    attr_cross: AtomicU64,
+    /// DIAG: of those, attributions the witness credited to the PREVIOUS
+    /// commitment (the spurious-retransmit class — the last flight was
+    /// younger than its path's RTprop at ack time).
+    attr_witness_prev: AtomicU64,
 }
 
 #[derive(Default)]
@@ -622,19 +637,78 @@ struct CopaFeedCursor {
     sacked: std::collections::BTreeSet<u64>,
 }
 
+/// One seq's send-commitment history for delivery attribution (residual
+/// (iii), branch `feat/store-borrowing`): the LAST (re)send plus the
+/// previous DISTINCT-path commitment, so the attribution site can apply
+/// the flight-time witness ([`resolve_flight_path`]) instead of blindly
+/// crediting the last-sent path.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SendCommit {
+    /// Path + send time (µs) of the most recent (re)send.
+    last: (u32, u64),
+    /// Path + send time of the previous distinct-path commitment, when the
+    /// seq was retransmitted CROSS-path (None = single-path history).
+    prev: Option<(u32, u64)>,
+}
+
+/// The flight-time witness (residual (iii) fix): which path's flight
+/// actually delivered an attributed seq.
+///
+/// The defect it closes: a seq lost (or presumed lost) on path A and
+/// retransmitted on path B is attributed to B when its ack arrives — but
+/// if the ack arrives SOONER after the retransmit than B's propagation
+/// floor, the retransmitted copy cannot have completed the round trip; the
+/// delivering flight was the ORIGINAL copy on A (a spurious retransmit —
+/// the gap was ack latency, not loss). Blindly crediting B advances B's
+/// per-path delivered counter for a symbol that flew on A, and at an
+/// asymmetric cell the fast→slow retransmit stream inflates the SLOW
+/// path's Δdelivered — the measured ×3–5 slow-path BtlBw over-read under
+/// multipath placement (goal-gate HONEST-CAP RESULTS sub-residual (iii)).
+///
+/// The witness is a pure floor-clock test, no new constants: credit the
+/// LAST commitment only if its flight is at least RTprop(last.path) old at
+/// ack time; otherwise credit the previous commitment (whose flight is
+/// older by construction). An unknown RTprop (warm-up) counts as
+/// qualified — legacy attribution, no behavior cliff.
+pub(crate) fn resolve_flight_path(
+    commit: &SendCommit,
+    now_us: u64,
+    mut rtprop_us_of: impl FnMut(u32) -> Option<u64>,
+) -> u32 {
+    match commit.prev {
+        None => commit.last.0,
+        Some((prev_path, _)) => {
+            let age = now_us.saturating_sub(commit.last.1);
+            let qualified = rtprop_us_of(commit.last.0).map_or(true, |rtp| age >= rtp);
+            if qualified {
+                commit.last.0
+            } else {
+                prev_path
+            }
+        }
+    }
+}
+
 impl CopaFeed {
     fn new() -> Self {
         Self {
             seq_path: DashMap::new(),
             cursor: parking_lot::Mutex::new(CopaFeedCursor::default()),
             sampling_only: false,
+            attr_witness: false,
+            attr_cross: AtomicU64::new(0),
+            attr_witness_prev: AtomicU64::new(0),
         }
     }
 
     /// feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only construction.
+    /// The flight-time witness (residual (iii)) defaults ON here —
+    /// `RWM_RS_ATTR=0` restores legacy last-sent-path attribution as the
+    /// same-binary control arm.
     fn new_sampling_only() -> Self {
         Self {
             sampling_only: true,
+            attr_witness: crate::config::env_flag("RWM_RS_ATTR", true),
             ..Self::new()
         }
     }
@@ -646,9 +720,40 @@ impl CopaFeed {
         !self.sampling_only
     }
 
-    /// Record a (re)send of source seq `seq` on `path`.
+    /// DIAG (residual (iii)): (cross-path-history attributions, of which
+    /// witness-credited-to-previous-flight). Read only at the DIAG print.
+    pub(crate) fn attr_diag(&self) -> (u64, u64) {
+        (
+            self.attr_cross.load(Ordering::Relaxed),
+            self.attr_witness_prev.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Record a (re)send of source seq `seq` on `path`. A cross-path
+    /// retransmit keeps the previous commitment as the flight-witness
+    /// fallback (residual (iii)); a same-path resend just refreshes the
+    /// send time (its rate sample is re-snapshotted by `on_src_sent`).
     fn on_sent(&self, seq: u64, path: u32) {
-        self.seq_path.insert(seq, path);
+        let now = now_us();
+        match self.seq_path.entry(seq) {
+            dashmap::mapref::entry::Entry::Occupied(mut e) => {
+                let cur = *e.get();
+                *e.get_mut() = SendCommit {
+                    last: (path, now),
+                    prev: if cur.last.0 != path {
+                        Some(cur.last)
+                    } else {
+                        cur.prev
+                    },
+                };
+            }
+            dashmap::mapref::entry::Entry::Vacant(v) => {
+                v.insert(SendCommit {
+                    last: (path, now),
+                    prev: None,
+                });
+            }
+        }
     }
 
     /// Diff one WindowAck against the cursor: returns the seqs this ack
@@ -708,16 +813,43 @@ fn copa_feed_attribute(
         return;
     }
     let mut per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    let now = now_us();
     let mut sched = scheduler.lock();
     for seq in newly {
-        // Attribute to the path the seq was sent on; a seq without a send
-        // record (pre-feed traffic, evicted record) falls back to the path
-        // the ack arrived on — plain in-order acks ride the arrival path.
-        let p = feed
-            .seq_path
-            .remove(&seq)
-            .map(|(_, p)| p)
-            .unwrap_or(ack_path);
+        // Attribute to the path whose FLIGHT delivered the seq. Default:
+        // the path it was last sent on; a seq without a send record
+        // (pre-feed traffic, evicted record) falls back to the path the
+        // ack arrived on — plain in-order acks ride the arrival path.
+        // Residual (iii): when the commit history crossed paths, the
+        // flight-time witness decides — an ack arriving sooner after a
+        // cross-path retransmit than that path's RTprop proves the
+        // delivering copy was the ORIGINAL flight, so the retransmit path's
+        // delivered counter must NOT advance (the ×3–5 slow-path BtlBw
+        // over-read under multipath placement; `resolve_flight_path`).
+        let p = match feed.seq_path.remove(&seq) {
+            Some((_, commit)) => {
+                if commit.prev.is_some() {
+                    feed.attr_cross.fetch_add(1, Ordering::Relaxed);
+                    let witness = resolve_flight_path(&commit, now, |pid| {
+                        sched
+                            .path(pid)
+                            .and_then(|ps| ps.min_rtt())
+                            .map(|d| d.as_micros() as u64)
+                    });
+                    if witness != commit.last.0 {
+                        feed.attr_witness_prev.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if feed.attr_witness {
+                        witness
+                    } else {
+                        commit.last.0
+                    }
+                } else {
+                    commit.last.0
+                }
+            }
+            None => ack_path,
+        };
         if let Some(ps) = sched.path_mut(p) {
             ps.on_src_delivered_seq(seq);
         }
@@ -1216,12 +1348,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // reused sampling-only). The full feed (`wanted`) takes precedence.
         let plain_rs = crate::config::anchor_gate("RWM_PLAIN_RS");
         if !wanted && plain_rs && plain_inorder {
+            let feed = CopaFeed::new_sampling_only();
             info!(
                 "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
                  WindowAck frontier/SACK -> per-path send-interval rate samples; \
-                 CC ownership unchanged)"
+                 CC ownership unchanged; flight-witness attribution={} \
+                 [residual (iii): cross-path retransmit acks younger than the \
+                 retransmit path's RTprop credit the ORIGINAL flight; \
+                 RWM_RS_ATTR=0 = legacy last-sent control])",
+                feed.attr_witness
             );
-            Some(Arc::new(CopaFeed::new_sampling_only()))
+            Some(Arc::new(feed))
         } else if wanted && plain_inorder {
             info!(
                 "plain-mode Copa delivery feed ACTIVE (WindowAck frontier/SACK → per-path send-interval rate samples + cwnd dynamics)"
@@ -3852,6 +3989,154 @@ pub fn percap_place_path(
         .unwrap_or(chosen)
 }
 
+/// One live path's account state as the bounded-borrowing law sees it
+/// (feat/store-borrowing, paper §16.22).
+#[derive(Clone, Copy, Debug)]
+pub struct BorrowAccount {
+    pub path: u32,
+    /// Account occupancy: symbols CHARGED to this path (own + lent-out).
+    pub out: usize,
+    /// The account's derived cap (honest law / legacy percap law).
+    pub cap: usize,
+    /// Pipe occupancy: symbols FLYING on this path
+    /// (= out − lent + borrowed, corrected by the loan ledger).
+    pub fly: usize,
+    /// Honest drain rate, sym/s (BtlBw_i under RWM_PLAIN_RS;
+    /// cwnd_i/RTprop_i under the Copa-sole feed). None = warm-up.
+    pub rate: Option<f64>,
+    /// RTprop_i (windowed-min floor clock), seconds. None = warm-up.
+    pub rtprop_s: Option<f64>,
+}
+
+/// The loan's return latency (paper §16.22.2): the borrowed symbol's
+/// expected residence on the BORROWER's pipe, on the floor clock —
+/// queue drain plus one flight: T_return(j) = fly_j/rate_j + RTprop_j.
+/// None on warm-up (an unmeasured borrower admits no loans).
+pub fn percap_t_return(borrower: &BorrowAccount) -> Option<f64> {
+    match (borrower.rate, borrower.rtprop_s) {
+        (Some(r), Some(rtp)) if r > 0.0 && rtp >= 0.0 => {
+            Some(borrower.fly as f64 / r + rtp)
+        }
+        _ => None,
+    }
+}
+
+/// The bounded-borrowing law (paper §16.22.2, derived not tuned):
+///
+///   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j))
+///
+/// — lend only headroom the lender cannot use within the loan's return
+/// latency (the lender's intake is bounded by its own drain rate, so
+/// rate_i·T_return is everything it could possibly place while the loan
+/// is out; reserving it yields the post-loan solvency invariant
+/// cap_i − out_i ≥ rate_i·T_return). Warm-up on EITHER side lends
+/// nothing — the degenerate is isolation, not the pool. The reservation
+/// term is what separates this from the pooled law (T_return := 0 ⇒
+/// lend up to cap_i − out_i ⇒ pooled Σcap sharing), and it makes lending
+/// one-directional at asymmetric cells: a fast lender's reservation
+/// toward a slow pipe exceeds its whole cap (rate_i·T_return(slow) ≫
+/// cap_i), so the #86 parking direction is unrepresentable.
+pub fn percap_lend_room(lender: &BorrowAccount, borrower: &BorrowAccount) -> usize {
+    let Some(t_return) = percap_t_return(borrower) else {
+        return 0;
+    };
+    let Some(rate_i) = lender.rate.filter(|r| *r > 0.0) else {
+        return 0;
+    };
+    let reservation = (rate_i * t_return).ceil() as usize;
+    lender
+        .cap
+        .saturating_sub(lender.out)
+        .saturating_sub(reservation)
+}
+
+/// Pick the lender for a pick landing on cap-full borrower `borrower`:
+/// the live sibling with the largest lend room (> 0). None = no loan
+/// admissible (the caller falls through to the guarded redirect, then to
+/// backpressure).
+pub fn percap_borrow_lender(borrower: u32, accounts: &[BorrowAccount]) -> Option<u32> {
+    let b = accounts.iter().find(|a| a.path == borrower)?;
+    accounts
+        .iter()
+        .filter(|a| a.path != borrower)
+        .map(|a| (a.path, percap_lend_room(a, b)))
+        .filter(|&(_, room)| room > 0)
+        .max_by_key(|&(_, room)| room)
+        .map(|(p, _)| p)
+}
+
+/// True when some cap-full borrower j has an open lend edge from some
+/// lender i (the admission-gate extension: the store is FULL only when
+/// the guarded gate reads full AND no loan is admissible — paper
+/// §16.22.4).
+pub fn percap_lend_edge_exists(accounts: &[BorrowAccount]) -> bool {
+    accounts
+        .iter()
+        .filter(|b| b.out >= b.cap.max(1))
+        .any(|b| {
+            accounts
+                .iter()
+                .filter(|a| a.path != b.path)
+                .any(|a| percap_lend_room(a, b) > 0)
+        })
+}
+
+/// Record one loan in the ledger: `seq` flies on `flyer`, is charged to
+/// `lender` (the caller performs the actual `percap_charge` to the
+/// lender). Gauges: `lent[lender]` and `borrowed[flyer]` correct the
+/// account occupancy into pipe occupancy (fly = out − lent + borrowed).
+pub fn percap_loan_charge(
+    loans: &mut BTreeMap<u64, (u32, u32)>,
+    lent: &mut std::collections::HashMap<u32, usize>,
+    borrowed: &mut std::collections::HashMap<u32, usize>,
+    seq: u64,
+    lender: u32,
+    flyer: u32,
+) {
+    if loans.insert(seq, (lender, flyer)).is_none() {
+        *lent.entry(lender).or_insert(0) += 1;
+        *borrowed.entry(flyer).or_insert(0) += 1;
+    }
+}
+
+/// Repay one loan on the ack that releases `seq` (SACK/OOO twin of
+/// [`percap_release_seq`]; idempotent the same way).
+pub fn percap_loan_release(
+    loans: &mut BTreeMap<u64, (u32, u32)>,
+    lent: &mut std::collections::HashMap<u32, usize>,
+    borrowed: &mut std::collections::HashMap<u32, usize>,
+    seq: u64,
+) {
+    if let Some((lender, flyer)) = loans.remove(&seq) {
+        if let Some(l) = lent.get_mut(&lender) {
+            *l = l.saturating_sub(1);
+        }
+        if let Some(b) = borrowed.get_mut(&flyer) {
+            *b = b.saturating_sub(1);
+        }
+    }
+}
+
+/// Repay every loan at or below the cumulative ack (the
+/// [`percap_release_cumulative`] twin).
+pub fn percap_loan_release_cumulative(
+    loans: &mut BTreeMap<u64, (u32, u32)>,
+    lent: &mut std::collections::HashMap<u32, usize>,
+    borrowed: &mut std::collections::HashMap<u32, usize>,
+    ack: u64,
+) {
+    let keep = loans.split_off(&(ack + 1));
+    for (lender, flyer) in loans.values() {
+        if let Some(l) = lent.get_mut(lender) {
+            *l = l.saturating_sub(1);
+        }
+        if let Some(b) = borrowed.get_mut(flyer) {
+            *b = b.saturating_sub(1);
+        }
+    }
+    *loans = keep;
+}
+
 /// Charge one retained seq to its placement path's outstanding account
 /// (task #86). Called in lockstep with the `sent_store` insert; paired
 /// with [`percap_release_seq`] (SACK/OOO removal) and
@@ -4741,6 +5026,17 @@ async fn run_window_sender(
     // shipped default is untouched: percap itself is default OFF.
     let percap_guard_on =
         percap_on && crate::config::env_flag("RWM_PERCAP_GUARD", true);
+    // Bounded account borrowing (feat/store-borrowing, paper §16.22): a
+    // pick landing on a cap-full account may FLY on that pipe while being
+    // CHARGED to a sibling account, bounded by
+    //   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j)),
+    //   T_return(j) = fly_j/rate_j + RTprop_j (floor clock)
+    // — lend only headroom the lender cannot use within the loan's return
+    // latency. Requires the percap stack (accounts, guard, honest caps
+    // under RWM_PLAIN_RS). Default OFF: shipped byte-identical; the
+    // no-borrow percap arm is the same-binary control.
+    let percap_borrow_on =
+        percap_on && crate::config::env_flag("RWM_STORE_BORROW", false);
     if percap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -4755,6 +5051,14 @@ async fn run_window_sender(
         // ABSENT on the RWM_PERCAP_GUARD=0 regression-control arm).
         info!(
             "percap delay-aware redirect guard ACTIVE (roadmap-1: redirect to j only while out_j < bound_j = rate_j*RTprop_j — kappa=1 on the floor clock; Copa feed: cwnd_j; warm-up: cap_j/gain — else the store reads FULL for the placement and admission pauses; RWM_PERCAP_GUARD=0 = unguarded legacy redirect)"
+        );
+    }
+    if percap_borrow_on {
+        // Borrowing mechanism-liveness echo (MEASUREMENT DISCIPLINE):
+        // asserted PRESENT on PBP-B/C1P-B arms, ABSENT on every no-borrow
+        // arm.
+        info!(
+            "bounded store borrowing ACTIVE (RWM_STORE_BORROW, paper 16.22: a cap-full pick flies on its picked pipe, charged to the lender with max lend_i->j = cap_i - out_i - rate_i*T_return(j), T_return(j) = fly_j/rate_j + RTprop_j; loans repay on ack; symmetric cells lend 0 by theorem; warm-up lends 0)"
         );
     }
     // ── Honest floor-clock store caps (feat/percap-honest-cap) ────────────
@@ -4810,6 +5114,22 @@ async fn run_window_sender(
     // Mirrors cap_i (guard degenerate) when RWM_PERCAP_GUARD=0.
     let mut percap_bounds: std::collections::HashMap<u32, usize> =
         std::collections::HashMap::new();
+    // ── Bounded-borrowing loan ledger (feat/store-borrowing, §16.22) ────
+    // seq → (lender, flyer) for BORROWED seqs only (sparse; empty when the
+    // gate is off). Repaid by the same acks that release the account.
+    let mut percap_loans: BTreeMap<u64, (u32, u32)> = BTreeMap::new();
+    // path → loans lent out (charged here, flying elsewhere) / borrowed in
+    // (flying here, charged elsewhere): fly_i = out_i − lent_i + borrowed_i.
+    let mut percap_lent: std::collections::HashMap<u32, usize> =
+        std::collections::HashMap::new();
+    let mut percap_borrowed: std::collections::HashMap<u32, usize> =
+        std::collections::HashMap::new();
+    // path → (rate sym/s, RTprop s) snapshot for the borrow law, refreshed
+    // with the caps (same cadence, same honest sources).
+    let mut percap_rr: std::collections::HashMap<u32, (Option<f64>, Option<f64>)> =
+        std::collections::HashMap::new();
+    // DIAG: cumulative loans granted (mechanism liveness at the gauge).
+    let mut percap_loans_total: u64 = 0;
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
     let mut dyn_store_cap: usize = store_boot_cap.min(store_max);
@@ -5170,6 +5490,10 @@ async fn run_window_sender(
             // marginal cost); single path collapses to that path (byte-
             // identical to Phase A). Non-reliable (realtime/EVICT) mode keeps
             // the single best-path pick + redundant duplicate, unchanged.
+            // feat/store-borrowing: when this placement is a LOAN, the
+            // account charged (the lender) differs from the flight path.
+            // None = charge the flight path (the non-borrow default).
+            let mut borrow_lender: Option<u32> = None;
             let source_path = {
                 if reliable && daps {
                     // DAPS delay-aware placement: the just-added source is at the
@@ -5237,7 +5561,53 @@ async fn run_window_sender(
                                     )
                                 })
                                 .collect();
-                        percap_place_path(picked, &accounts)
+                        // feat/store-borrowing (§16.22.4): BORROW FIRST —
+                        // a pick landing on a cap-full account stays on
+                        // its picked PIPE, charged to the lender with the
+                        // most lend room; else the guarded redirect; else
+                        // keep-chosen (the gate reads FULL next
+                        // iteration: backpressure, don't park). Own picks
+                        // below cap are never touched.
+                        let own_open = accounts
+                            .iter()
+                            .any(|&(p, out, cap, _)| p == picked && out < cap.max(1));
+                        if percap_borrow_on && !own_open {
+                            let baccts: Vec<BorrowAccount> = accounts
+                                .iter()
+                                .map(|&(p, out, cap, _)| {
+                                    let (rate, rtprop_s) = percap_rr
+                                        .get(&p)
+                                        .copied()
+                                        .unwrap_or((None, None));
+                                    BorrowAccount {
+                                        path: p,
+                                        out,
+                                        cap,
+                                        fly: out
+                                            .saturating_sub(
+                                                percap_lent.get(&p).copied().unwrap_or(0),
+                                            )
+                                            .saturating_add(
+                                                percap_borrowed
+                                                    .get(&p)
+                                                    .copied()
+                                                    .unwrap_or(0),
+                                            ),
+                                        rate,
+                                        rtprop_s,
+                                    }
+                                })
+                                .collect();
+                            match percap_borrow_lender(picked, &baccts) {
+                                Some(lender) => {
+                                    borrow_lender = Some(lender);
+                                    picked
+                                }
+                                None => percap_place_path(picked, &accounts),
+                            }
+                        } else {
+                            percap_place_path(picked, &accounts)
+                        }
                     } else {
                         picked
                     }
@@ -5395,7 +5765,25 @@ async fn run_window_sender(
             // the pipe the symbol was ADMITTED against (its dwell there ends
             // at the same ack either way).
             if percap_on {
-                percap_charge(&mut percap_acct, &mut percap_out, wire_sym.block_id, source_path);
+                // feat/store-borrowing: a LOAN charges the LENDER's account
+                // while the symbol flies on `source_path` (§16.22.1 — the
+                // ledger moves, the wire placement does not). The loan
+                // ledger corrects the pipe gauge (fly = out − lent +
+                // borrowed) and repays on the same ack that releases the
+                // account entry.
+                let charge_path = borrow_lender.unwrap_or(source_path);
+                percap_charge(&mut percap_acct, &mut percap_out, wire_sym.block_id, charge_path);
+                if let Some(lender) = borrow_lender {
+                    percap_loan_charge(
+                        &mut percap_loans,
+                        &mut percap_lent,
+                        &mut percap_borrowed,
+                        wire_sym.block_id,
+                        lender,
+                        source_path,
+                    );
+                    percap_loans_total += 1;
+                }
             }
 
             // feat/btlbw-rate-sample: snapshot this source seq's send-time state
@@ -5969,6 +6357,15 @@ async fn run_window_sender(
                     // path's delivery evidence, not the in-order frontier.
                     if percap_on {
                         percap_release_seq(&mut percap_acct, &mut percap_out, k);
+                        // feat/store-borrowing: the same ack repays a loan.
+                        if percap_borrow_on {
+                            percap_loan_release(
+                                &mut percap_loans,
+                                &mut percap_lent,
+                                &mut percap_borrowed,
+                                k,
+                            );
+                        }
                     }
                 }
                 // feat/per-path-estimator: OOO per-path ack attribution.  In
@@ -6293,6 +6690,29 @@ async fn run_window_sender(
                         let sched = scheduler.lock();
                         let live = sched.live_paths();
                         let mut v = Vec::with_capacity(live.len());
+                        // feat/store-borrowing: refresh the borrow law's
+                        // (rate, RTprop) snapshot at the same cadence from
+                        // the same honest sources (Copa feed: cwnd/RTprop
+                        // as the drain rate; plain: the send-interval
+                        // BtlBw anchor). Empty map when borrowing is off.
+                        if percap_borrow_on {
+                            percap_rr.clear();
+                            for id in live.iter() {
+                                if let Some(p) = sched.path(*id) {
+                                    let rtp = p.min_rtt().map(|d| d.as_secs_f64());
+                                    let rate = if copa_feed
+                                        .as_ref()
+                                        .is_some_and(|f| f.owns_cc())
+                                    {
+                                        rtp.filter(|r| *r > 0.0)
+                                            .map(|r| p.cwnd as f64 / r)
+                                    } else {
+                                        p.btlbw_sym_per_s()
+                                    };
+                                    percap_rr.insert(*id, (rate, rtp));
+                                }
+                            }
+                        }
                         for id in live.iter() {
                             let (pipe, floor_pipe, honest) = match sched.path(*id) {
                                 Some(p) => {
@@ -6449,8 +6869,39 @@ async fn run_window_sender(
                     )
                 })
                 .collect();
+            // feat/store-borrowing (§16.22.4): the guarded gate plus the
+            // loan edges — the store reads FULL only when the guarded gate
+            // reads full AND no loan is admissible (a cap-full borrower
+            // with a lender inside its lend bound keeps admission open;
+            // the placement then borrows instead of redirecting).
+            let guarded_full = percap_store_full_guarded(&accounts)
+                && !(percap_borrow_on && {
+                    let baccts: Vec<BorrowAccount> = percap_caps
+                        .iter()
+                        .map(|(&pid, &cap)| {
+                            let out = percap_out.get(&pid).copied().unwrap_or(0);
+                            let (rate, rtprop_s) =
+                                percap_rr.get(&pid).copied().unwrap_or((None, None));
+                            BorrowAccount {
+                                path: pid,
+                                out,
+                                cap,
+                                fly: out
+                                    .saturating_sub(
+                                        percap_lent.get(&pid).copied().unwrap_or(0),
+                                    )
+                                    .saturating_add(
+                                        percap_borrowed.get(&pid).copied().unwrap_or(0),
+                                    ),
+                                rate,
+                                rtprop_s,
+                            }
+                        })
+                        .collect();
+                    percap_lend_edge_exists(&baccts)
+                });
             reliable
-                && (percap_store_full_guarded(&accounts)
+                && (guarded_full
                     || store_len >= effective_store_cap
                     || cwnd_full)
         } else {
@@ -6579,9 +7030,15 @@ async fn run_window_sender(
                             // windowed-min echoSRTT/RTprop ratio K_i feeding
                             // the honest cap law (1.00 when not engaged).
                             let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
+                            // feat/store-borrowing DIAG: this path's loan
+                            // gauges — symbols LENT out (charged here,
+                            // flying elsewhere) / BORROWED in (flying
+                            // here, charged elsewhere). Zeros when off.
+                            let lent_i = percap_lent.get(id).copied().unwrap_or(0);
+                            let bor_i = percap_borrowed.get(id).copied().unwrap_or(0);
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} khr={:.2} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, khr_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -6622,8 +7079,15 @@ async fn run_window_sender(
                 };
                 gd_us = [0; 6];
                 gl_sum = (0, 0, 0, 0);
+                // Residual (iii) DIAG: cross-path-history attributions and
+                // how many the flight witness credited to the previous
+                // flight (spurious-retransmit class). Zeros without a feed.
+                let (xat_c, xat_w) = copa_feed
+                    .as_ref()
+                    .map(|f| f.attr_diag())
+                    .unwrap_or((0, 0));
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -6636,6 +7100,8 @@ async fn run_window_sender(
                     bdp_100m,
                     fmtcp_out, eff_fmtcp_backstop,
                     diag_sweeps, diag_retx, diag_gaps_dropped, cached_nack_budget,
+                    xat_c, xat_w,
+                    percap_loans.len(), percap_loans_total,
                     gdiag,
                     pp,
                 );
@@ -7822,6 +8288,17 @@ async fn run_window_sender(
             // account map, so no double-release).
             if percap_on {
                 percap_release_cumulative(&mut percap_acct, &mut percap_out, ack);
+                // feat/store-borrowing: repay every loan the frontier
+                // advance just released (the split_off twin — SACK-repaid
+                // loans are gone from the ledger, no double-repayment).
+                if percap_borrow_on {
+                    percap_loan_release_cumulative(
+                        &mut percap_loans,
+                        &mut percap_lent,
+                        &mut percap_borrowed,
+                        ack,
+                    );
+                }
             }
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             nack_retx_at.retain(|&seq, _| seq > ack);
@@ -9311,14 +9788,59 @@ mod tests {
     }
 
     /// seq→path attribution: the seq is charged to the path it was (last)
-    /// sent on; unknown seqs fall back to the ack path.
+    /// sent on; unknown seqs fall back to the ack path. A cross-path
+    /// retransmit keeps the previous commitment as the flight-witness
+    /// fallback (residual (iii)).
     #[test]
     fn copa_feed_seq_path_last_send_wins() {
         let feed = CopaFeed::new();
         feed.on_sent(10, 0);
         feed.on_sent(10, 1); // retransmit on the other path
-        assert_eq!(feed.seq_path.remove(&10).map(|(_, p)| p), Some(1));
-        assert_eq!(feed.seq_path.remove(&10).map(|(_, p)| p), None);
+        let commit = feed.seq_path.remove(&10).map(|(_, c)| c).unwrap();
+        assert_eq!(commit.last.0, 1);
+        assert_eq!(commit.prev.map(|(p, _)| p), Some(0));
+        assert!(feed.seq_path.remove(&10).is_none());
+    }
+
+    /// Residual (iii): the flight-time witness. An ack younger than the
+    /// retransmit path's RTprop proves the ORIGINAL flight delivered the
+    /// seq — the retransmit path's delivered counter must not advance. An
+    /// ack older than RTprop credits the retransmit path (a genuine
+    /// retransmit delivery). Unknown RTprop / single-path history keep
+    /// legacy attribution.
+    #[test]
+    fn flight_witness_credits_original_path_for_spurious_retransmit() {
+        // Original on fast (path 0) at t=0, retransmitted on slow (path 1,
+        // RTprop 60 ms) at t=1_000_000.
+        let commit = SendCommit {
+            last: (1, 1_000_000),
+            prev: Some((0, 0)),
+        };
+        let rtprop = |pid: u32| if pid == 1 { Some(60_000u64) } else { Some(8_000u64) };
+        // Ack 5 ms after the retransmit: the slow flight cannot have
+        // completed — the fast original delivered it.
+        assert_eq!(resolve_flight_path(&commit, 1_005_000, rtprop), 0);
+        // Ack 80 ms after the retransmit: the slow flight qualifies.
+        assert_eq!(resolve_flight_path(&commit, 1_080_000, rtprop), 1);
+        // Exactly RTprop old: qualifies (>=).
+        assert_eq!(resolve_flight_path(&commit, 1_060_000, rtprop), 1);
+        // Warm-up (no RTprop yet): legacy last-sent attribution.
+        assert_eq!(resolve_flight_path(&commit, 1_005_000, |_| None), 1);
+        // Single-path history: always the last (= only) commitment.
+        let single = SendCommit {
+            last: (1, 1_000_000),
+            prev: None,
+        };
+        assert_eq!(resolve_flight_path(&single, 1_000_001, rtprop), 1);
+        // A→B→A bounce: prev is the previous DISTINCT path (B), and a
+        // young ack after the same-path resend credits B's older flight.
+        let feed = CopaFeed::new();
+        feed.on_sent(7, 0);
+        feed.on_sent(7, 1);
+        feed.on_sent(7, 0);
+        let c = feed.seq_path.remove(&7).map(|(_, c)| c).unwrap();
+        assert_eq!(c.last.0, 0);
+        assert_eq!(c.prev.map(|(p, _)| p), Some(1));
     }
 
     /// A hostile/corrupt ack cannot trap the diff in a huge loop.
@@ -9915,6 +10437,241 @@ mod tests {
     fn percap_warmup_share_degenerates_to_legacy_at_n1() {
         assert_eq!(percap_store_cap(None, 1024, 1, 2.0, 64, 2048), 1024);
         assert_eq!(percap_store_cap(None, 0, 1, 2.0, 64, 2048), 64);
+    }
+
+    // ----- Bounded account borrowing (feat/store-borrowing, §16.22) --------
+
+    /// The c8 honest miniature (paper §16.22.3(b)): the slow lender lends
+    /// exactly its headroom beyond its own reserved intake for the loan's
+    /// return latency — and lending toward a slow pipe is IMPOSSIBLE (the
+    /// #86 parking direction is unrepresentable, not merely guarded).
+    #[test]
+    fn borrow_lend_room_reserves_lender_intake_and_is_one_directional() {
+        // Honest c8 anchors: slow 2000 sym/s @ 60 ms (cap ≈ 500), fast
+        // 10 400 sym/s @ 8 ms (cap ≈ 1230, cap-full and asking).
+        let slow = BorrowAccount {
+            path: 1,
+            out: 150,
+            cap: 500,
+            fly: 150,
+            rate: Some(2_000.0),
+            rtprop_s: Some(0.060),
+        };
+        let fast = BorrowAccount {
+            path: 0,
+            out: 1230,
+            cap: 1230,
+            fly: 1230,
+            rate: Some(10_400.0),
+            rtprop_s: Some(0.008),
+        };
+        // T_return(fast) = 1230/10400 + 0.008 ≈ 0.1263 s → reservation =
+        // ceil(2000·0.1263) = 253 → room = 500 − 150 − 253 = 97: the slow
+        // account lends its unused runway, NOT its own short-horizon need.
+        assert_eq!(percap_lend_room(&slow, &fast), 97);
+        // Post-loan solvency invariant: after lending the full room, the
+        // lender still holds ≥ its reserved intake (cap − out − room =
+        // reservation).
+        assert_eq!(slow.cap - slow.out - percap_lend_room(&slow, &fast), 253);
+        // fast → slow (the parking direction): a cap-full slow borrower
+        // has T_return = 500/2000 + 0.06 = 0.31 s → the fast lender's
+        // reservation = ceil(10400·0.31) = 3224 ≫ cap 1230 → room ≡ 0
+        // even with a completely EMPTY fast account.
+        let slow_full = BorrowAccount {
+            out: 500,
+            fly: 500,
+            ..slow
+        };
+        let fast_empty = BorrowAccount {
+            out: 0,
+            fly: 0,
+            ..fast
+        };
+        assert_eq!(percap_lend_room(&fast_empty, &slow_full), 0);
+        // Warm-up on either side lends nothing (isolation, not the pool).
+        let cold = BorrowAccount {
+            rate: None,
+            ..slow
+        };
+        assert_eq!(percap_lend_room(&cold, &fast), 0);
+        let cold_borrower = BorrowAccount {
+            rtprop_s: None,
+            ..fast
+        };
+        assert_eq!(percap_lend_room(&slow, &cold_borrower), 0);
+        // The lender pick: with a second lender offering less room, the
+        // max-room lender wins; with none, no loan.
+        let slow2 = BorrowAccount {
+            path: 2,
+            out: 400,
+            ..slow
+        };
+        assert_eq!(
+            percap_borrow_lender(0, &[fast, slow, slow2]),
+            Some(1),
+            "max lend room (97 vs 0) picks the slack lender"
+        );
+        assert_eq!(percap_borrow_lender(1, &[fast_empty, slow_full]), None);
+    }
+
+    /// The symmetric-neutrality THEOREM (paper §16.22.3(c)): at a
+    /// rate/RTprop-symmetric cell a cap-full borrower forces the lender's
+    /// reservation above the lender's whole cap (reservation − cap =
+    /// anchor > 0), so loans are identically zero for EVERY lender state —
+    /// the c7 percap win is preserved by proof, not tuning.
+    #[test]
+    fn borrow_is_identically_zero_at_symmetric_cells() {
+        let mk = |path: u32, out: usize| BorrowAccount {
+            path,
+            out,
+            cap: 1000,
+            fly: out,
+            rate: Some(5_000.0),
+            rtprop_s: Some(0.020),
+        };
+        // Borrower cap-full (the only time it asks): T_return = 1000/5000
+        // + 0.02 = 0.22 s → reservation = 1100 > cap = 1000.
+        let borrower = mk(0, 1000);
+        for lender_out in [0usize, 100, 500, 999] {
+            assert_eq!(
+                percap_lend_room(&mk(1, lender_out), &borrower),
+                0,
+                "symmetric lender (out={lender_out}) must lend 0"
+            );
+        }
+        assert_eq!(percap_borrow_lender(0, &[borrower, mk(1, 0)]), None);
+        assert!(!percap_lend_edge_exists(&[borrower, mk(1, 0)]));
+    }
+
+    /// The degenerate cases frame the design space (paper §16.22.3(d)):
+    /// dropping the reservation (T_return → 0) is the POOLED Σcap law —
+    /// lend up to cap − out; the all-cap-full state has no lend edge, so
+    /// the borrowed admission gate degenerates to the unguarded FULL.
+    #[test]
+    fn borrow_degenerates_to_pool_without_reservation_and_to_percap_when_closed() {
+        // T_return = 0 (empty pipe, zero RTprop — the reservation term
+        // vanishes): room = cap − out, i.e. any account's slack is
+        // anyone's — the pooled law. The reservation term is the whole
+        // difference between the principled point and the pool.
+        let lender = BorrowAccount {
+            path: 1,
+            out: 300,
+            cap: 500,
+            fly: 300,
+            rate: Some(2_000.0),
+            rtprop_s: Some(0.060),
+        };
+        let degenerate_borrower = BorrowAccount {
+            path: 0,
+            out: 1230,
+            cap: 1230,
+            fly: 0,
+            rate: Some(10_400.0),
+            rtprop_s: Some(0.0),
+        };
+        assert_eq!(
+            percap_lend_room(&lender, &degenerate_borrower),
+            lender.cap - lender.out
+        );
+        // All accounts cap-full → every lender's own headroom is 0 → no
+        // edge: the gate reads FULL exactly like the no-borrow gate
+        // (aggregate law: borrowing can move headroom, never mint it).
+        let full = |path: u32| BorrowAccount {
+            path,
+            out: 1000,
+            cap: 1000,
+            fly: 1000,
+            rate: Some(5_000.0),
+            rtprop_s: Some(0.010),
+        };
+        assert!(!percap_lend_edge_exists(&[full(0), full(1)]));
+    }
+
+    /// The loan ledger lifecycle (the c8 miniature end-to-end): a loan
+    /// charges the LENDER's account while flying on the borrower's pipe,
+    /// the gauges correct account→pipe occupancy, and the SAME acks that
+    /// release the store repay the loan — idempotently, SACK or cumulative.
+    #[test]
+    fn borrow_loans_charge_lender_fly_on_borrower_and_repay_on_ack() {
+        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
+        let mut out: std::collections::HashMap<u32, usize> = Default::default();
+        let mut loans: BTreeMap<u64, (u32, u32)> = BTreeMap::new();
+        let mut lent: std::collections::HashMap<u32, usize> = Default::default();
+        let mut borrowed: std::collections::HashMap<u32, usize> = Default::default();
+        // Fast (path 0) cap-full; three picks borrow from slow (path 1):
+        // the symbols FLY on 0, are CHARGED to 1.
+        for seq in [100u64, 101, 102] {
+            percap_charge(&mut acct, &mut out, seq, 1);
+            percap_loan_charge(&mut loans, &mut lent, &mut borrowed, seq, 1, 0);
+        }
+        assert_eq!(out.get(&1), Some(&3), "loans charge the LENDER's account");
+        assert_eq!(out.get(&0), None, "the borrower's account is untouched");
+        assert_eq!(lent.get(&1), Some(&3));
+        assert_eq!(borrowed.get(&0), Some(&3));
+        // Pipe gauges: fly_0 = out_0 − lent_0 + borrowed_0 = 0 − 0 + 3;
+        // fly_1 = 3 − 3 + 0 = 0 — the slow PIPE carries none of the loan.
+        // (Computed by the caller; asserted here from the gauge parts.)
+        assert_eq!(0 + borrowed.get(&0).copied().unwrap_or(0), 3);
+        assert_eq!(
+            out.get(&1).copied().unwrap_or(0) - lent.get(&1).copied().unwrap_or(0),
+            0
+        );
+        // SACK (OOO) repayment of 101: account + ledger release together.
+        percap_release_seq(&mut acct, &mut out, 101);
+        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
+        assert_eq!(out.get(&1), Some(&2));
+        assert_eq!(lent.get(&1), Some(&2));
+        assert_eq!(borrowed.get(&0), Some(&2));
+        // Idempotent re-release (SACK re-advertisement).
+        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
+        assert_eq!(lent.get(&1), Some(&2));
+        // Cumulative frontier advance repays the rest (split_off twin).
+        percap_release_cumulative(&mut acct, &mut out, 102);
+        percap_loan_release_cumulative(&mut loans, &mut lent, &mut borrowed, 102);
+        assert_eq!(out.get(&1), Some(&0));
+        assert_eq!(lent.get(&1), Some(&0));
+        assert_eq!(borrowed.get(&0), Some(&0));
+        assert!(loans.is_empty(), "every loan self-liquidated on ack");
+    }
+
+    /// The admission-gate composition (paper §16.22.4): the borrowed gate
+    /// opens the guarded-FULL state exactly when a lend edge exists, and
+    /// only then.
+    #[test]
+    fn borrow_admission_gate_opens_only_on_a_real_lend_edge() {
+        // Guarded gate reads FULL: fast (path 0) cap-full, slow (path 1)
+        // open but past its redirect bound (out 200 ≥ bound 117).
+        let accounts = [(1230usize, 1230usize, 1230usize), (200, 500, 117)];
+        assert!(percap_store_full_guarded(&accounts));
+        // Borrow edge: slow can lend to the cap-full fast borrower
+        // (T_return(fast) ≈ 0.126 s, reservation 253, room = 500 − 200 −
+        // 253 = 47 > 0) → admission stays open.
+        let fast = BorrowAccount {
+            path: 0,
+            out: 1230,
+            cap: 1230,
+            fly: 1230,
+            rate: Some(10_400.0),
+            rtprop_s: Some(0.008),
+        };
+        let slow = BorrowAccount {
+            path: 1,
+            out: 200,
+            cap: 500,
+            fly: 200,
+            rate: Some(2_000.0),
+            rtprop_s: Some(0.060),
+        };
+        assert!(percap_lend_edge_exists(&[fast, slow]));
+        // The edge closes when the lender's slack is inside its
+        // reservation (out 300: room = 500 − 300 − 253 < 0) — the gate
+        // then reads FULL exactly like the no-borrow arm: backpressure.
+        let slow_reserved = BorrowAccount {
+            out: 300,
+            fly: 300,
+            ..slow
+        };
+        assert!(!percap_lend_edge_exists(&[fast, slow_reserved]));
     }
 
     // ----- FMTCP-class pure decode-on-total aggregation (change 1 + change 2) --

@@ -8859,6 +8859,171 @@ remains a separate, unbuilt gate.
 
 ---
 
+### 16.22 Bounded account borrowing: the principled point between isolation and the pool (2026-07-19, `feat/store-borrowing`)
+
+Two batteries confirmed the same structural fact (§16.19 guard + honest-cap
+addenda): per-path outstanding accounts with honest caps WIN the symmetric
+cell (c7 ≥ pooled, both CC families, both seeds, three sessions) and LOSE
+the asymmetric cell (c8 PBP-H 0.54–0.55×Σ vs pooled PBS 0.62–0.69; Copa
+C1P-H −8.5/−9.8 vs C1 with caps honest by construction) — because
+`out_fast ≤ cap_fast` denies the fast path the slow path's unused share,
+which the pooled Σ law grants for free. The two extremes are both wrong:
+unlimited pooling reproduces the #86 parking collapse (any path's symbols
+can bloat the shared budget onto the slow pipe), and total isolation pays
+the measured ~0.13–0.16×Σ no-borrowing tax exactly where paths are
+asymmetric. This section derives the point between them. The derivation
+precedes the build.
+
+#### 16.22.1 Semantics: what an account actually bounds, and what a loan is
+
+The retention store is memory plus recovery-runway. Account i bounds the
+store share whose symbols FLY on path i; its honest cap (§16.19 honest-cap
+addendum) decomposes on measured clocks only:
+
+    cap_i = rate_i·K_i·RTprop_i            (residence: one honest pipe)
+          + rate_i·(gain−1)·(R + RTprop_i) (runway: one recovery round)
+
+A **loan** is a placement in which the symbol FLIES on borrower j's pipe
+(the placement law chose j; j has pipe headroom) but is CHARGED to lender
+i's account (j's account is cap-full; i has account headroom it is not
+using). Two facts make this well-posed, and they are the whole reason
+borrowing differs from the refuted #86 redirect:
+
+1. **The lender's dwell law is NOT violated.** The borrowed symbol's dwell
+   is `fly_j/rate_j` on j's pipe — it never queues on i. The account
+   ledger moves; the wire placement does not. (The #86 redirect moved the
+   WIRE placement — parking fast overflow on the slow PIPE at ≈1.3 s
+   dwell. Borrowing is the accounting dual: the pipe keeps the symbol,
+   the ledger absorbs it.)
+2. **The lender's future recovery-runway IS consumed.** Until the borrowed
+   symbol acks, cap_i − out_i is smaller than i's own derivation assumed;
+   if i takes a loss burst during the loan, part of its runway is lent
+   out. The loan's cost to i is therefore measured in TIME: the return
+   latency, which is the borrowed symbol's expected residence on j.
+
+#### 16.22.2 The bound
+
+Let the loan's return latency be the borrowed symbol's expected residence
+on the borrower's pipe, on the FLOOR clock (the loaded echo clock is
+self-referential — the §16.19 guard derivation refuted it once already):
+
+    T_return(j) = fly_j / rate_j + RTprop_j
+
+(`fly_j` = symbols currently FLYING on j — the pipe gauge, which under
+borrowing is `out_j − lent_j + borrowed_j`, the account occupancy corrected
+by the loan ledger; queue drain plus one flight.) During the loan, lender i
+can newly place at most rate_i·T_return(j) of its own traffic (its intake
+is bounded by its own drain rate). "Lend only headroom the lender cannot
+use within the loan's return latency" is then exact:
+
+    lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j))
+
+Every term is measured or already derived: out_i is the account gauge,
+cap_i the honest cap, rate_i the honest per-path anchor (BtlBw_i under
+`RWM_PLAIN_RS`; cwnd_i/RTprop_i under the Copa-sole feed), RTprop the
+windowed-min floor. **No new constants.** Warm-up (no anchor on either
+side) lends nothing — the degenerate is isolation, not the pool.
+
+**Post-loan solvency invariant.** After any admissible loan, by
+construction `cap_i − out_i ≥ rate_i·T_return(j)`: the lender retains at
+least its own full intake rate for the loan's whole expected residence —
+its own picks are never admission-blocked by lending before the loan is
+expected back. Repayment is the existing release machinery: the loan is
+charged to account i at placement (`percap_charge` to i) and released by
+the ack that removes the symbol from the store — a loan self-liquidates,
+no new lifecycle.
+
+#### 16.22.3 What the bound implies (the four required properties)
+
+**(a) The aggregate law — no pooled regression.** Loans are charged inside
+the lender's account and gated on that account's headroom, so
+`out_i ≤ cap_i` for every i at all times, hence `Σ outstanding ≤ Σ cap_i`
+— the same honestly-derived aggregate the isolation arm has. Borrowing
+moves headroom between ledgers; it can never mint it. (The pooled arm's
+failure mode — one path's symbols bloating the whole N×knee budget onto a
+slow pipe — requires exceeding some cap_i, which no loan can.)
+
+**(b) The asymmetric (c8) shape — and lending is one-directional by
+construction.** Take the honest c8 anchors (rate_f ≈ 10.4k sym/s,
+RTprop_f 8 ms; rate_s ≈ 2.1k, RTprop_s 60 ms; caps ≈ 1230/500):
+
+- slow → fast: T_return(fast) ≈ cap_f/rate_f + RTprop_f ≈ 0.13 s;
+  reservation = rate_s·0.13 ≈ 260. The slow account's runway slack beyond
+  ~260 symbols is lendable — the fast path rides through slow-hole
+  frontier stalls (whose duration is the SLOW path's recovery round,
+  R + RTprop_s ≈ 160 ms, which its OWN runway term never funded) on
+  headroom the slow path cannot use in that horizon. This is exactly the
+  share the pooled law was granting implicitly.
+- fast → slow: T_return(slow) ≈ fly_s/rate_s + RTprop_s ≈ 0.2–0.3 s;
+  reservation = rate_f·T_return ≈ 2000–3200 ≫ cap_f ≈ 1230 ⇒ lend ≡ 0.
+  **The fast path can never lend toward a slow pipe**: the reservation
+  term prices the lender's refill during the loan, and a fast lender
+  refills its whole cap many times over while a slow-pipe loan is out.
+  The #86 parking direction (deep budget onto the shallow pipe) is not
+  guarded against — it is UNREPRESENTABLE under the law.
+
+**(c) The symmetric (c7) neutrality theorem — loans are identically zero.**
+A borrower asks only when its account is cap-full (`out_j ≥ cap_j`). Then
+
+    T_return(j) ≥ cap_j/rate_j + RTprop_j
+    reservation = rate_i·T_return(j)
+                ≥ (rate_i/rate_j)·cap_j + rate_i·RTprop_j
+
+At a symmetric cell (rate_i = rate_j, RTprop_i = RTprop_j, hence
+cap_i = cap_j): reservation ≥ cap_i + anchor_i > cap_i ≥ cap_i − out_i,
+so lend_i→j = 0 for every state of the lender. Symmetric neutrality is
+EXACT, not approximate: the c7 percap win (0.89–0.90×Σ, three sessions)
+is preserved by proof, not by tuning — the borrowing arm at c7 must
+measure as the no-borrow arm plus noise, and that prediction is part of
+the battery.
+
+**(d) The degenerate cases frame the design space.**
+- Borrowing disabled (or T_return := ∞): the current percap arm, verbatim.
+- Reservation dropped (T_return := 0): lend up to cap_i − out_i — the
+  pooled Σcap law with honest per-path sizing (any account's slack is
+  anyone's), which restores the parking channel in the fast→slow
+  direction; the reservation term is precisely what separates the
+  principled point from the pool.
+- Caps un-derived (knee-clamped) + reservation dropped: the PBS
+  path-scaled pool itself.
+
+#### 16.22.4 Composition, and what borrowing does not touch
+
+Placement order for a softmax pick landing on a cap-full account j:
+**borrow first** (stay on j's pipe, charge the best lender — the one with
+the largest lend room), **else the §16.19 guarded redirect** (move the
+symbol to a pipe that can drain it within its floor-clock bound), **else
+FULL** — the existing admission pause (backpressure, don't park). The
+admission gate opens iff some account has own headroom or some (i, j) lend
+edge is open; it is the guarded gate plus the loan edges. Own picks below
+cap are never gated (unchanged). N = 1 computes nothing (percap_caps
+empty — bit-exact singles, the standing identity-control obligation).
+
+Borrowing changes ledgers only. The wire placement law, the send-interval
+sampler and its flight-witness attribution (residual (iii), fixed in this
+same branch), the SACK/cumulative release machinery, and the honest-cap
+derivation (whose terms are all self-queue-proof and carry no handle for
+loaned dwell) are untouched.
+
+**Honest limits, named.** (1) T_return is the EXPECTED residence: a
+borrowed symbol lost on j returns one borrower-recovery-round late
+(R + RTprop_j), eating lender runway the reservation did not price; the
+gate's backpressure and the (gain−1) runway term bound the exposure, and
+the loan ledger gauge (`loan=` DIAG) is the mechanism witness that it
+stays small. A loss-inflated reservation (rate_i·T_return·(1+p_j·R/…)) is
+derivable but adds a term the batteries have not asked for — not built.
+(2) The law prices the lender's intake at rate_i; a placement burst can
+transiently exceed it (softmax quantization) — the clamp to
+[0, cap_i − out_i] keeps even that case inside the aggregate law. (3) At
+c8 the lendable slack (~ the slow runway term, low hundreds of symbols)
+is small against the pooled arm's N×knee budget: bounded borrowing repays
+the tax the ACCOUNTS charge, it does not reproduce the pool's unbounded
+depth. Whether that suffices to beat PBS at c8 is exactly what the
+battery must decide — if it does not, the pooled path-scaled law is
+vindicated as the c8 answer and percap remains a symmetric-cell tool.
+
+---
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
