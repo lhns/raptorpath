@@ -368,6 +368,15 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 ///
 /// Numeric-VALUE knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do NOT use
 /// this — they parse their value, and 0 may be a legitimate value there.
+/// feat/anchor-hygiene: per-fix gate with the `RWM_ANCHOR_HYGIENE` umbrella
+/// as its default — `RWM_ANCHOR_HYGIENE=1` turns the whole anchor-repair
+/// family on for a battery, while each fix stays individually A/B-able
+/// (`RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_PLAIN_RS`, `RWM_CLOCK_GAP`).
+/// Everything defaults OFF: the shipped path is byte-identical unset.
+pub fn anchor_gate(name: &str) -> bool {
+    env_flag(name, env_flag("RWM_ANCHOR_HYGIENE", false))
+}
+
 pub fn env_flag(name: &str, default: bool) -> bool {
     match std::env::var(name) {
         Err(_) => default,

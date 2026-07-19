@@ -35,6 +35,14 @@ pub struct LossEstimator {
     /// RTT estimation (EWMA)
     ewma_rtt: Duration,
     rtt_alpha: f64,
+    /// feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): seed the RTT EWMA from the
+    /// FIRST measured sample instead of blending real samples into the 50-ms
+    /// DEFAULT_SRTT-class constructor seed (hygiene rule 1: an anchor is
+    /// seeded from measurements; the 50-ms seed surviving warm-up was the
+    /// measured M* floor-freshness FAIL — goal-gate #61 knee battery).
+    rtt_seed_from_sample: bool,
+    /// True once a real RTT sample has been recorded (seed consumed).
+    rtt_seeded: bool,
 
     /// Throughput estimation (bytes/sec EWMA)
     ewma_throughput: f64,
@@ -78,6 +86,8 @@ impl LossEstimator {
             rx_ewma_loss: 0.0,
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
+            rtt_seed_from_sample: crate::config::anchor_gate("RWM_MSTAR_ANCHOR"),
+            rtt_seeded: false,
             ewma_throughput: 0.0,
             consecutive_losses: 0,
             burst_threshold: 3,
@@ -196,10 +206,25 @@ impl LossEstimator {
 
     /// Record an RTT measurement.
     pub fn record_rtt(&mut self, rtt: Duration) {
+        // feat/anchor-hygiene rule 1: the first MEASURED sample replaces the
+        // constructor seed outright (no blend with the 50-ms constant).
+        if self.rtt_seed_from_sample && !self.rtt_seeded {
+            self.rtt_seeded = true;
+            self.ewma_rtt = rtt;
+            return;
+        }
         let rtt_secs = rtt.as_secs_f64();
         let old_secs = self.ewma_rtt.as_secs_f64();
         let new_secs = self.rtt_alpha * rtt_secs + (1.0 - self.rtt_alpha) * old_secs;
         self.ewma_rtt = Duration::from_secs_f64(new_secs);
+    }
+
+    /// Test hook (feat/anchor-hygiene): force the seed-from-sample gate
+    /// without the process-global env (parallel unit tests must not race
+    /// env vars).
+    #[cfg(test)]
+    pub(crate) fn force_anchor_hygiene(&mut self, seed_from_sample: bool) {
+        self.rtt_seed_from_sample = seed_from_sample;
     }
 
     /// Record throughput measurement.
@@ -404,6 +429,40 @@ mod tests {
         let pred_upper = est.predictive_loss_upper(0.95);
         assert!(pred_upper > 0.08, "Predictive upper should be above ~10%: {pred_upper}");
         assert!(pred_upper < 0.25, "Predictive upper should be reasonable: {pred_upper}");
+    }
+
+    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rule 1: the RTT EWMA
+    // seeds from the FIRST measured sample; the 50-ms constructor constant
+    // never blends into measurements (the DEFAULT_SRTT-class seed surviving
+    // warm-up was the #61 M* floor-freshness FAIL). Control arm: the legacy
+    // law blends 0.875·50 ms + 0.125·sample — the constant leaks for ~20
+    // samples.
+    #[test]
+    fn rtt_seeds_from_first_measured_sample_under_hygiene() {
+        let mut est = LossEstimator::new();
+        est.force_anchor_hygiene(true);
+        est.record_rtt(Duration::from_millis(200));
+        assert_eq!(
+            est.rtt(),
+            Duration::from_millis(200),
+            "first measured sample IS the estimate — no 50-ms blend"
+        );
+        // Subsequent samples EWMA-blend off the measured seed as before.
+        est.record_rtt(Duration::from_millis(100));
+        let expected = 0.875 * 0.200 + 0.125 * 0.100;
+        assert!((est.rtt().as_secs_f64() - expected).abs() < 1e-9);
+
+        // Control: the legacy path blends the constructor seed.
+        let mut legacy = LossEstimator::new();
+        legacy.force_anchor_hygiene(false);
+        legacy.record_rtt(Duration::from_millis(200));
+        let blended = 0.875 * 0.050 + 0.125 * 0.200;
+        assert!(
+            (legacy.rtt().as_secs_f64() - blended).abs() < 1e-9,
+            "legacy control keeps the 50-ms seed blend (the defect, preserved \
+             for the A/B): got {:?}",
+            legacy.rtt()
+        );
     }
 
     #[test]

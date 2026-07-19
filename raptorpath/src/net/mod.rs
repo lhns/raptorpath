@@ -474,6 +474,20 @@ fn gen_pipe_depth(rate_sym_per_s: f64, rtt_s: f64, gen_size: usize) -> usize {
     m.clamp(2, GEN_PIPE_MAX_GENS)
 }
 
+/// feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rule 3: the FMTCP win
+/// backstop coupled to the DERIVED pipeline depth M* — (M*+2)·G once the
+/// anchors are live, in place of the static (pipeline+2)·G that #61 measured
+/// governing the whole transfer at the knee cells. At cold start M* = 2
+/// (gen_pipe_depth's no-sample floor) reproduces the legacy default 4·G
+/// exactly, so the static value's reign is BOUNDED to the anchor warm-up
+/// (~one rate bucket). The DAPS read-ahead floor still applies. Pure for
+/// unit testing.
+fn fmtcp_backstop_coupled(m_star: usize, gen_size: usize, daps_win_floor: usize) -> usize {
+    ((m_star + 2) * gen_size)
+        .max(daps_win_floor)
+        .max(2 * gen_size)
+}
+
 /// FMTCP per-path in-flight cap decision (change 2, the #64 fix). Given each
 /// active path's `(in_flight, per_path_cap)` where the cap = gain·BtlBw_i·RTprop_i
 /// (that path's OWN windowed-max bandwidth × its OWN min-RTT), the sender is
@@ -590,6 +604,16 @@ pub(crate) struct CopaFeed {
     /// set of above-frontier seqs already attributed via SACK (so a seq is
     /// attributed exactly once). Bounded by the sender's outstanding store.
     cursor: parking_lot::Mutex<CopaFeedCursor>,
+    /// feat/anchor-hygiene (`RWM_PLAIN_RS`): SAMPLING-ONLY mode — the #79
+    /// send-interval rate sampler generalized to plain window-reliable mode
+    /// under ANY substrate CC. The WindowAck frontier/SACK attribution and
+    /// the per-seq BBR rate samples run (so the per-path BtlBw/BDP anchor is
+    /// fed CLEAN send-interval Δt instead of the ack-interval over-read that
+    /// knee-clamps the percap/store caps — goal-gate "Per-Path Outstanding
+    /// Accounting" GUARD RESULTS residual (i)), but Copa does NOT own the
+    /// substrate window: no pass-through window writes, and the cwnd
+    /// dynamics keep their legacy per-batch-Ack call site/cadence.
+    sampling_only: bool,
 }
 
 #[derive(Default)]
@@ -603,7 +627,23 @@ impl CopaFeed {
         Self {
             seq_path: DashMap::new(),
             cursor: parking_lot::Mutex::new(CopaFeedCursor::default()),
+            sampling_only: false,
         }
+    }
+
+    /// feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only construction.
+    fn new_sampling_only() -> Self {
+        Self {
+            sampling_only: true,
+            ..Self::new()
+        }
+    }
+
+    /// True when this feed also OWNS the CC operating point (the Copa-sole
+    /// pass-through mode). Sampling-only mode leaves cwnd dynamics, store-cap
+    /// law, and percap pipe derivation on their legacy branches.
+    fn owns_cc(&self) -> bool {
+        !self.sampling_only
     }
 
     /// Record a (re)send of source seq `seq` on `path`.
@@ -682,6 +722,13 @@ fn copa_feed_attribute(
             ps.on_src_delivered_seq(seq);
         }
         *per_path.entry(p).or_insert(0) += 1;
+    }
+    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode stops here —
+    // the rate samples above are the whole job. The cwnd dynamics keep their
+    // legacy per-batch-Ack call site, and the substrate window is whatever
+    // RWM_QUIC_CC says (this feed does not own the operating point).
+    if !feed.owns_cc() {
+        return;
     }
     for (p, _n) in per_path {
         if let Some(ps) = sched.path_mut(p) {
@@ -1163,7 +1210,19 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             && !window_generation
             && !window_coded_only
             && !config.window_out_of_order;
-        if wanted && plain_inorder {
+        // feat/anchor-hygiene (`RWM_PLAIN_RS`): the send-interval sampler
+        // WITHOUT Copa ownership — plain mode under any substrate CC gets an
+        // honest per-path BtlBw anchor (the WindowAck attribution machinery
+        // reused sampling-only). The full feed (`wanted`) takes precedence.
+        let plain_rs = crate::config::anchor_gate("RWM_PLAIN_RS");
+        if !wanted && plain_rs && plain_inorder {
+            info!(
+                "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
+                 WindowAck frontier/SACK -> per-path send-interval rate samples; \
+                 CC ownership unchanged)"
+            );
+            Some(Arc::new(CopaFeed::new_sampling_only()))
+        } else if wanted && plain_inorder {
             info!(
                 "plain-mode Copa delivery feed ACTIVE (WindowAck frontier/SACK → per-path send-interval rate samples + cwnd dynamics)"
             );
@@ -3208,7 +3267,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // Only feed while actually sending: an idle tunnel
                         // must not decay the operating-rate estimate to 0
                         // (t_sym would blow up and re-disable the floor).
-                        if delta > 0 {
+                        // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a report
+                        // tick inside a stall quarantine measures the
+                        // release flood — skip the sample (the next tick's
+                        // Δ/dt spans the disturbance and averages it out).
+                        let gap_q = crate::control::anchor::stall_witness()
+                            .is_some_and(|w| w.quarantined_now());
+                        if delta > 0 && !gap_q {
                             if let Some(path) = sched.path_mut(pid) {
                                 let bps = delta as f64 * report_symbol_size as f64 / dt;
                                 path.estimator.record_throughput(bps);
@@ -3976,12 +4041,27 @@ async fn run_window_sender(
     // generation mode; RWM_GEN_PIPE=0 still reproduces the fixed legacy
     // pipeline as the same-binary A/B arm.
     let gen_pipe = crate::config::env_flag("RWM_GEN_PIPE", unified_active()) && generation && !fmtcp;
+    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): the M* anchor-pair repair —
+    // (a) the peer-report 50-ms pseudo-sample no longer pins the RTprop floor
+    // (PathReport arm; hygiene rules 1+3), (b) the windowed-MAX delivered-rate
+    // filter seeds from 500-ms buckets instead of 2-s ones (rule 1: the
+    // anchor is live within ~1 bucket of the first acks), and (c) the STATIC
+    // (pipeline+2)·G FMTCP win backstop is replaced by the DERIVED (M*+2)·G
+    // once the anchors are live (rule 3: a backstop is for genuine cold-start
+    // only — cold-start M* = 2 reproduces the legacy default, so the static
+    // value governs exactly until the first measured bucket lands).
+    let mstar_anchor = crate::config::anchor_gate("RWM_MSTAR_ANCHOR") && generation;
+    if mstar_anchor {
+        info!("M* anchor hygiene ACTIVE (RWM_MSTAR_ANCHOR: measured RTprop floor + fast-seed rate filter + derived win backstop)");
+    }
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
     // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
     // the slow path always has FUTURE data to carry (the deep app-side read-
     // ahead + deep receiver reassembly the delay-alignment requires).
     let daps_win_floor = if daps { (pipeline + 6) * gen_size } else { 0 };
+    let fmtcp_win_explicit = std::env::var("RWM_FMTCP_WIN")
+        .ok().and_then(|s| s.parse::<usize>().ok()).is_some();
     let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(((pipeline + 2) * gen_size).max(daps_win_floor))
@@ -4605,6 +4685,40 @@ async fn run_window_sender(
             "unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ)"
         );
     }
+    // feat/anchor-hygiene (`RWM_ASTAR_ANCHOR`): the A* rate anchor repaired.
+    // Legacy A* reads `est.throughput()` — a 2-s-interval α=0.125 EWMA of the
+    // report-tick send rate — which (i) pins A* = 1 for ~10 s of every stream
+    // (realtime FEC inert: ru/rf ≈ 9%) and (ii) is flood-poisonable (A* 1→38
+    // off the post-stall release burst) — goal-gate COLLAPSE ATTRIBUTION,
+    // defect designs A+B. The repair: a windowed-max send-rate anchor
+    // (SendRateAnchor) fed by the sender's OWN send events — live within ~1
+    // RTT (hygiene rule 1), with gap-spanning/flood buckets DISCARDED
+    // (rule 2). Gate off ⇒ the EWMA path byte-identical.
+    let astar_anchor_on = unified_span && crate::config::anchor_gate("RWM_ASTAR_ANCHOR");
+    let mut astar_anchor = crate::control::SendRateAnchor::new();
+    if astar_anchor_on {
+        info!("A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)");
+    }
+    // feat/anchor-hygiene (`RWM_CLOCK_GAP`): the PROCESS-clock stall witness
+    // — a dedicated 50-ms timer tick; a tick interval ≫ the period is a
+    // whole-process scheduler stall (the timer wheel itself froze), and the
+    // ack-fed estimator feed sites (Ack/WindowAck/PathReport arms + the
+    // report-tick throughput feed) discard samples for the quarantine
+    // window (the release flood — the measured BtlBw ×13 / cwnd ×16 /
+    // EWMA-RTT ×3 post-stall poisoning). Ack SILENCES with a live process
+    // never trip it (see control::anchor::StallWitness — the arrival-clock
+    // variant mis-fired on normal recovery quiet periods, measured).
+    if let Some(w) = crate::control::anchor::stall_witness() {
+        info!("clock-gap estimator hygiene ACTIVE (RWM_CLOCK_GAP: process-clock stall witness, post-stall sample discard at the ack feed sites)");
+        tokio::spawn(async {
+            let mut iv = tokio::time::interval(Duration::from_millis(50));
+            iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                iv.tick().await;
+                w.tick_now();
+            }
+        });
+    }
     // diag/unified-collapse (roadmap item 3): ~500 ms sender-side span-law
     // trace (RWM_DIAG only) — the live A*/Δ, owed budget, window span vs the
     // cumulative ack. Names whether a collapse rep's emission is re-covering
@@ -5203,8 +5317,20 @@ async fn run_window_sender(
                             // §16.20.3 span parameters (A*, Δ) from the same
                             // measured anchors — see the unified_span decl.
                             let span = if unified_span {
-                                let rate_sym =
-                                    (est.throughput() / symbol_size.max(1) as f64).max(0.0);
+                                let rate_sym = if astar_anchor_on {
+                                    // feat/anchor-hygiene: this block runs
+                                    // once per SOURCE symbol send — feed the
+                                    // windowed-max send-rate anchor here and
+                                    // read it back (sym/s directly; no
+                                    // byte/EWMA detour). None before the
+                                    // first measured bucket ⇒ A* clamps to 1
+                                    // — the honest cold-start, ~SRTT/2 long.
+                                    let now_i = Instant::now();
+                                    astar_anchor.on_send(now_i, 1, est.rtt());
+                                    astar_anchor.rate(now_i, est.rtt()).unwrap_or(0.0)
+                                } else {
+                                    (est.throughput() / symbol_size.max(1) as f64).max(0.0)
+                                };
                                 let rtprop = est.rtt().as_secs_f64();
                                 let b = match protocol_hint {
                                     ProtocolHint::Realtime => 0.5,
@@ -5245,8 +5371,23 @@ async fn run_window_sender(
                             .datagram_frame_stats(source_path)
                             .map(|(rx, tx)| format!(" dg_rx={rx} dg_tx={tx}"))
                             .unwrap_or_default();
+                        // feat/anchor-hygiene: the A* anchor gauge (windowed-
+                        // max send rate + gap-discard counters) when active.
+                        let ah = if astar_anchor_on {
+                            let (g, d) = astar_anchor.stats();
+                            format!(
+                                " ar={:.0} agap={}/{}",
+                                astar_anchor
+                                    .rate(Instant::now(), Duration::from_millis(50))
+                                    .unwrap_or(0.0),
+                                g,
+                                d
+                            )
+                        } else {
+                            String::new()
+                        };
                         eprintln!(
-                            "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}",
+                            "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}",
                             dnow.saturating_sub(span_diag_start_us) as f64 / 1e6,
                             ack,
                             ws,
@@ -5258,6 +5399,7 @@ async fn run_window_sender(
                             repair_rate,
                             repair_debt,
                             retransmit_buffer.len(),
+                            ah,
                             transit,
                             dg,
                         );
@@ -5693,16 +5835,23 @@ async fn run_window_sender(
         let store_len = if generation { encoder.window_size() } else { sent_store.len() };
         // gen_pipe: roll the windowed-MAX rate filter + recompute the derived
         // pipeline depth M* (throttled ~5 ms; the encoder setter is O(1)).
-        if gen_pipe {
+        // feat/anchor-hygiene: under RWM_MSTAR_ANCHOR the filter also runs in
+        // FMTCP mode (feeding the derived win backstop below), and the bucket
+        // span drops 2 s → 500 ms (hygiene rule 1: the anchor seeds from the
+        // first measured acks, not after a multi-second pin; the max over 8
+        // buckets keeps a comparable window).
+        if gen_pipe || (fmtcp && mstar_anchor) {
+            let (gp_bucket_us, gp_ring) =
+                if mstar_anchor { (500_000u64, 8usize) } else { (2_000_000u64, 4usize) };
             let nowp = now_us();
-            if nowp.saturating_sub(gp_bucket_start_us) >= 2_000_000 {
+            if nowp.saturating_sub(gp_bucket_start_us) >= gp_bucket_us {
                 let ack_now = window_ack_seq.load(Ordering::Relaxed);
                 let dt_s = (nowp - gp_bucket_start_us) as f64 / 1e6;
                 let r = ack_now.saturating_sub(gp_bucket_ack) as f64 / dt_s;
                 gp_bucket_start_us = nowp;
                 gp_bucket_ack = ack_now;
                 gp_rates.push_back(r);
-                while gp_rates.len() > 4 {
+                while gp_rates.len() > gp_ring {
                     gp_rates.pop_front();
                 }
                 gp_rate_max = gp_rates.iter().copied().fold(0.0, f64::max);
@@ -5737,11 +5886,28 @@ async fn run_window_sender(
                         );
                     }
                     gen_pipe_m = m;
-                    encoder.set_pipeline_depth(m);
+                    // FMTCP composes its own window/cap stack: under the
+                    // mstar-anchor coupling it consumes M* only through the
+                    // derived win backstop below, never the encoder depth.
+                    if gen_pipe {
+                        encoder.set_pipeline_depth(m);
+                    }
                 }
                 gen_pipe_store_cap = (gen_pipe_m * gen_size).min(store_max);
             }
         }
+        // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): the FMTCP win backstop,
+        // M*-coupled (hygiene rule 3). Static (pipeline+2)·G was a constant
+        // wearing a backstop's clothes — it governed the whole transfer at
+        // the r100/r200 knee cells (#61: win pegged, budget-stall 90–95%).
+        // Derived (M*+2)·G equals the legacy default at cold start (M* = 2 ⇒
+        // 4·G) and grows with the measured anchors; an explicit RWM_FMTCP_WIN
+        // still wins (operator override).
+        let eff_fmtcp_backstop = if fmtcp && mstar_anchor && !fmtcp_win_explicit {
+            fmtcp_backstop_coupled(gen_pipe_m, gen_size, daps_win_floor)
+        } else {
+            fmtcp_win_backstop
+        };
         // PART 1.2: refresh the BDP-derived in-flight cap (throttled ~5 ms).
         if infl_bdp_on {
             let dnow = now_us();
@@ -5799,7 +5965,10 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_cap_refresh_us) >= 5_000 {
                 dyn_cap_refresh_us = dnow;
-                if copa_feed.is_some() {
+                // Σ-cwnd store law only when the feed OWNS the operating
+                // point (Copa-sole); the sampling-only feed (RWM_PLAIN_RS)
+                // keeps the legacy anchor-sum law — now fed honest samples.
+                if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
                     // feat/copa-sole-cc: Copa OWNS the operating point, so the
                     // outstanding window is keyed to Σ cwnd (the probe state),
                     // not the BtlBw anchor. With the honest send-interval
@@ -5908,7 +6077,7 @@ async fn run_window_sender(
                                 let (pipe, floor_pipe) = sched
                                     .path(*id)
                                     .map(|p| {
-                                        if copa_feed.is_some() {
+                                        if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
                                             (Some(p.cwnd as f64), Some(p.cwnd as f64))
                                         } else {
                                             let rate = p.btlbw_sym_per_s();
@@ -5996,7 +6165,7 @@ async fn run_window_sender(
             // wedged). cwnd_full is the per-path BDP in-flight bound. The
             // window_decoded_seq total-decode signal is published for DIAG /
             // occupancy reporting (the oracle's `d`), not used to gate here.
-            reliable && fmtcp_tx_paused(cwnd_full, store_len, fmtcp_win_backstop)
+            reliable && fmtcp_tx_paused(cwnd_full, store_len, eff_fmtcp_backstop)
         } else if !percap_caps.is_empty() {
             // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
             // only when NO live path's account has headroom below its own
@@ -6138,9 +6307,16 @@ async fn run_window_sender(
                             } else {
                                 "-".to_string()
                             };
+                            // feat/anchor-hygiene DIAG: process-clock stall
+                            // witness gauges (stalls detected / samples
+                            // discarded, PROCESS-global) — zeros when
+                            // RWM_CLOCK_GAP is off.
+                            let (gap_g, gap_d) = crate::control::anchor::stall_witness()
+                                .map(|w| w.stats())
+                                .unwrap_or((0, 0));
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -6193,7 +6369,7 @@ async fn run_window_sender(
                     cw, fl, np,
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,
-                    fmtcp_out, fmtcp_win_backstop,
+                    fmtcp_out, eff_fmtcp_backstop,
                     diag_sweeps, diag_retx, diag_gaps_dropped, cached_nack_budget,
                     gdiag,
                     pp,
@@ -8171,6 +8347,12 @@ fn handle_control_message(
         } => {
             let mut sched = scheduler.lock();
             sched.touch_path(path_id);
+            // feat/anchor-hygiene (`RWM_CLOCK_GAP`): samples processed in a
+            // stall's release-flood quarantine measured the stall, not the
+            // path — the RTT/delivered-rate feeds below are skipped (budget
+            // release and loss accounting are NOT: counts stay valid).
+            let gap_q = crate::control::anchor::stall_witness()
+                .is_some_and(|w| w.quarantined_now());
             // NOTE (feat/copa-sole-cc code-fact correction): these per-batch
             // Acks are sent by the receiver's data arm in WINDOW mode too
             // (the send site sits AFTER the window/block branch), so plain
@@ -8183,9 +8365,33 @@ fn handle_control_message(
             // SEND-interval samples (WindowAck frontier/SACK attribution), so
             // this arm must release the wire-level in-flight budget WITHOUT
             // polluting the max filter through `record_delivery`.
-            if copa_feed.is_some() {
+            if let Some(feed) = copa_feed {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(received_ids.len() as u32);
+                    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode
+                    // keeps the LEGACY cwnd-dynamics call site/cadence (this
+                    // per-batch Ack arm, exactly `on_ack` minus the polluted
+                    // ack-interval `record_delivery` sample — the max filter
+                    // is fed only clean send-interval samples via the
+                    // WindowAck attribution). The full Copa-sole feed runs
+                    // its dynamics in `copa_feed_attribute` instead.
+                    if !feed.owns_cc() {
+                        p.on_delivery_signal();
+                    }
+                }
+            } else if gap_q {
+                // Quarantined: release budget + run the cwnd dynamics at the
+                // legacy cadence, but do NOT feed the ack-interval rate
+                // sample (`record_delivery`) — the flood's collapsed Δt is
+                // the measured ×13 BtlBw over-read. The first post-quarantine
+                // sample spans the whole disturbance (large Δt ⇒ an average,
+                // not a spike), so skipping is self-healing.
+                if let Some(w) = crate::control::anchor::stall_witness() {
+                    w.note_discard();
+                }
+                if let Some(p) = sched.path_mut(path_id) {
+                    p.release_in_flight(received_ids.len() as u32);
+                    p.on_delivery_signal();
                 }
             } else {
                 sched.ack(path_id, received_ids.len() as u32);
@@ -8207,17 +8413,21 @@ fn handle_control_message(
             debug!(path_id, rtt_us, batch_seq, "ack rtt sample");
             if let Some(path) = sched.path_mut(path_id) {
                 let rtt_duration = Duration::from_micros(rtt_us);
-                path.estimator.record_rtt(rtt_duration);
-                // feat/copa-wire-signal: the CC delay term is wire-clocked
-                // (quinn packet-timed RTT — excludes the sender's own store
-                // dwell); the estimator above keeps the app-echo RTT for the
-                // reliability/tail machinery. Gate off ⇒ app echo, as ever.
-                let cc_rtt = if crate::scheduler::copa_wire_active() {
-                    transport.wire_rtt(path_id).unwrap_or(rtt_duration)
-                } else {
-                    rtt_duration
-                };
-                path.record_rtt_sample(cc_rtt);
+                // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a quarantined echo
+                // measured the stall, not the path — discard, don't average.
+                if !gap_q {
+                    path.estimator.record_rtt(rtt_duration);
+                    // feat/copa-wire-signal: the CC delay term is wire-clocked
+                    // (quinn packet-timed RTT — excludes the sender's own store
+                    // dwell); the estimator above keeps the app-echo RTT for
+                    // the reliability/tail machinery. Gate off ⇒ app echo.
+                    let cc_rtt = if crate::scheduler::copa_wire_active() {
+                        transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                    } else {
+                        rtt_duration
+                    };
+                    path.record_rtt_sample(cc_rtt);
+                }
                 // feat/copa-compete: wire-level loss evidence for the
                 // competitive AIMD (block-mode Ack arm; the WindowAck feed
                 // path has its own call). No-op unless RWM_COPA_COMPETE.
@@ -8364,15 +8574,33 @@ fn handle_control_message(
             sched.touch_path(report_path_id);
             if let Some(path) = sched.path_mut(report_path_id) {
                 let rtt_duration = Duration::from_micros(avg_rtt_us);
-                path.estimator.record_rtt(rtt_duration);
-                // feat/copa-wire-signal: wire-clocked CC delay term (see the
-                // Ack arm above).
-                let cc_rtt = if crate::scheduler::copa_wire_active() {
-                    transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
-                } else {
-                    rtt_duration
-                };
-                path.record_rtt_sample(cc_rtt);
+                // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rules
+                // 1+3: the peer's `avg_rtt_us` is the peer's ESTIMATOR VALUE
+                // (its own EWMA — seeded at the 50-ms DEFAULT_SRTT class and,
+                // on a pure receiver, never fed by a measurement), NOT an RTT
+                // measurement. Recording it as a sample every ~2 s planted a
+                // perpetual 50-ms "sample" in the 10-s min-RTT floor window —
+                // the measured M* floor-freshness FAIL at the r200 knee cell
+                // (goal-gate #61: rtp=50 ms at a 200-ms-RTprop cell, M*
+                // pinned at the cold-start floor). Under the gate the local
+                // RTT estimators are fed ONLY by locally measured echo
+                // samples (Ack/WindowAck arms); the report keeps its
+                // keepalive/monitoring/loss roles. Floors now EXPIRE with
+                // their min-window as designed. (`RWM_CLOCK_GAP`: reports
+                // processed in a stall quarantine are skipped too.)
+                let gap_q = crate::control::anchor::stall_witness()
+                    .is_some_and(|w| w.quarantined_now());
+                if !crate::config::anchor_gate("RWM_MSTAR_ANCHOR") && !gap_q {
+                    path.estimator.record_rtt(rtt_duration);
+                    // feat/copa-wire-signal: wire-clocked CC delay term (see
+                    // the Ack arm above).
+                    let cc_rtt = if crate::scheduler::copa_wire_active() {
+                        transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
+                    } else {
+                        rtt_duration
+                    };
+                    path.record_rtt_sample(cc_rtt);
+                }
                 // P10a: do NOT feed the peer's reported throughput into
                 // the estimator. The field carries the PEER's estimator
                 // value — historically 0.0 (circular feed, see the report
@@ -8444,7 +8672,16 @@ fn handle_control_message(
             {
                 let mut sched = scheduler.lock();
                 sched.touch_path(path_id);
-                if echo_send_timestamp_us > 0 {
+                // feat/anchor-hygiene (`RWM_CLOCK_GAP`): quarantined echoes
+                // (stall release flood) measured the stall — discard.
+                let gap_q = crate::control::anchor::stall_witness()
+                    .is_some_and(|w| w.quarantined_now());
+                if gap_q {
+                    if let Some(w) = crate::control::anchor::stall_witness() {
+                        w.note_discard();
+                    }
+                }
+                if echo_send_timestamp_us > 0 && !gap_q {
                     if let Some(path) = sched.path_mut(path_id) {
                         let rtt_duration = Duration::from_micros(rtt_us);
                         path.estimator.record_rtt(rtt_duration);
@@ -9320,6 +9557,34 @@ mod tests {
         assert_eq!(gen_pipe_depth(10_000.0, 0.200, 384), 12);
         // Monotone in rate·srtt, and hard-capped at GEN_PIPE_MAX_GENS.
         assert_eq!(gen_pipe_depth(1e9, 1.0, 384), GEN_PIPE_MAX_GENS);
+    }
+
+    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rule 3: the derived
+    // win backstop equals the legacy static default at cold start (the static
+    // constant governs ONLY the anchor warm-up) and tracks (M*+2)·G once the
+    // anchors are live; the DAPS read-ahead floor is preserved.
+    #[test]
+    fn fmtcp_backstop_couples_to_derived_depth_after_cold_start() {
+        // Cold start: M* = 2 (gen_pipe_depth's no-sample floor) ⇒ (2+2)·384 =
+        // 1536 — exactly the legacy (pipeline=2 + 2)·G static default.
+        assert_eq!(fmtcp_backstop_coupled(2, 384, 0), 1536);
+        // Anchors live at the r200 knee class (M* = 12) ⇒ the backstop GROWS
+        // with the derived depth instead of pinning the transfer at 4·G.
+        assert_eq!(fmtcp_backstop_coupled(12, 384, 0), 14 * 384);
+        // DAPS read-ahead floor still applies…
+        assert_eq!(fmtcp_backstop_coupled(2, 384, 8 * 384), 8 * 384);
+        // …and the 2·G absolute floor survives degenerate inputs.
+        assert_eq!(fmtcp_backstop_coupled(0, 384, 0), 2 * 384);
+    }
+
+    // feat/anchor-hygiene (`RWM_PLAIN_RS`): the sampling-only feed must
+    // declare that it does NOT own the CC operating point — everything the
+    // Copa-sole feed switches (store-cap law, percap pipes, cwnd-dynamics
+    // call site, pass-through window writes) keys on `owns_cc()`.
+    #[test]
+    fn sampling_only_feed_does_not_own_cc() {
+        assert!(CopaFeed::new().owns_cc());
+        assert!(!CopaFeed::new_sampling_only().owns_cc());
     }
 
     /// FMTCP change 2 (per-path BDP in-flight cap, the #64 fix). The sender is

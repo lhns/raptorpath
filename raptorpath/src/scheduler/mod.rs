@@ -1990,6 +1990,7 @@ impl PathState {
         self.copa.force_compete();
     }
 
+
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
