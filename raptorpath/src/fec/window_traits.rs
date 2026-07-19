@@ -197,4 +197,13 @@ pub trait WindowDecoder: Send + Sync {
 
     /// Number of repair symbols that contributed to recovery (useful repairs).
     fn repairs_useful(&self) -> u64 { 0 }
+
+    /// One-line internal-state snapshot for RWM_FDIAG traces (roadmap item 3,
+    /// diag/unified-collapse): active equation-set size, span widths, state
+    /// memory — whatever names the machine's live cost. Default None for
+    /// decoders without diagnostic structure. NEVER on a hot path (the FDIAG
+    /// periodic report calls it at ~500 ms).
+    fn diag_stats(&self) -> Option<String> {
+        None
+    }
 }

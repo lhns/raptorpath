@@ -227,7 +227,7 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
 |---|---|---|---|
 | **Streaming two-layer** (shipped Realtime default) | the 12–48× message-tail crown (Metric A); burst-optimal diagonal layer | DEFENDED 2026-07-19: unified fails tail parity (p99 ×2.7–3.3 + collapse class) → keeps Realtime | only if a retirement case engages BOTH the unified trade AND the L1 ordering datum below; honest liabilities recorded: 24–26% DNFs at the c3 100 KB realtime perf cell, and at the post-divide c3 tail matrix the legacy-RLC arm posts BETTER p99 medians (234/273 ms vs streaming 510/822 pooled) — the "streaming-retirement gap", roadmap item 7 |
 | **Legacy RLC family** (`RlcWindowDecoder` plain window + `GenerationDecoder` gen wire) | the bulk half: gen-sys = the bulk-champion wire (parity with plain at ~free CPU); the plain-RLC realtime arm posts the best c3 p99 medians of all three machines | bulk gate: unified reached parity+CPU-parity against it (PASS); realtime: it BEAT unified at the bursty cell, but carries its own 2/10 total-wedge class | both decoders retire when unified passes ≥ legacy-RLC EVERYWHERE — the remaining gap is realtime tail only; known defect: rank loss on late sources under reorder (unified already fixes it) |
-| **Unified span machine** (`RWM_UNIFIED`, default OFF) | ONE decoder + δ-continuous span law (A\*/M\*/Δ), differential-proven vs all three legacy decoders; bulk gen-sys parity + CPU parity PASS at L1; delivery-complete realtime (+24–26 pp) | BOTH flips NO (2026-07-19): named blocker = the c3-1200B stream-collapse rep class (3/10, p50 in seconds); M\* knee UNREACHABLE behind two anchor defects | it is the DESTINATION: when the collapse class is closed it takes the RLC family; streaming retirement is a separate, harder gate |
+| **Unified span machine** (`RWM_UNIFIED`, default OFF) | ONE decoder + δ-continuous span law (A\*/M\*/Δ), differential-proven vs all three legacy decoders; bulk gen-sys parity + CPU parity PASS at L1; delivery-complete realtime (+24–26 pp) | BOTH flips NO (2026-07-19): named blocker = the c3-1200B stream-collapse rep class (3/10, p50 in seconds) — **ATTRIBUTED 2026-07-19 (`diag/unified-collapse`): not the decoder; the A\*-anchor defect + the family-level transient-amplification response (COLLAPSE ATTRIBUTION)**; M\* knee UNREACHABLE behind two anchor defects | it is the DESTINATION: when the anchor repair + overload-shedding policy land and the battery re-runs, it takes the RLC family; streaming retirement is a separate, harder gate |
 
 (The block RaptorQ pipeline remains §15's other knob, untouched; the
 Full-Benchmark-Re-Run showed its lossy completion is recovery-bound and
@@ -246,13 +246,24 @@ carries its gating decision.
 2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
    now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
    next C7 lever after flow control. (#84/#86)
-3. **Unified-realtime c3-1200B stream-collapse attribution** — candidates:
-   EVICT-window × trailing-span repair interaction under sustained bursts,
-   decode/delivery backlog, retention pressure. THE `RWM_UNIFIED` blocker;
-   closing it re-opens flip (a), then legacy-RLC removal. (#61)
-4. **Legacy-RLC realtime total-wedge class** — 2/10 reps with no stream
-   summary in 30 s at the same c3-1200B cell; a distinct failure class from
-   the unified collapse. (#61)
+3. **Unified-realtime c3-1200B stream-collapse attribution** — **DONE
+   2026-07-19 (`diag/unified-collapse`, "Unified Decoder" → COLLAPSE
+   ATTRIBUTION):** reproduced at a new L0 sustained-stream rung; NOT a
+   decoder mechanism (global RREF empty throughout, decode µs-class — the
+   L-growth/re-elimination/allocation candidates refuted by trace); the
+   class is a whole-process-transient amplification shared by BOTH
+   RLC-family realtime arms (reliable-in-order backlog + post-stall
+   anchor poisoning: BtlBw ×13, cwnd ×16, RTT ×3), while the streaming
+   arm sheds ~1% of messages and stays flat. Two unified anchor defects
+   NAMED: A\* pinned at 1 for ~10 s (cold 2-s EWMA rate anchor ⇒ realtime
+   FEC inert, ru/rf ≈ 9%) and flood-poisonable A\*. Blocker decomposed
+   into named fixes A (anchor repair) + B (estimator clock-gap hygiene) +
+   C (δ-honest overload shedding); flip (a) re-opens on A(+B) + battery
+   re-run. (#61)
+4. **Legacy-RLC realtime total-wedge class** — **SAME ROOT as item 3
+   (measured at L0: the legacy-rlc arm shows the identical episodic class
+   with no unified code in the loop; one class, two terminal behaviors).**
+   Closes with item 3's fixes. (#61)
 5. **The M\* anchor pair + knee re-run** — (i) RTprop floor under-read (a
    DEFAULT_SRTT-class 50-ms seed surviving inside the 10-s min-window at a
    200-ms cell), (ii) the static `(pipeline+2)·G` win backstop (not
@@ -639,8 +650,12 @@ daps loopbacks — all green (`/home/vibe/unified61/suites.log`).
 **Named follow-ups (not built, this task is measurement):** (1)
 unified-realtime c3-1200B stream-collapse class — attribution (candidates:
 EVICT-window × trailing-span repair interaction under sustained bursts,
-decode/delivery backlog, retention pressure); (2) legacy-RLC realtime
-total-wedge class (2/10 reps, no summary in 30 s, same cell); (3) the M\*
+decode/delivery backlog, retention pressure) **[ATTRIBUTED 2026-07-19 at
+L0 — see COLLAPSE ATTRIBUTION below: NOT the decoder; a
+transient-stall-amplification class shared with legacy-RLC]**; (2)
+legacy-RLC realtime
+total-wedge class (2/10 reps, no summary in 30 s, same cell) **[same root
+family, see below]**; (3) the M\*
 L1 anchor pair — RTprop floor under-read (50-ms seed inside the 10-s
 min-window) and the static (pipeline+2)·G win backstop — fix, then re-run
 the knee; (4) the r200 M\*-arm ~1–2 Mbit bookkeeping cost; (5) c7 US
@@ -648,6 +663,133 @@ receiver +3–5% CPU. Honest scope: batteries 1–2 measure the RLC family at
 REALTIME δ where the streaming default was never displaced; the bulk/auto
 window-reliable RLC paths (unified's other half) passed every gate they
 were given (parity + CPU + byte-identity).
+
+### COLLAPSE ATTRIBUTION (2026-07-19, roadmap item 3, branch `diag/unified-collapse`) — the c3-1200B stream-collapse class REPRODUCED at L0 and attributed: NOT a decoder mechanism; a whole-process-transient amplification class shared by BOTH RLC-family realtime arms, with two NAMED unified-specific anchor defects found on the way
+
+**Instrument (this branch).** A new L0 sustained-stream rung
+(`tests/unified_stream_l0.rs`): the L1 tail_matrix stream shape (50 msg/s ×
+20 s × 1200 B, messages split into ≤508-B chunks like the L1 TUN-MTU-clamped
+inner TCP) driven through TWO real engines (memory TUNs, real QUIC on
+127.0.0.1) under the transport netem shim at the EXACT L1 c3 params (20 Mbit,
+20 ms one-way, 5 ms jitter, GE p=2 q=40 — `lib.sh scenario_params` ==
+`l0_scenario("c3")`), per-message latency at the server's in-order delivery
+point, per-message JSON + p50/p90/p99. Plus DIAG-gated instrumentation (all
+default-off, shipped path untouched): decoder-internal `diag_stats()` (active
+RREF rows L, widest span, coeff bytes) in the RWM_FDIAG report + per-call
+`add_symbol` max; a `[SPAN]` sender trace (live A\*/Δ, TaperBudget owed,
+repair rate/debt, retransmit-buffer depth); shim transit counters
+(enq/GE-drops/tail-drops/quinn-send ok/err/queue depth) + quinn datagram
+frame rx/tx at both endpoints — the "where did the packets die" layer the #85
+lesson demands.
+
+**Provenance.** Local dev box (Windows 11, 16 cores — its own hardware era;
+no cross-era number is compared, all arms same-session same-binary). Test
+binary `unified_stream_l0-30acebbd33c901e0.exe` sha256 `f114612b28dcebe3…`
+built from this branch off 729327e; arms are env-selected per process
+(`RWM_UNIFIED=1` / `RWM_L0_BACKEND=rlc` / unset), liveness echoes recorded
+per rep (backend selection, "unified global decoder", "span law ACTIVE",
+netem cfg+seed). Logs: session scratchpad `bat1/` (14×2 reps), `bat2/`
+(stream ×6), `ib-*` (exposure-controlled interleaved 3-arm ×4),
+`ctrace-1`/`ttrace-9` (instrumented collapse reps), `trace-build-*` (A/B/C
+under build interference).
+
+**Reproduction (L0, MEASUREMENT DISCIPLINE: same binary, interleaved arms,
+seeds recorded).** 14 seeds × {unified, rlc} + 6 × stream at the c3-1200B
+cell: the class reproduces with the L1 battery's structure — episodic
+1–2.6 s TOTAL delivery outages, chained 3–5 deep in the heavy reps (p90
+2.5–3.1 s): unified 3/14 outage-class reps (s42 p90 3063 ms ×5 outages, s7
+2486 ms ×4, s1 mild ×1), legacy-rlc 1/14 (s42 p90 3043 ms ×5 outages + 22
+lost messages = the L1 wedge signature); stream arm 0/6 outage-class but
+sheds 5–13 messages/rep. The class is
+seed-NONdeterministic (same seed re-runs clean) and concentrates where host
+background load was present; a concurrent `cargo build` (memory-bandwidth +
+I/O interference, Defender-scan class) reproduces it ON DEMAND with the same
+family split (exposure-controlled interleaved battery: RLC-family arms p90
+0.45–3.0 s in affected reps; stream arm p90 ≤ 400 ms in EVERY rep, p99 ~1 s,
+loses ~1% of messages instead).
+
+**The trace that names the mechanism (collapse rep vs clean rep,
+instrumented).** During a collapse episode the transit counters show the shim
+forwarder (a timer-driven task) FROZEN in BOTH engines simultaneously —
+`enq` advancing, `ok` flat, queue 0→174 over ~1 s — i.e. a WHOLE-PROCESS
+scheduling/timer stall (the trigger is outside the transport), followed by a
+release flood. The transport's RESPONSE to that transient is the collapse
+class, and it is FAMILY-level:
+
+- **The decoder is exonerated.** Throughout collapse AND clean reps the
+  unified global RREF is EMPTY: `rows=0, max_span=0, coeff_kb=0` in every
+  FDIAG sample; per-arrival `add_symbol` averages 6–11 µs (max 13.9 ms
+  once, during the stall itself — scheduling, not compute; total decode
+  compute 12–21 ms per 20-s rep). Candidates (a) global-closure L-growth,
+  (b) span-law re-elimination storm, (d) allocation churn: REFUTED by
+  direct observation at the collapse cell.
+- **What actually happens:** the reliable-in-order EVICT pipeline queues
+  the ENTIRE stream behind post-stall recovery (cumulative ack frozen
+  ~1.3 s, retransmit buffer 15→120), and the post-stall ack flood POISONS
+  the measured anchors — delivered-rate windowed-max reads 63,536 sym/s
+  (≈260 Mbit on a 20 Mbit link), cwnd 169→2,740, EWMA RTT 61→176 ms —
+  extending the disturbed regime; chained episodes follow. The streaming
+  arm under the SAME transient force-skips holes past its reorder horizon
+  (loses ~1% of messages) and its p90 never moves: the two responses are
+  the two (δ, ρ) semantics, and the RLC family's realtime path currently
+  has the WRONG one for small δ (it serializes the whole stream behind
+  recovery — a δ-contract violation under overload).
+- **Legacy-RLC same-root datum (roadmap item 4): YES, same family.** The
+  legacy-rlc arm shows the identical episodic class at L0 (chained outages,
+  p90 3.0 s, plus lost chunks — the L1 total-wedge signature), with NO
+  unified code in the loop. The L1 pair (unified 3/10 collapse; rlc 2/10
+  wedge) is one class with two terminal behaviors, not two roots.
+- **L1 linkage (inference, honestly scoped).** The L1 trigger was not
+  directly observed (no transit counters ran there), but the structure
+  transfers: the L1 stream arm's own per-rep maxima at the same cells
+  (3–11.5 s in completed, non-collapse reps) show the transient episodes
+  were present in ALL L1 arms; only the RLC-family arms converted them
+  into p50-seconds/wedges. At L1 the inner TCP adds the escalator L0
+  lacks (RTO backoff on force-delivered holes), which is the plausible
+  gap between L0's p90-seconds and L1's p50-seconds. CONFIRMATION
+  PROTOCOL (queued for the next VM window): rerun tail_matrix c3-1200B
+  with per-rep host-steal sampling (/proc/stat steal) + these transit
+  counters; verdict = collapse reps coincide with stall episodes.
+
+**Two unified-specific defects FOUND (named, not the collapse cause).**
+(i) **The A\* rate anchor is cold and slow:** `est.throughput()` is an
+α=0.125 EWMA fed every 2 s from the send rate, so at the c3-1200B realtime
+cell A\* = clamp(rate·D, 1, W) sits at **1** for the first ~10 s of every
+stream (measured in every [SPAN] trace; the data-direction arm reaches 4–7
+only at t≈11 s). A width-1 "trailing span" is a duplicate of one
+near-frontier symbol: the quantity law's r (cod/src 0.3–0.5) is consumed as
+near-pure overhead — repairs_useful/repairs_fed ≈ 9% — and recovery is
+ARQ-bound (FDIAG: SOURCE-resolved holes outnumber DECODE-resolved ~4:1 at
+~40 ms each). The small-δ machine's FEC is therefore largely INERT at
+exactly the cell the flip gate measured. (ii) **The anchor is
+flood-poisonable:** post-stall A\* spikes 1→38 off the corrupted rate
+sample. Both are the same anchor-defect family as the #61 M\* findings
+(RTprop floor under-read; delivered-rate warm-up loop).
+
+**Fix status: none built (gate honored — nothing small+obvious).** The
+trigger is environmental; the amplifiers are design-level. Named designs:
+(A) **A\* anchor repair** — seed/blend the span-law rate from the
+instantaneous send rate (windowed-max, §16.15 statistic) instead of the
+cold 2-s EWMA, and discard samples spanning a detected monotonic-clock gap;
+gates the L1 tail-battery re-run. (B) **Post-stall estimator hygiene** —
+same clock-gap guard for RTT/throughput/BtlBw samples (prevents the ×13
+BtlBw / ×16 cwnd poisoning). (C) **The δ-honest overload policy** — under
+backlog beyond H the realtime RLC path should shed like the streaming arm
+(EVICT means evict), not serialize; this is the structural §16.20 item and
+the real gate for flip (a). (D) The L1 confirmation protocol above.
+
+**Flip readiness.** `RWM_UNIFIED` stays DEFAULT OFF. The blocker is now
+ATTRIBUTED and decomposed: not decode cost, but (i) the A\*=1 anchor defect
+(fix A) making realtime FEC inert, and (ii) the family-level
+transient-amplification response (fix C + estimator hygiene B). The flip
+battery re-run is gated on A (+B); C is the streaming-retirement-class
+question and can gate separately. All instrumentation added this branch is
+DIAG-gated and the shipped path is byte-identical with the knobs unset.
+
+**Suites (final tree, this branch, local box, all diag knobs unset):**
+lib 332 (+2 ignored); math full 59/19/22/4/4/3/25 (incl. PART 7);
+gate_suite 15/15 release (235.7 s); mtu_blackhole_wedge 2/2; perf_loopback
+8/8; fmtcp/copa_sole/daps loopbacks 1/1 each — all green.
 
 ## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check MEASURED 2026-07-19 (`meas/percap-battery`): wire-consumption CONFIRMED (cod/src 0.06–0.09 → 0.32–0.35), the −22 pp degradation REPRODUCED on the real substrate (−25/−19 pp, both seeds) — the entanglement attribution stands, the flip stays closed. (task #85, branch `fix/taper-emission`)
 

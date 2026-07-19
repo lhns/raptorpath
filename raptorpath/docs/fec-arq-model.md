@@ -8535,6 +8535,51 @@ settled:
   Any future streaming-retirement case must engage with this datum, not
   only with unified-vs-streaming.
 
+#### 16.20.8 The collapse class attributed (2026-07-19) — the decoder is exonerated; the blocker is an anchor defect plus a δ-contract violation under overload
+
+The §16.20.7 blocker — the unified-realtime 3/10 stream-collapse class at
+c3-1200B — was reproduced at a new L0 sustained-stream rung (the L1 stream
+shape over two real engines under the transport netem shim at the exact c3
+parameters) and traced with decoder-internal, sender-span, and
+transit-layer instrumentation (goal-gate "Unified Decoder" → COLLAPSE
+ATTRIBUTION for the full evidence). Three structural findings:
+
+1. **The global RREF's realtime cost model is confirmed at the wire — by
+   emptiness.** In every rep, collapse or clean, the unified decoder holds
+   ZERO coded rows at essentially every sample: trailing-span repairs
+   arrive solvable (their members already delivered ⇒ the k=0 fast path)
+   or deliver immediately; per-arrival decode is 6–11 µs, total decode
+   compute 12–21 ms per 20-s stream. The feared small-δ failure modes of a
+   global closure — active-set growth under a stalled frontier,
+   re-elimination storms, allocation churn — do not occur, because span
+   freshness (§16.20.3) keeps the matrix empty. The collapse is not decode.
+
+2. **A span law is only as good as its anchors — and A\* joins M\* in the
+   anchor-defect family.** The A\* = clamp(rate·D, 1, W) rate anchor is a
+   2-s-interval, α=0.125 EWMA of the send rate: at a 150-sym/s realtime
+   stream it holds A\* = 1 for the first ~10 s (a width-1 span is a
+   duplicate of one near-frontier symbol ⇒ repairs_useful/repairs_fed
+   ≈ 9%, recovery ARQ-bound), and the post-transient ack flood poisons it
+   (A\* 1→38; delivered-rate ×13 over the link rate; cwnd ×16). §16.20.7's
+   M\* verdict already named the RTprop floor and warm-up loop; the
+   realtime limit inherits the same disease. The derivation stands; the
+   MEASUREMENT of its inputs is the open engineering.
+
+3. **The collapse class itself is family-level and semantic, not
+   algorithmic.** A whole-process transient (~1 s scheduler/timer stall —
+   observed directly via transit counters freezing in both engines at
+   once) is amplified by BOTH RLC-family realtime arms into chained
+   multi-second whole-stream backlog: the reliable-in-order EVICT pipeline
+   serializes every message behind post-stall recovery while poisoned
+   anchors extend the disturbed regime. The streaming two-layer arm under
+   the SAME transient sheds ~1% of messages past its reorder horizon and
+   its p50/p90 never move. That is the δ-contract stated operationally:
+   at small δ, overload must be shed, not serialized — the property the
+   streaming machine has and the RLC realtime parameterization currently
+   lacks. Flip (a) is therefore gated on the anchor repair (+ clock-gap
+   estimator hygiene) and on giving the unified small-δ machine an
+   explicit overload-shedding policy, not on any decoder work.
+
 ---
 
 ## 17. The Measured Regime Map (2026-07-19)

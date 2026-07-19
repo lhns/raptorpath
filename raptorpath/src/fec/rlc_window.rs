@@ -563,6 +563,31 @@ impl WindowDecoder for RlcWindowDecoder {
     fn repairs_useful(&self) -> u64 {
         self.repairs_useful
     }
+
+    /// diag/unified-collapse (roadmap item 3): legacy-arm counterpart of the
+    /// unified decoder's snapshot (pivot rows / widest row / state sizes).
+    fn diag_stats(&self) -> Option<String> {
+        let (mut max_span, mut coeff_n) = (0usize, 0usize);
+        for r in self.pivots.values() {
+            let span = r
+                .coefficients
+                .keys()
+                .next_back()
+                .zip(r.coefficients.keys().next())
+                .map(|(hi, lo)| (hi - lo + 1) as usize)
+                .unwrap_or(0);
+            max_span = max_span.max(span);
+            coeff_n += r.coefficients.len();
+        }
+        Some(format!(
+            "rows={} max_span={} coeff_n={} recovered={} seen={}",
+            self.pivots.len(),
+            max_span,
+            coeff_n,
+            self.recovered.len(),
+            self.seen.len()
+        ))
+    }
 }
 
 #[cfg(test)]
