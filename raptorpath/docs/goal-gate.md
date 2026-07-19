@@ -223,7 +223,7 @@ Flip decision: all of 1–4 green ⇒ RWM_UNIFIED default ON in a follow-up
 session and the legacy machines are scheduled for removal; any red ⇒ the
 specific property that blocks unification is the deliverable.
 
-## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check queued. (task #85, branch `fix/taper-emission`)
+## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check MEASURED 2026-07-19 (`meas/percap-battery`): wire-consumption CONFIRMED (cod/src 0.06–0.09 → 0.32–0.35), the −22 pp degradation REPRODUCED on the real substrate (−25/−19 pp, both seeds) — the entanglement attribution stands, the flip stays closed. (task #85, branch `fix/taper-emission`)
 
 **The bug (located by #46, fixed here).** Plain-mode proactive repair accrues
 emission debt from the taper density τ(t) = r·q̂(1−q̂)^t (net/mod.rs) and the
@@ -344,6 +344,46 @@ confirmed on the real substrate and the solvable-span follow-up is the
 named next task; (c) r* arms tied at the wire (spare-cap compression).
 A fix-ON arm that IMPROVES delivered reliability at L1 would falsify the
 entanglement attribution and reopen the default-flip question.
+
+### L1 spot-check RESULTS (VM 10.1.5.16, 2026-07-19 03:59–04:37 UTC; binary sha256 3654214ef4ca8eb3… = commit b317983 on `meas/percap-battery`; `tools/l1/perf_rwm_c.sh c3 c3 realtime 100000 20 single`, RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=5, arms interleaved per rep ×8, seeds 42+7; driver `/home/vibe/rstar2_battery.sh`, logs `/home/vibe/percap85/c3rt-s{42,7}.log` + per-run sender `diag-*.log`; harness commit adds the RWM_TAPER_R forward — the knob was not previously plumbed)
+
+| arm (RWM_TAPER_R × RWM_RSTAR_TAIL) | s42 delivered (per-rep /20) | s7 delivered (per-rep /20) | cod/src s42 | cod/src s7 |
+|---|---|---|---|---|
+| off × legacy (LN)   | 110/160 = **68.8%** [15 13 13 17 13 15 13 11] | 85/120 = **70.8%** [14 15 13 13 15 15] (n=6) | 0.064 | 0.072 |
+| off × corrected (TN)| 122/160 = **76.2%** [13 16 12 17 18 15 16 15] | 44/60 = **73.3%** [15 14 15] (n=3) | 0.070 | 0.091 |
+| ON × legacy (LB)    | 61/140 = **43.6%** [12 7 6 8 9 9 10] (n=7) | 41/80 = **51.2%** [11 10 11 9] (n=4) | 0.323 | 0.349 |
+| ON × corrected (TB) | 70/160 = **43.8%** [10 8 7 9 9 8 11 8] | 44/80 = **55.0%** [10 13 11 10] (n=4) | 0.353 | 0.321 |
+
+All three EXPECT items land, on both seeds:
+
+- **(a) The wire consumes r as computed — CONFIRMED at L1.** cod/src
+  0.064–0.091 (fix OFF, the #46 inertness reproduced on the real netem
+  substrate) → 0.321–0.353 (fix ON), ~4–5×, inside the L0-predicted
+  0.2–0.35 envelope; `budget-conserving taper emission ACTIVE` echo on
+  every ON run, absent on every OFF run. This is the only claim netem-L1
+  can prove (gemodel = GE; the heavy-tail rung stays the L0 shim).
+- **(b) Consuming r DEGRADES delivered reliability — the L0 −22 pp
+  reproduced on the real substrate**: −25.2 pp pooled at s42
+  (72.5→43.7 %), −19.0 pp at s7 (71.4→53.1 %); ≈2.5–3× the per-rep
+  spread (σ_rep ≈ 1.8–2.1 objects), every ON rep ≤ every OFF rep's mean.
+  **The leading-window (unsolvable-span) entanglement attribution is
+  CONFIRMED, not falsified — the RWM_TAPER_R flip stays CLOSED** and the
+  solvable-span emission follow-up remains the named next task
+  (§16.20.4's rescope of the −22 pp to the streaming family stands).
+- **(c) r* arms tied at the wire — spare-cap compression confirmed**:
+  legacy-vs-corrected Δcod/src ≤ 0.03 in both emission modes (controller
+  probe says 1.8×); delivered Δ = +7.4 pp (s42) / +2.5 pp (s7) in favor
+  of corrected in the OFF arms — ≤ ~0.8 σ_rep, inside noise (recorded,
+  not claimed).
+
+**Verdict.** `RWM_TAPER_R` stays DEFAULT OFF; #46's quantity defect
+remains fixed-as-mechanism; realizing r* at the realtime plain wire
+remains blocked by the two named binders (spare-cap compression,
+leading-window span) — unchanged by L1, now with the substrate's
+signature on it. Caveats: seed-7 lost 15/32 invocations to the known
+topo-ping double-abort (TN kept only n=3 reps — its per-rep values are
+tight and agree with s42; no captured result discarded); zero lost at
+s42 except one LB invocation.
 
 ## r* Bursty-Loss Provisioning (2026-07-13) — the GE 2-4x under-provisioning FIXED: r* now provisions against the receiver's MEASURED window loss-mass quantile (paper §8.4.1); oracle-validated on the #43 real traces (feasible-cell worst residual 2.88x → 1.41x, GE control tracks §8.7 exact, heavy-tail synthetic 5.1x-miss → 0.99x-hit); shipped default RWM_RSTAR_TAIL=1 (branch `feat/rstar-bursty`, task #46)
 
@@ -7661,7 +7701,7 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
 
-## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN, **L1 pending — the C7/C8 verdict is NOT claimed** (task #86, branch `feat/store-percap`, NO-VM session)
+## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`)
 
 **Why (proven by #84).** The multipath binder was flow control: the
 per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
@@ -7843,6 +7883,129 @@ EVERY arm.
 6. **VM hygiene**: `/tmp/rwm-vm.lock`, rp-* netns only, `pkill -x
    raptorpath`, logs + driver script under `/home/vibe/percap/`.
 
+### L1 RESULTS (VM 10.1.5.16, 2026-07-19 03:19–04:00 UTC; binary sha256 3654214ef4ca8eb3… = commit b317983 on `meas/percap-battery` (= 8ef5ff1 + the RWM_TAPER_R harness-forward), SAME binary every arm; 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42+7, `RWM_DIAG=1` on every arm; driver `/home/vibe/percap_battery.sh`, logs `/home/vibe/percap/{sc2,sc3,c7,c8}-s{42,7}.log` + per-run `diag-*.log`; lscpu in every log header: E5-2650 v3, aes+avx2+pclmulqdq — post-divide hardware, compared only against post-divide numbers)
+
+**Singles — the N=1 identity control (flag must be inert) + the same-session
+Σ denominators:**
+
+| cell | PB (σ_s) | PBP (σ_s) | C1 (σ_s) | C1P (σ_s) |
+|---|---|---|---|---|
+| sc2 s42 | 78.56 (3.48) | 79.38 (1.85) | 68.78 (1.17) | 68.89 (1.01) |
+| sc2 s7 | 76.25 (2.40, n=7) | 77.02 (3.28) | 66.36 (2.82) | 67.16 (0.90, n=5) |
+| sc3 s42 | 15.77 (0.29) | 15.56 (0.21) | 11.72 (0.55) | 11.93 (0.50) |
+| sc3 s7 | 15.70 (0.36, n=6) | 15.42 (0.74, n=7) | 12.29 (0.28, n=6) | 12.26 (0.29, n=7) |
+
+Identity HOLDS everywhere (every Δ ≪ σ_s; the percap law provably computes
+nothing at N=1 and measures that way). Same-session ceilings: **Σ-PB: C7 =
+157.1/152.5, C8 = 94.3/92.0; Σ-C1: C7 = 137.6/132.7, C8 = 80.5/78.7.**
+
+**Duals (mean (σ_s) [per-run values]; Σ-ratio = arm / same-family Σ):**
+
+| cell | arm | mean (σ_s) [runs] | Σ-ratio |
+|---|---|---|---|
+| c7 s42 | PB | 104.62 (18.89) [109.4 111.4 110.7 59.8 99.4 115.5 116.6 114.2] | 0.67 |
+| | PBS | 138.52 (8.46) [127.8 124.9 138.6 143.1 136.4 145.9 148.7 142.8] | 0.88 |
+| | PBP | **136.50 (7.75)** [133.7 139.8 133.8 146.3 132.8 132.2 125.1 148.2] | **0.87** |
+| | C1 | 80.99 (5.92) [80.2 79.0 77.6 76.6 84.5 72.3 89.4 88.3] | 0.59 |
+| | C1P | **92.27 (6.05)** [100.1 100.5 89.4 84.0 91.1 96.0 86.6 90.5] | **0.67** |
+| c7 s7 | PB | 104.99 (7.50, n=7) [117.8 97.8 103.7 104.1 100.0 112.6 99.0] | 0.69 |
+| | PBS | 128.87 (29.93, n=4) [150.3 140.6 140.0 84.5] | 0.85 |
+| | PBP | **147.38 (4.79, n=6)** [148.1 149.2 147.2 153.1 148.1 138.6] | **0.97** |
+| | C1 | 81.72 (4.70) [83.9 87.0 84.2 80.6 78.5 82.1 85.3 72.2] | 0.62 |
+| | C1P | **103.13 (4.36, n=7)** [100.7 102.3 104.3 107.3 105.7 94.8 106.8] | **0.78** |
+| c8 s42 | PB | 56.56 (10.53) [62.9 46.1 74.9 44.7 48.1 57.5 53.6 64.7] | 0.60 |
+| | PBS | 62.84 (13.17) [69.1 51.2 74.5 66.2 41.7 53.4 81.6 65.1] | 0.67 |
+| | PBP | **37.00 (2.10)** [34.9 33.9 38.8 37.0 38.3 39.0 35.2 39.0] | **0.39 REGRESSION** |
+| | C1 | 55.76 (3.50) [49.3 55.7 59.2 55.6 55.4 52.8 60.2 57.8] | 0.69 |
+| | C1P | **34.84 (5.84)** [28.8 28.0 44.6 36.6 40.9 36.3 31.1 32.4] | **0.43 REGRESSION** |
+| c8 s7 | PB | 44.43 (10.16, n=6) [47.4 39.2 48.9 54.9 49.7 26.5] | 0.48 |
+| | PBS | 67.59 (8.57) [61.2 66.3 72.3 79.1 66.0 61.4 79.1 55.6] | 0.74 |
+| | PBP | **35.08 (1.35, n=5)** [36.4 34.6 35.9 33.0 35.6] | **0.38 REGRESSION** |
+| | C1 | 55.87 (3.86) [49.2 52.5 59.8 57.6 55.9 54.6 56.1 61.2] | 0.71 |
+| | C1P | **35.16 (3.96)** [36.6 33.7 30.3 39.2 35.4 29.4 36.0 40.8] | **0.45 REGRESSION** |
+
+**Reading, effect-by-effect (vs the recorded noise floor):**
+
+1. **c7 symmetric — percap does the pooled fix's job, or better.**
+   PBP−PB = +31.9/+42.4 (1.7–5.7× the baseline σ_s, both seeds same
+   sign). PBP vs PBS: statistical tie at s42 (−2.0, ≪ σ), +18.5 at s7 —
+   where PBS's n=4 includes an 84.5 collapse run (the PBS bimodal mode)
+   while PBP's per-run spread is tight BOTH seeds (σ 4.8–7.8, no run
+   below 125): the per-path accounts remove the pooled arm's collapse
+   mode at c7. **PBP c7-s7 = 147.4 = 0.97×Σ — the ≈1.0×Σ target touched**
+   (0.87 at s42). Copa: C1P−C1 = +11.3/+21.4 (≈2–4.5× σ_s) — percap
+   extends the #84 pool unlock to Copa's c7 as well.
+2. **c8 heterogeneous — the cell this lever was BUILT for — is a decisive
+   REGRESSION under both CC families**: PBP −25.8/−32.5 vs PBS
+   (2.0–3.8× the worst arm σ_s, both seeds), C1P −20.9/−20.7 vs C1
+   (3.6–5.2× σ_s, both seeds). PBP/C1P σ COLLAPSES (1.4–5.8) — the arm
+   is stably parked at ~35 Mbit/s: a mechanism, not noise.
+   The C8 0.9×Σ target is not approached; the #84 PBS bar (0.67/0.74 Σ
+   this session) stands.
+3. **The ledger's C1P prediction ("percap ≈ inert under Copa — its C8 is
+   cwnd-bound") is REFUTED in both directions**: +21 at c7, −21 at c8.
+   The percap admission/placement structure binds BELOW Copa's cwnd law.
+
+**Forensics — the c8 collapse mechanism, from the sout= DIAG probes
+(per-run `diag-c8-*` logs):** in PBP-c8 BOTH accounts sit pegged at their
+caps (median out/cap = 1.00–1.05; caps knee-clamped: fast always 2048,
+slow median 1531 — the documented plain-anchor over-read means the derived
+differentiation mostly never engages in PB arms, exactly the
+interpretation guard's warning), `paused=36%` mean (PB 10%, PBS 22%), and
+the app-echo RTT inflates to 214–235 ms mid-run. C1P-c8 shows the SAME
+shape with honestly-derived caps (964/746 from cwnd_i): both accounts
+pegged, `paused=30%`, slow-path echo RTT spikes to 811 ms, goodput ~10
+mid-run. The named binder: **the cap-full placement redirect
+(`percap_place_path`) sends fast-path overflow to the account with
+RELATIVE headroom — at c8 that is the slow path, which it fills to its
+full cap: ~2048 symbols parked on a 15.7 Mbit path is ≈1.3 s of store
+dwell**, so every slow-path hole recovers ~13× slower than the fast
+path's, the in-order frontier serializes behind it, the echo-RTT feedback
+(dwell → echo → cap) holds the account open, and the all-full admission
+gate then pauses intake 30–36 % of the time. The smoke probe recorded the
+over-commit directly (`sout=1873/750` — out 2.5× the shrunk cap). The L0
+c8-like PC>SP ranking did NOT transfer: the L0 shim (drops before quinn,
+~10 ms echo) never let the slow account accumulate L1's 1.3 s dwell — L0
+was mechanism evidence only, as its own caveat said.
+
+**CPU (mean per 25 MB invocation, recv·send):** c7 PBP 1.93·1.59 (s42) /
+1.86·1.58 (s7) at 136–147 Mbit vs PB 2.07·1.59 at 105 — CPU per bit still
+FALLING at the higher rate. Per the #84 prediction: PBP c7-s7 lands at
+~147 ≈ the ~150 threshold — **receiver/sender task parallelization is now
+LIVE as the next c7 lever** (noted, NOT built). c8 PBP's higher
+per-invocation CPU (2.74–3.09 recv) is run-length, not rate (25 MB at
+~36 Mbit ≈ 5.5 s wall; utilization ~0.5 core).
+
+**VERDICT + FLIP DECISION.** PERCAP ≥ STORE_PATHS fails decisively at c8
+— the evidence is clean on both seeds and it is a regression in the
+lever's own target cell. **`RWM_STORE_PERCAP` stays DEFAULT OFF** (shipped
+tree byte-identical; no code change). What the battery DID establish:
+(i) the per-path account structure at SYMMETRIC cells is at least the
+pooled fix without its collapse mode (and touches Σ at s7); (ii) the c8
+binder is now named at the gauge level — not cap sizing but the
+**cap-full redirect + all-full admission composition**, which converts
+"the slow account is never starved" into "the slow path is always
+bloated". **Named follow-up (NOT built, per measurement discipline):
+`percap-redirect-guard` — bound the redirect by the target account's
+absolute dwell (redirect only while cap_i·dwell_i ≤ ~1 recovery round,
+i.e. a delay-aware redirect in the DAPS §16.9 sense), and/or let the
+slow account's cap bind by dwell (cap_i ≤ rate_i × recovery-bound) so a
+c3-class account caps at its recovery budget rather than the 2048 knee.**
+Re-battery c8 before any flip talk.
+
+**Controls / discipline:** mechanism-liveness audit over all 265
+result-bearing runs: every PBP/C1P run has the `per-path outstanding
+accounting ACTIVE` echo, every PBS run the `path-scaled` echo, every
+PB/C1 run has NEITHER (0 mismatches). 23 invocations (all seed-7)
+produced no result — the known seed-7 topo-ping double-abort (RETRY
+recorded per log); no captured result was discarded; c7-s7 PBS kept only
+n=4 (its mean is quoted with that caveat; its 3 non-collapse runs match
+#84's 142.1). Zero DNFs in captured runs. Driver quirk recorded: the
+LIVENESS log line doubles a "0" count on echo-absent runs (`grep -c ||
+echo 0`); the audit parsed blocks, not that line. Session drift vs #84
+(PB-C8 64.9/55.9 → 56.6/44.4; PBS-C8 0.80/0.79Σ → 0.67/0.74Σ) is why all
+verdicts above are same-session interleaved comparisons only.
+
 ### Controls / caveats
 
 - Shipped default byte-identical: env unset ⇒ no charge, no gate change,
@@ -7867,3 +8030,9 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix untouched); `perf_loopback`
 — all release. Shipped default byte-identical: env unset ⇒ the percap
 block computes nothing, the legacy dyn-cap expressions and the tx_paused
 gate are verbatim pre-commit.
+
+L1-battery session re-run on the `meas/percap-battery` tree (main 8ef5ff1
++ the RWM_TAPER_R harness forward; no binary-code change, NO default
+flipped): lib 332/332, math 136 green, `gate_suite` 15/15 release,
+`mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, the three loopbacks 1/1
+each — all green 2026-07-19.

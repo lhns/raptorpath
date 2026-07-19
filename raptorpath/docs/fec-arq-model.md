@@ -2016,6 +2016,14 @@ entanglement), making it recovery-inert within realtime's reorder horizon
 differential at the same rate recovers over half the gap). The flag stays
 default-off; the solvable-span emission follow-up and the queued L1
 re-run are specified in goal-gate "Taper Emission Fix".
+*L1 spot check (2026-07-19, c3-realtime 2×2 ×8, seeds 42+7,
+`meas/percap-battery`): the budget law is live on the real netem substrate
+(cod/src 0.06–0.09 → 0.32–0.35) and consuming r DEGRADES delivered
+reliability there too (−25/−19 pp, both seeds, ≈2.5–3× the per-rep
+spread) while the r\* arms stay wire-tied (Δcod/src ≤ 0.03) — all three
+L0 findings reproduced at L1; the leading-window entanglement attribution
+stands with the substrate's signature, and the flip remains closed
+pending the solvable-span follow-up.*
 
 **Cost and scoping (honest).** On heavy-tail channels the corrected r\* is
 large *because the contract is expensive there* — reliability against fades
@@ -8137,8 +8145,35 @@ establishes; N = 1 keeps the legacy pooled law bit-exactly. This is the
 shape that can hold a c3-shallow account at its own pipe while the
 c2-deep account deepens — the configuration no SHARED pool can express.
 Unit-tested (incl. the deep+shallow C8 conflict in miniature) and
-L0-validated at the mechanism level; the C7/C8 verdict awaits the queued
-L1 battery (goal-gate "Per-Path Outstanding Accounting").
+L0-validated at the mechanism level.
+
+**L1 verdict (2026-07-19, `meas/percap-battery`; 25 MB × 8 × 2 seeds,
+interleaved, same binary, same-session Σ denominators re-measured).** The
+per-path Little's-law story survives at the SYMMETRIC cell and fails at
+the heterogeneous one — the opposite of the design's own bet. C7: percap
+= the pooled fix or better — plain+BBR 136.5/147.4 = 0.87/**0.97** of Σ
+(the ≈1.0 target touched at s7), with the pooled arm's collapse mode
+absent (percap σ 4.8–7.8 vs a pooled n=4 run at 84.5), and Copa-sole c7
+gains +11/+21 over its own baseline. C8: **regression to 0.38–0.43 of Σ
+under BOTH CC families** (plain 37.0/35.1 vs pooled 62.8/67.6; Copa 34.8/
+35.2 vs 55.8/55.9; σ collapsed to 1.4–5.8 — a mechanism, not noise). The
+gauge-level forensics name the binder: both accounts peg at their caps
+(out/cap ≈ 1.0), and the cap-full placement REDIRECT — "send the overflow
+to the account with relative headroom" — fills the slow path to its full
+cap: ~2048 symbols on a 15.7 Mbit path is ≈1.3 s of store dwell, so
+slow-path holes recover ~13× slower, the frontier serializes behind them,
+the echo-RTT feedback (dwell→echo→cap) holds the account open (slow-path
+echo measured up to 811 ms under Copa), and the all-full admission gate
+pauses intake 30–36 % of ticks. Per-path admission accounting per se is
+not refuted — per-path admission **with an unguarded redirect** is: the
+redirect needs a delay-aware bound (redirect only while the target
+account's dwell stays within ~1 recovery round), or the slow cap must
+bind by dwell (cap_i ≤ rate_i × recovery budget) rather than the shared
+2048 knee. `RWM_STORE_PERCAP` stays default OFF; the C8 record remains
+the pooled path-scaled fix. One more datum: percap-c7 lands at ~147
+Mbit/s with receiver CPU still falling per bit — the §16.19 "~150
+threshold" for receiver/sender task parallelization is now the live
+frontier at the symmetric cell.
 
 ---
 
