@@ -64,6 +64,10 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    header; compare only within the same era (the 2026-07-14 HARDWARE DIVIDE:
    qemu64/SSSE3 vs passthrough E5-2650 v3 with aes+avx2+pclmulqdq). A
    cross-era comparison must name the divide.
+10. **Ops: line endings on VM sync.** A tree synced from the Windows dev box
+   (e.g. via `git archive`) can carry CRLF; the harness scripts fail or
+   misbehave under bash until converted (`dos2unix`/`sed -i 's/\r$//'`).
+   Convert before the first harness invocation (bit the #86 battery).
 
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
