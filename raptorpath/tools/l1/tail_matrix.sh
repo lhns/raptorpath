@@ -51,11 +51,13 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     done
     [[ $up -eq 0 ]] && { echo "ARM $label ${size}B: BRINGUP_FAIL"; hard_cleanup; return; }
     # Mechanism-liveness echoes (MEASUREMENT DISCIPLINE): code-family selection
-    # + decoder machine, from BOTH endpoints.
+    # + decoder machine, from BOTH endpoints.  NOTE lib.sh turns on set -e:
+    # every pipeline here must be no-match-safe (the rlc arm has no RWM_UNIFIED
+    # echo — an unguarded grep kills the whole matrix silently).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*)' \
-            | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |"
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
+            | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
     for r in $(seq 1 "$REPS"); do
@@ -69,9 +71,11 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
             >/dev/null 2>&1 || true
         wait $spid 2>/dev/null || true
         local p99 p50
-        p99=$(grep '"summary"' /tmp/tm-srv.log | tail -1 \
+        # no-summary-safe under lib.sh's set -e (a timed-out rep must be a
+        # skipped datum, not a matrix kill)
+        p99=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
               | sed -n 's/.*"p99_ms": \([0-9.]*\).*/\1/p')
-        p50=$(grep '"summary"' /tmp/tm-srv.log | tail -1 \
+        p50=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
               | sed -n 's/.*"p50_ms": \([0-9.]*\).*/\1/p')
         if [[ -n "$p99" ]]; then
             p99s+=("$p99"); p50s+=("${p50:-nan}")
