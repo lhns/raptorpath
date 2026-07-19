@@ -1838,6 +1838,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // (stays ≈ aggregate BDP because the total-in-flight FC bounds the sender).
     let reasm_bdp_on = crate::config::env_flag("RWM_REASM_BDP", false) || fmtcp;
 
+    // Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel
+    // STEP 1). RWM_RDIAG=1 samples (a) the engine task's busy fraction
+    // (1 − time-awaiting-select / wall) and (b) the inbound msg-channel depth
+    // (queued behind the single engine task). Distinguishes "the engine task
+    // is the service-rate wall" (busy→100%, q deep) from "the wall is
+    // upstream" (busy low, q empty). Probe only — no behavior change; the
+    // WeakSender adds no channel-close semantics.
+    let rdiag_probe = msg_tx.downgrade();
+
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
         // mode; codec pinned at startup, §16.4 — never rebuilt).
@@ -2277,6 +2286,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             }};
         }
 
+        // RWM_RDIAG state (see rdiag_probe above): idle time awaiting the
+        // select, message count, queue-depth samples over each ~500 ms window.
+        let rdiag_on = crate::config::env_flag("RWM_RDIAG", false);
+        let mut rdiag_idle_us: u64 = 0;
+        let mut rdiag_msgs: u64 = 0;
+        let mut rdiag_qsum: u64 = 0;
+        let mut rdiag_qmax: usize = 0;
+        let mut rdiag_qn: u64 = 0;
+        let mut rdiag_last = Instant::now();
+
         loop {
             // Periodic generation-deficit report deadline (§16.3): re-report the
             // frontier deficit ~once per SRTT even absent new data, so a sender
@@ -2368,6 +2387,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
             // ADR-0015: select between message arrival, in-order-hold expiry,
             // and shutdown signal
+            let rdiag_t0 = if rdiag_on { Some(Instant::now()) } else { None };
             let (path_id, msg) = tokio::select! {
                 msg = msg_rx.recv() => {
                     match msg {
@@ -2540,6 +2560,38 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     break;
                 }
             };
+            if let Some(t0) = rdiag_t0 {
+                rdiag_idle_us += t0.elapsed().as_micros() as u64;
+                rdiag_msgs += 1;
+                if rdiag_msgs % 16 == 0 {
+                    if let Some(s) = rdiag_probe.upgrade() {
+                        let q = s.max_capacity().saturating_sub(s.capacity());
+                        rdiag_qsum += q as u64;
+                        rdiag_qmax = rdiag_qmax.max(q);
+                        rdiag_qn += 1;
+                    }
+                }
+                let w = rdiag_last.elapsed();
+                if w >= Duration::from_millis(500) {
+                    let wall_us = w.as_micros() as u64;
+                    let busy =
+                        100.0 * (1.0 - rdiag_idle_us as f64 / wall_us.max(1) as f64);
+                    eprintln!(
+                        "[RDIAG] busy={:.0}% msgs={}/s q_avg={:.0} q_max={} cap={}",
+                        busy,
+                        rdiag_msgs * 1_000_000 / wall_us.max(1),
+                        rdiag_qsum as f64 / rdiag_qn.max(1) as f64,
+                        rdiag_qmax,
+                        rdiag_probe.upgrade().map(|s| s.max_capacity()).unwrap_or(0),
+                    );
+                    rdiag_idle_us = 0;
+                    rdiag_msgs = 0;
+                    rdiag_qsum = 0;
+                    rdiag_qmax = 0;
+                    rdiag_qn = 0;
+                    rdiag_last = Instant::now();
+                }
+            }
             match msg {
                 WireMessage::Data(batch) => {
                     let batch_send_ts = batch.send_timestamp_us;
