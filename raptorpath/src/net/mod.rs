@@ -685,6 +685,15 @@ fn copa_feed_attribute(
     }
     for (p, _n) in per_path {
         if let Some(ps) = sched.path_mut(p) {
+            // feat/copa-compete: feed the wire-level loss evidence (the
+            // pass-through shim's recorded congestion-event counter) into the
+            // competitive AIMD before the update consumes it. No-op unless
+            // RWM_COPA_COMPETE is active.
+            if crate::scheduler::copa_compete_active() {
+                if let Some((ev, _, _)) = transport.cc_passthrough_stats(p) {
+                    ps.on_wire_congestion_events(ev);
+                }
+            }
             // NOT release_in_flight here: the per-batch Ack arm keeps doing
             // the wire-level in-flight release (it covers repairs too);
             // releasing again per attributed source seq would double-count.
@@ -1169,6 +1178,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     "RWM_CC_PACE",
                     crate::scheduler::copa_wire_active()
                 ),
+                compete = crate::scheduler::copa_compete_active(),
                 "Copa queue-signal clock: wire={} (quinn packet-timed RTT; =false is the #80 app-echo arm)",
                 crate::scheduler::copa_wire_active(),
             );
@@ -5896,9 +5906,26 @@ async fn run_window_sender(
                             // (zeros when the percap law is not engaged).
                             let sout_i = percap_out.get(id).copied().unwrap_or(0);
                             let scap_i = percap_caps.get(id).copied().unwrap_or(0);
+                            // feat/copa-compete DIAG: cmp=<mode><switches>/<δ>
+                            // — mode C (competitive) or D (default), the
+                            // cumulative competitive entries, and the LIVE δ
+                            // the update law is running (== the hint base
+                            // unless competing). "-" when switching disabled.
+                            let (cmp_on, cmp_in, cmp_sw, cmp_delta, _) =
+                                p.copa_compete_diag();
+                            let cmp_s = if cmp_on {
+                                format!(
+                                    "{}{}/{:.4}",
+                                    if cmp_in { "C" } else { "D" },
+                                    cmp_sw,
+                                    cmp_delta
+                                )
+                            } else {
+                                "-".to_string()
+                            };
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{} btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -7976,6 +8003,14 @@ fn handle_control_message(
                     rtt_duration
                 };
                 path.record_rtt_sample(cc_rtt);
+                // feat/copa-compete: wire-level loss evidence for the
+                // competitive AIMD (block-mode Ack arm; the WindowAck feed
+                // path has its own call). No-op unless RWM_COPA_COMPETE.
+                if crate::scheduler::copa_compete_active() {
+                    if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
+                        path.on_wire_congestion_events(ev);
+                    }
+                }
 
                 // ADR-0003: update loss stats from ACK
                 if expected_count > 0 {

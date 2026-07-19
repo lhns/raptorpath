@@ -128,6 +128,87 @@ pub(crate) fn copa_delta_for_hint(hint: ProtocolHint) -> f64 {
     copa_delta(hint, over)
 }
 
+// --- Copa TCP-competitive mode (feat/copa-compete, task: roadmap item 6) ---
+//
+// Copa §2.2 (Arun & Balakrishnan, "Copa: Practical Delay-Based Congestion
+// Control for the Internet", NSDI 2018) defines TWO operating modes:
+//
+//   1. the DEFAULT mode (δ fixed — the paper's 0.5; here the hint-mapped
+//      δ(hint), see `copa_delta`), and
+//   2. a COMPETITIVE mode "where δ is adjusted dynamically to match the
+//      aggressiveness of typical buffer-filling schemes".
+//
+// Detection (verbatim mechanism from the paper): Copa's own dynamics empty
+// the bottleneck queue at least once every 5·RTT when only Copa flows share
+// it (paper §3). A concurrent long-running buffer-filling flow (Cubic,
+// NewReno) breaks that periodicity. "Hence if the sender sees a 'nearly
+// empty' queue in the last 5 RTTs, it remains in the default mode;
+// otherwise, it switches to competitive mode. We estimate 'nearly empty' as
+// any queuing delay lower than 10% of the rate oscillations in the last
+// four RTTs; i.e., d_q < 0.1·(RTTmax − RTTmin) where RTTmax is measured
+// over the past four RTTs and RTTmin is our long-term minimum" — the
+// RTTmax term self-calibrates the notion of "nearly empty" to the path's
+// short-term RTT variance.
+//
+// Competitive law (paper §2.2): "In competitive mode the sender varies 1/δ
+// according to whatever buffer-filling algorithm one wishes to emulate
+// (e.g., NewReno, Cubic, etc.). In our implementation we perform AIMD on
+// 1/δ based on packet success or loss" — NewReno-style: additive increase
+// of 1/δ by 1 per RTT without loss, multiplicative decrease (halve 1/δ) on
+// a loss event. "In competitive mode, δ ≤ 0.5. When Copa switches from
+// competitive mode to default mode, it resets δ to 0.5."
+//
+// Composition with the hint→δ mapping (ours): the paper's 0.5 is its
+// default-mode δ; ours is δ_base = δ(hint). The faithful generalization
+// keeps the hint as the BASE price and lets competition adapt AROUND it:
+// competitive mode enters at δ = δ_base, AIMD keeps 1/δ ≥ 1/δ_base (the
+// paper's "δ ≤ 0.5" with 0.5 → δ_base), and switch-back resets δ = δ_base.
+// The loss signal is quinn's wire-level loss detection (the pass-through
+// shim's recorded `congestion_events` — the same packet-timed layer as the
+// wire d_q clock); FEC recovery is irrelevant here because the AIMD term
+// only prices AGGRESSIVENESS against a loss-based competitor, it never
+// gates delivery (loss handling stays the FEC layer's job, §12.1).
+//
+// Hysteresis is the paper's own: the 5-RTT nearly-empty observation window
+// on both edges (a competitive-mode Copa cohort still empties the queue
+// every 5 RTT if no buffer-filler is present, so an erroneous or stale
+// switch self-corrects within a few RTTs; the paper accepts brief flaps by
+// design). Gated: `RWM_COPA_COMPETE` (default OFF) and only meaningful on
+// top of the wire-clocked signal (the δ-mapped update law is what the
+// adapted δ feeds). Env unset ⇒ every path byte-identical.
+
+/// Nearly-empty threshold coefficient (Copa §2.2: d_q < 0.1·(RTTmax−RTTmin)).
+const COMPETE_EMPTY_FRAC: f64 = 0.1;
+/// Detection window: no nearly-empty queue in the last 5 RTTs ⇒ competitive.
+const COMPETE_WINDOW_RTTS: f64 = 5.0;
+/// RTTmax lookback for the nearly-empty calibration (paper: past 4 RTTs).
+const COMPETE_RTTMAX_RTTS: f64 = 4.0;
+/// Bound on 1/δ in competitive mode: 2/δ (the coupling cap's dither term)
+/// may never exceed MAX_CWND, so the AIMD's additive growth cannot decouple
+/// cwnd from the store the way the uncapped v1 law did (see the coupling-cap
+/// note in `wire_update_cwnd`).
+const COMPETE_INV_DELTA_MAX: f64 = PathState::MAX_CWND as f64 / 2.0;
+
+/// Pure decision function for the competitive-mode gate: requires BOTH the
+/// env flag and the wire-clocked law (the δ adaptation composes with the
+/// wire update law; the legacy app-echo dynamics do not consume δ).
+fn copa_compete_from_env(compete_flag: bool, wire_active: bool) -> bool {
+    compete_flag && wire_active
+}
+
+/// Whether Copa's TCP-competitive mode switching is active for this process.
+/// Read once and cached (consulted at CopaState construction).
+pub fn copa_compete_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        copa_compete_from_env(
+            crate::config::env_flag("RWM_COPA_COMPETE", false),
+            copa_wire_active(),
+        )
+    })
+}
+
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
@@ -599,6 +680,31 @@ pub struct CopaState {
     /// Direction of the previous wire-mode update (None = no update yet /
     /// after a backoff reset).
     last_dir_up: Option<bool>,
+    // --- Copa §2.2 TCP-competitive mode (feat/copa-compete) -----------------
+    /// Mode switching enabled (RWM_COPA_COMPETE && wire mode). False
+    /// (default) ⇒ every field below is inert and the law byte-identical.
+    compete_on: bool,
+    /// The default-mode δ: the hint-mapped base price (`copa_delta`).
+    /// `delta` diverges from it only while in competitive mode.
+    delta_base: f64,
+    /// Currently in competitive mode.
+    in_compete: bool,
+    /// DIAG: competitive-mode entries (mechanism liveness counter).
+    compete_switches: u64,
+    /// Last instant a "nearly empty" queue was observed
+    /// (d_q < 0.1·(RTTmax−RTTmin), Copa §2.2). None = no sample yet
+    /// (treated as recently-empty: default mode, false-positive safe).
+    last_nearly_empty: Option<Instant>,
+    /// Monotonic (non-increasing) deque of wire RTT samples over the past
+    /// ~4 RTTs — front = RTTmax for the nearly-empty calibration. Mirror of
+    /// the `rtt_samples` min-deque; O(1) amortized.
+    compete_max_deque: VecDeque<(Instant, Duration)>,
+    /// A wire-level loss event (quinn congestion event) was recorded since
+    /// the last per-SRTT update — the competitive AIMD's MD trigger.
+    loss_since_update: bool,
+    /// Cumulative congestion-event counter last seen from the pass-through
+    /// shim (diffed, not reset — the shim counter is monotone).
+    last_cong_events: u64,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -606,17 +712,26 @@ pub struct CopaState {
 impl CopaState {
     fn new(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         let wire_mode = copa_wire_active();
+        let delta = if wire_mode {
+            copa_delta_for_hint(hint)
+        } else {
+            COPA_DELTA
+        };
         let now = clock.now();
         Self {
             wire_mode,
-            delta: if wire_mode {
-                copa_delta_for_hint(hint)
-            } else {
-                COPA_DELTA
-            },
+            delta,
             velocity: 1.0,
             dir_streak: 0,
             last_dir_up: None,
+            compete_on: wire_mode && copa_compete_active(),
+            delta_base: delta,
+            in_compete: false,
+            compete_switches: 0,
+            last_nearly_empty: None,
+            compete_max_deque: VecDeque::new(),
+            loss_since_update: false,
+            last_cong_events: 0,
             bw_samples: VecDeque::new(),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
@@ -922,6 +1037,115 @@ impl CopaState {
         });
         self.expire_old_samples(now);
         self.min_rtt = self.rtt_samples.front().map(|s| s.rtt);
+
+        // Copa §2.2 competitive-mode detector sampling (feat/copa-compete):
+        // mark the instants at which the queue is "nearly empty". Gated so
+        // the shipped/wire-only paths pay nothing.
+        if self.compete_on {
+            self.compete_note_sample(rtt, now);
+        }
+    }
+
+    /// Copa §2.2 nearly-empty detector, per wire RTT sample: maintain RTTmax
+    /// over the past ~4 RTTs (monotonic max-deque, the mirror of the min
+    /// deque above) and mark `last_nearly_empty` whenever the current
+    /// queuing delay d_q = sample − RTTmin(long-term) is below
+    /// 0.1·(RTTmax − RTTmin). The RTTmax term calibrates "nearly empty" to
+    /// the path's short-term RTT variance (paper §2.2); the DQ_FLOOR guard
+    /// keeps a zero-variance clean/idle link (RTTmax == RTTmin ⇒ threshold
+    /// 0) from reading as "never empty" — a d_q at the clamp floor IS an
+    /// empty queue.
+    fn compete_note_sample(&mut self, rtt: Duration, now: Instant) {
+        while self.compete_max_deque.back().is_some_and(|&(_, r)| r <= rtt) {
+            self.compete_max_deque.pop_back();
+        }
+        self.compete_max_deque.push_back((now, rtt));
+        let lookback = self.srtt().mul_f64(COMPETE_RTTMAX_RTTS);
+        let cutoff = now.checked_sub(lookback).unwrap_or(now);
+        while self
+            .compete_max_deque
+            .front()
+            .is_some_and(|&(t, _)| t < cutoff)
+        {
+            self.compete_max_deque.pop_front();
+        }
+        let Some(floor) = self.min_rtt else { return };
+        let rtt_max = self
+            .compete_max_deque
+            .front()
+            .map(|&(_, r)| r)
+            .unwrap_or(rtt);
+        let dq = (rtt.as_secs_f64() - floor.as_secs_f64()).max(0.0);
+        let threshold = COMPETE_EMPTY_FRAC * (rtt_max.as_secs_f64() - floor.as_secs_f64());
+        if dq <= threshold.max(DQ_FLOOR_SECS) {
+            self.last_nearly_empty = Some(now);
+        }
+    }
+
+    /// Wire-level loss evidence for the competitive AIMD (feat/copa-compete):
+    /// fed the pass-through shim's CUMULATIVE `congestion_events` counter for
+    /// this path; any advance since the last read marks a loss into the
+    /// current update window. No-op unless competitive switching is enabled.
+    fn note_congestion_events(&mut self, cumulative: u64) {
+        if !self.compete_on {
+            return;
+        }
+        if cumulative > self.last_cong_events {
+            self.loss_since_update = true;
+        }
+        self.last_cong_events = cumulative;
+    }
+
+    /// Copa §2.2 mode switching + the competitive AIMD on 1/δ, evaluated once
+    /// per SRTT update (the paper's per-RTT cadence). See the module-level
+    /// mechanism note at `copa_compete_active`.
+    ///
+    ///   - default → competitive: no nearly-empty queue observed in the last
+    ///     5 RTTs; enter at δ = δ_base (AIMD grows 1/δ from the base price).
+    ///   - competitive AIMD (NewReno-emulating, per the paper's
+    ///     implementation): loss in the window ⇒ 1/δ ← max(1/δ_base, 1/(2δ));
+    ///     otherwise 1/δ ← 1/δ + 1. Invariant: δ ≤ δ_base (the paper's
+    ///     "δ ≤ 0.5" generalized to the hint base), 1/δ bounded so the
+    ///     coupling cap's 2/δ term stays ≤ MAX_CWND.
+    ///   - competitive → default: a nearly-empty queue within the last
+    ///     5 RTTs ⇒ reset δ = δ_base (the paper's reset-to-0.5), velocity
+    ///     re-measures from 1.
+    ///
+    /// Skipped during the ramp: the startup burst's own queue is not
+    /// competitor evidence, and the velocity law is not live yet.
+    fn compete_update(&mut self, now: Instant) {
+        if !self.compete_on || self.ramping {
+            return;
+        }
+        let window = self.srtt().mul_f64(COMPETE_WINDOW_RTTS);
+        let empty_recent = match self.last_nearly_empty {
+            Some(t) => now.saturating_duration_since(t) <= window,
+            // No detector evidence yet (no RTT floor/sample): stay default —
+            // the false-positive-safe direction.
+            None => true,
+        };
+        if self.in_compete {
+            if empty_recent {
+                self.in_compete = false;
+                self.delta = self.delta_base;
+                self.velocity = 1.0;
+                self.dir_streak = 0;
+                self.last_dir_up = None;
+            } else {
+                let inv = 1.0 / self.delta;
+                let inv = if self.loss_since_update {
+                    (inv * 0.5).max(1.0 / self.delta_base)
+                } else {
+                    (inv + 1.0).min(COMPETE_INV_DELTA_MAX)
+                };
+                self.delta = 1.0 / inv;
+            }
+        } else if !empty_recent {
+            self.in_compete = true;
+            self.compete_switches += 1;
+            self.delta = self.delta_base;
+        }
+        self.loss_since_update = false;
     }
 
     /// Smoothed RTT, defaulting to 50ms before the first sample.
@@ -1047,6 +1271,10 @@ impl CopaState {
         let Some(win_min) = self.min_rtt_since_update else {
             return cwnd;
         };
+        // Copa §2.2 mode switching + competitive AIMD, per-SRTT cadence,
+        // BEFORE the direction test so the adapted δ drives this update's
+        // law (no-op unless RWM_COPA_COMPETE && wire mode).
+        self.compete_update(now);
         let above = self.queue_above_target(cwnd);
         tracing::debug!(
             cwnd,
@@ -1064,6 +1292,8 @@ impl CopaState {
             wire = self.wire_mode,
             delta = self.delta,
             velocity = self.velocity,
+            compete = self.in_compete,
+            compete_switches = self.compete_switches,
             "copa cwnd update"
         );
         // Record this window's min in the queue-floor history.
@@ -1316,6 +1546,11 @@ impl CopaState {
     fn set_hint_delta(&mut self, hint: ProtocolHint) {
         if self.wire_mode {
             self.delta = copa_delta_for_hint(hint);
+            // A hint change re-bases the competitive AIMD: drop to default
+            // mode at the new base price; the detector re-enters competitive
+            // within 5 RTTs if the buffer-filler evidence persists.
+            self.delta_base = self.delta;
+            self.in_compete = false;
         }
     }
 
@@ -1326,15 +1561,29 @@ impl CopaState {
     fn force_wire(&mut self, delta: f64) {
         self.wire_mode = true;
         self.delta = delta;
+        self.delta_base = delta;
+    }
+
+    /// Test hook: enable the competitive mode switching on top of a forced
+    /// wire mode (bypasses the process-global env caches, which other tests'
+    /// env vars could race).
+    #[cfg(test)]
+    fn force_compete(&mut self) {
+        debug_assert!(self.wire_mode, "compete rides the wire law");
+        self.compete_on = true;
     }
 
     fn reset(&mut self) {
         let clock = self.clock.clone();
         let queue_mult = self.queue_mult;
-        let delta = self.delta;
+        let delta_base = self.delta_base;
         *self = Self::new(clock, ProtocolHint::Auto);
         self.queue_mult = queue_mult; // hint survives a path reset
-        self.delta = delta; // (wire mode: the hint-mapped δ survives too)
+        // Wire mode: the hint-mapped BASE δ survives a path reset; a
+        // competitive-mode δ does not (fresh path, fresh detection — the
+        // detector re-enters competitive within 5 RTTs if warranted).
+        self.delta = delta_base;
+        self.delta_base = delta_base;
     }
 
     /// Read the current min_rtt estimate (for diagnostics/benchmarking).
@@ -1706,11 +1955,39 @@ impl PathState {
         self.copa.record_rtt(rtt);
     }
 
+    /// Wire-level loss evidence for the Copa competitive AIMD
+    /// (feat/copa-compete): pass the pass-through shim's cumulative
+    /// `congestion_events` counter for this path. No-op unless
+    /// RWM_COPA_COMPETE is active.
+    pub fn on_wire_congestion_events(&mut self, cumulative: u64) {
+        self.copa.note_congestion_events(cumulative);
+    }
+
+    /// Copa competitive-mode DIAG snapshot (feat/copa-compete):
+    /// (switching enabled, currently competitive, competitive entries,
+    /// live δ, base δ). Observation only.
+    pub fn copa_compete_diag(&self) -> (bool, bool, u64, f64, f64) {
+        (
+            self.copa.compete_on,
+            self.copa.in_compete,
+            self.copa.compete_switches,
+            self.copa.delta,
+            self.copa.delta_base,
+        )
+    }
+
     /// Test hook: force the wire-clocked δ-mapped update law with an
     /// explicit δ (bypasses the process-global env gate).
     #[cfg(test)]
     pub(crate) fn force_wire_for_test(&mut self, delta: f64) {
         self.copa.force_wire(delta);
+    }
+
+    /// Test hook: enable Copa §2.2 competitive mode switching (requires a
+    /// prior `force_wire_for_test`).
+    #[cfg(test)]
+    pub(crate) fn force_compete_for_test(&mut self) {
+        self.copa.force_compete();
     }
 
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
@@ -4720,6 +4997,187 @@ mod tests {
             "the cap must not collapse the window: {}",
             path.cwnd
         );
+    }
+
+    // --- Copa §2.2 TCP-competitive mode (feat/copa-compete) -----------------
+
+    /// Establish a clean 10 ms wire floor and exit the ramp so the per-SRTT
+    /// velocity law (and with it `compete_update`) is live.
+    fn compete_warmup(path: &mut PathState, clock: &Arc<MockClock>) {
+        for _ in 0..10 {
+            path.record_rtt_sample(millis(10));
+            clock.advance(millis(15));
+            path.on_delivery_signal();
+        }
+        // Ramp exit on first standing-queue evidence.
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(60));
+        }
+        clock.advance(millis(70));
+        path.on_delivery_signal();
+        assert!(!path.in_slow_start, "warmup must end the ramp");
+    }
+
+    /// One per-SRTT update under a NEVER-draining standing queue (60 ms over
+    /// the 10 ms floor — a buffer-filling competitor's signature).
+    fn queue_update(path: &mut PathState, clock: &Arc<MockClock>) {
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(60));
+        }
+        clock.advance(millis(70));
+        path.on_delivery_signal();
+    }
+
+    #[test]
+    fn compete_detection_fires_under_never_draining_queue() {
+        // Copa §2.2: no "nearly empty" queue (d_q < 0.1·(RTTmax−RTTmin)) in
+        // the last 5 RTTs ⇒ competitive mode; the AIMD then grows 1/δ past
+        // the hint base.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+        path.force_compete_for_test();
+        compete_warmup(&mut path, &clock);
+        for _ in 0..40 {
+            queue_update(&mut path, &clock);
+        }
+        let (on, in_compete, switches, delta, base) = path.copa_compete_diag();
+        assert!(on, "gate must be on (forced)");
+        assert!(in_compete, "a never-draining queue must switch to competitive mode");
+        assert!(switches >= 1, "the entry must be counted");
+        assert!(
+            delta < base,
+            "the loss-free AIMD must have grown 1/δ past the base: δ={delta} base={base}"
+        );
+        assert!(delta <= base, "invariant: δ ≤ δ_base in competitive mode");
+    }
+
+    #[test]
+    fn compete_detection_quiet_under_draining_queue() {
+        // The queue drains to ~the floor every 3rd update (≤ 5 RTTs apart):
+        // Copa's own dynamics look like this — mode switching must NOT fire.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+        path.force_compete_for_test();
+        compete_warmup(&mut path, &clock);
+        for _ in 0..30 {
+            queue_update(&mut path, &clock);
+            queue_update(&mut path, &clock);
+            // The drain trough: samples back at the floor mark nearly-empty.
+            for _ in 0..4 {
+                path.record_rtt_sample(millis(11));
+            }
+            clock.advance(millis(70));
+            path.on_delivery_signal();
+        }
+        let (_, in_compete, switches, delta, base) = path.copa_compete_diag();
+        assert!(
+            !in_compete && switches == 0,
+            "a regularly-draining queue must stay in default mode (switches={switches})"
+        );
+        assert_eq!(delta, base, "default mode keeps the hint-mapped base δ");
+    }
+
+    #[test]
+    fn compete_delta_follows_aimd_on_inverse_delta() {
+        // The verified law (Copa §2.2): AIMD on 1/δ — +1 per RTT without
+        // loss, halve on loss, floored at the default-mode δ (δ ≤ δ_base).
+        // Base δ = 0.5 (the paper's default) makes the arithmetic direct:
+        // 1/δ: 2 → 3 → (loss: max(1.5, 2) = 2) → 3 → 4 → (loss) → 2.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.5);
+        path.force_compete_for_test();
+        compete_warmup(&mut path, &clock);
+        // Drive updates until the detector enters competitive mode.
+        let mut entered = false;
+        for _ in 0..20 {
+            queue_update(&mut path, &clock);
+            if path.copa_compete_diag().1 {
+                entered = true;
+                break;
+            }
+        }
+        assert!(entered, "never-draining queue must enter competitive mode");
+        // Additive increase from the entry base: 1/δ 2 → 3.
+        queue_update(&mut path, &clock);
+        let d = path.copa_compete_diag().3;
+        assert!((d - 1.0 / 3.0).abs() < 1e-12, "AI must be 1/δ += 1: δ={d}");
+        // Loss (shim congestion-event counter advanced): 1/δ halves, floored
+        // at 1/δ_base — max(3/2, 2) = 2 ⇒ δ back to the base.
+        path.on_wire_congestion_events(1);
+        queue_update(&mut path, &clock);
+        let d = path.copa_compete_diag().3;
+        assert!((d - 0.5).abs() < 1e-12, "MD must floor at δ_base: δ={d}");
+        // Two clean updates: 2 → 3 → 4.
+        queue_update(&mut path, &clock);
+        queue_update(&mut path, &clock);
+        let d = path.copa_compete_diag().3;
+        assert!((d - 0.25).abs() < 1e-12, "AI must continue: δ={d}");
+        // A STALE counter read (no advance) is NOT a loss.
+        path.on_wire_congestion_events(1);
+        queue_update(&mut path, &clock);
+        let d = path.copa_compete_diag().3;
+        assert!((d - 0.2).abs() < 1e-12, "no counter advance ⇒ no MD: δ={d}");
+        // Loss again: max(5/2, 2) = 2.5 ⇒ δ = 0.4 (a real halving above the
+        // floor this time).
+        path.on_wire_congestion_events(2);
+        queue_update(&mut path, &clock);
+        let d = path.copa_compete_diag().3;
+        assert!((d - 0.4).abs() < 1e-12, "MD must halve 1/δ: δ={d}");
+        let (_, _, _, delta, base) = path.copa_compete_diag();
+        assert!(delta <= base, "invariant: δ ≤ δ_base throughout");
+    }
+
+    #[test]
+    fn compete_switches_back_on_drain_and_resets_delta() {
+        // Copa §2.2: "When Copa switches from competitive mode to default
+        // mode, it resets δ" to the default-mode value (the hint base here).
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+        path.force_compete_for_test();
+        compete_warmup(&mut path, &clock);
+        for _ in 0..12 {
+            queue_update(&mut path, &clock);
+        }
+        let (_, in_compete, _, delta, base) = path.copa_compete_diag();
+        assert!(in_compete && delta < base, "precondition: competitive, δ adapted");
+        // The competitor leaves: the queue drains to the floor.
+        for _ in 0..4 {
+            path.record_rtt_sample(millis(11));
+        }
+        clock.advance(millis(70));
+        path.on_delivery_signal();
+        let (_, in_compete, _, delta, base) = path.copa_compete_diag();
+        assert!(!in_compete, "a nearly-empty queue within 5 RTTs must switch back");
+        assert_eq!(delta, base, "switch-back must reset δ to the base");
+    }
+
+    #[test]
+    fn compete_gate_off_never_switches() {
+        // RWM_COPA_COMPETE unset (the shipped default): the identical
+        // never-draining queue must NOT flip modes or touch δ.
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_wire_for_test(0.005);
+        compete_warmup(&mut path, &clock);
+        for _ in 0..40 {
+            queue_update(&mut path, &clock);
+        }
+        let (on, in_compete, switches, delta, base) = path.copa_compete_diag();
+        assert!(!on && !in_compete && switches == 0, "gate off ⇒ no switching");
+        assert_eq!(delta, base, "gate off ⇒ δ stays the hint base");
+    }
+
+    #[test]
+    fn compete_env_gate_requires_wire() {
+        // The δ adaptation composes with the wire update law only.
+        assert!(copa_compete_from_env(true, true));
+        assert!(!copa_compete_from_env(true, false));
+        assert!(!copa_compete_from_env(false, true));
+        assert!(!copa_compete_from_env(false, false));
     }
 
     #[test]
