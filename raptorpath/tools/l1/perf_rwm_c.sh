@@ -64,6 +64,10 @@ fi
 # r* burst-tail provisioning (task #46, paper 8.4.1): RWM_RSTAR_TAIL=0 is the
 # legacy GE-only r* arm (same-binary A/B); unset/1 = shipped tail-provisioned r*.
 [[ -n "${RWM_RSTAR_TAIL:-}" ]] && TENV="$TENV RWM_RSTAR_TAIL=$RWM_RSTAR_TAIL"
+# #85 budget-conserving taper emission (task #85, fix/taper-emission): plain-mode
+# proactive repair budgeted at r x source per coding window (legacy = r per ack
+# cycle). Default OFF in the binary; forwarded for the queued L1 2x2 spot check.
+[[ -n "${RWM_TAPER_R:-}" ]] && TENV="$TENV RWM_TAPER_R=$RWM_TAPER_R"
 # Per-run completion timeout override (reliability batteries where DNF is an
 # expected datum; see src/perf.rs run_timeout()).
 [[ -n "${RWM_PERF_TIMEOUT_S:-}" ]] && TENV="$TENV RWM_PERF_TIMEOUT_S=$RWM_PERF_TIMEOUT_S"
