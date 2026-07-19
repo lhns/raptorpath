@@ -178,9 +178,10 @@ ACK absence.
     - [16.4 One Pipeline, Not Mode Switching](#164-one-pipeline-not-mode-switching)
     - [16.5 Choosing W for Multipath: a Fourth Bound](#165-choosing-w-for-multipath-a-fourth-bound)
     - [16.6 Predictions, Prerequisites, and the Experiment](#166-predictions-prerequisites-and-the-experiment)
-    - (16.7–16.20: the measured arc — reorder horizon, the concluded-then-
+    - (16.7–16.22: the measured arc — reorder horizon, the concluded-then-
       reopened aggregation verdicts, the methodology audit, the substrate
-      chain, the unified span machine; headers in-text)
+      chain, the unified span machine, anchor hygiene, bounded account
+      borrowing; headers in-text)
 17. [The Measured Regime Map (2026-07-19)](#17-the-measured-regime-map-2026-07-19)
     - [17.1 The Substrate Chain](#171-the-substrate-chain-seven-walls-in-order)
     - [17.2 The CC Policy Surface](#172-the-cc-policy-surface)
@@ -9022,6 +9023,50 @@ depth. Whether that suffices to beat PBS at c8 is exactly what the
 battery must decide — if it does not, the pooled path-scaled law is
 vindicated as the c8 answer and percap remains a symmetric-cell tool.
 
+#### 16.22.5 Measured outcome (2026-07-19, L1 battery, commit 477ab32): the law is gauge-perfect and limit (3) decides — the pool is vindicated at c8
+
+The full battery (goal-gate "Per-Path Outstanding Accounting" →
+BORROWING RESULTS: 8 reps × seeds 42+7 × interleaved arms × {sc2, sc3,
+c7, c8}, same binary, 279 result-bearing runs, 0 liveness mismatches, 0
+DNF) measured every clause of the derivation:
+
+- **§16.22.3(c), exact**: c7 loans were IDENTICALLY zero — `loan=0/0` at
+  every DIAG tick of every borrowing rep, both seeds — and the borrowing
+  arm tied its no-borrow control (141.7 vs 141.9 s42; 136.5 vs 143.2 s7,
+  ≈1σ), both at 0.90/0.89 of Σ, above pooled PBS both seeds. The
+  symmetric cell is preserved by theorem, and measured so.
+- **§16.22.3(b), exact**: every nonzero loan gauge at c8 has the slow
+  path lending and the fast path borrowing (plain: cumulative 34–916 per
+  run, ~100–250 active; Copa: 1747–3318, 65–638 active); the parking
+  direction NEVER occurred; every loan repaid to zero on ack.
+- **§16.22.4 limit (3), decisive**: c8 borrowing vs no-borrow is
+  statistically neutral under plain+BBR (−3.7/+5.8, sign-flipping, ≪
+  joint σ) and BOTH trail pooled PBS on both seeds (0.56–0.62 vs
+  0.72×Σ). The honestly-lendable slack is an order of magnitude below
+  the pooled arm's effective depth. One suggestive counter-datum: under
+  Copa's honest cwnd caps the borrowing arm erased the prior sessions'
+  −8.5…−11 Copa-percap isolation tax (C1P-B ≈ C1, heavy loan traffic) —
+  cross-session and uncontrolled, and C1 itself trails PBS, so it cannot
+  move the verdict.
+
+**Conclusion.** The no-borrowing tax was real, but repaying it within a
+lender-solvent law recovers only the slow path's HONEST slack — and the
+pooled law's c8 advantage is not that slack: it is the pool's willingness
+to let the fast path run past every honest per-path bound. That depth
+cannot be granted by any per-path derivation that keeps the lender
+solvent; it can only be granted by not having per-path bounds. So the
+design space is now closed at both ends by measurement: **per-path
+accounts (± bounded borrowing) own the symmetric cell (0.89–0.94×Σ, no
+collapse mode, Copa +13–21); the pooled path-scaled pool owns the
+asymmetric cell (0.72×Σ this session)**; `RWM_STORE_PERCAP` /
+`RWM_STORE_BORROW` stay default OFF. Residual (iii) is attributed and
+half-fixed in the same battery (the flight-witness attribution law in
+§16.21's sampler: spurious cross-path-retransmit acks — 57–76% of
+1057–1857 cross-path attributions per c8 run — no longer advance the
+retransmit path's delivered counter; slow BtlBw p50 ×2.3 → ×1.4 over
+truth; the p90 tail channel (iii-b) and the recurring honest-anchor
+throughput circularity at c8-plain are the named remainders).
+
 ---
 
 ## 17. The Measured Regime Map (2026-07-19)
@@ -9245,8 +9290,19 @@ asserted beyond its naming evidence.
    (needs a new dwell law: borrowed symbols park on the lender, fly on
    the borrower) or accepting pooled PBS as the c8 record. Sub-residual:
    the slow path's send-interval anchor over-reads ×3–5 under multipath
-   placement (frontier-advance burst attribution suspected).]** Gates
-   `RWM_STORE_PERCAP` and the C8 0.9×Σ target.
+   placement (frontier-advance burst attribution suspected).]**
+   **[CLOSED 2026-07-19, §16.22 (`feat/store-borrowing`): bounded
+   borrowing derived, built, measured — the law is gauge-perfect (c7
+   loans ≡ 0 by theorem; c8 loans one-directional and repaid) but the
+   lender-solvent slack cannot match the pool's depth: PBP-B < PBS both
+   seeds. VERDICT: pooled `RWM_STORE_PATHS` is the c8 answer; percap(±
+   borrow) the symmetric-cell tool; all default OFF. Sub-residual (iii)
+   attributed (spurious cross-path-retransmit attribution, 57–76% of the
+   cross-path class) and half-fixed (the §16.21 flight witness,
+   `RWM_RS_ATTR`); named remainders: (iii-b) the p90 slow-anchor tail
+   channel, and the honest-anchor c8-plain throughput circularity (third
+   instance). This item is no longer a roadmap lever; the C8 0.9×Σ
+   target is retired in favor of the pooled record.]**
 2. **Receiver/sender task parallelization** — live above ~150 Mbit/sink;
    the symmetric cell now operates at ~147 with the engine sink at 187.7.
    The next C7 lever after flow control.

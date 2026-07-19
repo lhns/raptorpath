@@ -105,7 +105,7 @@ in the order found, each fixed or refuted:
 | 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) | §16.19 |
-| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8 — the no-borrowing tax CONFIRMED as the c8 binder; OFF | §16.19; "Per-Path Outstanding Accounting" |
+| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid: **pooled path-scaled VINDICATED at c8, percap the symmetric-cell tool**; all OFF | §16.19, §16.22; "Per-Path Outstanding Accounting" |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
 on a saturated single reliable path FEC = ARQ parity is the ceiling,
@@ -8682,7 +8682,7 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
 
-## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below** — **HONEST-CAP FOLLOW-ON MEASURED (2026-07-19, `feat/percap-honest-cap`): caps re-derived on the honest anchor (residence K·RTprop + recovery-clock runway); the sc2 −20% RESOLVED exactly, c7 percap ≥ PBS both seeds (0.89–0.90×Σ), c8 PBP-H > the knee-clamped control but STILL < PBS, and C1P-H < C1 with honest cwnd caps — the NO-BORROWING TAX is confirmed as the c8 binder; flip NO, see "HONEST-CAP RESULTS"**
+## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below** — **HONEST-CAP FOLLOW-ON MEASURED (2026-07-19, `feat/percap-honest-cap`): caps re-derived on the honest anchor (residence K·RTprop + recovery-clock runway); the sc2 −20% RESOLVED exactly, c7 percap ≥ PBS both seeds (0.89–0.90×Σ), c8 PBP-H > the knee-clamped control but STILL < PBS, and C1P-H < C1 with honest cwnd caps — the NO-BORROWING TAX is confirmed as the c8 binder; flip NO, see "HONEST-CAP RESULTS"** — **BOUNDED BORROWING DERIVED+MEASURED (2026-07-19, `feat/store-borrowing`, paper §16.22): the lender-solvent loan law behaves exactly as derived (c7 loans ≡ 0 by theorem AND by gauge; c8 loans one-directional slow→fast, bounded, repaid) but CANNOT repay the c8 tax — PBP-B < PBS both seeds; the pooled `RWM_STORE_PATHS` design is VINDICATED as the c8 answer, percap(+borrow) is the symmetric-cell tool; residual (iii) attributed to spurious cross-path-retransmit delivery attribution and PARTLY fixed (the flight witness, `RWM_RS_ATTR`); flip NO, see "BORROWING RESULTS"**
 
 **Why (proven by #84).** The multipath binder was flow control: the
 per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
@@ -9350,6 +9350,183 @@ sessions) — all verdicts same-session interleaved. CPU lines captured
 per invocation in the logs (`CPU:` per run); c7 PBP-H remains below the
 ~150 parallelization threshold this session (137–138 means).
 
+### BORROWING RESULTS (2026-07-19, the HONEST-CAP follow-on, branch `feat/store-borrowing`, commit 477ab32) — bounded account borrowing DERIVED (paper §16.22), BUILT (`RWM_STORE_BORROW`), and L1-MEASURED: the law behaves exactly as derived at every gauge (c7 loans IDENTICALLY zero — the symmetric-neutrality theorem measured; c8 loans strictly one-directional slow→fast, bounded, repaid on ack; the #86 parking direction never occurs) and the c7 percap win is preserved at 0.90/0.89×Σ — but the c8 tax is NOT repaid: PBP-B < PBS both seeds, because the honestly-lendable slack (~the slow runway term, low hundreds of symbols) is small against the pooled N×knee depth — the derivation's own named limit (3), now measured. **Flip NO; `RWM_STORE_PERCAP`+`RWM_STORE_BORROW` stay DEFAULT OFF; the pooled path-scaled PBS design is VINDICATED as the c8 answer and percap(+borrowing) is the symmetric-cell tool.** Residual (iii) is PARTLY closed by the flight-witness attribution fix (below).
+
+**Part 0 — residual (iii) attributed and partly fixed (`resolve_flight_path`,
+rides `RWM_PLAIN_RS`; `RWM_RS_ATTR=0` = legacy control).** The slow-path
+multipath over-read is (at least half) a delivery-ATTRIBUTION defect, not a
+sampler defect: a seq lost (or presumed lost) on one path and retransmitted
+cross-path was credited to its LAST-sent path even when the ack arrived
+sooner after the retransmit than that path's RTprop — impossible for the
+retransmitted flight, so the delivering copy was the ORIGINAL (a spurious
+retransmit; the gap was ack latency). At c8 the fast→slow retransmit
+stream (cross-path placement avoids the original path) thus advanced the
+SLOW path's delivered counter for symbols that flew on the FAST path. The
+CopaFeed now keeps the previous distinct-path commitment and applies a
+floor-clock flight witness at attribution: credit the last flight only if
+its age ≥ RTprop(its path), else the previous flight. No new constants;
+unknown RTprop = legacy (warm-up safe); the full Copa-sole feed keeps
+legacy attribution (C1 arms untouched). MEASURED at L1-c8 (DIAG `xattr=`
+cross/witness): 1057–1857 cross-path-history attributions per 25 MB run,
+of which the witness reclassifies 57–76% — the phantom class is that
+large; slow-path btlbw p50 4819 → 2951 (truth ≈2.1k: ×2.3 → ×1.4 over)
+and cap_slow now differentiates off the knee in part of the reps
+(observed 584 ≈ the derived ~500). HONEST LIMITS, named: (a) p90 btlbw
+remains 8.5–10.4k in BOTH arms and cap_slow's tail stays knee-adjacent —
+a SECOND over-read channel persists (suspect: same-path retransmit
+re-snapshots and/or SACK-advertisement-truncation burst attribution;
+sub-residual (iii-b), NOT built); (b) the witness arm reads LOWER c8
+throughput than the legacy-attribution control (PBP-H 56.58/50.98 vs
+PBP-H0 60.02/56.03; ≈0.5–1σ, same sign both seeds) — anchor honesty is
+again mildly load-bearing at c8-plain, the third instance of the §16.19
+circularity class. L0 mechanism evidence: xattr fires 226–319/run with
+50–80% witness-reclassified on the dual shim; N=1 computes nothing (no
+cross-path commits exist).
+
+**The build (env `RWM_STORE_BORROW`, default OFF ⇒ shipped byte-identical;
+requires the percap stack).** Placement order for a cap-full own pick:
+BORROW first (stay on the picked pipe, charge the lender with max lend
+room), else the guarded redirect, else FULL/backpressure. The loan ledger
+(`percap_loans` seq→(lender,flyer) + `percap_lent`/`percap_borrowed`
+gauges) charges the LENDER's account at `percap_charge` and repays on the
+SAME acks that release the store (SACK + cumulative twins). Admission
+gate = the guarded gate opened additionally by any live lend edge
+(`percap_lend_edge_exists`). fly_j = out_j − lent_j + borrowed_j corrects
+account→pipe occupancy for T_return. Rates for the law: honest BtlBw_i
+(plain, `RWM_PLAIN_RS`) / cwnd_i/RTprop_i (Copa feed); warm-up lends 0.
+DIAG `ln=lent/borrowed` per path + `loan=active/cum`; liveness echo
+"bounded store borrowing ACTIVE". Unit evidence (lib 361/361, 6 new): the
+lend-room reservation + post-loan solvency + one-directionality (the c8
+miniature: slow lends 97 of its runway slack; a cap-full slow borrower
+gets 0 from even an EMPTY fast account), the symmetric-neutrality theorem
+(reservation − cap = anchor > 0 ⇒ loans ≡ 0 for every lender state), the
+degenerate equivalences (T_return→0 ⇒ pooled cap−out sharing; all-full ⇒
+the unguarded FULL), the loan-ledger lifecycle (charge lender / fly
+borrower / SACK+cumulative repayment, idempotent), the admission-gate
+composition, and the flight witness (spurious-retransmit ack younger than
+RTprop credits the original flight).
+
+**L1 battery (VM 10.1.5.16, 2026-07-19 18:25–19:07 UTC; binary sha256
+0995b3f287ef6f27… = commit 477ab32 `feat/store-borrowing`, SAME binary
+every arm; E5-2650 v3 aes+avx2+pclmulqdq in every log header
+(post-divide); 25 MB × 1 run/invocation × 8 reps, arms interleaved
+round-robin per rep, fresh tunnel per invocation, seeds 42+7, RWM_DIAG=1
+everywhere; driver `/home/vibe/borrow_battery.sh` (+`borrow_all.sh`),
+logs `/home/vibe/borrow/{sc2,sc3,c7,c8}-s{42,7}.log` + per-run
+`diag-*.log`).** Arms — duals: PBS (pooled path-scaled, the incumbent),
+PBP-H (percap+guard+honest+witness, the no-borrow control), PBP-B
+(= PBP-H + `RWM_STORE_BORROW=1`), C1 (Copa wire-signal), C1P-B
+(Copa + percap + borrow); c8 adds PBP-H0 (= PBP-H + `RWM_RS_ATTR=0`, the
+(iii) attribution control); singles: PB, PBP-B, C1, C1P-B (identity).
+
+Singles — N=1 identity + same-session Σ:
+
+| cell | PB (σ_s) | PBP-B (σ_s) | C1 (σ_s) | C1P-B (σ_s) |
+|---|---|---|---|---|
+| sc2 s42 | 78.85 (3.34) | 77.58 (3.43) | 68.98 (1.47) | 67.81 (1.00) |
+| sc2 s7 | 76.33 (3.40, n=7) | 74.21 (4.39, n=7) | 65.51 (1.40) | 65.83 (2.93, n=5) |
+| sc3 s42 | 15.49 (0.18) | 14.82 (0.31) | 12.19 (0.24) | 11.92 (0.49) |
+| sc3 s7 | 15.19 (0.88, n=6) | 14.91 (0.22) | 12.06 (0.28, n=7) | 12.39 (0.31, n=7) |
+
+Identity HOLDS: sc2 Δ −1.3/−2.1 ≪ σ; C1P-B ≈ C1 everywhere; sc3 PBP-B
+−0.67/−0.28 = the KNOWN honest-cap sc3 residual (−4.3%/−1.8%; last
+session −0.66/−0.36 with no borrow gate — borrowing computes nothing at
+N=1). Same-session ceilings: **Σ-PB c7 = 157.7/152.7, c8 = 94.3/91.5;
+Σ-C1 c7 = 138.0/131.0, c8 = 81.2/77.6.**
+
+Duals (mean (σ_s) [runs]; Σ-ratio = arm / same-family Σ):
+
+| cell | arm | mean (σ_s, n) | Σ-ratio |
+|---|---|---|---|
+| c7 s42 | PBS | 132.20 (8.54) [129.1 118.7 121.4 142.1 139.3 137.4 137.5 132.1] | 0.84 |
+| | PBP-H | 141.85 (7.47) [148.1 145.7 142.3 148.7 145.4 144.2 129.3 131.2] | 0.90 |
+| | PBP-B | **141.69 (6.25)** [144.2 146.6 139.1 135.3 147.1 147.7 130.4 143.0] | **0.90** |
+| | C1 | 78.67 (4.22) | 0.57 |
+| | C1P-B | **92.53 (8.14)** | **0.67** |
+| c7 s7 | PBS | 126.59 (19.93) [141.0 134.3 135.6 140.7 79.4 129.4 126.6 125.8] | 0.83 |
+| | PBP-H | 143.16 (5.70, n=5) | 0.94 |
+| | PBP-B | **136.51 (6.65, n=7)** [125.6 134.7 129.9 143.6 141.3 140.3 140.1] | **0.89** |
+| | C1 | 80.93 (4.50, n=7) | 0.62 |
+| | C1P-B | **95.25 (6.98, n=6)** | **0.73** |
+| c8 s42 | PBS | 68.08 (8.96) [56.1 72.0 59.6 61.4 76.8 78.5 63.3 77.0] | 0.72 |
+| | PBP-H | 56.58 (9.18) [43.1 48.6 54.8 55.1 65.2 71.2 52.3 62.3] | 0.60 |
+| | PBP-H0 | 60.02 (6.71) [51.6 65.2 63.1 65.5 59.6 64.9 62.2 47.9] | 0.64 |
+| | PBP-B | **52.84 (6.54)** [52.4 48.9 43.2 60.3 58.1 56.4 44.9 58.5] | **0.56** |
+| | C1 | 56.25 (4.28) | 0.69 |
+| | C1P-B | **55.97 (3.55)** | **0.69** |
+| c8 s7 | PBS | 65.87 (10.96, n=7) [64.4 70.3 76.5 49.0 77.8 69.3 53.9] | 0.72 |
+| | PBP-H | 50.98 (4.30, n=7) [51.3 47.4 54.7 55.2 50.8 43.4 54.0] | 0.56 |
+| | PBP-H0 | 56.03 (3.52, n=5) [53.0 55.4 52.5 59.3 60.1] | 0.61 |
+| | PBP-B | **56.80 (6.56)** [62.5 54.7 62.0 59.5 62.5 53.2 56.7 43.3] | **0.62** |
+| | C1 | 52.23 (4.16, n=5) | 0.67 |
+| | C1P-B | **55.66 (1.69, n=7)** | **0.72** |
+
+**Reading, effect-by-effect:**
+
+1. **c7 neutrality is EXACT — the theorem measured.** `loan=0/0` at every
+   DIAG tick of every PBP-B c7 rep, BOTH seeds (41+47 ticks): loans are
+   identically zero at the symmetric cell, as §16.22.3(c) proves
+   (reservation − cap = anchor > 0). Throughput: PBP-B = PBP-H (−0.2 at
+   s42, −6.6 ≈ 1σ at s7), ≥ 0.87×Σ target BOTH seeds (0.90/0.89), above
+   PBS both seeds (+9.5/+9.9; PBS-s7 carries its documented 79.4 collapse
+   run — the percap arms again have no collapse mode). The Copa c7 percap
+   win holds a FOURTH session (C1P-B − C1 = +13.9/+14.3, ≥2σ).
+2. **c8 — the mechanism works; the tax is NOT repaid.** Loans fire
+   (plain: cum 34–916/run, active ~100–250; Copa: cum 1747–3318, active
+   65–638), are strictly ONE-DIRECTIONAL (every nonzero `ln=` gauge:
+   slow lends, fast borrows — the parking direction NEVER occurs, as
+   §16.22.3(b) derives), and repay to 0. But PBP-B vs PBP-H is −3.7/+5.8
+   (sign flips, ≪ joint σ — statistically NEUTRAL under plain+BBR), and
+   PBP-B < PBS on BOTH seeds (−15.2/−9.1; PBS medians 67.6/69.3 vs
+   PBP-B 55.3/58.1). The C8 0.9×Σ target is not approached (0.56–0.62);
+   the pooled bar (0.72/0.72 this session) STANDS. The honestly-lendable
+   slack — the slow account's runway term minus its reservation, ~50–250
+   symbols — is an order of magnitude below the pooled arm's effective
+   depth; §16.22.4 limit (3), measured.
+3. **Copa datum (suggestive, not controlled): the account-isolation tax
+   disappears in the borrowing arm.** C1P-B ≈ C1 (−0.3/+3.4, ≪/≈σ) where
+   the two prior sessions' no-borrow Copa-percap arms lost −8.5/−9.8 and
+   −9.6/−11.2 to C1 — with heavy loan traffic under honest cwnd caps.
+   No same-session C1P (no-borrow) control was run, so this is a
+   cross-session delta-of-deltas: bounded borrowing plausibly repays the
+   ISOLATION tax to Copa-family parity — but C1 itself sits below PBS at
+   c8, so it cannot change the flip.
+4. **The (iii) witness at L1**: see Part 0 above — the spurious class is
+   57–76% of 1057–1857 cross-path attributions/run; slow btlbw p50
+   ×2.3→×1.4 over truth; p90 channel remains (iii-b); the honest arm
+   costs −3.4/−5.1 vs the legacy-attribution control at c8-plain.
+
+**VERDICT + FLIP DECISION.** Flip criteria were "c8 PBP-B ≥ PBS both
+seeds both CC, c7 ≥ 0.87×Σ, singles clean": c7 ✓ (0.90/0.89, loans ≡ 0),
+singles ✓ (identity; sc3 −4.3% pre-existing, named), c8 ✗ (PBP-B < PBS
+both seeds; C1P-B ≤ PBS-equivalent). **`RWM_STORE_PERCAP`,
+`RWM_STORE_BORROW`, `RWM_PLAIN_RS` all stay DEFAULT OFF** (shipped tree
+byte-identical). What this battery SETTLED, with the law behaving exactly
+as derived at every gauge: **the bounded-borrowing hypothesis is
+answered — a principled lender-solvent loan bound cannot recover the
+pooled law's c8 depth, because the pool's advantage is not the slow
+path's unused honest headroom (small) but its unbounded willingness to
+let the fast path run past every honest per-path derivation. The pooled
+path-scaled design (`RWM_STORE_PATHS`, PBS) is VINDICATED as the c8
+answer; per-path accounts (with or without borrowing) are the symmetric-
+cell tool** (no collapse mode, 0.89–0.94×Σ, Copa +13–21). The roadmap
+redirects accordingly: the c8 record stays pooled; remaining named
+residuals are (iii-b) (the p90 slow-anchor channel) and the honest-anchor
+throughput circularity at c8-plain (third instance).
+
+**Controls / discipline:** mechanism-liveness audit over all 279
+result-bearing runs: PBP-B/C1P-B carry the borrow echo (+ percap/guard,
++ honest+sampler on plain), PBP-H/PBP-H0 the no-borrow stack, PBS
+path-scaled only, PB/C1 none — **0 mismatches**; the 25 mismatch lines in
+the raw block audit all sit in blocks that captured NO result (the
+documented aborted-invocation stale-log class, seed-7-dominated;
+RETRY per protocol, no captured result discarded, n quoted wherever
+< 8). Zero DNFs in 279 captured runs. All verdicts same-session
+interleaved (PBS-c8 0.72/0.72 vs prior sessions 0.67/0.74, 0.72/0.67,
+0.69/0.62 — drift class visible again). CPU lines captured per
+invocation; c7 PBP-B ≈ 141 stays below the ~150 parallelization
+threshold.
+
 ### Controls / caveats
 
 - Shipped default byte-identical: env unset ⇒ no charge, no gate change,
@@ -9394,6 +9571,13 @@ is byte-identical): lib 355/355 (5 new), math 136 green, `gate_suite`
 15/15 release, `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8,
 `copa_sole_loopback` / `fmtcp_loopback` / `daps_loopback` 1/1 each — all
 green 2026-07-19 (`suites-final.log`, session scratchpad).
+
+Borrowing session (`feat/store-borrowing` 477ab32, NO default flipped —
+`RWM_STORE_BORROW` requires the percap stack, itself default OFF; the
+flight witness engages only with the `RWM_PLAIN_RS` sampling-only feed):
+lib 361/361 (6 new), math 136 green, `gate_suite` 15/15 release,
+`mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, `copa_sole_loopback` /
+`fmtcp_loopback` / `daps_loopback` 1/1 each — all green 2026-07-19.
 
 ## Copa Competitive Mode + Cross-Traffic (2026-07-19) — Copa §2.2 mode switching BUILT on the wire signal (verified mechanism, faithful law, unit-proven) + the FIRST shared-bottleneck battery: at the GE c2 cell Copa-sole does NOT starve vs Cubic (0.88–0.90 share, compete irrelevant); at the CLEAN bottleneck Copa-sole starves (2.2 vs Cubic's 93, share 0.023) and competitive mode CANNOT restore share — because δ is NOT the binder (fixed δ=0.001 probe: no change): the starvation is the plain-window ARQ/retention pipeline under contention tail-drop (pool 1024 × 3.3 s dwell = Little's-law 2.4 Mbit), a CC-INDEPENDENT named blocker; BBR-under reference = 0.24 share at a 305–316 ms standing queue (Copa arms keep 20–40 ms) — substrate-CC default flip stays CLOSED with the gate MOVED from "no competitive mode" to the contention-recovery pipeline (branch `feat/copa-compete`, roadmap item 6, tasks #80/#82)
 
