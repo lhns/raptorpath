@@ -241,7 +241,7 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
 |---|---|---|---|
 | **Streaming two-layer** (shipped Realtime default) | the 12–48× message-tail crown (Metric A); burst-optimal diagonal layer | DEFENDED 2026-07-19: unified fails tail parity (p99 ×2.7–3.3 + collapse class) → keeps Realtime | only if a retirement case engages BOTH the unified trade AND the L1 ordering datum below; honest liabilities recorded: 24–26% DNFs at the c3 100 KB realtime perf cell, and at the post-divide c3 tail matrix the legacy-RLC arm posts BETTER p99 medians (234/273 ms vs streaming 510/822 pooled) — the "streaming-retirement gap", roadmap item 7 |
 | **Legacy RLC family** (`RlcWindowDecoder` plain window + `GenerationDecoder` gen wire) | the bulk half: gen-sys = the bulk-champion wire (parity with plain at ~free CPU); the plain-RLC realtime arm posts the best c3 p99 medians of all three machines | bulk gate: unified reached parity+CPU-parity against it (PASS); realtime: it BEAT unified at the bursty cell, but carries its own 2/10 total-wedge class | both decoders retire when unified passes ≥ legacy-RLC EVERYWHERE — the remaining gap is realtime tail only; known defect: rank loss on late sources under reorder (unified already fixes it) |
-| **Unified span machine** (`RWM_UNIFIED`, default OFF) | ONE decoder + δ-continuous span law (A\*/M\*/Δ), differential-proven vs all three legacy decoders; bulk gen-sys parity + CPU parity PASS at L1; delivery-complete realtime (+24–26 pp) | BOTH flips NO (2026-07-19): named blocker = the c3-1200B stream-collapse rep class (3/10, p50 in seconds) — **ATTRIBUTED 2026-07-19 (`diag/unified-collapse`): not the decoder; the A\*-anchor defect + the family-level transient-amplification response (COLLAPSE ATTRIBUTION)**; M\* knee UNREACHABLE behind two anchor defects | it is the DESTINATION: when the anchor repair + overload-shedding policy land and the battery re-runs, it takes the RLC family; streaming retirement is a separate, harder gate |
+| **Unified span machine** (`RWM_UNIFIED`, default OFF) | ONE decoder + δ-continuous span law (A\*/M\*/Δ), differential-proven vs all three legacy decoders; bulk gen-sys parity + CPU parity PASS at L1; delivery-complete realtime (+24–26 pp) | BOTH flips NO (2026-07-19): named blocker = the c3-1200B stream-collapse rep class (3/10, p50 in seconds) — **ATTRIBUTED 2026-07-19 (`diag/unified-collapse`): not the decoder; the A\*-anchor defect + the family-level transient-amplification response (COLLAPSE ATTRIBUTION)**; ~~M\* knee UNREACHABLE behind two anchor defects~~ **anchor repairs BUILT 2026-07-19 ("Anchor Hygiene", `feat/anchor-hygiene`): A\* live in ~1 RTT + flood-poison-proof, M\* knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%)** | it is the DESTINATION: the flip-battery re-run is measurement-ready (fixes A+B built); the flip itself still gates on the re-run + the overload-shedding policy (fix C); streaming retirement is a separate, harder gate |
 
 (The block RaptorQ pipeline remains §15's other knob, untouched; the
 Full-Benchmark-Re-Run showed its lossy completion is recovery-bound and
@@ -268,7 +268,19 @@ carries its gating decision.
    fast path the pooled law's borrowing at asymmetric cells. Both named,
    NOT built; they inherit this item's gate on any `RWM_STORE_PERCAP`
    flip and the C8 0.9×Σ target. Ledger: "Per-Path Outstanding
-   Accounting" → GUARD RESULTS.]** (#86)
+   Accounting" → GUARD RESULTS.]**
+   **[Residual (i) BUILT + MEASURED 2026-07-19 (`feat/anchor-hygiene`,
+   `RWM_PLAIN_RS`): the #79 send-interval sampler generalized to plain
+   mode (sampling-only CopaFeed). The knee-clamp over-read is GONE — plain
+   btlbw reads 1.02× truth at sc2 (was ×4.6–6.2) and the c8 slow path
+   ×4.7–7.4 → ≤1× — and c8 plain throughput improves with σ collapsed
+   (48.3/57.5 σ 5.1/19.1 → 55.4/61.9 σ 9.3/4.0). Named costs: sc2 single
+   −20% (the over-read was accidentally load-bearing for the anchor-sum
+   store cap — the same circularity §16.19 documented for the Copa feed)
+   and slow-path UNDER-read when placement starves it of source (safe
+   direction for a cap). The percap cap re-derivation (cap_i from honest
+   BtlBw) + re-battery remains this item's open follow-up; see "Anchor
+   Hygiene" gate-readiness.]** (#86)
 2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
    now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
    next C7 lever after flow control. (#84/#86)
@@ -290,11 +302,26 @@ carries its gating decision.
    (measured at L0: the legacy-rlc arm shows the identical episodic class
    with no unified code in the loop; one class, two terminal behaviors).**
    Closes with item 3's fixes. (#61)
-5. **The M\* anchor pair + knee re-run** — (i) RTprop floor under-read (a
+5. ~~**The M\* anchor pair + knee re-run** — (i) RTprop floor under-read (a
    DEFAULT_SRTT-class 50-ms seed surviving inside the 10-s min-window at a
    200-ms cell), (ii) the static `(pipeline+2)·G` win backstop (not
    M\*-coupled). Fix both, then re-run c2r100/c2r200 — oracle PART 7b's knee
-   is neither confirmed nor refuted until then. (#61; §16.17's residual)
+   is neither confirmed nor refuted until then. (#61; §16.17's residual)~~
+   **[BUILT + KNEE MEASURED 2026-07-19, `feat/anchor-hygiene`
+   (`RWM_MSTAR_ANCHOR`): the 50-ms floor was the PEER-REPORT feedback loop —
+   `PathReport.avg_rtt_us` is the peer's estimator VALUE (its own 50-ms-seeded
+   EWMA, never fed on a pure receiver) recorded as a local RTT sample every
+   ~2 s, re-planting a 50-ms "sample" in the 10-s min-window forever. Fix =
+   don't record estimates as samples + seed the local EWMA from the first
+   measured sample + derive the win backstop from M\* once anchors live. The
+   KNEE ENGAGES at L1: c2r100 36.5/38.8 → 47.9/48.5 (+31/+25%), c2r200
+   19.2/20.3 → 34.9/32.9 (+82/+62%), n=8 both seeds, 0 DNF, non-overlapping
+   per-rep distributions at r200. Oracle PART 7b's m=2 deficit is confirmed
+   in DIRECTION and ordering (r200 gap ≫ r100 gap); measured m=2/M\* ratios
+   0.76-0.80 (r100) and 0.55-0.62 (r200) vs the in-model 0.64/0.39 — the
+   wire keeps other binders (receiver ~1-core ceiling class). See "Anchor
+   Hygiene". Item 8's bookkeeping-cost datum is SUPERSEDED in the fixed
+   regime (the M\*-law arm now clearly above fixed-depth).]**
 6. ~~**Copa competitive mode + the cross-traffic cell** — build Copa §4 mode
    switching; measure the FIRST shared-bottleneck/cross-traffic battery
    (this also carries BBR's unevaluated fairness). Gates ANY substrate-CC
@@ -315,8 +342,12 @@ carries its gating decision.
    (234/273 vs 510/822 ms): the L0 c3heavy proxy predicted the opposite
    ordering. Any future streaming-retirement case must engage this datum.
    (#61 bonus finding)
-8. **r200 M\*-arm bookkeeping cost** — the M\*-law arms sit ~1–2 Mbit BELOW
-   fixed-depth at c2r200 on both machines/seeds (~1.3–2σ). (#61)
+8. ~~**r200 M\*-arm bookkeeping cost** — the M\*-law arms sit ~1–2 Mbit BELOW
+   fixed-depth at c2r200 on both machines/seeds (~1.3–2σ). (#61)~~
+   **[SUPERSEDED 2026-07-19 ("Anchor Hygiene"): that datum was measured in
+   the anchor-broken regime where M\* never left its floor (the law's
+   bookkeeping without its benefit); with the anchors fixed the M\* law
+   clears fixed-depth by ×1.6–1.8 at r200.]**
 9. **The solvable-span default-flip chain** — code streaming-family/plain
    proactive repair over a decodable TRAILING span (or route realtime
    through the RLC/unified family), and revisit whether contract-priced
@@ -345,6 +376,280 @@ Cubic on clean at a 305–316 ms standing queue; 0.95–0.96 share at c2).
   in the paper; see paper §17.
 - §16.10–16.14 (DAPS era) — generation-inert, audit-classified; already
   bannered per section.
+
+## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
+
+Three investigations ended at the same defect family: the COLLAPSE
+ATTRIBUTION (designs A+B: A\* pinned/poisoned), the #61 knee battery (the M\*
+anchor pair), and the percap GUARD RESULTS (residual (i): the plain-anchor
+over-read). This build fixes the family as ONE workstream under one
+principle (paper §16.21).
+
+**THE PRINCIPLE.** An anchor is trustworthy only if (1) it is SEEDED from
+measured sends — a windowed statistic of real samples, live within ~1 RTT,
+never a static default surviving warm-up; (2) its samples EXCLUDE scheduler
+clock gaps — a sample whose interval spans a process stall measures the
+stall, not the link (detect on the PROCESS clock; discard, don't average);
+and (3) its floors/backstops EXPIRE — a floor that outlives its min-window
+is a constant wearing a floor's clothes. Every defect below violates one.
+
+**The four fixes (each env-gated for A/B; `RWM_ANCHOR_HYGIENE=1` = all).**
+
+1. **A\* rate anchor** (`RWM_ASTAR_ANCHOR`; rules 1+2). The span law's rate
+   was `est.throughput()` — a 2-s-interval α=0.125 EWMA of the report-tick
+   send rate. Now: `control::anchor::SendRateAnchor`, a windowed-max
+   send-rate (bucket ≈ SRTT/2 clamped [5, 250] ms; window ≈ 8·SRTT clamped
+   [0.5, 10] s) fed by the sender's own send events at the span site; a
+   bucket whose Δt is a clock gap (`is_clock_gap`: > max(8×expected,
+   250 ms)) is DISCARDED and a quarantine = min(gap, 2 s) swallows the
+   release-flood buckets; through the disturbance the window HOLDS its
+   pre-gap max (no collapse to "no sample").
+2. **M\* anchor pair** (`RWM_MSTAR_ANCHOR`; rules 1+3). ROOT CAUSE of the
+   50-ms floor: `PathReport.avg_rtt_us` carries the PEER'S ESTIMATOR VALUE
+   — a 50-ms-seeded EWMA that a pure receiver NEVER feeds with a
+   measurement — and the PathReport arm recorded it as a local RTT sample
+   every ~2 s, re-planting a perpetual 50-ms "sample" inside the 10-s
+   min-RTT window (the #61 `rtp=50ms` floor-freshness FAIL, reproduced
+   in-session in the U1 arm's DIAG at both knee cells). Fix: estimates are
+   not samples (the report keeps keepalive/monitoring/loss roles); the
+   local RTT EWMA seeds from its FIRST measured sample (no 50-ms blend);
+   the gen-pipe delivered-rate filter seeds from 500-ms buckets (ring 8,
+   same ~4-s window class) instead of a 2-s pin; and the static
+   `(pipeline+2)·G` FMTCP win backstop becomes the DERIVED `(M*+2)·G` once
+   anchors are live (cold-start M\*=2 reproduces the legacy 4·G exactly, so
+   the static value's reign is bounded to ~one rate bucket; explicit
+   `RWM_FMTCP_WIN` still wins).
+3. **Plain-mode send-interval sampler** (`RWM_PLAIN_RS`; rule 1). The #79
+   BBR sampler (RsPacket snapshots, Δt = max(send_elapsed, ack_elapsed),
+   windowed max, app-limited exclusion) generalized to plain
+   window-reliable mode under ANY substrate CC, by running the Copa-feed
+   WindowAck frontier/SACK attribution machinery in a new SAMPLING-ONLY
+   CopaFeed mode: rate samples flow, but cwnd dynamics keep the legacy
+   per-batch-Ack call site/cadence (minus the polluted ack-interval
+   `record_delivery` sample) and the store-cap/percap laws stay on their
+   legacy branches (`owns_cc()`). The Copa-sole feed is unchanged.
+4. **Post-stall hygiene at the shared sampling layer** (`RWM_CLOCK_GAP`;
+   rule 2). A process-global `StallWitness`: a dedicated 50-ms timer tick;
+   a tick interval ≫ the period (same `is_clock_gap` predicate — factored
+   ONCE) is a whole-process stall, and the ack feed sites
+   (Ack/WindowAck/PathReport arms + the report-tick throughput feed)
+   discard samples during the quarantine (budget release and loss counts
+   are NOT discarded — they stay valid). **Negative result, recorded:**
+   the first implementation detected gaps on the ACK-ARRIVAL clock
+   (median, then p90 cadence statistic) and was REFUTED at an r200 gen L0
+   rung — ack silences of 0.5–3 s are NORMAL protocol behavior there
+   (frontier waves, deficit rounds), and the detector quarantined exactly
+   the post-recovery ack waves carrying the true rate (measured discard
+   storms gapd 7/2487 and 9/5578 during healthy transfer). The process
+   clock cannot be fooled this way: ack silence with a live process never
+   trips a timer.
+
+**Unit evidence (lib 350/350 green, tree of 988960c).** The flood-poison
+injection (`send_rate_anchor_flood_poison_injection_does_not_move_the_max`:
+steady 150 sym/s, synthetic 1-s gap + 150-send backlog flood ⇒ anchor moves
+< 20% and re-measures truth after quarantine; the gap is DETECTED);
+seeding (`send_rate_anchor_seeds_from_first_measured_sends`: truthful
+within one SRTT of stream start); witness law
+(`stall_witness_quarantines_process_stalls_not_ack_silences` +
+`stall_witness_quarantine_is_capped`: steady ticks never quarantine, a 1-s
+stall quarantines ≈ its own length, expires, no cascade); estimator seed
+(`rtt_seeds_from_first_measured_sample_under_hygiene` + the legacy-blend
+control); backstop coupling
+(`fmtcp_backstop_couples_to_derived_depth_after_cold_start`: cold start =
+legacy 1536 exactly); `sampling_only_feed_does_not_own_cc`. Plain-sampler
+correctness under batched acks + a standing queue was already law
+(`rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue`) — fix 3
+reuses that machinery verbatim. N=1/identity: all gates default OFF; with
+the env unset every feed site takes its legacy branch (lib suite green on
+the same tree with no env set).
+
+### L0 mechanism evidence (dev box — its own hardware era; same-session interleaved arms, test binary from 988960c)
+
+- **A\* trajectory (unified_stream_l0, c3-1200B, RWM_DIAG [SPAN] trace).**
+  Base arm: `a_star=1` at EVERY 500-ms sample of the whole 20-s stream
+  (the EWMA never lifted it — defect (i) live). Hygiene arm: a\*=6 by the
+  second trace sample (t≈0.6 s), settling at its derived value 3 for the
+  stream (anchor rate ar≈64–66 sym/s steady, gap counters 0/0 on a quiet
+  box). Same cell, same seeds, same binary.
+- **Quiet-box stream battery (14 seeds × {U, U+AH}, interleaved).** 0
+  outage-class reps in EITHER arm (the trigger is environmental and was
+  absent); every message delivered in all 28 reps; p50 identical (47.5 ms);
+  **U+AH's p90 is systematically lower — median-of-reps p90 78 vs 94 ms**
+  (13/14 seeds ≤ base; the live span converts ARQ round-trips into
+  in-window FEC recovery — the ru/rf≈9% inertness closing).
+- **Interference stream batteries (same interleaved arms under concurrent
+  compile-class host load — the attribution's on-demand trigger).** Two
+  passes: 14×2 under a light build loop (mettle crate) and 6×2 under a
+  heavy loop (full raptorpath release rebuild, repeated). HONEST RESULT:
+  the collapse class did NOT reproduce today — 0 outage-class reps in
+  BOTH arms across all 68 local reps (quiet+light+heavy; the attribution
+  session's box produced 3/14 under its background load; today's did
+  not, even loaded — the trigger is environmental and was absent). What
+  the loaded passes DID show: U+AH's p90 advantage persists (median 78
+  vs 87–94 ms), and the single disturbed rep of the day (heavy-load
+  s42-U: p99 903 ms, max 1089 — a ~1-s episode) landed in the BASE arm
+  and did not chain, while the same-session U+AH rep held p99 126 ms —
+  suggestive of the amplification removal, but n=1 and NOT claimed as
+  more than that.
+- **Plain-sampler shim truth check (gen_substrate_l0 plain mode, RWM_DIAG,
+  mid-transfer btlbw vs the shim's configured rate).** c3: base 11,383
+  (×5.5 over) → PRS **2,144 = 1.03× truth** (ANCHOR attr/gen ≈ 4.8k —
+  sampler live). c2: base 82,785 (×7.9 over) → PRS 3,946 — an honest read
+  OF THE ACHIEVED rate (~1.0× its own ~19-Mbit delivered rate; the L0
+  shim run self-limits under the honest anchor: samples cannot read above
+  what flows — the same anchor⇄cap circularity, stronger at L0 where the
+  shim caps the loopback). The L1 check above (real substrate) is the
+  verdict-carrying row: 1.02× truth at line rate.
+- **Gen-substrate r200-class rung (`custom:100;100;3;1.3;50`, a
+  NEVER-BEFORE-RUN L0 cell): mechanism liveness only.** [GPIPE] shows M\*
+  climbing 2→9 on honest rtprop ≈ 200–216 ms under the gate (vs 2→3–4 on
+  a 120–190-ms under-read without), and the witness records 0 false
+  quarantines (gapd 0/0) — but the CELL ITSELF carries a pre-existing
+  wedge class in BOTH arms locally (base 3/10 DNF across passes; the
+  hygiene arm wedges too, `win=977/768` over-cap stall signature), so no
+  local throughput verdict is drawn. The L1 knee battery below is the
+  arbiter — it ran 64/64 with 0 DNF.
+
+### L1 RESULTS (VM 10.1.5.16, 2026-07-19 ~16:00–17:10 UTC+2; binary sha256 e17df72b7641… = commit 988960c, SAME binary every arm; host-passthrough E5-2650 v3, aes+avx2+pclmulqdq in every log header (post-divide); arms interleaved per rep, fresh tunnel per invocation, seeds 42+7, RWM_DIAG=1 everywhere; drivers `/home/vibe/anchorhyg/{ah_all,ah_knee,ah_plain}.sh`, logs `/home/vibe/anchorhyg/{knee,plain,tailah}-*.log` + per-run `diag-*`; lock `/tmp/rwm-vm.lock`)
+
+**(a) The #61 knee re-run** (`perf_rwm_c.sh c2r100|c2r200 … bulk 25 MB
+single`, gen-sys wire, GPB stack `RWM_GEN_R=0.03 RWM_QUIC_CC=bbr`; arms U1 =
+`RWM_UNIFIED=1 RWM_GEN_PIPE=1` (the #61 M\*-law arm, hygiene OFF) vs U1AH =
+U1 + `RWM_ANCHOR_HYGIENE=1`; ×8 interleaved, n=8/8 everywhere, 0 DNF; U1AH
+liveness echoes on every rep, `rtp=50ms`-class DIAG reproduced on U1 reps,
+`rtp=100/200ms` + [GPIPE] M\* 2→5..9 on U1AH reps):
+
+| cell | U1 mean Mbit/s (σ_s) s42 · s7 | U1AH s42 · s7 | Δ | m=2/M\* ratio (PART 7b predicts) |
+|---|---|---|---|---|
+| c2r100 | 36.49 (3.51) · 38.84 (1.10) | **47.86 (2.20) · 48.48 (2.82)** | +31% / +25% | 0.76 / 0.80 (0.64) |
+| c2r200 | 19.18 (0.74) · 20.30 (0.79) | **34.85 (2.16) · 32.94 (2.95)** | +82% / +62% | 0.55 / 0.62 (0.39) |
+
+**The knee ENGAGES.** At r200 the per-rep distributions do not overlap
+(U1AH min 32.0/27.5 vs U1 max 20.1/21.2); at r100 they barely touch
+(s7 U1AH min 43.5 vs U1 max 40.9). U1 reproduces the #61 class exactly
+(r100 33–37, r200 19–21 — no session drift on the control). Oracle PART 7b
+is CONFIRMED in direction and ordering (the m=2 deficit exists and is
+deeper at r200, saturating shape); the measured deficit is SHALLOWER than
+in-model (0.76–0.80 / 0.55–0.62 vs 0.64/0.39) — the wire keeps binders the
+oracle does not model (receiver ~1-core sink class, §16.19). The #61
+"M\*-arm ~1–2 Mbit bookkeeping cost" datum (roadmap item 8) is superseded
+in the fixed regime: the M\* law now pays for itself ×1.6–1.8 at r200.
+
+**(b) Plain-anchor truth check** (`perf_rwm_c.sh` plain bulk 25 MB, RWM_GEN=0
+RWM_QUIC_CC=bbr; sc2 single + c8 dual (c2+c3); P = base vs PRS =
+`RWM_PLAIN_RS=1`; ×4 interleaved; truth at 1200 B: c2 ≈ 10.4k, c3 ≈ 2.1k
+sym/s; sampler liveness echo on every PRS rep, ANCHOR counters attr/gen > 0):
+
+| gauge | P (ack-interval) | PRS (send-interval) |
+|---|---|---|
+| sc2 btlbw | 47.5–64.5k = **×4.6–6.2 over** | 6.5–10.7k = **0.6–1.0× truth** |
+| c8 fast (c2) btlbw | 48.1–68.8k = ×4.6–6.6 over | 6.4–10.2k = 0.6–1.0× |
+| c8 slow (c3) btlbw | 9.9–15.5k = **×4.7–7.4 over (the knee-clamp)** | 0–2.0k = ≤1× (under-reads when placement starves it of source) |
+
+| cell | P mean Mbit/s (σ_s, n) s42 · s7 | PRS s42 · s7 |
+|---|---|---|
+| sc2 | 79.95 (2.68, 4) · 77.31 (1.82, 4) | 61.66 (11.05, 4) · 62.46 (4.81, **n=2**) |
+| c8 | 48.26 (5.09, 4) · 57.49 (**19.08**, 4) | **55.35 (9.28, 4) · 61.88 (4.00, 4)** |
+
+The GUARD-RESULTS over-read is REMOVED (target "within ~2× truth" met on
+the over-read side everywhere; the residual is slow-path UNDER-read under
+source starvation — the safe direction for a cap). At c8 — the cell the
+percap fix needs — honest anchors also IMPROVE throughput and collapse the
+bimodal spread (s7 σ 19.1 → 4.0). Named cost, honestly: sc2 single-path
+−20% — the over-read was accidentally load-bearing for the anchor-sum
+store cap (the SAME circularity §16.19 documented when the Copa feed got
+honest samples), so `RWM_PLAIN_RS` is a measurement/cap-derivation arm,
+NOT a default-flip candidate as-is. (sc2-s7 PRS lost 2 invocations to the
+documented seed-7 topo-ping double-abort class; recorded, n quoted.)
+
+**(c) Unified 3-arm tail, ONE hygiene pass** (`RWM_TM_ARMS='stream unified
+rlc' RWM_ANCHOR_HYGIENE=1 RWM_DIAG=1 tail_matrix.sh c3 5`, both seeds — the
+readiness probe for the queued flip-battery re-run, NOT the battery).
+Harness defect, recorded first: the first s42 pass DIED silently after the
+unified-1200B reps — my new [SPAN]-scraper had a `head` inside a pipeline
+under lib.sh's `set -e -o pipefail` (SIGPIPE — the EXACT discipline-item-7
+class recurring), losing that pass's rlc arm; fixed in the harness (awk-
+internal cap + `|| true`) and s42 was re-run complete (`tailah-c3-s42b.log`).
+
+Median [min–max] of per-rep p99 (ms) at c3; per-rep p50s all in MS unless
+noted:
+
+| arm·size | s42 rerun (n) | s7 (n) | #61 base battery (for class reference; cross-session) |
+|---|---|---|---|
+| stream 1200B | 880 [343–3258] (5) | 527 [284–21561] (5) | 420/1498 |
+| unified 1200B | **396 [219–1782] (5)** | 579 [261–770] (3) | 794/3064 **+ 3/10 reps p50 in SECONDS** |
+| rlc 1200B | 929 [893–5905] (4) | 201 [139–815] (4) | 340/205 (n=5+3; 2/10 lost) |
+| unified 400B | 345 [108–706] (5) | 628 [102–11065] (5) | 181/1202 |
+
+- **The unified collapse class: 0/13 completed unified-1200B reps with p50
+  in seconds** (p50 range 26.2–39.4 ms across s42 first pass + s42 rerun +
+  s7) vs the #61 base 3/10. A\* liveness echo + [SPAN] a\*=2–7 (derived, not
+  pinned) on every unified rep.
+- In the SAME s42-rerun session, unified-1200B posts the BEST p99 median of
+  the three arms (396 vs stream 880 / rlc 929) — in #61 it was the worst.
+  ONE pass, n=5: a readiness signal, not the gate.
+- Honest counterweights: (i) 2/5 s7 unified-1200B reps and 2/10 rlc-1200B
+  reps produced no summary within 30 s (the #61 rlc total-wedge class
+  and/or the seed-7 topo class — indistinguishable here; recorded, n
+  quoted); (ii) the trigger is environmental and one pass cannot bound the
+  collapse rate — the FULL battery (≥10 reps/arm, the queued protocol)
+  remains the arbiter.
+
+### Gate-readiness verdicts (the two re-opened gates)
+
+- **`RWM_UNIFIED` flip battery re-run: READY on the measurement side.**
+  Fix A (A\* anchor) + fix B (clock-gap hygiene) — the two the COLLAPSE
+  ATTRIBUTION gated the re-run on — are built, unit-proven, and
+  mechanism-live at L0 and L1 ([SPAN] a\*=derived within ~1 RTT; witness
+  quarantining real stalls only). The one-pass readiness probe (battery
+  (c)) came back clean: 0/13 unified-1200B collapse reps, unified the
+  best-of-three p99 median in its rerun session, A\* live on every rep.
+  The FULL flip battery (tail matrix ×10 reps + c3 perf + bulk parity +
+  byte-identity, per the queued protocol) remains QUEUED — it needs its
+  own session, and flip (a) additionally still gates on fix C (δ-honest
+  overload shedding), which is NOT built. No default flipped here.
+- **The percap floor-clock cap fix: UNBLOCKED.** Residual (i)'s named
+  prerequisite — an honest plain-mode BtlBw_i — exists and is measured
+  ≈1× truth where fed; the knee-clamp over-read that held cap_slow ≈ 2048
+  is gone under `RWM_PLAIN_RS`. The cap re-derivation
+  (cap_i ≤ gain·rate_i·RTprop_i on honest rate) + the percap re-battery
+  is the next session's work; the sc2 −20% single-path cost says the
+  honest anchor must feed the CAP, not necessarily the cwnd anchor floor,
+  and that trade-off is that battery's first arm.
+
+### Controls / caveats / discipline
+
+- Shipped default byte-identical: every gate reads env-unset ⇒ legacy
+  branch; the full local suite is green with no env set (below); the U1/P
+  control arms in every battery ran the NEW binary with gates off and
+  reproduced their documented classes (#61 knee values; GUARD-RESULTS
+  over-read magnitudes).
+- The collapse TRIGGER is environmental. Today's box did not produce it
+  in 68 reps (0 outage-class in both arms, quiet AND loaded) vs the
+  attribution session's 3/14 — so THIS session measured the trigger's
+  ABSENCE, not its cure. The claims held to are the ones measured: the
+  amplifiers are gone at the unit/anchor level (flood-poison injection
+  law; A\* live instead of inert; witness quarantining real stalls only)
+  and the in-band tail improves (p90). Collapse-INCIDENCE deltas await a
+  session where the trigger fires (or the queued L1 flip battery's
+  larger n).
+- The local r200-class L0 cell is UNSTABLE in both arms (pre-existing
+  wedge class, recorded above) — it is mechanism-liveness evidence only.
+- Cross-session vs #61: only in-session interleaved deltas are claimed;
+  the #61 numbers are quoted as the control arm's reproduction check.
+
+### Tests
+
+Local (dev box, tree 988960c, all hygiene env unset — the byte-identity
+proof of the shipped path): lib 350/350 (7 new anchor/witness laws + the
+seed/backstop/ownership tests; 3 arrival-clock detector tests REMOVED with
+the refuted design); math full 59/19/22/4/4/3/25 (incl. PART 7);
+gate_suite 15/15 release (224.9 s); mtu_blackhole_wedge 2/2;
+perf_loopback 8/8; fmtcp/copa_sole/daps loopbacks 1/1 each — all green
+(`suites.log` in the session scratchpad; VM binary e17df72b… built from
+the same commit). Harness: tail_matrix.sh gains the A\*/hygiene echo
+scrape + [SPAN] trajectory dump (pipeline-failure-safe after the recorded
+s42 SIGPIPE defect).
 
 ## Unified Decoder (built; L1 flip-gate battery MEASURED 2026-07-19, both flips NO) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved) — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop). **L1 (`meas/unified-battery`): bulk gen-sys parity + CPU parity PASS, realtime delivery-complete at c3 (+24–26 pp vs shipped streaming, span law recovery-live), but the realtime TAIL gate FAILS — unified p99 medians 2.7–3.3× legacy-RLC at c3 with a 3/10 stream-collapse rep class, so `RWM_UNIFIED` stays DEFAULT OFF (named blocker) and streaming keeps Realtime + the 12–48× crown jewel; the M* knee is UNREACHABLE at L1 behind two named anchor defects (RTprop floor under-read, static win backstop)** (branch `feat/decoder-unify`)
 

@@ -56,7 +56,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # echo — an unguarded grep kills the whole matrix silently).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
             | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
@@ -81,6 +81,17 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
             p99s+=("$p99"); p50s+=("${p50:-nan}")
             echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms"
         fi
+    done
+    # feat/anchor-hygiene: A* trajectory + witness gauges (RWM_DIAG-gated
+    # [SPAN] trace on the sending engines). MUST be pipeline-failure-safe
+    # under lib.sh's set -e + pipefail: a `head` in the pipe SIGPIPEs the
+    # upstream and killed the s42 pass after one arm (MEASUREMENT
+    # DISCIPLINE item 7 recurrence, recorded in "Anchor Hygiene") — the
+    # line cap lives inside awk and the whole pipeline is `|| true`-guarded.
+    for lg in /tmp/tm-s.log /tmp/tm-c.log; do
+        { grep -E '^\[SPAN\] ' "$lg" 2>/dev/null || true; } \
+            | awk 'NR<=6 || NR%10==0 { n++; if (n<=24) print }' \
+            | sed "s|^|  SPAN $label ${size}B ${lg##*/}: |" || true
     done
     hard_cleanup
     if [[ ${#p99s[@]} -gt 0 ]]; then

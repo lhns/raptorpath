@@ -8639,6 +8639,11 @@ settled:
   The §16.17 depth law's first L1 validation therefore remains OPEN, with
   the two anchor defects as the named prerequisite. Unified ≡ legacy at
   every knee point — the decoder swap is knee-neutral.
+  **[CLOSED 2026-07-19 (§16.21): with the anchor pair fixed
+  (`RWM_MSTAR_ANCHOR`) the knee ENGAGES — r100 +25–31%, r200 +62–82%
+  over the same-session hygiene-off control, both seeds, n=8, 0 DNF;
+  PART 7b confirmed in direction/ordering, measured m=2 deficit
+  shallower than in-model (other wire binders).]**
 
 - **An ordering surprise worth keeping:** at these L1 tail cells the
   legacy-RLC realtime arm posts the best p99 medians of all three machines
@@ -8691,6 +8696,116 @@ ATTRIBUTION for the full evidence). Three structural findings:
    lacks. Flip (a) is therefore gated on the anchor repair (+ clock-gap
    estimator hygiene) and on giving the unified small-δ machine an
    explicit overload-shedding policy, not on any decoder work.
+
+---
+
+### 16.21 Anchor hygiene: three laws for a measured anchor, and the convergent defect family they name (2026-07-19, `feat/anchor-hygiene`)
+
+Three independent investigations ended at the same place. The unified-realtime
+collapse attribution (§16.20.8) found A\* pinned at 1 by a cold 2-s EWMA and
+flood-poisoned 1→38 by a post-stall ack burst; the #61 knee battery (§16.20.7)
+found M\* pinned at its cold-start floor by a 50-ms RTprop "sample" that never
+expired plus a static `(pipeline+2)·G` backstop; the per-path outstanding
+accounting battery (§16.19 guard addendum) found the plain-mode delivered-rate
+anchor over-reading ~8–10× and knee-clamping every derived cap. Different
+subsystems, one disease. The unifying principle, stated as three laws:
+
+**An anchor is trustworthy only if:**
+
+1. **It is seeded from measured sends.** The estimate must be a windowed
+   statistic (max, for a bottleneck-rate anchor — §16.15/§16.17's lesson) of
+   REAL samples, live within ~1 RTT of the first send — never a constructor
+   default or a multi-second EWMA crawl standing in for a measurement during
+   warm-up. A default that survives warm-up doesn't just delay the anchor: it
+   gets RECORDED as if it were data (the 50-ms peer-report seed entering the
+   min-RTT floor window every 2 s) and then outlives every real sample.
+2. **Its samples exclude scheduler clock gaps.** A sample whose interval
+   spans a whole-process stall measures the stall, not the link: the release
+   flood's ack-interval Δt collapses (delivered-rate reads ×13 the link), and
+   its echo RTTs carry the stall (EWMA-RTT ×3). Detection must be on the
+   PROCESS clock — a fixed-cadence timer whose tick interval stretches ≫ its
+   period — because on the ack clock, silences of 0.5–3 s are legitimate
+   protocol behavior at high-RTT lossy cells (frontier waves, deficit
+   rounds), and an arrival-clock detector was MEASURED discarding exactly
+   the post-recovery ack waves that carry the true rate. Discard the
+   quarantined samples; never average them in.
+3. **Its floors and backstops expire.** A floor that outlives its min-window,
+   or a "cold-start backstop" that governs the whole transfer, is a constant
+   wearing a floor's clothes. The static FMTCP win backstop bounded every
+   r100/r200 transfer end-to-end (win pegged, budget-stall 90–95%); the
+   repaired form derives from M\* the moment the anchors are live, so the
+   static value's reign is bounded to the measurement warm-up (~one rate
+   bucket).
+
+Every defect in the family violates at least one law, and every fix is an
+application of one (branch `feat/anchor-hygiene`, all env-gated, shipped
+default byte-identical; umbrella `RWM_ANCHOR_HYGIENE=1`):
+
+- **A\* rate anchor** (`RWM_ASTAR_ANCHOR`, law 1+2): the span law's rate is a
+  windowed-max send-rate anchor (bucket ≈ SRTT/2, window ≈ 8 SRTT) fed by the
+  sender's own send events, replacing the 2-s-interval α=0.125 EWMA; buckets
+  spanning a clock gap — and the release-flood buckets behind them — are
+  discarded, and the window holds its pre-gap value through the disturbance.
+  The unit law is the flood-poison injection: a synthetic 1-s gap plus the
+  full backlogged burst must not move the anchor.
+- **M\* anchor pair** (`RWM_MSTAR_ANCHOR`, law 1+3): the PathReport's
+  `avg_rtt_us` — the PEER'S ESTIMATOR VALUE, seeded at 50 ms and, on a pure
+  receiver, never fed by a measurement — is no longer recorded as an RTT
+  sample; the local RTT EWMA seeds from its first measured sample; the
+  delivered-rate filter seeds from 500-ms buckets; the win backstop derives
+  `(M*+2)·G` once anchors are live (cold-start M\*=2 reproduces the legacy
+  4·G exactly).
+- **Plain-mode send-interval sampler** (`RWM_PLAIN_RS`, law 1): the §16.13
+  BBR sampler (send-interval Δt = max(send_elapsed, ack_elapsed), windowed
+  max, app-limited exclusion), already carried by the Copa-feed WindowAck
+  attribution machinery, generalized to plain window-reliable mode under ANY
+  substrate CC — sampling-only: the per-path BtlBw/BDP anchor gets clean
+  samples while cwnd dynamics keep their legacy cadence and the store-cap /
+  percap laws stay on their legacy branches. This is the fix the §16.19
+  guard residual (i) named: honest `cap_i = gain·BtlBw_i·RTT_i` needs an
+  honest BtlBw_i.
+- **Post-stall hygiene at the shared sampling layer** (`RWM_CLOCK_GAP`,
+  law 2): one process-clock `StallWitness` (50-ms tick, quarantine =
+  min(gap, 2 s)) consulted at the ack feed sites (Ack/WindowAck/PathReport
+  arms, report-tick throughput feed) — factored once, not scattered per
+  estimator. The first arrival-clock implementation is retained in the
+  module doc as a REFUTED design with its measurement (the r200 discard
+  storm) — the negative result is part of the law's derivation.
+
+Measured before/after (goal-gate "Anchor Hygiene" for the full tables;
+same-session interleaved hygiene-off controls everywhere):
+
+- **A\*** ([SPAN] trace, c3-1200B stream): base `a_star=1` at every sample
+  of a 20-s stream; hygiene a\* at its derived value by the second 500-ms
+  sample. Stream p90 improves 94 → 78 ms (median of 14 seeds) with p50
+  unchanged — the FEC inertness (ru/rf ≈ 9%) closing into in-window
+  recovery. The flood-poison injection is a permanent unit law.
+- **M\* knee** (L1, gen-sys 25 MB, n=8 × 2 seeds, 0 DNF): r100 36.5/38.8 →
+  47.9/48.5 Mbit/s (+31/+25%); r200 19.2/20.3 → 34.9/32.9 (+82/+62%,
+  non-overlapping per-rep distributions). Oracle PART 7b
+  (raptorpath-math): the m=2 deficit is REAL, in the predicted direction
+  and ordering (deeper at r200); measured m=2/M\* ratios 0.76–0.80 (r100)
+  and 0.55–0.62 (r200) vs the in-model 0.64/0.39 — the wire keeps binders
+  the oracle does not model.
+- **Plain BtlBw truth** (L1, DIAG gauge vs known link rates): sc2
+  ×4.6–6.2 over-read → 1.02× truth; the c8 slow path's ×4.7–7.4
+  knee-clamp over-read → ≤1×. c8 plain throughput improves with the
+  bimodal spread collapsed (σ 19.1 → 4.0 at s7); named cost: sc2 single
+  −20% (the over-read was accidentally load-bearing for the anchor-sum
+  store cap — the §16.19-documented circularity), so the sampler is a
+  cap-derivation/measurement arm, not a default candidate as-is.
+- **Collapse incidence** — honest: the environmental trigger did NOT fire
+  in 68 local reps this session (0 outage-class in BOTH arms, quiet and
+  compile-loaded), so no incidence delta is claimable; the amplifier
+  removal is claimed at the unit/anchor level, and the one-pass L1
+  readiness probe (0/13 unified-1200B collapse reps; unified best-of-three
+  p99 median in its session) reads clean.
+
+Honest scope: the collapse TRIGGER is environmental (a host scheduler
+stall is outside the transport); these fixes remove the transport's
+AMPLIFICATION of it (anchor poisoning extending the disturbed regime), not
+the transient itself, and the δ-honest overload policy (§16.20.8 fix C)
+remains a separate, unbuilt gate.
 
 ---
 
@@ -8914,13 +9029,26 @@ asserted beyond its naming evidence.
    under sustained bursts, decode/delivery backlog, retention pressure).
    THE `RWM_UNIFIED` blocker; closing it re-opens the flip and schedules
    legacy-decoder removal.
+   **[ATTRIBUTED 2026-07-19 (§16.20.8): not the decoder — an anchor
+   defect + family-level transient amplification. The named fixes A
+   (A\* anchor repair) and B (clock-gap estimator hygiene) are BUILT
+   2026-07-19 (§16.21, `feat/anchor-hygiene`); the flip battery re-run
+   is UNBLOCKED on the measurement side. Fix C (δ-honest overload
+   shedding) remains open and still gates the flip itself.]**
 4. **Legacy-RLC realtime total-wedge class** (2/10 reps, no stream summary
    within 30 s, same cell) — a distinct failure class, unattributed.
+   **[Same root family as item 3 (§16.20.8); closes with its fixes.]**
 5. **The M\* anchor pair + knee re-run** — the RTprop floor under-read
    (a DEFAULT_SRTT-class 50-ms seed surviving the 10-s min-window at a
    200-ms cell) and the static (pipeline+2)·G win backstop; then re-run
    the RTT-100/200 knee cells. Oracle PART 7b's depth-term prediction is
    neither confirmed nor refuted until this lands (§16.20.7).
+   **[DONE 2026-07-19 — §16.21: the floor was the peer-report estimate
+   recorded as a sample; with the pair fixed the knee ENGAGES at L1
+   (r100 +25–31%, r200 +62–82%, both seeds, n=8, 0 DNF). PART 7b's
+   deficit is confirmed in direction and ordering; measured ratios
+   0.76–0.80/0.55–0.62 vs the in-model 0.64/0.39 (other wire binders
+   remain).]**
 6. **Copa competitive mode + the first cross-traffic cell** — Copa §4
    mode switching plus a shared-bottleneck battery (also carries BBR's
    unevaluated fairness). Gates any substrate-CC default flip (§17.2).
