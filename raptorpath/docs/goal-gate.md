@@ -36,8 +36,262 @@ eligible for merge unless ALL of the following are in the ledger section:
    exceed the measured same-config spread (σ_s and cross-session drift).
    Every DAPS-era "effect" (+15%, +30%, +52%, −53%, −19%) was inside it.
 
-Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
-as SET (`.is_ok()` gates) — only some knobs treat "0" as off.
+~~Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
+as SET (`.is_ok()` gates) — only some knobs treat "0" as off.~~ **[FIXED
+2026-07-13, "Gen-ON Stack Ablation" JOB 1: `config::env_flag` — `=0`/`=false`
+is OFF for every boolean gate; numeric-value knobs unchanged.]**
+
+Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
+
+6. **Mechanism liveness must be proven at the RECEIVER, not just the sender.**
+   The #85 span-probe datum was VOIDED because its repairs were emitted
+   (sender cod/src healthy) but dropped on entry by a mismatched-backend
+   decoder — it measured pure wire load. A recovery-mechanism verdict needs a
+   receiver-side liveness signal (backend/decoder echo, `repairs_useful > 0`),
+   not only emission counters. ("Unified Decoder", §16.20.4.)
+7. **Harness arm-liveness under `set -e`.** The first #61 tail battery lost
+   every legacy-RLC arm silently: `lib.sh` forces `set -e` and a no-match
+   `grep` in the echo pipeline (plus a no-summary rep) killed the matrix
+   mid-arm with no error. Battery drivers must `|| true`-guard match
+   pipelines AND assert a per-arm result count — an arm that produced zero
+   summaries fails the battery loudly, it does not vanish (commit bd13985).
+8. **Known caveat class: the seed-7 topo-ping double-abort.** GE loss on
+   seed 7 occasionally eats both verification echoes; aborted invocations
+   leave a stale-server-log echo line (recorded, discounted). Record n per
+   arm, keep per-rep values, retry per protocol, never discard a captured
+   result — and never present an n<8 mean without its n.
+9. **Hardware era is part of the config.** Record `lscpu` in every log
+   header; compare only within the same era (the 2026-07-14 HARDWARE DIVIDE:
+   qemu64/SSSE3 vs passthrough E5-2650 v3 with aes+avx2+pclmulqdq). A
+   cross-era comparison must name the divide.
+
+## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
+
+This is the settled synthesis of the post-audit evidence base (everything
+from the 2026-07-13 "Methodology Audit" onward: Generation-ON Re-Baseline →
+Gen-ON Stack Ablation → Gen Substrate Ceiling → Decode-CPU Ceiling →
+Copa-Sole → Copa Wire-Signal → Frontier Wedge → r\*/Taper → Hardware-Honest
+Re-Baseline → Per-Path Outstanding Accounting → Unified Decoder). It
+SUPERSEDES the "FINAL CONSOLIDATED VERDICT (2026-07-08)" and the "L3 REGIME
+MAP" further down this file (both retained, bannered, as the honest record
+of their era) and the corresponding paper regime text (now paper §17). Paper
+cross-refs: §16.15–§16.20, §12.11–§12.12, §8.4.1, §8.8.
+
+**Era discipline.** Two eras of L1 numbers exist. *Pre-divide* (≤ 2026-07-13):
+qemu64 vCPU, SSSE3 only, software AES-GCM. *Post-divide* (≥ 2026-07-14):
+host-passthrough E5-2650 v3 with AES-NI/AVX2/PCLMULQDQ (the HARDWARE DIVIDE
+banner in "Hardware-Honest Re-Baseline"). The divide itself was an
+instrument: every plain/Copa cell reproduced its pre-divide value on the
+faster CPU (crypto was never a wall), so pre-divide RATIOS carry, but
+absolute cross-era comparisons must name the divide. Numbers below are
+post-divide unless marked.
+
+### 1. The substrate chain — what the walls were, in order
+
+The old maps concluded bulk was "recovery-latency-bound at ~15–17 Mbit/s"
+and heterogeneous aggregation "bounded at ~parity". Both conclusions were
+measurements of SUBSTRATE ARTIFACTS stacked under the transport. The walls,
+in the order found, each fixed or refuted:
+
+| # | wall | what it was | disposition | where |
+|---|---|---|---|---|
+| 1 | **quinn's hidden Cubic** | every datagram send is gated on quinn's own congestion window; the "15–17 Mbit link ceiling" was loss-reactive Cubic collapsing under GE loss (plain 17.5 → plain+BBR 74.5 pooled, ×4.3) | FIXED as policy: `RWM_QUIC_CC` (§2 below) | "Gen Substrate Ceiling"; paper §12.11, §16.17 |
+| 2 | **quinn's PMTU black-hole detector** | a GE all-large loss burst reads as an MTU black hole → MTU reset to 1200 < the 1279-B symbol → every data send fails `TooLarge` for the 60-s cooldown = the cross-arm ~60-s "collapse run" | FIXED, ships default-ON: `min_mtu = initial_mtu = 1350`; 0/68 collapse runs vs 7.6% historic (p≈0.005); deterministic repro 63.5 s → 5.8 s | "Frontier Wedge"; paper §12.12 |
+| 3 | **the coded-only wire O(G²·S)** | the ~34 Mbit/s "generation machine ceiling" was the WIRE MODE (every DoF a dense row, both ends), not the solver | FIXED: systematic-repair wire = the O(k·G·S+k³) machine; gen single-c2 33.9 → 70.9 (pre-divide), ×2.1 | "Decode-CPU Ceiling"; paper §16.18 |
+| 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
+| 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
+| 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) | §16.19 |
+| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, c8-regressed, OFF | §16.19; "Per-Path Outstanding Accounting" |
+
+What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
+on a saturated single reliable path FEC = ARQ parity is the ceiling,
+confirmed again post-divide (gen-sys single = 0.97–1.0× plain+BBR; the
+coding is free, not free throughput).
+
+### What the transport measures today (post-divide, same-session interleaved)
+
+| cell | best measured | config | reference point |
+|---|---|---|---|
+| single-c2 plain | 76–79 Mbit/s | plain + `RWM_QUIC_CC=bbr` | legacy Cubic-under: 17 |
+| single-c2 gen-sys | 75.5–75.7 (0.97–1.0× plain+BBR) | GPB stack + `--window-systematic-repair` | FEC tax ≈ 0.37 s recv CPU / 25 MB |
+| single-c3 (lossy 20 Mbit) | 15.6–15.9 (the recovery ceiling) | plain+BBR; gen-sys 14.9–15.1 = 0.95× (pre-divide) | legacy Cubic: 3.2 |
+| C7 (c2+c2) | 136.5–147.4 = 0.87–0.97×Σ | PBP (percap) / PBS (pooled 0.85–0.94×Σ) | PB baseline 100–105 |
+| C8 (c2+c3) | 72.3–75.8 = 0.74–0.80×Σ | PBS (pooled path-scaled) | PB baseline 44–65 (bimodal) |
+| engine sink | 187.7 Mbit/s | single-path c1, 1 receiver task | the threading threshold ~150–190 |
+| realtime delivery, c3 100 KB | unified 99.4–100% / streaming 73.8–76.0% | `RWM_UNIFIED=1` vs shipped | ×3–4 completer-median cost |
+| message-tail p99 | 12–48× vs quinn/kernel-TCP at C2 (pre-divide crown, flip-gate-defended) | shipped streaming Realtime | post-divide c3 matrix: legacy-RLC medians best (§5 below) |
+
+**Default honesty:** the SHIPPED defaults still ride stock Cubic with the
+1024-pool law — the best-measured configs above are opt-in knobs
+(`RWM_QUIC_CC`, `RWM_GEN_PIPE`, `RWM_STORE_PATHS`). What ships ON today:
+the MTU floor (wall #2) and the corrected r\* solver (`RWM_RSTAR_TAIL=1`).
+Every other flip is gated on a named battery (roadmap, §6).
+
+### 2. The CC policy surface — substrate CC is POLICY (`RWM_QUIC_CC`)
+
+- **Cubic (the unset default): dead as a performance choice.** It was wall
+  #1; it survives only as the untouched shipped default pending the
+  fairness/competitive batteries.
+- **BBR-under (`bbr`): the bulk-throughput champion.** Plain single-c2
+  74.5–79, C7 ~100–105, the reference arm of every battery since §16.17.
+  Cost: standing queue (38 ms wireQ at sc2; 88–124 ms on the C8 slow path,
+  p90 to 2.5 s) and a c3/C8 bimodal collapse mode (partly the wedge, fixed;
+  partly BBR's own).
+- **Copa-sole (`passthrough` + wire signal): the queue/tail champion.** The
+  engine's per-path Copa-lite cwnd IS quinn's window; after the wire-clock
+  fix (paper §12.4 addendum) it holds 0.86–0.89× BBR's bulk at single-c2,
+  0.78× at sc3, 0.73–0.76× at C7 — and at C8 it STRICTLY DOMINATES
+  BBR-under: 0.95–1.01× throughput with a ×18–25 tighter slow-path standing
+  queue (wireQ 3–7 ms vs 88–124), σ collapsed, and natural RTT-floor
+  freshness (the ±v/δ dither refreshes the raw 10-s min without BBR's
+  ProbeRTT drain — no FEC protection gap). δ maps from the hint with no new
+  constants (δ = 0.5/ζ; measured knee AT the mapped Bulk δ).
+- **The named gap that blocks any default flip:** Copa-lite has NO
+  TCP-competitive mode (Copa §4 not built) — against loss-based
+  cross-traffic a delay-based controller yields, and no cross-traffic cell
+  has ever been measured (this gates BBR's fairness case too). Substrate CC
+  remains a policy surface with defaults unchanged. ("Copa-Sole", "Copa
+  Wire-Signal"; paper §12.11.)
+
+### 3. Aggregation vs Σ — the bulk N× verdict
+
+The user's claim: bulk multipath striping should approach N× per-path rate.
+Verdict: **substantially validated at C7, mechanism-named gap at C8.**
+
+- **C7 symmetric: 0.87–0.97×Σ.** The binder was never the receiver (wall
+  #6 refuted) — it was the per-transfer pool (wall #7). Path-scaled pool
+  (PBS): ×1.72–1.89 of the same-session single, 0.86–0.94×Σ (#84). Per-path
+  accounts (PBP): 0.87/0.97×Σ — the ≈1.0 target TOUCHED at s7, with the
+  pooled arm's collapse mode absent (#86). Copa rides the same unlock
+  (C1P ×1.34–1.54 of its own single).
+- **C8 heterogeneous: best ~0.74×Σ (pooled PBS arm; 0.79–0.80×Σ in the #84
+  session — session drift is why every verdict is same-session
+  interleaved).** One shared pool cannot be sized for a c2-deep and a
+  c3-shallow path at once; the percap lever BUILT for this cell REGRESSED
+  it to 0.38–0.43×Σ under both CC families — the cap-full placement
+  redirect over-commits the slow account (~2048 symbols on a 15.7 Mbit
+  path ≈ 1.3 s dwell; holes recover ~13× slower; frontier serializes).
+  `RWM_STORE_PERCAP` stays OFF.
+- **The two named residuals** (roadmap items 1–2): the percap
+  redirect-guard (delay-aware redirect / dwell-bound slow cap), and
+  receiver/sender task parallelization — now LIVE at the symmetric cell
+  (PBP c7-s7 = 147.4 ≈ the ~150 threshold), noted, not built.
+- No cell exceeds its link-class Σ ceiling; "every wall so far has been an
+  unscaled constant or a hidden substrate controller, not the architecture"
+  (§16.19).
+
+### 4. The FEC story, honestly
+
+- **Single-path throughput: parity, the identity confirmed.** Gen-sys
+  single-c2 = 0.97–1.0× plain+BBR; c3 = 0.95× the plain+BBR recovery
+  ceiling (pre-divide). FEC does not buy saturated single-path bulk
+  throughput; that is a property of reliable delivery, not a gap.
+- **Coding is ~free on real silicon.** On AVX2 the whole FEC machine costs
+  ~0.37 s recv CPU per 25 MB over plain (0.97× throughput) — the "coding
+  tax" era is over (walls #3–#5).
+- **Generation coding is the STABILIZER.** Gen-bare C8 σ 0.14–0.48 vs
+  plain's 2.0–2.1 (ablation, pre-divide); gen-sys C8 σ halved vs plain+BBR
+  with the bimodality gone (§16.18). Where plain+BBR pays a bimodal penalty
+  for touching a lossy path, the coded arms park stably.
+- **Tail latency is the crown: 12–48× message-p99** vs quinn/kernel-TCP at
+  C2-class loss (Full Benchmark Re-Run, Metric A — pre-divide, reproduced
+  across re-runs), held by the SHIPPED streaming machine and DEFENDED at
+  the 2026-07-19 flip gate (unified realtime is NOT tail-parity: p99
+  medians 2.7–3.3× legacy-RLC at c3 + a 3/10 stream-collapse class).
+- **NEW measured point — delivery-complete realtime.** The unified small-δ
+  machine at the c3 realtime cell: 99.4–100% delivered vs the shipped
+  streaming 73.8–76.0%, at ×3–4 completer medians and cod/src 0.34–0.42
+  (r consumed as computed, recovery-live at the receiver). That is a
+  DISTINCT (δ, ρ) profile candidate — +24–26 pp reliability bought with
+  completion tail — not a defect of either machine.
+- **r\* bursty provisioning: correct at the solver, entangled at the
+  shipped realtime wire.** The §8.4.1 mass-quantile solver is
+  oracle-validated (feasible-cell worst residual 2.88× → 1.41×; heavy-tail
+  synthetic 5.1×-miss → 0.99×-hit; infeasible cells DECLARED) and ships ON.
+  The wire quantity law is FIXED (`RWM_TAPER_R`: cod/src 0.06–0.09 →
+  0.32–0.35 at L1) but consuming r DEGRADES streaming-family delivery
+  (−19/−25 pp, both seeds, both rungs) — the leading-window unsolvable-span
+  entanglement, CONFIRMED on the real substrate; flip closed. The
+  solvable-span emission exists structurally in the unified machine
+  (trailing span, §16.20.3) — where it IS delivery-complete. The RLC family
+  at the same cell is ARQ-complete (the −22 pp was a streaming-family
+  property, rescoped in §16.20.4).
+
+### 5. The three-machine map
+
+| machine | measured niche | flip-gate status | retires when |
+|---|---|---|---|
+| **Streaming two-layer** (shipped Realtime default) | the 12–48× message-tail crown (Metric A); burst-optimal diagonal layer | DEFENDED 2026-07-19: unified fails tail parity (p99 ×2.7–3.3 + collapse class) → keeps Realtime | only if a retirement case engages BOTH the unified trade AND the L1 ordering datum below; honest liabilities recorded: 24–26% DNFs at the c3 100 KB realtime perf cell, and at the post-divide c3 tail matrix the legacy-RLC arm posts BETTER p99 medians (234/273 ms vs streaming 510/822 pooled) — the "streaming-retirement gap", roadmap item 7 |
+| **Legacy RLC family** (`RlcWindowDecoder` plain window + `GenerationDecoder` gen wire) | the bulk half: gen-sys = the bulk-champion wire (parity with plain at ~free CPU); the plain-RLC realtime arm posts the best c3 p99 medians of all three machines | bulk gate: unified reached parity+CPU-parity against it (PASS); realtime: it BEAT unified at the bursty cell, but carries its own 2/10 total-wedge class | both decoders retire when unified passes ≥ legacy-RLC EVERYWHERE — the remaining gap is realtime tail only; known defect: rank loss on late sources under reorder (unified already fixes it) |
+| **Unified span machine** (`RWM_UNIFIED`, default OFF) | ONE decoder + δ-continuous span law (A\*/M\*/Δ), differential-proven vs all three legacy decoders; bulk gen-sys parity + CPU parity PASS at L1; delivery-complete realtime (+24–26 pp) | BOTH flips NO (2026-07-19): named blocker = the c3-1200B stream-collapse rep class (3/10, p50 in seconds); M\* knee UNREACHABLE behind two anchor defects | it is the DESTINATION: when the collapse class is closed it takes the RLC family; streaming retirement is a separate, harder gate |
+
+(The block RaptorQ pipeline remains §15's other knob, untouched; the
+Full-Benchmark-Re-Run showed its lossy completion is recovery-bound and
+unchanged by the CPU-era fixes — the window/gen path is where the wins live.)
+
+### 6. THE ROADMAP — every named-not-built follow-up, prioritized
+
+Per MEASUREMENT DISCIPLINE these are named, scoped, and NOT built; each
+carries its gating decision.
+
+1. **percap-redirect-guard** — bound the cap-full placement redirect by the
+   target account's absolute dwell (redirect only while cap_i·dwell_i ≤ ~1
+   recovery round), and/or dwell-bound the slow cap
+   (cap_i ≤ rate_i × recovery budget, not the 2048 knee). Re-battery c8.
+   Gates any `RWM_STORE_PERCAP` flip and the C8 0.9×Σ target. (#86)
+2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
+   now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
+   next C7 lever after flow control. (#84/#86)
+3. **Unified-realtime c3-1200B stream-collapse attribution** — candidates:
+   EVICT-window × trailing-span repair interaction under sustained bursts,
+   decode/delivery backlog, retention pressure. THE `RWM_UNIFIED` blocker;
+   closing it re-opens flip (a), then legacy-RLC removal. (#61)
+4. **Legacy-RLC realtime total-wedge class** — 2/10 reps with no stream
+   summary in 30 s at the same c3-1200B cell; a distinct failure class from
+   the unified collapse. (#61)
+5. **The M\* anchor pair + knee re-run** — (i) RTprop floor under-read (a
+   DEFAULT_SRTT-class 50-ms seed surviving inside the 10-s min-window at a
+   200-ms cell), (ii) the static `(pipeline+2)·G` win backstop (not
+   M\*-coupled). Fix both, then re-run c2r100/c2r200 — oracle PART 7b's knee
+   is neither confirmed nor refuted until then. (#61; §16.17's residual)
+6. **Copa competitive mode + the cross-traffic cell** — build Copa §4 mode
+   switching; measure the FIRST shared-bottleneck/cross-traffic battery
+   (this also carries BBR's unevaluated fairness). Gates ANY substrate-CC
+   default flip. (#80/#82)
+7. **The streaming-retirement gap** — attribute why the legacy-RLC realtime
+   arm beats the shipped streaming machine's p99 medians at the L1 c3 cells
+   (234/273 vs 510/822 ms): the L0 c3heavy proxy predicted the opposite
+   ordering. Any future streaming-retirement case must engage this datum.
+   (#61 bonus finding)
+8. **r200 M\*-arm bookkeeping cost** — the M\*-law arms sit ~1–2 Mbit BELOW
+   fixed-depth at c2r200 on both machines/seeds (~1.3–2σ). (#61)
+9. **The solvable-span default-flip chain** — code streaming-family/plain
+   proactive repair over a decodable TRAILING span (or route realtime
+   through the RLC/unified family), and revisit whether contract-priced
+   repair should bypass the spare-cap gate. Gates `RWM_TAPER_R` and the
+   full realization of the corrected r\* at the realtime wire. (#85/#46)
+
+Minor named items (recorded, unranked): the c7 unified-receiver +3–5% CPU
+signal; the `np` 2→1 live-path flap under saturation (shared contributor at
+both dual cells); the `RWM_STORE_PATHS` default-flip battery; the harness
+gen-arm default is still the coded-only wire (flipping the battery default
+to systematic-repair is recommended, §16.18); BBR-under fairness battery
+(folds into item 6).
+
+### 7. Superseded-artifact index (what to NOT cite as current)
+
+- "FINAL CONSOLIDATED VERDICT (2026-07-08)" below — systematic-repair-era,
+  pre-substrate-chain; its structural claims (presence⊥throughput,
+  recovery-latency serialization AT that era's operating point) stand, its
+  ceilings (15–17 Mbit "link", C8 14.7 "bounded at parity", "NOT a
+  faster-bulk-transfer transport") are superseded by walls #1–#7.
+- "L3 REGIME MAP" below — pre-arc baselines with 2026-07-08 patches;
+  Metric A's tail-crown CLASS stands; every throughput/completion row is
+  era-bound.
+- Paper §16.8 verdict and §16.6's "Grounded verdict" — same era, bannered
+  in the paper; see paper §17.
+- §16.10–16.14 (DAPS era) — generation-inert, audit-classified; already
+  bannered per section.
 
 ## Unified Decoder (built; L1 flip-gate battery MEASURED 2026-07-19, both flips NO) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved) — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop). **L1 (`meas/unified-battery`): bulk gen-sys parity + CPU parity PASS, realtime delivery-complete at c3 (+24–26 pp vs shipped streaming, span law recovery-live), but the realtime TAIL gate FAILS — unified p99 medians 2.7–3.3× legacy-RLC at c3 with a 3/10 stream-collapse rep class, so `RWM_UNIFIED` stays DEFAULT OFF (named blocker) and streaming keeps Realtime + the 12–48× crown jewel; the M* knee is UNREACHABLE at L1 behind two named anchor defects (RTprop floor under-read, static win backstop)** (branch `feat/decoder-unify`)
 
@@ -769,6 +1023,18 @@ r as computed, but the 2×2 did NOT separate: two further binders measured
 Fix" above.]
 
 ## FINAL CONSOLIDATED VERDICT (2026-07-08) — the aggregation/throughput arc
+
+> **⚠ SUPERSEDED ERA (banner added 2026-07-19).** This was the settled
+> position of the SYSTEMATIC-REPAIR ERA, measured on the qemu64 vCPU with
+> quinn's stock Cubic silently underneath every arm (wall #1) and the PMTU
+> black-hole wedge live (wall #2). Its structural findings stand — the
+> presence⊥throughput identity, and recovery-latency serialization at THAT
+> era's operating point — but its ceilings do not: "15–17 Mbit link",
+> "C8 bounded at ~parity (14.7)", "NOT a faster-bulk-transfer transport"
+> were substrate artifacts (plain+BBR single 76–79; C7 136–147 = 0.87–0.97×Σ;
+> C8 72–76 = 0.74–0.80×Σ post-divide). Read
+> **"CONSOLIDATED VERDICT (2026-07-19)"** at the top of this file for the
+> current map; this section is retained as the record of its era.
 
 This is the single honest capstone for the heterogeneous-multipath-aggregation
 + FEC-throughput arc, which is now CONCLUDED. It supersedes the scattered
@@ -1958,6 +2224,16 @@ is the CATASTROPHIC failure mode (whole-tunnel death → connection lost),
 not the ordinary loss-recovery tail.
 
 ## L3 REGIME MAP — where raptorpath wins, ties, loses (vs best-of-baseline)
+
+> **⚠ SUPERSEDED ERA (banner added 2026-07-19).** Pre-arc baselines with
+> 2026-07-08 patches, all pre-divide (qemu64) and pre-substrate-chain
+> (stock Cubic underneath, PMTU wedge live, 1024-pool flow control). What
+> survives: the Metric A tail-crown CLASS (12–48/60× — re-confirmed 2026-07-08
+> and defended at the 2026-07-19 flip gate) and the C5 beats-CUBIC DNF-free
+> property. Every throughput/completion row and both multipath rows are
+> era-bound; the C8 "bounded at ~parity" verdict was walls #1/#2/#7, since
+> dissolved. Current map: **"CONSOLIDATED VERDICT (2026-07-19)"** at the top
+> of this file. Retained as the record of its era.
 
 Synthesis of all L1/L2/L3 measurements. Each cell marks raptorpath vs
 the BEST of {quinn, kernel BBR, kernel MPTCP, CUBIC} for that metric.
@@ -4977,6 +5253,11 @@ Loss-Recovery section named (pipelined per-RTT frontier recovery or a genuinely
 rateless ack-frontier so a hole is never a fixed in-order position), NOT a placement
 law. C8 stays at ~0.97× fast-alone.
 
+*[2026-07-19: era-bound. This "bounded" held at the Cubic-substrate ~15 Mbit
+operating point; the binding stack underneath (walls #1/#2/#7) was found and
+dissolved later — see "CONSOLIDATED VERDICT (2026-07-19)". The
+presence⊥throughput reading of cross-path repair itself still stands.]*
+
 ### Controls (no regression)
 - **C7 SHIPPED plain-reliable (c2+c2, default path):** dual **20.82** / single 16.42
   = **×1.27 symmetric aggregation INTACT**, dnf 0 — the shipped path is byte-
@@ -5084,6 +5365,13 @@ sender decoupling. Harness: `RWM_SACK_PRUNE`/`RWM_REASM_BDP` propagation in
 bulk receiver — `perf --client` uploads).
 
 ## Full Benchmark Re-Run (2026-07-08) — current numbers post-arc-fixes
+
+> **⚠ ERA NOTE (2026-07-19): "current" here means 2026-07-08** — pre-divide
+> (qemu64), stock-Cubic substrate, pre-wedge-fix, 1024-pool. Metric A is the
+> origin of the 12–48× streaming tail crown and STANDS as the crown's
+> reference measurement (defended at the 2026-07-19 flip gate). The
+> throughput/completion/multipath rows are era-bound; see "CONSOLIDATED
+> VERDICT (2026-07-19)" for the current numbers.
 
 Fresh L1 re-measure of raptorpath's OWN numbers with the current binary built
 from `main` @ `6d2a05b` (all arc fixes in: O(n²) Copa `record_rtt` monotonic-
