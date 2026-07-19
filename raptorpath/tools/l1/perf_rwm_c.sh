@@ -68,6 +68,11 @@ fi
 # proactive repair budgeted at r x source per coding window (legacy = r per ack
 # cycle). Default OFF in the binary; forwarded for the queued L1 2x2 spot check.
 [[ -n "${RWM_TAPER_R:-}" ]] && TENV="$TENV RWM_TAPER_R=$RWM_TAPER_R"
+# Task #61 (paper 16.20) unified RLC-family machine: RWM_UNIFIED=1 = one global
+# sparse-aware decoder for both wires + the A*/M*/Delta span law (Realtime rides
+# the RLC family; gen mode defaults the M* depth law ON). Default OFF in the
+# binary = legacy byte-identical; forwarded for the queued L1 parity battery.
+[[ -n "${RWM_UNIFIED:-}" ]] && TENV="$TENV RWM_UNIFIED=$RWM_UNIFIED"
 # Per-run completion timeout override (reliability batteries where DNF is an
 # expected datum; see src/perf.rs run_timeout()).
 [[ -n "${RWM_PERF_TIMEOUT_S:-}" ]] && TENV="$TENV RWM_PERF_TIMEOUT_S=$RWM_PERF_TIMEOUT_S"
