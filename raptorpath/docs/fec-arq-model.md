@@ -8455,6 +8455,56 @@ principle debt this section discharges is the RLC-family fork — the two
 machines that were one mechanism all along, split only by an emission-span
 policy that is now a formula.
 
+#### 16.20.7 L1 status (the flip-gate battery, 2026-07-19) — both flips NO, with the properties named
+
+The queued parity battery ran on the passthrough VM (goal-gate "Unified
+Decoder" L1 RESULTS: one binary, sha256-identical to the prior batteries',
+seeds 42+7, interleaved arms, liveness echoes at both endpoints). What it
+settled:
+
+- **The large-δ half of the unification passes every gate it was given.**
+  On the gen-sys wire the unified global decoder is throughput-parity with
+  the keyed machine (sc2 72.2/72.1 vs 75.3/73.4; c7 81.8/82.4 vs 83.9/77.6
+  Mbit/s — every Δ within σ_s) and CPU-parity at sc2 (2.38 → 2.40 s recv
+  per 25 MB; c7 +3–5% recv, recorded), i.e. the global sparse-aware RREF
+  really does block-diagonalize to §16.18's cost on the aligned wire at
+  L1, not just in the differential suite.
+
+- **The small-δ limit is delivery-complete but not tail-parity.** At the
+  c3 realtime perf cell the unified machine delivers 99.4/100% where the
+  shipped streaming code leaves 24–26% DNFs, with cod/src 0.34–0.42 — the
+  §16.20.3 span law consuming r as computed AND recovering in-window at
+  the receiver (the liveness #85 lacked). But under sustained streaming
+  load its p99 medians run 2.7–3.3× the legacy-RLC arm's at the bursty
+  cell, with a 3/10-rep stream-collapse class (p50 in seconds) that
+  neither legacy machine's completed reps show. `RWM_UNIFIED` therefore
+  stays DEFAULT OFF: the flip gate demanded ≥ legacy-RLC everywhere, and
+  the collapse class is a named blocker, not a rounding error. The
+  streaming two-layer keeps Realtime. The measured trade for the roadmap:
+  +24–26 pp delivered reliability for ×3–4 completer medians and the
+  collapse tail — a different (δ, ρ) operating point, not parity.
+
+- **The M\* knee is unreachable on today's L1 wire.** All four
+  depth×machine arms sit flat (≈35 Mbit/s at RTT 100, ≈20 at RTT 200)
+  because M\* never leaves its cold-start floor: the RTprop floor the
+  depth law reads carries a 50-ms default-seeded sample for the life of a
+  10-s run at a 200-ms cell (floor-freshness failure), the delivered-rate
+  anchor is itself window-throttled (warm-up loop), and the win backstop
+  is a static (pipeline+2)·G. The probes show the resulting signature —
+  `win=768/768` pegged, budget-stall 90–95%, cwnd and BDP caps slack.
+  PART 7b's knee prediction (m=2 at 0.64×/0.39× of M\*) is neither
+  confirmed nor refuted at L1; it is gated behind fixing those anchors.
+  The §16.17 depth law's first L1 validation therefore remains OPEN, with
+  the two anchor defects as the named prerequisite. Unified ≡ legacy at
+  every knee point — the decoder swap is knee-neutral.
+
+- **An ordering surprise worth keeping:** at these L1 tail cells the
+  legacy-RLC realtime arm posts the best p99 medians of all three machines
+  (234/273 ms at c3 vs streaming's 510/822) — the streaming code's L0/
+  benchmark superiority does not automatically transfer to every L1 cell.
+  Any future streaming-retirement case must engage with this datum, not
+  only with unified-vs-streaming.
+
 ---
 
 ## Appendix A: Summary of Key Formulas

@@ -39,7 +39,7 @@ eligible for merge unless ALL of the following are in the ledger section:
 Env footguns (until fixed in code): `RWM_FMTCP=0` and `RWM_DAPS=0` still count
 as SET (`.is_ok()` gates) — only some knobs treat "0" as off.
 
-## Unified Decoder (built, L1 pending) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved); shipped default LEGACY until the queued L1 parity battery — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop) (branch `feat/decoder-unify`)
+## Unified Decoder (built; L1 flip-gate battery MEASURED 2026-07-19, both flips NO) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved) — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop). **L1 (`meas/unified-battery`): bulk gen-sys parity + CPU parity PASS, realtime delivery-complete at c3 (+24–26 pp vs shipped streaming, span law recovery-live), but the realtime TAIL gate FAILS — unified p99 medians 2.7–3.3× legacy-RLC at c3 with a 3/10 stream-collapse rep class, so `RWM_UNIFIED` stays DEFAULT OFF (named blocker) and streaming keeps Realtime + the 12–48× crown jewel; the M* knee is UNREACHABLE at L1 behind two named anchor defects (RTprop floor under-read, static win backstop)** (branch `feat/decoder-unify`)
 
 **The derivation (paper §16.20, written BEFORE the code).** The two RLC-family
 decoders decode the SAME self-describing wire equations; they differ only in
@@ -222,6 +222,174 @@ unified arms must show "unified global decoder" at the RECEIVER).
 Flip decision: all of 1–4 green ⇒ RWM_UNIFIED default ON in a follow-up
 session and the legacy machines are scheduled for removal; any red ⇒ the
 specific property that blocks unification is the deliverable.
+
+### L1 RESULTS (VM 10.1.5.16, 2026-07-19 05:37–07:45 UTC; binary sha256 3654214ef4ca8eb3… = commit dada6ec/bd13985 on `meas/unified-battery` — byte-identical to the #86/#85 battery binary (no Rust source changed since 8ef5ff1; docs+harness only), SAME binary every arm; host-passthrough E5-2650 v3, aes+avx2+pclmulqdq in every log header (post-divide era — compared only against post-divide numbers); seeds 42+7, arms interleaved (per-rep round-robin in batteries 2–4; per-arm blocks within one warm-tunnel session in battery 1, the tail_matrix precedent); driver `/home/vibe/unified61/u61_all.sh`, logs `/home/vibe/unified61/{tail2-*,c3rt-*,bulk-*,knee-*}.log` + per-run `diag-*` + `probe-r200-{L0,L1}-rwm-c.log`; lock `/tmp/rwm-vm.lock` held 04:47–~08:30 UTC)
+
+**Harness caveats, recorded first.** (i) The first tail_matrix pass lost every
+legacy-RLC arm to a harness defect — `lib.sh` forces `set -e` and the new
+3-arm mode's echo-grep pipeline (plus a no-summary rep) killed the matrix
+silently mid-arm; fixed in bd13985 (`|| true` guards + a `backend=Rlc`
+liveness echo for the explicit-backend arm) and the WHOLE battery 1 was rerun
+clean (first-pass stream/unified data preserved in `tail-*.log`, consistent
+with the rerun). (ii) The known seed-7 topo-ping double-abort recurred:
+battery 2 s7 kept n=5 (S) / n=7 (U) of 8; battery 3 s7 kept n=3/6 (sc2
+LS/US) and n=4/6 (c7); battery 4 s42 lost 1 rep in three arms (n=7); aborted
+invocations produce a stale-server-log echo line (recorded, discounted). No
+captured result was discarded.
+
+**1. THE FLIP GATE — 3-arm realtime tail matrix** (`RWM_TM_ARMS='stream
+unified rlc' SEED=s tail_matrix.sh {c2,c3} 5`; run-mode tunnels, 50 msg/s ×
+20 s per rep, per-rep p99 over ≥5 reps/seed; arms: stream = shipped Realtime
+(streaming two-layer), unified = `RWM_UNIFIED=1` (RLC family, unified
+decoder + span law), rlc = `--fec-backend rlc` (legacy `RlcWindowDecoder`);
+liveness echoes at BOTH endpoints on every arm — backend selection,
+"unified global decoder", "span law ACTIVE", `backend=Rlc`).
+
+Median [min–max] of per-rep p99 (ms), s42/s7 (n=5+5):
+
+| cell·size | stream (shipped) | unified | legacy-rlc |
+|---|---|---|---|
+| c2 400B | 65/68 [39–2977] | 44/180 [36–573] | 51/51 [35–2553] |
+| c2 1200B | 130/106 [55–5439] | 545/153 [30–2993] | 47/327 [40–1327] |
+| c3 400B | 172/715 [111–3149] | 181/1202 [109–1363] | 185/283 [96–1310] |
+| c3 1200B | 420/1498 [335–11520] | 794/3064 [149–18715] | 340/205 [126–5781] (n=5+3) |
+
+p50 ties everywhere (~8 ms c2, ~24–33 ms c3) EXCEPT the unified c3-1200B
+arm, which shows a **stream-collapse rep class: 3/10 reps with p50 in
+SECONDS (1.96/2.34/9.15 s — the whole 20-s stream backlogged)**, absent in
+the stream arm (0/10) and in the rlc arm's completed reps (0/8; but rlc
+LOST 2/10 reps outright at this cell — no stream summary within the 30-s
+timeout, a total-wedge class of its own, recorded).
+
+**Tail-gate verdict.** At c2 all three arms are one tail class (arm medians
+44–545 vs intra-arm rep spread 30→5439 — no separable regression). At the
+bursty c3 cell the unified arm is NOT ≥ legacy-rlc: pooled p99 medians 633
+vs 234 (400B) and 908 vs 273 (1200B), it ties rlc only at s42-400B, and it
+carries the collapse class rlc's completed reps do not show. Against the
+shipped streaming arm it is the same broad class at 400B (633 vs 510) and
+worse-with-collapses at 1200B (908 vs 822, 3 collapse reps vs 0). **The
+12–48× tail property stays with the shipped streaming machine** (which this
+battery leaves untouched as default); honest bonus finding: at THESE cells
+the legacy-RLC realtime arm posts the best p99 medians of all three
+machines (234/273 at c3) — the streaming-vs-RLC ordering at L1 tail cells
+is not what the L0 c3heavy proxy suggested, recorded for the roadmap.
+
+**2. Realtime delivered reliability, c3 perf cell** (`perf_rwm_c.sh c3 c3
+realtime 100000 20 single`, RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=5, ×8
+interleaved; S = shipped streaming, U = `RWM_UNIFIED=1`):
+
+| arm | s42 delivered (per-rep /20) | s7 delivered | cod/src s42/s7 | completer median_s |
+|---|---|---|---|---|
+| S | 118/160 = **73.8%** [14 12 18 15 14 12 17 16] | 76/100 = **76.0%** (n=5) [14 15 16 15 16] | 0.056/0.179 | 0.11–0.17 |
+| U | 159/160 = **99.4%** [20 20 20 19 20 20 20 20] | 140/140 = **100%** (n=7) | 0.416/0.341 | 0.38–0.55 |
+
+The unified small-δ machine is delivery-complete at the cell where the
+shipped streaming machine leaves 24–26% of objects as DNFs (+25.6/+24.0 pp,
+every U rep ≥ every S rep, ≫ the σ_rep ≈ 2-object spread) — the quantity
+law + trailing solvable span is RECOVERY-LIVE at the receiver (100%
+delivery at ε≈4.8% with the 20-ms reorder horizon ≪ the 90-ms ARQ round
+means the holes were FEC-decoded in-window; cod/src 0.34–0.42 = r consumed
+as computed, the #85 wire law). The price: completer medians 3–4× slower
+(0.38–0.55 s vs 0.11–0.17 s survivor-only) — the same
+reliability-vs-completion-tail trade battery 1 measures from the other side.
+S-arm baselines reproduce the #85 spot-check class (68.8–76.2%) —
+session-drift anchor holds.
+
+**3. Bulk gen-sys parity, sc2 + c7** (`perf_rwm_c.sh c2 c2 bulk 25000000 1
+{single,dual}` ×8 interleaved, gen-sys wire `--window-systematic-repair`,
+GPB stack RWM_GEN_R=0.03 RWM_GEN_PIPE=1 RWM_QUIC_CC=bbr, GUARD OK all
+invocations; LS = legacy `GenerationDecoder`, US = `RWM_UNIFIED=1` unified
+global decoder, receiver echo on every US run):
+
+| cell | LS mean Mbit/s (σ_s, n) s42 · s7 | US s42 · s7 | CPU srv·cli /25 MB (LS → US) |
+|---|---|---|---|
+| sc2 | 72.20 (3.93, 8) · 72.13 (4.00, 3) | 75.32 (1.26, 8) · 73.42 (3.97, 6) | 2.38·1.58 → 2.40·1.58 (s42) |
+| c7 | 81.83 (7.63, 8) · 82.38 (6.56, 4) | 83.89 (7.17, 8) · 77.60 (6.53, 6) | 2.67·2.10 → 2.80·2.26 (s42) |
+
+**Throughput parity PASS** (every Δ within σ_s, sign flips across seeds).
+**CPU parity PASS at sc2** (Δ ≤ 0.02 s both seeds); at c7 the US receiver
+reads +0.13/+0.07 s (+4.9%/+2.6%, same direction both seeds) — inside the
+run scatter but recorded as the honest dual-path cost signal of the global
+matrix. First post-divide gen-sys anchors: LS sc2 72.2 = 0.92× the same-era
+plain+BBR single (78.6, #86 battery) — the pre-divide RATIO (70.9/77.1 =
+0.92) reproduces on the new hardware.
+
+**4. Depth-term knee, c2r100 + c2r200** (gen-sys single, 2×2
+{legacy, RWM_UNIFIED=1} × {RWM_GEN_PIPE=0,1} ×8 interleaved; oracle PART 7b
+prediction: m=2 ≈ 0.64× of M\*=6 at RTT100, 0.39× of M\*=10 at RTT200):
+
+| cell | L0 (fixed m=2) | L1 (M\* law) | U0 | U1 | s42·s7 per column |
+|---|---|---|---|---|---|
+| c2r100 | 33.63 (2.01) · 35.63 (1.68) | 35.26 (1.98, n7) · 36.72 (2.29) | 32.66 (3.09, n7) · 36.15 (1.27) | 35.26 (2.24, n7) · 36.52 (2.56) | Mbit/s |
+| c2r200 | 20.23 (1.60) · 21.36 (0.44) | 19.14 (0.93) · 19.36 (1.51) | 19.92 (0.89, n7) · 19.24 (1.00) | 21.24 (1.48) · 19.44 (0.63) | Mbit/s |
+
+**The knee does NOT appear — and the DIAG probes name why.** All four arms
+are flat (r100 ≈ 33–37, r200 ≈ 19–21; the oracle's 0.64×/0.39× m=2 deficit
+is absent; at r200 the M\*-law arms even sit ~1–2 Mbit BELOW fixed-depth on
+both machines and both seeds, ~1.3–2σ — the depth law's bookkeeping is a
+small net cost at this operating point, recorded). Probe runs
+(`probe-r200-{L0,L1}-rwm-c.log`): both arms peg `win=768/768` (= 2·G intake
+cap) with `stall[budget=90–95%]` and TUN `paused=13–39%` while cwnd (2190–
+3256) and the per-path BDP cap (3865) have headroom — the window/budget
+ceiling binds, not the pipe. M\* never left the cold-start floor: the DIAG
+floor echo reads `rtp=50ms` at a 200-ms-RTprop cell (floor-freshness FAIL —
+a DEFAULT_SRTT-class 50-ms seed surviving the ~10-s run inside the 10-s
+min-window), so `gen_pipe_depth(rate·2·rtprop)` computes ≈2, and the STATIC
+`fmtcp_win_backstop = (RWM_PIPELINE+2)·G = 1536` is not M\*-coupled anyway.
+BDP (2 200–2 900 sym) ≫ G — the engagement REGIME is real, but the L1 wire
+cannot reach it. **Oracle PART 7b's knee is neither confirmed nor refuted
+at L1: it is UNREACHABLE behind two named anchor defects** (RTprop floor
+under-read; delivered-rate warm-up loop + static backstop). Unified ≡
+legacy at every point (Δ within σ_s) — the decoder swap itself is
+knee-neutral.
+
+**Byte-identity (battery 5).** The shipped path with `RWM_UNIFIED` unset is
+proven identical three ways: (i) the binary is sha256-identical
+(3654214ef4ca8eb3…) to the #86/#85 battery binary — the #61 code was
+already in that tree, all of it behind `unified_active()` (default false);
+(ii) every baseline arm in this battery ran with the knob unset and
+reproduced its documented class (S-arm 73.8/76.0% vs #85's 68.8–76.2%;
+LS-sc2 0.92× same-era plain+BBR = the pre-divide ratio) with the legacy
+echoes and ZERO unified echoes; (iii) the full suite (below) is green on
+the final tree with the knob unset.
+
+**Suites (VM, final tree bd13985, RWM_UNIFIED unset):** lib 330 (+2
+ignored); math full 59/19/22/4/4/3/25 (incl. PART 7); gate_suite 15/15
+release (244 s — the passthrough era's first gate_suite timing, vs 1118 s
+pre-divide); mtu_blackhole_wedge 2/2; perf_loopback 8/8; fmtcp/copa_sole/
+daps loopbacks — all green (`/home/vibe/unified61/suites.log`).
+
+**FLIP DECISIONS.**
+
+- **(a) `RWM_UNIFIED` default for the RLC-family paths: NO.** Bulk parity
+  and CPU parity PASS, but the gate requires ≥ legacy-RLC EVERYWHERE and
+  the realtime tail matrix fails it at the bursty cell: p99 medians 633/908
+  vs legacy-rlc's 234/273 at c3, plus the unified-only stream-collapse rep
+  class (3/10 reps, p50 in seconds, both seeds represented). The named
+  blocker is the **unified-realtime sustained-stream collapse class at
+  c3-1200B** — until it is attributed and closed, `RWM_UNIFIED` stays
+  DEFAULT OFF (shipped path byte-identical).
+- **(b) Streaming retirement: NO** (as the gate expected). The unified
+  small-δ machine does not reach streaming-class tails under sustained
+  load: ×1.1–1.24 pooled p99-median gap at c3 plus the collapse class, and
+  its delivery-complete mode costs 3–4× on completer medians at the c3
+  perf cell. The quantified trade for the roadmap: **+24–26 pp delivered
+  reliability for ×3–4 completion medians and a 3/10 collapse-rep tail** —
+  a different point on the (δ, ρ) surface, not parity. The streaming
+  two-layer code keeps the Realtime default and the 12–48× crown jewel.
+
+**Named follow-ups (not built, this task is measurement):** (1)
+unified-realtime c3-1200B stream-collapse class — attribution (candidates:
+EVICT-window × trailing-span repair interaction under sustained bursts,
+decode/delivery backlog, retention pressure); (2) legacy-RLC realtime
+total-wedge class (2/10 reps, no summary in 30 s, same cell); (3) the M\*
+L1 anchor pair — RTprop floor under-read (50-ms seed inside the 10-s
+min-window) and the static (pipeline+2)·G win backstop — fix, then re-run
+the knee; (4) the r200 M\*-arm ~1–2 Mbit bookkeeping cost; (5) c7 US
+receiver +3–5% CPU. Honest scope: batteries 1–2 measure the RLC family at
+REALTIME δ where the streaming default was never displaced; the bulk/auto
+window-reliable RLC paths (unified's other half) passed every gate they
+were given (parity + CPU + byte-identity).
 
 ## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check MEASURED 2026-07-19 (`meas/percap-battery`): wire-consumption CONFIRMED (cod/src 0.06–0.09 → 0.32–0.35), the −22 pp degradation REPRODUCED on the real substrate (−25/−19 pp, both seeds) — the entanglement attribution stands, the flip stays closed. (task #85, branch `fix/taper-emission`)
 
