@@ -3278,6 +3278,83 @@ byte-identical), four coupled changes:
 Measured verdict and the arm table: goal-gate "Copa Wire-Signal"; §12.11
 addendum below for how it changes the Copa-sole conclusion.
 
+**TCP-competitive mode (feat/copa-compete, 2026-07-19 — Copa §2.2 built on
+the wire signal).** Copa (Arun & Balakrishnan, "Copa: Practical Delay-Based
+Congestion Control for the Internet", NSDI 2018, §2.2 — the earlier ledger
+sections cited this as "Copa §4"; the mechanism lives in the paper's §2.2)
+defines two operating modes, and the second was the named deployment gap of
+§12.11: without it, "when the bottleneck is shared with loss-based
+congestion-controlled flows that fill up buffers, Copa, like other
+delay-sensitive schemes, achieves low throughput."
+
+1. **Detection (verbatim mechanism).** Copa's own dynamics empty the
+   bottleneck queue at least once every 5·RTT when only Copa flows share it
+   (Copa §3); a concurrent long-running buffer-filling flow breaks that
+   periodicity. Per the paper: if the sender sees a "nearly empty" queue in
+   the last 5 RTTs it remains in (or returns to) the DEFAULT mode; otherwise
+   it switches to COMPETITIVE mode, where "nearly empty" is any queuing
+   delay d_q < 0.1·(RTTmax − RTTmin), RTTmax over the past 4 RTTs, RTTmin
+   the long-term minimum — the RTTmax term self-calibrates the test to the
+   path's short-term RTT variance. Our detector runs on the WIRE clock
+   (§12.4 wire addendum): d_q and RTTmax/RTTmin are quinn's packet-timed
+   samples, so the sender's own reservoir dwell cannot masquerade as a
+   competitor (app-echo detection would have inherited exactly the #80
+   self-signal failure). One guard for the degenerate case: a d_q at the
+   0.1 ms clamp floor counts as nearly-empty even when the 4-RTT variance
+   term is ~0 (an idle/clean link must never read as "never empty").
+2. **The competitive law (AIMD on 1/δ).** In competitive mode the sender
+   varies 1/δ "according to whatever buffer-filling algorithm one wishes to
+   emulate"; the paper's implementation — and ours — performs NewReno-style
+   AIMD on 1/δ on packet success or loss: no loss in the update window ⇒
+   1/δ += 1 (per RTT = per SRTT update), loss ⇒ 1/δ halves. The underlying
+   delay-sensitive law is UNCHANGED — competition only moves its price
+   knob, which is why Copa in competitive mode keeps better RTT fairness
+   and loss resilience than the TCP it emulates (paper §5.5). The loss
+   signal is quinn's wire-level loss detection, read from the pass-through
+   shim's recorded `congestion_events` counter — the same packet-timed
+   layer as the d_q clock; FEC recovery status is deliberately irrelevant
+   here (the AIMD prices aggressiveness against a loss-based competitor;
+   it does not gate delivery, which remains the FEC layer's job, §12.1).
+3. **Composition with δ(hint) — the hint sets the BASE, competition adapts
+   around it.** The paper's default-mode δ is 0.5 and its competitive bound
+   is "δ ≤ 0.5, reset δ to 0.5 on switch-back". Under the §12.4 mapping the
+   default-mode δ is δ_base = δ(hint) = 0.5/ζ, so the faithful
+   generalization substitutes δ_base for 0.5 everywhere: competitive mode
+   ENTERS at δ = δ_base, AIMD keeps 1/δ ≥ 1/δ_base (never more
+   latency-sensitive than the hint's declared price while competing;
+   for Bulk the AIMD starts from 1/δ = 200 — the hint's aggressiveness is
+   the floor, not a ceiling), and switch-back RESETS δ = δ_base. 1/δ is
+   bounded above so the coupling cap's 2/δ term stays ≤ MAX_CWND (the
+   §12.4 decoupling lesson applied to the adapted δ).
+4. **Hysteresis = the paper's own 5-RTT window, both edges.** A
+   competitive-mode Copa cohort still empties the queue every ~5 RTT when
+   no buffer-filler is present, so an erroneous entry self-corrects within
+   a few RTTs (the paper documents — and accepts — brief flaps around
+   losses). No extra state was invented; mode evaluation runs at the
+   per-SRTT update cadence and is skipped during the startup ramp (the
+   ramp's own transient queue is not competitor evidence).
+
+Gated `RWM_COPA_COMPETE` (default OFF) and only on top of the wire-clocked
+law (the adapted δ feeds the §12.4 velocity/target dynamics; the legacy
+app-echo dynamics do not consume δ). Env unset ⇒ byte-identical. Measured
+(goal-gate "Copa Competitive Mode + Cross-Traffic", the first
+shared-bottleneck battery, roadmap item 6): at the lossy c2 cell Copa-sole
+never needed it (0.88–0.90 share vs a Mathis-bound Cubic, with or without
+competitive mode); at the CLEAN shared bottleneck the mode detects and
+adapts exactly as specified (8/8 engagement, δ → 0.0032–0.0043; zero
+false engagement in the clean solo control) but CANNOT restore a fair
+share (2.24–2.37 vs 2.15–2.21 Mbit compete-off, Cubic at 93) — because δ
+is not the binder there: a fixed δ = 0.001 probe (queue tolerance = the
+entire 1000-packet qdisc) moves nothing. The starvation is the
+plain-window ARQ/retention pipeline under contention tail-drop (the
+single-path 1024 outstanding pool × a frontier frozen by drop bursts:
+goodput ≈ pool/dwell ≈ 2.5 Mbit — Little's law), a transport mechanism
+BELOW the CC policy surface; BBR-under passes 22 Mbit through the same
+pipeline only by holding ~250 packets (305–316 ms) resident in the shared
+queue. The competitive-mode deployment gap is therefore closed IN CODE
+but the shared-clean-bottleneck deployment gap is re-attributed to the
+contention-recovery pipeline (the successor roadmap item).
+
 ### 12.5 CC + Taper: The Complete Architecture
 
 ```
@@ -3629,7 +3706,11 @@ switching not built — deliberately out of scope here); against loss-based
 cross-traffic on a shared bottleneck a delay-based controller yields, and no
 cross-traffic cell was measured. `passthrough` is an experiment knob;
 BBR-under remains the bulk-throughput reference/default-fallback and the
-shipped default remains stock Cubic.
+shipped default remains stock Cubic. **[UPDATE 2026-07-19,
+feat/copa-compete: BUILT and measured. The mechanism is the Copa paper's
+§2.2 (the "Copa §4" reference above was imprecise); see the §12.4
+competitive-mode addendum for the law and goal-gate "Copa Competitive Mode
++ Cross-Traffic" for the first shared-bottleneck battery.]**
 
 > **ADDENDUM (2026-07-13, feat/copa-wire-signal — the bulk gap CLOSED where
 > it was named).** The §12.4 wire-signal fix (wire-clocked delay term +

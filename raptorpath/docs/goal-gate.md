@@ -150,12 +150,23 @@ Every other flip is gated on a named battery (roadmap, §6).
   freshness (the ±v/δ dither refreshes the raw 10-s min without BBR's
   ProbeRTT drain — no FEC protection gap). δ maps from the hint with no new
   constants (δ = 0.5/ζ; measured knee AT the mapped Bulk δ).
-- **The named gap that blocks any default flip:** Copa-lite has NO
+- ~~**The named gap that blocks any default flip:** Copa-lite has NO
   TCP-competitive mode (Copa §4 not built) — against loss-based
   cross-traffic a delay-based controller yields, and no cross-traffic cell
   has ever been measured (this gates BBR's fairness case too). Substrate CC
   remains a policy surface with defaults unchanged. ("Copa-Sole", "Copa
-  Wire-Signal"; paper §12.11.)
+  Wire-Signal"; paper §12.11.)~~ **[CLOSED-and-MOVED 2026-07-19, roadmap
+  item 6 (`feat/copa-compete`): Copa §2.2 competitive mode BUILT
+  (`RWM_COPA_COMPETE`, default OFF) and the first cross-traffic battery
+  MEASURED. At the lossy c2 cell Copa-sole is cross-traffic-safe (0.88–0.90
+  share vs Cubic, compete irrelevant, Cubic-friendlier than BBR). At the
+  CLEAN shared bottleneck Copa-sole starves (share 0.023) and competitive
+  mode does NOT restore share — attributed by probe: δ is not the binder;
+  the plain ARQ/1024-pool pipeline under contention tail-drop is (Little's
+  law, wall #7 at a shared bottleneck). BBR-under: 0.24 share at a
+  305–316 ms standing queue. The CC-flip gate is now the
+  shared-bottleneck contention-recovery pipeline, not the CC. Goal-gate
+  "Copa Competitive Mode + Cross-Traffic".]**
 
 ### 3. Aggregation vs Σ — the bulk N× verdict
 
@@ -284,10 +295,21 @@ carries its gating decision.
    200-ms cell), (ii) the static `(pipeline+2)·G` win backstop (not
    M\*-coupled). Fix both, then re-run c2r100/c2r200 — oracle PART 7b's knee
    is neither confirmed nor refuted until then. (#61; §16.17's residual)
-6. **Copa competitive mode + the cross-traffic cell** — build Copa §4 mode
+6. ~~**Copa competitive mode + the cross-traffic cell** — build Copa §4 mode
    switching; measure the FIRST shared-bottleneck/cross-traffic battery
    (this also carries BBR's unevaluated fairness). Gates ANY substrate-CC
-   default flip. (#80/#82)
+   default flip. (#80/#82)~~ **DONE 2026-07-19 (`feat/copa-compete`;
+   goal-gate "Copa Competitive Mode + Cross-Traffic"): mechanism built
+   faithfully (Copa §2.2 — detection + AIMD on 1/δ + δ(hint)-base
+   composition), unit- and liveness-proven; 4-arm battery at c2 AND clean
+   × both seeds. Outcome: c2 cross-traffic-safe (0.88–0.90 share);
+   clean-cell starvation REAL (0.023) and NOT a CC problem (δ-null probes)
+   — the binder is the contention-loss recovery pipeline (pool × frontier
+   × ARQ under tail-drop); BBR fairness measured (0.24 share, 305–316 ms
+   queue; crushes Cubic at c2). NO default flip. SUCCESSOR item:
+   shared-bottleneck contention recovery (contention-scaled pool /
+   loss-burst NACK cadence / FEC-protected blocker retransmit), measured
+   against the clean cross-traffic cell.**
 7. **The streaming-retirement gap** — attribute why the legacy-RLC realtime
    arm beats the shipped streaming machine's p99 medians at the L1 c3 cells
    (234/273 vs 510/822 ms): the L0 c3heavy proxy predicted the opposite
@@ -305,8 +327,9 @@ Minor named items (recorded, unranked): the c7 unified-receiver +3–5% CPU
 signal; the `np` 2→1 live-path flap under saturation (shared contributor at
 both dual cells); the `RWM_STORE_PATHS` default-flip battery; the harness
 gen-arm default is still the coded-only wire (flipping the battery default
-to systematic-repair is recommended, §16.18); BBR-under fairness battery
-(folds into item 6).
+to systematic-repair is recommended, §16.18); ~~BBR-under fairness battery
+(folds into item 6)~~ (measured 2026-07-19 with item 6: 0.24 share vs
+Cubic on clean at a 305–316 ms standing queue; 0.95–0.96 share at c2).
 
 ### 7. Superseded-artifact index (what to NOT cite as current)
 
@@ -8825,3 +8848,213 @@ guard active only under `RWM_STORE_PERCAP`, itself default OFF): lib
 335/335 (3 new), math 136 green, `gate_suite` 15/15 release,
 `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, `copa_sole_loopback` /
 `fmtcp_loopback` / `daps_loopback` 1/1 each — all green 2026-07-19.
+
+## Copa Competitive Mode + Cross-Traffic (2026-07-19) — Copa §2.2 mode switching BUILT on the wire signal (verified mechanism, faithful law, unit-proven) + the FIRST shared-bottleneck battery: at the GE c2 cell Copa-sole does NOT starve vs Cubic (0.88–0.90 share, compete irrelevant); at the CLEAN bottleneck Copa-sole starves (2.2 vs Cubic's 93, share 0.023) and competitive mode CANNOT restore share — because δ is NOT the binder (fixed δ=0.001 probe: no change): the starvation is the plain-window ARQ/retention pipeline under contention tail-drop (pool 1024 × 3.3 s dwell = Little's-law 2.4 Mbit), a CC-INDEPENDENT named blocker; BBR-under reference = 0.24 share at a 305–316 ms standing queue (Copa arms keep 20–40 ms) — substrate-CC default flip stays CLOSED with the gate MOVED from "no competitive mode" to the contention-recovery pipeline (branch `feat/copa-compete`, roadmap item 6, tasks #80/#82)
+
+Roadmap item 6. The CONSOLIDATED VERDICT §2 named gap: "Copa-lite has NO
+TCP-competitive mode … and no cross-traffic cell has ever been measured
+(this gates BBR's fairness case too). Gates ANY substrate-CC default flip."
+Both halves are now closed: the mechanism is built (faithfully, from the
+paper), and the first cross-traffic battery exists — with a verdict nobody
+had: the gap that actually blocks deployment on shared CLEAN bottlenecks is
+not the CC at all.
+
+### The verified mechanism (citation-accurate)
+
+Copa: Venkat Arun and Hari Balakrishnan, "Copa: Practical Delay-Based
+Congestion Control for the Internet", NSDI 2018 — mechanism verified against
+the paper text (people.csail.mit.edu/venkatar/copa.pdf; the earlier ledger
+citations "Copa §4" were imprecise: mode switching is the paper's **§2.2**,
+"Competing with Buffer-Filling Schemes"):
+
+- **Two modes**: default (δ = 0.5 in the paper) and "a competitive mode
+  where δ is adjusted dynamically to match the aggressiveness of typical
+  buffer-filling schemes".
+- **Detection**: Copa's dynamics empty the queue at least once every 5·RTT
+  when only Copa flows share the bottleneck (paper §3). "Hence if the
+  sender sees a 'nearly empty' queue in the last 5 RTTs, it remains in the
+  default mode; otherwise, it switches to competitive mode. We estimate
+  'nearly empty' as any queuing delay lower than 10% of the rate
+  oscillations in the last four RTTs; i.e., d_q < 0.1·(RTTmax − RTTmin)
+  where RTTmax is measured over the past four RTTs and RTTmin is our
+  long-term minimum."
+- **The competitive law**: "In competitive mode the sender varies 1/δ
+  according to whatever buffer-filling algorithm one wishes to emulate
+  (e.g., NewReno, Cubic, etc.). In our implementation we perform AIMD on
+  1/δ based on packet success or loss … In competitive mode, δ ≤ 0.5. When
+  Copa switches from competitive mode to default mode, it resets δ to 0.5."
+- **Switch-back / hysteresis**: the same 5-RTT nearly-empty window on both
+  edges; queues empty every ~5 RTT in competitive mode too when no
+  buffer-filler is present, so erroneous switches self-correct in a few
+  RTTs (the paper documents brief flaps around losses and accepts them).
+
+### As built (scheduler/mod.rs, feat/copa-compete; env `RWM_COPA_COMPETE`, default OFF)
+
+On top of the #82 wire clock — detection on quinn's packet-timed RTT (the
+app-echo clock would re-import the #80 self-signal as phantom competitors):
+
+1. Detector per wire RTT sample: monotonic max-deque over the past
+   4·SRTT (RTTmax), long-term floor = the wire 10 s min; nearly-empty mark
+   when d_q ≤ max(0.1·(RTTmax − RTTmin), DQ_FLOOR) — the floor guard keeps
+   a zero-variance clean/idle link from reading "never empty".
+2. Mode evaluation + AIMD once per SRTT update (the paper's per-RTT
+   cadence), skipped during the startup ramp. Loss signal = the
+   pass-through shim's recorded `congestion_events` (quinn's wire loss
+   detection — same layer as the d_q clock), diffed per window.
+3. **δ(hint) composition — the hint sets the BASE, competition adapts
+   around it**: the paper's 0.5 is its default-mode δ; ours is
+   δ_base = δ(hint) = 0.5/ζ (paper §12.4). Competitive mode enters at
+   δ_base, AIMD keeps 1/δ ≥ 1/δ_base (the paper's "δ ≤ 0.5" generalized),
+   switch-back resets δ = δ_base; 1/δ capped so the coupling cap's 2/δ
+   stays ≤ MAX_CWND.
+4. DIAG: `cmp=<C|D><switches>/<live δ>` per path; config echo
+   `compete=true/false`. Env unset ⇒ every path byte-identical (gate_suite
+   15/15 release on the final tree).
+
+Unit evidence (6 new tests, lib 338/338): detection fires under a synthetic
+never-draining queue and NOT under one that drains every ≤3 updates; the
+AIMD follows the verified arithmetic exactly (1/δ: 2→3, loss → floor at
+1/δ_base, 3→4, stale counter ≠ loss, real halving above the floor 5→2.5);
+switch-back on drain resets δ to base; gate-off never switches; the env
+gate requires the wire law.
+
+### L1 battery — the first cross-traffic cells (VM 10.1.5.16, 2026-07-19 ~10:24–11:48 UTC; binary sha256 6da66428ce2ba91c… commit 0f9bb2b; host-passthrough E5-2650 v3 era; driver `tools/l1/cross_battery.sh` → `cross_traffic.sh`; logs `/home/vibe/copacompete/{c2,clean}-{solo,copa,compete,bbr}-s{42,7}.log` + per-run `diag-*`; 25 MB × 1 run/invocation × 8 reps, arms interleaved round-robin per rep, seeds 42 AND 7, RWM_DIAG=1 everywhere; iperf3 3.19.1 Cubic INSIDE the rp-* namespaces sharing pathA's netem qdisc, 2 s head start, per-interval JSON overlapped onto the rp transfer window)
+
+Arms (all PLAIN, single path): **solo** = passthrough + `RWM_COPA_COMPETE=1`,
+NO competitor (false-positive control) · **copa** = passthrough, compete OFF,
+vs 1 Cubic · **compete** = passthrough + `RWM_COPA_COMPETE=1` vs 1 Cubic ·
+**bbr** = `RWM_QUIC_CC=bbr` vs 1 Cubic. Liveness: every passthrough arm log
+carries `feed ACTIVE` + `compete=` echo; the solo control matches the known
+#82 solo numbers (c2: 68.8/65.1 vs historic C1 68.09/64.27). Seed-7 n<8 =
+the known topo-ping double-abort class (recorded; the first s7 sub-battery
+lost whole invocations to lib.sh's `set -e` before the harness guarded it —
+discipline #7 bit again, now `set +e` + topo-retry-once in the script;
+aborted logs preserved in `copacompete/aborted-s7-run1/`).
+
+**c2 — the specified cell (100 Mbit, 10 ms, GE 1.3/50 ≈ 2.5% loss). rp
+Mbit/s mean (σ_s) [runs] · Cubic Mbit/s · rp share · Jain:**
+
+| arm | s42 | s7 |
+|---|---|---|
+| solo | 68.8 (1.0) [67.1 68.1 68.3 68.9 69.0 69.1 69.8 70.3] | 65.1 (1.4, n=6) [62.6 64.3 65.6 65.7 66.1 66.1] |
+| copa | 61.5 (1.6) · Cubic 7.2 · share 0.90 · J 0.62 | 59.4 (2.2, n=6) · 8.2 · 0.88 · 0.64 |
+| compete | 61.3 (1.0) · Cubic 6.9 · share 0.90 · J 0.61 | 60.5 (1.8, n=7) · 7.2 · 0.89 · 0.62 |
+| bbr | 73.8 (5.1) · Cubic 3.0 · share 0.96 · J 0.54 | 73.2 (8.0) · 4.0 · 0.95 · 0.56 |
+
+rp wire-queue p50 stays 2–11 ms in every Copa arm vs bbr's 9–60 ms —
+the #82 queue profile carries over unchanged under cross-traffic.
+
+**clean — the buffer-filler mechanism cell (100 Mbit, 10 ms, no loss;
+netem seed inert here — the two "seeds" are two interleaved sessions):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| solo | 71.1 (0.5), zero switches 8/8 | 71.2 (0.4), zero switches 8/8 |
+| copa | **2.21 (0.47)** [1.2 2.0 2.2 2.4 2.4 2.5 2.5 2.7] · Cubic 93.3 · share **0.023** · J 0.52 | **2.15 (0.44)** [1.2 1.8 2.1 2.3 2.4 2.4 2.5 2.5] · 93.4 · 0.023 · 0.52 |
+| compete | **2.37 (0.19)** [2.0 2.3 2.3 2.4 2.4 2.5 2.5 2.6] · Cubic 93.0 · share 0.025 · J 0.52 | **2.24 (0.50)** [1.1 1.9 2.3 2.5 2.5 2.5 2.5 2.7] · 93.1 · 0.024 · 0.52 |
+| bbr | 22.34 (0.31) · Cubic 70.7 · share 0.240 · **J 0.79** | 22.79 (0.28) · 69.9 · 0.246 · 0.79 |
+
+**Queue/tail while competing (clean, rp sender DIAG, per-run p50 pooled):**
+Copa arms wireQ p50 ≈ 7–73 ms (typ. 20–40; p90 83–263) — the queue rp
+experiences is Cubic's occupancy, not its own; **bbr wireQ p50 304–316 ms
+(p90 406–460) in EVERY run** — BBR buys its 0.24 share with a ~10× deeper
+standing queue. Competitive mode itself cost nothing measurable: δ never
+adapted past 0.0032 (1.6× base tolerance), wq unchanged vs the compete-OFF
+arm.
+
+**Mode-switching liveness (the mechanism datum):** clean/compete engages in
+8/8 + 8/8 runs (3–7 switches, C-mode 56–91% of DIAG samples, δ 0.005 →
+0.0032–0.0043); clean/solo NEVER engages (0/16 — false-positive control
+clean). c2/solo shows a TRANSIENT engagement class (1 switch in 11/14 runs,
+δ_min ≥ 0.0041, C-share of samples up to 1.0 on the short ~3 s transfers):
+GE loss + jitter keeps d_q above the 10% threshold for >5 RTT stretches —
+the paper's documented erroneous-switch class. Impact nil: solo throughput
+matches #82's C1 within σ (68.8/65.1 vs 68.09/64.27), queue unchanged, δ
+pinned ≈ base by the AI-vs-base scale (+1 per RTT on 1/δ = 200) and the
+loss-MD floor. Recorded, not fixed: it is behaviorally inert by
+construction exactly where it fires.
+
+**The δ-null probes (the attribution datum; clean, s42, copa arm, n=3+2):**
+fixed `RWM_COPA_DELTA=0.001` (tolerance 1/δ = 1000 pkt ≈ the ENTIRE
+1000-pkt qdisc) → 2.5/1.1/2.4 Mbit — unchanged from base δ's 2.21;
+`RWM_CC_PACE=0` (ack-clocked) → 2.4/2.5 — unchanged. δ is NOT the binder;
+neither is the pacer.
+
+**The actual binder (sender DIAG forensics, clean compete/copa runs):**
+win=1024/1024 pegged (the single-path plain outstanding pool), TUN paused
+46–100%, cwnd healthy at 460–580 (the δ-law's target — NOT the constraint),
+in_flight only 100–250, app-echo RTT 2–5 s = the pool dwell, retx a trickle
+(~4/s), goodput ≈ pool/dwell: 1024 sym × 1250 B × 8 / 3.3 s ≈ **2.5 Mbit/s
+— Little's law on wall #7's pool, reproduced at a shared bottleneck.** The
+chain: Cubic keeps the shared qdisc ~full → rp datagrams tail-drop in
+bursts → holes freeze the in-order frontier → the 1024-pool fills with
+sent-unacked symbols → TUN pauses → goodput = recovery rate, and the
+plain-ARQ recovery under multi-second effective feedback serializes.
+BBR-under passes 22 Mbit through the SAME app pipeline because its
+substrate window keeps ~250 pkt resident in the queue (wq 310 ms): high
+occupancy ⇒ proportionally admitted arrivals ⇒ loss rate low enough that
+the frontier keeps moving. A delay-based controller cannot hold that
+occupancy BY DESIGN — and δ-deep tolerance does not help because the pool,
+not cwnd, is what gates emission (probe-proven).
+
+### VERDICT
+
+1. **The named mechanism gap is CLOSED in code**: Copa §2.2 competitive
+   mode, faithful to the verified paper text (detection + AIMD on 1/δ +
+   δ_base composition + switch-back), unit-proven, liveness-proven at L1,
+   default OFF, byte-identical when unset.
+2. **c2-class (lossy) shared bottlenecks: Copa-sole is cross-traffic-SAFE
+   today** — 0.88–0.90 share vs Cubic with or without competitive mode
+   (Cubic is Mathis-bound to 7–8 Mbit by the channel loss, and gets MORE
+   under Copa than under BBR: 6.9–8.2 vs 3.0–4.0 — Copa-sole is the
+   Cubic-friendlier neighbor, matching the paper's co-existence claim),
+   queue advantage intact.
+3. **Clean shared bottlenecks: the starvation baseline is REAL and
+   measured** — share 0.023 (2.2 vs 93 Mbit, 1/32 of solo), both sessions.
+   **Competitive mode as specified does NOT restore a fair share here**
+   (2.24–2.37, Δ vs compete-OFF within σ) — and the null is ATTRIBUTED:
+   the δ lever itself is null at this cell (δ=0.001 probe unchanged); the
+   binder is the plain-window ARQ/retention pipeline under
+   contention-induced tail-drop (pool Little's law, forensics above), a
+   transport-layer mechanism BELOW the CC policy surface.
+4. **BBR's fairness case, measured for the first time**: BBR-under does
+   not starve (0.24 share, Jain 0.79) but is under-fair and pays 305–316 ms
+   of standing queue (p90 to 460) — and at c2 it crushes the Cubic flow to
+   3–4 Mbit (share 0.95–0.96, Jain 0.54–0.56). Neither CC family passes a
+   fair-share bar on the clean cell: Copa starves, BBR squeezes.
+5. **The Copa tail-vs-compete tradeoff never engaged**: δ adapted at most
+   1.6× base tolerance (the AI step +1 is small against 1/δ_base = 200 and
+   contention losses MD it back to the floor each sawtooth), so the
+   documented "competitive mode = Cubic-like queues" cost was not paid —
+   but it also bought nothing, because δ was not the binder.
+6. **Flip-readiness: NO substrate-CC default flip; the gate MOVED.** The
+   competitive-mode gap is closed, but the cross-traffic cell it was built
+   to protect against reveals a deeper, CC-independent blocker: the
+   contention-loss recovery pipeline (the 1024 single-path pool × frozen
+   frontier under tail-drop). Until that is attacked, `passthrough` (with
+   or without `RWM_COPA_COMPETE`) is deployable ONLY where the bottleneck
+   is not shared with sustained loss-based bulk flows on a clean link;
+   BBR-under remains the shared-bottleneck fallback; shipped default
+   remains stock Cubic. NEW named follow-up (roadmap): **shared-bottleneck
+   contention recovery** — the pool/frontier/ARQ chain under tail-drop
+   (candidate levers: contention-scaled pool, loss-burst-aware NACK
+   budget/cadence, FEC-protected retransmission of the blocker; measure
+   against the clean cross-traffic cell; also re-opens the fairness case
+   for BOTH CC families).
+
+### Env / commands (reproduction)
+
+```
+# one invocation (topology + iperf3 competitor handled inside):
+sudo env SEED=42 bash cross_traffic.sh <c2|clean> <solo|copa|compete|bbr> 25000000 300
+# the interleaved battery:
+sudo bash cross_battery.sh <c2|clean> 8 <42|7> 25000000 /home/vibe/copacompete 300
+# probe knobs forward through the env: RWM_COPA_DELTA, RWM_CC_PACE, RWM_STORE_GAIN
+```
+
+### Tests
+
+`cargo test -p raptorpath --lib` 338/338 (6 new competitive-mode tests);
+`-p raptorpath-math` green; `gate_suite` 15/15 release (shipped default
+byte-identical); `congestion_control` 19/19; `copa_sole_loopback` 1/1;
+`mtu_blackhole_wedge` 2/2 — all on the final tree.
