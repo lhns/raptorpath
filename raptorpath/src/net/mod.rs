@@ -1793,6 +1793,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // whether the "~25-67 ms decode" is compute or waiting-for-rank.
         let mut fdiag_addsym_us: u64 = 0;
         let mut fdiag_addsym_n: u64 = 0;
+        // diag/unified-collapse: worst single add_symbol call in the current
+        // FDIAG report interval (a mean hides a per-arrival cost blowup).
+        let mut fdiag_addsym_max_us: u64 = 0;
 
         // ── Receiver wedge forensics (fix/frontier-wedge, RWM_DIAG) ────────
         // Names the mechanism when the in-order frontier freezes while the
@@ -2419,7 +2422,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             let recovered = if fdiag_on {
                                 let t_dec = Instant::now();
                                 let r = win_dec.add_symbol(symbol);
-                                fdiag_addsym_us += t_dec.elapsed().as_micros() as u64;
+                                let call_us = t_dec.elapsed().as_micros() as u64;
+                                fdiag_addsym_us += call_us;
+                                fdiag_addsym_max_us = fdiag_addsym_max_us.max(call_us);
                                 fdiag_addsym_n += 1;
                                 r
                             } else {
@@ -2625,15 +2630,38 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                     0
                                 };
                                 eprintln!(
-                                    "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | COMPUTE calls={} avg={}us total={}ms | rf={} ru={}",
+                                    "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | COMPUTE calls={} avg={}us max={}us total={}ms | rf={} ru={}{}",
                                     f, highest_seen_seq,
                                     highest_seen_seq.saturating_sub(f),
                                     holes, buffered,
                                     fdiag_decode_n, dec_avg, fdiag_present_at_stall,
                                     fdiag_source_n, src_avg,
-                                    fdiag_addsym_n, addsym_avg, fdiag_addsym_us / 1000,
+                                    fdiag_addsym_n, addsym_avg,
+                                    std::mem::take(&mut fdiag_addsym_max_us),
+                                    fdiag_addsym_us / 1000,
                                     win_dec.repairs_fed(), win_dec.repairs_useful(),
+                                    // diag/unified-collapse: decoder-internal
+                                    // cost drivers (active rows L, span, memory)
+                                    win_dec
+                                        .diag_stats()
+                                        .map(|s| format!(" | {s}"))
+                                        .unwrap_or_default(),
                                 );
+                                // diag/unified-collapse: transit-layer counters
+                                // at the receiver — did datagrams reach quinn?
+                                let dg = recv_transport
+                                    .datagram_frame_stats(path_id)
+                                    .map(|(rx, tx)| format!("dg_rx={rx} dg_tx={tx}"))
+                                    .unwrap_or_default();
+                                let sh = recv_transport
+                                    .l0_transit_stats()
+                                    .map(|(e, g, td, ok, er, q)| {
+                                        format!(
+                                            " shim enq={e} ge={g} tail={td} ok={ok} err={er} q={q}"
+                                        )
+                                    })
+                                    .unwrap_or_default();
+                                eprintln!("[FDIAG-T] {dg}{sh}");
                             }
                         }
 
@@ -4567,6 +4595,13 @@ async fn run_window_sender(
             "unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ)"
         );
     }
+    // diag/unified-collapse (roadmap item 3): ~500 ms sender-side span-law
+    // trace (RWM_DIAG only) — the live A*/Δ, owed budget, window span vs the
+    // cumulative ack. Names whether a collapse rep's emission is re-covering
+    // a stalled region / has A* pinned / budget saturated. (Own t0: the DIAG
+    // block's `diag_start_us` is declared after the send macro — hygiene.)
+    let span_diag_start_us: u64 = now_us();
+    let mut span_diag_last_us: u64 = 0;
     // ── Proactive-frontier repair (plain-reliable) ────────────────────────
     // MEASURED root cause of the C2 lossy collapse (goal-gate "Proactive
     // Frontier"): under Bulk's r*→0 pure-ARQ steady state there is NO proactive
@@ -5181,6 +5216,43 @@ async fn run_window_sender(
                         None => (0.0, None),
                     }
                 };
+                // diag/unified-collapse: span-law sender trace (RWM_DIAG only).
+                if diag_on && unified_span {
+                    let dnow = now_us();
+                    if dnow.saturating_sub(span_diag_last_us) > 500_000 {
+                        span_diag_last_us = dnow;
+                        let (ws, we) = encoder.window_span();
+                        let ack = window_ack_seq.load(Ordering::Relaxed);
+                        let transit = transport
+                            .l0_transit_stats()
+                            .map(|(e, g, td, ok, er, q)| {
+                                format!(
+                                    " | shim enq={e} ge={g} tail={td} ok={ok} err={er} q={q}"
+                                )
+                            })
+                            .unwrap_or_default();
+                        let dg = transport
+                            .datagram_frame_stats(source_path)
+                            .map(|(rx, tx)| format!(" dg_rx={rx} dg_tx={tx}"))
+                            .unwrap_or_default();
+                        eprintln!(
+                            "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}",
+                            dnow.saturating_sub(span_diag_start_us) as f64 / 1e6,
+                            ack,
+                            ws,
+                            we,
+                            encoder.window_size(),
+                            span_params.map(|(a, _)| a),
+                            span_params.map(|(_, d)| d),
+                            taper_budget.owed(),
+                            repair_rate,
+                            repair_debt,
+                            retransmit_buffer.len(),
+                            transit,
+                            dg,
+                        );
+                    }
+                }
                 // RWM Phase C raise-r arm (§16.5): floor the per-symbol
                 // repair rate to make the window rateless-fungible. Applied
                 // AFTER the spare cap on purpose — the experiment forces the

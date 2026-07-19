@@ -475,6 +475,26 @@ impl WindowDecoder for UnifiedDecoder {
     fn repairs_useful(&self) -> u64 {
         self.repairs_useful
     }
+
+    /// diag/unified-collapse (roadmap item 3): the live cost drivers of the
+    /// global RREF — active coded-row count L, widest row span, total
+    /// coefficient bytes (matrix memory), payload-store and dedup-set sizes.
+    fn diag_stats(&self) -> Option<String> {
+        let rows = self.rows.len();
+        let (mut max_span, mut coeff_bytes) = (0usize, 0usize);
+        for r in self.rows.values() {
+            max_span = max_span.max(r.coeffs.len());
+            coeff_bytes += r.coeffs.len();
+        }
+        Some(format!(
+            "rows={} max_span={} coeff_kb={} recovered={} seen={}",
+            rows,
+            max_span,
+            coeff_bytes / 1024,
+            self.recovered.len(),
+            self.seen.len()
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------

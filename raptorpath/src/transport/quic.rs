@@ -307,6 +307,13 @@ struct L0Netem {
     states: DashMap<PathId, parking_lot::Mutex<L0PathState>>,
     epoch: std::time::Instant,
     seed: u64,
+    // diag/unified-collapse transit counters (RWM_DIAG reads them; always-on
+    // atomics, negligible cost): where do packets die during an outage?
+    enq: std::sync::atomic::AtomicU64,
+    ge_drops: std::sync::atomic::AtomicU64,
+    tail_drops: std::sync::atomic::AtomicU64,
+    sent_ok: std::sync::atomic::AtomicU64,
+    send_errs: std::sync::atomic::AtomicU64,
 }
 
 impl L0Netem {
@@ -330,6 +337,11 @@ impl L0Netem {
             states: DashMap::new(),
             epoch: std::time::Instant::now(),
             seed,
+            enq: std::sync::atomic::AtomicU64::new(0),
+            ge_drops: std::sync::atomic::AtomicU64::new(0),
+            tail_drops: std::sync::atomic::AtomicU64::new(0),
+            sent_ok: std::sync::atomic::AtomicU64::new(0),
+            send_errs: std::sync::atomic::AtomicU64::new(0),
         }))
     }
 
@@ -343,7 +355,7 @@ impl L0Netem {
     }
 
     /// Shape + (maybe) drop + schedule one datagram for delayed send.
-    fn send(&self, path_id: PathId, is_server: bool, conn: &quinn::Connection, data: bytes::Bytes) {
+    fn send(self: &Arc<Self>, path_id: PathId, is_server: bool, conn: &quinn::Connection, data: bytes::Bytes) {
         let cfg = self.cfg(path_id);
         let now = self.now_us();
         let entry = self.states.entry(path_id).or_insert_with(|| {
@@ -397,11 +409,13 @@ impl L0Netem {
                 drop
             };
             if drop {
+                self.ge_drops.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return;
             }
         }
         // netem default packet limit: tail-drop beyond 1000 queued.
         if st.queued.load(std::sync::atomic::Ordering::Relaxed) >= 1000 {
+            self.tail_drops.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return;
         }
         // Rate stage (serialization through the shaped link), then delay+jitter.
@@ -426,6 +440,7 @@ impl L0Netem {
             let conn = conn.clone();
             let epoch = self.epoch;
             let queued = st.queued.clone();
+            let shim = self.clone();
             tokio::spawn(async move {
                 while let Some((rel_us, data)) = rx.recv().await {
                     let now = epoch.elapsed().as_micros() as u64;
@@ -433,13 +448,40 @@ impl L0Netem {
                         tokio::time::sleep(std::time::Duration::from_micros(rel_us - now)).await;
                     }
                     queued.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    let _ = conn.send_datagram(data);
+                    match conn.send_datagram(data) {
+                        Ok(()) => {
+                            shim.sent_ok.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Err(_) => {
+                            shim.send_errs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
                 }
             });
             st.tx = Some(tx);
         }
         st.queued.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.enq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _ = st.tx.as_ref().unwrap().send((release, data));
+    }
+
+    /// diag/unified-collapse: cumulative transit counters + current queue
+    /// depth: (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
+    fn transit_stats(&self) -> (u64, u64, u64, u64, u64, usize) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let q: usize = self
+            .states
+            .iter()
+            .map(|e| e.value().lock().queued.load(Relaxed))
+            .sum();
+        (
+            self.enq.load(Relaxed),
+            self.ge_drops.load(Relaxed),
+            self.tail_drops.load(Relaxed),
+            self.sent_ok.load(Relaxed),
+            self.send_errs.load(Relaxed),
+            q,
+        )
     }
 }
 
@@ -607,6 +649,12 @@ impl QuicTransport {
             let s = c.stats();
             (s.frame_rx.datagram, s.frame_tx.datagram)
         })
+    }
+
+    /// diag/unified-collapse: L0 shim transit counters, None when the shim is
+    /// off — (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
+    pub fn l0_transit_stats(&self) -> Option<(u64, u64, u64, u64, u64, usize)> {
+        self.l0_netem.as_ref().map(|s| s.transit_stats())
     }
 
     /// Read back the pass-through window (bytes) for diagnostics; None when
