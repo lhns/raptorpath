@@ -177,9 +177,12 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
   path ≈ 1.3 s dwell; holes recover ~13× slower; frontier serializes).
   `RWM_STORE_PERCAP` stays OFF.
 - **The two named residuals** (roadmap items 1–2): the percap
-  redirect-guard (delay-aware redirect / dwell-bound slow cap), and
-  receiver/sender task parallelization — now LIVE at the symmetric cell
-  (PBP c7-s7 = 147.4 ≈ the ~150 threshold), noted, not built.
+  redirect-guard — MEASURED 2026-07-19: it halves the c8 regression
+  (0.40–0.41 → 0.52–0.55×Σ) but does not reach the PBS bar; the residual
+  is own-pick parking under the knee-clamped slow cap + account
+  no-borrowing (item 1, updated) — and receiver/sender task
+  parallelization — LIVE at the symmetric cell (PBP c7-s7 = 147.4 ≈ the
+  ~150 threshold), noted, not built.
 - No cell exceeds its link-class Σ ceiling; "every wall so far has been an
   unscaled constant or a hidden substrate controller, not the architecture"
   (§16.19).
@@ -238,11 +241,23 @@ unchanged by the CPU-era fixes — the window/gen path is where the wins live.)
 Per MEASUREMENT DISCIPLINE these are named, scoped, and NOT built; each
 carries its gating decision.
 
-1. **percap-redirect-guard** — bound the cap-full placement redirect by the
-   target account's absolute dwell (redirect only while cap_i·dwell_i ≤ ~1
-   recovery round), and/or dwell-bound the slow cap
-   (cap_i ≤ rate_i × recovery budget, not the 2048 knee). Re-battery c8.
-   Gates any `RWM_STORE_PERCAP` flip and the C8 0.9×Σ target. (#86)
+1. **percap-redirect-guard** — ~~bound the cap-full placement redirect by
+   the target account's absolute dwell~~ **[BUILT + MEASURED 2026-07-19,
+   `fix/percap-redirect-guard` 689b9f1: the floor-clock bound
+   (bound_j = rate_j·RTprop_j; κ=1 on the loaded echo clock is provably
+   vacuous) closes the redirect channel — slow-account dwell collapses
+   ~4×, +12/+11.5 Mbit over the unguarded control, both CC families both
+   seeds — but PBP-G < PBS at c8 both seeds (0.52–0.55×Σ vs 0.67–0.72),
+   so the flip stays NO and the c8 record remains pooled PBS. The
+   residual parking is now attributed PAST the redirect: (i) own-pick
+   placement under the plain-anchor over-read's knee-clamped slow cap —
+   the CAP needs the same floor-clock dwell bound
+   (cap_i ≤ gain·rate_i·RTprop_i) and/or the #79 sampler generalized to
+   plain mode; (ii) under honest Copa caps, account isolation denies the
+   fast path the pooled law's borrowing at asymmetric cells. Both named,
+   NOT built; they inherit this item's gate on any `RWM_STORE_PERCAP`
+   flip and the C8 0.9×Σ target. Ledger: "Per-Path Outstanding
+   Accounting" → GUARD RESULTS.]** (#86)
 2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
    now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
    next C7 lever after flow control. (#84/#86)
@@ -8161,7 +8176,7 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
 
-## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`)
+## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below**
 
 **Why (proven by #84).** The multipath binder was flow control: the
 per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
@@ -8466,6 +8481,172 @@ echo 0`); the audit parsed blocks, not that line. Session drift vs #84
 (PB-C8 64.9/55.9 → 56.6/44.4; PBS-C8 0.80/0.79Σ → 0.67/0.74Σ) is why all
 verdicts above are same-session interleaved comparisons only.
 
+### GUARD RESULTS (2026-07-19, roadmap item 1, branch `fix/percap-redirect-guard`, commit 689b9f1) — the delay-aware redirect guard BUILT and L1-MEASURED: it recovers HALF the c8 regression under both CC families (the redirect channel is closed — the slow account pins at its floor-clock bound and the parked dwell collapses ~4×) but PBP-G stays BELOW the pooled PBS bar at c8 on both seeds, because a SECOND parking channel is now exposed: the placement softmax's OWN picks fill the slow account to its knee-clamped cap. `RWM_STORE_PERCAP` stays DEFAULT OFF.
+
+**The guard law, derived (not tuned).** Projected dwell of account j is
+Little's law on the store: D_j = out_j / rate_j (the store drains at the
+ack clock). The naive bound D_j ≤ κ·echoRTT_j with κ = 1 ("j drains its
+account within one echo round") is VACUOUS on the loaded echo clock,
+because the app echo is store-dwell-inclusive: echoRTT_j ≈ RTprop_j + D_j,
+so D ≤ RTprop + D holds for EVERY D — this is precisely the measured #86
+feedback (slow-path echo inflating 214–811 ms and holding the account
+open). Solving D ≤ κ·(RTprop_j + D) for κ < 1 gives
+D ≤ (κ/(1−κ))·RTprop_j; κ = 1/2 — the redirected symbol must clear within
+one round even AFTER its own dwell has inflated the echo — gives
+D ≤ RTprop_j, i.e. κ = 1 on the FLOOR clock:
+
+    bound_j = rate_j × RTprop_j   (the path's honest BDP in symbols)
+
+A cap-full redirect may park at most one UN-QUEUED pipe on the target.
+Equivalently: cap_j = gain·pipe_j decomposes (gain 2.0) into "1 pipe + 1
+recovery-round runway" — redirects may consume only the floor-clocked pipe
+term; the runway term and any knee-clamp headroom (the plain-anchor
+over-read case) are reserved for the path's OWN traffic. Copa-sole feed:
+bound_j = cwnd_j (Copa's operating point is the bounded-queue pipe);
+warm-up: cap_j/gain (the share's pipe term); clamp [1, cap_j].
+**Composition** (`percap_place_path` + `percap_store_full_guarded`):
+redirect targets must satisfy out_j < min(cap_j, bound_j); when SOME
+account is cap-full and NO guard-eligible target exists the store reads
+FULL for the placement and the existing battery-proven admission pause
+engages — backpressure, don't park (NOT a new deferral mechanism; the #73
+lesson does not recur). Own-pick placement below cap is never guard-gated;
+N = 1 stays bit-exact (percap_caps empty); `RWM_PERCAP_GUARD=0` restores
+the unguarded redirect as the same-binary regression-control arm. DIAG:
+`sout=out/cap/b<bound>`; guard liveness echo per MEASUREMENT DISCIPLINE.
+
+**Unit evidence** (lib 335/335, 3 new):
+`percap_redirect_bound_is_floor_clock_bdp` (the derivation: c3-like
+1534 sym/s × 60 ms RTprop → 93 vs the knee-adjacent 1531 cap; warm-up
+cap/gain; clamps), `percap_store_full_guarded_backpressures_instead_of_parking`
+(cap-full + target-past-bound ⇒ FULL where the unguarded gate admits —
+THE c8 fix — and bound=cap degenerates exactly to the unguarded gate),
+and `percap_redirect_guard_stops_at_dwell_bound_and_pauses_admission`
+(the c8 miniature guarded: fast pegs at cap 1600, redirects fill slow to
+EXACTLY bound 60 ≪ cap 240, gate reads FULL where the old gate admits,
+one-placement slop on race, own picks never gated, gate reopens on
+drain). Old unguarded tests retained (bound=cap).
+
+**L1 battery** (VM 10.1.5.16, 2026-07-19 09:00–10:11 UTC; binary sha256
+fef7ae5ff8bebb6b… = commit 689b9f1 `fix/percap-redirect-guard`, SAME
+binary every arm; E5-2650 v3 aes+avx2+pclmulqdq in every log header
+(post-divide); 25 MB × 1 run/invocation × 8 reps, arms interleaved
+round-robin per rep, fresh tunnel per invocation, seeds 42+7, RWM_DIAG=1
+everywhere; driver `/home/vibe/guard_battery.sh`, logs
+`/home/vibe/guard/{sc2,sc3,c7,c8}-s{42,7}.log` + per-run `diag-*.log`).
+Arms: PBS (pooled path-scaled, the c8 incumbent), PBPO (percap
++ `RWM_PERCAP_GUARD=0`, unguarded regression control), PBPG (guarded
+percap), C1 (Copa wire-signal), C1PG (guarded percap under Copa); singles
+PB/PBPG/C1/C1PG.
+
+Singles — N=1 identity (flag+guard must be inert) + same-session Σ:
+
+| cell | PB (σ_s) | PBPG (σ_s) | C1 (σ_s) | C1PG (σ_s) |
+|---|---|---|---|---|
+| sc2 s42 | 74.36 (4.85) | 77.29 (3.32) | 68.96 (1.43) | 68.26 (2.24) |
+| sc2 s7 | 77.95 (2.89, n=7) | 77.63 (2.87) | 65.70 (2.93, n=7) | 63.06 (7.81, n=6) |
+| sc3 s42 | 15.36 (0.85) | 15.86 (0.19) | 11.92 (0.39) | 11.83 (0.52) |
+| sc3 s7 | 15.79 (0.24, n=6) | 15.79 (0.25, n=5) | 12.34 (0.32) | 12.35 (0.21, n=6) |
+
+Identity HOLDS (every Δ within ~1σ_s; sc2-s7 C1PG carries one 47.4
+outlier run in n=6, mean Δ −2.6 ≈ σ). Same-session ceilings: **Σ-PB
+c7 = 148.7/155.9, c8 = 89.7/93.7; Σ-C1 c7 = 137.9/131.4, c8 = 80.9/78.0.**
+
+Duals (mean (σ_s) [per-run values]; Σ-ratio = arm / same-family Σ):
+
+| cell | arm | mean (σ_s) [runs] | Σ-ratio |
+|---|---|---|---|
+| c7 s42 | PBS | 133.34 (2.89) [131.6 131.6 133.1 132.4 135.8 130.9 139.4 131.8] | 0.90 |
+| | PBPO | 139.12 (5.80) [140.5 134.0 149.1 138.3 130.9 142.1 135.2 142.8] | 0.94 |
+| | PBPG | **132.52 (12.47)** [141.6 130.2 134.1 103.5 139.8 142.2 135.8 133.1] | **0.89** |
+| | C1 | 80.30 (5.83) [77.1 82.0 76.9 73.5 86.8 78.4 76.9 90.8] | 0.58 |
+| | C1PG | **90.17 (6.60)** [85.8 97.1 86.6 89.9 86.9 86.6 103.4 85.1] | **0.65** |
+| c7 s7 | PBS | 132.58 (22.17, n=7) [83.5 138.3 144.1 135.9 136.3 140.7 149.2] | 0.85 |
+| | PBPO | 138.48 (15.28, n=7) [153.1 122.1 142.1 145.2 112.0 147.4 147.4] | 0.89 |
+| | PBPG | **135.90 (6.07, n=6)** [127.6 139.4 131.5 143.8 139.8 133.3] | **0.87** |
+| | C1 | 74.72 (8.51, n=7) [64.3 73.7 80.5 82.4 75.6 62.6 84.0] | 0.57 |
+| | C1PG | **95.72 (3.44, n=7)** [102.3 96.2 94.1 96.0 94.3 96.2 90.9] | **0.73** |
+| c8 s42 | PBS | 64.74 (21.58) [82.8 83.5 74.4 22.2 55.4 78.5 74.1 47.0] | 0.72 |
+| | PBPO | 37.15 (1.34) [36.6 38.0 36.3 39.4 37.9 37.0 37.1 34.9] | 0.41 |
+| | PBPG | **49.52 (8.82)** [62.0 41.1 50.0 40.8 47.5 45.3 63.8 45.6] | **0.55** |
+| | C1 | 53.01 (4.57) [46.8 56.5 50.8 53.8 46.4 58.8 55.5 55.5] | 0.66 |
+| | C1PG | **43.37 (8.37)** [43.4 47.3 51.0 49.5 44.1 46.5 24.3 40.9] | **0.54** |
+| c8 s7 | PBS | 62.92 (9.91) [70.9 53.4 77.2 68.8 46.3 60.1 65.3 61.3] | 0.67 |
+| | PBPO | 37.29 (1.89, n=7) [37.4 35.1 36.8 40.6 38.5 37.3 35.2] | 0.40 |
+| | PBPG | **48.81 (8.78, n=6)** [53.7 36.0 60.1 42.8 46.3 54.0] | **0.52** |
+| | C1 | 55.40 (2.41, n=6) [53.3 52.3 58.3 56.7 57.4 54.3] | 0.71 |
+| | C1PG | **44.18 (1.92, n=6)** [43.1 43.6 47.0 44.5 41.5 45.3] | **0.57** |
+
+**Reading, effect-by-effect:**
+
+1. **The guard MECHANISM works and recovers half the c8 regression, both
+   CC families, both seeds.** PBPG−PBPO = +12.4/+11.5 (≥6× PBPO's σ_s,
+   same sign both seeds); C1PG improves from #86's 0.43/0.45×Σ to
+   0.54/0.57 (family-ratio). The unguarded control PBPO reproduces the
+   #86 regression exactly (37.15/37.29 vs 37.00/35.08) — a clean
+   same-binary A/B on the guard alone.
+2. **But PBP-G < PBS at c8 on BOTH seeds** (−15.2/−14.1, ≈1.5σ of the
+   worst arm σ_s at s42, 1.4σ at s7 — and PBS's mean carries its
+   documented bimodal collapse runs 22.2/47.0/46.3; by medians the gap
+   is wider). C1PG stays below C1 (−9.6/−11.2, ≥2σ). The C8 0.9×Σ target
+   is not approached (0.52–0.57); the pooled PBS bar (0.67–0.72 this
+   session) STANDS.
+3. **c7 is preserved under the guard**: PBPG 0.89/0.87×Σ (≥ the 0.87
+   target both seeds), statistical tie with PBS (−0.8/+3.3, ≪/≈σ); the
+   Copa c7 percap win survives (C1PG−C1 = +9.9/+21.0, ≈1.7–2.5σ).
+   Honest note: at c7 the UNGUARDED percap is the best arm this session
+   (139.1/138.5 = 0.94/0.89) — the guard costs −6.6/−2.6 there (≈1σ),
+   the price of pausing where the unguarded arm borrows.
+
+**Gauge forensics — before/after (per-run `diag-c8-*` logs).** Unguarded
+PBPO: both accounts pegged at 2048/2048 (bound=cap), slow-path echo RTT
+**1004–1005 ms** (the parked ≈1.05 s dwell at the honest ~1954 sym/s
+rate, reproducing #86's ≈1.3 s), tick-mean paused 37–62 %. Guarded PBPG,
+good runs (62.0/63.8 Mbit): the slow account pins EXACTLY at its bound
+(`sout=508/2048/b508`), slow echo RTT 121–301 ms — **the parked dwell
+collapses ≈4× (1.05 s → ~0.26 s)** — paused 11–18 %. Guarded bad runs
+(41–47 Mbit): the slow account still bloats to 1638/2048 with b674 —
+ABOVE the bound — which the guard cannot cause: those symbols are the
+placement softmax's OWN picks, admitted while the gate is open and placed
+directly on the slow path below its cap, which the plain-anchor over-read
+holds knee-clamped (btlbw reads 12.9–15.2k sym/s ≈ 8–10× the honest c3
+rate, so cap_slow stays ≈2048 and never differentiates — exactly the #86
+interpretation-guard warning). Under Copa (C1PG) the caps are honest
+(cwnd-derived: cap 466–1038, bound = cwnd) and the slow account pins at
+its bound in EVERY probe (`sout=323/b323`, `233/b233`, `433/b433`),
+paused only 9–23 % — yet the arm still trails C1: with per-path accounts
+the fast path is denied the POOLED law's ability to borrow the slow
+path's unused share (out_fast ≤ gain·cwnd_fast vs pooled
+gain·Σcwnd), a structural cost of account isolation at asymmetric cells,
+not a defect of the guard.
+
+**VERDICT + FLIP DECISION.** The redirect channel is CLOSED — measured at
+the gauge level (bound-pinned slow account, dwell ~1.05 s → 0.26 s) and
+at the throughput level (+11.5/+12.4 over the unguarded control, both CC
+families) — but PBP-G ≥ PBS FAILS at c8 on both seeds under both CC
+families, so **`RWM_STORE_PERCAP` stays DEFAULT OFF** (guard merged as
+code, default-inert; shipped tree byte-identical with the env unset).
+What the battery established: the #86 "cap-full redirect" attribution was
+HALF the story — with redirects bounded, the residual c8 parking flows
+through (i) the softmax's own picks under the plain-anchor over-read's
+knee-clamped slow cap (the cap needs the SAME floor-clock dwell bound the
+redirect got, i.e. cap_i ≤ gain·rate_i·RTprop_i, and/or the #79
+send-interval sampler generalized to plain mode so the anchor stops
+over-reading), and (ii) under honest Copa caps, the account structure's
+no-borrowing property at asymmetric cells. Both are named follow-ups,
+NOT built. c7 keeps percap parity under the guard; the c8 record remains
+pooled PBS.
+
+**Controls / discipline:** mechanism-liveness audit over ALL 264
+captured runs (288 invocations): every PBPG/C1PG run has BOTH the percap
+echo and the guard echo, every PBPO run the percap echo and NO guard
+echo, every PBS run the path-scaled echo only, every PB/C1 run none — 0
+mismatches. 24 invocations aborted with no result (the documented seed-7
+topo-ping double-abort class, all but one on seed 7; stale-log liveness
+lines on aborted invocations recorded and discounted; RETRY per
+protocol; no captured result discarded; n quoted wherever < 8). Zero
+DNFs in captured runs. All verdicts same-session interleaved (session
+drift vs #86 visible again: PBS-c8 0.67/0.74Σ → 0.72/0.67Σ).
+
 ### Controls / caveats
 
 - Shipped default byte-identical: env unset ⇒ no charge, no gate change,
@@ -8496,3 +8677,9 @@ L1-battery session re-run on the `meas/percap-battery` tree (main 8ef5ff1
 flipped): lib 332/332, math 136 green, `gate_suite` 15/15 release,
 `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, the three loopbacks 1/1
 each — all green 2026-07-19.
+
+Guard session (`fix/percap-redirect-guard` 689b9f1, NO default flipped —
+guard active only under `RWM_STORE_PERCAP`, itself default OFF): lib
+335/335 (3 new), math 136 green, `gate_suite` 15/15 release,
+`mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, `copa_sole_loopback` /
+`fmtcp_loopback` / `daps_loopback` 1/1 each — all green 2026-07-19.

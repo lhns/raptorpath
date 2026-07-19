@@ -8205,6 +8205,37 @@ Mbit/s with receiver CPU still falling per bit — the §16.19 "~150
 threshold" for receiver/sender task parallelization is now the live
 frontier at the symmetric cell.
 
+**Guard addendum (2026-07-19, `fix/percap-redirect-guard`).** The named
+delay-aware redirect bound was derived, built, and L1-measured. The
+derivation is itself a datum: the natural law "redirect to j only while
+its account drains within one echo round" (out_j/rate_j ≤ κ·echoRTT_j,
+κ = 1) is PROVABLY vacuous on the loaded echo clock — the app echo is
+store-dwell-inclusive (echoRTT ≈ RTprop + out/rate), so the bound chases
+its own congestion; that is exactly the measured feedback that held the
+slow account open. Solving with κ < 1 collapses to κ = 1 on the FLOOR
+clock: **bound_j = rate_j × RTprop_j — a redirect may park at most one
+un-queued pipe on the target** (Copa feed: cwnd_j; warm-up: cap_j/gain).
+When some account is cap-full and no target is within its bound, the
+store reads FULL and the existing admission pause engages — backpressure,
+not parking. Measured (same-binary A/B against the unguarded redirect,
+`RWM_PERCAP_GUARD=0`, both seeds, both CC families, same-session Σ): the
+redirect channel CLOSES — the slow account pins at its bound
+(sout = 508/b508; 323/b323 under Copa's honest caps), the parked dwell
+collapses ≈4× (echo 1004 ms → 121–301 ms), and c8 recovers half the
+regression (0.41→0.55 / 0.40→0.52 of Σ; Copa 0.43→0.54/0.57) with c7
+preserved (0.87–0.89 of Σ; the Copa c7 win intact). But the guarded arm
+still trails the pooled fix at c8 (0.52–0.55 vs 0.67–0.72 of Σ), because
+closing the redirect EXPOSED a second parking channel: the placement
+softmax's own picks fill the slow account below a cap the plain-anchor
+over-read holds knee-clamped (≈2048; the honest derivation never
+engages), and under Copa's honest caps the account structure denies the
+fast path the pooled law's borrowing of the slow path's unused share.
+The flip stays NO; the follow-ups are named in §17.6 item 1: give the
+CAP the same floor-clock dwell bound the redirect got
+(cap_i ≤ gain·rate_i·RTprop_i), generalize the §16.15 send-interval
+sampler to plain mode, or accept account isolation's asymmetric-cell tax
+as structural and keep the pooled law there.
+
 ---
 
 ### 16.20 One decoder, one continuous mechanism: the unified span machine (task #61, the principle debt) (2026-07-18)
@@ -8741,10 +8772,14 @@ the window/generation path is where the measured wins live.)
 Prioritized; each item carries its gating decision. Nothing here is
 asserted beyond its naming evidence.
 
-1. **percap-redirect-guard** — delay-aware bound on the cap-full placement
-   redirect (redirect only while the target account's dwell ≤ ~1 recovery
-   round) and/or dwell-bound slow cap (cap_i ≤ rate_i × recovery budget).
-   Re-battery C8. Gates `RWM_STORE_PERCAP` and the C8 0.9×Σ target.
+1. **percap-redirect-guard** — **[MEASURED 2026-07-19, §16.19 guard
+   addendum: the floor-clock bound closes the redirect channel (dwell
+   ~4× down, half the c8 regression recovered, both CC families) but
+   PBP-G < pooled PBS at c8 both seeds — flip stays NO.]** The residual
+   inherits the gate: dwell-bound the CAP itself
+   (cap_i ≤ gain·rate_i·RTprop_i), generalize the plain-mode rate anchor
+   (§16.15 sampler), and weigh account isolation's no-borrowing tax at
+   asymmetric cells. Gates `RWM_STORE_PERCAP` and the C8 0.9×Σ target.
 2. **Receiver/sender task parallelization** — live above ~150 Mbit/sink;
    the symmetric cell now operates at ~147 with the engine sink at 187.7.
    The next C7 lever after flow control.
