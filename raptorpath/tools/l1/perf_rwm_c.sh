@@ -56,6 +56,14 @@ fi
 # Roadmap item 1 (#86 c8 fix): delay-aware redirect guard — default ON under
 # percap; =0 restores the unguarded redirect (the c8-regression control arm).
 [[ -n "${RWM_PERCAP_GUARD:-}" ]] && TENV="$TENV RWM_PERCAP_GUARD=$RWM_PERCAP_GUARD"
+# feat/anchor-hygiene: the honest plain-mode send-interval BtlBw sampler
+# (RWM_PLAIN_RS) and the hygiene umbrella — the honest-anchor measurement arm.
+[[ -n "${RWM_PLAIN_RS:-}" ]] && TENV="$TENV RWM_PLAIN_RS=$RWM_PLAIN_RS"
+[[ -n "${RWM_ANCHOR_HYGIENE:-}" ]] && TENV="$TENV RWM_ANCHOR_HYGIENE=$RWM_ANCHOR_HYGIENE"
+# feat/percap-honest-cap: honest floor-clock store caps under RWM_PLAIN_RS —
+# cap_i = anchor_i*(K_i+gain-1), K_i = windowed-min echoSRTT/RTprop. Default ON
+# whenever RWM_PLAIN_RS is set; =0 restores the floor-law control arm.
+[[ -n "${RWM_HONEST_CAP:-}" ]] && TENV="$TENV RWM_HONEST_CAP=$RWM_HONEST_CAP"
 [[ -n "${RWM_STORE_GAIN:-}" ]] && TENV="$TENV RWM_STORE_GAIN=$RWM_STORE_GAIN"
 [[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
 [[ -n "${RWM_GEN_RATE:-}" ]] && TENV="$TENV RWM_GEN_RATE=$RWM_GEN_RATE"
