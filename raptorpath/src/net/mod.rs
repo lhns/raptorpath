@@ -3692,42 +3692,98 @@ impl EchoRatioMin {
         let m = self.cur.min(self.prev);
         if m.is_finite() { m } else { 1.0 }
     }
+    /// Feed one echoSRTT/RTprop observation from raw clocks and return the
+    /// windowed min. SEED-IDENTITY GUARD: at the estimator's seed instant
+    /// the smoothed echo IS the windowed-min sample (bit-equal, ratio ≡ 1)
+    /// — an artifact of shared seeding, not a drain-clock measurement.
+    /// Feeding it would latch the windowed min at 1.0 for a whole window
+    /// (measured at the L1 smoke: khr pinned 1.00 while rtt/rtp read
+    /// 16/8 ms). Samples where srtt − RTprop ≤ 5 µs are DISCARDED, not
+    /// clamped — no measurement, no sample.
+    pub fn observe_srtt_over_rtprop(
+        &mut self,
+        srtt: Duration,
+        rtprop: Option<Duration>,
+        now_us: u64,
+    ) -> f64 {
+        if let Some(rtp) = rtprop {
+            let rtp_s = rtp.as_secs_f64();
+            let srtt_s = srtt.as_secs_f64();
+            if rtp_s > 0.0 && srtt_s - rtp_s > 5e-6 {
+                return self.observe(srtt_s / rtp_s, now_us);
+            }
+        }
+        self.k()
+    }
 }
 
-/// Honest floor-clock store cap (feat/percap-honest-cap, the GUARD-RESULTS
-/// residual (i) fix): the outstanding cap derived on the HONEST plain-mode
-/// anchor (`RWM_PLAIN_RS`), replacing both the knee-clamp fallback that the
-/// legacy anchor over-read forced AND the loaded-echo-clock cap law whose
+/// The recovery engine's per-round latency ceiling, in seconds — the
+/// hole-refresh / tail-sweep cadence clamp (`HOLE_NACK_REFRESH_MAX` =
+/// `TAIL_SWEEP_MAX_US` = 100 ms). A stalled hole in plain window mode is
+/// recovered by the SACK re-advertisement + tail-sweep engine, whose round
+/// runs on THIS clock (2×SRTT clamped [25, 100] ms), not on RTprop — at a
+/// short-RTprop cell (c2: RTprop ≈ 8 ms) a recovery round is ~12× the wire
+/// round trip. The honest cap's runway term must fund it (see
+/// [`honest_store_cap`]); using the CLAMP CEILING is the honest worst
+/// round: GE burst loss routinely drives the engine to it (retransmits
+/// re-lost in the same bad state, sweep-cadence refills — MEASURED: sweeps
+/// every ~140 ms live at the c2 cell).
+pub const HONEST_RECOVERY_ROUND_S: f64 = TAIL_SWEEP_MAX_US as f64 / 1e6;
+
+/// Honest store cap (feat/percap-honest-cap, the GUARD-RESULTS residual (i)
+/// fix): the outstanding cap derived on the HONEST plain-mode anchor
+/// (`RWM_PLAIN_RS`), replacing both the knee-clamp fallback that the legacy
+/// anchor over-read forced AND the loaded-echo-clock cap law whose
 /// dwell→echo→cap feedback parked the c8 slow path.
 ///
 /// Derivation (Little's law on the retention store, decomposed on honest
-/// clocks; not tuned):
+/// clocks; every term measured or a named engine constant — none
+/// inflatable by the store's own queue):
 ///
 ///   - a retained symbol's UNLOADED residence is K·RTprop (K = the
 ///     windowed-min echoSRTT/RTprop ratio, [`EchoRatioMin`] — the measured
 ///     ack-path/batching overhead; the loaded echo is self-referential and
-///     is used NOWHERE in this cap);
-///   - sustaining rate_i therefore needs rate_i·K_i·RTprop_i outstanding
-///     (Little's law on the unloaded drain clock);
-///   - plus (gain−1) floor-clock recovery rounds of runway (the same
-///     pipe+runway decomposition as the redirect guard):
+///     is used NOWHERE in this cap). Sustaining rate_i needs
+///     rate_i·K_i·RTprop_i outstanding — the RESIDENCE term;
+///   - a hole strands the in-order frontier for one recovery round, which
+///     runs on the RECOVERY engine's clock, not the wire's: the SACK
+///     re-advertisement / tail-sweep cadence bound R = 100 ms
+///     ([`HONEST_RECOVERY_ROUND_S`]) plus the retransmit flight RTprop_i.
+///     Keeping the pipe fed across it needs (gain−1) rounds of runway —
+///     the RUNWAY term (gain 2.0 = 1 round, the same pipe+runway
+///     decomposition as the redirect guard):
 ///
-///   cap_i = rate_i·RTprop_i·(K_i + gain − 1) = anchor_i·(K_i + gain − 1)
+///   cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R + RTprop_i))
+///         = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R
 ///
-/// where `anchor_i` = the BtlBw_i×RTprop_i BDP anchor (`copa_bdp_anchor`).
-/// With K = 1 (echo = floor) this degenerates EXACTLY to the legacy floor
-/// law gain·anchor_i — the honest form strictly generalizes it, and since
-/// K ≥ 1 it never shrinks a cap below the legacy law: the headroom the
-/// legacy anchor over-read supplied by accident (~K×, the sc2 −20% datum,
-/// "Anchor Hygiene" battery (b)) is now supplied EXPLICITLY from the
-/// measured echo-RTT/RTprop ratio. No term is inflatable by the store's
-/// own queue: rate is windowed-max of honest send-interval samples, RTprop
-/// windowed-min, K windowed-min. Caller clamps to the principled
+/// where `anchor_i` = BtlBw_i×RTprop_i (`copa_bdp_anchor`). The legacy
+/// floor law gain·anchor_i is the R = 0, K = 1 degenerate — the honest form
+/// strictly widens it (K ≥ 1, R > 0), so honest anchors can never shrink a
+/// cap below the legacy law: the headroom the anchor over-read supplied by
+/// accident (~12× at c2's 8-ms RTprop — the sc2 −20% datum, "Anchor
+/// Hygiene" battery (b)) is now supplied EXPLICITLY from the engine's own
+/// recovery cadence + the measured echo-ratio. Cross-checks against
+/// independently measured good operating points: sc2 → 10.4k·(K·8ms +
+/// 108ms) ≈ 1250+ → latches the legacy-proven 1024 store; c8-slow →
+/// ~2k·(K·60ms + 160ms) ≈ 470–500 ≈ the guard session's measured good pin
+/// (508, dwell 0.26 s); the c8 knee-parking regime (2048, dwell ≈ 1 s)
+/// is unreachable for a c3-class rate. Caller clamps to the principled
 /// [floor, knee/store] bounds; warm-up (no anchor) returns None and the
 /// caller keeps the legacy warm-up share.
-pub fn honest_store_cap(anchor_bdp: Option<f64>, k_ratio: f64, gain: f64) -> Option<f64> {
-    match anchor_bdp {
-        Some(a) if a > 0.0 => Some(a * (k_ratio.max(1.0) + (gain - 1.0).max(0.0))),
+pub fn honest_store_cap(
+    anchor_bdp: Option<f64>,
+    rate: Option<f64>,
+    k_ratio: f64,
+    gain: f64,
+) -> Option<f64> {
+    match (anchor_bdp, rate) {
+        (Some(a), Some(r)) if a > 0.0 && r > 0.0 => {
+            let runway_rounds = (gain - 1.0).max(0.0);
+            Some(
+                a * (k_ratio.max(1.0) + runway_rounds)
+                    + r * runway_rounds * HONEST_RECOVERY_ROUND_S,
+            )
+        }
         _ => None,
     }
 }
@@ -4708,9 +4764,11 @@ async fn run_window_sender(
     // Hygiene" battery (b)) so cap_slow latched at the 2048 knee and the
     // derived differentiation never engaged. With the honest send-interval
     // sampler (RWM_PLAIN_RS) the anchor reads ≈1× truth, and the cap law
-    // is re-derived on it: cap_i = anchor_i·(K_i + gain − 1) — the floor-
-    // clock BDP anchor times (measured unloaded drain-clock ratio + the
-    // recovery runway), see `honest_store_cap`. Applies to the per-account
+    // is re-derived on it: cap_i = anchor_i·(K_i + gain − 1) +
+    // rate_i·(gain−1)·R — residence on the measured unloaded drain clock
+    // plus runway on the RECOVERY engine's clock (R = the 100-ms hole-
+    // refresh/tail-sweep cadence bound), see `honest_store_cap`. Applies
+    // to the per-account
     // percap caps AND the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
     // over-read was accidentally load-bearing there; K supplies that
     // headroom explicitly and honestly). Engaged only where the honest
@@ -4729,7 +4787,7 @@ async fn run_window_sender(
             gain = store_bdp_gain,
             floor = store_cap_floor,
             pool_per_path = store_path_pool,
-            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1), K_i = windowed-min echoSRTT/RTprop; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
+            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
         );
     }
     // path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
@@ -6157,20 +6215,19 @@ async fn run_window_sender(
                                 if let Some(a) = p.copa_bdp_anchor() {
                                     bdp += a;
                                     if honest_cap_on {
-                                        let ratio = match p.min_rtt() {
-                                            Some(rtp) if rtp.as_secs_f64() > 0.0 => {
-                                                p.srtt().as_secs_f64() / rtp.as_secs_f64()
-                                            }
-                                            _ => 1.0,
-                                        };
                                         let k = percap_k
                                             .entry(*id)
                                             .or_insert_with(|| {
                                                 EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
                                             })
-                                            .observe(ratio, dnow);
+                                            .observe_srtt_over_rtprop(
+                                                p.srtt(),
+                                                p.min_rtt(),
+                                                dnow,
+                                            );
                                         hsum += honest_store_cap(
                                             Some(a),
+                                            p.btlbw_sym_per_s(),
                                             k,
                                             store_bdp_gain,
                                         )
@@ -6254,20 +6311,11 @@ async fn run_window_sender(
                                             _ => None,
                                         };
                                         // feat/percap-honest-cap: cap_i on
-                                        // the honest floor-clock anchor,
-                                        // cap_i = anchor_i·(K_i+gain−1) —
+                                        // the honest anchors — residence
+                                        // K·RTprop + recovery-clock runway;
                                         // no loaded-echo term (see
                                         // `honest_store_cap`).
                                         let honest = if honest_cap_on {
-                                            let ratio = match p.min_rtt() {
-                                                Some(rtp)
-                                                    if rtp.as_secs_f64() > 0.0 =>
-                                                {
-                                                    p.srtt().as_secs_f64()
-                                                        / rtp.as_secs_f64()
-                                                }
-                                                _ => 1.0,
-                                            };
                                             let k = percap_k
                                                 .entry(*id)
                                                 .or_insert_with(|| {
@@ -6275,9 +6323,14 @@ async fn run_window_sender(
                                                         PERCAP_K_HALF_WINDOW_US,
                                                     )
                                                 })
-                                                .observe(ratio, dnow);
+                                                .observe_srtt_over_rtprop(
+                                                    p.srtt(),
+                                                    p.min_rtt(),
+                                                    dnow,
+                                                );
                                             honest_store_cap(
                                                 floor_pipe,
+                                                rate,
                                                 k,
                                                 store_bdp_gain,
                                             )
@@ -9464,60 +9517,91 @@ mod tests {
     }
 
     #[test]
-    fn honest_store_cap_is_anchor_times_k_plus_runway() {
-        // Derived, not tuned: cap_i = anchor_i·(K_i + gain − 1) — the
-        // floor-clock BDP anchor × (measured unloaded drain-clock ratio +
-        // (gain−1) recovery rounds). c2-like honest anchor: 10 400 sym/s ×
-        // 40 ms = 416 symbols; K = 1.5 → 416 × 2.5 = 1040.
-        assert_eq!(honest_store_cap(Some(416.0), 1.5, 2.0), Some(1040.0));
-        // K = 1 (echo = floor) degenerates EXACTLY to the legacy floor law
-        // gain·anchor — the honest form strictly generalizes it.
-        assert_eq!(honest_store_cap(Some(416.0), 1.0, 2.0), Some(832.0));
-        // K < 1 clamps to the floor law: the cap can never shrink below
-        // gain·anchor (the sc2 no-regression property at the law level).
-        assert_eq!(honest_store_cap(Some(416.0), 0.5, 2.0), Some(832.0));
-        // gain < 1 cannot produce a negative runway.
-        assert_eq!(honest_store_cap(Some(416.0), 1.0, 0.5), Some(416.0));
-        // Warm-up (no anchor): None — the caller keeps the legacy warm-up
-        // share (warm-up unchanged).
-        assert_eq!(honest_store_cap(None, 2.0, 2.0), None);
-        assert_eq!(honest_store_cap(Some(0.0), 2.0, 2.0), None);
+    fn echo_ratio_seed_identity_sample_is_discarded_not_latched() {
+        // The measured L1-smoke defect: at the estimator seed instant
+        // srtt ≡ min_rtt (shared seeding), ratio ≡ 1.0 — feeding it latches
+        // the windowed min at 1.0 for a whole window (khr pinned 1.00 while
+        // rtt/rtp read 16/8 ms). The seed-identity sample must be DISCARDED.
+        let mut e = EchoRatioMin::new(5_000_000);
+        let ms = |m: u64| std::time::Duration::from_millis(m);
+        // Seed instant: srtt == RTprop bit-equal → no sample, K stays 1.0
+        // as the DEFAULT (not as a latched measurement).
+        assert_eq!(e.observe_srtt_over_rtprop(ms(8), Some(ms(8)), 1_000_000), 1.0);
+        // A real measurement then sets the min — it was not latched at 1.0.
+        assert!(
+            (e.observe_srtt_over_rtprop(ms(16), Some(ms(8)), 2_000_000) - 2.0).abs()
+                < 1e-9
+        );
+        // Warm-up (no RTprop) observes nothing.
+        assert!(
+            (e.observe_srtt_over_rtprop(ms(16), None, 3_000_000) - 2.0).abs() < 1e-9
+        );
     }
 
     #[test]
-    fn honest_caps_shallow_account_sits_at_true_pipe_not_knee() {
+    fn honest_store_cap_is_residence_plus_recovery_runway() {
+        // Derived, not tuned: cap_i = anchor_i·(K_i + gain − 1) +
+        // rate_i·(gain−1)·R — residence (Little's law on the unloaded
+        // drain clock) + (gain−1) recovery rounds on the RECOVERY engine's
+        // clock (R = 100 ms, the hole-refresh/tail-sweep cadence bound)
+        // plus the retransmit flight (the anchor term's second round).
+        // c2-like at the MEASURED cell clocks (rate 10 400 sym/s, RTprop
+        // 8 ms → anchor 83.2; K = 2): 83.2×3 + 10 400×0.1 = 1289.6.
+        let c = honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 2.0, 2.0)
+            .unwrap();
+        assert!((c - 1289.6).abs() < 1e-6);
+        // K clamps at 1 from below (K < 1 is clock noise).
+        assert_eq!(
+            honest_store_cap(Some(83.2), Some(10_400.0), 0.5, 2.0),
+            honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0)
+        );
+        // gain = 1: pure residence, zero runway — the R term vanishes with
+        // (gain−1), never a negative runway.
+        let g1 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 1.0).unwrap();
+        assert!((g1 - 83.2 * 1.5).abs() < 1e-9);
+        let g05 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 0.5).unwrap();
+        assert!((g05 - 83.2 * 1.5).abs() < 1e-9);
+        // Warm-up (no anchor / no rate): None — the caller keeps the
+        // legacy warm-up share (warm-up unchanged).
+        assert_eq!(honest_store_cap(None, Some(10_400.0), 2.0, 2.0), None);
+        assert_eq!(honest_store_cap(Some(83.2), None, 2.0, 2.0), None);
+        assert_eq!(honest_store_cap(Some(0.0), Some(10_400.0), 2.0, 2.0), None);
+    }
+
+    #[test]
+    fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
         // The GUARD-RESULTS residual (i) in miniature, on HONEST anchors.
-        // Deep c2-like path: anchor = 10 400 sym/s × 40 ms RTprop = 416;
-        // measured K = 1.5 → cap = 1040 — DIFFERENTIATED, inside the knee
-        // (the over-read arm read btlbw 8–10× and knee-clamped to 2048).
-        let fast = (honest_store_cap(Some(10_400.0 * 0.040), 1.5, 2.0)
+        // Deep c2-like path (rate 10 400, RTprop 8 ms, K 1.5): cap = 1248
+        // — DIFFERENTIATED, inside the knee (the over-read arm read btlbw
+        // 8–10× truth and knee-clamped to 2048).
+        let fast = (honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 1.5, 2.0)
             .unwrap()
             .ceil() as usize)
             .clamp(64, 2048);
-        assert_eq!(fast, 1040);
+        assert_eq!(fast, 1248);
         assert!(fast < 2048, "fast cap must be derived, not knee-clamped");
-        // Shallow c3-like path: anchor = 2 100 × 60 ms = 126; K = 1.3 →
-        // cap = 290 ≈ its true pipe class (≲ 2.5 un-queued pipes), NOT the
-        // 2048 knee the over-read held it at — the own-pick parking channel
-        // (softmax picks filling a knee-clamped slow cap) is closed by
-        // construction: ~290 symbols at 2 100 sym/s ≈ 0.14 s dwell, vs the
-        // measured ≈1 s parked dwell at the knee.
-        let slow = (honest_store_cap(Some(2_100.0 * 0.060), 1.3, 2.0)
+        // Shallow c8-slow-class path (rate 1 954, RTprop 60 ms → anchor
+        // 117.2; K 1.3): cap = 466 ≈ the guard session's MEASURED good pin
+        // (508 outstanding, 0.26 s dwell) — its recovery budget, NOT the
+        // 2048 knee (≈1 s parked dwell) the over-read held it at. The
+        // own-pick parking channel is closed by construction.
+        let slow = (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
             .unwrap()
             .ceil() as usize)
             .clamp(64, 2048);
-        assert_eq!(slow, 290);
-        assert!(slow < 2048 / 4, "slow cap must sit at its true pipe, not the knee");
+        assert_eq!(slow, 466);
+        assert!(slow < 2048 / 4, "slow cap must sit at its recovery budget, not the knee");
         // Per-path independence still holds: deepening the fast pipe does
         // not move the slow cap.
-        let fast2 = (honest_store_cap(Some(20_800.0 * 0.040), 1.5, 2.0)
+        let fast2 = (honest_store_cap(Some(20_800.0 * 0.008), Some(20_800.0), 1.5, 2.0)
             .unwrap()
             .ceil() as usize)
             .clamp(64, 2048);
         assert!(fast2 > fast);
         assert_eq!(
-            (honest_store_cap(Some(2_100.0 * 0.060), 1.3, 2.0).unwrap().ceil()
-                as usize)
+            (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
+                .unwrap()
+                .ceil() as usize)
                 .clamp(64, 2048),
             slow
         );
@@ -9525,32 +9609,35 @@ mod tests {
 
     #[test]
     fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
-        // The −20% resolution at the law level ("Anchor Hygiene" battery (b):
-        // sc2 P 79.9 → PRS 61.7 because cap fell from the 1024 latch to
-        // gain·anchor_honest). Honest anchor ≈ 416 symbols (10.4k × 40 ms).
-        let anchor = 10_400.0 * 0.040;
+        // The −20% resolution at the law level ("Anchor Hygiene" battery
+        // (b): sc2 P 79.9 → PRS 61.7 because the cap fell from the 1024
+        // latch to gain·anchor_honest ≈ 150–170 at the cell's true 8-ms
+        // RTprop — a 100-Mbit pipe whose RECOVERY round is ~12× its wire
+        // round trip).
+        let rate: f64 = 10_400.0;
+        let anchor: f64 = rate * 0.008;
         let store_max = 1024usize;
-        // The floor-law control (K = 1): 832 < 1024 — the measured −20% arm.
-        let floor_law =
-            (honest_store_cap(Some(anchor), 1.0, 2.0).unwrap().ceil() as usize)
-                .clamp(64, store_max);
-        assert_eq!(floor_law, 832);
-        // With the MEASURED drain-clock ratio (echo ≈ 2×RTprop at c2: ack
-        // batching + reverse path), the honest law re-supplies the headroom
-        // the over-read provided by accident — back at the legacy-proven
-        // 1024 latch, from measurement instead of estimator pollution.
-        let honest =
-            (honest_store_cap(Some(anchor), 2.0, 2.0).unwrap().ceil() as usize)
-                .clamp(64, store_max);
+        // The legacy floor law on honest anchors (the RWM_HONEST_CAP=0
+        // control arm): gain·anchor = 167 ≪ 1024 — the measured −20% arm.
+        let floor_law = ((2.0 * anchor).ceil() as usize).clamp(64, store_max);
+        assert_eq!(floor_law, 167);
+        // The honest law at the measured drain clocks (K ≈ 2): 1290 →
+        // latches the legacy-proven 1024 store — the over-read's accidental
+        // headroom re-supplied from the engine's own recovery cadence.
+        let honest = (honest_store_cap(Some(anchor), Some(rate), 2.0, 2.0)
+            .unwrap()
+            .ceil() as usize)
+            .clamp(64, store_max);
         assert_eq!(honest, store_max);
-        // Monotone: for ANY measured K ≥ 1 the honest cap is ≥ the floor
-        // law — honest anchors can widen but never shrink the single-path
-        // window relative to the K=1 control.
+        // Monotone: for ANY measured K ≥ 1 the honest cap strictly exceeds
+        // the legacy floor law — honest anchors can widen but never shrink
+        // the single-path window relative to the control.
         for k in [1.0, 1.2, 1.7, 2.5, 4.0] {
-            let c = (honest_store_cap(Some(anchor), k, 2.0).unwrap().ceil()
-                as usize)
+            let c = (honest_store_cap(Some(anchor), Some(rate), k, 2.0)
+                .unwrap()
+                .ceil() as usize)
                 .clamp(64, store_max);
-            assert!(c >= floor_law);
+            assert!(c > floor_law);
         }
     }
 
