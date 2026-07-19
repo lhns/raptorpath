@@ -26,6 +26,10 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+# lib.sh forces `set -e` (MEASUREMENT DISCIPLINE #7 — the #61 battery lost
+# whole arms to it silently): this script handles every failure explicitly
+# (guards exit with distinct codes), so undo -e.
+set +e
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 
 SCEN="${1:?scenario}"; ARM="${2:?arm (solo|copa|compete|bbr)}"
@@ -44,6 +48,12 @@ case "$ARM" in
     bbr)     AENV="$BASEENV RWM_QUIC_CC=bbr" ;;
     *) echo "unknown arm: $ARM" >&2; exit 2 ;;
 esac
+# Optional knob passthrough (probe/frontier arms): forwarded verbatim when
+# set in the caller's env, recorded by the env echo below.
+for k in RWM_COPA_DELTA RWM_STORE_GAIN RWM_CC_PACE RWM_STORE_PATHS RWM_STORE_PATH_POOL; do
+    v=""; eval "v=\${$k:-}"
+    [[ -n "$v" ]] && AENV="$AENV $k=$v"
+done
 
 cleanup() {
     pkill -x raptorpath 2>/dev/null || true
@@ -58,7 +68,16 @@ if pgrep -x raptorpath >/dev/null 2>&1; then
     exit 3
 fi
 
-bash ./topo_dual.sh up "$SCEN" "$SCEN" --seed "$SEED" >/dev/null 2>&1
+# Topology up, with the seed-7 topo-ping abort protocol (discipline #8):
+# GE loss can eat both verification echoes — retry ONCE, drop the
+# invocation loudly (exit 5) on a double abort so the driver records it.
+if ! bash ./topo_dual.sh up "$SCEN" "$SCEN" --seed "$SEED" >/dev/null 2>&1; then
+    echo "TOPO-PING abort (seed=$SEED) — retrying once"
+    if ! bash ./topo_dual.sh up "$SCEN" "$SCEN" --seed "$SEED" >/dev/null 2>&1; then
+        echo "TOPO-PING double abort — invocation dropped (recorded)" >&2
+        exit 5
+    fi
+fi
 
 # MEASUREMENT DISCIPLINE: full env + binary hash echoed into the record.
 echo "--- XT cell scen=$SCEN arm=$ARM seed=$SEED bytes=$BYTES cubic=$CUBIC dur=$DUR start=$(date +%T)"
@@ -108,7 +127,10 @@ if [[ "$CUBIC" == "1" ]]; then
 fi
 
 # --- MECHANISM-LIVENESS GUARDS (MEASUREMENT DISCIPLINE #1/#6) ---------------
-CLOG=/tmp/xt-c.log
+# ANSI-strip first: tracing colorizes field names, so "compete=true" spans
+# escape codes in the raw log.
+CLOG=/tmp/xt-c-clean.log
+sed 's/\x1b\[[0-9;]*m//g' /tmp/xt-c.log > "$CLOG"
 if [[ "$ARM" != "bbr" ]]; then
     if ! grep -q "feed ACTIVE" "$CLOG"; then
         echo "FATAL: passthrough arm without 'feed ACTIVE' echo — Copa-sole not live; numbers INVALID" >&2
@@ -134,7 +156,7 @@ t0, t1 = float(t0), float(t1)
 
 rp_mbps = rp_secs = None
 dnf = False
-for line in open("/tmp/xt-c.log", errors="replace"):
+for line in open("/tmp/xt-c-clean.log", errors="replace"):
     line = line.strip()
     if line.startswith("{"):
         try: j = json.loads(line)
@@ -171,7 +193,7 @@ cmp_sw, cmp_c, cmp_n, dmin = 0, 0, 0, None
 pat = re.compile(r"rtt=(\d+)/wrtt=(\d+)/rtp(\d+)ms")
 cpat = re.compile(r"cmp=([CD])(\d+)/([0-9.]+)")
 nline = 0
-for line in open("/tmp/xt-c.log", errors="replace"):
+for line in open("/tmp/xt-c-clean.log", errors="replace"):
     m = pat.search(line)
     if m:
         nline += 1

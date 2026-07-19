@@ -3336,9 +3336,24 @@ delay-sensitive schemes, achieves low throughput."
 
 Gated `RWM_COPA_COMPETE` (default OFF) and only on top of the wire-clocked
 law (the adapted δ feeds the §12.4 velocity/target dynamics; the legacy
-app-echo dynamics do not consume δ). Env unset ⇒ byte-identical. Measured:
-goal-gate "Copa Competitive Mode + Cross-Traffic" (the first
-shared-bottleneck battery, roadmap item 6).
+app-echo dynamics do not consume δ). Env unset ⇒ byte-identical. Measured
+(goal-gate "Copa Competitive Mode + Cross-Traffic", the first
+shared-bottleneck battery, roadmap item 6): at the lossy c2 cell Copa-sole
+never needed it (0.88–0.90 share vs a Mathis-bound Cubic, with or without
+competitive mode); at the CLEAN shared bottleneck the mode detects and
+adapts exactly as specified (8/8 engagement, δ → 0.0032–0.0043; zero
+false engagement in the clean solo control) but CANNOT restore a fair
+share (2.24–2.37 vs 2.15–2.21 Mbit compete-off, Cubic at 93) — because δ
+is not the binder there: a fixed δ = 0.001 probe (queue tolerance = the
+entire 1000-packet qdisc) moves nothing. The starvation is the
+plain-window ARQ/retention pipeline under contention tail-drop (the
+single-path 1024 outstanding pool × a frontier frozen by drop bursts:
+goodput ≈ pool/dwell ≈ 2.5 Mbit — Little's law), a transport mechanism
+BELOW the CC policy surface; BBR-under passes 22 Mbit through the same
+pipeline only by holding ~250 packets (305–316 ms) resident in the shared
+queue. The competitive-mode deployment gap is therefore closed IN CODE
+but the shared-clean-bottleneck deployment gap is re-attributed to the
+contention-recovery pipeline (the successor roadmap item).
 
 ### 12.5 CC + Taper: The Complete Architecture
 
