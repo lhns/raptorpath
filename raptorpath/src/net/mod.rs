@@ -3505,34 +3505,103 @@ pub fn percap_store_full(accounts: &[(usize, usize)]) -> bool {
     !accounts.iter().any(|&(out, cap)| out < cap.max(1))
 }
 
-/// Per-path placement redirect (task #86): the admission gate only admits
-/// while SOME account has headroom — make the placement land there. Keeps
-/// `chosen` when its account is below its cap; otherwise redirects to the
-/// path with the most RELATIVE headroom (1 − out/cap), so the deep path
-/// keeps deepening while the shallow path is never over-committed past its
-/// own pipe. All-full (racing the gate): keep `chosen` (the gate pauses
-/// intake next iteration; the slop is one placement). `accounts` =
-/// (path, outstanding_i, cap_i).
+/// Delay-aware redirect bound (roadmap item 1, the #86 c8 fix): the maximum
+/// outstanding a cap-full redirect may find on target path j before the
+/// redirect is refused and the store reads FULL for the placement instead.
+///
+/// Derivation (not tuned). The projected dwell of account j is Little's law
+/// on the store, D_j = out_j / rate_j (the store drains at the ack clock).
+/// The guard law is D_j ≤ κ·echoRTT_j — "j can drain its current account
+/// within one echo round". But the app-echo clock is store-dwell-INCLUSIVE:
+/// echoRTT_j ≈ RTprop_j + D_j, so on the LOADED echo clock κ = 1 is vacuous
+/// (D ≤ RTprop + D holds for every D — exactly the measured c8 feedback,
+/// where slow-path echo inflation to 214–811 ms held the account open).
+/// Solving D ≤ κ·(RTprop_j + D) for κ < 1 gives D ≤ (κ/(1−κ))·RTprop_j;
+/// κ = 1/2 (the redirected symbol must still clear within one round AFTER
+/// its own dwell has inflated the echo) gives D ≤ RTprop_j — equivalently
+/// κ = 1 on the FLOOR clock:
+///
+///   bound_j = rate_j × RTprop_j  (the path's honest BDP in symbols)
+///
+/// i.e. a redirect may never park more than one un-queued pipe on the
+/// target. Since cap_j = gain·rate_j·echoSRTT_j (gain 2 = pipe + recovery
+/// runway), the guard reserves the runway term AND any knee-clamp headroom
+/// (the plain-anchor over-read case) for the path's OWN traffic — redirects
+/// consume only the floor-clocked pipe term. Under the Copa-sole feed the
+/// caller passes cwnd_j (Copa's operating point IS the bounded-queue pipe).
+/// Warm-up (no anchor): cap_j/gain — the same "pipe term only" law applied
+/// to the inherited share. Clamped to [1, cap_j]: a one-symbol quantum so a
+/// cold account is never permanently redirect-closed, and never above the
+/// account's own cap.
+pub fn percap_redirect_bound(floor_pipe: Option<f64>, cap_i: usize, gain: f64) -> usize {
+    let ceiling = cap_i.max(1);
+    match floor_pipe {
+        Some(p) if p > 0.0 => (p.ceil() as usize).clamp(1, ceiling),
+        _ => ((cap_i as f64 / gain.max(1.0)).ceil() as usize).clamp(1, ceiling),
+    }
+}
+
+/// Guard-aware admission gate (roadmap item 1). `accounts` = (outstanding_i,
+/// cap_i, redirect_bound_i) per live path. Three regimes:
+///
+/// - every account cap-full → FULL (the unguarded law, unchanged);
+/// - no account cap-full → admit (every pick places on its own account);
+/// - SOME account cap-full → a pick landing there must redirect, so
+///   admission stays open only while a guard-eligible target exists
+///   (out_j < min(cap_j, bound_j)) — otherwise the store reads FULL and the
+///   existing admission pause engages: backpressure, don't park. (The #73
+///   lesson does NOT recur here: the pause path is the battery-proven
+///   percap/fmtcp gate, not a new deferral mechanism.)
+///
+/// With bound_j = cap_j (guard off) this degenerates exactly to
+/// [`percap_store_full`].
+pub fn percap_store_full_guarded(accounts: &[(usize, usize, usize)]) -> bool {
+    let any_open = accounts.iter().any(|&(out, cap, _)| out < cap.max(1));
+    if !any_open {
+        return true;
+    }
+    let any_capfull = accounts.iter().any(|&(out, cap, _)| out >= cap.max(1));
+    if !any_capfull {
+        return false;
+    }
+    !accounts
+        .iter()
+        .any(|&(out, cap, bound)| out < cap.min(bound).max(1))
+}
+
+/// Per-path placement redirect (task #86 + roadmap item 1): the admission
+/// gate only admits while a placement is possible — make it land there.
+/// Keeps `chosen` when its OWN account is below its cap (the guard gates
+/// redirects only, never a path's own picks); otherwise redirects to the
+/// guard-eligible path (out < min(cap, redirect_bound) — see
+/// [`percap_redirect_bound`]: the target must be able to drain its account
+/// within one floor-clock echo round, so a redirect never parks symbols
+/// behind a standing queue) with the most RELATIVE headroom. No eligible
+/// target (all-full, or every open account past its dwell bound — racing
+/// the guarded gate): keep `chosen` (the gate reads FULL and pauses intake
+/// next iteration; the slop is one placement). `accounts` =
+/// (path, outstanding_i, cap_i, redirect_bound_i); bound = cap is the
+/// unguarded legacy redirect.
 pub fn percap_place_path(
     chosen: crate::scheduler::PathId,
-    accounts: &[(crate::scheduler::PathId, usize, usize)],
+    accounts: &[(crate::scheduler::PathId, usize, usize, usize)],
 ) -> crate::scheduler::PathId {
     if accounts
         .iter()
-        .any(|&(p, out, cap)| p == chosen && out < cap.max(1))
+        .any(|&(p, out, cap, _)| p == chosen && out < cap.max(1))
     {
         return chosen;
     }
     accounts
         .iter()
-        .filter(|&&(_, out, cap)| out < cap.max(1))
+        .filter(|&&(_, out, cap, bound)| out < cap.min(bound).max(1))
         .max_by(|a, b| {
-            let h = |&(_, out, cap): &(crate::scheduler::PathId, usize, usize)| {
-                1.0 - out as f64 / cap.max(1) as f64
+            let h = |&(_, out, cap, bound): &(crate::scheduler::PathId, usize, usize, usize)| {
+                1.0 - out as f64 / cap.min(bound).max(1) as f64
             };
             h(a).partial_cmp(&h(b)).unwrap_or(std::cmp::Ordering::Equal)
         })
-        .map(|&(p, _, _)| p)
+        .map(|&(p, _, _, _)| p)
         .unwrap_or(chosen)
 }
 
@@ -4404,6 +4473,12 @@ async fn run_window_sender(
     // whichever pooled law is configured, so STORE_PATHS composes as the
     // warm-up baseline rather than conflicting).
     let percap_on = crate::config::env_flag("RWM_STORE_PERCAP", false) && plain_dyn_cap;
+    // Roadmap item 1 (the #86 c8 follow-up): the delay-aware redirect guard.
+    // Default ON whenever percap is on (RWM_PERCAP_GUARD=0 restores the
+    // unguarded redirect — the measured c8-regression control arm). The
+    // shipped default is untouched: percap itself is default OFF.
+    let percap_guard_on =
+        percap_on && crate::config::env_flag("RWM_PERCAP_GUARD", true);
     if percap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -4411,6 +4486,13 @@ async fn run_window_sender(
             gain = store_bdp_gain,
             floor = store_cap_floor,
             "per-path outstanding accounting ACTIVE (RWM_STORE_PERCAP: cap_i = clamp(gain*rate_i*echoRTT_i, floor, pool) per live path for N>=2, warm-up = legacy-pool/N; supersedes RWM_STORE_PATHS' pooled gate; N=1 legacy)"
+        );
+    }
+    if percap_guard_on {
+        // Guard mechanism-liveness echo (asserted PRESENT on guarded arms,
+        // ABSENT on the RWM_PERCAP_GUARD=0 regression-control arm).
+        info!(
+            "percap delay-aware redirect guard ACTIVE (roadmap-1: redirect to j only while out_j < bound_j = rate_j*RTprop_j — kappa=1 on the floor clock; Copa feed: cwnd_j; warm-up: cap_j/gain — else the store reads FULL for the placement and admission pauses; RWM_PERCAP_GUARD=0 = unguarded legacy redirect)"
         );
     }
     // seq → account path, in lockstep with `sent_store` (charge on insert,
@@ -4422,6 +4504,11 @@ async fn run_window_sender(
     // path → cap_i, refreshed with the dynamic-cap throttle. NON-EMPTY is
     // the "percap law engaged" signal (flag on AND N ≥ 2 live paths).
     let mut percap_caps: std::collections::HashMap<u32, usize> =
+        std::collections::HashMap::new();
+    // path → redirect_bound_i (roadmap item 1: rate_i×RTprop_i, the
+    // floor-clock dwell bound a cap-full redirect may fill the account to).
+    // Mirrors cap_i (guard degenerate) when RWM_PERCAP_GUARD=0.
+    let mut percap_bounds: std::collections::HashMap<u32, usize> =
         std::collections::HashMap::new();
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
@@ -4794,11 +4881,19 @@ async fn run_window_sender(
                     // placement above keeps its own delay-aware law; the
                     // accounts are still charged and gated.)
                     if !percap_caps.is_empty() {
-                        let accounts: Vec<(crate::scheduler::PathId, usize, usize)> =
+                        let accounts: Vec<(crate::scheduler::PathId, usize, usize, usize)> =
                             percap_caps
                                 .iter()
                                 .map(|(&pid, &cap)| {
-                                    (pid, percap_out.get(&pid).copied().unwrap_or(0), cap)
+                                    (
+                                        pid,
+                                        percap_out.get(&pid).copied().unwrap_or(0),
+                                        cap,
+                                        // Roadmap item 1: the delay-aware
+                                        // redirect bound (= cap when the
+                                        // guard is off).
+                                        percap_bounds.get(&pid).copied().unwrap_or(cap),
+                                    )
                                 })
                                 .collect();
                         percap_place_path(picked, &accounts)
@@ -5712,39 +5807,71 @@ async fn run_window_sender(
                 // the ACK-clock residence time (Little's law on the store;
                 // the per-path pool knee bounds the echo-RTT feedback).
                 percap_caps.clear();
+                percap_bounds.clear();
                 if percap_on {
-                    let pipes: Vec<(u32, Option<f64>)> = {
+                    // (pipe_i for the cap law, floor_pipe_i for the redirect
+                    // guard). Plain: pipe = rate×echoSRTT (loaded clock, the
+                    // cap's Little's-law residence time), floor_pipe =
+                    // rate×RTprop (the guard's un-inflatable clock — see
+                    // percap_redirect_bound: the loaded echo clock is
+                    // self-referential and made the c8 redirect bound
+                    // vacuous). Copa feed: cwnd_i is both (Copa's operating
+                    // point is the bounded-queue pipe).
+                    let pipes: Vec<(u32, Option<f64>, Option<f64>)> = {
                         let sched = scheduler.lock();
                         sched
                             .live_paths()
                             .iter()
                             .map(|id| {
-                                let pipe = sched.path(*id).and_then(|p| {
-                                    if copa_feed.is_some() {
-                                        Some(p.cwnd as f64)
-                                    } else {
-                                        let rate = p.btlbw_sym_per_s()?;
-                                        Some(rate * p.srtt().as_secs_f64())
-                                    }
-                                });
-                                (*id, pipe)
+                                let (pipe, floor_pipe) = sched
+                                    .path(*id)
+                                    .map(|p| {
+                                        if copa_feed.is_some() {
+                                            (Some(p.cwnd as f64), Some(p.cwnd as f64))
+                                        } else {
+                                            let rate = p.btlbw_sym_per_s();
+                                            let pipe = rate
+                                                .map(|r| r * p.srtt().as_secs_f64());
+                                            let floor_pipe = match (rate, p.min_rtt()) {
+                                                (Some(r), Some(rtp)) => {
+                                                    Some(r * rtp.as_secs_f64())
+                                                }
+                                                _ => None,
+                                            };
+                                            (pipe, floor_pipe)
+                                        }
+                                    })
+                                    .unwrap_or((None, None));
+                                (*id, pipe, floor_pipe)
                             })
                             .collect()
                     };
                     if pipes.len() >= 2 {
                         let legacy_cap = dyn_store_cap;
                         let n = pipes.len();
-                        for (pid, pipe) in pipes {
-                            percap_caps.insert(
+                        for (pid, pipe, floor_pipe) in pipes {
+                            let cap_i = percap_store_cap(
+                                pipe,
+                                legacy_cap,
+                                n,
+                                store_bdp_gain,
+                                store_cap_floor,
+                                store_path_pool,
+                            );
+                            percap_caps.insert(pid, cap_i);
+                            // Roadmap item 1: the delay-aware redirect bound;
+                            // bound = cap (guard degenerate) when unguarded.
+                            percap_bounds.insert(
                                 pid,
-                                percap_store_cap(
-                                    pipe,
-                                    legacy_cap,
-                                    n,
-                                    store_bdp_gain,
-                                    store_cap_floor,
-                                    store_path_pool,
-                                ),
+                                if percap_guard_on {
+                                    percap_redirect_bound(
+                                        floor_pipe,
+                                        cap_i,
+                                        store_bdp_gain,
+                                    )
+                                } else {
+                                    cap_i
+                                },
                             );
                         }
                         // Σ cap_i becomes the pooled MEMORY backstop (binds
@@ -5791,15 +5918,27 @@ async fn run_window_sender(
         } else if !percap_caps.is_empty() {
             // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
             // only when NO live path's account has headroom below its own
-            // cap. The pooled store_len test is retained as the Σcap_i
-            // memory backstop (effective_store_cap = Σcap_i while percap is
-            // engaged): it binds only through stranded accounts.
-            let accounts: Vec<(usize, usize)> = percap_caps
+            // cap, EXCEPT (roadmap item 1) that when some account is
+            // cap-full a pick landing there must redirect, so admission
+            // stays open only while a guard-eligible target exists
+            // (out < min(cap, redirect_bound)) — otherwise the store reads
+            // FULL: backpressure, don't park (percap_store_full_guarded;
+            // bound = cap when the guard is off, degenerating to the
+            // unguarded gate). The pooled store_len test is retained as the
+            // Σcap_i memory backstop (effective_store_cap = Σcap_i while
+            // percap is engaged): it binds only through stranded accounts.
+            let accounts: Vec<(usize, usize, usize)> = percap_caps
                 .iter()
-                .map(|(pid, &cap)| (percap_out.get(pid).copied().unwrap_or(0), cap))
+                .map(|(pid, &cap)| {
+                    (
+                        percap_out.get(pid).copied().unwrap_or(0),
+                        cap,
+                        percap_bounds.get(pid).copied().unwrap_or(cap),
+                    )
+                })
                 .collect();
             reliable
-                && (percap_store_full(&accounts)
+                && (percap_store_full_guarded(&accounts)
                     || store_len >= effective_store_cap
                     || cwnd_full)
         } else {
@@ -5896,9 +6035,13 @@ async fn run_window_sender(
                             // (zeros when the percap law is not engaged).
                             let sout_i = percap_out.get(id).copied().unwrap_or(0);
                             let scap_i = percap_caps.get(id).copied().unwrap_or(0);
+                            // Roadmap item 1: the delay-aware redirect bound
+                            // (sbnd) — the guard's mechanism gauge (dwell_i
+                            // is sout_i/btlbw_i, computable offline).
+                            let sbnd_i = percap_bounds.get(id).copied().unwrap_or(0);
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{} btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} btlbw={:.0} dbud={:.0} est={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, btlbw_i, dbud_i, est_i, rtt_i, wrtt_i, rtprop_i,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -8755,7 +8898,12 @@ mod tests {
 
     #[test]
     fn percap_place_redirects_capfull_pick_to_headroom_path() {
-        let accounts = [(0u32, 240usize, 240usize), (1u32, 100usize, 1664usize)];
+        // bound = cap in these cases: the unguarded legacy redirect law
+        // (RWM_PERCAP_GUARD=0), preserved exactly.
+        let accounts = [
+            (0u32, 240usize, 240usize, 240usize),
+            (1u32, 100usize, 1664usize, 1664usize),
+        ];
         // Slow path (p0) at ITS cap: a p0 pick redirects to the deep path.
         assert_eq!(percap_place_path(0, &accounts), 1);
         // A pick with its own headroom stays.
@@ -8763,14 +8911,145 @@ mod tests {
         // All full (racing the gate): keep the pick — the gate pauses next
         // iteration; the slop is one placement.
         assert_eq!(
-            percap_place_path(0, &[(0, 240, 240), (1, 1664, 1664)]),
+            percap_place_path(0, &[(0, 240, 240, 240), (1, 1664, 1664, 1664)]),
             0
         );
         // Redirect goes to the MOST relative headroom.
         assert_eq!(
-            percap_place_path(2, &[(0, 200, 240), (1, 100, 1664), (2, 50, 50)]),
+            percap_place_path(
+                2,
+                &[(0, 200, 240, 240), (1, 100, 1664, 1664), (2, 50, 50, 50)]
+            ),
             1
         );
+    }
+
+    #[test]
+    fn percap_redirect_bound_is_floor_clock_bdp() {
+        // Derived, not tuned: bound_j = rate_j × RTprop_j — κ=1 on the FLOOR
+        // clock (κ=1 on the loaded echo clock is vacuous: echoRTT ≈ RTprop +
+        // out/rate, the measured c8 feedback). A c3-like slow path (rate ≈
+        // 1534 sym/s ≈ 15.7 Mbit of 1279-B symbols, RTprop 60 ms): bound =
+        // 93 symbols ≈ one un-queued pipe — vs the knee-adjacent cap 1531
+        // the unguarded redirect filled (≈1.3 s dwell).
+        assert_eq!(percap_redirect_bound(Some(1534.0 * 0.060), 1531, 2.0), 93);
+        // Never above the account's own cap.
+        assert_eq!(percap_redirect_bound(Some(5000.0), 2048, 2.0), 2048);
+        // Warm-up (no anchor): the share's pipe term, cap/gain.
+        assert_eq!(percap_redirect_bound(None, 512, 2.0), 256);
+        // One-symbol quantum: a cold/tiny account is never permanently
+        // redirect-closed, and degenerate inputs cannot divide into nonsense.
+        assert_eq!(percap_redirect_bound(Some(0.5), 240, 2.0), 1);
+        assert_eq!(percap_redirect_bound(Some(-1.0), 0, 2.0), 1);
+    }
+
+    #[test]
+    fn percap_store_full_guarded_backpressures_instead_of_parking() {
+        // No account cap-full → admit (every pick lands on its own account).
+        assert!(!percap_store_full_guarded(&[(100, 240, 93), (500, 1664, 800)]));
+        // Fast cap-full + slow WITHIN its dwell bound → admit (a guard-
+        // eligible redirect target exists).
+        assert!(!percap_store_full_guarded(&[(50, 240, 93), (1664, 1664, 800)]));
+        // Fast cap-full + slow past its dwell bound (though under cap) →
+        // FULL: the redirect would park symbols behind the slow path's
+        // standing queue — backpressure instead. THE c8 fix.
+        assert!(percap_store_full_guarded(&[(120, 240, 93), (1664, 1664, 800)]));
+        // All cap-full → FULL (the unguarded law, unchanged).
+        assert!(percap_store_full_guarded(&[(240, 240, 93), (1664, 1664, 800)]));
+        // bound = cap degenerates exactly to the unguarded gate.
+        assert_eq!(
+            percap_store_full_guarded(&[(120, 240, 240), (1664, 1664, 1664)]),
+            percap_store_full(&[(120, 240), (1664, 1664)])
+        );
+        assert_eq!(
+            percap_store_full_guarded(&[(240, 240, 240), (1664, 1664, 1664)]),
+            percap_store_full(&[(240, 240), (1664, 1664)])
+        );
+    }
+
+    /// The c8 regression in miniature, guarded (roadmap item 1): the fast
+    /// account pegs at its cap; overflow redirects fill the slow account
+    /// only to its FLOOR-CLOCK dwell bound (rate×RTprop), then redirect
+    /// STOPS and the guarded gate reads FULL — admission pauses instead of
+    /// parking ~cap symbols (≈1.3 s dwell at L1) on the slow path. Deep-path
+    /// redirects within bound are unaffected; the slow path's OWN picks are
+    /// never guard-gated.
+    #[test]
+    fn percap_redirect_guard_stops_at_dwell_bound_and_pauses_admission() {
+        const SLOW: u32 = 0;
+        const FAST: u32 = 1;
+        // Slow: rate 2000 sym/s, echoSRTT 60 ms, RTprop 30 ms → cap 240,
+        // bound 60. Fast: rate 10 000, echoSRTT 80 ms, RTprop 40 ms →
+        // cap 1600, bound 400.
+        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
+        let fast_cap = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
+        let slow_bound = percap_redirect_bound(Some(2000.0 * 0.030), slow_cap, 2.0);
+        let fast_bound = percap_redirect_bound(Some(10_000.0 * 0.040), fast_cap, 2.0);
+        assert_eq!((slow_cap, fast_cap), (240, 1600));
+        assert_eq!((slow_bound, fast_bound), (60, 400));
+
+        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
+        let mut out: std::collections::HashMap<u32, usize> =
+            std::collections::HashMap::new();
+        let accounts4 = |out: &std::collections::HashMap<u32, usize>| {
+            [
+                (SLOW, out.get(&SLOW).copied().unwrap_or(0), slow_cap, slow_bound),
+                (FAST, out.get(&FAST).copied().unwrap_or(0), fast_cap, fast_bound),
+            ]
+        };
+        let accounts3 = |out: &std::collections::HashMap<u32, usize>| {
+            accounts4(out).map(|(_, o, c, b)| (o, c, b))
+        };
+        // The c8 shape: the softmax favors the fast path — every pick FAST.
+        let mut seq = 0u64;
+        while !percap_store_full_guarded(&accounts3(&out)) {
+            let placed = percap_place_path(FAST, &accounts4(&out));
+            percap_charge(&mut acct, &mut out, seq, placed);
+            seq += 1;
+            assert!(seq < 10_000, "guarded gate must close");
+        }
+        // Fast filled to ITS cap (own picks are never guard-gated); the
+        // overflow parked on slow stopped at the DWELL BOUND — 60 symbols
+        // (30 ms of dwell at slow's rate), not the 240 cap (120 ms), and
+        // nothing like the L1 ~2048 (1.3 s).
+        assert_eq!(out[&FAST], fast_cap, "fast account pegs at its own cap");
+        assert_eq!(
+            out[&SLOW], slow_bound,
+            "redirect STOPS at the floor-clock dwell bound, far below the cap"
+        );
+        // The unguarded gate would still admit here (slow has cap headroom)
+        // — that admission IS the measured c8 parking regression; the
+        // guarded gate reads FULL instead: backpressure, don't park.
+        assert!(!percap_store_full(
+            &accounts3(&out).map(|(o, c, _)| (o, c))
+        ));
+        assert!(percap_store_full_guarded(&accounts3(&out)));
+        // Racing the closed gate, a further fast pick finds no eligible
+        // target and keeps the pick (one-placement slop, gate closes).
+        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
+        // The slow path's OWN picks are not guard-gated: with the gate open
+        // (fast drained below cap) a slow pick with cap headroom places
+        // directly even though slow is past its redirect bound.
+        let fast_seqs: Vec<u64> = acct
+            .iter()
+            .filter(|&(_, &p)| p == FAST)
+            .map(|(&s, _)| s)
+            .take(200)
+            .collect();
+        for s in &fast_seqs {
+            percap_release_seq(&mut acct, &mut out, *s);
+        }
+        assert!(!percap_store_full_guarded(&accounts3(&out)), "gate reopens on drain");
+        assert_eq!(
+            percap_place_path(SLOW, &accounts4(&out)),
+            SLOW,
+            "own-pick placement is never guard-gated below the cap"
+        );
+        // And a fast pick now redirects nowhere (slow still ≥ bound) — it
+        // has its own headroom back, so it just places on fast.
+        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
+        // Gauges stay Σ-consistent (the charge/release lockstep invariant).
+        assert_eq!(out.values().sum::<usize>(), acct.len());
     }
 
     /// The C8 conflict in miniature (the #84 residual this feature exists
@@ -8804,10 +9083,12 @@ mod tests {
             std::collections::HashMap::new();
         const SLOW: u32 = 0;
         const FAST: u32 = 1;
+        // bound = cap: this test documents the UNGUARDED accounting law
+        // (RWM_PERCAP_GUARD=0); the guarded law has its own miniature below.
         let caps = |out: &std::collections::HashMap<u32, usize>| {
             [
-                (SLOW, out.get(&SLOW).copied().unwrap_or(0), 240usize),
-                (FAST, out.get(&FAST).copied().unwrap_or(0), 1600usize),
+                (SLOW, out.get(&SLOW).copied().unwrap_or(0), 240usize, 240usize),
+                (FAST, out.get(&FAST).copied().unwrap_or(0), 1600usize, 1600usize),
             ]
         };
         let mut seq = 0u64;
@@ -8815,7 +9096,7 @@ mod tests {
         // through the redirect (the placement law).
         loop {
             let accounts: Vec<(usize, usize)> =
-                caps(&out).iter().map(|&(_, o, c)| (o, c)).collect();
+                caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
             if percap_store_full(&accounts) {
                 break;
             }
@@ -8862,7 +9143,7 @@ mod tests {
         assert_eq!(out.values().sum::<usize>(), acct.len());
         // With headroom restored, admission resumes.
         let accounts: Vec<(usize, usize)> =
-            caps(&out).iter().map(|&(_, o, c)| (o, c)).collect();
+            caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
         assert!(!percap_store_full(&accounts));
     }
 

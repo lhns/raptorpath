@@ -53,6 +53,9 @@ fi
 # floor, pool) per live path for N>=2; supersedes RWM_STORE_PATHS' pooled gate;
 # N=1 / unset = legacy byte-identical.
 [[ -n "${RWM_STORE_PERCAP:-}" ]] && TENV="$TENV RWM_STORE_PERCAP=$RWM_STORE_PERCAP"
+# Roadmap item 1 (#86 c8 fix): delay-aware redirect guard — default ON under
+# percap; =0 restores the unguarded redirect (the c8-regression control arm).
+[[ -n "${RWM_PERCAP_GUARD:-}" ]] && TENV="$TENV RWM_PERCAP_GUARD=$RWM_PERCAP_GUARD"
 [[ -n "${RWM_STORE_GAIN:-}" ]] && TENV="$TENV RWM_STORE_GAIN=$RWM_STORE_GAIN"
 [[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
 [[ -n "${RWM_GEN_RATE:-}" ]] && TENV="$TENV RWM_GEN_RATE=$RWM_GEN_RATE"
