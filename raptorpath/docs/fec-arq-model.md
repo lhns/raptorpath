@@ -8317,6 +8317,56 @@ CAP the same floor-clock dwell bound the redirect got
 sampler to plain mode, or accept account isolation's asymmetric-cell tax
 as structural and keep the pooled law there.
 
+**Honest-cap addendum (2026-07-19, `feat/percap-honest-cap`) — the cap
+re-derived on the honest anchor, and the derivation corrected by its own
+smoke.** With the §16.21 plain-mode sampler (`RWM_PLAIN_RS`) supplying a
+≈1×-truth BtlBw, the named follow-up "cap_i ≤ gain·rate_i·RTprop_i" was
+built first in exactly that literal form — and REFUTED before the
+battery: c2's true RTprop is 8 ms, so the legacy-good 1024-symbol store
+is ~12× the floor BDP, and the floor law computes cap ≈ 150–170 → −25%
+throughput (the Anchor-Hygiene sc2 −20% reproduced). The headroom the
+old anchor over-read supplied by accident was never ack-batching: it is
+the RECOVERY clock. A plain-window hole is recovered by the SACK
+re-advertisement/tail-sweep engine, whose round is clamped to
+[25, 100] ms — at short RTprop a recovery round is an order of magnitude
+longer than the wire round trip, and GE burst loss drives it to the
+ceiling. The landed law decomposes on honest clocks only:
+
+    cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R + RTprop_i)),  R = 100 ms
+
+with K_i = the windowed-MIN echoSRTT_i/RTprop_i (self-queue-proof: own
+dwell can only raise the ratio, so the c8 dwell→echo→cap spiral has no
+handle; seed-identity samples where srtt ≡ RTprop are discarded, not
+clamped — feeding them latched the min at 1.00). The legacy law
+gain·anchor is the K=1, R=0 degenerate, so honest anchors can never
+shrink a cap below it. Cross-checks: sc2 → ≈1290 → latches the proven
+1024 store; c8-slow → ≈470–500 ≈ the guard battery's measured good pin
+(508 outstanding, 0.26 s dwell). Measured (same binary, 5 arms × 4 cells
+× 2 seeds × 8 reps, interleaved): the sc2 −20% is RESOLVED exactly
+(honest arm = baseline both seeds; the law-off control reproduces
+−18/−22%); sc3 keeps a −4.3/−2.3% named residual (the deep store's tail
+runway beyond one recovery round); c7 percap lands ABOVE the pooled fix
+both seeds (0.89–0.90 of Σ); c8 improves +3.4/+3.8 over the knee-clamped
+percap control with the slow-path parking tail halved (per-rep p50 echo
+358→204 ms, p90 943→433) — but still trails pooled PBS (0.54–0.55 vs
+0.62–0.69 of Σ), and Copa percap trails Copa pooled AGAIN (−8.5/−9.8;
+prior session −9.6/−11.2) with caps that are honest by construction.
+**Conclusion: with both parking channels closed, the account structure's
+NO-BORROWING property is the confirmed c8 binder** — out_fast ≤ cap_fast
+denies the fast path the slow path's unused share, which the pooled Σ law
+grants for free; the measured tax is ~0.13–0.16 of Σ at the asymmetric
+cell. One measured sub-residual: the slow path's send-interval anchor
+still over-reads ×3–5 UNDER MULTIPATH PLACEMENT (honest at N=1 and on
+the fast path) — suspected frontier-advance burst attribution (a
+slow-hole fill releases a burst of already-received fast-path symbols
+into the cumulative frontier) — so the honest cap law runs on a
+dishonest input at exactly the account it most needs to bound. Flip
+stays NO; §17.6 item 1 redirects from cap hygiene to bounded account
+borrowing (a borrowed symbol parks on the lender's account but flies on
+the borrower's pipe — the lender's dwell-bound derivation no longer
+describes its own queue, so this needs a new law, not a clamp), or to
+accepting pooled PBS as the c8 record.
+
 ---
 
 ### 16.20 One decoder, one continuous mechanism: the unified span machine (task #61, the principle debt) (2026-07-18)
@@ -9016,11 +9066,22 @@ asserted beyond its naming evidence.
 1. **percap-redirect-guard** — **[MEASURED 2026-07-19, §16.19 guard
    addendum: the floor-clock bound closes the redirect channel (dwell
    ~4× down, half the c8 regression recovered, both CC families) but
-   PBP-G < pooled PBS at c8 both seeds — flip stays NO.]** The residual
+   PBP-G < pooled PBS at c8 both seeds — flip stays NO.]** ~~The residual
    inherits the gate: dwell-bound the CAP itself
    (cap_i ≤ gain·rate_i·RTprop_i), generalize the plain-mode rate anchor
    (§16.15 sampler), and weigh account isolation's no-borrowing tax at
-   asymmetric cells. Gates `RWM_STORE_PERCAP` and the C8 0.9×Σ target.
+   asymmetric cells.~~ **[Cap re-derivation MEASURED 2026-07-19, §16.19
+   honest-cap addendum: the honest law (residence K·RTprop +
+   recovery-clock runway R = 100 ms — the literal floor-clock form was
+   refuted by its own smoke) resolves the sc2 −20% exactly and puts
+   percap ≥ pooled at c7 both seeds, but c8 still trails pooled under
+   BOTH CC families with honest caps — the no-borrowing tax is the
+   CONFIRMED c8 binder. Item redirects to bounded account borrowing
+   (needs a new dwell law: borrowed symbols park on the lender, fly on
+   the borrower) or accepting pooled PBS as the c8 record. Sub-residual:
+   the slow path's send-interval anchor over-reads ×3–5 under multipath
+   placement (frontier-advance burst attribution suspected).]** Gates
+   `RWM_STORE_PERCAP` and the C8 0.9×Σ target.
 2. **Receiver/sender task parallelization** — live above ~150 Mbit/sink;
    the symmetric cell now operates at ~147 with the engine sink at 187.7.
    The next C7 lever after flow control.

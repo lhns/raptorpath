@@ -105,7 +105,7 @@ in the order found, each fixed or refuted:
 | 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) | §16.19 |
-| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, c8-regressed, OFF | §16.19; "Per-Path Outstanding Accounting" |
+| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8 — the no-borrowing tax CONFIRMED as the c8 binder; OFF | §16.19; "Per-Path Outstanding Accounting" |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
 on a saturated single reliable path FEC = ARQ parity is the ceiling,
@@ -190,10 +190,18 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
 - **The two named residuals** (roadmap items 1–2): the percap
   redirect-guard — MEASURED 2026-07-19: it halves the c8 regression
   (0.40–0.41 → 0.52–0.55×Σ) but does not reach the PBS bar; the residual
-  is own-pick parking under the knee-clamped slow cap + account
-  no-borrowing (item 1, updated) — and receiver/sender task
-  parallelization — LIVE at the symmetric cell (PBP c7-s7 = 147.4 ≈ the
-  ~150 threshold), noted, not built.
+  was own-pick parking under the knee-clamped slow cap + account
+  no-borrowing — **HONEST-CAP FOLLOW-ON MEASURED same day
+  (`feat/percap-honest-cap`): the cap channel is fixed as far as honest
+  inputs allow (sc2 −20% resolved exactly, c7 percap ≥ pooled at
+  0.89–0.90×Σ both seeds, c8 +3.4/+3.8 over the knee-clamped control with
+  the parking tail halved) and the residual c8 gap is the account
+  structure itself: C1P-H < C1 twice with caps honest by construction —
+  the NO-BORROWING TAX is the confirmed c8 binder (item 1, redirected to
+  bounded account borrowing; a measured sub-residual: the slow path's
+  send-interval anchor over-reads ×3–5 under multipath placement)** —
+  and receiver/sender task parallelization — LIVE at the symmetric cell
+  (PBP c7-s7 = 147.4 ≈ the ~150 threshold), noted, not built.
 - No cell exceeds its link-class Σ ceiling; "every wall so far has been an
   unscaled constant or a hidden substrate controller, not the architecture"
   (§16.19).
@@ -280,7 +288,30 @@ carries its gating decision.
    and slow-path UNDER-read when placement starves it of source (safe
    direction for a cap). The percap cap re-derivation (cap_i from honest
    BtlBw) + re-battery remains this item's open follow-up; see "Anchor
-   Hygiene" gate-readiness.]** (#86)
+   Hygiene" gate-readiness.]**
+   **[Cap re-derivation BUILT + MEASURED 2026-07-19
+   (`feat/percap-honest-cap` 5d30c02, `RWM_HONEST_CAP` under
+   `RWM_PLAIN_RS`): cap_i = anchor_i·(K_i+gain−1) + rate_i·(gain−1)·R —
+   residence on the measured unloaded drain clock (K = windowed-min
+   echoSRTT/RTprop, self-queue-proof) + one recovery round on the
+   RECOVERY engine's clock (R = the 100-ms hole-refresh/tail-sweep
+   ceiling; the literal floor-clock form was refuted by its own smoke:
+   c2's RTprop is 8 ms and the good 1024 store is ~12× the floor BDP).
+   The sc2 −20% is RESOLVED exactly (PBP-H = PB both seeds; the =0
+   control reproduces −18/−22%); c7 percap ≥ PBS both seeds
+   (0.89–0.90×Σ); c8 improves +3.4/+3.8 over the knee-clamped control
+   with the slow-path parking tail halved — but PBP-H < PBS at c8 both
+   seeds and C1P-H < C1 both seeds with honest cwnd caps: residual (ii)
+   — the NO-BORROWING TAX — is the confirmed c8 binder. Flip NO;
+   `RWM_STORE_PERCAP`/`RWM_PLAIN_RS`/`RWM_HONEST_CAP` all stay default
+   OFF. THIS ITEM REDIRECTS to bounded account borrowing (named, not
+   built: a borrowed symbol parks on the lender's account but flies on
+   the borrower's pipe — the dwell derivation needs a new law, not a
+   clamp) or accepting pooled PBS as the c8 record. Sub-residual (iii),
+   measured: the slow path's send-interval anchor over-reads ×3–5 under
+   multipath placement (frontier-advance burst attribution suspected;
+   honest at N=1 and on the fast path). Ledger: "Per-Path Outstanding
+   Accounting" → HONEST-CAP RESULTS.]** (#86)
 2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
    now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
    next C7 lever after flow control. (#84/#86)
@@ -616,6 +647,11 @@ noted:
   is the next session's work; the sc2 −20% single-path cost says the
   honest anchor must feed the CAP, not necessarily the cwnd anchor floor,
   and that trade-off is that battery's first arm.
+  **[DONE 2026-07-19, `feat/percap-honest-cap`: the literal floor-clock
+  form was refuted by its own smoke (c2 RTprop = 8 ms); the landed law
+  adds the recovery-clock runway and the measured drain-ratio K. sc2
+  −20% resolved exactly; c8 flip still NO (the no-borrowing tax).
+  Ledger: "Per-Path Outstanding Accounting" → HONEST-CAP RESULTS.]**
 
 ### Controls / caveats / discipline
 
@@ -8646,7 +8682,7 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `apply_mtu_floor` path is untouched); `perf_loopback` 8/8;
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
 
-## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below**
+## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below** — **HONEST-CAP FOLLOW-ON MEASURED (2026-07-19, `feat/percap-honest-cap`): caps re-derived on the honest anchor (residence K·RTprop + recovery-clock runway); the sc2 −20% RESOLVED exactly, c7 percap ≥ PBS both seeds (0.89–0.90×Σ), c8 PBP-H > the knee-clamped control but STILL < PBS, and C1P-H < C1 with honest cwnd caps — the NO-BORROWING TAX is confirmed as the c8 binder; flip NO, see "HONEST-CAP RESULTS"**
 
 **Why (proven by #84).** The multipath binder was flow control: the
 per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
@@ -9117,6 +9153,203 @@ protocol; no captured result discarded; n quoted wherever < 8). Zero
 DNFs in captured runs. All verdicts same-session interleaved (session
 drift vs #86 visible again: PBS-c8 0.67/0.74Σ → 0.72/0.67Σ).
 
+### HONEST-CAP RESULTS (2026-07-19, the unblocked percap follow-on, branch `feat/percap-honest-cap`, commit 5d30c02) — the caps re-derived on the HONEST plain anchor: the sc2 −20% is RESOLVED exactly (the K/R headroom law; same-binary control reproduces −18/−22%), c7 percap ≥ PBS both seeds at 0.89–0.90×Σ, and c8 improves over the knee-clamped control (+3.4/+3.8, parking tail halved) — but PBP-H < PBS at c8 on BOTH seeds and C1P-H < C1 again with caps honest by construction: **the no-borrowing tax is CONFIRMED as the c8 binder**. `RWM_STORE_PERCAP` stays DEFAULT OFF; the roadmap redirects from cap hygiene to account borrowing.
+
+**The re-derivation (env `RWM_HONEST_CAP`, default ON but consulted only
+under `RWM_PLAIN_RS` — shipped tree byte-identical; `RWM_HONEST_CAP=0` =
+the floor-law control arm).** The first cut — the roadmap's literal
+"cap_i = gain·rate_i·RTprop_i floor clock" — was REFUTED by its own L1
+smoke before the battery: c2's true RTprop is 8 ms (the DIAG `rtp=` gauge;
+the percap unit tests' "80 ms echo" was the LOADED clock), so the
+legacy-good 1024 store is ~12× the floor BDP and the floor law computes
+cap ≈ 150–170 → 56 Mbit (the −20% arm reproduced, khr pinned 1.00 by a
+second defect, below). The headroom the over-read supplied was never
+ack-batching — it is the RECOVERY clock: a plain-window hole is recovered
+by the SACK re-advertisement / tail-sweep engine whose round is clamped to
+[25, 100] ms (`HOLE_NACK_REFRESH_*`/`TAIL_SWEEP_*`), and GE burst loss
+routinely drives it to the ceiling (measured: sweeps every ~140 ms live,
+558 retx per 3.5-s sc2 transfer). Final law (`honest_store_cap`,
+net/mod.rs), every term measured or a named engine constant:
+
+    cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R + RTprop_i))
+          = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R
+
+- **residence term** rate·K·RTprop: Little's law on the UNLOADED drain
+  clock; K_i = windowed-min echoSRTT_i/RTprop_i (`EchoRatioMin`, two 5-s
+  half-buckets ≈ the min-RTT window class) — the min is self-queue-PROOF
+  (own dwell only raises the ratio), so the c8 dwell→echo→cap spiral has
+  NO handle on any term (rate windowed-max honest, RTprop windowed-min,
+  K windowed-min, R a constant). Defect found and fixed at the smoke: at
+  the estimator seed instant srtt ≡ min_rtt (shared seed), ratio ≡ 1.0,
+  and feeding it LATCHED the windowed min at 1.00 for a whole window —
+  seed-identity samples (srtt−RTprop ≤ 5 µs) are now DISCARDED, not
+  clamped (`observe_srtt_over_rtprop`).
+- **runway term** (gain−1)·rate·(R + RTprop): one worst-case recovery
+  round on the RECOVERY engine's clock (R = 100 ms, the cadence clamp
+  ceiling — `HONEST_RECOVERY_ROUND_S`) plus the retransmit flight.
+- The legacy floor law gain·anchor is the K=1, R=0 degenerate; K ≥ 1 and
+  R > 0 make the honest cap STRICTLY wider — honest anchors can never
+  shrink a cap below the old law (the sc2 no-regression property, now a
+  unit law). Cross-checks against independently measured good points:
+  sc2 → 10.4k·(K·8ms + 108ms) ≈ 1290 → latches the proven 1024 store;
+  c8-slow → ~2k·(K·60ms + 160ms) ≈ 470–500 ≈ the guard session's measured
+  good pin (508, 0.26 s dwell); the knee-parking regime (2048, ≈1 s) is
+  unreachable for a c3-class honest rate.
+- **Scope**: percap cap_i (N ≥ 2) AND the N=1/anchor-sum pooled cap (the
+  −20% seat); clamps unchanged ([floor 64, 2048 knee] per account,
+  [floor, 1024 store] at N=1); warm-up unchanged (legacy share; honest law
+  returns None until anchor+RTprop warm); Copa-sole feed untouched
+  (cwnd_i is already the honest pipe); redirect guard unchanged
+  (bound_j = the floor pipe — redirects still may not consume the runway).
+  DIAG gains `khr=` (the live K_i); liveness echo "honest floor-clock
+  store caps ACTIVE"; harness forwards
+  RWM_PLAIN_RS/RWM_ANCHOR_HYGIENE/RWM_HONEST_CAP.
+
+**Unit evidence (lib 355/355, 5 new):**
+`echo_ratio_min_is_self_queue_proof_and_window_expires` (inflation cannot
+raise the min; the window expires per anchor-hygiene rule 3),
+`echo_ratio_seed_identity_sample_is_discarded_not_latched` (the measured
+khr=1.00 defect as a law), `honest_store_cap_is_residence_plus_recovery_runway`
+(the derivation, K/gain clamps, warm-up None),
+`honest_caps_shallow_account_sits_at_recovery_budget_not_knee` (the c8
+miniature on honest anchors: fast 1248 differentiated < knee, slow 466 ≈
+the measured good pin, per-path independence), and
+`honest_anchor_sum_cap_preserves_sc2_throughput_headroom` (floor law 167
+= the −20% arm; honest K=2 → 1024 latch; monotone > floor law ∀K ≥ 1).
+
+**L1 battery (VM 10.1.5.16, 2026-07-19 16:12–16:58 UTC; binary sha256
+67091cb91b73b216… = commit 5d30c02, SAME binary every arm; E5-2650 v3
+aes+avx2+pclmulqdq in every log header (post-divide); 25 MB × 1
+run/invocation × 8 reps, arms interleaved round-robin per rep, fresh
+tunnel per invocation, seeds 42+7, RWM_DIAG=1 everywhere; driver
+`/home/vibe/honest_battery.sh` (+`honest_all.sh`), logs
+`/home/vibe/honest/{sc2,sc3,c7,c8}-s{42,7}.log` + per-run `diag-*.log`).**
+Arms — duals: PBS (pooled path-scaled, the c8 incumbent), PBP-G-old
+(percap+guard, knee-clamped caps — the guard-session control), PBP-H
+(percap+guard+`RWM_PLAIN_RS` honest caps), C1 (Copa wire-signal), C1P-H
+(percap under Copa); singles: PB, PBH0 (`RWM_PLAIN_RS` +
+`RWM_HONEST_CAP=0`, the floor-law −20% control), PBP-H, C1, C1P-H.
+
+Singles — the −20% resolution + N=1 identity + same-session Σ:
+
+| cell | PB (σ_s) | PBH0 floor-law (σ_s) | PBP-H (σ_s) | C1 (σ_s) | C1P-H (σ_s) |
+|---|---|---|---|---|---|
+| sc2 s42 | 76.61 (1.94) | **62.88 (5.82)** | **76.85 (2.90)** | 67.21 (4.70) | 69.14 (1.12) |
+| sc2 s7 | 77.04 (5.08, n=4) | **60.20 (6.01, n=7)** | **77.01 (3.45, n=6)** | 65.50 (1.22, n=5) | 67.74 (0.77, n=4) |
+| sc3 s42 | 15.47 (0.23) | 13.43 (0.19) | 14.81 (0.24) | 12.08 (0.37) | 11.78 (0.32) |
+| sc3 s7 | 15.33 (1.15, n=5) | 13.45 (0.23, n=7) | 14.97 (0.22) | 12.23 (0.39) | 12.15 (0.49, n=5) |
+
+- **The sc2 −20% is RESOLVED exactly.** PBP-H − PB = +0.2/−0.0 (≪ σ_s
+  both seeds); the same-binary PBH0 control differs from PBP-H ONLY in
+  `RWM_HONEST_CAP` and reproduces the Anchor-Hygiene regression
+  (−18%/−22%; +14.0/+16.8 for the K/R law alone, ≥ 2.3σ). Gauges: PBP-H
+  sc2 cap latches 1024 (the legacy-proven point) with khr 1.2–1.3 and
+  honest btlbw ~9.1–9.5k; PBH0 cap ~150–175.
+- **sc3 carries a small named residual**: PBP-H −0.66/−0.36 vs PB
+  (−4.3%/−2.3%; ≈2.8σ at s42, inside PB's σ at s7). The honest cap sits
+  at ~355 (btlbw 1869 ≈ 0.9× truth at N=1 — the sampler IS honest on a
+  single c3 — × the law) vs the legacy 1024-latch/682: the deep store's
+  last ~4% at c3 is real tail-runway beyond one recovery round. PBH0
+  −13% shows the K/R terms recover most of it.
+- N=1 percap identity: PBP-H engages no accounts at N=1 (the law is
+  N ≥ 2-gated); its sc2/sc3 deltas are entirely the anchor-sum arm.
+  C1P-H − C1 = +1.9/+2.2 sc2, −0.3/−0.1 sc3 (≪/≈ σ_s) — inert under
+  Copa as designed. Same-session ceilings: **Σ-PB c7 = 153.2/154.1,
+  c8 = 92.1/92.4; Σ-C1 c7 = 134.4/131.0, c8 = 79.3/77.7.**
+
+Duals (mean (σ_s) [per-run values]; Σ-ratio = arm / same-family Σ):
+
+| cell | arm | mean (σ_s) [runs] | Σ-ratio |
+|---|---|---|---|
+| c7 s42 | PBS | 130.78 (4.39) [134.3 130.0 126.0 135.6 127.5 124.5 133.1 135.3] | 0.85 |
+| | PBP-G-old | 137.08 (6.48) [147.3 133.2 133.1 139.9 137.2 126.9 135.3 143.7] | 0.89 |
+| | PBP-H | **137.32 (9.16)** [138.5 147.2 146.6 147.2 126.0 128.0 127.9 137.2] | **0.90** |
+| | C1 | 79.41 (5.30) [86.5 84.9 77.1 74.8 82.8 82.0 72.2 75.0] | 0.59 |
+| | C1P-H | **91.56 (4.20)** [84.3 97.5 96.3 88.2 91.4 91.4 93.0 90.4] | **0.68** |
+| c7 s7 | PBS | 130.18 (20.94) [128.5 134.7 137.5 140.6 84.5* 142.8 130.3 146.4] (*collapse run 80.6) | 0.84 |
+| | PBP-G-old | 132.12 (11.70) [129.3 145.0 114.4 143.1 139.1 141.9 123.8 120.4] | 0.86 |
+| | PBP-H | **137.80 (11.62, n=6)** [124.5 129.1 149.4 128.6 145.7 149.6] | **0.89** |
+| | C1 | 81.40 (5.11, n=6) [88.6 77.4 75.5 78.2 84.5 84.2] | 0.62 |
+| | C1P-H | **94.46 (6.32, n=7)** [85.3 101.0 97.5 90.8 102.1 95.6 88.9] | **0.72** |
+| c8 s42 | PBS | 63.54 (10.87) [73.1 50.0 56.5 48.3 76.7 71.6 69.4 62.7] | 0.69 |
+| | PBP-G-old | 47.24 (5.47) [46.5 58.0 41.2 41.2 50.1 49.1 44.4 47.4] | 0.51 |
+| | PBP-H | **51.06 (3.05)** [55.9 51.4 51.4 49.5 55.1 47.6 49.2 48.4] | **0.55** |
+| | C1 | 53.96 (4.26) [56.9 54.2 57.1 58.3 53.9 54.4 52.2 44.7] | 0.68 |
+| | C1P-H | **45.42 (4.79)** [47.2 50.3 41.8 44.6 52.1 46.5 37.0 43.9] | **0.57** |
+| c8 s7 | PBS | 57.72 (14.99, n=7) [56.2 41.2 52.1 72.3 83.7 51.7 46.8] | 0.62 |
+| | PBP-G-old | 46.37 (7.76, n=5) [48.2 53.6 52.8 41.9 35.2] | 0.50 |
+| | PBP-H | **49.80 (5.26, n=6)** [48.3 40.8 49.5 56.4 52.7 51.2] | **0.54** |
+| | C1 | 56.69 (1.84) [54.6 56.8 58.4 55.9 55.9 59.2 58.5 54.3] | 0.73 |
+| | C1P-H | **46.91 (2.85, n=6)** [44.2 47.3 44.9 50.1 50.5 44.5] | **0.60** |
+
+**Reading, effect-by-effect:**
+
+1. **c7 is preserved-or-improved under honest caps**: PBP-H 0.90/0.89×Σ —
+   the ≥0.87 target met BOTH seeds, above PBS both seeds (+6.5/+7.6;
+   PBS-s7 carries its documented collapse run), tie with the knee-clamped
+   control at s42 (+0.2) and +5.7 at s7. The Copa c7 percap win holds a
+   third session (C1P-H − C1 = +12.2/+13.1, ≥2σ).
+2. **c8: honest caps improve the percap arm but do NOT reach the pooled
+   bar.** PBP-H − PBP-G-old = +3.8/+3.4 (same sign both seeds, ≈0.7σ of
+   the control's spread — a real but small unlock) with σ tightened
+   (3.1/5.3) and the slow-path parking HALVED at the gauge level (all-rep
+   p1 rtt: p50 358→204 ms, p90 943→433, max 1084→930). But PBP-H < PBS
+   on both seeds (−12.5/−7.9; PBS σ 10.9/15.0 vs PBP-H 3.1/5.3 — the
+   pooled arm buys its mean with spread), and 0.9×Σ is not approached
+   (0.54–0.55). C1P-H < C1 again (−8.5/−9.8, 2–5σ; guard session:
+   −9.6/−11.2 — reproduced cross-session).
+3. **The no-borrowing tax is CONFIRMED as the c8 binder.** Under Copa the
+   caps are honest BY CONSTRUCTION (cwnd_i) and were honest in BOTH
+   percap sessions — yet account isolation loses ~0.13–0.16×Σ to the
+   pooled Σcwnd law at the asymmetric cell, twice, both seeds. Under
+   plain+BBR the honest-cap fix removed most of the cap-hygiene residual
+   and the arm still trails PBS by a similar margin. The structural cost:
+   out_fast ≤ cap_fast forbids the fast path from consuming the slow
+   path's unused share, which the pooled law grants for free.
+4. **New named residual (iii), measured at the gauge**: at c8 the SLOW
+   path's send-interval anchor still over-reads ×3–5 under multipath
+   placement (p1 btlbw 5.8–10.8k vs ~2.1k truth; the SAME sampler reads
+   0.9× truth at sc3 N=1 and ≈1× on the c8 FAST path) — suspected
+   frontier-advance burst attribution: a slow-hole fill releases a burst
+   of already-received fast-path symbols into the cumulative frontier.
+   Consequence: cap_slow reads 1107–2048 instead of the derived ~500, so
+   the own-pick parking channel is only PARTLY closed under plain+BBR
+   (the honest law computed on a dishonest input; under Copa this
+   residual does not exist and the borrowing tax is isolated cleanly).
+
+**VERDICT + FLIP DECISION.** Flip criteria were "clean two-seed both-CC
+wins on BOTH cells with singles clean": c7 ✓ (both CC, both seeds),
+singles ✓ at sc2 (exact), −4.3% named at sc3, c8 ✗ (PBP-H < PBS and
+C1P-H < C1, both seeds). **`RWM_STORE_PERCAP` stays DEFAULT OFF** (and
+`RWM_PLAIN_RS`/`RWM_HONEST_CAP` remain measurement arms; shipped tree
+byte-identical). What this battery settled: the GUARD-RESULTS residual
+(i) — own-pick parking under the knee-clamped cap — is FIXED as far as
+honest inputs allow (sc2 exact, c8 partial behind residual (iii)), and
+with both parking channels closed the remaining c8 gap is the account
+structure itself. **The roadmap REDIRECTS: the c8 lever is no longer cap
+hygiene but bounded account borrowing** — an account lending headroom it
+cannot use (rate_i·RTprop_i satisfied) to a sibling. It does NOT fall
+out of the floor-clock law cleanly (a borrowed symbol parks on the
+LENDER's account but flies on the BORROWER's pipe, so the lender's
+dwell-bound derivation no longer describes its own queue — a new law is
+needed, not a clamp), so per discipline it is NAMED, NOT BUILT.
+Alternatively: accept isolation's asymmetric-cell tax as structural and
+keep pooled PBS at c8 (the standing record, 0.62–0.74×Σ across
+sessions).
+
+**Controls / discipline:** mechanism-liveness audit over all 286
+captured runs (320 invocations): every PBP-H run carries percap+guard+
+honest-cap+sampler echoes, PBH0 sampler-only, PBP-G-old percap+guard
+only, PBS path-scaled only, PB/C1 none — every one of the 31 mismatch
+lines pairs with one of the 34 aborted invocations (stale-log class;
+per-file blocks_without_result == the missing n, all seed-7, the
+documented topo-ping double-abort; RETRY per protocol; no captured
+result discarded; n quoted wherever < 8). Zero DNFs in captured runs.
+Session drift visible again (PBS-c8 0.72/0.67 → 0.69/0.62 across
+sessions) — all verdicts same-session interleaved. CPU lines captured
+per invocation in the logs (`CPU:` per run); c7 PBP-H remains below the
+~150 parallelization threshold this session (137–138 means).
+
 ### Controls / caveats
 
 - Shipped default byte-identical: env unset ⇒ no charge, no gate change,
@@ -9153,6 +9386,14 @@ guard active only under `RWM_STORE_PERCAP`, itself default OFF): lib
 335/335 (3 new), math 136 green, `gate_suite` 15/15 release,
 `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, `copa_sole_loopback` /
 `fmtcp_loopback` / `daps_loopback` 1/1 each — all green 2026-07-19.
+
+Honest-cap session (`feat/percap-honest-cap` 5d30c02, NO default flipped —
+the honest law consulted only under `RWM_PLAIN_RS`, itself default OFF;
+`honest_cap_on` structurally requires the anchor gate, so the shipped path
+is byte-identical): lib 355/355 (5 new), math 136 green, `gate_suite`
+15/15 release, `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8,
+`copa_sole_loopback` / `fmtcp_loopback` / `daps_loopback` 1/1 each — all
+green 2026-07-19 (`suites-final.log`, session scratchpad).
 
 ## Copa Competitive Mode + Cross-Traffic (2026-07-19) — Copa §2.2 mode switching BUILT on the wire signal (verified mechanism, faithful law, unit-proven) + the FIRST shared-bottleneck battery: at the GE c2 cell Copa-sole does NOT starve vs Cubic (0.88–0.90 share, compete irrelevant); at the CLEAN bottleneck Copa-sole starves (2.2 vs Cubic's 93, share 0.023) and competitive mode CANNOT restore share — because δ is NOT the binder (fixed δ=0.001 probe: no change): the starvation is the plain-window ARQ/retention pipeline under contention tail-drop (pool 1024 × 3.3 s dwell = Little's-law 2.4 Mbit), a CC-INDEPENDENT named blocker; BBR-under reference = 0.24 share at a 305–316 ms standing queue (Copa arms keep 20–40 ms) — substrate-CC default flip stays CLOSED with the gate MOVED from "no competitive mode" to the contention-recovery pipeline (branch `feat/copa-compete`, roadmap item 6, tasks #80/#82)
 
