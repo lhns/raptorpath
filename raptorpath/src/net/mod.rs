@@ -217,6 +217,86 @@ const HOLE_NACK_REFRESH_MIN: Duration = Duration::from_millis(25);
 const HOLE_NACK_REFRESH_MAX: Duration = Duration::from_millis(100);
 /// Fallback per-seq retransmit cooldown when no SRTT sample exists (µs).
 const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
+
+// ── Multipath recovery suppression (branch feat/recovery-suppression, env
+//    `RWM_RECOV_MP`, default OFF ⇒ shipped path byte-identical) ─────────────
+//
+// The fifth control-plane wall (goal-gate "Engine Parallelization" STEP 1d):
+// under dual-path striping the recovery plane roughly DOUBLES its per-source
+// retransmit share and ×2.2–2.5s its repair share vs the same config run
+// single-path; at dual-c1 (GE 0.1%, nothing real to recover) the sender
+// retransmits 9.3% of source (single-path: 0.2%, ×46) and the dual sink
+// aggregates BELOW one path alone. The root defects are two instances of ONE
+// mistake: recovery clocks/serials are GLOBAL where multipath demands they be
+// PER-PATH.
+//
+// (1) The hole law. A SACK gap is evidence of loss on a SINGLE path (FIFO
+//     within the path); across paths a seq gap is NORMAL — the scheduler
+//     CREATED it (striping + inter-path delay skew). The legacy age gate
+//     (age ≥ max-path-SRTT/2 since the ORIGINAL send) fires while the
+//     symbol's own flight is still in the air, and after a retransmit the
+//     clock is never reset to the NEW flight, so an open (scheduler-created)
+//     gap re-fires every cooldown while copies are still flying — the
+//     feedback flood. The law here is RFC 9002 §6.1.2 time-threshold loss
+//     detection generalized per path (the packet-threshold channel is
+//     deliberately NOT used across paths — cross-path seq gaps are exactly
+//     the RFC 4737 reordering caveat; multipath QUIC solves the same problem
+//     with per-path packet-number spaces): a reported gap seq is a candidate
+//     hole only once its LIVE flight (the last (re)send) is older than
+//     kTimeThreshold = 9/8 of its OWN path's smoothed RTT, with the existing
+//     per-seq cooldown floor as the kGranularity analog. Suppression-only:
+//     the receiver's hole-refresh keeps re-advertising, so a real hole fires
+//     the moment its flight clock expires. N = 1 live path keeps the legacy
+//     gates bit-exactly (single-path gaps are FIFO-real; sc2/sc3 inert).
+//
+// (2) The loss serials. `batch_seq` is a GLOBAL counter, but the receiver's
+//     per-path `PathBatchTracker` estimates expected symbols from batch_seq
+//     GAPS — so under striping every path-switch reads the other path's run
+//     as loss, the per-path loss estimators saturate, and everything keyed
+//     on loss (proactive repair_debt, P_lost retransmits, NACK budgets,
+//     phantom in-flight release) over-emits. Fix: per-path batch serial
+//     namespaces in plain window mode (the multipath-QUIC per-path
+//     packet-number-space pattern) — each path's batch stream is sequential,
+//     so per-path gap = per-path loss, honestly.
+//
+// Sub-gates for trace attribution (both default ON under the umbrella):
+// `RWM_RECOV_MP_LAW=0` disables (1), `RWM_RECOV_MP_SERIAL=0` disables (2).
+
+/// RFC 9002 §6.1.2 time threshold for the flight path: kTimeThreshold (9/8)
+/// × max of the two smoothed RTT clocks available for the path (Copa EWMA
+/// srtt and the estimator's EWMA app-echo RTT — the analog of
+/// `max(smoothed_rtt, latest_rtt)`), floored at the existing per-seq
+/// retransmit cooldown floor (the kGranularity analog). No new constants.
+pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64) -> u64 {
+    let s = srtt_us.max(ewma_rtt_us);
+    (s.saturating_mul(9) / 8).max(NACK_RETX_COOLDOWN_FLOOR_US)
+}
+
+/// The skew-aware hole law (pure, unit-tested): may a reported gap seq be
+/// treated as a hole (targeted retransmit eligible) right now?
+///
+/// * `n_live_paths <= 1`: the law is INERT — single-path gaps are FIFO-real
+///   and the legacy gates own the decision (bit-exact shipped behavior).
+/// * Unknown flight (no send record): legacy behavior (never suppress a seq
+///   we cannot clock — the reliability backstop stays intact).
+/// * Otherwise: a hole only once the LIVE flight is at least
+///   `threshold_us` old — a gap on path A while the seq's flight is still
+///   inside path B's expected-arrival clock is a gap the scheduler created,
+///   not a hole.
+pub(crate) fn mp_hole_ripe(
+    n_live_paths: usize,
+    now_us: u64,
+    flight_send_us: Option<u64>,
+    threshold_us: u64,
+) -> bool {
+    if n_live_paths <= 1 {
+        return true;
+    }
+    match flight_send_us {
+        None => true,
+        Some(t) => now_us.saturating_sub(t) >= threshold_us,
+    }
+}
 /// Tail ARQ sweep timeout clamp (µs): 2×SRTT bounded to [25ms, 100ms].
 /// Must sit above the ack arrival time (~1×SRTT + jitter, or the sweep
 /// fires spuriously on every in-flight symbol) and below the receiver's
@@ -5432,7 +5512,12 @@ async fn run_window_sender(
     /// same hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists)
     /// must not resend the symbol more than once per SRTT — but MAY resend
     /// after an SRTT, which escalates naturally if the retransmit itself dies.
-    let mut nack_retx_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    /// Value = (last retransmit time µs, path the retransmit flew on). The
+    /// path is the RWM_RECOV_MP live-flight input (the retransmit inherits
+    /// the in-flight clock of its own path — feat/recovery-suppression);
+    /// with the gate off only the time is read (byte-identical behavior).
+    let mut nack_retx_at: std::collections::HashMap<u64, (u64, u32)> =
+        std::collections::HashMap::new();
     /// P10b: cached ADR-0046/0050 budget state, refreshed every
     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
     /// budget inputs move; recomputing per ack would just churn locks).
@@ -5501,6 +5586,62 @@ async fn run_window_sender(
         std::collections::HashMap::new();
     // (fill_us, code_us, wait_us, n) accumulated over completed generations.
     let mut gl_sum: (u64, u64, u64, u64) = (0, 0, 0, 0);
+
+    // ── feat/recovery-suppression: multipath recovery suppression ─────────
+    // (`RWM_RECOV_MP`, default OFF ⇒ shipped byte-identical; plain window
+    // reliable mode only — generation mode has no per-seq ARQ to suppress).
+    // Sub-gates for trace attribution: _LAW (per-flight hole law), _SERIAL
+    // (per-path batch serial namespaces); both ON under the umbrella.
+    let recov_mp =
+        crate::config::env_flag("RWM_RECOV_MP", false) && reliable && !generation;
+    let recov_mp_law = recov_mp && crate::config::env_flag("RWM_RECOV_MP_LAW", true);
+    let recov_mp_serial =
+        recov_mp && crate::config::env_flag("RWM_RECOV_MP_SERIAL", true);
+    if recov_mp {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            law = recov_mp_law,
+            serial = recov_mp_serial,
+            "multipath recovery suppression ACTIVE (RWM_RECOV_MP: \
+             per-flight RFC9002-style time-threshold hole law on the flight \
+             path's smoothed clocks + per-path batch serial namespaces; \
+             N=1 live path keeps legacy gates bit-exactly)"
+        );
+    }
+    // Per-path batch serial counters (recov_mp_serial). The GLOBAL
+    // batch_counter stays the source of serials when off (bit-exact).
+    let mut mp_batch_ctr: std::collections::HashMap<u32, u64> =
+        std::collections::HashMap::new();
+    macro_rules! mp_batch_seq {
+        ($path:expr) => {{
+            if recov_mp_serial {
+                let e = mp_batch_ctr.entry($path).or_insert(0u64);
+                let v = *e;
+                *e += 1;
+                v
+            } else {
+                batch_counter.fetch_add(1, Ordering::Relaxed)
+            }
+        }};
+    }
+    // DIAG (RWM_DIAG): the recovery-plane trace counters — gap-report volume,
+    // per-cause suppression, fired-retransmit age attribution (young = the
+    // law's spurious class), per-flight-path and per-retx-path emission, and
+    // the P_lost-branch retransmit count. Cumulative; printed as `mpr[..]`.
+    let mut mpd_gap_reports: u64 = 0;
+    let mut mpd_gap_seqs: u64 = 0;
+    let mut mpd_supp_cool: u64 = 0;
+    let mut mpd_supp_age: u64 = 0;
+    let mut mpd_supp_law: u64 = 0;
+    let mut mpd_stale: u64 = 0;
+    let mut mpd_fired_young: u64 = 0;
+    let mut mpd_fired_ripe: u64 = 0;
+    let mut mpd_age_ms_sum: f64 = 0.0;
+    let mut mpd_plost_retx: u64 = 0;
+    let mut mpd_fired_flight: std::collections::HashMap<u32, u64> =
+        std::collections::HashMap::new();
+    let mut mpd_fired_on: std::collections::HashMap<u32, u64> =
+        std::collections::HashMap::new();
 
     // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
     macro_rules! send_source_symbol {
@@ -5706,7 +5847,7 @@ async fn run_window_sender(
                 } else {
                     wire_sym.clone()
                 };
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let batch_seq = mp_batch_seq!(source_path);
                 let batch = SymbolBatch {
                     symbols: vec![on_wire],
                     send_timestamp_us: now_us(),
@@ -5782,7 +5923,7 @@ async fn run_window_sender(
                         inline_debt -= 1.0;
                         // Proactive (no round-trip) — counts toward the pfrac.
                         proactive_coded_total += 1;
-                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch_seq = mp_batch_seq!(path);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
                             send_timestamp_us: now_us(),
@@ -5875,7 +6016,7 @@ async fn run_window_sender(
                     sched.redundant_source_path(source_path)
                 };
                 if let Some(alt) = alt_path {
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch_seq = mp_batch_seq!(alt);
                     let batch = SymbolBatch {
                         symbols: vec![wire_sym],
                         send_timestamp_us: now_us(),
@@ -6080,6 +6221,12 @@ async fn run_window_sender(
                             }
                         }
 
+                        if use_retransmit && diag_on {
+                            // feat/recovery-suppression trace: the P_lost-
+                            // branch retransmit channel (fed by eps_at_send,
+                            // which the per-path serial fix keeps honest).
+                            mpd_plost_retx += 1;
+                        }
                         if use_retransmit {
                             // Retransmit: exact source symbol — from the
                             // sent-data store (reliable: survives window
@@ -6133,7 +6280,7 @@ async fn run_window_sender(
                             select_repair_path(&sched, source_path)
                         }
                     };
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch_seq = mp_batch_seq!(correction_path);
                     let batch = SymbolBatch {
                         symbols: vec![correction_sym],
                         send_timestamp_us: now_us(),
@@ -6214,7 +6361,7 @@ async fn run_window_sender(
                                 source_path
                             }
                         };
-                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                        let batch_seq = mp_batch_seq!(fpath);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
                             send_timestamp_us: now_us(),
@@ -6379,7 +6526,6 @@ async fn run_window_sender(
     let mut diag_retx: u64 = 0;
     let mut diag_gaps_dropped: u64 = 0;
     let mut diag_eff_rate: f64 = 0.0;
-
     loop {
         // SACK flow control (feat/sack-flow-control): drain the receiver's
         // RECEIVED-above-frontier ranges NON-BLOCKING at the top of every
@@ -7088,9 +7234,16 @@ async fn run_window_sender(
                             // here, charged elsewhere). Zeros when off.
                             let lent_i = percap_lent.get(id).copied().unwrap_or(0);
                             let bor_i = percap_borrowed.get(id).copied().unwrap_or(0);
+                            // feat/recovery-suppression DIAG: the per-path
+                            // LOSS ESTIMATE the recovery plane actually keys
+                            // on (repair_debt, P_lost, NACK budgets) — the
+                            // gauge that names the batch-serial poisoning
+                            // (global batch_seq gaps read as per-path loss
+                            // under striping).
+                            let pl_i = p.estimator.loss_rate();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} dbud={:.0} est={} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, dbud_i, est_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} dbud={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, dbud_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -7138,8 +7291,52 @@ async fn run_window_sender(
                     .as_ref()
                     .map(|f| f.attr_diag())
                     .unwrap_or((0, 0));
+                // feat/recovery-suppression DIAG: the recovery-plane trace.
+                // rep/seqs = gap reports processed / gap seqs walked;
+                // fired y/r = retransmits whose live flight was YOUNGER than
+                // its path's law threshold (the spurious-by-law class) vs
+                // ripe; supp c/a/l = suppressed by cooldown / legacy age
+                // gate / the mp law; stale = gap seqs already acked;
+                // plost = P_lost-branch retransmits; age = mean flight age
+                // at fire (ms); fp/on = per-path fired-flight / sent-on.
+                let mpd_fired = mpd_fired_young + mpd_fired_ripe;
+                let mut mp_pp = String::new();
+                let mut mp_keys: Vec<u32> = mpd_fired_flight
+                    .keys()
+                    .chain(mpd_fired_on.keys())
+                    .copied()
+                    .collect();
+                mp_keys.sort_unstable();
+                mp_keys.dedup();
+                for k in mp_keys {
+                    mp_pp.push_str(&format!(
+                        " p{}:{}/{}",
+                        k,
+                        mpd_fired_flight.get(&k).copied().unwrap_or(0),
+                        mpd_fired_on.get(&k).copied().unwrap_or(0)
+                    ));
+                }
+                let mpr = format!(
+                    " mpr[rep={} seqs={} fired={} y={} r={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
+                    mpd_gap_reports,
+                    mpd_gap_seqs,
+                    mpd_fired,
+                    mpd_fired_young,
+                    mpd_fired_ripe,
+                    mpd_supp_cool,
+                    mpd_supp_age,
+                    mpd_supp_law,
+                    mpd_stale,
+                    mpd_plost_retx,
+                    if mpd_fired > 0 {
+                        mpd_age_ms_sum / mpd_fired as f64
+                    } else {
+                        0.0
+                    },
+                    mp_pp,
+                );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7154,6 +7351,7 @@ async fn run_window_sender(
                     diag_sweeps, diag_retx, diag_gaps_dropped, cached_nack_budget,
                     xat_c, xat_w,
                     percap_loans.len(), percap_loans_total,
+                    mpr,
                     gdiag,
                     pp,
                 );
@@ -7742,7 +7940,7 @@ async fn run_window_sender(
             retransmit_buffer.iter().next().map(|(&seq, &(send_us, _, _))| {
                 let last_activity_us = nack_retx_at
                     .get(&seq)
-                    .map_or(send_us, |&r| r.max(send_us))
+                    .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
                 let srtt_us = {
                     let sched = scheduler.lock();
@@ -8041,21 +8239,53 @@ async fn run_window_sender(
             }
 
             // SRTT drives the per-seq retransmit cooldown and the age gate.
+            // RWM_RECOV_MP additionally snapshots PER-PATH smoothed clocks
+            // (Copa srtt + estimator EWMA) for the per-flight hole law, and
+            // the live path count (N=1 ⇒ the law is inert, legacy bit-exact).
+            let mut mp_clocks: std::collections::HashMap<u32, (u64, u64)> =
+                std::collections::HashMap::new();
+            let mut mp_n_paths: usize = 1;
             let srtt_us = {
                 let sched = scheduler.lock();
-                sched
-                    .active_paths()
-                    .iter()
+                let ids = sched.active_paths();
+                if recov_mp_law || diag_on {
+                    mp_n_paths = ids.len();
+                    for id in &ids {
+                        if let Some(p) = sched.path(*id) {
+                            mp_clocks.insert(
+                                *id,
+                                (
+                                    p.srtt().as_micros() as u64,
+                                    p.estimator.rtt().as_micros() as u64,
+                                ),
+                            );
+                        }
+                    }
+                }
+                ids.iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.estimator.rtt().as_micros() as u64)
                     .max()
                     .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
             };
             let retx_cooldown_us = srtt_us.max(NACK_RETX_COOLDOWN_FLOOR_US);
+            // The per-flight law threshold for a path (falls back to the
+            // pooled cooldown clock when the path has no snapshot).
+            let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
+                             p: u32|
+             -> u64 {
+                mp_clocks
+                    .get(&p)
+                    .map(|&(a, b)| mp_time_threshold_us(a, b))
+                    .unwrap_or(retx_cooldown_us)
+            };
 
             let (win_start, win_end) = encoder.window_span();
             let mut retransmitted: u64 = 0;
             let mut nacked_count: u64 = 0;
+            if diag_on {
+                mpd_gap_reports += 1;
+            }
 
             'gaps: for &(gap_start, gap_end) in &gaps {
                 // EVICT: only the coding window can serve a gap — older
@@ -8076,20 +8306,63 @@ async fn run_window_sender(
                     if retransmitted >= cached_max_repairs || cached_nack_budget == 0 {
                         break 'gaps;
                     }
+                    if diag_on {
+                        mpd_gap_seqs += 1;
+                    }
                     // Per-seq cooldown: repeated gap acks for the same
                     // hole must not resend more than once per SRTT.
-                    if let Some(&last) = nack_retx_at.get(&seq) {
+                    if let Some(&(last, _)) = nack_retx_at.get(&seq) {
                         if now_repair_us.saturating_sub(last) < retx_cooldown_us {
+                            if diag_on {
+                                mpd_supp_cool += 1;
+                            }
                             continue;
                         }
                     }
-                    // Age gate: cross-path/jitter skew can report a seq
-                    // that is merely late, not lost — only repair
-                    // symbols old enough that an in-flight copy would
-                    // already have been sacked.
-                    if let Some(&(send_time_us, _, _)) = retransmit_buffer.get(&seq) {
-                        if now_repair_us.saturating_sub(send_time_us) < srtt_us / 2 {
+                    // The seq's LIVE flight: the last retransmit if any
+                    // (it inherits the in-flight clock of its own path),
+                    // else the original send (feat/recovery-suppression).
+                    let mp_flight: Option<(u64, u32)> = nack_retx_at
+                        .get(&seq)
+                        .copied()
+                        .or_else(|| {
+                            retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
+                        });
+                    if recov_mp_law && mp_n_paths > 1 {
+                        // The skew-aware hole law (RFC 9002 §6.1.2 time
+                        // threshold, per flight path — see mp_hole_ripe):
+                        // a gap whose live flight is younger than its own
+                        // path's 9/8×smoothed-RTT clock is a gap the
+                        // scheduler created, not a hole. Suppression-only;
+                        // the receiver's hole-refresh re-advertises until
+                        // the clock expires, so real holes still fire.
+                        let ripe = match mp_flight {
+                            Some((t, p)) => mp_hole_ripe(
+                                mp_n_paths,
+                                now_repair_us,
+                                Some(t),
+                                mp_thr_of(&mp_clocks, p),
+                            ),
+                            None => true,
+                        };
+                        if !ripe {
+                            if diag_on {
+                                mpd_supp_law += 1;
+                            }
                             continue;
+                        }
+                    } else {
+                        // Age gate (legacy): cross-path/jitter skew can
+                        // report a seq that is merely late, not lost — only
+                        // repair symbols old enough that an in-flight copy
+                        // would already have been sacked.
+                        if let Some(&(send_time_us, _, _)) = retransmit_buffer.get(&seq) {
+                            if now_repair_us.saturating_sub(send_time_us) < srtt_us / 2 {
+                                if diag_on {
+                                    mpd_supp_age += 1;
+                                }
+                                continue;
+                            }
                         }
                     }
                     // Cross-path: avoid the path that originally carried this
@@ -8117,13 +8390,40 @@ async fn run_window_sender(
                             Some(s) => s.clone(),
                             // Not in the store ⇒ already acked (removal is
                             // by ack only): the receiver has it; skip.
-                            None => continue,
+                            None => {
+                                if diag_on {
+                                    mpd_stale += 1;
+                                }
+                                continue;
+                            }
                         }
                     } else {
                         encoder.get_source(seq).unwrap_or_else(|| encoder.generate_repair())
                     };
 
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    // DIAG (feat/recovery-suppression trace): attribute this
+                    // fire — live-flight age vs the per-path law threshold
+                    // (young = the law would have suppressed it = the
+                    // spurious-by-law class), per-flight-path and per-retx-
+                    // path emission counts.
+                    if diag_on {
+                        if let Some((t, p)) = mp_flight {
+                            let age = now_repair_us.saturating_sub(t);
+                            let thr = mp_thr_of(&mp_clocks, p);
+                            if age < thr {
+                                mpd_fired_young += 1;
+                            } else {
+                                mpd_fired_ripe += 1;
+                            }
+                            mpd_age_ms_sum += age as f64 / 1000.0;
+                            *mpd_fired_flight.entry(p).or_insert(0) += 1;
+                        } else {
+                            mpd_fired_ripe += 1;
+                        }
+                        *mpd_fired_on.entry(nack_path).or_insert(0) += 1;
+                    }
+
+                    let batch_seq = mp_batch_seq!(nack_path);
                     let batch = SymbolBatch {
                         symbols: vec![sym],
                         send_timestamp_us: now_us(),
@@ -8145,7 +8445,10 @@ async fn run_window_sender(
                             p.on_src_sent(seq, false);
                         }
                     }
-                    nack_retx_at.insert(seq, now_repair_us);
+                    // The retransmit inherits the in-flight state: the next
+                    // hole decision for this seq clocks THIS flight on ITS
+                    // path (closes the re-NACK-while-flying feedback).
+                    nack_retx_at.insert(seq, (now_repair_us, nack_path));
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
@@ -8183,7 +8486,7 @@ async fn run_window_sender(
                         break;
                     }
                     let repair_sym = encoder.generate_repair();
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch_seq = mp_batch_seq!(margin_path);
                     let batch = SymbolBatch {
                         symbols: vec![repair_sym],
                         send_timestamp_us: now_us(),
@@ -9893,6 +10196,109 @@ mod tests {
         let c = feed.seq_path.remove(&7).map(|(_, c)| c).unwrap();
         assert_eq!(c.last.0, 0);
         assert_eq!(c.prev.map(|(p, _)| p), Some(1));
+    }
+
+    // ----- feat/recovery-suppression: the skew-aware hole law -----
+
+    /// The per-flight time threshold is the RFC 9002 §6.1.2 shape: 9/8 of
+    /// the larger smoothed clock, floored at the per-seq cooldown floor
+    /// (the kGranularity analog). No new constants.
+    #[test]
+    fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
+        // 40 ms srtt, 32 ms ewma → 9/8 × 40 ms = 45 ms.
+        assert_eq!(mp_time_threshold_us(40_000, 32_000), 45_000);
+        // The larger clock wins regardless of which estimator it is.
+        assert_eq!(mp_time_threshold_us(32_000, 40_000), 45_000);
+        // Tiny clocks floor at NACK_RETX_COOLDOWN_FLOOR_US.
+        assert_eq!(mp_time_threshold_us(1_000, 500), NACK_RETX_COOLDOWN_FLOOR_US);
+        assert_eq!(mp_time_threshold_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
+    }
+
+    /// The skew-aware hole law: a gap on path A while the seq's flight is
+    /// still inside path B's expected-arrival clock is NOT a hole; once
+    /// B's clock expires it IS. Single path (N=1) keeps legacy behavior
+    /// bit-exactly (the law never suppresses), and an unknown flight is
+    /// never suppressed (reliability backstop).
+    #[test]
+    fn mp_hole_law_suppresses_young_cross_path_flights_only() {
+        let thr = 45_000u64; // path B's 9/8×srtt clock
+        // Dual path, flight sent at t=1_000_000 on B.
+        // t = +10 ms: inside B's clock → NOT a hole.
+        assert!(!mp_hole_ripe(2, 1_010_000, Some(1_000_000), thr));
+        // t = +45 ms: B's clock expired → a hole (retransmit eligible).
+        assert!(mp_hole_ripe(2, 1_045_000, Some(1_000_000), thr));
+        // t = +44.999 ms: still inside (strict).
+        assert!(!mp_hole_ripe(2, 1_044_999, Some(1_000_000), thr));
+        // N=1: the law is INERT — always ripe regardless of age (the
+        // legacy gates own the decision; sc2/sc3 bit-exact).
+        assert!(mp_hole_ripe(1, 1_010_000, Some(1_000_000), thr));
+        assert!(mp_hole_ripe(0, 1_010_000, Some(1_000_000), thr));
+        // Unknown flight: never suppress (a seq we cannot clock must stay
+        // recoverable — the legacy path decides).
+        assert!(mp_hole_ripe(2, 1_010_000, None, thr));
+    }
+
+    /// The law composes with retransmit flight inheritance: after a
+    /// retransmit the LIVE flight is the retransmit on ITS path, so the
+    /// seq is suppressed until the NEW flight's clock expires (closes the
+    /// re-NACK-while-flying feedback), then ripe again.
+    #[test]
+    fn mp_hole_law_clocks_the_live_flight_after_retransmit() {
+        let thr_b = 45_000u64;
+        // Original flight expired → fired at t=1_045_000; the retransmit
+        // becomes the live flight at that instant.
+        let retx_at = 1_045_000u64;
+        // Immediately after: suppressed (the retransmit is still flying).
+        assert!(!mp_hole_ripe(2, retx_at + 1_000, Some(retx_at), thr_b));
+        // After the retransmit path's clock: ripe again (escalation if the
+        // retransmit itself died).
+        assert!(mp_hole_ripe(2, retx_at + thr_b, Some(retx_at), thr_b));
+    }
+
+    // ----- feat/recovery-suppression: per-path batch serial namespaces -----
+
+    /// The loss-serial defect, reproduced at the unit: a GLOBAL batch_seq
+    /// striped across two paths makes each path's tracker read the OTHER
+    /// path's run as loss (expected ≈ 2×received at round-robin — ~50%
+    /// phantom loss with zero real loss). Per-path serial namespaces
+    /// (each path's stream sequential) read exactly 0% loss on the same
+    /// arrival pattern.
+    #[test]
+    fn per_path_batch_serials_kill_striping_phantom_loss() {
+        // GLOBAL counter, round-robin striping, NO loss: path 0 gets
+        // even serials, path 1 odd.
+        let mut t0 = PathBatchTracker::new();
+        let mut t1 = PathBatchTracker::new();
+        for s in 0..200u64 {
+            if s % 2 == 0 {
+                t0.record_batch(s, 1);
+            } else {
+                t1.record_batch(s, 1);
+            }
+        }
+        // Phantom loss: each path expected ~2× what it received.
+        assert!(t0.total_expected >= t0.total_received * 2 - 2);
+        assert!(t1.total_expected >= t1.total_received * 2 - 2);
+
+        // PER-PATH serials, same striping, no loss: sequential per path.
+        let mut p0 = PathBatchTracker::new();
+        let mut p1 = PathBatchTracker::new();
+        for s in 0..100u64 {
+            p0.record_batch(s, 1);
+            p1.record_batch(s, 1);
+        }
+        assert_eq!(p0.total_expected, p0.total_received, "no phantom loss");
+        assert_eq!(p1.total_expected, p1.total_received, "no phantom loss");
+
+        // Per-path serials still see REAL loss: drop serials 10..=14.
+        let mut pl = PathBatchTracker::new();
+        for s in 0..100u64 {
+            if (10..=14).contains(&s) {
+                continue; // lost on the wire
+            }
+            pl.record_batch(s, 1);
+        }
+        assert_eq!(pl.total_expected - pl.total_received, 5, "real loss still counted");
     }
 
     /// A hostile/corrupt ack cannot trap the diff in a huge loop.
