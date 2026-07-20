@@ -104,7 +104,7 @@ in the order found, each fixed or refuted:
 | 3 | **the coded-only wire O(G²·S)** | the ~34 Mbit/s "generation machine ceiling" was the WIRE MODE (every DoF a dense row, both ends), not the solver | FIXED: systematic-repair wire = the O(k·G·S+k³) machine; gen single-c2 33.9 → 70.9 (pre-divide), ×2.1 | "Decode-CPU Ceiling"; paper §16.18 |
 | 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
-| 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) | §16.19 |
+| 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
 | 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid: **pooled path-scaled VINDICATED at c8, percap the symmetric-cell tool**; all OFF | §16.19, §16.22; "Per-Path Outstanding Accounting" |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
@@ -121,7 +121,7 @@ coding is free, not free throughput).
 | single-c3 (lossy 20 Mbit) | 15.6–15.9 (the recovery ceiling) | plain+BBR; gen-sys 14.9–15.1 = 0.95× (pre-divide) | legacy Cubic: 3.2 |
 | C7 (c2+c2) | 136.5–147.4 = 0.87–0.97×Σ | PBP (percap) / PBS (pooled 0.85–0.94×Σ) | PB baseline 100–105 |
 | C8 (c2+c3) | 72.3–75.8 = 0.74–0.80×Σ | PBS (pooled path-scaled) | PB baseline 44–65 (bimodal) |
-| engine sink | 187.7 Mbit/s | single-path c1, 1 receiver task | the threading threshold ~150–190 |
+| engine sink | 187.7 Mbit/s (177–193 re-measured 2026-07-19) | single-path c1, 1 receiver task | attributed: sender-emission service wall ~19.5–20k sym/s first, receiver engine ~20–22k msgs/s just above; NOT thread-count (pins −7%/−2%); dual-c1 sinks BELOW single (spurious-retx flood 9.3%) — "Engine Parallelization" |
 | realtime delivery, c3 100 KB | unified 99.4–100% / streaming 73.8–76.0% | `RWM_UNIFIED=1` vs shipped | ×3–4 completer-median cost |
 | message-tail p99 | 12–48× vs quinn/kernel-TCP at C2 (pre-divide crown, flip-gate-defended) | shipped streaming Realtime | post-divide c3 matrix: legacy-RLC medians best (§5 below) |
 
@@ -201,7 +201,12 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
   bounded account borrowing; a measured sub-residual: the slow path's
   send-interval anchor over-reads ×3–5 under multipath placement)** —
   and receiver/sender task parallelization — LIVE at the symmetric cell
-  (PBP c7-s7 = 147.4 ≈ the ~150 threshold), noted, not built.
+  (PBP c7-s7 = 147.4 ≈ the ~150 threshold), noted, not built —
+  **profiled and REFUTED a third time 2026-07-19 ("Engine
+  Parallelization", §16.23): 1+1 pinned cores sustain the operating
+  point; the c7 binder is multipath recovery-plane over-emission on a
+  saturated wire; successor lever = multipath-aware recovery
+  suppression (named, not built).**
 - No cell exceeds its link-class Σ ceiling; "every wall so far has been an
   unscaled constant or a hidden substrate controller, not the architecture"
   (§16.19).
@@ -312,9 +317,25 @@ carries its gating decision.
    multipath placement (frontier-advance burst attribution suspected;
    honest at N=1 and on the fast path). Ledger: "Per-Path Outstanding
    Accounting" → HONEST-CAP RESULTS.]** (#86)
-2. **Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
+2. ~~**Receiver/sender task parallelization** — refuted below ~150 Mbit/sink,
    now LIVE at the symmetric cell (PBP c7-s7 147.4; engine sink 187.7). The
-   next C7 lever after flow control. (#84/#86)
+   next C7 lever after flow control. (#84/#86)~~ **[CLOSED 2026-07-19 as the
+   THIRD refutation, binder named (`feat/engine-parallel`, goal-gate "Engine
+   Parallelization"): at the best c7 arm both processes pinned to 1 core
+   EACH sustain full throughput on both seeds (pinned 136.3 ≈ unpinned
+   136.2), the engine receiver task runs 81–87% busy with a near-empty
+   queue (new `RWM_RDIAG` gauge), and the c7 wire is measured SATURATED by
+   recovery-plane over-emission — retx share ×1.8 and repair share
+   ×2.2–2.5 the same-config single-path level ≈ exactly the Σ-gap
+   (0.85–0.86 this session). The dual-c1 control reproduces the flood with
+   ~zero real loss (retx 9.3% of source vs single-c1's 0.2%; dual sinks
+   BELOW single, 174–176 vs 180–184). The real task-service walls are
+   measured at ~19.5–20k sym/s (sender emission, binds first) and ~20–22k
+   msgs/s (receiver engine) ≈ 185–200 Mbit/sink — c1-class only.
+   `RWM_ENGINE_PAR` was NOT built (nothing to flip). SUCCESSOR lever
+   (named, not built): multipath-aware recovery suppression — cross-path
+   in-flight awareness for the hole-refresh/tail-sweep engine; it now owns
+   the c7 ~12–15% Σ-gap and the dual-c1 anti-scaling. Paper §16.23.]**
 3. **Unified-realtime c3-1200B stream-collapse attribution** — **DONE
    2026-07-19 (`diag/unified-collapse`, "Unified Decoder" → COLLAPSE
    ATTRIBUTION):** reproduced at a new L0 sustained-stream rung; NOT a
@@ -9788,3 +9809,230 @@ sudo bash cross_battery.sh <c2|clean> 8 <42|7> 25000000 /home/vibe/copacompete 3
 `-p raptorpath-math` green; `gate_suite` 15/15 release (shipped default
 byte-identical); `congestion_control` 19/19; `copa_sole_loopback` 1/1;
 `mtu_blackhole_wedge` 2/2 — all on the final tree.
+
+## Engine Parallelization (2026-07-19) — roadmap item 2, the receiver/sender task-parallelization lever PROFILED AT the ~150 threshold it went live at: the THIRD threading refutation, this time WITH the true binder named and measured — at the best c7 arm (137–144) BOTH processes pinned to ONE core each sustain full throughput (pinned mean 136.3 n=8 ≈ unpinned 136.2 n=10, both seeds), the engine receiver task runs 81–87% busy with a NEAR-EMPTY inbound queue, and the wire is measured FULL: multipath recovery-plane over-emission (retx ×1.8, repair ×2.2–2.5 the same-config single-path share) occupies ~25% of the dual wire ≈ exactly the Σ-gap; `RWM_ENGINE_PAR` NOT built (it would have measured noise); built instead: the `RWM_RDIAG` engine-saturation gauge, which also measured the REAL task-service walls (~19.5–20k sym/s sender emission, ~20–22k msgs/s receiver engine) that bracket the 187.7 sink ceiling and localize the parallelization threshold at c1-class cells only (branch `feat/engine-parallel`, tasks #84/#86)
+
+Task: roadmap item 2 — receiver/sender task parallelization, refuted by
+the #84 profile below ~150 Mbit/sink, now LIVE at the symmetric cell
+(best c7 arms 137–147 ≈ the threshold; engine sink 187.7; c7 Σ target
+~157). PROFILE-FIRST discipline: build only what the profile demands.
+The profile demanded nothing be built — and unlike #84's "no stage to
+parallelize", this session names and quantifies the wall that IS there.
+
+### Method
+
+VM 10.1.5.16 (E5-2650 v3, aes+avx2+pclmulqdq in every log header —
+post-divide), 2026-07-19 19:20–20:20 UTC. Binary sha256 40973e6b… =
+commit d27ce30 = main 7c3343f + the `RWM_RDIAG` probe ONLY (default-off
+instrument; shipped path byte-identical with env unset), SAME binary
+every run. Best-c7 arm under profile = **PBP-H** (plain +
+`RWM_QUIC_CC=bbr RWM_STORE_PERCAP=1 RWM_PLAIN_RS=1` — percap + guard +
+honest caps + flight witness, the borrowing-battery configuration;
+liveness echoes verified per run). 200 MB single-run c7 probes / 400 MB
+c1-class probes; per-thread CPU snapshots (`/proc/<pid>/task`),
+`perf record -F 397 -g` flat profiles both sides, `taskset -a` affinity
+pins applied mid-run, system-wide `/proc/stat`+softirq+UDP-counter
+capture, DIAG + the new RDIAG gauges. Mini-battery: arms interleaved
+round-robin per rep, seeds 42+7, foreground polling only, rp-* netns
+only; logs + drivers `/home/vibe/engpar/{profile/,mini-s42.log,
+mini-s7.log,prof_run.sh,sys_probe.sh,mini_battery.sh}`. CRLF stripped
+after tree sync (discipline item 10 — it bit again).
+
+### STEP 1a — where the core-seconds go at 134–138 Mbit/s (c7 PBP-H)
+
+Per-thread (400 MB @ 134.1): receiver process 1.34 cores, sender 1.59 —
+both spread FLAT over the 6 tokio workers (0.20–0.27 each); no hot
+thread. Flat perf, receiver: estimator math ~14% (`record_batch` 5.1 +
+`exp/log_fma` 8.8), decoder+GF(256) ~5%, `WireMessage::deserialize`
+3.0%, allocator ~6%, kernel futex/spin ~3%, `_aesni` 1.5% (crypto is
+noise), quinn ack-path ~1.7%. Sender: `on_src_delivered_seq` 7.8% (the
+percap/witness per-seq feed), estimator+FEC-rate control math ~18%
+(`record_batch` 4.5, `predictive_loss_upper` 3.6, `compute_repair_rate`
+3.4, exp/log 6.9), `run_window_sender` 2.6%, serialize 1.8%, BTreeMap
+1.9%, sched_yield ~4%. Top symbol 5.1%/7.8% — FLAT both sides; no
+parallelizable stage dominates (the #84 shape, reproduced at +35 Mbit).
+
+### STEP 1b — the pin experiments kill threading at c7, again (harder)
+
+Same binary, same arm, 200 MB, seed 42 (+ seed-7 battery reps):
+
+| pin (taskset, whole process) | throughput (Mbit/s) | CPU recv·send (s/invocation) |
+|---|---|---|
+| none (n=5) | 131.3–138.7 (mean 135.0) | 15.5–16.0 · 18.1–18.6 |
+| server → 1 core | **143.9** (best run of the session) | **9.7** · 16.6 |
+| client → 1 core | 132.4 | 15.5 · **11.2** |
+| both → 1+1 cores (n=6 s42, n=2 s7) | 132.5–140.5 (mean 136.3) | 9.9 · 11.1 |
+
+**1 + 1 cores sustain the full operating point on both seeds** (pinned
+mean 136.3, n=8, vs unpinned 136.2, n=10 pooled across the profile and
+battery phases; the server-pinned run is the session's FASTEST). Pinning cuts the receiver's measured CPU ~40% (15.5→9.7 s)
+at equal-or-better throughput: the unpinned 1.34/1.59 cores are ~⅓
+scheduler-migration waste, not work. There is no thread-parallelism
+deficit at c7 — with SIX cores available the engine uses the extra five
+to go 0–3% slower.
+
+### STEP 1c — the RDIAG gauge: the engine task has headroom at c7
+
+New instrument (`RWM_RDIAG`, receiver engine task): busy fraction =
+1 − time-awaiting-select, plus inbound msg-channel depth (cap 4096).
+
+| cell / arm | Mbit/s | engine busy | msgs/s | q_avg / q_max |
+|---|---|---|---|---|
+| c7 PB | 103.0 | 52–74% | 10.7–14.6k | 6–30 / ≤296 |
+| c7 PBS | 142.0 | 77–90% | 15.5–18.2k | ~30 / ≤451 |
+| c7 PBP-H | 137.5 | 81–87% | 16–18.5k | 14–32 / ≤456 |
+| single-c1 PB | 189.0 | 70–78% | 19.2–22k | ~100–130 / ≤446 |
+| dual-c1 PB | 171.8 | **86–92%** | 19.4–22.4k | 55–100 / ≤445 |
+
+At c7 the engine is ARRIVAL-limited (queue near-empty, 20+% headroom):
+it drains everything the wire delivers. The engine's measured service
+wall is ~20–22k msgs/s — reached only at c1-class aggregate (dual-c1),
+where the queue still never builds because flow control ack-clocks the
+sender to the drain rate. Σ-c7 (~157 ≈ 19–21k msgs/s at the measured
+waste level) sits AT that wall's edge — but c7 never gets there, because:
+
+### STEP 1d — the true c7 binder, named and measured: the wire is FULL of recovery-plane waste
+
+Same-config same-session waste gauges (DIAG cumulative counters, both
+seeds; share = counter / source symbols):
+
+| cell (arm PBP-H) | retx share | repair share (`cod`) | wire arithmetic |
+|---|---|---|---|
+| sc2 single s42 (n=4) | 7.5–9.1% | 7.7–9.3% | 81 Mbit on a 100 Mbit path |
+| sc2 single s7 (n=2) | 7.7% | 7.8–7.9% | — |
+| c7 dual s42 (n=2 + 4 pinned) | **14.2–14.7%** (pinned 11.6–12.6) | **15.5–19.2%** | src 14.2k + cod 2.7k + retx ~2k ≈ 19k sym/s ≈ **190 Mbit emitted on the 2×100 wire — saturated** |
+| c7 dual s7 (pinned n=2) | 12.1–12.6% | 16.0–16.7% | — |
+| single-c1 (GE 0.1%) | **0.2%** | ~0 | 189 of 1000 Mbit — wire NOT binding |
+| dual-c1 (GE 0.1%) | **9.1–9.3%** (×46 single) + 82–84k budget-suppressed gap reports | 12.8–13.1% | the dual sink is BELOW the single sink |
+
+Reading: under dual-path striping the recovery plane roughly DOUBLES
+its per-source retransmit share and ~2.2–2.5×es its repair share
+against the SAME config run single-path. At c7 that extra ~16 pp of
+source-relative emission ≈ 12–13% of the saturated wire ≈ exactly the
+measured Σ-gap (session c7 = 137.5/136.4 vs Σ singles 160.8/160.2 =
+0.85–0.86). The dual-c1 row is the controlled proof: at 0.1% loss there
+is nothing real to recover, yet the dual arm retransmits 9.3% of source
+(single: 0.2%) and STILL sinks less than one path alone (session means
+~175 vs ~183) — a spurious cross-path recovery flood (SACK-gap
+misreads + hole-refresh/tail-sweep re-fires under inter-path skew;
+same family as residual (iii)'s spurious-retransmit class, #86) that no
+receiver thread can fix. This is the FOURTH consecutive c7-class wall
+that is control-plane, not compute (quinn CC → PMTU → pool law → this).
+
+### STEP 1e — the sink ceiling attributed (which side binds, at what rate)
+
+Single-c1 (the 187.7 datum, session 177–193): sender process ≈1.05
+cores with the emission loop saturated at **~19.5–20k sym/s** (the
+first app wall — wire 1 Gbit idle, kernel idle: system-wide 2.57/6
+cores, softirq 0.10, ksoftirqd ~0, UDP errors 0); receiver engine 70–78%
+busy at the same rate (headroom, q ≈ 5 ms). Pins: server→1 −7%,
+client→1 −2–5%, both −7% — no CPU-count wall on either side, a
+SERVICE-TIME wall on both (τ ≈ 45–50 µs/sym: store insert + placement +
+serialize + `send_datagram` + estimator per symbol; on the receiver
+deserialize + estimator + BTreeSet + frontier + ack gen + inject
+hand-off). Dual-c1: both pipelines pay the multipath bookkeeping tax
+(emission degrades to ~17.5–18.5k sym/s, engine busy 86–92%) AND the
+spurious-retx flood eats 9% — aggregate 163–194 vs single 177–193.
+**The "engine sink ceiling" is a per-process pipeline service-rate
+pair (~19.5–20k sym/s send-side first, ~20–22k msgs/s recv-side just
+above it), not a threading deficit** — which is why AES-NI (#84) and
+core-count (this session) both failed to move it. Parallelizing
+per-path stages could in principle raise the AGGREGATE sink at
+c1-class cells — but no roadmap cell lives there: c7/c8 wire-classes
+sit at or below the wall with the wire already full.
+
+### STEP 2 — what was (not) built
+
+**`RWM_ENGINE_PAR` was NOT built — the third refutation, per the task's
+own gate.** Every menu item fails the profile: (a) per-path receiver
+tasks — the engine drains c7 with 20% headroom and an empty queue;
+(b) inject/delivery decoupling — inject is already a bounded-channel
+hand-off (`tun.tx`), and delivery latency is not the binder; (c) ack
+generation off the hot path — ack-path cost ~1.7% flat; (d) per-path
+sender emission tasks — the emission loop saturates only at c1-class
+cells, and at c7 the wire is already full (more emission capacity buys
+more waste, not more goodput). A parallel engine would have measured
+session drift (the #84/generation-inert lesson). Built and kept
+instead: **`RWM_RDIAG`** (env-gated, default OFF, receiver-side
+engine busy%/queue gauge — the instrument that made "arrival-limited
+vs service-limited" measurable at all) + the harness forward for
+`RWM_RDIAG` (no `RWM_ENGINE_PAR` forward: the knob does not exist).
+
+### STEP 3 — measurement (what a ±ENGINE_PAR battery reduces to with nothing built)
+
+Same-session interleaved mini-battery (100/200/400 MB single-run
+invocations ×4 reps, seeds 42+7, arms round-robin; PIN = both processes
+`taskset` to one core each mid-run):
+
+| arm | s42 (n) | s7 (n) |
+|---|---|---|
+| sc2 single PBP-H | 81.0 80.8 79.4 80.5 → **80.4 (4)** | 80.7 79.5 → **80.1 (2)** |
+| c7 PBP-H | 134.1 138.0 139.3 138.5 → **137.5 (4)** | 136.4 → **(1)** |
+| c7 PBP-H PINNED 1+1 | 135.2 136.8 135.6 136.0 → **135.9 (4)** | 137.0 140.5 → **(2)** |
+| single-c1 PB | 177.3 182.2 179.0 181.9 → **180.1 (4)** | 181.7 182.3 183.0 188.4 → **183.9 (4)** |
+| dual-c1 PB | 173.2 190.8 172.6 168.3 → **176.2 (4)** | 163.3 173.0 169.4 193.6 → **174.8 (4)** |
+
+plus the profile-phase c7 runs (133.3 134.1 137.8 131.3 138.7) and sink
+probes (184.7 185.5 193.3 189.0 sc1; 178.4 171.8 dc1). Verdict frame:
+c7 = 0.85–0.86 of same-session Σ (160.8/160.2) — consistent with the
+honest-cap/borrowing sessions (0.89–0.90 of their Σ; session drift in
+the singles, ratio stable); PINNED = UNPINNED at c7 both seeds (the ±
+arm that matters: ± five cores, Δ ≈ −1.6/+2.0 ≪ σ_s ≈ 2.4–3.0); sink
+ceiling single-c1 177–193 reproduces #84's 187.7 with dual-c1 BELOW it
+both seeds (the anti-scaling datum). Seed-7 topo-ping double-aborts
+took the documented toll (c7-s7 n=1 unpinned + 2 pinned; aborted
+invocations left stale-log lines, recorded and discounted; no captured
+result discarded). CPU recv·send per 200 MB @c7: unpinned 15.5–16.0 ·
+18.1–18.6 s; pinned 9.9 · 11.1 s at equal throughput — CPU/bit falls
+~38% when the scheduler stops migrating, the exact signature of a
+NON-CPU-bound system.
+
+### VERDICT + FLIP DECISION
+
+- **Roadmap item 2 is CLOSED as a refutation with the binder named**:
+  receiver/sender task parallelization is not the c7 (or c8) lever at
+  the current operating point — 1+1 pinned cores sustain 132–144, the
+  engine task idles 13–19% even at 142, and its inbound queue never
+  builds. The measured thresholds where parallelization WOULD become
+  the wall: ~19.5–20k sym/s sender emission / ~20–22k msgs/s receiver
+  engine ≈ 185–200 Mbit per sink — c1-class territory, above every
+  roadmap cell's wire class. #84's "~150–190" threshold estimate is
+  sharpened to its upper edge and attributed to the SENDER first.
+- **`RWM_ENGINE_PAR` default: not applicable — the knob does not exist**
+  (nothing to flip; the task's flip gate "default ON only on clean
+  sweep" is vacuously CLOSED-NO). `RWM_RDIAG` ships default OFF.
+- **The c7 0.85–0.90×Σ residual now has a measured owner: multipath
+  recovery-plane over-emission on a saturated wire** (retx share ×1.8,
+  repair share ×2.2–2.5 vs same-config singles; dual-c1's loss-free
+  9.3% retx flood is the controlled repro). SUCCESSOR lever (named,
+  NOT built, per discipline): multipath-aware recovery suppression —
+  cross-path in-flight awareness for the hole-refresh/tail-sweep
+  engine (do not re-pull a seq whose retransmit/repair is younger than
+  the other path's skew), the same family as the #86 flight witness
+  and the Copa-compete contention-recovery successor. It gates the
+  remaining ~12–15% of Σ at c7 AND the dual-c1 anti-scaling.
+- No default changed; shipped tree byte-identical with env unset.
+
+### Controls / discipline
+
+Liveness: percap/guard/honest/sampler echoes verified on every PBP-H
+run; PB/PBS runs carry none/path-scaled only. Same binary (40973e6b)
+every run; lscpu in every log header; all comparisons same-session
+interleaved; claimed effects are NULL effects with σ_s recorded, and the
+waste shares are cumulative counters over 83k–335k symbols per run,
+consistent across n=4+2 (sc2) and n=6+2 (c7) runs and both seeds. The
+RDIAG probe's own overhead: RDIAG-on runs (137.5, 142.0) sit inside the
+RDIAG-off spread (131.3–138.7) — instrument-neutral. VM lock held
+19:20–20:20 UTC, released after teardown; netns cleaned; binaries and
+logs preserved under /home/vibe/engpar/.
+
+### Tests
+
+`cargo test -p raptorpath --lib` 361/361 (probe tree, no new tests —
+the probe is read-only); `-p raptorpath-math` 136 green across suites;
+`gate_suite` 15/15 release; `mtu_blackhole_wedge` 2/2; `perf_loopback`
+8/8; `copa_sole_loopback` / `fmtcp_loopback` / `daps_loopback` 1/1
+release — the only code delta vs main is the
+default-off RDIAG probe (no ordering/delivery surface: suites +
+loopbacks green, no delivered-set change possible with the flag unset;
+with it set the probe only reads).

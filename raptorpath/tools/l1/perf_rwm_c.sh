@@ -80,6 +80,11 @@ fi
 [[ -n "${RWM_CODED_SRC:-}" ]] && TENV="$TENV RWM_CODED_SRC=$RWM_CODED_SRC"
 [[ -n "${RWM_NO_REACTIVE:-}" ]] && TENV="$TENV RWM_NO_REACTIVE=$RWM_NO_REACTIVE"
 [[ -n "${RWM_DIAG:-}" ]] && TENV="$TENV RWM_DIAG=$RWM_DIAG"
+# Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel):
+# busy% + inbound msg-queue depth on the RECEIVER (server log /tmp/rwm-s.log).
+# (RWM_ENGINE_PAR itself was NOT built -- the item-2 profile refuted it; see
+# goal-gate "Engine Parallelization".)
+[[ -n "${RWM_RDIAG:-}" ]] && TENV="$TENV RWM_RDIAG=$RWM_RDIAG"
 # r* burst-tail provisioning (task #46, paper 8.4.1): RWM_RSTAR_TAIL=0 is the
 # legacy GE-only r* arm (same-binary A/B); unset/1 = shipped tail-provisioned r*.
 [[ -n "${RWM_RSTAR_TAIL:-}" ]] && TENV="$TENV RWM_RSTAR_TAIL=$RWM_RSTAR_TAIL"

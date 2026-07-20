@@ -9069,6 +9069,80 @@ throughput circularity at c8-plain are the named remainders).
 
 ---
 
+### 16.23 Engine parallelization: the third threading refutation, and the walls that are actually there (2026-07-19, `feat/engine-parallel`)
+
+§16.19 refuted receiver parallelization below ~150 Mbit per sink and
+predicted it would become the lever above that threshold; the per-path
+accounting arc (§16.21–16.22) then moved the best symmetric operating
+point to 137–147 Mbit/s — at the threshold. This section is the
+profile-first test of that prediction, run at the best c7 arm (percap +
+guard + honest caps + witness, plain+BBR), and its result is a third
+refutation that finally names the wall the threshold estimate was
+standing in for.
+
+**The threading null, measured harder than §16.19.** At 132–144 Mbit/s
+aggregate the two processes pinned to ONE core each (taskset, whole
+process) sustain the full operating point on both seeds (pinned mean
+136.3, n=8; unpinned 136.2, n=10) — and the server-pinned arm posts the
+session's fastest run (143.9). Pinning removes ~40% of the measured CPU
+at equal throughput: the unpinned 1.34/1.59 cores per side are
+one-third scheduler-migration overhead, not parallel work. The flat
+profiles reproduce §16.19's shape at +35 Mbit: top symbol 5–8%
+(estimator/control math ~14–18% in aggregate), no stage to parallelize.
+
+**The new instrument.** A receiver-side gauge (`RWM_RDIAG`) samples the
+engine task's busy fraction (1 − time awaiting its select) and the
+inbound message-queue depth — the direct discriminator between "the
+single engine task is the service-rate wall" (busy → 100%, queue deep)
+and "the wall is upstream" (busy low, queue empty). At c7 the engine
+runs 81–87% busy with the queue near-EMPTY (avg 14–32 of 4096): it
+drains everything the wire delivers, with headroom. Its service wall,
+measured where it is actually approached (dual-c1 aggregate), is
+~20–22k msgs/s; the sender's emission loop saturates first, at
+~19.5–20k sym/s (single-c1: emission loop ≈ 1 core, wire and kernel
+idle — system-wide 2.6 of 6 cores, zero UDP drops). These two
+service-time walls (~45–50 µs/symbol of store/placement/serialize/
+send and deserialize/estimator/frontier/ack work respectively) bracket
+§16.19's "engine sink ceiling 187.7" exactly — and explain why neither
+AES-NI (§16.19) nor core count (here) ever moved it: τ per symbol is
+not reducible by more threads while the pipeline is one task deep on
+each side.
+
+**The actual c7 binder: the wire is full of recovery-plane waste.** At
+c7 the emission integral is ~1.34× source (retx 14.2–14.7% of source
+vs 7.5–9.1% for the SAME configuration single-path; proactive/reactive
+repair 15.5–19.2% vs 7.7–9.3%) — ~190 Mbit/s emitted on a 2×100 wire.
+The extra multipath waste (~16 pp of source ≈ 12–13% of the saturated
+wire) equals the measured Σ-gap (c7 = 0.85–0.86×Σ this session). The
+controlled proof is dual-c1: at GE 0.1% there is nothing real to
+recover, yet the dual arm retransmits 9.1–9.3% of source (single-c1:
+0.2%) and aggregates BELOW one path alone (174–176 vs 180–184) — a
+spurious cross-path recovery flood: per-path sequence gaps created by
+striping and inter-path skew are read as holes by the SACK-gap /
+hole-refresh / tail-sweep machinery, which re-pulls symbols whose
+originals or repairs are still in flight on the other path. This is
+the same spurious-retransmit class §16.22's flight witness caught at
+the attribution layer, now measured at the emission layer, and it is
+the fourth consecutive multipath wall that is control-plane, not
+compute (substrate CC → PMTU → pool law → recovery over-emission).
+
+**Disposition.** `RWM_ENGINE_PAR` was not built — a parallel engine
+would have measured session drift (the §16.14 lesson); the probe ships
+default-off. The parallelization threshold is re-stated with measured
+units: it is not a throughput ("~150–190 Mbit") but a symbol rate —
+~19.5–20k sym/s per sender process, ~20–22k msgs/s per receiver
+process — reachable only by c1-class wire aggregates. The named
+successor for the remaining c7 gap (and the dual-c1 anti-scaling) is
+multipath-aware recovery suppression: cross-path in-flight awareness
+in the hole-refresh/tail-sweep engine, i.e. do not re-pull a sequence
+whose latest transmission (any path) is younger than the current
+inter-path skew plus that path's RTprop — the emission-layer sibling
+of §16.22's flight witness. Per the measurement discipline it is
+named, not built, and gates on its own interleaved battery.
+
+---
+
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -9303,9 +9377,17 @@ asserted beyond its naming evidence.
    channel, and the honest-anchor c8-plain throughput circularity (third
    instance). This item is no longer a roadmap lever; the C8 0.9×Σ
    target is retired in favor of the pooled record.]**
-2. **Receiver/sender task parallelization** — live above ~150 Mbit/sink;
+2. ~~**Receiver/sender task parallelization** — live above ~150 Mbit/sink;
    the symmetric cell now operates at ~147 with the engine sink at 187.7.
-   The next C7 lever after flow control.
+   The next C7 lever after flow control.~~ **[CLOSED 2026-07-19, §16.23:
+   third refutation — 1+1 pinned cores sustain the full c7 operating
+   point both seeds; the engine task drains c7 with headroom (81–87%
+   busy, empty queue); the c7 binder is multipath recovery-plane
+   over-emission on a saturated wire (retx ×1.8, repair ×2.2–2.5 the
+   single-path share ≈ the Σ-gap), and the sink ceiling is the pair of
+   per-process service-time walls (~19.5–22k sym/s), c1-class only.
+   Successor lever: multipath-aware recovery suppression (named, not
+   built).]**
 3. **Unified-realtime stream-collapse attribution** (c3-1200B, 3/10 reps,
    p50 in seconds; candidates: EVICT-window × trailing-span interaction
    under sustained bursts, decode/delivery backlog, retention pressure).
