@@ -10838,3 +10838,139 @@ only; stale binary removed before every rebuild; battery + smoke logs
 and per-run diag preserved under `/home/vibe/consol/` (binary hashes in
 `BINARIES.txt`); seed-7 topo-abort count (75, all summary-less)
 recorded above.
+
+## Unified Shedding + Flip Battery (2026-07-21) — PRE-REGISTRATION (roadmap item 3; discipline item 11 — this block written BEFORE the build; branch `feat/unified-shedding`)
+
+**(a) Mechanism.** At overload the RLC-family reliable path serializes
+EVERYTHING behind the frontier — the COLLAPSE ATTRIBUTION's amplification:
+a whole-process transient backs up the stream, the in-order EVICT pipeline
+holds delivery 4×SRTT per hole round while the sender grinds stale
+retransmits oldest-first, and chained episodes turn a ~1-s stall into
+p50-seconds — while the streaming machine under the SAME transient sheds
+~1% of messages past its ~20-ms reorder horizon and its tails never move
+(§16.20.8: "at small δ, overload must be shed, not serialized"). Fix C =
+**δ-honest overload shedding for the unified realtime path**: drop (do not
+serialize behind) data that can no longer meet its deadline, priced by δ,
+bounded by ρ.
+
+**The (δ, ρ) semantics, stated precisely.** Shedding applies to
+DEADLINE-PRICED REALTIME delivery only — never to the reliable-transfer
+contract: the RETAIN-UNTIL-ACKED path (`window_reliable`, ρ = 1) is
+excluded BY CONSTRUCTION (the law is compiled out when `reliable`; the
+reliable reorder buffer never gives up on a hole, unchanged). On the
+EVICT/realtime path the contract is (δ, ρ) with ρ < 1: delivery within the
+deadline D(δ), and a residual loss allowance 1−ρ that the (δ, ρ, r) design
+already concedes. A symbol/message is SHEDDABLE iff BOTH:
+
+1. its projected delivery exceeds D(δ) — sender side: a retransmit of
+   seq s fired at age > D arrives after the receiver's own δ-horizon
+   give-up (send + owd + D), pure waste; receiver side: a hole held
+   longer than D can only serialize successors past THEIR deadlines;
+2. its loss stays within the 1−ρ budget — cumulative shed ≤ (1−ρ) of
+   the stream; beyond the budget the machine SERIALIZES (holds/keeps
+   retransmitting): ρ wins over δ, the completeness contract survives
+   overload.
+
+Both thresholds are DERIVED, no new constants, from the parameters the
+unified machine already carries (§16.20.3/§16.20.5):
+
+- D(δ) = min(b(hint)·RTprop, 2·RTprop) — the span law's own deadline
+  (b = ½ Realtime / 1 Auto / 2 Bulk; the same measured anchors);
+- 1−ρ = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)) — the §8.1 normal-
+  approximation residual the design leaves past in-window FEC at the
+  operating point (ε̂ = measured loss, r_live = the consumed taper rate,
+  A* = the live solvable-span width, σ²_burst = the GE burst factor):
+  the same ~1% class the streaming machine sheds. Receiver side (which
+  owns no r/A*): the loss-class bound 1−ρ_recv = ε̂_recv (holes given up
+  ≤ the channel's own measured loss fraction of the frontier) — shed is
+  intrinsically holes-only, so the realized fraction stays in the
+  FEC-residual class; the ε̂ bound is the serialize backstop.
+
+Sites: sender — the P_lost retransmit branch, the SACK-gap service loop,
+and (via the synthesized gap) the tail sweep drop past-deadline seqs from
+`retransmit_buffer`/`nack_retx_at` into a shed set (pruned at the
+cumulative frontier, the split_off twin); receiver — the in-order reorder
+hold becomes the δ-derived H = b·SRTT (the §16.20.3 "reorder_timeout IS
+the δ dial", replacing the bulk-shaped 4×SRTT ∈ [60, 300] ms clamp) while
+the budget holds, reverting to the legacy hold when it is spent. Env:
+part of the unified machine's realtime semantics under `RWM_UNIFIED`
+(not a separate knob); sub-gate `RWM_UNIFIED_SHED=0` reproduces the
+serializing arm for A/B. Composition: `RWM_ASTAR_ANCHOR` becomes default
+ON under `RWM_UNIFIED` (the span law ships with its repaired anchor —
+fix A gates this battery; `=0`/`RWM_ANCHOR_HYGIENE=0` still opt out).
+
+**(b) Predictions (effect size + cells).**
+
+1. The unified realtime collapse class (3/14 L0 base rate; 3/10 L1)
+   goes to ~0 with shedding ON (the environmental trigger is
+   seed/load-dependent — enough reps, honest incidence reporting).
+2. Unified p99 ≤ legacy-RLC at every realtime cell (the flip gate), and
+   within-class of streaming on tails at the standard cells (the 12–48×
+   crown row: stream p99 medians 40–45/50–55 at c2 on current defaults).
+3. Unified keeps its delivery-completeness advantage where ρ demands
+   it: the 99.4–100% vs 74–76% point (c3 perf cell) remains AVAILABLE
+   at the high-ρ setting — shedding is δρ-parameterized, not
+   unconditional (`RWM_UNIFIED_SHED=0` is that arm; with shedding ON
+   delivered% ≥ 1−ε̂-class ≈ 95%+, still ≫ streaming's 74–76%).
+4. A*-inertness resolution (pre-registered composition check): with
+   `RWM_ASTAR_ANCHOR` ON in the unified arm, spans reach derived width
+   within ~1–2 RTT of stream start ([SPAN] a*=derived, not 1) and
+   ru/rf rises well clear of the 9% inertness class (FDIAG at L0).
+5. Bulk parity holds (anchors hygiene-ON; the decoder swap was already
+   parity); knee cells c2r100/c2r200 show no unified regression vs
+   legacy at the same gates (M*/A* both anchored — first fully-live L1
+   look at the §16.20 depth law).
+
+**(c) Falsification.** If shedding-ON still collapses (outage-class reps
+with p50 in seconds at the c3-1200B cell), the amplification attribution
+is wrong → report, do not iterate; the build defaults to the deprecation
+register per discipline 11. If unified+shed loses the tail gate to
+legacy-RLC anywhere with no collapse class, the blocker is named and
+`RWM_UNIFIED` stays OFF. If delivered% falls below the 1−ε̂ class, the ρ
+bound is mis-derived → report.
+
+**(d) Derivation re-read for self-contained failure predictions.** Named
+bounds, none disqualifying, recorded: (1) the shed law cannot fix
+pure-rate overload (no holes to shed — a saturated link is the inner
+CC's job, not shedding's); the collapse class is stall×loss×recovery
+serialization, which IS hole-shaped. (2) At b=½ the sender-side deadline
+D = RTprop/2 sits BELOW one ARQ round (~1 SRTT), so within-budget the
+realtime machine becomes FEC-only recovery — exactly the streaming
+machine's operating point; the risk is delivered% falling toward 1−ε̂ if
+FEC is inert — which is why fix A (`RWM_ASTAR_ANCHOR` ON) is bound into
+the same arm and its liveness (prediction 4) is a gate, not a hope.
+(3) The receiver δ-hold (≈ 20–45 ms at c3) re-enters the regime the
+4×SRTT hold was built against ("holes force-delivered just before their
+repair arrived", pre-P10b) — but that lesson was measured with LEADING-
+window repair and ARQ-round recovery; the unified span law recovers
+in-window within ~D by construction, and the ρ budget reverts the hold
+to legacy when give-ups exceed the loss class. (4) The 2026-07-07 SACK
+flow-control null ("sender-side decoupling alone does not lift c2")
+does not bind: shedding is not a throughput lever here, it is a tail/
+serialization lever; c3-class tails are the cell.
+
+**Battery (pre-registered).** L0 FIRST (dev box, its own era):
+`unified_stream_l0` 4 arms — stream / unified+shed / unified-no-shed
+(`RWM_UNIFIED_SHED=0`) / legacy-rlc — ≥12 seeds interleaved, collapse
+incidence vs the 3/14 base + tail + delivered% per arm; one FDIAG rep
+per unified arm for the A*/ru-rf check. Then L1 (VM lock protocol, CRLF,
+FOREGROUND polling only, rp-* netns only, rm stale binary first,
+liveness echoes + env + sha256 recorded, seeds 42+7, state runtimes,
+seed-7 topo-abort ns recorded): (i) 3-arm tail_matrix realtime
+(stream / unified+shed / legacy-rlc) p50/p99 + delivered count at c2 AND
+c3 ×8 reps/seed — THE GATE: unified+shed ≥ legacy-RLC everywhere and
+within-class of streaming, delivered%/completeness reported; (ii) bulk
+parity spot (unified vs gen-sys, sc2 + c7, ×4); (iii) the rstar realtime
+cell (c3 perf realtime ×8: delivered% + cod/src — does the span law +
+TAPER_R realize r* at the wire; the §8.4.1 chain's last link); (iv) knee
+cells c2r100/c2r200 ×4 (unified vs legacy, gen-sys, anchors ON both
+arms). FLIP DECISION (pre-registered): `RWM_UNIFIED` default ON iff
+tails ≥ legacy-RLC everywhere + no collapse class + bulk parity + knee
+no-regression, both seeds. If it flips: streaming-machine retirement
+enters the DEPRECATION REGISTER with a re-test clause (the 12–48× crown
+is streaming's; retirement requires unified to hold that class at every
+historic tail cell in a LATER pass — the register argues it, nothing is
+retired this pass). If it does not flip: the blocker is named, register
+updated.
+
+*(Results below this line were written after the build/batteries ran.)*
