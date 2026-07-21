@@ -86,7 +86,8 @@ impl LossEstimator {
             rx_ewma_loss: 0.0,
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
-            rtt_seed_from_sample: crate::config::anchor_gate("RWM_MSTAR_ANCHOR"),
+            // DEFAULT ON (2026-07-21, "Consolidation" battery).
+            rtt_seed_from_sample: crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true),
             rtt_seeded: false,
             ewma_throughput: 0.0,
             consecutive_losses: 0,

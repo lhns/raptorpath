@@ -4726,10 +4726,13 @@ async fn run_window_sender(
     // once the anchors are live (rule 3: a backstop is for genuine cold-start
     // only — cold-start M* = 2 reproduces the legacy default, so the static
     // value governs exactly until the first measured bucket lands).
-    let mstar_anchor = crate::config::anchor_gate("RWM_MSTAR_ANCHOR") && generation;
+    // DEFAULT ON (2026-07-21, "Consolidation" battery: plain subset inert
+    // within sigma at every bulk cell on both seeds, tail crown unregressed;
+    // the generation-gated knee evidence is 16.21's).
+    let mstar_anchor = crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) && generation;
     if mstar_anchor {
         info!("M* anchor hygiene ACTIVE (RWM_MSTAR_ANCHOR: measured RTprop floor + fast-seed rate filter + derived win backstop)");
-    } else if crate::config::anchor_gate("RWM_MSTAR_ANCHOR") {
+    } else if crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1) for the
         // PLAIN-mode subset of the M* repair, which is NOT generation-gated:
         // (a) the peer-report RTT no longer feeds the local estimators (the
@@ -5275,7 +5278,12 @@ async fn run_window_sender(
     // The engine sink is NOT the binder here: single-path c1 sinks 187.7
     // Mbit/s through the same receiver task, and pinning the C7 receiver to
     // one core costs only −8% at the default store.
-    let store_paths_on = crate::config::env_flag("RWM_STORE_PATHS", false);
+    // DEFAULT ON (2026-07-21, "Consolidation" LOO battery: removal from the
+    // composed stack re-opens the c7 collapse class (86-97 Mbit runs, both
+    // seeds) and drops the mean; no cell regressed >>sigma. The c8 sub-sigma
+    // cost vs the legacy pool under SACK-release is the register's WATCHED
+    // follow-up — see goal-gate "Consolidation".)
+    let store_paths_on = crate::config::env_flag("RWM_STORE_PATHS", true);
     let store_path_pool: usize = std::env::var("RWM_STORE_PATH_POOL")
         .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2048);
     if store_paths_on && plain_dyn_cap {
@@ -5799,13 +5807,17 @@ async fn run_window_sender(
     let mut gl_sum: (u64, u64, u64, u64) = (0, 0, 0, 0);
 
     // ── feat/recovery-suppression: multipath recovery suppression ─────────
-    // (`RWM_RECOV_MP`, default OFF ⇒ shipped byte-identical; plain window
-    // reliable mode only — generation mode has no per-seq ARQ to suppress).
+    // (`RWM_RECOV_MP`, DEFAULT ON 2026-07-21 — the "Consolidation" LOO
+    // battery: removal costs −12.3/−13.9 Mbit >>sigma at c7 on both seeds
+    // (retx 18k vs 5.4k) with the dual-c1 retx flood (13-30k) re-appearing;
+    // neutral within sigma everywhere else. `=0` is the legacy global-clock
+    // opt-out arm. Plain window reliable mode only — generation mode has no
+    // per-seq ARQ to suppress).
     // Sub-gates for trace attribution: _LAW (per-flight hole law, default ON
     // under the umbrella), _SERIAL (per-path batch serial namespaces,
     // default OFF — see below).
     let recov_mp =
-        crate::config::env_flag("RWM_RECOV_MP", false) && reliable && !generation;
+        crate::config::env_flag("RWM_RECOV_MP", true) && reliable && !generation;
     let recov_mp_law = recov_mp && crate::config::env_flag("RWM_RECOV_MP_LAW", true);
     // The serial namespaces are DIAGNOSTICALLY true (the per-path loss
     // estimates are provably poisoned by global serials under striping —
@@ -10049,7 +10061,7 @@ fn handle_control_message(
                 // processed in a stall quarantine are skipped too.)
                 let gap_q = crate::control::anchor::stall_witness()
                     .is_some_and(|w| w.quarantined_now());
-                if !crate::config::anchor_gate("RWM_MSTAR_ANCHOR") && !gap_q {
+                if !crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) && !gap_q {
                     path.estimator.record_rtt(rtt_duration);
                     // feat/copa-wire-signal: wire-clocked CC delay term (see
                     // the Ack arm above).

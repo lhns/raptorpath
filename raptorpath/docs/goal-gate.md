@@ -114,8 +114,8 @@ in the order found, each fixed or refuted:
 | 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
-| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid: **pooled path-scaled VINDICATED at c8, percap the symmetric-cell tool**; all OFF | §16.19, §16.22; "Per-Path Outstanding Accounting" |
-| 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; OFF | "Multipath Recovery Suppression"; paper §16.24 |
+| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED, ships DEFAULT ON since 2026-07-21 ("Consolidation" LOO battery): path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path) — removal re-opens the c7 collapse class both seeds; per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid; percap family stays OFF. **c8 WATCH (2026-07-21): under SACK-release the LEGACY pool reads better at c8 (0.85–0.87×Σ vs the stack's 0.72–0.76) — the §16.22 pooled-c8 verdict was pre-SR and has MOVED; c8-aware pool law = the named follow-up** | §16.19, §16.22; "Per-Path Outstanding Accounting" |
+| 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; **DEFAULT ON since 2026-07-21 ("Consolidation": removal −12.3/−13.9 ≫σ at c7, dual-c1 retx flood returns; `=0` = legacy opt-out)** | "Multipath Recovery Suppression"; paper §16.24 |
 | 9 | **frontier-clocked store release** | the retention store frees slots only on the CUMULATIVE frontier, so SACKed-but-not-cumulative symbols hold flow-control slots a full frontier round — at c7 the store recycles at frontier latency, not path rate (the §16.24 residual: wire un-full, goodput stopped) | FIXED, ships DEFAULT ON: `RWM_STORE_SACK_RELEASE` = SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the frontier (slot release ≠ recoverability — the SACK_PRUNE distinction); c7 0.885→0.959×Σ SR-only, **1.018–1.045×Σ composed with `RWM_RECOV_MP`** (both seeds); sc2 +4.3/+2.9 ≫σ; dual-c1 composed +20–22 above single; occupancy 3,157→1,460 at 167k slots released/200 MB with retx FALLING | "SACK-Clocked Store Release"; paper §16.25 |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
@@ -130,17 +130,26 @@ coding is free, not free throughput).
 | single-c2 plain | 76–79 Mbit/s | plain + `RWM_QUIC_CC=bbr` | legacy Cubic-under: 17 |
 | single-c2 gen-sys | 75.5–75.7 (0.97–1.0× plain+BBR) | GPB stack + `--window-systematic-repair` | FEC tax ≈ 0.37 s recv CPU / 25 MB |
 | single-c3 (lossy 20 Mbit) | 15.6–15.9 (the recovery ceiling) | plain+BBR; gen-sys 14.9–15.1 = 0.95× (pre-divide) | legacy Cubic: 3.2 |
-| C7 (c2+c2) | **165.9–168.7 = 1.018–1.045×Σ** (PBS + `RWM_STORE_SACK_RELEASE` (now default) + `RWM_RECOV_MP`, 2026-07-21 §16.25; SR-only 152.3–154.8 = 0.93–0.96×Σ) | previous: PBP (percap) 136.5–147.4 = 0.87–0.97×Σ; + `RWM_RECOV_MP` 0.88–0.89×Σ (§16.24) | PB baseline 100–105 |
-| C8 (c2+c3) | 72.3–75.8 = 0.74–0.80×Σ | PBS (pooled path-scaled) | PB baseline 44–65 (bimodal) |
+| C7 (c2+c2) | **166.3–166.7 = 0.982–0.988×Σ AT THE SHIPPED DEFAULT** (the consolidation stack, 2026-07-21; same class as §16.25's composed 1.018–1.045×Σ vs the base-arm Σ) | SR-only (pre-stack ship) 146.5–148.0 = 0.86–0.88×Σ; PB legacy-era baseline 100–105 | "Consolidation" |
+| C8 (c2+c3) | **85.9–87.4 = 0.854–0.870×Σ** (best measured: SR + `RWM_RECOV_MP` + anchors on the LEGACY pool — the consolidation loo-pbs arm, both seeds, σ 2.9–3.8) | shipped default (stack incl. path pool): 72.6–76.1 = 0.72–0.76×Σ — the c8 WATCH (wall #7 row); historic pooled record 0.74–0.80×Σ | PB legacy-era baseline 44–65 (bimodal) |
 | engine sink | 187.7 Mbit/s (177–193 re-measured 2026-07-19) | single-path c1, 1 receiver task | attributed: sender-emission service wall ~19.5–20k sym/s first, receiver engine ~20–22k msgs/s just above; NOT thread-count (pins −7%/−2%); dual-c1 sinks BELOW single (spurious-retx flood 9.3%) — "Engine Parallelization"; flood KILLED by `RWM_RECOV_MP` (dual 192–193 ABOVE single, retx 0.3–0.7%; §16.24) |
 | realtime delivery, c3 100 KB | unified 99.4–100% / streaming 73.8–76.0% | `RWM_UNIFIED=1` vs shipped | ×3–4 completer-median cost |
 | message-tail p99 | 12–48× vs quinn/kernel-TCP at C2 (pre-divide crown, flip-gate-defended) | shipped streaming Realtime | post-divide c3 matrix: legacy-RLC medians best (§5 below) |
 
-**Default honesty:** the SHIPPED defaults still ride stock Cubic with the
-1024-pool law — the best-measured configs above are opt-in knobs
-(`RWM_QUIC_CC`, `RWM_GEN_PIPE`, `RWM_STORE_PATHS`). What ships ON today:
-the MTU floor (wall #2) and the corrected r\* solver (`RWM_RSTAR_TAIL=1`).
-Every other flip is gated on a named battery (roadmap, §6).
+**Default honesty (rewritten 2026-07-21 — the scandal is CLOSED):** the
+shipped default IS the best-measured composed configuration. What ships ON
+with everything unset: BBR-under (`RWM_QUIC_CC` unset ⇒ bbr, Item 0),
+SACK-clocked store release (`RWM_STORE_SACK_RELEASE`, §16.25), the
+path-scaled outstanding pool (`RWM_STORE_PATHS`), multipath recovery
+suppression (`RWM_RECOV_MP`), the anchor-hygiene pair
+(`RWM_MSTAR_ANCHOR`, `RWM_CLOCK_GAP`), the MTU floor (wall #2) and the
+corrected r\* solver (`RWM_RSTAR_TAIL`). Each of the four consolidation
+members carries its own leave-one-out row on both seeds ("Consolidation",
+2026-07-21); the legacy behaviors remain the explicit `=0` opt-out arms.
+The one place the default is knowingly not the best-measured config is
+heterogeneous c8 (the wall #7 c8 WATCH — a named, pre-registerable
+follow-up worth +11–13 Mbit); everything refuted is in the DEPRECATION
+REGISTER above with a walls-active argument and a re-test clause.
 
 ### 2. The CC policy surface — substrate CC is POLICY (`RWM_QUIC_CC`)
 
@@ -10624,3 +10633,190 @@ dual cell.
   teardown; CRLF converted after every sync (discipline 10); rp-* netns
   only; binaries + logs preserved under `/home/vibe/sackrel/` (+
   `/home/vibe/ccflip/` for the Item-0 identity).
+
+## Consolidation (2026-07-21) — the composed default stack: PRE-REGISTRATION (roadmap item 2; discipline item 11 — this block written before the battery's results were parsed; the flip rule was fixed in the approved roadmap before launch; branch `feat/consolidation`)
+
+**(a) Mechanism.** Not a new build — COMPOSITION. Four measured winners sit
+default-OFF because each was gated on a per-knob clean sweep while the
+features interact (the pile-up root cause named in the roadmap). The
+candidate default stack, tested as ONE unit on top of the current shipped
+defaults (BBR-under + `RWM_STORE_SACK_RELEASE`, both default ON since
+2026-07-21): `RWM_STORE_PATHS=1` (wall #7's fix) + `RWM_RECOV_MP=1`
+(wall #8's fix) + `RWM_MSTAR_ANCHOR=1` + `RWM_CLOCK_GAP=1` (the
+estimator-hygiene pair). `RWM_PLAIN_RS` joins ONLY if a c8 composition
+probe shows its known −3–5 Mbit witness cost resolved in composition.
+
+**(b) Predictions (effect size + cells).** (1) STACK ≥ every current best:
+c7 ≈1.0×Σ-class (the §16.25 composed 1.018–1.045×Σ carries), c8 ≥ PBS-class
+0.74–0.80×Σ, dc1 above single, sc2/sc3 at-or-above the SR-arm singles.
+(2) LOO-STORE_PATHS and LOO-RECOV_MP each fall ≫σ below STACK at c7 (their
+individual deltas were +40–50 and +5–13 Mbit) — both qualify easily.
+(3) The anchor pair must PROVE marginal value in composition: M*'s knee
+evidence is generation-gated, so its plain-cell LOO rows may be
+statistically identical — in that case its flip decision MOVES to the
+generation-default question and is recorded, not forced. (4) The realtime
+tail crown (shipped streaming p99 class at c2) survives the stack env
+unchanged — STORE_PATHS/RECOV_MP are reliable-window-gated (inert at that
+cell by construction), so only the anchor pair could move it. (5)
+Cross-traffic c2 share vs 1 Cubic flow ≈ the documented BBR-under class
+(share documented as a caveat, NOT a gate).
+
+**(c) Falsification / flip rule (pre-registered).** A member joins the
+default iff its LOO row shows removal HURTS (or is neutral while the member
+wins elsewhere) with no cell regressed ≫σ on both seeds — the roadmap's
+strictly-better criterion. A member whose LOO row shows removal HELPS at
+any cell ≫σ on both seeds stays OFF and is recorded. The tail crown
+regressing ≫ its documented rep spread under the stack is a STOP-and-report
+(the stack does NOT ship). c8's known bimodality means no c8-only ≪σ delta
+can gate any member in either direction.
+
+**(d) Derivation re-read for self-contained failure predictions.** Known
+composition risks, none disqualifying: (1) SR already banks part of the
+frontier-latency win MP used to convert (§16.25 measured them composing:
+1.018–1.045×Σ); (2) M*'s plain-live subset (peer-report RTT-feed
+suppression + seed-from-sample) touches the SAME estimator the SR/MP laws
+read clocks from — a small c7 interaction in either direction is possible
+and is exactly what the LOO row exists to measure; (3) CLOCK_GAP quarantine
+discards estimator samples after process stalls — at a VM cell with real
+scheduler stalls this can only defer estimator updates, bounded by the
+quarantine cap; (4) the PLAIN_RS witness cost is the pre-measured −3–5 Mbit
+(§16.21) — the probe asks whether the honest-cap law composes it away at
+c8; the derivation does not predict it does (the witness samples on the
+send path regardless), so the prior is AGAINST inclusion.
+
+**Battery (pre-registered).** VM protocol per MEASUREMENT DISCIPLINE 1–10:
+seeds 42+7 ×8 interleaved round-robin per rep, fresh tunnel per invocation,
+same binary every arm, liveness echoes asserted per arm (SR default-ON echo
+on every arm; PBS/MP/MS/GAP echoes matched to each arm's expectation, both
+directions), env + sha256 + lscpu recorded, same-session Σ singles per arm
+config, seed-7 topo-abort protocol. Arms: ship (env unset), stack, LOO ×4,
+stack+RS (c8 only). Cells: c7/c8/dc1 (all arms) + sc1 (ship, stack) +
+sc2/sc3 (ship, stack, LOO-MP/MS/GAP; LOO-PBS ≡ stack at N=1 — STORE_PATHS
+is N≥2-gated) + tail_matrix c2 `stream` vs `stack` ×5/seed + cross-traffic
+c2 `bbr`±stack env ×5/seed. Priority under VM-time pressure (pre-declared):
+LOO c7/c8/dc1 first, then singles, then tail, then cross-traffic (cut
+cross-traffic first, say so). Driver `tools/l1/consol_{battery,all}.sh`.
+
+*(Results below this line were written after the battery ran.)*
+
+### L1 battery RESULTS (VM 10.1.5.16, 2026-07-21 10:35–14:40 UTC; binary sha256 773b188a69194166… = commit 5daceab, SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; 1 run/invocation, 31 arms interleaved round-robin per rep ×8 reps, fresh tunnel per invocation, seeds 42 AND 7, RWM_GEN=0 RWM_DIAG=1 everywhere; per-arm 5-echo liveness assertion (SR/PBS/MP/MS/GAP, both directions): s42 **0 mismatches over 248/248 completed invocations**, s7 **0 completed-run mismatches over 173 completed** (75 seed-7 topo-ping aborts, every one verified SUMMARY-LESS with only the documented stale-echo class, discipline 8 — n recorded per arm, no captured result discarded); drivers `tools/l1/consol_{battery,all}.sh`, logs `/home/vibe/consol/{battery-s42,battery-s7,tail-s42,tail-s7,xt-s42,xt-s7,all,run}.log` + per-run client/server logs under `/home/vibe/consol/diag/`; lock `/tmp/rwm-vm.lock` held 10:34 UTC → released after teardown)
+
+Arms: ship = env unset (the current shipped defaults: BBR-under +
+`RWM_STORE_SACK_RELEASE`, legacy 1024 pool); stack = ship +
+`RWM_STORE_PATHS=1 RWM_RECOV_MP=1 RWM_MSTAR_ANCHOR=1 RWM_CLOCK_GAP=1`;
+loo-X = stack minus member X; stack-rs = stack + `RWM_PLAIN_RS=1` (c8
+only). Σ = same-session same-env singles (2×sc2 at c7; sc2+sc3 at c8).
+dnf=0 on ALL completed runs, both seeds.
+
+**c7 (the Σ-gap cell), mean ± σ_s (n) → vs Σ:**
+
+| arm | s42 | vs Σ | s7 | vs Σ |
+|---|---|---|---|---|
+| ship | 146.51 ± 5.23 (8) | 0.864 | 147.98 ± 1.41 (5) | 0.878 |
+| **stack** | **166.31 ± 2.13 (8)** | **0.982** | **166.68 ± 2.76 (6)** | **0.988** |
+| loo-pbs | 135.86 ± 38.43 (8) — **collapse class 3/8: 86.0/86.1/96.9** | 0.802 | 156.33 ± 15.08 (4) — collapse 1/4: 133.8 | 0.926 |
+| loo-mp | 154.01 ± 2.24 (8), retx 18.0k | 0.909 | 152.77 ± 2.31 (6), retx 18.4k | 0.905 |
+| loo-ms | 166.16 ± 1.45 (8) | 0.981 | 168.04 ± 1.18 (6) | 0.996 |
+| loo-gap | 167.23 ± 1.61 (8) | 0.987 | 164.72 ± 4.26 (3) | 0.976 |
+
+**c8 (asymmetric), mean ± σ_s (n) → vs Σ:**
+
+| arm | s42 | vs Σ | s7 | vs Σ |
+|---|---|---|---|---|
+| ship | 83.23 ± 1.59 (8) | 0.825 | 81.00 ± 3.83 (4) | 0.808 |
+| stack | 72.64 ± 9.61 (8) | 0.722 | 76.07 ± 10.46 (4) | 0.758 |
+| **loo-pbs** | **85.89 ± 3.75 (8)** | **0.854** | **87.39 ± 2.88 (6)** | **0.870** |
+| loo-mp | 74.75 ± 15.19 (8) | 0.743 | 82.96 ± 9.14 (4) | 0.826 |
+| loo-ms | 68.35 ± 16.80 (8) | 0.679 | 80.93 ± 10.46 (6) | 0.806 |
+| loo-gap | 75.57 ± 12.72 (8) | 0.751 | 77.05 ± 10.95 (5) | 0.767 |
+| stack-rs | 79.11 ± 7.35 (8) | 0.786 | 87.98 ± 4.29 (4) | 0.876 |
+
+**dual-c1 (anti-scaling control) vs same-session sc1:**
+
+| arm | s42 (sc1-ship 191.8, sc1-stack 192.8) | s7 (sc1-ship 194.0, sc1-stack 196.0) |
+|---|---|---|
+| ship | 190.46 ± 18.37 (8), retx 28.6k | 195.81 ± 18.61 (8), retx 13.4k |
+| **stack** | **208.41 ± 22.02 (8), retx 2.8k** (+15.6 above single) | **211.15 ± 27.78 (8), retx 3.1k** (+15.2) |
+| loo-pbs | 208.65 ± 11.43 (8) | 203.38 ± 8.43 (8) |
+| loo-mp | 194.90 ± 29.70 (8), retx 29.9k | 208.83 ± 37.10 (8), retx 19.8k |
+| loo-ms | 219.13 ± 20.38 (8) | 203.72 ± 13.49 (8) |
+| loo-gap | 214.69 ± 23.21 (8) | 222.05 ± 29.07 (8) |
+
+**Singles (Σ terms + N=1 inertness):** sc2 all five arms within
+84.26–85.04 both seeds (spread < 1σ_s — every member inert at N=1, as
+constructed); sc3 within 15.93–16.16 both seeds. sc1-stack =
+sc1-ship ± σ.
+
+**Tail crown (tail_matrix c2, shipped streaming Realtime, `stream` vs
+`stack` env, 5 reps/arm/seed, warm tunnel):** p50 ~8.0–8.6 ms IDENTICAL
+across arms and seeds; per-rep p99 medians [min–max]: s42 stream 43
+[35–44] / 55 [44–171], stack 40 [36–43] / 45 [39–71] (400B/1200B); s7
+stream 42 [36–49] / 50 [39–60], stack 40 [36–57] / 53 [40–88]. Stack ≤
+stream at 3/4 cells, +3 ms at s7-1200B — deep inside the rep spread.
+**The 12–48× crown SURVIVES the stack env** (STORE_PATHS/RECOV_MP are
+reliable-window-gated = inert here by construction; the live members are
+the anchor pair, echo-verified `clock-gap estimator hygiene ACTIVE` +
+`M* peer-report RTT-feed suppression ACTIVE` on both endpoints).
+
+**Cross-traffic c2 (one pass, documented share — a caveat, NOT a gate):**
+stack (BBR default + stack env) vs 1 established Cubic flow: rp share
+0.956/1.0/0.964/0.961/1.0 (s42), 0.937/0.978/0.967/1.0/0.941 (s7); ship
+reference 0.896–1.0 (s42), 0.957–1.0 (s7, n=4). Same class as the
+documented BBR-under fairness at the GE c2 cell (0.95–0.96 — Cubic is
+Mathis-bound there); the stack members do not move fairness. The clean-
+bottleneck contention story is unchanged (goal-gate "Copa Competitive
+Mode + Cross-Traffic"; the named blocker there is CC-independent).
+
+### Per-member LOO verdicts vs the pre-registered flip rule
+
+- **`RWM_STORE_PATHS` — FLIP ON.** Removal from the stack re-opens a c7
+  COLLAPSE CLASS on both seeds (3/8 runs at 86.0–96.9, 1/4 at 133.8 —
+  the pool-starvation mode the member was built to kill) and costs
+  −30.5/−10.3 mean; dc1/singles neutral. No cell regressed ≫σ on either
+  seed. **Recorded honestly — the c8 WATCH:** at c8 the stack sits
+  BELOW loo-pbs on both seeds (0.722/0.758 vs 0.854/0.870×Σ) and below
+  the SR-only ship arm (0.825/0.808), at ~1.1–1.4σ_s per seed — under
+  the pre-registered bimodality clause this cannot gate the member, and
+  the shipped stack's c8 (0.72–0.76×Σ) does not regress the HISTORIC
+  pooled record class (0.74–0.80×Σ) — but the direction is consistent
+  across seeds and the register carries the named follow-up: under
+  SACK-release the legacy 1024 pool has become the better c8 pool law
+  (the §16.22 "pooled VINDICATED at c8" verdict was pre-SR and has
+  MOVED); a c8-aware pool law (asymmetric scaling or per-topology
+  gating) is the next pre-registerable item, and it can bank a measured
+  +11–13 Mbit at c8.
+- **`RWM_RECOV_MP` — FLIP ON.** Removal costs −12.3/−13.9 ≫σ_s at c7 on
+  both seeds (retx 18.0k/18.4k vs 5.4k) and re-opens the dual-c1 retx
+  flood (29.9k/19.8k vs 2.8k/3.1k, with the s7 bimodal low runs
+  171–180 returning); c8/singles neutral within σ. No cell regressed ≫σ.
+- **`RWM_MSTAR_ANCHOR` — FLIP ON (on the "neutral + wins elsewhere"
+  clause).** Every plain bulk LOO row is inside σ on both seeds (c7
+  −0.15/+1.4; c8/dc1/singles within their σ) — the plain-live subset
+  (peer-report RTT-feed suppression + estimator seed-from-sample,
+  echo-verified per arm) is measured FREE at the bulk cells; the tail
+  cell is unregressed. Its wins are elsewhere and recorded: the M* knee
+  engagement (r100 +25/31%, r200 +62/82%, §16.21) is GENERATION-gated —
+  so the knee benefit ships only for gen-mode arms, and the
+  generation-default question inherits it (noted per pre-registration;
+  the plain default banks the hygiene subset at zero measured cost).
+- **`RWM_CLOCK_GAP` — FLIP ON (same clause).** Bulk rows inside σ both
+  seeds (sign flips seed-to-seed → noise); tail cell unregressed;
+  echo-verified live on every arm. Its win is the §16.21 post-stall
+  estimator-poisoning discard (the realtime collapse-attribution family).
+- **`RWM_PLAIN_RS` — NOT flipped; probe result recorded.** The c8
+  composition probe shows the −3–5 Mbit witness cost RESOLVED in
+  composition — stack-rs ≥ stack on both seeds (+6.5/+11.9, sub-σ vs the
+  stack arm's σ but σ-tight itself: 79.11 ± 7.35 / 87.98 ± 4.29, the
+  best-or-equal c8 arm at s7). Left OUT this pass because the inclusion
+  bar for a DEFAULT is the full LOO criterion and RS was probed at ONE
+  cell (no c7/dc1/tail/singles composition rows, and its default would
+  also engage `RWM_HONEST_CAP` semantics untested in this composition).
+  Named flip candidate: the c8-aware pool follow-up battery should carry
+  RS as a full stack member.
+
+**FLIPS LANDED (defaults in code, 2026-07-21):** `RWM_STORE_PATHS=1`,
+`RWM_RECOV_MP=1`, `RWM_MSTAR_ANCHOR=1`, `RWM_CLOCK_GAP=1` by default
+(`=0` = the per-member legacy opt-out arms; `RWM_ANCHOR_HYGIENE=0` turns
+the anchor family off as a group). The shipped default IS the composed
+stack: c7 0.982/0.988×Σ, dual-c1 +15 above single with retx ×10 down,
+tail crown intact, singles identical, fairness class unchanged.

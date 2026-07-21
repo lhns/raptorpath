@@ -46,7 +46,8 @@ fi
 [[ -n "${RWM_STORE:-}" ]] && TENV="$TENV RWM_STORE=$RWM_STORE"
 # Path-scaled outstanding pool (task #84, feat/recv-parallel): the plain-
 # reliable multipath store-starvation fix — cap = clamp(gain·N·pipe, floor,
-# N·pool) for N>=2 live paths; N=1 / unset = legacy byte-identical.
+# N·pool) for N>=2 live paths; N=1 = legacy bit-exact. DEFAULT ON since
+# 2026-07-21 (goal-gate "Consolidation"); =0 is the legacy-pool opt-out arm.
 [[ -n "${RWM_STORE_PATHS:-}" ]] && TENV="$TENV RWM_STORE_PATHS=$RWM_STORE_PATHS"
 [[ -n "${RWM_STORE_PATH_POOL:-}" ]] && TENV="$TENV RWM_STORE_PATH_POOL=$RWM_STORE_PATH_POOL"
 # Per-path outstanding accounting (task #86): cap_i = clamp(gain·rate_i·echoRTT_i,
@@ -99,8 +100,9 @@ fi
 [[ -n "${RWM_TAPER_R:-}" ]] && TENV="$TENV RWM_TAPER_R=$RWM_TAPER_R"
 # feat/recovery-suppression: multipath recovery suppression (the fifth-wall
 # lever, goal-gate 16.23 successor) — per-flight RFC9002-style hole law +
-# per-path batch serial namespaces. Default OFF in the binary; sub-gates
-# _LAW/_SERIAL are the trace-attribution probe arms.
+# per-path batch serial namespaces. DEFAULT ON since 2026-07-21 (goal-gate
+# "Consolidation"); =0 is the legacy opt-out arm; sub-gates _LAW/_SERIAL are
+# the trace-attribution probe arms.
 [[ -n "${RWM_RECOV_MP:-}" ]] && TENV="$TENV RWM_RECOV_MP=$RWM_RECOV_MP"
 [[ -n "${RWM_RECOV_MP_LAW:-}" ]] && TENV="$TENV RWM_RECOV_MP_LAW=$RWM_RECOV_MP_LAW"
 [[ -n "${RWM_RECOV_MP_SERIAL:-}" ]] && TENV="$TENV RWM_RECOV_MP_SERIAL=$RWM_RECOV_MP_SERIAL"

@@ -158,7 +158,10 @@ impl Default for StallWitness {
 pub fn stall_witness() -> Option<&'static StallWitness> {
     static W: std::sync::OnceLock<Option<StallWitness>> = std::sync::OnceLock::new();
     W.get_or_init(|| {
-        if crate::config::anchor_gate("RWM_CLOCK_GAP") {
+        // DEFAULT ON (2026-07-21, "Consolidation" battery: bulk cells inert
+        // within sigma on both seeds, tail crown unregressed, the post-stall
+        // poisoning fix wins at the realtime family — goal-gate).
+        if crate::config::anchor_gate_default("RWM_CLOCK_GAP", true) {
             Some(StallWitness::new())
         } else {
             None
