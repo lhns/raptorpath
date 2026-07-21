@@ -10567,9 +10567,17 @@ dual cell.
   substrate both sides).
 - Suites on the flipped default: lib 371/371, raptorpath-math all
   green, release gate_suite 15/15, mtu_blackhole_wedge 2/2,
-  perf_loopback 8/8, copa_sole/fmtcp/daps/recov_mp loopbacks 1/1;
-  default-env L1 smoke reproduces the SR arms with the liveness echo
-  (recorded below).
+  perf_loopback 8/8, copa_sole/fmtcp/daps/recov_mp loopbacks 1/1.
+- **Default-env L1 smoke of the SHIPPED binary** (env fully unset —
+  BBR default + SR default + legacy 1024 pool; binary sha256
+  6cc5c85816333906… = commit a52105d, 2026-07-21 10:15 UTC, seed 42,
+  log `/home/vibe/sackrel/default-smoke.log`): c7 **148.2/148.8**
+  Mbit/s (0.91×Σ on the LEGACY pool — vs 0.885×Σ for the path-scaled
+  baseline and ~20 for the pre-flip Cubic-era default), sc2
+  **83.8/85.2** (= the battery's SR arm 84.4–85.0), dnf=0, `SACK-
+  clocked store release ACTIVE` + BBR echoes present on every run,
+  srel gauge live (163–165k slots released per 200 MB). The shipped
+  default now carries both flips end to end.
 - Ops: VM lock `/tmp/rwm-vm.lock` held 08:19 UTC → released after
   teardown; CRLF converted after every sync (discipline 10); rp-* netns
   only; binaries + logs preserved under `/home/vibe/sackrel/` (+
