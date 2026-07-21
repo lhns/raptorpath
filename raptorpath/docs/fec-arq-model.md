@@ -3708,7 +3708,9 @@ switching not built — deliberately out of scope here); against loss-based
 cross-traffic on a shared bottleneck a delay-based controller yields, and no
 cross-traffic cell was measured. `passthrough` is an experiment knob;
 BBR-under remains the bulk-throughput reference/default-fallback and the
-shipped default remains stock Cubic. **[UPDATE 2026-07-19,
+shipped default remains stock Cubic. **[UPDATE 2026-07-21: the shipped
+default IS now BBR-under (goal-gate "Default CC Flip"; §17.2); stock Cubic
+is the explicit `RWM_QUIC_CC=cubic` legacy arm.]** **[UPDATE 2026-07-19,
 feat/copa-compete: BUILT and measured. The mechanism is the Copa paper's
 §2.2 (the "Copa §4" reference above was imprecise); see the §12.4
 competitive-mode addendum for the law and goal-gate "Copa Competitive Mode
@@ -8074,7 +8076,8 @@ plus the residual fill/serialization. Raising THAT (smaller effective decode
 cost, overlap, or G) is the next lever; it is CPU work, not networking.
 `RWM_QUIC_CC=bbr` remains an experiment knob — BBR's fairness on shared lossy
 bottlenecks was not evaluated and flipping the shipped default is a separate
-decision. **What remains of #61:** the M\* depth term only engages when
+decision. **[UPDATE 2026-07-21: measured (0.95–0.96 share vs Cubic at c2)
+and flipped — BBR is the shipped default; goal-gate "Default CC Flip".]** **What remains of #61:** the M\* depth term only engages when
 BDP > G (RTT100/200 classes) — at c2/c3 M\* = 2 and GP's +47 % came from the
 queue/pacing/reactive discipline; the depth law is implemented and unit-tested
 but not yet validated in its engagement regime. **Follow-on:** §12.11 turns
@@ -9326,13 +9329,14 @@ free throughput).
 Substrate CC is POLICY (`RWM_QUIC_CC`; §12.11), with three measured
 positions:
 
-- **Cubic** (the unset default): dead as a performance choice — it was
-  wall #1. It remains the shipped default only because no fairness /
-  competitive battery has run (below).
-- **BBR-under**: the bulk-throughput champion (plain single-c2 74.5–79;
-  C7 ~100–105 baseline), at the cost of standing queue (38 ms at c2-class;
-  88–124 ms p50 on the C8 slow path, p90 to 2.5 s) and a residual dual-cell
-  bimodality.
+- **Cubic** (now the explicit `RWM_QUIC_CC=cubic` legacy arm): dead as a
+  performance choice — it was wall #1. It was the unset default until
+  2026-07-21 (the Default CC Flip below).
+- **BBR-under** (**the shipped default since 2026-07-21**, goal-gate
+  "Default CC Flip"): the bulk-throughput champion (plain single-c2
+  74.5–79; C7 ~100–105 baseline), at the cost of standing queue (38 ms at
+  c2-class; 88–124 ms p50 on the C8 slow path, p90 to 2.5 s) and a
+  residual dual-cell bimodality.
 - **Copa-sole** (passthrough + the §12.4 wire-signal addendum): the
   queue/tail champion. With the delay term wire-clocked (the sender's own
   reservoir dwell structurally excluded) and δ mapped from the hint with
@@ -9343,11 +9347,20 @@ positions:
   property the model predicted (§12.3): the ±v/δ dither keeps the RTT
   floor fresh without ProbeRTT — no FEC protection gap.
 
-The named gap that gates ANY default flip: Copa-lite has no
-TCP-competitive mode (Copa §4 not built), so it yields to loss-based
-cross-traffic, and no cross-traffic cell has ever been measured — a gap
-that also covers BBR's unevaluated fairness. Until that battery exists,
-the defaults stay put and the policy surface is the deliverable.
+The fairness gap that gated the flip was measured 2026-07-19 (the first
+cross-traffic battery, goal-gate "Copa Competitive Mode +
+Cross-Traffic"): BBR vs one Cubic flow takes a 0.95–0.96 share at the
+lossy c2 cell (Cubic is Mathis-bound there) and 0.24 on the clean
+bufferbloated bottleneck — mildly aggressive under loss, yielding under
+standing queue, within the deployed-BBRv1 envelope; documented at the
+flip site as the caveat, not a blocker. With that measured, the shipped
+default flipped to BBR (2026-07-21). **Copa is NOT deprecated by the
+flip** — it is retained as the δ-capable controller the hint contract
+structurally requires (BBR has no latency price), the queue/tail champion
+(×18–25 tighter, no ProbeRTT stalls), and the C8 dominator. The endstate
+is the hint's declared price choosing the controller — bulk →
+BBR-under, latency-priced → passthrough+Copa — a policy mapping over
+this surface, not a mode switch.
 
 ### 17.3 Aggregation vs Σ — the bulk N× verdict
 

@@ -116,7 +116,7 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
 
 // ───────────────────────────────────────────────────────────────────────────
 // QUIC substrate congestion-controller override (env `RWM_QUIC_CC`, DEFAULT
-// UNSET ⇒ quinn's stock Cubic — byte-identical shipped path).
+// UNSET ⇒ quinn BBR — the Default CC Flip, 2026-07-21).
 //
 // WHY (feat/gen-substrate-ceiling JOB 1): quinn gates EVERY packet send —
 // including DATAGRAM frames, which carry all raptorpath wire symbols — on its
@@ -124,11 +124,18 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
 // control"), default CUBIC. On a GE-lossy path the loss-reactive Cubic window
 // is a hard substrate ceiling underneath raptorpath's own loss-tolerant
 // FEC/CC design — the exact per-connection (= per-path) wall the L1
-// generation-mode measurements hit. This knob lets an A/B name that binder:
-//   RWM_QUIC_CC=bbr          quinn BBR (model-based, loss-tolerant)
+// generation-mode measurements hit (plain 17.5 → plain+BBR 74.5 pooled,
+// ×4.3; "Gen Substrate Ceiling"). Every measured best arm since has used
+// BBR; as of 2026-07-21 the shipped default IS BBR (the A/B inverts: the
+// legacy wire is now the explicit `RWM_QUIC_CC=cubic` opt-out arm).
+// FAIRNESS CAVEAT (documented at flip time, "Cross-Traffic" battery): BBR
+// takes a 0.95–0.96 share against a competing Cubic flow at the c2 cell —
+// mildly aggressive, within the deployed-BBRv1 envelope.
+//   RWM_QUIC_CC=bbr          quinn BBR (explicit; = the default)
 //   RWM_QUIC_CC=newreno
-//   RWM_QUIC_CC=cubic        explicit default
+//   RWM_QUIC_CC=cubic        quinn stock Cubic (the legacy/fairness arm)
 //   RWM_QUIC_CC=passthrough  OUR engine owns the window (see below)
+// Unrecognized values warn and keep the BBR default.
 // Applied to BOTH client and server configs (each direction's sends are
 // governed by the sender-side controller of that connection).
 //
@@ -147,17 +154,18 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
 // direction) simply keep that static window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum QuicCcMode {
-    /// Env unset/unrecognized: quinn stock Cubic, byte-identical shipped path.
-    Stock,
+    /// Env unset/unrecognized/explicit `bbr`: quinn BBR — the shipped default
+    /// (Default CC Flip, 2026-07-21).
     Bbr,
     NewReno,
+    /// Explicit `cubic`: quinn stock Cubic — the legacy wire / fairness arm.
     Cubic,
     Passthrough,
 }
 
 fn quic_cc_mode() -> QuicCcMode {
     let Ok(name) = std::env::var("RWM_QUIC_CC") else {
-        return QuicCcMode::Stock;
+        return QuicCcMode::Bbr;
     };
     match name.trim().to_ascii_lowercase().as_str() {
         "bbr" => QuicCcMode::Bbr,
@@ -165,8 +173,8 @@ fn quic_cc_mode() -> QuicCcMode {
         "cubic" => QuicCcMode::Cubic,
         "passthrough" => QuicCcMode::Passthrough,
         other => {
-            warn!(%other, "RWM_QUIC_CC unrecognized — keeping quinn default (cubic)");
-            QuicCcMode::Stock
+            warn!(%other, "RWM_QUIC_CC unrecognized — keeping the BBR default");
+            QuicCcMode::Bbr
         }
     }
 }
@@ -268,16 +276,19 @@ fn quic_cc_factory(
 ) -> Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>> {
     match quic_cc_mode() {
         QuicCcMode::Bbr => {
-            info!("RWM_QUIC_CC=bbr: quinn congestion controller overridden to BBR");
+            info!("quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)");
             Some(Arc::new(quinn::congestion::BbrConfig::default()))
         }
         QuicCcMode::NewReno => {
             info!("RWM_QUIC_CC=newreno: quinn congestion controller overridden to NewReno");
             Some(Arc::new(quinn::congestion::NewRenoConfig::default()))
         }
-        QuicCcMode::Cubic => Some(Arc::new(quinn::congestion::CubicConfig::default())),
+        QuicCcMode::Cubic => {
+            info!("RWM_QUIC_CC=cubic: quinn stock Cubic (legacy wire / fairness arm)");
+            Some(Arc::new(quinn::congestion::CubicConfig::default()))
+        }
         // Passthrough needs a PER-PATH handle — built in cc_factory_for_path.
-        QuicCcMode::Passthrough | QuicCcMode::Stock => None,
+        QuicCcMode::Passthrough => None,
     }
 }
 

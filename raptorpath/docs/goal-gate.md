@@ -10302,3 +10302,46 @@ inheritance, packet-threshold evidence/decision, phantom-loss repro);
 byte-identical with env unset (every change env- or DIAG-gated; the
 `nack_retx_at` value widening and the mp_batch_seq fallback are
 behavior-neutral, covered by the identity cells).
+
+## Default CC Flip (2026-07-21) — `RWM_QUIC_CC` unset ⇒ BBR (branch `feat/bbr-default-and-store-release`)
+
+The consolidation roadmap's Item 0 (approved 2026-07-21): the shipped
+default was the worst measured configuration — stock Cubic was wall #1
+(plain 17.5 → plain+BBR 74.5 pooled, ×4.3, "Gen Substrate Ceiling"), every
+measured best arm since has set `RWM_QUIC_CC=bbr` explicitly, and the L1
+batteries were therefore never Cubic-polluted; what this flip fixes is the
+SHIPPED binary and the local suites (loopbacks/unit paths) that were still
+exercising the condemned Cubic path.
+
+**Change** (`raptorpath/src/transport/quic.rs`, `quic_cc_mode` /
+`quic_cc_factory`): env unset ⇒ quinn BBR. `cubic` stays selectable — **the
+A/B inverts: the legacy wire is now the explicit `RWM_QUIC_CC=cubic`
+opt-out arm.** Unrecognized values warn and keep the BBR default (they
+previously fell back to Cubic). `newreno`/`passthrough` unchanged.
+Byte-identity language for this file is hereby UPDATED: the shipped default
+is intentionally no longer the legacy wire; identity claims for other
+gates are unaffected (they compare against the same substrate on both
+sides).
+
+**Fairness caveat, documented at the flip site** (measured 2026-07-19,
+"Copa Competitive Mode + Cross-Traffic"): BBR vs one Cubic flow takes a
+0.95–0.96 share at the lossy c2 cell (Cubic is Mathis-bound there; BBR is
+the aggressor) and 0.24 share on the CLEAN shared bottleneck (the Cubic
+competitor fills a 305–316 ms queue and BBRv1 yields) — mildly aggressive
+under loss, yielding under bufferbloat, both within the deployed-BBRv1
+envelope. The endstate CC policy is the hint's declared price choosing the
+controller (bulk → bbr-under; latency-priced → passthrough+Copa, the
+δ-capable controller) — policy, not a mode switch (paper §17.2).
+
+**Local suites on the new default** (this tree, 2026-07-21): `cargo test
+-p raptorpath --lib` 366/366; `-p raptorpath-math` all suites green
+(59/19/22/4/4/3/25); release `gate_suite` 15/15 (L0/sim, no quinn —
+expectations unchanged by construction), `mtu_blackhole_wedge` 2/2,
+`perf_loopback` 8/8, `copa_sole_loopback`/`fmtcp_loopback`/
+`daps_loopback`/`recov_mp_loopback` 1/1 — the loopbacks now exercise BBR;
+no loopback expectation was Cubic-shaped (all green unmodified).
+
+**L1 identity check** (it's an identity, not a discovery: the default
+binary must reproduce the measured `RWM_QUIC_CC=bbr` arms): sc2 (single c2
+plain, env unset) expected ≈76–78 Mbit/s, sc3 expected ≈15.7, ×4 reps,
+seed 42 — result recorded below after the run.
