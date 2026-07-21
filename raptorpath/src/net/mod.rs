@@ -259,8 +259,10 @@ const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 //     packet-number-space pattern) — each path's batch stream is sequential,
 //     so per-path gap = per-path loss, honestly.
 //
-// Sub-gates for trace attribution (both default ON under the umbrella):
-// `RWM_RECOV_MP_LAW=0` disables (1), `RWM_RECOV_MP_SERIAL=0` disables (2).
+// Sub-gates for trace attribution: `RWM_RECOV_MP_LAW` (default ON under the
+// umbrella) gates (1); `RWM_RECOV_MP_SERIAL` (default OFF — L1 measured the
+// honest signal re-heating every SRTT/loss-scaled cadence, a net regression;
+// see the declaration site) gates (2).
 
 /// RFC 9002 §6.1.2 time threshold for the flight path: kTimeThreshold (9/8)
 /// × max of the two smoothed RTT clocks available for the path (Copa EWMA
@@ -5630,13 +5632,22 @@ async fn run_window_sender(
     // ── feat/recovery-suppression: multipath recovery suppression ─────────
     // (`RWM_RECOV_MP`, default OFF ⇒ shipped byte-identical; plain window
     // reliable mode only — generation mode has no per-seq ARQ to suppress).
-    // Sub-gates for trace attribution: _LAW (per-flight hole law), _SERIAL
-    // (per-path batch serial namespaces); both ON under the umbrella.
+    // Sub-gates for trace attribution: _LAW (per-flight hole law, default ON
+    // under the umbrella), _SERIAL (per-path batch serial namespaces,
+    // default OFF — see below).
     let recov_mp =
         crate::config::env_flag("RWM_RECOV_MP", false) && reliable && !generation;
     let recov_mp_law = recov_mp && crate::config::env_flag("RWM_RECOV_MP_LAW", true);
+    // The serial namespaces are DIAGNOSTICALLY true (the per-path loss
+    // estimates are provably poisoned by global serials under striping —
+    // the pl= gauge) but the honest signal re-heats every SRTT/loss-scaled
+    // recovery cadence (hole-refresh clamp, retransmit cooldown floor,
+    // NACK congestion backoff) that the poisoned values were accidentally
+    // damping: L1-MEASURED net regression (dual-c1 181→134, sender CPU
+    // ×2.4). Default OFF — the umbrella ships the LAW only; the honest-
+    // signal cadence re-derivation is the named follow-up.
     let recov_mp_serial =
-        recov_mp && crate::config::env_flag("RWM_RECOV_MP_SERIAL", true);
+        recov_mp && crate::config::env_flag("RWM_RECOV_MP_SERIAL", false);
     if recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -5685,6 +5696,7 @@ async fn run_window_sender(
     let mut mpd_fired_young: u64 = 0;
     let mut mpd_fired_ripe: u64 = 0;
     let mut mpd_fired_fast: u64 = 0;
+    let mut mpd_coalesced: u64 = 0;
     let mut mpd_age_ms_sum: f64 = 0.0;
     let mut mpd_plost_retx: u64 = 0;
     let mut mpd_fired_flight: std::collections::HashMap<u32, u64> =
@@ -7366,13 +7378,14 @@ async fn run_window_sender(
                     ));
                 }
                 let mpr = format!(
-                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
+                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
                     mpd_gap_reports,
                     mpd_gap_seqs,
                     mpd_fired,
                     mpd_fired_young,
                     mpd_fired_ripe,
                     mpd_fired_fast,
+                    mpd_coalesced,
                     mpd_supp_cool,
                     mpd_supp_age,
                     mpd_supp_law,
@@ -8278,7 +8291,29 @@ async fn run_window_sender(
             let gaps = match pending_gaps.take() {
                 Some(g) => g,
                 None => match nack_rx.try_recv() {
-                    Ok(g) => g,
+                    Ok(g) => {
+                        // feat/recovery-suppression: a gap report is a STATE
+                        // SNAPSHOT of the receiver's current holes (frontier
+                        // + inverted SACK), not a delta — so a queued
+                        // backlog is stale by construction and only the
+                        // NEWEST snapshot needs processing. Under the mp
+                        // law holes legitimately outlive their reports
+                        // (suppressed until a loss channel fires), so the
+                        // 2 ms gap-ack cadence queues snapshots faster than
+                        // they change; coalescing removes that walk tax.
+                        // Legacy path (gate off) keeps per-report
+                        // processing bit-exactly.
+                        let mut g = g;
+                        if recov_mp_law {
+                            while let Ok(n) = nack_rx.try_recv() {
+                                g = n;
+                                if diag_on {
+                                    mpd_coalesced += 1;
+                                }
+                            }
+                        }
+                        g
+                    }
                     Err(_) => break,
                 },
             };
