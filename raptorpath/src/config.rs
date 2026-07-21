@@ -374,7 +374,36 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 /// (`RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_PLAIN_RS`, `RWM_CLOCK_GAP`).
 /// Everything defaults OFF: the shipped path is byte-identical unset.
 pub fn anchor_gate(name: &str) -> bool {
-    env_flag(name, env_flag("RWM_ANCHOR_HYGIENE", false))
+    anchor_gate_default(name, false)
+}
+
+/// `anchor_gate` with a per-gate shipped default (feat/consolidation): a
+/// member of the anchor-hygiene family can flip its own default while the
+/// umbrella semantics are preserved — `RWM_ANCHOR_HYGIENE` SET overrides the
+/// family default in either direction (`=1` all on, `=0` all off), the
+/// individual gate env always wins, and unset-everything yields `default`.
+pub fn anchor_gate_default(name: &str, default: bool) -> bool {
+    env_flag(name, env_flag("RWM_ANCHOR_HYGIENE", default))
+}
+
+/// Class-C (refuted) experiment gate: reads exactly like `env_flag`, but an
+/// ACTIVATION (the gate evaluating ON) warns that the mechanism is deprecated,
+/// naming the refuting ledger section. Two-stage deprecation per goal-gate
+/// "DEPRECATION REGISTER": the gate stays reproducible (the negative result
+/// must remain re-runnable), removal is scheduled and gated on the register's
+/// re-test clause — a refutation measured behind a since-removed wall (Cubic
+/// substrate, MTU wedge, 1024-pool law, phantom retx, generation-inert
+/// harness, pre-hardware-divide) must be re-earned on the clean substrate
+/// before deletion. Call once at engine/experiment setup, not per packet.
+pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool {
+    let on = env_flag(name, default);
+    if on {
+        tracing::warn!(
+            "{name} is deprecated: refuted in goal-gate \"{refuted_in}\"; \
+             removal scheduled pending the DEPRECATION REGISTER re-test clause"
+        );
+    }
+    on
 }
 
 pub fn env_flag(name: &str, default: bool) -> bool {

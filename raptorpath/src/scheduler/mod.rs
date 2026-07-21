@@ -770,7 +770,11 @@ impl CopaState {
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(0.0),
             rs_trace_path: u32::MAX,
-            rs_robust_bw: crate::config::env_flag("RWM_RATE_WIRE", false),
+            rs_robust_bw: crate::config::deprecated_env_flag(
+                "RWM_RATE_WIRE",
+                false,
+                "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13) — any sub-max quantile under-reads the decode-clocked samples; refuted live, same-binary A/B",
+            ),
             rs_robust_q: std::env::var("RWM_RATE_Q")
                 .ok()
                 .and_then(|s| s.parse::<f64>().ok())

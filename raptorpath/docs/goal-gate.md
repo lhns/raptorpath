@@ -69,6 +69,15 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    misbehave under bash until converted (`dos2unix`/`sed -i 's/\r$//'`).
    Convert before the first harness invocation (bit the #86 battery).
 
+11. **Pre-registration.** Before any build, write in the ledger: (a) the
+   mechanism, (b) predicted effect size + cells, (c) the falsification
+   condition, (d) — the borrowing lesson — *re-read the derivation for
+   self-contained predictions of failure* (if the math already bounds the
+   effect below relevance: research, don't build). A build whose prediction
+   fails defaults to the deprecation register, not iteration, unless the
+   failure itself names a new mechanism. (Added 2026-07-21, the
+   consolidation pass; first exercised by "SACK-Clocked Store Release".)
+
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
 This is the settled synthesis of the post-audit evidence base (everything
@@ -458,6 +467,39 @@ Cubic on clean at a 305–316 ms standing queue; 0.95–0.96 share at c2).
   in the paper; see paper §17.
 - §16.10–16.14 (DAPS era) — generation-inert, audit-classified; already
   bannered per section.
+
+## DEPRECATION REGISTER (2026-07-21, consolidation pass) — Class-C gates: two-stage deprecate → re-test-on-clean-substrate → delete
+
+Discipline (per the consolidation roadmap, Pierre's amendment (a)): before
+any refuted mechanism is DELETED, ask whether its refutation predates a
+since-removed wall it plausibly collided with (the project's own history:
+DAPS "refuted" on dead code; FMTCP's "strictly worse" measured before the
+MTU-wedge/pool/recovery fixes). Every Class-C gate below now `warn!`s on
+activation naming its refuting section (`config::deprecated_env_flag`).
+NOTHING is deleted this pass; deletion requires the re-test column's clause
+satisfied on the consolidated stack (BBR + SR + PBS + MP + anchors — see
+"Consolidation" below). Walls key: **W1** quinn hidden Cubic · **W2** MTU
+black-hole wedge · **W7** 1024-pool flow-control law · **W8** global
+recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
+(§16.10–16.14, audit-classified) · **PRE-DIV** pre-hardware-divide
+(qemu64/SSSE3).
+
+| gate | refuting section | walls ACTIVE at refutation | re-test required? | status |
+|---|---|---|---|---|
+| `RWM_FMTCP` (+`_WIN`) | "FMTCP Aggregation Build (2026-07-08)": C8 0.48×Σ-fast, strictly worse than plain (14.37→7.58) | **W1, W2, W7, W8, PRE-DIV** — its entire table sits in the Cubic-era 7–25 Mbit band; its named mechanism ("recovers over a bufferbloat-inflated RTT", ~2 s spikes) is exactly the class walls W7/W8 later explained for plain mode | **YES — the strongest re-test case in the register.** Refuted pre-EVERY-wall; the composite (total-in-flight + per-path BDP + fungible repair) has never run on the clean substrate. Counter-weight, recorded honestly: its failure reproduced FMTCP's own abstract's pathology (slow subflow = bottleneck), and the clean-substrate c8 story (§16.22 no-borrowing tax) still names that same structural axis — the re-test is owed but the prior is against it | deprecated (warned); RETAINED pending clean-substrate re-test |
+| `RWM_SRC_BP` | "Source Backpressure (2026-07-12)": C8 −53% both seeds | **GEN-INERT (audit: §16.10–16.13 UNVERIFIABLE — no recorded env; −53% fits inside the 2.3× era noise), W1, W2, W7, W8, PRE-DIV** — the section pre-dates the discipline it helped motivate; the "live code at a bottlenecked era" reading is the CHARITABLE one and cannot be verified from the record | YES in principle, **LOW priority** — the mechanism space (defer source emission into per-path pacing budgets) was superseded by the per-path account family (`RWM_STORE_PERCAP`/honest caps/borrowing, §16.21–16.22), which asked the same admission question on live code with gauges and lost to pooled at c8 for a NAMED structural reason (no-borrowing tax) | deprecated (warned); retained; re-test rides any future gen-mode consolidation |
+| `RWM_SACK_PRUNE` | "SACK+BDP Reassembly (2026-07-08)": C7/C8 in-order DNF (wedge) | walls were active (W1, W7, PRE-DIV) but **IRRELEVANT: the unsafety is STRUCTURAL** — pruning `sent_store` destroys the only retransmittable copy, so a received-then-evicted symbol at the receiver's bounded reassembly window is unrecoverable. No wall excuses destroying recoverability | **NO.** SUPERSEDED 2026-07-21 by `RWM_STORE_SACK_RELEASE` (default ON), which releases the SLOT and never the recoverability — the same goal achieved safely and battery-proven (c7 0.96–1.05×Σ) | **deprecate-HARD**; removal next pass (kept this pass only as the release law's precedence-warned control arm) |
+| `RWM_RECOV_MP_SERIAL` | "Multipath Recovery Suppression (2026-07-21)": diagnosis vindicated (per-path loss 0.62–0.77 at a 0.1% cell), runtime refuted — honest signal re-heats every SRTT/loss cadence, sender CPU ×2.4 | **NONE** — refuted on the post-wall substrate itself (BBR default, MTU floor, path pool, suppression law live) | **NO** — the refutation IS the clean-substrate datum. A cheaper serial-namespace implementation would be a NEW build with its own item-11 pre-registration, not a re-test | deprecated (warned); retained as the diagnostic probe arm |
+| `RWM_INLINE_REPAIR` | "Repair In-Flight (2026-07-08)" (interspersed separate-grid inline repair): every inline config wedged or crawled; W=G reduction argument | W1, W7, PRE-DIV active, but the refutation's core is the GRID-STRANDING geometry (a separate inline grid strands its generation behind the frontier), which is substrate-independent | **NO on supersession grounds** — the goal (repair present at stall) was achieved by `RWM_PROACTIVE_PACER` ("Present-at-Stall"), whose own measured null resolved into the presence⊥throughput identity — re-confirmed post-divide as STRUCTURAL (Consolidated Verdict) | deprecated (warned); retained as documented negative result |
+| `RWM_FRONTIER*` (`RWM_FRONTIER`,`_GAIN`,`_R`,`_OFFSET`) | "Proactive Frontier (2026-07-07)": rf=718 emitted, ru=4 useful — repair anchored at the ack frontier loses the race to its own ARQ retransmit | **W1, W7, W8, PRE-DIV** (earliest refutation in the register) — but the mechanism died on GEOMETRY (a trailing window anchored ½-RTT stale covers holes only after they stick), not on throughput | **NO on supersession grounds** — same successor chain as INLINE_REPAIR (`RWM_PROACTIVE_PACER` → presence⊥throughput structural); the single-path recovery-latency cell it targeted has been re-measured post-walls repeatedly (sc3 recovery ceiling 15.6–15.9) without this mechanism being the missing term | deprecated (warned); retained as the FDIAG diagnosis arm |
+| `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | deprecated (warned) |
+| DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | deprecated (warned at `RWM_DAPS`/`RWM_PER_PATH_EST`/`RWM_RATE_SAMPLE`/`RWM_DAPS_DEPTH`; `_BDP`/`_PACE`/`PACE_ALL` are sub-knobs under the warned root); retained |
+
+Class-B gates (concept incomplete, successor named — `RWM_TAPER_R`,
+`RWM_STORE_PERCAP`/`_GUARD`/`_HONEST_CAP`, `RWM_STORE_BORROW`,
+`RWM_UNIFIED`, `RWM_COPA_COMPETE`) are NOT in this register: each is a
+documented negative-or-partial result whose successor is scheduled in the
+roadmap; they deprecate (or flip) when their successor's battery settles.
 
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
 

@@ -1194,7 +1194,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // OOO retention decouple, per-path BDP in-flight cap, once-per-RTT deficit,
     // receiver reassembly clamp) are forced on in run_window_sender / the receiver.
     // Shipped path is byte-untouched (default config has window_reliable off).
-    let fmtcp = crate::config::env_flag("RWM_FMTCP", false);
+    let fmtcp = crate::config::deprecated_env_flag(
+        "RWM_FMTCP",
+        false,
+        "FMTCP Aggregation Build (2026-07-08) — refuted PRE-wedge-fix/PRE-recov-mp/PRE-divide; re-test REQUIRED before removal",
+    );
     let window_systematic = window_reliable && (config.window_systematic_repair || fmtcp);
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair || fmtcp);
@@ -1932,7 +1936,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // the send frontier inside the receiver's reassembly window. Kept as an
     // env-gated experiment (RWM_SACK_PRUNE=1); default is byte-for-byte base.
     // Only plain-reliable has a per-seq sent-store to prune.
-    let sack_prune_enabled = crate::config::env_flag("RWM_SACK_PRUNE", false);
+    let sack_prune_enabled = crate::config::deprecated_env_flag(
+        "RWM_SACK_PRUNE",
+        false,
+        "SACK+BDP Reassembly (2026-07-08) — structurally UNSAFE (prunes recoverability); SUPERSEDED by SACK-Clocked Store Release (2026-07-21); deprecate-hard, no wall excuses it",
+    );
     // SACK-clocked store release (env `RWM_STORE_SACK_RELEASE`, goal-gate
     // "SACK-Clocked Store Release"): rides the same SACK forwarding channel;
     // the SENDER decides per-range whether to prune (legacy experiment) or
@@ -4671,7 +4679,11 @@ async fn run_window_sender(
     // with the ECF completion-time guard (Y. Lim, E. Nahum, D. Towsley,
     // R. Gibbens, ACM CoNEXT 2017).  It REUSES the FMTCP total-in-flight FC +
     // per-path BDP cap + decode-on-total base, so RWM_DAPS implies that base.
-    let daps = crate::config::env_flag("RWM_DAPS", false) && generation;
+    let daps = crate::config::deprecated_env_flag(
+        "RWM_DAPS",
+        false,
+        "DAPS + Right-Sized FEC (2026-07-12); era voided by the Methodology Audit (2026-07-13); DAPS-era stack refuted live in Gen-ON Stack Ablation (2026-07-13)",
+    ) && generation;
     let fmtcp = (crate::config::env_flag("RWM_FMTCP", false) || daps) && generation;
     // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
     // shipped non-generation default byte-identical — every use is generation-
@@ -4736,6 +4748,13 @@ async fn run_window_sender(
     let daps_win_floor = if daps { (pipeline + 6) * gen_size } else { 0 };
     let fmtcp_win_explicit = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok()).is_some();
+    if fmtcp_win_explicit {
+        warn!(
+            "RWM_FMTCP_WIN is deprecated: part of the RWM_FMTCP experiment surface, refuted in \
+             goal-gate \"FMTCP Aggregation Build\" (2026-07-08); removal scheduled pending the \
+             DEPRECATION REGISTER re-test clause"
+        );
+    }
     let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(((pipeline + 2) * gen_size).max(daps_win_floor))
@@ -4794,7 +4813,12 @@ async fn run_window_sender(
     // recovery ceiling.  Kept as a gated, unit-tested, oracle-modelled knob for
     // the scientific record; shipped DEFAULT (RWM_SRC_BP unset/0) is the spill
     // baseline — byte-identical to pace-all (the gate computes nothing when off).
-    let src_bp_on: bool = daps_pace_on && crate::config::env_flag("RWM_SRC_BP", false);
+    let src_bp_on: bool = daps_pace_on
+        && crate::config::deprecated_env_flag(
+            "RWM_SRC_BP",
+            false,
+            "Source Backpressure (2026-07-12) — DAPS-era verdict, audit-classified UNCERTAIN; superseded by the per-path account family",
+        );
     // feat/per-path-estimator: drive per-path delivered-rate attribution.
     // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
     // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
@@ -4803,7 +4827,13 @@ async fn run_window_sender(
     // is generation-mode-only (it keys on the source_path_map + OOO acks) and
     // is a NO-OP for the shipped non-generation default (byte-identical).
     let per_path_est: bool =
-        generation && (daps || crate::config::env_flag("RWM_PER_PATH_EST", false));
+        generation
+            && (daps
+                || crate::config::deprecated_env_flag(
+                    "RWM_PER_PATH_EST",
+                    false,
+                    "Per-Path Estimator (2026-07-12) — DAPS-chain member; era voided by the Methodology Audit (2026-07-13)",
+                ));
     // feat/btlbw-rate-sample: BBR-correct per-path delivery-rate sampling
     // (send-interval Δt, ack-aggregation robust).  ON by default whenever the
     // per-path estimator runs; RWM_RATE_SAMPLE=0 reproduces the legacy
@@ -4813,7 +4843,12 @@ async fn run_window_sender(
     // DEFAULT FLIPPED OFF (gen-ON stack ablation §16.16: rate-sample costs
     // −22% on symmetric C7 with generation actually ON; explicit =1 re-enables
     // for the A/B). The legacy ack-interval anchor is the default again.
-    let rate_sample: bool = per_path_est && crate::config::env_flag("RWM_RATE_SAMPLE", false);
+    let rate_sample: bool = per_path_est
+        && crate::config::deprecated_env_flag(
+            "RWM_RATE_SAMPLE",
+            false,
+            "BtlBw Rate-Sample Fix (2026-07-12); refuted LIVE (−22% sym C7) in Gen-ON Stack Ablation (2026-07-13)",
+        );
     // feat/daps-readahead-depth: bound each non-fastest path's DAPS read-ahead
     // DEPTH to its skew-depth `skew_j·BtlBw_j` (queue delay ≤ skew ⇒ the slow
     // segment arrives in-order-aligned, never later than the fast path would
@@ -4834,7 +4869,12 @@ async fn run_window_sender(
     // −17…−30% on symmetric C7 — the decode-clocked anchors hand one path a
     // garbage skew budget; its one win is hetero C8 (+8%), so it is a
     // heterogeneous-topology OPT-IN via RWM_DAPS_DEPTH=1).
-    let daps_depth_on: bool = rate_sample && crate::config::env_flag("RWM_DAPS_DEPTH", false);
+    let daps_depth_on: bool = rate_sample
+        && crate::config::deprecated_env_flag(
+            "RWM_DAPS_DEPTH",
+            false,
+            "DAPS Read-Ahead Depth (2026-07-12); refuted LIVE (−17…−30% sym C7) in Gen-ON Stack Ablation (2026-07-13)",
+        );
     // App-limited (BBR): the source pipeline was starved (idle gap) rather than
     // cwnd/pace-limited when a symbol was sent — such a sample underestimates
     // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
@@ -5558,6 +5598,11 @@ async fn run_window_sender(
     // reproduce the negative result and to drive the FDIAG diagnosis.
     let frontier_experiment =
         std::env::var("RWM_FRONTIER").is_ok() || std::env::var("RWM_FRONTIER_R").is_ok();
+    if frontier_experiment {
+        warn!(
+            "RWM_FRONTIER*/RWM_FRONTIER_R is deprecated: refuted in goal-gate \"Proactive Frontier\" (2026-07-07); \n             SUPERSEDED by RWM_PROACTIVE_PACER; removal scheduled pending the DEPRECATION REGISTER re-test clause"
+        );
+    }
     let frontier_enabled = frontier_experiment
         && frontier_width > 0
         && reliable
@@ -5593,7 +5638,12 @@ async fn run_window_sender(
     // win: recovery_coded 30k→437, FEC 0.32→0.913 = parity) and (b) a SMALLER G
     // (raises present_at_stall 1→16 via the non-stalling fungible batched path).
     // RWM_INLINE_W tunes W. Systematic-repair path only; shipped path untouched.
-    let inline_repair = systematic && crate::config::env_flag("RWM_INLINE_REPAIR", false);
+    let inline_repair = systematic
+        && crate::config::deprecated_env_flag(
+            "RWM_INLINE_REPAIR",
+            false,
+            "Repair In-Flight (2026-07-08) — every inline config wedged or crawled; SUPERSEDED by RWM_PROACTIVE_PACER (Present-at-Stall)",
+        );
     // ── Proactive-repair pacer (RWM_PROACTIVE_PACER) — present-at-stall ───────
     // A DEDICATED proactive-repair emission on the GENERATION grid, decoupled
     // from BOTH source availability and the ack-clock `target`. For each
@@ -5766,7 +5816,12 @@ async fn run_window_sender(
     // ×2.4). Default OFF — the umbrella ships the LAW only; the honest-
     // signal cadence re-derivation is the named follow-up.
     let recov_mp_serial =
-        recov_mp && crate::config::env_flag("RWM_RECOV_MP_SERIAL", false);
+        recov_mp
+            && crate::config::deprecated_env_flag(
+                "RWM_RECOV_MP_SERIAL",
+                false,
+                "Multipath Recovery Suppression (2026-07-21) — diagnosis vindicated, runtime refuted (sender CPU ×2.4) on the POST-wall substrate; no re-test owed",
+            );
     if recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
