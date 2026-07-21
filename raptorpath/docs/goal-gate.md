@@ -10974,3 +10974,101 @@ retired this pass). If it does not flip: the blocker is named, register
 updated.
 
 *(Results below this line were written after the build/batteries ran.)*
+
+### The law as built (commit 6568822; the code shape)
+
+Sender (`net/mod.rs` run_window_sender): armed iff `RWM_UNIFIED` + EVICT
+(`shed_armed(unified, reliable, gate)` — `reliable` compiles the law OUT:
+the ρ=1 RETAIN contract can never shed). At the two recovery decision
+points (the P_lost oldest-candidate branch and the SACK-gap service loop;
+the tail sweep feeds the latter) a hole whose age exceeds
+D = `shed_deadline_us(b(hint), RTprop)` = min(b·RTprop, 2·RTprop) — the
+span law's own deadline, b=½ Realtime — is DROPPED from
+`retransmit_buffer`/`nack_retx_at` into a shed set (pruned on the
+cumulative `split_off` twin), IFF cumulative shed ≤ the derived 1−ρ
+budget `residual_loss_after_fec(ε̂, r_live, A*, σ²_burst)` =
+ε̂·(1−P_fec) (fec_rate.rs, the §8.1 normal approximation at the live
+operating point — ε̂/σ² measured, r_live = the consumed taper r*, A* =
+the live span width; no new constants). Past-deadline candidates the
+budget refuses are counted (`shed_denied`) and SERVED — the serialize
+arm: ρ wins over δ. Receiver: the in-order EVICT hold becomes the
+δ dial `shed_recv_hold` = b·SRTT (§16.20.3: "reorder_timeout IS the δ
+dial") while the give-up budget `holes ≤ ε̂_recv·frontier` (the
+loss-class bound) is open; spent ⇒ the legacy 4×SRTT ∈ [60, 300] ms
+clamp returns (serialize). Composition: `RWM_ASTAR_ANCHOR` now defaults
+ON under `RWM_UNIFIED` (the span law ships with its repaired anchor).
+DIAG: `shed=total/denied bud= D=` in [SPAN]+[DIAG]; `[SHED-R]
+holes/frontier/budget_open` at the receiver. Unit tests (6 new, lib
+377/377): shed only past-deadline AND within-budget (incl. cold-start
+zeros); the reliable contract NEVER arms; deadline ≡ the span law's D;
+receiver hold = δ dial with legacy fallback bit-exact (60/300 clamps);
+budget laws (ε-class receiver bound; ε·(1−P_fec) monotone in r, = ε at
+r=0, 0 at cold start, c3-class value in the streaming ~1% band).
+
+### L0 battery (dev box, its own hardware era; test binary
+`unified_stream_l0-44ebc61d9322064f.exe` from 6568822, same binary all
+arms; c3-1200B, 50 msg/s × 20 s, 4 arms interleaved per seed ×14 seeds;
+RWM_DIAG=1; arms S = shipped streaming, U = RWM_UNIFIED=1 (shed ON),
+UNS = RWM_UNIFIED=1 RWM_UNIFIED_SHED=0 (serializing control), R =
+RWM_L0_BACKEND=rlc)
+
+**Environment, recorded honestly (discipline 9-class caveat):** seeds
+1–3 ran on a quiet box; from seed ~4 onward the box carried concurrent
+release builds + the 258-s gate_suite run (the COLLAPSE ATTRIBUTION's
+compile-class trigger, present UNCONTROLLED for most of the battery —
+multi-second whole-process stalls, heavier than the attribution
+session's load: today even the STREAMING arm outages). Arms are
+sequential within a seed, so per-seed cross-arm exposure is NOT
+controlled; incidence is comparable only at the battery level.
+
+Per-arm summary (median over 14 reps; outage-class = ≥1 delivery gap
+> 1 s; p50-sec = the L1 collapse signature, p50 > 1 s):
+
+| arm | outage-class | **p50-sec** | median p90 [range] | median p99 | lost total (median/rep) |
+|---|---|---|---|---|---|
+| S stream | 3/14 | **0/14** | 95 [93–4988] | 172 | 140 (8) |
+| U unified+shed | 3/14 | **0/14** | 78 [62–11504] | 127 | 275 (2; 242 of them ONE rep, below) |
+| UNS unified no-shed | 2/14 | **0/14** | 79 [64–1996] | 126 | 1 (0) |
+| R legacy-rlc | 4/14 | **0/14** | 95 [80–3004] | 163 | 8 (0) |
+
+- **The L1 collapse signature (p50 in SECONDS, the whole stream
+  backlogged) appears in ZERO reps of ANY arm — including the harshest
+  host-load episodes.** The #61 base rate at this shape was 3/10 (L1)
+  and 3/14 (L0 attribution) with p50-seconds; the amplification class is
+  gone from the unified arm at L0. The outage-class reps that DO occur
+  land in ALL FOUR arms (streaming included, 3/14, p90 3.6–5.0 s) —
+  i.e., today's trigger overwhelms every machine equally; it is the
+  environment, not the RLC-family amplification (which would spare the
+  stream arm, as it did in the attribution session).
+- **Quiet/typical rows: unified+shed posts the best tails of all four
+  arms** — p90 62–78 vs UNS 78–79, R 94–96, S 93–95; p99 123–127 vs
+  S 126–172, R 125–163. The δ-hold (the shed law's receiver arm) is the
+  visible mechanism: UNS (identical but serializing) sits ~15 ms above U
+  at p90.
+- **The ρ story at the gauges.** The sender budget is ρ-CONSERVATIVE:
+  bud = ε̂(1−P_fec) ≈ 0.000–0.002 at the healthy operating point (A* 4–7,
+  r 0.2–0.5 ⇒ P_fec ≈ 1), so the sender sheds 0–25 seqs/rep while
+  REFUSING 52–773 past-deadline candidates (shed_denied — the serialize
+  arm live). The receiver ε̂-class budget sheds only holes (54/2142 =
+  2.5% worst) and CLOSES when spent (budget_open=false observed). U's
+  delivered completeness excluding the one environmental rep: 99.75%
+  (33 lost / 13,000) vs streaming's 99.0% (140/14,000) — the unified
+  machine sheds LESS than streaming while beating its p90.
+- **The U-s11 rep, attributed honestly:** 758/1000 delivered, p90 11.5 s
+  — a ~7-s whole-process outage (maxgap 7.01 s; the same seed's other
+  arms all outage too). The gauges exonerate the law: sender shed 7
+  (denied 681), receiver gave up 54 holes then closed its budget — the
+  242 losses are the environment (chunks aged past the EVICT coding
+  window during a 7-s freeze are unrecoverable in EVERY EVICT arm, and
+  the box was mid-build-burst). Recorded as the trigger's tail, not the
+  law's.
+- **Prediction 4 (A*-inertness resolution): CONFIRMED.** FDIAG rep
+  (seed 42, U arm): data-direction holes resolve by DECODE 51 vs
+  SOURCE/ARQ 10–21 — the attribution's 1:4 INVERTED to ~3:1 FEC-first;
+  a\*=4–7 live on ar≈94–99 sym/s within ~1 RTT ([SPAN]); ru/rf ≈ 15.5%
+  (435/69) ≈ the span-hole ceiling 1−(1−ε̂)^A* ≈ 18%, well clear of the
+  9% width-1 inertness class.
+- Falsification check: NOT triggered — no shed-on collapse class
+  (0/14 p50-sec), delivered% within the 1−ε̂ class everywhere including
+  the environmental rep (75.8% ≈ 1−ε̂_episode with the law's own
+  contribution ≤ 61 symbols by gauge).
