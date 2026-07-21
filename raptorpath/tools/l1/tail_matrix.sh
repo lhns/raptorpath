@@ -34,7 +34,11 @@ trap hard_cleanup EXIT
 run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream measurements
     local hint="$1" size="$2" label="${3:-$1}" armenv="${4:-}" armflags="${5:-}"
     hard_cleanup; sleep 0.5
-    bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1
+    # Discipline item 7: lib.sh forces set -e — a transient topo bringup
+    # failure must fail THIS arm loudly (the ping probe below catches it),
+    # not kill the whole matrix silently (bit the shed battery's c3-s7
+    # rlc-1200B arm, 2026-07-21).
+    bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
     ip netns exec "$NS_SRV" env $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
         --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" $armflags \

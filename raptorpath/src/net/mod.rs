@@ -548,12 +548,23 @@ const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 /// switching code families, (c) plain-mode proactive repair follows the
 /// quantity law (TaperBudget, #85) + the trailing solvable-span placement
 /// with A* = clamp(rate·D, 1, W), D = b(hint)·RTprop (§8.8 budgets:
-/// Realtime ½, Auto 1, Bulk 2 RTT), and (d) generation mode runs the derived
-/// M* pipeline depth (RWM_GEN_PIPE defaults ON). Default OFF = every legacy
-/// path byte-identical; the flip is gated on the queued L1 parity battery
-/// (goal-gate "Unified Decoder").
+/// Realtime ½, Auto 1, Bulk 2 RTT), (d) generation mode runs the derived
+/// M* pipeline depth (RWM_GEN_PIPE defaults ON), (e) the A* send-rate
+/// anchor ships ON (`RWM_ASTAR_ANCHOR`, fix A), and (f) the realtime EVICT
+/// path runs δ-honest overload shedding (`RWM_UNIFIED_SHED`, fix C).
+///
+/// **DEFAULT ON (2026-07-21, goal-gate "Unified Shedding + Flip Battery")**
+/// — the pre-registered flip gate was met on both seeds: realtime tails ≥
+/// legacy-RLC everywhere within the noise floor and ≤ the streaming machine
+/// at every cell (c2 p99 medians 37/40 vs stream 40–43/52; c3 101–111 vs
+/// 108–133), ZERO collapse-class reps (the #61 3/10 blocker eliminated),
+/// 100% delivered at the c3 perf cell (vs streaming 79/81%) at completer
+/// parity, bulk gen-sys parity within σ, knee no-regression. `RWM_UNIFIED=0`
+/// is the legacy three-machine opt-out arm (streaming keeps Realtime
+/// there); the streaming machine is NOT removed — its retirement sits in
+/// the DEPRECATION REGISTER behind a re-test clause.
 pub(crate) fn unified_active() -> bool {
-    crate::config::env_flag("RWM_UNIFIED", false)
+    crate::config::env_flag("RWM_UNIFIED", true)
 }
 
 /// Realtime rides the window pipeline; `window_reliable` (RWM Phase A) opts
