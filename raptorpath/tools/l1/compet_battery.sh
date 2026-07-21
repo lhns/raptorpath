@@ -70,10 +70,13 @@ run_rp() { # name cellA cellB mode
     cp /tmp/rwm-s.log "$DDIR/${name}-s${SEED_ARG}-r${REP}-s.log" 2>/dev/null || true
 }
 
-# ---- quinn-perf, stock config, UPLOAD (= lossy) direction ------------------
-run_quinn() { # name cell duration
-    local name="$1" cell="$2" dur="$3"
-    log "=== rep=$REP arm=$name seed=$SEED_ARG cell=$cell dur=$dur $(date -u +%T)"
+# ---- quinn-perf, UPLOAD (= lossy) direction; CC via --congestion -----------
+# quinn-perf exposes --congestion {cubic,bbr,new-reno}; stock default = cubic
+# (verified via --help on the VM). The CLIENT is the upload sender, so the
+# client's CC governs the data direction.
+run_quinn() { # name cell duration cc
+    local name="$1" cell="$2" dur="$3" cc="$4"
+    log "=== rep=$REP arm=$name seed=$SEED_ARG cell=$cell dur=$dur cc=$cc $(date -u +%T)"
     teardown
     sudo bash topo.sh up "$cell" --seed "$SEED_ARG" >/dev/null 2>&1 || { log "TOPO-FAIL $name"; return; }
     sudo ip netns exec rp-srv "$QPERF" server --listen 10.77.0.2:4433 \
@@ -82,7 +85,7 @@ run_quinn() { # name cell duration
     local out
     out=$(sudo timeout $((dur + 90)) ip netns exec rp-cli /usr/bin/time -v \
         "$QPERF" client raptorpath:4433 --ip 10.77.0.2 \
-        --upload-size ${BYTES} --download-size 0 \
+        --upload-size ${BYTES} --download-size 0 --congestion "$cc" \
         --duration "$dur" --interval "$dur" --json - \
         2>"$DDIR/${name}-s${SEED_ARG}-r${REP}-time.log" | tail -1) || true
     log "QUINN-JSON $out"
@@ -107,17 +110,17 @@ run_iperf() { # name cell cc topo(single|dualA) [cellB]
     local out
     out=$(sudo timeout 400 ip netns exec rp-cli iperf3 -c 10.77.0.2 -n $BYTES -C "$cc" --json 2>/dev/null) || true
     if [ -n "$out" ]; then
-        echo "$out" | jq -c "{arm:\"$name\",rep:$REP,seconds:.end.sum_sent.seconds,mbps:(.end.sum_sent.bits_per_second/1e6),retransmits:.end.sum_sent.retransmits,cc:.start.sndbuf_actual}" >> "$OUT" \
+        echo "$out" | jq -c "{arm:\"$name\",rep:$REP,seconds:.end.sum_sent.seconds,mbps:(.end.sum_sent.bits_per_second/1e6),retransmits:.end.sum_sent.retransmits,cc:.end.sender_tcp_congestion}" >> "$OUT" \
             || log "IPERF-PARSE-FAIL $name rep=$REP"
-        echo "$out" | jq -c '.end.sender_tcp_congestion // empty' 2>/dev/null | head -1 \
-            | sed 's/^/IPERF-CC /' >> "$OUT" || true
     else
         log "{\"arm\":\"$name\",\"rep\":$REP,\"dnf\":true,\"timeout_s\":400}"
     fi
     sudo pkill -f 'iperf3 -s' 2>/dev/null || true
 }
 
-# ---- kernel MPTCP (transfer_bench IPPROTO_MPTCP; per-netns sysctl CC) ------
+# ---- kernel MPTCP via iperf3 --mptcp (3.19.1; CC via -C on the MPTCP sock,
+# plus per-netns sysctl default as belt-and-braces). Liveness = MPTcpExt
+# MPJoin counters in the client netns (subflow actually joined).
 run_mptcp() { # name cellA cellB cc
     local name="$1" ca="$2" cb="$3" cc="$4"
     log "=== rep=$REP arm=$name seed=$SEED_ARG cell=$ca+$cb cc=$cc $(date -u +%T)"
@@ -128,17 +131,21 @@ run_mptcp() { # name cellA cellB cc
     done
     local pre post
     pre=$(sudo ip netns exec rp-cli grep -A1 MPTcpExt /proc/net/netstat 2>/dev/null | tail -1)
-    sudo ip netns exec rp-srv python3 "$TB" server --bind 10.77.0.2 --port 9900 --proto mptcp \
-        >"$DDIR/${name}-s${SEED_ARG}-r${REP}-srv.log" 2>&1 &
-    sleep 0.6
-    sudo timeout 400 ip netns exec rp-cli python3 "$TB" client --host 10.77.0.2 --port 9900 \
-        --proto mptcp --bytes $BYTES --runs 1 2>/dev/null \
-        | sed "s/^/MPTCP-$cc /" >> "$OUT" || log "{\"arm\":\"$name\",\"rep\":$REP,\"dnf\":true}"
+    sudo ip netns exec rp-srv iperf3 -s -D -m --pidfile /tmp/rp-iperf3.pid 2>/dev/null || true
+    sleep 0.4
+    local out
+    out=$(sudo timeout 400 ip netns exec rp-cli iperf3 -c 10.77.0.2 -n $BYTES -m -C "$cc" --json 2>/dev/null) || true
+    if [ -n "$out" ]; then
+        echo "$out" | jq -c "{arm:\"$name\",rep:$REP,seconds:.end.sum_sent.seconds,mbps:(.end.sum_sent.bits_per_second/1e6),retransmits:.end.sum_sent.retransmits}" >> "$OUT" \
+            || log "MPTCP-PARSE-FAIL $name rep=$REP"
+    else
+        log "{\"arm\":\"$name\",\"rep\":$REP,\"dnf\":true,\"timeout_s\":400}"
+    fi
     post=$(sudo ip netns exec rp-cli grep -A1 MPTcpExt /proc/net/netstat 2>/dev/null | tail -1)
     log "MPTCP-MIB-HDR $(sudo ip netns exec rp-cli grep -A1 MPTcpExt /proc/net/netstat 2>/dev/null | head -1)"
     log "MPTCP-MIB-PRE $pre"
     log "MPTCP-MIB-POST $post"
-    sudo pkill -f 'transfer_bench.py server' 2>/dev/null || true
+    sudo pkill -f 'iperf3 -s' 2>/dev/null || true
 }
 
 for REP in $(seq 1 $REPS); do
@@ -146,7 +153,8 @@ for REP in $(seq 1 $REPS); do
     for CELL in c1 c2 c3; do
         run_rp    rp-$CELL      $CELL $CELL single
         if [ "$CELL" = "c3" ]; then QD=60; else QD=30; fi
-        run_quinn quinn-$CELL   $CELL $QD
+        run_quinn quinn-cubic-$CELL $CELL $QD cubic
+        run_quinn quinn-bbr-$CELL   $CELL $QD bbr
         run_iperf tcp-cubic-$CELL $CELL cubic single
         run_iperf tcp-bbr-$CELL   $CELL bbr   single
     done
@@ -163,9 +171,9 @@ done
 teardown
 
 log "--- ARMCOUNTS (expect $REPS headers per arm)"
-for a in rp-c1 quinn-c1 tcp-cubic-c1 tcp-bbr-c1 \
-         rp-c2 quinn-c2 tcp-cubic-c2 tcp-bbr-c2 \
-         rp-c3 quinn-c3 tcp-cubic-c3 tcp-bbr-c3 \
+for a in rp-c1 quinn-cubic-c1 quinn-bbr-c1 tcp-cubic-c1 tcp-bbr-c1 \
+         rp-c2 quinn-cubic-c2 quinn-bbr-c2 tcp-cubic-c2 tcp-bbr-c2 \
+         rp-c3 quinn-cubic-c3 quinn-bbr-c3 tcp-cubic-c3 tcp-bbr-c3 \
          rp-c7 tcp-bbr-c7A mptcp-cubic-c7 mptcp-bbr-c7 \
          rp-c8 tcp-bbr-c8A mptcp-cubic-c8 mptcp-bbr-c8; do
     hdr=$(grep -c "arm=$a " "$OUT" || true)
