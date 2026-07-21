@@ -136,6 +136,11 @@ fi
 # [REASM] occupancy probe (RWM_REASM_BDP).
 [[ -n "${RWM_SACK_PRUNE:-}" ]] && TENV="$TENV RWM_SACK_PRUNE=$RWM_SACK_PRUNE"
 [[ -n "${RWM_REASM_BDP:-}" ]] && TENV="$TENV RWM_REASM_BDP=$RWM_REASM_BDP"
+# SACK-clocked store release (feat/bbr-default-and-store-release, goal-gate
+# "SACK-Clocked Store Release"): SACKed seqs uncounted from the outstanding
+# gate, payload + ARQ maps retained until the cumulative frontier — slot
+# release, never recoverability (the RWM_SACK_PRUNE distinction).
+[[ -n "${RWM_STORE_SACK_RELEASE:-}" ]] && TENV="$TENV RWM_STORE_SACK_RELEASE=$RWM_STORE_SACK_RELEASE"
 # FMTCP-class pure decode-on-total aggregation (feat/fmtcp-aggregation): the
 # composite gate — total-in-flight flow control + per-path BDP in-flight cap +
 # fungible fountain repair (no per-hole ARQ) + decode-on-total OOO. Self-selects

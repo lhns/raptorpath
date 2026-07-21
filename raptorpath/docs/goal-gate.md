@@ -10341,10 +10341,23 @@ expectations unchanged by construction), `mtu_blackhole_wedge` 2/2,
 `daps_loopback`/`recov_mp_loopback` 1/1 — the loopbacks now exercise BBR;
 no loopback expectation was Cubic-shaped (all green unmodified).
 
-**L1 identity check** (it's an identity, not a discovery: the default
-binary must reproduce the measured `RWM_QUIC_CC=bbr` arms): sc2 (single c2
-plain, env unset) expected ≈76–78 Mbit/s, sc3 expected ≈15.7, ×4 reps,
-seed 42 — result recorded below after the run.
+**L1 identity check PASSED** (it's an identity, not a discovery: the
+default binary must reproduce the measured `RWM_QUIC_CC=bbr` arms). VM
+10.1.5.16, 2026-07-21 08:38–08:41 UTC, binary sha256 024005e3f267d2b7… =
+commit 7145fcc (Rust identical to the flip commit 519467e), E5-2650 v3
+post-divide, seed 42, ×4 reps per cell, env UNSET, `quinn congestion
+controller: BBR (shipped default…)` liveness echo asserted on 8/8 runs,
+dnf=0 on 8/8; log `/home/vibe/ccflip/identity-s42.log`:
+
+- sc2 (c2 single plain, 100 MB): **81.4 / 81.1 / 78.7 / 80.8** (mean 80.5)
+  vs expected ≈76–78 — at/above the top of the measured bbr-arm envelope
+  (74.5–79 PB; 80.9 ± 0.7 same-session PBP-H in §16.24), unambiguously
+  the BBR arm (the Cubic default measured ~16–17 at this cell).
+- sc3 (c3 single plain, 25 MB): **15.96 / 15.16 / 15.49 / 15.23** (mean
+  15.46) vs expected ≈15.7 — inside the measured 15.6–15.9 /
+  15.66 ± 0.57 envelope.
+
+The default binary reproduces the measured bbr arms; Item 1 may proceed.
 
 ## SACK-Clocked Store Release (2026-07-21) — PRE-REGISTRATION (written BEFORE the build, discipline item 11; env `RWM_STORE_SACK_RELEASE`, default OFF; branch `feat/bbr-default-and-store-release`)
 

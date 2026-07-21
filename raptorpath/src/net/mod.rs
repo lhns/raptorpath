@@ -1933,8 +1933,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // env-gated experiment (RWM_SACK_PRUNE=1); default is byte-for-byte base.
     // Only plain-reliable has a per-seq sent-store to prune.
     let sack_prune_enabled = crate::config::env_flag("RWM_SACK_PRUNE", false);
+    // SACK-clocked store release (env `RWM_STORE_SACK_RELEASE`, goal-gate
+    // "SACK-Clocked Store Release"): rides the same SACK forwarding channel;
+    // the SENDER decides per-range whether to prune (legacy experiment) or
+    // release (the slot-uncount law) — see the sender-loop drain.
+    let store_sack_release_enabled =
+        crate::config::env_flag("RWM_STORE_SACK_RELEASE", false);
     let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
-        if sack_prune_enabled && window_reliable && !window_generation && !window_coded_only {
+        if (sack_prune_enabled || store_sack_release_enabled)
+            && window_reliable
+            && !window_generation
+            && !window_coded_only
+        {
             Some(sack_tx)
         } else {
             None
@@ -4358,6 +4368,54 @@ pub fn percap_release_cumulative(
     *acct = keep;
 }
 
+/// SACK-clocked store release (env `RWM_STORE_SACK_RELEASE`, goal-gate
+/// "SACK-Clocked Store Release" pre-registration): mark every seq of the
+/// SACK range that is currently retained as RELEASED — uncounted from the
+/// flow-control outstanding, so the send window opens at path rate instead
+/// of frontier latency — while the `sent_store` entry (the ONLY payload
+/// copy; `retransmit_buffer` is metadata-only) and every ARQ/recovery map
+/// stay untouched until the cumulative frontier passes the seq.
+///
+/// THE `RWM_SACK_PRUNE` DISTINCTION, BY CONSTRUCTION (that experiment was
+/// refuted UNSAFE 2026-07-07: pruning `sent_store` on SACK destroyed the
+/// only copy of a received-then-EVICTED symbol → C7/C8 in-order DNF): this
+/// law never removes anything. A released symbol remains retransmittable
+/// (NACK path serves from `sent_store.get`); worst case under receiver
+/// eviction is a wasted retransmit, not a wedge. The race-ahead is bounded
+/// because never-received/evicted seqs are never SACKed and still count.
+///
+/// Returns the seqs NEWLY released by this call (for per-path account
+/// release); already-released seqs are skipped — no double-release.
+pub fn sack_release_mark<V>(
+    sent_store: &BTreeMap<u64, V>,
+    released: &mut BTreeSet<u64>,
+    start: u64,
+    end: u64,
+) -> Vec<u64> {
+    let mut newly = Vec::new();
+    for (&seq, _) in sent_store.range(start..=end) {
+        if released.insert(seq) {
+            newly.push(seq);
+        }
+    }
+    newly
+}
+
+/// The cumulative-frontier twin of [`sack_release_mark`] (the
+/// `sent_store.split_off(&(ack+1))` pattern): drop released marks at or
+/// below the ack — those slots are now FULLY freed (payload gone from the
+/// store, mark gone from the released set).
+pub fn sack_release_prune(released: &mut BTreeSet<u64>, ack: u64) {
+    *released = released.split_off(&(ack + 1));
+}
+
+/// Effective outstanding under the release law: retained minus released.
+/// With the gate off the released set is empty and this is exactly
+/// `store_len` — the shipped gate unchanged.
+pub fn sack_release_outstanding(store_len: usize, released: usize) -> usize {
+    store_len.saturating_sub(released)
+}
+
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
 /// of seqs the receiver HAS in (`delivered`, `seen`] — the inverse of
 /// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
@@ -5176,6 +5234,38 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
+    // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
+    // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
+    // the retention store releases slots only on the cumulative frontier,
+    // so SACKed-but-not-cumulative symbols hold slots a full frontier round
+    // — at c7 the store recycles at frontier latency, not path rate. Under
+    // this law a SACKed seq is UNCOUNTED from the flow-control outstanding
+    // (the slot returns to the pool / per-path account, the window opens)
+    // while sent_store + retransmit_buffer + nack_retx_at + source_path_map
+    // are kept UNTOUCHED until the cumulative frontier passes it — release
+    // a STORE SLOT, never recoverability (the RWM_SACK_PRUNE lesson; see
+    // sack_release_mark). Default OFF: released set stays empty and the
+    // gate arithmetic is exactly the shipped store_len.
+    let store_sack_release_on = reliable
+        && !generation
+        && !coded_only
+        && crate::config::env_flag("RWM_STORE_SACK_RELEASE", false);
+    let sack_prune_on = crate::config::env_flag("RWM_SACK_PRUNE", false);
+    if store_sack_release_on {
+        if sack_prune_on {
+            warn!(
+                "RWM_STORE_SACK_RELEASE and RWM_SACK_PRUNE both set — the legacy prune \
+                 experiment takes precedence; the release law is INACTIVE"
+            );
+        } else {
+            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+            info!(
+                "SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs \
+                 uncounted from the outstanding gate, payload + ARQ maps retained until \
+                 the cumulative frontier — slot release, never recoverability)"
+            );
+        }
+    }
     // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
     // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
     // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
@@ -5585,6 +5675,17 @@ async fn run_window_sender(
     /// Bounded by RELIABLE_STORE_MAX via TUN-read backpressure, never by
     /// eviction.
     let mut sent_store: BTreeMap<u64, crate::fec::WireSymbol> = BTreeMap::new();
+
+    /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+    /// retained in `sent_store` but UNCOUNTED from the flow-control
+    /// outstanding (SACKed by the receiver, cumulative frontier not yet
+    /// past them). Invariant: subset of `sent_store` keys — maintained by
+    /// marking only retained seqs and pruning with the same cumulative
+    /// `split_off` twin. Empty whenever the gate is off.
+    let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+    /// DIAG: cumulative count of slots released by the law (mechanism
+    /// liveness at the gauge — `srel=cur/cum`).
+    let mut sack_released_total: u64 = 0;
 
     // Symbol packer: accumulate small packets into packed symbols for Realtime mode
     let use_packing = protocol_hint == ProtocolHint::Realtime;
@@ -6606,24 +6707,58 @@ async fn run_window_sender(
                 if end < start {
                     continue;
                 }
-                let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
-                for k in acked {
-                    sent_store.remove(&k);
-                    retransmit_buffer.remove(&k);
-                    source_path_map.remove(&k);
-                    nack_retx_at.remove(&k);
-                    // task #86: OOO release — the account frees on THIS
-                    // path's delivery evidence, not the in-order frontier.
+                if sack_prune_on {
+                    // Legacy RWM_SACK_PRUNE experiment (refuted UNSAFE for
+                    // in-order, kept to reproduce the negative result):
+                    // prune the retained copy + ARQ maps on SACK.
+                    let acked: Vec<u64> =
+                        sent_store.range(start..=end).map(|(&k, _)| k).collect();
+                    for k in acked {
+                        sent_store.remove(&k);
+                        retransmit_buffer.remove(&k);
+                        source_path_map.remove(&k);
+                        nack_retx_at.remove(&k);
+                        // task #86: OOO release — the account frees on THIS
+                        // path's delivery evidence, not the in-order frontier.
+                        if percap_on {
+                            percap_release_seq(&mut percap_acct, &mut percap_out, k);
+                            // feat/store-borrowing: the same ack repays a loan.
+                            if percap_borrow_on {
+                                percap_loan_release(
+                                    &mut percap_loans,
+                                    &mut percap_lent,
+                                    &mut percap_borrowed,
+                                    k,
+                                );
+                            }
+                        }
+                    }
+                } else if store_sack_release_on {
+                    // SACK-clocked store release: uncount the slot (window
+                    // opens, pool/account freed) — KEEP the payload and
+                    // every recovery structure (retransmit_buffer,
+                    // nack_retx_at + its per-flight RWM_RECOV_MP loss
+                    // clocks, source_path_map) until the cumulative
+                    // frontier passes. sack_release_mark skips seqs
+                    // already released — no double-release.
+                    let newly =
+                        sack_release_mark(&sent_store, &mut sack_released, start, end);
+                    sack_released_total += newly.len() as u64;
                     if percap_on {
-                        percap_release_seq(&mut percap_acct, &mut percap_out, k);
-                        // feat/store-borrowing: the same ack repays a loan.
-                        if percap_borrow_on {
-                            percap_loan_release(
-                                &mut percap_loans,
-                                &mut percap_lent,
-                                &mut percap_borrowed,
-                                k,
-                            );
+                        for &k in &newly {
+                            // Per-path account slot freed on delivery
+                            // evidence (idempotent: cumulative release
+                            // later finds the seq already gone — the
+                            // documented no-double-release contract).
+                            percap_release_seq(&mut percap_acct, &mut percap_out, k);
+                            if percap_borrow_on {
+                                percap_loan_release(
+                                    &mut percap_loans,
+                                    &mut percap_lent,
+                                    &mut percap_borrowed,
+                                    k,
+                                );
+                            }
                         }
                     }
                 }
@@ -6670,7 +6805,16 @@ async fn run_window_sender(
         // encoder's retained source count (= symbols in the in-flight pipeline
         // of M generations). Pausing TUN reads at store_max holds the send
         // frontier ~M generations ahead of the cumulative-decode frontier.
-        let store_len = if generation { encoder.window_size() } else { sent_store.len() };
+        // RWM_STORE_SACK_RELEASE: outstanding = retained − released. With
+        // the gate off the released set is empty and this is exactly the
+        // shipped `sent_store.len()`; with it on, SACK-released slots
+        // return to the pool (RWM_STORE_PATHS composes through this same
+        // count) while their payloads stay retained for recovery.
+        let store_len = if generation {
+            encoder.window_size()
+        } else {
+            sack_release_outstanding(sent_store.len(), sack_released.len())
+        };
         // gen_pipe: roll the windowed-MAX rate filter + recompute the derived
         // pipeline depth M* (throttled ~5 ms; the encoder setter is O(1)).
         // feat/anchor-hygiene: under RWM_MSTAR_ANCHOR the filter also runs in
@@ -7352,6 +7496,15 @@ async fn run_window_sender(
                     .as_ref()
                     .map(|f| f.attr_diag())
                     .unwrap_or((0, 0));
+                // RWM_STORE_SACK_RELEASE DIAG: currently released (retained
+                // but uncounted) / cumulative slots released — the store-
+                // dwell mechanism gauge (win= already shows the uncounted
+                // outstanding; retained = win + srel_cur). Empty when off.
+                let srdiag = if store_sack_release_on {
+                    format!(" srel={}/{}", sack_released.len(), sack_released_total)
+                } else {
+                    String::new()
+                };
                 // feat/recovery-suppression DIAG: the recovery-plane trace.
                 // rep/seqs = gap reports processed / gap seqs walked;
                 // fired y/r = retransmits whose live flight was YOUNGER than
@@ -7399,7 +7552,7 @@ async fn run_window_sender(
                     mp_pp,
                 );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7415,6 +7568,7 @@ async fn run_window_sender(
                     xat_c, xat_w,
                     percap_loans.len(), percap_loans_total,
                     mpr,
+                    srdiag,
                     gdiag,
                     pp,
                 );
@@ -8757,6 +8911,13 @@ async fn run_window_sender(
             // RWM Phase A: the sent-data store is drained by acks ONLY —
             // this is the whole retention contract.
             sent_store = sent_store.split_off(&(ack + 1));
+            // RWM_STORE_SACK_RELEASE: the released-mark set prunes on the
+            // SAME cumulative twin — at/below the frontier the slot is now
+            // FULLY freed (payload dropped above, mark dropped here); the
+            // subset-of-sent_store invariant is preserved. No-op when off.
+            if !sack_released.is_empty() {
+                sack_release_prune(&mut sack_released, ack);
+            }
             // task #86: cumulative release of the per-path accounts (the
             // split_off twin; seqs already SACK-released are gone from the
             // account map, so no double-release).
@@ -11497,6 +11658,155 @@ mod tests {
         // The hole's exact bytes survive for a targeted retransmit (reliability
         // contract intact: the hole is recovered in the background).
         assert_eq!(&sent_store.get(&10).unwrap().data[..32], &[10u8; 32]);
+    }
+
+    // ----- SACK-clocked store release (RWM_STORE_SACK_RELEASE) --------------
+    // Pre-registered invariants (goal-gate "SACK-Clocked Store Release"):
+    // SACKed → released → retransmit-still-possible → cumulative-ack →
+    // fully freed; window opens on SACK; no double-release; released slots
+    // return to the pool; released seqs keep their per-flight loss clocks.
+
+    #[test]
+    fn test_sack_release_every_unacked_symbol_stays_recoverable() {
+        // The chain the RWM_SACK_PRUNE refutation forbids breaking: a
+        // SACKed symbol leaves the OUTSTANDING COUNT but its payload and
+        // ARQ state survive until the cumulative frontier passes it.
+        use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
+        let n = 100u64;
+        let mut encoder = RlcWindowEncoder::new(64);
+        let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        for i in 0..n {
+            let sym = encoder.add_source(&vec![i as u8; 32]);
+            sent_store.insert(sym.block_id, sym);
+        }
+        // Frontier at 9; hole at 10; receiver SACKed 11..=99.
+        let ack = 9u64;
+        sent_store = sent_store.split_off(&(ack + 1));
+        sack_release_prune(&mut released, ack);
+        let newly = sack_release_mark(&sent_store, &mut released, 11, 99);
+        assert_eq!(newly.len(), 89, "11..=99 newly released");
+        // RELEASED, not removed: outstanding drops to the hole + frontier
+        // successor set, but EVERY entry is still in the store.
+        assert_eq!(sent_store.len(), 90, "nothing was removed from the store");
+        assert_eq!(sack_release_outstanding(sent_store.len(), released.len()), 1);
+        // Retransmit still possible for a released symbol (the NACK path
+        // serves from sent_store.get — e.g. after a receiver eviction).
+        let held = sent_store.get(&50).expect("released symbol still retransmittable");
+        assert_eq!(&held.data[..32], &[50u8; 32]);
+        // The hole itself was never SACKed → still counted.
+        assert!(!released.contains(&10));
+        // Cumulative frontier passes everything → fully freed, both maps.
+        let ack2 = 99u64;
+        sent_store = sent_store.split_off(&(ack2 + 1));
+        sack_release_prune(&mut released, ack2);
+        assert!(sent_store.is_empty());
+        assert!(released.is_empty(), "released marks freed with the store (subset invariant)");
+    }
+
+    #[test]
+    fn test_sack_release_opens_window_and_returns_slots_to_pool() {
+        // The mechanism: outstanding = retained − released re-opens the
+        // flow-control gate (RWM_STORE_PATHS' pooled cap composes through
+        // the same count) while a hole holds the cumulative frontier.
+        let mut sent_store: BTreeMap<u64, u8> = BTreeMap::new();
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        for i in 0..1024u64 {
+            sent_store.insert(i, 0);
+        }
+        let cap = 1024usize; // RELIABLE_STORE_MAX-class pooled cap
+        // Store pegged at cap across a frontier stall: gate closed.
+        assert!(sack_release_outstanding(sent_store.len(), released.len()) >= cap);
+        // Hole at 0; receiver SACKs 1..=1023 → slots return to the pool.
+        let newly = sack_release_mark(&sent_store, &mut released, 1, 1023);
+        assert_eq!(newly.len(), 1023);
+        let outstanding = sack_release_outstanding(sent_store.len(), released.len());
+        assert_eq!(outstanding, 1, "window opens: only the hole still counts");
+        assert!(outstanding < cap, "gate re-opens while the frontier is frozen");
+        // The frontier is NOT advanced — retention intact (reliability).
+        assert_eq!(sent_store.len(), 1024);
+    }
+
+    #[test]
+    fn test_sack_release_no_double_release_and_percap_composes() {
+        // A re-advertised SACK snapshot (gap reports are state snapshots,
+        // re-sent every cadence) must not double-release: neither the
+        // released set nor the per-path accounts move twice.
+        let mut sent_store: BTreeMap<u64, u8> = BTreeMap::new();
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
+        let mut out: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for i in 0..10u64 {
+            sent_store.insert(i, 0);
+            percap_charge(&mut acct, &mut out, i, (i % 2) as u32);
+        }
+        assert_eq!(out[&0], 5);
+        assert_eq!(out[&1], 5);
+        // First snapshot: release 2..=5 (accounts freed on the newly list —
+        // the sender-loop arm's exact arithmetic).
+        let newly = sack_release_mark(&sent_store, &mut released, 2, 5);
+        assert_eq!(newly, vec![2, 3, 4, 5]);
+        for &k in &newly {
+            percap_release_seq(&mut acct, &mut out, k);
+        }
+        assert_eq!(out[&0], 3);
+        assert_eq!(out[&1], 3);
+        // Same snapshot again (plus overlap): NOTHING newly released.
+        let again = sack_release_mark(&mut sent_store, &mut released, 2, 5);
+        assert!(again.is_empty(), "idempotent under re-advertised snapshots");
+        assert_eq!(released.len(), 4);
+        // Cumulative release later cannot double-free the accounts either
+        // (percap_release_cumulative finds SACK-released seqs already gone).
+        percap_release_cumulative(&mut acct, &mut out, 9);
+        assert_eq!(out[&0], 0);
+        assert_eq!(out[&1], 0);
+    }
+
+    #[test]
+    fn test_sack_release_keeps_arq_state_and_flight_clocks() {
+        // RWM_RECOV_MP interaction: releasing a slot must not touch the
+        // per-flight state — nack_retx_at (the live-flight clock the
+        // per-path law times), retransmit_buffer (tail-sweep metadata),
+        // source_path_map (seq→path evidence for the packet-threshold
+        // channel). The release law takes NONE of them as inputs; this
+        // pins the contract the prune arm violates.
+        let mut sent_store: BTreeMap<u64, u8> = BTreeMap::new();
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        let mut nack_retx_at: std::collections::HashMap<u64, (u64, u32)> =
+            std::collections::HashMap::new();
+        let mut retransmit_buffer: BTreeMap<u64, (u64, f64, u32)> = BTreeMap::new();
+        let mut source_path_map: BTreeMap<u64, u32> = BTreeMap::new();
+        for i in 0..20u64 {
+            sent_store.insert(i, 0);
+            nack_retx_at.insert(i, (1_000 + i, (i % 2) as u32));
+            retransmit_buffer.insert(i, (2_000 + i, 0.01, (i % 2) as u32));
+            source_path_map.insert(i, (i % 2) as u32);
+        }
+        let newly = sack_release_mark(&sent_store, &mut released, 5, 19);
+        assert_eq!(newly.len(), 15);
+        // Released seqs keep their flight clocks + ARQ metadata intact.
+        assert_eq!(nack_retx_at.len(), 20);
+        assert_eq!(nack_retx_at[&10], (1_010, 0));
+        assert_eq!(retransmit_buffer.len(), 20);
+        assert_eq!(source_path_map.len(), 20);
+        // And the store itself (the payload copy) is untouched.
+        assert_eq!(sent_store.len(), 20);
+    }
+
+    #[test]
+    fn test_sack_release_mark_skips_seqs_not_retained() {
+        // Ranges can race the cumulative frontier (the atomic may already
+        // be ahead): seqs no longer in the store are never marked, so the
+        // released set stays a subset of sent_store keys.
+        let mut sent_store: BTreeMap<u64, u8> = BTreeMap::new();
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        for i in 50..60u64 {
+            sent_store.insert(i, 0);
+        }
+        let newly = sack_release_mark(&sent_store, &mut released, 0, 100);
+        assert_eq!(newly.len(), 10, "only retained seqs are markable");
+        assert!(released.iter().all(|k| sent_store.contains_key(k)));
+        assert_eq!(sack_release_outstanding(sent_store.len(), released.len()), 0);
     }
 
     /// SACK + BDP reassembly end-to-end reliability invariant
