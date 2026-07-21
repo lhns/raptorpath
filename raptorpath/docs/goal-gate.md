@@ -11346,3 +11346,92 @@ diag preserved under `/home/vibe/shed/` (binary sha256s in the log
 headers: 1bbc1e2a… = 6568822 for the battery, 6720c00d… = b849acb for
 the post-flip smoke); seed-7 topo-abort counts recorded per battery
 above; foreground polling only, no stop-and-wait.
+
+## Copa-Sole on Clean Substrate (2026-07-22) — PRE-REGISTRATION (written and committed BEFORE the battery, discipline item 11; the simple mode-switch removal; branch `feat/copa-sole-clean`)
+
+*Decision record: → [ADR-0054](adr/0054-substrate-cc-policy-bbr-default.md) (the policy surface this battery would collapse), [ADR-0068](adr/0068-copa-bbr-fusion.md) (the fusion that inherits the outcome either way)*
+
+**(a) Mechanism.** Copa-sole's bulk gap (0.86–0.89× BBR-under at sc2,
+0.73–0.76× at c7, 0.78× at sc3 — measured 2026-07-13, "Copa Wire-Signal"
+#82) predates walls 8+9 and the consolidated defaults: those walls
+throttled exactly the steady full-pipe regime where Copa trailed (the
+frontier-clocked store starving the pipe a full frontier round per slot
+— wall #9/§16.25; the phantom-retx recovery plane flooding it — wall
+#8/§16.24). BBR-under's #82 reference numbers were measured against the
+SAME broken substrate, but a controller that eats 38–124 ms of standing
+queue rides out store-starvation stalls that a 4–7 ms-queue controller
+cannot hide; if the walls were a bigger tax on the tight-queue arm, the
+gap shrinks or closes on the repaired substrate. The mode switch under
+test: the two-value CC policy surface (BBR for bulk, Copa for
+latency-priced — ADR-0054's "endstate") vs ONE δ-parameterized
+controller.
+
+**(b) Prediction (effect size + cells).** On the current substrate
+(SACK-release + `RWM_RECOV_MP` + path-scaled pool + anchor hygiene, all
+default ON), passthrough+Copa-wire with δ(hint) reaches ~parity with
+BBR-under on bulk — sc2/sc3/c7/c8 within ~0.95× or ≫σ-indistinguishable
+— while KEEPING its measured queue/tail advantage (the ×18–25 tighter
+slow-path standing queue class, re-confirmed on THIS substrate, not
+assumed) and its C8 class (#82: 0.95–1.01× with σ collapsed). The
+hint→δ mapping must be verified live in arm B (δ(hint) echo per
+profile — bulk small-δ 0.005, realtime large-δ 50; the continuous knob
+the flip is FOR).
+
+**(c) Falsification.** A bulk gap ≫σ persisting on ≥2 cells on both
+seeds ⇒ the gap is Copa's own dynamics (its δ-equilibrium operating
+point), not the walls; the two-value policy surface STAYS, honestly
+documented as a measured tradeoff (NOT flipped), and the fusion
+ADR-0068 inherits the residual gap as its bulk target.
+
+**(d) Derivation re-read for self-contained failure predictions.** Named
+bounds, none disqualifying, recorded before measuring: (1) at
+equilibrium Copa's coupling cap cwnd ≤ BDP + 2/δ is FULL utilization in
+the model (BDP + a 1/δ = 200-symbol queue at Bulk δ ≫ the ~20-symbol
+c2-path dither trough) — the model does not predict a structural sc2/c7
+deficit once the pipe stays fed, so a persisting gap falsifies honestly;
+(2) sc3 is the one cell where the δ-map ITSELF trades throughput
+(1/δ = 200 symbols ≈ 96 ms of tolerated queue at c3's ~2 083 sym/s vs
+the ~15.7 Mbit recovery ceiling): #82 measured 0.78× WITH the anchor ×4
+slow-path over-read that Anchor Hygiene has since fixed — direction
+unknown, so sc3 alone can not carry the falsification (hence the ≥2-cell
+clause); (3) the Copa feed re-keys the outstanding cap to
+gain×Σcwnd (#80) — under the pool/SACK-release defaults this composes
+untested; a c7/c8 anomaly with healthy singles points there (the
+store-cap composition, not Copa's law) and must be attributed before any
+verdict; (4) the 2026-07-19 clean-shared-bottleneck starvation (share
+0.023, "Copa Competitive Mode + Cross-Traffic") is OUT of this battery's
+scope and stays a documented deployment caveat at the flip site — its
+named binder is CC-independent (contention tail-drop recovery), it was
+measured on the pre-SR pool, and no cross-traffic cell is in this
+prediction.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–10 (lock poll FOREGROUND politely until the competitive-baseline
+worker frees `/tmp/rwm-vm.lock`; CRLF conversion after sync; stale
+binary removed first; env + sha256 + lscpu recorded; liveness echoes
+per arm incl. the Copa wire/feed/δ and compete-default echoes; seeds
+42+7 ×8 interleaved round-robin per rep; fresh tunnel per invocation;
+same-session Σ; stage runtimes; seed-7 topo-abort ns recorded). Arms:
+**A** = current default, env unset (BBR-under on the full consolidated
+stack) · **B** = `RWM_QUIC_CC=passthrough` (Copa-sole: wire signal +
+δ(hint) + feed defaults engage; `RWM_COPA_COMPETE` stays at its default
+OFF) — BOTH on the full current default stack otherwise. Cells:
+sc2/sc3/c7/c8 + dc1, plus per-arm queue/RTT distributions (per-path
+rtp / appQ / wireQ p50+p90 from the sender DIAG clocks — the tail
+advantage re-confirmed on this substrate, not assumed), plus ONE
+realtime tail cell (tail_matrix c2, `default` vs `copa` arms — Copa's
+tail claim on the shipped unified machine), plus δ(hint) echo one-offs
+(realtime + auto) in arm B. Driver `tools/l1/copaclean_battery.sh` +
+`copaclean_queues.py`; tail arms via `RWM_TM_ARMS='default copa'`.
+
+**FLIP DECISION (pre-registered).** If the prediction holds (bulk
+~parity + queue/tail advantage held, both seeds) → `RWM_QUIC_CC`
+default flips to `passthrough`: Copa-sole becomes THE controller, `bbr`
+joins `cubic`/`newreno` as explicit reference/fallback values, the
+hint-selected mode switch is GONE and δ(hint) (+`RWM_COPA_DELTA`) is
+the only latency/throughput knob; ADR-0054 gains a superseded-by note,
+paper §12.11/§17.2 updated. If falsified → no flip; the residual gap is
+documented as the measured tradeoff in ADR-0054 and paper §17.2, and
+ADR-0068 carries the target.
+
+*(Results below this line were written after the battery ran.)*

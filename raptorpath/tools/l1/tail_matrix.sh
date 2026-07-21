@@ -60,7 +60,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # echo — an unguarded grep kills the whole matrix silently).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*)' \
             | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
@@ -125,6 +125,13 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # RECOV_MP are reliable-window-gated (inert here by construction);
             # the live members at this cell are the anchor pair.
             stack)   AENV="RWM_STORE_PATHS=1 RWM_RECOV_MP=1 RWM_MSTAR_ANCHOR=1 RWM_CLOCK_GAP=1"; AFLAGS="" ;;
+            # feat/copa-sole-clean: the substrate-CC tail cell — the shipped
+            # default machine (unified Realtime, post-flip) under BBR-under
+            # (default) vs Copa-sole passthrough. `default` is an alias for
+            # env-unset (the historical `stream` name predates the unified
+            # default flip).
+            default) AENV="";              AFLAGS="" ;;
+            copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
             *) echo "unknown arm '$arm'" >&2; continue ;;
         esac
         for size in 400 1200; do
