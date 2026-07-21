@@ -99,3 +99,4 @@ tables. The feature triage feeding the code-consolidation pass is
 | [0065](0065-daps-era-refutations.md) | DAPS-era refutations (delay-aware scheduling chain) | Refuted / Void |
 | [0066](0066-deprecation-register.md) | The deprecation register — two-stage retirement | Accepted |
 | [0067](0067-consolidated-default-stack.md) | The consolidated default stack (LOO-defended defaults) | Accepted |
+| [0068](0068-copa-bbr-fusion.md) | A better Copa — δ-priced probing over a measured rate model, ε̂-referenced loss discrimination | Proposed (future exploration; adversarial-cell prerequisite) |

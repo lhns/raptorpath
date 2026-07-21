@@ -9730,6 +9730,19 @@ asserted beyond its naming evidence.
    **[CLOSED 2026-07-21 (§16.26): realtime IS routed through the unified
    family by default; `RWM_TAPER_R` rides the umbrella; cod/src 0.38–0.50
    consumed at the realtime wire and delivered 100% — r\* realized.]**
+10. **The CC endgame: adversarial cells → measured Copa breakage → the
+   fusion (ADR-0068)** — the named future lever for the one-controller
+   endstate. The current cells (clean delay, deep buffers, no policers)
+   cannot falsify a Copa/BBR fusion; the prerequisite is adversarial
+   cells (delay-jitter / shallow-buffer / policer) with Copa-sole's
+   measured breakage as the pre-registered baseline, then ONE controller:
+   δ-priced probing over a measured rate model (the §16.21 anchors as
+   feed-forward baseline; probe amplitude+dwell derived from δ — δ→0
+   recovers BBR-class discovery, δ large recovers Copa's gentleness)
+   with ε̂-referenced loss discrimination (loss ≤ ε̂ is FEC's job;
+   persistent loss > ε̂ ⇒ bounded inflight — the channel estimator as
+   the measured reference generic CCs lack). Literature verification
+   (BBRv2 / PCC-Vivace / Nimbus, from sources) required before build.
 
 Minor named items: the c7 unified-receiver +3–5% CPU signal; the np 2→1
 live-path flap under saturation; the `RWM_STORE_PATHS` default battery;

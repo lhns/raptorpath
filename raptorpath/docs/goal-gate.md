@@ -458,6 +458,23 @@ carries its gating decision.
    repair should bypass the spare-cap gate. Gates `RWM_TAPER_R` and the
    full realization of the corrected r\* at the realtime wire. (#85/#46)
 
+10. **The CC endgame: adversarial cells → measured Copa breakage → the
+   fusion [ADR-0068](adr/0068-copa-bbr-fusion.md)** (named 2026-07-21;
+   NOT buildable-falsifiable on the current rig). The clean-substrate
+   Copa question closes with the "Copa-Sole on Clean Substrate" battery
+   (below); what remains structurally open is the regime the current
+   cells cannot reach — delay-jitter (WiFi/LTE aggregation class),
+   shallow buffers, policers — where a pure delay-priced controller is
+   predicted fragile and BBR's explicit rate model is the known answer.
+   The lever is ONE controller, not a switch: δ-priced probing over a
+   measured rate model (the ADR-0061 anchors) with ε̂-referenced loss
+   discrimination. Gate chain, pre-registered in the ADR: build the
+   adversarial cells FIRST, measure Copa-sole's breakage as the
+   baseline, then pre-register the fusion per discipline item 11;
+   literature verification (BBRv2 / PCC-Vivace / Nimbus mechanisms from
+   sources) required before any build. No breakage measured ⇒ nothing
+   to build.
+
 Minor named items (recorded, unranked): the c7 unified-receiver +3–5% CPU
 signal; the `np` 2→1 live-path flap under saturation (shared contributor at
 both dual cells); the `RWM_STORE_PATHS` default-flip battery; the harness
