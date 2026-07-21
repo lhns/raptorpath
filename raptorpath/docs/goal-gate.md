@@ -11263,3 +11263,174 @@ diag preserved under `/home/vibe/shed/` (binary sha256s in the log
 headers: 1bbc1e2a… = 6568822 for the battery, 6720c00d… = b849acb for
 the post-flip smoke); seed-7 topo-abort counts recorded per battery
 above; foreground polling only, no stop-and-wait.
+
+## Competitive Baseline (2026-07-21) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE any measurement; branch `meas/competitive-baseline` from c3a9d76; MEASUREMENT task, harness glue only, no transport code touched)
+
+**(a) The question.** Where does the SHIPPED DEFAULT stack (BBR-under +
+SACK-release + path-scaled pool + recov-mp + anchor hygiene + unified, all
+default ON as of c3a9d76) stand against the real competitors — native QUIC
+(quinn), kernel TCP (Cubic AND BBR), and kernel MPTCP — for BULK and
+REALTIME under the standard conditions? Every prior external comparison in
+this file (L1 Phase 1/2, L2 claim table, Metric A, L3 REGIME MAP) predates
+the substrate chain (walls #1–#9), the hardware divide, the consolidation
+stack, and the unified flip; §17's claims have never been verified against
+the competitors on the CURRENT binary. This battery is the external
+referee for paper §17: it verifies or refutes the standing claims
+(lossy-bulk advantage, the tail crown, dual-path aggregation) on the same
+day, same VM, same netem cells, same seeds.
+
+**The comparison matrix (pre-registered).**
+
+Transports:
+- **rp** = raptorpath shipped default, env unset (liveness echoes asserted
+  per arm). Bulk arm = `perf --window-reliable` plain window (`RWM_GEN=0`,
+  the consolidation crown's configuration; gen-sys is measured parity at
+  ~free CPU — recorded, not re-run), single-path on c1/c2/c3, dual on
+  c7/c8. Realtime arm = the default tunnel (unified machine) under
+  tail_matrix.
+- **quinn** = quinn-perf (the native-QUIC reference the substrate is built
+  from), STOCK configuration; its CC is to be VERIFIED on the VM (expected:
+  quinn's default Cubic) and run BBR too iff the example exposes it
+  without patching — else its CC is documented as part of the record.
+  DEVIATION FROM PHASE 2, pre-registered: the client runs
+  `--upload-size 25M --download-size 0` so the object traverses the GE
+  direction (cli→srv) like every other arm — the Phase-2 quinn numbers
+  used download = the loss-FREE direction and are therefore NOT comparable
+  (recorded here; this battery is the first direction-fair quinn bulk row).
+- **tcp-cubic / tcp-bbr** = iperf3 `-C cubic|bbr` (availability via
+  `sysctl net.ipv4.tcp_available_congestion_control`, modprobe tcp_bbr if
+  needed), server in rp-srv, client in rp-cli (sender traverses the GE
+  direction). Cold connection per run (documented geometry caveat; at
+  25 MB the handshake is amortized). Sender-side completion without an
+  app-level ack — a caveat that FLATTERS TCP slightly vs rp's
+  delivery-acked completion; recorded, not corrected.
+- **mptcp** = kernel MPTCP v1 (`IPPROTO_MPTCP` via transfer_bench.py,
+  topo_dual's endpoint/limit configuration) over the dual topology, run
+  under per-netns `net.ipv4.tcp_congestion_control` = cubic AND bbr.
+  Liveness = MPTcpExt MPJoin counters (subflow actually joined) + goodput
+  vs the single-path ceiling. If the kernel lacks MPTCP, that is
+  DOCUMENTED and c7/c8 compare rp-dual vs the best single-path competitor
+  + the theoretical Σ.
+
+Conditions × workloads:
+- **BULK: 25 MB objects.** Cells c1 (clean 1 Gbit), c2 (100 Mbit,
+  GE 1.3/50 ≈ 2.6% loss), c3 (20 Mbit, GE 2/40 ≈ 4.8%), c7 (= c2+c2 dual),
+  c8 (= c2+c3 dual). Metric: goodput mean±σ, n=8 per seed, netem seeds 42
+  AND 7 for EVERY transport (the competitors ride the same seeded netem;
+  ×8 repetitions each), arms interleaved round-robin per rep within one
+  session, fresh topology/tunnel per invocation. Per-run timeout 400 s;
+  DNF is a recorded datum. rp CPU recorded (CPUSRV/CPUCLI);
+  iperf3/quinn client CPU via /usr/bin/time.
+  At c7/c8 the arms are rp-dual, mptcp×{cubic,bbr}, tcp-bbr on path A
+  (the best single-path competitor, same session); Σ references = the
+  same-battery single-cell arms (rp: sc2/sc3; tcp: c2/c3-bbr).
+- **REALTIME: the tail_matrix message workload** — 50 msg/s × 20 s,
+  400 B and 1200 B, one-way delivered latency on the shared kernel clock,
+  cells c2 and c3, n=8 reps per arm per seed, seeds 42+7. Arms: rp (the
+  shipped default tunnel; tail_matrix gains a `ship` arm alias = env
+  empty), tcp (kernel TCP stream, TCP_NODELAY both ends, framing = 4-byte
+  length prefix + 8-byte send timestamp — transfer_bench.py stream mode;
+  CC = cubic, the deployed default; CC is irrelevant at 0.5 Mbit offered
+  load — loss recovery, not congestion control, owns these tails), quic
+  (msg_lat, one ordered reliable QUIC stream, same framing/geometry).
+  Metric: per-rep p50/p99 + delivered count (of 1000). FAIRNESS CAVEATS,
+  stated in advance: TCP/QUIC have no message semantics (byte/stream
+  framing above a reliable in-order stream; retransmit-based HoL applies
+  — that IS the comparison point); rp's messages ride the TUN tunnel
+  (inner TCP over the transport = extra geometry rp pays, historically
+  ~equal p50); delivered<1000 for TCP/QUIC means tail messages were still
+  HoL-blocked at harness timeout (a latency cliff reported as a delivery
+  cliff — both readings recorded).
+- **FAIRNESS note row (not re-run):** the ledger's cross-traffic numbers
+  are reused — shipped stack vs 1 Cubic flow at GE-c2: rp share
+  0.937–1.0 (Cubic is Mathis-bound there); clean shared bottleneck: BBR
+  0.24 share at 305–316 ms standing queue, Copa-sole 0.023
+  (contention-recovery pipeline, the CC-independent named blocker);
+  goal-gate "Copa Competitive Mode + Cross-Traffic" + "Consolidation".
+
+**(b) Expected outcomes (pre-registered; the honest priors from this
+file).**
+
+1. **c1 bulk: rp LOSES, large.** The engine's measured service walls
+   (~19.5–22k sym/s ≈ 185–200 Mbit/s, §16.23) sit far below kernel TCP
+   line-rate (~930 Mbit Phase-1) and below quinn's clean-path rate
+   (Phase-2: 545). Expected rp ~180–195 vs tcp ~900+, quinn ~300–550.
+   This row is the engine-ceiling price, stated without softening.
+2. **c2 bulk: rp ≈ tcp-bbr (tie to small loss), rp ≫ tcp-cubic and
+   (predicted) ≫ quinn-stock.** rp class 84–85; tcp-bbr steady ~93
+   (Phase-1; loss-blind); tcp-cubic ~10–17 (Mathis-bound); quinn-stock
+   carries Cubic-family CC → predicted to collapse toward the cubic class
+   once the object rides the LOSSY direction (the direction fix above).
+   A quinn result ≥ 70 would refute wall #1's premise and demand
+   attribution.
+3. **c3 bulk: possible honest LOSS to tcp-bbr.** rp recovery ceiling
+   15.6–15.9 vs BBR steady ~18 (Phase-1); cubic ~1.4–3; quinn-stock
+   predicted cubic-class. If tcp-bbr > rp here, the row names the lever
+   (recovery-plane residual at the 20 Mbit cell), and the sub-cell claim
+   "legacy Cubic: 3.2" gets its modern verification.
+4. **c7 bulk: rp-dual expected to WIN vs mptcp-cubic (historic 15.4 =
+   collapse class) and vs any single path (~90); mptcp-bbr is THE
+   INTERESTING UNKNOWN** — loss-blind subflows could plausibly reach
+   0.8–0.95×Σ (~135–160). rp class 163–168 (0.97–1.0×Σ). If mptcp-bbr ≥
+   rp, that is a headline finding (kernel multipath matches the stack's
+   crown cell), recorded as such.
+5. **c8 bulk: the honest watch cell.** rp shipped default 0.72–0.76×Σ
+   (the c8 WATCH: the stack's known worst cell, legacy pool reads
+   0.85–0.87); mptcp-bbr unknown; single-path tcp-bbr on the c2 path ~90
+   ≈ 0.9×Σ alone. Plausible LOSS row for rp — if so it re-prices the c8
+   pool-law follow-up with an external bound.
+6. **Realtime c2: rp WINS by orders of magnitude (the crown's modern
+   verification).** rp p99 medians 37–52 ms class (unified default);
+   kernel TCP historic p99 ~13 s (RTO cascade, both CCs); quinn historic
+   p99 ~2.8 s. Prediction: tcp p99 ≥ 10× rp, quinn p99 ≥ 5× rp at
+   c2-1200B. If TCP/QUIC land within ~2× of rp, the 12–48× crown claim
+   is REFUTED on the modern substrate and §17.4 gets rewritten.
+7. **Realtime c3: rp expected to WIN but closer.** rp 90–135 ms class;
+   the pre-arc datum has kernel BBR at 198 ms p99 (Phase-1-era) and quinn
+   at 1393 ms; the tcp arm here runs cubic (see (a)) — GE 4.8% bursts
+   on a 91-ms-RTT-class cell should put TCP's p99 in the RTO class
+   (≥ 1 s). A TCP p99 < rp's would be the honest surprise to attribute.
+8. **Delivered%:** all reliable arms deliver 1000/1000 except where HoL
+   outlasts the harness window (expected at c3 for tcp/quic in some
+   reps); rp delivers 1000/1000 (the flip battery's class).
+
+**(c) Verdict rule.** No flip gates on this battery — the deliverable is
+the position table itself: per condition × workload, WIN/TIE/LOSS for rp
+vs the best competitor arm, at the discipline-5 noise floor (a delta
+inside the larger of the two σ_s is a TIE; sub-σ directions recorded as
+watch, never claimed). Losses are recorded at full strength and each must
+name the lever it exposes (engine service walls at c1; recovery ceiling
+vs loss-blind BBR at c3; c8 pool law; mptcp-bbr vs rp-dual). If a
+pre-registered expectation is refuted (e.g. quinn ≥ 70 at c2, TCP within
+2× at realtime-c2), the refutation is the headline, not a footnote.
+
+**(d) Derivation re-read / self-contained caveats.** (1) The engine-wall
+prediction at c1 is already derived (§16.23) — the row cannot surprise;
+it is included because a competitive table without the losing clean-path
+row would be dishonest by omission. (2) iperf3's sender-side semantics
+and quinn's warm-connection geometry both flatter the competitors
+slightly; rp's fresh-tunnel-per-invocation includes engine warm-up in
+session cost but the timed run excludes the warm-up object — geometry
+deltas are documented per arm, not "corrected". (3) The realtime arms
+compare a tunnel-carried TCP stream (rp) against raw sockets — rp pays
+the tunnel tax; historically equal p50 within ~1 ms. (4) MPTCP's
+scheduler/CC are kernel policy — both sysctls recorded; a cubic-subflow
+collapse is a CC property, not an MPTCP-protocol property, which is why
+the bbr arm exists. (5) netem's GE loss applies identically to every
+transport; seeds 42/7 give two channel realizations, not statistical
+independence across arms within a rep — which is exactly why arms are
+interleaved per rep.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–10: lock `/tmp/rwm-vm.lock`; CRLF-convert after sync; FOREGROUND
+polling only; rp-* namespaces only, never ens18/sshd/firewall; rm stale
+binary before build; binary sha256 + commit + lscpu in every log header;
+env record incl. kernel, iperf3 version, quinn checkout rev + verified
+CC, mptcp sysctls, qdisc; seed-7 topo-abort ns recorded; ARMCOUNT
+assertion per arm; runtimes stated. Missing tools installed via apt
+inside the VM only. Drivers: `tools/l1/compet_battery.sh` (bulk,
+interleaved) + `tools/l1/compet_rt.sh` (realtime) + a `ship` arm alias in
+tail_matrix.sh — harness-only changes; lib suite run once on the branch
+to prove the transport is untouched.
+
+*(Results below this line were written after the battery ran.)*
