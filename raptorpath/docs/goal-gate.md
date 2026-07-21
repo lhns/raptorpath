@@ -504,11 +504,17 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | deprecated (warned) |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | deprecated (warned at `RWM_DAPS`/`RWM_PER_PATH_EST`/`RWM_RATE_SAMPLE`/`RWM_DAPS_DEPTH`; `_BDP`/`_PACE`/`PACE_ALL` are sub-knobs under the warned root); retained |
 
+| STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning — an opt-out, not a refuted mechanism); retirement argued in a later pass only |
+
 Class-B gates (concept incomplete, successor named — `RWM_TAPER_R`,
 `RWM_STORE_PERCAP`/`_GUARD`/`_HONEST_CAP`, `RWM_STORE_BORROW`,
 `RWM_UNIFIED`, `RWM_COPA_COMPETE`) are NOT in this register: each is a
 documented negative-or-partial result whose successor is scheduled in the
 roadmap; they deprecate (or flip) when their successor's battery settles.
+**[2026-07-21 update: `RWM_TAPER_R` and `RWM_UNIFIED` left Class B by
+FLIPPING — both ship default ON under the unified umbrella ("Unified
+Shedding + Flip Battery"); the streaming machine entered the register
+above with its re-test clause.]**
 
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
 
@@ -11072,3 +11078,188 @@ Per-arm summary (median over 14 reps; outage-class = ≥1 delivery gap
   (0/14 p50-sec), delivered% within the 1−ε̂ class everywhere including
   the environmental rep (75.8% ≈ 1−ε̂_episode with the law's own
   contribution ≤ 61 symbols by gauge).
+
+### L1 flip battery RESULTS (VM 10.1.5.16, 2026-07-21 14:30–16:35 UTC; binary sha256 1bbc1e2afed2… = commit 6568822, SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; seeds 42 AND 7; drivers `tools/l1/shed_all.sh` (+ the rlc re-run and bulk-s7 top-up below), logs `/home/vibe/shed/{tail-*,c3rt-*,bulk-*,knee-*}.log` + per-run `diag-*`; lock `/tmp/rwm-vm.lock` held 13:22 UTC → released after teardown; stage runtimes: battery A 94 min, B 9 min, C+D 7 min + 12 min re-runs)
+
+Arms run on the CURRENT shipped defaults (BBR + SACK-release +
+STORE_PATHS + RECOV_MP + MSTAR/CLOCK_GAP all ON, env unset except the
+arm knob). Liveness: the unified arms echo `unified span law ACTIVE` +
+`unified overload shedding ACTIVE` (sender AND receiver) + `A* send-rate
+anchor ACTIVE` + `RWM_UNIFIED: receive path on the unified global
+decoder` at BOTH endpoints on every arm (8/8 echo sets per tail log);
+tail arms ran without RWM_DIAG (the battery-1 precedent — echoes are
+info-level; the shed gauges were verified at L0 and in the pre-battery
+VM smoke).
+
+**Harness caveat, recorded first (discipline item 7 recurrence).** The
+c3-s7 rlc-1200B arm was LOST silently: a transient `topo.sh up` failure
+under lib.sh's `set -e` killed tail_matrix mid-matrix after the arm's
+start line (no BRINGUP_FAIL, no EXIT echo — the trap had been replaced).
+Guard added (`|| true`; the ping probe now owns bringup failure, loudly)
+and the arm re-run same-day same-binary ×8 (its 400B companion reproduced
+the in-battery rlc-400B class: 110 [105–126] vs 110 [103–136] — the
+session anchor for the re-run). The seed-7 topo-ping double-abort class
+also hit battery C hard (bulk s7: LS-sc2 lost 9/12 invocations) — topped
+up with 6 more interleaved reps/arm, ns quoted, no captured result
+discarded.
+
+**1. THE FLIP GATE — 3-arm realtime tail matrix** (`RWM_TM_ARMS='stream
+unified rlc' tail_matrix.sh {c2,c3} 8`, warm tunnel, 50 msg/s × 20 s
+× 1000 msgs/rep; per-rep p99 medians [min–max] over n=8):
+
+| cell·size | stream (crown) | unified+shed | legacy-rlc |
+|---|---|---|---|
+| c2 400B s42/s7 | 40 [36–52] / 43 [35–59] | **37 [35–164] / 37 [35–55]** | 36 [34–41] / 37 [34–45] |
+| c2 1200B s42/s7 | 52 [41–62] / 52 [37–81] | **40 [35–43] / 40 [37–61]** | 39 [37–42] / 39 [36–41] |
+| c3 400B s42/s7 | 108 [103–148] / 125 [102–185] | **101 [97–125] / 108 [90–379]** | 109 [102–130] / 110 [103–136] |
+| c3 1200B s42/s7 | 112 [99–116] / 133 [106–494] | **111 [92–133] / 101 [89–134]** | 102 [94–109] / 106 [90–118] (re-run) |
+
+- **ZERO collapse-class reps: 96/96 completed reps (+ 16 re-run reps)
+  have p50 ≈ 8 ms (c2) / 24–26 ms (c3) and n=1000/1000 delivered.** The
+  #61 blocker (3/10 unified reps with p50 in SECONDS at c3-1200B) is
+  GONE — prediction 1 CONFIRMED at L1.
+- **Unified+shed ≤ streaming at ALL EIGHT cell-size-seed rows** (c2:
+  37/40 vs 40–43/52; c3: 101–111 vs 108–133) — within-class and better;
+  the 12–48× crown property is carried by the unified machine at these
+  cells, not merely survived.
+- **Unified+shed vs legacy-rlc: ≥ everywhere within the noise floor** —
+  better at c3-400B both seeds (101/108 vs 109/110), tied +1 ms at the
+  c2 rows, and at c3-1200B the delta SIGN-FLIPS across seeds (s42
+  111 vs 102, s7 101 vs 106; rep ranges overlap broadly, Δ ≈ 1.6σ at
+  s42, opposite sign at s7 — per discipline item 5 no regression claim
+  survives the noise floor). The #61 base at this cell — unified 794/
+  3064 vs rlc 340/205 with collapses — is replaced by three machines in
+  ONE tail class with unified at-or-ahead.
+
+**2. Realtime delivered reliability + r\* realization, c3 perf cell**
+(`perf_rwm_c.sh c3 c3 realtime 100000 20 single` ×8/seed interleaved;
+S = streaming (RWM_UNIFIED=0-era shipped arm), U = unified+shed, U0 =
+unified `RWM_UNIFIED_SHED=0`; note this perf cell runs `--window-reliable`
+⇒ ρ=1 RETAIN — the HIGH-ρ setting):
+
+| arm | s42 delivered (n) | s7 delivered (n) | completer median_s | cod/src |
+|---|---|---|---|---|
+| S | 126/160 = 78.8% (8) | 114/140 = 81.4% (7) | 0.100–0.121 | 0.015–0.12 |
+| U | **160/160 = 100%** (8) | **80/80 = 100%** (4) | 0.119–0.125 | 0.40–0.50 |
+| U0 | **160/160 = 100%** (8) | **120/120 = 100%** (6) | 0.117–0.126 | 0.38–0.49 |
+
+- Prediction 3 CONFIRMED and the #61 trade DISSOLVED: the unified
+  machine is delivery-complete at the cell where streaming leaves
+  19–21% DNFs — and the completer-median price collapsed from the #61
+  ×3–4 (0.38–0.55 s) to ×1.2 (0.12 vs 0.10 s): with the A* anchor live,
+  recovery is in-window FEC, not serialized ARQ.
+- U ≡ U0 (both 100%, medians overlapping) — the shed law is inert on
+  the ρ=1 reliable contract at L1, behaviorally confirming the
+  never-shed-reliable invariant; the high-ρ point (99.4–100% class)
+  remains exactly available.
+- **r\* is REALIZED at the realtime wire (the §8.4.1 chain's last
+  link):** cod/src 0.38–0.50 consumed as computed (S arms: 0.015–0.12 —
+  the streaming emission remains r\*-inert), and the consumed r BUYS the
+  measured 100% delivery. The #46/#85 arc closes: quantity law (#85
+  TaperBudget) + solvable span (§16.20.3) + honest anchor (§16.21 fix A)
+  together are what r\* needed to reach the wire.
+
+**3. Bulk gen-sys parity, sc2 + c7** (25 MB ×1/invocation, interleaved;
+n after the topo-abort top-up; mean ± σ_s Mbit/s):
+
+| cell | LS legacy s42 · s7 | US unified s42 · s7 |
+|---|---|---|
+| sc2 | 74.11 ± 2.11 (4) · 71.54 ± 3.77 (3) | 74.12 ± 2.42 (4) · **76.26 ± 2.26 (6)** |
+| c7 | 87.67 ± 11.17 (4) · 86.86 ± 6.95 (5) | 82.75 ± 4.96 (4) · 82.12 ± 8.14 (6) |
+
+Parity within σ_s everywhere (sc2 tie/+4.7 with the sign flipping
+across seeds; c7 −4.9/−4.7 at 0.6–0.7σ per seed — same class as the #61
+battery's ±5 sign-flipping c7 deltas; recorded, not a gated regression;
+GUARD OK + unified-decoder receiver echo on every US run).
+
+**4. Depth knee, c2r100 + c2r200** (gen-sys single ×4/arm, both arms on
+the shipped MSTAR/CLOCK_GAP defaults; L1 = legacy machine + RWM_GEN_PIPE=1,
+U1 = unified; mean ± σ_s):
+
+| cell | L1 s42 · s7 | U1 s42 · s7 |
+|---|---|---|
+| c2r100 | 46.22 ± 0.87 · 47.23 ± 1.07 | 47.92 ± 2.42 · 48.68 ± 4.88 |
+| c2r200 | 34.59 ± 1.90 · 32.39 ± 2.02 | 35.52 ± 2.12 · 34.60 ± 2.01 |
+
+The ENGAGED-knee class (§16.21: 47.9/48.5 at r100, 34.9/32.9 at r200)
+reproduces in BOTH machines — the first fully-live L1 look at the §16.20
+depth law with A\*/M\* both anchored; unified ≥ legacy at all four
+cell-seeds (inside σ) — knee no-regression PASS.
+
+### VERDICT vs the pre-registration
+
+- Prediction 1 (collapse → ~0): **CONFIRMED** — 0 collapse reps at L1
+  (vs 3/10 base) and 0 p50-sec reps in 56 L0 runs (vs 3/14 base); the
+  L0 outage-class reps that remain hit ALL FOUR machines including
+  streaming under the same (extreme) host-load trigger — the
+  RLC-family-specific amplification is gone.
+- Prediction 2 (tails): **CONFIRMED** — ≥ legacy-RLC everywhere within
+  the noise floor; ≤ streaming at every row (stronger than predicted).
+- Prediction 3 (completeness at high ρ): **CONFIRMED** — 100% both
+  seeds, shed-inert on the reliable contract, at completer parity.
+- Prediction 4 (A\*-inertness resolved): **CONFIRMED** (L0 FDIAG:
+  DECODE:SOURCE inverted 1:4 → ~3:1, a\*=4–7 within ~1 RTT, ru/rf 15.5%
+  ≈ the span ceiling).
+- Prediction 5 (bulk parity + knee): **CONFIRMED** (within σ; knee
+  engaged in both machines, unified at-or-ahead).
+- Falsification clauses: none triggered.
+
+**FLIP: `RWM_UNIFIED` DEFAULT ON (2026-07-21, commit b849acb).** The
+shipped transport is now ONE machine across the δ axis: the unified
+global sparse-aware decoder on both RLC wires, the (δ,ρ,r)-derived
+span law A\*/M\*/Δ with its repaired send-rate anchor, and δ-honest
+overload shedding on the realtime EVICT path — Realtime is the small-δ
+parameterization, bulk the large-δ limit, no machine switch. `RWM_UNIFIED=0`
+is the legacy three-machine opt-out arm (streaming keeps Realtime
+there). Suites on the flipped default: lib 377/377; math full
+(59/19/22/4/4/3/25); release gate_suite 15/15 (223.8 s, NO expectation
+recalibrated); mtu_blackhole_wedge 2/2; perf_loopback 8/8; copa_sole/
+fmtcp/daps/recov_mp loopbacks 1/1.
+
+**Default-env L1 smoke of the SHIPPED binary post-flip** (env fully
+unset; binary sha256 6720c00dcccc… = commit b849acb, seed 42, log
+`/home/vibe/shed/default-smoke.log`): the default Realtime tunnel now
+echoes the FULL unified set at both endpoints with nothing set (span
+law + unified decoder + shedding sender/receiver + A\* anchor + the
+consolidation stack echoes) and posts c3 p99 medians 108/91 ms
+(400/1200B, n=1000/rep — the battery's unified class); the PLAIN BULK
+default cells — which the flip battery did not cover and the
+consolidation crown owns — HOLD their classes under the unified
+default: sc2 85.4/84.7 Mbit (the §16.25 SR-arm class 84.4–85.0), c7
+dual 163.0/169.3 (the consolidation stack class 166–168, ≈0.97–1.0×Σ),
+dnf=0 everywhere. The shipped default carries the whole stack plus the
+unified machine end to end.
+
+**DEPRECATION REGISTER — streaming-machine retirement enters (re-test
+clause; NOTHING removed this pass).** The streaming two-layer code
+(`fec/streaming.rs` + `streaming-codes`) loses the Realtime default to
+the unified machine but is RETAINED as the `RWM_UNIFIED=0` arm. The
+crown's 12–48× record is streaming's; unified held/beat its tail class
+at every cell of THIS battery (c2/c3 × 400/1200 × both seeds), but the
+historic record spans more cells (the L2/L3 message-tail batteries,
+quinn-vs-rp Metric A). Retirement (code removal) requires a later pass
+re-arguing that record cell-by-cell on the unified default per the
+register's two-stage discipline; until then streaming warns nothing
+(it is a live opt-out, not a refuted mechanism).
+
+**Named follow-ups (not built).** (1) The ρ-budget at the sender is
+conservative by construction (ε̂·(1−P_fec) with the EVENTUAL P_fec —
+within-deadline P_fec would be smaller ⇒ a larger honest budget); the
+receiver's ε̂-class budget carried the tail work in this battery, so
+nothing was owed, but the within-D form is the principled refinement.
+(2) The L0 extreme-stall datum (multi-second whole-process freezes
+collapse ALL machines incl. streaming) names the residual class as
+environment-bound, not machine-bound — the CONFIRMATION PROTOCOL
+(host-steal sampling) from the attribution remains open. (3) c7 US
+−5 Mbit direction (0.6σ, both seeds) — watch at the next gen-mode
+consolidation. (4) The c3-1200B s42 +9 ms vs rlc (sign-flipped at s7)
+— re-measured free in any future tail battery.
+
+Ops: VM lock `/tmp/rwm-vm.lock` taken 13:22 UTC, released after
+teardown; tree synced via git archive + CRLF conversion before the
+first harness invocation (discipline 10); rp-* netns only; stale
+binary removed before each rebuild; battery + smoke logs and per-run
+diag preserved under `/home/vibe/shed/` (binary sha256s in the log
+headers: 1bbc1e2a… = 6568822 for the battery, 6720c00d… = b849acb for
+the post-flip smoke); seed-7 topo-abort counts recorded per battery
+above; foreground polling only, no stop-and-wait.

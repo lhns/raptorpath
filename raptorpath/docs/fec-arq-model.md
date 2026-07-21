@@ -9305,6 +9305,91 @@ measured here (1.02–1.05×Σ at c7) is the candidate default.
 
 ---
 
+### 16.26 δ-honest overload shedding: the δ-continuum completed, and the unified machine ships (2026-07-21, `feat/unified-shedding`, `RWM_UNIFIED` DEFAULT ON)
+
+§16.20.8 ended with the δ-contract stated operationally: at small δ,
+overload must be shed, not serialized — the property the streaming
+machine had and the RLC realtime parameterization lacked. This section
+derives that property from the (δ, ρ, r) triangle instead of hard-coding
+it, and reports the pre-registered flip battery that made the unified
+machine the shipped default.
+
+**The shed law.** The streaming machine's shedding was always the
+δ-price — a reorder horizon past which a hole is abandoned — but its
+horizon was a constant and its loss unbounded. The unified machine
+already carries everything needed to make both ends honest:
+
+```
+   D(δ)  = min(b(hint)·RTprop, 2·RTprop)     the span law's own deadline
+                                             (b = ½/1/2; §16.20.3's H)
+   1−ρ   = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst))
+                                             the §8.1 residual the design
+                                             already concedes past
+                                             in-window FEC at the live
+                                             operating point
+```
+
+A symbol is SHEDDABLE iff its projected delivery exceeds D(δ) — a
+retransmit fired at age > D lands after the receiver's own δ-horizon
+give-up (send + owd + D), pure waste that serializes the stream — AND
+cumulative shed stays within the 1−ρ budget. Beyond the budget the
+machine SERIALIZES: ρ wins over δ, the completeness contract survives
+overload. Sender arm: past-deadline holes leave the ARQ set at the
+recovery decision points (P_lost branch, SACK-gap service, tail sweep),
+budget-bounded, refused candidates counted and served. Receiver arm: the
+in-order EVICT hold becomes the δ dial b·SRTT (replacing the bulk-shaped
+4×SRTT ∈ [60, 300] ms clamp) while holes-given-up ≤ ε̂_recv × frontier
+(the loss-class bound — give-up is intrinsically holes-only), reverting
+to the legacy hold when spent. The ρ = 1 RETAIN contract is excluded BY
+CONSTRUCTION (the law compiles out on the reliable path). No new
+constants; every threshold is a measured anchor or an already-derived
+parameter. Composition: the unified machine ships with its repaired A\*
+anchor (§16.21 fix A, `RWM_ASTAR_ANCHOR` default ON under the umbrella)
+— a shed law in front of width-1 spans would shed what inert FEC failed
+to recover; the anchor is what makes the budget small.
+
+**Measured (goal-gate "Unified Shedding + Flip Battery"; L0 dev box +
+L1 VM, seeds 42+7, pre-registered, all five predictions confirmed, no
+falsification clause triggered).** At L0 the collapse signature (p50 in
+seconds) is 0/14 in every arm at the attribution cell (base: 3/14), the
+unified+shed arm posts the best p90 of all four machines (62–78 ms vs
+79–96), and the gauges show the law's ρ-conservatism directly: the
+sender budget reads ~0.000–0.002 and REFUSES 52–773 past-deadline
+candidates per rep while shedding 0–25; the receiver gives up ≤ 2.5% of
+frontier and closes its budget. Losses: unified 0.25% of messages
+(excluding one 7-s whole-process-freeze rep whose losses the gauges
+attribute to the environment) vs streaming's 1.0% — the machine sheds
+LESS than streaming while beating its tails, because in-window FEC now
+recovers what streaming abandons. At L1: zero collapse reps in 96
+completed tail reps; unified+shed p99 medians ≤ streaming at every
+cell-size-seed row (c2 37/40 vs 40–43/52; c3 101–111 vs 108–133) and ≥
+legacy-RLC within the noise floor; 100% delivered at the c3 perf cell
+(streaming: 79/81%) at completer parity (0.12 vs 0.10 s — the #61 ×3–4
+price dissolved by the live anchor); cod/src 0.38–0.50 consumed — **r\*
+is finally realized at the realtime wire (the §8.4.1 chain's last link)
+and it buys the measured 100%**; bulk gen-sys parity within σ; the
+§16.17/§16.20 depth knee engaged in both machines with unified
+at-or-ahead (the first fully-live L1 look, closing the §16.20.7 residual
+on the wire side).
+
+**The flip.** `RWM_UNIFIED` ships DEFAULT ON (2026-07-21). The three
+receive machines of §16.20 are now one shipped machine parameterized by
+(δ, ρ, r): Realtime is the small-δ point (EVICT + δ-derived hold +
+budget-bounded shedding), bulk the large-δ/ρ=1 limit (RETAIN, no
+shedding, M\* depth), with the span law continuous between them.
+`RWM_UNIFIED=0` is the legacy three-machine opt-out arm. The streaming
+two-layer code is NOT removed: it enters the deprecation register behind
+a re-test clause — the 12–48× crown record spans historic cells this
+battery did not re-run, and retirement requires a later pass to hold
+that record cell-by-cell on the unified default. Named residuals: the
+sender budget uses the EVENTUAL P_fec (the within-deadline form would be
+smaller ⇒ a larger honest budget — the principled refinement if a cell
+ever shows the receiver arm carrying too much); multi-second
+whole-process freezes overwhelm every machine including streaming (an
+environment class, not a machine class — the §16.20.8 confirmation
+protocol stays open); the c7 unified arm's −5 Mbit/0.6σ direction under
+gen-sys duals stays on the §17.6 watch list.
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -9499,6 +9584,13 @@ cell; mechanism-named gap at the heterogeneous one** (§16.19 + addendum).
 
 ### 17.5 The three-machine map
 
+**[SUPERSEDED 2026-07-21 by §16.26: the unified span machine is now the
+SHIPPED DEFAULT (`RWM_UNIFIED` ON) — one machine across the δ axis. The
+map below is retained as the record of the pre-flip standings; the
+streaming and legacy-RLC machines survive as the `RWM_UNIFIED=0` opt-out
+arm, with streaming's retirement in the deprecation register behind a
+re-test clause.]**
+
 Three receive machines exist (§16.20); each has a measured niche, a
 flip-gate status, and a retirement condition:
 
@@ -9615,6 +9707,12 @@ asserted beyond its naming evidence.
 7. **The streaming-retirement gap** — attribute the L1 ordering surprise
    (legacy-RLC beats streaming's p99 medians at c3; the L0 proxy
    predicted the opposite). Prerequisite to any retirement case.
+   **[MOVED 2026-07-21 (§16.26): the unified machine took the Realtime
+   default and beat streaming's p99 medians at every battery cell; the
+   ordering surprise is subsumed (all three machines are now one tail
+   class at these cells, unified at-or-ahead). What remains is the
+   register's re-test clause: hold the historic 12–48× record cells on
+   the unified default before any code removal.]**
 8. **The r200 M\*-arm bookkeeping cost** (~1–2 Mbit below fixed-depth at
    RTT 200, both machines, both seeds).
 9. **The solvable-span default-flip chain** — trailing-span (decodable)
@@ -9622,6 +9720,9 @@ asserted beyond its naming evidence.
    routed through the RLC/unified family; revisit whether contract-priced
    repair should bypass the spare-cap gate. Gates `RWM_TAPER_R` and the
    full wire realization of the corrected r\* (§8.4.1) at realtime δ.
+   **[CLOSED 2026-07-21 (§16.26): realtime IS routed through the unified
+   family by default; `RWM_TAPER_R` rides the umbrella; cod/src 0.38–0.50
+   consumed at the realtime wire and delivered 100% — r\* realized.]**
 
 Minor named items: the c7 unified-receiver +3–5% CPU signal; the np 2→1
 live-path flap under saturation; the `RWM_STORE_PATHS` default battery;
@@ -9635,7 +9736,10 @@ the default-honesty gap: the shipped default, with every `RWM_*` env
 unset, is now the composed best-measured stack — BBR-under (§17.2) +
 SACK-clocked store release (§16.25) + the path-scaled outstanding pool
 (wall #7) + per-path recovery suppression (wall #8) + the anchor-hygiene
-pair (`RWM_MSTAR_ANCHOR`'s plain-live subset, `RWM_CLOCK_GAP`; §16.21).
+pair (`RWM_MSTAR_ANCHOR`'s plain-live subset, `RWM_CLOCK_GAP`; §16.21) —
+and, since 2026-07-21, the UNIFIED span machine (`RWM_UNIFIED`, §16.26:
+one decoder on both RLC wires, the (δ,ρ,r) span law with its live A\*
+anchor, δ-honest overload shedding on the realtime EVICT path).
 Each member holds a per-member LEAVE-ONE-OUT row on both seeds against
 the composed stack (the strictly-better criterion, pre-registered):
 removing the pool re-opens a c7 collapse class (86–97 Mbit runs);
