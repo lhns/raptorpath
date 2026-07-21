@@ -34,7 +34,10 @@ teardown() {
 run_tcp_rep() { # cell size rep
     local cell="$1" size="$2" rep="$3"
     sudo pkill -f 'transfer_bench.py stream' 2>/dev/null || true
-    : | sudo tee /tmp/compet-tcp-srv.log >/dev/null
+    # NOTE: the log must be (re)creatable by THIS shell's redirect — a
+    # root-owned leftover (the first s42 pass used `sudo tee`) makes the
+    # redirect fail silently and the server never starts (32/32 NO_SUMMARY).
+    sudo rm -f /tmp/compet-tcp-srv.log
     sudo ip netns exec rp-srv timeout 40 python3 "$TB" stream-server \
         --bind 10.77.0.2 --port 9910 >/tmp/compet-tcp-srv.log 2>&1 &
     local spid=$!
