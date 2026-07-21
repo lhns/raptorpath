@@ -10345,3 +10345,83 @@ no loopback expectation was Cubic-shaped (all green unmodified).
 binary must reproduce the measured `RWM_QUIC_CC=bbr` arms): sc2 (single c2
 plain, env unset) expected ≈76–78 Mbit/s, sc3 expected ≈15.7, ×4 reps,
 seed 42 — result recorded below after the run.
+
+## SACK-Clocked Store Release (2026-07-21) — PRE-REGISTRATION (written BEFORE the build, discipline item 11; env `RWM_STORE_SACK_RELEASE`, default OFF; branch `feat/bbr-default-and-store-release`)
+
+**(a) Mechanism.** The retention store releases slots only on the
+cumulative frontier (`sent_store = sent_store.split_off(&(ack+1))` — "the
+whole retention contract"). SACKed-but-not-cumulative symbols therefore
+hold slots a full frontier round: at c7 the store recycles at FRONTIER
+latency, not path rate. §16.24 measured the profile this predicts: with
+`RWM_RECOV_MP` the waste is below single-path parity, the emitted wire is
+~155 of 200 Mbit (no longer full), yet goodput stops at ~144 — the Σ-gap's
+residual owner named there is frontier-recovery latency on the
+ack-serialized retention store. The lever: on a SACK range, release the
+STORE SLOT (uncount the symbol from the outstanding/flow-control gate so
+the window opens at path rate) while RETAINING the payload and every
+recovery structure until the cumulative frontier passes it.
+
+**(b) Prediction (effect size + cells).** SACK-clocked slot release lifts
+c7 from 0.88–0.89×Σ toward ~0.95×Σ composed with `RWM_RECOV_MP`; dual-c1
+and c8 (PBS arm) unregressed; sc2/sc3 identity cells inert-or-better (the
+law is NOT expected to be bit-exact at N=1 — single-path SACKs above a
+hole also hold slots — but any N=1 effect must be ≥0, within σ).
+Store-dwell/occupancy gauges (sout/DIAG) must show the mechanism: released
+slots re-open admission while holes are outstanding (store no longer
+pegged at cap across a frontier stall).
+
+**(c) Falsification.** c7 ≤0.90×Σ with the dwell gauges showing release no
+longer binds (store not at cap, window open, goodput still stopped) ⇒ the
+Σ-gap owner is elsewhere; report, don't force. Per discipline item 11 a
+failed prediction goes to the deprecation register unless the failure
+names a new mechanism.
+
+**(d) Derivation re-read for self-contained failure predictions (the
+borrowing lesson).** Two named bounds, neither disqualifying: (1) the
+sender emission service wall (~19.5–20k sym/s ≈ 190 Mbit, §16.23) sits
+ABOVE the c7 target (0.95×Σ ≈ 154 Mbit) — not binding; (2) the SACK Flow
+Control section (2026-07-07) measured that sender-side decoupling alone
+does NOT lift the single-path c2 cell (16.09 vs 16.07 — receiver-side
+recovery latency owned that gap at that era's operating point). The
+distinction that keeps this build eligible: that experiment predates walls
+1–8 (Cubic substrate, MTU wedge, pool law, recovery suppression) and its
+cell was single-path; the c7 profile TODAY is store-starved at the
+SENDER (wire un-full, waste suppressed, goodput stopped — §16.24), which
+is precisely the configuration in which slot release can bind. If c7
+nonetheless reproduces the 2026-07-07 null, falsification (c) applies and
+the 2007-07 receiver-side attribution extends to the multipath cell.
+
+**CONSTRAINT — the `RWM_SACK_PRUNE` lesson (2026-07-07, refuted UNSAFE for
+in-order): the law differs BY CONSTRUCTION.** SACK_PRUNE **removed** the
+SACKed symbol from `sent_store` + `retransmit_buffer` + `nack_retx_at` +
+`source_path_map` — destroying the only retained copy, so a
+received-then-EVICTED symbol at the receiver's bounded reassembly window
+could never be retransmitted → C7/C8 in-order DNF (wedge). The new law
+releases a STORE SLOT, never recoverability: in today's code the store
+slot and the retransmit copy are the SAME allocation (`sent_store` holds
+the payload; `retransmit_buffer` holds only per-seq retransmit metadata
+(send_time, ε, path); the NACK retransmit path serves payload from
+`sent_store.get(&seq)`), so the release KEEPS the `sent_store` entry and
+every ARQ map untouched and only UNCOUNTS the seq from the flow-control
+gate (a released-seq set subtracted from the outstanding count; pruned by
+the same cumulative `split_off` twin). Every un-cumulatively-acked symbol
+remains retransmittable until the frontier passes it. Worst case under
+receiver eviction is a wasted retransmit, not a wedge; the sender's
+race-ahead is bounded because evicted/never-received symbols are never
+SACKed and so still count against the cap. Unit invariant (pre-registered
+test): SACKed → released → retransmit-still-possible → cumulative-ack →
+fully freed; window opens on SACK; no double-release; released slots
+return to the `RWM_STORE_PATHS` pool; released symbols keep their
+`RWM_RECOV_MP` per-flight loss clocks.
+
+**Battery (pre-registered).** VM protocol per MEASUREMENT DISCIPLINE
+(items 1–10): seeds 42+7 ×8 interleaved, same-session Σ singles, liveness
+echoes, env+sha256 recorded, dwell gauges before/after. Arms = best-c7
+config (PBS-class: plain + BBR-default (env unset, post-flip) +
+`RWM_STORE_PATHS=1`) × {±`RWM_STORE_SACK_RELEASE`} × {±`RWM_RECOV_MP`}
+(4 arms); cells c7 + c8 + dual-c1 + sc2/sc3 identity. FLIP default ON only
+if the prediction (b) holds on both seeds with no regressions; else
+default OFF with the falsification outcome recorded.
+
+*(Results section to follow the build — nothing below this line in this
+section was written before the battery ran.)*
