@@ -4717,6 +4717,16 @@ async fn run_window_sender(
     let mstar_anchor = crate::config::anchor_gate("RWM_MSTAR_ANCHOR") && generation;
     if mstar_anchor {
         info!("M* anchor hygiene ACTIVE (RWM_MSTAR_ANCHOR: measured RTprop floor + fast-seed rate filter + derived win backstop)");
+    } else if crate::config::anchor_gate("RWM_MSTAR_ANCHOR") {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1) for the
+        // PLAIN-mode subset of the M* repair, which is NOT generation-gated:
+        // (a) the peer-report RTT no longer feeds the local estimators (the
+        // 50-ms pseudo-sample floor pin, PathReport arm) and (b) the
+        // estimator RTT EWMA seeds from its first measured sample instead
+        // of crawling from the 50-ms constant (LossEstimator
+        // rtt_seed_from_sample). The consolidation battery's LOO arm keys
+        // on this echo in plain cells.
+        info!("M* peer-report RTT-feed suppression ACTIVE (RWM_MSTAR_ANCHOR plain-live subset: local-echo-only RTT feed + estimator seed-from-sample)");
     }
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).

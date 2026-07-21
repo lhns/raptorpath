@@ -67,6 +67,11 @@ fi
 # (RWM_PLAIN_RS) and the hygiene umbrella — the honest-anchor measurement arm.
 [[ -n "${RWM_PLAIN_RS:-}" ]] && TENV="$TENV RWM_PLAIN_RS=$RWM_PLAIN_RS"
 [[ -n "${RWM_ANCHOR_HYGIENE:-}" ]] && TENV="$TENV RWM_ANCHOR_HYGIENE=$RWM_ANCHOR_HYGIENE"
+# feat/consolidation: the anchor-pair members of the candidate default stack
+# (M* peer-report RTT-feed suppression + the process-clock stall witness) —
+# forwarded individually so the leave-one-out arms can key each one.
+[[ -n "${RWM_MSTAR_ANCHOR:-}" ]] && TENV="$TENV RWM_MSTAR_ANCHOR=$RWM_MSTAR_ANCHOR"
+[[ -n "${RWM_CLOCK_GAP:-}" ]] && TENV="$TENV RWM_CLOCK_GAP=$RWM_CLOCK_GAP"
 # feat/percap-honest-cap: honest store caps under RWM_PLAIN_RS — cap_i =
 # anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R (K_i = windowed-min echoSRTT/RTprop,
 # R = 100ms recovery-round bound). Default ON whenever RWM_PLAIN_RS is set;

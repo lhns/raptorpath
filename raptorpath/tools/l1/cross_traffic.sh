@@ -50,7 +50,8 @@ case "$ARM" in
 esac
 # Optional knob passthrough (probe/frontier arms): forwarded verbatim when
 # set in the caller's env, recorded by the env echo below.
-for k in RWM_COPA_DELTA RWM_STORE_GAIN RWM_CC_PACE RWM_STORE_PATHS RWM_STORE_PATH_POOL; do
+for k in RWM_COPA_DELTA RWM_STORE_GAIN RWM_CC_PACE RWM_STORE_PATHS RWM_STORE_PATH_POOL \
+         RWM_RECOV_MP RWM_MSTAR_ANCHOR RWM_CLOCK_GAP RWM_STORE_SACK_RELEASE; do
     v=""; eval "v=\${$k:-}"
     [[ -n "$v" ]] && AENV="$AENV $k=$v"
 done
