@@ -339,6 +339,75 @@ pub(crate) fn mp_hole_ripe(
         Some(t) => now_us.saturating_sub(t) >= threshold_us,
     }
 }
+// ── δ-honest overload shedding (goal-gate "Unified Shedding", fix C;
+//    part of the unified machine's realtime semantics under `RWM_UNIFIED`,
+//    sub-gate `RWM_UNIFIED_SHED=0` = the serializing control arm) ─────────
+//
+// The (δ, ρ) semantics, operationally (paper §16.20.8 / §16.26): at small δ
+// overload must be SHED, not serialized. A symbol is sheddable iff BOTH
+// (1) its projected delivery exceeds the deadline D(δ) — a retransmit fired
+// at age > D arrives after the receiver's own δ-horizon give-up; a hole
+// held past D only serializes successors past THEIR deadlines — and
+// (2) its loss stays within the 1−ρ budget (`residual_loss_after_fec`,
+// the ε̂·(1−P_fec) allowance the (δ,ρ,r) design already concedes). Beyond
+// the budget the machine SERIALIZES (ρ wins over δ). The reliable-transfer
+// contract (RETAIN-UNTIL-ACKED, ρ=1) is excluded BY CONSTRUCTION: the law
+// is armed only on the EVICT path (`!reliable`).
+
+/// Is the shed law armed at all? Realtime-EVICT under the unified machine
+/// only — NEVER the reliable (ρ = 1) contract, never the legacy machines.
+pub(crate) fn shed_armed(unified_on: bool, reliable: bool, gate: bool) -> bool {
+    unified_on && !reliable && gate
+}
+
+/// The δ deadline D in µs: min(b(hint)·RTprop, 2·RTprop) — the span law's
+/// own D (§16.20.3), measured from the symbol's original send. b(Realtime)
+/// = ½, so on the realtime path D = RTprop/2: a retransmit older than that
+/// lands after the receiver's δ-horizon give-up (send + owd + D) — waste.
+pub(crate) fn shed_deadline_us(b_hint: f64, rtprop_us: u64) -> u64 {
+    ((b_hint.min(2.0) * rtprop_us as f64) as u64).min(2 * rtprop_us)
+}
+
+/// The per-decision shed admission: past-deadline AND within the ρ budget.
+/// `budget_frac` = the derived 1−ρ (`residual_loss_after_fec`); the
+/// cumulative shed count may never exceed budget_frac × the stream's
+/// source count. Cold start (budget 0, no ε̂/r sample) sheds nothing.
+pub(crate) fn shed_allowed(
+    age_us: u64,
+    deadline_us: u64,
+    shed_total: u64,
+    src_total: u64,
+    budget_frac: f64,
+) -> bool {
+    deadline_us > 0 // no derived deadline yet ⇒ nothing is sheddable
+        && age_us > deadline_us
+        && ((shed_total + 1) as f64) <= budget_frac * (src_total as f64)
+}
+
+/// Receiver-side in-order hold for the window EVICT path. Legacy: 4×SRTT
+/// clamped [60, 300] ms (two ARQ repair rounds — the bulk-shaped hold).
+/// Under the shed law (unified realtime, budget open): the δ-derived
+/// H = b·SRTT with b(Realtime) = ½ — §16.20.3's "the reorder_timeout IS
+/// the δ dial" made honest (the EVICT in-order window path exists only for
+/// the Realtime hint, so b = ½ structurally). When the receiver's give-up
+/// budget (holes ≤ ε̂_recv × frontier — the loss-class bound) is spent, the
+/// hold reverts to legacy: serialize, don't shed below ρ.
+pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> Duration {
+    if shed_on && budget_ok {
+        srtt / 2
+    } else {
+        (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
+    }
+}
+
+/// Receiver give-up budget: holes given up so far vs ε̂_recv × frontier.
+/// (The receiver owns no r/A*, so its bound is the loss CLASS, not the
+/// FEC residual; give-up is intrinsically holes-only, which keeps the
+/// realized fraction in the residual class anyway.)
+pub(crate) fn shed_recv_budget_ok(holes_given_up: u64, frontier_seqs: u64, eps_recv: f64) -> bool {
+    (holes_given_up as f64) < eps_recv * (frontier_seqs as f64)
+}
+
 /// Tail ARQ sweep timeout clamp (µs): 2×SRTT bounded to [25ms, 100ms].
 /// Must sit above the ack arrival time (~1×SRTT + jitter, or the sweep
 /// fires spuriously on every in-flight symbol) and below the receiver's
@@ -2031,6 +2100,39 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         } else {
             None
         };
+        // ── δ-honest overload shedding, receiver arm (fix C, goal-gate
+        // "Unified Shedding") ── the in-order hold for the window EVICT path
+        // becomes the δ-derived H = b·SRTT (§16.20.3: "the reorder_timeout
+        // IS the δ dial"; b(Realtime) = ½ — this path exists only for the
+        // Realtime hint) instead of the bulk-shaped 4×SRTT ∈ [60, 300] ms
+        // clamp, WHILE the give-up budget holds: holes given up ≤ ε̂_recv ×
+        // frontier (the loss-class bound — give-up is intrinsically
+        // holes-only, so the realized fraction stays in the FEC-residual
+        // class). Budget spent ⇒ the hold reverts to legacy (serialize:
+        // ρ wins over δ). Armed only on the EVICT in-order path under
+        // RWM_UNIFIED (the ρ = 1 reliable buffer never gives up, unchanged);
+        // `RWM_UNIFIED_SHED=0` = the serializing control arm.
+        let recv_shed_on = recv_window_mode
+            && !recv_window_reliable
+            && !recv_window_ooo
+            && reorder_buf.is_some()
+            && shed_armed(
+                unified_active(),
+                false,
+                crate::config::env_flag("RWM_UNIFIED_SHED", true),
+            );
+        if recv_shed_on {
+            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+            info!(
+                "unified overload shedding ACTIVE at receiver (RWM_UNIFIED_SHED: in-order hold = delta-derived b*SRTT within the eps-class give-up budget)"
+            );
+        }
+        // Holes given up (seqs the in-order frontier passed undelivered) and
+        // the diag throttle for the [SHED-R] gauge.
+        let mut recv_shed_holes: u64 = 0;
+        let mut recv_shed_budget_open = true;
+        let recv_shed_diag = crate::config::env_flag("RWM_DIAG", false);
+        let mut recv_shed_diag_at = Instant::now();
         // RWM Phase C unordered delivery: next in-order seq NOT yet received
         // (the frontier). Walks `received_seqs` to drive the cumulative
         // WindowAck (retention pruning) while delivery itself is unordered.
@@ -2503,8 +2605,32 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             .unwrap_or(HOLE_NACK_REFRESH_MAX);
                         Some(last_hole_nack_at + refresh)
                     } else {
-                        let hold = srtt
-                            .map(|s| (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD));
+                        // δ-honest shed (fix C): under the unified realtime
+                        // machine the EVICT hold is the δ dial b·SRTT while
+                        // the ε̂-class give-up budget is open; legacy 4×SRTT
+                        // clamp otherwise (incl. always for block mode and
+                        // with the law off — bit-exact legacy).
+                        if recv_shed_on {
+                            let eps_recv = {
+                                let sched = recv_scheduler.lock();
+                                sched
+                                    .live_paths()
+                                    .into_iter()
+                                    .filter_map(|pid| {
+                                        sched.path(pid).map(|p| p.estimator.loss_rate())
+                                    })
+                                    .fold(0.0_f64, f64::max)
+                            };
+                            let frontier = reorder_buf
+                                .as_ref()
+                                .map(|rb| rb.next_deliver_seq())
+                                .unwrap_or(0);
+                            recv_shed_budget_open =
+                                shed_recv_budget_ok(recv_shed_holes, frontier, eps_recv);
+                        }
+                        let hold = srtt.map(|s| {
+                            shed_recv_hold(s, recv_shed_on, recv_shed_budget_open)
+                        });
                         if block_inorder_enabled {
                             let mut rb = block_reorder.lock();
                             if let Some(h) = hold {
@@ -2667,7 +2793,27 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             }
                         }
                     } else if let Some(ref mut reorder) = reorder_buf {
+                        let shed_frontier_before = reorder.next_deliver_seq();
                         let expired = reorder.drain_expired(Instant::now());
+                        // δ-honest shed accounting: seqs the frontier passed
+                        // minus entries actually delivered = holes given up.
+                        if recv_shed_on {
+                            recv_shed_holes += reorder
+                                .next_deliver_seq()
+                                .saturating_sub(shed_frontier_before)
+                                .saturating_sub(expired.len() as u64);
+                            if recv_shed_diag
+                                && recv_shed_diag_at.elapsed() >= Duration::from_millis(500)
+                            {
+                                recv_shed_diag_at = Instant::now();
+                                eprintln!(
+                                    "[SHED-R] holes={} frontier={} budget_open={}",
+                                    recv_shed_holes,
+                                    reorder.next_deliver_seq(),
+                                    recv_shed_budget_open,
+                                );
+                            }
+                        }
                         for (dseq, ddata) in expired {
                             debug!(seq = dseq, "window hold expired — force-delivering");
                             for pkt_data in extract_window_packets(&ddata, window_packed) {
@@ -2944,20 +3090,50 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // / 8 RTOs per 5×1.8MB vs bulk's ~66/3/0 with the
                         // 4×SRTT hold).
                         if let Some(ref mut reorder) = reorder_buf {
-                            let srtt = {
+                            let (srtt, eps_recv) = {
                                 let sched = recv_scheduler.lock();
-                                sched
+                                let srtt = sched
                                     .live_paths()
                                     .into_iter()
                                     .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
-                                    .max()
+                                    .max();
+                                // δ-honest shed: ε̂_recv for the give-up
+                                // budget (only read when the law is armed).
+                                let eps = if recv_shed_on {
+                                    sched
+                                        .live_paths()
+                                        .into_iter()
+                                        .filter_map(|pid| {
+                                            sched.path(pid).map(|p| p.estimator.loss_rate())
+                                        })
+                                        .fold(0.0_f64, f64::max)
+                                } else {
+                                    0.0
+                                };
+                                (srtt, eps)
                             };
-                            if let Some(s) = srtt {
-                                reorder.set_timeout(
-                                    (s * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD),
+                            if recv_shed_on {
+                                recv_shed_budget_open = shed_recv_budget_ok(
+                                    recv_shed_holes,
+                                    reorder.next_deliver_seq(),
+                                    eps_recv,
                                 );
                             }
+                            if let Some(s) = srtt {
+                                reorder.set_timeout(shed_recv_hold(
+                                    s,
+                                    recv_shed_on,
+                                    recv_shed_budget_open,
+                                ));
+                            }
+                            let shed_frontier_before = reorder.next_deliver_seq();
                             let expired = reorder.drain_expired(Instant::now());
+                            if recv_shed_on {
+                                recv_shed_holes += reorder
+                                    .next_deliver_seq()
+                                    .saturating_sub(shed_frontier_before)
+                                    .saturating_sub(expired.len() as u64);
+                            }
                             for (dseq, ddata) in expired {
                                 for pkt_data in extract_window_packets(&ddata, window_packed) {
                                     let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
@@ -5526,11 +5702,48 @@ async fn run_window_sender(
     // (SendRateAnchor) fed by the sender's OWN send events — live within ~1
     // RTT (hygiene rule 1), with gap-spanning/flood buckets DISCARDED
     // (rule 2). Gate off ⇒ the EWMA path byte-identical.
-    let astar_anchor_on = unified_span && crate::config::anchor_gate("RWM_ASTAR_ANCHOR");
+    // goal-gate "Unified Shedding": DEFAULT ON under the unified machine —
+    // the span law ships with its repaired anchor (fix A gates the flip
+    // battery; without it the realtime spans pin at width 1, ru/rf ≈ 9%).
+    // `RWM_ASTAR_ANCHOR=0` / `RWM_ANCHOR_HYGIENE=0` still opt out for A/B.
+    let astar_anchor_on =
+        unified_span && crate::config::anchor_gate_default("RWM_ASTAR_ANCHOR", true);
     let mut astar_anchor = crate::control::SendRateAnchor::new();
     if astar_anchor_on {
         info!("A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)");
     }
+    // ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
+    // Part of the unified machine's REALTIME semantics: armed only on the
+    // EVICT path (`!reliable` — the ρ = 1 RETAIN contract is excluded by
+    // construction) under RWM_UNIFIED; `RWM_UNIFIED_SHED=0` reproduces the
+    // serializing arm for A/B. A hole whose retransmit can no longer meet
+    // the δ deadline D = b(hint)·RTprop (the span law's own D) is DROPPED
+    // from the ARQ set instead of serializing the stream behind it — but
+    // only while cumulative shed stays within the DERIVED 1−ρ budget
+    // (`residual_loss_after_fec`: ε̂·(1−P_fec) at the live (r, A*, σ²)
+    // operating point). Budget spent ⇒ serialize (ρ wins over δ).
+    let shed_on = shed_armed(
+        unified_active(),
+        reliable,
+        crate::config::env_flag("RWM_UNIFIED_SHED", true),
+    );
+    if shed_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            "unified overload shedding ACTIVE (RWM_UNIFIED_SHED: past-deadline holes shed within the derived 1-rho budget; =0 = serializing arm)"
+        );
+    }
+    /// Seqs shed by the δ law (never served again; pruned at the cumulative
+    /// frontier — the split_off twin).
+    let mut shed_seqs: BTreeSet<u64> = BTreeSet::new();
+    let mut shed_total: u64 = 0;
+    /// Past-deadline candidates the ρ budget REFUSED (the serialize arm of
+    /// the law — visible in DIAG so the budget's bite is measurable).
+    let mut shed_denied: u64 = 0;
+    /// The live derived 1−ρ budget fraction and δ deadline (µs), refreshed
+    /// per source symbol alongside the span parameters.
+    let mut shed_budget_frac: f64 = 0.0;
+    let mut shed_deadline_us_live: u64 = 0;
     // feat/anchor-hygiene (`RWM_CLOCK_GAP`): the PROCESS-clock stall witness
     // — a dedicated 50-ms timer tick; a tick interval ≫ the period is a
     // whole-process scheduler stall (the timer wheel itself froze), and the
@@ -6353,6 +6566,23 @@ async fn run_window_sender(
                                 let delta = ((rate_sym * (est.jitter_us() / 1e6)).ceil()
                                     as u64)
                                     .clamp(1, 64);
+                                // δ-honest shed law: refresh the derived
+                                // deadline D(δ) and the 1−ρ budget at the
+                                // live operating point (ε̂, r*, A*, σ²) —
+                                // same anchors, no new constants.
+                                if shed_on {
+                                    shed_deadline_us_live = shed_deadline_us(
+                                        b,
+                                        est.rtt().as_micros() as u64,
+                                    );
+                                    shed_budget_frac =
+                                        crate::control::fec_rate::residual_loss_after_fec(
+                                            est.loss_rate(),
+                                            flat_rate,
+                                            a_star as f64,
+                                            crate::control::fec_rate::burst_variance_factor(est),
+                                        );
+                                }
                                 Some((a_star, delta))
                             } else {
                                 None
@@ -6396,8 +6626,22 @@ async fn run_window_sender(
                         } else {
                             String::new()
                         };
+                        // δ-honest shed gauge (fix C): cumulative shed /
+                        // budget-refused counts, the live 1−ρ fraction and
+                        // deadline — the law's liveness at the sender.
+                        let shg = if shed_on {
+                            format!(
+                                " shed={}/{} bud={:.4} D={}ms",
+                                shed_total,
+                                shed_denied,
+                                shed_budget_frac,
+                                shed_deadline_us_live / 1000,
+                            )
+                        } else {
+                            String::new()
+                        };
                         eprintln!(
-                            "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}",
+                            "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{}",
                             dnow.saturating_sub(span_diag_start_us) as f64 / 1e6,
                             ack,
                             ws,
@@ -6409,6 +6653,7 @@ async fn run_window_sender(
                             repair_rate,
                             repair_debt,
                             retransmit_buffer.len(),
+                            shg,
                             ah,
                             transit,
                             dg,
@@ -6457,14 +6702,49 @@ async fn run_window_sender(
                         // Find oldest retransmit candidate and compute P_lost
                         let mut use_retransmit = false;
                         let mut retransmit_seq = 0u64;
-                        if let Some((&seq, &(send_time_us, eps_at_send, _path))) = retransmit_buffer.iter().next() {
+                        let oldest = retransmit_buffer
+                            .iter()
+                            .next()
+                            .map(|(&s, &v)| (s, v));
+                        if let Some((seq, (send_time_us, eps_at_send, _path))) = oldest {
                             let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
                             let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
                             // Paper Section 3.4: P(retransmit) = P_lost(t_k).
                             // Probabilistic — smooth transition from FEC to ARQ.
                             if rand::random::<f64>() < p {
-                                use_retransmit = true;
-                                retransmit_seq = seq;
+                                // δ-honest shed (fix C): a candidate older
+                                // than D(δ) arrives after the receiver's
+                                // δ-horizon give-up — retransmitting it only
+                                // serializes the stream behind a missed
+                                // deadline. Shed it (within the ρ budget)
+                                // and let this correction slot do fresh
+                                // span-repair work instead.
+                                let age_us_c = now.saturating_sub(send_time_us);
+                                if shed_on
+                                    && shed_allowed(
+                                        age_us_c,
+                                        shed_deadline_us_live,
+                                        shed_total,
+                                        stats.fec.total_source_symbols.load(Ordering::Relaxed),
+                                        shed_budget_frac,
+                                    )
+                                {
+                                    retransmit_buffer.remove(&seq);
+                                    nack_retx_at.remove(&seq);
+                                    shed_seqs.insert(seq);
+                                    shed_total += 1;
+                                } else {
+                                    if shed_on
+                                        && shed_deadline_us_live > 0
+                                        && age_us_c > shed_deadline_us_live
+                                    {
+                                        // Past deadline but ρ-budget-refused:
+                                        // the serialize arm (visible in DIAG).
+                                        shed_denied += 1;
+                                    }
+                                    use_retransmit = true;
+                                    retransmit_seq = seq;
+                                }
                             }
                         }
 
@@ -7590,6 +7870,19 @@ async fn run_window_sender(
                 } else {
                     String::new()
                 };
+                // δ-honest shed DIAG (fix C): cumulative shed / budget-
+                // refused, live 1−ρ fraction and deadline. Empty when off.
+                let sheddiag = if shed_on {
+                    format!(
+                        " shed={}/{} bud={:.4} D={}ms",
+                        shed_total,
+                        shed_denied,
+                        shed_budget_frac,
+                        shed_deadline_us_live / 1000,
+                    )
+                } else {
+                    String::new()
+                };
                 // feat/recovery-suppression DIAG: the recovery-plane trace.
                 // rep/seqs = gap reports processed / gap seqs walked;
                 // fired y/r = retransmits whose live flight was YOUNGER than
@@ -7637,7 +7930,7 @@ async fn run_window_sender(
                     mp_pp,
                 );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7654,6 +7947,7 @@ async fn run_window_sender(
                     percap_loans.len(), percap_loans_total,
                     mpr,
                     srdiag,
+                    sheddiag,
                     gdiag,
                     pp,
                 );
@@ -8650,6 +8944,37 @@ async fn run_window_sender(
                     if diag_on {
                         mpd_gap_seqs += 1;
                     }
+                    // δ-honest shed (fix C): a hole already shed is never
+                    // served again (the receiver's own δ-horizon passes it);
+                    // a past-deadline hole is shed within the ρ budget — a
+                    // retransmit fired at age > D(δ) lands after the
+                    // receiver's give-up, pure waste that serializes the
+                    // stream. Budget-refused holes fall through to the
+                    // legacy ARQ (serialize: ρ wins).
+                    if shed_on {
+                        if shed_seqs.contains(&seq) {
+                            continue;
+                        }
+                        if let Some(&(send_time_us, _, _)) = retransmit_buffer.get(&seq) {
+                            let age = now_repair_us.saturating_sub(send_time_us);
+                            if shed_allowed(
+                                age,
+                                shed_deadline_us_live,
+                                shed_total,
+                                stats.fec.total_source_symbols.load(Ordering::Relaxed),
+                                shed_budget_frac,
+                            ) {
+                                retransmit_buffer.remove(&seq);
+                                nack_retx_at.remove(&seq);
+                                shed_seqs.insert(seq);
+                                shed_total += 1;
+                                continue;
+                            }
+                            if shed_deadline_us_live > 0 && age > shed_deadline_us_live {
+                                shed_denied += 1;
+                            }
+                        }
+                    }
                     // Per-seq cooldown: repeated gap acks for the same
                     // hole must not resend more than once per SRTT.
                     if let Some(&(last, _)) = nack_retx_at.get(&seq) {
@@ -8993,6 +9318,11 @@ async fn run_window_sender(
             source_path_map.retain(|&seq, _| seq >= path_map_floor);
             // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
             retransmit_buffer = retransmit_buffer.split_off(&(ack + 1));
+            // δ-honest shed set: pruned on the same cumulative twin (the
+            // receiver's frontier passing a shed seq closes its story).
+            if !shed_seqs.is_empty() {
+                shed_seqs = shed_seqs.split_off(&(ack + 1));
+            }
             // RWM Phase A: the sent-data store is drained by acks ONLY —
             // this is the whole retention contract.
             sent_store = sent_store.split_off(&(ack + 1));
@@ -10310,6 +10640,92 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
+
+    /// Pre-registered invariant 1: shed ONLY past-deadline AND within the
+    /// ρ budget. Fresh data is never shed however large the budget; stale
+    /// data is never shed past the budget; a cold (0) deadline sheds
+    /// nothing.
+    #[test]
+    fn shed_only_past_deadline_and_within_rho_budget() {
+        let d = 25_000u64; // D(δ) = 25 ms
+        // Past deadline, budget open (1% of 1000 sources = 10 allowed).
+        assert!(shed_allowed(30_000, d, 0, 1_000, 0.01));
+        assert!(shed_allowed(30_000, d, 9, 1_000, 0.01));
+        // Budget exactly spent: the 11th shed is refused (serialize).
+        assert!(!shed_allowed(30_000, d, 10, 1_000, 0.01));
+        // Fresh (within deadline): never shed, however large the budget.
+        assert!(!shed_allowed(10_000, d, 0, 1_000, 1.0));
+        assert!(!shed_allowed(d, d, 0, 1_000, 1.0), "age == D is not past it");
+        // Cold start: no derived deadline or zero budget ⇒ nothing sheds.
+        assert!(!shed_allowed(30_000, 0, 0, 1_000, 1.0));
+        assert!(!shed_allowed(30_000, d, 0, 1_000, 0.0));
+        assert!(!shed_allowed(30_000, d, 0, 0, 0.5), "no sources ⇒ no budget");
+    }
+
+    /// Pre-registered invariant 2: the reliable-transfer contract (ρ = 1,
+    /// RETAIN-UNTIL-ACKED) is NEVER shed — the law is compiled out on the
+    /// reliable path by construction, and it never arms outside the
+    /// unified machine or against the explicit =0 opt-out.
+    #[test]
+    fn shed_never_arms_on_reliable_contract() {
+        // The only armed combination: unified + EVICT + gate on.
+        assert!(shed_armed(true, false, true));
+        // Reliable (bulk/auto window_reliable) NEVER sheds.
+        assert!(!shed_armed(true, true, true));
+        // Legacy machines (unified off) never shed.
+        assert!(!shed_armed(false, false, true));
+        // RWM_UNIFIED_SHED=0 = the serializing control arm.
+        assert!(!shed_armed(true, false, false));
+    }
+
+    /// The shed deadline IS the span law's D (§16.20.3): b·RTprop, capped
+    /// at the 2·RTprop deficit-round limit — no new constants.
+    #[test]
+    fn shed_deadline_is_the_span_law_d() {
+        // Realtime b = ½: D = RTprop/2.
+        assert_eq!(shed_deadline_us(0.5, 40_000), 20_000);
+        // Auto b = 1: D = RTprop.
+        assert_eq!(shed_deadline_us(1.0, 40_000), 40_000);
+        // Bulk b = 2 caps at the 2·RTprop limit.
+        assert_eq!(shed_deadline_us(2.0, 40_000), 80_000);
+        assert_eq!(shed_deadline_us(4.0, 40_000), 80_000);
+    }
+
+    /// Receiver arm: the in-order hold is the δ dial (b·SRTT, b = ½ on the
+    /// realtime-only EVICT path) while the give-up budget is open, and
+    /// reverts to the LEGACY 4×SRTT ∈ [60, 300] ms clamp when the law is
+    /// off or the budget is spent — bit-exact legacy in both fallbacks.
+    #[test]
+    fn shed_recv_hold_delta_dial_and_legacy_fallback() {
+        let srtt = Duration::from_millis(80);
+        assert_eq!(shed_recv_hold(srtt, true, true), Duration::from_millis(40));
+        let legacy = (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD);
+        assert_eq!(shed_recv_hold(srtt, true, false), legacy, "budget spent ⇒ serialize");
+        assert_eq!(shed_recv_hold(srtt, false, true), legacy, "law off ⇒ legacy");
+        // Legacy clamps still bind in the fallback (60 ms floor / 300 ms cap).
+        assert_eq!(
+            shed_recv_hold(Duration::from_millis(10), false, false),
+            Duration::from_millis(60)
+        );
+        assert_eq!(
+            shed_recv_hold(Duration::from_millis(200), false, false),
+            Duration::from_millis(300)
+        );
+    }
+
+    /// Receiver give-up budget: the loss-class bound — holes given up may
+    /// never exceed ε̂_recv × frontier; a clean channel (ε̂ = 0) never opens
+    /// the budget (nothing to shed on a clean channel anyway).
+    #[test]
+    fn shed_recv_budget_is_loss_class() {
+        assert!(shed_recv_budget_ok(0, 1_000, 0.05));
+        assert!(shed_recv_budget_ok(49, 1_000, 0.05));
+        assert!(!shed_recv_budget_ok(50, 1_000, 0.05));
+        assert!(!shed_recv_budget_ok(0, 0, 0.05), "no frontier yet ⇒ closed");
+        assert!(!shed_recv_budget_ok(0, 1_000, 0.0), "clean channel ⇒ closed");
+    }
 
     /// PART 1 (receiver-tail parallelization). With the legacy bound (6) a
     /// lossy bulk transfer reports only the first 6 outstanding generations'

@@ -111,6 +111,11 @@ fi
 # the RLC family; gen mode defaults the M* depth law ON). Default OFF in the
 # binary = legacy byte-identical; forwarded for the queued L1 parity battery.
 [[ -n "${RWM_UNIFIED:-}" ]] && TENV="$TENV RWM_UNIFIED=$RWM_UNIFIED"
+# goal-gate "Unified Shedding" (fix C): the δ-honest overload-shed sub-gate
+# (=0 = serializing control arm) and the A* anchor opt-out (default ON under
+# RWM_UNIFIED since this branch).
+[[ -n "${RWM_UNIFIED_SHED:-}" ]] && TENV="$TENV RWM_UNIFIED_SHED=$RWM_UNIFIED_SHED"
+[[ -n "${RWM_ASTAR_ANCHOR:-}" ]] && TENV="$TENV RWM_ASTAR_ANCHOR=$RWM_ASTAR_ANCHOR"
 # Per-run completion timeout override (reliability batteries where DNF is an
 # expected datum; see src/perf.rs run_timeout()).
 [[ -n "${RWM_PERF_TIMEOUT_S:-}" ]] && TENV="$TENV RWM_PERF_TIMEOUT_S=$RWM_PERF_TIMEOUT_S"

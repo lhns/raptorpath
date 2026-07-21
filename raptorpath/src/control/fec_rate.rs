@@ -833,6 +833,28 @@ fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -> f6
     1.0 - normal_survival(z)
 }
 
+/// The (δ, ρ, r) residual-loss allowance 1−ρ at the operating point (the
+/// δ-honest overload-shedding budget, goal-gate "Unified Shedding"):
+///
+///   1−ρ = ε · (1 − P_fec(r, ε, W, σ²_burst))
+///
+/// — the loss fraction the design already concedes past in-window FEC at
+/// the deadline (§6.3: P(lost) = ε·(1−P_fec)·(1−P_arq); at small δ,
+/// recovery past D(δ) belongs to no one, so P_arq's contribution is priced
+/// out and the residual IS the shed allowance). Every input is a measured
+/// anchor or an already-derived parameter: ε̂ from the loss estimator,
+/// r = the live consumed taper rate, W = the live solvable-span width A*,
+/// σ²_burst from the GE estimator. No new constants. Returns a fraction in
+/// [0, 1]; 0 when ε or r has no sample yet (cold start sheds nothing —
+/// the conservative side of the ρ contract).
+pub fn residual_loss_after_fec(epsilon: f64, r: f64, window_size: f64, sigma2_burst: f64) -> f64 {
+    if !(epsilon > 0.0) || epsilon >= 1.0 {
+        return 0.0;
+    }
+    let p_fec = p_fec_normal(r, epsilon, window_size, sigma2_burst);
+    (epsilon * (1.0 - p_fec)).clamp(0.0, 1.0)
+}
+
 /// Compute δ (tail latency) from r and ρ using the paper's delivery model.
 ///
 /// δ = P(late delivery) / ρ
@@ -1046,6 +1068,34 @@ mod tests {
     use crate::control::estimator::LossEstimator;
 
     const W: usize = 50; // typical window size for tests
+
+    /// δ-honest shed budget (goal-gate "Unified Shedding"): the 1−ρ
+    /// allowance is the DESIGN residual ε·(1−P_fec) — 0 with no loss or no
+    /// FEC sample (cold start sheds nothing), ε itself when r cannot
+    /// overcome the loss (P_fec = 0), monotone non-increasing in r, and in
+    /// the streaming-machine ~1% class at the measured c3 operating point.
+    #[test]
+    fn residual_loss_after_fec_is_the_design_residual() {
+        // Cold / degenerate inputs: budget 0.
+        assert_eq!(residual_loss_after_fec(0.0, 0.3, 5.0, 3.0), 0.0);
+        assert_eq!(residual_loss_after_fec(-1.0, 0.3, 5.0, 3.0), 0.0);
+        // r too low to overcome loss: residual = ε (pure-loss allowance).
+        let eps = 0.048;
+        let all = residual_loss_after_fec(eps, 0.0, 5.0, 3.0);
+        assert!((all - eps).abs() < 1e-12, "P_fec=0 ⇒ residual=ε, got {all}");
+        // Monotone non-increasing in r.
+        let mut prev = all;
+        for r in [0.05, 0.1, 0.2, 0.34, 0.5, 1.0] {
+            let v = residual_loss_after_fec(eps, r, 5.0, 3.76);
+            assert!(v <= prev + 1e-12, "residual must fall as r rises");
+            prev = v;
+        }
+        // The measured c3 operating point (ε≈4.8%, consumed r≈0.34, A*≈3–5,
+        // GE σ²≈3.76): the residual sits in the ~1% class the streaming
+        // machine sheds — well below ε, well above zero.
+        let c3 = residual_loss_after_fec(eps, 0.34, 4.0, 3.76);
+        assert!(c3 > 0.001 && c3 < eps, "c3-class residual out of class: {c3}");
+    }
 
     #[test]
     fn test_zero_loss_no_repair() {

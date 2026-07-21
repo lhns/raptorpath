@@ -56,7 +56,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # echo — an unguarded grep kills the whole matrix silently).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*)' \
             | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
@@ -77,9 +77,14 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
               | sed -n 's/.*"p99_ms": \([0-9.]*\).*/\1/p')
         p50=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
               | sed -n 's/.*"p50_ms": \([0-9.]*\).*/\1/p')
+        # goal-gate "Unified Shedding": delivered count per rep (the ρ story
+        # — shedding must stay within the 1−ρ class; 1000 msgs sent/rep).
+        local cnt
+        cnt=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
+              | sed -n 's/.*"count": \([0-9]*\).*/\1/p')
         if [[ -n "$p99" ]]; then
             p99s+=("$p99"); p50s+=("${p50:-nan}")
-            echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms"
+            echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms n=${cnt:-?}"
         fi
     done
     # feat/anchor-hygiene: A* trajectory + witness gauges (RWM_DIAG-gated
