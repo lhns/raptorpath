@@ -10820,3 +10820,21 @@ Mode + Cross-Traffic"; the named blocker there is CC-independent).
 the anchor family off as a group). The shipped default IS the composed
 stack: c7 0.982/0.988×Σ, dual-c1 +15 above single with retx ×10 down,
 tail crown intact, singles identical, fairness class unchanged.
+
+**Default-env L1 smoke of the SHIPPED binary** (env fully unset — the
+post-consolidation defaults; binary sha256 8c0ac420da155484… = commit
+5ebbcda, 2026-07-21 13:07 UTC, seed 42, log
+`/home/vibe/consol/default-smoke.log`): c7 **167.7** (= the battery's
+stack arm class, 0.99×Σ), c8 88.1, dc1 192.5, sc2 84.0, dnf=0, and ALL
+FIVE mechanism echoes present on every run with nothing set —
+`SACK-clocked store release ACTIVE`, `path-scaled outstanding pool
+ACTIVE`, `multipath recovery suppression ACTIVE`, `M* peer-report
+RTT-feed suppression ACTIVE`, `clock-gap estimator hygiene ACTIVE`. The
+shipped default carries the composed stack end to end.
+
+Ops: VM lock `/tmp/rwm-vm.lock` held 10:34 UTC → released after
+teardown; CRLF converted after each sync (discipline 10); rp-* netns
+only; stale binary removed before every rebuild; battery + smoke logs
+and per-run diag preserved under `/home/vibe/consol/` (binary hashes in
+`BINARIES.txt`); seed-7 topo-abort count (75, all summary-less)
+recorded above.

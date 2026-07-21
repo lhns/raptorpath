@@ -190,7 +190,8 @@ ACK absence.
     - [17.4 The FEC Story](#174-the-fec-story-honestly)
     - [17.5 The Three-Machine Map](#175-the-three-machine-map)
     - [17.6 The Roadmap](#176-the-roadmap-named-not-built)
-    - [17.7 Supersession Index](#177-supersession-index)
+    - [17.7 The Shipped Default Stack](#177-the-shipped-default-stack-2026-07-21--the-maps-recommendation-is-the-default)
+    - [17.8 Supersession Index](#178-supersession-index)
 
 **Appendices:**
 - [A: Summary of Key Formulas](#appendix-a-summary-of-key-formulas)
@@ -9364,7 +9365,10 @@ mechanism before it was fixed or refuted:
    it survived every CPU-era lever and the hardware upgrade. The
    path-scaled pool (knee ≈ 2048/path) unlocked C7; the per-path-accounts
    refinement won symmetric cells and regressed heterogeneous ones
-   (§16.19 addendum; §17.3).
+   (§16.19 addendum; §17.3). The pool ships DEFAULT ON since 2026-07-21
+   (the consolidation LOO battery: removal re-opens a c7 collapse class
+   on both seeds; goal-gate "Consolidation") — with the c8 pool-law WATCH
+   recorded in §17.7.
 8. **Multipath recovery-plane over-emission — the fifth control-plane
    wall** (§16.23–16.24). The recovery engine kept GLOBAL clocks and
    serials under striping: cross-path scheduler-created gaps read as
@@ -9375,7 +9379,9 @@ mechanism before it was fixed or refuted:
    the c7 retransmit share drops below single-path parity and the
    dual-c1 anti-scaling is eliminated; the freed wire not converting
    1:1 relocates the residual Σ-gap to frontier-recovery latency on
-   the ack-serialized retention store (§16.24).
+   the ack-serialized retention store (§16.24) — which the SACK-clocked
+   store release then closed (§16.25). Ships DEFAULT ON since 2026-07-21
+   (consolidation LOO: removal −12.3/−13.9 ≫σ at c7 both seeds).
 
 What remains after the chain is structural, not artifactual: the
 presence⊥throughput identity (§14.33, §16.8). A saturated single reliable
@@ -9622,7 +9628,38 @@ live-path flap under saturation; the `RWM_STORE_PATHS` default battery;
 flipping the harness gen-arm default to the systematic wire (§16.18's
 recommendation).
 
-### 17.7 Supersession index
+### 17.7 The shipped default stack (2026-07-21) — the map's recommendation IS the default
+
+The consolidation pass (goal-gate "Consolidation"; roadmap item 2) closed
+the default-honesty gap: the shipped default, with every `RWM_*` env
+unset, is now the composed best-measured stack — BBR-under (§17.2) +
+SACK-clocked store release (§16.25) + the path-scaled outstanding pool
+(wall #7) + per-path recovery suppression (wall #8) + the anchor-hygiene
+pair (`RWM_MSTAR_ANCHOR`'s plain-live subset, `RWM_CLOCK_GAP`; §16.21).
+Each member holds a per-member LEAVE-ONE-OUT row on both seeds against
+the composed stack (the strictly-better criterion, pre-registered):
+removing the pool re-opens a c7 collapse class (86–97 Mbit runs);
+removing recovery suppression costs 12–14 Mbit ≫σ at c7 and returns the
+dual-c1 retransmit flood; the anchor pair is measured free at every bulk
+cell, unregressed at the realtime tail cell (the 12–48× crown survives
+the stack), and carries its §16.21 wins. Measured at the default: c7
+0.982–0.988×Σ of same-session singles, dual-c1 +15 above single with
+retransmits ×10 down, singles and fairness class unchanged.
+
+Honest residuals of the default: (i) heterogeneous c8 — under the
+SACK-release law the LEGACY 1024 pool now reads better at c8
+(0.85–0.87×Σ, the new best-measured c8 class, vs the stack's 0.72–0.76;
+sub-σ per seed, consistent direction) — the pool law's c8 story has
+MOVED since §16.22 and a c8-aware pool law is the named, pre-registered
+follow-up (it also carries `RWM_PLAIN_RS`, whose composition probe
+showed its witness cost resolved); (ii) every REFUTED mechanism is now
+in the goal-gate DEPRECATION REGISTER (two-stage: warn-on-activation →
+clean-substrate re-test → delete), with the walls active at each
+refutation argued per gate — nothing was deleted on a wall-tainted
+verdict.
+
+
+### 17.8 Supersession index
 
 Bannered as superseded-era, retained as the record: §16.8 (the 2026-07-08
 "arc concluded" verdict), §16.6's grounded verdict, §16.10–§16.14 (the
