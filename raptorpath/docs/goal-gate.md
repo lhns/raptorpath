@@ -14,6 +14,8 @@ path is bit-identical).
 
 ## MEASUREMENT DISCIPLINE (2026-07-13) — required for every future L1 verdict
 
+*Decision record: → [ADR-0052](adr/0052-measurement-discipline.md)*
+
 The lesson of the generation-inert era (the 2026-07-12 DAPS-era sections below;
 paper §16.10–16.14; see "Methodology Audit (2026-07-13)" at the end of this
 file): six mechanism verdicts were merged on measurements in which the
@@ -79,6 +81,8 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    consolidation pass; first exercised by "SACK-Clocked Store Release".)
 
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
+
+*Decision record: → decision index [ADR-0052…0067](adr/README.md) + [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md)*
 
 This is the settled synthesis of the post-audit evidence base (everything
 from the 2026-07-13 "Methodology Audit" onward: Generation-ON Re-Baseline →
@@ -479,6 +483,8 @@ Cubic on clean at a 305–316 ms standing queue; 0.95–0.96 share at c2).
 
 ## DEPRECATION REGISTER (2026-07-21, consolidation pass) — Class-C gates: two-stage deprecate → re-test-on-clean-substrate → delete
 
+*Decision record: → [ADR-0066](adr/0066-deprecation-register.md)*
+
 Discipline (per the consolidation roadmap, Pierre's amendment (a)): before
 any refuted mechanism is DELETED, ask whether its refutation predates a
 since-removed wall it plausibly collided with (the project's own history:
@@ -517,6 +523,8 @@ Shedding + Flip Battery"); the streaming machine entered the register
 above with its re-test clause.]**
 
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
+
+*Decision record: → [ADR-0061](adr/0061-anchor-hygiene.md)*
 
 Three investigations ended at the same defect family: the COLLAPSE
 ATTRIBUTION (designs A+B: A\* pinned/poisoned), the #61 knee battery (the M\*
@@ -796,6 +804,8 @@ scrape + [SPAN] trajectory dump (pipeline-failure-safe after the recorded
 s42 SIGPIPE defect).
 
 ## Unified Decoder (built; L1 flip-gate battery MEASURED 2026-07-19, both flips NO) (2026-07-18) — task #61, the principle debt: ONE decoder for the RLC family (global sparse-aware closure) + the δ-derived span law A*/M*/Δ replacing the realtime/bulk machine switch; differential-proven vs all three legacy decoders; oracle δ-continuum green incl. the M* knee at RTT100/200; L0 measured (no cliff, bulk parity, tail class preserved) — and the honest finding that the #85 span-probe datum is VOID (backend-guard drop). **L1 (`meas/unified-battery`): bulk gen-sys parity + CPU parity PASS, realtime delivery-complete at c3 (+24–26 pp vs shipped streaming, span law recovery-live), but the realtime TAIL gate FAILS — unified p99 medians 2.7–3.3× legacy-RLC at c3 with a 3/10 stream-collapse rep class, so `RWM_UNIFIED` stays DEFAULT OFF (named blocker) and streaming keeps Realtime + the 12–48× crown jewel; the M* knee is UNREACHABLE at L1 behind two named anchor defects (RTprop floor under-read, static win backstop)** (branch `feat/decoder-unify`)
+
+*Decision record: → [ADR-0064](adr/0064-unified-span-machine.md)*
 
 **The derivation (paper §16.20, written BEFORE the code).** The two RLC-family
 decoders decode the SAME self-describing wire equations; they differ only in
@@ -1280,6 +1290,8 @@ gate_suite 15/15 release (235.7 s); mtu_blackhole_wedge 2/2; perf_loopback
 
 ## Taper Emission Fix (2026-07-18) — the #46 per-ack-cycle emission inertness FIXED as a mechanism (RWM_TAPER_R budget law, unit + L0-wire validated: cod/src 0.03-0.05 → 0.21-0.34) — and the honest L0 2x2 verdict: r* is STILL not realized at the realtime plain-mode wire; the next binders are NAMED and measured (spare-cap compression + leading-window entanglement). Default OFF. L1 spot check MEASURED 2026-07-19 (`meas/percap-battery`): wire-consumption CONFIRMED (cod/src 0.06–0.09 → 0.32–0.35), the −22 pp degradation REPRODUCED on the real substrate (−25/−19 pp, both seeds) — the entanglement attribution stands, the flip stays closed. (task #85, branch `fix/taper-emission`)
 
+*Decision record: → [ADR-0063](adr/0063-rstar-window-mass-provisioning.md)*
+
 **The bug (located by #46, fixed here).** Plain-mode proactive repair accrues
 emission debt from the taper density τ(t) = r·q̂(1−q̂)^t (net/mod.rs) and the
 offset t resets on every cumulative-ack advance, so emitted proactive repair
@@ -1441,6 +1453,8 @@ tight and agree with s42; no captured result discarded); zero lost at
 s42 except one LB invocation.
 
 ## r* Bursty-Loss Provisioning (2026-07-13) — the GE 2-4x under-provisioning FIXED: r* now provisions against the receiver's MEASURED window loss-mass quantile (paper §8.4.1); oracle-validated on the #43 real traces (feasible-cell worst residual 2.88x → 1.41x, GE control tracks §8.7 exact, heavy-tail synthetic 5.1x-miss → 0.99x-hit); shipped default RWM_RSTAR_TAIL=1 (branch `feat/rstar-bursty`, task #46)
+
+*Decision record: → [ADR-0063](adr/0063-rstar-window-mass-provisioning.md)*
 
 **The problem (from #43 / paper §2.5).** r* was derived for GE-geometric
 bursts. Real traces carry (i) burst-length tails 3.8x–26x heavier than
@@ -1806,6 +1820,8 @@ cannot buy a round-trip back without spare bandwidth a saturated reliable
 path does not have.
 
 ## FMTCP Aggregation Build (2026-07-08) — the literature-blessed retry, MEASURED
+
+*Decision record: → [ADR-0066](adr/0066-deprecation-register.md) (re-test clause; triage in [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md))*
 
 Built and measured the FMTCP/SCDP-class **pure decode-on-total** config — the
 empty quadrant the arc never tested — behind the composite env-gate `RWM_FMTCP`
@@ -6124,6 +6140,8 @@ gains are throughput-on-clean, tail-latency, and the window/systematic path.
 
 ## DAPS + Right-Sized FEC (2026-07-12) — delay-aware scheduling escapes the frontier long pole; C8 0.48×→0.80×; over-FEC refuted (branch `feat/daps-rightsized-fec`)
 
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
+
 **[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
 measurement.]** The DAPS arms recorded no generation-enabling flag; on this
 code `RWM_DAPS=1` alone leaves generation OFF (`daps = RWM_DAPS &&
@@ -6274,6 +6292,8 @@ residual), not recovery-latency-bound as the pre-DAPS arc concluded.
 
 ## DAPS Queue Management (2026-07-12) — per-path BDP cap + BtlBw pacing; the queue bound is right but rate-signal-limited in generation mode (branch `feat/daps-queue-mgmt`)
 
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
+
 **[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
 measurement.]** `RWM_DAPS_BDP`/`RWM_DAPS_PACE` are dead without generation,
 which the harness never enabled — under the inert reading all four arms ran
@@ -6400,6 +6420,8 @@ queue bound needs a per-path rate it currently lacks.
 RWM_DAPS-gated; RWM_DAPS_BDP=0 RWM_DAPS_PACE=0 reproduces pre-QM behaviour).
 
 ## Per-Path Estimator (2026-07-12) — the diagnosed rate-estimation residual, CLOSED: per-path BtlBw now establishes, RTprop stays at base, slow-path bufferbloat 3.7 s→~0.3 s; C8 lifts + STABILIZES (branch `feat/per-path-estimator`)
+
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
 
 **[AUDIT 2026-07-13: UNCERTAIN — generation-inert measurement; mechanism DIAG
 internally inconsistent.]** The throughput claims (+30% pooled, 7.85→10.24,
@@ -6535,6 +6557,8 @@ non-source traffic — improved and stabilized materially, not yet at parity.
 
 ## Pace-All Traffic (2026-07-12) — pace the CODED/REPAIR emission at BtlBw_i too; the standing queue that the SOURCE-only pacer left; C8 lifts + STABILIZES on BOTH seeds, does NOT reach the ceiling (branch `feat/pace-all-traffic`)
 
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
+
 **[AUDIT 2026-07-13: UNCERTAIN, leaning INVALID — generation-inert
 measurement.]** `RWM_PACE_ALL` is dead without generation, which the harness
 never enabled — under the inert reading both "same-binary A/B" arms ran
@@ -6658,6 +6682,8 @@ axis measured, not yet at the goodput ceiling.
 
 ## Source Backpressure (2026-07-12) — REFUTED at L1: deferring the SOURCE to the per-path bucket REGRESSES C8 ~53% on BOTH seeds; the spill baseline is benign; kept as a default-OFF, oracle-modelled, unit-tested knob (branch `feat/source-backpressure`)
 
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
+
 **[AUDIT 2026-07-13: UNCERTAIN — the REFUTED verdict is UNSAFE either way;
 generation-inert measurement.]** `RWM_SRC_BP` is dead without generation
 (`src_bp_on = daps_pace_on && …`; the TUN-read defer is entirely inside
@@ -6767,6 +6793,8 @@ pacer (repair OR source) actually bind — NOT the source spill. Feature retaine
 default-OFF, oracle-modelled, unit-tested knob for the scientific record.
 
 ## BtlBw Rate-Sample Fix (2026-07-12) — the per-path anchor over-read CLOSED (fast ×158→×1, fast bufferbloat 1573→30ms); but C8 does NOT rise under DAPS — it REGRESSES; the true residual is the slow-path deep read-ahead, not the source anchor (branch `feat/btlbw-rate-sample`)
+
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
 
 **[AUDIT 2026-07-13: UNCERTAIN — generation-inert measurement; the C7
 "politeness regression" sub-claim is refuted-as-noise.]** If generation was
@@ -6911,6 +6939,8 @@ the aggregation regression it exposes is the honest handoff to the read-ahead /
 pacer-headroom work, reproducible via the same-binary `RWM_RATE_SAMPLE=0`.
 
 ## DAPS Read-Ahead Depth (2026-07-12) — the last structural lever: depth-bounding is the CORRECT, best-performing, most-stable mechanism, but it CANNOT bind because the slow-path rate anchor never establishes; bulk C8 heterogeneous aggregation is BOUNDED below fast-path-alone — CONSOLIDATE (branch `feat/daps-readahead-depth`)
+
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
 
 **[AUDIT 2026-07-13: INVALID (PROVEN) — generation-inert measurement +
 wrong-log DIAG.]** The saved battery sender logs show `cod=0`/`eff_pace=0`
@@ -7060,6 +7090,8 @@ property no source-side scheduler can synthesize. Reproducible via the same-bina
 
 ## Slow-Path Anchor Diagnosis (2026-07-13) — the §16.14 "slow anchor never establishes" is REFUTED: it establishes for the whole active transfer, but BtlBw_slow is a decode-clocked windowed-MAX that swings ~4000× (5–20950 sym/s) so no depth/pace bound can key on it — FIXABLE (stabilize the per-path rate signal), NOT fundamental (branch `diag/slow-path-anchor`, DIAG only, no feature)
 
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md)*
+
 Diagnostic investigation of why the per-path SLOW-path BtlBw anchor "never
 establishes" (`est=n`, `btlbw=0`, `dbud=0`) that §16.14 named as the binding
 constraint before recommending CONSOLIDATE. Added temporary per-path DIAG
@@ -7176,6 +7208,8 @@ perf_rwm_c.sh c2 c3 bulk 12000000 3 dual`, then read the p1 `ANCHOR …` counter
 `/tmp/rwm-c.log` (the CLIENT/sender log, NOT `/tmp/rwm-s.log`).
 
 ## Generation-ON Re-Baseline (2026-07-13) — the FIRST VALID heterogeneous C8 measurement: the arc's coded path was DEAD in measurement (PROVEN for §16.14; §16.10–16.13 UNVERIFIABLE — no recorded env; the harness never enabled generation by itself); ceilings + C8/C7 re-measured with generation ACTUALLY ON, and a hard guard so the class of bug cannot recur (branch `feat/gen-on-rebaseline`)
+
+*Decision record: → [ADR-0053](adr/0053-generation-inert-era-audit.md)*
 
 > **CRITICAL — the entire recent arc is SUSPECT.** The §16.10–16.14 goal-gate
 > results (DAPS, pace-all §16.11, source-backpressure §16.12, rate-sample §16.13,
@@ -7322,6 +7356,8 @@ default; the cwnd recovery anchor (`bdp_anchor`) is untouched. Every battery arm
 
 ## Methodology Audit (2026-07-13) — how the generation-inert era happened
 
+*Decision record: → [ADR-0053](adr/0053-generation-inert-era-audit.md)*
+
 Full reports, in-repo verbatim:
 [audits/2026-07-13-verdict-audit.md](audits/2026-07-13-verdict-audit.md)
 (section-by-section VALID/INVALID/UNCERTAIN classification, the env-gate table,
@@ -7365,6 +7401,8 @@ Summary of findings:
   at the top of this file is now binding for every future L1 verdict.
 
 ## Gen-ON Stack Ablation (2026-07-13) — FIRST ablation of the DAPS-era stack with generation actually ON: the symmetric C7 collapse 21→12 is the STACK (rate-sample −22%, depth −20…−30%), NOT the coding (gen-bare ≈ plain, keeps ×1.35 aggregation); gen-mode C8 is SUBSTRATE-bound (per-path ≈10 Mbit/s generation ceiling), and PLAIN C8 beats every gen arm ×1.6 same-day; plus the env-parse footgun fixed (`RWM_*=0` now truly OFF) (branch `feat/gen-on-ablation`)
+
+*Decision record: → [ADR-0065](adr/0065-daps-era-refutations.md) (+ [ADR-0053](adr/0053-generation-inert-era-audit.md))*
 
 The §16.15 re-baseline left an open attribution: with generation ON, symmetric C7
 collapsed 21→12 (0.88× fast-alone). Was that (a) generation coding's intrinsic
@@ -7524,6 +7562,8 @@ G0 single-c3 — both reported above, not hidden). Env + command line recorded p
 in the battery logs; every gen-arm run GUARD-verified `cod>0` on the SENDER log.
 
 ## Gen Substrate Ceiling (2026-07-13) — the ~10 Mbit/s per-path generation wall NAMED and RAISED: the binder is quinn's loss-reactive CUBIC underneath the datagram path × generation-mode's own standing-queue RTT inflation; `RWM_QUIC_CC=bbr` alone ×3.4 (9.77→33), `RWM_GEN_PIPE` app fix alone 9.77→14.3, together 33.8; single-c3 bare collapse 0.78→13.0 FIXED; C8 gen 32.3 = ×1.9 the plain fast-alone link control — and the SAME lever exposes that plain's own 15–17 "link ceiling" was the substrate too (plain+BBR single 76, C7 94.6) (branch `feat/gen-substrate-ceiling`)
+
+*Decision record: → [ADR-0054](adr/0054-substrate-cc-policy-bbr-default.md)*
 
 §16.16 ended pointing at one lever: gen mode has a ~10 Mbit/s PER-PATH substrate
 ceiling (gen-bare single-c2 9.70 vs plain 15.15; gen C8 pinned at 0.95× of gen's own
@@ -7735,6 +7775,8 @@ one_deficit_round`, `set_pipeline_depth_widens_the_proactive_span`);
 
 
 ## Decode-CPU Ceiling (2026-07-13) — the ~34 Mbit/s generation machine was the CODED-ONLY WIRE's O(G²·S), not the solver: the systematic-repair wire is the O(k·G·S+k³) machine — gen single-c2 33.9→70.9 (×2.1, = 0.92× plain+BBR), c3 13.0→15.0 (0.95× the plain+BBR recovery ceiling), C8 het 30.0→69.8 (beats plain+BBR's own C8 ×1.25–1.5 with σ halved); sparse-aware decoder (pure speedup, output-identical, differential-tested) (branch `feat/decode-cpu-ceiling`)
+
+*Decision record: → [ADR-0056](adr/0056-systematic-wire-sparse-decoder.md)*
 
 §16.17 left ONE binder: the generation machine capped the whole gen transport at
 ~34 Mbit/s regardless of path count (single 33.9 ≈ C7 32.1 ≈ C8 30.0 = the L0
@@ -7984,6 +8026,8 @@ fmtcp/daps loopbacks green; L0 engine bench green before/after. Micro-bench:
 
 ## Copa-Sole Substrate CC (2026-07-13) — `RWM_QUIC_CC=passthrough`: the engine's per-path Copa-lite cwnd IS quinn's congestion window, fed for the first time with CLEAN plain-mode delivery samples; Copa-sole does NOT earn bulk-throughput parity with BBR-under (0.4–0.6×, mechanism named) but holds a 3–6× tighter standing queue everywhere (slow-path tail up to ×8), kills plain-BBR's c3 collapse mode (σ 6.5→0.63), and aggregates C7 at ×1.98 of its own single (branch `feat/copa-sole-cc`, code commit a895205)
 
+*Decision record: → [ADR-0062](adr/0062-copa-wire-signal-competitive-mode.md)*
+
 Task #80. The Gen Substrate Ceiling section proved quinn gates every datagram
 send on its own congestion controller — so the effective window was always
 min(app CC, quinn CC), with quinn's loss-reactive Cubic silently the binder.
@@ -8182,6 +8226,8 @@ default untouched); new `copa_sole_loopback` end-to-end guard (passthrough +
 feed over real QUIC). L0 shim smokes recorded above (`RWM_RS_TRACE`).
 
 ## Copa Wire-Signal (2026-07-13) — the #80 bulk gap CLOSED where it was named: wire-clocked delay term + hint→δ mapping + Copa's real update law take Copa-sole from 0.4× to 0.86–0.89× BBR-under at single-c2 and to PARITY at C8 (1.01×/0.95× with σ 3.7/1.6 and a ×18–25 tighter slow-path queue); arm-D's reservoir sensitivity is GONE; residuals: C7 0.73–0.76× (recovery-idle, named) and a pre-existing CROSS-ARM receiver-side frontier wedge (~60 s, forensics recorded) that C1's larger operating point triggers more often (branch `feat/copa-wire-signal`)
+
+*Decision record: → [ADR-0062](adr/0062-copa-wire-signal-competitive-mode.md)*
 
 Follow-up to "Copa-Sole Substrate CC" (#80), which named the bulk-gap
 mechanism: Copa's delay term was fed the APP-LAYER ECHO RTT — including the
@@ -8389,6 +8435,8 @@ defaults over real QUIC); `congestion_control` 19/19.
 
 ## Frontier Wedge (2026-07-13) — the cross-arm c3/C8 ~60 s "collapse run" ROOT-CAUSED and FIXED: not a receiver frontier bug at all — quinn's PMTU BLACK-HOLE DETECTOR misreads a GE all-large loss burst as an MTU black hole, resets the path MTU to 1200 < the 1279-byte symbol datagram, and EVERY data send (incl. every retransmit of the blocker) fails sender-side with `TooLarge` for exactly `black_hole_cooldown` = 60 s; fix = `min_mtu = initial_mtu = 1350` (the engine's real floor), deterministic same-binary repro 63.5 s → 5.8 s (branch `fix/frontier-wedge`)
 
+*Decision record: → [ADR-0055](adr/0055-mtu-floor-1350.md)*
+
 Follow-up to "Copa Wire-Signal" (#82), whose battery recorded the collapse
 mode in EVERY substrate arm (B 2/59, C0 3/57, C1 7/59 + 1 partial) and
 captured live sender forensics (`/home/vibe/wedge-c.log`). The working
@@ -8553,6 +8601,8 @@ reproduces, 63.5 s measured); `copa_sole_loopback` + `congestion_control`
 unchanged.
 
 ## Hardware-Honest Re-Baseline + Receiver Parallelization (2026-07-14) — the bulk N× test on real silicon: AES-NI moved the CPU but NOT ONE WALL (the "single-thread receiver ceiling ~93–104" attribution is REFUTED — the engine sinks 187.7 Mbit/s single-path); the true C7/C8 binder is the plain-reliable OUTSTANDING POOL not scaling with path count (`win=1024/1024` pegged), and the path-scaled pool (`RWM_STORE_PATHS`) takes C7 plain+BBR 100→136/142 (×1.72/×1.89 of the same-session single, 0.86/0.94 of Σ singles) and C8 65/56→75.8/72.3 with σ halved; receiver parallelization NOT built — the profile refutes it (task #84, branch `feat/recv-parallel`)
+
+*Decision record: → [ADR-0057](adr/0057-profile-before-parallelize.md) + [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)*
 
 ════════════════════════════════════════════════════════════════════════
 **HARDWARE DIVIDE.** Every L1 number in the sections ABOVE this line was
@@ -8791,6 +8841,8 @@ release; `mtu_blackhole_wedge` 2/2 (wedge fix NOT regressed — the
 `copa_sole_loopback`, `fmtcp_loopback`, `daps_loopback` green.
 
 ## Per-Path Outstanding Accounting (2026-07-18) — the #84 residual lever BUILT: each path's outstanding gets its OWN derived cap (gain·BtlBw_i·echoRTT_i, floor/knee-bounded), per-path draw/release on the retention store, admission = "any account has headroom"; unit + L0 mechanism evidence GREEN — and **L1 MEASURED (2026-07-19): c7 symmetric parity-or-better with the pooled fix (0.87/0.97 of Σ — the ≈1.0 target touched at s7, with the PBS collapse mode absent), but the heterogeneous c8 — the cell this lever was BUILT for — REGRESSES to 0.38–0.39×Σ under BOTH CC families (the cap-full placement redirect over-commits the slow path's account; forensics below). `RWM_STORE_PERCAP` stays DEFAULT OFF; the redirect's delay-aware guard is the named follow-up** (task #86, branch `feat/store-percap`; L1 battery branch `meas/percap-battery`) — **GUARD FOLLOW-UP MEASURED (2026-07-19, roadmap item 1, `fix/percap-redirect-guard`): the floor-clock redirect bound recovers HALF the c8 regression (0.41→0.55 / 0.40→0.52×Σ, both CC families) but PBP-G stays below the pooled PBS bar; flip still NO — see "GUARD RESULTS" below** — **HONEST-CAP FOLLOW-ON MEASURED (2026-07-19, `feat/percap-honest-cap`): caps re-derived on the honest anchor (residence K·RTprop + recovery-clock runway); the sc2 −20% RESOLVED exactly, c7 percap ≥ PBS both seeds (0.89–0.90×Σ), c8 PBP-H > the knee-clamped control but STILL < PBS, and C1P-H < C1 with honest cwnd caps — the NO-BORROWING TAX is confirmed as the c8 binder; flip NO, see "HONEST-CAP RESULTS"** — **BOUNDED BORROWING DERIVED+MEASURED (2026-07-19, `feat/store-borrowing`, paper §16.22): the lender-solvent loan law behaves exactly as derived (c7 loans ≡ 0 by theorem AND by gauge; c8 loans one-directional slow→fast, bounded, repaid) but CANNOT repay the c8 tax — PBP-B < PBS both seeds; the pooled `RWM_STORE_PATHS` design is VINDICATED as the c8 answer, percap(+borrow) is the symmetric-cell tool; residual (iii) attributed to spurious cross-path-retransmit delivery attribution and PARTLY fixed (the flight witness, `RWM_RS_ATTR`); flip NO, see "BORROWING RESULTS"**
+
+*Decision record: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)*
 
 **Why (proven by #84).** The multipath binder was flow control: the
 per-transfer outstanding pool (1024) WAS the historic ~100–128 Mbit wall by
@@ -9689,6 +9741,8 @@ lib 361/361 (6 new), math 136 green, `gate_suite` 15/15 release,
 
 ## Copa Competitive Mode + Cross-Traffic (2026-07-19) — Copa §2.2 mode switching BUILT on the wire signal (verified mechanism, faithful law, unit-proven) + the FIRST shared-bottleneck battery: at the GE c2 cell Copa-sole does NOT starve vs Cubic (0.88–0.90 share, compete irrelevant); at the CLEAN bottleneck Copa-sole starves (2.2 vs Cubic's 93, share 0.023) and competitive mode CANNOT restore share — because δ is NOT the binder (fixed δ=0.001 probe: no change): the starvation is the plain-window ARQ/retention pipeline under contention tail-drop (pool 1024 × 3.3 s dwell = Little's-law 2.4 Mbit), a CC-INDEPENDENT named blocker; BBR-under reference = 0.24 share at a 305–316 ms standing queue (Copa arms keep 20–40 ms) — substrate-CC default flip stays CLOSED with the gate MOVED from "no competitive mode" to the contention-recovery pipeline (branch `feat/copa-compete`, roadmap item 6, tasks #80/#82)
 
+*Decision record: → [ADR-0062](adr/0062-copa-wire-signal-competitive-mode.md)*
+
 Roadmap item 6. The CONSOLIDATED VERDICT §2 named gap: "Copa-lite has NO
 TCP-competitive mode … and no cross-traffic cell has ever been measured
 (this gates BBR's fairness case too). Gates ANY substrate-CC default flip."
@@ -9898,6 +9952,8 @@ byte-identical); `congestion_control` 19/19; `copa_sole_loopback` 1/1;
 `mtu_blackhole_wedge` 2/2 — all on the final tree.
 
 ## Engine Parallelization (2026-07-19) — roadmap item 2, the receiver/sender task-parallelization lever PROFILED AT the ~150 threshold it went live at: the THIRD threading refutation, this time WITH the true binder named and measured — at the best c7 arm (137–144) BOTH processes pinned to ONE core each sustain full throughput (pinned mean 136.3 n=8 ≈ unpinned 136.2 n=10, both seeds), the engine receiver task runs 81–87% busy with a NEAR-EMPTY inbound queue, and the wire is measured FULL: multipath recovery-plane over-emission (retx ×1.8, repair ×2.2–2.5 the same-config single-path share) occupies ~25% of the dual wire ≈ exactly the Σ-gap; `RWM_ENGINE_PAR` NOT built (it would have measured noise); built instead: the `RWM_RDIAG` engine-saturation gauge, which also measured the REAL task-service walls (~19.5–20k sym/s sender emission, ~20–22k msgs/s receiver engine) that bracket the 187.7 sink ceiling and localize the parallelization threshold at c1-class cells only (branch `feat/engine-parallel`, tasks #84/#86)
+
+*Decision record: → [ADR-0057](adr/0057-profile-before-parallelize.md)*
 
 Task: roadmap item 2 — receiver/sender task parallelization, refuted by
 the #84 profile below ~150 Mbit/sink, now LIVE at the symmetric cell
@@ -10125,6 +10181,8 @@ loopbacks green, no delivered-set change possible with the flag unset;
 with it set the probe only reads).
 
 ## Multipath Recovery Suppression (2026-07-21) — the FIFTH control-plane wall's lever BUILT and MEASURED (the §16.23 successor): the over-emission root-caused to TWO instances of one mistake — recovery clocks/serials GLOBAL where multipath demands PER-PATH — the hole law rebuilt as RFC 9002 loss detection generalized per path (packet-threshold fast channel + time-threshold safety net, per-flight, retransmits inherit their own clock), the waste KILLED at both target cells (c7 retx 14.9→4.5% of source — BELOW single-path parity; dual-c1 retx 8.5→0.7%, the ×46 control answered), c7 +5.3/+6.4 Mbit (s42 Δ≫σ_s; s7 consistent) and the dual-c1 anti-scaling ELIMINATED (s42 192.3 vs single 186.0 with the bimodal collapse-mode damped; s7 193.2 vs 181.0, Δ=+24.2 ≫ σ_s) — but the wire the waste occupied does NOT convert 1:1 into goodput (c7 lands 0.89×Σ, not ≥0.95): the Σ-gap's residual owner moves from emission to frontier-recovery latency; the per-path SERIAL fix is DIAGNOSTICALLY VINDICATED (per-path loss estimates measured 0.62–0.77 at a 0.1%-loss cell) but REGRESSES at runtime (honest signal re-heats every SRTT/loss-scaled cadence; sender CPU ×2.4) and ships default-OFF as the named follow-up; flip `RWM_RECOV_MP` stays DEFAULT OFF (named: the c7 ~1.0×Σ target missed — the revised attribution — and c8 carries no Δ≫σ win; identity clean both cells) (branch `feat/recovery-suppression`, code commits 8a34520→2c632c0)
+
+*Decision record: → [ADR-0059](adr/0059-per-path-recovery-clocks.md)*
 
 Task: goal-gate "Engine Parallelization" VERDICT named the successor —
 "multipath recovery-plane over-emission on a saturated wire" owns the c7
@@ -10363,6 +10421,8 @@ behavior-neutral, covered by the identity cells).
 
 ## Default CC Flip (2026-07-21) — `RWM_QUIC_CC` unset ⇒ BBR (branch `feat/bbr-default-and-store-release`)
 
+*Decision record: → [ADR-0054](adr/0054-substrate-cc-policy-bbr-default.md)*
+
 The consolidation roadmap's Item 0 (approved 2026-07-21): the shipped
 default was the worst measured configuration — stock Cubic was wall #1
 (plain 17.5 → plain+BBR 74.5 pooled, ×4.3, "Gen Substrate Ceiling"), every
@@ -10418,6 +10478,8 @@ dnf=0 on 8/8; log `/home/vibe/ccflip/identity-s42.log`:
 The default binary reproduces the measured bbr arms; Item 1 may proceed.
 
 ## SACK-Clocked Store Release (2026-07-21) — PRE-REGISTRATION (written BEFORE the build, discipline item 11; env `RWM_STORE_SACK_RELEASE`, default OFF; branch `feat/bbr-default-and-store-release`)
+
+*Decision record: → [ADR-0060](adr/0060-sack-clocked-store-release.md)*
 
 **(a) Mechanism.** The retention store releases slots only on the
 cumulative frontier (`sent_store = sent_store.split_off(&(ack+1))` — "the
@@ -10642,6 +10704,8 @@ dual cell.
 
 ## Consolidation (2026-07-21) — the composed default stack: PRE-REGISTRATION (roadmap item 2; discipline item 11 — this block written before the battery's results were parsed; the flip rule was fixed in the approved roadmap before launch; branch `feat/consolidation`)
 
+*Decision record: → [ADR-0067](adr/0067-consolidated-default-stack.md)*
+
 **(a) Mechanism.** Not a new build — COMPOSITION. Four measured winners sit
 default-OFF because each was gated on a per-knob clean sweep while the
 features interact (the pile-up root cause named in the roadmap). The
@@ -10846,6 +10910,8 @@ and per-run diag preserved under `/home/vibe/consol/` (binary hashes in
 recorded above.
 
 ## Unified Shedding + Flip Battery (2026-07-21) — PRE-REGISTRATION (roadmap item 3; discipline item 11 — this block written BEFORE the build; branch `feat/unified-shedding`)
+
+*Decision record: → [ADR-0064](adr/0064-unified-span-machine.md)*
 
 **(a) Mechanism.** At overload the RLC-family reliable path serializes
 EVERYTHING behind the frontier — the COLLAPSE ATTRIBUTION's amplification:

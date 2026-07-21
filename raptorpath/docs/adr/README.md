@@ -71,3 +71,31 @@ This directory contains ADRs for the raptorpath project, ordered by priority.
 | [0048](0048-overhead-reduction.md) | FEC overhead reduction: budget cap, NACK age gate, fractional repair | Accepted |
 | [0049](0049-benchmark-dashboard.md) | Benchmark dashboard generator (Plotly + Lit, 4 visualization tabs) | Accepted |
 | [0050](0050-fec-rate-control-redesign.md) | FEC rate control redesign — BOCD, budget allocator, spare capacity gate | Accepted |
+| [0051](0051-canonical-evaluation-scenarios.md) | Canonical evaluation scenarios and win conditions | Accepted |
+
+## The 2026-07 arc — decision index
+
+The measurement record for these decisions is the ledger
+(`docs/goal-gate.md`) and paper §16–§17 (`docs/fec-arq-model.md`); the
+ADRs index the DECISIONS and link the evidence — they do not restate the
+tables. The feature triage feeding the code-consolidation pass is
+[VISION-TRIAGE-2026-07](VISION-TRIAGE-2026-07.md).
+
+| # | Title | Status |
+|---|-------|--------|
+| [0052](0052-measurement-discipline.md) | L1 measurement discipline (liveness, pre-registration, era honesty) | Accepted (binding) |
+| [0053](0053-generation-inert-era-audit.md) | The generation-inert era — audit, classification, hard guard | Accepted (methodology lesson) |
+| [0054](0054-substrate-cc-policy-bbr-default.md) | Substrate CC is policy — BBR default (`RWM_QUIC_CC`), Cubic retained | Accepted |
+| [0055](0055-mtu-floor-1350.md) | MTU floor 1350 — quinn PMTU black-hole false positive | Accepted |
+| [0056](0056-systematic-wire-sparse-decoder.md) | Systematic-repair wire as the generation arm + sparse-aware decoding | Accepted |
+| [0057](0057-profile-before-parallelize.md) | Profile before parallelize — crypto + three threading refutations | Accepted (as method) |
+| [0058](0058-path-scaled-outstanding-pool.md) | Path-scaled outstanding pool; percap/borrowing family refuted for c8 | Accepted (family refuted; c8 WATCH open) |
+| [0059](0059-per-path-recovery-clocks.md) | Per-path recovery clocks (RFC 9002 per path, `RWM_RECOV_MP`) | Accepted |
+| [0060](0060-sack-clocked-store-release.md) | SACK-clocked store release (supersedes SACK_PRUNE) | Accepted |
+| [0061](0061-anchor-hygiene.md) | Anchor hygiene — measured-seed, clock-gap discard, expiring floors | Accepted |
+| [0062](0062-copa-wire-signal-competitive-mode.md) | Copa wire-signal + competitive mode; CC-independence finding | Accepted (compete gated) |
+| [0063](0063-rstar-window-mass-provisioning.md) | r* window-mass provisioning (§8.4.1) + wire-realization chain | Accepted |
+| [0064](0064-unified-span-machine.md) | One machine across the δ axis — unified span machine + δ-honest shedding | Accepted |
+| [0065](0065-daps-era-refutations.md) | DAPS-era refutations (delay-aware scheduling chain) | Refuted / Void |
+| [0066](0066-deprecation-register.md) | The deprecation register — two-stage retirement | Accepted |
+| [0067](0067-consolidated-default-stack.md) | The consolidated default stack (LOO-defended defaults) | Accepted |

@@ -9403,6 +9403,13 @@ the goal-gate ledger's 2026-07-08 FINAL CONSOLIDATED VERDICT / L3 REGIME MAP
 (bannered there). The primary record for every number is the goal-gate
 ledger; this section states positions and mechanisms.
 
+*Decision index (2026-07-21): the DECISIONS of this arc are recorded as
+architecture decision records ADR-0052…0067 (`docs/adr/README.md`), one
+per decision, each linking its ledger evidence; the code-consolidation
+feature triage is `docs/adr/VISION-TRIAGE-2026-07.md`. The ledger and
+this paper remain the measurement record; the ADRs are the decision
+index.*
+
 The map has been overturned three times — by the methodology audit (§16.15:
 the coded path was dead in a whole era of measurement), by the substrate
 chain (§16.17–§16.19, §12.12: the "walls" were controllers and constants
