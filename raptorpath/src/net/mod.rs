@@ -1937,8 +1937,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // "SACK-Clocked Store Release"): rides the same SACK forwarding channel;
     // the SENDER decides per-range whether to prune (legacy experiment) or
     // release (the slot-uncount law) — see the sender-loop drain.
+    // DEFAULT ON (2026-07-21): the pre-registered battery earned the flip
+    // (c7 0.96–1.05×Σ both seeds, sc2 +3–4, no regression; =0 is the
+    // legacy frontier-only-release opt-out arm).
     let store_sack_release_enabled =
-        crate::config::env_flag("RWM_STORE_SACK_RELEASE", false);
+        crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
     let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
         if (sack_prune_enabled || store_sack_release_enabled)
             && window_reliable
@@ -5244,12 +5247,17 @@ async fn run_window_sender(
     // while sent_store + retransmit_buffer + nack_retx_at + source_path_map
     // are kept UNTOUCHED until the cumulative frontier passes it — release
     // a STORE SLOT, never recoverability (the RWM_SACK_PRUNE lesson; see
-    // sack_release_mark). Default OFF: released set stays empty and the
-    // gate arithmetic is exactly the shipped store_len.
+    // sack_release_mark). DEFAULT ON (2026-07-21, the pre-registered
+    // battery earned the flip: c7 0.96–1.05×Σ both seeds, sc2 +3–4 at
+    // N=1, dual-c1 +20–22 composed, no regression; goal-gate
+    // "SACK-Clocked Store Release"); RWM_STORE_SACK_RELEASE=0 is the
+    // legacy frontier-only-release opt-out arm, under which the released
+    // set stays empty and the gate arithmetic is exactly the legacy
+    // store_len.
     let store_sack_release_on = reliable
         && !generation
         && !coded_only
-        && crate::config::env_flag("RWM_STORE_SACK_RELEASE", false);
+        && crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
     let sack_prune_on = crate::config::env_flag("RWM_SACK_PRUNE", false);
     if store_sack_release_on {
         if sack_prune_on {

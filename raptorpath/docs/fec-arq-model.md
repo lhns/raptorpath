@@ -9242,6 +9242,66 @@ remains §16.22's pool story) and the N=1 sc3 identity carries a
 consistent-signed sub-σ cost — the flip gates on the composed
 frontier-release battery.
 
+### 16.25 SACK-clocked store release: the sixth wall's lever, and the first default-flipped mechanism (2026-07-21, `feat/bbr-default-and-store-release`, `RWM_STORE_SACK_RELEASE`, DEFAULT ON)
+
+§16.24 ended with a measured hand-off: with the recovery waste
+suppressed, the c7 wire is no longer full yet goodput stops at
+0.88–0.89×Σ — the residual owner named as frontier-recovery latency on
+the ack-serialized retention store. The mechanism, pre-registered in
+the ledger before the build (goal-gate "SACK-Clocked Store Release",
+MEASUREMENT DISCIPLINE item 11): the store releases slots only on the
+cumulative frontier (`split_off(ack+1)` — the retention contract), so a
+SACKed-but-not-cumulative symbol holds its flow-control slot for a full
+frontier round, and the store recycles at frontier latency instead of
+path rate.
+
+**The law.** On a SACK range the sender UNCOUNTS every retained seq
+from the outstanding gate (a released-mark set; `outstanding =
+retained − released` at the single site every store gate reads, so the
+path-scaled pool composes with zero extra code) — and touches NOTHING
+else. The payload stays in `sent_store` (the only copy — the
+retransmit buffer is metadata), every ARQ map and `RWM_RECOV_MP`
+per-flight clock survives, and the marks prune on the same cumulative
+split_off twin (subset invariant). This differs BY CONSTRUCTION from
+the refuted `RWM_SACK_PRUNE` (2026-07-07, UNSAFE: pruning the store on
+SACK destroyed the only copy of a received-then-evicted symbol —
+in-order duals wedged): under the release law a receiver eviction
+costs a wasted retransmit, never a wedge, and the sender's race-ahead
+is bounded because never-SACKed seqs still count against the cap. The
+2026-07-07 null ("sender-side decoupling lifts nothing — the sender
+was never the bottleneck") is era-resolved rather than contradicted:
+that verdict was measured single-path under the Cubic substrate with
+walls 1–8 still standing; on the post-wall substrate the sender store
+IS the binder at the striped cell, which is exactly what the
+pre-registration predicted and the battery confirmed.
+
+**Measured (both seeds, 8 reps interleaved, same-session Σ, dnf=0 on
+all 200 completed runs; goal-gate section for full tables).** On the
+best-c7 arm (plain + BBR-default + path-scaled pool): c7 SR-only
+142.9→154.8 (0.959×Σ, s42) / 141.8→152.3 (0.934×Σ, s7), Δ ≫ σ_s both
+seeds; composed with `RWM_RECOV_MP`: **168.7 ± 0.85 = 1.045×Σ (s42)
+and 165.9 ± 2.0 = 1.018×Σ (s7)** — above the base singles' Σ, 0.98–0.99
+of the SR-arm's own Σ. The dwell gauges show the mechanism, not just
+the effect: mean counted occupancy at c7 falls 3,157→~1,460 (cap
+4,096) with ~167k slots released per 200 MB, while retransmits FALL
+(21.6k→17.2k SR-only; 5.2k composed) — releasing the window did not
+buy throughput with waste. The N=1 term is real and positive: sc2
++4.31/+2.93 ≫ σ (a single-path SACK above a hole also holds a slot),
+sc3 +0.66/+0.31. Dual-c1 composed: 204.2/208.2 vs 181.9/187.8, retx
+×11–12 down, above the same-session single on both seeds. c8 stays
+inside its documented bimodality (composed arm best mean both seeds,
+no Δ≫σ claim; the asymmetric binder remains §16.22's pool story).
+
+**Flip.** The pre-registered gate was met on both seeds and
+`RWM_STORE_SACK_RELEASE` ships DEFAULT ON — the first mechanism gate
+flipped under the item-11 discipline (prediction written before the
+build, battery confirming it, falsification path never triggered).
+`=0` restores the frontier-only release; `RWM_SACK_PRUNE=1` (kept to
+reproduce the refutation) takes precedence with a warning. Composed
+follow-ups named, not built: the `RWM_RECOV_MP` + pool flips ride the
+consolidation battery (roadmap item 2), where the composed stack
+measured here (1.02–1.05×Σ at c7) is the candidate default.
+
 ---
 
 
@@ -9374,7 +9434,10 @@ cell; mechanism-named gap at the heterogeneous one** (§16.19 + addendum).
   accounts arm touched 0.97×Σ with the pooled arm's collapse mode absent.
   The binder was flow control (wall #7), not the receiver thread; the
   mechanism of the user's claim was right, the conjectured constraint was
-  not.
+  not. **[UPDATE 2026-07-21, §16.25: with SACK-clocked store release
+  (now default ON) composed with recovery suppression, c7 = 1.018–1.045×Σ
+  of the base singles (0.98–0.99× the SR arm's own Σ) on both seeds — the
+  symmetric Σ-gap is CLOSED.]**
 - **C8 (heterogeneous): best ~0.74×Σ (pooled arm; 0.79–0.80×Σ in the #84
   session — session drift is why all verdicts are same-session
   interleaved).** One shared pool cannot fit a c2-deep and a c3-shallow

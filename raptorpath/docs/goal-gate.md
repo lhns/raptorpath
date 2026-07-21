@@ -107,6 +107,7 @@ in the order found, each fixed or refuted:
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
 | 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid: **pooled path-scaled VINDICATED at c8, percap the symmetric-cell tool**; all OFF | §16.19, §16.22; "Per-Path Outstanding Accounting" |
 | 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; OFF | "Multipath Recovery Suppression"; paper §16.24 |
+| 9 | **frontier-clocked store release** | the retention store frees slots only on the CUMULATIVE frontier, so SACKed-but-not-cumulative symbols hold flow-control slots a full frontier round — at c7 the store recycles at frontier latency, not path rate (the §16.24 residual: wire un-full, goodput stopped) | FIXED, ships DEFAULT ON: `RWM_STORE_SACK_RELEASE` = SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the frontier (slot release ≠ recoverability — the SACK_PRUNE distinction); c7 0.885→0.959×Σ SR-only, **1.018–1.045×Σ composed with `RWM_RECOV_MP`** (both seeds); sc2 +4.3/+2.9 ≫σ; dual-c1 composed +20–22 above single; occupancy 3,157→1,460 at 167k slots released/200 MB with retx FALLING | "SACK-Clocked Store Release"; paper §16.25 |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
 on a saturated single reliable path FEC = ARQ parity is the ceiling,
@@ -120,7 +121,7 @@ coding is free, not free throughput).
 | single-c2 plain | 76–79 Mbit/s | plain + `RWM_QUIC_CC=bbr` | legacy Cubic-under: 17 |
 | single-c2 gen-sys | 75.5–75.7 (0.97–1.0× plain+BBR) | GPB stack + `--window-systematic-repair` | FEC tax ≈ 0.37 s recv CPU / 25 MB |
 | single-c3 (lossy 20 Mbit) | 15.6–15.9 (the recovery ceiling) | plain+BBR; gen-sys 14.9–15.1 = 0.95× (pre-divide) | legacy Cubic: 3.2 |
-| C7 (c2+c2) | 136.5–147.4 = 0.87–0.97×Σ | PBP (percap) / PBS (pooled 0.85–0.94×Σ); + `RWM_RECOV_MP` 141.6–143.7 = 0.88–0.89×Σ with retx BELOW single parity (§16.24) | PB baseline 100–105 |
+| C7 (c2+c2) | **165.9–168.7 = 1.018–1.045×Σ** (PBS + `RWM_STORE_SACK_RELEASE` (now default) + `RWM_RECOV_MP`, 2026-07-21 §16.25; SR-only 152.3–154.8 = 0.93–0.96×Σ) | previous: PBP (percap) 136.5–147.4 = 0.87–0.97×Σ; + `RWM_RECOV_MP` 0.88–0.89×Σ (§16.24) | PB baseline 100–105 |
 | C8 (c2+c3) | 72.3–75.8 = 0.74–0.80×Σ | PBS (pooled path-scaled) | PB baseline 44–65 (bimodal) |
 | engine sink | 187.7 Mbit/s (177–193 re-measured 2026-07-19) | single-path c1, 1 receiver task | attributed: sender-emission service wall ~19.5–20k sym/s first, receiver engine ~20–22k msgs/s just above; NOT thread-count (pins −7%/−2%); dual-c1 sinks BELOW single (spurious-retx flood 9.3%) — "Engine Parallelization"; flood KILLED by `RWM_RECOV_MP` (dual 192–193 ABOVE single, retx 0.3–0.7%; §16.24) |
 | realtime delivery, c3 100 KB | unified 99.4–100% / streaming 73.8–76.0% | `RWM_UNIFIED=1` vs shipped | ×3–4 completer-median cost |
@@ -10438,3 +10439,138 @@ default OFF with the falsification outcome recorded.
 
 *(Results section to follow the build — nothing below this line in this
 section was written before the battery ran.)*
+
+### The law as built (commit ff7acb4; the code shape)
+
+`sack_release_mark` / `sack_release_prune` / `sack_release_outstanding`
+(net/mod.rs): on a drained SACK range the sender marks every retained seq
+into a released set (idempotent — a re-advertised snapshot releases
+nothing twice); `store_len = sent_store.len() − released.len()` at the
+single site every flow-control gate reads (so `RWM_STORE_PATHS`' pooled
+cap composes with no extra code); the released set prunes on the same
+cumulative `split_off` twin as the store (subset invariant). Per-path
+accounts (`RWM_STORE_PERCAP`) free on the newly-released list; borrowing
+loans repay. NOTHING else is touched: `sent_store` (the only payload
+copy), `retransmit_buffer` (metadata), `nack_retx_at` (+ its
+`RWM_RECOV_MP` per-flight clocks), `source_path_map` all survive until
+the cumulative frontier — the SACK_PRUNE separation verified in code:
+the NACK retransmit path serves from `sent_store.get(&seq)`, which the
+release law never removes. If both `RWM_SACK_PRUNE` and the release gate
+are set, the legacy prune experiment takes precedence (warned).
+Unit tests (5 new, lib 371/371): the every-unacked-symbol-recoverable
+chain (SACKed → released → retransmit-still-possible → cumulative-ack →
+fully freed), window-opens/pool-return, no-double-release + percap
+composition, ARQ-state/flight-clock preservation, subset invariant under
+frontier races. Local wedge check: `perf_loopback` 8/8 +
+`recov_mp_loopback` 1/1 green with the gate forced ON.
+
+### L1 battery (VM 10.1.5.16, 2026-07-21 09:06–09:51 UTC; binary sha256 e79d0be2a83d9dad… = commit ff7acb4, SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; 1 run/invocation × 8 reps, 15 arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42 AND 7, RWM_DIAG=1 + per-arm sr/mp liveness echoes asserted mechanically (0 completed-run mismatches, both seeds); driver `tools/l1/sackrel_battery.sh`, logs `/home/vibe/sackrel/battery-s{42,7}.log` + per-run client/server logs under `/home/vibe/sackrel/diag/`)
+
+Arms: PBS = plain + BBR-default (env unset — the post-flip substrate) +
+`RWM_STORE_PATHS=1` (the best-c7 profile); PB = plain + BBR-default;
+SR = `RWM_STORE_SACK_RELEASE=1`; MP = `RWM_RECOV_MP=1`. dnf=0 on ALL 200
+completed runs, both seeds.
+
+Seed 42 (mean ± σ_s over n; per-run values in the log; med_retx = median
+targeted retransmits; med_occ = mean counted store occupancy, median over
+runs; srel = median cumulative slots released):
+
+| arm | mean ± σ_s | n | vs Σ | med_retx | med_occ (cap) | srel |
+|---|---|---|---|---|---|---|
+| sc2 PBS (Σ term) | 80.70 ± 0.97 | 8 | — | 3,687 | 867 (4096) | — |
+| sc2 PBS+SR | **85.01 ± 0.38** | 8 | **+4.31 ≫σ** | 3,347 | 983 | 68.6k |
+| sc3 PBS (Σ term) | 15.50 ± 0.50 | 8 | — | 3,199 | 976 | — |
+| sc3 PBS+SR | **16.16 ± 0.22** | 8 | +0.66 (~1.3σ) | 2,339 | 972 | 20.3k |
+| c7 PBS | 142.87 ± 2.20 | 8 | 0.885×Σ | 21,639 | 3,157 | — |
+| c7 PBS+SR | **154.75 ± 1.59** | 8 | **0.959×Σ** (+11.9 ≫σ) | 17,229 | **1,466** | 166.9k |
+| c7 PBS+MP | 155.82 ± 4.02 | 8 | 0.965×Σ | 7,294 | 3,042 | — |
+| c7 PBS+SR+MP | **168.74 ± 0.85** | 8 | **1.045×Σ** (0.993×Σ_SR) | 5,208 | 1,369 | 165.8k |
+| c8 PBS | 70.07 ± 6.82 | 8 | — | 1,724 | 2,492 | — |
+| c8 PBS+SR | 63.01 ± 19.38 (bimodal: 25.0, 43.6 runs) | 8 | −7.1 ≪σ | 1,884 | 1,944 | 20.9k |
+| c8 PBS+MP | 66.75 ± 7.38 | 8 | — | 1,401 | 2,703 | — |
+| c8 PBS+SR+MP | 74.16 ± 15.18 | 8 | +4.1 ≪σ | 1,679 | 2,344 | 21.0k |
+| sc1 PB (single ref) | 190.59 ± 12.35 | 8 | — | 618 | 249 | — |
+| dc1 PB | 181.87 ± 5.34 | 8 | — | 27,473 | 208 | — |
+| dc1 PB+SR+MP | **204.19 ± 8.80** | 8 | **+22.3 ≫σ** (above single) | **2,437** | 203 | 23.0k |
+
+Seed 7 (same protocol; n<8 arms = the documented topo-ping double-abort
+class, discipline item 8 — 40 aborted invocations, every one verified
+SUMMARY-LESS, no captured result discarded, 0 completed-run liveness
+mismatches):
+
+| arm | mean ± σ_s | n | vs Σ | med_retx | med_occ | srel |
+|---|---|---|---|---|---|---|
+| sc2 PBS (Σ term) | 81.49 ± 0.45 | 4 | — | 3,117 | 547 | — |
+| sc2 PBS+SR | **84.42 ± 0.98** | 4 | **+2.93 ≫σ** | 3,523 | 919 | 69.5k |
+| sc3 PBS (Σ term) | 15.75 ± 0.52 | 3 | — | 3,321 | 976 | — |
+| sc3 PBS+SR | 16.06 ± 0.21 | 6 | +0.31 (<1σ) | 2,448 | 966 | 19.9k |
+| c7 PBS | 141.78 ± 1.98 | 4 | 0.870×Σ | 11,880 | 1,986 | — |
+| c7 PBS+SR | **152.28 ± 1.39** | 6 | **0.934×Σ** (+10.5 ≫σ) | 20,114 | **1,460** | 167.0k |
+| c7 PBS+MP | 158.78 ± 2.27 | 5 | 0.974×Σ | 6,767 | 2,930 | — |
+| c7 PBS+SR+MP | **165.92 ± 1.99** | 3 | **1.018×Σ** (0.983×Σ_SR) | 6,323 | 2,218 | 166.8k |
+| c8 PBS | 68.26 ± 10.44 | 5 | — | 3,031 | 2,609 | — |
+| c8 PBS+SR | 70.76 ± 9.67 | 7 | +2.5 ≪σ (sign FLIPS vs s42 → noise) | 2,005 | 1,952 | 21.1k |
+| c8 PBS+MP | 68.49 ± 10.19 | 3 | — | 2,005 | 2,372 | — |
+| c8 PBS+SR+MP | **74.48 ± 6.15** | 6 | +6.2 (σ tightest of the four) | 1,470 | 2,035 | 21.1k |
+| sc1 PB (single ref) | 185.97 ± 3.40 | 8 | — | 651 | 240 | — |
+| dc1 PB | 187.76 ± 22.79 | 8 | — | 29,320 | 204 | — |
+| dc1 PB+SR+MP | **208.16 ± 15.47** | 8 | **+20.4** (all 8 runs ≥196.3, above single) | **2,398** | 197 | 23.8k |
+
+(Σ = 2 × same-session sc2-PBS base term. Σ_SR = 2 × sc2-PBS+SR — the
+composed arm's own honest Σ, since SR lifts the single too.)
+
+### Dwell gauges — the mechanism evidence (before/after)
+
+The pre-registered mechanism signature is measured directly: at c7 the
+baseline counted store occupancy sits at ~3,157 mean (s42; cap 4,096 —
+the store recycling at frontier latency), and under SR it falls to
+~1,460–1,466 (both seeds) with ~167k slots released per 200 MB (≈ every
+symbol's slot returned on SACK evidence one frontier round early);
+admission stays open across frontier stalls and goodput follows
+(+11.9/+10.5 SR-only). The release does NOT inflate recovery waste —
+retx falls (s42: 21.6k → 17.2k) and cod share falls (0.162 → 0.128) with
+SR alone; composed with MP retx lands at 5.2k/6.3k. The dual-c1 control
+composes cleanly: retx 27.5k/29.3k → 2.4k (×11–12), repair share
+0.115/0.122 → 0.011, dual ABOVE single on both seeds. The 2026-07-07
+"sender was never the bottleneck" null is era-resolved: on the post-wall
+substrate (BBR + path pool + suppression) the sender store IS the
+binder, and releasing it converts ~1:1 into goodput at the symmetric
+dual cell.
+
+### VERDICT vs the pre-registration — the prediction HOLDS (exceeded)
+
+- **(b) predicted c7 → ~0.95×Σ composed with `RWM_RECOV_MP`: MEASURED
+  1.045×Σ / 1.018×Σ (0.993/0.983 of the SR-arm's own Σ), both seeds,
+  σ_s ≤ 2.0 on the composed arm.** SR alone lands 0.959/0.934×Σ
+  (+11.9/+10.5 ≫ σ). The falsification condition (c) is NOT triggered
+  (release binds at the gauges and goodput follows).
+- dual-c1 and c8 unregressed as predicted: dc1 +22.3/+20.4 (retx ×11–12
+  down, above single both seeds); c8 composed +4.1/+6.2 (≪σ at s42,
+  σ-tightest arm at s7) — no Δ≫σ claim in either direction at c8 (its
+  binder remains the §16.22 pool/no-borrowing story), and the s42
+  SR-only bimodal low runs (25.0/43.6) do not repeat at s7 (+2.5, sign
+  flip → noise class; WATCHED, not claimed).
+- sc2/sc3 pre-registered "inert-or-better": BETTER — sc2 +4.31/+2.93
+  ≫ σ both seeds (single-path SACKs above a hole also hold slots — the
+  law's N=1 term is real), sc3 +0.66/+0.31 positive both seeds. The
+  historic sc2 record (80.9 PBP-H) is exceeded at 84.4–85.0.
+- **FLIP: `RWM_STORE_SACK_RELEASE` DEFAULT ON (2026-07-21)** — the
+  pre-registered gate (c7 ≥~0.95×Σ or ≫σ toward it, both seeds, no
+  regressions anywhere) is met: s42 0.959×Σ SR-only / 1.045×Σ composed;
+  s7 0.934×Σ SR-only (≫σ toward the target) / 1.018×Σ composed; every
+  other cell inert-or-better within its documented noise. `=0` is the
+  legacy frontier-only-release opt-out arm; `RWM_SACK_PRUNE=1` (the
+  refuted experiment) takes precedence over the release law when
+  explicitly set, with a warning. The shipped default is intentionally
+  no longer byte-identical to the legacy wire (as with the Default CC
+  Flip above; identity claims for other gates compare on the same
+  substrate both sides).
+- Suites on the flipped default: lib 371/371, raptorpath-math all
+  green, release gate_suite 15/15, mtu_blackhole_wedge 2/2,
+  perf_loopback 8/8, copa_sole/fmtcp/daps/recov_mp loopbacks 1/1;
+  default-env L1 smoke reproduces the SR arms with the liveness echo
+  (recorded below).
+- Ops: VM lock `/tmp/rwm-vm.lock` held 08:19 UTC → released after
+  teardown; CRLF converted after every sync (discipline 10); rp-* netns
+  only; binaries + logs preserved under `/home/vibe/sackrel/` (+
+  `/home/vibe/ccflip/` for the Item-0 identity).
