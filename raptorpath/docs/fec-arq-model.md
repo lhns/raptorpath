@@ -178,12 +178,13 @@ ACK absence.
     - [16.4 One Pipeline, Not Mode Switching](#164-one-pipeline-not-mode-switching)
     - [16.5 Choosing W for Multipath: a Fourth Bound](#165-choosing-w-for-multipath-a-fourth-bound)
     - [16.6 Predictions, Prerequisites, and the Experiment](#166-predictions-prerequisites-and-the-experiment)
-    - (16.7–16.22: the measured arc — reorder horizon, the concluded-then-
+    - (16.7–16.24: the measured arc — reorder horizon, the concluded-then-
       reopened aggregation verdicts, the methodology audit, the substrate
       chain, the unified span machine, anchor hygiene, bounded account
-      borrowing; headers in-text)
+      borrowing, engine parallelization, multipath recovery suppression;
+      headers in-text)
 17. [The Measured Regime Map (2026-07-19)](#17-the-measured-regime-map-2026-07-19)
-    - [17.1 The Substrate Chain](#171-the-substrate-chain-seven-walls-in-order)
+    - [17.1 The Substrate Chain](#171-the-substrate-chain-eight-walls-in-order)
     - [17.2 The CC Policy Surface](#172-the-cc-policy-surface)
     - [17.3 Aggregation vs Σ](#173-aggregation-vs-σ--the-bulk-n-verdict)
     - [17.4 The FEC Story](#174-the-fec-story-honestly)
@@ -9138,7 +9139,105 @@ in the hole-refresh/tail-sweep engine, i.e. do not re-pull a sequence
 whose latest transmission (any path) is younger than the current
 inter-path skew plus that path's RTprop — the emission-layer sibling
 of §16.22's flight witness. Per the measurement discipline it is
-named, not built, and gates on its own interleaved battery.
+named, not built, and gates on its own interleaved battery. **[Built
+and measured: §16.24 — the attribution is REVISED there: the waste was
+real and is killed, but it was only partially causal for the Σ-gap.]**
+
+---
+
+### 16.24 Multipath recovery suppression: the fifth wall, and per-path loss detection as its law (2026-07-21, `feat/recovery-suppression`)
+
+§16.23 closed with the c7 Σ-gap's measured owner — multipath
+recovery-plane over-emission (retransmit share ×1.8, repair share
+×2.2–2.5 versus the same configuration run single-path; the dual-c1
+control retransmitting 9.3% of source at a 0.1%-loss cell where a
+single path retransmits 0.2%) — and named its successor lever:
+cross-path in-flight awareness for the hole-refresh engine. This
+section builds that lever, and the per-NACK trace it starts from
+sharpens the diagnosis into a form worth stating generally: **the
+over-emission was two instances of one mistake — recovery clocks and
+loss serials kept GLOBAL where a multipath transport needs them
+PER-PATH.**
+
+**The trace.** Instrumenting every targeted retransmit with its
+flight's age against its own path's smoothed-RTT clock shows 82% of
+c7's retransmits fire while the sequence's live flight is still inside
+its path's expected-arrival window (mean age at fire 45 ms): the
+legacy hole gate — age ≥ max-path-SRTT/2 since the ORIGINAL send,
+never reset by a retransmit — reads gaps the SCHEDULER created
+(striping + inter-path skew) as holes, and re-fires them every
+cooldown while copies still fly. The delivery side corroborates
+independently: §16.22's flight witness credits the ORIGINAL flight for
+82% of cross-path-history attributions (the ack arrives sooner after
+the retransmit than that path's RTprop — the retransmitted copy cannot
+have completed the round trip). Meanwhile the per-path loss estimators
+read 0.62–0.77 at the 0.1%-loss dual-c1 cell: the batch serial is a
+global counter, but per-path loss is estimated from serial GAPS, so
+under striping every path switch counts the other path's run as loss —
+poisoning the proactive repair budget (the ×2.2–2.5 repair share), the
+P_lost retransmit branch, the NACK budgets, and the per-batch
+in-flight release, all at once.
+
+**The law.** RFC 9002's loss detection, generalized per path — both
+channels, no new constants. *Time threshold* (§6.1.2, the safety
+net): a reported gap sequence is a candidate hole only once its LIVE
+flight — the last (re)send, which now inherits the in-flight state, so
+a retransmit is clocked on its own path — is older than 9/8 × its
+path's smoothed RTT (kTimeThreshold; granularity floor = the existing
+per-seq cooldown floor). *Packet threshold* (§6.1.1, the fast
+channel): the original flight on path j is declared lost as soon as ≥3
+later path-j symbols are known delivered — same-path FIFO evidence
+that a scheduler-created cross-path gap can never produce (its
+same-path successors are exactly as un-arrived as it is), and that
+real same-path losses produce within one skew rather than one RTT.
+The cross-path packet-threshold is deliberately NOT used: cross-path
+sequence gaps are precisely RFC 4737's reordering caveat, the problem
+multipath QUIC solves with per-path packet-number spaces. Suppression
+is the law's only power — the receiver's hole-refresh keeps
+re-advertising until a channel fires, so reliability is untouched
+(loopback and battery: dnf = 0 everywhere). A first build with the
+time threshold alone measured the cautionary tale: waste fell exactly
+as designed and throughput FELL with it (c7 139→134, dual-c1 181→142)
+— on a frontier-serialized retention store, recovery latency buys back
+every megabit the waste had cost. Loss detection needs its fast
+channel.
+
+**What it measures.** Both target cells clear their waste: c7's
+retransmit share falls 14.9% → 4.5% of source (BELOW the single-path
+8.2%) and its repair share 0.185 → 0.059, for +5.3/+6.4 Mbit
+(s42 Δ ≫ σ_s; s7 consistent) to 0.88–0.89×Σ; dual-c1 — the controlled cell with
+nothing real to recover — falls from a 27k-retransmit flood (8.5% of
+source) to 0.7%, its bimodal collapse mode damps (σ 15.4 → 6.9), and
+the dual aggregate lands ABOVE the same-session single (192.3 vs
+186.0 at seed 42, σ halved; 193.2 vs 181.0 at seed 7, Δ = +24.2 ≫ σ_s
+against an all-flood baseline): the anti-scaling §16.23 measured is eliminated.
+The bimodality itself is explained en passant: the poisoned loss
+estimate (~0.6) collapses the ADR-0046 congestion multiplier and
+thereby *accidentally suppresses* the flood in some runs — the runs
+where it engaged early were §16.23's fast dual-c1 runs.
+
+**What it refutes, honestly.** The freed wire does not convert 1:1
+into goodput: with c7's emission now ~155 of 200 Mbit — the wire no
+longer full — goodput stops at 0.89×Σ. §16.23's "the over-emission
+occupies ≈ exactly the Σ-gap" is therefore revised: co-located, only
+partially causal. The residual owner is frontier-recovery latency on
+the ack-serialized retention store (a real hole still freezes the
+cumulative frontier for at least a skew plus a report round), which
+composes with the SACK-clocked store-release machinery as the next
+lever. And the serial fix — per-path batch namespaces, the
+multipath-QUIC-shaped repair for the poisoned estimators — is
+diagnostically vindicated but operationally REFUTED for now: honest
+(small) RTT and honest (small) loss re-heat every SRTT- and
+loss-scaled recovery cadence that the poisoned values were
+accidentally damping (hole-refresh clamp 25 ms instead of 100 ms,
+cooldowns at their floors, no congestion damping of the legacy flood):
+dual-c1 181→134 with sender CPU ×2.4. It ships default-off inside the
+umbrella; re-deriving the cadences under honest per-path signals is
+the named follow-up. `RWM_RECOV_MP` itself stays default-off — c7 and
+the control sweep clean on both seeds, but c8 is null (its binder
+remains §16.22's pool story) and the N=1 sc3 identity carries a
+consistent-signed sub-σ cost — the flip gates on the composed
+frontier-release battery.
 
 ---
 
@@ -9164,7 +9263,7 @@ AES-GCM; the passthrough re-baseline reproduced every plain/Copa cell, so
 pre-divide ratios carry, but absolute cross-era comparisons must name the
 divide). This rewrite is the first coherent statement since.
 
-### 17.1 The substrate chain: seven walls, in order
+### 17.1 The substrate chain: eight walls, in order
 
 The transport's measured history is a chain of walls, each named with a
 mechanism before it was fixed or refuted:
@@ -9203,6 +9302,17 @@ mechanism before it was fixed or refuted:
    path-scaled pool (knee ≈ 2048/path) unlocked C7; the per-path-accounts
    refinement won symmetric cells and regressed heterogeneous ones
    (§16.19 addendum; §17.3).
+8. **Multipath recovery-plane over-emission — the fifth control-plane
+   wall** (§16.23–16.24). The recovery engine kept GLOBAL clocks and
+   serials under striping: cross-path scheduler-created gaps read as
+   holes (82% of c7 retransmits fired inside their flight's own-path
+   RTT clock) and global batch serials poisoned the per-path loss
+   estimators (0.62–0.77 read at a 0.1%-loss cell). Fixed as a knob
+   (`RWM_RECOV_MP`): RFC 9002 loss detection generalized per path —
+   the c7 retransmit share drops below single-path parity and the
+   dual-c1 anti-scaling is eliminated; the freed wire not converting
+   1:1 relocates the residual Σ-gap to frontier-recovery latency on
+   the ack-serialized retention store (§16.24).
 
 What remains after the chain is structural, not artifactual: the
 presence⊥throughput identity (§14.33, §16.8). A saturated single reliable
@@ -9387,7 +9497,11 @@ asserted beyond its naming evidence.
    single-path share ≈ the Σ-gap), and the sink ceiling is the pair of
    per-process service-time walls (~19.5–22k sym/s), c1-class only.
    Successor lever: multipath-aware recovery suppression (named, not
-   built).]**
+   built).]** **[Successor DONE 2026-07-21, §16.24: the per-path
+   RFC-9002 law kills the waste (c7 retx 14.9→4.5%, dual-c1
+   anti-scaling eliminated) and REVISES the attribution — the freed
+   wire does not convert 1:1; the residual Σ-gap owner is
+   frontier-recovery latency on the ack-serialized store.]**
 3. **Unified-realtime stream-collapse attribution** (c3-1200B, 3/10 reps,
    p50 in seconds; candidates: EVICT-window × trailing-span interaction
    under sustained bursts, decode/delivery backlog, retention pressure).

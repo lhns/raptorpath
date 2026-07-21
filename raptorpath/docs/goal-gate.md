@@ -106,6 +106,7 @@ in the order found, each fixed or refuted:
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
 | 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED as knob: path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path); per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid: **pooled path-scaled VINDICATED at c8, percap the symmetric-cell tool**; all OFF | §16.19, §16.22; "Per-Path Outstanding Accounting" |
+| 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; OFF | "Multipath Recovery Suppression"; paper §16.24 |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
 on a saturated single reliable path FEC = ARQ parity is the ceiling,
@@ -119,9 +120,9 @@ coding is free, not free throughput).
 | single-c2 plain | 76–79 Mbit/s | plain + `RWM_QUIC_CC=bbr` | legacy Cubic-under: 17 |
 | single-c2 gen-sys | 75.5–75.7 (0.97–1.0× plain+BBR) | GPB stack + `--window-systematic-repair` | FEC tax ≈ 0.37 s recv CPU / 25 MB |
 | single-c3 (lossy 20 Mbit) | 15.6–15.9 (the recovery ceiling) | plain+BBR; gen-sys 14.9–15.1 = 0.95× (pre-divide) | legacy Cubic: 3.2 |
-| C7 (c2+c2) | 136.5–147.4 = 0.87–0.97×Σ | PBP (percap) / PBS (pooled 0.85–0.94×Σ) | PB baseline 100–105 |
+| C7 (c2+c2) | 136.5–147.4 = 0.87–0.97×Σ | PBP (percap) / PBS (pooled 0.85–0.94×Σ); + `RWM_RECOV_MP` 141.6–143.7 = 0.88–0.89×Σ with retx BELOW single parity (§16.24) | PB baseline 100–105 |
 | C8 (c2+c3) | 72.3–75.8 = 0.74–0.80×Σ | PBS (pooled path-scaled) | PB baseline 44–65 (bimodal) |
-| engine sink | 187.7 Mbit/s (177–193 re-measured 2026-07-19) | single-path c1, 1 receiver task | attributed: sender-emission service wall ~19.5–20k sym/s first, receiver engine ~20–22k msgs/s just above; NOT thread-count (pins −7%/−2%); dual-c1 sinks BELOW single (spurious-retx flood 9.3%) — "Engine Parallelization" |
+| engine sink | 187.7 Mbit/s (177–193 re-measured 2026-07-19) | single-path c1, 1 receiver task | attributed: sender-emission service wall ~19.5–20k sym/s first, receiver engine ~20–22k msgs/s just above; NOT thread-count (pins −7%/−2%); dual-c1 sinks BELOW single (spurious-retx flood 9.3%) — "Engine Parallelization"; flood KILLED by `RWM_RECOV_MP` (dual 192–193 ABOVE single, retx 0.3–0.7%; §16.24) |
 | realtime delivery, c3 100 KB | unified 99.4–100% / streaming 73.8–76.0% | `RWM_UNIFIED=1` vs shipped | ×3–4 completer-median cost |
 | message-tail p99 | 12–48× vs quinn/kernel-TCP at C2 (pre-divide crown, flip-gate-defended) | shipped streaming Realtime | post-divide c3 matrix: legacy-RLC medians best (§5 below) |
 
@@ -206,7 +207,14 @@ Verdict: **substantially validated at C7, mechanism-named gap at C8.**
   Parallelization", §16.23): 1+1 pinned cores sustain the operating
   point; the c7 binder is multipath recovery-plane over-emission on a
   saturated wire; successor lever = multipath-aware recovery
-  suppression (named, not built).**
+  suppression (named, not built).** **[SUCCESSOR BUILT + MEASURED
+  2026-07-21 ("Multipath Recovery Suppression", `RWM_RECOV_MP`,
+  §16.24): the waste was two per-path-vs-global defects; the RFC-9002
+  per-path law kills it (c7 retx 14.9→4.5%, +5.3/+6.4 Mbit to
+  0.88–0.89×Σ; dual-c1 anti-scaling ELIMINATED) — and the freed wire
+  NOT converting 1:1 into goodput REVISES the §16.23 attribution: the
+  remaining c7 Σ-gap owner is frontier-recovery latency on the
+  ack-serialized store. Flip OFF (c7 ~1.0×Σ target missed).]**
 - No cell exceeds its link-class Σ ceiling; "every wall so far has been an
   unscaled constant or a hidden substrate controller, not the architecture"
   (§16.19).
@@ -336,6 +344,27 @@ carries its gating decision.
    (named, not built): multipath-aware recovery suppression — cross-path
    in-flight awareness for the hole-refresh/tail-sweep engine; it now owns
    the c7 ~12–15% Σ-gap and the dual-c1 anti-scaling. Paper §16.23.]**
+   **[SUCCESSOR DONE 2026-07-21 (`feat/recovery-suppression`,
+   `RWM_RECOV_MP`, goal-gate "Multipath Recovery Suppression", paper
+   §16.24): the per-NACK trace split the over-emission into (1) a
+   GLOBAL hole clock — 82% of c7 retransmits fired inside their
+   flight's own-path RTT window — and (2) GLOBAL batch serials
+   poisoning the per-path loss estimators (0.62–0.77 read at 0.1%
+   loss). The law = RFC 9002 loss detection per path (time threshold
+   9/8 on the live flight, packet threshold 3 on same-path delivered
+   successors, retransmit inherits its clock, snapshot coalescing).
+   MEASURED both seeds: dual-c1 control retx 8.5–9.5% → 0.3–0.7% with
+   the dual aggregate ABOVE single (anti-scaling eliminated); c7 retx
+   14.9–15.0 → 4.5–4.7% (BELOW single parity), +5.3/+6.4 Mbit to
+   0.88–0.89×Σ; c8 null-to-positive; N=1 identity clean. The ~1.0×Σ c7
+   target is MISSED and the miss is the discovery: the freed wire does
+   not convert — the Σ-gap's residual owner is frontier-recovery
+   latency on the ack-serialized retention store (next lever:
+   SACK-clocked store release composed with the suppression). The
+   serial fix is vindicated as diagnosis, refuted as runtime (honest
+   signals re-heat every SRTT/loss-scaled cadence; ×2.4 CPU) — the
+   honest-signal cadence re-derivation is the named follow-up. Flip
+   OFF; all knobs byte-identical unset.]**
 3. **Unified-realtime c3-1200B stream-collapse attribution** — **DONE
    2026-07-19 (`diag/unified-collapse`, "Unified Decoder" → COLLAPSE
    ATTRIBUTION):** reproduced at a new L0 sustained-stream rung; NOT a
@@ -10036,3 +10065,240 @@ release — the only code delta vs main is the
 default-off RDIAG probe (no ordering/delivery surface: suites +
 loopbacks green, no delivered-set change possible with the flag unset;
 with it set the probe only reads).
+
+## Multipath Recovery Suppression (2026-07-21) — the FIFTH control-plane wall's lever BUILT and MEASURED (the §16.23 successor): the over-emission root-caused to TWO instances of one mistake — recovery clocks/serials GLOBAL where multipath demands PER-PATH — the hole law rebuilt as RFC 9002 loss detection generalized per path (packet-threshold fast channel + time-threshold safety net, per-flight, retransmits inherit their own clock), the waste KILLED at both target cells (c7 retx 14.9→4.5% of source — BELOW single-path parity; dual-c1 retx 8.5→0.7%, the ×46 control answered), c7 +5.3/+6.4 Mbit (s42 Δ≫σ_s; s7 consistent) and the dual-c1 anti-scaling ELIMINATED (s42 192.3 vs single 186.0 with the bimodal collapse-mode damped; s7 193.2 vs 181.0, Δ=+24.2 ≫ σ_s) — but the wire the waste occupied does NOT convert 1:1 into goodput (c7 lands 0.89×Σ, not ≥0.95): the Σ-gap's residual owner moves from emission to frontier-recovery latency; the per-path SERIAL fix is DIAGNOSTICALLY VINDICATED (per-path loss estimates measured 0.62–0.77 at a 0.1%-loss cell) but REGRESSES at runtime (honest signal re-heats every SRTT/loss-scaled cadence; sender CPU ×2.4) and ships default-OFF as the named follow-up; flip `RWM_RECOV_MP` stays DEFAULT OFF (named: the c7 ~1.0×Σ target missed — the revised attribution — and c8 carries no Δ≫σ win; identity clean both cells) (branch `feat/recovery-suppression`, code commits 8a34520→2c632c0)
+
+Task: goal-gate "Engine Parallelization" VERDICT named the successor —
+"multipath recovery-plane over-emission on a saturated wire" owns the c7
+Σ-gap (retx ×1.8, repair ×2.2–2.5 vs same-config singles; dual-c1's
+loss-free 9.3% retx flood the controlled repro). This session traced the
+mechanism per-NACK, derived the law from the literature (no new
+constants), built it env-gated, and ran the full A/B battery.
+
+### The trace — the ×46 was TWO defects, named at the gauge
+
+New DIAG instrumentation (`mpr[..]` recovery-plane trace: per-NACK cause,
+fired-flight age vs law threshold, per-path fired/on, P_lost-branch count,
+snapshot-coalesce count; per-path `pl=` loss-estimate gauge), plus the
+existing `xattr` flight witness (RWM_RS_ATTR, §16.22 residual (iii)).
+Probe runs (VM 10.1.5.16, binary 26f69029… = commit 8a34520, 2026-07-21
+~00:00–00:30 UTC; 200 MB c7 / 400 MB dual-c1, seed 42):
+
+1. **The hole law fires on scheduler-created gaps.** c7 baseline: 24,755
+   targeted retransmits, of which **82% (20,357) with the seq's live
+   flight YOUNGER than its own path's 9/8×smoothed-RTT clock** (mean age
+   at fire 45 ms) — gaps created by striping + inter-path skew, read as
+   holes by the legacy age gate (max-path-SRTT/2 since the ORIGINAL
+   send; never reset by a retransmit, so an open gap re-fires every
+   cooldown while copies still fly). The flight witness confirms
+   delivery-side: 7,437 of 9,032 cross-path attributions (82%) credited
+   the ORIGINAL flight (ack younger than the retransmit path's RTprop) —
+   the direct spurious-retransmit fraction.
+2. **The loss serials are poisoned by striping.** `batch_seq` is GLOBAL,
+   but the receiver's per-path tracker estimates expected symbols from
+   batch_seq GAPS — every path switch reads the other path's run as
+   loss. MEASURED (`pl=` gauge): per-path loss estimate **0.62–0.77 at
+   dual-c1 (true GE mean 0.1%)**, 0.27–0.30 at c7 (true ≈2.5%). This
+   poisons everything keyed on loss: proactive `repair_debt` (the
+   ×2.2–2.5 repair share), the P_lost retransmit branch, NACK budgets,
+   and the per-batch phantom `release_in_flight`. (L0 unit repro: global
+   serials under lossless round-robin striping read ~50% loss; per-path
+   serials read 0% and still count real loss exactly.)
+
+### The law as derived (env `RWM_RECOV_MP`, default OFF ⇒ shipped byte-identical; plain window reliable, N=1 keeps legacy gates)
+
+RFC 9002 loss detection generalized per path (cited pattern, both
+channels; no new constants — 9/8 = kTimeThreshold, 3 = kPacketThreshold,
+granularity floor = the existing 10 ms per-seq cooldown floor):
+
+- **§6.1.2 time threshold (safety net):** a reported gap seq is a
+  candidate hole only once its LIVE flight (the last (re)send) is older
+  than 9/8 × max of its OWN path's two smoothed RTT clocks (Copa EWMA
+  srtt, estimator EWMA app-echo). The retransmit INHERITS the in-flight
+  state (`nack_retx_at` now carries the retx path): the next decision
+  clocks the NEW flight on ITS path — closes the re-NACK-while-flying
+  feedback (hypothesis (c)).
+- **§6.1.1 packet threshold (the fast honest channel — the first L1
+  probe demanded it):** the ORIGINAL flight on path j is lost as soon as
+  ≥3 later path-j symbols are known delivered (same-path FIFO evidence,
+  from each gap report's implied delivered intervals + the sender's
+  seq→path map). Scheduler-created cross-path gaps can NEVER trigger it
+  (their same-path successors are exactly as un-arrived); real same-path
+  losses fire in ~one skew instead of a full RTT. Retransmitted seqs
+  stay time-threshold-only (their wire order is not their seq order).
+  Without this channel the suppression traded waste for recovery
+  LATENCY 1:1 on the frontier-serialized store and LOST (first-build
+  probes: c7 139.1→134.5, dual-c1 181→142 — recorded, superseded).
+- **Cross-path packet-threshold is deliberately NOT used** — cross-path
+  seq gaps are the RFC 4737 reordering caveat; multipath QUIC solves
+  the same problem with per-path packet-number spaces, which is exactly
+  the SERIAL fix's shape.
+- **Snapshot coalescing:** a gap report is a STATE SNAPSHOT (frontier +
+  inverted SACK), not a delta — under the law holes legitimately
+  outlive the 2 ms gap-ack cadence, so the sender processes only the
+  NEWEST queued snapshot (law-gated; legacy per-report path bit-exact).
+  Removes the law arms' walk tax (probe: 85k reports / 2.0M gap-seqs
+  walked / 270k stale lookups per 400 MB before; CPU back to baseline
+  after).
+- Tail sweep verified single-fire per transfer cadence (diag_sweeps ≈
+  elapsed/100 ms, unchanged across arms — hypothesis (b) REFUTED).
+
+### The serial finding — vindicated as diagnosis, refuted as runtime fix (sub-gate `RWM_RECOV_MP_SERIAL`, default OFF)
+
+Per-path batch serial namespaces (each path's batch stream sequential →
+per-path gap = per-path loss, honestly) were built and sub-gate-measured
+at L1: dual-c1 **181→134 serial-only** (c7 139→132), sender CPU ×2.4
+(17.4→41.3 s per 400 MB) — the honest (small) RTT and honest (small)
+loss re-heat every SRTT/loss-scaled recovery cadence the poisoned values
+were accidentally damping: hole-refresh clamp lands at 25 ms instead of
+100 ms, the per-seq retransmit cooldown at the 10 ms floor instead of
+~53 ms, and the ADR-0046 congestion backoff no longer suppresses the
+legacy flood (poisoned loss ≈ 0.6 collapsed the multiplier — an
+accidental suppressor, which is also why baseline dual-c1 is BIMODAL:
+runs where the multiplier collapsed early ran clean at 197–208, runs
+where it didn't ran the flood at 172–176). The umbrella ships the LAW
+only; the honest-signal cadence re-derivation (every SRTT/loss-scaled
+constant re-audited under honest per-path estimates) is the NAMED
+FOLLOW-UP, not built.
+
+### Unit + L0 evidence
+
+`cargo test -p raptorpath --lib` 366/366 (9 new): the skew-aware hole
+law (gap on path A while in-flight on path B with B's clock not
+expired → NOT a hole; expired → hole; N=1 → law inert = legacy;
+unknown flight → never suppressed), 9/8-threshold + granularity floor,
+retransmit flight inheritance (re-suppressed until the NEW flight's
+clock expires), packet-threshold evidence inversion + decision (incl.
+the cross-path-skew never-fires shape), the striping-phantom-loss
+reproduction, and the §16.22 flight witness (pre-existing). New
+`recov_mp_loopback` (dual-path, gate ON, real engine): completion with
+dnf=0 — suppression-only gating never wedges (the receiver hole-refresh
+re-advertises until a loss channel fires). L0 netem shim (same binary):
+dual-c1 shape 139→172–174, c7 shape 71–76 → 97–99 with per-path loss
+estimates 0.77→0.0000 — noting honestly that L0 favored the serial arm
+(the shim hides quinn CC and the cadence heat; its documented fidelity
+boundary), which is why the sub-gate attribution was re-done at L1 and
+the L1 verdict governs.
+
+### L1 battery (VM 10.1.5.16, 2026-07-21 00:49–~01:40 (incl. the seed-7 supplemental block) UTC; binary sha256 ba688b80… = commit 2c632c0, SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; 1 run/invocation × 8 reps, 11 arms interleaved round-robin per rep, fresh tunnel per invocation, seeds 42 AND 7, `RWM_DIAG=1` + liveness echo asserted per arm (`multipath recovery suppression ACTIVE`; mp=expect verified mechanically on all 167 COMPLETED runs); driver `tools/l1/recovmp_battery.sh`, logs `/home/vibe/recovmp/battery-s{42,7}.log` + per-run client/server logs under `/home/vibe/recovmp/diag/`)
+
+Arms: PBP-H = plain + `RWM_QUIC_CC=bbr RWM_STORE_PERCAP=1
+RWM_PLAIN_RS=1` (the best-c7 profile arm); PBS = plain+bbr+
+`RWM_STORE_PATHS=1`; PB = plain+bbr; ±MP = `RWM_RECOV_MP=1` (= the law;
+serials stay off).
+
+Seed 42 (mean ± σ_s over n=8; per-run values in the log):
+
+| arm | −MP | +MP | Δ | retx_med −/+ | cod_med −/+ |
+|---|---|---|---|---|---|
+| **dual-c1 PB (THE control)** | 189.1 ± 15.4 (172.5–208.2, bimodal) | **192.3 ± 6.9** (184.0–202.4) | +3.2 (σ halved) | 27,155 → **2,277** (8.5→0.7% of src; single-c1: 0.2%) | 0.115 → 0.011 |
+| sc1 PB (same-session single) | 186.0 ± 4.2 | — | — | 712 (0.2%) | 0.002 |
+| **c7 PBP-H** | 138.4 ± 1.7 | **143.7 ± 1.9** | **+5.3 (≫σ_s)** | 23,931 → **7,274** (14.9→4.5%) | 0.185 → **0.059** |
+| sc2 PBP-H (Σ term + identity) | 80.9 ± 0.7 | 80.7 ± 0.8 (N=1 inert ✓) | −0.2 (≪σ) | 6,562 ≈ 6,446 (8.2%) | 0.081 ≈ 0.080 |
+| c8 PBS | 62.4 ± 10.6 | 61.1 ± 13.6 | −1.3 (≪σ; both bimodal) | 1,697 → 2,140 | 0.111 → 0.123 |
+| sc3 PB (Σ term + identity) | 15.79 ± 0.36 | 15.48 ± 0.41 | −0.31 (~0.8σ) | 2,444 → 2,940 | 0.124 → 0.147 |
+
+Seed 7 (same protocol):
+
+| arm | −MP | +MP | Δ | retx_med −/+ | cod_med −/+ |
+|---|---|---|---|---|---|
+| **dual-c1 PB (THE control)** | 169.0 ± 6.7 (n=8 — ALL-flood mode this seed, BELOW single) | **193.2 ± 14.6** (n=8; best run 222.5) | **+24.2 (≫σ_s)** | 30,525 → **918** (9.5→0.29%; single: 0.22%) | 0.128 → 0.005 |
+| sc1 PB (same-session single) | 181.0 ± 4.5 (n=8) | — | — | 703 (0.22%) | 0.002 |
+| **c7 PBP-H** | 135.2 ± 3.4 (n=6) | **141.6 ± 6.5** (n=6) | **+6.4** | 23,934 → **7,565** (15.0→4.7%) | 0.184 → 0.105 |
+| sc2 PBP-H (Σ term + identity) | 80.2 ± 1.2 (n=8) | 79.8 ± 0.7 (n=5) | −0.4 (≪σ) | 6,214 ≈ 6,214 | 0.079 ≈ 0.077 |
+| c8 PBS | 62.4 ± 14.5 (n=7) | **70.6 ± 8.7** (n=10) | +8.2 (~0.6σ_base; σ near-halved) | 2,797 → 1,781 | 0.153 → 0.106 |
+| sc3 PB (Σ term + identity) | 15.66 ± 0.57 (n=8) | 15.78 ± 0.35 (n=5) | +0.12 (sign FLIPS vs s42 → noise) | 2,925 → 2,564 | 0.111 → 0.125 |
+
+(Seed-7 n<8 arms are the documented topo-ping double-abort class
+(discipline item 8): 19 aborted invocations in the main battery + 9 in
+the same-session supplemental block (reps 9–12, same interleaving,
+appended to the same log); every abort verified SUMMARY-LESS — the
+stale-echo liveness lines are recorded and discounted, no captured
+result was discarded, and no completed run has a mismatched liveness
+echo (checked mechanically for all 167 completed runs).)
+
+dnf=0 on ALL 167 completed runs, both seeds; delivered-set clean (perf
+server acks only on complete reassembly). Witness corroboration at c7:
+baseline 82–86% of cross-path attributions spurious (xattr
+8.1–10.5k/6.5–8.9k per run) → +MP 34–44% (3.2–4.5k/1.1–2.0k) on ~3×
+fewer retransmits.
+
+### VERDICT vs Σ + the honest attribution hand-off
+
+- **The dual-c1 control is ANSWERED:** the loss-free retransmit flood
+  falls 8.5% → 0.7% of source (×12; vs the single's 0.2% ≈ ×3.2
+  residual, from real 0.1% GE loss now recovered per-flight), repair
+  0.115 → 0.011, and the dual aggregate moves from BELOW-single-mean
+  bimodal to ABOVE single (s42 192.3 vs 186.0 with σ halved; s7 193.2 vs 181.0, Δ=+24.2 ≫ σ_s against an ALL-flood baseline) with σ
+  halved — the anti-scaling is ELIMINATED. The task's "~1.9×" restated
+  honestly: dual-c1 CANNOT 1.9× — the §16.23 sender emission service
+  wall (~19.5–20k sym/s ≈ 190 Mbit) binds both arms; ≥1.0× single with
+  the waste gone is the physical ceiling's answer.
+- **c7 gains Δ=+5.3/+6.4 (s42 ≫σ_s; s7 consistent) to 0.88–0.89×Σ
+  (s42 143.7/161.8; s7 141.6/160.4) — the ≥0.95×Σ target is NOT met**, and the
+  reason is measured, not guessed: the +MP arm's waste is BELOW
+  single-path parity (retx 4.5% vs single 8.2%, repair 0.059 vs 0.081),
+  the emitted wire is ~155 of 200 Mbit — the wire is NO LONGER FULL,
+  yet goodput stops at 144. The §16.23 attribution ("over-emission
+  occupies ≈ the Σ-gap") is therefore REVISED: the emission was
+  co-located with, but only partially causal for, the gap. The
+  remaining ~11% of Σ has a new named owner: frontier-recovery latency
+  on the ack-serialized retention store (every real hole still freezes
+  the cumulative frontier for ≥ one path-skew + report round; the
+  successor-candidate lever is SACK-clocked store release — the
+  `RWM_SACK_PRUNE` machinery — composed with the suppression).
+- **c8 is null-to-positive:** s42 −1.3 (≪σ 10.6–13.6, null), s7 +8.2
+  with σ near-halved (14.5→8.7) — the direction is right on the noisier
+  seed but no Δ≫σ claim survives the cell's bimodality; NO regression
+  either seed. c8's retx waste was already modest (7–14% at a 20 Mbit
+  slow path) — its binder remains the pool/no-borrowing story (§16.22),
+  untouched here.
+- **N=1 identity holds at both single cells:** sc2 Δ = −0.2/−0.4 ≪ σ;
+  sc3 Δ = −0.31 (s42) / **+0.12 (s7 — the sign FLIPS)** → noise, not a
+  cost (the s42-only sign was watched for and did not repeat). The law
+  is provably inert at N=1 (unit-tested); the only live N=1 code under
+  the flag is snapshot coalescing.
+- **FLIP: `RWM_RECOV_MP` stays DEFAULT OFF, named.** The control cell
+  sweeps clean on both seeds (waste ×12–33 down; dual ABOVE single;
+  s7 Δ≫σ) and c7 improves on both seeds with identity clean — but the
+  task's own c7 target (throughput → ~1.0×Σ, ≥0.95) is MISSED at
+  0.88–0.89×Σ because the emission was only partially causal for the
+  Σ-gap (the revised attribution above), and c8 carries no Δ≫σ win.
+  Per discipline the default flip gates on the successor battery that
+  composes suppression with the frontier-release lever (where the
+  remaining Σ-gap now provably lives). All recovery-suppression knobs
+  ship byte-identical with env unset.
+
+### Controls / caveats / discipline items
+
+Liveness echo asserted per run (mp=expect on 167/167 completed;
+percap/pbs echoes verified per arm; seed-7 aborted invocations left the
+documented stale-echo lines — recorded, discounted, all summary-less); same binary ba688b80… every run; lscpu in every log
+header (post-divide); arms interleaved round-robin per rep; both seeds
+with per-run values recorded; claimed c7 effect (+5.3/+6.4)
+exceeds σ_s at s42 (1.7–1.9) and is consistent at s7 (σ_s 3.4–6.5); the dual-c1 claim is stated as waste-kill +
+σ-halving + mean-above-single, NOT as a Δ≫σ throughput win (baseline
+bimodality σ=15.4 forbids that claim at n=8). c8 session baseline
+(62.4/62.4) sits below the ledger's 72–76 PBS record — session
+drift, why every comparison here is same-session interleaved. The
+first-build probe numbers (139→134, 181→142) are RECORDED and
+superseded by the fast-channel build — they are the measured proof that
+suppression without a fast loss channel trades waste for recovery
+latency and loses; the serial sub-gate probes are the measured proof
+that honest signals cannot simply be switched on under legacy cadences.
+Probes are n=1 (channel attribution, not effect claims). CRLF stripped
+after every tree sync (discipline 10). VM lock `/tmp/rwm-vm.lock` held
+2026-07-20 23:45 → release after teardown; netns clean (`rp-*` only);
+binaries + logs preserved under `/home/vibe/recovmp/`.
+
+### Tests
+
+`cargo test -p raptorpath --lib` 366/366 (9 new — law, threshold,
+inheritance, packet-threshold evidence/decision, phantom-loss repro);
+`-p raptorpath-math` all suites green (59/19/22/4/4/3/25); release
+`gate_suite` 15/15, `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8,
+`copa_sole_loopback`/`fmtcp_loopback`/`daps_loopback` 1/1, NEW
+`recov_mp_loopback` 1/1 (dual-path, gate ON, dnf=0). Shipped tree
+byte-identical with env unset (every change env- or DIAG-gated; the
+`nack_retx_at` value widening and the mp_batch_seq fallback are
+behavior-neutral, covered by the identity cells).
