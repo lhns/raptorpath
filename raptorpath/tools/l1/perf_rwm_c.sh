@@ -92,6 +92,13 @@ fi
 # proactive repair budgeted at r x source per coding window (legacy = r per ack
 # cycle). Default OFF in the binary; forwarded for the queued L1 2x2 spot check.
 [[ -n "${RWM_TAPER_R:-}" ]] && TENV="$TENV RWM_TAPER_R=$RWM_TAPER_R"
+# feat/recovery-suppression: multipath recovery suppression (the fifth-wall
+# lever, goal-gate 16.23 successor) — per-flight RFC9002-style hole law +
+# per-path batch serial namespaces. Default OFF in the binary; sub-gates
+# _LAW/_SERIAL are the trace-attribution probe arms.
+[[ -n "${RWM_RECOV_MP:-}" ]] && TENV="$TENV RWM_RECOV_MP=$RWM_RECOV_MP"
+[[ -n "${RWM_RECOV_MP_LAW:-}" ]] && TENV="$TENV RWM_RECOV_MP_LAW=$RWM_RECOV_MP_LAW"
+[[ -n "${RWM_RECOV_MP_SERIAL:-}" ]] && TENV="$TENV RWM_RECOV_MP_SERIAL=$RWM_RECOV_MP_SERIAL"
 # Task #61 (paper 16.20) unified RLC-family machine: RWM_UNIFIED=1 = one global
 # sparse-aware decoder for both wires + the A*/M*/Delta span law (Realtime rides
 # the RLC family; gen mode defaults the M* depth law ON). Default OFF in the

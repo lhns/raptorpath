@@ -272,6 +272,46 @@ pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64) -> u64 {
     (s.saturating_mul(9) / 8).max(NACK_RETX_COOLDOWN_FLOOR_US)
 }
 
+/// RFC 9002 §6.1.1 packet threshold (kPacketThreshold = 3), generalized per
+/// path: the FAST honest loss channel. A seq's original flight on path j is
+/// declared lost as soon as ≥3 LATER path-j symbols are known delivered —
+/// same-path FIFO evidence (UDP within one 5-tuple does not reorder under
+/// netem/typical paths; 3 absorbs rare in-path reordering per the RFC).
+/// Scheduler-created cross-path gaps can never trigger it: their same-path
+/// successors are exactly as un-arrived as they are. This restores legacy
+/// real-loss recovery latency (≈ one skew, not a full RTT) under the
+/// time-threshold suppression. Applies to ORIGINAL flights only — a
+/// retransmit's wire order is not its seq order, so retransmits are
+/// governed by the time threshold alone.
+pub(crate) const MP_PACKET_THRESHOLD: usize = 3;
+
+/// The delivered intervals a gap report implies: between consecutive maximal
+/// missing runs everything was SACKed, and the seq just past the last gap is
+/// the SACK range that bounded it (its extent is unknown — one seq is the
+/// provable minimum). Pure; unit-tested.
+pub(crate) fn mp_delivered_intervals(gaps: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    let mut out = Vec::with_capacity(gaps.len());
+    for i in 0..gaps.len() {
+        let lo = gaps[i].1 + 1;
+        let hi = if i + 1 < gaps.len() {
+            gaps[i + 1].0.saturating_sub(1)
+        } else {
+            gaps[i].1 + 1
+        };
+        if lo <= hi {
+            out.push((lo, hi));
+        }
+    }
+    out
+}
+
+/// Fast-loss decision from per-path delivered evidence (sorted seq list):
+/// ≥ MP_PACKET_THRESHOLD delivered path-j seqs strictly above `s`.
+pub(crate) fn mp_fast_lost(delivered_on_path: &[u64], s: u64) -> bool {
+    let above = delivered_on_path.len() - delivered_on_path.partition_point(|&x| x <= s);
+    above >= MP_PACKET_THRESHOLD
+}
+
 /// The skew-aware hole law (pure, unit-tested): may a reported gap seq be
 /// treated as a hole (targeted retransmit eligible) right now?
 ///
@@ -5612,6 +5652,14 @@ async fn run_window_sender(
     // batch_counter stays the source of serials when off (bit-exact).
     let mut mp_batch_ctr: std::collections::HashMap<u32, u64> =
         std::collections::HashMap::new();
+    // Per-path delivered-seq evidence for the RFC 9002 §6.1.1 packet
+    // threshold (recov_mp_law): sorted, appended monotonically from each gap
+    // report's implied delivered intervals (each seq ingested at most once —
+    // `mp_evid_max` is the ingestion watermark), pruned at the cumulative
+    // ack. Bounded by the outstanding span.
+    let mut mp_delivered: std::collections::HashMap<u32, Vec<u64>> =
+        std::collections::HashMap::new();
+    let mut mp_evid_max: u64 = 0;
     macro_rules! mp_batch_seq {
         ($path:expr) => {{
             if recov_mp_serial {
@@ -5636,6 +5684,7 @@ async fn run_window_sender(
     let mut mpd_stale: u64 = 0;
     let mut mpd_fired_young: u64 = 0;
     let mut mpd_fired_ripe: u64 = 0;
+    let mut mpd_fired_fast: u64 = 0;
     let mut mpd_age_ms_sum: f64 = 0.0;
     let mut mpd_plost_retx: u64 = 0;
     let mut mpd_fired_flight: std::collections::HashMap<u32, u64> =
@@ -7317,12 +7366,13 @@ async fn run_window_sender(
                     ));
                 }
                 let mpr = format!(
-                    " mpr[rep={} seqs={} fired={} y={} r={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
+                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
                     mpd_gap_reports,
                     mpd_gap_seqs,
                     mpd_fired,
                     mpd_fired_young,
                     mpd_fired_ripe,
+                    mpd_fired_fast,
                     mpd_supp_cool,
                     mpd_supp_age,
                     mpd_supp_law,
@@ -8287,6 +8337,23 @@ async fn run_window_sender(
                 mpd_gap_reports += 1;
             }
 
+            // Packet-threshold evidence ingestion (RFC 9002 §6.1.1 per
+            // path): fold this report's implied delivered intervals into the
+            // per-path sorted evidence lists. Monotone watermark ⇒ each seq
+            // ingested at most once over the transfer.
+            if recov_mp_law && mp_n_paths > 1 {
+                for (lo, hi) in mp_delivered_intervals(&gaps) {
+                    let start = lo.max(mp_evid_max + 1);
+                    if start > hi {
+                        continue;
+                    }
+                    for (&q, &pj) in source_path_map.range(start..=hi) {
+                        mp_delivered.entry(pj).or_default().push(q);
+                    }
+                    mp_evid_max = mp_evid_max.max(hi);
+                }
+            }
+
             'gaps: for &(gap_start, gap_end) in &gaps {
                 // EVICT: only the coding window can serve a gap — older
                 // seqs are gone. RETAIN: the sent-data store serves ANY
@@ -8329,14 +8396,21 @@ async fn run_window_sender(
                             retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
                         });
                     if recov_mp_law && mp_n_paths > 1 {
-                        // The skew-aware hole law (RFC 9002 §6.1.2 time
-                        // threshold, per flight path — see mp_hole_ripe):
-                        // a gap whose live flight is younger than its own
-                        // path's 9/8×smoothed-RTT clock is a gap the
-                        // scheduler created, not a hole. Suppression-only;
-                        // the receiver's hole-refresh re-advertises until
-                        // the clock expires, so real holes still fire.
-                        let ripe = match mp_flight {
+                        // The skew-aware hole law — RFC 9002 loss detection
+                        // generalized per path, BOTH channels:
+                        //  §6.1.1 packet threshold (fast, honest): the
+                        //   ORIGINAL flight on path j is lost once ≥3 later
+                        //   path-j symbols are delivered (same-path FIFO
+                        //   evidence — scheduler-created cross-path gaps
+                        //   cannot trigger it). Retransmitted seqs are
+                        //   excluded (wire order ≠ seq order for them).
+                        //  §6.1.2 time threshold (safety net): a gap whose
+                        //   LIVE flight is younger than 9/8× its own path's
+                        //   smoothed RTT is a gap the scheduler created,
+                        //   not a hole. Suppression-only; the receiver's
+                        //   hole-refresh re-advertises until a channel
+                        //   fires, so real holes still recover.
+                        let time_ripe = match mp_flight {
                             Some((t, p)) => mp_hole_ripe(
                                 mp_n_paths,
                                 now_repair_us,
@@ -8345,11 +8419,21 @@ async fn run_window_sender(
                             ),
                             None => true,
                         };
-                        if !ripe {
+                        let mut fast = false;
+                        if !time_ripe && !nack_retx_at.contains_key(&seq) {
+                            let orig = source_path_map.get(&seq).copied();
+                            fast = orig
+                                .and_then(|j| mp_delivered.get(&j))
+                                .is_some_and(|v| mp_fast_lost(v, seq));
+                        }
+                        if !time_ripe && !fast {
                             if diag_on {
                                 mpd_supp_law += 1;
                             }
                             continue;
+                        }
+                        if fast && diag_on {
+                            mpd_fired_fast += 1;
                         }
                     } else {
                         // Age gate (legacy): cross-path/jitter skew can
@@ -8657,6 +8741,15 @@ async fn run_window_sender(
             }
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             nack_retx_at.retain(|&seq, _| seq > ack);
+            // feat/recovery-suppression: drop packet-threshold evidence the
+            // frontier passed (counts are only ever taken above a live gap,
+            // and gaps are above the frontier).
+            if recov_mp_law {
+                for v in mp_delivered.values_mut() {
+                    let idx = v.partition_point(|&x| x <= ack);
+                    v.drain(..idx);
+                }
+            }
             // Update correction deficit: ACKed symbols no longer need coverage
             {
                 let mut sched = scheduler.lock();
@@ -10253,6 +10346,39 @@ mod tests {
         // After the retransmit path's clock: ripe again (escalation if the
         // retransmit itself died).
         assert!(mp_hole_ripe(2, retx_at + thr_b, Some(retx_at), thr_b));
+    }
+
+    /// The packet-threshold fast channel (RFC 9002 §6.1.1 per path): a gap
+    /// report's implied delivered intervals, and the ≥3-same-path-successors
+    /// decision. Cross-path skew gaps cannot trigger it (their same-path
+    /// successors are equally un-arrived); real same-path losses fire in
+    /// ~one skew instead of a full RTT.
+    #[test]
+    fn mp_packet_threshold_evidence_and_decision() {
+        // Report: missing 5..=6 and 9..=9 → delivered 7..=8 (between gaps)
+        // and 10 (the seq that bounded the last gap).
+        assert_eq!(
+            mp_delivered_intervals(&[(5, 6), (9, 9)]),
+            vec![(7, 8), (10, 10)]
+        );
+        // Single gap: only the bounding seq is provable.
+        assert_eq!(mp_delivered_intervals(&[(5, 6)]), vec![(7, 7)]);
+        // Adjacent gaps produce no between-interval.
+        assert_eq!(mp_delivered_intervals(&[(5, 6), (7, 8)]), vec![(9, 9)]);
+        assert!(mp_delivered_intervals(&[]).is_empty());
+
+        // Decision: 3 delivered path-j successors above s = lost.
+        let ev = vec![10, 12, 14, 16];
+        assert!(mp_fast_lost(&ev, 9), ">=3 successors above 9");
+        assert!(mp_fast_lost(&ev, 10), "3 above 10 (12,14,16)");
+        assert!(!mp_fast_lost(&ev, 12), "only 2 above 12");
+        assert!(!mp_fast_lost(&ev, 20), "none above 20");
+        assert!(!mp_fast_lost(&[], 0), "no evidence, never lost-fast");
+        // The cross-path skew shape: path A delivered 100..102 while s=50
+        // flies on B with NO delivered B successors — B's evidence list is
+        // empty, so the fast channel never fires for B's flight.
+        let b_ev: Vec<u64> = vec![];
+        assert!(!mp_fast_lost(&b_ev, 50));
     }
 
     // ----- feat/recovery-suppression: per-path batch serial namespaces -----
