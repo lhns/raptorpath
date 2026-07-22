@@ -9781,6 +9781,77 @@ REGIME MAP, and the Full Benchmark Re-Run's throughput rows. The §16.x
 sections are deliberately NOT rewritten: they are the primary record of how
 each wall was found, and the audit trail is the method's proof.
 
+### 17.9 Competitive Position (2026-07-22) — the shipped default vs QUIC, TCP, MPTCP, measured
+
+The first external verification of this map on the CURRENT shipped
+binary (goal-gate "Competitive Baseline" — pre-registered matrix, both
+netem seeds, same cells, same day, same VM; the raptorpath binary is
+byte-identical to the §16.26 flip binary). Competitors: quinn-perf
+(native QUIC, stock Cubic AND `--congestion bbr`), kernel TCP (Cubic and
+BBR — reported on APP-LEVEL-ACKED delivery, the same completion
+semantics as rp's perf; iperf3's sender-side numbers were measured
+line-rate-clamped on short objects and are recorded only as a
+cross-check), and kernel MPTCP v1 (native, subflow join proven by MIB
+counters, CC per-netns). Bulk = 25 MB objects; realtime = 50 msg/s
+messages (400/1200 B) with one-way delivered latency. Every sender
+traverses the same seeded GE direction.
+
+| condition × workload | rp shipped default | best competitor | verdict |
+|---|---|---|---|
+| c1 bulk (clean 1 Gbit) | 164–168 Mbit/s | quinn-BBR 915; kernel TCP ~900 | **LOSS ×5.5** — the §16.23 engine service walls, externally priced |
+| c2 bulk (GE 2.6%) | 78.6–78.7 | quinn-BBR 91.9–92.4 | **LOSS −14%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7) |
+| c3 bulk (20 Mbit lossy) | 16.1 | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | **LOSS −9…−13%** (vs Cubic-family: WIN ×4–11) |
+| c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |
+| c8 bulk (dual c2+c3) | 67–74 | MPTCP-BBR 90–93; single-path TCP-BBR 89.5–92.1 | **LOSS −21…−27%**, below even single-path kernel BBR — the §17.7 c8 WATCH externally confirmed |
+| c2 realtime tails | p99 med 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms + delivery cliffs (to 687/1000) | **WIN ×1.4–8.8 / ×5–38** |
+| c3 realtime tails | p99 med 92–103 ms, 1000/1000 | QUIC 150–759 ms (worst reps 38–44 s); TCP 830–3878 ms (delivered to 525/1000) | **WIN ×1.5–41**; only delivery-complete arm |
+
+Honest readings, in both directions:
+
+- **Bulk, everywhere, the shipped default LOSES to the best-tuned
+  competitor** — by ×5.5 on the clean path (the engine's ~190 Mbit
+  service walls vs 915 Mbit of userspace QUIC on the same box: the wall
+  is ours, not "userspace transport" physics), by 9–14% at the lossy
+  singles (BBR-class stacks extract 18.6/92 where rp holds 16.1/79), by
+  0–13% at symmetric dual (kernel MPTCP over BBR subflows is a solved
+  aggregator), and by 21–27% at heterogeneous dual — where the shipped
+  stack also sits below single-path kernel BBR on the fast path alone.
+  Each loss names a lever: emission batching/GSO (c1), the
+  recovery-plane residual (c2/c3 — quinn-BBR's numbers are the measured
+  bar for the same pipes), and the c8-aware pool law (now priced at
+  ~+20 Mbit by an external referee).
+- **The Cubic-collapse findings that motivated wall #1 are confirmed on
+  the reference stacks themselves**: quinn stock (Cubic) does 24–26 at
+  c2 and 3.2–4.8 at c3 (same stack, CC swap to BBR = ×3.8); kernel
+  Cubic 11/1.4–2.2; MPTCP-Cubic 23–38/11–17. "QUIC/TCP/MPTCP as
+  commonly deployed" still collapse under bursty loss; the BBR arms are
+  the strong competitors.
+- **Realtime is the durable, decisive win — and it is a CLASS, not a
+  multiplier.** rp's worst rep across all 32 realtime cells is 164 ms
+  p99 with 1000/1000 delivered in every rep; kernel TCP's medians run
+  0.2–3.9 s with delivery cliffs (down to 525/1000 still blocked at
+  the harness window), and QUIC — which delivers everything — carries
+  38–44 s worst-rep tails at c3 (the HoL cascade of a reliable ordered
+  stream under GE bursts). The historic 12–48× crown reproduces vs
+  kernel TCP at the medians (×5–38); vs QUIC the MEDIAN gap narrows to
+  ×1.4–8.8 (quinn's c2-400B median is only ×1.5 rp's — recorded), but
+  no competitor bounds its tail. The p50 cost of the rp tunnel is
+  ~2.5 ms.
+- **Fairness (reused, not re-run):** rp/BBR-under share 0.94–1.0
+  against a Cubic flow at the lossy c2 cell; the clean-bottleneck
+  contention blocker (share 0.02–0.24) stands unchanged (§16.19-era
+  finding, goal-gate "Copa Competitive Mode + Cross-Traffic").
+
+Position statement (replacing any older "beats X" phrasing where it
+conflicts): raptorpath's measured value on real links today is (i)
+bounded message tails + complete delivery under bursty loss —
+realtime/messaging semantics no deployed reliable stream offers at
+these cells — and (ii) loss-robust bulk far above every Cubic-family
+deployment; it is NOT currently a faster bulk pipe than well-tuned
+BBR-class singles or kernel MPTCP-BBR aggregation, and at c8 it is
+measurably behind them. The bulk gaps are named, mechanism-attributed
+levers (§17.6 additions), not mysteries.
+
 ---
 
 ## Appendix A: Summary of Key Formulas

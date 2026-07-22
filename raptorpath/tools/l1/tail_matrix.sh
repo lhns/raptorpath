@@ -116,6 +116,12 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
     echo "=== tail matrix (task #61 flip-gate) @ $CELL seed=$SEED arms='$RWM_TM_ARMS', $REPS reps/arm (warm tunnel), 50msg/s x20s $(date +%T)"
     for arm in $RWM_TM_ARMS; do
         case "$arm" in
+            # meas/competitive-baseline: `ship` = env fully unset = whatever the
+            # binary's CURRENT defaults are (post-unified-flip: the unified
+            # machine + the consolidation stack). `stream` predates the flip
+            # (env-empty then meant the streaming machine); kept for battery
+            # reproducibility — on a post-flip binary the two are identical.
+            ship)    AENV="";              AFLAGS="" ;;
             stream)  AENV="";              AFLAGS="" ;;
             unified) AENV="RWM_UNIFIED=1"; AFLAGS="" ;;
             rlc)     AENV="";              AFLAGS="--fec-backend rlc" ;;
