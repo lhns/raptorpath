@@ -462,6 +462,14 @@ to systematic-repair is recommended, §16.18); ~~BBR-under fairness battery
 (folds into item 6)~~ (measured 2026-07-19 with item 6: 0.24 share vs
 Cubic on clean at a 305–316 ms standing queue; 0.95–0.96 share at c2).
 
+**[ADDENDUM 2026-07-22, "Competitive Baseline" (end of file): the first
+external referee run re-prices this roadmap. New/re-priced levers from
+the losses: emission batching/GSO (c1 ×5.5 to userspace QUIC), the
+lossy-single recovery residual (−9…−14% to BBR-class arms at c2/c3),
+and the c8-aware pool law (now worth ~+20 Mbit against kernel
+MPTCP-BBR, which also matches rp at c7). The realtime crown verified as
+the durable class win (only delivery-complete arm; bounded tails).]**
+
 ### 7. Superseded-artifact index (what to NOT cite as current)
 
 - "FINAL CONSOLIDATED VERDICT (2026-07-08)" below — systematic-repair-era,
@@ -11434,3 +11442,223 @@ tail_matrix.sh — harness-only changes; lib suite run once on the branch
 to prove the transport is untouched.
 
 *(Results below this line were written after the battery ran.)*
+
+### Environment verification (pre-battery, recorded)
+
+- **quinn's CC is configurable without patching**: quinn-perf exposes
+  `--congestion {cubic,bbr,new-reno}`, stock default **cubic** — so quinn
+  ran BOTH stock-Cubic and BBR per the pre-registration's conditional
+  branch. The client is the upload sender ⇒ the client's CC governs the
+  measured direction.
+- **MPTCP: PRESENT and used natively.** Kernel 7.0.14-101.fc43,
+  `net.mptcp.enabled=1`, path_manager=kernel, scheduler=default; iperf3
+  3.19.1 has native `--mptcp` (used with `-C`), transfer_bench's
+  `IPPROTO_MPTCP` path is the delivery-acked arm; CC set per-netns
+  (`net.ipv4.tcp_congestion_control`, both namespaces). `tcp_bbr`
+  modprobed (available: reno cubic bbr). Subflow liveness proven per run:
+  MPTcpExt MPJoinSynTx/MPJoinSynAckRx = 2 + goodput ABOVE the single-path
+  ceiling (200 Mbit sender-side at c7).
+- **iperf3's sender-side completion is disqualified as the verdict metric
+  for short objects** — measured line-rate-clamped (c2-bbr "100.1 ± 0.0",
+  c1 "200.0" both CCs: the send-buffer tail is not delivery). The
+  Phase-1 precedent tool (transfer_bench.py, app-level delivery ack — the
+  SAME semantics as rp perf) was added as the primary TCP/MPTCP metric
+  (`tbtcp-*`/`tbmptcp-*` arms); iperf3 rows retained as the
+  standard-tool cross-check. Harness commits 9250bf8, 05937b8.
+
+### L1 RESULTS (VM 10.1.5.16, 2026-07-21 22:02 → 2026-07-22 02:28 UTC; raptorpath binary sha256 6720c00dcccc… — byte-identical to the b849acb post-flip binary, the no-transport-change proof for this docs+harness-only branch; quinn checkout 953b466 (quinn-perf 653baae1…, msg_lat 8661002e…); iperf3 3.19.1; python 3.14.6; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; netem seeds 42 AND 7 for EVERY transport; bulk arms interleaved round-robin per rep ×8, fresh topology per invocation; rp liveness echoes (SR/MP/MS/GAP + the full unified set on realtime) asserted per arm; drivers `tools/l1/compet_{all,battery,rt,topup}.sh` + tail_matrix `ship`; logs `/home/vibe/compet/{bulk-s42,bulk-s7,bulk-s7-topup,rt-s42,rt-s42-pass1-quiconly,rt-s7,tailrp-*,env,run}.log` + per-run diag under `/home/vibe/compet/diag/`; lock `/tmp/rwm-vm.lock` held 21:37 UTC → released after teardown; stage runtimes: bulk s42 81 min, s7 62 min + 7 min top-up; realtime rp 16–17 min/seed, competitors 34–35 min/seed)
+
+**Incidents, recorded first (discipline 7/8):** (i) the first s42
+TCP-stream pass lost all 32 reps silently — a root-owned server-log
+leftover (`sudo tee`) made the vibe-shell redirect fail and the server
+never started; fixed (05937b8) and the arm re-run in full ×8 same
+session-class (QUIC pass-1 preserved as `rt-s42-pass1-quiconly.log`; its
+medians reproduce in the re-run). (ii) The documented seed-7 topo-ping
+double-abort class thinned several s7 arms (rp-c7/c8 to n=2, TOPO-FAIL
+logged per invocation); +6 interleaved top-up reps/arm were run for the
+affected arms (+47 runs, merged, n quoted per cell). (iii) Transient
+connect failures leave n<8 on a few tb arms; n is printed everywhere, no
+captured result discarded. (iv) 2/8 tcp-c3 reps in the s42 realtime
+re-run produced no summary (n=7).
+
+### BULK — 25 MB objects, goodput Mbit/s, mean ± σ_s (n)
+
+Metric semantics per arm (fairness, as pre-registered): **rp** =
+`perf --window-reliable` plain window, shipped defaults, delivery-acked
+object on a warm engine (fresh tunnel per invocation, warm-up object
+excluded); **tbtcp/tbmptcp** = kernel TCP/MPTCP with app-level delivery
+ack (same semantics as rp); **quinn** = warm connection, sequential 25 MB
+UPLOADS (the GE direction), goodput = stream bytes/duration (10/15/30 s
+at c1/c2/c3) — partial objects count bytes; **tcp-\*/mptcp-\* (iperf3)** =
+sender-side completion, cross-check only. All senders sit in rp-cli ⇒
+every transport traverses the same lossy direction, same netem seed.
+
+**c1 (clean 1 Gbit):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| rp (shipped default) | 163.9 ± 12.1 (8) | 167.5 ± 10.1 (8) |
+| quinn-bbr | 914.6 ± 1.2 (8) | 915.9 ± 1.3 (8) |
+| quinn-cubic (stock) | 694.2 ± 14.2 (8) | 700.7 ± 5.9 (8) |
+| tcp-bbr (delivery-acked) | 896.3 ± 10.6 (8) | 902.6 ± 0.6 (8) |
+| tcp-cubic (delivery-acked) | 880.0 ± 65.2 (7) | 901.1 ± 8.5 (8) |
+| iperf3 rows (both CCs) | 200.0 (sender-side artifact) | 200.0 |
+
+rp CPU: 1.26–1.29 s recv + 1.01–1.07 s send per 25 MB (whole-invocation
+incl. warm-up; competitor CPU logs preserved in diag).
+
+**c2 (100 Mbit, GE ≈2.6%):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| rp (shipped default) | 78.7 ± 2.2 (8) | 78.6 ± 3.3 (8) |
+| quinn-bbr | **91.9 ± 0.8 (8)** | **92.4 ± 0.7 (8)** |
+| quinn-cubic (stock) | 24.2 ± 0.4 (8) | 26.1 ± 0.9 (8) |
+| tcp-bbr (delivery-acked) | 61.5 ± 2.1 (6) | 91.6 ± 0.7 (4) |
+| tcp-cubic (delivery-acked) | 11.0 ± 0.2 (8) | 11.2 ± 2.0 (6) |
+| iperf3 tcp-bbr / tcp-cubic | 100.1 ± 0.0 / 12.9 ± 1.5 | 100.1 ± 0.0 / 13.3 ± 1.8 |
+
+(The kernel-BBR delivery split 61.5 vs 91.6 across seeds is a
+realization effect — BBR's drain against one GE pattern; rp holds
+78.6–78.7 on both. Stability is rp's, peak is BBR's.)
+
+**c3 (20 Mbit, GE ≈4.8%):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| rp (shipped default) | 16.1 ± 0.1 (8) | 16.1 ± 0.2 (11) |
+| quinn-bbr | **18.6 ± 0.2 (8)** | **18.6 ± 0.6 (8)** |
+| quinn-cubic (stock) | 3.2 ± 0.1 (8) | 4.8 ± 0.3 (7) |
+| tcp-bbr (delivery-acked) | 17.5 ± 0.3 (7) | 17.8 ± 0.2 (8) |
+| tcp-cubic (delivery-acked) | 1.4 ± 0.1 (8) | 2.1 ± 0.2 (7) |
+| iperf3 tcp-bbr / tcp-cubic | 18.4 ± 0.6 / 1.5 ± 0.1 | 19.4 ± 0.9 / 2.2 ± 0.2 |
+
+**c7 (dual c2+c2):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| rp dual (shipped default) | 150.8 ± 9.5 (8) | 147.3 ± 11.7 (6) |
+| mptcp-bbr (delivery-acked) | 148.9 ± 8.5 (7) | **169.3 ± 1.4 (10)** |
+| mptcp-cubic (delivery-acked) | 23.5 ± 1.6 (8) | 25.1 ± 8.4 (5) |
+| mptcp-bbr / mptcp-cubic (iperf3) | 175.0 ± 46.3 / 38.0 ± 5.9 | 180.0 ± 42.1 / 37.1 ± 10.6 |
+| tcp-bbr path-A single (delivery-acked, same session) | 84.8 ± 11.0 (8) | 91.9 ± 0.3 (9) |
+
+**c8 (dual c2+c3):**
+
+| arm | s42 | s7 |
+|---|---|---|
+| rp dual (shipped default) | 67.4 ± 13.2 (8) | 73.8 ± 12.0 (7) |
+| mptcp-bbr (delivery-acked) | **92.6 ± 5.3 (7)** | **89.7 ± 17.1 (14)** |
+| mptcp-cubic (delivery-acked) | 10.8 ± 0.7 (8) | 13.9 ± 3.9 (4) |
+| mptcp-bbr / mptcp-cubic (iperf3) | 78.0 ± 25.1 / 17.2 ± 4.5 | 81.7 ± 28.6 / 16.1 ± 4.3 |
+| tcp-bbr path-A single (delivery-acked, same session) | **89.5 ± 3.4 (8)** | **92.1 ± 0.3 (10)** |
+
+### REALTIME — 50 msg/s × 20 s, one-way delivered latency, per-rep p99 median [min–max] over n=8, delivered of 1000
+
+rp = the shipped default tunnel (unified machine, echo-verified); tcp =
+kernel TCP stream, TCP_NODELAY both ends, cubic (CC is irrelevant at
+0.5 Mbit offered load); quic = quinn msg_lat, one ordered reliable
+stream. Same framing everywhere (4-B length + 8-B timestamp).
+
+| cell·size | rp p99 med [rng] | tcp p99 med [rng] · delivered | quic p99 med [rng] · delivered |
+|---|---|---|---|
+| c2·400B s42 | **37 [36–43]** | 1407 [100–13808] · 687–1000 | 55 [39–81] · all 1000 |
+| c2·400B s7 | **36 [33–59]** | 1366 [100–13787] · 728–1000 | 60 [40–118] · all 1000 |
+| c2·1200B s42 | **39 [36–48]** | 561 [123–6571] · 938–1000 | 138 [33–2668] · all 1000 |
+| c2·1200B s7 | **38 [35–44]** | 209 [36–3318] · all 1000 | 342 [39–1343] · all 1000 |
+| c3·400B s42 | **96 [89–142]** | 830 [325–16790] · 560–1000 (n=7) | 225 [141–5254] · all 1000 |
+| c3·400B s7 | **103 [91–164]** | 3784 [778–16041] · 525–1000 | 150 [95–38073] · all 1000 |
+| c3·1200B s42 | **96 [90–137]** | 2931 [330–15982] · 550–1000 (n=7) | 739 [177–43974] · all 1000 |
+| c3·1200B s7 | **92 [88–116]** | 3878 [125–8914] · 775–1000 | 759 [121–43032] · all 1000 |
+
+p50s are equal-class everywhere (rp 8.0–8.3 ms at c2 / 24–26 at c3 vs
+raw-socket 5.5–5.9 / 21–23 — the ~2.5 ms delta IS the tunnel tax). rp
+delivered **1000/1000 in all 32 realtime reps** across both seeds — the
+only arm with no delivery cliff. TCP's delivered<1000 rows are HoL
+cascades still blocked at the 25-s harness window (a latency cliff
+reported as a delivery cliff, both readings recorded); QUIC delivers
+everything but its worst reps carry 38–44 s p99 tails at c3 (the same
+HoL class the L2-era measurement found at c5).
+
+### FAIRNESS note row (reused, not re-run)
+
+Shipped stack vs 1 established Cubic flow at GE-c2: rp share 0.937–1.0
+(Cubic is Mathis-bound there; same class as BBR-under). Clean shared
+bottleneck: BBR-under 0.24 share at a 305–316 ms standing queue;
+Copa-sole 0.023 (the CC-independent contention-recovery pipeline
+blocker). Goal-gate "Copa Competitive Mode + Cross-Traffic" +
+"Consolidation" cross-traffic rows.
+
+### THE VERDICT TABLE (noise-floor rule as pre-registered: Δ inside the larger σ_s = TIE)
+
+| condition × workload | rp (shipped default) | best competitor | verdict |
+|---|---|---|---|
+| c1 bulk | 164–168 | quinn-bbr 915 / kernel TCP ~900 | **LOSS ×5.5** — the engine service walls, externally priced |
+| c2 bulk | 78.6–78.7 | quinn-bbr 91.9–92.4 | **LOSS −14%** (vs kernel tcp-bbr delivery-acked: seed-split 61.5 vs 91.6 → TIE-class; vs every Cubic-family arm: WIN ×3–7) |
+| c3 bulk | 16.1 | tcp-bbr 17.5–19.4, quinn-bbr 18.6 | **LOSS −9…−13%** (vs Cubic-family: WIN ×8–11 TCP, ×4–6 quinn-stock) |
+| c7 bulk | 147–151 | mptcp-bbr 148.9 (s42) / 169.3 (s7) | **TIE (s42) / LOSS −13% (s7)** — kernel MPTCP-BBR matches the crown cell; both aggregate ×1.7–1.8 of single |
+| c8 bulk | 67–74 | mptcp-bbr 89.7–92.6; kernel single-path bbr 89.5–92.1 | **LOSS −21…−27%** — and BELOW same-session single-path kernel BBR: the c8 WATCH externally confirmed and priced |
+| c2 realtime | p99 36–39 ms, 1000/1000 | quic 55–342; tcp 209–1407 + delivery cliffs | **WIN ×1.4–8.8 vs QUIC, ×5–38 vs TCP**; only delivery-complete arm |
+| c3 realtime | p99 92–103 ms, 1000/1000 | quic 150–759 (worst reps 38–44 s); tcp 830–3878 + delivered to 525/1000 | **WIN ×1.5–8 vs QUIC medians (×300+ at QUIC's worst reps), ×9–41 vs TCP**; only delivery-complete arm |
+| fairness (note row) | share 0.94–1.0 at GE-c2 vs Cubic | — | documented caveat class unchanged (clean-bottleneck contention blocker stands) |
+
+### Verdict vs the pre-registered expectations
+
+1. c1 LOSS — CONFIRMED at the predicted magnitude (×5.5).
+2. c2 — the "rp ≈ tcp-bbr" prediction held only as a seed-split tie;
+   the REFUTED part is "rp ≫ quinn-stock covers quinn": quinn-BBR (which
+   the environment check un-gated) beats rp by 14% on both seeds. The
+   quinn-CUBIC collapse (24–26) confirms wall #1 externally on the
+   reference stack itself: same quinn, CC swap cubic→bbr = ×3.8.
+3. c3 LOSS to loss-blind BBR arms — CONFIRMED (−9…−13%): the 16.1
+   "recovery ceiling" is ~87% of what BBR-class transports extract from
+   the same lossy pipe. The historic "legacy Cubic 3.2" claim
+   re-verified (1.4–2.2 delivery-acked).
+4. c7 — the interesting unknown ANSWERED: MPTCP-BBR is rp's equal
+   (s42) or better (s7, tight σ) at symmetric dual-path bulk.
+   MPTCP-cubic collapse (23–38) reproduces the historic 15.4-class
+   finding; the collapse was always the CC, not multipath.
+5. c8 — the honest watch cell became the worst row: rp loses to
+   MPTCP-BBR by 21–27% AND to single-path kernel BBR on the fast path.
+6. Realtime c2 — crown verified with a caveat: vs kernel TCP the
+   12–48× class reproduces (×5–38 at the medians, delivery cliffs on
+   top); vs QUIC the median gap NARROWS to ×1.4–8.8 (quinn's c2-400B
+   median is only ×1.5 rp's) — the pre-registered "quic ≥5× rp at
+   c2-1200B" held at s7 (×9) but not s42 (×3.5). The crown's strongest
+   modern form is: rp's worst rep across ALL 32 realtime cells is
+   164 ms while every competitor's worst rep is 1.3–44 s — the tail
+   CLASS (bounded vs unbounded), not a fixed multiplier.
+7. Realtime c3 — WIN confirmed; the "TCP p99 ≥1 s" prediction held
+   (830–3878 ms medians + delivery cliffs).
+8. Delivered% — rp 1000/1000 everywhere as predicted; TCP delivery
+   cliffs at both cells; QUIC complete but with 38–44 s tails.
+
+### The levers the losses name (each pre-registerable)
+
+1. **Clean-path emission/receive service walls (c1, ×5.5).** quinn
+   moves 915 Mbit/s of QUIC in userspace on the same box — the ~190
+   engine ceiling is OUR per-symbol service time (§16.23's 19.5–22k
+   sym/s), not a userspace-transport bound. Lever: datagram
+   batching/GSO + multi-symbol frames on the emission path.
+2. **The BBR-gap at lossy singles (c2 −14%, c3 −9…−13%).** Half the c2
+   gap is object-scale ramp (rp's own 100-MB steady class is 84–85);
+   the rest, and the c3 gap, is recovery-plane residual — quinn-bbr's
+   18.6 at c3 is the externally measured bar for the same pipe.
+3. **c8-aware pool law (c8 −21…−27%)** — already the named wall-#7
+   follow-up; now externally priced: kernel MPTCP-BBR banks 90–93 at
+   the cell where the shipped stack holds 67–74, and kernel single-path
+   BBR alone beats the shipped dual config.
+4. **c7 is not a moat (TIE/−13%).** Symmetric striping over BBR
+   subflows is a solved kernel problem; rp's differentiation there is
+   the realtime/delivery surface, not bulk Σ.
+5. **The realtime crown is the durable position** — the only
+   delivery-complete arm, bounded worst-rep tails (≤164 ms vs 1.3–44 s),
+   at a ~2.5 ms p50 tunnel tax. This is the product surface the bulk
+   losses do not touch.
+
+Ops: VM lock held 21:37 UTC → released 2026-07-22 after teardown;
+CRLF-converted after every sync; rp-* namespaces only; stale binary
+removed before build; logs + per-run diag preserved under
+`/home/vibe/compet/`; lib suite run once on the branch binary
+(375 passed / 0 failed / 2 ignored = the 377 set) — transport untouched,
+binary hash equal to b849acb's.
