@@ -165,15 +165,23 @@ REGISTER above with a walls-active argument and a re-test clause.
   Cost: standing queue (38 ms wireQ at sc2; 88–124 ms on the C8 slow path,
   p90 to 2.5 s) and a c3/C8 bimodal collapse mode (partly the wedge, fixed;
   partly BBR's own).
-- **Copa-sole (`passthrough` + wire signal): the queue/tail champion.** The
-  engine's per-path Copa-lite cwnd IS quinn's window; after the wire-clock
-  fix (paper §12.4 addendum) it holds 0.86–0.89× BBR's bulk at single-c2,
-  0.78× at sc3, 0.73–0.76× at C7 — and at C8 it STRICTLY DOMINATES
-  BBR-under: 0.95–1.01× throughput with a ×18–25 tighter slow-path standing
-  queue (wireQ 3–7 ms vs 88–124), σ collapsed, and natural RTT-floor
-  freshness (the ±v/δ dither refreshes the raw 10-s min without BBR's
-  ProbeRTT drain — no FEC protection gap). δ maps from the hint with no new
-  constants (δ = 0.5/ζ; measured knee AT the mapped Bulk δ).
+- **Copa-sole (`passthrough` + wire signal): the queue/tail champion — a
+  MEASURED TRADEOFF, not a bulk-parity candidate.** The engine's per-path
+  Copa-lite cwnd IS quinn's window; after the wire-clock fix (paper §12.4
+  addendum) it holds the NETWORK standing queue ×18/×16/×6–7 tighter than
+  BBR-under at sc2/sc3/c7 (wireQ 5/30/7 ms vs 89/487/50) with natural
+  RTT-floor freshness (the ±v/δ dither refreshes the raw 10-s min without
+  BBR's ProbeRTT drain — no FEC protection gap), and ties BBR on the
+  realtime c2 message tail. δ maps from the hint with no new constants
+  (δ = 0.5/ζ; live-verified Bulk 0.005 / Auto 0.5 / Realtime 50). **The
+  bulk cost is real and does NOT close on the fixed substrate** (goal-gate
+  "Copa-Sole on Clean Substrate", 2026-07-22): copa/bbr 0.89× sc2, 0.97×
+  sc3, 0.73× c7, 0.57× c8, 0.66× dc1, ≫σ both seeds. The #82 "C8
+  domination" was a broken-substrate artifact (it suppressed BBR); on the
+  consolidated stack BBR-under leads C8 throughput and the walls WIDENED
+  the gap — Copa's δ-equilibrium caps cwnd near BDP + 1/δ and leaves the
+  freed pipe on the table. NO default flip; the fusion (ADR-0068) inherits
+  the gap.
 - ~~**The named gap that blocks any default flip:** Copa-lite has NO
   TCP-competitive mode (Copa §4 not built) — against loss-based
   cross-traffic a delay-based controller yields, and no cross-traffic cell
@@ -11435,3 +11443,145 @@ documented as the measured tradeoff in ADR-0054 and paper §17.2, and
 ADR-0068 carries the target.
 
 *(Results below this line were written after the battery ran.)*
+
+### L1 battery RESULTS (VM 10.1.5.16, 2026-07-22 02:40–03:16 UTC; binary sha256 6720c00dcccc1ff4… = commit b849acb's Rust (the docs+harness tree is e931981 — NO Rust source changed since b849acb, so this IS the post-consolidation+unified SHIPPED binary), SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; 1 run/invocation, 10 arms interleaved round-robin per rep ×8 reps, fresh tunnel per invocation, seeds 42 AND 7, RWM_GEN=0 RWM_DIAG=1 everywhere; drivers `tools/l1/copaclean_battery.sh` + `copaclean_queues.py` + `tail_matrix.sh` (`default`/`copa` arms), logs `/home/vibe/copaclean/{battery-s42,battery-s7,tail-c2}.log` + per-run client/server logs under `/home/vibe/copaclean/diag/`; lock `/tmp/rwm-vm.lock` held 02:34 UTC → refreshed after a spend-limit interruption, released after teardown)
+
+Arms (all PLAIN, `RWM_GEN=0`, same binary, full current default stack —
+BBR-under + SACK-release + path pool + recov-mp + anchor hygiene + unified
+— otherwise): **A** = env unset (BBR-under, the shipped default) · **B** =
+`RWM_QUIC_CC=passthrough` (Copa-sole; wire signal + δ(hint) + feed defaults
+engage; `RWM_COPA_COMPETE` default OFF). Σ = 2× same-session sc2-A at c7;
+sc2-A + sc3-A at c8. dnf=0 on ALL completed runs, both seeds.
+
+**Liveness / stale-echo honesty (discipline items 1, 8).** Seed 42:
+0 aborts, 8/8 completed every arm; every A run carries the BBR echo and
+every B run the `engine-owned` + `feed ACTIVE` + `copa_wire=true
+delta=0.005 cc_pace=true` echoes; 0 real contamination. Seed 7: the
+documented topo-ping double-abort class hit hard (21 of 80 invocations
+aborted — RUNTIME ~2 s, RATES no-diag, NO summary); on those aborted reps
+the copaclean liveness check read the STALE `/tmp/rwm-c.log` left by the
+prior arm and cosmetically flagged it "contamination" — every such flag
+is PROVEN summary-less (per arm: 8 headers = n completed + n aborted), so
+NO captured result is misattributed, and each completed run's controller
+is independently confirmed by its throughput signature matching the s42
+class within σ. n per arm (s7): sc2-A 3, sc2-B 6, sc3-A 6, sc3-B 7,
+c7-A 5, c7-B 7, c8-A 3, c8-B 6, dc1 8/8. Every datum used is a cleanly
+completed arm-rep with a valid summary; aborted invocations contribute
+nothing.
+
+**Throughput (Mbit/s, mean ± σ_s; B/A = copa/bbr ratio):**
+
+| cell | A = BBR-under s42 · s7 | B = Copa-sole s42 · s7 | B/A s42 · s7 |
+|---|---|---|---|
+| sc2 | 84.98 ± 0.85 · 84.31 ± 1.11 | 75.86 ± 1.99 · 75.20 ± 1.02 | **0.89 · 0.89** |
+| sc3 | 15.98 ± 0.26 · 16.23 ± 0.18 | 15.56 ± 0.31 · 15.73 ± 0.40 | 0.97 · 0.97 |
+| c7  | 163.94 ± 1.95 · 166.02 ± 1.27 | 120.46 ± 2.61 · 121.79 ± 5.16 | **0.73 · 0.73** |
+| c8  | 81.86 ± 3.55 · 83.82 ± 3.70 | 47.20 ± 12.88 · 47.77 ± 14.73 | **0.58 · 0.57** |
+| dc1 | 194.78 ± 14.44 · 202.68 ± 23.09 | 130.03 ± 2.28 · 132.67 ± 2.37 | **0.67 · 0.65** |
+
+Every B/A gap except sc3 is ≫ σ_s and reproduces to the third digit
+across seeds. **The falsification condition (c) is TRIGGERED**: a bulk
+gap ≫σ on ≥2 cells — here 4 of 5 (sc2, c7, c8, dc1) — on both seeds.
+(External-baseline context, from the same-era competitive-baseline
+battery on main: BBR-class transports extract ~92/18.6 Mbit at c2/c3;
+BBR-under's sc2 84.98 sits in that class — Copa's 0.89× is a Copa
+property, not a stack ceiling.)
+
+**Queue distributions (s42 clean set — 0 aborts, every DIAG copy fresh;
+per-path steady-state DIAG blocks 4+; wireQ = quinn packet-timed p50/p90
+− RTprop = the NETWORK standing queue; appQ = app-echo − RTprop = the
+consumer-experienced pipeline incl. the sender's own reservoir):**
+
+| cell/path | A wireQ p50/p90 (appQ p50/p90) | B wireQ p50/p90 (appQ) | wireQ advantage |
+|---|---|---|---|
+| sc2 p0 | 89/98 (94/100) | **5/7 (90/123)** | **×18 tighter** |
+| sc3 p0 | 487/515 (497/539) | **30/45 (455/517)** | **×16 tighter** |
+| c7 p0/p1 | 50/40 (64/54) | **7/8 (234/126)** | **×6–7 tighter** |
+| c8 fast/slow | 114/290 (357/428) | **30/112 (770/1782)** | ×3–4 tighter |
+| dc1 p0/p1 | 0/0 (5/5) | 1/3 (14/50) | both ~empty (c1 unloaded) |
+
+The s42 set is authoritative (0-abort — the whole reason for same-session
+interleaving); the s7 queue distributions confirm the direction but are
+partially polluted by the aborted-rep stale diag copies, so they are not
+tabled as primary. The NETWORK-queue advantage is DECISIVELY re-confirmed
+on the fixed substrate — Copa did not buy anything with bufferbloat.
+(Honest note: at c8, Copa's tight wireQ coexists with a DEEP app-layer
+reservoir — 770/1782 ms — and a collapsed, bimodal throughput: the
+tight-queue equilibrium is exactly what starves the pipe at the
+asymmetric cell here.)
+
+**Realtime tail cell (tail_matrix c2, shipped UNIFIED Realtime machine,
+`default` = BBR vs `copa` = passthrough, 50 msg/s × 20 s × 1000 msg/rep,
+warm tunnel, n=8/arm/seed; per-rep p99 medians [min–max]; p50 ≈ 8 ms all
+arms):**
+
+| cell·size | default (BBR) s42 · s7 | copa (passthrough) s42 · s7 |
+|---|---|---|
+| c2 400B | 36 [35–139] · 37 [34–58] | **36 [35–39] · 37 [34–155]** |
+| c2 1200B | 38 [37–43] · 39 [36–617] | **38 [35–175] · 39 [36–60]** |
+
+Copa TIES BBR-under arm-for-arm on p99 medians at every cell-size-seed
+(36/38 vs 36/38 s42; 37/39 vs 37/39 s7): at this cell the tail is
+dominated by the unified Realtime machine + δ-honest shedding, not the
+substrate CC, so Copa's queue advantage neither costs nor uniquely buys
+the message tail — it holds the 12–48× tail class with no regression.
+Copa's distinctive win is the whole-transfer standing queue on the bulk
+cells above (the ×18/×16/×6–7 wireQ), where its bulk throughput is the
+price.
+
+**hint→δ live verification (arm B, s42 clean deltachecks — the flip's
+continuous knob):** δ echoed = **0.005 for Bulk** (every bulk B rep,
+`copa_wire=true cc_pace=true compete=false`), **0.5 for Auto**, **50 for
+Realtime** — `δ(hint) = 0.5/ζ` live and continuous. The mapping the flip
+would have been FOR is confirmed working; the flip is refused on
+throughput, not on the knob.
+
+### VERDICT vs the pre-registered prediction — FALSIFIED (no flip)
+
+Prediction (b): bulk ~parity (within 0.95× or ≫σ-indistinguishable) on
+sc2/sc3/c7/c8 with the queue/tail advantage held. Measured:
+
+1. **Bulk parity FAILS decisively.** sc3 alone reaches parity (0.97×);
+   sc2 holds the #82 0.89× gap UNCHANGED, and c7/c8/dc1 are FAR from
+   parity (0.73/0.57/0.66×) — every gap ≫σ both seeds. The walls did
+   NOT close the gap.
+2. **The walls WIDENED the gap — mechanism named.** The #82 hope was
+   that walls 8+9 + the pool throttled the full-pipe regime where Copa
+   trailed. The opposite happened: those walls lifted BBR-under's
+   aggregation (c7 ~100→166, c8 ~54→82 vs the #82 broken-substrate
+   numbers) while Copa did NOT ride the same unlock — its δ-equilibrium
+   caps cwnd near BDP + 1/δ regardless of how much pipe the walls free,
+   so it leaves the freed capacity on the table (that tight queue IS its
+   design). BBR eats the freed pipe; Copa, by construction, does not.
+3. **Copa's #82 "C8 domination" is GONE — a broken-substrate artifact.**
+   At #82 Copa strictly dominated BBR at C8 (0.95–1.01×) because the
+   broken substrate suppressed BBR there; on the fixed substrate BBR
+   c8 = 82 vs Copa 47 (0.57×, Copa bimodal σ 12.9/14.7). The domination
+   inverted.
+4. **The queue/tail advantage is REAL and re-confirmed on THIS
+   substrate** (not assumed): ×18/×16/×6–7 tighter network standing
+   queue at sc2/sc3/c7, tail parity at the realtime c2 cell. The tradeoff
+   is genuine, not a substrate artifact.
+
+**FLIP DECISION: NO FLIP.** The pre-registered gate (bulk parity +
+tail/queue advantage, both seeds) is NOT met — parity fails on 4 of 5
+cells ≫σ both seeds. The falsification clause governs: the gap is Copa's
+own δ-equilibrium dynamics, not the walls (the walls were fixed and the
+gap GREW). `RWM_QUIC_CC` default STAYS BBR-under; the two-value policy
+surface STAYS, honestly documented as a MEASURED TRADEOFF (queue/tail vs
+bulk throughput), NOT flipped on a wish. ADR-0054 gains the
+measured-tradeoff amendment; ADR-0068 (the fusion) inherits the bulk gap
+as its target — and this battery STRENGTHENS the fusion's motivation: a
+BBR-style rate-model feed-forward baseline is exactly the mechanism that
+would let a δ-priced controller convert the freed pipe Copa leaves on the
+table (Copa leaves it precisely because it has only a delay price, no
+rate model).
+
+Ops: VM lock `/tmp/rwm-vm.lock` taken 2026-07-22 02:34 UTC (refreshed
+2026-07-27 after a spend-limit interruption; both batteries had completed
+cleanly BEFORE the interruption — nothing re-run), released after
+teardown; tree synced via git archive + CRLF conversion before the first
+harness invocation (discipline 10); stale binary removed before build;
+rp-* netns only; battery + tail + smoke logs and per-run diag preserved
+under `/home/vibe/copaclean/`; seed-7 topo-abort count (21) recorded
+above; foreground polling only.

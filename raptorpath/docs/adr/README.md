@@ -85,7 +85,7 @@ tables. The feature triage feeding the code-consolidation pass is
 |---|-------|--------|
 | [0052](0052-measurement-discipline.md) | L1 measurement discipline (liveness, pre-registration, era honesty) | Accepted (binding) |
 | [0053](0053-generation-inert-era-audit.md) | The generation-inert era — audit, classification, hard guard | Accepted (methodology lesson) |
-| [0054](0054-substrate-cc-policy-bbr-default.md) | Substrate CC is policy — BBR default (`RWM_QUIC_CC`), Cubic retained | Accepted |
+| [0054](0054-substrate-cc-policy-bbr-default.md) | Substrate CC is policy — BBR default (`RWM_QUIC_CC`), Cubic retained; Copa a measured queue/tail-vs-bulk tradeoff (2026-07-22, no flip) | Accepted |
 | [0055](0055-mtu-floor-1350.md) | MTU floor 1350 — quinn PMTU black-hole false positive | Accepted |
 | [0056](0056-systematic-wire-sparse-decoder.md) | Systematic-repair wire as the generation arm + sparse-aware decoding | Accepted |
 | [0057](0057-profile-before-parallelize.md) | Profile before parallelize — crypto + three threading refutations | Accepted (as method) |
