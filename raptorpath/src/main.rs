@@ -1,6 +1,7 @@
 mod config;
 mod control;
 mod fec;
+mod gates;
 mod monitor;
 mod net;
 mod perf;

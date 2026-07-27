@@ -835,10 +835,10 @@ impl CopaFeed {
     /// The flight-time witness (residual (iii)) defaults ON here —
     /// `RWM_RS_ATTR=0` restores legacy last-sent-path attribution as the
     /// same-binary control arm.
-    fn new_sampling_only() -> Self {
+    fn new_sampling_only(attr_witness: bool) -> Self {
         Self {
             sampling_only: true,
-            attr_witness: crate::config::env_flag("RWM_RS_ATTR", true),
+            attr_witness,
             ..Self::new()
         }
     }
@@ -1131,6 +1131,10 @@ pub async fn run_with_tun(config: PeerConfig, tun: TunInterface) -> anyhow::Resu
 
 async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> anyhow::Result<()> {
     let tun_injected = injected_tun.is_some();
+    // The RWM_* env-gate surface, resolved ONCE for this engine (src/gates.rs
+    // — the consolidation-pass extraction of the former inline gate block).
+    // Deprecation warnings (register Class-C gates) fire inside resolve().
+    let gates = crate::gates::RuntimeGates::resolve();
     // Parse TUN address
     let (tun_ip, prefix_len) = parse_cidr(&config.tun_addr)?;
     let netmask = prefix_to_netmask(prefix_len);
@@ -1202,11 +1206,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // OOO retention decouple, per-path BDP in-flight cap, once-per-RTT deficit,
     // receiver reassembly clamp) are forced on in run_window_sender / the receiver.
     // Shipped path is byte-untouched (default config has window_reliable off).
-    let fmtcp = crate::config::deprecated_env_flag(
-        "RWM_FMTCP",
-        false,
-        "FMTCP Aggregation Build (2026-07-08) — refuted PRE-wedge-fix/PRE-recov-mp/PRE-divide; re-test REQUIRED before removal",
-    );
+    let fmtcp = gates.fmtcp;
     let window_systematic = window_reliable && (config.window_systematic_repair || fmtcp);
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair || fmtcp);
@@ -1469,8 +1469,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // the OOO/generation modes deliver out of order (the in-order frontier
     // is not their delivery signal).
     let copa_feed_plain: Option<Arc<CopaFeed>> = {
-        let wanted = transport_arc.cc_passthrough_active()
-            || crate::config::env_flag("RWM_COPA_FEED", false);
+        let wanted = transport_arc.cc_passthrough_active() || gates.copa_feed;
         let plain_inorder = window_reliable
             && !window_generation
             && !window_coded_only
@@ -1479,9 +1478,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // WITHOUT Copa ownership — plain mode under any substrate CC gets an
         // honest per-path BtlBw anchor (the WindowAck attribution machinery
         // reused sampling-only). The full feed (`wanted`) takes precedence.
-        let plain_rs = crate::config::anchor_gate("RWM_PLAIN_RS");
+        let plain_rs = gates.plain_rs;
         if !wanted && plain_rs && plain_inorder {
-            let feed = CopaFeed::new_sampling_only();
+            let feed = CopaFeed::new_sampling_only(gates.rs_attr);
             info!(
                 "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
                  WindowAck frontier/SACK -> per-path send-interval rate samples; \
@@ -1503,10 +1502,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 copa_wire = crate::scheduler::copa_wire_active(),
                 hint = ?config.protocol_hint,
                 delta = crate::scheduler::copa_delta_for_hint(config.protocol_hint),
-                cc_pace = crate::config::env_flag(
-                    "RWM_CC_PACE",
-                    crate::scheduler::copa_wire_active()
-                ),
+                cc_pace = gates.cc_pace,
                 compete = crate::scheduler::copa_compete_active(),
                 "Copa queue-signal clock: wire={} (quinn packet-timed RTT; =false is the #80 app-echo arm)",
                 crate::scheduler::copa_wire_active(),
@@ -1557,6 +1553,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
     let sender_protocol_hint = config.protocol_hint;
+    let sender_gates = gates.clone();
 
     let sender_handle = tokio::spawn(async move {
         // ----- Sliding-window sender mode -----
@@ -1582,6 +1579,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 sender_window_generation,
                 sender_window_systematic,
                 sender_copa_feed,
+                sender_gates,
             )
             .await;
             return;
@@ -1888,19 +1886,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // Generation mode retains the whole in-flight pipeline (M generations of
     // G symbols) so no not-yet-decoded generation is ever pruned early.
     let recv_win_cap: u64 = if window_generation {
-        let g = std::env::var("RWM_GEN").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(384);
-        let mut m = std::env::var("RWM_PIPELINE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2);
+        let g = gates.gen_size;
+        let mut m = gates.pipeline;
         // feat/gen-substrate-ceiling: under the derived-depth pipeline the
         // sender may run up to GEN_PIPE_MAX_GENS generations of read-ahead, so
         // the receiver must retain that whole span (prune bound only).
-        if crate::config::env_flag("RWM_GEN_PIPE", unified_active()) {
+        if gates.gen_pipe {
             m = m.max(GEN_PIPE_MAX_GENS);
         }
         ((g.max(1) * (m.max(1) + 1)).max(MAX_WINDOW_SIZE)).min(1 << 20) as u64
     } else if window_coded_only {
-        std::env::var("RWM_WINDOW")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
+        gates
+            .window_override
             .unwrap_or(640)
             .clamp(MAX_WINDOW_SIZE, 4096) as u64
     } else {
@@ -1939,8 +1936,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // DEFAULT ON (2026-07-21): the pre-registered battery earned the flip
     // (c7 0.96–1.05×Σ both seeds, sc2 +3–4, no regression; =0 is the
     // legacy frontier-only-release opt-out arm).
-    let store_sack_release_enabled =
-        crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
+    let store_sack_release_enabled = gates.store_sack_release;
     let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
         if store_sack_release_enabled
             && window_reliable
@@ -1969,7 +1965,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // receiver must (a) never evict an above-frontier symbol before it is
     // delivered (reliability invariant) and (b) probe the reassembly occupancy
     // (stays ≈ aggregate BDP because the total-in-flight FC bounds the sender).
-    let reasm_bdp_on = crate::config::env_flag("RWM_REASM_BDP", false) || fmtcp;
+    let reasm_bdp_on = gates.reasm_bdp || fmtcp;
 
     // Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel
     // STEP 1). RWM_RDIAG=1 samples (a) the engine task's busy fraction
@@ -1980,6 +1976,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // WeakSender adds no channel-close semantics.
     let rdiag_probe = msg_tx.downgrade();
 
+    let recv_gates = gates.clone();
     let receiver_handle = tokio::spawn(async move {
         // Window decoder: created once, long-lived (only used in window
         // mode; codec pinned at startup, §16.4 — never rebuilt).
@@ -2037,11 +2034,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             && !recv_window_reliable
             && !recv_window_ooo
             && reorder_buf.is_some()
-            && shed_armed(
-                unified_active(),
-                false,
-                crate::config::env_flag("RWM_UNIFIED_SHED", true),
-            );
+            && shed_armed(recv_gates.unified, false, recv_gates.unified_shed);
         if recv_shed_on {
             // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
             info!(
@@ -2052,7 +2045,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // the diag throttle for the [SHED-R] gauge.
         let mut recv_shed_holes: u64 = 0;
         let mut recv_shed_budget_open = true;
-        let recv_shed_diag = crate::config::env_flag("RWM_DIAG", false);
+        let recv_shed_diag = recv_gates.diag;
         let mut recv_shed_diag_at = Instant::now();
         // RWM Phase C unordered delivery: next in-order seq NOT yet received
         // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -2091,11 +2084,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // hole — the sender was never told to recover it (MEASURED at G=96:
         // in_flight=0/src=0/cod=0). At large G the whole ceil(G·r) budget is
         // never fully lost, which is why only small G wedged.
-        let recv_gen_size: u64 = std::env::var("RWM_GEN")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(384)
-            .max(1);
+        let recv_gen_size: u64 = recv_gates.gen_size as u64;
         // Receiver-tail parallelization (PART 1). Number of outstanding
         // generations whose deficit is reported (and anti-wedge-seeded) per
         // round. Legacy = 6 (frontier-first serial tail); env RWM_REPORT_GENS
@@ -2106,14 +2095,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // whole M*-generation in-flight range must be reportable in ONE round
         // (a 6-generation frontier-first report would re-serialize the deeper
         // pipeline's recovery — the PART-1 receiver-tail lesson).
-        let report_gens: usize = std::env::var("RWM_REPORT_GENS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(if crate::config::env_flag("RWM_GEN_PIPE", unified_active()) {
-                GEN_PIPE_MAX_GENS + 1
-            } else {
-                6
-            })
+        let report_gens: usize = recv_gates
+            .report_gens
+            .unwrap_or(if recv_gates.gen_pipe { GEN_PIPE_MAX_GENS + 1 } else { 6 })
             .clamp(1, 2000);
         // Repair-coverage horizon (branch `feat/nack-timing`). Base wait, in
         // MILLISECONDS, before a frontier hole's deficit is allowed to fire a
@@ -2124,9 +2108,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // ARQ pull would have cost. Made δ-aware at use: clamped to ≤ ½·SRTT so
         // low-RTT / latency-tight (Realtime) paths never over-wait, and it can
         // never exceed the round-trip it is trying to save.
-        let repair_wait_base: Duration = std::env::var("RWM_REPAIR_WAIT")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
+        let repair_wait_base: Duration = recv_gates
+            .repair_wait_ms
             .map(Duration::from_millis)
             .unwrap_or(Duration::ZERO);
         // Per-anchor first-armed instants for the horizon gate (see
@@ -2152,7 +2135,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // frontier sat on p and how p was ultimately resolved: DECODE (a repair
         // solved it, no round-trip) vs SOURCE (a retransmitted source symbol
         // arrived, a ~1-RTT ARQ round). Off unless RWM_FDIAG is set.
-        let fdiag_on = crate::config::env_flag("RWM_FDIAG", false);
+        let fdiag_on = recv_gates.fdiag;
         // Current frontier hole being tracked: (seq, stall_start, saw_buffered_
         // equation_during_stall, source_arrived_for_it). None = not stalled.
         let mut fdiag_hole: Option<(u64, Instant, bool, bool)> = None;
@@ -2192,7 +2175,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         //     are eaten" from "retransmits never reach the receive loop";
         //   * quinn DATAGRAM frame rx/tx per path → whether the wire is
         //     delivering frames that then die before `read_datagram()`.
-        let wdiag_on = crate::config::env_flag("RWM_DIAG", false);
+        let wdiag_on = recv_gates.diag;
         let mut wdiag_frontier_val: u64 = 0;
         let mut wdiag_frontier_at = Instant::now();
         let mut wdiag_last_report = Instant::now();
@@ -2434,7 +2417,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     );
                     if !deficits.is_empty() || $force {
                         last_deficit_send = Instant::now();
-                        if crate::config::env_flag("RWM_TRACE", false) {
+                        if recv_gates.trace {
                             let total: u32 = deficits.iter().map(|(_, d)| d).sum();
                             let withheld = raw_deficits.len().saturating_sub(deficits.len());
                             eprintln!(
@@ -2454,7 +2437,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
         // RWM_RDIAG state (see rdiag_probe above): idle time awaiting the
         // select, message count, queue-depth samples over each ~500 ms window.
-        let rdiag_on = crate::config::env_flag("RWM_RDIAG", false);
+        let rdiag_on = recv_gates.rdiag;
         let mut rdiag_idle_us: u64 = 0;
         let mut rdiag_msgs: u64 = 0;
         let mut rdiag_qsum: u64 = 0;
@@ -3437,6 +3420,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         recv_sack_tx.as_ref(),
                         if recv_window_mode { Some(&recv_window_decoded) } else { None },
                         recv_copa_feed.as_ref(),
+                        recv_gates.mstar_anchor,
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -3810,6 +3794,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let ctrl_stats = stats.clone();
     let ctrl_fec_backend = effective_fec_backend;
     let ctrl_forward_tx = msg_tx.clone();
+    let ctrl_mstar_anchor = gates.mstar_anchor;
     let ctrl_handle = tokio::spawn(async move {
         while let Some((path_id, msg)) = ctrl_rx.recv().await {
             match msg {
@@ -3841,6 +3826,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         None,
                         None,
                         None,
+                        ctrl_mstar_anchor,
                     );
                 }
                 other => {
@@ -4692,21 +4678,15 @@ async fn run_window_sender(
     // seq→path + a BBR send-interval rate-sample snapshot so the WindowAck
     // handler can attribute deliveries per path. None = shipped path.
     copa_feed: Option<Arc<CopaFeed>>,
+    // The engine's env-gate surface, resolved once in run_impl (src/gates.rs).
+    gates: crate::gates::RuntimeGates,
 ) {
     // Generation coding emits coded wire symbols exactly like coded-only; the
     // difference is the coding UNIT (a stable generation vs the moving window)
     // and that per-seq ARQ is disabled below.
     let coded_wire = coded_only || generation;
-    let gen_size: usize = std::env::var("RWM_GEN")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(384)
-        .max(1);
-    let pipeline: usize = std::env::var("RWM_PIPELINE")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(2)
-        .max(1);
+    let gen_size: usize = gates.gen_size;
+    let pipeline: usize = gates.pipeline;
     // Generation-coding proactive overhead r (coded per generation beyond K_G):
     // the encoder provisions each generation to ceil(len·(1+r)) coded before it
     // is only coded for recovery. Covers loss + the MDS margin. RWM_GEN_R env.
@@ -4732,7 +4712,7 @@ async fn run_window_sender(
     // honest per-path anchors → ADR-0061 (the send-interval sampler the
     // CopaFeed/RWM_PLAIN_RS machinery keeps IS that fix — shared, retained),
     // per-path admission → the percap family (ADR-0058).
-    let fmtcp = crate::config::env_flag("RWM_FMTCP", false) && generation;
+    let fmtcp = gates.fmtcp && generation;
     // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
     // shipped non-generation default byte-identical — every use is generation-
     // gated). The JOB-1 diagnosis: the L1 per-path ~10 Mbit/s generation
@@ -4764,7 +4744,7 @@ async fn run_window_sender(
     // ceil(rate·2·RTprop/G)+1, the large-δ limit of A*) is the DEFAULT for
     // generation mode; RWM_GEN_PIPE=0 still reproduces the fixed legacy
     // pipeline as the same-binary A/B arm.
-    let gen_pipe = crate::config::env_flag("RWM_GEN_PIPE", unified_active()) && generation && !fmtcp;
+    let gen_pipe = gates.gen_pipe && generation && !fmtcp;
     // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): the M* anchor-pair repair —
     // (a) the peer-report 50-ms pseudo-sample no longer pins the RTprop floor
     // (PathReport arm; hygiene rules 1+3), (b) the windowed-MAX delivered-rate
@@ -4777,10 +4757,10 @@ async fn run_window_sender(
     // DEFAULT ON (2026-07-21, "Consolidation" battery: plain subset inert
     // within sigma at every bulk cell on both seeds, tail crown unregressed;
     // the generation-gated knee evidence is 16.21's).
-    let mstar_anchor = crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) && generation;
+    let mstar_anchor = gates.mstar_anchor && generation;
     if mstar_anchor {
         info!("M* anchor hygiene ACTIVE (RWM_MSTAR_ANCHOR: measured RTprop floor + fast-seed rate filter + derived win backstop)");
-    } else if crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) {
+    } else if gates.mstar_anchor {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1) for the
         // PLAIN-mode subset of the M* repair, which is NOT generation-gated:
         // (a) the peer-report RTT no longer feeds the local estimators (the
@@ -4793,17 +4773,9 @@ async fn run_window_sender(
     }
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
-    let fmtcp_win_explicit = std::env::var("RWM_FMTCP_WIN")
-        .ok().and_then(|s| s.parse::<usize>().ok()).is_some();
-    if fmtcp_win_explicit {
-        warn!(
-            "RWM_FMTCP_WIN is deprecated: part of the RWM_FMTCP experiment surface, refuted in \
-             goal-gate \"FMTCP Aggregation Build\" (2026-07-08); removal scheduled pending the \
-             DEPRECATION REGISTER re-test clause"
-        );
-    }
-    let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
-        .ok().and_then(|s| s.parse::<usize>().ok())
+    let fmtcp_win_explicit = gates.fmtcp_win.is_some();
+    let fmtcp_win_backstop: usize = gates
+        .fmtcp_win
         .unwrap_or((pipeline + 2) * gen_size)
         .max(2 * gen_size);
     // feat/source-backpressure (RWM_SRC_BP) — REMOVED 2026-07-27 per the
@@ -4815,9 +4787,8 @@ async fn run_window_sender(
     // gauges and lost for a named structural reason (ADR-0058); any future
     // gen-mode re-ask rides that family, not this code.
     // Generation-coding proactive overhead r.  FMTCP ships a FIXED r=0.10.
-    let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
+    let gen_repair_floor: f64 = gates
+        .gen_r
         .unwrap_or(if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
         .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
@@ -4902,14 +4873,12 @@ async fn run_window_sender(
     // ack-clocked flow window is the real limiter, this just spreads the bursts.
     let mut gen_tokens: f64 = 0.0;
     let mut gen_tok_last_us: u64 = now_us();
-    let gen_rate: f64 = std::env::var("RWM_GEN_RATE")
-        .ok().and_then(|s| s.parse().ok()).unwrap_or(9000.0);
+    let gen_rate: f64 = gates.gen_rate;
     // Bootstrap pacing floor (symbols/sec): the rate used before the ack-rate
     // estimator has a sample (primes the first generation). Kept modest so the
     // startup burst can't overrun a bandwidth-limited link's datagram intake;
     // once the ack rate is known the pacing clocks to delivered goodput × 1.5.
-    let gen_rate_floor: f64 = std::env::var("RWM_GEN_RATE_FLOOR")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2000.0).clamp(1.0, gen_rate);
+    let gen_rate_floor: f64 = gates.gen_rate_floor;
     // ── Fix 1 (transport-substrate): CC-RATE PACING of the SYSTEMATIC SOURCE ──
     // PRIMARY high-RTT lever. The systematic source rides the DROPPABLE QUIC-
     // datagram path driven only by TUN-read intake, gated by a BDP-scaled
@@ -4941,9 +4910,8 @@ async fn run_window_sender(
     // default alone, store no longer pinned at the cap, wire queue p50
     // 3–5 ms). RWM_CC_PACE=0 still forces it off (the #80 A/B arms are
     // reproduced by RWM_COPA_WIRE=0, under which this default is false).
-    let cc_pace = crate::config::env_flag("RWM_CC_PACE", crate::scheduler::copa_wire_active());
-    let cc_pace_headroom: f64 = std::env::var("RWM_CC_PACE_HR")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.1).clamp(1.0, 2.0);
+    let cc_pace = gates.cc_pace;
+    let cc_pace_headroom: f64 = gates.cc_pace_headroom;
     // Source pacing token bucket (symbols). Refilled at the link rate each loop
     // iteration; the TUN-read select branch is gated on a token being available
     // and one token is consumed per source symbol put on the wire.
@@ -4989,9 +4957,10 @@ async fn run_window_sender(
     // FMTCP forces once-per-RTT deficit coalescing (1.0·SRTT): the design's
     // "ONE deficit feedback per RTT" — the #59/#60 lesson that a sub-RTT re-flood
     // of the fungible top-up defeats aggregation. RWM_REACT_CAP still overrides.
-    let react_cap_cfg: f64 = std::env::var("RWM_REACT_CAP")
-        .ok().and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(if fmtcp || gen_pipe { 1.0 } else { 0.0 }).max(0.0);
+    let react_cap_cfg: f64 = gates
+        .react_cap
+        .unwrap_or(if fmtcp || gen_pipe { 1.0 } else { 0.0 })
+        .max(0.0);
     let react_cap_on = react_cap_cfg > 0.0;
     // anchor → wall-clock (µs) of the last reactive emission for that generation.
     let mut gen_recover_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
@@ -5004,8 +4973,8 @@ async fn run_window_sender(
     // stays 0, and the target never grows — a startup deadlock. Default
     // (M+1)·gen_size (matches the source-retention store_max) plus decode/loss
     // slack. RWM_GEN_INFLIGHT overrides.
-    let gen_inflight_window: f64 = std::env::var("RWM_GEN_INFLIGHT")
-        .ok().and_then(|s| s.parse().ok())
+    let gen_inflight_window: f64 = gates
+        .gen_inflight
         .unwrap_or((2 * pipeline * gen_size) as f64);
     // RWM Phase C (paper §16.5, the BANDWIDTH knob r): experimental
     // per-symbol repair-rate FLOOR. The Bulk χ glide drives r*→0 mid-stream
@@ -5016,11 +4985,7 @@ async fn run_window_sender(
     // (RWM_MIN_R, repairs per source symbol, e.g. 0.18 ≈ the slow path's
     // symbol share at C8); 0 = production default (unchanged glide). Test
     // instrument for the raise-r arm, not a shipped control law.
-    let repair_rate_floor: f64 = std::env::var("RWM_MIN_R")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0)
-        .clamp(0.0, 2.0);
+    let repair_rate_floor: f64 = gates.min_r;
     // ── Fix 3 (transport-substrate): OUT-OF-ORDER RETENTION DECOUPLE ──────────
     // Defect #3: generation backpressure caps the send frontier at ~store_max =
     // a few generations ahead of the CUMULATIVE (in-order) decode ack, so ONE
@@ -5035,9 +5000,8 @@ async fn run_window_sender(
     // of every not-yet-in-order-acked generation stay retained for reactive
     // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
     // generation count, default 16; unset = OFF, byte-identical legacy).
-    let ooo_retain = (crate::config::env_flag("RWM_OOO_RETAIN", false) || fmtcp) && generation;
-    let ooo_gens: usize = std::env::var("RWM_OOO_RETAIN")
-        .ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(16);
+    let ooo_retain = (gates.ooo_retain || fmtcp) && generation;
+    let ooo_gens: usize = gates.ooo_gens;
     // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
     // at the frontier is raced by coded symbols that combine over the CURRENT
     // window; sustained Σg aggregation needs the window to span the cross-path
@@ -5065,9 +5029,8 @@ async fn run_window_sender(
         };
         (gen_size * gens).clamp(MAX_WINDOW_SIZE, 1 << 20)
     } else if coded_only {
-        std::env::var("RWM_WINDOW")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
+        gates
+            .window_override
             .unwrap_or(640)
             .clamp(MAX_WINDOW_SIZE, 4096)
     } else {
@@ -5121,27 +5084,19 @@ async fn run_window_sender(
         } else {
             2 * gen_size
         };
-        std::env::var("RWM_STORE")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
+        gates
+            .store_override
             .unwrap_or(default_store)
             .clamp(gen_size, win_cap)
     } else if coded_only {
-        std::env::var("RWM_STORE")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(win_cap)
-            .clamp(win_cap, 1 << 20)
+        gates.store_override.unwrap_or(win_cap).clamp(win_cap, 1 << 20)
     } else {
         // Plain-reliable (systematic-free, non-generation) MEMORY ceiling for
         // the retention store. RWM_STORE forces a STATIC window (disables the
         // dynamic BDP cap below) for the sweep; the shipped default keeps the
         // large retention ceiling and lets the delay-based `plain_dyn_cap`
         // bound the *outstanding* window instead.
-        std::env::var("RWM_STORE")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(RELIABLE_STORE_MAX)
+        gates.store_override.unwrap_or(RELIABLE_STORE_MAX)
     };
     // Delay-based send-window cap for the plain-reliable path (paper §12).
     // The fixed RELIABLE_STORE_MAX (1024) is ≈12× the BDP at C2, so the
@@ -5156,19 +5111,17 @@ async fn run_window_sender(
     // so it tracks the true pipe even while the live RTT is inflated. Active
     // only for the plain-reliable path and only when RWM_STORE is NOT forcing
     // a static window; generation/coded-only keep their own structural caps.
-    let plain_dyn_cap = reliable && !generation && !coded_only
-        && std::env::var("RWM_STORE").is_err();
+    let plain_dyn_cap =
+        reliable && !generation && !coded_only && !gates.store_env_set;
     // Window = gain × BDP. ≥2 keeps the pipe full (≈1 BDP) while leaving ≈1
     // BDP of headroom to keep sending fresh data during a one-RTT recovery
     // round; 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
-    let store_bdp_gain: f64 = std::env::var("RWM_STORE_GAIN")
-        .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(2.0).clamp(1.0, 64.0);
+    let store_bdp_gain: f64 = gates.store_gain;
     // Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
     // burst can't pre-bloat the queue and inflate the min-RTT floor (which
     // would then inflate the anchor itself); the anchor takes over once
     // samples land. ~1.5× a 100 Mbit / 10 ms BDP.
-    let store_boot_cap: usize = std::env::var("RWM_STORE_BOOT")
-        .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(128);
+    let store_boot_cap: usize = gates.store_boot;
     // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
     let store_cap_floor: usize = 64;
     // ── Path-scaled outstanding pool (task #84, env RWM_STORE_PATHS) ──────
@@ -5195,9 +5148,8 @@ async fn run_window_sender(
     // seeds) and drops the mean; no cell regressed >>sigma. The c8 sub-sigma
     // cost vs the legacy pool under SACK-release is the register's WATCHED
     // follow-up — see goal-gate "Consolidation".)
-    let store_paths_on = crate::config::env_flag("RWM_STORE_PATHS", true);
-    let store_path_pool: usize = std::env::var("RWM_STORE_PATH_POOL")
-        .ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(2048);
+    let store_paths_on = gates.store_paths;
+    let store_path_pool: usize = gates.store_path_pool;
     if store_paths_on && plain_dyn_cap {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): the recorded run
         // must show which outstanding-pool law was active.
@@ -5224,10 +5176,8 @@ async fn run_window_sender(
     // legacy frontier-only-release opt-out arm, under which the released
     // set stays empty and the gate arithmetic is exactly the legacy
     // store_len.
-    let store_sack_release_on = reliable
-        && !generation
-        && !coded_only
-        && crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
+    let store_sack_release_on =
+        reliable && !generation && !coded_only && gates.store_sack_release;
     if store_sack_release_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -5253,13 +5203,12 @@ async fn run_window_sender(
     // pooled GATE when both are set (the warm-up share still inherits from
     // whichever pooled law is configured, so STORE_PATHS composes as the
     // warm-up baseline rather than conflicting).
-    let percap_on = crate::config::env_flag("RWM_STORE_PERCAP", false) && plain_dyn_cap;
+    let percap_on = gates.store_percap && plain_dyn_cap;
     // Roadmap item 1 (the #86 c8 follow-up): the delay-aware redirect guard.
     // Default ON whenever percap is on (RWM_PERCAP_GUARD=0 restores the
     // unguarded redirect — the measured c8-regression control arm). The
     // shipped default is untouched: percap itself is default OFF.
-    let percap_guard_on =
-        percap_on && crate::config::env_flag("RWM_PERCAP_GUARD", true);
+    let percap_guard_on = percap_on && gates.percap_guard;
     // Bounded account borrowing (feat/store-borrowing, paper §16.22): a
     // pick landing on a cap-full account may FLY on that pipe while being
     // CHARGED to a sibling account, bounded by
@@ -5269,8 +5218,7 @@ async fn run_window_sender(
     // latency. Requires the percap stack (accounts, guard, honest caps
     // under RWM_PLAIN_RS). Default OFF: shipped byte-identical; the
     // no-borrow percap arm is the same-binary control.
-    let percap_borrow_on =
-        percap_on && crate::config::env_flag("RWM_STORE_BORROW", false);
+    let percap_borrow_on = percap_on && gates.store_borrow;
     if percap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -5315,9 +5263,7 @@ async fn run_window_sender(
     // RWM_HONEST_CAP=0 = the floor-law control arm (reproduces the −20%);
     // both gates default-OFF paths keep the shipped tree byte-identical
     // (RWM_PLAIN_RS itself is default OFF).
-    let honest_cap_on = plain_dyn_cap
-        && crate::config::anchor_gate("RWM_PLAIN_RS")
-        && crate::config::env_flag("RWM_HONEST_CAP", true);
+    let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
     if honest_cap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): asserted
         // PRESENT on honest-cap arms, ABSENT on knee-clamp control arms.
@@ -5399,7 +5345,7 @@ async fn run_window_sender(
     // fix composes with the trailing solvable-span placement below, which
     // removes the leading-window entanglement that kept it OFF); RWM_TAPER_R=0
     // still reproduces the legacy accrual as the same-binary A/B arm.
-    let taper_r_budget = crate::config::env_flag("RWM_TAPER_R", unified_active());
+    let taper_r_budget = gates.taper_r;
     let mut taper_budget = crate::control::TaperBudget::new();
     if taper_r_budget {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
@@ -5413,7 +5359,7 @@ async fn run_window_sender(
     // deficit-round limit) and trailing offset Δ = ceil(rate·jitter) ≥ 1, so
     // every covered member has LANDED when the repair does (solvable at
     // arrival — the #85 leading-window entanglement removed structurally).
-    let unified_span = unified_active();
+    let unified_span = gates.unified;
     if unified_span {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -5434,8 +5380,7 @@ async fn run_window_sender(
     // the span law ships with its repaired anchor (fix A gates the flip
     // battery; without it the realtime spans pin at width 1, ru/rf ≈ 9%).
     // `RWM_ASTAR_ANCHOR=0` / `RWM_ANCHOR_HYGIENE=0` still opt out for A/B.
-    let astar_anchor_on =
-        unified_span && crate::config::anchor_gate_default("RWM_ASTAR_ANCHOR", true);
+    let astar_anchor_on = unified_span && gates.astar_anchor;
     let mut astar_anchor = crate::control::SendRateAnchor::new();
     if astar_anchor_on {
         info!("A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)");
@@ -5450,11 +5395,7 @@ async fn run_window_sender(
     // only while cumulative shed stays within the DERIVED 1−ρ budget
     // (`residual_loss_after_fec`: ε̂·(1−P_fec) at the live (r, A*, σ²)
     // operating point). Budget spent ⇒ serialize (ρ wins over δ).
-    let shed_on = shed_armed(
-        unified_active(),
-        reliable,
-        crate::config::env_flag("RWM_UNIFIED_SHED", true),
-    );
+    let shed_on = shed_armed(gates.unified, reliable, gates.unified_shed);
     if shed_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -5529,7 +5470,7 @@ async fn run_window_sender(
     // reactive deficit (RWM_REACT_CAP + RWM_REPAIR_WAIT) stays the bounded
     // fallback for holes the proactive repair still misses. Systematic only;
     // shipped path untouched.
-    let proactive_pacer = systematic && crate::config::env_flag("RWM_PROACTIVE_PACER", false);
+    let proactive_pacer = systematic && gates.proactive_pacer;
     // ── Cross-path repair placement (RWM_XPATH_REPAIR) — the C8 realization ────
     // Route proactive (and deficit) REPAIR to the max-spare-capacity path (the
     // underutilized path — the slow path once the fast path is source-saturated)
@@ -5544,7 +5485,7 @@ async fn run_window_sender(
     // FMTCP forces fungible cross-path repair placement: a fast-path hole is
     // covered by repair already in flight on the SLOW (spare) path, so no block
     // waits on a specific slow-path symbol (the FMTCP fungibility escape).
-    let xpath_repair = generation && (crate::config::env_flag("RWM_XPATH_REPAIR", false) || fmtcp);
+    let xpath_repair = generation && (gates.xpath_repair || fmtcp);
     /// Congestion-aware NACK repair throttle (ADR-0046).
     let mut nack_congestion = NackCongestionState::new();
     /// Maps source seq → path it was sent on (for cross-path retransmission).
@@ -5626,7 +5567,7 @@ async fn run_window_sender(
 
     // RWM_DIAG (transport-ceiling diagnosis) master gate — declared BEFORE the
     // send macro below so the macro body (GLIFE fill tracking) can see it.
-    let diag_on = crate::config::env_flag("RWM_DIAG", false);
+    let diag_on = gates.diag;
     // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ──────────────────────────
     // Time-weighted attribution of the generation-mode sender loop to the
     // gate that is BINDING its wire emission each instant. In coded-wire
@@ -5663,9 +5604,8 @@ async fn run_window_sender(
     // under the umbrella). The _SERIAL per-path batch-namespace arm was
     // REMOVED 2026-07-27 (register: refuted on the clean substrate, ×2.4
     // sender CPU — see the module-header design note (2)).
-    let recov_mp =
-        crate::config::env_flag("RWM_RECOV_MP", true) && reliable && !generation;
-    let recov_mp_law = recov_mp && crate::config::env_flag("RWM_RECOV_MP_LAW", true);
+    let recov_mp = gates.recov_mp && reliable && !generation;
+    let recov_mp_law = recov_mp && gates.recov_mp_law;
     if recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -6340,8 +6280,7 @@ async fn run_window_sender(
     // recovery-stall latency — stays small. 0 = off (legacy store-only
     // backpressure). The deficit-recovery emission is EXEMPT (it must always be
     // able to fund a frontier hole, else a full-window pipe deadlocks).
-    let infl_cap: u64 = std::env::var("RWM_INFL_CAP")
-        .ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let infl_cap: u64 = gates.infl_cap;
     // PART 1.2 (receiver-tail): BDP-DERIVED in-flight cap. A fixed RWM_INFL_CAP
     // must be hand-tuned per RTT; instead bound total in-flight to
     // gain × Σ copa_bdp_anchor (BtlBw×RTprop, bufferbloat-robust) recomputed
@@ -6359,9 +6298,10 @@ async fn run_window_sender(
     // gen_pipe remedy 1: the per-path BDP in-flight cap ON (gain 1.5, same
     // rationale as FMTCP's) so the standing queue — and the RTT the SUBSTRATE
     // CC sees — stays ≈ RTprop.
-    let infl_bdp_gain: f64 = std::env::var("RWM_INFL_BDP")
-        .ok().and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(if fmtcp || gen_pipe { 1.5 } else { 0.0 }).max(0.0);
+    let infl_bdp_gain: f64 = gates
+        .infl_bdp
+        .unwrap_or(if fmtcp || gen_pipe { 1.5 } else { 0.0 })
+        .max(0.0);
     let infl_bdp_on = infl_bdp_gain > 0.0;
     // FMTCP #64 fix: enforce the in-flight cap PER PATH (path i outstanding ≤
     // gain·BtlBw_i·RTprop_i) rather than as one fungible global Σ budget. The
@@ -6384,7 +6324,7 @@ async fn run_window_sender(
     // retention bound govern coded emission (both already bound the datagram
     // buffer), so proactive coverage always completes and small generations —
     // which keep the store near BDP and avoid the bufferbloat stall — work.
-    let coded_src_clock = crate::config::env_flag("RWM_CODED_SRC", false);
+    let coded_src_clock = gates.coded_src;
     // PURE-PROACTIVE demonstrator (proactive-FEC-vs-ARQ crossover, directive #4):
     // when set, DISABLE the deficit-driven reactive recovery loop entirely. All
     // recovery then comes from the UPFRONT proactive per-generation budget
@@ -6396,7 +6336,7 @@ async fn run_window_sender(
     // on arrival, does proactive FEC beat ARQ at high RTT? Requires r sized to
     // cover the per-generation loss tail — a generation that loses more than its
     // budget never decodes (the object DNFs), which is itself the honest result.
-    let no_reactive = crate::config::env_flag("RWM_NO_REACTIVE", false);
+    let no_reactive = gates.no_reactive;
     let diag_start_us = now_us();
     let mut diag_last_us = now_us();
     let mut diag_last_ack: u64 = 0;
@@ -7256,7 +7196,7 @@ async fn run_window_sender(
         // (∝-goodput striping via place_symbol; fungible cross-path, no per-seq
         // ARQ). This is the mechanism that turns the serialized stop-and-wait
         // into a pipelined transfer.
-        if generation && crate::config::env_flag("RWM_TRACE", false) {
+        if generation && gates.trace {
             let now = now_us();
             if now.saturating_sub(gen_trace_last_us) > 200_000 {
                 gen_trace_last_us = now;
@@ -7274,7 +7214,7 @@ async fn run_window_sender(
         // repair emitted PROACTIVELY (upfront, no round-trip) vs REACTIVELY
         // (deficit-driven, one round-trip). Cumulative over the transfer. A high
         // proactive fraction proves Mode B recovers holes from upfront repair.
-        if generation && crate::config::env_flag("RWM_PFRAC", false) {
+        if generation && gates.pfrac {
             let now = now_us();
             if now.saturating_sub(pfrac_last_us) > 500_000 {
                 pfrac_last_us = now;
@@ -9299,6 +9239,9 @@ fn handle_control_message(
     // into the pass-through substrate window. None = shipped path,
     // byte-identical.
     copa_feed: Option<&Arc<CopaFeed>>,
+    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`, resolved once in run_impl —
+    // src/gates.rs): suppress the peer-report RTT pseudo-sample feed.
+    mstar_anchor: bool,
 ) {
     match msg {
         // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -9579,7 +9522,7 @@ fn handle_control_message(
                 // processed in a stall quarantine are skipped too.)
                 let gap_q = crate::control::anchor::stall_witness()
                     .is_some_and(|w| w.quarantined_now());
-                if !crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true) && !gap_q {
+                if !mstar_anchor && !gap_q {
                     path.estimator.record_rtt(rtt_duration);
                     // feat/copa-wire-signal: wire-clocked CC delay term (see
                     // the Ack arm above).
@@ -11222,7 +11165,7 @@ mod tests {
     #[test]
     fn sampling_only_feed_does_not_own_cc() {
         assert!(CopaFeed::new().owns_cc());
-        assert!(!CopaFeed::new_sampling_only().owns_cc());
+        assert!(!CopaFeed::new_sampling_only(true).owns_cc());
     }
 
     /// FMTCP change 2 (per-path BDP in-flight cap, the #64 fix). The sender is

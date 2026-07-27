@@ -1,6 +1,7 @@
 pub mod config;
 pub mod control;
 pub mod fec;
+pub mod gates;
 pub mod monitor;
 pub mod net;
 pub mod perf;
