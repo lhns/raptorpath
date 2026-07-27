@@ -42,6 +42,10 @@ run_one() { # name envs cell bytes  -> appends result lines
   local name="$1" envs="$2" cell="$3" bytes="$4" attempt ok=0
   for attempt in 1 2 3; do
     wait_clear
+    # Stale-log guard (bit the s7 pass-1 retry check: a pre-run topo abort
+    # leaves the PREVIOUS invocation's client log, whose summary false-passes
+    # the retry test): clear both logs before every attempt.
+    sudo rm -f /tmp/rwm-c.log /tmp/rwm-s.log
     echo "=== rep=$REP arm=$name attempt=$attempt seed=$SEED_ARG env=\"$envs\" cell=$cell bytes=$bytes $(date -u +%T)" >> "$OUT"
     sudo env SEED=$SEED_ARG RWM_GEN=0 $envs RWM_DIAG=1 \
       bash perf_rwm_c.sh "$cell" "$cell" bulk "$bytes" 1 single 2>&1 \

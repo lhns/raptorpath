@@ -1096,6 +1096,91 @@ quoted per arm, aborts preserved.
 
 *(Battery results below this line were written after it ran.)*
 
+### L1 BATTERY RESULTS (VM 10.1.5.16, 2026-07-27 20:52–21:16 UTC; binary sha256 ef6ed448…= commit 982b1a0, built fresh (stale rm'd), same binary every arm; E5-2650 v3 (post-divide); arms def ↔ `RWM_RECOV_SP=1` interleaved per rep, fresh topology per invocation, 1 run/invocation, RWM_GEN=0 RWM_DIAG=1; liveness echo asserted per arm (sp=1 in every sp run, 0 in every def run); drivers `tools/l1/lossy_battery.sh`; logs `/home/vibe/lossyres/battery-s{42,7}.log` + `battery-s7-pass1.log` + per-run diag; runtimes s42 7 min (32/32 clean, 0 retries), s7 pass-1 5 min + top-up 6 min)
+
+**Incidents (recorded first).** (i) s7 pass-1: 13 seed-7 topo-ping aborts
+(the known class; ~3 s marker-to-marker, pre-run) AND the driver's retry
+check was defeated by the stale-client-log summary (discipline-8's
+stale-log class, new instance) — fixed mid-session (rm logs per attempt,
+committed), pass-1 completed runs kept (n quoted), top-up ×5 run with the
+fixed driver (12 RUN-RETRY recovered, 2 RUN-LOST after 3 attempts).
+(ii) VM co-tenancy: the p2 streaming-crown battery was mid-flight at my
+first lock take (its hold predated mine and its controller launches
+stages without re-polling); one of its realtime tunnel pairs was killed
+at ~19:14 UTC by my pre-battery cleanup before I understood its session
+was live — ITS crown-s42 log carries that dead rep (flagged in
+`/home/vibe/crown/`). I then yielded and waited out its full battery
+(19:07–20:45 UTC), re-took the lock 20:48, and ran on a quiet VM.
+
+**Goodput (Mbit/s, mean ± σ_s (n); merged s7 = pass-1 + top-up):**
+
+| cell | def (s42) | sp (s42) | def (s7) | sp (s7) | verdict |
+|---|---|---|---|---|---|
+| sc2 (c2 single 100 MB) | 84.82 ± 0.80 (8) | 85.60 ± 0.89 (8) | 85.04 ± 0.75 (8) | 85.09 ± 0.93 (12) | **TIE** (+0.78 ≈ 1σ s42; +0.05 s7) |
+| sc3 (c3 single 25 MB) | 16.13 ± 0.12 (8) | **16.45 ± 0.20 (8)** | 16.14 ± 0.06 (7) | **16.48 ± 0.12 (10)** | **+0.32/+0.35 ≫ σ_def, BOTH seeds** |
+
+dnf = 0 in all 69 completed runs.
+
+**Mechanism gauge (rep-8 class, s42):** the law is LIVE and does what it
+says — y (young fires) 2739→**0**, supp_law 0→12 386 (sc2) / 1606→0 with
+supp_law 18 404 (sc3) — but total fired only drops 3615→2485 (sc2) /
+2542→1928 (sc3), i.e. −24…−31%, NOT the predicted collapse to ~2× drops:
+the y-class was not one-shot spuriousness but a QUEUE-SUSTAINED RE-FIRE
+LOOP — each retransmit crosses the store-cap standing queue (~110 ms at
+c2 / ~350–500 ms at c3), so the hole stays open past every 9/8×SRTT
+threshold and legitimately re-ripens until the frontier passes. Wire
+truth: sp trims 1.1 MB (sc2) / 0.7 MB (sc3) of wire per object at equal
+drops; at sc3 ~70% of the freed wire converts to goodput, at sc2 it
+vanishes into the BBR-probe/idle margin.
+
+### VERDICT vs the fix pre-registration — predictions (2)+(3) FAIL; NO FLIP
+
+- (1) gauge: PARTIAL (y→0 and supp_law live as predicted; fired does NOT
+  reach ≤2× drops — attribution amended above). (2) sc2 +2…3: **FAILED**
+  (tie both seeds). (3) sc3 +1…1.7: **FAILED** (+0.32/+0.35 — real, ≫σ,
+  consistent, but ~¼ the band; 16.45–16.48 vs the predicted ≥17.0).
+  (4) dnf=0: PASS.
+- **FLIP: NO — `RWM_RECOV_SP` ships DEFAULT OFF**, retained as a measured
+  arm (the only ≫σ singles-goodput lever this session: +0.3–0.4 at sc3 on
+  both seeds, tie at sc2, zero regressions). Per the falsification clause
+  the binder behind the residual is NAMED, not tuned at:
+  **window/inflight coupling** — the over-read-latched 1024 store cap is
+  simultaneously (i) the standing queue that keeps every hole's recovery
+  crossing 100–500 ms (sustaining the re-fire loop the law cannot
+  legally suppress) and (ii) the only thing keeping the wire full through
+  frontier stalls (the sc3-s384 probe: honest-sized window → wire idles
+  12%, goodput 14.8). BBR-class stacks decouple these; our window is
+  both. That decoupling is a NEW pre-registerable build, not this
+  session's.
+
+### Roadmap (named + sized, from the closed accounting)
+
+1. **MTU/payload scaling** (structural): the 1350-floor/1200-payload
+   framing tax is ~4.3 Mbit at c2, ~0.95 at c3 — the single largest c2
+   term. Candidate: scale symbol payload to the MTUD-verified path MTU
+   (keep the 1350 floor as the blackhole defense). Up to +4/+1 Mbit.
+2. **Window/inflight decoupling at lossy singles**: keep the wire fed
+   through frontier stalls WITHOUT retaining a 4–13×BDP un-SACKed span
+   (candidates: retx priority lane ahead of the fresh-symbol queue;
+   honest inflight target + spare-capacity filler). Sized: the remaining
+   reactive-plane overhead above honest retx ≈ 1.5–2 Mbit at c2,
+   ~1.0–1.4 at c3 (post-RECOV_SP residual).
+3. **Sender loss-estimator honesty at singles**: per-path `pl` reads
+   0.000–0.010 at 2.5–4.8% cells ⇒ r* = 0 ⇒ the proactive plane is dead
+   at singles; whether funded proactive r* beats reactive-only at bulk is
+   an open item-11 question (it did NOT bind this session's gap — the
+   waste was reactive).
+
+Ops: lock takes 2026-07-27 ~18:48 (yielded, see incident ii) and
+20:48–21:20 UTC, released after teardown; rp-* netns torn down, no stray
+processes; CRLF converted after each sync; stale binary removed before
+each build; binaries e8a0af12… (diagnosis, e6f0859) / ef6ed448… (battery,
+982b1a0), sha256 + lscpu + kernel in every log header; all logs + 1.4 MB
+per-run diag preserved under `/home/vibe/lossyres/`; seed-7 abort ns
+recorded above; suites on the fix commit: lib 368/368, math 136
+(59/19/22/4/4/3/25), gate_suite 15/15 release, gates-default test pins
+`recov_sp=false`.
+
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
 
 *Decision record: → [ADR-0061](adr/0061-anchor-hygiene.md)*

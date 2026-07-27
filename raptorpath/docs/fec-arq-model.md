@@ -9538,6 +9538,50 @@ c7 ×0.11, c8 ×0.20 of the same-session stack, strictly worse everywhere
 ≫σ, cod_share > 1 — CONFIRMED-REFUTED, never wall-tainted, cleared for
 deletion (register row updated; goal-gate "C8-Aware Pool Law").
 
+### 16.30 The lossy-single residual: a CLOSED accounting of the −9…−14% vs BBR-class, and the reactive plane's queue-sustained over-fire (2026-07-27, `diag/lossy-residual`, `RWM_RECOV_SP` DEFAULT OFF)
+
+The §17.9 c2/c3 losses (rp 78.6–78.7 vs quinn-BBR 91.9–92.4; 16.1 vs
+18.6) diagnosed to closure with wire-truth instruments (qdisc byte/pkt/
+drop counters + DIAG cumulative src/cod/ack + emission/arrival gap
+gauges; goal-gate "Lossy-Single Residual"). The gap is NOT idle wire and
+NOT engine service: at both cells the wire runs ≥98% utilized (98.4/100
+and 19.87/20 Mbit) with the receiver at 8–45% busy. It decomposes, and
+the terms SUM to the measured gap at both cells:
+
+- **Framing/MTU tax (structural, the largest c2 term): ~4.3 Mbit at c2,
+  ~0.95 at c3.** rp carries 1200 payload bytes per ~1319 wire bytes
+  (the 1350 MTU floor, one symbol per packet: efficiency 0.910) vs
+  quinn's MTUD-sized ~0.957.
+- **Reactive-plane over-fire: ~2.7 at c2, ~1.7 at c3.** The sender
+  retransmits ×5.0–5.7 the realized loss (3313 fired vs ~580 drops at
+  sc2-100M; 2556 vs ~510 at sc3). Root: (i) the RFC 9002 hole law
+  (§16.24) is `N>1`-gated — inert at singles; (ii) the legacy plain
+  anchor still over-reads ×5.7–10 at singles, latching the dynamic
+  store cap at 1024 (4–13×BDP) whose standing queue (echo RTT 110 ms at
+  c2, 530 ms at c3 vs RTprop 13/45) keeps every hole's recovery
+  crossing 100–500 ms of queue while the receiver re-advertises it
+  each [25,100] ms sweep.
+- **Proactive FEC is DEAD at singles** (the honest surprise): [SPAN]
+  rr = 0.000 everywhere — the sender estimator reads pl ≈ 0 at
+  2.5–4.8% cells, so r* = 0 and ALL overhead is reactive. The #46-era
+  "taper overspend" concern is refuted in the opposite direction.
+- **Object-scale ramp** (the 25 MB bar geometry vs steady): +1.7 this
+  session (historic up to +6) at c2.
+
+The pre-registered fix (`RWM_RECOV_SP`: the same 9/8× time-threshold
+hole law applied at N = 1, time channel only, suppression-only) is
+mechanically LIVE (young-fires → 0, supp_law 12–18k) but banks only
+**+0.32/+0.35 Mbit ≫σ at sc3 (both seeds) and a tie at sc2** — fired
+drops just 24–31%, because the y-class was a QUEUE-SUSTAINED RE-FIRE
+LOOP, not one-shot spuriousness: while a hole's recovery crosses the
+store-cap queue it keeps legitimately re-ripening. Predictions failed
+per pre-registration ⇒ NO FLIP (ships default OFF, the only measured
+≫σ singles lever this session). The named successor levers: **MTU/
+payload scaling** (up to +4/+1), **window/inflight decoupling** (the
+1024-latch is at once the re-fire queue AND the only stall insurance —
+an honest-sized static window idles the wire 12% and LOSES 1.3 Mbit at
+sc3), and estimator honesty for a live proactive plane. Realtime tails
+untouched (gate OFF; shipped path byte-identical).
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -9990,8 +10034,8 @@ traverses the same seeded GE direction.
 | condition × workload | rp shipped default | best competitor | verdict |
 |---|---|---|---|
 | c1 bulk (clean 1 Gbit) | 164–168 Mbit/s | quinn-BBR 915; kernel TCP ~900 | **LOSS ×5.5** — the §16.23 engine service walls, externally priced |
-| c2 bulk (GE 2.6%) | 78.6–78.7 | quinn-BBR 91.9–92.4 | **LOSS −14%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7) |
-| c3 bulk (20 Mbit lossy) | 16.1 | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | **LOSS −9…−13%** (vs Cubic-family: WIN ×4–11) |
+| c2 bulk (GE 2.6%) | 78.6–78.7 | quinn-BBR 91.9–92.4 | **LOSS −14%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine |
+| c3 bulk (20 Mbit lossy) | 16.1 | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | **LOSS −9…−13%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling |
 | c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |
 | c8 bulk (dual c2+c3) | 67–74 | MPTCP-BBR 90–93; single-path TCP-BBR 89.5–92.1 | **LOSS −21…−27%**, below even single-path kernel BBR — the §17.7 c8 WATCH externally confirmed |
 | c2 realtime tails | p99 med 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms + delivery cliffs (to 687/1000) | **WIN ×1.4–8.8 / ×5–38** |
@@ -10014,7 +10058,12 @@ Honest readings, in both directions:
   engine-receiver per-message service wall ~22–23k msgs/s ≈ 210–230
   Mbit/s per sink**), the
   recovery-plane residual (c2/c3 — quinn-BBR's numbers are the measured
-  bar for the same pipes), and the c8-aware pool law (now priced at
+  bar for the same pipes — **executed 2026-07-27, §16.30: the gap is
+  ACCOUNTED TO CLOSURE (framing/MTU tax ~4.3/0.95 + reactive over-fire
+  ~2.7/1.7 Mbit; wire ≥98% utilized, engine non-binding, proactive FEC
+  measured dead at singles); `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ at sc3,
+  no flip; successor levers named: window/inflight decoupling +
+  MTU/payload scaling**), and the c8-aware pool law (now priced at
   ~+20 Mbit by an external referee).
 - **The Cubic-collapse findings that motivated wall #1 are confirmed on
   the reference stacks themselves**: quinn stock (Cubic) does 24–26 at
