@@ -1998,40 +1998,24 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         } else {
             None
         };
-    // SACK flow-control producer (feat/sack-flow-control), GATED OFF by default.
-    //
-    // Rationale / MEASURED finding (L1, 2026-07-07): decoupling the sender's
-    // flow control from the in-order cumulative-ack frontier by pruning the
-    // sent-store for out-of-order-received (SACKed) symbols does NOT lift lossy
-    // single-path throughput (c2 single 16.09 vs 16.07 baseline — the limiter is
-    // the receiver-side in-order RECOVERY LATENCY, not sender store
-    // backpressure) and is UNSAFE for in-order delivery: with the sender no
-    // longer held near the frontier it races the whole object ahead, but the
-    // receiver's in-order reassembly window is BOUNDED (MAX_WINDOW_SIZE), so a
-    // symbol can be received (→ SACKed → pruned here) and then EVICTED at the
-    // receiver before the in-order frontier consumes it — destroying the only
-    // retained copy and wedging completion (MEASURED: C7/C8 in-order dual DNF;
-    // the OOO-completion arms, which are not frontier-bound, complete). The
-    // frontier-coupled backpressure this would remove is precisely what keeps
-    // the send frontier inside the receiver's reassembly window. Kept as an
-    // env-gated experiment (RWM_SACK_PRUNE=1); default is byte-for-byte base.
-    // Only plain-reliable has a per-seq sent-store to prune.
-    let sack_prune_enabled = crate::config::deprecated_env_flag(
-        "RWM_SACK_PRUNE",
-        false,
-        "SACK+BDP Reassembly (2026-07-08) — structurally UNSAFE (prunes recoverability); SUPERSEDED by SACK-Clocked Store Release (2026-07-21); deprecate-hard, no wall excuses it",
-    );
+    // SACK forwarding channel producer. Historical note: the original consumer
+    // was the RWM_SACK_PRUNE experiment (feat/sack-flow-control, 2026-07-07),
+    // refuted structurally UNSAFE — pruning `sent_store` on SACK destroys the
+    // only retransmittable copy of a received-then-evicted symbol (C7/C8
+    // in-order dual DNF). REMOVED 2026-07-27 per the DEPRECATION REGISTER
+    // (deprecate-HARD, no re-test owed); the safe realization of the same goal
+    // is the SACK-clocked store release below (slot release, never
+    // recoverability — ADR-0060).
     // SACK-clocked store release (env `RWM_STORE_SACK_RELEASE`, goal-gate
-    // "SACK-Clocked Store Release"): rides the same SACK forwarding channel;
-    // the SENDER decides per-range whether to prune (legacy experiment) or
-    // release (the slot-uncount law) — see the sender-loop drain.
+    // "SACK-Clocked Store Release"): the SENDER uncounts SACKed ranges from
+    // the flow-control outstanding — see the sender-loop drain.
     // DEFAULT ON (2026-07-21): the pre-registered battery earned the flip
     // (c7 0.96–1.05×Σ both seeds, sc2 +3–4, no regression; =0 is the
     // legacy frontier-only-release opt-out arm).
     let store_sack_release_enabled =
         crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
     let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
-        if (sack_prune_enabled || store_sack_release_enabled)
+        if store_sack_release_enabled
             && window_reliable
             && !window_generation
             && !window_coded_only
@@ -2040,13 +2024,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         } else {
             None
         };
-    // SACK + BDP reassembly (feat/sack-bdp-reassembly) — the composed root-cause
-    // attack on the in-order cumulative-ack frontier serialization. RWM_SACK_PRUNE
-    // (above) decouples the SENDER from the frozen frontier (prune on any OOO ack);
-    // RWM_REASM_BDP hardens the RECEIVER so that decoupling is SAFE for reliable
-    // in-order delivery. The RELIABILITY INVARIANT it guarantees: a received symbol
-    // is NEVER evicted from the receiver's reassembly state before it is delivered
-    // (its in-order frontier passes), so a symbol the sender has SACK-pruned always
+    // SACK + BDP reassembly (feat/sack-bdp-reassembly): RWM_REASM_BDP hardens
+    // the RECEIVER so a sender decoupled from the in-order frontier is SAFE for
+    // reliable in-order delivery. The RELIABILITY INVARIANT it guarantees: a
+    // received symbol is NEVER evicted from the receiver's reassembly state
+    // before it is delivered (its in-order frontier passes), so a symbol whose
+    // sender-side slot was released on SACK always
     // survives at the receiver until use → no un-recoverable eviction. Concretely
     // it (a) clamps the window-decoder/received-seq prune so it can never advance
     // ABOVE the delivered frontier (the reorder buffer is already usize::MAX / non-
@@ -5503,21 +5486,13 @@ async fn run_window_sender(
         && !generation
         && !coded_only
         && crate::config::env_flag("RWM_STORE_SACK_RELEASE", true);
-    let sack_prune_on = crate::config::env_flag("RWM_SACK_PRUNE", false);
     if store_sack_release_on {
-        if sack_prune_on {
-            warn!(
-                "RWM_STORE_SACK_RELEASE and RWM_SACK_PRUNE both set — the legacy prune \
-                 experiment takes precedence; the release law is INACTIVE"
-            );
-        } else {
-            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
-            info!(
-                "SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs \
-                 uncounted from the outstanding gate, payload + ARQ maps retained until \
-                 the cumulative frontier — slot release, never recoverability)"
-            );
-        }
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            "SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs \
+             uncounted from the outstanding gate, payload + ARQ maps retained until \
+             the cumulative frontier — slot release, never recoverability)"
+        );
     }
     // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
     // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
@@ -7065,51 +7040,23 @@ async fn run_window_sender(
     let mut diag_gaps_dropped: u64 = 0;
     let mut diag_eff_rate: f64 = 0.0;
     loop {
-        // SACK flow control (feat/sack-flow-control): drain the receiver's
-        // RECEIVED-above-frontier ranges NON-BLOCKING at the top of every
-        // iteration (never as a select! branch — a frequently-ready channel
-        // there would race, and cancel, the `tun.read_packet()` future and
-        // starve/stall intake). An out-of-order-received symbol is DELIVERED:
-        // drop it from the retention store and the per-seq ARQ bookkeeping even
-        // though the in-order cumulative frontier still sits below it on an
-        // unfilled hole. The flow-control gate below keys on `sent_store.len()`
-        // (= TRUE outstanding after this pruning), so the send window tracks the
-        // real pipe rather than freezing at the frozen frontier. The hole itself
-        // (NOT in any received range) stays retained and recovers in the
-        // background via the orthogonal NACK / tail-sweep path. The loop wakes at
-        // least every 1 ms (backpressure/emission poll) so drains stay prompt.
+        // SACK drain: consume the receiver's RECEIVED-above-frontier ranges
+        // NON-BLOCKING at the top of every iteration (never as a select! branch
+        // — a frequently-ready channel there would race, and cancel, the
+        // `tun.read_packet()` future and starve/stall intake). An out-of-order-
+        // received symbol is delivery EVIDENCE: the release law uncounts its
+        // slot from the flow-control outstanding (the window opens at path
+        // rate) while payload + ARQ maps stay retained until the cumulative
+        // frontier passes it. The hole itself (NOT in any received range) stays
+        // retained and recovers in the background via the orthogonal NACK /
+        // tail-sweep path. The loop wakes at least every 1 ms
+        // (backpressure/emission poll) so drains stay prompt.
         while let Ok(ranges) = sack_rx.try_recv() {
             for (start, end) in ranges {
                 if end < start {
                     continue;
                 }
-                if sack_prune_on {
-                    // Legacy RWM_SACK_PRUNE experiment (refuted UNSAFE for
-                    // in-order, kept to reproduce the negative result):
-                    // prune the retained copy + ARQ maps on SACK.
-                    let acked: Vec<u64> =
-                        sent_store.range(start..=end).map(|(&k, _)| k).collect();
-                    for k in acked {
-                        sent_store.remove(&k);
-                        retransmit_buffer.remove(&k);
-                        source_path_map.remove(&k);
-                        nack_retx_at.remove(&k);
-                        // task #86: OOO release — the account frees on THIS
-                        // path's delivery evidence, not the in-order frontier.
-                        if percap_on {
-                            percap_release_seq(&mut percap_acct, &mut percap_out, k);
-                            // feat/store-borrowing: the same ack repays a loan.
-                            if percap_borrow_on {
-                                percap_loan_release(
-                                    &mut percap_loans,
-                                    &mut percap_lent,
-                                    &mut percap_borrowed,
-                                    k,
-                                );
-                            }
-                        }
-                    }
-                } else if store_sack_release_on {
+                if store_sack_release_on {
                     // SACK-clocked store release: uncount the slot (window
                     // opens, pool/account freed) — KEEP the payload and
                     // every recovery structure (retransmit_buffer,
@@ -12115,61 +12062,6 @@ mod tests {
         assert!(sent_store.get(&ack).is_none());
         assert!(sent_store.get(&(ack + 1)).is_some());
         assert_eq!(sent_store.len(), (MAX_WINDOW_SIZE + 100) - 50);
-    }
-
-    #[test]
-    fn test_sack_pruning_advances_sender_past_a_hole() {
-        // ROOT-CAUSE FIX (feat/sack-flow-control): the plain-reliable sender's
-        // flow control keys on `sent_store.len()` (= outstanding-unacked). Under
-        // the OLD contract the store drained by the in-order cumulative frontier
-        // ONLY (split_off(&(ack+1))), so a single hole froze the frontier, the
-        // store stayed full, and TUN reads stalled for a reactive round-trip —
-        // goodput collapsed to window/RTT. This asserts the new SACK-pruning
-        // arm: out-of-order-received symbols leave the store immediately, so
-        // outstanding tracks TRUE in-flight and the sender keeps injecting.
-        use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
-        let mut encoder = RlcWindowEncoder::new(64);
-        let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
-
-        // Send 100 source symbols (seqs 0..=99), all retained.
-        let n = 100u64;
-        for i in 0..n {
-            let sym = encoder.add_source(&vec![i as u8; 32]);
-            sent_store.insert(sym.block_id, sym.clone());
-        }
-        assert_eq!(sent_store.len(), n as usize);
-
-        // Receiver got 0..=9 contiguously (cumulative ack = 9), then a HOLE at
-        // seq 10, then received EVERYTHING above it (11..=99) out of order.
-        let ack = 9u64;
-        // Cumulative frontier prune (removal below the contiguous frontier).
-        sent_store = sent_store.split_off(&(ack + 1));
-        // Under the OLD contract this is where it ends: the frozen frontier
-        // leaves 90 symbols (10..=99) pinned in the store → still "full",
-        // sender stalls behind the hole.
-        assert_eq!(sent_store.len(), (n - (ack + 1)) as usize); // 90 pinned
-
-        // NEW: the SACK ranges (received-above-frontier) prune the store for the
-        // out-of-order deliveries — exactly the sender-loop arm's arithmetic.
-        let sack_ranges: Vec<(u64, u64)> = vec![(11, 99)];
-        for (start, end) in sack_ranges {
-            if end < start {
-                continue;
-            }
-            let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
-            for k in acked {
-                sent_store.remove(&k);
-            }
-        }
-
-        // Only the genuine hole (seq 10) remains retained — outstanding drops
-        // from 90 to 1, well under any BDP-scaled cap, so the sender is FREE to
-        // read the TUN and inject fresh source instead of freezing on the hole.
-        assert_eq!(sent_store.len(), 1, "only the unfilled hole stays retained");
-        assert!(sent_store.contains_key(&10), "the hole is retained for ARQ");
-        // The hole's exact bytes survive for a targeted retransmit (reliability
-        // contract intact: the hole is recovered in the background).
-        assert_eq!(&sent_store.get(&10).unwrap().data[..32], &[10u8; 32]);
     }
 
     // ----- SACK-clocked store release (RWM_STORE_SACK_RELEASE) --------------
