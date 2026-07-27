@@ -545,7 +545,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | **REMOVED f1f32c5 (2026-07-27)** — effective_btlbw is now always the windowed-MAX (the shipped default, byte-identical) |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
-| STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning — an opt-out, not a refuted mechanism); retirement argued in a later pass only |
+| STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. **Deletion GO next consolidation pass** (~1,230 LOC: adapter + crate + selection glue; scope limit: the legacy-RLC decoders' own retirement clause was NOT re-argued — streaming-only unless that lands too). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
 
 Class-B gates (concept incomplete, successor named — `RWM_TAPER_R`,
 `RWM_STORE_PERCAP`/`_GUARD`/`_HONEST_CAP`, `RWM_STORE_BORROW`,
@@ -12664,4 +12664,117 @@ every ship rep, both endpoints); seed-7 topo-abort ns recorded; stage
 runtimes stated; lib suite run once on the branch (transport untouched —
 harness+docs only). Logs `/home/vibe/crown/`.
 
-*(Results below this line will be written after the battery runs.)*
+*(Results below this line were written after the battery ran.)*
+
+### L1 RESULTS (VM 10.1.5.16, 2026-07-27 19:07–20:44 UTC; binary sha256 2aac6b5fd088… = commit 8cf2b6f — Rust byte-identical to main 44dd7d4, the no-transport-change branch proof (docs+harness only; local lib suite 368/368 on the branch); E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in the header; seeds 42 AND 7; arms interleaved per rep (fresh warm tunnel per rep-arm, order alternating per round); drivers `tools/l1/crown_{all,battery}.sh` + tail_matrix arms; logs `/home/vibe/crown/{crown,l2shape,bulk}-s{42,7}.log` + env/run logs; lock `/tmp/rwm-vm.lock` taken 18:41 UTC (found FREE on arrival and across two checks ~10 min apart — the lossy-residual worker was not holding it), released 20:46 UTC after teardown; stage runtimes: crown-s42 36m38s, crown-s7 36m54s, l2shape 7m22s+7m24s, bulk 9m12s)*
+
+**Incidents, recorded first (discipline 7/8).** (i) The FIRST launch died
+into a bringup-collision cascade after 3 good arms (every subsequent
+`topo.sh up`+ping failed, 23 s each; ~4 reps captured) — battery stopped,
+log preserved (`crown-s42-ABORTED-bringups.log`, its reps NOT merged),
+`run_arm` bringup retry-hardened (3 attempts, counted loudly — the
+embatch "retry-hardened driver" precedent, commit 7f20057) and the
+battery relaunched FROM SCRATCH. Cause unattributed honestly: the
+relaunch recorded **0 BRINGUP_RETRY and 0 BRINGUP_FAIL over all 164
+bringups, both seeds** — the guard was never exercised, so the cascade
+was a transient VM condition, not the netns cycling rate per se.
+(ii) One NO_DATA rep (ship c2-1200B s42 — summary-less, skipped datum,
+n=7 quoted). (iii) The documented seed-7 topo-abort class did not appear
+at all (0 aborts). Liveness: **every bringup echoed its machine at both
+endpoints** — streaming arms 64/64+10/10 echo sets "Realtime mode:
+auto-selecting streaming backend … backend=Streaming"; ship arms
+64/64+10/10 the full unified set (span law + shedding sender/receiver +
+A* anchor + unified global decoder + backend=Rlc); bulk arms 0 realtime
+echoes (the block pipeline, as constructed).
+
+**Cells 1–4 (tail_matrix, 50 msg/s × 20 s × 1000 msg/rep, ×8/arm/seed;
+per-rep p99 medians [min–max]; S = streaming `RWM_UNIFIED=0`, U = ship =
+env unset = the unified default):**
+
+| cell·size | S s42 · s7 | U s42 · s7 | verdict |
+|---|---|---|---|
+| c2·400B (crown #1) | 36.7 [34.4–45.3] · 40.6 [36.9–57.4] | **35.4 [34.5–36.7] · 36.5 [35.3–39.1]** | U ≤ S both seeds |
+| c2·1200B (crown #2) | 41.5 [38.6–57.1] · 57.5 [51.7–93.2] | **40.3 [35.9–48.0] (n=7) · 41.9 [37.0–113.3]** | U ≤ S both seeds (−1.2 / −15.6 med) |
+| c3·400B (#3) | 107.2 [94.5–150.1] · 123.1 [107.1–153.2] | **104.6 [91.3–118.6] · 105.2 [88.5–112.8]** | U ≤ S both seeds |
+| c3·1200B (#4) | 108.1 [90.1–122.1] · 126.1 [93.9–177.6] | **92.6 [84.3–152.1] · 99.3 [90.8–139.1]** | U ≤ S both seeds (−15.5 / −26.8 med) |
+
+p50 equal-class everywhere (c2 7.9–8.4 ms, c3 23.7–25.8 ms, both arms
+both seeds). **Delivered: 1000/1000 in EVERY captured rep, both arms,
+both seeds** (127 crown reps) — at these cells even the streaming
+machine sheds nothing at the summary level; the tail, not delivery,
+separates the machines.
+
+**Cell 5 (the L2 stream_bench shape: c2·1200B, 50 msg/s × 30 s × 1500
+msg/rep, ×5/arm/seed — the p99.9 record cell):**
+
+| metric | S s42 · s7 | U s42 · s7 |
+|---|---|---|
+| p99 med [rng] | 41.2 [40.1–68.3] · 55.8 [49.8–81.5] | **39.5 [38.4–43.3] · 43.3 [40.8–65.6]** |
+| p999 med [rng] | **62.8 [58.3–111.6]** · **86.3 [84.6–335.0]** | 69.5 [60.0–117.2] · 98.5 [70.4–129.0] |
+| delivered | 1500/1500 every rep | 1500/1500 every rep |
+
+**The one direction streaming still shows, recorded at full strength:
+its p999 MEDIANS are LOWER on both seeds (−6.7 / −12.2 ms).** Verdict
+per the pre-registered noise-floor rule: **TIE** — the deltas sit deep
+inside the per-rep spreads (s42 both arms span ~58–117; s7 U 70–129 vs
+S 85–335), the sign REVERSES at the worst rep (s7: S's worst p999 is
+335 ms vs U's 129 — the only >200 ms excursion in the whole battery is
+STREAMING's), and U wins p99 at the same cell both seeds. This is the
+diagonal layer's residual signature at the 2nd-worst-message quantile —
+real enough to record, too small and too noisy to gate; named the
+**cell-5 p999 WATCH** (any future tail battery re-measures it free).
+
+**Bulk sanity spot (cell S; c2·bulk·{400,1200}B ×4, seed 42):** p99
+medians U 70.1/67.3 vs S 70.2/65.5 (ranges overlap fully; the modern
+tunnel-bulk class 65–80), delivered 1000/1000 every rep — `RWM_UNIFIED=0`
+is INERT on the bulk-hint tail class, as constructed (block pipeline;
+zero realtime-backend echoes both arms).
+
+### VERDICT — the register clause is satisfied: RE-TESTED / CLEARED
+
+- **The gate (unified match-or-beat streaming on p50/p99/delivered% at
+  EVERY crown cell, both seeds): PASS at all five cells.** p99 medians:
+  unified ≤ streaming at 10/10 cell-seeds, by −1.2 to −26.8 ms (largest
+  at the c3 cells and s7-c2-1200B, smallest a statistical tie at
+  s42-c2-1200B); p50 equal-class; delivered identical-complete (163/163
+  captured reps full delivery, both arms).
+- The pre-registered prediction (c) held including the modern classes
+  (c2 rt ~35–42, c3 rt ~93–126). The p999 prediction at cell 5 held
+  only as a spread-level TIE (streaming −6.7/−12.2 at the median, sub-
+  noise, worst-rep sign reversed) — recorded above, does not gate.
+- Era honesty: no historic ABSOLUTE was used as a bar (pre-divide walls
+  + hardware divide); the comparison is same-day arm-vs-arm at the
+  record's cells, and the crown itself was already externally
+  re-verified on the unified default by "Competitive Baseline
+  (2026-07-21)" (rp 36–39/92–103 ms vs quic/tcp 55–3878 + delivery
+  cliffs).
+
+**DISPOSITION — streaming retirement is GO (nothing deleted THIS
+session).** The DEPRECATION REGISTER streaming row moves to
+RE-TESTED/CLEARED (row updated in place); the next consolidation pass
+may delete, per the VISION-TRIAGE stage-2 work-list: `fec/streaming.rs`
+(352 LOC) + the `streaming-codes` crate (845 LOC) + the selection glue
+(~30 LOC: net/mod.rs backend-selection sites, `is_streaming()`,
+config.rs `FecBackend::Streaming` parse, backend_selector.rs,
+fec_rate.rs `compute_streaming_params`; line refs are the c3a9d76
+survey, re-locate at deletion time) ≈ **~1,230 LOC**, with
+`FecBackend::Streaming` becoming a parse error with a pointer and
+`RWM_UNIFIED=0` thereafter meaning "legacy RLC decoders" only. SCOPE
+LIMIT, stated honestly: this battery re-tested the STREAMING clause
+only — the legacy RLC decoders' own retirement condition ("unified ≥
+legacy-RLC everywhere", §17.5) was NOT re-argued here (no rlc arms in
+the crown record; the flip battery's c3-1200B unified-vs-rlc sign-flip
+class stands unresolved), so stage 2's "take all three legacy machines
+out together" option needs that separate confirmation or a scoped
+streaming-only deletion. The cell-5 p999 WATCH transfers to the
+deletion pass's notes: it is a property of the machine being deleted,
+measured and bounded (sub-noise medians, worst-rep inverted), not a
+blocker.
+
+Ops: lock taken 18:41 → released 20:46:39 UTC after teardown; tree
+synced via git archive + CRLF conversion before the first harness
+invocation (discipline 10); stale binary removed before build; rp-*
+netns only, deleted at teardown; VM left clean (no battery processes,
+no netns, lock free); all logs preserved under `/home/vibe/crown/`
+including the aborted first attempt; foreground polling only, elapsed
+stated per poll.

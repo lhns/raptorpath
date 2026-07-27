@@ -9538,6 +9538,38 @@ c7 ×0.11, c8 ×0.20 of the same-session stack, strictly worse everywhere
 ≫σ, cod_share > 1 — CONFIRMED-REFUTED, never wall-tainted, cleared for
 deletion (register row updated; goal-gate "C8-Aware Pool Law").
 
+### 16.31 The streaming crown re-test: the historic record held cell-by-cell, and the second machine cleared for retirement (2026-07-27, `meas/streaming-retirement`, measurement only)
+
+The deprecation register's streaming clause (§16.26's honest reservation:
+the 12–48× message-tail crown spans historic cells — the L2/L3
+message-tail batteries and quinn-vs-rp Metric A — that the flip battery
+did not re-run) was discharged by a dedicated pre-registered battery: the
+historic crown cells reproduced era-honestly on today's substrate
+(Metric-A tail_matrix c2/c3 × 400/1200 B at 50 msg/s × 20 s, plus the
+L2-era 30-s stream_bench shape with its p99.9 metric, plus a bulk-hint
+inertness spot), `RWM_UNIFIED=0` (the streaming two-layer machine, echo-
+verified) vs the shipped unified default, interleaved per rep, both
+seeds, ×8 (crown) / ×5 (L2 shape) — with the pre-divide historic
+absolutes explicitly NOT the bar (hardware divide + substrate walls);
+the comparison is same-day arm-vs-arm, the external crown having already
+been re-verified on the unified default by the §17.9 competitive
+baseline. Result: the unified machine matched-or-beat streaming's p99
+medians at all five cells on both seeds (10/10 cell-seeds, −1.2…−26.8 ms,
+largest at c3), p50 equal-class, delivery identical-complete (163/163
+reps full delivery — at these cells the tail, not delivery, separates
+the machines), bulk-hint inert. One datum recorded at full strength
+because it is the only direction the old machine still shows: at the
+30-s shape the streaming p99.9 MEDIANS are lower by 6.7/12.2 ms on both
+seeds — deep inside the rep spread, with the sign reversed at the worst
+rep (streaming owns the battery's only >200 ms excursion, 335 vs 129 ms)
+— a sub-noise residual signature of the diagonal layer, named the cell-5
+p999 WATCH, not a gate. Disposition: the register row is RE-TESTED/
+CLEARED and streaming deletion (~1,230 LOC: adapter + `streaming-codes`
+crate + selection glue) is GO for the next consolidation pass — scoped
+to streaming only, since the legacy RLC decoders' separate retirement
+clause (unified ≥ legacy everywhere) was not re-argued here. The
+architectural claim completes its arc: the one-machine default now holds
+every cell of the record that justified keeping the second machine.
 
 ## 17. The Measured Regime Map (2026-07-19)
 

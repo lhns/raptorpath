@@ -187,6 +187,23 @@ HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) the
 flip battery did not re-run. The vision says one machine; streaming is by
 construction a second machine and a mode switch.
 
+**[STAGE 1 EXECUTED 2026-07-27 → CLEARED (goal-gate "Streaming Crown
+Re-Test", branch `meas/streaming-retirement`): unified ≤ streaming p99
+medians at all 5 historic crown cells (Metric-A c2/c3 × 400/1200B + the
+L2 30-s stream_bench shape) × both seeds, p50 equal-class, delivery
+identical-complete (163/163 interleaved reps), bulk-hint inert.
+Baselines not re-run — the Competitive Baseline battery had already
+re-verified the crown externally on the unified default; this session
+supplied the missing streaming arm. One recorded non-gating datum: the
+cell-5 p999 medians favor streaming −6.7/−12.2 ms (sub-noise, worst-rep
+sign reversed — S 335 ms vs U 129) = the "cell-5 p999 WATCH", carried
+into the deletion notes. STAGE 2 (deletion, ~1,230 LOC) is GO at the
+next consolidation pass — SCOPED: streaming-only unless the legacy-RLC
+"unified ≥ legacy everywhere" clause (NOT re-argued here; the flip
+battery's c3-1200B unified-vs-rlc sign-flip class stands) is separately
+confirmed, in which case the combined three-machine removal below
+applies.]**
+
 **Recommended retirement path** (two stages, per ADR-0066):
 
 1. **The historic-crown re-test battery** (one VM session, ~half a day):

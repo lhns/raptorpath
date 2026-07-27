@@ -1,6 +1,6 @@
 # ADR-0064: One Machine Across the δ Axis — the Unified Span Machine + δ-Honest Shedding
 
-## Status: Accepted (`RWM_UNIFIED` default ON, 2026-07-21 — the mode-switch removal ships)
+## Status: Accepted (`RWM_UNIFIED` default ON, 2026-07-21 — the mode-switch removal ships). Streaming re-test clause DISCHARGED 2026-07-27: unified held the historic crown cell-by-cell (goal-gate "Streaming Crown Re-Test"); streaming deletion GO at the next consolidation pass (register row RE-TESTED/CLEARED; cell-5 p999 WATCH recorded)
 
 **Date**: 2026-07-18 (built) … 2026-07-21 (flipped)
 
