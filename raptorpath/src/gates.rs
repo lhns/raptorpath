@@ -84,6 +84,16 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw
     /// anchor warms.
     pub store_boot: usize,
+    /// `RWM_STORE_CAPW` (default OFF): capacity-weighted SHARED outstanding
+    /// pool — pool = Σ_i honest per-path cap over live paths (each path earns
+    /// depth for its OWN pipe + recovery round; one pool, so borrowing stays
+    /// free — ADR-0058's pooled verdict kept). The c8-aware pool law
+    /// (the ADR-0058 "c8 WATCH" follow-up). Engaged N ≥ 2 with warm anchors;
+    /// falls back to the configured pooled law until anchors live. Reads
+    /// honestly only with the `RWM_PLAIN_RS` sampler (the battery arm
+    /// composes it); with the over-reading legacy anchor it clamps to the
+    /// N×knee ceiling ≡ the path-scaled law.
+    pub store_capw: bool,
     /// `RWM_STORE_PERCAP` (default OFF): per-path outstanding accounts
     /// (task #86; symmetric-cell tool, c8 successor named — ADR-0058).
     pub store_percap: bool,
@@ -222,6 +232,7 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
+            store_capw: env_flag("RWM_STORE_CAPW", false),
             store_percap: env_flag("RWM_STORE_PERCAP", false),
             percap_guard: env_flag("RWM_PERCAP_GUARD", true),
             store_borrow: env_flag("RWM_STORE_BORROW", false),
@@ -305,6 +316,7 @@ mod tests {
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // Experiments / instruments (default OFF)
         assert!(!g.fmtcp && !g.store_percap && !g.store_borrow && !g.plain_rs);
+        assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
         // Numeric defaults
