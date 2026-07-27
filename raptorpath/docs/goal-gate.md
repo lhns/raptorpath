@@ -892,6 +892,295 @@ binary hash preserved under `/home/vibe/c8pool/`; s7 abort count (42
 battery + 9 top-up, all summary-less) recorded above; runtimes: s42
 battery 43 min/105 invocations, s7 26 min/104, top-up 6 min.
 
+## Lossy-Single Residual (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the instrumented runs; branch `diag/lossy-residual` from 44dd7d4; DIAGNOSIS-FIRST: the ACCOUNTING TABLE is the deliverable; a fix ships only if the table names a dominant AND cheaply-fixable term, under its own pre-registered prediction appended before any battery)
+
+**(a) The question.** LEVER 2/3 of the competitive-baseline losses: where do
+the missing 9–14% go on lossy SINGLE paths? The external bar ("Competitive
+Baseline", same VM/cells/seeds): c2 rp 78.6–78.7 vs quinn-bbr 91.9–92.4
+(−14%); c3 rp 16.1 vs quinn-bbr 18.6 / tcp-bbr 17.5–17.8 (−9…−13%). The
+candidate terms, EACH to be priced in Mbit/s from instrumented sc2/sc3 runs
+(new DIAG-only gauges this branch: sender emission-gap `sidle=` + cumulative
+`cum=src/cod/ack` in [DIAG]; receiver inter-arrival `[WIDLE]`; QDISC
+wire-byte/pkt/drop echo in perf_rwm_c.sh — plus the existing DIAG/SPAN/RDIAG
+surface):
+
+1. **Framing/MTU tax (structural).** rp rides the ADR-0055 1350-B MTU floor
+   with a ~1200-B source payload per ~1340-B IP packet (wire efficiency
+   ≈ 0.89); quinn MTUD reaches ~1452 on the same veth (≈ 0.96). Derivation
+   re-read, self-contained prediction: this alone is ~4–6 Mbit of the c2 gap
+   and ~0.8–1.2 Mbit at c3, and it is NOT a this-session fix (the floor is
+   the blackhole defense; a symbol-size/MTU-scaled-payload raise is a named
+   roadmap item). The QDISC byte counters price it exactly.
+2. **Object-scale ramp at the bar's 25 MB geometry.** Known class: rp 78.7 at
+   25 MB vs its own 100-MB steady 84–85 (vs quinn's quasi-steady sequential
+   uploads) → ~6 Mbit at c2. Re-measured same-session (25 MB AND 100 MB arms
+   at both cells).
+3. **FEC overhead.** Emitted cod/src (cod includes retx by counter
+   semantics). Prior: r* ≈ 0.03 at c2-class loss → ~2.5–3 Mbit; the #46-era
+   question — is the taper emitting MORE than r* under the unified span law
+   (spare-capacity cap read from an over-reading anchor)?
+4. **Recovery wire idle.** Idle wire during hole-recovery rounds (SACK sweep
+   clamp [25,100] ms; BBR keeps the wire full through loss). Gauges: [WIDLE]
+   (wire truth), sidle (engine handoff), GOODSERIES microstructure.
+5. **Anchor over-read → store-cap bloat → retx queue delay.** The legacy
+   plain anchor over-reads ×4.6–7.4 (§16.21) so the dynamic cap latches at
+   RELIABLE_STORE_MAX=1024 at c2 (~4.4×BDP) and ~684+ at c3 (~9×BDP); the
+   excess outstanding sits in quinn's FIFO datagram queue, so every
+   retransmit waits behind it (~60 ms class at c2, ~285 ms at c3, derived).
+   Probes: static RWM_STORE arms bracketing the honest cap (c2 256/512, c3
+   192/384) + the RWM_PLAIN_RS honest-anchor arm (known −1.2…−1.8 witness
+   cost at singles). Honest prior: the RS arm measured ≈neutral at sc2, so
+   the expected static-store effect is SMALL at c2 (±1–2 Mbit); c3 (deeper
+   relative bloat, longer recovery rounds) is the cell where this term can
+   be large. A null is informative (prices the queue-delay term ≈ 0).
+6. **Per-message engine cost.** Predicted NON-BINDING: c2/c3 rates are
+   ~9.8k/2.4k sym/s ≪ the 22–23k msgs/s receiver wall (§16.23). Verify:
+   RDIAG busy% + CPUSRV/CPUCLI (expect busy ≪ 100%, CPU/wall ≪ 1 core).
+
+**(b) Predictions (pre-registered).** (i) The table CLOSES: terms 1–6 sum to
+the measured residual within the session noise floor at both cells. (ii) At
+c2, structural terms (framing + ramp + FEC) cover ≥ ~2/3 of the −13-to-14
+gap; the actionable mechanism residual (idle + queue-delay) is ≤ ~4 Mbit.
+(iii) At c3, framing + FEC cover ~half; the rest is recovery idle/queue
+delay. (iv) Receiver busy < 50% both cells. (v) If (iii)'s
+idle/queue-delay term is large AND the static-store probe moves sc3 ≫σ, the
+named fix candidate is store-cap honesty at singles — to be pre-registered
+separately before any battery.
+
+**(c) Falsification / verdict rule.** If the accounting does NOT close
+(unexplained remainder > ~2σ of the cell), the remainder is reported as
+UNACCOUNTED — no invented term, and the table still ships as the deliverable.
+A fix is built ONLY for a term that is (i) dominant (≥ half the cell's
+actionable residual) and (ii) cheaply fixable this session; everything else
+is named + sized for the roadmap. A probe arm that regresses ≫σ is itself a
+datum (the incumbent law is protective), not a tuning invitation.
+
+**(d) Derivation re-read for self-contained failure predictions.** Terms 1–2
+are arithmetic/measured priors, not mechanisms — they cannot close the whole
+gap (1+2+3 ≈ 12–15 Mbit at c2 would OVER-close it; the table's job is the
+honest split, and over-closure would itself falsify the naive sum, naming
+double-counting between ramp and idle — the ramp IS partly idle at object
+edges, so the 25 MB vs 100 MB split must be read as geometry, not added to
+idle blindly). At c3 the derived retx-queue-delay bound (~285 ms/retx) is
+close to one [25,100]-ms sweep + one inflated RTT — if measured echo-RTT
+stays ~RTprop-class, term 5 is already refuted at c3 and the store probes
+should read null.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE 1–11:
+lock priority 1 (a parallel streaming-retest worker polls behind); CRLF
+after sync; FOREGROUND polling only; rm stale binary; sha256 + commit +
+lscpu + env headers; diagnosis `tools/l1/lossy_diag.sh` seed 42 ×2/arm
+(arms: sc2/sc3 × 25M/100M defaults + static-store + plain-rs probes). IFF a
+fix ships: sc2 (100 MB) + sc3 (25 MB) default ↔ fix, seeds 42+7 ×8
+interleaved, fresh topology per invocation, dnf recorded; tail_matrix c2
+spot ×4 iff the fix touches emission. No flip without the fix's own
+pre-registered prediction holding on both seeds; suites green.
+
+*(Results below this line were written after the runs.)*
+
+### DIAGNOSIS RESULTS (VM 10.1.5.16, 2026-07-27 18:56–19:02 UTC; binary sha256 e8a0af12c971b9b5… = commit e6f0859, built fresh (stale rm'd), CRLF-converted; E5-2650 v3 aes+avx2+pclmulqdq; kernel 7.0.14-101.fc43; seed 42; `tools/l1/lossy_diag.sh` — logs `/home/vibe/lossyres/diagnose-s42.log` + per-run diag/)
+
+**Ops incident, recorded first:** the 20-invocation rapid-fire tripped a
+flake class — server bind `Address already in use` cascades (pkill racing
+the next invocation) plus silent early process deaths (no OOM, no panic in
+logs) — 8 invocations lost (wedge signature: warmup never acked, CPUSRV=0,
+sweeps=retx). Completed runs are clean (liveness echoes + qdisc counters
+consistent); the battery driver is retry-hardened (`lossy_battery.sh`:
+port-free wait + ≤3 attempts, aborts preserved). Also an instrument
+caveat: the new [WIDLE] 3 ms inter-arrival gauge over-counts at c3 — GRO
+delivers ~13-datagram batches ≈ 7 ms apart at 1.8k pkt/s, so its "idle"
+includes batching cadence; the QDISC byte counters are the idle authority.
+
+**Wire truth (qdisc counters, completed runs):**
+- sc2-def-100M: 116.25 MB / 93 983 pkt in 9.4534 s = **98.4 Mbit/s on the
+  100 Mbit wire — idle ≤ 1.6%**; drops 580 = **0.61% realized** (GE nominal
+  2.53%, seed-42 realization); mean data pkt ≈ 1319 B wire per 1200 B
+  payload → **framing efficiency 0.910** (quinn MTUD ~1452 ⇒ ~0.957).
+- sc3-def-25M: 30.94 MB / 27 670 pkt in 12.4621 s = **19.87 Mbit/s of
+  20 — idle ≈ 0**; drops 510 = **1.81% realized** (nominal 4.76%).
+- Goodputs (this session): sc2-def 25M/100M = 82.86/84.63; sc3-def-25M
+  16.05; probes: sc2-rs 85.17, sc3-rs 15.26, sc3-s384 14.77 (sc2 static
+  arms lost to the flake class).
+
+**Engine truth ([DIAG]/[SPAN] cumulative):**
+- sc2-100M: src 83 870, cod 3 764 (4.5%), retx 3 313 — vs ~580 real drops:
+  **×5.7 over-fire; mpr y=2659 (80%) fired on flights YOUNGER than the
+  hole law's own threshold, supp_law=0 — the RFC9002 law is `mp_n_paths>1`-
+  gated and INERT at singles**. Ripe fires 654 ≈ the realized drop count.
+- sc3-25M: src 21 152, cod 2 817 (13.3%), retx 2 556 vs ~510 drops (×5.0;
+  y=1572, ripe 984); 145 472 gap-seqs walked (the receiver re-advertises
+  holes ~each [25,100] ms sweep while recovery crosses the bloated queue);
+  age-at-fire 357 ms.
+- **The taper emits ≈ NOTHING at singles**: [SPAN] rr=0.000 owed=0.00
+  everywhere; sender per-path `pl` reads 0.0000–0.0102 at 2.5–4.8% cells
+  (the sender estimator is loss-blind on singles) — so the #46-era
+  "emitting MORE than r*" is REFUTED in the opposite direction: proactive
+  FEC is dead; ALL recovery overhead is the reactive plane.
+- Anchor over-read at singles CONFIRMED: btlbw gauge 50.5–67.0k sym/s at
+  sc2 (true ~8.9k → ×5.7–7.5), 12.9–18.4k at sc3 (true ~1.8k → ×7–10) ⇒
+  dyn store cap latched at 1024 ⇒ standing queue ON the wire: echo/wire
+  RTT 109–111 ms vs RTprop 13 (sc2), 528–558 vs ~45 (sc3).
+- Receiver service: RDIAG busy 43–45% (sc2) / 8–10% (sc3); CPUSRV 7.0 s /
+  9.45 s wall (sc2-100M) — **term (e) NON-BINDING, confirmed**.
+
+### THE ACCOUNTING TABLE (each term priced; gap = rp vs quinn-bbr same cell)
+
+**sc2 steady (rp 84.6–85.2 vs quinn-bbr 91.9–92.4 → gap ≈ 7.3 Mbit):**
+
+| term | Mbit/s | evidence |
+|---|---|---|
+| (1) framing/MTU tax (structural) | **~4.3** | 1319 B wire / 1200 B payload (×1.099) vs quinn ~×1.045: qdisc bytes |
+| (2) spurious retransmissions | **~2.7** | 2659 y-fires × 1319 B / 9.45 s = 2.97 Mbit wire × 0.91 framing |
+| (3) honest retx + margin + control | ~0.9 | 654 ripe + ~450 margin + 6.3k ctrl pkts |
+| (4) wire idle (b) | ≤ 1.0 | 98.4 of 100 Mbit qdisc |
+| (5) engine service (e) | 0 | busy 43–45% |
+| Σ vs gap | 7.9–8.9 vs 7.3 | CLOSES (overlap: (3) partially present in quinn's own ~2.9% overhead; (4) partially BBR-probe-shared) |
+| (+) 25 MB bar geometry ramp | +1.7 this session (historic to +6) | 82.9 vs 84.6 same session |
+
+**sc3 25 MB (rp 16.05 vs quinn-bbr 18.6 → gap ≈ 2.55; tcp-bbr 17.5–17.8):**
+
+| term | Mbit/s | evidence |
+|---|---|---|
+| (1) framing/MTU tax (structural) | **~0.95** | same ratio on the 19.87 Mbit wire |
+| (2) spurious retransmissions | **~1.7** | ~2046 above-honest fires × 1319 B / 12.46 s × 0.91 |
+| (3) honest retx delta vs quinn | ~0 | realized loss identical on the shared netem |
+| (4) wire idle | ~0 | 19.87 of 20 Mbit |
+| (5) engine service | 0 | busy 8–10% |
+| Σ vs gap | 2.65 vs 2.55 | **CLOSES** |
+
+**Verdicts on the pre-registered candidates:** (a) FEC overspend REFUTED
+(r* consumed ≈ 0; overhead is reactive); (b) recovery idle REFUTED as a
+term (the bloated window is accidental wire insurance — the waste keeps
+the pipe "full"); (c) anchor over-read CONFIRMED alive and priced
+INDIRECTLY: the 1024-latch queue (100/500 ms) is what makes re-fires
+spurious (flights still queued read as lost) and what the static-store
+probes cannot fix (sc3-s384 = 14.77: a right-sized window IDLES the wire
+12% during stalls — window-vs-inflight decoupling is the structural
+successor, roadmap); (d) app-layer conservatism REFUTED (the opposite:
+4–13×BDP); (e) non-binding CONFIRMED. Prediction (b)(i) HELD (the table
+closes); (ii) HELD (structural ≈ 4.3 + 2.7 spurious ≥ 2/3); (iii) HELD.
+
+### FIX PRE-REGISTRATION — `RWM_RECOV_SP` (written BEFORE the battery; default OFF)
+
+**Mechanism.** The dominant actionable term at BOTH cells is the spurious
+reactive plane (×5.0–5.7 over-fire). Root cause, named by the y-class: the
+RFC 9002 §6.1.2 time-threshold hole law (`recov_mp_law`) is gated
+`mp_n_paths > 1` on the premise "single-path gaps are FIFO-real" — refuted
+on a jittery substrate (netem delay-jitter reorders tens of packets; gap
+reports name merely-late seqs; re-fires chase flights still crossing the
+store-cap standing queue). The fix: apply the SAME law at N = 1 — a gap
+seq with a live flight fires only at age ≥ 9/8×max(smoothed clocks)
+(`mp_time_threshold_us`, no new constants); TIME channel only (the §6.1.1
+packet channel is excluded at N=1: reorder depth ≫ kPacketThreshold);
+suppression-only (the receiver hole-refresh re-advertises).
+
+**Predictions.** (1) Mechanism gauge: fired collapses from ×5.0–5.7 to
+≤ ~2× realized drops; supp_law absorbs the former y class. (2) sc2 100 MB:
+**+2 to +3 Mbit** (→ ~87–88) both seeds, ≫ σ_s (~0.7–1.0). (3) sc3 25 MB:
+**+1 to +1.7** (→ ~17.0–17.7, the tcp-bbr class), ≫ σ_s (~0.1–0.2).
+(4) dnf = 0; no cell regresses ≫σ.
+
+**Falsification.** Either cell regressing ≫σ (first-retx delay
+serializing recovery outweighs the reclaimed waste) REFUTES the arm →
+default OFF, register row, no tuning. Goodput flat WITH the gauge
+collapsed ⇒ the freed wire went idle, not to goodput — the window/inflight
+coupling is then the named binder, and no flip happens on a wrong
+attribution.
+
+**Flip rule.** Default ON only if (1)–(4) hold on BOTH seeds AND a
+tail_matrix c2 spot ×4 is unregressed (the fire path is shared with the
+tunnels' reliable plane) AND suites stay green. Battery:
+`tools/l1/lossy_battery.sh` — sc2-100M + sc3-25M, def ↔ sp interleaved
+per rep, ×8, seeds 42+7, fresh topology per invocation, RWM_DIAG=1, n
+quoted per arm, aborts preserved.
+
+*(Battery results below this line were written after it ran.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16, 2026-07-27 20:52–21:16 UTC; binary sha256 ef6ed448…= commit 982b1a0, built fresh (stale rm'd), same binary every arm; E5-2650 v3 (post-divide); arms def ↔ `RWM_RECOV_SP=1` interleaved per rep, fresh topology per invocation, 1 run/invocation, RWM_GEN=0 RWM_DIAG=1; liveness echo asserted per arm (sp=1 in every sp run, 0 in every def run); drivers `tools/l1/lossy_battery.sh`; logs `/home/vibe/lossyres/battery-s{42,7}.log` + `battery-s7-pass1.log` + per-run diag; runtimes s42 7 min (32/32 clean, 0 retries), s7 pass-1 5 min + top-up 6 min)
+
+**Incidents (recorded first).** (i) s7 pass-1: 13 seed-7 topo-ping aborts
+(the known class; ~3 s marker-to-marker, pre-run) AND the driver's retry
+check was defeated by the stale-client-log summary (discipline-8's
+stale-log class, new instance) — fixed mid-session (rm logs per attempt,
+committed), pass-1 completed runs kept (n quoted), top-up ×5 run with the
+fixed driver (12 RUN-RETRY recovered, 2 RUN-LOST after 3 attempts).
+(ii) VM co-tenancy: the p2 streaming-crown battery was mid-flight at my
+first lock take (its hold predated mine and its controller launches
+stages without re-polling); one of its realtime tunnel pairs was killed
+at ~19:14 UTC by my pre-battery cleanup before I understood its session
+was live — ITS crown-s42 log carries that dead rep (flagged in
+`/home/vibe/crown/`). I then yielded and waited out its full battery
+(19:07–20:45 UTC), re-took the lock 20:48, and ran on a quiet VM.
+
+**Goodput (Mbit/s, mean ± σ_s (n); merged s7 = pass-1 + top-up):**
+
+| cell | def (s42) | sp (s42) | def (s7) | sp (s7) | verdict |
+|---|---|---|---|---|---|
+| sc2 (c2 single 100 MB) | 84.82 ± 0.80 (8) | 85.60 ± 0.89 (8) | 85.04 ± 0.75 (8) | 85.09 ± 0.93 (12) | **TIE** (+0.78 ≈ 1σ s42; +0.05 s7) |
+| sc3 (c3 single 25 MB) | 16.13 ± 0.12 (8) | **16.45 ± 0.20 (8)** | 16.14 ± 0.06 (7) | **16.48 ± 0.12 (10)** | **+0.32/+0.35 ≫ σ_def, BOTH seeds** |
+
+dnf = 0 in all 69 completed runs.
+
+**Mechanism gauge (rep-8 class, s42):** the law is LIVE and does what it
+says — y (young fires) 2739→**0**, supp_law 0→12 386 (sc2) / 1606→0 with
+supp_law 18 404 (sc3) — but total fired only drops 3615→2485 (sc2) /
+2542→1928 (sc3), i.e. −24…−31%, NOT the predicted collapse to ~2× drops:
+the y-class was not one-shot spuriousness but a QUEUE-SUSTAINED RE-FIRE
+LOOP — each retransmit crosses the store-cap standing queue (~110 ms at
+c2 / ~350–500 ms at c3), so the hole stays open past every 9/8×SRTT
+threshold and legitimately re-ripens until the frontier passes. Wire
+truth: sp trims 1.1 MB (sc2) / 0.7 MB (sc3) of wire per object at equal
+drops; at sc3 ~70% of the freed wire converts to goodput, at sc2 it
+vanishes into the BBR-probe/idle margin.
+
+### VERDICT vs the fix pre-registration — predictions (2)+(3) FAIL; NO FLIP
+
+- (1) gauge: PARTIAL (y→0 and supp_law live as predicted; fired does NOT
+  reach ≤2× drops — attribution amended above). (2) sc2 +2…3: **FAILED**
+  (tie both seeds). (3) sc3 +1…1.7: **FAILED** (+0.32/+0.35 — real, ≫σ,
+  consistent, but ~¼ the band; 16.45–16.48 vs the predicted ≥17.0).
+  (4) dnf=0: PASS.
+- **FLIP: NO — `RWM_RECOV_SP` ships DEFAULT OFF**, retained as a measured
+  arm (the only ≫σ singles-goodput lever this session: +0.3–0.4 at sc3 on
+  both seeds, tie at sc2, zero regressions). Per the falsification clause
+  the binder behind the residual is NAMED, not tuned at:
+  **window/inflight coupling** — the over-read-latched 1024 store cap is
+  simultaneously (i) the standing queue that keeps every hole's recovery
+  crossing 100–500 ms (sustaining the re-fire loop the law cannot
+  legally suppress) and (ii) the only thing keeping the wire full through
+  frontier stalls (the sc3-s384 probe: honest-sized window → wire idles
+  12%, goodput 14.8). BBR-class stacks decouple these; our window is
+  both. That decoupling is a NEW pre-registerable build, not this
+  session's.
+
+### Roadmap (named + sized, from the closed accounting)
+
+1. **MTU/payload scaling** (structural): the 1350-floor/1200-payload
+   framing tax is ~4.3 Mbit at c2, ~0.95 at c3 — the single largest c2
+   term. Candidate: scale symbol payload to the MTUD-verified path MTU
+   (keep the 1350 floor as the blackhole defense). Up to +4/+1 Mbit.
+2. **Window/inflight decoupling at lossy singles**: keep the wire fed
+   through frontier stalls WITHOUT retaining a 4–13×BDP un-SACKed span
+   (candidates: retx priority lane ahead of the fresh-symbol queue;
+   honest inflight target + spare-capacity filler). Sized: the remaining
+   reactive-plane overhead above honest retx ≈ 1.5–2 Mbit at c2,
+   ~1.0–1.4 at c3 (post-RECOV_SP residual).
+3. **Sender loss-estimator honesty at singles**: per-path `pl` reads
+   0.000–0.010 at 2.5–4.8% cells ⇒ r* = 0 ⇒ the proactive plane is dead
+   at singles; whether funded proactive r* beats reactive-only at bulk is
+   an open item-11 question (it did NOT bind this session's gap — the
+   waste was reactive).
+
+Ops: lock takes 2026-07-27 ~18:48 (yielded, see incident ii) and
+20:48–21:20 UTC, released after teardown; rp-* netns torn down, no stray
+processes; CRLF converted after each sync; stale binary removed before
+each build; binaries e8a0af12… (diagnosis, e6f0859) / ef6ed448… (battery,
+982b1a0), sha256 + lscpu + kernel in every log header; all logs + 1.4 MB
+per-run diag preserved under `/home/vibe/lossyres/`; seed-7 abort ns
+recorded above; suites on the fix commit: lib 368/368, math 136
+(59/19/22/4/4/3/25), gate_suite 15/15 release, gates-default test pins
+`recov_sp=false`.
+
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
 
 *Decision record: → [ADR-0061](adr/0061-anchor-hygiene.md)*
