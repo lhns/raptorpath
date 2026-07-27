@@ -1,6 +1,6 @@
 # ADR-0066: The Deprecation Register — two-stage retirement for refuted mechanisms
 
-## Status: Accepted (register live 2026-07-21; per-gate dispositions below)
+## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"; FMTCP + streaming remain the live re-test clauses)
 
 **Date**: 2026-07-21
 

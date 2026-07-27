@@ -46,7 +46,11 @@ the code-consolidation pass's biggest simplicity win is not deletion of
 CORE but extraction — the gate block (~4838–8280) reads ~70 env vars
 inline. After the REMOVE list lands, fold the surviving defaults into
 plain code paths (drop the `=1` branches where the `=0` arm is the only
-alternative and is register-retained).
+alternative and is register-retained). **[DONE 2026-07-27 (be878cc):
+src/gates.rs `RuntimeGates`, resolved once per engine start, every gate
+documented with default + ADR pointer; net/mod.rs → 11,510 lines. The
+"fold `=1` branches into plain code" step is NOT taken yet — the `=0`
+opt-out arms are still register-retained A/B controls.]**
 
 ---
 
@@ -67,6 +71,17 @@ alternative and is register-retained).
 ---
 
 ## 3. REMOVE — schedule deletion in the code-consolidation pass
+
+**[EXECUTED 2026-07-27, branch `refactor/consolidation` — goal-gate "Code
+Consolidation (2026-07-27)": SACK_PRUNE 3dcb39c (−108) · RECOV_MP_SERIAL
+ade48ad (−30) · INLINE_REPAIR+FRONTIER* bede4a3 (−290) · RATE_WIRE/RATE_Q
+f1f32c5 (−131) · SRC_BP 8902d24 (−209) · DAPS chain 9b48286 (−1168; the
+shared RsPacket send-interval sampler retained under anchor hygiene) —
+total −1,936 LOC. FMTCP retained per §"FMTCP re-test question" (the
+piggybacked c8-pool arm stands). The consolidation note's extraction also
+landed: the gate block → src/gates.rs `RuntimeGates` (be878cc),
+net/mod.rs 12,696 → 11,510 lines. Identity smoke green (sc2 ~85, c7
+163–169, both known classes).]**
 
 Register rows with no re-test owed, plus vision-based removals. Work-list
 with code surface (from the 2026-07-21 survey; sizes are clean-removal
@@ -89,6 +104,11 @@ arms whose parent chains are all above; audit each in-pass and delete
 where the only consumer is a REMOVE entry.
 
 ### The DAPS re-test question — recommendation: REMOVE without further VM time
+
+**[ACCEPTED + EXECUTED 2026-07-27: commit 9b48286; deletion order followed
+(gate block first, then non-shared estimator/scheduler remnants; the
+shared-use audit kept source_path_map (live ARQ user) and the whole
+send-interval sampler family).]**
 
 The register formally owes a re-test (refuted with W1/PRE-DIV active).
 Honest argument against spending it:
@@ -120,6 +140,9 @@ with `RWM_GEN_PIPE`/`RWM_PLAIN_RS` (audit `source_path_map` and pacing
 buckets for shared use before deleting).
 
 ### The FMTCP re-test question — recommendation: one piggybacked battery, else REMOVE
+
+**[2026-07-27: NOT deleted, per this recommendation — the c8-pool-session
+piggyback arm remains the disposition; it dies there or earns a record.]**
 
 The register calls FMTCP the strongest re-test case (refuted
 pre-EVERY-wall; its named failure mechanism — recovery over a

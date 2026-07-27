@@ -9853,6 +9853,13 @@ REGIME MAP, and the Full Benchmark Re-Run's throughput rows. The §16.x
 sections are deliberately NOT rewritten: they are the primary record of how
 each wall was found, and the audit trail is the method's proof.
 
+Code status (2026-07-27): the deprecation register's no-re-test rows were
+EXECUTED — the refuted mechanism code (SACK_PRUNE, RECOV_MP_SERIAL,
+INLINE_REPAIR/FRONTIER, RATE_WIRE, SRC_BP, the DAPS chain; ~1.9 kLOC) is
+deleted from the tree; the sections above remain the record. FMTCP and the
+streaming machine keep their re-test clauses (goal-gate "Code Consolidation
+(2026-07-27)"). No regime-map claim changes.
+
 ### 17.9 Competitive Position (2026-07-22) — the shipped default vs QUIC, TCP, MPTCP, measured
 
 The first external verification of this map on the CURRENT shipped
