@@ -9436,6 +9436,53 @@ gap as its target — and gains a sharpened rationale: the very mechanism
 Copa lacks, a BBR-style measured rate model as feed-forward baseline, is
 what would let a δ-priced controller convert the freed pipe.
 
+### 16.28 Emission batching: the c1 lever profiled, built sender-only, and honestly bounded (2026-07-27, `feat/emission-batching`, `RWM_EMIT_BATCH` DEFAULT OFF)
+
+The §17.9 c1 loss (×5.5 vs quinn-BBR's 915 Mbit/s of userspace QUIC on
+the same box) named "emission batching/GSO" as its lever. The
+profile-first pass corrected the mechanism before building: **syscall
+density was NOT the wall** — quinn-udp's GSO transmit path was already
+engaged under the engine (≈7.6 segments/sendmsg; quinn-perf itself runs
+≈10.5 at 922 Mbit/s — the same order per byte), and AEAD is 1.7% noise.
+The sender's core-second goes to PER-SYMBOL control machinery: the
+taper/span derivation (repair rate, A*/Δ, shed budget — recomputed per
+source symbol, ≈15–17%/core with its exp/log), per-ack estimator math
+(the receiver acks every in-order symbol, ~20k WindowAcks/s), and one
+full select!-loop iteration per symbol (τ ≈ 45–50 µs/sym total).
+
+Built (`RWM_EMIT_BATCH`, default OFF; burst `RWM_EMIT_BURST` = 64
+symbols ≈ the 64 KB pacer quantum): pacer-quantum burst TUN intake
+inside the flow-control/pacing contracts (checked per symbol) +
+per-burst taper/span refresh (50 ms staleness bound; the A* anchor
+stays fed per symbol). Scope is measurement-carved: **single-live-path
+only** (dual-path bursting amplified the wall-#8 striping-gap loss
+misread — per-path ε̂ read 0.74 at a 2.6% cell, c7 167→115 — and was
+scoped out; dual cells then measure null, the built-in control) and
+**Realtime excluded** (the per-packet latency path never trades a
+wakeup for a burst). Three receiver-side variants (engine-loop burst
+drain ± per-burst ack coalescing) were built and REFUTED — any drain
+between arrival and ack emission inflates the echo RTT (11→76 ms), the
+echo-RTT-derived store cap grows on it, and the tail-sweep/hole-refresh
+machinery floods spurious retransmits (c1 collapsed to 136–144); the
+code is removed, the mechanism recorded.
+
+Measured (both seeds, ×8 interleaved, dnf 0): **c1 +10–16% with
+disjoint per-run ranges** (def 186.2±9.8 / 190.8±2.6 → eb 216.2±10.7 /
+210.5±4.7) at **−24–27% sender CPU/bit** (1.10 → 0.94 cores); sc2
+−15–20% sender CPU at equal (wire-bound) goodput; c7/c8 null; tail
+crown unregressed (structurally inert in tunnels + measured parity;
+1000/1000 every rep). Syscall density unchanged — the win is CPU, as
+the corrected profile predicted.
+
+**No flip** (the pre-registered c1 ≥ 400 gate failed): the gate ships
+as a measured opt-in. The honest ceiling after this branch: sender
+~24k sym/s/core batched (was ~19.5–20k); **the engine-receiver
+per-message service wall (~22–23k msgs/s ≈ 210–230 Mbit/s per sink,
+receiver pinned at ~1.1 cores in the batched arm) is the measured
+system ceiling** — the named successor, with the refuted drain family
+bounding its solution space: reduce per-message/per-ack work or ack
+density at the protocol level, never by queueing in front of the ack
+clock. Goal-gate "Emission Batching" carries the full tables.
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -9895,7 +9942,12 @@ Honest readings, in both directions:
   0–13% at symmetric dual (kernel MPTCP over BBR subflows is a solved
   aggregator), and by 21–27% at heterogeneous dual — where the shipped
   stack also sits below single-path kernel BBR on the fast path alone.
-  Each loss names a lever: emission batching/GSO (c1), the
+  Each loss names a lever: emission batching/GSO (c1 — **executed
+  2026-07-27, §16.28: sender batching banks +10–16% (c1 210–216, gate
+  `RWM_EMIT_BATCH`, no flip at the pre-registered ≥400 bar); GSO was
+  already engaged and AEAD is noise; the residual c1 binder is the
+  engine-receiver per-message service wall ~22–23k msgs/s ≈ 210–230
+  Mbit/s per sink**), the
   recovery-plane residual (c2/c3 — quinn-BBR's numbers are the measured
   bar for the same pipes), and the c8-aware pool law (now priced at
   ~+20 Mbit by an external referee).

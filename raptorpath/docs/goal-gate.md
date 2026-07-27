@@ -12132,3 +12132,161 @@ quinn-perf syscall reference on the same box; seed-7 topo-abort ns
 recorded; ARMCOUNT per arm; runtimes stated; same-session Σ references.
 
 *(Results below this line were written after the profile/battery ran.)*
+
+### PROFILE (2026-07-27 12:52–13:10 UTC, VM 10.1.5.16, binary b04bc50f… = code be24660; E5-2650 v3 aes+avx2+pclmulqdq; c1 cell, 1.2 GB single-path runs; logs `/home/vibe/embatch/profile-{rp-strace,rp-perf,quinn-strace}.log`)
+
+**Sender flat profile** (perf -F 397 -g, 15 s at ~190 Mbit/s): the
+dominant family is OUR per-symbol/per-ack control math — 28.7%/core:
+`compute_repair_rate` 6.44 + `__ieee754_exp_fma` 6.18 +
+`LossEstimator::record_batch` 5.93 + `predictive_loss_upper` 4.54 +
+`__ieee754_log_fma` 3.39 + `exp` 2.19 (the taper/span block runs the
+whole derivation PER SOURCE SYMBOL; record_batch runs per WindowAck —
+the receiver acks EVERY in-order data symbol, ~20k acks/s). Then:
+`WireMessage::serialize` 3.83, allocator family ~4.7, `memmove` 1.81,
+sender-loop closure 2.51, `handle_control_message` 1.34. **AEAD is
+noise: 1.67%** (aesni 1.33 + ring 0.34 — wall #5 re-confirmed).
+quinn-proto ≈ 2.0 (poll_transmit 0.51, populate_packet 0.42,
+process_payload 0.41, finish_and_track 0.34); kernel entries ~4–5 flat.
+
+**Syscall density — the pre-registered prediction is HALF-REFUTED.**
+strace -c (26.17 s window, throughput held 184 Mbit/s under strace):
+the client makes only ~2 303 UDP sends/s for ~17.6k wire segments/s —
+**quinn-udp's GSO path is ALREADY engaged at ~7.6 segments/sendmsg**
+(veth mean tx packet 9 986 B), and the receive side runs GRO at ~13
+datagrams/recv. The client's syscall profile is futex-dominated (7.2k/s
+waker churn + 1.5k/s epoll), not send-dominated. **quinn-perf reference
+(same box, same c1 topo, `--congestion bbr`, upload): 921.9 Mbit/s
+sustained WITH strace attached, ~8 710 UDP sends/s ≈ 10.5 segments/send
+≈ 73 sends/MB vs rp's ~100 sends/MB — syscall density per byte is the
+SAME ORDER.** The ×5 gap is therefore NOT syscalls; it is per-symbol
+CPU in the engine loop (τ ≈ 45–50 µs/sym of control math + loop
+machinery + store/alloc, serialized). Per the falsification clause the
+mechanism-evidence gate moves from "syscalls/s drop ×10" to CPU/bit +
+throughput with the term named.
+
+### BUILD (what the profile justified — and what it refuted mid-branch)
+
+Shipped under `RWM_EMIT_BATCH` (default OFF; `RWM_EMIT_BURST` default
+64 ≈ the ~64 KB pacer quantum), SENDER-ONLY:
+1. **Pacer-quantum burst TUN intake** — ≤ burst symbols per loop
+   iteration inside the flow-control store headroom (live local
+   counters) and the cc_pace token bucket, checked per symbol; the
+   select! re-arm / tail-deadline scan / SACK-drain / pacing-refresh
+   iteration cost amortizes ×burst and quinn's driver sees a
+   multi-datagram queue.
+2. **Per-burst taper/span refresh** — the 15–17%/core per-symbol
+   derivation (repair rate, A*/Δ span, shed budget) recomputes once per
+   burst with a 50 ms staleness bound; the A* send-rate anchor stays
+   FED per symbol. OFF ⇒ per-symbol recompute, bit-identical.
+Scope, measurement-driven: **single-live-path only** (re-checked per
+iteration) and **Realtime packing excluded**.
+
+**Refuted mid-branch, removed (commits preserve the mechanisms):**
+- *Engine-receiver burst drain* (± per-burst cumulative-ack coalescing,
+  burst 16/64; commits 97bc6ea→8a71ed8): ANY receiver-loop drain
+  collapsed c1 227.6 → 136–144 Mbit/s — echo-RTT inflation 11 → 76 ms
+  (standing queue at the service-limited engine) → dynamic store cap
+  growth (positive feedback) → tail-sweep/hole-refresh spurious-retx
+  flood (retx ×3–6, paused 60%+, receiver CPU +80%). Isolation arms:
+  sender-only 227.6; +drain 137.2; +drain−ack-coalesce 136.1 (CPUSRV
+  66.4 s); burst=16 136.5. Removed (1313841).
+- *Dual-path bursting* (battery rep 1, s42): c7 167 → 115, c8 88 → 52 —
+  longer same-path arrival runs amplify the wall-#8 striping-gap loss
+  misread (global batch serials): per-path `pl` read **0.74** at a
+  2.6%-loss cell, tail recovery stretched ~4 s. Scoped out (c639d56);
+  dual cells become the battery's null control. Aborted partial
+  preserved (`battery-s42-ABORTED-burst64-dual.log`).
+
+Unit tests: `emit_batch_loopback` (burst=8, many burst boundaries —
+completion IS the no-symbol-loss check), gates default test. Lib suite
+364/364.
+
+### L1 BATTERY (VM 10.1.5.16; seeds 42 + 7 ×8, arms interleaved default ↔ `RWM_EMIT_BATCH=1` per rep, fresh topology per invocation, 1 run/invocation; RWM_GEN=0 RWM_DIAG=1; liveness echo asserted per arm; s42 binary 73276eca (pre dates the realtime-exclusion/staleness commits — bulk path logically identical; equivalence spot on the final binary, same seed/cell: def 201.4 / eb 225.7), s7 + tails binary 3fc50648 = 2367a51; s42 14:52–15:33 UTC (41 min), s7 16:04–16:21 (17 min, retry-hardened driver after a busy-collision abort — first s7 attempt preserved as `battery-s7-ABORTED-busycollisions.log`); logs `/home/vibe/embatch/battery-s{42,7}.log` + per-run diag)
+
+Goodput (Mbit/s, mean ± σ_s (n); Δ = eb − def):
+
+| cell | arm def (s42) | arm eb (s42) | def (s7) | eb (s7) | verdict |
+|---|---|---|---|---|---|
+| **c1 single 400 MB** | 186.2 ± 9.8 (8) | **216.2 ± 10.7 (8)** | 190.8 ± 2.6 (8) | **210.5 ± 4.7 (8)** | **+16.1% / +10.3%, Δ ≫ σ_s — per-run RANGES DISJOINT both seeds** (s42: 172.6–200.4 vs 201.4–237.6; s7: 186.6–194.1 vs 203.7–215.1) |
+| sc2 single 100 MB | 85.10 ± 0.72 (8) | 85.04 ± 0.63 (8) | 84.04 ± 1.04 (7) | 85.13 ± 0.51 (8) | HOLD (wire-bound; Δ inside σ) |
+| c7 dual 200 MB | 163.4 ± 3.2 (8) | 165.6 ± 2.9 (8) | 165.7 ± 2.6 (8) | 167.8 ± 2.4 (7) | HOLD (null control — emission path bit-identical at N=2 by scope) |
+| c8 dual 25 MB | 67.3 ± 15.0 (8) | 74.2 ± 9.9 (8) | 80.1 ± 10.5 (8) | 80.2 ± 7.0 (8) | HOLD (Δ inside the cell's historic bimodal σ) |
+
+**dnf = 0 in all 126 captured runs.** Seed-7 caveat class: 28 RUN-RETRY
+(recovered), 2 RUN-LOST after 3 attempts (sc2-def r7, c7-eb r7 — n=7
+quoted; the two stale-log liveness artifacts on those lost runs are
+explained by the RUN-LOST lines, zero contamination among captured runs).
+
+**CPU (mean s/invocation; the mechanism evidence per the corrected
+profile verdict):**
+
+| cell | CPUCLI def→eb (s42) | (s7) | CPUSRV def→eb (s42) | (s7) |
+|---|---|---|---|---|
+| c1 | 18.99 → **13.85** (−27%) | 17.93 → **13.54** (−24%) | 18.44 → 16.36 | 17.87 → 16.59 |
+| sc2 | 6.33 → **5.40** (−15%) | 6.04 → **4.86** (−20%) | 7.41 → 7.60 | 6.91 → 6.98 |
+
+Sender cores at c1: 1.10 → 0.94 at +16% throughput (−27% CPU/bit).
+Receiver cores: 1.07 → **1.10–1.12 — SATURATED in the eb arm: the
+engine-receiver service wall (~22–23k msgs/s ≈ 210–230 Mbit/s, §16.23's
+recv-side wall) is the measured residual binder.** sc2: −15–20% sender
+CPU at equal goodput (an efficiency win even where the wire binds).
+Syscall density (in-battery 5 s samples, c1): def ~3.1–3.3k UDP
+sends/s, eb ~3.8–4.1k at +16% throughput — sends/MB EQUAL, as the
+corrected profile predicted (GSO already amortizes; the win is CPU).
+
+**Tail spot (crown gate; tail_matrix c2 ×4, seed 42, both arms):**
+p99 medians def {realtime 36/40 ms, tunnel-bulk 68/67} vs eb {36/39,
+73/67}; **1000/1000 delivered in every rep, both arms.** Batching is
+structurally inert in the tunnels (Realtime excluded by code;
+tunnel-bulk rides the block sender — zero batching echoes in the arm
+logs), so the single 192.6 ms rep (eb realtime-1200B r3, vs def max
+77 ms this spot / historic worst-rep 164 ms) occurred on
+code-identical paths = session noise, recorded. **Crown UNREGRESSED.**
+
+### VERDICT vs the pre-registration
+
+1. **Profile prediction (c)1 — half-refuted, honestly:** the dominant
+   term IS amortizable per-send overhead, but it is control math + loop
+   machinery, NOT syscall density (quinn-udp GSO was already engaged at
+   7.6 segs/send; quinn's own density is the same order per byte). AEAD
+   irreducibility refuted again (1.67%).
+2. **c1 ≥ 400 Mbit/s — FAILED.** Measured: +10–16% both seeds with
+   disjoint ranges (186–191 → 210–216). The falsification clause
+   governs: the residual binder is NAMED AND MEASURED — the
+   engine-receiver per-message service wall (~1.1 cores at ~22–23k
+   msgs/s). Receiver-side batching was attempted in three variants and
+   REFUTED with the mechanism identified (the drain destabilizes the
+   ack clock: queue-delay → echo-RTT-derived store cap → spurious-retx
+   spiral) — the receiver wall is not select-overhead; it is
+   per-message work (estimator math, per-ack processing, locks,
+   per-symbol WindowAck emission) coupled to the sender's control laws.
+3. sc2/c7/c8 unregressed — as predicted (c7/c8 by construction after
+   the dual-scope refutation; measured null).
+4. Realtime tails unregressed; 5. dnf = 0 — both PASS.
+
+**FLIP DECISION: NO FLIP — `RWM_EMIT_BATCH` ships DEFAULT OFF.** The
+pre-registered flip rule gates on c1 ≥ 400; the measured lever is
++10–16% c1 at −25% sender CPU/bit with zero regressions — a documented,
+gated opt-in, not a default. The honest per-core ceiling after this
+branch: **sender ~24k sym/s/core batched (was ~19.5–20k); receiver
+~22–23k msgs/s/core UNCHANGED = the system ceiling ≈ 210–230 Mbit/s
+per sink.** The external bar stays quinn-bbr 915–922 on this box
+(×4.3 of the batched ceiling). SUCCESSOR lever (named, NOT built): the
+receiver per-message service cost — its profile terms are on record
+(§16.23 receiver flat: estimator ~14%, allocator ~6%, deserialize 3%,
+per-symbol ack generation ~20k control datagrams/s) and the refuted
+drain family bounds the solution space: any fix must reduce
+PER-MESSAGE work (or ack density) WITHOUT adding queueing between
+arrival and ack emission — e.g. cheaper per-ack estimator math, ack
+thinning at the PROTOCOL level (sender-negotiated, so the store law
+sees honest RTT), or moving delivery off the ack path. A future
+re-ask rides a fresh pre-registration.
+
+Ops: lock `/tmp/rwm-vm.lock` held 12:35 → released 16:41 UTC (one
+crash-resume mid-session, lock refreshed 15:38; the s42 battery had
+completed before the crash — nothing re-run); tree synced per
+discipline 10 (CRLF converted); stale binaries removed before every
+build; binaries: profile b04bc50f…, s42 battery 73276eca…, final
+3fc50648… (sha256 in every log header); rp-* netns only, cleaned; all
+logs + perf data preserved under `/home/vibe/embatch/`; foreground
+polling only; the parallel c8-pool worker's tree untouched.
