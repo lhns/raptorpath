@@ -22,6 +22,13 @@ source ./lib.sh
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 CELL="${1:-c2}"; REPS="${2:-5}"
 SEED="${SEED:-42}"
+# meas/streaming-retirement (crown re-test) harness glue: message rate,
+# stream duration and size list are overridable so the L2-era stream_bench
+# shape (50 msg/s x 30 s, 1200 B) is reproducible through the SAME matrix
+# machinery. Defaults = the historic tail_matrix shape, byte-identical.
+TM_RATE="${RWM_TM_RATE:-50}"; TM_DUR="${RWM_TM_DUR:-20}"
+TM_SIZES="${RWM_TM_SIZES:-400 1200}"
+TM_TMO=$((TM_DUR + 10))
 
 hard_cleanup() {
     pkill -x raptorpath 2>/dev/null || true
@@ -33,6 +40,7 @@ trap hard_cleanup EXIT
 
 run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream measurements
     local hint="$1" size="$2" label="${3:-$1}" armenv="${4:-}" armflags="${5:-}"
+    echo "ARMENV $label ${size}B: hint=$hint env='${armenv:-<unset>}' flags='${armflags:-}' rate=$TM_RATE dur=$TM_DUR"
     hard_cleanup; sleep 0.5
     # Discipline item 7: lib.sh forces set -e — a transient topo bringup
     # failure must fail THIS arm loudly (the ping probe below catches it),
@@ -66,29 +74,31 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     local p99s=() p50s=()
     for r in $(seq 1 "$REPS"); do
         : > /tmp/tm-srv.log
-        ip netns exec "$NS_SRV" timeout 30 python3 ./transfer_bench.py stream-server \
+        ip netns exec "$NS_SRV" timeout "$TM_TMO" python3 ./transfer_bench.py stream-server \
             --bind 10.99.0.2 --port 9910 >/tmp/tm-srv.log 2>&1 &
         local spid=$!
         sleep 0.5
-        timeout 30 ip netns exec "$NS_CLI" python3 ./transfer_bench.py stream-client \
-            --host 10.99.0.2 --port 9910 --rate 50 --duration 20 --size "$size" \
+        timeout "$TM_TMO" ip netns exec "$NS_CLI" python3 ./transfer_bench.py stream-client \
+            --host 10.99.0.2 --port 9910 --rate "$TM_RATE" --duration "$TM_DUR" --size "$size" \
             >/dev/null 2>&1 || true
         wait $spid 2>/dev/null || true
-        local p99 p50
+        local p99 p50 sline
         # no-summary-safe under lib.sh's set -e (a timed-out rep must be a
         # skipped datum, not a matrix kill)
-        p99=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
-              | sed -n 's/.*"p99_ms": \([0-9.]*\).*/\1/p')
-        p50=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
-              | sed -n 's/.*"p50_ms": \([0-9.]*\).*/\1/p')
+        sline=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1)
+        p99=$(echo "$sline" | sed -n 's/.*"p99_ms": \([0-9.]*\).*/\1/p')
+        p50=$(echo "$sline" | sed -n 's/.*"p50_ms": \([0-9.]*\).*/\1/p')
         # goal-gate "Unified Shedding": delivered count per rep (the ρ story
-        # — shedding must stay within the 1−ρ class; 1000 msgs sent/rep).
-        local cnt
-        cnt=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1 \
-              | sed -n 's/.*"count": \([0-9]*\).*/\1/p')
+        # — shedding must stay within the 1−ρ class; rate*dur msgs sent/rep).
+        # Crown re-test glue: p999/max scraped too (the L2-era record's p99.9
+        # metric — gated on the 30-s shape, free everywhere else).
+        local cnt p999 pmax
+        cnt=$(echo "$sline" | sed -n 's/.*"count": \([0-9]*\).*/\1/p')
+        p999=$(echo "$sline" | sed -n 's/.*"p999_ms": \([0-9.]*\).*/\1/p')
+        pmax=$(echo "$sline" | sed -n 's/.*"max_ms": \([0-9.]*\).*/\1/p')
         if [[ -n "$p99" ]]; then
             p99s+=("$p99"); p50s+=("${p50:-nan}")
-            echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms n=${cnt:-?}"
+            echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms p999=${p999:-?}ms max=${pmax:-?}ms n=${cnt:-?}"
         fi
     done
     # feat/anchor-hygiene: A* trajectory + witness gauges (RWM_DIAG-gated
@@ -113,8 +123,9 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
 }
 
 if [[ -n "${RWM_TM_ARMS:-}" ]]; then
-    echo "=== tail matrix (task #61 flip-gate) @ $CELL seed=$SEED arms='$RWM_TM_ARMS', $REPS reps/arm (warm tunnel), 50msg/s x20s $(date +%T)"
+    echo "=== tail matrix (task #61 flip-gate) @ $CELL seed=$SEED arms='$RWM_TM_ARMS', $REPS reps/arm (warm tunnel), ${TM_RATE}msg/s x${TM_DUR}s sizes='$TM_SIZES' $(date +%T)"
     for arm in $RWM_TM_ARMS; do
+        AHINT="realtime"
         case "$arm" in
             # meas/competitive-baseline: `ship` = env fully unset = whatever the
             # binary's CURRENT defaults are (post-unified-flip: the unified
@@ -138,11 +149,20 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # default flip).
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
+            # meas/streaming-retirement (crown re-test): on a POST-FLIP binary
+            # env-empty is the unified machine, so the streaming two-layer code
+            # needs the explicit legacy opt-out. `streaming` = RWM_UNIFIED=0 +
+            # Realtime hint (echo: "Realtime mode: auto-selecting streaming
+            # backend"). The bulk sanity arms pin the block pipeline's
+            # streaming-inertness under the same A/B env.
+            streaming)  AENV="RWM_UNIFIED=0"; AFLAGS="" ;;
+            bulkship)   AENV="";              AFLAGS=""; AHINT="bulk" ;;
+            bulkstream) AENV="RWM_UNIFIED=0"; AFLAGS=""; AHINT="bulk" ;;
             *) echo "unknown arm '$arm'" >&2; continue ;;
         esac
-        for size in 400 1200; do
+        for size in $TM_SIZES; do
             echo "--- $arm ${size}B start=$(date +%T)"
-            run_arm realtime "$size" "$arm" "$AENV" "$AFLAGS"
+            run_arm "$AHINT" "$size" "$arm" "$AENV" "$AFLAGS"
         done
     done
     echo "=== done $(date +%T)"
