@@ -214,6 +214,16 @@ pub struct RuntimeGates {
     /// `RWM_RECOV_MP_LAW` (default ON under the umbrella): the per-flight
     /// hole-law sub-gate (trace attribution).
     pub recov_mp_law: bool,
+    /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
+    /// Residual"): SINGLE-path per-flight time-threshold suppression — the
+    /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
+    /// §6.1.1 packet channel is excluded at N = 1 by measurement: netem
+    /// jitter reorders tens of packets deep on one path, far past
+    /// kPacketThreshold). Measured without it (2026-07-27 diagnosis): the
+    /// singles reactive plane fires ×4.4–5.7 the realized loss (sc2-100M:
+    /// 3313 fired vs ~580 drops, 80% younger than the law's own threshold),
+    /// costing ~2.7 Mbit at sc2 / ~1.7 at sc3 of pure wire waste.
+    pub recov_sp: bool,
 
     // ── Instruments (ADR-0052; no behavior) ───────────────────────────────
     /// `RWM_DIAG` (default OFF): the transport-ceiling / recovery-plane DIAG.
@@ -309,6 +319,7 @@ impl RuntimeGates {
                 .clamp(2, 512),
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
+            recov_sp: env_flag("RWM_RECOV_SP", false),
             diag: env_flag("RWM_DIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
             fdiag: env_flag("RWM_FDIAG", false),
@@ -336,6 +347,7 @@ mod tests {
         assert!(g.astar_anchor && g.mstar_anchor);
         assert!(g.store_sack_release && g.store_paths);
         assert!(g.recov_mp && g.recov_mp_law);
+        assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // Experiments / instruments (default OFF)
         assert!(!g.fmtcp && !g.store_percap && !g.store_borrow && !g.plain_rs);
