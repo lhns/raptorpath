@@ -249,20 +249,21 @@ const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 //     the moment its flight clock expires. N = 1 live path keeps the legacy
 //     gates bit-exactly (single-path gaps are FIFO-real; sc2/sc3 inert).
 //
-// (2) The loss serials. `batch_seq` is a GLOBAL counter, but the receiver's
-//     per-path `PathBatchTracker` estimates expected symbols from batch_seq
-//     GAPS — so under striping every path-switch reads the other path's run
-//     as loss, the per-path loss estimators saturate, and everything keyed
-//     on loss (proactive repair_debt, P_lost retransmits, NACK budgets,
-//     phantom in-flight release) over-emits. Fix: per-path batch serial
-//     namespaces in plain window mode (the multipath-QUIC per-path
-//     packet-number-space pattern) — each path's batch stream is sequential,
-//     so per-path gap = per-path loss, honestly.
+// (2) The loss serials, DIAGNOSED and left global. `batch_seq` is a GLOBAL
+//     counter, but the receiver's per-path `PathBatchTracker` estimates
+//     expected symbols from batch_seq GAPS — so under striping every
+//     path-switch reads the other path's run as loss and the per-path loss
+//     estimators saturate. The per-path serial-namespace fix
+//     (`RWM_RECOV_MP_SERIAL`) was diagnostically TRUE but runtime-REFUTED on
+//     the post-wall substrate (honest signal re-heats every SRTT/loss-scaled
+//     recovery cadence the poisoned values were accidentally damping; sender
+//     CPU ×2.4, dual-c1 181→134 — goal-gate "Multipath Recovery Suppression"
+//     2026-07-21) and REMOVED 2026-07-27 per the DEPRECATION REGISTER (no
+//     re-test owed: refuted ON the clean substrate). A cheaper serial-
+//     namespace implementation is a NEW pre-registered build, not a revival.
 //
-// Sub-gates for trace attribution: `RWM_RECOV_MP_LAW` (default ON under the
-// umbrella) gates (1); `RWM_RECOV_MP_SERIAL` (default OFF — L1 measured the
-// honest signal re-heating every SRTT/loss-scaled cadence, a net regression;
-// see the declaration site) gates (2).
+// Sub-gate for trace attribution: `RWM_RECOV_MP_LAW` (default ON under the
+// umbrella) gates (1).
 
 /// RFC 9002 §6.1.2 time threshold for the flight path: kTimeThreshold (9/8)
 /// × max of the two smoothed RTT clocks available for the path (Copa EWMA
@@ -6012,42 +6013,23 @@ async fn run_window_sender(
     // neutral within sigma everywhere else. `=0` is the legacy global-clock
     // opt-out arm. Plain window reliable mode only — generation mode has no
     // per-seq ARQ to suppress).
-    // Sub-gates for trace attribution: _LAW (per-flight hole law, default ON
-    // under the umbrella), _SERIAL (per-path batch serial namespaces,
-    // default OFF — see below).
+    // Sub-gate for trace attribution: _LAW (per-flight hole law, default ON
+    // under the umbrella). The _SERIAL per-path batch-namespace arm was
+    // REMOVED 2026-07-27 (register: refuted on the clean substrate, ×2.4
+    // sender CPU — see the module-header design note (2)).
     let recov_mp =
         crate::config::env_flag("RWM_RECOV_MP", true) && reliable && !generation;
     let recov_mp_law = recov_mp && crate::config::env_flag("RWM_RECOV_MP_LAW", true);
-    // The serial namespaces are DIAGNOSTICALLY true (the per-path loss
-    // estimates are provably poisoned by global serials under striping —
-    // the pl= gauge) but the honest signal re-heats every SRTT/loss-scaled
-    // recovery cadence (hole-refresh clamp, retransmit cooldown floor,
-    // NACK congestion backoff) that the poisoned values were accidentally
-    // damping: L1-MEASURED net regression (dual-c1 181→134, sender CPU
-    // ×2.4). Default OFF — the umbrella ships the LAW only; the honest-
-    // signal cadence re-derivation is the named follow-up.
-    let recov_mp_serial =
-        recov_mp
-            && crate::config::deprecated_env_flag(
-                "RWM_RECOV_MP_SERIAL",
-                false,
-                "Multipath Recovery Suppression (2026-07-21) — diagnosis vindicated, runtime refuted (sender CPU ×2.4) on the POST-wall substrate; no re-test owed",
-            );
     if recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
             law = recov_mp_law,
-            serial = recov_mp_serial,
             "multipath recovery suppression ACTIVE (RWM_RECOV_MP: \
              per-flight RFC9002-style time-threshold hole law on the flight \
-             path's smoothed clocks + per-path batch serial namespaces; \
+             path's smoothed clocks; \
              N=1 live path keeps legacy gates bit-exactly)"
         );
     }
-    // Per-path batch serial counters (recov_mp_serial). The GLOBAL
-    // batch_counter stays the source of serials when off (bit-exact).
-    let mut mp_batch_ctr: std::collections::HashMap<u32, u64> =
-        std::collections::HashMap::new();
     // Per-path delivered-seq evidence for the RFC 9002 §6.1.1 packet
     // threshold (recov_mp_law): sorted, appended monotonically from each gap
     // report's implied delivered intervals (each seq ingested at most once —
@@ -6056,18 +6038,6 @@ async fn run_window_sender(
     let mut mp_delivered: std::collections::HashMap<u32, Vec<u64>> =
         std::collections::HashMap::new();
     let mut mp_evid_max: u64 = 0;
-    macro_rules! mp_batch_seq {
-        ($path:expr) => {{
-            if recov_mp_serial {
-                let e = mp_batch_ctr.entry($path).or_insert(0u64);
-                let v = *e;
-                *e += 1;
-                v
-            } else {
-                batch_counter.fetch_add(1, Ordering::Relaxed)
-            }
-        }};
-    }
     // DIAG (RWM_DIAG): the recovery-plane trace counters — gap-report volume,
     // per-cause suppression, fired-retransmit age attribution (young = the
     // law's spurious class), per-flight-path and per-retx-path emission, and
@@ -6293,7 +6263,7 @@ async fn run_window_sender(
                 } else {
                     wire_sym.clone()
                 };
-                let batch_seq = mp_batch_seq!(source_path);
+                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let batch = SymbolBatch {
                     symbols: vec![on_wire],
                     send_timestamp_us: now_us(),
@@ -6369,7 +6339,7 @@ async fn run_window_sender(
                         inline_debt -= 1.0;
                         // Proactive (no round-trip) — counts toward the pfrac.
                         proactive_coded_total += 1;
-                        let batch_seq = mp_batch_seq!(path);
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
                             send_timestamp_us: now_us(),
@@ -6462,7 +6432,7 @@ async fn run_window_sender(
                     sched.redundant_source_path(source_path)
                 };
                 if let Some(alt) = alt_path {
-                    let batch_seq = mp_batch_seq!(alt);
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
                         symbols: vec![wire_sym],
                         send_timestamp_us: now_us(),
@@ -6793,7 +6763,7 @@ async fn run_window_sender(
                             select_repair_path(&sched, source_path)
                         }
                     };
-                    let batch_seq = mp_batch_seq!(correction_path);
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
                         symbols: vec![correction_sym],
                         send_timestamp_us: now_us(),
@@ -6874,7 +6844,7 @@ async fn run_window_sender(
                                 source_path
                             }
                         };
-                        let batch_seq = mp_batch_seq!(fpath);
+                        let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                         let batch = SymbolBatch {
                             symbols: vec![sym],
                             send_timestamp_us: now_us(),
@@ -9064,7 +9034,7 @@ async fn run_window_sender(
                         *mpd_fired_on.entry(nack_path).or_insert(0) += 1;
                     }
 
-                    let batch_seq = mp_batch_seq!(nack_path);
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
                         symbols: vec![sym],
                         send_timestamp_us: now_us(),
@@ -9127,7 +9097,7 @@ async fn run_window_sender(
                         break;
                     }
                     let repair_sym = encoder.generate_repair();
-                    let batch_seq = mp_batch_seq!(margin_path);
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch {
                         symbols: vec![repair_sym],
                         send_timestamp_us: now_us(),
