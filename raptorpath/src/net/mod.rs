@@ -5676,7 +5676,17 @@ async fn run_window_sender(
     // OFF ⇒ per-symbol recompute, bit-identical shipped path. Plain
     // window-reliable mode only (generation/coded emission has its own
     // paced block; realtime packing keeps its per-packet latency path).
+    // SINGLE-LIVE-PATH ONLY (measured, 2026-07-27 battery rep 1): the
+    // emission service wall is a c1-class single-path binder (§16.23);
+    // dual cells are wire/recovery-bound and bursting there AMPLIFIES the
+    // wall-#8 striping-gap loss misread (global batch serials + longer
+    // same-path arrival runs → per-path pl read up to 0.74 at a 2.6%-loss
+    // cell, tail-recovery stretch: c7 167→115, c8 87→52). With N ≥ 2 live
+    // paths the emission path stays bit-identical (`emit_batch_live`
+    // re-checked per loop iteration — path flaps re-scope within one
+    // burst).
     let emit_batch_on = gates.emit_batch && reliable && !coded_wire;
+    let mut emit_batch_live = false;
     let emit_burst: usize = gates.emit_burst;
     if emit_batch_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
@@ -5980,7 +5990,7 @@ async fn run_window_sender(
             if !generation && encoder.window_size() > 1 {
                 // RWM_EMIT_BATCH: the derived taper/span math refreshes at
                 // burst granularity; per-symbol (bit-identical) when OFF.
-                let taper_recompute = !emit_batch_on
+                let taper_recompute = !emit_batch_live
                     || taper_cache.is_none()
                     || taper_cache_syms >= emit_burst;
                 let (repair_rate, span_params) = if !taper_recompute {
@@ -6462,6 +6472,13 @@ async fn run_window_sender(
                     }
                 }
             }
+        }
+
+        // RWM_EMIT_BATCH scope check (see the gate decl): batching engages
+        // only while exactly ONE path is live; re-checked every iteration so
+        // path flaps re-scope within one burst. Gate-off pays nothing.
+        if emit_batch_on {
+            emit_batch_live = scheduler.lock().live_paths().len() == 1;
         }
 
         // Determine if packer has pending data for flush timer
@@ -7949,7 +7966,7 @@ async fn run_window_sender(
                 // pooled store backstop from the LIVE local counters (the
                 // macro updates sent_store/sack_released), and the cc_pace
                 // token bucket. Burst quantum ≤ emit_burst ≈ 64 KB.
-                if emit_batch_on {
+                if emit_batch_live {
                     let mut burst = 1usize;
                     while burst < emit_burst {
                         if reliable
