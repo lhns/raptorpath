@@ -37,7 +37,6 @@ fn trial(
         FecBackend::RaptorQ => num_repair.max(num_source),
         FecBackend::ReedSolomon => num_repair.max(num_source),
         FecBackend::Rlc => num_repair.max(num_source),
-        FecBackend::Streaming => num_repair.max(num_source),
     };
     let params = make_params(num_source, actual_repair, 0);
 

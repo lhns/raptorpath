@@ -13,7 +13,6 @@ raptorpath-math = { path = "../raptorpath-math" }
 raptorq = "2"
 mettle = { path = "../mettle" }
 gf256 = { path = "../gf256" }
-streaming-codes = { path = "../streaming-codes" }
 reed-solomon-erasure = "6"
 
 # Async runtime

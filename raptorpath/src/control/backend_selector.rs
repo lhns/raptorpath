@@ -122,12 +122,10 @@ impl BackendSelector {
         }
     }
 
-    /// Select best window-mode backend (only window-capable: RLC, Mettle, Streaming).
-    fn select_window_backend(&self, loss: f64, estimator: &LossEstimator) -> FecBackend {
-        let ge = estimator.ge_estimator();
-        if ge.is_valid() && ge.mean_burst_length() > 3.0 {
-            return FecBackend::Streaming;
-        }
+    /// Select best window-mode backend (only window-capable: RLC, Mettle).
+    /// (The burst-length → Streaming branch died with the streaming machine's
+    /// retirement, 2026-07-28 — this module is reference-only anyway.)
+    fn select_window_backend(&self, loss: f64, _estimator: &LossEstimator) -> FecBackend {
         if loss < self.threshold_low {
             FecBackend::Rlc
         } else {
@@ -276,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_window_mode_high_loss_selects_mettle_or_streaming() {
+    fn test_window_mode_high_loss_selects_mettle() {
         let mut sel = BackendSelector::new(
             FecBackend::Rlc,
             None,
@@ -290,11 +288,6 @@ mod tests {
         sel.evaluate(&est);
         sel.evaluate(&est);
         let result = sel.evaluate(&est);
-        // GE estimator may detect burst patterns → Streaming, otherwise → Mettle
-        assert!(
-            result == Some(FecBackend::Mettle) || result == Some(FecBackend::Streaming),
-            "expected Mettle or Streaming, got {:?}",
-            result
-        );
+        assert_eq!(result, Some(FecBackend::Mettle));
     }
 }

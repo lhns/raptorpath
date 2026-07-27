@@ -101,7 +101,7 @@ struct RunArgs {
     #[arg(long)]
     pin_cert: Option<String>,
 
-    /// FEC backend: raptorq (default), mettle, rs, rlc, or streaming
+    /// FEC backend: raptorq (default), mettle, rs, or rlc
     #[arg(long)]
     fec_backend: Option<String>,
 

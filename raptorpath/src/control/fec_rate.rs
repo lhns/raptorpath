@@ -84,7 +84,7 @@ pub struct FecRateController {
     max_overhead: f64,
     /// Codec decode overhead factor (raw, before P(decoder_invoked) weighting)
     rq_overhead: f64,
-    /// Protocol hint (stored for streaming params and diagnostics)
+    /// Protocol hint (stored for diagnostics)
     hint: ProtocolHint,
     /// Symbol size in bytes (needed to compute T = RTT × throughput / symbol_size)
     symbol_size: u16,
@@ -167,7 +167,6 @@ impl FecRateController {
             FecBackend::Mettle => 0.15,
             FecBackend::ReedSolomon => 0.0,
             FecBackend::Rlc => 0.004,
-            FecBackend::Streaming => 0.0,
         };
 
         // Protocol hint maps to target_tail_loss, not an additive offset.
@@ -372,27 +371,6 @@ impl FecRateController {
         rate.min(spare_capacity.max(0.0))
     }
 
-    /// Compute streaming code parameters from the current loss estimator.
-    pub fn compute_streaming_params(
-        &self,
-        estimator: &LossEstimator,
-    ) -> crate::fec::StreamingParams {
-        let ge = estimator.ge_estimator();
-        let burst_length = if ge.is_valid() {
-            ge.mean_burst_length().max(1.0)
-        } else {
-            2.0
-        };
-
-        let loss_rate = estimator.predictive_loss_upper(0.95);
-
-        // BOCD quantile already provides the uncertainty margin.
-        // No per-hint safety factor needed.
-        let safety = 1.0;
-
-        crate::fec::StreamingParams::from_channel(burst_length, loss_rate, safety)
-    }
-
     /// Update the codec overhead for a new backend (used during runtime switching).
     pub fn update_backend(&mut self, backend: FecBackend) {
         self.rq_overhead = match backend {
@@ -400,7 +378,6 @@ impl FecRateController {
             FecBackend::Mettle => 0.15,
             FecBackend::ReedSolomon => 0.0,
             FecBackend::Rlc => 0.004,
-            FecBackend::Streaming => 0.0,
         };
     }
 

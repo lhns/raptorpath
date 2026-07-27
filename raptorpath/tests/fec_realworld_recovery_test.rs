@@ -6,7 +6,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::fec::{
     EncodingParams, FecBackend, FecEncoder, MettleWindowDecoder, MettleWindowEncoder,
-    RlcWindowDecoder, RlcWindowEncoder, StreamingDecoder, StreamingEncoder, StreamingParams,
+    RlcWindowDecoder, RlcWindowEncoder,
     WindowDecoder, WindowEncoder, WireSymbol,
 };
 use std::collections::BTreeSet;
@@ -428,83 +428,6 @@ fn window_recovery_mettle(scenario: &Scenario) -> f64 {
     }
 }
 
-fn window_recovery_streaming(scenario: &Scenario) -> f64 {
-    let num_symbols = 500usize;
-    let mut total_lost = 0usize;
-    let mut total_recovered = 0usize;
-
-    let mean_burst = 1.0 / scenario.channel.p_bg.max(0.01);
-    let sparams = StreamingParams::from_channel(mean_burst, scenario.stationary_loss, 1.15);
-
-    for seed in 0..NUM_TRIALS {
-        let mut encoder = StreamingEncoder::new(SYMBOL_SIZE, sparams);
-        let packet_data: Vec<Vec<u8>> = (0..num_symbols)
-            .map(|i| vec![(i % 256) as u8; 1000])
-            .collect();
-
-        let mut all_syms: Vec<(bool, WireSymbol)> = Vec::new();
-        for pkt in &packet_data {
-            let src = encoder.add_source(pkt);
-            all_syms.push((false, src));
-            // Interleave repairs
-            let total_rate = sparams.total_rate();
-            if total_rate > 0.0 {
-                let repairs_per_source = total_rate.ceil() as usize;
-                for _ in 0..repairs_per_source {
-                    all_syms.push((true, encoder.generate_repair()));
-                }
-            }
-        }
-
-        // Separate sources and repairs for channel application
-        let source_indices: Vec<usize> = all_syms
-            .iter()
-            .enumerate()
-            .filter(|(_, (is_repair, _))| !is_repair)
-            .map(|(i, _)| i)
-            .collect();
-        let sources: Vec<WireSymbol> = source_indices
-            .iter()
-            .map(|&i| all_syms[i].1.clone())
-            .collect();
-        let repairs: Vec<WireSymbol> = all_syms
-            .iter()
-            .filter(|(is_repair, _)| *is_repair)
-            .map(|(_, sym)| sym.clone())
-            .collect();
-
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let (surviving, dropped) = scenario.channel.apply(&sources, &mut rng);
-
-        let mut decoder = StreamingDecoder::new(SYMBOL_SIZE, sparams);
-        let mut recovered_seqs = BTreeSet::new();
-
-        for sym in &surviving {
-            for (seq, _) in decoder.add_symbol(sym) {
-                recovered_seqs.insert(seq);
-            }
-        }
-        for sym in &repairs {
-            for (seq, _) in decoder.add_symbol(sym) {
-                recovered_seqs.insert(seq);
-            }
-        }
-
-        let lost_seqs: BTreeSet<u64> = dropped.iter().map(|&i| i as u64).collect();
-        total_lost += lost_seqs.len();
-        total_recovered += lost_seqs
-            .iter()
-            .filter(|s| recovered_seqs.contains(s))
-            .count();
-    }
-
-    if total_lost == 0 {
-        100.0
-    } else {
-        total_recovered as f64 / total_lost as f64 * 100.0
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Cross-pipeline comparison: block backends on streaming data
 // ---------------------------------------------------------------------------
@@ -831,16 +754,6 @@ fn fec_realworld_recovery_comparison() {
             "METTLE Window", rates[0], rates[1], rates[2], rates[3]
         );
     }
-    {
-        let rates: Vec<f64> = scenarios
-            .iter()
-            .map(|s| window_recovery_streaming(s))
-            .collect();
-        println!(
-            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            "Streaming", rates[0], rates[1], rates[2], rates[3]
-        );
-    }
 
     // Part 3: Cross-pipeline comparison
     let cross_k = 50u32; // block size for cross-pipeline
@@ -962,16 +875,6 @@ fn fec_realworld_recovery_comparison() {
         println!(
             "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
             "METTLE Window", rates[0], rates[1], rates[2], rates[3]
-        );
-    }
-    {
-        let rates: Vec<f64> = scenarios
-            .iter()
-            .map(|s| window_recovery_streaming(s))
-            .collect();
-        println!(
-            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            "Streaming", rates[0], rates[1], rates[2], rates[3]
         );
     }
     println!();

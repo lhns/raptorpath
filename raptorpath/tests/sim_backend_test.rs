@@ -139,8 +139,10 @@ fn test_switch_with_sim_channel() {
 }
 
 #[test]
-fn test_window_burst_triggers_streaming() {
-    // Window mode: bursty GE loss → BackendSelector should pick Streaming
+fn test_window_burst_high_loss_switches_backend() {
+    // Window mode: bursty high loss → BackendSelector switches away from RLC.
+    // (Before the streaming machine's retirement (2026-07-28) the GE burst
+    // branch could pick Streaming; the surviving high-loss target is Mettle.)
     let mut selector = BackendSelector::new(
         FecBackend::Rlc,
         None,
@@ -165,8 +167,7 @@ fn test_window_burst_triggers_streaming() {
     }
 
     // With high loss + burst, should have switched away from RLC
-    // The exact backend depends on the selector's window_mode logic
-    // (could be Mettle or Streaming based on burst characteristics)
+    // (the selector's surviving window-mode high-loss target is Mettle)
     assert_ne!(
         final_backend,
         FecBackend::Rlc,

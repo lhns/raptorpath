@@ -159,15 +159,18 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # default flip).
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
-            # meas/streaming-retirement (crown re-test): on a POST-FLIP binary
-            # env-empty is the unified machine, so the streaming two-layer code
-            # needs the explicit legacy opt-out. `streaming` = RWM_UNIFIED=0 +
-            # Realtime hint (echo: "Realtime mode: auto-selecting streaming
-            # backend"). The bulk sanity arms pin the block pipeline's
-            # streaming-inertness under the same A/B env.
-            streaming)  AENV="RWM_UNIFIED=0"; AFLAGS="" ;;
+            # meas/streaming-retirement (crown re-test) HISTORIC arms: the
+            # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
+            # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
+            # streaming machine was DELETED 2026-07-28 (register RE-TESTED/
+            # CLEARED); on current binaries RWM_UNIFIED=0 + Realtime selects
+            # the LEGACY-RLC windowed machine, so these arms would silently
+            # measure a different machine than their name claims — they now
+            # fail loudly instead (use `rlc` / `ship`).
+            streaming|bulkstream)
+                echo "ARM $arm RETIRED 2026-07-28: streaming machine deleted (goal-gate 'Streaming Crown Re-Test' / register); RWM_UNIFIED=0 now = legacy-RLC. Use 'rlc' or 'ship'." >&2
+                continue ;;
             bulkship)   AENV="";              AFLAGS=""; AHINT="bulk" ;;
-            bulkstream) AENV="RWM_UNIFIED=0"; AFLAGS=""; AHINT="bulk" ;;
             *) echo "unknown arm '$arm'" >&2; continue ;;
         esac
         for size in $TM_SIZES; do

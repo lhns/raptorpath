@@ -274,9 +274,18 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         Some("mettle") => FecBackend::Mettle,
         Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
         Some("rlc") => FecBackend::Rlc,
-        Some("streaming") => FecBackend::Streaming,
+        // The streaming machine was RETIRED 2026-07-28 (DEPRECATION REGISTER:
+        // displaced by the unified span machine ADR-0064; re-test clause
+        // discharged cell-by-cell, goal-gate "Streaming Crown Re-Test").
+        Some("streaming") => anyhow::bail!(
+            "fec_backend 'streaming' was REMOVED (2026-07-28): the streaming two-layer machine \
+             was retired after the unified default held its historic tail crown cell-by-cell \
+             (DEPRECATION REGISTER / ADR-0064; goal-gate \"Streaming Crown Re-Test\"). \
+             Realtime rides the unified RLC span machine (default); RWM_UNIFIED=0 selects the \
+             legacy-RLC windowed machine. Available: raptorq, mettle, rs, rlc"
+        ),
         Some("raptorq") | None => FecBackend::RaptorQ,
-        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc, streaming"),
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc"),
     };
 
     let fec_backend_explicit = config.fec_backend.is_some();

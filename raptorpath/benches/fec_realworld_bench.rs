@@ -3,7 +3,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::fec::{
     EncodingParams, FecBackend, MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder,
-    RlcWindowEncoder, StreamingDecoder, StreamingEncoder, StreamingParams, WindowDecoder,
+    RlcWindowEncoder, WindowDecoder,
     WindowEncoder, WireSymbol,
 };
 use std::collections::BTreeSet;
@@ -257,23 +257,6 @@ fn bench_window_encode(c: &mut Criterion) {
             });
         });
 
-        // Streaming
-        let mean_burst = 1.0 / scenario.channel.p_bg.max(0.01);
-        let sparams =
-            StreamingParams::from_channel(mean_burst, scenario.stationary_loss, 1.15);
-        let id = format!("{}/streaming", scenario.name);
-        group.bench_function(BenchmarkId::from_parameter(&id), |b| {
-            b.iter(|| {
-                let mut encoder =
-                    StreamingEncoder::new(WINDOW_SYMBOL_SIZE, sparams);
-                for pkt in &packet_data {
-                    encoder.add_source(pkt);
-                }
-                for _ in 0..num_repairs {
-                    encoder.generate_repair();
-                }
-            });
-        });
     }
     group.finish();
 }
@@ -355,40 +338,6 @@ fn bench_window_decode(c: &mut Criterion) {
             );
         }
 
-        // Streaming decode
-        {
-            let mean_burst = 1.0 / scenario.channel.p_bg.max(0.01);
-            let sparams =
-                StreamingParams::from_channel(mean_burst, scenario.stationary_loss, 1.15);
-            let mut encoder =
-                StreamingEncoder::new(WINDOW_SYMBOL_SIZE, sparams);
-            let sources: Vec<WireSymbol> = packet_data
-                .iter()
-                .map(|pkt| encoder.add_source(pkt))
-                .collect();
-            let repairs: Vec<WireSymbol> =
-                (0..num_repairs).map(|_| encoder.generate_repair()).collect();
-
-            let mut rng = ChaCha8Rng::seed_from_u64(0);
-            let (surviving, _) = scenario.channel.apply(&sources, &mut rng);
-            let mut transmitted: Vec<WireSymbol> = surviving;
-            transmitted.extend(repairs);
-
-            let id = format!("{}/streaming", scenario.name);
-            group.bench_with_input(
-                BenchmarkId::from_parameter(&id),
-                &transmitted,
-                |b, syms| {
-                    b.iter(|| {
-                        let mut decoder =
-                            StreamingDecoder::new(WINDOW_SYMBOL_SIZE, sparams);
-                        for sym in syms {
-                            decoder.add_symbol(sym);
-                        }
-                    });
-                },
-            );
-        }
     }
     group.finish();
 }
@@ -497,34 +446,6 @@ fn bench_cross_pipeline(c: &mut Criterion) {
                 });
             });
 
-            // Streaming
-            let mean_burst = 1.0 / scenario.channel.p_bg.max(0.01);
-            let sparams =
-                StreamingParams::from_channel(mean_burst, scenario.stationary_loss, 1.15);
-            let id = format!("{}/window_streaming", scenario.name);
-            group.bench_function(BenchmarkId::from_parameter(&id), |b| {
-                b.iter(|| {
-                    let mut encoder =
-                        StreamingEncoder::new(WINDOW_SYMBOL_SIZE, sparams);
-                    let sources: Vec<WireSymbol> = packet_data
-                        .iter()
-                        .map(|pkt| encoder.add_source(pkt))
-                        .collect();
-                    let repairs: Vec<WireSymbol> =
-                        (0..num_repairs).map(|_| encoder.generate_repair()).collect();
-
-                    let mut rng = ChaCha8Rng::seed_from_u64(0);
-                    let (surviving, _) = scenario.channel.apply(&sources, &mut rng);
-                    let mut all: Vec<WireSymbol> = surviving;
-                    all.extend(repairs);
-
-                    let mut decoder =
-                        StreamingDecoder::new(WINDOW_SYMBOL_SIZE, sparams);
-                    for sym in &all {
-                        decoder.add_symbol(sym);
-                    }
-                });
-            });
         }
     }
     group.finish();

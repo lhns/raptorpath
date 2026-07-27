@@ -560,10 +560,16 @@ const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 /// at every cell (c2 p99 medians 37/40 vs stream 40–43/52; c3 101–111 vs
 /// 108–133), ZERO collapse-class reps (the #61 3/10 blocker eliminated),
 /// 100% delivered at the c3 perf cell (vs streaming 79/81%) at completer
-/// parity, bulk gen-sys parity within σ, knee no-regression. `RWM_UNIFIED=0`
-/// is the legacy three-machine opt-out arm (streaming keeps Realtime
-/// there); the streaming machine is NOT removed — its retirement sits in
-/// the DEPRECATION REGISTER behind a re-test clause.
+/// parity, bulk gen-sys parity within σ, knee no-regression.
+///
+/// **The streaming machine was RETIRED 2026-07-28** after its register
+/// re-test clause was discharged cell-by-cell (goal-gate "Streaming Crown
+/// Re-Test" 2026-07-27: unified ≤ streaming p99 medians at all 5 historic
+/// crown cells × both seeds; the sub-noise cell-5 p999 WATCH is recorded as
+/// historical). OPT-OUT SEMANTICS CHANGE: `RWM_UNIFIED=0` + Realtime now
+/// selects the LEGACY-RLC windowed machine (`RlcWindowDecoder`) — before
+/// the retirement it selected the streaming two-layer code. The legacy-RLC
+/// machines stay (their own retirement clause, §17.5, was never re-argued).
 pub(crate) fn unified_active() -> bool {
     crate::config::env_flag("RWM_UNIFIED", true)
 }
@@ -999,7 +1005,7 @@ fn backend_to_u8(backend: FecBackend) -> u8 {
         FecBackend::Mettle => 1,
         FecBackend::ReedSolomon => 2,
         FecBackend::Rlc => 3,
-        FecBackend::Streaming => 4,
+        // 4 was Streaming (retired 2026-07-28) — kept reserved.
     }
 }
 
@@ -1121,8 +1127,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // removed). Computed before TUN creation because window mode
     // constrains the TUN MTU.
     //
-    // Realtime auto-selects the streaming backend (delay-optimal on bursty
-    // GE channels). Bulk/Auto under `window_reliable` (RWM Phase A)
+    // Realtime rides the RLC family either way since the streaming machine's
+    // retirement (2026-07-28): under the unified default it is the small-δ
+    // parameterization of the span machine; under `RWM_UNIFIED=0` it falls
+    // back to the LEGACY-RLC windowed machine (`RlcWindowDecoder`) — an
+    // OPT-OUT SEMANTICS CHANGE, stated in the register row: before the
+    // retirement, `RWM_UNIFIED=0` + Realtime selected the streaming
+    // two-layer code. Bulk/Auto under `window_reliable` (RWM Phase A)
     // auto-select windowed RLC — the natural sliding-window codec; the
     // bulk profile's symbol_size=1200 puts the window-mode TUN MTU clamp
     // at 1196, so full-size packets are not fragmented.
@@ -1133,11 +1144,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 // small-δ parameterization of the RLC span machine, not a
                 // different code. (Mechanism-liveness echo for the A/B.)
                 info!("RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)");
-                FecBackend::Rlc
             } else {
-                info!("Realtime mode: auto-selecting streaming backend for bursty channel protection");
-                FecBackend::Streaming
+                // Mechanism-liveness echo for the legacy opt-out arm (the
+                // pre-retirement echo was "auto-selecting streaming backend").
+                info!("Realtime mode (RWM_UNIFIED=0): streaming machine retired — riding the legacy-RLC windowed machine");
             }
+            FecBackend::Rlc
         } else if config.window_reliable {
             info!("reliable window mode (RWM Phase A): auto-selecting RLC windowed backend");
             FecBackend::Rlc
@@ -4830,7 +4842,7 @@ async fn run_window_sender(
     } else if generation {
         Box::new(crate::fec::GenerationEncoder::new(symbol_size, gen_size, pipeline, gen_repair_floor))
     } else {
-        create_window_encoder(fec_backend, symbol_size, fec_controller, scheduler)
+        create_window_encoder(fec_backend, symbol_size)
     };
     let mut prev_ack: u64 = 0;
     // Generation-mode paced coded emission (see the emission block in the loop).
@@ -8781,12 +8793,12 @@ async fn run_window_sender(
     }
 }
 
-/// Create a window encoder for the given backend.
+/// Create a window encoder for the given backend. (The retired Streaming arm
+/// was the only one that read the FEC controller/scheduler — the signature
+/// shrank with it, 2026-07-28.)
 fn create_window_encoder(
     backend: FecBackend,
     symbol_size: u16,
-    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
 ) -> Box<dyn WindowEncoder> {
     match backend {
         FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
@@ -8794,28 +8806,6 @@ fn create_window_encoder(
             symbol_size,
             42,
         )),
-        FecBackend::Streaming => {
-            let params = {
-                let ctrl = fec_controller.lock();
-                let sched = scheduler.lock();
-                let estimator = sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .max_by(|a, b| {
-                        a.estimator
-                            .loss_rate()
-                            .partial_cmp(&b.estimator.loss_rate())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .map(|p| &p.estimator);
-                match estimator {
-                    Some(est) => ctrl.compute_streaming_params(est),
-                    None => crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15),
-                }
-            };
-            Box::new(crate::fec::StreamingEncoder::new(symbol_size, params))
-        }
         _ => Box::new(RlcWindowEncoder::new(symbol_size)),
     }
 }
@@ -8836,10 +8826,6 @@ fn create_window_decoder(
 ) -> Box<dyn WindowDecoder> {
     match backend {
         FecBackend::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
-        FecBackend::Streaming => {
-            let params = crate::fec::StreamingParams::from_channel(2.0, 0.05, 1.15);
-            Box::new(crate::fec::StreamingDecoder::new(symbol_size, params))
-        }
         // Task #61 (paper §16.20): under RWM_UNIFIED the whole RLC family —
         // sliding-window AND generation wires — decodes on ONE machine, the
         // global sparse-aware closure. Differential-proven equal to both

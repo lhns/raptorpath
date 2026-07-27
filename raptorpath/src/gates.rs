@@ -44,7 +44,10 @@ fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
 pub struct RuntimeGates {
     // ── The unified machine (ADR-0064) ───────────────────────────────────
     /// `RWM_UNIFIED` (default ON): the one-span-machine default; `=0` is the
-    /// legacy three-machine opt-out arm (streaming retirement: register).
+    /// legacy opt-out arm. OPT-OUT SEMANTICS since 2026-07-28 (streaming
+    /// machine DELETED, register RE-TESTED/CLEARED via the crown re-test):
+    /// `=0` + Realtime selects the LEGACY-RLC windowed machine — it can no
+    /// longer select the streaming two-layer code.
     pub unified: bool,
     /// `RWM_UNIFIED_SHED` (default ON): δ-honest overload shedding on the
     /// EVICT path within the derived 1−ρ budget; `=0` = serializing arm.

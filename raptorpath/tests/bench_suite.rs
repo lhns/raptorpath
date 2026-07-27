@@ -17,7 +17,7 @@ use raptorpath::control::estimator::LossEstimator;
 use raptorpath::control::fec_rate::{FecRateController, ProtocolHint};
 use raptorpath::fec::{
     EncodingParams, FecBackend, FecDecoder, MettleWindowDecoder, MettleWindowEncoder,
-    RlcWindowDecoder, RlcWindowEncoder, StreamingDecoder, StreamingEncoder, WindowDecoder,
+    RlcWindowDecoder, RlcWindowEncoder, WindowDecoder,
     WindowEncoder, WireSymbol,
 };
 use raptorpath::net::reorder::ReorderBuffer;
@@ -49,7 +49,7 @@ enum BackendChoice {
     ReedSolomon,
     Rlc,
     Mettle,
-    Streaming,
+    // Streaming: RETIRED 2026-07-28 with the streaming machine (register).
     Retransmit,
 }
 
@@ -60,7 +60,6 @@ impl BackendChoice {
             Self::ReedSolomon,
             Self::Rlc,
             Self::Mettle,
-            Self::Streaming,
             Self::Retransmit,
         ]
     }
@@ -71,7 +70,6 @@ impl BackendChoice {
             Self::ReedSolomon => "ReedSolomon",
             Self::Rlc => "RLC",
             Self::Mettle => "Mettle",
-            Self::Streaming => "Streaming",
             Self::Retransmit => "Retransmit",
         }
     }
@@ -81,7 +79,7 @@ impl BackendChoice {
     }
 
     fn is_window(&self) -> bool {
-        matches!(self, Self::Rlc | Self::Mettle | Self::Streaming)
+        matches!(self, Self::Rlc | Self::Mettle)
     }
 
     fn is_retransmit(&self) -> bool {
@@ -94,7 +92,6 @@ impl BackendChoice {
             Self::ReedSolomon => FecBackend::ReedSolomon,
             Self::Rlc => FecBackend::Rlc,
             Self::Mettle => FecBackend::Mettle,
-            Self::Streaming => FecBackend::Streaming,
             Self::Retransmit => unreachable!("Retransmit has no FecBackend"),
         }
     }
@@ -102,8 +99,8 @@ impl BackendChoice {
     fn create_window_encoder(
         &self,
         symbol_size: u16,
-        ctrl: &FecRateController,
-        estimator: &LossEstimator,
+        _ctrl: &FecRateController,
+        _estimator: &LossEstimator,
     ) -> Box<dyn WindowEncoder> {
         match self {
             Self::Rlc => Box::new(RlcWindowEncoder::new(symbol_size)),
@@ -112,10 +109,6 @@ impl BackendChoice {
                 symbol_size,
                 42,
             )),
-            Self::Streaming => {
-                let params = ctrl.compute_streaming_params(estimator);
-                Box::new(StreamingEncoder::new(symbol_size, params))
-            }
             _ => unreachable!("{:?} is not a window backend", self),
         }
     }
@@ -123,16 +116,12 @@ impl BackendChoice {
     fn create_window_decoder(
         &self,
         symbol_size: u16,
-        ctrl: &FecRateController,
-        estimator: &LossEstimator,
+        _ctrl: &FecRateController,
+        _estimator: &LossEstimator,
     ) -> Box<dyn WindowDecoder> {
         match self {
             Self::Rlc => Box::new(RlcWindowDecoder::new(symbol_size)),
             Self::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
-            Self::Streaming => {
-                let params = ctrl.compute_streaming_params(estimator);
-                Box::new(StreamingDecoder::new(symbol_size, params))
-            }
             _ => unreachable!("{:?} is not a window backend", self),
         }
     }
@@ -482,7 +471,6 @@ fn fec_backend_name(b: FecBackend) -> &'static str {
         FecBackend::ReedSolomon => "ReedSolomon",
         FecBackend::Rlc => "RLC",
         FecBackend::Mettle => "Mettle",
-        FecBackend::Streaming => "Streaming",
     }
 }
 
@@ -701,13 +689,13 @@ fn run_loss_sweep_table(
 
     // Header
     text.push_str(&format!("| {:>6} ", "Loss %"));
-    for name in &["RaptorQ", "RS", "RLC-win", "Mettle-win", "Streaming"] {
+    for name in &["RaptorQ", "RS", "RLC-win", "Mettle-win"] {
         text.push_str(&format!("| {:>16} ", name));
     }
     text.push_str("|\n");
 
     text.push_str(&format!("|{:-<8}", ""));
-    for _ in 0..5 {
+    for _ in 0..4 {
         text.push_str(&format!("|{:-<18}", ""));
     }
     text.push_str("|\n");
@@ -734,7 +722,7 @@ fn run_loss_sweep_table(
         }
 
         // Window backends
-        for &kind in &[BackendChoice::Rlc, BackendChoice::Mettle, BackendChoice::Streaming] {
+        for &kind in &[BackendChoice::Rlc, BackendChoice::Mettle] {
             let mut stats = TrialStats::new();
             for trial in 0..NUM_TRIALS {
                 if use_ge {
@@ -1000,7 +988,7 @@ fn run_matrix_trial(
 }
 
 // ---------------------------------------------------------------------------
-// Window backend trial (RLC, Mettle, Streaming)
+// Window backend trial (RLC, Mettle)
 // ---------------------------------------------------------------------------
 
 fn run_matrix_trial_window(

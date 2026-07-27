@@ -96,9 +96,10 @@ pub enum FecBackend {
     /// Random Linear Code (RFC 8681) — GF(2^8) random combinations, ~0% overhead, truly rateless.
     /// Block + window modes. Near-MDS via Gaussian elimination. Patent-free.
     Rlc,
-    /// Streaming codes (Badr/Martinian) — delay-optimal two-layer code for burst+random channels.
-    /// Window-mode only. Burst layer (diagonal XOR) + random layer (GF(256)). Patent-free.
-    Streaming,
+    // `Streaming` (Badr/Martinian two-layer, formerly variant 4) was RETIRED
+    // 2026-07-28 — displaced by the unified span machine (ADR-0064), register
+    // clause discharged (goal-gate "Streaming Crown Re-Test"). Removing the
+    // LAST variant keeps the wire indices of the surviving variants stable.
 }
 
 impl Default for FecBackend {
@@ -114,7 +115,7 @@ impl FecBackend {
     /// Streaming-native backends can use the sliding-window FEC pipeline;
     /// block-only backends must use the block-based pipeline.
     pub fn is_streaming(&self) -> bool {
-        matches!(self, Self::Rlc | Self::Mettle | Self::Streaming)
+        matches!(self, Self::Rlc | Self::Mettle)
     }
 
     /// Per-repair-symbol wire overhead in bytes. METTLE repair symbols carry
@@ -130,8 +131,6 @@ impl FecBackend {
             Self::ReedSolomon => 0,
             // RLC: [repair_index(4 bytes)] header per repair symbol
             Self::Rlc => 4,
-            // Streaming: [window_start(8)][window_count(2)][repair_index(4)][layer(1)] = 15
-            Self::Streaming => 15,
         }
     }
 
@@ -142,8 +141,6 @@ impl FecBackend {
             Self::Mettle => Box::new(super::mettle_backend::MettleBlockEncoder::new(data, params)),
             Self::ReedSolomon => Box::new(super::rs_backend::ReedSolomonEncoder::new(data, params)),
             Self::Rlc => Box::new(super::rlc_backend::RlcEncoder::new(data, params)),
-            // Streaming is window-only; fall back to RaptorQ for block mode
-            Self::Streaming => Box::new(super::raptorq_backend::RaptorqEncoder::new(data, params)),
         }
     }
 
@@ -165,10 +162,6 @@ impl FecBackend {
             }
             Self::Rlc => {
                 Box::new(super::rlc_backend::RlcDecoder::new(params, transfer_length))
-            }
-            // Streaming is window-only; fall back to RaptorQ for block mode
-            Self::Streaming => {
-                Box::new(super::raptorq_backend::RaptorqDecoder::new(params, transfer_length))
             }
         }
     }

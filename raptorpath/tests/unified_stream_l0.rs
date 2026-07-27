@@ -32,8 +32,9 @@
 //!   RWM_L0_SEED     GE/jitter RNG seed
 //!   RWM_L0_HINT     protocol hint (default realtime)
 //!   RWM_L0_BACKEND  explicit fec_backend ("rlc" = the legacy-RLC arm;
-//!                   unset = shipped auto-selection: streaming, or the RLC
-//!                   span machine under RWM_UNIFIED=1)
+//!                   unset = shipped auto-selection: the unified RLC span
+//!                   machine; RWM_UNIFIED=0 = the legacy-RLC windowed
+//!                   machine (streaming retired 2026-07-28))
 //!   RWM_SL_RATE     messages per second (default 50)
 //!   RWM_SL_DUR     stream duration seconds (default 20)
 //!   RWM_SL_MSG      message size bytes (default 1200)
