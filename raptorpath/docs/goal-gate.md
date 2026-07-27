@@ -12575,3 +12575,93 @@ build; binaries: profile b04bc50f…, s42 battery 73276eca…, final
 3fc50648… (sha256 in every log header); rp-* netns only, cleaned; all
 logs + perf data preserved under `/home/vibe/embatch/`; foreground
 polling only; the parallel c8-pool worker's tree untouched.
+
+## Streaming Crown Re-Test (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE any measurement; branch `meas/streaming-retirement` from 44dd7d4; MEASUREMENT task, harness glue only, no transport code touched; LEVER 4's gate — the DEPRECATION REGISTER's streaming-machine re-test clause)
+
+*Decision record: → [ADR-0064](adr/0064-unified-span-machine.md) +
+[ADR-0066](adr/0066-deprecation-register.md) +
+[VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md) §4 (the retirement
+path, stage 1).*
+
+**(a) The question.** The register's streaming row: "the 12–48×
+message-tail crown record spans HISTORIC cells (L2/L3 message-tail
+batteries, quinn-vs-rp Metric A) this battery did not re-run; code
+removal requires a later pass holding that record cell-by-cell on the
+unified default." This session IS that later pass (VISION-TRIAGE stage 1:
+"confirmation, not exploration" — the 2026-07-21 flip battery already
+showed unified ≤ streaming at all 8 of ITS cells). Gate: the SHIPPED
+DEFAULT (unified machine, env unset) must match-or-beat the streaming
+machine (`RWM_UNIFIED=0`, the legacy opt-out — VERIFIED in code:
+`net/mod.rs` `unified_active()` is `env_flag("RWM_UNIFIED", true)`;
+`=0` + Realtime hint echoes "Realtime mode: auto-selecting streaming
+backend") on p50/p99/delivered% at EVERY historic crown cell, both seeds.
+
+**(b) The crown-cell list, as found in the ledger (era-honest provenance).**
+The record's cells and their historic values (all PRE-DIVIDE qemu64,
+pre-substrate-chain — walls #1/#2/#7/#8 live, stock-Cubic under, 1024
+pool; the HISTORIC ABSOLUTES ARE NOT THE BAR — the hardware/wall divide
+means the comparison is the SAME-DAY streaming-arm vs unified-arm ratio
+per cell, plus class-consistency with the modern record):
+
+| # | cell (this battery) | historic origin | historic streaming record (p99, ms) | why it is in the record |
+|---|---|---|---|---|
+| 1 | tail_matrix **c2·realtime·400B**, 50 msg/s × 20 s | "Full Benchmark Re-Run (2026-07-08)" Metric A (×5 reps, seed 42) | med **59** [42–637] vs quinn 2824 / kernel-BBR 13,400 | THE 12–48× crown cell (2824/59 ≈ 48×) |
+| 2 | tail_matrix **c2·realtime·1200B**, 50 msg/s × 20 s | Metric A; L3 REGIME MAP ("12–60×") | med **145** [39–2655] vs quinn 2824 / BBR 13,400 | the crown's other half (2824/145 ≈ 19×, BBR/145 ≈ 92×) |
+| 3 | tail_matrix **c3·realtime·400B**, 50 msg/s × 20 s | Metric A | med **209** [105–1409] (vs BBR 198 — rp TIED, beat quinn 1393 ~6×) | record row, not a crown win — cell-by-cell means EVERY row of the record table |
+| 4 | tail_matrix **c3·realtime·1200B**, 50 msg/s × 20 s | Metric A | med **1771** [334–3154] ("worse than BBR"; the melts-adjacent cell) | record row; the modern unified class here is 92–133 — the cell the streaming-retirement gap (roadmap item 7) named |
+| 5 | **c2·realtime·1200B @ 50 msg/s × 30 s** (the L2 stream_bench shape, 1500 msgs) | "L2 workstream 2 (2026-07-04)" + "quinn message-tail vs raptorpath" | p50 8.6 / p90 15.6 / **p99 513 / p999 727** / max 747 vs cubic 13,252 / bbr 13,426 (26–147×), quinn 2824 (5.5×) | the L2-era record used **p99.9** → p999 is gated on THIS shape (the only historic cell that recorded it) |
+| S | tail_matrix **c2·bulk·{400,1200}B** ×4, seed 42 only | Metric A bulk rows (med 102/154) | streaming-INERT by construction (bulk hint rides the block pipeline) | the pre-registered bulk sanity spot: `RWM_UNIFIED=0` must not move the bulk tail class |
+
+Cells the record does NOT contain, stated so the list is closed: no c4
+message-tail measurement exists anywhere in the ledger (Metric A/L2/L3
+never ran it — the crown claim is "C2-class loss"); c5 was measured
+(L2-era) and is NOT a streaming crown cell — rp-realtime DNF'd/silent-
+failed there ("no winner — both stacks break >5% loss"), so it cannot
+gate retirement and is not re-run. The quinn/kernel-TCP baseline arms are
+NOT re-run either: the "Competitive Baseline (2026-07-21)" battery
+already re-verified the crown externally on the modern substrate against
+live quinn/TCP (rp 36–39/92–103 ms vs quic 55–759 / tcp 209–3878 + del
+cliffs) — ON THE UNIFIED DEFAULT; what it did not measure is the
+streaming machine, which is exactly this battery's second arm.
+
+**(c) Prediction (pre-registered).** Unified (ship) ≤ streaming per-rep
+p99 medians at every cell-seed within the rep spread, delivered ≥
+streaming's, p50 equal-class (~8 ms c2 / ~24–26 ms c3), p999 ≤ streaming
+at cell 5. Prior strongly favorable: flip battery 8/8 rows, competitive
+baseline classes. Expected modern classes: c2 rt p99 med ~36–52,
+c3 rt ~90–135, both arms.
+
+**(d) Falsification / disposition rule (pre-registered).** Any cell
+where STREAMING beats unified beyond the noise floor (discipline 5: Δ
+outside the larger arm's rep spread, BOTH seeds) → the register row
+STAYS, that cell named as a documented (δ,ρ) point where the second
+machine wins — a finding, not a failure; retirement blocked or scoped to
+the cells that pass. If unified holds EVERY cell both seeds → the row
+becomes RE-TESTED/CLEARED, streaming retirement is GO for the next
+consolidation pass (~1,230 LOC: `fec/streaming.rs` 352 + `streaming-codes`
+845 + ~30 selection glue — NOTHING deleted THIS session; the clearance +
+work-list refresh are recorded). A c3-1200B unified-vs-streaming
+sign-flip inside the spread (the flip battery saw ±(1–2)σ there vs rlc)
+does not block — the gate is vs streaming, at the noise floor.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–11: priority 2 — the lossy-residual worker holds `/tmp/rwm-vm.lock`
+first; ALL local prep done before touching the VM, then FOREGROUND
+polite polling (2–3 min interval, elapsed stated; no stop-and-wait).
+CRLF-convert after sync; rm stale binary before build; binary sha256 +
+commit + lscpu in every log header; rp-* netns only; seeds 42+7; arms
+`streaming` (`RWM_UNIFIED=0`) vs `ship` (env unset) INTERLEAVED PER REP
+(fresh warm tunnel per rep-arm, arm order alternating per round — the
+historic ×5-rep warm-tunnel protocol upgraded to the current discipline);
+×8 reps/arm/seed at cells 1–4, ×5 at cell 5 (historic was n=1), ×4 at
+the bulk spot (seed 42); per-rep p50/p99/p999/max/delivered scraped
+(harness glue: tail_matrix.sh gains the `streaming` arm + p999/max/
+count in the rep echo + rate/duration/size/hint overrides; driver
+`tools/l1/crown_battery.sh`); liveness echoes asserted per arm BOTH
+machines ("auto-selecting streaming backend" on every streaming rep;
+"unified span law ACTIVE" + shedding + A* anchor + unified-decoder on
+every ship rep, both endpoints); seed-7 topo-abort ns recorded; stage
+runtimes stated; lib suite run once on the branch (transport untouched —
+harness+docs only). Logs `/home/vibe/crown/`.
+
+*(Results below this line will be written after the battery runs.)*
