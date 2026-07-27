@@ -3215,7 +3215,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // service wall is ~20k control datagrams/s of pure
                         // per-symbol emission cost on BOTH endpoints). Gap
                         // reports keep their own (rate-limited) trigger.
-                        let defer_cum_ack = recv_batch_on && !recv_burst.is_empty();
+                        // Defer ONLY when another DATA message is queued in
+                        // this burst: the burst's last data message always
+                        // acks, so an ack can never be stranded behind a
+                        // control-message tail while the loop blocks in
+                        // select (measured: a stranded ack turns the ack
+                        // clock into the 2×SRTT tail-sweep timer — stall +
+                        // spurious-retransmit stutter).
+                        let defer_cum_ack = recv_batch_on
+                            && recv_burst
+                                .iter()
+                                .any(|(_, m)| matches!(m, WireMessage::Data(_)));
                         if (cumulative_advanced && !defer_cum_ack) || gap_report_due {
                             last_advertised_ack = highest_delivered_seq;
                             last_gap_ack_seen = highest_seen_seq;
