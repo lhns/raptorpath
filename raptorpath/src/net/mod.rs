@@ -2445,13 +2445,44 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut rdiag_qn: u64 = 0;
         let mut rdiag_last = Instant::now();
 
+        // ── Emission batching, receiver arm (RWM_EMIT_BATCH, DEFAULT OFF;
+        // goal-gate "Emission Batching") ──────────────────────────────────
+        // The engine-receiver service wall (~20–22k msgs/s, §16.23) is per-
+        // MESSAGE loop cost: both pre-select deadline computations
+        // (scheduler locks + SRTT scans) re-run for every message. Under
+        // the gate the engine drains already-queued messages in bounded
+        // bursts (same pacer quantum as the sender) after each select
+        // wake: per-message processing is UNCHANGED (same handlers, same
+        // acks, same delivery path) — only the select re-arm + deadline
+        // recomputation amortizes. Timer arms are delayed by at most one
+        // burst (~1–3 ms at the service wall — an order below every
+        // deadline this loop arms: deficit ≥ 3 ms, hole-refresh/reorder
+        // ≥ SRTT class). OFF ⇒ bit-identical shipped path.
+        let recv_batch_on = recv_gates.emit_batch;
+        let recv_burst_max: usize = recv_gates.emit_burst;
+        let mut recv_burst: std::collections::VecDeque<(
+            crate::scheduler::PathId,
+            WireMessage,
+        )> = std::collections::VecDeque::new();
+        if recv_batch_on {
+            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+            info!(
+                burst = recv_burst_max,
+                "emission batching ACTIVE on the engine receiver \
+                 (RWM_EMIT_BATCH: bounded burst drain of the inbound queue)"
+            );
+        }
+
         loop {
+            let burst_pending = !recv_burst.is_empty();
             // Periodic generation-deficit report deadline (§16.3): re-report the
             // frontier deficit ~once per SRTT even absent new data, so a sender
             // that emitted its budget and went quiet is always re-pulled and a
             // lost report is retransmitted. Only armed once a generation is known.
+            // (Burst iterations skip the recomputation — the timers re-arm on
+            // the next select wake, one burst away at most.)
             let deficit_deadline: Option<tokio::time::Instant> =
-                if recv_window_generation && !gen_widths.is_empty() {
+                if !burst_pending && recv_window_generation && !gen_widths.is_empty() {
                     let srtt = {
                         let sched = recv_scheduler.lock();
                         sched
@@ -2478,7 +2509,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             // whole tunnel (hole → no delivery advance → no WindowAck →
             // sender window full → no sends → no arrivals → no drain;
             // measured at L1 realtime C2: inner TCP wedged for minutes).
-            let reorder_deadline: Option<tokio::time::Instant> = {
+            let reorder_deadline: Option<tokio::time::Instant> = if burst_pending {
+                None // burst iteration: timers re-arm on the next select wake
+            } else {
                 let pending = if block_inorder_enabled {
                     block_reorder.lock().pending_count() > 0
                 } else if recv_window_ooo {
@@ -2561,7 +2594,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             // ADR-0015: select between message arrival, in-order-hold expiry,
             // and shutdown signal
             let rdiag_t0 = if rdiag_on { Some(Instant::now()) } else { None };
-            let (path_id, msg) = tokio::select! {
+            let (path_id, msg) = if let Some(m) = recv_burst.pop_front() {
+                m // RWM_EMIT_BATCH burst drain — processing path unchanged
+            } else {
+                tokio::select! {
                 msg = msg_rx.recv() => {
                     match msg {
                         Some(m) => m,
@@ -2752,7 +2788,19 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     info!("receiver shutting down");
                     break;
                 }
+                }
             };
+            // RWM_EMIT_BATCH: after a real select wake, drain already-queued
+            // messages for the following iterations (bounded burst; the
+            // select — and every timer arm — re-arms after the burst).
+            if recv_batch_on && recv_burst.is_empty() {
+                while recv_burst.len() + 1 < recv_burst_max {
+                    match msg_rx.try_recv() {
+                        Ok(m) => recv_burst.push_back(m),
+                        Err(_) => break,
+                    }
+                }
+            }
             if let Some(t0) = rdiag_t0 {
                 rdiag_idle_us += t0.elapsed().as_micros() as u64;
                 rdiag_msgs += 1;
