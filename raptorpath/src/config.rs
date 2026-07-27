@@ -360,7 +360,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 /// Boolean `RWM_*` env gate parser — the ONE way to read an on/off experiment
 /// gate.
 ///
-/// Semantics (fixes the `.is_ok()` footgun where `RWM_FMTCP=0` / `RWM_DAPS=0`
+/// Semantics (fixes the historic `.is_ok()` footgun where `RWM_FMTCP=0`
 /// counted as ON):
 ///   - unset → `default` (shipped default preserved)
 ///   - set to "" / "0" / "false" (case-insensitive, trimmed) → OFF

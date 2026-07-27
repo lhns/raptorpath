@@ -683,12 +683,9 @@ fn gen_pipe_depth(rate_sym_per_s: f64, rtt_s: f64, gen_size: usize) -> usize {
 /// governing the whole transfer at the knee cells. At cold start M* = 2
 /// (gen_pipe_depth's no-sample floor) reproduces the legacy default 4·G
 /// exactly, so the static value's reign is BOUNDED to the anchor warm-up
-/// (~one rate bucket). The DAPS read-ahead floor still applies. Pure for
-/// unit testing.
-fn fmtcp_backstop_coupled(m_star: usize, gen_size: usize, daps_win_floor: usize) -> usize {
-    ((m_star + 2) * gen_size)
-        .max(daps_win_floor)
-        .max(2 * gen_size)
+/// (~one rate bucket). Pure for unit testing.
+fn fmtcp_backstop_coupled(m_star: usize, gen_size: usize) -> usize {
+    ((m_star + 2) * gen_size).max(2 * gen_size)
 }
 
 /// FMTCP per-path in-flight cap decision (change 2, the #64 fix). Given each
@@ -702,42 +699,6 @@ fn fmtcp_backstop_coupled(m_star: usize, gen_size: usize, daps_win_floor: usize)
 /// pure for unit testing.
 fn fmtcp_percap_full(per_path: &[(u64, u64)]) -> bool {
     !per_path.iter().any(|&(in_flight, cap)| in_flight < cap.max(1))
-}
-
-/// Per-path pace-gate decision (feat/pace-all-traffic). Given a candidate path
-/// for a repair symbol, the fast (min-RTprop) path, and the per-path BtlBw pace
-/// token buckets (`daps_pace_tok`, refilled at BtlBw_i), decide where — if
-/// anywhere — the symbol may be emitted, so that TOTAL per-path emission
-/// (source + repair, both charged against the SAME buckets) never exceeds
-/// BtlBw_i on ANY path. Returns:
-///   * `Some(candidate)` — the candidate's bucket ≥ 1: emit there, one token
-///     consumed;
-///   * `Some(fast)` — candidate dry but the fast path has a token: spill so the
-///     slow path never over-queues;
-///   * `None` — BOTH the candidate and the fast path are dry: HOLD (the caller
-///     retries next loop as the buckets refill). This is what bounds the FAST
-///     path too — source has priority, repair uses only the leftover per-path
-///     capacity, so neither path is driven above BtlBw_i.
-/// A path with no warmed bucket (anchor not established) is transparent — it
-/// emits on the candidate and consumes nothing (mirrors the source pace gate).
-/// Extracted pure so the "total per-path emission ≤ BtlBw_i incl. repair"
-/// invariant is unit-tested without driving the async sender loop.
-fn paced_repair_decision(
-    tok: &mut std::collections::HashMap<crate::scheduler::PathId, f64>,
-    cand: crate::scheduler::PathId,
-    fast: crate::scheduler::PathId,
-) -> Option<crate::scheduler::PathId> {
-    let mut p = cand;
-    if p != fast && tok.get(&p).is_some_and(|&t| t < 1.0) {
-        p = fast;
-    }
-    if tok.get(&p).is_some_and(|&t| t < 1.0) {
-        return None;
-    }
-    if let Some(t) = tok.get_mut(&p) {
-        *t -= 1.0;
-    }
-    Some(p)
 }
 
 /// Dead path timeout: if no report received for this long, deactivate the path.
@@ -1506,8 +1467,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // `RWM_QUIC_CC=passthrough` (Copa-sole flies blind without it) or
     // standalone by `RWM_COPA_FEED=1` for the A/B. In-order plain mode ONLY:
     // the OOO/generation modes deliver out of order (the in-order frontier
-    // is not their delivery signal) and generation mode has its own per-path
-    // attribution machinery (`per_path_est`).
+    // is not their delivery signal).
     let copa_feed_plain: Option<Arc<CopaFeed>> = {
         let wanted = transport_arc.cc_passthrough_active()
             || crate::config::env_flag("RWM_COPA_FEED", false);
@@ -4761,19 +4721,18 @@ async fn run_window_sender(
     // once-per-RTT deficit coalesce, and — the crux — TOTAL-in-flight flow control
     // (the tx_paused gate keys on the per-path BDP in-flight, NOT the in-order
     // frontier store). Sub-levers below OR `fmtcp` into their own env gates.
-    // DAPS delay-aware scheduling (RWM_DAPS): the slow path carries FUTURE
-    // stream data offset by the per-path latency skew so it arrives IN SYNC with
-    // the fast path reaching that position (G. Sarwar, R. Boreli, E. Lochin,
-    // A. Mifdaoui, G. Smith, WAINA/PAMS 2013; N. Kuhn et al., IEEE ICC 2014),
-    // with the ECF completion-time guard (Y. Lim, E. Nahum, D. Towsley,
-    // R. Gibbens, ACM CoNEXT 2017).  It REUSES the FMTCP total-in-flight FC +
-    // per-path BDP cap + decode-on-total base, so RWM_DAPS implies that base.
-    let daps = crate::config::deprecated_env_flag(
-        "RWM_DAPS",
-        false,
-        "DAPS + Right-Sized FEC (2026-07-12); era voided by the Methodology Audit (2026-07-13); DAPS-era stack refuted live in Gen-ON Stack Ablation (2026-07-13)",
-    ) && generation;
-    let fmtcp = (crate::config::env_flag("RWM_FMTCP", false) || daps) && generation;
+    // The DAPS chain (RWM_DAPS, _BDP, _PACE, RWM_PACE_ALL, RWM_RATE_SAMPLE,
+    // RWM_PER_PATH_EST, RWM_DAPS_DEPTH) was REMOVED 2026-07-27 per the
+    // DEPRECATION REGISTER (ADR-0065/0066): the original 2026-07-12 arc was
+    // voided by the Methodology Audit (generation-inert era), and the live
+    // re-ask ("Gen-ON Stack Ablation" 2026-07-13, generation actually ON)
+    // measured the stack itself as the sym-C7 collapse (rate-sample −22%,
+    // depth −17…−30%). Every surviving idea was re-derived better elsewhere:
+    // per-path BDP cap + derived depth → RWM_GEN_PIPE's M* law (ADR-0064),
+    // honest per-path anchors → ADR-0061 (the send-interval sampler the
+    // CopaFeed/RWM_PLAIN_RS machinery keeps IS that fix — shared, retained),
+    // per-path admission → the percap family (ADR-0058).
+    let fmtcp = crate::config::env_flag("RWM_FMTCP", false) && generation;
     // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
     // shipped non-generation default byte-identical — every use is generation-
     // gated). The JOB-1 diagnosis: the L1 per-path ~10 Mbit/s generation
@@ -4834,10 +4793,6 @@ async fn run_window_sender(
     }
     // FMTCP win backstop: bound the send frontier to (pipeline+2) generations
     // past the in-order frontier (anti-bufferbloat; RWM_FMTCP_WIN overrides).
-    // DAPS deepens it to a "read-ahead" ≥ max latency skew + recovery slack so
-    // the slow path always has FUTURE data to carry (the deep app-side read-
-    // ahead + deep receiver reassembly the delay-alignment requires).
-    let daps_win_floor = if daps { (pipeline + 6) * gen_size } else { 0 };
     let fmtcp_win_explicit = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok()).is_some();
     if fmtcp_win_explicit {
@@ -4849,39 +4804,8 @@ async fn run_window_sender(
     }
     let fmtcp_win_backstop: usize = std::env::var("RWM_FMTCP_WIN")
         .ok().and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(((pipeline + 2) * gen_size).max(daps_win_floor))
+        .unwrap_or((pipeline + 2) * gen_size)
         .max(2 * gen_size);
-    // DAPS QUEUE MANAGEMENT (feat/daps-queue-mgmt).  DAPS removed the frontier
-    // stall but the slow path then BUFFERBLOATED to ~834 ms: the FMTCP per-path
-    // BDP cap only gated the aggregate TUN-read PAUSE (the sender paused only
-    // when EVERY path was full), so the softmax kept committing a share to the
-    // slow path PAST its BDP.  Two bounds, both DAPS-gated, reclaim the slack:
-    //  (1) BLEST per-path PLACEMENT cap (`place_source_daps_capped`): a path at
-    //      its own BDP is dropped from the eligible set, so slow-path OUTSTANDING
-    //      is bounded at gain·BtlBw_slow·RTprop_slow — the standing queue stays
-    //      ≈0 (RTT ≈ RTprop ≈ 40 ms) so the DAPS pre-fetch slack is preserved.
-    //      RWM_DAPS_BDP=gain (default 1.0 = exactly one BDP; 0 disables).
-    //  (2) BBR per-path PACING: each path emits at its own BtlBw, so the future-
-    //      offset data flows at the slow path's drain rate WITHOUT queuing.  When
-    //      the slow path's BtlBw pace bucket is dry the source spills to the fast
-    //      path this instant (no burst on the slow path).  RWM_DAPS_PACE=0
-    //      disables (default on under DAPS).  The DAPS offset Δ_j itself is
-    //      computed from RTprop (min-filtered) in `daps_offset_syms`, NOT the
-    //      bufferbloated RTT, so a bloated RTT can never mis-size the offset.
-    let daps_bdp_gain: f64 = if daps {
-        std::env::var("RWM_DAPS_BDP")
-            .ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(1.0).max(0.0)
-    } else {
-        0.0
-    };
-    let daps_pace_on: bool = daps && crate::config::env_flag("RWM_DAPS_PACE", true);
-    // feat/pace-all-traffic: route the CODED/REPAIR emission (proactive, filling,
-    // deficit top-up, inline) through the SAME per-path BtlBw pacer as source, so
-    // TOTAL per-path emission ≤ BtlBw_i and no standing queue builds (the residual
-    // the source-only pacer left).  Extends the DAPS/pace gate — ON by default
-    // whenever per-path pacing is on; RWM_PACE_ALL=0 reproduces the source-only
-    // pacer (the same-binary A/B baseline).  Shipped non-DAPS default untouched.
-    let pace_all_on: bool = daps_pace_on && crate::config::env_flag("RWM_PACE_ALL", true);
     // feat/source-backpressure (RWM_SRC_BP) — REMOVED 2026-07-27 per the
     // DEPRECATION REGISTER: deferring the source into per-path pacing budgets
     // stalls the generation-fill pipeline (the source read IS the pipeline
@@ -4890,91 +4814,11 @@ async fn run_window_sender(
     // source) was re-asked BY the percap account family on live code with
     // gauges and lost for a named structural reason (ADR-0058); any future
     // gen-mode re-ask rides that family, not this code.
-    // feat/per-path-estimator: drive per-path delivered-rate attribution.
-    // On (a) under DAPS — the cap/pacer need per-path BtlBw/BDP — and (b) when
-    // RWM_PER_PATH_EST is set standalone, so a PLAIN generation multipath run
-    // also establishes per-path BtlBw (the general-fix check: the CC + the
-    // placement law get a stable per-path signal, not just DAPS).  Attribution
-    // is generation-mode-only (it keys on the source_path_map + OOO acks) and
-    // is a NO-OP for the shipped non-generation default (byte-identical).
-    let per_path_est: bool =
-        generation
-            && (daps
-                || crate::config::deprecated_env_flag(
-                    "RWM_PER_PATH_EST",
-                    false,
-                    "Per-Path Estimator (2026-07-12) — DAPS-chain member; era voided by the Methodology Audit (2026-07-13)",
-                ));
-    // feat/btlbw-rate-sample: BBR-correct per-path delivery-rate sampling
-    // (send-interval Δt, ack-aggregation robust).  ON by default whenever the
-    // per-path estimator runs; RWM_RATE_SAMPLE=0 reproduces the legacy
-    // ack-interval anchor (same-binary A/B).  When on, each SOURCE seq is
-    // snapshotted at send (`on_src_sent`) and its ack drives `on_src_delivered_seq`
-    // (a send-interval rate sample) instead of the legacy `on_src_delivered`.
-    // DEFAULT FLIPPED OFF (gen-ON stack ablation §16.16: rate-sample costs
-    // −22% on symmetric C7 with generation actually ON; explicit =1 re-enables
-    // for the A/B). The legacy ack-interval anchor is the default again.
-    let rate_sample: bool = per_path_est
-        && crate::config::deprecated_env_flag(
-            "RWM_RATE_SAMPLE",
-            false,
-            "BtlBw Rate-Sample Fix (2026-07-12); refuted LIVE (−22% sym C7) in Gen-ON Stack Ablation (2026-07-13)",
-        );
-    // feat/daps-readahead-depth: bound each non-fastest path's DAPS read-ahead
-    // DEPTH to its skew-depth `skew_j·BtlBw_j` (queue delay ≤ skew ⇒ the slow
-    // segment arrives in-order-aligned, never later than the fast path would
-    // deliver that region — the ECF/BLEST completion guard done on DEPTH).  Once
-    // path j holds that budget of read-ahead, fresh SOURCE steers to the fast
-    // path and REPAIR spills/holds off j (`daps_depth_over_budget`).  This is the
-    // structural residual the three prior pacers (§16.11-13) converged on: NOT
-    // the source rate anchor (§16.13 fixed that, ×158→×1) but the deep read-ahead
-    // over-commit that survives a correct anchor + BDP cap and bloats the slow
-    // path to ~3-4 s.  Crucially a DEPTH limiter, NOT a rate throttle — within the
-    // budget the path still emits at BtlBw (pace bucket unchanged), so the link
-    // stays FULL (escapes §16.13's rate-throttle politeness-idle, C7 20.96→16.97).
-    // Requires the correct anchor (rate_sample) so skew·BtlBw_j is right-sized.
-    // ON by default under DAPS+rate-sample; RWM_DAPS_DEPTH=0 reproduces the
-    // current unbounded read-ahead (the same-binary A/B baseline).  Shipped
-    // non-DAPS default byte-identical (gated on rate_sample ⇒ generation && DAPS).
-    // DEFAULT FLIPPED OFF (gen-ON stack ablation §16.16: the depth bound costs
-    // −17…−30% on symmetric C7 — the decode-clocked anchors hand one path a
-    // garbage skew budget; its one win is hetero C8 (+8%), so it is a
-    // heterogeneous-topology OPT-IN via RWM_DAPS_DEPTH=1).
-    let daps_depth_on: bool = rate_sample
-        && crate::config::deprecated_env_flag(
-            "RWM_DAPS_DEPTH",
-            false,
-            "DAPS Read-Ahead Depth (2026-07-12); refuted LIVE (−17…−30% sym C7) in Gen-ON Stack Ablation (2026-07-13)",
-        );
-    // App-limited (BBR): the source pipeline was starved (idle gap) rather than
-    // cwnd/pace-limited when a symbol was sent — such a sample underestimates
-    // BtlBw and must not be read as bw dropping.  We flag a send app-limited when
-    // it follows an idle gap longer than this (a post-idle burst, the classic
-    // starved interval).  Bulk back-to-back sends have ~0 gap ⇒ never flagged.
-    let rs_app_limited_gap_us: u64 = 5_000;
-    // Per-path BtlBw pace token buckets (symbols), refilled at BtlBw_i each loop.
-    let mut daps_pace_tok: std::collections::HashMap<crate::scheduler::PathId, f64> =
-        std::collections::HashMap::new();
-    let mut daps_pace_last_us: u64 = now_us();
-    // Generation-coding proactive overhead r.  FMTCP shipped a FIXED r=0.10
-    // (~4× the ~2.6% operating loss — the over-FEC the DAPS work right-sizes).
-    // DAPS instead DERIVES r* from §8.4 for the bulk/loose-δ profile:
-    //   r* = ε/(1−ε) + z_{δ/ε}·√(εσ²_burst/(W(1−ε))),  z≈0 for the bulk δ≈ε.
-    // At the C7/C8 operating loss (c2 GE ε≈0.026) this lands ≈0.04–0.05, NOT
-    // 0.10; RWM_GEN_R overrides for the sweep {0.03,0.05,0.10}.
-    let daps_r_star: f64 = {
-        let eps = 0.026_f64; // c2 wifi operating loss (netem gemodel p=1.3% q=50%)
-        let sigma2 = raptorpath_math::burst_variance_factor(0.013, 0.50);
-        // bulk/loose tail δ = 0.2·ε (a small burst margin, not the tight δ the
-        // realtime profile budgets); z = Φ⁻¹(1 − δ/ε) = Φ⁻¹(0.8).
-        let z = raptorpath_math::normal_quantile(0.8);
-        raptorpath_math::compute_r_star_with_z(eps, sigma2, gen_size as f64, z)
-            .clamp(0.03, 0.10)
-    };
+    // Generation-coding proactive overhead r.  FMTCP ships a FIXED r=0.10.
     let gen_repair_floor: f64 = std::env::var("RWM_GEN_R")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(if daps { daps_r_star } else if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
+        .unwrap_or(if fmtcp { 0.10 } else if systematic { 0.15 } else { 0.20 })
         .clamp(0.0, 2.0);
     // Codec pinned at startup (§16.4) — created once, never rebuilt.
     let mut encoder: Box<dyn WindowEncoder> = if systematic {
@@ -5878,11 +5722,6 @@ async fn run_window_sender(
                     e.1 = now_us();
                 }
             }
-            // App-limited (BBR rate-sample): the idle gap SINCE THE PREVIOUS
-            // source send, captured before `last_source_send_us` is refreshed
-            // below.  A long gap ⇒ this send follows a starved interval.
-            let rs_src_app_limited =
-                now_us().saturating_sub(last_source_send_us) > rs_app_limited_gap_us;
             gen_last_source_us = now_us();
 
             // RWM Phase A retention: the store keeps the sent bytes until
@@ -5906,44 +5745,7 @@ async fn run_window_sender(
             // None = charge the flight path (the non-borrow default).
             let mut borrow_lender: Option<u32> = None;
             let source_path = {
-                if reliable && daps {
-                    // DAPS delay-aware placement: the just-added source is at the
-                    // sender's leading edge, `encoder.window_size()` symbols ahead
-                    // of the in-order delivered frontier.  A slow path is eligible
-                    // only when this lead ≥ its delay-skew offset Δ_j, so the slow
-                    // path carries FUTURE data that arrives in sync (Sarwar 2013 /
-                    // Kuhn 2014) with the ECF completion guard (Lim 2017).  The
-                    // BLEST per-path BDP cap (daps_bdp_gain) additionally drops a
-                    // path at its own BDP from the eligible set so the slow path is
-                    // never over-committed (the bufferbloat fix).
-                    let lead = encoder.window_size() as f64;
-                    let mut sched = scheduler.lock();
-                    let mut chosen = sched
-                        .place_source_daps_capped_depth(lead, daps_bdp_gain, daps_depth_on)
-                        .unwrap_or(0);
-                    // BBR per-path pacing: if the picked path's BtlBw pace bucket
-                    // is dry, spill to the fast (min-RTprop) path so no burst above
-                    // the slow path's drain rate ever hits the wire.  Warm-up
-                    // (no bucket yet) is transparent — no restriction, no consume.
-                    if daps_pace_on {
-                        let fast = sched.fastest_active_path().unwrap_or(0);
-                        if chosen != fast
-                            && daps_pace_tok.get(&chosen).is_some_and(|&t| t < 1.0)
-                        {
-                            chosen = fast;
-                        }
-                        if let Some(t) = daps_pace_tok.get_mut(&chosen) {
-                            *t -= 1.0;
-                        }
-                    }
-                    // feat/per-path-estimator: commit this source seq to `chosen`
-                    // and charge its per-path SOURCE outstanding gauge (BLEST
-                    // in_flight_i).  Released on per-path ack attribution below.
-                    if let Some(p) = sched.path_mut(chosen) {
-                        p.charge_src(1);
-                    }
-                    chosen
-                } else if reliable {
+                if reliable {
                     let picked = {
                         let sched = scheduler.lock();
                         sched.place_symbol(false, &[]).unwrap_or(0)
@@ -6133,16 +5935,6 @@ async fn run_window_sender(
                         source_path,
                     );
                     percap_loans_total += 1;
-                }
-            }
-
-            // feat/btlbw-rate-sample: snapshot this source seq's send-time state
-            // on its DAPS-committed path so its ack yields a SEND-INTERVAL
-            // delivery-rate sample (BBR).  Byte-identical when off.
-            if rate_sample {
-                let mut sched = scheduler.lock();
-                if let Some(p) = sched.path_mut(source_path) {
-                    p.on_src_sent(wire_sym.block_id, rs_src_app_limited);
                 }
             }
 
@@ -6530,54 +6322,6 @@ async fn run_window_sender(
         }};
     }
 
-    // ── PACE-ALL-TRAFFIC (feat/pace-all-traffic) ──────────────────────────────
-    // The per-path BBR pacer (`daps_pace_tok`, refilled at BtlBw_i) meters only
-    // SOURCE placement; the CODED/REPAIR emission (batched proactive, filling
-    // proactive, deficit top-up, inline) was emitted OUTSIDE it — so TOTAL
-    // per-path emission (source + repair) exceeded BtlBw_i and a standing queue
-    // built on BOTH the slow (~300 ms) and the fast (~140 ms) path.  This gate
-    // routes every repair symbol through the SAME per-path bucket as source, so
-    // the aggregate per-path send rate never exceeds the path's drain rate (the
-    // temporal_oracle PART 6e "PACE" scheduler admits ≤ BtlBw_i *total*).  Given
-    // a candidate path it evaluates to:
-    //   * Some(candidate) — the candidate's bucket ≥ 1: emit there, one token
-    //                       consumed;
-    //   * Some(fast)      — candidate dry but the fast (min-RTprop) path has a
-    //                       token: spill so the slow path never over-queues;
-    //   * None            — BOTH the candidate and the fast path are dry: HOLD
-    //                       (retry next loop as the buckets refill at BtlBw_i).
-    //                       This is what bounds the FAST path too — source has
-    //                       priority, repair uses only the leftover per-path
-    //                       capacity, so neither path is driven above BtlBw_i.
-    // A path whose anchor has not warmed (no bucket entry yet) is transparent —
-    // it emits on the candidate and consumes nothing (mirrors the source gate).
-    // Active only when `daps_pace_on`, so the shipped non-DAPS default is
-    // byte-identical.  `$sched` is an already-held scheduler lock guard.
-    macro_rules! paced_repair_path {
-        ($sched:expr, $cand:expr) => {{
-            let mut cand = $cand;
-            // feat/daps-readahead-depth: repair is per-path read-ahead too.  If the
-            // chosen non-fastest path has already filled its skew-depth budget,
-            // redirect the repair to the fast path BEFORE pacing — bounding ALL
-            // per-path look-ahead to one skew, not just source.  A DEPTH steer, not
-            // a rate change; the pace gate below still meters the (possibly
-            // redirected) path at BtlBw.  When the fast path is itself dry the
-            // pace gate HOLDs (rateless repair is free to retry).
-            if daps_depth_on {
-                let fast = $sched.fastest_active_path().unwrap_or(0);
-                if cand != fast && $sched.daps_depth_over_budget(cand) {
-                    cand = fast;
-                }
-            }
-            if pace_all_on {
-                let fast = $sched.fastest_active_path().unwrap_or(0);
-                paced_repair_decision(&mut daps_pace_tok, cand, fast)
-            } else {
-                Some(cand)
-            }
-        }};
-    }
-
     // Retention backpressure state (reliable mode), for edge-triggered logs.
     let mut last_tx_paused = false;
 
@@ -6715,34 +6459,6 @@ async fn run_window_sender(
                         }
                     }
                 }
-                // feat/per-path-estimator: OOO per-path ack attribution.  In
-                // generation mode sent_store is empty (the loop above is inert),
-                // and the in-order cumulative frontier STALLS on holes — exactly
-                // when the estimator is most starved.  A SACK range is OOO
-                // delivery evidence: attribute each newly-received source seq to
-                // the path its DAPS placement committed it to (`source_path_map`)
-                // and drive that path's delivered-rate estimator, so BtlBw_i
-                // keeps establishing even while the frontier is frozen.  Remove
-                // the seq so the cumulative pass below cannot double-count it.
-                if per_path_est {
-                    let attributed: Vec<u64> =
-                        source_path_map.range(start..=end).map(|(&k, _)| k).collect();
-                    if !attributed.is_empty() {
-                        let mut sched = scheduler.lock();
-                        for k in attributed {
-                            if let Some(&pid) = source_path_map.get(&k) {
-                                if let Some(p) = sched.path_mut(pid) {
-                                    if rate_sample {
-                                        p.on_src_delivered_seq(k);
-                                    } else {
-                                        p.on_src_delivered(1);
-                                    }
-                                }
-                                source_path_map.remove(&k);
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -6839,7 +6555,7 @@ async fn run_window_sender(
         // 4·G) and grows with the measured anchors; an explicit RWM_FMTCP_WIN
         // still wins (operator override).
         let eff_fmtcp_backstop = if fmtcp && mstar_anchor && !fmtcp_win_explicit {
-            fmtcp_backstop_coupled(gen_pipe_m, gen_size, daps_win_floor)
+            fmtcp_backstop_coupled(gen_pipe_m, gen_size)
         } else {
             fmtcp_win_backstop
         };
@@ -7292,18 +7008,10 @@ async fn run_window_sender(
                     // PART 1 instrumentation: per-path in-flight vs its own BDP
                     // cap + live RTT vs RTprop — the slow-path bufferbloat probe
                     // (is the slow path over its BDP? is its RTT inflated above
-                    // RTprop?).  Cap gain = the DAPS placement gain when active,
-                    // else the FMTCP aggregate gain.
-                    let cap_gain = if daps_bdp_gain > 0.0 { daps_bdp_gain } else { infl_bdp_gain };
+                    // RTprop?).  Cap gain = the FMTCP aggregate gain.
+                    let cap_gain = infl_bdp_gain;
                     let mut pp = String::new();
                     let ids = sched.active_paths();
-                    // feat/daps-readahead-depth: snapshot each path's skew-depth
-                    // budget (skew·BtlBw_j) under the immutable borrow, before the
-                    // per-path mutable loop below (borrow-checker).
-                    let dbud: std::collections::HashMap<crate::scheduler::PathId, f64> = ids
-                        .iter()
-                        .map(|id| (*id, sched.daps_depth_budget_syms(*id).unwrap_or(0.0)))
-                        .collect();
                     for id in &ids {
                         if let Some(p) = sched.path_mut(*id) {
                             p.expire_in_flight();
@@ -7317,20 +7025,13 @@ async fn run_window_sender(
                             let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
                             let rtprop_i =
                                 p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
-                            // feat/per-path-estimator DIAG: the SOURCE outstanding
-                            // gauge (BLEST in_flight_i, the value the cap now keys
-                            // on), the ack-attributed per-path BtlBw_i (sym/s), and
-                            // whether the per-path BDP anchor has ESTABLISHED — the
-                            // signals the DAPS residual was missing.  Piece 2 send-
-                            // buffer proxy: charged-source − src_inflight is drained,
-                            // so a growing src_inflight relative to bdp is the queue.
+                            // Per-path SOURCE outstanding gauge (charged by the
+                            // CopaFeed at send, released on ack attribution),
+                            // the ack-attributed per-path BtlBw_i (sym/s), and
+                            // whether the per-path BDP anchor has ESTABLISHED.
                             let sinfl_i = p.src_inflight() as u64;
                             let btlbw_i = p.btlbw_sym_per_s().unwrap_or(0.0);
                             let est_i = if p.anchor_established() { "Y" } else { "n" };
-                            // feat/daps-readahead-depth DIAG: the skew-depth budget
-                            // (skew·BtlBw_j) this path's read-ahead is bounded to,
-                            // to compare the OBSERVED sinfl against Δ×BtlBw at L1.
-                            let dbud_i = dbud.get(id).copied().unwrap_or(0.0);
                             // diag/slow-path-anchor: the rate-sample anchor trace
                             // (snapshotted-at-send / of-which-app-limited / acks-
                             // attributed / no-record / rej[interval/zero/applim] /
@@ -7400,8 +7101,8 @@ async fn run_window_sender(
                             // under striping).
                             let pl_i = p.estimator.loss_rate();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} dbud={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, dbud_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -7724,19 +7425,12 @@ async fn run_window_sender(
                 && !cwnd_full
                 && encoder.wants_coding()
             {
-                // pace-all-traffic: pick the candidate path + apply the per-path
-                // pace gate FIRST (before generating / charging), so a HOLD when
-                // both paths' BtlBw buckets are dry wastes no coded symbol.
                 let path = {
                     let sched = scheduler.lock();
-                    let cand = if xpath_repair {
+                    if xpath_repair {
                         sched.place_repair_spare_path().unwrap_or(0)
                     } else {
                         sched.place_symbol(true, &[]).unwrap_or(0)
-                    };
-                    match paced_repair_path!(sched, cand) {
-                        Some(p) => p,
-                        None => break, // both paths paced-out — retry next loop
                     }
                 };
                 gen_coded_total += 1;
@@ -7794,17 +7488,12 @@ async fn run_window_sender(
                     && !cwnd_full
                     && encoder.wants_filling_coding()
                 {
-                    // pace-all-traffic: candidate + per-path pace gate FIRST.
                     let path = {
                         let sched = scheduler.lock();
-                        let cand = if xpath_repair {
+                        if xpath_repair {
                             sched.place_repair_spare_path().unwrap_or(0)
                         } else {
                             sched.place_symbol(true, &[]).unwrap_or(0)
-                        };
-                        match paced_repair_path!(sched, cand) {
-                            Some(p) => p,
-                            None => break, // both paths paced-out — retry next loop
                         }
                     };
                     let sym = encoder.generate_repair_filling();
@@ -7903,22 +7592,12 @@ async fn run_window_sender(
                         // path proportionally without STARVING a symmetric second
                         // path — hard argmax concentration serializes symmetric
                         // aggregation (MEASURED C7 regression) for no C8 gain.
-                        // pace-all-traffic: gate that placement through the per-path
-                        // BtlBw pacer.  The deficit top-up was the DOMINANT unpaced
-                        // repair feeding the standing queue; if BOTH paths are dry
-                        // HOLD — discard this (rateless) symbol WITHOUT decrementing
-                        // the want, so the generation is re-covered next loop as the
-                        // buckets refill (bounds deficit top-up to BtlBw_i per path).
                         let path = {
                             let sched = scheduler.lock();
-                            let cand = if xpath_repair {
+                            if xpath_repair {
                                 sched.place_repair_spare_path().unwrap_or(0)
                             } else {
                                 sched.place_symbol(true, &[]).unwrap_or(0)
-                            };
-                            match paced_repair_path!(sched, cand) {
-                                Some(p) => p,
-                                None => break 'recover,
                             }
                         };
                         *gen_emitted.entry(a).or_insert(0) += 1;
@@ -8065,23 +7744,6 @@ async fn run_window_sender(
             src_tok_last_us = now;
             let burst = (src_rate * 0.004).clamp(8.0, 64.0);
             src_tokens = (src_tokens + src_rate * (dt as f64 / 1_000_000.0)).min(burst);
-        }
-        // DAPS BBR per-path pacing: refill each active path's BtlBw token bucket
-        // so the placement gate above emits each path at its own drain rate
-        // (the slow path's future-offset data flows at BtlBw_slow without
-        // queuing).  Independent of cc_pace; transparent until the anchor warms.
-        if daps_pace_on {
-            let now = now_us();
-            let dts = now.saturating_sub(daps_pace_last_us) as f64 / 1_000_000.0;
-            daps_pace_last_us = now;
-            let sched = scheduler.lock();
-            for id in sched.active_paths() {
-                if let Some(btlbw) = sched.path(id).and_then(|p| p.btlbw_sym_per_s()) {
-                    let burst = (btlbw * 0.004).clamp(4.0, 64.0); // ≤4 ms burst
-                    let t = daps_pace_tok.entry(id).or_insert(burst);
-                    *t = (*t + btlbw * dts).min(burst);
-                }
-            }
         }
         // P10b: gap reports must wake this loop even when the TUN is idle.
         // The inner TCP stalls exactly when a hole blocks delivery — no new
@@ -8762,35 +8424,6 @@ async fn run_window_sender(
         if ack > prev_ack {
             // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
             let newly_acked = ack - prev_ack;
-            // feat/per-path-estimator: cumulative-frontier per-path ack
-            // attribution.  Every source seq the in-order frontier just passed
-            // (prev_ack+1..=ack) that is still owned in source_path_map (i.e.
-            // NOT already attributed OOO via a SACK above) is now delivered:
-            // attribute it to its DAPS placement path and drive that path's
-            // delivered-rate estimator + release its SOURCE outstanding gauge.
-            // Range-query the map (BTreeMap) so the cost is O(unattributed in
-            // span), not O(span).  Runs before the source_path_map.retain below
-            // that drops the acked range wholesale.
-            if per_path_est {
-                let attributed: Vec<u64> = source_path_map
-                    .range((prev_ack + 1)..=ack)
-                    .map(|(&k, _)| k)
-                    .collect();
-                if !attributed.is_empty() {
-                    let mut sched = scheduler.lock();
-                    for k in attributed {
-                        if let Some(pid) = source_path_map.remove(&k) {
-                            if let Some(p) = sched.path_mut(pid) {
-                                if rate_sample {
-                                    p.on_src_delivered_seq(k);
-                                } else {
-                                    p.on_src_delivered(1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             // Compute the repair rate AND the derived window target (paper
             // Section 8.8) from the worst (highest-loss) active path, under a
             // single lock acquisition.
@@ -11569,19 +11202,17 @@ mod tests {
     // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rule 3: the derived
     // win backstop equals the legacy static default at cold start (the static
     // constant governs ONLY the anchor warm-up) and tracks (M*+2)·G once the
-    // anchors are live; the DAPS read-ahead floor is preserved.
+    // anchors are live.
     #[test]
     fn fmtcp_backstop_couples_to_derived_depth_after_cold_start() {
         // Cold start: M* = 2 (gen_pipe_depth's no-sample floor) ⇒ (2+2)·384 =
         // 1536 — exactly the legacy (pipeline=2 + 2)·G static default.
-        assert_eq!(fmtcp_backstop_coupled(2, 384, 0), 1536);
+        assert_eq!(fmtcp_backstop_coupled(2, 384), 1536);
         // Anchors live at the r200 knee class (M* = 12) ⇒ the backstop GROWS
         // with the derived depth instead of pinning the transfer at 4·G.
-        assert_eq!(fmtcp_backstop_coupled(12, 384, 0), 14 * 384);
-        // DAPS read-ahead floor still applies…
-        assert_eq!(fmtcp_backstop_coupled(2, 384, 8 * 384), 8 * 384);
-        // …and the 2·G absolute floor survives degenerate inputs.
-        assert_eq!(fmtcp_backstop_coupled(0, 384, 0), 2 * 384);
+        assert_eq!(fmtcp_backstop_coupled(12, 384), 14 * 384);
+        // The 2·G absolute floor survives degenerate inputs.
+        assert_eq!(fmtcp_backstop_coupled(0, 384), 2 * 384);
     }
 
     // feat/anchor-hygiene (`RWM_PLAIN_RS`): the sampling-only feed must
@@ -11934,126 +11565,6 @@ mod tests {
         assert_eq!(clean.effective_multiplier(true), clean.multiplier(),
             "idle floor is a no-op when not suppressed");
         assert!((clean.multiplier() - 1.0).abs() < 1e-9);
-    }
-
-    /// feat/pace-all-traffic: ALL per-path emission (source + repair) is metered
-    /// against the SAME per-path BtlBw token bucket, so the TOTAL per-path send
-    /// rate never exceeds BtlBw_i — closing the standing queue the SOURCE-only
-    /// pacer left (the coded/repair top-up was emitted outside it).
-    /// `paced_repair_decision` is the gate. Drive a fast+slow pair with a repair
-    /// FLOOD and assert: (a) repair never overdraws a bucket (so per-path repair
-    /// ≤ BtlBw_i); (b) TOTAL per-path emission (source + repair) ≤ BtlBw_i·ticks
-    /// + one burst; (c) an unpaced dump would blow the slow path's budget over.
-    #[test]
-    fn pace_all_traffic_bounds_total_per_path_emission_at_btlbw() {
-        use std::collections::HashMap;
-        let fast = 0u32;
-        let slow = 1u32;
-        // Heterogeneous C8 rates (symbols per tick). Fast ≫ slow, like c2+c3.
-        let btlbw = |id: u32| if id == fast { 20.0f64 } else { 2.0f64 };
-        let burst = 8.0; // token-bucket cap (a few ms of link)
-        let ticks = 1000u64;
-
-        let mut tok: HashMap<u32, f64> = HashMap::new();
-        tok.insert(fast, 0.0);
-        tok.insert(slow, 0.0);
-
-        let mut src_emitted: HashMap<u32, u64> = HashMap::new();
-        let mut rep_emitted: HashMap<u32, u64> = HashMap::new();
-
-        for _ in 0..ticks {
-            // Refill both buckets at BtlBw_i (one tick of link), capped at burst.
-            for &id in &[fast, slow] {
-                let t = tok.get_mut(&id).unwrap();
-                *t = (*t + btlbw(id)).min(burst);
-            }
-            // SOURCE first (has priority). DAPS offers source on the slow path
-            // (future-offset placement); the source pacer spills to fast when the
-            // slow bucket is dry — the production source gate (may go negative).
-            for _ in 0..3 {
-                let cand = slow;
-                let pick = if cand != fast && tok.get(&cand).is_some_and(|&t| t < 1.0) {
-                    fast
-                } else {
-                    cand
-                };
-                *tok.get_mut(&pick).unwrap() -= 1.0;
-                *src_emitted.entry(pick).or_insert(0) += 1;
-            }
-            // REPAIR next: offer a FLOOD (8/tick, far above capacity) on BOTH
-            // candidates — the gate must HOLD once the buckets dry.
-            for cand in [slow, fast, slow, fast, slow, fast, slow, fast] {
-                if let Some(p) = paced_repair_decision(&mut tok, cand, fast) {
-                    // (a) repair only ever consumes a bucket that was ≥ 1, so the
-                    //     bucket is never negative AFTER a repair emission — repair
-                    //     can never overdraw a path past BtlBw_i (any negative
-                    //     excursion is SOURCE, which has priority).
-                    assert!(
-                        *tok.get(&p).unwrap() >= -1e-9,
-                        "repair must never drive a per-path bucket negative (path {p})"
-                    );
-                    *rep_emitted.entry(p).or_insert(0) += 1;
-                }
-            }
-        }
-
-        // (b) TOTAL per-path emission (source + repair) ≤ BtlBw_i·ticks + burst.
-        for &id in &[fast, slow] {
-            let total = src_emitted.get(&id).copied().unwrap_or(0)
-                + rep_emitted.get(&id).copied().unwrap_or(0);
-            let ceiling = (btlbw(id) * ticks as f64 + burst).ceil() as u64;
-            assert!(
-                total <= ceiling,
-                "path {id}: total emission {total} must be ≤ BtlBw_i·ticks+burst {ceiling}"
-            );
-        }
-        // (c) The slow path carries far less than an unpaced dump would place on
-        //     it (4 slow-candidate offers/tick = 4000), proving pacing bounds it.
-        let slow_total = src_emitted.get(&slow).copied().unwrap_or(0)
-            + rep_emitted.get(&slow).copied().unwrap_or(0);
-        let unpaced_slow_offer = 4 * ticks;
-        assert!(
-            (slow_total as f64) < 0.6 * unpaced_slow_offer as f64,
-            "pacing must cut slow-path emission ({slow_total}) far below an unpaced \
-             dump ({unpaced_slow_offer})"
-        );
-        // Sanity: the fast path still carries the bulk (aggregation preserved).
-        let fast_total = src_emitted.get(&fast).copied().unwrap_or(0)
-            + rep_emitted.get(&fast).copied().unwrap_or(0);
-        assert!(fast_total > slow_total, "fast path carries the bulk of the load");
-    }
-
-    /// feat/pace-all-traffic: the HOLD property that bounds the FAST path too.
-    /// When BOTH the candidate and the fast path are dry, the gate returns None
-    /// (hold) rather than spilling into a negative bucket; a warmed candidate
-    /// with a token emits there; a dry candidate spills to a funded fast path;
-    /// an un-warmed path (no bucket) is transparent (emits, consumes nothing).
-    #[test]
-    fn pace_all_traffic_holds_when_both_paths_dry() {
-        use std::collections::HashMap;
-        let (fast, slow) = (0u32, 1u32);
-
-        // Both dry ⇒ HOLD (this is what bounds the fast path).
-        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 0.5), (slow, 0.5)]);
-        assert_eq!(paced_repair_decision(&mut tok, slow, fast), None);
-        assert_eq!(paced_repair_decision(&mut tok, fast, fast), None);
-
-        // Slow dry, fast funded ⇒ spill to fast, consume a fast token.
-        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0), (slow, 0.0)]);
-        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(fast));
-        assert!((tok[&fast] - 2.0).abs() < 1e-9, "one fast token consumed");
-        assert!((tok[&slow] - 0.0).abs() < 1e-9, "slow bucket untouched");
-
-        // Candidate funded ⇒ emit there, consume its token.
-        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0), (slow, 2.0)]);
-        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(slow));
-        assert!((tok[&slow] - 1.0).abs() < 1e-9, "one slow token consumed");
-
-        // Un-warmed candidate (no bucket) ⇒ transparent: emit, consume nothing.
-        let mut tok: HashMap<u32, f64> = HashMap::from([(fast, 3.0)]);
-        assert_eq!(paced_repair_decision(&mut tok, slow, fast), Some(slow));
-        assert!(!tok.contains_key(&slow), "un-warmed path stays un-metered");
-        assert!((tok[&fast] - 3.0).abs() < 1e-9, "fast untouched when candidate transparent");
     }
 
 }

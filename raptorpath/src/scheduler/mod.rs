@@ -499,7 +499,7 @@ struct RttSample {
 
 /// Cap on rate-sample send records tracked per path (bounds the map when
 /// symbols are lost / attributed without a matching send record). ~a few
-/// aggregate BDPs + the deep DAPS read-ahead; oldest are dropped past this.
+/// aggregate BDPs; oldest are dropped past this.
 const RS_MAX_TRACKED: usize = 8192;
 
 /// A sent SOURCE symbol's BBR delivery-rate-sample state
@@ -597,9 +597,9 @@ pub struct CopaState {
     last_delivered_time: Instant,
     /// Delivered count at last measurement.
     last_delivered: u64,
-    // --- BBR delivery-rate sampling (feat/btlbw-rate-sample, RWM_RATE_SAMPLE) ---
+    // --- BBR delivery-rate sampling (the send-interval anchor, ADR-0061) ---
     /// Total SOURCE symbols delivered on this path (BBR `C.delivered`). Separate
-    /// from `delivered` so the =0 (legacy ack-interval anchor) A/B is byte-exact.
+    /// from `delivered` so the legacy ack-interval anchor stays byte-exact.
     rs_delivered: u64,
     /// Time `rs_delivered` last advanced (BBR `C.delivered_time`).
     rs_delivered_time: Instant,
@@ -1791,53 +1791,30 @@ impl PathState {
         }
     }
 
-    // --- Per-path delivered-rate estimator (feat/per-path-estimator) ---
+    // --- Per-path send-interval rate sampling (the CopaFeed's anchor) ---
     //
-    // In generation mode WindowAcks do NOT drive `on_ack` (the block-ARQ
-    // path), so `copa.record_delivery` was never called per path and the
-    // Copa BtlBw/BDP anchor stayed `None` — the DAPS BLEST cap + BBR pacer,
-    // which key on `copa_bdp_anchor()` / `btlbw_sym_per_s()`, therefore had
-    // no per-path rate to act on (goal-gate "DAPS Queue Management" residual).
-    // These two entry points close that: the sender attributes each
-    // newly-acked SOURCE seq to the path its DAPS placement committed it to
-    // (`source_path_map`) and calls `on_src_delivered` on THAT path, which
-    // (a) feeds `copa.record_delivery` so BtlBw_i = the path's own delivered
-    // source-rate (BtlBw_i·RTprop_i = the per-path BDP), and (b) releases the
-    // per-path SOURCE outstanding gauge by ACK, not time-expiry.
+    // The plain-mode Copa delivery feed (feat/copa-sole-cc / RWM_PLAIN_RS,
+    // ADR-0061) attributes each newly-acked SOURCE seq to the path that
+    // carried it and drives that path's BBR-correct send-interval sampler,
+    // so BtlBw_i / the per-path BDP anchor establish per path.
 
-    /// Charge `n` source symbols to this path's outstanding gauge at DAPS
+    /// Charge `n` source symbols to this path's outstanding gauge at
     /// placement time (the seq→path commitment).  Pairs with
-    /// `on_src_delivered`.
+    /// `on_src_delivered_seq`.
     pub fn charge_src(&mut self, n: u32) {
         self.src_inflight = self.src_inflight.saturating_add(n);
     }
 
-    /// Per-path ack attribution: `n` source symbols placed on this path have
-    /// now been delivered/decoded at the receiver.  Releases the outstanding
-    /// gauge (BLEST in_flight_i) and drives the Copa delivered-rate estimator
-    /// so BtlBw_i / the BDP anchor establish per path (they underpin the
-    /// DAPS cap, the BBR pacer, and the Δ_j offset's ΣBtlBw).
-    pub fn on_src_delivered(&mut self, n: u32) {
-        if n == 0 {
-            return;
-        }
-        self.src_inflight = self.src_inflight.saturating_sub(n);
-        self.copa.record_delivery(n);
-    }
-
-    /// BBR `SendPacket` for the rate-sample anchor (RWM_RATE_SAMPLE): record this
-    /// source seq's send-time state so its ack yields a send-interval rate sample.
-    /// Called at DAPS placement/send time; pairs with `on_src_delivered_seq`.
+    /// BBR `SendPacket` for the rate-sample anchor: record this source seq's
+    /// send-time state so its ack yields a send-interval rate sample.
+    /// Called at placement/send time; pairs with `on_src_delivered_seq`.
     pub fn on_src_sent(&mut self, seq: u64, app_limited: bool) {
         self.copa.rs_on_sent(seq, app_limited);
     }
 
     /// Per-path ack attribution under the BBR rate-sample anchor: release the
     /// SOURCE outstanding gauge and feed the delivery-rate max-filter a
-    /// SEND-INTERVAL sample (robust to ack-aggregation / a standing queue).  The
-    /// send-interval replacement for `on_src_delivered` — same gauge release,
-    /// correct BtlBw_i.  Under RWM_RATE_SAMPLE=0 the caller uses the legacy
-    /// `on_src_delivered` instead (byte-identical old ack-interval anchor).
+    /// SEND-INTERVAL sample (robust to ack-aggregation / a standing queue).
     pub fn on_src_delivered_seq(&mut self, seq: u64) {
         self.src_inflight = self.src_inflight.saturating_sub(1);
         self.copa.rs_on_delivered(seq);
@@ -1960,8 +1937,7 @@ impl PathState {
         self.copa.bdp_anchor()
     }
 
-    /// RTprop (Copa windowed-min RTT) for this path — the DAPS delay-skew
-    /// input (None during warm-up). Used by `daps_offset_syms`.
+    /// RTprop (Copa windowed-min RTT) for this path (None during warm-up).
     pub fn min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
     }
@@ -2704,275 +2680,6 @@ impl Scheduler {
         }
         let idx = (rand::random::<f64>() * candidates.len() as f64) as usize;
         Some(candidates[idx.min(candidates.len() - 1)])
-    }
-
-    /// The fastest active path by RTprop (min windowed-min RTT) — the DAPS
-    /// reference (Δ=0) path and the pacing spill target.  Falls back to the
-    /// first active path when no RTprop sample exists yet (warm-up).
-    pub fn fastest_active_path(&self) -> Option<PathId> {
-        self.paths
-            .values()
-            .filter(|p| p.active)
-            .min_by(|a, b| {
-                let ra = a.min_rtt().unwrap_or(Duration::MAX);
-                let rb = b.min_rtt().unwrap_or(Duration::MAX);
-                ra.cmp(&rb)
-            })
-            .map(|p| p.id)
-    }
-
-    /// DAPS delay-skew offset Δ_j for path `pid`, in symbols (0 for warm-up /
-    /// the fastest path).  Follows the published DAPS delay-alignment rule
-    /// (G. Sarwar, R. Boreli, E. Lochin, A. Mifdaoui, G. Smith, "Mitigating
-    /// Receiver's Buffer Blocking by Delay Aware Packet Scheduling in Multipath
-    /// Data Transfer," WAINA/PAMS 2013; N. Kuhn, E. Lochin, A. Mifdaoui,
-    /// G. Sarwar, O. Mehani, R. Boreli, "DAPS: Intelligent Delay-Aware Packet
-    /// Scheduling for Multipath Transport," IEEE ICC 2014): the slow path
-    /// carries FUTURE stream positions so they arrive IN ORDER with the fast
-    /// path reaching that position.  The two-subflow RTT-ratio offset, expressed
-    /// in symbols, is the delay skew times the aggregate delivery rate:
-    ///   Δ_j = (RTprop_j − RTprop_min) · Σ_i BtlBw_i
-    /// with Σ BtlBw_i = Σ (anchor_i / RTprop_i) since anchor = BtlBw·RTprop.
-    pub fn daps_offset_syms(&self, pid: PathId) -> f64 {
-        let min_rtprop = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .filter_map(|p| p.min_rtt())
-            .min();
-        let (Some(min_rtprop), Some(p)) = (min_rtprop, self.paths.get(&pid)) else {
-            return 0.0;
-        };
-        if !p.active {
-            return 0.0;
-        }
-        let Some(rtprop_j) = p.min_rtt() else { return 0.0 };
-        let skew = rtprop_j.as_secs_f64() - min_rtprop.as_secs_f64();
-        if skew <= 0.0 {
-            return 0.0;
-        }
-        // Σ BtlBw over active paths (symbols/sec), from the Copa anchors.
-        let sum_btlbw: f64 = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .filter_map(|p| {
-                let anchor = p.copa_bdp_anchor()?;
-                let rtp = p.min_rtt()?.as_secs_f64();
-                if rtp > 0.0 { Some(anchor / rtp) } else { None }
-            })
-            .sum();
-        skew * sum_btlbw
-    }
-
-    /// The DAPS read-ahead DEPTH budget for path `pid`, in SOURCE symbols: the
-    /// skew-depth `(RTprop_j − RTprop_min)·BtlBw_j`.  This is the MOST read-ahead
-    /// path j may carry beyond the fast-path frontier while its own queue delay
-    /// stays within the latency skew — so the slow-path segment ARRIVES
-    /// in-order-aligned (never later than the fast path would deliver that
-    /// region), the ECF/BLEST completion-time guard (Lim 2017 / Ferlin 2016) done
-    /// on DEPTH.  It is the correct DAPS/ECF depth: `daps_offset_syms` places the
-    /// slow path Δ_j = skew·ΣBtlBw AHEAD; the depth budget caps how much it may
-    /// pile up THERE at skew·BtlBw_j (path j's OWN drain), so outstanding/BtlBw_j
-    /// = queue delay ≤ skew ⇒ the read-ahead is skew-aligned, not bloated.
-    ///
-    /// This is DISTINCT from the BLEST BDP cap (`daps_eligible_paths_capped`):
-    /// that bounds outstanding to BtlBw_j·RTprop_j (one full BDP); the depth
-    /// budget bounds it to BtlBw_j·SKEW_j (skew ≤ RTprop), the TIGHTER DAPS-exact
-    /// bound.  Crucially it is a DEPTH limiter, NOT a rate throttle: the path
-    /// still emits at its natural BtlBw within the budget (never idled below
-    /// BtlBw), so the link stays FULL — it only STOPS placing FRESH read-ahead on
-    /// path j once the budget is exhausted (the fast path then carries it).  That
-    /// is what escapes the §16.13 rate-throttle politeness-idle regression.
-    /// None for the fastest path (skew 0 ⇒ no bound) or during warm-up (no
-    /// RTprop / BtlBw sample yet) — never restrict an un-warmed path.
-    pub fn daps_depth_budget_syms(&self, pid: PathId) -> Option<f64> {
-        let min_rtprop = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .filter_map(|p| p.min_rtt())
-            .min()?;
-        let p = self.paths.get(&pid)?;
-        if !p.active {
-            return None;
-        }
-        let rtprop_j = p.min_rtt()?;
-        let skew = rtprop_j.checked_sub(min_rtprop)?; // saturates to 0 if j is the min
-        let skew_s = skew.as_secs_f64();
-        if skew_s <= 0.0 {
-            return None; // the fastest path carries no read-ahead depth bound
-        }
-        let btlbw = p.btlbw_sym_per_s()?;
-        Some(skew_s * btlbw)
-    }
-
-    /// True iff path `pid`'s committed SOURCE read-ahead depth (`src_inflight`)
-    /// has reached its skew-depth budget (`daps_depth_budget_syms`).  Used to
-    /// steer BOTH source placement and repair emission off an over-committed
-    /// non-fastest path (the fast path carries it instead), so ALL per-path
-    /// look-ahead is bounded to one skew.  False for the fastest path / warm-up.
-    pub fn daps_depth_over_budget(&self, pid: PathId) -> bool {
-        match self.daps_depth_budget_syms(pid) {
-            Some(budget) => {
-                let infl = self.paths.get(&pid).map(|p| p.src_inflight).unwrap_or(0);
-                (infl as f64) >= budget.max(1.0)
-            }
-            None => false,
-        }
-    }
-
-    /// The DAPS-eligible path set for a source symbol whose leading edge is
-    /// `lead_syms` ahead of the delivered frontier.  A path j is eligible iff
-    /// `lead_syms ≥ Δ_j` — the ECF completion-time guard (Y. Lim, E. Nahum,
-    /// D. Towsley, R. Gibbens, "ECF: An MPTCP Path Scheduler to Manage
-    /// Heterogeneous Paths," ACM CoNEXT 2017): only place on path j data the
-    /// fast path could not deliver sooner, so using j never delays completion.
-    /// The fastest path (Δ=0) is always eligible, so the set is never empty.
-    /// This is the published fix for DAPS's known static-schedule failure mode
-    /// (a near-frontier slow-path symbol that stalls the delivered frontier).
-    pub fn daps_eligible_paths(&self, lead_syms: f64) -> Vec<PathId> {
-        self.daps_eligible_paths_capped(lead_syms, 0.0)
-    }
-
-    /// `daps_eligible_paths` with a BLEST-style per-path in-flight BDP cap
-    /// (S. Ferlin, Ö. Alay, O. Mehani, R. Boreli, "BLEST: Blocking Estimation-
-    /// based MPTCP Scheduler for Heterogeneous Networks," IFIP Networking 2016):
-    /// bound each subflow's OUTSTANDING to its own BDP so no path is committed
-    /// beyond one bandwidth-delay product.  A path j is eligible iff
-    ///   `lead_syms ≥ Δ_j`  (the ECF future-offset guard)  AND
-    ///   `in_flight_j < ceil(bdp_gain · BtlBw_j·RTprop_j)`  (the BLEST bound).
-    ///
-    /// This is the fix for the DAPS slow-path bufferbloat: without it the
-    /// per-path cap only gated the aggregate TUN-read pause (the sender paused
-    /// only when EVERY path was full), so the softmax kept committing a share
-    /// to the slow path past its BDP — the slow path's standing queue grew to
-    /// ~834 ms and consumed the DAPS pre-fetch slack.  Bounding OUTSTANDING at
-    /// one BDP holds the standing queue near zero (RTT ≈ RTprop), so the slack
-    /// is preserved.  `bdp_gain ≤ 0` disables the cap (the shipped default).
-    /// A path whose anchor has not warmed yet is NOT capped (warm-up).  If the
-    /// cap would empty the set, the caller falls back to the uncapped set so
-    /// placement never wedges.
-    pub fn daps_eligible_paths_capped(&self, lead_syms: f64, bdp_gain: f64) -> Vec<PathId> {
-        self.daps_eligible_paths_capped_depth(lead_syms, bdp_gain, false)
-    }
-
-    /// `daps_eligible_paths_capped` with the additional DAPS read-ahead DEPTH
-    /// bound (feat/daps-readahead-depth).  When `depth_bound` is set, a path j is
-    /// additionally required to be WITHIN its skew-depth budget
-    /// (`daps_depth_over_budget(j)` false) — i.e. its committed read-ahead has not
-    /// piled up more than one skew beyond the frontier.  This is the correct
-    /// DAPS/ECF depth guard: once path j holds skew·BtlBw_j read-ahead it is
-    /// dropped from the eligible set so the FAST path carries the rest (never
-    /// placing on j data that would COMPLETE later than waiting for the fast
-    /// path).  It is a DEPTH limiter, not a rate throttle — the pace bucket still
-    /// refills at BtlBw_j, so within the budget path j emits at full link rate
-    /// (no idle); it only STOPS once the depth is exhausted.  `depth_bound=false`
-    /// reproduces the prior unbounded read-ahead exactly (same-binary A/B).
-    pub fn daps_eligible_paths_capped_depth(
-        &self,
-        lead_syms: f64,
-        bdp_gain: f64,
-        depth_bound: bool,
-    ) -> Vec<PathId> {
-        self.paths
-            .values()
-            .filter(|p| p.active)
-            .filter(|p| lead_syms >= self.daps_offset_syms(p.id))
-            .filter(|p| {
-                if bdp_gain <= 0.0 {
-                    return true;
-                }
-                match p.copa_bdp_anchor() {
-                    // BLEST bound on SOURCE outstanding (`src_inflight`, ack-
-                    // attributed) vs the source-unit BDP (BtlBw_i·RTprop_i,
-                    // where BtlBw_i is the ack-attributed per-path delivered
-                    // source-rate) — both in source symbols, so the cap is
-                    // dimensionally consistent (feat/per-path-estimator).  The
-                    // former coded `in_flight` (time-expired) was a different
-                    // unit and never released by per-path ack.
-                    Some(bdp) => (p.src_inflight as f64) < (bdp_gain * bdp).max(1.0),
-                    None => true, // anchor not warm yet — do not restrict
-                }
-            })
-            .filter(|p| {
-                // DAPS read-ahead DEPTH bound: drop a non-fastest path once its
-                // committed read-ahead reaches skew·BtlBw_j (queue delay = skew).
-                !depth_bound || !self.daps_depth_over_budget(p.id)
-            })
-            .map(|p| p.id)
-            .collect()
-    }
-
-    /// DAPS delay-aware source placement: restrict the §16.3 marginal-cost
-    /// softmax to the DAPS-eligible set (`daps_eligible_paths`), then sample.
-    /// Symmetric paths (skew 0 ⇒ all Δ_j = 0) reduce EXACTLY to `place_symbol`
-    /// (no C7 regression).  A slow-path pick is therefore always FUTURE data:
-    /// if lost it has the pre-fetch slack (Δ_j / ΣBtlBw seconds) to recover
-    /// before df arrives — the long-pole escape the cost-based build lacked.
-    pub fn place_source_daps(&self, lead_syms: f64) -> Option<PathId> {
-        self.place_source_daps_capped(lead_syms, 0.0)
-    }
-
-    /// `place_source_daps` with the BLEST per-path in-flight BDP cap
-    /// (`daps_eligible_paths_capped`).  A path at its own BDP is dropped from
-    /// the eligible set, so the softmax steers fresh source to a path with
-    /// spare pipe instead of over-committing the slow path (the bufferbloat
-    /// fix).  If EVERY eligible path is at its cap, fall back to the uncapped
-    /// lead-eligible set (the fast path) so intake never wedges — the aggregate
-    /// per-path TUN-pause then throttles overall admission.
-    pub fn place_source_daps_capped(&self, lead_syms: f64, bdp_gain: f64) -> Option<PathId> {
-        self.place_source_daps_capped_depth(lead_syms, bdp_gain, false)
-    }
-
-    /// `place_source_daps_capped` with the DAPS read-ahead DEPTH bound
-    /// (feat/daps-readahead-depth).  When `depth_bound` is set, a non-fastest
-    /// path already holding its skew-depth budget (skew·BtlBw_j) is dropped from
-    /// the eligible set, so the softmax steers fresh source to the FAST path
-    /// instead of piling read-ahead onto the slow path past the point it would
-    /// arrive in-order-aligned.  Falls back exactly like the capped variant when
-    /// the depth bound empties the set, so intake never wedges.  `depth_bound=
-    /// false` is byte-identical to `place_source_daps_capped`.
-    pub fn place_source_daps_capped_depth(
-        &self,
-        lead_syms: f64,
-        bdp_gain: f64,
-        depth_bound: bool,
-    ) -> Option<PathId> {
-        let mut elig: std::collections::HashSet<PathId> = self
-            .daps_eligible_paths_capped_depth(lead_syms, bdp_gain, depth_bound)
-            .into_iter()
-            .collect();
-        if elig.is_empty() {
-            // depth/BDP bound emptied the set — fall back to the lead-eligible
-            // (uncapped) set so placement never wedges (the fast path qualifies).
-            elig = self.daps_eligible_paths(lead_syms).into_iter().collect();
-        }
-        if elig.len() <= 1 {
-            // only the fast path qualifies (or warm-up): send there.
-            return elig.into_iter().next().or_else(|| self.place_symbol(false, &[]));
-        }
-        let probs: Vec<(PathId, f64)> = self
-            .place_probs(false, &[])
-            .into_iter()
-            .filter(|(pid, _)| elig.contains(pid))
-            .collect();
-        if probs.is_empty() {
-            return self.place_symbol(false, &[]);
-        }
-        let z: f64 = probs.iter().map(|(_, p)| p).sum();
-        if z <= 0.0 || !z.is_finite() {
-            return probs.first().map(|(pid, _)| *pid);
-        }
-        let u: f64 = rand::random::<f64>() * z;
-        let mut acc = 0.0;
-        for (pid, p) in &probs {
-            acc += p;
-            if u <= acc {
-                return Some(*pid);
-            }
-        }
-        probs.last().map(|(pid, _)| *pid)
     }
 
     /// The softmax placement distribution over paths (paper §16.3). Exposed for
@@ -4221,335 +3928,6 @@ mod tests {
         // Even heavily overdrafted, the lone path is still chosen.
         sched.path_mut(0).unwrap().in_flight = 10_000;
         assert_eq!(sched.place_symbol(false, &[]), Some(0));
-    }
-
-    // Set a path's Copa RTprop + BtlBw anchor directly so DAPS can compute the
-    // delay-skew offset (bypasses the estimator warm-up).
-    fn set_anchor(sched: &mut Scheduler, id: PathId, rtprop_ms: u64, btlbw_sym_s: f64) {
-        let p = sched.path_mut(id).unwrap();
-        p.active = true;
-        p.copa.min_rtt = Some(Duration::from_millis(rtprop_ms));
-        p.copa.max_bw = btlbw_sym_s;
-        let now = Instant::now();
-        for _ in 0..ANCHOR_MIN_SAMPLES {
-            p.copa.bw_samples.push_back(BwSample { delivery_rate: btlbw_sym_s, timestamp: now });
-        }
-    }
-
-    // DAPS delay-aware scheduling (Sarwar WAINA 2013 / Kuhn ICC 2014 + ECF
-    // guard, Lim CoNEXT 2017): the slow path carries FUTURE-offset data, the
-    // receiver reassembles by offset, and near-frontier data (lead < Δ_slow)
-    // is force-routed to the fast path so arrivals stay in sync.
-    #[test]
-    fn daps_slow_path_carries_future_offset_data() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹ (100Mbit), slow RTprop=40ms/1667 (20Mbit).
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 40, 1667.0);
-
-        // Δ_fast = 0 (min RTprop); Δ_slow = (0.040−0.010)·(8333+1667) = 300 syms.
-        assert!(sched.daps_offset_syms(0).abs() < 1e-6, "fast path has zero skew offset");
-        let d_slow = sched.daps_offset_syms(1);
-        assert!((d_slow - 300.0).abs() < 1.0, "Δ_slow must be skew·ΣBtlBw = 300 syms: {d_slow}");
-
-        // ECF guard: near-frontier data (lead < Δ_slow) goes ONLY to the fast
-        // path — the slow path would land it late and stall the frontier.
-        assert_eq!(sched.daps_eligible_paths(100.0), vec![0],
-            "lead 100 < Δ_slow 300 ⇒ only the fast path is eligible");
-        for _ in 0..50 {
-            assert_eq!(sched.place_source_daps(100.0), Some(0),
-                "near-frontier source must never be placed on the slow path");
-        }
-
-        // FUTURE data (lead ≥ Δ_slow) admits the slow path: it now carries data
-        // Δ_slow ahead of the frontier, arriving in sync.
-        let elig = sched.daps_eligible_paths(400.0);
-        assert!(elig.contains(&0) && elig.contains(&1),
-            "lead 400 ≥ Δ_slow 300 ⇒ both paths eligible (slow carries future data)");
-        let slow_picks = (0..2000).filter(|_| sched.place_source_daps(400.0) == Some(1)).count();
-        assert!(slow_picks > 0, "with sufficient lead the slow path must carry some future-offset data");
-    }
-
-    // BLEST per-path in-flight BDP cap (queue management): once the slow path's
-    // in_flight reaches its own BDP, it is dropped from the DAPS-eligible set so
-    // fresh source no longer piles onto it (the bufferbloat fix).  Below the cap
-    // it still carries future-offset data; at/above the cap all source goes to
-    // the fast path.  The cap-off default (gain 0) never restricts.
-    #[test]
-    fn daps_bdp_cap_bounds_slow_path_outstanding() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹, slow RTprop=40ms/1667 sym·s⁻¹.
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 40, 1667.0);
-        // Slow-path BDP = BtlBw·RTprop = 1667·0.040 ≈ 66.7 symbols.
-        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
-        assert!((slow_bdp - 66.7).abs() < 1.0, "slow BDP ≈ 66.7 syms: {slow_bdp}");
-
-        // Deep lead (≥ Δ_slow ≈ 300) so the ECF guard admits the slow path.
-        let lead = 4000.0;
-
-        // Below the cap (in_flight = 0): the slow path carries some future data.
-        let slow_below = (0..3000)
-            .filter(|_| sched.place_source_daps_capped(lead, 1.0) == Some(1))
-            .count();
-        assert!(slow_below > 0, "below its BDP the slow path must carry future data");
-
-        // At/above the cap: drive slow SOURCE outstanding past its BDP (the
-        // BLEST in_flight_i the cap now keys on — feat/per-path-estimator),
-        // then it must be excluded — every source now goes to the fast path.
-        sched.path_mut(1).unwrap().src_inflight = (slow_bdp.ceil() as u32) + 5;
-        assert_eq!(
-            sched.daps_eligible_paths_capped(lead, 1.0),
-            vec![0],
-            "slow path at its BDP cap must be dropped from the eligible set"
-        );
-        for _ in 0..200 {
-            assert_eq!(
-                sched.place_source_daps_capped(lead, 1.0),
-                Some(0),
-                "slow path over its BDP ⇒ all source to the fast path (no bufferbloat)"
-            );
-        }
-
-        // Cap OFF (gain 0, the shipped default): even over one BDP the slow path
-        // stays eligible — byte-identical to the pre-cap behaviour.
-        let elig_off = sched.daps_eligible_paths_capped(lead, 0.0);
-        assert!(elig_off.contains(&1), "gain 0 disables the cap (default unchanged)");
-    }
-
-    // feat/daps-readahead-depth: the DAPS read-ahead DEPTH bound caps the slow
-    // path's committed read-ahead at skew·BtlBw_j — a TIGHTER bound than the
-    // BLEST BDP cap (skew ≤ RTprop) — so the slow segment arrives in-order-
-    // aligned (queue delay ≤ skew).  It BINDS in the window between the depth
-    // budget and the BDP where the BDP cap alone does NOT, and it is a DEPTH
-    // limiter (uses the full BtlBw), never a rate throttle.
-    #[test]
-    fn daps_depth_bound_caps_slow_path_readahead_at_skew_btlbw() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        // C8 het: fast RTprop=10ms/8333 sym·s⁻¹, slow RTprop=40ms/1667 sym·s⁻¹.
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 40, 1667.0);
-
-        // Skew-depth budget = (0.040−0.010)·1667 = 50 syms.  The BLEST BDP =
-        // 1667·0.040 ≈ 66.7 syms — so the DEPTH bound is STRICTLY TIGHTER (uses
-        // the skew, not the full RTprop).  The fast path has no depth bound.
-        let budget = sched.daps_depth_budget_syms(1).unwrap();
-        assert!((budget - 50.0).abs() < 1.0, "slow depth budget = skew·BtlBw = 50 syms: {budget}");
-        assert!(sched.daps_depth_budget_syms(0).is_none(), "fastest path carries no depth bound");
-        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
-        assert!(budget < slow_bdp, "depth budget {budget} must be tighter than the BDP {slow_bdp}");
-
-        let lead = 4000.0; // ≥ Δ_slow ≈ 300 so the ECF guard admits the slow path
-
-        // Drive slow SOURCE outstanding INTO the window (depth_budget, BDP): 55
-        // syms — ABOVE the 50-sym depth budget but BELOW the 66.7-sym BDP cap.
-        sched.path_mut(1).unwrap().src_inflight = 55;
-        assert!(sched.daps_depth_over_budget(1), "slow path is over its skew-depth budget");
-        assert!(!sched.daps_depth_over_budget(0), "the fastest path is never over budget");
-
-        // depth_bound ON: the slow path is DROPPED (fresh source → fast path).
-        assert_eq!(
-            sched.daps_eligible_paths_capped_depth(lead, 1.0, true),
-            vec![0],
-            "over the skew-depth budget ⇒ slow path dropped (read-ahead bounded to one skew)"
-        );
-        for _ in 0..200 {
-            assert_eq!(
-                sched.place_source_daps_capped_depth(lead, 1.0, true),
-                Some(0),
-                "over the depth budget ⇒ all fresh source to the fast path"
-            );
-        }
-        // depth_bound OFF (same src_inflight): the BDP cap alone does NOT bind
-        // here (55 < 66.7) ⇒ the slow path is still eligible.  This is the exact
-        // same-binary A/B difference the depth bound makes.
-        assert!(
-            sched.daps_eligible_paths_capped_depth(lead, 1.0, false).contains(&1),
-            "with depth_bound OFF the BDP cap alone leaves the slow path eligible (the residual)"
-        );
-    }
-
-    // feat/daps-readahead-depth: WITHIN the depth budget the slow path must stay
-    // FULLY usable — the bound must not throttle the link below BtlBw.  Two
-    // checks: (1) below the budget the slow path is eligible and carries data;
-    // (2) the budget is computed from the FULL BtlBw (skew·BtlBw), so it is a
-    // DEPTH limiter, never a reduced-rate clock (the anti-politeness invariant).
-    #[test]
-    fn daps_depth_bound_does_not_rate_throttle_within_budget() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 40, 1667.0);
-        let lead = 4000.0;
-
-        // The budget is EXACTLY skew · BtlBw_slow (full drain rate) — not a
-        // throttled rate.  This is what keeps the link full within the budget.
-        let skew_s = 0.030_f64;
-        let btlbw_slow = sched.path(1).unwrap().btlbw_sym_per_s().unwrap();
-        let budget = sched.daps_depth_budget_syms(1).unwrap();
-        assert!((budget - skew_s * btlbw_slow).abs() < 1e-6,
-            "depth budget must be skew·BtlBw (full rate), not a throttle: {budget} vs {}", skew_s * btlbw_slow);
-
-        // Below the budget (20 < 50): the slow path is eligible AND carries some
-        // future-offset data under the depth bound — no idle, no throttle.
-        sched.path_mut(1).unwrap().src_inflight = 20;
-        assert!(!sched.daps_depth_over_budget(1), "20 < 50 ⇒ within the depth budget");
-        assert!(
-            sched.daps_eligible_paths_capped_depth(lead, 1.0, true).contains(&1),
-            "within the depth budget the slow path must stay eligible (link stays full)"
-        );
-        let slow_picks = (0..3000)
-            .filter(|_| sched.place_source_daps_capped_depth(lead, 1.0, true) == Some(1))
-            .count();
-        assert!(slow_picks > 0, "within the budget the slow path must carry future-offset data (not idled)");
-    }
-
-    // feat/daps-readahead-depth: symmetric paths (skew 0) and un-warmed paths
-    // carry NO depth bound — the depth-bound path is byte-identical to the
-    // unbounded path there (no C7 regression, no warm-up wedge).
-    #[test]
-    fn daps_depth_bound_noop_on_symmetric_and_warmup() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        // Symmetric skew 0: no depth budget on either path.
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 10, 8333.0);
-        assert!(sched.daps_depth_budget_syms(0).is_none());
-        assert!(sched.daps_depth_budget_syms(1).is_none());
-        sched.path_mut(1).unwrap().src_inflight = 100_000; // arbitrarily deep
-        assert!(!sched.daps_depth_over_budget(1), "symmetric skew ⇒ no depth bound");
-        // BDP cap OFF (gain 0) to isolate the DEPTH bound: with symmetric skew the
-        // depth bound alone must not drop either path (no C7 regression).
-        assert_eq!(
-            sched.daps_eligible_paths_capped_depth(0.0, 0.0, true).len(),
-            2,
-            "symmetric skew ⇒ depth bound is a no-op (both paths eligible)"
-        );
-
-        // Warm-up (no anchor on path 1): no depth budget, no restriction.
-        let mut sched2 = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched2.add_path(0);
-        sched2.add_path(1);
-        set_anchor(&mut sched2, 0, 10, 8333.0);
-        sched2.path_mut(1).unwrap().active = true; // active but no min_rtt/anchor
-        assert!(sched2.daps_depth_budget_syms(1).is_none(), "un-warmed path has no depth budget");
-        assert!(!sched2.daps_depth_over_budget(1), "un-warmed path is never over budget");
-    }
-
-    // Symmetric paths (skew 0 ⇒ all Δ_j = 0) must reduce EXACTLY to the
-    // unrestricted placement — no C7 regression from the DAPS gate.
-    #[test]
-    fn daps_symmetric_paths_no_restriction() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 10, 8333.0);
-        assert!(sched.daps_offset_syms(0).abs() < 1e-6);
-        assert!(sched.daps_offset_syms(1).abs() < 1e-6);
-        // Both eligible even at zero lead (no future-offset requirement).
-        let elig = sched.daps_eligible_paths(0.0);
-        assert_eq!(elig.len(), 2, "symmetric skew ⇒ both paths always eligible");
-    }
-
-    // feat/per-path-estimator PIECE 1: per-path ack attribution must update the
-    // RIGHT path's delivered-rate estimator (BtlBw / BDP anchor) and release the
-    // RIGHT path's SOURCE outstanding gauge — never the other path's.
-    #[test]
-    fn per_path_ack_attribution_updates_only_the_owning_path() {
-        let clock = Arc::new(MockClock::new());
-        let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        // Give both paths an RTprop sample (needed for the BDP anchor product).
-        for id in [0u32, 1u32] {
-            let p = sched.path_mut(id).unwrap();
-            p.record_rtt_sample(Duration::from_millis(if id == 0 { 10 } else { 40 }));
-        }
-        // Charge SOURCE outstanding: 100 on the fast path, 100 on the slow path.
-        sched.path_mut(0).unwrap().charge_src(100);
-        sched.path_mut(1).unwrap().charge_src(100);
-        assert_eq!(sched.path(0).unwrap().src_inflight(), 100);
-        assert_eq!(sched.path(1).unwrap().src_inflight(), 100);
-
-        // Attribute deliveries: drive ≥ ANCHOR_MIN_SAMPLES rate samples on EACH
-        // path, spaced 5 ms apart, with the fast path delivering 5× the slow
-        // path per interval — so BtlBw_fast ≈ 5·BtlBw_slow.
-        for _ in 0..(ANCHOR_MIN_SAMPLES + 2) {
-            clock.advance(Duration::from_millis(5));
-            sched.path_mut(0).unwrap().on_src_delivered(50); // fast: 50/5ms
-            sched.path_mut(1).unwrap().on_src_delivered(10); // slow: 10/5ms
-        }
-        // Outstanding released ONLY on the owning path (never cross-attributed).
-        assert!(sched.path(0).unwrap().src_inflight() < 100);
-        assert!(sched.path(1).unwrap().src_inflight() < 100);
-
-        // Both per-path BDP anchors established (the DIAG "established?" signal).
-        assert!(sched.path(0).unwrap().anchor_established(), "fast anchor established");
-        assert!(sched.path(1).unwrap().anchor_established(), "slow anchor established");
-        let btlbw_fast = sched.path(0).unwrap().btlbw_sym_per_s().unwrap();
-        let btlbw_slow = sched.path(1).unwrap().btlbw_sym_per_s().unwrap();
-        // Rates are separated (fast ≈ 5× slow), proving attribution is per-path.
-        assert!(
-            btlbw_fast > 3.0 * btlbw_slow,
-            "per-path BtlBw must separate: fast={btlbw_fast} slow={btlbw_slow}"
-        );
-        // BDP_i = BtlBw_i·RTprop_i is a real, stable per-path value the cap reads.
-        let bdp_slow = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
-        assert!(bdp_slow > 0.0, "slow-path BDP is a real value: {bdp_slow}");
-    }
-
-    // feat/per-path-estimator PIECE 1+2: once the estimator establishes a real
-    // per-path BDP, the BLEST cap + the ack-attributed SOURCE outstanding
-    // together bound slow-path outstanding at ≈ one BDP — the send-queue bound.
-    #[test]
-    fn per_path_estimator_bounds_slow_path_outstanding_at_one_bdp() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_anchor(&mut sched, 0, 10, 8333.0);
-        set_anchor(&mut sched, 1, 40, 1667.0);
-        let slow_bdp = sched.path(1).unwrap().copa_bdp_anchor().unwrap();
-        let lead = 4000.0;
-        // Simulate the placement→charge / ack→release loop: every source the cap
-        // routes to the slow path charges its src_inflight; nothing is delivered
-        // yet. The cap MUST stop admitting the slow path once its outstanding
-        // reaches one BDP — so src_inflight never exceeds ceil(BDP)+1.
-        // The fast path DRAINS (it is not the bottleneck): deliver whatever is
-        // routed to it immediately, mirroring the live system where its acks keep
-        // its outstanding well below its own BDP. The slow path does NOT drain, so
-        // its src_inflight accumulates — and the BLEST cap must stop admitting it
-        // once it reaches one BDP.
-        let cap = (slow_bdp).ceil() as u32;
-        let mut fast_total = 0u32;
-        for _ in 0..5000 {
-            if let Some(pid) = sched.place_source_daps_capped(lead, 1.0) {
-                sched.path_mut(pid).unwrap().charge_src(1);
-                if pid == 0 {
-                    fast_total += 1;
-                    sched.path_mut(0).unwrap().on_src_delivered(1); // fast drains
-                }
-            }
-        }
-        let slow_out = sched.path(1).unwrap().src_inflight();
-        assert!(
-            slow_out <= cap + 1,
-            "slow-path outstanding bounded at ~1 BDP ({cap}); got {slow_out}"
-        );
-        // The fast path absorbed the overflow the slow-path cap rejected.
-        assert!(
-            fast_total > slow_out,
-            "fast path carries the overflow the slow-path cap rejected \
-             (fast={fast_total} slow_out={slow_out})"
-        );
     }
 
     // feat/btlbw-rate-sample: the BBR send-interval anchor must read the TRUE
