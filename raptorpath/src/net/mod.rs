@@ -2183,6 +2183,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut wdiag_syms: u64 = 0; // symbols fed (total)
         let mut wdiag_batches_last: u64 = 0;
         let mut wdiag_syms_last: u64 = 0;
+        // diag/lossy-residual (goal-gate "Lossy-Single Residual", RWM_DIAG
+        // only): receiver INTER-ARRIVAL gap gauge — cumulative time in Data
+        // arrival gaps ≥ 3 ms. This is the wire-truth idle gauge for
+        // accounting term (b): a GE loss burst pauses arrivals for ≪ 3 ms at
+        // c2/c3 packet rates, so stall-class gaps here are genuine wire idle
+        // (sender/CC-caused), not loss shadows. Printed once per second as
+        // `[WIDLE] idle=<cum ms>/<n>/mx<max ms> arr=<cum Data messages>`; the
+        // end-of-run accounting reads the LAST line (cumulative counters).
+        const WIDLE_GAP_MIN_US: u64 = 3_000;
+        let mut widle_last_arrival_us: u64 = 0;
+        let mut widle_us: u64 = 0;
+        let mut widle_n: u64 = 0;
+        let mut widle_max_us: u64 = 0;
+        let mut widle_arrivals: u64 = 0;
+        let mut widle_last_print_us: u64 = 0;
 
         // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
         // routinely outrace the reliable control stream). A decoder created
@@ -2804,6 +2819,28 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     if wdiag_on {
                         wdiag_batches += 1;
                         wdiag_syms += symbol_count as u64;
+                        // diag/lossy-residual [WIDLE] gauge (see decls).
+                        let wnow = now_us();
+                        widle_arrivals += 1;
+                        if widle_last_arrival_us > 0 {
+                            let gap = wnow.saturating_sub(widle_last_arrival_us);
+                            if gap >= WIDLE_GAP_MIN_US {
+                                widle_us += gap;
+                                widle_n += 1;
+                                widle_max_us = widle_max_us.max(gap);
+                            }
+                        }
+                        widle_last_arrival_us = wnow;
+                        if wnow.saturating_sub(widle_last_print_us) >= 1_000_000 {
+                            widle_last_print_us = wnow;
+                            eprintln!(
+                                "[WIDLE] idle={}ms/{}/mx{}ms arr={}",
+                                widle_us / 1000,
+                                widle_n,
+                                widle_max_us / 1000,
+                                widle_arrivals,
+                            );
+                        }
                     }
 
                     // Touch path as keepalive (received data = path is alive)
@@ -6517,6 +6554,19 @@ async fn run_window_sender(
     let mut diag_retx: u64 = 0;
     let mut diag_gaps_dropped: u64 = 0;
     let mut diag_eff_rate: f64 = 0.0;
+    // diag/lossy-residual (goal-gate "Lossy-Single Residual", RWM_DIAG only):
+    // sender EMISSION-GAP gauge — cumulative time in inter-emission gaps
+    // ≥ 3 ms (src+cod handoffs to the transport observed per loop iteration;
+    // the loop wakes ≥ every 1 ms, so gap edges are observed within ~1 ms).
+    // Prices accounting term (b): engine-caused wire idle during recovery
+    // rounds. `sidle=<cum ms>/<n>/<max ms>` in the [DIAG] line; the receiver's
+    // [WIDLE] inter-arrival gauge is the wire-truth counterpart.
+    const SIDLE_GAP_MIN_US: u64 = 3_000;
+    let mut sidle_last_total: u64 = 0;
+    let mut sidle_last_change_us: u64 = now_us();
+    let mut sidle_us: u64 = 0;
+    let mut sidle_n: u64 = 0;
+    let mut sidle_max_us: u64 = 0;
     loop {
         // SACK drain: consume the receiver's RECEIVED-above-frontier ranges
         // NON-BLOCKING at the top of every iteration (never as a select! branch
@@ -7145,6 +7195,24 @@ async fn run_window_sender(
                 diag_paused_iters += 1;
             }
             let dnow = now_us();
+            // diag/lossy-residual emission-gap gauge (see decls): observe the
+            // cumulative wire handoff count (src+cod, retx rides cod) once per
+            // iteration; a change closes the current gap — accumulate it when
+            // it is a stall-class gap (≥ 3 ms), not a pacing interval.
+            {
+                let wt = stats.fec.total_source_symbols.load(Ordering::Relaxed)
+                    + stats.fec.total_repair_symbols.load(Ordering::Relaxed);
+                if wt != sidle_last_total {
+                    let gap = dnow.saturating_sub(sidle_last_change_us);
+                    if sidle_last_total > 0 && gap >= SIDLE_GAP_MIN_US {
+                        sidle_us += gap;
+                        sidle_n += 1;
+                        sidle_max_us = sidle_max_us.max(gap);
+                    }
+                    sidle_last_total = wt;
+                    sidle_last_change_us = dnow;
+                }
+            }
             let ddt = dnow.saturating_sub(diag_last_us);
             if ddt >= 250_000 {
                 let ack_now = window_ack_seq.load(Ordering::Relaxed);
@@ -7377,7 +7445,7 @@ async fn run_window_sender(
                     mp_pp,
                 );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym fmtcp_out={} winbackstop={} sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7385,6 +7453,11 @@ async fn run_window_sender(
                     if generation { gen_rate_ewma } else { 0.0 },
                     eff,
                     src_rate, cod_rate,
+                    // diag/lossy-residual: cumulative src/cod/ack totals (the
+                    // end-of-run accounting reads the LAST line) + the
+                    // emission-gap gauge (cum stall-gap ms / count / max).
+                    src_now, cod_now, ack_now,
+                    sidle_us / 1000, sidle_n, sidle_max_us / 1000,
                     cw, fl, np,
                     min_rtt_us as f64 / 1000.0,
                     bdp_100m,

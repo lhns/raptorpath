@@ -287,6 +287,19 @@ echo "    CPU: CPUSRV=$(awk "BEGIN{printf \"%.2f\", $SRV_TICKS/$HZ}")s CPUCLI=$(
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
 
+# diag/lossy-residual (goal-gate "Lossy-Single Residual"): wire-truth qdisc
+# counters BEFORE teardown — bytes/pkts that passed netem per direction plus
+# its GE drops (the loss realization). Read-only; whole-invocation totals
+# (warm-up object is 64 B — negligible). cli*=data direction, srv*=acks.
+for DEV in cli0 cli1; do
+    ST=$(ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
+        && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
+done
+for DEV in srv0 srv1; do
+    ST=$(ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
+        && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
+done
+
 # --- HARD SANITY GUARD (feat/gen-on-rebaseline) -----------------------------------
 # A measurement where the mechanism under test did not run must FAIL LOUDLY, not
 # silently report a number.  When generation is requested (GEN_FLAG set, i.e.

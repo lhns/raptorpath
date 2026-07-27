@@ -892,6 +892,92 @@ binary hash preserved under `/home/vibe/c8pool/`; s7 abort count (42
 battery + 9 top-up, all summary-less) recorded above; runtimes: s42
 battery 43 min/105 invocations, s7 26 min/104, top-up 6 min.
 
+## Lossy-Single Residual (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the instrumented runs; branch `diag/lossy-residual` from 44dd7d4; DIAGNOSIS-FIRST: the ACCOUNTING TABLE is the deliverable; a fix ships only if the table names a dominant AND cheaply-fixable term, under its own pre-registered prediction appended before any battery)
+
+**(a) The question.** LEVER 2/3 of the competitive-baseline losses: where do
+the missing 9–14% go on lossy SINGLE paths? The external bar ("Competitive
+Baseline", same VM/cells/seeds): c2 rp 78.6–78.7 vs quinn-bbr 91.9–92.4
+(−14%); c3 rp 16.1 vs quinn-bbr 18.6 / tcp-bbr 17.5–17.8 (−9…−13%). The
+candidate terms, EACH to be priced in Mbit/s from instrumented sc2/sc3 runs
+(new DIAG-only gauges this branch: sender emission-gap `sidle=` + cumulative
+`cum=src/cod/ack` in [DIAG]; receiver inter-arrival `[WIDLE]`; QDISC
+wire-byte/pkt/drop echo in perf_rwm_c.sh — plus the existing DIAG/SPAN/RDIAG
+surface):
+
+1. **Framing/MTU tax (structural).** rp rides the ADR-0055 1350-B MTU floor
+   with a ~1200-B source payload per ~1340-B IP packet (wire efficiency
+   ≈ 0.89); quinn MTUD reaches ~1452 on the same veth (≈ 0.96). Derivation
+   re-read, self-contained prediction: this alone is ~4–6 Mbit of the c2 gap
+   and ~0.8–1.2 Mbit at c3, and it is NOT a this-session fix (the floor is
+   the blackhole defense; a symbol-size/MTU-scaled-payload raise is a named
+   roadmap item). The QDISC byte counters price it exactly.
+2. **Object-scale ramp at the bar's 25 MB geometry.** Known class: rp 78.7 at
+   25 MB vs its own 100-MB steady 84–85 (vs quinn's quasi-steady sequential
+   uploads) → ~6 Mbit at c2. Re-measured same-session (25 MB AND 100 MB arms
+   at both cells).
+3. **FEC overhead.** Emitted cod/src (cod includes retx by counter
+   semantics). Prior: r* ≈ 0.03 at c2-class loss → ~2.5–3 Mbit; the #46-era
+   question — is the taper emitting MORE than r* under the unified span law
+   (spare-capacity cap read from an over-reading anchor)?
+4. **Recovery wire idle.** Idle wire during hole-recovery rounds (SACK sweep
+   clamp [25,100] ms; BBR keeps the wire full through loss). Gauges: [WIDLE]
+   (wire truth), sidle (engine handoff), GOODSERIES microstructure.
+5. **Anchor over-read → store-cap bloat → retx queue delay.** The legacy
+   plain anchor over-reads ×4.6–7.4 (§16.21) so the dynamic cap latches at
+   RELIABLE_STORE_MAX=1024 at c2 (~4.4×BDP) and ~684+ at c3 (~9×BDP); the
+   excess outstanding sits in quinn's FIFO datagram queue, so every
+   retransmit waits behind it (~60 ms class at c2, ~285 ms at c3, derived).
+   Probes: static RWM_STORE arms bracketing the honest cap (c2 256/512, c3
+   192/384) + the RWM_PLAIN_RS honest-anchor arm (known −1.2…−1.8 witness
+   cost at singles). Honest prior: the RS arm measured ≈neutral at sc2, so
+   the expected static-store effect is SMALL at c2 (±1–2 Mbit); c3 (deeper
+   relative bloat, longer recovery rounds) is the cell where this term can
+   be large. A null is informative (prices the queue-delay term ≈ 0).
+6. **Per-message engine cost.** Predicted NON-BINDING: c2/c3 rates are
+   ~9.8k/2.4k sym/s ≪ the 22–23k msgs/s receiver wall (§16.23). Verify:
+   RDIAG busy% + CPUSRV/CPUCLI (expect busy ≪ 100%, CPU/wall ≪ 1 core).
+
+**(b) Predictions (pre-registered).** (i) The table CLOSES: terms 1–6 sum to
+the measured residual within the session noise floor at both cells. (ii) At
+c2, structural terms (framing + ramp + FEC) cover ≥ ~2/3 of the −13-to-14
+gap; the actionable mechanism residual (idle + queue-delay) is ≤ ~4 Mbit.
+(iii) At c3, framing + FEC cover ~half; the rest is recovery idle/queue
+delay. (iv) Receiver busy < 50% both cells. (v) If (iii)'s
+idle/queue-delay term is large AND the static-store probe moves sc3 ≫σ, the
+named fix candidate is store-cap honesty at singles — to be pre-registered
+separately before any battery.
+
+**(c) Falsification / verdict rule.** If the accounting does NOT close
+(unexplained remainder > ~2σ of the cell), the remainder is reported as
+UNACCOUNTED — no invented term, and the table still ships as the deliverable.
+A fix is built ONLY for a term that is (i) dominant (≥ half the cell's
+actionable residual) and (ii) cheaply fixable this session; everything else
+is named + sized for the roadmap. A probe arm that regresses ≫σ is itself a
+datum (the incumbent law is protective), not a tuning invitation.
+
+**(d) Derivation re-read for self-contained failure predictions.** Terms 1–2
+are arithmetic/measured priors, not mechanisms — they cannot close the whole
+gap (1+2+3 ≈ 12–15 Mbit at c2 would OVER-close it; the table's job is the
+honest split, and over-closure would itself falsify the naive sum, naming
+double-counting between ramp and idle — the ramp IS partly idle at object
+edges, so the 25 MB vs 100 MB split must be read as geometry, not added to
+idle blindly). At c3 the derived retx-queue-delay bound (~285 ms/retx) is
+close to one [25,100]-ms sweep + one inflated RTT — if measured echo-RTT
+stays ~RTprop-class, term 5 is already refuted at c3 and the store probes
+should read null.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE 1–11:
+lock priority 1 (a parallel streaming-retest worker polls behind); CRLF
+after sync; FOREGROUND polling only; rm stale binary; sha256 + commit +
+lscpu + env headers; diagnosis `tools/l1/lossy_diag.sh` seed 42 ×2/arm
+(arms: sc2/sc3 × 25M/100M defaults + static-store + plain-rs probes). IFF a
+fix ships: sc2 (100 MB) + sc3 (25 MB) default ↔ fix, seeds 42+7 ×8
+interleaved, fresh topology per invocation, dnf recorded; tail_matrix c2
+spot ×4 iff the fix touches emission. No flip without the fix's own
+pre-registered prediction holding on both seeds; suites green.
+
+*(Results below this line were written after the runs.)*
+
 ## Anchor Hygiene (2026-07-19) — the convergent anchor-defect family FIXED as one workstream (branch `feat/anchor-hygiene`, commit 988960c): A\* live in ~1 RTT (was pinned ~10 s+) and flood-poison-proof; the M\* 50-ms floor was the PEER-REPORT feedback loop and with it fixed the PART 7b knee ENGAGES at L1 (r100 +25/+31%, r200 +62/+82%); plain-mode BtlBw reads ≈1× truth (was ×4.6–7.4); post-stall estimator poisoning discarded by a PROCESS-clock stall witness (the arrival-clock design REFUTED by measurement). All default-OFF (`RWM_ANCHOR_HYGIENE` umbrella); shipped path byte-identical
 
 *Decision record: → [ADR-0061](adr/0061-anchor-hygiene.md)*
