@@ -4738,7 +4738,7 @@ async fn run_window_sender(
     //   5. once-per-SRTT deficit action (react_cap 1.0 — the known-good
     //      bounded reactive from the FMTCP arm).
     // The substrate CC itself is A/B-able independently via RWM_QUIC_CC (bbr)
-    // in transport/quic.rs. Excluded under FMTCP/DAPS (they compose their own
+    // in transport/quic.rs. Excluded under FMTCP (it composes its own
     // window/cap stack).
     // §16.20 (d): under RWM_UNIFIED the derived-depth law (M* =
     // ceil(rate·2·RTprop/G)+1, the large-δ limit of A*) is the DEFAULT for
@@ -5695,9 +5695,7 @@ async fn run_window_sender(
                     // the symbol there. A cap-full pick is redirected to the
                     // live path with the most relative account headroom, so
                     // the shallow path is never over-committed past its own
-                    // pipe while the deep path keeps deepening. (DAPS
-                    // placement above keeps its own delay-aware law; the
-                    // accounts are still charged and gated.)
+                    // pipe while the deep path keeps deepening.
                     if !percap_caps.is_empty() {
                         let accounts: Vec<(crate::scheduler::PathId, usize, usize, usize)> =
                             percap_caps
@@ -6179,8 +6177,7 @@ async fn run_window_sender(
 
                         if use_retransmit && diag_on {
                             // feat/recovery-suppression trace: the P_lost-
-                            // branch retransmit channel (fed by eps_at_send,
-                            // which the per-path serial fix keeps honest).
+                            // branch retransmit channel (fed by eps_at_send).
                             mpd_plost_retx += 1;
                         }
                         if use_retransmit {
