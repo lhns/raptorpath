@@ -12049,3 +12049,86 @@ harness invocation (discipline 10); stale binary removed before build;
 rp-* netns only; battery + tail + smoke logs and per-run diag preserved
 under `/home/vibe/copaclean/`; seed-7 topo-abort count (21) recorded
 above; foreground polling only.
+
+## Emission Batching (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE any profile run and BEFORE any build; branch `feat/emission-batching` from be24660)
+
+**(a) The question.** LEVER 1 of the competitive-baseline losses: the c1
+×5.5 gap (rp 164–168 vs quinn-bbr 915 on the SAME box, same VM, same
+netem cells — "Competitive Baseline (2026-07-21)"). §16.23 attributes the
+engine sink ceiling to per-process SERVICE-TIME walls: sender emission
+saturates first at ~19.5–20k sym/s (τ ≈ 45–50 µs/sym: store insert +
+placement + serialize + `send_datagram` + estimator per symbol), receiver
+engine ~20–22k msgs/s just above, loop ≈ 1 core, wire/kernel idle
+(system 2.6/6 cores, softirq ~0, ZERO UDP drops), NOT thread-count
+(pins −7%/−2%). quinn moves 915 Mbit/s ≈ ~89k pkts/s of userspace QUIC
+through the same kernel — so the ceiling is OUR per-symbol emission
+path, not a userspace-transport bound.
+
+**(b) Mechanism (pre-registered).** Per-symbol emission — ONE datagram
+per `send_datagram` call with a full sender-loop iteration (select!
+re-arm, tail-deadline scan, 4–5 scheduler-lock acquisitions, a
+sent-store insert + symbol clone, a serialize allocation) per symbol,
+and per-symbol wakeups/yields between sends — serializes the sender at
+~20k sym/s ≈ 190 Mbit/s AND defeats quinn's own transmit batching: the
+endpoint driver drains the datagram queue as fast as we feed it one at
+a time, so poll_transmit emits ~one-datagram transmits and the
+GSO/sendmmsg path (quinn-udp: up to 64 segments per sendmsg) never
+engages. Note the 1279-byte symbol datagram in the 1350 MTU means one
+datagram per QUIC packet — no packet-coalescing headroom; GSO batches
+PACKETS per syscall and is the only available syscall amortization.
+Batching the symbol→quinn handoff (emit in pacer-quantum bursts,
+~64 KB ≈ 48–64 symbols, no await points inside a burst) plus removing
+per-symbol allocation/locking amortizes per-send costs by ~an order of
+magnitude.
+
+**(c) Predictions (pre-registered).**
+1. **Profile first**: the dominant sender core-second term at c1 is
+   amortizable per-send overhead (our loop + quinn per-transmit +
+   syscall density ~1 sendmsg/datagram), NOT irreducible per-packet
+   compute (AEAD). Reference: quinn-perf's own syscall density at 915
+   Mbit on this box (expected ≫1 packet/sendmsg via GSO).
+2. **c1 (PRIMARY): default+`RWM_EMIT_BATCH` ≥ 400 Mbit/s** (external
+   bar quinn-bbr 915; baseline 164–168). Mechanism evidence gate:
+   sender syscalls/s drop ~an order of magnitude at equal-or-higher
+   throughput.
+3. **sc2/c7/c8 lift or hold** — their walls may be elsewhere
+   (loss/recovery-bound; c2-class wire 100 Mbit is BELOW the emission
+   wall): predicted ≈ no change ≫σ at sc2 (wire-bound at 78–79), c7/c8
+   unregressed (emission headroom cannot add waste under the recov-mp
+   law; any lift is a bonus, not gated).
+4. **Realtime tails UNREGRESSED** (the crown is the product): ONE
+   tail_matrix c2 spot-check ×4 per arm — batching must not add pacing
+   burst jitter; p50/p99 within the historic class (p99 ~36–48 ms,
+   1000/1000 delivered) is the gate.
+5. **Reliability dnf=0** across all battery cells.
+
+**(d) Falsification.** If the profile shows the dominant cost is NOT
+amortizable per-send overhead (e.g. AEAD/crypto ≈ irreducible per
+packet, or kernel-side per-packet cost dominates even under GSO), report
+the honest per-core packet ceiling with the term named and build only
+what the profile justifies. If c1 default+batch lands < 400 with
+syscall density collapsed as predicted, the residual binder is named
+with numbers (candidate: the receiver engine's ~20–22k msgs/s service
+wall — receiver-side batched recv is in scope ONLY if it becomes the
+measured binder mid-battery). A tail-gate regression (p99 class worse
+than historic on the c2 spot) blocks the flip regardless of throughput.
+
+**(e) Gate + flip rule.** `RWM_EMIT_BATCH` in src/gates.rs, DEFAULT OFF
+for the A/B (perf-only, behavior-preserving, delivered-set unchanged;
+unit tests: ordering/pacing contracts preserved, no symbol loss at burst
+boundaries). Flip to default ON in the same branch IFF: c1 gate met
+(≥400 both seeds), sc2/c7/c8 unregressed ≫σ, tail spot-check
+unregressed, dnf=0, suites green.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–11: lock `/tmp/rwm-vm.lock` priority 1; CRLF-convert after sync;
+FOREGROUND polling only; rm stale binary before build; binary sha256 +
+commit + lscpu in every log header; seeds 42+7 ×8 interleaved arms
+default ± `RWM_EMIT_BATCH` within one session; cells c1 (PRIMARY,
+single-path 400 MB), sc2 (100 MB), c7 (dual 200 MB), c8 (dual 25 MB);
+ONE tail_matrix c2 spot ×4; per-arm syscall density (strace -c /
+/proc counters: sendmsg calls/s vs packets/s) + CPU (CPUSRV/CPUCLI);
+quinn-perf syscall reference on the same box; seed-7 topo-abort ns
+recorded; ARMCOUNT per arm; runtimes stated; same-session Σ references.
+
+*(Results below this line were written after the profile/battery ran.)*
