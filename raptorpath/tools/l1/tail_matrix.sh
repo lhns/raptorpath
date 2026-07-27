@@ -41,25 +41,35 @@ trap hard_cleanup EXIT
 run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream measurements
     local hint="$1" size="$2" label="${3:-$1}" armenv="${4:-}" armflags="${5:-}"
     echo "ARMENV $label ${size}B: hint=$hint env='${armenv:-<unset>}' flags='${armflags:-}' rate=$TM_RATE dur=$TM_DUR"
-    hard_cleanup; sleep 0.5
     # Discipline item 7: lib.sh forces set -e — a transient topo bringup
     # failure must fail THIS arm loudly (the ping probe below catches it),
     # not kill the whole matrix silently (bit the shed battery's c3-s7
     # rlc-1200B arm, 2026-07-21).
-    bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
-    # shellcheck disable=SC2086
-    ip netns exec "$NS_SRV" env $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
-        --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" $armflags \
-        >/tmp/tm-s.log 2>&1 &
-    sleep 2
-    # shellcheck disable=SC2086
-    ip netns exec "$NS_CLI" env $armenv "$BIN" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
-        --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$hint" $armflags \
-        >/tmp/tm-c.log 2>&1 &
-    local up=0
-    for i in $(seq 1 20); do
-        ip netns exec "$NS_CLI" ping -c1 -W1 10.99.0.2 >/dev/null 2>&1 && { up=1; break; }
-        sleep 1
+    # Crown re-test hardening (the embatch "retry-hardened driver"
+    # precedent): per-rep-interleaved invocations cycle netns fast enough
+    # to hit transient bringup collisions — retry the WHOLE bringup up to
+    # 3 times, each attempt counted loudly (BRINGUP_RETRY), before the arm
+    # is declared BRINGUP_FAIL. Captured measurements are never affected:
+    # the stream reps only run after a verified ping.
+    local up=0 attempt
+    for attempt in 1 2 3; do
+        hard_cleanup; sleep 1
+        bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
+        # shellcheck disable=SC2086
+        ip netns exec "$NS_SRV" env $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
+            --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" $armflags \
+            >/tmp/tm-s.log 2>&1 &
+        sleep 2
+        # shellcheck disable=SC2086
+        ip netns exec "$NS_CLI" env $armenv "$BIN" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
+            --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$hint" $armflags \
+            >/tmp/tm-c.log 2>&1 &
+        for i in $(seq 1 20); do
+            ip netns exec "$NS_CLI" ping -c1 -W1 10.99.0.2 >/dev/null 2>&1 && { up=1; break; }
+            sleep 1
+        done
+        [[ $up -eq 1 ]] && break
+        echo "  BRINGUP_RETRY $label ${size}B attempt=$attempt failed"
     done
     [[ $up -eq 0 ]] && { echo "ARM $label ${size}B: BRINGUP_FAIL"; hard_cleanup; return; }
     # Mechanism-liveness echoes (MEASUREMENT DISCIPLINE): code-family selection
