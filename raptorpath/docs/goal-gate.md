@@ -12282,6 +12282,19 @@ thinning at the PROTOCOL level (sender-negotiated, so the store law
 sees honest RTT), or moving delivery off the ack path. A future
 re-ask rides a fresh pre-registration.
 
+### Tests
+
+`cargo test -p raptorpath --lib` 364/364; `gate_suite` 15/15 release
+(--test-threads 1); `mtu_blackhole_wedge` 2/2; `perf_loopback` 8/8;
+`copa_sole_loopback` / `fmtcp_loopback` 1/1 release;
+`unified_stream_l0` 1/1 (--ignored measurement arm); NEW
+`emit_batch_loopback` 1/1 release (burst=8, ~20 burst boundaries —
+completion is the no-symbol-loss/ordering check); `-p raptorpath-math`
+136 green (59/19/22/4/4/3/25). Shipped path with env unset:
+gate-off per-symbol recompute is code-identical (the taper cache and
+burst intake are `emit_batch_live`-gated; the gates default test pins
+`emit_batch=false`, `emit_burst=64`).
+
 Ops: lock `/tmp/rwm-vm.lock` held 12:35 → released 16:41 UTC (one
 crash-resume mid-session, lock refreshed 15:38; the s42 battery had
 completed before the crash — nothing re-run); tree synced per
