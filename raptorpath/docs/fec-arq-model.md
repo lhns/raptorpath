@@ -3715,7 +3715,18 @@ is the explicit `RWM_QUIC_CC=cubic` legacy arm.]** **[UPDATE 2026-07-19,
 feat/copa-compete: BUILT and measured. The mechanism is the Copa paper's
 §2.2 (the "Copa §4" reference above was imprecise); see the §12.4
 competitive-mode addendum for the law and goal-gate "Copa Competitive Mode
-+ Cross-Traffic" for the first shared-bottleneck battery.]**
++ Cross-Traffic" for the first shared-bottleneck battery.]** **[UPDATE
+2026-07-22, feat/copa-sole-clean: the clean-substrate re-measure (goal-gate
+"Copa-Sole on Clean Substrate") settled whether the consolidated stack
+collapses the two-value CC surface to ONE δ-controller: it does NOT. On the
+fixed substrate Copa-sole is copa/bbr 0.89× sc2, 0.97× sc3, 0.73× c7,
+0.57× c8, 0.66× dc1 (≫σ both seeds) — the walls WIDENED the gap (they lift
+BBR's aggregation while Copa's δ-equilibrium leaves the freed pipe on the
+table), and the §12.11-era C8 domination inverted (it was a broken-
+substrate artifact). Copa keeps the network standing queue ×18/×16/×6–7
+tighter (sc2/sc3/c7) and ties BBR on the realtime tail. NO default flip;
+the surface stays two-valued as a MEASURED TRADEOFF; the fusion (ADR-0068,
+§17.6 item 10) inherits the bulk gap.]**
 
 > **ADDENDUM (2026-07-13, feat/copa-wire-signal — the bulk gap CLOSED where
 > it was named).** The §12.4 wire-signal fix (wire-clocked delay term +
@@ -9390,6 +9401,41 @@ environment class, not a machine class — the §16.20.8 confirmation
 protocol stays open); the c7 unified arm's −5 Mbit/0.6σ direction under
 gen-sys duals stays on the §17.6 watch list.
 
+### 16.27 Copa-sole on the clean substrate: the mode switch is a measured tradeoff, not a wish (2026-07-22, `feat/copa-sole-clean`)
+
+The one open question the consolidation left on the CC surface (§17.2):
+does the fixed substrate — SACK-clocked store release (§16.25), per-path
+recovery suppression (§16.24), the path-scaled pool (wall #7), anchor
+hygiene (§16.21), all now default ON — close Copa-sole's §12.11/#82 bulk
+gap, letting the two-value `RWM_QUIC_CC` surface collapse to ONE
+δ-parameterized controller (the vision's one-continuous-mechanism axiom)?
+Pre-registered prediction (goal-gate "Copa-Sole on Clean Substrate",
+committed before the battery per the discipline's item 11): the walls
+throttled exactly the full-pipe regime where Copa trailed, so Copa should
+reach ~parity while keeping its queue/tail advantage. **Measured:
+FALSIFIED.** On the consolidated stack, arms A = BBR-under (default) vs
+B = passthrough+Copa, same binary interleaved, seeds 42+7 ×8:
+copa/bbr = 0.89× sc2, 0.97× sc3, 0.73× c7, 0.57× c8, 0.66× dc1, every gap
+but sc3 ≫σ and reproduced to three digits across seeds. The walls
+WIDENED the gap: they lifted BBR-under's aggregation (c7 ~100→166, c8
+~54→82 vs the #82 broken-substrate numbers) while Copa's δ-equilibrium
+caps cwnd near BDP + 1/δ regardless of freed pipe — it leaves the
+capacity on the table (that tight queue is its design), so BBR eats the
+unlock and Copa does not. The §12.11 "C8 domination" (0.95–1.01×) is
+superseded as a broken-substrate artifact (it had suppressed BBR); on the
+fixed substrate BBR leads C8 (0.57×). What Copa KEEPS, re-confirmed on
+this substrate (not assumed): the NETWORK standing queue ×18/×16/×6–7
+tighter at sc2/sc3/c7 (wireQ 5/30/7 ms vs 89/487/50), and tail PARITY at
+the realtime c2 message cell (p99 medians tie BBR arm-for-arm on the
+shipped unified machine, both seeds). δ(hint) = 0.5/ζ live-verified
+(Bulk 0.005 / Auto 0.5 / Realtime 50). **No default flip**: `RWM_QUIC_CC`
+stays BBR-under, the surface stays two-valued as a MEASURED queue/tail-vs-
+bulk TRADEOFF, and the CC endgame (one controller across the surface)
+moves to the fusion (§17.6 item 10 / ADR-0068), which inherits this bulk
+gap as its target — and gains a sharpened rationale: the very mechanism
+Copa lacks, a BBR-style measured rate model as feed-forward baseline, is
+what would let a δ-priced controller convert the freed pipe.
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -9498,27 +9544,40 @@ positions:
 - **Copa-sole** (passthrough + the §12.4 wire-signal addendum): the
   queue/tail champion. With the delay term wire-clocked (the sender's own
   reservoir dwell structurally excluded) and δ mapped from the hint with
-  no new constants (δ = 0.5/ζ), Copa-sole holds 0.86–0.89× BBR's bulk at
-  single-c2 and 0.73–0.78× at C7/sc3 — and at heterogeneous C8 it
-  STRICTLY DOMINATES BBR-under: 0.95–1.01× throughput, slow-path standing
-  queue ×18–25 tighter (3–7 ms vs 88–124), variance collapsed. Bonus
-  property the model predicted (§12.3): the ±v/δ dither keeps the RTT
-  floor fresh without ProbeRTT — no FEC protection gap.
+  no new constants (δ = 0.5/ζ, live-verified Bulk 0.005 / Auto 0.5 /
+  Realtime 50), Copa-sole holds the NETWORK standing queue ×18/×16/×6–7
+  tighter than BBR-under at sc2/sc3/c7 (5/30/7 ms vs 89/487/50, measured
+  on the consolidated stack) and ties BBR on the realtime c2 message tail.
+  Bonus property the model predicted (§12.3): the ±v/δ dither keeps the
+  RTT floor fresh without ProbeRTT — no FEC protection gap. **Its bulk
+  cost is a MEASURED TRADEOFF that does NOT close on the fixed substrate**
+  (§16.27, goal-gate "Copa-Sole on Clean Substrate", 2026-07-22):
+  copa/bbr 0.89× sc2, 0.97× sc3, 0.73× c7, 0.57× c8, 0.66× dc1 (≫σ both
+  seeds). The consolidation walls WIDENED the gap — they lift BBR's
+  aggregation while Copa's δ-equilibrium caps cwnd near BDP + 1/δ and
+  leaves the freed pipe on the table — and the §12.11-era C8 domination
+  inverted (it was a broken-substrate artifact suppressing BBR).
 
-The fairness gap that gated the flip was measured 2026-07-19 (the first
-cross-traffic battery, goal-gate "Copa Competitive Mode +
-Cross-Traffic"): BBR vs one Cubic flow takes a 0.95–0.96 share at the
-lossy c2 cell (Cubic is Mathis-bound there) and 0.24 on the clean
-bufferbloated bottleneck — mildly aggressive under loss, yielding under
-standing queue, within the deployed-BBRv1 envelope; documented at the
-flip site as the caveat, not a blocker. With that measured, the shipped
-default flipped to BBR (2026-07-21). **Copa is NOT deprecated by the
-flip** — it is retained as the δ-capable controller the hint contract
-structurally requires (BBR has no latency price), the queue/tail champion
-(×18–25 tighter, no ProbeRTT stalls), and the C8 dominator. The endstate
-is the hint's declared price choosing the controller — bulk →
-BBR-under, latency-priced → passthrough+Copa — a policy mapping over
-this surface, not a mode switch.
+The fairness gap first measured 2026-07-19 (the first cross-traffic
+battery, goal-gate "Copa Competitive Mode + Cross-Traffic"): BBR vs one
+Cubic flow takes a 0.95–0.96 share at the lossy c2 cell (Cubic is
+Mathis-bound there) and 0.24 on the clean bufferbloated bottleneck —
+mildly aggressive under loss, yielding under standing queue, within the
+deployed-BBRv1 envelope; documented at the flip site as the caveat, not a
+blocker. The shipped default is BBR (2026-07-21), and the clean-substrate
+re-measure (2026-07-22) CONFIRMED it: the two-value CC surface does NOT
+collapse to one δ-controller — Copa's bulk gap is its own δ-equilibrium
+dynamics, not a substrate artifact, so **NO flip to passthrough**. **Copa
+is NOT deprecated** — it is retained as the δ-capable controller the hint
+contract structurally requires (BBR has no latency price) and the
+queue/tail champion (×18/×16/×6–7 tighter, tail parity, no ProbeRTT
+stalls). The endstate is the hint's declared price choosing the
+controller — bulk → BBR-under, latency-priced → passthrough+Copa — a
+policy mapping over this surface documented as a MEASURED TRADEOFF, not a
+mode switch to be collapsed on a wish. The CC endgame (one controller
+across the surface) is the fusion, §17.6 item 10 / ADR-0068: δ-priced
+probing over a BBR-style rate model, which inherits this battery's bulk
+gap as its target.
 
 ### 17.3 Aggregation vs Σ — the bulk N× verdict
 
@@ -9730,6 +9789,19 @@ asserted beyond its naming evidence.
    **[CLOSED 2026-07-21 (§16.26): realtime IS routed through the unified
    family by default; `RWM_TAPER_R` rides the umbrella; cod/src 0.38–0.50
    consumed at the realtime wire and delivered 100% — r\* realized.]**
+10. **The CC endgame: adversarial cells → measured Copa breakage → the
+   fusion (ADR-0068)** — the named future lever for the one-controller
+   endstate. The current cells (clean delay, deep buffers, no policers)
+   cannot falsify a Copa/BBR fusion; the prerequisite is adversarial
+   cells (delay-jitter / shallow-buffer / policer) with Copa-sole's
+   measured breakage as the pre-registered baseline, then ONE controller:
+   δ-priced probing over a measured rate model (the §16.21 anchors as
+   feed-forward baseline; probe amplitude+dwell derived from δ — δ→0
+   recovers BBR-class discovery, δ large recovers Copa's gentleness)
+   with ε̂-referenced loss discrimination (loss ≤ ε̂ is FEC's job;
+   persistent loss > ε̂ ⇒ bounded inflight — the channel estimator as
+   the measured reference generic CCs lack). Literature verification
+   (BBRv2 / PCC-Vivace / Nimbus, from sources) required before build.
 
 Minor named items: the c7 unified-receiver +3–5% CPU signal; the np 2→1
 live-path flap under saturation; the `RWM_STORE_PATHS` default battery;
