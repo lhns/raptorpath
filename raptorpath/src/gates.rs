@@ -178,6 +178,18 @@ pub struct RuntimeGates {
     /// attribution in the sampling-only feed; `=0` = last-sent-path arm.
     pub rs_attr: bool,
 
+    // ── Emission (goal-gate "Emission Batching", 2026-07-27) ──────────────
+    /// `RWM_EMIT_BATCH` (default OFF — the A/B arm): pacer-quantum emission
+    /// batching on the plain window-reliable sender. Burst TUN intake
+    /// (≤ `emit_burst` symbols per loop iteration, inside the flow-control
+    /// store headroom and the pacing bucket) + per-burst taper/span-math
+    /// refresh (per-symbol when OFF — bit-identical shipped path). Perf-only:
+    /// ordering/pacing contracts and the delivered set unchanged.
+    pub emit_batch: bool,
+    /// `RWM_EMIT_BURST` (default 64 symbols ≈ 64 KB payload — the BBR-style
+    /// pacer quantum; clamped [2, 512]): emission burst quantum.
+    pub emit_burst: usize,
+
     // ── Recovery plane (ADR-0059) ─────────────────────────────────────────
     /// `RWM_RECOV_MP` (default ON): multipath recovery suppression — per-
     /// flight RFC 9002-style hole law on the flight path's smoothed clocks.
@@ -273,6 +285,10 @@ impl RuntimeGates {
             infl_bdp: env_parse::<f64>("RWM_INFL_BDP"),
             copa_feed: env_flag("RWM_COPA_FEED", false),
             rs_attr: env_flag("RWM_RS_ATTR", true),
+            emit_batch: env_flag("RWM_EMIT_BATCH", false),
+            emit_burst: env_parse::<usize>("RWM_EMIT_BURST")
+                .unwrap_or(64)
+                .clamp(2, 512),
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             diag: env_flag("RWM_DIAG", false),
@@ -305,6 +321,8 @@ mod tests {
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // Experiments / instruments (default OFF)
         assert!(!g.fmtcp && !g.store_percap && !g.store_borrow && !g.plain_rs);
+        assert!(!g.emit_batch, "emission batching ships OFF (A/B gate)");
+        assert_eq!(g.emit_burst, 64);
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
         // Numeric defaults

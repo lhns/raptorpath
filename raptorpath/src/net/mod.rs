@@ -5645,6 +5645,42 @@ async fn run_window_sender(
     let mut mpd_fired_on: std::collections::HashMap<u32, u64> =
         std::collections::HashMap::new();
 
+    // ── Emission batching (goal-gate "Emission Batching", RWM_EMIT_BATCH,
+    // DEFAULT OFF — same-binary A/B) ──────────────────────────────────────
+    // The §16.23 sender-emission service wall (~19.5–20k sym/s ≈ 190 Mbit)
+    // is per-SYMBOL loop cost, profiled 2026-07-27 on the c1 cell: taper/
+    // span control math (compute_repair_rate + predictive_loss_upper +
+    // exp/log ≈ 15–17%/core, recomputed per symbol), plus a full select!
+    // iteration (tail-deadline scan, SACK drain, pacing refresh) and the
+    // waker churn of one-datagram-per-wakeup handoff to quinn (syscall
+    // density is NOT the wall — quinn-udp GSO already batches ~7.6
+    // segments/sendmsg on this path). Under the gate the sender:
+    //   1. drains TUN intake in pacer-quantum bursts (≤ emit_burst symbols
+    //      per loop iteration, ~64 KB — inside the flow-control store
+    //      headroom and the cc_pace token bucket, checked per symbol), so
+    //      loop-iteration overhead amortizes and quinn's endpoint driver
+    //      sees a multi-datagram queue (deeper GSO transmits);
+    //   2. refreshes the derived taper/span math once per burst instead of
+    //      per symbol (the A* send-rate anchor is still FED per symbol —
+    //      only the derived-rate recomputation is amortized).
+    // OFF ⇒ per-symbol recompute, bit-identical shipped path. Plain
+    // window-reliable mode only (generation/coded emission has its own
+    // paced block; realtime packing keeps its per-packet latency path).
+    let emit_batch_on = gates.emit_batch && reliable && !coded_wire;
+    let emit_burst: usize = gates.emit_burst;
+    if emit_batch_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            burst = emit_burst,
+            "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN \
+             intake + per-burst taper/span refresh; flow-control and pacing \
+             contracts enforced at symbol granularity)"
+        );
+    }
+    // Per-burst cache: (repair_rate, span_params, estimator RTT at refresh).
+    let mut taper_cache: Option<(f64, Option<(u64, u64)>, Duration)> = None;
+    let mut taper_cache_syms: usize = 0;
+
     // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
@@ -5932,7 +5968,22 @@ async fn run_window_sender(
             // flow-control block in the main loop, so the per-source taper repair
             // is disabled here (it would double-emit and fight the flow control).
             if !generation && encoder.window_size() > 1 {
-                let (repair_rate, span_params) = {
+                // RWM_EMIT_BATCH: the derived taper/span math refreshes at
+                // burst granularity; per-symbol (bit-identical) when OFF.
+                let taper_recompute = !emit_batch_on
+                    || taper_cache.is_none()
+                    || taper_cache_syms >= emit_burst;
+                let (repair_rate, span_params) = if !taper_recompute {
+                    let (rr, span, rtt) = taper_cache.unwrap();
+                    taper_cache_syms += 1;
+                    // The A* send-rate anchor is FED per symbol regardless —
+                    // the cache amortizes only the derived recomputation.
+                    if unified_span && astar_anchor_on {
+                        astar_anchor.on_send(Instant::now(), 1, rtt);
+                    }
+                    (rr, span)
+                } else {
+                let (repair_rate, span_params, taper_rtt) = {
                     let ctrl = fec_controller.lock();
                     let sched = scheduler.lock();
                     let spare = sched.spare_capacity();
@@ -6014,10 +6065,14 @@ async fn run_window_sender(
                             } else {
                                 None
                             };
-                            (rr, span)
+                            (rr, span, est.rtt())
                         }
-                        None => (0.0, None),
+                        None => (0.0, None, Duration::from_millis(50)),
                     }
+                };
+                taper_cache = Some((repair_rate, span_params, taper_rtt));
+                taper_cache_syms = 1;
+                (repair_rate, span_params)
                 };
                 // diag/unified-collapse: span-law sender trace (RWM_DIAG only).
                 if diag_on && unified_span {
@@ -7875,6 +7930,41 @@ async fn run_window_sender(
                 // Legacy: one packet per symbol (padded)
                 let framed = framing::frame_window_packet(&pkt, symbol_size);
                 send_source_symbol!(framed);
+                // ── RWM_EMIT_BATCH pacer-quantum burst intake ─────────────
+                // Drain already-queued TUN packets without re-arming the
+                // select! (per-iteration overhead — tail-deadline scan, SACK
+                // drain, pacing refresh — amortizes over the burst, and
+                // quinn's endpoint driver sees a multi-datagram queue for
+                // deeper GSO transmits). Contracts enforced per symbol: the
+                // pooled store backstop from the LIVE local counters (the
+                // macro updates sent_store/sack_released), and the cc_pace
+                // token bucket. Burst quantum ≤ emit_burst ≈ 64 KB.
+                if emit_batch_on {
+                    let mut burst = 1usize;
+                    while burst < emit_burst {
+                        if reliable
+                            && sack_release_outstanding(
+                                sent_store.len(),
+                                sack_released.len(),
+                            ) >= effective_store_cap
+                        {
+                            break; // store headroom exhausted (flow control)
+                        }
+                        if cc_pace && src_tokens < 1.0 {
+                            break; // pacing bucket dry (Fix 1 contract)
+                        }
+                        match tun.try_read_packet() {
+                            Some(pkt) => {
+                                let framed =
+                                    framing::frame_window_packet(&pkt, symbol_size);
+                                send_source_symbol!(framed);
+                                burst += 1;
+                            }
+                            None => break, // intake drained (or closed — the
+                                           // blocking read owns shutdown)
+                        }
+                    }
+                }
             }
         }
 

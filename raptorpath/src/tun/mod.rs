@@ -103,6 +103,14 @@ impl TunInterface {
         self.rx.recv().await
     }
 
+    /// Non-blocking read (goal-gate "Emission Batching", `RWM_EMIT_BATCH`):
+    /// drain an already-queued packet without yielding, `None` when the
+    /// queue is empty OR the channel is closed (closure is then observed by
+    /// the next blocking `read_packet`, which owns the shutdown path).
+    pub fn try_read_packet(&mut self) -> Option<Bytes> {
+        self.rx.try_recv().ok()
+    }
+
     /// Write a packet to the TUN device (inject into the OS network stack).
     pub async fn write_packet(&self, data: Bytes) -> anyhow::Result<()> {
         self.tx
