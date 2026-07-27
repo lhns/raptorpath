@@ -3980,6 +3980,54 @@ pub fn path_scaled_store_cap(
     Some(((gain * n_live as f64 * pipe_sum).ceil() as usize).clamp(floor, ceiling))
 }
 
+/// Capacity-weighted SHARED outstanding pool (env `RWM_STORE_CAPW`) — the
+/// ADR-0058 "c8 WATCH" follow-up: the c8-aware pool law.
+///
+/// The path-scaled pool (`RWM_STORE_PATHS`) scales by path COUNT:
+/// cap = clamp(gain·N·Σpipe, floor, N·knee), which at asymmetric cells
+/// over-weights the slow path — a 1/5-rate path contributes ×N to the
+/// ceiling exactly like a full-rate path, so the pool grants unacked-frontier
+/// depth the slow path cannot drain within its recovery round. Under
+/// SACK-clocked release (ADR-0060) the pool bounds the UNACKED-FRONTIER SPAN
+/// (outstanding = retained − SACK-released), so excess depth = the span the
+/// cumulative frontier must resequence across the slow path's stragglers —
+/// the measured c8 WATCH (stack 0.72–0.76×Σ vs legacy-1024 0.85–0.87×Σ).
+///
+/// The law here scales by CAPACITY instead: each live path earns depth for
+/// its OWN pipe plus its own recovery round — the honest per-path cap law
+/// ([`honest_store_cap`]: cap_i = rate_i·(K_i·RTprop_i + (gain−1)·(R +
+/// RTprop_i))) — SUMMED AS ONE SHARED POOL, not per-path accounts: admission
+/// still gates on the pooled total, so cross-path borrowing stays free
+/// (ADR-0058's pooled-vindicated verdict kept; only the SIZING law changes).
+///
+///   pool = clamp(Σ_i cap_i, floor, N·knee)
+///
+/// Degenerates (unit-tested): symmetric N-path → N × the single-path term
+/// (≈ N×(single pool) — c7 preserved); N = 1 → not engaged (`None`), the
+/// caller keeps the legacy law bit-exactly; over-read anchors → the terms
+/// clamp at the N·knee ceiling ≡ the path-scaled law (which is why the law
+/// reads honestly only with the `RWM_PLAIN_RS` send-interval sampler).
+///
+/// `terms` = the per-live-path honest cap (None until that path's anchor is
+/// warm). Returns `None` — the caller falls back to the CONFIGURED pooled
+/// law (path-scaled / legacy) — unless the gate is on, N ≥ 2, and EVERY live
+/// path's anchor is warm (a partial sum would under-provision the unwarm
+/// path's share of the shared pool).
+pub fn capw_store_cap(
+    on: bool,
+    terms: &[Option<f64>],
+    floor: usize,
+    pool: usize,
+) -> Option<usize> {
+    if !on || terms.len() < 2 || terms.iter().any(|t| !matches!(t, Some(v) if *v > 0.0)) {
+        return None;
+    }
+    let n = terms.len();
+    let sum: f64 = terms.iter().map(|t| t.unwrap_or(0.0)).sum();
+    let ceiling = n.saturating_mul(pool).max(floor);
+    Some((sum.ceil() as usize).clamp(floor, ceiling))
+}
+
 /// Per-path outstanding-account cap (task #86, env `RWM_STORE_PERCAP`).
 ///
 /// The #84 residual, named at L1: ONE shared pool cannot be sized for a
@@ -5169,6 +5217,26 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
+    // ── Capacity-weighted outstanding pool (env RWM_STORE_CAPW) ──────────
+    // The ADR-0058 "c8 WATCH" follow-up (goal-gate "C8-Aware Pool Law"):
+    // pool = Σ_i honest per-path cap over LIVE paths (capw_store_cap) — each
+    // path earns unacked-frontier depth for its OWN pipe + recovery round,
+    // summed as ONE shared pool (borrowing stays free, only the sizing law
+    // changes vs RWM_STORE_PATHS' count-scaled clamp). Engaged N ≥ 2 with
+    // every live anchor warm; until then the configured pooled law
+    // (path-scaled / legacy) is the warm-up fallback. Default OFF: shipped
+    // byte-identical; the battery arm composes RWM_PLAIN_RS=1 so the anchor
+    // terms read ≈1× truth (the legacy over-read clamps this law to the
+    // N×knee ceiling ≡ path-scaled — documented at capw_store_cap).
+    let capw_on = gates.store_capw && plain_dyn_cap;
+    if capw_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            pool_per_path = store_path_pool,
+            gain = store_bdp_gain,
+            "capacity-weighted outstanding pool ACTIVE (RWM_STORE_CAPW: pool = sum_i anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R over live paths, clamp [floor, N*knee], N>=2 all-warm; fallback = configured pooled law until anchors warm; N=1 legacy)"
+        );
+    }
     // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
     // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
     // the retention store releases slots only on the cumulative frontier,
@@ -5578,6 +5646,16 @@ async fn run_window_sender(
     // RWM_DIAG (transport-ceiling diagnosis) master gate — declared BEFORE the
     // send macro below so the macro body (GLIFE fill tracking) can see it.
     let diag_on = gates.diag;
+    // Per-path store-attribution GAUGE (goal-gate "C8-Aware Pool Law"
+    // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG the
+    // percap account maps are maintained even when the percap LAW is off, so
+    // the DIAG `sout=` field shows each path's share of the POOLED
+    // outstanding (which path is holding the unacked-frontier span — the c8
+    // pool-arm diagnosis gauge). Behavior-inert by construction: every percap
+    // decision site keys on `percap_caps` NON-EMPTY (the "law engaged"
+    // signal), and caps are only computed under percap_on — with the law off
+    // the maps feed the DIAG print alone.
+    let percap_track = percap_on || (diag_on && plain_dyn_cap);
     // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ──────────────────────────
     // Time-weighted attribution of the generation-mode sender loop to the
     // gate that is BINDING its wire emission each instant. In coded-wire
@@ -5919,8 +5997,9 @@ async fn run_window_sender(
             // Released only by the ack that removes it from the store. A
             // cross-path retransmit does NOT re-attribute: the account bounds
             // the pipe the symbol was ADMITTED against (its dwell there ends
-            // at the same ack either way).
-            if percap_on {
+            // at the same ack either way. percap_track ⊇ percap_on: under
+            // RWM_DIAG the maps are maintained as a gauge only — see decl).
+            if percap_track {
                 // feat/store-borrowing: a LOAN charges the LENDER's account
                 // while the symbol flies on `source_path` (§16.22.1 — the
                 // ledger moves, the wire placement does not). The loan
@@ -6466,7 +6545,7 @@ async fn run_window_sender(
                     let newly =
                         sack_release_mark(&sent_store, &mut sack_released, start, end);
                     sack_released_total += newly.len() as u64;
-                    if percap_on {
+                    if percap_track {
                         for &k in &newly {
                             // Per-path account slot freed on delivery
                             // evidence (idempotent: cumulative release
@@ -6699,6 +6778,42 @@ async fn run_window_sender(
                         store_boot_cap.min(store_max)
                     };
                 } else {
+                    // RWM_STORE_CAPW (goal-gate "C8-Aware Pool Law"): the
+                    // capacity-weighted shared pool's per-path terms, over
+                    // LIVE paths (live_paths(), NOT active_paths() — the
+                    // documented cwnd-saturation filter trap above: a
+                    // saturated path must keep its earned share). None until
+                    // that path's anchor warms; capw_store_cap requires ALL
+                    // live paths warm, else the configured fallback below.
+                    let capw_terms: Vec<Option<f64>> = if capw_on {
+                        let sched = scheduler.lock();
+                        sched
+                            .live_paths()
+                            .iter()
+                            .map(|id| {
+                                sched.path(*id).and_then(|p| {
+                                    let k = percap_k
+                                        .entry(*id)
+                                        .or_insert_with(|| {
+                                            EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
+                                        })
+                                        .observe_srtt_over_rtprop(
+                                            p.srtt(),
+                                            p.min_rtt(),
+                                            dnow,
+                                        );
+                                    honest_store_cap(
+                                        p.copa_bdp_anchor(),
+                                        p.btlbw_sym_per_s(),
+                                        k,
+                                        store_bdp_gain,
+                                    )
+                                })
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     // feat/percap-honest-cap: alongside the legacy Σanchor
                     // base, accumulate the honest per-path cap sum
                     // Σ anchor_i·(K_i+gain−1) when the honest sampler is
@@ -6739,7 +6854,18 @@ async fn run_window_sender(
                         }
                         (bdp, hsum, n)
                     };
-                    dyn_store_cap = if honest_cap_on && hsum > 0.0 {
+                    dyn_store_cap = if let Some(cap) = capw_store_cap(
+                        capw_on,
+                        &capw_terms,
+                        store_cap_floor,
+                        store_path_pool,
+                    ) {
+                        // Capacity-weighted shared pool ENGAGED (N ≥ 2, all
+                        // anchors warm): Σ honest per-path caps, clamped to
+                        // [floor, N×knee]. Takes precedence over the hsum /
+                        // path-scaled laws — this IS the pool law under test.
+                        cap
+                    } else if honest_cap_on && hsum > 0.0 {
                         // Honest law: the Σ is already per-path-composed
                         // (each term carries its own K_i and runway), so no
                         // gain× multiplier here. Principled ceilings
@@ -8591,7 +8717,7 @@ async fn run_window_sender(
             // task #86: cumulative release of the per-path accounts (the
             // split_off twin; seqs already SACK-released are gone from the
             // account map, so no double-release).
-            if percap_on {
+            if percap_track {
                 percap_release_cumulative(&mut percap_acct, &mut percap_out, ack);
                 // feat/store-borrowing: repay every loan the frontier
                 // advance just released (the split_off twin — SACK-repaid
@@ -10511,6 +10637,88 @@ mod tests {
         assert_eq!(
             path_scaled_store_cap(true, 3, 4000.0, 2.0, 64, 2048),
             Some(3 * 2048)
+        );
+    }
+
+    // ----- Capacity-weighted pool (RWM_STORE_CAPW, "C8-Aware Pool Law") -------
+
+    #[test]
+    fn capw_store_cap_not_engaged_off_single_or_unwarm() {
+        // Flag OFF: never engaged.
+        assert_eq!(
+            capw_store_cap(false, &[Some(1000.0), Some(400.0)], 64, 2048),
+            None
+        );
+        // N = 1: not engaged — the caller keeps the legacy law bit-exactly
+        // (the same singles contract as RWM_STORE_PATHS).
+        assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), None);
+        // Anchors-not-warm fallback: ANY unwarm live path → None → the
+        // caller keeps the CONFIGURED pooled law (path-scaled / legacy)
+        // until every anchor is live — a partial sum would under-provision
+        // the unwarm path's share of the shared pool.
+        assert_eq!(capw_store_cap(true, &[Some(1000.0), None], 64, 2048), None);
+        assert_eq!(capw_store_cap(true, &[None, None], 64, 2048), None);
+        assert_eq!(
+            capw_store_cap(true, &[Some(1000.0), Some(0.0)], 64, 2048),
+            None
+        );
+        assert_eq!(capw_store_cap(true, &[], 64, 2048), None);
+    }
+
+    #[test]
+    fn capw_store_cap_symmetric_is_n_times_single() {
+        // The c7 degenerate: N identical paths → pool = N × the single-path
+        // honest term (≈ N×(single pool) — symmetric cells preserved).
+        let single = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap();
+        // 83.2·(1.5+1) + 10 400·1·0.1 = 208 + 1040 = 1248.
+        assert!((single - 1248.0).abs() < 1e-6);
+        assert_eq!(
+            capw_store_cap(true, &[Some(single), Some(single)], 64, 2048),
+            Some(2496)
+        );
+        // Three symmetric paths: 3× (ceiling 3×2048 not binding).
+        assert_eq!(
+            capw_store_cap(true, &[Some(single); 3].to_vec(), 64, 2048),
+            Some(3744)
+        );
+    }
+
+    #[test]
+    fn capw_store_cap_asymmetric_weights_by_capacity_not_path_count() {
+        // The c8 shape (the law's target cell): a c2-class fast path
+        // (10 400 sym/s, RTprop 8 ms → anchor 83.2) + a c3-class slow path
+        // (2000 sym/s, RTprop 40 ms → anchor 80). Each earns its OWN pipe +
+        // recovery round — the slow path's 1/5 rate earns ~1/3 of the fast
+        // term (its longer RTprop partially offsets), NOT the equal ×knee
+        // share the path-count law grants.
+        let fast = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap(); // 1248
+        let slow = honest_store_cap(Some(80.0), Some(2_000.0), 1.5, 2.0).unwrap(); // 200+200=400
+        assert!((slow - 400.0).abs() < 1e-6);
+        let pool = capw_store_cap(true, &[Some(fast), Some(slow)], 64, 2048).unwrap();
+        assert_eq!(pool, 1648);
+        // The verdict shape the diagnosis predicts: strictly between the
+        // legacy 1024 latch (fast path under-provisioned) and the
+        // path-scaled N×2048 = 4096 (slow path over-provisioned).
+        assert!(pool > 1024 && pool < 4096);
+        // Capacity weighting: the slow path's contribution is its own term,
+        // ~24% of the pool — not the 50% the count-scaled ceiling implies.
+        assert!((slow / (fast + slow) - 0.243).abs() < 0.01);
+    }
+
+    #[test]
+    fn capw_store_cap_overread_anchors_clamp_to_the_path_scaled_ceiling() {
+        // The legacy plain anchor over-reads ×4.6–7.4 ("Anchor Hygiene"
+        // battery (b)): inflated terms clamp at the N×knee ceiling — the
+        // path-scaled degenerate (which is why the battery arm composes
+        // RWM_PLAIN_RS=1; without honest anchors the law cannot
+        // differentiate). Floor guards transiently-tiny terms.
+        assert_eq!(
+            capw_store_cap(true, &[Some(6.0 * 1248.0), Some(6.0 * 400.0)], 64, 2048),
+            Some(4096)
+        );
+        assert_eq!(
+            capw_store_cap(true, &[Some(1.0), Some(2.0)], 64, 2048),
+            Some(64)
         );
     }
 

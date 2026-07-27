@@ -50,6 +50,11 @@ fi
 # 2026-07-21 (goal-gate "Consolidation"); =0 is the legacy-pool opt-out arm.
 [[ -n "${RWM_STORE_PATHS:-}" ]] && TENV="$TENV RWM_STORE_PATHS=$RWM_STORE_PATHS"
 [[ -n "${RWM_STORE_PATH_POOL:-}" ]] && TENV="$TENV RWM_STORE_PATH_POOL=$RWM_STORE_PATH_POOL"
+# Capacity-weighted shared pool (goal-gate "C8-Aware Pool Law", ADR-0058
+# follow-up): pool = sum_i honest per-path cap over live paths for N>=2 with
+# warm anchors; fallback = the configured pooled law. Default OFF; the
+# battery arm composes RWM_PLAIN_RS=1 (honest anchor terms).
+[[ -n "${RWM_STORE_CAPW:-}" ]] && TENV="$TENV RWM_STORE_CAPW=$RWM_STORE_CAPW"
 # Per-path outstanding accounting (task #86): cap_i = clamp(gain·rate_i·echoRTT_i,
 # floor, pool) per live path for N>=2; supersedes RWM_STORE_PATHS' pooled gate;
 # N=1 / unset = legacy byte-identical.
