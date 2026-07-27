@@ -9436,6 +9436,63 @@ gap as its target — and gains a sharpened rationale: the very mechanism
 Copa lacks, a BBR-style measured rate model as feed-forward baseline, is
 what would let a δ-priced controller convert the freed pipe.
 
+*(§16.28 is reserved for the emission-batching lever measured the same
+day on the parallel LEVER-1 branch.)*
+
+### 16.29 The c8-aware pool law: capacity-weighted sizing measured, the span story sharpened, and the real binder renamed (2026-07-27, `feat/c8-pool-law`, `RWM_STORE_CAPW` DEFAULT OFF)
+
+The wall-#7 coda's owed follow-up (§17.7 residual (i), ADR-0058): under
+SACK-clocked release the LEGACY 1024 pool reads better at c8 than the
+shipped path-scaled N×2048 pool (0.85–0.87×Σ vs 0.72–0.76), and kernel
+MPTCP-BBR prices the cell externally at 89.7–92.6. Pre-registered
+derivation (goal-gate "C8-Aware Pool Law", written before any run): the
+count-scaled pool over-weights the slow path, so the fix is the
+CAPACITY-WEIGHTED shared pool — pool = clamp(Σ_i cap_i, floor, N·knee),
+cap_i = the honest per-path law rate_i·(K_i·RTprop_i + (gain−1)·(R +
+RTprop_i)) — each path earns unacked-frontier depth for its own pipe +
+recovery round, summed as ONE pool (ADR-0058's pooled-borrowing verdict
+kept). Predicted ≥ max(legacy, path-scaled) at c7 AND c8.
+
+**Diagnosis first (the new DIAG-only per-path store-attribution gauge):
+the hypothesis's villain was wrong.** The slow path never holds the
+depth — in EVERY pool arm it holds ≤~10% of the outstanding. Under the
+shipped pool (latched at 4096 by the ×5–9 legacy anchor over-read) it is
+the FAST path that parks up to ~3,950 un-SACKed slots, echo RTT inflates
+to 279–452 ms over a 9–13 ms RTprop, and goodput runs stall-then-burst
+(16–33 Mbit while the span fills, 170–234 at release) — the c8
+bimodality, mechanism now on gauges. Legacy-1024 wins by bounding that
+span at ~the fast path's own pipe+runway — and starving the slow path
+entirely (its outstanding decays to ≈0; legacy c8 = the fast single +
+only 2.6–2.7 Mbit).
+
+**Battery (seeds 42+7 ×8 interleaved, same binary, echo-asserted,
+same-session Σ):** the law engaged exactly as derived (pool live at
+1.3–2.5k on honest anchors, between the incumbents) and the prediction
+FAILED both cells: c8 capw 79.1/74.2 vs legacy 86.7/87.9 (0.79/0.74 vs
+0.866/0.868×Σ, consistent both seeds); c7 capw 143.9/143.8 vs pbs
+166.3/166.2 — where the attribution top-up showed the c7 cost is owned
+by the `RWM_PLAIN_RS` composition the law rides (rs-without-capw =
+139.4/142.8, cap non-binding), pricing a NEW datum: the RS witness cost
+scales from −1.2…−1.8 at N=1 to −22…−27 ≫σ at the symmetric dual — the
+"carry RS as a full stack member" candidate is refuted at c7. **Verdict
+per the pre-registered falsification clause: the c8 binder is NOT pool
+sizing.** Σ-shaped pools of any honesty buy fast-path frontier-span
+exposure with no slow-path payback, because the slow path CONVERTS
+almost nothing (the data supports pool ≈ max_i cap_i ≈ 1024–1250 — which
+legacy latches at by accident and which can only formalize the
+0.85–0.87×Σ it already measures). The true c8 binder, renamed with
+numbers: **slow-path conversion** — placement + recovery leave the c3
+path's ~16 Mbit unbanked while kernel MPTCP-BBR banks it (89.7–92.6 vs
+rp-legacy 86.7–87.9 = fast + 2.7). No flip: `RWM_STORE_CAPW` and
+`RWM_PLAIN_RS` stay OFF, the shipped default is unchanged, and the next
+pre-registerable item at this cell is a conversion mechanism (or the
+mechanical per-topology gate to the legacy span law, worth the measured
++11–14), not pool arithmetic. Piggybacked on the same battery: the
+DEPRECATION REGISTER's owed `RWM_FMTCP` re-test on the clean substrate —
+c7 ×0.11, c8 ×0.20 of the same-session stack, strictly worse everywhere
+≫σ, cod_share > 1 — CONFIRMED-REFUTED, never wall-tainted, cleared for
+deletion (register row updated; goal-gate "C8-Aware Pool Law").
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -9835,7 +9892,14 @@ SACK-release law the LEGACY 1024 pool now reads better at c8
 sub-σ per seed, consistent direction) — the pool law's c8 story has
 MOVED since §16.22 and a c8-aware pool law is the named, pre-registered
 follow-up (it also carries `RWM_PLAIN_RS`, whose composition probe
-showed its witness cost resolved); (ii) every REFUTED mechanism is now
+showed its witness cost resolved) **[EXECUTED 2026-07-27, §16.29: the
+capacity-weighted pool law was derived, built and REFUTED at the cell —
+the binder is not pool sizing but SLOW-PATH CONVERSION (the fast path
+parks the un-SACKed span; the slow path converts ~nothing in any pool
+arm), legacy-1024 remains the best-measured c8 class (0.87×Σ = fast
+single + 2.7), and the RS witness cost was re-priced at −22…−27 ≫σ for
+the symmetric dual (its full-stack-member candidacy refuted); the c8
+residual stands with a sharper name]**; (ii) every REFUTED mechanism is now
 in the goal-gate DEPRECATION REGISTER (two-stage: warn-on-activation →
 clean-substrate re-test → delete), with the walls active at each
 refutation argued per gate — nothing was deleted on a wall-tainted
@@ -9858,7 +9922,10 @@ EXECUTED — the refuted mechanism code (SACK_PRUNE, RECOV_MP_SERIAL,
 INLINE_REPAIR/FRONTIER, RATE_WIRE, SRC_BP, the DAPS chain; ~1.9 kLOC) is
 deleted from the tree; the sections above remain the record. FMTCP and the
 streaming machine keep their re-test clauses (goal-gate "Code Consolidation
-(2026-07-27)"). No regime-map claim changes.
+(2026-07-27)"). No regime-map claim changes. **[Later same day: FMTCP's
+re-test RAN (§16.29) → CONFIRMED-REFUTED on the clean substrate; its chain
+is cleared for deletion at the next consolidation pass. The streaming
+machine's clause is unchanged.]**
 
 ### 17.9 Competitive Position (2026-07-22) — the shipped default vs QUIC, TCP, MPTCP, measured
 

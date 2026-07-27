@@ -49,6 +49,21 @@ verdict was pre-SR and has MOVED. A c8-aware pool law (asymmetric scaling
 or per-topology gating) is the named, pre-registerable follow-up worth a
 measured +11–13 Mbit.
 
+**Follow-up EXECUTED and REFUTED (2026-07-27, `feat/c8-pool-law`,
+`RWM_STORE_CAPW` default OFF; goal-gate "C8-Aware Pool Law" + paper
+§16.29):** the capacity-weighted shared pool (Σ honest per-path caps) was
+derived, pre-registered, built and measured — it engaged exactly as
+derived (pool 1.3–2.5k on honest anchors, between the incumbents) and
+LOST to legacy-1024 at c8 on both seeds. The per-path gauge shows the
+binder is not pool sizing: the FAST path parks the un-SACKed frontier
+span in every deep-pool arm and the SLOW path converts ~nothing
+(legacy c8 = fast single + 2.7 Mbit). The c8 residual's true name is
+slow-path CONVERSION (placement/recovery at the asymmetric cell);
+the mechanical alternative worth the measured +11–14 is a per-topology
+gate to the legacy span law. Same session, the RS witness cost was
+priced at −22…−27 ≫σ for the symmetric dual (`RWM_PLAIN_RS` full-stack
+candidacy refuted at c7).
+
 ## Consequences
 
 - C7 plain+BBR 100 → 136/142 at introduction; in the composed stack the
