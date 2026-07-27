@@ -144,6 +144,14 @@ buckets for shared use before deleting).
 **[2026-07-27: NOT deleted, per this recommendation — the c8-pool-session
 piggyback arm remains the disposition; it dies there or earns a record.]**
 
+**[2026-07-27 LATER, EXECUTED: the piggyback arm RAN ("C8-Aware Pool Law"
+battery) → CONFIRMED-REFUTED on the full clean substrate (c7/c8
+×0.11–0.20 of the default stack, both seeds ≫σ) — the register's
+strongest clause closed WITH data, and the chain was deleted in
+consolidation pass 2, commit f841757 (−264 LOC; the shared per-path
+in-flight pattern renamed `infl_percap_full` and retained under
+gen_pipe/percap). Goal-gate "Code Consolidation 2 (2026-07-27)".]**
+
 The register calls FMTCP the strongest re-test case (refuted
 pre-EVERY-wall; its named failure mechanism — recovery over a
 bufferbloat-inflated RTT — is exactly the W7/W8 class later fixed).
@@ -203,6 +211,17 @@ next consolidation pass — SCOPED: streaming-only unless the legacy-RLC
 battery's c3-1200B unified-vs-rlc sign-flip class stands) is separately
 confirmed, in which case the combined three-machine removal below
 applies.]**
+
+**[STAGE 2 EXECUTED 2026-07-27, consolidation pass 2, commit bccb32a —
+SCOPED STREAMING-ONLY: `fec/streaming.rs` + the `streaming-codes` crate
++ the selection glue deleted (−1,708 net LOC vs the ~1,230 estimate;
+the delta is Cargo boilerplate + test arms). `FecBackend::Streaming` is
+a parse error with a pointer; `RWM_UNIFIED=0` + Realtime now means the
+LEGACY-RLC windowed machine (the stated opt-out semantics change). The
+legacy-RLC machines + the differential `reference` decoder REMAIN (the
+"take all three out together" option was not taken — its §17.5 clause
+stays open). The cell-5 p999 WATCH is now historical. Goal-gate "Code
+Consolidation 2 (2026-07-27)".]**
 
 **Recommended retirement path** (two stages, per ADR-0066):
 

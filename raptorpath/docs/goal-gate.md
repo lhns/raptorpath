@@ -528,7 +528,11 @@ NOTHING is deleted this pass; deletion requires the re-test column's clause
 satisfied on the consolidated stack (BBR + SR + PBS + MP + anchors — see
 "Consolidation" below). **[2026-07-27 UPDATE: the code-consolidation pass
 executed the register — per-row REMOVED status + commits below; see "Code
-Consolidation (2026-07-27)".]** Walls key: **W1** quinn hidden Cubic · **W2** MTU
+Consolidation (2026-07-27)".]** **[2026-07-27 LATER: consolidation pass 2
+executed the two rows that pass left behind their re-test clauses — FMTCP
+(f841757) and the streaming machine (bccb32a); the register is now FULLY
+EXECUTED, no Class-C gate remains in the tree; see "Code Consolidation 2
+(2026-07-27)".]** Walls key: **W1** quinn hidden Cubic · **W2** MTU
 black-hole wedge · **W7** 1024-pool flow-control law · **W8** global
 recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 (§16.10–16.14, audit-classified) · **PRE-DIV** pre-hardware-divide
@@ -536,7 +540,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 
 | gate | refuting section | walls ACTIVE at refutation | re-test required? | status |
 |---|---|---|---|---|
-| `RWM_FMTCP` (+`_WIN`) | "FMTCP Aggregation Build (2026-07-08)": C8 0.48×Σ-fast, strictly worse than plain (14.37→7.58) | **W1, W2, W7, W8, PRE-DIV** — its entire table sits in the Cubic-era 7–25 Mbit band; its named mechanism ("recovers over a bufferbloat-inflated RTT", ~2 s spikes) is exactly the class walls W7/W8 later explained for plain mode | **YES — the strongest re-test case in the register.** Refuted pre-EVERY-wall; the composite (total-in-flight + per-path BDP + fungible repair) has never run on the clean substrate. Counter-weight, recorded honestly: its failure reproduced FMTCP's own abstract's pathology (slow subflow = bottleneck), and the clean-substrate c8 story (§16.22 no-borrowing tax) still names that same structural axis — the re-test is owed but the prior is against it | **RE-TESTED 2026-07-27 → CONFIRMED-REFUTED** ("C8-Aware Pool Law" battery, piggybacked arm, binary 1d09eb32… = 080073c, seeds 42+7 ×4 interleaved on the FULL clean substrate — BBR + MTU floor + SR + PBS + MP + anchors): c7 18.30/18.98, c8 14.30/15.03 Mbit/s = ×0.11/×0.20 of the same-session default stack, strictly worse than every plain arm at both cells both seeds ≫σ; dnf=0; cod_share 1.02–1.17 (recovery flood), ~8× plain CPU. The 2026-07-08 pathology reproduces with every wall removed — the refutation was never wall-tainted. **CLEARED FOR DELETION next consolidation pass** (chain: `RWM_FMTCP`, `RWM_FMTCP_WIN`, the FMTCP-forced sub-lever couplings). No ADR re-opens |
+| `RWM_FMTCP` (+`_WIN`) | "FMTCP Aggregation Build (2026-07-08)": C8 0.48×Σ-fast, strictly worse than plain (14.37→7.58) | **W1, W2, W7, W8, PRE-DIV** — its entire table sits in the Cubic-era 7–25 Mbit band; its named mechanism ("recovers over a bufferbloat-inflated RTT", ~2 s spikes) is exactly the class walls W7/W8 later explained for plain mode | **YES — the strongest re-test case in the register.** Refuted pre-EVERY-wall; the composite (total-in-flight + per-path BDP + fungible repair) has never run on the clean substrate. Counter-weight, recorded honestly: its failure reproduced FMTCP's own abstract's pathology (slow subflow = bottleneck), and the clean-substrate c8 story (§16.22 no-borrowing tax) still names that same structural axis — the re-test is owed but the prior is against it | **RE-TESTED 2026-07-27 → CONFIRMED-REFUTED** ("C8-Aware Pool Law" battery, piggybacked arm, binary 1d09eb32… = 080073c, seeds 42+7 ×4 interleaved on the FULL clean substrate — BBR + MTU floor + SR + PBS + MP + anchors): c7 18.30/18.98, c8 14.30/15.03 Mbit/s = ×0.11/×0.20 of the same-session default stack, strictly worse than every plain arm at both cells both seeds ≫σ; dnf=0; cod_share 1.02–1.17 (recovery flood), ~8× plain CPU. The 2026-07-08 pathology reproduces with every wall removed — the refutation was never wall-tainted. ~~CLEARED FOR DELETION next consolidation pass~~ **REMOVED f841757 (2026-07-27, Code Consolidation 2)** — chain deleted (`RWM_FMTCP`, `RWM_FMTCP_WIN`, the forced sub-lever couplings; the sub-lever gates themselves and the shared per-path in-flight/percap patterns retained). No ADR re-opens |
 | `RWM_SRC_BP` | "Source Backpressure (2026-07-12)": C8 −53% both seeds | **GEN-INERT (audit: §16.10–16.13 UNVERIFIABLE — no recorded env; −53% fits inside the 2.3× era noise), W1, W2, W7, W8, PRE-DIV** — the section pre-dates the discipline it helped motivate; the "live code at a bottlenecked era" reading is the CHARITABLE one and cannot be verified from the record | YES in principle, **LOW priority** — the mechanism space (defer source emission into per-path pacing budgets) was superseded by the per-path account family (`RWM_STORE_PERCAP`/honest caps/borrowing, §16.21–16.22), which asked the same admission question on live code with gauges and lost to pooled at c8 for a NAMED structural reason (no-borrowing tax) | **REMOVED 8902d24 (2026-07-27)** — VISION-TRIAGE ruling accepted: the mechanism space was re-asked by the percap family on live code and lost for a named structural reason (ADR-0058); the gen-mode re-test clause transfers to this row's text, not the code |
 | `RWM_SACK_PRUNE` | "SACK+BDP Reassembly (2026-07-08)": C7/C8 in-order DNF (wedge) | walls were active (W1, W7, PRE-DIV) but **IRRELEVANT: the unsafety is STRUCTURAL** — pruning `sent_store` destroys the only retransmittable copy, so a received-then-evicted symbol at the receiver's bounded reassembly window is unrecoverable. No wall excuses destroying recoverability | **NO.** SUPERSEDED 2026-07-21 by `RWM_STORE_SACK_RELEASE` (default ON), which releases the SLOT and never the recoverability — the same goal achieved safely and battery-proven (c7 0.96–1.05×Σ) | **REMOVED 3dcb39c (2026-07-27)** — SR's first post-ship battery cycle closed (§16.25 + Consolidation); the precedence-warned control-arm role ended as scheduled |
 | `RWM_RECOV_MP_SERIAL` | "Multipath Recovery Suppression (2026-07-21)": diagnosis vindicated (per-path loss 0.62–0.77 at a 0.1% cell), runtime refuted — honest signal re-heats every SRTT/loss cadence, sender CPU ×2.4 | **NONE** — refuted on the post-wall substrate itself (BBR default, MTU floor, path pool, suppression law live) | **NO** — the refutation IS the clean-substrate datum. A cheaper serial-namespace implementation would be a NEW build with its own item-11 pre-registration, not a re-test | **REMOVED ade48ad (2026-07-27)** — the diagnosis (per-path loss poisoning by global serials) stays documented at the module design note; a cheaper serial-namespace implementation is a NEW item-11 build |
@@ -545,7 +549,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | **REMOVED f1f32c5 (2026-07-27)** — effective_btlbw is now always the windowed-MAX (the shipped default, byte-identical) |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
-| STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. **Deletion GO next consolidation pass** (~1,230 LOC: adapter + crate + selection glue; scope limit: the legacy-RLC decoders' own retirement clause was NOT re-argued — streaming-only unless that lands too). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
+| STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. ~~Deletion GO next consolidation pass~~ **REMOVED bccb32a (2026-07-27, Code Consolidation 2, scoped streaming-only)** — adapter + `streaming-codes` crate + selection glue deleted (−1,708 net LOC); `fec_backend streaming` is a parse error with a pointer; **OPT-OUT SEMANTICS CHANGE: `RWM_UNIFIED=0` + Realtime now selects the LEGACY-RLC windowed machine** (its own retirement clause, §17.5, stays open — NOT re-argued); the cell-5 p999 WATCH is HISTORICAL (a property of the deleted machine, measured and bounded above). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
 
 Class-B gates (concept incomplete, successor named — `RWM_TAPER_R`,
 `RWM_STORE_PERCAP`/`_GUARD`/`_HONEST_CAP`, `RWM_STORE_BORROW`,
@@ -622,6 +626,79 @@ asserted (sr=1 every rep; pbs=1+mp=1 at c7)): **sc2 85.49/85.11/85.02/85.83
 Mbit/s (known class ~84–85); c7 168.54/165.83/165.37/163.15 (known class
 ~163–169); 0 DNF.** The shipped default is unchanged by the pass — the
 deleted code was all default-OFF/dead, and the extraction is a refactor.
+
+## Code Consolidation 2 (2026-07-27) — the register's two re-test-cleared rows executed (branch `refactor/consolidation-2`, base b81f5c3)
+
+*Decision record: → [ADR-0064](adr/0064-unified-span-machine.md) +
+[ADR-0066](adr/0066-deprecation-register.md) +
+[VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md) §3 (FMTCP) / §4
+(streaming stage 2). Both deletions were gated on same-day-earlier
+re-tests: FMTCP's "C8-Aware Pool Law" piggyback arm
+(CONFIRMED-REFUTED) and the "Streaming Crown Re-Test" (CLEARED). The
+register is now FULLY EXECUTED — no Class-C gate remains in the tree.*
+
+**What was deleted** (each its own commit citing its register row +
+re-test numbers; tests exclusive to the deleted path deleted with it;
+shared machinery mapped before cutting):
+
+| chain | commit | net LOC | ruling honored |
+|---|---|---|---|
+| `RWM_FMTCP` + `RWM_FMTCP_WIN` (composite wiring: fmtcp_tx_paused total-in-flight FC, win backstop static+derived, window_decoded_seq publish/read chain, forced `\|\| fmtcp` couplings on REASM_BDP/OOO_RETAIN/XPATH/react_cap/infl_bdp/gen_r, DIAG fields, fmtcp_loopback.rs, harness pass-through) | f841757 | −264 | RE-TESTED 2026-07-27 → CONFIRMED-REFUTED (c7 18.30/18.98, c8 14.30/15.03 = ×0.11–0.20 of the default stack, both seeds ≫σ, on the FULL clean substrate) |
+| Streaming machine (`fec/streaming.rs` 352 + `streaming-codes` crate 845 + selection glue + `FecBackend::Streaming` variant + streaming_code_test.rs + bench/test arms + tail_matrix `streaming`/`bulkstream` arms retired loudly) | bccb32a | −1,708 | RE-TESTED 2026-07-27 → CLEARED (crown held 10/10 cell-seeds); **scoped streaming-only** — the legacy-RLC machines and the differential `reference` decoder are NOT in scope (their §17.5 clause was never re-argued) |
+
+Total: **−1,972 net LOC** (211 insertions, 2,183 deletions vs base
+b81f5c3). `net/mod.rs` 11,965 → 11,775 (−190); `gates.rs` 368 → 357 (the
+`fmtcp`/`fmtcp_win` fields and the last `deprecated_env_flag` caller
+gone — the helper itself stays, CORE gate-hygiene layer per the triage).
+
+**Shared-machinery boundary** (the work-list's named hazard, honored):
+`fmtcp_percap_full` → renamed `infl_percap_full` and RETAINED — the
+gen_pipe stack (remedy 1) consumes it and `percap_store_full` mirrors it
+(percap family = EXPERIMENT-KEEP); the WindowAck `cumulative_received`
+wire field STAYS (wire format + debug datum; only FMTCP's sender-side FC
+consumer died); the M* anchor machinery keeps its plain-live subset (the
+mstar echo drops its now-dead "derived win backstop" clause). Historic
+battery drivers (`c8pool_*.sh`, `crown_*.sh`) keep their fmtcp/streaming
+arms as the record of the executed re-tests.
+
+**The `RWM_UNIFIED=0` OPT-OUT SEMANTICS CHANGE, stated explicitly:**
+after bccb32a the realtime path under `RWM_UNIFIED=0` can no longer
+select streaming — it falls back to the LEGACY-RLC windowed machine
+(`RlcWindowDecoder`; echo: "Realtime mode (RWM_UNIFIED=0): streaming
+machine retired — riding the legacy-RLC windowed machine"). The
+legacy-RLC machines stay: their retirement clause ("unified ≥ legacy-RLC
+everywhere", §17.5, the flip battery's c3-1200B sign-flip class
+unresolved) was never argued and remains open. `fec_backend streaming`
+is a parse error with a pointer. The cell-5 p999 WATCH becomes
+HISTORICAL — it described the deleted machine (sub-noise p999-median
+edge, worst-rep sign reversed), measured and bounded in "Streaming Crown
+Re-Test".
+
+**Suites** (every commit boundary + final tree): lib 362/362 (368
+baseline − 2 FMTCP-only − 4 streaming-adapter tests); raptorpath-math
+all 8 result sets green; `gate_suite --release` 15/15 (twice — once per
+deletion boundary); `mtu_blackhole_wedge`, `perf_loopback` 8/8,
+`recov_mp_loopback`, `copa_sole_loopback`, `backpressure`,
+`emit_batch_loopback`, `sim_backend`/`fec_waterfall`/`config`/
+`fec_backend_switching`/`fec_window` tests, `unified_stream_l0
+--ignored --release` — all green; all test+bench targets compile
+(gates.rs default-stack test updated: fmtcp fields gone).
+
+**L1 identity smoke** (VM 10.1.5.16, lock held 22:45–22:56 UTC
+2026-07-27 (found FREE), binary sha256 01001268fee6… = commit bccb32a
+built fresh on the VM (stale binary rm'd first), E5-2650 v3
+aes+avx2+pclmulqdq, seed 42, default env (`SEED=42 RWM_GEN=0
+RWM_DIAG=1`), ×4 per cell, liveness echoes asserted (sr=1 every rep;
+pbs=1+mp=1 at c7)): **sc2 84.12/84.70/85.57/85.05 Mbit/s (known class
+~84–85.5); c7 165.36/168.57/166.98/164.69 (known class ~163–169); 0
+DNF.** Tail crown spot (tail_matrix c2 `ship` ×4, the crown classes):
+**400B p99 35.0/35.1/35.2/40.5 med 35 (class ~35–42); 1200B p99
+36.2/39.7/40.9/43.0 med 40; delivered 1000/1000 EVERY rep; p50 7.9–8.3
+ms; full unified echo set at both endpoints.** The shipped default is
+untouched by both deletions — FMTCP was default-OFF/deprecated-warned,
+and streaming was reachable only through the `RWM_UNIFIED=0` opt-out.
+VM left clean (no processes, no netns, lock released 22:56 UTC; logs
+`/home/vibe/consol2/smoke-{bulk,tail}.log`).
 
 ## C8-Aware Pool Law (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the diagnosis runs and the battery; branch `feat/c8-pool-law` from be24660; env `RWM_STORE_CAPW`, default OFF)
 

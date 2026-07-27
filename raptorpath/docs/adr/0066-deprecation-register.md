@@ -1,6 +1,6 @@
 # ADR-0066: The Deprecation Register — two-stage retirement for refuted mechanisms
 
-## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"; FMTCP + streaming remain the live re-test clauses)
+## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"). **FULLY EXECUTED 2026-07-27, consolidation pass 2 (`refactor/consolidation-2`): the two re-test clauses were both discharged same-day WITH DATA and their code deleted — FMTCP re-tested on the clean substrate → CONFIRMED-REFUTED → f841757; streaming crown re-test → CLEARED → bccb32a (scoped streaming-only; `RWM_UNIFIED=0` now = legacy-RLC). No Class-C gate remains in the tree; the two-stage discipline itself (deprecate → re-test → delete) stays the standing rule for future refuted mechanisms**
 
 **Date**: 2026-07-21
 

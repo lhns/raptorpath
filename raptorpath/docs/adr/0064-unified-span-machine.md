@@ -1,6 +1,6 @@
 # ADR-0064: One Machine Across the δ Axis — the Unified Span Machine + δ-Honest Shedding
 
-## Status: Accepted (`RWM_UNIFIED` default ON, 2026-07-21 — the mode-switch removal ships). Streaming re-test clause DISCHARGED 2026-07-27: unified held the historic crown cell-by-cell (goal-gate "Streaming Crown Re-Test"); streaming deletion GO at the next consolidation pass (register row RE-TESTED/CLEARED; cell-5 p999 WATCH recorded)
+## Status: Accepted (`RWM_UNIFIED` default ON, 2026-07-21 — the mode-switch removal ships). Streaming re-test clause DISCHARGED 2026-07-27 (goal-gate "Streaming Crown Re-Test"); **the second machine RETIRED 2026-07-27, consolidation pass 2, commit bccb32a** — adapter + `streaming-codes` crate + selection glue deleted (−1,708 LOC), `RWM_UNIFIED=0` + Realtime now falls back to the LEGACY-RLC windowed machine (opt-out semantics change, stated); the legacy-RLC decoders' own §17.5 retirement clause stays open; cell-5 p999 WATCH historical
 
 **Date**: 2026-07-18 (built) … 2026-07-21 (flipped)
 
@@ -61,7 +61,10 @@ split was an emission-SPAN policy wearing a machine switch's clothes.
   retirement sits in the deprecation register behind a cell-by-cell
   re-test clause (ADR-0066; triage: VISION-TRIAGE-2026-07). The legacy
   RLC decoders retire when the same pass confirms unified ≥ legacy
-  everywhere on the historic cells.
+  everywhere on the historic cells. **[2026-07-27: the clause was
+  discharged (crown re-test, 10/10 cell-seeds) and the machine DELETED
+  (bccb32a) — the legacy-RLC clause was NOT re-argued and those
+  machines remain.]**
 - Named follow-ups: within-deadline P_fec refinement of the ρ budget;
   the environment-bound extreme-stall class (collapses ALL machines,
   streaming included); c7 unified −5 Mbit direction (0.6σ) watched.

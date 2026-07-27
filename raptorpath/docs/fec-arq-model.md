@@ -9614,6 +9614,17 @@ to streaming only, since the legacy RLC decoders' separate retirement
 clause (unified ≥ legacy everywhere) was not re-argued here. The
 architectural claim completes its arc: the one-machine default now holds
 every cell of the record that justified keeping the second machine.
+
+*Coda (consolidation pass 2, 2026-07-27): the deletion this section
+cleared was executed — commit bccb32a removed the adapter, the
+`streaming-codes` crate and the selection glue (−1,708 LOC), scoped
+streaming-only. `RWM_UNIFIED=0` + Realtime now selects the legacy-RLC
+windowed machine (the stated opt-out semantics change); the cell-5 p999
+WATCH above is thereby historical — the record of the retired machine's
+last measured edge. Identity + tail-crown smoke on the deletion binary:
+sc2 84.1–85.6, c7 164.7–168.6, tail c2 p99 med 35/40 ms, 1000/1000 —
+the shipped default untouched (goal-gate "Code Consolidation 2").*
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -10045,7 +10056,12 @@ streaming machine keep their re-test clauses (goal-gate "Code Consolidation
 (2026-07-27)"). No regime-map claim changes. **[Later same day: FMTCP's
 re-test RAN (§16.29) → CONFIRMED-REFUTED on the clean substrate; its chain
 is cleared for deletion at the next consolidation pass. The streaming
-machine's clause is unchanged.]**
+machine's clause is unchanged.]** **[Consolidation pass 2, same day: both
+cleared chains DELETED — FMTCP f841757 (−264 LOC), streaming machine
+bccb32a (−1,708 LOC, scoped streaming-only; `RWM_UNIFIED=0` + Realtime
+now = the legacy-RLC windowed machine). The register is fully executed;
+no deprecated mechanism code remains (goal-gate "Code Consolidation 2
+(2026-07-27)").]**
 
 ### 17.9 Competitive Position (2026-07-22) — the shipped default vs QUIC, TCP, MPTCP, measured
 
