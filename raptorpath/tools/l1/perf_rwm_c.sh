@@ -158,11 +158,8 @@ fi
 # gate, payload + ARQ maps retained until the cumulative frontier — slot
 # release, never recoverability (the RWM_SACK_PRUNE distinction).
 [[ -n "${RWM_STORE_SACK_RELEASE:-}" ]] && TENV="$TENV RWM_STORE_SACK_RELEASE=$RWM_STORE_SACK_RELEASE"
-# FMTCP-class pure decode-on-total aggregation (feat/fmtcp-aggregation): the
-# composite gate — total-in-flight flow control + per-path BDP in-flight cap +
-# fungible fountain repair (no per-hole ARQ) + decode-on-total OOO. Self-selects
-# the systematic-repair generation submode on top of --window-reliable.
-[[ -n "${RWM_FMTCP:-}" ]] && TENV="$TENV RWM_FMTCP=$RWM_FMTCP"
+# (RWM_FMTCP pass-through removed 2026-07-27: the composite was deleted per the
+# DEPRECATION REGISTER after the C8-Aware Pool Law re-test CONFIRMED-REFUTED it.)
 [[ -n "${RWM_DAPS:-}" ]] && TENV="$TENV RWM_DAPS=$RWM_DAPS"
 # DAPS queue management (feat/daps-queue-mgmt): BLEST per-path in-flight BDP cap
 # (RWM_DAPS_BDP=gain, default 1.0) + BBR per-path pacing (RWM_DAPS_PACE=0 off).
@@ -209,7 +206,7 @@ EXTRA="${RWM_EXTRA:-}"
 # estimator, the read-ahead depth bound, source-backpressure — EVERYTHING the
 # §16.11-16.14 arc measured) is enabled ONLY by the --window-generation-coding CLI
 # flag: net/mod.rs:701 gates window_generation on
-#   window_reliable && (window_generation_coding || window_systematic_repair || fmtcp)
+#   window_reliable && (window_generation_coding || window_systematic_repair)
 # and RWM_DAPS/RWM_GEN_R/RWM_RATE_SAMPLE only *configure* generation, they do NOT
 # *enable* it (`daps = RWM_DAPS && generation`).  The §16.14 diagnosis proved this
 # harness NEVER passed that flag, so the entire recent arc ran with the coded path

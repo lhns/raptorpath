@@ -7,14 +7,16 @@
 //! resolution: every gate is read exactly once per engine start
 //! (`RuntimeGates::resolve()`), documented in one place with its default and
 //! its decision record (ADR / goal-gate section), and the resolved struct is
-//! passed to the tasks that consume it. Deprecation warnings
-//! (`config::deprecated_env_flag`) fire here, once.
+//! passed to the tasks that consume it. When a register Class-C gate exists,
+//! its deprecation warning (`config::deprecated_env_flag`) fires here, once
+//! (none currently — the 2026-07-27 consolidation passes executed the whole
+//! DEPRECATION REGISTER).
 //!
 //! Behavior contract: `resolve()` reproduces the exact per-site semantics the
 //! scattered reads had (same defaults, same parse/clamp rules, same chaining
 //! through `unified_active()` / `copa_wire_active()` / the
 //! `RWM_ANCHOR_HYGIENE` umbrella). Fields whose EFFECTIVE default depends on
-//! the runtime MODE (generation / fmtcp / systematic — e.g. `RWM_GEN_R`,
+//! the runtime MODE (generation / systematic — e.g. `RWM_GEN_R`,
 //! `RWM_REACT_CAP`, `RWM_INFL_BDP`, `RWM_REPORT_GENS`) store the raw override
 //! (`Option<_>`) and the mode-dependent default stays at the use site.
 //!
@@ -27,7 +29,7 @@
 //! `RWM_RS_TRACE` (scheduler CopaState), and the harness/bench-only knobs
 //! (`RWM_L0_*`, `RWM_B_*`, `RWM_SL_*`, `RWM_PERF_TIMEOUT_S`, …).
 
-use crate::config::{anchor_gate, anchor_gate_default, deprecated_env_flag, env_flag};
+use crate::config::{anchor_gate, anchor_gate_default, env_flag};
 
 fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok().and_then(|s| s.parse::<T>().ok())
@@ -114,16 +116,16 @@ pub struct RuntimeGates {
     pub pipeline: usize,
     /// `RWM_GEN_PIPE` (default = `unified`): derived pipeline depth M* +
     /// dynamic intake cap (ADR-0064 §16.20(d)); `=0` = fixed legacy M arm.
+    ///
+    /// The `RWM_FMTCP`(+`_WIN`) decode-on-total composite that used to sit
+    /// beside this gate was REMOVED 2026-07-27 (register: RE-TESTED on the
+    /// clean substrate by the "C8-Aware Pool Law" battery → CONFIRMED-REFUTED,
+    /// c7/c8 ×0.11–0.20 of the default stack; ADR-0066). Its surviving ideas
+    /// live on derived: per-path in-flight cap + M* depth here, honest
+    /// anchors in ADR-0061, per-path admission in the percap family.
     pub gen_pipe: bool,
-    /// `RWM_FMTCP` (default OFF, DEPRECATED-warned): the FMTCP-class
-    /// decode-on-total composite. Register: strongest re-test case — retained
-    /// pending the piggybacked c8-pool-session arm (ADR-0066).
-    pub fmtcp: bool,
-    /// `RWM_FMTCP_WIN` (unset = derived/static backstop): explicit win
-    /// backstop override; part of the deprecated FMTCP surface (warned).
-    pub fmtcp_win: Option<usize>,
-    /// `RWM_GEN_R` (unset = mode default 0.10 fmtcp / 0.15 systematic /
-    /// 0.20 coded-only; clamped [0, 2] at the use site): proactive overhead r.
+    /// `RWM_GEN_R` (unset = mode default 0.15 systematic / 0.20 coded-only;
+    /// clamped [0, 2] at the use site): proactive overhead r.
     pub gen_r: Option<f64>,
     /// `RWM_GEN_RATE` (default 9000 sym/s): coded-emission pace ceiling.
     pub gen_rate: f64,
@@ -133,7 +135,7 @@ pub struct RuntimeGates {
     /// `RWM_GEN_INFLIGHT` (unset = 2·M·G): in-flight coded allowance W.
     pub gen_inflight: Option<f64>,
     /// `RWM_OOO_RETAIN` set at all (flag semantics): out-of-order retention
-    /// decouple (Fix 3); forced under FMTCP.
+    /// decouple (Fix 3).
     pub ooo_retain: bool,
     /// `RWM_OOO_RETAIN` numeric value (≥ 2, default 16): retention depth in
     /// generations for the decouple.
@@ -153,15 +155,15 @@ pub struct RuntimeGates {
     /// `RWM_NO_REACTIVE` (default OFF): pure-proactive demonstrator — the
     /// deficit-driven reactive loop disabled entirely.
     pub no_reactive: bool,
-    /// `RWM_XPATH_REPAIR` (default OFF; forced under FMTCP): route repair to
-    /// the max-spare-capacity path (the C8 fungibility realization).
+    /// `RWM_XPATH_REPAIR` (default OFF): route repair to the
+    /// max-spare-capacity path (the C8 fungibility realization).
     pub xpath_repair: bool,
     /// `RWM_PROACTIVE_PACER` (default OFF): present-at-stall filling-repair
     /// pacer — the documented resolution of the removed frontier/inline
     /// family (presence⊥throughput evidence arm; ADR-0066).
     pub proactive_pacer: bool,
-    /// `RWM_REASM_BDP` (default OFF; forced under FMTCP): receiver
-    /// reassembly clamp — never evict an undelivered above-frontier symbol.
+    /// `RWM_REASM_BDP` (default OFF): receiver reassembly clamp — never
+    /// evict an undelivered above-frontier symbol.
     pub reasm_bdp: bool,
     /// `RWM_MIN_R` (default 0, clamped [0, 2]): per-symbol repair-rate floor
     /// (raise-r test instrument, not a shipped control law).
@@ -173,12 +175,12 @@ pub struct RuntimeGates {
     pub cc_pace: bool,
     /// `RWM_CC_PACE_HR` (default 1.1, clamped [1, 2]): pace headroom.
     pub cc_pace_headroom: f64,
-    /// `RWM_REACT_CAP` (unset = 1.0 under fmtcp/gen_pipe else OFF; <1 =
+    /// `RWM_REACT_CAP` (unset = 1.0 under gen_pipe else OFF; <1 =
     /// fraction of SRTT, ≥1 = absolute µs): bounded-reactive spacing.
     pub react_cap: Option<f64>,
     /// `RWM_INFL_CAP` (default 0 = off): static total in-flight cap.
     pub infl_cap: u64,
-    /// `RWM_INFL_BDP` (unset = 1.5 under fmtcp/gen_pipe else off): BDP-derived
+    /// `RWM_INFL_BDP` (unset = 1.5 under gen_pipe else off): BDP-derived
     /// in-flight cap gain.
     pub infl_bdp: Option<f64>,
     /// `RWM_COPA_FEED` (default OFF): standalone plain-mode Copa delivery
@@ -241,7 +243,7 @@ pub struct RuntimeGates {
 
 impl RuntimeGates {
     /// Read the whole gate surface from the environment — call once at engine
-    /// start. Deprecation warnings (register Class-C gates) fire here.
+    /// start.
     pub fn resolve() -> Self {
         let unified = crate::net::unified_active();
         let gen_rate: f64 = env_parse::<f64>("RWM_GEN_RATE").unwrap_or(9000.0);
@@ -269,22 +271,6 @@ impl RuntimeGates {
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
-            fmtcp: deprecated_env_flag(
-                "RWM_FMTCP",
-                false,
-                "FMTCP Aggregation Build (2026-07-08) — refuted PRE-wedge-fix/PRE-recov-mp/PRE-divide; re-test REQUIRED before removal",
-            ),
-            fmtcp_win: {
-                let win = env_parse::<usize>("RWM_FMTCP_WIN");
-                if win.is_some() {
-                    tracing::warn!(
-                        "RWM_FMTCP_WIN is deprecated: part of the RWM_FMTCP experiment surface, refuted in \
-                         goal-gate \"FMTCP Aggregation Build\" (2026-07-08); removal scheduled pending the \
-                         DEPRECATION REGISTER re-test clause"
-                    );
-                }
-                win
-            },
             gen_r: env_parse::<f64>("RWM_GEN_R"),
             gen_rate,
             gen_rate_floor: env_parse::<f64>("RWM_GEN_RATE_FLOOR")
@@ -350,7 +336,7 @@ mod tests {
         assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // Experiments / instruments (default OFF)
-        assert!(!g.fmtcp && !g.store_percap && !g.store_borrow && !g.plain_rs);
+        assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
         assert!(!g.emit_batch, "emission batching ships OFF (A/B gate)");
         assert_eq!(g.emit_burst, 64);
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
@@ -363,6 +349,6 @@ mod tests {
         assert_eq!(g.store_boot, 128);
         assert!((g.store_gain - 2.0).abs() < 1e-12);
         assert!((g.cc_pace_headroom - 1.1).abs() < 1e-12);
-        assert!(g.store_override.is_none() && g.fmtcp_win.is_none());
+        assert!(g.store_override.is_none());
     }
 }
