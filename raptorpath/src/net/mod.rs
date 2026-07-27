@@ -5685,7 +5685,13 @@ async fn run_window_sender(
     // paths the emission path stays bit-identical (`emit_batch_live`
     // re-checked per loop iteration — path flaps re-scope within one
     // burst).
-    let emit_batch_on = gates.emit_batch && reliable && !coded_wire;
+    // Realtime (packed) mode is excluded outright: its per-packet latency
+    // path must never trade a wakeup for a burst, and its symbol rate is
+    // orders below the wall. The taper cache additionally carries a 50 ms
+    // staleness bound so a low-rate bulk-hint tunnel (e.g. the tail-matrix
+    // message workload riding the bulk tunnel at 50 msg/s) never runs the
+    // span/shed law on second-old anchors.
+    let emit_batch_on = gates.emit_batch && reliable && !coded_wire && !use_packing;
     let mut emit_batch_live = false;
     let emit_burst: usize = gates.emit_burst;
     if emit_batch_on {
@@ -5700,6 +5706,10 @@ async fn run_window_sender(
     // Per-burst cache: (repair_rate, span_params, estimator RTT at refresh).
     let mut taper_cache: Option<(f64, Option<(u64, u64)>, Duration)> = None;
     let mut taper_cache_syms: usize = 0;
+    let mut taper_cache_at_us: u64 = 0;
+    /// Staleness bound for the cached taper/span math (µs): one burst at
+    /// the service wall is ~3 ms; 50 ms only binds on low-rate paths.
+    const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 
     // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
     macro_rules! send_source_symbol {
@@ -5992,7 +6002,9 @@ async fn run_window_sender(
                 // burst granularity; per-symbol (bit-identical) when OFF.
                 let taper_recompute = !emit_batch_live
                     || taper_cache.is_none()
-                    || taper_cache_syms >= emit_burst;
+                    || taper_cache_syms >= emit_burst
+                    || now_us().saturating_sub(taper_cache_at_us)
+                        > TAPER_CACHE_MAX_AGE_US;
                 let (repair_rate, span_params) = if !taper_recompute {
                     let (rr, span, rtt) = taper_cache.unwrap();
                     taper_cache_syms += 1;
@@ -6092,6 +6104,7 @@ async fn run_window_sender(
                 };
                 taper_cache = Some((repair_rate, span_params, taper_rtt));
                 taper_cache_syms = 1;
+                taper_cache_at_us = now_us();
                 (repair_rate, span_params)
                 };
                 // diag/unified-collapse: span-law sender trace (RWM_DIAG only).
