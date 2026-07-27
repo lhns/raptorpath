@@ -3206,7 +3206,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         let gap_report_due = highest_seen_seq > highest_delivered_seq
                             && highest_seen_seq > last_gap_ack_seen
                             && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
-                        if cumulative_advanced || gap_report_due {
+                        // RWM_EMIT_BATCH ack coalescing: while more messages of
+                        // the SAME burst are already queued, the cumulative ack
+                        // is deferred — the burst's LAST message (recv_burst
+                        // empty) sends ONE WindowAck carrying the final
+                        // frontier + SACK state (cumulative acks subsume their
+                        // predecessors; a per-symbol ack stream at the c1
+                        // service wall is ~20k control datagrams/s of pure
+                        // per-symbol emission cost on BOTH endpoints). Gap
+                        // reports keep their own (rate-limited) trigger.
+                        let defer_cum_ack = recv_batch_on && !recv_burst.is_empty();
+                        if (cumulative_advanced && !defer_cum_ack) || gap_report_due {
                             last_advertised_ack = highest_delivered_seq;
                             last_gap_ack_seen = highest_seen_seq;
                             last_gap_ack_time = Instant::now();
