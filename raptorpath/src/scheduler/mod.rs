@@ -297,12 +297,6 @@ const DEFAULT_SRTT: Duration = Duration::from_millis(50);
 /// Minimum delivery-rate samples in the 10s window before the BtlBw anchor
 /// is trusted. A handful of coarse samples is too noisy to floor cwnd on.
 const ANCHOR_MIN_SAMPLES: usize = 8;
-/// De-noise (feat/gen-on-rebaseline, RWM_RATE_WIRE): the max-filter sample
-/// window floor when the robust per-path rate is enabled — raised well above the
-/// slow path's decode-burst spacing (the default 1 s clamp undershoots it), so
-/// the robust quantile is taken over a multi-RTprop horizon that spans several
-/// bursts rather than latching one.
-const RS_ROBUST_WIN_FLOOR_SECS: f64 = 3.0;
 /// cwnd_gain on the BtlBw×RTprop BDP estimate for the post-backoff recovery
 /// TARGET. 1.0 = aim to re-fill exactly the pipe; the gentle +2 probe (and
 /// the hint-coupled queue target) still governs the standing queue ABOVE
@@ -629,22 +623,6 @@ pub struct CopaState {
     rs_rej_zero: u64,
     rs_rej_applimited: u64,
     rs_generated: u64,
-    // --- De-noise the per-path DEPTH/pace rate signal (feat/gen-on-rebaseline,
-    // RWM_RATE_WIRE) ----------------------------------------------------------
-    // The slow-path per-path rate signal is decode-clocked and bursty; the pure
-    // windowed-MAX (`max_bw`) LATCHES the decode-burst over-reads (§16.15
-    // diagnosis measured 5..20 950 sym/s around a true ~2 083 — a ~4000× swing),
-    // so the DAPS depth budget `skew·BtlBw_slow` swings through 0 and the depth/
-    // pace bound is INERT half the time.  When `rs_robust_bw` is on, the DEPTH/
-    // pace signal (`effective_btlbw`) is a robust QUANTILE (`rs_robust_q`, default
-    // median) of the windowed per-path delivered-rate samples — rejecting the
-    // over-read latch — taken over a WIDER window floor (RS_ROBUST_WIN_FLOOR_SECS,
-    // above the decode-burst spacing).  The cwnd recovery anchor (`bdp_anchor`)
-    // still uses `max_bw` (an underestimate there is safe — it only RAISES cwnd),
-    // so the change is isolated to the per-path SCHEDULER rate (pace/offset/depth).
-    // Off (default) => `effective_btlbw == max_bw` => byte-identical.
-    rs_robust_bw: bool,
-    rs_robust_q: f64,
     /// RWM_RS_TRACE: eprintln each ACCEPTED rate sample above the given
     /// symbols/s threshold with its (delivered, interval, send_elapsed,
     /// ack_elapsed) decomposition — the over-read forensics instrument
@@ -653,13 +631,6 @@ pub struct CopaState {
     /// DIAG label for the RSTRACE prints: the owning path's id (u32::MAX
     /// until the owner stamps it). Never read by any control decision.
     pub(crate) rs_trace_path: u32,
-    /// Cached robust quantile of `bw_samples` (symbols/s), recomputed once per
-    /// delivered sample in `rs_on_delivered`.  MUST be cached: `btlbw_sym_per_s`
-    /// (hence `effective_btlbw`) is read once PER SEND-LOOP ITERATION by the DAPS
-    /// pace-bucket refill / depth budget, so recomputing an O(n log n) sort there
-    /// makes the sender CPU-bound and STALLS the transfer.  Only maintained when
-    /// `rs_robust_bw` (else 0.0, unused).
-    rs_robust_cached: f64,
     // --- Wire-clocked δ-mapped update law (feat/copa-wire-signal) -----------
     /// Wire mode: the delay term is the packet-timed wire RTT (fed by the
     /// transport seam) and the cwnd update law is Copa's actual
@@ -770,17 +741,6 @@ impl CopaState {
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(0.0),
             rs_trace_path: u32::MAX,
-            rs_robust_bw: crate::config::deprecated_env_flag(
-                "RWM_RATE_WIRE",
-                false,
-                "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13) — any sub-max quantile under-reads the decode-clocked samples; refuted live, same-binary A/B",
-            ),
-            rs_robust_q: std::env::var("RWM_RATE_Q")
-                .ok()
-                .and_then(|s| s.parse::<f64>().ok())
-                .filter(|q| *q > 0.0 && *q <= 1.0)
-                .unwrap_or(0.5),
-            rs_robust_cached: 0.0,
             last_cwnd_update: now,
             clock,
         }
@@ -961,13 +921,9 @@ impl CopaState {
         // [1s, 10s]: long enough to hold the true BtlBw between acks, short
         // enough that a genuine rate change is not pinned for the full 10s
         // sample window.  Falls back to 10s before a min-RTT sample exists.
-        // Robust de-noise widens the window floor above the decode-burst spacing
-        // (RWM_RATE_WIRE): the default 1 s clamp undershoots the slow path's
-        // decode-burst period, so the max/quantile latches a single burst.
-        let win_floor = if self.rs_robust_bw { RS_ROBUST_WIN_FLOOR_SECS } else { 1.0 };
         let win = self
             .min_rtt
-            .map(|r| (r.as_secs_f64() * 10.0).clamp(win_floor, 10.0))
+            .map(|r| (r.as_secs_f64() * 10.0).clamp(1.0, 10.0))
             .unwrap_or(10.0);
         let cutoff = now
             .checked_sub(Duration::from_secs_f64(win))
@@ -980,24 +936,6 @@ impl CopaState {
             .iter()
             .map(|s| s.delivery_rate)
             .fold(0.0f64, f64::max);
-        // Refresh the cached robust quantile ONCE per delivered sample (O(n log n)
-        // here, not per send-loop iteration — see `rs_robust_cached`).
-        if self.rs_robust_bw {
-            self.rs_robust_cached = self.compute_robust_bw();
-        }
-    }
-
-    /// Robust quantile (`rs_robust_q`) of the windowed per-path delivered-rate
-    /// samples — the de-noised BtlBw that rejects the decode-burst over-read latch.
-    /// Called only from `rs_on_delivered` (cached into `rs_robust_cached`).
-    fn compute_robust_bw(&self) -> f64 {
-        if self.bw_samples.is_empty() {
-            return 0.0;
-        }
-        let mut v: Vec<f64> = self.bw_samples.iter().map(|s| s.delivery_rate).collect();
-        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let idx = (((v.len() - 1) as f64) * self.rs_robust_q).round() as usize;
-        v[idx.min(v.len() - 1)]
     }
 
     /// Record an RTT sample: SRTT EWMA, 10s floor window, and the
@@ -1498,32 +1436,22 @@ impl CopaState {
         Some(self.max_bw * rtprop)
     }
 
-    /// The per-path bottleneck rate (symbols/s) that drives the DAPS SCHEDULER
-    /// signals — the BBR pace bucket, the Δ_j delay-skew offset, and the
-    /// read-ahead depth budget `skew·BtlBw_j`.  Gated on ANCHOR_MIN_SAMPLES like
-    /// `bdp_anchor`.
+    /// The per-path bottleneck rate (symbols/s) for scheduler consumers (the
+    /// percap store-cap law reads it via `btlbw_sym_per_s`): the pure
+    /// windowed-MAX `max_bw`, gated on ANCHOR_MIN_SAMPLES like `bdp_anchor`
+    /// (byte-identical to `bdp_anchor()/RTprop`).
     ///
-    /// Default (RWM_RATE_WIRE off): the pure windowed-MAX `max_bw` — byte-identical
-    /// to `bdp_anchor()/RTprop`.  Robust on: a QUANTILE (`rs_robust_q`, default the
-    /// median) of the windowed per-path delivered-rate samples, which REJECTS the
-    /// decode-burst over-read latch that makes `max_bw` swing ~4000× on the slow
-    /// path (§16.15).  A quantile that under-reads only TIGHTENS the depth budget
-    /// (dbud smaller, still > 0 and stable) — the safe direction; the over-read
-    /// (dbud → huge, then through 0) is what makes the bound inert.
+    /// Historical note (DEPRECATION REGISTER, removed 2026-07-27): the
+    /// RWM_RATE_WIRE/RWM_RATE_Q robust-quantile de-noise branch was refuted by
+    /// its own structural argument — decode-clocked samples are mostly-low, so
+    /// the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads
+    /// and throttles ("Slow-Path Anchor Diagnosis STEP 3", 2026-07-13). The
+    /// rate-signal need was met by the honest-anchor family (ADR-0061).
     fn effective_btlbw(&self) -> Option<f64> {
         if self.bw_samples.len() < ANCHOR_MIN_SAMPLES {
             return None;
         }
-        if !self.rs_robust_bw {
-            return if self.max_bw > 0.0 { Some(self.max_bw) } else { None };
-        }
-        // O(1): the quantile is precomputed in `rs_on_delivered` (must NOT sort
-        // here — this is read per send-loop iteration by the DAPS pacer).
-        if self.rs_robust_cached > 0.0 {
-            Some(self.rs_robust_cached)
-        } else {
-            None
-        }
+        if self.max_bw > 0.0 { Some(self.max_bw) } else { None }
     }
 
     /// The cwnd floor from the BtlBw anchor (symbols), or None if not yet
@@ -2047,8 +1975,7 @@ impl PathState {
     pub fn btlbw_sym_per_s(&self) -> Option<f64> {
         // Warm gate: an RTprop sample must exist (same trustworthiness gate as
         // `copa_bdp_anchor`).  The rate itself is `effective_btlbw` — the pure
-        // windowed-MAX by default (byte-identical to the old `anchor/RTprop`), or
-        // the robust quantile when RWM_RATE_WIRE de-noise is on (§16.15).
+        // windowed-MAX (byte-identical to the old `anchor/RTprop`).
         self.copa.min_rtt()?;
         self.copa.effective_btlbw()
     }
@@ -4768,64 +4695,6 @@ mod tests {
             (copa.max_bw - max_after).abs() < 1.0,
             "a sub-RTprop burst must be rejected (no over-read): before={max_after} after={}",
             copa.max_bw
-        );
-    }
-
-    // feat/gen-on-rebaseline (§16.15): the robust de-noise (RWM_RATE_WIRE) makes the
-    // per-path DEPTH/pace rate (`effective_btlbw`) a QUANTILE of the windowed samples,
-    // rejecting the decode-burst OVER-READ latch that makes the pure windowed-MAX swing
-    // ~4000× on the slow path (5..20 950 sym/s around a true ~2 083).  Default (off) is
-    // byte-identical (== max_bw).
-    #[test]
-    fn robust_btlbw_rejects_the_decode_burst_over_read_latch() {
-        let clock = Arc::new(MockClock::new());
-        let now = clock.now();
-        // The §16.15 slow-path trace: TRUE link ~2 083 sym/s with decode-burst
-        // over-read spikes (5 .. 20 950).  The windowed-MAX latches the 20 950 spike;
-        // the median tracks the true ~2 083.
-        let samples = [
-            2083.0, 1950.0, 2100.0, 5.0, 20950.0, 2000.0, 780.0, 2200.0, 20751.0, 2050.0, 59.0,
-            2083.0,
-        ];
-        let load = |copa: &mut CopaState| {
-            for &r in &samples {
-                copa.bw_samples
-                    .push_back(BwSample { delivery_rate: r, timestamp: now });
-            }
-            copa.max_bw = copa
-                .bw_samples
-                .iter()
-                .map(|s| s.delivery_rate)
-                .fold(0.0f64, f64::max);
-            // Refresh the cached robust quantile (rs_on_delivered does this in prod).
-            copa.rs_robust_cached = copa.compute_robust_bw();
-        };
-
-        // Default (robust OFF): effective_btlbw == max_bw == the over-read spike.
-        let mut off = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-        off.rs_robust_bw = false;
-        load(&mut off);
-        let e_off = off.effective_btlbw().expect("enough samples");
-        assert!(
-            (e_off - 20950.0).abs() < 1.0,
-            "OFF must equal the windowed-MAX (byte-identical): {e_off}"
-        );
-
-        // Robust ON (median): rejects the over-read latch, tracks the true ~2 083.
-        let mut on = CopaState::new(clock.clone(), ProtocolHint::Bulk);
-        on.rs_robust_bw = true;
-        on.rs_robust_q = 0.5;
-        load(&mut on);
-        let e_on = on.effective_btlbw().expect("enough samples");
-        assert!(
-            e_on > 1000.0 && e_on < 4000.0,
-            "ON (median) must reject the ~4000× over-read latch and track true ~2 083: got {e_on}"
-        );
-        // With a STABLE anchor the DAPS depth budget dbud = skew·BtlBw stays > 0
-        // (not swinging through 0 as it does when the anchor latches 5 .. 20 950).
-        assert!(
-            e_on < e_off / 4.0,
-            "robust must sit far below the over-read max: on={e_on} off={e_off}"
         );
     }
 
