@@ -189,6 +189,13 @@ pub struct RuntimeGates {
     /// `RWM_EMIT_BURST` (default 64 symbols ≈ 64 KB payload — the BBR-style
     /// pacer quantum; clamped [2, 512]): emission burst quantum.
     pub emit_burst: usize,
+    /// `RWM_EMIT_BATCH_RECV` (default ON under the umbrella): the engine-
+    /// receiver arm — bounded burst drain of the inbound message queue.
+    /// `=0` = sender-side batching only (the composition-isolation arm).
+    pub emit_batch_recv: bool,
+    /// `RWM_EMIT_ACK` (default ON under the receiver arm): per-burst
+    /// cumulative-ack coalescing. `=0` = drain without coalescing.
+    pub emit_ack_coalesce: bool,
 
     // ── Recovery plane (ADR-0059) ─────────────────────────────────────────
     /// `RWM_RECOV_MP` (default ON): multipath recovery suppression — per-
@@ -289,6 +296,8 @@ impl RuntimeGates {
             emit_burst: env_parse::<usize>("RWM_EMIT_BURST")
                 .unwrap_or(64)
                 .clamp(2, 512),
+            emit_batch_recv: env_flag("RWM_EMIT_BATCH_RECV", true),
+            emit_ack_coalesce: env_flag("RWM_EMIT_ACK", true),
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             diag: env_flag("RWM_DIAG", false),

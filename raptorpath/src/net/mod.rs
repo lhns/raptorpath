@@ -2458,7 +2458,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // burst (~1–3 ms at the service wall — an order below every
         // deadline this loop arms: deficit ≥ 3 ms, hole-refresh/reorder
         // ≥ SRTT class). OFF ⇒ bit-identical shipped path.
-        let recv_batch_on = recv_gates.emit_batch;
+        let recv_batch_on = recv_gates.emit_batch && recv_gates.emit_batch_recv;
+        let recv_ack_coalesce = recv_batch_on && recv_gates.emit_ack_coalesce;
         let recv_burst_max: usize = recv_gates.emit_burst;
         let mut recv_burst: std::collections::VecDeque<(
             crate::scheduler::PathId,
@@ -3222,7 +3223,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // select (measured: a stranded ack turns the ack
                         // clock into the 2×SRTT tail-sweep timer — stall +
                         // spurious-retransmit stutter).
-                        let defer_cum_ack = recv_batch_on
+                        let defer_cum_ack = recv_ack_coalesce
                             && recv_burst
                                 .iter()
                                 .any(|(_, m)| matches!(m, WireMessage::Data(_)));
