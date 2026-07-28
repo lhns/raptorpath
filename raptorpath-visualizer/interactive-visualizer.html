@@ -175,9 +175,26 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
 <!-- RIGHT COLUMN -->
 <div class="col-right">
 
-<!-- THE UNIFIED SPAN MACHINE (centerpiece) -->
+<!-- MAIN CHART -->
 <div class="panel">
-  <h3 data-tip="The paper's central architectural claim, animated (§16.20.3, §16.26; ADR-0064): ALL emission-span structure derives from one dimensionless quantity — the recovery budget N_δ = rate·D — with no mode bit. The three quantities morph continuously as you move the δ dial: span width A* = clamp(rate·D, 1, W), pipeline depth M* = ceil(rate·2·RTprop/A*_q)+1, trailing offset Δ = clamp(⌈rate·J⌉, 1, 64). Realtime and Bulk are the two ends of this ONE formula, not two machines.">The Unified Span Machine &mdash; one pipeline, no mode switch (&sect;16.20 / &sect;16.26)</h3>
+  <h3 data-tip="Left axis: what the sender transmits each tick, stacked (source + FEC + ARQ), plus the smoothed loss rate. Right axis: cumulative progress in percent of the source data. The dashed vertical marker labels the completion-tail FEC (paper 14.25): a burst of repairs covering the final window at end of stream, so the tail can decode without waiting a round trip.">Sender Rate &amp; Receiver Progress</h3>
+  <div class="legend">
+    <span data-tip="New application data symbols sent this tick (stacked band, left axis). When the controller spends more on repairs, this band shrinks — capacity is shared."><i style="background:var(--src)"></i>Source</span>
+    <span data-tip="Proactive repair symbols sent this tick; each protects the last W source symbols. Includes scheduled FEC at rate r, post-loss corrections (which preempt scheduled FEC rather than add to it) and the completion tail."><i style="background:var(--fec)"></i>FEC</span>
+    <span data-tip="Retransmits of specific lost symbols, sent once the loss report arrives one RTT after the loss. This is the slow, exact recovery path that FEC tries to make unnecessary."><i style="background:var(--arq)"></i>ARQ</span>
+    <span data-tip="Symbols destroyed by the channel this tick (smoothed line, left axis). Clusters into spikes when the Gilbert-Elliott channel sits in its Bad state — see the red strip below."><i class="line" style="background:var(--lost)"></i>Lost</span>
+    <span data-tip="Cumulative symbols sent, as percent of the source data (right axis). Ends above 100% — the excess is exactly the overhead paid in FEC and retransmits."><i class="line" style="background:rgba(255,255,255,0.35)"></i>Sent %</span>
+    <span data-tip="Cumulative symbols that survived the channel, as percent of the source data (right axis, dashed)."><i class="line" style="background:rgba(255,255,255,0.75)"></i>Arrived %</span>
+    <span data-tip="Cumulative source symbols the receiver has recovered — directly, by FEC decode, or by retransmit (right axis). The run completes when this meets the reliability target; with ρ &lt; 1 it plateaus below 100% on purpose."><i class="line" style="background:var(--decoded)"></i>Decoded %</span>
+  </div>
+  <div class="chart-wrap"><canvas id="main-chart" style="height:330px"></canvas></div>
+  <div class="channel-strip-wrap" data-tip="True Gilbert-Elliott channel state per tick for the path selected in the Channel panel, aligned with the chart above: green = Good (no loss), red = Bad (loss burst). The controller cannot see this strip — only its delayed per-path loss feedback."><canvas id="channel-strip" height="22"></canvas></div>
+  <div id="main-tooltip"></div>
+</div>
+
+<!-- THE UNIFIED SPAN MACHINE -->
+<div class="panel">
+  <h3 data-tip="The emission-span law, animated (§16.20.3, §16.26; ADR-0064): ALL span structure derives from one dimensionless quantity — the recovery budget N_δ = rate·D. The three quantities morph continuously as you move the δ dial: span width A* = clamp(rate·D, 1, W), pipeline depth M* = ceil(rate·2·RTprop/A*_q)+1, trailing offset Δ = clamp(⌈rate·J⌉, 1, 64).">The Unified Span Machine (&sect;16.20 / &sect;16.26)</h3>
   <div class="legend" id="span-quants">
     <span data-tip="The recovery deadline D(δ) = min(b·RTprop, 2·RTprop) (§16.26): past D, recovery belongs to ARQ anyway — a correction fired later lands after the receiver's own δ-horizon give-up. b = ½/1/2 at the Realtime/Auto/Bulk presets (log-interpolated between).">D(&delta;) = <b id="q-d">&ndash;</b></span>
     <span data-tip="Span width / coding quantum A* = clamp(rate·D, 1, W) (§16.20.3): how many symbols one repair equation covers. Small δ price ⇒ wide spans (Bulk, up to 2·BDP clamped by W); large δ price ⇒ tight fresh spans solvable inside the horizon (Realtime).">A* = <b id="q-astar">&ndash;</b></span>
@@ -195,23 +212,6 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
     There is no &delta; at which a different machine takes over.
     <span id="span-counters" style="color:var(--text)"></span>
   </div>
-</div>
-
-<!-- MAIN CHART -->
-<div class="panel">
-  <h3 data-tip="Left axis: what the sender transmits each tick, stacked (source + FEC + ARQ), plus the smoothed loss rate. Right axis: cumulative progress in percent of the source data. The dashed vertical marker labels the completion-tail FEC (paper 14.25): a burst of repairs covering the final window at end of stream, so the tail can decode without waiting a round trip.">Sender Rate &amp; Receiver Progress</h3>
-  <div class="legend">
-    <span data-tip="New application data symbols sent this tick (stacked band, left axis). When the controller spends more on repairs, this band shrinks — capacity is shared."><i style="background:var(--src)"></i>Source</span>
-    <span data-tip="Proactive repair symbols sent this tick; each protects the last W source symbols. Includes scheduled FEC at rate r, post-loss corrections (which preempt scheduled FEC rather than add to it) and the completion tail."><i style="background:var(--fec)"></i>FEC</span>
-    <span data-tip="Retransmits of specific lost symbols, sent once the loss report arrives one RTT after the loss. This is the slow, exact recovery path that FEC tries to make unnecessary."><i style="background:var(--arq)"></i>ARQ</span>
-    <span data-tip="Symbols destroyed by the channel this tick (smoothed line, left axis). Clusters into spikes when the Gilbert-Elliott channel sits in its Bad state — see the red strip below."><i class="line" style="background:var(--lost)"></i>Lost</span>
-    <span data-tip="Cumulative symbols sent, as percent of the source data (right axis). Ends above 100% — the excess is exactly the overhead paid in FEC and retransmits."><i class="line" style="background:rgba(255,255,255,0.35)"></i>Sent %</span>
-    <span data-tip="Cumulative symbols that survived the channel, as percent of the source data (right axis, dashed)."><i class="line" style="background:rgba(255,255,255,0.75)"></i>Arrived %</span>
-    <span data-tip="Cumulative source symbols the receiver has recovered — directly, by FEC decode, or by retransmit (right axis). The run completes when this meets the reliability target; with ρ &lt; 1 it plateaus below 100% on purpose."><i class="line" style="background:var(--decoded)"></i>Decoded %</span>
-  </div>
-  <div class="chart-wrap"><canvas id="main-chart" style="height:330px"></canvas></div>
-  <div class="channel-strip-wrap" data-tip="True Gilbert-Elliott channel state per tick for the path selected in the Channel panel, aligned with the chart above: green = Good (no loss), red = Bad (loss burst). The controller cannot see this strip — only its delayed per-path loss feedback."><canvas id="channel-strip" height="22"></canvas></div>
-  <div id="main-tooltip"></div>
 </div>
 
 <!-- CONTROLLER READOUTS + r*(delta) -->
@@ -2497,6 +2497,7 @@ const spanViz = {
   holes: [],          // {seq, born, lastRetx, healAt|null}
   fx: [],             // transient markers {seq, kind:'heal'|'shed'|'refuse', t}
   shed: 0, refused: 0, delivered: 0, resolved: 0,
+  view: 0,            // low-passed viewport extent (symbols)
 };
 function svRand() { // xorshift32 — cartoon-only RNG
   let x = spanViz.rng; x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
@@ -2595,10 +2596,17 @@ function drawSpanViz(law) {
   const v = spanViz;
   const pad = { l: 10, r: 76, t: 26, b: 30 };
   const pw = w - pad.l - pad.r;
-  // View: from the frontier backwards — wide enough for the M* pipeline
-  // AND the deadline distance rate·D.
-  const V = Math.max(law.mStar * law.aQ + law.delta + 10,
-                     law.rate * law.D * 1.35 + law.delta + 10, 60);
+  // View: from the frontier backwards — wide enough for the pipeline
+  // (M*·A*_q ≈ rate·2·RTprop + A*_q) AND the deadline distance rate·D.
+  // Computed from the CONTINUOUS quantities and low-passed: M* and A*_q
+  // are honestly integer-quantized (ceil/round — the law steps), but the
+  // viewport must not re-scale in jolts with them, or every landmark
+  // (deadline line included) appears to jump as the dial moves.
+  const vTarget = Math.max(
+    law.rate * 2 * law.rtprop + law.aStar + law.delta + 10,
+    law.rate * law.D * 1.35 + law.delta + 10, 60);
+  v.view = v.view ? v.view + (vTarget - v.view) * 0.15 : vTarget;
+  const V = v.view;
   const Xs = seq => pad.l + pw * (1 - (v.sent - seq) / V);
   const yMid = pad.t + (h - pad.t - pad.b) * 0.52;
 
