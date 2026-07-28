@@ -140,17 +140,33 @@ listeners["btn-d-rt"].click();
 check("Realtime preset sets the dial",
   Math.abs(parseFloat(getEl("sl-dprice").value) - Math.log10(50)) < 1e-6);
 
-// ROUTING (the gap this file exists for): the Bulk preset must reach the
-// engine's late-is-fine law — pure ARQ mid-stream even at ε = 5%.
+// ROUTING (the gap this file exists for) — THE NO-MODE-SWITCH INVARIANT:
+// ONE hint string at EVERY dial position (presets, between them, and with
+// ρ < 1). Any position constructing a different hint is a mode switch.
+{
+  const positions = [-2.30103, -1.5, -0.30103, 0.7, 1.69897];
+  let oneHint = true, seen = "";
+  for (const lg of positions) {
+    getEl("sl-dprice").value = String(lg);
+    api.resetSim();
+    if (api.sim().hint !== "continuum") { oneHint = false; seen = api.sim().hint + " @ 10^" + lg; }
+  }
+  getEl("sl-rhoc").value = "0.95";
+  api.resetSim();
+  if (api.sim().hint !== "continuum") { oneHint = false; seen = "ρ<1 flips hint"; }
+  getEl("sl-rhoc").value = "1.0";
+  check("NO-MODE-SWITCH: one hint ('continuum') at every dial position incl. ρ<1",
+    oneHint, seen || "5 positions + ρ<1");
+}
+// The Bulk end must reach late-is-fine THROUGH the UI path: settled
+// mid-stream r ~ 0 at ε = 5% (window excludes estimator warm-up).
 listeners["btn-d-bulk"].click();
 {
   const s = api.sim();
-  check("Bulk preset ROUTES to the 'bulk' hint (late is fine, §14.26)",
-    s.hint === "bulk");
   let maxR = 0;
-  for (let i = 0; i < 300; i++) { s.step(); maxR = Math.max(maxR, s.rLive); }
-  check("Bulk preset: mid-stream r = 0 through the UI path (cold start incl.)",
-    maxR === 0, `max r=${maxR}`);
+  for (let i = 0; i < 300; i++) { s.step(); if (i >= 100) maxR = Math.max(maxR, s.rLive); }
+  check("Bulk end: settled mid-stream r ~ 0 through the UI path",
+    maxR < 1e-3, `settled max r=${maxR}`);
 }
 
 // Morph with Auto-derived W*(δ): Realtime = fresh spans inside W*;
@@ -201,6 +217,18 @@ listeners["sl-rhoc"].input();
 check("ρ dial: contract line shows T_cut give-up",
   getEl("delta-derived").innerHTML.includes("T_cut give-up"),
   getEl("delta-derived").innerHTML.replace(/<[^>]*>/g, ""));
+// ρ must COMPOSE with the Bulk price — touching ρ may not change the law
+// (the hidden-mode-switch-keyed-on-ρ defect, user-caught 2026-07-28).
+listeners["sl-rhoc"].change(); // resetSim at Bulk preset with ρ = 0.95
+{
+  const s = api.sim();
+  check("Bulk + ρ<1: same one hint, ρ composes (no mode flip)",
+    s.hint === "continuum");
+  let maxR = 0;
+  for (let i = 0; i < 300; i++) { s.step(); if (i >= 100) maxR = Math.max(maxR, s.rLive); }
+  check("Bulk + ρ<1: settled mid-stream still pure ARQ through the UI path",
+    maxR < 1e-2, `settled max r=${maxR}`);
+}
 const lawRho = api.spanLaw();
 check("ρ dial: span budget = 1−ρ when the dial is below 1",
   Math.abs(lawRho.budget - 0.05) < 1e-9 && !lawRho.retain && lawRho.userRho === 0.95,

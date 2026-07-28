@@ -224,6 +224,19 @@ pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst
 /// tail ≥ ε ⇒ the §8.4 continuous glide takes r* to 0 = pure ARQ, the
 /// Bulk limit reached with no mode bit). §12.4 fixes only the presets;
 /// the interpolation between them is the visualizer's documented choice.
+/// Bulkness β(δ) ∈ [0, 1]: the log-position of the δ price between the
+/// Auto (β = 0) and Bulk (β = 1) anchors. This is the continuum's ONLY
+/// shaping parameter: the sim's effective tail target cross-fades
+/// (log-blend) from the interpolated anchor into §14.26's late-is-fine
+/// form (target tracks p̂ with the χ-glide) as β → 1 — one continuous
+/// law, no hint branch, exact at all three presets.
+#[wasm_bindgen]
+pub fn bulkness_of_delta(delta_price: f64) -> f64 {
+    let x = delta_price.max(1e-12).log10();
+    let (a, b) = (0.5f64.log10(), 0.005f64.log10());
+    ((a - x) / (a - b)).clamp(0.0, 1.0)
+}
+
 #[wasm_bindgen]
 pub fn sim_tail_target_of_delta(delta_price: f64) -> f64 {
     let x = delta_price.max(1e-12).log10();
@@ -385,6 +398,11 @@ pub struct Simulation {
     sigma2_true: f64,
     hint_bulk: bool,
     tail_target: f64,
+    /// Continuum bulkness β ∈ [0, 1] (0 for every non-"continuum" hint):
+    /// the per-tick effective tail target log-blends from `tail_target`
+    /// (β = 0) into §14.26's late-is-fine form p̂ + (0.05 − p̂)·χ (β = 1)
+    /// — see `continuum_tail`. ONE law, continuous in δ, no mode bit.
+    bulkness: f64,
     fixed_r: Option<f64>,
     /// Ablation-only: revert Bulk to the pre-P6 mapping (delta_eff =
     /// min(0.1, p_hat) + one-shot tail burst). Never exposed to JS; set
@@ -690,7 +708,37 @@ impl Simulation {
         }
         let (pg, qg) = self.agg_ge_params();
         let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
-        r_tail * w * dchi
+        // On the continuum the two completion mechanisms cross-fade
+        // continuously: the 14.29 ramp (the FEC side's completion law)
+        // scales by (1 − β) as the 14.26 χ-glide — which lives inside the
+        // blended tail target — takes over toward the Bulk end. At β = 1
+        // the glide alone covers the tail (no double-pay); at β = 0 the
+        // ramp is whole, exactly as before.
+        r_tail * w * dchi * (1.0 - self.bulkness)
+    }
+
+    /// The continuum's effective tail target — ONE law, no branch:
+    /// log-blend of the anchor tail with §14.26's late-is-fine form
+    /// p̂ + (BULK_TAIL_BUDGET − p̂)·χ, weighted by β. β = 0 ⇒ the anchor
+    /// exactly (the Auto/Realtime side); β = 1 ⇒ tracks p̂ exactly
+    /// (r = 0 mid-stream at ANY ε, the χ-glide covering the stream
+    /// tail). Continuous in δ everywhere, exact at all three presets.
+    fn continuum_tail(&self, p_upper: f64) -> f64 {
+        if self.bulkness <= 0.0 {
+            return self.tail_target;
+        }
+        let chi = self.completion_chi_raw();
+        let p = p_upper.clamp(1e-9, 0.99);
+        // NOTE the upper clamp: the blend must be allowed to track p̂ all
+        // the way up (cold start p̂₉₅ ≈ 0.975) — clamping it below p̂
+        // would pin r at max-overhead exactly when late-is-fine says 0.
+        let bulk_form = (p + (math::BULK_TAIL_BUDGET - p) * chi).clamp(1e-9, 0.99);
+        10f64
+            .powf(
+                (1.0 - self.bulkness) * self.tail_target.log10()
+                    + self.bulkness * bulk_form.log10(),
+            )
+            .clamp(1e-9, 0.99)
     }
 
     /// Capacity-weighted GE (p_gb, p_bg) across paths, each path falling
@@ -721,6 +769,28 @@ impl Simulation {
     /// `saturation_cap` is a parameter so the pressure accessor can request
     /// the UNCAPPED rate.
     fn rate_inputs(&self, saturation_cap: bool) -> math::RateInputs {
+        // Semantics selection for the classic hints (the continuum path
+        // never comes through here — it builds BOTH laws' inputs
+        // explicitly via `rate_inputs_for` and mixes the rates).
+        let p_upper_sel = self.agg_p_upper();
+        let (tail_target, bulk_late_is_fine) = if self.legacy_bulk_delta && self.hint_bulk {
+            ((0.1f64).min(p_upper_sel), false)
+        } else {
+            (self.tail_target, self.hint_bulk)
+        };
+        self.rate_inputs_for(saturation_cap, tail_target, bulk_late_is_fine, self.completion_chi())
+    }
+
+    /// Build `RateInputs` with EXPLICIT semantics (tail target, bulk flag,
+    /// completion χ) — the shared plumbing for both the classic hints and
+    /// the continuum's two always-computed law terms.
+    fn rate_inputs_for(
+        &self,
+        saturation_cap: bool,
+        tail_target: f64,
+        bulk_late_is_fine: bool,
+        completion_exposure: f64,
+    ) -> math::RateInputs {
         // Capacity-weighted aggregates over the per-path estimators: the
         // shared window rides a mixture of the paths. Each path contributes
         // its estimate when its GE estimator is valid, the same cold-start
@@ -751,14 +821,6 @@ impl Simulation {
             .sum();
         let t_symbols = if t_symbols_raw > 0.0 { t_symbols_raw.max(1.0) } else { 0.0 };
         let p_upper = self.agg_p_upper();
-        // Ablation arm: the pre-P6 Bulk mapping delta_eff = min(0.1, p_hat)
-        // expressed through the plain tail_target path (equivalent by
-        // construction; see test_ablation_p6_completion_exposure).
-        let (tail_target, bulk_late_is_fine) = if self.legacy_bulk_delta && self.hint_bulk {
-            ((0.1f64).min(p_upper), false)
-        } else {
-            (self.tail_target, self.hint_bulk)
-        };
         math::RateInputs {
             p_upper,
             sigma2,
@@ -778,7 +840,7 @@ impl Simulation {
             codec_overhead: CODEC_OVERHEAD_RLC,
             tail_target,
             bulk_late_is_fine,
-            completion_exposure: self.completion_chi(),
+            completion_exposure,
             // Paper 14.28: the sim's payload IS the transfer (file-transfer
             // semantics) — its delivery latency does not feed back into its
             // own throughput, so the inner-feedback repair floor stays off
@@ -796,7 +858,37 @@ impl Simulation {
         if let Some(r) = self.fixed_r {
             return r;
         }
-        math::controller_rate(&self.rate_inputs(true))
+        self.rate_now(true)
+    }
+
+    /// The rate law, one path for every hint. For the continuum (β > 0)
+    /// the rate is a CONVEX MIX of the two laws' outputs — BOTH terms
+    /// computed every tick at every dial position, no branch, no mode
+    /// bit:  r(β) = (1−β)·r_anchor + β·r_late-is-fine.
+    /// β = 0 is exactly the custom/anchor arm; β = 1 exactly the bulk
+    /// late-is-fine arm (χ-gated, r = 0 mid-stream at any ε — including
+    /// the cold start, which the anchor side pays and the mix therefore
+    /// fades out CONTINUOUSLY toward Bulk). A tail-domain blend was tried
+    /// first and rejected: r*(δ) is near-binary in δ vs the cold-start
+    /// ε̂, so it stepped at the preset — the seam this design removes.
+    fn rate_now(&self, saturation_cap: bool) -> f64 {
+        if self.bulkness > 0.0 {
+            let anchor = math::controller_rate(&self.rate_inputs_for(
+                saturation_cap,
+                self.tail_target,
+                false,
+                0.0,
+            ));
+            let bulk = math::controller_rate(&self.rate_inputs_for(
+                saturation_cap,
+                (BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1),
+                true,
+                self.completion_chi_raw(),
+            ));
+            (1.0 - self.bulkness) * anchor + self.bulkness * bulk
+        } else {
+            math::controller_rate(&self.rate_inputs(saturation_cap))
+        }
     }
 
     /// Send one repair symbol on path `pi`. Returns whether it survived.
@@ -911,14 +1003,37 @@ impl Simulation {
         );
 
         // Hint -> tail target, mirroring the production constructor.
-        let (tail_target, hint_bulk) = match hint.as_str() {
-            "bulk" => ((BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1), true),
-            "realtime" => ((BASE_TAIL_TARGET * 0.01).clamp(1e-9, 0.1), false),
-            "custom" => (custom_delta.unwrap_or(BASE_TAIL_TARGET).clamp(1e-9, 0.1), false),
-            _ => (BASE_TAIL_TARGET, false), // auto / fixed
+        //
+        // "continuum" is the visualizer dial's ONE code path for the whole
+        // δ range: `custom_delta` carries the δ PRICE (0.005..50), the base
+        // tail is the anchor interpolation, and β = bulkness_of_delta(δ)
+        // cross-fades the EFFECTIVE tail per tick into §14.26's
+        // late-is-fine form (`continuum_tail`). No hint branch exists
+        // downstream of construction — a threshold-keyed hint flip at a
+        // preset was a (user-caught) hidden mode switch, twice.
+        let (tail_target, hint_bulk, bulkness) = match hint.as_str() {
+            "bulk" => ((BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1), true, 0.0),
+            "realtime" => ((BASE_TAIL_TARGET * 0.01).clamp(1e-9, 0.1), false, 0.0),
+            "custom" => (custom_delta.unwrap_or(BASE_TAIL_TARGET).clamp(1e-9, 0.1), false, 0.0),
+            "continuum" => {
+                let dp = custom_delta.unwrap_or(0.5);
+                (
+                    sim_tail_target_of_delta(dp).clamp(1e-9, 0.1),
+                    false,
+                    bulkness_of_delta(dp),
+                )
+            }
+            _ => (BASE_TAIL_TARGET, false, 0.0), // auto / fixed
         };
         let fixed_r = if hint == "fixed" { Some(fixed_r.unwrap_or(0.1)) } else { None };
-        let rho = if hint == "custom" {
+        // The ρ dial composes with the δ price — the triangle's two dials
+        // are INDEPENDENT (§1.4): 'bulk' honors custom_rho exactly like
+        // 'custom', so a Bulk-priced transfer may still declare ρ < 1
+        // (§6.1 T_cut give-up) with the late-is-fine controller unchanged.
+        // Gating ρ on the hint would be a hidden mode switch keyed on ρ.
+        // None defaults to 1.0 — behavior-identical for every existing
+        // caller (the shipped engine Bulk hint carries ρ = 1).
+        let rho = if hint == "custom" || hint == "bulk" || hint == "continuum" {
             custom_rho.unwrap_or(1.0).clamp(0.9, 1.0)
         } else {
             1.0
@@ -973,7 +1088,7 @@ impl Simulation {
         Self {
             paths,
             sigma2_true,
-            hint_bulk, tail_target, fixed_r,
+            hint_bulk, tail_target, bulkness, fixed_r,
             legacy_bulk_delta: false,
             legacy_tail_burst: false,
             rho,
@@ -1551,6 +1666,9 @@ impl Simulation {
         if self.hint_bulk {
             let p = self.get_p_upper();
             p + (math::BULK_TAIL_BUDGET - p) * self.completion_chi()
+        } else if self.bulkness > 0.0 {
+            // the continuum's live effective target (the blend, per tick)
+            self.continuum_tail(self.get_p_upper())
         } else {
             self.tail_target
         }
@@ -1561,6 +1679,10 @@ impl Simulation {
     /// via the SOURCE-POSITION completion term (paper 14.29), a separate
     /// metering, so this display stays 0 for them.
     pub fn get_completion_exposure(&self) -> f64 {
+        if self.bulkness > 0.0 {
+            // the continuum: χ is live inside the blended tail target
+            return self.completion_chi_raw();
+        }
         self.completion_chi()
     }
     /// Saturation cap for the current estimator state (paper 14.21).
@@ -1598,7 +1720,7 @@ impl Simulation {
         if self.fixed_r.is_some() {
             return 0.0;
         }
-        let uncapped = math::controller_rate(&self.rate_inputs(false));
+        let uncapped = self.rate_now(false);
         math::saturation_pressure(uncapped, self.get_r_sat())
     }
     /// Symbols permanently given up (rho < 1.0 age eviction).
@@ -1996,6 +2118,124 @@ mod tests {
             sim.get_excess_overhead() <= sim.get_overhead(),
             "excess cannot exceed total"
         );
+    }
+
+    /// The "continuum" hint: ONE law across the whole dial, no mode bit.
+    /// The Bulk end (β = 1) reproduces late-is-fine (r = 0 mid-stream at
+    /// any ε); the Realtime end (β = 0) is bit-identical to the custom
+    /// arm at the same tail; ρ composes at every position; and the law is
+    /// continuous ACROSS the Bulk preset (no behavior step at δ = 0.005
+    /// vs δ just above it — the seam that was twice reintroduced).
+    #[test]
+    fn test_continuum_one_law_across_the_dial() {
+        // Bulk end: pure ARQ in the settled mid-stream at ε = 5% AND 10%
+        // (the tracks-p̂ form emerges from the blend, not from a flag).
+        // The settled window [100, 300) excludes the estimator warm-up —
+        // the SHIPPED bulk reference arm itself shows a brief warm-up
+        // spike at some cells, so the parity bar is the reference, not an
+        // idealized flat zero.
+        for eps in [0.05, 0.10] {
+            let mut s = Simulation::new(
+                eps, 0.5, 50, 64, "continuum".into(), None, Some(0.005), None,
+            );
+            let mut reference = Simulation::new(
+                eps, 0.5, 50, 64, "bulk".into(), None, None, None,
+            );
+            let (mut mid_max, mut ref_max): (f64, f64) = (0.0, 0.0);
+            for i in 0..300 {
+                s.step();
+                reference.step();
+                if i >= 100 {
+                    mid_max = mid_max.max(s.get_r_star());
+                    ref_max = ref_max.max(reference.get_r_star());
+                }
+            }
+            // Parity with the reference arm (the tiny residual is the χ
+            // horizon brushing the settled window on the toy transfer).
+            assert!(
+                mid_max <= ref_max + 1e-4,
+                "continuum bulk end settled r {mid_max} must match the bulk arm {ref_max} (eps={eps})"
+            );
+            assert!(mid_max < 1e-3, "settled bulk-end r must be ~0: {mid_max}");
+            run_to_end(&mut s);
+            assert_eq!(s.get_cum_decoded(), s.get_num_source());
+        }
+        // Realtime end (β = 0): identical to the custom arm at the same tail.
+        let mut rt = Simulation::new(
+            0.05, 0.5, 50, 64, "continuum".into(), None, Some(50.0), None,
+        );
+        let mut cu = Simulation::new(
+            0.05, 0.5, 50, 64, "custom".into(), None,
+            Some(sim_tail_target_of_delta(50.0)), None,
+        );
+        run_to_end(&mut rt);
+        run_to_end(&mut cu);
+        assert_eq!(rt.get_tick(), cu.get_tick(), "β = 0 must equal the custom arm");
+        assert_eq!(rt.get_total_fec(), cu.get_total_fec());
+        // Continuity across the Bulk preset: a 5% dial nudge off the
+        // preset must not step the early behavior (β 1.0 → ~0.989).
+        let mut at = Simulation::new(0.05, 0.5, 50, 64, "continuum".into(), None, Some(0.005), None);
+        let mut off = Simulation::new(0.05, 0.5, 50, 64, "continuum".into(), None, Some(0.00525), None);
+        for _ in 0..300 {
+            at.step();
+            off.step();
+        }
+        let (fec_at, fec_off) = (at.get_total_fec(), off.get_total_fec());
+        // The off-preset point mixes Δβ ≈ 1.1% of the anchor law back in,
+        // so its early FEC must scale with Δβ (a few symbols), NOT step to
+        // the anchor arm's full cold-start emission (the ~115-symbol jump
+        // the tail-domain blend produced — the rejected seam).
+        assert!(
+            (fec_at as i64 - fec_off as i64).abs() <= 10,
+            "behavior step across the Bulk preset: fec {fec_at} vs {fec_off}"
+        );
+        // ρ composes at the bulk end of the continuum.
+        let mut br = Simulation::new(
+            0.10, 0.3, 80, 64, "continuum".into(), None, Some(0.005), Some(0.95),
+        );
+        run_to_end(&mut br);
+        assert_eq!(br.get_cum_decoded() + br.get_given_up(), br.get_num_source());
+        assert!(br.get_reliability() >= 0.90);
+    }
+
+    /// The ρ dial composes with the Bulk price (no hidden mode switch
+    /// keyed on ρ): 'bulk' + ρ < 1 keeps the late-is-fine controller
+    /// (r = 0 mid-stream) AND the §6.1 T_cut give-up semantics.
+    #[test]
+    fn test_bulk_composes_with_rho() {
+        let mut sim = Simulation::new(
+            0.10, 0.3, 80, 64, "bulk".into(), None, None, Some(0.95),
+        );
+        // Settled-window parity with the ρ = 1 reference arm (the shipped
+        // bulk arm itself has a warm-up spike and a tiny χ-horizon
+        // residual at this cell — the bar is parity, not idealization).
+        let mut reference =
+            Simulation::new(0.10, 0.3, 80, 64, "bulk".into(), None, None, None);
+        let (mut mid_r_max, mut ref_r_max): (f64, f64) = (0.0, 0.0);
+        for i in 0..300 {
+            sim.step();
+            reference.step();
+            if i >= 100 {
+                mid_r_max = mid_r_max.max(sim.get_r_star());
+                ref_r_max = ref_r_max.max(reference.get_r_star());
+            }
+        }
+        assert!(
+            mid_r_max <= ref_r_max + 1e-3,
+            "bulk + rho<1 settled r {mid_r_max} must match the rho=1 arm {ref_r_max}"
+        );
+        while !sim.is_finished() && sim.get_tick() < 20_000 { sim.step(); }
+        assert_eq!(
+            sim.get_cum_decoded() + sim.get_given_up(),
+            sim.get_num_source(),
+            "every symbol delivered or explicitly given up"
+        );
+        assert!(sim.get_reliability() >= 0.90, "reliability {}", sim.get_reliability());
+        assert!((sim.get_rho() - 0.95).abs() < 1e-12, "rho dial honored");
+        // ρ = 1 (None) remains byte-identical bulk (the golden contract).
+        let mut plain = Simulation::new(0.10, 0.3, 80, 64, "bulk".into(), None, None, None);
+        run_to_end(&mut plain);
+        assert_eq!(plain.get_given_up(), 0);
     }
 
     #[test]

@@ -45,6 +45,7 @@ const factory = new Function(
     trailing_offset_delta,
     shed_budget_residual,
     sim_tail_target_of_delta,
+    bulkness_of_delta,
   };
 `
 );
@@ -239,8 +240,10 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
 // the engine's late-is-fine 'bulk' law verbatim): the Realtime end pays
 // FEC, the Bulk end is pure ARQ and completes faster.
 {
-  const rtEnd = runSim("custom", { delta: api.sim_tail_target_of_delta(50), rho: 1.0 });
-  const bulkEnd = runSim("bulk"); // the UI's Bulk-preset path (§14.26)
+  // The UI path end-to-end: ONE hint ('continuum', taking the δ PRICE)
+  // at both ends of the dial — no routing branch anywhere.
+  const rtEnd = runSim("continuum", { delta: 50, rho: 1.0 });
+  const bulkEnd = runSim("continuum", { delta: 0.005, rho: 1.0 });
   check("δ continuum: both ends deliver fully",
     rtEnd.decoded === rtEnd.numSource && bulkEnd.decoded === bulkEnd.numSource,
     `rt=${rtEnd.decoded}, bulk=${bulkEnd.decoded}`);
@@ -286,6 +289,58 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   check("Bulk preset: tail glide emits FEC once p̂ exceeds the 0.05 budget (ε=10%)",
     b10.get_total_fec() > 0 && b10.get_cum_decoded() === b10.get_num_source(),
     `fec=${b10.get_total_fec()}`);
+  // ρ composes with the Bulk price (no hidden mode switch keyed on ρ):
+  // continuum@0.005 + ρ = 0.95 keeps the settled mid-stream pure-ARQ
+  // (parity with the ρ = 1 bulk reference arm, which itself has a brief
+  // estimator warm-up spike at this cell) AND honors §6.1 T_cut give-up.
+  const brho = new api.Simulation(0.10, 0.3, 80, 64, "continuum", undefined, 0.005, 0.95);
+  const bref = new api.Simulation(0.10, 0.3, 80, 64, "bulk", undefined, undefined, undefined);
+  let brhoMidR = 0, brefMidR = 0;
+  for (t = 0; t < 300; t++) {
+    brho.step(); bref.step();
+    if (t >= 100) {
+      brhoMidR = Math.max(brhoMidR, brho.get_r_star());
+      brefMidR = Math.max(brefMidR, bref.get_r_star());
+    }
+  }
+  while (!brho.is_finished() && t++ < 20000) brho.step();
+  check("continuum Bulk-end + ρ<1 composes: settled pure-ARQ parity + T_cut give-up",
+    brhoMidR <= brefMidR + 1e-3 &&
+    brho.get_cum_decoded() + brho.get_given_up() === brho.get_num_source() &&
+    brho.get_reliability() >= 0.90,
+    `settled r=${brhoMidR.toExponential(1)} (ref ${brefMidR.toExponential(1)}), givenUp=${brho.get_given_up()}, rel=${brho.get_reliability().toFixed(4)}`);
+}
+
+// --- 7d3. THE NO-MODE-SWITCH INVARIANT (executable, the build gate for a
+// twice-reintroduced defect class): every law the dial feeds the sim must
+// be CONTINUOUS and monotone THROUGH each preset point — a step at a
+// preset is a mode switch and fails the build. Checked on the pure law
+// functions (which are exactly what the sim and the panel consume) with a
+// ±2% dial nudge around Bulk/Auto/Realtime.
+{
+  let ok = true, worst = "";
+  for (const dp of [0.005, 0.5, 50]) {
+    for (const f of ["sim_tail_target_of_delta", "bulkness_of_delta",
+                     "span_horizon_b", "zeta_of_delta"]) {
+      const lo = api[f](dp / 1.02), mid = api[f](dp), hi = api[f](dp * 1.02);
+      const cont = f === "bulkness_of_delta"
+        ? Math.abs(lo - hi) < 0.05
+        : Math.abs(Math.log10(Math.max(lo, 1e-12)) - Math.log10(Math.max(hi, 1e-12))) < 0.2;
+      const mono = Math.min(lo, hi) - 1e-12 <= mid && mid <= Math.max(lo, hi) + 1e-12;
+      if (!cont || !mono) { ok = false; worst = `${f} @ δ=${dp}: ${lo} / ${mid} / ${hi}`; }
+    }
+  }
+  check("NO-MODE-SWITCH invariant: all dial laws continuous+monotone through every preset",
+    ok, worst || "±2% nudges around all three presets");
+  // And the SIM's behavior across the Bulk preset: a 5% dial nudge must
+  // not step the early emission (the tail-domain blend stepped ~115 FEC
+  // symbols here before the rate-mix law).
+  const atP = new api.Simulation(0.05, 0.5, 50, 64, "continuum", undefined, 0.005, undefined);
+  const offP = new api.Simulation(0.05, 0.5, 50, 64, "continuum", undefined, 0.00525, undefined);
+  for (let i = 0; i < 300; i++) { atP.step(); offP.step(); }
+  check("NO-MODE-SWITCH invariant: sim behavior continuous across the Bulk preset",
+    Math.abs(atP.get_total_fec() - offP.get_total_fec()) <= 10,
+    `fec at=${atP.get_total_fec()}, off=${offP.get_total_fec()}`);
 }
 
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the
