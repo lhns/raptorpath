@@ -73,6 +73,11 @@ function solveRhoFromRDelta(eps,q,W,s2,r,delta) {
 // (or legacy flat params) reproduces the classic single-path sim exactly.
 const SMOOTH_WINDOW = 6;
 
+// §16.6 P1 baseline memo: the hidden single-path baseline runs are pure
+// functions of (path cfgs, hint, W, r/δ/ρ params) — cached so repeated
+// Resets and topology flips never recompute them.
+const BASELINE_CACHE = new Map();
+
 class SimWrapper {
   constructor(params) {
     const fixedR = params.hint === 'fixed' ? params.fixedR : undefined;
@@ -103,19 +108,59 @@ class SimWrapper {
     // multipath run against this — what a single-path transfer would
     // actually achieve, not the loss-free theoretical ceiling (which no
     // real run reaches: overhead, ramp and drain are paid on both sides).
+    //
+    // ASYNC + CHUNKED + CACHED (the topology-change hang fix): these are
+    // FULL hidden transfers, one per path, with ~W²-scaling decode cost —
+    // run synchronously they froze the page for seconds per topology
+    // change (measured 1.7 s at W* = 90, extrapolating to ~10+ s at the
+    // realtime-end W*). They now run in ~40 ms slices off the
+    // construction path; `baselineReady` flips when done (the UI shows
+    // “measuring…” until then), and results are memoized per config.
     this.bestSingleMeasured = 0;
+    this.baselineReady = paths.length <= 1;
+    this.onBaselineReady = null;
+    this._dead = false;
     if (paths.length > 1) {
-      for (const c of paths) {
-        const s = Simulation.multipath(
-          [c.eps], [c.q], new Uint32Array([c.rttMs]), new Uint32Array([c.cap]),
-          params.W, params.hint, fixedR, params.customDelta, params.customRho);
-        let guard = 0;
-        while (!s.is_finished() && guard++ < 25000) s.step();
-        const gp = s.get_num_source() / Math.max(s.get_tick(), 1);
-        if (gp > this.bestSingleMeasured) this.bestSingleMeasured = gp;
-        if (s.free) s.free();
+      const key = JSON.stringify([paths, params.hint, params.W,
+                                  fixedR, params.customDelta, params.customRho]);
+      const hit = BASELINE_CACHE.get(key);
+      if (hit !== undefined) {
+        this.bestSingleMeasured = hit;
+        this.baselineReady = true;
+      } else {
+        this._measureBaseline(paths, params, fixedR, key);
       }
     }
+  }
+  _measureBaseline(paths, params, fixedR, key) {
+    const sims = paths.map(c => Simulation.multipath(
+      [c.eps], [c.q], new Uint32Array([c.rttMs]), new Uint32Array([c.cap]),
+      params.W, params.hint, fixedR, params.customDelta, params.customRho));
+    const wrapper = this;
+    let idx = 0, guard = 0, best = 0;
+    function slice() {
+      if (wrapper._dead) { // superseded by a newer Reset: abandon cleanly
+        for (const s of sims) if (s.free) s.free();
+        return;
+      }
+      const t0 = Date.now();
+      while (idx < sims.length) {
+        const s = sims[idx];
+        while (!s.is_finished() && guard < 25000) {
+          s.step(); guard++;
+          if (Date.now() - t0 > 40) { setTimeout(slice, 0); return; }
+        }
+        const gp = s.get_num_source() / Math.max(s.get_tick(), 1);
+        if (gp > best) best = gp;
+        if (s.free) s.free();
+        idx++; guard = 0;
+      }
+      BASELINE_CACHE.set(key, best);
+      wrapper.bestSingleMeasured = best;
+      wrapper.baselineReady = true;
+      if (wrapper.onBaselineReady) wrapper.onBaselineReady();
+    }
+    setTimeout(slice, 0);
   }
   // measured aggregate goodput vs the best MEASURED single-path run (>1 =
   // the §16.2 per-path-affine ceiling is broken in like-for-like terms)
@@ -246,6 +291,10 @@ rm -f "$TMPFILE"
 echo "Running engine tests against the built file..."
 node raptorpath-visualizer/test_visualizer.mjs
 echo "Engine tests passed."
+
+echo "Running UI-layer tests (stub DOM) against the built file..."
+node raptorpath-visualizer/test_visualizer_ui.mjs
+echo "UI tests passed."
 
 echo "Done! Visualizer updated: raptorpath-visualizer/interactive-visualizer.html"
 echo "Open it directly in a browser (file:// works)."

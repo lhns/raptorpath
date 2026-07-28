@@ -13191,7 +13191,24 @@ shed budget, tail-target anchors) plus δ-continuum sim behavior
 invariants (SACK ≤ frontier counterfactual; wall-#7 bind at high BDP)
 and phantom-clock behavior (heterogeneous > 0, homogeneous = 0). All
 green; `cargo test -p raptorpath-wasm` 31/31; `cargo test -p raptorpath
---lib` untouched-and-green (no engine change). Stale era content purged
+--lib` untouched-and-green (no engine change).
+
+**UI-layer gate + the routing lesson (2026-07-28 follow-up):** the Bulk
+preset initially shipped routed through a fixed 0.05 tail anchor instead
+of the engine's late-is-fine law — caught by the USER, not the gates,
+because the continuum tests were ordinal (rt FEC > bulk FEC) and nothing
+asserted the UI→hint ROUTING: both endpoints tested, the wire between
+them not (the visualizer-scale instance of MEASUREMENT DISCIPLINE rule
+1). Fixed (the Bulk preset now runs the `bulk` hint verbatim; absolute
+per-preset law gates added: mid-stream r = 0 exactly at ε = 5%, χ-glide
+fires, ε = 10% emits tail FEC) and the hole closed structurally:
+`test_visualizer_ui.mjs` — a stub-DOM harness exercising the dial→hint→
+sim routing, readouts, ρ paths, span-law panel and wall chain — is now a
+BUILD GATE in `build_visualizer.sh`, including a responsiveness
+regression gate for the measured topology-change hang (the §16.6 hidden
+single-path baseline runs were synchronous full transfers with ~W²
+decode cost, seconds per Reset at derived W*; now chunked ~40 ms slices
++ memoized per config; handler returns in ~2 ms, gate < 800 ms). Stale era content purged
 (hint mode switch, Bulk χ-glide copy, 14.25 burst label, Streaming/
 Mettle/DAPS references in `docs/packet-flow-visualization.md`, which is
 rewritten to the systematic wire + unified decode + current DIAG names,
