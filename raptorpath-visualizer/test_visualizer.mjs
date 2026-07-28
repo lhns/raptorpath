@@ -234,12 +234,13 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   near(api.sim_tail_target_of_delta(0.005), 0.05, 1e-9),
   `tails=[${api.sim_tail_target_of_delta(50).toExponential(2)}, ${api.sim_tail_target_of_delta(0.5).toExponential(2)}, ${api.sim_tail_target_of_delta(0.005).toExponential(2)}]`);
 
-// --- 7d. The δ continuum drives the SIM continuously (the UI path: hint
-// 'custom' + derived tail, ρ = 1): the Realtime end pays FEC, the Bulk end
-// is pure-ARQ-shaped and completes faster. No mode bit anywhere.
+// --- 7d. The δ continuum drives the SIM continuously (the UI path:
+// 'custom' + derived tail strictly BETWEEN presets; AT the Bulk preset
+// the engine's late-is-fine 'bulk' law verbatim): the Realtime end pays
+// FEC, the Bulk end is pure ARQ and completes faster.
 {
   const rtEnd = runSim("custom", { delta: api.sim_tail_target_of_delta(50), rho: 1.0 });
-  const bulkEnd = runSim("custom", { delta: api.sim_tail_target_of_delta(0.005), rho: 1.0 });
+  const bulkEnd = runSim("bulk"); // the UI's Bulk-preset path (§14.26)
   check("δ continuum: both ends deliver fully",
     rtEnd.decoded === rtEnd.numSource && bulkEnd.decoded === bulkEnd.numSource,
     `rt=${rtEnd.decoded}, bulk=${bulkEnd.decoded}`);
@@ -260,6 +261,31 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     lossyRho.get_cum_decoded() + lossyRho.get_given_up() === lossyRho.get_num_source() &&
     lossyRho.get_reliability() >= 0.90,
     `decoded=${lossyRho.get_cum_decoded()}, givenUp=${lossyRho.get_given_up()}, rel=${lossyRho.get_reliability().toFixed(4)}`);
+}
+
+// --- 7d2. The Bulk preset runs the engine's late-is-fine law (§14.26):
+// pure ARQ mid-stream at ε = 5% (r = 0 identically, cold start included),
+// the χ completion glide intact at the stream tail; at ε = 10% (p̂ above
+// the 0.05 tail budget) the glide actually EMITS tail FEC.
+{
+  const b5 = new api.Simulation(0.05, 0.5, 50, 64, "bulk", undefined, undefined, undefined);
+  let midR = 0, t = 0;
+  for (; t < 300; t++) { b5.step(); midR = Math.max(midR, b5.get_r_star()); }
+  while (!b5.is_finished() && t++ < 20000) b5.step();
+  check("Bulk preset: mid-stream r = 0 at ε=5% (late is fine, §14.26)",
+    midR === 0, `max mid-stream r=${midR}`);
+  check("Bulk preset: χ completion glide fired by end of stream",
+    b5.get_completion_exposure() > 0.95,
+    `χ=${b5.get_completion_exposure().toFixed(3)}`);
+  check("Bulk preset: delivers fully, ~zero FEC at ε=5%",
+    b5.get_cum_decoded() === b5.get_num_source() && b5.get_total_fec() <= 5,
+    `fec=${b5.get_total_fec()}, decoded=${b5.get_cum_decoded()}`);
+  const b10 = new api.Simulation(0.10, 0.5, 50, 64, "bulk", undefined, undefined, undefined);
+  t = 0;
+  while (!b10.is_finished() && t++ < 20000) b10.step();
+  check("Bulk preset: tail glide emits FEC once p̂ exceeds the 0.05 budget (ε=10%)",
+    b10.get_total_fec() > 0 && b10.get_cum_decoded() === b10.get_num_source(),
+    `fec=${b10.get_total_fec()}`);
 }
 
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the

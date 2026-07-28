@@ -124,8 +124,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
   <input type="range" id="sl-rtt" min="1" max="500" step="1" value="50">
   <label class="slider-label" data-tip="Wire capacity of the selected path in symbols per tick. With several paths the tick's slot budget is the union of all paths' capacities; capacity ratios set the striping weights via gᵢ = capᵢ·(1−ε̂ᵢ).">Capacity (sym/tick) <span class="val" id="v-cap">4</span></label>
   <input type="range" id="sl-cap" min="1" max="8" step="1" value="4">
-  <label class="slider-label" data-tip="Encoder window, SHARED across all paths (one reliable window is the RWM design): each repair symbol protects the last W source symbols regardless of which path carried them. It is also the span law's clamp: A* = clamp(rate·D, 1, W) — with W below the recovery budget rate·D, the W-clamp pins the span and the δ-morph in the pipeline panel flattens (watch the A* readout note the clamp). Drag all the way LEFT for Auto: the sim is constructed with the derived window W* (paper 8.8) computed from the aggregate true channel parameters, recomputed as the channel sliders move.">Window W <span class="val" id="v-w">200</span></label>
-  <input type="range" id="sl-w" min="10" max="400" step="1" value="200">
+  <label class="slider-label" data-tip="Encoder window, SHARED across all paths (one reliable window is the RWM design): each repair symbol protects the last W source symbols regardless of which path carried them. It is also the span law's clamp: A* = clamp(rate·D, 1, W). The shipped machine DERIVES W (§16.5's four bounds / paper 8.8 W*), so the default position here is Auto — the sim is constructed with the derived W* from the aggregate true channel parameters and the dial's tail target, recomputed as the sliders move. Any other position is override W — the engine's RWM_WINDOW analogue (a sweep/measurement knob, not an operating control); with an override below the recovery budget rate·D, the W-clamp pins the span and the δ-morph in the pipeline panel flattens.">Window W <span class="val" id="v-w">Auto</span></label>
+  <input type="range" id="sl-w" min="10" max="400" step="1" value="10">
   <div class="derived" id="derived-vals" data-tip="Derived Gilbert-Elliott parameters for the selected path: p is the Good-to-Bad transition probability implied by ε and q; burst = 1/q is the mean loss-burst length in symbols; sigma2 = 1 + 2(1-p-q)/(p+q) is the burst variance inflation — how much bursts widen the loss distribution versus independent losses (1.0 means independent).">p=0.026 | burst=2.0 | sigma2=2.8</div>
 
   <div class="separator"></div>
@@ -205,7 +205,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
     <span data-tip="Where the continuum stands. EVICT: the δ-horizon give-up + budget-bounded shedding is live. RETAIN (ρ = 1): the shed law is compiled out by construction (§16.26) — the visualizer derives this contract from the continuum itself, at the point where r* glides to 0 (the Bulk limit).">contract: <b id="q-contract">&ndash;</b></span>
   </div>
   <div class="chart-wrap"><canvas id="span-canvas" style="height:215px"></canvas></div>
-  <div class="note" id="span-caption" data-tip="A law-driven cartoon, morphing LIVE with the δ dial (it does not wait for Reset). Blue ticks = delivered symbols marching left from the send frontier; red dots = holes aging toward the D(δ) deadline; the green bracket = the trailing emission span [F, F+A*] ending Δ behind the frontier; stacked outlines = the M* quanta in flight; grey ✕ = a hole shed δ-honestly (past deadline, within budget); orange = a past-deadline hole REFUSED shedding because the budget is spent — ρ wins over δ and it is served by ARQ.">
+  <div class="note" id="span-caption" data-tip="A law-driven cartoon, morphing LIVE with the δ dial (it does not wait for Reset). Red dots = holes, red from birth and deepening as they age toward the D(δ) deadline; green rings = a hole healed (by a span repair or retransmit); the green bracket = the trailing emission span [F, F+A*] ending Δ behind the frontier; stacked outlines = the M* quanta in flight; grey ✕ = a hole shed δ-honestly (past deadline, within budget); hollow orange DIAMOND = a past-deadline hole REFUSED shedding because the budget is spent — ρ wins over δ and it is served by ARQ. In steady state recovery beats the deadline and the law rarely fires (the §16.26 ρ-conservatism) — the periodic red-tinted SERVICE STALL (§16.20.8's measured transient class, the overload the shed law exists for) is what ages holes past D and triggers the visible shed/refuse decisions.">
     Slide &delta; and watch ONE formula morph: Realtime (right) = tight trailing spans + per-arrival
     decode + budget-bounded shedding past D(&delta;); Bulk (left) = r*&rarr;0, spans widen to 2&middot;BDP,
     the M* depth pipeline engages, and the shed law compiles out (&rho; = 1 RETAIN).
@@ -394,8 +394,8 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">windowed-MAX delivered rate, min-filtered RTprop, measured jitter (&sect;16.21 anchor hygiene &mdash; anchor defects were a named wall)</td>
           <td style="text-align:left; font-weight:normal">&Sigma; cap&#7522;&middot;(1&minus;&epsilon;&#770;&#7522;), the configured RTT, J = RTT/8; no anchor-defect dynamics</td></tr>
       <tr><td>&delta; continuum between presets</td>
-          <td style="text-align:left; font-weight:normal">the hint declares one of three &zeta; points (&sect;12.4); b(hint) = &frac12;/1/2 (&sect;16.26)</td>
-          <td style="text-align:left; font-weight:normal">log-interpolated through the paper's three anchors (exact AT them); documented visualizer choice</td></tr>
+          <td style="text-align:left; font-weight:normal">the hint declares one of three &zeta; points (&sect;12.4); b(hint) = &frac12;/1/2 (&sect;16.26); Bulk = late is fine (target tracks p&#770; with the &chi;-glide, &sect;14.26)</td>
+          <td style="text-align:left; font-weight:normal">AT the Bulk preset the sim runs the engine's late-is-fine law verbatim (pure ARQ mid-stream at any &epsilon;); the log-interpolated tail anchor applies strictly BETWEEN presets (exact at Realtime/Auto); b(&delta;) interpolation as documented</td></tr>
       <tr><td>RETAIN vs EVICT</td>
           <td style="text-align:left; font-weight:normal">the app's retention contract (the &rho; dial); shed law compiled out on &rho; = 1</td>
           <td style="text-align:left; font-weight:normal">the &rho; dial is live (default 1 = RETAIN; &lt; 1 = &sect;6.1 T_cut give-up in the sim); the span cartoon additionally marks the shed law compiled out at the Bulk r* = 0 limit</td></tr>
@@ -1888,7 +1888,7 @@ function deltaNote(dp) {
   if (dp > 1.2) return 'Realtime side of the continuum: tightening tail target, narrowing spans, shrinking deadline D(δ). No threshold was crossed — the same formulas, different δ.';
   if (dp >= 0.4 && dp <= 0.65) return 'The Auto point: the Copa-paper default price δ = 0.5 (ζ = 1), tail target 1e-5.';
   if (dp > 0.008) return 'Bulk side of the continuum: the tail target loosens toward ε (r* gliding to 0), spans widen, the M* depth pipeline engages. Still the same machine.';
-  return 'The Bulk point: latency is cheap (ζ = 100). Tail target 0.05 ≥ ε ⇒ r* = 0 (pure ARQ mid-stream; the completion ramp still covers the stream tail), spans at 2·BDP clamped by W, M* deep, ρ = 1 RETAIN — the shed law compiles out.';
+  return 'The Bulk point: latency is cheap (ζ = 100). The sim runs the engine’s late-is-fine law (§14.26): the target TRACKS the live estimate, so r = 0 mid-stream at ANY loss rate — pure ARQ — and the χ-glide covers the stream tail. Spans at 2·BDP clamped by W, M* deep, ρ = 1 RETAIN — the shed law compiles out.';
 }
 
 function getParams() {
@@ -1898,8 +1898,18 @@ function getParams() {
   // §12.4 anchors log-interpolated) — and ρ is the retention contract:
   // 1 = RETAIN-until-acked; < 1 = §6.1 T_cut give-up in the delivery sim
   // (r emerges from (δ, ρ) via the controller — the triangle, live).
+  //
+  // AT the Bulk preset (same log tolerance as the button highlight) the
+  // sim runs the ENGINE's late-is-fine law verbatim (§14.26, the 'bulk'
+  // hint: the effective target TRACKS the live estimate, δ_eff = p̂ +
+  // (0.05 − p̂)·χ ⇒ pure ARQ mid-stream at ANY ε, χ-glide at the tail).
+  // The interpolated fixed anchor applies strictly BETWEEN presets. With
+  // the ρ dial below 1 the §6.1 T_cut machine is requested — 'custom'
+  // is its vehicle (Bulk IS the ρ = 1 RETAIN contract).
   const dprice = dPrice();
-  const hint = 'custom';
+  const rhoDial = parseFloat(slRhoC.value);
+  const nearBulk = Math.abs(Math.log10(dprice / DELTA_PRESETS.bulk)) < 0.02;
+  const hint = (nearBulk && rhoDial >= 1) ? 'bulk' : 'custom';
   // Per-path configs with the visualizer's historical eps floor.
   const paths = pathCfg.map(c => ({
     eps: Math.max(c.eps, 0.001), q: c.q, rttMs: c.rtt, cap: c.cap,
@@ -1922,7 +1932,7 @@ function getParams() {
     eps: sel.eps, q: sel.q, rttMs: sel.rttMs, cap: sel.cap,
     hint, dprice,
     customDelta: sim_tail_target_of_delta(dprice),
-    customRho: parseFloat(slRhoC.value),
+    customRho: rhoDial,
   };
   // Window slider at its LEFTMOST position = Auto: construct the sim with the
   // derived window W* (paper 8.8) from the AGGREGATE true channel params and
@@ -1951,7 +1961,7 @@ function updateLabels() {
   $id('v-q').textContent = parseFloat(slQ.value).toFixed(2);
   $id('v-rtt').textContent = slRtt.value+' ms';
   $id('v-cap').textContent = slCap.value;
-  $id('v-w').textContent = p.wAuto ? 'Auto (W*=' + p.W + ')' : slW.value;
+  $id('v-w').textContent = p.wAuto ? 'Auto (W*=' + p.W + ')' : slW.value + ' (override)';
   $id('v-r').textContent = parseFloat(slR.value).toFixed(2);
   $id('v-delta').textContent = Math.pow(10,parseFloat(slDelta.value)).toExponential(1);
   $id('v-rho').textContent = parseFloat(slRho.value).toFixed(3);
@@ -1970,12 +1980,15 @@ function updateLabels() {
   const userEvict = p.customRho < 1;
   const contract = userEvict
     ? ['ρ = ' + p.customRho.toFixed(3) + ' — T_cut give-up (§6.1)', 'var(--bad)']
-    : rHere <= 0
-      ? ['ρ = 1 RETAIN — shed law compiled out (Bulk limit)', 'var(--decoded)']
-      : ['ρ = 1 target — sheds only the derived §16.26 residual', 'var(--accent)'];
+    : p.hint === 'bulk'
+      ? ['ρ = 1 RETAIN — late is fine (§14.26), shed law compiled out', 'var(--decoded)']
+      : rHere <= 0
+        ? ['ρ = 1 RETAIN — shed law compiled out (r* = 0)', 'var(--decoded)']
+        : ['ρ = 1 target — sheds only the derived §16.26 residual', 'var(--accent)'];
   $id('delta-derived').innerHTML =
     'ζ = 0.5/δ = <b>' + zeta_of_delta(dp).toPrecision(3) + '</b> · δ_FEC = <b>' +
-    tail.toExponential(1) + '</b> · contract: <b style="color:' + contract[1] + '">' +
+    (p.hint === 'bulk' ? 'tracks p̂ (late is fine)' : tail.toExponential(1)) +
+    '</b> · contract: <b style="color:' + contract[1] + '">' +
     contract[0] + '</b>';
   $id('delta-note').textContent = deltaNote(dp);
   for (const [k, v] of Object.entries(DELTA_PRESETS)) {
@@ -2498,6 +2511,17 @@ const spanViz = {
   fx: [],             // transient markers {seq, kind:'heal'|'shed'|'refuse', t}
   shed: 0, refused: 0, delivered: 0, resolved: 0,
   view: 0,            // low-passed viewport extent (symbols)
+  // §16.20.8 stall transients: the shed law exists for OVERLOAD. With the
+  // cartoon's idealized recovery (surplus repairs healing oldest-first +
+  // guaranteed ARQ retries) no hole EVER ages past D — the §16.26
+  // ρ-conservatism taken to its limit — so the law's decision points
+  // would be unreachable on screen. The measured collapse class the law
+  // was built against is a ~1 s whole-process service stall (§16.20.8;
+  // the §16.26 battery injected exactly this), so the cartoon periodically
+  // freezes recovery service for ~1.3·D: aged holes then cross the
+  // deadline and the law fires visibly — shed (grey ✕) within budget,
+  // REFUSED (orange diamond, served by ARQ) once the budget is spent.
+  stallUntil: 0, nextStall: 500,
 };
 function svRand() { // xorshift32 — cartoon-only RNG
   let x = spanViz.rng; x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
@@ -2517,7 +2541,11 @@ function spanLaw() {
   const mStar = pipeline_depth_m_star(rate, rtprop, aQ);
   const delta = trailing_offset_delta(rate, jit);
   const tail = p.customDelta;
-  const rStar = compute_r_star_continuous(p.aggEps, p.aggSigma2, p.W, tail);
+  // AT the Bulk preset the sim runs the engine's late-is-fine law
+  // (§14.26): the target tracks p̂ ⇒ r = 0 mid-stream at any ε (the
+  // χ-glide is an end-of-stream effect, not part of the steady cartoon).
+  const isBulk = p.hint === 'bulk';
+  const rStar = isBulk ? 0 : compute_r_star_continuous(p.aggEps, p.aggSigma2, p.W, tail);
   // The shed budget honors the ρ dial (the triangle's second corner):
   //   ρ < 1  → the EXPLICIT contract concession 1−ρ (§6.1 semantics);
   //   ρ = 1  → the DERIVED §16.26 residual ε̂·(1−P_fec) — what the design
@@ -2526,7 +2554,7 @@ function spanLaw() {
   const userRho = p.customRho;
   const derived = shed_budget_residual(p.aggEps, rStar, aStar, p.aggSigma2);
   const budget = userRho < 1 ? (1 - userRho) : derived;
-  const retain = userRho >= 1 && rStar <= 0;
+  const retain = userRho >= 1 && (isBulk || rStar <= 0);
   return { p, rate, rtprop, D, aStar, aQ, mStar, delta, rStar, budget, retain,
            userRho, derived,
            geP: p.aggEps * p.aggQ / (1 - p.aggEps), geQ: p.aggQ };
@@ -2534,6 +2562,13 @@ function spanLaw() {
 function spanStep(law, dt) {
   const v = spanViz;
   v.t += dt;
+  // §16.20.8 stall transient scheduling (see spanViz decl): recovery
+  // service freezes for ~1.3·D every ~900–1500 ticks.
+  const stalled = v.t < v.stallUntil;
+  if (!stalled && v.t >= v.nextStall) {
+    v.stallUntil = v.t + Math.max(1.3 * law.D, 0.6 * law.rtprop);
+    v.nextStall = v.stallUntil + 900 + 600 * svRand();
+  }
   v.carry += law.rate * dt;
   while (v.carry >= 1) {
     v.carry -= 1;
@@ -2550,7 +2585,9 @@ function spanStep(law, dt) {
     if (v.owed >= 1) {
       v.owed -= 1;
       const end = v.sent - law.delta, start = end - law.aStar;
-      if (svRand() >= law.p.aggEps) { // the repair itself survives the wire
+      // during a §16.20.8 stall the recovery SERVICE is frozen: repairs
+      // sent into it are wasted (nothing decodes until service resumes)
+      if (!stalled && svRand() >= law.p.aggEps) { // repair survives the wire
         const h = v.holes.find(h => h.healAt === null && h.seq >= start && h.seq < end);
         if (h) h.healAt = v.t; // per-arrival incremental decode
       }
@@ -2558,8 +2595,10 @@ function spanStep(law, dt) {
   }
   // Recovery decision points (per cartoon tick): ARQ rounds + the §16.26
   // shed law — sheddable iff past D(δ) AND within the 1−ρ budget;
-  // past-budget candidates are SERVED (ρ wins over δ).
-  for (const h of v.holes) {
+  // past-budget candidates are SERVED (ρ wins over δ). Frozen during a
+  // stall; on resume the aged backlog hits the decision points at once
+  // (the post-stall drain the law exists to keep from serializing).
+  if (!stalled) for (const h of v.holes) {
     if (h.healAt !== null) continue;
     const age = v.t - h.born;
     if (age > law.D && !law.retain) {
@@ -2660,14 +2699,26 @@ function drawSpanViz(law) {
                  Math.max(dlx, pad.l + 90), pad.t - 6 + 14);
   }
 
-  // holes (aging toward the deadline)
+  // holes: RED from birth, deepening as they age toward the deadline.
+  // A refused-shed hole (budget spent — ρ wins, served by ARQ) switches
+  // to a DISTINCT shape: a hollow orange diamond, so it cannot be
+  // confused with a young hole.
   for (const hh of v.holes) {
     const x = Xs(hh.seq);
     if (x < pad.l - 4) continue;
+    if (hh.refused) {
+      ctx.strokeStyle = '#f0a050'; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, yMid-5); ctx.lineTo(x+5, yMid);
+      ctx.lineTo(x, yMid+5); ctx.lineTo(x-5, yMid);
+      ctx.closePath(); ctx.stroke();
+      continue;
+    }
     const age = v.t - hh.born;
     const urg = law.retain ? 0 : Math.min(age / Math.max(law.D, 1), 1);
     ctx.beginPath(); ctx.arc(x, yMid, 3.4, 0, 2*Math.PI);
-    ctx.fillStyle = hh.refused ? '#f0a050' : 'rgb(230,' + Math.round(160 - 80*urg) + ',' + Math.round(120 - 60*urg) + ')';
+    ctx.fillStyle = 'rgb(' + Math.round(225 + 30*urg) + ',' +
+      Math.round(70 - 40*urg) + ',' + Math.round(70 - 40*urg) + ')';
     ctx.fill();
   }
   // transient fx
@@ -2681,10 +2732,24 @@ function drawSpanViz(law) {
       ctx.beginPath();
       ctx.moveTo(x-4, yMid-4); ctx.lineTo(x+4, yMid+4);
       ctx.moveTo(x+4, yMid-4); ctx.lineTo(x-4, yMid+4); ctx.stroke();
-    } else {
+    } else { // refuse: large hollow orange diamond flash
       ctx.strokeStyle = '#f0a050'; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(x, yMid, 7, 0, 2*Math.PI); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, yMid-8); ctx.lineTo(x+8, yMid);
+      ctx.lineTo(x, yMid+8); ctx.lineTo(x-8, yMid);
+      ctx.closePath(); ctx.stroke();
     }
+  }
+
+  // §16.20.8 stall-transient indicator: recovery service frozen — watch
+  // the holes age toward (and past) the deadline, then the post-stall
+  // decision burst: sheds within budget, refusals past it.
+  if (v.t < v.stallUntil) {
+    ctx.fillStyle = 'rgba(230,103,103,0.07)';
+    ctx.fillRect(pad.l, pad.t, pw, h - pad.t - pad.b);
+    ctx.fillStyle = COLORS.lost; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('service stall (§16.20.8) — holes aging toward D(δ)', pad.l + 4, h - pad.b - 6);
+    ctx.font = '9px sans-serif';
   }
 
   // frontier arrow
