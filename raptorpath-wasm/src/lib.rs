@@ -137,6 +137,111 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 }
 
 // =========================================================================
+// THE UNIFIED SPAN MACHINE — the (δ, ρ, r) span law, ported verbatim from
+// the paper (§16.20.3 sender span law, §16.26 δ-honest shedding, §12.4
+// δ(hint) = 0.5/ζ; ADR-0064). These are the LAW formulas the visualizer's
+// centerpiece animates; they are pure functions of measured anchors and
+// carry no mode bit — Realtime and Bulk are the two ends of ONE continuum.
+//
+// Convention: `delta_price` is the HINT's declared latency price
+// δ(hint) = 0.5/ζ (§12.4): Realtime 50, Auto 0.5, Bulk 0.005. It is NOT
+// the (δ, ρ, r) triangle's tail target (`tail target δ` below maps one to
+// the other along the same continuum).
+// =========================================================================
+
+/// §12.4: δ(hint) = 0.5/ζ ⇔ ζ = 0.5/δ. ζ is the hint's tail-loss scale
+/// {0.01 Realtime, 1 Auto, 100 Bulk} ⇒ δ ∈ {50, 0.5, 0.005}. Involution.
+#[wasm_bindgen]
+pub fn zeta_of_delta(delta_price: f64) -> f64 {
+    0.5 / delta_price.max(1e-12)
+}
+
+/// §16.26: the horizon coefficient b of the span law's own deadline,
+/// b(hint) = ½/1/2 at Realtime/Auto/Bulk. §12.4 fixes only the three hint
+/// presets; the visualizer's continuum log-interpolates b through those
+/// anchors — b(δ) = 2^(−log₁₀(2δ)/2), clamped to [½, 2] — which is EXACT
+/// at all three presets (δ = 50 → ½, 0.5 → 1, 0.005 → 2). Documented as a
+/// visualizer interpolation, not a paper formula, in the model-vs-engine
+/// table.
+#[wasm_bindgen]
+pub fn span_horizon_b(delta_price: f64) -> f64 {
+    (2.0f64)
+        .powf(-((2.0 * delta_price.max(1e-12)).log10() / 2.0))
+        .clamp(0.5, 2.0)
+}
+
+/// §16.26/§16.20.3: the recovery deadline D(δ) = min(b(δ)·RTprop, 2·RTprop)
+/// — past D, recovery belongs to ARQ/deficit anyway; a repair or retransmit
+/// fired at age > D lands after the receiver's own δ-horizon give-up.
+#[wasm_bindgen]
+pub fn span_deadline_d(delta_price: f64, rtprop: f64) -> f64 {
+    (span_horizon_b(delta_price) * rtprop).min(2.0 * rtprop)
+}
+
+/// §16.20.3: the coding quantum / span width A* = clamp(rate·D, 1, W) —
+/// the recovery budget in symbols N_δ = rate·D, clamped into the window.
+#[wasm_bindgen]
+pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
+    (rate * d).clamp(1.0, w.max(1.0))
+}
+
+/// §16.20.3: pipeline depth M* = ceil(rate·2·RTprop / A*_q) + 1 (A*_q =
+/// A* quantized to the retained grid), clamped to [2, 32] — the cold-start
+/// floor / memory ceiling named in the §16.20.5 constants audit
+/// (GEN_PIPE_MAX_GENS). Bulk's §16.17 derived depth is the large-δ limit.
+#[wasm_bindgen]
+pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
+    ((rate * 2.0 * rtprop / a_star_q.max(1.0)).ceil() + 1.0).clamp(2.0, 32.0)
+}
+
+/// §16.20.3 / ADR-0064: the trailing offset Δ = clamp(⌈rate·J⌉, 1, 64)
+/// (J = jitter anchor): the span must END Δ behind the send frontier so
+/// every member has LANDED when the repair does — a repair is solvable AT
+/// ARRIVAL iff it trails the frontier by Δ (the leading-window emission was
+/// the measured −22 pp defect). Floor 1 = the FIFO-per-path minimum.
+#[wasm_bindgen]
+pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
+    (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
+}
+
+/// §16.26: the derived shed budget — the residual the design already
+/// concedes past in-window FEC at the live operating point:
+///   1−ρ = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
+/// A hole is SHEDDABLE iff its projected delivery exceeds D(δ) AND
+/// cumulative shed stays within this budget; past-budget candidates are
+/// SERVED — ρ wins over δ. On the ρ = 1 RETAIN contract the law is
+/// compiled out entirely.
+#[wasm_bindgen]
+pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst: f64) -> f64 {
+    let e = eps_hat.clamp(0.0, 1.0);
+    e * (1.0 - math::p_fec_normal(r_live.max(0.0), e, a_star.max(1.0), sigma2_burst))
+}
+
+/// The visualizer's δ-continuum → r*-margin tail-target mapping: a
+/// monotone log-log interpolation through the paper's three hint anchor
+/// points (δ_price, tail target): Realtime (50, 1e-7), Auto (0.5, 1e-5),
+/// Bulk (0.005, 0.05 — the late-is-fine class, §14.26's BULK tail budget;
+/// tail ≥ ε ⇒ the §8.4 continuous glide takes r* to 0 = pure ARQ, the
+/// Bulk limit reached with no mode bit). §12.4 fixes only the presets;
+/// the interpolation between them is the visualizer's documented choice.
+#[wasm_bindgen]
+pub fn sim_tail_target_of_delta(delta_price: f64) -> f64 {
+    let x = delta_price.max(1e-12).log10();
+    let (x_rt, x_auto, x_bulk) = (50.0f64.log10(), 0.5f64.log10(), 0.005f64.log10());
+    let (y_rt, y_auto, y_bulk) = (-7.0f64, -5.0f64, 0.05f64.log10());
+    let y = if x >= x_rt {
+        y_rt
+    } else if x >= x_auto {
+        y_auto + (x - x_auto) * (y_rt - y_auto) / (x_rt - x_auto)
+    } else if x >= x_bulk {
+        y_auto + (x - x_auto) * (y_bulk - y_auto) / (x_bulk - x_auto)
+    } else {
+        y_bulk
+    };
+    10.0f64.powf(y)
+}
+
+// =========================================================================
 // Three-variable solvers — kept for the triangle explainer panel
 // =========================================================================
 
@@ -188,16 +293,43 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 // a mixture channel. N = 1 reduces exactly to the single-path simulation
 // (bit-identical: same seed derivation, same RNG stream, same slot order).
 //
+// CURRENT-ERA LAWS modeled (visualizer refresh 2026-07-28, main 7a3aff6):
+//   - per-path recovery clocks (wall #8, §16.24): RFC 9002 loss detection
+//     generalized per path — a hole's retransmit clock is its OWN path's
+//     RTT from send (no speculative pre-report firing); retransmits inherit
+//     the clock of the path they ride; the phantom_held/phantom_avoided
+//     counters show the spurious candidates a global clock would have fired
+//   - the path-scaled outstanding pool (wall #7, §16.19): the retention
+//     store is STORE_PER_PATH × n_paths; a full pool stalls new source
+//     (the Little's-law wall, visible when cap·RTT is cranked past it)
+//   - SACK-clocked store release (wall #9, §16.25): slots free on the
+//     selective ack (or on recovery of a loss), NOT on the cumulative
+//     frontier — the frontier-clocked occupancy is kept as a live
+//     counterfactual readout
+//   - the δ continuum (§16.20.3/§16.26/§12.4): the span-law formulas
+//     (A*, M*, D, Δ, shed budget) are exported above as pure functions;
+//     the sim itself is driven along the continuum via the "custom" hint
+//     with sim_tail_target_of_delta(δ) — no mode bit anywhere
+//
 // Simplifications vs the L0 gate (documented): fixed wire capacity
 // (slots/tick) instead of a queue+Copa model, no jitter (so no encoder lag
 // needed — each path's channel is FIFO), delivery one-way latency uses the
-// capacity-weighted mean SRTT.
+// capacity-weighted mean SRTT, forward propagation is instantaneous (the
+// one-way delay is added in the latency accounting, so cross-path reorder
+// gaps exist only as losses).
 // =========================================================================
 
 const BASE_TAIL_TARGET: f64 = 1e-5;
 const CODEC_OVERHEAD_RLC: f64 = 0.004;
 const MAX_OVERHEAD: f64 = 0.5;
 const TICK_SECS: f64 = 0.001;
+/// Path-scaled retention-store pool (wall #7, §16.19/§16.29): the
+/// outstanding pool is a Little's-law wall when it is a per-TRANSFER
+/// constant; the shipped law scales it per path (production knee ≈ 2048
+/// symbols/path). Sim scale: 512/path against the 2000-symbol transfer —
+/// slack at the standard cells (cap·RTT ≤ ~400), binding when the BDP is
+/// cranked past it (the wall made visible on the RTT slider).
+const STORE_PER_PATH: u32 = 512;
 
 /// Per-path state (paper Section 16): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
@@ -212,8 +344,12 @@ struct PathState {
     channel_states: Vec<bool>,
     wire_idx: usize,
     estimator: math::LossEstimator,
-    /// Wire outcomes awaiting THIS path's ACK round-trip: (send_tick, arrived).
-    feedback_queue: std::collections::VecDeque<(u32, bool)>,
+    /// Wire outcomes awaiting THIS path's ACK round-trip:
+    /// (send_tick, arrived, holds_store_slot). The third flag marks SOURCE
+    /// sends, whose retention-store slot is released when this entry pops
+    /// with arrived = true — the SACK-clocked release (§16.25): the slot
+    /// frees on the selective ack, NOT on the cumulative frontier.
+    feedback_queue: std::collections::VecDeque<(u32, bool, bool)>,
     last_flush_tick: u32,
     pending_sent: u32,
     pending_ok: u32,
@@ -308,6 +444,35 @@ pub struct Simulation {
     cum_sent: u32, cum_arrived: u32, cum_decoded: u32,
     lost_pending: u32,
     last_src: u32, last_fec: u32, last_arq: u32, last_lost: u32,
+
+    // --- Retention-store model (walls #7/#9; §16.19, §16.25) ---
+    /// Slots held by source symbols: taken at send, released on SACK
+    /// (arrival ack pops one path-RTT later) or on recovery/give-up of a
+    /// lost symbol. This is the SACK-clocked law (§16.25, shipped
+    /// DEFAULT ON): SACKed-but-not-cumulative symbols do NOT hold slots.
+    store_occupancy: u32,
+    /// Source slots skipped because the path-scaled pool was full
+    /// (STORE_PER_PATH × n_paths) — the wall-#7 Little's-law stall,
+    /// visible when cap·RTT is cranked past the pool.
+    pool_stalls: u32,
+    /// Receiver's contiguous delivered/given-up prefix (next undelivered
+    /// source seq) — the cumulative frontier.
+    frontier: u32,
+    /// The frontier as the SENDER knows it (one aggregate RTT late):
+    /// what a frontier-clocked store (wall #9, the legacy law) would
+    /// release against. occupancy_frontier = next_seq − frontier_acked
+    /// is the counterfactual the §16.25 gauge compares against.
+    frontier_acked: u32,
+    frontier_hist: std::collections::VecDeque<(u32, u32)>,
+
+    // --- Per-path recovery clocks (wall #8; §16.24, RFC 9002 per path) ---
+    /// Holes currently held by their OWN path's RTT clock although the
+    /// aggregate (global) clock has already expired — the retransmits a
+    /// global-clock recovery plane would have fired spuriously.
+    phantom_held: u32,
+    /// Cumulative count of such crossings (one per hole per retx cycle):
+    /// phantom retransmits avoided by the per-path law.
+    phantom_avoided: u32,
 
     rng_state: u64,
 }
@@ -645,7 +810,7 @@ impl Simulation {
             let p = &mut self.paths[pi];
             p.sent += 1;
             p.fec += 1;
-            p.feedback_queue.push_back((tick, !lost));
+            p.feedback_queue.push_back((tick, !lost, false));
             if lost {
                 p.lost += 1;
             } else {
@@ -700,6 +865,10 @@ impl Simulation {
                 if sym.seq == *rseq && sym.lost && !sym.recovered {
                     sym.recovered = true;
                     self.lost_pending = self.lost_pending.saturating_sub(1);
+                    // A lost symbol's store slot is released on recovery
+                    // (its SACK never came — the slot was held for exactly
+                    // the recovery span; §16.25 semantics).
+                    self.store_occupancy = self.store_occupancy.saturating_sub(1);
                 }
             }
         }
@@ -833,6 +1002,13 @@ impl Simulation {
             cum_sent: 0, cum_arrived: 0, cum_decoded: 0,
             lost_pending: 0,
             last_src: 0, last_fec: 0, last_arq: 0, last_lost: 0,
+            store_occupancy: 0,
+            pool_stalls: 0,
+            frontier: 0,
+            frontier_acked: 0,
+            frontier_hist: std::collections::VecDeque::new(),
+            phantom_held: 0,
+            phantom_avoided: 0,
             rng_state: 0xdeadbeef12345678,
         }
     }
@@ -850,10 +1026,11 @@ impl Simulation {
         // PATH (each path has its own ACK delay and its own estimator). Fed
         // with the TRUE per-symbol pattern (paper 7.5); flushed once per
         // that path's RTT — each estimator honestly lags its own path.
+        let mut sack_released = 0u32;
         for pi in 0..self.paths.len() {
             let tick = self.tick;
             let p = &mut self.paths[pi];
-            while let Some(&(t, ok)) = p.feedback_queue.front() {
+            while let Some(&(t, ok, src_slot)) = p.feedback_queue.front() {
                 if tick.saturating_sub(t) < p.rtt_ticks {
                     break;
                 }
@@ -862,6 +1039,12 @@ impl Simulation {
                 p.pending_sent += 1;
                 if ok {
                     p.pending_ok += 1;
+                    // SACK-clocked store release (§16.25, wall #9): the
+                    // slot frees the moment THIS path's selective ack
+                    // lands — not when the cumulative frontier passes it.
+                    if src_slot {
+                        sack_released += 1;
+                    }
                 }
             }
             if tick.saturating_sub(p.last_flush_tick) >= p.rtt_ticks && p.pending_sent > 0 {
@@ -871,6 +1054,7 @@ impl Simulation {
                 p.last_flush_tick = tick;
             }
         }
+        self.store_occupancy = self.store_occupancy.saturating_sub(sack_released);
 
         // --- Rate from the shared production formula ---
         self.rate = self.controller_rate_now();
@@ -936,7 +1120,9 @@ impl Simulation {
                         let p = &mut self.paths[dest];
                         p.sent += 1;
                         p.arq += 1;
-                        p.feedback_queue.push_back((self.tick, !lost));
+                        // A retransmit holds no NEW store slot: the lost
+                        // original's slot is still held (until recovery).
+                        p.feedback_queue.push_back((self.tick, !lost, false));
                         if lost {
                             p.lost += 1;
                         } else {
@@ -957,6 +1143,13 @@ impl Simulation {
                             .iter()
                             .filter(|q| !self.given_up_seqs.contains(q))
                             .count() as u32;
+                        // Recovery releases the lost original's store slot —
+                        // exactly once: mark_recovered above may already have
+                        // resolved this seq (the fed source is in the
+                        // decoder's output) and released it there.
+                        if !self.symbols[i].recovered {
+                            self.store_occupancy = self.store_occupancy.saturating_sub(1);
+                        }
                         self.symbols[i].recovered = true;
                         self.lost_pending = self.lost_pending.saturating_sub(1);
                     }
@@ -980,6 +1173,15 @@ impl Simulation {
                     lost_n += 1;
                 }
             } else if !self.source_done {
+                // Path-scaled outstanding pool (wall #7, §16.19): a new
+                // source symbol needs a retention-store slot; the pool is
+                // STORE_PER_PATH × n_paths. When cap·RTT outgrows it the
+                // slot idles — the Little's-law stall the per-transfer
+                // constant pool inflicted on multipath, made visible.
+                if self.store_occupancy >= STORE_PER_PATH * self.paths.len() as u32 {
+                    self.pool_stalls += 1;
+                    continue;
+                }
                 // --- Source slot: striped proportional to estimated goodput ---
                 let dest = self.next_source_path(&free);
                 let data = vec![self.next_seq as u8; 8];
@@ -993,11 +1195,12 @@ impl Simulation {
                 }
                 let lost = self.wire_lost(dest);
                 free[dest] -= 1;
+                self.store_occupancy += 1; // slot taken at send (§16.25)
                 {
                     let p = &mut self.paths[dest];
                     p.sent += 1;
                     p.src += 1;
-                    p.feedback_queue.push_back((self.tick, !lost));
+                    p.feedback_queue.push_back((self.tick, !lost, true));
                     if lost {
                         p.lost += 1;
                     } else {
@@ -1009,7 +1212,14 @@ impl Simulation {
                     seq,
                     lost,
                     recovered: false,
-                    last_retx_tick: -1_000_000,
+                    // Per-path recovery clock (wall #8, §16.24 / RFC 9002
+                    // generalized per path): a hole may not fire before its
+                    // OWN path's RTT clock has run from the send — the loss
+                    // report cannot exist earlier. Seeding the retx clock at
+                    // the send tick makes first eligibility send + own-RTT
+                    // (the pre-§16.24 model allowed immediate, P_lost-gated
+                    // firing — the phantom-retransmit defect).
+                    last_retx_tick: self.tick as i64,
                     path: dest,
                 });
                 self.total_src += 1;
@@ -1082,6 +1292,8 @@ impl Simulation {
                         self.given_up += 1;
                         self.given_up_seqs.insert(sym.seq);
                         self.lost_pending = self.lost_pending.saturating_sub(1);
+                        // Give-up resolves the slot too (§16.25 semantics).
+                        self.store_occupancy = self.store_occupancy.saturating_sub(1);
                     }
                 }
             }
@@ -1115,6 +1327,65 @@ impl Simulation {
         }
         if self.tick > 20_000 {
             self.finished = true;
+        }
+
+        // --- Per-path recovery clocks (wall #8, §16.24): RFC 9002 loss
+        // detection generalized per path. A hole's retransmit clock is its
+        // OWN path's RTT; a GLOBAL clock (the aggregate RTT — what the
+        // pre-fix recovery plane effectively ran) would already have fired
+        // for slow-path holes the moment the aggregate clock expired. Count
+        // the holes currently HELD by their own clock past the global one
+        // (a striping gap not firing while the other path's clock runs),
+        // and the cumulative phantom retransmits thereby avoided.
+        {
+            let global_clock = self.agg_rtt_ticks();
+            let mut held = 0u32;
+            let mut crossings = 0u32;
+            for sym in &self.symbols {
+                if sym.lost && !sym.recovered {
+                    let own = self.paths[sym.path].rtt_ticks;
+                    if own > global_clock {
+                        let base = if sym.last_retx_tick >= 0 {
+                            sym.last_retx_tick as u32
+                        } else {
+                            sym.tick
+                        };
+                        let age = self.tick.saturating_sub(base);
+                        if age >= global_clock && age < own {
+                            held += 1;
+                            if age == global_clock {
+                                crossings += 1; // once per hole per retx cycle
+                            }
+                        }
+                    }
+                }
+            }
+            self.phantom_held = held;
+            self.phantom_avoided += crossings;
+        }
+
+        // --- Cumulative delivery frontier + its RTT-delayed acked view.
+        // frontier = next undelivered source seq; frontier_acked = the
+        // frontier as the SENDER knows it (one aggregate-RTT-old), i.e.
+        // what the legacy FRONTIER-CLOCKED store (wall #9) would release
+        // against. next_seq − frontier_acked is the counterfactual
+        // occupancy the SACK-clocked gauge (§16.25) is compared with.
+        while (self.frontier as usize) < self.lat_by_seq.len()
+            && (!self.lat_by_seq[self.frontier as usize].is_nan()
+                || self.given_up_seqs.contains(&(self.frontier as u64)))
+        {
+            self.frontier += 1;
+        }
+        self.frontier_hist.push_back((self.tick, self.frontier));
+        if let Some(ack_cut) = self.tick.checked_sub(self.agg_rtt_ticks()) {
+            while self.frontier_hist.len() > 1 && self.frontier_hist[1].0 <= ack_cut {
+                self.frontier_hist.pop_front();
+            }
+            if let Some(&(t, f)) = self.frontier_hist.front() {
+                if t <= ack_cut {
+                    self.frontier_acked = f;
+                }
+            }
         }
 
         // Prune resolved symbols (keep lost unrecovered for ARQ).
@@ -1180,6 +1451,32 @@ impl Simulation {
         self.paths.get(i).map_or(0, |p| p.lost)
     }
     pub fn get_total_capacity(&self) -> u32 { self.total_capacity() }
+
+    // --- Retention store + recovery clocks (walls #7/#8/#9) ---
+    /// Path-scaled pool capacity STORE_PER_PATH × n_paths (wall #7,
+    /// §16.19: the pool scales with paths — the per-transfer constant was
+    /// the Little's-law multipath binder).
+    pub fn get_pool_cap(&self) -> u32 {
+        STORE_PER_PATH * self.paths.len() as u32
+    }
+    /// Live SACK-clocked store occupancy (§16.25, the shipped law): slots
+    /// held by un-SACKed sends plus unrecovered losses only.
+    pub fn get_store_occupancy(&self) -> u32 { self.store_occupancy }
+    /// Counterfactual FRONTIER-CLOCKED occupancy (wall #9, the legacy
+    /// law): everything above the sender-known cumulative frontier —
+    /// next_seq − frontier_acked. Always ≥ the SACK-clocked occupancy.
+    pub fn get_store_occupancy_frontier(&self) -> u32 {
+        self.next_seq.saturating_sub(self.frontier_acked)
+    }
+    /// Source slots stalled on a full pool (the wall-#7 signature).
+    pub fn get_pool_stalls(&self) -> u32 { self.pool_stalls }
+    /// Receiver's contiguous delivered/given-up prefix.
+    pub fn get_frontier(&self) -> u32 { self.frontier }
+    /// Holes currently held by their own path's RTT clock past the global
+    /// (aggregate) clock — §16.24's suppressed spurious candidates, live.
+    pub fn get_phantom_held(&self) -> u32 { self.phantom_held }
+    /// Cumulative phantom retransmits avoided by per-path clocks (§16.24).
+    pub fn get_phantom_avoided(&self) -> u32 { self.phantom_avoided }
     /// Measured AGGREGATE delivery goodput so far: decoded source symbols
     /// per tick. After completion this is the completion goodput
     /// num_source / completion_ticks.
@@ -1397,22 +1694,26 @@ impl Simulation {
 mod tests {
     use super::*;
 
-    /// N = 1 identical-behavior regression: golden fingerprints captured
-    /// from the PRE-multipath simulation (commit 4663c38, the last
-    /// single-path engine). Both the legacy constructor and the multipath
-    /// constructor with one path must reproduce them EXACTLY — the
-    /// multipath refactor may not perturb single-path behavior by one
-    /// tick or one symbol.
+    /// N = 1 identical-behavior regression: golden fingerprints pin the
+    /// CURRENT model era. Both the legacy constructor and the multipath
+    /// constructor with one path must reproduce them EXACTLY — a refactor
+    /// may not perturb single-path behavior by one tick or one symbol.
+    /// Re-captured 2026-07-28 (visualizer refresh) when the retransmit
+    /// clock moved to the per-path RFC 9002 law (§16.24: first
+    /// eligibility = send + own-path RTT; the pre-refresh model allowed
+    /// immediate P_lost-gated firing). To re-capture after a deliberate
+    /// model change: `GOLDEN_CAPTURE=1 cargo test -p raptorpath-wasm
+    /// test_multipath_n1_identical_golden -- --nocapture`.
     #[test]
     fn test_multipath_n1_identical_golden() {
         // (hint, eps, q, rtt) -> (ticks, src, fec, arq, lost, decoded, sent, arrived)
         let goldens: [(&str, f64, f64, u32, [u32; 8]); 6] = [
-            ("auto",     0.05, 0.5, 50, [672, 2000, 668,  12,  100, 2000, 2680, 2542]),
-            ("auto",     0.10, 0.3, 80, [750, 2000, 984,  15,  183, 2000, 2999, 2719]),
-            ("bulk",     0.05, 0.5, 50, [562, 2000, 0,    116, 114, 2000, 2116, 2000]),
-            ("bulk",     0.10, 0.3, 80, [619, 2000, 85,   190, 197, 2000, 2275, 2061]),
-            ("realtime", 0.05, 0.5, 50, [680, 2000, 710,  9,   98,  2000, 2719, 2577]),
-            ("realtime", 0.10, 0.3, 80, [757, 2000, 1014, 14,  179, 2000, 3028, 2747]),
+            ("auto",     0.05, 0.5, 50, [667, 2000, 668,  0,   101, 2000, 2668, 2532]),
+            ("auto",     0.10, 0.3, 80, [747, 2000, 985,  0,   185, 2000, 2985, 2705]),
+            ("bulk",     0.05, 0.5, 50, [569, 2000, 0,    116, 113, 2000, 2116, 2000]),
+            ("bulk",     0.10, 0.3, 80, [647, 2000, 85,   188, 198, 2000, 2273, 2059]),
+            ("realtime", 0.05, 0.5, 50, [733, 2000, 710,  3,   101, 2000, 2713, 2571]),
+            ("realtime", 0.10, 0.3, 80, [754, 2000, 1015, 0,   184, 2000, 3015, 2734]),
         ];
         for (hint, eps, q, rtt, g) in goldens {
             let mut arms = [
@@ -1429,12 +1730,13 @@ mod tests {
                     s.get_total_lost(), s.get_cum_decoded(), s.get_cum_sent(),
                     s.get_cum_arrived(),
                 ];
-                assert_eq!(
+                println!("golden {hint} eps={eps} q={q} rtt={rtt} arm{ai}: {got:?}");
+                if std::env::var("GOLDEN_CAPTURE").is_err() { assert_eq!(
                     got, g,
                     "N=1 regression (arm {ai}) {hint} eps={eps} q={q} rtt={rtt}: \
                      [ticks,src,fec,arq,lost,decoded,sent,arrived] diverged from \
                      the pre-multipath engine"
-                );
+                ); }
             }
         }
     }
@@ -1462,9 +1764,14 @@ mod tests {
                  (agg factor accessor: x{:.2})",
                 single.get_tick(), dual.get_tick(), factor, dual.get_aggregation_factor()
             );
+            // Gate 1.6–2.1: the drain tail is RTT-bound, and since the
+            // per-path RFC 9002 retransmit clock (§16.24 model, 2026-07-28)
+            // a drain straggler honestly costs a full own-RTT detection
+            // round — the dual run pays it on a shorter total, so the
+            // ratio sits slightly below the pre-refresh ~1.8 floor.
             assert!(
-                factor > 1.7 && factor <= 2.1,
-                "[{hint}] symmetric aggregation x{factor:.2} outside ~1.8-2x"
+                factor > 1.6 && factor <= 2.1,
+                "[{hint}] symmetric aggregation x{factor:.2} outside ~1.6-2x"
             );
             // Striping is goodput-proportional: symmetric paths carry ~equal
             // source shares.
@@ -1978,14 +2285,173 @@ mod tests {
             println!(
                 "{hint}: mid p99={mid_p99:.1}ms tail p99={tail_p99:.1}ms | mid mean={mid_mean:.1} tail mean={tail_mean:.1}"
             );
-            // No cliff: the last window's tail latency must not blow past the
-            // mid-stream tail (allow a modest 1.6x band for the residual
-            // serial-ARQ few at the very last symbols).
+            // No cliff: the last window's tail must stay within ONE honest
+            // ARQ round of the mid-stream tail. Since the per-path RFC 9002
+            // retransmit clock (§16.24 model, 2026-07-28) a residual
+            // straggler costs a full own-RTT detection round — the cliff
+            // this test guards against is SERIAL multi-round ARQ (several
+            // chained RTTs), which the completion ramp must prevent.
             assert!(
-                tail_p99 <= mid_p99 * 1.6 + 5.0,
-                "{hint} end-of-stream cliff: tail p99 {tail_p99:.1}ms vs mid {mid_p99:.1}ms"
+                tail_p99 <= mid_p99 + 50.0 + 10.0,
+                "{hint} end-of-stream cliff: tail p99 {tail_p99:.1}ms vs mid {mid_p99:.1}ms \
+                 (> mid + one ARQ round)"
             );
         }
+    }
+
+    /// §12.4 δ(hint) = 0.5/ζ: the three preset anchors, exactly.
+    #[test]
+    fn test_span_law_zeta_mapping() {
+        assert!((zeta_of_delta(50.0) - 0.01).abs() < 1e-12, "Realtime ζ");
+        assert!((zeta_of_delta(0.5) - 1.0).abs() < 1e-12, "Auto ζ");
+        assert!((zeta_of_delta(0.005) - 100.0).abs() < 1e-9, "Bulk ζ");
+    }
+
+    /// §16.26 D(δ) = min(b·RTprop, 2·RTprop), b = ½/1/2 at the presets.
+    #[test]
+    fn test_span_law_deadline() {
+        assert!((span_horizon_b(50.0) - 0.5).abs() < 1e-12);
+        assert!((span_horizon_b(0.5) - 1.0).abs() < 1e-12);
+        assert!((span_horizon_b(0.005) - 2.0).abs() < 1e-9);
+        // clamps outside the preset range
+        assert_eq!(span_horizon_b(1e6), 0.5);
+        assert_eq!(span_horizon_b(1e-9), 2.0);
+        // D at RTprop = 100 ms: 50 / 100 / 200 ms
+        assert!((span_deadline_d(50.0, 0.1) - 0.05).abs() < 1e-12);
+        assert!((span_deadline_d(0.5, 0.1) - 0.1).abs() < 1e-12);
+        assert!((span_deadline_d(0.005, 0.1) - 0.2).abs() < 1e-9);
+    }
+
+    /// §16.20.3 A* = clamp(rate·D, 1, W): the paper's voice example
+    /// (200 sym/s × 20 ms = 4), the W clamp, and the floor.
+    #[test]
+    fn test_span_law_a_star() {
+        assert!((span_width_a_star(200.0, 0.02, 512.0) - 4.0).abs() < 1e-12);
+        assert!((span_width_a_star(1000.0, 0.2, 64.0) - 64.0).abs() < 1e-12, "W clamp");
+        assert!((span_width_a_star(10.0, 0.002, 512.0) - 1.0).abs() < 1e-12, "floor 1");
+    }
+
+    /// §16.20.3 M* = ceil(rate·2·RTprop/A*_q)+1, clamp [2, 32]
+    /// (§16.20.5 constants audit).
+    #[test]
+    fn test_span_law_m_star() {
+        // bulk-like: 5000 sym/s, RTprop 100 ms, grid quantum 128:
+        // ceil(1000/128)+1 = 9
+        assert!((pipeline_depth_m_star(5000.0, 0.1, 128.0) - 9.0).abs() < 1e-12);
+        // realtime-like: BDP ≤ A* ⇒ the floor of 2 (depth term inert)
+        assert!((pipeline_depth_m_star(200.0, 0.01, 4.0) - 2.0).abs() < 1e-12);
+        // memory ceiling clamp
+        assert!((pipeline_depth_m_star(1e6, 0.1, 1.0) - 32.0).abs() < 1e-12);
+    }
+
+    /// §16.20.3/ADR-0064 Δ = clamp(⌈rate·J⌉, 1, 64).
+    #[test]
+    fn test_span_law_trailing_offset() {
+        assert!((trailing_offset_delta(200.0, 0.005) - 1.0).abs() < 1e-12);
+        assert!((trailing_offset_delta(5000.0, 0.003) - 15.0).abs() < 1e-12);
+        assert!((trailing_offset_delta(1e6, 1.0) - 64.0).abs() < 1e-12, "cap 64");
+        assert!((trailing_offset_delta(10.0, 0.0) - 1.0).abs() < 1e-12, "FIFO floor");
+    }
+
+    /// §16.26 shed budget 1−ρ = ε̂·(1−P_fec): bounds and monotonicity in r.
+    #[test]
+    fn test_span_law_shed_budget() {
+        assert_eq!(shed_budget_residual(0.0, 0.1, 64.0, 2.0), 0.0);
+        let b_lo = shed_budget_residual(0.05, 0.0, 64.0, 2.9);
+        let b_hi = shed_budget_residual(0.05, 0.30, 64.0, 2.9);
+        assert!(b_lo <= 0.05 + 1e-12 && b_lo >= 0.0);
+        assert!(b_hi < b_lo, "more FEC ⇒ smaller conceded residual");
+        assert!(b_hi < 0.01, "realtime-class r concedes ~nothing: {b_hi}");
+    }
+
+    /// The δ-continuum tail-target interpolation hits the three §12.4
+    /// preset anchors and is monotone (smaller δ price ⇒ looser tail).
+    #[test]
+    fn test_sim_tail_target_of_delta_anchors() {
+        assert!((sim_tail_target_of_delta(50.0) - 1e-7).abs() / 1e-7 < 1e-9);
+        assert!((sim_tail_target_of_delta(0.5) - 1e-5).abs() / 1e-5 < 1e-9);
+        assert!((sim_tail_target_of_delta(0.005) - 0.05).abs() / 0.05 < 1e-9);
+        let mut prev = sim_tail_target_of_delta(100.0);
+        for i in 1..50 {
+            let d = 100.0 * (1e-4f64 / 100.0).powf(i as f64 / 50.0);
+            let t = sim_tail_target_of_delta(d);
+            assert!(t >= prev, "tail target must be monotone along the continuum");
+            prev = t;
+        }
+    }
+
+    /// Walls #7/#9 model: SACK-clocked occupancy stays within the
+    /// path-scaled pool, is ≤ the frontier-clocked counterfactual, and the
+    /// pool BINDS (stalls) when cap·RTT is cranked past it — while the
+    /// transfer still completes.
+    #[test]
+    fn test_store_pool_sack_release() {
+        // Standard cell: slack pool, SACK ≤ frontier counterfactual.
+        let mut sim = Simulation::new(0.05, 0.5, 50, 64, "auto".into(), None, None, None);
+        let mut saw_occupancy = false;
+        while !sim.is_finished() && sim.get_tick() < 20_000 {
+            sim.step();
+            assert!(sim.get_store_occupancy() <= sim.get_pool_cap());
+            assert!(
+                sim.get_store_occupancy() <= sim.get_store_occupancy_frontier(),
+                "SACK release can only hold LESS than frontier release (tick {})",
+                sim.get_tick()
+            );
+            if sim.get_store_occupancy() > 100 {
+                saw_occupancy = true;
+            }
+        }
+        assert!(saw_occupancy, "the store gauge must be live mid-stream");
+        assert_eq!(sim.get_pool_cap(), STORE_PER_PATH);
+        assert_eq!(sim.get_pool_stalls(), 0, "standard cell must not stall");
+        assert_eq!(sim.get_cum_decoded(), sim.get_num_source());
+
+        // High-BDP cell (cap 8 × RTT 200 = 1600 ≫ 512): the wall binds.
+        let mut big = Simulation::multipath(
+            vec![0.02], vec![0.5], vec![200], vec![8], 64, "auto".into(), None, None, None,
+        );
+        while !big.is_finished() && big.get_tick() < 20_000 {
+            big.step();
+        }
+        assert!(big.get_pool_stalls() > 0, "cap·RTT ≫ pool must stall (wall #7)");
+        assert_eq!(big.get_cum_decoded(), big.get_num_source());
+        // Two paths double the pool (the path-scaled law).
+        let dual = Simulation::multipath(
+            vec![0.02, 0.02], vec![0.5, 0.5], vec![200, 200], vec![8, 8],
+            64, "auto".into(), None, None, None,
+        );
+        assert_eq!(dual.get_pool_cap(), 2 * STORE_PER_PATH);
+    }
+
+    /// Wall #8 model: on a heterogeneous 2-path cell, slow-path holes are
+    /// HELD by their own path's RTT clock past the aggregate clock — the
+    /// phantom retransmits a global-clock plane would have fired.
+    #[test]
+    fn test_per_path_clock_phantom_counter() {
+        // Bulk (pure ARQ): holes survive to their own-path clock, so the
+        // slow path's holes are visibly HELD past the aggregate clock.
+        // (FEC-heavy hints heal holes within a few ticks — before the
+        // aggregate clock even expires — so the counter honestly reads ~0.)
+        let mut rwm = Simulation::multipath(
+            vec![0.026, 0.048], vec![0.5, 0.5], vec![10, 40], vec![5, 1],
+            64, "bulk".into(), None, None, None,
+        );
+        while !rwm.is_finished() && rwm.get_tick() < 20_000 {
+            rwm.step();
+        }
+        assert!(
+            rwm.get_phantom_avoided() > 0,
+            "heterogeneous RTTs must produce held slow-path holes"
+        );
+        // Homogeneous paths: own clock == aggregate clock ⇒ no phantoms.
+        let mut homo = Simulation::multipath(
+            vec![0.05, 0.05], vec![0.5, 0.5], vec![50, 50], vec![4, 4],
+            64, "auto".into(), None, None, None,
+        );
+        while !homo.is_finished() && homo.get_tick() < 20_000 {
+            homo.step();
+        }
+        assert_eq!(homo.get_phantom_avoided(), 0);
     }
 
     #[test]
@@ -2015,9 +2481,17 @@ mod tests {
                     "eps={eps} rtt={rtt} {hint}: last-window p99 burst={burst_tail:.1}ms ramp={ramp_tail:.1}ms | overhead burst={:.2}% ramp={:.2}%",
                     burst.get_overhead(), ramp.get_overhead()
                 );
+                // The ramp meters the same budget continuously, so a couple
+                // of stragglers can land in ARQ where the one-shot burst
+                // heals instantly — and since the per-path RFC 9002 clock
+                // (§16.24 model, 2026-07-28) one ARQ round costs a full
+                // own-RTT. Gate: within one ARQ round of the burst arm
+                // (the 14.29 claim is "no serial multi-round cliff", not
+                // "beats the burst at p99 of a 64-sample window").
                 assert!(
-                    ramp_tail <= burst_tail * 1.15 + 3.0,
-                    "eps={eps} rtt={rtt} {hint}: ramp tail p99 {ramp_tail:.1} must not regress vs burst {burst_tail:.1}"
+                    ramp_tail <= burst_tail + rtt as f64 + 5.0,
+                    "eps={eps} rtt={rtt} {hint}: ramp tail p99 {ramp_tail:.1} must stay within \
+                     one ARQ round of burst {burst_tail:.1}"
                 );
                 assert!(
                     ramp.get_overhead() <= burst.get_overhead() + 6.0,
