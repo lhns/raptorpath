@@ -122,6 +122,14 @@ class SimWrapper {
   get aggregationFactorMeasured() {
     return this.bestSingleMeasured > 0 ? this.aggGoodput / this.bestSingleMeasured : 0;
   }
+  // --- Retention store + recovery clocks (walls #7/#8/#9; §16.19/24/25) ---
+  get poolCap()                { return this.inner.get_pool_cap(); }
+  get storeOccupancy()         { return this.inner.get_store_occupancy(); }
+  get storeOccupancyFrontier() { return this.inner.get_store_occupancy_frontier(); }
+  get poolStalls()             { return this.inner.get_pool_stalls(); }
+  get frontier()               { return this.inner.get_frontier(); }
+  get phantomHeld()            { return this.inner.get_phantom_held(); }
+  get phantomAvoided()         { return this.inner.get_phantom_avoided(); }
   // --- Multipath accessors (paper §16) ---
   get numPaths() { return this.inner.get_num_paths(); }
   pathCapacity(i)   { return this.inner.get_path_capacity(i); }

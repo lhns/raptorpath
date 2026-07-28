@@ -37,6 +37,14 @@ const factory = new Function(
     p_fec_exact,
     compute_r_star_exact,
     p_lost,
+    zeta_of_delta,
+    span_horizon_b,
+    span_deadline_d,
+    span_width_a_star,
+    pipeline_depth_m_star,
+    trailing_offset_delta,
+    shed_budget_residual,
+    sim_tail_target_of_delta,
   };
 `
 );
@@ -165,6 +173,127 @@ check("saturation_pressure monotone (low < high)",
 const pfx = api.p_fec_exact(0.013, 0.5, 0.1, 64);
 check("exact P_fec sane", pfx > 0.9 && pfx <= 1.0, `p_fec_exact=${pfx.toFixed(4)}`);
 
+// --- 7c. THE UNIFIED SPAN LAW (paper §16.20.3, §16.26, §12.4; ADR-0064) —
+// formula fidelity against the paper's stated formulas, ≥3 spot values per
+// formula, hand-computed. These are the quantities the centerpiece panel
+// animates; a drift here is a lie on screen and fails the build.
+function near(a, b, rel = 1e-9) {
+  return Math.abs(a - b) <= rel * Math.max(1, Math.abs(b));
+}
+// §12.4: δ(hint) = 0.5/ζ ⇒ ζ = 0.5/δ; the three preset anchors.
+check("§12.4 ζ(δ) at the three presets",
+  near(api.zeta_of_delta(50), 0.01) &&
+  near(api.zeta_of_delta(0.5), 1) &&
+  near(api.zeta_of_delta(0.005), 100),
+  `ζ(50)=${api.zeta_of_delta(50)}, ζ(0.5)=${api.zeta_of_delta(0.5)}, ζ(0.005)=${api.zeta_of_delta(0.005)}`);
+// §16.26: b(hint) = ½/1/2 at Realtime/Auto/Bulk; D = min(b·RTprop, 2·RTprop).
+check("§16.26 b(δ) anchors ½/1/2",
+  near(api.span_horizon_b(50), 0.5) &&
+  near(api.span_horizon_b(0.5), 1) &&
+  near(api.span_horizon_b(0.005), 2),
+  `b(50)=${api.span_horizon_b(50)}, b(0.5)=${api.span_horizon_b(0.5)}, b(0.005)=${api.span_horizon_b(0.005)}`);
+check("§16.26 D(δ) = min(b·RTprop, 2·RTprop) at RTprop=100ms",
+  near(api.span_deadline_d(50, 0.1), 0.05) &&
+  near(api.span_deadline_d(0.5, 0.1), 0.1) &&
+  near(api.span_deadline_d(0.005, 0.1), 0.2) &&
+  near(api.span_deadline_d(1e-6, 0.1), 0.2), // 2·RTprop cap holds below Bulk
+  `D=[${api.span_deadline_d(50,0.1)}, ${api.span_deadline_d(0.5,0.1)}, ${api.span_deadline_d(0.005,0.1)}]`);
+// §16.20.3: A* = clamp(rate·D, 1, W) — incl. the paper's 200 sym/s × 20 ms
+// voice example (= 4).
+check("§16.20.3 A* = clamp(rate·D, 1, W)",
+  near(api.span_width_a_star(200, 0.02, 512), 4) &&
+  near(api.span_width_a_star(1000, 0.2, 64), 64) &&   // W clamp
+  near(api.span_width_a_star(10, 0.002, 512), 1),     // floor 1
+  `A*=[${api.span_width_a_star(200,0.02,512)}, ${api.span_width_a_star(1000,0.2,64)}, ${api.span_width_a_star(10,0.002,512)}]`);
+// §16.20.3/§16.20.5: M* = ceil(rate·2·RTprop/A*_q)+1, clamped [2, 32].
+check("§16.20.3 M* = ceil(rate·2RTprop/A*q)+1 clamp [2,32]",
+  near(api.pipeline_depth_m_star(5000, 0.1, 128), 9) && // ceil(1000/128)+1
+  near(api.pipeline_depth_m_star(200, 0.01, 4), 2) &&   // floor (depth inert)
+  near(api.pipeline_depth_m_star(1e6, 0.1, 1), 32),     // memory ceiling
+  `M*=[${api.pipeline_depth_m_star(5000,0.1,128)}, ${api.pipeline_depth_m_star(200,0.01,4)}, ${api.pipeline_depth_m_star(1e6,0.1,1)}]`);
+// §16.20.3/ADR-0064: Δ = clamp(⌈rate·J⌉, 1, 64).
+check("§16.20.3 Δ = clamp(⌈rate·J⌉, 1, 64)",
+  near(api.trailing_offset_delta(200, 0.005), 1) &&
+  near(api.trailing_offset_delta(5000, 0.003), 15) &&
+  near(api.trailing_offset_delta(1e6, 1), 64) &&
+  near(api.trailing_offset_delta(10, 0), 1),
+  `Δ=[${api.trailing_offset_delta(200,0.005)}, ${api.trailing_offset_delta(5000,0.003)}, ${api.trailing_offset_delta(1e6,1)}]`);
+// §16.26: 1−ρ = ε̂·(1−P_fec) — bounds, ε̂=0 zero, monotone-decreasing in r.
+{
+  const b0 = api.shed_budget_residual(0.0, 0.1, 64, 2.0);
+  const bLo = api.shed_budget_residual(0.05, 0.0, 64, 2.9);
+  const bHi = api.shed_budget_residual(0.05, 0.30, 64, 2.9);
+  check("§16.26 shed budget 1−ρ = ε̂·(1−P_fec)",
+    b0 === 0 && bLo > 0 && bLo <= 0.05 + 1e-12 && bHi < bLo && bHi < 0.01,
+    `budget(ε̂=0)=${b0}, budget(r=0)=${bLo.toFixed(4)}, budget(r=.3)=${bHi.toExponential(2)}`);
+}
+// The δ-continuum tail-target mapping: the three §12.4 anchors, exact.
+check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→0.05)",
+  near(api.sim_tail_target_of_delta(50), 1e-7, 1e-9) &&
+  near(api.sim_tail_target_of_delta(0.5), 1e-5, 1e-9) &&
+  near(api.sim_tail_target_of_delta(0.005), 0.05, 1e-9),
+  `tails=[${api.sim_tail_target_of_delta(50).toExponential(2)}, ${api.sim_tail_target_of_delta(0.5).toExponential(2)}, ${api.sim_tail_target_of_delta(0.005).toExponential(2)}]`);
+
+// --- 7d. The δ continuum drives the SIM continuously (the UI path: hint
+// 'custom' + derived tail, ρ = 1): the Realtime end pays FEC, the Bulk end
+// is pure-ARQ-shaped and completes faster. No mode bit anywhere.
+{
+  const rtEnd = runSim("custom", { delta: api.sim_tail_target_of_delta(50), rho: 1.0 });
+  const bulkEnd = runSim("custom", { delta: api.sim_tail_target_of_delta(0.005), rho: 1.0 });
+  check("δ continuum: both ends deliver fully",
+    rtEnd.decoded === rtEnd.numSource && bulkEnd.decoded === bulkEnd.numSource,
+    `rt=${rtEnd.decoded}, bulk=${bulkEnd.decoded}`);
+  check("δ continuum: Realtime end sends more FEC than Bulk end",
+    rtEnd.fec > bulkEnd.fec,
+    `fec rt-end=${rtEnd.fec}, bulk-end=${bulkEnd.fec}`);
+  check("δ continuum: Bulk end completes faster",
+    bulkEnd.ticks < rtEnd.ticks,
+    `bulk-end=${bulkEnd.ticks} ticks, rt-end=${rtEnd.ticks} ticks`);
+}
+
+// --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the
+// path-scaled pool and ≤ the frontier-clocked counterfactual; the pool
+// BINDS when cap·RTT outgrows it.
+{
+  const s = new api.Simulation(0.05, 0.5, 50, 64, "auto", undefined, undefined, undefined);
+  let okInv = true, sawOcc = false;
+  while (!s.is_finished() && s.get_tick() < 20000) {
+    s.step();
+    if (s.get_store_occupancy() > s.get_store_occupancy_frontier()) okInv = false;
+    if (s.get_store_occupancy() > 100) sawOcc = true;
+  }
+  check("store: SACK-clocked ≤ frontier-clocked counterfactual, gauge live",
+    okInv && sawOcc && s.get_pool_cap() === 512 && s.get_pool_stalls() === 0,
+    `cap=${s.get_pool_cap()}, stalls=${s.get_pool_stalls()}`);
+  const big = api.Simulation.multipath(
+    [0.02], [0.5], new Uint32Array([200]), new Uint32Array([8]),
+    64, "auto", undefined, undefined, undefined);
+  let t = 0;
+  while (!big.is_finished() && t++ < 20000) big.step();
+  check("store: pool binds when cap·RTT ≫ pool (wall #7), transfer still completes",
+    big.get_pool_stalls() > 0 && big.get_cum_decoded() === big.get_num_source(),
+    `stalls=${big.get_pool_stalls()}`);
+}
+
+// --- 7f. Per-path recovery clocks (wall #8, §16.24): heterogeneous RTTs
+// hold slow-path holes past the aggregate clock (phantom retx avoided);
+// homogeneous paths produce none.
+{
+  const het = api.Simulation.multipath(
+    [0.026, 0.048], [0.5, 0.5], new Uint32Array([10, 40]), new Uint32Array([5, 1]),
+    64, "bulk", undefined, undefined, undefined);
+  let t = 0;
+  while (!het.is_finished() && t++ < 20000) het.step();
+  const homo = api.Simulation.multipath(
+    [0.05, 0.05], [0.5, 0.5], new Uint32Array([50, 50]), new Uint32Array([4, 4]),
+    64, "bulk", undefined, undefined, undefined);
+  t = 0;
+  while (!homo.is_finished() && t++ < 20000) homo.step();
+  check("per-path clocks: phantoms avoided on heterogeneous, none on homogeneous",
+    het.get_phantom_avoided() > 0 && homo.get_phantom_avoided() === 0,
+    `het avoided=${het.get_phantom_avoided()}, homo=${homo.get_phantom_avoided()}`);
+}
+
 // --- 8. Multipath (paper §16, Reliable Windowed Multipath at L0) ---
 function runInner(sim) {
   let ticks = 0;
@@ -204,9 +333,12 @@ function runInner(sim) {
   );
   const ts = runInner(single), td = runInner(dual);
   const factor = ts / td;
+  // Gate 1.6–2.1 (was 1.7): under the per-path RFC 9002 retransmit clock
+  // (§16.24 model, 2026-07-28) a drain straggler honestly costs a full
+  // own-RTT detection round, paid on the dual run's shorter total.
   check(
     "2-path symmetric aggregation ~2x",
-    dual.get_cum_decoded() === dual.get_num_source() && factor > 1.7 && factor <= 2.1,
+    dual.get_cum_decoded() === dual.get_num_source() && factor > 1.6 && factor <= 2.1,
     `single=${ts} ticks, dual=${td} ticks, x${factor.toFixed(2)}`
   );
   const af = dual.get_aggregation_factor();
