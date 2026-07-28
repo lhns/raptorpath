@@ -13144,3 +13144,49 @@ netns only, deleted at teardown; VM left clean (no battery processes,
 no netns, lock free); all logs preserved under `/home/vibe/crown/`
 including the aborted first attempt; foreground polling only, elapsed
 stated per poll.
+
+## Visualizer Refresh (2026-07-28) — the interactive model moved to the unified-machine era (branch `feat/visualizer-unified`, from 7a3aff6; visualizer + wasm crate only, NO engine change)
+
+The 2026-07-06-era interactive visualizer (`raptorpath-visualizer/` +
+`raptorpath-wasm/`, the §16 RWM-L0 model with a hint mode-switch) now
+models the CURRENT architecture. What it models:
+
+- **The δ continuum as the centerpiece (no mode switch anywhere in the
+  UI).** One log slider δ ∈ [0.005, 50] with the §12.4 δ(hint) = 0.5/ζ
+  presets as buttons; a law-driven pipeline animation morphs live —
+  D(δ) = min(b·RTprop, 2·RTprop), A* = clamp(rate·D, 1, W),
+  M* = ceil(rate·2·RTprop/A*_q)+1 [2,32], Δ = clamp(⌈rate·J⌉, 1, 64),
+  δ-honest shedding within 1−ρ = ε̂·(1−P_fec) with refused-candidates
+  shown (ρ wins over δ). Formulas ported verbatim into the wasm crate
+  with §16.20.3/§16.26/§12.4 citations; the RETAIN/EVICT contract is
+  DERIVED from the continuum (the r*→0 Bulk limit). The delivery sim is
+  driven through the same dial (derived tail target, ρ = 1).
+- **Multipath at the current laws**: 1/2 paths + homogeneous(c7)/
+  heterogeneous(c8) topology presets and per-path knobs; the wasm model
+  now carries per-path RFC 9002 recovery clocks (§16.24 — first retx
+  eligibility = send + own-path RTT; phantom-retx counters show what a
+  global clock would have fired), the path-scaled pool (§16.19,
+  512/path at sim scale, binding when cap·RTT outgrows it), and
+  SACK-clocked store release with the frontier-clocked counterfactual
+  gauge (§16.25). Model-era goldens re-captured (constructor-equivalence
+  contract unchanged).
+- **The wall chain** (§17.1 / CONSOLIDATED VERDICT) as a 9-step story
+  panel; honesty footer "L0 interactive model · era 2026-07-28 · main
+  7a3aff6 · models the laws of §16.20/§16.26, not the engine binary"
+  plus an explicit model-vs-engine simplification table (anchors,
+  b/tail interpolation between the three hint points, no CC, no grid,
+  instantaneous forward flight, slot-only store).
+
+**Formula-fidelity gate:** `test_visualizer.mjs` (run by
+`build_visualizer.sh` against the BUILT single-file bundle) now asserts
+≥3 hand-computed spot values per span-law formula (ζ, b, D, A*, M*, Δ,
+shed budget, tail-target anchors) plus δ-continuum sim behavior
+(Realtime end more FEC / Bulk end faster, both complete), store/pool
+invariants (SACK ≤ frontier counterfactual; wall-#7 bind at high BDP)
+and phantom-clock behavior (heterogeneous > 0, homogeneous = 0). All
+green; `cargo test -p raptorpath-wasm` 31/31; `cargo test -p raptorpath
+--lib` untouched-and-green (no engine change). Stale era content purged
+(hint mode switch, Bulk χ-glide copy, 14.25 burst label, Streaming/
+Mettle/DAPS references in `docs/packet-flow-visualization.md`, which is
+rewritten to the systematic wire + unified decode + current DIAG names,
+marked descriptive).
