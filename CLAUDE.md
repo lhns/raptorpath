@@ -5,9 +5,11 @@
 The architecture's central claim (paper §16.20/§16.26, ADR-0064) is ONE
 machine parameterized by the (δ, ρ, r) triangle on measured anchors —
 continuous in δ, with NO mode bit. This applies to the visualizer as much
-as the engine, and it has been violated three times by well-meaning
-shortcuts (fixed-anchor at a preset; a ρ-gated hint flip; a
-threshold-keyed hint boundary). The user has rejected every one of them.
+as the engine. The user rejected the architectural mode-switches twice
+(the decoder split; the hint-selected CC), and the visualizer reproduced
+the same defect three times through well-meaning shortcuts (fixed-anchor
+at a preset; a ρ-gated hint flip; a threshold-keyed hint boundary), each
+caught on review. The pattern, not the instances, is the enemy.
 
 Concretely, in the visualizer and any model of the machine:
 
