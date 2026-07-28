@@ -129,15 +129,18 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
   <div class="derived" id="derived-vals" data-tip="Derived Gilbert-Elliott parameters for the selected path: p is the Good-to-Bad transition probability implied by ε and q; burst = 1/q is the mean loss-burst length in symbols; sigma2 = 1 + 2(1-p-q)/(p+q) is the burst variance inflation — how much bursts widen the loss distribution versus independent losses (1.0 means independent).">p=0.026 | burst=2.0 | sigma2=2.8</div>
 
   <div class="separator"></div>
-  <h3 data-tip="THE knob (§12.4, §16.20.3): the hint's declared latency price δ(hint) = 0.5/ζ. It is the only thing an application declares, and it has exactly two consumers — Copa's utility U = log(throughput) − δ·log(delay), and the span law that derives the coding machine's shape (A*, M*, Δ, D). There is no mode switch: Realtime and Bulk are the two ends of one continuum, and every point between them is a valid machine.">The &delta; dial &mdash; one machine, no modes</h3>
-  <label class="slider-label" data-tip="δ = the marginal price of latency (log scale). Right (δ = 50, Realtime): latency is expensive — tight tail target, small fresh spans, δ-honest shedding. Left (δ = 0.005, Bulk): latency is cheap — pure ARQ mid-stream, wide spans, deep M* pipeline, ρ = 1 RETAIN. The presets below are just points on this slider.">&delta; (latency price) <span class="val" id="v-dprice">0.5</span></label>
+  <h3 data-tip="The protocol hint is STILL the app-facing contract — it declares a latency price δ(hint) = 0.5/ζ (§12.4) and, together with ρ, parameterizes the ONE machine (§16.20.3). What is gone is the mode switch behind it: the three hints are named points on this continuum, with the same formulas everywhere. Two consumers of δ — Copa's utility U = log(throughput) − δ·log(delay), and the span law (A*, M*, Δ, D).">Protocol hint = a point on the (&delta;, &rho;) dials</h3>
+  <label class="slider-label" data-tip="δ = the hint's marginal price of latency (log scale). Right (δ = 50, the Realtime hint): latency is expensive — tight tail target, small fresh spans, δ-honest shedding. Left (δ = 0.005, the Bulk hint): latency is cheap — pure ARQ mid-stream, wide spans, deep M* pipeline. The hint buttons below are points on this slider, not modes.">&delta; (latency price) <span class="val" id="v-dprice">0.5</span></label>
   <input type="range" id="sl-dprice" min="-2.30103" max="1.69897" step="0.01" value="-0.30103">
+  <div class="note" style="margin-bottom:2px">the three protocol hints, as presets:</div>
   <div class="btn-row">
     <button id="btn-d-bulk" data-tip="δ = 0.005 (ζ = 100): the Bulk point of the continuum — late is fine. r* glides to 0 (pure ARQ mid-stream), spans widen to 2·BDP, the M* depth law engages, the ρ = 1 RETAIN contract compiles the shed law out.">Bulk 0.005</button>
     <button id="btn-d-auto" class="active" data-tip="δ = 0.5 (ζ = 1): the Auto point — the Copa-paper default price, tail target 1e-5.">Auto 0.5</button>
     <button id="btn-d-rt" data-tip="δ = 50 (ζ = 0.01): the Realtime point — tail target 1e-7, biggest proactive FEC margin, tight trailing spans solvable on arrival, budget-bounded δ-honest shedding past D(δ).">Realtime 50</button>
   </div>
-  <div class="derived" id="delta-derived" data-tip="Derived from the dial with no extra knobs: ζ = 0.5/δ is the tail-loss scale (the r* margin knob); δ_FEC is the tail target driving the rate controller (the visualizer log-interpolates it through the paper's three hint anchors); the contract column shows where the continuum stands — EVICT (δ-horizon give-up + shedding) or RETAIN (ρ = 1, the Bulk limit, reached exactly where r* glides to 0)."></div>
+  <label class="slider-label" style="margin-top:6px" data-tip="The SECOND corner of the (δ, ρ, r) triangle (§1.4): the retention contract. ρ = 1 (default) = RETAIN-until-acked — every source symbol is delivered, whatever it costs. ρ < 1 lets the sender GIVE UP losses older than the derived cutoff T_cut (§6.1 age eviction) instead of retransmitting forever — reliability bends instead of latency. Not a mode: a contract dial. Set (δ, ρ); r emerges from the controller.">&rho; (retention contract) <span class="val" id="v-rhoc">1.000</span></label>
+  <input type="range" id="sl-rhoc" min="0.90" max="1.0" step="0.001" value="1.0">
+  <div class="derived" id="delta-derived" data-tip="Derived from the two dials with no extra knobs: ζ = 0.5/δ is the tail-loss scale (the r* margin knob); δ_FEC is the tail target driving the rate controller (the visualizer log-interpolates it through the paper's three hint anchors); the contract column shows where the machine stands — RETAIN (ρ = 1, with the shed law additionally compiled out at the Bulk r* = 0 limit) or, with ρ < 1, EVICT with §6.1 T_cut give-up toward the declared ρ."></div>
   <div class="note" id="delta-note"></div>
 
   <div class="separator"></div>
@@ -284,6 +287,7 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
       sender spends FEC to tighten p99; at the <b>Bulk</b> end it lets the tail
       stretch toward a full RTT in exchange for throughput. One dial, no modes.
     </div>
+    <div class="note" id="rho-readout" style="display:none; margin-top:6px" data-tip="Shown when the ρ dial is below 1: the reliability achieved so far versus the declared target, and how many symbols were deliberately given up once they aged past the derived cutoff T_cut (§6.1) — reliability bends instead of latency. The Decoded % line in the main chart plateaus below 100% on purpose."></div>
     <div id="mp-panel" style="display:none">
       <div class="separator"></div>
       <h3 data-tip="Reliable Windowed Multipath (paper §16): per-path live state and the aggregation readout. Each path has its own channel, capacity, RTT and estimator; all pour into ONE shared window.">Multipath (&sect;16)</h3>
@@ -394,10 +398,10 @@ table.cmp td small { font-weight: normal; color: var(--muted); }
           <td style="text-align:left; font-weight:normal">log-interpolated through the paper's three anchors (exact AT them); documented visualizer choice</td></tr>
       <tr><td>RETAIN vs EVICT</td>
           <td style="text-align:left; font-weight:normal">the app's retention contract (the &rho; dial); shed law compiled out on &rho; = 1</td>
-          <td style="text-align:left; font-weight:normal">derived from the continuum: RETAIN exactly where r* glides to 0 (the Bulk limit)</td></tr>
+          <td style="text-align:left; font-weight:normal">the &rho; dial is live (default 1 = RETAIN; &lt; 1 = &sect;6.1 T_cut give-up in the sim); the span cartoon additionally marks the shed law compiled out at the Bulk r* = 0 limit</td></tr>
       <tr><td>shed law</td>
           <td style="text-align:left; font-weight:normal">sender arm at ALL recovery decision points + receiver arm (&delta;-derived hold, &epsilon;&#770;<sub>recv</sub> bound); EVENTUAL P_fec budget (&sect;16.26)</td>
-          <td style="text-align:left; font-weight:normal">sender-side cartoon in the span panel only; budget from the same 1&minus;&rho; formula; the delivery sim itself runs &rho; = 1</td></tr>
+          <td style="text-align:left; font-weight:normal">sender-side cartoon in the span panel only; budget = 1&minus;&rho; when the dial is below 1, else the derived &sect;16.26 residual; the delivery sim sheds via &sect;6.1 T_cut, not the span law</td></tr>
       <tr><td>decoder</td>
           <td style="text-align:left; font-weight:normal">UnifiedDecoder: global sparse-aware RREF, interval-span rows, k = 0 fast path (src/fec/unified.rs)</td>
           <td style="text-align:left; font-weight:normal">raptorpath-math RLC over the shared window; repairs span the whole window (no per-span A* emission in the sim; A*/M*/&Delta; live in the law panel)</td></tr>
@@ -1825,6 +1829,9 @@ const slCap=$id('sl-cap');
 // THE δ dial (§12.4 δ(hint) = 0.5/ζ): the slider carries log10(δ_price);
 // the presets are just positions on it — there is NO mode switch.
 const slDprice=$id('sl-dprice');
+// The ρ dial (§1.4 triangle, second corner): the retention contract.
+// ρ = 1 → RETAIN-until-acked; ρ < 1 → §6.1 T_cut give-up in the sim.
+const slRhoC=$id('sl-rhoc');
 const DELTA_PRESETS = { bulk: 0.005, auto: 0.5, realtime: 50 };
 const slR=$id('sl-r'), slDelta=$id('sl-delta'), slRho=$id('sl-rho'), triMode=$id('tri-mode');
 const selNPaths=$id('sel-npaths'), selPath=$id('sel-path'), selPreset=$id('sel-preset');
@@ -1886,11 +1893,11 @@ function deltaNote(dp) {
 
 function getParams() {
   storePathSliders();
-  // ONE knob: the δ price drives the sim through the continuum — the
-  // tail target is derived (wasm sim_tail_target_of_delta, the paper's
-  // three §12.4 anchors log-interpolated), ρ = 1 (full retention: the
-  // delivery sim keeps the reliable contract; shedding is modeled in the
-  // span-machine panel per §16.26).
+  // TWO dials, no modes: the δ price drives the continuum — the tail
+  // target is derived (wasm sim_tail_target_of_delta, the paper's three
+  // §12.4 anchors log-interpolated) — and ρ is the retention contract:
+  // 1 = RETAIN-until-acked; < 1 = §6.1 T_cut give-up in the delivery sim
+  // (r emerges from (δ, ρ) via the controller — the triangle, live).
   const dprice = dPrice();
   const hint = 'custom';
   // Per-path configs with the visualizer's historical eps floor.
@@ -1915,7 +1922,7 @@ function getParams() {
     eps: sel.eps, q: sel.q, rttMs: sel.rttMs, cap: sel.cap,
     hint, dprice,
     customDelta: sim_tail_target_of_delta(dprice),
-    customRho: 1.0,
+    customRho: parseFloat(slRhoC.value),
   };
   // Window slider at its LEFTMOST position = Auto: construct the sim with the
   // derived window W* (paper 8.8) from the AGGREGATE true channel params and
@@ -1951,20 +1958,25 @@ function updateLabels() {
   const pp = p.eps*p.q/(1-p.eps);
   $id('derived-vals').textContent =
     'p=' + pp.toFixed(4) + ' | burst=' + (1/p.q).toFixed(1) + ' | sigma2=' + trueSigma2(p).toFixed(2);
-  // --- the δ dial readouts ---
+  // --- the (δ, ρ) dial readouts ---
   const dp = p.dprice;
   $id('v-dprice').textContent = dp >= 1 ? dp.toFixed(1) : dp.toFixed(3);
+  $id('v-rhoc').textContent = p.customRho.toFixed(3);
   const tail = p.customDelta;
-  // RETAIN contract derived from the continuum: exactly where r* glides
-  // to 0 at the aggregate channel (the Bulk / pure-ARQ limit, §16.26 —
-  // the shed law compiles out on the reliable path).
+  // The contract: ρ is the USER's dial (the triangle's second corner).
+  // ρ = 1 → RETAIN-until-acked; at the Bulk end (r* = 0) the §16.26 shed
+  // law additionally compiles out. ρ < 1 → §6.1 T_cut give-up toward ρ.
   const rHere = compute_r_star_continuous(p.aggEps, p.aggSigma2, p.W, tail);
-  const retain = rHere <= 0;
+  const userEvict = p.customRho < 1;
+  const contract = userEvict
+    ? ['ρ = ' + p.customRho.toFixed(3) + ' — T_cut give-up (§6.1)', 'var(--bad)']
+    : rHere <= 0
+      ? ['ρ = 1 RETAIN — shed law compiled out (Bulk limit)', 'var(--decoded)']
+      : ['ρ = 1 target — sheds only the derived §16.26 residual', 'var(--accent)'];
   $id('delta-derived').innerHTML =
     'ζ = 0.5/δ = <b>' + zeta_of_delta(dp).toPrecision(3) + '</b> · δ_FEC = <b>' +
-    tail.toExponential(1) + '</b> · contract: <b style="color:' +
-    (retain ? 'var(--decoded)' : 'var(--accent)') + '">' +
-    (retain ? 'RETAIN (ρ = 1)' : 'EVICT (δ-horizon)') + '</b>';
+    tail.toExponential(1) + '</b> · contract: <b style="color:' + contract[1] + '">' +
+    contract[0] + '</b>';
   $id('delta-note').textContent = deltaNote(dp);
   for (const [k, v] of Object.entries(DELTA_PRESETS)) {
     $id('btn-d-' + (k === 'realtime' ? 'rt' : k))
@@ -2414,6 +2426,19 @@ function updateReadouts() {
   } else {
     mpEl.style.display = 'none';
   }
+
+  // ρ dial below 1: achieved reliability vs the declared target + give-ups
+  // (§6.1 T_cut age eviction — the triangle's second corner, live).
+  const rhoEl = $id('rho-readout');
+  if (p.customRho < 1) {
+    rhoEl.style.display = '';
+    rhoEl.innerHTML = '<b>ρ &lt; 1:</b> reliability ' +
+      (sim.reliability*100).toFixed(2) + '% achieved <small>(live)</small> vs target ρ = ' +
+      (p.customRho*100).toFixed(1) + '% &middot; given up: <b>' + sim.givenUp +
+      '</b> symbols (T_cut eviction, §6.1)';
+  } else {
+    rhoEl.style.display = 'none';
+  }
 }
 
 // =========================================================================
@@ -2492,11 +2517,17 @@ function spanLaw() {
   const delta = trailing_offset_delta(rate, jit);
   const tail = p.customDelta;
   const rStar = compute_r_star_continuous(p.aggEps, p.aggSigma2, p.W, tail);
-  const budget = shed_budget_residual(p.aggEps, rStar, aStar, p.aggSigma2);
-  // RETAIN derived from the continuum: the r* → 0 point IS the Bulk
-  // (ρ = 1) limit; §16.26 compiles the shed law out there.
-  const retain = rStar <= 0;
+  // The shed budget honors the ρ dial (the triangle's second corner):
+  //   ρ < 1  → the EXPLICIT contract concession 1−ρ (§6.1 semantics);
+  //   ρ = 1  → the DERIVED §16.26 residual ε̂·(1−P_fec) — what the design
+  //            already concedes past in-window FEC on the EVICT path —
+  //            compiled out entirely at the Bulk r* = 0 limit.
+  const userRho = p.customRho;
+  const derived = shed_budget_residual(p.aggEps, rStar, aStar, p.aggSigma2);
+  const budget = userRho < 1 ? (1 - userRho) : derived;
+  const retain = userRho >= 1 && rStar <= 0;
   return { p, rate, rtprop, D, aStar, aQ, mStar, delta, rStar, budget, retain,
+           userRho, derived,
            geP: p.aggEps * p.aggQ / (1 - p.aggEps), geQ: p.aggQ };
 }
 function spanStep(law, dt) {
@@ -2665,10 +2696,15 @@ function updateSpanQuants(law) {
   $id('q-mstar').textContent = law.mStar;
   $id('q-delta').textContent = law.delta + ' sym';
   $id('q-rstar').textContent = law.rStar > 0 ? law.rStar.toFixed(3) : '0 (pure ARQ)';
-  $id('q-budget').textContent = law.retain ? '— (ρ=1)' : (law.budget*100).toFixed(2) + '%';
+  $id('q-budget').textContent = law.retain
+    ? '— (compiled out)'
+    : (law.budget*100).toFixed(2) + '%' + (law.userRho < 1 ? ' (1−ρ dial)' : ' (derived)');
   const qc = $id('q-contract');
-  qc.textContent = law.retain ? 'RETAIN' : 'EVICT';
-  qc.style.color = law.retain ? 'var(--decoded)' : 'var(--accent)';
+  qc.textContent = law.userRho < 1
+    ? 'EVICT (ρ=' + law.userRho.toFixed(3) + ')'
+    : (law.retain ? 'RETAIN' : 'RETAIN target');
+  qc.style.color = law.userRho < 1 ? 'var(--bad)'
+    : (law.retain ? 'var(--decoded)' : 'var(--accent)');
   const v = spanViz;
   $id('span-counters').innerHTML =
     (law.retain
@@ -2749,6 +2785,9 @@ $id('btn-reset').addEventListener('click', resetSim);
 // point); the delivery simulation adopts the new δ on release/Reset.
 slDprice.addEventListener('input', () => { updateLabels(); drawRstarChart(); });
 slDprice.addEventListener('change', resetSim);
+// The ρ dial: same contract — panel readouts live, sim adopts on release.
+slRhoC.addEventListener('input', updateLabels);
+slRhoC.addEventListener('change', resetSim);
 for (const [k, v] of Object.entries(DELTA_PRESETS)) {
   $id('btn-d-' + (k === 'realtime' ? 'rt' : k)).addEventListener('click', () => {
     slDprice.value = Math.log10(v);

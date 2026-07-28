@@ -13159,8 +13159,14 @@ models the CURRENT architecture. What it models:
   δ-honest shedding within 1−ρ = ε̂·(1−P_fec) with refused-candidates
   shown (ρ wins over δ). Formulas ported verbatim into the wasm crate
   with §16.20.3/§16.26/§12.4 citations; the RETAIN/EVICT contract is
-  DERIVED from the continuum (the r*→0 Bulk limit). The delivery sim is
-  driven through the same dial (derived tail target, ρ = 1).
+  DERIVED from the continuum (the r*→0 Bulk limit). ρ REMAINS a live
+  dial (the triangle's second corner, next to δ — a contract dial, not a
+  mode): default 1 = RETAIN-until-acked; below 1 the sim gives up via
+  §6.1 T_cut toward the declared target (reliability readout + given-up
+  annotation restored), and the span cartoon's shed budget becomes the
+  explicit 1−ρ instead of the derived §16.26 residual. The protocol
+  hints remain first-class: the three presets ARE the hints, as named
+  points on the (δ, ρ) dials.
 - **Multipath at the current laws**: 1/2 paths + homogeneous(c7)/
   heterogeneous(c8) topology presets and per-path knobs; the wasm model
   now carries per-path RFC 9002 recovery clocks (§16.24 — first retx

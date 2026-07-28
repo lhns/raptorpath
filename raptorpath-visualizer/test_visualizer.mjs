@@ -249,6 +249,17 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   check("δ continuum: Bulk end completes faster",
     bulkEnd.ticks < rtEnd.ticks,
     `bulk-end=${bulkEnd.ticks} ticks, rt-end=${rtEnd.ticks} ticks`);
+  // The ρ dial stays a thing (the triangle's second corner): the UI path
+  // with ρ < 1 gives up cleanly via §6.1 T_cut toward the declared target.
+  const lossyRho = new api.Simulation(
+    0.10, 0.3, 80, 64, "custom",
+    undefined, api.sim_tail_target_of_delta(0.5), 0.95);
+  let t = 0;
+  while (!lossyRho.is_finished() && t++ < 20000) lossyRho.step();
+  check("ρ dial on the continuum: decoded + given_up == num_source, reliability ≥ 0.90",
+    lossyRho.get_cum_decoded() + lossyRho.get_given_up() === lossyRho.get_num_source() &&
+    lossyRho.get_reliability() >= 0.90,
+    `decoded=${lossyRho.get_cum_decoded()}, givenUp=${lossyRho.get_given_up()}, rel=${lossyRho.get_reliability().toFixed(4)}`);
 }
 
 // --- 7e. Retention store (walls #7/#9): SACK-clocked occupancy within the
