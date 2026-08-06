@@ -80,6 +80,14 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    failure itself names a new mechanism. (Added 2026-07-21, the
    consolidation pass; first exercised by "SACK-Clocked Store Release".)
 
+12. **The VM lock covers ALL VM activity — not just batteries.** Builds,
+   probes, iperf3/ping checks, netem/tbf setup, cell validation: everything
+   that touches the measurement VM's CPU or network stack waits for
+   `/tmp/rwm-vm.lock`. Co-tenancy has contaminated measurements three times
+   (a killed crown rep 2026-07-27; compile-load on L0 tails; the 2026-08-06
+   A1/B1 overlap, user-observed). Non-holders do purely local work.
+   (Added 2026-08-06.)
+
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
 *Decision record: → decision index [ADR-0052…0067](adr/README.md) + [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md)*
