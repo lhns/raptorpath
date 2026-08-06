@@ -700,6 +700,71 @@ and streaming was reachable only through the `RWM_UNIFIED=0` opt-out.
 VM left clean (no processes, no netns, lock released 22:56 UTC; logs
 `/home/vibe/consol2/smoke-{bulk,tail}.log`).
 
+## C8 Slow-Path Conversion (2026-08-06) — DIAGNOSIS-FIRST (branch `feat/c8-conversion` from f2f1c78; the "C8-Aware Pool Law" verdict's named successor: the binder is NOT pool sizing — WHY does the slow path convert ~nothing at c8?)
+
+*Decision record context: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
+(pool arithmetic REFUTED for c8), the "C8-Aware Pool Law" section above
+(the measured fact this work re-settles: every pool law converges to
+fast-single + ~2.6–2.7 Mbit of the slow path's ~16; legacy-1024 0.866/0.868×Σ
+vs shipped path-scaled 0.71–0.76×Σ; fast path parks the un-SACKed span,
+slow path holds ≤10% of the pool), and "Competitive Baseline" (the external
+bar: kernel MPTCP-BBR 89.7–92.6 at c8 — noting honestly that the kernel's
+own slow-path conversion is +3.1/−2.4 vs its same-session single-path BBR
+89.5/92.1, i.e. ~0±3 Mbit: no in-order transport measured to date banks the
+c3 path's Σ-share at this cell).*
+
+**Diagnosis plan (this block written BEFORE the instrumented runs; the
+instruments are DIAG-gated and behavior-inert — commit 15de9f6).** Four
+candidate conversion-failure channels, to be distinguished by per-path
+gauges in ONE instrumented c8 pass (legacy + pbs arms, seed 42, ×2):
+
+- (a) PLACEMENT STARVATION — the placement law puts too little SOURCE on
+  the slow path. Gauge: `[C8CONV-S] splace` (per-path first source
+  placements) vs the capacity share (~16–19%); `[C8CONV-R] fst` per path.
+  Mechanical prior (code read, to be confirmed): at Bulk the placement
+  cost's `srtt_i/2 / ref_srtt` propagation term alone puts the idle slow
+  path ~1.5–1.75 dimensionless units above the fast path — e^10:1 odds at
+  T=0.15 — and the POOL gate pauses admission before the fast path's queue
+  term can ever climb enough to spill; predicted signature: splace_slow
+  share ≪ capacity share with paused > 0.
+- (b) BEHIND-THE-FRONTIER ARRIVALS — slow-path deliveries arrive after the
+  region was already served (they displace would-be-retransmits, add no
+  goodput). Gauge: `[C8CONV-R] dup` share of slow-path arrivals (a source
+  arrival for an already-received seq), plus which side's copies win.
+- (c) HoL/REASSEMBLY COUPLING — slow-path-owned holes serialize the
+  cumulative frontier. Gauge: `[C8CONV-S] stallo` (frontier-stall wall time
+  by blocking-hole OWNER path) + `[C8CONV-R] unb` (stall time by RESOLVING
+  arrival path).
+- (d) SKEW MIS-SCHEDULING — source lands on the slow path with too little
+  lead: the recovery plane re-serves it on the fast path before the
+  original arrives (spurious cross-path retx → the dup flood → slow-path
+  work displaced). Gauges: `[C8CONV-S] retxo` (retx by ORIGINAL placement
+  path) / splace ratio vs the path's realized loss; `[C8CONV-R] lead`
+  (first-copy frontier lead at arrival). Code-read prior (to be confirmed):
+  the `RWM_RECOV_MP` hole law keys `mp_n_paths` + its per-path clocks on
+  `active_paths()` — the SATURATION-FILTERED set (`available() > 0`) whose
+  cwnd-full-path trap is already documented at the Copa-sole store law and
+  `capw_store_cap` — so a cwnd-saturated path drops the law to N=1 bypass
+  (legacy age gate, cross-path clock) mid-transfer; the July c8 mpr gauge
+  shows the matching signature (pbs: 1063/1539 retx fired YOUNG vs their
+  own flight-path law threshold; 1056 of the fired flights were slow-path).
+
+(b)+(d) together = the arrival-alignment question. The refuted-DAPS history
+(ADR-0065) refutes the OLD implementations, not the geometry — if the
+diagnosis points here, the fix must derive lead-time from the honest
+per-path anchors (RTprop_i, rate_i), placed as ONE continuous law, no mode,
+no per-topology branch (the no-mode-switch invariant; the July verdict's
+"heterogeneity detector → legacy-span law" suggestion is NOT eligible).
+
+A fix ships only under its own item-11 pre-registration appended BELOW
+after the diagnosis names the dominant channel with numbers, gated in
+`gates.rs` default OFF, with the c7 (≥0.97×Σ held) / singles-inert
+no-regression clause. Battery: c8 primary (arms shipped / legacy-1024 /
++fix on the pool the diagnosis says) + c7 + sc2/sc3 identity, seeds 42+7
+×8 interleaved, same-session Σ, per MEASUREMENT DISCIPLINE 1–11.
+
+*(Diagnosis results and everything below written AFTER the runs.)*
+
 ## C8-Aware Pool Law (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the diagnosis runs and the battery; branch `feat/c8-pool-law` from be24660; env `RWM_STORE_CAPW`, default OFF)
 
 *Decision record: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
