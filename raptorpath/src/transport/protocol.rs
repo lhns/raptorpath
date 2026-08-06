@@ -43,12 +43,16 @@ pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 /// first byte b'R' (0x52) — the receive path classifies on byte 0.
 pub const COMPACT_DATA_TAG: u8 = 0xC1;
 
-/// `RWM_WIRE_COMPACT` (default OFF — the A/B arm): sender-side compact DATA
-/// framing. Resolved once per process (transport-layer knob, like
-/// `RWM_MTU_FLOOR`/`RWM_QUIC_CC`).
+/// `RWM_WIRE_COMPACT` (default ON since 2026-08-06 — goal-gate "Window
+/// Decoupling + MTU Scaling" part 2, flip earned by the pre-registered
+/// battery: sc2 +2.59/+3.64, sc3 +0.55/+0.60 Mbit/s ≫σ both seeds, c7
+/// +8.1/+4.6, c8 unregressed, crown tail spot unregressed, wire overhead
+/// 119 → ~71 B/pkt at the qdisc gauge; `=0` is the legacy-framing opt-out
+/// arm): sender-side compact DATA framing. Resolved once per process
+/// (transport-layer knob, like `RWM_MTU_FLOOR`/`RWM_QUIC_CC`).
 pub fn wire_compact_active() -> bool {
     static ACTIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ACTIVE.get_or_init(|| crate::config::env_flag("RWM_WIRE_COMPACT", false))
+    *ACTIVE.get_or_init(|| crate::config::env_flag("RWM_WIRE_COMPACT", true))
 }
 
 // ── LEB128 varints for the compact frame ────────────────────────────────

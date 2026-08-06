@@ -22,7 +22,10 @@
 //!
 //! NOT covered here (deliberately — each is already a resolve-once site in
 //! its own module): the substrate-CC policy `RWM_QUIC_CC` (transport/quic.rs,
-//! ADR-0054), the MTU floor `RWM_MTU_FLOOR` (transport, ADR-0055), the Copa
+//! ADR-0054), the MTU floor `RWM_MTU_FLOOR` (transport, ADR-0055), the
+//! compact v5 DATA framing `RWM_WIRE_COMPACT` (transport/protocol.rs,
+//! default ON since 2026-08-06 — goal-gate "Window Decoupling + MTU
+//! Scaling"), the Copa
 //! wire/δ family `RWM_COPA_WIRE`/`RWM_COPA_DELTA`/`RWM_COPA_COMPETE`
 //! (scheduler, cached `OnceLock`, ADR-0062), the stall-witness umbrella
 //! member `RWM_CLOCK_GAP` (control/anchor.rs, ADR-0061), the RS trace knob
