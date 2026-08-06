@@ -13422,7 +13422,7 @@ J·0.85), the shallow buffer caps the standing queue at its arithmetic
 value (8 × 1350 B ≈ 0.9 ms + tbf 1.2 ms latency), and the policer drops
 the exact excess with no delay signal at all. The cells are real.
 
-### L1 battery RESULTS (VM 10.1.5.16, 2026-08-06 14:22–15:38 UTC; binary sha256 01001268fee62fff… = commit 6c8c3d3's Rust (harness-only db501c8 on top), SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; 25 MB × 1 run/invocation, arms interleaved round-robin per rep, fresh cell + fresh tunnel per invocation, seeds 42 AND 7, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120` everywhere; driver `tools/l1/adv_battery.sh`; logs `/home/vibe/advcells/battery-s{42,7}.log` + 366 per-run client/server/qdisc files under `diag/`; runtimes 36m43s (s42) + 37m00s (s7); lock 14:08:35–15:52 UTC)
+### L1 battery RESULTS (VM 10.1.5.16, 2026-08-06 14:22–15:38 UTC; binary sha256 01001268fee62fff… = commit 6c8c3d3's Rust (harness-only db501c8 on top), SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; 25 MB × 1 run/invocation, arms interleaved round-robin per rep, fresh cell + fresh tunnel per invocation, seeds 42 AND 7, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120` everywhere; driver `tools/l1/adv_battery.sh`; logs `/home/vibe/advcells/battery-s{42,7}.log` + 366 per-run client/server/qdisc files under `diag/`; runtimes 36m43s (s42) + 37m00s (s7); lock 14:08:35–15:43:35 UTC)
 
 **Liveness / honesty (discipline 1, 6–8).** 98/98 invocations captured
 per seed; **0 topo-ping aborts on BOTH seeds** (the seed-7 abort class
@@ -13591,11 +13591,13 @@ the mid-session co-tenancy correction: full timestamped activity list
 (UTC) — 14:09 tree cleared + git-archive sync + dos2unix (discipline
 10), 14:10–14:13:40 fresh build (stale binary rm'd first), ~14:14–14:21
 cell validation + one pol100 smoke run, 14:22:28–14:59:11 battery s42,
-15:00:51–15:37:51 battery s7, 15:44–15:48 EXCLUSIVE-LOCK re-validation
-of all 7 cells (ps-snapshot-verified no foreign workload; every
-signature reproduced within noise — recorded in `validate2.log`),
-~15:50 cleanup.sh + rp-* netns/process verification, 15:52 lock
-released. No A1 files, processes, or builds appeared on the VM during
+15:00:51–15:37:51 battery s7, 15:40:30–~15:43 EXCLUSIVE-LOCK
+re-validation of all 7 cells (ps-snapshot-verified no foreign workload;
+every signature reproduced within noise — recorded in `validate2.log`),
+then cleanup.sh + rp-* netns/process verification, lock released
+~15:43:35 — and the queued A1 worker took it at 15:43:43 (clean 8-s
+handoff, verified from its lock stamp; no overlap at either end of the
+session). No A1 files, processes, or builds appeared on the VM during
 the measurement window (filesystem mtime sweep recorded); the
 14:14–14:21 validation window overlaps A1's 14:18 arrival by ~3 min,
 which is why it was re-run under verified exclusivity. rp-* namespaces
