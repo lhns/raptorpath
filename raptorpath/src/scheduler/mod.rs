@@ -376,6 +376,15 @@ fn place_temperature() -> f64 {
 /// window, NOT a tuning knob (any positive value cancels once real RTTs land).
 pub(crate) const PLACE_REF_FLOOR_SECS: f64 = 0.001;
 
+/// Recovery-patience bound on the frontier-slack placement deadline
+/// (goal-gate "C8 Slow-Path Conversion"): D_i = min(S, 9/8·srtt_i). 9/8 is
+/// RFC 9002's kTimeThreshold — the SAME constant the `RWM_RECOV_MP` hole
+/// law's `mp_time_threshold_us` uses — NOT a new tuning dial: a placement
+/// later than the hole law's patience is re-served cross-path no matter
+/// what the frontier needs, so the placement plane must never budget past
+/// it (the 2026-08-06 smoke falsification of the unbounded-S form).
+pub(crate) const PLACE_SLACK_RECOV_PATIENCE: f64 = 1.125;
+
 /// Controls the latency vs bandwidth trade-off in the interpolated objective.
 /// See paper Section 13.8.
 #[derive(Debug, Clone, Copy)]
@@ -2098,6 +2107,17 @@ pub struct Scheduler {
     block_affinity: bool,
     /// Smooth-WRR credit per path for the block-affinity pick.
     affinity_credit: HashMap<PathId, f64>,
+    /// Frontier slack S (seconds) for the placement cost (goal-gate "C8
+    /// Slow-Path Conversion", env `RWM_PLACE_SLACK`): the load term becomes
+    /// max(0, Ê_i − S)/ref_srtt — a path whose expected delivery fits
+    /// inside the in-order frontier's need-time costs nothing extra, so
+    /// placement deadline-aware water-fills (backlog_i ≈ rate_i·(S−owd_i),
+    /// capacity-proportional) instead of starving the slow path on the
+    /// propagation term. 0.0 (the default, and whenever the gate is OFF or
+    /// N = 1 or the ack-rate EWMA is cold) reproduces the shipped cost
+    /// BIT-EXACTLY (max(0, x − 0) = x). Set by the plain reliable window
+    /// sender on its 5 ms refresh cadence.
+    place_slack_secs: f64,
 }
 
 impl Scheduler {
@@ -2116,6 +2136,7 @@ impl Scheduler {
             hint,
             block_affinity: true,
             affinity_credit: HashMap::new(),
+            place_slack_secs: 0.0,
         }
     }
 
@@ -2123,6 +2144,18 @@ impl Scheduler {
     /// `false` = legacy per-symbol greedy striping).
     pub fn set_block_affinity(&mut self, enabled: bool) {
         self.block_affinity = enabled;
+    }
+
+    /// Set the frontier slack S (seconds) for the placement cost (goal-gate
+    /// "C8 Slow-Path Conversion", `RWM_PLACE_SLACK`). Non-finite / negative
+    /// input is treated as 0 (the shipped-identical operating point).
+    pub fn set_place_slack(&mut self, secs: f64) {
+        self.place_slack_secs = if secs.is_finite() { secs.max(0.0) } else { 0.0 };
+    }
+
+    /// Current frontier slack S (seconds) — gauge accessor.
+    pub fn place_slack(&self) -> f64 {
+        self.place_slack_secs
     }
 
     /// Update scheduling weights (e.g., when protocol hint changes).
@@ -2769,7 +2802,30 @@ impl Scheduler {
             // rate) and the propagation preference; because it is expressed in
             // TIME it is capacity-aware, so it water-fills by capacity rather
             // than over-loading the slow path.
-            let load = p.expected_delivery_load() / ref_srtt;
+            //
+            // Frontier-slack generalization (goal-gate "C8 Slow-Path
+            // Conversion", `RWM_PLACE_SLACK`): only the LATENESS beyond the
+            // per-path deadline D_i = min(S, 9/8·srtt_i) is charged —
+            // max(0, Ê_i − D_i). S = the frontier slack (need-time budget);
+            // the 9/8·srtt_i term is the RECOVERY plane's patience for a
+            // flight on this path (RFC 9002 kTimeThreshold — the SAME
+            // constant `mp_time_threshold_us` uses): a placement later than
+            // that gets re-served cross-path regardless of frontier need,
+            // so budgeting past it makes the planes fight (MEASURED, the
+            // 2026-08-06 smoke falsification of the unbounded-S form: c8
+            // 66.2 Mbit with retxo_p1 = 49%). S = 0 (gate off / N = 1 /
+            // cold ack-rate) is bit-exactly the shipped term. With S > 0 a
+            // path is free until its backlog's completion time reaches its
+            // deadline (deadline-aware water-filling: equilibrium
+            // backlog_i ≈ rate_i·(D_i − owd_i)), which ends the
+            // Bulk-softmax starvation of the slow path (its idle srtt_i/2
+            // propagation term alone was worth e^10:1 odds at T = 0.15)
+            // while bounding each placement's lateness continuously — no
+            // threshold, no mode, no per-topology branch.
+            let deadline = self
+                .place_slack_secs
+                .min(PLACE_SLACK_RECOV_PATIENCE * p.srtt().as_secs_f64());
+            let load = (p.expected_delivery_load() - deadline).max(0.0) / ref_srtt;
             // Bandwidth/correction burden (loss/wire waste); the hint's w_bw
             // dial. w_lat does NOT gate placement: on a reliable in-order stream
             // latency-to-frontier is the completion cost itself, already carried
@@ -3928,6 +3984,129 @@ mod tests {
         // Even heavily overdrafted, the lone path is still chosen.
         sched.path_mut(0).unwrap().in_flight = 10_000;
         assert_eq!(sched.place_symbol(false, &[]), Some(0));
+    }
+
+    // ── Frontier-slack placement (goal-gate "C8 Slow-Path Conversion",
+    //    `RWM_PLACE_SLACK`) — the law is a STRICT continuous generalization
+    //    of the shipped cost: S = 0 bit-identical, S > 0 un-starves the
+    //    slow path up to exactly its deadline-feasible backlog. ───────────
+
+    /// S = 0 (the default, and any non-finite/negative setter input)
+    /// reproduces the shipped placement distribution bit-exactly.
+    #[test]
+    fn place_slack_zero_is_bit_identical() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 50);
+        sched.path_mut(0).unwrap().in_flight = 7;
+        let base = sched.place_probs(false, &[]);
+        sched.set_place_slack(0.0);
+        assert_eq!(base, sched.place_probs(false, &[]));
+        sched.set_place_slack(-3.0);
+        assert_eq!(base, sched.place_probs(false, &[]));
+        sched.set_place_slack(f64::NAN);
+        assert_eq!(base, sched.place_probs(false, &[]));
+        assert_eq!(sched.place_slack(), 0.0);
+    }
+
+    /// Rising S monotonically feeds the slow path: the Bulk softmax's
+    /// idle-propagation starvation (p1 ~ e^-10 at S = 0) relaxes toward the
+    /// uniform clamp as S covers the slow path's delivery time — no
+    /// threshold, strictly non-decreasing in S.
+    #[test]
+    fn place_slack_monotonically_feeds_the_slow_path() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 50); // 5× slower — the c8 shape
+        let mut prev_p1 = -1.0;
+        for slack_ms in [0u64, 5, 10, 20, 30, 50, 100] {
+            sched.set_place_slack(slack_ms as f64 / 1000.0);
+            let p1 = prob_of(&sched.place_probs(false, &[]), 1);
+            assert!(
+                p1 >= prev_p1 - 1e-12,
+                "p1 must be non-decreasing in S: S={slack_ms}ms p1={p1} prev={prev_p1}"
+            );
+            prev_p1 = p1;
+        }
+        // Starved at S = 0 …
+        sched.set_place_slack(0.0);
+        assert!(prob_of(&sched.place_probs(false, &[]), 1) < 0.01);
+        // … equal-cost (uniform clamp) once S covers both idle delivery times.
+        sched.set_place_slack(0.1);
+        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
+        assert!((p1 - 0.5).abs() < 0.05, "clamped region ⇒ ~uniform, got p1={p1}");
+    }
+
+    /// The law still prices LATENESS: a slow path whose backlog's completion
+    /// time exceeds S is choked continuously (the c8-pbs unbounded-queue
+    /// failure cannot form).
+    #[test]
+    fn place_slack_still_chokes_beyond_the_deadline() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 50);
+        sched.set_place_slack(0.05); // S = 50 ms
+        // Backlog the slow path to ~2× cwnd: Ê_1 ≈ 2·50 + 25 = 125 ms ≫ S.
+        let cwnd1 = sched.path(1).unwrap().cwnd;
+        sched.path_mut(1).unwrap().in_flight = 2 * cwnd1;
+        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
+        assert!(p1 < 0.01, "deadline-exceeded slow path must be choked, got p1={p1}");
+    }
+
+    /// The lateness budget never exceeds the recovery plane's patience:
+    /// even with S at its 250 ms ceiling, a slow-path backlog whose
+    /// completion time exceeds 9/8·srtt_i is charged — the unbounded-S
+    /// smoke failure (placement tolerating 250 ms while the hole law
+    /// re-serves at ~9/8·srtt: retxo_p1 = 49%) cannot form.
+    #[test]
+    fn place_slack_deadline_capped_by_recovery_patience() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+        sched.add_path(0);
+        sched.add_path(1);
+        set_rtt(&mut sched, 0, 10);
+        set_rtt(&mut sched, 1, 50); // patience for p1 ≈ 56 ms
+        sched.set_place_slack(0.25); // S at the ceiling
+        // Backlog p1 so Ê_1 ≈ (8/10)·50 + 25 = 65 ms: inside S, but PAST
+        // the 9/8·srtt_1 = 56 ms recovery patience → must be charged.
+        sched.path_mut(1).unwrap().in_flight = 8;
+        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
+        assert!(
+            p1 < 0.4,
+            "beyond-patience backlog must lose mass even at max S, got p1={p1}"
+        );
+        // And the charge grows with the backlog (continuous choke).
+        sched.path_mut(1).unwrap().in_flight = 20;
+        let p1_deep = prob_of(&sched.place_probs(false, &[]), 1);
+        assert!(p1_deep < p1, "deeper backlog ⇒ smaller mass ({p1_deep} < {p1})");
+    }
+
+    /// Symmetric paths split 50/50 with or without slack — the c7 cell's
+    /// placement is untouched by the law (any symmetric cost ⇒ 50/50).
+    #[test]
+    fn place_slack_symmetric_split_unchanged() {
+        for slack in [0.0, 0.08, 0.25] {
+            let mut sched =
+                Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+            sched.add_path(0);
+            sched.add_path(1);
+            set_rtt(&mut sched, 0, 20);
+            set_rtt(&mut sched, 1, 20);
+            sched.path_mut(0).unwrap().in_flight = 5;
+            sched.path_mut(1).unwrap().in_flight = 5;
+            sched.set_place_slack(slack);
+            let dist = sched.place_probs(false, &[]);
+            let p0 = prob_of(&dist, 0);
+            assert!(
+                (p0 - 0.5).abs() < 1e-9,
+                "symmetric split must stay 50/50 at S={slack}, got p0={p0}"
+            );
+        }
     }
 
     // feat/btlbw-rate-sample: the BBR send-interval anchor must read the TRUE

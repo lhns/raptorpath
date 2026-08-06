@@ -9625,6 +9625,73 @@ last measured edge. Identity + tail-crown smoke on the deletion binary:
 sc2 84.1–85.6, c7 164.7–168.6, tail c2 p99 med 35/40 ms, 1000/1000 —
 the shipped default untouched (goal-gate "Code Consolidation 2").*
 
+### 16.32 C8 slow-path conversion: the question answered structurally — feeding the slow path source is negative-margin at this cell, under every placement law measured (2026-08-06, `feat/c8-conversion`)
+
+The §16.29/"C8-Aware Pool Law" arc ended by naming SLOW-PATH CONVERSION —
+not pool sizing — as the c8 binder (every pool law converges to
+fast-single + ~2.6 of the slow path's ~16 Mbit Σ-share). This section
+closes that question with a diagnosis-first instrumented answer.
+
+**Diagnosis (per-path conversion gauges, DIAG-only: placement counts,
+retransmits by original placement path, frontier-stall owner/resolver
+attribution, receiver first-copy vs duplicate classification with
+frontier lead).** The displacement hypothesis is REFUTED: ~90% of
+slow-path arrivals are FIRST copies in every arm — slow deliveries
+convert when they happen. Under the legacy-1024 pool the limiter is
+PLACEMENT STARVATION (slow share 4–9% vs its ~16% capacity share: the
+Bulk placement softmax's idle propagation term alone is worth e^10:1
+odds against the slow path, and the pool gate pauses admission before
+the fast path's queue term can ever spill placement); under the
+path-scaled pool placement DOES reach capacity share and the cell nets
+LESS — the lateness tax: 16–29% of slow-placed symbols are re-served
+cross-path (vs ~4.8% realized loss), partly through a named defect (the
+`RWM_RECOV_MP` hole law keys its path count and clocks on the
+saturation-filtered `active_paths()`, so a cwnd-full path collapses the
+law to its N=1 bypass mid-transfer — the same filter trap documented at
+the store laws), and the slow queue is need-time-unbounded (echo RTT to
+~560 ms over a 34–40 ms RTprop).
+
+**The pre-registered fix and its honest fate.** A frontier-slack
+placement law (`RWM_PLACE_SLACK`, default OFF): charge only the lateness
+beyond the in-order frontier's need-time, cost_i = max(0, Ê_i − D_i)/ref
+with D_i = min(span/R_ack, 9/8·srtt_i) — the second bound added after a
+smoke falsification showed placement must never budget past the recovery
+plane's patience (9/8 = RFC 9002's kTimeThreshold, the hole law's own
+constant). The law is a strict continuous generalization (S = 0 is the
+shipped cost bit-exactly; no mode, no threshold, no per-topology
+branch), and it WORKED as a mechanism: placement reached capacity share
+with the starvation gone. The battery refuted the PREDICTION both ways:
+c8 never beat both incumbents, and c7 fails its protection clause ≫σ on
+both seeds (0.858/0.896×Σ vs ≥0.97 required — flattening the short-term
+queue differential costs the symmetric cell its per-symbol load
+balancing). Register row; no tuning pass. The companion defect fix
+(`RWM_RECOV_MP_LIVE`: hole-law N/clocks on `live_paths()`) is
+gauge-proven — young fires collapse 412–749 → ~16, slow re-serving
+26–29% → 4–8% — and lifts the path-scaled pool's c8 collapse floor
+(+8–12 in 3 of 4 pairings, min run 49.5 → 73.3), but a 3/3-pairwise
+dual-c1 regression (−11 mean) blocks its default flip; it ships OFF as a
+measured A/B arm with the dc1 interaction as the named follow-up.
+
+**The structural result (the table that closes the chapter).** Across
+five placement arms spanning slow-source shares of 6–18%, c8 goodput is
+MONOTONICALLY ANTI-CORRELATED with the slow path's source share on both
+seeds: 6.2% → 88.6 (0.874×Σ); 11.2% → 88.4; 16–18% → 70–83 — and the
+ordering survives killing the re-serving tax entirely. What conversion
+banks, the in-order frontier pays back with interest: slow-owned
+frontier stalls (24–39% of stall time on ≤18% of placements) and the
+end-of-object drain tail (the last slow-queued symbols serialize
+completion). **At a 5×-rate / 4×-RTT / 2×-loss asymmetry, an in-order
+object transport should NOT feed the slow path source; its optimum is
+fast-path source + slow-path recovery traffic ≈ fast single + 2–3
+Mbit.** The external reference obeys the same law: kernel MPTCP-BBR
+banks +3.1/−2.4 vs its own same-session single-path BBR at this cell.
+The pre-registered ≥0.87×Σ line is held by the legacy-1024 arm
+(0.874/0.871×Σ, both seeds), 1–4 Mbit under kernel MPTCP-BBR — and the
+REMAINING distance to that bar is the single-path c2 gap (§16.30's
+framing + reactive accounting), not multipath: closing c2 closes c8.
+Pool-law re-settlement: no law wins both cells (legacy c8, path-scaled
+c7 — the shipped default unchanged); the c8 WATCH stands with its
+mechanism now fully named.
 ### 16.33 The adversarial cells: where each controller actually breaks (2026-08-06, `meas/adversarial-cells`, measurement only)
 
 ADR-0068's fusion was gated on a prerequisite the clean rig could not
@@ -9688,7 +9755,6 @@ the policer as blocked on the burst-loss recovery prerequisite. A
 prediction table where the most confident row (shallow-buffer
 loss-conversion) inverts is exactly what the pre-registration
 discipline is for: the map, not the indictment, is the deliverable.
-
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -10163,7 +10229,7 @@ traverses the same seeded GE direction.
 | c2 bulk (GE 2.6%) | 78.6–78.7 | quinn-BBR 91.9–92.4 | **LOSS −14%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine |
 | c3 bulk (20 Mbit lossy) | 16.1 | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | **LOSS −9…−13%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling |
 | c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |
-| c8 bulk (dual c2+c3) | 67–74 | MPTCP-BBR 90–93; single-path TCP-BBR 89.5–92.1 | **LOSS −21…−27%**, below even single-path kernel BBR — the §17.7 c8 WATCH externally confirmed |
+| c8 bulk (dual c2+c3) | 67–74 (shipped; session-episodic 70–88 — §16.32) | MPTCP-BBR 90–93; single-path TCP-BBR 89.5–92.1 | **LOSS −21…−27%**, below even single-path kernel BBR — the §17.7 c8 WATCH externally confirmed. **Closed structurally 2026-08-06, §16.32: slow-path source is negative-margin at this asymmetry under every placement law measured (share↑ ⇒ goodput↓, monotone, both seeds); the legacy-1024 arm holds 0.874/0.871×Σ (88.6/87.6) — 1–4 Mbit under the kernel MPTCP bar, whose own slow-path banking is +3.1/−2.4; the remaining c8 gap ≡ the single-path c2 gap (§16.30)** |
 | c2 realtime tails | p99 med 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms + delivery cliffs (to 687/1000) | **WIN ×1.4–8.8 / ×5–38** |
 | c3 realtime tails | p99 med 92–103 ms, 1000/1000 | QUIC 150–759 ms (worst reps 38–44 s); TCP 830–3878 ms (delivered to 525/1000) | **WIN ×1.5–41**; only delivery-complete arm |
 
@@ -10190,7 +10256,12 @@ Honest readings, in both directions:
   measured dead at singles); `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ at sc3,
   no flip; successor levers named: window/inflight decoupling +
   MTU/payload scaling**), and the c8-aware pool law (now priced at
-  ~+20 Mbit by an external referee).
+  ~+20 Mbit by an external referee — **executed to structural closure
+  2026-08-06, §16.32: the "+20" decomposes as ~+15 legacy-pool class
+  (0.874×Σ, reachable today via the pool WATCH) + the rest owned by the
+  single-path c2 gap; slow-path source conversion itself is measured
+  negative-margin at this cell under every placement law, matching the
+  kernel referee's own +3.1/−2.4 slow-path banking**).
 - **The Cubic-collapse findings that motivated wall #1 are confirmed on
   the reference stacks themselves**: quinn stock (Cubic) does 24–26 at
   c2 and 3.2–4.8 at c3 (same stack, CC swap to BBR = ×3.8); kernel
