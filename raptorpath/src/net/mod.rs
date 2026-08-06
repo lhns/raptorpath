@@ -2033,6 +2033,28 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut reasm_max_pending: usize = 0;
         let mut reasm_max_span: u64 = 0;
         let mut reasm_last_report = Instant::now();
+        // feat/c8-conversion DIAGNOSIS gauges (goal-gate "C8 Slow-Path
+        // Conversion", RWM_DIAG only — behavior-inert): the RECEIVER-side
+        // view of slow-path conversion, per arrival path:
+        //  * first[p]  — seqs whose FIRST copy this path delivered (source
+        //    arrival or repair-decode output) = the path's real conversion.
+        //  * dup[p]    — source arrivals for an already-received seq =
+        //    displacement-only deliveries (candidate (b): a cross-path
+        //    retransmit or the outrun original got there first).
+        //  * lead[p]   — Σ (seq − in-order frontier) at first-copy arrival,
+        //    in symbols (candidate (d) arrival-alignment: lead 0 = the
+        //    stream was already WAITING on this symbol when it arrived).
+        //  * unb_n/ms[p] — frontier unblocks credited to this path: an
+        //    arrival that advanced the stalled (≥ 5 ms) in-order frontier,
+        //    with the stall time it ended (candidate (c) resolution side).
+        let c8r_on = recv_gates.diag;
+        let mut c8r_first: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut c8r_dup: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut c8r_lead: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut c8r_unb_n: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut c8r_unb_ms: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+        let mut c8r_last_adv = Instant::now();
+        let mut c8r_last_print = Instant::now();
         // Generation-deficit feedback (§16.3), receiver arm. `gen_widths[anchor]`
         // = the generation's K_g, learned self-describingly from the wire header
         // (`window_count`) of any coded symbol for that anchor. Deficit_g =
@@ -2882,6 +2904,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             }
                         }
                         for symbol in &batch.symbols {
+                            // feat/c8-conversion DIAG: a source arrival for a
+                            // seq already received = a displacement-only
+                            // delivery on this path (its goodput was already
+                            // banked by the other copy).
+                            if c8r_on
+                                && !symbol.is_repair
+                                && received_seqs.contains(&symbol.block_id)
+                            {
+                                *c8r_dup.entry(path_id).or_insert(0) += 1;
+                            }
                             let recovered = if fdiag_on {
                                 let t_dec = Instant::now();
                                 let r = win_dec.add_symbol(symbol);
@@ -2900,6 +2932,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 received_seqs.insert(seq);
                                 if seq > highest_seen_seq {
                                     highest_seen_seq = seq;
+                                }
+                                // feat/c8-conversion DIAG: FIRST copy of this
+                                // seq, credited to the arrival path, with its
+                                // lead over the in-order frontier (symbols).
+                                if c8r_on {
+                                    let frontier = reorder_buf
+                                        .as_ref()
+                                        .map(|r| r.next_deliver_seq())
+                                        .unwrap_or(ooo_frontier);
+                                    *c8r_first.entry(path_id).or_insert(0) += 1;
+                                    *c8r_lead.entry(path_id).or_insert(0) +=
+                                        seq.saturating_sub(frontier);
                                 }
 
                                 // RWM Phase C (paper §16.2, H→∞ corner):
@@ -2964,6 +3008,20 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                     vec![(seq, sym_data)]
                                 };
 
+                                // feat/c8-conversion DIAG: this arrival
+                                // advanced the in-order frontier — if it had
+                                // been stalled ≥ 5 ms, credit the unblock
+                                // (and the stall it ended) to this path.
+                                if c8r_on && !deliverable.is_empty() {
+                                    let gap = c8r_last_adv.elapsed();
+                                    if gap >= Duration::from_millis(5) {
+                                        *c8r_unb_n.entry(path_id).or_insert(0) += 1;
+                                        *c8r_unb_ms.entry(path_id).or_insert(0) +=
+                                            gap.as_millis() as u64;
+                                    }
+                                    c8r_last_adv = Instant::now();
+                                }
+
                                 for (dseq, ddata) in deliverable {
                                     for pkt_data in extract_window_packets(&ddata, window_packed) {
                                         match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
@@ -2981,6 +3039,41 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                         highest_delivered_seq = dseq;
                                     }
                                 }
+                            }
+                        }
+
+                        // feat/c8-conversion DIAG: the receiver-side
+                        // conversion gauges, cumulative, ~1/s (keys sorted
+                        // for stable scraping). fst/dup = first-copy vs
+                        // displacement deliveries; lead = mean first-copy
+                        // frontier lead (symbols); unb = frontier unblocks
+                        // credited / stall ms ended.
+                        if c8r_on && c8r_last_print.elapsed() >= Duration::from_secs(1) {
+                            c8r_last_print = Instant::now();
+                            let mut keys: Vec<u32> = c8r_first
+                                .keys()
+                                .chain(c8r_dup.keys())
+                                .chain(c8r_unb_n.keys())
+                                .copied()
+                                .collect();
+                            keys.sort_unstable();
+                            keys.dedup();
+                            if !keys.is_empty() {
+                                let mut s = String::new();
+                                for k in keys {
+                                    let f = c8r_first.get(&k).copied().unwrap_or(0);
+                                    s.push_str(&format!(
+                                        " p{}:fst={} dup={} lead={:.0} unb={}/{}ms",
+                                        k,
+                                        f,
+                                        c8r_dup.get(&k).copied().unwrap_or(0),
+                                        c8r_lead.get(&k).copied().unwrap_or(0) as f64
+                                            / f.max(1) as f64,
+                                        c8r_unb_n.get(&k).copied().unwrap_or(0),
+                                        c8r_unb_ms.get(&k).copied().unwrap_or(0),
+                                    ));
+                                }
+                                eprintln!("[C8CONV-R]{}", s);
                             }
                         }
 
@@ -5796,6 +5889,32 @@ async fn run_window_sender(
     /// the service wall is ~3 ms; 50 ms only binds on low-rate paths.
     const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 
+    // feat/c8-conversion DIAGNOSIS gauges (goal-gate "C8 Slow-Path
+    // Conversion", RWM_DIAG only — behavior-inert): why don't slow-path
+    // symbols CONVERT to delivered goodput at the heterogeneous dual cell?
+    //  * c8c_src_placed[p]  — cumulative FIRST source placements per path
+    //    (candidate (a), placement starvation: compare against the path's
+    //    capacity share from btlbw/qdisc truth).
+    //  * c8c_retx_orig[p]   — cumulative targeted retransmits whose ORIGINAL
+    //    placement path was p (candidate (d), arrival-misalignment: slow-
+    //    placed symbols being re-served spuriously shows up as
+    //    retx_orig[slow]/src_placed[slow] ≫ the path's realized loss rate).
+    //  * c8c_stall_ms/n[p]  — cumulative frontier-stall wall time (ack
+    //    advance gaps ≥ 5 ms) attributed to the OWNER path of the blocking
+    //    hole seq = prev_ack+1 at resolution (candidate (c), HoL coupling:
+    //    which path's holes serialize the cumulative frontier).
+    //    The receiver-side [C8CONV-R] gauge carries the arrival-side view
+    //    (first-copy vs duplicate per path + frontier lead + unblock
+    //    attribution — candidates (a)/(b)/(d)).
+    // Declared BEFORE `send_source_symbol!` (macro_rules hygiene: the macro
+    // body's identifiers resolve against bindings visible at the DEFINITION
+    // site).
+    let mut c8c_src_placed: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+    let mut c8c_retx_orig: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+    let mut c8c_stall_ms: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+    let mut c8c_stall_n: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+    let mut c8c_last_ack_adv_us: u64 = 0;
+
     // Helper macro: feed a framed symbol to encoder + send + stats + repair debt
     macro_rules! send_source_symbol {
         ($framed:expr) => {{
@@ -5997,6 +6116,10 @@ async fn run_window_sender(
 
             // Track which path this source was sent on (for cross-path retransmission)
             source_path_map.insert(wire_sym.block_id, source_path);
+            // feat/c8-conversion DIAG: per-path FIRST source placement count.
+            if diag_on {
+                *c8c_src_placed.entry(source_path).or_insert(0) += 1;
+            }
 
             // task #86: charge this seq to its placement path's outstanding
             // account, in lockstep with the sent_store insert above (percap_on
@@ -7388,6 +7511,35 @@ async fn run_window_sender(
                     gdiag,
                     pp,
                 );
+                // feat/c8-conversion DIAG: the sender-side conversion gauges
+                // (cumulative; keys sorted for stable scraping). splace =
+                // first source placements; retxo = targeted retransmits by
+                // ORIGINAL placement path; stallo = frontier-stall ms/count
+                // by blocking-hole owner path.
+                {
+                    let mut keys: Vec<u32> = c8c_src_placed
+                        .keys()
+                        .chain(c8c_retx_orig.keys())
+                        .chain(c8c_stall_ms.keys())
+                        .copied()
+                        .collect();
+                    keys.sort_unstable();
+                    keys.dedup();
+                    if !keys.is_empty() {
+                        let mut s = String::new();
+                        for k in keys {
+                            s.push_str(&format!(
+                                " p{}:sp={} ro={} st={}ms/{}",
+                                k,
+                                c8c_src_placed.get(&k).copied().unwrap_or(0),
+                                c8c_retx_orig.get(&k).copied().unwrap_or(0),
+                                c8c_stall_ms.get(&k).copied().unwrap_or(0),
+                                c8c_stall_n.get(&k).copied().unwrap_or(0),
+                            ));
+                        }
+                        eprintln!("[C8CONV-S]{}", s);
+                    }
+                }
                 diag_last_us = dnow;
                 diag_last_ack = ack_now;
                 diag_last_src = src_now;
@@ -8525,6 +8677,11 @@ async fn run_window_sender(
                             mpd_fired_ripe += 1;
                         }
                         *mpd_fired_on.entry(nack_path).or_insert(0) += 1;
+                        // feat/c8-conversion DIAG: retransmit attributed to
+                        // the seq's ORIGINAL placement path (conversion-
+                        // failure candidate (d): slow-placed symbols being
+                        // re-served on the fast path).
+                        *c8c_retx_orig.entry(original_path).or_insert(0) += 1;
                     }
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
@@ -8626,6 +8783,24 @@ async fn run_window_sender(
         // Advance encoder window based on receiver ACKs
         let ack = window_ack_seq.load(Ordering::Relaxed);
         if ack > prev_ack {
+            // feat/c8-conversion DIAG: attribute the just-ended frontier
+            // stall (time since the previous cumulative advance, ≥ 5 ms)
+            // to the ORIGINAL placement path of the hole that was blocking
+            // (seq = prev_ack + 1) — read BEFORE the cleanup below prunes
+            // source_path_map to ack+1.
+            if diag_on {
+                let nowa = now_us();
+                if c8c_last_ack_adv_us > 0 {
+                    let dt_us = nowa.saturating_sub(c8c_last_ack_adv_us);
+                    if dt_us >= 5_000 {
+                        if let Some(&owner) = source_path_map.get(&(prev_ack + 1)) {
+                            *c8c_stall_ms.entry(owner).or_insert(0) += dt_us / 1000;
+                            *c8c_stall_n.entry(owner).or_insert(0) += 1;
+                        }
+                    }
+                }
+                c8c_last_ack_adv_us = nowa;
+            }
             // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
             let newly_acked = ack - prev_ack;
             // Compute the repair rate AND the derived window target (paper
