@@ -165,6 +165,12 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # default flip).
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
+            # feat/window-mtu (goal-gate "Window Decoupling + MTU Scaling"):
+            # the crown-gate arms — part 2 compact framing (mandatory spot),
+            # part 1 decoupled window, and the composed pair.
+            mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
+            wdfix)   AENV="RWM_WIN_DECOUPLE=1"; AFLAGS="" ;;
+            wdmtu)   AENV="RWM_WIN_DECOUPLE=1 RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
