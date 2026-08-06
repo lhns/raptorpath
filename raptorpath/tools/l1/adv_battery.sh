@@ -179,7 +179,9 @@ except FileNotFoundError:
 sec = None
 stats = {}   # (section, kind) -> (sent_pkt, dropped)
 kind = None
-sent_re = re.compile(r"Sent (\d+) bytes (\d+) pkt \(dropped (\d+)")
+# NOTE: qdisc stats print "pkt", the police action stats print "pkts"
+# (validated live on the VM, 2026-08-06) — accept both.
+sent_re = re.compile(r"Sent (\d+) bytes (\d+) pkts? \(dropped (\d+)")
 try:
     for line in open("/tmp/adv-q.txt", errors="replace"):
         if line.startswith("== "):
