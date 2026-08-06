@@ -102,6 +102,24 @@ if [[ "$SCOPE" == "singles" || "$SCOPE" == "all" ]]; then
   done
 fi
 
+# Post-scope-fix supplemental (the falsification-5 re-run): the dual fix
+# arms on the FIXED binary with their own interleaved def controls.
+if [[ "$SCOPE" == "redual" ]]; then
+  for REP in $(seq 1 $REPS); do
+    run_one c7-def2 ""       c2 c2 200000000 dual
+    run_one c7-fix2 "$E_FIX" c2 c2 200000000 dual
+    run_one c8-def2 ""       c2 c3 25000000 dual
+    run_one c8-fix2 "$E_FIX" c2 c3 25000000 dual
+  done
+  for a in c7-def2 c7-fix2 c8-def2 c8-fix2; do
+    n=$(awk "/=== rep=.* arm=$a /{f=1} f&&/\"summary\":true/{c++;f=0} END{print c+0}" "$OUT")
+    echo "ARMCOUNT $a n=$n" >> "$OUT"
+  done
+  echo "BATTERY-DONE seed=$SEED_ARG scope=$SCOPE $(date -u +%FT%TZ)" >> "$OUT"
+  echo BATTERY-DONE
+  exit 0
+fi
+
 if [[ "$SCOPE" == "duals" || "$SCOPE" == "all" ]]; then
   for REP in $(seq 1 $REPS); do
     run_one c7-def ""       c2 c2 200000000 dual
