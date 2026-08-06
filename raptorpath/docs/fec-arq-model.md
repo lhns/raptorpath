@@ -9815,6 +9815,63 @@ sc3 ever measured (16.86/16.84) — recorded as the starting point for
 any future re-ask, which must attack the re-serve clock or the recovery
 dwell, not the window.
 
+### 16.35 The receiver per-message wall: one mis-scaled detector was a quarter of every core-second, and the c1 sink more than doubles (2026-08-06, `feat/recv-permsg`, `RWM_EST_CADENCE` DEFAULT OFF)
+
+§16.28's verdict named its successor with numbers: after sender
+batching, the engine RECEIVER saturated (~1.1 cores) at its ~22–23k
+msgs/s per-message service wall ≈ 210–230 Mbit/sink — ×4.3 under
+quinn-BBR's 915 on the same box. The v5 re-baseline moved the def arm
++7% (the compact parse is measurably cheaper) and left the receiver
+the binder, so the profile targeted it at the wall.
+
+**The profile (both sides + the reference).** The dominant family on
+BOTH sides is one call chain: `LossEstimator::record_batch` → the
+inlined Adams-MacKay BOCD changepoint update — 22.4%/core on the
+receiver (which runs it per received Data message before sending the
+legacy per-batch Ack) and 25.9%/core on the sender (which runs it per
+received Ack). The detector is O(MAX_RUN_LENGTH = 200) with ~2 ln +
+1 exp per run length and two Vec allocations PER UPDATE — designed,
+per its own constructor comment, for ~2 s batch cadence ("regime
+changes every ~100 batches"), and driven by the window wire at
+~22 kHz: ≈ 4.4 M transcendentals + 44k allocations per second per
+side. Everything else is flat (allocator ~5%, loop machinery ~3%,
+AEAD 2.2% — noise again). The same-box reference row: quinn-perf's
+receiver takes 946 Mbit/s at 0.455 cores ≈ **5.1 µs/QUIC-packet**,
+AEAD-dominated, acking once per ~24 packets — while rp paid **~48
+µs/message** with ~2 control datagrams emitted per data message.
+Decoder/reassembly/frontier — the FEC feature's own cost — did not
+chart (< 0.4%/core at c1): the gap was overhead, not feature.
+
+**The build (`RWM_EST_CADENCE`, default OFF, pure compute, no wire or
+timing change):** restore the detector's design cadence. Clean
+observations accumulate; the BOCD flushes the accumulated counts on
+every LOSS-bearing call (zero staleness on informative observations)
+or a 10 ms heartbeat (≪ the 100 ms recovery round). EWMA, Beta,
+burst flag, and the per-symbol GE chain stay per-call.
+
+**Measured (seeds 42+7, ×8 interleaved, dnf 0):** c1 def 193.7/197.8
+→ est **314.8/323.1 (+62.5/+63.3%, per-run ranges disjoint)**;
+composed with §16.28's sender batching: **446/460 at 400 MB and
+480–505 Mbit/s sustained at 1.2 GB** — the per-message service wall
+moved from ~22–23k to **~46–62k msgs/s serviced (~23 µs/message, was
+~48)**, and the estimator family is gone from the post-build chart.
+sc2/sc3 hold within σ at −22…−40% CPU (the tax was real everywhere;
+only c1 had wire headroom to convert it); realtime crown unregressed
+(medians 36.4/42.6 ms, 1000/1000 every rep). **No flip:** the c7
+dual clause failed (0.942/0.951×Σ vs required 0.97, both seeds) with
+the mechanism gauge-attributed — the faster ack clock feeds the
+LEGACY plain anchor's windowed-MAX burst peaks (btlbw over-read a
+further ×3.4–3.7, echo 265 ms, sweeps ×7), and only the N ≥ 2 pooled
+store has headroom to convert that into a standing queue; at N = 1
+the 1024 latch clamps it inert. The named successor composes the
+cadence with the honest-anchor family (ADR-0061) at duals. Distance
+to the external bar after this branch: quinn-BBR 915–922 = ×1.8–2.0
+of the measured opt-in ceiling (was ×4.3); the remaining per-message
+terms are flat, with the dual-ack density (legacy per-batch Ack +
+WindowAck vs quinn's 1-per-~24) the largest named structural
+residual, measured below this session's 5% build bar. Goal-gate
+"Receiver Per-Message Wall" carries the full tables.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -10285,7 +10342,7 @@ traverses the same seeded GE direction.
 
 | condition × workload | rp shipped default | best competitor | verdict |
 |---|---|---|---|
-| c1 bulk (clean 1 Gbit) | 164–168 Mbit/s | quinn-BBR 915; kernel TCP ~900 | **LOSS ×5.5** — the §16.23 engine service walls, externally priced |
+| c1 bulk (clean 1 Gbit) | 164–168 Mbit/s → **~200 shipped (v5 framing, §16.34); 446–505 measured opt-in (`RWM_EMIT_BATCH` + `RWM_EST_CADENCE`, §16.28/§16.35 — both default OFF behind their pre-registered gates)** | quinn-BBR 915; kernel TCP ~900 | ~~LOSS ×5.5~~ → **LOSS ×4.6 shipped / ×1.8–2.0 at the measured opt-in ceiling** — the §16.23 engine service walls, externally priced; the receiver per-message wall executed 2026-08-06 (§16.35: the per-message BOCD update was 22–26%/core per side; wall 22–23k → 46–62k msgs/s) |
 | c2 bulk (GE 2.6%) | 78.6–78.7 → **87.8–88.1 (compact framing default ON, 2026-08-06, §16.34)** | quinn-BBR 91.9–92.4 | ~~LOSS −14%~~ → **LOSS −4…−5%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine. **Framing term EXECUTED 2026-08-06, §16.34: v5 compact DATA framing (`RWM_WIRE_COMPACT`, flipped default ON) banks +2.6/+3.6 ≫σ both seeds; the window-decoupling lever was measured and refuted (register)** |
 | c3 bulk (20 Mbit lossy) | 16.1 → **16.6 (compact framing, §16.34)** | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | ~~LOSS −9…−13%~~ → **LOSS −8…−11%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling. **Executed 2026-08-06, §16.34: compact framing +0.55/+0.60 ≫σ (flipped ON); decoupling refuted at the singles (the re-fire loop is re-serve-clocked, not queue-sustained — the §16.30 spurious-retx term is re-attributed)** |
 | c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |
@@ -10308,7 +10365,12 @@ Honest readings, in both directions:
   `RWM_EMIT_BATCH`, no flip at the pre-registered ≥400 bar); GSO was
   already engaged and AEAD is noise; the residual c1 binder is the
   engine-receiver per-message service wall ~22–23k msgs/s ≈ 210–230
-  Mbit/s per sink**), the
+  Mbit/s per sink — ITSELF executed 2026-08-06, §16.35: the wall was
+  one mis-scaled changepoint detector (22–26%/core per side), and the
+  cadence fix (`RWM_EST_CADENCE`) + sender batching take the measured
+  opt-in sink to 446–505 Mbit/s (~×2.2 the shipped c1 class); no flip
+  (the c7 anchor-interaction clause), gap to quinn now ×1.8–2.0 at the
+  opt-in ceiling**), the
   recovery-plane residual (c2/c3 — quinn-BBR's numbers are the measured
   bar for the same pipes — **executed 2026-07-27, §16.30: the gap is
   ACCOUNTED TO CLOSURE (framing/MTU tax ~4.3/0.95 + reactive over-fire

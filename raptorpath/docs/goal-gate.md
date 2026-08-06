@@ -14757,3 +14757,156 @@ battery ARM (eb+est), not a build — the sender binds second on v5 but
 its gate's own flip rule (c1 ≥ 400) is untouched here.
 
 *(Battery results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16; binary sha256 4f6a3f5e… = commit 224b915, built fresh (stale rm'd, CRLF-converted), SAME binary every run incl. probes/tails; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, RWM_GEN=0 RWM_DIAG=1; driver `recvwall_battery.sh` + `tail_matrix.sh` (new `est` arm) + in-line probe loop; runtimes: s42 22:02:01–22:19:40 UTC (18 min, 80/80 clean, 0 retries), s7 22:22:21–22:41:17 (19 min, 79 completed + the seed-7 flake class: 18 RUN-RETRY recovered, 1 RUN-LOST sc2-est r2 → n=7 quoted), tails 22:48–23:00 (incl. the ×6 re-run), probes/post-perf 23:00–23:06; dnf = 0 in every completed run; liveness echoes asserted per arm BOTH directions (est echo required on client AND server), 0 ARM-LIVENESS-FAIL / 0 ARM-CONTAMINATION on captured runs; logs + per-run diag under `/home/vibe/recvwall/`)
+
+**Goodput (Mbit/s, mean ± σ_s (n)); est = `RWM_EST_CADENCE=1`, eb =
+`RWM_EMIT_BATCH=1`:**
+
+| cell | arm | s42 | s7 |
+|---|---|---|---|
+| **c1 single 400 MB** | def | 193.7 ± 4.7 (8) | 197.8 ± 5.5 (8) |
+| | **est** | **314.8 ± 19.4 (8) +62.5%** | **323.1 ± 25.7 (8) +63.3%** |
+| | eb | 218.7 ± 8.1 (8) | 215.2 ± 5.5 (8) |
+| | **eb+est** | **446.0 ± 13.8 (8) [417.6–459.2]** | **459.7 ± 33.4 (8) [402.0–505.7]** |
+| sc2 single 100 MB | def | 88.04 ± 0.69 (8) | 87.23 ± 2.03 (8) |
+| | est | 88.36 ± 0.48 (8) HOLD | 88.18 ± 0.94 (7) HOLD |
+| sc3 single 25 MB | def | 16.61 ± 0.27 (8) | 16.70 ± 0.16 (8) |
+| | est | 16.81 ± 0.37 (8) HOLD | 16.66 ± 0.12 (8) HOLD |
+| c7 dual 200 MB | def | 171.1 ± 2.3 (8) = 0.972×Σ | 173.4 ± 2.5 (8) = 0.994×Σ |
+| | est | **166.5 ± 4.9 (8) = 0.942×Σ** | **167.7 ± 2.4 (8) = 0.951×Σ** |
+
+Every c1 arm-pair's per-run RANGES are DISJOINT on both seeds (def max
+204.4/205.4 < est min 273.1/267.5; eb max 229.9/220.7 < eb+est min
+417.6/402.0). The eb+est composition is SUPER-additive (+16% × +63% →
++130/+132% vs def): the two levers relieve OPPOSITE sides of the same
+per-message pipeline. Longer-object datum (profile runs, 1.2 GB):
+eb+est sustains **480–505 Mbit/s single-path** (the 400 MB numbers
+carry ~2 s of BBR ramp).
+
+**CPU (mean s/invocation, whole invocation incl. warm-up):**
+
+| cell | CPUSRV def→est (s42/s7) | CPUCLI def→est (s42/s7) |
+|---|---|---|
+| c1 | 17.5→12.0 / 17.1→11.6 (eb+est: **8.8 / 8.5**) | 17.2→13.2 / 17.0→12.7 (eb+est: **8.1 / 7.8**) |
+| sc2 | 7.13→**4.42 (−38%)** / 6.87→4.14 (−40%) | 6.05→4.63 (−23%) / 5.77→4.48 (−22%) |
+| sc3 | 2.39→1.63 (−32%) / 2.27→1.58 | 2.60→2.05 / 2.48→1.98 |
+| c7 | 12.6→10.0 / 12.5→9.7 | 13.9→12.7 / 13.8→12.4 |
+
+Receiver CPU/bit at c1: −58% (est), −72% (eb+est ≈ 1.0–1.05 cores at
+446–460). sc2/sc3: −22…−40% CPU at EQUAL goodput — the estimator tax
+was real at every cell; only c1 had wire headroom to convert it.
+
+**Engine-sink probes (RWM_RDIAG, single-c1 400 MB, seed 42): the wall
+VISIBLY MOVED** — def 19.4–23k msgs/s at busy 83–85% (STEP 0); est
+24.4–33.0k at busy 72–77% (goodput 291/324); **eb+est 45.8–61.6k
+msgs/s serviced at busy 76–81%** (goodput 472/480), queue bounded
+(q_max ≤ 1027 of 4096, no growth trend). Per-message service time at
+the wall: ~48 µs (STEP 1) → **~23 µs** (eb+est battery CPU ÷ rate).
+
+**Mechanism gauges (predictions 1/3):** post-build receiver perf at
+the eb+est wall (505 Mbit/s run): the record_batch/exp/log family is
+GONE from the ≥ 0.4% chart (was 22.4%/core) — top receiver terms now
+_int_malloc 5.09, engine-loop closure 4.29, memmove 3.73, AEAD 3.47,
+spin-lock 2.35. Recovery gauges at the lossy cells hold class in
+every arm: sc2 fired 3116–3530 (def) vs 2974–3822 (est), echo
+~100–107 ms both; sc3 fired 2226–2727 vs 1746–2584, echo bimodal
+55–541 vs 175–533 both; c7 fired 4929–6141 vs 4452–5927 (est fires
+FEWER, y-share lower). No falsification-(i) signal anywhere.
+
+**The c7 term, gauge-attributed (the prediction-4 failure's named
+mechanism):** in the c7-est arms the LEGACY plain-mode BtlBw anchor
+over-reads a further **×3.4–3.7** (per-path btlbw gauge 304–349k
+sym/s vs def's 88–92k — on top of the documented ×4.6–7.4 legacy
+over-read), cwnd 5860 vs 1779, per-path bdp caps 2952/3714 vs
+756/1103 — with echo RTT 265 ms class (def 125–171), sidle 1995 ms/219
+events (def 594/103), sweeps 21 (def 3), recovery age 274 ms (def
+143). Reading: the cheaper receiver emits acks in tighter bursts; the
+legacy anchor's windowed-MAX takes the burst peak; at N ≥ 2 the
+path-scaled pooled store (cap 4096) has HEADROOM for the inflated
+anchor, so a standing queue forms and recovery patience stretches —
+−2.7/−3.3% goodput. At N = 1 the 1024 latch clamps the same
+inflation inert (sc2/sc3/c1 all hold or gain) — the anchor-hygiene
+family's known defect surface (ADR-0061), reached through a NEW
+channel (ack-clock speed), not a property of the posterior cadence
+itself.
+
+**Crown gate (tail_matrix c2 spot, seed 42, ship ↔ est):** p99 medians
+ship 35.9 (400 B) / 39.2 (1200 B); est 36.4 / 42.6 — all inside the
+historic ~36–48 ms class; **1000/1000 delivered in every rep, both
+arms.** One est-1200B rep read p99 222 ms (historic worst-rep class:
+164–193 on code-identical paths); the arm was re-run ×6 same session:
+36.8–47.6 ms, no recurrence (pooled est-1200B n=10 median 41.8) —
+recorded as the documented single-rep session-noise class, delivery
+complete throughout. Crown UNREGRESSED.
+
+### VERDICT vs the amendment — the c1 predictions land ABOVE their bands; the flip is blocked by the c7 clause
+
+1. **Mechanism (prediction 1): PASS** — the 22.4/25.9%-per-core
+   estimator family is off the chart on both sides; CPU/bit −22…−72%.
+2. **c1 (prediction 2): PASS, above the pre-registered bands** — est
+   +62.5/+63.3% (band floor +8%, band 215–240 — measured 314.8/323.1);
+   eb+est 446/460 (band 235–265); msgs/s wall 22–23k → 46–62k (gate
+   ≥ 26k). The overshoot is recorded as a band miss in the FAVORABLE
+   direction: the profile's 22% share under-predicted the gain because
+   the freed core-seconds also relieved the futex/wake serialization
+   around the same loop (the sink scales super-linearly near
+   saturation).
+3. **sc2/sc3 (prediction 3): PASS** — hold within σ on both seeds with
+   recovery classes unchanged and −22…−40% CPU.
+4. **c7 ≥ 0.97×Σ (prediction 4): FAIL on both seeds** (0.942/0.951 vs
+   def's 0.972/0.994; Δ −4.6/−5.7 ≈ 2σ, consistent) — crown/dnf/echo
+   clauses all pass. Per the fixed flip rule: **NO FLIP —
+   `RWM_EST_CADENCE` ships DEFAULT OFF** (measured A/B lever, 3 law
+   tests). NO register row: discipline 11's names-a-new-mechanism
+   clause governs — the failure isolates the legacy anchor's
+   burst-peak windowed-MAX under a faster ack clock at the N ≥ 2
+   pooled store (gauges above), while the cadence itself behaves
+   exactly as derived at every N = 1 cell. SUCCESSOR (named, NOT
+   built, needs its own item-11 pre-registration): compose
+   `RWM_EST_CADENCE` with the honest-anchor family at duals
+   (`RWM_PLAIN_RS`/honest caps — burst-robust send-interval sampling
+   is exactly ADR-0061's cure for this over-read class), or
+   burst-robustify the legacy anchor's rate sample directly; either
+   would also unblock the composition for the c7/c8 cells.
+
+**The wall's new position (the deliverable):** v5 default c1 sink
+~200 Mbit/s; +`RWM_EMIT_BATCH` ~218; +`RWM_EST_CADENCE` ~315–323;
+**both ~446–460 (400 MB) / 480–505 sustained (1.2 GB) at ~46–62k
+msgs/s serviced** — the engine-receiver per-message service wall
+moved from ~22–23k msgs/s ≈ 210–230 Mbit/sink to **~46–62k msgs/s ≈
+450–505 Mbit/sink** (~23 µs/message, was ~48). Distance to the
+external bar: quinn-bbr 915–922 = **×1.8–2.0 of the new ceiling**
+(was ×4.3). The remaining per-message gap to quinn's 5.1 µs/packet
+is no longer estimator overhead: the post-build receiver chart is
+allocator + loop/wake machinery + memmove + AEAD — flat (#84 shape,
+top term 5%), with the dual-ack density (legacy Ack + WindowAck ≈ 2
+control datagrams per data message vs quinn's 1 per ~24) the largest
+REMAINING named structural term (~4–5%/side serialize+send+handle,
+measured below the 5% build bar this session). Both arms of the c1
+lever ship default OFF behind their pre-registered gates; the
+composed opt-in (`RWM_EMIT_BATCH=1 RWM_EST_CADENCE=1`) is the
+documented fast configuration for clean single-path deployments.
+
+### Tests
+
+lib 377+2 ignored (= the 379 set: +3 `est_cadence` law tests — per-call
+default parity, accumulate/flush-on-loss/heartbeat, posterior
+equal-class); `gate_suite` 15/15 release (--test-threads 1);
+`mtu_blackhole_wedge` 2/2; `perf_loopback` 8/8; `emit_batch_loopback`,
+`win_decouple_loopback`, `wire_compact_loopback`, `copa_sole_loopback`,
+`recov_mp_loopback`, `backpressure` — all green release;
+`raptorpath-math` full suite green. Env-unset tree: the gate-off branch
+executes the identical per-call `bocd.update` (pinned by the
+default-parity law test).
+
+Ops: lock `/tmp/rwm-vm.lock` taken 2026-08-06 21:04:20 UTC (found
+FREE), held through sync → builds → STEP 0 → STEP 1 → build → battery
+→ tails → probes → suites, released 23:43:41 UTC after teardown
+verification (no rp processes, no rp-* netns);
+rp-* netns only, torn down per invocation; stale binaries removed
+before both builds (baseline 6bb6ca96… = 1ce8ba2, battery 4f6a3f5e… =
+224b915, sha256 + commit + lscpu + kernel in every log header);
+seed-7 flake class quoted per arm (18 RUN-RETRY recovered, 1
+RUN-LOST, nothing discarded); FOREGROUND polling only; logs + perf
+data + per-run diag preserved under `/home/vibe/recvwall/`.
