@@ -709,6 +709,286 @@ and streaming was reachable only through the `RWM_UNIFIED=0` opt-out.
 VM left clean (no processes, no netns, lock released 22:56 UTC; logs
 `/home/vibe/consol2/smoke-{bulk,tail}.log`).
 
+## Window Decoupling + MTU Scaling (2026-08-06) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/window-mtu` from 6e59a11; ARC A item 2 — the lossy-singles STRUCTURAL terms, carrying three fronts: (i) the c2/c3 gap vs quinn-bbr (91.9/18.6), (ii) the B1 jitter-cell Copa dwell ceiling (1024-store Little's law ≈ 36 Mbit), (iii) c8-via-c2 (the residual c8 gap ≡ the single-path c2 gap, "C8 Slow-Path Conversion"))
+
+*Decision record context: → goal-gate "Lossy-Single Residual" (§16.30 — the
+CLOSED accounting this section executes: framing tax ~4.3/0.95 Mbit +
+spurious retx ×5.7 from the queue-sustained re-fire loop; the 1024-latch is
+ALSO the stall insurance — the honest-size static window idled the wire
+12%), "Adversarial Cells (B1)" (the jitter-cell dwell attribution),
+"Per-Path Outstanding Accounting" HONEST-CAP (the cap-law derivation
+template), ADR-0055 (the MTU floor), ADR-0061 (anchor hygiene; the
+`RWM_PLAIN_RS` c7 −22…−27 composition price, "C8-Aware Pool Law"
+ATTRIBUTION).*
+
+The two parts are pre-registered SEPARATELY and stand or fall
+independently; the battery carries each part's own arms plus one composed
+arm at the singles.
+
+### PART 1 pre-registration — window/inflight decoupling (`RWM_WIN_DECOUPLE`, default OFF)
+
+**(a) The problem, precisely.** The 1024-slot outstanding latch
+(`RELIABLE_STORE_MAX`, reached because the legacy plain anchor over-reads
+×4.6–7.5 so the `gain·Σanchor` dyn cap always clamps) is simultaneously:
+(1) the spurious-retx re-fire queue — its standing queue (echo RTT 109–111
+ms at sc2 vs RTprop 13; 528–558 ms at sc3 vs ~45) ages every hole past the
+9/8·SRTT law so re-fires are LEGAL and sustained (fired ×5.0–5.7 realized
+drops; `RWM_RECOV_SP` could only trim −24…−31%); (2) the only stall
+insurance — the honest-size static window idles the wire (sc3-s384: 12%
+idle, goodput 14.77 vs 16.13); (3) the B1 jitter-cell dwell ceiling —
+under Copa-sole at 40 ms RTprop cells the 1024 outstanding × the measured
+~250–350 ms dwell is a Little's-law ceiling ≈ 36 Mbit, and Copa sits AT it
+(0.38× BBR-under at ZERO jitter — a CC×store interaction, not a delay-law
+failure).
+
+**(b) Diagnosis FIRST (one instrumented run each way; instruments
+DIAG-gated and behavior-inert).** Name the insurance term instead of
+inheriting it: what EXACTLY does the honest-size window stall on?
+New [DIAG] gauges (sender): `wnd2=` wire-head outstanding split —
+`head=<last_sent − release_frontier>` (the live head span) vs
+`hole=<unSACKed total − head>` (recovery-stalled seqs below the SACK
+frontier), `relgap=<max ms since the SACK/cum frontier last advanced>`
+(release clumping), plus the existing sidle/paused/win gauges. Arms (seed
+42, ×2 each, sc3 25 MB AND sc2 100 MB): default (1024 latch) ↔ honest-size
+static (`RWM_STORE=384` at sc3 — the known 12%-idle arm; `RWM_STORE=256`
+at sc2 — the arm the July flake class lost). Decision rule, fixed now: the
+insurance term is named by which gauge saturates in the static arm's
+sidle-gap windows — (D1) HOLE-PINNING: `hole=` ≥ ~⅓ of the window with
+oldest-age ≫ SRTT (holes eat the budget; fresh admission starves);
+(D2) RELEASE CLUMPING: `relgap=` clumps at the [25,100] ms sweep cadence
+with `head=` pinned at cap (the budget starves between SACK refreshes);
+(D3) MULTI-ROUND TAIL: hole ages cluster at multiples of (R + RTprop)
+(GE re-kill; insurance = hole capacity for N rounds, not 1).
+
+**(c) The law family (pre-registered; the exact constants finalized by an
+AMENDMENT appended after the diagnosis and BEFORE the battery — the
+PLACE_SLACK amendment pattern).** Decouple the three roles into O(1)
+gauges with every term measured or a named engine constant:
+
+    wire_out  = last_sent_seq − release_frontier          (holes EXCLUDED)
+    allow     = anchor·(K + gain − 1) + rate·min(stall_age, R_ins)
+    admission pauses when wire_out ≥ allow
+                OR unSACKed_total ≥ cap_ret               (retention backstop)
+    cap_ret   = anchor·(K + gain − 1) + rate·(R_ins + N_hole·(R + RTprop))
+                clamped [floor 64, WIN_STORE_MAX 4096]
+
+- `anchor`/`rate`/`RTprop`/`K` are the HONEST-CAP terms (`honest_store_cap`
+  derivation: anchor = BtlBw·RTprop windowed honest, K = windowed-min
+  echoSRTT/RTprop, R = `HONEST_RECOVERY_ROUND_S` = 100 ms, gain = 2.0).
+- `stall_age` = now − (last SACK/cum frontier advance): the stall-insurance
+  term made EXPLICIT and CONTINUOUS (no mode bit): during steady flow it is
+  ~ack-interarrival (allowance ≈ residence + headroom, standing queue
+  ≈ (K+gain−2)·anchor ≈ 1 BDP-class); during a frontier freeze the
+  allowance grows at exactly the anchor rate, so the wire stays fed through
+  a recovery round WITHOUT a permanent standing queue. `R_ins` (expected =
+  R; the diagnosis may name D3 multiples) caps it.
+- Holes live against RETENTION (`cap_ret`), not the wire budget — the D1
+  channel is structural in the law; `N_hole` (expected 1–4 recovery rounds
+  of hole capacity) is priced by the diagnosis hole-age tail (p95 age /
+  (R + RTprop)).
+- Scope: plain in-order reliable window, N = 1 live path ONLY (N ≥ 2 keeps
+  the configured pooled laws bit-exactly — the c7/c8 pool battle is
+  settled separately and stays untouched). Under Copa-sole (`owns_cc`) the
+  residence term is `gain·Σcwnd` (Copa's honest pipe) and the clamp
+  ceiling lifts from the 1024 latch to `cap_ret` — the B1 dwell-ceiling
+  release. Warm-up (no anchor) keeps the legacy boot/latch path.
+- Anchor feeding at N = 1 (the trustworthy-anchor requirement WITHOUT the
+  PLAIN_RS c7 composition price −22…−27 ≫σ, which was measured at
+  c7/N = 2): the sampling-only CopaFeed engages under this gate at N = 1
+  ONLY — its sample-recording sites dynamically no-op while
+  `live_paths() ≥ 2` (the c7 arm must carry the sampler-inert gauge).
+
+**(d) Predictions (pre-registered).**
+1. MECHANISM: sc2 echo RTT 109–111 → ≤ ~30 ms class; sc3 528–558 → ≤ ~150
+   ms; fired/realized-drops collapses ×5.0–5.7 → ≤ ~×1.5 at BOTH cells
+   WITHOUT `RWM_RECOV_SP` (the re-fire loop was queue-sustained; remove
+   the queue and holes recover inside the law's threshold).
+2. sc2 100 MB: **+1.5 to +3** (→ ~86.5–88, toward the 91.9 bar; the ~2.7
+   Mbit spurious-retx wire term reclaimed as source on a full wire), ≫ σ_s
+   (~0.7–1.0), both seeds.
+3. sc3 25 MB: **+0.8 to +1.6** (→ ~17.0–17.7, the tcp-bbr class, toward
+   18.6), ≫ σ_s (~0.1–0.2), both seeds; wire utilization stays ≥ ~98%
+   (the s384 12%-idle class MUST NOT appear); ≥ the RWM_RECOV_SP arm's
+   +0.32–0.35 (subsumption bar — see (g)).
+4. B1 jitter cross-check (jit5/jit15, Copa-sole arms, same-session
+   BBR-under reference): the `win=1024/1024` pin disappears (gauge), and
+   IF the dwell ceiling was the binder, Copa lifts from 0.32–0.36× to
+   ≥ ~0.7× BBR-under. A Copa that stays ~0.35× with the window unpinned
+   REFUTES the store-ceiling share of the B1 attribution and isolates the
+   empty-pipe recovery-stall share — attribution-bearing either way, NOT
+   flip-gating.
+5. c7 ≥ 0.97×Σ and c8 ≥ the 0.87 line (legacy-arm class) — the N = 1 scope
+   makes the fix arm bit-identical at duals (echo may print; the law and
+   the sampler must be gauge-inert), so Δ within σ.
+6. dnf = 0 everywhere; tail_matrix c2 spot ×4 unregressed (shared reliable
+   plane).
+
+**(e) Falsification (fixed now).** (1) Either single cell regressing ≫σ on
+both seeds ⇒ the law is refuted → default OFF, register row with the gauge
+state (which budget starved), NO tuning pass. (2) fired stays ≥ ×3 with
+the queue measurably gone (echo ≈ RTprop class) ⇒ the queue-sustained
+attribution of §16.30 is WRONG — the re-fire loop has another owner;
+record it, register. (3) sc3 wire idle ≥ 5% with the insurance term live
+⇒ the insurance derivation missed the real stall — register with the
+diagnosis gauges. (4) Goodput flat at BOTH cells with mechanism gauges all
+confirming (queue gone, fired collapsed, wire full) ⇒ the freed wire went
+to margin, not goodput — the §16.30 spurious-retx pricing is refuted as a
+GOODPUT term; register, no flip on a wrong attribution. (5) c7/c8 moved
+≫σ ⇒ scope defect (a bug, not a result): fix before any verdict.
+
+**(f) Derivation re-read — self-contained failure predictions.** (1) The
+sc2 risk class is known and bounded: PBH0 (cap ≈ 150–175, no K/R) lost
+−18…−22% at sc2 — my residence-only base (anchor·(K+1) ≈ 190) sits just
+above that class, so the stall-metered insurance term is LOAD-BEARING at
+sc2; if BBR's probe/ack-aggregation gaps are not what the diagnosis says
+they are, sc2 regresses toward that class and falsification (1) fires.
+(2) At sc2 the wire is already 98.4% full — the +1.5…+3 prediction
+requires reclaimed spurious wire to CONVERT, which the RECOV_SP battery
+showed is NOT automatic at sc2 (its freed 1.1 MB vanished into margin);
+the decoupling differs by ALSO removing the queue (recovery latency, not
+just wire waste), which is why the prediction stays positive — but
+falsification (4) prices the honest failure. (3) The frontier gauge
+`wire_out` under-counts in-flight retransmits (they fly below the
+frontier): ≤ ~realized-drop-count symbols, ≪ σ of the budget — accepted.
+(4) Under heavy reorder (jit cells) the SACK frontier runs ahead of
+in-flight seqs, widening the effective window by ~the reorder depth — the
+SAFE direction (more insurance), bounded by cap_ret. (5) A receiver whose
+SACK advertisement is itself clumped (GRO ~13-datagram batches) feeds K;
+K's windowed-min is self-queue-proof — no positive feedback handle
+(HONEST-CAP battery, measured). (6) The B1 Copa ceiling-lift risk: Copa's
+own cwnd law was measured SANE on jitter cells (btlbw ≈ 1× link at
+shal8); lifting the retention clamp cannot push Copa's cwnd — only stop
+truncating it; regression channel is memory only, bounded at 4096 × 1.2
+KB ≈ 5 MB.
+
+**(g) Relation to `RWM_RECOV_SP` (ships OFF at sc3 +0.32–0.35).** The
+decoupling removes the standing queue that makes young re-fires LEGAL
+(holes aged past 9/8·SRTT by queue dwell alone). If prediction 1 holds
+(fired ≤ ~×1.5 WITHOUT recov_sp), the decoupling SUBSUMES the RECOV_SP
+lever (nothing left to suppress) and the ledger records the relation;
+RECOV_SP remains a default-OFF measured arm in either case (it never
+flipped — no register row owed).
+
+**(h) Flip rule (fixed before the battery).** `RWM_WIN_DECOUPLE` flips
+default ON only if predictions 1–3 hold on BOTH seeds AND c7/c8 hold
+their lines (5) AND the tail spot is unregressed AND suites stay green.
+Prediction 4 (B1 Copa) is attribution, not a gate.
+
+### PART 2 pre-registration — MTU/payload scaling (the ~4.3/0.95 Mbit framing term; `RWM_WIRE_COMPACT`, default OFF)
+
+**(a) The derivation (done BEFORE choosing what to build — the wire
+arithmetic, every number measured or read from the code).** The framing
+tax: rp puts 1200 payload B on ~1319 wire B (qdisc-measured mean, sc2
+diagnosis) = 0.910 efficiency vs quinn MTUD ~0.957. The per-symbol wire
+overhead is **119 B, ALL FIXED, none per-byte**: 28 IP+UDP, ~26 QUIC
+1-RTT (short header + CID + PN + AEAD tag + DATAGRAM frame), and **65 B
+of rp's own framing** — 8 magic+version + 57 bincode-fixint (4 enum tag +
+8 Vec len + WireSymbol{8 block_id + 4 payload_id + 1 is_repair + 8 data
+len + 4 backend} + 8 send_ts + 8 batch_seq + 4 path_id); repair symbols
+add 14 B INSIDE the payload (span header — load-bearing, untouched).
+The three candidate levers, priced:
+- **(A) Fill the 1350 floor**: the floor guarantees ~1317 B datagrams;
+  the worst-case (repair-batch) symbol datagram is 1279 → payload can
+  rise only 1200 → ~1212. Efficiency 0.9098 → 0.9106 = **+0.1 Mbit at
+  c2** — BELOW the session noise floor. REFUTED BY DERIVATION; not
+  built (discipline 11d).
+- **(B) MTUD-style payload scaling above the floor** (symbol sized to the
+  verified path MTU ~1452): payload → ~1340, efficiency → 0.9184 =
+  **+0.9 at c2 / +0.2 at c3** — real but ~1σ; AND a symbol sized above
+  the floor is exactly the wedge geometry (a black-hole reset to the
+  1350 floor makes every data send TooLarge for the 60 s cooldown)
+  unless the floor RISES with the payload, which trades away 1500−MTU
+  external validity (PPPoE-class paths), or symbols re-size mid-stream
+  (protocol surgery across the span law's symbol units, G, and the
+  store accounting). Named for the roadmap with its price; NOT built
+  this session.
+- **(C) The framing diet (BUILT — the term the derivation actually
+  names)**: the recoverable tax is rp's own 65 B/pkt, not the MTU. A
+  compact DATA wire frame (v5-compact, env `RWM_WIRE_COMPACT` sender-
+  gated A/B): tag byte (∉ 'R' — classified against the legacy magic
+  unambiguously) + flags(is_repair|backend) + varint path_id/seq/
+  payload_id/batch_seq/send_ts + payload = REST OF DATAGRAM (the QUIC
+  datagram boundary IS the length — both 8-B bincode length fields
+  deleted). ~14–16 B vs 65 ⇒ overhead 119 → ~69 ⇒ efficiency 1200/1269
+  = **0.9456** — recovers ~3.4–3.9 of the 4.3 Mbit c2 term and ~0.6–0.8
+  of the 0.95 c3 term with NO MTU change, NO symbol-size change (zero
+  interaction with G / span units / message packing), NO wedge exposure
+  (datagrams get SMALLER: 1279 → ~1228). Receive support is
+  unconditional (a non-'R' first byte is a parse ERROR today — compact
+  parsing converts dead space, byte-identical for all legacy traffic);
+  PROTOCOL_VERSION bumps 4 → 5 so pre-compact binaries refuse cleanly
+  at handshake instead of dying mid-stream. Control/ack framing
+  unchanged (out of scope; priced separately in §16.30 term 3).
+
+**(b) Predictions (pre-registered).**
+1. WIRE TRUTH (mechanism gauge, qdisc bytes/pkts): mean data-pkt overhead
+   119 → ≤ ~75 B; framing efficiency 0.910 → ≥ 0.94 at both cells.
+2. sc2: **+2.5 to +4** (→ ~87.5–89), ≫ σ_s, both seeds.
+3. sc3: **+0.5 to +0.9** (→ ~16.6–17.0), ≫ σ_s (~0.1–0.2), both seeds.
+4. c7/c8: lift-or-hold (the same framing rides both paths; no regression
+   ≫σ). Composed fix+mtu at singles: ≈ additive within σ.
+5. Crown gate (MANDATORY): tail_matrix c2 spot ×4 — p99 medians within
+   the historic class (~36–48 ms), 1000/1000 delivered, both arms.
+6. dnf = 0; `mtu_blackhole_wedge` stays green; env-unset tree
+   byte-identical on the wire (legacy serializer verbatim).
+
+**(c) Falsification.** Overhead does NOT drop ≤ ~80 B ⇒ the serializer
+misses the hot path (mechanism defect — fix or withdraw, no verdict).
+Goodput flat with the overhead gauge collapsed ⇒ the freed wire did not
+convert at that cell — the §16.30 framing-tax pricing is refuted AS A
+GOODPUT TERM at that cell; register row, no flip on wrong attribution.
+Crown spot regressed ⇒ no flip regardless of throughput.
+
+**(d) Derivation re-read — failure predictions.** (1) GSO/GRO are
+byte-transparent — segment sizes change ~4%, no kernel-batching cliff
+predicted. (2) The tag byte must never collide with legacy classification:
+legacy starts 'R' (0x52); compact tag 0xC1 — disjoint by construction;
+handshake rides a STREAM (never datagrams) — unambiguous. (3)
+MAX_SYMBOLS_PER_BATCH guard: compact = exactly one symbol/frame by
+construction; multi-symbol batches (block mode) keep legacy framing —
+scope is the window-mode one-symbol datagram path. (4) At sc2 the wire is
+full: +3.9% wire efficiency converts ~1:1 ONLY if loss/recovery waste is
+rate-independent — the retx share rides the same framing, so the gain is
+on ALL sent bytes; conversion is arithmetic, not behavioral — this is the
+strongest-prior prediction of the session. (5) Realtime symbols (512 B)
+carry proportionally MORE fixed overhead — compact helps the tunnels or
+is neutral; the crown spot is the gate.
+
+**(e) Flip rule.** `RWM_WIRE_COMPACT` flips default ON only if
+predictions 1–3 + 5 + 6 hold on both seeds and c7/c8 unregressed; else
+OFF with the register row.
+
+### BATTERY (pre-registered; one session, arms per part evaluated INDEPENDENTLY)
+
+VM 10.1.5.16 per MEASUREMENT DISCIPLINE 1–12: lock `/tmp/rwm-vm.lock`
+taken 2026-08-06 17:25:55 UTC (found FREE; covers builds + probes +
+battery); tree synced via git archive of THIS branch + CRLF conversion
+before the first harness invocation; stale binary removed before every
+build; binary sha256 + commit + lscpu + kernel in every log header;
+FOREGROUND polling only; rp-* netns only; fresh topology per invocation;
+seed-7 topo-abort protocol (n recorded, nothing discarded); logs
+preserved under `/home/vibe/winmtu/`. Driver `tools/l1/winmtu_*.sh`:
+- DIAGNOSIS (part 1): sc3 {def, RWM_STORE=384} + sc2 {def, RWM_STORE=256}
+  ×2, seed 42, RWM_DIAG=1 — the insurance-term naming runs; amendment
+  appended to this section BEFORE the battery.
+- SINGLES (PRIMARY): sc2 100 MB + sc3 25 MB × arms def ↔ fix
+  (`RWM_WIN_DECOUPLE=1`) ↔ mtu (`RWM_WIRE_COMPACT=1`) ↔ both,
+  interleaved round-robin per rep ×8, seeds 42+7; bars: quinn-bbr
+  91.9/18.6 ("Competitive Baseline", same cells/seeds).
+- DUALS (no-regression): c7 200 MB + c8 25 MB × def ↔ fix ↔ mtu ×8,
+  seeds 42+7; same-session Σ from the singles arms (Σ_c7 = 2×sc2,
+  Σ_c8 = sc2+sc3, per arm env); c7 ≥ 0.97×Σ clause, c8 vs the 0.87 line.
+- B1 JITTER CROSS-CHECK: jit5 + jit15 (adv_cells.sh recipes verbatim) ×
+  arms bbr-def ↔ copa-def ↔ copa-fix ×5, seeds 42+7 (the same-session
+  BBR-under reference the ratio needs).
+- CROWN: tail_matrix c2 spot ×4, seed 42, arms def + mtu (+ both iff
+  both parts pass singles).
+- Liveness echoes asserted per arm both directions; ARMCOUNT per arm;
+  runtimes stated; aborts preserved.
+
+*(The diagnosis results, the amendment, and the battery results below
+this line were written AFTER the respective runs.)*
+
 ## C8 Slow-Path Conversion (2026-08-06) — DIAGNOSIS-FIRST (branch `feat/c8-conversion` from f2f1c78; the "C8-Aware Pool Law" verdict's named successor: the binder is NOT pool sizing — WHY does the slow path convert ~nothing at c8?)
 
 *Decision record context: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
