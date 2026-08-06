@@ -6703,6 +6703,19 @@ async fn run_window_sender(
     let mut sidle_us: u64 = 0;
     let mut sidle_n: u64 = 0;
     let mut sidle_max_us: u64 = 0;
+    // feat/window-mtu DIAG (goal-gate "Window Decoupling + MTU Scaling",
+    // part 1 diagnosis — behavior-inert, RWM_DIAG only): the outstanding
+    // split the decoupled law would gate on. `wnd2=<head>/<hole>` — head =
+    // last_sent − release_frontier (the live head span: in-flight + queue,
+    // everything above the highest SACK/cum-covered seq), hole = unSACKed
+    // total − head (recovery-stalled seqs BELOW the frontier — the seats
+    // the 1024-latch insures). `relgap=<cur>/mx<max>ms` — time since the
+    // release frontier (max of SACK-release max and cum ack) last advanced,
+    // max per DIAG window: the release-clumping gauge (D2). Insurance-term
+    // decision rule: see the pre-registration.
+    let mut wnd2_frontier_last: u64 = 0;
+    let mut wnd2_frontier_change_us: u64 = now_us();
+    let mut wnd2_relgap_max_us: u64 = 0;
     loop {
         // SACK drain: consume the receiver's RECEIVED-above-frontier ranges
         // NON-BLOCKING at the top of every iteration (never as a select! branch
@@ -7352,6 +7365,24 @@ async fn run_window_sender(
                     sidle_last_change_us = dnow;
                 }
             }
+            // feat/window-mtu wnd2/relgap tracking (see decls): the release
+            // frontier is max(highest SACK-released seq, cumulative ack) —
+            // O(log n) per iteration, DIAG only.
+            if reliable && !generation {
+                let frontier = sack_released
+                    .iter()
+                    .next_back()
+                    .copied()
+                    .unwrap_or(0)
+                    .max(window_ack_seq.load(Ordering::Relaxed));
+                if frontier > wnd2_frontier_last {
+                    wnd2_frontier_last = frontier;
+                    wnd2_frontier_change_us = dnow;
+                } else {
+                    wnd2_relgap_max_us = wnd2_relgap_max_us
+                        .max(dnow.saturating_sub(wnd2_frontier_change_us));
+                }
+            }
             let ddt = dnow.saturating_sub(diag_last_us);
             if ddt >= 250_000 {
                 let ack_now = window_ack_seq.load(Ordering::Relaxed);
@@ -7518,6 +7549,28 @@ async fn run_window_sender(
                 } else {
                     String::new()
                 };
+                // feat/window-mtu part-1 diagnosis gauge (see decls): the
+                // outstanding split + release-clumping. head = live head
+                // span above the release frontier; hole = unSACKed below it.
+                let wnd2diag = if reliable && !generation {
+                    let last_sent =
+                        sent_store.keys().next_back().copied().unwrap_or(0);
+                    let head = last_sent.saturating_sub(wnd2_frontier_last) as usize;
+                    let hole = store_len.saturating_sub(head);
+                    let relgap_cur =
+                        dnow.saturating_sub(wnd2_frontier_change_us) / 1000;
+                    let s = format!(
+                        " wnd2={}/{} relgap={}ms/mx{}ms",
+                        head.min(store_len),
+                        hole,
+                        relgap_cur,
+                        wnd2_relgap_max_us / 1000,
+                    );
+                    wnd2_relgap_max_us = 0;
+                    s
+                } else {
+                    String::new()
+                };
                 // δ-honest shed DIAG (fix C): cumulative shed / budget-
                 // refused, live 1−ρ fraction and deadline. Empty when off.
                 let sheddiag = if shed_on {
@@ -7578,7 +7631,7 @@ async fn run_window_sender(
                     mp_pp,
                 );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7598,6 +7651,7 @@ async fn run_window_sender(
                     xat_c, xat_w,
                     percap_loans.len(), percap_loans_total,
                     mpr,
+                    wnd2diag,
                     srdiag,
                     sheddiag,
                     gdiag,
