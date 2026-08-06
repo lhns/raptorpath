@@ -171,6 +171,10 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
             wdfix)   AENV="RWM_WIN_DECOUPLE=1"; AFLAGS="" ;;
             wdmtu)   AENV="RWM_WIN_DECOUPLE=1 RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
+            # feat/recv-permsg (goal-gate "Receiver Per-Message Wall"): the
+            # crown-gate arm — estimator heavy-math cadence (delivery path
+            # touched at the estimator only; the spot is mandatory).
+            est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The

@@ -65,10 +65,50 @@ pub struct LossEstimator {
     /// BOCD for regime-aware prediction
     bocd: BayesianChangepoint,
 
+    /// `RWM_EST_CADENCE` (goal-gate "Receiver Per-Message Wall"): run the
+    /// BOCD heavy update at its DESIGN cadence instead of per message. The
+    /// detector's own constructor documents "regime changes every ~100
+    /// batches (200 s at 2 s intervals)" — a batch-cadence model; the window
+    /// wire was calling its O(MAX_RUN_LENGTH) exp/ln update ~22k×/s per side
+    /// (~22–26%/core at the c1 wall, STEP-1 profile). With the gate ON,
+    /// clean observations ACCUMULATE and flush every `EST_HEAVY_CADENCE`;
+    /// any call that carries a loss flushes IMMEDIATELY (every informative
+    /// observation reaches the posterior on today's clock — zero staleness
+    /// on losses). EWMA/Beta/burst/GE stay per-call. OFF = per-call BOCD,
+    /// bit-identical shipped path.
+    est_cadence: bool,
+    /// Accumulated (received, lost) counts awaiting the next BOCD flush.
+    bocd_acc_received: u64,
+    bocd_acc_lost: u64,
+    /// Instant of the last BOCD flush (cadence clock).
+    bocd_last_flush: Instant,
+
     /// Bookkeeping
     total_sent: u64,
     total_received: u64,
     last_update: Instant,
+}
+
+/// `RWM_EST_CADENCE` heartbeat: clean evidence flushes to the BOCD at this
+/// cadence (10 ms ≪ the 100 ms recovery round; ~100 updates/s ≈ the
+/// detector's design regime). Pre-registered constant — not a tuning knob.
+const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
+
+/// Resolve `RWM_EST_CADENCE` once (default OFF — the A/B arm; noted in the
+/// gates.rs header list of resolve-once sites) and echo mechanism liveness
+/// on first resolution (MEASUREMENT DISCIPLINE item 1).
+fn est_cadence_active() -> bool {
+    use std::sync::OnceLock;
+    static GATE: OnceLock<bool> = OnceLock::new();
+    *GATE.get_or_init(|| {
+        let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+        if on {
+            tracing::info!(
+                "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
+            );
+        }
+        on
+    })
 }
 
 impl LossEstimator {
@@ -98,6 +138,10 @@ impl LossEstimator {
             last_send_ts_us: None,
             ge: GilbertElliottEstimator::new(),
             bocd: BayesianChangepoint::default_fec(),
+            est_cadence: est_cadence_active(),
+            bocd_acc_received: 0,
+            bocd_acc_lost: 0,
+            bocd_last_flush: Instant::now(),
             total_sent: 0,
             total_received: 0,
             last_update: Instant::now(),
@@ -145,8 +189,19 @@ impl LossEstimator {
         self.beta_a += received as f64;
         self.beta_b += lost as f64;
 
-        // BOCD update
-        self.bocd.update(received, lost);
+        // BOCD update — per-call when the cadence gate is OFF (legacy
+        // bit-identical); accumulated + flushed on loss / 10 ms heartbeat
+        // when ON (goal-gate "Receiver Per-Message Wall": the per-message
+        // O(MAX_RUN_LENGTH) update was 22–26%/core at the c1 wall).
+        if self.est_cadence {
+            self.bocd_acc_received += received as u64;
+            self.bocd_acc_lost += lost as u64;
+            if lost > 0 || self.bocd_last_flush.elapsed() >= EST_HEAVY_CADENCE {
+                self.flush_bocd();
+            }
+        } else {
+            self.bocd.update(received, lost);
+        }
 
         // Burst detection
         if lost > 0 {
@@ -162,6 +217,22 @@ impl LossEstimator {
         self.total_sent += sent as u64;
         self.total_received += received as u64;
         self.last_update = Instant::now();
+    }
+
+    /// Flush the accumulated counts into the BOCD (cadence gate). The
+    /// posterior sees the same evidence as the per-call path, batched —
+    /// exactly the batch-cadence observation model `default_fec()` was
+    /// designed for.
+    fn flush_bocd(&mut self) {
+        if self.bocd_acc_received > 0 || self.bocd_acc_lost > 0 {
+            self.bocd.update(
+                self.bocd_acc_received.min(u32::MAX as u64) as u32,
+                self.bocd_acc_lost.min(u32::MAX as u64) as u32,
+            );
+            self.bocd_acc_received = 0;
+            self.bocd_acc_lost = 0;
+        }
+        self.bocd_last_flush = Instant::now();
     }
 
     /// Record one wire-symbol outcome (true = received) into the
@@ -382,9 +453,84 @@ fn normal_quantile(p: f64) -> f64 {
     sign * (t - num / den)
 }
 
+impl LossEstimator {
+    /// Test-only constructor with the heavy-math cadence forced ON
+    /// (the env gate is process-global; law tests need both arms).
+    #[cfg(test)]
+    pub fn new_with_cadence_for_test() -> Self {
+        let mut e = Self::new();
+        e.est_cadence = true;
+        e
+    }
+
+    /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
+    pub fn bocd_updates(&self) -> u64 {
+        self.bocd.updates()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RWM_EST_CADENCE law: with the gate OFF (default), every
+    /// record_batch performs a per-call BOCD update — the legacy path is
+    /// bit-identical in call topology.
+    #[test]
+    fn test_est_cadence_off_is_per_call() {
+        let mut est = LossEstimator::new();
+        assert!(!est.est_cadence, "RWM_EST_CADENCE ships default OFF");
+        for _ in 0..7 {
+            est.record_batch(1, 1);
+        }
+        assert_eq!(est.bocd_updates(), 7);
+    }
+
+    /// RWM_EST_CADENCE law: clean observations within the 10 ms heartbeat
+    /// ACCUMULATE (no heavy update); a loss-bearing call flushes
+    /// IMMEDIATELY — every informative observation reaches the posterior
+    /// on the legacy clock.
+    #[test]
+    fn test_est_cadence_accumulates_clean_flushes_loss() {
+        let mut est = LossEstimator::new_with_cadence_for_test();
+        for _ in 0..50 {
+            est.record_batch(1, 1); // clean
+        }
+        assert_eq!(
+            est.bocd_updates(),
+            0,
+            "clean sub-cadence evidence must accumulate"
+        );
+        est.record_batch(2, 1); // one loss → immediate flush with the backlog
+        assert_eq!(est.bocd_updates(), 1, "a loss flushes immediately");
+        // The flush carried the whole backlog: 52 sent / 51 received.
+        std::thread::sleep(std::time::Duration::from_millis(12));
+        est.record_batch(1, 1); // heartbeat elapsed → flush
+        assert_eq!(est.bocd_updates(), 2, "the 10 ms heartbeat flushes");
+    }
+
+    /// RWM_EST_CADENCE law: the cadenced posterior lands in the same class
+    /// as the per-call posterior for a steady lossy stream — the consumers
+    /// (predictive_loss_upper → r*) read equal-class values.
+    #[test]
+    fn test_est_cadence_posterior_equal_class() {
+        let mut per_call = LossEstimator::new();
+        let mut cadenced = LossEstimator::new_with_cadence_for_test();
+        // ~5% loss in per-message batches (1 symbol per batch, 1 loss / 20).
+        for i in 0..400 {
+            let received = if i % 20 == 0 { 0 } else { 1 };
+            per_call.record_batch(1, received);
+            cadenced.record_batch(1, received);
+        }
+        let a = per_call.predictive_loss_upper(0.95);
+        let b = cadenced.predictive_loss_upper(0.95);
+        assert!(
+            (a - b).abs() < 0.05,
+            "cadenced posterior must stay in the per-call class: {a} vs {b}"
+        );
+        // And the cheap per-call estimates are bit-identical by construction.
+        assert!((per_call.loss_rate() - cadenced.loss_rate()).abs() < 1e-12);
+    }
 
     #[test]
     fn test_loss_estimator_basic() {

@@ -8,7 +8,12 @@
 //! - Changepoint: wide posterior → large margin → conservative protection
 //! - Prediction: integrates over run-length uncertainty automatically
 //!
-//! Cost: O(MAX_RUN_LENGTH) per update — negligible.
+//! Cost: O(MAX_RUN_LENGTH) per update — ~2 ln + 1 exp per run length plus
+//! two Vec allocations and a stats-vector shift. Negligible at the BATCH
+//! cadence it was designed for (`default_fec()`: ~2 s intervals); at the
+//! window wire's per-message cadence (~22k msgs/s) it measured 22–26% of a
+//! core per side (goal-gate "Receiver Per-Message Wall" STEP-1 profile) —
+//! `RWM_EST_CADENCE` (control/estimator.rs) restores the design cadence.
 
 /// Maximum run length tracked (truncation point for the distribution).
 const MAX_RUN_LENGTH: usize = 200;

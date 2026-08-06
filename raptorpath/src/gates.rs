@@ -29,7 +29,10 @@
 //! wire/δ family `RWM_COPA_WIRE`/`RWM_COPA_DELTA`/`RWM_COPA_COMPETE`
 //! (scheduler, cached `OnceLock`, ADR-0062), the stall-witness umbrella
 //! member `RWM_CLOCK_GAP` (control/anchor.rs, ADR-0061), the RS trace knob
-//! `RWM_RS_TRACE` (scheduler CopaState), and the harness/bench-only knobs
+//! `RWM_RS_TRACE` (scheduler CopaState), the estimator heavy-math cadence
+//! `RWM_EST_CADENCE` (control/estimator.rs `OnceLock`, default OFF —
+//! goal-gate "Receiver Per-Message Wall": BOCD at its design cadence
+//! instead of per message), and the harness/bench-only knobs
 //! (`RWM_L0_*`, `RWM_B_*`, `RWM_SL_*`, `RWM_PERF_TIMEOUT_S`, …).
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};

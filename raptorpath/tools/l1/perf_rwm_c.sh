@@ -103,9 +103,8 @@ fi
 [[ -n "${RWM_EMIT_BATCH:-}" ]] && TENV="$TENV RWM_EMIT_BATCH=$RWM_EMIT_BATCH"
 [[ -n "${RWM_EMIT_BURST:-}" ]] && TENV="$TENV RWM_EMIT_BURST=$RWM_EMIT_BURST"
 # Receiver per-message wall (goal-gate "Receiver Per-Message Wall",
-# feat/recv-permsg): the pre-registered A/B gates, forwarded.
-[[ -n "${RWM_RECV_BATCH:-}" ]] && TENV="$TENV RWM_RECV_BATCH=$RWM_RECV_BATCH"
-[[ -n "${RWM_ACK_EVERY:-}" ]] && TENV="$TENV RWM_ACK_EVERY=$RWM_ACK_EVERY"
+# feat/recv-permsg): estimator heavy-math cadence — the profile-named part.
+[[ -n "${RWM_EST_CADENCE:-}" ]] && TENV="$TENV RWM_EST_CADENCE=$RWM_EST_CADENCE"
 # Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel):
 # busy% + inbound msg-queue depth on the RECEIVER (server log /tmp/rwm-s.log).
 # (RWM_ENGINE_PAR itself was NOT built -- the item-2 profile refuted it; see
