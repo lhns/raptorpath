@@ -765,6 +765,171 @@ no-regression clause. Battery: c8 primary (arms shipped / legacy-1024 /
 
 *(Diagnosis results and everything below written AFTER the runs.)*
 
+### DIAGNOSIS RESULTS (VM 10.1.5.16, 2026-08-06 15:48:11–15:48:30 UTC; binary sha256 070d5443393f235f… = commit be4062f, built fresh on the VM (stale binary rm'd, CRLF-converted); E5-2650 v3; c8 ×2 per pool arm, seed 42, RWM_DIAG=1; driver `tools/l1/c8conv_diag.sh`, log `/home/vibe/c8conv/diagnose-s42.log` + per-run diag/; lock taken 15:43:43Z with the VM verified QUIET (0 rp processes, no rp netns) — the B1 co-tenancy window ended before any run of this workstream)
+
+**SESSION DATUM FIRST (n=2/arm, honest σ-unknown): on the f2f1c78 tree the
+c8 cell reads BETTER than the July record on BOTH pool arms — legacy
+88.3/89.8, pbs 85.8/83.7 (July: legacy 86.7±3.3, pbs 72.3±17.5 with the
+stall-burst mode). The pbs collapse class did NOT appear in either rep;
+whether it is gone or episodic is a battery question (n=8, both seeds).**
+
+Per-path conversion gauges (p0 = fast c2, p1 = slow c3; capacity share of
+p1 ≈ 16%):
+
+| gauge | legacy r1 | legacy r2 | pbs r1 | pbs r2 |
+|---|---|---|---|---|
+| goodput (Mbit/s) | 88.28 | 89.83 | 85.81 | 83.73 |
+| splace p1 share | 837/21152 = **4.0%** | 1816/19833 = **9.2%** | 3629/21152 = **17.2%** | 3429/21152 = **16.2%** |
+| fst p1 (receiver first-copies) | 821 | 1879 | 3160 | 3061 |
+| dup share of p1 arrivals | 10.5% | 10.4% | 6.9% | 7.1% |
+| retxo p1 / splace p1 | 109/837 = **13.0%** | 112/1816 = 6.2% | 725/3629 = **20.0%** | 534/3429 = **15.6%** |
+| retxo p0 / splace p0 | 3.1% | 3.6% | 3.2% | 3.6% |
+| mpr young fires | 171 | 120 | **749** | **412** |
+| stallo p1 share (ms) | 427/1689 = 25% | 801/1484 = **54%** | 750/2087 = 36% | 749/2005 = 37% |
+| p1 echo rtt at end (rtp) | 274 (39) | 140 (40) | **511 (40)** | **563 (34)** |
+| mean win / cap | 912/1024, paused 5.7% | 1000/1024, 4.9% | 2112/4096, 0.9% | 2155/4096, 1.6% |
+
+**The dominant channel, named: (a)+(d) — PLACEMENT STARVATION under the
+binding pool, becoming ARRIVAL-MISALIGNMENT once placement is fed.**
+
+- (b) is REFUTED as the dominant channel: ~90% of slow-path arrivals are
+  FIRST copies in every rep of both arms — slow deliveries DO convert when
+  they happen; displacement (dup ≈ 7–10%) is a tax, not the wall.
+- Under legacy-1024 the limiter is (a): the slow path is under-placed ×2–4
+  vs its capacity share (4.0–9.2% vs 16%) — the mechanical prior confirmed:
+  with the pool PAUSING admission (4.9–5.7%) the fast path's queue term
+  never climbs enough for the Bulk softmax (whose `srtt_i/2/ref` term alone
+  is worth e^10:1 odds) to spill; the slow path gets scraps.
+- Under pbs the placement DOES reach capacity share (16–17%) — and the
+  cell still nets LESS than legacy: the conversion is eaten by (d): 15.6 to
+  20% of slow-placed symbols are re-served (vs their ~4.8% realized GE
+  loss, ×3–4 spurious), young fires 412–749 (the `active_paths()`
+  saturation-bypass prior — the law drops to N=1 mid-transfer), the slow
+  path's echo RTT inflates to 511–563 ms against a 34–40 ms RTprop (an
+  UNBOUNDED slow queue: placement is capacity-proportional but not
+  NEED-TIME-bounded), and slow-owned holes carry 36–37% of frontier-stall
+  time on 16% of placements.
+- (c) is real but derivative: slow-owned stall burden per placement is
+  ×5–10 the fast path's — it is the SYMPTOM of (d)'s lateness, not an
+  independent reassembly defect.
+
+**What a fix must do (the geometry the numbers demand): feed the slow path
+∝ capacity (kill (a)) while bounding each slow placement's LATENESS to
+what the in-order frontier can absorb (kill (d)) — the arrival-alignment
+law, derived from the honest anchors, as ONE continuous term. Pool
+arithmetic stays refuted: pbs already proves ∝-capacity placement without
+need-time bounding nets NEGATIVE.**
+
+### FIX PRE-REGISTRATION — `RWM_PLACE_SLACK` (discipline item 11; written BEFORE the build; default OFF; secondary lever `RWM_RECOV_MP_LIVE`, default OFF, separately gated + echoed)
+
+**(a) Mechanism — the frontier-slack placement law (ONE continuous term,
+no mode, no threshold, no per-topology branch).** The placement cost's
+load term becomes
+
+    cost_i = max(0, Ê_i(load) − S) / ref_srtt + w_bw·r_i + w_div·ρ_fate
+
+where S = the FRONTIER SLACK — the time the in-order frontier will take to
+need the symbol being placed:
+
+    S = clamp( (sent_edge − cum_ack) / R_ack , 0, 250 ms ),   S = 0 until
+    R_ack has a sample (cold start = shipped), S set only when N ≥ 2 live
+    paths (N = 1 placement is degenerate anyway), refreshed on the existing
+    5 ms dyn-cap cadence; R_ack = EWMA of the cumulative-ack advance rate
+    (delivery-truth, self-measured, immune to the plain anchor's ×5–9
+    over-read; sent_edge − cum_ack = the live stream span).
+
+Shape: S = 0 reproduces the shipped cost BIT-EXACTLY (max(0, x−0) = x —
+the law is a strict generalization, continuous in S). A path whose
+delivery time fits inside the frontier's need-time costs nothing extra —
+so the slow path earns placements up to EXACTLY the backlog it can deliver
+by need-time (deadline-aware water-filling: equilibrium backlog_i ≈
+rate_i·(S − owd_i), capacity-proportional); beyond that its queue term
+crosses S and the softmax chokes it CONTINUOUSLY. The (a) starvation ends
+(idle-slow cost clamps to ~w_bw·r_s instead of carrying the e^10 latency
+odds); the (d) lateness is bounded by construction (a placement whose
+Ê exceeds S is priced, so the unbounded 511–563 ms slow queue cannot
+form). At c7 (symmetric) any symmetric cost gives the same 50/50 split —
+the law changes burst micro-structure at most (n=8 both seeds watches it).
+Realtime is untouched (place_symbol is reliable-window-only; S is derived
+from the measured span, which a latency-tight stream keeps small —
+continuous self-honesty, no hint gate).
+
+**Secondary lever (the (d) young-fire repair), `RWM_RECOV_MP_LIVE`:** the
+`RWM_RECOV_MP` hole law's `mp_n_paths` + per-path clock snapshot move from
+`active_paths()` (saturation-filtered — `available() > 0`; a cwnd-full
+path collapses the law to the N=1 bypass = legacy age gate on a cross-path
+clock) to `live_paths()` — the same trap already fixed at the Copa-sole
+store law and `capw_store_cap`, now at the recovery plane. Default OFF;
+battery arms attribute it separately from the slack law.
+
+**(b) Prediction (effect size + cells).** On the SHIPPED pool base (pbs —
+the diagnosis says the pool is not the binder on this tree): slack law
+splace_p1 → capacity share (14–19%) with retxo_p1/splace_p1 ≤ ~2× realized
+GE (≤ 10%), slow echo RTT bounded ≤ ~150 ms, young fires below the pbs
+control; c8 goodput ≥ BOTH incumbents on both seeds with the target
+≥ 0.90×Σ (≈ 90+; the banked slow share), toward the external 89.7–92.6
+bar. c7 ≥ 0.97×Σ held (placement split unchanged by symmetry). Singles
+bit-inert at N = 1 (S never set; gauge zero) — the arm's env carries only
+the INFO echo. `+RWM_RECOV_MP_LIVE` composed: young fires → ~0 class at
+c8, no c7 effect ≫σ.
+
+**(c) Falsification.** (1) If slack-law c8 ≤ the pbs control on both seeds
+(≫σ), the alignment geometry is refuted ON THIS SUBSTRATE — record the
+gauge state (splace share, retxo ratio, rtt bound: which sub-claim failed)
+and STOP (register, no tuning pass). (2) If splace_p1 reaches capacity
+share AND retxo_p1 stays ≤ 10% AND rtt stays bounded AND goodput STILL
+does not beat legacy — conversion at this cell is structurally
+displacement-bounded; that verdict redirects the roadmap (the honest
+outcome the kernel MPTCP-BBR datum (+3.1/−2.4 vs its own single) already
+prices) and the c8 chapter closes with legacy-class as the ceiling. (3)
+c7 < 0.97×Σ on either seed or singles regress ≫σ ⇒ no flip regardless of
+c8.
+
+**(d) Derivation re-read for self-contained failure predictions.** (1) The
+S-clamped region flattens the SHORT-TERM queue differential (both costs 0
+until loads reach S) — at c7 this could coarsen transient load balancing;
+by symmetry the mean split is unchanged, so any damage appears as c7
+σ inflation, watched at n=8×2 seeds — this is the law's one plausible
+regression channel and it is covered by falsification (3). (2) The
+transient over-placement window at c8 (both costs clamped → ~uniform until
+the slow queue builds to S) is bounded by rate_slow·S ≈ 200–300 symbols
+≈ 100 ms — 5% of a 2.3 s transfer, priced, not disqualifying. (3) R_ack
+during a full frontier stall decays → S grows → MORE slow placement (a
+positive-feedback risk); bounded by the 250 ms clamp and by the slow
+path's own queue term crossing S; if the battery shows stall-coupled
+oscillation the law needs a stall-witness guard (NAMED follow-up, not a
+tuning pass). (4) The prize is bounded: Σ-share of the slow path is
+~16 Mbit and the kernel reference banks ~0±3 of it; predicting ≥ 0.90×Σ
+(> legacy + ~2) is deliberately ABOVE the kernel's realized conversion —
+failure against it while beating both incumbents would still be a
+positive-but-humble result, handled under the flip rule below.
+
+**FLIP RULE (fixed before the battery).** `RWM_PLACE_SLACK` flips default
+ON only if, on BOTH seeds: c8 slack ≥ legacy AND ≥ pbs (Δ ≫ σ_s against
+at least one, no Δ ≪ −σ against either), c7 ≥ 0.97×Σ, singles inert
+(within σ). `RWM_RECOV_MP_LIVE` flips only if its composed arm is
+inert-or-better everywhere with the young-fire gauge collapsing at c8.
+Otherwise both stay OFF with the falsification outcome recorded. The
+POOL-LAW re-settlement (which pool wins both cells WITH conversion
+working) is reported either way from the same battery.
+
+**Battery (pre-registered; driver `tools/l1/c8conv_battery.sh`).** VM
+protocol per MEASUREMENT DISCIPLINE 1–11: seeds 42+7, ×8 interleaved
+round-robin per rep, fresh tunnel per invocation, same binary every arm
+(sha256 + lscpu + env in the log header), per-arm echo assertion both
+directions (SR default; PBS/fix per arm; the fix INFO echo follows the ENV
+at singles — the c8pool harness-note lesson pre-applied), same-session Σ
+singles per arm env, seed-7 topo-abort protocol (n recorded, nothing
+discarded), per-rep UTC wall-clock stamps (the B1 co-tenancy discipline:
+any rep overlapping another worker's reported VM activity is
+contamination-suspect and re-run). Arms: legacy / pbs / fix
+(= `RWM_PLACE_SLACK=1` on the shipped pool) / lfix (= slack on legacy
+pool, c8 only — the pool re-settlement arm) / fix+live (c8 only, the
+secondary-lever attribution arm); cells c8 (25 MB), c7 (200 MB), sc2
+(100 MB) + sc3 (25 MB) singles.
+
+*(Results below this line were written after the runs.)*
+
 ## C8-Aware Pool Law (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the diagnosis runs and the battery; branch `feat/c8-pool-law` from be24660; env `RWM_STORE_CAPW`, default OFF)
 
 *Decision record: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
