@@ -930,6 +930,42 @@ secondary-lever attribution arm); cells c8 (25 MB), c7 (200 MB), sc2
 
 *(Results below this line were written after the runs.)*
 
+### AMENDMENT (pre-battery, 2026-08-06 ~16:20 UTC) — the smoke run falsifies the UNBOUNDED-S form and NAMES the missing mechanism; the law is re-derived with the recovery-patience bound BEFORE any battery
+
+One smoke run of the law as first pre-registered (c8, seed 42, sha
+817edc57…, `RWM_PLACE_SLACK=1`): **66.2 Mbit — below BOTH incumbents.**
+The gauges say exactly why, and it is the derivation re-read's named risk
+(3) plus a coupling the derivation missed: S clamped at its 250 ms
+ceiling (`slk=250ms/r9094`), placement DID reach capacity share
+(splace_p1 = 3172/21152 = 15.0% — the (a) starvation is dead), but
+**retxo_p1 = 1562/3172 = 49%**: the placement plane now tolerates 250 ms
+of slow-path lateness while the RECOVERY plane's patience for a slow
+flight is only ~9/8·srtt_slow (~55–70 ms) — the planes FIGHT, half the
+slow placements are re-served cross-path (dup_p0 = 1544 wasted fast
+arrivals), and the frontier serializes behind 250 ms-late symbols
+(stallo_p1 876 ms/44).
+
+Per discipline item 11 this failure NAMES a new mechanism (it is not a
+tuning miss): **the placement lateness budget must be bounded by the
+recovery plane's patience for the placed path.** Re-derived law (the
+battery runs on THIS form; no other change):
+
+    D_i    = min(S, 9/8 · srtt_i)        ← per-path deadline; 9/8 is RFC
+                                            9002 kTimeThreshold — the SAME
+                                            constant `mp_time_threshold_us`
+                                            already uses, not a new dial
+    cost_i = max(0, Ê_i − D_i)/ref_srtt + w_bw·r_i + w_div·ρ_fate
+
+S = 0 still reproduces shipped bit-exactly (min(0, ·) = 0). The slow
+path's admissible backlog becomes rate_i·(9/8·srtt_i − owd_i) once the
+frontier slack covers it — deep enough to convert continuously, never
+deeper than what the hole law will not re-serve. Predictions/falsification
+conditions of the pre-registration carry over unchanged against this
+form; prediction sub-claim "retxo_p1 ≤ ~2× realized GE" is now load-
+bearing (it was the clause the unbounded form broke).
+
+*(Battery results below this line were written after the runs.)*
+
 ## C8-Aware Pool Law (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the diagnosis runs and the battery; branch `feat/c8-pool-law` from be24660; env `RWM_STORE_CAPW`, default OFF)
 
 *Decision record: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
