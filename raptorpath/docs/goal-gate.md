@@ -556,6 +556,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_FRONTIER*` (`RWM_FRONTIER`,`_GAIN`,`_R`,`_OFFSET`) | "Proactive Frontier (2026-07-07)": rf=718 emitted, ru=4 useful — repair anchored at the ack frontier loses the race to its own ARQ retransmit | **W1, W7, W8, PRE-DIV** (earliest refutation in the register) — but the mechanism died on GEOMETRY (a trailing window anchored ½-RTT stale covers holes only after they stick), not on throughput | **NO on supersession grounds** — same successor chain as INLINE_REPAIR (`RWM_PROACTIVE_PACER` → presence⊥throughput structural); the single-path recovery-latency cell it targeted has been re-measured post-walls repeatedly (sc3 recovery ceiling 15.6–15.9) without this mechanism being the missing term | **REMOVED bede4a3 (2026-07-27)** — the FDIAG instrument (RWM_FDIAG) is retained; only the mechanism died |
 | `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | **REMOVED f1f32c5 (2026-07-27)** — effective_btlbw is now always the windowed-MAX (the shipped default, byte-identical) |
 | `RWM_PLACE_SLACK` | "C8 Slow-Path Conversion (2026-08-06)": c7 protection clause FAILS ≫σ both seeds (145.6/151.0 = 0.858/0.896×Σ vs required ≥0.97); c8 never ≥ both incumbents; the smoke-falsified unbounded form was re-derived once (recovery-patience bound, D_i = min(S, 9/8·srtt_i)) per item-11's names-a-new-mechanism clause, then the battery falsified the bounded form too | **NONE** — refuted on the full current default stack (BBR + SR + PBS + MP + anchors + unified), same-session interleaved, instrumented | **NO** — the refutation is the clean-substrate datum AND carries the structural finding: slow-path source share is monotonically anti-correlated with c8 goodput across five arms (6%→88.6, 18%→70–83); the mechanism WORKED (placement reached capacity share, ~90% first-copy conversion) and the cell still paid more than it banked. Any future conversion ask must first refute the negative-margin table, not rebuild placement | **DEPRECATED 2026-08-06, default OFF** — law + 5 unit tests retained as the measured A/B arm until the next consolidation pass deletes it |
+| `RWM_WIN_DECOUPLE` | "Window Decoupling + MTU Scaling (2026-08-06)": predictions 2–3 failed BOTH seeds (sc2 −1.76/−0.37 vs a +1.5…3 band; sc3 +0.09/+0.22 vs +0.8…1.6) with the law engaged exactly as derived (wd gauge live, echo RTT collapsed 108→27 / 520→230 ms) — the goodput never followed the queue | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, instrumented; the one defect found mid-battery (the paused-feed scope leak at N ≥ 2) was fixed and the duals re-measured TIE before any verdict | **NO** — the refutation carries three named mechanisms that supersede a re-test: (i) the §16.30 re-fire loop is re-serve-clocked (receiver re-advertise + per-seq cooldown), NOT queue-sustained — fired stays ×3.3–4.2 realized drops at a 27 ms echo; (ii) the 1024-latch's honest insurance value at sc2 is only ~0.4–1.8 Mbit (sub-sweep ack-granularity + drop-granularity cover), the PBH0 −20% cliff sits below ~256; (iii) the B1 jitter dwell is recovery-latency-owned — releasing the ceiling moves Copa −1.0…−1.4. A future re-ask starts from the composed datum (fix+mtu = best-ever sc3 16.86/16.84) and must attack the re-serve clock or the recovery dwell, not the window again | **DEPRECATED 2026-08-06, default OFF** — law + 4 unit tests + loopback retained as the measured A/B arm; the N1-scoped sampler pause (paused feed ≡ absent feed) retained as shared machinery |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
 | STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. ~~Deletion GO next consolidation pass~~ **REMOVED bccb32a (2026-07-27, Code Consolidation 2, scoped streaming-only)** — adapter + `streaming-codes` crate + selection glue deleted (−1,708 net LOC); `fec_backend streaming` is a parse error with a pointer; **OPT-OUT SEMANTICS CHANGE: `RWM_UNIFIED=0` + Realtime now selects the LEGACY-RLC windowed machine** (its own retirement clause, §17.5, stays open — NOT re-argued); the cell-5 p999 WATCH is HISTORICAL (a property of the deleted machine, measured and bounded above). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
@@ -1045,6 +1046,169 @@ residence term is gain·Σcwnd (Copa's own honest pipe, un-truncated) with
 the same stall meter and retention backstop — the B1 ceiling release.
 
 *(Battery results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16, 2026-08-06 18:46–20:16 UTC; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, RWM_GEN=0 RWM_DIAG=1 everywhere; drivers `tools/l1/winmtu_{battery,jit,phase2}.sh` + `tail_matrix.sh`; logs + per-run diag preserved under `/home/vibe/winmtu/`; binaries: A = sha256 335e07f1… (commit 3e7f43a, built fresh, stale rm'd, CRLF-converted) for the s42+s7 batteries; B = 0e4f5cde… (commit 44fe5aa = A + the scope fix below) for the dual re-run, the jitter cross-check, and the crown tails; runtimes: s42 battery 18:46:31–19:10 (24 min, 112/112 clean, 0 retries), s7 19:10–19:35 (25 min, 106 completed + the seed-7 flake class: RUN-RETRY recovered, RUN-LOST sc2-def 1 / sc2-fix 1 / sc3-def 2 / c7-fix 1 / c7-mtu 1, n quoted), phase-2 build 19:37–19:41, redual 19:41–19:51, jit 19:51–19:59, tails 19:59–20:16; dnf = 0 in every completed run of every battery; liveness echoes asserted per arm both directions, 0 ARM-LIVENESS-FAIL / 0 ARM-CONTAMINATION on captured runs)
+
+**INCIDENT, recorded first — the falsification-(5) scope defect, found,
+fixed, re-measured.** On binary A the s42 duals read c7-fix 64.05 ± 0.39
+(vs def 166.35) — the pre-registered clause "c7/c8 moved ≫σ ⇒ scope
+defect (a bug, not a result)" fired. Gauge forensics named it exactly:
+with the N1-scoped feed PRESENT-BUT-PAUSED at N ≥ 2, (a) `charge_src`/
+`on_src_sent` still ran per send while attribution was paused —
+src_inflight leaked to ~165 k; (b) the per-batch Ack arm suppressed the
+legacy `record_delivery` anchor feed while the paused feed supplied no
+samples either — btlbw=0/est=n on BOTH paths, the dyn cap stuck at the
+128 boot value for the whole transfer. Fix (commit 2ea195f): every
+feed-conditional site filters on `!n1_paused()` (a paused feed ≡ absent
+feed), and the feed starts PAUSED under `RWM_WIN_DECOUPLE` so a dual
+bring-up never charges a symbol. The dual re-run on binary B (redual,
+def2 ↔ fix2 interleaved ×8 both seeds): **c7 fix2 166.40 ± 2.13 /
+165.45 ± 1.86 vs def2 166.38 ± 0.96 / 165.71 ± 2.24 (7) — TIE; c8 fix2
+75.20 ± 17.44 / 71.78 ± 11.33 (7) vs def2 76.54 ± 8.86 / 70.16 ± 15.37 —
+TIE within the cell's episodic σ.** Prediction 5 (dual inertness) HOLDS
+on the fixed binary. Singles are UNAFFECTED (at N = 1 the pause never
+engages; code path identical).
+
+**Goodput, singles (mean ± σ_s (n); bars = quinn-bbr 91.9 / 18.6,
+"Competitive Baseline", same cells/seeds):**
+
+| cell | arm | s42 | s7 |
+|---|---|---|---|
+| sc2 (c2 single 100 MB) | def | 85.17 ± 0.78 (8) | 84.48 ± 0.82 (7) |
+| | fix (`RWM_WIN_DECOUPLE`) | 83.41 ± 0.85 (8) **−1.76** | 84.11 ± 0.77 (7) −0.37 |
+| | **mtu (`RWM_WIRE_COMPACT`)** | **87.76 ± 0.98 (8) +2.59 ≫σ** | **88.12 ± 0.68 (8) +3.64 ≫σ** |
+| | both | 87.17 ± 0.83 (8) +2.00 | 86.69 ± 1.01 (8) +2.21 |
+| sc3 (c3 single 25 MB) | def | 16.08 ± 0.21 (8) | 16.04 ± 0.09 (6) |
+| | fix | 16.17 ± 0.23 (8) +0.09 | 16.26 ± 0.12 (8) +0.22 |
+| | **mtu** | **16.63 ± 0.19 (8) +0.55 ≫σ** | **16.64 ± 0.15 (8) +0.60 ≫σ** |
+| | both | **16.86 ± 0.19 (8) +0.78** | **16.84 ± 0.31 (8) +0.80** |
+
+**Duals (binary A for def/mtu; the fix column is the binary-B redual):**
+
+| cell | def | mtu | fix (redual, vs its def2) |
+|---|---|---|---|
+| c7 s42 | 166.35 ± 1.12 (0.977×Σ) | **174.41 ± 2.85 (+8.1; 0.994×Σ-own)** | 166.40 ± 2.13 vs 166.38 (tie; 0.997×Σ-own) |
+| c7 s7 | 166.52 ± 1.73 (0.986×Σ) | **171.13 ± 2.90 (7) (+4.6; 0.971×Σ-own)** | 165.45 ± 1.86 vs 165.71 (7) (tie; 0.983×Σ-own) |
+| c8 s42 | 76.09 ± 11.67 | 75.98 ± 13.95 (tie) | 75.20 ± 17.44 vs 76.54 (tie) |
+| c8 s7 | 69.23 ± 10.65 | **86.62 ± 7.64 (+17.4 — the episodic mode caught NOT firing; direction consistent, inside the pooled arm's session spread class)** | 71.78 ± 11.33 (7) vs 70.16 (tie) |
+
+The c7 ≥ 0.97×Σ clause holds for EVERY arm on both seeds; c8 never
+regresses (the 0.87 line belongs to the legacy pool arm, unrun here; the
+shipped-pool def arms read their documented episodic class).
+
+**Wire truth (qdisc cli0, per-run means — the part-2 mechanism gauge):**
+sc2 def 116.11 MB for the 100 MB object → mtu **111.90 MB** (−48 B/pkt ≈
+overhead 119 → **~71 B**, framing efficiency 0.910 → ~0.944 — the
+derivation's number, measured); sc3 30.72 → 29.76 MB; c7 115.97 → 111.30
+MB. Drops sc2: def 451 → mtu 374 (fewer packets, fewer GE events).
+
+**Mechanism, part 1 (the decoupled law engaged exactly as derived —
+`wd=al…` gauge on every fix rep; sc2 allow ≈ 300 = anchor·(K+1) with
+honest r ≈ 9.8–10.5 k, ret ≈ 2400; sc3 allow ≈ 232, ret ≈ 685):**
+- echo RTT collapses as predicted: sc2 107.8/105.4 → **26.9/30.7 ms**;
+  sc3 520/541 → **232/219 ms** (prediction-1 echo clause ✓).
+- **fired does NOT collapse: sc2 3288/3292 → 3455/3233 (flat); sc3
+  2435/2359 → 2172/1979 (−11…−16%)** — prediction-1's fired clause
+  FAILS and falsification (2) lands: with the standing queue measurably
+  gone the re-fire loop persists, so §16.30's "queue-sustained re-fire
+  loop" attribution is AMENDED — the re-fires are receiver-re-advertise
+  + per-seq-cooldown clocked re-serves of open holes (and at 27 ms echo
+  most are no longer even young: y share 80% → ~55–60%), not
+  queue-aged-past-the-law fires. `RWM_RECOV_SP` is NOT subsumed (its
+  sc3 +0.32–0.35 remains the only ≫σ singles lever of that family;
+  relation recorded per pre-registration (g)).
+- the sc2 static-probe insurance number reproduces as the law's cost:
+  −1.76/−0.37 — the diagnosis's micro-stall/drop-granularity channels
+  (equal wire bytes, ~2% wire idle, more drop EVENTS at a shallow
+  queue), NOT the PBH0 −20% class (the cliff sits below ~256).
+
+**B1 jitter cross-check (prediction 4; jit5/jit15 per adv_cells.sh, ×5
+per arm per seed, all ARMCOUNT 5/5, same-session BBR-under reference):**
+
+| cell | A = bbr | B = copa | Bfix = copa + decouple | B/A · Bfix/A |
+|---|---|---|---|---|
+| jit5 s42 | 78.88 ± 3.88 | 27.78 ± 0.41 | 26.72 ± 0.51 | 0.35 · 0.34 |
+| jit5 s7 | 76.56 ± 3.53 | 26.65 ± 0.28 | 25.64 ± 0.62 | 0.35 · 0.33 |
+| jit15 s42 | 75.65 ± 6.25 | 24.38 ± 0.34 | 23.00 ± 0.51 | 0.32 · 0.30 |
+| jit15 s7 | 72.67 ± 3.51 | 22.49 ± 1.40 | 21.15 ± 1.54 | 0.31 · 0.29 |
+
+The gauge shows the ceiling RELEASED (`win=1024/1024` pin → outstanding
+~1100–1180 against allow ≈ 1050/ret ≈ 1900; wd live on every copafix
+rep) — and Copa does not move (−1.0…−1.4, consistent both seeds).
+**The store-ceiling share of the B1 dwell attribution is REFUTED: the
+1024 latch was not the jitter-cell binder.** The B1 CC×store interaction
+is owned by the EMPTY-PIPE RECOVERY-STALL share alone (outstanding only
+*wants* ~1150 at Copa's own operating point; the ~300 ms dwell is
+recovery latency, not store truncation) — the pre-registered
+attribution-bearing alternative, now measured on both seeds. ADR-0068's
+jitter-cell bar sharpens accordingly: lifting store ceilings buys
+nothing; the recovery-plane dwell itself is the target.
+
+**Crown gate (tail_matrix c2 spot ×4, seed 42, binary B; per-rep p99
+medians, n = 1000 delivered on EVERY rep, all arms):** default 400 B
+35.7 [35.4–36.3] / 1200 B 39.5 [35.4–68.4]; **mtu 36.1 [35.3–38.9] /
+40.8 [35.4–43.8]**; wdfix 35.5 / 40.7; wdmtu 36.1 / 40.4 — all inside
+the historic ~36–48 ms class. **Crown UNREGRESSED for both parts.**
+
+### VERDICTS vs the pre-registrations — PART 2 FLIPS, PART 1 DOES NOT
+
+- **PART 2 (`RWM_WIRE_COMPACT`): every pre-registered clause holds on
+  both seeds** — (1) overhead gauge 119 → ~71 B ≤ 75 ✓; (2) sc2 +2.59/
+  +3.64 in the +2.5…4 band ≫σ ✓; (3) sc3 +0.55/+0.60 in the +0.5…0.9
+  band ≫σ ✓; (4) c7 +8.1/+4.6, c8 tie/+17.4, composed ≈ additive ✓;
+  (5) crown unregressed ✓; (6) dnf = 0, `mtu_blackhole_wedge` green
+  (datagrams SHRINK — no floor interaction) ✓. **FLIP: `RWM_WIRE_COMPACT`
+  ships DEFAULT ON** (`=0` = the legacy-framing opt-out arm; PROTOCOL_
+  VERSION 5 refuses pre-compact peers cleanly at handshake). vs the
+  bars: sc2 87.8–88.1 vs quinn-bbr 91.9 (the c2 gap ~6.9 → ~3.9 Mbit);
+  sc3 16.6 vs 18.6 (2.55 → ~1.95); per §16.32 the c8-remaining-gap ≡
+  the c2 gap, so the c8-to-kernel-MPTCP distance shrinks by the same
+  term. The residual c2 gap decomposes as ~1.2 Mbit of remaining
+  fixed-overhead delta (71 vs quinn's ~61 B/pkt on bigger MTUD packets)
+  + the ~2.7 Mbit reactive-plane term the fired-count amendment above
+  re-attributes (below) + margin.
+- **PART 1 (`RWM_WIN_DECOUPLE`): predictions 2 and 3 FAIL on both
+  seeds** (sc2 −1.76/−0.37 against a +1.5…3 band; sc3 +0.09/+0.22
+  against +0.8…1.6); prediction 1 PARTIAL (echo collapse exact, fired
+  flat — falsification (2) fires and amends §16.30, above);
+  prediction 4 lands on its attribution-refuting branch (store-ceiling
+  share = 0); prediction 5 holds after the scope fix; crown clause ✓.
+  Per the flip rule and discipline item 11: **NO FLIP — `RWM_WIN_
+  DECOUPLE` ships DEFAULT OFF**, register row added (the failure names
+  three mechanisms: the re-fire loop is re-serve-clocked rather than
+  queue-sustained; the 1024-latch's honest insurance value at sc2 is
+  ~0.4–1.8 Mbit of sub-sweep ack-granularity/drop-granularity cover;
+  the jitter-cell dwell is recovery-latency-owned, not store-owned).
+  Retained as the measured A/B arm with its law tests; the N=1-scoped
+  sampler pattern (pause semantics) stays — it is the reusable piece.
+- **Composition note (recorded, not flip-bearing):** both = fix+mtu is
+  the best sc3 arm ever measured (16.86/16.84 — above the RECOV_SP
+  record 16.45–16.48) while costing ~−0.6/−1.4 vs mtu alone at sc2 —
+  the decoupled window's sc3 value appears only once the framing tax is
+  paid down. A future part-1 re-ask starts from that composed datum,
+  not from scratch.
+
+**Suites (final tree, flip committed):** lib 376/376 (4 new part-1 law
+tests + 5 compact-codec tests + the pause law); raptorpath-math full
+59/19/22/4/4/3/25; gate_suite 15/15 release; `mtu_blackhole_wedge` 2/2;
+`perf_loopback` 8/8; `win_decouple_loopback` + `wire_compact_loopback`
+(new) + `copa_sole_loopback` + `emit_batch_loopback` +
+`recov_mp_loopback` + `backpressure` — all green. Gates-default test
+pins `win_decouple=false`; the compact gate is a transport resolve-once
+knob (`wire_compact_active`, default ON, noted in gates.rs).
+
+Ops: lock `/tmp/rwm-vm.lock` taken 2026-08-06 17:25:55 UTC (found FREE),
+held through diagnosis → batteries → phase 2, released 20:24:12 UTC
+after teardown verification (no rp processes, no rp-* netns) + log
+preservation;
+rp-* netns torn down per invocation and verified at teardown; logs +
+per-run diag under `/home/vibe/winmtu/` (diagnose-s42, battery-s{42,7}
+incl. redual appendix, jit-s{42,7}, tails-s42, phase2, diag/); binaries
+1306bea4… / 335e07f1… / 0e4f5cde… with sha256 + commit + lscpu + kernel
+in every log header; seed-7 abort ns recorded above; the winmtu battery
+harness note for FUTURE sessions: with the compact default ON, the
+`compact DATA framing ACTIVE` echo now prints on DEF arms too (the
+def-arm contamination check keys must move to `=0`-arm absence).
 
 ## C8 Slow-Path Conversion (2026-08-06) — DIAGNOSIS-FIRST (branch `feat/c8-conversion` from f2f1c78; the "C8-Aware Pool Law" verdict's named successor: the binder is NOT pool sizing — WHY does the slow path convert ~nothing at c8?)
 
@@ -1961,12 +2125,25 @@ vanishes into the BBR-probe/idle margin.
    framing tax is ~4.3 Mbit at c2, ~0.95 at c3 — the single largest c2
    term. Candidate: scale symbol payload to the MTUD-verified path MTU
    (keep the 1350 floor as the blackhole defense). Up to +4/+1 Mbit.
+   **[EXECUTED 2026-08-06, "Window Decoupling + MTU Scaling" part 2:
+   the tax is mostly rp's own 65-B framing, not the MTU — the v5
+   compact frame banks +2.6/+3.6 at sc2 and +0.55/+0.60 at sc3 ≫σ both
+   seeds and FLIPPED default ON (`RWM_WIRE_COMPACT`); the two literal
+   MTU options refuted-by-derivation / roadmap-with-price.]**
 2. **Window/inflight decoupling at lossy singles**: keep the wire fed
    through frontier stalls WITHOUT retaining a 4–13×BDP un-SACKed span
    (candidates: retx priority lane ahead of the fresh-symbol queue;
    honest inflight target + spare-capacity filler). Sized: the remaining
    reactive-plane overhead above honest retx ≈ 1.5–2 Mbit at c2,
    ~1.0–1.4 at c3 (post-RECOV_SP residual).
+   **[EXECUTED + REFUTED 2026-08-06, "Window Decoupling + MTU Scaling"
+   part 1: the decoupled law killed the queue (echo 108→27 / 520→230
+   ms) and the goodput did not follow (sc2 −1.76/−0.37, sc3 tie) —
+   fired stays ×3.3–4.2 with the queue gone, so THIS section's
+   "queue-sustained re-fire loop" attribution is AMENDED: the re-fires
+   are re-serve-clocked (hole re-advertisement + per-seq cooldown).
+   Register row; the reactive-plane residual's owner is the re-serve
+   clock, not the window.]**
 3. **Sender loss-estimator honesty at singles**: per-path `pl` reads
    0.000–0.010 at 2.5–4.8% cells ⇒ r* = 0 ⇒ the proactive plane is dead
    at singles; whether funded proactive r* beats reactive-only at bulk is

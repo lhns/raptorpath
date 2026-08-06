@@ -9755,6 +9755,66 @@ the policer as blocked on the burst-loss recovery prerequisite. A
 prediction table where the most confident row (shallow-buffer
 loss-conversion) inverts is exactly what the pre-registration
 discipline is for: the map, not the indictment, is the deliverable.
+### 16.34 The lossy-singles structural terms executed: compact wire framing flips ON; the window-decoupling law is refuted and re-attributes the re-fire loop (2026-08-06, `feat/window-mtu`)
+
+The §16.30 closed accounting left two structural terms and one
+interaction on the table: the framing/MTU tax (~4.3/0.95 Mbit at c2/c3),
+the spurious-retx term (~2.7/1.7, attributed to the 1024-latch's
+standing queue), and the B1 jitter-cell Copa dwell ceiling (§16.33).
+Both levers were pre-registered, built default-OFF, and measured on
+seeds 42+7 ×8 interleaved (goal-gate "Window Decoupling + MTU Scaling").
+One flipped; one refuted with the more valuable result.
+
+**Part 2 — the framing tax is mostly rp's own 65 B/packet, and it is
+gone.** The per-symbol wire overhead (119 B, all fixed) decomposes as
+28 IP/UDP + ~26 QUIC + **65 B of rp framing** (8 magic+version + 57
+bincode-fixint, including two 8-byte length fields for lengths the QUIC
+datagram boundary already carries). The derivation refuted both named
+MTU options first — filling the 1350 floor is worth +0.1 Mbit
+(arithmetic), MTUD-style payload scaling is worth ≤ +1 and re-exposes
+the §12.12 black-hole wedge geometry unless the floor rises with it —
+and named the third: a compact v5 DATA frame (tag byte + varints,
+payload to the datagram boundary, ~15 B) recovers ~50 B/packet with NO
+MTU change, no symbol-size change, and shrinking datagrams (no wedge
+surface). Measured: wire 116.1 → 111.9 MB per 100 MB object (overhead
+119 → ~71 B/pkt), **sc2 +2.59/+3.64 Mbit ≫σ, sc3 +0.55/+0.60 ≫σ, c7
++8.1/+4.6, c8 unregressed, realtime crown spot unregressed, wedge
+green** — every pre-registered clause on both seeds. `RWM_WIRE_COMPACT`
+ships DEFAULT ON (PROTOCOL_VERSION 5; `=0` = legacy-framing opt-out).
+The c2 gap to quinn-BBR narrows −14% → −4…−5% (87.8–88.1 vs 91.9); by
+§16.32's identity (the residual c8 gap ≡ the single-path c2 gap) the
+same term moves the c8-to-kernel-MPTCP distance.
+
+**Part 1 — the window/inflight decoupling is REFUTED, and the
+refutation buys three attributions.** The law family (wire budget = the
+live head span above the SACK frontier, gated at
+anchor·(K+gain−1) + rate·min(stall_age, 100 ms) — the 1024-latch's
+stall insurance made explicit and continuous; holes and retention on a
+separate backstop; N = 1 only; the B1 ceiling released under
+Copa-sole) engaged exactly as derived: the standing queue died (echo
+RTT 108 → 27 ms at sc2, 520 → 230 ms at sc3). The goodput did not
+follow (sc2 −1.76/−0.37, sc3 +0.09/+0.22 — both prediction bands
+missed), and the mechanism gauges name why, superseding three standing
+attributions: (i) **the §16.30 re-fire loop is NOT queue-sustained** —
+with the queue gone, fired stays ×3.3–4.2 realized drops; the re-fires
+are re-serve-clocked (receiver hole re-advertisement each [25,100] ms +
+per-seq cooldown), so window laws cannot kill them and `RWM_RECOV_SP`
+is not subsumed; (ii) **the 1024-latch's honest insurance value at sc2
+is ~0.4–1.8 Mbit** of sub-sweep ack-granularity and drop-granularity
+cover (the −20% floor-law cliff of §16.22 sits below ~256, not at the
+honest size); (iii) **the §16.33 jitter-cell dwell ceiling was not the
+store** — with the ceiling released (outstanding free to 1900) Copa
+holds 0.29–0.35× BBR-under unchanged (−1.0…−1.4 if anything): the
+CC×store interaction is the empty-pipe recovery stall alone, which
+re-scopes ADR-0068's jitter bar onto the recovery plane's dwell. One
+scope defect (the paused N1 sampler leaking src-inflight at duals) was
+caught by the pre-registered c7 clause, fixed, and the duals re-measured
+TIE before any verdict. Register row; the law and its tests remain as
+the measured A/B arm. The composed arm (decouple + compact) is the best
+sc3 ever measured (16.86/16.84) — recorded as the starting point for
+any future re-ask, which must attack the re-serve clock or the recovery
+dwell, not the window.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -10226,8 +10286,8 @@ traverses the same seeded GE direction.
 | condition × workload | rp shipped default | best competitor | verdict |
 |---|---|---|---|
 | c1 bulk (clean 1 Gbit) | 164–168 Mbit/s | quinn-BBR 915; kernel TCP ~900 | **LOSS ×5.5** — the §16.23 engine service walls, externally priced |
-| c2 bulk (GE 2.6%) | 78.6–78.7 | quinn-BBR 91.9–92.4 | **LOSS −14%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine |
-| c3 bulk (20 Mbit lossy) | 16.1 | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | **LOSS −9…−13%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling |
+| c2 bulk (GE 2.6%) | 78.6–78.7 → **87.8–88.1 (compact framing default ON, 2026-08-06, §16.34)** | quinn-BBR 91.9–92.4 | ~~LOSS −14%~~ → **LOSS −4…−5%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine. **Framing term EXECUTED 2026-08-06, §16.34: v5 compact DATA framing (`RWM_WIRE_COMPACT`, flipped default ON) banks +2.6/+3.6 ≫σ both seeds; the window-decoupling lever was measured and refuted (register)** |
+| c3 bulk (20 Mbit lossy) | 16.1 → **16.6 (compact framing, §16.34)** | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | ~~LOSS −9…−13%~~ → **LOSS −8…−11%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling. **Executed 2026-08-06, §16.34: compact framing +0.55/+0.60 ≫σ (flipped ON); decoupling refuted at the singles (the re-fire loop is re-serve-clocked, not queue-sustained — the §16.30 spurious-retx term is re-attributed)** |
 | c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |
 | c8 bulk (dual c2+c3) | 67–74 (shipped; session-episodic 70–88 — §16.32) | MPTCP-BBR 90–93; single-path TCP-BBR 89.5–92.1 | **LOSS −21…−27%**, below even single-path kernel BBR — the §17.7 c8 WATCH externally confirmed. **Closed structurally 2026-08-06, §16.32: slow-path source is negative-margin at this asymmetry under every placement law measured (share↑ ⇒ goodput↓, monotone, both seeds); the legacy-1024 arm holds 0.874/0.871×Σ (88.6/87.6) — 1–4 Mbit under the kernel MPTCP bar, whose own slow-path banking is +3.1/−2.4; the remaining c8 gap ≡ the single-path c2 gap (§16.30)** |
 | c2 realtime tails | p99 med 36–39 ms, 1000/1000 delivered | QUIC 55–342 ms; TCP 209–1407 ms + delivery cliffs (to 687/1000) | **WIN ×1.4–8.8 / ×5–38** |
