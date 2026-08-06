@@ -989,6 +989,63 @@ preserved under `/home/vibe/winmtu/`. Driver `tools/l1/winmtu_*.sh`:
 *(The diagnosis results, the amendment, and the battery results below
 this line were written AFTER the respective runs.)*
 
+### PART 1 DIAGNOSIS RESULTS (VM 10.1.5.16, 2026-08-06 17:53:26–17:55:12 UTC; binary sha256 1306bea40182… = commit 7ebba0e, built fresh (stale rm'd, CRLF-converted); E5-2650 v3; kernel 7.0.14-101.fc43; seed 42 ×2/arm, 8/8 clean, 0 retries; driver `tools/l1/winmtu_diag.sh`; log `/home/vibe/winmtu/diagnose-s42.log` + full per-run DIAG series under `diag/`)
+
+| arm | goodput (Mbit/s) | echo rtt | fired (y) | wnd2 hole max | relgap mx steady | qdisc sent / pkt / drop | wire util |
+|---|---|---|---|---|---|---|---|
+| sc3-def (1024 latch) | 16.25 / 15.87 | **554–569 ms** | 2270–2317 (×4.6 drops; y 60–66%) | 22–61 | 3–10 ms | 30.5–30.6 MB / 26.9–27.9 k / 497–502 | ~99% |
+| sc3-s384 (honest-size static) | **16.22 / 16.43 — TIE** | **194–209 ms** | 1669–1810 (×3.4; y 86–96%) | 2–38 | 10–12 ms (one 101 ms at the drain tail) | 29.9–30.0 MB / 26.6–27.6 k / 498–514 | ~99% |
+| sc2-def | 85.54 / 85.25 | **104–109 ms** | 3121–3156 (y ~74%) | 1–70 | 2–4 ms | 115.93 MB / 86.3–86.4 k / 325–337 | **99.2%** |
+| sc2-s256 | 84.53 / 84.32 (**−1.0**) | **23–27 ms** | 2669–2987 (y ~55–62%) | 0–20 | 2–4 ms | 115.99 MB / 94.9 k / 556 | **98.0%** |
+
+**The D-rule verdicts (the pre-registered decision rule, applied):**
+- **D1 (hole-pinning): REFUTED.** Holes never exceed ~70 of a 256–1024
+  window (≤ 7%) in any arm at either cell — recovery-stalled seqs do NOT
+  eat the budget.
+- **D2 (release clumping at the [25,100] ms sweep scale): REFUTED.**
+  relgap-max stays 2–12 ms through steady transfer in every arm (the
+  per-symbol in-order acks + 2 ms gap-ack cadence keep the frontier
+  moving); the sweep-cadence starvation the derivation feared does not
+  occur.
+- **D3 (multi-round tail): NOT BINDING** (the hole population is too
+  small to need multi-round capacity; N_hole = 1 suffices).
+- **The insurance term, NAMED (none of the pre-registered three): SUB-
+  SWEEP ACK-GRANULARITY COVER.** At sc2 the honest-size window's whole
+  cost is **~1.2% of wire time** (util 99.2% → 98.0% at EQUAL wire
+  bytes ⇒ the −1.0 Mbit), spread over sub-3-ms micro-stalls (invisible
+  to the ≥3 ms sidle gauge; relgap mx 2–4 ms): a static window is
+  consumed by its own queue (Little's law — win 256 ⇒ echo 25 ms ⇒
+  residence ≈ 256: ZERO slack), so every ack-clock hiccup beyond the
+  pacing smoothing idles the wire. The 1024-latch buys those ~190 ms/run
+  by never being the binder. The law's stall-metered term is EXACTLY
+  this cover, made continuous: during any frontier freeze of g ms the
+  allowance grows rate·g (micro or sweep scale alike), and resets when
+  the frontier jumps.
+- **Session datum vs the July record:** the sc3-s384 "12% idle /
+  14.77" datum did NOT reproduce (16.22/16.43 = tie with def) — that
+  was one run in the flake-class diagnosis session; the idle-insurance
+  story at sc3 is SESSION-DEPENDENT at most. And the queue-shrink arms
+  cut fired only −15…−25% with y-fires persisting at 23–27 ms echo
+  (×3.4–4 fired/drops) — **the re-fire loop is only PARTLY queue-
+  sustained**, and the freed retx wire did not convert to goodput in
+  either static arm. Predictions 2–3 (sc2 +1.5…3, sc3 +0.8…1.6) are
+  therefore AT RISK by this diagnosis's own evidence; they stand
+  unchanged as the falsifiable bet, and falsification clause (4) (freed
+  wire → margin, not goodput) is the expected failure mode if they
+  fail. The B1 Copa-ceiling half of the law (prediction 4) is untouched
+  by this risk — the jitter cells need the ceiling RAISED, the
+  opposite direction.
+
+**AMENDMENT — constants fixed for the build (BEFORE the build; no other
+change to the pre-registered law):** R_ins = R = `HONEST_RECOVERY_ROUND_S`
+(100 ms, the sweep-cadence clamp — the same named constant); N_hole = 1
+(from D3); residence/K/gain verbatim from `honest_store_cap`; memory
+backstop `WIN_STORE_MAX` = 4096 (~5 MB); under Copa-sole (`owns_cc`) the
+residence term is gain·Σcwnd (Copa's own honest pipe, un-truncated) with
+the same stall meter and retention backstop — the B1 ceiling release.
+
+*(Battery results below this line were written after the runs.)*
+
 ## C8 Slow-Path Conversion (2026-08-06) — DIAGNOSIS-FIRST (branch `feat/c8-conversion` from f2f1c78; the "C8-Aware Pool Law" verdict's named successor: the binder is NOT pool sizing — WHY does the slow path convert ~nothing at c8?)
 
 *Decision record context: → [ADR-0058](adr/0058-path-scaled-outstanding-pool.md)
