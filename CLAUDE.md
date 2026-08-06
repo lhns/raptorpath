@@ -8,8 +8,9 @@ continuous in δ, with NO mode bit. This applies to the visualizer as much
 as the engine. The user rejected the architectural mode-switches twice
 (the decoder split; the hint-selected CC), and the visualizer reproduced
 the same defect three times through well-meaning shortcuts (fixed-anchor
-at a preset; a ρ-gated hint flip; a threshold-keyed hint boundary), each
-caught on review. The pattern, not the instances, is the enemy.
+at a preset; a ρ-gated hint flip; a threshold-keyed hint boundary) — the
+user caught and rejected every one of them in direct review. The pattern,
+not the instances, is the enemy.
 
 Concretely, in the visualizer and any model of the machine:
 
