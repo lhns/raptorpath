@@ -50,7 +50,7 @@ rp-perf-srv|rp-strace-srv)
     RUNNER=$!
     SRVPID=""; CLIPID=""
     for _ in $(seq 1 60); do
-        CLIPID=$(find_pid -- --client); SRVPID=$(find_pid -- --server)
+        CLIPID=$(find_pid "\-\-client"); SRVPID=$(find_pid "\-\-server")
         [ -n "$CLIPID" ] && [ -n "$SRVPID" ] && break
         sleep 0.5
     done
@@ -97,7 +97,8 @@ quinn-recv)
     sudo ip netns exec rp-srv "$QPERF" server --listen 10.77.0.2:4433 \
         > /home/vibe/recvwall/quinn-srv.log 2>&1 &
     sleep 1
-    QSRV=$(pgrep -f "quinn-perf server" | head -1)
+    QSRV=""
+    for q in $(pgrep -x quinn-perf); do grep -qa server /proc/$q/cmdline && QSRV=$q; done
     log "quinn server pid=$QSRV"
     sudo ip netns exec rp-cli sh -c "timeout 60 $QPERF client raptorpath:4433 --ip 10.77.0.2 \
         --upload-size 8000000000 --download-size 0 --congestion bbr \

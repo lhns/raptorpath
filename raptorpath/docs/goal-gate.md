@@ -14627,3 +14627,133 @@ before/after. Drivers `tools/l1/recvwall_*.sh` (+
 
 *(STEP 0/1 results, the amendment, and the battery results below this
 line were written AFTER the respective runs.)*
+
+### STEP 0 — RE-BASELINE RESULTS (VM 10.1.5.16, 2026-08-06 21:17–21:31 UTC; binary sha256 6bb6ca96… = commit 1ce8ba2 (v5 compact default ON), built fresh (stale rm'd, CRLF-converted); E5-2650 v3 aes+avx2+pclmulqdq; kernel 7.0.14-101.fc43; driver `recvwall_baseline.sh`, seeds 42+7, c1 arms ×4 interleaved + sink probes ×2/config; 32/32 runs clean, 0 retries, dnf = 0; logs `/home/vibe/recvwall/baseline-s{42,7}.log` + per-run diag)
+
+| arm (c1 single 400 MB) | s42 (n=4) | s7 (n=4) | v4-era reference |
+|---|---|---|---|
+| def (v5 shipped) | 200.8 (198.2–204.4) | 199.7 (187.9–205.6) | 186.2/190.8 ("Emission Batching") |
+| eb (`RWM_EMIT_BATCH=1`) | 217.8 (209.1–223.8) | 223.0 (215.8–233.2) | 216.2/210.5 |
+
+CPU: def CPUSRV 16.5–17.6 s ≈ CPUCLI 16.0–16.9 s (both ~1.03–1.05
+cores); eb CPUSRV ~16.1 s at 14.5 s wall = **1.10 cores receiver** vs
+CPUCLI 12.7–13.5 (0.88–0.93) — the receiver is the saturated side in
+the eb arm, exactly the "Emission Batching" verdict shape. RDIAG:
+def sc1 busy 83–85% at 19.4–23k msgs/s; eb sc1 busy 73–80% at 20–23k;
+dual-c1 eb bursts 25–32k msgs/s serviced (busy 78–89%, q ≤ 658 of
+4096) — one dc1-eb probe run banked **277.2 Mbit/s**, and the STEP-1
+1.2 GB profile run sustained **267.1 Mbit/s single-path** (the longer
+steady state amortizes warm-up/ramp; the 400 MB numbers carry ~2 s of
+ramp). **Prediction R0 verdict: HOLDS** — v5 lifted def ~+7% (186–191
+→ ~200) and eb ~+3% (210–216 → 218–223 at 400 MB), inside the ≤ ~10%
+band; the receiver remains the binder at ~1.1 cores. The wall's honest
+v5 position: **~22–26k msgs/s ≈ 220–270 Mbit/sink depending on
+transfer length** (object-scale ramp is a visible share at 400 MB).
+
+### STEP 1 — PROFILE RESULTS (same session, 21:32–21:44 UTC; `recvwall_profile.sh` phases rp-perf-srv / rp-strace-srv (eb arm, c1 1.2 GB, run read 267.1 Mbit/s, CPUSRV 44.5 s / CPUCLI 39.1 s ≈ 1.24 / 1.09 cores) + quinn-recv; logs `/home/vibe/recvwall/profile-*.log`, perf data preserved)
+
+**Receiver flat (perf -F 397 -g, 15 s at the wall):** the dominant
+family is `LossEstimator::record_batch` + its inlined
+`BayesianChangepoint::update` — **record_batch self 7.8 +
+__ieee754_exp_fma 7.75 + __ieee754_log_fma 4.86 + exp@glibc 2.01 ≈
+22.4%/core**. Then allocator (_int_malloc 3.80 + malloc_consolidate
+1.13 + realloc family — the BOCD update allocates TWO Vec(201) per
+call), engine-loop closure 3.08, AEAD 2.21 (noise, wall-#5 again),
+memmove 2.18, spin-lock slowpath 1.09. v5 deserialize does NOT appear
+≥ 0.4% (the compact parse is cheap — part of why def moved +7%).
+
+**Sender flat (same run):** the SAME family, larger — record_batch
+8.28 + exp 9.39 + log 5.64 + exp@glibc 2.63 ≈ **25.9%/core** — the
+sender runs `estimator.record_batch` per received legacy Ack
+(`handle_control_message` Ack arm, ~one Ack per Data batch ≈ 20k+/s).
+`run_window_sender` closure 2.88, handle_control_message 1.87.
+
+**The mechanism, named:** the receiver sends a legacy block-era
+`ControlMessage::Ack` for EVERY Data message (both modes, net/mod.rs
+~3480–3514) and calls `estimator.record_batch(expected, received)`
+under the scheduler lock per message; the sender processes that Ack
+through the same `record_batch`. Inside: EWMA + Beta + burst flag
+(cheap) + GE record_symbol (O(1), cheap) + **`BayesianChangepoint::
+update` — O(MAX_RUN_LENGTH = 200) with ~2 ln + 1 exp per run length,
+two Vec allocations, and a 200-entry stats-shift clone, PER CALL**.
+changepoint.rs's own header says "Cost: O(MAX_RUN_LENGTH) per update —
+negligible" and `default_fec()` documents the design cadence: "expect
+regime changes every ~100 batches (**200 s at 2 s intervals**)". The
+window wire calls it at ~22 kHz — ~4.4 M transcendentals + ~44k Vec
+allocs per second per side. This is a mis-scaled CONTROL-PLANE cadence
+(the sixth control-plane wall in a row), not irreducible per-message
+feature work.
+
+**quinn reference row (same box, quinn-perf server = receiver of the
+BBR upload at 923.5 Mbit/s wire-946):** 0.455 cores for ~90k wire
+pkts/s ≈ **5.1 µs/QUIC-packet**, flat profile AEAD-dominated (aesni
+9.42, memmove 4.16, kernel copy 2.71) — BYTE costs, control ~free:
+recvmmsg 3.7k calls/s (~24 wire pkts/call via GRO), **ack sends 3.7k/s
+≈ 1 ack per ~24 data packets**. rp's receiver at the wall: **~48
+µs/message** (1.24 cores / 26k msgs/s), of which ~10.6 µs is the BOCD
+family, ~2.3 µs allocator, ~1.1 µs AEAD — and rp emits ~2 control
+datagrams per data message (legacy Ack + WindowAck ≈ 40k control
+sends/s across both directions vs quinn's 3.7k). Feature-vs-overhead
+split per (f)2: reassembly/decoder/frontier bookkeeping is < ~3%/core
+at c1 (decoder add_symbol did not chart ≥ 0.4%) — the gap to quinn is
+NOT the FEC feature's cost at this cell; it is per-message control
+overhead (estimator cadence, dual-ack density, per-message wakeups).
+
+### AMENDMENT — what the profile names, pre-registered BEFORE the build (discipline 11)
+
+**PART 1 (the ONLY ≥ 5%/core overhead term): `RWM_EST_CADENCE`
+(default OFF, A/B) — restore the BOCD changepoint detector to its
+design cadence.** In `LossEstimator::record_counts`: accumulate
+(sent, received) and flush `bocd.update()` with the ACCUMULATED counts
+when (a) this call carries a loss (`lost > 0` — zero staleness on the
+informative observations; the BOCD sees every loss event at the same
+clock it does today), or (b) ≥ 10 ms since the last flush (the
+heartbeat for clean evidence; 10 ms ≪ the 100 ms recovery round, and
+one flush per 10 ms of clean symbols is EXACTLY the batch-cadence
+semantics `default_fec()` was designed and tuned for). EWMA, Beta,
+burst flag, GE record_symbol stay per-call (all O(1), they carry the
+per-symbol pattern). No wire change, no timing change, no ack-clock
+change, delivered set unchanged — pure compute. Gate resolved once
+(OnceLock, estimator.rs; noted in the gates.rs header list), liveness
+echo "estimator heavy-math cadence ACTIVE" at first construction.
+
+Predictions (pre-registered):
+1. MECHANISM: the exp/log/record_batch perf family collapses ≥ 22% →
+   ≤ ~4%/core on BOTH sides at the c1 wall; BOCD update rate ~22k/s →
+   ~100/s + loss-event rate.
+2. c1 PRIMARY: est ≥ +8% vs def (band 215–240 from def ~200) and
+   eb+est ≥ +8% vs eb (band 235–265 from eb ~218–223), both seeds,
+   Δ ≫ σ_s (~3–11); sink probes: the msgs/s wall moves ≥ +15% (22–23k
+   → ≥ 26k); receiver CPU/bit −15…−25%.
+3. sc2/sc3 HOLD within σ on both seeds (wire-bound cells; the
+   estimator's VALUES are equal-class at cell cadence — flush-on-loss
+   keeps every loss event current) AND the recovery gauges hold class
+   (fired/y, retx — a moved class = the staleness falsification).
+4. c7 ≥ 0.97× same-session Σ; crown tail spot ×4 unregressed
+   (p99 medians ~36–48 ms class, 1000/1000); dnf = 0; echo-RTT class
+   unchanged everywhere (no timing surface touched).
+Falsification: (i) recovery-gauge class moves at sc2/sc3 ⇒ the
+cadence starves a consumer (r*/recovery reads a stale posterior) —
+register row, NO tuning past the pre-set 10 ms constant. (ii) c1 flat
+with the perf family collapsed ⇒ the estimator term was not
+load-bearing (mis-attribution) — register row. (iii) any echo-RTT /
+store-gauge movement ⇒ scope bug (falsification-(5) class): fix
+before any verdict. Flip rule: `RWM_EST_CADENCE` flips DEFAULT ON in
+this branch IFF predictions 1–4 hold on both seeds and all suites
+stay green; else OFF + register row.
+
+**Explicitly NOT built (profile-refused, with numbers):** (A) batched
+datagram RECV / recvmmsg-class intake — the engine-loop/wakeup share
+is ~3%/core (run_impl closure 3.08) + ~1.5–2% syscall entry; below
+the 5% bar, and it borders the refuted drain family (its safe variant
+would buy < ~5%). (C) legacy-Ack thinning/removal at the protocol
+level — after Part 1 the remaining per-ack cost (serialize + send +
+sender handle ≈ 4–5%/side combined) is below the bar; it also touches
+the loss-feed (the Ack's expected/received counts ARE the sender's
+loss signal) — a protocol change with a control-plane consumer is not
+justified by a < 5% term. Both stay NAMED with their measured shares
+for a future profile to re-ask. (D) `RWM_EMIT_BATCH` composition is a
+battery ARM (eb+est), not a build — the sender binds second on v5 but
+its gate's own flip rule (c1 ≥ 400) is untouched here.
+
+*(Battery results below this line were written after the runs.)*
