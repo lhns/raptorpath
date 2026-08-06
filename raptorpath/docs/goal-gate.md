@@ -14505,3 +14505,125 @@ the measurement window (filesystem mtime sweep recorded); the
 which is why it was re-run under verified exclusivity. rp-* namespaces
 only; logs + per-run diag preserved under `/home/vibe/advcells/`;
 foreground polling only.
+
+## Receiver Per-Message Wall (2026-08-06) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any VM run and BEFORE any build; branch `feat/recv-permsg` from 48f60c4; ARC A item 3 — the ×4-to-quinn c1 gap's named binder: the engine-receiver per-message service wall, "Emission Batching"'s pre-named successor)
+
+**(a) The question.** The "Emission Batching" verdict named its residual
+binder with numbers: after the sender batched (+10–16% c1, sender cores
+1.10 → 0.94), the eb arm SATURATED the engine receiver (~1.10–1.12
+cores) at its ~22–23k msgs/s per-message service wall ≈ 210–230
+Mbit/sink — §16.23's recv-side wall, unchanged through three sessions.
+The external bar is quinn-bbr 915–922 on the same box (×4.3 of the
+batched ceiling). BUT: every wall number above is v4-era. The v5
+compact DATA framing flipped DEFAULT ON 2026-08-06 ("Window Decoupling
++ MTU Scaling" part 2: per-packet overhead 119 → ~71 B, hand-rolled
+varint parse instead of bincode) — parse/serialize and wire density
+both changed, so the wall may have MOVED. PROFILE-FIRST, and
+RE-BASELINE before the profile targets anything.
+
+**(b) Solution-space bounds (inherited, BINDING).** The refuted drain
+family (embatch receiver arm, commits 97bc6ea→8a71ed8, removed 1313841)
+bounds every candidate: ANY queueing between datagram arrival and ack
+emission collapsed c1 227.6 → 136–144 (echo-RTT 11 → 76 ms → dynamic
+store-cap growth → spurious tail-sweep/hole-refresh retx flood, ×3–6).
+Threading is refuted ×3 (§16.23; thread-count is not the wall — 1+1
+pinned cores sustain the operating point). The admissible space:
+reduce PER-MESSAGE / PER-ACK work, or carry more bytes per message —
+NEVER delay the ack clock behind a queue.
+
+**(c) STEP 0 — re-baseline on v5 (before the profile).** c1 single
+400 MB, arms def ↔ def+`RWM_EMIT_BATCH=1` interleaved ×4, seeds 42+7;
+engine-sink probes single-c1 + dual-c1 (400 MB, `RWM_RDIAG=1`, the
+§16.23 methodology) ×2 per config. Record goodput, msgs/s, engine
+busy%, q depth, CPUSRV/CPUCLI. Prediction R0 (pre-registered): the v5
+frames move the receiver wall ≤ ~10% (deserialize was ~3%/core of the
+v4 receiver flat and serialize 3.8%/core of the sender's; the
+estimator/ack-generation/lock terms are v5-invariant), so the eb arm
+re-baselines in the ~210–240 band with the receiver still the
+saturated side (~1.1 cores at ~22–25k msgs/s). If instead the wall
+moved ≥ ~15%, the profile targets the NEW wall and R0's failure is
+recorded as a v5 datum, not a defect.
+
+**(d) STEP 1 — profile the receiver core-second AT the wall.**
+`perf record -F 397 -g` + `strace -c` on the SERVER (bulk receiver)
+at the re-baselined wall (c1, 1.2 GB, the faster arm from STEP 0);
+same-run sender side for the binds-first question (#84 had send-side
+first at 19.5–20k sym/s; embatch moved sender to ~24k — which side
+binds on v5?). Attribution table (µs/msg × rate = cores), terms fixed
+in advance: (i) datagram recv + parse (quinn read_datagram → v5
+deserialize + per-symbol Vec alloc), (ii) per-symbol bookkeeping
+(decoder add_symbol, received_seqs BTreeSet, reorder/frontier walk),
+(iii) ack generation (received_sack_ranges BTreeSet walk + serialize +
+send_control_datagram, × R_ack ≈ one ack per in-order data symbol
+~20k/s + the 2 ms gap-ack cadence), (iv) estimator/control math
+(record_arrival, jitter, scheduler-lock family — the §16.23 receiver
+flat had estimator ~14%), (v) delivery/inject hand-off, (vi)
+allocator, (vii) select/loop re-arm (deadline recompute + 2 scheduler
+locks per wake). Reference row, same box: quinn-perf SERVER (receiver
+of the 915-Mbit upload) — CPU cores, recvmsg calls/s, datagrams/call
+(GRO was ~13 dg/recv in the embatch profile), µs per DATAGRAM — what
+does the reference stack pay per message for recv+parse+ack with NO
+reassembly/FEC/estimator obligations? The dominant rp term is then
+named with numbers, and the quinn row prices which part of our
+per-message cost is FEATURE (reassembly/FEC/frontier — quinn simply
+does not do it) vs OVERHEAD (locks, allocation, per-ack density,
+per-message wakeups — quinn does the same job cheaper).
+
+**(e) STEP 2 — candidate space (build ONLY what the profile names;
+per-part pre-registrations with predicted c1 bands appended BELOW as
+the amendment, BEFORE any build — the winmtu pattern).** Bounded by
+(b): **(A)** batched datagram RECV — process N already-arrived
+datagrams per wakeup (recvmmsg/GRO-class intake amortizing select/
+lock/deadline overhead) with the ack clock PER-BATCH-IMMEDIATE (acks
+emitted before awaiting again; the drain refutation forbids holding
+acks across wakeups, not batching arrivals that are already
+simultaneous — the gauge gate in (f)1 decides); **(B)** cheaper
+per-symbol bookkeeping — only structures the profile names ≥ ~5%/core;
+**(C)** ack cadence/aggregation at the PROTOCOL level IFF per-ack cost
+(iii on the receiver + the sender's per-WindowAck record_batch) is the
+dominant term — any cadence change must show echo-RTT and the store
+gauges UNMOVED (the #85-class falsification) and SACK-release/recovery
+clocks unaffected; **(D)** compose `RWM_EMIT_BATCH` (sender) iff STEP 1
+shows the sender binds first on v5. Anything the profile does not name
+is NOT built (discipline 11d).
+
+**(f) Falsification (fixed now).** (1) Any receiver-path change whose
+arm shows echo-RTT inflated ≥ ~2× the def arm's class or the dyn
+store-cap gauge growing ⇒ the drain-family mechanism reappeared —
+refuted, removed, register row, NO tuning pass. (2) If the profile
+attributes the dominant receiver term to irreducible FEATURE work
+(reassembly/FEC/frontier bookkeeping quinn does not do), the honest
+deliverable is the measured ceiling WITH that attribution — nothing is
+built past what the profile justifies, and the c1-vs-quinn row is
+re-priced as a feature cost, not an inefficiency. (3) Per-part c1
+bands are pre-registered in the amendment before build; the session
+bar is the WALL VISIBLY MOVING (engine-sink probes before/after ≫ σ_s,
+msgs/s wall up) with honest distance-to-915 stated — a part whose band
+fails goes to the register per discipline 11. (4) CROWN GATE
+(mandatory): tail_matrix c2 spot ×4 — p99 medians in the historic
+~36–48 ms class, 1000/1000 delivered, both arms; ANY regression blocks
+a flip regardless of throughput (receiver changes touch the delivery
+path). (5) c7 dual ≥ 0.97× same-session Σ and sc2/sc3 unregressed ≫σ;
+dnf = 0 everywhere.
+
+**(g) Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT
+DISCIPLINE 1–12: lock `/tmp/rwm-vm.lock` (taken 2026-08-06 21:04:20
+UTC, found FREE — covers ALL VM activity incl. builds/probes); tree
+synced via git archive of THIS branch + CRLF conversion before first
+harness invocation; stale binary removed before every build; binary
+sha256 + commit + lscpu + kernel in every log header; FOREGROUND
+polling only; rp-* netns only; fresh topology per invocation; seeds
+42+7, ×8/arm interleaved round-robin per rep (probes/profile ×2–×4 as
+stated); seed-7 topo-abort protocol (n recorded, nothing discarded);
+liveness echoes asserted per arm both directions (new gates get their
+own ACTIVE echo); ARMCOUNT per arm; runtimes stated; logs under
+`/home/vibe/recvwall/`. Cells: c1 PRIMARY (single 400 MB) def ↔ each
+pre-registered part ↔ composed; sc2 100 MB + sc3 25 MB
+(no-regression); c7 dual 200 MB (≥ 0.97×Σ from same-session singles);
+tail_matrix c2 spot ×4 seed 42 (crown); engine-sink probes
+before/after. Drivers `tools/l1/recvwall_*.sh` (+
+`RWM_EMIT_BATCH`/`RWM_EMIT_BURST` forwarding added to `perf_rwm_c.sh`
+— harness glue the embatch session kept VM-local).
+
+*(STEP 0/1 results, the amendment, and the battery results below this
+line were written AFTER the respective runs.)*

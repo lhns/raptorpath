@@ -97,6 +97,15 @@ fi
 [[ -n "${RWM_CODED_SRC:-}" ]] && TENV="$TENV RWM_CODED_SRC=$RWM_CODED_SRC"
 [[ -n "${RWM_NO_REACTIVE:-}" ]] && TENV="$TENV RWM_NO_REACTIVE=$RWM_NO_REACTIVE"
 [[ -n "${RWM_DIAG:-}" ]] && TENV="$TENV RWM_DIAG=$RWM_DIAG"
+# Emission batching (goal-gate "Emission Batching", default OFF, sender-only)
+# + burst quantum — forwarded for the A/B arms (the embatch session kept this
+# forwarding VM-local; landed here by feat/recv-permsg).
+[[ -n "${RWM_EMIT_BATCH:-}" ]] && TENV="$TENV RWM_EMIT_BATCH=$RWM_EMIT_BATCH"
+[[ -n "${RWM_EMIT_BURST:-}" ]] && TENV="$TENV RWM_EMIT_BURST=$RWM_EMIT_BURST"
+# Receiver per-message wall (goal-gate "Receiver Per-Message Wall",
+# feat/recv-permsg): the pre-registered A/B gates, forwarded.
+[[ -n "${RWM_RECV_BATCH:-}" ]] && TENV="$TENV RWM_RECV_BATCH=$RWM_RECV_BATCH"
+[[ -n "${RWM_ACK_EVERY:-}" ]] && TENV="$TENV RWM_ACK_EVERY=$RWM_ACK_EVERY"
 # Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel):
 # busy% + inbound msg-queue depth on the RECEIVER (server log /tmp/rwm-s.log).
 # (RWM_ENGINE_PAR itself was NOT built -- the item-2 profile refuted it; see
