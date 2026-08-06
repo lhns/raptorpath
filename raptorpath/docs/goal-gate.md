@@ -13221,3 +13221,393 @@ decode cost, seconds per Reset at derived W*; now chunked ~40 ms slices
 Mettle/DAPS references in `docs/packet-flow-visualization.md`, which is
 rewritten to the systematic wire + unified decode + current DIAG names,
 marked descriptive).
+
+## Adversarial Cells (B1) (2026-08-06) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any cell was brought up and BEFORE any measurement; branch `meas/adversarial-cells` from f2f1c78; MEASUREMENT + HARNESS ONLY, no transport code touched; the ADR-0068 prerequisite battery — items (i)+(ii) of its "adversarial cells + measured Copa breakage" clause)
+
+*Decision record: → [ADR-0068](adr/0068-copa-bbr-fusion.md) (the fusion whose
+falsifiable targets this battery sets), [ADR-0054](adr/0054-substrate-cc-policy-bbr-default.md)
+(the policy surface whose measured tradeoff this extends), [ADR-0052](adr/0052-measurement-discipline.md).*
+
+**(a) The question.** The clean-substrate map ("Copa-Sole on Clean
+Substrate", 2026-07-22) measured Copa-sole vs BBR-under only on clean
+deep-buffer netem cells: bulk 0.57–0.97×, network queue ×6–18 tighter,
+realtime tail parity. ADR-0068's whole case for the fusion is that BBR's
+rate model matters exactly where the current rig CANNOT look: delay-noise
+(jitter talks a delay-based law under capacity), shallow buffers (Copa's
+1/δ queue target physically cannot park), and policers (drop-without-queue
+is invisible to a delay signal). This battery builds those three cells in
+the L1 harness (`tools/l1/adv_cells.sh`, netem/tbf/police inside the
+existing rp-* single-path topology) and MEASURES the predicted breakage —
+Copa-sole (passthrough + wire + δ(hint)) vs the shipped BBR-under default
+on every cell, +compete arms where pre-registered below. If Copa-sole does
+NOT break, ADR-0068 stays unbuilt (its own clause). The map is the
+deliverable, not a Copa indictment: a refuted breakage prediction is the
+most valuable row because it re-scopes the fusion.
+
+**The cells** (all c2-class rate 100 mbit; data-dir GE 1.3%/50% where
+noted; full recipes in `adv_cells.sh`):
+
+| cell | mechanism | recipe (data dir → ack dir) |
+|---|---|---|
+| c2ctl | clean control (= topo.sh c2) | netem delay 5ms 3ms rate 100mbit GE → same, lossless |
+| jit0 | jitter-family control | netem delay 20ms rate 100mbit GE → same, lossless |
+| jit5/jit15/jit25 | delay-jitter dose-response, jitter both dirs, 25% correlation | netem delay 20ms {5,15,25}ms 25% rate 100mbit GE → same, lossless |
+| shal8 | 8-packet bottleneck buffer (vs the ~1000-pkt deep default) | tbf 100mbit burst 15140b + CHILD netem limit 8 GE (the child holds the queue) → netem delay 10ms rate 100mbit (all propagation on the ack egress; RTprop stays c2-class 10ms) |
+| pol100 | token-bucket policer, drop-WITHOUT-queue | netem delay 5ms limit 4000 no-rate (delay stage, must never drop) → ingress police 100mbit burst 16k drop on srv0 + ack netem delay 5ms rate 100mbit |
+
+Jitter magnitudes model the aggregation/scheduling class ADR-0068 names:
+WiFi A-MPDU service-burst delay variation at the 5 ms end, LTE
+scheduler/HARQ-induced delay variation in the 15–25 ms class (the
+cellular-measurement literature's tens-of-ms delay variability — Sprout
+NSDI'13-class trace evidence; exact citations get source-verified per
+ADR-0068's literature clause before any fusion build; the cells need the
+CLASS, not a point estimate). HONEST MODEL NOTE (recorded before
+measuring): netem jitter re-orders in-flow packets, real aggregation
+mostly preserves order — the cell is strictly harsher than the modeled
+class, and the transport's reorder tolerance is part of what gets
+measured. Offloads (gro/gso/tso) are disabled on the shal8/pol100 veths
+so the 8-pkt limit and the per-packet policer act on wire-MTU packets.
+
+**Cell-mechanism liveness FIRST (discipline item 1 applied to the cell
+itself).** Before any transport run, `adv_cells.sh validate <cell>` on all
+7 cells: (i) idle ping ×30 — jit cells must show J-class mdev, shal8/
+pol100 tight base RTT; (ii) iperf3 UDP overload at 120M (> the 100M
+ceiling) — loss ≈ the excess for every working ceiling; (iii) ping UNDER
+that load — the queue signature: c2ctl/jit (deep netem) inflate RTT
+toward the ~100 ms deep-buffer class, shal8 caps RTT at base+≲1 ms
+(8 × 1350 B at 100 mbit ≈ 0.9 ms), pol100 shows NO inflation at all
+(drop-without-delay, THE property under test); (iv) tc -s counters. A
+cell that fails validation gets its recipe fixed (harness-only) and
+re-validated before its battery rows run; the validation transcript goes
+in the results below.
+
+**(b) Predictions (quantitative, per cell × arm; A = BBR-under shipped
+default, B = Copa-sole passthrough, C = +RWM_COPA_COMPETE=1).**
+
+- **P-J1 (jitter, A):** BBR is delay-noise robust — goodput ≈ flat in J:
+  each jit level ≥ 0.9× its own jit0-A mean, both seeds (windowed-min
+  RTprop filters jitter; BtlBw is delivery-clocked).
+- **P-J2 (jitter, B):** the ADR-0068 shape — B/A falls monotonically as
+  J grows: ≈ the sc2 class (0.85–0.9×) at jit0, ≤ 0.75× at jit25.
+  Mechanism: jitter pollutes the wire d_q → the target rate 1/(δ·d_q)
+  and the backoff both read noise as queue → under-capacity operation.
+  NAMED DEFENSE (recorded now): the shipped Copa carries the §12.4
+  jitter-adjusted backoff threshold (k·jitter_est headroom) that vanilla
+  Copa lacks — a partial defense; if it holds, that is a REAL finding
+  that re-scopes ADR-0068's delay-noise motivation (see falsification).
+- **P-S1 (shal8, B):** loss-conversion — Copa's Bulk dither wants
+  1/δ = 200 pkt of standing queue; the 8-pkt buffer converts the excess
+  to drops: bottleneck drop fraction ≥ 3× the same-cell A arm AND ≥ 10%
+  absolute; the engine's own per-path loss estimate (DIAG pl=) elevated
+  in step. Derivation band: coupling cap cwnd ≤ BDP̂+2/δ ≈ 92+400 pkts
+  bounds the naive storm at ~50–80% attempted-overshoot; the store's
+  honest anchor-scaled caps may throttle below that — predicted measured
+  band 10–60%.
+- **P-S2 (shal8, B goodput):** 0.5–0.9× same-cell A (the recovery plane
+  carries part of the loss; LOSS is the primary breakage metric here,
+  not goodput).
+- **P-S3 (shal8, A):** BBR viable — goodput ≥ 0.85× its own c2ctl-A
+  mean, drop fraction single-digit-% class (ProbeBW overshoot only);
+  wireQ p50 ≤ ~2 ms on BOTH arms (the buffer physically caps it — cell
+  property, not controller credit).
+- **P-P1 (pol100, B):** the loss storm — d_q ≈ 0 (the dq floor) forever
+  says "no queue", the target 1/(δ·d_q_floor) ≫ capacity, and default-
+  mode Copa has NO loss response (loss is FEC/ARQ's job, §12.1): police
+  drop fraction ≥ 20% absolute and ≥ 5× the same-cell A arm; goodput
+  ≤ 0.5× A; a 120 s DNF is an admissible outcome and scores as breakage.
+  The delay-stage netem must show dropped=0 (cell-honesty guard).
+- **P-P2 (pol100, A):** the rate model finds the ceiling — goodput
+  ≥ 0.8× its own c2ctl-A mean, police drop fraction ≤ 10%.
+- **P-C1 (pol100, C):** compete does NOT rescue: the §2.2 detector keys
+  on d_q ≥ 0.1·(RTTmax−RTTmin) persisting 5 RTT — a policer suppresses
+  exactly that signal (queue "nearly empty" every RTT) → in_compete
+  never engages (cmp C-fraction ≈ 0, switches ≈ 0), goodput/loss ≈ the
+  B arm within σ. What the policer needs is ADR-0068's ε̂-referenced
+  loss regime, not mode switching.
+- **P-C2 (shal8, C):** detection MAY fire (the standing 8-pkt queue
+  never "nearly empties" under sustained overload: d_q ≈ 0.9 ms vs a
+  ~0.1·oscillation threshold) — but our hint-base AIMD floor
+  (1/δ ≥ 1/δ_base = 200) makes compete strictly MORE aggressive, never
+  less: no rescue, ≈ B within σ (loss equal or higher). Either way the
+  verdict shape is: mode switching does not buy the shallow cell.
+- **P-R (realtime crown under jitter, shipped default arm):**
+  tail_matrix `default` at jit15 vs the same-session clean c2 row: p99
+  medians inflate by the WIRE class only (RTprop 40 ms vs 10 ms + two-way
+  25%-correlated 15 ms jitter tails ⇒ wire-implied p99 floor ≈ 60–120
+  ms): predict p99 median ≤ ~150 ms with delivered counts in the clean
+  row's (1−ρ) class and 0 NO_DATA arms — the crown survives real jitter
+  in the same order of magnitude, it does not collapse.
+
+**(c) Falsification conditions (fixed now).**
+- F-J: B/A ≥ 0.85 at every jitter level on both seeds ⇒ the delay-noise
+  breakage is REFUTED for THIS Copa (the §12.4 jitter headroom defends
+  it) — ADR-0068's jitter motivation must be re-scoped to whatever
+  residual the dose-response shows, and the fusion loses that cell from
+  its recovery list.
+- F-S: shal8-B drop fraction < 3× A's or < 10% absolute on both seeds ⇒
+  loss-conversion REFUTED — attribute what actually bounds the dither
+  (store caps? velocity? the coupling cap?) from the DIAG gauges before
+  any verdict line.
+- F-P: pol100-B drop fraction < 5× A's OR goodput ≥ 0.8× A ⇒ policer
+  starvation REFUTED — the single most valuable possible row (it would
+  name a Copa-side mechanism ADR-0068's analysis missed); same
+  attribution duty.
+- F-C: a compete arm improving goodput or cutting loss by ≥ σ vs B on
+  either cell ⇒ the mode switch has measurable value and the
+  no-mode-switch story must carry that number honestly.
+- F-R: jit15 crown p99 median ≥ ~250 ms (an order above the wire-implied
+  floor) or delivery collapse/NO_DATA ⇒ the crown does NOT survive
+  real jitter; the §16.31/§17.9 crown claims gain that external-validity
+  caveat verbatim.
+- Verdict arithmetic per discipline 5: every claimed delta must exceed
+  the per-arm σ_s and the same-session c2ctl drift.
+
+**(d) Derivation re-read — self-contained failure predictions, named
+before measuring.** (1) The recovery plane can MASK breakage in goodput
+terms (plain-mode ARQ+FEC carries loss) — that is why loss-rate, DIAG
+pl=, and queue distributions are primary metrics beside goodput. (2) The
+§12.4 jitter-adjusted threshold is a real, already-shipped defense on the
+jitter cell — named in P-J2/F-J; a hold is a finding, not a wasted cell.
+(3) The store's honest per-path caps (anchor-scaled ≈ 2–3×BDP) may bound
+the policer/shallow storm below the coupling-cap math — the DIAG
+cap/sout gauges attribute this; a bounded-but-large storm still
+confirms. (4) 25 MB objects put ~seconds-scale transfers on these cells —
+warmup is perf's built-in object, and all ratios are same-session
+same-size; the c2ctl-25MB absolutes will sit below the 100 MB sc2 record
+(85/76 Mbit) by construction — RATIOS carry the map, not absolutes.
+(5) netem jitter's in-flow reordering makes jit cells harsher than the
+modeled aggregation class (recorded above). (6) A 100 mbit policer with
+16k burst passes ≈ line rate for conformant pacing — if BOTH arms sail
+through undropped, the cell (burst too big for the probe pattern), not
+the controllers, is the first suspect; the validation stage exists to
+catch exactly this before the battery.
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–10 (A1 worker holds `/tmp/rwm-vm.lock` first: ALL local work done
+before polling, then FOREGROUND polite polling at 2–3 min intervals with
+elapsed stated; tree synced via git archive of THIS branch + CRLF
+conversion before the first harness invocation; stale binary removed
+before the fresh build; binary sha256 + commit + lscpu + kernel in every
+log header; rp-* netns only, never ens18/sshd/firewall; fresh cell +
+fresh tunnel per invocation; interleaved round-robin per rep; seed-7
+topo-ping double-abort protocol with per-arm n recorded; logs preserved
+under `/home/vibe/advcells/`; lock released after teardown +
+cleanup.sh). Driver `tools/l1/adv_battery.sh` (+ `adv_cells.sh`,
+`tail_matrix.sh` with the new `RWM_TM_TOPO` glue): 25 MB × 1 run/
+invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120`, seeds 42+7 —
+arms A/B on c2ctl + jit0/5/15/25 (×5 reps/level, dose-response), arms
+A/B/C on shal8 + pol100 (×8 reps), per-run ADVRESULT rows (goodput,
+wireQ/appQ p50/p90, DIAG pl_max/retx, cmp counters, and the CELL-TRUTH
+tc -s bottleneck sent/dropped incl. the police stats and the pol100
+delay-stage zero-drop guard), then the two tail rows (`default` arm,
+c2-clean + jit15, 8 reps × {400,1200} B, both seeds). CC liveness echoes
+asserted per arm (BBR echo vs engine-owned + feed ACTIVE + copa_wire/
+delta/cc_pace/compete echoes); an arm with zero captured rows fails
+loudly (ARMCOUNT). NO flips are gated on this battery; no engine change
+ships from this branch (suites run once to prove the tree untouched).
+
+*(Results below this line were written after the battery ran.)*
+
+### Cell-mechanism validation (VM 10.1.5.16, 2026-08-06 ~14:14–14:21 UTC + exclusive-lock re-run 15:44–15:48 UTC; kernel 7.0.14-101.fc43, E5-2650 v3 aes+avx2+pclmulqdq; logs `/home/vibe/advcells/validate.log` + `validate2.log`)
+
+Every cell expressed its adversarial property BEFORE any transport run,
+and the full 7-cell suite was re-run under a verified-exclusive lock
+(ps snapshot: no foreign workload) after the co-tenancy correction —
+both passes agree within noise:
+
+| cell | idle ping (30×) mdev | UDP 120M overload loss | ping UNDER load (the queue signature) |
+|---|---|---|---|
+| c2ctl | 2.3 · 2.4 ms (3 ms netem jitter) | 18.8% ≈ excess | **RTT → 104 · 74–107 ms (deep-buffer bloat)** |
+| jit0 | 0.12 · 0.04 ms | 18.8% | → ~100 ms (deep, no jitter) |
+| jit5 | 4.8 · 4.2 ms | 18.9% | → ~120 ms |
+| jit15 | 13.0 · 15.5 ms | 19.0% | → ~77–108 ms |
+| jit25 | 21.4 · 20.0 ms (min 0.07 ms = netem's negative-delay clamp; heavy in-flow reorder, recorded) | 19.0% | → ~90 ms |
+| shal8 | 0.02 · 0.04 ms | 19.6% | **10.5 ms = base + 0.4 ms — the 8-pkt cap holds (vs +~93 ms deep)** |
+| pol100 | 0.05 · 0.02 ms | 18.8% | **10.07 ms = ZERO inflation at 18.8% loss — drop-WITHOUT-queue, verbatim** |
+
+The jitter dose-response is monotone in mdev (0.1 → 4.8 → 13 → 21 ms ≈
+J·0.85), the shallow buffer caps the standing queue at its arithmetic
+value (8 × 1350 B ≈ 0.9 ms + tbf 1.2 ms latency), and the policer drops
+the exact excess with no delay signal at all. The cells are real.
+
+### L1 battery RESULTS (VM 10.1.5.16, 2026-08-06 14:22–15:38 UTC; binary sha256 01001268fee62fff… = commit 6c8c3d3's Rust (harness-only db501c8 on top), SAME binary every arm; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; 25 MB × 1 run/invocation, arms interleaved round-robin per rep, fresh cell + fresh tunnel per invocation, seeds 42 AND 7, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120` everywhere; driver `tools/l1/adv_battery.sh`; logs `/home/vibe/advcells/battery-s{42,7}.log` + 366 per-run client/server/qdisc files under `diag/`; runtimes 36m43s (s42) + 37m00s (s7); lock 14:08:35–15:43:35 UTC)
+
+**Liveness / honesty (discipline 1, 6–8).** 98/98 invocations captured
+per seed; **0 topo-ping aborts on BOTH seeds** (the seed-7 abort class
+did not fire on these cells; n = 5/5 jitter/control arms, 8/8
+shal/pol arms, every arm, both seeds), 0 DNF, 0 ARM-LIVENESS-FAIL,
+0 ARM-CONTAMINATION (stale-log hygiene: both endpoint logs removed
+before every run), 0 ARM-VANISHED. Every A run carries the BBR echo,
+every B/C run `engine-owned` + `feed ACTIVE` + `copa_wire=true
+delta=0.005 cc_pace=true` + `compete=false/true` per arm. Cell truth
+recorded per run from tc -s: the pol100 delay-stage netem shows
+**dropped 0 on all 64 policer invocations** (the policer, not the delay
+line, did every drop).
+
+**THE MAP — throughput (Mbit/s, mean ± σ_s, s42 · s7; B/A = copa/bbr):**
+
+| cell | A = BBR-under s42 · s7 | B = Copa-sole s42 · s7 | B/A s42 · s7 |
+|---|---|---|---|
+| c2ctl | 81.3 ± 2.6 · 76.9 ± 2.1 | 74.1 ± 1.3 · 71.4 ± 1.2 | 0.91 · 0.93 |
+| jit0 | 79.2 ± 2.9 · 75.7 ± 3.7 | 29.9 ± 0.6 · 29.0 ± 1.2 | **0.38 · 0.38** |
+| jit5 | 77.7 ± 4.4 · 80.4 ± 1.5 | 27.6 ± 0.4 · 26.0 ± 0.6 | **0.36 · 0.32** |
+| jit15 | 75.8 ± 4.8 · 69.0 ± 8.0 | 24.2 ± 0.2 · 23.6 ± 0.4 | **0.32 · 0.34** |
+| jit25 | 66.6 ± 9.5 · 69.7 ± 3.7 | 20.5 ± 0.3 · 20.0 ± 0.3 | **0.31 · 0.29** |
+| shal8 | **9.8 ± 0.7 · 10.0 ± 1.1** | **75.3 ± 3.0 · 78.8 ± 1.8** | **7.68 · 7.87 (INVERTED)** |
+| pol100 | 8.1 ± 0.1 · 8.0 ± 0.4 | 8.0 ± 0.2 · 8.0 ± 0.3 | 0.99 · 1.00 |
+
+Compete arms (C): shal8 75.9 ± 2.1 · 76.8 ± 5.0 (C/B 1.01 · 0.97),
+pol100 7.9 ± 0.2 · 8.0 ± 0.2 (C/B 0.99 · 1.00) — compete never moved a
+cell by ≥ σ.
+
+**Loss / queue profile (bottleneck drop% from tc -s; DIAG retx + engine
+loss estimate pl; wireQ p50 ms; s42 · s7 medians):**
+
+| cell·arm | bottleneck drop % | retx | pl_max | wireQ p50 |
+|---|---|---|---|---|
+| shal8-A | **7.26 · 7.35** | ~17 k | 0.08–0.09 | 0 |
+| shal8-B | 1.53 · 1.49 | ~2.1 k | 0.02 | 4 |
+| pol100-A | 3.83 · 3.86 | ~21 k | 0.12–0.13 | 0 |
+| pol100-B | 3.79 · 3.88 | ~22 k | 0.13–0.20 | 0 |
+| c2ctl-A / B | 0.45–0.58 / 0.35–0.37 | ~1 k / ~1.1 k | ~0.001 / 0.000 | 90 / 5–6 |
+| jit0–25-A | 0.5–0.9 | ~0.7 k | ≤ 0.008 | 66 → 42 |
+| jit0–25-B | 0.3–0.5 | ~1.0–1.5 k | ≤ 0.055 | 0 → 10 |
+
+**Realtime crown rows (tail_matrix `default` = shipped machine, 50 msg/s
+× 20 s × 1000 msg/rep, n=8/arm/seed; per-rep p99 medians [min–max]):**
+
+| row | 400 B s42 · s7 | 1200 B s42 · s7 |
+|---|---|---|
+| c2 clean (same-session control) | 36 [35–42] · 36 [35–58] | 39 [38–58] · 37 [34–44] |
+| jit15 | **95 [91–110] · 96 [91–105]** | **92 [86–101] · 94 [82–590]** |
+
+n=1000 delivered on every rep, both cells, both seeds; 0 NO_DATA, 0
+bringup failures (one s7 1200 B rep carried a 590 ms p99 tail max —
+recorded, within the [min–max] shown).
+
+### VERDICTS vs the pre-registered predictions — the map, row by row
+
+1. **P-J1 (BBR delay-noise robust): CONFIRMED at jit5/jit15**
+   (0.98/0.96× jit0 s42, 1.06/0.91 s7), **PARTIAL at jit25** (0.84×
+   s42 vs 0.92× s7, σ up to 9.5 — a mild, seed-inconsistent sag, no
+   collapse). The rate model holds its class under aggregation-grade
+   jitter.
+2. **P-J2 (Copa jitter dose-response): SHAPE CONFIRMED, BASE REFUTED.**
+   Copa's absolute goodput decays STRICTLY MONOTONICALLY with J on both
+   seeds (29.9→27.6→24.2→20.5 s42; 29.0→26.0→23.6→20.0 s7; every step
+   ≫ σ ≤ 1.2) — the delay-noise dose-response ADR-0068 predicts is
+   real, −31% from jit0 to jit25. But the predicted base (0.85–0.9× at
+   jit0) measured **0.38×**: the DOMINANT aggregation-cell breakage is
+   the RTprop scaling 10→40 ms, present with ZERO jitter. Attribution
+   (DIAG gauges, per the pre-registered duty): `sinfl=sout=1024`
+   pinned, `win=1024/1024` full, sender `paused` — the 1024-slot
+   outstanding pool × the measured app-echo dwell (~250–350 ms vs
+   BBR's ~68 ms) is a Little's-law ceiling 1024·1198 B/dwell ≈ 36 Mbit,
+   and Copa sits AT it (30). Copa's empty pipe pays a full recovery
+   round of frontier stall per GE hole at 40 ms RTprop; BBR's ~60 ms
+   standing queue hides repair latency. A CC×store interaction, NOT the
+   pure delay-law failure the ADR predicted — and NOT visible on any
+   clean cell (sc3's 40 ms RTprop sat at 20 mbit, below the store
+   ceiling; this cell is 100 mbit at 40 ms).
+3. **P-S1/S2/S3 (shallow buffer): REFUTED — AND INVERTED. The
+   headline row of the battery.** Copa does NOT loss-convert: it holds
+   its FULL clean class at an 8-packet buffer (75.3/78.8 ≈ its own
+   c2ctl 74.1/71.4; drops 1.5% ≈ GE + residual; wq 4 ms; sane engine
+   anchor btlbw ≈ 10.7–13.6 k sym/s ≈ the link). It is **BBR that
+   loss-converts and collapses**: 9.8/10.0 Mbit (0.12× its c2ctl),
+   7.3% sustained drops, retx ~17 k on a ~21 k-symbol object, and the
+   named mechanism from the gauges: the engine's delivery-rate anchor
+   reads **btlbw ≈ 108 k sym/s ≈ 10× the link** under the BBR arm —
+   token-bucket dequeue at line-rate 15 KB bursts quantizes delivery
+   into microbursts that poison a max-filter rate model, which then
+   sustains 1.25×-class overshoot into an 8-packet buffer forever
+   (the documented BBRv1-class shallow-buffer pathology, reproduced
+   here on quinn's BBRv1-class controller; under Copa the buffer stays
+   empty, dequeues are token-paced, and the same estimator reads the
+   true link). Copa's 1/δ = 200-packet queue TARGET never converts to
+   loss because its equilibrium settles UNDER the ceiling — the
+   fairness-irrelevant single-flow case the derivation re-read did not
+   grant it.
+4. **P-P1/P-P2 (policer): BOTH REFUTED, in the most informative
+   direction — the starvation is CC-INDEPENDENT.** No Copa loss storm
+   (3.8% police drops, not ≥20%) and no BBR survival (8.1 Mbit =
+   0.10× its c2ctl, not ≥0.8×): **both controllers pin at 8.0 ± 0.4
+   Mbit** (B/A 0.99 · 1.00), identical drop fractions, identical zero
+   wire queue, retx ~21–22 k. The token-exhaustion drops arrive as
+   BURSTS (16 KB bucket ⇒ runs of consecutive losses), and each burst
+   stalls the cumulative-frontier/recovery pipeline for ≥ a recovery
+   round — the same CC-independent binder family as the 2026-07-19
+   clean-contention starvation (share 0.023, "Copa Competitive Mode +
+   Cross-Traffic"). The policer cell does not distinguish the
+   controllers because the wall is BEHIND both of them.
+5. **P-C1/P-C2 (compete arms): CONFIRMED — mode switching buys
+   nothing here.** pol100: the §2.2 detector never engages (cmp
+   C-fraction 0.00 on 15 of 16 compete runs; one transient
+   single-switch on s7 rep 5, C-fraction 0.01, self-corrected per the
+   paper's own hysteresis) — exactly the pre-registered mechanism: a
+   policer suppresses the queue signal the detector keys on. shal8:
+   the detector did NOT fire at all (consistent with Copa running
+   UNDER the ceiling — the queue "nearly empties" every 5 RTT); C/B
+   0.97–1.01 everywhere. F-C not triggered.
+6. **P-R (crown under jitter): CONFIRMED.** p99 medians 95/92 (s42) ·
+   96/94 (s7) vs clean 36/39 · 36/37 — inside the pre-registered
+   wire-implied 60–150 ms class (RTprop 40 ms + two-way 15 ms
+   correlated jitter tails), ×2.4–2.6 the clean row, NOT the ≥250 ms
+   collapse class; every rep delivered n=1000 (no shed collapse). The
+   12–48× tail crown's external validity survives aggregation-class
+   jitter: the tail inflates with the wire, not with the machine.
+
+### What ADR-0068's fusion must now beat (the measured targets)
+
+- **c2ctl:** the standing clean target, unchanged — close 0.91–0.93×
+  to parity while keeping Copa's wireQ class (5–6 ms vs 90).
+- **jit0–jit25 (the hard row):** BBR-under holds 66–80 Mbit where
+  Copa-sole holds 20–30; the fusion must reach ≥ 0.9× BBR-under
+  ACROSS the dose-response — but the named binder is the store-dwell
+  × empty-pipe interaction, so a rate-model feed-forward alone is NOT
+  predicted sufficient: the fusion (or its prerequisite) must keep
+  the pipe fed across GE-hole recovery rounds WITHOUT BBR's 42–66 ms
+  standing queue. That is the actual mechanism bar this battery sets.
+- **shal8:** the target is now **Copa's own 75–79 Mbit** — the δ
+  outer law already owns this cell; the fusion's rate-model baseline
+  must NOT import the measured poisoning (max-filter btlbw ≈ 10× link
+  under burst-quantized delivery). Any fusion arm that regresses
+  shal8 below the Copa class falsifies the fusion on its OWN
+  motivating cell.
+- **pol100:** the target moves OFF the CC surface: both controllers
+  = 8 Mbit means the ε̂-referenced bounded-loss regime CANNOT show its
+  value here until the burst-loss recovery pipeline stops binding
+  first. A recovery-plane fix is a named PREREQUISITE for the
+  policer cell to become CC-discriminating at all.
+- **Context re-scope (honest):** two of ADR-0068's three "BBR
+  structural advantage" cells came from deployed-BBR literature about
+  BBRv2-class mechanisms; the SHIPPED BBR-under arm is BBRv1-class
+  and does NOT deliver them — it loses shal8 ×7.7–7.9 to Copa and
+  ties Copa's starvation at pol100. The fusion's case is now: keep
+  Copa's shal8/queue/tail class, add jitter-cell robustness WITHOUT
+  the standing queue, and gate the policer on the recovery plane.
+
+**Suites (tree untouched proven):** `cargo test -p raptorpath --lib`
+362/362 (0 failed, 2 ignored) on this branch — no engine change; the
+battery binary is commit 6c8c3d3's Rust verbatim.
+
+**Ops + co-tenancy record.** Lock `/tmp/rwm-vm.lock` was FREE (file
+absent) at 14:08:18 UTC and taken atomically (noclobber) at 14:08:35;
+the ARC-A1 worker (`c8conv-agent`) arrived 14:18:05, found the lock
+held, and queued (`/tmp/rwm-vm.queue`, left in place at release). Per
+the mid-session co-tenancy correction: full timestamped activity list
+(UTC) — 14:09 tree cleared + git-archive sync + dos2unix (discipline
+10), 14:10–14:13:40 fresh build (stale binary rm'd first), ~14:14–14:21
+cell validation + one pol100 smoke run, 14:22:28–14:59:11 battery s42,
+15:00:51–15:37:51 battery s7, 15:40:30–~15:43 EXCLUSIVE-LOCK
+re-validation of all 7 cells (ps-snapshot-verified no foreign workload;
+every signature reproduced within noise — recorded in `validate2.log`),
+then cleanup.sh + rp-* netns/process verification, lock released
+~15:43:35 — and the queued A1 worker took it at 15:43:43 (clean 8-s
+handoff, verified from its lock stamp; no overlap at either end of the
+session). No A1 files, processes, or builds appeared on the VM during
+the measurement window (filesystem mtime sweep recorded); the
+14:14–14:21 validation window overlaps A1's 14:18 arrival by ~3 min,
+which is why it was re-run under verified exclusivity. rp-* namespaces
+only; logs + per-run diag preserved under `/home/vibe/advcells/`;
+foreground polling only.

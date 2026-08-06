@@ -29,6 +29,12 @@ SEED="${SEED:-42}"
 TM_RATE="${RWM_TM_RATE:-50}"; TM_DUR="${RWM_TM_DUR:-20}"
 TM_SIZES="${RWM_TM_SIZES:-400 1200}"
 TM_TMO=$((TM_DUR + 10))
+# meas/adversarial-cells (ARC B1) harness glue: the topology script is
+# overridable (RWM_TM_TOPO=./adv_cells.sh) so the SAME matrix machinery can
+# run the realtime-crown row on an adversarial cell (`up <cell> [--seed N]`
+# interface shared by topo.sh and adv_cells.sh). Default = topo.sh,
+# byte-identical.
+TM_TOPO="${RWM_TM_TOPO:-./topo.sh}"
 
 hard_cleanup() {
     pkill -x raptorpath 2>/dev/null || true
@@ -54,7 +60,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     local up=0 attempt
     for attempt in 1 2 3; do
         hard_cleanup; sleep 1
-        bash ./topo.sh up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
+        bash "$TM_TOPO" up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
         # shellcheck disable=SC2086
         ip netns exec "$NS_SRV" env $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
             --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" $armflags \

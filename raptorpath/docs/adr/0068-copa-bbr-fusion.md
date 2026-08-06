@@ -1,6 +1,6 @@
 # ADR-0068: A better Copa — δ-priced probing over a measured rate model with ε̂-referenced loss discrimination
 
-## Status: Proposed (future exploration — NOT buildable-falsifiable on the current rig)
+## Status: Proposed (prerequisite battery COMPLETE — see MEASURED BASELINE addendum, 2026-08-06; targets are now numbers)
 
 **Date**: 2026-07-21 (design conversation recorded; no build scheduled)
 
@@ -115,3 +115,64 @@ switch:
   reuses), ADR-0062 (Copa wire signal + competitive mode), ADR-0052
   (pre-registration discipline the prerequisite battery must follow).
 - VISION-TRIAGE-2026-07 §5 (the follow-ups register).
+
+## MEASURED BASELINE addendum (2026-08-06, branch `meas/adversarial-cells`) — the prerequisite battery ran; the fusion's targets are now numbers, and the analysis above is partly WRONG
+
+The "adversarial cells + measured Copa breakage" prerequisite (items
+(i)+(ii) of the Consequences section) is DONE: goal-gate "Adversarial
+Cells (B1)" — delay-jitter dose-response (20 ms base, {0,5,15,25} ms
+correlated jitter, c2-class rate/loss), 8-packet shallow buffer
+(tbf + child netem), and a 100 mbit token-bucket policer (ingress
+police, drop-without-queue), each cell mechanism-validated before
+measurement, seeds 42+7, interleaved, shipped BBR-under vs Copa-sole
+(+compete arms). Measured baseline (Mbit/s, s42 · s7):
+
+| cell | BBR-under | Copa-sole | Copa/BBR |
+|---|---|---|---|
+| c2ctl (clean) | 81.3 · 76.9 | 74.1 · 71.4 | 0.91 · 0.93 |
+| jit0 (40 ms RTprop, no jitter) | 79.2 · 75.7 | 29.9 · 29.0 | 0.38 |
+| jit25 | 66.6 · 69.7 | 20.5 · 20.0 | 0.31 · 0.29 |
+| shal8 | **9.8 · 10.0** | **75.3 · 78.8** | **×7.7–7.9 INVERTED** |
+| pol100 | 8.1 · 8.0 | 8.0 · 8.0 | 0.99 · 1.00 |
+
+What this does to the Context section's structural-advantage claims:
+
+1. **Delay-noise: breakage CONFIRMED in shape, re-attributed in
+   mechanism.** Copa's goodput decays strictly monotonically with
+   jitter (both seeds), but the dominant collapse (0.38×) is already
+   present at ZERO jitter — the binder is the 1024-slot store's
+   Little's-law dwell ceiling under Copa's empty-pipe hole recovery at
+   40 ms RTprop (gauges: sinfl=sout=1024 pinned; dwell ~250–350 ms vs
+   BBR's ~68 ms). A rate-model feed-forward ALONE is therefore not
+   predicted sufficient for this cell: the fusion must keep the pipe
+   fed across recovery rounds WITHOUT BBR's 42–66 ms standing queue.
+2. **Shallow-buffer viability: the claim was BACKWARDS for the
+   BBR we actually ship.** quinn's BBRv1-class controller COLLAPSES at
+   the 8-packet buffer (0.12× its clean class, 7.3% sustained loss;
+   the engine's max-filter delivery anchor reads ~10× the link under
+   token-bucket burst-quantized delivery — measured poisoning), while
+   Copa holds its FULL clean class there. The δ outer law ALREADY owns
+   this cell; the fusion's rate model must be burst-robust or it will
+   regress the fusion's own motivating cell.
+3. **Policer survival: CC-INDEPENDENT starvation — the cell does not
+   discriminate controllers.** Both arms pin at 8 Mbit (0.10–0.12× the
+   clean class) at identical ~3.8% police-drop fractions with zero
+   queue: the token-exhaustion loss BURSTS stall the recovery/frontier
+   pipeline behind either controller (the 2026-07-19 contention-binder
+   family). The ε̂-referenced bounded-loss regime cannot show value here
+   until that pipeline survives burst drops — a named PREREQUISITE,
+   ahead of any CC build.
+4. **Competitive mode buys nothing on these cells** (pre-registered and
+   confirmed): the §2.2 detector structurally cannot fire on a policer
+   (no queue signal) and did not fire on the shallow cell; C/B
+   0.97–1.01 everywhere.
+
+**The fusion's falsifiable targets (fixed by this battery):** c2ctl
+≥ ~0.95× BBR-under with Copa's 5–6 ms wireQ class; jit0–jit25 ≥ 0.9×
+BBR-under across the dose-response without the standing queue; shal8
+≥ Copa's own 75–79 Mbit (no regression); pol100 carries NO CC-side
+target until the burst-loss recovery prerequisite is fixed. The
+realtime crown survives jit15 (p99 medians 92–96 ms vs 36–39 clean,
+wire-class inflation only) — the fusion inherits that bar too.
+Evidence: goal-gate "Adversarial Cells (B1)" (2026-08-06), paper
+§16.33.

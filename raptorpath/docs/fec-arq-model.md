@@ -9625,6 +9625,70 @@ last measured edge. Identity + tail-crown smoke on the deletion binary:
 sc2 84.1–85.6, c7 164.7–168.6, tail c2 p99 med 35/40 ms, 1000/1000 —
 the shipped default untouched (goal-gate "Code Consolidation 2").*
 
+### 16.33 The adversarial cells: where each controller actually breaks (2026-08-06, `meas/adversarial-cells`, measurement only)
+
+ADR-0068's fusion was gated on a prerequisite the clean rig could not
+supply: MEASURE the predicted Copa breakage on the three link classes
+where a rate model should structurally beat a delay law — delay-jitter
+(aggregation class), shallow buffers, and policers. The battery
+(goal-gate "Adversarial Cells (B1)": three new L1 cells, each
+mechanism-validated before any transport run — jitter shows in ping
+mdev 4.8/13/21 ms for J=5/15/25; the 8-packet buffer caps
+RTT-under-overload at +0.4 ms where the deep control bloats +93 ms; the
+policer drops 18.8% of a 120 Mbit overload with ZERO RTT inflation —
+then shipped-BBR-under vs Copa-sole ×5–8 reps, seeds 42+7, interleaved,
+pre-registered predictions and falsification conditions committed
+first) returned a map that confirms the dose-response, refutes two of
+the three breakage stories, and indicts the shipped default on one:
+
+- **Jitter (20 ms base): the dose-response is real, the base collapse
+  is not the delay law's.** Copa decays strictly monotonically with J
+  (29.9→20.5 Mbit s42, every step ≫ σ) — delay noise does talk a
+  delay-based law down, as predicted. But Copa is already at 0.38× BBR
+  at ZERO jitter: the binder is the 1024-slot store's Little's-law
+  dwell ceiling (~36 Mbit at the measured ~250–350 ms dwell) — Copa's
+  empty pipe pays a full recovery round per GE hole at 40 ms RTprop,
+  while BBR's ~60 ms standing queue hides repair latency. The gap is a
+  CC×store interaction, invisible on every clean cell (sc3's 40 ms sat
+  below the ceiling at 20 mbit).
+- **Shallow buffer: INVERTED, ×7.7–7.9 for Copa.** The predicted Copa
+  loss-conversion (1/δ = 200-packet target vs an 8-packet buffer) did
+  not happen — Copa holds its full clean class (75–79 Mbit, 1.5%
+  drops, 4 ms wireQ). The shipped BBRv1-class arm collapses instead
+  (9.8–10.0 Mbit, 7.3% sustained drops): token-bucket dequeue
+  quantizes delivery into line-rate microbursts that poison the
+  max-filter rate anchor (measured btlbw ≈ 10× the link), sustaining
+  probe overshoot into the tiny buffer — the documented BBRv1
+  shallow-buffer pathology, reproduced. The cell ADR-0068 listed as
+  BBR's structural win is, on our shipped controller, Copa's biggest.
+- **Policer: CC-independent starvation.** Both controllers pin at
+  8.0 ± 0.4 Mbit (ratio 0.99–1.00) at identical ~3.8% police-drop
+  fractions and zero queue. The token-exhaustion drop BURSTS stall the
+  recovery/frontier pipeline behind either controller — the same
+  binder family as the clean-contention starvation (§16.27 caveat,
+  goal-gate 2026-07-19). No CC swap, and no ε̂-referenced loss regime,
+  can move this cell until that pipeline survives burst loss; the
+  policer row is a recovery-plane work order, not a CC verdict.
+- **Competitive mode: confirmed inert where pre-registered.** The Copa
+  §2.2 detector structurally cannot fire on a policer (it keys on the
+  queue signal the policer suppresses — measured: 0 engagements in 15
+  of 16 runs, one transient self-corrected switch) and did not fire on
+  the shallow cell; compete arms moved nothing by ≥ σ.
+- **The realtime crown survives real jitter** (external validity for
+  §16.26/§16.31): tail_matrix p99 medians at jit15 are 92–96 ms vs
+  36–39 clean — wire-class inflation (RTprop ×4 + jitter tails), not
+  machine collapse; 1000/1000 delivered every rep, both seeds.
+
+The fusion's targets are now numbers (ADR-0068 MEASURED-BASELINE
+addendum): hold Copa's shal8/queue/tail class, reach ≥ 0.9× BBR-under
+across the jitter dose-response WITHOUT the standing queue (the honest
+mechanism bar — a rate-model feed-forward alone is not predicted
+sufficient, since the jitter-cell binder is the store dwell), and treat
+the policer as blocked on the burst-loss recovery prerequisite. A
+prediction table where the most confident row (shallow-buffer
+loss-conversion) inverts is exactly what the pre-registration
+discipline is for: the map, not the indictment, is the deliverable.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -9766,6 +9830,21 @@ mode switch to be collapsed on a wish. The CC endgame (one controller
 across the surface) is the fusion, §17.6 item 10 / ADR-0068: δ-priced
 probing over a BBR-style rate model, which inherits this battery's bulk
 gap as its target.
+
+*External validity (2026-08-06, §16.33 / goal-gate "Adversarial Cells
+(B1)"): the clean-cell map above does NOT extrapolate to adversarial
+links, in both directions. At an 8-packet bottleneck buffer the surface
+INVERTS — shipped BBR-under collapses to 0.12× its clean class (burst-
+quantized delivery poisons the max-filter anchor ~10×) while Copa-sole
+holds its full class, ×7.7–7.9 over BBR; at a 100 mbit policer BOTH
+controllers starve identically at ~8 Mbit (the burst-loss recovery
+pipeline, not the CC, binds); on aggregation-class jitter cells Copa's
+gap widens to 0.29–0.38× with a strictly monotone jitter dose-response
+whose dominant term is the store-dwell ceiling at 40 ms RTprop, not the
+delay law. The two-value policy surface therefore has measured
+adversarial edges: "bulk → BBR-under" is clean-deep-buffer advice, not
+a universal; the realtime crown's tail class survives jitter (p99
+92–96 ms vs 36–39 clean, wire-class inflation only).*
 
 ### 17.3 Aggregation vs Σ — the bulk N× verdict
 
