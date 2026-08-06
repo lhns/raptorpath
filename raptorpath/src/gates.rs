@@ -111,6 +111,20 @@ pub struct RuntimeGates {
     /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
     pub honest_cap: bool,
+    /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
+    /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
+    /// N = 1 plain reliable window. The 1024-latch's three roles split:
+    /// wire budget = the live HEAD SPAN (last_sent − SACK/cum frontier;
+    /// recovery-stalled holes excluded) gated at
+    /// allow = anchor·(K + gain − 1) + rate·min(stall_age, R) — the
+    /// stall-insurance term explicit and continuous (grows at the anchor
+    /// rate during any frontier freeze, resets on advance); hole/retention
+    /// capacity = cap_ret (residence + R_ins + one recovery round),
+    /// memory-clamped at 4096. Under Copa-sole the residence term is
+    /// gain·Σcwnd and the 1024 clamp ceiling lifts to cap_ret (the B1
+    /// jitter-cell dwell-ceiling release). N ≥ 2 keeps the configured
+    /// pooled laws bit-exactly; the N1-scoped sampling anchor pauses.
+    pub win_decouple: bool,
 
     // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
     /// `RWM_PLACE_SLACK` (default OFF — the A/B arm): frontier-slack
@@ -294,6 +308,7 @@ impl RuntimeGates {
             percap_guard: env_flag("RWM_PERCAP_GUARD", true),
             store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
+            win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
@@ -368,6 +383,7 @@ mod tests {
         assert!(!g.emit_batch, "emission batching ships OFF (A/B gate)");
         assert_eq!(g.emit_burst, 64);
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
+        assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");
         assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
         assert!(
             !g.recov_mp_live,

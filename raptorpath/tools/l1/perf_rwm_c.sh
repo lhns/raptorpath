@@ -78,6 +78,12 @@ fi
 # forwarded individually so the leave-one-out arms can key each one.
 [[ -n "${RWM_MSTAR_ANCHOR:-}" ]] && TENV="$TENV RWM_MSTAR_ANCHOR=$RWM_MSTAR_ANCHOR"
 [[ -n "${RWM_CLOCK_GAP:-}" ]] && TENV="$TENV RWM_CLOCK_GAP=$RWM_CLOCK_GAP"
+# feat/window-mtu (goal-gate "Window Decoupling + MTU Scaling"): part 1 —
+# window/inflight decoupling at N=1 (head-span gate + stall meter + retention
+# backstop, N1-scoped sampling anchor); part 2 — compact v5 DATA framing.
+# Both default OFF; forwarded for the pre-registered A/B battery.
+[[ -n "${RWM_WIN_DECOUPLE:-}" ]] && TENV="$TENV RWM_WIN_DECOUPLE=$RWM_WIN_DECOUPLE"
+[[ -n "${RWM_WIRE_COMPACT:-}" ]] && TENV="$TENV RWM_WIRE_COMPACT=$RWM_WIRE_COMPACT"
 # feat/percap-honest-cap: honest store caps under RWM_PLAIN_RS — cap_i =
 # anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R (K_i = windowed-min echoSRTT/RTprop,
 # R = 100ms recovery-round bound). Default ON whenever RWM_PLAIN_RS is set;

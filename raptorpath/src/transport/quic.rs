@@ -952,12 +952,24 @@ impl QuicTransport {
     }
 
     /// Send a symbol batch over a path using QUIC datagrams.
+    ///
+    /// feat/window-mtu part 2 (`RWM_WIRE_COMPACT`, v5): one-symbol batches
+    /// — the window-mode data path, one symbol per datagram — ride the
+    /// compact tag+varint frame (~14–16 B vs the 65-B magic+bincode
+    /// framing, the measured ~4.3 Mbit/0.95 Mbit framing tax at c2/c3).
+    /// Multi-symbol (block-mode) batches and everything else keep legacy
+    /// framing; gate OFF is byte-identical.
     pub fn send_symbols(&self, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
         let conn = self
             .connections
             .get(&path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
+        if crate::transport::protocol::wire_compact_active() {
+            if let Some(buf) = crate::transport::protocol::serialize_data_compact(&batch) {
+                return self.send_datagram_shaped(path_id, &conn, buf);
+            }
+        }
         let msg = WireMessage::Data(batch);
         let data = msg.serialize()?;
 
@@ -1091,6 +1103,16 @@ impl QuicTransport {
         info!(floor, "MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (fix/frontier-wedge)");
         transport.initial_mtu(floor);
         transport.min_mtu(floor);
+        // feat/window-mtu part 2 mechanism-liveness echo (MEASUREMENT
+        // DISCIPLINE item 1): the compact-framing gate, resolved once.
+        if crate::transport::protocol::wire_compact_active() {
+            info!(
+                "compact DATA framing ACTIVE (RWM_WIRE_COMPACT v5: one-symbol \
+                 datagrams ride the tag+varint frame, ~14-16 B vs 65-B legacy \
+                 framing; receive support unconditional; datagrams SHRINK — \
+                 no MTU-floor interaction)"
+            );
+        }
     }
 
     fn generate_self_signed_config(

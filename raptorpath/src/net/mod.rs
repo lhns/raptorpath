@@ -741,6 +741,15 @@ pub(crate) struct CopaFeed {
     /// commitment (the spurious-retransmit class — the last flight was
     /// younger than its path's RTprop at ack time).
     attr_witness_prev: AtomicU64,
+    /// feat/window-mtu (`RWM_WIN_DECOUPLE`): the N1-scoped sampler pause.
+    /// The RS sampling composition carries a measured −22…−27 Mbit cost at
+    /// the symmetric dual cell ("C8-Aware Pool Law" ATTRIBUTION), so a
+    /// sampling-only feed constructed for the N = 1 window law must go
+    /// fully inert while ≥ 2 paths are live: `on_sent` records nothing and
+    /// attribution only fast-forwards the cursor. Set by the sender loop at
+    /// the dyn-cap refresh cadence. Always false for `RWM_PLAIN_RS` and the
+    /// full Copa-sole feed (their semantics are unchanged).
+    n1_pause: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Default)]
@@ -810,7 +819,16 @@ impl CopaFeed {
             attr_witness: false,
             attr_cross: AtomicU64::new(0),
             attr_witness_prev: AtomicU64::new(0),
+            n1_pause: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// feat/window-mtu: pause/resume the N1-scoped sampler (see `n1_pause`).
+    fn set_n1_paused(&self, paused: bool) {
+        self.n1_pause.store(paused, Ordering::Relaxed);
+    }
+    fn n1_paused(&self) -> bool {
+        self.n1_pause.load(Ordering::Relaxed)
     }
 
     /// feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only construction.
@@ -846,6 +864,10 @@ impl CopaFeed {
     /// fallback (residual (iii)); a same-path resend just refreshes the
     /// send time (its rate sample is re-snapshotted by `on_src_sent`).
     fn on_sent(&self, seq: u64, path: u32) {
+        // N1-scoped sampler pause: record nothing while ≥ 2 paths are live.
+        if self.n1_paused() {
+            return;
+        }
         let now = now_us();
         match self.seq_path.entry(seq) {
             dashmap::mapref::entry::Entry::Occupied(mut e) => {
@@ -920,6 +942,21 @@ fn copa_feed_attribute(
     transport: &Arc<QuicTransport>,
     stats: &Arc<SharedStats>,
 ) {
+    // feat/window-mtu: paused N1-scoped sampler — no samples, no cwnd work;
+    // only fast-forward the attribution cursor so a later resume (paths
+    // dropping back to 1) starts clean at the live frontier. Send records
+    // from before the pause are dropped un-attributed (bounded by the
+    // outstanding store at pause time; the battery topologies never flap).
+    if feed.n1_paused() {
+        let mut c = feed.cursor.lock();
+        if received_up_to >= c.next {
+            c.next = received_up_to + 1;
+        }
+        c.sacked.retain(|&s| s > received_up_to);
+        drop(c);
+        feed.seq_path.retain(|&s, _| s > received_up_to);
+        return;
+    }
     let newly = feed.newly_delivered(received_up_to, sack_ranges);
     if newly.is_empty() {
         return;
@@ -1452,17 +1489,28 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // honest per-path BtlBw anchor (the WindowAck attribution machinery
         // reused sampling-only). The full feed (`wanted`) takes precedence.
         let plain_rs = gates.plain_rs;
-        if !wanted && plain_rs && plain_inorder {
+        if !wanted && (plain_rs || gates.win_decouple) && plain_inorder {
             let feed = CopaFeed::new_sampling_only(gates.rs_attr);
-            info!(
-                "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
-                 WindowAck frontier/SACK -> per-path send-interval rate samples; \
-                 CC ownership unchanged; flight-witness attribution={} \
-                 [residual (iii): cross-path retransmit acks younger than the \
-                 retransmit path's RTprop credit the ORIGINAL flight; \
-                 RWM_RS_ATTR=0 = legacy last-sent control])",
-                feed.attr_witness
-            );
+            if plain_rs {
+                info!(
+                    "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
+                     WindowAck frontier/SACK -> per-path send-interval rate samples; \
+                     CC ownership unchanged; flight-witness attribution={} \
+                     [residual (iii): cross-path retransmit acks younger than the \
+                     retransmit path's RTprop credit the ORIGINAL flight; \
+                     RWM_RS_ATTR=0 = legacy last-sent control])",
+                    feed.attr_witness
+                );
+            } else {
+                // feat/window-mtu: the N1-scoped anchor for the decoupled
+                // window law — same sampling-only machinery, dynamically
+                // PAUSED while >= 2 paths are live (the measured RS dual-cell
+                // composition cost stays structurally unreachable).
+                info!(
+                    "win-decouple N1 sampler ACTIVE (RWM_WIN_DECOUPLE: sampling-only \
+                     send-interval anchor at N=1 only; inert while >=2 paths live)"
+                );
+            }
             Some(Arc::new(feed))
         } else if wanted && plain_inorder {
             info!(
@@ -4354,6 +4402,48 @@ pub fn honest_store_cap(
     }
 }
 
+/// feat/window-mtu part 1 (`RWM_WIN_DECOUPLE`, goal-gate "Window Decoupling
+/// + MTU Scaling"): the retention/memory ceiling once the window and the
+/// inflight are decoupled — 4096 × ~1.2 KB ≈ 5 MB. The legacy 1024 latch's
+/// memory role only; the wire budget is `win_decouple_allow`.
+pub const WIN_STORE_MAX: usize = 4096;
+
+/// The stall-insurance meter's ceiling: one recovery-engine round on the
+/// sweep-cadence clamp — the SAME named constant the honest cap's runway
+/// uses ([`HONEST_RECOVERY_ROUND_S`]). Fixed by the 2026-08-06 diagnosis
+/// amendment (R_ins = R).
+pub const WIN_STALL_INS_S: f64 = HONEST_RECOVERY_ROUND_S;
+
+/// The decoupled WIRE budget (part 1 law; diagnosis-amended constants):
+///
+///   allow = base + rate·min(stall_age, R_ins)
+///
+/// where `base` = anchor·(K + gain − 1) (residence on the measured unloaded
+/// clock + probe headroom; under Copa-sole the caller passes gain·Σcwnd)
+/// and the metered term is the stall insurance made EXPLICIT and
+/// CONTINUOUS: the 2026-08-06 diagnosis refuted all three pre-registered
+/// insurance channels (holes ≤ 7% of any window; release gaps 2–12 ms;
+/// no multi-round tail) and named SUB-SWEEP ACK-GRANULARITY COVER — a
+/// right-sized static window is consumed by its own queue (Little's law:
+/// zero slack), so every frontier micro-freeze idles the wire. Here the
+/// allowance grows at exactly the anchor rate while the frontier is
+/// frozen (micro or sweep scale alike, no threshold, no mode bit) and
+/// falls back to `base` when it advances.
+pub fn win_decouple_allow(base: f64, rate: f64, stall_age_s: f64) -> f64 {
+    base + rate.max(0.0) * stall_age_s.clamp(0.0, WIN_STALL_INS_S)
+}
+
+/// The decoupled RETENTION backstop (part 1 law): the un-SACKed total —
+/// head span PLUS recovery-stalled holes — may reach the full metered
+/// allowance plus one recovery round of hole capacity (N_hole = 1, from
+/// the diagnosis: hole population ≤ 70 everywhere), memory-clamped.
+pub fn win_decouple_cap_ret(base: f64, rate: f64, rtprop_s: f64, floor: usize) -> usize {
+    let r = rate.max(0.0);
+    ((base + r * (WIN_STALL_INS_S + HONEST_RECOVERY_ROUND_S + rtprop_s.max(0.0))).ceil()
+        as usize)
+        .clamp(floor.min(WIN_STORE_MAX), WIN_STORE_MAX)
+}
+
 /// Guard-aware admission gate (roadmap item 1). `accounts` = (outstanding_i,
 /// cap_i, redirect_bound_i) per live path. Three regimes:
 ///
@@ -5460,6 +5550,35 @@ async fn run_window_sender(
             "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
         );
     }
+    // ── Window/inflight decoupling (env RWM_WIN_DECOUPLE) ────────────────
+    // Goal-gate "Window Decoupling + MTU Scaling" part 1 (pre-registered
+    // 2026-08-06 + diagnosis amendment): at N = 1 the admission gate moves
+    // from the un-SACKed total vs the anchor-sum latch to the live HEAD
+    // SPAN (last_sent − SACK/cum frontier — recovery-stalled holes
+    // excluded) vs the stall-metered allowance `win_decouple_allow`; the
+    // un-SACKed total keeps a retention backstop `win_decouple_cap_ret`
+    // (memory clamp 4096). Under Copa-sole the residence term is
+    // gain·Σcwnd (the 1024 ceiling truncation — the B1 jitter-cell dwell
+    // binder — is released). N ≥ 2 and warm-up keep the configured laws
+    // bit-exactly. Default OFF: shipped byte-identical.
+    let win_decouple_on = gates.win_decouple && plain_dyn_cap;
+    if win_decouple_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). Prints
+        // when CONFIGURED; the law engages at N = 1 with a warm anchor
+        // (the harness expects the echo per ENV).
+        info!(
+            gain = store_bdp_gain,
+            "window/inflight decoupling ACTIVE (RWM_WIN_DECOUPLE: wire gate = head \
+             span vs anchor*(K+gain-1) + rate*min(stall_age, 100ms); holes to \
+             retention cap_ret, clamp 4096; N=1 only; Copa-sole ceiling released)"
+        );
+    }
+    // Law state, refreshed with the dyn-cap throttle; wd_engaged gates the
+    // decoupled admission test each iteration.
+    let mut wd_engaged: bool = false;
+    let mut wd_allow_base: f64 = 0.0;
+    let mut wd_rate: f64 = 0.0;
+    let mut wd_cap_ret: usize = 0;
     // path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
     // refresh cadence; ~10 s window = two 5 s half-buckets.
     const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
@@ -6978,17 +7097,53 @@ async fn run_window_sender(
                     // c2 smoke: effective cap flapping 1024↔128 every few
                     // DIAG ticks, store swinging 400–1024, goodput dips to
                     // 20 Mbit).
-                    let (cwnd_sum, n_live): (f64, usize) = {
+                    let (cwnd_sum, n_live, wd_terms): (f64, usize, Option<(f64, f64)>) = {
                         let sched = scheduler.lock();
                         let live = sched.live_paths();
-                        (
-                            live.iter()
-                                .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
-                                .sum(),
-                            live.len().max(1),
-                        )
+                        let cs: f64 = live
+                            .iter()
+                            .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
+                            .sum();
+                        // feat/window-mtu: (rate, RTprop) for the stall meter
+                        // and the retention backstop at N = 1 — the feed's
+                        // delivered-rate anchor when warm, else Copa's own
+                        // cwnd/RTprop (both honest under Copa-sole).
+                        let wd = if win_decouple_on && live.len() == 1 {
+                            live.first().and_then(|id| sched.path(*id)).and_then(|p| {
+                                let rtp = p.min_rtt().map(|d| d.as_secs_f64())?;
+                                if rtp <= 0.0 {
+                                    return None;
+                                }
+                                let rate = p
+                                    .btlbw_sym_per_s()
+                                    .filter(|r| *r > 0.0)
+                                    .unwrap_or(p.cwnd as f64 / rtp);
+                                Some((rate, rtp))
+                            })
+                        } else {
+                            None
+                        };
+                        (cs, live.len().max(1), wd)
                     };
-                    dyn_store_cap = if let Some(cap) = path_scaled_store_cap(
+                    wd_engaged = false;
+                    dyn_store_cap = if let (true, Some((rate, rtp))) =
+                        (win_decouple_on && cwnd_sum > 0.0, wd_terms)
+                    {
+                        // Decoupled law under Copa-sole: residence = Copa's
+                        // own gain*cwnd (un-truncated — the B1 dwell-ceiling
+                        // release); stall meter + retention backstop per the
+                        // amended constants.
+                        wd_allow_base = store_bdp_gain * cwnd_sum;
+                        wd_rate = rate;
+                        wd_cap_ret = win_decouple_cap_ret(
+                            wd_allow_base,
+                            rate,
+                            rtp,
+                            store_cap_floor,
+                        );
+                        wd_engaged = true;
+                        wd_cap_ret
+                    } else if let Some(cap) = path_scaled_store_cap(
                         store_paths_on,
                         n_live,
                         cwnd_sum,
@@ -7047,16 +7202,25 @@ async fn run_window_sender(
                     // the refresh cadence). hsum = 0.0 whenever
                     // honest_cap_on is false — the legacy expressions below
                     // then run verbatim (shipped byte-identical).
-                    let (bdp, hsum, n_live): (f64, f64, usize) = {
+                    let (bdp, hsum, n_live, wd_terms): (
+                        f64,
+                        f64,
+                        usize,
+                        Option<(f64, f64, f64, f64)>,
+                    ) = {
                         let sched = scheduler.lock();
                         let n = sched.live_paths().len().max(1);
                         let mut bdp = 0.0f64;
                         let mut hsum = 0.0f64;
+                        // feat/window-mtu: (anchor, rate, K, RTprop) for the
+                        // decoupled law at N = 1 (anchor honest via the
+                        // N1-scoped sampling feed).
+                        let mut wd: Option<(f64, f64, f64, f64)> = None;
                         for id in sched.active_paths().iter() {
                             if let Some(p) = sched.path(*id) {
                                 if let Some(a) = p.copa_bdp_anchor() {
                                     bdp += a;
-                                    if honest_cap_on {
+                                    if honest_cap_on || (win_decouple_on && n == 1) {
                                         let k = percap_k
                                             .entry(*id)
                                             .or_insert_with(|| {
@@ -7067,20 +7231,59 @@ async fn run_window_sender(
                                                 p.min_rtt(),
                                                 dnow,
                                             );
-                                        hsum += honest_store_cap(
-                                            Some(a),
-                                            p.btlbw_sym_per_s(),
-                                            k,
-                                            store_bdp_gain,
-                                        )
-                                        .unwrap_or(0.0);
+                                        if honest_cap_on {
+                                            hsum += honest_store_cap(
+                                                Some(a),
+                                                p.btlbw_sym_per_s(),
+                                                k,
+                                                store_bdp_gain,
+                                            )
+                                            .unwrap_or(0.0);
+                                        }
+                                        if win_decouple_on && n == 1 {
+                                            if let (Some(r), Some(rtp)) = (
+                                                p.btlbw_sym_per_s().filter(|r| *r > 0.0),
+                                                p.min_rtt().map(|d| d.as_secs_f64()),
+                                            ) {
+                                                wd = Some((a, r, k, rtp));
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                        (bdp, hsum, n)
+                        (bdp, hsum, n, wd)
                     };
-                    dyn_store_cap = if let Some(cap) = capw_store_cap(
+                    // feat/window-mtu: the N1-scoped sampler pause (see
+                    // CopaFeed::n1_pause) — refreshed here at the dyn-cap
+                    // cadence. Never touches RWM_PLAIN_RS or Copa-sole
+                    // feeds (their semantics are unchanged).
+                    if win_decouple_on && !gates.plain_rs {
+                        if let Some(f) = &copa_feed {
+                            if !f.owns_cc() {
+                                f.set_n1_paused(n_live >= 2);
+                            }
+                        }
+                    }
+                    wd_engaged = false;
+                    dyn_store_cap = if let (true, Some((a, r, k, rtp))) =
+                        (win_decouple_on && n_live == 1, wd_terms)
+                    {
+                        // Decoupled law (part 1, plain/BBR seat): residence
+                        // on the honest anchor + probe headroom; the stall
+                        // meter and hole capacity live in the gate below and
+                        // the retention backstop respectively.
+                        wd_allow_base = a * (k.max(1.0) + store_bdp_gain - 1.0);
+                        wd_rate = r;
+                        wd_cap_ret = win_decouple_cap_ret(
+                            wd_allow_base,
+                            r,
+                            rtp,
+                            store_cap_floor,
+                        );
+                        wd_engaged = true;
+                        wd_cap_ret
+                    } else if let Some(cap) = capw_store_cap(
                         capw_on,
                         &capw_terms,
                         store_cap_floor,
@@ -7336,10 +7539,47 @@ async fn run_window_sender(
                 && (guarded_full
                     || store_len >= effective_store_cap
                     || cwnd_full)
+        } else if wd_engaged {
+            // feat/window-mtu (RWM_WIN_DECOUPLE, N = 1): the decoupled gate.
+            // Fresh admission tests the live HEAD SPAN against the
+            // stall-metered allowance — recovery-stalled holes (below the
+            // SACK/cum frontier) never consume the wire budget; they are
+            // bounded by the retention backstop instead. During a frontier
+            // freeze the allowance grows at the anchor rate (the explicit
+            // stall-insurance term), capped at one recovery round.
+            let last_sent = sent_store.keys().next_back().copied().unwrap_or(0);
+            let wire_out = last_sent.saturating_sub(wnd2_frontier_last) as usize;
+            let stall_s =
+                now_us().saturating_sub(wnd2_frontier_change_us) as f64 / 1e6;
+            let allow = win_decouple_allow(wd_allow_base, wd_rate, stall_s);
+            reliable
+                && (wire_out >= allow as usize
+                    || store_len >= wd_cap_ret
+                    || cwnd_full)
         } else {
             reliable && (store_len >= effective_store_cap || cwnd_full)
         };
 
+        // feat/window-mtu wnd2/relgap tracking (see decls): the release
+        // frontier is max(highest SACK-released seq, cumulative ack) —
+        // O(log n) per iteration. Runs for the DIAG gauge AND for the
+        // decoupled law's stall meter (RWM_WIN_DECOUPLE).
+        if (diag_on || win_decouple_on) && reliable && !generation {
+            let tnow = now_us();
+            let frontier = sack_released
+                .iter()
+                .next_back()
+                .copied()
+                .unwrap_or(0)
+                .max(window_ack_seq.load(Ordering::Relaxed));
+            if frontier > wnd2_frontier_last {
+                wnd2_frontier_last = frontier;
+                wnd2_frontier_change_us = tnow;
+            } else {
+                wnd2_relgap_max_us = wnd2_relgap_max_us
+                    .max(tnow.saturating_sub(wnd2_frontier_change_us));
+            }
+        }
         // RWM_DIAG periodic constraint report (see decls above the loop).
         if diag_on {
             diag_total_iters += 1;
@@ -7363,24 +7603,6 @@ async fn run_window_sender(
                     }
                     sidle_last_total = wt;
                     sidle_last_change_us = dnow;
-                }
-            }
-            // feat/window-mtu wnd2/relgap tracking (see decls): the release
-            // frontier is max(highest SACK-released seq, cumulative ack) —
-            // O(log n) per iteration, DIAG only.
-            if reliable && !generation {
-                let frontier = sack_released
-                    .iter()
-                    .next_back()
-                    .copied()
-                    .unwrap_or(0)
-                    .max(window_ack_seq.load(Ordering::Relaxed));
-                if frontier > wnd2_frontier_last {
-                    wnd2_frontier_last = frontier;
-                    wnd2_frontier_change_us = dnow;
-                } else {
-                    wnd2_relgap_max_us = wnd2_relgap_max_us
-                        .max(dnow.saturating_sub(wnd2_frontier_change_us));
                 }
             }
             let ddt = dnow.saturating_sub(diag_last_us);
@@ -7559,13 +7781,21 @@ async fn run_window_sender(
                     let hole = store_len.saturating_sub(head);
                     let relgap_cur =
                         dnow.saturating_sub(wnd2_frontier_change_us) / 1000;
-                    let s = format!(
+                    let mut s = format!(
                         " wnd2={}/{} relgap={}ms/mx{}ms",
                         head.min(store_len),
                         hole,
                         relgap_cur,
                         wnd2_relgap_max_us / 1000,
                     );
+                    // RWM_WIN_DECOUPLE engagement gauge: base allowance /
+                    // honest rate / retention backstop (mechanism liveness).
+                    if wd_engaged {
+                        s.push_str(&format!(
+                            " wd=al{:.0}/r{:.0}/ret{}",
+                            wd_allow_base, wd_rate, wd_cap_ret
+                        ));
+                    }
                     wnd2_relgap_max_us = 0;
                     s
                 } else {
@@ -10555,6 +10785,104 @@ mod tests {
         let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
         assert_eq!(ip, "10.99.0.1".parse::<IpAddr>().unwrap());
         assert_eq!(prefix, 24);
+    }
+
+    /// feat/window-mtu part 1: the stall-metered allowance is continuous —
+    /// base at zero stall, grows at exactly the anchor rate through a
+    /// frontier freeze, and caps at one recovery round (R_ins = 100 ms).
+    /// No threshold, no mode bit: allow(g) is piecewise-linear in g alone.
+    #[test]
+    fn win_decouple_allow_is_stall_metered_and_capped() {
+        let base = 190.0; // sc2-class residence: anchor 83 * (K 1.3 + 1)
+        let rate = 10_400.0;
+        assert_eq!(win_decouple_allow(base, rate, 0.0), base);
+        // 3 ms micro-freeze: +rate*3ms ≈ 31 symbols — the sub-sweep
+        // ack-granularity cover the diagnosis named.
+        let a3 = win_decouple_allow(base, rate, 0.003);
+        assert!((a3 - (base + rate * 0.003)).abs() < 1e-9);
+        // Linear through the sweep scale...
+        let a80 = win_decouple_allow(base, rate, 0.080);
+        assert!((a80 - (base + rate * 0.080)).abs() < 1e-9);
+        // ...and capped at R_ins: a 5 s wedge cannot mint an unbounded
+        // window (backpressure resumes, bounded).
+        let acap = win_decouple_allow(base, rate, 5.0);
+        assert!((acap - (base + rate * WIN_STALL_INS_S)).abs() < 1e-9);
+        // Negative clock skew clamps to base, never below.
+        assert_eq!(win_decouple_allow(base, rate, -1.0), base);
+    }
+
+    /// feat/window-mtu part 1: the retention backstop = full metered
+    /// allowance + one recovery round of hole capacity (N_hole = 1, from
+    /// the diagnosis), memory-clamped at WIN_STORE_MAX and floored.
+    #[test]
+    fn win_decouple_cap_ret_bounds_holes_and_memory() {
+        // sc3-class: anchor 81*(K1.3+1)=186, rate 1.8k, RTprop 45 ms:
+        // 186 + 1800*(0.1 + 0.1 + 0.045) = 627 — between the honest cap
+        // (~355) and the legacy latch (1024), and every term derived.
+        let c = win_decouple_cap_ret(186.0, 1800.0, 0.045, 64);
+        assert_eq!(c, 627); // 186 + 1800*(0.1 + 0.1 + 0.045)
+        assert!(c > 355 && c < 1024);
+        // A jitter-cell Copa seat (base = 2*cwnd ≈ 1100 at 40 ms RTprop,
+        // rate ~10.4k) must be allowed ABOVE the legacy 1024 latch — the
+        // B1 dwell-ceiling release — and below the memory clamp.
+        let copa = win_decouple_cap_ret(1100.0, 10_400.0, 0.040, 64);
+        assert!(copa > RELIABLE_STORE_MAX && copa <= WIN_STORE_MAX);
+        // Memory clamp binds for an absurd rate; floor binds when cold.
+        assert_eq!(win_decouple_cap_ret(1e9, 1e9, 1.0, 64), WIN_STORE_MAX);
+        assert_eq!(win_decouple_cap_ret(0.0, 0.0, 0.0, 64), 64);
+    }
+
+    /// feat/window-mtu part 1: the decoupled gate excludes recovery-stalled
+    /// holes from the wire budget — the head-span arithmetic. A store full
+    /// of below-frontier holes must not consume fresh-admission budget;
+    /// the SAME totals under the legacy gate would read paused.
+    #[test]
+    fn win_decouple_head_span_excludes_holes() {
+        // 300 un-SACKed total; frontier at 950 of 1000 sent ⇒ head span =
+        // 50 (live wire), holes = 250 (below-frontier recovery seats).
+        let last_sent: u64 = 1000;
+        let frontier: u64 = 950;
+        let outstanding: usize = 300;
+        let head = last_sent.saturating_sub(frontier) as usize;
+        let hole = outstanding.saturating_sub(head);
+        assert_eq!(head, 50);
+        assert_eq!(hole, 250);
+        let allow = win_decouple_allow(190.0, 10_400.0, 0.0);
+        // Decoupled: 50 < 190 ⇒ wire keeps feeding. Legacy on the same
+        // state: 300 >= 190-class cap ⇒ paused (the D1 channel closed
+        // structurally even though the diagnosis measured it small).
+        assert!(head < allow as usize);
+        assert!(outstanding >= allow as usize);
+    }
+
+    /// feat/window-mtu: the N1-scoped sampler pause — a paused feed records
+    /// no send commitments and attribution only fast-forwards the cursor
+    /// (no samples, no stale-record attribution after resume).
+    #[test]
+    fn copa_feed_n1_pause_is_fully_inert() {
+        let feed = CopaFeed::new_sampling_only(true);
+        assert!(!feed.owns_cc());
+        feed.set_n1_paused(true);
+        feed.on_sent(10, 0);
+        assert!(feed.seq_path.is_empty(), "paused on_sent must record nothing");
+        // Pre-pause leftovers below the frontier are pruned by the paused
+        // attribution path's fast-forward (simulated here directly).
+        feed.set_n1_paused(false);
+        feed.on_sent(11, 0);
+        feed.set_n1_paused(true);
+        {
+            let mut c = feed.cursor.lock();
+            if 20 >= c.next {
+                c.next = 21;
+            }
+            c.sacked.retain(|&s| s > 20);
+        }
+        feed.seq_path.retain(|&s, _| s > 20);
+        assert!(feed.seq_path.is_empty());
+        // Resume: the cursor starts at the live frontier — an old ack
+        // yields no attributions.
+        feed.set_n1_paused(false);
+        assert!(feed.newly_delivered(15, &[]).is_empty());
     }
 
     #[test]
