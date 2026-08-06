@@ -118,7 +118,7 @@ in the order found, each fixed or refuted:
 | 4 | **decoder waste** | known sources materialized as full-width pivot rows etc. | FIXED: sparse-aware global rewrite, output-identical (differential-tested), ×1.2–5.0 at L0 | "Decode-CPU Ceiling"; §16.18 |
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
-| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED, ships DEFAULT ON since 2026-07-21 ("Consolidation" LOO battery): path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path) — removal re-opens the c7 collapse class both seeds; per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid; percap family stays OFF. **c8 WATCH (2026-07-21): under SACK-release the LEGACY pool reads better at c8 (0.85–0.87×Σ vs the stack's 0.72–0.76) — the §16.22 pooled-c8 verdict was pre-SR and has MOVED; c8-aware pool law = the named follow-up. [2026-07-27, "C8-Aware Pool Law": the capacity-weighted pool (`RWM_STORE_CAPW`) derived+built+REFUTED at c8 — the gauges show the binder is SLOW-PATH CONVERSION, not pool sizing (fast path parks the span, slow path converts ~nothing, legacy c8 = fast single + 2.7); no flip, the WATCH stands with a sharper name]** | §16.19, §16.22, §16.29; "Per-Path Outstanding Accounting", "C8-Aware Pool Law" |
+| 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED, ships DEFAULT ON since 2026-07-21 ("Consolidation" LOO battery): path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path) — removal re-opens the c7 collapse class both seeds; per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid; percap family stays OFF. **c8 WATCH (2026-07-21): under SACK-release the LEGACY pool reads better at c8 (0.85–0.87×Σ vs the stack's 0.72–0.76) — the §16.22 pooled-c8 verdict was pre-SR and has MOVED; c8-aware pool law = the named follow-up. [2026-07-27, "C8-Aware Pool Law": the capacity-weighted pool (`RWM_STORE_CAPW`) derived+built+REFUTED at c8 — the gauges show the binder is SLOW-PATH CONVERSION, not pool sizing (fast path parks the span, slow path converts ~nothing, legacy c8 = fast single + 2.7); no flip, the WATCH stands with a sharper name] [2026-08-06, "C8 Slow-Path Conversion": the conversion question ANSWERED structurally — slow-path SOURCE share is monotonically anti-correlated with c8 goodput across five placement arms (6% share → 88.6 = 0.874×Σ; 16–18% → 70–83), conversion itself works (~90% first-copy) but costs more in frontier stalls + drain tail than it banks under EVERY law measured, matching kernel MPTCP-BBR's own +3.1/−2.4 vs its single; the frontier-slack placement law (`RWM_PLACE_SLACK`) refuted → register; `RWM_RECOV_MP_LIVE` (hole-law N/clocks on live_paths — the saturation-filter trap at the recovery plane) proven at the gauge (young fires 412–749 → 16-class) and half-repairs pbs's c8 collapse, flip-blocked by a 3/3-pairwise dc1 regression (named follow-up); the c8 remaining-gap owner is the SINGLE-PATH c2 gap (§16.30), not multipath]** | §16.19, §16.22, §16.29; "Per-Path Outstanding Accounting", "C8-Aware Pool Law" |
 | 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; **DEFAULT ON since 2026-07-21 ("Consolidation": removal −12.3/−13.9 ≫σ at c7, dual-c1 retx flood returns; `=0` = legacy opt-out)** | "Multipath Recovery Suppression"; paper §16.24 |
 | 9 | **frontier-clocked store release** | the retention store frees slots only on the CUMULATIVE frontier, so SACKed-but-not-cumulative symbols hold flow-control slots a full frontier round — at c7 the store recycles at frontier latency, not path rate (the §16.24 residual: wire un-full, goodput stopped) | FIXED, ships DEFAULT ON: `RWM_STORE_SACK_RELEASE` = SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the frontier (slot release ≠ recoverability — the SACK_PRUNE distinction); c7 0.885→0.959×Σ SR-only, **1.018–1.045×Σ composed with `RWM_RECOV_MP`** (both seeds); sc2 +4.3/+2.9 ≫σ; dual-c1 composed +20–22 above single; occupancy 3,157→1,460 at 167k slots released/200 MB with retx FALLING | "SACK-Clocked Store Release"; paper §16.25 |
 
@@ -547,6 +547,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_INLINE_REPAIR` | "Repair In-Flight (2026-07-08)" (interspersed separate-grid inline repair): every inline config wedged or crawled; W=G reduction argument | W1, W7, PRE-DIV active, but the refutation's core is the GRID-STRANDING geometry (a separate inline grid strands its generation behind the frontier), which is substrate-independent | **NO on supersession grounds** — the goal (repair present at stall) was achieved by `RWM_PROACTIVE_PACER` ("Present-at-Stall"), whose own measured null resolved into the presence⊥throughput identity — re-confirmed post-divide as STRUCTURAL (Consolidated Verdict) | **REMOVED bede4a3 (2026-07-27)** — the negative result stays documented at the PROACTIVE_PACER site + here |
 | `RWM_FRONTIER*` (`RWM_FRONTIER`,`_GAIN`,`_R`,`_OFFSET`) | "Proactive Frontier (2026-07-07)": rf=718 emitted, ru=4 useful — repair anchored at the ack frontier loses the race to its own ARQ retransmit | **W1, W7, W8, PRE-DIV** (earliest refutation in the register) — but the mechanism died on GEOMETRY (a trailing window anchored ½-RTT stale covers holes only after they stick), not on throughput | **NO on supersession grounds** — same successor chain as INLINE_REPAIR (`RWM_PROACTIVE_PACER` → presence⊥throughput structural); the single-path recovery-latency cell it targeted has been re-measured post-walls repeatedly (sc3 recovery ceiling 15.6–15.9) without this mechanism being the missing term | **REMOVED bede4a3 (2026-07-27)** — the FDIAG instrument (RWM_FDIAG) is retained; only the mechanism died |
 | `RWM_RATE_WIRE` (+`RWM_RATE_Q`) | "Slow-Path Anchor Diagnosis STEP 3 (2026-07-13)": refuted LIVE, same-binary A/B, post-audit discipline | W1 (pre-BBR-lever, same day), PRE-DIV — but the refutation names the mechanism's own structural error: generation-mode rate samples are decode-clocked, so the windowed-MAX is near-correct and ANY sub-max quantile UNDER-reads and throttles | **NO** — a wall did not produce the verdict; the sample-clocking argument did. The rate-signal need was later met by the honest-anchor family (`RWM_PLAIN_RS`, rate-sample fix) | **REMOVED f1f32c5 (2026-07-27)** — effective_btlbw is now always the windowed-MAX (the shipped default, byte-identical) |
+| `RWM_PLACE_SLACK` | "C8 Slow-Path Conversion (2026-08-06)": c7 protection clause FAILS ≫σ both seeds (145.6/151.0 = 0.858/0.896×Σ vs required ≥0.97); c8 never ≥ both incumbents; the smoke-falsified unbounded form was re-derived once (recovery-patience bound, D_i = min(S, 9/8·srtt_i)) per item-11's names-a-new-mechanism clause, then the battery falsified the bounded form too | **NONE** — refuted on the full current default stack (BBR + SR + PBS + MP + anchors + unified), same-session interleaved, instrumented | **NO** — the refutation is the clean-substrate datum AND carries the structural finding: slow-path source share is monotonically anti-correlated with c8 goodput across five arms (6%→88.6, 18%→70–83); the mechanism WORKED (placement reached capacity share, ~90% first-copy conversion) and the cell still paid more than it banked. Any future conversion ask must first refute the negative-margin table, not rebuild placement | **DEPRECATED 2026-08-06, default OFF** — law + 5 unit tests retained as the measured A/B arm until the next consolidation pass deletes it |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
 | STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. ~~Deletion GO next consolidation pass~~ **REMOVED bccb32a (2026-07-27, Code Consolidation 2, scoped streaming-only)** — adapter + `streaming-codes` crate + selection glue deleted (−1,708 net LOC); `fec_backend streaming` is a parse error with a pointer; **OPT-OUT SEMANTICS CHANGE: `RWM_UNIFIED=0` + Realtime now selects the LEGACY-RLC windowed machine** (its own retirement clause, §17.5, stays open — NOT re-argued); the cell-5 p999 WATCH is HISTORICAL (a property of the deleted machine, measured and bounded above). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
@@ -965,6 +966,119 @@ form; prediction sub-claim "retxo_p1 ≤ ~2× realized GE" is now load-
 bearing (it was the clause the unbounded form broke).
 
 *(Battery results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16; binary sha256 4d23d0f9698b049c… = commit 87135a0, SAME binary every arm, built fresh (stale rm'd, CRLF-converted); E5-2650 v3 aes+avx2+pclmulqdq (post-divide) in every log header; 1 run/invocation, 12 arms interleaved round-robin per rep ×8, fresh tunnel per invocation, seeds 42 AND 7, RWM_GEN=0 RWM_DIAG=1 everywhere; per-arm echo assertion both directions: **0 completed-run liveness mismatches on any of the 4 logs** (s42 96/96 completed; s7 96 headers / 53 completed / 43 seed-7 topo-ping aborts, every abort SUMMARY-LESS, n recorded per arm, nothing discarded; the 32 s42 + singles-class s7 "CONTAMINATION-pbs" flags are the July harness-note INFO-echo class — pbs default-configured while N≥2-gated — plus the abort stale-log class, counts matching); drivers `tools/l1/c8conv_{battery,live}.sh`, logs `/home/vibe/c8conv/{battery,live}-s{42,7}.log` + per-run diag/ (13 MB preserved) + `BINARIES.txt`; lock 15:43:43→16:54:29 UTC; runtimes: s42 battery 16:14:50–16:34:24 (19.5 min), s7 16:34:33–16:46:08 (11.6 min), live supplemental 16:46:20–16:52:10 (5.8 min), dc1 probe ~16:52–16:54. CO-TENANCY: every run of this workstream started AFTER the B1 worker's stop (lock taken with the VM verified quiet, 0 processes/netns); no rep overlaps any other worker's activity — nothing contamination-suspect, nothing re-run.)
+
+Σ = same-session same-env singles (sc2+sc3 at c8; 2×sc2 at c7), per arm
+env: s42 pbs-env Σ_c8 = 101.43, Σ_c7 = 170.72; fix-env Σ_c8 = 100.84,
+Σ_c7 = 169.70; s7 pbs-env Σ_c8 = 100.55, Σ_c7 = 169.18; fix-env
+Σ_c8 = 100.22, Σ_c7 = 168.52.
+
+**c8 (the target cell), mean ± σ_s (n) → vs own-env Σ:**
+
+| arm | s42 | vs Σ | s7 | vs Σ |
+|---|---|---|---|---|
+| **legacy** (`RWM_STORE_PATHS=0`) | **88.62 ± 3.30 (8)** | **0.874** | **87.62 ± 2.99 (4)** | **0.871** |
+| pbs (shipped default) | 70.46 ± 14.64 (8; lows 49.5, 50.6) | 0.695 | 84.21 ± 6.54 (4; low 73.0) | 0.838 |
+| fix (slack, pbs pool) | 72.33 ± 13.02 (8; lows 53.8, 54.1) | 0.717 | 77.77 ± 8.34 (5) | 0.776 |
+| lfix (slack, legacy pool) | 88.38 ± 5.60 (8) | 0.876 | 89.40 (2) | 0.892 |
+| fixlive (slack+live, pbs pool) | 82.66 ± 5.66 (8; min 73.3) | 0.820 | 81.43 ± 7.25 (5) | 0.813 |
+| live ALONE (supplemental, pbs pool) | **81.83 ± 9.68 (6)** vs same-block pbs2 73.42 ± 12.16 (6) | — | **83.27 ± 6.49 (4)** vs pbs2 71.27 ± 20.74 (3) | — |
+
+**c7 (the protection cell), mean ± σ_s (n) → vs own-env Σ:**
+
+| arm | s42 | vs Σ | s7 | vs Σ |
+|---|---|---|---|---|
+| legacy | 158.63 ± 15.63 (8; collapse tail) | 0.929 | 163.01 ± 2.95 (6) | 0.964 |
+| **pbs** | **166.48 ± 3.44 (8)** | **0.975** | **166.73 ± 1.13 (5)** | **0.985** |
+| fix (slack) | **145.60 ± 3.07 (8)** | **0.858** | **150.96 (2)** | **0.896** |
+| live ALONE (supplemental) | 167.75 ± 1.23 (6) vs pbs2 166.14 ± 1.64 (6) | — | 167.19 ± 2.94 (4) vs pbs2 167.86 ± 3.22 (2) | — |
+
+**Singles (Σ terms + N=1 inertness):** sc2 pbs/fix = 85.36 ± 0.31 /
+84.85 ± 0.72 (s42), 84.59 ± 1.03 / 84.26 ± 0.66 (s7); sc3 16.07 ± 0.16 /
+15.99 ± 0.29 (s42), 15.96 ± 0.12 / 15.96 ± 0.28 (s7) — fix inert within σ
+(−0.3…−0.5 class, and the slack law is N≥2-gated by construction).
+dnf = 0 on every completed run, all logs. **dual-c1 probe (±live, seed 42
+×3 interleaved pairs): default 202.1/237.3/214.2, live 194.4/229.6/196.2 —
+live LOWER in 3/3 pairs (mean −11.2).**
+
+**The conversion gauges across ALL arms (the mechanism table; aggregated
+over reps; p1 = slow c3):**
+
+| c8 arm | splace p1 share | retxo p1/splace p1 | goodput s42/s7 |
+|---|---|---|---|
+| legacy | 6.2% / 6.5% | 15.8% / 25.3% | **88.6 / 87.6** |
+| lfix | 11.2% / 9.8% | 9.5% / 19.5% | 88.4 / 89.4 |
+| pbs | 16.1% / 11.3% | 26.0% / 28.7% | 70.5 / 84.2 |
+| fix | 15.5% / 12.3% | 21.2% / 22.3% | 72.3 / 77.8 |
+| fixlive | 17.6% / 14.5% | **3.6% / 8.2%** | 82.7 / 81.4 |
+
+### VERDICT vs the pre-registration — BOTH flips NO; the structural verdict lands, with numbers
+
+- **`RWM_PLACE_SLACK`: falsified, both clauses.** (1) c8 never ≥ both
+  incumbents (s42 72.3 vs legacy 88.6; s7 77.8 vs pbs 84.2); (2) **c7
+  fails the protection clause ≫σ on BOTH seeds: 145.60 ± 3.07 / 150.96 =
+  0.858/0.896×Σ vs the required ≥ 0.97** — the derivation re-read's named
+  regression channel (1) (the S-clamped region flattens the short-term
+  queue differential; at c7 the law let both paths run ~100 ms-class
+  backlogs before any placement signal, where the shipped cost corrects
+  per-symbol). The singles stayed inert as predicted; the law engaged as
+  designed everywhere (echo + slk gauge live; splace_p1 reached capacity
+  share 15.5/12.3%) — the MECHANISM worked, the PREDICTION failed. **NO
+  FLIP; deprecation register row added; no tuning pass.**
+- **`RWM_RECOV_MP_LIVE`: mechanism PROVEN, flip BLOCKED at dual-c1.** The
+  young-fire gauge collapses exactly as predicted (c8 y: pbs-class
+  412–749 → 16-class; retxo_p1 26–29% → 3.6–8.2% composed) and c8 improves
+  in 3 of 4 independent pairings (+8.4/+12.0 supplemental both seeds,
+  +12.2 composed s42; −2.8 ≪σ composed s7) with the pbs collapse floor
+  lifted (min 49.5 → 73.3) and c7 inert-or-better — but the pre-registered
+  gate is "inert-or-better EVERYWHERE", and the dual-c1 probe reads
+  live LOWER in **3/3 interleaved pairs (−11.2 mean)**. DEFAULT OFF;
+  retained as the measured A/B arm. Named follow-up: attribute the dc1
+  interaction (the law now ENGAGES at clean saturated duals where the
+  saturation filter used to bypass it — its young-suppression may be
+  delaying the retransmits dc1's scheduler-gap churn actually needs).
+- **The structural verdict (falsification (c)(2), measured across the
+  whole placement spectrum):** slow-path source share and c8 goodput are
+  MONOTONICALLY ANTI-CORRELATED across five arms on both seeds — 6.2%
+  share → 88.6; 11.2% → 88.4; 16–18% → 70–83. Conversion itself WORKS
+  (~90% of slow-path arrivals are first copies; displacement refuted),
+  and killing the re-serving tax (fixlive: retxo 3.6%) still leaves the
+  fed arms ~6 below the starved one: the residual costs are the
+  frontier's slow-owned stalls (24–39% of stall time) and the end-of-
+  object drain tail (the last slow-queued symbols serialize completion —
+  visible in the DIAG tails as src=0 drain phases). **At this cell's
+  asymmetry (5× rate, 4× RTT, ~2× loss), feeding the slow path SOURCE is
+  negative-margin under every placement law measured; the c8 optimum is
+  the starved corner — fast-path source + slow-path recovery traffic ≈
+  fast single + 2.6, which legacy-1024 reaches by accident of its pool
+  arithmetic.** The external reference agrees: kernel MPTCP-BBR banks
+  +3.1/−2.4 vs its own same-session single-path BBR at this cell.
+- **vs the bar:** best rp c8 = legacy 88.62/87.62 = 0.874/0.871×Σ — the
+  pre-registered ≥ 0.87×Σ line is HELD (by the legacy arm, both seeds),
+  1–4 Mbit under kernel MPTCP-BBR's 89.7–92.6. The REMAINING gap to the
+  bar is owned by the single-path c2 gap (§16.30's framing/MTU +
+  reactive-plane accounting: rp sc2 84.6–85.4 vs kernel single-path BBR
+  89.5–92.1), NOT by multipath conversion — closing c2 closes c8.
+- **Pool-law re-settlement (the "C8-Aware Pool Law" tension, re-asked
+  with conversion instrumented):** NO pool law wins both cells — legacy
+  wins c8 (88.6/87.6 vs 70.5/84.2, 5 sessions consistent in direction)
+  and pbs wins c7 (166.5/166.7 = 0.975/0.985×Σ vs legacy 158.6/163.0,
+  with legacy's c7 collapse tail visible again at s42, σ 15.6). The c8
+  WATCH stands, now with its mechanism named (above) and with
+  `RWM_RECOV_MP_LIVE` as the measured half-repair of pbs's c8 collapse
+  mode (flip-blocked at dc1, follow-up named). The shipped default is
+  UNCHANGED.
+- **Session datum, recorded:** on this tree the pbs c8 collapse class is
+  EPISODIC across seeds/sessions (s42 70.5 ± 14.6 with 49-class lows; s7
+  84.2 ± 6.5) — the July "0.71–0.76 both seeds" reading was the mode
+  firing on both; the 2026-08-06 diagnosis pair caught it NOT firing
+  (85.8/83.7). Whole-session comparisons at c8 need the per-run
+  distribution, not the mean (discipline item 4, re-affirmed).
+
+Ops: rp-* netns torn down after every invocation (harness trap) and
+verified empty at teardown; logs + per-run diag + binary hashes preserved
+under `/home/vibe/c8conv/`; lock released 16:54:29 UTC after cleanup.
 
 ## C8-Aware Pool Law (2026-07-27) — PRE-REGISTRATION (discipline item 11 — this block written BEFORE the diagnosis runs and the battery; branch `feat/c8-pool-law` from be24660; env `RWM_STORE_CAPW`, default OFF)
 
