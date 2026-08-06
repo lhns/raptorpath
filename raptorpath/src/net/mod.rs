@@ -1505,7 +1505,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 // feat/window-mtu: the N1-scoped anchor for the decoupled
                 // window law — same sampling-only machinery, dynamically
                 // PAUSED while >= 2 paths are live (the measured RS dual-cell
-                // composition cost stays structurally unreachable).
+                // composition cost stays structurally unreachable). Starts
+                // PAUSED: the first dyn-cap refresh (~5 ms) unpauses at
+                // N = 1, so a dual bring-up never charges a single symbol.
+                feed.set_n1_paused(true);
                 info!(
                     "win-decouple N1 sampler ACTIVE (RWM_WIN_DECOUPLE: sampling-only \
                      send-interval anchor at N=1 only; inert while >=2 paths live)"
@@ -6261,7 +6264,13 @@ async fn run_window_sender(
                         // SEND-interval delivery-rate sample on this path.
                         // (Bulk back-to-back sends: app_limited = false; an
                         // under-read sample can never lower the max filter.)
-                        if let Some(feed) = &copa_feed {
+                        // feat/window-mtu scope fix: a PAUSED N1-scoped feed
+                        // must behave as ABSENT — charging src_inflight /
+                        // snapshotting rate samples without the (paused)
+                        // attribution to release them leaked src_inflight
+                        // ~165k and starved the anchor at duals (measured:
+                        // c7-fix 64 Mbit, cap collapsed to boot 128).
+                        if let Some(feed) = copa_feed.as_ref().filter(|f| !f.n1_paused()) {
                             feed.on_sent(wire_sym.block_id, source_path);
                             p.charge_src(1);
                             p.on_src_sent(wire_sym.block_id, false);
@@ -9093,7 +9102,8 @@ async fn run_window_sender(
                     // its new path and re-snapshots the rate sample, so the
                     // eventual ack is attributed to the path that actually
                     // delivered it with a truthful send-interval.
-                    if let Some(feed) = &copa_feed {
+                    // (feat/window-mtu scope fix: paused feed = absent feed.)
+                    if let Some(feed) = copa_feed.as_ref().filter(|f| !f.n1_paused()) {
                         feed.on_sent(seq, nack_path);
                         let mut sched = scheduler.lock();
                         if let Some(p) = sched.path_mut(nack_path) {
@@ -10100,7 +10110,12 @@ fn handle_control_message(
             // SEND-interval samples (WindowAck frontier/SACK attribution), so
             // this arm must release the wire-level in-flight budget WITHOUT
             // polluting the max filter through `record_delivery`.
-            if let Some(feed) = copa_feed {
+            // feat/window-mtu scope fix: a PAUSED N1-scoped feed must behave
+            // as ABSENT here too — otherwise this arm suppresses the legacy
+            // `record_delivery` anchor feed while the paused feed supplies no
+            // samples either, and the anchor never establishes (measured at
+            // duals: btlbw=0/est=n on both paths, dyn cap stuck at boot 128).
+            if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(received_ids.len() as u32);
                     // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode
