@@ -77,6 +77,7 @@ for REP in $(seq 1 $REPS); do
   run_one c8-pbs     ""                   c2 c3 dual   25000000    1   0
   run_one c8-fix     "$FIX_ENV"           c2 c3 dual   25000000    1   1
   run_one c8-lfix    "$LEGACY $FIX_ENV"   c2 c3 dual   25000000    0   1
+  run_one c8-fixlive "$FIX_ENV RWM_RECOV_MP_LIVE=1" c2 c3 dual 25000000 1 1
   # -- c7 (symmetric preservation cell) --
   run_one c7-legacy  "$LEGACY"            c2 c2 dual   200000000   0   0
   run_one c7-pbs     ""                   c2 c2 dual   200000000   1   0
@@ -94,7 +95,7 @@ done
 # Arm-liveness assertion (discipline 7): an arm with zero summaries fails
 # LOUDLY, it does not vanish.
 echo "--- ARMCOUNTS (expect $REPS headers per arm)" >> "$OUT"
-for a in c8-legacy c8-pbs c8-fix c8-lfix c7-legacy c7-pbs c7-fix \
+for a in c8-legacy c8-pbs c8-fix c8-lfix c8-fixlive c7-legacy c7-pbs c7-fix \
          sc2-pbs sc2-fix sc3-pbs sc3-fix; do
   hdr=$(grep -c "arm=$a " "$OUT" || true)
   echo "ARMCOUNT $a headers=$hdr" >> "$OUT"

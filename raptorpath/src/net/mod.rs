@@ -5344,6 +5344,34 @@ async fn run_window_sender(
              the cumulative frontier — slot release, never recoverability)"
         );
     }
+    // ── Frontier-slack placement (env RWM_PLACE_SLACK) ───────────────────
+    // Goal-gate "C8 Slow-Path Conversion" (pre-registered 2026-08-06): the
+    // §16.3 placement cost's load term becomes max(0, Ê_i − S)/ref with
+    // S = clamp(span/R_ack, 0, 250 ms) — span = sent_edge − cum_ack,
+    // R_ack = EWMA of the cumulative-ack advance rate (delivery truth,
+    // immune to the plain anchor's over-read). S = 0 until R_ack warms and
+    // whenever N < 2 (shipped cost bit-exact — the law is a strict
+    // continuous generalization; see Scheduler::set_place_slack /
+    // place_costs). Plain reliable window only. Default OFF.
+    let place_slack_on = gates.place_slack && reliable && !generation;
+    if place_slack_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). The INFO
+        // prints whenever the gate is CONFIGURED; the law itself engages
+        // only at N ≥ 2 with a warm ack-rate (the harness expects the echo
+        // per ENV — the c8pool harness-note lesson).
+        info!(
+            "frontier-slack placement ACTIVE (RWM_PLACE_SLACK: cost_i = \
+             max(0, E_i - S)/ref, S = span/R_ack clamped <= 250 ms; S = 0 \
+             cold / N = 1 = shipped-identical)"
+        );
+    }
+    // Slack-law state: refresh timer (5 ms cadence), ack-rate sample
+    // anchor (>= 50 ms windows), EWMA, and the live S gauge for DIAG.
+    let mut ps_refresh_us: u64 = 0;
+    let mut ps_rate_last_us: u64 = 0;
+    let mut ps_rate_last_ack: u64 = 0;
+    let mut ps_rate_ewma: f64 = 0.0;
+    let mut ps_slack_gauge: f64 = 0.0;
     // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
     // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
     // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
@@ -5802,6 +5830,25 @@ async fn run_window_sender(
         info!(
             "single-path hole-law suppression ACTIVE (RWM_RECOV_SP: RFC9002 \
              time-threshold on the live flight at N=1; time channel only)"
+        );
+    }
+    // ── feat/c8-conversion: recovery clocks on LIVE paths ────────────────
+    // (`RWM_RECOV_MP_LIVE`, default OFF — the A/B arm; goal-gate "C8
+    // Slow-Path Conversion"). The hole law's N + per-path clock snapshot
+    // read `active_paths()` — the saturation-filtered set (`available() >
+    // 0`) whose cwnd-full-path trap collapses the law to the N=1 bypass
+    // (legacy age gate on a cross-path clock) mid-transfer; the same
+    // filter trap already documented at the Copa-sole store law and
+    // `capw_store_cap`. Diagnosis signature (2026-08-06): c8-pbs 412–749
+    // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
+    // threshold. Under this gate the snapshot uses `live_paths()`.
+    let recov_mp_live = gates.recov_mp_live && recov_mp_law;
+    if recov_mp_live {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            "recovery clocks on LIVE paths ACTIVE (RWM_RECOV_MP_LIVE: hole-law \
+             N + per-path clock snapshot ignore the available()>0 saturation \
+             filter)"
         );
     }
     // Per-path delivered-seq evidence for the RFC 9002 §6.1.1 packet
@@ -6705,6 +6752,51 @@ async fn run_window_sender(
             }
         }
 
+        // ── Frontier-slack refresh (RWM_PLACE_SLACK, 5 ms cadence) ────────
+        // S = clamp(span/R_ack, 0, 250 ms); R_ack sampled on >= 50 ms
+        // windows of cumulative-ack advance (delivery truth). S stays 0 —
+        // the shipped-identical operating point — until R_ack warms or
+        // while N < 2 live paths.
+        if place_slack_on {
+            let pnow = now_us();
+            if pnow.saturating_sub(ps_refresh_us) >= 5_000 {
+                ps_refresh_us = pnow;
+                let ack_now = window_ack_seq.load(Ordering::Relaxed);
+                if ps_rate_last_us == 0 {
+                    ps_rate_last_us = pnow;
+                    ps_rate_last_ack = ack_now;
+                } else if pnow.saturating_sub(ps_rate_last_us) >= 50_000 {
+                    let dt = pnow.saturating_sub(ps_rate_last_us) as f64 / 1e6;
+                    let inst = ack_now.saturating_sub(ps_rate_last_ack) as f64 / dt;
+                    ps_rate_ewma = if ps_rate_ewma > 0.0 {
+                        0.8 * ps_rate_ewma + 0.2 * inst
+                    } else {
+                        inst
+                    };
+                    ps_rate_last_us = pnow;
+                    ps_rate_last_ack = ack_now;
+                }
+                // span = the live stream span (max retained seq − cum ack);
+                // the retention store's last key IS the sent edge (removal
+                // is by cumulative ack only).
+                let span = sent_store
+                    .keys()
+                    .next_back()
+                    .copied()
+                    .unwrap_or(ack_now)
+                    .saturating_sub(ack_now) as f64;
+                let mut slack = 0.0;
+                {
+                    let mut sched = scheduler.lock();
+                    if ps_rate_ewma > 1.0 && sched.live_paths().len() >= 2 {
+                        slack = (span / ps_rate_ewma).clamp(0.0, 0.25);
+                    }
+                    sched.set_place_slack(slack);
+                }
+                ps_slack_gauge = slack;
+            }
+        }
+
         // RWM_EMIT_BATCH scope check (see the gate decl): batching engages
         // only while exactly ONE path is live; re-checked every iteration so
         // path flaps re-scope within one burst. Gate-off pays nothing.
@@ -7535,6 +7627,15 @@ async fn run_window_sender(
                                 c8c_retx_orig.get(&k).copied().unwrap_or(0),
                                 c8c_stall_ms.get(&k).copied().unwrap_or(0),
                                 c8c_stall_n.get(&k).copied().unwrap_or(0),
+                            ));
+                        }
+                        // RWM_PLACE_SLACK gauge: the live S (ms) + ack-rate
+                        // EWMA (sym/s) — engagement magnitude for the law.
+                        if place_slack_on {
+                            s.push_str(&format!(
+                                " slk={:.0}ms/r{:.0}",
+                                ps_slack_gauge * 1000.0,
+                                ps_rate_ewma
                             ));
                         }
                         eprintln!("[C8CONV-S]{}", s);
@@ -8417,7 +8518,16 @@ async fn run_window_sender(
             let mut mp_n_paths: usize = 1;
             let srtt_us = {
                 let sched = scheduler.lock();
-                let ids = sched.active_paths();
+                // RWM_RECOV_MP_LIVE (goal-gate "C8 Slow-Path Conversion"):
+                // the law's N + clock snapshot must not lose a cwnd-
+                // saturated path (available() == 0 collapses the law to the
+                // N=1 bypass mid-transfer). Default OFF = the shipped
+                // active_paths() arm.
+                let ids = if recov_mp_live {
+                    sched.live_paths()
+                } else {
+                    sched.active_paths()
+                };
                 if recov_mp_law || recov_sp || diag_on {
                     mp_n_paths = ids.len();
                     for id in &ids {

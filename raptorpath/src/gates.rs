@@ -112,6 +112,18 @@ pub struct RuntimeGates {
     /// floor-clock store caps on the send-interval anchor (§16.23).
     pub honest_cap: bool,
 
+    // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
+    /// `RWM_PLACE_SLACK` (default OFF — the A/B arm): frontier-slack
+    /// placement — the §16.3 marginal cost's load term becomes
+    /// max(0, Ê_i − S)/ref with S = the measured frontier slack
+    /// (stream span / cumulative-ack rate, clamped ≤ 250 ms; 0 until the
+    /// ack-rate EWMA has a sample, 0 at N = 1). S = 0 reproduces the
+    /// shipped cost bit-exactly — a strict continuous generalization
+    /// (deadline-aware water-filling: the slow path earns placements up to
+    /// the backlog it can deliver by frontier need-time). Plain reliable
+    /// window only.
+    pub place_slack: bool,
+
     // ── Generation stack ──────────────────────────────────────────────────
     /// `RWM_GEN` (default 384, min 1): generation size G.
     pub gen_size: usize,
@@ -219,6 +231,17 @@ pub struct RuntimeGates {
     /// `RWM_RECOV_MP_LAW` (default ON under the umbrella): the per-flight
     /// hole-law sub-gate (trace attribution).
     pub recov_mp_law: bool,
+    /// `RWM_RECOV_MP_LIVE` (default OFF — the A/B arm; goal-gate "C8
+    /// Slow-Path Conversion"): the hole law's `mp_n_paths` + per-path
+    /// clock snapshot read `live_paths()` instead of the
+    /// saturation-filtered `active_paths()` (`available() > 0`), whose
+    /// cwnd-full-path trap collapses the law to the N = 1 bypass (legacy
+    /// age gate, cross-path clock) mid-transfer — the same filter trap
+    /// already fixed at the Copa-sole store law and `capw_store_cap`, here
+    /// at the recovery plane. Diagnosis signature: c8-pbs 412–749 of
+    /// ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
+    /// threshold (2026-08-06).
+    pub recov_mp_live: bool,
     /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
     /// Residual"): SINGLE-path per-flight time-threshold suppression — the
     /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
@@ -271,6 +294,7 @@ impl RuntimeGates {
             percap_guard: env_flag("RWM_PERCAP_GUARD", true),
             store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
+            place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -308,6 +332,7 @@ impl RuntimeGates {
                 .clamp(2, 512),
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
+            recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             diag: env_flag("RWM_DIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
@@ -343,6 +368,11 @@ mod tests {
         assert!(!g.emit_batch, "emission batching ships OFF (A/B gate)");
         assert_eq!(g.emit_burst, 64);
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
+        assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
+        assert!(
+            !g.recov_mp_live,
+            "RWM_RECOV_MP_LIVE ships default OFF (A/B arm)"
+        );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
         // Numeric defaults
