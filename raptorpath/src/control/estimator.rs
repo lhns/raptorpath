@@ -98,18 +98,23 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 /// resolve-once sites) and echo mechanism liveness on first resolution
 /// (MEASUREMENT DISCIPLINE item 1).
 ///
-/// DEFAULT ON since 2026-08-07 (goal-gate "Ship The Wins 1": the §16.35 c7
-/// anchor-interaction blocker resolved by the `RWM_POOL_ANCHOR` composition
-/// — the pooled-store cap at N ≥ 2 reads the burst-immune send-interval
-/// anchor, so the faster ack clock can no longer inflate the dual-store cap;
-/// pre-registered composed battery earned the flip). `RWM_EST_CADENCE=0` is
-/// the prior-default opt-out arm (per-call BOCD, and `RWM_POOL_ANCHOR`
-/// defaults off with it — one composed default).
+/// STAYS DEFAULT OFF (goal-gate "Ship The Wins 1", 2026-08-07): the
+/// composed flip (est + emit-batch + the `RWM_POOL_ANCHOR` honest dual-store
+/// law) measured c1 463–482 Mbit/s (the pre-registered ≥ 430 PRIMARY met on
+/// both seeds) but the c7 clause failed by its own pre-set rule (new-default
+/// 0.968/0.959×Σ vs ≥ 0.97; prior default 0.981/0.972) — the honest pool
+/// removes the est ack-burst over-read channel (est-only control reproduces
+/// the §16.35 blocker at 0.938/0.949) yet the pool then BECOMES the binder
+/// (send-side anchors cannot ratchet above the cap-limited carried rate:
+/// no delivery physics), re-aging holes (sweeps 10–21 vs prior 0–6).
+/// The composed OPT-IN (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR`
+/// on with it, + `RWM_EMIT_BATCH=1`) remains the documented fast
+/// single-path configuration: 446–508 Mbit/s at c1.
 pub(crate) fn est_cadence_active() -> bool {
     use std::sync::OnceLock;
     static GATE: OnceLock<bool> = OnceLock::new();
     *GATE.get_or_init(|| {
-        let on = crate::config::env_flag("RWM_EST_CADENCE", true);
+        let on = crate::config::env_flag("RWM_EST_CADENCE", false);
         if on {
             tracing::info!(
                 "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
@@ -491,16 +496,19 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE default: ships ON since 2026-08-07 (goal-gate "Ship
-    /// The Wins 1" — the composed default with RWM_POOL_ANCHOR). Relies on
-    /// the test env not exporting RWM_* overrides, like every engine-default
-    /// test in this crate.
+    /// RWM_EST_CADENCE default: ships OFF — the composed flip was measured
+    /// and REVERTED by its own pre-set rule (goal-gate "Ship The Wins 1",
+    /// 2026-08-07: c1 463–482 but c7 0.968/0.959×Σ vs the ≥ 0.97 clause).
+    /// The composed opt-in (`RWM_EST_CADENCE=1`, pool-anchor rides it) is
+    /// the documented fast single-path configuration. Relies on the test
+    /// env not exporting RWM_* overrides, like every engine-default test
+    /// in this crate.
     #[test]
-    fn test_est_cadence_default_on() {
+    fn test_est_cadence_default_off() {
         let est = LossEstimator::new();
         assert!(
-            est.est_cadence,
-            "RWM_EST_CADENCE ships default ON (the est×honest-anchor composed default)"
+            !est.est_cadence,
+            "RWM_EST_CADENCE ships default OFF (the composed flip failed its c7 clause)"
         );
     }
 

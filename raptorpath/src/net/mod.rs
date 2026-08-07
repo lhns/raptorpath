@@ -5426,7 +5426,9 @@ async fn run_window_sender(
     // N = 1 law are bit-exactly untouched — no CopaFeed machinery runs at
     // duals (the measured −22…−27 c7 RS-composition price stays
     // unreachable; no src_inflight is charged — the §16.34 falsification-5
-    // lesson). Default ON via the est-cadence composed default.
+    // lesson). Default rides the est-cadence resolution (OFF unset; ON
+    // under the est opt-in — the composed default flip was measured and
+    // REVERTED on its pre-set c7 clause, 2026-08-07).
     let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
     if pool_anchor_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).

@@ -215,10 +215,11 @@ pub fn copa_compete_active() -> bool {
 /// SEND-interval anchor ([`crate::control::SendRateAnchor`] — burst-immune
 /// by construction, clock-gap discard) instead of the legacy ack-interval
 /// windowed-max, whose burst-peak over-read under the est-cadence ack clock
-/// was the §16.35 c7 blocker. ONE COMPOSED DEFAULT: the unset default rides
-/// the `RWM_EST_CADENCE` resolution (est ON ⇒ pool-anchor ON; the
-/// `RWM_EST_CADENCE=0` opt-out restores the full prior stack), while
-/// `RWM_POOL_ANCHOR=0` alone is the est-only decomposition arm (the blocker
+/// was the §16.35 c7 blocker. ONE COMPOSED RESOLUTION: the unset default
+/// rides `RWM_EST_CADENCE` (both OFF with everything unset — the measured
+/// composed flip REVERTED on its pre-set c7 clause, 2026-08-07; the est=1
+/// opt-in turns pool-anchor ON with it), while `RWM_POOL_ANCHOR=0` under
+/// the est opt-in is the est-only decomposition arm (the blocker
 /// reproduction). Consumers: the per-path send-event feed
 /// (`PathState::charge_in_flight`) and the N ≥ 2 dyn-cap law in net/mod.rs.
 /// The Copa cwnd feed (`record_delivery`/`on_ack`) is deliberately
