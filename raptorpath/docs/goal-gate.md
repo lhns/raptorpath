@@ -16923,3 +16923,123 @@ form when passed `NACK_RETX_COOLDOWN_FLOOR_US`, RFC 9002's 9/8 and the
 packet threshold 3 unchanged, and the tail-sweep INERTNESS assertion
 (any fallback ≤ 12.5 ms ⇒ `TAIL_SWEEP_MIN_US`). `gates.rs` pins both
 new gates OFF in the default-stack test.
+
+### MECHANISM SMOKE + PRE-BATTERY MEASUREMENT (2026-08-07 21:40–21:52 UTC — taken and recorded BEFORE the battery launched; binary sha256 `7c91151f…` = commit 3d932c2, the battery binary; VM 10.1.5.16, `RWM_GEN=0 RWM_DIAG=1 RWM_SIDLE_DERIVED=1`, seed 42, 1 run/cell, shakeout evidence NOT battery evidence): **BOTH premises are quantitatively refuted, and the `pf` gauge is what refutes 3b — 0 floor-bound evaluations out of 177 543 at c7**
+
+Liveness first (MEASUREMENT DISCIPLINE item 1): the `derived patience
+ACTIVE` echo fires on BOTH logs in the `pat` arm and on NEITHER in
+`est`; the `derived stall gauge ACTIVE` echo fires on both logs in
+every arm. `dnf = 0` everywhere. Both gates are live and
+uncontaminated.
+
+**The single table that decides this branch.** `pf=<floor-bound>/<clock-
+bound>/<mean floor µs>` is the count of RFC 9002 §6.1.2 threshold
+evaluations pinned by the kGranularity FLOOR versus governed by the
+9/8·srtt CLOCK, plus the mean floor actually used. `evt`/`sthr` are the
+MEASURED mean inter-emission-event interval and the derived stall
+threshold it produces. End-of-run values:
+
+| cell / arm | Mbit/s | `rtt` (app-echo) | **`pf` floor/clock/mean-floor** | `sidle` | **`sidle2`** | `evt` | `sthr` |
+|---|---|---|---|---|---|---|---|
+| **c7 dual, prior** | 172.0 | 158.2 ms | **0 / 177 543 / 10 000** | 449 ms/76 | **449 ms/76** | 97 µs | 3 000 |
+| c7 dual 100 MB, est | 171.4 | — | **0 / 80 676 / 10 000** | 752 ms/106 | 752 ms/106 | 52 µs | 3 000 |
+| c7 dual 100 MB, pat | 163.8 | — | **0 / 96 758 / 32 568** | 1 094 ms/152 | 1 094 ms/152 | 170 µs | 3 000 |
+| c1 single, prior | 202.8 | 0.0 ms | 100 / 108 / 10 000 | 3 759 ms/428 | 3 759 ms/428 | 40 µs | 3 000 |
+| c1 single, est | 450.9 | 11.8 ms | 18 / 721 / 10 000 | 1 498 ms/307 | **1 267 ms/243** | 1 033 µs | 3 099 |
+| c1 single, pat | 436.0 | 20.2 ms | 31 / 1 240 / **3 513** | 1 777 ms/323 | **1 610 ms/277** | 1 055 µs | 3 165 |
+| c8 dual, prior | 92.4 | 424.3 ms | **0 / 22 871 / 10 000** | 1 078 ms/149 | 1 078 ms/149 | 1 926 µs | 5 778 |
+| c8 dual, pat | 55.7 | 1 712.8 ms | **0 / 35 514 / 3 290** | 2 422 ms/147 | **2 204 ms/135** | 43 799 µs | 25 000 |
+| sc3 single, prior | 16.6 | 229.9 ms | **0 / 1 513 / 10 000** | 10 327 ms/1 608 | 10 327 ms/1 608 | 83 953 µs | 25 000 |
+| sc3 single, pat | 16.8 | 530.4 ms | **0 / 1 543 / 38 546** | 10 314 ms/1 650 | **1 208 ms/66** | 63 248 µs | 25 000 |
+
+*(Single runs, no interleaving — the THROUGHPUT column is shakeout only
+and nothing is concluded from it. The gauge columns are counts and
+thresholds, which is what this measurement is for.)*
+
+**(3b) THE PREMISE IS REFUTED: the 10 ms literal is not "dominating
+9/8·srtt at c2/c7" — at c7 it wins ZERO evaluations out of 177 543.**
+The tasking's derivation ("at c2/c7, RTprop ≈ 8–10 ms, so the floor
+dominates 9/8·srtt") reasoned from RTprop. But `mp_time_threshold_us`
+does not read RTprop. It reads `max(Copa srtt, estimator EWMA app-echo
+RTT)` — and **the app-echo clock is store-dwell inclusive**, so at c7
+it measures **158 ms**, twenty times RTprop. 9/8 × 158 ms ≈ 178 ms, and
+the kGranularity floor at 10 ms was **structurally unreachable at every
+dual cell**: 0/177 543 at c7, 0/22 871 at c8, 0/1 513 at sc3. The unit
+test pinned the crossover at srtt = 8 889 µs; the measurement shows the
+smoothed clock never goes anywhere near it on a loaded path.
+
+The floor binds at exactly one measured place — **c1 in the prior
+default, 100 of 208 evaluations** — and 208 evaluations is a rounding
+error next to c7's 177 543. Under `est` at c1 it falls to 18/739 (2.4%).
+
+**The derivation is nonetheless LIVE, and the gauge proves it
+separately from the premise.** The mean floor actually used moves
+10 000 → 3 513 (c1), 3 290 (c8), 38 546 (sc3) — i.e.
+`patience_floor_us` is computed and consumed at every evaluation, and
+it tracks the path (small where jitter is small, large where the
+measured jitter is large). Falsification clause (i) — *"`pf` does NOT
+move ⇒ the derivation is not live; a BUG"* — therefore **does NOT
+fire**: its antecedent is false in the same way attempt 1's density
+clause was. The floor's SPLIT does not move because **there was no
+floor-bound population to move**, not because the law is dead. This is
+the second time in two attempts that a c7 mechanism has been eliminated
+by measuring its premise before spending the battery on it, and it is
+the whole reason the gauge was pre-registered as required evidence.
+
+**(3a) THE ARTIFACT VERDICT, and it resolves PER CELL — branch (1C) at
+c7, branch (1A) at the slow cells, exactly as the three-way was
+written.**
+- **At c7 — THE cell, the one §16.37 and §16.39 draw their headline
+  evidence from — `evt` is 52–170 µs, far BELOW the 1 ms loop wake, so
+  the derived threshold sits exactly on its floor (`sthr = 3 000 µs`)
+  and `sidle2 = sidle` to the millisecond in every arm** (449/449,
+  752/752, 1 094/1 094). **§16.37's and §16.39's stall evidence is NOT
+  a measurement artifact. No correction is owed to either section**,
+  and this is branch (1C) with the `evt` distribution quoted as its
+  evidence, as pre-registered. The premise that emission batching makes
+  emission EVENTS rarer than the loop wake is false at c7: the sender
+  loop iterates far faster than its 1 ms timer arms whenever there is
+  work, so the counter is observed many times per millisecond.
+- **At the SLOW cells the legacy 3 ms IS mis-scaled, and materially.**
+  sc3 measures `evt = 63–84 ms` — the emitter hands off once per ~70 ms
+  — so a 3 ms threshold counts essentially every ordinary pacing
+  interval as a stall: `sidle` 10 314 ms against a derived `sidle2` of
+  **1 208 ms, an 88% over-count**. c8 (`evt` 1.9–43.8 ms) and c1 under
+  `est` (`evt` 1 033–1 055 µs, just past the wake) show the same effect
+  at 9% and 14%. **This does not touch any published conclusion** — no
+  section in this file draws a stall claim from sc3 or c8 — but it is
+  recorded so that nobody does. Where `evt ≫ LOOP_WAKE_US`, read
+  `sidle2`, not `sidle`.
+
+**What this does to the battery.** It runs UNAMENDED and at full
+pre-registered scope, but — as in attempt 1 — its interpretation is
+fixed before the numbers exist. `RWM_PATIENCE_DERIVED` is now MEASURED
+to be inert at c7 by construction: both of its behavioural sites are
+floors on a clock that already exceeds them by an order of magnitude,
+in 100% of evaluations. So the c7 arms `pat` and `est` are expected to
+be the SAME machine, and the battery's c7 columns are a test of that
+identity at n = 8 × 2 seeds rather than a test of a lever. Prediction 2
+cannot land through the mechanism it was written for. The battery is
+still worth its cost because (a) the identity has to be demonstrated,
+not assumed, before the goal's honest exit can be taken; (b) the `pf`
+and `evt` distributions at n = 8 both seeds are the evidence the
+structural-bound writeup will rest on; and (c) c1 is the one cell where
+the floor demonstrably binds, so arm `patonly` measures something real
+there.
+
+**THE SUCCESSOR THIS ALREADY NAMES, with its number in hand.** The
+patience problem at c7 is real but it is not the floor — **it is the
+CLOCK**. The §6.1.2 time threshold at c7 is 9/8 × 158 ms ≈ **178 ms of
+patience before a reported gap is even a candidate hole**, because the
+threshold takes `max(Copa srtt, estimator app-echo RTT)` and the
+app-echo RTT is STORE-DWELL INCLUSIVE — it measures how long a symbol
+sat in the sender's own store plus the round trip, not the path's round
+trip. A recovery clock fed by a queue-inclusive estimate is the same
+class of defect as the anchor over-read §16.37 eliminated, one layer
+down. That is a clock-input change, not a constant change, and the
+tasking's instruction to leave 9/8 alone does not touch it: 9/8 is
+correct, its ARGUMENT is not. It is a separate pre-registered
+experiment and it is named here, before the battery, so the verdict
+cannot be accused of finding its successor after the fact.
+
+*(Results below this line were written after the runs.)*
