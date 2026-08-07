@@ -88,6 +88,45 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    A1/B1 overlap, user-observed). Non-holders do purely local work.
    (Added 2026-08-06.)
 
+13. **THE LOCK HOLDER'S OWN MONITORING IS CO-TENANCY. Do not poll a
+   running battery.** Item 12 says non-holders do purely local work; this
+   says the HOLDER must too, for the battery's duration. MEASURED
+   2026-08-07 ("Unlock The Default 1: ack-merge"), same binary, same
+   arms, same seed, same VM, back to back:
+
+   | battery | invocations | summaries | RUN-RETRY | RUN-LOST |
+   |---|---|---|---|---|
+   | polled every ~2 min (`grep`/`python` over a growing log, per-poll `sudo`) | 171 | 26 | **121** | 3 |
+   | not polled at all | 80 | **80** | **0** | 0 |
+
+   Mechanism: each poll opens an SSH session (sshd + `systemd-userwork` +
+   `sudo` fork) and runs `grep -c`/`python` over a log that grows through
+   the run, ON a box already at load 7–12 from the transfer under
+   measurement, WHILE a 5 ms-netem timed transfer is in flight. The
+   harness's bring-up/verification steps are timing-sensitive; they lose
+   their echoes and the invocation aborts summary-less. **The failure
+   mode is indistinguishable at the log level from the documented
+   "seed-7 topo-ping double-abort" of item 8** — same signature
+   (summary-less aborted invocation, stale-log echo), and it appeared
+   here on SEED 42, which item 8's GE-loss explanation does not cover.
+
+   **Consequence for the record, stated as a hypothesis with its test,
+   not as a conclusion:** item 8's abort class may be partly or wholly
+   this — a polling artefact misattributed to seed-7 GE loss — and the
+   discriminating experiment is a seed-7 battery run with NO polling. If
+   seed 7 aborts at seed-42 rates when unpolled, item 8's attribution
+   stands; if its aborts largely vanish, item 8 has been measuring the
+   observer. Prior batteries' abort counts should be re-read in that
+   light: they bound the observer's footprint as much as the cell's
+   loss. Until that is settled, no prior verdict changes — the aborts
+   were always recorded, never discarded, and n was always quoted.
+
+   **Protocol.** Launch the battery detached (tmux/`setsid`), then WAIT
+   — one foreground wait sized to the expected duration, or a
+   launch-then-collect pattern. Collect once, at the end. If progress
+   must be checked, poll at most once per ~20 min and expect to record
+   it. (Added 2026-08-07.)
+
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
 *Decision record: → decision index [ADR-0052…0067](adr/README.md) + [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md)*
