@@ -16331,4 +16331,81 @@ per arm is not evidence: `prior`'s 146.1 sits well below its own
 §16.37 battery mean of 171.7/174.6, so this pair may be reading session
 noise as much as mechanism. The battery decides.
 
+### DENSITY MEASURED (pre-battery, 2026-08-07 ~18:38 UTC — taken and recorded BEFORE the battery launched at 18:46:05 UTC): the tasking's headline finding is QUANTITATIVELY REFUTED, and prediction 1 cannot land as written
+
+The corrected `[CTLD]` instrument was validated on two c2/c2 dual runs
+at 100 MB, seed 42, binary `e74570e8…` = commit 3169b24 (the battery
+binary), arm `am` (`RWM_ACK_MERGE=1`) vs `prior` (env unset). At the
+RECEIVER, `tx` = quinn DATAGRAM frames sent = control datagrams, `rx` =
+data datagrams received:
+
+| arm | p0 tx / rx | p1 tx / rx | **control datagrams per data message** |
+|---|---|---|---|
+| `am` (merged) | 37 669 / 37 681 | 37 985 / 37 998 | **1.000 / 1.000** |
+| `prior` | 38 966 / 37 542 | 40 060 / 38 031 | **1.038 / 1.053** |
+
+**The receiver was never sending two control datagrams per data
+message. It was sending 1.04.** The merge takes that to exactly 1.000 —
+a 4–5% reduction, not the predicted ≈2×.
+
+**Why, precisely.** The premise counted send SITES, not send RATES. The
+legacy `Ack` is indeed unconditional in window mode (that half of the
+finding is confirmed exactly: it is the 1.000). But the `WindowAck` it
+was said to duplicate is already heavily rate-limited by its own
+shipped predicate: `cumulative_advanced` is ONE boolean per FRONTIER
+JUMP, not one per symbol, and under dual-path striping with 1.3% GE
+loss the in-order frontier advances in jumps of ~20–25 seqs. So the
+SACK ack was already firing at ≈0.04–0.05 per data message —
+**already inside quinn-perf's own ~1-per-24 class.** The "duplicate"
+is 25× rarer than the thing it duplicates.
+
+**Prediction 1 is therefore refuted on the numbers, and falsification
+clause (i) does NOT fire.** Clause (i) reads: *"density does NOT halve
+⇒ the merge is not live; a BUG."* Its antecedent is false — the merge
+is verifiably live and doing exactly what it was built to do: the echo
+fires on both logs, `tx/rx` is 1.000 to four figures (one control
+datagram per data message, precisely the designed cadence), and no
+consumer lost a count (the loopback completes, which the re-homed
+in-flight release gates). The density did not halve because **the
+quantity to be halved was not there**, not because the mechanism
+failed. Recording this distinction is the whole point of writing the
+falsification conditions down in advance; the honest reading is that
+prediction 1's PREMISE was wrong, and the build is a control-datagram
+SWAP (Ack → unconditional WindowAck) rather than a halving.
+
+**What this does to the battery.** It is still worth running, and it
+runs UNAMENDED — but its interpretation changes before the numbers
+exist, which is the only time such a change is worth anything. The
+battery is now a clean, one-knob test of a DIFFERENT and sharper
+question than the one it was designed for: with control-frame density
+essentially held fixed (1.04 → 1.00), does replacing the per-batch
+`Ack` with the per-batch merged `WindowAck` — one scheduler-lock
+acquisition per ack instead of two, one RTT sample per batch instead of
+1.04, one handler invocation instead of 1.04 — move c7? Stall source
+(a) (ack density) is now measured to be ≈absent, so the battery reads
+almost purely on source (b) (lock contention). A c7 pass would
+attribute to (b) at a 4% density change, which would be a strong and
+surprising result; a c7 fail attributes the §16.37 residual away from
+BOTH (a) and (b) and hands it to the sender-loop/gap-channel
+successors. Either way the pre-registered gates decide, unweakened.
+
+**THE SUCCESSOR THIS NAMES, with its numbers already in hand.** The v6
+cumulative counters make the honest density lever POSSIBLE for the
+first time, and this build deliberately does not pull it. Because the
+counters are CUMULATIVE, a merged `WindowAck` arriving once per ~25
+data messages still delivers every count exactly (the next ack carries
+the whole delta — the property unit-tested under simulated ack loss).
+So the quinn-perf-class configuration is: suppress the `Ack` (as here)
+and DO NOT make the `WindowAck` unconditional — leave it on its
+existing frontier-advance predicate, i.e. **0.04 control datagrams per
+data message, a 25× reduction**, versus the 4% this build achieves.
+That was not buildable before the counters existed: the legacy `Ack`
+was an EVENT stream, and dropping 96% of an event stream loses 96% of
+the delivery accounting. It is buildable now. The cost to price is the
+RTT-sample and in-flight-release CADENCE (both drop 25×), which is
+exactly why it is a separate pre-registered experiment and not a
+tuning knob on this one — and it is the same "ack thinning" the
+"Receiver Per-Message Wall" AMENDMENT refused for want of numbers.
+**These are the numbers.**
+
 *(Results below this line were written after the runs.)*
