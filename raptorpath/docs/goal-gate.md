@@ -16042,3 +16042,227 @@ kernel-reference rows → cleanup.sh + teardown verification (no rp
 procs/netns/iperf3), released 13:16:53 UTC. rp-* netns only; logs
 preserved under `/home/vibe/shal8fix/` (att-1 logs archived as
 `battery-s42-att1.log` + `diag-att1/`); FOREGROUND polling only.
+## Unlock The Default 1: ack-merge (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge` from main@847db34; GOAL "UNLOCK THE DEFAULT" item 1, the arc's keystone — the §16.37 structural bound's OWN named successor: "the recovery plane's patience/stall behaviour under the denser ack clock … Anyone reopening this should start there, not at the anchor")
+
+**(a) The finding this build acts on (verified by an Explore pass over
+the tree at 847db34, code facts quoted with line numbers).** The
+receiver emits **TWO control datagrams per data message**. The first is
+the SACK-extended `ControlMessage::WindowAck` (built + sent inside the
+window arm, `net/mod.rs:3339`/`:3361`). The second is the legacy
+`ControlMessage::Ack` (`:3489`, sent `:3509`) — and it is
+**unconditional and fires in WINDOW mode too**, because its send site
+sits AFTER the window/block branch closes (`:2908` window arm, `:3436`
+block arm, the Ack block at `:3482–3512` outside both). The code
+already carries this as a recorded correction at `:10249–10256`.
+quinn-perf, the external bar this arc measures against, sends ~1 ack
+per ~24 packets.
+
+This single duplicate is simultaneously THREE named stall sources:
+(a) the §16.35 ack-density structural term; (b) two extra
+`scheduler.lock()` acquisitions per ack (`:10241` + a second inside the
+WindowAck arm's own path at `:10584`) contending with the sender loop's
+per-iteration locks (sweep SRTT `:8618`, dyn cap `:7137`, placement
+`:9189`) — the only per-ack/per-iteration coupling that GROWS with ack
+density and directly lengthens inter-emission gaps, i.e. manufactures
+`sidle`; (c) pressure on the depth-16 `try_send` gap channels
+(`:1403`, `:1419`) whose silent drops push holes onto the 25–100 ms
+tail-sweep clock (the measured `sweeps` ×3). Halving control frames
+attacks the §16.37 c7 blocker at the one place all three meet.
+
+**(a.1) ONE PREMISE OF THE TASKING IS FALSE, and the build is designed
+around the corrected fact — recorded here BEFORE the build, not after.**
+The tasking states that the coalescing-safe delivery twin
+`rs_on_delivered` "ALREADY runs off `WindowAck` via
+`copa_feed_attribute`", so the legacy `Ack`'s delivery consumers merely
+need re-pointing. **That is true only when a `CopaFeed` exists, and no
+`CopaFeed` exists in ANY arm of this battery.** `copa_feed_plain`
+(`:1480–1537`) is constructed only if `RWM_QUIC_CC=passthrough` ∨
+`RWM_COPA_FEED=1` ∨ `RWM_PLAIN_RS=1` ∨ `RWM_WIN_DECOUPLE=1`; the
+shipped default resolves all four OFF (`gates.rs` default-stack test),
+and neither `RWM_EST_CADENCE` nor `RWM_EMIT_BATCH` turns any of them on
+(`RWM_POOL_ANCHOR` rides the est resolution but uses `SendRateAnchor`
+fed at `charge_in_flight`, explicitly with "no CopaFeed machinery").
+Therefore **`copa_feed == None` in all four arms below, and the legacy
+`Ack` is not a duplicate of the delivery accounting — it is the SOLE
+carrier of it**: `sched.ack` (`:10295`), `estimator.record_batch`
+(`:10340`), the lost-symbol `release_in_flight` (`:10345`),
+`on_pool_delivery` (`:10359`), the per-path stats (`:10366`) and
+`set_cc_window_bytes` (`:10379`) all run from that arm and from nowhere
+else in window mode.
+
+This makes the tasking's risk-surface item 1 the decisive one, and it
+fires in the direction the tasking flagged as the RECORDED TRAP
+(`:10261–10265`): dropping `record_delivery` with no feed present
+leaves `max_bw = 0`, the anchor floor never establishes, and the
+dynamic store cap sticks at boot 128 — a measured catastrophic mode.
+**So this build does NOT change the delivery statistic. It changes the
+DATAGRAM COUNT and nothing else.** The Δt statistic, the cadence, the
+counts and the consumers are all preserved; `record_delivery` keeps its
+ack-interval windowed max verbatim, because at 847db34 that IS the
+window-mode anchor and replacing it is a DIFFERENT experiment (three
+rate sources have already been built and measured against it — §16.35,
+§16.36, §16.37 — and the c7 ordering did not track anchor honesty).
+Conflating the two is exactly how §16.37's arm A moved c7 the wrong way
+while its mechanism landed perfectly. **The A/B here is one-knob: two
+control datagrams per data message, or one.**
+
+**(b) Mechanism (what `RWM_ACK_MERGE=1` does; default OFF).** In WINDOW
+mode only:
+
+1. **Receiver.** The legacy `Ack` (`:3482–3512`) is SUPPRESSED. The
+   window arm's `WindowAck` becomes unconditional (one per data
+   message, exactly the cadence the `Ack` had), and carries the `Ack`'s
+   payload as **two new cumulative counter fields**,
+   `cum_expected`/`cum_received`, read from the per-path
+   `PathBatchTracker` (`:9980–10021`, which already maintains
+   `total_expected`/`total_received`). Gap advertisement is UNCHANGED:
+   `sack_ranges` are populated only when the existing
+   `cumulative_advanced || gap_report_due` predicate holds, so
+   `GAP_ACK_MIN_INTERVAL` still rate-limits gap reports and the
+   depth-16 nack/sack channels see no new pressure. With the gate OFF
+   the predicate governs emission as today and the path is
+   byte-identical.
+2. **Sender.** The `WindowAck` arm (`:10568`) gains the re-homed
+   accounting, driven by the DIFF of the cumulative counters against a
+   per-path cursor on `PathState`. Cumulative-and-diffed (not per-ack
+   sums) is deliberate: a lost control datagram then costs nothing —
+   the next ack carries the whole outstanding delta — whereas per-ack
+   sums lose it permanently. Totals are identical to the `Ack` arm's by
+   construction.
+3. **Re-homing, per consumer** (the tasking's risk surface, each
+   verified present and each carried across with its own guard
+   preserved — `gap_q`, the `copa_feed`/`n1_paused` three-way branch,
+   the `expected > 0` guard):
+   - `sched.ack` / `release_in_flight` / `on_delivery_signal`
+     (`:10266–10296`) — re-homed with `d_received`, the three-way
+     branch mirrored verbatim so a feed-present configuration behaves
+     exactly as it does today.
+   - `estimator.record_batch(expected, received)` (`:10340`) —
+     re-homed with `(d_expected, d_received)`. **This is the sender's
+     only loss signal and it MUST survive**; the counter diff makes it
+     survive exactly.
+   - lost-symbol `release_in_flight(d_expected − d_received)`
+     (`:10345`), `on_pool_delivery` (`:10359`), per-path stats
+     (`:10366`), `set_cc_window_bytes` (`:10379`) — all re-homed with
+     the diffs.
+   - `sched.ack → record_delivery` — **PORTED, deliberately and against
+     the tasking's instruction, for the reason given in (a.1)**: with
+     no feed it is the only anchor, and the trap at `:10261–10265` is
+     the measured failure mode of removing it. Its Δt is the ack
+     ARRIVAL interval and the merged ack arrives on the SAME schedule
+     the `Ack` did, so the statistic is unperturbed.
+   - `block_arq.on_ack` + `LATER_ACK_LOSS_THRESHOLD` (`:10394`,
+     `block_arq.rs:49`) — **untouched, and already structurally
+     unreachable in window mode**: `block_arq` is passed as `None`
+     there (`:3571`, `if recv_window_mode { None } else { … }`). Block
+     mode keeps the legacy `Ack` in full and must be BIT-EXACT.
+   - Echo RTT (`:10317`) — the merged `WindowAck` echoes
+     `batch_send_ts` of the batch that triggered it, i.e. always the
+     NEWEST, never the oldest (echo inflation is the refuted-drain
+     vector). `echo == 0` stays the live timer-ack sentinel (`:10578`);
+     the two timer-driven `WindowAck` sites (`:2734`, `:2799`) carry
+     the counters unchanged and keep echoing 0.
+
+   **Honest side-effect, named now:** today a batch that triggers both
+   messages records the RTT sample TWICE (`:10317` and `:10598`, same
+   `batch_send_ts`, same value). Merged, it is recorded once. The SRTT
+   EWMA therefore weights slightly differently. This is a real
+   behavioural delta, it is inherent to merging, and it is the one
+   thing in this build that is not a pure datagram-count change.
+4. **Wire.** `WindowAck` gains two `u64` fields ⇒ the shape changes ⇒
+   `PROTOCOL_VERSION` **is bumped 5 → 6**, and it is bumped
+   unconditionally (the fields are always present and always populated,
+   gate or no gate) so that there is exactly one wire format per binary
+   and no gate-dependent framing. Stated per the v5 tag discipline: no
+   new tag is claimed; `COMPACT_DATA_TAG = 0xC1` is untouched.
+5. **No-mode-switch invariant (CLAUDE.md).** `RWM_ACK_MERGE` is a
+   BUILD/transport gate, not a dial: it selects neither a law nor a
+   constructor argument on δ/ρ/r, and no behaviour anywhere keys on a
+   threshold in the triangle. The (δ, ρ, r) machine is bit-identical
+   under both settings; only the number of control frames differs.
+
+**(c) Predictions (pre-registered, both seeds, all against same-session
+controls in the SAME battery).**
+1. **DENSITY (the mechanism proof, independent of throughput):**
+   control datagrams per MB — measured directly off the ACK-direction
+   qdisc packet counters (`QDISC srv0`/`srv1` from `perf_rwm_c.sh:320`,
+   the §16.34 wire-gauge method) — fall by **≈2×** in the ack-merge
+   arms at c7 and c1. This is a counting claim about the mechanism and
+   it must land regardless of what throughput does.
+2. **c7 (THE clause): ≥ 0.97×Σ same-session on BOTH seeds** for
+   `est+eb+ackmerge`. It was 0.968/0.959 in §16.36 and 0.958/0.931 in
+   §16.37; the same-session `est+eb` control arm reproduces that
+   blocker.
+3. **MECHANISM EVIDENCE (goal clause 4 — required, not optional):**
+   `sidle` and `sweeps` in the `est+eb+ackmerge` arm fall toward the
+   prior-default class — from the §16.37 est-arm class (sidle
+   1400–2178 ms / ~200–245 stalls, sweeps 10–26) toward prior's
+   822–1026 ms / 109–157 and 5–8 — with `mpr[…]`, `gapdrop`, `paused`
+   and `wnd2-relgap` quoted per arm. A c7 pass WITHOUT this signature
+   moving is not a mechanism confirmation and must be reported as such.
+4. **c1 (PRIMARY): ≥ 430 Mbit/s** mean both seeds at 400 MB for
+   `est+eb+ackmerge` (the §16.36/§16.37 composed class 446–493), plus
+   one 1.2 GB sustained run.
+5. **c8 ≥ 0.87 line**, **sc2/sc3 within σ** of prior default,
+   **tail_matrix c2 ×4** in the crown ≤~41 ms class at 1000/1000,
+   **wedge** green.
+6. **RELIABILITY (pre-registered explicitly):** no delivered-set
+   change, **dnf = 0** everywhere, and **block mode bit-exact**
+   (asserted by unit test, not by inspection).
+7. `ackmerge` ALONE (arm iv) isolates the duplicate's own cost on
+   today's shipped default: c1/c7 ≥ the prior default within σ. A
+   regression here means the duplicate was load-bearing at the current
+   default and is a finding in its own right.
+
+**(d) Falsification (fixed now).** **c7 still < 0.97 on both seeds with
+control density VERIFIABLY halved (prediction 1 landed) ⇒ the duplicate
+ack was NOT the binder.** In that case name what the gauges then say
+and which queued successor the evidence points at — the plan's item 2
+(the sender-loop lock granularity: `sidle` stays high while density
+halves ⇒ the contention is the sender's own per-iteration locks, not
+ack-driven) or item 3 (the gap-channel/tail-sweep clock: `sweeps` and
+`gapdrop` stay high while `sidle` falls ⇒ the depth-16 `try_send` drops
+own the residual). Additional falsifications: (i) density does NOT
+halve ⇒ the merge is not live; a BUG, fix before any verdict (§16.34
+incident protocol), no verdict from that battery. (ii) c7 ≥ 0.97 but
+c1 < 430 ⇒ no flip, the c1 term re-attributed. (iii) block-mode
+bit-exactness or the delivered set breaks ⇒ scope defect, a BUG, fix
+before any verdict. (iv) `est+eb+ackmerge` passes c7 but `ackmerge`
+ALONE regresses the shipped default ≫σ ⇒ no unconditional default flip;
+report the composition-only result.
+
+**(e) Battery (pre-registered).** VM 10.1.5.16 under MEASUREMENT
+DISCIPLINE 1–12: lock `/tmp/rwm-vm.lock` (item 12 — covers builds and
+probes too); tree synced by `git archive` of THIS branch + CRLF
+conversion; stale binary `rm`'d before the build; binary sha256 +
+commit + `lscpu` + kernel in every log header; rp-* netns only; fresh
+topology per invocation; seeds 42 AND 7, ×8 interleaved round-robin per
+rep; seed-7 topo-abort protocol (n recorded, nothing discarded);
+liveness echoes asserted per arm BOTH directions **including the
+ack-merge gate**; ARMCOUNT per arm; stated runtimes; same-session Σ
+from each arm's own singles; FOREGROUND polling only. Logs under
+`/home/vibe/ackmerge/`.
+**Arms:** (i) `prior` = env unset (today's default) · (ii) `est` =
+`RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` (reproduces the §16.37 blocker) ·
+(iii) `merge` = the same + `RWM_ACK_MERGE=1` (**THE candidate**) ·
+(iv) `am` = `RWM_ACK_MERGE=1` alone (isolates its own effect on the
+current default).
+**Cells:** **c7 200 MB ×8 (THE clause, ≥ 0.97×Σ)** with
+`sidle`/`sweeps`/`mpr[…]`/`gapdrop`/`paused`/`wnd2-relgap` quoted per
+arm (goal clause 4's evidence) · **c1 400 MB ×8 (≥ 430)** + one 1.2 GB
+sustained · c8 25 MB ×8 (≥ 0.87 line) · sc2 100 MB + sc3 25 MB ×8
+(within σ) · tail_matrix c2 ×4 (crown) · wedge · **the ack-direction
+qdisc density gauge captured on EVERY run**.
+**FLIP:** `RWM_ACK_MERGE` default ON, and the composed est+eb default
+flip, ONLY if the FULL pre-registered gate set passes on BOTH seeds.
+Otherwise revert defaults and report. **The goal's gates bind: c7 ≥
+0.97 is not negotiable and will not be weakened to ship the c1 win.**
+
+**Unit tests (pre-registered).** Consumer-equivalence (each re-homed
+consumer sees the same totals from the merged `WindowAck` as it did
+from `Ack`, over a randomized ack/SACK/loss trace, including dropped
+control datagrams); block-mode bit-exactness; echo-newest; N = 1
+behaviour; `gates.rs` pins `RWM_ACK_MERGE` OFF in the default-stack
+test.
+
+*(Everything below this line was written after the runs.)*
