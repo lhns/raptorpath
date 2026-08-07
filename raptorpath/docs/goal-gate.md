@@ -15101,3 +15101,129 @@ dip). Predictions and falsifications still verbatim; both smokes are
 shakeout, not battery evidence.
 
 *(Results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16; binary sha256 4cb1b002… = commit e2cd82d, built fresh (stale rm'd, CRLF-converted), SAME binary every run incl. tails; E5-2650 v3 aes+avx2+pclmulqdq, kernel in every log header; seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, RWM_GEN=0 RWM_DIAG=1; driver `shipest_battery.sh` + `tail_matrix.sh` (`ship`/`prior` arms); runtimes: s42 10:36–11:00:19 UTC (89/89 invocations, 0 retries, 0 lost), s7 11:05–11:24:48 (130 invocations: 44 RUN-RETRY recovered + 3 RUN-LOST after 3 attempts → c7-estonly, c8-prior and sc3-prior quoted at n=7; the documented seed-7 topo-abort class, nothing discarded), tails 11:31–11:41; **dnf = 0 in every completed run, both seeds; 0 liveness/contamination flags on captured runs** (all 54 s7 flags sit on summary-less aborted attempts); logs + per-run diag under `/home/vibe/shipest/`; lock `/tmp/rwm-vm.lock` held 09:22:06 (found FREE) → released 11:42:13 UTC after teardown verification)
+
+Goodput (Mbit/s, mean ± σ_s (n)); **new** = env unset (est+eb+pa
+composed candidate), **prior** = `RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0`
+(the shipped default), **estonly** = `RWM_POOL_ANCHOR=0
+RWM_EMIT_BATCH=0` (the §16.35 blocker-reproduction control):
+
+| cell | arm | s42 | s7 |
+|---|---|---|---|
+| **c1 single 400 MB** | prior | 204.3 ± 9.5 (8) | 201.1 ± 3.1 (8) |
+| | **new** | **463.4 ± 28.3 (8) [405.3–490.5]** | **481.7 ± 17.4 (8) [454.3–507.7]** |
+| | new 1.2 GB sustained | 477.2 (1) | 482.0 (1) |
+| sc2 single 100 MB | prior | 88.1 ± 0.7 (8) | 88.1 ± 0.7 (8) |
+| | new | 88.4 ± 0.6 (8) HOLD | 88.7 ± 0.5 (8) HOLD(+) |
+| sc3 single 25 MB | prior | 16.7 ± 0.2 (8) | 16.6 ± 0.1 (7) |
+| | new | 16.7 ± 0.2 (8) HOLD | 16.8 ± 0.1 (8) HOLD |
+| **c7 dual 200 MB** | prior | 172.9 ± 2.1 (8) = **0.981×Σ** | 171.2 ± 2.5 (8) = **0.972×Σ** |
+| | **new** | **171.1 ± 4.7 (8) = 0.968×Σ** | **170.1 ± 4.6 (8) = 0.959×Σ** |
+| | estonly | 165.8 ± 6.7 (8) = 0.938×Σ | 168.4 ± 6.6 (7) = 0.949×Σ |
+| c8 dual 25 MB | prior | 78.2 ± 16.7 (8) = 0.746×Σ | 74.9 ± 17.1 (7) = 0.715×Σ |
+| | new | 79.7 ± 11.9 (8) = 0.758×Σ | **82.0 ± 6.6 (8) = 0.777×Σ** (σ halved, min 69.2 vs prior 36.3 — the collapse tail cut) |
+
+Σ = same-session singles per arm env (2×sc2 at c7; sc2+sc3 at c8;
+estonly shares the new arm's Σ — est is its only sc2-relevant flag).
+CPU at c1 (whole invocation): new CPUSRV 8.1–8.6 s / CPUCLI 7.4–8.3 s
+vs prior 16.0–17.4 / 16.1–17.4 — the §16.35 eb+est class reproduced
+(−72% CPU/bit at ×2.3 the goodput).
+
+**Mechanism gauges (mid-run t≈5 s per rep, c7).** prior: win floats
+414–2289 UNDER the 4096 pool (Σcwnd is the governor), echo 57–177 ms
+(median ~90–105), sweeps 0–7. estonly: win 1371–3312 floating deep in
+the 4096 pool, echo 119–325 (median ~180–235), sweeps 4–15 — **the
+§16.35 blocker class reproduced by its control arm, both seeds** (and
+the goodput 0.938/0.949 matches §16.35's 0.942/0.951). new: the
+pool-anchor law ENGAGED every rep (`pa=on`, cap 1697–3103 — the
+derived Σ honest caps; the 4096 clamp GONE from the operating point;
+per-path sr ≈ 8–12k ≈ truth vs btlbw 339–500k legacy over-read), echo
+129–218 (median ~170) — BELOW the est class but ABOVE prior — and
+**win pins AT the cap** (1950/2650, 2828/3080, 2864/2877 …) with
+sweeps 8–21 vs prior's 0–7: the store sits at its honest ceiling and
+recovery patience re-stretches there. At c8 the pool-anchor warm gate
+(¼ window) engages only intermittently inside the 2.5 s transfer
+(pa=on/1258–3662 when warm, path-scaled fallback otherwise) — the c8
+gain rides est's CPU relief plus the occasional honest small pool.
+
+**Crown (tail_matrix c2 ×4, seed 42, ship=new ↔ prior):** new p99
+36.2/41.3/36.6/37.0 (400 B, median 36.8) and 39.1/41.1/40.3/46.6
+(1200 B, median 40.7) vs prior 36.2/36.9/35.9/36.2 and
+38.3/43.1/40.6/41.6 — all inside the historic ~36–48 ms class,
+**1000/1000 delivered in every rep, both arms.** UNREGRESSED.
+
+### VERDICT vs the pre-registration — c1 lands decisively; THE c7 clause fails by its own pre-set rule; NO FLIP, defaults reverted
+
+1. **Mechanism (prediction 1): PARTIAL.** The over-read channel is
+   removed exactly as pre-registered — sr_i ≈ 1× truth on both paths,
+   cap at the derived Σ (2–3k, not the 4096 clamp), echo out of the
+   est 265-class — but the sweep/patience signature does NOT return to
+   the prior class: the honest pool becomes the BINDER (win pins at
+   cap; sweeps 8–21 vs prior 0–7). The cap gauge decided, as pre-set.
+2. **c7 (prediction 2, THE clause): FAIL** — new 0.968/0.959×Σ vs
+   ≥ 0.97 required on both seeds (prior same-session 0.981/0.972).
+   The estonly control DOES reproduce the blocker (0.938/0.949) —
+   the composition recovers ~⅔ of est's c7 deficit, not all of it.
+3. **c1 (prediction 3, the goal's PRIMARY): PASS** — 463.4/481.7 ≥ 430
+   both seeds (per-run min 405.3/454.3; ranges disjoint from prior by
+   ~200 Mbit), sustained 477.2/482.0 ≈ the pre-registered ~480 class.
+4. **sc2/sc3 (prediction 4): PASS** — hold within σ (sc2-s7 new
+   88.7 vs 88.1, the safe direction).
+5. **c8 (prediction 5): the stated upside direction confirmed, the
+   0.87 line NOT reached** — 0.758/0.777 vs prior 0.746/0.715: better
+   mean both seeds, σ halved at s7, collapse tail cut (min 69.2 vs
+   36.3). No shipped default has ever reached the 0.87 legacy-arm
+   line; the c8 WATCH stands with a new datum: the honest small pool
+   moves TOWARD the max_i-cap class the c8 attribution named.
+6. **Crown (prediction 6): PASS.** 7. **dnf = 0: PASS.**
+
+**FLIP DECISION (the pre-set rule, verbatim): NO FLIP.** Predictions
+2–4+6–7 were required on both seeds; prediction 2 failed. Defaults
+REVERTED in this branch (est-cadence OFF, emit-batch OFF, pool-anchor
+riding the est resolution = OFF unset): the shipped default is
+byte-identical to the prior stack. `RWM_EST_CADENCE=1` (which now
+brings `RWM_POOL_ANCHOR` with it) `+ RWM_EMIT_BATCH=1` is the
+DOCUMENTED FAST SINGLE-PATH OPT-IN: **463–508 Mbit/s at c1, −72%
+CPU/bit, crown-clean** — and at duals the opt-in now pays −1.3 to
+−2.2% at c7 instead of est-alone's −4.3 to −6.2% (the pool-anchor
+composition is strictly the better opt-in).
+
+**The two falsified mechanisms, named (the goal's honest-exit
+ledger).** (1) `RWM_EST_CADENCE` alone at duals (§16.35 + this
+battery's control): the denser ack clock feeds the legacy ack-interval
+anchor's windowed-MAX burst peaks → ×3.4–3.7 further btlbw over-read →
+the N ≥ 2 pooled store converts the inflated cap+cwnd into a standing
+queue (echo 265-class, sweeps ×7) — CONFIRMED twice, both seeds.
+(2) The honest send-side pool anchor (this build, three statistic
+iterations: windowed-max — refill-burst latch, smoke; plain mean —
+anchor⇄cap oscillation 3588→938, smoke; ratcheted half-window mean —
+battery): removing the over-read makes the honest pool the BINDER,
+and a send-derived rate can never ratchet ABOVE the cap-limited
+carried rate (no delivery physics), so the pool sits AT the operating
+point instead of above it — the store pins, holes re-age (sweeps
+8–21), and c7 lands 0.968/0.959: **at N ≥ 2 the engine has no honest
+un-self-referential rate source for the pool: ack-interval reads
+burst peaks (over), send-interval reads the cap's own shadow
+(under).** SUCCESSOR (named, NOT built, needs its own item-11
+pre-registration): a delivery-clocked send-interval sampler (the BBR
+rs machinery, physics-bounded by DELIVERED packets) attributed per
+path but decoupled from the cwnd consumer — a SHADOW attribution
+feeding ONLY the pool law, so the −22…−27 cwnd-side RS price stays
+unreachable — or, equivalently cheaper: bound the est-arm's
+anchor_floor cwnd inflation (cwnd 5860 vs 1779 was the runaway's
+other half) so Σcwnd stays the c7 governor as it is at the prior
+default.
+
+### Tests
+
+lib 385 green (+6 this branch: 2 anchor statistic laws, 2 scheduler
+consumer-separation/inertness laws, the pool-law §16.35-class numbers,
+the est default pin — final state: default-OFF pins for est/eb/pa);
+`gate_suite` 15/15 release (--test-threads 1); `mtu_blackhole_wedge`
+2/2 (the wedge gate); `perf_loopback` 8/8; `emit_batch_loopback`,
+`win_decouple_loopback`, `wire_compact_loopback`, `copa_sole_loopback`,
+`recov_mp_loopback`, `backpressure` all green release; raptorpath-math
+full suite green. Env-unset tree after the revert: gates default-stack
+test pins est/eb/pa OFF; the N = 1 and Copa-feed paths are
+byte-identical by construction (consumer-separation law).
