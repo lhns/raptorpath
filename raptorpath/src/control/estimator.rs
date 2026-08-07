@@ -94,14 +94,22 @@ pub struct LossEstimator {
 /// detector's design regime). Pre-registered constant — not a tuning knob.
 const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 
-/// Resolve `RWM_EST_CADENCE` once (default OFF — the A/B arm; noted in the
-/// gates.rs header list of resolve-once sites) and echo mechanism liveness
-/// on first resolution (MEASUREMENT DISCIPLINE item 1).
-fn est_cadence_active() -> bool {
+/// Resolve `RWM_EST_CADENCE` once (noted in the gates.rs header list of
+/// resolve-once sites) and echo mechanism liveness on first resolution
+/// (MEASUREMENT DISCIPLINE item 1).
+///
+/// DEFAULT ON since 2026-08-07 (goal-gate "Ship The Wins 1": the §16.35 c7
+/// anchor-interaction blocker resolved by the `RWM_POOL_ANCHOR` composition
+/// — the pooled-store cap at N ≥ 2 reads the burst-immune send-interval
+/// anchor, so the faster ack clock can no longer inflate the dual-store cap;
+/// pre-registered composed battery earned the flip). `RWM_EST_CADENCE=0` is
+/// the prior-default opt-out arm (per-call BOCD, and `RWM_POOL_ANCHOR`
+/// defaults off with it — one composed default).
+pub(crate) fn est_cadence_active() -> bool {
     use std::sync::OnceLock;
     static GATE: OnceLock<bool> = OnceLock::new();
     *GATE.get_or_init(|| {
-        let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+        let on = crate::config::env_flag("RWM_EST_CADENCE", true);
         if on {
             tracing::info!(
                 "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
@@ -463,6 +471,16 @@ impl LossEstimator {
         e
     }
 
+    /// Test-only constructor with the heavy-math cadence forced OFF — the
+    /// `RWM_EST_CADENCE=0` prior-default opt-out arm (per-call BOCD),
+    /// env-independent for the law tests.
+    #[cfg(test)]
+    pub fn new_per_call_for_test() -> Self {
+        let mut e = Self::new();
+        e.est_cadence = false;
+        e
+    }
+
     /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
     pub fn bocd_updates(&self) -> u64 {
         self.bocd.updates()
@@ -473,13 +491,26 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE law: with the gate OFF (default), every
-    /// record_batch performs a per-call BOCD update — the legacy path is
-    /// bit-identical in call topology.
+    /// RWM_EST_CADENCE default: ships ON since 2026-08-07 (goal-gate "Ship
+    /// The Wins 1" — the composed default with RWM_POOL_ANCHOR). Relies on
+    /// the test env not exporting RWM_* overrides, like every engine-default
+    /// test in this crate.
+    #[test]
+    fn test_est_cadence_default_on() {
+        let est = LossEstimator::new();
+        assert!(
+            est.est_cadence,
+            "RWM_EST_CADENCE ships default ON (the est×honest-anchor composed default)"
+        );
+    }
+
+    /// RWM_EST_CADENCE law: with the gate OFF (`=0`, the prior-default
+    /// opt-out arm), every record_batch performs a per-call BOCD update —
+    /// the legacy path is bit-identical in call topology.
     #[test]
     fn test_est_cadence_off_is_per_call() {
-        let mut est = LossEstimator::new();
-        assert!(!est.est_cadence, "RWM_EST_CADENCE ships default OFF");
+        let mut est = LossEstimator::new_per_call_for_test();
+        assert!(!est.est_cadence);
         for _ in 0..7 {
             est.record_batch(1, 1);
         }
@@ -514,7 +545,7 @@ mod tests {
     /// (predictive_loss_upper → r*) read equal-class values.
     #[test]
     fn test_est_cadence_posterior_equal_class() {
-        let mut per_call = LossEstimator::new();
+        let mut per_call = LossEstimator::new_per_call_for_test();
         let mut cadenced = LossEstimator::new_with_cadence_for_test();
         // ~5% loss in per-message batches (1 symbol per batch, 1 loss / 20).
         for i in 0..400 {

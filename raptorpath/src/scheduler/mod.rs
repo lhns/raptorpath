@@ -209,6 +209,32 @@ pub fn copa_compete_active() -> bool {
     })
 }
 
+/// Whether the pool-anchor honest dual-store law is active for this process
+/// (`RWM_POOL_ANCHOR`, goal-gate "Ship The Wins 1"): at N ≥ 2 live paths the
+/// pooled-store cap's rate input comes from the per-path hygiene-grade
+/// SEND-interval anchor ([`crate::control::SendRateAnchor`] — burst-immune
+/// by construction, clock-gap discard) instead of the legacy ack-interval
+/// windowed-max, whose burst-peak over-read under the est-cadence ack clock
+/// was the §16.35 c7 blocker. ONE COMPOSED DEFAULT: the unset default rides
+/// the `RWM_EST_CADENCE` resolution (est ON ⇒ pool-anchor ON; the
+/// `RWM_EST_CADENCE=0` opt-out restores the full prior stack), while
+/// `RWM_POOL_ANCHOR=0` alone is the est-only decomposition arm (the blocker
+/// reproduction). Consumers: the per-path send-event feed
+/// (`PathState::charge_in_flight`) and the N ≥ 2 dyn-cap law in net/mod.rs.
+/// The Copa cwnd feed (`record_delivery`/`on_ack`) is deliberately
+/// UNTOUCHED — the measured −22…−27 c7 RS-composition price stays
+/// unreachable. Read once and cached (consulted on the send hot path).
+pub fn pool_anchor_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        crate::config::env_flag(
+            "RWM_POOL_ANCHOR",
+            crate::control::estimator::est_cadence_active(),
+        )
+    })
+}
+
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
@@ -1601,6 +1627,22 @@ pub struct PathState {
     /// the leak-guard backstop) break it temporarily and all helpers
     /// saturate rather than trust it.
     in_flight_log: VecDeque<(Instant, u32)>,
+    /// Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`, goal-gate
+    /// "Ship The Wins 1"): per-path hygiene-grade SEND-interval rate anchor
+    /// (ADR-0061 `SendRateAnchor`: ≈SRTT/2 buckets, windowed-max ≈ 8·SRTT,
+    /// clock-gap discard + quarantine), fed by this path's own send events
+    /// at `charge_in_flight` — every wire send on the path (source,
+    /// redundant, retransmit). Burst-immune by construction (Δt spans the
+    /// SEND interval on the sender's clock), it is the N ≥ 2 pooled-store
+    /// cap's rate input; it feeds NOTHING else (Copa cwnd dynamics keep the
+    /// legacy `record_delivery` path byte-identically — the −22…−27 c7
+    /// RS-composition price stays unreachable).
+    send_anchor: crate::control::SendRateAnchor,
+    /// Whether the send-anchor feed is on (resolved once at construction
+    /// from `pool_anchor_active()`; test-forcible). OFF ⇒ `charge_in_flight`
+    /// is byte-identical to the prior-default path (no clock read, no
+    /// bucket work) — the A/B decomposition arm stays cost-honest.
+    pool_anchor_feed: bool,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -1646,6 +1688,8 @@ impl PathState {
             pace_tokens: Self::INITIAL_CWND as f64,
             last_pace_refill: now,
             in_flight_log: VecDeque::new(),
+            send_anchor: crate::control::SendRateAnchor::new(),
+            pool_anchor_feed: pool_anchor_active(),
             clock,
         }
     }
@@ -2033,7 +2077,41 @@ impl PathState {
             return;
         }
         self.in_flight = self.in_flight.saturating_add(n);
-        self.in_flight_log.push_back((self.clock.now(), n));
+        let now = self.clock.now();
+        // Pool-anchor feed (RWM_POOL_ANCHOR): every wire send on this path
+        // is a send-process sample for the honest dual-store anchor. O(1)
+        // amortized; gate resolved once at construction — the =0 arm skips
+        // entirely (cost-honest A/B).
+        if self.pool_anchor_feed {
+            let srtt = self.srtt();
+            self.send_anchor.on_send(now, n as u64, srtt);
+        }
+        self.in_flight_log.push_back((now, n));
+    }
+
+    /// The pool-anchor windowed-max SEND rate for this path (symbols/s), or
+    /// None before the first surviving bucket / with the feed off — the
+    /// N ≥ 2 pooled-store cap law's honest rate input (goal-gate "Ship The
+    /// Wins 1"). Read-only: consumes no sample, owns no cwnd dynamics.
+    pub fn send_rate_anchor(&self) -> Option<f64> {
+        if !self.pool_anchor_feed {
+            return None;
+        }
+        self.send_anchor.rate(self.clock.now(), self.srtt())
+    }
+
+    /// (gaps detected, buckets discarded) for the pool-anchor sampler — the
+    /// DIAG hygiene gauges.
+    pub fn send_anchor_stats(&self) -> (u64, u64) {
+        self.send_anchor.stats()
+    }
+
+    /// Test hook: force the pool-anchor feed regardless of the process-global
+    /// env cache (unit tests must not depend on it — the `force_wire`
+    /// pattern).
+    #[cfg(test)]
+    pub fn force_pool_anchor_feed(&mut self, on: bool) {
+        self.pool_anchor_feed = on;
     }
 
     /// Release `n` symbols of budget (ACK feedback: received or
@@ -4252,6 +4330,106 @@ mod tests {
             (copa.max_bw - max_after).abs() < 1.0,
             "a sub-RTprop burst must be rejected (no over-read): before={max_after} after={}",
             copa.max_bw
+        );
+    }
+
+    // ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR, goal-gate -----
+    // ----- "Ship The Wins 1") ------------------------------------------------
+
+    /// THE burst-immunity + anchor-consumer-separation law (the §16.35 c7
+    /// blocker, at the unit level): a steady send process with the acks
+    /// arriving in est-cadence-class BURSTS must (a) drive the LEGACY
+    /// ack-interval windowed-max (`record_delivery` via `on_ack` — the Copa
+    /// cwnd feed, deliberately UNCHANGED) to a burst-peak over-read, while
+    /// (b) the pool-anchor send-interval rate — the N ≥ 2 store-cap law's
+    /// input — keeps reading ≈ the true send rate. One PathState, both
+    /// consumers, same clock: the separation IS the fix.
+    #[test]
+    fn pool_anchor_send_rate_is_burst_immune_while_the_copa_feed_over_reads() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_pool_anchor_feed(true);
+        path.record_rtt_sample(millis(10)); // srtt/RTprop warm
+
+        // Steady send process: 1 symbol/ms ≈ 1000 sym/s for 2 s, fed at the
+        // real feed site (charge_in_flight = every wire send on this path).
+        for _ in 0..2000 {
+            path.charge_in_flight(1);
+            path.release_in_flight(1);
+            clock.advance(millis(1));
+        }
+        let sr = path
+            .send_rate_anchor()
+            .expect("send anchor warm within the window");
+        assert!(
+            (sr - 1000.0).abs() / 1000.0 < 0.25,
+            "send-interval anchor reads ≈ truth (1000 sym/s), got {sr}"
+        );
+
+        // est-cadence ack clock: every ~100 ms a tight burst — a 1-ms-spaced
+        // clump whose Δdelivered/Δt spikes ~200× the true rate. The legacy
+        // windowed-MAX latches the spike (the measured ×3.4–3.7 further
+        // over-read channel); the send anchor must not move.
+        for _ in 0..10 {
+            // The send process keeps flowing between ack bursts (as on the
+            // real wire — the anchor window must stay fresh).
+            for _ in 0..98 {
+                path.charge_in_flight(1);
+                path.release_in_flight(1);
+                clock.advance(millis(1));
+            }
+            path.on_ack(1); // re-arm last_delivered_time
+            clock.advance(millis(2));
+            path.on_ack(400); // burst peak: 400 / 2 ms = 200k sym/s
+        }
+        let btlbw = path
+            .btlbw_sym_per_s()
+            .expect("legacy anchor established (the cwnd feed still runs)");
+        assert!(
+            btlbw > 10.0 * 1000.0,
+            "the LEGACY ack-interval max must show the burst-peak over-read \
+             (the unchanged Copa-feed channel), got {btlbw}"
+        );
+        let sr_after = path.send_rate_anchor().expect("anchor still live");
+        assert!(
+            (sr_after - 1000.0).abs() / 1000.0 < 0.25,
+            "the pool anchor must be burst-immune: got {sr_after} vs truth 1000"
+        );
+        // And the honest pool term derived from it stays in the truth class
+        // while the legacy term reads the spike: the store-cap consumer is
+        // the one being fixed, the cwnd consumer the one left alone.
+        let rtp = path.min_rtt().unwrap().as_secs_f64();
+        let honest = crate::net::honest_store_cap(Some(sr_after * rtp), Some(sr_after), 1.0, 2.0)
+            .unwrap();
+        let legacy_bdp = path.copa_bdp_anchor().unwrap();
+        assert!(
+            legacy_bdp > 2.0 * (sr_after * rtp),
+            "legacy BDP anchor carries the over-read: {legacy_bdp} vs honest pipe {}",
+            sr_after * rtp
+        );
+        assert!(
+            honest < 2.0 * (sr_after * rtp + sr_after * crate::net::HONEST_RECOVERY_ROUND_S),
+            "honest cap term stays residence+runway-bounded, got {honest}"
+        );
+    }
+
+    /// `RWM_POOL_ANCHOR=0` (the est-only decomposition arm) and N = 1 cost
+    /// honesty: with the feed off, `charge_in_flight` does no anchor work
+    /// and the anchor reads None — the prior-default path.
+    #[test]
+    fn pool_anchor_feed_off_is_inert() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        path.force_pool_anchor_feed(false);
+        path.record_rtt_sample(millis(10));
+        for _ in 0..100 {
+            path.charge_in_flight(1);
+            clock.advance(millis(1));
+        }
+        assert_eq!(path.in_flight, 100, "in-flight accounting unchanged");
+        assert!(
+            path.send_rate_anchor().is_none(),
+            "feed off ⇒ no send-anchor samples (byte-identical prior path)"
         );
     }
 
