@@ -16265,4 +16265,70 @@ control datagrams); block-mode bit-exactness; echo-newest; N = 1
 behaviour; `gates.rs` pins `RWM_ACK_MERGE` OFF in the default-stack
 test.
 
-*(Everything below this line was written after the runs.)*
+### MECHANISM SMOKE + INSTRUMENT AMENDMENT (pre-battery, recorded and committed BEFORE the battery ran — shakeout evidence, NOT battery evidence)
+
+Two c7 dual runs on the VM (binary sha256 d862d419… = commit 43ccb40,
+2026-08-07 18:23–18:24 UTC, 200 MB dual, seed 42, `RWM_GEN=0
+RWM_DIAG=1`), arm `am` (`RWM_ACK_MERGE=1` alone) against arm `prior`
+(env unset). The ack-merge echo fired on BOTH logs in the `am` run
+(client=1 server=1) and on NEITHER in `prior` — the gate is live and
+uncontaminated. `dnf = 0` in both.
+
+**The pre-registered density instrument is WRONG, and the smoke is what
+caught it. Prediction 1's INSTRUMENT is amended here, before any
+battery run; the PREDICTION and every gate are untouched.**
+
+Ack-direction qdisc packets (`QDISC srv0`+`srv1`), 200 MB transferred:
+
+| arm | ack-side packets | ack-side bytes | data-side packets |
+|---|---|---|---|
+| `am` (merge) | 55 906 + 54 472 = **110 378** | 23.74 MB | 177 921 |
+| `prior` | 57 518 + 56 710 = **114 228** | 21.72 MB | 177 857 |
+
+−3.4% in packets, and bytes went UP 9%. That is not a failure of the
+merge; it is a failure of the gauge, and the numbers say exactly why:
+**110–114 k ack-side packets against ~178 k data packets is ≈ 1 per 1.6
+— that is QUINN'S OWN transport-level ACK cadence, not our control
+traffic.** Our control datagrams ride COALESCED inside those packets.
+Merging two datagram FRAMES into one changes the frame count, not the
+packet count; it can only change the packets' SIZE, which is precisely
+the +9% bytes (one larger `WindowAck` where two smaller frames rode
+before, on the same quinn ACK schedule). The §16.34 wire-gauge method
+is sound for DATA-direction structural framing tax, which is what it
+was built for; it cannot see control-frame density.
+
+**The corrected instrument (built now, behavior-inert, RWM_DIAG only):**
+`[CTLD] p<id> tx=<n> rx=<n>` at the receiver — quinn's own
+`frame_tx.datagram` / `frame_rx.datagram` per path. A window-mode
+RECEIVER sends nothing but control datagrams, so `tx` IS the
+control-frame count and `tx` per MB IS the density prediction 1 is
+about. This is a strictly more direct measurement of the pre-registered
+quantity than the one it replaces, it required no behavior change, and
+it is committed before the battery. The battery quotes BOTH gauges.
+
+**What the smoke says about the MECHANISM (one run per arm — this is
+not evidence, and it is recorded now so that it cannot be reported
+selectively later).** The goal-clause-4 gauges moved hard, in the
+pre-registered direction, on the `am` arm alone:
+
+| gauge (c7, end of run) | `am` | `prior` |
+|---|---|---|
+| `sidle` | **727 ms / 104 / mx 58 ms** | 2 416 ms / 132 / mx 101 ms |
+| `sweeps` | **6** | 22 |
+| `gapdrop` | 481 | 311 |
+| `win`/cap | 10 / 4096 | 31 / 4096 |
+| goodput | **171.8** | 146.1 |
+
+Stall-idle −70%, sweeps −73%. Two honest observations recorded in
+advance of the numbers: (1) this is the §16.37 signature — sidle ≈2×
+and sweeps ≈3× the prior default — moving the OTHER way for the first
+time, and it moved under the ack-merge knob ALONE, without the est
+clock; (2) `gapdrop` went UP (311 → 481), which is the opposite of
+stall source (c)'s prediction, so if the battery confirms it the
+gap-channel term is NOT what the merge relieves and the attribution
+belongs to (a)+(b) — the ack-density and lock-contention terms. One run
+per arm is not evidence: `prior`'s 146.1 sits well below its own
+§16.37 battery mean of 171.7/174.6, so this pair may be reading session
+noise as much as mechanism. The battery decides.
+
+*(Results below this line were written after the runs.)*

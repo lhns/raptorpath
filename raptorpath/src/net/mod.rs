@@ -2008,6 +2008,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // mode must stay bit-exact, and `recv_window_mode` is the same predicate
     // the block_arq wiring already uses to pass `None` in window mode.
     let ack_merge_recv = gates.ack_merge && recv_window_mode;
+    // ack-merge density gauge (`[CTLD]`), RWM_DIAG only — behavior-inert.
+    let recv_diag_on = gates.diag;
 
     // Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel
     // STEP 1). RWM_RDIAG=1 samples (a) the engine task's busy fraction
@@ -2110,6 +2112,23 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut reasm_max_pending: usize = 0;
         let mut reasm_max_span: u64 = 0;
         let mut reasm_last_report = Instant::now();
+        // ack-merge CONTROL-DATAGRAM DENSITY gauge (goal-gate "Unlock The
+        // Default 1", RWM_DIAG only — behavior-inert). `[CTLD] p<id>
+        // tx=<n> rx=<n>` = quinn's own `frame_tx.datagram` / `frame_rx.datagram`
+        // for the path, read at the receiver: since a window-mode RECEIVER
+        // sends nothing but control datagrams, `tx` IS the control-frame count
+        // and `tx / MB` IS the density prediction 1 is about.
+        //
+        // THE INSTRUMENT LESSON, recorded where the instrument lives: the
+        // pre-registration proposed measuring this off the ACK-direction
+        // qdisc PACKET counters (`QDISC srv0/srv1`). The pre-battery smoke
+        // showed that cannot work — those packets are dominated by quinn's own
+        // transport-level ACK cadence (~1 per 2 data packets: 55–57k ack-side
+        // packets against 89k data packets), and our control datagrams ride
+        // COALESCED inside them. Merging two datagram frames into one changes
+        // the frame count, not the packet count. Frames are the quantity the
+        // mechanism is about, so frames are what this counts.
+        let mut ctld_last_report = Instant::now();
         // feat/c8-conversion DIAGNOSIS gauges (goal-gate "C8 Slow-Path
         // Conversion", RWM_DIAG only — behavior-inert): the RECEIVER-side
         // view of slow-path conversion, per arrival path:
@@ -3437,6 +3456,25 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                                 debug!(?e, path_id, "failed to send WindowAck");
                             }
+                        }
+
+                        // ack-merge CONTROL-DATAGRAM DENSITY gauge (prediction
+                        // 1's instrument — see the declaration of
+                        // `ctld_last_report` for why this and not the qdisc
+                        // packet counters). Cumulative per path, 1 Hz.
+                        if recv_diag_on
+                            && ctld_last_report.elapsed() >= Duration::from_secs(1)
+                        {
+                            ctld_last_report = Instant::now();
+                            let mut line = String::from("[CTLD]");
+                            for pid in recv_scheduler.lock().live_paths() {
+                                if let Some((rx, tx)) =
+                                    recv_transport.datagram_frame_stats(pid)
+                                {
+                                    line.push_str(&format!(" p{pid} tx={tx} rx={rx}"));
+                                }
+                            }
+                            eprintln!("{line}");
                         }
 
                         // Periodic tasks (rate-limited by REPORT_INTERVAL)
