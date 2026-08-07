@@ -674,6 +674,27 @@ impl BbrRs {
             .recovery_window
             .max(in_flight + bytes_acked)
             .max(self.min_cwnd);
+        // MECHANISM 2 (AMENDMENT 2026-08-07, pre-registered in the ledger
+        // before this build — goal-gate "Ship The Wins 2: shal8 anchor",
+        // attempt-1 battery evidence): floor the recovery window at the
+        // rate model's own 1×BDP target once a bandwidth estimate exists.
+        // Upstream's quiche-style recovery window requires a LOSS-FREE
+        // round to exit recovery; on a shallow-buffer/GE cell with ~7%
+        // per-packet loss a loss-free round has probability ≈ 0, so the
+        // conservation clamp becomes the PERMANENT window and ratchets the
+        // controller to ~0.5×BDP (measured attempt 1: qcwnd_med 64-67 KB
+        // vs true BDP ≈ 130 KB, goodput 19-23 of 100 Mbit) — loss-limited
+        // Reno-class behavior on a rate-model controller. Linux BBRv1
+        // holds cwnd at the model target through channel loss (loss is
+        // not a model signal in v1); this floor restores exactly that
+        // semantic: conservation may hold the window AT the measured
+        // pipe, never clamp it below (the engine's own §12.1 law at the
+        // substrate: channel loss is the recovery plane's job; congestion
+        // evidence is the model's falling bw estimate). When no bandwidth
+        // estimate exists yet, get_target_cwnd returns init_cwnd — the
+        // floor then keeps startup loss from wedging the handshake window,
+        // matching upstream's init_cwnd fallback semantics.
+        self.recovery_window = self.recovery_window.max(self.get_target_cwnd(1.0));
     }
 
     /// <https://datatracker.ietf.org/doc/html/draft-cardwell-iccrg-bbr-congestion-control#section-4.3.2.2>
@@ -1102,6 +1123,62 @@ mod tests {
             est.get_estimate(),
             established,
             "an app-limited dribble must not depress the max filter"
+        );
+    }
+
+    /// MECHANISM 2 law (the amendment): sustained per-round loss must not
+    /// clamp the recovery window below the rate model's 1×BDP target — a
+    /// loss-free round has probability ~0 at 7% per-packet loss, so
+    /// without the floor the conservation clamp becomes the permanent
+    /// window (measured attempt 1: ~0.5×BDP, 19-23 of 100 Mbit).
+    #[test]
+    fn sustained_loss_cannot_clamp_recovery_below_the_pipe() {
+        let cfg = Arc::new(BbrRsConfig::default());
+        let mut bbr = BbrRs::new(cfg, 1200);
+        let t0 = Instant::now();
+        // Established model: RTprop 10 ms, bw 12 MB/s (~100 mbit).
+        bbr.min_rtt = 10 * MS;
+        bbr.max_bandwidth.max_filter.update_max(1, 12_000_000);
+        bbr.is_at_full_bandwidth = true;
+        bbr.mode = Mode::ProbeBw;
+        // Keep the spurious-ProbeRtt entry out of the law under test (the
+        // 10-s min-RTT refresh is upstream behavior, not this law).
+        bbr.probe_rtt_last_started_at = Some(t0);
+        bbr.cwnd = bbr.get_target_cwnd(2.0);
+        let bdp = bbr.get_target_cwnd(1.0); // = bw x RTprop = 120 kB
+        // Drive rounds that EACH carry loss (GE + tail-drop cell class):
+        // a link-consistent flight (100 x 1200 B per 10 ms = 12 MB/s, the
+        // planted bw) is sent, acked, one loss recorded, batch closed —
+        // recovery never sees a loss-free round.
+        let mut now = t0;
+        let mut pn: u64 = 0;
+        for _round in 0..50 {
+            now += 10 * MS;
+            for _ in 0..100 {
+                pn += 1;
+                bbr.on_sent(now, 1200, pn);
+            }
+            bbr.on_congestion_event(now, now, false, 1200);
+            // acks driven at the estimator directly — the Controller-level
+            // on_ack needs quinn's RttEstimator, whose constructor is
+            // private; the recovery law under test lives in
+            // on_end_acks/calculate_recovery_window.
+            for _ in 0..100 {
+                bbr.max_bandwidth
+                    .on_ack(now, now - 10 * MS, 1200, bbr.round_count, false, 10 * MS);
+            }
+            bbr.on_end_acks(now, bdp, false, Some(pn));
+            assert!(
+                bbr.recovery_state.in_recovery(),
+                "test must exercise the recovery-resident regime"
+            );
+            assert_eq!(bbr.mode, Mode::ProbeBw, "mode drift would void the law");
+        }
+        assert!(
+            bbr.window() >= bdp,
+            "recovery-resident window {} clamped below the 1xBDP target {}",
+            bbr.window(),
+            bdp
         );
     }
 

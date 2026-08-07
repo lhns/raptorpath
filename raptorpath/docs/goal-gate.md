@@ -15106,3 +15106,75 @@ per-run rows preserved under `/home/vibe/shal8fix/`; cleanup.sh + lock
 released after teardown verification.
 
 *(Results below this line will be written after the runs.)*
+
+### DIAGNOSIS-PASS RESULTS (VM 10.1.5.16, 2026-08-07 11:53–11:57 UTC; binary 0c449ef8… = commit 51bc04b; shal8 ×3 reps s42 + ×1 s7 per arm; logs `/home/vibe/shal8fix/diag-s{42,7}.log`)
+
+- **P-D1 CONFIRMED (both seeds).** Default arm at shal8: collapse
+  reproduced (8.8–9.6 Mbit s42, 9.4 s7; drops 6.4–7.7%; retx 17–18k),
+  and quinn's OWN window gauge reads qcwnd_med 615 KB → 1.00 MB (s42
+  reps, ratcheting across the transfer; 1.14 MB s7) ≈ **4.7–8.8× the
+  true BDP ≈ 130 KB** — the in-vivo max-filter latch, inside quinn
+  (engine btlbw gauge spikes 78–111k sym/s in step, the B1 gauge
+  reproduced).
+- **P-D2 CONFIRMED (both seeds).** `RWM_PLAIN_RS=1` gauge arm: the
+  honest engine sampler reads btlbw ≈ 15.0–15.7k sym/s (≈ 1.4× link)
+  where established, and goodput STAYS collapsed (10.8–12.3 Mbit s42,
+  12.0 s7; +2–3 Mbit over default = the anchor-floor release, noted) —
+  the engine anchor is a gauge, not the driver. Candidate (b) demoted
+  as pre-registered; D1 stands PRIMARY; no diagnosis amendment.
+
+### ATTEMPT-1 RESULT (s42 battery, same session): P-F1 FALSIFIED at ~20 Mbit — and the gauges name the SECOND quinn-side mechanism
+
+The estimator fix behaves exactly as designed where it can: c2ctl-fix
+qcwnd 2.07 MB → 260 KB (= 2×BDP + extra_acked, the honest class), wireQ
+p50 91 → 7 ms, goodput 82.5 vs def 85.7 (−3.7%, ~1σ class). But
+shal8-fix lands **19.2–22.7 Mbit** (def 11.1–11.3 same session): ×2
+better, far below the ≥70 gate. The mechanism, from the same gauges:
+**qcwnd_med 64–67 KB ≈ 0.5× the true BDP** while qcwnd_max touches
+302–346 KB — the bandwidth model is honest (back-computed bŵ ≈ 1.0–1.3×
+link), but upstream's quiche-style RECOVERY WINDOW is the binding
+clamp: exit requires a loss-free round, which at ~7% per-packet loss on
+a ~500-packet round has probability ≈ 0, so the conservation clamp is
+the PERMANENT window and ratchets below the pipe (loss-limited
+Reno-class behavior on a rate-model controller). The stock arm never
+hit this clamp only because its ×10-poisoned inputs kept
+`recovery_window = max(in_flight + acked, …)` enormous — the two
+defects were mutually masking.
+
+**AMENDMENT (attempt 2 of the pre-registered ×2; this block + the code
+committed BEFORE the attempt-2 build/battery). MECHANISM 2: floor the
+recovery window at the rate model's 1×BDP target**
+(`calculate_recovery_window` gains
+`recovery_window ≥ get_target_cwnd(1.0)`): conservation may hold the
+window AT the measured pipe, never below it — Linux BBRv1's actual loss
+semantics (loss is not a model signal in v1; the model's own falling bŵ
+is the congestion evidence, and the max-filter decays within 10 rounds
+under real congestion so the floor follows it), and the substrate
+statement of the engine's own §12.1 law: channel loss is the recovery
+plane's job. The vendored controller now carries exactly TWO named
+mechanisms vs upstream (estimator; recovery floor). +1 law test
+(`sustained_loss_cannot_clamp_recovery_below_the_pipe`).
+
+Also recorded from source while attributing attempt 1: quinn's
+connection pacer derives its rate from `window()` (refill =
+1.25 × window/RTT, burst capacity = window·2 ms/RTT clamped ≥ 10
+packets — connection/pacing.rs) and IGNORES the controller's
+`pacing_rate` (metrics-only). The controller trait therefore cannot
+shape sub-burst granularity: ≥10-packet line-rate bursts into the
+19-slot cell are structural to quinn. This is the named RESIDUAL if
+attempt 2 falsifies.
+
+**Attempt-2 predictions:** P-A1: shal8 fix ≥ 70 Mbit both seeds
+(window floored ≈ 1–1.3×BDP̂ → ack-clocked sends ≈ link; drops fall
+toward the pacer-burst/GE residual ≤ 3–4%). P-A2: c2ctl/c1/sc2/c7/
+crown within σ of attempt 1's fix arm or better (the floor binds only
+where loss is sustained per-round). **Falsification (final):** shal8
+< 70 on either seed ⇒ STRUCTURAL BOUND per the pre-registration, with
+the pacer burst granularity as the named unreachable residual — priced
+exit (upstream PR against quinn's pacer/pacing_rate plumbing, or the
+full passthrough-style pacer ownership), no third attempt.
+
+**Attempt-1 seed-7 scope note (recorded before attempt 2):** the s7
+attempt-1 battery is NOT run — P-F1 is already falsified on s42 with
+n = 8 ≫ σ and the s7 diagnosis pass reproduces the mechanism gauges;
+attempt 2 runs BOTH seeds in full per the pre-registration.
