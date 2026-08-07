@@ -15434,4 +15434,50 @@ c8 25 MB ×8 · sc2 100 MB + sc3 25 MB ×8 · tail_matrix c2 spot ×4
 `RWM_FLOOR_BOUND=1`). FLIP only on the FULL pre-registered gate set,
 both seeds.
 
+*NOTE (post-hoc, honest): attempt 1's defaults were REVERTED at the end
+of that session, so on this branch env-unset IS the prior default. The
+battery arms are therefore all explicit: `deliv` =
+`RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` (pool-anchor and pool-deliv both
+ride the est opt-in), `pa` = the same + `RWM_POOL_DELIV=0`, `prior` =
+env unset, `floor` = `pa` + `RWM_FLOOR_BOUND=1`. No gate or prediction
+changes — only the env spelling of the same four machines.*
+
+### MECHANISM SMOKE (pre-battery, the winmtu/attempt-1 pattern — recorded BEFORE the battery ran; shakeout evidence, NOT battery evidence)
+
+One c7 default-arm run on the VM (binary sha256 23fb146a… = commit
+8e9b489, 2026-08-07 ~13:30 UTC, `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1`,
+200 MB dual, 165.4 Mbit dnf 0). The delivery-clocked echo fired and the
+gauges say the mechanism does exactly what arm A pre-registered — and
+**no defect was found, so the build goes to the battery UNAMENDED**
+(attempt 1 needed three statistic iterations here; attempt 2 needed
+none):
+
+| gauge (mid-run t≈5 s, per path) | value | pre-registered expectation |
+|---|---|---|
+| `dr` (delivery-clocked, arm A) | 21 370 / 17 319 | ≳ `sr`, within ~2× of the ≈10.4k truth ✓ |
+| `sr` (send mean, attempt 1) | 13 176 / 10 027 | the cap-limited mean ✓ |
+| `btlbw` (legacy ack-interval) | 125 031 / 77 856 | the ×10-class over-read, untouched ✓ |
+| pool Σ (`pa=on/…`) | 4 783 | ABOVE attempt 1's 1 697–3 103 ✓ |
+| `win` / cap | 3 344 / 4 096 | NOT pinned at cap (attempt 1: win = cap) ✓ |
+| `sweeps` | 2 | the prior 0–7 class (attempt 1: 8–21) ✓ |
+| guard counters | a110 s11470 g0 d0 | 99% of ack events sub-RTprop ⇒ REJECTED-AND-ACCUMULATED, as designed |
+
+So the delivery clock DOES carry information the send clock lacks
+(falsification (iii) does not fire), it does NOT reproduce the
+ack-bunching over-read (falsification (i) does not fire — `dr` is
+17–34k against a 125–418k legacy `btlbw` on the same paths, same
+instant), and the store no longer pins at its ceiling (falsification
+(ii)'s signature is absent). Two honest observations recorded now, in
+advance of the numbers: (1) `dr` sits ≈2× truth rather than ≈1× — the
+max filter over short spans is picking burst drains, which is what a
+BtlBw filter IS, and it is inside the pre-registered ~2× bound, so NO
+tuning pass; (2) the raised pool Σ = 4 783 CLAMPS at the N·knee 4 096
+again, and this single run's echo RTT (269 ms) is in the est standing-
+queue class while its goodput (165.4) is below both attempt 1 (171)
+and prior (173). One run is not evidence — attempt 1's own smokes read
+170.5 and 147.7 against a 171.1 battery mean — but if the battery
+confirms it, the mechanism to name is that arm A trades attempt 1's
+PIN for a REFILLED clamp, i.e. it moves the c7 deficit from the
+store's ceiling back to the pool's own headroom.
+
 *(Results below this line were written after the runs.)*
