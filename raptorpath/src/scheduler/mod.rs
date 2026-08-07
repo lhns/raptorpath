@@ -2089,15 +2089,18 @@ impl PathState {
         self.in_flight_log.push_back((now, n));
     }
 
-    /// The pool-anchor windowed-max SEND rate for this path (symbols/s), or
-    /// None before the first surviving bucket / with the feed off — the
-    /// N ≥ 2 pooled-store cap law's honest rate input (goal-gate "Ship The
-    /// Wins 1"). Read-only: consumes no sample, owns no cwnd dynamics.
+    /// The pool-anchor SEND rate for this path (symbols/s) — the GAP-ROBUST
+    /// WINDOWED MEAN (`SendRateAnchor::mean_rate`; the pre-battery
+    /// amendment: an admission-gated sender's refill bursts latch a
+    /// windowed-max, measured sr=53k vs ≈8.9k truth) — or None before the
+    /// first surviving bucket / with the feed off. The N ≥ 2 pooled-store
+    /// cap law's honest rate input (goal-gate "Ship The Wins 1").
+    /// Read-only: consumes no sample, owns no cwnd dynamics.
     pub fn send_rate_anchor(&self) -> Option<f64> {
         if !self.pool_anchor_feed {
             return None;
         }
-        self.send_anchor.rate(self.clock.now(), self.srtt())
+        self.send_anchor.mean_rate(self.clock.now(), self.srtt())
     }
 
     /// (gaps detected, buckets discarded) for the pool-anchor sampler — the
@@ -4369,18 +4372,28 @@ mod tests {
         // est-cadence ack clock: every ~100 ms a tight burst — a 1-ms-spaced
         // clump whose Δdelivered/Δt spikes ~200× the true rate. The legacy
         // windowed-MAX latches the spike (the measured ×3.4–3.7 further
-        // over-read channel); the send anchor must not move.
+        // over-read channel); the send anchor must not move. AND the send
+        // side bursts too (the amendment's measured defect): each ack burst
+        // frees store slots and the admission-gated sender REFILLS at
+        // emission speed — a ~5 ms bucket at ~40k sym/s. The windowed-max
+        // latches that refill burst (sr=53k-vs-8.9k smoke); the MEAN the
+        // law reads must stay ≈ the true carried rate.
         for _ in 0..10 {
-            // The send process keeps flowing between ack bursts (as on the
-            // real wire — the anchor window must stay fresh).
-            for _ in 0..98 {
+            // Steady send process between ack bursts.
+            for _ in 0..93 {
                 path.charge_in_flight(1);
                 path.release_in_flight(1);
                 clock.advance(millis(1));
             }
             path.on_ack(1); // re-arm last_delivered_time
             clock.advance(millis(2));
-            path.on_ack(400); // burst peak: 400 / 2 ms = 200k sym/s
+            path.on_ack(400); // ack burst peak: 400 / 2 ms = 200k sym/s
+            // Store-refill send burst: 200 symbols in ~5 ms (~40k sym/s).
+            for _ in 0..200 {
+                path.charge_in_flight(1);
+                path.release_in_flight(1);
+                clock.advance(Duration::from_micros(25));
+            }
         }
         let btlbw = path
             .btlbw_sym_per_s()
@@ -4390,10 +4403,14 @@ mod tests {
             "the LEGACY ack-interval max must show the burst-peak over-read \
              (the unchanged Copa-feed channel), got {btlbw}"
         );
+        // Carried truth over the burst phase: (93 + 200) sends per 100 ms
+        // cycle ≈ 2 930 sym/s — the mean must read it; the 40k refill peaks
+        // and the 200k ack peaks must both be invisible to it.
+        let truth = (93.0 + 200.0) / 0.1;
         let sr_after = path.send_rate_anchor().expect("anchor still live");
         assert!(
-            (sr_after - 1000.0).abs() / 1000.0 < 0.25,
-            "the pool anchor must be burst-immune: got {sr_after} vs truth 1000"
+            (sr_after - truth).abs() / truth < 0.35,
+            "the pool anchor must be burst-immune: got {sr_after} vs carried truth {truth}"
         );
         // And the honest pool term derived from it stays in the truth class
         // while the legacy term reads the spike: the store-cap consumer is

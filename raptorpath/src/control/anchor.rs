@@ -193,8 +193,10 @@ pub fn stall_witness() -> Option<&'static StallWitness> {
 pub struct SendRateAnchor {
     bucket_start: Option<Instant>,
     bucket_count: u64,
-    /// (bucket close instant, rate sym/s) — surviving samples.
-    samples: VecDeque<(Instant, f64)>,
+    /// (bucket close instant, symbol count, bucket Δt seconds) — surviving
+    /// samples. Per-bucket rate = count/Δt (the `rate()` windowed-max);
+    /// the gap-robust windowed mean (`mean_rate()`) is Σcount/ΣΔt.
+    samples: VecDeque<(Instant, u64, f64)>,
     quarantine_until: Option<Instant>,
     gaps: u64,
     discarded: u64,
@@ -250,10 +252,10 @@ impl SendRateAnchor {
             self.discarded += 1;
         } else {
             self.quarantine_until = None;
-            self.samples.push_back((now, self.bucket_count as f64 / dt));
+            self.samples.push_back((now, self.bucket_count, dt));
             // Expire outside quarantine only (hold-through-disturbance).
             if let Some(cutoff) = now.checked_sub(Duration::from_secs_f64(window_s(srtt))) {
-                while self.samples.front().is_some_and(|&(t, _)| t < cutoff) {
+                while self.samples.front().is_some_and(|&(t, _, _)| t < cutoff) {
                     self.samples.pop_front();
                 }
             }
@@ -270,11 +272,11 @@ impl SendRateAnchor {
         let iter = self.samples.iter();
         let max = if self.in_quarantine(now) {
             // Hold the pre-gap window through the disturbance.
-            iter.map(|&(_, r)| r).fold(f64::NAN, f64::max)
+            iter.map(|&(_, c, dt)| c as f64 / dt).fold(f64::NAN, f64::max)
         } else {
             let cutoff = now.checked_sub(Duration::from_secs_f64(window_s(srtt)));
-            iter.filter(|&&(t, _)| cutoff.map_or(true, |c| t >= c))
-                .map(|&(_, r)| r)
+            iter.filter(|&&(t, _, _)| cutoff.map_or(true, |c| t >= c))
+                .map(|&(_, c, dt)| c as f64 / dt)
                 .fold(f64::NAN, f64::max)
         };
         if max.is_nan() {
@@ -282,6 +284,42 @@ impl SendRateAnchor {
         } else {
             Some(max)
         }
+    }
+
+    /// The GAP-ROBUST WINDOWED MEAN send rate (symbols/s): Σ count / Σ Δt
+    /// over the surviving buckets of the same window (clock-gap buckets
+    /// were discarded on entry; during quarantine the pre-gap window is
+    /// held, like `rate()`). None before the first surviving bucket.
+    ///
+    /// Why a mean next to the max (goal-gate "Ship The Wins 1" amendment):
+    /// the windowed-MAX is the right statistic for a PACED send process
+    /// (the A* span consumer) but an ADMISSION-GATED sender legitimately
+    /// bursts a bucket many× the drain rate on every store-refill
+    /// (SACK-release flood), and the max latches the burst — the measured
+    /// sr=53k-vs-8.9k smoke defect. A time-normalized mean cannot be
+    /// inflated by burst concentration: under a bounded store it converges
+    /// to the true carried rate (drain + retx share) — the honest rate the
+    /// pooled store-cap law wants.
+    pub fn mean_rate(&self, now: Instant, srtt: Duration) -> Option<f64> {
+        let (mut n, mut dt_sum) = (0u64, 0.0f64);
+        if self.in_quarantine(now) {
+            for &(_, c, dt) in self.samples.iter() {
+                n += c;
+                dt_sum += dt;
+            }
+        } else {
+            let cutoff = now.checked_sub(Duration::from_secs_f64(window_s(srtt)));
+            for &(t, c, dt) in self
+                .samples
+                .iter()
+                .filter(|&&(t, _, _)| cutoff.map_or(true, |cu| t >= cu))
+            {
+                let _ = t;
+                n += c;
+                dt_sum += dt;
+            }
+        }
+        if dt_sum > 0.0 { Some(n as f64 / dt_sum) } else { None }
     }
 
     /// (gaps detected, buckets discarded) — DIAG gauges.
@@ -394,6 +432,41 @@ mod tests {
     fn send_rate_anchor_no_samples_is_none() {
         let a = SendRateAnchor::new();
         assert!(a.rate(Instant::now(), SRTT).is_none());
+        assert!(a.mean_rate(Instant::now(), SRTT).is_none());
+    }
+
+    /// Goal-gate "Ship The Wins 1" amendment law: an ADMISSION-GATED sender
+    /// legitimately bursts whole buckets at emission speed on every
+    /// store-refill (SACK-release flood) — the windowed-MAX latches the
+    /// burst (the measured sr=53k-vs-8.9k smoke defect), while the
+    /// GAP-ROBUST WINDOWED MEAN reads the true carried rate. Both
+    /// statistics from the SAME buckets: max for the paced A* consumer,
+    /// mean for the pooled store-cap law.
+    #[test]
+    fn send_rate_anchor_mean_is_refill_burst_immune_where_the_max_latches() {
+        let t0 = Instant::now();
+        let mut a = SendRateAnchor::new();
+        let mut t = feed_steady(&mut a, t0, 1000.0, 1.0, SRTT);
+        // 5 cycles of [165 ms steady @1000/s + 35 ms refill burst @40k/s]:
+        // carried truth = (165 + 1400) / 0.2 s ≈ 7 825 sym/s.
+        for _ in 0..5 {
+            t = feed_steady(&mut a, t, 1000.0, 0.165, SRTT);
+            for _ in 0..1400 {
+                a.on_send(t, 1, SRTT);
+                t += Duration::from_micros(25);
+            }
+        }
+        let max = a.rate(t, SRTT).expect("max live");
+        let mean = a.mean_rate(t, SRTT).expect("mean live");
+        let truth = (165.0 + 1400.0) / 0.2;
+        assert!(
+            max > 3.0 * truth,
+            "the windowed-max latches the refill burst (the defect): max={max} truth={truth}"
+        );
+        assert!(
+            (mean - truth).abs() / truth < 0.3,
+            "the windowed mean reads the carried truth: mean={mean} truth={truth}"
+        );
     }
 
     #[test]

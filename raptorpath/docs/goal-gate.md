@@ -15051,4 +15051,32 @@ c8 25 MB ×8 new↔prior; tail_matrix c2 spot ×4 seed 42 new↔prior
 (crown); driver `tools/l1/shipest_battery.sh` (recvwall pattern,
 retry-hardened).
 
+### AMENDMENT (pre-battery, after the mechanism smoke — the winmtu pattern; committed BEFORE any battery run)
+
+The first c7 default-env smoke on the VM (binary d17619e5… = a7d2d69,
+2026-08-07 ~09:35 UTC, one run, 170.5 Mbit dnf 0) showed the law
+ENGAGED (`pa=on`) but the mechanism gauges UNFIXED: per-path
+`sr=1961 / 53354` vs truth ≈ 8.9k, Σ = 6644 → still the 4096 clamp,
+echo 258 ms / sweeps 19 (the blocker class). DEFECT, named: the
+pre-registered per-bucket windowed-MAX is the right statistic for a
+PACED send process (the A* span consumer, where cc_pace shapes
+emission) but not for the ADMISSION-GATED plain sender at N ≥ 2 — a
+SACK-release burst refills the store at emission speed, so individual
+≈SRTT/2 buckets legitimately read many× the drain rate and the MAX
+latches them (the same burst-peak channel as the ack side, reached
+from the send side). The honest send-process statistic is the
+GAP-ROBUST WINDOWED MEAN: Σ count / Σ Δt over the SURVIVING buckets
+of the same window (clock-gap buckets discarded, quarantine
+hold-through unchanged — hygiene rules intact); a time-normalized
+mean cannot be inflated by burst concentration, and under a bounded
+store it converges to the true carried rate (drain + retx share).
+AMENDED BUILD (one function): `SendRateAnchor::mean_rate()` alongside
+the untouched `rate()` (A* keeps its windowed-max verbatim);
+`PathState::send_rate_anchor()` reads the mean. The unit law test
+gains the measured defect as its burst model (periodic store-refill
+bursts ≫ truth: the max latches, the mean must hold ≈ truth).
+Predictions 1–7 and every falsification clause stand VERBATIM on the
+amended statistic; the smoke run is recorded as mechanism shakeout,
+not battery evidence.
+
 *(Results below this line were written after the runs.)*
