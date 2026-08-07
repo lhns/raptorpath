@@ -28,7 +28,7 @@ pub struct RaptorpathConfig {
     pub interleave_depth: Option<u32>,
     /// Path to a pinned TLS certificate (DER or PEM) for server verification
     pub pin_cert: Option<String>,
-    /// FEC backend: "raptorq" (default) or "mettle"
+    /// FEC backend: "raptorq" (default), "rs", or "rlc"
     pub fec_backend: Option<String>,
     /// DEPRECATED (parsed, warned, ignored): mid-stream FEC backend
     /// auto-switching was removed (paper §16.4). A switch strands every
@@ -271,7 +271,6 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     };
 
     let fec_backend = match config.fec_backend.as_deref() {
-        Some("mettle") => FecBackend::Mettle,
         Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
         Some("rlc") => FecBackend::Rlc,
         // The streaming machine was RETIRED 2026-07-28 (DEPRECATION REGISTER:
@@ -282,10 +281,10 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
              was retired after the unified default held its historic tail crown cell-by-cell \
              (DEPRECATION REGISTER / ADR-0064; goal-gate \"Streaming Crown Re-Test\"). \
              Realtime rides the unified RLC span machine (default); RWM_UNIFIED=0 selects the \
-             legacy-RLC windowed machine. Available: raptorq, mettle, rs, rlc"
+             legacy-RLC windowed machine. Available: raptorq, rs, rlc"
         ),
         Some("raptorq") | None => FecBackend::RaptorQ,
-        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, mettle, rs, rlc"),
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, rs, rlc"),
     };
 
     let fec_backend_explicit = config.fec_backend.is_some();
@@ -526,7 +525,7 @@ mod tests {
             dns: Some("10.99.0.1".into()),
             interleave_depth: Some(3),
             pin_cert: None,
-            fec_backend: Some("mettle".into()),
+            fec_backend: Some("rs".into()),
             fec_switch_threshold_low: Some(0.01),
             fec_switch_threshold_high: Some(0.10),
             fec_switch_interval: Some(5),
@@ -548,7 +547,7 @@ mod tests {
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.server, Some(true));
         assert_eq!(parsed.tun_name.as_deref(), Some("rpath0"));
-        assert_eq!(parsed.fec_backend.as_deref(), Some("mettle"));
+        assert_eq!(parsed.fec_backend.as_deref(), Some("rs"));
         assert_eq!(parsed.fec_switch_threshold_low, Some(0.01));
         assert_eq!(parsed.fec_auto_switch, Some(true));
         assert_eq!(parsed.enable_pi_feedback, Some(false));

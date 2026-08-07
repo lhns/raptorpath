@@ -77,7 +77,6 @@ const BACKEND_COLORS = {
   'RaptorQ': '#2196F3',
   'ReedSolomon': '#4CAF50',
   'RLC': '#FF9800',
-  'Mettle': '#E91E63',
   'Streaming': '#9C27B0',
   'Retransmit': '#00BCD4'
 };

@@ -5,7 +5,7 @@
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::fec::{
-    EncodingParams, FecBackend, FecEncoder, MettleWindowDecoder, MettleWindowEncoder,
+    EncodingParams, FecBackend, FecEncoder,
     RlcWindowDecoder, RlcWindowEncoder,
     WindowDecoder, WindowEncoder, WireSymbol,
 };
@@ -152,7 +152,7 @@ fn block_recovery_rate_same_overhead(backend: FecBackend, scenario: &Scenario) -
     (successes as f64 / NUM_TRIALS as f64 * 100.0, repair_count)
 }
 
-/// Block recovery with full repair budget — METTLE gets max_repairs(), others get 25%.
+/// Block recovery with full repair budget — the budget backend (RS) sets max_repairs(), others get 25%.
 fn block_recovery_rate_full_budget(backend: FecBackend, scenario: &Scenario) -> (f64, u32) {
     let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
     let k = (data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
@@ -194,23 +194,23 @@ fn block_recovery_rate_full_budget(backend: FecBackend, scenario: &Scenario) -> 
 }
 
 // ---------------------------------------------------------------------------
-// Block-mode recovery — same bandwidth as METTLE (all backends get METTLE's max_repairs)
+// Block-mode recovery — same bandwidth for all backends (RS's max_repairs is the budget)
 // ---------------------------------------------------------------------------
 
-/// All backends get METTLE's max_repairs count, answering: "at equal bandwidth, does
-/// METTLE's Congested advantage persist?" Returns (recovery%, repair_count, overhead%).
+/// All backends get the same repair budget (RS's max_repairs), answering:
+/// "at equal bandwidth, which backend recovers most?" Returns (recovery%, repair_count, overhead%).
 fn block_recovery_rate_same_bandwidth(backend: FecBackend, scenario: &Scenario) -> (f64, u32, f64) {
     let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
     let k = (data.len() as f64 / SYMBOL_SIZE as f64).ceil() as u32;
     let base_repair = (k as f64 * 0.25).ceil() as u32;
 
-    // Determine METTLE's max_repairs for this k
-    let mettle_params = make_params(k, SYMBOL_SIZE, base_repair);
-    let mettle_encoder = FecBackend::Mettle.create_encoder(&data, mettle_params);
-    let mettle_max = mettle_encoder.max_repairs();
+    // Determine the budget backend's max_repairs for this k
+    let budget_params = make_params(k, SYMBOL_SIZE, base_repair);
+    let budget_encoder = FecBackend::ReedSolomon.create_encoder(&data, budget_params);
+    let budget_max = budget_encoder.max_repairs();
 
-    // All backends get the same repair count as METTLE
-    let repair_count = mettle_max;
+    // All backends get the same repair count
+    let repair_count = budget_max;
     let overhead = repair_count as f64 / k as f64 * 100.0;
 
     let mut successes = 0u64;
@@ -243,23 +243,23 @@ fn block_recovery_rate_same_bandwidth(backend: FecBackend, scenario: &Scenario) 
 }
 
 // ---------------------------------------------------------------------------
-// Cross-pipeline block — same bandwidth as METTLE
+// Cross-pipeline block — same bandwidth for all backends
 // ---------------------------------------------------------------------------
 
-/// Cross-pipeline version: all backends get METTLE's max_repairs per block.
+/// Cross-pipeline version: all backends get the same repair budget per block.
 fn cross_block_recovery_same_bandwidth(backend: FecBackend, scenario: &Scenario) -> (f64, u32, f64) {
     let num_symbols = 500usize;
     let block_size = 50usize;
     let num_blocks = (num_symbols + block_size - 1) / block_size;
 
-    // Determine METTLE's max_repairs for k=block_size
+    // Determine the budget backend's max_repairs for k=block_size
     let probe_data: Vec<u8> = vec![0u8; block_size * SYMBOL_SIZE as usize];
     let probe_k = block_size as u32;
     let probe_repair = (probe_k as f64 * 0.25).ceil() as u32;
     let probe_params = make_params(probe_k, SYMBOL_SIZE, probe_repair);
-    let probe_encoder = FecBackend::Mettle.create_encoder(&probe_data, probe_params);
-    let mettle_max = probe_encoder.max_repairs();
-    let overhead = mettle_max as f64 / probe_k as f64 * 100.0;
+    let probe_encoder = FecBackend::ReedSolomon.create_encoder(&probe_data, probe_params);
+    let budget_max = probe_encoder.max_repairs();
+    let overhead = budget_max as f64 / probe_k as f64 * 100.0;
 
     let mut total_blocks = 0u64;
     let mut successful_blocks = 0u64;
@@ -280,13 +280,13 @@ fn cross_block_recovery_same_bandwidth(backend: FecBackend, scenario: &Scenario)
             let params = EncodingParams {
                 source_symbols: k,
                 symbol_size: SYMBOL_SIZE,
-                repair_count: mettle_max,
+                repair_count: budget_max,
                 block_id: block_idx as u64,
             };
 
             let encoder = backend.create_encoder(&block_data, params);
             let source = encoder.source_symbols();
-            let repairs = encoder.repair_symbols(mettle_max);
+            let repairs = encoder.repair_symbols(budget_max);
 
             let mut rng = ChaCha8Rng::seed_from_u64(seed * 100 + block_idx as u64);
             let (surviving, _) = scenario.channel.apply(&source, &mut rng);
@@ -309,7 +309,7 @@ fn cross_block_recovery_same_bandwidth(backend: FecBackend, scenario: &Scenario)
         }
     }
 
-    (successful_blocks as f64 / total_blocks as f64 * 100.0, mettle_max, overhead)
+    (successful_blocks as f64 / total_blocks as f64 * 100.0, budget_max, overhead)
 }
 
 // ---------------------------------------------------------------------------
@@ -342,64 +342,6 @@ fn window_recovery_rlc(scenario: &Scenario) -> f64 {
         let (surviving, dropped) = scenario.channel.apply(&sources, &mut rng);
 
         let mut decoder = RlcWindowDecoder::new(SYMBOL_SIZE);
-        let mut recovered_seqs = BTreeSet::new();
-
-        for sym in &surviving {
-            for (seq, _) in decoder.add_symbol(sym) {
-                recovered_seqs.insert(seq);
-            }
-        }
-        for sym in &repairs {
-            for (seq, _) in decoder.add_symbol(sym) {
-                recovered_seqs.insert(seq);
-            }
-        }
-
-        let lost_seqs: BTreeSet<u64> = dropped.iter().map(|&i| i as u64).collect();
-        total_lost += lost_seqs.len();
-        total_recovered += lost_seqs
-            .iter()
-            .filter(|s| recovered_seqs.contains(s))
-            .count();
-    }
-
-    if total_lost == 0 {
-        100.0
-    } else {
-        total_recovered as f64 / total_lost as f64 * 100.0
-    }
-}
-
-fn window_recovery_mettle(scenario: &Scenario) -> f64 {
-    let num_symbols = 500usize;
-    let mut total_lost = 0usize;
-    let mut total_recovered = 0usize;
-
-    for seed in 0..NUM_TRIALS {
-        let mut encoder = MettleWindowEncoder::new(
-            mettle::MettleConfig::small_window(),
-            SYMBOL_SIZE,
-            seed,
-        );
-        let packet_data: Vec<Vec<u8>> = (0..num_symbols)
-            .map(|i| vec![(i % 256) as u8; 1000])
-            .collect();
-        let sources: Vec<WireSymbol> = packet_data
-            .iter()
-            .map(|pkt| encoder.add_source(pkt))
-            .collect();
-
-        let repair_count = (num_symbols as f64 * scenario.stationary_loss * 2.0)
-            .ceil() as usize;
-        let repair_count = repair_count.max(5);
-        let repairs: Vec<WireSymbol> = (0..repair_count)
-            .map(|_| encoder.generate_repair())
-            .collect();
-
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let (surviving, dropped) = scenario.channel.apply(&sources, &mut rng);
-
-        let mut decoder = MettleWindowDecoder::new(SYMBOL_SIZE);
         let mut recovered_seqs = BTreeSet::new();
 
         for sym in &surviving {
@@ -678,7 +620,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32)> = scenarios.iter().map(|s| block_recovery_rate_same_overhead(backend, s)).collect();
@@ -699,7 +640,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32)> = scenarios.iter().map(|s| block_recovery_rate_full_budget(backend, s)).collect();
@@ -710,8 +650,8 @@ fn fec_realworld_recovery_comparison() {
         );
     }
 
-    // Part 1c: Block-mode recovery — same bandwidth as METTLE
-    println!("\n=== Block-mode FEC Recovery — Same Bandwidth as METTLE (64KB, {} trials) ===", NUM_TRIALS);
+    // Part 1c: Block-mode recovery — same bandwidth budget for all backends
+    println!("\n=== Block-mode FEC Recovery — Same Bandwidth Budget (64KB, {} trials) ===", NUM_TRIALS);
     println!(
         "{:>16} {:>12} {:>12} {:>12} {:>12} {:>8} {:>10}",
         "", scenarios[0].name, scenarios[1].name, scenarios[2].name, scenarios[3].name, "repairs", "overhead"
@@ -720,7 +660,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32, f64)> = scenarios.iter().map(|s| block_recovery_rate_same_bandwidth(backend, s)).collect();
@@ -747,13 +686,6 @@ fn fec_realworld_recovery_comparison() {
             "RLC Window", rates[0], rates[1], rates[2], rates[3]
         );
     }
-    {
-        let rates: Vec<f64> = scenarios.iter().map(|s| window_recovery_mettle(s)).collect();
-        println!(
-            "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            "METTLE Window", rates[0], rates[1], rates[2], rates[3]
-        );
-    }
 
     // Part 3: Cross-pipeline comparison
     let cross_k = 50u32; // block size for cross-pipeline
@@ -768,7 +700,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32)> = scenarios
@@ -793,7 +724,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32)> = scenarios
@@ -807,7 +737,7 @@ fn fec_realworld_recovery_comparison() {
         );
     }
     println!(
-        "\n=== Cross-Pipeline Block — Same Bandwidth as METTLE (500 pkts, 50-pkt blocks, {} trials) ===",
+        "\n=== Cross-Pipeline Block — Same Bandwidth Budget (500 pkts, 50-pkt blocks, {} trials) ===",
         NUM_TRIALS
     );
     println!(
@@ -817,7 +747,6 @@ fn fec_realworld_recovery_comparison() {
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
         ("Reed-Solomon", FecBackend::ReedSolomon),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let results: Vec<(f64, u32, f64)> = scenarios
@@ -841,7 +770,6 @@ fn fec_realworld_recovery_comparison() {
     );
     for (name, backend) in [
         ("RaptorQ", FecBackend::RaptorQ),
-        ("METTLE", FecBackend::Mettle),
         ("RLC", FecBackend::Rlc),
     ] {
         let flat: Vec<(f64, u32)> = scenarios
@@ -868,13 +796,6 @@ fn fec_realworld_recovery_comparison() {
         println!(
             "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
             "RLC Window", rates[0], rates[1], rates[2], rates[3]
-        );
-    }
-    {
-        let rates: Vec<f64> = scenarios.iter().map(|s| window_recovery_mettle(s)).collect();
-        println!(
-            "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
-            "METTLE Window", rates[0], rates[1], rates[2], rates[3]
         );
     }
     println!();

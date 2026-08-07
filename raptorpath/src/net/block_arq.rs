@@ -20,7 +20,7 @@
 //!   blocks (byte-capped LRU) so fresh repairs can be minted post-hoc.
 //!   Rateless backends (RaptorQ, RLC) mint NEW repair symbols — any repair
 //!   fills any hole, strictly better than resending the lost symbol.
-//!   Fixed-rate backends (RS, METTLE) resend the exact missing symbols,
+//!   Fixed-rate backends (RS) resend the exact missing symbols,
 //!   which every backend accepts.
 //! - **Margin**: repairs per loss event = missing + fractional-accumulated
 //!   ε̂ margin (continuous, no per-event ceil). Repair batches re-enter the

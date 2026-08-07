@@ -145,8 +145,8 @@ fn backend_tag_mismatch_rejected() {
     let data = vec![42u8; 5000];
     let params = make_params(data.len(), 10);
 
-    // Encode with METTLE
-    let encoder = FecBackend::Mettle.create_encoder(&data, params);
+    // Encode with Reed-Solomon
+    let encoder = FecBackend::ReedSolomon.create_encoder(&data, params);
     let source = encoder.source_symbols();
 
     // Try to decode with RaptorQ — backend mismatch should reject symbols
@@ -156,137 +156,6 @@ fn backend_tag_mismatch_rejected() {
         // Mismatched backend symbols should be ignored (return None without decoding)
         assert!(result.is_none() || decoder.is_decoded());
     }
-}
-
-// ===== METTLE Backend Tests =====
-
-#[test]
-fn mettle_decode_no_loss() {
-    let data = vec![42u8; 5000];
-    let result = encode_decode(FecBackend::Mettle, &data, &[]).unwrap();
-    assert_eq!(result, data);
-}
-
-#[test]
-fn mettle_decode_with_source_loss() {
-    let data = vec![0xAB; 5000];
-    let result = encode_decode(FecBackend::Mettle, &data, &[0, 1, 2]).unwrap();
-    assert_eq!(result, data);
-}
-
-#[test]
-fn mettle_source_only_no_loss() {
-    let data = vec![0xCD; 3600];
-    let params = make_params(data.len(), 10);
-    let encoder = FecBackend::Mettle.create_encoder(&data, params);
-    let source = encoder.source_symbols();
-
-    let mut decoder = FecBackend::Mettle.create_decoder(params, data.len() as u64);
-    let mut result = None;
-    for sym in &source {
-        if let Some(r) = decoder.add_symbol(sym) {
-            result = Some(r);
-            break;
-        }
-    }
-
-    assert!(result.is_some());
-}
-
-#[test]
-fn mettle_large_block() {
-    let data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
-    // METTLE with small window needs more repair symbols for large blocks.
-    // Use a custom encode/decode with higher repair_count.
-    let repair_count = 40;
-    let params = make_params(data.len(), repair_count);
-    let encoder = FecBackend::Mettle.create_encoder(&data, params);
-
-    let source = encoder.source_symbols();
-    let repair = encoder.repair_symbols(repair_count);
-
-    let drop_indices: &[usize] = &[0, 5, 10, 15, 20];
-    let mut all: Vec<WireSymbol> = source;
-    all.extend(repair);
-
-    let transmitted: Vec<_> = all
-        .into_iter()
-        .enumerate()
-        .filter(|(i, _)| !drop_indices.contains(i))
-        .map(|(_, s)| s)
-        .collect();
-
-    let mut decoder = FecBackend::Mettle.create_decoder(params, data.len() as u64);
-    let mut result = None;
-    for sym in &transmitted {
-        if let Some(r) = decoder.add_symbol(sym) {
-            result = Some(r.to_vec());
-            break;
-        }
-    }
-
-    assert!(result.is_some(), "METTLE should decode large block with 40 repair symbols");
-    assert_eq!(result.unwrap(), data);
-}
-
-#[test]
-fn mettle_decode_only_repair_symbols() {
-    let data = vec![0xEF; 5000];
-    // METTLE peeling needs more repair symbols than RaptorQ when no source arrives,
-    // because peeling requires degree-1 bins to start the cascade.
-    let repair_count = 40;
-    let params = make_params(data.len(), repair_count);
-    let encoder = FecBackend::Mettle.create_encoder(&data, params);
-
-    let _source = encoder.source_symbols();
-    let repair = encoder.repair_symbols(repair_count);
-
-    let mut decoder = FecBackend::Mettle.create_decoder(params, data.len() as u64);
-    let mut result = None;
-    for sym in &repair {
-        if let Some(r) = decoder.add_symbol(sym) {
-            result = Some(r);
-            break;
-        }
-    }
-
-    assert!(result.is_some(), "Should decode from repair symbols alone");
-    assert_eq!(result.unwrap().to_vec(), data);
-}
-
-#[test]
-fn mettle_duplicate_symbols_ignored() {
-    let data = vec![0x11; 3600];
-    let params = make_params(data.len(), 5);
-    let encoder = FecBackend::Mettle.create_encoder(&data, params);
-    let source = encoder.source_symbols();
-
-    let mut decoder = FecBackend::Mettle.create_decoder(params, data.len() as u64);
-
-    let first = &source[0];
-    decoder.add_symbol(first);
-    decoder.add_symbol(first);
-
-    assert_eq!(decoder.total_fed(), 1, "Duplicate should not be counted");
-}
-
-#[test]
-fn mettle_small_block() {
-    let data = vec![1, 2, 3, 4, 5];
-    let result = encode_decode(FecBackend::Mettle, &data, &[]).unwrap();
-    assert_eq!(result, data);
-}
-
-#[test]
-fn mettle_decoder_created_at_is_recent() {
-    let params = EncodingParams {
-        source_symbols: 10,
-        symbol_size: 1200,
-        repair_count: 5,
-        block_id: 0,
-    };
-    let decoder = FecBackend::Mettle.create_decoder(params, 12000);
-    assert!(decoder.created_at().elapsed().as_secs() < 1);
 }
 
 // ===== Reed-Solomon Backend Tests =====

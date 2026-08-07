@@ -1,7 +1,7 @@
 //! Consolidated benchmark suite (ADR-0042, ADR-0045).
 //!
 //! Tables 1/1b (codec recovery sweep) and Table 2 (overhead breakdown) remain unchanged.
-//! Tables 3/4/5 replaced by unified matrix: 6 backends × 4 configs × 2 paths × 5 scenarios.
+//! Tables 3/4/5 replaced by unified matrix: 4 backends × 4 configs × 2 paths × 5 scenarios.
 //!
 //! Output: markdown + JSON files with git commit info.
 //! Run with: cargo test --test bench_suite -- --nocapture --release
@@ -9,14 +9,13 @@
 mod common;
 
 use common::*;
-use mettle::MettleConfig;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::control::estimator::LossEstimator;
 use raptorpath::control::fec_rate::{FecRateController, ProtocolHint};
 use raptorpath::fec::{
-    EncodingParams, FecBackend, FecDecoder, MettleWindowDecoder, MettleWindowEncoder,
+    EncodingParams, FecBackend, FecDecoder,
     RlcWindowDecoder, RlcWindowEncoder, WindowDecoder,
     WindowEncoder, WireSymbol,
 };
@@ -48,7 +47,6 @@ enum BackendChoice {
     RaptorQ,
     ReedSolomon,
     Rlc,
-    Mettle,
     // Streaming: RETIRED 2026-07-28 with the streaming machine (register).
     Retransmit,
 }
@@ -59,7 +57,6 @@ impl BackendChoice {
             Self::RaptorQ,
             Self::ReedSolomon,
             Self::Rlc,
-            Self::Mettle,
             Self::Retransmit,
         ]
     }
@@ -69,7 +66,6 @@ impl BackendChoice {
             Self::RaptorQ => "RaptorQ",
             Self::ReedSolomon => "ReedSolomon",
             Self::Rlc => "RLC",
-            Self::Mettle => "Mettle",
             Self::Retransmit => "Retransmit",
         }
     }
@@ -79,7 +75,7 @@ impl BackendChoice {
     }
 
     fn is_window(&self) -> bool {
-        matches!(self, Self::Rlc | Self::Mettle)
+        matches!(self, Self::Rlc)
     }
 
     fn is_retransmit(&self) -> bool {
@@ -91,7 +87,6 @@ impl BackendChoice {
             Self::RaptorQ => FecBackend::RaptorQ,
             Self::ReedSolomon => FecBackend::ReedSolomon,
             Self::Rlc => FecBackend::Rlc,
-            Self::Mettle => FecBackend::Mettle,
             Self::Retransmit => unreachable!("Retransmit has no FecBackend"),
         }
     }
@@ -104,11 +99,6 @@ impl BackendChoice {
     ) -> Box<dyn WindowEncoder> {
         match self {
             Self::Rlc => Box::new(RlcWindowEncoder::new(symbol_size)),
-            Self::Mettle => Box::new(MettleWindowEncoder::new(
-                MettleConfig::small_window(),
-                symbol_size,
-                42,
-            )),
             _ => unreachable!("{:?} is not a window backend", self),
         }
     }
@@ -121,7 +111,6 @@ impl BackendChoice {
     ) -> Box<dyn WindowDecoder> {
         match self {
             Self::Rlc => Box::new(RlcWindowDecoder::new(symbol_size)),
-            Self::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
             _ => unreachable!("{:?} is not a window backend", self),
         }
     }
@@ -470,7 +459,6 @@ fn fec_backend_name(b: FecBackend) -> &'static str {
         FecBackend::RaptorQ => "RaptorQ",
         FecBackend::ReedSolomon => "ReedSolomon",
         FecBackend::Rlc => "RLC",
-        FecBackend::Mettle => "Mettle",
     }
 }
 
@@ -689,13 +677,13 @@ fn run_loss_sweep_table(
 
     // Header
     text.push_str(&format!("| {:>6} ", "Loss %"));
-    for name in &["RaptorQ", "RS", "RLC-win", "Mettle-win"] {
+    for name in &["RaptorQ", "RS", "RLC-win"] {
         text.push_str(&format!("| {:>16} ", name));
     }
     text.push_str("|\n");
 
     text.push_str(&format!("|{:-<8}", ""));
-    for _ in 0..4 {
+    for _ in 0..3 {
         text.push_str(&format!("|{:-<18}", ""));
     }
     text.push_str("|\n");
@@ -722,7 +710,7 @@ fn run_loss_sweep_table(
         }
 
         // Window backends
-        for &kind in &[BackendChoice::Rlc, BackendChoice::Mettle] {
+        for &kind in &[BackendChoice::Rlc] {
             let mut stats = TrialStats::new();
             for trial in 0..NUM_TRIALS {
                 if use_ge {
@@ -988,7 +976,7 @@ fn run_matrix_trial(
 }
 
 // ---------------------------------------------------------------------------
-// Window backend trial (RLC, Mettle)
+// Window backend trial (RLC)
 // ---------------------------------------------------------------------------
 
 fn run_matrix_trial_window(

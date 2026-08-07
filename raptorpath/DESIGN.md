@@ -214,25 +214,9 @@ coding**:
   implementation exists (irtf-nwcrg/swif-codec, research prototype quality). Decoding is GF(2^8)
   Gaussian elimination — O(n³), but at raptorpath's window sizes (~50 symbols) this is fast.
   Steinwurf's RLNC benchmarks show 56 Gbps decode at K=16, 3.68 Gbps at K=500.
-- **METTLE (2026)**: SC-MET-LDGM code (Yu, Yang, Meng, Xu — Georgia Tech) that converts spatial
-  coupling into time coupling for streaming. The key innovation is a **pure peeling decoder** —
-  unlike RaptorQ, which falls back to Gaussian elimination when peeling stalls, METTLE's graph
-  structure ensures peeling almost always succeeds:
-  - Each source packet is XOR'd into l=4 bins via hash functions with binomial edge placement.
-  - **Touch-less Leading Edge (TLE)**: the first edge is deterministic — packet at position x
-    always connects to bin `(1+c)·x`. No two first-edges collide, guaranteeing a peeling start.
-  - Peeling cascade: 3-5 XOR operations per packet. Pure GF(2), no GF(2^8) multiplication.
-  - **2.6 μs/packet decode** vs RaptorQ's 124-220 μs (47-85x faster).
-  - Latency depends on window size w (paper uses w=600), **not block size k** — can use k=27,000
-    with the same decode speed. This decoupling is the core architectural insight.
-  - Overhead: 5.5% at 1% loss (competitive with RaptorQ's 6.14%), but 25% at 10% loss (worse
-    than RaptorQ's 15% — the peeling decoder's simplicity costs coding efficiency at high loss).
-  - **Caveat for raptorpath**: the paper optimized for w=600. Our windows are ~50 symbols —
-    whether the spatially-coupled cascade propagates reliably at small w is unknown.
-  - Patent filed covering scheme + implementation. No open-source code. Worth watching.
 - **Bogino sliding window fountain codes**: proof of concept only — no implementation exists.
 - **Realistic path**: implement sliding window RLC (the GF(2^8) math is straightforward) for our
-  small window sizes, or wait for METTLE to become available.
+  small window sizes.
 - **Largest architectural change** in the FEC pipeline: replaces the block assembly → RaptorQ
   encode → block decode pipeline with a continuous window encoder/decoder.
 - **Consider when**: latency requirements exceed what block-based proactive/reactive can deliver,
@@ -253,11 +237,6 @@ coding**:
 - **RFC 8681** — Roca et al., "Sliding Window Random Linear Code (RLC) FEC Schemes for
   FECFRAME," 2020. Standardized sliding window FEC; reference implementation at
   github.com/irtf-nwcrg/swif-codec.
-- **METTLE** — Yu, Yang, Meng, Xu (Georgia Tech), "Efficient Streaming Erasure Code with Peeling
-  Decodability," arxiv 2602.10020, Feb 2026. SC-MET-LDGM construction — first streaming code with
-  pure peeling decoder (no Gaussian elimination fallback). 2.6 μs/packet decode (47-85x faster
-  than streaming RaptorQ). Decouples latency from block size via window parameter w. Provisional
-  patent filed covering scheme and implementation; no open-source code.
 - **rQUIC** — Garrido et al., "rQUIC: Integrating FEC with QUIC for Robust Wireless
   Communications," 2019. Up to 60% latency reduction on WiFi with FEC in QUIC.
 - **DMTP** — IETF draft, multipath QUIC with deadline-aware streaming codes. Combines multipath
@@ -348,7 +327,6 @@ The `FecEncoder`/`FecDecoder` traits abstract the erasure code, and `FecBackend`
 the implementation at runtime. Currently supported backends:
 
 - **RaptorQ** (default) — RFC 6330 rateless fountain code.
-- **METTLE** — SC-MET-LDGM streaming code with pure peeling decoder (patent-encumbered).
 - **Reed-Solomon** — MDS erasure code with zero overhead.
 - **RLC** — RFC 8681 sliding window random linear code (block + window mode).
 - **Streaming** — Badr/Martinian delay-optimal two-layer code (ADR-0027).
@@ -369,8 +347,8 @@ For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-
   NACKs still reduce debt, so proactive overhead approaches zero at low loss. NACK handler
   retransmits exact source symbols (via `get_source()`) instead of random repairs.
 
-- [x] **Sliding window FEC (streaming codes)** — Implemented three window backends: RLC (ADR-0022),
-  METTLE window mode, and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
+- [x] **Sliding window FEC (streaming codes)** — Implemented window backends: RLC (ADR-0022)
+  and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
   layered construction (burst XOR + random GF(256)). Parameters derived from GE HMM estimator.
   *References: Badr et al. 2017, RFC 8681, ADR-0022, ADR-0027.*
 
@@ -409,9 +387,8 @@ production now derives the debt increment from the ADR-0050 controller — BOCD 
 `compute_repair_rate_capped()` — so benchmark numbers predating that change reflect the old
 heuristic.) See [ADR-0040](docs/adr/0040-benchmark-repair-alignment.md) for the repair alignment fix.
 
-**Multi-backend comparison** (ADR-0040): the benchmark tests three FEC backends across all scenarios:
+**Multi-backend comparison** (ADR-0040): the benchmark tests the FEC backends across all scenarios:
 - **RLC** (window mode) — GF(2^8) Gaussian elimination, ~0% coding overhead, O(k^3) decode
-- **METTLE** (window mode) — XOR peeling decoder, ~15% coding overhead, O(k) decode
 - **RaptorQ** (block mode) — fountain code, ~1% coding overhead, block-granularity delivery
 
 The meaningful comparison is in the latency and recovery columns: raptorpath trades bandwidth (higher

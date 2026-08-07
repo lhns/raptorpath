@@ -1,5 +1,5 @@
 [workspace]
-members = ["raptorpath", "raptorpath-math", "raptorpath-wasm", "mettle", "gf256"]
+members = ["raptorpath", "raptorpath-math", "raptorpath-wasm", "gf256"]
 resolver = "2"
 
 [profile.release]

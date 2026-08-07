@@ -12,7 +12,6 @@
 //! Evaluates loss estimates and selects the optimal FEC backend:
 //! - Low loss → RaptorQ (near-MDS, lowest overhead)
 //! - Moderate loss → RLC (rateless, good moderate-loss recovery)
-//! - High loss → Mettle (fast XOR decode, robust at high loss)
 //!
 //! Hysteresis prevents oscillation: minimum interval between switches
 //! and condition must persist for multiple consecutive evaluations.
@@ -34,7 +33,7 @@ pub struct BackendSelector {
     pending_backend: Option<FecBackend>,
     /// Below this loss rate → RaptorQ (block) or RLC (window)
     threshold_low: f64,
-    /// Above this loss rate → Mettle
+    /// Above this loss rate → RLC
     threshold_high: f64,
     /// Whether this is window mode (restricts to window-capable backends)
     window_mode: bool,
@@ -115,22 +114,16 @@ impl BackendSelector {
     fn select_block_backend(&self, loss: f64) -> FecBackend {
         if loss < self.threshold_low {
             FecBackend::RaptorQ
-        } else if loss < self.threshold_high {
-            FecBackend::Rlc
         } else {
-            FecBackend::Mettle
+            FecBackend::Rlc
         }
     }
 
-    /// Select best window-mode backend (only window-capable: RLC, Mettle).
+    /// Select best window-mode backend (only window-capable: RLC).
     /// (The burst-length → Streaming branch died with the streaming machine's
     /// retirement, 2026-07-28 — this module is reference-only anyway.)
-    fn select_window_backend(&self, loss: f64, _estimator: &LossEstimator) -> FecBackend {
-        if loss < self.threshold_low {
-            FecBackend::Rlc
-        } else {
-            FecBackend::Mettle
-        }
+    fn select_window_backend(&self, _loss: f64, _estimator: &LossEstimator) -> FecBackend {
+        FecBackend::Rlc
     }
 
     /// Get the current active backend.
@@ -185,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_high_loss_selects_mettle() {
+    fn test_high_loss_selects_rlc() {
         let mut sel = make_selector(false);
         let est = estimator_with_loss(0.15, 100); // 15% loss
         // First eval: debounce = 1
@@ -194,8 +187,8 @@ mod tests {
         assert!(sel.evaluate(&est).is_none());
         // Third eval: debounce = 3 → switch
         let result = sel.evaluate(&est);
-        assert_eq!(result, Some(FecBackend::Mettle));
-        assert_eq!(sel.current(), FecBackend::Mettle);
+        assert_eq!(result, Some(FecBackend::Rlc));
+        assert_eq!(sel.current(), FecBackend::Rlc);
     }
 
     #[test]
@@ -222,7 +215,7 @@ mod tests {
         // Now high again — debounce restarted, need 3 more
         assert!(sel.evaluate(&high).is_none()); // 1
         assert!(sel.evaluate(&high).is_none()); // 2
-        assert_eq!(sel.evaluate(&high), Some(FecBackend::Mettle)); // 3
+        assert_eq!(sel.evaluate(&high), Some(FecBackend::Rlc)); // 3
     }
 
     #[test]
@@ -246,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_configurable_thresholds() {
-        // Set thresholds so 5% loss goes to Mettle (high threshold = 0.03)
+        // Set thresholds so 5% loss lands in the high tier (high threshold = 0.03)
         let mut sel = BackendSelector::new(
             FecBackend::RaptorQ,
             None,
@@ -259,7 +252,7 @@ mod tests {
         let est = estimator_with_loss(0.05, 100);
         sel.evaluate(&est);
         sel.evaluate(&est);
-        assert_eq!(sel.evaluate(&est), Some(FecBackend::Mettle));
+        assert_eq!(sel.evaluate(&est), Some(FecBackend::Rlc));
     }
 
     #[test]
@@ -274,9 +267,11 @@ mod tests {
     }
 
     #[test]
-    fn test_window_mode_high_loss_selects_mettle() {
+    fn test_window_mode_high_loss_selects_rlc() {
+        // Start away from RLC so the high-loss tier's resolution to RLC is
+        // observable as an actual switch (desired == current returns None).
         let mut sel = BackendSelector::new(
-            FecBackend::Rlc,
+            FecBackend::RaptorQ,
             None,
             ProtocolHint::Auto,
             0.01,
@@ -288,6 +283,7 @@ mod tests {
         sel.evaluate(&est);
         sel.evaluate(&est);
         let result = sel.evaluate(&est);
-        assert_eq!(result, Some(FecBackend::Mettle));
+        assert_eq!(result, Some(FecBackend::Rlc));
+        assert_eq!(sel.current(), FecBackend::Rlc);
     }
 }

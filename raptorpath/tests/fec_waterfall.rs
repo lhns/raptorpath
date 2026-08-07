@@ -33,7 +33,6 @@ fn trial(
     let num_repair = ((num_source as f64) * overhead_pct / 100.0).ceil() as u32;
     // Generate enough repair for all backends
     let actual_repair = match backend {
-        FecBackend::Mettle => num_repair.max(num_source),
         FecBackend::RaptorQ => num_repair.max(num_source),
         FecBackend::ReedSolomon => num_repair.max(num_source),
         FecBackend::Rlc => num_repair.max(num_source),
@@ -93,7 +92,6 @@ struct BackendResult {
 fn all_backends() -> Vec<(&'static str, FecBackend)> {
     vec![
         ("raptorq", FecBackend::RaptorQ),
-        ("mettle", FecBackend::Mettle),
         ("rs", FecBackend::ReedSolomon),
         ("rlc", FecBackend::Rlc),
     ]

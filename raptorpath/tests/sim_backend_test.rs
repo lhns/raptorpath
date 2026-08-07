@@ -36,7 +36,7 @@ fn feed_bursty_loss(est: &mut LossEstimator) {
 
 #[test]
 fn test_switch_low_to_high_loss() {
-    // Start at low loss → RaptorQ. Switch to high loss → should switch to Mettle after debounce.
+    // Start at low loss → RaptorQ. Switch to high loss → should switch to RLC after debounce.
     let mut selector = BackendSelector::new(
         FecBackend::RaptorQ,
         None,  // forced
@@ -55,19 +55,19 @@ fn test_switch_low_to_high_loss() {
     }
     assert_eq!(selector.current(), FecBackend::RaptorQ);
 
-    // High loss: 15% → should switch to Mettle after 3 debounce evals
+    // High loss: 15% → should switch to RLC after 3 debounce evals
     let est_high = estimator_at_loss(0.15);
     let mut switched = false;
     for i in 0..5 {
         if let Some(new_backend) = selector.evaluate(&est_high) {
-            assert_eq!(new_backend, FecBackend::Mettle);
+            assert_eq!(new_backend, FecBackend::Rlc);
             assert!(i >= 2, "should take at least 3 evals to switch (debounce)");
             switched = true;
             break;
         }
     }
-    assert!(switched, "should have switched to Mettle at high loss");
-    assert_eq!(selector.current(), FecBackend::Mettle);
+    assert!(switched, "should have switched to RLC at high loss");
+    assert_eq!(selector.current(), FecBackend::Rlc);
 }
 
 #[test]
@@ -139,10 +139,11 @@ fn test_switch_with_sim_channel() {
 }
 
 #[test]
-fn test_window_burst_high_loss_switches_backend() {
-    // Window mode: bursty high loss → BackendSelector switches away from RLC.
+fn test_window_burst_high_loss_stays_rlc() {
+    // Window mode: bursty high loss → BackendSelector stays on RLC.
     // (Before the streaming machine's retirement (2026-07-28) the GE burst
-    // branch could pick Streaming; the surviving high-loss target is Mettle.)
+    // branch could pick Streaming; the surviving window-mode target at every
+    // loss tier is RLC, so the invariant is stability: no spurious switch.)
     let mut selector = BackendSelector::new(
         FecBackend::Rlc,
         None,
@@ -157,22 +158,16 @@ fn test_window_burst_high_loss_switches_backend() {
     // Feed bursty loss to trigger GE burst detection
     feed_bursty_loss(&mut est);
 
-    // Evaluate repeatedly until switch (debounce=3)
-    let mut final_backend = selector.current();
+    // Evaluate repeatedly: desired backend equals current, so no switch may
+    // ever fire and the selector must remain pinned to RLC.
     for _ in 0..10 {
-        if let Some(new) = selector.evaluate(&est) {
-            final_backend = new;
-            break;
-        }
+        assert_eq!(
+            selector.evaluate(&est),
+            None,
+            "no switch may fire when RLC is already selected"
+        );
     }
-
-    // With high loss + burst, should have switched away from RLC
-    // (the selector's surviving window-mode high-loss target is Mettle)
-    assert_ne!(
-        final_backend,
-        FecBackend::Rlc,
-        "should switch away from RLC under high bursty loss"
-    );
+    assert_eq!(selector.current(), FecBackend::Rlc);
 }
 
 #[test]

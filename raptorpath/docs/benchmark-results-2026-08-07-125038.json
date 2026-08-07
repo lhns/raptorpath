@@ -1,0 +1,7287 @@
+{
+  "commit_hash": "dc4fb78",
+  "commit_message": "Receiver Per-Message Wall: RESULTS + verdicts (both seeds) — c1 est +62/+63% and eb+est 446-505 (wall 22-23k -> 46-62k msgs/s), NO FLIP on the c7 anchor-interaction clause; paper 16.35 + 17.9 c1 row; suites green",
+  "timestamp": "2026-08-07-125038",
+  "parameters": {
+    "symbol_size": 1200,
+    "num_symbols": 2000,
+    "batch_size": 10,
+    "num_trials": 30,
+    "fec_overhead": 0.12,
+    "block_size": 200
+  },
+  "table1_uniform": [
+    {
+      "loss_pct": 1.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 1.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 1.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 99.99,
+        "stddev": 0.05477225575051608,
+        "ci95": 0.01959999999999981
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 99.965,
+        "stddev": 0.10997648651510214,
+        "ci95": 0.03935458027352965
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 82.0,
+        "stddev": 10.635010497214475,
+        "ci95": 3.8056896304373526
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 82.33333333333333,
+        "stddev": 10.400044208570936,
+        "ci95": 3.7216080238957057
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 98.91499999999998,
+        "stddev": 2.08905811147116,
+        "ci95": 0.7475598443733722
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 11.0,
+        "stddev": 10.618786215460558,
+        "ci95": 3.7998838457746715
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 11.0,
+        "stddev": 10.618786215460558,
+        "ci95": 3.7998838457746715
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 80.67666666666666,
+        "stddev": 1.3685968987486279,
+        "ci95": 0.48974611046980837
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 75.1116666666667,
+        "stddev": 1.0123107173717663,
+        "ci95": 0.3622507378710521
+      }
+    }
+  ],
+  "table1b_bursty": [
+    {
+      "loss_pct": 1.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 1.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 1.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 2.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 100.0,
+        "stddev": 0.0,
+        "ci95": 0.0
+      }
+    },
+    {
+      "loss_pct": 5.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 99.95166666666667,
+        "stddev": 0.11852784725418991,
+        "ci95": 0.04241464541398243
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 99.66666666666667,
+        "stddev": 1.8257418583505538,
+        "ci95": 0.6533333333333333
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 99.66666666666667,
+        "stddev": 1.8257418583505538,
+        "ci95": 0.6533333333333333
+      }
+    },
+    {
+      "loss_pct": 8.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 99.88833333333334,
+        "stddev": 0.22387008753282264,
+        "ci95": 0.08011088196969024
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 98.66666666666667,
+        "stddev": 3.457459036417605,
+        "ci95": 1.2372358265187187
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 98.66666666666667,
+        "stddev": 3.457459036417605,
+        "ci95": 1.2372358265187187
+      }
+    },
+    {
+      "loss_pct": 10.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 99.77166666666666,
+        "stddev": 0.38745040468678504,
+        "ci95": 0.1386473466868189
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 69.33333333333333,
+        "stddev": 17.603552410558056,
+        "ci95": 6.299350328358232
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 69.33333333333333,
+        "stddev": 17.603552410558056,
+        "ci95": 6.299350328358232
+      }
+    },
+    {
+      "loss_pct": 15.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 95.64833333333333,
+        "stddev": 5.47989245007307,
+        "ci95": 1.9609543289700848
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 23.333333333333332,
+        "stddev": 15.829551877538359,
+        "ci95": 5.664532390503663
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 23.333333333333332,
+        "stddev": 15.829551877538359,
+        "ci95": 5.664532390503663
+      }
+    },
+    {
+      "loss_pct": 20.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 81.09333333333333,
+        "stddev": 2.41888166427114,
+        "ci95": 0.8655856869518684
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "RaptorQ",
+      "recovery": {
+        "mean": 2.6666666666666665,
+        "stddev": 5.208304597621877,
+        "ci95": 1.8637678641239082
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "ReedSolomon",
+      "recovery": {
+        "mean": 2.6666666666666665,
+        "stddev": 5.208304597621877,
+        "ci95": 1.8637678641239082
+      }
+    },
+    {
+      "loss_pct": 25.0,
+      "backend": "RLC",
+      "recovery": {
+        "mean": 75.24666666666668,
+        "stddev": 1.5879358393477505,
+        "ci95": 0.5682355423333528
+      }
+    }
+  ],
+  "table2_overhead": [
+    {
+      "layer": "1. FEC repair symbols",
+      "values": {
+        "Congested (12%)": 20.0,
+        "DC (0.1%)": 0.8500000000000001,
+        "WiFi (2.5%)": 14.05
+      }
+    },
+    {
+      "layer": "2. Symbol padding",
+      "values": {
+        "Congested (12%)": 0.0,
+        "DC (0.1%)": 0.0,
+        "WiFi (2.5%)": 0.0
+      }
+    },
+    {
+      "layer": "3. Per-symbol metadata",
+      "values": {
+        "Congested (12%)": 2.5,
+        "DC (0.1%)": 2.100435498264282,
+        "WiFi (2.5%)": 2.3754494603541167
+      }
+    },
+    {
+      "layer": "4. Batch/wire header",
+      "values": {
+        "Congested (12%)": 0.32,
+        "DC (0.1%)": 0.2693333333333333,
+        "WiFi (2.5%)": 0.30533333333333335
+      }
+    },
+    {
+      "layer": "5. Repair metadata",
+      "values": {
+        "Congested (12%)": 0.23333333333333336,
+        "DC (0.1%)": 0.009916666666666666,
+        "WiFi (2.5%)": 0.16391666666666665
+      }
+    },
+    {
+      "layer": "Total",
+      "values": {
+        "Congested (12%)": 23.053333333333335,
+        "DC (0.1%)": 3.229685498264282,
+        "WiFi (2.5%)": 16.894699460354115
+      }
+    }
+  ],
+  "matrix": [
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.1850842557249043,
+          "stddev": 0.25664164312614823,
+          "ci95": 0.0918380325284496
+        },
+        "in_order_rate": {
+          "mean": 99.91905259433089,
+          "stddev": 0.06571033626992362,
+          "ci95": 0.023514141845040866
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.825741858350554,
+          "ci95": 0.6533333333333334
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.1850842557249043,
+          "stddev": 0.25664164312614823,
+          "ci95": 0.0918380325284496
+        },
+        "in_order_rate": {
+          "mean": 99.91905259433089,
+          "stddev": 0.06571033626992362,
+          "ci95": 0.023514141845040866
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.825741858350554,
+          "ci95": 0.6533333333333334
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.08789633249191584,
+          "stddev": 0.06442826888111292,
+          "ci95": 0.0230553599220332
+        },
+        "in_order_rate": {
+          "mean": 99.91269864391776,
+          "stddev": 0.06355240740576767,
+          "ci95": 0.02274193691833292
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.1850842557249043,
+          "stddev": 0.25664164312614823,
+          "ci95": 0.0918380325284496
+        },
+        "in_order_rate": {
+          "mean": 99.91905259433089,
+          "stddev": 0.06571033626992362,
+          "ci95": 0.023514141845040866
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.825741858350554,
+          "ci95": 0.6533333333333334
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 3.601666666666666,
+          "stddev": 0.45037978864841205,
+          "ci95": 0.16116633752893436
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 72.03333333333333,
+          "stddev": 9.007595772968246,
+          "ci95": 3.2233267505786887
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.081128312726385,
+          "stddev": 0.8174004554998945,
+          "ci95": 0.2925029964216294
+        },
+        "in_order_rate": {
+          "mean": 93.45614850903561,
+          "stddev": 0.5968294166076759,
+          "ci95": 0.2135726638463327
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 12.5,
+          "stddev": 0.5085476277156078,
+          "ci95": 0.18198143141351084
+        },
+        "p99_latency_ms": {
+          "mean": 263.3,
+          "stddev": 28.694767034642638,
+          "ci95": 10.268290508989873
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.288930268587645,
+          "stddev": 0.817250364253794,
+          "ci95": 0.2924492869589962
+        },
+        "in_order_rate": {
+          "mean": 97.01574240402887,
+          "stddev": 0.2991018743746259,
+          "ci95": 0.1070322311435452
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.2,
+          "stddev": 0.4068381021724863,
+          "ci95": 0.1455851451308087
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.662664127463368,
+          "stddev": 0.9347726162573874,
+          "ci95": 0.33450408473403037
+        },
+        "in_order_rate": {
+          "mean": 96.7354607404104,
+          "stddev": 0.8610627988643302,
+          "ci95": 0.3081273653327979
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.14764472580351307,
+          "stddev": 0.0011268694103233774,
+          "ci95": 0.00040324503965915036
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.662664127463368,
+          "stddev": 0.9347726162573874,
+          "ci95": 0.33450408473403037
+        },
+        "in_order_rate": {
+          "mean": 96.7354607404104,
+          "stddev": 0.8610627988643302,
+          "ci95": 0.3081273653327979
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.14764472580351307,
+          "stddev": 0.0011268694103233774,
+          "ci95": 0.00040324503965915036
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.42498747852156,
+          "stddev": 0.8354371028382053,
+          "ci95": 0.2989573277794822
+        },
+        "in_order_rate": {
+          "mean": 96.84775412517702,
+          "stddev": 0.8074623998951214,
+          "ci95": 0.2889467088964125
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 34.2,
+          "stddev": 2.657455355319678,
+          "ci95": 0.9509581858653761
+        },
+        "p99_latency_ms": {
+          "mean": 981.5333333333333,
+          "stddev": 156.11903799020962,
+          "ci95": 55.866480258652615
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.14764472580351307,
+          "stddev": 0.0011268694103233774,
+          "ci95": 0.00040324503965915036
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.662664127463368,
+          "stddev": 0.9347726162573874,
+          "ci95": 0.33450408473403037
+        },
+        "in_order_rate": {
+          "mean": 96.7354607404104,
+          "stddev": 0.8610627988643302,
+          "ci95": 0.3081273653327979
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.14764472580351307,
+          "stddev": 0.0011268694103233774,
+          "ci95": 0.00040324503965915036
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.42373472481442004,
+          "stddev": 0.2419026470750858,
+          "ci95": 0.08656375052851391
+        },
+        "in_order_rate": {
+          "mean": 99.90603709395037,
+          "stddev": 0.09267649241007513,
+          "ci95": 0.033163856889723585
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.1476245426455674,
+          "stddev": 0.0011332789781545347,
+          "ci95": 0.00040553867405067345
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.42373472481442004,
+          "stddev": 0.2419026470750858,
+          "ci95": 0.08656375052851391
+        },
+        "in_order_rate": {
+          "mean": 99.90603709395037,
+          "stddev": 0.09267649241007513,
+          "ci95": 0.033163856889723585
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.1476245426455674,
+          "stddev": 0.0011332789781545347,
+          "ci95": 0.00040553867405067345
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3082252190445894,
+          "stddev": 0.16995696129469326,
+          "ci95": 0.06081831751734214
+        },
+        "in_order_rate": {
+          "mean": 99.52650761945985,
+          "stddev": 0.17500171661347552,
+          "ci95": 0.06262356002366706
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.183333333333334,
+          "stddev": 0.3824452481285287,
+          "ci95": 0.13685627441496165
+        },
+        "p99_latency_ms": {
+          "mean": 34.7,
+          "stddev": 1.4419813954512681,
+          "ci95": 0.5160064153570721
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.1476245426455674,
+          "stddev": 0.0011332789781545347,
+          "ci95": 0.00040553867405067345
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.42373472481442004,
+          "stddev": 0.2419026470750858,
+          "ci95": 0.08656375052851391
+        },
+        "in_order_rate": {
+          "mean": 99.90603709395037,
+          "stddev": 0.09267649241007513,
+          "ci95": 0.033163856889723585
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.1476245426455674,
+          "stddev": 0.0011332789781545347,
+          "ci95": 0.00040553867405067345
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 4.242637176856719,
+          "stddev": 0.768245567708621,
+          "ci95": 0.2749131457297511
+        },
+        "in_order_rate": {
+          "mean": 41.79849226149363,
+          "stddev": 1.2513900331316496,
+          "ci95": 0.4478041722637832
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.3,
+          "stddev": 0.4660915996993989,
+          "ci95": 0.1667887369057655
+        },
+        "p95_latency_ms": {
+          "mean": 181.7,
+          "stddev": 18.749068942400754,
+          "ci95": 6.709268154755315
+        },
+        "p99_latency_ms": {
+          "mean": 273.8666666666667,
+          "stddev": 7.9902239118137075,
+          "ci95": 2.8592649056647907
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.404745170563624,
+          "stddev": 0.16148852532146196,
+          "ci95": 0.05778792662324849
+        },
+        "in_order_rate": {
+          "mean": 50.54759398768678,
+          "stddev": 1.183845450647848,
+          "ci95": 0.42363365384086754
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 103.7,
+          "stddev": 0.4660915996993989,
+          "ci95": 0.1667887369057655
+        },
+        "p95_latency_ms": {
+          "mean": 109.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 116.06666666666666,
+          "stddev": 12.492572505936955,
+          "ci95": 4.4704096583434
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC+LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09903128608148629,
+          "stddev": 0.1470610054555138,
+          "ci95": 0.05262510494468513
+        },
+        "in_order_rate": {
+          "mean": 99.931048414216,
+          "stddev": 0.06842623309541444,
+          "ci95": 0.024486013042423826
+        },
+        "overhead_pct": {
+          "mean": 10.915000000000001,
+          "stddev": 0.6633444520526011,
+          "ci95": 0.23737476359294096
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 218.3,
+          "stddev": 13.26688904105202,
+          "ci95": 4.747495271858818
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC+LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09903128608148629,
+          "stddev": 0.1470610054555138,
+          "ci95": 0.05262510494468513
+        },
+        "in_order_rate": {
+          "mean": 99.931048414216,
+          "stddev": 0.06842623309541444,
+          "ci95": 0.024486013042423826
+        },
+        "overhead_pct": {
+          "mean": 10.915000000000001,
+          "stddev": 0.6633444520526011,
+          "ci95": 0.23737476359294096
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 218.3,
+          "stddev": 13.26688904105202,
+          "ci95": 4.747495271858818
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC+LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.07494071163673467,
+          "stddev": 0.07169940191138952,
+          "ci95": 0.02565730146051141
+        },
+        "in_order_rate": {
+          "mean": 99.93112963228582,
+          "stddev": 0.06582487820722951,
+          "ci95": 0.023555130150898152
+        },
+        "overhead_pct": {
+          "mean": 10.915000000000001,
+          "stddev": 0.6633444520526011,
+          "ci95": 0.23737476359294096
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 218.3,
+          "stddev": 13.26688904105202,
+          "ci95": 4.747495271858818
+        }
+      }
+    },
+    {
+      "backend": "RaptorQ",
+      "scenario": "DC+LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09903128608148629,
+          "stddev": 0.1470610054555138,
+          "ci95": 0.05262510494468513
+        },
+        "in_order_rate": {
+          "mean": 99.931048414216,
+          "stddev": 0.06842623309541444,
+          "ci95": 0.024486013042423826
+        },
+        "overhead_pct": {
+          "mean": 10.915000000000001,
+          "stddev": 0.6633444520526011,
+          "ci95": 0.23737476359294096
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 218.3,
+          "stddev": 13.26688904105202,
+          "ci95": 4.747495271858818
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.2245269357677992,
+          "stddev": 0.30647006226323026,
+          "ci95": 0.10966890331703485
+        },
+        "in_order_rate": {
+          "mean": 99.91711331143003,
+          "stddev": 0.07121212980928653,
+          "ci95": 0.0254829333781611
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.2245269357677992,
+          "stddev": 0.30647006226323026,
+          "ci95": 0.10966890331703485
+        },
+        "in_order_rate": {
+          "mean": 99.91711331143003,
+          "stddev": 0.07121212980928653,
+          "ci95": 0.0254829333781611
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09263032259779021,
+          "stddev": 0.0692950552415658,
+          "ci95": 0.024796917054523162
+        },
+        "in_order_rate": {
+          "mean": 99.90757005617189,
+          "stddev": 0.06916260833124634,
+          "ci95": 0.02474952153635999
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.2245269357677992,
+          "stddev": 0.30647006226323026,
+          "ci95": 0.10966890331703485
+        },
+        "in_order_rate": {
+          "mean": 99.91711331143003,
+          "stddev": 0.07121212980928653,
+          "ci95": 0.0254829333781611
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 2.7583333333333337,
+          "stddev": 0.31019552602804595,
+          "ci95": 0.11100204340392456
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 55.166666666666664,
+          "stddev": 6.2039105205609175,
+          "ci95": 2.2200408680784904
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.081128312726385,
+          "stddev": 0.8174004554998945,
+          "ci95": 0.2925029964216294
+        },
+        "in_order_rate": {
+          "mean": 93.45614850903561,
+          "stddev": 0.5968294166076759,
+          "ci95": 0.2135726638463327
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 12.5,
+          "stddev": 0.5085476277156078,
+          "ci95": 0.18198143141351084
+        },
+        "p99_latency_ms": {
+          "mean": 263.3,
+          "stddev": 28.694767034642638,
+          "ci95": 10.268290508989873
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 19.817157165427396,
+          "stddev": 1.1178853058319704,
+          "ci95": 0.400030119155718
+        },
+        "in_order_rate": {
+          "mean": 97.19616631382233,
+          "stddev": 0.5283487425458795,
+          "ci95": 0.18906716935428688
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 13.333333333333334,
+          "stddev": 2.3973165074269205,
+          "ci95": 0.8578686946835207
+        },
+        "p99_latency_ms": {
+          "mean": 274.53333333333336,
+          "stddev": 29.902984896948436,
+          "ci95": 10.700645718332703
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311484171587113,
+          "stddev": 0.0010877965138388873,
+          "ci95": 0.0003892629832219589
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.288725969191434,
+          "stddev": 0.8171157220156039,
+          "ci95": 0.29240110585284373
+        },
+        "in_order_rate": {
+          "mean": 97.01580004922269,
+          "stddev": 0.2990764039326524,
+          "ci95": 0.10702311666294112
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.2,
+          "stddev": 0.4068381021724863,
+          "ci95": 0.1455851451308087
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.371233419573919,
+          "stddev": 0.931146990765078,
+          "ci95": 0.333206671314124
+        },
+        "in_order_rate": {
+          "mean": 99.92017359782271,
+          "stddev": 0.07750196873230496,
+          "ci95": 0.027733723330152414
+        },
+        "overhead_pct": {
+          "mean": 11.963333333333333,
+          "stddev": 0.052413036897146686,
+          "ci95": 0.018755764375732977
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.233333333333333,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45311198186849205,
+          "stddev": 0.0010860039295105155,
+          "ci95": 0.00038862151515834433
+        },
+        "total_repair_count": {
+          "mean": 239.26666666666668,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.654561462535541,
+          "stddev": 0.9416248106829656,
+          "ci95": 0.3369561110181599
+        },
+        "in_order_rate": {
+          "mean": 96.74297949483362,
+          "stddev": 0.8664677226836603,
+          "ci95": 0.3100614924817947
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1476528725687946,
+          "stddev": 0.001124955357940058,
+          "ci95": 0.0004025601048103112
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.654561462535541,
+          "stddev": 0.9416248106829656,
+          "ci95": 0.3369561110181599
+        },
+        "in_order_rate": {
+          "mean": 96.74297949483362,
+          "stddev": 0.8664677226836603,
+          "ci95": 0.3100614924817947
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1476528725687946,
+          "stddev": 0.001124955357940058,
+          "ci95": 0.0004025601048103112
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.4175706870821445,
+          "stddev": 0.8414703277002503,
+          "ci95": 0.30111628956909164
+        },
+        "in_order_rate": {
+          "mean": 96.85468520310013,
+          "stddev": 0.8127580759703966,
+          "ci95": 0.290841742242276
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 34.2,
+          "stddev": 2.657455355319678,
+          "ci95": 0.9509581858653761
+        },
+        "p99_latency_ms": {
+          "mean": 980.7666666666667,
+          "stddev": 156.3609183319451,
+          "ci95": 55.95303602731786
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1476528725687946,
+          "stddev": 0.001124955357940058,
+          "ci95": 0.0004025601048103112
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.654561462535541,
+          "stddev": 0.9416248106829656,
+          "ci95": 0.3369561110181599
+        },
+        "in_order_rate": {
+          "mean": 96.74297949483362,
+          "stddev": 0.8664677226836603,
+          "ci95": 0.3100614924817947
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 41.96666666666667,
+          "stddev": 31.054438666952905,
+          "ci95": 11.112688158119834
+        },
+        "p99_latency_ms": {
+          "mean": 1007.4166666666666,
+          "stddev": 162.65735528983944,
+          "ci95": 58.20618705576652
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1476528725687946,
+          "stddev": 0.001124955357940058,
+          "ci95": 0.0004025601048103112
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.4181637010707169,
+          "stddev": 0.24852557186259217,
+          "ci95": 0.08893373372632844
+        },
+        "in_order_rate": {
+          "mean": 99.90603542059657,
+          "stddev": 0.09267567310255487,
+          "ci95": 0.033163563704292805
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.14763389289536136,
+          "stddev": 0.001131029887988831,
+          "ci95": 0.0004047338474711624
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.4181637010707169,
+          "stddev": 0.24852557186259217,
+          "ci95": 0.08893373372632844
+        },
+        "in_order_rate": {
+          "mean": 99.90603542059657,
+          "stddev": 0.09267567310255487,
+          "ci95": 0.033163563704292805
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.14763389289536136,
+          "stddev": 0.001131029887988831,
+          "ci95": 0.0004047338474711624
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.30447045162300357,
+          "stddev": 0.17433510473467642,
+          "ci95": 0.0623850160264292
+        },
+        "in_order_rate": {
+          "mean": 99.52988821315326,
+          "stddev": 0.175350292945571,
+          "ci95": 0.06274829646213312
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.183333333333334,
+          "stddev": 0.3824452481285287,
+          "ci95": 0.13685627441496165
+        },
+        "p99_latency_ms": {
+          "mean": 34.7,
+          "stddev": 1.4419813954512681,
+          "ci95": 0.5160064153570721
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.14763389289536136,
+          "stddev": 0.001131029887988831,
+          "ci95": 0.0004047338474711624
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.4181637010707169,
+          "stddev": 0.24852557186259217,
+          "ci95": 0.08893373372632844
+        },
+        "in_order_rate": {
+          "mean": 99.90603542059657,
+          "stddev": 0.09267567310255487,
+          "ci95": 0.033163563704292805
+        },
+        "overhead_pct": {
+          "mean": 11.998333333333333,
+          "stddev": 0.009128709291752898,
+          "ci95": 0.003266666666666713
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.616666666666667,
+          "stddev": 0.5521639769771879,
+          "ci95": 0.1975893415463504
+        },
+        "p99_latency_ms": {
+          "mean": 35.95,
+          "stddev": 2.077589783943121,
+          "ci95": 0.7434559560731822
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.4666666666666667,
+          "stddev": 0.8603661343041522,
+          "ci95": 0.3078780671216436
+        },
+        "throughput_mbps": {
+          "mean": 0.14763389289536136,
+          "stddev": 0.001131029887988831,
+          "ci95": 0.0004047338474711624
+        },
+        "total_repair_count": {
+          "mean": 239.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 4.242637176856719,
+          "stddev": 0.768245567708621,
+          "ci95": 0.2749131457297511
+        },
+        "in_order_rate": {
+          "mean": 41.80075983518977,
+          "stddev": 1.252542974072852,
+          "ci95": 0.4482167468809488
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.3,
+          "stddev": 0.4660915996993989,
+          "ci95": 0.1667887369057655
+        },
+        "p95_latency_ms": {
+          "mean": 181.7,
+          "stddev": 18.749068942400754,
+          "ci95": 6.709268154755315
+        },
+        "p99_latency_ms": {
+          "mean": 273.8666666666667,
+          "stddev": 7.9902239118137075,
+          "ci95": 2.8592649056647907
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 9.035791620008364,
+          "stddev": 1.9470347056402648,
+          "ci95": 0.6967374213027413
+        },
+        "in_order_rate": {
+          "mean": 86.50227502748766,
+          "stddev": 2.8541750662252334,
+          "ci95": 1.021353430335703
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 109.6,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 241.16666666666666,
+          "stddev": 12.801086519977671,
+          "ci95": 4.58080998041049
+        },
+        "p99_latency_ms": {
+          "mean": 286.96666666666664,
+          "stddev": 6.413796193300454,
+          "ci95": 2.2951474914834633
+        },
+        "recovery_rate": {
+          "mean": 97.41333333333334,
+          "stddev": 1.2439462604351441,
+          "ci95": 0.445140452414156
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7542166288697033,
+          "stddev": 0.009645472900410323,
+          "ci95": 0.00345158814910155
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.40470654726948624,
+          "stddev": 0.161442781507705,
+          "ci95": 0.057771557409723305
+        },
+        "in_order_rate": {
+          "mean": 50.550795331133784,
+          "stddev": 1.185562702425576,
+          "ci95": 0.4242481644974448
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 103.7,
+          "stddev": 0.4660915996993989,
+          "ci95": 0.1667887369057655
+        },
+        "p95_latency_ms": {
+          "mean": 109.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 116.06666666666666,
+          "stddev": 12.492572505936955,
+          "ci95": 4.4704096583434
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3515528885353653,
+          "stddev": 0.1449536909986602,
+          "ci95": 0.0518710121510185
+        },
+        "in_order_rate": {
+          "mean": 99.32088485060282,
+          "stddev": 0.18618602714478197,
+          "ci95": 0.06662581414685129
+        },
+        "overhead_pct": {
+          "mean": 12.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 106.93333333333334,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p95_latency_ms": {
+          "mean": 110.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 114.4,
+          "stddev": 5.468404545739284,
+          "ci95": 1.9568434351999284
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7741103219071369,
+          "stddev": 0.00009466364994384432,
+          "ci95": 0.000033874952080677244
+        },
+        "total_repair_count": {
+          "mean": 240.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC+LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.13606869768000215,
+          "stddev": 0.22650557824227563,
+          "ci95": 0.08105398020797654
+        },
+        "in_order_rate": {
+          "mean": 99.92752898420535,
+          "stddev": 0.06884089743745118,
+          "ci95": 0.02463439877152251
+        },
+        "overhead_pct": {
+          "mean": 10.711666666666668,
+          "stddev": 0.7839646514433184,
+          "ci95": 0.28053814760302453
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.8257418583505538,
+          "ci95": 0.6533333333333333
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 214.23333333333332,
+          "stddev": 15.679293028866368,
+          "ci95": 5.610762952060491
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC+LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.13606869768000215,
+          "stddev": 0.22650557824227563,
+          "ci95": 0.08105398020797654
+        },
+        "in_order_rate": {
+          "mean": 99.92752898420535,
+          "stddev": 0.06884089743745118,
+          "ci95": 0.02463439877152251
+        },
+        "overhead_pct": {
+          "mean": 10.711666666666668,
+          "stddev": 0.7839646514433184,
+          "ci95": 0.28053814760302453
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.8257418583505538,
+          "ci95": 0.6533333333333333
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 214.23333333333332,
+          "stddev": 15.679293028866368,
+          "ci95": 5.610762952060491
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC+LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.08047553178604727,
+          "stddev": 0.07217510055874718,
+          "ci95": 0.02582752803526997
+        },
+        "in_order_rate": {
+          "mean": 99.92602612536835,
+          "stddev": 0.0662392151481902,
+          "ci95": 0.02370339872102643
+        },
+        "overhead_pct": {
+          "mean": 10.711666666666668,
+          "stddev": 0.7839646514433184,
+          "ci95": 0.28053814760302453
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 214.23333333333332,
+          "stddev": 15.679293028866368,
+          "ci95": 5.610762952060491
+        }
+      }
+    },
+    {
+      "backend": "ReedSolomon",
+      "scenario": "DC+LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.13606869768000215,
+          "stddev": 0.22650557824227563,
+          "ci95": 0.08105398020797654
+        },
+        "in_order_rate": {
+          "mean": 99.92752898420535,
+          "stddev": 0.06884089743745118,
+          "ci95": 0.02463439877152251
+        },
+        "overhead_pct": {
+          "mean": 10.711666666666668,
+          "stddev": 0.7839646514433184,
+          "ci95": 0.28053814760302453
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.8257418583505538,
+          "ci95": 0.6533333333333333
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 1520.5333333333333,
+          "stddev": 10.756660593624623,
+          "ci95": 3.8492215583626765
+        },
+        "throughput_mbps": {
+          "mean": 0.7900371713153603,
+          "stddev": 0.000580624186837645,
+          "ci95": 0.00020777369684852725
+        },
+        "total_repair_count": {
+          "mean": 214.23333333333332,
+          "stddev": 15.679293028866368,
+          "ci95": 5.610762952060491
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.8416666666666666,
+          "stddev": 0.8554171530587439,
+          "ci95": 0.3061070969273206
+        },
+        "in_order_rate": {
+          "mean": 99.99666499916626,
+          "stddev": 0.018266551859435418,
+          "ci95": 0.006536601634150467
+        },
+        "overhead_pct": {
+          "mean": 0.47500000000000003,
+          "stddev": 0.3321170337967191,
+          "ci95": 0.11884655421288352
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 4.5,
+          "stddev": 5.110840405957949,
+          "ci95": 1.8288907510593255
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 9.5,
+          "stddev": 6.642340675934381,
+          "ci95": 2.3769310842576705
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 2.3064984559059076,
+          "stddev": 1.6139987078059927,
+          "ci95": 0.5775620200323607
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.2685406585123125,
+          "ci95": 0.4539414447360388
+        },
+        "p99_latency_ms": {
+          "mean": 11.666666666666666,
+          "stddev": 7.5124417874081,
+          "ci95": 2.688292768219793
+        },
+        "recovery_rate": {
+          "mean": 99.90666666666667,
+          "stddev": 0.06530212719423335,
+          "ci95": 0.02336806610333739
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.799120146642226,
+          "stddev": 0.0005223299625600982,
+          "ci95": 0.0001869133765972632
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09333333333333334,
+          "stddev": 0.0653021271942343,
+          "ci95": 0.02336806610333773
+        },
+        "in_order_rate": {
+          "mean": 99.9116224779056,
+          "stddev": 0.06657771702150805,
+          "ci95": 0.023824530060718736
+        },
+        "overhead_pct": {
+          "mean": 0.47500000000000003,
+          "stddev": 0.3321170337967191,
+          "ci95": 0.11884655421288352
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 9.5,
+          "stddev": 6.642340675934381,
+          "ci95": 2.3769310842576705
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.8416666666666666,
+          "stddev": 0.8554171530587439,
+          "ci95": 0.3061070969273206
+        },
+        "in_order_rate": {
+          "mean": 99.99666499916626,
+          "stddev": 0.018266551859435418,
+          "ci95": 0.006536601634150467
+        },
+        "overhead_pct": {
+          "mean": 0.47500000000000003,
+          "stddev": 0.3321170337967191,
+          "ci95": 0.11884655421288352
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 4.5,
+          "stddev": 5.110840405957949,
+          "ci95": 1.8288907510593255
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 9.5,
+          "stddev": 6.642340675934381,
+          "ci95": 2.3769310842576705
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7998666888851854,
+          "stddev": 3.387607712450221e-16,
+          "ci95": 1.2122398512571408e-16
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 33.20595762194055,
+          "stddev": 1.5341727183983884,
+          "ci95": 0.5489966565842013
+        },
+        "in_order_rate": {
+          "mean": 98.68742884810159,
+          "stddev": 0.30240813043665493,
+          "ci95": 0.10821535968057207
+        },
+        "overhead_pct": {
+          "mean": 11.423333333333334,
+          "stddev": 1.3906543568514373,
+          "ci95": 0.4976392704810425
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 29.5,
+          "stddev": 1.5480800121886242,
+          "ci95": 0.5539733177524069
+        },
+        "p99_latency_ms": {
+          "mean": 63.6,
+          "stddev": 25.315389894632112,
+          "ci95": 9.058995930254515
+        },
+        "recovery_rate": {
+          "mean": 99.98166666666665,
+          "stddev": 0.062261037427985624,
+          "ci95": 0.022279826106614355
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.415186087517715,
+          "stddev": 0.0034632589444486836,
+          "ci95": 0.0012393112969526355
+        },
+        "total_repair_count": {
+          "mean": 228.46666666666667,
+          "stddev": 27.81308713702875,
+          "ci95": 9.952785409620851
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 36.851320360412586,
+          "stddev": 2.230463836687746,
+          "ci95": 0.7981612332748863
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 9.2,
+          "stddev": 0.4068381021724863,
+          "ci95": 0.1455851451308087
+        },
+        "p95_latency_ms": {
+          "mean": 31.433333333333334,
+          "stddev": 0.9352607356658149,
+          "ci95": 0.3346787560210549
+        },
+        "p99_latency_ms": {
+          "mean": 34.46666666666667,
+          "stddev": 0.507416263404925,
+          "ci95": 0.18157657789441553
+        },
+        "recovery_rate": {
+          "mean": 97.34833333333333,
+          "stddev": 0.3824790580999937,
+          "ci95": 0.1368683731578678
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.44100384624421396,
+          "stddev": 0.0015203672619561437,
+          "ci95": 0.0005440564374429539
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 18.108266485897925,
+          "stddev": 0.506406642989541,
+          "ci95": 0.18121528986874683
+        },
+        "in_order_rate": {
+          "mean": 84.10274087569611,
+          "stddev": 0.853584263715881,
+          "ci95": 0.30545120589950264
+        },
+        "overhead_pct": {
+          "mean": 11.423333333333334,
+          "stddev": 1.3906543568514373,
+          "ci95": 0.4976392704810425
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 12.633333333333333,
+          "stddev": 0.4901325178535611,
+          "ci95": 0.17539166898086334
+        },
+        "p99_latency_ms": {
+          "mean": 62.166666666666664,
+          "stddev": 25.89246106939016,
+          "ci95": 9.26549819805916
+        },
+        "recovery_rate": {
+          "mean": 99.98166666666665,
+          "stddev": 0.062261037427985624,
+          "ci95": 0.022279826106614355
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.415186087517715,
+          "stddev": 0.0034632589444486836,
+          "ci95": 0.0012393112969526355
+        },
+        "total_repair_count": {
+          "mean": 228.46666666666667,
+          "stddev": 27.81308713702875,
+          "ci95": 9.952785409620851
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 33.20595762194055,
+          "stddev": 1.5341727183983884,
+          "ci95": 0.5489966565842013
+        },
+        "in_order_rate": {
+          "mean": 98.68742884810159,
+          "stddev": 0.30240813043665493,
+          "ci95": 0.10821535968057207
+        },
+        "overhead_pct": {
+          "mean": 11.423333333333334,
+          "stddev": 1.3906543568514373,
+          "ci95": 0.4976392704810425
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 29.5,
+          "stddev": 1.5480800121886242,
+          "ci95": 0.5539733177524069
+        },
+        "p99_latency_ms": {
+          "mean": 63.6,
+          "stddev": 25.315389894632112,
+          "ci95": 9.058995930254515
+        },
+        "recovery_rate": {
+          "mean": 99.98166666666665,
+          "stddev": 0.062261037427985624,
+          "ci95": 0.022279826106614355
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.415186087517715,
+          "stddev": 0.0034632589444486836,
+          "ci95": 0.0012393112969526355
+        },
+        "total_repair_count": {
+          "mean": 228.46666666666667,
+          "stddev": 27.81308713702875,
+          "ci95": 9.952785409620851
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.91756164428514,
+          "stddev": 1.4318570364576944,
+          "ci95": 0.5123834600203792
+        },
+        "in_order_rate": {
+          "mean": 99.8632616266412,
+          "stddev": 0.13960775092310204,
+          "ci95": 0.049957992063655164
+        },
+        "overhead_pct": {
+          "mean": 5.818333333333332,
+          "stddev": 4.227526449953622,
+          "ci95": 1.5128009114050314
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.466666666666667,
+          "stddev": 0.507416263404925,
+          "ci95": 0.18157657789441553
+        },
+        "p99_latency_ms": {
+          "mean": 20.333333333333332,
+          "stddev": 6.331820751015344,
+          "ci95": 2.2658129562014646
+        },
+        "recovery_rate": {
+          "mean": 99.98,
+          "stddev": 0.04660915996993914,
+          "ci95": 0.016678873690576284
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.4324382322089498,
+          "stddev": 0.014796433857103913,
+          "ci95": 0.00529483585485707
+        },
+        "total_repair_count": {
+          "mean": 116.36666666666666,
+          "stddev": 84.55052899907244,
+          "ci95": 30.256018228100622
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 13.991116524077535,
+          "stddev": 2.0468051544282404,
+          "ci95": 0.7324398178801523
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 12.166666666666666,
+          "stddev": 1.4641305136221772,
+          "ci95": 0.5239323755024277
+        },
+        "p99_latency_ms": {
+          "mean": 21.766666666666666,
+          "stddev": 7.609809156759376,
+          "ci95": 2.723135233864765
+        },
+        "recovery_rate": {
+          "mean": 99.72333333333331,
+          "stddev": 0.22465810550215287,
+          "ci95": 0.08039287057847101
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.45175593005871056,
+          "stddev": 0.0013013857731070785,
+          "ci95": 0.0004656949180454039
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 7.856506209394319,
+          "stddev": 1.2619849461477233,
+          "ci95": 0.4515955131948729
+        },
+        "in_order_rate": {
+          "mean": 88.6741680366535,
+          "stddev": 0.6067023550060963,
+          "ci95": 0.21710564947851957
+        },
+        "overhead_pct": {
+          "mean": 5.778333333333332,
+          "stddev": 4.34006362843341,
+          "ci95": 1.5530718235297896
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 12.1,
+          "stddev": 0.30512857662936477,
+          "ci95": 0.10918885884810653
+        },
+        "recovery_rate": {
+          "mean": 99.98333333333333,
+          "stddev": 0.033044727612561456,
+          "ci95": 0.011824903910408977
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.4323639096369997,
+          "stddev": 0.015007363446859288,
+          "ci95": 0.005370316039168565
+        },
+        "total_repair_count": {
+          "mean": 115.56666666666666,
+          "stddev": 86.8012725686682,
+          "ci95": 31.06143647059579
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "WiFi",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 11.11595946132272,
+          "stddev": 1.5281525086529688,
+          "ci95": 0.5468423521942618
+        },
+        "in_order_rate": {
+          "mean": 99.87159996414623,
+          "stddev": 0.15747346623436126,
+          "ci95": 0.05635115618119067
+        },
+        "overhead_pct": {
+          "mean": 5.601666666666666,
+          "stddev": 4.269569212973108,
+          "ci95": 1.5278457209329674
+        },
+        "p50_latency_ms": {
+          "mean": 8.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 11.4,
+          "stddev": 0.563241847975046,
+          "ci95": 0.20155350677166103
+        },
+        "p99_latency_ms": {
+          "mean": 19.9,
+          "stddev": 6.905020662157904,
+          "ci95": 2.47092991011272
+        },
+        "recovery_rate": {
+          "mean": 99.98,
+          "stddev": 0.0484234198111493,
+          "ci95": 0.01732809823684456
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.43308566220065353,
+          "stddev": 0.014711420993069152,
+          "ci95": 0.005264414392161231
+        },
+        "total_repair_count": {
+          "mean": 112.03333333333333,
+          "stddev": 85.39138425946219,
+          "ci95": 30.556914418659353
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 7.8762028331429725,
+          "stddev": 1.65792925717225,
+          "ci95": 0.5932823652286696
+        },
+        "in_order_rate": {
+          "mean": 97.09766394564764,
+          "stddev": 0.7937686739427215,
+          "ci95": 0.28404647199746924
+        },
+        "overhead_pct": {
+          "mean": 11.250000000000002,
+          "stddev": 2.2679171668872895,
+          "ci95": 0.8115637353601528
+        },
+        "p50_latency_ms": {
+          "mean": 28.566666666666666,
+          "stddev": 0.5040069329937308,
+          "ci95": 0.18035656467524525
+        },
+        "p95_latency_ms": {
+          "mean": 50.233333333333334,
+          "stddev": 3.8746152942145002,
+          "ci95": 1.386513276219921
+        },
+        "p99_latency_ms": {
+          "mean": 432.2,
+          "stddev": 214.2195779713117,
+          "ci95": 76.65749147456114
+        },
+        "recovery_rate": {
+          "mean": 99.88666666666668,
+          "stddev": 0.2100629352875195,
+          "ci95": 0.07517005599311195
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1463424865488669,
+          "stddev": 0.0017840303298440657,
+          "ci95": 0.0006384070545535981
+        },
+        "total_repair_count": {
+          "mean": 225.0,
+          "stddev": 45.35834333774579,
+          "ci95": 16.231274707203056
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 5.627780537763834,
+          "stddev": 1.3304984099518657,
+          "ci95": 0.47611274134552334
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 28.333333333333332,
+          "stddev": 0.4794633014853843,
+          "ci95": 0.1715737389367042
+        },
+        "p95_latency_ms": {
+          "mean": 42.13333333333333,
+          "stddev": 4.305035810923451,
+          "ci95": 1.5405372800134085
+        },
+        "p99_latency_ms": {
+          "mean": 54.2,
+          "stddev": 0.8051557998728978,
+          "ci95": 0.2881213026790475
+        },
+        "recovery_rate": {
+          "mean": 96.67666666666666,
+          "stddev": 0.8970962095535815,
+          "ci95": 0.3210217557469203
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.15557468131817626,
+          "stddev": 0.00037585933143461086,
+          "ci95": 0.00013449953439335734
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 3.121174895208294,
+          "stddev": 0.8241437907843725,
+          "ci95": 0.2949160679624071
+        },
+        "in_order_rate": {
+          "mean": 96.88729332792794,
+          "stddev": 0.8298302982642805,
+          "ci95": 0.29695095853024983
+        },
+        "overhead_pct": {
+          "mean": 11.250000000000002,
+          "stddev": 2.2679171668872895,
+          "ci95": 0.8115637353601528
+        },
+        "p50_latency_ms": {
+          "mean": 28.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 33.86666666666667,
+          "stddev": 0.7760791522613607,
+          "ci95": 0.2777163579606487
+        },
+        "p99_latency_ms": {
+          "mean": 431.3666666666667,
+          "stddev": 213.65981393784378,
+          "ci95": 76.45718248772764
+        },
+        "recovery_rate": {
+          "mean": 99.88666666666668,
+          "stddev": 0.2100629352875195,
+          "ci95": 0.07517005599311195
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1463424865488669,
+          "stddev": 0.0017840303298440657,
+          "ci95": 0.0006384070545535981
+        },
+        "total_repair_count": {
+          "mean": 225.0,
+          "stddev": 45.35834333774579,
+          "ci95": 16.231274707203056
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 7.8762028331429725,
+          "stddev": 1.65792925717225,
+          "ci95": 0.5932823652286696
+        },
+        "in_order_rate": {
+          "mean": 97.09766394564764,
+          "stddev": 0.7937686739427215,
+          "ci95": 0.28404647199746924
+        },
+        "overhead_pct": {
+          "mean": 11.250000000000002,
+          "stddev": 2.2679171668872895,
+          "ci95": 0.8115637353601528
+        },
+        "p50_latency_ms": {
+          "mean": 28.566666666666666,
+          "stddev": 0.5040069329937308,
+          "ci95": 0.18035656467524525
+        },
+        "p95_latency_ms": {
+          "mean": 50.233333333333334,
+          "stddev": 3.8746152942145002,
+          "ci95": 1.386513276219921
+        },
+        "p99_latency_ms": {
+          "mean": 432.2,
+          "stddev": 214.2195779713117,
+          "ci95": 76.65749147456114
+        },
+        "recovery_rate": {
+          "mean": 99.88666666666668,
+          "stddev": 0.2100629352875195,
+          "ci95": 0.07517005599311195
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1463424865488669,
+          "stddev": 0.0017840303298440657,
+          "ci95": 0.0006384070545535981
+        },
+        "total_repair_count": {
+          "mean": 225.0,
+          "stddev": 45.35834333774579,
+          "ci95": 16.231274707203056
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.545663313727313,
+          "stddev": 1.217311634060897,
+          "ci95": 0.4356093737725698
+        },
+        "in_order_rate": {
+          "mean": 99.68226067895272,
+          "stddev": 0.43946813655765155,
+          "ci95": 0.15726165297562583
+        },
+        "overhead_pct": {
+          "mean": 2.3416666666666663,
+          "stddev": 3.0901144754303798,
+          "ci95": 1.1057832635980889
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 32.78333333333333,
+          "stddev": 1.7698788840956932,
+          "ci95": 0.6333430247292379
+        },
+        "p99_latency_ms": {
+          "mean": 49.95,
+          "stddev": 33.491725689417265,
+          "ci95": 11.984860117914478
+        },
+        "recovery_rate": {
+          "mean": 99.775,
+          "stddev": 0.3490751327090798,
+          "ci95": 0.12491493197326332
+        },
+        "tail_drops": {
+          "mean": 0.3,
+          "stddev": 0.7022132498578064,
+          "ci95": 0.25128378425573955
+        },
+        "throughput_mbps": {
+          "mean": 0.1575285742262887,
+          "stddev": 0.003934904742163975,
+          "ci95": 0.0014080875780926089
+        },
+        "total_repair_count": {
+          "mean": 46.833333333333336,
+          "stddev": 61.80228950860758,
+          "ci95": 22.115665271961767
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.6841095818281684,
+          "stddev": 0.9424980065272739,
+          "ci95": 0.3372685801380443
+        },
+        "in_order_rate": {
+          "mean": 99.9966566357355,
+          "stddev": 0.012723582231463748,
+          "ci95": 0.004553075426957147
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 32.666666666666664,
+          "stddev": 0.9222660747548284,
+          "ci95": 0.330028676334444
+        },
+        "p99_latency_ms": {
+          "mean": 45.416666666666664,
+          "stddev": 5.898689704492436,
+          "ci95": 2.1108190017710062
+        },
+        "recovery_rate": {
+          "mean": 99.23666666666666,
+          "stddev": 0.5514765967669071,
+          "ci95": 0.19734336569713815
+        },
+        "tail_drops": {
+          "mean": 0.5666666666666667,
+          "stddev": 1.3817363722139075,
+          "ci95": 0.4944480106634489
+        },
+        "throughput_mbps": {
+          "mean": 0.1596984878255934,
+          "stddev": 0.001238639469568313,
+          "ci95": 0.0004432414416912152
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.5297047917801019,
+          "stddev": 0.3462248722745923,
+          "ci95": 0.12389497937590427
+        },
+        "in_order_rate": {
+          "mean": 98.15721740532845,
+          "stddev": 0.5595870342948825,
+          "ci95": 0.2002456484928731
+        },
+        "overhead_pct": {
+          "mean": 3.08,
+          "stddev": 2.9292990805734185,
+          "ci95": 1.0482362136180134
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 31.766666666666666,
+          "stddev": 0.5040069329937309,
+          "ci95": 0.1803565646752453
+        },
+        "p99_latency_ms": {
+          "mean": 46.43333333333333,
+          "stddev": 55.550960346354934,
+          "ci95": 19.878655860878748
+        },
+        "recovery_rate": {
+          "mean": 99.70666666666666,
+          "stddev": 0.3659501881812397,
+          "ci95": 0.13095359302021525
+        },
+        "tail_drops": {
+          "mean": 0.23333333333333334,
+          "stddev": 0.9352607356658147,
+          "ci95": 0.33467875602105485
+        },
+        "throughput_mbps": {
+          "mean": 0.15638298415564447,
+          "stddev": 0.0039597668240385995,
+          "ci95": 0.0014169843598312002
+        },
+        "total_repair_count": {
+          "mean": 61.6,
+          "stddev": 58.58598161146838,
+          "ci95": 20.96472427236027
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.8754512203396758,
+          "stddev": 1.3285075970544054,
+          "ci95": 0.47540033809947196
+        },
+        "in_order_rate": {
+          "mean": 99.57352274073973,
+          "stddev": 0.447420925157777,
+          "ci95": 0.16010752182704682
+        },
+        "overhead_pct": {
+          "mean": 3.0433333333333334,
+          "stddev": 3.020011798713346,
+          "ci95": 1.0806973429102065
+        },
+        "p50_latency_ms": {
+          "mean": 27.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 32.93333333333333,
+          "stddev": 1.9464084224865132,
+          "ci95": 0.6965133087544205
+        },
+        "p99_latency_ms": {
+          "mean": 61.766666666666666,
+          "stddev": 62.07250117643763,
+          "ci95": 22.21235927546589
+        },
+        "recovery_rate": {
+          "mean": 99.73166666666665,
+          "stddev": 0.3519608455234886,
+          "ci95": 0.1259475710418465
+        },
+        "tail_drops": {
+          "mean": 0.2,
+          "stddev": 0.7611243951073872,
+          "ci95": 0.2723648668416232
+        },
+        "throughput_mbps": {
+          "mean": 0.15644408952685568,
+          "stddev": 0.0036081985125092043,
+          "ci95": 0.0012911772552751466
+        },
+        "total_repair_count": {
+          "mean": 60.86666666666667,
+          "stddev": 60.400235974266906,
+          "ci95": 21.613946858204127
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.3343754758608697,
+          "stddev": 0.4376236416496204,
+          "ci95": 0.1566016089496489
+        },
+        "in_order_rate": {
+          "mean": 96.74577937251757,
+          "stddev": 0.6992448174172552,
+          "ci95": 0.25022154434910115
+        },
+        "overhead_pct": {
+          "mean": 23.35666666666667,
+          "stddev": 1.0265218587233205,
+          "ci95": 0.36733612949266403
+        },
+        "p50_latency_ms": {
+          "mean": 110.06666666666666,
+          "stddev": 0.25370813170246254,
+          "ci95": 0.0907882889472078
+        },
+        "p95_latency_ms": {
+          "mean": 127.56666666666666,
+          "stddev": 1.381736372213908,
+          "ci95": 0.49444801066344907
+        },
+        "p99_latency_ms": {
+          "mean": 243.16666666666666,
+          "stddev": 51.551837542642346,
+          "ci95": 18.447588144591975
+        },
+        "recovery_rate": {
+          "mean": 99.90833333333333,
+          "stddev": 0.22479236907733668,
+          "ci95": 0.08044091618180692
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.771650746795292,
+          "stddev": 0.0018645303802669096,
+          "ci95": 0.0006672136276382361
+        },
+        "total_repair_count": {
+          "mean": 467.1333333333333,
+          "stddev": 20.530437174466417,
+          "ci95": 7.346722589853282
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.4875742643520185,
+          "stddev": 0.4180763484821492,
+          "ci95": 0.1496066999244017
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 116.53333333333333,
+          "stddev": 0.776079152261361,
+          "ci95": 0.2777163579606488
+        },
+        "p95_latency_ms": {
+          "mean": 127.86666666666666,
+          "stddev": 0.507416263404925,
+          "ci95": 0.18157657789441553
+        },
+        "p99_latency_ms": {
+          "mean": 165.01666666666668,
+          "stddev": 178.39246173058672,
+          "ci95": 63.83692258076336
+        },
+        "recovery_rate": {
+          "mean": 90.84499999999998,
+          "stddev": 0.7816152594423329,
+          "ci95": 0.27969742847272144
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7033692025434538,
+          "stddev": 0.006065328305384802,
+          "ci95": 0.0021704498592687747
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.3025596185606998,
+          "stddev": 0.44084633592360045,
+          "ci95": 0.1577548352848526
+        },
+        "in_order_rate": {
+          "mean": 31.85422088116325,
+          "stddev": 0.8782944070762652,
+          "ci95": 0.31429361713904636
+        },
+        "overhead_pct": {
+          "mean": 23.35666666666667,
+          "stddev": 1.0265218587233205,
+          "ci95": 0.36733612949266403
+        },
+        "p50_latency_ms": {
+          "mean": 105.63333333333334,
+          "stddev": 0.4901325178535611,
+          "ci95": 0.17539166898086334
+        },
+        "p95_latency_ms": {
+          "mean": 118.9,
+          "stddev": 2.6043729803332045,
+          "ci95": 0.9319629019304969
+        },
+        "p99_latency_ms": {
+          "mean": 235.96666666666667,
+          "stddev": 51.38729437310847,
+          "ci95": 18.38870712757574
+        },
+        "recovery_rate": {
+          "mean": 99.90833333333333,
+          "stddev": 0.22479236907733668,
+          "ci95": 0.08044091618180692
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.771650746795292,
+          "stddev": 0.0018645303802669096,
+          "ci95": 0.0006672136276382361
+        },
+        "total_repair_count": {
+          "mean": 467.1333333333333,
+          "stddev": 20.530437174466417,
+          "ci95": 7.346722589853282
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 1.3343754758608697,
+          "stddev": 0.4376236416496204,
+          "ci95": 0.1566016089496489
+        },
+        "in_order_rate": {
+          "mean": 96.74577937251757,
+          "stddev": 0.6992448174172552,
+          "ci95": 0.25022154434910115
+        },
+        "overhead_pct": {
+          "mean": 23.35666666666667,
+          "stddev": 1.0265218587233205,
+          "ci95": 0.36733612949266403
+        },
+        "p50_latency_ms": {
+          "mean": 110.06666666666666,
+          "stddev": 0.25370813170246254,
+          "ci95": 0.0907882889472078
+        },
+        "p95_latency_ms": {
+          "mean": 127.56666666666666,
+          "stddev": 1.381736372213908,
+          "ci95": 0.49444801066344907
+        },
+        "p99_latency_ms": {
+          "mean": 243.16666666666666,
+          "stddev": 51.551837542642346,
+          "ci95": 18.447588144591975
+        },
+        "recovery_rate": {
+          "mean": 99.90833333333333,
+          "stddev": 0.22479236907733668,
+          "ci95": 0.08044091618180692
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.771650746795292,
+          "stddev": 0.0018645303802669096,
+          "ci95": 0.0006672136276382361
+        },
+        "total_repair_count": {
+          "mean": 467.1333333333333,
+          "stddev": 20.530437174466417,
+          "ci95": 7.346722589853282
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.44198158240906527,
+          "stddev": 0.2582368529366558,
+          "ci95": 0.09240887102793306
+        },
+        "in_order_rate": {
+          "mean": 99.39103541634248,
+          "stddev": 0.2055238397822138,
+          "ci95": 0.07354576152714681
+        },
+        "overhead_pct": {
+          "mean": 3.5666666666666673,
+          "stddev": 0.8807650801642747,
+          "ci95": 0.3151777361489619
+        },
+        "p50_latency_ms": {
+          "mean": 107.4,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 118.0,
+          "stddev": 3.0961600243772485,
+          "ci95": 1.1079466355048138
+        },
+        "p99_latency_ms": {
+          "mean": 134.86666666666667,
+          "stddev": 27.11118020216056,
+          "ci95": 9.701611238776396
+        },
+        "recovery_rate": {
+          "mean": 99.93333333333331,
+          "stddev": 0.11244411127719957,
+          "ci95": 0.040237608454026914
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7733368838102538,
+          "stddev": 0.0010418863305108697,
+          "ci95": 0.00037283423511036304
+        },
+        "total_repair_count": {
+          "mean": 71.33333333333333,
+          "stddev": 17.615301603285495,
+          "ci95": 6.303554722979238
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.1210248491543127,
+          "stddev": 0.25799501149327064,
+          "ci95": 0.0923223291788637
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 107.36666666666666,
+          "stddev": 0.4901325178535611,
+          "ci95": 0.17539166898086334
+        },
+        "p95_latency_ms": {
+          "mean": 119.5,
+          "stddev": 4.0407407992714095,
+          "ci95": 1.445960524731038
+        },
+        "p99_latency_ms": {
+          "mean": 126.03333333333333,
+          "stddev": 0.7648904962570577,
+          "ci95": 0.2737125488299234
+        },
+        "recovery_rate": {
+          "mean": 99.19,
+          "stddev": 0.1802297384470448,
+          "ci95": 0.06449438361005899
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7678317410986402,
+          "stddev": 0.001380698381191374,
+          "ci95": 0.0004940765703463963
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.3552122592099546,
+          "stddev": 0.16470584343220973,
+          "ci95": 0.05893922912314711
+        },
+        "in_order_rate": {
+          "mean": 37.00787275325385,
+          "stddev": 1.0939245370618957,
+          "ci95": 0.39145586816936834
+        },
+        "overhead_pct": {
+          "mean": 3.5750000000000006,
+          "stddev": 0.9001676089139905,
+          "ci95": 0.32212084189261825
+        },
+        "p50_latency_ms": {
+          "mean": 103.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 108.96666666666667,
+          "stddev": 0.18257418583505536,
+          "ci95": 0.06533333333333333
+        },
+        "p99_latency_ms": {
+          "mean": 111.53333333333333,
+          "stddev": 5.37384042557464,
+          "ci95": 1.9230040993933228
+        },
+        "recovery_rate": {
+          "mean": 99.93333333333331,
+          "stddev": 0.11244411127719957,
+          "ci95": 0.040237608454026914
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7733368838102538,
+          "stddev": 0.0010418863305108697,
+          "ci95": 0.00037283423511036304
+        },
+        "total_repair_count": {
+          "mean": 71.5,
+          "stddev": 18.003352178279812,
+          "ci95": 6.442416837852366
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "Satellite",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.44198158240906527,
+          "stddev": 0.2582368529366558,
+          "ci95": 0.09240887102793306
+        },
+        "in_order_rate": {
+          "mean": 99.39103541634248,
+          "stddev": 0.2055238397822138,
+          "ci95": 0.07354576152714681
+        },
+        "overhead_pct": {
+          "mean": 3.5666666666666673,
+          "stddev": 0.8807650801642747,
+          "ci95": 0.3151777361489619
+        },
+        "p50_latency_ms": {
+          "mean": 107.4,
+          "stddev": 0.4982728791224398,
+          "ci95": 0.17830465984975805
+        },
+        "p95_latency_ms": {
+          "mean": 118.0,
+          "stddev": 3.0961600243772485,
+          "ci95": 1.1079466355048138
+        },
+        "p99_latency_ms": {
+          "mean": 134.86666666666667,
+          "stddev": 27.11118020216056,
+          "ci95": 9.701611238776396
+        },
+        "recovery_rate": {
+          "mean": 99.93333333333331,
+          "stddev": 0.11244411127719957,
+          "ci95": 0.040237608454026914
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7733368838102538,
+          "stddev": 0.0010418863305108697,
+          "ci95": 0.00037283423511036304
+        },
+        "total_repair_count": {
+          "mean": 71.33333333333333,
+          "stddev": 17.615301603285495,
+          "ci95": 6.303554722979238
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC+LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.868357512089378,
+          "stddev": 0.859395557712538,
+          "ci95": 0.3075307507488747
+        },
+        "in_order_rate": {
+          "mean": 99.99666499916626,
+          "stddev": 0.018266551859435418,
+          "ci95": 0.006536601634150467
+        },
+        "overhead_pct": {
+          "mean": 0.45833333333333337,
+          "stddev": 0.3319439434741887,
+          "ci95": 0.11878461463644818
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 4.666666666666667,
+          "stddev": 5.074162634049249,
+          "ci95": 1.815765778944155
+        },
+        "recovery_rate": {
+          "mean": 99.99833333333332,
+          "stddev": 0.009128709291752257,
+          "ci95": 0.0032666666666664834
+        },
+        "tail_drops": {
+          "mean": 710.2,
+          "stddev": 772.2339470429393,
+          "ci95": 276.3403689448896
+        },
+        "throughput_mbps": {
+          "mean": 0.7926144289557072,
+          "stddev": 0.0025377729776589353,
+          "ci95": 0.0009081303970513571
+        },
+        "total_repair_count": {
+          "mean": 9.166666666666666,
+          "stddev": 6.638878869483774,
+          "ci95": 2.3756922927289637
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC+LTE",
+      "config": "no_nack",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 2.3145445015054493,
+          "stddev": 1.6203599910903905,
+          "ci95": 0.5798383760207302
+        },
+        "in_order_rate": {
+          "mean": 99.99165665415039,
+          "stddev": 0.023082855832925932,
+          "ci95": 0.008260093876471045
+        },
+        "overhead_pct": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 1.2685406585123125,
+          "ci95": 0.4539414447360388
+        },
+        "p99_latency_ms": {
+          "mean": 11.666666666666666,
+          "stddev": 7.5124417874081,
+          "ci95": 2.688292768219793
+        },
+        "recovery_rate": {
+          "mean": 99.915,
+          "stddev": 0.06317736390784884,
+          "ci95": 0.022607729326213806
+        },
+        "tail_drops": {
+          "mean": 558.3666666666667,
+          "stddev": 746.4134697445459,
+          "ci95": 267.10062980846124
+        },
+        "throughput_mbps": {
+          "mean": 0.7923289347134848,
+          "stddev": 0.0025709068603123257,
+          "ci95": 0.0009199872046833914
+        },
+        "total_repair_count": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC+LTE",
+      "config": "no_reorder",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.09166750041687512,
+          "stddev": 0.06576200110637126,
+          "ci95": 0.0235326298693243
+        },
+        "in_order_rate": {
+          "mean": 99.91328914373767,
+          "stddev": 0.06690049075876484,
+          "ci95": 0.023940033159204382
+        },
+        "overhead_pct": {
+          "mean": 0.4583333333333333,
+          "stddev": 0.3353030881449502,
+          "ci95": 0.11998666911904642
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "recovery_rate": {
+          "mean": 99.99833333333332,
+          "stddev": 0.009128709291752257,
+          "ci95": 0.0032666666666664834
+        },
+        "tail_drops": {
+          "mean": 657.9333333333333,
+          "stddev": 765.279752019204,
+          "ci95": 273.85184221548013
+        },
+        "throughput_mbps": {
+          "mean": 0.792684509045276,
+          "stddev": 0.0025811983604768106,
+          "ci95": 0.0009236699707199535
+        },
+        "total_repair_count": {
+          "mean": 9.166666666666666,
+          "stddev": 6.706061762899004,
+          "ci95": 2.399733382380928
+        }
+      }
+    },
+    {
+      "backend": "RLC",
+      "scenario": "DC+LTE",
+      "config": "no_pi",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.8416666666666666,
+          "stddev": 0.8554171530587439,
+          "ci95": 0.3061070969273206
+        },
+        "in_order_rate": {
+          "mean": 99.99666499916626,
+          "stddev": 0.018266551859435418,
+          "ci95": 0.006536601634150467
+        },
+        "overhead_pct": {
+          "mean": 0.47500000000000003,
+          "stddev": 0.3321170337967191,
+          "ci95": 0.11884655421288352
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 4.5,
+          "stddev": 5.110840405957949,
+          "ci95": 1.8288907510593255
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 607.5,
+          "stddev": 756.7713976333025,
+          "ci95": 270.80716670086804
+        },
+        "throughput_mbps": {
+          "mean": 0.7929845617746681,
+          "stddev": 0.0023641554535078413,
+          "ci95": 0.0008460021639389324
+        },
+        "total_repair_count": {
+          "mean": 9.5,
+          "stddev": 6.642340675934381,
+          "ci95": 2.3769310842576705
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.5133333333333334,
+          "stddev": 0.42078197592621264,
+          "ci95": 0.1505748962708365
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.09333333333333334,
+          "stddev": 0.0653021271942343,
+          "ci95": 0.02336806610333773
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.2666666666666666,
+          "stddev": 0.6914918072835208,
+          "ci95": 0.2474471653037436
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 1.2054244098442985,
+          "stddev": 6.775215424900442e-16,
+          "ci95": 2.4244797025142816e-16
+        },
+        "total_repair_count": {
+          "mean": 1.8666666666666667,
+          "stddev": 1.3060425438846857,
+          "ci95": 0.46736132206675446
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "DC",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 0.5050000000000002,
+          "stddev": 0.42086733104961654,
+          "ci95": 0.15060544020947464
+        },
+        "in_order_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "overhead_pct": {
+          "mean": 0.09166666666666669,
+          "stddev": 0.07081220103973576,
+          "ci95": 0.025339820705955318
+        },
+        "p50_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 1.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p99_latency_ms": {
+          "mean": 1.3333333333333333,
+          "stddev": 0.7580980435789034,
+          "ci95": 0.2712819008555506
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 1.2053840879038455,
+          "stddev": 0.0002208523634851824,
+          "ci95": 0.00007903100328798757
+        },
+        "total_repair_count": {
+          "mean": 1.8333333333333333,
+          "stddev": 1.4162440207947153,
+          "ci95": 0.5067964141191063
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 24.955000000000002,
+          "stddev": 1.1651069212441558,
+          "ci95": 0.41692815721160187
+        },
+        "in_order_rate": {
+          "mean": 99.96498249124559,
+          "stddev": 0.039738708799889534,
+          "ci95": 0.014220314314341316
+        },
+        "overhead_pct": {
+          "mean": 2.7016666666666667,
+          "stddev": 0.38896044771294874,
+          "ci95": 0.13918770864393126
+        },
+        "p50_latency_ms": {
+          "mean": 9.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 17.066666666666666,
+          "stddev": 1.0482607379429243,
+          "ci95": 0.37511528751465606
+        },
+        "p99_latency_ms": {
+          "mean": 22.666666666666668,
+          "stddev": 2.4400866764329803,
+          "ci95": 0.8731738031007664
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.5381835565950964,
+          "stddev": 0.002432468211561064,
+          "ci95": 0.0008704475704590124
+        },
+        "total_repair_count": {
+          "mean": 54.03333333333333,
+          "stddev": 7.779208954258974,
+          "ci95": 2.783754172878625
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "WiFi",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 40.41166666666666,
+          "stddev": 1.5405822529683109,
+          "ci95": 0.5512902790733443
+        },
+        "in_order_rate": {
+          "mean": 99.96164749041185,
+          "stddev": 0.0467864299982903,
+          "ci95": 0.01674230895553066
+        },
+        "overhead_pct": {
+          "mean": 2.7766666666666664,
+          "stddev": 0.3685323485856065,
+          "ci95": 0.13187760725391995
+        },
+        "p50_latency_ms": {
+          "mean": 10.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 19.333333333333332,
+          "stddev": 0.47946330148538424,
+          "ci95": 0.1715737389367042
+        },
+        "p99_latency_ms": {
+          "mean": 25.6,
+          "stddev": 2.954832395036751,
+          "ci95": 1.0573731928536478
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.9795678805851842,
+          "stddev": 0.010487168837019055,
+          "ci95": 0.003752785171781696
+        },
+        "total_repair_count": {
+          "mean": 55.53333333333333,
+          "stddev": 7.37064697171213,
+          "ci95": 2.637552145078399
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 6.745,
+          "stddev": 1.4361316575895937,
+          "ci95": 0.5139131135472824
+        },
+        "in_order_rate": {
+          "mean": 97.75387693846928,
+          "stddev": 0.49423685725825905,
+          "ci95": 0.17686038797426212
+        },
+        "overhead_pct": {
+          "mean": 3.4266666666666667,
+          "stddev": 0.9492041433470074,
+          "ci95": 0.3396683403791685
+        },
+        "p50_latency_ms": {
+          "mean": 28.266666666666666,
+          "stddev": 0.4497764451088037,
+          "ci95": 0.1609504338161096
+        },
+        "p95_latency_ms": {
+          "mean": 47.333333333333336,
+          "stddev": 5.358418020102661,
+          "ci95": 1.9174852624729
+        },
+        "p99_latency_ms": {
+          "mean": 73.76666666666667,
+          "stddev": 10.918770087783926,
+          "ci95": 3.90723169583072
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.1597193919303293,
+          "stddev": 0.0019512176784940083,
+          "ci95": 0.0006982342789145004
+        },
+        "total_repair_count": {
+          "mean": 68.53333333333333,
+          "stddev": 18.98408286694015,
+          "ci95": 6.79336680758337
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 10.350000000000001,
+          "stddev": 1.8591340216199659,
+          "ci95": 0.6652825654968143
+        },
+        "in_order_rate": {
+          "mean": 97.45706186426546,
+          "stddev": 0.47677100068353556,
+          "ci95": 0.1706103114679398
+        },
+        "overhead_pct": {
+          "mean": 3.4733333333333336,
+          "stddev": 0.6692421515948203,
+          "ci95": 0.239485228269693
+        },
+        "p50_latency_ms": {
+          "mean": 29.766666666666666,
+          "stddev": 0.4301830671520764,
+          "ci95": 0.1539390335608219
+        },
+        "p95_latency_ms": {
+          "mean": 52.06666666666667,
+          "stddev": 1.4125870942531562,
+          "ci95": 0.5054877997625782
+        },
+        "p99_latency_ms": {
+          "mean": 72.06666666666666,
+          "stddev": 6.638099714232377,
+          "ci95": 2.375413475603064
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.29268526167008324,
+          "stddev": 0.0038495377603219617,
+          "ci95": 0.001377539395966886
+        },
+        "total_repair_count": {
+          "mean": 69.46666666666667,
+          "stddev": 13.384843031896406,
+          "ci95": 4.789704565393861
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 1,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 7.936666666666667,
+          "stddev": 0.7073424441763222,
+          "ci95": 0.25311924287005744
+        },
+        "in_order_rate": {
+          "mean": 92.05936301484077,
+          "stddev": 0.7076962923224841,
+          "ci95": 0.25324586580295916
+        },
+        "overhead_pct": {
+          "mean": 10.106666666666667,
+          "stddev": 0.9069400365432422,
+          "ci95": 0.3245443239952717
+        },
+        "p50_latency_ms": {
+          "mean": 117.13333333333334,
+          "stddev": 1.1957780134587126,
+          "ci95": 0.42790366660350126
+        },
+        "p95_latency_ms": {
+          "mean": 304.46666666666664,
+          "stddev": 1.0416609195243756,
+          "ci95": 0.37275357282478166
+        },
+        "p99_latency_ms": {
+          "mean": 504.6666666666667,
+          "stddev": 1.917853205941537,
+          "ci95": 0.6862949557468168
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7058823529411764,
+          "stddev": 1.1292025708167404e-16,
+          "ci95": 4.0407995041904695e-17
+        },
+        "total_repair_count": {
+          "mean": 202.13333333333333,
+          "stddev": 18.138800730864844,
+          "ci95": 6.490886479905434
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "Satellite",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 7.996666666666666,
+          "stddev": 0.52076424829173,
+          "ci95": 0.18635309294197974
+        },
+        "in_order_rate": {
+          "mean": 92.0010005002501,
+          "stddev": 0.5219211088740374,
+          "ci95": 0.18676707018470107
+        },
+        "overhead_pct": {
+          "mean": 10.099999999999998,
+          "stddev": 0.7610111241200633,
+          "ci95": 0.272324333339376
+        },
+        "p50_latency_ms": {
+          "mean": 117.2,
+          "stddev": 0.7143842296595067,
+          "ci95": 0.25563911344283574
+        },
+        "p95_latency_ms": {
+          "mean": 304.6,
+          "stddev": 0.770132097938959,
+          "ci95": 0.2755882319026312
+        },
+        "p99_latency_ms": {
+          "mean": 504.23333333333335,
+          "stddev": 2.344227441791981,
+          "ci95": 0.8388710165308364
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.7373527691865015,
+          "stddev": 0.09604374748042337,
+          "ci95": 0.03436881364154046
+        },
+        "total_repair_count": {
+          "mean": 202.0,
+          "stddev": 15.22022248240127,
+          "ci95": 5.446486666787522
+        }
+      }
+    },
+    {
+      "backend": "Retransmit",
+      "scenario": "DC+LTE",
+      "config": "baseline",
+      "paths": 2,
+      "metrics": {
+        "deadline_miss_pct": {
+          "mean": 99.94999999999997,
+          "stddev": 2.890758581290855e-14,
+          "ci95": 1.0344446730727602e-14
+        },
+        "in_order_rate": {
+          "mean": 67.85726196431548,
+          "stddev": 0.6082590582880932,
+          "ci95": 0.21766270859374234
+        },
+        "overhead_pct": {
+          "mean": 1.7333333333333334,
+          "stddev": 0.3813165336706168,
+          "ci95": 0.13645236913350234
+        },
+        "p50_latency_ms": {
+          "mean": 26.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "p95_latency_ms": {
+          "mean": 33.06666666666667,
+          "stddev": 0.2537081317024625,
+          "ci95": 0.09078828894720777
+        },
+        "p99_latency_ms": {
+          "mean": 59.6,
+          "stddev": 12.759310326189262,
+          "ci95": 4.565860561456805
+        },
+        "recovery_rate": {
+          "mean": 100.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "tail_drops": {
+          "mean": 0.0,
+          "stddev": 0.0,
+          "ci95": 0.0
+        },
+        "throughput_mbps": {
+          "mean": 0.3075603993974122,
+          "stddev": 0.0028609418971260437,
+          "ci95": 0.001023774909674805
+        },
+        "total_repair_count": {
+          "mean": 34.666666666666664,
+          "stddev": 7.626330673412338,
+          "ci95": 2.7290473826700477
+        }
+      }
+    }
+  ]
+}

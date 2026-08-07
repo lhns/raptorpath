@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
 use raptorpath::fec::{
-    EncodingParams, FecBackend, MettleWindowDecoder, MettleWindowEncoder,
+    EncodingParams, FecBackend,
     RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder, WireSymbol,
 };
 
@@ -13,9 +13,8 @@ fn make_params(data_len: usize, repair_count: u32) -> EncodingParams {
     }
 }
 
-const ALL_BACKENDS: [(&str, FecBackend); 4] = [
+const ALL_BACKENDS: [(&str, FecBackend); 3] = [
     ("raptorq", FecBackend::RaptorQ),
-    ("mettle", FecBackend::Mettle),
     ("rs", FecBackend::ReedSolomon),
     ("rlc", FecBackend::Rlc),
 ];
@@ -68,7 +67,6 @@ fn bench_decode_5pct_loss(c: &mut Criterion) {
     let mut group = c.benchmark_group("fec_decode_5pct_loss");
     for (backend_name, backend, repair_count) in [
         ("raptorq", FecBackend::RaptorQ, 20u32),
-        ("mettle", FecBackend::Mettle, 40u32),
         ("rs", FecBackend::ReedSolomon, 10u32),
         ("rlc", FecBackend::Rlc, 15u32),
     ] {
@@ -109,7 +107,6 @@ fn bench_per_symbol_ns(c: &mut Criterion) {
     let size = 16384;
     for (backend_name, backend, repair_count) in [
         ("raptorq", FecBackend::RaptorQ, 20u32),
-        ("mettle", FecBackend::Mettle, 40u32),
         ("rs", FecBackend::ReedSolomon, 10u32),
         ("rlc", FecBackend::Rlc, 15u32),
     ] {
@@ -158,22 +155,6 @@ fn bench_window_encode(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("mettle", |b| {
-        b.iter(|| {
-            let mut encoder = MettleWindowEncoder::new(
-                mettle::MettleConfig::small_window(),
-                WINDOW_SYMBOL_SIZE,
-                42,
-            );
-            for pkt in &packet_data {
-                encoder.add_source(pkt);
-            }
-            for _ in 0..10 {
-                encoder.generate_repair();
-            }
-        });
-    });
-
     group.finish();
 }
 
@@ -197,31 +178,6 @@ fn bench_window_decode_no_loss(c: &mut Criterion) {
             }
         });
     });
-
-    // Pre-generate METTLE source symbols
-    let mettle_syms: Vec<WireSymbol> = {
-        let mut encoder = MettleWindowEncoder::new(
-            mettle::MettleConfig::small_window(),
-            WINDOW_SYMBOL_SIZE,
-            42,
-        );
-        (0..num_symbols)
-            .map(|i| encoder.add_source(&vec![(i % 256) as u8; 1000]))
-            .collect()
-    };
-
-    group.bench_with_input(
-        BenchmarkId::from_parameter("mettle"),
-        &mettle_syms,
-        |b, syms| {
-            b.iter(|| {
-                let mut decoder = MettleWindowDecoder::new(WINDOW_SYMBOL_SIZE);
-                for sym in syms {
-                    decoder.add_symbol(sym);
-                }
-            });
-        },
-    );
 
     group.finish();
 }
@@ -253,40 +209,6 @@ fn bench_window_decode_with_loss(c: &mut Criterion) {
         |b, syms| {
             b.iter(|| {
                 let mut decoder = RlcWindowDecoder::new(WINDOW_SYMBOL_SIZE);
-                for sym in syms {
-                    decoder.add_symbol(sym);
-                }
-            });
-        },
-    );
-
-    // METTLE: 10% loss + repair
-    let (mettle_transmitted,): (Vec<WireSymbol>,) = {
-        let mut encoder = MettleWindowEncoder::new(
-            mettle::MettleConfig::small_window(),
-            WINDOW_SYMBOL_SIZE,
-            42,
-        );
-        let sources: Vec<WireSymbol> = (0..num_symbols)
-            .map(|i| encoder.add_source(&vec![(i % 256) as u8; 1000]))
-            .collect();
-        let repairs: Vec<WireSymbol> = (0..30).map(|_| encoder.generate_repair()).collect();
-        let mut transmitted: Vec<WireSymbol> = sources
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _)| i % 10 != 0)
-            .map(|(_, s)| s)
-            .collect();
-        transmitted.extend(repairs);
-        (transmitted,)
-    };
-
-    group.bench_with_input(
-        BenchmarkId::from_parameter("mettle"),
-        &mettle_transmitted,
-        |b, syms| {
-            b.iter(|| {
-                let mut decoder = MettleWindowDecoder::new(WINDOW_SYMBOL_SIZE);
                 for sym in syms {
                     decoder.add_symbol(sym);
                 }

@@ -13,11 +13,11 @@ Standard MPTCP with round-robin scheduling degrades to the speed of the **worst*
 
 ## Project Status
 
-**32 ADRs resolved.** The core data path is fully wired with five FEC backends, sliding-window FEC, Gilbert-Elliott burst modeling, runtime backend auto-switching, BBR congestion control, tapered interleaving, and multipath window scheduling. See [docs/adr/](docs/adr/) for the full decision log.
+**32 ADRs resolved.** The core data path is fully wired with three FEC backends, sliding-window FEC, Gilbert-Elliott burst modeling, runtime backend auto-switching, BBR congestion control, tapered interleaving, and multipath window scheduling. See [docs/adr/](docs/adr/) for the full decision log.
 
 ### Features
-- Five swappable FEC backends: RaptorQ, METTLE, Reed-Solomon, RLC, Streaming
-- Sliding-window FEC pipeline (RLC, METTLE-window, Streaming backends)
+- Three swappable FEC backends: RaptorQ, Reed-Solomon, RLC
+- Sliding-window FEC pipeline (RLC window backend)
 - Runtime FEC backend auto-switching with loss-based heuristic
 - Source-first symbol emission with on-demand repair generation
 - Bayesian loss estimation with EWMA, Beta-Binomial, and burst detection
@@ -130,7 +130,7 @@ peer = ["203.0.113.1:4433", "203.0.113.1:4434"]
 tun_name = "rpath0"
 tun_addr = "10.99.0.2/24"
 protocol_hint = "realtime"
-fec_backend = "mettle"         # "raptorq" (default), "mettle", "rs", "rlc", or "streaming"
+fec_backend = "raptorq"        # "raptorq" (default), "rs", or "rlc"
 route = ["192.168.50.0/24"]
 dns = "10.99.0.1"
 status_addr = "127.0.0.1:9820"
@@ -138,7 +138,7 @@ status_addr = "127.0.0.1:9820"
 # Runtime FEC backend switching (config-only, no CLI flags)
 fec_auto_switch = true         # auto-switch between backends based on loss (default: true)
 fec_switch_threshold_low = 0.01   # below this loss rate → RaptorQ
-fec_switch_threshold_high = 0.10  # above this loss rate → Mettle
+fec_switch_threshold_high = 0.10  # above this loss rate → RLC
 fec_switch_interval = 5           # minimum seconds between switches
 ```
 
@@ -163,7 +163,7 @@ CLI flags override config file values. See `--help` for all available fields.
 | `--dns` | none | DNS server to configure on tunnel interface |
 | `--interleave-depth` | auto | Block interleaving depth (1=disabled, 2+=burst resilience) |
 | `--pin-cert` | none | Path to pinned TLS certificate (DER or PEM) |
-| `--fec-backend` | `raptorq` | FEC backend: `raptorq`, `mettle`, `rs`, `rlc`, or `streaming` |
+| `--fec-backend` | `raptorq` | FEC backend: `raptorq`, `rs`, or `rlc` |
 
 ### Environment
 
@@ -191,8 +191,6 @@ raptorpath/                      (workspace root)
 │       │   ├── traits.rs        FecEncoder/FecDecoder traits, FecBackend enum
 │       │   ├── window_traits.rs WindowEncoder/WindowDecoder traits
 │       │   ├── raptorq_backend.rs  RaptorQ implementation (RFC 6330)
-│       │   ├── mettle_backend.rs   METTLE block-mode adapter
-│       │   ├── mettle_window.rs    METTLE window-mode adapter
 │       │   ├── rs_backend.rs       Reed-Solomon (GF(256) MDS)
 │       │   ├── rlc_backend.rs      RLC block-mode (RFC 8681)
 │       │   ├── rlc_window.rs       RLC window-mode (sliding window)
@@ -217,13 +215,10 @@ raptorpath/                      (workspace root)
 │           ├── mod.rs           Platform-agnostic TUN interface
 │           ├── linux/mod.rs     Linux TUN (kernel driver)
 │           └── windows/mod.rs   Windows TUN (wintun)
-└── mettle/                      Standalone METTLE erasure code crate
+└── gf256/                       Standalone GF(256) field arithmetic crate
     └── src/
-        ├── lib.rs               Public API and MettleConfig
-        ├── encoder.rs           Streaming encoder with bin accumulation
-        ├── decoder.rs           Peeling decoder
-        ├── graph.rs             Tanner graph / hash-based edge generation
-        └── gf2.rs               GF(2) XOR packet operations
+        ├── lib.rs               Log/exp table field operations
+        └── simd.rs              SIMD-accelerated routines
 ```
 
 ## License

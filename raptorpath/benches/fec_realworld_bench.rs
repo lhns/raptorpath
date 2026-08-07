@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use raptorpath::fec::{
-    EncodingParams, FecBackend, MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder,
+    EncodingParams, FecBackend, RlcWindowDecoder,
     RlcWindowEncoder, WindowDecoder,
     WindowEncoder, WireSymbol,
 };
@@ -116,15 +116,11 @@ fn make_params(data_len: usize, repair_count: u32) -> EncodingParams {
     }
 }
 
-fn repair_count_for_scenario(backend: FecBackend, stationary_loss: f64, k: u32) -> u32 {
+fn repair_count_for_scenario(stationary_loss: f64, k: u32) -> u32 {
     // Target ~99% recovery: overhead = max(loss * 2.5, 3)
     let base = (k as f64 * stationary_loss * 2.5).ceil() as u32;
     let min_repair = 3u32;
-    let overhead = base.max(min_repair);
-    match backend {
-        FecBackend::Mettle => overhead * 2, // METTLE needs more overhead
-        _ => overhead,
-    }
+    base.max(min_repair)
 }
 
 // ---------------------------------------------------------------------------
@@ -140,11 +136,10 @@ fn bench_block_encode(c: &mut Criterion) {
         for (backend_name, backend) in [
             ("raptorq", FecBackend::RaptorQ),
             ("rs", FecBackend::ReedSolomon),
-            ("mettle", FecBackend::Mettle),
             ("rlc", FecBackend::Rlc),
         ] {
             let k = (data.len() as f64 / 1200.0).ceil() as u32;
-            let repair = repair_count_for_scenario(backend, scenario.stationary_loss, k);
+            let repair = repair_count_for_scenario(scenario.stationary_loss, k);
             let params = make_params(data.len(), repair);
             let id = format!("{}/{}", scenario.name, backend_name);
 
@@ -169,11 +164,10 @@ fn bench_block_decode(c: &mut Criterion) {
         for (backend_name, backend) in [
             ("raptorq", FecBackend::RaptorQ),
             ("rs", FecBackend::ReedSolomon),
-            ("mettle", FecBackend::Mettle),
             ("rlc", FecBackend::Rlc),
         ] {
             let k = (data.len() as f64 / 1200.0).ceil() as u32;
-            let repair = repair_count_for_scenario(backend, scenario.stationary_loss, k);
+            let repair = repair_count_for_scenario(scenario.stationary_loss, k);
             let params = make_params(data.len(), repair);
             let encoder = backend.create_encoder(&data, params);
             let source = encoder.source_symbols();
@@ -239,24 +233,6 @@ fn bench_window_encode(c: &mut Criterion) {
             });
         });
 
-        // METTLE
-        let id = format!("{}/mettle", scenario.name);
-        group.bench_function(BenchmarkId::from_parameter(&id), |b| {
-            b.iter(|| {
-                let mut encoder = MettleWindowEncoder::new(
-                    mettle::MettleConfig::small_window(),
-                    WINDOW_SYMBOL_SIZE,
-                    42,
-                );
-                for pkt in &packet_data {
-                    encoder.add_source(pkt);
-                }
-                for _ in 0..num_repairs {
-                    encoder.generate_repair();
-                }
-            });
-        });
-
     }
     group.finish();
 }
@@ -303,41 +279,6 @@ fn bench_window_decode(c: &mut Criterion) {
             );
         }
 
-        // METTLE window decode
-        {
-            let mut encoder = MettleWindowEncoder::new(
-                mettle::MettleConfig::small_window(),
-                WINDOW_SYMBOL_SIZE,
-                42,
-            );
-            let sources: Vec<WireSymbol> = packet_data
-                .iter()
-                .map(|pkt| encoder.add_source(pkt))
-                .collect();
-            let repairs: Vec<WireSymbol> = (0..num_repairs.max(10))
-                .map(|_| encoder.generate_repair())
-                .collect();
-
-            let mut rng = ChaCha8Rng::seed_from_u64(0);
-            let (surviving, _) = scenario.channel.apply(&sources, &mut rng);
-            let mut transmitted: Vec<WireSymbol> = surviving;
-            transmitted.extend(repairs);
-
-            let id = format!("{}/mettle", scenario.name);
-            group.bench_with_input(
-                BenchmarkId::from_parameter(&id),
-                &transmitted,
-                |b, syms| {
-                    b.iter(|| {
-                        let mut decoder = MettleWindowDecoder::new(WINDOW_SYMBOL_SIZE);
-                        for sym in syms {
-                            decoder.add_symbol(sym);
-                        }
-                    });
-                },
-            );
-        }
-
     }
     group.finish();
 }
@@ -357,11 +298,10 @@ fn bench_cross_pipeline(c: &mut Criterion) {
         for (backend_name, backend) in [
             ("raptorq", FecBackend::RaptorQ),
             ("rs", FecBackend::ReedSolomon),
-            ("mettle", FecBackend::Mettle),
             ("rlc", FecBackend::Rlc),
         ] {
             let k = (data.len() as f64 / 1200.0).ceil() as u32;
-            let repair = repair_count_for_scenario(backend, scenario.stationary_loss, k);
+            let repair = repair_count_for_scenario(scenario.stationary_loss, k);
             let params = make_params(data.len(), repair);
 
             let id = format!("{}/block_{}", scenario.name, backend_name);
@@ -411,35 +351,6 @@ fn bench_cross_pipeline(c: &mut Criterion) {
                     all.extend(repairs);
 
                     let mut decoder = RlcWindowDecoder::new(WINDOW_SYMBOL_SIZE);
-                    for sym in &all {
-                        decoder.add_symbol(sym);
-                    }
-                });
-            });
-
-            // METTLE window
-            let id = format!("{}/window_mettle", scenario.name);
-            group.bench_function(BenchmarkId::from_parameter(&id), |b| {
-                b.iter(|| {
-                    let mut encoder = MettleWindowEncoder::new(
-                        mettle::MettleConfig::small_window(),
-                        WINDOW_SYMBOL_SIZE,
-                        42,
-                    );
-                    let sources: Vec<WireSymbol> = packet_data
-                        .iter()
-                        .map(|pkt| encoder.add_source(pkt))
-                        .collect();
-                    let repairs: Vec<WireSymbol> = (0..num_repairs.max(10))
-                        .map(|_| encoder.generate_repair())
-                        .collect();
-
-                    let mut rng = ChaCha8Rng::seed_from_u64(0);
-                    let (surviving, _) = scenario.channel.apply(&sources, &mut rng);
-                    let mut all: Vec<WireSymbol> = surviving;
-                    all.extend(repairs);
-
-                    let mut decoder = MettleWindowDecoder::new(WINDOW_SYMBOL_SIZE);
                     for sym in &all {
                         decoder.add_symbol(sym);
                     }

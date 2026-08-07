@@ -85,8 +85,8 @@ primary and secondary channel's GE models, overriding independent transitions.
 
 ### Table 1: Backend Recovery vs Uniform Loss
 
-Tests the five FEC backends (RaptorQ, Reed-Solomon, RLC window, Mettle window,
-Streaming) under **uniform i.i.d. Bernoulli loss** at rates from 1% to 25%.
+Tests the FEC backends (RaptorQ, Reed-Solomon, RLC window) under
+**uniform i.i.d. Bernoulli loss** at rates from 1% to 25%.
 
 - Loss is applied independently per symbol (source + repair) using a seeded
   `ChaCha8Rng`.
@@ -136,7 +136,7 @@ Key question: "How much bandwidth does FEC actually cost?"
 A single unified matrix (ADR-0045) crossing four dimensions replaces the
 former Tables 3, 4, and 5:
 
-**Backends (6)**: RaptorQ, ReedSolomon, RLC, Mettle, Streaming, Retransmit
+**Backends (4)**: RaptorQ, ReedSolomon, RLC, Retransmit
 
 **Feature ablations (4)**: baseline, no_nack, no_reorder, no_pi
 
@@ -156,11 +156,11 @@ Retransmit only runs "baseline" (NACK/reorder/PI are FEC-specific).
 
 DC+LTE only runs in 2-path mode (asymmetric scenario).
 
-**Total**: 168 cells × 30 trials = 5,040 trial runs.
+**Total**: 117 cells × 30 trials = 3,510 trial runs.
 
 Three trial branches handle backend differences:
 
-- **Window backends** (RLC, Mettle, Streaming): streaming encode/decode through
+- **Window backends** (RLC): streaming encode/decode through
   SimChannel with adaptive FEC rate, NACK, reorder buffer, and PI feedback.
 - **Block backends** (RaptorQ, RS): per-block encode, send individual symbols
   through SimChannel pipeline with multipath and reorder at symbol level,
@@ -317,7 +317,7 @@ would cause elevated loss in the first few batches.
 These results are robust to the simulation simplifications:
 
 - **Backend ranking under both uniform and bursty loss**: the relative ordering
-  of RaptorQ, RS, RLC, Mettle, and Streaming is a function of their codec
+  of RaptorQ, RS, and RLC is a function of their codec
   properties (MDS vs near-MDS, block vs window), not congestion dynamics.
 - **Overhead comparison**: wire overhead is a deterministic function of the FEC
   rate and header sizes. The simulation accurately counts bytes.

@@ -51,10 +51,10 @@ fn test_block_mode_per_block_switching() {
         FecBackend::RaptorQ,
         FecBackend::Rlc,
         FecBackend::RaptorQ,
-        FecBackend::Mettle,
+        FecBackend::Rlc,
         FecBackend::RaptorQ,
         FecBackend::Rlc,
-        FecBackend::Mettle,
+        FecBackend::Rlc,
         FecBackend::Rlc,
         FecBackend::RaptorQ,
         FecBackend::Rlc,
@@ -74,7 +74,7 @@ fn test_block_mode_per_block_switching() {
 fn test_block_mode_receiver_uses_blockstart_backend() {
     // Simulate receiver creating decoder from BlockStart.backend field
     let data = vec![0xCD; 512];
-    let backends = [FecBackend::RaptorQ, FecBackend::Rlc, FecBackend::Mettle];
+    let backends = [FecBackend::RaptorQ, FecBackend::Rlc, FecBackend::ReedSolomon];
 
     for &backend in &backends {
         let source_symbols = (data.len() as f64 / 128.0).ceil() as u32;
@@ -142,7 +142,7 @@ fn test_backend_selector_switches_on_loss_change() {
     assert!(selector.evaluate(&est).is_none());
     assert_eq!(selector.current(), FecBackend::RaptorQ);
 
-    // Switch to high loss — should switch to Mettle after debounce
+    // Switch to high loss — should switch to RLC after debounce
     let mut est_high = LossEstimator::new();
     for _ in 0..100 {
         est_high.record_batch(1000, 850); // 15% loss
@@ -163,7 +163,7 @@ fn test_backend_selector_switches_on_loss_change() {
 fn test_window_switch_message_roundtrip() {
     let msg = WireMessage::Control(ControlMessage::WindowSwitch {
         flush_seq: 42,
-        new_backend: FecBackend::Mettle,
+        new_backend: FecBackend::Rlc,
         symbol_size: 512,
     });
 
@@ -177,7 +177,7 @@ fn test_window_switch_message_roundtrip() {
             symbol_size,
         }) => {
             assert_eq!(flush_seq, 42);
-            assert_eq!(new_backend, FecBackend::Mettle);
+            assert_eq!(new_backend, FecBackend::Rlc);
             assert_eq!(symbol_size, 512);
         }
         _ => panic!("expected WindowSwitch"),
@@ -201,8 +201,8 @@ fn test_window_switch_ack_roundtrip() {
 
 #[test]
 fn test_window_flush_and_switch_encode_decode() {
-    // Simulate window-mode: encode with RLC, then switch to Mettle
-    use raptorpath::fec::{RlcWindowEncoder, RlcWindowDecoder, MettleWindowEncoder, MettleWindowDecoder, WindowEncoder, WindowDecoder};
+    // Simulate window-mode: encode with RLC, flush, then restart with a fresh RLC window
+    use raptorpath::fec::{RlcWindowEncoder, RlcWindowDecoder, WindowEncoder, WindowDecoder};
     use raptorpath::net::framing::{frame_window_packet, extract_window_packet};
 
     let symbol_size: u16 = 128;
@@ -228,13 +228,9 @@ fn test_window_flush_and_switch_encode_decode() {
 
     assert_eq!(recovered_phase1.len(), 5, "all 5 packets should be recovered in phase 1");
 
-    // Phase 2: Switch to Mettle (simulate flush point)
-    let mut mettle_encoder = MettleWindowEncoder::new(
-        mettle::MettleConfig::small_window(),
-        symbol_size,
-        42,
-    );
-    let mut mettle_decoder = MettleWindowDecoder::new(symbol_size);
+    // Phase 2: fresh encoder/decoder pair (simulate flush point)
+    let mut phase2_encoder = RlcWindowEncoder::new(symbol_size);
+    let mut phase2_decoder = RlcWindowDecoder::new(symbol_size);
 
     let packets2: Vec<Vec<u8>> = (5..10)
         .map(|i| vec![i as u8 + 1; 50])
@@ -243,8 +239,8 @@ fn test_window_flush_and_switch_encode_decode() {
     let mut recovered_phase2 = Vec::new();
     for pkt in &packets2 {
         let framed = frame_window_packet(pkt, symbol_size);
-        let sym = mettle_encoder.add_source(&framed);
-        for (seq, data) in mettle_decoder.add_symbol(&sym) {
+        let sym = phase2_encoder.add_source(&framed);
+        for (seq, data) in phase2_decoder.add_symbol(&sym) {
             if let Some(p) = extract_window_packet(&data) {
                 recovered_phase2.push((seq, p));
             }

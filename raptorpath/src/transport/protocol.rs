@@ -88,7 +88,6 @@ fn read_varint(data: &[u8], pos: &mut usize) -> Option<u64> {
 fn backend_to_u8(b: FecBackend) -> u8 {
     match b {
         FecBackend::RaptorQ => 0,
-        FecBackend::Mettle => 1,
         FecBackend::ReedSolomon => 2,
         FecBackend::Rlc => 3,
     }
@@ -97,7 +96,6 @@ fn backend_to_u8(b: FecBackend) -> u8 {
 fn backend_from_u8(v: u8) -> Option<FecBackend> {
     Some(match v {
         0 => FecBackend::RaptorQ,
-        1 => FecBackend::Mettle,
         2 => FecBackend::ReedSolomon,
         3 => FecBackend::Rlc,
         _ => return None,
@@ -463,7 +461,6 @@ mod tests {
             (FecBackend::Rlc, false),
             (FecBackend::Rlc, true),
             (FecBackend::RaptorQ, false),
-            (FecBackend::Mettle, true),
             (FecBackend::ReedSolomon, false),
         ] {
             let batch = SymbolBatch {

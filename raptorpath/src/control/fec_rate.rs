@@ -164,7 +164,6 @@ impl FecRateController {
     ) -> Self {
         let codec_overhead = match backend {
             FecBackend::RaptorQ => 0.01,
-            FecBackend::Mettle => 0.15,
             FecBackend::ReedSolomon => 0.0,
             FecBackend::Rlc => 0.004,
         };
@@ -375,7 +374,6 @@ impl FecRateController {
     pub fn update_backend(&mut self, backend: FecBackend) {
         self.rq_overhead = match backend {
             FecBackend::RaptorQ => 0.01,
-            FecBackend::Mettle => 0.15,
             FecBackend::ReedSolomon => 0.0,
             FecBackend::Rlc => 0.004,
         };
@@ -1366,9 +1364,9 @@ mod tests {
 
     #[test]
     fn test_codec_overhead_weighted_by_decoder_invocation() {
-        // Compare Mettle (15% codec overhead) vs ReedSolomon (0% overhead) at same window.
+        // Compare RaptorQ (1% codec overhead) vs ReedSolomon (0% overhead) at same window.
         // The difference isolates the codec overhead contribution.
-        let ctrl_mettle = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::Mettle, 1200);
+        let ctrl_rq = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
         let ctrl_rs = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::ReedSolomon, 1200);
 
         let mut est = LossEstimator::new();
@@ -1377,20 +1375,20 @@ mod tests {
             est.record_batch(100, 95); // 5% loss
         }
 
-        // At same window, Mettle should have higher rate than RS due to codec overhead
-        let rate_mettle = ctrl_mettle.compute_repair_rate(&est, 50);
+        // At same window, RaptorQ should have higher rate than RS due to codec overhead
+        let rate_rq = ctrl_rq.compute_repair_rate(&est, 50);
         let rate_rs = ctrl_rs.compute_repair_rate(&est, 50);
         assert!(
-            rate_mettle > rate_rs,
-            "Mettle should have higher rate than RS due to codec overhead: mettle={rate_mettle}, rs={rate_rs}"
+            rate_rq > rate_rs,
+            "RaptorQ should have higher rate than RS due to codec overhead: rq={rate_rq}, rs={rate_rs}"
         );
 
-        // With zero window size, no codec overhead → Mettle ≈ RS
-        let rate_mettle_zero = ctrl_mettle.compute_repair_rate(&est, 0);
+        // With zero window size, no codec overhead → RaptorQ ≈ RS
+        let rate_rq_zero = ctrl_rq.compute_repair_rate(&est, 0);
         let rate_rs_zero = ctrl_rs.compute_repair_rate(&est, 0);
         assert!(
-            (rate_mettle_zero - rate_rs_zero).abs() < 0.01,
-            "Zero window should have no codec overhead: mettle={rate_mettle_zero}, rs={rate_rs_zero}"
+            (rate_rq_zero - rate_rs_zero).abs() < 0.01,
+            "Zero window should have no codec overhead: rq={rate_rq_zero}, rs={rate_rs_zero}"
         );
     }
 

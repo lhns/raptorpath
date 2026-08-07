@@ -4,7 +4,7 @@
 //! combination of loss, reordering, and boundary condition that a real
 //! network deployment would encounter.
 //!
-//! Tests run against all four backends: RaptorQ, METTLE, Reed-Solomon, and RLC.
+//! Tests run against all three backends: RaptorQ, Reed-Solomon, and RLC.
 
 use bytes::Bytes;
 use rand::seq::SliceRandom;
@@ -88,7 +88,6 @@ fn assert_data_eq(decoded: &Bytes, expected: &[u8]) {
 fn all_backends() -> Vec<(&'static str, FecBackend, u32)> {
     vec![
         ("raptorq", FecBackend::RaptorQ, 20),
-        ("mettle", FecBackend::Mettle, 40),
         ("rs", FecBackend::ReedSolomon, 20),
         ("rlc", FecBackend::Rlc, 20),
     ]

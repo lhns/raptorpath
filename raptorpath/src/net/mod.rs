@@ -19,7 +19,7 @@ use block_arq::BlockArq;
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
-use crate::fec::{MettleWindowDecoder, MettleWindowEncoder, RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
+use crate::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
 use crate::monitor::stats::SharedStats;
 use crate::routing::{self, ManagedDns, ManagedRoute};
 use crate::scheduler::{Scheduler, WallClock};
@@ -56,7 +56,7 @@ pub struct PeerConfig {
     pub interleave_depth: u32,
     /// Optional path to a pinned TLS certificate for server verification
     pub pin_cert: Option<std::path::PathBuf>,
-    /// Which FEC backend to use (RaptorQ or Mettle)
+    /// Which FEC backend to use (RaptorQ, RS or RLC)
     pub fec_backend: FecBackend,
     /// Whether the user explicitly set fec_backend (vs defaulting to RaptorQ)
     pub fec_backend_explicit: bool,
@@ -540,7 +540,7 @@ const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 /// Returns true if this config should use sliding-window mode instead of block mode.
 ///
 /// The pipeline shape follows from the algorithm's capabilities: streaming-native
-/// backends (RLC, METTLE) use the sliding-window pipeline; block-only backends
+/// backends (RLC) use the sliding-window pipeline; block-only backends
 /// (RaptorQ, Reed-Solomon) always use the block pipeline. By default only
 /// Task #61 (paper §16.20): the UNIFIED machine gate. When set, (a) the
 /// receive path uses ONE decoder (`UnifiedDecoder` — the global sparse-aware
@@ -1039,7 +1039,6 @@ fn copa_feed_attribute(
 fn backend_to_u8(backend: FecBackend) -> u8 {
     match backend {
         FecBackend::RaptorQ => 0,
-        FecBackend::Mettle => 1,
         FecBackend::ReedSolomon => 2,
         FecBackend::Rlc => 3,
         // 4 was Streaming (retired 2026-07-28) — kept reserved.
@@ -9380,11 +9379,6 @@ fn create_window_encoder(
     symbol_size: u16,
 ) -> Box<dyn WindowEncoder> {
     match backend {
-        FecBackend::Mettle => Box::new(MettleWindowEncoder::new(
-            mettle::MettleConfig::small_window(),
-            symbol_size,
-            42,
-        )),
         _ => Box::new(RlcWindowEncoder::new(symbol_size)),
     }
 }
@@ -9404,7 +9398,6 @@ fn create_window_decoder(
     generation: bool,
 ) -> Box<dyn WindowDecoder> {
     match backend {
-        FecBackend::Mettle => Box::new(MettleWindowDecoder::new(symbol_size)),
         // Task #61 (paper §16.20): under RWM_UNIFIED the whole RLC family —
         // sliding-window AND generation wires — decodes on ONE machine, the
         // global sparse-aware closure. Differential-proven equal to both
@@ -9450,11 +9443,9 @@ fn encode_to_interleave_buf(
     // MTU-aware symbol sizing: use PMTU-discovered max datagram size if available,
     // otherwise fall back to the profile default. We take the minimum MTU across
     // all active paths to avoid fragmentation on any path.
-    // For METTLE, repair symbols carry extra in-band metadata (bin membership lists)
-    // that must be subtracted from the available MTU.
-    let fec_wire_overhead = fec_backend.repair_wire_overhead(
-        mettle::MettleConfig::small_window().num_edges,
-    );
+    // Repair symbols may carry in-band metadata that must be subtracted from
+    // the available MTU (RLC: a repair-index header).
+    let fec_wire_overhead = fec_backend.repair_wire_overhead();
     let effective_symbol_size = {
         let sched = scheduler.lock();
         let total_overhead = WIRE_OVERHEAD + fec_wire_overhead;
