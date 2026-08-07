@@ -89,3 +89,27 @@ motivation (a rate-model feed-forward is exactly what would let a
 - ADR-0019 (engine delay-based CC), ADR-0062 (Copa wire-signal +
   competitive mode), ADR-0067 (the composed default stack), ADR-0068
   (the Copa/BBR fusion — inherits this battery's bulk gap as its target).
+
+## ADDENDUM (2026-08-07, "Ship The Wins 2: shal8 anchor") — the shallow-buffer bound of the shipped quinn-BBR default, measured and priced
+
+The B1 inversion (shal8: shipped BBR-under ~10 Mbit vs Copa-sole 75–79)
+is attributed at source: quinn-proto 0.11's BBR estimator samples
+adjacent-event rates (vacuous send-side guard inside its own ≥10-packet
+pacer bursts) and its 10-round max filter latches token-bucket
+burst-delivery peaks — measured in vivo at 5–8.8× the true BDP (qcwnd
+gauge). A two-mechanism in-tree port (`RWM_QUIC_CC=bbr_rs`: the
+ADR-0061 per-flight interval-guarded sampler + a recovery-window floor
+at the model's 1×BDP target) reaches only 21–22 Mbit, both seeds: the
+residual is the `Controller`-trait boundary (window-derived 1.25×/RTT
+pacer with ≥10-packet bursts, `pacing_rate` ignored, probe-vs-filter
+starvation at 1×BDP̂). Kernel BBRv1 holds the identical cell at
+91–93 Mbit (CUBIC 11) — the algorithm is fine, the implementation
+surface is the bound. FINDING: the defects are mutually masking — the
+honest estimator gives back −4…−14% on GE cells (c7 both seeds) because
+the shipped default's deep-cell class rides the over-read's standing
+queue. DECISION: default UNCHANGED (no flip; `bbr_rs` retained as a
+gated reference arm with law tests); the honest fix is upstream
+quinn-proto work or engine-owned pacing via the existing passthrough
+surface under a rate-model law — ADR-0068's fusion, whose shal8 bar is
+now kernel-BBR's 93. Evidence: goal-gate "Ship The Wins 2: shal8
+anchor"; paper §16.37.

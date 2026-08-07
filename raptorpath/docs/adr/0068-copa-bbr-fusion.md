@@ -176,3 +176,24 @@ realtime crown survives jit15 (p99 medians 92–96 ms vs 36–39 clean,
 wire-class inflation only) — the fusion inherits that bar too.
 Evidence: goal-gate "Adversarial Cells (B1)" (2026-08-06), paper
 §16.33.
+
+## ADDENDUM 2 (2026-08-07, "Ship The Wins 2: shal8 anchor") — the fusion's substrate constraint and its sharpened bars
+
+Attempting the shal8 fix inside the shipped quinn-BBR (in-tree
+burst-robust port behind quinn's public `Controller` trait) measured a
+constraint that binds THIS ADR: the trait exposes only `window()` —
+quinn's pacer paces at 1.25 × window/RTT in ≥ 10-packet bursts and
+ignores `pacing_rate` — so a rate-model controller behind the trait
+cannot both probe its filter and avoid the shallow-buffer drop storm
+(measured fixed point: bŵ decays to the achieved rate at 1×BDP̂;
+21–22 Mbit vs kernel BBRv1's 91–93 on the same cell). The fusion must
+therefore own PACING, not just the window: the existing
+`RWM_QUIC_CC=passthrough` surface (+ engine `cc_pace`) is the required
+seam — as Copa-sole already demonstrates at 80–82 on this cell.
+Sharpened bars: shal8 external bar = kernel BBRv1 93 Mbit (~3%
+retrans); named hazard = the measured mutual masking (an honest
+burst-robust estimator strips the over-read's standing queue and gives
+back −4…−14% at GE cells until the recovery-latency story is
+queue-independent — the store-dwell binder of the MEASURED BASELINE
+addendum, same family). Evidence: goal-gate "Ship The Wins 2: shal8
+anchor"; paper §16.37.
