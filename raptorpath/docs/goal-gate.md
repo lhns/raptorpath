@@ -15227,3 +15227,211 @@ the est default pin — final state: default-OFF pins for est/eb/pa);
 full suite green. Env-unset tree after the revert: gates default-stack
 test pins est/eb/pa OFF; the N = 1 and Copa-feed paths are
 byte-identical by construction (consumer-separation law).
+
+## Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07) — PRE-REGISTRATION (discipline item 11 — written and committed BEFORE any build and BEFORE any VM run; branch `feat/pool-delivery-anchor` from `feat/ship-est-cadence`@60f833a; ATTEMPT 2 of the goal's sub-item 1, and its LAST — a second falsification converts sub-goal 1 into a documented structural bound per the honest-exit rule)
+
+**(a) The question, inherited exactly.** Attempt 1 ("Ship The Wins 1",
+above; paper §16.36) built `RWM_POOL_ANCHOR` — the N ≥ 2 pooled-store
+cap fed from a per-path SEND-interval `SendRateAnchor` (ratcheted
+half-window mean) instead of the legacy ack-interval windowed-MAX —
+and measured **c1 = 463/482 Mbit/s (PRIMARY ≥ 430 MET, −72% receiver
+CPU/bit), every other gate held, and c7 = 0.968/0.959×Σ against the
+required ≥ 0.97 — failed by 0.002/0.011 on both seeds.** Defaults
+reverted; no flip. The gauge-named mechanism, verbatim: the
+send-derived anchor removes the over-read channel (sr ≈ 8–12k ≈ 1×
+truth vs legacy btlbw 339–500k) but **BECOMES THE BINDER** — a
+send-derived rate cannot ratchet above the cap-limited carried rate
+(no delivery physics), so the pool sits AT the operating point (win
+pins at cap 1950–3080, sweeps 8–21 vs prior 0–7) and holes re-age
+there. Generally: **at N ≥ 2 the engine has no honest
+un-self-referential rate source for the pool — ack-interval reads
+burst peaks (over), send-interval reads the cap's own shadow
+(under).** The prior default escapes only by ACCIDENT: its Σcwnd
+governor floats the store below a pool the over-read inflated into
+slack. Attempt 1 named two successors; this pre-registration builds
+the first and carries the second as a fallback arm in the SAME
+battery.
+
+### ARM (A) — the delivery-clocked pool anchor (the primary build)
+
+**(A.1) Mechanism.** Feed the pool law's rate input from a per-path
+**delivery-clocked rate sampler**, `control::anchor::DeliveryRateAnchor`
+— the BBR/ADR-0061 rate-sample structure (`RsPacket`/`rs_on_sent`/
+`rs_on_delivered`, already in-tree inside `CopaState`) rebuilt as a
+STANDALONE SHADOW estimator that no cwnd consumer can read:
+
+- **The statistic.** BBR `GenerateRateSample`: on each delivery event,
+  `rate = Δdelivered / max(send_elapsed, ack_elapsed)`, windowed-MAX
+  over ≈ 10·RTprop (clamped [1 s, 10 s]) — with the two hygiene guards
+  that make the sample an honest LOWER BOUND on the bottleneck rate:
+  (i) `send_elapsed` (the sender's own clock, from the send-cursor log)
+  overrides a batched ack's collapsed `ack_elapsed`, which is exactly
+  the ×10-class ack-bunching over-read the legacy `record_delivery`
+  suffers and the §16.35 est clock makes ×3.4–3.7 worse; (ii) samples
+  spanning less than one RTprop are REJECTED and ACCUMULATED (the
+  cursor is not reset), so a drain burst is averaged over ≥ one pipe
+  instead of latched. Plus the ADR-0061 clock-gap discard + quarantine
+  on the ack clock (`is_clock_gap`), hold-through-disturbance as in
+  `SendRateAnchor`.
+- **Why it escapes attempt 1's self-reference (THE claim under test).**
+  A send-interval MEAN is bounded above by what the cap let the sender
+  emit — the cap's own shadow. A delivery-clocked MAX-FILTER is not:
+  during any store-refill/SACK-release burst the wire delivers at the
+  BOTTLENECK rate, the `send_elapsed ≥ RTprop` guards keep that sample
+  from over-reading, and the max filter HOLDS it for ≈10·RTprop. That
+  is precisely BBR's escape from the cwnd⇄BtlBw circularity, and it is
+  the one honest rate source in this engine that is bounded by
+  delivered-packet PHYSICS rather than by the sender's own admission
+  gate. If the c7 store is being pinned because the pool cannot see
+  above its own operating point, this raises the pool to the measured
+  wire rate and the pin releases.
+- **Aggregate (not per-seq) attribution — stated as a limitation now.**
+  The plain N ≥ 2 stack has no per-seq delivery attribution without
+  the CopaFeed (whose sampling-only mode carries the measured −22…−27
+  Mbit c7 price and the §16.34 `src_inflight` leak — both must stay
+  unreachable, falsification-5). So the sampler keys on CUMULATIVE
+  COUNTS, per path: a monotone send cursor (`(instant, cum_sent)` log,
+  fed at `charge_in_flight` — the same site arm 1 already feeds) and a
+  monotone ACCOUNTED cursor advanced by delivered + lost at the ack
+  arm, `send_elapsed` = the send-log instant at the new accounted
+  cursor minus the instant at the previous SAMPLE's cursor. Advancing
+  the cursor by LOSSES too is what keeps the two cursors aligned (a
+  lost symbol left the wire; the numerator counts only deliveries).
+  The per-path ATTRIBUTION is byte-identical to the one the legacy
+  anchor already uses (the arriving ack's path) — this build changes
+  the Δt STATISTIC, not the attribution.
+- **The rate the law reads.** `PathState::pool_rate_anchor()` =
+  `max(delivery_max_bw, send_ratcheted_mean)` — ONE formula, no
+  branch, no mode bit (CLAUDE.md's no-mode-switch invariant applies to
+  laws as much as to dials): both terms are honest LOWER BOUNDS on the
+  bottleneck rate and the pool law wants the bottleneck rate, so the
+  max of two lower bounds is the estimator. This also makes arm (A)
+  strictly ≥ arm (attempt 1) at every instant — the arms are ordered,
+  so a c7 difference is attributable to exactly the added delivery
+  term.
+- **Scope (unreachability, restated as build constraints).** The
+  delivery anchor feeds ONLY `pool_rate_anchor()` → ONLY the N ≥ 2
+  `pa_terms` pool law. NOT `record_delivery`/`max_bw`/`bdp_anchor`/
+  `anchor_floor`/cwnd/pacing (the −22…−27 price), NOT `src_inflight`/
+  `charge_src`/`on_src_sent` (falsification-5), NO CopaFeed
+  instantiated. N = 1 is bit-exactly untouched; with the gate off,
+  `charge_in_flight` and the ack arm do no anchor work at all
+  (cost-honest A/B, the `pool_anchor_feed` precedent).
+- **Gate.** `RWM_POOL_DELIV` (default = the `RWM_POOL_ANCHOR`
+  resolution = the `RWM_EST_CADENCE` resolution ⇒ OFF with everything
+  unset). Liveness echo: "pool-anchor DELIVERY-CLOCKED rate ACTIVE".
+  DIAG: per-path `dr=` (delivery max_bw) beside the existing `sr=`,
+  and the pool `pa=on/Σ`.
+
+**(A.2) Predictions (pre-registered, both seeds).**
+1. **MECHANISM at c7:** per-path `dr_i` is (a) ≳ `sr_i` (it sees the
+   burst drain the mean cannot) and (b) within ~2× of the ≈8–12k
+   truth — NOT the legacy 339–500k class (that would mean the guards
+   failed and the over-read channel is back). The pool cap rises above
+   attempt 1's 1697–3103 while `win` NO LONGER PINS AT CAP (win < cap
+   with slack, the prior default's signature), and sweeps return to
+   the prior 0–7 class from attempt 1's 8–21.
+2. **c7 (THE clause): ≥ 0.97×Σ same-session on BOTH seeds** with
+   est-cadence ON (prior default 0.981/0.972; attempt 1 0.968/0.959;
+   est-only 0.938/0.949).
+3. **c1 (PRIMARY): ≥ 430 Mbit/s mean on both seeds** at 400 MB (the
+   delivery anchor is N ≥ 2-scoped, so c1 must reproduce attempt 1's
+   463/482 class), plus one 1.2 GB sustained run ≥ ~480.
+4. **sc2/sc3:** within σ of prior default (N = 1 inert by construction).
+5. **c8 dual 25 MB:** ≥ the shipped-default class (attempt 1 measured
+   0.758/0.777 vs prior 0.746/0.715 — the honest-pool upside); a
+   regression below the prior class is a finding, not a pass.
+6. **CROWN (mandatory):** tail_matrix c2 spot ×4 — p99 medians in the
+   historic ~36–48 ms class, 1000/1000 delivered.
+7. dnf = 0 everywhere; wedge suite green; suites green.
+
+**(A.3) Falsification (fixed now).** (i) `dr_i` in the 100k+ class ⇒
+the aggregate-cursor sampler reproduced the ack-bunching over-read
+(the guards do not hold under aggregate counts) ⇒ arm (A) is
+FALSIFIED as built; record the gauge, NO tuning pass. (ii) `dr_i`
+honest (≈1× truth, ≳ sr) and the pool DOES rise, but c7 still < 0.97
+with win still pinned / sweeps still 8–21 ⇒ the binder is NOT the
+pool's rate source at all — the store pin is downstream (recovery
+patience / retention), and the "no un-self-referential rate source"
+framing is itself incomplete; name the real binder from the gauges and
+report it in the structural-bound writeup. (iii) `dr ≈ sr` everywhere
+(no burst headroom to see) ⇒ the delivery clock carries NO information
+the send clock lacks at these cells — the cleanest possible
+falsification of the successor's premise, and the strongest form of
+the structural bound. (iv) c7 ≥ 0.97 but c1 < 430 ⇒ no flip, the c1
+term re-attributed. (v) sc2/sc3/crown regression ≫σ both seeds ⇒ scope
+defect (N = 1 or cwnd-consumer inertness broken) = a BUG: fix before
+any verdict (§16.34 incident protocol).
+
+### ARM (B) — bound the est-arm's `anchor_floor` cwnd inflation (the fallback, same battery)
+
+**(B.1) Mechanism.** Keep the pool law exactly as attempt 1 shipped
+it, and instead make the OTHER half of the runaway principled: at the
+est opt-in, attempt 1 measured cwnd 5860 vs the prior default's 1779,
+because `CopaState::anchor_floor()` = `ANCHOR_FLOOR_GAIN · max_bw ·
+RTprop` rides the LEGACY ack-interval `max_bw` (339–500k at c7 under
+the est clock). The prior default's accidental escape IS its Σcwnd
+governor floating the store below the pool; arm (B) makes that escape
+DERIVED instead of accidental by bounding the floor with the honest
+rate the engine already measures: in `PathState::clamp_cwnd_with_anchor`,
+`floor := min(legacy_floor, ANCHOR_FLOOR_GAIN · sr · RTprop)` when the
+send anchor is warm. It is a bound on a FLOOR (never a cap on cwnd,
+never a new consumer): it can only remove inflation the over-read
+injected, and with the send anchor cold it is the legacy value
+verbatim. Gate `RWM_FLOOR_BOUND` (default OFF — a pure A/B arm; it is
+NOT part of arm A's default resolution, so arms A and B are
+independent knobs).
+
+**(B.2) Prediction.** At c7 with est ON + pool-anchor ON + floor-bound
+ON: per-path cwnd back in the ≈1.8–2.5k class (not 5860), Σcwnd once
+again BELOW the pool cap so the store floats (win < cap, sweeps ≤ ~7),
+and **c7 ≥ 0.97×Σ both seeds** with c1 ≥ 430 retained (N = 1: the
+floor bound is live there too, so sc2/sc3/c1 MUST be measured, not
+assumed inert — a c1/sc2 regression is arm (B)'s own falsification).
+
+**(B.3) Falsification.** cwnd bounded as predicted but c7 still
+< 0.97 ⇒ the Σcwnd-governor account of the prior default's escape is
+WRONG (the escape is not the cwnd term) ⇒ arm (B) falsified, and with
+(A) also falsified the sub-goal resolves as the structural bound. A
+c1/sc2/sc3 regression ⇒ the honest floor bound costs single-path
+throughput (the over-read was doing load-bearing work at N = 1) ⇒
+falsified as a shippable default, recorded with its numbers.
+
+### THE HONEST EXIT (pre-committed now, so the verdict cannot be negotiated later)
+
+If (A) and (B) are both falsified by the rules above, sub-goal 1
+resolves as a **DOCUMENTED STRUCTURAL BOUND**, written to the ledger,
+the deprecation/limitation register and the paper in this form: *at
+N ≥ 2 this engine has no un-self-referential rate source for the
+pooled-store cap — the ack-interval clock reads burst peaks (over),
+the send-interval clock reads the cap's own shadow (under), and the
+delivery clock (this attempt) reads <the measured outcome>; the c1
+win therefore ships as a DOCUMENTED OPT-IN, not a default*, quoted
+with its full cost/benefit: c1 463–508 Mbit/s at −72% receiver
+CPU/bit vs the 200–204 default, against −1.3…−2.2% c7 at duals
+(attempt 1's composed opt-in) — so a future session can reopen it
+deliberately with the numbers in hand. NO gate is weakened to ship the
+win: c7 ≥ 0.97×Σ stands.
+
+**(c) Battery (pre-registered; IDENTICAL gate set to attempt 1 so the
+results are directly comparable).** VM 10.1.5.16 under MEASUREMENT
+DISCIPLINE 1–12: lock `/tmp/rwm-vm.lock` (item 12 — the lock covers
+ALL VM activity incl. builds; a shal8 worker holds it, so ALL local
+work first, then FOREGROUND polling only); tree synced by git archive
+of THIS branch + CRLF conversion; stale binary removed before the
+build; binary sha256 + commit + lscpu + kernel in every log header;
+rp-* netns only; fresh topology per invocation; seeds 42 AND 7, ×8
+interleaved round-robin per rep; seed-7 topo-abort protocol (n
+recorded, nothing discarded); liveness echoes asserted per arm both
+directions; ARMCOUNT per arm; runtimes stated; same-session Σ from
+each arm's own singles; logs under `/home/vibe/pooldeliv/`. **Cells:**
+c1 400 MB ×8 (PRIMARY ≥ 430) + 1×1.2 GB sustained · **c7 200 MB ×8
+(THE clause, ≥ 0.97×Σ)** with the win/cap/sweeps/echo/dr/sr gauges ·
+c8 25 MB ×8 · sc2 100 MB + sc3 25 MB ×8 · tail_matrix c2 spot ×4
+(crown) · wedge. **Arms:** `deliv` (A: est+eb+pa+`RWM_POOL_DELIV=1`),
+`pa` (attempt 1's default: est+eb+pa, `RWM_POOL_DELIV=0`), `prior`
+(`RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0`), `floor` (B: est+eb+pa +
+`RWM_FLOOR_BOUND=1`). FLIP only on the FULL pre-registered gate set,
+both seeds.
+
+*(Results below this line were written after the runs.)*
