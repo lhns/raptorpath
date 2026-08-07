@@ -174,6 +174,30 @@ pub struct RuntimeGates {
     /// `scheduler::ack_merge_active()` (cached — the receiver arm and the
     /// sender arm read the same resolution).
     pub ack_merge: bool,
+    /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
+    /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
+    /// = 10 ms literal — 10× RFC 9002's kGranularity, and at c2/c7 at or
+    /// ABOVE the 9/8·srtt term it was meant to floor — becomes
+    /// `net::patience_floor_us` = the engine's timer granularity (the sender
+    /// loop's 1 ms wake, coinciding with RFC 9002's RECOMMENDED value) + the
+    /// path's OWN measured RTT jitter (`PathState::rtt_jitter_us`), clamped
+    /// at one srtt, with the legacy floor kept verbatim before the first
+    /// clock sample. Applied at the two BEHAVIOURAL sites only: the
+    /// kGranularity analog inside `mp_time_threshold_us` and the per-seq
+    /// retransmit cooldown. The tail-sweep fallback is left alone (it feeds
+    /// `(srtt·2).clamp(25 ms, 100 ms)`, so every value ≤ 12.5 ms is
+    /// identical — INERT, unit-tested). RFC 9002's kTimeThreshold 9/8 and
+    /// kPacketThreshold 3 are UNTOUCHED.
+    pub patience_derived: bool,
+    /// `RWM_SIDLE_DERIVED` (default OFF — DIAG-only and behaviour-inert;
+    /// goal-gate "Unlock The Default 2"): print `sidle2=`/`idle2=` beside
+    /// the UNCHANGED legacy `sidle=`/`idle=` gauges, computed by
+    /// `net::stall_threshold_us` (the legacy 3 ms re-expressed as 3 × the
+    /// MEASURED inter-emission-event interval, floored at the legacy value
+    /// and capped at the hole-refresh cadence). Answers whether §16.37's and
+    /// §16.39's stall evidence was a fixed-threshold artifact of a batched
+    /// emitter — measured on every arm, controls included.
+    pub sidle_derived: bool,
     /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
     /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
     /// N = 1 plain reliable window. The 1024-latch's three roles split:
@@ -380,6 +404,8 @@ impl RuntimeGates {
             pool_deliv: crate::scheduler::pool_deliv_active(),
             floor_bound: crate::scheduler::floor_bound_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
+            patience_derived: crate::scheduler::patience_derived_active(),
+            sidle_derived: crate::scheduler::sidle_derived_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
@@ -477,6 +503,18 @@ mod tests {
         assert!(
             !g.ack_merge,
             "RWM_ACK_MERGE ships default OFF (A/B arm)"
+        );
+        // "Unlock The Default 2: derived patience" (2026-08-07): the derived
+        // recovery-patience floor is a pure A/B arm and must not reach the
+        // shipped default stack until its pre-registered gate set passes;
+        // the derived stall gauge is DIAG-only and also ships OFF.
+        assert!(
+            !g.patience_derived,
+            "RWM_PATIENCE_DERIVED ships default OFF (A/B arm)"
+        );
+        assert!(
+            !g.sidle_derived,
+            "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
         );
         // Experiments / instruments (default OFF)
         assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);

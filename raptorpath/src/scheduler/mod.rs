@@ -321,6 +321,33 @@ pub fn ack_merge_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", false))
 }
 
+/// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
+/// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
+/// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
+/// analog inside `mp_time_threshold_us`, and the per-seq retransmit
+/// cooldown) with `net::patience_floor_us` = timer granularity + the path's
+/// own measured RTT jitter. RFC 9002's 9/8 and packet-threshold 3 untouched.
+/// Cached so every read site resolves identically within a process.
+///
+/// Not a dial: it selects no law and no constructor argument on (δ, ρ, r).
+pub fn patience_derived_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_PATIENCE_DERIVED", false))
+}
+
+/// `RWM_SIDLE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2".
+/// DIAG-ONLY and behaviour-inert: the legacy `sidle=`/`[WIDLE] idle=` fields
+/// are printed UNCHANGED; this gate adds a SECOND field (`sidle2=`,
+/// `idle2=`) computed by `net::stall_threshold_us` over the same event
+/// stream, so the fixed-3 ms-threshold artifact question is answered on the
+/// SAME runs in every arm, controls included.
+pub fn sidle_derived_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_SIDLE_DERIVED", false))
+}
+
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
@@ -2127,6 +2154,27 @@ impl PathState {
         match self.copa.srtt {
             Some(s) => s,
             None => self.estimator.rtt(),
+        }
+    }
+
+    /// The path's OWN measured RTT jitter, in microseconds — the derived
+    /// patience floor's second term (goal-gate "Unlock The Default 2").
+    ///
+    /// Copa's consecutive-difference estimate (RFC 3550-style EWMA at gain
+    /// 1/8, shift-robust: a standing queue shifts all samples and leaves the
+    /// consecutive differences at jitter scale) widened by its window-level
+    /// twin — `max(jitter_est, win_jitter_est)`, exactly the combination the
+    /// Copa backoff threshold already uses, so patience and the CC read the
+    /// SAME jitter. Before Copa has an RTT sample both are 0 and the loss
+    /// estimator's RFC 3550 §A.8 interarrival jitter stands in.
+    ///
+    /// Measured, never configured: there is no env knob on this path.
+    pub fn rtt_jitter_us(&self) -> u64 {
+        let copa_j = self.copa.jitter_est.max(self.copa.win_jitter_est);
+        if copa_j > 0.0 {
+            (copa_j * 1e6) as u64
+        } else {
+            self.estimator.jitter_us().max(0.0) as u64
         }
     }
 

@@ -218,6 +218,111 @@ const HOLE_NACK_REFRESH_MAX: Duration = Duration::from_millis(100);
 /// Fallback per-seq retransmit cooldown when no SRTT sample exists (µs).
 const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 
+// ── Derived patience + derived stall definition ───────────────────────────
+//
+// Goal-gate "Unlock The Default 2: derived patience" (2026-08-07). Two fixed
+// literals sat in the plane §16.37/§16.39 named as the c7 blocker's owner —
+// the recovery plane's patience and the gauge that measures its stalls — in
+// a project whose own rules say a clock must be DERIVED from the operating
+// point. Both are re-expressed here as laws over measured inputs; both are
+// env-gated (`RWM_PATIENCE_DERIVED`, `RWM_SIDLE_DERIVED`) default OFF so the
+// battery attributes them independently, and both reproduce their literal
+// EXACTLY at the operating point where the literal's own assumption holds.
+//
+// Neither is a dial: neither selects a law, a code path or a constructor
+// argument on (δ, ρ, r), and nothing keys on a threshold in the triangle
+// (CLAUDE.md's no-mode-switch invariant).
+
+/// The engine's timer granularity (µs) — RFC 9002 §6.1.2 kGranularity,
+/// DERIVED rather than borrowed.
+///
+/// RFC 9002 defines kGranularity as "the timer granularity … a
+/// system-dependent value" and RECOMMENDS 1 ms. In this engine the finest
+/// interval at which ANY recovery clock can be evaluated is the sender
+/// loop's wake period: both timer arms of the send `select!` sleep exactly
+/// 1 ms (the pacing refill and the backpressure poll), so a threshold below
+/// that cannot be observed, let alone acted on. The engine's own granularity
+/// and the RFC's recommendation coincide at 1 ms.
+pub(crate) const TIMER_GRANULARITY_US: u64 = 1_000;
+
+/// The sender loop's wake period (µs) as the emission-gap gauge's
+/// OBSERVATION GRANULARITY. Same 1 ms, named separately because it plays a
+/// different role: `TIMER_GRANULARITY_US` floors a recovery clock,
+/// `LOOP_WAKE_US` bounds what the gauge can resolve.
+pub(crate) const LOOP_WAKE_US: u64 = 1_000;
+
+/// The derived recovery-patience floor (µs): timer granularity + the path's
+/// OWN measured RTT jitter.
+///
+/// This replaces `NACK_RETX_COOLDOWN_FLOOR_US`'s 10 ms — 10× RFC 9002's
+/// kGranularity — at the two sites where that literal is BEHAVIOURAL (the
+/// kGranularity analog inside `mp_time_threshold_us`, and the per-seq
+/// retransmit cooldown). At c2/c7 (RTprop ≈ 8–10 ms) the literal is at or
+/// above the 9/8·srtt term it was meant to floor, so recovery patience was a
+/// CONSTANT rather than a property of the path.
+///
+/// Both terms are already measured in-tree and neither is invented here:
+/// `TIMER_GRANULARITY_US` above, and `jitter_us` = the path's
+/// consecutive-difference RTT jitter (`PathState::rtt_jitter_us()`, Copa's
+/// RFC 3550-style EWMA widened by its window-level twin exactly as the Copa
+/// backoff threshold does, with the loss estimator's interarrival jitter as
+/// the pre-Copa-sample fallback). The jitter term is clamped at one srtt so
+/// a pathological estimate cannot make patience unbounded.
+///
+/// With NO clock at all (`srtt_us == 0`, before the first sample) there is
+/// nothing to derive from and the legacy floor is kept verbatim — an
+/// information-availability fallback, not a mode.
+///
+/// RFC 9002's kTimeThreshold (9/8) and kPacketThreshold (3) are UNTOUCHED:
+/// they are cited, not magic. Only the floor is derived.
+pub(crate) fn patience_floor_us(jitter_us: u64, srtt_us: u64) -> u64 {
+    if srtt_us == 0 {
+        return NACK_RETX_COOLDOWN_FLOOR_US;
+    }
+    TIMER_GRANULARITY_US.saturating_add(jitter_us.min(srtt_us))
+}
+
+/// The derived STALL threshold (µs) for the emission-gap gauges — the
+/// definition `sidle`/`widle` count against.
+///
+/// The legacy `SIDLE_GAP_MIN_US` / `WIDLE_GAP_MIN_US` = 3 ms is 3 ×
+/// `LOOP_WAKE_US`, i.e. "three times the nominal inter-emission interval",
+/// with the loop wake STANDING IN for that interval. The substitution is
+/// valid only while emission EVENTS are at least as frequent as loop wakes.
+/// Emission batching (`RWM_EMIT_BATCH`) exists precisely to make them
+/// rarer — one counter change now covers a whole batch — so the nominal
+/// inter-EVENT interval rises above 1 ms by construction and a fixed 3 ms
+/// begins counting ordinary pacing intervals as stalls.
+///
+/// The law keeps the legacy FORM and replaces the ASSUMED nominal interval
+/// with the MEASURED one (`evt_us`, the mean inter-event interval over the
+/// previous diagnostic window):
+///
+/// ```text
+///   3 · max(evt_us, LOOP_WAKE_US)   clamped to [3 ms, HOLE_NACK_REFRESH_MIN]
+/// ```
+///
+/// No new constant is introduced: the multiplier 3 IS the legacy
+/// `SIDLE_GAP_MIN_US / LOOP_WAKE_US`; the floor IS the legacy constant; the
+/// ceiling is the engine's own hole-refresh cadence (a wire gap longer than
+/// the interval at which the receiver re-advertises a stalled hole is a
+/// stall at any operating point — the ceiling stops the derived gauge going
+/// blind at very slow cells).
+///
+/// COINCIDENCE PROPERTY (unit-tested): whenever `evt_us ≤ LOOP_WAKE_US` the
+/// law returns exactly 3 000 µs — the legacy constant, to the microsecond.
+/// The derived gauge is a strict generalization that reproduces the legacy
+/// gauge wherever the legacy gauge's own stated assumption holds, and it is
+/// one-directional by construction: the derived stall total can never exceed
+/// the legacy one.
+pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
+    const STALL_GAP_MIN_US: u64 = 3_000;
+    let nominal = evt_us.max(LOOP_WAKE_US);
+    nominal
+        .saturating_mul(STALL_GAP_MIN_US / LOOP_WAKE_US)
+        .clamp(STALL_GAP_MIN_US, HOLE_NACK_REFRESH_MIN.as_micros() as u64)
+}
+
 // ── Multipath recovery suppression (branch feat/recovery-suppression, env
 //    `RWM_RECOV_MP`, default OFF ⇒ shipped path byte-identical) ─────────────
 //
@@ -270,9 +375,32 @@ const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 /// srtt and the estimator's EWMA app-echo RTT — the analog of
 /// `max(smoothed_rtt, latest_rtt)`), floored at the existing per-seq
 /// retransmit cooldown floor (the kGranularity analog). No new constants.
-pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64) -> u64 {
+///
+/// `floor_us` is the kGranularity analog, supplied by the caller: the legacy
+/// `NACK_RETX_COOLDOWN_FLOOR_US` when `RWM_PATIENCE_DERIVED` is off (⇒ this
+/// function is bit-identical to its pre-2026-08-07 form), and
+/// `patience_floor_us(jitter, srtt)` when it is on. kTimeThreshold (9/8) is
+/// untouched — it is cited, not magic; only the floor is derived.
+///
+/// Returns the threshold and whether the FLOOR term won (the `pf=` mechanism
+/// gauge: "patience is derived" means the floor term stops winning).
+pub(crate) fn mp_time_threshold_split(
+    srtt_us: u64,
+    ewma_rtt_us: u64,
+    floor_us: u64,
+) -> (u64, bool) {
     let s = srtt_us.max(ewma_rtt_us);
-    (s.saturating_mul(9) / 8).max(NACK_RETX_COOLDOWN_FLOOR_US)
+    let clock = s.saturating_mul(9) / 8;
+    if clock >= floor_us {
+        (clock, false)
+    } else {
+        (floor_us, true)
+    }
+}
+
+/// `mp_time_threshold_split` without the gauge bit.
+pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64, floor_us: u64) -> u64 {
+    mp_time_threshold_split(srtt_us, ewma_rtt_us, floor_us).0
 }
 
 /// RFC 9002 §6.1.1 packet threshold (kPacketThreshold = 3), generalized per
@@ -1559,6 +1687,38 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         );
     }
 
+    // ── Derived patience / derived stall gauge (goal-gate "Unlock The
+    //    Default 2") — mechanism-liveness echoes (MEASUREMENT DISCIPLINE
+    //    item 1). Emitted in `run_impl` so both roles echo: the patience
+    //    floor is a SENDER law, the derived stall gauge has a sender arm
+    //    (`sidle2=`) and a receiver arm (`idle2=`), and the battery asserts
+    //    the echo on both logs.
+    if gates.patience_derived {
+        info!(
+            timer_granularity_us = TIMER_GRANULARITY_US,
+            legacy_floor_us = NACK_RETX_COOLDOWN_FLOOR_US,
+            "derived patience ACTIVE (RWM_PATIENCE_DERIVED: the recovery \
+             patience floor becomes timer granularity + the path's own \
+             measured RTT jitter, replacing the 10 ms literal at the RFC \
+             9002 §6.1.2 kGranularity analog and the per-seq retransmit \
+             cooldown; kTimeThreshold 9/8 and kPacketThreshold 3 untouched; \
+             the tail-sweep fallback is inert under its 25–100 ms clamp and \
+             is left alone)"
+        );
+    }
+    if gates.sidle_derived {
+        info!(
+            loop_wake_us = LOOP_WAKE_US,
+            legacy_stall_us = 3_000u64,
+            "derived stall gauge ACTIVE (RWM_SIDLE_DERIVED: DIAG-only and \
+             behaviour-inert — the legacy sidle=/idle= fields are printed \
+             UNCHANGED and sidle2=/idle2= are added beside them, counting \
+             the same event stream against 3 × the MEASURED inter-event \
+             interval, floored at the legacy 3 ms and capped at the \
+             hole-refresh cadence)"
+        );
+    }
+
     // Clone tx before moving tun into the sender task
     let recv_tun_tx = tun.tx.clone();
 
@@ -2281,6 +2441,20 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         let mut widle_max_us: u64 = 0;
         let mut widle_arrivals: u64 = 0;
         let mut widle_last_print_us: u64 = 0;
+        // Goal-gate "Unlock The Default 2", part 3a — the receiver twin of
+        // the derived stall gauge (`RWM_SIDLE_DERIVED`, DIAG-only). Same law
+        // (`stall_threshold_us`) over the Data-ARRIVAL event stream: the
+        // legacy 3 ms is 3 × an ASSUMED nominal inter-arrival interval, and
+        // the measured one is what the law substitutes. `idle=` is printed
+        // unchanged; `idle2=` is added beside it. Recomputed once per 1 s
+        // print window from that window's own arrival count.
+        let widle_derived = crate::scheduler::sidle_derived_active();
+        let mut widle_evt_us: u64 = LOOP_WAKE_US;
+        let mut widle_thr_us: u64 = stall_threshold_us(LOOP_WAKE_US);
+        let mut widle_evt_n: u64 = 0;
+        let mut widle2_us: u64 = 0;
+        let mut widle2_n: u64 = 0;
+        let mut widle2_max_us: u64 = 0;
 
         // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
         // routinely outrace the reliable control stream). A decoder created
@@ -2924,15 +3098,48 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 widle_max_us = widle_max_us.max(gap);
                             }
                         }
+                        // 3a: the SAME gap against the DERIVED threshold.
+                        if widle_derived {
+                            widle_evt_n += 1;
+                            if widle_last_arrival_us > 0 {
+                                let gap = wnow.saturating_sub(widle_last_arrival_us);
+                                if gap >= widle_thr_us {
+                                    widle2_us += gap;
+                                    widle2_n += 1;
+                                    widle2_max_us = widle2_max_us.max(gap);
+                                }
+                            }
+                        }
                         widle_last_arrival_us = wnow;
                         if wnow.saturating_sub(widle_last_print_us) >= 1_000_000 {
+                            let wdt = wnow.saturating_sub(widle_last_print_us);
                             widle_last_print_us = wnow;
+                            let w2 = if widle_derived {
+                                // Re-derive from THIS window's measured
+                                // arrival rate (see the decls).
+                                if widle_evt_n > 0 {
+                                    widle_evt_us = wdt / widle_evt_n;
+                                    widle_thr_us = stall_threshold_us(widle_evt_us);
+                                }
+                                widle_evt_n = 0;
+                                format!(
+                                    " idle2={}ms/{}/mx{}ms evt={}us sthr={}us",
+                                    widle2_us / 1000,
+                                    widle2_n,
+                                    widle2_max_us / 1000,
+                                    widle_evt_us,
+                                    widle_thr_us,
+                                )
+                            } else {
+                                String::new()
+                            };
                             eprintln!(
-                                "[WIDLE] idle={}ms/{}/mx{}ms arr={}",
+                                "[WIDLE] idle={}ms/{}/mx{}ms arr={}{}",
                                 widle_us / 1000,
                                 widle_n,
                                 widle_max_us / 1000,
                                 widle_arrivals,
+                                w2,
                             );
                         }
                     }
@@ -6181,6 +6388,12 @@ async fn run_window_sender(
     // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
     // threshold. Under this gate the snapshot uses `live_paths()`.
     let recov_mp_live = gates.recov_mp_live && recov_mp_law;
+    // Goal-gate "Unlock The Default 2: derived patience" — the two gates.
+    // `patience_derived` is BEHAVIOURAL (the recovery-patience floor);
+    // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
+    // beside the unchanged legacy one). Both default OFF.
+    let patience_derived = gates.patience_derived;
+    let sidle_derived = gates.sidle_derived && diag_on;
     if recov_mp_live {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -6213,6 +6426,16 @@ async fn run_window_sender(
     let mut mpd_coalesced: u64 = 0;
     let mut mpd_age_ms_sum: f64 = 0.0;
     let mut mpd_plost_retx: u64 = 0;
+    // Goal-gate "Unlock The Default 2: derived patience" — THE mechanism
+    // gauge the falsification clause requires ("patience demonstrably
+    // derived"). Every `mp_time_threshold_us` evaluation is classified: did
+    // the kGranularity FLOOR win, or the 9/8·srtt CLOCK? Plus the running
+    // sum of the floors actually used, for the mean. Printed as
+    // `pf=<floor>/<clock>/<mean floor µs>` inside `mpr[…]`. `Cell` because
+    // the evaluation happens inside a shared closure.
+    let mpd_pf_floor: std::cell::Cell<u64> = std::cell::Cell::new(0);
+    let mpd_pf_clock: std::cell::Cell<u64> = std::cell::Cell::new(0);
+    let mpd_pf_sum: std::cell::Cell<u64> = std::cell::Cell::new(0);
     let mut mpd_fired_flight: std::collections::HashMap<u32, u64> =
         std::collections::HashMap::new();
     let mut mpd_fired_on: std::collections::HashMap<u32, u64> =
@@ -7047,6 +7270,25 @@ async fn run_window_sender(
     let mut sidle_us: u64 = 0;
     let mut sidle_n: u64 = 0;
     let mut sidle_max_us: u64 = 0;
+    // Goal-gate "Unlock The Default 2: derived patience", part 3a
+    // (`RWM_SIDLE_DERIVED`, DIAG-only, behaviour-inert). The gauge above is
+    // UNCHANGED and keeps printing `sidle=`. These accumulate the SAME event
+    // stream against `stall_threshold_us(evt_us)` — the legacy 3 ms
+    // re-expressed as 3 × the MEASURED mean inter-emission-EVENT interval,
+    // floored at the legacy value and capped at the hole-refresh cadence —
+    // and print as `sidle2=` beside it, plus `evt=<µs>` (the measured
+    // interval) and `sthr=<µs>` (the live threshold) so the verdict can be
+    // read off the same line. `sidle2 ≤ sidle` by construction.
+    //
+    // `sidle_evt_us` is recomputed ONCE PER DIAG WINDOW from the events that
+    // window observed — zero hot-loop cost. It starts at the loop wake, so
+    // before the first window the derived threshold IS the legacy constant.
+    let mut sidle_evt_us: u64 = LOOP_WAKE_US;
+    let mut sidle_thr_us: u64 = stall_threshold_us(LOOP_WAKE_US);
+    let mut sidle_evt_n: u64 = 0;
+    let mut sidle2_us: u64 = 0;
+    let mut sidle2_n: u64 = 0;
+    let mut sidle2_max_us: u64 = 0;
     // feat/window-mtu DIAG (goal-gate "Window Decoupling + MTU Scaling",
     // part 1 diagnosis — behavior-inert, RWM_DIAG only): the outstanding
     // split the decoupled law would gate on. `wnd2=<head>/<hole>` — head =
@@ -7891,6 +8133,18 @@ async fn run_window_sender(
                         sidle_n += 1;
                         sidle_max_us = sidle_max_us.max(gap);
                     }
+                    // 3a: the SAME gap against the DERIVED threshold. One
+                    // extra compare per emission event, only under
+                    // RWM_SIDLE_DERIVED; the legacy accumulation above is
+                    // untouched, so both numbers come off the same run.
+                    if sidle_derived {
+                        sidle_evt_n += 1;
+                        if sidle_last_total > 0 && gap >= sidle_thr_us {
+                            sidle2_us += gap;
+                            sidle2_n += 1;
+                            sidle2_max_us = sidle2_max_us.max(gap);
+                        }
+                    }
                     sidle_last_total = wt;
                     sidle_last_change_us = dnow;
                 }
@@ -7907,6 +8161,17 @@ async fn run_window_sender(
                 let src_rate = src_now.saturating_sub(diag_last_src) as f64 / secs;
                 let cod_rate = cod_now.saturating_sub(diag_last_cod) as f64 / secs;
                 let paused_frac = diag_paused_iters as f64 / diag_total_iters.max(1) as f64;
+                // 3a: re-derive the stall threshold from THIS window's
+                // measured emission-event rate (window duration / events
+                // observed). A window with no events keeps the previous
+                // interval rather than inventing one. Once per 250 ms.
+                if sidle_derived {
+                    if sidle_evt_n > 0 {
+                        sidle_evt_us = ddt / sidle_evt_n;
+                        sidle_thr_us = stall_threshold_us(sidle_evt_us);
+                    }
+                    sidle_evt_n = 0;
+                }
                 let (cw, fl, np, min_rtt_us, pp) = {
                     let mut sched = scheduler.lock();
                     let mut cw = 0u64;
@@ -8162,8 +8427,22 @@ async fn run_window_sender(
                         mpd_fired_on.get(&k).copied().unwrap_or(0)
                     ));
                 }
+                // Goal-gate "Unlock The Default 2": the patience-floor split.
+                // `pf=<floor-bound>/<clock-bound>/<mean floor µs>` — how many
+                // §6.1.2 threshold evaluations were pinned by the
+                // kGranularity FLOOR versus governed by the 9/8·srtt CLOCK.
+                // "Patience is derived" means the floor term stops winning.
+                let pf = format!(
+                    " pf={}/{}/{}",
+                    mpd_pf_floor.get(),
+                    mpd_pf_clock.get(),
+                    {
+                        let n = mpd_pf_floor.get() + mpd_pf_clock.get();
+                        if n > 0 { mpd_pf_sum.get() / n } else { 0 }
+                    }
+                );
                 let mpr = format!(
-                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} age={:.0}ms fp/on{}]",
+                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} age={:.0}ms{} fp/on{}]",
                     mpd_gap_reports,
                     mpd_gap_seqs,
                     mpd_fired,
@@ -8181,10 +8460,27 @@ async fn run_window_sender(
                     } else {
                         0.0
                     },
+                    pf,
                     mp_pp,
                 );
+                // Goal-gate "Unlock The Default 2", part 3a: the DERIVED
+                // stall gauge printed beside the untouched legacy one.
+                // `sidle2=<cum ms>/<n>/mx<max ms> evt=<µs> sthr=<µs>`.
+                // Empty (and nothing computed) unless RWM_SIDLE_DERIVED.
+                let sd2 = if sidle_derived {
+                    format!(
+                        " sidle2={}ms/{}/mx{}ms evt={}us sthr={}us",
+                        sidle2_us / 1000,
+                        sidle2_n,
+                        sidle2_max_us / 1000,
+                        sidle_evt_us,
+                        sidle_thr_us,
+                    )
+                } else {
+                    String::new()
+                };
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -8204,6 +8500,7 @@ async fn run_window_sender(
                     xat_c, xat_w,
                     percap_loans.len(), percap_loans_total,
                     mpr,
+                    sd2,
                     wnd2diag,
                     srdiag,
                     padiag,
@@ -9121,9 +9418,16 @@ async fn run_window_sender(
             // RWM_RECOV_MP additionally snapshots PER-PATH smoothed clocks
             // (Copa srtt + estimator EWMA) for the per-flight hole law, and
             // the live path count (N=1 ⇒ the law is inert, legacy bit-exact).
-            let mut mp_clocks: std::collections::HashMap<u32, (u64, u64)> =
+            // Goal-gate "Unlock The Default 2": the snapshot gains the path's
+            // OWN measured RTT jitter — the derived patience floor's second
+            // term. Tuple is (copa/estimator srtt, estimator EWMA rtt,
+            // measured jitter); the jitter slot is read only under
+            // `RWM_PATIENCE_DERIVED`, and with the gate OFF every floor below
+            // resolves to `NACK_RETX_COOLDOWN_FLOOR_US` verbatim.
+            let mut mp_clocks: std::collections::HashMap<u32, (u64, u64, u64)> =
                 std::collections::HashMap::new();
             let mut mp_n_paths: usize = 1;
+            let mut pooled_jitter_us: u64 = 0;
             let srtt_us = {
                 let sched = scheduler.lock();
                 // RWM_RECOV_MP_LIVE (goal-gate "C8 Slow-Path Conversion"):
@@ -9145,27 +9449,62 @@ async fn run_window_sender(
                                 (
                                     p.srtt().as_micros() as u64,
                                     p.estimator.rtt().as_micros() as u64,
+                                    p.rtt_jitter_us(),
                                 ),
                             );
                         }
                     }
                 }
+                // The pooled jitter for the pooled cooldown clock below: the
+                // MAX over live paths, matching the pooled srtt's own max.
+                pooled_jitter_us = ids
+                    .iter()
+                    .filter_map(|id| sched.path(*id))
+                    .map(|p| p.rtt_jitter_us())
+                    .max()
+                    .unwrap_or(0);
                 ids.iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.estimator.rtt().as_micros() as u64)
                     .max()
                     .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
             };
-            let retx_cooldown_us = srtt_us.max(NACK_RETX_COOLDOWN_FLOOR_US);
+            // Goal-gate "Unlock The Default 2": the per-seq retransmit
+            // cooldown's floor. Gate OFF ⇒ the legacy literal, bit-exact.
+            let pooled_floor_us = if patience_derived {
+                patience_floor_us(pooled_jitter_us, srtt_us)
+            } else {
+                NACK_RETX_COOLDOWN_FLOOR_US
+            };
+            let retx_cooldown_us = srtt_us.max(pooled_floor_us);
             // The per-flight law threshold for a path (falls back to the
             // pooled cooldown clock when the path has no snapshot).
-            let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
+            let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64, u64)>,
                              p: u32|
              -> u64 {
-                mp_clocks
-                    .get(&p)
-                    .map(|&(a, b)| mp_time_threshold_us(a, b))
-                    .unwrap_or(retx_cooldown_us)
+                match mp_clocks.get(&p) {
+                    Some(&(srtt, ewma, jit)) => {
+                        // Goal-gate "Unlock The Default 2": the kGranularity
+                        // analog. Gate OFF ⇒ the legacy literal ⇒ this call
+                        // is bit-identical to its pre-2026-08-07 form.
+                        let floor = if patience_derived {
+                            patience_floor_us(jit, srtt.max(ewma))
+                        } else {
+                            NACK_RETX_COOLDOWN_FLOOR_US
+                        };
+                        let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
+                        if diag_on {
+                            if floor_won {
+                                mpd_pf_floor.set(mpd_pf_floor.get() + 1);
+                            } else {
+                                mpd_pf_clock.set(mpd_pf_clock.get() + 1);
+                            }
+                            mpd_pf_sum.set(mpd_pf_sum.get().saturating_add(floor));
+                        }
+                        thr
+                    }
+                    None => retx_cooldown_us,
+                }
             };
 
             let (win_start, win_end) = encoder.window_span();
@@ -11474,13 +11813,192 @@ mod tests {
     /// (the kGranularity analog). No new constants.
     #[test]
     fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
+        const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
         // 40 ms srtt, 32 ms ewma → 9/8 × 40 ms = 45 ms.
-        assert_eq!(mp_time_threshold_us(40_000, 32_000), 45_000);
+        assert_eq!(mp_time_threshold_us(40_000, 32_000, F), 45_000);
         // The larger clock wins regardless of which estimator it is.
-        assert_eq!(mp_time_threshold_us(32_000, 40_000), 45_000);
+        assert_eq!(mp_time_threshold_us(32_000, 40_000, F), 45_000);
         // Tiny clocks floor at NACK_RETX_COOLDOWN_FLOOR_US.
-        assert_eq!(mp_time_threshold_us(1_000, 500), NACK_RETX_COOLDOWN_FLOOR_US);
-        assert_eq!(mp_time_threshold_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
+        assert_eq!(mp_time_threshold_us(1_000, 500, F), F);
+        assert_eq!(mp_time_threshold_us(0, 0, F), F);
+    }
+
+    // ----- goal-gate "Unlock The Default 2: derived patience" -----
+
+    /// 3b, the gate-OFF contract: passing the legacy literal reproduces the
+    /// pre-2026-08-07 function EXACTLY, and RFC 9002's kTimeThreshold (9/8)
+    /// and kPacketThreshold (3) are untouched by any of this.
+    #[test]
+    fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
+        const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
+        for srtt in [0u64, 1, 500, 1_000, 8_000, 8_888, 8_889, 9_000, 40_000, 250_000] {
+            for ewma in [0u64, 700, 9_500, 40_000] {
+                let legacy = (srtt.max(ewma).saturating_mul(9) / 8).max(F);
+                assert_eq!(
+                    mp_time_threshold_us(srtt, ewma, F),
+                    legacy,
+                    "srtt={srtt} ewma={ewma}"
+                );
+            }
+        }
+        // The cited constants are still the cited constants.
+        assert_eq!(MP_PACKET_THRESHOLD, 3);
+        assert_eq!(mp_time_threshold_us(80_000, 0, 0), 90_000); // 9/8 exactly
+    }
+
+    /// 3b, the law: timer granularity + the path's OWN measured jitter,
+    /// clamped at one srtt, with the legacy floor kept verbatim when there
+    /// is no clock at all to derive from.
+    #[test]
+    fn patience_floor_is_granularity_plus_measured_jitter() {
+        // No clock yet ⇒ nothing to derive ⇒ legacy patience, verbatim.
+        assert_eq!(patience_floor_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
+        assert_eq!(patience_floor_us(5_000, 0), NACK_RETX_COOLDOWN_FLOOR_US);
+        // Zero measured jitter ⇒ pure timer granularity (RFC 9002's
+        // RECOMMENDED kGranularity, and this engine's own 1 ms loop wake).
+        assert_eq!(patience_floor_us(0, 9_000), TIMER_GRANULARITY_US);
+        // The jitter term is ADDITIVE and MEASURED — it scales with the
+        // link, which is the whole point of deriving it.
+        assert_eq!(patience_floor_us(300, 9_000), 1_300);
+        assert_eq!(patience_floor_us(2_500, 9_000), 3_500);
+        // …and is clamped at one srtt so a pathological estimate cannot
+        // make patience unbounded.
+        assert_eq!(patience_floor_us(10_000_000, 9_000), 10_000);
+        // Monotone non-decreasing in jitter, at fixed srtt.
+        let mut prev = 0;
+        for j in (0..20_000).step_by(250) {
+            let f = patience_floor_us(j, 40_000);
+            assert!(f >= prev, "jitter={j}");
+            prev = f;
+        }
+    }
+
+    /// 3b, the composition that matters at c2/c7, with the CROSSOVER stated
+    /// exactly rather than asserted loosely.
+    ///
+    /// The legacy floor wins whenever `9/8 · srtt < 10 ms`, i.e. for every
+    /// smoothed clock **below 8 889 µs**. c2/c7 sit at RTprop ≈ 8–10 ms, so
+    /// the literal straddles the operating point: on the low side of 8.889 ms
+    /// patience is a CONSTANT and the path clock is discarded; on the high
+    /// side the clock already governs and the derived floor changes nothing.
+    /// That is precisely why this has to be MEASURED per run (`pf=`) rather
+    /// than argued — and why the pre-registration makes the gauge, not the
+    /// prose, the mechanism evidence.
+    #[test]
+    fn derived_patience_hands_the_clock_back_to_the_path_below_the_crossover() {
+        const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
+        // The crossover, to the microsecond: 8 888 floor-bound, 8 889 not.
+        assert_eq!(mp_time_threshold_split(8_888, 0, F), (F, true));
+        assert_eq!(mp_time_threshold_split(8_889, 0, F), (10_000, false));
+        assert_eq!(mp_time_threshold_split(8_890, 0, F), (10_001, false));
+
+        // BELOW the crossover (an 8 ms path, 400 µs measured jitter): the
+        // legacy literal discards the path's own clock, the derived floor
+        // hands it back — and the recovered patience is 1 ms, not 10 ms.
+        let (srtt, jit) = (8_000u64, 400u64);
+        assert_eq!(mp_time_threshold_split(srtt, 0, F), (F, true));
+        let floor = patience_floor_us(jit, srtt);
+        assert_eq!(floor, 1_400);
+        assert_eq!(mp_time_threshold_split(srtt, 0, floor), (9_000, false));
+
+        // ABOVE the crossover the derived floor is INERT: the clock already
+        // won, so the two agree exactly. The law is a floor, never a cap.
+        for srtt in [9_000u64, 12_000, 40_000] {
+            let legacy = mp_time_threshold_us(srtt, 0, F);
+            let derived = mp_time_threshold_us(srtt, 0, patience_floor_us(400, srtt));
+            assert_eq!(legacy, derived, "srtt={srtt} must be unaffected");
+        }
+    }
+
+    /// 3b, the deliberate non-change, asserted rather than claimed: the
+    /// tail-sweep SRTT fallback is INERT with respect to this constant.
+    /// Every fallback value ≤ 12.5 ms — the legacy 10 ms and any derived
+    /// floor alike — yields exactly `TAIL_SWEEP_MIN_US` after the
+    /// `(srtt·2).clamp(25 ms, 100 ms)` the site applies. Changing it would
+    /// be a cosmetic edit dressed as a derivation.
+    #[test]
+    fn tail_sweep_srtt_fallback_is_inert_to_the_patience_floor() {
+        let sweep = |srtt_us: u64| (srtt_us * 2).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US);
+        assert_eq!(sweep(NACK_RETX_COOLDOWN_FLOOR_US), TAIL_SWEEP_MIN_US);
+        assert_eq!(sweep(TIMER_GRANULARITY_US), TAIL_SWEEP_MIN_US);
+        for f in [0u64, 1, 1_000, 1_400, 5_000, 10_000, 12_500] {
+            assert_eq!(sweep(f), TAIL_SWEEP_MIN_US, "fallback {f} must be inert");
+        }
+        // The first value that is NOT inert, recorded so the bound is exact.
+        assert!(sweep(12_501) > TAIL_SWEEP_MIN_US);
+    }
+
+    /// 3a, THE COINCIDENCE PROPERTY — the pre-registered test. Wherever the
+    /// legacy gauge's own stated assumption holds (emission events at least
+    /// as frequent as the 1 ms loop wake), the derived threshold reproduces
+    /// the legacy 3 000 µs to the microsecond.
+    #[test]
+    fn derived_stall_threshold_reproduces_the_legacy_3ms_where_they_coincide() {
+        for evt in [0u64, 1, 10, 100, 500, 999, 1_000] {
+            assert_eq!(
+                stall_threshold_us(evt),
+                3_000,
+                "evt={evt} µs must reproduce the legacy constant exactly"
+            );
+        }
+    }
+
+    /// 3a, the law: monotone in the measured interval, both clamps, and the
+    /// departure only where the legacy assumption fails.
+    #[test]
+    fn derived_stall_threshold_scales_with_the_measured_event_interval() {
+        // Above the loop wake it tracks 3 × the measured interval — this is
+        // the batched-emitter regime the legacy constant mis-reads.
+        assert_eq!(stall_threshold_us(2_000), 6_000);
+        assert_eq!(stall_threshold_us(4_000), 12_000);
+        // …up to the engine's own hole-refresh cadence, then it stops.
+        assert_eq!(
+            stall_threshold_us(100_000),
+            HOLE_NACK_REFRESH_MIN.as_micros() as u64
+        );
+        assert_eq!(stall_threshold_us(u64::MAX), HOLE_NACK_REFRESH_MIN.as_micros() as u64);
+        // Monotone non-decreasing, and never below the legacy constant.
+        let mut prev = 0;
+        for evt in (0..60_000).step_by(97) {
+            let t = stall_threshold_us(evt);
+            assert!(t >= prev && t >= 3_000, "evt={evt}");
+            prev = t;
+        }
+    }
+
+    /// 3a, the one-directionality the artifact verdict rests on: over any
+    /// gap trace, the DERIVED stall total can never exceed the LEGACY one,
+    /// because the derived threshold is never below the legacy constant.
+    /// So a shrink in `sidle2` is evidence of over-counting and can never be
+    /// an artifact of the new gauge itself.
+    #[test]
+    fn derived_stall_gauge_can_only_ever_report_less_than_the_legacy_one() {
+        let mut state = 0x9E3779B97F4A7C15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for evt in [200u64, 1_000, 2_500, 6_000, 40_000] {
+            let thr = stall_threshold_us(evt);
+            assert!(thr >= 3_000);
+            let (mut legacy_us, mut legacy_n) = (0u64, 0u64);
+            let (mut derived_us, mut derived_n) = (0u64, 0u64);
+            for _ in 0..20_000 {
+                let gap = next() % 30_000;
+                if gap >= 3_000 {
+                    legacy_us += gap;
+                    legacy_n += 1;
+                }
+                if gap >= thr {
+                    derived_us += gap;
+                    derived_n += 1;
+                }
+            }
+            assert!(derived_us <= legacy_us, "evt={evt}");
+            assert!(derived_n <= legacy_n, "evt={evt}");
+        }
     }
 
     /// The skew-aware hole law: a gap on path A while the seq's flight is
