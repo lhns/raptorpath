@@ -10055,6 +10055,142 @@ with a queue-independent recovery-latency story. The realtime crown is
 indifferent (p99 medians 36–40 ms on both arms, n = 1000 every rep).
 Goal-gate "Ship The Wins 2: shal8 anchor" carries the full tables and
 the per-mechanism law tests.
+
+### 16.39 The ack-merge: the "two control datagrams per data message" finding was a count of send SITES, not send RATES — the duplicate is real, 25× rarer than claimed, and the fix for it is now buildable for the first time (2026-08-07, `feat/ack-merge`, `RWM_ACK_MERGE` DEFAULT OFF, wire v6)
+
+§16.37 closed the pooled-store rate-source question as a structural
+bound and named its own successor precisely: *"the remaining named
+suspect, gauge-supported and NOT yet tested, is the recovery plane's
+patience/stall behaviour under the denser ack clock (sidle ≈2×, sweeps
+≈3× the prior default, invariant across every pool variant). Anyone
+reopening this should start there, not at the anchor."* This section
+starts there, and the first thing it did was measure the ack clock
+itself.
+
+**The claim under test.** A code reading of the receiver found that it
+emits two control datagrams for every data message: the SACK-extended
+`WindowAck` from the window arm, and the legacy per-batch
+`ControlMessage::Ack` whose send site sits *after* the window/block
+branch closes and therefore fires in window mode too. Against
+quinn-perf's ~1 ack per ~24 packets that is a ~48× ack-density excess,
+and it is simultaneously three named stall sources: the §16.35
+ack-density term, two `scheduler.lock()` acquisitions per ack
+contending with the sender loop's per-iteration locks (the only
+per-ack coupling that grows with ack density and so lengthens
+inter-emission gaps), and pressure on the depth-16 gap channels whose
+silent `try_send` drops push holes onto the 25–100 ms tail-sweep clock.
+
+**Half of it is exactly right, and the half that matters is wrong.**
+The legacy `Ack` *is* unconditional in window mode — measured, it is
+1.000 control datagrams per data message. But the `WindowAck` it was
+said to duplicate is already rate-limited by its own shipped predicate:
+`cumulative_advanced` is one boolean per FRONTIER JUMP, not one per
+symbol, and under dual-path striping at 1.3% GE loss the in-order
+frontier advances in jumps of ~20–25 seqs. Measured at c7 with quinn's
+own datagram-frame counters read at the receiver:
+
+| arm | control datagrams per data message |
+|---|---|
+| shipped default | 1.038 / 1.053 (per path) |
+| `RWM_ACK_MERGE=1` | 1.000 / 1.000 |
+
+**The duplicate is 25× rarer than the thing it duplicates.** The SACK
+ack was already inside quinn-perf's own density class; the excess is
+entirely the legacy `Ack`. So merging the two — suppressing the `Ack`
+and making the `WindowAck` unconditional at the `Ack`'s cadence — is a
+4–5% density change, a control-datagram SWAP rather than the predicted
+halving.
+
+**A methodological note worth more than the build.** The
+pre-registration proposed measuring this off the ack-direction qdisc
+PACKET counters, the same wire-gauge method §16.34 used for the
+data-direction framing tax. That instrument cannot see this quantity,
+and the pre-battery smoke is what caught it: the ack-direction packets
+run ~1 per 1.6 data packets, which is quinn's own transport-level ACK
+cadence, with the application's control datagrams riding COALESCED
+inside them. Merging two datagram FRAMES into one changes the frame
+count, not the packet count — it changes the packets' size, which is
+exactly the +9% ack-direction bytes the smoke measured while the packet
+count fell 3.4%. Frames are the quantity; frames are what must be
+counted. The instrument was corrected and re-measured before the
+battery ran.
+
+**What the build leaves behind, and why it matters more than its own
+result.** To suppress the `Ack` at all, every consumer of its arm had
+to be re-homed: the delivery signal, the loss feed (the sender's ONLY
+loss signal), the lost-symbol in-flight release, the pool-delivery
+feed, the per-path stats and the pass-through window write. The
+enabling primitive is a wire change: `WindowAck` v6 carries the
+receiver's per-path CUMULATIVE `(expected, received)` counters, and the
+sender diffs them against a per-path cursor. Cumulative-and-diffed
+rather than per-ack sums means **a dropped control datagram costs
+nothing** — the next ack carries the whole outstanding delta — which is
+proven by unit test over a randomized trace with a quarter of the acks
+discarded.
+
+That property is the durable result of this section, because it makes
+the honest density lever buildable for the first time. The legacy `Ack`
+was an EVENT stream: dropping 96% of it drops 96% of the delivery
+accounting, which is why ack thinning was refused for want of numbers
+when it was last raised (§16.35's amendment). With cumulative counters
+the accounting is CARRIED, not streamed. The quinn-perf-class
+configuration is therefore: suppress the `Ack` and leave the
+`WindowAck` on its existing frontier-advance predicate — **0.04 control
+datagrams per data message, a 25× reduction**, against the 4% this
+build achieves. What must then be priced is not correctness but
+CADENCE: the RTT sample rate and the in-flight release rate both fall
+25× with it. That is the next experiment, and it now has its numbers.
+
+One further code fact worth recording, because it inverts the usual
+reading of the shipped design: with no `CopaFeed` constructed — the
+shipped default and every arm measured here — the legacy `Ack` is not a
+duplicate of the delivery accounting at all. It is the SOLE carrier of
+it, and of the ack-interval windowed-max that is window mode's only
+rate anchor. Removing it without re-homing is the recorded `max_bw = 0`
+trap: the anchor never establishes and the dynamic store cap sticks at
+its boot value. Three rate sources have now been built and measured
+against that anchor (§16.35–§16.37) without the c7 ordering tracking
+anchor honesty; this build deliberately does not touch the statistic,
+so that its A/B is one knob — two control frames or one.
+
+**The battery, and the second elimination.** The build was measured on
+the pre-registered four arms (shipped default; `RWM_EST_CADENCE=1
+RWM_EMIT_BATCH=1`; the same plus the merge; the merge alone), both
+seeds, interleaved, same binary. **c7 = 0.894×Σ (seed 42) and 0.943×Σ
+(seed 7) against the pre-set ≥ 0.97 — failed on both seeds**, with the
+merge arm BELOW its own est control at seed 42. No default flipped.
+
+The gauge is what matters. §16.37's stall signature reproduces exactly
+— the est clock carries ≈3× the shipped default's stall-idle time
+(1473–2604 ms against 454–1039) and ≈4× its sweep count (12–24 against
+2–7) — and **the ack-merge does not move it**: 1634–3118 ms and 14–25
+sweeps, if anything marginally worse. The signature is a step function
+of the est gate and of nothing else measured.
+
+So the three named stall sources die together, and by two independent
+routes. Ack density was measured to be ≈absent, and removing what
+excess there is proves inert. Per-ack scheduler-lock contention was
+halved at the ack arm — the merged arm takes one acquisition where the
+pair took two — with no response. And `gapdrop`, the depth-16 gap
+channel's own counter, does not fall when control density falls; it
+rises slightly, and it sits at ≈400 in the shipped default too, so it
+is a constant background rather than the est-clock differentiator.
+§16.37 said to start at the recovery plane's patience behaviour rather
+than the anchor; this narrows that to the patience CONSTANTS and the
+freshness of their input — what the estimator cadence actually changes
+is WHEN the sweep and patience clocks are evaluated and on what — and
+eliminates the transport-side explanations that stood in front of it.
+
+One result falls out sideways and is worth more than the hypothesis it
+came from: **the duplicate ack costs ~10% of c1 on the shipped
+default.** The merge alone measures c1 202.5 → 223.0 (seed 42) and
+204.3 → 223.4 (seed 7), +10.1% / +9.3% with Δ ≫ σ on both seeds, c7 and
+the singles within σ, dnf 0. It is a single-knob improvement to the
+default configuration that does nothing whatever for the c7 clause the
+goal turns on — which is precisely why it is reported as a separate
+finding awaiting its own pre-registered gate set, and not folded into a
+verdict it did not earn.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
