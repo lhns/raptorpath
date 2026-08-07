@@ -110,16 +110,27 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    (summary-less aborted invocation, stale-log echo), and it appeared
    here on SEED 42, which item 8's GE-loss explanation does not cover.
 
-   **Consequence for the record, stated as a hypothesis with its test,
-   not as a conclusion:** item 8's abort class may be partly or wholly
-   this — a polling artefact misattributed to seed-7 GE loss — and the
-   discriminating experiment is a seed-7 battery run with NO polling. If
-   seed 7 aborts at seed-42 rates when unpolled, item 8's attribution
-   stands; if its aborts largely vanish, item 8 has been measuring the
-   observer. Prior batteries' abort counts should be re-read in that
-   light: they bound the observer's footprint as much as the cell's
-   loss. Until that is settled, no prior verdict changes — the aborts
-   were always recorded, never discarded, and n was always quoted.
+   **The discriminating test was RUN IN THE SAME SESSION, and it
+   ACQUITS item 8.** The hypothesis on first observing this was that
+   item 8's "seed-7 topo-abort class" might be partly or wholly a
+   polling artefact misattributed to GE loss. The unpolled battery
+   settles it, because it ran BOTH seeds with no polling at all:
+
+   | seed, unpolled | invocations | RUN-RETRY | RUN-LOST |
+   |---|---|---|---|
+   | 42 | 80 | **0** | 0 |
+   | 7 | 84 | **41** | 4 |
+
+   Seed 7 aborts heavily with the observer completely absent, seed 42
+   does not abort at all. **Item 8's attribution STANDS: the seed-7
+   class is real, cell-driven, and independent of polling.** The two
+   effects are distinct and additive — polling manufactures the SAME
+   signature on a seed that otherwise has none (seed 42: 0 unpolled →
+   121 polled). So prior batteries' seed-7 abort counts do NOT need
+   re-reading as observer artefacts; their seed-42 abort counts, where
+   any exist alongside heavy polling, do. No prior verdict changes
+   either way — those aborts were always recorded, never discarded, and
+   n was always quoted.
 
    **Protocol.** Launch the battery detached (tmux/`setsid`), then WAIT
    — one foreground wait sized to the expected duration, or a
@@ -16448,3 +16459,181 @@ tuning knob on this one — and it is the same "ack thinning" the
 **These are the numbers.**
 
 *(Results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16; binary sha256 `e74570e8…` = commit 3169b24, built fresh on the VM after `rm` of the stale binary, CRLF-converted `git archive` tree of this branch, SAME binary every run incl. the smoke and the density measurement; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1`; driver `tools/l1/ackmerge_battery.sh`; logs + per-run diag under `/home/vibe/ackmerge/`; lock `/tmp/rwm-vm.lock` found FREE and taken 18:09:59 UTC)
+
+**REDUCED SCOPE, and therefore FLIP-INELIGIBLE BY THE PRE-SET RULE —
+stated first because it bounds everything below.** The battery ran at
+**n = 4** per arm per seed, not the pre-registered ×8, and WITHOUT the
+1.2 GB sustained run and the tail_matrix crown. The reason is recorded
+in full under MEASUREMENT DISCIPLINE item 13: the first, full-scope
+attempt was destroyed by the session's own foreground polling (171
+invocations, 26 summaries, 121 RUN-RETRY) and had to be aborted and
+relaunched unpolled with a reduced budget. Its log is preserved as
+`battery-s42-ABORTED-polled.log` and NOTHING from it is quoted as
+evidence. **The pre-registered flip rule requires the FULL gate set on
+both seeds, so this battery cannot flip anything under any outcome.**
+It is quoted here because it answers the MECHANISM question decisively
+and in the same direction on both seeds, which is what the falsification
+clause needs.
+
+Run health, unpolled: **s42 80 invocations / 80 summaries / 0 RUN-RETRY
+/ 0 RUN-LOST / 0 liveness flags.** s7 84 invocations / 41 RUN-RETRY
+recovered / 4 RUN-LOST / 49 liveness flags, ALL on summary-less aborted
+attempts — the documented item-8 seed-7 class, nothing discarded, n
+quoted per arm below. **dnf = 0 in every completed run, both seeds.**
+
+Goodput (Mbit/s, mean ± σ_s (n)). Arms: **prior** = env unset (today's
+shipped default) · **est** = `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` (the
+§16.37 blocker-reproduction control) · **merge** = the same +
+`RWM_ACK_MERGE=1` (THE candidate) · **am** = `RWM_ACK_MERGE=1` alone:
+
+| cell | arm | s42 | s7 |
+|---|---|---|---|
+| **c1 single 400 MB** | prior | 202.5 ± 3.7 (4) | 204.3 ± 2.8 (4) |
+| | est | 473.6 ± 28.1 (4) | 473.9 ± 21.4 (4) |
+| | **merge** | **496.2 ± 19.6 (4)** [472.7–516.2] | **490.1 ± 18.3 (4)** [462.4–511.1] |
+| | **am (alone)** | **223.0 ± 4.7 (4)** [217.1–228.6] | **223.4 ± 5.5 (4)** [214.1–227.8] |
+| sc2 single 100 MB | prior | 87.4 ± 0.9 (4) | 88.9 ± 0.1 (4) |
+| | est / merge / am | 88.7 / 88.9 / 88.1 | 88.3 / 88.5 / 87.3 (3) |
+| sc3 single 25 MB | prior | 16.7 ± 0.1 (4) | 16.5 ± 0.1 (4) |
+| | est / merge / am | 16.8 / 16.9 / 16.5 | 16.7 / 16.9 / 16.8 |
+| **c7 dual 200 MB** | prior | 173.3 ± 2.5 (4) = **0.992×Σ** | 171.5 ± 1.5 (3) = **0.965×Σ** |
+| | est | 169.5 ± 4.0 (4) = 0.955×Σ | 163.1 ± 2.9 (4) = 0.924×Σ |
+| | **merge** | **159.0 ± 6.3 (4) = 0.894×Σ** | **166.9 ± 5.8 (4) = 0.943×Σ** |
+| | am (alone) | 172.6 ± 0.8 (4) = 0.980×Σ | 169.5 ± 5.2 (4) = 0.971×Σ |
+| c8 dual 25 MB | prior | 84.5 ± 7.7 (4) = 0.812×Σ | 82.0 ± 3.6 (2) |
+| | est / merge / am | 0.716 / 0.766 / 0.715×Σ | 89.6 / 71.3 / — |
+
+Σ = same-session singles per arm env (2×sc2 at c7; sc2+sc3 at c8).
+
+**THE GAUGE THAT DECIDES IT (goal clause 4's evidence, c7, per rep,
+end-of-run).** Stall-idle and sweeps:
+
+| arm | s42 `sidle` / stalls | s42 `sweeps` | s7 `sidle` / stalls | s7 `sweeps` |
+|---|---|---|---|---|
+| prior | 454–787 ms / 93–131 | 2–5 | 714–1039 / 104–126 | 5–7 |
+| est | 1473–2553 / 194–265 | 12–24 | 1852–2604 / 199–238 | 12–22 |
+| **merge** | **1923–3118 / 236–317** | **17–25** | **1634–2552 / 197–265** | **14–24** |
+| am (alone) | 719–1012 / 125–165 | 4–9 | 791–1638 / 118–160 | 5–9 |
+
+`gapdrop`: prior 357–414 (s42) / 388–694 (s7); est 353–548 / 355–453;
+merge 417–612 / 441–612; am 340–457 / 384–699. `paused` = 0% in every
+arm, both seeds.
+
+**Read it directly. The §16.37 signature reproduces exactly (est carries
+≈3× prior's stall time and ≈4× its sweeps) and the ack-merge does not
+move it — if anything it is marginally worse than its own est control.**
+The `am` arm sits in the prior class throughout, which is the correct
+control behaviour (it IS the prior default plus the merge). The
+signature tracks the est gate and nothing else.
+
+### VERDICT vs the pre-registration — NO FLIP; the duplicate ack is NOT the binder, established twice over; and one real, reproducible win falls out sideways
+
+1. **Prediction 1 (density ≈2×): FAILED, on a refuted PREMISE** — see
+   the DENSITY MEASURED block above: 1.038/1.053 → 1.000/1.000 control
+   datagrams per data message, a 4–5% change. Falsification clause (i)
+   ("the merge is not live") does NOT fire: the merge is verifiably
+   live and hit its designed cadence to four figures.
+2. **Prediction 2 (c7 ≥ 0.97×Σ, THE clause): FAILED on BOTH seeds.**
+   merge 0.894 / 0.943. On s42 the merge is BELOW its own est control
+   (0.894 vs 0.955); on s7 it is above it (0.943 vs 0.924) but still
+   short. Not close, not one-sided, not rescuable by n.
+3. **Prediction 3 (sidle/sweeps fall toward the prior class): FAILED —
+   the signature is INVARIANT to the merge.** This is the finding.
+4. **Prediction 4 (c1 ≥ 430): PASSED** — merge 496.2 / 490.1, per-run
+   min 472.7 / 462.4. Notably ABOVE the est arm (+22.6 / +16.2).
+5. **Prediction 5 (c8 ≥ 0.87 line): NOT MET BY ANY ARM INCLUDING THE
+   SHIPPED DEFAULT** (prior 0.812 at s42) at n = 4 with σ 3.6–16.0. The
+   cell is too noisy at this n to attribute anything; no claim is made
+   from it in either direction. sc2/sc3 HOLD within σ everywhere.
+6. **Prediction 6 (reliability): PASSED** — dnf = 0 in every completed
+   run both seeds; delivered-set integrity and block-mode bit-exactness
+   asserted by unit test and by `ack_merge_loopback` (the window
+   transfer completes, which the re-homed in-flight release gates).
+7. **Prediction 7 (`am` alone ≥ prior): PASSED, and then some at c1** —
+   **c1 202.5 → 223.0 (s42) and 204.3 → 223.4 (s7), +10.1% / +9.3%,
+   Δ ≫ σ_s (σ 2.8–5.5) and identical on both seeds**; c7 within σ
+   (0.980/0.971 vs 0.992/0.965); sc2/sc3 within σ except sc3-am at s42
+   (16.5 vs 16.7, ≈σ).
+
+**FLIP DECISION (the pre-set rule, verbatim): NO FLIP.** The rule
+required the FULL pre-registered gate set on both seeds; prediction 2
+failed on both, prediction 3 failed outright, and the battery was in any
+case reduced below the pre-registered scope and so flip-ineligible by
+construction. **No default changes: `RWM_ACK_MERGE` ships OFF, and the
+composed est+eb default flip does not happen. c7 ≥ 0.97×Σ was not
+weakened to ship the c1 win, and will not be.** The shipped default
+stack is byte-identical to the one this branch inherited (`gates.rs`
+pins the new gate OFF in the default-stack test).
+
+### FALSIFICATION-WITH-MECHANISM: what the gauges now say, and which successor they name
+
+The pre-registered falsification clause is the one that fired: *"c7
+still < 0.97 both seeds ⇒ the duplicate ack was NOT the binder; name
+what the gauges then say and which queued successor the evidence points
+at."* Naming it, and the case is stronger than the clause asked for,
+because the mechanism was eliminated on TWO independent grounds:
+
+- **By density.** The excess control traffic the theory rested on was
+  not there. The receiver sends 1.04 control datagrams per data
+  message, not 2 — the SACK ack was already at ≈0.04, inside
+  quinn-perf's own class. There was no ×2 to remove.
+- **By response.** Removing what excess there is moves the stall
+  signature not at all. `sidle` and `sweeps` under the est clock are
+  the same 1.5–3.1 s / 14–25 whether the receiver sends 1.04 control
+  datagrams per message or 1.00, and the sender's WindowAck arm takes
+  one scheduler lock per ack instead of two.
+
+That kills all three named stall sources as the c7 binder together:
+**(a) ack density** — measured ≈absent, and its removal is inert;
+**(b) per-ack lock contention** — halved at the ack arm with no
+response, so the sender-loop contention that matters is not
+ack-clocked; **(c) the depth-16 gap channels** — `gapdrop` does NOT
+fall when control density falls (417–612 under merge vs 353–548 under
+est, i.e. flat-to-slightly-up), and it sits at ≈400 in the prior
+default too, so it is a constant background rather than the est-clock
+differentiator.
+
+**The successor the evidence names: item 3 — the derived sidle/patience
+constants — NOT item 2 (the lossless gap channel).** The discriminator
+is in the table: the stall signature is a step function of the EST GATE
+and of nothing else measured. It does not respond to ack density, to
+ack-arm lock count, or to control-frame size; and `gapdrop`, which is
+item 2's own gauge, is the one counter that moves the WRONG way when
+density falls. What changes under `RWM_EST_CADENCE` is when the
+estimator's heavy math runs, i.e. WHEN the recovery plane's patience
+and sweep clocks are evaluated and on what freshness of input — so the
+next experiment is the patience/sweep constants themselves (are they
+derived from a live SRTT/loss estimate whose cadence the est gate
+changes, or are they fixed?), not the channel the sweeps drain into.
+§16.37 said "start at the recovery plane's patience/stall behaviour,
+not at the anchor"; this session narrows that to the patience
+CONSTANTS and their input freshness, and eliminates the transport-side
+explanations that stood between.
+
+### THE SIDE RESULT, recorded so it is not lost: the duplicate ack costs ~10% of c1 on the SHIPPED default
+
+`RWM_ACK_MERGE=1` alone, against the shipped default in the same
+session: **c1 +10.1% (s42) and +9.3% (s7), 202.5 → 223.0 and 204.3 →
+223.4, Δ ≫ σ_s on both seeds**, with c7/c8/sc2/sc3 within σ and dnf 0.
+This is a real, reproduced, single-knob improvement to the DEFAULT
+configuration — and it is emphatically NOT what the build was for (it
+does nothing for the c7 clause the goal turns on). It does not flip
+here, because the pre-registered rule for this battery is the full
+composed gate set and this battery was reduced. It is the obvious
+candidate for its OWN pre-registered flip on its OWN gate set (c1 win
+≫σ both seeds, c7/c8/sc within σ, crown, ×8, sustained), and a future
+session should take it as such rather than rediscover it.
+
+**And the durable primitive.** The v6 cumulative `WindowAck` counters
+are proven (unit-tested under a quarter of acks dropped; battery-clean
+at dnf 0) and they are what makes the REAL density lever buildable for
+the first time: because the accounting is CARRIED rather than streamed,
+the merged ack can stay on its frontier-advance predicate and still
+deliver every count — **0.04 control datagrams per data message, a 25×
+reduction, versus the 4% this build achieves.** That is ack thinning
+with the correctness objection removed; what remains to price is
+CADENCE (RTT-sample and in-flight-release rates both fall 25× with it).
+Given this battery's result — that c7 does not respond to ack density
+at all — its expected c7 value is zero, and its case is c1/CPU, not c7.
