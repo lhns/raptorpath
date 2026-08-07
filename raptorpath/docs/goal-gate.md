@@ -15079,4 +15079,25 @@ Predictions 1–7 and every falsification clause stand VERBATIM on the
 amended statistic; the smoke run is recorded as mechanism shakeout,
 not battery evidence.
 
+**Amendment iteration 2 (same pre-battery smoke protocol).** The
+plain-mean re-smoke (binary 85b3eec8…, one c7 run, 147.7 Mbit dnf 0)
+fixed the read (sr 7293/8247 ≈ truth, pa=on, echo 131 ms = def class)
+but exposed the OTHER documented failure mode: the un-ratcheted mean
+inherits the anchor⇄cap CIRCULARITY (ADR-0061's "samples cannot read
+above what flows") — the cap oscillated 3588→1769→2696→…→938→2553
+(win pinned at cap in the dips), sweeps 49 / sidle 3325 ms/331, the
+goodput paying for the dips. Final statistic (the BBR-filter
+structure, on the rolling two-half-window pattern `EchoRatioMin`
+already established): **the RATCHETED MEAN — max of the two rolling
+half-window means** (burst-immune at the half-window scale ≫ one
+refill cycle; the pre-dip half holds the anchor through a
+self-inflicted dip for up to a half window, exactly BBR's
+max-filter-over-interval-means escape), warm-gated on ≥ ¼ window of
+measured send time (a shorter mean is burst-weighted; the caller's
+fallback law covers the boot). Two new anchor laws pin it
+(refill-burst: max latches ≥3×, ratcheted mean stays in the carried
+class; self-dip: the pre-dip half holds ≥0.75× through a half-window
+dip). Predictions and falsifications still verbatim; both smokes are
+shakeout, not battery evidence.
+
 *(Results below this line were written after the runs.)*

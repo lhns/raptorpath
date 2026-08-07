@@ -286,40 +286,61 @@ impl SendRateAnchor {
         }
     }
 
-    /// The GAP-ROBUST WINDOWED MEAN send rate (symbols/s): Σ count / Σ Δt
-    /// over the surviving buckets of the same window (clock-gap buckets
-    /// were discarded on entry; during quarantine the pre-gap window is
-    /// held, like `rate()`). None before the first surviving bucket.
+    /// The GAP-ROBUST RATCHETED MEAN send rate (symbols/s): the MAX of the
+    /// two rolling half-window means Σ count / Σ Δt over the surviving
+    /// buckets (clock-gap buckets were discarded on entry; during
+    /// quarantine the window is anchored to the last surviving bucket —
+    /// hold-through-disturbance, like `rate()`). None until the surviving
+    /// buckets span at least a quarter window of measured send time (a
+    /// shorter mean is burst-weighted — the honest cold-start is the
+    /// caller's fallback law).
     ///
-    /// Why a mean next to the max (goal-gate "Ship The Wins 1" amendment):
-    /// the windowed-MAX is the right statistic for a PACED send process
-    /// (the A* span consumer) but an ADMISSION-GATED sender legitimately
-    /// bursts a bucket many× the drain rate on every store-refill
-    /// (SACK-release flood), and the max latches the burst — the measured
-    /// sr=53k-vs-8.9k smoke defect. A time-normalized mean cannot be
-    /// inflated by burst concentration: under a bounded store it converges
-    /// to the true carried rate (drain + retx share) — the honest rate the
-    /// pooled store-cap law wants.
+    /// Why this statistic (goal-gate "Ship The Wins 1" amendment, both
+    /// smoke-named defects):
+    /// - NOT the per-bucket windowed-MAX (`rate()`, the paced-A*
+    ///   statistic): an ADMISSION-GATED sender legitimately bursts whole
+    ///   buckets at emission speed on every store-refill (SACK-release
+    ///   flood, boot-cap ramp) and the max latches the burst — the
+    ///   measured sr=53k-vs-8.9k defect. A half-window mean (≫ one refill
+    ///   cycle) is time-normalized: burst concentration cannot inflate it.
+    /// - NOT the plain full-window mean: the cap this anchor feeds limits
+    ///   the send process itself, so an un-ratcheted mean inherits the
+    ///   anchor⇄cap circularity (cap dip → carried rate dip → mean dip —
+    ///   the measured 3588→938 oscillation). The max-of-two-halves holds
+    ///   the pre-dip half's rate for up to a half window — the same
+    ///   escape BBR's BtlBw max-filter provides over its interval-mean
+    ///   samples, on the rolling two-half-window pattern already
+    ///   established by `EchoRatioMin`.
     pub fn mean_rate(&self, now: Instant, srtt: Duration) -> Option<f64> {
-        let (mut n, mut dt_sum) = (0u64, 0.0f64);
-        if self.in_quarantine(now) {
-            for &(_, c, dt) in self.samples.iter() {
-                n += c;
-                dt_sum += dt;
+        let last = self.samples.back()?.0;
+        let w = window_s(srtt);
+        // Anchor the window to `now` normally; to the last surviving
+        // bucket during quarantine (hold-through-disturbance).
+        let end = if self.in_quarantine(now) { last } else { now };
+        let mid = end.checked_sub(Duration::from_secs_f64(w / 2.0));
+        let start = end.checked_sub(Duration::from_secs_f64(w));
+        let (mut c_old, mut d_old, mut c_new, mut d_new) = (0u64, 0.0f64, 0u64, 0.0f64);
+        for &(t, c, dt) in self.samples.iter() {
+            if start.is_some_and(|s| t < s) {
+                continue; // outside the window (deque expiry is lazy)
             }
-        } else {
-            let cutoff = now.checked_sub(Duration::from_secs_f64(window_s(srtt)));
-            for &(t, c, dt) in self
-                .samples
-                .iter()
-                .filter(|&&(t, _, _)| cutoff.map_or(true, |cu| t >= cu))
-            {
-                let _ = t;
-                n += c;
-                dt_sum += dt;
+            if mid.map_or(true, |m| t >= m) {
+                c_new += c;
+                d_new += dt;
+            } else {
+                c_old += c;
+                d_old += dt;
             }
         }
-        if dt_sum > 0.0 { Some(n as f64 / dt_sum) } else { None }
+        // Warm gate: a mean is a rate only once it averages over enough
+        // measured send time (¼ window ≈ several refill cycles).
+        if d_old + d_new < w / 4.0 {
+            return None;
+        }
+        let r_old = if d_old > 0.0 { c_old as f64 / d_old } else { f64::NAN };
+        let r_new = if d_new > 0.0 { c_new as f64 / d_new } else { f64::NAN };
+        let r = r_old.max(r_new); // NaN-ignoring: max(NaN, x) = x
+        if r.is_finite() { Some(r) } else { None }
     }
 
     /// (gaps detected, buckets discarded) — DIAG gauges.
@@ -463,9 +484,34 @@ mod tests {
             max > 3.0 * truth,
             "the windowed-max latches the refill burst (the defect): max={max} truth={truth}"
         );
+        // The ratcheted mean carries a bounded upward bias (max of two
+        // half-window means, ≤ ~1.6× under this burst geometry — the
+        // anti-circularity ratchet) but must stay in the carried-truth
+        // CLASS where the max reads the 5× burst peak.
         assert!(
-            (mean - truth).abs() / truth < 0.3,
-            "the windowed mean reads the carried truth: mean={mean} truth={truth}"
+            mean > 0.6 * truth && mean < 2.0 * truth,
+            "the ratcheted mean stays in the carried-truth class: mean={mean} truth={truth}"
+        );
+    }
+
+    /// The anti-circularity ratchet law: a self-inflicted rate DIP (the
+    /// cap→rate→mean feedback the smoke measured as the 3588→938
+    /// oscillation) must not drag the anchor down within a half window —
+    /// the previous half's mean holds the pre-dip rate.
+    #[test]
+    fn send_rate_anchor_mean_ratchets_through_a_self_dip() {
+        let t0 = Instant::now();
+        let mut a = SendRateAnchor::new();
+        let mut t = feed_steady(&mut a, t0, 8000.0, 1.0, SRTT);
+        let before = a.mean_rate(t, SRTT).expect("warm");
+        assert!((before - 8000.0).abs() / 8000.0 < 0.15);
+        // A cap-induced dip: rate collapses ×4 for ~one half window
+        // (0.24 s at SRTT 60 ms).
+        t = feed_steady(&mut a, t, 2000.0, 0.2, SRTT);
+        let during = a.mean_rate(t, SRTT).expect("still warm");
+        assert!(
+            during > 0.75 * before,
+            "the pre-dip half must hold the anchor up: before={before} during={during}"
         );
     }
 
