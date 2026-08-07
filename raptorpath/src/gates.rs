@@ -159,6 +159,21 @@ pub struct RuntimeGates {
     /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
     /// Still a floor, never a cap; legacy verbatim with the anchor cold.
     pub floor_bound: bool,
+    /// `RWM_ACK_MERGE` (default OFF — the A/B arm; goal-gate "Unlock The
+    /// Default 1: ack-merge"): in WINDOW MODE ONLY, suppress the legacy
+    /// per-batch `ControlMessage::Ack` (whose send site sits after the
+    /// window/block branch and so fires in window mode too), make the SACK
+    /// `WindowAck` unconditional at exactly that cadence, and carry the
+    /// `Ack`'s payload in the v6 cumulative `cum_expected`/`cum_received`
+    /// counters — TWO control datagrams per data message become ONE.
+    /// Every `Ack`-arm consumer is re-homed onto the counter diff with its
+    /// own guard preserved (`gap_q`, the `copa_feed`/`n1_paused` three-way
+    /// branch, the `expected > 0` guard). Block mode keeps the legacy `Ack`
+    /// bit-exactly. Changes the datagram COUNT only: the delivery statistic,
+    /// its cadence and its counts are unperturbed. Resolved via
+    /// `scheduler::ack_merge_active()` (cached — the receiver arm and the
+    /// sender arm read the same resolution).
+    pub ack_merge: bool,
     /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
     /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
     /// N = 1 plain reliable window. The 1024-latch's three roles split:
@@ -364,6 +379,7 @@ impl RuntimeGates {
             pool_anchor: crate::scheduler::pool_anchor_active(),
             pool_deliv: crate::scheduler::pool_deliv_active(),
             floor_bound: crate::scheduler::floor_bound_active(),
+            ack_merge: crate::scheduler::ack_merge_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
@@ -454,6 +470,13 @@ mod tests {
         assert!(
             !g.floor_bound,
             "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
+        );
+        // "Unlock The Default 1: ack-merge" (2026-08-07): the window-mode
+        // control-datagram merge is a pure A/B arm and must not reach the
+        // shipped default stack until its pre-registered gate set passes.
+        assert!(
+            !g.ack_merge,
+            "RWM_ACK_MERGE ships default OFF (A/B arm)"
         );
         // Experiments / instruments (default OFF)
         assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);

@@ -276,6 +276,51 @@ pub fn floor_bound_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_FLOOR_BOUND", false))
 }
 
+/// Whether the WINDOW-mode control-datagram MERGE is active for this process
+/// (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1: ack-merge"; default
+/// OFF — the A/B arm).
+///
+/// The receiver emits TWO control datagrams per data message: the SACK
+/// `WindowAck` from the window arm, and the legacy per-batch
+/// `ControlMessage::Ack` whose send site sits AFTER the window/block branch
+/// and therefore fires in window mode too (the recorded code-fact correction
+/// at `net/mod.rs`'s Ack arm). quinn-perf sends ~1 ack per ~24 packets. The
+/// duplicate is three named stall sources at once: the §16.35 ack-density
+/// term, two extra per-ack `scheduler.lock()` acquisitions contending with
+/// the sender loop's per-iteration locks (the only ack-density-scaling
+/// coupling that lengthens inter-emission gaps = manufactures `sidle`), and
+/// pressure on the depth-16 `try_send` gap channels whose silent drops push
+/// holes onto the 25–100 ms tail-sweep clock.
+///
+/// ON ⇒ in WINDOW MODE ONLY the legacy `Ack` is suppressed, the `WindowAck`
+/// becomes unconditional (one per data message — exactly the cadence the
+/// `Ack` had) and carries the `Ack`'s payload in its v6 cumulative counters,
+/// and every consumer of the `Ack` arm is re-homed onto the counter DIFF.
+/// BLOCK MODE IS BIT-EXACT: it keeps the legacy `Ack` in full, and
+/// `block_arq` is already `None` in window mode so the dup-ack loss channel
+/// is structurally out of scope.
+///
+/// **This gate changes the DATAGRAM COUNT and nothing else.** The delivery
+/// statistic (`record_delivery`'s ack-interval windowed max), its cadence,
+/// its counts and its consumers are all preserved — deliberately, because
+/// with no `CopaFeed` constructed (the shipped default and every arm of the
+/// ack-merge battery) that estimator IS the window-mode anchor, and removing
+/// it is the measured catastrophic trap recorded at the Ack arm
+/// (`max_bw = 0` ⇒ the anchor floor never establishes ⇒ the dynamic store cap
+/// sticks at boot 128). Replacing the anchor is a DIFFERENT experiment; three
+/// rate sources have already been measured against it (§16.35/§16.36/§16.37)
+/// and the c7 ordering did not track anchor honesty.
+///
+/// Not a dial: it selects no law and no constructor argument on (δ, ρ, r),
+/// and nothing keys on a threshold in the triangle (CLAUDE.md's
+/// no-mode-switch invariant). The machine is bit-identical under both
+/// settings; only the number of control frames differs.
+pub fn ack_merge_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", false))
+}
+
 /// Floor on the queuing-delay estimate dq, in seconds (0.1 ms).
 ///
 /// Two jobs, both continuity guards (no branch cliffs):
@@ -1702,6 +1747,18 @@ pub struct PathState {
     /// resolved once at construction, test-forcible). OFF ⇒
     /// `clamp_cwnd_with_anchor` is byte-identical to the shipped path.
     floor_bound: bool,
+    /// ack-merge (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1"): the
+    /// sender-side CURSOR for the v6 `WindowAck` cumulative counters. The
+    /// merged ack carries the receiver's per-path running
+    /// `(total_expected, total_received)`; the sender diffs them against
+    /// these to recover exactly the `(expected_count, received_count)` pair
+    /// the suppressed legacy `Ack` used to deliver per batch. Cumulative and
+    /// diffed rather than per-ack sums so a DROPPED control datagram costs
+    /// nothing — the next ack carries the whole outstanding delta, which is
+    /// the property that makes merging safe on a lossy ack path.
+    ack_cum_expected: u64,
+    /// See [`Self::ack_cum_expected`].
+    ack_cum_received: u64,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -1752,8 +1809,42 @@ impl PathState {
             deliv_anchor: crate::control::DeliveryRateAnchor::new(),
             pool_deliv_feed: pool_deliv_active(),
             floor_bound: floor_bound_active(),
+            ack_cum_expected: 0,
+            ack_cum_received: 0,
             clock,
         }
+    }
+
+    /// ack-merge (`RWM_ACK_MERGE`): advance the v6 cumulative-counter cursor
+    /// and return this ack's `(expected, received)` delta — exactly the pair
+    /// the suppressed legacy `ControlMessage::Ack` carried per batch.
+    ///
+    /// `cum_received == 0` is the "no counter payload" sentinel (the two
+    /// timer-driven `WindowAck` sites broadcast one message to every live
+    /// path and cannot carry a per-path counter), and a reordered/stale ack
+    /// yields `(0, 0)` because the cursor only ever moves FORWARD. Both cases
+    /// are no-ops, which is what makes the re-homed consumers idempotent
+    /// under ack loss, duplication and reordering.
+    ///
+    /// `received` is clamped to `expected`: the receiver's `expected` is a
+    /// batch-gap ESTIMATE (`PathBatchTracker`), so a shrinking gap estimate
+    /// must never make the derived loss count underflow.
+    pub fn ack_merge_counter_delta(&mut self, cum_expected: u64, cum_received: u64) -> (u32, u32) {
+        if cum_received == 0 {
+            return (0, 0);
+        }
+        let d_expected = cum_expected.saturating_sub(self.ack_cum_expected);
+        let d_received = cum_received.saturating_sub(self.ack_cum_received);
+        if d_received == 0 && d_expected == 0 {
+            return (0, 0);
+        }
+        self.ack_cum_expected = self.ack_cum_expected.max(cum_expected);
+        self.ack_cum_received = self.ack_cum_received.max(cum_received);
+        let cap = u32::MAX as u64;
+        (
+            d_expected.min(cap) as u32,
+            d_received.min(d_expected).min(cap) as u32,
+        )
     }
 
     /// Update the hint-coupled queue target when the protocol hint changes.
@@ -5219,5 +5310,158 @@ mod tests {
             after + ADDITIVE_STEP as u32,
             "legacy steady state must remain the additive +2"
         );
+    }
+
+    // ── ack-merge counter re-homing (goal-gate "Unlock The Default 1") ──
+
+    /// A tiny model of the receiver's `PathBatchTracker`: the source of the
+    /// v6 cumulative counters, and the source of the legacy per-batch `Ack`
+    /// payload. Both come from the SAME accumulator, which is what makes the
+    /// equivalence law below a statement about the wire and not about
+    /// arithmetic.
+    #[derive(Default)]
+    struct TrackerModel {
+        cum_expected: u64,
+        cum_received: u64,
+    }
+    impl TrackerModel {
+        /// Returns the legacy Ack's `(expected_count, received_count)`.
+        fn record_batch(&mut self, expected: u32, received: u32) -> (u32, u32) {
+            self.cum_expected += expected as u64;
+            self.cum_received += received as u64;
+            (expected, received)
+        }
+    }
+
+    /// THE consumer-equivalence law (pre-registered): over a randomized
+    /// ack/loss trace in which an arbitrary subset of control datagrams is
+    /// DROPPED, the totals the re-homed consumers see from the merged
+    /// WindowAck's cumulative counters are EXACTLY the totals they saw from
+    /// the per-batch legacy `Ack`.
+    ///
+    /// This is the property the merge is safe on: the loss feed
+    /// (`record_batch`), the in-flight release (delivered + lost) and the
+    /// pool-delivery feed are all COUNT-based, so carrying running sums and
+    /// diffing them loses nothing an event stream carried — and unlike an
+    /// event stream it is robust to ack loss, which a merged ack path must
+    /// be (there are now half as many chances to deliver the same counts).
+    #[test]
+    fn ack_merge_counter_delta_matches_the_legacy_ack_totals_under_ack_loss() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        let mut tracker = TrackerModel::default();
+        // Deterministic pseudo-random trace (xorshift): batch sizes, loss
+        // counts, and which acks reach the sender.
+        let mut rng: u64 = 0x9E3779B97F4A7C15;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        let (mut legacy_expected, mut legacy_received) = (0u64, 0u64);
+        let (mut merged_expected, mut merged_received) = (0u64, 0u64);
+        let mut delivered_acks = 0usize;
+        for _ in 0..2000 {
+            let received = (next() % 32) as u32 + 1;
+            // `expected >= received` always: the tracker's estimate is
+            // received scaled by the batch-sequence gap.
+            let gap = (next() % 4) as u32 + 1;
+            let expected = received * gap;
+            let (e, r) = tracker.record_batch(expected, received);
+            // What the LEGACY per-batch Ack delivered (it is sent for every
+            // batch, so every batch counts).
+            legacy_expected += e as u64;
+            legacy_received += r as u64;
+            // What the MERGED ack delivers — but only when this control
+            // datagram survives the wire (~25% dropped).
+            if next() % 4 != 0 {
+                delivered_acks += 1;
+                let (de, dr) =
+                    path.ack_merge_counter_delta(tracker.cum_expected, tracker.cum_received);
+                merged_expected += de as u64;
+                merged_received += dr as u64;
+            }
+        }
+        // Flush: the final ack always lands (the transfer ends on one).
+        let (de, dr) = path.ack_merge_counter_delta(tracker.cum_expected, tracker.cum_received);
+        merged_expected += de as u64;
+        merged_received += dr as u64;
+        assert!(
+            delivered_acks < 2000,
+            "the trace must actually drop acks or it proves nothing"
+        );
+        assert_eq!(
+            merged_expected, legacy_expected,
+            "the loss feed's `expected` total must survive the merge exactly"
+        );
+        assert_eq!(
+            merged_received, legacy_received,
+            "the delivered total (in-flight release, pool feed, stats) must              survive the merge exactly"
+        );
+        assert!(
+            merged_expected >= merged_received,
+            "derived loss = expected - received must never underflow"
+        );
+    }
+
+    /// `cum_received == 0` is the "no counter payload" sentinel used by the
+    /// two timer-driven WindowAck sites (hole re-advertisement, hold-expiry
+    /// unwedge), which broadcast ONE message to every live path and so cannot
+    /// carry a per-path counter. It must be a total no-op — including on the
+    /// cursor, so the next real ack still reports the whole outstanding delta.
+    #[test]
+    fn ack_merge_timer_ack_sentinel_is_inert_and_loses_no_counts() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        assert_eq!(path.ack_merge_counter_delta(0, 0), (0, 0));
+        assert_eq!(path.ack_merge_counter_delta(100, 80), (100, 80));
+        // A timer ack lands mid-stream: inert, and the cursor does NOT move.
+        assert_eq!(path.ack_merge_counter_delta(0, 0), (0, 0));
+        assert_eq!(
+            path.ack_merge_counter_delta(150, 130),
+            (50, 50),
+            "the counts the timer ack could not carry are still delivered next"
+        );
+    }
+
+    /// Duplicated and REORDERED acks are idempotent: the cursor only moves
+    /// forward, so a stale ack contributes nothing and cannot double-charge
+    /// the loss feed or double-release in-flight budget.
+    #[test]
+    fn ack_merge_counter_delta_is_idempotent_under_duplication_and_reorder() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        assert_eq!(path.ack_merge_counter_delta(200, 180), (200, 180));
+        assert_eq!(
+            path.ack_merge_counter_delta(200, 180),
+            (0, 0),
+            "a duplicate ack must be a no-op"
+        );
+        assert_eq!(
+            path.ack_merge_counter_delta(120, 100),
+            (0, 0),
+            "a REORDERED (stale) ack must be a no-op, not a negative delta"
+        );
+        assert_eq!(
+            path.ack_merge_counter_delta(260, 220),
+            (60, 40),
+            "and the cursor is still at the newest point, not the stale one"
+        );
+    }
+
+    /// The derived loss count is `expected - received`, so `received` may
+    /// never exceed `expected` however the receiver's batch-gap ESTIMATE
+    /// moves. (The estimate is approximate by construction — see
+    /// `PathBatchTracker` — and an underflow here would feed the loss
+    /// estimator garbage.)
+    #[test]
+    fn ack_merge_counter_delta_never_lets_received_exceed_expected() {
+        let clock = Arc::new(MockClock::new());
+        let mut path = PathState::new(0, clock.clone());
+        let (e, r) = path.ack_merge_counter_delta(10, 40);
+        assert_eq!(e, 10);
+        assert_eq!(r, 10, "received is clamped to expected, never above it");
+        assert!(e >= r);
     }
 }

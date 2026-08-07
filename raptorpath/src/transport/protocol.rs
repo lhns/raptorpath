@@ -35,7 +35,18 @@ fn bincode_options() -> impl Options {
 /// env-gated; the version bump makes pre-compact binaries refuse cleanly
 /// at handshake instead of dropping datagrams mid-stream if the gate is
 /// ever flipped on.
-pub const PROTOCOL_VERSION: u32 = 5;
+/// v6: `WindowAck` carries the receiver's per-path CUMULATIVE
+/// `cum_expected`/`cum_received` symbol counters (goal-gate "Unlock The
+/// Default 1: ack-merge"). They are the payload of the legacy per-batch
+/// `ControlMessage::Ack`, folded onto the SACK ack so window mode can send
+/// ONE control datagram per data message instead of two. The fields are
+/// unconditional — always present, always populated on a data-triggered ack —
+/// so there is exactly one wire format per binary and no gate-dependent
+/// framing; `RWM_ACK_MERGE` gates only whether the legacy `Ack` is still
+/// ALSO sent. Cumulative (not per-ack) so a dropped control datagram costs
+/// nothing: the next ack carries the whole outstanding delta. No new tag is
+/// claimed; `COMPACT_DATA_TAG` is untouched.
+pub const PROTOCOL_VERSION: u32 = 6;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -308,6 +319,28 @@ pub enum ControlMessage {
         jitter_us: u32,
         /// Running total of symbols received (self-healing reliability metric).
         cumulative_received: u64,
+        /// v6 (goal-gate "Unlock The Default 1: ack-merge"): the receiver's
+        /// per-path CUMULATIVE expected-symbol counter
+        /// (`PathBatchTracker::total_expected` — batch-gap derived). Paired
+        /// with `cum_received` below, this is the entire payload of the legacy
+        /// per-batch `ControlMessage::Ack`, carried here so window mode can
+        /// merge two control datagrams into one. The sender DIFFS it against a
+        /// per-path cursor to recover `(expected, received)` for the loss
+        /// estimator and the in-flight release — identical totals to the
+        /// legacy arm, and robust to a dropped ack (the next one carries the
+        /// whole delta).
+        cum_expected: u64,
+        /// v6: the receiver's per-path CUMULATIVE received-symbol counter
+        /// (`PathBatchTracker::total_received`). See `cum_expected`.
+        ///
+        /// **Zero is the "no counter payload" sentinel**, exactly parallel to
+        /// the existing `echo_send_timestamp_us == 0` timer-ack sentinel: the
+        /// two timer-driven `WindowAck` sites (hole re-advertisement and
+        /// hold-expiry unwedge) broadcast one message to every live path and
+        /// therefore cannot carry a per-path counter. A data-triggered ack
+        /// always reports at least the symbol that triggered it, so a real
+        /// counter payload is never 0.
+        cum_received: u64,
     },
 
     /// DEPRECATED: WindowNack replaced by SACK-extended WindowAck.

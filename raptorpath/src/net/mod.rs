@@ -1538,6 +1538,27 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_copa_feed = copa_feed_plain.clone();
     let recv_copa_feed = copa_feed_plain.clone();
 
+    // ── Window-mode control-datagram MERGE (env RWM_ACK_MERGE) ────────────
+    // Goal-gate "Unlock The Default 1: ack-merge". Mechanism-liveness echo
+    // (MEASUREMENT DISCIPLINE item 1) — emitted in `run_impl` so it fires in
+    // BOTH roles: the receiver is what suppresses the legacy Ack, the sender
+    // is what re-homes its consumers, and the battery asserts the echo on
+    // both logs. Recorded here beside the CopaFeed construction on purpose:
+    // whether a feed exists is exactly what decides how much work the
+    // re-homing has to do, and in the shipped default it does not exist.
+    if gates.ack_merge {
+        info!(
+            copa_feed = copa_feed_plain.is_some(),
+            "ack-merge ACTIVE (RWM_ACK_MERGE: WINDOW mode sends ONE control \
+             datagram per data message instead of two — the legacy per-batch \
+             Ack is suppressed, the SACK WindowAck goes unconditional at that \
+             cadence and carries the Ack's payload in the v6 cumulative \
+             cum_expected/cum_received counters, every Ack-arm consumer \
+             re-homed onto the counter diff; BLOCK mode bit-exact; the \
+             delivery statistic/cadence/counts unchanged)"
+        );
+    }
+
     // Clone tx before moving tun into the sender task
     let recv_tun_tx = tun.tx.clone();
 
@@ -1981,6 +2002,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // outstanding is bounded (plain_dyn_cap = gain·BDP store cap, default-on) and
     // working FEC recovers holes fast. Default-off; the shipped path is untouched.
     let reasm_bdp_on = gates.reasm_bdp;
+
+    // ack-merge (RWM_ACK_MERGE, goal-gate "Unlock The Default 1"): hoisted
+    // for the receiver's per-batch hot path. Scoped to WINDOW mode — block
+    // mode must stay bit-exact, and `recv_window_mode` is the same predicate
+    // the block_arq wiring already uses to pass `None` in window mode.
+    let ack_merge_recv = gates.ack_merge && recv_window_mode;
 
     // Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel
     // STEP 1). RWM_RDIAG=1 samples (a) the engine task's busy fraction
@@ -2737,6 +2764,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                             echo_send_timestamp_us: 0,
                             jitter_us: 0,
                             cumulative_received: 0,
+                            // Timer-driven hole re-advertisement: ONE message
+                            // broadcast to every live path, so it cannot carry
+                            // a per-path counter. 0 = the "no counter payload"
+                            // sentinel, exactly parallel to the echo == 0
+                            // timer-ack sentinel this site already uses.
+                            cum_expected: 0,
+                            cum_received: 0,
                         };
                         for pid in recv_scheduler.lock().live_paths() {
                             let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
@@ -2802,6 +2836,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                 echo_send_timestamp_us: 0,
                                 jitter_us: 0,
                                 cumulative_received: 0,
+                                // Hold-expiry unwedge: same broadcast, same
+                                // "no counter payload" sentinel as above.
+                                cum_expected: 0,
+                                cum_received: 0,
                             };
                             for pid in recv_scheduler.lock().live_paths() {
                                 let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
@@ -2897,11 +2935,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     }
 
                     // Track batch sequences for loss detection (ADR-0003)
-                    let (expected, _received_total) = {
+                    // ack-merge (RWM_ACK_MERGE): read the tracker's CUMULATIVE
+                    // totals in the same borrow — they are the v6 WindowAck
+                    // counter payload, i.e. the legacy Ack's (expected,
+                    // received) pair carried as running sums so the sender can
+                    // diff them. Cumulative, not per-ack: a dropped control
+                    // datagram then costs nothing.
+                    let (expected, _received_total, cum_expected, cum_received) = {
                         let mut tracker = recv_path_tracking
                             .entry(path_id)
                             .or_insert_with(PathBatchTracker::new);
-                        tracker.record_batch(batch_seq, symbol_count)
+                        let (e, r) = tracker.record_batch(batch_seq, symbol_count);
+                        (e, r, tracker.total_expected, tracker.total_received)
                     };
 
                     // Route symbols to window decoder or block decoder
@@ -3313,21 +3358,44 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         let gap_report_due = highest_seen_seq > highest_delivered_seq
                             && highest_seen_seq > last_gap_ack_seen
                             && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
-                        if cumulative_advanced || gap_report_due {
-                            last_advertised_ack = highest_delivered_seq;
-                            last_gap_ack_seen = highest_seen_seq;
-                            last_gap_ack_time = Instant::now();
-                            // A gap-bearing ack IS a hole re-advertisement:
-                            // push the reliable-mode refresh timer out.
-                            last_hole_nack_at = last_gap_ack_time;
-
+                        // ack-merge (RWM_ACK_MERGE): what the ack ADVERTISES
+                        // (the cumulative point + SACK ranges) is unchanged —
+                        // `advertise` is the shipped predicate verbatim, so
+                        // GAP_ACK_MIN_INTERVAL still rate-limits gap reports
+                        // and the depth-16 nack/sack channels see no new
+                        // pressure. What changes is only WHETHER A DATAGRAM
+                        // IS SENT: under the merge this ack also carries the
+                        // suppressed legacy Ack's payload, so it must go out
+                        // once per data message — exactly the cadence the Ack
+                        // had. Gate off ⇒ `emit == advertise` ⇒ byte-identical.
+                        let (emit_ack, advertise) = window_ack_emission(
+                            cumulative_advanced,
+                            gap_report_due,
+                            ack_merge_recv,
+                        );
+                        if emit_ack {
+                            if cumulative_advanced {
+                                last_advertised_ack = highest_delivered_seq;
+                            }
                             // SACK ranges: what WAS received beyond the
-                            // cumulative point (not what's missing).
-                            let sack_ranges = received_sack_ranges(
-                                &received_seqs,
-                                highest_delivered_seq,
-                                highest_seen_seq,
-                            );
+                            // cumulative point (not what's missing). Only on
+                            // an advertising ack — a merge-only ack carries
+                            // the counters and the echo, never a gap report
+                            // (that is what preserves the gap rate limit).
+                            let sack_ranges = if advertise {
+                                last_gap_ack_seen = highest_seen_seq;
+                                last_gap_ack_time = Instant::now();
+                                // A gap-bearing ack IS a hole re-advertisement:
+                                // push the reliable-mode refresh timer out.
+                                last_hole_nack_at = last_gap_ack_time;
+                                received_sack_ranges(
+                                    &received_seqs,
+                                    highest_delivered_seq,
+                                    highest_seen_seq,
+                                )
+                            } else {
+                                Vec::new()
+                            };
 
                             let jitter = {
                                 let sched = recv_scheduler.lock();
@@ -3357,6 +3425,14 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                         .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
                                         .unwrap_or(0)
                                 },
+                                // v6 ack-merge counters: the legacy Ack's
+                                // (expected, received) pair as per-path running
+                                // sums. Always populated on a data-triggered
+                                // ack (gate or no gate — one wire format per
+                                // binary); the sender only CONSUMES them under
+                                // RWM_ACK_MERGE.
+                                cum_expected,
+                                cum_received,
                             };
                             if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                                 debug!(?e, path_id, "failed to send WindowAck");
@@ -3480,6 +3556,21 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     }
 
                     // ADR-0005: send ACK with echo timestamp for RTT
+                    //
+                    // ack-merge (RWM_ACK_MERGE, goal-gate "Unlock The Default
+                    // 1"): THIS is the second control datagram per data
+                    // message. Its send site sits after the window/block
+                    // branch closes, so it has always fired in WINDOW mode too
+                    // (the recorded correction in the sender's Ack arm) — one
+                    // legacy Ack for every SACK WindowAck, against quinn-perf's
+                    // ~1 ack per ~24 packets. Under the merge, window mode
+                    // suppresses it entirely: its payload rides the WindowAck's
+                    // v6 cumulative counters and its consumers are re-homed
+                    // onto the counter diff. BLOCK MODE IS UNTOUCHED — it has
+                    // no WindowAck to merge into, `block_arq` is live only
+                    // there, and its dup-ack loss channel keeps the per-batch
+                    // Ack it is built on.
+                    let suppress_legacy_ack = ack_merge_recv;
                     // Collect received_ids for symbols in this batch
                     let received_ids: Vec<u32> = batch
                         .symbols
@@ -3506,9 +3597,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         .map(|p| p.estimator.record_batch(expected, symbol_count));
 
                     // ADR-0005: send ACK as datagram (best-effort, low overhead)
-                    match recv_transport.send_control_datagram(path_id, ack) {
-                        Err(e) => debug!(?e, path_id, "failed to send ACK datagram"),
-                        Ok(()) => debug!(path_id, batch_seq, symbol_count, "ack sent"),
+                    if !suppress_legacy_ack {
+                        match recv_transport.send_control_datagram(path_id, ack) {
+                            Err(e) => debug!(?e, path_id, "failed to send ACK datagram"),
+                            Ok(()) => debug!(path_id, batch_seq, symbol_count, "ack sent"),
+                        }
                     }
                 }
                 WireMessage::Control(ctrl_msg) => {
@@ -4751,6 +4844,34 @@ pub fn sack_release_prune(released: &mut BTreeSet<u64>, ack: u64) {
 /// `store_len` — the shipped gate unchanged.
 pub fn sack_release_outstanding(store_len: usize, released: usize) -> usize {
     store_len.saturating_sub(released)
+}
+
+/// ack-merge (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1"): the
+/// receiver data arm's WindowAck emission decision, as a pure function of the
+/// two shipped predicates and the gate. Returns `(emit, advertise)`.
+///
+/// The separation is the whole safety argument of the merge:
+///
+/// - `advertise` is the SHIPPED predicate verbatim
+///   (`cumulative_advanced || gap_report_due`) and it alone decides whether
+///   the ack carries SACK ranges and pushes the gap/hole timers. So
+///   `GAP_ACK_MIN_INTERVAL` still rate-limits gap reports at exactly its
+///   shipped cadence and the depth-16 nack/sack `try_send` channels see no
+///   new pressure — a merge-only ack carries counters and an echo, never a
+///   gap report.
+/// - `emit` decides only whether a DATAGRAM GOES OUT. Under the merge it is
+///   unconditional, because this ack now also carries the suppressed legacy
+///   `Ack`'s payload and must therefore keep the `Ack`'s once-per-data-message
+///   cadence.
+///
+/// With the gate OFF, `emit == advertise`: the shipped path, byte-identical.
+pub fn window_ack_emission(
+    cumulative_advanced: bool,
+    gap_report_due: bool,
+    ack_merge: bool,
+) -> (bool, bool) {
+    let advertise = cumulative_advanced || gap_report_due;
+    (advertise || ack_merge, advertise)
 }
 
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
@@ -10565,7 +10686,7 @@ fn handle_control_message(
             debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
         }
 
-        ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received } => {
+        ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received, cum_expected, cum_received } => {
             debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
             // Publish the peer's cumulative ack point for the window sender
             // (fetch_max: acks arrive on multiple paths, out of order).
@@ -10578,6 +10699,15 @@ fn handle_control_message(
             // Update RTT from echoed timestamp. echo == 0 is the sentinel
             // for timer-driven acks (hold-expiry unwedge) that echo no
             // batch — recording now−0 would poison SRTT with a huge sample.
+            // ack-merge (RWM_ACK_MERGE, goal-gate "Unlock The Default 1"):
+            // in window mode the legacy per-batch `Ack` is suppressed, so
+            // EVERY consumer of its arm is re-homed here, driven by the diff
+            // of the v6 cumulative counters. The whole arm runs under ONE
+            // scheduler lock in the legacy Ack arm's own internal order
+            // (delivery → RTT → loss/pool/stats/cc-window) — one acquisition
+            // where the unmerged pair took two, which is stall source (b) of
+            // the pre-registration, removed rather than merely relocated.
+            let am_on = crate::scheduler::ack_merge_active();
             let now = now_us();
             let rtt_us = now.saturating_sub(echo_send_timestamp_us);
             {
@@ -10592,6 +10722,48 @@ fn handle_control_message(
                         w.note_discard();
                     }
                 }
+
+                // ── re-homing PART 1: the delivery signal ────────────────
+                // Mirrors the legacy Ack arm's three-way branch VERBATIM
+                // (feed-present / quarantined / neither), so a configuration
+                // that does have a CopaFeed behaves exactly as it does today.
+                // `record_delivery` (inside `sched.ack`) is PORTED on purpose:
+                // with no feed constructed — the shipped default and every arm
+                // of this battery — it is the ONLY window-mode rate anchor,
+                // and dropping it is the trap recorded in the Ack arm
+                // (max_bw = 0 ⇒ the anchor floor never establishes ⇒ the
+                // dynamic store cap sticks at boot 128). The merged ack
+                // arrives on exactly the cadence the Ack did, so its
+                // ack-interval Δt statistic is unperturbed. `note_discard` is
+                // NOT repeated here — the quarantine block above already
+                // charged it once for this ack.
+                let (d_expected, d_received) = if am_on {
+                    sched
+                        .path_mut(path_id)
+                        .map(|p| p.ack_merge_counter_delta(cum_expected, cum_received))
+                        .unwrap_or((0, 0))
+                } else {
+                    (0, 0)
+                };
+                let am_live = d_expected > 0 || d_received > 0;
+                if am_live {
+                    if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
+                        if let Some(p) = sched.path_mut(path_id) {
+                            p.release_in_flight(d_received);
+                            if !feed.owns_cc() {
+                                p.on_delivery_signal();
+                            }
+                        }
+                    } else if gap_q {
+                        if let Some(p) = sched.path_mut(path_id) {
+                            p.release_in_flight(d_received);
+                            p.on_delivery_signal();
+                        }
+                    } else {
+                        sched.ack(path_id, d_received);
+                    }
+                }
+
                 if echo_send_timestamp_us > 0 && !gap_q {
                     if let Some(path) = sched.path_mut(path_id) {
                         let rtt_duration = Duration::from_micros(rtt_us);
@@ -10607,6 +10779,67 @@ fn handle_control_message(
                             rtt_duration
                         };
                         path.record_rtt_sample(cc_rtt);
+                    }
+                }
+
+                // ── re-homing PART 2: loss, pool, stats, cc window ───────
+                // The remainder of the legacy Ack arm, in its own order and
+                // with its own guards. The loss feed is the SENDER'S ONLY
+                // loss signal and the counter diff is what makes it survive
+                // the merge exactly (sums, not events).
+                if am_live {
+                    if let Some(path) = sched.path_mut(path_id) {
+                        // feat/copa-compete: wire-level loss evidence for the
+                        // competitive AIMD. Re-homed only when no live feed
+                        // exists — `copa_feed_attribute` below carries its own
+                        // call, so this keeps the event exactly-once in BOTH
+                        // configurations. (Compete implies a passthrough/feed
+                        // config in practice, so this branch is the
+                        // belt-and-braces one.)
+                        if crate::scheduler::copa_compete_active()
+                            && copa_feed.filter(|f| !f.n1_paused()).is_none()
+                        {
+                            if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
+                                path.on_wire_congestion_events(ev);
+                            }
+                        }
+                        // ADR-0003: loss stats from the ack's counter delta.
+                        if d_expected > 0 {
+                            path.estimator.record_batch(d_expected, d_received);
+                            // Lost symbols also left the wire: release them
+                            // from in_flight (the delivery branch above only
+                            // subtracts received), otherwise losses leak
+                            // budget and the Copa gate jams.
+                            path.release_in_flight(d_expected.saturating_sub(d_received));
+                        }
+                        // Delivery-clocked pool anchor (RWM_POOL_DELIV): the
+                        // same delivery event the legacy arm fed it.
+                        path.on_pool_delivery(
+                            d_received,
+                            d_expected.saturating_sub(d_received),
+                            gap_q,
+                        );
+                        // ADR-0013: path monitoring stats.
+                        if let Some(ps) = stats.path(path_id) {
+                            ps.loss_rate_e6.store(
+                                (path.estimator.loss_rate() * 1_000_000.0) as u64,
+                                Ordering::Relaxed,
+                            );
+                            ps.throughput_bps
+                                .store(path.estimator.throughput() as u64, Ordering::Relaxed);
+                            ps.cwnd.store(path.cwnd as u64, Ordering::Relaxed);
+                            ps.in_flight.store(path.in_flight as u64, Ordering::Relaxed);
+                            ps.in_slow_start.store(path.in_slow_start, Ordering::Relaxed);
+                            ps.symbols_received
+                                .fetch_add(d_received as u64, Ordering::Relaxed);
+                        }
+                        // feat/copa-sole-cc: publish the cwnd as the
+                        // pass-through substrate window (no-op unless
+                        // RWM_QUIC_CC=passthrough).
+                        transport.set_cc_window_bytes(
+                            path_id,
+                            path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
+                        );
                     }
                 }
             }
@@ -12655,4 +12888,64 @@ mod tests {
         assert!((clean.multiplier() - 1.0).abs() < 1e-9);
     }
 
+
+    // ── ack-merge emission decision (goal-gate "Unlock The Default 1") ──
+
+    /// With `RWM_ACK_MERGE` OFF the receiver's data arm is byte-identical to
+    /// the shipped path: a datagram goes out on exactly the shipped predicate
+    /// and never otherwise.
+    #[test]
+    fn ack_merge_off_emits_on_exactly_the_shipped_predicate() {
+        for &adv in &[false, true] {
+            for &gap in &[false, true] {
+                let (emit, advertise) = window_ack_emission(adv, gap, false);
+                assert_eq!(
+                    emit,
+                    adv || gap,
+                    "gate OFF must emit iff (cumulative_advanced || gap_report_due)"
+                );
+                assert_eq!(emit, advertise, "gate OFF: emit and advertise are one decision");
+            }
+        }
+    }
+
+    /// With the gate ON the ack is UNCONDITIONAL — it now carries the
+    /// suppressed legacy `Ack`'s payload, so it must keep that message's
+    /// once-per-data-message cadence. Two control datagrams become one; zero
+    /// is never correct.
+    #[test]
+    fn ack_merge_on_emits_once_per_data_message() {
+        for &adv in &[false, true] {
+            for &gap in &[false, true] {
+                let (emit, _) = window_ack_emission(adv, gap, true);
+                assert!(emit, "the merged ack carries the Ack payload and must always go out");
+            }
+        }
+    }
+
+    /// THE safety law of the merge: the gate changes only WHETHER A DATAGRAM
+    /// IS SENT, never WHAT IT ADVERTISES. `advertise` is invariant under the
+    /// gate, so `GAP_ACK_MIN_INTERVAL` still rate-limits gap reports at its
+    /// shipped cadence and the depth-16 nack/sack `try_send` channels see no
+    /// new pressure — a merge-only ack carries counters and an echo, never a
+    /// gap report. (Getting this wrong would turn every stalled-frontier
+    /// batch into a NACK storm, which is the failure the rate limit exists
+    /// to prevent.)
+    #[test]
+    fn ack_merge_never_changes_what_the_ack_advertises() {
+        for &adv in &[false, true] {
+            for &gap in &[false, true] {
+                let (_, off) = window_ack_emission(adv, gap, false);
+                let (_, on) = window_ack_emission(adv, gap, true);
+                assert_eq!(
+                    off, on,
+                    "gap advertisement (and therefore the gap rate limit) is                      invariant under RWM_ACK_MERGE"
+                );
+            }
+        }
+        // Concretely: frontier stalled on a hole, gap report NOT yet due.
+        let (emit, advertise) = window_ack_emission(false, false, true);
+        assert!(emit, "the merged ack still goes out (it carries the counters)");
+        assert!(!advertise, "but it advertises no gap — the rate limit holds");
+    }
 }
