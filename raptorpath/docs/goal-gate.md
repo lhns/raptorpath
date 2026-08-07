@@ -16638,3 +16638,288 @@ with the correctness objection removed; what remains to price is
 CADENCE (RTT-sample and in-flight-release rates both fall 25× with it).
 Given this battery's result — that c7 does not respond to ack density
 at all — its expected c7 value is zero, and its case is c1/CPU, not c7.
+
+## Unlock The Default 2: derived patience (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/derived-patience` from main@1c1867f; GOAL "UNLOCK THE DEFAULT" ATTEMPT 2 at the c7 clause, and its LAST: attempt 1 (ack-merge) was falsified WITH ITS MECHANISM NAMED, and a second falsification-with-mechanism converts the c1-default target into a documented STRUCTURAL BOUND per the goal's honest-exit clause)
+
+**(0) What attempt 1 handed to this one, quoted so the successor is not
+re-derived.** §16.39 / "Unlock The Default 1: ack-merge" eliminated the
+three transport-side explanations of the §16.37 c7 blocker on two
+independent grounds each: **ack density** (measured 1.038/1.053 → 1.000
+control datagrams per data message — the "duplicate" `WindowAck` was
+already frontier-rate-limited to ≈0.04/msg, inside quinn-perf's own
+1-per-24 class, so there was no ×2 to remove), **per-ack lock
+contention** (halved at the ack arm, response nil), and **the depth-16
+gap channels** (`gapdrop` does not fall when density falls — it rises
+slightly, and sits ≈400 in the prior default too). What survived is the
+gauge itself: **the stall signature is a STEP FUNCTION OF THE `est`
+GATE AND OF NOTHING ELSE MEASURED** — est `sidle` 1473–2604 ms /
+`sweeps` 12–24 against the prior default's 454–1039 ms / 2–7, invariant
+to the pool (§16.37), invariant to the ack merge (§16.39). Attempt 1's
+falsification clause names THIS build: *"the next experiment is the
+patience/sweep constants themselves (are they derived from a live
+SRTT/loss estimate whose cadence the est gate changes, or are they
+fixed?), not the channel the sweeps drain into."*
+
+**(a) The finding this build acts on (code facts at 1c1867f, with line
+numbers).** Two fixed literals sit in the plane §16.37/§16.39 name, in
+a project whose own rules say a clock must be derived from the
+operating point. Both mis-scale exactly where the blocker appears.
+
+**(3a) The stall DEFINITION is a fixed 3 ms.**
+`SIDLE_GAP_MIN_US = 3_000` (`net/mod.rs:7044`, used `:7889`) and its
+receiver twin `WIDLE_GAP_MIN_US = 3_000` (`:2277`, used `:2921`). The
+sender gauge accumulates the time between CHANGES of the cumulative
+`(source + repair)` wire-handoff counter, observed once per sender-loop
+iteration, and counts a change-gap as a STALL iff it is ≥ 3 ms. The
+gauge's own comment states the assumption the constant encodes: *"the
+loop wakes ≥ every 1 ms, so gap edges are observed within ~1 ms"* —
+i.e. **3 ms is 3 × the loop's 1 ms wake, and the loop wake is standing
+in for the nominal inter-emission interval.** That substitution is
+valid only while emission EVENTS are at least as frequent as loop
+wakes. `RWM_EMIT_BATCH` (an `est`-arm component) exists precisely to
+make them rarer: it hands a whole batch to the transport in one
+iteration, so ONE counter change covers many symbols and the nominal
+inter-EVENT interval rises above 1 ms by construction — at which point
+a fixed 3 ms starts counting ordinary pacing intervals as stalls. **The
+`est` arm's 3–5× `sidle` is therefore under suspicion of being partly a
+GAUGE artifact, and §16.37's and §16.39's own headline evidence rests
+on it.** This is a DIAG-only gauge (`RWM_DIAG`); it cannot move
+throughput. What it decides is whether the EVIDENCE was real.
+
+**(3b) Recovery patience is a CONSTANT, not a derived quantity.**
+`NACK_RETX_COOLDOWN_FLOOR_US = 10_000` (`:219`) serves three roles
+simultaneously:
+
+- the **kGranularity analog** in `mp_time_threshold_us` (`:275`):
+  `max(9/8 · max(srtt, ewma_rtt), 10 ms)` — the RFC 9002 §6.1.2
+  time-threshold loss detector, per path. RFC 9002's own kGranularity
+  is the SYSTEM TIMER GRANULARITY with a RECOMMENDED value of **1 ms**.
+  This constant is **10× that**. At c2/c7 (RTprop ≈ 8–10 ms) the
+  9/8·srtt term is ≈9–11 ms, so the floor is at or above it for a large
+  fraction of the run: the loss detector's patience is pinned to a
+  literal instead of tracking the path.
+- the **per-seq retransmit cooldown** (`:9159`):
+  `retx_cooldown_us = srtt.max(10 ms)`, on the POOLED max estimator RTT
+  across active paths — same domination at these cells.
+- the **tail-sweep SRTT fallback** (`:8784`): `unwrap_or(10 ms)` when no
+  active path has an RTT snapshot, feeding
+  `(srtt·2).clamp(25 ms, 100 ms)`.
+
+Patience is exactly the quantity a denser ack clock interacts with: the
+`est` gate changes WHEN the estimator's heavy math runs and therefore
+on what freshness the recovery clocks are evaluated — but if the clock
+they are compared against is a constant, freshness cannot help, and a
+hole waits out a 10 ms literal on a path whose own round trip is 9 ms.
+**KEEP RFC 9002's kTimeThreshold = 9/8 and kPacketThreshold = 3
+untouched** — those are cited, not magic. Only the floor is derived.
+
+**(b) The two derivations (what the gates do; both default OFF, gated
+separately so the battery attributes them independently).**
+
+**`RWM_SIDLE_DERIVED` (default OFF; DIAG-only, behaviour-inert).**
+The legacy `sidle=` field is PRINTED UNCHANGED in every run. With the
+gate on, a SECOND field `sidle2=` is printed beside it, computed by the
+derived law over the same event stream, so **every arm carries both
+numbers and the artifact question is answered on the SAME runs, in all
+four arms, including `prior` and `est`.** The law (one formula, no
+branch, no threshold selecting a code path — CLAUDE.md's
+no-mode-switch invariant):
+
+```
+stall_threshold_us(evt_us) =
+    clamp( 3 · max(evt_us, LOOP_WAKE_US),          // the legacy form, with the
+           SIDLE_GAP_MIN_US,                       //   MEASURED nominal interval
+           HOLE_NACK_REFRESH_MIN_US )              //   in place of the assumed one
+```
+
+with `LOOP_WAKE_US = 1_000` (the sender loop's wake period — the two
+`sleep(Duration::from_millis(1))` arms at `:8794`/`:8799`, i.e. the
+gauge's observation granularity, already asserted by the existing
+comment), `evt_us` = the MEASURED mean inter-event interval over the
+previous DIAG window (window duration / events observed in it,
+recomputed once per 250 ms window — zero hot-loop cost), and the clamp
+bounds taken from the two constants already in the file:
+`SIDLE_GAP_MIN_US = 3_000` as the floor and `HOLE_NACK_REFRESH_MIN` =
+25 ms as the ceiling (a wire gap longer than the engine's own
+hole-refresh cadence is a stall at any operating point — the ceiling
+exists so the derived gauge cannot go blind at very slow cells).
+**No new constant is introduced: the multiplier 3 IS the legacy
+`SIDLE_GAP_MIN_US / LOOP_WAKE_US`.**
+
+*The coincidence property, and why it is the test to run.* Whenever
+emission events are at least as frequent as the loop wake
+(`evt_us ≤ 1 ms` — the prior default at every cell in this battery),
+the law returns **exactly 3 000 µs, the legacy constant, to the
+microsecond.** The derived gauge is a strict generalization that
+reproduces the legacy gauge wherever the legacy gauge's own stated
+assumption holds, and departs from it ONLY where emission events are
+rarer than the loop wake — which is what emission batching produces.
+It is therefore one-directional: `sidle2 ≤ sidle` always, by
+construction. The identical law is applied to the receiver's `WIDLE`
+twin over the Data-arrival event stream (`widle2=`).
+
+**`RWM_PATIENCE_DERIVED` (default OFF; BEHAVIOUR).** The floor becomes
+
+```
+patience_floor_us(jitter_us, srtt_us) =
+    TIMER_GRANULARITY_US + min(jitter_us, srtt_us)
+```
+
+with `TIMER_GRANULARITY_US = 1_000` — RFC 9002 §6.1.2 kGranularity
+("the timer granularity … a system-dependent value"; RECOMMENDED 1 ms),
+which here is DERIVED rather than borrowed: the engine's finest
+recovery-clock evaluation interval IS the sender loop's 1 ms wake, and
+it coincides with the RFC's recommendation — and `jitter_us` = the
+path's **own measured** RFC 3550 §A.8 interarrival jitter
+(`Estimator::jitter_us()`, `control/estimator.rs:378`, already
+maintained per path from real arrivals), clamped at one srtt so a
+pathological jitter estimate cannot make the floor unbounded. "Timer
+granularity + measured jitter", exactly as the tasking specifies, with
+both terms already measured in-tree and neither invented here.
+
+Applied at the two BEHAVIOURAL sites, per path where a path clock
+exists and pooled where the legacy code pools:
+
+- `mp_time_threshold_us(srtt, ewma_rtt, floor)` gains the floor as a
+  PARAMETER (the function stays pure and unit-tested; 9/8 and the
+  packet threshold 3 are untouched). Gate OFF ⇒ caller passes
+  `NACK_RETX_COOLDOWN_FLOOR_US` ⇒ **bit-identical**.
+- `retx_cooldown_us = srtt.max(floor)` — same substitution.
+- The **tail-sweep fallback (`:8784`) is DELIBERATELY LEFT ALONE**, and
+  the reason is recorded now with a unit test rather than asserted:
+  it feeds `(srtt·2).clamp(25 ms, 100 ms)`, so **every** fallback value
+  ≤ 12.5 ms — the legacy 10 ms and any derived floor alike — yields
+  exactly `TAIL_SWEEP_MIN_US`. The site is INERT with respect to this
+  constant and changing it would be a cosmetic edit dressed as a
+  derivation.
+
+**Mechanism gauge (required by the falsification clause — "patience
+demonstrably derived").** `mpr[…]` gains
+`pf=<floor_bound>/<clock_bound>/<mean floor µs>`: how many
+`mp_time_threshold_us` evaluations returned the FLOOR term versus the
+9/8·srtt term, and the mean derived floor. Under the gate OFF this
+reads the legacy split; under the gate ON, "patience is derived" means
+`floor_bound` collapses. A c7 miss WITHOUT that collapse is a build
+defect, not a falsification, and must be reported as such.
+
+**No-mode-switch invariant (CLAUDE.md).** Both gates are BUILD/transport
+gates, not dials: neither selects a law, a code path or a constructor
+argument on δ, ρ or r, and no behaviour anywhere keys on a threshold in
+the triangle. Each law is ONE formula, continuous in its inputs, both
+terms always computed.
+
+**(c) Predictions (pre-registered, both seeds, all against same-session
+controls in the SAME battery).**
+
+1. **THE 3a ARTIFACT VERDICT (a gauge claim, independent of
+   throughput).** `sidle2` is measured beside `sidle` in all four arms.
+   Pre-registered THREE-WAY, and **the honest consequence of each
+   branch is committed here, before the numbers exist**:
+   - **(1A) If the `est` arm's `sidle2` shrinks toward the prior
+     default's class** (i.e. the 3–5× ratio falls to ≲1.5×) **while
+     the prior arm's `sidle2` ≈ its `sidle`** (which the coincidence
+     property predicts) — **then a material part of §16.37's and
+     §16.39's own gauge evidence was a MEASUREMENT ARTIFACT of a fixed
+     threshold read against a batched emitter, and BOTH sections must
+     be CORRECTED in the paper and in this ledger, in those words, not
+     softened.** The "invariant stall signature" would then be
+     substantially a re-reading of `RWM_EMIT_BATCH`'s event
+     granularity.
+   - **(1B) If the ratio survives** (`est sidle2` still ≫ prior) — the
+     signature is REAL, §16.37/§16.39 need no correction, and this
+     build's own mechanism claim (3b) is the only thing on trial.
+   - **(1C) If `sidle2` ≈ `sidle` everywhere**, the derived law never
+     left its floor: `evt_us ≤ 1 ms` in every arm, the legacy constant
+     was correctly scaled at these cells, and 3a is a null with the
+     `evt_us` distribution quoted as its evidence.
+
+   **This alone cannot move c7.** It decides whether the evidence was
+   real.
+2. **c7 (THE clause): ≥ 0.97×Σ same-session on BOTH seeds** for
+   `pat` = `est+eb+RWM_PATIENCE_DERIVED`. Same-session controls: the
+   `est` arm reproduces the blocker (0.955/0.924 in attempt 1;
+   0.958–0.977 / 0.931–0.956 across §16.36–16.39) and `prior` the
+   shipped default (0.992/0.965).
+3. **MECHANISM EVIDENCE (goal clause 4 — required, not optional):**
+   in the `pat` arm, `pf=` shows the floor term collapsing to a small
+   minority of evaluations, and `sweeps` and `retx` fall toward the
+   prior class (est 12–24 sweeps → prior 2–7) with `mpr[…]`,
+   `gapdrop`, `paused`, `sidle`/`sidle2` quoted per arm. A c7 pass
+   WITHOUT `pf` moving is not a mechanism confirmation; a c7 pass
+   WITHOUT `sweeps`/`retx` moving is a pass whose attribution is open,
+   and both must be reported as such.
+4. **c1 (PRIMARY): ≥ 430 Mbit/s** mean both seeds at 400 MB for `pat`
+   (the composed class 446–496), plus one 1.2 GB sustained run.
+5. **c8 ≥ 0.87 line**, **sc2/sc3 within σ** of the prior default,
+   **tail_matrix c2 ×4** in the crown ≤ ~41 ms class at 1000/1000,
+   **wedge** green.
+6. **RELIABILITY:** no delivered-set change, **dnf = 0** everywhere,
+   and **N = 1 / block mode unaffected** where the laws do not apply
+   (asserted by unit test, not by inspection).
+7. `patonly` (arm iv, `RWM_PATIENCE_DERIVED=1` on today's default)
+   isolates the derived floor's own effect off the est clock: c1/c7 ≥
+   the prior default within σ. A regression here means the 10 ms
+   literal was load-bearing at the current default and is a finding in
+   its own right.
+
+**(d) Falsification (fixed now).** **c7 still < 0.97 on both seeds with
+patience DEMONSTRABLY DERIVED (the `pf` gauge shows the floor term
+collapsed) ⇒ ATTEMPT 2 IS FALSIFIED.** In that case: name the
+mechanism the gauges then point at, and — per the goal's honest-exit
+clause 5, this being the second falsification-with-mechanism — **write
+the c1-default target up as a documented STRUCTURAL BOUND** in the
+ledger, the deprecation register and the paper, quoting the opt-in's
+own numbers as the priced alternative. Additional falsifications:
+(i) `pf` does NOT move ⇒ the derivation is not live; a BUG, fix before
+any verdict, no verdict from that battery. (ii) c7 ≥ 0.97 but c1 < 430
+⇒ no flip, the c1 term re-attributed. (iii) delivered-set / dnf / N=1
+breakage ⇒ scope defect, a BUG, fix before any verdict. (iv) `pat`
+passes c7 but `patonly` regresses the shipped default ≫ σ ⇒ no
+unconditional default flip; report the composition-only result.
+
+**(e) Battery (pre-registered — FULL gate set; this one is
+flip-eligible, unlike attempt 1's reduced battery).** VM 10.1.5.16
+under MEASUREMENT DISCIPLINE 1–13: lock `/tmp/rwm-vm.lock` (item 12 —
+builds and probes too); tree synced by `git archive` of THIS branch +
+CRLF conversion; stale binary `rm`'d before the build; binary sha256 +
+commit + `lscpu` + kernel in every log header; rp-* netns only; fresh
+topology per invocation; seeds 42 AND 7, ×8 interleaved round-robin per
+rep; seed-7 topo-abort protocol (n recorded, nothing discarded);
+liveness echoes asserted per arm BOTH directions including the two new
+gates; ARMCOUNT per arm; stated runtimes; same-session Σ from each
+arm's own singles. **DISCIPLINE ITEM 13 IS BINDING: the battery is
+launched detached and NOT POLLED — one wait sized to the expected
+duration, collect once at the end.**
+
+**Arms** (all four carry `RWM_SIDLE_DERIVED=1`, which is DIAG-only and
+behaviour-inert — `RWM_DIAG=1` is already set in every arm of every
+battery in this file, so this changes the printed fields and nothing
+else; it is what makes prediction 1 measurable on the CONTROL arms):
+(i) `prior` = today's default · (ii) `est` = `RWM_EST_CADENCE=1
+RWM_EMIT_BATCH=1` (the blocker control) · (iii) `pat` = the same +
+`RWM_PATIENCE_DERIVED=1` (**THE candidate**) · (iv) `patonly` =
+`RWM_PATIENCE_DERIVED=1` alone.
+
+**Cells:** **c7 dual 200 MB ×8 (THE clause, ≥ 0.97×Σ)** with
+`sidle`/`sidle2`/`sweeps`/`retx`/`mpr[…pf=…]`/`gapdrop`/`paused`
+quoted per arm · **c1 single 400 MB ×8 (≥ 430)** + one 1.2 GB
+sustained · c8 dual 25 MB ×8 (≥ 0.87 line) · sc2 100 MB + sc3 25 MB ×8
+(within σ) · tail_matrix c2 ×4 (crown ≤ ~41 ms class, 1000/1000) ·
+wedge.
+
+**FLIP:** `RWM_EST_CADENCE` + `RWM_EMIT_BATCH` + `RWM_PATIENCE_DERIVED`
+as the new default ONLY if the FULL pre-registered gate set passes on
+BOTH seeds. Otherwise revert defaults and take the honest exit.
+**The goal's gates bind: c7 ≥ 0.97 is not negotiable and will not be
+weakened to ship the c1 win.**
+
+**Unit tests (pre-registered).** For 3a: the derived threshold
+reproduces the legacy 3 000 µs EXACTLY at every operating point where
+the two coincide (`evt_us ≤ LOOP_WAKE_US`); monotone non-decreasing in
+`evt_us`; both clamp bounds; and `sidle2 ≤ sidle` over a randomized
+gap trace. For 3b: `patience_floor_us` scaling across RTT and jitter,
+floor/clamp sanity, `mp_time_threshold_us` bit-identical to the legacy
+form when passed `NACK_RETX_COOLDOWN_FLOOR_US`, RFC 9002's 9/8 and the
+packet threshold 3 unchanged, and the tail-sweep INERTNESS assertion
+(any fallback ≤ 12.5 ms ⇒ `TAIL_SWEEP_MIN_US`). `gates.rs` pins both
+new gates OFF in the default-stack test.
