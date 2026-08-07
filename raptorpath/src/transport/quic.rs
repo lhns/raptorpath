@@ -132,6 +132,11 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
 // takes a 0.95–0.96 share against a competing Cubic flow at the c2 cell —
 // mildly aggressive, within the deployed-BBRv1 envelope.
 //   RWM_QUIC_CC=bbr          quinn BBR (explicit; = the default)
+//   RWM_QUIC_CC=bbr_rs       in-tree burst-robust BBR (transport/bbr_rs.rs:
+//                            quinn's Bbr with the interval-guarded per-flight
+//                            rate sampler — goal-gate "Ship The Wins 2:
+//                            shal8 anchor", ADR-0054/0061; built as an
+//                            explicit arm, flip decision battery-gated)
 //   RWM_QUIC_CC=newreno
 //   RWM_QUIC_CC=cubic        quinn stock Cubic (the legacy/fairness arm)
 //   RWM_QUIC_CC=passthrough  OUR engine owns the window (see below)
@@ -157,6 +162,10 @@ enum QuicCcMode {
     /// Env unset/unrecognized/explicit `bbr`: quinn BBR — the shipped default
     /// (Default CC Flip, 2026-07-21).
     Bbr,
+    /// Explicit `bbr_rs`: the in-tree burst-robust BBR (one changed
+    /// mechanism vs quinn's: the bandwidth estimator — see
+    /// transport/bbr_rs.rs module docs).
+    BbrRs,
     NewReno,
     /// Explicit `cubic`: quinn stock Cubic — the legacy wire / fairness arm.
     Cubic,
@@ -169,6 +178,7 @@ fn quic_cc_mode() -> QuicCcMode {
     };
     match name.trim().to_ascii_lowercase().as_str() {
         "bbr" => QuicCcMode::Bbr,
+        "bbr_rs" => QuicCcMode::BbrRs,
         "newreno" => QuicCcMode::NewReno,
         "cubic" => QuicCcMode::Cubic,
         "passthrough" => QuicCcMode::Passthrough,
@@ -278,6 +288,15 @@ fn quic_cc_factory(
         QuicCcMode::Bbr => {
             info!("quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)");
             Some(Arc::new(quinn::congestion::BbrConfig::default()))
+        }
+        QuicCcMode::BbrRs => {
+            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1): the
+            // battery greps for "burst-robust BBR".
+            info!(
+                "RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, \
+                 interval-guarded per-flight rate sampler — ADR-0061 family)"
+            );
+            Some(Arc::new(super::bbr_rs::BbrRsConfig::default()))
         }
         QuicCcMode::NewReno => {
             info!("RWM_QUIC_CC=newreno: quinn congestion controller overridden to NewReno");
@@ -659,6 +678,21 @@ impl QuicTransport {
         self.connections.get(&path_id).map(|c| {
             let s = c.stats();
             (s.frame_rx.datagram, s.frame_tx.datagram)
+        })
+    }
+
+    /// Quinn substrate congestion gauge for `path_id` (goal-gate "Ship The
+    /// Wins 2: shal8 anchor" diagnosis instrument — read only at the
+    /// RWM_DIAG print, never gates anything):
+    /// `(cwnd_bytes, congestion_events, lost_packets, sent_packets)` from
+    /// `Connection::stats().path`. Under the shipped BBR default the cwnd
+    /// IS 2 × quinn's internal BtlBŵ × RTprop, so a cwnd many multiples of
+    /// the true BDP·MTU is direct in-vivo evidence of the max-filter
+    /// over-read (P-D1).
+    pub fn quinn_path_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64)> {
+        self.connections.get(&path_id).map(|c| {
+            let p = c.stats().path;
+            (p.cwnd, p.congestion_events, p.lost_packets, p.sent_packets)
         })
     }
 

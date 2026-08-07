@@ -175,6 +175,11 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # crown-gate arm — estimator heavy-math cadence (delivery path
             # touched at the estimator only; the spot is mandatory).
             est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
+            # fix/shal8-anchor (goal-gate "Ship The Wins 2: shal8 anchor"):
+            # the crown-gate arm — burst-robust BBR substrate controller
+            # (P-F4; the estimator barely engages app-limited, the spot is
+            # mandatory).
+            bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The

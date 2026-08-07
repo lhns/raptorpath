@@ -4,6 +4,7 @@
 //! unreliable datagrams (QUIC DATAGRAM extension) for minimum overhead.
 //! A control stream handles ACKs, loss reports, and path management.
 
+mod bbr_rs;
 mod protocol;
 mod quic;
 
