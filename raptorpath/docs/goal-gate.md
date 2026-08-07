@@ -14910,3 +14910,360 @@ before both builds (baseline 6bb6ca96… = 1ce8ba2, battery 4f6a3f5e… =
 seed-7 flake class quoted per arm (18 RUN-RETRY recovered, 1
 RUN-LOST, nothing discarded); FOREGROUND polling only; logs + perf
 data + per-run diag preserved under `/home/vibe/recvwall/`.
+
+## Ship The Wins 2: shal8 anchor (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `fix/shal8-anchor` from dc4fb78; goal sub-item 2: the shipped default's shallow-buffer collapse, target shal8 ≥ 70 Mbit/s with nothing given back)
+
+*Decision record: → [ADR-0054](adr/0054-substrate-cc-policy-bbr-default.md)
+(the policy surface this amends if the flip lands), [ADR-0061](adr/0061-anchor-hygiene.md)
+(the anchor-trust laws the defect violates), [ADR-0068](adr/0068-copa-bbr-fusion.md)
+(whose "the fusion's rate model must be burst-robust" clause this executes
+on the SHIPPED controller), [ADR-0052](adr/0052-measurement-discipline.md).*
+
+**(a) The question.** "Adversarial Cells (B1)" inverted the shallow-buffer
+story: at the 8-packet bottleneck (shal8) the shipped BBR-under default
+collapses to 9.8/10.0 Mbit (7.3% sustained bottleneck drops, retx ~17k on
+a ~21k-symbol object) while Copa-sole holds 75.3/78.8 (1.5% drops) — the
+same engine, the same recovery plane, the same cell. The measured gauge:
+the engine's delivery-rate anchor reads btlbw ≈ 108k sym/s ≈ 10× the true
+link (~10.4k) under the BBR arm. WHERE does the ×10 enter, and what is the
+minimal principled fix that restores the default to the Copa class
+(≥ 70 Mbit) without giving anything back?
+
+**(b) DIAGNOSIS — local, source-derived (quinn-proto 0.11.14 read
+read-only from the registry; engine sites cited). The instrumented VM pass
+below is pre-registered to confirm/refute each candidate before the fix
+battery runs.**
+
+- **D1 (candidate (a), PRIMARY): the ×10 enters inside quinn's BBR
+  bandwidth estimator, and it is structural to that implementation.**
+  `quinn-proto-0.11.14/src/congestion/bbr/bw_estimation.rs::on_ack`
+  computes BOTH of its rates over ADJACENT-EVENT gaps, not per-flight
+  intervals: `ack_rate` = this-ack-event's bytes / (now −
+  prev_acked_time), `send_rate` = last-send-delta / last-send-gap — and
+  when two sends share a timestamp the send side degenerates to
+  `u64::MAX` ("will take the min of send and ack, so this is just a
+  skip", bw_estimation.rs:52). quinn's own pacer emits bursts of AT
+  LEAST 10 packets (`MIN_BURST_SIZE = 10`, connection/pacing.rs:148, GSO
+  batches share `now`), so the send-side bound is vacuous exactly when it
+  is needed. The shal8 token bucket (tbf 100mbit burst 15140b) drains its
+  bucket at veth line rate: ~11-packet delivery clusters → ack clusters →
+  `ack_rate` reads the line-rate class, `min()` admits it, and the
+  10-round `MinMax` max filter (min_max.rs:114) LATCHES it. The bucket
+  re-quantizes delivery continuously (~every 1.3 ms at 100 mbit), so the
+  latch renews forever. Missing guards vs the reference implementations
+  (draft-cheng-iccrg-delivery-rate-estimation / Linux BBR / our own
+  ADR-0061 sampler `rs_on_delivered`, scheduler/mod.rs): no per-flight
+  `rate = Δdelivered / max(send_elapsed, ack_elapsed)` sampling and no
+  `interval ≥ RTprop` rejection. quinn's `AckAggregationState`
+  (bbr/mod.rs:544) is not a filter guard — `max_ack_height` is ADDED to
+  the cwnd target (mod.rs:315), i.e. aggregation makes the overshoot
+  BIGGER. Consequence chain: btlbŵ ~10× → pacing_rate = gain × btlbŵ
+  (never binds) → cwnd = 2 × btlbŵ × RTprop ≈ 2250 sym-equivalents vs
+  true BDP ≈ 135 → quinn restrains nothing → sustained overshoot into
+  ~19 usable queue slots (tbf bucket ~11 + child netem 8) → 7.3%
+  steady-state tail drop. `BbrConfig` exposes ONLY `initial_window`
+  (bbr/mod.rs:516-528) — a startup-only knob, useless against a
+  steady-state latch: REFUSED with numbers.
+- **D2 (candidate (b), the engine's own abdication — same defect family,
+  NOT the driver):** in the shipped default the engine's delivery anchor
+  is the LEGACY ack-interval estimator (`CopaState::record_delivery`,
+  scheduler/mod.rs — Δdelivered/Δack-arrival, 1 ms floor only), the
+  documented ×4.6–7.4 over-reader (ADR-0061) and the B1 btlbw=108k
+  gauge. It FLOORS cwnd at 0.85·BDP̂ ≈ 918 syms (`anchor_floor` →
+  `clamp_cwnd_with_anchor`), while the 8-packet buffer physically caps
+  the app-echo queue signal below the legacy backoff target
+  ((queue_mult−1)·floor ≈ 1.3 ms vs ~0.9 ms of queue + ~1.2 ms tbf
+  latency, marginal) so the ramp never ends and `pace_refill`
+  (= cwnd/SRTT, burst cwnd/8) is vacuous: the engine hands quinn an
+  effectively UNPACED stream bounded only by the ~1024-slot outstanding
+  store (≈ 7.6× the true pipe+queue). The engine cannot rescue quinn —
+  and fixing ONLY the engine anchor cannot rescue the cell, because
+  quinn's INTERNAL filter (D1) is the binding controller's own poisoned
+  anchor. Pre-registered discriminator: the plain_rs gauge arm below.
+- **D3 (candidate (c), the amplifier, not the entry point):** the
+  dual-ack density and tail-drop burst synchronization make the recovery
+  plane serialize (retx ~17k), converting 7.3% wire loss into 0.12×
+  goodput. Copa on the same cell runs 1.5% drops and holds 75–79 — the
+  plane handles honest drop rates; it amplifies dishonest ones.
+
+Both D1 and D2 are ONE family under ADR-0061's laws: a windowed-max
+filter fed burst-quantized instantaneous rates latches peaks the LINK
+cannot sustain. Our side already built, unit-tested, and shipped (gated)
+the honest sampler; quinn's side has no config surface for it.
+
+**(c) The fix (pre-registered): `RWM_QUIC_CC=bbr_rs` — the burst-robust
+BBR.** An in-tree implementation of quinn's public
+`congestion::Controller` trait (the Passthrough shim already proves the
+seam; quinn is Apache-2.0/MIT — ported with attribution): quinn's `Bbr`
+verbatim EXCEPT the bandwidth estimator, which becomes the
+interval-guarded per-flight delivery-rate sampler (the ADR-0061 `rs_*`
+design already law-tested in scheduler/mod.rs
+`rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue`):
+send-state snapshots keyed by packet send `Instant` (the trait hands the
+acked packet's `sent` back to `on_ack`), rate = Δdelivered /
+max(send_elapsed, ack_elapsed), samples spanning < RTprop rejected
+(`rtt.min()`, 1 ms absolute floor — the existing rs_* constant),
+app-limited samples raise-only. Gains, mode machine, recovery window,
+ProbeRTT, and the ack-aggregation cwnd term stay STOCK — one mechanism
+changes, so the battery attributes one mechanism. NO mode switch: one
+default controller for every cell; the `RWM_QUIC_CC` values remain
+explicit reference arms; the default mapping (env unset ⇒ bbr_rs) flips
+ONLY if the battery earns every gate below. Built default-OFF
+(env unset ⇒ quinn BBR unchanged) until the results commit.
+
+Priced and refused alternatives: (i) `BbrConfig::initial_window` —
+startup-only vs a latch renewed every ~1.3 ms (D1); (ii) engine-side
+handoff pacing on an honest anchor — a max-filter pace with headroom > 1
+sustains proportional overshoot into an 8-slot buffer, headroom = 1
+decays geometrically as the window expires under its own feedback
+(delivery ≤ pace ⇒ samples ≤ pace): stable operation needs probe
+dynamics, i.e. re-deriving BBR in a worse place — refused as PRIMARY;
+the diagnosis pass still gauges the emission pattern; (iii) per-cell CC
+selection — the forbidden mode switch; (iv) flipping `RWM_PLAIN_RS`
+alone — fixes the gauge, not the binding controller (P-D2 tests this
+exactly).
+
+**(d) Derivation re-read — self-contained failure modes, named before
+building.** (1) THE NAMED RISK: the stock estimator over-reads on DEEP
+cells too (c2ctl-A wireQ p50 = 90 ms ≈ 9×BDP standing queue is partly
+the same defect), and that bufferbloat may be LOAD-BEARING — it is the
+named mechanism by which BBR-under hides recovery latency and wins the
+jit/c2ctl class (B1 verdict 2). An honest filter shrinks the standing
+queue toward 2×BDP-class; if c2ctl/sc2/c1/c7 regress > σ, the fix fails
+"nothing given back" — that outcome goes to the register with the
+tension named (the shipped default's deep-cell class RESTS on the
+defect), which IS the structural-bound exit with numbers. (2) The
+`sent`-Instant snapshot key collides within a GSO batch — by
+construction those packets share send state; the first record serves the
+batch (documented, bounded). (3) `rtt.min()` before the first RTT sample
+is the configured initial RTT — early samples may be rejected for one
+handshake round; the 1 ms floor and the handshake's own acks bound the
+warm-up hole. (4) The estimator change alters EVERY cell's operating
+point in principle — hence deep control + spot cells + crown are gates,
+not spot checks. (5) A kernel-BBR reference at shal8 does not exist in
+any battery (Competitive Baseline ran c1–c3/c7/c8 only) — the
+attribution "quinn's implementation vintage, not BBR-the-algorithm"
+rests on source reading plus the bbr_rs arm itself; if the harness's
+transfer_bench TCP arm can pin CC=bbr cheaply, one ×4 reference row per
+seed sharpens it (optional, measurement-only, not a gate).
+
+**(e) Predictions (numbers fixed now).**
+- **P-D1 (diagnosis pass, shal8, default arm, new behavior-inert quinn
+  gauge `qcwnd`):** quinn PathStats.cwnd sustains ≥ 5× true BDP·MTU
+  (≥ ~800 KB vs true ≈ 162 KB) after warm-up; engine DIAG btlbw
+  reproduces the ~100k sym/s class.
+- **P-D2 (diagnosis pass, shal8, default + `RWM_PLAIN_RS=1` gauge arm):**
+  the honest sampler reads btlbw ≈ 10–14k sym/s (≈ 1× link) while
+  goodput STAYS in the ~10 Mbit collapse class (±σ) — the engine anchor
+  is a gauge, not the driver; candidate (b) demoted to family-member.
+- **P-F1 (battery, shal8, PRIMARY GATE):** bbr_rs ≥ 70 Mbit/s both
+  seeds (the Copa class is 75–79); bottleneck drop fraction ≤ 3%;
+  retx ≤ ~5k; qcwnd ≈ 2×BDP̂ + extra_acked class.
+- **P-F2 (battery, c2ctl deep control):** bbr_rs within σ_s of the
+  default arm, both seeds (risk (d)(1) named).
+- **P-F3 (battery, spot):** c1 400 MB, sc2 100 MB, c7 dual — bbr_rs
+  within σ of default, both seeds.
+- **P-F4 (battery, crown):** tail_matrix c2 ×4 reps {400,1200} B,
+  default vs bbr_rs arms — p99 medians in the clean-row class (36–58 ms),
+  n = 1000 delivered, 0 NO_DATA (realtime is app-limited; the estimator
+  barely engages).
+- **P-F5:** suites green on the final tree: lib full, `gate_suite`
+  15/15 release, `mtu_blackhole_wedge` 2/2, `perf_loopback` 8/8, new
+  bbr_rs law tests (burst-robustness under synthetic token-bucket ack
+  clustering; app-limited raise-only; mode-parse/echo).
+- **FLIP CONDITION:** P-F1 AND no > σ giveback on P-F2/F3/F4, both
+  seeds ⇒ default (env unset) becomes bbr_rs; ADR-0054 addendum + paper
+  §16.37. **FALSIFICATION:** shal8 < 70 on either seed, or any gate
+  given back, ×2 (one amendment round permitted if the diagnosis pass
+  refutes D1) ⇒ the fix does NOT ship; the structural bound is
+  documented instead: the shipped default's shal8 collapse is quinn-proto
+  0.11's BBR bandwidth estimator (named, source-cited), the fix is
+  upstream or vendored, and — if (d)(1) fired — the deep-cell class
+  measurably rests on the same defect (the priced tradeoff recorded).
+
+**Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT DISCIPLINE
+1–12: lock `/tmp/rwm-vm.lock` PRIORITY 2 behind the est-cadence worker —
+ALL local work (this block, the build, unit tests) done BEFORE the first
+poll; foreground polite polling at 2–3 min intervals with elapsed
+stated; the lock covers builds ON the VM (item 12). Tree synced via git
+archive of THIS branch + dos2unix before the first harness invocation;
+stale binary removed before the fresh build; binary sha256 + commit +
+lscpu + kernel in every log header; rp-* netns only; fresh cell + fresh
+tunnel per invocation; seed-7 double-abort protocol with per-arm n.
+RE-READ MAIN before the battery: if worker-1's flips merged, rebase the
+branch and battery the CURRENT default (arms are env-unset-relative by
+construction). Session order: (1) instrumented DIAGNOSIS pass — shal8
+×3 reps/arm, seed 42 (+1 spot rep seed 7): default+DIAG(qcwnd gauge),
+default+RWM_PLAIN_RS=1 — P-D1/P-D2 verdicts recorded and any amendment
+committed BEFORE the fix battery; (2) FIX battery, seeds 42+7, arms
+interleaved round-robin per rep: shal8 ×8 def/bbr_rs/copa, c2ctl ×8
+def/bbr_rs, c1-single 400 MB ×4 def/bbr_rs, sc2 100 MB ×4 def/bbr_rs,
+c7 dual ×4 def/bbr_rs, tail_matrix c2 ×4 default/bbrrs arms ×
+{400,1200} B; 25 MB × 1 run on adv cells, `RWM_GEN=0 RWM_DIAG=1
+RWM_PERF_TIMEOUT_S=120`; CC liveness echoes asserted per arm (bbr_rs
+must echo its own controller line; def must NOT); ARMCOUNT loud-fail;
+per-run rows preserved under `/home/vibe/shal8fix/`; cleanup.sh + lock
+released after teardown verification.
+
+*(Results below this line will be written after the runs.)*
+
+### DIAGNOSIS-PASS RESULTS (VM 10.1.5.16, 2026-08-07 11:53–11:57 UTC; binary 0c449ef8… = commit 51bc04b; shal8 ×3 reps s42 + ×1 s7 per arm; logs `/home/vibe/shal8fix/diag-s{42,7}.log`)
+
+- **P-D1 CONFIRMED (both seeds).** Default arm at shal8: collapse
+  reproduced (8.8–9.6 Mbit s42, 9.4 s7; drops 6.4–7.7%; retx 17–18k),
+  and quinn's OWN window gauge reads qcwnd_med 615 KB → 1.00 MB (s42
+  reps, ratcheting across the transfer; 1.14 MB s7) ≈ **4.7–8.8× the
+  true BDP ≈ 130 KB** — the in-vivo max-filter latch, inside quinn
+  (engine btlbw gauge spikes 78–111k sym/s in step, the B1 gauge
+  reproduced).
+- **P-D2 CONFIRMED (both seeds).** `RWM_PLAIN_RS=1` gauge arm: the
+  honest engine sampler reads btlbw ≈ 15.0–15.7k sym/s (≈ 1.4× link)
+  where established, and goodput STAYS collapsed (10.8–12.3 Mbit s42,
+  12.0 s7; +2–3 Mbit over default = the anchor-floor release, noted) —
+  the engine anchor is a gauge, not the driver. Candidate (b) demoted
+  as pre-registered; D1 stands PRIMARY; no diagnosis amendment.
+
+### ATTEMPT-1 RESULT (s42 battery, same session): P-F1 FALSIFIED at ~20 Mbit — and the gauges name the SECOND quinn-side mechanism
+
+The estimator fix behaves exactly as designed where it can: c2ctl-fix
+qcwnd 2.07 MB → 260 KB (= 2×BDP + extra_acked, the honest class), wireQ
+p50 91 → 7 ms, goodput 82.5 vs def 85.7 (−3.7%, ~1σ class). But
+shal8-fix lands **19.2–22.7 Mbit** (def 11.1–11.3 same session): ×2
+better, far below the ≥70 gate. The mechanism, from the same gauges:
+**qcwnd_med 64–67 KB ≈ 0.5× the true BDP** while qcwnd_max touches
+302–346 KB — the bandwidth model is honest (back-computed bŵ ≈ 1.0–1.3×
+link), but upstream's quiche-style RECOVERY WINDOW is the binding
+clamp: exit requires a loss-free round, which at ~7% per-packet loss on
+a ~500-packet round has probability ≈ 0, so the conservation clamp is
+the PERMANENT window and ratchets below the pipe (loss-limited
+Reno-class behavior on a rate-model controller). The stock arm never
+hit this clamp only because its ×10-poisoned inputs kept
+`recovery_window = max(in_flight + acked, …)` enormous — the two
+defects were mutually masking.
+
+**AMENDMENT (attempt 2 of the pre-registered ×2; this block + the code
+committed BEFORE the attempt-2 build/battery). MECHANISM 2: floor the
+recovery window at the rate model's 1×BDP target**
+(`calculate_recovery_window` gains
+`recovery_window ≥ get_target_cwnd(1.0)`): conservation may hold the
+window AT the measured pipe, never below it — Linux BBRv1's actual loss
+semantics (loss is not a model signal in v1; the model's own falling bŵ
+is the congestion evidence, and the max-filter decays within 10 rounds
+under real congestion so the floor follows it), and the substrate
+statement of the engine's own §12.1 law: channel loss is the recovery
+plane's job. The vendored controller now carries exactly TWO named
+mechanisms vs upstream (estimator; recovery floor). +1 law test
+(`sustained_loss_cannot_clamp_recovery_below_the_pipe`).
+
+Also recorded from source while attributing attempt 1: quinn's
+connection pacer derives its rate from `window()` (refill =
+1.25 × window/RTT, burst capacity = window·2 ms/RTT clamped ≥ 10
+packets — connection/pacing.rs) and IGNORES the controller's
+`pacing_rate` (metrics-only). The controller trait therefore cannot
+shape sub-burst granularity: ≥10-packet line-rate bursts into the
+19-slot cell are structural to quinn. This is the named RESIDUAL if
+attempt 2 falsifies.
+
+**Attempt-2 predictions:** P-A1: shal8 fix ≥ 70 Mbit both seeds
+(window floored ≈ 1–1.3×BDP̂ → ack-clocked sends ≈ link; drops fall
+toward the pacer-burst/GE residual ≤ 3–4%). P-A2: c2ctl/c1/sc2/c7/
+crown within σ of attempt 1's fix arm or better (the floor binds only
+where loss is sustained per-round). **Falsification (final):** shal8
+< 70 on either seed ⇒ STRUCTURAL BOUND per the pre-registration, with
+the pacer burst granularity as the named unreachable residual — priced
+exit (upstream PR against quinn's pacer/pacing_rate plumbing, or the
+full passthrough-style pacer ownership), no third attempt.
+
+**Attempt-1 seed-7 scope note (recorded before attempt 2):** the s7
+attempt-1 battery is NOT run — P-F1 is already falsified on s42 with
+n = 8 ≫ σ and the s7 diagnosis pass reproduces the mechanism gauges;
+attempt 2 runs BOTH seeds in full per the pre-registration.
+
+### ATTEMPT-2 RESULTS (VM 10.1.5.16, 2026-08-07; att-1 battery s42 11:57:51–12:17:40 binary 0c449ef8… = 51bc04b; att-2 batteries s42 12:26:49–12:47:01 + s7 12:49:25–13:10:02 binary f16e113e… = 61172f9, SAME binary every att-2 arm; 25 MB × 1 run adv cells, arms interleaved round-robin per rep, fresh cell + tunnel per invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120`; def baseline = MAIN dc4fb78 defaults (worker-1's flips NOT merged at run time — verified); logs `/home/vibe/shal8fix/battery-s{42,7}.log` + `battery-s42-att1.log` + per-run diag; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every header; lock 11:44:33–13:16:53 UTC)
+
+**Liveness/honesty.** ARMCOUNT full on every arm both seeds (adv 8/8,
+spots 4/4, crown 4/4 n=1000 each); every captured run carries its arm's
+CC echo (def: "congestion controller: BBR", fix: "burst-robust BBR",
+copa: engine-owned + feed ACTIVE) with zero contamination; the 12 s7
+ARM-LIVENESS-FAIL lines are exactly the 12 RUN-RETRY aborted attempts
+of the known seed-7 flake class (echo-verified per captured log; no
+RUN-LOST, no TOPO-ABORT, 0 DNF).
+
+**THE MAP (Mbit/s, mean ± σ_s; att-2 binary; s42 · s7):**
+
+| cell·arm | def (= shipped) | fix (bbr_rs) | copa (reference) |
+|---|---|---|---|
+| shal8 | 9.9 ± 0.7 · 10.4 ± 1.0 | **21.3 ± 0.8 · 22.2 ± 2.3** | 82.0 ± 0.8 · 80.6 ± 3.7 |
+| c2ctl | 81.7 ± 3.4 · 81.8 ± 3.5 | 69.3 ± 8.1 · 77.3 ± 3.2 | — |
+| c1 400 MB | 198.1 ± 4.2 · 197.3 ± 4.1 | 198.0 ± 5.3 · 191.9 ± 2.5 | — |
+| sc2 100 MB | 87.4 ± 0.7 · 87.9 ± 1.2 | 86.0 ± 2.1 · 84.6 ± 2.4 | — |
+| c7 dual | 173.2 ± 1.5 · 172.4 ± 0.9 | **148.8 ± 9.6 · 158.5 ± 6.1** | — |
+
+Gauges (shal8): def qcwnd_med 790 · 725 KB (5.6–6.1×BDP, drops
+6.9–7.0%, retx ~16.4–16.8k) — the latch, unchanged; fix qcwnd_med
+66 · 68 KB = the floor at the DECAYED bŵ (drops 6.3–6.8%, retx ~8.7–9k);
+copa 1.7 · 0.9% drops. c2ctl: fix qcwnd_med 159 · 215 KB (honest class)
+vs def 741 · 1158 KB — wireQ 91 → ~7 ms. Crown (tail_matrix c2 ×4,
+{400,1200} B): default 36/39 · 36/40 ms p99 medians, bbrrs 36/37 ·
+36/36 — n=1000 every rep, 0 NO_DATA (P-F4 HELD on both arms).
+
+**Kernel reference at shal8 (measurement-only, same cell recipe, iperf3
+TCP 10 s):** kernel **BBRv1** (`tcp_bbr`) **92.2/93.1/93.2/92.9 (s42),
+91.1 (s7) Mbit at ~2.4–2.7k retrans (~3%)**; kernel CUBIC 11.2/10.9 —
+BBR-the-ALGORITHM holds this cell at ~0.93× link; the loss-reactive
+class collapses exactly like the shipped default.
+
+**VERDICTS.** P-A1 **FALSIFIED, both seeds** (21.3/22.2 < 70) — that is
+falsification ×2 of the pre-registered gate: **STRUCTURAL BOUND, no
+third attempt, NO FLIP** (default unchanged; `bbr_rs` ships as a gated
+reference arm). P-A2 split: c1/sc2 within ~1–2σ, crown held — but
+**c7 −14% both seeds and c2ctl −12.4 (s42)**: risk (d)(1) FIRED with
+numbers — the shipped default's GE-cell class measurably RESTS on the
+over-read (the honest window strips the 90 ms standing queue that hides
+recovery latency).
+
+**THE STRUCTURAL BOUND (priced).** The shipped default's shal8 collapse
+is quinn-proto 0.11's BBR implementation, not BBR: three named terms,
+each measured —
+1. the adjacent-event bandwidth estimator (D1; fixed in-tree by the
+   bbr_rs port: shal8 ×2.2, honest window proven at c2ctl);
+2. the quiche-style recovery window that needs a loss-free round to
+   exit (mechanism 2; floored in-tree at the model target — engaged,
+   insufficient alone);
+3. the `Controller`-trait boundary itself: quinn's pacer paces at
+   1.25 × window/RTT in ≥ 10-packet line-rate bursts (≈ the whole
+   19-slot cell buffer) and IGNORES the controller's `pacing_rate`
+   (metrics-only), and with window as the only steerable quantity a
+   probe cannot be scheduled without either sustaining the drop storm
+   (in_flight ≥ 2×BDP̂) or starving the max filter (in_flight ≈ 1×BDP̂ ⇒
+   samples ≤ achieved rate ⇒ bŵ decays within its 10-round window —
+   the measured 66–68 KB fixed point). Sub-burst pacing + probe
+   scheduling are exactly what kernel BBRv1 uses to hold 91–93 Mbit
+   here; they are unreachable through the trait.
+The price of the honest fix: upstream work in quinn-proto (per-flight
+delivery-rate sampling, `pacing_rate` plumbing into the pacer,
+BBR-consistent loss semantics) — or engine-owned pacing via the
+EXISTING passthrough surface with a rate-model law, which is precisely
+ADR-0068's fusion prerequisite, and the δ outer law already OWNS this
+cell (Copa-sole 80.6–82.4). The fusion, not per-cell CC selection,
+remains the shipped path to shal8; this battery adds the kernel-BBR
+93-Mbit row as the fusion's external bar for the cell and the
+CONFIRMED mutual-masking finding (honest estimator −4…−14% at GE cells)
+as the fusion's named hazard: a burst-robust rate model must ship
+TOGETHER with the queue-independent recovery-latency story, or it gives
+back the deep-cell class the defect currently funds.
+
+**Suites (final tree).** lib 384/384 (+5 bbr_rs law tests, incl. the
+mechanism-2 law); `gate_suite` 15/15 release (--test-threads 1);
+`mtu_blackhole_wedge` 2/2; `perf_loopback` 8/8 — all green local.
+
+**Ops.** Lock `/tmp/rwm-vm.lock` taken 11:44:33 UTC (found FREE at
+11:44:10 after ~2 h 15 m of foreground 2–3-min polling behind the
+priority-1 est-cadence worker; clean 23-s handoff), held through sync →
+build (0c449ef8…) → shal8 cell validation (idle 10.11 ms / overload
+19.7% / under-load +0.4 ms — the cap signature) → diag pass → att-1 s42
+battery → amended sync + build (f16e113e…) → att-2 s42 + s7 batteries →
+kernel-reference rows → cleanup.sh + teardown verification (no rp
+procs/netns/iperf3), released 13:16:53 UTC. rp-* netns only; logs
+preserved under `/home/vibe/shal8fix/` (att-1 logs archived as
+`battery-s42-att1.log` + `diag-att1/`); FOREGROUND polling only.

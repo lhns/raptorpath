@@ -19,6 +19,12 @@ tokio = { version = "1", features = ["full"] }
 
 # QUIC transport
 quinn = "0.11"
+# Direct dep on quinn's protocol crate: the in-tree burst-robust BBR
+# controller (transport/bbr_rs.rs, RWM_QUIC_CC=bbr_rs) implements the
+# quinn_proto congestion::Controller trait, whose on_ack signature names
+# quinn_proto::RttEstimator (not re-exported by quinn). Same version as
+# quinn's own — cargo unifies them.
+quinn-proto = "0.11"
 rustls = { version = "0.23", features = ["ring"] }
 
 # TUN interface

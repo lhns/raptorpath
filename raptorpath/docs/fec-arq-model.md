@@ -9872,6 +9872,62 @@ WindowAck vs quinn's 1-per-~24) the largest named structural
 residual, measured below this session's 5% build bar. Goal-gate
 "Receiver Per-Message Wall" carries the full tables.
 
+### 16.37 The shal8 anchor: the shallow-buffer collapse is quinn's BBR, not BBR — a two-mechanism in-tree fix, a measured mutual-masking finding, and a priced structural bound (2026-08-07, `fix/shal8-anchor`, `RWM_QUIC_CC=bbr_rs` gated, NO default flip)
+
+*(§16.36 is reserved for the parallel "Ship The Wins 1" branch.)*
+
+§16.33's inverted row — shipped BBR-under 9.8–10.0 Mbit at the
+8-packet bottleneck where Copa-sole holds 75–79 — is now attributed at
+source level and bounded by measurement. WHERE the ×10 enters:
+quinn-proto 0.11's BBR samples bandwidth over ADJACENT-EVENT gaps
+(this-ack-bytes / inter-ack-event gap, min'd against a send-side rate
+that degenerates to `u64::MAX` inside quinn's own ≥10-packet pacer
+bursts), so a token bucket draining its ~11-packet bucket at line rate
+feeds the 10-round windowed-MAX filter line-rate samples and the latch
+renews every ~1.3 ms forever. Measured in vivo (new behavior-inert
+`qcwnd` gauge): quinn's own window sustains 0.6–1.14 MB ≈ 5–8.8× the
+true 130-KB BDP at 6.4–7.7% steady tail drop. The engine's legacy
+ack-interval anchor over-reads the same way (btlbw ≈ 78–111k sym/s ≈
+10× link) — same ADR-0061 defect family — but is a GAUGE, not the
+driver: with the honest in-tree sampler forced on
+(`RWM_PLAIN_RS=1`), the anchor reads ≈ 1.4× link and the collapse
+persists (pre-registered discriminator, both seeds).
+
+The fix attempt, pre-registered ×2: an in-tree port of quinn's Bbr
+behind the public `Controller` trait (`RWM_QUIC_CC=bbr_rs`) changing
+(1) the estimator to the ADR-0061 per-flight interval-guarded sampler
+and, after attempt 1 falsified at ~22 Mbit, (2) a recovery-window
+floor at the rate model's 1×BDP target (upstream's quiche-style clamp
+needs a loss-free round to exit — probability ≈ 0 at 7%/packet — and
+was the measured 0.5×BDP binding window). Attempt 2: shal8
+21.3 ± 0.8 · 22.2 ± 2.3 (s42 · s7) — ×2.2 over shipped, FALSIFIED vs
+the ≥ 70 gate, both seeds. The residual is structural to the trait:
+quinn's pacer paces at 1.25 × window/RTT in ≥ 10-packet line-rate
+bursts (≈ the entire cell buffer) and ignores the controller's
+`pacing_rate`; with window the only steerable quantity, probing
+sustains the drop storm (2×BDP̂) or starves the max filter (1×BDP̂ ⇒
+samples ≤ achieved rate ⇒ bŵ decays inside its 10-round window — the
+measured 66–68 KB fixed point).
+
+Two findings sharpen the map. **Kernel BBRv1 holds the same cell at
+91.1–93.2 Mbit (~3% retrans; kernel CUBIC: 10.9–11.2)** — the
+algorithm is fine; the implementation surface is the bound. And the
+defects were MUTUALLY MASKING: the honest estimator costs
+−4…−14% on the GE cells (c7 −14% both seeds; c2ctl −12.4 s42) because
+the shipped default's deep-cell class rides the over-read's 90-ms
+standing queue, which hides recovery latency — fixing the anchor
+strips the queue (wireQ 91 → 7 ms, window 2.07 MB → 0.16–0.27 MB)
+faster than the recovery plane can absorb. The priced exit: upstream
+quinn-proto work (per-flight sampling, pacing_rate plumbing,
+BBR-consistent loss semantics), or engine-owned pacing via the
+existing passthrough surface under a rate-model law — i.e. ADR-0068's
+fusion, whose shal8 bar is now the kernel-BBR 93 and whose named
+hazard is this masking: a burst-robust rate model must ship together
+with a queue-independent recovery-latency story. The realtime crown is
+indifferent (p99 medians 36–40 ms on both arms, n = 1000 every rep).
+Goal-gate "Ship The Wins 2: shal8 anchor" carries the full tables and
+the per-mechanism law tests.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

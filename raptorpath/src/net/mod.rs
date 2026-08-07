@@ -7675,6 +7675,16 @@ async fn run_window_sender(
                                 .wire_rtt(*id)
                                 .map(|d| d.as_secs_f64() * 1000.0)
                                 .unwrap_or(0.0);
+                            // goal-gate "Ship The Wins 2: shal8 anchor" DIAG
+                            // (P-D1 gauge, behavior-inert): quinn's OWN
+                            // congestion state for this path — qcwnd bytes
+                            // (= 2 × quinn-internal BtlBŵ × RTprop under the
+                            // BBR default, so qcwnd ≫ true BDP·MTU is the
+                            // in-vivo max-filter over-read signature),
+                            // congestion events, lost/sent packets.
+                            let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
+                                .quinn_path_stats(*id)
+                                .unwrap_or((0, 0, 0, 0));
                             // task #86 DIAG: the per-path outstanding ACCOUNT
                             // (store symbols charged to this path / its cap_i)
                             // — the mechanism gauge for RWM_STORE_PERCAP
@@ -7727,8 +7737,9 @@ async fn run_window_sender(
                             // under striping).
                             let pl_i = p.estimator.loss_rate();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
                                 id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                qcwnd_i, qce_i, qlost_i, qsent_i,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
