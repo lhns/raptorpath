@@ -15848,7 +15848,7 @@ seed sharpens it (optional, measurement-only, not a gate).
   clustering; app-limited raise-only; mode-parse/echo).
 - **FLIP CONDITION:** P-F1 AND no > σ giveback on P-F2/F3/F4, both
   seeds ⇒ default (env unset) becomes bbr_rs; ADR-0054 addendum + paper
-  §16.37. **FALSIFICATION:** shal8 < 70 on either seed, or any gate
+  §16.38. **FALSIFICATION:** shal8 < 70 on either seed, or any gate
   given back, ×2 (one amendment round permitted if the diagnosis pass
   refutes D1) ⇒ the fix does NOT ship; the structural bound is
   documented instead: the shipped default's shal8 collapse is quinn-proto

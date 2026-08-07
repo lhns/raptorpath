@@ -10000,7 +10000,7 @@ to 4%. Both numbers come from the same battery, which is what makes
 reopening this a decision rather than a rediscovery. Anyone who does
 reopen it should start at the recovery plane's ack-clock sensitivity —
 not at the anchor, which has now been eliminated three ways.
-### 16.37 The shal8 anchor: the shallow-buffer collapse is quinn's BBR, not BBR — a two-mechanism in-tree fix, a measured mutual-masking finding, and a priced structural bound (2026-08-07, `fix/shal8-anchor`, `RWM_QUIC_CC=bbr_rs` gated, NO default flip)
+### 16.38 The shal8 anchor: the shallow-buffer collapse is quinn's BBR, not BBR — a two-mechanism in-tree fix, a measured mutual-masking finding, and a priced structural bound (2026-08-07, `fix/shal8-anchor`, `RWM_QUIC_CC=bbr_rs` gated, NO default flip)
 
 *(§16.36 is reserved for the parallel "Ship The Wins 1" branch.)*
 

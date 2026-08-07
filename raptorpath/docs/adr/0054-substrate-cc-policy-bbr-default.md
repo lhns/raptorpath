@@ -112,4 +112,4 @@ gated reference arm with law tests); the honest fix is upstream
 quinn-proto work or engine-owned pacing via the existing passthrough
 surface under a rate-model law — ADR-0068's fusion, whose shal8 bar is
 now kernel-BBR's 93. Evidence: goal-gate "Ship The Wins 2: shal8
-anchor"; paper §16.37.
+anchor"; paper §16.38.

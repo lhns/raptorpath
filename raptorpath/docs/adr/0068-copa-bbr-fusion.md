@@ -196,4 +196,4 @@ burst-robust estimator strips the over-read's standing queue and gives
 back −4…−14% at GE cells until the recovery-latency story is
 queue-independent — the store-dwell binder of the MEASURED BASELINE
 addendum, same family). Evidence: goal-gate "Ship The Wins 2: shal8
-anchor"; paper §16.37.
+anchor"; paper §16.38.
