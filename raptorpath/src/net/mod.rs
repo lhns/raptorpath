@@ -5409,6 +5409,57 @@ async fn run_window_sender(
             "capacity-weighted outstanding pool ACTIVE (RWM_STORE_CAPW: pool = sum_i anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R over live paths, clamp [floor, N*knee], N>=2 all-warm; fallback = configured pooled law until anchors warm; N=1 legacy)"
         );
     }
+    // ── Pool-anchor honest dual-store law (env RWM_POOL_ANCHOR) ──────────
+    // Goal-gate "Ship The Wins 1" (the §16.35 c7 blocker's named successor):
+    // at N ≥ 2 live paths the pooled-store cap's RATE input is the per-path
+    // hygiene-grade SEND-interval anchor (SendRateAnchor fed at
+    // charge_in_flight — burst-immune by construction: Δt spans the SEND
+    // interval, so the est-cadence ack clock's tighter ack bursts cannot
+    // inflate it; clock-gap buckets discarded) instead of the legacy
+    // ack-interval windowed-max (measured over-read ×4.6–7.4, a further
+    // ×3.4–3.7 under RWM_EST_CADENCE). Law: pool = clamp(Σ_i
+    // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
+    // the capw shape (ONE shared pool, borrowing free), engaged only with
+    // ALL live send-anchors warm; until then the configured path-scaled law
+    // runs verbatim. The Copa cwnd feed (record_delivery/on_ack) and every
+    // N = 1 law are bit-exactly untouched — no CopaFeed machinery runs at
+    // duals (the measured −22…−27 c7 RS-composition price stays
+    // unreachable; no src_inflight is charged — the §16.34 falsification-5
+    // lesson). Default rides the est-cadence resolution (OFF unset; ON
+    // under the est opt-in — the composed default flip was measured and
+    // REVERTED on its pre-set c7 clause, 2026-08-07).
+    let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
+    if pool_anchor_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        info!(
+            pool_per_path = store_path_pool,
+            gain = store_bdp_gain,
+            "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: N>=2 pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched; N=1 legacy)"
+        );
+    }
+    // ── Delivery-clocked pool rate anchor (env RWM_POOL_DELIV) ───────────
+    // Goal-gate "Ship The Wins 1b" arm A: attempt 1's send-interval anchor
+    // removed the over-read but BECAME THE BINDER — a send-derived rate can
+    // never ratchet above the cap-limited carried rate, so the pool sat AT
+    // the operating point (win pinned at cap, sweeps 8-21) and c7 landed
+    // 0.968/0.959 vs the required 0.97. The delivery clock is the one rate
+    // source bounded by delivered-packet PHYSICS instead of by the sender's
+    // own admission gate: during a store-refill burst the wire delivers at
+    // the BOTTLENECK rate and the max filter holds it, while
+    // max(send_elapsed, ack_elapsed) + the >= RTprop reject-and-accumulate
+    // guard keep the sample from reading an ack burst. The law reads
+    // max(delivery, send_mean) — ONE formula, no branch, both terms honest
+    // lower bounds, so the pool can only rise relative to attempt 1.
+    if pool_anchor_on && gates.pool_deliv {
+        info!(
+            "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
+        );
+    }
+    if gates.floor_bound {
+        info!(
+            "honest anchor-floor BOUND ACTIVE (RWM_FLOOR_BOUND: cwnd floor = min(gain*max_bw*RTprop, gain*sr*RTprop) - the ack-interval over-read can no longer inflate the floor; still a floor, never a cap; legacy verbatim while the send anchor is cold)"
+        );
+    }
     // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
     // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
     // the retention store releases slots only on the cumulative frontier,
@@ -5581,6 +5632,13 @@ async fn run_window_sender(
     let mut wd_allow_base: f64 = 0.0;
     let mut wd_rate: f64 = 0.0;
     let mut wd_cap_ret: usize = 0;
+    // Pool-anchor law state (RWM_POOL_ANCHOR, DIAG): whether the N ≥ 2
+    // honest send-anchor pool computed the cap at the last refresh, and its
+    // Σ before clamping — the mechanism gauges for the "Ship The Wins 1"
+    // battery (the cap gauge decides; the legacy btlbw gauge may stay
+    // inflated by design since the cwnd feed is untouched).
+    let mut pa_engaged: bool = false;
+    let mut pa_sum: f64 = 0.0;
     // path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
     // refresh cadence; ~10 s window = two 5 s half-buckets.
     const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
@@ -7134,6 +7192,7 @@ async fn run_window_sender(
                         (cs, live.len().max(1), wd)
                     };
                     wd_engaged = false;
+                    pa_engaged = false; // Copa-sole owns the store law (Σcwnd)
                     dyn_store_cap = if let (true, Some((rate, rtp))) =
                         (win_decouple_on && cwnd_sum > 0.0, wd_terms)
                     {
@@ -7273,7 +7332,54 @@ async fn run_window_sender(
                             }
                         }
                     }
+                    // Pool-anchor honest dual-store law (RWM_POOL_ANCHOR,
+                    // goal-gate "Ship The Wins 1"): per-live-path honest
+                    // caps on the SEND-interval anchor. Collected only at
+                    // N ≥ 2 (N = 1 code path untouched, incl. the percap_k
+                    // maps); None until that path's send anchor AND RTprop
+                    // are warm — capw_store_cap then requires ALL live
+                    // paths warm, else the configured fallback below runs
+                    // verbatim. live_paths(), NOT active_paths(): the
+                    // cwnd-saturation filter trap (documented above) must
+                    // not drop a saturated path's earned share.
+                    let pa_terms: Vec<Option<f64>> = if pool_anchor_on && n_live >= 2 {
+                        let sched = scheduler.lock();
+                        sched
+                            .live_paths()
+                            .iter()
+                            .map(|id| {
+                                sched.path(*id).and_then(|p| {
+                                    // "Ship The Wins 1b": max(delivery-clocked
+                                    // windowed-max, send ratcheted mean) — one
+                                    // formula; identical to attempt 1 with
+                                    // RWM_POOL_DELIV off.
+                                    let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
+                                    let rtp =
+                                        p.min_rtt().map(|d| d.as_secs_f64()).filter(|r| *r > 0.0)?;
+                                    let k = percap_k
+                                        .entry(*id)
+                                        .or_insert_with(|| {
+                                            EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
+                                        })
+                                        .observe_srtt_over_rtprop(
+                                            p.srtt(),
+                                            p.min_rtt(),
+                                            dnow,
+                                        );
+                                    honest_store_cap(
+                                        Some(sr * rtp),
+                                        Some(sr),
+                                        k,
+                                        store_bdp_gain,
+                                    )
+                                })
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     wd_engaged = false;
+                    pa_engaged = false;
                     dyn_store_cap = if let (true, Some((a, r, k, rtp))) =
                         (win_decouple_on && n_live == 1, wd_terms)
                     {
@@ -7315,6 +7421,23 @@ async fn run_window_sender(
                             store_max
                         };
                         (hsum.ceil() as usize).clamp(store_cap_floor, ceiling)
+                    } else if let Some(cap) = capw_store_cap(
+                        pool_anchor_on,
+                        &pa_terms,
+                        store_cap_floor,
+                        store_path_pool,
+                    ) {
+                        // Pool-anchor law ENGAGED (RWM_POOL_ANCHOR, N ≥ 2,
+                        // all send anchors warm): Σ honest per-path caps on
+                        // the burst-immune send-interval rate, clamped
+                        // [floor, N·knee] — the same pure pooled law as
+                        // capw_store_cap, with the CAP's rate input honest
+                        // by construction. Explicit experiment arms
+                        // (RWM_STORE_CAPW / RWM_PLAIN_RS+RWM_HONEST_CAP)
+                        // take precedence above, unchanged.
+                        pa_engaged = true;
+                        pa_sum = pa_terms.iter().flatten().sum();
+                        cap
                     } else if let Some(cap) = path_scaled_store_cap(
                         store_paths_on,
                         n_live,
@@ -7736,11 +7859,24 @@ async fn run_window_sender(
                             // (global batch_seq gaps read as per-path loss
                             // under striping).
                             let pl_i = p.estimator.loss_rate();
+                            // RWM_POOL_ANCHOR DIAG: the per-path send-
+                            // interval anchor rate (0 = no surviving bucket
+                            // / feed off) + its gap/discard hygiene gauges
+                            // — vs btlbw (the legacy ack-interval read,
+                            // deliberately left feeding cwnd only).
+                            let sr_i = p.send_rate_anchor().unwrap_or(0.0);
+                            let (sa_g, sa_d) = p.send_anchor_stats();
+                            // RWM_POOL_DELIV DIAG (arm A): the DELIVERY-clocked
+                            // term alone (0 = no accepted sample / gate off) and
+                            // its guard counters — the mechanism witness that
+                            // separates arm A from attempt 1 in the logs.
+                            // dr vs sr IS the pre-registered prediction 1.
+                            let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
+                            let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
-                                qcwnd_i, qce_i, qlost_i, qsent_i,
-                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
                     }
@@ -7787,6 +7923,15 @@ async fn run_window_sender(
                 // outstanding; retained = win + srel_cur). Empty when off.
                 let srdiag = if store_sack_release_on {
                     format!(" srel={}/{}", sack_released.len(), sack_released_total)
+                } else {
+                    String::new()
+                };
+                // RWM_POOL_ANCHOR DIAG: the honest dual-store law's
+                // engagement + its Σ honest caps before clamping (the
+                // mechanism gauge — win=/cap shows the clamped result).
+                // Empty when not engaged (N = 1, warm-up, or gate off).
+                let padiag = if pa_engaged {
+                    format!(" pa=on/{:.0}", pa_sum)
                 } else {
                     String::new()
                 };
@@ -7880,7 +8025,7 @@ async fn run_window_sender(
                     mp_pp,
                 );
                 eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}",
+                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}",
                     dnow.saturating_sub(diag_start_us) as f64 / 1e6,
                     store_len, effective_store_cap,
                     paused_frac * 100.0,
@@ -7902,6 +8047,7 @@ async fn run_window_sender(
                     mpr,
                     wnd2diag,
                     srdiag,
+                    padiag,
                     sheddiag,
                     gdiag,
                     pp,
@@ -10199,6 +10345,23 @@ fn handle_control_message(
                     path.release_in_flight(expected_count.saturating_sub(received_count));
                 }
 
+                // Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate
+                // "Ship The Wins 1b" arm A): THE delivery event for this
+                // path's shadow rate sampler. Delivered advances the rate
+                // numerator; LOST advances the accounted cursor only (a lost
+                // symbol left the wire too — that alignment is what lets an
+                // aggregate cursor resolve send spacing without a per-seq
+                // key). Placed here so it sees exactly the counts the legacy
+                // anchor sees: this build changes the Δt STATISTIC, not the
+                // per-path attribution. `gap_q` drops a stall-poisoned event
+                // exactly as the RTT/rate feeds above drop it. Feeds nothing
+                // but the N ≥ 2 pool law; no-op with the gate off.
+                path.on_pool_delivery(
+                    received_ids.len() as u32,
+                    expected_count.saturating_sub(received_count),
+                    gap_q,
+                );
+
                 // ADR-0013: update path monitoring stats
                 if let Some(ps) = stats.path(path_id) {
                     ps.rtt_us.store(rtt_us, Ordering::Relaxed);
@@ -11381,6 +11544,42 @@ mod tests {
             capw_store_cap(true, &[Some(1.0), Some(2.0)], 64, 2048),
             Some(64)
         );
+    }
+
+    // ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR, goal-gate ------
+    // ----- "Ship The Wins 1") --------------------------------------------------
+
+    /// The §16.35 c7 blocker, at the law level: with the c7-class TRUE send
+    /// rate (≈ 8.9k sym/s/path, RTprop 8 ms, K ≈ 2) the honest send-anchor
+    /// pool sizes to the ~2.2k residence+runway class, while the est-arm's
+    /// inflated legacy anchor (btlbw 304–349k, the measured burst-peak
+    /// over-read) drives the path-scaled law to its 4096 clamp — the
+    /// standing-queue headroom the pooled store converted into echo-265 ms /
+    /// sweeps-×7. Same pure functions the engine branch calls
+    /// (honest_store_cap terms → capw_store_cap pool).
+    #[test]
+    fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
+        let sr = 8_900.0; // true per-path send rate, sym/s (c7 ≈ 85 Mbit @1200B)
+        let rtp = 0.008; // c2-class RTprop
+        let term = honest_store_cap(Some(sr * rtp), Some(sr), 2.0, 2.0).unwrap();
+        // cap_i = 71.2·(2+1) + 8900·1·0.1 ≈ 1104 — the legacy-1024-per-path
+        // good class the c8 attribution named.
+        assert!((1000.0..1300.0).contains(&term), "cap_i class, got {term}");
+        let pool = capw_store_cap(true, &[Some(term), Some(term)], 64, 2048).unwrap();
+        assert!((1500..3000).contains(&pool), "Σ pool class, got {pool}");
+        // The est-arm legacy anchor: Σ bdp ≈ 2 × 330k × 8 ms ⇒ the
+        // path-scaled law rails at the N×knee ceiling.
+        let inflated_bdp_sum = 2.0 * 330_000.0 * rtp;
+        assert_eq!(
+            path_scaled_store_cap(true, 2, inflated_bdp_sum, 2.0, 64, 2048),
+            Some(4096)
+        );
+        assert!(pool < 4096, "the honest pool removes the clamp headroom");
+        // N = 1 bit-exactness: one term never engages the pooled law — the
+        // caller's legacy single-path law runs verbatim.
+        assert_eq!(capw_store_cap(true, &[Some(term)], 64, 2048), None);
+        // Warm-up: any unwarm live path defers to the configured fallback.
+        assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
     }
 
     // ----- Per-path outstanding accounting (task #86, RWM_STORE_PERCAP) -------

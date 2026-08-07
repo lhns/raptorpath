@@ -180,7 +180,20 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # (P-F4; the estimator barely engages app-limited, the spot is
             # mandatory).
             bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
-            # meas/streaming-retirement (crown re-test) HISTORIC arms: the
+            # feat/ship-est-cadence (goal-gate "Ship The Wins 1"): the
+            # composed-default crown spot — `ship` (env unset = est+eb+
+            # pool-anchor NEW default) vs the prior default (est=0 turns the
+            # composed pool-anchor default off with it; eb=0 restores the
+            # per-symbol sender).
+            prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
+            # feat/pool-delivery-anchor (goal-gate "Ship The Wins 1b"): the
+            # attempt-2 crown spot. Defaults were REVERTED at the end of
+            # attempt 1, so `ship`/env-unset is now the PRIOR default and the
+            # candidates are explicit: `deliv` = est+eb+pool-anchor+the
+            # delivery-clocked rate term (arm A), `floorb` = attempt 1's pool
+            # + the honest anchor-floor bound (arm B).
+            deliv)   AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1"; AFLAGS="" ;;
+            floorb)  AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=1"; AFLAGS="" ;;            # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
             # streaming machine was DELETED 2026-07-28 (register RE-TESTED/

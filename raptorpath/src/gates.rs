@@ -31,8 +31,12 @@
 //! member `RWM_CLOCK_GAP` (control/anchor.rs, ADR-0061), the RS trace knob
 //! `RWM_RS_TRACE` (scheduler CopaState), the estimator heavy-math cadence
 //! `RWM_EST_CADENCE` (control/estimator.rs `OnceLock`, default OFF —
-//! goal-gate "Receiver Per-Message Wall": BOCD at its design cadence
-//! instead of per message), and the harness/bench-only knobs
+//! goal-gate "Receiver Per-Message Wall" + "Ship The Wins 1": BOCD at its
+//! design cadence instead of per message; the composed default flip with
+//! `RWM_POOL_ANCHOR`/`RWM_EMIT_BATCH` was measured 2026-08-07 and REVERTED
+//! by its pre-set c7 clause — the `pool_anchor` field below reads the same
+//! `scheduler::pool_anchor_active()` resolution the send-path feed
+//! consults, riding the est resolution), and the harness/bench-only knobs
 //! (`RWM_L0_*`, `RWM_B_*`, `RWM_SL_*`, `RWM_PERF_TIMEOUT_S`, …).
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};
@@ -117,6 +121,44 @@ pub struct RuntimeGates {
     /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
     pub honest_cap: bool,
+    /// `RWM_POOL_ANCHOR` (default = the `RWM_EST_CADENCE` resolution — OFF
+    /// with everything unset, ON with the est opt-in; goal-gate "Ship The
+    /// Wins 1"): at N ≥ 2 live paths the pooled-store cap is Σ_i
+    /// honest_store_cap on the per-path hygiene-grade SEND-interval anchor
+    /// (`SendRateAnchor` fed at `charge_in_flight`; ratcheted half-window
+    /// mean — burst-immune, clock-gap discard) clamped [floor, N·knee] —
+    /// replacing the legacy ack-interval windowed-max as the CAP's rate
+    /// input (the §16.35 c7 blocker: the est-cadence ack clock's burst
+    /// peaks inflated it a further ×3.4–3.7). The Copa cwnd feed and all
+    /// N = 1 laws are bit-exactly untouched; no CopaFeed machinery runs
+    /// (the −22…−27 c7 RS price unreachable). MEASURED 2026-08-07: it
+    /// recovers most of est's c7 deficit (est-only 0.938/0.949×Σ →
+    /// est+pa 0.968/0.959) but the honest pool becomes the binder (the
+    /// send side has no un-self-referential uncapped rate source) — the
+    /// composed default flip failed its pre-set c7 ≥ 0.97 clause and
+    /// REVERTED. `=0` under the est opt-in = the blocker-reproduction arm;
+    /// resolved via `scheduler::pool_anchor_active()` (cached — the
+    /// send-path feed reads the same resolution).
+    pub pool_anchor: bool,
+    /// `RWM_POOL_DELIV` (default = the `pool_anchor` resolution ⇒ OFF with
+    /// everything unset; goal-gate "Ship The Wins 1b" arm A): the N ≥ 2 pool
+    /// law's rate input gains a per-path DELIVERY-CLOCKED term
+    /// (`DeliveryRateAnchor` — BBR `GenerateRateSample`: delivered /
+    /// max(send_elapsed, ack_elapsed), windowed-max ≈10·RTprop, sub-RTprop
+    /// samples rejected-and-accumulated, ADR-0061 clock-gap discard), read as
+    /// `max(delivery, send_mean)` — ONE formula, no branch. It exists to test
+    /// attempt 1's named binder: a send-derived rate cannot ratchet above the
+    /// cap-limited carried rate, but a delivery clock is bounded by
+    /// delivered-packet PHYSICS and CAN. Shadow-only: no cwnd/`max_bw`/
+    /// pacing/`src_inflight` consumer can reach it; N = 1 untouched.
+    pub pool_deliv: bool,
+    /// `RWM_FLOOR_BOUND` (default OFF — a pure A/B arm; goal-gate "Ship The
+    /// Wins 1b" arm B): bound the BtlBw anchor FLOOR by the honest
+    /// send-anchor rate (`min(gain·max_bw·RTprop, gain·sr·RTprop)`) so the
+    /// ack-interval over-read cannot inflate cwnd (measured 5860 vs 1779) —
+    /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
+    /// Still a floor, never a cap; legacy verbatim with the anchor cold.
+    pub floor_bound: bool,
     /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
     /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
     /// N = 1 plain reliable window. The 1024-latch's three roles split:
@@ -226,12 +268,17 @@ pub struct RuntimeGates {
     pub rs_attr: bool,
 
     // ── Emission (goal-gate "Emission Batching", 2026-07-27) ──────────────
-    /// `RWM_EMIT_BATCH` (default OFF — the A/B arm): pacer-quantum emission
-    /// batching on the plain window-reliable sender. Burst TUN intake
-    /// (≤ `emit_burst` symbols per loop iteration, inside the flow-control
-    /// store headroom and the pacing bucket) + per-burst taper/span-math
-    /// refresh (per-symbol when OFF — bit-identical shipped path). Perf-only:
-    /// ordering/pacing contracts and the delivered set unchanged.
+    /// `RWM_EMIT_BATCH` (default OFF — the A/B arm; the "Ship The Wins 1"
+    /// composed flip measured c1 463–482 with est+pool-anchor but was
+    /// REVERTED by the pre-set c7 clause, 2026-08-07): pacer-quantum
+    /// emission batching on the plain window-reliable sender. Burst TUN
+    /// intake (≤ `emit_burst` symbols per loop iteration, inside the
+    /// flow-control store headroom and the pacing bucket) + per-burst
+    /// taper/span-math refresh (per-symbol when OFF — bit-identical shipped
+    /// path). Perf-only: ordering/pacing contracts and the delivered set
+    /// unchanged. Single-live-path scope only; Realtime packing excluded
+    /// (§16.28). Part of the documented fast single-path opt-in
+    /// (`RWM_EMIT_BATCH=1 RWM_EST_CADENCE=1`: 446–508 Mbit/s at c1).
     pub emit_batch: bool,
     /// `RWM_EMIT_BURST` (default 64 symbols ≈ 64 KB payload — the BBR-style
     /// pacer quantum; clamped [2, 512]): emission burst quantum.
@@ -314,6 +361,9 @@ impl RuntimeGates {
             percap_guard: env_flag("RWM_PERCAP_GUARD", true),
             store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
+            pool_anchor: crate::scheduler::pool_anchor_active(),
+            pool_deliv: crate::scheduler::pool_deliv_active(),
+            floor_bound: crate::scheduler::floor_bound_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
@@ -384,9 +434,30 @@ mod tests {
         assert!(g.recov_mp && g.recov_mp_law);
         assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
+        // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
+        // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:
+        // everything unset ⇒ est-cadence OFF (estimator's own default test)
+        // ⇒ pool-anchor OFF (it rides the est resolution), emit-batch OFF.
+        // The composed opt-in (est=1 ⇒ pa on, + eb=1) stays the documented
+        // fast single-path configuration (c1 446–508).
+        assert!(
+            !g.pool_anchor,
+            "RWM_POOL_ANCHOR default rides the RWM_EST_CADENCE resolution (OFF unset)"
+        );
+        // "Ship The Wins 1b" (2026-08-07): arm A rides the pool-anchor
+        // resolution (⇒ OFF unset), arm B is a pure A/B arm (always OFF
+        // unset). Neither may reach the shipped default stack.
+        assert!(
+            !g.pool_deliv,
+            "RWM_POOL_DELIV default rides the RWM_POOL_ANCHOR resolution (OFF unset)"
+        );
+        assert!(
+            !g.floor_bound,
+            "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
+        );
         // Experiments / instruments (default OFF)
         assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
-        assert!(!g.emit_batch, "emission batching ships OFF (A/B gate)");
+        assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
         assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");

@@ -9872,6 +9872,134 @@ WindowAck vs quinn's 1-per-~24) the largest named structural
 residual, measured below this session's 5% build bar. Goal-gate
 "Receiver Per-Message Wall" carries the full tables.
 
+### 16.36 The est×honest-anchor composition: the c7 blocker is two mechanisms deep, and the fast path stays an opt-in (2026-08-07, `feat/ship-est-cadence`, `RWM_POOL_ANCHOR`; composed default flip measured and REVERTED by its pre-set clause)
+
+§16.35's named successor was built and measured: at N ≥ 2 the pooled
+store's cap reads a per-path HYGIENE-GRADE SEND-INTERVAL anchor
+(`SendRateAnchor` fed at `charge_in_flight` — every wire send on the
+path; clock-gap discard per ADR-0061) through the honest-cap law
+(Σ_i anchor_i·(K_i+gain−1) + rate_i·(gain−1)·R, clamped [floor,
+N·knee]), while the Copa cwnd feed stays byte-identically on the
+legacy path — the measured −22…−27 c7 RS-composition price and the
+§16.34 src_inflight leak both structurally unreachable. Getting an
+honest SEND-side rate took three statistic iterations, each
+smoke-falsified and recorded pre-battery: the windowed-max latches
+store-refill bursts (an admission-gated sender legitimately bursts
+whole buckets at emission speed — sr read 53k vs 8.9k truth); the
+plain mean inherits the anchor⇄cap circularity (cap oscillation
+3588→938); the shipped statistic is the RATCHETED MEAN (max of two
+rolling half-window means — BBR's filter structure over interval
+means, on the `EchoRatioMin` two-half-window pattern).
+
+**Measured (seeds 42+7, ×8 interleaved, dnf 0, crown clean):** the
+composition works as far as the anchor goes — per-path sr ≈ 1× truth,
+the 4096 clamp gone from the c7 operating point (cap at the derived
+2–3k), echo out of the est 265 ms class, the est-only control
+reproducing the §16.35 blocker exactly (0.938/0.949×Σ) — and **c1 =
+463/482 Mbit/s mean (min 405/454; 477/482 sustained at 1.2 GB) at
+−72% receiver CPU/bit**. But the c7 clause failed its pre-set rule:
+new 0.968/0.959×Σ vs ≥ 0.97 (prior default 0.981/0.972). The gauges
+name the second mechanism: with the over-read removed, the honest
+pool BECOMES the binder — the store pins at its own cap (win = cap;
+sweeps 8–21 vs prior 0–7) because a send-derived rate can never
+ratchet above the cap-limited carried rate. **At N ≥ 2 the engine has
+no honest un-self-referential rate source for the pool: the
+ack-interval reads burst peaks (over), the send-interval reads the
+cap's own shadow (under).** The prior default escapes only by
+accident: its Σcwnd governor floats the store BELOW a pool the
+over-read inflated into slack. NO FLIP — defaults reverted; the
+documented fast single-path opt-in is `RWM_EST_CADENCE=1` (which now
+carries `RWM_POOL_ANCHOR`) + `RWM_EMIT_BATCH=1`: 463–508 at c1, and
+at duals −1.3…−2.2% instead of est-alone's −4.3…−6.2%. One honest
+side-datum: c8 improves under the composition (0.758/0.777×Σ vs
+0.746/0.715, σ halved, collapse tail cut) — the honest small pool
+moves toward the max_i-cap class the c8 attribution predicted. Named
+successor (not built): a delivery-clocked per-path rate sampler
+decoupled from the cwnd consumer (physics-bounded by delivered
+packets, feeding ONLY the pool law), or bounding the est-arm's
+anchor_floor cwnd inflation so Σcwnd stays the dual governor.
+
+### 16.37 The delivery-clocked pool anchor: the successor was built exactly as specified, did exactly what it promised, and moved c7 the wrong way — so the blocker was never the anchor (2026-08-07, `feat/pool-delivery-anchor`, `RWM_POOL_DELIV` + `RWM_FLOOR_BOUND`, both DEFAULT OFF; sub-goal closed as a STRUCTURAL BOUND)
+
+§16.36 named two successors and this section measured both, on a
+battery identical to §16.36's so the numbers compose.
+
+**Arm A, the delivery-clocked pool anchor.** §16.36's verdict was that
+at N ≥ 2 the engine has no honest un-self-referential rate source for
+the pooled store: the ack-interval clock reads burst peaks (over), the
+send-interval clock reads the cap's own shadow (under, and the store
+pins at its own ceiling). Arm A supplies one. `DeliveryRateAnchor` is
+the BBR `GenerateRateSample` statistic — `delivered /
+max(send_elapsed, ack_elapsed)`, windowed-max over ≈10·RTprop, samples
+below one RTprop REJECTED and ACCUMULATED rather than latched, ADR-0061
+clock-gap discard with hold-through-disturbance — rebuilt as a
+STANDALONE SHADOW estimator on aggregate per-path cursors (a monotone
+send cursor fed at `charge_in_flight`; an accounted cursor advanced by
+delivered + LOST at the ack arm, which is what lets a non-per-seq
+cursor resolve send spacing at all). It reaches exactly one consumer:
+`pool_rate_anchor() = max(delivery_max_bw, send_ratcheted_mean)` — one
+formula, no branch, both terms honest lower bounds on the bottleneck —
+feeding only the N ≥ 2 pool law. No CopaFeed is instantiated, so the
+measured −22…−27 Mbit c7 RS-composition price and the §16.34
+`src_inflight` leak stay structurally unreachable, and N = 1 is
+bit-exact. It needed no statistic iterations, where the send-side
+anchor needed three.
+
+**It worked.** At c7 the delivery clock read 1.5–3.4× the send mean
+(`dr` 15 665–41 163 vs `sr` 9 065–13 382 sym/s) while sitting 4–20×
+BELOW the same paths' legacy ack-interval `btlbw` (57 531–309 504) at
+the same instant — so it is genuinely a different clock, and its guards
+genuinely held. The pool Σ rose to 3 878–7 326 against §16.36's
+1 697–3 103; the store stopped pinning at its ceiling (800–1 800
+symbols of slack where §16.36 measured win = cap); sweeps fell from
+8–21 back into the prior default's 0–7 class. Every element of the
+pre-registered mechanism prediction landed, on both seeds.
+
+**And c7 got worse: 0.958/0.931×Σ**, against the SAME session's
+attempt-1 arm at 0.977/0.956 and the shipped default at 0.975/0.995 —
+below the required 0.97 on both seeds, and below the mechanism it was
+built to improve. c1 held at 454.6/480.8 Mbit/s (sustained 498.4/484.0,
+1.2 GB) and sc2/sc3 held; crown clean 1000/1000; dnf 0.
+
+**Arm B, bounding the anchor floor**, failed both of its own clauses:
+`min(gain·max_bw·RTprop, gain·sr·RTprop)` cut c7 cwnd to 237–305 (vs
+1 006–2 356) exactly as designed, and landed c7 0.969/0.969 — under the
+clause on both seeds — while costing **c1 396.4/398.0, −14% and below
+the 430 PRIMARY.** The ack-interval over-read is doing load-bearing
+work at N = 1: making the prior default's Σcwnd escape *derived*
+instead of *accidental* is not a free correction.
+
+**What this refutes is §16.36's own attribution.** A mechanism that is
+supplied in full, behaves exactly as its theory says, and moves the
+target the wrong way was not the mechanism. The gauge that names the
+real one is the stall/sweep signature at end of transfer: BOTH est arms
+carry ≈2× the shipped default's stall-idle time (1 400–2 178 ms /
+≈200–245 stalls vs 822–1 026 ms / 109–157) and ≈3× its sweep count —
+**and that signature is INVARIANT to the pool**, barely moving while
+the pool's Σ nearly doubles between arms A and attempt 1. With the
+stall rate fixed, a larger pool simply strands more outstanding per
+stall, which is why the arm that fixed the pool most thoroughly scored
+lowest. **The c7 cost of the faster ack clock is owned by the recovery
+plane's patience/stall behaviour, not by the pooled store's rate
+input.** Three rate sources have now been built and measured on
+identical batteries — ack-interval windowed-max (0.938/0.949),
+send-interval ratcheted mean (0.968/0.959, and 0.977/0.956 re-measured
+here), delivery-clocked windowed-max (0.958/0.931) — and the c7
+ordering does not track anchor honesty at all.
+
+**The sub-goal therefore closes as a documented STRUCTURAL BOUND, and
+the c1 win ships as a documented OPT-IN rather than a default.**
+`RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` (which carries `RWM_POOL_ANCHOR`;
+leave `RWM_POOL_DELIV=0` — arm A's term is strictly worse at duals)
+measures **c1 454–493 Mbit/s mean, per-run 425–521, 1.2 GB sustained
+484–498, at −72% receiver CPU/bit against the 179–206 shipped default —
+×2.3–2.5, crown-clean, sc2/sc3 unaffected, dnf 0** — for a dual-path
+price of **c7 −1.8…−4.0% of Σ** and c8 inside its noisy WATCH band. The
+single-path user pays nothing and gains ×2.4; the dual-path user pays up
+to 4%. Both numbers come from the same battery, which is what makes
+reopening this a decision rather than a rediscovery. Anyone who does
+reopen it should start at the recovery plane's ack-clock sensitivity —
+not at the anchor, which has now been eliminated three ways.
 ### 16.37 The shal8 anchor: the shallow-buffer collapse is quinn's BBR, not BBR — a two-mechanism in-tree fix, a measured mutual-masking finding, and a priced structural bound (2026-08-07, `fix/shal8-anchor`, `RWM_QUIC_CC=bbr_rs` gated, NO default flip)
 
 *(§16.36 is reserved for the parallel "Ship The Wins 1" branch.)*
@@ -9927,7 +10055,6 @@ with a queue-independent recovery-latency story. The realtime crown is
 indifferent (p99 medians 36–40 ms on both arms, n = 1000 every rep).
 Goal-gate "Ship The Wins 2: shal8 anchor" carries the full tables and
 the per-mechanism law tests.
-
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -10398,7 +10525,7 @@ traverses the same seeded GE direction.
 
 | condition × workload | rp shipped default | best competitor | verdict |
 |---|---|---|---|
-| c1 bulk (clean 1 Gbit) | 164–168 Mbit/s → **~200 shipped (v5 framing, §16.34); 446–505 measured opt-in (`RWM_EMIT_BATCH` + `RWM_EST_CADENCE`, §16.28/§16.35 — both default OFF behind their pre-registered gates)** | quinn-BBR 915; kernel TCP ~900 | ~~LOSS ×5.5~~ → **LOSS ×4.6 shipped / ×1.8–2.0 at the measured opt-in ceiling** — the §16.23 engine service walls, externally priced; the receiver per-message wall executed 2026-08-06 (§16.35: the per-message BOCD update was 22–26%/core per side; wall 22–23k → 46–62k msgs/s) |
+| c1 bulk (clean 1 Gbit) | 164–168 Mbit/s → **~200–204 shipped default (v5 framing, §16.34); 454–521 measured opt-in, reproduced in TWO independent sessions (`RWM_EMIT_BATCH=1 RWM_EST_CADENCE=1` — the est opt-in carries the `RWM_POOL_ANCHOR` honest dual-store law, §16.36; means 463/482 then 454/481–493, sustained 477–498 at 1.2 GB. The composed DEFAULT flip was measured and REVERTED TWICE by its pre-set c7 ≥ 0.97×Σ clause — 0.968/0.959 (§16.36) and 0.958/0.931 for the delivery-clocked successor (§16.37). CLOSED as a structural bound: the c1 win ships as a documented OPT-IN, and the recommended opt-in leaves `RWM_POOL_DELIV=0`)** | quinn-BBR 915; kernel TCP ~900 | ~~LOSS ×5.5~~ → **LOSS ×4.5 shipped / ×1.8–2.0 at the measured opt-in ceiling** — the §16.23 engine service walls, externally priced; per-message wall executed 2026-08-06/07 (§16.35–16.37: BOCD cadence + sender batching + honest pool; wall 22–23k → 46–62k msgs/s; the DEFAULT column is blocked NOT by the store's rate anchor — three anchors were built and the c7 ordering does not track anchor honesty (§16.37) — but by the recovery plane's stall/patience sensitivity to the denser ack clock, the named successor) |
 | c2 bulk (GE 2.6%) | 78.6–78.7 → **87.8–88.1 (compact framing default ON, 2026-08-06, §16.34)** | quinn-BBR 91.9–92.4 | ~~LOSS −14%~~ → **LOSS −4…−5%** (kernel TCP-BBR delivery-acked: seed-split 61.5/91.6 → tie-class; all Cubic-family arms: WIN ×3–7). **Accounted to closure 2026-07-27, §16.30**: framing/MTU tax ~4.3 + reactive over-fire ~2.7 + ramp/idle margin; wire ≥98% utilized — not idle, not engine. **Framing term EXECUTED 2026-08-06, §16.34: v5 compact DATA framing (`RWM_WIRE_COMPACT`, flipped default ON) banks +2.6/+3.6 ≫σ both seeds; the window-decoupling lever was measured and refuted (register)** |
 | c3 bulk (20 Mbit lossy) | 16.1 → **16.6 (compact framing, §16.34)** | quinn-BBR 18.6; TCP-BBR 17.5–19.4 | ~~LOSS −9…−13%~~ → **LOSS −8…−11%** (vs Cubic-family: WIN ×4–11). **Accounted to closure 2026-07-27, §16.30**: framing ~0.95 + over-fire ~1.7; `RWM_RECOV_SP` banks +0.32/+0.35 ≫σ both seeds (no flip — band missed); levers: window/inflight decoupling + MTU/payload scaling. **Executed 2026-08-06, §16.34: compact framing +0.55/+0.60 ≫σ (flipped ON); decoupling refuted at the singles (the re-fire loop is re-serve-clocked, not queue-sustained — the §16.30 spurious-retx term is re-attributed)** |
 | c7 bulk (dual c2+c2) | 147–151 | MPTCP-BBR 149 (s42) / 169 (s7) | **TIE / LOSS −13%** — kernel MPTCP-BBR matches the crown cell |

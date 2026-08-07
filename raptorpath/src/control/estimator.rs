@@ -94,10 +94,23 @@ pub struct LossEstimator {
 /// detector's design regime). Pre-registered constant — not a tuning knob.
 const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 
-/// Resolve `RWM_EST_CADENCE` once (default OFF — the A/B arm; noted in the
-/// gates.rs header list of resolve-once sites) and echo mechanism liveness
-/// on first resolution (MEASUREMENT DISCIPLINE item 1).
-fn est_cadence_active() -> bool {
+/// Resolve `RWM_EST_CADENCE` once (noted in the gates.rs header list of
+/// resolve-once sites) and echo mechanism liveness on first resolution
+/// (MEASUREMENT DISCIPLINE item 1).
+///
+/// STAYS DEFAULT OFF (goal-gate "Ship The Wins 1", 2026-08-07): the
+/// composed flip (est + emit-batch + the `RWM_POOL_ANCHOR` honest dual-store
+/// law) measured c1 463–482 Mbit/s (the pre-registered ≥ 430 PRIMARY met on
+/// both seeds) but the c7 clause failed by its own pre-set rule (new-default
+/// 0.968/0.959×Σ vs ≥ 0.97; prior default 0.981/0.972) — the honest pool
+/// removes the est ack-burst over-read channel (est-only control reproduces
+/// the §16.35 blocker at 0.938/0.949) yet the pool then BECOMES the binder
+/// (send-side anchors cannot ratchet above the cap-limited carried rate:
+/// no delivery physics), re-aging holes (sweeps 10–21 vs prior 0–6).
+/// The composed OPT-IN (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR`
+/// on with it, + `RWM_EMIT_BATCH=1`) remains the documented fast
+/// single-path configuration: 446–508 Mbit/s at c1.
+pub(crate) fn est_cadence_active() -> bool {
     use std::sync::OnceLock;
     static GATE: OnceLock<bool> = OnceLock::new();
     *GATE.get_or_init(|| {
@@ -463,6 +476,16 @@ impl LossEstimator {
         e
     }
 
+    /// Test-only constructor with the heavy-math cadence forced OFF — the
+    /// `RWM_EST_CADENCE=0` prior-default opt-out arm (per-call BOCD),
+    /// env-independent for the law tests.
+    #[cfg(test)]
+    pub fn new_per_call_for_test() -> Self {
+        let mut e = Self::new();
+        e.est_cadence = false;
+        e
+    }
+
     /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
     pub fn bocd_updates(&self) -> u64 {
         self.bocd.updates()
@@ -473,13 +496,29 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE law: with the gate OFF (default), every
-    /// record_batch performs a per-call BOCD update — the legacy path is
-    /// bit-identical in call topology.
+    /// RWM_EST_CADENCE default: ships OFF — the composed flip was measured
+    /// and REVERTED by its own pre-set rule (goal-gate "Ship The Wins 1",
+    /// 2026-08-07: c1 463–482 but c7 0.968/0.959×Σ vs the ≥ 0.97 clause).
+    /// The composed opt-in (`RWM_EST_CADENCE=1`, pool-anchor rides it) is
+    /// the documented fast single-path configuration. Relies on the test
+    /// env not exporting RWM_* overrides, like every engine-default test
+    /// in this crate.
+    #[test]
+    fn test_est_cadence_default_off() {
+        let est = LossEstimator::new();
+        assert!(
+            !est.est_cadence,
+            "RWM_EST_CADENCE ships default OFF (the composed flip failed its c7 clause)"
+        );
+    }
+
+    /// RWM_EST_CADENCE law: with the gate OFF (`=0`, the prior-default
+    /// opt-out arm), every record_batch performs a per-call BOCD update —
+    /// the legacy path is bit-identical in call topology.
     #[test]
     fn test_est_cadence_off_is_per_call() {
-        let mut est = LossEstimator::new();
-        assert!(!est.est_cadence, "RWM_EST_CADENCE ships default OFF");
+        let mut est = LossEstimator::new_per_call_for_test();
+        assert!(!est.est_cadence);
         for _ in 0..7 {
             est.record_batch(1, 1);
         }
@@ -514,7 +553,7 @@ mod tests {
     /// (predictive_loss_upper → r*) read equal-class values.
     #[test]
     fn test_est_cadence_posterior_equal_class() {
-        let mut per_call = LossEstimator::new();
+        let mut per_call = LossEstimator::new_per_call_for_test();
         let mut cadenced = LossEstimator::new_with_cadence_for_test();
         // ~5% loss in per-message batches (1 symbol per batch, 1 loss / 20).
         for i in 0..400 {
