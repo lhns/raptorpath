@@ -14910,3 +14910,145 @@ before both builds (baseline 6bb6ca96… = 1ce8ba2, battery 4f6a3f5e… =
 seed-7 flake class quoted per arm (18 RUN-RETRY recovered, 1
 RUN-LOST, nothing discarded); FOREGROUND polling only; logs + perf
 data + per-run diag preserved under `/home/vibe/recvwall/`.
+
+## Ship The Wins 1: est×honest-anchor (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ship-est-cadence` from dc4fb78; the §16.35 verdict's NAMED SUCCESSOR: compose `RWM_EST_CADENCE` with the honest-anchor family at duals, re-gate `RWM_EMIT_BATCH` in composition, flip BOTH default ON)
+
+**(a) The question.** §16.35 measured the c1 lever (est +62/+63%, eb+est
+446–505) and blocked the flip on ONE clause: c7-est 0.942/0.951×Σ
+(≥ 0.97 required), gauge-attributed — the faster ack clock's tighter ack
+bursts feed the LEGACY plain-mode anchor's ack-interval Δt, whose
+windowed-MAX takes the burst peak: per-path btlbw 304–349k sym/s vs
+def's 88–92k (a further ×3.4–3.7 on the documented ×4.6–7.4 legacy
+over-read), per-path bdp caps 2952/3714 vs 756/1103 — and only the
+N ≥ 2 path-scaled pooled store (clamp 4096) has HEADROOM for the
+inflated anchor, so a standing queue forms (echo 265 ms class vs def
+125–171, sidle 1995 ms/219, sweeps 21 vs 3, recovery age 274 vs
+143 ms). At every N = 1 cell the 1024 latch clamps the same inflation
+inert. The named successor IS this task: feed the DUAL-store cap law
+from a burst-immune anchor.
+
+**(b) The anchor consumer being fixed — stated precisely.** The
+STORE-CAP / POOL LAW'S RATE INPUT at N ≥ 2 (the `Σ copa_bdp_anchor`
+term of `path_scaled_store_cap`), and NOTHING else. NOT the Copa cwnd
+feed: the full sampling-only CopaFeed at duals (`RWM_PLAIN_RS`)
+carries the measured −22…−27 Mbit c7 composition price ("C8-Aware Pool
+Law" ATTRIBUTION: the entire c7-capw/rs regression is owned by the RS
+feed composition — emission-side suppression, win ≪ cap, infl
+collapsed), so that price must stay UNREACHABLE: no CopaFeed at
+N ≥ 2, no `charge_src`/`on_src_sent`/`src_inflight` (the
+falsification-5 lesson, §16.34: a scoped feed must not leak
+src_inflight at duals — here NO feed machinery runs at all), no change
+to `record_delivery`/cwnd dynamics (the legacy ack path stays
+byte-identical). N = 1 keeps every law bit-exactly.
+
+**(c) Mechanism (pre-registered).** The hygiene-grade send-interval
+sampler is burst-immune BY CONSTRUCTION: Δt spans the SEND interval on
+the sender's own clock, so an ack burst cannot collapse it (ADR-0061
+principle; `control::anchor::SendRateAnchor` — per-bucket send rate
+≈ SRTT/2 buckets, windowed-max ≈ 8·SRTT, clock-gap buckets DISCARDED
+with quarantine). Give each path its own `SendRateAnchor` fed at
+`charge_in_flight` (every wire send on that path: source, redundant,
+retransmit — the true send process), and at N ≥ 2 size the pooled
+store from it via the ALREADY-DERIVED honest law: pool =
+clamp(Σ_i honest_store_cap(rate_i·RTprop_i, rate_i, K_i, gain),
+floor, N·knee) — the `capw_store_cap` shape (one shared pool,
+borrowing free), with K_i from the existing `EchoRatioMin` machinery
+and rate_i from the send anchor instead of the RS delivery sampler.
+Engaged only when ALL live paths' send anchors are warm (the capw
+precedent: a partial sum under-provisions); until then the configured
+path-scaled law runs verbatim. Send rate ≈ delivered rate + retx
+share (≤ a few % at these cells) — the safe direction, ~1× truth vs
+the removed ×10-class over-read. Expected pool at c7 (sr_i ≈ 8–10k
+sym/s, RTprop ≈ 8–16 ms, K ≈ 1–3, gain 2): Σ ≈ 2–3k — the
+1024-latch-per-path class the c8 attribution named as the good
+operating point (pool ≈ Σ_i cap_i with each cap_i ≈ 1.1–1.3k),
+vs def's inflated 3.7k and est's 4096 clamp.
+
+**(d) Gates + the composed default.** New gate `RWM_POOL_ANCHOR`
+(gates.rs + scheduler resolve-once): the honest pooled-store anchor at
+N ≥ 2. DEFAULT = the est-cadence resolution — ONE composed default:
+env-unset ⇒ `RWM_EST_CADENCE` ON (default flipped in this branch) ⇒
+pool-anchor ON; `RWM_EST_CADENCE=0` ⇒ the full prior stack (both off)
+— the prior-default A/B arm is one knob (+`RWM_EMIT_BATCH=0`); and
+`RWM_POOL_ANCHOR=0` alone is the est-only decomposition arm (the
+§16.35 blocker reproduction). `RWM_EMIT_BATCH` default flips ON in
+the same branch (its §16.28 gate "c1 ≥ 400" was measured 446–505 IN
+COMPOSITION with est — the re-gate here is the COMPOSED gate; its
+sender-batching scope is single-live-path only, duals structurally
+inert). Liveness echoes: est (existing, both directions), eb
+(existing), NEW "pool-anchor honest dual-store law ACTIVE".
+
+**(e) Predictions (pre-registered).**
+1. MECHANISM at c7 (the blocker's gauges, est ON): per-path DIAG shows
+   the send-anchor rate sr_i ≈ 8–11k sym/s (≈1× truth) on both paths;
+   effective store cap ≈ Σ honest caps ≈ 2–3k (NOT the 4096 clamp);
+   echo RTT back in the def class (≤ ~180 ms, not 265); sidle/sweeps/
+   recovery-age back in the def class (sweeps ≤ ~5-class, not 21).
+   The legacy btlbw gauge may STAY inflated (the cwnd feed is
+   deliberately untouched) — the claim is about the CAP input, and the
+   cap gauge decides.
+2. c7 (THE clause): new default (est+pa; eb inert at duals) ≥ 0.97×
+   same-session Σ on BOTH seeds. The est-only arm reproduces the
+   blocker class (< 0.97, the control that proves the mechanism).
+3. c1 (PRIMARY): new default (est+eb+pa) ≥ 430 Mbit/s mean on BOTH
+   seeds at 400 MB (the §16.35 composed class 446–460; pa engages
+   only at N ≥ 2 so c1 is est+eb exactly), plus one 1.2 GB sustained
+   run ≥ ~480. Prior-default arm reproduces the ~200 class.
+4. sc2/sc3: new default within σ of prior default (N = 1: pa inert by
+   construction, est holds per §16.35, eb holds per §16.28) with
+   recovery-gauge classes unchanged.
+5. c8 dual 25 MB: new default ≥ the shipped-default class, with the
+   derivation-predicted upside toward the 0.87×Σ legacy line (the
+   honest pool Σ ≈ fast cap + slow cap ≈ 1.6–1.9k sits nearer the
+   c8-attribution's pool ≈ max_i cap_i ≈ 1024–1250 good class than
+   the path-scaled 3.7–4.1k) — GATE: ≥ 0.87×Σ line-class on both
+   seeds is the goal's bar; an honest miss that still ≥ the shipped
+   0.72–0.76 class with the pool gauge at its derived value is a
+   named finding vs the c8 WATCH, judged by the pre-set falsification
+   rule below.
+6. CROWN (mandatory): tail_matrix c2 spot ×4 — p99 medians in the
+   historic ~36–48 ms class, 1000/1000 delivered, new default vs
+   prior default. 7. dnf = 0 everywhere; wedge suite green.
+
+**(f) Falsification (fixed now).** (i) If the honest-fed store cap
+still converts the denser ack clock into a standing queue at c7
+(echo/sweep gauges in the est class with the cap gauge at its derived
+2–3k) ⇒ the mechanism is DEEPER than the anchor — name it from the
+gauges (candidates it would isolate: the recovery plane's patience
+under the faster clock; the WindowAck density itself), register row,
+NO tuning pass; a second falsified mechanism ⇒ structural-bound
+documentation per the goal's honest exit. (ii) c7 ≥ 0.97 but c1 < 430
+⇒ the composed default fails its PRIMARY gate — no flip, the c1 term
+re-attributed with the CPU/sink probes. (iii) sc2/sc3/crown/c8
+regression ≫σ on both seeds ⇒ scope defect or law failure — c8/sc2/
+sc3 gauge state decides which; a scope defect (N = 1 or dual
+inertness broken) is a BUG: fix before any verdict (the §16.34
+incident protocol). (iv) est-only arm NOT reproducing the c7 blocker
+⇒ the §16.35 attribution itself is session-dependent — record, and
+the flip rides prediction 2 alone. Flip rule: BOTH defaults (est
+composed + eb) ship ON IFF predictions 2–4 + 6–7 hold on both seeds
+and c8 passes per its stated rule and suites are green; else
+defaults revert (one-line change each) + register rows.
+
+**(g) Battery (pre-registered).** VM 10.1.5.16 per MEASUREMENT
+DISCIPLINE 1–12: lock `/tmp/rwm-vm.lock` PRIORITY 1 (the shal8 worker
+does local work behind it; the lock covers ALL VM activity incl.
+builds); tree synced via git archive of THIS branch + CRLF conversion
+before the first harness invocation; stale binary removed before
+every build; binary sha256 + commit + lscpu + kernel in every log
+header; FOREGROUND polling only; rp-* netns only; fresh topology per
+invocation; seeds 42+7, ×8/arm interleaved round-robin per rep;
+seed-7 topo-abort protocol (n recorded, nothing discarded); liveness
+echoes asserted per arm both directions (est/eb/pool-anchor);
+ARMCOUNT per arm; runtimes stated; same-session Σ from the battery's
+own singles per arm env; logs under `/home/vibe/shipest/`. Arms:
+**new** (env unset = est+eb+pa), **prior** (`RWM_EST_CADENCE=0
+RWM_EMIT_BATCH=0`), **estonly** (`RWM_POOL_ANCHOR=0
+RWM_EMIT_BATCH=0`). Cells: c1 400 MB ×8 new↔prior (PRIMARY ≥ 430) +
+1×1.2 GB new (sustained); sc2 100 MB + sc3 25 MB ×8 new↔prior;
+c7 200 MB ×8 new↔prior↔estonly (THE clause + the blocker control);
+c8 25 MB ×8 new↔prior; tail_matrix c2 spot ×4 seed 42 new↔prior
+(crown); driver `tools/l1/shipest_battery.sh` (recvwall pattern,
+retry-hardened).
+
+*(Results below this line were written after the runs.)*
