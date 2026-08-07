@@ -5438,6 +5438,29 @@ async fn run_window_sender(
             "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: N>=2 pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched; N=1 legacy)"
         );
     }
+    // ── Delivery-clocked pool rate anchor (env RWM_POOL_DELIV) ───────────
+    // Goal-gate "Ship The Wins 1b" arm A: attempt 1's send-interval anchor
+    // removed the over-read but BECAME THE BINDER — a send-derived rate can
+    // never ratchet above the cap-limited carried rate, so the pool sat AT
+    // the operating point (win pinned at cap, sweeps 8-21) and c7 landed
+    // 0.968/0.959 vs the required 0.97. The delivery clock is the one rate
+    // source bounded by delivered-packet PHYSICS instead of by the sender's
+    // own admission gate: during a store-refill burst the wire delivers at
+    // the BOTTLENECK rate and the max filter holds it, while
+    // max(send_elapsed, ack_elapsed) + the >= RTprop reject-and-accumulate
+    // guard keep the sample from reading an ack burst. The law reads
+    // max(delivery, send_mean) — ONE formula, no branch, both terms honest
+    // lower bounds, so the pool can only rise relative to attempt 1.
+    if pool_anchor_on && gates.pool_deliv {
+        info!(
+            "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
+        );
+    }
+    if gates.floor_bound {
+        info!(
+            "honest anchor-floor BOUND ACTIVE (RWM_FLOOR_BOUND: cwnd floor = min(gain*max_bw*RTprop, gain*sr*RTprop) - the ack-interval over-read can no longer inflate the floor; still a floor, never a cap; legacy verbatim while the send anchor is cold)"
+        );
+    }
     // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
     // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
     // the retention store releases slots only on the cumulative frontier,
@@ -7327,7 +7350,11 @@ async fn run_window_sender(
                             .iter()
                             .map(|id| {
                                 sched.path(*id).and_then(|p| {
-                                    let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
+                                    // "Ship The Wins 1b": max(delivery-clocked
+                                    // windowed-max, send ratcheted mean) — one
+                                    // formula; identical to attempt 1 with
+                                    // RWM_POOL_DELIV off.
+                                    let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
                                     let rtp =
                                         p.min_rtt().map(|d| d.as_secs_f64()).filter(|r| *r > 0.0)?;
                                     let k = percap_k
@@ -7830,9 +7857,16 @@ async fn run_window_sender(
                             // deliberately left feeding cwnd only).
                             let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                             let (sa_g, sa_d) = p.send_anchor_stats();
+                            // RWM_POOL_DELIV DIAG (arm A): the DELIVERY-clocked
+                            // term alone (0 = no accepted sample / gate off) and
+                            // its guard counters — the mechanism witness that
+                            // separates arm A from attempt 1 in the logs.
+                            // dr vs sr IS the pre-registered prediction 1.
+                            let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
+                            let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                             pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                                 rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                             ));
                         }
@@ -10309,6 +10343,23 @@ fn handle_control_message(
                     // otherwise losses leak budget and the Copa gate jams.
                     path.release_in_flight(expected_count.saturating_sub(received_count));
                 }
+
+                // Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate
+                // "Ship The Wins 1b" arm A): THE delivery event for this
+                // path's shadow rate sampler. Delivered advances the rate
+                // numerator; LOST advances the accounted cursor only (a lost
+                // symbol left the wire too — that alignment is what lets an
+                // aggregate cursor resolve send spacing without a per-seq
+                // key). Placed here so it sees exactly the counts the legacy
+                // anchor sees: this build changes the Δt STATISTIC, not the
+                // per-path attribution. `gap_q` drops a stall-poisoned event
+                // exactly as the RTT/rate feeds above drop it. Feeds nothing
+                // but the N ≥ 2 pool law; no-op with the gate off.
+                path.on_pool_delivery(
+                    received_ids.len() as u32,
+                    expected_count.saturating_sub(received_count),
+                    gap_q,
+                );
 
                 // ADR-0013: update path monitoring stats
                 if let Some(ps) = stats.path(path_id) {

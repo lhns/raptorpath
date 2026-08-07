@@ -140,6 +140,25 @@ pub struct RuntimeGates {
     /// resolved via `scheduler::pool_anchor_active()` (cached — the
     /// send-path feed reads the same resolution).
     pub pool_anchor: bool,
+    /// `RWM_POOL_DELIV` (default = the `pool_anchor` resolution ⇒ OFF with
+    /// everything unset; goal-gate "Ship The Wins 1b" arm A): the N ≥ 2 pool
+    /// law's rate input gains a per-path DELIVERY-CLOCKED term
+    /// (`DeliveryRateAnchor` — BBR `GenerateRateSample`: delivered /
+    /// max(send_elapsed, ack_elapsed), windowed-max ≈10·RTprop, sub-RTprop
+    /// samples rejected-and-accumulated, ADR-0061 clock-gap discard), read as
+    /// `max(delivery, send_mean)` — ONE formula, no branch. It exists to test
+    /// attempt 1's named binder: a send-derived rate cannot ratchet above the
+    /// cap-limited carried rate, but a delivery clock is bounded by
+    /// delivered-packet PHYSICS and CAN. Shadow-only: no cwnd/`max_bw`/
+    /// pacing/`src_inflight` consumer can reach it; N = 1 untouched.
+    pub pool_deliv: bool,
+    /// `RWM_FLOOR_BOUND` (default OFF — a pure A/B arm; goal-gate "Ship The
+    /// Wins 1b" arm B): bound the BtlBw anchor FLOOR by the honest
+    /// send-anchor rate (`min(gain·max_bw·RTprop, gain·sr·RTprop)`) so the
+    /// ack-interval over-read cannot inflate cwnd (measured 5860 vs 1779) —
+    /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
+    /// Still a floor, never a cap; legacy verbatim with the anchor cold.
+    pub floor_bound: bool,
     /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
     /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
     /// N = 1 plain reliable window. The 1024-latch's three roles split:
@@ -343,6 +362,8 @@ impl RuntimeGates {
             store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
             pool_anchor: crate::scheduler::pool_anchor_active(),
+            pool_deliv: crate::scheduler::pool_deliv_active(),
+            floor_bound: crate::scheduler::floor_bound_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
@@ -422,6 +443,17 @@ mod tests {
         assert!(
             !g.pool_anchor,
             "RWM_POOL_ANCHOR default rides the RWM_EST_CADENCE resolution (OFF unset)"
+        );
+        // "Ship The Wins 1b" (2026-08-07): arm A rides the pool-anchor
+        // resolution (⇒ OFF unset), arm B is a pure A/B arm (always OFF
+        // unset). Neither may reach the shipped default stack.
+        assert!(
+            !g.pool_deliv,
+            "RWM_POOL_DELIV default rides the RWM_POOL_ANCHOR resolution (OFF unset)"
+        );
+        assert!(
+            !g.floor_bound,
+            "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
         );
         // Experiments / instruments (default OFF)
         assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
