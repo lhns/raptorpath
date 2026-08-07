@@ -175,6 +175,12 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # crown-gate arm — estimator heavy-math cadence (delivery path
             # touched at the estimator only; the spot is mandatory).
             est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
+            # feat/ship-est-cadence (goal-gate "Ship The Wins 1"): the
+            # composed-default crown spot — `ship` (env unset = est+eb+
+            # pool-anchor NEW default) vs the prior default (est=0 turns the
+            # composed pool-anchor default off with it; eb=0 restores the
+            # per-symbol sender).
+            prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The

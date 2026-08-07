@@ -105,6 +105,10 @@ fi
 # Receiver per-message wall (goal-gate "Receiver Per-Message Wall",
 # feat/recv-permsg): estimator heavy-math cadence — the profile-named part.
 [[ -n "${RWM_EST_CADENCE:-}" ]] && TENV="$TENV RWM_EST_CADENCE=$RWM_EST_CADENCE"
+# Pool-anchor honest dual-store law (goal-gate "Ship The Wins 1",
+# feat/ship-est-cadence): the N>=2 store cap on the per-path send-interval
+# anchor; default rides RWM_EST_CADENCE — =0 is the est-only decomposition arm.
+[[ -n "${RWM_POOL_ANCHOR:-}" ]] && TENV="$TENV RWM_POOL_ANCHOR=$RWM_POOL_ANCHOR"
 # Engine-receiver saturation probe (roadmap item 2, feat/engine-parallel):
 # busy% + inbound msg-queue depth on the RECEIVER (server log /tmp/rwm-s.log).
 # (RWM_ENGINE_PAR itself was NOT built -- the item-2 profile refuted it; see
