@@ -166,6 +166,8 @@ impl SymbolPacker {
     }
 
     /// Returns true if the flush timeout has elapsed since the last push.
+    // Test-only consumer: this file's packer tests.
+    #[allow(dead_code)]
     pub fn should_flush(&self) -> bool {
         !self.buffer.is_empty() && self.last_push.elapsed() >= self.flush_timeout
     }

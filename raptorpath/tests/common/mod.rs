@@ -66,15 +66,6 @@ impl GilbertElliottChannel {
 
         drop
     }
-
-    pub fn is_in_bad_state(&self) -> bool {
-        self.in_bad
-    }
-
-    /// Force the channel into the Bad state (for correlated fading).
-    pub fn force_bad_state(&mut self) {
-        self.in_bad = true;
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -169,50 +160,6 @@ impl LinkModel {
     /// Notify that a packet has been delivered (frees queue slot).
     pub fn dequeue(&mut self) {
         self.queue_depth = self.queue_depth.saturating_sub(1);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// CorrelatedFading — forces both paths into bad state simultaneously
-// ---------------------------------------------------------------------------
-
-/// Models correlated fading events that affect multiple paths simultaneously.
-pub struct CorrelatedFading {
-    correlation_prob: f64,    // per-tick probability of starting a correlated burst
-    burst_duration: Duration, // how long both paths stay in bad
-    in_burst: bool,
-    burst_end: Option<Instant>,
-    rng: ChaCha8Rng,
-}
-
-impl CorrelatedFading {
-    pub fn new(correlation_prob: f64, burst_duration: Duration, seed: u64) -> Self {
-        Self {
-            correlation_prob,
-            burst_duration,
-            in_burst: false,
-            burst_end: None,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-        }
-    }
-
-    /// Step the correlation model. Returns true if both paths should be in bad state.
-    pub fn step(&mut self, now: Instant) -> bool {
-        // Check if current burst has ended
-        if let Some(end) = self.burst_end {
-            if now >= end {
-                self.in_burst = false;
-                self.burst_end = None;
-            }
-        }
-
-        // Maybe start a new burst
-        if !self.in_burst && self.rng.gen::<f64>() < self.correlation_prob {
-            self.in_burst = true;
-            self.burst_end = Some(now + self.burst_duration);
-        }
-
-        self.in_burst
     }
 }
 
@@ -645,11 +592,6 @@ pub fn make_source_batch(count: u32) -> Vec<WireSymbol> {
     (0..count).map(|i| make_wire_symbol(i, false)).collect()
 }
 
-/// Create a batch of repair WireSymbols.
-pub fn make_repair_batch(count: u32) -> Vec<WireSymbol> {
-    (0..count).map(|i| make_wire_symbol(i, true)).collect()
-}
-
 // ---------------------------------------------------------------------------
 // ge_for_target_loss — derive GE parameters from target avg loss + burst len
 // ---------------------------------------------------------------------------
@@ -670,34 +612,6 @@ pub fn ge_for_target_loss(target_loss: f64, mean_burst_len: f64) -> GilbertEllio
     let pi_bad = pi_bad.min(0.99); // clamp to avoid division by zero
     let p_gb = pi_bad * p_bg / (1.0 - pi_bad);
     GilbertElliottChannel::new(p_gb, p_bg, loss_good, loss_bad)
-}
-
-// ---------------------------------------------------------------------------
-// UniformChannel — fixed-rate packet loss (no Gilbert-Elliott state)
-// ---------------------------------------------------------------------------
-
-/// Simple uniform-random packet loss channel for loss-sweep benchmarks.
-pub struct UniformChannel {
-    pub loss_rate: f64,
-    rng: ChaCha8Rng,
-}
-
-impl UniformChannel {
-    pub fn new(loss_rate: f64, seed: u64) -> Self {
-        Self {
-            loss_rate,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-        }
-    }
-
-    /// Filter a slice, independently dropping each element with probability `loss_rate`.
-    pub fn apply<T: Clone>(&mut self, symbols: &[T]) -> Vec<T> {
-        symbols
-            .iter()
-            .filter(|_| self.rng.gen::<f64>() >= self.loss_rate)
-            .cloned()
-            .collect()
-    }
 }
 
 // ---------------------------------------------------------------------------

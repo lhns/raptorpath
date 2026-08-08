@@ -12,7 +12,7 @@
 //! repairs where they have the highest marginal recovery value, then tapers off.
 //! The decay rate adapts to measured loss — higher loss = gentler slope.
 
-use crate::fec::{FecBackend, WireSymbol};
+use crate::fec::WireSymbol;
 use crate::scheduler::PathId;
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -353,16 +353,13 @@ impl InterleavingBuffer {
     pub fn is_empty(&self) -> bool {
         self.total_buffered == 0 && self.pending_repairs.values().all(|v| v.is_empty())
     }
-
-    /// Whether tapered mode is enabled.
-    pub fn is_tapered(&self) -> bool {
-        self.tapered
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the tests name a backend; the interleaver itself is codec-agnostic.
+    use crate::fec::FecBackend;
 
     fn sym(block_id: u64, payload_id: u32) -> WireSymbol {
         WireSymbol {

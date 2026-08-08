@@ -23,6 +23,10 @@ impl Clock for WallClock {
 }
 
 /// Mock clock for tests — time only advances when `advance()` is called.
+// Constructed by the scheduler's own unit tests AND by the integration-test
+// harness (`tests/common/mod.rs`, gate_suite, bench_suite). Integration tests
+// are separate crates, so the lib's dead_code lint cannot see those uses.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct MockClock {
     current: Mutex<Instant>,

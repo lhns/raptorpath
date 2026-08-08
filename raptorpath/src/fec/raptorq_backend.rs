@@ -211,14 +211,6 @@ impl FecDecoder for RaptorqDecoder {
         &self.params
     }
 
-    fn get_source_symbol(&self, index: usize) -> Option<&[u8]> {
-        self.received_source.get(index)?.as_deref()
-    }
-
-    fn received_ids(&self) -> Vec<u32> {
-        self.seen_ids.iter().copied().collect()
-    }
-
     fn created_at(&self) -> Instant {
         self.created
     }

@@ -8,7 +8,10 @@
 //! (correlated losses, bursty channels, estimation lag).
 
 pub mod anchor;
-pub mod backend_selector;
+// `backend_selector` was DELETED (refactor: dead code batch 1). Mid-stream FEC
+// backend switching was removed from the data path (paper §16.4; the live
+// `warn!` in net::run that ignores an inbound WindowSwitch is its epitaph), so
+// the threshold heuristic had no consumer and no verification.
 pub mod changepoint;
 pub mod estimator;
 pub mod fec_rate;

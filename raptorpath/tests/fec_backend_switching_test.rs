@@ -1,11 +1,15 @@
-//! Integration tests for runtime FEC backend switching (ADR-0030).
+//! Integration tests for per-block FEC backend selection (ADR-0030).
 //!
-//! Tests block-mode per-block switching and the backend selector heuristic
-//! with actual encode/decode cycles across different backends.
+//! Tests block-mode per-block switching with actual encode/decode cycles
+//! across different backends, and the WindowSwitch/WindowSwitchAck wire
+//! round-trips.
+//!
+//! The BackendSelector arms were dropped in the dead-code refactor (batch 1):
+//! MID-STREAM backend switching was removed from the data path (paper §16.4)
+//! and the selector deleted with it. Per-BLOCK backend choice (the `backend`
+//! field on BlockStart, decoded by the receiver) is still live — that is what
+//! the remaining tests cover.
 
-use raptorpath::control::backend_selector::BackendSelector;
-use raptorpath::control::estimator::LossEstimator;
-use raptorpath::control::fec_rate::ProtocolHint;
 use raptorpath::fec::{EncodingParams, FecBackend, FecStream};
 use raptorpath::transport::{ControlMessage, WireMessage};
 
@@ -123,43 +127,6 @@ fn test_block_mode_receiver_uses_blockstart_backend() {
 }
 
 #[test]
-fn test_backend_selector_switches_on_loss_change() {
-    let mut selector = BackendSelector::new(
-        FecBackend::RaptorQ,
-        None,
-        ProtocolHint::Auto,
-        0.01,
-        0.10,
-        0, // no delay
-        false,
-    );
-
-    // Start with low loss — should stay RaptorQ
-    let mut est = LossEstimator::new();
-    for _ in 0..100 {
-        est.record_batch(1000, 998); // 0.2% loss
-    }
-    assert!(selector.evaluate(&est).is_none());
-    assert_eq!(selector.current(), FecBackend::RaptorQ);
-
-    // Switch to high loss — should switch to RLC after debounce
-    let mut est_high = LossEstimator::new();
-    for _ in 0..100 {
-        est_high.record_batch(1000, 850); // 15% loss
-    }
-
-    selector.evaluate(&est_high);
-    selector.evaluate(&est_high);
-    let switch = selector.evaluate(&est_high);
-    assert!(switch.is_some(), "should switch after 3 evaluations");
-
-    // Encode with the new backend and verify it works
-    let data = vec![0xEF; 256];
-    let success = encode_decode_block(&data, selector.current(), 99);
-    assert!(success, "encoding with switched backend should work");
-}
-
-#[test]
 fn test_window_switch_message_roundtrip() {
     let msg = WireMessage::Control(ControlMessage::WindowSwitch {
         flush_seq: 42,
@@ -256,31 +223,4 @@ fn test_window_flush_and_switch_encode_decode() {
     for (i, (_, pkt)) in recovered_phase2.iter().enumerate() {
         assert_eq!(pkt, &vec![(i + 5) as u8 + 1; 50]);
     }
-}
-
-#[test]
-fn test_forced_backend_blocks_auto_switch() {
-    let mut selector = BackendSelector::new(
-        FecBackend::RaptorQ,
-        Some(FecBackend::RaptorQ), // forced
-        ProtocolHint::Auto,
-        0.01,
-        0.10,
-        0,
-        false,
-    );
-
-    // Even with very high loss, forced backend should not switch
-    let mut est = LossEstimator::new();
-    for _ in 0..200 {
-        est.record_batch(1000, 500); // 50% loss
-    }
-
-    for _ in 0..20 {
-        assert!(
-            selector.evaluate(&est).is_none(),
-            "forced backend should never auto-switch"
-        );
-    }
-    assert_eq!(selector.current(), FecBackend::RaptorQ);
 }

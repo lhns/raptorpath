@@ -65,6 +65,9 @@ pub trait FecDecoder: Send + Sync {
     /// Feed a received symbol. Returns `Some(data)` when the block is fully decoded.
     fn add_symbol(&mut self, symbol: &WireSymbol) -> Option<Bytes>;
     /// Whether all source symbols arrived intact (fast path).
+    // Test-only consumer (tests/fec_backend_switching_test.rs + the backends'
+    // own unit tests); the block path decides on `is_decoded`.
+    #[allow(dead_code)]
     fn is_complete_source(&self) -> bool;
     /// Whether decoding has completed (by any means).
     fn is_decoded(&self) -> bool;
@@ -72,10 +75,6 @@ pub trait FecDecoder: Send + Sync {
     fn total_fed(&self) -> u32;
     /// The encoding params for this block.
     fn params(&self) -> &EncodingParams;
-    /// Get an individual source symbol by index.
-    fn get_source_symbol(&self, index: usize) -> Option<&[u8]>;
-    /// Get all received payload_ids (for ACKs).
-    fn received_ids(&self) -> Vec<u32>;
     /// When this decoder was created (for timeout eviction).
     fn created_at(&self) -> Instant;
 }

@@ -18083,3 +18083,116 @@ and have already paid for themselves by establishing that §16.37's and
 §16.39's c7 evidence is REAL while the same gauge over-counts by 85–90%
 at slow cells — a correction to the INSTRUMENT that no future session
 now has to rediscover.
+
+## Refactor: dead code batch 1 (2026-08-08, branch `refactor/dead-code-1` from 6e386bf)
+
+REFACTOR ARC phase C, the FREE deletions — compiler-confirmed-dead items
+with a live twin or a documented removed consumer, none of them touching
+`src/net/mod.rs` or `src/transport/protocol.rs` (two workers were mid-flight
+in those files; the deletions that overlap their regions are deferred).
+Zero behaviour change. Six commits, one per item.
+
+**What went, per item (LOC).**
+
+1. **The duplicated three-variable FEC-rate solver — `control/fec_rate.rs`,
+   −275 src / −102 test (1986 → 1609 lines).** `b_max`, `ThreeVarResult`,
+   `find_t_cut`, `p_recovered_within`, `compute_delta`, the three
+   `solve_*` entry points and `compute_buffer_max` were an UNVERIFIED
+   second copy of `raptorpath-math/src/lib.rs:1072-1180`, which
+   `formula_verification.rs` checks and `fec_rate_controller::
+   compute_triangle` uses. All nine twins were confirmed present before
+   deleting. The duplicate's own unit tests went with it; the math crate
+   asserts the same facts (b_max(0.5)=14, the three-var cycle across all
+   three modes, T_cut monotone in ρ) against the verified copy, so the law's
+   coverage is consolidated, not reduced. `p_fec_normal` and
+   `residual_loss_after_fec` live in the same region and are LIVE
+   (net::run prices the shed allowance with the latter) — kept verbatim.
+
+2. **`BackendSelector` and its consumers, −546.** `control/backend_selector.rs`
+   (−289, incl. 8 unit tests), `sim_backend_test.rs` (−203), the selector arm
+   of `sim_pipeline_test.rs` (−40), `changepoint::changepoint_probability`
+   (−9), `FecStats::{backend_switches, current_backend}` (−5). Mid-stream FEC
+   backend switching was removed from the data path (§16.4) and net::run
+   still carries the `warn!` that ignores an inbound WindowSwitch; the module
+   itself said "nothing in the data path calls it". The dashboard HTML and
+   `generate_dashboard.py` were checked first — neither reads the two stats
+   fields. **Kept against the audit:** `fec_backend_switching_test.rs` is NOT
+   deleted, only its two selector arms (−61); its other five tests cover
+   PER-BLOCK backend choice (`BlockStart.backend` on the wire) and the
+   WindowSwitch/WindowSwitchAck codecs, all live.
+
+3. **`tests/common/mod.rs`, −86 (751 → 665).** The audit called ~400 lines
+   dead; that was wrong, and the reason is the batch's main lesson (below).
+   Actually dead in EVERY test binary and deleted: `CorrelatedFading`,
+   `UniformChannel`, `make_repair_batch`, `GilbertElliottChannel::
+   {is_in_bad_state, force_bad_state}`. `ReliableSimChannel`, `TrialStats`
+   (all methods), `make_wire_symbol*`, `make_source_batch`,
+   `ge_for_target_loss`, `LinkModel`, `with_link`, `ge_mut` and every
+   SimChannel preset are LIVE in bench_suite / gate_suite / the sim tests.
+
+4. **Scattered dead accessors, −~190 net.** Deleted: `RepairStream` + its
+   re-export; `FecDecoder::{get_source_symbol, received_ids}` + the three
+   backend impls (a trait method every implementor paid for, zero call
+   sites); five estimator accessors and the write-only `rx_beta_a/b` pair;
+   `fec_rate::{update_backend, max_overhead, should_generate}` + the two
+   never-read `FecDiagnostics` fields; `PathState::effective_bandwidth`,
+   `Scheduler::{set_weights, weights}`; `interleave::is_tapered`; two
+   unconditionally-unused imports.
+
+5. **18 abandoned `tools/l1` drivers, −1,211.** Each re-verified
+   independently: zero citations in `raptorpath/docs/` (ledger included),
+   zero references from any surviving script, zero repo-wide hits. The
+   batteries they wrapped (`compet_battery.sh`, `c8pool_battery.sh`,
+   `consol_battery.sh`, `phase3_smoke.sh`, `lib.sh`, `cleanup.sh`, …) are
+   untouched. No `attic/` needed — nothing was ambiguous.
+
+6. **`config::deprecated_env_flag` — NOT deleted**, now `#[allow(dead_code)]`
+   with a comment citing ADR-0066 / the DEPRECATION REGISTER. It IS the
+   register's enforcement mechanism, held ahead of the rows that will call it.
+
+**TOTAL: ≈ −2,410 lines** (≈ −1,199 Rust, −1,211 shell).
+
+**MEASUREMENT DISCIPLINE, the lesson of this batch: a `dead_code` warning is
+scoped to ONE compilation unit, and is therefore not evidence of global
+deadness.** It fired on items that are very much alive:
+(a) in `tests/common/mod.rs`, which ~10 separate integration binaries include
+by `mod common;` — a helper used by one binary still warns in the other nine,
+and the deduplicated warning set names it "never used";
+(b) on `pub` lib items whose only callers are integration-test crates
+(`gate_suite`, `bench_suite`) the lib's lint cannot see —
+`gilbert_elliott::conditional_loss_rate` is read at `gate_suite.rs:701`;
+(c) on `#[cfg(test)]`-only consumers inside the same file;
+(d) on PLATFORM-conditional code — `preflight::CheckStatus::Warn` is
+constructed only in the `cfg(not(any(windows, linux)))` arms and
+`ManagedRoute::iface` only in the `cfg(target_os)` route bodies. Deleting
+either would have broken the build on the platform that uses it.
+The authority is a whole-workspace grep plus `cargo check --workspace
+--all-targets`, never the lib-target warning alone. Everything in classes
+(a)–(d) was KEPT; the lib-side keeps carry `#[allow(dead_code)]` and a
+one-line reason naming the consumer, so the next audit does not re-propose
+them.
+
+**Also kept, and reported rather than deleted:** `tun::write_packet` and
+`quic::{cc_window_bytes, recv_datagram}` are compiler-dead but have NEITHER
+a live twin NOR a documented removed consumer — they fail this batch's own
+deletion rule (they are the unused halves of symmetric handles). A later
+batch can retire them with a register row. `transport/mod.rs`'s unused
+re-export list and `fec/mod.rs`'s `#[doc(hidden)] pub use
+generation::reference` were left alone as public-surface decisions adjacent
+to the protocol module another worker is mid-flight in.
+
+**Warning-count delta (`cargo check --workspace --all-targets`).**
+Raw `warning:` lines 212 → 159 (−53); unique (message @ location) 165 → 114
+(−51). Nothing new appeared that was not a line-number shift of a
+pre-existing warning — the two leftovers the deletions did create
+(`tokio::sync::mpsc` in `fec/stream.rs`, `bytes::Bytes` in
+`sim_pipeline_test.rs`) were removed in the same pass.
+
+**Suites — the FULL battery after EVERY commit, all green:**
+`cargo test -p raptorpath --lib` 382/382 → **374/374** after commit 2 (the
+8 deleted `backend_selector` unit tests; no other test was lost),
+`-p raptorpath-math` all targets green, `--test gate_suite --release`
+**15/15** (17 ignored) each time, `mtu_blackhole_wedge` 2/2,
+`perf_loopback` 8/8, all seven loopbacks (ack_merge, copa_sole, emit_batch,
+patience, recov_mp, win_decouple, wire_compact) 1/1 each, `recovery_bench`
+1/1, and `--doc`. No merge; six commits on `refactor/dead-code-1`.

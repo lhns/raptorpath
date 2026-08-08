@@ -582,6 +582,10 @@ pub struct CorrectionDeficit {
     total: f64,
 }
 
+// on_ack / deficit / pending_count / path_deficit have only #[cfg(test)]
+// consumers (the deficit-chain law tests in this file); the live path uses
+// on_send + on_ack_cumulative.
+#[allow(dead_code)]
 impl CorrectionDeficit {
     pub fn new() -> Self {
         Self {
@@ -1946,17 +1950,6 @@ impl PathState {
         queue_wait + srtt / 2.0 + eps * srtt
     }
 
-    /// Source-carrying capacity: B_eff = throughput / (1 + r).
-    /// See paper Section 13.5.
-    pub fn effective_bandwidth(&self) -> f64 {
-        let throughput = self.estimator.throughput();
-        let r = self.correction_rate();
-        if r.is_infinite() {
-            return 0.0;
-        }
-        throughput / (1.0 + r)
-    }
-
     /// Effective goodput: throughput * (1 - loss_rate).
     /// This is what actually gets through to the receiver.
     pub fn effective_goodput(&self) -> f64 {
@@ -2553,16 +2546,6 @@ impl Scheduler {
     /// Current frontier slack S (seconds) — gauge accessor.
     pub fn place_slack(&self) -> f64 {
         self.place_slack_secs
-    }
-
-    /// Update scheduling weights (e.g., when protocol hint changes).
-    pub fn set_weights(&mut self, weights: SchedulingWeights) {
-        self.weights = weights;
-    }
-
-    /// Current scheduling weights.
-    pub fn weights(&self) -> SchedulingWeights {
-        self.weights
     }
 
     pub fn add_path(&mut self, id: PathId) {

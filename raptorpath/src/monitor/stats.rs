@@ -3,7 +3,7 @@
 //! Uses atomics for hot-path updates (no locking on the data path).
 
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Global stats shared between data path and monitoring endpoint.
@@ -154,10 +154,6 @@ pub struct FecStats {
     pub target_tail_loss_bits: AtomicU64,
     pub total_source_symbols: AtomicU64,
     pub total_repair_symbols: AtomicU64,
-    /// Number of runtime FEC backend switches.
-    pub backend_switches: AtomicU64,
-    /// Current FEC backend (FecBackend variant mapped to u8).
-    pub current_backend: AtomicU8,
 }
 
 /// Block decode statistics.
