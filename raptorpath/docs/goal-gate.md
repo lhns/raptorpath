@@ -16764,6 +16764,24 @@ both falling 25×) is unchanged. Recording this here so the next session
 does not build it on §16.39's cell-conditional arithmetic — which is
 the same error this section just corrected once.
 
+### SUITES (post-flip, on the flipped default — every one of these ran with `RWM_ACK_MERGE` resolving ON from the shipped default, which is the point)
+
+`cargo test -p raptorpath --lib` **390 passed / 0 failed** (2 ignored) —
+includes `gates.rs`'s `default_env_resolves_the_shipped_stack`, now
+asserting `g.ack_merge` rather than `!g.ack_merge`, and the three
+`window_ack_emission` law tests. `raptorpath-math` **59 + 19 + 22 + 25
++ 4 + 4 + 3 passed / 0 failed**. `--doc` **ok**. `gate_suite --release`
+**15 passed / 0 failed** (17 ignored) — the required 15/15.
+`mtu_blackhole_wedge --release` **2/2** (no-regression gate 6).
+`perf_loopback --release` **8/8**. All loopbacks `--release`:
+`ack_merge_loopback` 1/1 (the window transfer + the block-mode scope
+guard in one process), **`ack_merge_optout` 2/2 (new — the opt-out arm
+and the emission law at both settings)**, `emit_batch_loopback` 1/1,
+`copa_sole_loopback` 1/1, `patience_loopback` 1/1, `recov_mp_loopback`
+1/1, `win_decouple_loopback` 1/1, `wire_compact_loopback` 1/1.
+`recovery_bench --release` 1/1 plus the `--ignored` fixture 1/1.
+**Zero failures anywhere.**
+
 ### FLIP VERIFIED ON THE SUBSTRATE, TWO-SIDED (2026-08-08 15:29:40-15:31 UTC; binary sha256 `e163277e3156c795d472e4677505e7654a8bf85fcc5711f6d5472155950e55a5` = commit bdab7de, i.e. the POST-FLIP binary, rebuilt on the VM after `rm` of the previous one from a CRLF-converted `git archive` tree; log `/home/vibe/ackflip/flipverify.log`; still under the same lock)
 
 The battery measured the KNOB (`RWM_ACK_MERGE=1` against env-unset on a
