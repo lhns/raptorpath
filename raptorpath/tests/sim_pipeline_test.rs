@@ -1,18 +1,18 @@
 //! B6: Full pipeline integration tests with SimChannel.
 //!
 //! Wires together Scheduler + MockClock + SimChannel + WindowEncoder/Decoder
-//! + ReorderBuffer + BackendSelector to verify end-to-end behavior.
+//! + ReorderBuffer to verify end-to-end behavior.
+//!
+//! The BackendSelector arm was dropped in the dead-code refactor (batch 1):
+//! mid-stream FEC backend switching was removed from the data path
+//! (paper §16.4), so the selector it exercised no longer exists.
 
 mod common;
 
 use bytes::Bytes;
 use common::*;
-use raptorpath::control::backend_selector::BackendSelector;
 use raptorpath::control::estimator::LossEstimator;
-use raptorpath::control::fec_rate::ProtocolHint;
-use raptorpath::fec::{
-    FecBackend, RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder,
-};
+use raptorpath::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
 use raptorpath::net::reorder::ReorderBuffer;
 use raptorpath::scheduler::{Clock, MockClock, Scheduler};
 use std::collections::BTreeSet;
@@ -30,7 +30,6 @@ struct PipelineRun {
     total_sent: u32,
     total_dropped: u32,
     cwnd_history: Vec<u32>,
-    backend_switches: Vec<FecBackend>,
 }
 
 fn run_pipeline(
@@ -41,7 +40,6 @@ fn run_pipeline(
     path_id: u32,
     sched: &mut Scheduler,
     estimator: &mut LossEstimator,
-    selector: &mut BackendSelector,
 ) -> PipelineRun {
     let symbol_size = 64u16;
     let mut encoder = RlcWindowEncoder::new(symbol_size);
@@ -51,7 +49,6 @@ fn run_pipeline(
     let mut recovered = BTreeSet::new();
     let mut total_dropped = 0u32;
     let mut cwnd_history = Vec::new();
-    let mut backend_switches = Vec::new();
 
     let batch_size = 10u32;
     let repair_per_batch = 3u32;
@@ -132,11 +129,6 @@ fn run_pipeline(
 
         cwnd_history.push(sched.path(path_id).map(|p| p.cwnd).unwrap_or(0));
 
-        // Check backend selector
-        if let Some(new_backend) = selector.evaluate(estimator) {
-            backend_switches.push(new_backend);
-        }
-
         batch_num += 1;
     }
 
@@ -145,7 +137,6 @@ fn run_pipeline(
         total_sent: num_symbols,
         total_dropped,
         cwnd_history,
-        backend_switches,
     }
 }
 
@@ -167,15 +158,6 @@ fn test_pipeline_datacenter() {
     }
 
     let mut estimator = LossEstimator::new();
-    let mut selector = BackendSelector::new(
-        FecBackend::Rlc,
-        None,
-        ProtocolHint::Auto,
-        0.02,
-        0.08,
-        0,
-        true,
-    );
     let mut channel = SimChannel::datacenter(clock.clone(), 42);
 
     let result = run_pipeline(
@@ -186,7 +168,6 @@ fn test_pipeline_datacenter() {
         1,
         &mut sched,
         &mut estimator,
-        &mut selector,
     );
 
     let recovery_rate = result.recovered.len() as f64 / result.total_sent as f64;
@@ -205,14 +186,6 @@ fn test_pipeline_datacenter() {
             "cwnd should not collapse to below MIN_CWND on datacenter: last={last_cwnd}"
         );
     }
-
-    // On datacenter, backend should be mostly stable. A few switches are
-    // acceptable due to confidence interval spikes, but not excessive churn.
-    assert!(
-        result.backend_switches.len() <= 4,
-        "too many backend switches on stable datacenter: switches={:?}",
-        result.backend_switches
-    );
 }
 
 #[test]
@@ -233,15 +206,6 @@ fn test_pipeline_wifi_degradation() {
     }
 
     let mut estimator = LossEstimator::new();
-    let mut selector = BackendSelector::new(
-        FecBackend::Rlc,
-        None,
-        ProtocolHint::Auto,
-        0.02,
-        0.08,
-        0,
-        true,
-    );
 
     // Phase 1: datacenter (first 200 symbols)
     let mut channel_dc = SimChannel::datacenter(clock.clone(), 42);
@@ -253,7 +217,6 @@ fn test_pipeline_wifi_degradation() {
         1,
         &mut sched,
         &mut estimator,
-        &mut selector,
     );
 
     // Phase 2: switch to WiFi (next 300 symbols)
@@ -266,7 +229,6 @@ fn test_pipeline_wifi_degradation() {
         1,
         &mut sched,
         &mut estimator,
-        &mut selector,
     );
 
     // Combined recovery should be >= 95%

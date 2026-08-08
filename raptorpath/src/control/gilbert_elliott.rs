@@ -163,6 +163,9 @@ impl GilbertElliottEstimator {
     }
 
     /// Current HMM state.
+    // Test-only consumer: this file's `mod tests` asserts the Good/Bad
+    // transition. Not on the data path.
+    #[allow(dead_code)]
     pub fn state(&self) -> HmmState {
         self.state
     }
@@ -197,6 +200,10 @@ impl GilbertElliottEstimator {
 
     /// Conditional loss rate given current state.
     /// In Good state: P(Good → Bad), in Bad state: P(Bad → Bad).
+    // Test-only consumer: `tests/gate_suite.rs` (the burst-conditional arm)
+    // reads it. Integration tests are separate crates, so the lib's dead_code
+    // lint cannot see that use — the allow records it instead of hiding it.
+    #[allow(dead_code)]
     pub fn conditional_loss_rate(&self) -> f64 {
         match self.state {
             HmmState::Good => self.p_gb(),
