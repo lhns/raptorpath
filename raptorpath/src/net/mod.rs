@@ -213,10 +213,10 @@ const GAP_ACK_MIN_INTERVAL: Duration = Duration::from_millis(2);
 /// hole via a SACK-bearing WindowAck (2×SRTT, clamped). The receiver never
 /// force-delivers past the hole, so this refresh — with the sender's tail
 /// sweep as backstop — is the recovery engine when gap acks are lost.
-const HOLE_NACK_REFRESH_MIN: Duration = Duration::from_millis(25);
-const HOLE_NACK_REFRESH_MAX: Duration = Duration::from_millis(100);
+pub const HOLE_NACK_REFRESH_MIN: Duration = Duration::from_millis(25);
+pub const HOLE_NACK_REFRESH_MAX: Duration = Duration::from_millis(100);
 /// Fallback per-seq retransmit cooldown when no SRTT sample exists (µs).
-const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
+pub const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 
 // ── Derived patience + derived stall definition ───────────────────────────
 //
@@ -243,7 +243,7 @@ const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 /// 1 ms (the pacing refill and the backpressure poll), so a threshold below
 /// that cannot be observed, let alone acted on. The engine's own granularity
 /// and the RFC's recommendation coincide at 1 ms.
-pub(crate) const TIMER_GRANULARITY_US: u64 = 1_000;
+pub const TIMER_GRANULARITY_US: u64 = 1_000;
 
 /// The sender loop's wake period (µs) as the emission-gap gauge's
 /// OBSERVATION GRANULARITY. Same 1 ms, named separately because it plays a
@@ -275,7 +275,7 @@ pub(crate) const LOOP_WAKE_US: u64 = 1_000;
 ///
 /// RFC 9002's kTimeThreshold (9/8) and kPacketThreshold (3) are UNTOUCHED:
 /// they are cited, not magic. Only the floor is derived.
-pub(crate) fn patience_floor_us(jitter_us: u64, srtt_us: u64) -> u64 {
+pub fn patience_floor_us(jitter_us: u64, srtt_us: u64) -> u64 {
     if srtt_us == 0 {
         return NACK_RETX_COOLDOWN_FLOOR_US;
     }
@@ -384,7 +384,7 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 ///
 /// Returns the threshold and whether the FLOOR term won (the `pf=` mechanism
 /// gauge: "patience is derived" means the floor term stops winning).
-pub(crate) fn mp_time_threshold_split(
+pub fn mp_time_threshold_split(
     srtt_us: u64,
     ewma_rtt_us: u64,
     floor_us: u64,
@@ -399,7 +399,7 @@ pub(crate) fn mp_time_threshold_split(
 }
 
 /// `mp_time_threshold_split` without the gauge bit.
-pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64, floor_us: u64) -> u64 {
+pub fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64, floor_us: u64) -> u64 {
     mp_time_threshold_split(srtt_us, ewma_rtt_us, floor_us).0
 }
 
@@ -414,13 +414,13 @@ pub(crate) fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64, floor_us: u64
 /// time-threshold suppression. Applies to ORIGINAL flights only — a
 /// retransmit's wire order is not its seq order, so retransmits are
 /// governed by the time threshold alone.
-pub(crate) const MP_PACKET_THRESHOLD: usize = 3;
+pub const MP_PACKET_THRESHOLD: usize = 3;
 
 /// The delivered intervals a gap report implies: between consecutive maximal
 /// missing runs everything was SACKed, and the seq just past the last gap is
 /// the SACK range that bounded it (its extent is unknown — one seq is the
 /// provable minimum). Pure; unit-tested.
-pub(crate) fn mp_delivered_intervals(gaps: &[(u64, u64)]) -> Vec<(u64, u64)> {
+pub fn mp_delivered_intervals(gaps: &[(u64, u64)]) -> Vec<(u64, u64)> {
     let mut out = Vec::with_capacity(gaps.len());
     for i in 0..gaps.len() {
         let lo = gaps[i].1 + 1;
@@ -438,7 +438,7 @@ pub(crate) fn mp_delivered_intervals(gaps: &[(u64, u64)]) -> Vec<(u64, u64)> {
 
 /// Fast-loss decision from per-path delivered evidence (sorted seq list):
 /// ≥ MP_PACKET_THRESHOLD delivered path-j seqs strictly above `s`.
-pub(crate) fn mp_fast_lost(delivered_on_path: &[u64], s: u64) -> bool {
+pub fn mp_fast_lost(delivered_on_path: &[u64], s: u64) -> bool {
     let above = delivered_on_path.len() - delivered_on_path.partition_point(|&x| x <= s);
     above >= MP_PACKET_THRESHOLD
 }
@@ -454,7 +454,7 @@ pub(crate) fn mp_fast_lost(delivered_on_path: &[u64], s: u64) -> bool {
 ///   `threshold_us` old — a gap on path A while the seq's flight is still
 ///   inside path B's expected-arrival clock is a gap the scheduler created,
 ///   not a hole.
-pub(crate) fn mp_hole_ripe(
+pub fn mp_hole_ripe(
     n_live_paths: usize,
     now_us: u64,
     flight_send_us: Option<u64>,
@@ -463,10 +463,99 @@ pub(crate) fn mp_hole_ripe(
     if n_live_paths <= 1 {
         return true;
     }
+    time_threshold_ripe(now_us, flight_send_us, threshold_us)
+}
+
+// ── Laws EXTRACTED from the sender loop (goal-gate "Component Benches",
+//    2026-08-08). Pure refactor: each function below reproduces, verbatim,
+//    an expression that was previously inline in `run_impl`'s gap-report
+//    handler, its tail-sweep arm, or the receiver's hole-refresh arm. They
+//    are extracted so the recovery plane can be driven WITHOUT a transport
+//    (`tests/recovery_bench.rs`) and unit-tested for good. No new
+//    constants; no behaviour change. ────────────────────────────────────
+
+/// RFC 9002 §6.1.2 time-threshold ripeness for ONE flight, path-count
+/// agnostic: the LIVE flight (last (re)send) must be at least
+/// `threshold_us` old. An unknown flight is ripe (never suppress a seq we
+/// cannot clock — the reliability backstop). This is the body `mp_hole_ripe`
+/// applies past its N ≤ 1 bypass, and verbatim the `RWM_RECOV_SP` arm's
+/// inline test.
+pub fn time_threshold_ripe(
+    now_us: u64,
+    flight_send_us: Option<u64>,
+    threshold_us: u64,
+) -> bool {
     match flight_send_us {
         None => true,
         Some(t) => now_us.saturating_sub(t) >= threshold_us,
     }
+}
+
+/// The LEGACY age gate (the pre-RFC-9002 channel, still the default when
+/// neither `RWM_RECOV_MP` nor `RWM_RECOV_SP` is armed): a gap seq whose
+/// ORIGINAL send is younger than half the pooled smoothed clock is merely
+/// late, not lost. Note the asymmetry the bench exists to expose — this
+/// clock is `srtt/2` where the two RFC channels use `9/8·srtt`, and the
+/// `srtt` fed to it is the pooled **app-echo** RTT (see
+/// `pooled_recovery_srtt_us`).
+pub fn legacy_age_ripe(now_us: u64, send_time_us: u64, srtt_us: u64) -> bool {
+    now_us.saturating_sub(send_time_us) >= srtt_us / 2
+}
+
+/// The POOLED recovery clock (µs): the MAX smoothed RTT over the live
+/// paths, falling back to the legacy floor when no path has a sample yet.
+///
+/// THIS is the argument the component bench interrogates. The samples fed
+/// here are the ESTIMATOR's app-echo RTT, which is store-dwell inclusive
+/// (ADR-0062 / §16.34: `QuicTransport::wire_rtt` is the dwell-free twin) —
+/// so the legacy age gate, the per-seq cooldown and the tail sweep all
+/// inherit the dwell through this one reduction.
+pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
+    path_rtt_us.iter().copied().max().unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+}
+
+/// The per-seq retransmit cooldown clock (µs): the pooled smoothed RTT,
+/// floored. `floor_us` is `NACK_RETX_COOLDOWN_FLOOR_US` with
+/// `RWM_PATIENCE_DERIVED` off and `patience_floor_us(jitter, srtt)` with it
+/// on — see `recovery_floor_us`.
+pub fn retx_cooldown_us(srtt_us: u64, floor_us: u64) -> u64 {
+    srtt_us.max(floor_us)
+}
+
+/// Has a seq's per-seq retransmit cooldown elapsed? (`false` ⇒ the service
+/// is suppressed by the cooldown channel.)
+pub fn cooldown_elapsed(now_us: u64, last_retx_us: u64, cooldown_us: u64) -> bool {
+    now_us.saturating_sub(last_retx_us) >= cooldown_us
+}
+
+/// The kGranularity analog actually supplied to `mp_time_threshold_split`
+/// and to `retx_cooldown_us`: the legacy literal, or the derived floor when
+/// `RWM_PATIENCE_DERIVED` is armed. `patience_derived` is an ENV GATE (an
+/// A/B arm for attribution), never a dial on the (δ, ρ, r) triangle.
+pub fn recovery_floor_us(patience_derived: bool, jitter_us: u64, srtt_us: u64) -> u64 {
+    if patience_derived {
+        patience_floor_us(jitter_us, srtt_us)
+    } else {
+        NACK_RETX_COOLDOWN_FLOOR_US
+    }
+}
+
+/// P10b tail-sweep timeout (µs): 2×SRTT clamped to
+/// [`TAIL_SWEEP_MIN_US`, `TAIL_SWEEP_MAX_US`]. The last symbols of a burst
+/// have no successors, so the receiver can never SACK a gap behind them —
+/// this is the sender's own stall detector.
+pub fn tail_sweep_timeout_us(srtt_us: u64) -> u64 {
+    (srtt_us.saturating_mul(2)).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US)
+}
+
+/// Receiver hole-refresh cadence: 2×SRTT clamped to
+/// [`HOLE_NACK_REFRESH_MIN`, `HOLE_NACK_REFRESH_MAX`], falling back to the
+/// MAX when no path clock exists yet. In reliable window mode this cadence
+/// — not any sender timer — is what re-presents a stalled hole to the
+/// sender, so it bounds every recovery channel's observable latency.
+pub fn hole_nack_refresh(srtt: Option<Duration>) -> Duration {
+    srtt.map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
+        .unwrap_or(HOLE_NACK_REFRESH_MAX)
 }
 // ── δ-honest overload shedding (goal-gate "Unified Shedding", fix C;
 //    part of the unified machine's realtime semantics under `RWM_UNIFIED`,
@@ -493,7 +582,7 @@ pub(crate) fn shed_armed(unified_on: bool, reliable: bool, gate: bool) -> bool {
 /// own D (§16.20.3), measured from the symbol's original send. b(Realtime)
 /// = ½, so on the realtime path D = RTprop/2: a retransmit older than that
 /// lands after the receiver's δ-horizon give-up (send + owd + D) — waste.
-pub(crate) fn shed_deadline_us(b_hint: f64, rtprop_us: u64) -> u64 {
+pub fn shed_deadline_us(b_hint: f64, rtprop_us: u64) -> u64 {
     ((b_hint.min(2.0) * rtprop_us as f64) as u64).min(2 * rtprop_us)
 }
 
@@ -501,7 +590,7 @@ pub(crate) fn shed_deadline_us(b_hint: f64, rtprop_us: u64) -> u64 {
 /// `budget_frac` = the derived 1−ρ (`residual_loss_after_fec`); the
 /// cumulative shed count may never exceed budget_frac × the stream's
 /// source count. Cold start (budget 0, no ε̂/r sample) sheds nothing.
-pub(crate) fn shed_allowed(
+pub fn shed_allowed(
     age_us: u64,
     deadline_us: u64,
     shed_total: u64,
@@ -541,8 +630,8 @@ pub(crate) fn shed_recv_budget_ok(holes_given_up: u64, frontier_seqs: u64, eps_r
 /// Must sit above the ack arrival time (~1×SRTT + jitter, or the sweep
 /// fires spuriously on every in-flight symbol) and below the receiver's
 /// reorder hold (60ms floor) plus the inner-TCP RTO (~200ms).
-const TAIL_SWEEP_MIN_US: u64 = 25_000;
-const TAIL_SWEEP_MAX_US: u64 = 100_000;
+pub const TAIL_SWEEP_MIN_US: u64 = 25_000;
+pub const TAIL_SWEEP_MAX_US: u64 = 100_000;
 /// Upper clamp on the block-mode idle re-announce cadence (P8). The
 /// re-announce timeout is otherwise 1.5×SRTT, but under a stalled block the
 /// per-path SRTT estimate inflates well past the true RTT (L1 C3: 40 ms link,
@@ -2786,9 +2875,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                         // Reliable policy: the hole is never given up on —
                         // this timer instead re-advertises the gap (SACK
                         // WindowAck) at 2×SRTT cadence until recovered.
-                        let refresh = srtt
-                            .map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
-                            .unwrap_or(HOLE_NACK_REFRESH_MAX);
+                        let refresh = hole_nack_refresh(srtt);
                         Some(last_hole_nack_at + refresh)
                     } else {
                         // δ-honest shed (fix C): under the unified realtime
@@ -9072,15 +9159,15 @@ async fn run_window_sender(
                     .max(last_tail_sweep_us);
                 let srtt_us = {
                     let sched = scheduler.lock();
-                    sched
+                    let pooled: Vec<u64> = sched
                         .active_paths()
                         .iter()
                         .filter_map(|id| sched.path(*id))
                         .map(|p| p.estimator.rtt().as_micros() as u64)
-                        .max()
-                        .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+                        .collect();
+                    pooled_recovery_srtt_us(&pooled)
                 };
-                let timeout_us = (srtt_us * 2).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US);
+                let timeout_us = tail_sweep_timeout_us(srtt_us);
                 let deadline_us = last_activity_us + timeout_us;
                 let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
                 tokio::time::Instant::now() + remaining
@@ -9463,20 +9550,18 @@ async fn run_window_sender(
                     .map(|p| p.rtt_jitter_us())
                     .max()
                     .unwrap_or(0);
-                ids.iter()
+                let pooled: Vec<u64> = ids
+                    .iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.estimator.rtt().as_micros() as u64)
-                    .max()
-                    .unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+                    .collect();
+                pooled_recovery_srtt_us(&pooled)
             };
             // Goal-gate "Unlock The Default 2": the per-seq retransmit
             // cooldown's floor. Gate OFF ⇒ the legacy literal, bit-exact.
-            let pooled_floor_us = if patience_derived {
-                patience_floor_us(pooled_jitter_us, srtt_us)
-            } else {
-                NACK_RETX_COOLDOWN_FLOOR_US
-            };
-            let retx_cooldown_us = srtt_us.max(pooled_floor_us);
+            let pooled_floor_us =
+                recovery_floor_us(patience_derived, pooled_jitter_us, srtt_us);
+            let retx_cooldown_us = retx_cooldown_us(srtt_us, pooled_floor_us);
             // The per-flight law threshold for a path (falls back to the
             // pooled cooldown clock when the path has no snapshot).
             let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64, u64)>,
@@ -9487,11 +9572,8 @@ async fn run_window_sender(
                         // Goal-gate "Unlock The Default 2": the kGranularity
                         // analog. Gate OFF ⇒ the legacy literal ⇒ this call
                         // is bit-identical to its pre-2026-08-07 form.
-                        let floor = if patience_derived {
-                            patience_floor_us(jit, srtt.max(ewma))
-                        } else {
-                            NACK_RETX_COOLDOWN_FLOOR_US
-                        };
+                        let floor =
+                            recovery_floor_us(patience_derived, jit, srtt.max(ewma));
                         let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
                         if diag_on {
                             if floor_won {
@@ -9587,7 +9669,7 @@ async fn run_window_sender(
                     // Per-seq cooldown: repeated gap acks for the same
                     // hole must not resend more than once per SRTT.
                     if let Some(&(last, _)) = nack_retx_at.get(&seq) {
-                        if now_repair_us.saturating_sub(last) < retx_cooldown_us {
+                        if !cooldown_elapsed(now_repair_us, last, retx_cooldown_us) {
                             if diag_on {
                                 mpd_supp_cool += 1;
                             }
@@ -9651,13 +9733,13 @@ async fn run_window_sender(
                         // clocks) is merely late/queued, not lost. TIME
                         // channel only (see the gate's decl note);
                         // suppression-only — the hole-refresh re-advertises.
-                        let time_ripe = match mp_flight {
-                            Some((t, p)) => {
-                                now_repair_us.saturating_sub(t)
-                                    >= mp_thr_of(&mp_clocks, p)
-                            }
-                            None => true,
-                        };
+                        let time_ripe = time_threshold_ripe(
+                            now_repair_us,
+                            mp_flight.map(|(t, _)| t),
+                            mp_flight
+                                .map(|(_, p)| mp_thr_of(&mp_clocks, p))
+                                .unwrap_or(0),
+                        );
                         if !time_ripe {
                             if diag_on {
                                 mpd_supp_law += 1;
@@ -9670,7 +9752,7 @@ async fn run_window_sender(
                         // repair symbols old enough that an in-flight copy
                         // would already have been sacked.
                         if let Some(&(send_time_us, _, _)) = retransmit_buffer.get(&seq) {
-                            if now_repair_us.saturating_sub(send_time_us) < srtt_us / 2 {
+                            if !legacy_age_ripe(now_repair_us, send_time_us, srtt_us) {
                                 if diag_on {
                                     mpd_supp_age += 1;
                                 }
@@ -11918,7 +12000,7 @@ mod tests {
     /// be a cosmetic edit dressed as a derivation.
     #[test]
     fn tail_sweep_srtt_fallback_is_inert_to_the_patience_floor() {
-        let sweep = |srtt_us: u64| (srtt_us * 2).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US);
+        let sweep = tail_sweep_timeout_us;
         assert_eq!(sweep(NACK_RETX_COOLDOWN_FLOOR_US), TAIL_SWEEP_MIN_US);
         assert_eq!(sweep(TIMER_GRANULARITY_US), TAIL_SWEEP_MIN_US);
         for f in [0u64, 1, 1_000, 1_400, 5_000, 10_000, 12_500] {
@@ -11926,6 +12008,111 @@ mod tests {
         }
         // The first value that is NOT inert, recorded so the bound is exact.
         assert!(sweep(12_501) > TAIL_SWEEP_MIN_US);
+    }
+
+    // ----- goal-gate "Component Benches" (2026-08-08): the EXTRACTED laws.
+    // Each test below re-evaluates the expression that used to be INLINE in
+    // `run_impl` and asserts the extracted function is identical to it over
+    // a dense grid. These are equivalence proofs for a pure refactor, not
+    // new behaviour claims.
+
+    #[test]
+    fn extracted_laws_are_identical_to_the_inline_expressions_they_replaced() {
+        let times = [0u64, 1, 999, 1_000, 5_000, 9_999, 10_000, 11_250, 79_000, 177_750, 1 << 40];
+        let clocks = [0u64, 1_000, 8_000, 10_000, 12_500, 40_000, 158_000, 200_000];
+
+        for &now in &times {
+            for &t in &times {
+                for &thr in &clocks {
+                    // §6.1.2 ripeness (both the RECOV_SP arm and mp_hole_ripe's body).
+                    assert_eq!(
+                        time_threshold_ripe(now, Some(t), thr),
+                        now.saturating_sub(t) >= thr,
+                        "time_threshold_ripe({now},{t},{thr})"
+                    );
+                    // Per-seq cooldown (the `< cooldown ⇒ suppress` inline test).
+                    assert_eq!(
+                        cooldown_elapsed(now, t, thr),
+                        !(now.saturating_sub(t) < thr),
+                        "cooldown_elapsed({now},{t},{thr})"
+                    );
+                }
+                for &srtt in &clocks {
+                    // Legacy age gate: `now - send < srtt/2 ⇒ suppress`.
+                    assert_eq!(
+                        legacy_age_ripe(now, t, srtt),
+                        !(now.saturating_sub(t) < srtt / 2),
+                        "legacy_age_ripe({now},{t},{srtt})"
+                    );
+                }
+            }
+        }
+        // An unknown flight is ripe — the reliability backstop.
+        assert!(time_threshold_ripe(0, None, u64::MAX));
+        // mp_hole_ripe still bypasses at N ≤ 1 and delegates above it.
+        for n in 0..4usize {
+            for &thr in &clocks {
+                let expect = n <= 1 || time_threshold_ripe(50_000, Some(0), thr);
+                assert_eq!(mp_hole_ripe(n, 50_000, Some(0), thr), expect, "n={n} thr={thr}");
+            }
+        }
+
+        // Pooled clock reduction + cooldown + floor.
+        assert_eq!(pooled_recovery_srtt_us(&[]), NACK_RETX_COOLDOWN_FLOOR_US);
+        assert_eq!(pooled_recovery_srtt_us(&[8_000, 158_000, 12_000]), 158_000);
+        for &s in &clocks {
+            for &f in &clocks {
+                assert_eq!(retx_cooldown_us(s, f), s.max(f));
+            }
+            assert_eq!(recovery_floor_us(false, 400, s), NACK_RETX_COOLDOWN_FLOOR_US);
+            assert_eq!(recovery_floor_us(true, 400, s), patience_floor_us(400, s));
+        }
+
+        // Receiver hole-refresh cadence.
+        assert_eq!(hole_nack_refresh(None), HOLE_NACK_REFRESH_MAX);
+        for ms in [0u64, 5, 10, 12, 13, 20, 50, 51, 200] {
+            let s = Duration::from_millis(ms);
+            assert_eq!(
+                hole_nack_refresh(Some(s)),
+                (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX)
+            );
+        }
+    }
+
+    /// THE ASYMMETRY the component bench exists to expose, pinned as a law
+    /// fact rather than prose: at the c7 operating point (RTprop ≈ 10 ms)
+    /// the recovery clock's ARGUMENT — not its constants — sets patience.
+    /// Fed the store-dwell-inclusive app-echo RTT (measured 158 ms at c7,
+    /// goal-gate "Unlock The Default 2") every channel's patience is ~×16–18
+    /// RTprop; fed the dwell-free wire clock it is ~×1.1–1.4.
+    #[test]
+    fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
+        const RTPROP_US: u64 = 10_000;
+        const APP_ECHO_US: u64 = 158_000; // measured, c7
+        const WIRE_US: u64 = 14_000; // rtp 10 + measured wireQ 4, c7 p0
+
+        let f = NACK_RETX_COOLDOWN_FLOOR_US;
+        // §6.1.2 time threshold (the RECOV_MP / RECOV_SP channel).
+        assert_eq!(mp_time_threshold_us(0, APP_ECHO_US, f), 177_750);
+        assert_eq!(mp_time_threshold_us(0, WIRE_US, f), 15_750);
+        // Legacy age gate (the shipped default channel) = srtt/2.
+        assert_eq!(APP_ECHO_US / 2, 79_000);
+        assert_eq!(WIRE_US / 2, 7_000);
+        // Per-seq cooldown.
+        assert_eq!(retx_cooldown_us(APP_ECHO_US, f), APP_ECHO_US);
+        assert_eq!(retx_cooldown_us(WIRE_US, f), WIRE_US);
+        // Tail sweep saturates its 100 ms clamp under app-echo and sits just
+        // above its 25 ms floor under the wire clock.
+        assert_eq!(tail_sweep_timeout_us(APP_ECHO_US), TAIL_SWEEP_MAX_US);
+        assert_eq!(tail_sweep_timeout_us(WIRE_US), 28_000);
+        // The ratios, stated as the claim: ×17.8 vs ×1.6 RTprop.
+        assert_eq!(mp_time_threshold_us(0, APP_ECHO_US, f) / RTPROP_US, 17);
+        assert_eq!(mp_time_threshold_us(0, WIRE_US, f) / RTPROP_US, 1);
+        // And the derived floor changes NEITHER — it is not the binder.
+        assert_eq!(
+            mp_time_threshold_us(0, APP_ECHO_US, patience_floor_us(400, APP_ECHO_US)),
+            mp_time_threshold_us(0, APP_ECHO_US, f)
+        );
     }
 
     /// 3a, THE COINCIDENCE PROPERTY — the pre-registered test. Wherever the
