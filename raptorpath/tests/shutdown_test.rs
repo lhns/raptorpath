@@ -121,10 +121,6 @@ async fn test_shutdown_control_message_variants() {
         ControlMessage::Pong {
             echo_timestamp_us: 12345,
         },
-        ControlMessage::RepairRequest {
-            block_id: 7,
-            additional_count: 3,
-        },
     ];
 
     for original in &messages {

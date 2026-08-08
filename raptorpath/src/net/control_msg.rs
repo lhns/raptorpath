@@ -165,17 +165,6 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             info!(path_id, "peer is shutting down");
         }
 
-        ControlMessage::PathAdd { path_id: new_path_id, bind_addr } => {
-            info!(new_path_id, %bind_addr, "peer announced new path");
-            // The peer is adding a path. We'll handle the connection setup
-            // through the path command processor.
-        }
-
-        ControlMessage::PathRemove { path_id: removed_id } => {
-            info!(removed_id, "peer removed path");
-            ctx.scheduler.lock().remove_path(removed_id);
-        }
-
         ControlMessage::WindowStart { symbol_size, backend, packed } => {
             debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
         }
@@ -192,27 +181,14 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             cum_received,
         ),
 
-        ControlMessage::WindowNack { gaps } => on_window_nack(ctx, path_id, gaps),
-
         ControlMessage::GenerationDeficit { deficits } => {
             on_generation_deficit(ctx, path_id, deficits)
         }
 
-        ControlMessage::NackAck { nack_id } => {
-            debug!(path_id, nack_id, "NackAck received — RX path alive");
-            // NackAck reception is tracked by the receiver for RX loss estimation.
-            // The receiver updates its estimator based on how many NackAcks come back
-            // vs how many NACKs were sent. This is handled at the application level
-            // in the receiver loop, not here, since we need access to the NACK counter.
-        }
-
-        // ADR-0030: WindowSwitch/WindowSwitchAck handled in receiver/sender loops directly
+        // ADR-0030: never sent by this binary; the real guard (warn + ignore)
+        // lives in the receiver loop in `net::mod`.
         ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
             debug!(path_id, flush_seq, ?new_backend, symbol_size, "window switch request (handled in receiver loop)");
-        }
-
-        ControlMessage::WindowSwitchAck { flush_seq } => {
-            debug!(path_id, flush_seq, "window switch ack (handled in sender loop)");
         }
 
         _ => {}
@@ -789,20 +765,6 @@ fn on_window_ack(
                 let _ = tx.try_send(gaps);
             }
         }
-    }
-}
-
-fn on_window_nack(ctx: &ControlCtx<'_>, path_id: u32, gaps: Vec<(u64, u64)>) {
-    debug!(path_id, gap_count = gaps.len(), "window NACK received");
-    // Send NackAck back to receiver for RX path loss measurement
-    // Use gap count as a lightweight nack_id proxy
-    let nack_id = gaps.len() as u32;
-    let _ = ctx.transport.send_control_datagram(
-        path_id,
-        ControlMessage::NackAck { nack_id },
-    );
-    if let Some(tx) = ctx.nack_tx {
-        let _ = tx.try_send(gaps);
     }
 }
 

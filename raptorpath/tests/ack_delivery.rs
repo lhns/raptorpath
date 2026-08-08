@@ -158,28 +158,6 @@ fn test_ack_with_large_received_ids() {
 }
 
 #[test]
-fn test_repair_request_roundtrip() {
-    let msg = ControlMessage::RepairRequest {
-        block_id: 42,
-        additional_count: 5,
-    };
-    let wire = WireMessage::Control(msg);
-    let data = wire.serialize().unwrap();
-    let decoded = WireMessage::deserialize(&data).unwrap();
-
-    match decoded {
-        WireMessage::Control(ControlMessage::RepairRequest {
-            block_id,
-            additional_count,
-        }) => {
-            assert_eq!(block_id, 42);
-            assert_eq!(additional_count, 5);
-        }
-        _ => panic!("expected RepairRequest"),
-    }
-}
-
-#[test]
 fn test_path_report_roundtrip() {
     let msg = ControlMessage::PathReport {
         path_id: 2,

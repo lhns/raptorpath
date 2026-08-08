@@ -1,8 +1,9 @@
 //! Integration tests for per-block FEC backend selection (ADR-0030).
 //!
 //! Tests block-mode per-block switching with actual encode/decode cycles
-//! across different backends, and the WindowSwitch/WindowSwitchAck wire
-//! round-trips.
+//! across different backends, and the WindowSwitch wire round-trip
+//! (`WindowSwitchAck` was deleted in dead-code batch 2 — never constructed;
+//! `WindowSwitch` itself is kept as a hostile-peer/version guard).
 //!
 //! The BackendSelector arms were dropped in the dead-code refactor (batch 1):
 //! MID-STREAM backend switching was removed from the data path (paper §16.4)
@@ -148,21 +149,6 @@ fn test_window_switch_message_roundtrip() {
             assert_eq!(symbol_size, 512);
         }
         _ => panic!("expected WindowSwitch"),
-    }
-}
-
-#[test]
-fn test_window_switch_ack_roundtrip() {
-    let msg = WireMessage::Control(ControlMessage::WindowSwitchAck { flush_seq: 100 });
-
-    let bytes = msg.serialize().unwrap();
-    let decoded = WireMessage::deserialize(&bytes).unwrap();
-
-    match decoded {
-        WireMessage::Control(ControlMessage::WindowSwitchAck { flush_seq }) => {
-            assert_eq!(flush_seq, 100);
-        }
-        _ => panic!("expected WindowSwitchAck"),
     }
 }
 
