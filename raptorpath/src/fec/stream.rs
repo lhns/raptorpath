@@ -2,7 +2,6 @@
 //! then streams repair symbols based on controller demand.
 
 use super::traits::{EncodingParams, FecBackend, FecEncoder, WireSymbol};
-use tokio::sync::mpsc;
 
 /// A FEC stream that first yields all source symbols, then generates
 /// repair symbols on demand from the controller.

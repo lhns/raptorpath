@@ -9,7 +9,6 @@
 
 mod common;
 
-use bytes::Bytes;
 use common::*;
 use raptorpath::control::estimator::LossEstimator;
 use raptorpath::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
