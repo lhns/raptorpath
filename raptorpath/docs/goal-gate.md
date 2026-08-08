@@ -138,6 +138,188 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    must be checked, poll at most once per ~20 min and expect to record
    it. (Added 2026-08-07.)
 
+14. **NO L1 BATTERY UNTIL THE MECHANISM IS CHARACTERIZED AT COMPONENT
+   LEVEL, AND THE COMPONENT RESULT PREDICTS A NUMBER L1 CAN CONFIRM OR
+   REFUTE.** L1's job is COMPOSITION effects; discovery is a component
+   job. Our own record splits cleanly on this line:
+
+   | built component-first | built battery-first |
+   |---|---|
+   | decode-CPU / BOCD ceiling · MTU blackhole wedge repro · emission profiling · the `pf=` floor/clock gauge | "Unlock The Default 1: ack-merge" · "Unlock The Default 2: derived patience" |
+   | LANDED — each produced a number, then a battery confirmed it | FALSIFIED — and in BOTH cases the PREMISE was wrong, not the mechanism |
+
+   Both falsifications were premise errors a component bench would have
+   caught in minutes: ack-merge counted send SITES where the claim needed
+   send RATES (density measured, headline refuted, pre-battery); derived
+   patience reasoned from RTprop 8–10 ms where the clock actually reads a
+   store-dwell-inclusive 158 ms, so the floor it replaced won ZERO of
+   501 542–1 366 558 evaluations at c7. Those are component facts that
+   cost hours of VM-locked L1 time to learn.
+
+   Concretely, before pre-registering a battery:
+   (a) drive the mechanism ALONE, locally, deterministically, in seconds,
+       calling the SHIPPED laws (extract them to pure functions if they are
+       inline — that extraction is part of the deliverable);
+   (b) report a DISTRIBUTION, not a mean, and the attribution of WHICH
+       channel/branch fired;
+   (c) state, in the ledger, what the component result PREDICTS for the
+       battery as a number with a direction and a magnitude — and state
+       what the bench CANNOT see, so the battery knows what it is for;
+   (d) if the component bench refutes the premise, the battery is not run.
+   See "Component Benches" below. (Added 2026-08-08.)
+
+## Component Benches (2026-08-08)
+
+The instruments that satisfy MEASUREMENT DISCIPLINE 14. Each drives ONE
+plane alone — no transport, no tokio, no VM — by calling the shipped laws
+directly, so it cannot drift from the engine by construction.
+
+| bench | plane | run |
+|---|---|---|
+| `tests/gen_decode_bench.rs` | the generation coding machine (decode-CPU) | `cargo test --test gen_decode_bench --release -- --ignored --nocapture` |
+| `tests/recovery_bench.rs` | the RECOVERY plane (holes → service) | `cargo test --test recovery_bench --release -- --ignored --nocapture` |
+
+### `recovery_bench` — what it measures
+
+A deterministic discrete-event driver: synthetic arrival/loss patterns in,
+per-hole *when and why was it served* out. Per hole it records loss → first
+service, the channel that ADMITTED the service (§6.1.2 **time** threshold /
+§6.1.1 **fast** packet threshold / the legacy **age** gate / the tail
+**sweep** / the δ-honest **shed**), and every redundant service after it. Per
+cell it prints p50/p90/p99/max of that latency, the channel mix, the retx and
+sweep totals, and the per-channel suppression counts. Axes (comma lists,
+`RWM_RB_*`): RTprop 5–200 ms × loss 0.1–5 % × uniform/GE × 1 or 2 paths ×
+the clock ARGUMENT (`app`/`wire`) × the gate arms (`shipped`, `legacy`,
+`sp`, `pd`). **768 cells in 10 s.** `recovery_bench_fixtures_pin_the_plane`
+is a non-ignored 60 ms regression test that pins characteristic outputs.
+
+The original loss pattern is precomputed in seq order, so the wire is
+IDENTICAL across every arm and clock of a cell — the A/B is over the laws.
+
+**What it cannot see** (the boundary that keeps L1 honest): congestion
+control (no cwnd/pacing/backoff ⇒ hole→service latency is a LOWER bound);
+the NACK budget's congestion modulation; FEC (ARQ-only ⇒ retx counts are an
+UPPER bound wherever r > 0 would have covered the hole); **the store dwell
+itself, which is an INPUT here, not an output** — the bench says what a given
+dwell does to patience, never what changing the clock does to the dwell;
+scheduler placement, per-path CC coupling, failover; control-plane loss.
+
+### FIRST RESULT — the recovery clock's ARGUMENT (§16.40's named successor)
+
+The plane's every clock is fed by `pooled_recovery_srtt_us` and the per-path
+`(copa_srtt, estimator_rtt)` pair. The estimator's app-echo RTT is
+STORE-DWELL INCLUSIVE (158 ms measured at c7 against RTprop 10 ms);
+`QuicTransport::wire_rtt` (ADR-0062/§16.34) is its dwell-free twin. The
+bench swaps ONLY that argument. Calibration: wireQ 4 ms + dwell 144 ms ⇒
+path-0 app-echo = the measured 158 ms; skew 5 ms; 100 Mbit/s; N = 6 000
+symbols; seeds 42 + 7 pooled.
+
+**(a) Patience is set by the ARGUMENT, not by the constants.** kTimeThreshold
+(9/8) and kPacketThreshold (3) are untouched in both columns:
+
+| RTprop | patience app-echo | ×RTprop | patience wire | ×RTprop | app/wire |
+|---|---|---|---|---|---|
+| 5 ms | 172.1 ms | **×34.4** | 10.1 ms | ×2.0 | ×17.0 |
+| 10 ms (c7) | 177.8 ms | **×17.8** | 15.8 ms | ×1.6 | ×11.3 |
+| 20 ms | 189.0 ms | ×9.4 | 27.0 ms | ×1.4 | ×7.0 |
+| 50 ms | 222.8 ms | ×4.5 | 60.8 ms | ×1.2 | ×3.7 |
+| 100 ms | 279.0 ms | ×2.8 | 117.0 ms | ×1.2 | ×2.4 |
+| 200 ms | 391.5 ms | ×2.0 | 229.5 ms | ×1.1 | ×1.7 |
+
+The dwell is ADDITIVE, so the distortion is worst exactly where our target
+cells live: at c7 patience is ×17.8 RTprop app-clocked and ×1.6 wire-clocked;
+at 200 ms RTprop the two nearly coincide. The same argument sets the per-seq
+cooldown (168 ms vs 24 ms at c7) and the tail sweep (saturating its 100 ms
+clamp app-clocked, 48 ms wire-clocked). It does NOT set the receiver's
+hole-refresh cadence — that reads the Copa clock and is 48 ms in both arms.
+
+**(b) Does the FAST (packet-threshold) channel get to fire? YES — it is
+CARRYING the plane.** Shipped arm, np = 2, per cell (first-service mix):
+
+| cell | app-echo (fast share, svc p50) | wire (fast share, svc p50) |
+|---|---|---|
+| rtp 10, unif 2.6 % | **99.7 %**, 16.8 ms | 51.0 %, 16.8 ms |
+| rtp 10, GE 2.6 % (c7) | **99.0 %**, 19.9 ms | 78.7 %, 17.7 ms |
+| rtp 5, GE 0.1 % | 0 % (time 75 %, sweep 25 %), 208.8 ms | 0 % (time 100 %), 22.9 ms |
+| rtp 10, GE 5 % | 49.6 %, 177.9 ms | 67.4 %, 17.3 ms |
+| rtp 50, GE 5 % | 12.0 %, 401.4 ms | 1.4 %, 185.1 ms |
+
+So the answer to "dominate or starved" is **dominate — because the time
+channel is starved** — with two named exceptions where it CANNOT: below
+~1 % loss the fast channel has too little same-path evidence to reach 3
+(0.1 % GE: 0 % fast, and the app arm's p50 is a full 209 ms), and above
+~5 % GE loss the same-path successors are inside the same burst (rtp 50:
+12 % fast, p50 401 ms). Those are the two ends where the argument is not a
+tail effect but a MEDIAN effect. At c7 the §6.1.2 threshold (177.75 ms) never ripens
+inside a hole's life, so §6.1.1 same-path FIFO evidence serves ~99 % of
+holes and the median is FINE (19.9 ms). The cost is entirely in the TAIL:
+the ~1 % of holes the fast channel cannot reach (in-burst holes whose
+same-path successors are also lost; the last symbols of a burst) wait the
+FULL time threshold, producing a hard p90/p99 shelf at 174/176 ms.
+
+| c7 cell (rtp 10, GE 2.6 %, np 2, shipped) | app-echo | wire | ratio |
+|---|---|---|---|
+| hole→service p50 | 19.9 ms | 17.7 ms | ×0.89 |
+| p90 | **173.8 ms** | **27.9 ms** | **×0.16** |
+| p99 | 175.6 ms | 28.9 ms | ×0.16 |
+| max | 189.7 ms | 29.0 ms | ×0.15 |
+| retx | 202 | 206 | ×1.02 |
+| sweeps | 2 | 4 | ×2 |
+| redundant services | 0 | 2 | — |
+
+Single-path is where the argument bites the MEDIAN, because at N ≤ 1 the MP
+law is inert and the legacy `srtt/2` gate owns the decision: rtp 10, GE 2.6 %,
+np = 1 → p50 **80.1 ms → 11.5 ms (×0.14)**, retx 162 → 164, 100 % age
+channel in both arms.
+
+**Two component facts that fall out, both worth more than the headline:**
+
+1. **`RWM_PATIENCE_DERIVED` is measurably INERT here — the bench reproduces
+   the L1 refutation, including its "where it binds, nothing moves" half.**
+   Across all 192 cells the `pd` arm's holes, latencies, channel mix, retx,
+   sweeps and suppression counts are IDENTICAL to `shipped`. The only
+   difference anywhere is the reported cooldown CLOCK in the 8 cells
+   (RTprop 5 ms, np = 1, wire) where the pooled srtt (9 ms) actually falls
+   below the 10 ms literal: the derived floor takes it to 9 ms — and
+   nothing downstream moves, because `max(srtt, floor)` returns the srtt
+   either way. That is §16.40's verdict re-derived in 10 seconds, and it is
+   the validation of the instrument against a known L1 result.
+2. **Wire-clocking is only safe WITH the RFC 9002 hole law.** In the
+   `legacy` arm at np = 2 (both RFC channels off), swapping to the wire clock
+   takes retx from 202 to **5 171 (×25.6)** — the age gate re-fires on
+   scheduler-created cross-path gaps every 24 ms instead of every 168 ms.
+   The app-echo clock has been ACCIDENTALLY SUPPRESSING that flood. Any
+   battery that changes the argument must have `RWM_RECOV_MP` on (it is the
+   default since 2026-07-21), and must record it.
+
+   A third, for the successor's own scope: `RWM_RECOV_SP` at np = 1 on the
+   app-echo clock is **strictly worse** than the gate it replaces — p50
+   179.2 ms vs 80.1 ms — because 9/8 > 1/2 of the same inflated srtt. The
+   channel was never the problem; the argument was.
+
+### THE PREDICTION FOR L1 (pre-registered here, before any battery)
+
+If a battery arms a wire-clocked recovery argument at c7 on the current
+default stack (`RWM_RECOV_MP` on), the component bench predicts:
+
+* **retx changes by < 5 %** (bench: ×1.02) and **sweeps by < 5 per transfer**
+  (bench: 2 → 4). *A battery that pre-registers a retransmit REDUCTION as its
+  success clause is pre-registering the wrong clause* — the plane does not
+  retransmit more under a 178 ms patience, it retransmits LATER.
+* **The recovery-latency TAIL collapses by ×5–7**: p90 174 → 28 ms,
+  p99 176 → 29 ms. The observable at L1 is the inner-TCP's view — RTO-scale
+  stalls behind a hole, i.e. `sidle`/hole-dwell tail and inner retransmits —
+  not the retx counter.
+* **Single-path cells move ×6–7 at the MEDIAN** (80 → 12 ms), so `sc2`/lossy
+  single is the higher-signal cell for this change than dual-path c7.
+* **`RWM_PATIENCE_DERIVED` contributes nothing** in any arm (bench: exactly
+  zero difference), confirming its 2026-08-07 refutation from the component
+  side.
+
+If L1 measures a retx swing ≫ 5 % on the default stack, the divergence is a
+COMPOSITION effect the bench cannot see (CC/FEC/budget interaction) and is
+itself the finding.
+
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
 *Decision record: → decision index [ADR-0052…0067](adr/README.md) + [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md)*

@@ -10318,6 +10318,99 @@ distinguish "the network lost it" from "we have not sent it yet" — the
 same class of defect as the ack-interval anchor over-read §16.37
 eliminated, one layer down. Anyone reopening this should start there.
 
+### 16.41 The component bench: the recovery plane driven alone says patience at c7 is ×17.8 RTprop and its cost is entirely in the TAIL — plus a method change, no L1 battery before a component number (2026-08-08, `feat/recovery-bench`, `tests/recovery_bench.rs`, no default change)
+
+§16.39 and §16.40 were both falsified on their PREMISE, not their
+mechanism: one counted send SITES where it needed send RATES, the other
+reasoned from an 8–10 ms RTprop where the clock in question reads a
+store-dwell-inclusive 158 ms. Both premises are component facts, and
+both cost hours of VM-locked L1 time to learn. The method change this
+section records is therefore a standing rule (MEASUREMENT DISCIPLINE
+14): **no L1 battery until the mechanism is characterized at component
+level and the component result predicts a number L1 can confirm or
+refute.** L1's job is composition effects; discovery is a component job.
+
+**The instrument.** `tests/recovery_bench.rs` drives the recovery plane
+ALONE — no congestion control, no scheduler, no placement, no
+transport, no tokio — as a deterministic discrete-event simulator over
+synthetic arrival/loss patterns. It does not reimplement the plane: the
+laws were first EXTRACTED from the sender loop into pure functions
+(`time_threshold_ripe`, `legacy_age_ripe`, `cooldown_elapsed`,
+`retx_cooldown_us`, `recovery_floor_us`, `pooled_recovery_srtt_us`,
+`tail_sweep_timeout_us`, `hole_nack_refresh`, joining the already-pure
+`mp_*`/`patience_floor_us`/`shed_*`), a pure refactor proved
+behaviour-identical over a dense grid, and the bench calls exactly
+those. Per hole it records loss → first service, WHICH channel admitted
+it, and every redundant service after; per cell it reports a
+distribution. 768 cells — RTprop 5–200 ms × loss 0.1–5 % × uniform/GE ×
+1–2 paths × clock argument × four gate arms, two seeds — run in **10
+seconds**. The extraction is the durable half: a plane whose decisions
+are inline in a 12 000-line async loop can only be measured through a
+whole transport, which is exactly why its premises went unchecked.
+
+**The characterization.** Patience is set by the ARGUMENT of the
+recovery clock, not by its constants: kTimeThreshold 9/8 and
+kPacketThreshold 3 are identical in both columns, and the store dwell
+is ADDITIVE, so the distortion is worst exactly where the target cells
+live — ×34.4 RTprop at 5 ms, **×17.8 at c7's 10 ms**, ×2.0 at 200 ms
+app-clocked, against ×2.0 / ×1.6 / ×1.1 wire-clocked. The same argument
+sets the per-seq cooldown (168 vs 24 ms at c7) and saturates the tail
+sweep's 100 ms clamp. It does NOT set the receiver's hole-refresh
+cadence, which reads the Copa clock — an asymmetry the bench exposes
+and which bounds every channel's observable latency at 48 ms regardless.
+
+**The channel mix is the surprise, and it is the reason the plane has
+looked healthy.** At c7 the §6.1.2 time channel never ripens inside a
+hole's life, so RFC 9002 §6.1.1's same-path FIFO evidence — the fast
+channel — serves **99 % of holes**, and the MEDIAN recovery latency is
+fine (19.9 ms app-clocked vs 17.7 ms wire-clocked, ×0.89). The entire
+cost is in the tail: the ~1 % of holes the fast channel cannot reach
+(in-burst holes whose same-path successors are also lost, and the last
+symbols of a burst) wait the full 177.75 ms, producing a hard shelf at
+p90 = 173.8 ms and p99 = 175.6 ms, which wire-clocking collapses to
+27.9 / 28.9 ms — **×0.16**, at retx ×1.02. Where the fast channel
+CANNOT carry the plane, the effect is on the median instead: below ~1 %
+loss there is too little same-path evidence to reach three (0.1 % GE:
+0 % fast, p50 209 ms), above ~5 % GE loss the successors are inside the
+same burst (RTprop 50 ms: 12 % fast, p50 401 ms), and at N = 1 the
+multipath law is inert so the legacy `srtt/2` gate owns the decision
+and the median moves 80.1 → 11.5 ms (×0.14).
+
+Two secondary facts earn their place. First, the bench REPRODUCES
+§16.40's refutation from the component side, BOTH halves of it: across
+all 192 cells the `RWM_PATIENCE_DERIVED` arm's holes, latencies,
+channel mix, retransmits, sweeps and suppression counts are identical
+to the shipped arm's, and the only difference anywhere is the cooldown
+CLOCK in the eight cells (RTprop 5 ms, single path, wire) where the
+9 ms pooled srtt actually falls below the 10 ms literal — where
+`max(srtt, floor)` returns the srtt either way and nothing downstream
+moves. "Wins zero of a million evaluations, and inert where it binds",
+re-derived in ten seconds. That is the validation of the instrument
+against a known L1 verdict, which is the only honest way to trust a new
+one. Second, the app-echo clock has been
+ACCIDENTALLY SUPPRESSING a known failure: with both RFC channels off,
+wire-clocking takes retx from 202 to 5 171 (×25.6), because the legacy
+age gate then re-fires on scheduler-created cross-path gaps every 24 ms
+instead of every 168 ms. The inflated clock was doing the suppression
+job `RWM_RECOV_MP` was later built to do properly. Relatedly,
+`RWM_RECOV_SP` at N = 1 on the app-echo clock is strictly WORSE than
+the gate it replaces (p50 179.2 vs 80.1 ms) because 9/8 > 1/2 of the
+same inflated srtt — the channel was never the problem.
+
+**The prediction, pre-registered before any battery.** On the current
+default stack at c7, a wire-clocked recovery argument should move retx
+by **< 5 %** and sweeps by **< 5 per transfer**, and collapse the
+recovery-latency tail by **×5–7** (p90 174 → 28 ms). A battery that
+pre-registers a retransmit REDUCTION as its success clause is
+pre-registering the wrong clause: the plane does not retransmit more
+under a 178 ms patience, it retransmits LATER. The higher-signal cell
+is single-path, where the median moves ×6–7, not dual-path c7. A
+measured retx swing far outside that bound is a composition effect the
+bench cannot see — and naming that boundary in advance (no CC, no FEC,
+no budget modulation, and the store dwell an INPUT rather than an
+emergent quantity) is what makes the battery a test rather than a
+search.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
