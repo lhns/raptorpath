@@ -16468,6 +16468,40 @@ set is not weakened after the fact in either direction.**
 
 *(Results below this line were written after the runs.)*
 
+### PRE-BATTERY SMOKE + a density observation recorded BEFORE the battery (2026-08-08 14:11-14:12 UTC; binary sha256 `fbd6b279...` = commit c2bfab7, built fresh on the VM after `rm` of the stale binary from a cleared, CRLF-converted `git archive` tree; lock held since 13:57:44 UTC)
+
+Four invocations (`ackflip_battery.sh 42 1 singles`), the instrument check
+before the x8 run. Log `/home/vibe/ackflip/smoke-s42.log`, diag
+`diag-smoke/`. **Two-sided liveness is correct on both logs**: `am_c=1
+am_s=1` in both `am` arms, `am_c=0 am_s=0` in both `prior` arms, zero
+`ARM-LIVENESS-FAIL` and zero `ARM-CONTAMINATION`. dnf 0 in all four.
+Goodput is at parity as expected at these cells (sc2 88.9 vs 88.8, sc3
+16.45 vs 16.75 - one rep each, quoted only to show the runs completed).
+
+**The observation worth recording in advance**, because it sharpens the
+prediction rather than reporting on it. `[CTLD]` at the RECEIVER, last
+1 Hz sample, control datagrams per data message (`tx/rx`):
+
+| cell | `am` | `prior` |
+|---|---|---|
+| sc2 single 100 MB (c2) | **0.999** | **1.179** |
+| sc3 single 25 MB (c3) | **1.000** | **1.151** |
+
+The merge hits 1.000 to three figures, as designed and as measured on
+2026-08-07. But **`prior`'s density on a SINGLE path reads 1.15-1.18,
+not the 1.038/1.053 measured on the DUAL cell** - i.e. the legacy
+`Ack`'s duplicate is roughly 3-4x more of the control traffic on a
+single path than on a dual one. That is mechanically sensible: the
+suppressed `Ack` fires once per symbol batch regardless of topology,
+while the `WindowAck` it duplicates fires on FRONTIER ADVANCE, and a
+single clean path advances its in-order frontier far more often (and
+in far smaller jumps) than two striped lossy paths do. **This is
+recorded now, before the battery, because it is a self-consistent
+reason for the pre-registered asymmetry - c1-positive, dual-neutral -
+and if the battery lands that way it should not be reported as though
+the direction had been fitted afterwards.** It is an observation, not
+an amendment: no prediction, gate or falsification clause changes.
+
 ## Unlock The Default 1: ack-merge (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge` from main@847db34; GOAL "UNLOCK THE DEFAULT" item 1, the arc's keystone — the §16.37 structural bound's OWN named successor: "the recovery plane's patience/stall behaviour under the denser ack clock … Anyone reopening this should start there, not at the anchor")
 
 **(a) The finding this build acts on (verified by an Explore pass over
