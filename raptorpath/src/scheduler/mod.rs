@@ -277,20 +277,32 @@ pub fn floor_bound_active() -> bool {
 }
 
 /// Whether the WINDOW-mode control-datagram MERGE is active for this process
-/// (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1: ack-merge"; default
-/// OFF — the A/B arm).
+/// (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1: ack-merge" →
+/// "Ack-Merge Flip"; **default ON since 2026-08-08** — `RWM_ACK_MERGE=0` is
+/// the opt-out A/B arm).
 ///
-/// The receiver emits TWO control datagrams per data message: the SACK
+/// The receiver emits up to TWO control datagrams per data message: the SACK
 /// `WindowAck` from the window arm, and the legacy per-batch
 /// `ControlMessage::Ack` whose send site sits AFTER the window/block branch
 /// and therefore fires in window mode too (the recorded code-fact correction
-/// at `net/mod.rs`'s Ack arm). quinn-perf sends ~1 ack per ~24 packets. The
-/// duplicate is three named stall sources at once: the §16.35 ack-density
-/// term, two extra per-ack `scheduler.lock()` acquisitions contending with
-/// the sender loop's per-iteration locks (the only ack-density-scaling
-/// coupling that lengthens inter-emission gaps = manufactures `sidle`), and
-/// pressure on the depth-16 `try_send` gap channels whose silent drops push
-/// holes onto the 25–100 ms tail-sweep clock.
+/// at `net/mod.rs`'s Ack arm). quinn-perf sends ~1 ack per ~24 packets.
+///
+/// **How much of a duplicate it is depends on the CELL, and that is the whole
+/// measured story (§16.42).** The `Ack` fires once per symbol batch
+/// unconditionally; the `WindowAck` it duplicates fires on FRONTIER ADVANCE.
+/// So on a clean single path, where the in-order frontier advances on
+/// essentially every batch, the two coincide and the receiver really does
+/// send ≈2.0 control datagrams per data message — **measured 1.96 at c1**.
+/// Under dual-path striping with GE loss the frontier advances in jumps of
+/// ~20–25 seqs, the `WindowAck` rate collapses, and the "duplicate" is
+/// ≈4% of the traffic — **measured 1.05 at c7**. §16.39 measured only the
+/// dual cell and concluded the premise was refuted; it was refuted THERE and
+/// exactly right at the clean cell.
+///
+/// ON ⇒ 1.000 per data message everywhere, and the goodput/CPU response
+/// tracks the density REMOVED, cell by cell: c1 (1.96 → 1.00) +12.7% / +13.0%
+/// on the two seeds with receiver CPU per bit −9.1% / −8.4%; c7 (1.05 → 1.00)
+/// −0.7% / −0.2% with receiver CPU flat, i.e. within σ of its own control.
 ///
 /// ON ⇒ in WINDOW MODE ONLY the legacy `Ack` is suppressed, the `WindowAck`
 /// becomes unconditional (one per data message — exactly the cadence the
@@ -318,7 +330,7 @@ pub fn floor_bound_active() -> bool {
 pub fn ack_merge_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", false))
+    *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", true))
 }
 
 /// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:

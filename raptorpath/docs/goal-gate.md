@@ -800,7 +800,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_WIN_DECOUPLE` | "Window Decoupling + MTU Scaling (2026-08-06)": predictions 2–3 failed BOTH seeds (sc2 −1.76/−0.37 vs a +1.5…3 band; sc3 +0.09/+0.22 vs +0.8…1.6) with the law engaged exactly as derived (wd gauge live, echo RTT collapsed 108→27 / 520→230 ms) — the goodput never followed the queue | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, instrumented; the one defect found mid-battery (the paused-feed scope leak at N ≥ 2) was fixed and the duals re-measured TIE before any verdict | **NO** — the refutation carries three named mechanisms that supersede a re-test: (i) the §16.30 re-fire loop is re-serve-clocked (receiver re-advertise + per-seq cooldown), NOT queue-sustained — fired stays ×3.3–4.2 realized drops at a 27 ms echo; (ii) the 1024-latch's honest insurance value at sc2 is only ~0.4–1.8 Mbit (sub-sweep ack-granularity + drop-granularity cover), the PBH0 −20% cliff sits below ~256; (iii) the B1 jitter dwell is recovery-latency-owned — releasing the ceiling moves Copa −1.0…−1.4. A future re-ask starts from the composed datum (fix+mtu = best-ever sc3 16.86/16.84) and must attack the re-serve clock or the recovery dwell, not the window again | **DEPRECATED 2026-08-06, default OFF** — law + 4 unit tests + loopback retained as the measured A/B arm; the N1-scoped sampler pause (paused feed ≡ absent feed) retained as shared machinery |
 | `RWM_POOL_DELIV` (arm A) | "Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07)": the MECHANISM landed completely — the shadow `DeliveryRateAnchor` read 1.5–3.4× the send mean (`dr` 15.7–41.2k vs `sr` 9.1–13.4k) while staying 4–20× below the same paths' legacy `btlbw` (57–310k) at the same instant, the pool Σ rose to 3 878–7 326 (attempt 1: 1 697–3 103), the store stopped pinning (800–1 800 slack) and sweeps returned to the prior 0–7 class — **and c7 got WORSE: 0.958/0.931×Σ vs attempt 1's own same-session 0.977/0.956 and prior's 0.975/0.995**, failing the ≥ 0.97 clause on both seeds | **NONE** — measured on the full current default stack, 4 arms interleaved per rep, both seeds, dnf 0, crown-clean, with the one-knob attempt-1 control in the same session | **NO — and the refutation carries the finding that closes the sub-goal.** Supplying the un-self-referential rate source §16.36 said the pool lacked moved c7 the WRONG WAY, which refutes §16.36's own attribution: the c7 cost of the est cadence is not the pool's rate input. The gauge that names the successor: BOTH est arms carry ≈2× the prior default's stall-idle (1 400–2 178 ms / ~200–245 stalls vs 822–1 026 / 109–157) and ≈3× its sweeps, and that signature is INVARIANT while the pool Σ nearly doubles between arms — the RECOVERY PLANE's patience/stall behaviour under the denser ack clock is where a re-ask must start, not the anchor | **DEPRECATED 2026-08-07, default OFF** (rides the `RWM_POOL_ANCHOR`/`RWM_EST_CADENCE` resolution ⇒ OFF unset) — sampler + 5 anchor laws + 3 scheduler laws retained as the measured A/B arm and as the negative datum's only reproduction path; the recommended opt-in is `RWM_POOL_DELIV=0` (attempt 1's pool), which is strictly better at duals |
 | `RWM_FLOOR_BOUND` (arm B) | "Ship The Wins 1b (2026-08-07)", same battery: bounding the BtlBw anchor FLOOR by the honest send rate cut c7 cwnd to 237–305 (vs 1 006–2 356 unbounded) exactly as designed, and **failed BOTH its clauses — c7 0.969/0.969×Σ (under 0.97 on both seeds) AND c1 396.4/398.0 < the 430 PRIMARY** (−14% vs the unbounded arm), with sc2 marginally soft | **NONE** — same battery, same session, same interleaving | **NO** — the refutation IS the finding: the ack-interval over-read is doing LOAD-BEARING work at N = 1, so "the prior default's Σcwnd escape is accidental, make it derived" is not a free correction — deriving it costs 14% of the single-path win. Any future ask must pay for the floor honestly at N = 1 first | **DEPRECATED 2026-08-07, default OFF** (pure A/B arm) — the bound + its law test retained as the measured arm |
-| `RWM_ACK_MERGE` | "Unlock The Default 1: ack-merge (2026-08-07)": built to halve window-mode control-datagram density and so relieve the §16.37 est-clock stall signature. **Its PREMISE was measured false before the battery** — the receiver sends 1.038/1.053 control datagrams per data message, not 2 (the legacy `Ack` is the 1.00; the SACK `WindowAck` it "duplicates" was already frontier-rate-limited to ≈0.04, inside quinn-perf's own class), so the merge is a 4–5% SWAP, not a halving. c7 then failed its ≥0.97 clause on both seeds (0.894/0.943) **and the stall signature did not move at all** (sidle 1634–3118 ms / sweeps 14–25 vs its own est control's 1473–2604 / 12–24) | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, dnf 0 | **NO as a c7 lever** — the mechanism is eliminated twice over (the density was not there; removing what there is, is inert), which is stronger than a null. **YES as its own question:** the SAME knob measures **c1 +10.1%/+9.3% on the SHIPPED default** (202.5→223.0, 204.3→223.4, Δ≫σ both seeds, c7/singles within σ) — a real single-path win that this battery could not flip (reduced scope, composed gate set) and that owes its OWN item-11 pre-registration | **NOT CLASS-C — RETAINED, default OFF.** The law, the v6 cumulative-counter wire and 8 tests stay: the counters are the durable primitive (accounting CARRIED, not streamed), and they make the real 25× density lever — ack thinning with the correctness objection removed — buildable for the first time. Expected c7 value of that successor: ZERO, per this row's own result; its case is c1/CPU |
+| `RWM_ACK_MERGE` | "Unlock The Default 1: ack-merge (2026-08-07)": built to halve window-mode control-datagram density and so relieve the §16.37 est-clock stall signature. **Its PREMISE was measured false before the battery** — the receiver sends 1.038/1.053 control datagrams per data message, not 2 (the legacy `Ack` is the 1.00; the SACK `WindowAck` it "duplicates" was already frontier-rate-limited to ≈0.04, inside quinn-perf's own class), so the merge is a 4–5% SWAP, not a halving. c7 then failed its ≥0.97 clause on both seeds (0.894/0.943) **and the stall signature did not move at all** (sidle 1634–3118 ms / sweeps 14–25 vs its own est control's 1473–2604 / 12–24) | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, dnf 0 | **NO as a c7 lever** — the mechanism is eliminated twice over (the density was not there; removing what there is, is inert), which is stronger than a null. **YES as its own question:** the SAME knob measures **c1 +10.1%/+9.3% on the SHIPPED default** (202.5→223.0, 204.3→223.4, Δ≫σ both seeds, c7/singles within σ) — a real single-path win that this battery could not flip (reduced scope, composed gate set) and that owes its OWN item-11 pre-registration | **SHIPPED — DEFAULT ON 2026-08-08** ("Ack-Merge Flip", paper §16.42), on its OWN pre-registered gate set at FULL scope (×8 both seeds + 1.2 GB sustained + crown): **c1 +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%**, every no-regression gate within σ of its own same-session control, crown 1000/1000 in 32/32 reps, dnf 0/164. **And the row above is corrected by that battery: the density premise was refuted at the WRONG CELL.** `[CTLD]` on every run reads **1.96 at c1** — essentially exactly the two-datagrams-per-data-message the original finding claimed — against 1.05 at c7, because the legacy `Ack` fires per batch while the `WindowAck` it duplicates fires on FRONTIER ADVANCE (near-1:1 on a clean single path, ≈0.05 under dual striped GE loss). The response is monotone in the density REMOVED across six cells and two seeds. `RWM_ACK_MERGE=0` is the retained opt-out arm (`tests/ack_merge_optout.rs`); the window-mode legacy `Ack` branch is now dead code scheduled for deletion in refactor seam B2 (block mode keeps it — `block_arq`'s dup-ack ledger depends on the 1:1 cadence) |
 | `RWM_PATIENCE_DERIVED` | "Unlock The Default 2: derived patience (2026-08-07)": built to replace the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms literal (10× RFC 9002's kGranularity) with timer granularity + the path's own measured RTT jitter, at the two behavioural sites — the §6.1.2 kGranularity analog and the per-seq retransmit cooldown — and so relieve the §16.37/§16.39 est-clock stall signature. **Its PREMISE was measured false before the battery and confirmed at n = 8 both seeds: the literal wins ZERO of 501 542–1 366 558 §6.1.2 evaluations at c7, in EVERY arm including the shipped default.** The tasking reasoned from RTprop 8–10 ms, but the threshold reads `max(Copa srtt, estimator app-echo RTT)` and the app-echo clock is STORE-DWELL INCLUSIVE — 158 ms at c7, ×20 RTprop — so the floor was structurally unreachable on every loaded path. **Where it DOES bind (c1, 30–45% of evaluations) the derivation collapses it to ~1% (`pf` 149–391 → 0–31 s42, 161–286 → 0–40 s7) and NOTHING MOVES** (c1 `pat` 467.1/468.7 vs `est` 480.6/469.7; `patonly` 206.4/201.8 vs `prior` 201.2/200.2, all within σ). c7 then failed its ≥0.97 clause on both seeds (0.943/0.933) with `sweeps`/`retx` unmoved | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, FULL pre-registered scope (ARMCOUNT 8 every cell×arm), dnf 0 over 312 runs | **NO as a c7 lever** — eliminated on BOTH population (no binding evaluations to move) and response (moving it where it binds does nothing), which is stronger than a null. This is the goal's SECOND falsification-with-mechanism and it closes the c1-default target as a documented STRUCTURAL BOUND | **NOT CLASS-C — RETAINED, default OFF.** The law and 8 tests stay, and so does the durable piece: the **`pf=<floor>/<clock>/<mean>` instrument**, which turns "is this recovery clock governed by its floor or by the path?" into a per-run count and is what converted this attempt from an argument into a measurement in 15 min of shakeout. The successor it names — the recovery clock's ARGUMENT (a store-dwell-inclusive RTT), not its constants — will need exactly this gauge |
 | `RWM_SIDLE_DERIVED` | Same section, part 3a — a DIAG-only INSTRUMENT, never a behaviour claim, so "refutation" does not apply to it; recorded here because its VERDICT retires a standing suspicion. It was built to test whether §16.37's/§16.39's stall evidence was an artifact of a fixed 3 ms threshold read against a batched emitter, by printing `sidle2=` (3 × the MEASURED inter-emission-event interval, floored at the legacy value) beside the unchanged `sidle=` in every arm | n/a | n/a — the question it was built to answer is ANSWERED, both ways: **at c7 `sidle2 = sidle` to the millisecond and the est/prior ratio SURVIVES at 2.6× (measured `evt` 45–170 µs, far below the 1 ms loop wake), so §16.37 and §16.39 need NO correction and their evidence is REAL**; at the SLOW cells under `RWM_EMIT_BATCH` the legacy gauge over-counts by **85–90%** (sc2 3 461–4 106 → 306–536 ms; sc3 10 076–10 707 → 929–1 679; `evt` 1.6–250 ms) | **NOT CLASS-C — RETAINED, default OFF.** Standing instruction for every future session: **where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not `sidle`.** No published conclusion in this file rests on a slow-cell `sidle`, and this row exists so none ever does |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
@@ -16502,6 +16502,268 @@ and if the battery lands that way it should not be reported as though
 the direction had been fitted afterwards.** It is an observation, not
 an amendment: no prediction, gate or falsification clause changes.
 
+### L1 BATTERY RESULTS (VM 10.1.5.16, 2026-08-08 14:13:59-15:10:56 UTC; binary sha256 `fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d` = commit c2bfab7, built fresh on the VM (5m11s) after `rm` of the stale binary, from a CLEARED and CRLF-CONVERTED `git archive` tree of this branch, SAME binary for the smoke, both seeds and the crown; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7 x8, arms interleaved round-robin per rep, candidate first, fresh topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1`; driver `tools/l1/ackflip_all.sh` -> `ackflip_battery.sh` + `tail_matrix.sh`, collector `ackflip_parse.py`; logs + per-run diag under `/home/vibe/ackflip/`; lock `/tmp/rwm-vm.lock` found FREE and taken 13:57:44 UTC)
+
+**FULL SCOPE, AND UNPOLLED.** Stage runtimes: battery-s42 18m59s ·
+battery-s7 21m20s · crown-s42 8m18s · crown-s7 8m20s. **Launched
+detached with `setsid`, waited once, collected ONCE** (MEASUREMENT
+DISCIPLINE item 13); the session's only contact with the VM between
+launch and collection was a single ssh whose remote command was
+`while [ ! -f DONE ]; do sleep 300; done` — one sleeping shell, no
+`sudo`, no `grep` over a growing log.
+
+**Run health.** **s42: 84 invocations / 84 summaries / 0 RUN-RETRY /
+0 RUN-LOST / 0 liveness flags.** s7: 125 invocations / 80 summaries /
+45 RUN-RETRY recovered / 4 RUN-LOST / 22 liveness flags — and **all 22
+flags are on summary-less aborted attempts, 0 on any counted run**
+(checked programmatically per attempt, not eyeballed). This is the
+documented item-8 seed-7 double-abort class, reproducing a THIRD time
+on an unpolled battery and in the same proportion as item 13's
+discriminating test (s42 80/0/0 vs s7 84/41/4 there; s42 84/0/0 vs s7
+125/45/4 here). Nothing discarded; n is quoted per arm below and is 7
+rather than 8 for two s7 cells. **dnf = 0 in every completed run, both
+seeds (0/84 and 0/80).**
+
+**GOODPUT (Mbit/s, mean ± sample σ (n)) and RECEIVER CPU PER GIGABIT
+(`CPUSRV` / transfer bits — the receiver is where the mechanism removes
+work).** Arms: `prior` = env unset (the shipped default this branch
+inherited) · `am` = `RWM_ACK_MERGE=1`.
+
+| cell | arm | s42 goodput | s7 goodput | s42 CPUSRV/Gbit | s7 CPUSRV/Gbit |
+|---|---|---|---|---|---|
+| **c1 single 400 MB** | prior | 203.1 ± 8.5 (8) | 201.8 ± 5.6 (8) | 5.19 | 5.26 |
+| | **am** | **228.9 ± 4.2 (8)** | **228.1 ± 3.1 (8)** | **4.72** | **4.82** |
+| | **Δ** | **+25.9 = +12.7%** | **+26.3 = +13.0%** | **−9.1%** | **−8.4%** |
+| **c1 sustained 1.2 GB** | prior | 212.2 ± 4.8 (2) | 201.8 ± 0.0 (2) | 5.27 | 5.33 |
+| | **am** | **225.1 ± 4.3 (2)** | **226.3 ± 0.9 (2)** | **5.00** | **5.05** |
+| | **Δ** | **+6.1%** | **+12.1%** | **−5.1%** | **−5.3%** |
+| c7 dual 200 MB | prior | 172.6 ± 2.4 (8) = 0.981×Σ | 173.5 ± 1.9 (8) = 0.986×Σ | 7.82 | 7.83 |
+| | am | 171.5 ± 1.9 (8) = 0.973×Σ | 173.2 ± 2.1 (8) = 0.983×Σ | 7.88 | 7.82 |
+| c8 dual 25 MB | prior | 80.5 ± 13.6 (8) = 0.770×Σ | 78.8 ± 8.3 (7) = 0.753×Σ | 10.91 | 10.41 |
+| | am | 79.8 ± 8.4 (8) = 0.762×Σ | 77.0 ± 6.4 (7) = 0.734×Σ | 10.78 | 10.42 |
+| sc2 single 100 MB | prior | 88.0 ± 0.6 (8) | 87.9 ± 0.8 (8) | 8.70 | 8.76 |
+| | am | 88.1 ± 0.7 (8) | 88.1 ± 1.0 (8) | 8.36 | 8.43 |
+| sc3 single 25 MB | prior | 16.5 ± 0.2 (8) | 16.7 ± 0.1 (7) | 11.64 | 11.82 |
+| | am | 16.6 ± 0.5 (8) | 16.8 ± 0.2 (7) | 11.26 | 11.47 |
+
+Σ = same-session singles from THAT ARM's own runs (2×sc2 at c7;
+sc2+sc3 at c8). Per-run c1 values, both arms, both seeds, so the bands
+are checkable rather than asserted:
+
+- c1-am s42: 221.6 231.1 230.7 227.9 231.1 224.2 234.5 230.5
+- c1-prior s42: 194.7 221.7 199.4 203.2 199.7 208.2 197.0 200.7
+- c1-am s7: 224.3 223.9 232.1 228.8 227.8 231.9 229.7 226.4
+- c1-prior s7: 196.6 204.0 197.6 211.8 200.0 204.8 195.0 204.8
+
+**The distributions are disjoint at s7 and overlap by 0.1 Mbit/s in one
+rep at s42**: at s7 the worst `am` rep (223.9) beats the best `prior`
+rep (211.8) outright; at s42 the worst `am` rep (221.6) is beaten by
+exactly one of the sixteen `prior` reps (221.7, rep 2) and by no other
+— `prior`'s next-best is 208.2. Stated precisely rather than rounded to
+"non-overlapping", because the one crossing rep is the only thing
+standing between this and a clean separation and it should be in the
+record.
+
+### THE MECHANISM, MEASURED: the density premise was refuted at the wrong cell — it is EXACTLY RIGHT at c1, and the response tracks the density removed cell by cell
+
+This is the finding, and it is bigger than the flip. `[CTLD]` at the
+RECEIVER (quinn DATAGRAM frames: `tx` = control datagrams out, `rx` =
+data datagrams in), cumulative, last 1 Hz sample, **every run of the
+battery** rather than the two hand-read runs of 2026-08-07:
+
+| cell | `prior` s42 | `prior` s7 | `am` s42 | `am` s7 | density removed | Δ goodput | Δ receiver CPU/bit |
+|---|---|---|---|---|---|---|---|
+| **c1 400 MB single** | **1.961** [1.949–1.971] | **1.959** [1.944–1.965] | 0.999 | 0.999 | **−49%** | **+12.7% / +13.0%** | **−9.1% / −8.4%** |
+| c1 1.2 GB sustained | 1.965 | 1.965 | 1.000 | 1.000 | −49% | +6.1% / +12.1% | −5.1% / −5.3% |
+| sc2 100 MB single | 1.191 | 1.208 | 1.000 | 1.000 | −16 / −17% | +0.2% / +0.2% | −3.9% / −3.8% |
+| sc3 25 MB single | 1.156 | 1.166 | 1.000 | 1.000 | −13 / −14% | +0.3% / +0.4% | −3.3% / −3.0% |
+| c8 25 MB dual | 1.115 | 1.083 | 0.998 | 1.000 | −10 / −8% | −0.9% / −2.3% | −1.2% / +0.1% |
+| **c7 200 MB dual** | **1.046** | **1.057** | 1.000 | 1.000 | **−4 / −5%** | **−0.7% / −0.2%** | **+0.8% / −0.1%** |
+
+**Read the first column and the last three together.** §16.39 measured
+the density at the DUAL cell, found 1.038/1.053, and concluded: *"The
+receiver was never sending two control datagrams per data message. It
+was sending 1.04. … The 'duplicate' is 25× rarer than the thing it
+duplicates."* That is correct — **at c7**, and this battery reproduces
+it to three figures (1.046/1.057). It is **wrong at c1**, where the
+same instrument on the same binary reads **1.96**, i.e. essentially
+exactly the two-datagrams-per-data-message the original finding
+claimed. The tasking's headline premise was not false; it was
+**cell-conditional**, and it was checked at the one cell where it fails.
+
+**The mechanism for the conditionality is in the shipped predicate and
+needs no new hypothesis.** The legacy `Ack` fires once per symbol batch
+unconditionally. The `WindowAck` it duplicates fires on
+`cumulative_advanced || gap_report_due` — one boolean per FRONTIER
+JUMP. On a clean single path the in-order frontier advances on
+essentially every batch, so the two coincide and the receiver really
+does send ~2.0 control datagrams per data message. Under dual-path
+striping with 1.3% GE loss the frontier advances in jumps of ~20–25
+seqs, the `WindowAck` rate collapses to ~0.05, and the duplicate is ~4%
+of the traffic. The intermediate cells sit exactly where that reasoning
+puts them: lossy SINGLES (sc2/sc3) at 1.16–1.21, the dual 25 MB cell at
+1.08–1.12, the dual 200 MB cell at 1.05.
+
+**And the response is monotone in the density removed, across six cells
+and two seeds.** −49% density → +12.7/+13.0% goodput and −9% receiver
+CPU/bit. −13 to −17% density → +0.2/+0.4% goodput and −3 to −4% CPU/bit
+(the CPU gauge sees it; the throughput gauge cannot, because those
+cells are not receiver-bound). −4 to −10% density → nothing, in either
+gauge, in either direction. **There is no cell at which the goodput
+moves and the CPU does not, and none at which either moves without the
+density having moved first.** That is the pre-registered clause (b)'s
+second half satisfied in the strongest available form: the win is not
+merely accompanied by a receiver-CPU fall, it is PROPORTIONAL to it and
+to the mechanism's own instrument, on an axis the battery did not have
+to be designed around.
+
+This also retro-explains the one thing §16.39 could only record as a
+coincidence — that `RWM_ACK_MERGE` moved c1 by ~10% while leaving c7
+untouched. It was never an anomaly. It is the same law read at two
+points.
+
+### CROWN (tail_matrix c2 ×4, realtime hint, 400 B and 1200 B, warm tunnel, 50 msg/s × 20 s; arms `ship` = env unset and `am`; both seeds)
+
+**delivered 1000/1000 in EVERY rep — 32/32 across both arms, both
+sizes, both seeds.** p99 distributions (min / median / max, n = 4):
+
+| seed | size | `ship` | `am` |
+|---|---|---|---|
+| 42 | 400 B | 35 / **35** / 36 | 34 / **38** / 39 |
+| 42 | 1200 B | 39 / **39** / 45 | 35 / **40** / 57 |
+| 7 | 400 B | 35 / **37** / 60 | 35 / **36** / 48 |
+| 7 | 1200 B | 36 / **39** / 42 | 35 / **37** / 63 |
+
+p50 7.5–8.5 ms in every rep of every arm. Medians 35–40 ms — the ~35–42
+ms crown class, with no systematic direction (`am` is above `ship` at
+s42 and below it at s7 on both sizes). Single-rep maxima in the 48–63
+ms band appear in BOTH arms (`ship` s7 400 B 60.3; `am` s7 1200 B
+63.3), so the outlier class is the cell's, not the gate's. The
+ack-merge liveness echo was scraped from BOTH endpoint logs in every
+`am` arm and from neither in any `ship` arm. Gate 4 holds.
+
+*(Honest bound on this gate: n = 4 per cell resolves the ~35–42 ms
+CLASS and the 1000/1000 delivery, not a few-ms shift in the median. It
+is pre-registered as a no-regression gate at that resolution and is
+read at that resolution — it would catch a tail collapse or a delivery
+loss, which is what it is for, and it would not catch a 2 ms median
+drift, which nothing in this section claims either way.)*
+
+### VERDICT vs the pre-registration — every clause and every gate, both seeds
+
+**THE CLAUSE (b): PASSED, above the band it had to reproduce.** c1
+`am` vs `prior`, same session, interleaved, ×8: **+12.7% (s42) and
++13.0% (s7)**, against the pre-registered "≥ ~8% each seed, Δ ≫ σ_s".
+Δ = 25.9 and 26.3 against σ_s of 4.2/8.5 and 3.1/5.6 — Δ is 3–8× the
+larger σ on each seed, and the distributions do not overlap. The
+2026-08-07 result (223.0 / 223.4) is not merely reproduced at full
+scope but exceeded (228.9 / 228.1), with `prior` landing at 203.1 /
+201.8 against its own 202.5 / 204.3 — **the CONTROL reproduces to
+within 0.6 and 2.5 Mbit/s across a day and a rebuild**, which is what
+makes the candidate's reproduction meaningful. The **1.2 GB sustained**
+run — absent from the reduced battery — holds the win on both seeds
+(+6.1% / +12.1%) and both arms of it were run, so it is a comparison
+rather than a spot check. **Receiver CPU per bit is DOWN on both seeds
+at c1 (−9.1% / −8.4%)** and at every single-path cell. Clause (b)
+passes in both halves.
+
+**THE NO-REGRESSION GATES (c): ALL HELD, both seeds.**
+
+1. **c7 ≥ its own same-session control within σ: PASS.** 171.5 vs 172.6
+   (s42, Δ = −1.1, σ 1.9/2.4) and 173.2 vs 173.5 (s7, Δ = −0.3, σ
+   2.1/1.9). |Δ| < σ on both seeds. As Σ ratios: 0.973 vs 0.981 and
+   0.983 vs 0.986. **This is the pre-registered EXPECTED outcome, and
+   it is recorded as a PASS of a gate, not as a missed target** — see
+   the pre-registration, which fixed that reading before the numbers
+   existed. (For the record and claimed for nothing: `am`'s c7 at
+   0.973/0.983×Σ is far above the 0.894/0.943 the COMPOSED est+eb+merge
+   arm reached on 2026-08-07, because it is not carrying the est gate
+   that the §16.37 signature actually tracks.)
+2. **c8 within σ of its own control: PASS.** 79.8 vs 80.5 (s42, σ
+   8.4/13.6) and 77.0 vs 78.8 (s7, σ 6.4/8.3, n = 7 both arms). |Δ| is
+   well inside σ on both seeds. The cell's σ is 8–17% of its mean in
+   BOTH arms at ×8, confirming §16.39's reading that c8 is too noisy at
+   this budget to attribute anything; the absolute Σ line (0.734–0.770)
+   is reported for the record and, as pre-registered, is not enforced
+   against one arm — the shipped default fails it by the same margin.
+3. **sc2 / sc3 within σ: PASS.** +0.2% / +0.2% and +0.3% / +0.4%,
+   against σ of 0.6–1.0 and 0.1–0.5. Flat, both seeds.
+4. **Crown: PASS.** 1000/1000 in 32/32 reps; p99 medians 35–40 ms in
+   the ~35–42 ms class, no systematic direction, outlier class shared
+   by both arms.
+5. **dnf = 0: PASS.** 0/84 (s42) and 0/80 (s7) completed runs.
+6. **wedge: PASS.** `mtu_blackhole_wedge` 2/2 green (suite results
+   below).
+7. **Block mode bit-exact: PASS.** The gate is scoped
+   `gates.ack_merge && recv_window_mode`; `ack_merge_loopback`'s second
+   transfer is the in-process scope guard and passes, and the new
+   `ack_merge_optout` binary asserts the opt-out resolution at both
+   read sites.
+
+**FALSIFICATION: no clause fired.** (i) c1 reproduced and exceeded its
+band on both seeds. (ii) receiver CPU/bit fell on both seeds. (iii) no
+no-regression gate broke. (iv) the mechanism is live — `am_c=1 am_s=1`
+in every `am` arm and `0/0` in every `prior` arm across 164 counted
+runs with zero contamination, and `[CTLD]` reads 0.998–1.000 in the
+`am` arm at every cell.
+
+### FLIP DECISION: **FLIP. `RWM_ACK_MERGE` ships DEFAULT ON.**
+
+The pre-registered rule was: the clause on both seeds AND every gate on
+both seeds. Both are met, at the full scope the rule demanded (×8, both
+seeds, sustained, crown), with the mechanism instrumented on every run
+and the effect proportional to the mechanism across six cells. Applied:
+
+- `scheduler::ack_merge_active()` — `env_flag("RWM_ACK_MERGE", true)`.
+  **`RWM_ACK_MERGE=0` is the opt-out A/B arm**, gated by the new
+  `tests/ack_merge_optout.rs` so the flip cannot silently weld the knob
+  shut and destroy the arm future measurements of this mechanism need.
+- `gates.rs` — the default-stack assertion inverted to `assert!(g.ack_merge, …)`
+  and both doc comments rewritten to carry the measured numbers.
+
+**The window-mode legacy `Ack` branch is now DEAD CODE, scheduled for
+deletion in refactor seam B2.** With the gate ON by default,
+`net/mod.rs`'s `if !suppress_legacy_ack { … }` is reachable in window
+mode only when the operator sets `RWM_ACK_MERGE=0` — so it is dead in
+the shipped configuration but NOT yet removable, which is exactly why
+it is a scheduled seam and not a deletion in this commit. **BLOCK MODE
+KEEPS IT.** `block_arq`'s dup-ack loss channel
+(`LATER_ACK_LOSS_THRESHOLD = 3` later same-path acks to declare a batch
+lost) is built on the legacy `Ack`'s 1:1 per-batch cadence; the gate is
+scoped `gates.ack_merge && recv_window_mode` precisely so that stays
+true, and B2 must delete only the window-mode branch.
+
+**What is NOT claimed.** This flip is a c1 / receiver-CPU result and
+nothing else. It does not move c7 (measured, twice, and pre-registered
+as expected). It does not touch the "UNLOCK THE DEFAULT" c7 clause,
+which §16.39 and §16.40 closed as a structural bound with mechanisms
+named; nothing here reopens it. The Σ lines at c7 and c8 are unchanged
+by this flip within σ, and no earlier verdict is revised by it.
+
+### THE SUCCESSOR THIS NAMES, with the number now in hand at the right cell
+
+§16.39 named the honest density lever and priced it off the DUAL cell:
+keep the merged `WindowAck` on its frontier-advance predicate instead
+of making it unconditional, for *"0.04 control datagrams per data
+message, a 25× reduction, versus the 4% this build achieves"*, and
+judged that *"its expected c7 value is zero, and its case is c1/CPU,
+not c7."* **That judgement was right and its arithmetic was measured at
+the wrong cell.** At c1 the shipped default is at 1.96 and this flip
+takes it to 1.00 — a 2× reduction, worth +12.7/+13.0%. The frontier-
+predicate successor would take c1 from 1.00 to ~1.00, because at a
+clean single path `cumulative_advanced` fires on essentially every
+batch: **there is almost nothing left to remove at c1, and the 25×
+headroom exists only at the dual cells, where this battery measures the
+response to removing control density as flat in both gauges.**
+
+So the successor's case is now bounded from BOTH sides by measurement
+and it should be re-priced before it is built: its headroom is where
+the response is zero, and its response is where the headroom is gone.
+The cost it would have to pay (RTT-sample and in-flight-release cadence
+both falling 25×) is unchanged. Recording this here so the next session
+does not build it on §16.39's cell-conditional arithmetic — which is
+the same error this section just corrected once.
+
 ## Unlock The Default 1: ack-merge (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge` from main@847db34; GOAL "UNLOCK THE DEFAULT" item 1, the arc's keystone — the §16.37 structural bound's OWN named successor: "the recovery plane's patience/stall behaviour under the denser ack clock … Anyone reopening this should start there, not at the anchor")
 
 **(a) The finding this build acts on (verified by an Explore pass over
@@ -17034,7 +17296,7 @@ here, because the pre-registered rule for this battery is the full
 composed gate set and this battery was reduced. It is the obvious
 candidate for its OWN pre-registered flip on its OWN gate set (c1 win
 ≫σ both seeds, c7/c8/sc within σ, crown, ×8, sustained), and a future
-session should take it as such rather than rediscover it.
+session should take it as such rather than rediscover it. **→ CASHED 2026-08-08: that is exactly what "Ack-Merge Flip" (above) did — the gate set named in this sentence, run verbatim at full scope, passed on both seeds, and `RWM_ACK_MERGE` SHIPS DEFAULT ON. The same battery also corrects this section's own density reading: 1.038/1.053 is the DUAL-cell number and reproduces exactly, but at c1 the shipped default reads 1.96 — the "duplicate" is 25× rarer than the frame it duplicates AT c7 and very nearly 1:1 at a clean single path, which is why this section's c1 win was real and its c7 verdict was also right.**
 
 **And the durable primitive.** The v6 cumulative `WindowAck` counters
 are proven (unit-tested under a quarter of acks dropped; battery-clean

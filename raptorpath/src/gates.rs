@@ -159,8 +159,10 @@ pub struct RuntimeGates {
     /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
     /// Still a floor, never a cap; legacy verbatim with the anchor cold.
     pub floor_bound: bool,
-    /// `RWM_ACK_MERGE` (default OFF — the A/B arm; goal-gate "Unlock The
-    /// Default 1: ack-merge"): in WINDOW MODE ONLY, suppress the legacy
+    /// `RWM_ACK_MERGE` (**default ON since 2026-08-08**; `=0` is the opt-out
+    /// A/B arm. Goal-gate "Unlock The Default 1: ack-merge" built it and
+    /// "Ack-Merge Flip" shipped it; paper §16.42): in WINDOW MODE ONLY,
+    /// suppress the legacy
     /// per-batch `ControlMessage::Ack` (whose send site sits after the
     /// window/block branch and so fires in window mode too), make the SACK
     /// `WindowAck` unconditional at exactly that cadence, and carry the
@@ -173,6 +175,18 @@ pub struct RuntimeGates {
     /// its cadence and its counts are unperturbed. Resolved via
     /// `scheduler::ack_merge_active()` (cached — the receiver arm and the
     /// sender arm read the same resolution).
+    ///
+    /// FLIPPED ON by its own pre-registered gate set (2026-08-08, ×8 both
+    /// seeds, full scope + sustained + crown): c1 +12.7% / +13.0% with
+    /// receiver CPU per bit −9.1% / −8.4%, every no-regression gate held
+    /// (c7/c8/sc2/sc3 within σ of their own same-session controls, crown
+    /// 1000/1000 in 32/32 reps, dnf 0/164). With the gate ON by default the
+    /// window-mode `!suppress_legacy_ack` branch in `net/mod.rs` is DEAD
+    /// unless the operator sets `RWM_ACK_MERGE=0`; it is scheduled for
+    /// deletion in refactor seam **B2**. BLOCK MODE KEEPS IT — `block_arq`'s
+    /// dup-ack loss channel (`LATER_ACK_LOSS_THRESHOLD`) is built on the
+    /// legacy `Ack`'s 1:1 per-batch cadence, and the gate is scoped
+    /// `gates.ack_merge && recv_window_mode` precisely so that stays true.
     pub ack_merge: bool,
     /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
     /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
@@ -497,12 +511,17 @@ mod tests {
             !g.floor_bound,
             "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
         );
-        // "Unlock The Default 1: ack-merge" (2026-08-07): the window-mode
-        // control-datagram merge is a pure A/B arm and must not reach the
-        // shipped default stack until its pre-registered gate set passes.
+        // "Ack-Merge Flip" (2026-08-08): the window-mode control-datagram
+        // merge PASSED its own pre-registered gate set at full scope (×8,
+        // both seeds, + sustained + crown) and is now part of the shipped
+        // stack. c1 +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%;
+        // control-datagram density 1.96 → 1.00 at c1 and 1.05 → 1.00 at c7,
+        // and the response tracks the density removed cell by cell. Every
+        // no-regression gate held within σ of its own same-session control.
         assert!(
-            !g.ack_merge,
-            "RWM_ACK_MERGE ships default OFF (A/B arm)"
+            g.ack_merge,
+            "RWM_ACK_MERGE ships default ON since 2026-08-08 (paper §16.42); \
+             RWM_ACK_MERGE=0 is the opt-out arm"
         );
         // "Unlock The Default 2: derived patience" (2026-08-07): the derived
         // recovery-patience floor is a pure A/B arm and must not reach the

@@ -10058,6 +10058,8 @@ the per-mechanism law tests.
 
 ### 16.39 The ack-merge: the "two control datagrams per data message" finding was a count of send SITES, not send RATES — the duplicate is real, 25× rarer than claimed, and the fix for it is now buildable for the first time (2026-08-07, `feat/ack-merge`, `RWM_ACK_MERGE` DEFAULT OFF, wire v6)
 
+> **[Amended 2026-08-08 by §16.42.]** Two corrections, both from the battery this section itself called for. **(1) The knob SHIPPED:** `RWM_ACK_MERGE` is DEFAULT ON since 2026-08-08 — the c1 side result below was run at full scope on its own gate set (×8 both seeds, sustained, crown) and measured +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%, so the "DEFAULT OFF" in this heading is superseded. **(2) The density number below is the DUAL cell's, and the premise this section refutes is CELL-CONDITIONAL:** 1.038/1.053 reproduces exactly at c7, but the same instrument reads **1.96 at c1** — the legacy `Ack` fires per batch while the `WindowAck` it duplicates fires on frontier advance, which is near-1:1 on a clean single path and ≈0.05 under dual striped GE loss. The "25× rarer" claim is true at c7 and false at c1. Everything this section concludes about c7 stands; the generalisation to the machine does not.
+
 §16.37 closed the pooled-store rate-source question as a structural
 bound and named its own successor precisely: *"the remaining named
 suspect, gauge-supported and NOT yet tested, is the recovery plane's
@@ -10410,6 +10412,151 @@ bench cannot see — and naming that boundary in advance (no CC, no FEC,
 no budget modulation, and the store dwell an INPUT rather than an
 emergent quantity) is what makes the battery a test rather than a
 search.
+
+### 16.42 The ack-merge flip: the "two control datagrams per data message" premise was refuted at the wrong cell — it reads 1.96 at c1 and 1.05 at c7, the response is monotone in the density removed, and the knob ships default ON for +12.7%/+13.0% of the single-path default (2026-08-08, `feat/ack-merge-flip`, `RWM_ACK_MERGE` **DEFAULT ON**)
+
+§16.39 built the window-mode control-datagram merge to relieve the
+§16.37 stall signature at c7, measured its density premise before the
+battery, and reported the premise refuted: *"The receiver was never
+sending two control datagrams per data message. It was sending 1.04. …
+The 'duplicate' is 25× rarer than the thing it duplicates."* The
+battery then failed the c7 clause on both seeds and the knob shipped
+OFF. But the same battery measured, and recorded as a side result it
+explicitly declined to cash, that the knob **alone** moved c1 from
+202.5 to 223.0 and 204.3 to 223.4 — +10.1% and +9.3%, Δ ≫ σ on both
+seeds — and it named the gate set such a win would owe: *"c1 win ≫σ
+both seeds, c7/c8/sc within σ, crown, ×8, sustained."*
+
+This section is that gate set, run verbatim. It passed, the knob ships
+default ON, and in passing it corrected the premise it was built on
+top of.
+
+**The correction, which is the more durable half.** §16.39's density
+number was taken at the DUAL cell only. This battery instrumented the
+same `[CTLD]` receiver-side quinn datagram-frame counters on **every
+run of every arm at every cell**, and the picture is not a single
+number:
+
+| cell | shipped default | merged | density removed | Δ goodput (s42 / s7) | Δ receiver CPU per bit |
+|---|---|---|---|---|---|
+| **c1 400 MB single (clean)** | **1.96** | 1.00 | **−49%** | **+12.7% / +13.0%** | **−9.1% / −8.4%** |
+| sc2 100 MB single (1.3% GE) | 1.19–1.21 | 1.00 | −16 / −17% | +0.2% / +0.2% | −3.9% / −3.8% |
+| sc3 25 MB single | 1.16–1.17 | 1.00 | −13 / −14% | +0.3% / +0.4% | −3.3% / −3.0% |
+| c8 25 MB dual | 1.08–1.12 | 1.00 | −10 / −8% | −0.9% / −2.3% | −1.2% / +0.1% |
+| **c7 200 MB dual** | **1.05** | 1.00 | **−4 / −5%** | **−0.7% / −0.2%** | **+0.8% / −0.1%** |
+
+§16.39's 1.038/1.053 reproduces to three figures at c7 — it was not a
+measurement error. It was a measurement of one point on a curve,
+reported as a property of the machine. At c1 the shipped default reads
+**1.96**: essentially exactly the two-datagrams-per-data-message the
+original finding claimed, at the cell the original finding never
+checked.
+
+**The mechanism needs no new hypothesis; it is in the shipped predicate
+already quoted in §16.39.** The legacy per-batch `Ack` fires once per
+symbol batch, unconditionally. The `WindowAck` it duplicates fires on
+`cumulative_advanced || gap_report_due` — one boolean per FRONTIER
+JUMP. On a clean single path the in-order frontier advances on
+essentially every batch, so the two coincide and the receiver genuinely
+sends ≈2 control datagrams per data message. Under dual-path striping
+with 1.3% GE loss the frontier advances in jumps of ~20–25 seqs, the
+`WindowAck` rate collapses toward 0.05, and the duplicate becomes ~4%
+of the control traffic. The intermediate cells land exactly where that
+reasoning puts them, monotonically: lossy singles 1.16–1.21, dual 25 MB
+1.08–1.12, dual 200 MB 1.05. **The premise was cell-conditional and was
+audited at the one cell where it is false.**
+
+**And the response tracks the density removed, across six cells and two
+seeds.** −49% density buys +12.7/+13.0% goodput and −9% receiver CPU
+per bit. −13 to −17% buys nothing visible in goodput and −3 to −4% in
+CPU per bit — the CPU gauge still sees it, because those cells are not
+receiver-bound, so the saving shows up as headroom rather than
+throughput. −4 to −10% buys nothing in either gauge, in either
+direction. There is no cell at which goodput moves and CPU does not,
+and none at which either moves without the density having moved first.
+That is a stronger form of attribution than the pre-registration asked
+for: the clause required only that receiver CPU fall alongside the c1
+win, and what the battery delivers is proportionality between the
+mechanism's own instrument, the cost gauge and the outcome.
+
+It also retro-explains what §16.39 could only record as a coincidence —
+that the same knob moved c1 by ~10% and c7 not at all. That was never
+an anomaly requiring two stories. It is one law read at two points.
+
+**The battery.** VM 10.1.5.16, one binary (sha256 `fbd6b279…`) built
+fresh from a cleared, CRLF-converted tree; arms `prior` (env unset) and
+`am` (`RWM_ACK_MERGE=1`) interleaved round-robin per rep, candidate
+first; seeds 42 and 7 ×8; c1 400 MB, c7 dual 200 MB, c8 dual 25 MB,
+sc2 100 MB, sc3 25 MB, a 1.2 GB sustained run on BOTH arms, and a
+tail_matrix c2 crown ×4 on both arms and both seeds; same-session Σ
+from each arm's own singles. Launched detached and collected once, per
+the MEASUREMENT DISCIPLINE item 13 protocol that the ack-merge session
+itself wrote after its own polling destroyed the first full-scope
+attempt.
+
+c1: **228.9 ± 4.2 vs 203.1 ± 8.5 (seed 42) and 228.1 ± 3.1 vs 201.8 ±
+5.6 (seed 7)**, n = 8 each — the 2026-08-07 result not merely
+reproduced at full scope but exceeded, with the CONTROL arm landing
+within 0.6 and 2.5 Mbit/s of its own value from the previous day and a
+separate build. The 1.2 GB sustained run holds it on both seeds (+6.1%
+/ +12.1%). Every no-regression gate held within σ of its own
+same-session control: c7 171.5 vs 172.6 and 173.2 vs 173.5; c8, sc2 and
+sc3 flat; crown **1000/1000 delivered in 32 of 32 reps** with p99
+medians 35–40 ms in the ~35–42 ms class and no systematic direction;
+dnf 0 across 164 completed runs; the MTU black-hole wedge green.
+
+**c7 was pre-registered as NOT a target and its non-movement as the
+EXPECTED outcome** — written down before the numbers existed precisely
+so it could not be re-litigated afterward in either direction. §16.39
+had already eliminated the mechanism as a c7 lever twice over, and this
+battery's density column now says why in one line: there is only 4–5%
+of control traffic to remove at c7, and removing it does nothing.
+
+**What ships, and what is now dead.** `RWM_ACK_MERGE` defaults ON;
+`RWM_ACK_MERGE=0` is the retained opt-out arm, gated by its own test so
+the flip cannot silently weld the knob shut and destroy the A/B arm
+future measurements of this mechanism need. With the gate on, the
+window-mode `!suppress_legacy_ack` branch is unreachable in the shipped
+configuration and is scheduled for deletion in refactor seam B2 — not
+deleted here, because the opt-out still reaches it. **Block mode keeps
+the legacy `Ack` in full**: `block_arq`'s dup-ack loss channel is built
+on its 1:1 per-batch cadence, and the gate is scoped
+`gates.ack_merge && recv_window_mode` exactly so that stays true.
+
+**What this does not claim.** It is a c1 and receiver-CPU result. It
+does not move c7, does not touch the "unlock the default" c7 clause
+that §16.39 and §16.40 closed as a structural bound with mechanisms
+named, and revises no earlier verdict beyond the density premise
+corrected above.
+
+**The successor, re-priced.** §16.39 named the honest density lever —
+keep the merged `WindowAck` on its frontier-advance predicate rather
+than making it unconditional — and costed it at *"0.04 control
+datagrams per data message, a 25× reduction, versus the 4% this build
+achieves"*, judging its expected c7 value zero and its case c1/CPU.
+That judgement was right and its arithmetic was, again, the dual cell's.
+At c1 the default is 1.96 and this flip takes it to 1.00; the
+frontier-predicate successor would take c1 from 1.00 to ~1.00, because
+at a clean single path `cumulative_advanced` fires on essentially every
+batch. **Its 25× headroom exists only where this battery measures the
+response to removing control density as flat, and it is gone where the
+response is large.** Its costs — RTT-sample and in-flight-release
+cadence both falling 25× — are unchanged. It should be re-derived
+against these numbers before it is built, which is the same discipline
+this section applied to the premise it inherited.
+
+**The method note.** Both halves of this section are the same lesson.
+A quantity that varies across the cell matrix was measured at one cell
+and written into the record as a property of the machine; a knob was
+judged against a clause its measured mechanism could not reach, and
+shipped OFF for reasons that were about the clause rather than about
+the knob. Neither error was a failure of rigour in the original
+session — it pre-registered, it instrumented, it recorded its own
+refutation honestly, and it explicitly flagged the side result and the
+gate set it would owe. What it lacked was a second cell. **Where an
+instrument is cheap and the mechanism is cell-conditional, measure the
+matrix, not the point** — and when a build's own record names the
+experiment it is owed, run it.
 
 ## 17. The Measured Regime Map (2026-07-19)
 
