@@ -18196,3 +18196,86 @@ pre-existing warning — the two leftovers the deletions did create
 `perf_loopback` 8/8, all seven loopbacks (ack_merge, copa_sole, emit_batch,
 patience, recov_mp, win_decouple, wire_compact) 1/1 each, `recovery_bench`
 1/1, and `--doc`. No merge; six commits on `refactor/dead-code-1`.
+## Refactor: net seams 1 (2026-08-08) — REFACTOR, behaviour-preserving ONLY (branch `refactor/net-seams-1` from main@6e386bf; no law change, no default change, no measurement; the seam-map's "free" extractions — the ones with no shared mutable state)
+
+`raptorpath/src/net/mod.rs` was 13,694 lines, of which `run_window_sender`
+(4,797) and `run_impl` (3,084) were 69% of production code. The 2026-08-08
+seam map identified three extractions that are FREE — the moved code shares
+no mutable state with what it leaves behind, so the move is a pure change of
+where the text lives. This branch executes exactly those three and nothing
+else. House style throughout: one concern per file, a `behaviour contract`
+paragraph plus a `NOT covered here` list in each new module header (the
+`src/gates.rs` shape), `pub(crate)` visibility, no traits invented for
+single-implementation seams.
+
+**What moved.**
+
+| # | what | to | net/mod.rs |
+|---|---|---|---|
+| 1 | the five spawned background tasks — decoder GC, block-ARQ sweeper, path-command processor, RTCP report/keepalive, control fast path | `net/tasks/{decoder_gc,arq_sweep,path_cmd,report,control_fastpath}.rs` + a 38-line `tasks/mod.rs` | 13,694 → 13,390 (−304) |
+| 2 | the BLOCK-mode sender loop (the `else` half of the sender spawn) | `net/block_sender.rs` — the sibling of the existing `net/block_arq.rs` | 13,390 → 13,150 (−240) |
+| 3 | `handle_control_message` (17 params, one 620-line `match`) | `net/control_msg.rs` — a `ControlCtx` struct + one `on_*` fn per non-trivial arm | 13,150 → 12,478 (−672) |
+
+**Total: 13,694 → 12,478 lines, −1,216 (−8.9%), in five new files plus one
+new directory module.**
+
+**The behaviour-preservation argument.** Each move rests on a structural
+fact, not on inspection alone:
+
+1. **The tasks.** Every one of the five was an `async move` block preceded by
+   a block of `let x_foo = foo.clone();` bindings that existed only to feed
+   it. The captures are therefore *exactly* enumerable: pre-cloned `Arc`s,
+   `Copy` scalars, and channel endpoints the task owns outright. Turning
+   clone-then-move into clone-then-pass keeps the same clone at the same
+   point in `run_impl`, and `tokio::spawn(run_x(..))` polls the returned
+   future where it polled the block. Bodies are verbatim — including the
+   report task's deliberate scope-end guard drop (it must not hold the
+   scheduler lock across the reliable-stream awaits) and the ARQ sweeper's
+   window-mode PARK-until-shutdown early return (an instant return there
+   once tore the tunnel down at startup).
+2. **The block sender.** The split point is an *existing early `return`*:
+   the sender spawn was `if sender_window_mode { run_window_sender(..).await;
+   return; }` followed by ~260 lines of block-mode loop. Every binding the
+   block loop touches is declared AFTER that return, so the two halves
+   provably share nothing. `tun` is moved in by value instead of captured
+   and is still dropped when the future completes.
+3. **The control dispatch.** Only the parameter plumbing changed: the 17
+   parameters became `ControlCtx` fields with their original types and their
+   original documented meaning, and the arm bodies moved verbatim. Verified
+   mechanically as well as by eye — a line-level diff of the old function
+   body against the new module leaves 49 unmatched lines, and all 49 are the
+   signature/param-doc lines that became `ControlCtx` fields, the `} => {`
+   arm openers, and four lines where a bare parameter became `ctx.<field>`.
+   No statement was lost, added, or reordered. In particular the `WindowAck`
+   arm still runs its whole re-homed Ack payload (delivery → RTT →
+   loss/pool/stats/cc-window) under ONE scheduler acquisition released before
+   `copa_feed_attribute`, and the `Ack` arm still `drop(sched)`s before
+   touching the ARQ ledger. `ControlCtx` is taken by SHARED reference: no arm
+   mutates the context, all mutation goes through the `Mutex`/`DashMap`/
+   atomic handles it carries.
+
+**One finding, reported rather than fixed.** `handle_control_message`'s
+`fec_backend` parameter is **read by no arm**. `BlockStart` builds its decoder
+from the backend carried ON THE WIRE (ADR-0030) — which is that field's whole
+purpose — and mid-stream backend switching was removed (§16.4), so the
+startup-pinned value has had no consumer here for some time. Deleting it would
+be behaviour-neutral, but it is a signature change beyond a
+behaviour-preserving pass's remit, so the seam keeps it verbatim as a
+documented dead `ControlCtx` field. A later cleanup pass can drop it.
+
+**Not moved, deliberately.** The status-HTTP `serve` spawn (five lines inside
+an `if let Some(addr)` conditional — extraction buys an indirection and no
+seam), the window-mode sender (`run_window_sender`, still the largest single
+function and NOT a free seam — it is stateful across its whole body), the
+receiver loop, and the encode/drain helpers `encode_to_interleave_buf` /
+`send_interleaved_batches` (shared with the ARQ repair paths, so they stay at
+`net` module level).
+
+**Gate, run in full after EACH of the three commits** (`--doc` included, per
+627ade9): `cargo test -p raptorpath --lib` 390/390 · `-p raptorpath-math`
+59+19+22+4+4+3+25 · `--doc` (0 doctests defined) · `--test gate_suite
+--release` **15/15** · `mtu_blackhole_wedge` 2/2 · `recovery_bench` 1/1
+(fixtures) · `perf_loopback` 8/8 · `ack_merge` / `copa_sole` / `emit_batch` /
+`patience` / `recov_mp` / `win_decouple` / `wire_compact` loopbacks 1/1 each.
+**Three green runs, no flake, no skip.** No paper change: nothing this branch
+did is visible from outside the crate.

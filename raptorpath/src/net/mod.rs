@@ -10,11 +10,16 @@
 //!   QUIC paths → FEC decode → packet extraction → TUN injection
 
 pub mod block_arq;
+pub mod block_sender;
+pub mod control_msg;
 pub mod framing;
 pub mod interleave;
 pub mod reorder;
+pub mod tasks;
 
 use block_arq::BlockArq;
+use block_sender::run_block_sender;
+use control_msg::{ControlCtx, handle_control_message};
 
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
@@ -1661,7 +1666,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
     // Dedicated channel for stream-origin control: liveness must not queue
     // behind the data flood (see spawn_receiver_for_path).
-    let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
+    let (ctrl_tx, ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
     let _recv_handles = transport.spawn_receivers(msg_tx.clone(), ctrl_tx.clone());
 
     // Sender task: TUN → frame → encode → schedule → send
@@ -1876,267 +1881,25 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             return;
         }
 
-        // ----- Block-mode sender (existing) -----
-        let mut block_buf = Vec::with_capacity(sender_profile_max_block);
-        let mut last_tx_paused = false;
-        let mut flush_deadline: Option<tokio::time::Instant> = None;
-        // Pacing retry: set when the token bucket left symbols in the
-        // carry (P7); the select loop resumes the paced drain when it fires.
-        let mut pace_deadline: Option<tokio::time::Instant> = None;
-        // Symbol-level pacing carry: drained-but-not-yet-sendable symbols
-        // wait here between pace ticks (P7 follow-up — the interleaver
-        // drain is all-or-nothing, so partial sends need their own queue).
-        let mut pace_carry: PaceCarry = PaceCarry::new();
-        let mut shutting_down = false;
-        let mut ileave = if sender_interleave_depth >= 2 {
-            interleave::InterleavingBuffer::new_tapered(
-                sender_interleave_depth as usize,
-                sender_interleave_timeout,
-            )
-        } else {
-            interleave::InterleavingBuffer::new(
-                sender_interleave_depth as usize,
-                sender_interleave_timeout,
-            )
-        };
-
-        loop {
-            // Compute interleave drain deadline
-            let ileave_deadline = ileave.oldest_deadline().map(|d| {
-                // Convert std Instant to tokio Instant (offset from now)
-                let std_now = std::time::Instant::now();
-                let remaining = d.saturating_duration_since(std_now);
-                tokio::time::Instant::now() + remaining
-            });
-
-            // Copa backpressure (paper 12 / ADR-0050): stop reading the
-            // TUN while the wire budget is exhausted — the inner flow's own
-            // CC sees the growing TUN queue and slows down. Without this
-            // the encoder ran at TUN speed, saturated the runtime, starved
-            // QUIC timers/liveness, and any bulk transfer killed the
-            // tunnel within DEAD_PATH_TIMEOUT (L1 harness finding).
-            let (tx_paused, dbg_fl, dbg_cw) = {
-                let mut sched = sender_scheduler.lock();
-                let mut fl = 0u64;
-                let mut cw = 0u64;
-                for id in sched.live_paths() {
-                    if let Some(p) = sched.path_mut(id) {
-                        // Time-based budget release first: stranded charges
-                        // (lost best-effort ACK datagrams) must reopen the
-                        // gate at RTT timescale, not the 2s leak-guard
-                        // cadence (P7 follow-up 2, L1 finding).
-                        p.expire_in_flight();
-                        fl += p.in_flight as u64;
-                        cw += p.cwnd as u64;
-                    }
-                }
-                // in_flight is charged once at SCHEDULE time, so it already
-                // covers interleaver + pacing carry + wire — the whole
-                // committed pipeline.
-                (fl >= cw.max(4), fl, cw)
-            };
-            if tx_paused != last_tx_paused {
-                debug!(tx_paused, in_flight = dbg_fl, cwnd = dbg_cw, "backpressure state change");
-                last_tx_paused = tx_paused;
-            }
-
-            // ADR-0001: select between packet arrival, flush timeout, interleave drain, and shutdown
-            let packet = {
-                let flush_sleep = async {
-                    match flush_deadline {
-                        Some(d) => tokio::time::sleep_until(d).await,
-                        None => std::future::pending().await,
-                    }
-                };
-                let ileave_sleep = async {
-                    match ileave_deadline {
-                        Some(d) => tokio::time::sleep_until(d).await,
-                        None => std::future::pending().await,
-                    }
-                };
-                let pace_sleep = async {
-                    match pace_deadline {
-                        Some(d) => tokio::time::sleep_until(d).await,
-                        None => std::future::pending().await,
-                    }
-                };
-                tokio::select! {
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(1)), if tx_paused => {
-                        continue;
-                    }
-                    p = tun.read_packet(), if !tx_paused => p,
-                    _ = flush_sleep => None,
-                    _ = pace_sleep => {
-                        // Pacing tokens should be available again — retry
-                        // the blocked drain.
-                        pace_deadline = send_interleaved_batches(
-                            &mut ileave,
-                            &mut pace_carry,
-                            &sender_batch_counter,
-                            &sender_transport,
-                            &sender_scheduler,
-                            &sender_stats,
-                            &sender_block_arq,
-                            false,
-                        )
-                        .map(|d| tokio::time::Instant::now() + d);
-                        continue;
-                    }
-                    _ = ileave_sleep => {
-                        // Interleave timeout — drain and send buffered symbols
-                        if ileave.should_drain() || !ileave.is_empty() {
-                            pace_deadline = send_interleaved_batches(
-                                &mut ileave,
-                                &mut pace_carry,
-                                &sender_batch_counter,
-                                &sender_transport,
-                                &sender_scheduler,
-                                &sender_stats,
-                                &sender_block_arq,
-                                false,
-                            )
-                            .map(|d| tokio::time::Instant::now() + d);
-                        }
-                        continue;
-                    }
-                    _ = sender_shutdown_rx.recv() => { shutting_down = true; None }
-                }
-            };
-
-            // ADR-0015: flush partial block and notify peer on shutdown
-            if shutting_down {
-                if !block_buf.is_empty() {
-                    framing::frame_end(&mut block_buf);
-                    encode_to_interleave_buf(
-                        &mut block_buf,
-                        &sender_block_counter,
-                        &sender_batch_counter,
-                        &sender_scheduler,
-                        &sender_fec,
-                        &sender_transport,
-                        &sender_sent_counts,
-                        &sender_stats,
-                        sender_profile_symbol_size,
-                        sender_profile_max_block,
-                        &mut ileave,
-                        sender_fec_backend,
-                        &sender_block_arq,
-                    );
-                }
-                // Force-drain all remaining interleaved symbols (bypasses
-                // the pacing gate — shutdown flush must not strand data)
-                send_interleaved_batches(
-                    &mut ileave,
-                    &mut pace_carry,
-                    &sender_batch_counter,
-                    &sender_transport,
-                    &sender_scheduler,
-                    &sender_stats,
-                    &sender_block_arq,
-                    true,
-                );
-                // Send Shutdown control message to peer on all paths
-                {
-                    let sched = sender_scheduler.lock();
-                    for pid in sched.active_paths() {
-                        let _ = sender_transport.send_control_datagram(
-                            pid,
-                            ControlMessage::Shutdown,
-                        );
-                    }
-                }
-                info!("sender shut down gracefully");
-                break;
-            }
-
-            match packet {
-                Some(pkt) => {
-                    // ADR-0002: frame each packet with length prefix
-                    framing::frame_packet(&mut block_buf, &pkt);
-
-                    // Start flush timer on first packet in block
-                    if flush_deadline.is_none() {
-                        flush_deadline =
-                            Some(tokio::time::Instant::now() + sender_profile_flush);
-                    }
-
-                    // Flush if block is full
-                    if block_buf.len() >= sender_profile_max_block {
-                        framing::frame_end(&mut block_buf);
-                        encode_to_interleave_buf(
-                            &mut block_buf,
-                            &sender_block_counter,
-                            &sender_batch_counter,
-                            &sender_scheduler,
-                            &sender_fec,
-                            &sender_transport,
-                            &sender_sent_counts,
-                            &sender_stats,
-                            sender_profile_symbol_size,
-                            sender_profile_max_block,
-                            &mut ileave,
-                            sender_fec_backend,
-                            &sender_block_arq,
-                        );
-                        flush_deadline = None;
-                        // Check if interleave buffer is ready to drain
-                        if ileave.should_drain() {
-                            pace_deadline = send_interleaved_batches(
-                                &mut ileave,
-                                &mut pace_carry,
-                                &sender_batch_counter,
-                                &sender_transport,
-                                &sender_scheduler,
-                                &sender_stats,
-                                &sender_block_arq,
-                                false,
-                            )
-                            .map(|d| tokio::time::Instant::now() + d);
-                        }
-                    }
-                }
-                None => {
-                    if flush_deadline.is_some() && !block_buf.is_empty() {
-                        // ADR-0001: flush partial block on timeout
-                        framing::frame_end(&mut block_buf);
-                        encode_to_interleave_buf(
-                            &mut block_buf,
-                            &sender_block_counter,
-                            &sender_batch_counter,
-                            &sender_scheduler,
-                            &sender_fec,
-                            &sender_transport,
-                            &sender_sent_counts,
-                            &sender_stats,
-                            sender_profile_symbol_size,
-                            sender_profile_max_block,
-                            &mut ileave,
-                            sender_fec_backend,
-                            &sender_block_arq,
-                        );
-                        flush_deadline = None;
-                        // Check if interleave buffer is ready to drain
-                        if ileave.should_drain() {
-                            pace_deadline = send_interleaved_batches(
-                                &mut ileave,
-                                &mut pace_carry,
-                                &sender_batch_counter,
-                                &sender_transport,
-                                &sender_scheduler,
-                                &sender_stats,
-                                &sender_block_arq,
-                                false,
-                            )
-                            .map(|d| tokio::time::Instant::now() + d);
-                        }
-                    } else if flush_deadline.is_none() {
-                        // TUN closed (read_packet returned None without timeout)
-                        info!("TUN closed");
-                        break;
-                    }
-                }
-            }
-        }
+        run_block_sender(
+            tun,
+            sender_transport,
+            sender_scheduler,
+            sender_fec,
+            sender_block_counter,
+            sender_batch_counter,
+            sender_sent_counts,
+            sender_stats,
+            sender_block_arq,
+            sender_profile_max_block,
+            sender_profile_flush,
+            sender_profile_symbol_size,
+            sender_fec_backend,
+            sender_interleave_depth,
+            sender_interleave_timeout,
+            sender_shutdown_rx,
+        )
+        .await;
     });
 
     // Receiver task: receive → decode → extract packets → TUN inject
@@ -3985,21 +3748,23 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                     handle_control_message(
                         path_id,
                         ctrl_msg,
-                        &recv_scheduler,
-                        &recv_fec,
-                        &recv_decoders,
-                        &sent_counts,
-                        &recv_transport,
-                        recv_fec_backend,
-                        &recv_stats,
-                        recv_nack_tx.as_ref(),
-                        if recv_window_mode { None } else { Some(&recv_block_arq) },
-                        Some(&recv_batch_counter),
-                        if recv_window_mode { Some(&recv_window_ack) } else { None },
-                        if recv_window_generation { Some(&recv_deficit_tx) } else { None },
-                        recv_sack_tx.as_ref(),
-                        recv_copa_feed.as_ref(),
-                        recv_gates.mstar_anchor,
+                        &ControlCtx {
+                            scheduler: &recv_scheduler,
+                            fec_controller: &recv_fec,
+                            decoders: &recv_decoders,
+                            sent_counts: &sent_counts,
+                            transport: &recv_transport,
+                            fec_backend: recv_fec_backend,
+                            stats: &recv_stats,
+                            nack_tx: recv_nack_tx.as_ref(),
+                            block_arq: if recv_window_mode { None } else { Some(&recv_block_arq) },
+                            batch_counter: Some(&recv_batch_counter),
+                            peer_window_ack: if recv_window_mode { Some(&recv_window_ack) } else { None },
+                            deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
+                            sack_tx: recv_sack_tx.as_ref(),
+                            copa_feed: recv_copa_feed.as_ref(),
+                            mstar_anchor: recv_gates.mstar_anchor,
+                        },
                     );
 
                     // Replay symbols that outraced this BlockStart -- the
@@ -4025,131 +3790,32 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cleanup_decoders = active_decoders.clone();
     let cleanup_fec = fec_controller.clone();
     let cleanup_stats = stats.clone();
-    let cleanup_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
-        loop {
-            interval.tick().await;
-            let now = Instant::now();
-            let mut timed_out = Vec::new();
+    let cleanup_handle = tokio::spawn(tasks::run_decoder_gc(
+        cleanup_decoders,
+        cleanup_fec,
+        cleanup_stats,
+    ));
 
-            cleanup_decoders.retain(|block_id, decoder| {
-                if now.duration_since(decoder.created_at()) > DECODER_TIMEOUT {
-                    if !decoder.is_decoded() {
-                        timed_out.push(*block_id);
-                    }
-                    false // remove
-                } else {
-                    true // keep
-                }
-            });
-
-            // Report timed-out blocks as failures to FEC controller
-            if !timed_out.is_empty() {
-                let mut ctrl = cleanup_fec.lock();
-                for _block_id in &timed_out {
-                    ctrl.feedback_update(false);
-                }
-                // ADR-0013: update monitoring stats for timed-out blocks
-                cleanup_stats.blocks.decoded_fail.fetch_add(timed_out.len() as u64, Ordering::Relaxed);
-                warn!(
-                    count = timed_out.len(),
-                    "evicted timed-out decoders (block decode failures)"
-                );
-            }
-        }
-    });
-
-    // Block-mode ARQ sweeper (P8): the Ack-diff path needs LATER acks on
-    // the same path to reveal a lost batch; the tail of a transfer has
-    // none, so a timeout sweep declares those batches delivered-or-lost at
-    // SRTT timescale (mirrors the in_flight expiry) and repairs them.
+    // Block-mode ARQ sweeper (P8) — see `net::tasks::arq_sweep`.
     let sweep_block_arq = block_arq.clone();
     let sweep_scheduler = scheduler_arc.clone();
     let sweep_transport = transport_arc.clone();
     let sweep_stats = stats.clone();
     let sweep_batch_counter = batch_counter.clone();
     let sweep_window_mode = window_mode;
-    let mut sweep_shutdown_rx = shutdown_tx.subscribe();
-    let arq_sweep_handle = tokio::spawn(async move {
-        if sweep_window_mode {
-            // Window mode has its own SACK/NACK repair machinery — there is
-            // no block-ARQ ledger to sweep. Park until shutdown instead of
-            // returning: main()'s select! treats ANY task completing as
-            // tunnel shutdown, and an instant return here tore the tunnel
-            // down right after startup (L1 realtime bring-up failure).
-            let _ = sweep_shutdown_rx.recv().await;
-            return;
-        }
-        let mut interval = tokio::time::interval(Duration::from_millis(25));
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {}
-                _ = sweep_shutdown_rx.recv() => break,
-            }
-            let timeouts: std::collections::HashMap<u32, Duration> = {
-                let sched = sweep_scheduler.lock();
-                sched
-                    .all_path_ids()
-                    .into_iter()
-                    .filter_map(|pid| sched.path(pid).map(|p| (pid, arq_loss_timeout(p.srtt()))))
-                    .collect()
-            };
-            let events = sweep_block_arq.lock().sweep(Instant::now(), &|pid| {
-                timeouts
-                    .get(&pid)
-                    .copied()
-                    .unwrap_or(Duration::from_millis(200))
-            });
-            if !events.is_empty() {
-                send_arq_repairs(
-                    events,
-                    &sweep_block_arq,
-                    &sweep_scheduler,
-                    &sweep_transport,
-                    &sweep_batch_counter,
-                    &sweep_stats,
-                );
-            }
-
-            // Idle re-announce (P8, send-idle recovery): a lost BlockStart
-            // orphans a block whose symbols were all delivered-and-acked — the
-            // ledger is empty, so `sweep` above sees nothing, yet the block
-            // never decodes. Re-send BlockStart + a small spare for any block
-            // still retained (un-decoded) and quiet past the loss timeout. The
-            // re-announce is driven by THIS timer (not TUN reads), so it fires
-            // while the sender is idle awaiting the app-level ack.
-            let default_path = {
-                let sched = sweep_scheduler.lock();
-                sched.best_repair_path_avoiding(u32::MAX).unwrap_or(0)
-            };
-            let eps_hat = worst_loss_rate(&sweep_scheduler);
-            let reann = sweep_block_arq.lock().idle_reannounce(
-                Instant::now(),
-                &|pid| {
-                    timeouts
-                        .get(&pid)
-                        .copied()
-                        .unwrap_or(Duration::from_millis(200))
-                        .min(REANNOUNCE_TIMEOUT_MAX)
-                },
-                default_path,
-                eps_hat,
-            );
-            if !reann.is_empty() {
-                dispatch_repair_plans(
-                    reann,
-                    &sweep_block_arq,
-                    &sweep_scheduler,
-                    &sweep_transport,
-                    &sweep_batch_counter,
-                    &sweep_stats,
-                );
-            }
-        }
-    });
+    let sweep_shutdown_rx = shutdown_tx.subscribe();
+    let arq_sweep_handle = tokio::spawn(tasks::run_arq_sweep(
+        sweep_block_arq,
+        sweep_scheduler,
+        sweep_transport,
+        sweep_stats,
+        sweep_batch_counter,
+        sweep_window_mode,
+        sweep_shutdown_rx,
+    ));
 
     // Path management command channel (for runtime add/remove via HTTP API)
-    let (path_cmd_tx, mut path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
+    let (path_cmd_tx, path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
 
     // ADR-0013: spawn status HTTP endpoint if configured
     if let Some(addr) = config.status_addr {
@@ -4169,199 +3835,31 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cmd_msg_tx = msg_tx.clone();
     let cmd_ctrl_tx = ctrl_tx.clone();
     let next_path_id = Arc::new(AtomicU64::new(config.bind_addrs.len() as u64));
-    let mut cmd_shutdown_rx = shutdown_tx.subscribe();
-    let cmd_handle = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                cmd = path_cmd_rx.recv() => {
-                    let cmd = match cmd {
-                        Some(c) => c,
-                        None => break,
-                    };
-                    match cmd {
-                        crate::monitor::http::PathCommand::Add { bind_addr, peer_addr } => {
-                            let path_id = next_path_id.fetch_add(1, Ordering::Relaxed) as u32;
-                            info!(path_id, %bind_addr, ?peer_addr, "adding path at runtime");
-                            match cmd_transport.add_path(path_id, bind_addr, peer_addr).await {
-                                Ok(conn) => {
-                                    cmd_scheduler.lock().add_path(path_id);
-                                    cmd_stats.add_path(path_id);
-                                    cmd_transport.spawn_receiver_for_path(
-                                        path_id,
-                                        conn,
-                                        cmd_msg_tx.clone(),
-                                        cmd_ctrl_tx.clone(),
-                                    );
-                                    info!(path_id, "path added successfully");
-                                }
-                                Err(e) => {
-                                    warn!(path_id, ?e, "failed to add path");
-                                }
-                            }
-                        }
-                        crate::monitor::http::PathCommand::Remove { path_id } => {
-                            info!(path_id, "removing path at runtime");
-                            cmd_transport.remove_path(path_id);
-                            cmd_scheduler.lock().remove_path(path_id);
-                            info!(path_id, "path removed");
-                        }
-                    }
-                }
-                _ = cmd_shutdown_rx.recv() => break,
-            }
-        }
-    });
+    let cmd_shutdown_rx = shutdown_tx.subscribe();
+    let cmd_handle = tokio::spawn(tasks::run_path_cmd(
+        path_cmd_rx,
+        cmd_transport,
+        cmd_scheduler,
+        cmd_stats,
+        cmd_msg_tx,
+        cmd_ctrl_tx,
+        next_path_id,
+        cmd_shutdown_rx,
+    ));
 
     // RTCP-style periodic report + keepalive task
     let report_transport = transport_arc.clone();
     let report_scheduler = scheduler_arc.clone();
     let report_stats = stats.clone();
     let report_symbol_size = profile.symbol_size;
-    let mut report_shutdown_rx = shutdown_tx.subscribe();
-    let report_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(REPORT_INTERVAL);
-        // P10a: local send-rate measurement state (per path): previous
-        // symbols_sent counter and the last sample instant.
-        let mut sent_prev: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-        let mut sent_prev_t = tokio::time::Instant::now();
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {}
-                _ = report_shutdown_rx.recv() => break,
-            }
-
-            debug!("report tick");
-            let reports: Vec<_> = {
-            let mut sched = report_scheduler.lock();
-
-            // P10a (paper 14.28): feed the estimator a LOCAL throughput
-            // measurement — the achieved send rate over the report
-            // interval. Production previously had NO local feed: the only
-            // record_throughput call took the peer's PathReport value,
-            // which is the peer's estimator.throughput() — circular, so
-            // both sides sat at 0.0 forever and every throughput-gated
-            // model term (t_sym: the 14.28 inner-feedback floor, the
-            // 14.21 saturation cap, the 8.4 burst B/T term) was silently
-            // sentinel-disabled on real links. The send rate is the right
-            // t_sym semantics anyway: T_arq counts wire slots of the send
-            // process the repairs are interleaved into.
-            {
-                let now_t = tokio::time::Instant::now();
-                let dt = now_t.duration_since(sent_prev_t).as_secs_f64();
-                if dt > 0.2 {
-                    for pid in sched.all_path_ids() {
-                        let sent = report_stats
-                            .path(pid)
-                            .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
-                            .unwrap_or(0);
-                        let prev = sent_prev.insert(pid, sent).unwrap_or(sent);
-                        let delta = sent.saturating_sub(prev);
-                        // Only feed while actually sending: an idle tunnel
-                        // must not decay the operating-rate estimate to 0
-                        // (t_sym would blow up and re-disable the floor).
-                        // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a report
-                        // tick inside a stall quarantine measures the
-                        // release flood — skip the sample (the next tick's
-                        // Δ/dt spans the disturbance and averages it out).
-                        let gap_q = crate::control::anchor::stall_witness()
-                            .is_some_and(|w| w.quarantined_now());
-                        if delta > 0 && !gap_q {
-                            if let Some(path) = sched.path_mut(pid) {
-                                let bps = delta as f64 * report_symbol_size as f64 / dt;
-                                path.estimator.record_throughput(bps);
-                            }
-                        }
-                    }
-                    sent_prev_t = now_t;
-                }
-            }
-
-            // Check for dead paths
-            let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
-            for pid in &deactivated {
-                if let Some(ps) = report_stats.path(*pid) {
-                    ps.active.store(false, Ordering::Relaxed);
-                }
-            }
-
-            // Query and store MTU per path
-            for pid in sched.all_path_ids() {
-                if let Some(mtu) = report_transport.max_datagram_size(pid) {
-                    if let Some(path) = sched.path_mut(pid) {
-                        path.max_datagram_size = Some(mtu);
-                    }
-                }
-            }
-
-            // in_flight leak guard (backstop): time-based expiry
-            // (PathState::expire_in_flight, RTT-timescale) is the primary
-            // release for stranded budget; the 25% decay remains as a
-            // last-resort backstop for anything the expiry can't see
-            // (e.g. direct in_flight writes that bypassed the charge log).
-            for pid in sched.all_path_ids() {
-                if let Some(path) = sched.path_mut(pid) {
-                    path.expire_in_flight();
-                    if path.in_flight > path.cwnd {
-                        path.in_flight -= path.in_flight / 4;
-                    }
-                }
-            }
-
-            // Send PathReport + Ping on each LIVE path (not active_paths:
-            // that filters by spare cwnd, and a saturated path still needs
-            // its liveness heartbeats — see Scheduler::live_paths).
-            let path_ids = sched.live_paths();
-            path_ids.iter().filter_map(|&pid| {
-                let path = sched.path(pid)?;
-                let ps = report_stats.path(pid)?;
-                Some((pid, ControlMessage::PathReport {
-                    path_id: pid,
-                    loss_rate: path.estimator.loss_rate(),
-                    avg_rtt_us: path.estimator.rtt().as_micros() as u64,
-                    throughput_bps: path.estimator.throughput(),
-                    jitter_us: path.estimator.jitter_us() as u64,
-                    symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
-                    symbols_received: ps.symbols_received.load(Ordering::Relaxed),
-                }))
-            }).collect()
-            // guard dropped by scope end: the report sends below await on
-            // the reliable stream and must not hold the scheduler lock
-            };
-
-            for (pid, report) in reports {
-                // Liveness must not share fate with the data flood: under
-                // load the datagram queue is saturated by symbol batches
-                // and report datagrams get dropped, so the peer declares
-                // the path dead after DEAD_PATH_TIMEOUT and QUIC idles out
-                // (L1 finding: every bulk transfer killed the tunnel in
-                // ~6 s). The reliable control stream has its own flow
-                // control, so reports and pings survive saturation.
-                // Hard deadline on control sends: this task also runs the
-                // dead-path checker, so it must NEVER wedge (open_uni can
-                // block indefinitely once stream credit is exhausted).
-                match tokio::time::timeout(
-                    Duration::from_millis(500),
-                    report_transport.send_control(pid, report),
-                )
-                .await
-                {
-                    Err(_) => warn!(pid, "PathReport send timed out (stream credit?)"),
-                    Ok(Err(e)) => warn!(pid, ?e, "failed to send PathReport on control stream"),
-                    Ok(Ok(())) => {}
-                }
-                match tokio::time::timeout(
-                    Duration::from_millis(500),
-                    report_transport.send_control(pid, ControlMessage::Ping { timestamp_us: now_us() }),
-                )
-                .await
-                {
-                    Err(_) => warn!(pid, "Ping send timed out (stream credit?)"),
-                    Ok(Err(e)) => warn!(pid, ?e, "failed to send Ping on control stream"),
-                    Ok(Ok(())) => debug!(pid, "ping sent on control stream"),
-                }
-            }
-        }
-    });
+    let report_shutdown_rx = shutdown_tx.subscribe();
+    let report_handle = tokio::spawn(tasks::run_report(
+        report_transport,
+        report_scheduler,
+        report_stats,
+        report_symbol_size,
+        report_shutdown_rx,
+    ));
 
     // Control fast path: liveness-critical messages (PathReport, Ping,
     // Pong) are handled immediately; anything else that arrives via the
@@ -4374,56 +3872,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let ctrl_fec_backend = effective_fec_backend;
     let ctrl_forward_tx = msg_tx.clone();
     let ctrl_mstar_anchor = gates.mstar_anchor;
-    let ctrl_handle = tokio::spawn(async move {
-        while let Some((path_id, msg)) = ctrl_rx.recv().await {
-            match msg {
-                WireMessage::Control(
-                    cm @ (ControlMessage::PathReport { .. }
-                    | ControlMessage::Ping { .. }
-                    | ControlMessage::Pong { .. }),
-                ) => {
-                    handle_control_message(
-                        path_id,
-                        cm,
-                        &ctrl_scheduler,
-                        &ctrl_fec,
-                        &ctrl_decoders,
-                        &ctrl_sent_counts,
-                        &ctrl_transport,
-                        ctrl_fec_backend,
-                        &ctrl_stats,
-                        None,
-                        // The fast path only handles PathReport/Ping/Pong;
-                        // Acks (which drive block ARQ) and WindowAcks go
-                        // through the data loop, so neither the ledger nor
-                        // the peer-ack atomic (nor the Copa feed) is needed
-                        // here.
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        ctrl_mstar_anchor,
-                    );
-                }
-                other => {
-                    // NEVER await into the data channel: under a symbol
-                    // flood it is full, an awaited send here stalls the
-                    // uni-stream accept loop, stream credit (100) runs
-                    // out, and the report task wedges inside
-                    // send_control — taking the dead-path checker with
-                    // it. Dropping a forwarded stream message under
-                    // overload is survivable; wedging liveness is not.
-                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
-                        ctrl_forward_tx.try_send((path_id, other))
-                    {
-                        warn!(path_id, "data channel full — dropping forwarded control message");
-                    }
-                }
-            }
-        }
-    });
+    let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
+        ctrl_rx,
+        ctrl_scheduler,
+        ctrl_fec,
+        ctrl_decoders,
+        ctrl_sent_counts,
+        ctrl_transport,
+        ctrl_fec_backend,
+        ctrl_stats,
+        ctrl_forward_tx,
+        ctrl_mstar_anchor,
+    ));
 
     // Any task completing — even cleanly — ends the tunnel, so every arm
     // must say WHICH task exited and why. A silent `_ = handle => {}` arm
@@ -10741,682 +10201,6 @@ fn dispatch_repair_plans(
                 "sent ARQ repair symbols"
             );
         }
-    }
-}
-
-fn handle_control_message(
-    path_id: u32,
-    msg: ControlMessage,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
-    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
-    decoders: &Arc<DashMap<u64, Box<dyn FecDecoder>>>,
-    sent_counts: &Arc<DashMap<(u64, u32), u32>>,
-    transport: &Arc<QuicTransport>,
-    fec_backend: FecBackend,
-    stats: &Arc<SharedStats>,
-    nack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
-    // P8: Some(..) in block mode — Ack diffs drive repair sends.
-    block_arq: Option<&Arc<parking_lot::Mutex<BlockArq>>>,
-    batch_counter: Option<&Arc<AtomicU64>>,
-    // Some(..) in window mode: the PEER's cumulative WindowAck point, read
-    // by the local window sender (ack-driven advance, retransmit-buffer and
-    // sent-store pruning). Historically this atomic was only ever written
-    // with the LOCAL receiver's inbound delivery counter — a different seq
-    // space entirely — so the sender's ack state was fed garbage; the RWM
-    // Phase A retention contract (removal by ack ONLY) needs the real ack.
-    peer_window_ack: Option<&Arc<AtomicU64>>,
-    // Some(..) in generation mode: forwards an inbound GenerationDeficit's
-    // (anchor, deficit) vector to the local window sender's recovery loop.
-    deficit_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
-    // Some(..) in plain-reliable mode: forwards the WindowAck's RECEIVED-above-
-    // frontier ranges to the local window sender so it can prune the sent-store
-    // for out-of-order deliveries (SACK flow control). None disables it.
-    sack_tx: Option<&tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
-    // feat/copa-sole-cc: Some(..) in PLAIN in-order window-reliable mode when
-    // the Copa delivery feed is enabled (RWM_QUIC_CC=passthrough or
-    // RWM_COPA_FEED=1). Each WindowAck's frontier/SACK diff is attributed
-    // per path into the send-interval rate sampler + the Copa cwnd dynamics
-    // (`copa_feed_attribute`), and the resulting per-path cwnd is written
-    // into the pass-through substrate window. None = shipped path,
-    // byte-identical.
-    copa_feed: Option<&Arc<CopaFeed>>,
-    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`, resolved once in run_impl —
-    // src/gates.rs): suppress the peer-report RTT pseudo-sample feed.
-    mstar_anchor: bool,
-) {
-    match msg {
-        // ADR-0008: handle BlockStart — use backend from message (ADR-0030)
-        ControlMessage::BlockStart {
-            params,
-            transfer_length,
-            backend,
-        } => {
-            // Evict oldest decoder if at capacity (DoS protection)
-            if !decoders.contains_key(&params.block_id)
-                && decoders.len() >= MAX_CONCURRENT_DECODERS
-            {
-                evict_oldest_decoder(decoders);
-            }
-            decoders
-                .entry(params.block_id)
-                .or_insert_with(|| backend.create_decoder(params, transfer_length));
-            debug!(
-                block_id = params.block_id,
-                source_symbols = params.source_symbols,
-                transfer_length,
-                ?backend,
-                "received BlockStart"
-            );
-        }
-
-        // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
-        ControlMessage::Ack {
-            block_id: _,
-            batch_seq,
-            received_ids,
-            echo_send_timestamp_us,
-            expected_count,
-            received_count,
-        } => {
-            let mut sched = scheduler.lock();
-            sched.touch_path(path_id);
-            // feat/anchor-hygiene (`RWM_CLOCK_GAP`): samples processed in a
-            // stall's release-flood quarantine measured the stall, not the
-            // path — the RTT/delivered-rate feeds below are skipped (budget
-            // release and loss accounting are NOT: counts stay valid).
-            let gap_q = crate::control::anchor::stall_witness()
-                .is_some_and(|w| w.quarantined_now());
-            // NOTE (feat/copa-sole-cc code-fact correction): these per-batch
-            // Acks are sent by the receiver's data arm in WINDOW mode too
-            // (the send site sits AFTER the window/block branch), so plain
-            // window mode has ALWAYS driven `on_ack → record_delivery` here —
-            // with the ack-interval Δt estimator, whose windowed max
-            // over-reads ~×10 under ack bunching (MEASURED on the L0 shim:
-            // btlbw 108k vs true ~10.4k sym/s) and pins cwnd/the plain store
-            // cap via the anchor floor. When the plain-mode Copa feed is
-            // active it owns delivery accounting + cwnd dynamics with clean
-            // SEND-interval samples (WindowAck frontier/SACK attribution), so
-            // this arm must release the wire-level in-flight budget WITHOUT
-            // polluting the max filter through `record_delivery`.
-            // feat/window-mtu scope fix: a PAUSED N1-scoped feed must behave
-            // as ABSENT here too — otherwise this arm suppresses the legacy
-            // `record_delivery` anchor feed while the paused feed supplies no
-            // samples either, and the anchor never establishes (measured at
-            // duals: btlbw=0/est=n on both paths, dyn cap stuck at boot 128).
-            if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
-                if let Some(p) = sched.path_mut(path_id) {
-                    p.release_in_flight(received_ids.len() as u32);
-                    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode
-                    // keeps the LEGACY cwnd-dynamics call site/cadence (this
-                    // per-batch Ack arm, exactly `on_ack` minus the polluted
-                    // ack-interval `record_delivery` sample — the max filter
-                    // is fed only clean send-interval samples via the
-                    // WindowAck attribution). The full Copa-sole feed runs
-                    // its dynamics in `copa_feed_attribute` instead.
-                    if !feed.owns_cc() {
-                        p.on_delivery_signal();
-                    }
-                }
-            } else if gap_q {
-                // Quarantined: release budget + run the cwnd dynamics at the
-                // legacy cadence, but do NOT feed the ack-interval rate
-                // sample (`record_delivery`) — the flood's collapsed Δt is
-                // the measured ×13 BtlBw over-read. The first post-quarantine
-                // sample spans the whole disturbance (large Δt ⇒ an average,
-                // not a spike), so skipping is self-healing.
-                if let Some(w) = crate::control::anchor::stall_witness() {
-                    w.note_discard();
-                }
-                if let Some(p) = sched.path_mut(path_id) {
-                    p.release_in_flight(received_ids.len() as u32);
-                    p.on_delivery_signal();
-                }
-            } else {
-                sched.ack(path_id, received_ids.len() as u32);
-            }
-            if let Some(p) = sched.path(path_id) {
-                debug!(
-                    path_id,
-                    acked = received_ids.len(),
-                    expected_count,
-                    in_flight = p.in_flight,
-                    cwnd = p.cwnd,
-                    "ack processed"
-                );
-            }
-
-            // ADR-0007: RTT from echoed sender timestamp (same clock, no skew)
-            let now = now_us();
-            let rtt_us = now.saturating_sub(echo_send_timestamp_us);
-            debug!(path_id, rtt_us, batch_seq, "ack rtt sample");
-            if let Some(path) = sched.path_mut(path_id) {
-                let rtt_duration = Duration::from_micros(rtt_us);
-                // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a quarantined echo
-                // measured the stall, not the path — discard, don't average.
-                if !gap_q {
-                    path.estimator.record_rtt(rtt_duration);
-                    // feat/copa-wire-signal: the CC delay term is wire-clocked
-                    // (quinn packet-timed RTT — excludes the sender's own store
-                    // dwell); the estimator above keeps the app-echo RTT for
-                    // the reliability/tail machinery. Gate off ⇒ app echo.
-                    let cc_rtt = if crate::scheduler::copa_wire_active() {
-                        transport.wire_rtt(path_id).unwrap_or(rtt_duration)
-                    } else {
-                        rtt_duration
-                    };
-                    path.record_rtt_sample(cc_rtt);
-                }
-                // feat/copa-compete: wire-level loss evidence for the
-                // competitive AIMD (block-mode Ack arm; the WindowAck feed
-                // path has its own call). No-op unless RWM_COPA_COMPETE.
-                if crate::scheduler::copa_compete_active() {
-                    if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                        path.on_wire_congestion_events(ev);
-                    }
-                }
-
-                // ADR-0003: update loss stats from ACK
-                if expected_count > 0 {
-                    path.estimator
-                        .record_batch(expected_count, received_count);
-                    // Lost symbols also left the wire: release them from
-                    // in_flight (sched.ack above only subtracts received),
-                    // otherwise losses leak budget and the Copa gate jams.
-                    path.release_in_flight(expected_count.saturating_sub(received_count));
-                }
-
-                // Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate
-                // "Ship The Wins 1b" arm A): THE delivery event for this
-                // path's shadow rate sampler. Delivered advances the rate
-                // numerator; LOST advances the accounted cursor only (a lost
-                // symbol left the wire too — that alignment is what lets an
-                // aggregate cursor resolve send spacing without a per-seq
-                // key). Placed here so it sees exactly the counts the legacy
-                // anchor sees: this build changes the Δt STATISTIC, not the
-                // per-path attribution. `gap_q` drops a stall-poisoned event
-                // exactly as the RTT/rate feeds above drop it. Feeds nothing
-                // but the N ≥ 2 pool law; no-op with the gate off.
-                path.on_pool_delivery(
-                    received_ids.len() as u32,
-                    expected_count.saturating_sub(received_count),
-                    gap_q,
-                );
-
-                // ADR-0013: update path monitoring stats
-                if let Some(ps) = stats.path(path_id) {
-                    ps.rtt_us.store(rtt_us, Ordering::Relaxed);
-                    ps.loss_rate_e6.store((path.estimator.loss_rate() * 1_000_000.0) as u64, Ordering::Relaxed);
-                    ps.throughput_bps.store(path.estimator.throughput() as u64, Ordering::Relaxed);
-                    ps.cwnd.store(path.cwnd as u64, Ordering::Relaxed);
-                    ps.in_flight.store(path.in_flight as u64, Ordering::Relaxed);
-                    ps.in_slow_start.store(path.in_slow_start, Ordering::Relaxed);
-                    ps.symbols_received.fetch_add(received_ids.len() as u64, Ordering::Relaxed);
-                }
-
-                // feat/copa-sole-cc: block mode already drives Copa via
-                // `sched.ack` above — publish its cwnd as the pass-through
-                // substrate window too (no-op unless RWM_QUIC_CC=passthrough).
-                transport.set_cc_window_bytes(
-                    path_id,
-                    path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-                );
-            }
-
-            // P8: the Ack is P_lost evidence at probability ≈ 1 — diff the
-            // batch ledger and repair immediately (one-RTT recovery). The
-            // per-path SRTT feeds the timeout leg for older un-acked
-            // batches on this path.
-            let loss_timeout = sched
-                .path(path_id)
-                .map(|p| arq_loss_timeout(p.srtt()))
-                .unwrap_or(Duration::from_millis(200));
-            drop(sched);
-            if let (Some(arq), Some(bc)) = (block_arq, batch_counter) {
-                let events = arq.lock().on_ack(
-                    batch_seq,
-                    path_id,
-                    &received_ids,
-                    Instant::now(),
-                    loss_timeout,
-                );
-                if !events.is_empty() {
-                    send_arq_repairs(events, arq, scheduler, transport, bc, stats);
-                }
-            }
-        }
-
-        ControlMessage::BlockResult {
-            block_id,
-            success,
-            symbols_received,
-            symbols_needed,
-        } => {
-            fec_controller.lock().feedback_update(success);
-
-            // ADR-0013: update FEC monitoring stats
-            {
-                let diag = fec_controller.lock().diagnostics();
-                stats.fec.actual_failure_rate_bits.store(diag.actual_failure_rate.to_bits(), Ordering::Relaxed);
-                stats.fec.pi_correction_e3.store((diag.pi_correction * 1000.0) as i64, Ordering::Relaxed);
-            }
-            if !success {
-                stats.blocks.decoded_fail.fetch_add(1, Ordering::Relaxed);
-            }
-
-            // ADR-0009: signal congestion control on block result
-            // If block failed (not enough symbols), that's a congestion signal
-            // If block succeeded despite loss, FEC handled it (random loss)
-            let had_loss = symbols_received < symbols_needed + (symbols_needed / 5); // rough: needed some repair
-            if had_loss || !success {
-                let mut sched = scheduler.lock();
-                // Signal loss to all paths that sent symbols for this block
-                let path_ids: Vec<u32> = sent_counts
-                    .iter()
-                    .filter(|entry| entry.key().0 == block_id)
-                    .map(|entry| entry.key().1)
-                    .collect();
-                for pid in path_ids {
-                    sched.on_loss(pid, success); // fec_recovered = success
-                }
-            }
-
-            debug!(
-                block_id,
-                success,
-                symbols_received,
-                symbols_needed,
-                "block result from peer"
-            );
-
-            // P8: block decoded → drop retained data and suppress pending
-            // loss events; block failed → one more repair round with
-            // doubled margin (rateless backends only — see block_arq).
-            if let Some(arq) = block_arq {
-                if success {
-                    arq.lock().on_block_done(block_id);
-                } else if let Some(bc) = batch_counter {
-                    let deficit = symbols_needed.saturating_sub(symbols_received);
-                    let eps_hat = worst_loss_rate(scheduler);
-                    let plan = arq.lock().on_block_failed(block_id, deficit, path_id, eps_hat);
-                    if let Some(plan) = plan {
-                        dispatch_repair_plans(
-                            vec![plan],
-                            arq,
-                            scheduler,
-                            transport,
-                            bc,
-                            stats,
-                        );
-                    }
-                }
-            }
-
-            // Clean up sent_counts for this block
-            sent_counts.retain(|(bid, _), _| *bid != block_id);
-        }
-
-        ControlMessage::PathReport {
-            path_id: report_path_id,
-            loss_rate,
-            avg_rtt_us,
-            throughput_bps,
-            jitter_us,
-            symbols_sent: _,
-            symbols_received: _,
-        } => {
-            let mut sched = scheduler.lock();
-            // Touch path — this doubles as keepalive
-            sched.touch_path(report_path_id);
-            if let Some(path) = sched.path_mut(report_path_id) {
-                let rtt_duration = Duration::from_micros(avg_rtt_us);
-                // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rules
-                // 1+3: the peer's `avg_rtt_us` is the peer's ESTIMATOR VALUE
-                // (its own EWMA — seeded at the 50-ms DEFAULT_SRTT class and,
-                // on a pure receiver, never fed by a measurement), NOT an RTT
-                // measurement. Recording it as a sample every ~2 s planted a
-                // perpetual 50-ms "sample" in the 10-s min-RTT floor window —
-                // the measured M* floor-freshness FAIL at the r200 knee cell
-                // (goal-gate #61: rtp=50 ms at a 200-ms-RTprop cell, M*
-                // pinned at the cold-start floor). Under the gate the local
-                // RTT estimators are fed ONLY by locally measured echo
-                // samples (Ack/WindowAck arms); the report keeps its
-                // keepalive/monitoring/loss roles. Floors now EXPIRE with
-                // their min-window as designed. (`RWM_CLOCK_GAP`: reports
-                // processed in a stall quarantine are skipped too.)
-                let gap_q = crate::control::anchor::stall_witness()
-                    .is_some_and(|w| w.quarantined_now());
-                if !mstar_anchor && !gap_q {
-                    path.estimator.record_rtt(rtt_duration);
-                    // feat/copa-wire-signal: wire-clocked CC delay term (see
-                    // the Ack arm above).
-                    let cc_rtt = if crate::scheduler::copa_wire_active() {
-                        transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
-                    } else {
-                        rtt_duration
-                    };
-                    path.record_rtt_sample(cc_rtt);
-                }
-                // P10a: do NOT feed the peer's reported throughput into
-                // the estimator. The field carries the PEER's estimator
-                // value — historically 0.0 (circular feed, see the report
-                // task), and now the peer's own SEND rate, which for an
-                // asymmetric workload (bulk up, ACK trickle down) would
-                // drag this side's t_sym estimate toward the reverse
-                // direction's rate. Local send-rate measurement in the
-                // report task is the sole throughput feed.
-                let _ = throughput_bps;
-                // Record peer's reported loss for cross-validation
-                if loss_rate > 0.0 {
-                    let approx_sent = 100u32;
-                    let approx_received = ((1.0 - loss_rate) * approx_sent as f64) as u32;
-                    path.estimator.record_batch(approx_sent, approx_received);
-                }
-            }
-            // Update monitoring stats with peer's jitter
-            if let Some(ps) = stats.path(report_path_id) {
-                ps.rtt_us.store(avg_rtt_us, Ordering::Relaxed);
-                ps.jitter_us.store(jitter_us, Ordering::Relaxed);
-            }
-        }
-
-        ControlMessage::Ping { timestamp_us } => {
-            debug!(path_id, timestamp_us, "ping received");
-            scheduler.lock().touch_path(path_id);
-            let _ = transport.send_control_datagram(path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
-        }
-
-        // ADR-0015: handle graceful shutdown from peer
-        ControlMessage::Shutdown => {
-            info!(path_id, "peer is shutting down");
-        }
-
-        ControlMessage::PathAdd { path_id: new_path_id, bind_addr } => {
-            info!(new_path_id, %bind_addr, "peer announced new path");
-            // The peer is adding a path. We'll handle the connection setup
-            // through the path command processor.
-        }
-
-        ControlMessage::PathRemove { path_id: removed_id } => {
-            info!(removed_id, "peer removed path");
-            scheduler.lock().remove_path(removed_id);
-        }
-
-        ControlMessage::WindowStart { symbol_size, backend, packed } => {
-            debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
-        }
-
-        ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received, cum_expected, cum_received } => {
-            debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
-            // Publish the peer's cumulative ack point for the window sender
-            // (fetch_max: acks arrive on multiple paths, out of order).
-            if let Some(pa) = peer_window_ack {
-                pa.fetch_max(received_up_to, Ordering::Relaxed);
-            }
-            // (`cumulative_received` — the peer's total decoded count `d`,
-            // FMTCP-era "change 1" — stays on the wire for the debug trace
-            // above; its sender-side consumer was removed with RWM_FMTCP.)
-            // Update RTT from echoed timestamp. echo == 0 is the sentinel
-            // for timer-driven acks (hold-expiry unwedge) that echo no
-            // batch — recording now−0 would poison SRTT with a huge sample.
-            // ack-merge (RWM_ACK_MERGE, goal-gate "Unlock The Default 1"):
-            // in window mode the legacy per-batch `Ack` is suppressed, so
-            // EVERY consumer of its arm is re-homed here, driven by the diff
-            // of the v6 cumulative counters. The whole arm runs under ONE
-            // scheduler lock in the legacy Ack arm's own internal order
-            // (delivery → RTT → loss/pool/stats/cc-window) — one acquisition
-            // where the unmerged pair took two, which is stall source (b) of
-            // the pre-registration, removed rather than merely relocated.
-            let am_on = crate::scheduler::ack_merge_active();
-            let now = now_us();
-            let rtt_us = now.saturating_sub(echo_send_timestamp_us);
-            {
-                let mut sched = scheduler.lock();
-                sched.touch_path(path_id);
-                // feat/anchor-hygiene (`RWM_CLOCK_GAP`): quarantined echoes
-                // (stall release flood) measured the stall — discard.
-                let gap_q = crate::control::anchor::stall_witness()
-                    .is_some_and(|w| w.quarantined_now());
-                if gap_q {
-                    if let Some(w) = crate::control::anchor::stall_witness() {
-                        w.note_discard();
-                    }
-                }
-
-                // ── re-homing PART 1: the delivery signal ────────────────
-                // Mirrors the legacy Ack arm's three-way branch VERBATIM
-                // (feed-present / quarantined / neither), so a configuration
-                // that does have a CopaFeed behaves exactly as it does today.
-                // `record_delivery` (inside `sched.ack`) is PORTED on purpose:
-                // with no feed constructed — the shipped default and every arm
-                // of this battery — it is the ONLY window-mode rate anchor,
-                // and dropping it is the trap recorded in the Ack arm
-                // (max_bw = 0 ⇒ the anchor floor never establishes ⇒ the
-                // dynamic store cap sticks at boot 128). The merged ack
-                // arrives on exactly the cadence the Ack did, so its
-                // ack-interval Δt statistic is unperturbed. `note_discard` is
-                // NOT repeated here — the quarantine block above already
-                // charged it once for this ack.
-                let (d_expected, d_received) = if am_on {
-                    sched
-                        .path_mut(path_id)
-                        .map(|p| p.ack_merge_counter_delta(cum_expected, cum_received))
-                        .unwrap_or((0, 0))
-                } else {
-                    (0, 0)
-                };
-                let am_live = d_expected > 0 || d_received > 0;
-                if am_live {
-                    if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
-                        if let Some(p) = sched.path_mut(path_id) {
-                            p.release_in_flight(d_received);
-                            if !feed.owns_cc() {
-                                p.on_delivery_signal();
-                            }
-                        }
-                    } else if gap_q {
-                        if let Some(p) = sched.path_mut(path_id) {
-                            p.release_in_flight(d_received);
-                            p.on_delivery_signal();
-                        }
-                    } else {
-                        sched.ack(path_id, d_received);
-                    }
-                }
-
-                if echo_send_timestamp_us > 0 && !gap_q {
-                    if let Some(path) = sched.path_mut(path_id) {
-                        let rtt_duration = Duration::from_micros(rtt_us);
-                        path.estimator.record_rtt(rtt_duration);
-                        // feat/copa-wire-signal: wire-clocked CC delay term —
-                        // the #80 battery proved the app-echo RTT reads the
-                        // sender's OWN reservoir dwell as network queue (arm
-                        // D). The estimator keeps the app echo (end-to-end
-                        // tail machinery); Copa gets the packet-timed RTT.
-                        let cc_rtt = if crate::scheduler::copa_wire_active() {
-                            transport.wire_rtt(path_id).unwrap_or(rtt_duration)
-                        } else {
-                            rtt_duration
-                        };
-                        path.record_rtt_sample(cc_rtt);
-                    }
-                }
-
-                // ── re-homing PART 2: loss, pool, stats, cc window ───────
-                // The remainder of the legacy Ack arm, in its own order and
-                // with its own guards. The loss feed is the SENDER'S ONLY
-                // loss signal and the counter diff is what makes it survive
-                // the merge exactly (sums, not events).
-                if am_live {
-                    if let Some(path) = sched.path_mut(path_id) {
-                        // feat/copa-compete: wire-level loss evidence for the
-                        // competitive AIMD. Re-homed only when no live feed
-                        // exists — `copa_feed_attribute` below carries its own
-                        // call, so this keeps the event exactly-once in BOTH
-                        // configurations. (Compete implies a passthrough/feed
-                        // config in practice, so this branch is the
-                        // belt-and-braces one.)
-                        if crate::scheduler::copa_compete_active()
-                            && copa_feed.filter(|f| !f.n1_paused()).is_none()
-                        {
-                            if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                                path.on_wire_congestion_events(ev);
-                            }
-                        }
-                        // ADR-0003: loss stats from the ack's counter delta.
-                        if d_expected > 0 {
-                            path.estimator.record_batch(d_expected, d_received);
-                            // Lost symbols also left the wire: release them
-                            // from in_flight (the delivery branch above only
-                            // subtracts received), otherwise losses leak
-                            // budget and the Copa gate jams.
-                            path.release_in_flight(d_expected.saturating_sub(d_received));
-                        }
-                        // Delivery-clocked pool anchor (RWM_POOL_DELIV): the
-                        // same delivery event the legacy arm fed it.
-                        path.on_pool_delivery(
-                            d_received,
-                            d_expected.saturating_sub(d_received),
-                            gap_q,
-                        );
-                        // ADR-0013: path monitoring stats.
-                        if let Some(ps) = stats.path(path_id) {
-                            ps.loss_rate_e6.store(
-                                (path.estimator.loss_rate() * 1_000_000.0) as u64,
-                                Ordering::Relaxed,
-                            );
-                            ps.throughput_bps
-                                .store(path.estimator.throughput() as u64, Ordering::Relaxed);
-                            ps.cwnd.store(path.cwnd as u64, Ordering::Relaxed);
-                            ps.in_flight.store(path.in_flight as u64, Ordering::Relaxed);
-                            ps.in_slow_start.store(path.in_slow_start, Ordering::Relaxed);
-                            ps.symbols_received
-                                .fetch_add(d_received as u64, Ordering::Relaxed);
-                        }
-                        // feat/copa-sole-cc: publish the cwnd as the
-                        // pass-through substrate window (no-op unless
-                        // RWM_QUIC_CC=passthrough).
-                        transport.set_cc_window_bytes(
-                            path_id,
-                            path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-                        );
-                    }
-                }
-            }
-            // feat/copa-sole-cc: plain-mode Copa delivery feed. Diff this
-            // ack's cumulative frontier + SACK ranges against the attribution
-            // cursor and drive the per-path Copa machinery (send-interval
-            // rate samples, in-flight release, cwnd dynamics, pass-through
-            // window write). After the RTT recording above so the cwnd
-            // update sees the freshest queue signal.
-            if let Some(feed) = copa_feed {
-                copa_feed_attribute(
-                    feed,
-                    path_id,
-                    received_up_to,
-                    &sack_ranges,
-                    scheduler,
-                    transport,
-                    stats,
-                );
-            }
-            // Update monitoring stats
-            if echo_send_timestamp_us > 0 {
-                if let Some(ps) = stats.path(path_id) {
-                    ps.rtt_us.store(rtt_us, Ordering::Relaxed);
-                    ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
-                }
-            }
-            // The sender reads window_ack_seq via AtomicU64 in the sender loop.
-            // P10b: SACK ranges drive reactive repair. Sacked-but-undelivered
-            // seqs imply the seqs BETWEEN them are missing at the receiver —
-            // invert the ranges into gaps and feed the window sender's NACK
-            // repair machinery (exact source retransmission, ADR-0046/0050
-            // budgets, per-seq cooldown). Before this the gap info was
-            // dropped here and the nack channel had no producer at all
-            // (WindowNack is deprecated and never sent), so window mode had
-            // NO functioning reactive repair path.
-            if !sack_ranges.is_empty() {
-                // SACK flow control (feat/sack-flow-control): the RECEIVED
-                // ranges themselves let the plain-reliable sender prune its
-                // sent-store for out-of-order deliveries, so its flow-control
-                // window tracks TRUE outstanding rather than freezing on the
-                // in-order cumulative frontier. Forward before inverting to
-                // gaps (which drive the orthogonal targeted-retransmit path).
-                if let Some(tx) = sack_tx {
-                    let _ = tx.try_send(sack_ranges.clone());
-                }
-                let gaps = sack_to_gaps(received_up_to, &sack_ranges);
-                if !gaps.is_empty() {
-                    debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
-                    if let Some(tx) = nack_tx {
-                        let _ = tx.try_send(gaps);
-                    }
-                }
-            }
-        }
-
-        ControlMessage::WindowNack { gaps } => {
-            debug!(path_id, gap_count = gaps.len(), "window NACK received");
-            // Send NackAck back to receiver for RX path loss measurement
-            // Use gap count as a lightweight nack_id proxy
-            let nack_id = gaps.len() as u32;
-            let _ = transport.send_control_datagram(
-                path_id,
-                ControlMessage::NackAck { nack_id },
-            );
-            if let Some(tx) = nack_tx {
-                let _ = tx.try_send(gaps);
-            }
-        }
-
-        ControlMessage::GenerationDeficit { deficits } => {
-            debug!(
-                path_id,
-                gen_count = deficits.len(),
-                first = ?deficits.first(),
-                "generation deficit feedback received"
-            );
-            // Forward to the local window sender's recovery loop (generation
-            // mode only). Best-effort: a dropped report is re-sent by the
-            // receiver next SRTT, and the in-flight accounting self-corrects.
-            if let Some(tx) = deficit_tx {
-                let _ = tx.try_send(deficits);
-            }
-        }
-
-        ControlMessage::NackAck { nack_id } => {
-            debug!(path_id, nack_id, "NackAck received — RX path alive");
-            // NackAck reception is tracked by the receiver for RX loss estimation.
-            // The receiver updates its estimator based on how many NackAcks come back
-            // vs how many NACKs were sent. This is handled at the application level
-            // in the receiver loop, not here, since we need access to the NACK counter.
-        }
-
-        // ADR-0030: WindowSwitch/WindowSwitchAck handled in receiver/sender loops directly
-        ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
-            debug!(path_id, flush_seq, ?new_backend, symbol_size, "window switch request (handled in receiver loop)");
-        }
-
-        ControlMessage::WindowSwitchAck { flush_seq } => {
-            debug!(path_id, flush_seq, "window switch ack (handled in sender loop)");
-        }
-
-        _ => {}
-    }
-}
-
-/// Evict the oldest incomplete decoder from the map. Used to enforce
-/// `MAX_CONCURRENT_DECODERS` and prevent OOM from a peer flooding block_ids.
-fn evict_oldest_decoder(decoders: &DashMap<u64, Box<dyn FecDecoder>>) {
-    let oldest = decoders
-        .iter()
-        .filter(|entry| !entry.value().is_decoded())
-        .min_by_key(|entry| entry.value().created_at())
-        .map(|entry| *entry.key());
-
-    if let Some(block_id) = oldest {
-        decoders.remove(&block_id);
-        warn!(block_id, "evicted oldest decoder (concurrent decoder limit reached)");
     }
 }
 
