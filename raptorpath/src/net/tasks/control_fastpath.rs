@@ -15,7 +15,7 @@ use dashmap::DashMap;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::handle_control_message;
+use super::super::control_msg::{ControlCtx, handle_control_message};
 use crate::control::FecRateController;
 use crate::fec::{FecBackend, FecDecoder};
 use crate::monitor::stats::SharedStats;
@@ -48,26 +48,28 @@ pub(crate) async fn run_control_fastpath(
                 handle_control_message(
                     path_id,
                     cm,
-                    &ctrl_scheduler,
-                    &ctrl_fec,
-                    &ctrl_decoders,
-                    &ctrl_sent_counts,
-                    &ctrl_transport,
-                    ctrl_fec_backend,
-                    &ctrl_stats,
-                    None,
-                    // The fast path only handles PathReport/Ping/Pong;
-                    // Acks (which drive block ARQ) and WindowAcks go
-                    // through the data loop, so neither the ledger nor
-                    // the peer-ack atomic (nor the Copa feed) is needed
-                    // here.
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    ctrl_mstar_anchor,
+                    &ControlCtx {
+                        scheduler: &ctrl_scheduler,
+                        fec_controller: &ctrl_fec,
+                        decoders: &ctrl_decoders,
+                        sent_counts: &ctrl_sent_counts,
+                        transport: &ctrl_transport,
+                        fec_backend: ctrl_fec_backend,
+                        stats: &ctrl_stats,
+                        // The fast path only handles PathReport/Ping/Pong;
+                        // Acks (which drive block ARQ) and WindowAcks go
+                        // through the data loop, so neither the ledger nor
+                        // the peer-ack atomic (nor the Copa feed) is needed
+                        // here.
+                        nack_tx: None,
+                        block_arq: None,
+                        batch_counter: None,
+                        peer_window_ack: None,
+                        deficit_tx: None,
+                        sack_tx: None,
+                        copa_feed: None,
+                        mstar_anchor: ctrl_mstar_anchor,
+                    },
                 );
             }
             other => {
