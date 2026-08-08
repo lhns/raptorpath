@@ -198,7 +198,7 @@ const BLOCK_REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
 /// Maximum number of gap ranges in a WindowNack message.
 pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
-const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
+pub const MAX_NACK_REPAIRS_PER_NACK: usize = 10;
 /// Minimum interval between NACK budget/congestion-state refreshes (microseconds).
 const NACK_REPAIR_COOLDOWN_US: u64 = 5_000;
 /// Minimum interval between gap-advertising WindowAcks while the cumulative
