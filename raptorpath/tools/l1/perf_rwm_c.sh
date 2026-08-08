@@ -105,6 +105,15 @@ fi
 # Receiver per-message wall (goal-gate "Receiver Per-Message Wall",
 # feat/recv-permsg): estimator heavy-math cadence — the profile-named part.
 [[ -n "${RWM_EST_CADENCE:-}" ]] && TENV="$TENV RWM_EST_CADENCE=$RWM_EST_CADENCE"
+# Window-mode control-datagram merge (goal-gate "Unlock The Default 1:
+# ack-merge" / "Ack-Merge Flip", RWM_ACK_MERGE): the receiver suppresses the
+# legacy per-batch Ack and the SACK WindowAck carries its payload. The
+# 2026-08-07 battery relied on the implicit `sudo env … → ip netns exec`
+# environment inheritance; forwarded EXPLICITLY here so the arm cannot go
+# silently inert if that path ever changes (MEASUREMENT DISCIPLINE item 1 —
+# the liveness echo is asserted per arm, but a harness that can drop the knob
+# is a harness that will).
+[[ -n "${RWM_ACK_MERGE:-}" ]] && TENV="$TENV RWM_ACK_MERGE=$RWM_ACK_MERGE"
 # Pool-anchor honest dual-store law (goal-gate "Ship The Wins 1",
 # feat/ship-est-cadence): the N>=2 store cap on the per-path send-interval
 # anchor; default rides RWM_EST_CADENCE — =0 is the est-only decomposition arm.

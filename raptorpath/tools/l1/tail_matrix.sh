@@ -84,7 +84,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # echo — an unguarded grep kills the whole matrix silently).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*|derived patience ACTIVE[^"]*|derived stall gauge ACTIVE[^"]*|estimator heavy-math cadence ACTIVE[^"]*)' \
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*|derived patience ACTIVE[^"]*|derived stall gauge ACTIVE[^"]*|estimator heavy-math cadence ACTIVE[^"]*|ack-merge ACTIVE[^"]*)' \
             | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
@@ -202,6 +202,13 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # Compare against `ship` (env unset = today's default) and
             # `deliv` (est+eb, the same composition WITHOUT the derived floor).
             pat)     AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_PATIENCE_DERIVED=1"; AFLAGS="" ;;
+            # feat/ack-merge-flip (goal-gate "Ack-Merge Flip"): the crown
+            # NO-REGRESSION spot for the single-knob candidate. `am` =
+            # RWM_ACK_MERGE=1 alone against `ship` (env unset = today's
+            # default). The knob changes the receiver's control-datagram
+            # cadence, which is exactly the clock a tail cell is sensitive
+            # to, so this arm is a gate, not a formality.
+            am)      AENV="RWM_ACK_MERGE=1"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
