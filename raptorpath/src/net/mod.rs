@@ -13,6 +13,7 @@ pub mod block_arq;
 pub mod framing;
 pub mod interleave;
 pub mod reorder;
+pub mod tasks;
 
 use block_arq::BlockArq;
 
@@ -1661,7 +1662,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (msg_tx, mut msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
     // Dedicated channel for stream-origin control: liveness must not queue
     // behind the data flood (see spawn_receiver_for_path).
-    let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
+    let (ctrl_tx, ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
     let _recv_handles = transport.spawn_receivers(msg_tx.clone(), ctrl_tx.clone());
 
     // Sender task: TUN → frame → encode → schedule → send
@@ -4025,131 +4026,32 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cleanup_decoders = active_decoders.clone();
     let cleanup_fec = fec_controller.clone();
     let cleanup_stats = stats.clone();
-    let cleanup_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(CLEANUP_INTERVAL);
-        loop {
-            interval.tick().await;
-            let now = Instant::now();
-            let mut timed_out = Vec::new();
+    let cleanup_handle = tokio::spawn(tasks::run_decoder_gc(
+        cleanup_decoders,
+        cleanup_fec,
+        cleanup_stats,
+    ));
 
-            cleanup_decoders.retain(|block_id, decoder| {
-                if now.duration_since(decoder.created_at()) > DECODER_TIMEOUT {
-                    if !decoder.is_decoded() {
-                        timed_out.push(*block_id);
-                    }
-                    false // remove
-                } else {
-                    true // keep
-                }
-            });
-
-            // Report timed-out blocks as failures to FEC controller
-            if !timed_out.is_empty() {
-                let mut ctrl = cleanup_fec.lock();
-                for _block_id in &timed_out {
-                    ctrl.feedback_update(false);
-                }
-                // ADR-0013: update monitoring stats for timed-out blocks
-                cleanup_stats.blocks.decoded_fail.fetch_add(timed_out.len() as u64, Ordering::Relaxed);
-                warn!(
-                    count = timed_out.len(),
-                    "evicted timed-out decoders (block decode failures)"
-                );
-            }
-        }
-    });
-
-    // Block-mode ARQ sweeper (P8): the Ack-diff path needs LATER acks on
-    // the same path to reveal a lost batch; the tail of a transfer has
-    // none, so a timeout sweep declares those batches delivered-or-lost at
-    // SRTT timescale (mirrors the in_flight expiry) and repairs them.
+    // Block-mode ARQ sweeper (P8) — see `net::tasks::arq_sweep`.
     let sweep_block_arq = block_arq.clone();
     let sweep_scheduler = scheduler_arc.clone();
     let sweep_transport = transport_arc.clone();
     let sweep_stats = stats.clone();
     let sweep_batch_counter = batch_counter.clone();
     let sweep_window_mode = window_mode;
-    let mut sweep_shutdown_rx = shutdown_tx.subscribe();
-    let arq_sweep_handle = tokio::spawn(async move {
-        if sweep_window_mode {
-            // Window mode has its own SACK/NACK repair machinery — there is
-            // no block-ARQ ledger to sweep. Park until shutdown instead of
-            // returning: main()'s select! treats ANY task completing as
-            // tunnel shutdown, and an instant return here tore the tunnel
-            // down right after startup (L1 realtime bring-up failure).
-            let _ = sweep_shutdown_rx.recv().await;
-            return;
-        }
-        let mut interval = tokio::time::interval(Duration::from_millis(25));
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {}
-                _ = sweep_shutdown_rx.recv() => break,
-            }
-            let timeouts: std::collections::HashMap<u32, Duration> = {
-                let sched = sweep_scheduler.lock();
-                sched
-                    .all_path_ids()
-                    .into_iter()
-                    .filter_map(|pid| sched.path(pid).map(|p| (pid, arq_loss_timeout(p.srtt()))))
-                    .collect()
-            };
-            let events = sweep_block_arq.lock().sweep(Instant::now(), &|pid| {
-                timeouts
-                    .get(&pid)
-                    .copied()
-                    .unwrap_or(Duration::from_millis(200))
-            });
-            if !events.is_empty() {
-                send_arq_repairs(
-                    events,
-                    &sweep_block_arq,
-                    &sweep_scheduler,
-                    &sweep_transport,
-                    &sweep_batch_counter,
-                    &sweep_stats,
-                );
-            }
-
-            // Idle re-announce (P8, send-idle recovery): a lost BlockStart
-            // orphans a block whose symbols were all delivered-and-acked — the
-            // ledger is empty, so `sweep` above sees nothing, yet the block
-            // never decodes. Re-send BlockStart + a small spare for any block
-            // still retained (un-decoded) and quiet past the loss timeout. The
-            // re-announce is driven by THIS timer (not TUN reads), so it fires
-            // while the sender is idle awaiting the app-level ack.
-            let default_path = {
-                let sched = sweep_scheduler.lock();
-                sched.best_repair_path_avoiding(u32::MAX).unwrap_or(0)
-            };
-            let eps_hat = worst_loss_rate(&sweep_scheduler);
-            let reann = sweep_block_arq.lock().idle_reannounce(
-                Instant::now(),
-                &|pid| {
-                    timeouts
-                        .get(&pid)
-                        .copied()
-                        .unwrap_or(Duration::from_millis(200))
-                        .min(REANNOUNCE_TIMEOUT_MAX)
-                },
-                default_path,
-                eps_hat,
-            );
-            if !reann.is_empty() {
-                dispatch_repair_plans(
-                    reann,
-                    &sweep_block_arq,
-                    &sweep_scheduler,
-                    &sweep_transport,
-                    &sweep_batch_counter,
-                    &sweep_stats,
-                );
-            }
-        }
-    });
+    let sweep_shutdown_rx = shutdown_tx.subscribe();
+    let arq_sweep_handle = tokio::spawn(tasks::run_arq_sweep(
+        sweep_block_arq,
+        sweep_scheduler,
+        sweep_transport,
+        sweep_stats,
+        sweep_batch_counter,
+        sweep_window_mode,
+        sweep_shutdown_rx,
+    ));
 
     // Path management command channel (for runtime add/remove via HTTP API)
-    let (path_cmd_tx, mut path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
+    let (path_cmd_tx, path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
 
     // ADR-0013: spawn status HTTP endpoint if configured
     if let Some(addr) = config.status_addr {
@@ -4169,199 +4071,31 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cmd_msg_tx = msg_tx.clone();
     let cmd_ctrl_tx = ctrl_tx.clone();
     let next_path_id = Arc::new(AtomicU64::new(config.bind_addrs.len() as u64));
-    let mut cmd_shutdown_rx = shutdown_tx.subscribe();
-    let cmd_handle = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                cmd = path_cmd_rx.recv() => {
-                    let cmd = match cmd {
-                        Some(c) => c,
-                        None => break,
-                    };
-                    match cmd {
-                        crate::monitor::http::PathCommand::Add { bind_addr, peer_addr } => {
-                            let path_id = next_path_id.fetch_add(1, Ordering::Relaxed) as u32;
-                            info!(path_id, %bind_addr, ?peer_addr, "adding path at runtime");
-                            match cmd_transport.add_path(path_id, bind_addr, peer_addr).await {
-                                Ok(conn) => {
-                                    cmd_scheduler.lock().add_path(path_id);
-                                    cmd_stats.add_path(path_id);
-                                    cmd_transport.spawn_receiver_for_path(
-                                        path_id,
-                                        conn,
-                                        cmd_msg_tx.clone(),
-                                        cmd_ctrl_tx.clone(),
-                                    );
-                                    info!(path_id, "path added successfully");
-                                }
-                                Err(e) => {
-                                    warn!(path_id, ?e, "failed to add path");
-                                }
-                            }
-                        }
-                        crate::monitor::http::PathCommand::Remove { path_id } => {
-                            info!(path_id, "removing path at runtime");
-                            cmd_transport.remove_path(path_id);
-                            cmd_scheduler.lock().remove_path(path_id);
-                            info!(path_id, "path removed");
-                        }
-                    }
-                }
-                _ = cmd_shutdown_rx.recv() => break,
-            }
-        }
-    });
+    let cmd_shutdown_rx = shutdown_tx.subscribe();
+    let cmd_handle = tokio::spawn(tasks::run_path_cmd(
+        path_cmd_rx,
+        cmd_transport,
+        cmd_scheduler,
+        cmd_stats,
+        cmd_msg_tx,
+        cmd_ctrl_tx,
+        next_path_id,
+        cmd_shutdown_rx,
+    ));
 
     // RTCP-style periodic report + keepalive task
     let report_transport = transport_arc.clone();
     let report_scheduler = scheduler_arc.clone();
     let report_stats = stats.clone();
     let report_symbol_size = profile.symbol_size;
-    let mut report_shutdown_rx = shutdown_tx.subscribe();
-    let report_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(REPORT_INTERVAL);
-        // P10a: local send-rate measurement state (per path): previous
-        // symbols_sent counter and the last sample instant.
-        let mut sent_prev: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-        let mut sent_prev_t = tokio::time::Instant::now();
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {}
-                _ = report_shutdown_rx.recv() => break,
-            }
-
-            debug!("report tick");
-            let reports: Vec<_> = {
-            let mut sched = report_scheduler.lock();
-
-            // P10a (paper 14.28): feed the estimator a LOCAL throughput
-            // measurement — the achieved send rate over the report
-            // interval. Production previously had NO local feed: the only
-            // record_throughput call took the peer's PathReport value,
-            // which is the peer's estimator.throughput() — circular, so
-            // both sides sat at 0.0 forever and every throughput-gated
-            // model term (t_sym: the 14.28 inner-feedback floor, the
-            // 14.21 saturation cap, the 8.4 burst B/T term) was silently
-            // sentinel-disabled on real links. The send rate is the right
-            // t_sym semantics anyway: T_arq counts wire slots of the send
-            // process the repairs are interleaved into.
-            {
-                let now_t = tokio::time::Instant::now();
-                let dt = now_t.duration_since(sent_prev_t).as_secs_f64();
-                if dt > 0.2 {
-                    for pid in sched.all_path_ids() {
-                        let sent = report_stats
-                            .path(pid)
-                            .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
-                            .unwrap_or(0);
-                        let prev = sent_prev.insert(pid, sent).unwrap_or(sent);
-                        let delta = sent.saturating_sub(prev);
-                        // Only feed while actually sending: an idle tunnel
-                        // must not decay the operating-rate estimate to 0
-                        // (t_sym would blow up and re-disable the floor).
-                        // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a report
-                        // tick inside a stall quarantine measures the
-                        // release flood — skip the sample (the next tick's
-                        // Δ/dt spans the disturbance and averages it out).
-                        let gap_q = crate::control::anchor::stall_witness()
-                            .is_some_and(|w| w.quarantined_now());
-                        if delta > 0 && !gap_q {
-                            if let Some(path) = sched.path_mut(pid) {
-                                let bps = delta as f64 * report_symbol_size as f64 / dt;
-                                path.estimator.record_throughput(bps);
-                            }
-                        }
-                    }
-                    sent_prev_t = now_t;
-                }
-            }
-
-            // Check for dead paths
-            let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
-            for pid in &deactivated {
-                if let Some(ps) = report_stats.path(*pid) {
-                    ps.active.store(false, Ordering::Relaxed);
-                }
-            }
-
-            // Query and store MTU per path
-            for pid in sched.all_path_ids() {
-                if let Some(mtu) = report_transport.max_datagram_size(pid) {
-                    if let Some(path) = sched.path_mut(pid) {
-                        path.max_datagram_size = Some(mtu);
-                    }
-                }
-            }
-
-            // in_flight leak guard (backstop): time-based expiry
-            // (PathState::expire_in_flight, RTT-timescale) is the primary
-            // release for stranded budget; the 25% decay remains as a
-            // last-resort backstop for anything the expiry can't see
-            // (e.g. direct in_flight writes that bypassed the charge log).
-            for pid in sched.all_path_ids() {
-                if let Some(path) = sched.path_mut(pid) {
-                    path.expire_in_flight();
-                    if path.in_flight > path.cwnd {
-                        path.in_flight -= path.in_flight / 4;
-                    }
-                }
-            }
-
-            // Send PathReport + Ping on each LIVE path (not active_paths:
-            // that filters by spare cwnd, and a saturated path still needs
-            // its liveness heartbeats — see Scheduler::live_paths).
-            let path_ids = sched.live_paths();
-            path_ids.iter().filter_map(|&pid| {
-                let path = sched.path(pid)?;
-                let ps = report_stats.path(pid)?;
-                Some((pid, ControlMessage::PathReport {
-                    path_id: pid,
-                    loss_rate: path.estimator.loss_rate(),
-                    avg_rtt_us: path.estimator.rtt().as_micros() as u64,
-                    throughput_bps: path.estimator.throughput(),
-                    jitter_us: path.estimator.jitter_us() as u64,
-                    symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
-                    symbols_received: ps.symbols_received.load(Ordering::Relaxed),
-                }))
-            }).collect()
-            // guard dropped by scope end: the report sends below await on
-            // the reliable stream and must not hold the scheduler lock
-            };
-
-            for (pid, report) in reports {
-                // Liveness must not share fate with the data flood: under
-                // load the datagram queue is saturated by symbol batches
-                // and report datagrams get dropped, so the peer declares
-                // the path dead after DEAD_PATH_TIMEOUT and QUIC idles out
-                // (L1 finding: every bulk transfer killed the tunnel in
-                // ~6 s). The reliable control stream has its own flow
-                // control, so reports and pings survive saturation.
-                // Hard deadline on control sends: this task also runs the
-                // dead-path checker, so it must NEVER wedge (open_uni can
-                // block indefinitely once stream credit is exhausted).
-                match tokio::time::timeout(
-                    Duration::from_millis(500),
-                    report_transport.send_control(pid, report),
-                )
-                .await
-                {
-                    Err(_) => warn!(pid, "PathReport send timed out (stream credit?)"),
-                    Ok(Err(e)) => warn!(pid, ?e, "failed to send PathReport on control stream"),
-                    Ok(Ok(())) => {}
-                }
-                match tokio::time::timeout(
-                    Duration::from_millis(500),
-                    report_transport.send_control(pid, ControlMessage::Ping { timestamp_us: now_us() }),
-                )
-                .await
-                {
-                    Err(_) => warn!(pid, "Ping send timed out (stream credit?)"),
-                    Ok(Err(e)) => warn!(pid, ?e, "failed to send Ping on control stream"),
-                    Ok(Ok(())) => debug!(pid, "ping sent on control stream"),
-                }
-            }
-        }
-    });
+    let report_shutdown_rx = shutdown_tx.subscribe();
+    let report_handle = tokio::spawn(tasks::run_report(
+        report_transport,
+        report_scheduler,
+        report_stats,
+        report_symbol_size,
+        report_shutdown_rx,
+    ));
 
     // Control fast path: liveness-critical messages (PathReport, Ping,
     // Pong) are handled immediately; anything else that arrives via the
@@ -4374,56 +4108,18 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let ctrl_fec_backend = effective_fec_backend;
     let ctrl_forward_tx = msg_tx.clone();
     let ctrl_mstar_anchor = gates.mstar_anchor;
-    let ctrl_handle = tokio::spawn(async move {
-        while let Some((path_id, msg)) = ctrl_rx.recv().await {
-            match msg {
-                WireMessage::Control(
-                    cm @ (ControlMessage::PathReport { .. }
-                    | ControlMessage::Ping { .. }
-                    | ControlMessage::Pong { .. }),
-                ) => {
-                    handle_control_message(
-                        path_id,
-                        cm,
-                        &ctrl_scheduler,
-                        &ctrl_fec,
-                        &ctrl_decoders,
-                        &ctrl_sent_counts,
-                        &ctrl_transport,
-                        ctrl_fec_backend,
-                        &ctrl_stats,
-                        None,
-                        // The fast path only handles PathReport/Ping/Pong;
-                        // Acks (which drive block ARQ) and WindowAcks go
-                        // through the data loop, so neither the ledger nor
-                        // the peer-ack atomic (nor the Copa feed) is needed
-                        // here.
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        ctrl_mstar_anchor,
-                    );
-                }
-                other => {
-                    // NEVER await into the data channel: under a symbol
-                    // flood it is full, an awaited send here stalls the
-                    // uni-stream accept loop, stream credit (100) runs
-                    // out, and the report task wedges inside
-                    // send_control — taking the dead-path checker with
-                    // it. Dropping a forwarded stream message under
-                    // overload is survivable; wedging liveness is not.
-                    if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
-                        ctrl_forward_tx.try_send((path_id, other))
-                    {
-                        warn!(path_id, "data channel full — dropping forwarded control message");
-                    }
-                }
-            }
-        }
-    });
+    let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
+        ctrl_rx,
+        ctrl_scheduler,
+        ctrl_fec,
+        ctrl_decoders,
+        ctrl_sent_counts,
+        ctrl_transport,
+        ctrl_fec_backend,
+        ctrl_stats,
+        ctrl_forward_tx,
+        ctrl_mstar_anchor,
+    ));
 
     // Any task completing — even cleanly — ends the tunnel, so every arm
     // must say WHICH task exited and why. A silent `_ = handle => {}` arm
