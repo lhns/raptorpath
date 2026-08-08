@@ -16286,6 +16286,188 @@ kernel-reference rows → cleanup.sh + teardown verification (no rp
 procs/netns/iperf3), released 13:16:53 UTC. rp-* netns only; logs
 preserved under `/home/vibe/shal8fix/` (att-1 logs archived as
 `battery-s42-att1.log` + `diag-att1/`); FOREGROUND polling only.
+## Ack-Merge Flip (2026-08-08) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge-flip` from main@6e386bf; lock `/tmp/rwm-vm.lock` found FREE and taken 13:57:44 UTC; PHASE A of the approved refactor arc — cash the measured ack-merge win on ITS OWN clause)
+
+*Decision record context: → goal-gate "Unlock The Default 1: ack-merge"
+(§16.39 — the battery whose SIDE RESULT this section adjudicates, and whose
+closing paragraph named this experiment: "It is the obvious candidate for
+its OWN pre-registered flip on its OWN gate set (c1 win ≫σ both seeds,
+c7/c8/sc within σ, crown, ×8, sustained), and a future session should take
+it as such rather than rediscover it.")*
+
+**(a) The finding this section acts on, and the two reasons it did not
+already ship.** `RWM_ACK_MERGE=1` ALONE, against the shipped default in the
+same session, interleaved, both seeds: **c1 single 400 MB 202.5 → 223.0
+(s42, +10.1%) and 204.3 → 223.4 (s7, +9.3%), σ_s 2.8–5.5, ranges
+[217.1–228.6] vs prior's ±3.7 and [214.1–227.8] vs prior's ±2.8** — Δ ≫ σ_s
+on both seeds and the same size on both. c7/c8/sc2/sc3 within σ, dnf 0. It
+ships DEFAULT OFF for two reasons, and **neither is a judgement on this
+result**:
+
+1. It was judged against **the c7 clause** (≥ 0.97×Σ), which was the goal
+   the build was FOR. The same session then proved, at component level and
+   in two independent ways, that the mechanism was structurally never going
+   to reach c7: the "duplicate" ack it suppresses fires at 1.04 control
+   datagrams per data message, not 2 — **the duplicate is 25× rarer than
+   the frame it duplicates** — and removing it moves the stall signature
+   (`sidle`/`sweeps`/`gapdrop`) not at all. A knob cannot be refuted by a
+   clause its measured mechanism cannot reach.
+2. Its battery was **REDUCED (n = 4, no crown, no sustained)** after the
+   full-scope attempt was destroyed by the session's own polling (now
+   MEASUREMENT DISCIPLINE item 13), and the pre-set rule made a reduced
+   battery **flip-ineligible by construction, under any outcome**.
+
+This section gives the knob the battery it is owed, on the clause it
+actually addresses.
+
+**(a.1) THE ITEM-14 QUESTION, ANSWERED IN ADVANCE BECAUSE IT IS THE
+OBVIOUS OBJECTION.** MEASUREMENT DISCIPLINE item 14 (added 2026-08-08)
+forbids an L1 battery until the mechanism is characterized at component
+level, and it lists "Unlock The Default 1: ack-merge" in its
+`battery-first → FALSIFIED` column. Both are true and neither blocks this
+run, for a reason that must be stated before the numbers exist:
+
+- **This is a REPLICATION battery, not a discovery battery.** Item 14
+  governs discovery — "L1's job is COMPOSITION effects; discovery is a
+  component job." The quantity under test here is not a hypothesis; it is
+  an already-measured L1 composition effect (+10.1%/+9.3%, both seeds,
+  interleaved, same session, same binary) whose only defect is the SCOPE
+  of the battery that produced it. Item 14 (d) fires when "the component
+  bench refutes the PREMISE"; the premise refuted in §16.39 was
+  prediction 1's ≈2× density claim and the c7 attribution built on it —
+  **not** the c1 measurement, which no component result contradicts.
+- **The component characterization exists and is already in the ledger**:
+  the `[CTLD]` density measurement (1.038/1.053 → 1.000/1.000 control
+  datagrams per data message, two runs, receiver-side quinn datagram-frame
+  counters). It is re-taken in this battery as the mechanism check.
+- **What that component result predicts for THIS battery, as a number with
+  direction (item 14 (c)):** the receiver stops constructing, serializing,
+  scheduler-locking and transmitting one `ControlMessage::Ack` per symbol
+  batch — with its `received_ids: Vec<u32>` allocation, ~384 entries at the
+  shipped `RWM_GEN` — at a rate of **1.000 per data message**, i.e. ~37 700
+  per 100 MB per path. On c1 (single path, clean, no loss, the highest data
+  message RATE of any cell) this is a pure per-message receiver-side
+  overhead removal, so the effect must be **positive at c1, ≈ +10% (the
+  measured 202.5→223.0 / 204.3→223.4 band), and accompanied by RECEIVER
+  CPU per bit going DOWN**. It must be **≈ zero on the loss/dual cells**
+  (c7, c8), where the binder is the recovery plane and where §16.39
+  measured exactly zero response.
+- **What the component bench CANNOT see, and why L1 is the right layer
+  here:** the ~10% is a composition effect between the receiver's
+  per-message cost and the sender's window/in-flight release clock. There
+  is no local harness in this tree that drives a real receiver at c1's
+  message rate against a real sender; `recovery_bench` drives the recovery
+  plane, which is precisely the plane this mechanism is measured NOT to
+  touch. The honest statement is that this effect is measurable only in
+  composition — which is item 14's own definition of L1's job.
+
+If this reading is wrong, the battery says so: the falsification clause
+below is written so that a non-reproducing c1 kills the flip outright.
+
+**(b) The clause — THE ONE THING THIS BATTERY IS FOR.** `RWM_ACK_MERGE=1`
+vs the shipped default (env unset):
+
+> **c1 (single-path clean, 400 MB) at or above the measured band on BOTH
+> seeds — i.e. c1(am) ≥ c1(prior) with Δ ≫ σ_s and Δ/prior ≥ ~8% each seed,
+> reproducing the 202.5→223.0 / 204.3→223.4 result at FULL SCOPE (×8 +
+> sustained) — AND receiver CPU per bit DOWN on both seeds.**
+
+Receiver CPU is `CPUSRV` from `perf_rwm_c.sh` at fixed transfer bytes, so
+CPU/bit is comparable directly; the merge's whole mechanism is removing
+receiver-side per-message work, so if the win is real this gauge must move
+with it, and a c1 win WITHOUT a receiver-CPU fall would be an unexplained
+coincidence rather than a cashed mechanism.
+
+**(c) NO-REGRESSION GATES (gates, NOT targets — a pass here is "did not
+break", never "improved").** All on both seeds:
+
+1. **c7 ≥ its OWN same-session control within σ.** c7 dual 200 MB, `am` vs
+   `prior`, same session, Σ from each arm's own singles.
+2. **c8 ≥ its line** — `am` within σ of `prior` at c8 dual 25 MB. (§16.39
+   recorded that at n = 4 NO arm including the shipped default met the
+   0.87×Σ line and σ ran 3.6–16.0; the honest gate here is therefore
+   arm-vs-own-control within σ at ×8, and the absolute line is reported
+   for the record, not enforced against one arm.)
+3. **sc2 / sc3 within σ** (100 MB / 25 MB singles).
+4. **crown** — tail_matrix c2 ×4: p99 in the ~41 ms class at **1000/1000
+   delivered**, both arms.
+5. **dnf = 0** in every completed run.
+6. **wedge green** — `mtu_blackhole_wedge` 2/2.
+7. **block mode bit-exact** — asserted by unit test; the gate is scoped
+   `gates.ack_merge && recv_window_mode`, block mode keeps the legacy
+   `Ack` its dup-ack ledger (`block_arq.rs`, `LATER_ACK_LOSS_THRESHOLD`)
+   is built on.
+
+**c7 IS EXPLICITLY NOT A TARGET IN THIS SECTION, AND A c7 NON-MOVEMENT IS
+THE EXPECTED OUTCOME, NOT A FAILURE.** This is pre-registered so it cannot
+be re-litigated after the numbers land in either direction. §16.39
+established the mechanism cannot reach c7 — by density (the excess is 4%,
+not 2×) and by response (`sidle`/`sweeps` flat, `gapdrop` moving the wrong
+way) — and measured `am` at c7 within σ of the default on both seeds
+(0.980/0.971 vs 0.992/0.965). **A c7 that sits within σ of its control is a
+PASS of gate 1.** A c7 that IMPROVES is not claimed as support for this
+flip and will be recorded as an unexplained observation requiring its own
+experiment. Only a c7 that FALLS below its control by more than σ is a
+failure — and it fails as a REGRESSION, not as a missed target.
+
+**(d) FALSIFICATION (fixed now, before any run).** No flip, and the ledger
+says WHICH clause fired, if any of:
+
+- **(i)** c1 fails to reproduce its band on either seed — Δ ≤ σ_s, or
+  Δ/prior < ~8%, or the sign inverts. The +10%/+9.3% was then a
+  session artifact of the n = 4 battery, and the side result is
+  demoted in the record.
+- **(ii)** c1 reproduces but **receiver CPU/bit does not fall** — the win
+  is real but unattributed; no flip until the mechanism is identified.
+- **(iii)** ANY no-regression gate (c7, c8, sc2, sc3, crown, dnf, wedge,
+  block-mode) breaks. Name it.
+- **(iv)** The mechanism is not live — the `ack-merge ACTIVE` echo missing
+  on either log in an `am` run, present in any `prior` run, or `[CTLD]`
+  tx/rx not at ≈1.000 in the `am` arm.
+
+**(e) THE BATTERY (pre-registered, FULL SCOPE — the scope is the whole
+point of this section).** VM 10.1.5.16 under MEASUREMENT DISCIPLINE 1–14:
+lock `/tmp/rwm-vm.lock` (item 12 — covers the build and every probe); tree
+synced by `git archive` of THIS branch, tree cleared first, **CRLF
+conversion before the first harness invocation** (item 10); **stale binary
+`rm`'d before the build**; binary sha256 + commit + `lscpu` + kernel in
+every log header (items 2, 9); rp-* netns only; fresh topology per
+invocation; **seeds 42 AND 7, ×8, arms interleaved round-robin per rep**
+(item 3, 4); seed-7 topo-abort protocol — n recorded per arm, per-rep
+values kept, nothing discarded, no n < 8 mean quoted without its n (item
+8); liveness echoes asserted per arm on BOTH logs, two-sided
+(fail + contamination) (items 1, 6, 7); `ARMCOUNT` per arm (item 7);
+same-session Σ from each arm's OWN singles; **launched detached, ONE
+foreground wait sized to the duration, collected ONCE — NO POLLING**
+(item 13).
+
+Arms — **TWO, because the clause is single-knob**:
+`prior` = env unset (today's shipped default) · `am` = `RWM_ACK_MERGE=1`.
+
+Cells: **c1** single 400 MB ×8 (THE clause) + **1.2 GB sustained** ×1 per
+arm · **c7** dual 200 MB ×8 · **c8** dual 25 MB ×8 · **sc2** single 100 MB
+×8 · **sc3** single 25 MB ×8 (the Σ sources) · **tail_matrix c2 ×4** both
+arms (crown) · **wedge** (`mtu_blackhole_wedge`, release).
+
+Mechanism check: the `[CTLD]` receiver-side density counters scraped from
+`/tmp/rwm-s.log` on EVERY run (§16.39 read them by hand off two runs; this
+battery instruments them), plus `CPUSRV`/`CPUCLI` on every run.
+
+Driver: `tools/l1/ackflip_battery.sh` (+ `tools/l1/ackflip_parse.py`).
+Logs under `/home/vibe/ackflip/`.
+
+**FLIP RULE (fixed now).** If the clause in (b) passes on both seeds AND
+every gate in (c) holds on both seeds: **flip `RWM_ACK_MERGE` to default
+ON** — `gates.rs` default, its default-stack assertion, and the doc
+comment — and record that the window-mode legacy `Ack` branch
+(`net/mod.rs` `suppress_legacy_ack`) becomes DEAD CODE in window mode,
+scheduled for deletion in refactor seam **B2**; block mode keeps it
+(`block_arq.rs`'s dup-ack loss channel depends on the 1:1 Ack cadence).
+Otherwise: no flip, and the ledger names the clause that fired. **The gate
+set is not weakened after the fact in either direction.**
+
+*(Results below this line were written after the runs.)*
+
 ## Unlock The Default 1: ack-merge (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge` from main@847db34; GOAL "UNLOCK THE DEFAULT" item 1, the arc's keystone — the §16.37 structural bound's OWN named successor: "the recovery plane's patience/stall behaviour under the denser ack clock … Anyone reopening this should start there, not at the anchor")
 
 **(a) The finding this build acts on (verified by an Explore pass over
