@@ -320,6 +320,15 @@ If L1 measures a retx swing ≫ 5 % on the default stack, the divergence is a
 COMPOSITION effect the bench cannot see (CC/FEC/budget interaction) and is
 itself the finding.
 
+**Suites** (`feat/recovery-bench`, no default change, no VM): lib 390/390 ·
+math 136/136 · doctests 0/0 (the crate has none — the two remaining fences
+are `text`, per 627ade9) · `gate_suite` **15/15 release** (17 ignored) ·
+`mtu_blackhole_wedge`, `perf_loopback`, `recov_mp_loopback`,
+`copa_sole_loopback`, `ack_merge_loopback`, `emit_batch_loopback`,
+`patience_loopback`, `win_decouple_loopback`, `wire_compact_loopback` all
+green · `recovery_bench` fixtures green. The law extraction carries its own
+equivalence proof (`extracted_laws_are_identical_to_the_inline_expressions_they_replaced`).
+
 ## CONSOLIDATED VERDICT (2026-07-19) — the hardware-honest regime map
 
 *Decision record: → decision index [ADR-0052…0067](adr/README.md) + [VISION-TRIAGE-2026-07](adr/VISION-TRIAGE-2026-07.md)*
