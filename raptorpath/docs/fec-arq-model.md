@@ -10191,6 +10191,133 @@ goal turns on — which is precisely why it is reported as a separate
 finding awaiting its own pre-registered gate set, and not folded into a
 verdict it did not earn.
 
+### 16.40 Derived patience: the recovery-patience constant wins zero of a million evaluations at the cell it was accused at — the goal's second falsification-with-mechanism, the c1 default closed as a structural bound, and the recovery clock's ARGUMENT named as the survivor (2026-08-07, `feat/derived-patience`, `RWM_PATIENCE_DERIVED` + `RWM_SIDLE_DERIVED` both DEFAULT OFF)
+
+§16.39 eliminated ack density, per-ack lock contention and the gap
+channels as the c7 binder and named its own successor: *"the next
+experiment is the patience/sweep constants themselves — are they
+derived from a live SRTT/loss estimate whose cadence the est gate
+changes, or are they fixed?"* This section is that experiment. It found
+two fixed literals in exactly the plane named, derived both, and
+measured that one of them was never binding and the other was never
+measuring what it was thought to measure.
+
+**The two constants.** `SIDLE_GAP_MIN_US = 3 000` defines a STALL for
+the sender's emission-gap gauge — the instrument §16.37 and §16.39 both
+draw their headline evidence from. `NACK_RETX_COOLDOWN_FLOOR_US =
+10 000` is recovery PATIENCE: it is simultaneously the RFC 9002 §6.1.2
+kGranularity analog inside the per-path time-threshold loss detector,
+the per-seq retransmit cooldown, and a tail-sweep fallback. RFC 9002's
+own kGranularity is the system timer granularity with a RECOMMENDED
+value of 1 ms; this was ten times that.
+
+**Both were re-expressed as laws over measured inputs, and both
+reproduce their literal exactly where the literal's own assumption
+holds.** The stall threshold becomes `3 × max(evt, LOOP_WAKE_US)`
+clamped to `[3 ms, HOLE_NACK_REFRESH_MIN]`, where `evt` is the MEASURED
+mean inter-emission-event interval — no new constant, since the
+multiplier 3 IS the legacy `3 000 µs / 1 ms loop wake`, and the
+derivation only replaces the ASSUMED nominal interval with the measured
+one. Whenever emission events are at least as frequent as the loop wake
+it returns exactly 3 000 µs, so the derived gauge can only ever report
+LESS stall than the legacy one and a shrink is unambiguous evidence of
+over-counting. Patience becomes `timer granularity + min(measured RTT
+jitter, srtt)` — both terms already estimated in-tree (the 1 ms loop
+wake, which coincides with RFC 9002's recommendation, and Copa's RFC
+3550-style consecutive-difference jitter, the same estimate the backoff
+threshold reads). kTimeThreshold 9/8 and kPacketThreshold 3 were left
+untouched: they are cited, not magic. The tail-sweep fallback was
+deliberately left alone and its INERTNESS asserted by test rather than
+claimed — it feeds `(srtt·2).clamp(25 ms, 100 ms)`, so every value
+≤ 12.5 ms is identical.
+
+**A gauge was pre-registered as required evidence, and it decided the
+branch in fifteen minutes of shakeout.** `pf=<floor-bound>/<clock-bound>
+/<mean floor>` counts how many §6.1.2 threshold evaluations were pinned
+by the kGranularity floor versus governed by the 9/8·srtt clock. **At
+c7 it reads zero floor-bound out of 501 542–1 366 558, in every arm
+including the shipped default, on both seeds, at n = 8.** Recovery
+patience at c7 was never a constant: the path clock governed 100.000%
+of evaluations before this branch existed.
+
+**Why, precisely — and this is the durable finding.** The threshold is
+`9/8 × max(Copa srtt, estimator EWMA app-echo RTT)`, and the app-echo
+clock is **store-dwell inclusive**: it measures how long a symbol sat
+in the sender's own store plus the round trip. At c7 it reads **158 ms
+against an 8–10 ms RTprop, ×20**. The live patience threshold is
+therefore ≈178 ms before a reported gap is even a candidate hole, and
+against 178 ms a 10 ms floor and a 1.4 ms floor are the same number.
+Both this build and the constant it replaced were adjusting a term two
+orders of magnitude below the one that governs.
+
+**Where the constant DOES bind, the derivation lands perfectly and
+nothing happens.** At c1 the floor pins 30–45% of evaluations
+(`pf` 149–391 of ~450 in the shipped default); deriving it collapses
+that to ~1% (0–31 on seed 42, 0–40 on seed 7) with the mean floor
+moving 10 000 → 2 635–4 322 µs. Throughput does not follow, on either
+seed, at either operating point: 467.1/468.7 against the composed
+control's 480.6/469.7, and 206.4/201.8 against the shipped default's
+201.2/200.2 — all inside σ. A mechanism supplied in full, demonstrated
+live by its own gauge, that moves nothing, was not the mechanism; this
+is §16.37's arm-A pattern repeating one layer down.
+
+**c7 = 0.943×Σ (seed 42) and 0.933×Σ (seed 7) against the pre-set
+≥ 0.97 — failed on both seeds**, at full pre-registered scope (every
+cell×arm at n = 8, 312 completed runs, dnf 0), with `sweeps` and `retx`
+unmoved. c1 passed its ≥430 clause at 467.1/468.7 with 1.2 GB sustained
+489.1/481.0; sc2/sc3 held; the crown ran 1000/1000 with `pat` medians
+in the ≤~41 ms class on both seeds; c8 failed its line in every arm
+including the shipped default and is quoted as uninterpretable at this
+n. **No flip. Both gates ship OFF.**
+
+**The instrument verdict, which is the part with the longest half-life.**
+The derived stall gauge answered its question both ways. At c7 —
+the cell §16.37 and §16.39 quote — `sidle2` equals `sidle` to the
+millisecond in every arm and the est/prior ratio SURVIVES at 2.6×,
+because the measured inter-event interval is 45–170 µs, far below the
+1 ms loop wake. **Their stall evidence is real and neither section is
+corrected.** But at slow cells under emission batching the fixed 3 ms
+counts ordinary pacing intervals as stalls: sc2 measures `evt`
+1.6–3.7 ms and `sidle` 3 461–4 106 ms against a derived 306–536, and
+sc3 measures `evt` 21–250 ms and 10 076–10 707 against 929–1 679 — an
+**85–90% over-count, present only in the batched arms.** No published
+conclusion rests on a slow-cell stall number, and the rule is now
+recorded so that none ever does: where the measured event interval
+greatly exceeds the loop wake, the fixed threshold is not measuring
+stalls.
+
+**The goal closes as a structural bound.** "Unlock The Default" set out
+to make `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` the shipped default,
+gated on c7 ≥ 0.97×Σ. Two attempts were pre-registered and both were
+falsified with their mechanism named — attempt 1 on a density premise
+measured false (1.04 control datagrams per data message, not 2) and
+inert when removed, attempt 2 on a patience premise measured false
+(zero binding evaluations) and inert where it binds. Per the rule
+written before either, **the c1-default target is now a documented
+structural bound and the win ships as an opt-in**: single-path
+**×2.35–2.39 (480.6/469.7 against 201.2/200.2, sustained 489/481,
+crown-clean, dnf 0)** for a dual-path price of **−1.1…−5.9% of Σ at
+c7**, both numbers from the same interleaved battery.
+
+**Five mechanisms have now been proposed for that c7 cost and all five
+are eliminated**: the pooled store's rate source (three sources built,
+the ordering does not track anchor honesty — §16.35–16.37), ack density
+(≈absent, removal inert), per-ack lock contention (halved, no
+response), the depth-16 gap channels (`gapdrop` moves the wrong way),
+and the recovery-patience constant (this section). What survives all
+five is one gauge — under the est clock the sender spends ≈2.6× the
+shipped default's time in stall-class emission gaps and fires 3–4× the
+tail sweeps, responding to that gate and to nothing else measured — and
+this branch strengthened that fact rather than weakening it, by proving
+with a derived instrument that it is not an artifact of how the stalls
+were counted. The clock never yet examined is the one the gauges point
+at: **the ARGUMENT of the recovery threshold, not its constants.** 9/8
+is right; feeding it a queue- and store-inclusive RTT is not. A
+recovery clock that inflates with the sender's own backlog cannot
+distinguish "the network lost it" from "we have not sent it yet" — the
+same class of defect as the ack-interval anchor over-read §16.37
+eliminated, one layer down. Anyone reopening this should start there.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

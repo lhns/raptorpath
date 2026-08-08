@@ -610,6 +610,8 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_POOL_DELIV` (arm A) | "Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07)": the MECHANISM landed completely — the shadow `DeliveryRateAnchor` read 1.5–3.4× the send mean (`dr` 15.7–41.2k vs `sr` 9.1–13.4k) while staying 4–20× below the same paths' legacy `btlbw` (57–310k) at the same instant, the pool Σ rose to 3 878–7 326 (attempt 1: 1 697–3 103), the store stopped pinning (800–1 800 slack) and sweeps returned to the prior 0–7 class — **and c7 got WORSE: 0.958/0.931×Σ vs attempt 1's own same-session 0.977/0.956 and prior's 0.975/0.995**, failing the ≥ 0.97 clause on both seeds | **NONE** — measured on the full current default stack, 4 arms interleaved per rep, both seeds, dnf 0, crown-clean, with the one-knob attempt-1 control in the same session | **NO — and the refutation carries the finding that closes the sub-goal.** Supplying the un-self-referential rate source §16.36 said the pool lacked moved c7 the WRONG WAY, which refutes §16.36's own attribution: the c7 cost of the est cadence is not the pool's rate input. The gauge that names the successor: BOTH est arms carry ≈2× the prior default's stall-idle (1 400–2 178 ms / ~200–245 stalls vs 822–1 026 / 109–157) and ≈3× its sweeps, and that signature is INVARIANT while the pool Σ nearly doubles between arms — the RECOVERY PLANE's patience/stall behaviour under the denser ack clock is where a re-ask must start, not the anchor | **DEPRECATED 2026-08-07, default OFF** (rides the `RWM_POOL_ANCHOR`/`RWM_EST_CADENCE` resolution ⇒ OFF unset) — sampler + 5 anchor laws + 3 scheduler laws retained as the measured A/B arm and as the negative datum's only reproduction path; the recommended opt-in is `RWM_POOL_DELIV=0` (attempt 1's pool), which is strictly better at duals |
 | `RWM_FLOOR_BOUND` (arm B) | "Ship The Wins 1b (2026-08-07)", same battery: bounding the BtlBw anchor FLOOR by the honest send rate cut c7 cwnd to 237–305 (vs 1 006–2 356 unbounded) exactly as designed, and **failed BOTH its clauses — c7 0.969/0.969×Σ (under 0.97 on both seeds) AND c1 396.4/398.0 < the 430 PRIMARY** (−14% vs the unbounded arm), with sc2 marginally soft | **NONE** — same battery, same session, same interleaving | **NO** — the refutation IS the finding: the ack-interval over-read is doing LOAD-BEARING work at N = 1, so "the prior default's Σcwnd escape is accidental, make it derived" is not a free correction — deriving it costs 14% of the single-path win. Any future ask must pay for the floor honestly at N = 1 first | **DEPRECATED 2026-08-07, default OFF** (pure A/B arm) — the bound + its law test retained as the measured arm |
 | `RWM_ACK_MERGE` | "Unlock The Default 1: ack-merge (2026-08-07)": built to halve window-mode control-datagram density and so relieve the §16.37 est-clock stall signature. **Its PREMISE was measured false before the battery** — the receiver sends 1.038/1.053 control datagrams per data message, not 2 (the legacy `Ack` is the 1.00; the SACK `WindowAck` it "duplicates" was already frontier-rate-limited to ≈0.04, inside quinn-perf's own class), so the merge is a 4–5% SWAP, not a halving. c7 then failed its ≥0.97 clause on both seeds (0.894/0.943) **and the stall signature did not move at all** (sidle 1634–3118 ms / sweeps 14–25 vs its own est control's 1473–2604 / 12–24) | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, dnf 0 | **NO as a c7 lever** — the mechanism is eliminated twice over (the density was not there; removing what there is, is inert), which is stronger than a null. **YES as its own question:** the SAME knob measures **c1 +10.1%/+9.3% on the SHIPPED default** (202.5→223.0, 204.3→223.4, Δ≫σ both seeds, c7/singles within σ) — a real single-path win that this battery could not flip (reduced scope, composed gate set) and that owes its OWN item-11 pre-registration | **NOT CLASS-C — RETAINED, default OFF.** The law, the v6 cumulative-counter wire and 8 tests stay: the counters are the durable primitive (accounting CARRIED, not streamed), and they make the real 25× density lever — ack thinning with the correctness objection removed — buildable for the first time. Expected c7 value of that successor: ZERO, per this row's own result; its case is c1/CPU |
+| `RWM_PATIENCE_DERIVED` | "Unlock The Default 2: derived patience (2026-08-07)": built to replace the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms literal (10× RFC 9002's kGranularity) with timer granularity + the path's own measured RTT jitter, at the two behavioural sites — the §6.1.2 kGranularity analog and the per-seq retransmit cooldown — and so relieve the §16.37/§16.39 est-clock stall signature. **Its PREMISE was measured false before the battery and confirmed at n = 8 both seeds: the literal wins ZERO of 501 542–1 366 558 §6.1.2 evaluations at c7, in EVERY arm including the shipped default.** The tasking reasoned from RTprop 8–10 ms, but the threshold reads `max(Copa srtt, estimator app-echo RTT)` and the app-echo clock is STORE-DWELL INCLUSIVE — 158 ms at c7, ×20 RTprop — so the floor was structurally unreachable on every loaded path. **Where it DOES bind (c1, 30–45% of evaluations) the derivation collapses it to ~1% (`pf` 149–391 → 0–31 s42, 161–286 → 0–40 s7) and NOTHING MOVES** (c1 `pat` 467.1/468.7 vs `est` 480.6/469.7; `patonly` 206.4/201.8 vs `prior` 201.2/200.2, all within σ). c7 then failed its ≥0.97 clause on both seeds (0.943/0.933) with `sweeps`/`retx` unmoved | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, FULL pre-registered scope (ARMCOUNT 8 every cell×arm), dnf 0 over 312 runs | **NO as a c7 lever** — eliminated on BOTH population (no binding evaluations to move) and response (moving it where it binds does nothing), which is stronger than a null. This is the goal's SECOND falsification-with-mechanism and it closes the c1-default target as a documented STRUCTURAL BOUND | **NOT CLASS-C — RETAINED, default OFF.** The law and 8 tests stay, and so does the durable piece: the **`pf=<floor>/<clock>/<mean>` instrument**, which turns "is this recovery clock governed by its floor or by the path?" into a per-run count and is what converted this attempt from an argument into a measurement in 15 min of shakeout. The successor it names — the recovery clock's ARGUMENT (a store-dwell-inclusive RTT), not its constants — will need exactly this gauge |
+| `RWM_SIDLE_DERIVED` | Same section, part 3a — a DIAG-only INSTRUMENT, never a behaviour claim, so "refutation" does not apply to it; recorded here because its VERDICT retires a standing suspicion. It was built to test whether §16.37's/§16.39's stall evidence was an artifact of a fixed 3 ms threshold read against a batched emitter, by printing `sidle2=` (3 × the MEASURED inter-emission-event interval, floored at the legacy value) beside the unchanged `sidle=` in every arm | n/a | n/a — the question it was built to answer is ANSWERED, both ways: **at c7 `sidle2 = sidle` to the millisecond and the est/prior ratio SURVIVES at 2.6× (measured `evt` 45–170 µs, far below the 1 ms loop wake), so §16.37 and §16.39 need NO correction and their evidence is REAL**; at the SLOW cells under `RWM_EMIT_BATCH` the legacy gauge over-counts by **85–90%** (sc2 3 461–4 106 → 306–536 ms; sc3 10 076–10 707 → 929–1 679; `evt` 1.6–250 ms) | **NOT CLASS-C — RETAINED, default OFF.** Standing instruction for every future session: **where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not `sidle`.** No published conclusion in this file rests on a slow-cell `sidle`, and this row exists so none ever does |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
 | STREAMING MACHINE (`fec/streaming.rs` + `streaming-codes`, the Realtime two-layer code) | NOT refuted — DISPLACED: "Unified Shedding + Flip Battery (2026-07-21)" flipped `RWM_UNIFIED` default ON after unified+shed beat streaming's p99 medians at every battery cell (c2/c3 × 400/1200 × both seeds), delivered 100% vs 79/81% at the c3 perf cell, with zero collapse reps | none relevant (displacement, not refutation; measured on the full current default stack) | **YES — the RE-TEST CLAUSE governs retirement**: the 12–48× message-tail crown record spans HISTORIC cells (L2/L3 message-tail batteries, quinn-vs-rp Metric A) this battery did not re-run; code removal requires a later pass holding that record cell-by-cell on the unified default | **RE-TESTED 2026-07-27 → CLEARED FOR RETIREMENT** ("Streaming Crown Re-Test", binary 2aac6b5f… ≡ 44dd7d4 Rust, seeds 42+7, per-rep interleaved `RWM_UNIFIED=0` vs ship): unified ≤ streaming p99 medians at ALL 5 historic crown cells × both seeds (10/10 cell-seeds, −1.2…−26.8 ms), p50 equal-class, delivery identical-complete (163/163 reps), bulk-hint inert. One recorded non-gating datum: cell-5 (L2 30-s shape) p999 MEDIANS favor streaming −6.7/−12.2 ms both seeds, deep sub-noise, worst-rep sign REVERSED (S 335 vs U 129) — the "cell-5 p999 WATCH", transfers to the deletion notes. ~~Deletion GO next consolidation pass~~ **REMOVED bccb32a (2026-07-27, Code Consolidation 2, scoped streaming-only)** — adapter + `streaming-codes` crate + selection glue deleted (−1,708 net LOC); `fec_backend streaming` is a parse error with a pointer; **OPT-OUT SEMANTICS CHANGE: `RWM_UNIFIED=0` + Realtime now selects the LEGACY-RLC windowed machine** (its own retirement clause, §17.5, stays open — NOT re-argued); the cell-5 p999 WATCH is HISTORICAL (a property of the deleted machine, measured and bounded above). Was: RETAINED as the live `RWM_UNIFIED=0` opt-out arm (no activation warning) |
@@ -17043,3 +17045,313 @@ experiment and it is named here, before the battery, so the verdict
 cannot be accused of finding its successor after the fact.
 
 *(Results below this line were written after the runs.)*
+
+### L1 BATTERY RESULTS (VM 10.1.5.16; binary sha256 `7c91151fa6a1e58c…` = commit 3d932c2, built fresh on the VM after `rm` of the stale binary, CRLF-converted `git archive` tree of this branch, SAME binary every run including the smoke, the pre-battery measurement and the crown; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_SIDLE_DERIVED=1`; driver `tools/l1/patience_battery.sh` + `tail_matrix.sh` (`ship`/`deliv`/`pat` arms) + `patience_parse.py`; logs + per-run diag under `/home/vibe/patience/`; lock `/tmp/rwm-vm.lock` found FREE and taken 21:32:15 UTC, released 03:22 UTC after teardown verification, VM clean)
+
+**FULL PRE-REGISTERED SCOPE, and therefore FLIP-ELIGIBLE** — unlike
+attempt 1's reduced battery. All twenty cell×arm combinations at
+`ARMCOUNT = 8`, plus the 1.2 GB sustained run and the crown.
+
+**Runtimes.** s42 21:45:20 → 22:20:37 UTC (35 min), s7 22:20:37 →
+23:11:15 (51 min), crown 00:48 → 01:13 (25 min, re-run — the first
+crown attempt was invoked without `sudo` by the stage script and
+returned `BRINGUP_FAIL` on every arm of both seeds, a harness defect
+that produced no measurements and is recorded here rather than hidden;
+its logs are preserved as `tail-c2-s{42,7}.log` and NOTHING is quoted
+from them).
+
+**Run health, launched detached and NOT POLLED (discipline item 13,
+second independent confirmation):**
+
+| seed | invocations | summaries | RUN-RETRY | RUN-LOST | liveness/contamination/gauge flags |
+|---|---|---|---|---|---|
+| **42** | **161** | **161** | **0** | **0** | **0 / 0 / 0** |
+| 7 | 236 | 151 | 85 | 10 | 199 flags, **ALL on summary-less aborted attempts (0 on any captured run, verified programmatically)** |
+
+**`dnf = 0` in every completed run, both seeds (312 runs).** The seed-42
+column is the item-13 signature again: 161 invocations, 161 summaries,
+zero retries, with the observer completely absent. The seed-7 column is
+the documented item-8 topo-abort class; nothing was discarded and every
+n is quoted below.
+
+Goodput (Mbit/s, mean ± σ_s (n)). Arms: **prior** = today's shipped
+default · **est** = `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` (the
+§16.37/§16.39 blocker-reproduction control) · **pat** = the same +
+`RWM_PATIENCE_DERIVED=1` (**THE candidate**) · **patonly** =
+`RWM_PATIENCE_DERIVED=1` alone. Every arm also carries
+`RWM_SIDLE_DERIVED=1` (DIAG-only).
+
+| cell | arm | s42 | s7 |
+|---|---|---|---|
+| **c1 single 400 MB** | prior | 201.2 ± 3.3 (8) | 200.2 ± 6.6 (8) |
+| | est | 480.6 ± 22.6 (8) | 469.7 ± 21.9 (8) |
+| | **pat** | **467.1 ± 26.0 (8)** [435.7–500.8] | **468.7 ± 31.1 (8)** [434.3–516.4] |
+| | patonly | 206.4 ± 9.4 (8) | 201.8 ± 4.5 (8) |
+| c1 sustained 1.2 GB | pat | **489.1** (1), dnf 0 | **481.0** (1), dnf 0 |
+| sc2 single 100 MB | prior / est / **pat** / patonly | 88.3 ± 0.7 / 87.8 ± 0.9 / **88.6 ± 0.4** / 87.4 ± 0.6 (8) | 87.5 ± 1.0 / 88.7 ± 0.8 / **88.6 ± 0.8** / 87.7 ± 0.9 (8) |
+| sc3 single 25 MB | prior / est / **pat** / patonly | 16.7 / 16.8 / **16.7** / 16.6 ± 0.1–0.2 (8) | 16.6 (8) / 16.7 (7) / **16.9 (8)** / 16.7 (7) |
+| **c7 dual 200 MB** | prior | 172.9 ± 1.8 (8) = **0.978×Σ** | 171.0 ± 2.9 (7) = **0.977×Σ** |
+| | est | 170.0 ± 6.4 (8) = 0.967×Σ | 163.1 ± 12.6 (8) = 0.919×Σ |
+| | **pat** | **167.1 ± 3.7 (8) = 0.943×Σ** | **165.3 ± 4.9 (7) = 0.933×Σ** |
+| | patonly | 171.6 ± 1.3 (8) = **0.982×Σ** | 173.0 ± 2.1 (8) = **0.986×Σ** |
+| c8 dual 25 MB | prior | 82.3 ± 17.2 (8) = 0.783×Σ | 74.3 ± 8.3 (7) = 0.714×Σ |
+| | est / **pat** / patonly | 0.765 / **0.704** / 0.774×Σ | 0.760 / **0.797** / 0.770×Σ |
+
+Σ = same-session singles from each arm's OWN env (2×sc2 at c7;
+sc2+sc3 at c8).
+
+**THE MECHANISM GAUGE (`pf=<floor-bound>/<clock-bound>/<mean floor µs>`,
+end-of-run, per-rep ranges over n = 8). This is the table the verdict
+turns on**, because the falsification clause is written in terms of it:
+
+| cell | arm | s42 `pf` | s7 `pf` |
+|---|---|---|---|
+| **c7** | prior | **0** / 501 542–713 071 / 10 000 | **0** / 577 465–851 417 / 10 000 |
+| | est | **0** / 204 718–927 638 / 10 000 | **0** / 354 560–1 366 558 / 10 000 |
+| | **pat** | **0** / 264 885–853 817 / **25 591–34 194** | **0** / 249 120–1 291 563 / **22 618–36 395** |
+| | patonly | **0** / 396 752–635 824 / 15 232–20 780 | **0** / 493 310–800 053 / 18 645–23 036 |
+| **c1** | prior | **149–391** / 295–460 / 10 000 | **161–286** / 174–528 / 10 000 |
+| | est | **42–614** / 900–1 861 / 10 000 | **83–489** / 1 112–2 977 / 10 000 |
+| | **pat** | **0–31** / 937–2 418 / **3 119–4 322** | **0–40** / 979–2 557 / **2 635–4 217** |
+| | patonly | **0–10** / 376–710 / 2 122–3 019 | **0** / 297–764 / 2 062–2 618 |
+| sc2 / sc3 | all arms | **0** / 1 377–3 041 / 10 000 → 4 246–46 148 | **0** / 1 261–3 192 / same |
+
+Recovery/stall gauges at **c7** (per-rep ranges, n = 8):
+
+| arm | s42 `sidle` ms/n | s42 `sidle2` | s42 `sweeps` | s42 `retx` | s42 `gapdrop` | s7 `sidle` | s7 `sweeps` |
+|---|---|---|---|---|---|---|---|
+| prior | 536–1032 / 78–145 | **536–1032 / 78–145** | 3–7 | 4965–6275 | 292–474 | 635–1334 / 99–158 | 3–8 |
+| est | 1376–2914 / 191–293 | **1376–2863 / 191–290** | 10–21 | 4569–5583 | 281–456 | 1475–5122 / 211–392 | 11–32 |
+| **pat** | 1428–2432 / 199–286 | **1428–2432 / 199–286** | 7–21 | 4569–6572 | 354–609 | 1730–3100 / 204–323 | 15–22 |
+| patonly | 534–1103 / 97–154 | **534–1103 / 97–154** | 4–10 | 4541–5963 | 260–684 | 673–1112 / 115–145 | 2–7 |
+
+`paused` = 0% in every arm, both seeds.
+
+**Crown (tail_matrix c2 ×4, realtime hint, p99 ms, `1000/1000` delivered
+in all 24 reps per seed; liveness echoes for the derived-patience and
+est gates asserted on BOTH endpoint logs of the `pat` arm):**
+
+| arm | s42 400 B | s42 1200 B | s7 400 B | s7 1200 B |
+|---|---|---|---|---|
+| ship (default) | 36 / **37** / 38 | 37 / **37** / 64 | 35 / **40** / 46 | 36 / **39** / 40 |
+| deliv (est+eb) | 34 / **35** / 37 | 37 / **38** / 41 | 36 / **40** / 158 | 38 / **40** / 46 |
+| **pat** | 35 / **37** / 42 | 38 / **41** / **179** | 37 / **38** / 40 | 36 / **38** / 43 |
+
+(min / median / max over 4 reps.) `pat` medians sit inside the ≤ ~41 ms
+class on both seeds and at both sizes, at 1000/1000 delivered. **One
+honest blemish, recorded rather than smoothed:** on seed 42 at 1200 B
+the `pat` arm has two reps outside the class (p99 59.9 and 178.8 ms)
+where its two controls have none. The same single-rep outlier class
+appears in a CONTROL on the other seed (`deliv` 400 B s7, max 158 ms),
+so this is not attributable to the derived floor at n = 4 — but it is
+not a clean pass either, and it is quoted as a WATCH.
+
+**Wedge:** `mtu_blackhole_wedge` 2/2 green on the branch binary.
+
+### VERDICT vs the pre-registration — the c7 clause FAILS on both seeds with the mechanism DEMONSTRABLY DERIVED; NO FLIP; and per the goal's own honest-exit rule this second falsification-with-mechanism CLOSES the c1-default target as a STRUCTURAL BOUND
+
+1. **Prediction 1 (the 3a artifact verdict): RESOLVED, three-way, per
+   cell — and §16.37/§16.39 need NO correction.**
+   - **At c7, the cell both sections quote: branch (1B)+(1C) together.**
+     `sidle2` equals `sidle` to the millisecond in every arm on seed 42
+     (536–1032 / 1376–2863 vs 1376–2914 / 1428–2432 / 534–1103) and to
+     within 1% on seed 7. **The est-arm ratio SURVIVES the derived
+     gauge**: est/prior is 2.6× on the legacy threshold and 2.6× on the
+     derived one. **The §16.37 and §16.39 stall evidence is REAL, not a
+     fixed-threshold artifact, and neither section is corrected.** The
+     premise that batching makes emission EVENTS rarer than the 1 ms
+     loop wake is simply false at c7: measured `evt` is 45–170 µs in the
+     bulk of every run, so the derived law sits on its floor and returns
+     the legacy 3 000 µs by construction.
+   - **At the SINGLE cells it is branch (1A), and materially so — but no
+     published claim rests on them.** Under `est`/`pat` (i.e. with
+     `RWM_EMIT_BATCH`), sc2 measures `evt` 1 564–3 656 µs and sc3
+     20 942–250 147 µs, so the fixed 3 ms counts ordinary pacing
+     intervals as stalls: **sc2 `sidle` 3 461–4 106 ms against `sidle2`
+     306–536 ms, and sc3 10 076–10 707 against 929–1 679 — an 85–90%
+     over-count, present ONLY in the batched arms** (`prior` and
+     `patonly` are identical under both gauges: `evt` 101–188 µs). This
+     is recorded so that nobody ever reads `sidle` at a slow cell
+     again: **where `evt ≫ LOOP_WAKE_US`, read `sidle2`.**
+2. **Prediction 2 (c7 ≥ 0.97×Σ, THE clause): FAILED on BOTH seeds.**
+   `pat` = 0.943 (s42) / 0.933 (s7). Below the clause on both, and
+   below its own same-session `est` control on seed 42 (0.943 vs
+   0.967). Not close, not rescuable by n — n was 8/7 with σ_s 3.7/4.9.
+3. **Prediction 3 (mechanism evidence): the `pf` gauge MOVES exactly
+   where it CAN move, and the throughput does not follow.** This is the
+   cleanest possible form of the falsification clause, and it splits in
+   two:
+   - **At c1, where the legacy floor demonstrably binds, the derivation
+     does precisely what it was built to do:** floor-bound evaluations
+     collapse from **149–391 (prior) and 42–614 (est) to 0–31 (`pat`)
+     on seed 42**, and from 161–286 / 83–489 to **0–40** on seed 7 —
+     i.e. from ~30–45% of evaluations to ~1%, with the mean floor moving
+     10 000 → 2 635–4 322 µs. **Patience is demonstrably derived.** And
+     c1 does not move: `pat` 467.1/468.7 against `est` 480.6/469.7
+     (within σ), `patonly` 206.4/201.8 against `prior` 201.2/200.2
+     (within σ).
+   - **At c7 the gauge CANNOT move, because it was already zero.**
+     0 floor-bound out of 501 542–1 366 558 evaluations in EVERY arm
+     including the shipped default, both seeds, at n = 8 — the
+     pre-battery finding reproduced three orders of magnitude larger.
+     The derived law is still live there (mean floor 10 000 → 22 618–
+     36 395), it simply never wins. Falsification clause (i) does not
+     fire.
+   - `sweeps` and `retx` do NOT fall toward the prior class in the `pat`
+     arm (sweeps 7–21 / 15–22 against est's 10–21 / 11–32 and prior's
+     3–7 / 3–8). The pre-registration said a c7 pass without this
+     moving would have open attribution; there is no c7 pass, and the
+     signature's invariance is now established against a FOURTH
+     mechanism.
+4. **Prediction 4 (c1 ≥ 430): PASSED** — 467.1 ± 26.0 / 468.7 ± 31.1,
+   per-run min 435.7 / 434.3, sustained 1.2 GB 489.1 / 481.0, dnf 0.
+5. **Prediction 5: c8 ≥ 0.87 NOT MET BY ANY ARM INCLUDING THE SHIPPED
+   DEFAULT** (prior 0.783 / 0.714) at σ_s 8.3–17.2; the cell is too
+   noisy at this n to attribute anything and no claim is made from it in
+   either direction — the same reading as attempt 1. **sc2/sc3 HOLD
+   within σ everywhere.** Crown: `pat` medians in class at 1000/1000
+   both seeds, with the seed-42 1200 B WATCH recorded above. Wedge
+   green.
+6. **Prediction 6 (reliability): PASSED** — dnf = 0 in all 312 completed
+   runs, both seeds; delivered-set integrity and the N = 1 / gate-OFF
+   bit-exactness asserted by unit test (`derived_patience_off_is_bit_
+   identical_to_the_legacy_threshold`) and by `patience_loopback`.
+7. **Prediction 7 (`patonly` ≥ prior within σ): PASSED, on every cell.**
+   c1 206.4/201.8 vs 201.2/200.2; **c7 0.982/0.986 vs prior's
+   0.978/0.977 — `patonly` is in fact the BEST c7 arm on both seeds**,
+   though inside σ and therefore claimed as nothing more than "no
+   regression". The 10 ms literal was not load-bearing at the current
+   default.
+
+**FLIP DECISION (the pre-set rule, verbatim): NO FLIP.** The rule
+required the FULL pre-registered gate set on both seeds; prediction 2
+failed on both. **No default changes: `RWM_PATIENCE_DERIVED` and
+`RWM_SIDLE_DERIVED` ship OFF, and the composed est+eb default flip does
+not happen. c7 ≥ 0.97×Σ was not weakened to ship the c1 win, and will
+not be.** `gates.rs` pins both new gates OFF in the default-stack test;
+the shipped default stack is byte-identical to the one this branch
+inherited.
+
+### FALSIFICATION-WITH-MECHANISM: what the gauges say, and the successor they name
+
+The pre-registered clause that fired is (d)'s head: *"c7 still < 0.97 on
+both seeds with patience DEMONSTRABLY DERIVED ⇒ ATTEMPT 2 IS
+FALSIFIED."* Both halves are satisfied on the numbers, and the case is
+again stronger than the clause asked for, because the mechanism was
+eliminated on two independent grounds:
+
+- **By population.** The constant this build was written to remove
+  **had no c7 population to remove.** 0 floor-bound §6.1.2 evaluations
+  out of 501 542–1 366 558, in every arm including the shipped default,
+  both seeds, n = 8. Recovery patience at c7 was never "a constant, not
+  a derived quantity" — the path clock governed 100.000% of
+  evaluations before this branch existed.
+- **By response.** Where the constant DOES bind — c1, 30–45% of
+  evaluations — deriving it collapses the floor-bound share to ~1%
+  (149–391 → 0–31; 161–286 → 0–40) and **throughput does not move**, on
+  either seed, at either the composed operating point (`pat` vs `est`)
+  or the shipped one (`patonly` vs `prior`). A mechanism supplied in
+  full, demonstrated live by its own gauge, that moves nothing, was not
+  the mechanism. That is §16.37's arm-A pattern repeating one layer
+  down.
+
+**And the reason it could never have been the mechanism is now
+measured, which is the durable result of this branch.** The §6.1.2
+threshold is `9/8 × max(Copa srtt, estimator EWMA app-echo RTT)`, and
+**the app-echo clock is STORE-DWELL INCLUSIVE**: it measures how long a
+symbol sat in the sender's own store plus the round trip. At c7 it
+reads **158 ms against an 8–10 ms RTprop, ×20**. So the live patience
+threshold at c7 is ≈ **178 ms before a reported gap is even a candidate
+hole** — and against 178 ms, a 10 ms floor and a 1.4 ms floor are the
+same number. Both this build and the constant it replaced were
+adjusting a term that is two orders of magnitude below the one that
+governs.
+
+**The successor this names, and it was named BEFORE the battery ran**
+(see the pre-battery block above, committed at 4307a6c): **the recovery
+clock's ARGUMENT, not its constants.** RFC 9002's kTimeThreshold 9/8 is
+correct and stays; what is wrong is feeding it a queue- and
+store-inclusive RTT estimate. A recovery clock that inflates with the
+sender's own backlog cannot distinguish "the network lost it" from "we
+have not sent it yet" — it is the same class of defect as the
+ack-interval anchor over-read §16.37 eliminated, one layer down, and it
+is a clock-INPUT change rather than a constant change. The obvious
+candidate argument is the pair the engine already maintains honestly
+(`min_rtt`/RTprop plus a measured jitter term), which is what RFC 9002
+means by "smoothed_rtt" in a stack that does not put a store between
+the sample and the wire. **That is a separate pre-registered
+experiment.** Whoever takes it should note that this branch has already
+built and shipped (default OFF) the instrument it will need: the `pf`
+split, which turns "is this clock governing?" from an argument into a
+count.
+
+### THE STRUCTURAL BOUND (the goal's honest exit, clause 5 — this is the SECOND falsification-with-mechanism, and the rule was written before either)
+
+GOAL "UNLOCK THE DEFAULT" set out to make the composed fast
+configuration — `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1`, which more than
+doubles single-path throughput — the SHIPPED DEFAULT, gated on the c7
+clause ≥ 0.97×Σ. Two attempts have now been made at that clause, each
+pre-registered, each falsified with its mechanism named:
+
+| attempt | mechanism | measured outcome | eliminated by |
+|---|---|---|---|
+| 1 — ack-merge (§16.39) | window-mode control-datagram density | density 1.038/1.053 → 1.000 (a 4% swap, not the claimed ×2); c7 0.894/0.943; stall signature INVARIANT | premise (there was no ×2) **and** response (removing it is inert) |
+| 2 — derived patience (this section) | the fixed 10 ms recovery-patience floor | 0 floor-bound evaluations of 0.5–1.4 M at c7 in EVERY arm; where it binds (c1) the derivation collapses it 30–45% → ~1% and nothing moves; c7 0.943/0.933 | population **and** response |
+
+**Per the pre-committed rule, the c1-default target therefore closes as
+a documented STRUCTURAL BOUND, and the win ships as a documented OPT-IN
+rather than a default.** The numbers, all from this battery's own
+same-session interleaved arms, both seeds:
+
+**What the opt-in buys.** `RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1` measures
+**c1 = 480.6 ± 22.6 / 469.7 ± 21.9 Mbit/s against the shipped default's
+201.2 ± 3.3 / 200.2 ± 6.6 — ×2.35–2.39**, per-run 442.6–510.3 /
+444.4–501.8, 1.2 GB sustained 489.1 / 481.0 with dnf 0, crown medians
+35–38 ms at 1000/1000, sc2/sc3 unchanged within σ.
+
+**What it costs.** **c7 = 0.967 / 0.919×Σ against the shipped default's
+0.978 / 0.977 — a dual-path price of −1.1% to −5.9% of Σ**, seed 7 being
+the expensive one and also the noisy one (σ_s 12.6). c8 is inside its
+WATCH band and too noisy at this n to price in either direction.
+
+**The single-path user pays nothing and gains ×2.4; the dual-path user
+pays up to ~6%. Both numbers come from the same battery, which is what
+makes reopening this a decision rather than a rediscovery.**
+
+**And the bound is now sharper than "we could not find it", which is
+what four eliminations buy.** The c7 cost of the faster ack clock has
+survived, unmoved, against every mechanism proposed for it:
+
+| # | proposed binder | how it was eliminated | where |
+|---|---|---|---|
+| 1 | the pooled store's rate SOURCE | three independent rate sources built and measured on identical batteries; the c7 ordering does not track anchor honesty at all | §16.35–§16.37 |
+| 2 | ack DENSITY | measured ≈absent (1.04, not 2); removing it is inert | §16.39 |
+| 3 | per-ack LOCK CONTENTION | halved at the ack arm, response nil | §16.39 |
+| 4 | the depth-16 GAP CHANNELS | `gapdrop` does not fall when density falls, and sits ≈400 in the prior default too | §16.39 |
+| 5 | the recovery-patience CONSTANT | 0 binding evaluations of 0.5–1.4 M at c7; where it binds, deriving it moves nothing | **this section** |
+
+What survives every one of them is the same gauge: **under
+`RWM_EST_CADENCE`+`RWM_EMIT_BATCH` the sender spends ≈2.6× the shipped
+default's time in stall-class emission gaps and fires 3–4× the tail
+sweeps, at c7, and that signature responds to the est gate and to
+nothing else yet measured** — a fact this branch strengthened rather
+than weakened, by proving with a derived gauge that it is not an
+artifact of how the stalls were counted. The one clock never yet
+examined is the one the gauges point at and this section names: the
+ARGUMENT of the recovery threshold, measured here at 158 ms of
+store-dwell-inclusive RTT against an 8–10 ms path. **Anyone reopening
+"Unlock The Default" should start there — not at a constant, and not at
+the anchor, which has now been eliminated three ways and the constants
+one more.**
+
+**What ships from this branch anyway (default OFF, retained, not
+class-C):** the two laws, eight unit tests, the `patience_loopback`
+integration test, and — the durable piece — **two instruments the
+project did not have.** `pf=` turns "is this recovery clock governed by
+its floor or by the path?" into a per-run count, and it is what
+converted this attempt from an argument into a measurement in fifteen
+minutes of shakeout. `sidle2=`/`evt=` do the same for the stall gauge,
+and have already paid for themselves by establishing that §16.37's and
+§16.39's c7 evidence is REAL while the same gauge over-counts by 85–90%
+at slow cells — a correction to the INSTRUMENT that no future session
+now has to rediscover.
