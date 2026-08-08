@@ -403,6 +403,9 @@ pub fn anchor_gate_default(name: &str, default: bool) -> bool {
 /// substrate, MTU wedge, 1024-pool law, phantom retx, generation-inert
 /// harness, pre-hardware-divide) must be re-earned on the clean substrate
 /// before deletion. Call once at engine/experiment setup, not per packet.
+// ADR-0066 / goal-gate "DEPRECATION REGISTER": this IS the register's
+// enforcement mechanism — kept deliberately ahead of the rows that will call it.
+#[allow(dead_code)]
 pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool {
     let on = env_flag(name, default);
     if on {

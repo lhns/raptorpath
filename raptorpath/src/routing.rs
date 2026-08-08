@@ -4,7 +4,7 @@
 //! and optionally configures DNS on the tunnel interface.
 
 use std::net::IpAddr;
-use tracing::{info, warn};
+use tracing::info;
 
 /// A route that was added and needs to be cleaned up on shutdown.
 #[derive(Debug, Clone)]

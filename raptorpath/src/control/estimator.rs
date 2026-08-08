@@ -26,9 +26,6 @@ pub struct LossEstimator {
     beta_decay: f64,
 
     // --- RX path loss (reverse direction, from NackAck feedback) ---
-    /// Beta distribution parameters for RX path loss
-    rx_beta_a: f64,
-    rx_beta_b: f64,
     /// EWMA of RX loss rate
     rx_ewma_loss: f64,
 
@@ -134,8 +131,6 @@ impl LossEstimator {
             beta_b: 1.0,
             beta_decay: 0.995, // slowly forget old observations
             // RX path: weak prior
-            rx_beta_a: 1.0,
-            rx_beta_b: 1.0,
             rx_ewma_loss: 0.0,
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
@@ -270,10 +265,6 @@ impl LossEstimator {
         self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
 
         // Beta-Binomial update with decay
-        self.rx_beta_a *= self.beta_decay;
-        self.rx_beta_b *= self.beta_decay;
-        self.rx_beta_a += acks_received as f64;
-        self.rx_beta_b += lost as f64;
     }
 
     /// RX path loss rate (point estimate).
@@ -344,13 +335,6 @@ impl LossEstimator {
         self.bocd.predictive_quantile(confidence)
     }
 
-    /// Variance of loss estimate (from Beta posterior).
-    pub fn loss_variance(&self) -> f64 {
-        let a = self.beta_a;
-        let b = self.beta_b;
-        (a * b) / ((a + b).powi(2) * (a + b + 1.0))
-    }
-
     pub fn rtt(&self) -> Duration {
         self.ewma_rtt
     }
@@ -385,36 +369,12 @@ impl LossEstimator {
         self.beta_b / (self.beta_a + self.beta_b)
     }
 
-    /// Relative uncertainty: (upper_bound - mean) / mean.
-    /// Returns 0.0 when loss is negligible.
-    pub fn loss_uncertainty(&self, confidence: f64) -> f64 {
-        let mean = self.loss_rate_mean();
-        if mean < 1e-10 {
-            return 0.0;
-        }
-        let upper = self.loss_rate_upper(confidence);
-        ((upper - mean) / mean).max(0.0)
-    }
-
-    /// Total number of symbols sent (for confidence adaptation).
-    pub fn total_sent(&self) -> u64 {
-        self.total_sent
-    }
-
     pub fn ge_estimator(&self) -> &GilbertElliottEstimator {
         &self.ge
     }
 
-    pub fn bocd(&self) -> &BayesianChangepoint {
-        &self.bocd
-    }
-
     pub fn is_in_burst(&self) -> bool {
         self.in_burst
-    }
-
-    pub fn time_since_update(&self) -> Duration {
-        self.last_update.elapsed()
     }
 }
 
@@ -487,6 +447,8 @@ impl LossEstimator {
     }
 
     /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
+    // Test-only consumer: the `RWM_EST_CADENCE` law tests in this file.
+    #[allow(dead_code)]
     pub fn bocd_updates(&self) -> u64 {
         self.bocd.updates()
     }

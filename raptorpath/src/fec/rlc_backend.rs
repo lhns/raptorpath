@@ -316,17 +316,6 @@ impl FecDecoder for RlcDecoder {
         &self.params
     }
 
-    fn get_source_symbol(&self, index: usize) -> Option<&[u8]> {
-        if index >= self.params.source_symbols as usize {
-            return None;
-        }
-        self.pivot_rows.get(index)?.as_ref().map(|(_, data)| data.as_slice())
-    }
-
-    fn received_ids(&self) -> Vec<u32> {
-        self.seen_ids.iter().copied().collect()
-    }
-
     fn created_at(&self) -> Instant {
         self.created
     }

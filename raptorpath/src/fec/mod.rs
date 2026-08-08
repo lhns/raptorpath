@@ -25,7 +25,7 @@ pub(crate) mod unified;
 mod stream;
 
 pub use traits::{EncodingParams, FecBackend, FecDecoder, FecEncoder, WireSymbol};
-pub use stream::{FecStream, RepairStream};
+pub use stream::FecStream;
 pub use window_traits::{WindowEncoder, WindowDecoder};
 pub use rlc_window::{RlcWindowEncoder, RlcWindowDecoder};
 pub use generation::{GenerationDecoder, GenerationEncoder};

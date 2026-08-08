@@ -210,6 +210,8 @@ impl FecRateController {
     /// for callers that know the remaining send time T_rem — compute it
     /// with `raptorpath_math::completion_exposure(t_rem, srtt, rttvar)`.
     /// The production tunnel never calls this (endless stream ⇒ χ = 0).
+    // Test-only consumer: tests/gate_suite.rs drives the χ arm through it.
+    #[allow(dead_code)]
     pub fn set_completion_exposure(&mut self, chi: f64) {
         self.completion_exposure = chi.clamp(0.0, 1.0);
     }
@@ -370,28 +372,12 @@ impl FecRateController {
         rate.min(spare_capacity.max(0.0))
     }
 
-    /// Update the codec overhead for a new backend (used during runtime switching).
-    pub fn update_backend(&mut self, backend: FecBackend) {
-        self.rq_overhead = match backend {
-            FecBackend::RaptorQ => 0.01,
-            FecBackend::ReedSolomon => 0.0,
-            FecBackend::Rlc => 0.004,
-        };
-    }
-
     /// Get diagnostics for monitoring.
     pub fn diagnostics(&self) -> FecDiagnostics {
         FecDiagnostics {
             actual_failure_rate: 0.0,
             pi_correction: 0.0,
-            integral_error: 0.0,
-            target_tail_loss: self.target_tail_loss,
         }
-    }
-
-    /// Get the maximum overhead setting.
-    pub fn max_overhead(&self) -> f64 {
-        self.max_overhead
     }
 
     /// Get the raw codec overhead (before P(decoder_invoked) weighting).
@@ -421,6 +407,8 @@ pub struct TaperFunction {
     /// Each time step, the density multiplies by this factor.
     pub decay: f64,
     /// Total correction rate: A / q = r*.
+    // Test-only reader: the taper geometric-sum law tests below.
+    #[allow(dead_code)]
     pub total_rate: f64,
     /// The GE parameter q (for reference).
     pub q: f64,
@@ -456,20 +444,6 @@ impl TaperFunction {
     /// to generate per source symbol at offset t.
     pub fn density(&self, t: f64) -> f64 {
         self.amplitude * self.decay.powf(t)
-    }
-
-    /// Whether to generate a correction symbol at this offset,
-    /// using the taper density as a probability.
-    ///
-    /// For densities > 1.0 (high loss), always generate.
-    /// For densities < 1.0, probabilistic based on density.
-    pub fn should_generate(&self, t: f64, rng_value: f64) -> bool {
-        let d = self.density(t);
-        if d >= 1.0 {
-            true
-        } else {
-            rng_value < d
-        }
     }
 }
 
@@ -743,6 +717,8 @@ impl BudgetAllocator {
         }
     }
 
+    // Test-only consumers: the BudgetAllocator conservation tests below.
+    #[allow(dead_code)]
     pub fn proactive_rate(&self) -> f64 {
         self.proactive_budget
     }
@@ -751,6 +727,7 @@ impl BudgetAllocator {
         self.nack_cap
     }
 
+    #[allow(dead_code)]
     pub fn total_budget(&self) -> f64 {
         self.total_budget
     }
@@ -760,8 +737,6 @@ impl BudgetAllocator {
 pub struct FecDiagnostics {
     pub actual_failure_rate: f64,
     pub pi_correction: f64,
-    pub integral_error: f64,
-    pub target_tail_loss: f64,
 }
 
 #[cfg(test)]
