@@ -490,7 +490,9 @@ impl TaperFunction {
 /// computed rate is banked into `owed` (Σ grants ≤ Σ rates, conserved up
 /// to the expiry cap below) and the grant handed to the emission debt is
 ///
-///     grant = min( owed, max(desire, rate), spare, 1.0 )
+/// ```text
+/// grant = min( owed, max(desire, rate), spare, 1.0 )
+/// ```
 ///
 /// where desire = rate · shape(t mod W) re-times the spend with the SAME
 /// GE-survival taper shape, renormalized to mean weight 1 over a W-span:
