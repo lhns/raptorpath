@@ -16764,6 +16764,47 @@ both falling 25×) is unchanged. Recording this here so the next session
 does not build it on §16.39's cell-conditional arithmetic — which is
 the same error this section just corrected once.
 
+### FLIP VERIFIED ON THE SUBSTRATE, TWO-SIDED (2026-08-08 15:29:40-15:31 UTC; binary sha256 `e163277e3156c795d472e4677505e7654a8bf85fcc5711f6d5472155950e55a5` = commit bdab7de, i.e. the POST-FLIP binary, rebuilt on the VM after `rm` of the previous one from a CRLF-converted `git archive` tree; log `/home/vibe/ackflip/flipverify.log`; still under the same lock)
+
+The battery measured the KNOB (`RWM_ACK_MERGE=1` against env-unset on a
+default-OFF binary). It did not, and could not, measure THE FLIP — that
+env-unset on a default-ON binary now resolves to the merged machine and
+that the opt-out still reaches the legacy one. Asserting that from the
+unit tests alone would be exactly the routing assumption CLAUDE.md's
+testing-discipline rule exists to forbid, so it is measured. Four c1
+400 MB invocations, seed 42, alternating:
+
+| rep | arm | echo (client / server) | `[CTLD]` tx/rx | goodput | CPUSRV |
+|---|---|---|---|---|---|
+| 1 | **env UNSET** (the new default) | **1 / 1** | 323 521 / 323 539 = **1.000** | 218.6 | 16.18 s |
+| 1 | `RWM_ACK_MERGE=0` (opt-out) | **0 / 0** | 651 492 / 334 471 = **1.948** | 196.5 | 17.17 s |
+| 2 | **env UNSET** | **1 / 1** | 333 824 / 334 243 = **0.999** | 225.0 | 15.56 s |
+| 2 | `RWM_ACK_MERGE=0` | **0 / 0** | 647 197 / 331 620 = **1.952** | 194.6 | 16.98 s |
+
+**Both directions land exactly where the flip says they must.** With
+the env unset the ack-merge liveness echo now fires on BOTH logs and
+the receiver sends 1.000 control datagrams per data message; with
+`RWM_ACK_MERGE=0` the echo is absent on both logs and the density
+returns to **1.95**, reproducing the pre-flip default's c1 measurement
+(1.961/1.959) on a different binary. Goodput follows: 218.6/225.0 vs
+196.5/194.6, +11.3% / +15.6% at n = 2 per arm, consistent with the
+battery's +12.7% / +13.0% at n = 8. dnf 0 in all four.
+
+So the shipped default is now the arm that was measured, the A/B arm
+survives the flip and still reaches the legacy branch — which is why
+that branch is scheduled for deletion in seam B2 rather than deleted
+here — and the `gates.rs` default-stack assertion, `ack_merge_optout`
+and this run agree at all three layers.
+
+**Ops close-out.** VM cleaned via `cleanup.sh` with teardown VERIFIED
+(0 `raptorpath` processes, 0 `rp-*` netns, 0 iperf3); `rp-*` netns
+only throughout; logs preserved under `/home/vibe/ackflip/`
+(`battery-s42.log`, `battery-s7.log`, `driver.log`, `env.log`,
+`smoke-s42.log`, `flipverify.log`, `diag/`, `diag-smoke/`, 15 MB).
+Lock `/tmp/rwm-vm.lock` held 13:57:44 -> **released 15:31:17 UTC**,
+covering the sync, both builds, the smoke, the battery, the crown and
+this verification (item 12).
+
 ## Unlock The Default 1: ack-merge (2026-08-07) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any build and BEFORE any VM run; branch `feat/ack-merge` from main@847db34; GOAL "UNLOCK THE DEFAULT" item 1, the arc's keystone — the §16.37 structural bound's OWN named successor: "the recovery plane's patience/stall behaviour under the denser ack clock … Anyone reopening this should start there, not at the anchor")
 
 **(a) The finding this build acts on (verified by an Explore pass over
