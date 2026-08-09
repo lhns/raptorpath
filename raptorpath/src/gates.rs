@@ -373,6 +373,25 @@ pub struct RuntimeGates {
     /// costing ~2.7 Mbit at sc2 / ~1.7 at sc3 of pure wire waste.
     pub recov_sp: bool,
 
+    // ── Structural A/B arms (no law change; net seam pass 2) ──────────────
+    /// `RWM_SCHED_SNAPSHOT` (default OFF): read the scheduler ONCE per
+    /// sender-loop iteration and serve the routed read-only phases (the M*
+    /// depth RTprop, the in-flight-cap BDP sum, the CC pace rate, the
+    /// tail-sweep pooled SRTT, the reactive deficit spacing SRTT) from that
+    /// one snapshot instead of from a per-phase `scheduler.lock()`.
+    ///
+    /// NOT behaviour-preserving, which is why it is OFF: today a phase near
+    /// the loop top and a phase after the `select!` await can read DIFFERENT
+    /// scheduler states within one iteration (acks land in between), so a
+    /// rate read before an ack burst can compose with an RTprop read after
+    /// it into a BDP that never existed. One snapshot removes that skew —
+    /// probably the right semantics, but NOT what any measurement to date
+    /// was taken against. With the gate OFF no snapshot is captured, no
+    /// extra lock is taken, and every routed site runs its original block
+    /// bit-for-bit. Adjudicating the arm is an open question for a later
+    /// battery — goal-gate "Refactor: net seams 2".
+    pub sched_snapshot: bool,
+
     // ── Instruments (ADR-0052; no behavior) ───────────────────────────────
     /// `RWM_DIAG` (default OFF): the transport-ceiling / recovery-plane DIAG.
     pub diag: bool,
@@ -461,6 +480,7 @@ impl RuntimeGates {
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
+            sched_snapshot: env_flag("RWM_SCHED_SNAPSHOT", false),
             diag: env_flag("RWM_DIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
             fdiag: env_flag("RWM_FDIAG", false),
@@ -489,6 +509,16 @@ mod tests {
         assert!(g.store_sack_release && g.store_paths);
         assert!(g.recov_mp && g.recov_mp_law);
         assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
+        // net seam pass 2, MOVE 2: the per-iteration scheduler snapshot is
+        // NOT behaviour-preserving (it removes a real intra-iteration read
+        // skew that every measurement to date was taken against), so the
+        // shipped default MUST keep the per-phase reads. This assertion is
+        // the safety claim of that seam — see net/sched_snapshot.rs.
+        assert!(
+            !g.sched_snapshot,
+            "RWM_SCHED_SNAPSHOT ships default OFF: the default sender must take \
+             its scheduler reads per phase, exactly where it always did"
+        );
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
         // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:
