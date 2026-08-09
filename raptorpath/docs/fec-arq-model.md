@@ -10610,13 +10610,15 @@ residence against a backlog S, and reports wire-idle against S. 576 cells in
 13 s. The predicted numbers were written into the ledger and committed before
 the sweep ran.
 
-*The term survives, and what fails it is the clock.* With the recovery plane
-clocked on the honest path RTT, the a-priori S = rate × RTprop + rate ×
-stall(δ, ρ) leaves the wire under 1 % idle at **266 of 288** cells, and the
-median backlog actually required is **0.84–0.90 ×** the prediction — mildly
-conservative, the safe direction for a cover. With the same plane clocked on
-the store-dwell-inclusive app-echo RTT (§16.40's argument), the identical
-term under-provisions 43 % of single-path cells and is off by **×4.5** at c7.
+*The term survives, and what the clock moves is not the median but the tail.*
+The a-priori S = rate × RTprop + rate × stall(δ, ρ) predicts the backlog
+actually required to within ±15 % in the median on BOTH clocks. On the honest
+path RTT it is never worse than **×2.1** and lands within ×1.5 at **95.5 %**
+of cells; on the store-dwell-inclusive app-echo RTT (§16.40's argument) the
+identical term reaches **×13.5**, and only 69 % of cells stay within ×1.5.
+At c7 the prediction leaves 1.59 % of the wire idle wire-clocked against
+18.06 % app-clocked, and the smallest backlog reaching 1 % idle is ×1.13 the
+prediction wire-clocked against ×4.50.
 The measured frontier stall over the contract's own runs p90 ÷ predicted
 **3.85** at RTprop ≤ 20 ms on the app clock against **0.68** on the wire
 clock. The owner of every gap is labelled by the driver rather than inferred:
@@ -10627,7 +10629,7 @@ app-echo patience; at a single path the legacy age gate reads srtt_app/2 =
 which is `TAIL_SWEEP_MAX_US` — a δ-independent engine constant showing
 through as the stall itself.
 
-*There is no knee.* 348 of 574 cells read SLOPE (≥ 3 octaves of transition
+*There is no knee.* 343 of 576 cells read SLOPE (≥ 3 octaves of transition
 width), 58 read KNEE. This is structural, not noisy: the recovery plane has
 two channels with a ×9 latency ratio at the same cell, so the stall
 distribution is bimodal and the idle curve's transition width is the LOG of

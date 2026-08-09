@@ -345,6 +345,17 @@ fn run_slack_cell(
     let mut by_chan: [(u64, Vec<u64>); 5] =
         [(0, vec![]), (0, vec![]), (0, vec![]), (0, vec![]), (0, vec![])];
     let mut spans: Vec<u64> = Vec::new();
+    // The PREDICTED point is added to this cell's grid so `idle@pred` is read
+    // AT the prediction rather than at the next grid point above it — the
+    // rounding would otherwise bias PS1 toward passing by up to one grid step.
+    let grid: Vec<usize> = {
+        let mut g = grid.to_vec();
+        g.push((pred_window + pred_slack).ceil() as usize);
+        g.sort_unstable();
+        g.dedup();
+        g
+    };
+    let grid = &grid[..];
     let mut curve_acc: Vec<(usize, f64)> = grid.iter().map(|&s| (s, 0.0)).collect();
     let mut n_holes = 0usize;
     let (mut patience_us, mut pooled_us, mut cooldown_us, mut refresh_us) = (0, 0, 0, 0);
@@ -565,9 +576,9 @@ fn slack_bench() {
     );
     for c in &cells {
         let pred_s = (c.pred_window + c.pred_slack).ceil() as usize;
+        // `pred_s` is in this cell's grid by construction, so this is the idle
+        // fraction AT the prediction — no interpolation, no rounding up.
         let idle_at = |s: usize| -> f64 {
-            // The grid's nearest point at or above `s` (the honest read of a
-            // grid; no interpolation, no fit).
             c.curve.iter().find(|(g, _)| *g >= s).map(|(_, i)| *i).unwrap_or(0.0)
         };
         let s1 = s_at(&c.curve, 0.01);

@@ -19597,27 +19597,39 @@ prospective test. The prospective test is PS5.
 
 *(Everything below this line was written AFTER the sweep ran.)*
 
-### RESULTS (2026-08-10, local L0, no VM; `cargo test -p raptorpath --test slack_bench --release -- --ignored --nocapture`; **576 cells in 12.90 s**; seeds 42 + 7 pooled; the tree that produced them is 530bbaa + this block, and 530bbaa contains the predictions and NO results)
+### RESULTS (2026-08-10, local L0, no VM; `cargo test -p raptorpath --test slack_bench --release -- --ignored --nocapture`; **576 cells in ~13 s**; seeds 42 + 7 pooled; predictions committed at 530bbaa, which contains NO results)
 
-### THE HEADLINE — the three-term model SURVIVES; what fails is the CLOCK the recovery plane feeds it
+**A METHOD CORRECTION MADE BEFORE THESE NUMBERS WERE BELIEVED, recorded
+because it moved them.** The first pass read `idle@pred` at the nearest grid
+point **at or above** the predicted S, which biases PS1 toward PASSING by up
+to one grid step (×1.33–×1.5) and inflated the wire-clock pass count from
+226 to 266 of 288. The bench now inserts each cell's exact predicted S into
+that cell's grid, so the idle fraction is read AT the prediction. Every
+number below is from the corrected run. Sections (1), (2), (5), (6) and (7)
+are byte-identical between the two runs — the stall measurements never
+depended on the grid — and only the idle-curve reads moved.
 
-`slack = rate × stall(δ, ρ)` is **right, and right to within one grid step**,
-whenever the recovery plane is clocked on the honest path RTT. It is wrong by
-up to ×4.5 when the same plane is clocked on the store-dwell-inclusive
-app-echo RTT. The term did not need a coefficient; the implementation needed
-an honest argument.
+### THE HEADLINE — the three-term model SURVIVES; what fails is not the MEDIAN but the TAIL, and the tail belongs to the CLOCK
 
-| clock | np | cells | median idle at the PREDICTED S | **PS1 pass (idle < 1 %)** | median S(1 %) ÷ pred S |
+`slack = rate × stall(δ, ρ)` predicts the required backlog to within
+±15 % in the MEDIAN on BOTH clocks. The clock argument does not move the
+median at all. What it moves is the TAIL, and by an order of magnitude:
+
+| clock | median S(1 %) ÷ pred S | p90 | p95 | **max** | cells within ×1.5 |
 |---|---|---|---|---|---|
-| **wire** | 1 | 144 | 0.00 % | **138 / 144** | **0.84** |
-| **wire** | 2 | 144 | 0.00 % | **128 / 144** | **0.90** |
-| app | 1 | 143 | 0.00 % | 82 / 143 | 1.20 (tail to **13.47**) |
-| app | 2 | 144 | 0.00 % | 106 / 144 | 0.98 (tail to **6.99**) |
+| **wire** | **0.86** | 1.35 | 1.40 | **2.10** | **95.5 %** |
+| app | 1.00 | 3.37 | 4.36 | **13.47** | 69.4 % |
 
-**266 of 288 wire-clocked cells satisfy PS1**, and the median required
-backlog is 0.84–0.90 × the a-priori prediction — i.e. the derived term is
-mildly CONSERVATIVE, which is the safe direction for a cover. On the app
-clock the same term under-provisions 43 % of single-path cells.
+Read strictly — wire idle below 1 % AT the predicted S, no rounding — PS1
+passes at **226 / 288 (78.5 %)** wire-clocked cells against **152 / 288
+(52.8 %)** app-clocked. But the pass/fail count is the weaker statistic,
+because a cell sitting at 1.6 % idle is not a refutation of a term; a cell
+needing ×13.5 the predicted backlog is. **The honest reading is: the derived
+term is correct and mildly conservative (median ×0.86) on the honest clock,
+where it is never worse than ×2.1; on the app-echo clock the same term is
+still right in the median and catastrophically wrong in 5–10 % of cells.**
+The term did not need a coefficient. The implementation needed an honest
+argument.
 
 ### PS1 / PS2 — the ratio table, and the mechanism that owns every gap
 
@@ -19656,9 +19668,13 @@ sweep clamp — a δ-independent constant showing through as the stall itself.
 | c2 · RTprop 10 · GE 2.6 % · np 2 | app clock | wire clock |
 |---|---|---|
 | predicted S = window 146 + slack 309 | **455** | **455** |
-| wire idle AT the predicted S | **15.65 %** | **0.66 %** |
+| wire idle AT the predicted S (exact, not rounded) | **18.06 %** | **1.59 %** |
 | smallest grid S reaching 1 % idle | 2048 (**×4.50**) | 512 (**×1.13**) |
 | p90 frontier stall ÷ contract stall | **5.70** | **0.77** |
+
+The wire column is the honest form of the claim: 1.59 % idle at the exact
+prediction and under 1 % one grid step later, against 18.06 % and four grid
+steps on the app clock.
 
 **A NAMED RESIDUAL, not adjusted for.** At 5 % loss the wire clock fails too
 (worst ratio 2.10, c1 RTprop 20). The driver names it: at that cell the
@@ -19674,12 +19690,11 @@ refuse. It is recorded as the named successor.
 
 | verdict | cells |
 |---|---|
-| SLOPE (≥ 3 octaves) | **348 / 574** |
-| soft knee | 168 / 574 |
-| KNEE (≤ 1.2 octaves) | 58 / 574 |
+| SLOPE (≥ 3 octaves) | **343 / 576** |
+| soft knee | 175 / 576 |
+| KNEE (≤ 1.2 octaves) | 58 / 576 |
 
-Median transition width **3.00 octaves** (p10 1.00, p90 3.58, max 4.58), the
-same on both clocks. PS3 predicted "soft knee or wider — a single sharp knee
+Median transition width **3.00 octaves**, the same on both clocks. PS3 predicted "soft knee or wider — a single sharp knee
 inside one octave would refute the bimodality", and that is what happened.
 
 The width is not free-floating. At the c7 cell the measured stall runs
@@ -19798,7 +19813,7 @@ is a split verdict:
   nothing about how often the WIRE may idle while that happens, and those are
   different promises. A reliable bulk transfer that idles 5 % of the wire has
   broken no contract term the machine currently has. The measurements make
-  this concrete: at the c7 cell on the honest clock, S = 455 buys 0.66 % idle
+  this concrete: at the c7 cell on the honest clock, S = 455 buys 1.59 % idle
   and S = 512 buys < 1 % — but S = 2048 would buy ~0 %, and nothing in
   (δ, ρ, r) says which of those the operator asked for.
 
@@ -19883,3 +19898,12 @@ contract stall at the c7 cell).
 
 `recovery_bench_fixtures_pin_the_plane` is UNCHANGED and green after the
 driver extraction — the proof that the move was behaviour-identical.
+
+Full battery on the final tree, all green, zero failures: `-p raptorpath
+--lib --release` **377** · `-p raptorpath-math` (8 targets: 59/19/22/4/4/3/25/0)
+· `--test gate_suite --release -- --test-threads 1` **15/15** (17 ignored,
+1236 s) · `mtu_blackhole_wedge` **2** · `perf_loopback` **8** · all nine
+loopbacks (`recov_mp`, `copa_sole`, `ack_merge`, `emit_batch`, `patience`,
+`win_decouple`, `wire_compact`, plus the two above) · `recovery_bench` **1**
+· `store_cap_bench` **3** · `slack_bench` **3** · `--doc`. No VM was
+contacted at any point; the whole phase is local and deterministic.
