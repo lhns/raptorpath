@@ -12,6 +12,7 @@
 pub mod block_arq;
 pub mod block_sender;
 pub mod control_msg;
+pub mod diag;
 pub mod emit_source;
 pub mod framing;
 pub mod interleave;
@@ -23,6 +24,7 @@ pub mod tasks;
 use block_arq::BlockArq;
 use block_sender::run_block_sender;
 use control_msg::{ControlCtx, handle_control_message};
+use diag::{DiagCtx, DiagInputs, DiagState};
 use emit_source::{SenderCtx, SenderState, emit_source};
 use sched_snapshot::SchedSnapshot;
 use sender_policy::SenderPolicy;
@@ -4874,7 +4876,6 @@ async fn run_window_sender(
     //                      the fresh deficit so we never double-send. "Send the
     //                      deficit, wait ~RTT for the updated deficit, re-evaluate."
     let mut gen_want: BTreeMap<u64, u64> = BTreeMap::new();
-    let mut gen_trace_last_us: u64 = 0;
     // PROACTIVE vs REACTIVE recovery accounting (proactive-FEC-vs-ARQ crossover
     // instrumentation). `proactive_coded_total` counts coded symbols emitted by
     // the open-loop per-generation provisioning round-robin (`generate_repair`,
@@ -5164,28 +5165,10 @@ async fn run_window_sender(
         }
     }
 
-    // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ──────────────────────────
-    // Time-weighted attribution of the generation-mode sender loop to the
-    // gate that is BINDING its wire emission each instant. In coded-wire
-    // generation mode the paced coded block IS the data plane, so whichever
-    // gate stops it is the throughput binder. States (post-emission):
-    //   emit    — emitted ≥1 coded this iteration (link-flowing)
-    //   budget  — wants_coding=false with sealed gens retained: every active
-    //             generation is at its ceil(len·(1+r)) proactive budget and
-    //             the sender is WAITING ON THE ACK/deficit round (the
-    //             window-advance serialization)
-    //   fill    — wants_coding=false because the head generation has not
-    //             sealed yet (waiting on TUN intake / store backpressure)
-    //   target  — ack-clocked flow window `target` exhausted
-    //   tokens  — pace token bucket dry (the delivered-rate-EWMA pacer)
-    //   cwnd    — in-flight congestion cap
-    // Also per-generation lifecycle (GLIFE): anchor → (first_src, sealed,
-    // last_emit) µs; on the ack passing a generation its fill/code/ack-wait
-    // phases are accumulated. All gated on RWM_DIAG (shipped path untouched).
-    let mut gd_last_us = now_us();
-    let mut gd_us = [0u64; 6]; // [emit, budget, fill, target, tokens, cwnd]
-    // (fill_us, code_us, wait_us, n) accumulated over completed generations.
-    let mut gl_sum: (u64, u64, u64, u64) = (0, 0, 0, 0);
+    // GDIAG / GLIFE stall attribution (net seam pass 3 → net/diag.rs, where
+    // the gauge and its documentation now live): the clock stamp stays
+    // sampled here, at its original point.
+    let gd_last_us = now_us();
 
     if pol.recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
@@ -5219,21 +5202,6 @@ async fn run_window_sender(
     let mut mp_delivered: std::collections::HashMap<u32, Vec<u64>> =
         std::collections::HashMap::new();
     let mut mp_evid_max: u64 = 0;
-    // DIAG (RWM_DIAG): the recovery-plane trace counters — gap-report volume,
-    // per-cause suppression, fired-retransmit age attribution (young = the
-    // law's spurious class), per-flight-path and per-retx-path emission, and
-    // the P_lost-branch retransmit count. Cumulative; printed as `mpr[..]`.
-    let mut mpd_gap_reports: u64 = 0;
-    let mut mpd_gap_seqs: u64 = 0;
-    let mut mpd_supp_cool: u64 = 0;
-    let mut mpd_supp_age: u64 = 0;
-    let mut mpd_supp_law: u64 = 0;
-    let mut mpd_stale: u64 = 0;
-    let mut mpd_fired_young: u64 = 0;
-    let mut mpd_fired_ripe: u64 = 0;
-    let mut mpd_fired_fast: u64 = 0;
-    let mut mpd_coalesced: u64 = 0;
-    let mut mpd_age_ms_sum: f64 = 0.0;
     // Goal-gate "Unlock The Default 2: derived patience" — THE mechanism
     // gauge the falsification clause requires ("patience demonstrably
     // derived"). Every `mp_time_threshold_us` evaluation is classified: did
@@ -5244,10 +5212,6 @@ async fn run_window_sender(
     let mpd_pf_floor: std::cell::Cell<u64> = std::cell::Cell::new(0);
     let mpd_pf_clock: std::cell::Cell<u64> = std::cell::Cell::new(0);
     let mpd_pf_sum: std::cell::Cell<u64> = std::cell::Cell::new(0);
-    let mut mpd_fired_flight: std::collections::HashMap<u32, u64> =
-        std::collections::HashMap::new();
-    let mut mpd_fired_on: std::collections::HashMap<u32, u64> =
-        std::collections::HashMap::new();
 
     let mut emit_batch_live = false;
     if pol.emit_batch_on {
@@ -5261,27 +5225,11 @@ async fn run_window_sender(
     }
 
     // feat/c8-conversion DIAGNOSIS gauges (goal-gate "C8 Slow-Path
-    // Conversion", RWM_DIAG only — behavior-inert): why don't slow-path
-    // symbols CONVERT to delivered goodput at the heterogeneous dual cell?
-    //  * c8c_src_placed[p]  — cumulative FIRST source placements per path
-    //    (candidate (a), placement starvation: compare against the path's
-    //    capacity share from btlbw/qdisc truth).
-    //  * c8c_retx_orig[p]   — cumulative targeted retransmits whose ORIGINAL
-    //    placement path was p (candidate (d), arrival-misalignment: slow-
-    //    placed symbols being re-served spuriously shows up as
-    //    retx_orig[slow]/src_placed[slow] ≫ the path's realized loss rate).
-    //  * c8c_stall_ms/n[p]  — cumulative frontier-stall wall time (ack
-    //    advance gaps ≥ 5 ms) attributed to the OWNER path of the blocking
-    //    hole seq = prev_ack+1 at resolution (candidate (c), HoL coupling:
-    //    which path's holes serialize the cumulative frontier).
-    //    The receiver-side [C8CONV-R] gauge carries the arrival-side view
-    //    (first-copy vs duplicate per path + frontier lead + unblock
-    //    attribution — candidates (a)/(b)/(d)).
-    // `c8c_src_placed` (the FIRST-placement counter the emission step writes)
-    // moved to `SenderState`; the three below stay local to this function.
-    let mut c8c_retx_orig: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-    let mut c8c_stall_ms: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-    let mut c8c_stall_n: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
+    // Conversion", RWM_DIAG only — behavior-inert). The three cumulative
+    // per-path maps moved to `DiagState` (net/diag.rs) with their
+    // documentation; `c8c_src_placed`, which the emission step writes, is in
+    // `SenderState`. The stall clock below stays a local: it is the
+    // ack-advance edge detector, not a reported counter.
     let mut c8c_last_ack_adv_us: u64 = 0;
 
     // ── The emission seam (net seam pass 2, 2026-08-09) ───────────────────
@@ -5340,54 +5288,13 @@ async fn run_window_sender(
     // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
     let mut dyn_infl_cap: u64 = if pol.infl_bdp_on { 128 } else { pol.infl_cap };
     let mut dyn_infl_refresh_us: u64 = 0;
+    // The periodic DIAG report clock (net seam pass 3 → net/diag.rs): both
+    // stamps stay sampled here, at their original points.
     let diag_start_us = now_us();
-    let mut diag_last_us = now_us();
-    let mut diag_last_ack: u64 = 0;
-    let mut diag_last_src: u64 = 0;
-    let mut diag_last_cod: u64 = 0;
-    let mut diag_paused_iters: u64 = 0;
-    let mut diag_total_iters: u64 = 0;
-    // feat/copa-wire-signal wedge forensics (RWM_DIAG only): cumulative tail
-    // ARQ sweeps fired, SACK-gap retransmits actually sent, gaps discarded
-    // for exhausted budget, and the live budget/cap values — the wedge shows
-    // good=0 with in_flight=0 for tens of seconds and these name which stage
-    // of the reactive-repair chain is dead.
-    let mut diag_sweeps: u64 = 0;
-    let mut diag_retx: u64 = 0;
-    let mut diag_gaps_dropped: u64 = 0;
-    let mut diag_eff_rate: f64 = 0.0;
-    // diag/lossy-residual (goal-gate "Lossy-Single Residual", RWM_DIAG only):
-    // sender EMISSION-GAP gauge — cumulative time in inter-emission gaps
-    // ≥ 3 ms (src+cod handoffs to the transport observed per loop iteration;
-    // the loop wakes ≥ every 1 ms, so gap edges are observed within ~1 ms).
-    // Prices accounting term (b): engine-caused wire idle during recovery
-    // rounds. `sidle=<cum ms>/<n>/<max ms>` in the [DIAG] line; the receiver's
-    // [WIDLE] inter-arrival gauge is the wire-truth counterpart.
-    const SIDLE_GAP_MIN_US: u64 = 3_000;
-    let mut sidle_last_total: u64 = 0;
-    let mut sidle_last_change_us: u64 = now_us();
-    let mut sidle_us: u64 = 0;
-    let mut sidle_n: u64 = 0;
-    let mut sidle_max_us: u64 = 0;
-    // Goal-gate "Unlock The Default 2: derived patience", part 3a
-    // (`RWM_SIDLE_DERIVED`, DIAG-only, behaviour-inert). The gauge above is
-    // UNCHANGED and keeps printing `sidle=`. These accumulate the SAME event
-    // stream against `stall_threshold_us(evt_us)` — the legacy 3 ms
-    // re-expressed as 3 × the MEASURED mean inter-emission-EVENT interval,
-    // floored at the legacy value and capped at the hole-refresh cadence —
-    // and print as `sidle2=` beside it, plus `evt=<µs>` (the measured
-    // interval) and `sthr=<µs>` (the live threshold) so the verdict can be
-    // read off the same line. `sidle2 ≤ sidle` by construction.
-    //
-    // `sidle_evt_us` is recomputed ONCE PER DIAG WINDOW from the events that
-    // window observed — zero hot-loop cost. It starts at the loop wake, so
-    // before the first window the derived threshold IS the legacy constant.
-    let mut sidle_evt_us: u64 = LOOP_WAKE_US;
-    let mut sidle_thr_us: u64 = stall_threshold_us(LOOP_WAKE_US);
-    let mut sidle_evt_n: u64 = 0;
-    let mut sidle2_us: u64 = 0;
-    let mut sidle2_n: u64 = 0;
-    let mut sidle2_max_us: u64 = 0;
+    let diag_last_us = now_us();
+    // diag/lossy-residual emission-gap gauge (net seam pass 3 → net/diag.rs):
+    // the stamp stays sampled here, at its original point.
+    let sidle_last_change_us = now_us();
     // feat/window-mtu DIAG (goal-gate "Window Decoupling + MTU Scaling",
     // part 1 diagnosis — behavior-inert, RWM_DIAG only): the outstanding
     // split the decoupled law would gate on. `wnd2=<head>/<hole>` — head =
@@ -5400,7 +5307,10 @@ async fn run_window_sender(
     // decision rule: see the pre-registration.
     let mut wnd2_frontier_last: u64 = 0;
     let mut wnd2_frontier_change_us: u64 = now_us();
-    let mut wnd2_relgap_max_us: u64 = 0;
+    // The DIAG report's counters (net seam pass 3 → net/diag.rs). All four
+    // wall-clock stamps above were sampled at their ORIGINAL points in this
+    // setup and are moved in, not re-sampled.
+    let mut dg = DiagState::new(gd_last_us, diag_start_us, diag_last_us, sidle_last_change_us);
     loop {
         // RWM_SCHED_SNAPSHOT: the ONE scheduler reading this iteration's
         // routed read-only phases share. `None` (the shipped default) leaves
@@ -6225,451 +6135,55 @@ async fn run_window_sender(
                 wnd2_frontier_last = frontier;
                 wnd2_frontier_change_us = tnow;
             } else {
-                wnd2_relgap_max_us = wnd2_relgap_max_us
+                dg.wnd2_relgap_max_us = dg.wnd2_relgap_max_us
                     .max(tnow.saturating_sub(wnd2_frontier_change_us));
             }
         }
-        // RWM_DIAG periodic constraint report (see decls above the loop).
+        // RWM_DIAG periodic constraint report (net seam pass 3 → net/diag.rs;
+        // see the decls above the loop). The guard stays HERE so the shipped
+        // path still pays nothing and the report still runs at this exact
+        // point of the iteration.
         if pol.diag_on {
-            diag_total_iters += 1;
-            if tx_paused {
-                diag_paused_iters += 1;
-            }
-            let dnow = now_us();
-            // diag/lossy-residual emission-gap gauge (see decls): observe the
-            // cumulative wire handoff count (src+cod, retx rides cod) once per
-            // iteration; a change closes the current gap — accumulate it when
-            // it is a stall-class gap (≥ 3 ms), not a pacing interval.
-            {
-                let wt = stats.fec.total_source_symbols.load(Ordering::Relaxed)
-                    + stats.fec.total_repair_symbols.load(Ordering::Relaxed);
-                if wt != sidle_last_total {
-                    let gap = dnow.saturating_sub(sidle_last_change_us);
-                    if sidle_last_total > 0 && gap >= SIDLE_GAP_MIN_US {
-                        sidle_us += gap;
-                        sidle_n += 1;
-                        sidle_max_us = sidle_max_us.max(gap);
-                    }
-                    // 3a: the SAME gap against the DERIVED threshold. One
-                    // extra compare per emission event, only under
-                    // RWM_SIDLE_DERIVED; the legacy accumulation above is
-                    // untouched, so both numbers come off the same run.
-                    if pol.sidle_derived {
-                        sidle_evt_n += 1;
-                        if sidle_last_total > 0 && gap >= sidle_thr_us {
-                            sidle2_us += gap;
-                            sidle2_n += 1;
-                            sidle2_max_us = sidle2_max_us.max(gap);
-                        }
-                    }
-                    sidle_last_total = wt;
-                    sidle_last_change_us = dnow;
-                }
-            }
-            let ddt = dnow.saturating_sub(diag_last_us);
-            if ddt >= 250_000 {
-                let ack_now = window_ack_seq.load(Ordering::Relaxed);
-                let src_now = stats.fec.total_source_symbols.load(Ordering::Relaxed);
-                let cod_now = stats.fec.total_repair_symbols.load(Ordering::Relaxed);
-                let secs = ddt as f64 / 1_000_000.0;
-                // Goodput = cumulative-ack advance (delivered source symbols).
-                let dack = ack_now.saturating_sub(diag_last_ack) as f64;
-                let good_mbit = dack * (symbol_size as f64) * 8.0 / secs / 1e6;
-                let src_rate = src_now.saturating_sub(diag_last_src) as f64 / secs;
-                let cod_rate = cod_now.saturating_sub(diag_last_cod) as f64 / secs;
-                let paused_frac = diag_paused_iters as f64 / diag_total_iters.max(1) as f64;
-                // 3a: re-derive the stall threshold from THIS window's
-                // measured emission-event rate (window duration / events
-                // observed). A window with no events keeps the previous
-                // interval rather than inventing one. Once per 250 ms.
-                if pol.sidle_derived {
-                    if sidle_evt_n > 0 {
-                        sidle_evt_us = ddt / sidle_evt_n;
-                        sidle_thr_us = stall_threshold_us(sidle_evt_us);
-                    }
-                    sidle_evt_n = 0;
-                }
-                let (cw, fl, np, min_rtt_us, pp) = {
-                    let mut sched = scheduler.lock();
-                    let mut cw = 0u64;
-                    let mut fl = 0u64;
-                    let mut np = 0u64;
-                    let mut rtt = 0u64;
-                    // PART 1 instrumentation: per-path in-flight vs its own BDP
-                    // cap + live RTT vs RTprop — the slow-path bufferbloat probe
-                    // (is the slow path over its BDP? is its RTT inflated above
-                    // RTprop?).  Cap gain = the BDP in-flight gain.
-                    let cap_gain = pol.infl_bdp_gain;
-                    let mut pp = String::new();
-                    let ids = sched.active_paths();
-                    for id in &ids {
-                        if let Some(p) = sched.path_mut(*id) {
-                            p.expire_in_flight();
-                            cw += p.cwnd as u64;
-                            fl += p.in_flight as u64;
-                            np += 1;
-                            rtt = rtt.max(p.estimator.rtt().as_micros() as u64);
-                            let infl_i = p.in_flight as u64;
-                            let bdp_i = p.copa_bdp_anchor().unwrap_or(0.0);
-                            let cap_i = (cap_gain * bdp_i).ceil() as u64;
-                            let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
-                            let rtprop_i =
-                                p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
-                            // Per-path SOURCE outstanding gauge (charged by the
-                            // CopaFeed at send, released on ack attribution),
-                            // the ack-attributed per-path BtlBw_i (sym/s), and
-                            // whether the per-path BDP anchor has ESTABLISHED.
-                            let sinfl_i = p.src_inflight() as u64;
-                            let btlbw_i = p.btlbw_sym_per_s().unwrap_or(0.0);
-                            let est_i = if p.anchor_established() { "Y" } else { "n" };
-                            // diag/slow-path-anchor: the rate-sample anchor trace
-                            // (snapshotted-at-send / of-which-app-limited / acks-
-                            // attributed / no-record / rej[interval/zero/applim] /
-                            // generated / windowed-max-fill).  Cumulative counters.
-                            let (rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill) =
-                                p.rs_diag();
-                            // feat/copa-wire-signal: the wire clock next to the
-                            // app-echo clock — wrtt = quinn packet-timed path RTT
-                            // (what Copa's queue term reads under RWM_COPA_WIRE),
-                            // rtt = app-layer echo (store-dwell inclusive), rtp =
-                            // Copa's floor (wire-clocked when the gate is on; its
-                            // distance from the known netem base per path is the
-                            // FLOOR-FRESHNESS check).
-                            let wrtt_i = transport
-                                .wire_rtt(*id)
-                                .map(|d| d.as_secs_f64() * 1000.0)
-                                .unwrap_or(0.0);
-                            // goal-gate "Ship The Wins 2: shal8 anchor" DIAG
-                            // (P-D1 gauge, behavior-inert): quinn's OWN
-                            // congestion state for this path — qcwnd bytes
-                            // (= 2 × quinn-internal BtlBŵ × RTprop under the
-                            // BBR default, so qcwnd ≫ true BDP·MTU is the
-                            // in-vivo max-filter over-read signature),
-                            // congestion events, lost/sent packets.
-                            let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
-                                .quinn_path_stats(*id)
-                                .unwrap_or((0, 0, 0, 0));
-                            // task #86 DIAG: the per-path outstanding ACCOUNT
-                            // (store symbols charged to this path / its cap_i)
-                            // — the mechanism gauge for RWM_STORE_PERCAP
-                            // (zeros when the percap law is not engaged).
-                            let sout_i = st.percap_out.get(id).copied().unwrap_or(0);
-                            let scap_i = percap_caps.get(id).copied().unwrap_or(0);
-                            // Roadmap item 1: the delay-aware redirect bound
-                            // (sbnd) — the guard's mechanism gauge (dwell_i
-                            // is sout_i/btlbw_i, computable offline).
-                            let sbnd_i = percap_bounds.get(id).copied().unwrap_or(0);
-                            // feat/copa-compete DIAG: cmp=<mode><switches>/<δ>
-                            // — mode C (competitive) or D (default), the
-                            // cumulative competitive entries, and the LIVE δ
-                            // the update law is running (== the hint base
-                            // unless competing). "-" when switching disabled.
-                            let (cmp_on, cmp_in, cmp_sw, cmp_delta, _) =
-                                p.copa_compete_diag();
-                            let cmp_s = if cmp_on {
-                                format!(
-                                    "{}{}/{:.4}",
-                                    if cmp_in { "C" } else { "D" },
-                                    cmp_sw,
-                                    cmp_delta
-                                )
-                            } else {
-                                "-".to_string()
-                            };
-                            // feat/anchor-hygiene DIAG: process-clock stall
-                            // witness gauges (stalls detected / samples
-                            // discarded, PROCESS-global) — zeros when
-                            // RWM_CLOCK_GAP is off.
-                            let (gap_g, gap_d) = crate::control::anchor::stall_witness()
-                                .map(|w| w.stats())
-                                .unwrap_or((0, 0));
-                            // feat/percap-honest-cap DIAG: khr = the
-                            // windowed-min echoSRTT/RTprop ratio K_i feeding
-                            // the honest cap law (1.00 when not engaged).
-                            let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
-                            // feat/store-borrowing DIAG: this path's loan
-                            // gauges — symbols LENT out (charged here,
-                            // flying elsewhere) / BORROWED in (flying
-                            // here, charged elsewhere). Zeros when off.
-                            let lent_i = st.percap_lent.get(id).copied().unwrap_or(0);
-                            let bor_i = st.percap_borrowed.get(id).copied().unwrap_or(0);
-                            // feat/recovery-suppression DIAG: the per-path
-                            // LOSS ESTIMATE the recovery plane actually keys
-                            // on (repair_debt, P_lost, NACK budgets) — the
-                            // gauge that names the batch-serial poisoning
-                            // (global batch_seq gaps read as per-path loss
-                            // under striping).
-                            let pl_i = p.estimator.loss_rate();
-                            // RWM_POOL_ANCHOR DIAG: the per-path send-
-                            // interval anchor rate (0 = no surviving bucket
-                            // / feed off) + its gap/discard hygiene gauges
-                            // — vs btlbw (the legacy ack-interval read,
-                            // deliberately left feeding cwnd only).
-                            let sr_i = p.send_rate_anchor().unwrap_or(0.0);
-                            let (sa_g, sa_d) = p.send_anchor_stats();
-                            // RWM_POOL_DELIV DIAG (arm A): the DELIVERY-clocked
-                            // term alone (0 = no accepted sample / gate off) and
-                            // its guard counters — the mechanism witness that
-                            // separates arm A from attempt 1 in the logs.
-                            // dr vs sr IS the pre-registered prediction 1.
-                            let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
-                            let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
-                            pp.push_str(&format!(
-                                " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                                id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
-                                qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
-                            ));
-                        }
-                    }
-                    (cw, fl, np, rtt, pp)
-                };
-                // BDP in symbols = goodput-rate(sym/s) × RTT — but report the
-                // link-capacity BDP too from the measured min RTT and a nominal
-                // 100 Mbit (diagnostic reference only).
-                let bdp_100m = if min_rtt_us > 0 {
-                    (100e6 / 8.0 / symbol_size as f64) * (min_rtt_us as f64 / 1e6)
-                } else {
-                    0.0
-                };
-                let eff = if generation { diag_eff_rate } else { 0.0 };
-                // GDIAG: stall attribution + generation lifecycle for this
-                // window (percentages of attributed wall time; GLIFE means).
-                let gd_tot: u64 = gd_us.iter().sum::<u64>().max(1);
-                let pct = |i: usize| gd_us[i] as f64 * 100.0 / gd_tot as f64;
-                let gln = gl_sum.3.max(1);
-                let gdiag = if generation {
-                    format!(
-                        " stall[emit={:.0}% budget={:.0}% fill={:.0}% target={:.0}% tok={:.0}% cwnd={:.0}%] glife[n={} fill={:.0}ms code={:.0}ms wait={:.0}ms]",
-                        pct(0), pct(1), pct(2), pct(3), pct(4), pct(5),
-                        gl_sum.3,
-                        gl_sum.0 as f64 / gln as f64 / 1000.0,
-                        gl_sum.1 as f64 / gln as f64 / 1000.0,
-                        gl_sum.2 as f64 / gln as f64 / 1000.0,
-                    )
-                } else {
-                    String::new()
-                };
-                gd_us = [0; 6];
-                gl_sum = (0, 0, 0, 0);
-                // Residual (iii) DIAG: cross-path-history attributions and
-                // how many the flight witness credited to the previous
-                // flight (spurious-retransmit class). Zeros without a feed.
-                let (xat_c, xat_w) = copa_feed
-                    .as_ref()
-                    .map(|f| f.attr_diag())
-                    .unwrap_or((0, 0));
-                // RWM_STORE_SACK_RELEASE DIAG: currently released (retained
-                // but uncounted) / cumulative slots released — the store-
-                // dwell mechanism gauge (win= already shows the uncounted
-                // outstanding; retained = win + srel_cur). Empty when off.
-                let srdiag = if pol.store_sack_release_on {
-                    format!(" srel={}/{}", sack_released.len(), sack_released_total)
-                } else {
-                    String::new()
-                };
-                // RWM_POOL_ANCHOR DIAG: the honest dual-store law's
-                // engagement + its Σ honest caps before clamping (the
-                // mechanism gauge — win=/cap shows the clamped result).
-                // Empty when not engaged (N = 1, warm-up, or gate off).
-                let padiag = if pa_engaged {
-                    format!(" pa=on/{:.0}", pa_sum)
-                } else {
-                    String::new()
-                };
-                // feat/window-mtu part-1 diagnosis gauge (see decls): the
-                // outstanding split + release-clumping. head = live head
-                // span above the release frontier; hole = unSACKed below it.
-                let wnd2diag = if reliable && !generation {
-                    let last_sent =
-                        st.sent_store.keys().next_back().copied().unwrap_or(0);
-                    let head = last_sent.saturating_sub(wnd2_frontier_last) as usize;
-                    let hole = store_len.saturating_sub(head);
-                    let relgap_cur =
-                        dnow.saturating_sub(wnd2_frontier_change_us) / 1000;
-                    let mut s = format!(
-                        " wnd2={}/{} relgap={}ms/mx{}ms",
-                        head.min(store_len),
-                        hole,
-                        relgap_cur,
-                        wnd2_relgap_max_us / 1000,
-                    );
-                    // RWM_WIN_DECOUPLE engagement gauge: base allowance /
-                    // honest rate / retention backstop (mechanism liveness).
-                    if wd_engaged {
-                        s.push_str(&format!(
-                            " wd=al{:.0}/r{:.0}/ret{}",
-                            wd_allow_base, wd_rate, wd_cap_ret
-                        ));
-                    }
-                    wnd2_relgap_max_us = 0;
-                    s
-                } else {
-                    String::new()
-                };
-                // δ-honest shed DIAG (fix C): cumulative shed / budget-
-                // refused, live 1−ρ fraction and deadline. Empty when off.
-                let sheddiag = if pol.shed_on {
-                    format!(
-                        " shed={}/{} bud={:.4} D={}ms",
-                        st.shed_total,
-                        st.shed_denied,
-                        st.shed_budget_frac,
-                        st.shed_deadline_us_live / 1000,
-                    )
-                } else {
-                    String::new()
-                };
-                // feat/recovery-suppression DIAG: the recovery-plane trace.
-                // rep/seqs = gap reports processed / gap seqs walked;
-                // fired y/r = retransmits whose live flight was YOUNGER than
-                // its path's law threshold (the spurious-by-law class) vs
-                // ripe; supp c/a/l = suppressed by cooldown / legacy age
-                // gate / the mp law; stale = gap seqs already acked;
-                // plost = P_lost-branch retransmits; age = mean flight age
-                // at fire (ms); fp/on = per-path fired-flight / sent-on.
-                let mpd_fired = mpd_fired_young + mpd_fired_ripe;
-                let mut mp_pp = String::new();
-                let mut mp_keys: Vec<u32> = mpd_fired_flight
-                    .keys()
-                    .chain(mpd_fired_on.keys())
-                    .copied()
-                    .collect();
-                mp_keys.sort_unstable();
-                mp_keys.dedup();
-                for k in mp_keys {
-                    mp_pp.push_str(&format!(
-                        " p{}:{}/{}",
-                        k,
-                        mpd_fired_flight.get(&k).copied().unwrap_or(0),
-                        mpd_fired_on.get(&k).copied().unwrap_or(0)
-                    ));
-                }
-                // Goal-gate "Unlock The Default 2": the patience-floor split.
-                // `pf=<floor-bound>/<clock-bound>/<mean floor µs>` — how many
-                // §6.1.2 threshold evaluations were pinned by the
-                // kGranularity FLOOR versus governed by the 9/8·srtt CLOCK.
-                // "Patience is derived" means the floor term stops winning.
-                let pf = format!(
-                    " pf={}/{}/{}",
-                    mpd_pf_floor.get(),
-                    mpd_pf_clock.get(),
-                    {
-                        let n = mpd_pf_floor.get() + mpd_pf_clock.get();
-                        if n > 0 { mpd_pf_sum.get() / n } else { 0 }
-                    }
-                );
-                let mpr = format!(
-                    " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} age={:.0}ms{} fp/on{}]",
-                    mpd_gap_reports,
-                    mpd_gap_seqs,
-                    mpd_fired,
-                    mpd_fired_young,
-                    mpd_fired_ripe,
-                    mpd_fired_fast,
-                    mpd_coalesced,
-                    mpd_supp_cool,
-                    mpd_supp_age,
-                    mpd_supp_law,
-                    mpd_stale,
-                    st.mpd_plost_retx,
-                    if mpd_fired > 0 {
-                        mpd_age_ms_sum / mpd_fired as f64
-                    } else {
-                        0.0
-                    },
-                    pf,
-                    mp_pp,
-                );
-                // Goal-gate "Unlock The Default 2", part 3a: the DERIVED
-                // stall gauge printed beside the untouched legacy one.
-                // `sidle2=<cum ms>/<n>/mx<max ms> evt=<µs> sthr=<µs>`.
-                // Empty (and nothing computed) unless RWM_SIDLE_DERIVED.
-                let sd2 = if pol.sidle_derived {
-                    format!(
-                        " sidle2={}ms/{}/mx{}ms evt={}us sthr={}us",
-                        sidle2_us / 1000,
-                        sidle2_n,
-                        sidle2_max_us / 1000,
-                        sidle_evt_us,
-                        sidle_thr_us,
-                    )
-                } else {
-                    String::new()
-                };
-                eprintln!(
-                    "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}",
-                    dnow.saturating_sub(diag_start_us) as f64 / 1e6,
-                    store_len, effective_store_cap,
-                    paused_frac * 100.0,
-                    good_mbit,
-                    if generation { gen_rate_ewma } else { 0.0 },
-                    eff,
-                    src_rate, cod_rate,
-                    // diag/lossy-residual: cumulative src/cod/ack totals (the
-                    // end-of-run accounting reads the LAST line) + the
-                    // emission-gap gauge (cum stall-gap ms / count / max).
-                    src_now, cod_now, ack_now,
-                    sidle_us / 1000, sidle_n, sidle_max_us / 1000,
-                    cw, fl, np,
-                    min_rtt_us as f64 / 1000.0,
-                    bdp_100m,
-                    diag_sweeps, diag_retx, diag_gaps_dropped, cached_nack_budget,
-                    xat_c, xat_w,
-                    st.percap_loans.len(), st.percap_loans_total,
-                    mpr,
-                    sd2,
-                    wnd2diag,
-                    srdiag,
-                    padiag,
-                    sheddiag,
-                    gdiag,
-                    pp,
-                );
-                // feat/c8-conversion DIAG: the sender-side conversion gauges
-                // (cumulative; keys sorted for stable scraping). splace =
-                // first source placements; retxo = targeted retransmits by
-                // ORIGINAL placement path; stallo = frontier-stall ms/count
-                // by blocking-hole owner path.
-                {
-                    let mut keys: Vec<u32> = st.c8c_src_placed
-                        .keys()
-                        .chain(c8c_retx_orig.keys())
-                        .chain(c8c_stall_ms.keys())
-                        .copied()
-                        .collect();
-                    keys.sort_unstable();
-                    keys.dedup();
-                    if !keys.is_empty() {
-                        let mut s = String::new();
-                        for k in keys {
-                            s.push_str(&format!(
-                                " p{}:sp={} ro={} st={}ms/{}",
-                                k,
-                                st.c8c_src_placed.get(&k).copied().unwrap_or(0),
-                                c8c_retx_orig.get(&k).copied().unwrap_or(0),
-                                c8c_stall_ms.get(&k).copied().unwrap_or(0),
-                                c8c_stall_n.get(&k).copied().unwrap_or(0),
-                            ));
-                        }
-                        // RWM_PLACE_SLACK gauge: the live S (ms) + ack-rate
-                        // EWMA (sym/s) — engagement magnitude for the law.
-                        if pol.place_slack_on {
-                            s.push_str(&format!(
-                                " slk={:.0}ms/r{:.0}",
-                                ps_slack_gauge * 1000.0,
-                                ps_rate_ewma
-                            ));
-                        }
-                        eprintln!("[C8CONV-S]{}", s);
-                    }
-                }
-                diag_last_us = dnow;
-                diag_last_ack = ack_now;
-                diag_last_src = src_now;
-                diag_last_cod = cod_now;
-                diag_paused_iters = 0;
-                diag_total_iters = 0;
-            }
+            diag::report(
+                &st,
+                &pol,
+                &mut dg,
+                DiagCtx {
+                    scheduler,
+                    transport,
+                    stats,
+                    window_ack_seq,
+                    copa_feed: &copa_feed,
+                },
+                DiagInputs {
+                    tx_paused,
+                    store_len,
+                    effective_store_cap,
+                    percap_caps: &percap_caps,
+                    percap_bounds: &percap_bounds,
+                    percap_k: &percap_k,
+                    sack_released: &sack_released,
+                    sack_released_total,
+                    pa_engaged,
+                    pa_sum,
+                    wnd2_frontier_last,
+                    wnd2_frontier_change_us,
+                    wd_engaged,
+                    wd_allow_base,
+                    wd_rate,
+                    wd_cap_ret,
+                    cached_nack_budget,
+                    gen_rate_ewma,
+                    ps_slack_gauge,
+                    ps_rate_ewma,
+                    mpd_pf_floor: &mpd_pf_floor,
+                    mpd_pf_clock: &mpd_pf_clock,
+                    mpd_pf_sum: &mpd_pf_sum,
+                },
+                symbol_size,
+                reliable,
+                generation,
+            );
         }
 
         // Generation coding: paced coded emission (see gen_tokens above). Runs
@@ -6679,20 +6193,6 @@ async fn run_window_sender(
         // (∝-goodput striping via place_symbol; fungible cross-path, no per-seq
         // ARQ). This is the mechanism that turns the serialized stop-and-wait
         // into a pipelined transfer.
-        if generation && gates.trace {
-            let now = now_us();
-            if now.saturating_sub(gen_trace_last_us) > 200_000 {
-                gen_trace_last_us = now;
-                let ack_now = window_ack_seq.load(Ordering::Relaxed);
-                let want_sum: u64 = gen_want.values().sum();
-                let (ws, we) = st.encoder.window_span();
-                eprintln!(
-                    "[SND] ack={} coded_total={} wants={} win={} span=({},{}) want_gens={} want_sum={} tx_paused={}",
-                    ack_now, gen_coded_total, st.encoder.wants_coding(), st.encoder.window_size(),
-                    ws, we, gen_want.len(), want_sum, tx_paused
-                );
-            }
-        }
         // Proactive-recovery FRACTION trace (RWM_PFRAC): the share of coded
         // repair emitted PROACTIVELY (upfront, no round-trip) vs REACTIVELY
         // (deficit-driven, one round-trip). Cumulative over the transfer. A high
@@ -6831,7 +6331,7 @@ async fn run_window_sender(
                 gen_rate_ewma
             };
             let eff_rate = (eff_base * eff_factor).clamp(pol.gen_rate_floor, pol.gen_rate);
-            diag_eff_rate = eff_rate;
+            dg.diag_eff_rate = eff_rate;
             // Refill the pacing token bucket (capped at a small burst). Under
             // cc_pace the cap is ≈ a few ms of link rate (not 64) so a caught-up
             // bucket can't release a large coded burst onto the datagram path.
@@ -7077,8 +6577,8 @@ async fn run_window_sender(
         // iteration is the throughput binder for the elapsed slice.
         if pol.diag_on && generation {
             let now_g = now_us();
-            let dt = now_g.saturating_sub(gd_last_us);
-            gd_last_us = now_g;
+            let dt = now_g.saturating_sub(dg.gd_last_us);
+            dg.gd_last_us = now_g;
             let idx = if gd_flow {
                 0 // emit: coded flowed
             } else if st.encoder.window_size() == 0 {
@@ -7107,7 +6607,7 @@ async fn run_window_sender(
                     0
                 }
             };
-            gd_us[idx] += dt;
+            dg.gd_us[idx] += dt;
         }
         if tx_paused != last_tx_paused {
             debug!(
@@ -7320,7 +6820,7 @@ async fn run_window_sender(
                 last_tail_sweep_us = now_us();
                 if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
-                    diag_sweeps += 1;
+                    dg.diag_sweeps += 1;
                     pending_gaps = Some(vec![(seq, seq)]);
                 }
                 None
@@ -7582,7 +7082,7 @@ async fn run_window_sender(
                             while let Ok(n) = nack_rx.try_recv() {
                                 g = n;
                                 if pol.diag_on {
-                                    mpd_coalesced += 1;
+                                    dg.mpd_coalesced += 1;
                                 }
                             }
                         }
@@ -7593,7 +7093,7 @@ async fn run_window_sender(
             };
             if cached_max_repairs == 0 || cached_nack_budget == 0 {
                 // Fully suppressed or budget exhausted — drain NACK queue
-                diag_gaps_dropped += 1;
+                dg.diag_gaps_dropped += 1;
                 continue;
             }
 
@@ -7689,7 +7189,7 @@ async fn run_window_sender(
             let mut retransmitted: u64 = 0;
             let mut nacked_count: u64 = 0;
             if pol.diag_on {
-                mpd_gap_reports += 1;
+                dg.mpd_gap_reports += 1;
             }
 
             // Packet-threshold evidence ingestion (RFC 9002 §6.1.1 per
@@ -7729,7 +7229,7 @@ async fn run_window_sender(
                         break 'gaps;
                     }
                     if pol.diag_on {
-                        mpd_gap_seqs += 1;
+                        dg.mpd_gap_seqs += 1;
                     }
                     // δ-honest shed (fix C): a hole already shed is never
                     // served again (the receiver's own δ-horizon passes it);
@@ -7767,7 +7267,7 @@ async fn run_window_sender(
                     if let Some(&(last, _)) = st.nack_retx_at.get(&seq) {
                         if !cooldown_elapsed(now_repair_us, last, retx_cooldown_us) {
                             if pol.diag_on {
-                                mpd_supp_cool += 1;
+                                dg.mpd_supp_cool += 1;
                             }
                             continue;
                         }
@@ -7814,12 +7314,12 @@ async fn run_window_sender(
                         }
                         if !time_ripe && !fast {
                             if pol.diag_on {
-                                mpd_supp_law += 1;
+                                dg.mpd_supp_law += 1;
                             }
                             continue;
                         }
                         if fast && pol.diag_on {
-                            mpd_fired_fast += 1;
+                            dg.mpd_fired_fast += 1;
                         }
                     } else if pol.recov_sp && mp_n_paths <= 1 {
                         // RWM_RECOV_SP (goal-gate "Lossy-Single Residual"):
@@ -7838,7 +7338,7 @@ async fn run_window_sender(
                         );
                         if !time_ripe {
                             if pol.diag_on {
-                                mpd_supp_law += 1;
+                                dg.mpd_supp_law += 1;
                             }
                             continue;
                         }
@@ -7850,7 +7350,7 @@ async fn run_window_sender(
                         if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
                             if !legacy_age_ripe(now_repair_us, send_time_us, srtt_us) {
                                 if pol.diag_on {
-                                    mpd_supp_age += 1;
+                                    dg.mpd_supp_age += 1;
                                 }
                                 continue;
                             }
@@ -7883,7 +7383,7 @@ async fn run_window_sender(
                             // by ack only): the receiver has it; skip.
                             None => {
                                 if pol.diag_on {
-                                    mpd_stale += 1;
+                                    dg.mpd_stale += 1;
                                 }
                                 continue;
                             }
@@ -7902,21 +7402,21 @@ async fn run_window_sender(
                             let age = now_repair_us.saturating_sub(t);
                             let thr = mp_thr_of(&mp_clocks, p);
                             if age < thr {
-                                mpd_fired_young += 1;
+                                dg.mpd_fired_young += 1;
                             } else {
-                                mpd_fired_ripe += 1;
+                                dg.mpd_fired_ripe += 1;
                             }
-                            mpd_age_ms_sum += age as f64 / 1000.0;
-                            *mpd_fired_flight.entry(p).or_insert(0) += 1;
+                            dg.mpd_age_ms_sum += age as f64 / 1000.0;
+                            *dg.mpd_fired_flight.entry(p).or_insert(0) += 1;
                         } else {
-                            mpd_fired_ripe += 1;
+                            dg.mpd_fired_ripe += 1;
                         }
-                        *mpd_fired_on.entry(nack_path).or_insert(0) += 1;
+                        *dg.mpd_fired_on.entry(nack_path).or_insert(0) += 1;
                         // feat/c8-conversion DIAG: retransmit attributed to
                         // the seq's ORIGINAL placement path (conversion-
                         // failure candidate (d): slow-placed symbols being
                         // re-served on the fast path).
-                        *c8c_retx_orig.entry(original_path).or_insert(0) += 1;
+                        *dg.c8c_retx_orig.entry(original_path).or_insert(0) += 1;
                     }
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
@@ -7949,7 +7449,7 @@ async fn run_window_sender(
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
-                    diag_retx += 1;
+                    dg.diag_retx += 1;
                     retransmitted += 1;
                 }
             }
@@ -8030,8 +7530,8 @@ async fn run_window_sender(
                     let dt_us = nowa.saturating_sub(c8c_last_ack_adv_us);
                     if dt_us >= 5_000 {
                         if let Some(&owner) = st.source_path_map.get(&(prev_ack + 1)) {
-                            *c8c_stall_ms.entry(owner).or_insert(0) += dt_us / 1000;
-                            *c8c_stall_n.entry(owner).or_insert(0) += 1;
+                            *dg.c8c_stall_ms.entry(owner).or_insert(0) += dt_us / 1000;
+                            *dg.c8c_stall_n.entry(owner).or_insert(0) += 1;
                         }
                     }
                 }
@@ -8083,10 +7583,10 @@ async fn run_window_sender(
                     for a in done {
                         if let Some((f, s, e)) = st.gl.remove(&a) {
                             if f > 0 && s >= f && e >= s {
-                                gl_sum.0 += s - f;
-                                gl_sum.1 += e - s;
-                                gl_sum.2 += now_g.saturating_sub(e);
-                                gl_sum.3 += 1;
+                                dg.gl_sum.0 += s - f;
+                                dg.gl_sum.1 += e - s;
+                                dg.gl_sum.2 += now_g.saturating_sub(e);
+                                dg.gl_sum.3 += 1;
                             }
                         }
                     }
