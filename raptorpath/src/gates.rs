@@ -197,7 +197,7 @@ pub struct RuntimeGates {
     /// path's OWN measured RTT jitter (`PathState::rtt_jitter_us`), clamped
     /// at one srtt, with the legacy floor kept verbatim before the first
     /// clock sample. Applied at the two BEHAVIOURAL sites only: the
-    /// kGranularity analog inside `mp_time_threshold_us` and the per-seq
+    /// kGranularity analog inside `mp_time_threshold_split` and the per-seq
     /// retransmit cooldown. The tail-sweep fallback is left alone (it feeds
     /// `(srtt·2).clamp(25 ms, 100 ms)`, so every value ≤ 12.5 ms is
     /// identical — INERT, unit-tested). RFC 9002's kTimeThreshold 9/8 and

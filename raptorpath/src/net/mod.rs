@@ -252,7 +252,7 @@ pub(crate) const LOOP_WAKE_US: u64 = 1_000;
 ///
 /// This replaces `NACK_RETX_COOLDOWN_FLOOR_US`'s 10 ms — 10× RFC 9002's
 /// kGranularity — at the two sites where that literal is BEHAVIOURAL (the
-/// kGranularity analog inside `mp_time_threshold_us`, and the per-seq
+/// kGranularity analog inside `mp_time_threshold_split`, and the per-seq
 /// retransmit cooldown). At c2/c7 (RTprop ≈ 8–10 ms) the literal is at or
 /// above the 9/8·srtt term it was meant to floor, so recovery patience was a
 /// CONSTANT rather than a property of the path.
