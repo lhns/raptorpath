@@ -18776,3 +18776,81 @@ tree, stale binary `rm`'d before the build, honest n per arm.
 Cells: **c7**, **c8** (duals — where the filter drops a path's share),
 **sc2**, **sc3** (N = 1 — where it empties the set), **c1** crown spot, and
 the MTU blackhole **wedge** (the cap feeds the admission gate).
+
+### P0 — THE PRE-BATTERY SMOKE (2026-08-09 12:17:56–12:19:59 UTC; binary sha256 `b3e862f409160e5c16047d74c6cdf37b7fe63a68f556d34dfa057b63ec4dc01a` = commit cd627b0, built fresh on the VM (3m18s) after `rm` of the stale binary, from a CLEARED and CRLF-CONVERTED `git archive` tree of this branch; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43; seed 42, 1 rep/arm, `RWM_GEN=0 RWM_DIAG=1`; driver `tools/l1/storecap_smoke.sh`, log `/home/vibe/storecap/smoke-s42.log` + per-run diag; lock `/tmp/rwm-vm.lock` found FREE at 11:25:11 and again at 12:08:27 UTC — 43 min of polling with no holder — and taken 12:12:20 UTC. **This block is SHAKEOUT EVIDENCE, recorded and committed BEFORE the battery launched, and it is n = 1 per cell: it decides P0 and it corrects P1, it does not decide the flip.**)
+
+**P0 IS ANSWERED: the population is LIVE at L1, and the cell it is live at is
+the one the pre-registration ranked last for headroom.** The `[SF]` gauge,
+per cell, on the DEFAULT arm (E = active_sum/live_sum = the anchor-mass the
+filter retains; "zero" = ticks where `active_paths()` was EMPTY and the
+shipped pooled cap therefore fell out to `store_boot_cap` = 128):
+
+| cell (def arm) | refresh ticks | E | short ticks | **zero ticks** | end-of-run `win=occ/CAP` | Mbit/s |
+|---|---|---|---|---|---|---|
+| c7 (dual c2+c2) | 1460 | 0.975 | 4.8% | 0.2% | 918/**4096** | 170.79 |
+| c8 (dual c2+c3) | 338 | 0.837 | **29.3%** | 3.3% | 0/**4096** | 93.19 |
+| sc2 (single c2) | 1419 | 0.941 | 5.9% | 5.9% | 1009/**1024** | 89.04 |
+| sc3 (single c3) | 1681 | 0.940 | 6.0% | 6.0% | 31/**1024** | 16.97 |
+| **c1 (single 1G)** | 2520 | **0.686** | **31.3%** | **31.3%** | **278/128** | **220.56** |
+
+and the same runs with `RWM_STORE_CAP_UNIFIED=1`, interleaved, same binary:
+
+| cell (uni arm) | ticks | E | short | zero | `win=occ/CAP` | Mbit/s | Δ |
+|---|---|---|---|---|---|---|---|
+| c7 | 1448 | 0.978 | 4.1% | 0.2% | 0/4096 | 171.95 | +0.7% |
+| c8 | 303 | 0.587 | 51.2% | 31.4% | 0/4096 | 93.22 | +0.0% |
+| sc2 | 1420 | 0.911 | 8.9% | 8.9% | 1000/1024 | 86.89 | −2.4% |
+| sc3 | 1996 | 0.905 | 9.5% | 9.5% | 192/1024 | 16.51 | −2.7% |
+| **c1** | 2219 | 0.782 | 21.8% | 21.8% | **720/1024** | **257.50** | **+16.7%** |
+
+dnf = 0 on all ten runs; the `"unified store-cap path set ACTIVE"` echo
+present on BOTH endpoints in every `uni` run and absent from every `def`
+run (10/10 two-sided).
+
+**Three things this establishes before the battery, and one it refutes.**
+
+1. **P0 passes: the drift is NOT latent at L1.** The pre-registration's
+   cancel-the-battery clause was "short-tick fraction < 5% at every cell";
+   c1 reads 31.3% and c8 29.3%. The battery runs.
+
+2. **`win=278/128` at c1-def is the defect, printed.** The dynamic store
+   cap read `store_boot_cap` = 128 at the end-of-run DIAG sample while the
+   store itself held 278 un-SACKed symbols — the cap is not shrinking, it
+   has **fallen out of its own law**, exactly the cliff the component bench
+   predicted. Under the gate the same run reads 720/**1024**. The cap is
+   the mechanism and it moved: **P1 lands.**
+
+3. **The MAGNITUDE ordering is the ZERO-TICK ordering, not the law-delta
+   ordering — and this SHARPENS the pre-registration.** The component
+   sweep's −50% at a symmetric dual is real but **absorbed by the clamp**:
+   at c7 and c8 the pooled cap sits at its N·knee ceiling (4096) in both
+   arms, so halving the anchor mass changes nothing — `gain·N·(bdp/2)` is
+   still over the ceiling. The drift only reaches goodput where the cap is
+   NOT clamp-bound, which is where `active_paths()` goes EMPTY, which is
+   **N = 1**. Zero-tick fraction: c1 31.3% ≫ sc3 6.0% ≈ sc2 5.9% ≫ c8 3.3%
+   ≫ c7 0.2%. The single-rep goodput response orders identically:
+   c1 +16.7% ≫ c7 +0.7% ≈ c8 +0.0% > sc2 −2.4% ≈ sc3 −2.7%.
+   P2/P3 (the dual cells) were pre-registered as the interesting cells and
+   the smoke says they are the INERT ones; P4's c1 clause is where the
+   effect is. Nothing is re-predicted here — the pre-registered clauses
+   stand as written and the battery is scored against them — but the
+   mechanism is now named before the numbers rather than after.
+
+4. **P1's sub-clause "the `sf=` gauge itself must be UNCHANGED between
+   arms" is REFUTED, and the refutation is a mechanism fact rather than a
+   wiring bug.** Measured: c8 short 29.3% → 51.2%, c1 short 31.3% → 21.8%.
+   The clause assumed `sf=` counts the filter independently of the law it
+   feeds. It does not: raising the cap changes admission, which changes
+   in-flight, which changes `cwnd − in_flight`, which is the very predicate
+   `active_paths()` tests. The gauge is **downstream-coupled to its own
+   consumer**, so arm-invariance was never available to it. Recorded here,
+   before the battery, rather than explained away after it: the surviving
+   half of P1 — *the effective store cap must move at the cells where P0
+   measured E < 0.95* — is the clause the battery scores, and it is the
+   one that carries the mechanism.
+
+**What this block explicitly does NOT establish.** n = 1 per cell, one
+seed, one session. The −2.4%/−2.7% at sc2/sc3 and the +16.7% at c1 are
+inside a single-rep spread that the ledger measures at 2.3× for
+same-nominal-config drift across sessions. This is shakeout. The battery
+that follows is ×8 both seeds, interleaved, same binary.
