@@ -219,6 +219,8 @@ directly, so it cannot drift from the engine by construction.
 |---|---|---|
 | `tests/gen_decode_bench.rs` | the generation coding machine (decode-CPU) | `cargo test --test gen_decode_bench --release -- --ignored --nocapture` |
 | `tests/recovery_bench.rs` | the RECOVERY plane (holes → service) | `cargo test --test recovery_bench --release -- --ignored --nocapture` |
+| `tests/store_cap_bench.rs` | the STORE-CAP laws (path set → pooled cap) | `cargo test --test store_cap_bench --release -- --ignored --nocapture` |
+| `tests/slack_bench.rs` | EMISSION SLACK + the RESEQUENCING SPAN (backlog → wire idle) | `cargo test --test slack_bench --release -- --ignored --nocapture` |
 
 ### `recovery_bench` — what it measures
 
@@ -19594,3 +19596,290 @@ prospective test. The prospective test is PS5.
    priced here.
 
 *(Everything below this line was written AFTER the sweep ran.)*
+
+### RESULTS (2026-08-10, local L0, no VM; `cargo test -p raptorpath --test slack_bench --release -- --ignored --nocapture`; **576 cells in 12.90 s**; seeds 42 + 7 pooled; the tree that produced them is 530bbaa + this block, and 530bbaa contains the predictions and NO results)
+
+### THE HEADLINE — the three-term model SURVIVES; what fails is the CLOCK the recovery plane feeds it
+
+`slack = rate × stall(δ, ρ)` is **right, and right to within one grid step**,
+whenever the recovery plane is clocked on the honest path RTT. It is wrong by
+up to ×4.5 when the same plane is clocked on the store-dwell-inclusive
+app-echo RTT. The term did not need a coefficient; the implementation needed
+an honest argument.
+
+| clock | np | cells | median idle at the PREDICTED S | **PS1 pass (idle < 1 %)** | median S(1 %) ÷ pred S |
+|---|---|---|---|---|---|
+| **wire** | 1 | 144 | 0.00 % | **138 / 144** | **0.84** |
+| **wire** | 2 | 144 | 0.00 % | **128 / 144** | **0.90** |
+| app | 1 | 143 | 0.00 % | 82 / 143 | 1.20 (tail to **13.47**) |
+| app | 2 | 144 | 0.00 % | 106 / 144 | 0.98 (tail to **6.99**) |
+
+**266 of 288 wire-clocked cells satisfy PS1**, and the median required
+backlog is 0.84–0.90 × the a-priori prediction — i.e. the derived term is
+mildly CONSERVATIVE, which is the safe direction for a cover. On the app
+clock the same term under-provisions 43 % of single-path cells.
+
+### PS1 / PS2 — the ratio table, and the mechanism that owns every gap
+
+Measured frontier stall ÷ contract stall, medians over the sweep:
+
+| clock | band | p50 ÷ pred | **p90 ÷ pred** | worst p90 ÷ pred |
+|---|---|---|---|---|
+| app | RTprop ≤ 20 ms | 2.69 | **3.85** | 20.94 |
+| app | RTprop ≥ 50 ms | 0.87 | **1.30** | 12.26 |
+| wire | RTprop ≤ 20 ms | 0.47 | **0.68** | 9.52 |
+| wire | RTprop ≥ 50 ms | 0.55 | **0.62** | 10.66 |
+
+**PS2 is confirmed on every clause it named.** It predicted app p90 ÷ pred
+≈ 5–6 at RTprop ≤ 20 ms falling toward 1 by RTprop 200, and wire ≈ 1–2
+everywhere. Measured: 3.85 median at RTprop ≤ 20 (5.70 at the c7 cell it
+named by name), 1.30 at RTprop ≥ 50, and 0.62–0.68 on the wire clock —
+*below* 1, i.e. the honestly-clocked plane recovers FASTER than the contract
+demands, which is why the contract-derived slack is a valid cover there.
+
+The attribution is not inferred. The driver labels which channel ADMITTED
+each hole's first service, and the three failure owners fall out labelled:
+
+| cell | clock | channel mix (n / p50 stall) | contract | the cadence that owns it |
+|---|---|---|---|---|
+| c2, RTprop 10, GE 2.6 %, np 2 (**the c7 cell**) | app | `fast` 200 / 19.2 ms · `time` 2 / **184.7 ms** | 29.8 ms | **patience** = 9/8 × the 177.75 ms app-echo RTT |
+| same | wire | `fast` 159 / 17.4 ms · `time` 43 / 22.8 ms | 29.8 ms | — (p90 ÷ pred **0.77**) |
+| c2, RTprop 10, GE 2.6 %, np 1 (**the sc2 cell**) | app | `age` 162 / **80.1 ms** | 29.8 ms | **the legacy age gate on the app clock**: srtt_app/2 = 158/2 = 79 ms |
+| same | wire | `age` 162 / 11.5 ms | 29.8 ms | — (p90 ÷ pred **0.42**) |
+| c1, RTprop 5, 0.1 % GE, np 1 | app | `age` 15 / 90.2 ms · `sweep` 1 / 100.0 ms; p90/p99/max **99.9 / 100.2 / 100.2 ms** | 19.1 ms | **`TAIL_SWEEP_MAX_US` = 100 ms** — the `age` channel admits the service, but the sweep cadence is what re-presents the hole, so the TAIL is pinned at the clamp, δ-independent |
+
+21 of 574 rows have their p90 frontier stall pinned within 3 ms of the 100 ms
+sweep clamp — a δ-independent constant showing through as the stall itself.
+
+**The c7 cell, end to end, is the whole result in six numbers:**
+
+| c2 · RTprop 10 · GE 2.6 % · np 2 | app clock | wire clock |
+|---|---|---|
+| predicted S = window 146 + slack 309 | **455** | **455** |
+| wire idle AT the predicted S | **15.65 %** | **0.66 %** |
+| smallest grid S reaching 1 % idle | 2048 (**×4.50**) | 512 (**×1.13**) |
+| p90 frontier stall ÷ contract stall | **5.70** | **0.77** |
+
+**A NAMED RESIDUAL, not adjusted for.** At 5 % loss the wire clock fails too
+(worst ratio 2.10, c1 RTprop 20). The driver names it: at that cell the
+`time` channel's own p50 stall is 446 ms (app) / 132 ms (wire) against a
+189 ms / 27 ms patience — i.e. **multi-round recovery**, the repair itself
+re-lost. The contract stall models ONE recovery round. The a-priori extension
+is expected rounds, `stall / (1 − ε̂)` with ε̂ already measured by the engine
+— still no fitted constant. **It was NOT added**: adding a term because it
+would make 5 %-loss cells pass is precisely the move this bench exists to
+refuse. It is recorded as the named successor.
+
+### PS3 — SHAPE: it is a SLOPE, not a knee, and the slope's WIDTH is the stall distribution's own dynamic range
+
+| verdict | cells |
+|---|---|
+| SLOPE (≥ 3 octaves) | **348 / 574** |
+| soft knee | 168 / 574 |
+| KNEE (≤ 1.2 octaves) | 58 / 574 |
+
+Median transition width **3.00 octaves** (p10 1.00, p90 3.58, max 4.58), the
+same on both clocks. PS3 predicted "soft knee or wider — a single sharp knee
+inside one octave would refute the bimodality", and that is what happened.
+
+The width is not free-floating. At the c7 cell the measured stall runs
+19.2 ms (p50, `fast`) to 169.5 ms (p90, `time`): log₂(169.5 / 19.2) = **3.14
+octaves**, against a measured transition width of 4.42 octaves app / 3.00
+wire. **The idle curve's slope is the log of the stall distribution's own
+spread** — which is the honest reason there is no single knee to find: two
+recovery channels with a ×9 latency ratio produce two transitions, and asking
+"where is the knee" was asking the wrong question. The answer to "how much
+backlog" is a COVERAGE choice along a slope, and §PS-C below is where that
+choice comes from.
+
+### PS4 — TRANSFER-LENGTH DEPENDENCE: **PARTIALLY FALSIFIED, and honestly so**
+
+c2, RTprop 10 ms, GE 2.6 %, np 2, app clock:
+
+| N | idle @ S = 64 | idle @ S = 1024 | S(1 %) | max stall |
+|---|---|---|---|---|
+| 1 500 | 82.54 % | **0.00 %** | **1024** | 231.4 ms |
+| 3 000 | 78.24 % | 10.53 % | **2048** | 184.7 ms |
+| 6 000 | 74.00 % | 5.89 % | **2048** | 184.7 ms |
+| 12 000 | 83.25 % | 7.82 % | **2048** | **558.1 ms** |
+
+PS4 predicted invariance to within one grid step. S(1 %) moves 1024 → 2048
+(two grid steps) between N = 1500 and N = 3000 and then **saturates**, while
+the stall's MAXIMUM keeps growing (231 → 558 ms at N = 12 000). That is the
+expected behaviour of a distribution TAIL being sampled more often, not of a
+term that carries N: a longer transfer buys more chances at a multi-round
+recovery, so the extreme grows, but the 99th-percentile cover does not.
+**The verdict is: S at a fixed coverage is N-invariant once N is large enough
+to sample the tail; S at FULL coverage is not, and never will be.** That is
+one more reason the answer is a coverage point on a slope rather than a knee.
+
+### PS5 — THE SPAN TERM: measured **exactly**, at a factor of 2 that is STRUCTURAL and IDENTIFIED
+
+Loss 0, np 2, so the span is the skew term alone. Predicted
+`rate_fast × Δowd` with rate_fast = rate/2; measured max span:
+
+| rate | skew | pred (rate/2 × skew) | measured p50 | measured max | max ÷ pred |
+|---|---|---|---|---|---|
+| c1 | 1 / 2 / 5 / 10 / 20 / 40 ms | 13 / 26 / 65 / 130 / 260 / 520 | 26 / 52 / 130 / 262 / 526 / 1052 | 26 / 52 / 132 / 264 / 526 / 1052 | **2.00 / 2.00 / 2.03 / 2.03 / 2.02 / 2.02** |
+| c2 | same | 5 / 10 / 26 / 52 / 104 / 208 | 10 / 20 / 50 / 104 / 208 / 416 | 10 / 20 / 52 / 104 / 208 / 416 | **1.92 / 1.92 / 2.00 / 2.00 / 2.00 / 2.00** |
+| c3 | same | 1 / 2 / 5 / 10 / 20 / 40 | 2 / 4 / 10 / 20 / 40 / 80 | same | **2.00** ×6 |
+| any | 0 ms | 0 | 0 | **0** | — |
+
+**The span is linear in skew with zero intercept and a slope of exactly
+1.00× the TOTAL emission rate, across ×13 in rate and ×40 in skew.** Ratio
+2.00 ± 0.03 in 18 of 18 non-zero cells, and identically 0 at zero skew — job
+3 does not exist without skew, asserted and measured.
+
+The factor 2 is not a coefficient and was not fitted; it is a definition
+mismatch, and naming it is the deliverable:
+
+* `rate_fast × Δowd` = the number of FAST-PATH SYMBOLS the receiver buffers.
+* `rate_total × Δowd` = the **SEQUENCE-NUMBER SPAN** from the in-order
+  frontier to the highest received — which counts both paths' seqs, because
+  the slow path's own not-yet-arrived seqs sit inside the same range.
+
+A store cap bounds a SPAN (frontier → highest), not a buffered-symbol count,
+so **the span form is `total emission rate × Δowd`** and the tasking's
+`rate_fast × ΔRTprop` is the same quantity for a symmetric-rate pair read
+over a round trip. **This bench CANNOT distinguish the two forms**, and that
+is a real limitation, stated: the driver alternates the source between paths
+at equal rate and gives both paths symmetric one-way delays, so
+rate_fast = rate_total/2 and ΔRTprop = 2·Δowd *by construction*. Separating
+them needs a driver with per-path RATES — named as the successor, not
+guessed at here.
+
+### PS6 — THE c8 GEOMETRY: the formula lands in the measured good-pin class, and the arm that collapsed was ×7.6 above it
+
+c8 = c2 + c3: rate_fast 10 400 sym/s, RTprop 8 ms and 60 ms, Δowd 26 ms.
+
+| quantity | value |
+|---|---|
+| predicted receiver-hold span = 10 400 × 26 ms | **270** |
+| predicted sender-retention span = 10 400 × 52 ms | **541** |
+| honest pooled cap at c8, one path filtered (ledger, "Store-Cap Triplication" (A)) | 480–500 |
+| the guard session's independently measured GOOD pin (`honest_store_cap` doc) | **508** |
+| the arm that read **−19.6 %** at seed 7 (cap pinned at N × knee) | **4096** |
+| the `active_paths()` cliff the filter accidentally supplied | 128 |
+
+**541 vs 508 is +6.5 %** — inside the ±10 % PS6 pre-registered, from a
+formula containing nothing but a rate and a delay difference. And
+**4096 ÷ 541 = ×7.57**, against the ×7.6 PS6 wrote down before looking. The
+c8 collapse is a cell run at 7.6 × its own resequencing span.
+
+**What this check is, stated as PS6 required:** a consistency check against
+three already-recorded data points, not a prospective test. Two further
+honest caveats. (i) Using the SENDER-RETENTION reading (541) rather than the
+receiver-hold reading (270) is a choice, and the bench's symmetric geometry
+cannot adjudicate it — 270 would put the good pin at ×1.9 the prediction
+instead of ×0.94. The choice is defended on the object being bounded (a store
+cap retains until ACKED, hence a round trip), not on which number matched.
+(ii) The total-rate form the bench actually measured gives 12 400 × 52 ms =
+**645** for c8, which reads the good pin at ×0.79. All three readings are
+recorded; **none was selected for fit.**
+
+### PS-C — IS THE STALL-COVERAGE STATISTIC DERIVABLE FROM (δ, ρ)? **YES for the time, NO for the coverage — and the gap is real**
+
+The second correction to this task was right that there is no statistic to
+choose for the STALL ITSELF: the contract declares the time, and
+`contract_stall_us` computes it with no free parameter. The measurements
+support that — on the honest clock the contract's own number is a valid
+cover at 92 % of cells.
+
+But PS3 forced the question back in a different place, and the honest answer
+is a split verdict:
+
+* **The stall TIME is fully derivable from (δ, ρ).** Confirmed. `stall(δ, ρ)
+  = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)`, continuous in ρ, no mode bit, no
+  coefficient. It predicted the required backlog to ×0.84–0.90 on the honest
+  clock.
+* **The COVERAGE — where on a 3-octave slope to sit — is NOT derivable, and
+  ρ is the term that ought to supply it but cannot.** ρ is a RETENTION
+  contract: at ρ = 1 it says every symbol must eventually arrive. It says
+  nothing about how often the WIRE may idle while that happens, and those are
+  different promises. A reliable bulk transfer that idles 5 % of the wire has
+  broken no contract term the machine currently has. The measurements make
+  this concrete: at the c7 cell on the honest clock, S = 455 buys 0.66 % idle
+  and S = 512 buys < 1 % — but S = 2048 would buy ~0 %, and nothing in
+  (δ, ρ, r) says which of those the operator asked for.
+
+**This is positive evidence that the contract needs a fourth term** — an
+EMISSION-CONTINUITY promise ("what fraction of the wire may go idle waiting
+for the recovery plane"), independent of δ (when), ρ (whether) and r (with
+how much redundancy). It is not a fitted constant: it is a declared price,
+the same kind of object as ρ, and it is exactly the dial the "how much stall
+must we cover" question was reaching for. The goal named this as a legitimate
+outcome before the work started; it is the outcome.
+
+Two things it is NOT. It is not a mode bit — it is a continuous coverage
+quantile on a curve every cell has. And it is not required for the term to be
+useful: the ρ = 1 contract stall already covers 92 % of honestly-clocked
+cells at the value it derives.
+
+### WHAT THE BENCH CANNOT SEE — re-stated with the results in hand
+
+The five boundaries in the pre-registration all stand. Three of them are load
+bearing for the reading above and are worth naming again:
+
+1. **Open loop.** Every idle curve replays an UNCONSTRAINED stall
+   distribution against a constrained backlog. In the real engine a smaller
+   S changes the ack clock, and the app-echo dwell that this bench finds
+   guilty is *itself* generated by store occupancy — so the app-clock
+   failures may be self-reinforcing in a way this bench structurally cannot
+   show. That feedback is the single biggest thing L1 would have to confirm,
+   and it is the same loop `recovery_bench` flagged ("the bench can say what
+   a given dwell does to patience; it cannot say what changing the clock does
+   to the dwell").
+2. **No CC.** Stalls are a LOWER bound, so every ratio in the tables above is
+   a lower bound on the real gap.
+3. **No FEC.** Every hole here is served by ARQ, so at r > 0 the stall
+   distribution's tail — the part that sets the slope's width — would be
+   thinner and the required coverage lower. The slack term's size at the
+   shipped default is therefore an UPPER bound wherever generation coding is
+   on.
+
+Additionally, and specific to §1.2: the driver's symmetric geometry cannot
+separate `rate_fast × Δowd` from `rate_total × Δowd`, and has no per-path
+rate axis at all.
+
+### WHAT THIS DOES **NOT** LICENSE
+
+No law changed, no default changed, no engine behaviour touched — this phase
+is characterization. In particular the obvious next move, *"wire-clock the
+recovery plane"*, is NOT licensed by this bench: `recovery_bench`'s own
+second component fact says the app-echo clock has been ACCIDENTALLY
+SUPPRESSING a retransmit flood in the `legacy` arm (retx 202 → 5 171, ×25.6,
+when the argument is swapped with the RFC channels off). The same shape as
+the store-cap cliff: **a defect can be doing load-bearing work.** Any battery
+that changes the argument must carry `RWM_RECOV_MP` on and must record it.
+
+### THE SUCCESSORS THIS NAMES
+
+1. **The emission-continuity term** (PS-C): a fourth contract dial declaring
+   the tolerated wire-idle fraction, which is what selects a point on the
+   3-octave slope. Component-testable with this bench as it stands.
+2. **Multi-round recovery** as an a-priori extension `stall / (1 − ε̂)` — the
+   named residual behind every ≥ 5 %-loss failure on the honest clock.
+   Deliberately NOT added here.
+3. **A per-path-rate driver** to separate `rate_fast` from `rate_total` in
+   the span term — the one question §1.2's geometry is degenerate for.
+4. **The δ-blind cadences**, now priced: `TAIL_SWEEP_MIN/MAX_US` = [25, 100]
+   ms shows through as the stall itself in 21 of 574 cells, and the app-echo
+   patience clock is worth ×4.5 in required backlog at c7.
+
+### Tests and suites
+
+New, always-on (all three non-ignored, ~10 ms total):
+`slack_bench_terms_are_arithmetic_with_no_constants` (the three terms as
+ABSOLUTE arithmetic — `network_window(10 400, 8 ms) = 83.2`, the ρ = 1 stall
+= 17/8 · srtt, the ρ = 0 stall = the shipped `shed_deadline_us`, linearity in
+ρ across 21 points, the c8 span readings, and `span(skew = 0) = 0`);
+`slack_bench_emission_sim_is_exact_on_hand_computable_inputs` (the simulator
+against hand-computable Little's-law inputs: S = rate × RTT ⇒ 0 % idle, S =
+half ⇒ 50 %, S = a fifth ⇒ 80 %, monotone in S);
+`slack_bench_fixtures_pin_the_slack_term` (LIVENESS — the plane executed,
+holes reached named channels, the residence series is live, the idle curve
+falls — plus the pinned headline that patience 177.75 ms > 5 × the 29.75 ms
+contract stall at the c7 cell).
+
+`recovery_bench_fixtures_pin_the_plane` is UNCHANGED and green after the
+driver extraction — the proof that the move was behaviour-identical.
