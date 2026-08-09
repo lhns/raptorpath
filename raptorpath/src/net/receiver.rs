@@ -35,9 +35,12 @@
 //!   * every `recv_scheduler` / `recv_fec` / `recv_decoders` lock is taken and
 //!     released at the same statement, with the same scope — nothing was
 //!     hoisted out of or into a guard's lifetime;
-//!   * the two early `return`s (the TUN-send failure in `feed_block_symbol`
-//!     and the replay path that follows a BlockStart) still end the TASK, not
-//!     a helper: they are `return` from the same future.
+//!   * all FOUR early `return`s (two TUN-inject failures on the window
+//!     delivery paths, and the two `feed_block_symbol` failures — the live
+//!     one and the BlockStart replay) still end the TASK, not a helper: they
+//!     are `return` from the same future, and `feed_block_symbol` is still a
+//!     closure returning `bool` rather than a function that could swallow
+//!     them.
 //!
 //! NOT covered here: `spawn_receiver_for_path` (the per-path datagram/stream
 //! readers that FEED this task's channel) and the control fast-path task,

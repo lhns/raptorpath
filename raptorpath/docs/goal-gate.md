@@ -18557,3 +18557,133 @@ omission reads as a decision, not an oversight.
 `emit_batch_loopback`, `patience_loopback`, `perf_loopback`,
 `recov_mp_loopback`, `win_decouple_loopback`, `wire_compact_loopback`) ·
 `--doc`. Zero failures in any run.
+
+## Refactor: net seams 3 (2026-08-09) — REFACTOR, behaviour-preserving ONLY (branch `refactor/net-seams-3` from main@407bbe3; no law change, no default change, no measurement)
+
+The last two STRUCTURAL extractions of the seam map. Seams 1–2 took
+`net/mod.rs` from 13,694 → 11,102 and left the two giants: `run_window_sender`
+(~3,470) and `run_impl` (~2,520). This branch takes the largest read-only
+phase out of the first and the whole receiver task out of the second. Two
+commits, one per move. **net/mod.rs 11,102 → 8,902, −2,200 (−19.8%).**
+Cumulative across all three seam passes: 13,694 → 8,902, **−4,792 (−35.0%)**.
+
+| # | what | to | net/mod.rs |
+|---|---|---|---|
+| 1 | the 439-line `[DIAG]`/`[C8CONV-S]` report phase + the 40 counters only it reads | `net/diag.rs` (815) | 11,102 → 10,602 (−500) |
+| 2 | the 1,735-line receiver task body | `net/receiver.rs` (1,854) | 10,602 → 8,902 (−1,700) |
+
+### MOVE 1 — the report is read-only w.r.t. the data plane
+
+The DIAG phase reads ~30 locals from every OTHER phase of the sender loop —
+`SenderState`, `SenderPolicy`, the dynamic store-cap block's `tx_paused` /
+`effective_store_cap` / per-path cap maps, the decoupled-admission `wd_*`
+gauges, the recovery plane's suppression counters — and writes NOTHING any
+other phase reads. That asymmetry, not its size, is what licenses the move:
+it can be an ordinary `diag::report(&SenderState, &SenderPolicy,
+&mut DiagState, …)` taking `&` everywhere the counters allow.
+
+**The `SenderState`/`SenderPolicy` split held.** Everything the report needs
+was reachable from the two structs or from a per-iteration local that is
+already passed explicitly. The seams did not miss a field. What the move DID
+surface is two counters that LOOK DIAG-only and are not, and both are
+findings worth keeping:
+
+1. **`wnd2_frontier_last` / `wnd2_frontier_change_us` are LIVE.** They sit in
+   a block introduced "for the DIAG gauge", but the `RWM_WIN_DECOUPLE`
+   admission gate reads both — the head span (`last_sent − frontier`) and the
+   stall meter (`now − change_us`) that grows the allowance during a frontier
+   freeze. Only the derived `wnd2_relgap_max_us` is instrumentation. They
+   stay locals of `run_window_sender` and are passed in BY VALUE; had they
+   moved into `DiagState`, a gauge struct would own state a wire-admission
+   law reads.
+2. **`mpd_pf_floor` / `mpd_pf_clock` / `mpd_pf_sum` cannot move for a BORROW
+   reason, not a behaviour one.** They are `Cell`s precisely because the
+   `mp_thr_of` closure in the recovery phase captures them; folding them into
+   `DiagState` would make that closure hold a shared borrow of `dg` across a
+   block that also does `dg.mpd_* += 1`. Passed in by reference, with the
+   reason recorded at the type.
+
+**Mechanical preservation.** The body was moved by a transform that only
+dedents one level and inserts a `dg.` prefix in front of a captured counter
+name — never inside a string literal, never inside a comment, never after a
+`.`. Stripping the 82 prefixes off the 71 lines that carry them and
+re-indenting reproduces the original 439 lines BYTE-FOR-BYTE, checked by
+script. The same transform and the same round-trip check cover the 30
+accumulator write sites elsewhere in the function. `if pol.diag_on` stays at
+the CALL SITE (zero cost on the shipped path; same point of the iteration).
+The ONE scheduler acquisition and its scope, the two atomics and their
+`Relaxed` order, the 250 ms window test, the per-window resets and the
+`diag_last_*` roll-forward are all where they were. All four wall-clock
+stamps stay sampled at their original lines and are moved into
+`DiagState::new`, not re-sampled — the `SenderState::new` precedent.
+
+595 deleted lines account exactly: **441** the whole `if pol.diag_on {…}`
+statement + **108** declarations and their doc comments (now `DiagState`
+fields and field docs) + **30** prefixed in place + **15** the `[SND]` block
+and its local + **1** duplicated comment.
+
+**`[SND]` DELETED** — the item batch 2 deferred behind the seam fence. The
+zero-consumer claim was re-verified here, not inherited: no `tools/` parser,
+no ledger section citing it, and every field it printed is already on the
+`[DIAG]` line (`cum=` / `win=` / `paused=`). The ledger's "tx_paused ~90% of
+samples" readings come from DIAG's PERCENTAGE, not from this per-200 ms bool.
+Its one reference was the gauge table in `packet-flow-visualization.md`, which
+now records the deletion and why. `RWM_TRACE` still drives `[RCV]`.
+
+### MOVE 2 — the receiver task, moved whole
+
+`run_impl`'s receiver spawn is 545 lines of receiver-local state followed by
+ONE `loop` around a `tokio::select!` (message channel / in-order-hold expiry
+/ deficit deadline / shutdown). It is now
+`receiver::run_receiver(…)`-shaped exactly as seam batch 1 shaped the five
+background tasks: the 29 captures are cloned at the SAME lines and PASSED at
+the SAME spawn instead of being moved into an `async move` block.
+`run_receiver` is an `async fn`, so building its future at the call site runs
+none of its body — the task still begins executing when the runtime polls it.
+
+**No `ReceiverState`.** The prompt allowed one; it is not warranted. Unlike
+the sender's locals (which the emission step, the ack drains and the report
+all touch, which is why `SenderState` had to exist), the receiver's ~90
+locals are read by nothing outside the task. The whole task is one function
+now, so a struct would add an `st.` prefix to ~400 lines and unblock nothing.
+Recorded here so the asymmetry with `SenderState` reads as a decision.
+
+**Mechanical preservation.** Re-indenting the 1,735 moved lines reproduces
+the original block byte-for-byte, with ONE textual edit, listed because it is
+the only one: the four reads of `config.reorder_timeout_ms` /
+`config.reorder_max_size` (on three lines) become the parameters
+`recv_reorder_timeout_ms` / `recv_reorder_max_size`. Rust 2021's disjoint
+capture already copied exactly those two `u64`/`usize` fields into the
+spawned block — which is why `run_impl` can still read `config.status_addr`
+afterwards — so passing the two values is the same two copies at the same
+point. Undoing the rename and re-indenting is byte-identical; checked by
+script. 1,742 deleted lines account exactly: **1,737** the whole spawn
+statement + **2** `use` lines that lost their last consumer + **2** `mut`
+bindings that are now moved rather than mutated + **1** `PathBatchTracker`
+made `pub(crate)` (it appears in the extracted signature). 42 insertions:
+**38** the spawn call + **1** `pub mod receiver;` + **3** those same edits.
+
+### A collision, and what was done about it
+
+Mid-run, a CONCURRENT worker on `audit/gate-forwarding` wrote 8 lines
+(`gates.echo()` and its comment) into this branch's working copy of
+`net/mod.rs` — they had started in the main worktree before moving to their
+own. The pollution was caught by a gate battery failing to compile
+(`no method named echo`), NOT by inspection, which is the argument for
+running the battery rather than trusting the diff. The 8 lines were removed
+from this branch and are present in their own worktree's commits, so nothing
+was lost. Every number above was re-derived after the tree was restored.
+
+### Suites — the full battery after EACH commit, all green
+
+`-p raptorpath --lib` (374) · `-p raptorpath-math` (8 targets) ·
+`--test gate_suite --release` **15/15** · `mtu_blackhole_wedge` ·
+`recovery_bench` · all nine loopbacks (`ack_merge_loopback`,
+`ack_merge_optout`, `copa_sole_loopback`, `emit_batch_loopback`,
+`patience_loopback`, `perf_loopback`, `recov_mp_loopback`,
+`win_decouple_loopback`, `wire_compact_loopback`) · `--doc`. Zero failures.
+Compiler-warning delta **0** across both commits: 16 warnings before, 16
+after, the same set. (MOVE 2 transiently added five — two `use` lines that
+lost their consumer, two `mut` bindings, and a private-type-in-public-
+signature on `PathBatchTracker`; all five are fixed in the same commit, which
+is what the "no new warnings" target means.)
