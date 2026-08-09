@@ -67,7 +67,7 @@ use std::time::Duration;
 
 use raptorpath::net::{
     cooldown_elapsed, hole_nack_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
-    mp_hole_ripe, mp_time_threshold_us, pooled_recovery_srtt_us, recovery_floor_us,
+    mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us, recovery_floor_us,
     retx_cooldown_us, shed_allowed, shed_deadline_us, tail_sweep_timeout_us, time_threshold_ripe,
     MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK,
 };
@@ -362,7 +362,7 @@ fn run_cell(cell: Cell, cal: Calib) -> Out {
     let thr_of = |p: u32| -> u64 {
         let (c, e) = (copa[p as usize], ewma[p as usize]);
         let floor = recovery_floor_us(cell.arm.patience_derived, cal.jitter_us, c.max(e));
-        mp_time_threshold_us(c, e, floor)
+        mp_time_threshold_split(c, e, floor).0
     };
     let patience_us = thr_of(0);
     // The receiver's refresh cadence reads the COPA clock (`PathState::srtt`),

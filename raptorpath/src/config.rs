@@ -327,7 +327,6 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         fec_backend_explicit,
         window_reliable: config.window_reliable.unwrap_or(false),
         enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
-        symbol_size_override: 0, // use profile default
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
         reorder_max_size: config.reorder_max_size.unwrap_or(500),
         // Paper 14.28 (P10a): mid-stream repair floor for inner-feedback

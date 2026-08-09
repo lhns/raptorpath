@@ -76,8 +76,6 @@ pub struct PeerConfig {
     pub window_reliable: bool,
     /// Enable PI feedback loop in FEC rate controller
     pub enable_pi_feedback: bool,
-    /// Symbol size override (0 = use profile default)
-    pub symbol_size_override: u16,
     /// Reorder buffer timeout in ms (0 = disabled)
     pub reorder_timeout_ms: u64,
     /// Reorder buffer max capacity
@@ -128,11 +126,6 @@ pub struct PeerConfig {
     pub window_systematic_repair: bool,
 }
 
-// ADR-0006: These defaults are now overridden by BlockProfile based on protocol hint.
-// Kept as fallback for decoder creation when BlockStart hasn't arrived yet.
-const DEFAULT_SYMBOL_SIZE: u16 = 1200;
-const DEFAULT_MAX_BLOCK_SIZE: usize = 64 * 1024;
-
 /// ADR-0006: Block assembly profile derived from protocol hint.
 struct BlockProfile {
     max_block_size: usize,
@@ -180,12 +173,10 @@ const MAX_CONCURRENT_DECODERS: usize = 10_000;
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 /// Maximum window size for sliding-window FEC (source symbols in encoder window).
 const MAX_WINDOW_SIZE: usize = 200;
-/// Default reorder buffer timeout for window mode (milliseconds).
-const DEFAULT_REORDER_TIMEOUT_MS: u64 = 20;
-/// Maximum packets buffered in the reorder buffer before force-delivery.
-const MAX_REORDER_BUFFERED: usize = 500;
-/// Reorder buffer drain interval (how often we check for expired entries).
-const REORDER_DRAIN_INTERVAL: Duration = Duration::from_millis(5);
+// (The reorder-buffer defaults that used to live here — timeout 20 ms, max
+// 500 buffered — are supplied by `config::resolve` and reach the receiver as
+// `config.reorder_timeout_ms` / `config.reorder_max_size`; the local copies
+// had no readers.)
 /// Block-mode in-order delivery: max decoded blocks held for ordering
 /// (64 × 64KB ≈ 4MB worst case) before force-drain.
 const BLOCK_REORDER_MAX_BLOCKS: usize = 64;
@@ -401,11 +392,6 @@ pub fn mp_time_threshold_split(
     } else {
         (floor_us, true)
     }
-}
-
-/// `mp_time_threshold_split` without the gauge bit.
-pub fn mp_time_threshold_us(srtt_us: u64, ewma_rtt_us: u64, floor_us: u64) -> u64 {
-    mp_time_threshold_split(srtt_us, ewma_rtt_us, floor_us).0
 }
 
 /// RFC 9002 §6.1.1 packet threshold (kPacketThreshold = 3), generalized per
@@ -716,11 +702,6 @@ impl NackCongestionState {
         self.repair_multiplier
     }
 
-    /// Current repair multiplier.
-    fn multiplier(&self) -> f64 {
-        self.repair_multiplier
-    }
-
     /// Idle-triggered recovery floor (ADR-0046 hardening; the fix the P10b
     /// NOTE at the call site asked for). The blanket per-round `.max(1)` floor
     /// was correctly REJECTED because forcing a retransmit every round on a
@@ -832,12 +813,6 @@ fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool
 /// ≈ 1.2 MB ≈ 10× the C2 BDP (100 Mbit × 10 ms ≈ 104 symbols). When
 /// full, the sender stops reading the TUN until acks drain it (flow
 /// control, not loss).
-const RELIABLE_STORE_MAX: usize = 1024;
-
-/// Reliable-policy backpressure: when the sent-data store is full of
-/// un-acked symbols, stop reading the TUN (the same contract as the block
-/// path's cwnd gate) instead of dropping retention. EVICT mode never
-/// backpressures on retention (Realtime's correct spend of the budget).
 ///
 /// NOTE (RWM Phase C, MEASURED). Relaxing this cap in out-of-order object
 /// mode — the hypothesis that the store's cumulative-ack backpressure was
@@ -851,9 +826,7 @@ const RELIABLE_STORE_MAX: usize = 1024;
 /// object-completion equivalence (§16.2) is why out-of-order delivery is a
 /// no-op here anyway: in-order-with-retention already completes at
 /// decode-on-total. See goal-gate "RWM Phase C".
-fn store_backpressure(reliable: bool, store_len: usize) -> bool {
-    reliable && store_len >= RELIABLE_STORE_MAX
-}
+const RELIABLE_STORE_MAX: usize = 1024;
 
 /// feat/gen-substrate-ceiling: hard ceiling on the derived generation-pipeline
 /// depth (bounds sender retention, the receiver reassembly span, and the
@@ -1254,16 +1227,6 @@ fn copa_feed_attribute(
                 st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
             }
         }
-    }
-}
-
-/// Map FecBackend to u8 for atomic stats storage.
-fn backend_to_u8(backend: FecBackend) -> u8 {
-    match backend {
-        FecBackend::RaptorQ => 0,
-        FecBackend::ReedSolomon => 2,
-        FecBackend::Rlc => 3,
-        // 4 was Streaming (retired 2026-07-28) — kept reserved.
     }
 }
 
@@ -3404,21 +3367,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                                         .map(|s| format!(" | {s}"))
                                         .unwrap_or_default(),
                                 );
-                                // diag/unified-collapse: transit-layer counters
-                                // at the receiver — did datagrams reach quinn?
-                                let dg = recv_transport
-                                    .datagram_frame_stats(path_id)
-                                    .map(|(rx, tx)| format!("dg_rx={rx} dg_tx={tx}"))
-                                    .unwrap_or_default();
-                                let sh = recv_transport
-                                    .l0_transit_stats()
-                                    .map(|(e, g, td, ok, er, q)| {
-                                        format!(
-                                            " shim enq={e} ge={g} tail={td} ok={ok} err={er} q={q}"
-                                        )
-                                    })
-                                    .unwrap_or_default();
-                                eprintln!("[FDIAG-T] {dg}{sh}");
                             }
                         }
 
@@ -4105,6 +4053,14 @@ pub fn percap_store_cap(
 /// full (or recovery-stalled) account never starves another path's
 /// admission. `accounts` = (outstanding_i, cap_i) per live path. The exact
 /// mirror of [`infl_percap_full`] for the retention store.
+///
+/// KEPT despite having no production call site (dead-code batch 2 audit): it
+/// is the UNGUARDED CONTROL LAW that [`percap_store_full_guarded`] — the law
+/// the sender actually runs — is bounded against. Its real consumers are the
+/// degeneracy and c8-miniature tests (`percap_store_full_guarded` with
+/// bound = cap must equal it exactly; the guarded gate must read FULL exactly
+/// where this one still admits). Deleting it would delete the bound, not
+/// dead code.
 pub fn percap_store_full(accounts: &[(usize, usize)]) -> bool {
     !accounts.iter().any(|&(out, cap)| out < cap.max(1))
 }
@@ -9568,16 +9524,17 @@ async fn run_window_sender(
     }
 }
 
-/// Create a window encoder for the given backend. (The retired Streaming arm
-/// was the only one that read the FEC controller/scheduler — the signature
-/// shrank with it, 2026-07-28.)
+/// Create a window encoder. RLC is the only window backend left (the retired
+/// Streaming arm was the only other one, and the only one that read the FEC
+/// controller/scheduler — the signature shrank with it, 2026-07-28); the
+/// degenerate one-arm `match backend` it left behind is gone, but `backend`
+/// stays in the signature as the selection point a future window codec
+/// re-enters at.
 fn create_window_encoder(
-    backend: FecBackend,
+    _backend: FecBackend,
     symbol_size: u16,
 ) -> Box<dyn WindowEncoder> {
-    match backend {
-        _ => Box::new(RlcWindowEncoder::new(symbol_size)),
-    }
+    Box::new(RlcWindowEncoder::new(symbol_size))
 }
 
 /// Create a window decoder for the given backend.
@@ -10681,12 +10638,12 @@ mod tests {
     fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
         const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
         // 40 ms srtt, 32 ms ewma → 9/8 × 40 ms = 45 ms.
-        assert_eq!(mp_time_threshold_us(40_000, 32_000, F), 45_000);
+        assert_eq!(mp_time_threshold_split(40_000, 32_000, F).0, 45_000);
         // The larger clock wins regardless of which estimator it is.
-        assert_eq!(mp_time_threshold_us(32_000, 40_000, F), 45_000);
+        assert_eq!(mp_time_threshold_split(32_000, 40_000, F).0, 45_000);
         // Tiny clocks floor at NACK_RETX_COOLDOWN_FLOOR_US.
-        assert_eq!(mp_time_threshold_us(1_000, 500, F), F);
-        assert_eq!(mp_time_threshold_us(0, 0, F), F);
+        assert_eq!(mp_time_threshold_split(1_000, 500, F).0, F);
+        assert_eq!(mp_time_threshold_split(0, 0, F).0, F);
     }
 
     // ----- goal-gate "Unlock The Default 2: derived patience" -----
@@ -10701,7 +10658,7 @@ mod tests {
             for ewma in [0u64, 700, 9_500, 40_000] {
                 let legacy = (srtt.max(ewma).saturating_mul(9) / 8).max(F);
                 assert_eq!(
-                    mp_time_threshold_us(srtt, ewma, F),
+                    mp_time_threshold_split(srtt, ewma, F).0,
                     legacy,
                     "srtt={srtt} ewma={ewma}"
                 );
@@ -10709,7 +10666,7 @@ mod tests {
         }
         // The cited constants are still the cited constants.
         assert_eq!(MP_PACKET_THRESHOLD, 3);
-        assert_eq!(mp_time_threshold_us(80_000, 0, 0), 90_000); // 9/8 exactly
+        assert_eq!(mp_time_threshold_split(80_000, 0, 0).0, 90_000); // 9/8 exactly
     }
 
     /// 3b, the law: timer granularity + the path's OWN measured jitter,
@@ -10770,8 +10727,8 @@ mod tests {
         // ABOVE the crossover the derived floor is INERT: the clock already
         // won, so the two agree exactly. The law is a floor, never a cap.
         for srtt in [9_000u64, 12_000, 40_000] {
-            let legacy = mp_time_threshold_us(srtt, 0, F);
-            let derived = mp_time_threshold_us(srtt, 0, patience_floor_us(400, srtt));
+            let legacy = mp_time_threshold_split(srtt, 0, F).0;
+            let derived = mp_time_threshold_split(srtt, 0, patience_floor_us(400, srtt)).0;
             assert_eq!(legacy, derived, "srtt={srtt} must be unaffected");
         }
     }
@@ -10877,8 +10834,8 @@ mod tests {
 
         let f = NACK_RETX_COOLDOWN_FLOOR_US;
         // §6.1.2 time threshold (the RECOV_MP / RECOV_SP channel).
-        assert_eq!(mp_time_threshold_us(0, APP_ECHO_US, f), 177_750);
-        assert_eq!(mp_time_threshold_us(0, WIRE_US, f), 15_750);
+        assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0, 177_750);
+        assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0, 15_750);
         // Legacy age gate (the shipped default channel) = srtt/2.
         assert_eq!(APP_ECHO_US / 2, 79_000);
         assert_eq!(WIRE_US / 2, 7_000);
@@ -10890,12 +10847,12 @@ mod tests {
         assert_eq!(tail_sweep_timeout_us(APP_ECHO_US), TAIL_SWEEP_MAX_US);
         assert_eq!(tail_sweep_timeout_us(WIRE_US), 28_000);
         // The ratios, stated as the claim: ×17.8 vs ×1.6 RTprop.
-        assert_eq!(mp_time_threshold_us(0, APP_ECHO_US, f) / RTPROP_US, 17);
-        assert_eq!(mp_time_threshold_us(0, WIRE_US, f) / RTPROP_US, 1);
+        assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0 / RTPROP_US, 17);
+        assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0 / RTPROP_US, 1);
         // And the derived floor changes NEITHER — it is not the binder.
         assert_eq!(
-            mp_time_threshold_us(0, APP_ECHO_US, patience_floor_us(400, APP_ECHO_US)),
-            mp_time_threshold_us(0, APP_ECHO_US, f)
+            mp_time_threshold_split(0, APP_ECHO_US, patience_floor_us(400, APP_ECHO_US)).0,
+            mp_time_threshold_split(0, APP_ECHO_US, f).0
         );
     }
 
@@ -11174,19 +11131,6 @@ mod tests {
     }
 
     // ----- RWM Phase A: RETAIN-UNTIL-ACKED retention (paper §15.7/§16.3) -----
-
-    #[test]
-    fn test_store_backpressure_engages_at_store_full() {
-        // Reliable: TUN reads stop exactly when the store fills — flow
-        // control, not eviction. (Out-of-order object mode keeps this cap:
-        // relaxing it was MEASURED harmful — the coding window slid off the
-        // recovery frontier; see the store_backpressure NOTE.)
-        assert!(!store_backpressure(true, RELIABLE_STORE_MAX - 1));
-        assert!(store_backpressure(true, RELIABLE_STORE_MAX));
-        assert!(store_backpressure(true, RELIABLE_STORE_MAX + 1));
-        // EVICT mode never backpressures on retention.
-        assert!(!store_backpressure(false, RELIABLE_STORE_MAX * 10));
-    }
 
     // ----- Path-scaled outstanding pool (task #84, RWM_STORE_PATHS) -----------
 
@@ -12389,12 +12333,12 @@ mod tests {
             st.update(loss, Some(rtt));
         }
         // Multiplier has collapsed toward 0 (full suppression).
-        assert!(st.multiplier() < 0.05, "congestion must suppress: {}", st.multiplier());
+        assert!(st.repair_multiplier < 0.05, "congestion must suppress: {}", st.repair_multiplier);
 
         // ACTIVE sender: suppression stands — congestion safety wins, so a
         // retransmit would NOT be forced onto the straggler.
         let active = st.effective_multiplier(false);
-        assert_eq!(active, st.multiplier(), "active transfer keeps raw multiplier");
+        assert_eq!(active, st.repair_multiplier, "active transfer keeps raw multiplier");
         assert_eq!((MAX_NACK_REPAIRS_PER_NACK as f64 * active).round() as u64, 0,
             "active + suppressed => 0 forced repairs");
 
@@ -12410,9 +12354,9 @@ mod tests {
         // (raw multiplier already >= floor), so behavior is unchanged.
         let mut clean = NackCongestionState::new();
         for _ in 0..5 { clean.update(0.0, Some(Duration::from_millis(20))); }
-        assert_eq!(clean.effective_multiplier(true), clean.multiplier(),
+        assert_eq!(clean.effective_multiplier(true), clean.repair_multiplier,
             "idle floor is a no-op when not suppressed");
-        assert!((clean.multiplier() - 1.0).abs() < 1e-9);
+        assert!((clean.repair_multiplier - 1.0).abs() < 1e-9);
     }
 
 
