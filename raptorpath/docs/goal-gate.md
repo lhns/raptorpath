@@ -168,6 +168,47 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    (d) if the component bench refutes the premise, the battery is not run.
    See "Component Benches" below. (Added 2026-08-08.)
 
+15. **EVERY BATTERY ARM ASSERTS ITS GATE'S LIVENESS ECHO, AND DRIVERS
+   FORWARD GATES EXPLICITLY.** Item 1 requires the mechanism to be proven
+   live. This says HOW, and closes the hole the ack-merge flip battery
+   found: `RWM_ACK_MERGE` had never been added to `perf_rwm_c.sh`'s
+   hand-rolled forwarding allowlist, and eleven more engine gates were in
+   the same state. Concretely:
+
+   (a) **One forwarding list.** `tools/l1/lib.sh` owns `RWM_FORWARD` and
+       `rwm_forward_env()`; every driver that launches the binary sources
+       lib.sh and passes `$(rwm_forward_env)`. No driver keeps a private
+       allowlist. `gates::forwarding_audit::gate_forwarding_list_covers_the_engine_surface`
+       scrapes every `RWM_*` the engine reads and FAILS the suite if one is
+       missing — and fails the other way on knobs the engine no longer
+       reads, so the list cannot rot.
+   (b) **Every gate has an echo.** The `[GATES]` line
+       (`RuntimeGates::echo()`) names every gate resolved there with its
+       RESOLVED value, once per engine start, on both endpoints; gates
+       resolved elsewhere keep their own `... ACTIVE (RWM_X: …)` echoes.
+       `every_forwarded_gate_has_a_liveness_echo` fails on any gate with
+       neither. A gate with no echo cannot be shown to have reached the
+       binary, so **any verdict resting on it is unfalsifiable in
+       principle**, whatever its numbers say.
+   (c) **Assert it TWO-SIDED, on BOTH logs.** The arm shows the gate ON and
+       the control shows the same gate OFF, on client AND server — the
+       `sp=1`/`sp=0` form of "Lossy-Single Residual" and the est-echo form
+       of "Receiver Per-Message Wall", now available for every gate because
+       `[GATES]` prints the OFF values too. An arm that cannot show its
+       control was a control has measured one condition twice.
+   (d) **Never rely on inheritance.** Env DOES reach the binary implicitly
+       (`sudo env … → bash driver → ip netns exec ns env $TENV`) — MEASURED,
+       and that is why no past verdict is voided. It is still not a design:
+       it means a knob's arrival is invisible at the call site and a driver
+       that ever cleans its environment silently disarms every arm. Forward
+       explicitly; assert the echo anyway.
+
+   Corollary for the reverse direction: a driver that must WITHHOLD a var
+   from the binary cannot do it by leaving the var out of an allowlist —
+   inheritance defeats that. It must `unset` it (the `RWM_GEN` gate/size
+   name collision in `perf_rwm_c.sh`). (Added 2026-08-09, "Gate-Forwarding
+   Audit".)
+
 ## Component Benches (2026-08-08)
 
 The instruments that satisfy MEASUREMENT DISCIPLINE 14. Each drives ONE
@@ -18557,3 +18598,246 @@ omission reads as a decision, not an oversight.
 `emit_batch_loopback`, `patience_loopback`, `perf_loopback`,
 `recov_mp_loopback`, `win_decouple_loopback`, `wire_compact_loopback`) ·
 `--doc`. Zero failures in any run.
+## Gate-Forwarding Audit (2026-08-09) — the ack-merge forwarding gap was REAL and TWELVE gates wide, but it VOIDS NOTHING: env reaches the binary by inheritance, MEASURED two-sided. The defect was the harness lying about how, and 41 of 76 knobs having no echo to check. (branch `audit/gate-forwarding`, base 407bbe3)
+
+A MEASUREMENT-INTEGRITY AUDIT, not a feature. Trigger: the "Ack-Merge Flip"
+battery (2026-08-08) discovered that `RWM_ACK_MERGE` had **never** been added
+to `tools/l1/perf_rwm_c.sh`'s hand-rolled forwarding allowlist, so the
+2026-08-07 "Unlock The Default 1" battery reached the binary only through
+implicit `sudo env … → ip netns exec` environment inheritance. The question
+this audit had to answer: **how many past "no flip, mechanism inert" verdicts
+rest on a gate that may never have reached the wire?**
+
+**The answer is none, and the reason is worth stating precisely, because it is
+not the reassuring one.** The allowlists were not partially broken — they were
+load-bearing for *nothing at all*. Every driver launches the binary as
+`ip netns exec ns env $TENV "$BIN"`, and neither `ip netns exec` nor `env`
+clears the environment, so a knob set anywhere up the chain arrives whether or
+not the allowlist names it. The allowlist could only ever ADD what was already
+there. Twelve gates sat outside it and were delivered anyway; the harness has
+been describing a mechanism it does not use since the allowlist was written.
+
+### 1 — The gate surface
+
+76 `RWM_*` knobs, scraped from the crate source (`RWM_TEST_*` excluded — those
+are `config::env_flag`'s own fixtures). 61 resolve in `RuntimeGates::resolve()`;
+the rest are the documented resolve-once sites outside it (`RWM_QUIC_CC`,
+`RWM_MTU_FLOOR`, `RWM_WIRE_COMPACT`, the scheduler Copa family, `RWM_CLOCK_GAP`,
+`RWM_EST_CADENCE`, `RWM_RS_TRACE`) plus the harness/L0 knobs (`RWM_PLACE_T`,
+`RWM_PERF_TIMEOUT_S`, `RWM_L0_*`, `RWM_RSTAR_TAIL`).
+
+**Echo coverage BEFORE this audit: 32 of 76 had a liveness echo. 41 had none**
+(`RWM_ANCHOR_HYGIENE`, `RWM_CC_PACE`, `RWM_CC_PACE_HR`, `RWM_CODED_SRC`, all
+four `RWM_COPA_*`, `RWM_EMIT_BURST`, the whole `RWM_GEN*` family,
+`RWM_INFL_BDP`, `RWM_INFL_CAP`, `RWM_MIN_R`, `RWM_NO_REACTIVE`,
+`RWM_OOO_RETAIN`, `RWM_PIPELINE`, `RWM_PROACTIVE_PACER`, `RWM_REACT_CAP`,
+`RWM_REASM_BDP`, `RWM_RECOV_MP_LAW`, `RWM_REPAIR_WAIT`, `RWM_REPORT_GENS`,
+`RWM_RSTAR_TAIL`, `RWM_STORE`, `RWM_STORE_BOOT`, `RWM_STORE_GAIN`,
+`RWM_STORE_PATH_POOL`, `RWM_WINDOW`, `RWM_XPATH_REPAIR`, and the instruments
+`RWM_DIAG`/`RWM_RDIAG`/`RWM_FDIAG`/`RWM_TRACE`/`RWM_PFRAC`/`RWM_RS_TRACE`).
+**A gate with no echo cannot be shown to have reached the binary, so a verdict
+resting on it is unfalsifiable in principle** — that is its own finding,
+independent of forwarding, and it is listed separately in §4.
+
+### 2 — The forwarding matrix (gate × driver)
+
+44 scripts in `tools/l1/` launch the binary or call a driver that does. They
+fall into exactly four shapes, so the matrix collapses to four rows:
+
+| shape | drivers | how env reaches the binary | gates NOT explicitly forwarded |
+|---|---|---|---|
+| **hand-rolled allowlist** | `perf_rwm_c.sh` (78 entries), `diag_rwm.sh` (17), `perf_rwm.sh` (1), `meas_rwm.sh` (2) | `ip netns exec ns env $TENV "$BIN"` — allowlist ADDS to an already-inherited env | **12** (see below); `diag_rwm.sh` missed **59** |
+| **arm-table env** | `cross_traffic.sh`, `adv_battery.sh`, `winmtu_jit.sh`, `tail_matrix.sh`, `prof_single.sh` | `env $AENV/$armenv "$BIN"` — arm knobs explicit, everything else inherited | all but the arm's own knobs |
+| **no env at all** | `perf_native.sh`, `stream_bench.sh`, `sweep_l1.sh`, `phase3_smoke.sh` | pure inheritance | **all 76** |
+| **wrapper → `perf_rwm_c.sh`** | the 26 `*_battery.sh` / `*_sweep.sh` / `*_all.sh` | `sudo env ARM_ENV bash perf_rwm_c.sh` (sudo `env_reset` makes the arm env explicit and total at that hop) or `sudo -E` | inherits whatever `perf_rwm_c.sh` does |
+
+The 12 engine gates absent from `perf_rwm_c.sh`'s allowlist — the driver used
+by nearly every battery in this ledger:
+
+`RWM_ACK_MERGE` · `RWM_RECOV_SP` · `RWM_RECOV_MP_LIVE` · `RWM_PLACE_SLACK` ·
+`RWM_PATIENCE_DERIVED` · `RWM_SIDLE_DERIVED` · `RWM_SCHED_SNAPSHOT` ·
+`RWM_STORE_BOOT` · `RWM_COPA_WIRE` · `RWM_COPA_DELTA` · `RWM_COPA_COMPETE` ·
+`RWM_COPA_FEED`
+
+So ack-merge was **not** a one-off. Five of the other eleven are the primary
+A/B arms of 2026-07/08 batteries. In the reverse direction the allowlist had
+also rotted: **16 entries named knobs the engine no longer reads** — the whole
+`RWM_DAPS_*` family, `RWM_SACK_PRUNE`, `RWM_FRONTIER_*`, `RWM_PACE_ALL`,
+`RWM_SRC_BP`, `RWM_PER_PATH_EST`, `RWM_RATE_SAMPLE`, `RWM_RECOV_MP_SERIAL`.
+
+### 3 — Empirical sweep (VM 10.1.5.16, 2026-08-09 11:27–11:58 UTC)
+
+Binary sha256 `0ddfc945766a6bb0…` (pre-fix, = 407bbe3) and `029ace45bd85bc11…`
+(post-fix, = 451ecfa), built fresh on the VM; E5-2650 v3 aes+avx2+pclmulqdq;
+seed 42; `RWM_GEN=0 RWM_DIAG=1`; driver `perf_rwm_c.sh c2 c2 bulk 3000000 1`;
+logs `/home/vibe/gfa/{sweep,verify}.log`; lock `/tmp/rwm-vm.lock` held
+11:27:37 → 11:58:16 UTC, released after teardown. Reading, not re-running: no
+battery verdict is recomputed here.
+
+**PROBE 0 — the plumbing, isolated.** A var set via `sudo env VAR=… bash
+script` and deliberately LEFT OUT of the script's `$TENV`, observed with
+`printenv` inside `ip netns exec`:
+
+| var | in the allowlist? | reached the process |
+|---|---|---|
+| `RWM_IN_LIST=alpha` | yes | **yes** |
+| `RWM_NOT_IN_LIST=beta` | **no** | **yes** |
+
+Inheritance delivers non-allowlisted vars. This is the whole explanation.
+
+**RUNS A–D — liveness echoes end to end, two-sided.** The six echo-bearing
+gates that are NOT in the allowlist, set together, vs a control with nothing
+set, scraping BOTH endpoint logs:
+
+| run | mode | `RECOV_SP` | `RECOV_MP_LIVE` | `PLACE_SLACK` | `PATIENCE_DERIVED` | `SIDLE_DERIVED` | `SCHED_SNAPSHOT` |
+|---|---|---|---|---|---|---|---|
+| A arm | dual | echo | echo | echo | echo | echo | echo |
+| B arm | single | echo | echo | echo | echo | echo | echo |
+| D control | dual | — | — | — | — | — | — |
+
+Every echo on **both** client and server; **none** in the control. The six
+gates the allowlist never named were live in every arm that set them. The
+positive control (run C: six allowlisted gates) behaved identically.
+
+**PROBE 1 — the one place the allowlist tried to be RESTRICTIVE, and failed.**
+`perf_rwm_c.sh` withholds the `RWM_GEN` gate sentinels `0`/`1` from `$TENV`,
+because the binary reads `RWM_GEN` as the generation SIZE G while the harness
+uses it as the generation on/off GATE. Omission cannot withhold anything, so
+the sentinel arrived anyway. Injected into the binary directly:
+
+| `RWM_GEN` injected | G the engine resolved |
+|---|---|
+| `1` | **1** — a one-symbol generation |
+| `0` | **1** (`.max(1)`) |
+| `7` / `384` | 7 / 384 |
+
+**Blast radius of this one: ZERO, verified.** No driver and no ledger section
+has ever used `RWM_GEN=1`; the 26 drivers that set `RWM_GEN=0` also drop
+`--window-generation-coding`, so G is never consulted. A live trap, never
+sprung. Post-fix the driver `unset`s it and the engine resolves `RWM_GEN=384`.
+
+### 4 — Blast radius, per battery
+
+Classification: **(a) safe** — the gate had an echo and the ledger asserted it;
+**(b) safe by luck** — implicit inheritance provably applied (a co-transported
+var's echo fired, proving the whole env bundle arrived), but the gate's own
+liveness was inferred; **(c) SUSPECT** — no echo and no explicit forwarding.
+
+| ledger section | gate(s) not in the allowlist | class |
+|---|---|---|
+| Lossy-Single Residual (2026-07-27) | `RWM_RECOV_SP` | **(a)** — `sp=1` in every sp run, `0` in every def run |
+| C8 Slow-Path Conversion (2026-08-06) | `RWM_PLACE_SLACK`, `RWM_RECOV_MP_LIVE` | **(a)** — "0 completed-run liveness mismatches on any of the 4 logs", plus the `slk` gauge and `splace_p1` capacity share |
+| Unlock The Default 1: ack-merge (2026-08-07) | `RWM_ACK_MERGE` | **(a)** — echo asserted per arm both directions, plus `[CTLD]` |
+| Ack-Merge Flip (2026-08-08) | `RWM_ACK_MERGE` | **(a)** — per-rep echo(client/server) + `[CTLD]` tx/rx table |
+| Unlock The Default 2: derived patience (2026-08-07) | `RWM_PATIENCE_DERIVED`, `RWM_SIDLE_DERIVED` | **(a)** — echo in `pat`, in NEITHER log of `est`; plus the `pf=` population counter |
+| Copa-Sole on Clean Substrate (2026-07-22); Copa Competitive + Cross-Traffic (2026-07-19); Adversarial Cells B1 (2026-08-06) | `RWM_COPA_COMPETE`, `RWM_COPA_DELTA`, `RWM_COPA_WIRE`, `RWM_COPA_FEED` | **(b)** — these four had NO echo of their own until this audit. The arms rode `RWM_QUIC_CC=passthrough` in the SAME `env` bundle and its echo WAS asserted, which proves the bundle reached the binary; the compete/δ gates' own resolution was inferred, not observed. The δ-probe dose-response is corroborating mechanism evidence. |
+| Refactor: net seams 2 (2026-08-08) | `RWM_SCHED_SNAPSHOT` | n/a — never measured; the arm is an open question |
+| — | `RWM_STORE_BOOT` | n/a — never a battery arm |
+
+**No live verdict lands in class (c), and no re-test is owed.** That is the
+honest result: the forwarding gap was real, twelve gates wide, and consequence-
+free, because the mechanism it failed to implement was being done by the shell
+all along. Had a driver ever cleaned its environment, the six class-(a) arms
+above would have gone silently inert and their echo assertions would have
+caught it — which is exactly why the echoes, not the allowlists, were doing
+the work.
+
+**Separately: results whose gate had NO echo at all.** These are not voided by
+anything found here, but their liveness was inferred from counters or from a
+co-transported gate rather than asserted, and until this audit they could not
+have been asserted. Recorded so the boundary is visible: the four `RWM_COPA_*`
+arms (class (b) above, now echoed); `RWM_MIN_R` in "Taper Emission Fix"
+(rests on the cod/src wire-consumption counters); `RWM_GEN_PIPE` in "Gen
+Substrate Ceiling" (rests on the `GUARD OK` cod>0 proof, which shows
+generation ran, not that the M* depth law did); `RWM_REPORT_GENS` and
+`RWM_INFL_BDP` in the receiver-tail work; `RWM_EMIT_BURST` (its umbrella
+`RWM_EMIT_BATCH` echoes, the quantum does not). The **DAPS-era block** is the
+only genuinely unbacked set, and it is already bannered UNCERTAIN under the
+2026-07-13 Methodology Audit for recording no env at all — its gates
+(`RWM_DAPS*`, `RWM_PACE_ALL`, `RWM_SRC_BP`, `RWM_RATE_SAMPLE`,
+`RWM_PER_PATH_EST`) no longer exist in the engine, so those results are not
+re-testable at any price and nothing new is claimed for them here.
+
+**What a re-test would cost, if one were ever wanted.** Nothing above needs
+one. For the record, re-running the class-(b) Copa arms with the new
+`copa_wire=` / `copa_compete=` / `copa_delta_override=` echoes asserted would
+be one `copaclean_battery.sh` pass — ×8 reps, 10 arms, both seeds, ≈2 h of VM
+lock plus a ≈4 min build, which is what the 2026-07-22 session cost. It is not
+proposed: the QUIC_CC echo already proves the env bundle arrived, and the
+δ-probe already separates the mechanism.
+
+### 5 — The fix
+
+**One shared mechanism.** `tools/l1/lib.sh` now owns `RWM_FORWARD` (all 76
+knobs) and `rwm_forward_env()`, which emits `VAR=value` for each one that is
+SET. All 13 drivers that launch the binary source lib.sh and pass
+`$(rwm_forward_env)` — including `perf_native.sh`, `stream_bench.sh` and
+`sweep_l1.sh`, which previously passed no env at all, and `adv_battery.sh` /
+`winmtu_jit.sh`, which did not source lib.sh (they now do, and immediately
+`set +e` — they run without `-e` on purpose, per discipline item 7). The 16
+dead knobs are gone. `perf_rwm_c.sh`'s 78-line block became one line, and its
+`RWM_GEN` sentinel is `unset` rather than merely un-listed, which is the only
+thing that actually withholds a var.
+
+**Liveness echoes for the gates that had none.** `RuntimeGates::echo()` emits
+one `[GATES]` line naming every gate resolved there with its RESOLVED value,
+once per engine start, on both endpoints — 61 gates in one cheap formatted
+line, never on the hot path. It is **two-sided by construction**: it prints
+the OFF values too, so "gate absent in the control" is as mechanically
+assertable as "gate present in the arm". The pre-existing per-mechanism
+`... ACTIVE (RWM_X: …)` echoes are KEPT — they carry the law's statement and
+the ledger's assertions are written against them; `[GATES]` is the total
+backstop underneath. The Copa family gains its own echoes, the wire one
+printing the three composed inputs beside the derived result.
+
+**Three tests make the defect unrepeatable** (`gates::forwarding_audit`):
+`gate_forwarding_list_covers_the_engine_surface` scrapes every `RWM_*` literal
+from the crate source and fails if one is missing from `RWM_FORWARD` — and
+fails the other way on dead knobs; `every_forwarded_gate_has_a_liveness_echo`
+fails on any forwarded gate with neither a `[GATES]` entry nor a registered
+`EXTERNALLY_ECHOED` echo; `the_gates_echo_is_two_sided` pins the OFF-value
+property. **Adding a gate the old way now fails `cargo test`, not a battery
+six weeks later.** MEASUREMENT DISCIPLINE item 15 records the standing rule.
+
+**Post-fix verification** (binary `029ace45bd85bc11…`, both endpoints): the
+six formerly-unforwarded gates read `=1` in the arm and `=0` in the control on
+both logs; `RWM_ACK_MERGE=0` is honoured; `RWM_GEN=1` resolves to the default
+384; transfers unaffected (c2/c2 dual, 120.2 Mbit/s, dnf 0).
+
+### Suites
+
+`-p raptorpath --lib` · `-p raptorpath-math` · `--test gate_suite --release` ·
+`mtu_blackhole_wedge` · all nine loopbacks (`ack_merge_loopback`,
+`ack_merge_optout`, `copa_sole_loopback`, `emit_batch_loopback`,
+`patience_loopback`, `perf_loopback`, `recov_mp_loopback`,
+`win_decouple_loopback`, `wire_compact_loopback`) · `recovery_bench` ·
+`--doc`. Zero failures.
+
+Ops: VM lock `/tmp/rwm-vm.lock` taken 11:27:37 UTC (found FREE), released
+11:58:16 UTC after teardown — `cleanup.sh`, no `rp-*` namespaces left, 0
+`raptorpath` processes. Foreground throughout; no battery polled (item 13).
+
+**Ops incident — SHARED WORKING DIRECTORY, recorded because it nearly
+contaminated this section's own commits.** The VM lock protects the VM; it
+does not protect the dev tree, and nothing else does either. This session
+branched `audit/gate-forwarding` at 407bbe3 in
+`C:/Users/pierr/Documents/claude/raptorpath`; the concurrent net-seams-3
+session then ran `git checkout -b refactor/net-seams-3` **in that same
+directory**, moving HEAD off this branch. Two consequences, both caught only
+because the final `git diff --stat` did not match what this session had
+edited: this session's commits landed on the OTHER branch, and its `git add
+-A` swept the other session's uncommitted 815-line `net/diag.rs` extraction
+into audit commit 451ecfa. Untangled by rebuilding both audit commits from
+this session's own files in a PRIVATE worktree (`git worktree add`), restoring
+the shared directory to 407bbe3, and preserving the other session's work
+verbatim on `rescue/net-seams-3-wip` (0109ecc) plus tag `gfa-backup-7014ba1`.
+Nothing was lost on either side, and the suites above were re-run from
+scratch in the private worktree — the FIRST run was against a tree containing
+both sessions' changes and is therefore discarded, not reported.
+
+The generalizable rule, and it is the same one this whole audit is about:
+**`git add -A` in a directory you do not exclusively own commits work you
+cannot see, exactly as an env allowlist you do not exclusively own forwards
+knobs you cannot see.** Concurrent sessions get their own `git worktree`, or
+they stage explicit paths — never `-A`. A `git diff --stat` against the base,
+read before every commit, is the cheap check that catches both.
