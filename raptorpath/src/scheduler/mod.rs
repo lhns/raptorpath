@@ -89,11 +89,22 @@ pub fn copa_wire_active() -> bool {
     *F.get_or_init(|| {
         let qcc = std::env::var("RWM_QUIC_CC").ok();
         let wire = std::env::var("RWM_COPA_WIRE").ok();
-        copa_wire_from_env(
+        let on = copa_wire_from_env(
             qcc.as_deref(),
             crate::config::env_flag("RWM_COPA_FEED", false),
             wire.as_deref(),
-        )
+        );
+        // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09):
+        // two-sided and composed — this gate's value is DERIVED from three
+        // knobs, so the echo prints the inputs beside the result. Resolved
+        // once, cached; never on the hot path despite the hot-path readers.
+        tracing::info!(
+            copa_wire = on,
+            quic_cc = qcc.as_deref().unwrap_or("unset"),
+            copa_wire_env = wire.as_deref().unwrap_or("unset"),
+            "Copa wire-clocked signal (RWM_COPA_WIRE / RWM_QUIC_CC / RWM_COPA_FEED)"
+        );
+        on
     })
 }
 
@@ -122,6 +133,22 @@ fn copa_delta(hint: ProtocolHint, over: Option<f64>) -> f64 {
 
 /// `copa_delta` with the RWM_COPA_DELTA env override applied.
 pub(crate) fn copa_delta_for_hint(hint: ProtocolHint) -> f64 {
+    // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09), emitted
+    // ONCE per process even though this function is re-entered on every hint
+    // change — the fixed-δ probe of the "Copa Competitive Mode" battery is an
+    // arm whose only distinguishing knob is this override, so it needs an
+    // assertable echo; the OnceLock keeps it off the repeat path.
+    {
+        use std::sync::OnceLock;
+        static ECHOED: OnceLock<()> = OnceLock::new();
+        ECHOED.get_or_init(|| {
+            tracing::info!(
+                copa_delta_override =
+                    std::env::var("RWM_COPA_DELTA").as_deref().unwrap_or("unset"),
+                "Copa δ override (RWM_COPA_DELTA; unset = the hint→δ mapping)"
+            );
+        });
+    }
     let over = std::env::var("RWM_COPA_DELTA")
         .ok()
         .and_then(|s| s.parse::<f64>().ok());
@@ -202,10 +229,20 @@ pub fn copa_compete_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
     *F.get_or_init(|| {
-        copa_compete_from_env(
+        let on = copa_compete_from_env(
             crate::config::env_flag("RWM_COPA_COMPETE", false),
             copa_wire_active(),
-        )
+        );
+        // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09).
+        // Two-sided: the "Copa Competitive Mode + Cross-Traffic" battery's
+        // arms differ ONLY in this gate, and it composes with copa_wire —
+        // so the echo must fire on the OFF arm too, or the control cannot
+        // be shown to have been a control.
+        tracing::info!(
+            copa_compete = on,
+            "Copa TCP-competitive mode (RWM_COPA_COMPETE, requires the wire signal)"
+        );
+        on
     })
 }
 

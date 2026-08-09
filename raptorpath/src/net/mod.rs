@@ -1344,6 +1344,14 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // — the consolidation-pass extraction of the former inline gate block).
     // Deprecation warnings (register Class-C gates) fire inside resolve().
     let gates = crate::gates::RuntimeGates::resolve();
+    // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09;
+    // MEASUREMENT DISCIPLINE item 15): one `[GATES]` line naming every gate
+    // resolved above and its RESOLVED value, on BOTH endpoints, once per
+    // engine start. Two-sided by construction — the OFF values are printed
+    // too, so a battery can assert "gate absent in the control" as
+    // mechanically as "gate present in the arm". Cheap: one formatted line,
+    // never on the hot path.
+    gates.echo();
     // Parse TUN address
     let (tun_ip, prefix_len) = parse_cidr(&config.tun_addr)?;
     let netmask = prefix_to_netmask(prefix_len);

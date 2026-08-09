@@ -13,6 +13,9 @@
 #   usage: sudo bash winmtu_jit.sh <seed> [reps]
 set -u
 cd /home/vibe/raptorpath/raptorpath/tools/l1
+source ./lib.sh   # gate forwarding: RWM_FORWARD / rwm_forward_env
+set +e            # lib.sh forces `set -euo pipefail`; this driver
+                  # runs WITHOUT -e on purpose (per-arm abort tolerance)
 SEED_ARG="${1:-42}"; REPS="${2:-5}"
 BIN=/home/vibe/raptorpath/target/release/raptorpath
 OUT=/home/vibe/winmtu/jit-s${SEED_ARG}.log
@@ -26,7 +29,7 @@ lscpu | grep "Model name" >> "$OUT"
 uname -r >> "$OUT"
 
 BYTES=25000000
-BASEENV="RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120"
+BASEENV="$(rwm_forward_env) RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120"   # gate forwarding: lib.sh
 
 arm_env() {
   case "$1" in

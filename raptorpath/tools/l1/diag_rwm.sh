@@ -11,23 +11,7 @@ source ./lib.sh
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 SCENA="${1:-c2}"; SCENB="${2:-c2}"; BYTES="${3:-50000000}"; MODE="${4:-single}"
 
-TENV="RWM_DIAG=1"
-[[ -n "${RWM_DAPS:-}" ]] && TENV="$TENV RWM_DAPS=$RWM_DAPS"
-[[ -n "${RWM_DAPS_BDP:-}" ]] && TENV="$TENV RWM_DAPS_BDP=$RWM_DAPS_BDP"
-[[ -n "${RWM_DAPS_PACE:-}" ]] && TENV="$TENV RWM_DAPS_PACE=$RWM_DAPS_PACE"
-[[ -n "${RWM_PACE_ALL:-}" ]] && TENV="$TENV RWM_PACE_ALL=$RWM_PACE_ALL"
-[[ -n "${RWM_SRC_BP:-}" ]] && TENV="$TENV RWM_SRC_BP=$RWM_SRC_BP"
-[[ -n "${RWM_RATE_SAMPLE:-}" ]] && TENV="$TENV RWM_RATE_SAMPLE=$RWM_RATE_SAMPLE"
-[[ -n "${RWM_PER_PATH_EST:-}" ]] && TENV="$TENV RWM_PER_PATH_EST=$RWM_PER_PATH_EST"
-[[ -n "${RWM_GEN:-}" ]] && TENV="$TENV RWM_GEN=$RWM_GEN"
-[[ -n "${RWM_GEN_R:-}" ]] && TENV="$TENV RWM_GEN_R=$RWM_GEN_R"
-[[ -n "${RWM_PIPELINE:-}" ]] && TENV="$TENV RWM_PIPELINE=$RWM_PIPELINE"
-[[ -n "${RWM_GEN_INFLIGHT:-}" ]] && TENV="$TENV RWM_GEN_INFLIGHT=$RWM_GEN_INFLIGHT"
-[[ -n "${RWM_GEN_RATE_FLOOR:-}" ]] && TENV="$TENV RWM_GEN_RATE_FLOOR=$RWM_GEN_RATE_FLOOR"
-[[ -n "${RWM_STORE:-}" ]] && TENV="$TENV RWM_STORE=$RWM_STORE"
-[[ -n "${RWM_CODED_SRC:-}" ]] && TENV="$TENV RWM_CODED_SRC=$RWM_CODED_SRC"
-[[ -n "${RWM_INFL_CAP:-}" ]] && TENV="$TENV RWM_INFL_CAP=$RWM_INFL_CAP"
-[[ -n "${RWM_TRACE:-}" ]] && TENV="$TENV RWM_TRACE=$RWM_TRACE"
+TENV="$(rwm_forward_env) RWM_DIAG=1"   # gate forwarding: ONE shared list in lib.sh
 EXTRA="${RWM_EXTRA:---window-systematic-repair}"
 
 cleanup() { pkill -x raptorpath 2>/dev/null || true; bash ./topo_dual.sh down >/dev/null 2>&1 || true; }

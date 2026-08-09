@@ -488,6 +488,239 @@ impl RuntimeGates {
             pfrac: env_flag("RWM_PFRAC", false),
         }
     }
+
+    /// The `[GATES]` LIVENESS ECHO — one line naming every gate resolved here
+    /// and its RESOLVED value (goal-gate "Gate-Forwarding Audit", 2026-08-09;
+    /// MEASUREMENT DISCIPLINE item 15).
+    ///
+    /// Why it exists: before this, 41 of the 76 `RWM_*` knobs had no echo at
+    /// all, so a battery arm keyed on one of them could not be proven live —
+    /// its verdict was unfalsifiable in principle, whatever the numbers said.
+    /// The audit's rule is now that every arm asserts its gate's echo, which
+    /// requires every gate to HAVE one. Rather than 41 hand-written `info!`s
+    /// that can go stale one at a time, this is ONE line covering the whole
+    /// `RuntimeGates` surface, emitted once at engine start.
+    ///
+    /// Cheap and off the hot path: called exactly once, from the same place
+    /// `resolve()` is. The pre-existing per-mechanism `... ACTIVE (RWM_X: …)`
+    /// echoes are deliberately KEPT — they carry the law's statement and the
+    /// ledger's assertions are written against them; this line is the total
+    /// backstop underneath them, and it is two-sided by construction (it
+    /// prints the OFF values too, so "gate absent" is as checkable as "gate
+    /// present" — the `sp=1` / `sp=0` discipline generalized to every gate).
+    ///
+    /// Gates resolved OUTSIDE this struct keep their own echoes and are
+    /// enumerated in `EXTERNALLY_ECHOED` below, which the coverage test reads.
+    pub fn echo_line(&self) -> String {
+        let b = |v: bool| if v { "1" } else { "0" };
+        let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
+        let ou = |v: &Option<usize>| v.map_or("unset".to_string(), |x| x.to_string());
+        format!(
+            "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
+             RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
+             RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
+             RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
+             RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
+             RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
+             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_PATIENCE_DERIVED={} \
+             RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
+             RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
+             RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
+             RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
+             RWM_REPAIR_WAIT={} RWM_CODED_SRC={} RWM_NO_REACTIVE={} \
+             RWM_XPATH_REPAIR={} RWM_PROACTIVE_PACER={} RWM_REASM_BDP={} \
+             RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
+             RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
+             RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
+             RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
+             RWM_SCHED_SNAPSHOT={} RWM_DIAG={} RWM_RDIAG={} RWM_FDIAG={} \
+             RWM_TRACE={} RWM_PFRAC={}",
+            b(self.unified), b(self.unified_shed), b(self.taper_r),
+            b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
+            b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
+            ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
+            b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
+            b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
+            b(self.floor_bound), b(self.ack_merge), b(self.patience_derived),
+            b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
+            self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
+            self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
+            b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
+            ou(&self.report_gens),
+            self.repair_wait_ms.map_or("unset".to_string(), |v| v.to_string()),
+            b(self.coded_src), b(self.no_reactive),
+            b(self.xpath_repair), b(self.proactive_pacer), b(self.reasm_bdp),
+            self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
+            self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
+            b(self.emit_batch), self.emit_burst, b(self.recov_mp),
+            b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
+            b(self.sched_snapshot), b(self.diag), b(self.rdiag), b(self.fdiag),
+            b(self.trace), b(self.pfrac),
+        )
+    }
+
+    /// Emit the `[GATES]` echo. Call ONCE, right after [`Self::resolve`].
+    pub fn echo(&self) {
+        tracing::info!("{}", self.echo_line());
+    }
+}
+
+/// `RWM_*` knobs the harness forwards that are NOT resolved by
+/// [`RuntimeGates`], each with the reason the coverage test accepts it.
+/// Every entry either has its OWN resolve-time echo elsewhere in the engine
+/// or is a harness/L0-sim knob with no engine gate behind it.
+#[cfg(test)]
+const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
+    ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar/plain_rs values this line prints"),
+    ("RWM_CLOCK_GAP", "own echo: 'clock-gap estimator hygiene ACTIVE' (control/anchor.rs wiring, net/mod.rs)"),
+    ("RWM_COPA_WIRE", "own echo: scheduler Copa family resolve"),
+    ("RWM_COPA_DELTA", "own echo: scheduler Copa family resolve"),
+    ("RWM_COPA_COMPETE", "own echo: scheduler Copa family resolve"),
+    ("RWM_EST_CADENCE", "own echo: 'estimator heavy-math cadence ACTIVE' (control/estimator.rs)"),
+    ("RWM_MTU_FLOOR", "own echo: 'MTU floor: …' / 'MTU floor OFF' (transport/quic.rs)"),
+    ("RWM_QUIC_CC", "own echo: 'quinn congestion controller: …' (transport/quic.rs)"),
+    ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
+    ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),
+    ("RWM_RSTAR_TAIL", "r* provisioning knob, read at the tail-provisioning site"),
+    ("RWM_PLACE_T", "placement temperature, read by the perf harness path"),
+    ("RWM_PERF_TIMEOUT_S", "harness-only: per-run completion timeout (src/perf.rs)"),
+    ("RWM_L0_NETEM", "L0 sim harness knob, no engine gate"),
+    ("RWM_L0_SEED", "L0 sim harness knob, no engine gate"),
+];
+
+#[cfg(test)]
+mod forwarding_audit {
+    use super::EXTERNALLY_ECHOED;
+    use std::collections::BTreeSet;
+
+    /// Every `RWM_*` string literal the ENGINE reads, scraped from the crate
+    /// source. Test-only reflection: there is no runtime registry of gates,
+    /// and building one would not survive a gate added the old way (an
+    /// inline `env::var` at a new site), which is exactly the failure this
+    /// audit exists to prevent.
+    fn engine_gate_surface() -> BTreeSet<String> {
+        fn walk(dir: &std::path::Path, out: &mut String) {
+            for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push_str(&std::fs::read_to_string(&p).unwrap_or_default());
+                }
+            }
+        }
+        let mut src = String::new();
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut src,
+        );
+        let mut out = BTreeSet::new();
+        // Match the `"RWM_..."` literal form every gate read uses.
+        let bytes = src.as_bytes();
+        let mut i = 0;
+        while let Some(off) = src[i..].find("\"RWM_") {
+            let start = i + off + 1;
+            let mut end = start;
+            while end < bytes.len() && (bytes[end].is_ascii_uppercase() || bytes[end].is_ascii_digit() || bytes[end] == b'_') {
+                end += 1;
+            }
+            if end < bytes.len() && bytes[end] == b'"' {
+                let name = &src[start..end];
+                // `len > 4` drops the bare `"RWM_"` prefix literal this
+                // scraper itself contains; RWM_TEST_* are `config::env_flag`'s
+                // own unit-test fixtures, not gates.
+                if name.len() > 4 && !name.starts_with("RWM_TEST_") {
+                    out.insert(name.to_string());
+                }
+            }
+            i = start;
+        }
+        assert!(out.len() > 60, "gate scrape found only {} names", out.len());
+        out
+    }
+
+    /// The harness's `RWM_FORWARD` array in `tools/l1/lib.sh`.
+    fn harness_forward_list() -> BTreeSet<String> {
+        let lib = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/l1/lib.sh"),
+        )
+        .expect("tools/l1/lib.sh must exist — it is the single forwarding list");
+        let body = lib
+            .split_once("RWM_FORWARD=(")
+            .expect("lib.sh must define RWM_FORWARD=(")
+            .1
+            .split_once(')')
+            .expect("unterminated RWM_FORWARD array")
+            .0;
+        body.split_whitespace().map(str::to_string).collect()
+    }
+
+    /// **The audit's enforcement gate** (goal-gate "Gate-Forwarding Audit",
+    /// 2026-08-09). Adding an `RWM_*` gate to the engine without adding it to
+    /// `tools/l1/lib.sh`'s `RWM_FORWARD` fails HERE, at `cargo test`, instead
+    /// of silently producing a battery arm whose knob may never reach the
+    /// wire. This is the structural fix for the defect the ack-merge flip
+    /// battery found: `RWM_ACK_MERGE` had never been added to
+    /// `perf_rwm_c.sh`'s hand-rolled allowlist, and eleven more gates were in
+    /// the same state — every one of them undetectable by any test.
+    #[test]
+    fn gate_forwarding_list_covers_the_engine_surface() {
+        let engine = engine_gate_surface();
+        let fwd = harness_forward_list();
+        let missing: Vec<_> = engine.difference(&fwd).collect();
+        assert!(
+            missing.is_empty(),
+            "these RWM_* gates are read by the engine but are NOT in \
+             tools/l1/lib.sh's RWM_FORWARD, so no L1 driver forwards them \
+             explicitly: {missing:?}"
+        );
+        // The reverse direction keeps the list from accumulating dead knobs
+        // (the audit removed 16 such entries from perf_rwm_c.sh, e.g. the
+        // whole RWM_DAPS_* family, RWM_SACK_PRUNE and RWM_FRONTIER_*).
+        let stale: Vec<_> = fwd.difference(&engine).collect();
+        assert!(
+            stale.is_empty(),
+            "RWM_FORWARD names knobs the engine no longer reads: {stale:?}"
+        );
+    }
+
+    /// Every forwarded gate must have a LIVENESS ECHO — either in the
+    /// `[GATES]` line or its own, registered in `EXTERNALLY_ECHOED` with a
+    /// reason. A gate with no echo cannot be proven live, so any battery
+    /// verdict resting on it is unfalsifiable (MEASUREMENT DISCIPLINE 1/15).
+    #[test]
+    fn every_forwarded_gate_has_a_liveness_echo() {
+        let line = super::RuntimeGates::resolve().echo_line();
+        let known: BTreeSet<&str> = EXTERNALLY_ECHOED.iter().map(|(n, _)| *n).collect();
+        let unechoed: Vec<_> = harness_forward_list()
+            .into_iter()
+            .filter(|g| !line.contains(g.as_str()) && !known.contains(g.as_str()))
+            .collect();
+        assert!(
+            unechoed.is_empty(),
+            "these gates have NO liveness echo — add them to \
+             RuntimeGates::echo_line() or register them in EXTERNALLY_ECHOED \
+             with the echo they already own: {unechoed:?}"
+        );
+    }
+
+    /// The echo is TWO-SIDED: it prints the OFF value too, so a battery can
+    /// assert both "gate present in the arm" and "gate absent in the control"
+    /// — the `sp=1`/`sp=0` discipline (goal-gate "Lossy-Single Residual")
+    /// generalized to the whole surface.
+    #[test]
+    fn the_gates_echo_is_two_sided() {
+        let line = super::RuntimeGates::resolve().echo_line();
+        assert!(line.starts_with("[GATES] "));
+        assert!(
+            line.contains("RWM_RECOV_SP=0"),
+            "a default-OFF gate must still be NAMED with its 0 value: {line}"
+        );
+        assert!(
+            line.contains("RWM_ACK_MERGE=1"),
+            "a default-ON gate must be named with its 1 value: {line}"
+        );
+    }
 }
 
 #[cfg(test)]

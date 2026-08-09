@@ -21,6 +21,9 @@
 #   usage: sudo bash adv_battery.sh <seed> [reps]
 set -u
 cd /home/vibe/raptorpath/raptorpath/tools/l1
+source ./lib.sh   # gate forwarding: RWM_FORWARD / rwm_forward_env
+set +e            # lib.sh forces `set -euo pipefail`; this driver
+                  # runs WITHOUT -e on purpose (per-arm abort tolerance)
 SEED_ARG="$1"; REPS="${2:-8}"
 JREPS=5   # jitter + control families (pre-registered x5/level)
 BIN=/home/vibe/raptorpath/target/release/raptorpath
@@ -37,7 +40,7 @@ lscpu | grep "Model name" >> "$OUT"
 echo >> "$OUT"
 
 BYTES=25000000
-BASEENV="RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120"
+BASEENV="$(rwm_forward_env) RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=120"   # gate forwarding: lib.sh
 
 arm_env() { # arm -> extra env
   case "$1" in

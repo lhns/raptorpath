@@ -39,7 +39,7 @@ SEED="${SEED:-42}"
 
 # Arm env (PLAIN, single path). RWM_DIAG=1 always: the queue/compete
 # profile IS a primary metric of this battery.
-BASEENV="RWM_GEN=0 RWM_DIAG=1"
+BASEENV="$(rwm_forward_env) RWM_GEN=0 RWM_DIAG=1"   # gate forwarding: ONE shared list in lib.sh
 CUBIC=1
 case "$ARM" in
     solo)    AENV="$BASEENV RWM_QUIC_CC=passthrough RWM_COPA_COMPETE=1"; CUBIC=0 ;;
@@ -48,13 +48,8 @@ case "$ARM" in
     bbr)     AENV="$BASEENV RWM_QUIC_CC=bbr" ;;
     *) echo "unknown arm: $ARM" >&2; exit 2 ;;
 esac
-# Optional knob passthrough (probe/frontier arms): forwarded verbatim when
-# set in the caller's env, recorded by the env echo below.
-for k in RWM_COPA_DELTA RWM_STORE_GAIN RWM_CC_PACE RWM_STORE_PATHS RWM_STORE_PATH_POOL \
-         RWM_RECOV_MP RWM_MSTAR_ANCHOR RWM_CLOCK_GAP RWM_STORE_SACK_RELEASE; do
-    v=""; eval "v=\${$k:-}"
-    [[ -n "$v" ]] && AENV="$AENV $k=$v"
-done
+# (The former 9-knob passthrough loop is subsumed by rwm_forward_env in
+# BASEENV above -- goal-gate "Gate-Forwarding Audit", 2026-08-09.)
 
 cleanup() {
     pkill -x raptorpath 2>/dev/null || true

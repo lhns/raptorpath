@@ -34,11 +34,11 @@ case "$STACK" in
         ;;
     rp-bulk|rp-realtime)
         HINT="${STACK#rp-}"
-        ip netns exec "$NS_SRV" "$BIN" run --server --bind 10.77.0.2:7000 \
+        ip netns exec "$NS_SRV" env $(rwm_forward_env) "$BIN" run --server --bind 10.77.0.2:7000 \
             --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$HINT" \
             >/tmp/stream-rp-s.log 2>&1 &
         sleep 2
-        ip netns exec "$NS_CLI" "$BIN" run --peer 10.77.0.2:7000 \
+        ip netns exec "$NS_CLI" env $(rwm_forward_env) "$BIN" run --peer 10.77.0.2:7000 \
             --bind 10.77.0.1:0 --tun-name rpcli0 --tun-addr 10.99.0.1/24 \
             --protocol-hint "$HINT" >/tmp/stream-rp-c.log 2>&1 &
         for i in $(seq 1 25); do

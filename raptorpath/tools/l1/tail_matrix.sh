@@ -62,12 +62,12 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
         hard_cleanup; sleep 1
         bash "$TM_TOPO" up "$CELL" --seed "$SEED" >/dev/null 2>&1 || true
         # shellcheck disable=SC2086
-        ip netns exec "$NS_SRV" env $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
+        ip netns exec "$NS_SRV" env $(rwm_forward_env) $armenv "$BIN" run --server --bind 10.77.0.2:7000 \
             --tun-name rpsrv0 --tun-addr 10.99.0.2/24 --protocol-hint "$hint" $armflags \
             >/tmp/tm-s.log 2>&1 &
         sleep 2
         # shellcheck disable=SC2086
-        ip netns exec "$NS_CLI" env $armenv "$BIN" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
+        ip netns exec "$NS_CLI" env $(rwm_forward_env) $armenv "$BIN" run --peer 10.77.0.2:7000 --bind 10.77.0.1:0 \
             --tun-name rpcli0 --tun-addr 10.99.0.1/24 --protocol-hint "$hint" $armflags \
             >/tmp/tm-c.log 2>&1 &
         for i in $(seq 1 20); do

@@ -19,8 +19,8 @@ SCENA="${1:?scenA}"; SCENB="${2:?scenB}"; HINT="${3:-bulk}"
 BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 
 # Optional RWM placement-temperature override (§16.3 dial) for the sweep.
-TENV=""
-[[ -n "$PLACE_T" ]] && TENV="RWM_PLACE_T=$PLACE_T"
+TENV="$(rwm_forward_env)"   # gate forwarding: ONE shared list in lib.sh
+[[ -n "$PLACE_T" ]] && TENV="$TENV RWM_PLACE_T=$PLACE_T"
 
 cleanup() {
     pkill -x raptorpath 2>/dev/null || true

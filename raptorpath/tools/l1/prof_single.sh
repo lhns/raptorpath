@@ -24,7 +24,7 @@ bash ./topo_dual.sh up c2 c2 --seed 42 >/dev/null 2>&1
 SRV_BIND="10.77.0.2:7000"; PEERS="10.77.0.2:7000"; CLI_BIND="10.77.0.1:0"
 EXTRA="--window-systematic-repair"
 
-ip netns exec "$NS_SRV" env RWM_GEN=$G RWM_GEN_R=0.15 "$BIN" perf --server \
+ip netns exec "$NS_SRV" env $(rwm_forward_env) RWM_GEN=$G RWM_GEN_R=0.15 "$BIN" perf --server \
     --bind "$SRV_BIND" --window-reliable $EXTRA --protocol-hint bulk \
     >/tmp/prof-s.log 2>&1 &
 for _ in $(seq 1 20); do
@@ -33,7 +33,7 @@ for _ in $(seq 1 20); do
 done
 sleep 1
 
-ip netns exec "$NS_CLI" env RWM_GEN=$G RWM_GEN_R=0.15 "$BIN" perf --client \
+ip netns exec "$NS_CLI" env $(rwm_forward_env) RWM_GEN=$G RWM_GEN_R=0.15 "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" --window-reliable $EXTRA \
     --protocol-hint bulk --bytes "$BYTES" --runs 3 \
     >/tmp/prof-c.log 2>&1 &

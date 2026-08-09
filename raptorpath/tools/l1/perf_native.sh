@@ -18,11 +18,11 @@ trap cleanup EXIT
 cleanup
 bash ./topo.sh up "$CELL" --seed 42 >/dev/null 2>&1
 
-ip netns exec "$NS_SRV" "$BIN" perf --server --bind 10.77.0.2:7000 \
+ip netns exec "$NS_SRV" env $(rwm_forward_env) "$BIN" perf --server --bind 10.77.0.2:7000 \
     --protocol-hint "$HINT" >/tmp/perf-s.log 2>&1 &
 sleep 2
 echo "--- perf native $HINT @ $CELL ($BYTES x $RUNS) start=$(date +%T)"
-timeout 600 ip netns exec "$NS_CLI" "$BIN" perf --client \
+timeout 600 ip netns exec "$NS_CLI" env $(rwm_forward_env) "$BIN" perf --client \
     --peer 10.77.0.2:7000 --bytes "$BYTES" --runs "$RUNS" \
     --protocol-hint "$HINT" 2>&1 | grep -E "summary|seconds" | tail -3 \
     || echo "{\"dnf\":true,\"cell\":\"$CELL\",\"hint\":\"$HINT\"}"

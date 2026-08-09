@@ -9,7 +9,8 @@ source ./lib.sh
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 A="${1:?}"; B="${2:?}"; BYTES="${3:-50000000}"; RUNS="${4:-6}"; MODE="${5:-single}"; TAG="${6:-x}"
 GEN="${RWM_GEN:-384}"; GR="${RWM_GEN_R:-0.15}"; EXTRA="${RWM_EXTRA:-}"
-if [[ "$GEN" == "none" ]]; then TENV=""; else TENV="RWM_GEN=$GEN RWM_GEN_R=$GR"; fi
+TENV="$(rwm_forward_env)"   # gate forwarding: ONE shared list in lib.sh
+[[ "$GEN" != "none" ]] && TENV="$TENV RWM_GEN=$GEN RWM_GEN_R=$GR"
 [[ -n "${RWM_STORE:-}" ]] && TENV="$TENV RWM_STORE=$RWM_STORE"
 OUT="/tmp/meas_${TAG}.log"
 

@@ -29,6 +29,61 @@ guard_ns() {
     fi
 }
 
+# ── GATE FORWARDING (goal-gate "Gate-Forwarding Audit", 2026-08-09) ──────
+#
+# THE ONE list of `RWM_*` knobs the harness forwards to the binary, and the
+# ONE function that turns it into an `env` prefix. Every driver that launches
+# the binary sources this file and passes `$(rwm_forward_env)`.
+#
+# WHY THIS EXISTS. Before this, each driver hand-rolled its own allowlist
+# (`perf_rwm_c.sh` had 78 lines of `[[ -n "${RWM_X:-}" ]] && TENV="$TENV ..."`)
+# and the ack-merge battery discovered `RWM_ACK_MERGE` had never been added to
+# it. That battery was nevertheless VALID — the audit MEASURED (PROBE 0,
+# 2026-08-09) that `sudo env VAR=… → bash driver → ip netns exec ns env $TENV`
+# delivers the var by plain process-environment INHERITANCE whether or not the
+# allowlist names it. So the allowlists were, and are, load-bearing for
+# NOTHING; they only created a false impression of explicitness while 12
+# engine gates silently sat outside them. This function makes the forwarding
+# TOTAL and EXPLICIT so the impression matches the mechanism.
+#
+# ENFORCEMENT: `raptorpath`'s `gate_forwarding_list_covers_the_engine_surface`
+# test parses THIS array and fails if any `RWM_*` the engine reads is missing.
+# Adding a gate to the engine without adding it here fails the suite.
+RWM_FORWARD=(
+    RWM_ACK_MERGE RWM_ANCHOR_HYGIENE RWM_ASTAR_ANCHOR RWM_CC_PACE
+    RWM_CC_PACE_HR RWM_CLOCK_GAP RWM_CODED_SRC RWM_COPA_COMPETE
+    RWM_COPA_DELTA RWM_COPA_FEED RWM_COPA_WIRE RWM_DIAG
+    RWM_EMIT_BATCH RWM_EMIT_BURST RWM_EST_CADENCE RWM_FDIAG
+    RWM_FLOOR_BOUND RWM_GEN RWM_GEN_INFLIGHT RWM_GEN_PIPE
+    RWM_GEN_R RWM_GEN_RATE RWM_GEN_RATE_FLOOR RWM_HONEST_CAP
+    RWM_INFL_BDP RWM_INFL_CAP RWM_L0_NETEM RWM_L0_SEED
+    RWM_MIN_R RWM_MSTAR_ANCHOR RWM_MTU_FLOOR RWM_NO_REACTIVE
+    RWM_OOO_RETAIN RWM_PATIENCE_DERIVED RWM_PERCAP_GUARD RWM_PERF_TIMEOUT_S
+    RWM_PFRAC RWM_PIPELINE RWM_PLACE_SLACK RWM_PLACE_T
+    RWM_PLAIN_RS RWM_POOL_ANCHOR RWM_POOL_DELIV RWM_PROACTIVE_PACER
+    RWM_QUIC_CC RWM_RDIAG RWM_REACT_CAP RWM_REASM_BDP
+    RWM_RECOV_MP RWM_RECOV_MP_LAW RWM_RECOV_MP_LIVE RWM_RECOV_SP
+    RWM_REPAIR_WAIT RWM_REPORT_GENS RWM_RSTAR_TAIL RWM_RS_ATTR
+    RWM_RS_TRACE RWM_SCHED_SNAPSHOT RWM_SIDLE_DERIVED RWM_STORE
+    RWM_STORE_BOOT RWM_STORE_BORROW RWM_STORE_CAPW RWM_STORE_GAIN
+    RWM_STORE_PATHS RWM_STORE_PATH_POOL RWM_STORE_PERCAP RWM_STORE_SACK_RELEASE
+    RWM_TAPER_R RWM_TRACE RWM_UNIFIED RWM_UNIFIED_SHED
+    RWM_WINDOW RWM_WIN_DECOUPLE RWM_WIRE_COMPACT RWM_XPATH_REPAIR
+)
+
+# Emit `VAR=value` for every RWM_FORWARD knob that is SET in this process's
+# environment. Word-splitting at the call site is intended:
+#   ip netns exec "$NS" env $(rwm_forward_env) "$BIN" ...
+# Values containing whitespace are not supported (no RWM_* knob takes one).
+rwm_forward_env() {
+    local v
+    for v in "${RWM_FORWARD[@]}"; do
+        if [[ -n "${!v+set}" ]]; then
+            printf '%s=%s ' "$v" "${!v}"
+        fi
+    done
+}
+
 # Scenario table — identical parameterization to ADR-0051 / paper 2.4.
 # Fields: rate one_way_ms jitter_ms ge_p ge_q
 scenario_params() {
