@@ -18557,3 +18557,222 @@ omission reads as a decision, not an oversight.
 `emit_batch_loopback`, `patience_loopback`, `perf_loopback`,
 `recov_mp_loopback`, `win_decouple_loopback`, `wire_compact_loopback`) ·
 `--doc`. Zero failures in any run.
+
+## Store-Cap Triplication (2026-08-09) — PRE-REGISTRATION (discipline item 11 — this block written and committed BEFORE any VM contact and BEFORE any battery; branch `fix/store-cap-triplication` from main@407bbe3. Item 14's component characterization is BELOW and was taken FIRST, locally, at L0 — its numbers are what the predictions are derived from, and the extraction of the inline law into pure functions was part of that deliverable, committed at 625384e before this block)
+
+### THE DEFECT AS FOUND — and as RE-SCOPED by reading the code
+
+The 2026-08-08 dead-code audit found `honest_store_cap` transcribed three
+times in `run_window_sender`'s dynamic-store-cap block, with the copies
+drifted: `capw_terms` (rate source `copa_bdp_anchor` + `btlbw_sym_per_s`,
+over `live_paths()`), the inline `hsum` loop (same law, over
+**`active_paths()`**), and `pa_terms` (rate source `pool_rate_anchor`,
+over `live_paths()`). Reading the block found a FOURTH — the percap
+account loop — and re-scoped the defect twice:
+
+1. **The transcription count is four, not three**, and the shared body is
+   larger than the law: fetch-or-create `EchoRatioMin::new(
+   PERCAP_K_HALF_WINDOW_US)` → `observe_srtt_over_rtprop` →
+   `honest_store_cap`. `PERCAP_K_HALF_WINDOW_US` was a function-local
+   const, so four independent sites were free to drift the WINDOW too.
+
+2. **The `active_paths()` trap is not where the audit put it.** All three
+   honest-cap arms ship DEFAULT OFF — `RWM_PLAIN_RS` (⇒ `honest_cap_on`
+   false), `RWM_STORE_CAPW`, `RWM_POOL_ANCHOR` — so with everything unset
+   `hsum` = 0, `capw_terms` and `pa_terms` are empty, and the drift between
+   them is **inert by construction**. The live consumer of the path set is
+   the law UNDERNEATH them, the one that ships ON:
+
+   ```
+   path_scaled_store_cap(store_paths_on, n_live, bdp, gain, floor, pool)
+       n_live = sched.live_paths().len()          // live_paths()
+       bdp    = Σ over sched.active_paths()       // active_paths()
+       cap    = clamp(gain · n_live · bdp, floor, n_live·knee)
+   ```
+
+   The ×N and the Σ **range over different sets**. `RWM_STORE_PATHS` has
+   shipped default ON since 2026-07-21 and is register row 7's fix, so this
+   is not an experiment arm — it is the shipped flow-control ceiling of
+   every plain window-reliable transfer that is not under Copa-sole.
+
+### WHICH PATH SET IS CORRECT, AND WHY — stated plainly
+
+**`live_paths()`.** The argument is entirely from the code:
+
+- `active_paths()` = `p.active && p.available() > 0`, i.e. `cwnd −
+  in_flight > 0`. Its own decl comment says what it is for: *"`active_paths()`
+  filters by spare capacity (for scheduling DATA) — using it for liveness
+  made a saturated path invisible"*. It is a **scheduling** predicate.
+- The store cap is not a scheduling decision, it is a **sizing** law: how
+  much retention the transfer may hold. A cwnd-saturated path still has a
+  pipe to fund and a recovery round to cover — it is the path doing the
+  *most* work at that instant. Removing its earned share exactly when it is
+  busiest is backwards, and it is a *load-triggered* removal, so the law
+  degrades precisely under the load it exists to survive.
+- Three consumers in this same phase already read `live_paths()`, each
+  carrying an explicit comment about this trap: the Copa-sole `cwnd_sum`
+  law (*"MEASURED at the L1 c2 smoke: effective cap flapping 1024↔128 every
+  few DIAG ticks, store swinging 400–1024, goodput dips to 20 Mbit"*),
+  `capw_terms`, and `pa_terms`. The recovery plane has the identical fix
+  armed as `RWM_RECOV_MP_LIVE`, where the same filter collapsed the hole
+  law to its N = 1 bypass. **The remaining `active_paths()` reader is an
+  outlier, not a design** — and the Copa-sole comment is a *measured*
+  description of the exact failure the plain branch still contains.
+
+### COMPONENT CHARACTERIZATION (A) — THE LAW (`tests/store_cap_bench.rs`, `store_cap_pathset_sweep`; deterministic, no transport, no VM)
+
+Cells at the parameters the shipped derivation itself quotes (c2 = 10 400
+sym/s × 8 ms RTprop ⇒ anchor 83.2; c3 = 2 000 sym/s × 60 ms ⇒ anchor 120;
+c7 = c2+c2, c8 = c2+c3), gain 2.0, floor 64, knee 2048/path, store_max
+1024, boot 128. "sat s/n" = s of the n paths cwnd-saturated, i.e. dropped
+by `active_paths()`. Legacy anchors over-read the honest ones ×4.6–7.4
+("Anchor Hygiene" (b)); ×5 is shown as the second row per cell.
+
+| cell | anchors | sat | shipped pooled cap | Δ | honest pooled cap | Δ |
+|---|---|---|---|---|---|---|
+| c7 | honest | 0/2 | 666 | — | 2496 | — |
+| c7 | honest | 1/2 | 333 | **−50.0%** | 1248 | **−50.0%** |
+| c7 | honest | 2/2 | 128 (boot) | **−80.8%** | 128 (law DISENGAGES) | −94.9% |
+| c7 | legacy ×5 | 1/2 | 1664 | **−50.0%** | 2080 | −49.2% |
+| c7 | legacy ×5 | 2/2 | 128 (boot) | **−96.2%** | 128 | −96.9% |
+| c8 | honest | 1/2 (fast dropped) | 480 | −41.0% | 500 | −71.4% |
+| c8 | honest | 2/2 | 128 (boot) | −84.3% | 128 | −92.7% |
+| c8 | legacy ×5 | 1/2 | 2400 | −40.9% | 1700 | −55.0% |
+| sc2 | honest | 1/1 | 128 (boot) | −23.4% | 128 | −87.5% |
+| sc2 | legacy ×5 | 1/1 | 128 (boot) | **−84.6%** | 128 | −87.5% |
+| sc3 | legacy ×5 | 1/1 | 128 (boot) | **−87.5%** | 128 | −87.5% |
+
+Invariants behind the table, asserted as tests rather than left as prose
+(`shipped_pool_cap_is_proportional_to_retained_anchor_mass`):
+
+- **The shipped pooled cap is exactly proportional to the anchor mass the
+  path set retains**, until a clamp bites. So the drift is not a rounding
+  difference: dropping half the anchor mass halves the flow-control
+  ceiling. At a symmetric dual that is **−50.0% at every K and every
+  anchor scale**.
+- **The terminal case is a cliff, not a slope.** When the filter empties
+  the set the law does not shrink — it *falls out*, to `store_boot_cap` =
+  128, a ×5.2 collapse at honest anchors and **×26 at the measured legacy
+  over-read**. The honest arms do worse: `hsum` = 0 DISENGAGES the honest
+  law entirely and falls through to the same 128.
+- **K is irrelevant to the drift.** Sweeping K ∈ {1.0, 1.5, 2.0} moves the
+  absolute caps and leaves every Δ within 6 points. The path set, not the
+  clock, is the variable.
+
+### COMPONENT CHARACTERIZATION (B) — THE POPULATION (the `sf=` gauge, `net::store_cap_sf_gauge`; two in-process L0 runs, real engine, plain window-reliable, 8 MB)
+
+A −50% law delta on a population of 0% is latent-but-inert. The `sf=`
+gauge — the `pf=` gauge's analogue for this phase — counts, at the dyn-cap
+refresh instants themselves, how often `active_paths()` is SHORT of
+`live_paths()` and how often it is EMPTY:
+
+| L0 run | refresh ticks | mean n_live → n_active | ticks n_active < n_live | ticks n_active = 0 (cap → boot 128) |
+|---|---|---|---|---|
+| dual path, 8 MB | 96–105 | 2.000 → 1.740–1.743 | **23–26 (24.0–24.8%)** | 1–2 (1.0–2.1%) |
+| single path, 8 MB | 105 | 1.000 → 0.114 | **93 (88.6%)** | **93 (88.6%)** |
+
+**The drift is NOT inert, and the biggest surface is N = 1.** On a
+lossless, ~zero-RTT loopback — the regime *least* able to saturate a cwnd —
+the single-path sender spends **88.6% of its dyn-cap refresh ticks with
+`active_paths()` empty**, i.e. with its flow-control store ceiling pinned
+at the 128-symbol boot cap instead of `gain·anchor`. The dual path retains
+87.0–87.1% of its path count, so the shipped pooled cap runs at ≈0.87 of
+the cap its own law intends, with a 1–2% tail at the 128 cliff.
+
+**This refutes the tasking's expectation that "sc2/sc3 identity (N = 1 must
+be inert)".** N = 1 is not inert: `active_paths()` returns the EMPTY set
+for a single saturated path, and the shipped cap then reads `store_boot_cap`,
+not `gain·Σanchor`. The N = 1 case is IN SCOPE for the gate, deliberately,
+and sc2/sc3 are prediction cells rather than identity cells.
+
+### WHAT THE BENCH CANNOT SEE (item 14(c))
+
+1. **Whether the L0 population transfers to L1.** Loopback has no netem
+   delay, so cwnd sits near its floor and in-flight fills it trivially;
+   at L1 the anchor floor raises cwnd against a real BDP. The L1
+   population could be higher (wire-bound, saturated by design) or lower.
+   The `[SF]` INFO line carries the gauge to L1 under `RWM_DIAG` and the
+   **pre-battery smoke measures it at the real cells before the battery
+   is launched** (item 14(d): if the population is inert at L1, the
+   battery is not run and the finding is recorded as latent).
+2. **Whether the cap is the binder.** Raising a flow-control ceiling only
+   helps where the ceiling binds. The ledger's own record cuts BOTH ways
+   here: register row 7 says an undersized pool is *the* multipath binder,
+   and the c8 WATCH says an oversized one re-enters the collapse.
+3. **Composition.** The cap interacts with SACK-clocked release (§16.25),
+   the recovery plane (§16.24) and the in-flight cap. L1's job.
+
+### PREDICTIONS — direction and size, per cell (derived from A × B, not guessed)
+
+**P0 (GATE ON THE BATTERY ITSELF, item 14(d)).** Pre-battery smoke reads
+`[SF]` at c7, c8, sc2 with `RWM_DIAG=1`. **If the short-tick fraction is
+< 5% at every cell, the drift is LATENT-BUT-INERT at L1 and the battery is
+NOT RUN** — the finding is recorded as the de-triplication plus a
+documented latency, and `RWM_STORE_CAP_UNIFIED` stays a correctness knob
+with no measured effect. This is a real possible outcome and it is a good
+one; it is written here so it cannot be renegotiated after the numbers.
+
+**P1 (MECHANISM — the gauge that must move, and the one that must not).**
+With the gate ON, the `sf=` gauge itself is UNCHANGED within noise (it
+counts the filter, not the law — a gate that moves `sf=` is a wiring bug,
+not a fix). The effective store cap's mean rises by 1/E − 1, where E =
+Σn_active/Σn_live measured by P0 at that cell. If L1 reproduces L0, that is
+**≈ +15% at duals and ≈ ×8 at singles**. Falsified if the cap does not
+move at a cell where P0 measured E < 0.95.
+
+**P2 (c7, dual symmetric — the drift's cleanest cell).** Cap up ≈ +15%
+(exactly +100% on the 24% of ticks with one path filtered). Goodput
+**up, small**: c7 already reads 0.977–0.986×Σ on the shipped default, so
+the headroom is ≤ 2–3%. **Predict c7 within [0.97, 1.02]×Σ and ≥ the
+same-session default arm − σ.** A c7 *regression* > σ falsifies.
+
+**P3 (c8, asymmetric — the RISK cell, pre-named as such).** The law delta
+is −41% (fast filtered) to −59% (slow filtered), so the gate DEEPENS the
+c8 pool. The c8 WATCH is explicit that a deeper pool at c8 has read WORSE
+than the legacy 1024 (stack 0.72–0.76×Σ vs legacy 0.85–0.87), and the
+2026-08-06 verdict named slow-path conversion, not pool sizing, as the
+binder. **Predict c8 within σ or DOWN. This is the clause most likely to
+block the flip, and it is written before the numbers.**
+
+**P4 (sc2/sc3, N = 1 — NOT an identity cell).** P0's L0 analogue is 88.6%
+empty-set ticks; if L1 reproduces it, the single-path cap moves from 128 to
+`gain·anchor` (≈832 at c2 on the measured legacy over-read, ≈1024 at c3,
+i.e. the legacy-proven latch) for most of the transfer. Goodput direction
+**up or flat**: sc2 already reads ≈0.99 of its own line, so **predict sc2
++0…+3% and sc3 +0…+5%**, and treat any regression > σ as falsifying. The
+c1 crown cell inherits the same N = 1 mechanism and is the highest-headroom
+cell if the population holds.
+
+**P5 (NO-REGRESSION, all cells).** dnf = 0 everywhere; crown 1000/1000;
+retransmit share and sweeps not worse than the same-session default beyond
+σ. A deeper store that buys goodput by inflating retx is not a win.
+
+### FALSIFICATION CONDITION (pre-committed)
+
+`RWM_STORE_CAP_UNIFIED` **FLIPS to default ON only if ALL of**: P0 found a
+live population (E < 0.95 at ≥ 1 cell); P1's cap gauge moved at those
+cells; c7 ≥ 0.97×Σ and ≥ default − σ on **both seeds**; c8 ≥ default − σ on
+both seeds; sc2/sc3/c1 ≥ default − σ on both seeds; dnf = 0; crown
+1000/1000. **Otherwise NO FLIP and the section reports the numbers.** Per
+item 11, a failed prediction goes to the deprecation register rather than
+to iteration — with one exception already named: if P3 fails *because* the
+c8 pool is deepened, that is the c8 WATCH's own known mechanism
+reproducing, and the correct successor is a c8-scoped ceiling, not a re-run.
+
+### THE ARMS
+
+| arm | env | what it is |
+|---|---|---|
+| `def` | (unset) | the shipped default — `active_paths()`, bit-exact |
+| `uni` | `RWM_STORE_CAP_UNIFIED=1` | the unified path set — `live_paths()` |
+
+Same binary both arms, interleaved round-robin per rep, seeds 42 AND 7 ×8,
+fresh topology per invocation, `RWM_GEN=0 RWM_DIAG=1`, same-session Σ from
+the singles arms, liveness echo asserted per arm (the
+`"unified store-cap path set ACTIVE"` INFO line PRESENT on `uni` and ABSENT
+on `def`, both directions), env + binary sha256 recorded, CRLF-converted
+tree, stale binary `rm`'d before the build, honest n per arm.
+
+Cells: **c7**, **c8** (duals — where the filter drops a path's share),
+**sc2**, **sc3** (N = 1 — where it empties the set), **c1** crown spot, and
+the MTU blackhole **wedge** (the cap feeds the admission gate).
