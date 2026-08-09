@@ -802,6 +802,7 @@ recovery clocks (phantom retx) · **GEN-INERT** generation-inert harness era
 | `RWM_FLOOR_BOUND` (arm B) | "Ship The Wins 1b (2026-08-07)", same battery: bounding the BtlBw anchor FLOOR by the honest send rate cut c7 cwnd to 237–305 (vs 1 006–2 356 unbounded) exactly as designed, and **failed BOTH its clauses — c7 0.969/0.969×Σ (under 0.97 on both seeds) AND c1 396.4/398.0 < the 430 PRIMARY** (−14% vs the unbounded arm), with sc2 marginally soft | **NONE** — same battery, same session, same interleaving | **NO** — the refutation IS the finding: the ack-interval over-read is doing LOAD-BEARING work at N = 1, so "the prior default's Σcwnd escape is accidental, make it derived" is not a free correction — deriving it costs 14% of the single-path win. Any future ask must pay for the floor honestly at N = 1 first | **DEPRECATED 2026-08-07, default OFF** (pure A/B arm) — the bound + its law test retained as the measured arm. **[2026-08-09: removal SCHEDULED — see "Batch-2 removal schedule" below; activation now `warn!`s via `config::deprecated_env_flag`.]** |
 | `RWM_ACK_MERGE` | "Unlock The Default 1: ack-merge (2026-08-07)": built to halve window-mode control-datagram density and so relieve the §16.37 est-clock stall signature. **Its PREMISE was measured false before the battery** — the receiver sends 1.038/1.053 control datagrams per data message, not 2 (the legacy `Ack` is the 1.00; the SACK `WindowAck` it "duplicates" was already frontier-rate-limited to ≈0.04, inside quinn-perf's own class), so the merge is a 4–5% SWAP, not a halving. c7 then failed its ≥0.97 clause on both seeds (0.894/0.943) **and the stall signature did not move at all** (sidle 1634–3118 ms / sweeps 14–25 vs its own est control's 1473–2604 / 12–24) | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, dnf 0 | **NO as a c7 lever** — the mechanism is eliminated twice over (the density was not there; removing what there is, is inert), which is stronger than a null. **YES as its own question:** the SAME knob measures **c1 +10.1%/+9.3% on the SHIPPED default** (202.5→223.0, 204.3→223.4, Δ≫σ both seeds, c7/singles within σ) — a real single-path win that this battery could not flip (reduced scope, composed gate set) and that owes its OWN item-11 pre-registration | **SHIPPED — DEFAULT ON 2026-08-08** ("Ack-Merge Flip", paper §16.42), on its OWN pre-registered gate set at FULL scope (×8 both seeds + 1.2 GB sustained + crown): **c1 +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%**, every no-regression gate within σ of its own same-session control, crown 1000/1000 in 32/32 reps, dnf 0/164. **And the row above is corrected by that battery: the density premise was refuted at the WRONG CELL.** `[CTLD]` on every run reads **1.96 at c1** — essentially exactly the two-datagrams-per-data-message the original finding claimed — against 1.05 at c7, because the legacy `Ack` fires per batch while the `WindowAck` it duplicates fires on FRONTIER ADVANCE (near-1:1 on a clean single path, ≈0.05 under dual striped GE loss). The response is monotone in the density REMOVED across six cells and two seeds. `RWM_ACK_MERGE=0` is the retained opt-out arm (`tests/ack_merge_optout.rs`); the window-mode legacy `Ack` branch is now dead code scheduled for deletion in refactor seam B2 (block mode keeps it — `block_arq`'s dup-ack ledger depends on the 1:1 cadence) |
 | `RWM_PATIENCE_DERIVED` | "Unlock The Default 2: derived patience (2026-08-07)": built to replace the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms literal (10× RFC 9002's kGranularity) with timer granularity + the path's own measured RTT jitter, at the two behavioural sites — the §6.1.2 kGranularity analog and the per-seq retransmit cooldown — and so relieve the §16.37/§16.39 est-clock stall signature. **Its PREMISE was measured false before the battery and confirmed at n = 8 both seeds: the literal wins ZERO of 501 542–1 366 558 §6.1.2 evaluations at c7, in EVERY arm including the shipped default.** The tasking reasoned from RTprop 8–10 ms, but the threshold reads `max(Copa srtt, estimator app-echo RTT)` and the app-echo clock is STORE-DWELL INCLUSIVE — 158 ms at c7, ×20 RTprop — so the floor was structurally unreachable on every loaded path. **Where it DOES bind (c1, 30–45% of evaluations) the derivation collapses it to ~1% (`pf` 149–391 → 0–31 s42, 161–286 → 0–40 s7) and NOTHING MOVES** (c1 `pat` 467.1/468.7 vs `est` 480.6/469.7; `patonly` 206.4/201.8 vs `prior` 201.2/200.2, all within σ). c7 then failed its ≥0.97 clause on both seeds (0.943/0.933) with `sweeps`/`retx` unmoved | **NONE** — refuted on the full current default stack, same-session interleaved, both seeds, FULL pre-registered scope (ARMCOUNT 8 every cell×arm), dnf 0 over 312 runs | **NO as a c7 lever** — eliminated on BOTH population (no binding evaluations to move) and response (moving it where it binds does nothing), which is stronger than a null. This is the goal's SECOND falsification-with-mechanism and it closes the c1-default target as a documented STRUCTURAL BOUND | **NOT CLASS-C — RETAINED, default OFF.** The law and 8 tests stay, and so does the durable piece: the **`pf=<floor>/<clock>/<mean>` instrument**, which turns "is this recovery clock governed by its floor or by the path?" into a per-run count and is what converted this attempt from an argument into a measurement in 15 min of shakeout. The successor it names — the recovery clock's ARGUMENT (a store-dwell-inclusive RTT), not its constants — will need exactly this gauge. **[2026-08-09: the LAW's removal is SCHEDULED and the `pf` gauge is explicitly EXCLUDED from it — see "Batch-2 removal schedule" below; activation of the law now `warn!`s via `config::deprecated_env_flag`.]** |
+| `RWM_STORE_CAP_UNIFIED` | "Store-Cap Triplication (2026-08-09)": the plain dyn-store-cap phase's Sigma-anchor base moved off the cwnd-saturation-filtered `active_paths()` onto `live_paths()` — the set its own `xN` multiplier is already counted from. Component-characterized first: the shipped pooled cap is EXACTLY proportional to the retained anchor mass (−50.0% at a symmetric dual with one path saturated, at every K), and an emptied set is a CLIFF to `store_boot_cap` = 128; the `sf=` gauge then measured the POPULATION at 30–33% empty-set ticks at c1 and 3.9–4.9% at c8. **The knob measures c1 +15.8%/+24.8% on the SHIPPED default (n = 8 both seeds, sigma TIGHTER than the default's, cap gauge 458→961 / 397→963, receiver CPU and retx flat-to-better) — the largest single-knob c1 movement in this ledger — and it costs c8 −19.6% at seed 7** (0.586×Sigma vs 0.724, per-run 16.6/40.5/55.0 = the c8 WATCH's collapse MODE, not a shift), c7-s42 one collapse rep, sc3 −1.5%, and two seed-7 crown p99 tails (83.8/272.4 ms) | **NONE** — measured on the full current default stack, same-session interleaved, both seeds, 155 completed runs, dnf 0, 0 liveness flags on captured runs | **YES, and with a number.** The path-set argument is unchanged and still right (`live_paths()` is the correct filter for a SIZING law). What the battery found is that the defect was **accidentally load-bearing at the duals**: the cliff to 128 was an intermittent brake on the unacked-frontier span, and removing it left the c8 pool pinned at its 4096 ceiling — `sf=` zero-ticks 4.9%→28.6% / 3.9%→32.2% shows the feedback closing. The successor is the c8 WATCH's own long-standing ask, now PRICED: the capacity-weighted CEILING composed with the unified path set, scored at c8 alone. The N=1-scoped shortcut is explicitly REFUSED — it is a mode bit, the pattern CLAUDE.md rejects by name | **RETAINED, default OFF.** The de-triplication (`net::honest_cap_term` / `honest_cap_terms`, four transcriptions → one) is UNCONDITIONAL and stays; only the path-set gate is an arm. The `sf=` gauge stays too — it is the `pf=` gauge's analogue for this phase and is what turned this from a code-tidiness item into a measured c1 number |
 | `RWM_SIDLE_DERIVED` | Same section, part 3a — a DIAG-only INSTRUMENT, never a behaviour claim, so "refutation" does not apply to it; recorded here because its VERDICT retires a standing suspicion. It was built to test whether §16.37's/§16.39's stall evidence was an artifact of a fixed 3 ms threshold read against a batched emitter, by printing `sidle2=` (3 × the MEASURED inter-emission-event interval, floored at the legacy value) beside the unchanged `sidle=` in every arm | n/a | n/a — the question it was built to answer is ANSWERED, both ways: **at c7 `sidle2 = sidle` to the millisecond and the est/prior ratio SURVIVES at 2.6× (measured `evt` 45–170 µs, far below the 1 ms loop wake), so §16.37 and §16.39 need NO correction and their evidence is REAL**; at the SLOW cells under `RWM_EMIT_BATCH` the legacy gauge over-counts by **85–90%** (sc2 3 461–4 106 → 306–536 ms; sc3 10 076–10 707 → 929–1 679; `evt` 1.6–250 ms) | **NOT CLASS-C — RETAINED, default OFF.** Standing instruction for every future session: **where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not `sidle`.** No published conclusion in this file rests on a slow-cell `sidle`, and this row exists so none ever does. **[2026-08-09: explicitly NOT scheduled for removal and deliberately NOT wired to `deprecated_env_flag` — see "Batch-2 removal schedule" below for why.]** |
 | DAPS chain (`RWM_DAPS`,`_BDP`,`_PACE`,`RWM_PACE_ALL`,`RWM_RATE_SAMPLE`,`RWM_PER_PATH_EST`,`RWM_DAPS_DEPTH`) | §16.10–16.14 arc (2026-07-12) — VOIDED/UNCERTAIN by "Methodology Audit (2026-07-13)"; the LIVE refutation is "Gen-ON Stack Ablation (2026-07-13)": generation actually ON, rate-sample −22%, depth −17…−30% at sym C7 — the C7 collapse IS the stack; defaults flipped OFF there | original arc: **GEN-INERT (the defining case), W1, W2, W7, W8, PRE-DIV**. The live ablation: W1 (pre-BBR lever), PRE-DIV | YES formally, **LOW priority — argued honestly:** (i) the era verdicts were superseded by the live `Gen-ON Stack Ablation` on the SAME mechanism space, which is the re-test the register would otherwise order (its residual walls: W1/PRE-DIV); (ii) DAPS is generation-mode-only while the shipped default stack is plain-mode; (iii) `RWM_DAPS_DEPTH` retains its one live win (hetero C8 +8%) as a gen-mode opt-in. A deletion decision rides the next generation-mode consolidation battery (BBR substrate), not this plain-mode pass | **REMOVED 9b48286 (2026-07-27)** — VISION-TRIAGE ruling accepted (ADR-0065 §arguments 1–4): the live Gen-ON ablation already re-tested the mechanism space, every surviving idea is re-derived better (M* law / ADR-0061 anchors / percap family). The SHARED send-interval sampler (RsPacket, rs_on_sent/rs_on_delivered, on_src_sent/on_src_delivered_seq, charge_src/src_inflight, btlbw_sym_per_s) is RETAINED under the anchor-hygiene/CopaFeed family — only the DAPS-specific consumers died. A future gen-mode DAPS_DEPTH re-ask is a NEW item-11 build |
 
@@ -18854,3 +18855,174 @@ seed, one session. The −2.4%/−2.7% at sc2/sc3 and the +16.7% at c1 are
 inside a single-rep spread that the ledger measures at 2.3× for
 same-nominal-config drift across sessions. This is shakeout. The battery
 that follows is ×8 both seeds, interleaved, same binary.
+
+### L1 BATTERY RESULTS (VM 10.1.5.16, 2026-08-09 12:22:32–13:12:35 UTC; binary sha256 `b3e862f409160e5c16047d74c6cdf37b7fe63a68f556d34dfa057b63ec4dc01a` = commit cd627b0, built fresh on the VM (3m18s) after `rm` of the stale binary, from a CLEARED and CRLF-CONVERTED `git archive` tree of this branch, SAME binary for the smoke, both seeds AND both crowns; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header; seeds 42 AND 7 ×8, arms interleaved round-robin per rep, candidate FIRST, fresh topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1`; driver `tools/l1/storecap_all.sh` → `storecap_battery.sh` + `tail_matrix.sh` (`default`/`uni` arms), collector `storecap_parse.py`; runtimes s42 15m44s, s7 17m41s, crowns 8m17s + 8m21s; logs + per-run diag under `/home/vibe/storecap/`; lock `/tmp/rwm-vm.lock` found FREE (11:25:11 and 12:08:27 UTC) and taken 12:12:20 UTC. **LAUNCHED DETACHED AND NOT POLLED** (item 13) — one status check at 12:58 and one collection at 13:19)
+
+**Run health.** Seed 42: **80 invocations, 80 summaries, 0 RUN-RETRY, 0
+RUN-LOST, 0 liveness/contamination flags.** Seed 7: 107 invocations, 75
+summaries, 32 RUN-RETRY recovered, 5 RUN-LOST, 17 liveness flags — all on
+summary-less aborted attempts, the documented seed-7 topo-ping double-abort
+class (item 8), so several s7 arms are quoted at n = 7 and the n is printed
+with every mean. **dnf = 0 in every one of the 155 completed runs, both
+seeds.** The `"unified store-cap path set ACTIVE"` echo appeared on BOTH
+endpoints in every `uni` run and on NEITHER in any `def` run.
+
+### GOODPUT, mean ± sample σ (n), same session, interleaved
+
+| cell | s42 def | s42 uni | Δ | s7 def | s7 uni | Δ |
+|---|---|---|---|---|---|---|
+| **c1** (single 1G, 400 MB) | 220.9 ± 5.1 (8) | **255.9 ± 3.8 (8)** | **+15.8%** | 206.9 ± 46.0 (8) | **258.3 ± 6.6 (8)** | **+24.8%** |
+| c7 (dual c2, 200 MB) | 172.3 ± 2.4 (8) | 161.2 ± 33.2 (8) | −6.5% | 173.7 ± 2.4 (8) | 172.3 ± 1.7 (7) | −0.8% |
+| c8 (c2+c3, 25 MB) | 78.5 ± 10.6 (8) | 75.2 ± 21.2 (8) | −4.2% | 75.8 ± 9.4 (7) | **60.9 ± 25.3 (7)** | **−19.6%** |
+| sc2 (single c2, 100 MB) | 88.2 ± 1.0 (8) | 87.9 ± 0.8 (8) | −0.4% | 87.9 ± 1.1 (7) | 87.5 ± 1.0 (8) | −0.4% |
+| sc3 (single c3, 25 MB) | 16.7 ± 0.2 (8) | 16.5 ± 0.3 (8) | −1.5% | 16.8 ± 0.1 (7) | 16.5 ± 0.2 (8) | −1.6% |
+
+Same-session Σ (Σ_c7 = 2·sc2, Σ_c8 = sc2 + sc3, each arm against its OWN
+singles): c7 def 0.977 / 0.988, uni 0.917 / 0.984; c8 def 0.747 / 0.724,
+uni 0.720 / **0.586**.
+
+### THE MECHANISM — P1 lands, and it lands EXACTLY where the smoke said it would
+
+| arm | s42 E | s42 zero% | s42 effective cap | s7 E | s7 zero% | s7 effective cap |
+|---|---|---|---|---|---|---|
+| c1-def | 0.672 | 32.8% | **458 ± 206** | 0.698 | 30.2% | **397 ± 328** |
+| c1-uni | 0.737 | 26.3% | **961 ± 177** | 0.744 | 25.6% | **963 ± 171** |
+| c7-def / uni | 0.977 / 0.960 | 0.3 / 1.5% | 4096 / 4096 | 0.980 / 0.972 | 0.2 / 0.8% | 4096 / 4096 |
+| c8-def / uni | 0.754 / 0.597 | 4.9 / **28.6%** | 4096 / 4096 | 0.716 / 0.575 | 3.9 / **32.2%** | 4096 / 3980 |
+| sc2-def / uni | 0.932 / 0.920 | 6.8 / 8.0% | 1024 / 1024 | 0.951 / 0.929 | 4.9 / 7.1% | 1024 / 1007 |
+| sc3-def / uni | 0.914 / 0.906 | 8.6 / 9.4% | 1024 / 1024 | 0.903 / 0.903 | 9.7 / 9.7% | 1024 / 1024 |
+
+**The effective store cap at c1 moves 458 → 961 and 397 → 963** — the
+defect and its repair, measured on the shipped default at n = 8 on both
+seeds, with the goodput response +15.8% / +24.8% alongside it. Everywhere
+else the cap is CLAMP-BOUND (4096 = N·knee at the duals, 1024 = `store_max`
+at the singles) and does not move, exactly as the pre-battery smoke said:
+the −50% law delta is absorbed by the clamp, and the drift reaches goodput
+only where the cap is free — where `active_paths()` goes EMPTY.
+
+### VERDICT vs the pre-registration, clause by clause
+
+| clause | required | measured | verdict |
+|---|---|---|---|
+| P0 population live | E < 0.95 at ≥ 1 cell | c1 0.672/0.698, c8 0.754/0.716 | **PASS** |
+| P1 cap moves where E < 0.95 | cap up at those cells | c1 458→961, 397→963 | **PASS** |
+| P2 c7 ≥ 0.97×Σ and ≥ def − σ, both seeds | — | s7 0.984×Σ, 172.3 vs 171.3 ✓; **s42 0.917×Σ ✗** | **FAIL (s42)** |
+| P3 c8 ≥ def − σ, both seeds | — | s42 75.2 vs 67.9 ✓; **s7 60.9 vs 66.4 ✗** | **FAIL (s7)** |
+| P4 sc2 ≥ def − σ | — | 87.9 vs 87.2, 87.5 vs 86.8 | PASS |
+| P4 sc3 ≥ def − σ | — | s42 16.5 vs 16.5 (marginal); **s7 16.5 vs 16.7 ✗** | **FAIL (s7)** |
+| P4 c1 ≥ def − σ | — | +15.8% / +24.8%, σ TIGHTER than def | **PASS, hugely** |
+| P5 dnf = 0 | — | 0 / 155 completed runs | PASS |
+| P5 crown 1000/1000 | — | 32/32 reps n = 1000, p50 flat 7.6–8.7 ms | PASS |
+
+### FLIP DECISION: **NO FLIP. `RWM_STORE_CAP_UNIFIED` stays DEFAULT OFF.**
+
+Three pre-registered clauses fail, and **the one the pre-registration named
+in advance as "the clause most likely to block the flip" is the one that
+fails hardest.** P3 was written before any number existed:
+
+> *"the gate DEEPENS the c8 pool. The c8 WATCH is explicit that a deeper
+> pool at c8 has read WORSE than the legacy 1024 … **Predict c8 within σ or
+> DOWN. This is the clause most likely to block the flip, and it is written
+> before the numbers.**"*
+
+c8 seed 7 reads 60.9 ± 25.3 against its own same-session default's
+75.8 ± 9.4 — **−19.6%, 0.586×Σ against 0.724** — with the per-run values
+showing the mode, not a shift: 16.58, 40.50, 54.97 alongside 80–84. The
+same collapse class appears once at c7-s42 (one rep at 79.19 against seven
+at 170–176, which is the whole of that cell's −6.5%) and twice in the
+seed-7 crown p99 tail (83.8 ms and 272.4 ms against the default arm's worst
+66.0 ms). It is one failure mode, appearing at three places, on the cells
+where the cap was ALREADY at its ceiling.
+
+### WHY IT COSTS WHAT IT COSTS: the filter's cliff was ACCIDENTALLY LOAD-BEARING at the duals
+
+The gauges give the mechanism without inference. At c7 and c8 the pooled
+cap is pinned at 4096 = N·knee in BOTH arms, so the unification cannot
+raise it — there is nothing to win. What it removes is the **cliff**: on
+the `def` arm, the 3.9–4.9% of ticks where `active_paths()` came back empty
+dropped the cap to `store_boot_cap` = 128 for one refresh, and at an
+asymmetric cell that is an emergency brake on the unacked-frontier span the
+slow path must resequence across. Take the brake away and the span stays at
+4096, which is precisely the c8 WATCH's measured collapse regime — and the
+`sf=` gauge shows the feedback closing: **zero-tick fraction 4.9% → 28.6%
+(s42) and 3.9% → 32.2% (s7)**, i.e. removing the brake made the paths
+MORE saturated, not less.
+
+This is the same shape as a lesson already recorded in this file's own
+code comments — *"the legacy ack-interval over-read was accidentally
+load-bearing for the old cap"* — and it is worth stating plainly: **a
+defect can be doing load-bearing work, and removing it correctly can still
+cost.** The path-set argument in the pre-registration is unchanged and
+still right; `live_paths()` is the correct filter for a sizing law. What
+the battery establishes is that the c8/c7 pool is currently sized on the
+assumption of an intermittent brake it was never designed to have.
+
+### THE SIDE RESULT, and it is the largest single-knob c1 movement this ledger has measured on the shipped default
+
+**c1 +15.8% (s42) and +24.8% (s7), n = 8 both seeds, same-session
+interleaved, dnf 0, with the mechanism measured at the cap gauge and the
+candidate arm's σ SMALLER than the default's** (3.8 / 6.6 vs 5.1 / 46.0 —
+the default's s7 σ of 46.0 is itself one 93.52 collapse rep, i.e. the
+shipped default sometimes falls off this same cliff at c1 and the gate
+removes that too). Receiver CPU is flat-to-better (15.90 → 15.02 s and
+16.15 → 14.89 s), retransmits flat-to-better (876 → 826, 864 → 774), and
+sweeps at s7 fall 56 ± 121 → 16 ± 5.
+
+The mechanism is exact and needs no interpretation: **at a single path the
+shipped default spends 30–33% of its dyn-cap refresh ticks with
+`active_paths()` empty, and on those ticks the flow-control store ceiling
+is not the law's `gain·anchor` but the 128-symbol BOOT CAP.** The
+end-to-end effective cap reads 397–458 where the law asks for ~961. At c1
+the cap is the binder because c1 is the only cell fast enough that
+`gain·anchor` sits below `store_max` = 1024 rather than clamped at it.
+
+**This is a real, reproducible, cell-scoped win that this battery is not
+allowed to flip**, because the same knob costs c8 −19.6% on a seed. It is
+recorded here so it is not lost, and it names its own successor below.
+
+### THE SUCCESSOR THIS NAMES — and the shortcut it must NOT take
+
+The tempting move is to scope the gate to N = 1: it would cash the entire
+c1 win and touch neither c7 nor c8. **That is a mode bit, and this project
+has rejected that pattern by name** (CLAUDE.md, THE NO-MODE-SWITCH
+INVARIANT; the decoder split and the hint-selected CC were both rejected
+for exactly this shape). "One law with a path-count threshold selecting a
+different path set" is the same defect wearing the fix's clothes, and the
+`active_paths()`/`live_paths()` split IS the mode bit we came to remove.
+
+The honest successor is the one the c8 WATCH has been asking for since
+2026-07-21 and which this battery has now PRICED: **the pooled ceiling, not
+the path set.** The unification is correct and the c8 harm is a SIZING
+harm — the pool is at 4096 at an asymmetric cell where the slow path cannot
+drain it, and it was only ever kept off that ceiling by an intermittent
+accident. The measurement to take next is the capacity-weighted ceiling
+(`RWM_STORE_CAPW`'s law, refuted in 2026-07-27 as a *sizing* answer for a
+binder that was conversion) composed WITH the unified path set, scored on
+c8 alone. Two facts this battery supplies that the 2026-07-27 attempt did
+not have: the c8 zero-tick population (3.9–4.9% on the default) and the
+price of removing it (−19.6% at seed 7). That is the first time the brake
+has had a number.
+
+### Tests and suites
+
+New, always-on: `net::honest_cap_term` / `honest_cap_terms` (the
+de-triplication) bounded by `honest_cap_terms_equals_the_transcription`
+(collector == the hand-rolled `EchoRatioMin` + `honest_store_cap` shape,
+term for term, INCLUDING the clock-observation side effects: a vanished
+path observes nothing, a cold anchor still does);
+`shipped_pool_cap_is_proportional_to_retained_anchor_mass` (the
+pre-registration's central claim asserted as an invariant, not prose);
+`single_path_pool_law_is_pathset_inert_when_unsaturated`. The component
+bench `tests/store_cap_bench.rs` carries the law sweep and the two L0
+population runs behind `--ignored`, and the `sf=` gauge behind
+`net::store_cap_sf_gauge`.
+
+Full battery on the final tree, all green, zero failures:
+`-p raptorpath --lib` **374** · `-p raptorpath-math` (8 targets) ·
+`--test gate_suite --release -- --test-threads 1` **15/15** ·
+`mtu_blackhole_wedge` **2** · `store_cap_bench` **3** (+3 ignored benches,
+run separately) · `recovery_bench` · all nine loopbacks
+(`ack_merge_loopback`, `ack_merge_optout`, `copa_sole_loopback`,
+`emit_batch_loopback`, `patience_loopback`, `perf_loopback`,
+`recov_mp_loopback`, `win_decouple_loopback`, `wire_compact_loopback`) ·
+`--doc`.
