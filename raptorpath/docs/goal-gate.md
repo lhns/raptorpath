@@ -18279,3 +18279,136 @@ receiver loop, and the encode/drain helpers `encode_to_interleave_buf` /
 `patience` / `recov_mp` / `win_decouple` / `wire_compact` loopbacks 1/1 each.
 **Three green runs, no flake, no skip.** No paper change: nothing this branch
 did is visible from outside the crate.
+## Refactor: net seams 2 (2026-08-09) — REFACTOR (branch `refactor/net-seams-2` from main@30b178f; no law change, no default change, no measurement — with ONE deliberate exception that ships GATED OFF and is written up below as an open A/B question)
+
+Seam batch 1 left `net/mod.rs` at 12,478 lines with `run_window_sender`
+(4,797) and `run_impl` (3,084) still 63% of it. The 2026-08-08 seam map named
+three STRUCTURAL blockers — not "free" extractions like batch 1's, but the
+moves every remaining phase extraction depends on. This branch executes
+exactly those three, in dependency order, and nothing else.
+
+**What moved.**
+
+| # | what | to | net/mod.rs |
+|---|---|---|---|
+| 1 | `macro_rules! send_source_symbol` (645 lines, 6 expansions) → `emit_source()` + the `SenderState` it mutates | `net/emit_source.rs` (939) + `net/sender_policy.rs` | 12,478 → 11,847 (−631) |
+| 2 | one scheduler read per loop iteration, **gated OFF** (`RWM_SCHED_SNAPSHOT`) | `net/sched_snapshot.rs` (219) | 11,847 → 11,898 (**+51**) |
+| 3 | the 56 resolve-once locals → `SenderPolicy::resolve()` | `net/sender_policy.rs` (1,032) | 11,898 → 11,158 (−740) |
+
+**Total: 12,478 → 11,158 lines, −1,320 (−10.6%), in three new files.**
+Cumulative across both seam passes: 13,694 → 11,158, **−2,536 (−18.5%)**.
+
+**MOVE 1 — the macro was a macro for exactly one reason.** It mutates ~30
+captured locals (encoder, retention store, per-path account + loan ledgers,
+the taper/span cache, the shed ledger, the DIAG gauges) that no ordinary
+function could reach. Those locals are now the fields of `SenderState`; the
+resolve-once configuration it reads is `SenderPolicy`; the shared engine
+handles are `SenderCtx` (batch 1's `ControlCtx` shape). Preservation is
+MECHANICAL: the body was moved by a transform that only inserts a `st.` /
+`pol.` / `ctx.` prefix before a captured name — never inside a string
+literal, never inside a comment, never after a `.`. **Stripping those
+prefixes from the new function body reproduces the macro body byte-for-byte
+modulo one dedent level** (verified by `diff`); the same strip-and-diff over
+`mod.rs` leaves ONLY the intended hunks. All eleven scheduler acquisitions
+are the same eleven, in the same order, with the same scopes; the
+fec-controller lock is still taken before the scheduler lock in the taper
+block. The two wall-clock stamps that moved into `SenderState`
+(`gen_last_source_us`, `last_source_send_us`) are still sampled by `now_us()`
+at their ORIGINAL points in setup and passed in, so no stamp drifts; every
+other `SenderState::new` initializer is pure, and nothing read `encoder`
+between its old declaration site and the construction point.
+
+**MOVE 2 — the one thing here that is NOT behaviour-preserving, and the open
+question it leaves.** `run_window_sender` takes `scheduler.lock()` in 31
+distinct places (plus the 11 now inside `emit_source`), and a dozen of them
+independently re-derive the same aggregates from the same path set.
+`SchedSnapshot::capture` takes all of them under ONE acquisition at the loop
+top. **This changes WHICH values a late phase sees.** Today the M*-depth
+refresh near the loop top and the reactive deficit-spacing read after the
+`select!` await can see DIFFERENT scheduler states within one iteration —
+acks land in between — so a rate read taken before an ack burst can compose
+with an RTprop read taken after it into a BDP that never existed. That skew
+is a REAL HAZARD and one snapshot removes it; it is very likely the right
+semantics. But it is NOT what any measurement to date was taken against, so
+the snapshot ships as `RWM_SCHED_SNAPSHOT`, **default OFF, and was not
+flipped**: with the gate off `sched_snap` is `None`, no snapshot is
+captured, no extra lock is taken, and each of the five routed sites runs its
+original block bit-for-bit. **OPEN A/B QUESTION for a later battery: does
+removing the intra-iteration read skew move anything?** The pre-registered
+shape is the obvious one — the same cells, `RWM_SCHED_SNAPSHOT` 0 vs 1, with
+the c7/c8 duals as the cells most likely to show it (they are the ones whose
+`select!` parks longest between the loop-top and post-await reads).
+
+Routed, deliberately, only PURE READS of derived scalars: the M*-depth max
+RTprop, the in-flight-cap sum of Copa BDP anchors, the CC-pace sum of
+cwnd/srtt with its live count, the tail-sweep pooled estimator SRTT, and the
+reactive deficit-spacing max SRTT. NOT routed: every site that mutates
+through the lock (`set_place_slack`, `deficit.on_send`, `charge_in_flight`,
+`path_mut`), every per-symbol placement PICK (`place_symbol` /
+`place_repair_spare_path` / `select_source_path` — decisions, not readings,
+and they must see live account state), and the per-path refresh blocks that
+fold state into `percap_k` / `percap_rr` under the lock. Each snapshot field
+keeps its site's own path set: **`live_paths()` vs `active_paths()` is not
+laundered by this seam** (the saturation-filter trap documented at
+`capw_store_cap`). Two ABSOLUTE gates, per MEASUREMENT DISCIPLINE:
+`capture_matches_the_inline_per_phase_expressions` asserts `capture()`
+computes the SAME function of the SAME state as each inline expression (so
+the arm can differ only in WHEN a value was read, never in WHAT), and
+`default_env_resolves_the_shipped_stack` now asserts `!sched_snapshot` — the
+shipped default must keep its per-phase reads.
+
+**MOVE 3 — the immutability argument is structural, not a reading.** All 56
+hoisted locals were `let` WITHOUT `mut`, so Rust already guaranteed they
+could not be reassigned; the audit was a compiler fact, not an inspection.
+Their expressions moved into `SenderPolicy::resolve()` VERBATIM — same text,
+same order, same comments, and `gates` keeps its name so not one expression
+changed (`diff` of the 736 moved lines against the deleted `mod.rs` text is
+empty). Every one is pure, so computing them together at the top of the
+sender cannot change what any holds. `RuntimeGates` remains the sole env
+reader. The mechanism-liveness `info!` echoes STAY in `run_window_sender`,
+in their original order — they are startup side effects, not policy, and
+hoisting them would reorder the log against the `WindowStart` broadcast and
+the stall-witness spawn. Verified the same way as MOVE 1: stripping `pol.`
+from the new `mod.rs` and diffing against the old leaves exactly the 56
+deletion ranges, the `SenderPolicy` literal MOVE 1 had built, and the
+span-t0 line — **758 lines removed, 18 added, every one accounted for**.
+
+**Members that turned out NOT to be policy, reported rather than forced.**
+
+* `emit_batch_live` — the seam map groups it with the `RWM_EMIT_BATCH`
+  family, but it is RE-SCOPED every loop iteration on the live-path count
+  (path flaps must re-scope within one burst). It stays a local and is
+  passed into `emit_source` as a per-iteration input, alongside
+  `percap_caps` / `percap_bounds` / `percap_rr` for the same reason (they
+  are refreshed at the dyn-cap cadence).
+* `span_diag_start_us` is not a policy value at all: it is a `now_us()`
+  read. Resolving it with the rest would have moved the stamp. The sender
+  rebinds `pol` with it (`SenderPolicy { span_diag_start_us: now_us(),
+  ..pol }`) at the exact point in setup the stamp was always taken, so the
+  struct stays immutable AND the stamp does not drift.
+* `coded_only` and `ooo_gens` are read by NOTHING outside the resolution
+  itself — `coded_only` because the sender body uses the parameter, and
+  `ooo_gens` because it only feeds `win_cap` / `store_max`. They are
+  `resolve()` inputs/locals, not `SenderPolicy` fields; adding them would
+  have been a dead field. This branch introduces ZERO new compiler warnings
+  — verified by diffing the whole warning set against the branch point.
+
+**Not moved, deliberately.** `run_impl` (untouched by this batch — its seam
+is `run_window_sender`'s, and this batch is what unblocks it), the receiver
+loop, the paced generation coded-emission block, the deficit recovery loop,
+the NACK/gap repair dispatch and the tail ARQ sweep. All of those now read
+the same `SenderState` fields through the struct and the same `SenderPolicy`
+fields — which is precisely what makes them extractable next.
+
+**Gate, run in full after EACH of the three commits** (`--doc` included):
+`cargo test -p raptorpath --lib` 374 → 375 (MOVE 2 adds the snapshot
+equivalence test) · `-p raptorpath-math --all-targets` 59+19+22+4+4+3+25 ·
+`--doc` (0 doctests defined) · `--test gate_suite --release` **15/15** ·
+`mtu_blackhole_wedge` 2/2 · `perf_loopback` 8/8 · `ack_merge` 1/1 ·
+`ack_merge_optout` 2/2 · `copa_sole` / `emit_batch` / `patience` /
+`recov_mp` / `win_decouple` / `wire_compact` loopbacks 1/1 each ·
+`recovery_bench` 1/1. From MOVE 2 on, additionally the
+`RWM_SCHED_SNAPSHOT=1` ON-arm smoke (`perf_loopback` 8/8, `win_decouple`
+1/1) so the gated arm is exercised, not merely compiled. **Three green runs,
+no flake, no skip.** No paper change: nothing this branch did is visible
+from outside the crate, and the shipped default path is unchanged.

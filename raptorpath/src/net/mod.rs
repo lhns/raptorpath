@@ -4838,83 +4838,24 @@ async fn run_window_sender(
     // The engine's env-gate surface, resolved once in run_impl (src/gates.rs).
     gates: crate::gates::RuntimeGates,
 ) {
-    // Generation coding emits coded wire symbols exactly like coded-only; the
-    // difference is the coding UNIT (a stable generation vs the moving window)
-    // and that per-seq ARQ is disabled below.
-    let coded_wire = coded_only || generation;
-    let gen_size: usize = gates.gen_size;
-    let pipeline: usize = gates.pipeline;
-    // Generation-coding proactive overhead r (coded per generation beyond K_G):
-    // the encoder provisions each generation to ceil(len·(1+r)) coded before it
-    // is only coded for recovery. Covers loss + the MDS margin. RWM_GEN_R env.
-    // Systematic-repair provisions only the loss-FEC overhead r (the K base DoF
-    // ride the wire as source), so its natural default is smaller than
-    // coded-only's (which must also fund the K base). r ≳ 1.5·ε keeps windowed
-    // repair ahead of loss (the oracle's provisioning floor; r < ε → DNF). At C8
-    // ε_slow ≈ 4.8 %, so 0.15 clears both paths with margin. RWM_GEN_R overrides.
-    // The DAPS chain (RWM_DAPS, _BDP, _PACE, RWM_PACE_ALL, RWM_RATE_SAMPLE,
-    // RWM_PER_PATH_EST, RWM_DAPS_DEPTH) was REMOVED 2026-07-27 per the
-    // DEPRECATION REGISTER (ADR-0065/0066): the original 2026-07-12 arc was
-    // voided by the Methodology Audit (generation-inert era), and the live
-    // re-ask ("Gen-ON Stack Ablation" 2026-07-13, generation actually ON)
-    // measured the stack itself as the sym-C7 collapse (rate-sample −22%,
-    // depth −17…−30%). Every surviving idea was re-derived better elsewhere:
-    // per-path BDP cap + derived depth → RWM_GEN_PIPE's M* law (ADR-0064),
-    // honest per-path anchors → ADR-0061 (the send-interval sampler the
-    // CopaFeed/RWM_PLAIN_RS machinery keeps IS that fix — shared, retained),
-    // per-path admission → the percap family (ADR-0058).
-    // The RWM_FMTCP(+_WIN) decode-on-total composite was REMOVED 2026-07-27
-    // per the DEPRECATION REGISTER: re-tested on the FULL clean substrate
-    // ("C8-Aware Pool Law" battery, piggybacked arm) → CONFIRMED-REFUTED
-    // (c7 18.30/18.98, c8 14.30/15.03 Mbit/s = ×0.11–0.20 of the same-session
-    // default stack, both seeds, ≫σ) — the 2026-07-08 pathology was never
-    // wall-tainted. Its forced sub-levers (RWM_REASM_BDP, RWM_OOO_RETAIN,
-    // RWM_XPATH_REPAIR) survive as independent gates; the per-path in-flight
-    // cap + derived win backstop it pioneered live on under gen_pipe/M*.
-    // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
-    // shipped non-generation default byte-identical — every use is generation-
-    // gated). The JOB-1 diagnosis: the L1 per-path ~10 Mbit/s generation
-    // ceiling is the SUBSTRATE — quinn's loss-reactive Cubic window under the
-    // datagram path (per connection = per path), COLLAPSED further by bare
-    // generation mode's own standing queue (uncapped in-flight → RTT inflated
-    // 3–5× → Cubic throughput ∝ 1/RTT). The L0 netem-shim bench (which
-    // reproduces RTT/rate/GE-loss but hides them from quinn) measures the app
-    // machine at 34 Mbit/s on the same c2 parameters — the wall is NOT the
-    // app pipeline. This gate composes the app-side remedies so the substrate
-    // sees a queue-lean, BDP-covering pipeline:
-    //   1. per-path BDP in-flight cap (infl_bdp 1.5, percap) — queue ≈ 0,
-    //      RTT ≈ RTprop (the mechanism behind DAPS's accidental +44% single);
-    //   2. DERIVED pipeline depth M* (gen_pipe_depth above, #61's A*) —
-    //      generations in flight cover BDP + one deficit round, recomputed
-    //      from measured rate/SRTT (no fixed M);
-    //   3. coded-emission budget clocked on the SENT frontier (the stalled
-    //      cumulative ack must not freeze emission for the still-recovering
-    //      oldest generation while M* fresh generations have budget);
-    //   4. pace anchored to the windowed-MAX delivered rate (§16.15: the
-    //      decode-clocked samples are mostly-low; the legacy decaying EWMA
-    //      under-reads between generation decodes and throttles emission);
-    //   5. once-per-SRTT deficit action (react_cap 1.0 — the known-good
-    //      bounded reactive from the FMTCP-era arm).
-    // The substrate CC itself is A/B-able independently via RWM_QUIC_CC (bbr)
-    // in transport/quic.rs.
-    // §16.20 (d): under RWM_UNIFIED the derived-depth law (M* =
-    // ceil(rate·2·RTprop/G)+1, the large-δ limit of A*) is the DEFAULT for
-    // generation mode; RWM_GEN_PIPE=0 still reproduces the fixed legacy
-    // pipeline as the same-binary A/B arm.
-    let gen_pipe = gates.gen_pipe && generation;
-    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): the M* anchor-pair repair —
-    // (a) the peer-report 50-ms pseudo-sample no longer pins the RTprop floor
-    // (PathReport arm; hygiene rules 1+3), (b) the windowed-MAX delivered-rate
-    // filter seeds from 500-ms buckets instead of 2-s ones (rule 1: the
-    // anchor is live within ~1 bucket of the first acks). (Historic rule (c),
-    // the derived (M*+2)·G replacement of the STATIC FMTCP win backstop, was
-    // removed with the FMTCP composite 2026-07-27 — the derived-depth idea
-    // ships as gen_pipe's M* law itself.)
-    // DEFAULT ON (2026-07-21, "Consolidation" battery: plain subset inert
-    // within sigma at every bulk cell on both seeds, tail crown unregressed;
-    // the generation-gated knee evidence is 16.21's).
-    let mstar_anchor = gates.mstar_anchor && generation;
-    if mstar_anchor {
+    // ── The sender's resolve-once policy (net seam pass 2, 2026-08-09) ────
+    // The ~56 derived constants that used to be declared one at a time
+    // across 1,300 lines of setup — every one of them a `let` WITHOUT `mut`,
+    // so structurally incapable of being reassigned — now resolve together,
+    // verbatim and in their original order, in `SenderPolicy::resolve`
+    // (net/sender_policy.rs). The mechanism-liveness `info!` echoes stay
+    // below, in their original order, reading `pol`; so does the span-law
+    // trace's own `now_us()` t0, which rebinds `pol` where it was sampled.
+    let pol = SenderPolicy::resolve(
+        &gates,
+        symbol_size,
+        protocol_hint,
+        reliable,
+        coded_only,
+        generation,
+        systematic,
+    );
+    if pol.mstar_anchor {
         info!("M* anchor hygiene ACTIVE (RWM_MSTAR_ANCHOR: measured RTprop floor + fast-seed rate filter)");
     } else if gates.mstar_anchor {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1) for the
@@ -4927,19 +4868,6 @@ async fn run_window_sender(
         // on this echo in plain cells.
         info!("M* peer-report RTT-feed suppression ACTIVE (RWM_MSTAR_ANCHOR plain-live subset: local-echo-only RTT feed + estimator seed-from-sample)");
     }
-    // feat/source-backpressure (RWM_SRC_BP) — REMOVED 2026-07-27 per the
-    // DEPRECATION REGISTER: deferring the source into per-path pacing budgets
-    // stalls the generation-fill pipeline (the source read IS the pipeline
-    // clock — C8 −53% both seeds, "Source Backpressure" 2026-07-12; era
-    // audit-classified UNCERTAIN). The mechanism space (per-path admission of
-    // source) was re-asked BY the percap account family on live code with
-    // gauges and lost for a named structural reason (ADR-0058); any future
-    // gen-mode re-ask rides that family, not this code.
-    // Generation-coding proactive overhead r.
-    let gen_repair_floor: f64 = gates
-        .gen_r
-        .unwrap_or(if systematic { 0.15 } else { 0.20 })
-        .clamp(0.0, 2.0);
     let mut prev_ack: u64 = 0;
     // Generation-mode paced coded emission (see the emission block in the loop).
     // The token bucket is clocked at the DELIVERED goodput — measured from the
@@ -4965,7 +4893,7 @@ async fn run_window_sender(
     // Derived pipeline depth M* + dynamic intake cap, recomputed every ~5 ms
     // from the windowed-MAX delivered rate and SRTT (gen_pipe_depth above).
     let mut gen_pipe_m: usize = 2;
-    let mut gen_pipe_store_cap: usize = 2 * gen_size;
+    let mut gen_pipe_store_cap: usize = 2 * pol.gen_size;
     let mut gen_pipe_refresh_us: u64 = 0;
     // Windowed-MAX delivered-rate filter. The cumulative ack advances in
     // whole-generation bursts, so a rate bucket must span MANY generations to
@@ -5015,45 +4943,6 @@ async fn run_window_sender(
     // ack-clocked flow window is the real limiter, this just spreads the bursts.
     let mut gen_tokens: f64 = 0.0;
     let mut gen_tok_last_us: u64 = now_us();
-    let gen_rate: f64 = gates.gen_rate;
-    // Bootstrap pacing floor (symbols/sec): the rate used before the ack-rate
-    // estimator has a sample (primes the first generation). Kept modest so the
-    // startup burst can't overrun a bandwidth-limited link's datagram intake;
-    // once the ack rate is known the pacing clocks to delivered goodput × 1.5.
-    let gen_rate_floor: f64 = gates.gen_rate_floor;
-    // ── Fix 1 (transport-substrate): CC-RATE PACING of the SYSTEMATIC SOURCE ──
-    // PRIMARY high-RTT lever. The systematic source rides the DROPPABLE QUIC-
-    // datagram path driven only by TUN-read intake, gated by a BDP-scaled
-    // WINDOW (store_max / infl_cap) but NOT by a RATE. At high RTT the window is
-    // BDP-sized, so the source is spent as one big BURST that netem/QUIC drops
-    // faster than the receiver decodes — per-generation loss then exceeds the
-    // ceil(len·r) proactive budget and the proactive-recovery fraction
-    // COLLAPSES (0.95→0.23), forcing reactive round-trips (goal-gate "Proactive
-    // FEC vs ARQ"). This paces the source at the measured LINK rate, smoothed
-    // over the RTT with a SMALL burst, so no BDP-sized burst ever hits the wire.
-    //
-    // Rate signal: the delivered-goodput EWMA (`gen_rate_ewma`) is the achieved
-    // BtlBw in generation mode — the true CC anchor. The Copa `cwnd` is NOT
-    // usable here: window-mode WindowAcks do not drive `record_delivery`, so
-    // cwnd is pinned at INITIAL_CWND and cwnd/SRTT would strangle the pipe. The
-    // ack-clocked delivered-goodput EWMA already tracks the link and is what the
-    // coded bucket uses; the source now shares it. A small headroom lets the
-    // rate ramp without the 1.5× overshoot that itself overruns the datagram
-    // path. Env-gated (RWM_CC_PACE) so the A/B baseline is byte-identical.
-    //
-    // feat/copa-wire-signal: DEFAULT ON under the wire-clocked Copa signal.
-    // Copa's model assumes a PACED wire (the paper paces at 2·cwnd/RTT; our
-    // §12.5 token bucket does the same for the block path), but under
-    // RWM_QUIC_CC=passthrough quinn's own pacer derives from the engine
-    // window — at Copa's Bulk operating point (cwnd ≈ BDP + 1/δ ≈ 5×BDP at
-    // c2) that pacer never binds, the send process degrades to pure
-    // ack-clocking, and each GE loss burst's recovery micro-stall idles the
-    // bottleneck (MEASURED at the L1 c2 smoke: 55.7 → 67 Mbit/s from this
-    // default alone, store no longer pinned at the cap, wire queue p50
-    // 3–5 ms). RWM_CC_PACE=0 still forces it off (the #80 A/B arms are
-    // reproduced by RWM_COPA_WIRE=0, under which this default is false).
-    let cc_pace = gates.cc_pace;
-    let cc_pace_headroom: f64 = gates.cc_pace_headroom;
     let mut src_tok_last_us: u64 = now_us();
     // Fix 1 (rate signal): the delivered-goodput EWMA is clocked on the IN-ORDER
     // cumulative ack, which STALLS at 0 whenever a hole wedges the frontier —
@@ -5069,279 +4958,31 @@ async fn run_window_sender(
     // Pace ceiling = gen_rate × live-path count (single-link burst guard,
     // scaled so it cannot clamp a multi-path aggregate — see the refresh
     // block below). Starts at one link's worth.
-    let mut cc_rate_ceiling: f64 = gen_rate;
-    // ── Fix 2 (transport-substrate): BOUNDED REACTIVE under congestion control ─
-    // The deficit-driven recovery loop was EXEMPT from the in-flight congestion
-    // cap and re-emitted the reported residual on EVERY deficit report. At high
-    // RTT the reports are ~RTT stale, so it re-sends the deficit faster than an
-    // updated report can shrink it, its own recovery symbols overrun the pipe
-    // and drop, the stale deficit persists, and it re-floods — MEASURED
-    // recovery_coded 60 k–252 k symbols for a ~5 k-symbol object (up to 120×),
-    // which DNFs at RTT200. Two bounds close the loop:
-    //   (a) PER-GENERATION RTT SPACING. After emitting recovery for a
-    //       generation, do NOT emit for it again for ~1 SRTT — long enough for
-    //       those symbols to arrive and the receiver's NEXT deficit report to
-    //       reflect them. This is the "send the deficit, wait ~RTT, re-evaluate"
-    //       the design intended but never TIMED, so a stale periodic re-report
-    //       could no longer trigger an immediate re-flood.
-    //   (b) NON-EXEMPT from the in-flight cap. Reactive now also stops at
-    //       `cwnd_full` (RWM_INFL_CAP) like proactive — it may not push the pipe
-    //       past the congestion cap. The in-flight budget expires on the RTT
-    //       timescale, so the frontier is still funded within a bounded delay
-    //       (no permanent deadlock), it just cannot BURST past the cap.
-    // Enabled by RWM_REACT_CAP (any value; the value optionally scales the
-    // spacing — <1 = fraction of SRTT, >=1 = absolute µs). Unset = OFF (legacy
-    // exempt behaviour), so Fix 1 measures alone and Fix 2 stacks on top.
-    // gen_pipe defaults to once-per-RTT deficit coalescing (1.0·SRTT): "ONE
-    // deficit feedback per RTT" — the #59/#60 lesson that a sub-RTT re-flood
-    // of the fungible top-up defeats aggregation. RWM_REACT_CAP still overrides.
-    let react_cap_cfg: f64 = gates
-        .react_cap
-        .unwrap_or(if gen_pipe { 1.0 } else { 0.0 })
-        .max(0.0);
-    let react_cap_on = react_cap_cfg > 0.0;
+    let mut cc_rate_ceiling: f64 = pol.gen_rate;
     // anchor → wall-clock (µs) of the last reactive emission for that generation.
     let mut gen_recover_at: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
-    // In-flight coded allowance W (coded symbols the pipe may hold ahead of the
-    // decode frontier). MUST be ≥ pipeline·gen_size: coded symbols are striped
-    // round-robin across the M active generations, so to let the FIRST
-    // generation accumulate its K_G (and thereby decode → advance the ack that
-    // grows the target) each of the M active generations needs ~gen_size coded
-    // in flight at once. Below M·G the first generation never reaches K_G, ack
-    // stays 0, and the target never grows — a startup deadlock. Default
-    // (M+1)·gen_size (matches the source-retention store_max) plus decode/loss
-    // slack. RWM_GEN_INFLIGHT overrides.
-    let gen_inflight_window: f64 = gates
-        .gen_inflight
-        .unwrap_or((2 * pipeline * gen_size) as f64);
-    // RWM Phase C (paper §16.5, the BANDWIDTH knob r): experimental
-    // per-symbol repair-rate FLOOR. The Bulk χ glide drives r*→0 mid-stream
-    // (§14.26), leaving the window systematic (not rateless-fungible), so a
-    // heterogeneous slow path's source symbols are fixed positions the fast
-    // path cannot decode around (the measured Phase B C8 wall). Raising r
-    // makes the pooled window fungible so completion → K/Σg. Env-gated
-    // (RWM_MIN_R, repairs per source symbol, e.g. 0.18 ≈ the slow path's
-    // symbol share at C8); 0 = production default (unchanged glide). Test
-    // instrument for the raise-r arm, not a shipped control law.
-    let repair_rate_floor: f64 = gates.min_r;
-    // ── Fix 3 (transport-substrate): OUT-OF-ORDER RETENTION DECOUPLE ──────────
-    // Defect #3: generation backpressure caps the send frontier at ~store_max =
-    // a few generations ahead of the CUMULATIVE (in-order) decode ack, so ONE
-    // hole stalls the whole pipeline even under out-of-order delivery — throughput
-    // ∝ generations/RTT = window/RTT, reproducing ARQ's serialization. This
-    // raises the retention/backpressure window to `ooo_gens` generations so the
-    // sender keeps sending (and proactively coding, via the send-frontier-tracking
-    // `set_code_base` below) MANY generations past a stalled in-order frontier;
-    // the stalled generation is recovered by the bounded reactive tail (Fix 2)
-    // while everything above it completes out of order. Retention still drops on
-    // the in-order ack (advance(ack+1)) so RELIABILITY IS UNCHANGED — the sources
-    // of every not-yet-in-order-acked generation stay retained for reactive
-    // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
-    // generation count, default 16; unset = OFF, byte-identical legacy).
-    let ooo_retain = gates.ooo_retain && generation;
-    let ooo_gens: usize = gates.ooo_gens;
-    // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
-    // at the frontier is raced by coded symbols that combine over the CURRENT
-    // window; sustained Σg aggregation needs the window to span the cross-path
-    // recovery horizon, W_mp ≳ Σg·(RTT_max+t_slack) ≈ 600 symbols at C8 — 3×
-    // the systematic pipeline's MAX_WINDOW_SIZE=200, which §16.5 states would
-    // "starve RWM at C8 by construction". Coded-only therefore widens the
-    // coding window to W_mp (default 640, RWM_WINDOW override for the sweep);
-    // the oracle (oracle_c8_fungible_wmp_window) confirms W≥384 reaches the
-    // ×1.19 ceiling while W=200 does not. Systematic modes keep 200.
-    let win_cap: usize = if generation {
-        // Generation mode retains the whole in-flight pipeline: M generations
-        // of G symbols (plus one for the currently-filling head). This is the
-        // stable-anchor analogue of W_mp — every not-yet-decoded generation
-        // stays retained (and keeps getting coded symbols) until it decodes.
-        // Fix 3: RWM_OOO_RETAIN widens this to `ooo_gens` generations so the
-        // send frontier can run far past a stalled in-order frontier.
-        // gen_pipe: retention ceiling = the M* hard cap (the DYNAMIC intake
-        // cap `gen_pipe_store_cap` below is what actually bounds the queue).
-        let gens = if gen_pipe {
-            GEN_PIPE_MAX_GENS + 1
-        } else if ooo_retain {
-            ooo_gens + 1
-        } else {
-            pipeline + 1
-        };
-        (gen_size * gens).clamp(MAX_WINDOW_SIZE, 1 << 20)
-    } else if coded_only {
-        gates
-            .window_override
-            .unwrap_or(640)
-            .clamp(MAX_WINDOW_SIZE, 4096)
-    } else {
-        MAX_WINDOW_SIZE
-    };
-    // Fungible-frontier retention bound = the coding window itself. This is
-    // the §16.5 W_mp bound doing double duty: the backpressure cap must keep
-    // the SEND frontier within ONE window of the cumulative ack, so every
-    // not-yet-decoded seq stays INSIDE the current coding window and is raced
-    // by ongoing coded symbols (fungible in-window refill) rather than aging
-    // out and forcing a congestion-throttled targeted ARQ. At the systematic
-    // RELIABLE_STORE_MAX=1024 > W the frontier runs ~1024 ahead while the
-    // window covers only the last 640, so a lost DOF at the ack ages out to
-    // slow ARQ (MEASURED ~4.7 Mbit/s, 80% idle); lifting the cap entirely
-    // decouples them and DNFs. Sizing the store to W_mp is what makes the
-    // window rateless-fungible in practice. W_mp also comfortably exceeds the
-    // BDP (~190 sym at C8), so both paths stay saturated. RWM_STORE overrides.
-    let store_max: usize = if generation {
-        // Backpressure at the pipeline bound: the send frontier may run at most
-        // ~M generations ahead of the cumulative-decode frontier, so exactly M
-        // generations are in flight. TUN reads pause here (flow control), never
-        // dropping data. Generation mode uses the encoder's retained size as the
-        // backpressure signal (no sent_store), so this matches win_cap.
-        //
-        // Transport-ceiling fix (MEASURED at L1): win_cap = G·(M+1) as the
-        // BACKPRESSURE point is 14× the BDP at C2, so the unacked pipeline is a
-        // multi-hundred-ms standing queue (RTT inflated to 0.5–1.3 s). That
-        // bufferbloat does NOT cap single-path throughput (it is window-
-        // INDEPENDENT — a per-symbol processing limit) but it (a) produces
-        // catastrophic slow-run outliers (single-path 50 MB×6 stdev 24.8 s at
-        // G·(M+1)) and (b) SERIALIZES dual-path aggregation: the fast path
-        // stalls on the bloated in-order-frontier cross-path feedback, so
-        // symmetric C7 falls BELOW single (×0.65, anti-aggregation).
-        //
-        // The send frontier needs only TWO generations outstanding to pipeline
-        // — one filling head + one sealed-and-recovering — not M+1. Backpressure
-        // at 2·G (retention stays at win_cap = G·(M+1) for decode headroom)
-        // decouples the standing queue from the retention horizon. MEASURED
-        // (G=480, 50 MB×6): single 11.2→15.6 Mbit (stdev 24.8→0.7 s), symmetric
-        // C7 9.8→22.3 (×1.43 aggregation), heterogeneous C8 9.45→14.55 — all
-        // up, tighter, 0 DNF. RWM_STORE overrides for the sweep.
-        // Fix 3: under OOO retention the backpressure window is the wide
-        // ooo_gens·G, so the send frontier decouples from the stalled in-order
-        // frontier. Otherwise the tight 2·G standing-queue bound.
-        // gen_pipe: the static cap is the M* ceiling; the DYNAMIC per-loop cap
-        // (`gen_pipe_store_cap` = M*·G) is what gates intake each iteration.
-        let default_store = if gen_pipe {
-            GEN_PIPE_MAX_GENS * gen_size
-        } else if ooo_retain {
-            ooo_gens * gen_size
-        } else {
-            2 * gen_size
-        };
-        gates
-            .store_override
-            .unwrap_or(default_store)
-            .clamp(gen_size, win_cap)
-    } else if coded_only {
-        gates.store_override.unwrap_or(win_cap).clamp(win_cap, 1 << 20)
-    } else {
-        // Plain-reliable (systematic-free, non-generation) MEMORY ceiling for
-        // the retention store. RWM_STORE forces a STATIC window (disables the
-        // dynamic BDP cap below) for the sweep; the shipped default keeps the
-        // large retention ceiling and lets the delay-based `plain_dyn_cap`
-        // bound the *outstanding* window instead.
-        gates.store_override.unwrap_or(RELIABLE_STORE_MAX)
-    };
-    // Delay-based send-window cap for the plain-reliable path (paper §12).
-    // The fixed RELIABLE_STORE_MAX (1024) is ≈12× the BDP at C2, so the
-    // unacked store builds a multi-hundred-ms standing queue (MEASURED RTT
-    // 0.41–0.52 s vs 10 ms base). On a CLEAN link that only adds latency, but
-    // under loss every hole must traverse that bloated queue to recover, the
-    // cumulative-ack (and thus the ack-clocked pacing) freezes for a full
-    // bufferbloat-RTT, and single-path throughput COLLAPSES (MEASURED 75→14
-    // Mbit at C2). The remedy is to bound the OUTSTANDING window to a
-    // BDP-scaled cap so the queue — and hence recovery latency — stays ~1 RTT.
-    // BtlBw×RTprop is bufferbloat-robust (windowed-max rate × min-RTT floor),
-    // so it tracks the true pipe even while the live RTT is inflated. Active
-    // only for the plain-reliable path and only when RWM_STORE is NOT forcing
-    // a static window; generation/coded-only keep their own structural caps.
-    let plain_dyn_cap =
-        reliable && !generation && !coded_only && !gates.store_env_set;
-    // Window = gain × BDP. ≥2 keeps the pipe full (≈1 BDP) while leaving ≈1
-    // BDP of headroom to keep sending fresh data during a one-RTT recovery
-    // round; 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
-    let store_bdp_gain: f64 = gates.store_gain;
-    // Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
-    // burst can't pre-bloat the queue and inflate the min-RTT floor (which
-    // would then inflate the anchor itself); the anchor takes over once
-    // samples land. ~1.5× a 100 Mbit / 10 ms BDP.
-    let store_boot_cap: usize = gates.store_boot;
-    // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
-    let store_cap_floor: usize = 64;
-    // ── Path-scaled outstanding pool (task #84, env RWM_STORE_PATHS) ──────
-    // MEASURED at L1 (2026-07-14, host-passthrough E5-2650v3): the plain-
-    // reliable OUTSTANDING ceiling is a per-TRANSFER constant
-    // (RELIABLE_STORE_MAX = 1024, which the 2×Σanchor dynamic cap latches at
-    // on fast paths because the legacy ack-interval anchor over-reads), so a
-    // multipath sender is store-starved: the DIAG shows win=1024/1024 pegged
-    // while both paths idle (infl=0 spikes). Same-binary static-store sweep,
-    // C7 plain+BBR: 1024→103 Mbit, 2048→122.7, 4096→141.3, 8192→143.7
-    // (saturated); C8: 4096→71.5, 8192→31.8 (slow-path bufferbloat collapse);
-    // singles: sc2 2048→81.6 / 4096→75.6 / 8192→43.0 (collapse), sc3
-    // degrades monotonically with a static pool (the dynamic cap binds at
-    // ~684 there and is the right law). The knee is 2048 PER LIVE PATH.
-    // Under RWM_STORE_PATHS=1 and N = live_paths ≥ 2 the dynamic-cap value
-    // scales ×N and its clamp ceiling becomes N × 2048 (RWM_STORE_PATH_POOL
-    // overrides); N = 1 keeps the legacy law bit-exactly, so singles are
-    // unaffected even with the flag ON. Default OFF: shipped byte-identical.
-    // The engine sink is NOT the binder here: single-path c1 sinks 187.7
-    // Mbit/s through the same receiver task, and pinning the C7 receiver to
-    // one core costs only −8% at the default store.
-    // DEFAULT ON (2026-07-21, "Consolidation" LOO battery: removal from the
-    // composed stack re-opens the c7 collapse class (86-97 Mbit runs, both
-    // seeds) and drops the mean; no cell regressed >>sigma. The c8 sub-sigma
-    // cost vs the legacy pool under SACK-release is the register's WATCHED
-    // follow-up — see goal-gate "Consolidation".)
-    let store_paths_on = gates.store_paths;
-    let store_path_pool: usize = gates.store_path_pool;
-    if store_paths_on && plain_dyn_cap {
+    if pol.store_paths_on && pol.plain_dyn_cap {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): the recorded run
         // must show which outstanding-pool law was active.
         info!(
-            pool_per_path = store_path_pool,
-            gain = store_bdp_gain,
+            pool_per_path = pol.store_path_pool,
+            gain = pol.store_bdp_gain,
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
-    // ── Capacity-weighted outstanding pool (env RWM_STORE_CAPW) ──────────
-    // The ADR-0058 "c8 WATCH" follow-up (goal-gate "C8-Aware Pool Law"):
-    // pool = Σ_i honest per-path cap over LIVE paths (capw_store_cap) — each
-    // path earns unacked-frontier depth for its OWN pipe + recovery round,
-    // summed as ONE shared pool (borrowing stays free, only the sizing law
-    // changes vs RWM_STORE_PATHS' count-scaled clamp). Engaged N ≥ 2 with
-    // every live anchor warm; until then the configured pooled law
-    // (path-scaled / legacy) is the warm-up fallback. Default OFF: shipped
-    // byte-identical; the battery arm composes RWM_PLAIN_RS=1 so the anchor
-    // terms read ≈1× truth (the legacy over-read clamps this law to the
-    // N×knee ceiling ≡ path-scaled — documented at capw_store_cap).
-    let capw_on = gates.store_capw && plain_dyn_cap;
-    if capw_on {
+    if pol.capw_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
-            pool_per_path = store_path_pool,
-            gain = store_bdp_gain,
+            pool_per_path = pol.store_path_pool,
+            gain = pol.store_bdp_gain,
             "capacity-weighted outstanding pool ACTIVE (RWM_STORE_CAPW: pool = sum_i anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R over live paths, clamp [floor, N*knee], N>=2 all-warm; fallback = configured pooled law until anchors warm; N=1 legacy)"
         );
     }
-    // ── Pool-anchor honest dual-store law (env RWM_POOL_ANCHOR) ──────────
-    // Goal-gate "Ship The Wins 1" (the §16.35 c7 blocker's named successor):
-    // at N ≥ 2 live paths the pooled-store cap's RATE input is the per-path
-    // hygiene-grade SEND-interval anchor (SendRateAnchor fed at
-    // charge_in_flight — burst-immune by construction: Δt spans the SEND
-    // interval, so the est-cadence ack clock's tighter ack bursts cannot
-    // inflate it; clock-gap buckets discarded) instead of the legacy
-    // ack-interval windowed-max (measured over-read ×4.6–7.4, a further
-    // ×3.4–3.7 under RWM_EST_CADENCE). Law: pool = clamp(Σ_i
-    // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
-    // the capw shape (ONE shared pool, borrowing free), engaged only with
-    // ALL live send-anchors warm; until then the configured path-scaled law
-    // runs verbatim. The Copa cwnd feed (record_delivery/on_ack) and every
-    // N = 1 law are bit-exactly untouched — no CopaFeed machinery runs at
-    // duals (the measured −22…−27 c7 RS-composition price stays
-    // unreachable; no src_inflight is charged — the §16.34 falsification-5
-    // lesson). Default rides the est-cadence resolution (OFF unset; ON
-    // under the est opt-in — the composed default flip was measured and
-    // REVERTED on its pre-set c7 clause, 2026-08-07).
-    let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
-    if pool_anchor_on {
+    if pol.pool_anchor_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
-            pool_per_path = store_path_pool,
-            gain = store_bdp_gain,
+            pool_per_path = pol.store_path_pool,
+            gain = pol.store_bdp_gain,
             "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: N>=2 pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched; N=1 legacy)"
         );
     }
@@ -5358,7 +4999,7 @@ async fn run_window_sender(
     // guard keep the sample from reading an ack burst. The law reads
     // max(delivery, send_mean) — ONE formula, no branch, both terms honest
     // lower bounds, so the pool can only rise relative to attempt 1.
-    if pool_anchor_on && gates.pool_deliv {
+    if pol.pool_anchor_on && gates.pool_deliv {
         info!(
             "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
         );
@@ -5368,26 +5009,7 @@ async fn run_window_sender(
             "honest anchor-floor BOUND ACTIVE (RWM_FLOOR_BOUND: cwnd floor = min(gain*max_bw*RTprop, gain*sr*RTprop) - the ack-interval over-read can no longer inflate the floor; still a floor, never a cap; legacy verbatim while the send anchor is cold)"
         );
     }
-    // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
-    // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
-    // the retention store releases slots only on the cumulative frontier,
-    // so SACKed-but-not-cumulative symbols hold slots a full frontier round
-    // — at c7 the store recycles at frontier latency, not path rate. Under
-    // this law a SACKed seq is UNCOUNTED from the flow-control outstanding
-    // (the slot returns to the pool / per-path account, the window opens)
-    // while sent_store + retransmit_buffer + nack_retx_at + source_path_map
-    // are kept UNTOUCHED until the cumulative frontier passes it — release
-    // a STORE SLOT, never recoverability (the RWM_SACK_PRUNE lesson; see
-    // sack_release_mark). DEFAULT ON (2026-07-21, the pre-registered
-    // battery earned the flip: c7 0.96–1.05×Σ both seeds, sc2 +3–4 at
-    // N=1, dual-c1 +20–22 composed, no regression; goal-gate
-    // "SACK-Clocked Store Release"); RWM_STORE_SACK_RELEASE=0 is the
-    // legacy frontier-only-release opt-out arm, under which the released
-    // set stays empty and the gate arithmetic is exactly the legacy
-    // store_len.
-    let store_sack_release_on =
-        reliable && !generation && !coded_only && gates.store_sack_release;
-    if store_sack_release_on {
+    if pol.store_sack_release_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
             "SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs \
@@ -5395,17 +5017,7 @@ async fn run_window_sender(
              the cumulative frontier — slot release, never recoverability)"
         );
     }
-    // ── Frontier-slack placement (env RWM_PLACE_SLACK) ───────────────────
-    // Goal-gate "C8 Slow-Path Conversion" (pre-registered 2026-08-06): the
-    // §16.3 placement cost's load term becomes max(0, Ê_i − S)/ref with
-    // S = clamp(span/R_ack, 0, 250 ms) — span = sent_edge − cum_ack,
-    // R_ack = EWMA of the cumulative-ack advance rate (delivery truth,
-    // immune to the plain anchor's over-read). S = 0 until R_ack warms and
-    // whenever N < 2 (shipped cost bit-exact — the law is a strict
-    // continuous generalization; see Scheduler::set_place_slack /
-    // place_costs). Plain reliable window only. Default OFF.
-    let place_slack_on = gates.place_slack && reliable && !generation;
-    if place_slack_on {
+    if pol.place_slack_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). The INFO
         // prints whenever the gate is CONFIGURED; the law itself engages
         // only at N ≥ 2 with a warm ack-rate (the harness expects the echo
@@ -5423,56 +5035,23 @@ async fn run_window_sender(
     let mut ps_rate_last_ack: u64 = 0;
     let mut ps_rate_ewma: f64 = 0.0;
     let mut ps_slack_gauge: f64 = 0.0;
-    // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
-    // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
-    // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
-    // 0.79–0.80 of Σ; raising the shared cap to 8192 collapsed the slow
-    // path to 31.8 Mbit/s). Here each path gets its OWN account sized to
-    // ITS pipe (percap_store_cap: gain·rate_i·echoRTT_i, clamped to
-    // [floor, pool]); a symbol placed on path i draws path i's account and
-    // is released on the ack that removes it from the retention store
-    // (SACK/OOO or cumulative). Admission pauses only when NO live path
-    // has account headroom (percap_store_full — the infl_percap_full
-    // pattern), and the plain-reliable placement redirects a cap-full pick
-    // to the path with headroom (percap_place_path). Engaged only for
-    // N ≥ 2 live paths — N = 1 keeps the legacy pooled law bit-exactly.
-    // Default OFF: shipped byte-identical. Supersedes RWM_STORE_PATHS'
-    // pooled GATE when both are set (the warm-up share still inherits from
-    // whichever pooled law is configured, so STORE_PATHS composes as the
-    // warm-up baseline rather than conflicting).
-    let percap_on = gates.store_percap && plain_dyn_cap;
-    // Roadmap item 1 (the #86 c8 follow-up): the delay-aware redirect guard.
-    // Default ON whenever percap is on (RWM_PERCAP_GUARD=0 restores the
-    // unguarded redirect — the measured c8-regression control arm). The
-    // shipped default is untouched: percap itself is default OFF.
-    let percap_guard_on = percap_on && gates.percap_guard;
-    // Bounded account borrowing (feat/store-borrowing, paper §16.22): a
-    // pick landing on a cap-full account may FLY on that pipe while being
-    // CHARGED to a sibling account, bounded by
-    //   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j)),
-    //   T_return(j) = fly_j/rate_j + RTprop_j (floor clock)
-    // — lend only headroom the lender cannot use within the loan's return
-    // latency. Requires the percap stack (accounts, guard, honest caps
-    // under RWM_PLAIN_RS). Default OFF: shipped byte-identical; the
-    // no-borrow percap arm is the same-binary control.
-    let percap_borrow_on = percap_on && gates.store_borrow;
-    if percap_on {
+    if pol.percap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
-            pool_per_path = store_path_pool,
-            gain = store_bdp_gain,
-            floor = store_cap_floor,
+            pool_per_path = pol.store_path_pool,
+            gain = pol.store_bdp_gain,
+            floor = pol.store_cap_floor,
             "per-path outstanding accounting ACTIVE (RWM_STORE_PERCAP: cap_i = clamp(gain*rate_i*echoRTT_i, floor, pool) per live path for N>=2, warm-up = legacy-pool/N; supersedes RWM_STORE_PATHS' pooled gate; N=1 legacy)"
         );
     }
-    if percap_guard_on {
+    if pol.percap_guard_on {
         // Guard mechanism-liveness echo (asserted PRESENT on guarded arms,
         // ABSENT on the RWM_PERCAP_GUARD=0 regression-control arm).
         info!(
             "percap delay-aware redirect guard ACTIVE (roadmap-1: redirect to j only while out_j < bound_j = rate_j*RTprop_j — kappa=1 on the floor clock; Copa feed: cwnd_j; warm-up: cap_j/gain — else the store reads FULL for the placement and admission pauses; RWM_PERCAP_GUARD=0 = unguarded legacy redirect)"
         );
     }
-    if percap_borrow_on {
+    if pol.percap_borrow_on {
         // Borrowing mechanism-liveness echo (MEASUREMENT DISCIPLINE):
         // asserted PRESENT on PBP-B/C1P-B arms, ABSENT on every no-borrow
         // arm.
@@ -5480,55 +5059,22 @@ async fn run_window_sender(
             "bounded store borrowing ACTIVE (RWM_STORE_BORROW, paper 16.22: a cap-full pick flies on its picked pipe, charged to the lender with max lend_i->j = cap_i - out_i - rate_i*T_return(j), T_return(j) = fly_j/rate_j + RTprop_j; loans repay on ack; symmetric cells lend 0 by theorem; warm-up lends 0)"
         );
     }
-    // ── Honest floor-clock store caps (feat/percap-honest-cap) ────────────
-    // GUARD-RESULTS residual (i): with the redirect channel closed, the c8
-    // parking flowed through the softmax's OWN picks under the knee-clamped
-    // slow cap — the legacy plain anchor over-reads ×4.6–7.4 ("Anchor
-    // Hygiene" battery (b)) so cap_slow latched at the 2048 knee and the
-    // derived differentiation never engaged. With the honest send-interval
-    // sampler (RWM_PLAIN_RS) the anchor reads ≈1× truth, and the cap law
-    // is re-derived on it: cap_i = anchor_i·(K_i + gain − 1) +
-    // rate_i·(gain−1)·R — residence on the measured unloaded drain clock
-    // plus runway on the RECOVERY engine's clock (R = the 100-ms hole-
-    // refresh/tail-sweep cadence bound), see `honest_store_cap`. Applies
-    // to the per-account
-    // percap caps AND the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
-    // over-read was accidentally load-bearing there; K supplies that
-    // headroom explicitly and honestly). Engaged only where the honest
-    // sampler is live (plain in-order, no Copa CC ownership — the Σcwnd
-    // and per-path cwnd laws are already honest and stay untouched).
-    // RWM_HONEST_CAP=0 = the floor-law control arm (reproduces the −20%);
-    // both gates default-OFF paths keep the shipped tree byte-identical
-    // (RWM_PLAIN_RS itself is default OFF).
-    let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
-    if honest_cap_on {
+    if pol.honest_cap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): asserted
         // PRESENT on honest-cap arms, ABSENT on knee-clamp control arms.
         info!(
-            gain = store_bdp_gain,
-            floor = store_cap_floor,
-            pool_per_path = store_path_pool,
+            gain = pol.store_bdp_gain,
+            floor = pol.store_cap_floor,
+            pool_per_path = pol.store_path_pool,
             "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
         );
     }
-    // ── Window/inflight decoupling (env RWM_WIN_DECOUPLE) ────────────────
-    // Goal-gate "Window Decoupling + MTU Scaling" part 1 (pre-registered
-    // 2026-08-06 + diagnosis amendment): at N = 1 the admission gate moves
-    // from the un-SACKed total vs the anchor-sum latch to the live HEAD
-    // SPAN (last_sent − SACK/cum frontier — recovery-stalled holes
-    // excluded) vs the stall-metered allowance `win_decouple_allow`; the
-    // un-SACKed total keeps a retention backstop `win_decouple_cap_ret`
-    // (memory clamp 4096). Under Copa-sole the residence term is
-    // gain·Σcwnd (the 1024 ceiling truncation — the B1 jitter-cell dwell
-    // binder — is released). N ≥ 2 and warm-up keep the configured laws
-    // bit-exactly. Default OFF: shipped byte-identical.
-    let win_decouple_on = gates.win_decouple && plain_dyn_cap;
-    if win_decouple_on {
+    if pol.win_decouple_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). Prints
         // when CONFIGURED; the law engages at N = 1 with a warm anchor
         // (the harness expects the echo per ENV).
         info!(
-            gain = store_bdp_gain,
+            gain = pol.store_bdp_gain,
             "window/inflight decoupling ACTIVE (RWM_WIN_DECOUPLE: wire gate = head \
              span vs anchor*(K+gain-1) + rate*min(stall_age, 100ms); holes to \
              retention cap_ret, clamp 4096; N=1 only; Copa-sole ceiling released)"
@@ -5567,83 +5113,25 @@ async fn run_window_sender(
         std::collections::HashMap::new();
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
-    let mut dyn_store_cap: usize = store_boot_cap.min(store_max);
+    let mut dyn_store_cap: usize = pol.store_boot_cap.min(pol.store_max);
     let mut dyn_cap_refresh_us: u64 = 0;
-    // ── #85 budget-conserving taper (RWM_TAPER_R, default OFF) ────────────
-    // MEASURED (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13): the
-    // legacy taper accrual below sums to Σ τ(t) = r symbols PER ACK CYCLE
-    // (taper_offset resets on cumulative-ack advancement), so the emitted
-    // plain-mode proactive overhead is ~r/cycle-length — nearly independent
-    // of r's computed magnitude. Legacy r*=0.206 and corrected r*=0.255 both
-    // emitted cod/src ≈ 0.03–0.10 at c3-realtime: the whole r* control loop
-    // (incl. the §8.4.1 burst-tail correction) was INERT at the wire. With
-    // the flag ON, `TaperBudget` makes emission consume r as computed: a
-    // per-window budget (emitted ≈ r × source per coding window), the taper
-    // shape kept as a re-timing (repair still concentrated at the frontier),
-    // paced ≤ 1 repair per source send and spare-capped (existing anchors,
-    // no new constants). OFF ⇒ byte-identical legacy emission (A/B arm).
-    // L0 VERDICT (2026-07-18, goal-gate "Taper Emission Fix"): the budget
-    // law is LIVE at the wire (cod/src 0.03-0.05 → 0.21-0.34 on the
-    // c3heavy 2x2) but delivered reliability DEGRADES at realtime and the
-    // r* arms stay tied — the emitted repair codes over the LEADING sliding
-    // window (in-flight entanglement, the RWM_MIN_R defect class above), so
-    // it is recovery-inert within realtime's reorder horizon; quantity was
-    // not the only binder. Default stays OFF; flipping it is gated on the
-    // solvable-span emission follow-up, not on L1 alone.
-    // §16.20 (c): under RWM_UNIFIED the quantity law is the default (the #85
-    // fix composes with the trailing solvable-span placement below, which
-    // removes the leading-window entanglement that kept it OFF); RWM_TAPER_R=0
-    // still reproduces the legacy accrual as the same-binary A/B arm.
-    let taper_r_budget = gates.taper_r;
-    if taper_r_budget {
+    if pol.taper_r_budget {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
             "budget-conserving taper emission ACTIVE (RWM_TAPER_R: plain-mode proactive repair budgeted at r x source per coding window; legacy = r per ack cycle)"
         );
     }
-    // §16.20 (c): trailing solvable-span placement for plain-mode proactive
-    // repair — span width A* = clamp(rate·D, 1, W) with D = b(hint)·RTprop
-    // (§8.8 budgets: Realtime ½, Auto 1, Bulk 2 RTT — capped at 2·RTprop, the
-    // deficit-round limit) and trailing offset Δ = ceil(rate·jitter) ≥ 1, so
-    // every covered member has LANDED when the repair does (solvable at
-    // arrival — the #85 leading-window entanglement removed structurally).
-    let unified_span = gates.unified;
-    if unified_span {
+    if pol.unified_span {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
             hint = ?protocol_hint,
             "unified span law ACTIVE (RWM_UNIFIED: plain-mode proactive repair over the trailing solvable span [end-A*, end-Δ), A* from δ)"
         );
     }
-    // feat/anchor-hygiene (`RWM_ASTAR_ANCHOR`): the A* rate anchor repaired.
-    // Legacy A* reads `est.throughput()` — a 2-s-interval α=0.125 EWMA of the
-    // report-tick send rate — which (i) pins A* = 1 for ~10 s of every stream
-    // (realtime FEC inert: ru/rf ≈ 9%) and (ii) is flood-poisonable (A* 1→38
-    // off the post-stall release burst) — goal-gate COLLAPSE ATTRIBUTION,
-    // defect designs A+B. The repair: a windowed-max send-rate anchor
-    // (SendRateAnchor) fed by the sender's OWN send events — live within ~1
-    // RTT (hygiene rule 1), with gap-spanning/flood buckets DISCARDED
-    // (rule 2). Gate off ⇒ the EWMA path byte-identical.
-    // goal-gate "Unified Shedding": DEFAULT ON under the unified machine —
-    // the span law ships with its repaired anchor (fix A gates the flip
-    // battery; without it the realtime spans pin at width 1, ru/rf ≈ 9%).
-    // `RWM_ASTAR_ANCHOR=0` / `RWM_ANCHOR_HYGIENE=0` still opt out for A/B.
-    let astar_anchor_on = unified_span && gates.astar_anchor;
-    if astar_anchor_on {
+    if pol.astar_anchor_on {
         info!("A* send-rate anchor ACTIVE (RWM_ASTAR_ANCHOR: windowed-max send rate over ~8 SRTT, clock-gap sample discard)");
     }
-    // ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
-    // Part of the unified machine's REALTIME semantics: armed only on the
-    // EVICT path (`!reliable` — the ρ = 1 RETAIN contract is excluded by
-    // construction) under RWM_UNIFIED; `RWM_UNIFIED_SHED=0` reproduces the
-    // serializing arm for A/B. A hole whose retransmit can no longer meet
-    // the δ deadline D = b(hint)·RTprop (the span law's own D) is DROPPED
-    // from the ARQ set instead of serializing the stream behind it — but
-    // only while cumulative shed stays within the DERIVED 1−ρ budget
-    // (`residual_loss_after_fec`: ε̂·(1−P_fec) at the live (r, A*, σ²)
-    // operating point). Budget spent ⇒ serialize (ρ wins over δ).
-    let shed_on = shed_armed(gates.unified, reliable, gates.unified_shed);
-    if shed_on {
+    if pol.shed_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
             "unified overload shedding ACTIVE (RWM_UNIFIED_SHED: past-deadline holes shed within the derived 1-rho budget; =0 = serializing arm)"
@@ -5675,50 +5163,7 @@ async fn run_window_sender(
     // a stalled region / has A* pinned / budget saturated. (Own t0, distinct
     // from the DIAG block's own `diag_start_us` below; carried into the
     // emission step as `SenderPolicy::span_diag_start_us`.)
-    let span_diag_start_us: u64 = now_us();
-    // ── Removed proactive-repair experiments (DEPRECATION REGISTER) ───────
-    // RWM_FRONTIER* ("Proactive Frontier", 2026-07-07: repair anchored at the
-    // ½-RTT-stale ack frontier loses the race to its own ARQ — rf=718 emitted,
-    // ru=4 useful) and RWM_INLINE_REPAIR ("Repair In-Flight", 2026-07-08:
-    // stall-starved + cross-grid stranding — every inline config wedged or
-    // crawled) were both refuted on GEOMETRY, not substrate, and REMOVED
-    // 2026-07-27. Their goal (repair present at stall) is achieved by
-    // RWM_PROACTIVE_PACER below, whose own measured null resolved into the
-    // structural presence⊥throughput identity; the unified TRAILING span law
-    // (§16.20.3) is the derived realization of the frontier intent. The FDIAG
-    // diagnosis instrument (RWM_FDIAG, receiver loop) is retained.
-    // ── Proactive-repair pacer (RWM_PROACTIVE_PACER) — present-at-stall ───────
-    // A DEDICATED proactive-repair emission on the GENERATION grid, decoupled
-    // from BOTH source availability and the ack-clock `target`. For each
-    // in-flight generation (still FILLING or recently sealed) it emits
-    // proactive repair over the retained contiguous PREFIX at the full
-    // generation width (`generate_repair_filling` → same (anchor, G) matrix, no
-    // cross-grid stranding), paced by the shared CC token bucket. Fixes BOTH
-    // refutations of the interspersed inline repair (goal-gate "Repair
-    // In-Flight"): (1) NOT stall-starved — it runs in the main loop every
-    // iteration incl. tx_paused wakeups, so repair flows under backpressure when
-    // the frontier most needs it; (2) NOT cross-grid stranded — it codes the
-    // generation grid, so a buffered filling equation combines directly with the
-    // reactive generation deficit. The covering equation reaches the receiver
-    // EARLY (around when the hole is sent, not a generation-span later at seal),
-    // so it is PRESENT when the frontier detects the hole → proactive decode, no
-    // round-trip. Supersedes the sealed batched proactive path when on; the
-    // reactive deficit (RWM_REACT_CAP + RWM_REPAIR_WAIT) stays the bounded
-    // fallback for holes the proactive repair still misses. Systematic only;
-    // shipped path untouched.
-    let proactive_pacer = systematic && gates.proactive_pacer;
-    // ── Cross-path repair placement (RWM_XPATH_REPAIR) — the C8 realization ────
-    // Route proactive (and deficit) REPAIR to the max-spare-capacity path (the
-    // underutilized path — the slow path once the fast path is source-saturated)
-    // instead of the marginal-cost softmax (which biases repair toward the fast
-    // path, so it competes with systematic source — the single-path
-    // presence⊥throughput tension). With this on, a fast-path loss is covered by
-    // repair already in flight on the SLOW path, WITHOUT displacing fast-path
-    // source: presence is bought from the spare path's capacity. Symmetric paths
-    // (C7) have equal spare, so `place_repair_spare_path` splits the near-tie set
-    // uniformly (no hard-argmax concentration → no C7 regression). Generation/
-    // systematic only; shipped path untouched. Default-OFF.
-    let xpath_repair = generation && gates.xpath_repair;
+    let pol = SenderPolicy { span_diag_start_us: now_us(), ..pol };
     /// Congestion-aware NACK repair throttle (ADR-0046).
     let mut nack_congestion = NackCongestionState::new();
     // Sampled HERE, at its original point in setup; moved into SenderState below.
@@ -5750,8 +5195,6 @@ async fn run_window_sender(
     /// liveness at the gauge — `srel=cur/cum`).
     let mut sack_released_total: u64 = 0;
 
-    // Symbol packer: accumulate small packets into packed symbols for Realtime mode
-    let use_packing = protocol_hint == ProtocolHint::Realtime;
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
     // Announce window mode to peer on all paths
@@ -5760,24 +5203,11 @@ async fn run_window_sender(
         for pid in sched.active_paths() {
             let _ = transport.send_control_datagram(
                 pid,
-                ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: use_packing },
+                ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
             );
         }
     }
 
-    // RWM_DIAG (transport-ceiling diagnosis) master gate. Carried into the
-    // emission step as `SenderPolicy::diag_on` (the GLIFE fill tracking).
-    let diag_on = gates.diag;
-    // Per-path store-attribution GAUGE (goal-gate "C8-Aware Pool Law"
-    // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG the
-    // percap account maps are maintained even when the percap LAW is off, so
-    // the DIAG `sout=` field shows each path's share of the POOLED
-    // outstanding (which path is holding the unacked-frontier span — the c8
-    // pool-arm diagnosis gauge). Behavior-inert by construction: every percap
-    // decision site keys on `percap_caps` NON-EMPTY (the "law engaged"
-    // signal), and caps are only computed under percap_on — with the law off
-    // the maps feed the DIAG print alone.
-    let percap_track = percap_on || (diag_on && plain_dyn_cap);
     // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ──────────────────────────
     // Time-weighted attribution of the generation-mode sender loop to the
     // gate that is BINDING its wire emission each instant. In coded-wire
@@ -5801,70 +5231,23 @@ async fn run_window_sender(
     // (fill_us, code_us, wait_us, n) accumulated over completed generations.
     let mut gl_sum: (u64, u64, u64, u64) = (0, 0, 0, 0);
 
-    // ── feat/recovery-suppression: multipath recovery suppression ─────────
-    // (`RWM_RECOV_MP`, DEFAULT ON 2026-07-21 — the "Consolidation" LOO
-    // battery: removal costs −12.3/−13.9 Mbit >>sigma at c7 on both seeds
-    // (retx 18k vs 5.4k) with the dual-c1 retx flood (13-30k) re-appearing;
-    // neutral within sigma everywhere else. `=0` is the legacy global-clock
-    // opt-out arm. Plain window reliable mode only — generation mode has no
-    // per-seq ARQ to suppress).
-    // Sub-gate for trace attribution: _LAW (per-flight hole law, default ON
-    // under the umbrella). The _SERIAL per-path batch-namespace arm was
-    // REMOVED 2026-07-27 (register: refuted on the clean substrate, ×2.4
-    // sender CPU — see the module-header design note (2)).
-    let recov_mp = gates.recov_mp && reliable && !generation;
-    let recov_mp_law = recov_mp && gates.recov_mp_law;
-    if recov_mp {
+    if pol.recov_mp {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
-            law = recov_mp_law,
+            law = pol.recov_mp_law,
             "multipath recovery suppression ACTIVE (RWM_RECOV_MP: \
              per-flight RFC9002-style time-threshold hole law on the flight \
              path's smoothed clocks; \
              N=1 live path keeps legacy gates bit-exactly)"
         );
     }
-    // ── diag/lossy-residual: SINGLE-path hole-law suppression ─────────────
-    // (`RWM_RECOV_SP`, default OFF — the A/B arm; goal-gate "Lossy-Single
-    // Residual"). The 2026-07-27 diagnosis measured the N=1 reactive plane
-    // firing ×4.4–5.7 the realized loss (sc2-100M: fired 3313, y=2659 younger
-    // than the law's own threshold, vs ~580 netem drops; sc3: 2556 vs ~510)
-    // — the "single-path gaps are FIFO-real" premise of `mp_hole_ripe`'s
-    // N=1 bypass is REFUTED on a jittery substrate (netem delay jitter
-    // reorders tens of packets deep; the receiver's gap reports name
-    // merely-late seqs, and re-fires chase flights still queued behind the
-    // store-cap standing queue). The law: at N=1 a gap seq with a LIVE
-    // flight (original or retransmit) fires only once the flight is
-    // ≥ 9/8×max(smoothed clocks) old (RFC 9002 §6.1.2, same
-    // `mp_time_threshold_us`); TIME channel only — the §6.1.1 packet
-    // channel is excluded at N=1 (reorder depth ≫ kPacketThreshold).
-    // Suppression-only: the receiver's hole-refresh re-advertises until the
-    // flight ripens, so real holes still recover.
-    let recov_sp = gates.recov_sp && reliable && !generation;
-    if recov_sp {
+    if pol.recov_sp {
         info!(
             "single-path hole-law suppression ACTIVE (RWM_RECOV_SP: RFC9002 \
              time-threshold on the live flight at N=1; time channel only)"
         );
     }
-    // ── feat/c8-conversion: recovery clocks on LIVE paths ────────────────
-    // (`RWM_RECOV_MP_LIVE`, default OFF — the A/B arm; goal-gate "C8
-    // Slow-Path Conversion"). The hole law's N + per-path clock snapshot
-    // read `active_paths()` — the saturation-filtered set (`available() >
-    // 0`) whose cwnd-full-path trap collapses the law to the N=1 bypass
-    // (legacy age gate on a cross-path clock) mid-transfer; the same
-    // filter trap already documented at the Copa-sole store law and
-    // `capw_store_cap`. Diagnosis signature (2026-08-06): c8-pbs 412–749
-    // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
-    // threshold. Under this gate the snapshot uses `live_paths()`.
-    let recov_mp_live = gates.recov_mp_live && recov_mp_law;
-    // Goal-gate "Unlock The Default 2: derived patience" — the two gates.
-    // `patience_derived` is BEHAVIOURAL (the recovery-patience floor);
-    // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
-    // beside the unchanged legacy one). Both default OFF.
-    let patience_derived = gates.patience_derived;
-    let sidle_derived = gates.sidle_derived && diag_on;
-    if recov_mp_live {
+    if pol.recov_mp_live {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
             "recovery clocks on LIVE paths ACTIVE (RWM_RECOV_MP_LIVE: hole-law \
@@ -5910,49 +5293,11 @@ async fn run_window_sender(
     let mut mpd_fired_on: std::collections::HashMap<u32, u64> =
         std::collections::HashMap::new();
 
-    // ── Emission batching (goal-gate "Emission Batching", RWM_EMIT_BATCH,
-    // DEFAULT OFF — same-binary A/B) ──────────────────────────────────────
-    // The §16.23 sender-emission service wall (~19.5–20k sym/s ≈ 190 Mbit)
-    // is per-SYMBOL loop cost, profiled 2026-07-27 on the c1 cell: taper/
-    // span control math (compute_repair_rate + predictive_loss_upper +
-    // exp/log ≈ 15–17%/core, recomputed per symbol), plus a full select!
-    // iteration (tail-deadline scan, SACK drain, pacing refresh) and the
-    // waker churn of one-datagram-per-wakeup handoff to quinn (syscall
-    // density is NOT the wall — quinn-udp GSO already batches ~7.6
-    // segments/sendmsg on this path). Under the gate the sender:
-    //   1. drains TUN intake in pacer-quantum bursts (≤ emit_burst symbols
-    //      per loop iteration, ~64 KB — inside the flow-control store
-    //      headroom and the cc_pace token bucket, checked per symbol), so
-    //      loop-iteration overhead amortizes and quinn's endpoint driver
-    //      sees a multi-datagram queue (deeper GSO transmits);
-    //   2. refreshes the derived taper/span math once per burst instead of
-    //      per symbol (the A* send-rate anchor is still FED per symbol —
-    //      only the derived-rate recomputation is amortized).
-    // OFF ⇒ per-symbol recompute, bit-identical shipped path. Plain
-    // window-reliable mode only (generation/coded emission has its own
-    // paced block; realtime packing keeps its per-packet latency path).
-    // SINGLE-LIVE-PATH ONLY (measured, 2026-07-27 battery rep 1): the
-    // emission service wall is a c1-class single-path binder (§16.23);
-    // dual cells are wire/recovery-bound and bursting there AMPLIFIES the
-    // wall-#8 striping-gap loss misread (global batch serials + longer
-    // same-path arrival runs → per-path pl read up to 0.74 at a 2.6%-loss
-    // cell, tail-recovery stretch: c7 167→115, c8 87→52). With N ≥ 2 live
-    // paths the emission path stays bit-identical (`emit_batch_live`
-    // re-checked per loop iteration — path flaps re-scope within one
-    // burst).
-    // Realtime (packed) mode is excluded outright: its per-packet latency
-    // path must never trade a wakeup for a burst, and its symbol rate is
-    // orders below the wall. The taper cache additionally carries a 50 ms
-    // staleness bound so a low-rate bulk-hint tunnel (e.g. the tail-matrix
-    // message workload riding the bulk tunnel at 50 msg/s) never runs the
-    // span/shed law on second-old anchors.
-    let emit_batch_on = gates.emit_batch && reliable && !coded_wire && !use_packing;
     let mut emit_batch_live = false;
-    let emit_burst: usize = gates.emit_burst;
-    if emit_batch_on {
+    if pol.emit_batch_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
-            burst = emit_burst,
+            burst = pol.emit_burst,
             "emission batching ACTIVE (RWM_EMIT_BATCH: pacer-quantum TUN \
              intake + per-burst taper/span refresh; flow-control and pacing \
              contracts enforced at symbol granularity)"
@@ -5995,35 +5340,14 @@ async fn run_window_sender(
     let mut st = SenderState::new(
         fec_backend,
         symbol_size,
-        gen_size,
-        pipeline,
+        pol.gen_size,
+        pol.pipeline,
         systematic,
         generation,
-        gen_repair_floor,
+        pol.gen_repair_floor,
         gen_last_source_us,
         last_source_send_us,
     );
-    let pol = SenderPolicy {
-        symbol_size,
-        protocol_hint,
-        reliable,
-        generation,
-        systematic,
-        coded_wire,
-        gen_size,
-        gen_repair_floor,
-        cc_pace,
-        percap_borrow_on,
-        percap_track,
-        emit_burst,
-        unified_span,
-        astar_anchor_on,
-        shed_on,
-        taper_r_budget,
-        repair_rate_floor,
-        diag_on,
-        span_diag_start_us,
-    };
     let sctx = SenderCtx {
         scheduler,
         fec_controller,
@@ -6056,74 +5380,10 @@ async fn run_window_sender(
     // Retention backpressure state (reliable mode), for edge-triggered logs.
     let mut last_tx_paused = false;
 
-    // RWM_DIAG (transport-ceiling diagnosis): once per ~250 ms emit one line
-    // isolating the binding single-connection constraint — window occupancy vs
-    // store_max, tx_paused duty cycle, cumulative-ack goodput (Mbit/s), the
-    // ack-clocked pacing rate vs the link, cwnd/in_flight vs BDP, and the
-    // source/coded send rates. Gated on the RWM_DIAG env so the hot path is
-    // untouched when off. (`diag_on` itself is resolved above.)
-    // Transport-ceiling fix (generation mode): bound the in-flight (unacked)
-    // symbols to ~BDP instead of the fixed store_max = G·(M+1). The oversized
-    // store_max is decoupled from the pipe (14× BDP at C2), so unpaced source
-    // emission builds a multi-hundred-ms standing queue (MEASURED RTT inflated
-    // to 0.5–1.3 s), which turns every hole into a ~1 s recovery stall. Cap
-    // total in-flight at a BDP-scaled bound so the queue — and thus the
-    // recovery-stall latency — stays small. 0 = off (legacy store-only
-    // backpressure). The deficit-recovery emission is EXEMPT (it must always be
-    // able to fund a frontier hole, else a full-window pipe deadlocks).
-    let infl_cap: u64 = gates.infl_cap;
-    // PART 1.2 (receiver-tail): BDP-DERIVED in-flight cap. A fixed RWM_INFL_CAP
-    // must be hand-tuned per RTT; instead bound total in-flight to
-    // gain × Σ copa_bdp_anchor (BtlBw×RTprop, bufferbloat-robust) recomputed
-    // live, so the standing queue — and thus the RECOVERY-ROUND RTT — stays
-    // ~gain·BDP at ANY RTT. It gates BOTH proactive emission AND (Fix-2
-    // non-exempt) reactive/deficit recovery via `cwnd_full`, so the parallel
-    // tail flush cannot re-bloat the queue. Env RWM_INFL_BDP=gain (e.g. 2.0);
-    // 0/unset = off (legacy static RWM_INFL_CAP / store-only backpressure).
-    // gen_pipe remedy 1: the per-path BDP in-flight cap ON (gain 1.5 — the
-    // FMTCP-era oracle PART 5c finding: the bare aggregate BDP starves the
-    // recovery headroom; ~1.5× over the windowed-max — hence under-estimating —
-    // anchor gives the emergent ~1.3× BDP operating point) so the standing
-    // queue — and the RTT the SUBSTRATE CC sees — stays ≈ RTprop.
-    let infl_bdp_gain: f64 = gates
-        .infl_bdp
-        .unwrap_or(if gen_pipe { 1.5 } else { 0.0 })
-        .max(0.0);
-    let infl_bdp_on = infl_bdp_gain > 0.0;
-    // The #64 fix (FMTCP-era, retained under gen_pipe): enforce the in-flight
-    // cap PER PATH (path i outstanding ≤ gain·BtlBw_i·RTprop_i) rather than as
-    // one fungible global Σ budget. The sender is TUN-paused only when EVERY
-    // active path is at its own cap, so the fast path keeps pulling fresh
-    // source while the slow path is full.
-    let infl_percap = gen_pipe;
     // Boot cap before the BtlBw anchor warms (a few RTTs); ~1.5× a 100 Mbit/
     // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
-    let mut dyn_infl_cap: u64 = if infl_bdp_on { 128 } else { infl_cap };
+    let mut dyn_infl_cap: u64 = if pol.infl_bdp_on { 128 } else { pol.infl_cap };
     let mut dyn_infl_refresh_us: u64 = 0;
-    // Transport-ceiling fix (generation mode): clock the coded-emission budget
-    // to the SENT source frontier instead of the ACKED frontier. The
-    // ack-clocked `target = ack·(1+r) + W` DEADLOCKS a small generation: once
-    // the proactive budget W is spent, coded stops until the ack advances — but
-    // the ack is stalled precisely because the frontier generation is missing
-    // the coded it needs to decode (MEASURED: G=96 wedges with in_flight=0,
-    // src=0, cod=0). Sourcing the budget from the sent frontier lets the
-    // encoder's own per-generation ceil(K_g·(1+r)) cap + the M-generation
-    // retention bound govern coded emission (both already bound the datagram
-    // buffer), so proactive coverage always completes and small generations —
-    // which keep the store near BDP and avoid the bufferbloat stall — work.
-    let coded_src_clock = gates.coded_src;
-    // PURE-PROACTIVE demonstrator (proactive-FEC-vs-ARQ crossover, directive #4):
-    // when set, DISABLE the deficit-driven reactive recovery loop entirely. All
-    // recovery then comes from the UPFRONT proactive per-generation budget
-    // (ceil(len·r)) — no NACK/deficit round-trips, and (crucially) no
-    // recovery-emission path that is EXEMPT from the in-flight congestion cap, so
-    // every emitted symbol (systematic source + proactive coded) is bounded by
-    // RWM_INFL_CAP and cannot overrun the droppable datagram path. This isolates
-    // the clean question: with enough upfront repair (high r) that holes decode
-    // on arrival, does proactive FEC beat ARQ at high RTT? Requires r sized to
-    // cover the per-generation loss tail — a generation that loses more than its
-    // budget never decodes (the object DNFs), which is itself the honest result.
-    let no_reactive = gates.no_reactive;
     let diag_start_us = now_us();
     let mut diag_last_us = now_us();
     let mut diag_last_ack: u64 = 0;
@@ -6211,7 +5471,7 @@ async fn run_window_sender(
                 if end < start {
                     continue;
                 }
-                if store_sack_release_on {
+                if pol.store_sack_release_on {
                     // SACK-clocked store release: uncount the slot (window
                     // opens, pool/account freed) — KEEP the payload and
                     // every recovery structure (retransmit_buffer,
@@ -6222,14 +5482,14 @@ async fn run_window_sender(
                     let newly =
                         sack_release_mark(&st.sent_store, &mut sack_released, start, end);
                     sack_released_total += newly.len() as u64;
-                    if percap_track {
+                    if pol.percap_track {
                         for &k in &newly {
                             // Per-path account slot freed on delivery
                             // evidence (idempotent: cumulative release
                             // later finds the seq already gone — the
                             // documented no-double-release contract).
                             percap_release_seq(&mut st.percap_acct, &mut st.percap_out, k);
-                            if percap_borrow_on {
+                            if pol.percap_borrow_on {
                                 percap_loan_release(
                                     &mut st.percap_loans,
                                     &mut st.percap_lent,
@@ -6248,7 +5508,7 @@ async fn run_window_sender(
         // windows of cumulative-ack advance (delivery truth). S stays 0 —
         // the shipped-identical operating point — until R_ack warms or
         // while N < 2 live paths.
-        if place_slack_on {
+        if pol.place_slack_on {
             let pnow = now_us();
             if pnow.saturating_sub(ps_refresh_us) >= 5_000 {
                 ps_refresh_us = pnow;
@@ -6291,12 +5551,12 @@ async fn run_window_sender(
         // RWM_EMIT_BATCH scope check (see the gate decl): batching engages
         // only while exactly ONE path is live; re-checked every iteration so
         // path flaps re-scope within one burst. Gate-off pays nothing.
-        if emit_batch_on {
+        if pol.emit_batch_on {
             emit_batch_live = scheduler.lock().live_paths().len() == 1;
         }
 
         // Determine if packer has pending data for flush timer
-        let packer_pending = use_packing && packer.is_pending();
+        let packer_pending = pol.use_packing && packer.is_pending();
 
         // RWM Phase A backpressure: when the sent-data store is full of
         // un-acked symbols, stop reading the TUN — the inner flow sees the
@@ -6323,9 +5583,9 @@ async fn run_window_sender(
         // 2 s → 500 ms (hygiene rule 1: the anchor seeds from the first
         // measured acks, not after a multi-second pin; the max over 8 buckets
         // keeps a comparable window).
-        if gen_pipe {
+        if pol.gen_pipe {
             let (gp_bucket_us, gp_ring) =
-                if mstar_anchor { (500_000u64, 8usize) } else { (2_000_000u64, 4usize) };
+                if pol.mstar_anchor { (500_000u64, 8usize) } else { (2_000_000u64, 4usize) };
             let nowp = now_us();
             if nowp.saturating_sub(gp_bucket_start_us) >= gp_bucket_us {
                 let ack_now = window_ack_seq.load(Ordering::Relaxed);
@@ -6365,9 +5625,9 @@ async fn run_window_sender(
                             .fold(0.0, f64::max)
                     }
                 };
-                let m = gen_pipe_depth(gp_rate_max, rtprop_s, gen_size);
+                let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
-                    if diag_on {
+                    if pol.diag_on {
                         eprintln!(
                             "[GPIPE] M* {}→{} (rate_max={:.0}sym/s rtprop={:.1}ms)",
                             gen_pipe_m, m, gp_rate_max, rtprop_s * 1000.0
@@ -6376,11 +5636,11 @@ async fn run_window_sender(
                     gen_pipe_m = m;
                     st.encoder.set_pipeline_depth(m);
                 }
-                gen_pipe_store_cap = (gen_pipe_m * gen_size).min(store_max);
+                gen_pipe_store_cap = (gen_pipe_m * pol.gen_size).min(pol.store_max);
             }
         }
         // PART 1.2: refresh the BDP-derived in-flight cap (throttled ~5 ms).
-        if infl_bdp_on {
+        if pol.infl_bdp_on {
             let dnow = now_us();
             if dnow.saturating_sub(dyn_infl_refresh_us) >= 5_000 {
                 dyn_infl_refresh_us = dnow;
@@ -6397,11 +5657,11 @@ async fn run_window_sender(
                     }
                 };
                 if bdp > 0.0 {
-                    dyn_infl_cap = ((infl_bdp_gain * bdp).ceil() as u64).max(64);
+                    dyn_infl_cap = ((pol.infl_bdp_gain * bdp).ceil() as u64).max(64);
                 }
             }
         }
-        let eff_infl_cap = if infl_bdp_on { dyn_infl_cap } else { infl_cap };
+        let eff_infl_cap = if pol.infl_bdp_on { dyn_infl_cap } else { pol.infl_cap };
         // In-flight (unacked) symbols across the pipe, for the BDP in-flight cap.
         // The #64 fix: also decide fullness PER PATH — the sender is "full"
         // (TUN-paused) only when NO active path is below its own cap
@@ -6421,7 +5681,7 @@ async fn run_window_sender(
                     // global boot cap before the anchor warms.
                     let cap_i = p
                         .copa_bdp_anchor()
-                        .map(|b| ((infl_bdp_gain * b).ceil() as u64).max(1))
+                        .map(|b| ((pol.infl_bdp_gain * b).ceil() as u64).max(1))
                         .unwrap_or(eff_infl_cap);
                     per_path.push((fl, cap_i));
                 }
@@ -6431,12 +5691,12 @@ async fn run_window_sender(
             (0, false)
         };
         let cwnd_full = eff_infl_cap > 0
-            && if infl_percap { percap_full } else { pipe_infl >= eff_infl_cap };
+            && if pol.infl_percap { percap_full } else { pipe_infl >= eff_infl_cap };
         // Plain-reliable delay-based window cap (paper §12): bound the
         // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
         // loss recovery does not stall behind a bloated queue. Refreshed off
         // the scheduler lock at most every 5 ms.
-        if plain_dyn_cap {
+        if pol.plain_dyn_cap {
             let dnow = now_us();
             if dnow.saturating_sub(dyn_cap_refresh_us) >= 5_000 {
                 dyn_cap_refresh_us = dnow;
@@ -6476,7 +5736,7 @@ async fn run_window_sender(
                         // and the retention backstop at N = 1 — the feed's
                         // delivered-rate anchor when warm, else Copa's own
                         // cwnd/RTprop (both honest under Copa-sole).
-                        let wd = if win_decouple_on && live.len() == 1 {
+                        let wd = if pol.win_decouple_on && live.len() == 1 {
                             live.first().and_then(|id| sched.path(*id)).and_then(|p| {
                                 let rtp = p.min_rtt().map(|d| d.as_secs_f64())?;
                                 if rtp <= 0.0 {
@@ -6496,36 +5756,36 @@ async fn run_window_sender(
                     wd_engaged = false;
                     pa_engaged = false; // Copa-sole owns the store law (Σcwnd)
                     dyn_store_cap = if let (true, Some((rate, rtp))) =
-                        (win_decouple_on && cwnd_sum > 0.0, wd_terms)
+                        (pol.win_decouple_on && cwnd_sum > 0.0, wd_terms)
                     {
                         // Decoupled law under Copa-sole: residence = Copa's
                         // own gain*cwnd (un-truncated — the B1 dwell-ceiling
                         // release); stall meter + retention backstop per the
                         // amended constants.
-                        wd_allow_base = store_bdp_gain * cwnd_sum;
+                        wd_allow_base = pol.store_bdp_gain * cwnd_sum;
                         wd_rate = rate;
                         wd_cap_ret = win_decouple_cap_ret(
                             wd_allow_base,
                             rate,
                             rtp,
-                            store_cap_floor,
+                            pol.store_cap_floor,
                         );
                         wd_engaged = true;
                         wd_cap_ret
                     } else if let Some(cap) = path_scaled_store_cap(
-                        store_paths_on,
+                        pol.store_paths_on,
                         n_live,
                         cwnd_sum,
-                        store_bdp_gain,
-                        store_cap_floor,
-                        store_path_pool,
+                        pol.store_bdp_gain,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
                     ) {
                         cap
                     } else if cwnd_sum > 0.0 {
-                        ((store_bdp_gain * cwnd_sum).ceil() as usize)
-                            .clamp(store_cap_floor, store_max)
+                        ((pol.store_bdp_gain * cwnd_sum).ceil() as usize)
+                            .clamp(pol.store_cap_floor, pol.store_max)
                     } else {
-                        store_boot_cap.min(store_max)
+                        pol.store_boot_cap.min(pol.store_max)
                     };
                 } else {
                     // RWM_STORE_CAPW (goal-gate "C8-Aware Pool Law"): the
@@ -6535,7 +5795,7 @@ async fn run_window_sender(
                     // saturated path must keep its earned share). None until
                     // that path's anchor warms; capw_store_cap requires ALL
                     // live paths warm, else the configured fallback below.
-                    let capw_terms: Vec<Option<f64>> = if capw_on {
+                    let capw_terms: Vec<Option<f64>> = if pol.capw_on {
                         let sched = scheduler.lock();
                         sched
                             .live_paths()
@@ -6556,7 +5816,7 @@ async fn run_window_sender(
                                         p.copa_bdp_anchor(),
                                         p.btlbw_sym_per_s(),
                                         k,
-                                        store_bdp_gain,
+                                        pol.store_bdp_gain,
                                     )
                                 })
                             })
@@ -6589,7 +5849,7 @@ async fn run_window_sender(
                             if let Some(p) = sched.path(*id) {
                                 if let Some(a) = p.copa_bdp_anchor() {
                                     bdp += a;
-                                    if honest_cap_on || (win_decouple_on && n == 1) {
+                                    if pol.honest_cap_on || (pol.win_decouple_on && n == 1) {
                                         let k = percap_k
                                             .entry(*id)
                                             .or_insert_with(|| {
@@ -6600,16 +5860,16 @@ async fn run_window_sender(
                                                 p.min_rtt(),
                                                 dnow,
                                             );
-                                        if honest_cap_on {
+                                        if pol.honest_cap_on {
                                             hsum += honest_store_cap(
                                                 Some(a),
                                                 p.btlbw_sym_per_s(),
                                                 k,
-                                                store_bdp_gain,
+                                                pol.store_bdp_gain,
                                             )
                                             .unwrap_or(0.0);
                                         }
-                                        if win_decouple_on && n == 1 {
+                                        if pol.win_decouple_on && n == 1 {
                                             if let (Some(r), Some(rtp)) = (
                                                 p.btlbw_sym_per_s().filter(|r| *r > 0.0),
                                                 p.min_rtt().map(|d| d.as_secs_f64()),
@@ -6627,7 +5887,7 @@ async fn run_window_sender(
                     // CopaFeed::n1_pause) — refreshed here at the dyn-cap
                     // cadence. Never touches RWM_PLAIN_RS or Copa-sole
                     // feeds (their semantics are unchanged).
-                    if win_decouple_on && !gates.plain_rs {
+                    if pol.win_decouple_on && !gates.plain_rs {
                         if let Some(f) = &copa_feed {
                             if !f.owns_cc() {
                                 f.set_n1_paused(n_live >= 2);
@@ -6644,7 +5904,7 @@ async fn run_window_sender(
                     // verbatim. live_paths(), NOT active_paths(): the
                     // cwnd-saturation filter trap (documented above) must
                     // not drop a saturated path's earned share.
-                    let pa_terms: Vec<Option<f64>> = if pool_anchor_on && n_live >= 2 {
+                    let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
                         let sched = scheduler.lock();
                         sched
                             .live_paths()
@@ -6672,7 +5932,7 @@ async fn run_window_sender(
                                         Some(sr * rtp),
                                         Some(sr),
                                         k,
-                                        store_bdp_gain,
+                                        pol.store_bdp_gain,
                                     )
                                 })
                             })
@@ -6683,51 +5943,51 @@ async fn run_window_sender(
                     wd_engaged = false;
                     pa_engaged = false;
                     dyn_store_cap = if let (true, Some((a, r, k, rtp))) =
-                        (win_decouple_on && n_live == 1, wd_terms)
+                        (pol.win_decouple_on && n_live == 1, wd_terms)
                     {
                         // Decoupled law (part 1, plain/BBR seat): residence
                         // on the honest anchor + probe headroom; the stall
                         // meter and hole capacity live in the gate below and
                         // the retention backstop respectively.
-                        wd_allow_base = a * (k.max(1.0) + store_bdp_gain - 1.0);
+                        wd_allow_base = a * (k.max(1.0) + pol.store_bdp_gain - 1.0);
                         wd_rate = r;
                         wd_cap_ret = win_decouple_cap_ret(
                             wd_allow_base,
                             r,
                             rtp,
-                            store_cap_floor,
+                            pol.store_cap_floor,
                         );
                         wd_engaged = true;
                         wd_cap_ret
                     } else if let Some(cap) = capw_store_cap(
-                        capw_on,
+                        pol.capw_on,
                         &capw_terms,
-                        store_cap_floor,
-                        store_path_pool,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
                     ) {
                         // Capacity-weighted shared pool ENGAGED (N ≥ 2, all
                         // anchors warm): Σ honest per-path caps, clamped to
                         // [floor, N×knee]. Takes precedence over the hsum /
                         // path-scaled laws — this IS the pool law under test.
                         cap
-                    } else if honest_cap_on && hsum > 0.0 {
+                    } else if pol.honest_cap_on && hsum > 0.0 {
                         // Honest law: the Σ is already per-path-composed
                         // (each term carries its own K_i and runway), so no
                         // gain× multiplier here. Principled ceilings
                         // unchanged: the legacy store latch at N = 1, the
                         // N×knee pool when the path-scaled pool is
                         // configured.
-                        let ceiling = if store_paths_on && n_live >= 2 {
-                            n_live.saturating_mul(store_path_pool).max(store_cap_floor)
+                        let ceiling = if pol.store_paths_on && n_live >= 2 {
+                            n_live.saturating_mul(pol.store_path_pool).max(pol.store_cap_floor)
                         } else {
-                            store_max
+                            pol.store_max
                         };
-                        (hsum.ceil() as usize).clamp(store_cap_floor, ceiling)
+                        (hsum.ceil() as usize).clamp(pol.store_cap_floor, ceiling)
                     } else if let Some(cap) = capw_store_cap(
-                        pool_anchor_on,
+                        pol.pool_anchor_on,
                         &pa_terms,
-                        store_cap_floor,
-                        store_path_pool,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
                     ) {
                         // Pool-anchor law ENGAGED (RWM_POOL_ANCHOR, N ≥ 2,
                         // all send anchors warm): Σ honest per-path caps on
@@ -6741,18 +6001,18 @@ async fn run_window_sender(
                         pa_sum = pa_terms.iter().flatten().sum();
                         cap
                     } else if let Some(cap) = path_scaled_store_cap(
-                        store_paths_on,
+                        pol.store_paths_on,
                         n_live,
                         bdp,
-                        store_bdp_gain,
-                        store_cap_floor,
-                        store_path_pool,
+                        pol.store_bdp_gain,
+                        pol.store_cap_floor,
+                        pol.store_path_pool,
                     ) {
                         cap
                     } else if bdp > 0.0 {
-                        ((store_bdp_gain * bdp).ceil() as usize).clamp(store_cap_floor, store_max)
+                        ((pol.store_bdp_gain * bdp).ceil() as usize).clamp(pol.store_cap_floor, pol.store_max)
                     } else {
-                        store_boot_cap.min(store_max)
+                        pol.store_boot_cap.min(pol.store_max)
                     };
                 }
                 // ── task #86: per-path account caps (RWM_STORE_PERCAP) ────
@@ -6769,7 +6029,7 @@ async fn run_window_sender(
                 // the per-path pool knee bounds the echo-RTT feedback).
                 percap_caps.clear();
                 percap_bounds.clear();
-                if percap_on {
+                if pol.percap_on {
                     // (pipe_i for the cap law, floor_pipe_i for the redirect
                     // guard). Plain: pipe = rate×echoSRTT (loaded clock, the
                     // cap's Little's-law residence time), floor_pipe =
@@ -6787,7 +6047,7 @@ async fn run_window_sender(
                         // the same honest sources (Copa feed: cwnd/RTprop
                         // as the drain rate; plain: the send-interval
                         // BtlBw anchor). Empty map when borrowing is off.
-                        if percap_borrow_on {
+                        if pol.percap_borrow_on {
                             percap_rr.clear();
                             for id in live.iter() {
                                 if let Some(p) = sched.path(*id) {
@@ -6827,7 +6087,7 @@ async fn run_window_sender(
                                         // K·RTprop + recovery-clock runway;
                                         // no loaded-echo term (see
                                         // `honest_store_cap`).
-                                        let honest = if honest_cap_on {
+                                        let honest = if pol.honest_cap_on {
                                             let k = percap_k
                                                 .entry(*id)
                                                 .or_insert_with(|| {
@@ -6844,7 +6104,7 @@ async fn run_window_sender(
                                                 floor_pipe,
                                                 rate,
                                                 k,
-                                                store_bdp_gain,
+                                                pol.store_bdp_gain,
                                             )
                                         } else {
                                             None
@@ -6870,16 +6130,16 @@ async fn run_window_sender(
                             // anchor warms, exactly when pipe = None too).
                             let cap_i = match honest {
                                 Some(h) => (h.ceil() as usize).clamp(
-                                    store_cap_floor,
-                                    store_path_pool.max(store_cap_floor),
+                                    pol.store_cap_floor,
+                                    pol.store_path_pool.max(pol.store_cap_floor),
                                 ),
                                 None => percap_store_cap(
                                     pipe,
                                     legacy_cap,
                                     n,
-                                    store_bdp_gain,
-                                    store_cap_floor,
-                                    store_path_pool,
+                                    pol.store_bdp_gain,
+                                    pol.store_cap_floor,
+                                    pol.store_path_pool,
                                 ),
                             };
                             percap_caps.insert(pid, cap_i);
@@ -6887,11 +6147,11 @@ async fn run_window_sender(
                             // bound = cap (guard degenerate) when unguarded.
                             percap_bounds.insert(
                                 pid,
-                                if percap_guard_on {
+                                if pol.percap_guard_on {
                                     percap_redirect_bound(
                                         floor_pipe,
                                         cap_i,
-                                        store_bdp_gain,
+                                        pol.store_bdp_gain,
                                     )
                                 } else {
                                     cap_i
@@ -6906,14 +6166,14 @@ async fn run_window_sender(
                 }
             }
         }
-        let effective_store_cap = if plain_dyn_cap {
+        let effective_store_cap = if pol.plain_dyn_cap {
             dyn_store_cap
-        } else if gen_pipe {
+        } else if pol.gen_pipe {
             // gen_pipe remedy 2: intake bounded at the DERIVED M*·G — deep
             // enough to cover BDP + one deficit round, no deeper (queue-lean).
             gen_pipe_store_cap
         } else {
-            store_max
+            pol.store_max
         };
         let tx_paused = if !percap_caps.is_empty() {
             // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
@@ -6943,7 +6203,7 @@ async fn run_window_sender(
             // with a lender inside its lend bound keeps admission open;
             // the placement then borrows instead of redirecting).
             let guarded_full = percap_store_full_guarded(&accounts)
-                && !(percap_borrow_on && {
+                && !(pol.percap_borrow_on && {
                     let baccts: Vec<BorrowAccount> = percap_caps
                         .iter()
                         .map(|(&pid, &cap)| {
@@ -6997,7 +6257,7 @@ async fn run_window_sender(
         // frontier is max(highest SACK-released seq, cumulative ack) —
         // O(log n) per iteration. Runs for the DIAG gauge AND for the
         // decoupled law's stall meter (RWM_WIN_DECOUPLE).
-        if (diag_on || win_decouple_on) && reliable && !generation {
+        if (pol.diag_on || pol.win_decouple_on) && reliable && !generation {
             let tnow = now_us();
             let frontier = sack_released
                 .iter()
@@ -7014,7 +6274,7 @@ async fn run_window_sender(
             }
         }
         // RWM_DIAG periodic constraint report (see decls above the loop).
-        if diag_on {
+        if pol.diag_on {
             diag_total_iters += 1;
             if tx_paused {
                 diag_paused_iters += 1;
@@ -7038,7 +6298,7 @@ async fn run_window_sender(
                     // extra compare per emission event, only under
                     // RWM_SIDLE_DERIVED; the legacy accumulation above is
                     // untouched, so both numbers come off the same run.
-                    if sidle_derived {
+                    if pol.sidle_derived {
                         sidle_evt_n += 1;
                         if sidle_last_total > 0 && gap >= sidle_thr_us {
                             sidle2_us += gap;
@@ -7066,7 +6326,7 @@ async fn run_window_sender(
                 // measured emission-event rate (window duration / events
                 // observed). A window with no events keeps the previous
                 // interval rather than inventing one. Once per 250 ms.
-                if sidle_derived {
+                if pol.sidle_derived {
                     if sidle_evt_n > 0 {
                         sidle_evt_us = ddt / sidle_evt_n;
                         sidle_thr_us = stall_threshold_us(sidle_evt_us);
@@ -7083,7 +6343,7 @@ async fn run_window_sender(
                     // cap + live RTT vs RTprop — the slow-path bufferbloat probe
                     // (is the slow path over its BDP? is its RTT inflated above
                     // RTprop?).  Cap gain = the BDP in-flight gain.
-                    let cap_gain = infl_bdp_gain;
+                    let cap_gain = pol.infl_bdp_gain;
                     let mut pp = String::new();
                     let ids = sched.active_paths();
                     for id in &ids {
@@ -7246,7 +6506,7 @@ async fn run_window_sender(
                 // but uncounted) / cumulative slots released — the store-
                 // dwell mechanism gauge (win= already shows the uncounted
                 // outstanding; retained = win + srel_cur). Empty when off.
-                let srdiag = if store_sack_release_on {
+                let srdiag = if pol.store_sack_release_on {
                     format!(" srel={}/{}", sack_released.len(), sack_released_total)
                 } else {
                     String::new()
@@ -7292,7 +6552,7 @@ async fn run_window_sender(
                 };
                 // δ-honest shed DIAG (fix C): cumulative shed / budget-
                 // refused, live 1−ρ fraction and deadline. Empty when off.
-                let sheddiag = if shed_on {
+                let sheddiag = if pol.shed_on {
                     format!(
                         " shed={}/{} bud={:.4} D={}ms",
                         st.shed_total,
@@ -7368,7 +6628,7 @@ async fn run_window_sender(
                 // stall gauge printed beside the untouched legacy one.
                 // `sidle2=<cum ms>/<n>/mx<max ms> evt=<µs> sthr=<µs>`.
                 // Empty (and nothing computed) unless RWM_SIDLE_DERIVED.
-                let sd2 = if sidle_derived {
+                let sd2 = if pol.sidle_derived {
                     format!(
                         " sidle2={}ms/{}/mx{}ms evt={}us sthr={}us",
                         sidle2_us / 1000,
@@ -7437,7 +6697,7 @@ async fn run_window_sender(
                         }
                         // RWM_PLACE_SLACK gauge: the live S (ms) + ack-rate
                         // EWMA (sym/s) — engagement magnitude for the law.
-                        if place_slack_on {
+                        if pol.place_slack_on {
                             s.push_str(&format!(
                                 " slk={:.0}ms/r{:.0}",
                                 ps_slack_gauge * 1000.0,
@@ -7513,10 +6773,10 @@ async fn run_window_sender(
             // this the coder would keep re-coding the stalled generation and
             // never provision the fresh ones — they would then need reactive
             // recovery and re-serialize. No-op when ooo_retain is off (default).
-            if ooo_retain {
+            if pol.ooo_retain {
                 let (_, newest) = st.encoder.window_span();
                 let code_anchor =
-                    newest.saturating_sub((pipeline as u64) * (gen_size as u64));
+                    newest.saturating_sub((pol.pipeline as u64) * (pol.gen_size as u64));
                 st.encoder.set_code_base(code_anchor);
             }
             // ACK-CLOCKED WINDOW FLOW CONTROL. Emit coded symbols up to
@@ -7559,11 +6819,11 @@ async fn run_window_sender(
             // (M*·G) + per-generation ceil(len·(1+r)) budgets already bound
             // the outstanding coded, so the stalled ack must not freeze the
             // M*−1 fresh generations' provisioning.
-            let target = if coded_src_clock || ooo_retain || gen_pipe {
+            let target = if pol.coded_src_clock || pol.ooo_retain || pol.gen_pipe {
                 let (_, wend) = st.encoder.window_span();
-                (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                (wend as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
             } else {
-                (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                (ack_now as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
             };
             // Clock the pacing rate to the DELIVERED goodput (ack rate): sample
             // the ack advance over a ~20 ms window into an EWMA, and pace at
@@ -7597,9 +6857,9 @@ async fn run_window_sender(
             // the recovery statistic. Headroom 1.25 (the BBR probe gain — the
             // wire must fund (1+r)/(1−ε) ≈ 1.08× the delivered rate plus ramp
             // margin) instead of the legacy 1.5 whose overshoot bursts drop.
-            let eff_factor = if cc_pace {
-                cc_pace_headroom
-            } else if gen_pipe {
+            let eff_factor = if pol.cc_pace {
+                pol.cc_pace_headroom
+            } else if pol.gen_pipe {
                 1.25
             } else {
                 1.5
@@ -7607,25 +6867,25 @@ async fn run_window_sender(
             // Fix 1: under cc_pace clock coded emission on the same frontier-
             // independent CC rate (max with the goodput EWMA) so a stalled
             // in-order ack does not starve coded emission below the link.
-            let eff_base = if cc_pace {
+            let eff_base = if pol.cc_pace {
                 gen_rate_ewma.max(cc_rate_cached)
-            } else if gen_pipe {
+            } else if pol.gen_pipe {
                 gen_rate_ewma.max(gp_rate_max)
             } else {
                 gen_rate_ewma
             };
-            let eff_rate = (eff_base * eff_factor).clamp(gen_rate_floor, gen_rate);
+            let eff_rate = (eff_base * eff_factor).clamp(pol.gen_rate_floor, pol.gen_rate);
             diag_eff_rate = eff_rate;
             // Refill the pacing token bucket (capped at a small burst). Under
             // cc_pace the cap is ≈ a few ms of link rate (not 64) so a caught-up
             // bucket can't release a large coded burst onto the datagram path.
             let tok_dt = now.saturating_sub(gen_tok_last_us);
             gen_tok_last_us = now;
-            let gen_tok_cap = if cc_pace { (eff_rate * 0.004).clamp(8.0, 64.0) } else { 64.0 };
+            let gen_tok_cap = if pol.cc_pace { (eff_rate * 0.004).clamp(8.0, 64.0) } else { 64.0 };
             gen_tokens = (gen_tokens + eff_rate * (tok_dt as f64 / 1_000_000.0)).min(gen_tok_cap);
-            let burst_cap = if cc_pace { 64u32 } else { 256u32 };
+            let burst_cap = if pol.cc_pace { 64u32 } else { 256u32 };
             let mut emitted = 0u32;
-            while !proactive_pacer
+            while !pol.proactive_pacer
                 && (gen_coded_total as f64) < target
                 && emitted < burst_cap
                 && gen_tokens >= 1.0
@@ -7634,7 +6894,7 @@ async fn run_window_sender(
             {
                 let path = {
                     let sched = scheduler.lock();
-                    if xpath_repair {
+                    if pol.xpath_repair {
                         sched.place_repair_spare_path().unwrap_or(0)
                     } else {
                         sched.place_symbol(true, &[]).unwrap_or(0)
@@ -7651,7 +6911,7 @@ async fn run_window_sender(
                 if sym.data.len() >= 8 {
                     let anchor = u64::from_le_bytes(sym.data[0..8].try_into().unwrap());
                     *gen_emitted.entry(anchor).or_insert(0) += 1;
-                    if diag_on {
+                    if pol.diag_on {
                         st.gl.entry(anchor).or_insert((0, 0, 0)).2 = now_us();
                     }
                 }
@@ -7688,7 +6948,7 @@ async fn run_window_sender(
             // coding turns false at budget), the CC rate (gen_tokens) and
             // congestion (cwnd_full). Supersedes the sealed batched proactive
             // path above; the reactive deficit below remains the fallback.
-            if proactive_pacer {
+            if pol.proactive_pacer {
                 let mut fill_emitted = 0u32;
                 while fill_emitted < burst_cap
                     && gen_tokens >= 1.0
@@ -7697,7 +6957,7 @@ async fn run_window_sender(
                 {
                     let path = {
                         let sched = scheduler.lock();
-                        if xpath_repair {
+                        if pol.xpath_repair {
                             sched.place_repair_spare_path().unwrap_or(0)
                         } else {
                             sched.place_symbol(true, &[]).unwrap_or(0)
@@ -7747,7 +7007,7 @@ async fn run_window_sender(
             // (we send only the residual it reports, minus what is already in
             // flight — tracked in gen_want), so bypassing the ack-clock here
             // cannot flood: recovery is bounded AND funds the frontier at once.
-            if !no_reactive && !gen_want.is_empty() {
+            if !pol.no_reactive && !gen_want.is_empty() {
                 let rec_burst = 256u32;
                 let mut rec_emitted = 0u32;
                 'recover: loop {
@@ -7763,7 +7023,7 @@ async fn run_window_sender(
                     // recent, and (b) recovery running each iteration as the
                     // in-flight budget expires on the RTT timescale.
                     if gen_tokens < 1.0 || rec_emitted >= rec_burst
-                        || (react_cap_on && cwnd_full) {
+                        || (pol.react_cap_on && cwnd_full) {
                         break;
                     }
                     let now_r = now_us();
@@ -7774,7 +7034,7 @@ async fn run_window_sender(
                     let mut progressed = false;
                     for a in anchors {
                         if gen_tokens < 1.0 || rec_emitted >= rec_burst
-                            || (react_cap_on && cwnd_full) {
+                            || (pol.react_cap_on && cwnd_full) {
                             break 'recover;
                         }
                         let want = gen_want.get(&a).copied().unwrap_or(0);
@@ -7801,7 +7061,7 @@ async fn run_window_sender(
                         // aggregation (MEASURED C7 regression) for no C8 gain.
                         let path = {
                             let sched = scheduler.lock();
-                            if xpath_repair {
+                            if pol.xpath_repair {
                                 sched.place_repair_spare_path().unwrap_or(0)
                             } else {
                                 sched.place_symbol(true, &[]).unwrap_or(0)
@@ -7810,7 +7070,7 @@ async fn run_window_sender(
                         *gen_emitted.entry(a).or_insert(0) += 1;
                         recovery_coded_total += 1;
                         gd_flow = true;
-                        if diag_on {
+                        if pol.diag_on {
                             st.gl.entry(a).or_insert((0, 0, 0)).2 = now_us();
                         }
                         let nw = want - 1;
@@ -7820,7 +7080,7 @@ async fn run_window_sender(
                             gen_want.insert(a, nw);
                         }
                         gen_tokens -= 1.0;
-                        if react_cap_on {
+                        if pol.react_cap_on {
                             // Stamp this generation's recovery time so the spacing
                             // check above holds off further recovery for ~1 SRTT.
                             gen_recover_at.insert(a, now_r);
@@ -7859,7 +7119,7 @@ async fn run_window_sender(
         // declarations above. In coded-wire generation mode the paced coded
         // block is the whole data plane, so the gate that stopped it this
         // iteration is the throughput binder for the elapsed slice.
-        if diag_on && generation {
+        if pol.diag_on && generation {
             let now_g = now_us();
             let dt = now_g.saturating_sub(gd_last_us);
             gd_last_us = now_g;
@@ -7872,14 +7132,14 @@ async fn run_window_sender(
                 // wait) vs the head generation not yet sealed (intake-bound).
                 // advance() is generation-aligned, so ≥2·G retained means the
                 // two active generations are both full ⇒ sealed-at-budget.
-                if store_len >= 2 * gen_size { 1 } else { 2 }
+                if store_len >= 2 * pol.gen_size { 1 } else { 2 }
             } else {
                 let ack_now = window_ack_seq.load(Ordering::Relaxed);
-                let tgt = if coded_src_clock || ooo_retain || gen_pipe {
+                let tgt = if pol.coded_src_clock || pol.ooo_retain || pol.gen_pipe {
                     let (_, wend) = st.encoder.window_span();
-                    (wend as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                    (wend as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
                 } else {
-                    (ack_now as f64) * (1.0 + gen_repair_floor) + gen_inflight_window
+                    (ack_now as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
                 };
                 if cwnd_full {
                     5 // cwnd
@@ -7908,7 +7168,7 @@ async fn run_window_sender(
         // ms of link rate, NOT the BDP) is what kills the datagram burst-
         // overrun: at high RTT the flow window is BDP-sized, but emission is now
         // metered to the link so no BDP-sized burst reaches the droppable path.
-        if cc_pace {
+        if pol.cc_pace {
             let now = now_us();
             // Refresh the Copa cwnd/SRTT rate estimate (frontier-independent) at
             // most every 5 ms.
@@ -7945,12 +7205,12 @@ async fn run_window_sender(
                     }
                 };
                 cc_rate_cached = rate;
-                cc_rate_ceiling = gen_rate * n_live as f64;
+                cc_rate_ceiling = pol.gen_rate * n_live as f64;
             }
             // Pace at the HIGHER of the CC rate and the delivered-goodput EWMA so
             // a stalled in-order frontier (EWMA→0) can't throttle the source ramp.
             let link_est = gen_rate_ewma.max(cc_rate_cached);
-            let src_rate = (link_est * cc_pace_headroom).clamp(gen_rate_floor, cc_rate_ceiling);
+            let src_rate = (link_est * pol.cc_pace_headroom).clamp(pol.gen_rate_floor, cc_rate_ceiling);
             let dt = now.saturating_sub(src_tok_last_us);
             src_tok_last_us = now;
             let burst = (src_rate * 0.004).clamp(8.0, 64.0);
@@ -8004,9 +7264,9 @@ async fn run_window_sender(
             // empty), wake at 1 ms to refill it. Without this the select could
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep(Duration::from_millis(1)),
-                if cc_pace && !tx_paused && st.src_tokens < 1.0 => None,
+                if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => None,
             p = tun.read_packet(),
-                if !tx_paused && (!cc_pace || st.src_tokens >= 1.0) => Some(p),
+                if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => Some(p),
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
             // run the paced coded-emission block even when no TUN packet is ready
             // (the tail — all sources read but the last generations still need
@@ -8033,7 +7293,7 @@ async fn run_window_sender(
                     // Pure-proactive demonstrator: drain the channel but never
                     // arm reactive recovery (no round-trips, no exempt-from-cap
                     // emission). Proactive upfront budget is the ONLY recovery.
-                    if no_reactive {
+                    if pol.no_reactive {
                         let _ = dv;
                     } else {
                     // Fix 2: RTT-spacing gate. Reports arrive on EVERY decode
@@ -8046,7 +7306,7 @@ async fn run_window_sender(
                     // so we act on its deficit at most once per ~SRTT. Absent this
                     // window the baseline logic alone cannot bound a sub-RTT report
                     // stream. react_space_us = react_cap_cfg × SRTT (1.0 = 1 SRTT).
-                    let react_space_us: u64 = if react_cap_on {
+                    let react_space_us: u64 = if pol.react_cap_on {
                         // RWM_SCHED_SNAPSHOT: see the M* refresh above.
                         let srtt_us = match sched_snap.as_ref() {
                             Some(s) => s.srtt_max_us.unwrap_or(50_000),
@@ -8057,14 +7317,14 @@ async fn run_window_sender(
                                     .max().unwrap_or(50_000)
                             }
                         };
-                        ((srtt_us as f64) * react_cap_cfg).max(1_000.0) as u64
+                        ((srtt_us as f64) * pol.react_cap_cfg).max(1_000.0) as u64
                     } else {
                         0
                     };
                     let now_d = now_us();
                     for (anchor, deficit) in dv {
                         // Fix 2: hold off if we recovered this generation recently.
-                        if react_cap_on {
+                        if pol.react_cap_on {
                             if let Some(&last) = gen_recover_at.get(&anchor) {
                                 if now_d.saturating_sub(last) < react_space_us {
                                     continue;
@@ -8111,7 +7371,7 @@ async fn run_window_sender(
             }
             _ = shutdown_rx.recv() => {
                 // Flush any remaining packed data before shutdown
-                if use_packing {
+                if pol.use_packing {
                     if let Some(packed) = packer.flush() {
                         emit_source(
                     &packed,
@@ -8156,7 +7416,7 @@ async fn run_window_sender(
                 Some(p) => p,
                 None => {
                     // Flush remaining packed data before exit
-                    if use_packing {
+                    if pol.use_packing {
                         if let Some(packed) = packer.flush() {
                             emit_source(
                     &packed,
@@ -8175,7 +7435,7 @@ async fn run_window_sender(
                 }
             };
 
-            if use_packing {
+            if pol.use_packing {
                 // Pack multiple small packets into one symbol
                 if let Some(packed) = packer.push(&pkt) {
                     emit_source(
@@ -8213,7 +7473,7 @@ async fn run_window_sender(
                 // token bucket. Burst quantum ≤ emit_burst ≈ 64 KB.
                 if emit_batch_live {
                     let mut burst = 1usize;
-                    while burst < emit_burst {
+                    while burst < pol.emit_burst {
                         if reliable
                             && sack_release_outstanding(
                                 st.sent_store.len(),
@@ -8222,7 +7482,7 @@ async fn run_window_sender(
                         {
                             break; // store headroom exhausted (flow control)
                         }
-                        if cc_pace && st.src_tokens < 1.0 {
+                        if pol.cc_pace && st.src_tokens < 1.0 {
                             break; // pacing bucket dry (Fix 1 contract)
                         }
                         match tun.try_read_packet() {
@@ -8362,10 +7622,10 @@ async fn run_window_sender(
                         // Legacy path (gate off) keeps per-report
                         // processing bit-exactly.
                         let mut g = g;
-                        if recov_mp_law {
+                        if pol.recov_mp_law {
                             while let Ok(n) = nack_rx.try_recv() {
                                 g = n;
-                                if diag_on {
+                                if pol.diag_on {
                                     mpd_coalesced += 1;
                                 }
                             }
@@ -8402,12 +7662,12 @@ async fn run_window_sender(
                 // saturated path (available() == 0 collapses the law to the
                 // N=1 bypass mid-transfer). Default OFF = the shipped
                 // active_paths() arm.
-                let ids = if recov_mp_live {
+                let ids = if pol.recov_mp_live {
                     sched.live_paths()
                 } else {
                     sched.active_paths()
                 };
-                if recov_mp_law || recov_sp || diag_on {
+                if pol.recov_mp_law || pol.recov_sp || pol.diag_on {
                     mp_n_paths = ids.len();
                     for id in &ids {
                         if let Some(p) = sched.path(*id) {
@@ -8440,7 +7700,7 @@ async fn run_window_sender(
             // Goal-gate "Unlock The Default 2": the per-seq retransmit
             // cooldown's floor. Gate OFF ⇒ the legacy literal, bit-exact.
             let pooled_floor_us =
-                recovery_floor_us(patience_derived, pooled_jitter_us, srtt_us);
+                recovery_floor_us(pol.patience_derived, pooled_jitter_us, srtt_us);
             let retx_cooldown_us = retx_cooldown_us(srtt_us, pooled_floor_us);
             // The per-flight law threshold for a path (falls back to the
             // pooled cooldown clock when the path has no snapshot).
@@ -8453,9 +7713,9 @@ async fn run_window_sender(
                         // analog. Gate OFF ⇒ the legacy literal ⇒ this call
                         // is bit-identical to its pre-2026-08-07 form.
                         let floor =
-                            recovery_floor_us(patience_derived, jit, srtt.max(ewma));
+                            recovery_floor_us(pol.patience_derived, jit, srtt.max(ewma));
                         let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
-                        if diag_on {
+                        if pol.diag_on {
                             if floor_won {
                                 mpd_pf_floor.set(mpd_pf_floor.get() + 1);
                             } else {
@@ -8472,7 +7732,7 @@ async fn run_window_sender(
             let (win_start, win_end) = st.encoder.window_span();
             let mut retransmitted: u64 = 0;
             let mut nacked_count: u64 = 0;
-            if diag_on {
+            if pol.diag_on {
                 mpd_gap_reports += 1;
             }
 
@@ -8480,7 +7740,7 @@ async fn run_window_sender(
             // path): fold this report's implied delivered intervals into the
             // per-path sorted evidence lists. Monotone watermark ⇒ each seq
             // ingested at most once over the transfer.
-            if recov_mp_law && mp_n_paths > 1 {
+            if pol.recov_mp_law && mp_n_paths > 1 {
                 for (lo, hi) in mp_delivered_intervals(&gaps) {
                     let start = lo.max(mp_evid_max + 1);
                     if start > hi {
@@ -8512,7 +7772,7 @@ async fn run_window_sender(
                     if retransmitted >= cached_max_repairs || cached_nack_budget == 0 {
                         break 'gaps;
                     }
-                    if diag_on {
+                    if pol.diag_on {
                         mpd_gap_seqs += 1;
                     }
                     // δ-honest shed (fix C): a hole already shed is never
@@ -8522,7 +7782,7 @@ async fn run_window_sender(
                     // receiver's give-up, pure waste that serializes the
                     // stream. Budget-refused holes fall through to the
                     // legacy ARQ (serialize: ρ wins).
-                    if shed_on {
+                    if pol.shed_on {
                         if st.shed_seqs.contains(&seq) {
                             continue;
                         }
@@ -8550,7 +7810,7 @@ async fn run_window_sender(
                     // hole must not resend more than once per SRTT.
                     if let Some(&(last, _)) = st.nack_retx_at.get(&seq) {
                         if !cooldown_elapsed(now_repair_us, last, retx_cooldown_us) {
-                            if diag_on {
+                            if pol.diag_on {
                                 mpd_supp_cool += 1;
                             }
                             continue;
@@ -8565,7 +7825,7 @@ async fn run_window_sender(
                         .or_else(|| {
                             st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
                         });
-                    if recov_mp_law && mp_n_paths > 1 {
+                    if pol.recov_mp_law && mp_n_paths > 1 {
                         // The skew-aware hole law — RFC 9002 loss detection
                         // generalized per path, BOTH channels:
                         //  §6.1.1 packet threshold (fast, honest): the
@@ -8597,15 +7857,15 @@ async fn run_window_sender(
                                 .is_some_and(|v| mp_fast_lost(v, seq));
                         }
                         if !time_ripe && !fast {
-                            if diag_on {
+                            if pol.diag_on {
                                 mpd_supp_law += 1;
                             }
                             continue;
                         }
-                        if fast && diag_on {
+                        if fast && pol.diag_on {
                             mpd_fired_fast += 1;
                         }
-                    } else if recov_sp && mp_n_paths <= 1 {
+                    } else if pol.recov_sp && mp_n_paths <= 1 {
                         // RWM_RECOV_SP (goal-gate "Lossy-Single Residual"):
                         // the same §6.1.2 time threshold applied at N=1 —
                         // a gap seq whose LIVE flight (last retransmit, else
@@ -8621,7 +7881,7 @@ async fn run_window_sender(
                                 .unwrap_or(0),
                         );
                         if !time_ripe {
-                            if diag_on {
+                            if pol.diag_on {
                                 mpd_supp_law += 1;
                             }
                             continue;
@@ -8633,7 +7893,7 @@ async fn run_window_sender(
                         // would already have been sacked.
                         if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
                             if !legacy_age_ripe(now_repair_us, send_time_us, srtt_us) {
-                                if diag_on {
+                                if pol.diag_on {
                                     mpd_supp_age += 1;
                                 }
                                 continue;
@@ -8666,7 +7926,7 @@ async fn run_window_sender(
                             // Not in the store ⇒ already acked (removal is
                             // by ack only): the receiver has it; skip.
                             None => {
-                                if diag_on {
+                                if pol.diag_on {
                                     mpd_stale += 1;
                                 }
                                 continue;
@@ -8681,7 +7941,7 @@ async fn run_window_sender(
                     // (young = the law would have suppressed it = the
                     // spurious-by-law class), per-flight-path and per-retx-
                     // path emission counts.
-                    if diag_on {
+                    if pol.diag_on {
                         if let Some((t, p)) = mp_flight {
                             let age = now_repair_us.saturating_sub(t);
                             let thr = mp_thr_of(&mp_clocks, p);
@@ -8808,7 +8068,7 @@ async fn run_window_sender(
             // to the ORIGINAL placement path of the hole that was blocking
             // (seq = prev_ack + 1) — read BEFORE the cleanup below prunes
             // source_path_map to ack+1.
-            if diag_on {
+            if pol.diag_on {
                 let nowa = now_us();
                 if c8c_last_ack_adv_us > 0 {
                     let dt_us = nowa.saturating_sub(c8c_last_ack_adv_us);
@@ -8857,12 +8117,12 @@ async fn run_window_sender(
                 // GLIFE: fold completed generations into the lifecycle sums
                 // (fill = first-source→sealed, code = sealed→last-emit,
                 // wait = last-emit→acked). RWM_DIAG only.
-                if diag_on {
+                if pol.diag_on {
                     let now_g = now_us();
                     let done: Vec<u64> = st.gl
                         .keys()
                         .copied()
-                        .filter(|&a| a + gen_size as u64 <= ack + 1)
+                        .filter(|&a| a + pol.gen_size as u64 <= ack + 1)
                         .collect();
                     for a in done {
                         if let Some((f, s, e)) = st.gl.remove(&a) {
@@ -8886,8 +8146,8 @@ async fn run_window_sender(
                 gen_recover_at.retain(|&a, _| a >= win_start);
             } else {
                 let keep_behind = derived_window
-                    .map(|w| w.clamp(16, win_cap))
-                    .unwrap_or(win_cap / 2) as u64;
+                    .map(|w| w.clamp(16, pol.win_cap))
+                    .unwrap_or(pol.win_cap / 2) as u64;
                 st.encoder.advance(ack.saturating_sub(keep_behind));
             }
 
@@ -8923,12 +8183,12 @@ async fn run_window_sender(
             // task #86: cumulative release of the per-path accounts (the
             // split_off twin; seqs already SACK-released are gone from the
             // account map, so no double-release).
-            if percap_track {
+            if pol.percap_track {
                 percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, ack);
                 // feat/store-borrowing: repay every loan the frontier
                 // advance just released (the split_off twin — SACK-repaid
                 // loans are gone from the ledger, no double-repayment).
-                if percap_borrow_on {
+                if pol.percap_borrow_on {
                     percap_loan_release_cumulative(
                         &mut st.percap_loans,
                         &mut st.percap_lent,
@@ -8942,7 +8202,7 @@ async fn run_window_sender(
             // feat/recovery-suppression: drop packet-threshold evidence the
             // frontier passed (counts are only ever taken above a live gap,
             // and gaps are above the frontier).
-            if recov_mp_law {
+            if pol.recov_mp_law {
                 for v in mp_delivered.values_mut() {
                     let idx = v.partition_point(|&x| x <= ack);
                     v.drain(..idx);
@@ -8968,9 +8228,9 @@ async fn run_window_sender(
         // store to fall back on). Backpressure (store_max) already bounds the
         // retained pipeline to M generations, and advance() only ever drops
         // fully-decoded generations — so no size-pressure eviction is needed.
-        if !generation && st.encoder.window_size() > win_cap {
+        if !generation && st.encoder.window_size() > pol.win_cap {
             let (oldest, _) = st.encoder.window_span();
-            st.encoder.advance(oldest + (st.encoder.window_size() - win_cap) as u64);
+            st.encoder.advance(oldest + (st.encoder.window_size() - pol.win_cap) as u64);
             // Clean up source_path_map for evicted sequences (EVICT only:
             // reliable mode keeps attribution while the store holds them).
             if !reliable {
