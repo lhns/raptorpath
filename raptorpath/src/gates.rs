@@ -538,6 +538,7 @@ impl RuntimeGates {
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
+             RWM_STORE_CAP_UNIFIED={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_PATIENCE_DERIVED={} \
@@ -557,6 +558,7 @@ impl RuntimeGates {
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
+            b(self.store_cap_unified),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.patience_derived),
