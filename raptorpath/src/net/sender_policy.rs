@@ -142,6 +142,11 @@ pub(crate) struct SenderPolicy {
     pub capw_on: bool,
     /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
     pub pool_anchor_on: bool,
+    /// `RWM_STORE_CAP_UNIFIED` (goal-gate "Store-Cap Triplication"): the
+    /// plain dyn-store-cap phase's path set is `live_paths()` rather than
+    /// the saturation-filtered `active_paths()`. Scoped to the plain
+    /// dynamic cap — Copa-sole already reads `live_paths()`.
+    pub store_cap_unified: bool,
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
     /// `RWM_PLACE_SLACK`: frontier-slack placement cost.
@@ -602,6 +607,14 @@ impl SenderPolicy {
         // under the est opt-in — the composed default flip was measured and
         // REVERTED on its pre-set c7 clause, 2026-08-07).
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
+        // ── The store-cap path set (env RWM_STORE_CAP_UNIFIED) ───────────────
+        // Goal-gate "Store-Cap Triplication" (pre-registered 2026-08-09): the
+        // dyn-cap phase's Σ-anchor base and honest per-path cap sum move off
+        // `active_paths()` (the cwnd-saturation data-scheduling filter) onto
+        // `live_paths()` — the set `n_live` is already counted from, and the
+        // set every OTHER honest-cap consumer in this phase already reads.
+        // Default OFF: the shipped tree is bit-identical.
+        let store_cap_unified = gates.store_cap_unified && plain_dyn_cap;
         // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
         // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
         // the retention store releases slots only on the cumulative frontier,
@@ -966,7 +979,7 @@ impl SenderPolicy {
         Self {
             symbol_size,
             protocol_hint,
-            reliable,
+            reliable,
             generation,
             systematic,
             coded_wire,
@@ -978,7 +991,7 @@ impl SenderPolicy {
             gen_rate,
             gen_rate_floor,
             gen_inflight_window,
-            ooo_retain,
+            ooo_retain,
             coded_src_clock,
             no_reactive,
             xpath_repair,
@@ -1001,6 +1014,7 @@ impl SenderPolicy {
             store_path_pool,
             capw_on,
             pool_anchor_on,
+            store_cap_unified,
             store_sack_release_on,
             place_slack_on,
             win_decouple_on,

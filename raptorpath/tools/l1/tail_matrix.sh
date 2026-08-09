@@ -180,6 +180,14 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # (P-F4; the estimator barely engages app-limited, the spot is
             # mandatory).
             bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
+            # fix/store-cap-triplication (goal-gate "Store-Cap
+            # Triplication"): the crown-gate arm - the dyn-store-cap
+            # phase's path set moves off the cwnd-saturation-filtered
+            # active_paths() onto live_paths(). Realtime is single-path
+            # here, which is exactly where the filter EMPTIES the set
+            # (component bench: 88.6% of L0 refresh ticks; L1 smoke: 31.3%
+            # at c1), so the spot is mandatory.
+            uni)     AENV="RWM_STORE_CAP_UNIFIED=1"; AFLAGS="" ;;
             # feat/ship-est-cadence (goal-gate "Ship The Wins 1"): the
             # composed-default crown spot — `ship` (env unset = est+eb+
             # pool-anchor NEW default) vs the prior default (est=0 turns the
