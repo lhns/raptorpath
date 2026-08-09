@@ -4251,6 +4251,158 @@ pub fn honest_store_cap(
     }
 }
 
+/// The `EchoRatioMin` half-window for the store-cap K_i state: ~10 s total
+/// = two 5 s half-buckets (the min-RTT window class). Module-level since
+/// the 2026-08-09 store-cap de-triplication — every consumer of the honest
+/// per-path cap must key its windowed-min tracker on the SAME window, and
+/// four independently transcribed `EchoRatioMin::new(...)` sites are
+/// exactly how that stops being true.
+pub const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
+
+/// ONE honest per-path store-cap term (the de-triplication, 2026-08-09).
+///
+/// The body this replaces was transcribed FOUR times inside
+/// `run_window_sender`'s dynamic-store-cap block — `capw_terms`, the inline
+/// `hsum` loop, `pa_terms`, and the percap account loop — each of them
+/// spelling out the same three steps:
+///
+///   1. fetch-or-create this path's windowed-min echo-ratio tracker
+///      (`EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)`),
+///   2. feed it this refresh's (srtt, RTprop) sample
+///      (`observe_srtt_over_rtprop` — seed-identity guarded),
+///   3. evaluate [`honest_store_cap`] on (anchor, rate, K_i, gain).
+///
+/// The copies had DRIFTED in their inputs (which rate source, which path
+/// set) while claiming to be the same law. The law is here, once; the
+/// inputs stay at the call site, where they are a documented choice rather
+/// than a transcription accident.
+///
+/// K_i is observed for EVERY path this is called on, warm anchor or not —
+/// the tracker is a clock statistic, not a cap statistic, and starving it
+/// on cold-anchor ticks would make the window's min depend on anchor
+/// warmth. (Idempotent within a refresh tick: two calls at the same
+/// `now_us` with the same sample leave identical state.)
+pub fn honest_cap_term(
+    ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
+    id: u32,
+    srtt: Duration,
+    rtprop: Option<Duration>,
+    now_us: u64,
+    anchor: Option<f64>,
+    rate: Option<f64>,
+    gain: f64,
+) -> Option<f64> {
+    let k = ks
+        .entry(id)
+        .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
+        .observe_srtt_over_rtprop(srtt, rtprop, now_us);
+    honest_store_cap(anchor, rate, k, gain)
+}
+
+/// One path's inputs to [`honest_cap_term`], as read off `PathState` under
+/// the scheduler lock. Exists so the collector below can be driven from a
+/// component bench with no transport, no tokio and no scheduler — the
+/// MEASUREMENT DISCIPLINE 14 instrument for the store-cap phase.
+#[derive(Debug, Clone, Copy)]
+pub struct HonestCapPath {
+    pub id: u32,
+    /// The cap's RESIDENCE anchor (BtlBw_i·RTprop_i), `None` until warm.
+    pub anchor: Option<f64>,
+    /// The cap's RUNWAY rate (symbols/s), `None` until warm.
+    pub rate: Option<f64>,
+    pub srtt: Duration,
+    pub rtprop: Option<Duration>,
+}
+
+/// ONE collector for the honest per-path cap terms over a path set.
+///
+/// The three pooled store-cap laws (`RWM_STORE_CAPW`, `RWM_PLAIN_RS` +
+/// `RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`) differ ONLY in (a) which rate
+/// source fills [`HonestCapPath`] and (b) which path set the caller
+/// enumerates. Both are the caller's choice; the loop is not.
+///
+/// A `None` slot is a path id that no longer resolves to a `PathState`
+/// between the caller taking the id list and reading it: it contributes a
+/// `None` TERM (so `capw_store_cap`'s all-warm requirement still refuses to
+/// engage on a partial sum) and observes NO clock sample — bit-identical to
+/// the `sched.path(id).and_then(..)` shape every call site used before.
+pub fn honest_cap_terms(
+    ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
+    paths: &[Option<HonestCapPath>],
+    now_us: u64,
+    gain: f64,
+) -> Vec<Option<f64>> {
+    paths
+        .iter()
+        .map(|slot| {
+            slot.and_then(|p| {
+                honest_cap_term(ks, p.id, p.srtt, p.rtprop, now_us, p.anchor, p.rate, gain)
+            })
+        })
+        .collect()
+}
+
+// ── The saturation-filter gauge (`sf=`), 2026-08-09 ──────────────────────
+//
+// MEASUREMENT DISCIPLINE 14's instrument for the store-cap phase, and the
+// direct analogue of the `pf=` floor/clock gauge that converted "Unlock The
+// Default 2" from an argument into a measurement. The question it answers
+// is a POPULATION question, and it is the only one that decides whether the
+// documented `active_paths()` filter trap is live or latent here: at the
+// dyn-cap refresh instants, how often does `active_paths()` (cwnd −
+// in_flight > 0) return FEWER paths than `live_paths()`, and how often does
+// it return NONE at all?
+//
+// A tick where n_active < n_live is a tick where the pooled cap's Σ-anchor
+// base was summed over a STRICT SUBSET of the paths whose count (`n_live`)
+// multiplies it; a tick where n_active = 0 < n_live is a tick where the cap
+// fell all the way to `store_boot_cap`.
+static STORE_CAP_SF_TICKS: AtomicU64 = AtomicU64::new(0);
+static STORE_CAP_SF_LIVE: AtomicU64 = AtomicU64::new(0);
+static STORE_CAP_SF_ACTIVE: AtomicU64 = AtomicU64::new(0);
+static STORE_CAP_SF_SHORT: AtomicU64 = AtomicU64::new(0);
+static STORE_CAP_SF_ZERO: AtomicU64 = AtomicU64::new(0);
+
+/// Record one dyn-cap refresh tick's (n_live, n_active) into the `sf=`
+/// gauge. Observation only.
+pub(crate) fn store_cap_sf_record(n_live: usize, n_active: usize) {
+    STORE_CAP_SF_TICKS.fetch_add(1, Ordering::Relaxed);
+    STORE_CAP_SF_LIVE.fetch_add(n_live as u64, Ordering::Relaxed);
+    STORE_CAP_SF_ACTIVE.fetch_add(n_active as u64, Ordering::Relaxed);
+    if n_active < n_live {
+        STORE_CAP_SF_SHORT.fetch_add(1, Ordering::Relaxed);
+    }
+    if n_active == 0 && n_live > 0 {
+        STORE_CAP_SF_ZERO.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// `sf=` gauge readout: (ticks, Σ n_live, Σ n_active, short ticks, zero
+/// ticks). "short" = `active_paths()` returned fewer than `live_paths()`;
+/// "zero" = it returned none while paths were live.
+pub fn store_cap_sf_gauge() -> (u64, u64, u64, u64, u64) {
+    (
+        STORE_CAP_SF_TICKS.load(Ordering::Relaxed),
+        STORE_CAP_SF_LIVE.load(Ordering::Relaxed),
+        STORE_CAP_SF_ACTIVE.load(Ordering::Relaxed),
+        STORE_CAP_SF_SHORT.load(Ordering::Relaxed),
+        STORE_CAP_SF_ZERO.load(Ordering::Relaxed),
+    )
+}
+
+/// Zero the `sf=` gauge (component bench / test isolation).
+pub fn store_cap_sf_reset() {
+    for c in [
+        &STORE_CAP_SF_TICKS,
+        &STORE_CAP_SF_LIVE,
+        &STORE_CAP_SF_ACTIVE,
+        &STORE_CAP_SF_SHORT,
+        &STORE_CAP_SF_ZERO,
+    ] {
+        c.store(0, Ordering::Relaxed);
+    }
+}
+
 /// feat/window-mtu part 1 (`RWM_WIN_DECOUPLE`, goal-gate "Window Decoupling
 /// + MTU Scaling"): the retention/memory ceiling once the window and the
 /// inflight are decoupled — 4096 × ~1.2 KB ≈ 5 MB. The legacy 1024 latch's
@@ -5015,6 +5167,13 @@ async fn run_window_sender(
             "bounded store borrowing ACTIVE (RWM_STORE_BORROW, paper 16.22: a cap-full pick flies on its picked pipe, charged to the lender with max lend_i->j = cap_i - out_i - rate_i*T_return(j), T_return(j) = fly_j/rate_j + RTprop_j; loans repay on ack; symmetric cells lend 0 by theorem; warm-up lends 0)"
         );
     }
+    if pol.store_cap_unified {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE 1): asserted
+        // PRESENT on the unified arm, ABSENT on the default arm.
+        info!(
+            "unified store-cap path set ACTIVE (RWM_STORE_CAP_UNIFIED, goal-gate \"Store-Cap Triplication\": the plain dyn-store-cap phase's Sigma-anchor base and honest per-path cap sum iterate live_paths() instead of the cwnd-saturation-filtered active_paths(), so the path-scaled law's Sigma-base and its xN multiplier range over the SAME set; Copa-sole, capw and pool-anchor already read live_paths(); RWM_STORE_CAP_UNIFIED=0 = the shipped-default control arm)"
+        );
+    }
     if pol.honest_cap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): asserted
         // PRESENT on honest-cap arms, ABSENT on knee-clamp control arms.
@@ -5050,8 +5209,9 @@ async fn run_window_sender(
     let mut pa_engaged: bool = false;
     let mut pa_sum: f64 = 0.0;
     // path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
-    // refresh cadence; ~10 s window = two 5 s half-buckets.
-    const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
+    // refresh cadence; ~10 s window = two 5 s half-buckets
+    // (`PERCAP_K_HALF_WINDOW_US`, now module-level so every consumer of the
+    // honest per-path cap keys on the SAME window).
     let mut percap_k: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
     // path → cap_i, refreshed with the dynamic-cap throttle. NON-EMPTY is
@@ -5071,6 +5231,10 @@ async fn run_window_sender(
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
     let mut dyn_store_cap: usize = pol.store_boot_cap.min(pol.store_max);
     let mut dyn_cap_refresh_us: u64 = 0;
+    // `sf=` gauge print cadence (goal-gate "Store-Cap Triplication"). A
+    // standalone INFO line, deliberately NOT part of the [DIAG] assembly:
+    // the population it reports is the store-cap phase's own instrument.
+    let mut sf_print_us: u64 = 0;
     if pol.taper_r_budget {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -5656,6 +5820,22 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_cap_refresh_us) >= 5_000 {
                 dyn_cap_refresh_us = dnow;
+                // `sf=` readout every ~2 s under RWM_DIAG — the
+                // saturation-filter POPULATION at the refresh instants, the
+                // number that decides whether the documented
+                // `active_paths()` trap is live or latent at this cell.
+                if gates.diag && dnow.saturating_sub(sf_print_us) >= 2_000_000 {
+                    sf_print_us = dnow;
+                    let (t, lv, ac, sh, ze) = store_cap_sf_gauge();
+                    info!(
+                        ticks = t,
+                        live_sum = lv,
+                        active_sum = ac,
+                        short_ticks = sh,
+                        zero_ticks = ze,
+                        "[SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh"
+                    );
+                }
                 // Σ-cwnd store law only when the feed OWNS the operating
                 // point (Copa-sole); the sampling-only feed (RWM_PLAIN_RS)
                 // keeps the legacy anchor-sum law — now fed honest samples.
@@ -5752,31 +5932,26 @@ async fn run_window_sender(
                     // that path's anchor warms; capw_store_cap requires ALL
                     // live paths warm, else the configured fallback below.
                     let capw_terms: Vec<Option<f64>> = if pol.capw_on {
-                        let sched = scheduler.lock();
-                        sched
-                            .live_paths()
-                            .iter()
-                            .map(|id| {
-                                sched.path(*id).and_then(|p| {
-                                    let k = percap_k
-                                        .entry(*id)
-                                        .or_insert_with(|| {
-                                            EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
-                                        })
-                                        .observe_srtt_over_rtprop(
-                                            p.srtt(),
-                                            p.min_rtt(),
-                                            dnow,
-                                        );
-                                    honest_store_cap(
-                                        p.copa_bdp_anchor(),
-                                        p.btlbw_sym_per_s(),
-                                        k,
-                                        pol.store_bdp_gain,
-                                    )
+                        // Rate source: the Copa/BtlBw anchor pair
+                        // (copa_bdp_anchor, btlbw_sym_per_s). Path set:
+                        // live_paths().
+                        let slots: Vec<Option<HonestCapPath>> = {
+                            let sched = scheduler.lock();
+                            sched
+                                .live_paths()
+                                .iter()
+                                .map(|id| {
+                                    sched.path(*id).map(|p| HonestCapPath {
+                                        id: *id,
+                                        anchor: p.copa_bdp_anchor(),
+                                        rate: p.btlbw_sym_per_s(),
+                                        srtt: p.srtt(),
+                                        rtprop: p.min_rtt(),
+                                    })
                                 })
-                            })
-                            .collect()
+                                .collect()
+                        };
+                        honest_cap_terms(&mut percap_k, &slots, dnow, pol.store_bdp_gain)
                     } else {
                         Vec::new()
                     };
@@ -5794,46 +5969,75 @@ async fn run_window_sender(
                         Option<(f64, f64, f64, f64)>,
                     ) = {
                         let sched = scheduler.lock();
-                        let n = sched.live_paths().len().max(1);
+                        let live = sched.live_paths();
+                        let n = live.len().max(1);
+                        // ── THE PATH SET (2026-08-09 de-triplication) ─────
+                        // `active_paths()` = active AND `available() > 0`
+                        // (cwnd − in_flight). It is the DATA-SCHEDULING
+                        // filter; using it for a LAW is the documented
+                        // cwnd-saturation trap (`live_paths()` decl comment;
+                        // `RWM_RECOV_MP_LIVE` at the recovery plane; the
+                        // Copa-sole store law above, already fixed) — a
+                        // wire-bound sender is cwnd-saturated by definition,
+                        // so the filter drops exactly the paths that are
+                        // carrying the transfer, mid-transfer.
+                        //
+                        // `RWM_STORE_CAP_UNIFIED` is the A/B: OFF keeps
+                        // `active_paths()` here bit-exactly (shipped
+                        // default), ON reads `live_paths()` — the same set
+                        // `n_live` below is already counted from, so the
+                        // path-scaled law's Σ-base and its ×N multiplier
+                        // finally range over the SAME paths.
+                        let act = sched.active_paths();
+                        store_cap_sf_record(live.len(), act.len());
+                        let set: &[u32] = if pol.store_cap_unified { &live } else { &act };
                         let mut bdp = 0.0f64;
-                        let mut hsum = 0.0f64;
-                        // feat/window-mtu: (anchor, rate, K, RTprop) for the
-                        // decoupled law at N = 1 (anchor honest via the
-                        // N1-scoped sampling feed).
-                        let mut wd: Option<(f64, f64, f64, f64)> = None;
-                        for id in sched.active_paths().iter() {
+                        // Warm-anchor slots for the honest per-path cap, in
+                        // path-set order — collected here, evaluated ONCE by
+                        // `honest_cap_terms` below (the law lives there).
+                        let want_k = pol.honest_cap_on || (pol.win_decouple_on && n == 1);
+                        let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
+                        for id in set.iter() {
                             if let Some(p) = sched.path(*id) {
                                 if let Some(a) = p.copa_bdp_anchor() {
                                     bdp += a;
-                                    if pol.honest_cap_on || (pol.win_decouple_on && n == 1) {
-                                        let k = percap_k
-                                            .entry(*id)
-                                            .or_insert_with(|| {
-                                                EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
-                                            })
-                                            .observe_srtt_over_rtprop(
-                                                p.srtt(),
-                                                p.min_rtt(),
-                                                dnow,
-                                            );
-                                        if pol.honest_cap_on {
-                                            hsum += honest_store_cap(
-                                                Some(a),
-                                                p.btlbw_sym_per_s(),
-                                                k,
-                                                pol.store_bdp_gain,
-                                            )
-                                            .unwrap_or(0.0);
-                                        }
-                                        if pol.win_decouple_on && n == 1 {
-                                            if let (Some(r), Some(rtp)) = (
-                                                p.btlbw_sym_per_s().filter(|r| *r > 0.0),
-                                                p.min_rtt().map(|d| d.as_secs_f64()),
-                                            ) {
-                                                wd = Some((a, r, k, rtp));
-                                            }
-                                        }
+                                    if want_k {
+                                        slots.push(Some(HonestCapPath {
+                                            id: *id,
+                                            anchor: Some(a),
+                                            rate: p.btlbw_sym_per_s(),
+                                            srtt: p.srtt(),
+                                            rtprop: p.min_rtt(),
+                                        }));
                                     }
+                                }
+                            }
+                        }
+                        let terms =
+                            honest_cap_terms(&mut percap_k, &slots, dnow, pol.store_bdp_gain);
+                        // hsum = 0.0 whenever honest_cap_on is false — the
+                        // legacy expressions below then run verbatim
+                        // (shipped byte-identical).
+                        let hsum: f64 = if pol.honest_cap_on {
+                            terms.iter().flatten().sum()
+                        } else {
+                            0.0
+                        };
+                        // feat/window-mtu: (anchor, rate, K, RTprop) for the
+                        // decoupled law at N = 1 (anchor honest via the
+                        // N1-scoped sampling feed). K is read back from the
+                        // tracker the collector just fed — `k()` returns
+                        // exactly what `observe_srtt_over_rtprop` returned.
+                        let mut wd: Option<(f64, f64, f64, f64)> = None;
+                        if pol.win_decouple_on && n == 1 {
+                            for slot in slots.iter().flatten() {
+                                if let (Some(a), Some(r), Some(rtp)) = (
+                                    slot.anchor,
+                                    slot.rate.filter(|r| *r > 0.0),
+                                    slot.rtprop.map(|d| d.as_secs_f64()),
+                                ) {
+                                    let k = percap_k.get(&slot.id).map_or(1.0, |e| e.k());
+                                    wd = Some((a, r, k, rtp));
                                 }
                             }
                         }
@@ -5861,38 +6065,47 @@ async fn run_window_sender(
                     // cwnd-saturation filter trap (documented above) must
                     // not drop a saturated path's earned share.
                     let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
-                        let sched = scheduler.lock();
-                        sched
-                            .live_paths()
-                            .iter()
-                            .map(|id| {
-                                sched.path(*id).and_then(|p| {
-                                    // "Ship The Wins 1b": max(delivery-clocked
-                                    // windowed-max, send ratcheted mean) — one
-                                    // formula; identical to attempt 1 with
-                                    // RWM_POOL_DELIV off.
-                                    let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
-                                    let rtp =
-                                        p.min_rtt().map(|d| d.as_secs_f64()).filter(|r| *r > 0.0)?;
-                                    let k = percap_k
-                                        .entry(*id)
-                                        .or_insert_with(|| {
-                                            EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US)
+                        // Rate source: the hygiene-grade SEND-interval
+                        // anchor — "Ship The Wins 1b" max(delivery-clocked
+                        // windowed-max, send ratcheted mean), ONE formula;
+                        // identical to attempt 1 with RWM_POOL_DELIV off.
+                        // Path set: live_paths().
+                        //
+                        // PROVENANCE PRESERVED (the pre-de-triplication
+                        // comment): live_paths(), NOT active_paths() — the
+                        // cwnd-saturation filter trap must not drop a
+                        // saturated path's earned share. A cold send anchor
+                        // or RTprop yields a None TERM, exactly as the
+                        // `?`-shaped original did, so capw_store_cap's
+                        // all-warm requirement is unchanged.
+                        let slots: Vec<Option<HonestCapPath>> = {
+                            let sched = scheduler.lock();
+                            sched
+                                .live_paths()
+                                .iter()
+                                .map(|id| {
+                                    sched.path(*id).and_then(|p| {
+                                        // Cold send anchor or cold RTprop →
+                                        // no slot at all: the original `?`
+                                        // returned BEFORE feeding the clock
+                                        // tracker, and that is preserved.
+                                        let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
+                                        let rtp = p
+                                            .min_rtt()
+                                            .map(|d| d.as_secs_f64())
+                                            .filter(|r| *r > 0.0)?;
+                                        Some(HonestCapPath {
+                                            id: *id,
+                                            anchor: Some(sr * rtp),
+                                            rate: Some(sr),
+                                            srtt: p.srtt(),
+                                            rtprop: p.min_rtt(),
                                         })
-                                        .observe_srtt_over_rtprop(
-                                            p.srtt(),
-                                            p.min_rtt(),
-                                            dnow,
-                                        );
-                                    honest_store_cap(
-                                        Some(sr * rtp),
-                                        Some(sr),
-                                        k,
-                                        pol.store_bdp_gain,
-                                    )
+                                    })
                                 })
-                            })
-                            .collect()
+                                .collect()
+                        };
+                        honest_cap_terms(&mut percap_k, &slots, dnow, pol.store_bdp_gain)
                     } else {
                         Vec::new()
                     };
@@ -6043,23 +6256,19 @@ async fn run_window_sender(
                                         // K·RTprop + recovery-clock runway;
                                         // no loaded-echo term (see
                                         // `honest_store_cap`).
+                                        // Rate source: the floor-clock BDP
+                                        // (rate_i·RTprop_i) with BtlBw_i —
+                                        // NOT the loaded echo pipe above.
+                                        // Path set: live_paths() (this loop).
                                         let honest = if pol.honest_cap_on {
-                                            let k = percap_k
-                                                .entry(*id)
-                                                .or_insert_with(|| {
-                                                    EchoRatioMin::new(
-                                                        PERCAP_K_HALF_WINDOW_US,
-                                                    )
-                                                })
-                                                .observe_srtt_over_rtprop(
-                                                    p.srtt(),
-                                                    p.min_rtt(),
-                                                    dnow,
-                                                );
-                                            honest_store_cap(
+                                            honest_cap_term(
+                                                &mut percap_k,
+                                                *id,
+                                                p.srtt(),
+                                                p.min_rtt(),
+                                                dnow,
                                                 floor_pipe,
                                                 rate,
-                                                k,
                                                 pol.store_bdp_gain,
                                             )
                                         } else {

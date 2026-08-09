@@ -362,6 +362,23 @@ pub struct RuntimeGates {
     /// ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
     /// threshold (2026-08-06).
     pub recov_mp_live: bool,
+    /// `RWM_STORE_CAP_UNIFIED` (default OFF — the A/B arm; goal-gate
+    /// "Store-Cap Triplication", 2026-08-09): the plain (non-Copa-sole)
+    /// dynamic store cap's Σ-anchor base and honest per-path cap sum read
+    /// `live_paths()` instead of the saturation-filtered `active_paths()`
+    /// (`available() > 0`). This is the SAME filter trap already fixed at
+    /// the Copa-sole store law (`cwnd_sum`) and at `capw_store_cap`/
+    /// `RWM_POOL_ANCHOR`, and armed at the recovery plane as
+    /// `RWM_RECOV_MP_LIVE` — here at the law that is actually SHIPPED ON:
+    /// `path_scaled_store_cap` multiplies its Σ-base by `n_live`, counted
+    /// from `live_paths()`, while the base itself was summed over
+    /// `active_paths()`, so a cwnd-saturated path is counted in the ×N and
+    /// omitted from the Σ. A wire-bound sender is cwnd-saturated by
+    /// definition; when the filter empties the set the cap falls to
+    /// `store_boot_cap` (128). Population measured by the `sf=` gauge
+    /// (`net::store_cap_sf_gauge`). `=0`/unset is the shipped default,
+    /// bit-exactly.
+    pub store_cap_unified: bool,
     /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
     /// Residual"): SINGLE-path per-flight time-threshold suppression — the
     /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
@@ -479,6 +496,7 @@ impl RuntimeGates {
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
+            store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             sched_snapshot: env_flag("RWM_SCHED_SNAPSHOT", false),
             diag: env_flag("RWM_DIAG", false),
@@ -575,6 +593,10 @@ mod tests {
         assert!(
             !g.recov_mp_live,
             "RWM_RECOV_MP_LIVE ships default OFF (A/B arm)"
+        );
+        assert!(
+            !g.store_cap_unified,
+            "RWM_STORE_CAP_UNIFIED ships default OFF (A/B arm)"
         );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
