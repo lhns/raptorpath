@@ -19440,3 +19440,157 @@ run separately) · `recovery_bench` · all nine loopbacks
 `emit_batch_loopback`, `patience_loopback`, `perf_loopback`,
 `recov_mp_loopback`, `win_decouple_loopback`, `wire_compact_loopback`) ·
 `--doc`.
+
+## Emission-Slack Bench (2026-08-09) — PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11 at component scale — this block was written and committed BEFORE the sweep was run; branch `feat/slack-bench` from main@2aeea9d; GOAL "THREE TERMS, NO CONSTANTS" phase 1.1 + 1.2. The instrument is `tests/slack_bench.rs`; its stall source is `tests/common/recovery_model.rs` — the `recovery_bench` driver, extracted VERBATIM at aa947d5)
+
+### THE MODEL ERROR THIS ATTACKS
+
+Four independent changes this month all helped the single path and hurt or
+failed the asymmetric dual: estimator cadence (+62% c1, c7 clause failed),
+ack-merge (+12.7% c1, duals flat), the store-cap path-set fix (+16–25% c1,
+**−19.6% c8**), honest pool anchors (c1 met, c7 failed). The diagnosis is
+that the outstanding-data limit is modelled as ONE quantity (network flow
+control ≈ rate × RTprop) while doing **three jobs**:
+
+| # | term | quantity | wants the limit |
+|---|---|---|---|
+| 1 | NETWORK WINDOW | path rate × RTprop | — (this is the modelled one) |
+| 2 | EMISSION SLACK | emission rate × recovery stall | **LARGE** |
+| 3 | RESEQUENCING SPAN | fast-path rate × skew | **SMALL** |
+
+Jobs 2 and 3 make opposite demands of one knob, which is exactly why results
+split by TOPOLOGY: job 3 does not exist at N = 1, because skew is 0 there.
+The bugs we kept "fixing" were supplying whichever job the model omitted —
+the 1024 latch and the over-reading anchor supplied SLACK; the store-cap
+cliff supplied a BRAKE (removing it made the paths MORE saturated: `sf=`
+zero-tick fraction 4–5% → 29–32%).
+
+### THE THREE TERMS ARE DERIVED, NOT DISCOVERED
+
+All three are Little's law — quantity = rate × time — over signals the
+engine already measures. **There is no coefficient in any of them**, and
+this bench does not fit one. It writes the predicted numbers down first
+(this block) and then tries to KILL them.
+
+The stall in term 2 is not a new unmodelled quantity either: it is declared
+by the (δ, ρ) contract, in a form CONTINUOUS in ρ (both terms always
+computed — no mode bit, CLAUDE.md):
+
+```text
+stall(δ, ρ) = (1 − ρ)·D(δ)  +  ρ·(9/8·srtt + srtt)
+              └ shed-eligible ┘   └ retained: RFC 9002 §6.1.2 detection
+                share, bounded       plus one retransmit round trip ┘
+                by the span law's own
+                D = min(b(δ)·RTprop, 2·RTprop)   (`shed_deadline_us`)
+```
+
+`srtt` is the HONEST path clock (RTprop + the standing wire queue) — what
+the contract can see. **There is no statistic of a stall distribution to
+choose**: mean vs p95 vs worst case was the wrong question, because the
+contract already declares the time. Pinned as arithmetic by
+`slack_bench_terms_are_arithmetic_with_no_constants`.
+
+### THE PREDICTED NUMBERS (ρ = 1, the reliable bulk contract every named cell runs; b(δ) = ½; wireQ 4 ms)
+
+| cell | rate sym/s | RTprop | srtt | contract stall | window | slack | **pred S** |
+|---|---|---|---|---|---|---|---|
+| c1 (1 Gbit single) | 26 000 | 1 ms | 5 ms | 10.6 ms | 26 | 276 | **302** |
+| c2 / sc2 | 10 400 | 8 ms | 12 ms | 25.5 ms | 83 | 265 | **348** |
+| c2 at RTprop 10 (the c7 path) | 10 400 | 10 ms | 14 ms | 29.8 ms | 104 | 309 | **413** |
+| c3 / sc3 | 2 000 | 60 ms | 64 ms | 136.0 ms | 120 | 272 | **392** |
+
+The slack term lands at 265–309 symbols across three rate classes spanning
+×13 in rate and ×60 in RTprop — because rate and stall move oppositely. That
+near-invariance is a PREDICTION, not an observation.
+
+### PRE-REGISTERED CLAIMS — every one falsifiable, written before the sweep
+
+**PS1 (the term's own falsification).** If `slack = rate × contract stall`
+is complete, wire-idle at S = window + slack is **< 1 %** at every cell. A
+mismatch is a MISSING MECHANISM, not a wrong constant: no coefficient will
+be adjusted and no parameter will be scanned to see which value fits.
+
+**PS2 (the expected failure, and its named owner).** PS1 will FAIL on the
+app-echo clock, because two shipped cadences ignore δ outright:
+
+* **the patience clock** reads a store-dwell-inclusive RTT — 177.75 ms at
+  the c7-class cell against a contract stall of 29.75 ms, **×5.97**
+  (goal-gate "Unlock The Default 2" / §16.40; `recovery_bench` (a));
+* **the tail sweep** is clamped to `[TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US]`
+  = [25, 100] ms *regardless of δ* — 100 ms against c2's 25.5 ms, **×3.92**.
+
+PREDICT: measured p90 frontier stall ÷ contract stall ≈ **5–6** at
+RTprop ≤ 20 ms on the app clock, falling toward 1 as RTprop → 200 ms (where
+the additive dwell stops dominating); and ≈ **1–2** on the WIRE clock at
+every RTprop. If the wire-clock ratio is also ≫ 2, the gap has an owner
+neither cadence explains, and that is the finding.
+
+**PS3 (shape — two steps, not one knee).** `recovery_bench` measured the
+stall distribution at c7 as BIMODAL: p50 19.9 ms (the §6.1.1 fast channel
+serves ~99 % of holes) with a hard p90/p99 shelf at 173.8/175.6 ms (the ~1 %
+the fast channel cannot reach wait the full time threshold). A bimodal stall
+implies the idle curve has **TWO transitions**, at S ≈ rate × 20 ms and
+S ≈ rate × 178 ms. PREDICT the shape verdict reads "soft knee" or wider —
+**a single sharp knee inside one octave would refute the bimodality** — and
+sub-1 % loss cells (where the fast channel has too little same-path evidence
+to reach 3) should lose the first step entirely.
+
+**PS4 (transfer-length invariance).** `rate × stall` carries no N. PREDICT
+S(1 %) is INVARIANT across N ∈ {1500, 3000, 6000, 12000} to within one grid
+step. If it GROWS with N, the required backlog depends on something outside
+{rate, stall distribution} and the slack term is incomplete in its stated
+variables — a first-class finding either way.
+
+**PS5 (§1.2 — the span term, predicted before measurement).** Assumption,
+stated: the receiver must hold everything the fast path delivers that
+overtakes an in-flight slow-path symbol. So the RECEIVER hold is
+`rate_fast × (owd_slow − owd_fast)` — one-way, because the in-order frontier
+is a receive-side object — and the SENDER RETENTION span, which is what a
+store cap actually bounds, is `rate_fast × (RTprop_slow − RTprop_fast)`,
+exactly twice it. At loss 0, np = 2, the driver alternates the source, so
+rate_fast = rate/2 and the skew is the cell's own. PREDICT measured max span
+= rate/2 × skew plus a residual equal to the 2 ms gap-ack quantum
+(rate/2 × 2 ms), and ratio max ÷ predicted → 1 as skew grows.
+
+**PS6 (§1.2 at the c8 geometry — the check that decides the term).**
+c8 = c2 + c3: rate_fast 10 400 sym/s, RTprop 8 ms and 60 ms.
+
+| quantity | predicted |
+|---|---|
+| receiver-hold span = 10 400 × 26 ms | **270** symbols |
+| sender-retention span = 10 400 × 52 ms | **541** symbols |
+
+Against the ledger's own independently measured c8 numbers: the honest
+pooled cap with one path filtered reads **480–500** ("Store-Cap
+Triplication" (A)); `honest_store_cap`'s doc cross-check cites the guard
+session's measured GOOD pin at **508**; the arm that read **−19.6 %** at
+seed 7 had the cap pinned at **4096** = N × knee; the `active_paths()` cliff
+the filter supplied was **128**. PREDICT the sender-retention reading (541)
+lands in the 480–508 good-pin class within ~10 %, and that 4096 is ≈ **7.6×**
+the predicted span. **If 541 does not land in that class, the formula is
+wrong, and this block says so before the numbers.** Stated honestly: this is
+a consistency check against three already-recorded data points, not a
+prospective test. The prospective test is PS5.
+
+### WHAT THIS BENCH CANNOT SEE (item 14(c)) — stated before the results
+
+1. Everything `recovery_bench` cannot see, inherited by construction (it IS
+   that driver): no CC (stalls are a LOWER bound), no FEC (holes an UPPER
+   bound wherever r > 0 would have covered them), no scheduler placement, no
+   control-plane loss, and the store dwell is an INPUT rather than an
+   emergent quantity.
+2. **The backlog→stall feedback.** The stall distribution is taken from an
+   UNCONSTRAINED run and replayed against each S as a per-symbol residence.
+   A smaller S changes ack timing, loss correlation and queue occupancy in
+   the real engine; here it does not. Every curve is the OPEN-LOOP idle
+   response, and that is the single largest thing an L1 battery would have
+   to confirm.
+3. **The source is backlogged** and the wire serializes at the cell's rate.
+   A δ-small, source-limited realtime emitter is a different regime.
+4. **Retransmits are not charged wire time**, so the idle fraction is the
+   slack-induced idle alone, not total wire utilization.
+5. **Memory is out of scope** — the backlog is counted in symbols, so the
+   byte price of a large S (the `WIN_STORE_MAX` ≈ 5 MB argument) is not
+   priced here.
+
+*(Everything below this line was written AFTER the sweep ran.)*
