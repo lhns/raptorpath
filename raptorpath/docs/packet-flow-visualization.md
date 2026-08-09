@@ -235,7 +235,6 @@ The live instrumentation the ledger's batteries read, as printed today:
 
 | gauge | side | what it reports |
 |---|---|---|
-| `[SND]` | sender | ack frontier, coded totals, window span, want-lists, tx_paused |
 | `[SPAN]` | sender | the live span law: `a_star`, `delta`, `owed`, realized repair rate `rr`, debt, retx_buf |
 | `[GPIPE]` | sender | M* depth transitions: `M* a→b (rate_max, rtprop)` |
 | `[PFRAC]` | sender | proactive vs recovery coded split (`proactive_fraction`) |
@@ -246,6 +245,12 @@ The live instrumentation the ledger's batteries read, as printed today:
 | `[RDIAG]` | receiver | engine saturation: busy %, msgs/s, queue depth/capacity |
 | `[WIDLE]` | receiver | wire idle gaps (inter-arrival truth for the lossy-residual accounting) |
 | `[WEDGE]` | receiver | frontier-stall forensics: blocker seq, stall age |
+
+`[SND]` (sender, `RWM_TRACE`) was deleted in net seam pass 3: every field it
+printed — ack frontier, coded totals, window span, tx_paused — is on the
+`[DIAG]` line already (`cum=`, `win=`, `paused=`), no `tools/` consumer parsed
+it, and no ledger section cited it. `RWM_TRACE` still drives the receiver's
+`[RCV]` gauge.
 
 ---
 
