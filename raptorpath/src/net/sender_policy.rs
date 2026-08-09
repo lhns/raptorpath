@@ -609,10 +609,10 @@ impl SenderPolicy {
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // ── The store-cap path set (env RWM_STORE_CAP_UNIFIED) ───────────────
         // Goal-gate "Store-Cap Triplication" (pre-registered 2026-08-09): the
-        // dyn-cap phase's Sigma-anchor base and honest per-path cap sum move
-        // off `active_paths()` (the cwnd-saturation data-scheduling filter)
-        // onto `live_paths()` — the set `n_live` is already counted from, and
-        // the set every OTHER honest-cap consumer in this phase already reads.
+        // dyn-cap phase's Σ-anchor base and honest per-path cap sum move off
+        // `active_paths()` (the cwnd-saturation data-scheduling filter) onto
+        // `live_paths()` — the set `n_live` is already counted from, and the
+        // set every OTHER honest-cap consumer in this phase already reads.
         // Default OFF: the shipped tree is bit-identical.
         let store_cap_unified = gates.store_cap_unified && plain_dyn_cap;
         // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
@@ -980,7 +980,6 @@ impl SenderPolicy {
             symbol_size,
             protocol_hint,
             reliable,
-
             generation,
             systematic,
             coded_wire,
@@ -993,7 +992,6 @@ impl SenderPolicy {
             gen_rate_floor,
             gen_inflight_window,
             ooo_retain,
-
             coded_src_clock,
             no_reactive,
             xpath_repair,
