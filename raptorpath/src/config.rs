@@ -327,7 +327,6 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         fec_backend_explicit,
         window_reliable: config.window_reliable.unwrap_or(false),
         enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
-        symbol_size_override: 0, // use profile default
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
         reorder_max_size: config.reorder_max_size.unwrap_or(500),
         // Paper 14.28 (P10a): mid-stream repair floor for inner-feedback
@@ -404,8 +403,9 @@ pub fn anchor_gate_default(name: &str, default: bool) -> bool {
 /// harness, pre-hardware-divide) must be re-earned on the clean substrate
 /// before deletion. Call once at engine/experiment setup, not per packet.
 // ADR-0066 / goal-gate "DEPRECATION REGISTER": this IS the register's
-// enforcement mechanism — kept deliberately ahead of the rows that will call it.
-#[allow(dead_code)]
+// enforcement mechanism. Live consumers since 2026-08-09 (goal-gate
+// "Batch-2 removal schedule"): `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
+// `RWM_PATIENCE_DERIVED`.
 pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool {
     let on = env_flag(name, default);
     if on {

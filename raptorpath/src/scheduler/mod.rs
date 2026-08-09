@@ -251,10 +251,24 @@ pub fn pool_anchor_active() -> bool {
 /// `RWM_EST_CADENCE`), so everything-unset ⇒ OFF and the est opt-in carries
 /// it; `RWM_POOL_DELIV=0` under the est opt-in is exactly attempt 1's arm.
 /// Read once and cached (consulted on the send hot path).
+///
+/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
+/// → "Batch-2 removal schedule"): the arm failed its ≥0.97 c7 clause on both
+/// seeds while the mechanism landed completely, and the anchor's own doc
+/// comment certifies it can reach no cwnd/pacing consumer. Activation now
+/// warns via [`crate::config::deprecated_env_flag`]; the sampler stays only
+/// as the negative datum's reproduction path until the recovery-plane
+/// battery the refutation NAMES has run.
 pub fn pool_deliv_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_POOL_DELIV", pool_anchor_active()))
+    *F.get_or_init(|| {
+        crate::config::deprecated_env_flag(
+            "RWM_POOL_DELIV",
+            pool_anchor_active(),
+            "Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07)",
+        )
+    })
 }
 
 /// Whether the honest ANCHOR-FLOOR BOUND is active (`RWM_FLOOR_BOUND`,
@@ -270,10 +284,22 @@ pub fn pool_deliv_active() -> bool {
 /// inflation the over-read injected. Its purpose (attempt 1's second named
 /// successor): make the prior default's ACCIDENTAL escape — Σcwnd floating
 /// the store below the pool — a DERIVED one.
+/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
+/// → "Batch-2 removal schedule"): the bound cut the c7 over-read exactly as
+/// designed and failed BOTH clauses — c7 0.969/0.969×Σ and c1 396.4/398.0
+/// under the 430 PRIMARY (−14% vs unbounded). The refutation is a positive
+/// structural finding: the ack-interval over-read is LOAD-BEARING at N = 1.
+/// Activation warns via [`crate::config::deprecated_env_flag`].
 pub fn floor_bound_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_FLOOR_BOUND", false))
+    *F.get_or_init(|| {
+        crate::config::deprecated_env_flag(
+            "RWM_FLOOR_BOUND",
+            false,
+            "Ship The Wins 1b (2026-08-07)",
+        )
+    })
 }
 
 /// Whether the WINDOW-mode control-datagram MERGE is active for this process
@@ -336,16 +362,30 @@ pub fn ack_merge_active() -> bool {
 /// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
 /// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
 /// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
-/// analog inside `mp_time_threshold_us`, and the per-seq retransmit
+/// analog inside `mp_time_threshold_split`, and the per-seq retransmit
 /// cooldown) with `net::patience_floor_us` = timer granularity + the path's
 /// own measured RTT jitter. RFC 9002's 9/8 and packet-threshold 3 untouched.
 /// Cached so every read site resolves identically within a process.
 ///
 /// Not a dial: it selects no law and no constructor argument on (δ, ρ, r).
+/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
+/// → "Batch-2 removal schedule"): eliminated on BOTH population and response
+/// — the literal it replaces wins 0 of 177 543 §6.1.2 evaluations at c7, and
+/// where it does bind (c1) collapsing it moves nothing ≫σ. The goal closed as
+/// a documented STRUCTURAL BOUND. Activation warns via
+/// [`crate::config::deprecated_env_flag`]. NOTE: the schedule deletes the LAW
+/// only — the `pf=<floor>/<clock>/<mean>` gauge is explicitly excluded, the
+/// named successor (a store-dwell-inclusive recovery RTT) needs it verbatim.
 pub fn patience_derived_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_PATIENCE_DERIVED", false))
+    *F.get_or_init(|| {
+        crate::config::deprecated_env_flag(
+            "RWM_PATIENCE_DERIVED",
+            false,
+            "Unlock The Default 2: derived patience (2026-08-07)",
+        )
+    })
 }
 
 /// `RWM_SIDLE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2".
@@ -354,6 +394,13 @@ pub fn patience_derived_active() -> bool {
 /// `idle2=`) computed by `net::stall_threshold_us` over the same event
 /// stream, so the fixed-3 ms-threshold artifact question is answered on the
 /// SAME runs in every arm, controls included.
+/// Deliberately NOT wired to `deprecated_env_flag` even though it was built
+/// and closed in the same session as its three deprecated mates: this is an
+/// INSTRUMENT whose verdict is a STANDING INSTRUCTION the register issues to
+/// future sessions (*where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not
+/// `sidle`*). Warning "deprecated, removal scheduled" on a gauge the ledger
+/// tells you to switch on would contradict the register. See goal-gate
+/// "Batch-2 removal schedule".
 pub fn sidle_derived_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
@@ -530,7 +577,7 @@ pub(crate) const PLACE_REF_FLOOR_SECS: f64 = 0.001;
 /// Recovery-patience bound on the frontier-slack placement deadline
 /// (goal-gate "C8 Slow-Path Conversion"): D_i = min(S, 9/8·srtt_i). 9/8 is
 /// RFC 9002's kTimeThreshold — the SAME constant the `RWM_RECOV_MP` hole
-/// law's `mp_time_threshold_us` uses — NOT a new tuning dial: a placement
+/// law's `mp_time_threshold_split` uses — NOT a new tuning dial: a placement
 /// later than the hole law's patience is re-served cross-path no matter
 /// what the frontier needs, so the placement plane must never budget past
 /// it (the 2026-08-06 smoke falsification of the unbounded-S form).
@@ -3189,7 +3236,7 @@ impl Scheduler {
             // max(0, Ê_i − D_i). S = the frontier slack (need-time budget);
             // the 9/8·srtt_i term is the RECOVERY plane's patience for a
             // flight on this path (RFC 9002 kTimeThreshold — the SAME
-            // constant `mp_time_threshold_us` uses): a placement later than
+            // constant `mp_time_threshold_split` uses): a placement later than
             // that gets re-served cross-path regardless of frontier need,
             // so budgeting past it makes the planes fight (MEASURED, the
             // 2026-08-06 smoke falsification of the unbounded-S form: c8

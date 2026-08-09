@@ -241,7 +241,7 @@ The live instrumentation the ledger's batteries read, as printed today:
 | `[PFRAC]` | sender | proactive vs recovery coded split (`proactive_fraction`) |
 | `[RCV]` | receiver | decode frontier, tracked generations, deficits, horizon withholding |
 | `[SHED-R]` | receiver | δ-honest shedding receiver arm: holes, frontier, budget_open |
-| `[FDIAG]` / `[FDIAG-T]` | receiver | frontier/hole probe: decode vs source service times, `rf`/`ru` (repairs fed/useful — the liveness gate) |
+| `[FDIAG]` | receiver | frontier/hole probe: decode vs source service times, `rf`/`ru` (repairs fed/useful — the liveness gate) |
 | `[REASM]` | receiver | reassembly span/pending under `RWM_REASM_BDP` |
 | `[RDIAG]` | receiver | engine saturation: busy %, msgs/s, queue depth/capacity |
 | `[WIDLE]` | receiver | wire idle gaps (inter-arrival truth for the lossy-residual accounting) |

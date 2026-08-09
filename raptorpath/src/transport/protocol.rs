@@ -46,7 +46,22 @@ fn bincode_options() -> impl Options {
 /// ALSO sent. Cumulative (not per-ack) so a dropped control datagram costs
 /// nothing: the next ack carries the whole outstanding delta. No new tag is
 /// claimed; `COMPACT_DATA_TAG` is untouched.
-pub const PROTOCOL_VERSION: u32 = 6;
+/// v7: SIX never-sent `ControlMessage` variants removed (refactor arc,
+/// "dead code batch 2"): `RepairRequest`, `PathAdd`, `PathRemove`,
+/// `WindowNack`, `WindowSwitchAck`, `NackAck`. None had a construction
+/// site anywhere in the workspace — their only life was receive-side
+/// handlers (a `debug!`/`info!` each, plus `WindowNack`'s handler, which
+/// was the sole construction site of `NackAck`) and round-trip codec
+/// tests. Because `ControlMessage` rides bincode FIXINT encoding, the
+/// variant tag IS the declaration index, so removing them RENUMBERS every
+/// later variant — a v6 peer's `WindowAck` would deserialize as something
+/// else entirely. Hence the version bump: both `Handshake::deserialize`
+/// and `WireMessage::deserialize` hard-refuse a version mismatch, so a
+/// mixed v6/v7 pair fails cleanly and loudly at handshake instead of
+/// silently mis-parsing control traffic. `WindowSwitch` is KEPT despite
+/// also never being sent: its receive arm is a deliberate
+/// hostile-peer/version guard that warns and ignores.
+pub const PROTOCOL_VERSION: u32 = 7;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -215,7 +230,8 @@ pub struct SymbolBatch {
     pub send_timestamp_us: u64,
     /// Batch sequence number for loss detection (per-path monotonic)
     pub batch_seq: u64,
-    /// Total symbols sent in this block on this path (for receiver loss tracking)
+    /// The path this batch was sent on (receiver keys its per-path batch_seq
+    /// gap tracking and loss estimation off it).
     pub path_id: u32,
 }
 
@@ -268,29 +284,12 @@ pub enum ControlMessage {
         symbols_received: u64,
     },
 
-    /// Request more repair symbols for a block.
-    RepairRequest {
-        block_id: u64,
-        additional_count: u32,
-    },
-
     /// Keepalive / path probe.
     Ping { timestamp_us: u64 },
     Pong { echo_timestamp_us: u64 },
 
     /// Graceful shutdown notification.
     Shutdown,
-
-    /// Notify peer that a new path is being added (connection migration).
-    PathAdd {
-        path_id: u32,
-        bind_addr: String,
-    },
-
-    /// Notify peer that a path is being removed (connection migration).
-    PathRemove {
-        path_id: u32,
-    },
 
     /// Announce that the sender is entering sliding-window FEC mode.
     WindowStart {
@@ -343,13 +342,13 @@ pub enum ControlMessage {
         cum_received: u64,
     },
 
-    /// DEPRECATED: WindowNack replaced by SACK-extended WindowAck.
-    /// Kept for wire compatibility during transition.
-    WindowNack {
-        gaps: Vec<(u64, u64)>,
-    },
-
     /// Sender signals backend switch at a window flush point (sender → receiver).
+    ///
+    /// NEVER SENT by this binary (mid-stream FEC backend switching was retired,
+    /// ADR-0030 / goal-gate "streaming retirement"). The variant and its receive
+    /// arm are KEPT deliberately as a hostile-peer / future-version guard: an
+    /// inbound `WindowSwitch` is warned about and ignored rather than silently
+    /// mis-parsed. Do not delete without a version bump.
     WindowSwitch {
         /// Last source sequence number under the old backend.
         flush_seq: u64,
@@ -357,17 +356,6 @@ pub enum ControlMessage {
         new_backend: FecBackend,
         /// Symbol size for the new backend.
         symbol_size: u16,
-    },
-
-    /// Receiver confirms it drained up to flush_seq and is ready (receiver → sender).
-    WindowSwitchAck {
-        flush_seq: u64,
-    },
-
-    /// DEPRECATED: NackAck is no longer used. SACK-extended WindowAck replaces
-    /// the NACK mechanism. Kept for wire compatibility during transition.
-    NackAck {
-        nack_id: u32,
     },
 
     /// Per-generation deficit feedback (receiver → sender, generation coding
