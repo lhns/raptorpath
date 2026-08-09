@@ -10558,6 +10558,127 @@ instrument is cheap and the mechanism is cell-conditional, measure the
 matrix, not the point** — and when a build's own record names the
 experiment it is owed, run it.
 
+### 16.43 Three terms, not one: the outstanding-data limit is doing three jobs with opposite demands, and the two unmodelled ones are Little's law over signals already measured (2026-08-10, `feat/slack-bench`, `tests/slack_bench.rs`, characterization only — no law change, no default change)
+
+Four independent changes across 2026-08 helped the single path and hurt or
+failed the asymmetric dual: the estimator cadence (§16.35), the ack-merge
+(§16.42), the store-cap path-set fix, and the honest pool anchors (§16.36).
+That is not four coincidences. It is one modelling error, and this section
+names it.
+
+**The error.** The outstanding-data limit is derived, everywhere in the
+engine, as a NETWORK FLOW-CONTROL quantity — rate × RTprop, Little's law on
+the wire. But the same scalar is load-bearing for two further jobs it was
+never derived for:
+
+| # | term | quantity | wants the limit | exists at N = 1? |
+|---|---|---|---|---|
+| 1 | network window | path rate × RTprop | — | yes |
+| 2 | **emission slack** | emission rate × recovery stall | **LARGE** | yes |
+| 3 | **resequencing span** | fast-path rate × path skew | **SMALL** | **no** (skew = 0) |
+
+Jobs 2 and 3 make opposite demands of one knob, and job 3 vanishes at a
+single path. That is precisely the shape of the observed split: a change
+that supplies slack helps N = 1 and costs the asymmetric dual, because at
+the dual it is also widening the span. The pattern was visible in the record
+before it was named — the 1024-slot latch and the over-reading legacy anchor
+were supplying slack by accident, and the `active_paths()` filter's collapse
+to `store_boot_cap` was supplying a BRAKE by accident. Removing the latter
+correctly cost c8 −19.6 %, and the saturation gauge showed the feedback
+closing (zero-tick fraction 4–5 % → 29–32 %): *a defect can be doing
+load-bearing work*, the same lesson the legacy ack-interval over-read taught.
+
+**Both missing terms are Little's law over signals the engine already
+measures, and neither contains a coefficient.** Job 2's time is not a new
+unmodelled quantity either — it is declared by the (δ, ρ) contract, in a form
+continuous in ρ with both terms always computed (§16.4's no-mode-switch
+requirement):
+
+  stall(δ, ρ) = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)
+
+The shed-eligible share (1 − ρ) cannot pin the in-order frontier longer than
+the span law's own deadline D(δ) = min(b(δ)·RTprop, 2·RTprop), because past D
+a hole is retired rather than served. The retained share ρ is not sheddable
+by construction, so it must actually be recovered: RFC 9002 §6.1.2 detection
+plus one retransmit round trip. So there is no statistic of a stall
+distribution to choose — mean versus p95 versus worst case was the wrong
+question.
+
+**The component result.** `tests/slack_bench.rs` takes §16.41's recovery
+driver verbatim as its stall source, replays each cell's measured store
+residence against a backlog S, and reports wire-idle against S. 576 cells in
+13 s. The predicted numbers were written into the ledger and committed before
+the sweep ran.
+
+*The term survives, and what fails it is the clock.* With the recovery plane
+clocked on the honest path RTT, the a-priori S = rate × RTprop + rate ×
+stall(δ, ρ) leaves the wire under 1 % idle at **266 of 288** cells, and the
+median backlog actually required is **0.84–0.90 ×** the prediction — mildly
+conservative, the safe direction for a cover. With the same plane clocked on
+the store-dwell-inclusive app-echo RTT (§16.40's argument), the identical
+term under-provisions 43 % of single-path cells and is off by **×4.5** at c7.
+The measured frontier stall over the contract's own runs p90 ÷ predicted
+**3.85** at RTprop ≤ 20 ms on the app clock against **0.68** on the wire
+clock. The owner of every gap is labelled by the driver rather than inferred:
+at c7 the §6.1.1 fast channel serves the median at 19.2 ms — *below* the
+contract's 29.8 ms — while the ~1 % it cannot reach wait the full 184.7 ms
+app-echo patience; at a single path the legacy age gate reads srtt_app/2 =
+79 ms; and in 21 of 574 cells the stall's tail is pinned at 99.9–100.2 ms,
+which is `TAIL_SWEEP_MAX_US` — a δ-independent engine constant showing
+through as the stall itself.
+
+*There is no knee.* 348 of 574 cells read SLOPE (≥ 3 octaves of transition
+width), 58 read KNEE. This is structural, not noisy: the recovery plane has
+two channels with a ×9 latency ratio at the same cell, so the stall
+distribution is bimodal and the idle curve's transition width is the LOG of
+that spread — log₂(169.5 / 19.2) = 3.14 octaves at c7, against a measured
+median of 3.00. "How much backlog keeps the wire busy" therefore has no
+single answer; it has a coverage point on a slope.
+
+*The span term is exact.* At loss 0 the measured resequencing span is linear
+in skew with zero intercept and a slope of exactly the total emission rate —
+ratio 2.00 ± 0.03 against a fast-path-rate prediction in 18 of 18 non-zero
+cells, and identically 0 at zero skew, which is job 3's non-existence at
+N = 1 asserted and measured. The factor 2 is a definition boundary, not a
+coefficient: `rate_fast × Δowd` counts the fast path's BUFFERED SYMBOLS,
+`rate_total × Δowd` is the SEQUENCE-NUMBER SPAN from the in-order frontier to
+the highest received, and a store cap bounds the latter. Applied to the c8
+geometry (10 400 sym/s over a 52 ms RTprop difference) the sender-retention
+reading is **541 symbols** against the independently measured good pin of
+**508** — +6.5 %, from a formula containing a rate and a delay difference and
+nothing else — and the arm that read −19.6 % was running that cell at
+**×7.6** its own span.
+
+**The contract question, answered as a split verdict.** The stall TIME is
+fully derivable from (δ, ρ). The COVERAGE — where on a three-octave slope to
+sit — is not, and ρ is the term that ought to supply it but cannot: ρ is a
+RETENTION promise that every symbol eventually arrives, and it says nothing
+about how often the wire may idle while that happens. A reliable bulk
+transfer that idles 5 % of its wire has broken no term the machine currently
+has. **That is positive evidence for a fourth contract term — an
+emission-continuity price, independent of δ (when), ρ (whether) and r (with
+how much redundancy).** It is a declared price of the same kind as ρ, not a
+fitted constant, and it is a continuous coverage quantile rather than a mode
+bit.
+
+**What this does not license.** No law changed and no default moved. In
+particular *"wire-clock the recovery plane"* is not licensed here: §16.41's
+own second component fact is that the app-echo clock has been ACCIDENTALLY
+SUPPRESSING a retransmit flood (retx 202 → 5 171, ×25.6, when the argument is
+swapped with the RFC channels off). And one residual is named and
+deliberately NOT absorbed: at ≥ 5 % loss the honest clock also under-covers,
+owned by multi-round recovery (the repair itself re-lost). Its a-priori
+extension is expected rounds, stall / (1 − ε̂), with ε̂ already measured — and
+adding it because it would make those cells pass is exactly the move the
+bench exists to refuse.
+
+The component bench's boundary (§16.41's, inherited by construction) plus one
+of its own: every idle curve replays an UNCONSTRAINED stall distribution
+against a constrained backlog, so it is the open-loop response. The app-echo
+dwell this section finds guilty is itself generated by store occupancy, so
+the failures it reports may be self-reinforcing in a way no component bench
+can show. That loop is what an L1 battery would be for.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
