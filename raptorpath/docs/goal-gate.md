@@ -21951,3 +21951,287 @@ get, and never on B versus D.**
 Nothing here proposes a term, a constant or a cell-specific coefficient. If
 the latency win is absent, that is a second honest refutation and it closes
 the goal by the other route.
+
+## Latency Lever — BATTERY (2026-08-10) — GOAL "THREE TERMS, NO CONSTANTS" criterion 6. Every verdict below is stated against a number pre-registered at ec6a5ec, never against one chosen after the fact.
+
+### ERA (discipline 2/6/9/12)
+
+VM 10.1.5.16, binary sha256
+`44e5eff7415766861803dc365c5ad761f0e77b5b2f28886952b206bc94a04b01`, **the same
+binary in every arm**, built on the VM from source `74c4e2f` (the tools moved
+to `9f5adc0`; no Rust changed between them). Kernel `7.0.14-101.fc43.x86_64`;
+E5-2650 v3 `aes avx2 pclmulqdq`, 6 cores.
+
+**The VM had been restarted.** Load at launch was recorded as part of the era
+*because* of that: `0.52 3.03 3.74` — 1-minute load settled to 0.59 and was
+waited for explicitly before the first invocation (a battery started on a
+still-booting box is a co-tenancy artifact, and this one scores latency, which
+is what co-tenancy corrupts). A desktop greeter (`sddm-greeter`, ~12 % of one
+core of six) was resident throughout and is disclosed rather than assumed
+harmless; it is present in **every arm** and so cannot favour one.
+
+Lock `/tmp/rwm-vm.lock` taken 13:54:57Z (found FREE), held continuously.
+Main battery 13:59:20→15:03:40Z (64 m), seed-7 top-up + crown
+15:06:16→15:38:28Z. **Launched detached with a completion sentinel and not
+polled** (discipline 13), with one disclosed exception: a single startup
+sanity check 5 minutes in, reading only liveness and gauge presence, never a
+score. It exists because the previous launch attempt died instantly on a
+line-ending fault and cost a full cycle.
+
+Drivers `tools/l1/lat_battery.sh` + `lat_parse.py` + `lat_report.py`; logs
+under `docs/l1-raw/latlever-*`. Base env every arm:
+`SEED=<seed> RWM_GEN=0 RWM_DIAG=1 RWM_LATPROBE=1`.
+
+### LIVENESS (discipline 1/15) — asserted before any number was read
+
+| check | result |
+|---|---|
+| invocations | **288** main + 72 top-up |
+| two-sided `[GATES]` mismatches, both endpoints | **0 / 256 live** |
+| arm-B invocations with no `[3T] eng=1` (warm-up failure) | **0** |
+| **INSTRUMENT-FAIL** (engine ran, a gauge absent) | **0** |
+| REAL DNF | **0 / 256** |
+| ABORTS | **32 / 288 (11.1 %)**, every one seed 7 |
+
+**ABORT ≠ DNF, and it mattered again.** All 32 aborts are the documented
+seed-7 topo-ping class: no `[GATES]` on either endpoint, no summary, no datum.
+Seed 42 aborted **zero** times, same driver, same binary, same hour. Scored as
+DNFs they would have read `dnf = 32`.
+
+**The three new instruments were live in every single live invocation** —
+`wait[`, `dgq0[` and the ICMP probe, 0 INSTRUMENT-FAILs across 256. The
+previous battery ran with `stall[` in 0 of 1 116 logs and nobody noticed until
+afterwards; this is the check that closes that.
+
+**The thin seed-7 arms were RE-RUN, not explained.** A separate interleaved
+top-up session over sc2/sc3/c7 (72 invocations, 38.9 % aborted — the same
+class) is reported **as its own session and pooled separately**, never
+silently merged.
+
+### THE HEADROOM TABLE (MEASUREMENT DISCIPLINE 16) — tc-measured, arm A, EVERY cell
+
+| cell | shaped | tc Mbit/s | **util %** | **headroom** | throughput target permitted? |
+|---|---|---|---|---|---|
+| sc2 | 100 | 98.2 / 98.4 | **98.2 / 98.4** | **1.8 / 1.6 %** | **NO — latency only** |
+| sc3 | 20 | 19.6 / 19.8 | **98.2 / 99.1** | **1.8 / 0.9 %** | **NO — latency only** |
+| c7 | 200 | 192.2 / 192.2 | **96.1** | **3.9 %** | **NO — latency only** |
+| c2r100 | 100 | 93.0 / 92.8 | 93.0 / 92.8 | 7.0 / 7.2 % | YES |
+| c2r200 | 100 | 46.5 / 46.9 | 46.5 / 46.9 | **53.5 / 53.1 %** | YES |
+| c1 | 1000 | 247.7 / 248.3 | 24.8 | **75.2 %** | YES |
+
+This is the table whose absence is what discipline 16 exists to prevent, and
+it is now produced by the battery itself rather than reconstructed afterwards
+by a tool written after the verdicts. **Three of six cells carry no throughput
+target at all**, decided before the run.
+
+### THE SCORE — delivered probe latency (independent ICMP flow through the same shaped qdisc), ms
+
+`B/A` with 2σ_pooled beside it. An effect is called real ONLY when
+|B − A| > 2σ_pooled (discipline 5).
+
+| cell | seed | p50 A | p50 B | **B/A** | vs 2σ | p99 A | p99 B | p99 B/A | vs 2σ |
+|---|---|---|---|---|---|---|---|---|---|
+| **sc2** | 42 | 97.7±7.9 | **44.6±11.4** | **0.456** | 53.1 vs 27.8 **EXCEEDS** | 105.6 | **53.7** | **0.509** | **EXCEEDS** |
+| **sc2** | 7 | 93.7±8.7 | **44.7±5.7** | **0.477** | 49.0 vs 20.7 **EXCEEDS** | 99.8 | **50.5** | **0.506** | **EXCEEDS** |
+| **sc3** | 42 | 500.2±14.4 | **149.2±14.0** | **0.298** | 351 vs 40 **EXCEEDS** | 576.0 | 743.5±171 | 1.291 | 167 vs 361 within |
+| **sc3** | 7 | 516.5±3.6 | **162.7±14.7** | **0.315** | 354 vs 30 **EXCEEDS** | 576.3 | 889.3±208 | 1.543 | 313 vs 427 within |
+| **c7** | 42 | 73.4±10.3 | **27.1±15.8** | **0.369** | 46.3 vs 37.7 **EXCEEDS** | 164.5 | **59.7** | **0.363** | **EXCEEDS** |
+| **c7** | 7 | 70.6±4.6 | **21.6±0.8** | **0.306** | 49.0 vs 9.4 **EXCEEDS** | 205.5 | **68.8** | **0.335** | **EXCEEDS** |
+| **c2r100** | 42 | 103.2±0.4 | **286.9±22.4** | **2.778** | 184 vs 45 **EXCEEDS** | 110.6 | 362.5 | 3.277 | **EXCEEDS** |
+| **c2r100** | 7 | 103.5±0.5 | **304.8±3.8** | **2.944** | 201 vs 7.6 **EXCEEDS** | 111.4 | 339.2 | 3.046 | **EXCEEDS** |
+| **c2r200** | 42 | 200.0±0.0 | 209.1±21.5 | 1.046 | within | 204.2 | **476.0** | **2.330** | **EXCEEDS** |
+| **c2r200** | 7 | 200.0±0.0 | 206.0±8.1 | 1.030 | within | 202.9 | **474.9** | **2.341** | **EXCEEDS** |
+| **c1** | 42 | 2.1±0.0 | 2.1±0.0 | **1.000** | within | 2.8 | 2.8 | 1.003 | within |
+| **c1** | 7 | 2.1±0.0 | 2.1±0.0 | **0.999** | within | 2.8 | 2.8 | 1.015 | within |
+
+**The seed-7 top-up reproduces it in a wholly independent session:** sc2
+**0.496**, sc3 **0.318**, c7 **0.263**, every one EXCEEDS its 2σ. Two
+sessions, two seeds, same numbers.
+
+### THE CONSTRAINT — goodput parity, and arm D says who pays
+
+| cell | seed | A | B | D | **B/A** | **D/A** | |B−A| vs 2σ |
+|---|---|---|---|---|---|---|---|
+| sc2 | 42 | 87.7±0.9 | 87.6±0.7 | 87.3 | **0.999** | 0.994 | 0.1 vs 2.2 **within** |
+| sc2 | 7 | 88.0±1.1 | 86.9±1.6 | 87.3 | **0.987** | 0.992 | 1.1 vs 3.9 **within** |
+| sc3 | 42 | 16.6±0.3 | 16.0±0.4 | 16.6 | 0.964 | 1.000 | 0.6 vs 0.9 within |
+| sc3 | 7 | 16.8±0.2 | 16.1±0.1 | 16.6 | 0.957 | 0.990 | 0.7 vs 0.4 **EXCEEDS** |
+| c7 | 42 | 172.3±1.3 | 145.9±14.6 | 151.7 | 0.846 | **0.880** | 26.5 vs 29.3 within |
+| c7 | 7 | 172.0±1.2 | 151.4±2.5 | 151.4 | 0.880 | **0.880** | 20.6 vs 5.5 **EXCEEDS** |
+| c2r100 | 42 | 82.9±0.3 | 76.0±6.4 | 80.4 | 0.916 | 0.969 | 7.0 vs 12.7 within |
+| c2r100 | 7 | 82.8±0.9 | 78.7±6.5 | 80.1 | 0.950 | 0.966 | 4.1 vs 13.2 within |
+| c2r200 | 42 | 41.4±0.7 | 44.3±11.4 | 40.0 | 1.072 | 0.968 | 3.0 vs 22.8 within |
+| c2r200 | 7 | 41.8±0.5 | 46.5±8.6 | 39.8 | 1.113 | 0.952 | 4.7 vs 17.2 within |
+| **c1** | 42 | 226.0±4.4 | **147.5±1.5** | **144.2** | **0.652** | **0.638** | 78.6 vs 9.3 **EXCEEDS** |
+| **c1** | 7 | 226.6±2.5 | **147.9±1.9** | **147.2** | **0.653** | **0.649** | 78.7 vs 6.3 **EXCEEDS** |
+
+**At c7 the goodput cost is the ANCHOR'S, exactly: B/A = D/A = 0.880 on seed 7,
+to three digits.** At c1 the same: B/A 0.652 against D/A 0.638. **The law adds
+essentially nothing to the anchor's bill at either cell** — but a user who
+takes the law takes the anchor, so the bill is still the law's to pay.
+
+### THE PRE-REGISTERED PREDICTIONS, SCORED
+
+**PREDICTION 1 — sign(Δp50) tracks sign(R−1), R = cap_B/cap_A. VERDICT: CONFIRMED, 12/12 against the pre-registered per-cell table.**
+
+| cell | seed | cap_A → cap_B | R | p50 B/A | pre-registered | match |
+|---|---|---|---|---|---|---|
+| sc2 | 42/7 | 1024 → 468 | 0.46 | 0.456 / 0.477 | DOWN to 0.45–0.75× | **YES, and inside the interval** |
+| sc3 | 42/7 | 1024 → 298/322 | 0.29/0.31 | 0.298 / 0.315 | DOWN to 0.25–0.65× | **YES, inside** |
+| c7 | 42/7 | 4096 → 1134/1222 | 0.28/0.30 | 0.369 / 0.306 | DOWN or FLAT; p99 < 0.8× | **YES** (p99 0.363/0.335) |
+| c2r100 | 42/7 | 1024 → 3049/3012 | 2.98/2.94 | 2.778 / 2.944 | **UP, > 1.8×** | **YES** |
+| c2r200 | 42/7 | 1024 → 4096 | 4.00 | 1.046 / 1.030 | **p50 pinned by 200 ms propagation; UP at p95/p99** | **YES** (p99 2.330/2.341) |
+| c1 | 42/7 | 542 → 356/402 | 0.66/0.75 | 1.000 / 0.999 | **FLAT within ±10 %** (no queue to remove) | **YES** |
+
+**The naive form of the rule scores 8/12, and the two divergences are exactly
+the two cells the pre-registration carved out IN ADVANCE and for the stated
+reason** — c1 has no queue to remove (probe 2.1 ms on a 2 ms propagation) and
+c2r200's p50 is pinned by 200 ms of propagation. Both carve-outs are in the
+committed text at ec6a5ec, with their mechanism named, before the run. Both
+numbers are reported so a reader can apply whichever rule they prefer.
+
+**PREDICTION 2 — the sc3 tail gets WORSE while the median improves. VERDICT: NOT CONFIRMED, and it is a null rather than a refutation.**
+p99 rises 576 → 743 (s42) and 576 → 889 (s7) — the predicted DIRECTION, on
+both seeds — but σ is 171 and 208 and **|Δ| is inside 2σ on both** (167 vs 361;
+313 vs 427). **The tail-for-median trade is not established and is not
+claimed.** It is also not refuted; the battery lacks the n to settle it, and
+that is stated rather than resolved by picking the favourable reading.
+
+**PREDICTION 3 — the wait attribution names WHICH gate the law released. VERDICT: CONFIRMED, 4/4.**
+
+| cell | `wait_paused` A → B | pre-registered | verdict |
+|---|---|---|---|
+| c2r100 | **40 % → 7–8 %** | < 15 % | **PASS** |
+| c2r200 | **65–66 % → 4–7 %** | < 20 % | **PASS** |
+| sc2 | 40 % → 43–44 % | does NOT fall, ±10 pts | **PASS** |
+| sc3 | 75–76 % → 77–78 % | stays > 60 % | **PASS** |
+
+**This is the instrument that did not exist three commits ago.** It shows the
+law releasing the store-full gate precisely where it raises the cap and
+tightening it where it lowers the cap — the mechanism, named, in the bucket
+that names it. It also shows something nobody could see before: **c7 is
+`tun` 96–98 % in EVERY arm** — c7's sender is intake-bound and its store never
+binds, which is why c7's entire goodput cost is the anchor's.
+
+**PREDICTION 4 — H5, the silent datagram eviction, is REFUTED. VERDICT: WRONG — H5 is CONFIRMED, at exactly the cell the pre-registration named.**
+
+`full = 0` in **34 of 36** cell-arm-seeds. The two exceptions are
+**c2r200-B**: `full = 295.2` (s42) and `123.5` (s7), with
+`(hand − tx)/hand = 0.00612` and `0.00267`. The s42 figure **exceeds the
+pre-registered 0.005 threshold**.
+
+"What Binds Throughput" listed H5 as *"OPEN AND UNMEASURABLE FROM THESE
+LOGS"* and predicted that if real it would need cap ≳ 3 000, *"which is
+c2r100-B and c2r200-B and nothing else in the battery"*. It fired at
+c2r200-B, the arm whose cap is clamped at 4 096, and **not** at c2r100-B
+(cap ~3 030, `full = 0`). **The instrument built for this battery measured the
+thing the previous one could not see, and the mechanism's own prediction about
+where to look was right.**
+
+Per the pre-registration's own rule, **c2r200 arm B's goodput number is VOID
+until re-priced.** It was inside noise anyway (see below), so nothing rests on
+it — but the rule is applied rather than waived because the number happened to
+be unhelpful.
+
+### THE FALSIFIERS, SCORED
+
+| falsifier | fires? |
+|---|---|
+| **F-WIN-1** sc2 p50 ≤ 0.75× both seeds at goodput parity | **PASS: 0.456 / 0.477, goodput 0.999 / 0.987, both within 2σ** |
+| **F-WIN-2** sign matched at ≥ 5 of 6 cells, both seeds | **PASS: 6/6 both seeds against the pre-registered table** |
+| **F-WIN-3** every claimed direction exceeds 2σ | **PASS** (c1 claims no direction) |
+| **F-LOSE-1** the win is bought with goodput | **FIRES, PARTIALLY — sc3 s7 (−4.3 %) and c7 s7 (−12 %) exceed 2σ. But D/A shows c7's cost is the ANCHOR'S to the third digit, and sc3's is 0.990 in arm D.** |
+| **F-LOSE-2** inside noise at sc2 | does not fire — EXCEEDS on both seeds and again in the top-up |
+| **F-LOSE-3** direction unpredictable, or differs between seeds | **does not fire — every cell has the same sign on both seeds and in the top-up** |
+| **F-LOSE-4** tail worse where median improves, at > 1 cell | does not fire — only sc3 shows it and it is inside noise; sc2 and c7 tails IMPROVE (0.51×, 0.34×) |
+| **F-LOSE-5** the c1 null fires | **does not fire — 1.000 / 0.999 at p50 across 48 invocations** |
+
+**F-LOSE-5 not firing is the instrument's own validation.** c1 has 75 %
+headroom, no standing queue, and a probe that reads 2.1 ms against a 2 ms
+propagation. The law changes its cap there (542 → 356) and the probe does not
+move, at all, on either seed. **The probe measures queueing delay and nothing
+else** — which is exactly what makes the sc2/sc3/c7 numbers mean what they say.
+
+### THE CROWN — the law is INERT, as its scope requires
+
+`tail_matrix.sh` c2 ×5, gate verified two-sided (`RWM_THREE_TERM=0` in ship,
+`=1` in tt). p99 distribution medians:
+
+| arm | ship | tt (law ON) |
+|---|---|---|
+| realtime 400 B | 35 (35–48) | 36 (33–37) |
+| realtime 1200 B | 40 (37–43) | 40 (38–62) |
+| bulk 400 B | 73 (71–78) | 69 (68–75) |
+| bulk 1200 B | 68 (67–70) | 68 (65–69) |
+
+Ranges overlap everywhere; no regression, no gain. **The law does not reach
+the realtime crown, which is the correct behaviour for a store-sizing law at
+1000-message realtime rates.**
+
+### THE ADJUDICATION — does `RWM_THREE_TERM` ship as a latency control, and at what default?
+
+**It ships as a documented latency control. It does NOT ship ON. Default
+stays OFF, and the reason is arm D, not arm B.**
+
+**What is established, and it is the strongest positive result this goal has
+produced.** The outstanding-data limit is a *predictable, signed, two-directional
+latency control at a saturated link*. At sc2 it halves the delivered latency of
+an independent flow (0.456 / 0.477, ≫ 2σ, reproduced in a third session) **at
+goodput parity within noise**. At c7 it cuts p99 to 0.34×. The direction was
+pre-registered at every cell from one formula with no cell-specific term and
+matched 12/12 including the two cells where it predicted a LOSS and the cell
+where it predicted NOTHING. That is a mechanism, not a correlation.
+
+**Why it still does not earn ON, and the noise bound on the claim.** A default
+is what a user gets, and a user who gets the law gets `RWM_PLAIN_RS` with it.
+That anchor alone costs **−35 % goodput at c1** (D/A 0.638 / 0.649, |B−A| 78.6
+vs 2σ 9.3 — roughly 17σ) **for exactly zero latency benefit there** (probe
+1.000 / 0.999). A default that trades a third of the throughput on a 1 Gbit
+cell for no latency change on that cell is not defensible, and the adjudication
+was pre-committed to B-vs-A precisely so this could not be argued away by
+pointing at B/D.
+
+**The honest shape is therefore: the mechanism is real and the packaging is
+not.** The law is worth having where the link is saturated and delay is the
+scarce resource; it is a straight loss where the link is open. Nothing in this
+battery licenses picking that per cell — a δ- or ρ-keyed switch between "law"
+and "no law" would be exactly the mode-switch this architecture rejects, and it
+is not proposed.
+
+**What would change the verdict, stated so the next attempt is not wasted:** an
+honest rate anchor that does not cost 35 % at 24 k sym/s. The tax is a function
+of arm A's symbol rate alone (1.00 at 5–10 k, 0.88 at 19 k, 0.64 at 24 k) and
+is anti-correlated with store binding, so it is a sender-local per-symbol cost
+and not a store effect. **The latency control is blocked on the anchor, and on
+nothing else this battery can see.**
+
+### WHAT THIS BATTERY DELIBERATELY DOES NOT CONCLUDE
+
+1. **It does not settle the sc3 tail.** p99 rises on both seeds in the
+   predicted direction and is inside 2σ on both. n = 8 (and n = 3–4 after the
+   seed-7 aborts) is not enough. Not claimed either way.
+2. **It does not re-price c2r200.** Arm B there has confirmed datagram
+   eviction (`full` 123–295), so its +7…+11 % goodput point estimate is void
+   by the pre-registration's own rule. It was inside noise regardless, so the
+   ONE cell with a permitted throughput target produced **no throughput
+   verdict** — the third time this goal has lost its store-bound cell.
+3. **It does not claim the probe measures application latency.** It measures
+   ICMP round-trip through the shaped qdisc. That is queueing delay, validated
+   by the c1 null, and it is not the same thing as an application's
+   end-to-end delivered latency through the tunnel.
+4. **It does not explain the seed-7 abort class**, which cost 11.1 % of the
+   main battery and 38.9 % of the top-up. It is a standing instrument cost,
+   documented since 2026-08, and it is reported rather than worked around.
+5. **It does not test the law above 4 096.** `WIN_STORE_MAX` clamped c2r200
+   again, and it is still the largest un-derived quantity in the phase.
+6. **The crown was run on seed 42 only**, ×5, at one cell. It shows inertness,
+   not a bound on it.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed. `RWM_THREE_TERM` stays **default OFF**, and this battery is
+now the strongest single argument for eventually flipping it AND the reason it
+cannot be flipped today. No constant tuned, no term added, no cell rescued, no
+criterion re-scored. `RWM_THREE_TERM=0` remains bit-identical to main. The
+engine change in this branch is instrumentation only, gated on `RWM_DIAG`, with
+an asserted OFF-value property.
