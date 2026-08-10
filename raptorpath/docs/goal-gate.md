@@ -20263,3 +20263,341 @@ loopbacks (`recov_mp`, `copa_sole`, `ack_merge` + `ack_merge_optout`,
 `emit_batch`, `patience`, `win_decouple`, `wire_compact`) · `recovery_bench`
 **1** · `slack_bench` **6** (three new) · `store_cap_bench` **3** · `--doc`.
 No VM was contacted at any point; the whole phase is local and deterministic.
+
+## Three-Term Law — PRE-REGISTRATION (2026-08-10) — MEASUREMENT DISCIPLINE 11: this block was written and committed BEFORE any battery was run, in its OWN commit, against the law shipped at c7cc6bc. Branch `feat/three-term-law` from main@e113c9a; GOAL "THREE TERMS, NO CONSTANTS" phase 1.3 (compose) + 1.4 (pre-register). Gate `RWM_THREE_TERM`, default OFF; law `net::three_term_store_cap`; component validation `tests/slack_bench.rs::three_term_bench`
+
+### THE LAW, VERBATIM, WITH EACH TERM'S PROVENANCE
+
+```text
+   limit = Σ_i rate_i · K_i · RTprop_i                TERM 1  NETWORK WINDOW
+         + Σ_i rate_i · stall(δ, ρ, RTprop_i, srtt_i) TERM 2  EMISSION SLACK
+         + 2 · rate_fast · skew                       TERM 3  RESEQUENCING SPAN
+
+   srtt_i = K_i · RTprop_i
+   stall  = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt),  D(δ) = min(b(δ)·RTprop, 2·RTprop)
+   skew   = (max_i RTprop_i − min_i RTprop_i) / 2
+   rate_fast = rate of the path with the least RTprop
+   clamp  = [store_cap_floor, WIN_STORE_MAX] — a MEMORY bound, not law
+```
+
+| symbol | where the engine gets it | is it a constant? |
+|---|---|---|
+| `rate_i` | `PathState::btlbw_sym_per_s()` — the per-path delivered-rate anchor, the same source the shipped Σ-anchor base and `capw_store_cap` read | measured |
+| `RTprop_i` | `PathState::min_rtt()` | measured |
+| `K_i` | `EchoRatioMin::observe_srtt_over_rtprop` — windowed-MIN echoSRTT/RTprop on the SAME `PERCAP_K_HALF_WINDOW_US` window every honest cap uses | measured |
+| `ρ` | the declared retention contract. **1 here by SCOPE, not by a branch**: the plain dynamic cap exists only on the RETAIN-UNTIL-ACKED path | declared dial |
+| `b(δ)` | `net::delta_budget_b(hint)` — the δ dial's named points (½ / 1 / 2), de-triplicated this commit | declared dial |
+| `9/8` | RFC 9002 §6.1.2 `kTimeThreshold` | **cited, not fitted** |
+| `2` (span) | the definition boundary §16.43 PS5 IDENTIFIED — sequence-number span vs fast-path buffered symbols — and measured at 2.00 ± 0.03 over 18/18 non-zero cells | **identified, not fitted** |
+| `WIN_STORE_MAX` | 4096 × ~1.2 KB ≈ 5 MB, the existing memory clamp `win_decouple_cap_ret` uses | memory, outside the law |
+
+**There is no other number in the law.** Nothing below was tuned to make a
+cell pass; where the law disagrees with a measurement the disagreement is
+reported as a ratio, in §"WHERE THIS WILL BE WORST".
+
+### THE TOPOLOGY BRANCH, DELETED — the reason the goal exists
+
+`skew = (max RTprop − min RTprop)/2` over a ONE-ELEMENT set is zero because
+max and min are the same number. So at a single path TERM 3 is `0` **by
+arithmetic**, and the `active_paths()` vs `live_paths()` question — which
+path set a *count-scaled* law multiplies by — does not arise: this law reads
+`live_paths()` unconditionally and never counts. There is no `if n == 1`, no
+topology predicate and no δ/ρ threshold anywhere in `three_term_store_cap`.
+
+Enforced, not asserted in prose, by
+`three_term_span_vanishes_continuously_as_skew_goes_to_zero`: the span term
+is 0 at path counts 1…6 with equal RTprop, and a 400-point skew sweep from
+20 ms down to 0 has NO adjacent step above 8 symbols (50 µs of skew is 1.04
+symbols of span plus 4.9 of the lagging path's own window+slack), arriving
+AT zero skew continuously. **A behaviour step at the vanishing point would
+be a defect even if both sides were individually correct.**
+
+### THE CLOSED DWELL LOOP — one evaluation, and why that is sound
+
+§16.44 route B: `S → dwell → app-echo srtt → §6.1.2 patience → stall → S`.
+Its gain through this law is **identically zero**, because `K_i` is a
+windowed MIN and the store's dwell can only ADD to an echo sample — it can
+never lower the window's minimum, and the minimum is the only statistic the
+law reads. That is the loop-OPENING argument §16.44 measured (`wire` arm
+terminates at iteration 2 = converged after one update, 36/36 cells). So
+the iteration bound is **1**, and it is 1 because the map is constant in its
+own output, not because the iteration was truncated.
+
+The residual is BOUNDED, not described
+(`three_term_law_closes_the_dwell_loop_in_one_evaluation`): a 200 ms
+app-echo dwell injected for 9 s moves the limit by **zero**; K's memory is
+2 × `PERCAP_K_HALF_WINDOW_US` ≈ 10 s, so a dwell sustained past that DOES
+re-enter the law (K 1.5 → 25 at the c2 cell), and the memory clamp is what
+bounds the damage there. That is the law's stated limitation, pinned on
+both sides.
+
+### COMPONENT VALIDATION, RUN BEFORE ANY L1 (discipline item 14) — the SHIPPED arithmetic against the bench's closed-loop requirement
+
+`cargo test -p raptorpath --test slack_bench --release -- --ignored
+three_term_bench --nocapture`, 18.7 s, both seeds. The function under test is
+`raptorpath::net::three_term_store_cap` — the one `run_window_sender` calls
+— driven on the bench's own cells. Nothing is re-derived.
+
+**(A) The adjudication, exact.** There are exactly two differences between
+the engine's law and the bench's `pred_s`, and neither is a coefficient:
+
+1. *the window term's clock.* The bench writes `rate·srtt` with
+   `srtt = RTprop + wireQ`; the engine writes `rate·K·RTprop`, because a cap
+   that reads a LOADED srtt inflates its own input. On the bench's axes
+   these are the SAME NUMBER (`K = 1 + wireQ/RTprop` exactly). **Measured:
+   worst |(engine window + slack) − pred_s| ÷ pred_s over all 36 (rate,
+   RTprop) pairs at np = 1 = 2.5 × 10⁻¹⁶** — floating-point dust. The
+   engine is computing the bench's own terms, and the adjudication is that
+   the BENCH is right about the quantity and the ENGINE is right about how
+   to read it without self-reference.
+2. *the span term is in the engine and not in the bench's `pred_s`.*
+   §16.43/§16.44 measured the span separately (PS5/PS6) and never folded it
+   into the composite. Measured: **worst |engine span − rate_total × Δowd|
+   ÷ that = 2.0 × 10⁻¹⁵**, i.e. the engine's span IS PS5's measured form.
+   This is a difference in what is being predicted, not a disagreement about
+   a value.
+
+**(B) The ratio distribution — measured closed-loop S(1 %) ÷ the ENGINE's
+limit**, over the closed-loop grid (3 rate classes × RTprop {5, 20, 100} ms
+× np {1, 2} × both clocks = 36 cells, both seeds, GE 2.6 %, worst seed
+kept):
+
+| | p50 | p90 | max |
+|---|---|---|---|
+| **ALL (36 cells)** | **0.587** | **1.162** | **1.481** |
+| np = 1 (18) | 0.600 | 1.055 | 1.162 |
+| np = 2 (18) | 0.530 | 1.277 | 1.481 |
+
+Over-covering (ratio < 1) at **29 of 36** cells. Worst cell **1.481** at
+c2 / RTprop 100 ms / np 2 / app clock.
+
+**The verdict, stated plainly: the composed law is CONSERVATIVE in the
+median (×1.7 over-cover) and under-provisions by at most ×1.48.** That is
+the same distribution §16.44 measured for the two-term composite (p50 0.595,
+p90 1.057, max 1.575) — so **adding the span term did not degrade the fit**,
+which is the check that mattered, since term 3 pushes the limit UP exactly
+where terms 1–2 already over-cover. The over-cover direction is the correct
+one for a term whose stall input is a DECLARED BOUND rather than a mean
+(§16.43 measured the honest plane recovering in 0.47–0.55 of the contract's
+own stall).
+
+**Where the engine's limit exceeds `pred_s` and gets CLAMPED**: c1 at
+RTprop ≥ 50 ms and c2 at RTprop 200 ms hit `WIN_STORE_MAX` = 4096. At those
+cells the law is not being applied — the memory clamp is — and both of the
+two >1.15 ratios in (B) are exactly there (c1/RTprop 100: engine clamped to
+4096 against a window+slack of 8450). **This is named as a limitation of the
+deployment, not of the law**, and it is the single most important thing the
+battery can confirm or refute at c2r200.
+
+### THE PRE-REGISTERED NUMBERS — computed from the law, before the battery
+
+Symbol payload 1200 B. `ρ = 1` (every named cell is the reliable bulk
+contract). Rate classes at the ledger's own measured numbers: c1 26 000
+sym/s (~250 Mbit/s achieved on the shipped default), c2 10 400 sym/s, c3
+2 000 sym/s. Two columns because `K` is a MEASURED ratio and the battery
+will not read the bench's calibration exactly: **`K@4ms`** uses the bench's
+own standing wire queue (`srtt = RTprop + 4 ms`), **`K=1`** is the
+un-queued floor. The truth is between them, and the interval is the
+prediction's honest width.
+
+At ρ = 1 the whole `(1 − ρ)·D(δ)` term is multiplied by zero, so **δ does
+not enter the limit at any named cell.** That is a falsifiable structural
+claim: if the measured `[3T]` limit moves with the protocol hint on a
+reliable transfer, the law as shipped is wrong.
+
+| cell | topology | RTprop | **pred limit (sym) K@4ms / K=1** | **pred bytes** | window | slack | **span** |
+|---|---|---|---|---|---|---|---|
+| **jit25** (jitter cell) | N = 1, 100 Mbit, 20 ms each way + 25 ms jitter | 40 ms | **1430 / 1300** | 1.72 / 1.56 MB | 458 | 972 | **0** |
+| **shal8** (shallow buffer) | N = 1, 100 Mbit, 8-pkt bottleneck queue | 10 ms | **455 / 325** | 0.55 / 0.39 MB | 146 | 309 | **0** |
+| **c2r100** (RTT-100) | N = 1, 100 Mbit | 100 ms | **3380 / 3250** | 4.06 / 3.90 MB | 1082 | 2298 | **0** |
+| **c2r200** (RTT-200) | N = 1, 100 Mbit | 200 ms | **4096 (CLAMPED from 6631) / 4096 (from 6500)** | 4.92 MB | 2122 | 4508 | **0** |
+| **c1** | N = 1, 1 Gbit | 2 ms | **488 / 163** | 0.59 / 0.20 MB | 156 | 332 | **0** |
+| **c7** | N = 2, c2 + c2 (SYMMETRIC) | 10 ms / 10 ms | **910 / 650** | 1.09 / 0.78 MB | 291 | 619 | **0** |
+| **c8** | N = 2, c2 + c3 | 10 ms / 40 ms | **1042 / 887** | 1.25 / 1.06 MB | 234 | 496 | **312** |
+
+**c7's span term is ZERO even at N = 2**, because c7 is two IDENTICAL paths
+and `max RTprop = min RTprop` there. That is the sharpest distinguishing
+prediction in the table: a law that keyed on path COUNT could not produce
+it, and the `[3T]` echo prints the term separately so it can be read
+directly.
+
+### GATE-OFF vs GATE-ON, and the predicted direction of the throughput effect
+
+Gate-OFF values are the shipped chain's own: at N = 1 the legacy law
+`clamp(gain·Σanchor, 64, RELIABLE_STORE_MAX)` latches at **1024** on fast
+paths (documented: the legacy ack-interval anchor over-reads ×4.6–7.4); at
+N ≥ 2 `path_scaled_store_cap` clamps at the **N × 2048 = 4096** ceiling —
+the arm §16.43 PS6 showed is ×7.6 above c8's own span and read **−19.6 %**.
+
+| cell | OFF (expected) | ON (pred) | ratio ON/OFF | **predicted throughput effect** |
+|---|---|---|---|---|
+| c1 | 1024 | 488 | ×0.48 | **flat to mildly UP (0 to +5 %)**. 488 covers the closed-loop requirement at this geometry with margin (bench c1/RTprop 5 ms needs 360–430; c1's RTprop is 2 ms), and a smaller store means less standing queue. The +16–25 % class is a *floor to hold*, not a gain to add: the store-cap fix already banked it. |
+| c7 | 4096 | 910 | ×0.22 | **flat, ±3 %** — the risky one. 910 must still cover; the bench's np = 2 requirement at c2/RTprop 20 ms is 796 (app) / 464 (wire) for HALF this rate, so the margin is thin at the app clock. |
+| c8 | 4096 | 1042 | ×0.25 | **UP, +10 to +25 %.** This is the cell the whole goal was diagnosed from: 4096 is ×3.9 the derived limit and PS6 attributed the −19.6 % collapse to exactly that over-provisioning. |
+| jit25 | 1024 | 1430 | ×1.40 | **UP, +5 to +15 %** — 1024 under-provisions a 40 ms RTprop cell by ×1.4. |
+| shal8 | 1024 | 455 | ×0.44 | **flat, ±3 %.** With an 8-packet bottleneck the substrate cwnd binds long before a 455-symbol store; the law should be INERT here. |
+| c2r100 | 1024 | 3380 | ×3.30 | **UP, +25 to +60 %.** 1024 is 0.30 of the derived requirement and 0.46–0.50 of the bench's own closed-loop measurement (2046–2223). This is the strongest predicted gain in the table. |
+| c2r200 | 1024 | 4096 | ×4.00 | **UP, +30 to +80 %** — but the LAW is not what is being tested here (see below). |
+
+### THE FALSIFIERS, STATED IN ADVANCE
+
+**Refutes the law outright:**
+
+* **F1 — a behaviour STEP across the vanishing point.** Any measurement in
+  which the limit, or the throughput, moves discontinuously between a
+  symmetric dual (skew = 0) and a near-symmetric dual, or between N = 1 and
+  a zero-skew N = 2. The law claims ONE continuous formula; a step means a
+  branch survived somewhere in the stack the law feeds.
+* **F2 — δ moves the limit at ρ = 1.** The `(1 − ρ)·D(δ)` term is
+  multiplied by zero on every reliable cell. If the `[3T]` limit differs
+  between Bulk and Realtime hints on a reliable transfer, the shipped law is
+  not the law described here.
+* **F3 — the span term is non-zero at c7 or at any single path.** Directly
+  readable from the `[3T]` echo. This is the property the whole goal exists
+  for; if it fails, the topology branch was not deleted, only moved.
+* **F4 — c8 REGRESSES below 0.87×Σ under the gate.** The law's central
+  claim about c8 is that 4096 was ×3.9 too large. If sizing c8 to its own
+  derived span makes it worse, the diagnosis in §16.43/§16.44 is wrong
+  about which direction the error ran.
+
+**Merely BOUNDS the law (a residual to record, not a refutation):**
+
+* **B1 — a cell needs more backlog than the law grants, by ≤ ×1.5.** That is
+  inside the component-validated max (1.481) and inside the term's own
+  measured spread; it prices the law, it does not refute it.
+* **B2 — c2r200 (and c1 at RTT ≥ 100 ms) behave as the ×4096 arm rather
+  than as the law.** At those cells the law is CLAMPED by `WIN_STORE_MAX`,
+  so whatever they measure is a fact about a 5 MB memory ceiling. **They
+  cannot confirm the law and they cannot refute it**, and this is written
+  down BEFORE the numbers precisely so a c2r200 win cannot be claimed as
+  evidence for the law afterwards.
+* **B3 — the ≥ 5 % loss residual.** §16.43/§16.44's named, deliberately
+  unadopted successor `stall/(1 − ε̂)` (multi-round recovery: the repair
+  itself re-lost) is worth ×1.05 at ε̂ = 5 % and does not close the ×1.43
+  gap measured there. The named cells run GE 1.3 %/50 % ≈ 2.5 %, so this
+  should not bind — but if the losses at c2r100l5/l10-class cells
+  under-provision, this is the owner, and it is NOT to be added because it
+  would make them pass.
+* **B4 — the rate anchor, not the law.** See below; this is the largest
+  single threat to the battery's interpretability.
+
+### **THE ANCHOR CAVEAT — the battery MUST compose `RWM_PLAIN_RS=1`, and here is why, before the run**
+
+Every number in the table above assumes an HONEST `rate_i`. Under the
+shipped default (`RWM_PLAIN_RS=0`) the engine's `btlbw_sym_per_s()` is the
+legacy ack-interval windowed-max, which the "Anchor Hygiene" battery
+measured over-reading **×4.6–7.4** (a further ×3.4–3.7 under
+`RWM_EST_CADENCE`). The law is LINEAR in the rate, so under the shipped
+anchor the computed limit will be 4.6–7.4× the table and will **hit
+`WIN_STORE_MAX` = 4096 at essentially every cell** — reproducing the ×4096
+arm rather than testing the law.
+
+**Pre-registered consequence: `RWM_THREE_TERM=1` alone is NOT an arm that
+tests this law.** The arm that tests it is `RWM_THREE_TERM=1
+RWM_PLAIN_RS=1`, and `RWM_THREE_TERM=1` alone should be run as the
+DIAGNOSTIC control that demonstrates the anchor's price — predicted `[3T]`
+`cap=4096` at most cells, `eng` ≫ the table. If the composed arm's `[3T]`
+limits do not land within ~±30 % of the table above, the anchor is the
+binder and no verdict about the law may be read off that battery. This is
+stated now so it cannot be discovered afterwards as an excuse.
+
+### WHERE I EXPECT THE LAW TO BE WORST, AND WHY
+
+Named in order of expected severity. **A pre-registration that predicts
+success everywhere is worthless**, so these are the cells I expect to lose:
+
+1. **c7 (symmetric dual) — the most likely regression.** The law cuts c7's
+   store from 4096 to 910, ×4.5. The component validation's own worst np = 2
+   ratios (1.277, 1.481) are both dual cells, and c7 is scored at the
+   TIGHTEST criterion in the set (≥ 0.97×Σ). The mechanism I expect: c7's
+   two paths are identical, so the span term contributes nothing and the
+   limit is pure window+slack — exactly the composite whose measured p90 is
+   1.06–1.28. If c7 lands 0.90–0.96×Σ that is B1, not F4.
+2. **c2r200 — where the law is not tested at all.** Clamped at 4096 from a
+   derived 6631. Whatever it measures is about the memory ceiling (B2).
+   The honest successor, stated now: either the clamp is raised with a
+   memory argument of its own, or the law needs a term that makes a 200 ms
+   RTprop reliable transfer cheaper — and neither is in this phase.
+3. **c1 — the anchor's most inflated cell.** c1 is where the ack-interval
+   over-read is largest (fastest path, tightest ack spacing), so c1 is
+   where the `RWM_PLAIN_RS=0` control will look most like the ×4096 arm and
+   the composed arm most different. It is also the cell whose criterion
+   (≥ the +16–25 % class) is a FLOOR earned by a previous change, so a
+   ×0.48 store cut has downside and no upside.
+4. **shal8 — expected INERT, and that is a real risk to the phase.** With
+   an 8-packet bottleneck the substrate cwnd binds first. If shal8 is flat
+   in both arms the cell contributes no information, which is worth saying
+   in advance rather than reporting a null as a pass.
+5. **jit25 — the one cell where `K` is not a clean read.** netem jitter
+   ±25 ms at 25 % correlation moves srtt sample to sample; `K` is a
+   windowed MIN, so it will read near the LOW end of the jitter
+   distribution and the limit will sit near the `K=1` column (1300) rather
+   than the `K@4ms` one (1430). If the measured `[3T]` window term is far
+   above 458, the min-window is being inflated by something and that is a
+   finding about `EchoRatioMin`, not about the three terms.
+
+**What I do NOT expect to fail:** c8. The whole diagnosis says c8 was run at
+×3.9 its derived limit, and the span term (312 symbols, 30 % of the c8
+limit) exists precisely to size it. If c8 does not improve, the goal's
+central premise is wrong and F4 fires.
+
+### THE CRITERION TARGETS THE BATTERY WILL BE SCORED AGAINST
+
+Both seeds (42 and 7), every criterion at both:
+
+| # | criterion | target |
+|---|---|---|
+| 1 | c1 | ≥ the **+16–25 %** class (the store-cap fix's banked floor) |
+| 2 | c8 | ≥ **0.87×Σ** |
+| 3 | c7 | ≥ **0.97×Σ** |
+| 4 | sc2 / sc3 | **within σ** of the same-session default |
+| 5 | realtime crown | ≤ **~41 ms** at 1000/1000 |
+| 6 | dnf | **0** |
+| 7 | wedge | **green** (`mtu_blackhole_wedge`) |
+
+Liveness, per MEASUREMENT DISCIPLINE 1/15, asserted per arm and per
+direction before any number is read: the resolve-time echo `three-term
+outstanding limit ACTIVE`, `[GATES] RWM_THREE_TERM=1` on the arm and
+`RWM_THREE_TERM=0` on the control, and the per-2 s `[3T]` line with
+`eng=1`. **`eng=0` with the gate configured is a warm-up failure, not a null
+result**, and any arm whose `[3T]` never reaches `eng=1` is discarded with
+its n recorded.
+
+### WHAT THIS PHASE COULD NOT DERIVE WITHOUT A CONSTANT — stated plainly
+
+1. **`WIN_STORE_MAX` = 4096.** A memory ceiling, not a law. It BINDS at
+   c2r200 and at c1 for RTprop ≥ 50 ms, so at those cells the shipped
+   behaviour is a constant's and not the law's. Recorded as the phase's
+   largest un-derived quantity.
+2. **`store_cap_floor` = 64.** The cold-start floor. Never binds at any
+   named cell (the smallest prediction is 163) but it is a constant in the
+   clamp.
+3. **`9/8`.** RFC 9002 §6.1.2's `kTimeThreshold` — cited from the standard,
+   not fitted, but it IS a number the machine did not measure.
+4. **`b(δ)` = ½ / 1 / 2.** The δ dial's named points (§8.8). At ρ = 1 they
+   are multiplied by zero, so no named cell depends on them; at ρ < 1 they
+   would be load-bearing and they are declared, not derived.
+5. **What is NOT here.** `κ = min(1, (ε̂·rate/B)·stall)` (§16.44 route C)
+   was measured and REJECTED — it closes the ε̂ → 0 limit exactly but
+   under-covers by ×1.35 in the interior. It is not in the shipped law and
+   it was not resurrected. `stall/(1 − ε̂)` (multi-round recovery) is the
+   other named, unadopted successor. Adding either because it would make a
+   cell pass is the move this phase exists to refuse.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed, no existing law weakened, no gate removed, no visualizer
+or wasm crate touched. `RWM_THREE_TERM=0` is bit-identical to main: the
+law returns `None` when the gate is off and the shipped chain runs verbatim.
+The Copa-sole store law (Σcwnd) is deliberately UNTOUCHED — under Copa
+ownership cwnd IS the operating point — so this law is scoped to the plain
+dynamic cap, exactly as `RWM_STORE_CAP_UNIFIED` is.
+
+### Tests and suites
+
+New, always-on: `net::tests::three_term_law_is_arithmetic_and_continuous`,
+`three_term_span_vanishes_continuously_as_skew_goes_to_zero`,
+`three_term_law_closes_the_dwell_loop_in_one_evaluation`,
+`delta_budget_b_is_the_dial_not_a_mode`, and
+`slack_bench::three_term_engine_law_is_the_bench_terms_at_the_anchors`.
+New `--ignored` component bench: `slack_bench::three_term_bench` (18.7 s).
