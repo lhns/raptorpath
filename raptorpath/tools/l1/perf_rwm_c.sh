@@ -129,12 +129,48 @@ echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} e
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
 # teardown.  Reported as CPUCLI/CPUSRV seconds so utilization = cpu/elapsed.
 rm -f /tmp/rwm-cli-time
+# goal-gate "Latency Lever" — THE LOADED DELIVERED-LATENCY PROBE (RWM_LATPROBE=1).
+#
+# The score for a latency control is what a *different* flow experiences while
+# the bulk transfer is running. The engine's own `rtt=`/`rtp` gauges cannot
+# supply that: they are the sender's estimate of its OWN path, produced by the
+# code under test, on a flow whose pacing the mechanism changes. An
+# independent ICMP flow sharing the SAME shaped qdisc is not — it is delivered
+# round-trip time, measured by the kernel, identical in both arms, and it is
+# exactly the standing queue a latency control is claimed to remove.
+#
+# It must run HERE because the namespaces exist only for this script's
+# lifetime. 20 probes/s over the data path, backgrounded before the transfer
+# starts and reaped after it ends; raw RTTs land in /tmp/rwm-ping.txt for the
+# caller to percentile. Default OFF, so every existing driver is unchanged.
+#
+# Cost accounting, stated rather than assumed: 20 pkt/s of 84 B is 13 kbit/s,
+# 1.3e-4 of a 100 Mbit cell — below the resolution of every goodput number
+# here, and it is present in EVERY arm, so it cannot favour one.
+PING_PID=""
+if [[ "${RWM_LATPROBE:-0}" != "0" ]]; then
+    rm -f /tmp/rwm-ping.txt
+    # NOT -q: the per-packet `time=<ms>` lines ARE the measurement; the
+    # summary line only carries min/avg/max/mdev, and a tail percentile is
+    # the whole point of a bufferbloat probe.
+    ip netns exec "$NS_CLI" ping -i 0.05 -W 2 -D 10.77.0.2 > /tmp/rwm-ping.txt 2>&1 &
+    PING_PID=$!
+    disown "$PING_PID" 2>/dev/null || true
+fi
 timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
     --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
     | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
     || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+# Reap the loaded-latency probe BEFORE the qdisc counters below, so its own
+# packets are inside the tc totals every arm is measured on.
+if [[ -n "$PING_PID" ]]; then
+    kill "$PING_PID" 2>/dev/null || true
+    pkill -f "ping -i 0.05 -W 2 -D 10.77.0.2" 2>/dev/null || true
+    wait "$PING_PID" 2>/dev/null || true
+    echo "    LATPROBE: /tmp/rwm-ping.txt $(grep -c 'time=' /tmp/rwm-ping.txt 2>/dev/null || echo 0) replies"
+fi
 SRV_TICKS=0
 for P in $(pgrep -x raptorpath); do
     T=$(awk '{print $14+$15}' /proc/$P/stat 2>/dev/null || echo 0)
