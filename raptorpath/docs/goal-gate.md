@@ -19907,3 +19907,359 @@ loopbacks (`recov_mp`, `copa_sole`, `ack_merge`, `emit_batch`, `patience`,
 `win_decouple`, `wire_compact`, plus the two above) · `recovery_bench` **1**
 · `store_cap_bench` **3** · `slack_bench` **3** · `--doc`. No VM was
 contacted at any point; the whole phase is local and deterministic.
+
+## Coverage: derivable or not (2026-08-10) — the ADVERSARIAL pass on §16.43's fourth term (branch `feat/coverage-derivation` from main@0e18752; GOAL "THREE TERMS, NO CONSTANTS" phase 1.3; instrument `tests/slack_bench.rs::coverage_bench`, 576 cells plus a closed-loop sub-sweep, ~140 s, local, no VM)
+
+§16.43 closed with a split verdict: the stall TIME is derived from (δ, ρ); the
+COVERAGE — where on a ~3-octave slope to size — was asserted NOT derivable, and
+that assertion was offered as **positive evidence for a fourth contract term**.
+This phase's brief was to KILL that claim, with the default hypothesis that the
+fourth term is unnecessary. It is.
+
+**VERDICT: THE FOURTH TERM IS NOT NEEDED.** What §16.43 read as a missing
+DIMENSION is a missing COMPOSITION — two of them, both over dials the contract
+already has:
+
+1. **the store dwell is an OUTPUT of the backlog, not an input to it.** Closing
+   that loop (Little's law, no free parameter) removes essentially all of the
+   apparent freedom, and with it the ×13.5 tail that motivated the fourth term.
+2. **the slack term is incomplete in ε̂**, the residual the (δ, ρ, r) triangle
+   already fixes through r\*. Uncorrected it predicts 3.125 × the network window
+   at ZERO loss, where the measured requirement is 0.90 × it.
+
+And one measurement correction had to be made before any of it could be read.
+
+### 0. A DRIVER ARTIFACT FOUND FIRST, AND WHAT IT MOVED IN §16.43
+
+The first coverage sweep returned a requirement that was **independent of the
+loss rate** at c1 and c2 — S(1 %) = 1466 at c1/RTprop 20 for every ε̂ from 0 to
+5 %. A term that is supposed to cover a recovery stall cannot be blind to
+whether recoveries happen; that is the signature of an artifact, and it was one.
+
+`recovery_model.rs` arms the receiver's SACK-bearing ack timer at
+`GAP_ACK_MIN_US` = 2 ms — one owd *before* the first symbol can arrive. The
+"nothing arrived" branch then handed the next advertisement to the stalled-hole
+refresh cadence, `(last_hole_nack_at + refresh_us)`, even though
+`last_hole_nack_at` was still 0 because no hole had ever been NACKed. So the
+first frontier advertisement landed a full refresh cadence in, and **every
+symbol emitted inside that window sat in the sender's store**. At c1/RTprop 20
+the refresh is 2 × 24 = 48 ms; the report reaches the sender at 58 ms;
+58 ms ÷ 38.46 µs = **1508 symbols**, against a measured S(0.1 %) of **1521**.
+The artifact WAS the answer. It is a startup transient with no counterpart in
+the shipped receiver, which acks ON ARRIVAL subject to the 2 ms floor.
+
+The correction is one clause — the refresh cadence owns the next ack only once
+a hole NACK has actually been sent — and it is bounded by a permanent test,
+`coverage_cold_start_ack_is_bounded_by_the_gap_ack_floor` (at ε̂ = 0 the worst
+store residence must be one RTprop plus two gap-ack quanta, never the refresh).
+
+**§16.43's own numbers move, and they move in its favour.** Re-run on the
+corrected driver, same 576 cells:
+
+| §16.43 statistic | as published | corrected |
+|---|---|---|
+| PS1 wire-clock pass (idle < 1 % AT the prediction) | 226 / 288 (78.5 %) | **266 / 288 (92.4 %)** |
+| wire S(1 %) ÷ pred — p50 / p90 / p95 / **max** | 0.86 / 1.35 / 1.40 / **2.10** | 0.56 / 1.00 / 1.40 / **1.82** |
+| wire cells within ×1.5 | 95.5 % | **96.5 %** |
+| app-clock pass | 152 / 288 (52.8 %) | 182 / 288 (63.2 %) |
+| app S(1 %) ÷ pred — p50 / **max** | 1.00 / **13.47** | 0.88 / **13.47** |
+| PS3 shape — SLOPE / soft / KNEE, median width | 343 / 175 / 58, 3.00 oct | 315 / 200 / 61, **3.00 oct** |
+| PS5 span ratios (18 non-zero cells) | 2.00 ± 0.03 | **byte-identical** |
+
+The span term is untouched, the shape verdict is untouched, and the slack
+term's honest-clock accuracy IMPROVES. The app-clock tail does not move at all
+— the first hint that the app-clock failure has a different owner, which route
+B names. `recovery_bench_fixtures_pin_the_plane` re-pins six values (app p50
+16 600 → 14 776 µs, wire p50 16 600 → 14 328 µs, wire mix [75, 79] → [70, 84],
+retx 157 → 156, sweeps 3 → 2); the channel LAWS, the N ≤ 1 bit-exact bypass and
+the SP asymmetry are unchanged.
+
+### 1. THE SLOPE IS NOT A SHAPE — IT IS ONE PARAMETER, AND "3 OCTAVES" IS ITS ARITHMETIC
+
+§16.43 read the 3-octave transition as "the log of the stall distribution's own
+spread" (log₂(169.5/19.2) = 3.14 at c7, against a measured median of 3.00). That
+agreement is a coincidence. A store capped at S symbols with mean residence W
+admits S/W symbols per second (Little's law), so the open-loop idle response of
+ANY residence distribution whatsoever is the one-parameter hyperbola
+
+```text
+   idle(S) = 1 − S/S* ,   S* = mean store occupancy = Σ residence ÷ (N·g)
+```
+
+and §16.43's shape metric — log₂(S at 10 % of the small-S idle ÷ S at 90 %) —
+evaluates on that hyperbola to **log₂(0.9/0.1) = log₂ 9 = 3.17 octaves**, with
+no distribution involved at all. The measured median is 3.00. The width of the
+transition therefore carries no information about where to sit on it, and
+"which point on a 3-octave slope" was a question about the interval from 90 %
+wire idle to 10 % wire idle — an interval no operating point is in.
+
+Measured against the identity: max |measured idle − (1 − S/S\*)| over the
+starved half is p50 **0.054** (wire) / **0.081** (app). It is not exact — p90
+0.30/0.40 — so the residence spread is real and the hyperbola is a description
+of the median cell, not a law. Reported as such, not adopted.
+
+### 2. THE COVERAGE TARGET'S ENTIRE LEVERAGE, MEASURED IN SYMBOLS
+
+Bisected in symbols rather than read off an octave grid, S at each idle target
+÷ S(1 %), over all 576 cells:
+
+| clock | 30 % | 10 % | 3 % | **1 %** | 0.3 % | 0.1 % |
+|---|---|---|---|---|---|---|
+| wire p50 | 0.574 | 0.840 | 0.953 | **1.000** | 1.025 | 1.038 |
+| wire p90 | 0.818 | 0.928 | 0.993 | **1.000** | 1.192 | 1.323 |
+| app p50 | 0.568 | 0.833 | 0.954 | **1.000** | 1.019 | 1.028 |
+| app p90 | 0.880 | 0.977 | 1.000 | **1.000** | 1.093 | 1.121 |
+
+**Across 3 % → 0.1 % idle — one and a half decades of "how much wire may go
+idle", which is the whole operationally meaningful range — the answer moves by
+×1.09 in the median and ×1.33 at p90.** On the hand-computable emission fixture
+it moves by nothing at all: S(3 %) = S(1 %) = S(0.3 %) = S(0.1 %) = S\* = 10,
+the same integer (`coverage_terms_are_arithmetic_with_no_constants`).
+
+For comparison, the three-term prediction's own spread across cells is ×2.27
+(p10 0.465 → p90 1.057, closed loop). **A dial whose entire dynamic range is
+smaller than the residual of the model it would join is not a dimension of that
+model.** This is the quantitative core of the verdict.
+
+### ROUTE A — DERIVE COVERAGE FROM δ BY ARBITRATION: **FAILS, and the algebra says why**
+
+The premise: slack wants the limit large, span wants it small; that is a
+latency-vs-throughput trade and δ is the term that prices latency. Written out,
+the premise is wrong twice.
+
+**(i) δ cancels.** Price both horns in delay, as δ requires. Idling a fraction α
+stretches the transfer from N·g to N·g/(1−α), deferring delivery by
+(N·g/2)·α/(1−α) per symbol on average. Backlog above the network window stands
+in the bottleneck queue and adds (S/R − RTprop) of queueing delay to every
+symbol. Minimising the sum:
+
+```text
+   Δ(S) = (S/R − RTprop)  +  (N/2R)·α(S)/(1−α(S))
+   dΔ/dS = 0   ⟹   α′(S) = −(1−α)²·2/N
+```
+
+δ appears nowhere in the stationarity condition, because it multiplies BOTH
+terms — the trade is delay against delay, so its price divides out. Route A's
+premise requires the two horns to be in different currencies; they are not.
+(The condition that survives carries N, the transfer length, which is PS4's
+finding restated and not a contract term either.)
+
+**(ii) δ's only actual entry is a CEILING, and it is never interior.** The one
+place δ does constrain S is the queueing delay it bounds:
+`S ≤ rate·(RTprop + D(δ))`. Section (6) of the bench tabulates that ceiling at
+four points of the δ dial — b = 1/8, 1/2 (Realtime), 1, 2 (Bulk) — against the
+backlog the slack term demands, at all 18 rate × RTprop cells:
+
+| need ÷ ceiling | b = 1/8 | b = 1/2 | b = 1 | b = 2 (bulk) |
+|---|---|---|---|---|
+| at RTprop 5 ms | 5.00 | 3.75 | 2.81 | 1.88 |
+| at RTprop 20 ms | 3.33 | 2.50 | 1.88 | 1.25 |
+| at RTprop 200 ms | 2.83 | 2.12 | 1.59 | **1.06** |
+
+The ratio is > 1 in **72 of 72** (cell, b) pairs — 18 rate × RTprop cells at
+four points of the dial. It is rate-independent (both sides are
+proportional to the rate, so the three rate classes coincide). At ρ = 1 the δ
+ceiling is not in tension with the slack requirement at some interior optimum;
+it FORBIDS it outright, at every named point of the dial. That is a meaningful
+statement — reliability at a tight deadline over a lossy path is infeasible,
+which is exactly why ρ < 1 exists and why `stall(δ, ρ)` collapses to D(δ) as
+ρ → 0 — but it is not a selection rule. As the tasking anticipated, the
+constraint goes slack toward bulk (asymptotically need ÷ ceiling → (25/8)/3 =
+1.04 as RTprop dominates the wire queue) and it never lands ON the requirement
+anywhere.
+
+**Route A fails. δ cannot arbitrate a trade in which it prices both sides.**
+
+### ROUTE B — CLOSE THE LOOP: **SUCCEEDS. This is the result.**
+
+§16.43's largest stated boundary is that its bench is OPEN LOOP: it replays the
+store residences of an unconstrained run against a constrained backlog. But the
+residence is not exogenous — it is what the store DOES, and the estimator's
+app-echo RTT reads it back as the store DWELL, which phase 1.1 supplied as a
+144 ms INPUT. That is a loop:
+
+```text
+   backlog S ──> store dwell ──> app-echo srtt ──> §6.1.2 patience
+        ^                                               │
+        └────────── residence <── frontier stall <──────┘
+```
+
+Little's law closes it with no free parameter. A store bounded at S symbols
+whose departures run at the rate the wire ACHIEVES sustains a mean residence of
+at most S·g/(1 − idle), so the dwell obeys the self-map
+
+```text
+   dwell  =  min( E[residence | dwell] ,  S·g / (1 − idle(dwell, S)) )
+```
+
+The second argument is DESTABILISING — idling raises the sustainable dwell,
+which raises the patience, which lengthens the stall — so this is the honest
+form of the loop, not a convenient one. `closed_loop_dwell` iterates it.
+
+**It converges at 36 / 36 cells, in 2–8 iterations**, so the fixed point exists
+and the map is a contraction at every measured cell. On the WIRE clock the loop
+gain is identically zero — the dwell is excluded from the estimator's argument
+by construction — and the iteration terminates at the second step, which is the
+precise sense in which **the honest clock is the loop-OPENING argument**. Pinned
+by `coverage_closed_loop_converges_and_prices_the_clock`.
+
+**What closing it does to the numbers:**
+
+| S(1 %) on the APP clock ÷ the same cell on the WIRE clock | p50 | p90 | max |
+|---|---|---|---|
+| **OPEN loop** (phase 1.1's argument) | 2.43 | 6.27 | **12.24** |
+| **CLOSED loop** | **1.12** | **1.72** | **2.29** |
+
+The app-echo clock's penalty — §16.43's ×13.5 headline, the entire reason its
+verdict named a fourth term — is **an open-loop artifact.** It is the cost of
+running the store at three times its own derived size, not a property of the
+clock. Cell by cell at RTprop ≤ 20 ms the collapse is total: c2/5 ms/np 2 goes
+from 1664 (app) vs 136 (wire) open-loop to **136 vs 136** closed; c3/5 ms/np 2
+from 286 vs 25 to **28 vs 25**; c1/5 ms/np 1 from 2126 vs 360 to **430 vs 360**.
+The fixed-point dwells are 6–33 ms at those cells, against the 144 ms phase 1.1
+fed in.
+
+And the self-consistent requirement lands on the contract's own arithmetic:
+
+```text
+   closed-loop S(1 %) ÷ [ rate·srtt + rate·stall(δ, ρ) ]
+      p10 0.465   p50 0.595   p90 1.057   max 1.575    (36 cells, both clocks, np ∈ {1,2})
+```
+
+against ×13.47 open-loop. **The contract's three terms, with no fourth dial and
+no fitted coefficient, COVER the self-consistent requirement at 30 of 36 cells
+and are exceeded by at most ×1.58 at the other six, while over-covering by ×1.7
+in the median** (five of the six exceedances are app-clocked; the sixth,
+c3/RTprop 100/np 1, reads 1.057 on both clocks) — over-coverage being the correct
+direction for a term whose stall input is a declared BOUND rather than a mean
+(§16.43 measured the honestly-clocked plane recovering in 0.47–0.55 of the
+contract's own stall, the same factor).
+
+Route B does not, by itself, name a quantile. What it does is remove the freedom
+that made a quantile look load-bearing: once the loop is closed, the distance
+between the contract's number and the measured requirement (×0.47–1.58) is
+larger than the distance between any two defensible coverage targets
+(×1.09–1.33).
+
+### ROUTE C — DOES r ALREADY PRICE IT? **NO — but ε̂ COMPOSES, and that is the second missing rule**
+
+r and backlog ARE substitutes for the same job (repair avoids the stall, backlog
+survives it), but r does not price the coverage: r\* is fixed by (δ, ε̂) against
+a window-failure target (§8.4/§8.4.1), a quantity in units of residual loss,
+while the coverage is in units of wire time. There is no margin at which they
+trade, and the arbitration that would create one is route A's, which cancels.
+
+What route C DOES find is that the slack term is incomplete in the variable r\*
+consumes. `slack = rate × stall(δ, ρ)` carries no ε̂, so it charges the full
+contract stall to the whole emission rate no matter how many holes exist. In the
+ε̂ → 0 limit that is wrong by a factor: it predicts 3.125 × the network window
+where the measured requirement is **0.90 × the window**.
+
+The a-priori repair is Little's law a THIRD time, on the in-order frontier
+itself. Stall EPISODES arrive at ε̂·rate/B per second (a burst of mean length B
+costs one episode; B is what §8.3's σ²_burst already estimates) and each pins
+the frontier for the contract's own stall, so the frontier is pinned
+
+```text
+   κ  =  min(1, (ε̂·rate/B) · stall(δ, ρ))
+```
+
+of the time, and `slack = rate × stall(δ, ρ) × κ`. No coefficient; every input
+already measured. **It closes the limit** — at ε̂ = 0 it returns the network
+window exactly, against a measured 0.90–1.10 × window at six rate × topology
+combinations. **It is NOT adopted**, because in the interior it under-covers by
+up to ×1.35 (c2/RTprop 20/ε̂ = 0.1 %: measured 383 against a κ-corrected 285):
+a mean-occupancy form cannot cover a requirement that is peak-driven when
+episodes are rare, since ONE stall episode can exhaust a 1 % idle budget by
+itself. Recorded as the named successor with its measured failure, in the same
+spirit §16.43 recorded `stall/(1 − ε̂)` — adding a term because it fixes one end
+of a sweep is the move this bench exists to refuse.
+
+### ROUTE D — THE LIMITS: **coverage is DETERMINED at every edge**
+
+| limit | determined? | evidence |
+|---|---|---|
+| ε̂ → 0 | **yes** — the requirement IS the network window | closed-loop S(1 %) ÷ window = 0.896 / 0.909 / 0.918 / 1.000 / 1.034 / 1.095 at six rate × topology cells |
+| ε̂ → 0, the dial's leverage | **yes, and it vanishes** | S(0.1 %) ÷ S(1 %) = 1.000–1.012 there, against 1.04–1.91 at ε̂ = 2.6 % |
+| ρ → 1 | yes | stall = 17/8·srtt, closed form |
+| ρ → 0 | yes | stall = D(δ) — the hole is retired rather than served, so the slack term is a pure bound |
+| δ → bulk | yes (the δ ceiling goes slack, route A) | need ÷ ceiling → 1.06 |
+| skew → 0 / single path | yes | span term identically 0 (§16.43 PS5, measured; asserted permanently) |
+
+Coverage is determined in **every** limit and only ambiguous in the interior —
+which is the tasking's own stated signature of a missing COMPOSITION RULE rather
+than a missing axis. Both compositions are now named: the dwell loop (route B)
+and ε̂ (route C).
+
+### WHAT THIS PHASE CANNOT SEE — stated with the results in hand
+
+1. **The loop is closed on the DWELL, not on the emission.** `closed_loop_dwell`
+   solves the dwell self-consistently and then replays the residence series
+   measured at that dwell against the cap. The residence series itself still
+   comes from an unconstrained driver run. That is one of the two feedbacks
+   closed, and it is the one that owns the app-clock failure; the other (a
+   smaller cap changing loss correlation and ack timing) still needs a driver
+   with a real emission constraint.
+2. Everything `recovery_bench` cannot see, inherited: no CC, no FEC, no
+   scheduler placement, no control-plane loss. With r > 0 the stall tail thins,
+   so every requirement here is an UPPER bound wherever generation coding is on.
+3. **The 5 % loss residual is untouched and still owned by multi-round
+   recovery** — wire-clock S(1 %) ÷ pred rises 0.333 → 0.479 → 0.526 → 0.772
+   (p50) and 0.620 → 1.028 → 1.057 → **1.425** (max) across ε̂ = 0.1 / 1 / 2.6 /
+   5 %. `stall/(1 − ε̂)` remains the named, unadopted successor; at ε̂ = 5 % it is
+   worth ×1.05 and does not close a ×1.43 gap, so it is not the whole owner
+   either.
+4. The hyperbola identity is a median statement (p50 0.054 wire) and fails in
+   the tail (p90 0.30). The residence spread is real; §1 does not claim
+   otherwise.
+
+### WHAT WOULD FALSIFY THIS VERDICT
+
+The fourth term comes back if any of these is measured:
+
+* a cell where the CLOSED-loop requirement at a defensible idle target (≤ 3 %)
+  exceeds the contract's `rate·srtt + rate·stall(δ, ρ)` by more than the term's
+  own spread — beyond ×2.3 — and the excess is NOT owned by multi-round recovery
+  at ≥ 5 % loss;
+* a coverage-target range inside [3 %, 0.1 %] whose leverage exceeds ×2 at the
+  median rather than ×1.09;
+* an application that can state an emission-continuity requirement its (δ, ρ, r)
+  triangle does not already imply — the specification test, and the one no
+  measurement can run.
+
+### WHAT THIS DOES NOT LICENSE
+
+No law changed, no default changed, no engine crate touched. In particular the
+route-B result is **not** a licence to wire-clock the recovery plane: §16.41's
+second component fact (the app-echo clock has been accidentally suppressing a
+retransmit flood, retx 202 → 5 171) stands unchanged, and route B's finding is
+the opposite move — SIZE THE STORE and the clock argument stops mattering,
+rather than change the argument and hope the store follows.
+
+### Tests and suites
+
+New, always-on (~60 ms total):
+`coverage_terms_are_arithmetic_with_no_constants` (κ as absolute arithmetic —
+κ(ε̂ = 0) = 0, κ(0.001) = 0.06630 exactly, the clamp at 1 approached
+monotonically through 41 points with no step; `mean_occupancy` = d/g exactly;
+the hyperbola at 0.5 / 0.8 / 0 / 0; and the coverage claim itself — S(3 %) =
+S(1 %) = S(0.3 %) = S(0.1 %) = 10 on the hand-computable fixture, with log₂ 9 =
+3.17 pinned as the octave count of a shape-free hyperbola);
+`coverage_cold_start_ack_is_bounded_by_the_gap_ack_floor` (the artifact BOUNDED
+rather than described: at ε̂ = 0 the worst residence ≤ RTprop + 2 gap-ack quanta
+while the refresh cadence is 48 ms, and S(1 %) < 1.25 × the network window);
+`coverage_closed_loop_converges_and_prices_the_clock` (the loop converges inside
+its budget; the wire arm terminates at iteration 2 — zero loop gain, asserted;
+the fixed-point dwell is under a tenth of the 144 ms input; and the clock's
+price is bounded on BOTH sides — open loop the app arm must idle > 4 × the wire
+arm at the same backlog, closed loop it must be within ×1.5).
+`recovery_bench_fixtures_pin_the_plane` re-pinned (§0) and green.
+
+Full battery on the final tree, all green, zero failures: `-p raptorpath --lib
+--release` **377** · `-p raptorpath-math` (8 targets: 59/19/22/4/4/3/25/0) ·
+`--test gate_suite --release -- --test-threads 1` **15/15** (17 ignored,
+**1213 s**) · `mtu_blackhole_wedge` **2** · `perf_loopback` **8** · all nine
+loopbacks (`recov_mp`, `copa_sole`, `ack_merge` + `ack_merge_optout`,
+`emit_batch`, `patience`, `win_decouple`, `wire_compact`) · `recovery_bench`
+**1** · `slack_bench` **6** (three new) · `store_cap_bench` **3** · `--doc`.
+No VM was contacted at any point; the whole phase is local and deterministic.
