@@ -93,8 +93,19 @@ run_one() { # cell arm envs cellA cellB mode bytes exp_3t exp_rs
   rm -f /tmp/rwm-c.log /tmp/rwm-s.log
   # shellcheck disable=SC2086
   env SEED=$SEED_ARG RWM_GEN=0 $envs RWM_DIAG=1 bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" 2>&1 \
-    | grep -E "summary|\"dnf\"|CPU:|GUARD" >> "$OUT" || true
+    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
   echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
+
+  # goal-gate "Latency Lever", instrument 1: TC COUNTERS ON EVERY CELL.
+  # The three-term battery captured these for 2 of 9 cells and then could not
+  # read the one number its central negative result turned on — the shaped
+  # link's utilisation. `perf_rwm_c.sh` now writes the sectioned capture to
+  # /tmp/rwm-q.txt BEFORE its EXIT trap tears the namespaces down (it must:
+  # by the time control returns here the qdiscs no longer exist), and clears
+  # that path at entry, so an ABSENT file here means "this invocation
+  # produced no capture" and never "the previous cell's counters".
+  cp /tmp/rwm-q.txt "$DDIR/${name}-s${SEED_ARG}-r${REP}-q.txt" 2>/dev/null \
+    || echo "QCAP-MISSING $name rep=$REP" >> "$OUT"
 
   # ONE parser, shared with tt_adv.sh (tt_parse.py).
   python3 ./tt_parse.py "$cell" "$arm" "$SEED_ARG" "$REP" /tmp/rwm-c.log /tmp/rwm-s.log \

@@ -109,6 +109,47 @@ pub(crate) struct DiagState {
     /// (fill_us, code_us, wait_us, n) accumulated over completed generations.
     pub gl_sum: (u64, u64, u64, u64),
 
+    // ── The WINDOW sender's wait-reason histogram (`wait[..]`, RWM_DIAG) ──
+    //
+    // goal-gate "What Binds Throughput", instrument 2. `gd_us` above answers
+    // "which gate binds wire emission" for the GENERATION plane only: its
+    // accumulator is `if pol.diag_on && generation` and its six buckets
+    // (budget / fill / target / tokens / cwnd) are generation-plane concepts
+    // that do not exist under `RWM_GEN=0`. Every arm of the three-term
+    // battery ran `RWM_GEN=0`, so `stall[` appeared in 0 of 1 116 logs and
+    // `sidle` — 34.3 % of wall at c2r100-B, 72.7 % at c2r200-B — was one
+    // undifferentiated bucket attributed to nothing.
+    //
+    // This is the window sender's own attribution, and it is a DIFFERENT
+    // measurement, not the same one printed twice: it times the sender
+    // loop's `select!` await and charges the elapsed wall time to the arm
+    // that WOKE it. That is the direct answer to "when the sender is not
+    // sending, what is it waiting on?", it is defined whether or not
+    // generation coding is on, and its buckets sum to the whole loop.
+    //
+    //   tun     — `tun.read_packet()` produced a packet: PRODUCTIVE intake.
+    //             The only arm that carries new source data.
+    //   paused  — the 1 ms backpressure poll: the store is FULL (`tx_paused`).
+    //             This is the outstanding-data limit binding, and it is the
+    //             one the three-term law moves.
+    //   pace    — the 1 ms pacing poll: the `RWM_CC_PACE` source token
+    //             bucket is dry. Zero whenever `RWM_CC_PACE=0`.
+    //   gen     — the 1 ms generation emission poll.
+    //   nack    — a gap report arrived from the receiver.
+    //   defc    — a generation-deficit report arrived.
+    //   tail    — the tail-ARQ sweep deadline fired.
+    //   flush   — the packer's partial-symbol flush timeout fired.
+    //
+    // `wait_n` counts loop iterations so the mean await is readable, and
+    // `wait_tun_us` is split out so "productive" and "waiting" are separable
+    // without re-deriving them from percentages. All gated on RWM_DIAG; the
+    // shipped path is untouched.
+    pub wait_last_us: u64,
+    /// [tun, paused, pace, gen, nack, defc, tail, flush]
+    pub wait_us: [u64; 8],
+    /// Iterations charged into `wait_us` this window (all buckets).
+    pub wait_n: u64,
+
     // ── The recovery-plane trace (RWM_DIAG) ──────────────────────────────
     // Gap-report volume, per-cause suppression, fired-retransmit age
     // attribution (young = the law's spurious class), per-flight-path and
@@ -222,6 +263,12 @@ impl DiagState {
             gd_last_us,
             gd_us: [0u64; 6],
             gl_sum: (0, 0, 0, 0),
+            // Same wall-clock stamp the generation attribution starts from:
+            // both bracket the same loop, so a divergent origin would make
+            // the two attributions disagree about the first window's length.
+            wait_last_us: gd_last_us,
+            wait_us: [0u64; 8],
+            wait_n: 0,
             mpd_gap_reports: 0,
             mpd_gap_seqs: 0,
             mpd_supp_cool: 0,
@@ -593,6 +640,52 @@ pub(crate) fn report(
         };
         dg.gd_us = [0; 6];
         dg.gl_sum = (0, 0, 0, 0);
+        // WAIT: the window sender's select!-arm wait-reason attribution.
+        // UNCONDITIONAL on the RWM_DIAG surface — every battery arm sets it,
+        // and this is the gauge whose ABSENCE (`stall[` in 0 of 1 116 logs)
+        // left `sidle` unattributed for the whole three-term battery. It is
+        // printed even when every bucket is zero: a gauge that disappears
+        // when it has nothing to say is a gauge you cannot prove ran.
+        let w_tot: u64 = dg.wait_us.iter().sum::<u64>().max(1);
+        let wpct = |i: usize| dg.wait_us[i] as f64 * 100.0 / w_tot as f64;
+        let waitdiag = format!(
+            " wait[tun={:.0}% paused={:.0}% pace={:.0}% gen={:.0}% nack={:.0}% \
+             defc={:.0}% tail={:.0}% flush={:.0}% n={} us={}]",
+            wpct(0), wpct(1), wpct(2), wpct(3), wpct(4), wpct(5), wpct(6), wpct(7),
+            dg.wait_n,
+            dg.wait_us.iter().sum::<u64>(),
+        );
+        dg.wait_us = [0; 8];
+        dg.wait_n = 0;
+        // DGQ: the datagram send-queue audit (instrument 3). CUMULATIVE, not
+        // per-window — eviction is a whole-run accounting question and the
+        // end-of-run reading is the one that matters, exactly like the
+        // `cum=` totals above. Per LIVE path, so a dual cell shows both.
+        //
+        //   hand — handoffs quinn ACCEPTED
+        //   tx   — DATAGRAM frames quinn TRANSMITTED (its own stats)
+        //   full — handoffs that entered with a byte-full send queue: the
+        //          eviction predicate (see `DatagramQueueAudit`)
+        //   err  — handoffs quinn REJECTED
+        //   sp   — send-buffer space, bytes, at the last handoff
+        //
+        // `hand − tx` is the eviction estimate that does not rest on the
+        // predicate; `sp` corrects it for what is still queued. Absent
+        // entirely without RWM_DIAG, and absent for a path that has sent
+        // nothing — a gauge that reads 0 for two different reasons is not a
+        // gauge.
+        let dgq = {
+            let ids: Vec<u32> = { scheduler.lock().active_paths().to_vec() };
+            let mut s = String::new();
+            for id in ids {
+                if let Some((hand, full, err, sp, tx)) = transport.datagram_queue_stats(id) {
+                    s.push_str(&format!(
+                        " dgq{id}[hand={hand} tx={tx} full={full} err={err} sp={sp}]"
+                    ));
+                }
+            }
+            s
+        };
         // Residual (iii) DIAG: cross-path-history attributions and
         // how many the flight witness credited to the previous
         // flight (spurious-retransmit class). Zeros without a feed.
@@ -739,7 +832,7 @@ pub(crate) fn report(
             String::new()
         };
         eprintln!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -764,6 +857,8 @@ pub(crate) fn report(
             srdiag,
             padiag,
             sheddiag,
+            waitdiag,
+            dgq,
             gdiag,
             pp,
         );
@@ -811,5 +906,112 @@ pub(crate) fn report(
         dg.diag_last_cod = cod_now;
         dg.diag_paused_iters = 0;
         dg.diag_total_iters = 0;
+    }
+}
+
+#[cfg(test)]
+mod wait_attribution_tests {
+    /// **The instrument's real failure mode, gated at `cargo test`.**
+    ///
+    /// The window sender's wait-reason histogram (goal-gate "What Binds
+    /// Throughput", instrument 2) charges each loop iteration's elapsed wall
+    /// time to the `select!` arm that woke it. If someone later adds a
+    /// `select!` arm and forgets its `wait_arm = N`, that arm's time is
+    /// SILENTLY charged to whichever arm ran last — the histogram keeps
+    /// summing to 100 %, keeps looking healthy, and lies. No runtime
+    /// assertion can catch that, because the omission has no runtime symptom.
+    ///
+    /// So this scrapes the source, the same test-only reflection technique
+    /// `gates::forwarding_audit` uses on the `RWM_*` surface, and asserts:
+    ///
+    ///   * every bucket index 0..8 is assigned EXACTLY once, so no two arms
+    ///     share a bucket and no bucket is dead;
+    ///   * the number of `select!` arms in `run_window_sender`'s sender loop
+    ///     equals the number of attributions plus the one arm that `return`s
+    ///     (shutdown) — i.e. every arm that falls through is attributed;
+    ///   * `wait_us` is sized to match.
+    ///
+    /// Order-insensitive by construction: it counts occurrences in a string
+    /// and compares totals, so it does not depend on `RandomState`, on file
+    /// order, or on which arm the runtime happens to poll first.
+    fn sender_loop_source() -> String {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/mod.rs");
+        let src = std::fs::read_to_string(p).expect("read src/net/mod.rs");
+        // The window sender's `select!`: from the `wait_arm` declaration to
+        // the charge that closes it. Both are unique strings.
+        let start = src
+            .find("let mut wait_arm: usize = usize::MAX;")
+            .expect("the wait-attribution declaration must exist");
+        let end = src[start..]
+            .find("dg.wait_us[wait_arm] += dt;")
+            .expect("the wait-attribution charge must exist")
+            + start;
+        src[start..end].to_string()
+    }
+
+    #[test]
+    fn every_wait_bucket_is_assigned_exactly_once() {
+        let body = sender_loop_source();
+        for i in 0..8usize {
+            let needle = format!("wait_arm = {i};");
+            let n = body.matches(&needle).count();
+            assert_eq!(
+                n, 1,
+                "wait bucket {i} is assigned {n} times, expected exactly 1 — \
+                 a duplicated bucket merges two wait reasons and a missing \
+                 one leaves an arm's time charged to its predecessor"
+            );
+        }
+        assert_eq!(
+            body.matches("wait_arm = ").count(),
+            8,
+            "there must be exactly 8 attributions, one per bucket"
+        );
+    }
+
+    #[test]
+    fn every_select_arm_that_falls_through_is_attributed() {
+        let body = sender_loop_source();
+        // `select!` arms are `<pat> = <fut>[, if <cond>] => …`. Counting `=>`
+        // at the arm level is fragile; counting the futures is not — every
+        // arm in this loop awaits one of exactly these, and each occurrence
+        // inside the scraped region is one arm.
+        let arms = body.matches("tokio::time::sleep(").count()
+            + body.matches("tun.read_packet()").count()
+            + body.matches("nack_rx.recv()").count()
+            + body.matches("deficit_rx.recv()").count()
+            + body.matches("shutdown_rx.recv()").count()
+            + body.matches("tail_deadline").count().min(1);
+        let attributed = body.matches("wait_arm = ").count();
+        assert_eq!(
+            arms,
+            attributed + 1,
+            "every `select!` arm must set a wait bucket except the shutdown \
+             arm, which returns instead of falling through (arms={arms}, \
+             attributed={attributed})"
+        );
+    }
+
+    #[test]
+    fn the_histogram_is_wide_enough_for_every_bucket() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs");
+        let src = std::fs::read_to_string(p).expect("read src/net/diag.rs");
+        assert!(
+            src.contains("pub wait_us: [u64; 8],"),
+            "wait_us must be sized 8 — the bucket count the sender assigns"
+        );
+        // And it must be printed UNCONDITIONALLY: the whole point is that
+        // `stall[` was gated on `generation` and so appeared in 0 of the
+        // battery's 1 116 logs. A `if generation` around `waitdiag` would
+        // reintroduce exactly that defect.
+        let w = src
+            .find("let waitdiag = ")
+            .expect("the waitdiag gauge must exist");
+        let head = &src[w..w + 40];
+        assert!(
+            !head.contains("if "),
+            "waitdiag must not be conditional — that is the defect this \
+             instrument exists to fix: {head}"
+        );
     }
 }

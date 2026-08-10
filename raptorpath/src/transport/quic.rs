@@ -538,6 +538,76 @@ pub struct QuicTransport {
     cc_windows: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
     /// Per-path record-only pass-through congestion stats (diagnostics).
     cc_stats: DashMap<PathId, Arc<PassthroughCcStats>>,
+    /// `RWM_DIAG`: run the datagram send-queue audit at the
+    /// `send_datagram_shaped` seam. Resolved ONCE, here, so the shipped
+    /// default pays neither the extra connection-lock take nor the atomics.
+    dg_audit: bool,
+    /// Datagram send-queue audit counters, per path (goal-gate "What Binds
+    /// Throughput", instrument 3). See `datagram_queue_stats`.
+    dg_stats: DashMap<PathId, Arc<DatagramQueueAudit>>,
+}
+
+/// The datagram send-queue audit (`RWM_DIAG`), one per path.
+///
+/// **The gap this closes.** `quinn::Connection::send_datagram` calls
+/// `Datagrams::send(data, drop = true)` (quinn-proto 0.11.14,
+/// `connection/datagrams.rs`:38–48), which **silently evicts the OLDEST
+/// queued datagrams** when the 4 MB send buffer overflows — about 3 300
+/// 1 200 B symbols — logging a `trace!` nobody enables and returning `Ok`.
+/// The engine's `src=`/`cod=` gauges count HANDOFFS, not transmissions, so
+/// an evicted symbol is indistinguishable from a delivered one in every log
+/// the three-term battery produced. The law set the cap to 3 073 at c2r100
+/// and 4 096 at c2r200 — the same order as that buffer — so the arm most
+/// exposed to the loss was the scored one.
+///
+/// **It cannot be counted exactly from quinn's public API, and this is what
+/// is available instead.** quinn exposes no eviction counter and no hook;
+/// `ConnectionStats` counts frames transmitted, not datagrams dropped before
+/// transmission. What it does expose is
+/// `Connection::datagram_send_buffer_space()`, which is
+/// `datagram_send_buffer_size.saturating_sub(outgoing_total)`. Read at the
+/// seam, immediately BEFORE the send, that gives an exact predicate:
+///
+/// * quinn's eviction loop runs iff `outgoing_total > buffer_size` on entry;
+/// * `space == 0` iff `outgoing_total >= buffer_size` on entry.
+///
+/// So `full` counts every call that evicted, plus the measure-zero tie where
+/// the queue is byte-exactly full. **`full` is therefore an upper bound on
+/// the number of evicting CALLS that is tight to one boundary case, and a
+/// LOWER bound on the number of datagrams EVICTED** — one call's `while`
+/// loop pops until it is back under the ceiling, which is one datagram when
+/// sizes are uniform (ours are: 1 200 B symbols) and more when they are not.
+/// Both directions are named because neither is exact.
+///
+/// The corroborating cross-check is independent of that predicate:
+/// `tx_frames` is quinn's own `stats().frame_tx.datagram`, the count of
+/// DATAGRAM frames actually put on the wire. DATAGRAM frames are never
+/// retransmitted, so in a run that ends with a drained queue
+/// `handoff − tx_frames` is the total lost to eviction, computed without
+/// reference to `full` at all. `space` is echoed so the queue depth at the
+/// last DIAG window is readable and `handoff − tx_frames` can be corrected
+/// for what was still queued.
+///
+/// **OFF-value property:** with `RWM_DIAG` unset the audit does not run and
+/// every counter reads 0, so `dgq[...]` never appears — enforced by
+/// `transport::quic::tests::datagram_queue_audit_is_off_without_diag`.
+///
+/// **Scope:** only the real `conn.send_datagram` path is audited. The
+/// `RWM_L0_NETEM` shim branch has its own transit ledger
+/// (`l0_transit_stats`) and does not touch quinn's datagram buffer at all.
+#[derive(Default)]
+pub struct DatagramQueueAudit {
+    /// Calls into the seam that quinn ACCEPTED (returned `Ok`).
+    pub handoff: std::sync::atomic::AtomicU64,
+    /// Calls whose `datagram_send_buffer_space()` was 0 on entry — the
+    /// eviction predicate. See the type doc for exactly what it bounds.
+    pub full: std::sync::atomic::AtomicU64,
+    /// Calls quinn REJECTED (`TooLarge` / `UnsupportedByPeer` / `Disabled`).
+    /// These are loud (the seam returns `Err`); counted so that
+    /// `handoff + err` reconciles with the engine's own handoff count.
+    pub err: std::sync::atomic::AtomicU64,
+    /// `datagram_send_buffer_space()` at the most recent call, in bytes.
+    pub space: std::sync::atomic::AtomicU64,
 }
 
 impl QuicTransport {
@@ -604,6 +674,13 @@ impl QuicTransport {
             cc_passthrough,
             cc_windows,
             cc_stats,
+            // Resolved once, at construction: the audit's per-datagram cost
+            // (one connection-lock take for `datagram_send_buffer_space`)
+            // must not exist on the shipped path. `RWM_DIAG` is an existing
+            // gate — already in `RWM_FORWARD`, already in the `[GATES]` echo
+            // — so this adds no name to the gate surface.
+            dg_audit: crate::config::env_flag("RWM_DIAG", false),
+            dg_stats: DashMap::new(),
         })
     }
 
@@ -737,10 +814,65 @@ impl QuicTransport {
                 Ok(())
             }
             None => {
-                conn.send_datagram(data.into())?;
-                Ok(())
+                if !self.dg_audit {
+                    conn.send_datagram(data.into())?;
+                    return Ok(());
+                }
+                use std::sync::atomic::Ordering::Relaxed;
+                // Read the queue depth BEFORE the send: quinn's eviction
+                // decision is taken against the state on entry, so this is
+                // the only moment at which the predicate is meaningful.
+                let space = conn.datagram_send_buffer_space() as u64;
+                let a = self
+                    .dg_stats
+                    .entry(path_id)
+                    .or_insert_with(|| Arc::new(DatagramQueueAudit::default()))
+                    .clone();
+                a.space.store(space, Relaxed);
+                if space == 0 {
+                    a.full.fetch_add(1, Relaxed);
+                }
+                match conn.send_datagram(data.into()) {
+                    Ok(()) => {
+                        a.handoff.fetch_add(1, Relaxed);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        a.err.fetch_add(1, Relaxed);
+                        Err(e.into())
+                    }
+                }
             }
         }
+    }
+
+    /// Datagram send-queue audit readout for a path (`RWM_DIAG` only):
+    /// `(handoff, full, err, space_bytes, tx_frames)`. `None` when the audit
+    /// is off or the path has never sent a datagram — which is the OFF-value
+    /// property: no audit, no gauge, rather than a gauge reading zero for two
+    /// different reasons.
+    ///
+    /// `tx_frames` is read live from quinn (`stats().frame_tx.datagram`) —
+    /// DATAGRAM frames actually transmitted. See `DatagramQueueAudit` for why
+    /// `handoff − tx_frames` is the eviction estimate that does NOT depend on
+    /// the `full` predicate.
+    pub fn datagram_queue_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64, u64)> {
+        use std::sync::atomic::Ordering::Relaxed;
+        if !self.dg_audit {
+            return None;
+        }
+        let a = self.dg_stats.get(&path_id)?;
+        let tx_frames = self
+            .connections
+            .get(&path_id)
+            .map_or(0, |c| c.stats().frame_tx.datagram);
+        Some((
+            a.handoff.load(Relaxed),
+            a.full.load(Relaxed),
+            a.err.load(Relaxed),
+            a.space.load(Relaxed),
+            tx_frames,
+        ))
     }
 
     /// Connect to a peer on a specific path.
@@ -1403,5 +1535,84 @@ mod passthrough_cc_tests {
         assert_eq!(stats.congestion_events.load(Ordering::Relaxed), 2);
         assert_eq!(stats.lost_bytes.load(Ordering::Relaxed), 4_800);
         assert_eq!(stats.persistent_congestion.load(Ordering::Relaxed), 1);
+    }
+}
+
+#[cfg(test)]
+mod datagram_queue_audit_tests {
+    use super::*;
+
+    /// **The OFF-value property** for the datagram send-queue audit
+    /// (goal-gate "What Binds Throughput", instrument 3).
+    ///
+    /// The audit costs one connection-lock take per datagram, so it must not
+    /// exist on the shipped path. `dg_audit` resolves `RWM_DIAG` ONCE at
+    /// construction, and with it off `datagram_queue_stats` must return
+    /// `None` for every path — not `Some((0,0,0,0,0))`, which would be
+    /// indistinguishable from "the audit ran and saw nothing".
+    ///
+    /// **Written to be correct in BOTH process conditions.** A test that
+    /// mutated `RWM_DIAG` would race every other test in the process (and is
+    /// `unsafe` in edition 2024), so this reads the AMBIENT value and asserts
+    /// the branch that value selects. Run it in a process with `RWM_DIAG`
+    /// unset and again with `RWM_DIAG=1` and both arms are covered — which is
+    /// the multi-process discipline this repo already applies to env gates.
+    #[tokio::test]
+    async fn datagram_queue_audit_follows_rwm_diag_and_is_absent_when_off() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let t = QuicTransport::new(&[addr], false, None)
+            .await
+            .expect("client endpoint binds on loopback");
+
+        let diag_on = crate::config::env_flag("RWM_DIAG", false);
+        assert_eq!(
+            t.dg_audit, diag_on,
+            "dg_audit must be RWM_DIAG resolved at construction"
+        );
+
+        // No path has sent a datagram, so the readout is `None` EITHER WAY —
+        // the two reasons are distinguished by `dg_audit`, never by a zero.
+        assert!(
+            t.datagram_queue_stats(0).is_none(),
+            "no handoff has happened: the gauge must be absent, not zero"
+        );
+
+        if !diag_on {
+            // The stronger OFF claim: the map itself is never touched, so the
+            // seam takes no lock and allocates no per-path audit record.
+            assert!(
+                t.dg_stats.is_empty(),
+                "the audit must not allocate when RWM_DIAG is off"
+            );
+        }
+    }
+
+    /// The eviction predicate's semantics, asserted against quinn's actual
+    /// source so the bound in `DatagramQueueAudit`'s docs is checked rather
+    /// than merely claimed.
+    ///
+    /// quinn-proto's `Datagrams::send(_, drop = true)` pops while
+    /// `outgoing_total > buffer_size`, and `send_buffer_space()` is
+    /// `buffer_size.saturating_sub(outgoing_total)`. Therefore
+    /// `space == 0  <=>  outgoing_total >= buffer_size`, which contains the
+    /// eviction condition `outgoing_total > buffer_size` and exceeds it only
+    /// on the exact tie. This test states that containment as arithmetic.
+    #[test]
+    fn the_full_predicate_contains_the_eviction_condition_and_differs_only_at_the_tie() {
+        const SIZE: usize = 4 * 1024 * 1024;
+        let space = |total: usize| SIZE.saturating_sub(total);
+        let evicts = |total: usize| total > SIZE;
+        let full = |total: usize| space(total) == 0;
+
+        for total in [0, 1, SIZE / 2, SIZE - 1, SIZE, SIZE + 1, SIZE + 1_200, SIZE * 2] {
+            assert!(
+                !evicts(total) || full(total),
+                "every evicting state must be counted by `full` (total={total})"
+            );
+        }
+        // The one over-count, named explicitly rather than left implicit.
+        assert!(full(SIZE) && !evicts(SIZE), "the tie is the only over-count");
+        assert!(!full(SIZE - 1), "a queue with room must not be counted");
     }
 }

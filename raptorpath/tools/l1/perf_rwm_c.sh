@@ -84,6 +84,12 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
+# The tc capture below writes a FIXED path, so a run that aborts before
+# reaching it would leave the PREVIOUS invocation's counters there for the
+# caller to copy under this cell's name. Silently attributing one cell's
+# wire truth to another is worse than having no capture, so clear it first:
+# an absent file is then an unambiguous "this invocation produced none".
+rm -f /tmp/rwm-q.txt
 
 if pgrep -x raptorpath >/dev/null 2>&1; then
     echo "BUSY: raptorpath already running -- aborting" >&2
@@ -153,6 +159,44 @@ for DEV in srv0 srv1; do
     ST=$(ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
 done
+
+# goal-gate "Latency Lever", instrument 1 — TC COUNTERS ON EVERY CELL.
+#
+# The three-term battery captured tc for 2 of its 9 cells, and its central
+# negative result ("the store was occupied to the new limit and throughput
+# did not follow") needed exactly one number to be readable: the shaped
+# link's utilisation. The flattened `QDISC` lines above ALREADY carry it —
+# and `tt_battery.sh`'s grep filter threw them away, and their one-line
+# form is not what any parser here reads.
+#
+# The capture MUST happen inside this script: `trap cleanup EXIT` above
+# destroys both namespaces the instant this process returns, so by the time
+# a caller regains control the qdiscs are gone. So write the sectioned form
+# to a FIXED path and let the caller copy it under its own rep-unique name
+# (the `adv_battery.sh` precedent). Callers that do not copy it pay nothing
+# but a stale /tmp file.
+#
+# Banner names match `adv_cells.sh counters` so `bind_analyze.py`'s parser
+# reads both without a second dialect. CLI1/SRV1 are NEW — dual cells (c7,
+# c8) shape two veth pairs and only the first was ever nameable.
+{
+    for DEV in cli0 cli1; do
+        ip netns exec "$NS_CLI" ip link show "$DEV" >/dev/null 2>&1 || continue
+        echo "== ${DEV^^} (data-dir egress: netem or tbf+netem bottleneck)"
+        ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+    done
+    for DEV in srv0 srv1; do
+        ip netns exec "$NS_SRV" ip link show "$DEV" >/dev/null 2>&1 || continue
+        echo "== ${DEV^^} (ack-dir egress)"
+        ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+    done
+    echo "== SRV0-INGRESS (policer, when present)"
+    ip netns exec "$NS_SRV" tc -s filter show dev srv0 parent ffff: 2>/dev/null || true
+    # Wall duration of the shaped window, so utilisation is computable from
+    # this file ALONE rather than joined against a RUNTIME line elsewhere.
+    echo "== INVOCATION_S ${SECONDS}"
+} > /tmp/rwm-q.txt 2>/dev/null || true
+echo "    QCAP: /tmp/rwm-q.txt $(wc -l < /tmp/rwm-q.txt 2>/dev/null || echo 0) lines"
 
 # --- HARD SANITY GUARD (feat/gen-on-rebaseline) -----------------------------------
 # A measurement where the mechanism under test did not run must FAIL LOUDLY, not

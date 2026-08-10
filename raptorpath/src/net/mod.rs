@@ -5549,26 +5549,35 @@ async fn run_window_sender(
                 tokio::time::Instant::now() + remaining
             });
 
+        // WAIT attribution (goal-gate "What Binds Throughput", instrument 2):
+        // which `select!` arm woke this iteration. Every arm below writes its
+        // bucket index; the charge happens once, after the await, and reads
+        // the clock only under RWM_DIAG. The index is written unconditionally
+        // — a local `usize` store — so the attribution can never disagree
+        // with the branch actually taken. `usize::MAX` means "shutdown", the
+        // one arm that returns instead of falling through.
+        let mut wait_arm: usize = usize::MAX;
         let packet = tokio::select! {
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
             // below (mirrors the block sender's 1 ms backpressure poll).
-            _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => None,
+            _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => { wait_arm = 1; None },
             // Fix 1: pacing wake — when source sends are paced-off (bucket
             // empty), wake at 1 ms to refill it. Without this the select could
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep(Duration::from_millis(1)),
-                if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => None,
+                if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
             p = tun.read_packet(),
-                if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => Some(p),
+                if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
             // run the paced coded-emission block even when no TUN packet is ready
             // (the tail — all sources read but the last generations still need
             // coded symbols to decode) and when not paused. Without it the loop
             // would block in read_packet and the tail would never complete.
             _ = tokio::time::sleep(Duration::from_millis(1)),
-                if generation && !tx_paused && st.encoder.window_size() > 0 => None,
+                if generation && !tx_paused && st.encoder.window_size() > 0 => { wait_arm = 3; None },
             gaps = nack_rx.recv() => {
+                wait_arm = 4;
                 if let Some(g) = gaps {
                     pending_gaps = Some(g);
                 }
@@ -5582,6 +5591,7 @@ async fn run_window_sender(
             // wants, paced. A generation ABSENT from the report has decoded (or
             // is not yet frontier), so its want is cleared by the rebuild.
             dv = deficit_rx.recv(), if generation => {
+                wait_arm = 5;
                 if let Some(dv) = dv {
                     gen_want.clear();
                     // Pure-proactive demonstrator: drain the channel but never
@@ -5654,6 +5664,7 @@ async fn run_window_sender(
                     None => std::future::pending().await,
                 }
             } => {
+                wait_arm = 6;
                 last_tail_sweep_us = now_us();
                 if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
@@ -5687,6 +5698,7 @@ async fn run_window_sender(
                 return;
             }
             _ = tokio::time::sleep(packer.time_until_flush()), if packer_pending => {
+                wait_arm = 7;
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
                     emit_source(
@@ -5703,6 +5715,20 @@ async fn run_window_sender(
                 None
             }
         };
+        // Charge the elapsed wall time to the arm that woke us. This is the
+        // window sender's wait-reason attribution — the instrument whose
+        // absence left `sidle` (34.3 % of wall at c2r100-B, 72.7 % at
+        // c2r200-B) attributed to nothing across all 419 invocations of the
+        // three-term battery. Unlike `gd_us` it has NO `generation` guard:
+        // the arms it names exist in window mode, which is what every arm of
+        // every battery has actually run.
+        if pol.diag_on && wait_arm < 8 {
+            let now_w = now_us();
+            let dt = now_w.saturating_sub(dg.wait_last_us);
+            dg.wait_last_us = now_w;
+            dg.wait_us[wait_arm] += dt;
+            dg.wait_n += 1;
+        }
 
         if let Some(packet) = packet {
             let pkt = match packet {
