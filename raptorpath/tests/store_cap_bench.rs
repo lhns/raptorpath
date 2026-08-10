@@ -81,6 +81,7 @@ fn slots(cell: &Cell, keep: &[bool], anchor_scale: f64) -> Vec<Option<HonestCapP
                 rate: Some(*rate),
                 srtt: Duration::from_secs_f64(rtprop * 3.0),
                 rtprop: Some(Duration::from_secs_f64(*rtprop)),
+                k_raw: None,
             })
         })
         .collect()
@@ -340,6 +341,7 @@ fn honest_cap_terms_equals_the_transcription() {
             rate: Some(10_400.0),
             srtt: Duration::from_micros(12_000),
             rtprop: Some(Duration::from_micros(8_000)),
+            k_raw: None,
         }),
         None,
         Some(HonestCapPath {
@@ -348,6 +350,7 @@ fn honest_cap_terms_equals_the_transcription() {
             rate: Some(2_000.0),
             srtt: Duration::from_micros(90_000),
             rtprop: Some(Duration::from_micros(60_000)),
+            k_raw: None,
         }),
         Some(HonestCapPath {
             id: 3,
@@ -355,6 +358,7 @@ fn honest_cap_terms_equals_the_transcription() {
             rate: Some(1.0),
             srtt: Duration::from_micros(90_000),
             rtprop: Some(Duration::from_micros(60_000)),
+            k_raw: None,
         }),
     ];
     let mut ks: HashMap<u32, EchoRatioMin> = HashMap::new();

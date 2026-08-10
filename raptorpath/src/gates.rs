@@ -77,6 +77,21 @@ pub struct RuntimeGates {
     /// `RWM_PLAIN_RS` (umbrella default OFF): plain-mode BBR send-interval
     /// sampler (sampling-only CopaFeed); the honest-cap law's anchor input.
     pub plain_rs: bool,
+    /// `RWM_HONEST_ANCHOR` (umbrella default OFF; goal-gate "Honest
+    /// Inputs"): the BtlBw windowed-max read off a monotonic max-deque —
+    /// value-identical statistic, O(1) amortized instead of the per-sample
+    /// full-window fold whose O(window·rate) cost under `RWM_PLAIN_RS` is
+    /// the measured c1 −35% (sender CPU/byte +61…64%, latlever CPU gauge).
+    /// Resolved via `scheduler::honest_anchor_active()` (cached — CopaState
+    /// construction reads the same resolution).
+    pub honest_anchor: bool,
+    /// `RWM_HONEST_K` (umbrella default OFF; goal-gate "Honest Inputs"):
+    /// `EchoRatioMin` fed the RAW per-sample echo/RTprop ratio at the
+    /// sample clock instead of the smoothed SRTT at the refresh clock —
+    /// the windowed MIN reads the delay distribution's floor (the measured
+    /// jit25 ×1.34 inversion removed). Resolved via
+    /// `scheduler::honest_k_active()` (cached).
+    pub honest_k: bool,
 
     // ── Store / flow-control laws ─────────────────────────────────────────
     /// `RWM_STORE_SACK_RELEASE` (default ON): SACK-clocked slot release —
@@ -441,6 +456,8 @@ impl RuntimeGates {
             astar_anchor: anchor_gate_default("RWM_ASTAR_ANCHOR", true),
             mstar_anchor: anchor_gate_default("RWM_MSTAR_ANCHOR", true),
             plain_rs: anchor_gate("RWM_PLAIN_RS"),
+            honest_anchor: crate::scheduler::honest_anchor_active(),
+            honest_k: crate::scheduler::honest_k_active(),
             store_sack_release: env_flag("RWM_STORE_SACK_RELEASE", true),
             store_paths: env_flag("RWM_STORE_PATHS", true),
             store_path_pool: env_parse::<usize>("RWM_STORE_PATH_POOL").unwrap_or(2048),
@@ -541,6 +558,7 @@ impl RuntimeGates {
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
+             RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} \
@@ -561,6 +579,7 @@ impl RuntimeGates {
              RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
+            b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
             b(self.store_cap_unified), b(self.three_term),
@@ -815,6 +834,24 @@ mod tests {
         );
         // Experiments / instruments (default OFF)
         assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
+        // "Honest Inputs" (2026-08-10): both fixes ship default OFF (A/B
+        // arms; anchor-hygiene umbrella members). The OFF-VALUE PROPERTY,
+        // two-sided on the echo (MEASUREMENT DISCIPLINE 15): a battery must
+        // be able to assert the gates ABSENT on the control arm.
+        assert!(
+            !g.honest_anchor,
+            "RWM_HONEST_ANCHOR ships default OFF (A/B arm — goal-gate \"Honest Inputs\")"
+        );
+        assert!(
+            !g.honest_k,
+            "RWM_HONEST_K ships default OFF (A/B arm — goal-gate \"Honest Inputs\")"
+        );
+        assert!(
+            g.echo_line().contains("RWM_HONEST_ANCHOR=0")
+                && g.echo_line().contains("RWM_HONEST_K=0"),
+            "the default echo must NAME both Honest-Inputs gates with their 0 value: {}",
+            g.echo_line()
+        );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");

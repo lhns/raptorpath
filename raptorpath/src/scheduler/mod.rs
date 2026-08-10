@@ -339,6 +339,72 @@ pub fn floor_bound_active() -> bool {
     })
 }
 
+/// Whether the O(1) windowed-max rate filter is active for this process
+/// (`RWM_HONEST_ANCHOR`, goal-gate "Honest Inputs" — anchor-hygiene family
+/// member, default OFF; `RWM_ANCHOR_HYGIENE=1` turns the family on).
+///
+/// THE MECHANISM IT REPAIRS (measured, not argued): `CopaState`'s BtlBw
+/// windowed max (`max_bw`) is recomputed by a FULL-WINDOW FOLD over
+/// `bw_samples` on every accepted sample. Fed per-ACK (the legacy
+/// `record_delivery`) the fold is invisible; fed PER DELIVERED SOURCE
+/// SYMBOL (`rs_on_delivered` under `RWM_PLAIN_RS`) it is O(window·rate)
+/// work per second of transfer — a hidden O(n²), and the EXACT defect the
+/// `rtt_samples` min-deque already fixed for min_rtt (see `record_rtt`'s
+/// monotonic-deque comment: "~42% sender CPU ... MEASURED by perf"). The
+/// latency-lever battery's CPU gauge convicts it at c1: `RWM_PLAIN_RS=1`
+/// alone inflates sender CPU per delivered byte by +61…64% (CPUCLI
+/// 15.0–16.6 s → 24.2–25.4 s for the same 400 MB, 16/16 reps, both seeds)
+/// on a sender already at its ~1-core ceiling — which is the whole
+/// −35% / D/A 0.64, and why the tax is rate-dependent (fold length ∝ rate)
+/// and anti-correlated with store binding (it is not a store effect at
+/// all).
+///
+/// ON ⇒ `max_bw` is read off a monotonic max-deque maintained beside
+/// `bw_samples` — the SAME statistic to the bit (front of the deque ==
+/// the fold; unit-pinned by `bw_mono_front_equals_full_window_fold`), the
+/// same [1 s, 10 s] window, the same evictions, amortized O(1) per sample.
+/// ZERO constants: nothing is sampled, subsetted, decayed or approximated.
+/// OFF ⇒ the fold runs verbatim (value-identical either way; the gate
+/// selects COST, not behavior). Read once and cached (consulted at
+/// CopaState construction).
+pub fn honest_anchor_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::anchor_gate("RWM_HONEST_ANCHOR"))
+}
+
+/// Whether the RAW-sample echo-ratio floor is active for this process
+/// (`RWM_HONEST_K`, goal-gate "Honest Inputs" — anchor-hygiene family
+/// member, default OFF; `RWM_ANCHOR_HYGIENE=1` turns the family on).
+///
+/// THE MECHANISM IT REPAIRS: K_i (`EchoRatioMin`, the honest caps' and the
+/// three-term law's residence-clock ratio) is documented as "the smallest
+/// OBSERVED echoSRTT/RTprop" but is fed the SMOOTHED srtt series sampled at
+/// the 5 ms dyn-cap refresh clock. The minimum of a smoothed series sits
+/// near the MEAN of the underlying distribution, not its floor — the EWMA
+/// (α = 1/8) filters out exactly the low excursions a windowed MIN exists
+/// to catch — so K READS HIGH wherever the delay distribution is wide:
+/// jit25's `[3T]` window term measured ×1.34/1.38 its pre-registered value,
+/// the INVERSE of the pre-registered "min reads the low end" direction
+/// (goal-gate "Latency Lever — BATTERY", banked as an `EchoRatioMin`
+/// finding). RTprop, by contrast, is already the min over RAW samples —
+/// the current K is min(smoothed)/min(raw), a statistic that rises with
+/// jitter width by construction.
+///
+/// ON ⇒ the SAME `EchoRatioMin` tracker (same `PERCAP_K_HALF_WINDOW_US`
+/// window, same ≥ 1 clamp, same seed-identity guard) is fed the RAW
+/// per-sample echo/RTprop ratio at the SAMPLE clock (`record_rtt`), and
+/// every K consumer reads that tracker's min — min(raw)/min(raw), the
+/// floor the derivation assumed. ZERO constants: the fix changes which
+/// measured series feeds the unchanged statistic. OFF ⇒ the smoothed
+/// refresh-clock feed runs verbatim. Read once and cached (consulted at
+/// CopaState construction).
+pub fn honest_k_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::anchor_gate("RWM_HONEST_K"))
+}
+
 /// Whether the WINDOW-mode control-datagram MERGE is active for this process
 /// (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1: ack-merge" →
 /// "Ack-Merge Flip"; **default ON since 2026-08-08** — `RWM_ACK_MERGE=0` is
@@ -793,6 +859,20 @@ struct RsPacket {
 pub struct CopaState {
     /// Sliding window of bandwidth samples (symbols/sec).
     bw_samples: VecDeque<BwSample>,
+    /// goal-gate "Honest Inputs" (`RWM_HONEST_ANCHOR`): monotonic
+    /// (non-increasing) MAX-deque maintained beside `bw_samples` — the exact
+    /// mirror of the `rtt_samples` min-deque, on the max statistic. Fed and
+    /// evicted in lockstep with `bw_samples` (`bw_push_sample` /
+    /// `bw_evict_before`), so its front is ALWAYS the full-window fold's
+    /// value (unit-pinned). `max_bw` reads it only under `bw_o1`; the deque
+    /// itself is maintained unconditionally (O(1) amortized, ≤ the size of
+    /// `bw_samples`) so the equality is testable without env plumbing.
+    bw_mono: VecDeque<BwSample>,
+    /// `RWM_HONEST_ANCHOR` resolved at construction: `max_bw` = the mono
+    /// deque's front (O(1)) instead of the per-sample full-window fold
+    /// (O(window) — the measured c1 CPU tax under `RWM_PLAIN_RS`).
+    /// Value-identical either way.
+    bw_o1: bool,
     /// Sliding window of RTT samples.
     rtt_samples: VecDeque<RttSample>,
     /// How long to keep samples in sliding windows (10s).
@@ -927,6 +1007,18 @@ pub struct CopaState {
     /// Cumulative congestion-event counter last seen from the pass-through
     /// shim (diffed, not reset — the shim counter is monotone).
     last_cong_events: u64,
+    // --- Raw-sample echo-ratio floor (goal-gate "Honest Inputs") ------------
+    /// `RWM_HONEST_K` resolved at construction: feed the K tracker below the
+    /// RAW per-sample ratio at the sample clock. False (default) ⇒ the
+    /// tracker is never fed and `k_raw_ratio()` is `None` — every K consumer
+    /// keeps the legacy smoothed-at-refresh feed byte-identically.
+    k_raw_on: bool,
+    /// The path's raw-fed windowed-min echo-ratio (`EchoRatioMin`, the SAME
+    /// window/clamp/guard as the net-side refresh-clock trackers): fed
+    /// rtt_raw/RTprop per sample in `record_rtt` under `k_raw_on`.
+    k_raw: crate::net::EchoRatioMin,
+    /// Monotonic µs epoch for `k_raw`'s window arithmetic.
+    k_raw_epoch: Instant,
     /// Injectable clock for time queries.
     clock: Arc<dyn Clock>,
 }
@@ -954,7 +1046,12 @@ impl CopaState {
             compete_max_deque: VecDeque::new(),
             loss_since_update: false,
             last_cong_events: 0,
+            k_raw_on: honest_k_active(),
+            k_raw: crate::net::EchoRatioMin::new(crate::net::PERCAP_K_HALF_WINDOW_US),
+            k_raw_epoch: now,
             bw_samples: VecDeque::new(),
+            bw_mono: VecDeque::new(),
+            bw_o1: honest_anchor_active(),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -994,6 +1091,76 @@ impl CopaState {
         }
     }
 
+    /// Admit one bandwidth sample into the sliding window: `bw_samples` gets
+    /// it verbatim (its LENGTH is the anchor-establishment gate —
+    /// `ANCHOR_MIN_SAMPLES` — and must not change meaning), and the
+    /// monotonic max-deque `bw_mono` gets it with dominated-candidate
+    /// eviction (goal-gate "Honest Inputs"): a sample that is older AND no
+    /// larger than the new one can never again be the windowed max — any
+    /// front-eviction cutoff that spares it spares the newer, larger sample
+    /// too — so after eviction the mono deque is strictly decreasing
+    /// front→back with increasing timestamps, and its FRONT equals the
+    /// full-window fold over `bw_samples` at all times (unit-pinned by
+    /// `bw_mono_front_equals_full_window_fold`).
+    fn bw_push_sample(&mut self, now: Instant, rate: f64) {
+        self.bw_samples.push_back(BwSample {
+            delivery_rate: rate,
+            timestamp: now,
+        });
+        while self
+            .bw_mono
+            .back()
+            .is_some_and(|s| s.delivery_rate <= rate)
+        {
+            self.bw_mono.pop_back();
+        }
+        self.bw_mono.push_back(BwSample {
+            delivery_rate: rate,
+            timestamp: now,
+        });
+    }
+
+    /// Evict bandwidth samples older than `cutoff` from BOTH windows (the
+    /// two structures see identical push and eviction sequences — that
+    /// lockstep is what makes front == fold an invariant rather than a
+    /// coincidence). Called with the legacy 10 s cutoff from
+    /// `expire_old_samples` and with the ≈10·RTprop [1 s, 10 s] cutoff from
+    /// `rs_on_delivered`, exactly where `bw_samples` was already evicted.
+    fn bw_evict_before(&mut self, cutoff: Instant) {
+        while self.bw_samples.front().is_some_and(|s| s.timestamp < cutoff) {
+            self.bw_samples.pop_front();
+        }
+        while self.bw_mono.front().is_some_and(|s| s.timestamp < cutoff) {
+            self.bw_mono.pop_front();
+        }
+    }
+
+    /// Recompute `max_bw` after a push/evict. `RWM_HONEST_ANCHOR` selects the
+    /// COST of the same value: the mono deque's front (O(1) amortized) or
+    /// the legacy full-window fold (O(window) per accepted sample — the
+    /// measured c1 sender-CPU tax once `RWM_PLAIN_RS` feeds this per
+    /// delivered symbol instead of per ack).
+    fn bw_refresh_max(&mut self) {
+        self.max_bw = if self.bw_o1 {
+            self.bw_mono.front().map_or(0.0, |s| s.delivery_rate)
+        } else {
+            self.bw_samples
+                .iter()
+                .map(|s| s.delivery_rate)
+                .fold(0.0f64, f64::max)
+        };
+    }
+
+    /// The legacy full-window fold, unconditionally — the equivalence
+    /// oracle for `bw_mono` (test-only).
+    #[cfg(test)]
+    fn bw_fold(&self) -> f64 {
+        self.bw_samples
+            .iter()
+            .map(|s| s.delivery_rate)
+            .fold(0.0f64, f64::max)
+    }
+
     /// Record delivery of `count` symbols.  Returns the computed delivery rate.
     fn record_delivery(&mut self, count: u32) -> f64 {
         self.delivered += count as u64;
@@ -1022,18 +1189,11 @@ impl CopaState {
             );
         }
         // Add to sliding window
-        self.bw_samples.push_back(BwSample {
-            delivery_rate: rate,
-            timestamp: now,
-        });
+        self.bw_push_sample(now, rate);
         self.expire_old_samples(now);
 
         // Update max bandwidth
-        self.max_bw = self
-            .bw_samples
-            .iter()
-            .map(|s| s.delivery_rate)
-            .fold(0.0f64, f64::max);
+        self.bw_refresh_max();
 
         rate
     }
@@ -1161,10 +1321,7 @@ impl CopaState {
                 self.max_bw,
             );
         }
-        self.bw_samples.push_back(BwSample {
-            delivery_rate: rate,
-            timestamp: now,
-        });
+        self.bw_push_sample(now, rate);
         // Max-filter window ≈ 10·RTprop (BBR's BtlBw filter), clamped to
         // [1s, 10s]: long enough to hold the true BtlBw between acks, short
         // enough that a genuine rate change is not pinned for the full 10s
@@ -1176,14 +1333,13 @@ impl CopaState {
         let cutoff = now
             .checked_sub(Duration::from_secs_f64(win))
             .unwrap_or(now);
-        while self.bw_samples.front().is_some_and(|s| s.timestamp < cutoff) {
-            self.bw_samples.pop_front();
-        }
-        self.max_bw = self
-            .bw_samples
-            .iter()
-            .map(|s| s.delivery_rate)
-            .fold(0.0f64, f64::max);
+        self.bw_evict_before(cutoff);
+        // goal-gate "Honest Inputs": under RWM_PLAIN_RS this runs once per
+        // DELIVERED SOURCE SYMBOL, so the legacy full-window fold here is
+        // O(window·rate) per second — the measured c1 sender-CPU tax
+        // (+61…64% CPU/byte, latlever CPU gauge). RWM_HONEST_ANCHOR reads
+        // the same value off the mono deque in O(1).
+        self.bw_refresh_max();
     }
 
     /// Record an RTT sample: SRTT EWMA, 10s floor window, and the
@@ -1233,6 +1389,25 @@ impl CopaState {
         });
         self.expire_old_samples(now);
         self.min_rtt = self.rtt_samples.front().map(|s| s.rtt);
+
+        // goal-gate "Honest Inputs" (`RWM_HONEST_K`): feed the K tracker the
+        // RAW sample's ratio at the SAMPLE clock, against the freshest floor.
+        // The windowed MIN then reads the delay distribution's FLOOR — the
+        // quantity the honest-cap/three-term derivations assume — instead of
+        // the min of the SMOOTHED series, which sits near the distribution's
+        // mean and reads ×1.34-class high under ±25 ms jitter (the measured
+        // jit25 inversion). Same tracker type, same window, same ≥ 1 clamp,
+        // same seed-identity guard (which here also discards the exact
+        // floor-setting sample — the min then reads the second-lowest in
+        // window, a negligible upward bias under any dense sample stream,
+        // and the guard stays shared discipline rather than forking).
+        // Gated: OFF ⇒ nothing is fed and `k_raw_ratio()` is None — every
+        // consumer keeps the legacy smoothed feed byte-identically.
+        if self.k_raw_on {
+            let now_us = now.duration_since(self.k_raw_epoch).as_micros() as u64;
+            self.k_raw
+                .observe_srtt_over_rtprop(rtt, self.min_rtt, now_us);
+        }
 
         // Copa §2.2 competitive-mode detector sampling (feat/copa-compete):
         // mark the instants at which the queue is "nearly empty". Gated so
@@ -1714,9 +1889,7 @@ impl CopaState {
     /// Expire samples older than the sliding window.
     fn expire_old_samples(&mut self, now: Instant) {
         let cutoff = now.checked_sub(self.window_duration).unwrap_or(now);
-        while self.bw_samples.front().is_some_and(|s| s.timestamp < cutoff) {
-            self.bw_samples.pop_front();
-        }
+        self.bw_evict_before(cutoff);
         while self.rtt_samples.front().is_some_and(|s| s.timestamp < cutoff) {
             self.rtt_samples.pop_front();
         }
@@ -1738,6 +1911,32 @@ impl CopaState {
             self.delta_base = self.delta;
             self.in_compete = false;
         }
+    }
+
+    /// The raw-fed windowed-min echo ratio (`RWM_HONEST_K`), or None with
+    /// the gate off (the legacy smoothed-at-refresh feed stays the only K
+    /// source). 1.0 before the first raw sample — identical to a cold
+    /// legacy tracker, so warm-up has no behavior cliff.
+    fn k_raw_ratio(&self) -> Option<f64> {
+        if self.k_raw_on {
+            Some(self.k_raw.k())
+        } else {
+            None
+        }
+    }
+
+    /// Test hook: force the raw-sample K feed on (bypasses the
+    /// process-global env cache, which other tests' env vars could race).
+    #[cfg(test)]
+    fn force_k_raw(&mut self) {
+        self.k_raw_on = true;
+    }
+
+    /// Test hook: force the O(1) max-filter read (bypasses the
+    /// process-global env cache).
+    #[cfg(test)]
+    fn force_bw_o1(&mut self) {
+        self.bw_o1 = true;
     }
 
     /// Test hook: force wire mode with an explicit δ. Unit tests must not
@@ -2283,6 +2482,16 @@ impl PathState {
     /// RTprop (Copa windowed-min RTT) for this path (None during warm-up).
     pub fn min_rtt(&self) -> Option<Duration> {
         self.copa.min_rtt()
+    }
+
+    /// goal-gate "Honest Inputs" (`RWM_HONEST_K`): the RAW-sample windowed-min
+    /// echo-ratio for this path, or None with the gate off. `Some` values are
+    /// what the honest-cap / three-term collectors substitute for the
+    /// smoothed-at-refresh K (`k_raw.unwrap_or(legacy)` — ONE formula, the
+    /// gate changes which measured series feeds it); None ⇒ every consumer
+    /// byte-identical to the legacy feed.
+    pub fn k_raw(&self) -> Option<f64> {
+        self.copa.k_raw_ratio()
     }
 
     /// BtlBw (bottleneck rate) for this path in symbols/second — the path's
@@ -4777,6 +4986,223 @@ mod tests {
             (copa.max_bw - max_after).abs() < 1.0,
             "a sub-RTprop burst must be rejected (no over-read): before={max_after} after={}",
             copa.max_bw
+        );
+    }
+
+    // ----- Honest Inputs (RWM_HONEST_ANCHOR / RWM_HONEST_K, goal-gate --------
+    // ----- "Honest Inputs") --------------------------------------------------
+
+    /// THE equivalence pin for `RWM_HONEST_ANCHOR` (its OFF-value property
+    /// and its ON-value property are the SAME property): the monotonic
+    /// max-deque's front equals the legacy full-window fold over
+    /// `bw_samples` after EVERY push and EVERY eviction, across both feed
+    /// paths (per-ack `record_delivery` and per-symbol `rs_on_delivered`),
+    /// across window-length changes (min_rtt moving the ≈10·RTprop cutoff)
+    /// and across long idle gaps (mass evictions). The gate may therefore
+    /// select COST only, never a value — which is what makes this fix
+    /// zero-constant by construction.
+    #[test]
+    fn bw_mono_front_equals_full_window_fold() {
+        let clock = Arc::new(MockClock::new());
+        let mut legacy = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        let mut o1 = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        o1.force_bw_o1();
+        legacy.record_rtt(Duration::from_millis(10));
+        o1.record_rtt(Duration::from_millis(10));
+
+        // Deterministic LCG so the stream is reproducible.
+        let mut lcg: u64 = 0x9E3779B97F4A7C15;
+        let mut rnd = move || {
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (lcg >> 33) as u32
+        };
+        let mut seq = 0u64;
+        for step in 0..4000u32 {
+            let r = rnd();
+            match r % 4 {
+                // Per-symbol samples (the RWM_PLAIN_RS feed path).
+                0 | 1 => {
+                    legacy.rs_on_sent(seq, false);
+                    o1.rs_on_sent(seq, false);
+                    let extra = (r >> 8) % 50;
+                    legacy.rs_delivered += extra as u64;
+                    o1.rs_delivered += extra as u64;
+                    clock.advance(Duration::from_millis(11 + (r >> 16) as u64 % 30));
+                    legacy.rs_on_delivered(seq);
+                    o1.rs_on_delivered(seq);
+                    seq += 1;
+                }
+                // Per-ack samples (the legacy Copa feed path).
+                2 => {
+                    clock.advance(Duration::from_millis(2 + (r >> 8) as u64 % 20));
+                    legacy.record_delivery(1 + r % 100);
+                    o1.record_delivery(1 + r % 100);
+                }
+                // Occasional long gap (mass eviction) and an RTT sample that
+                // moves min_rtt, hence the ≈10·RTprop window length.
+                _ => {
+                    if step % 37 == 0 {
+                        clock.advance(Duration::from_millis(1500));
+                    }
+                    let rtt = Duration::from_millis(5 + (r % 120) as u64);
+                    legacy.record_rtt(rtt);
+                    o1.record_rtt(rtt);
+                }
+            }
+            let fold_l = legacy.bw_fold();
+            let fold_o = o1.bw_fold();
+            assert_eq!(fold_l, fold_o, "identical streams, step {step}");
+            assert_eq!(
+                legacy.max_bw, fold_l,
+                "legacy max_bw IS the fold, step {step}"
+            );
+            assert_eq!(
+                o1.max_bw, fold_o,
+                "O(1) max_bw equals the full-window fold, step {step}"
+            );
+            let front = o1.bw_mono.front().map_or(0.0, |s| s.delivery_rate);
+            assert_eq!(front, fold_o, "mono front == fold, step {step}");
+        }
+        assert!(legacy.max_bw > 0.0, "the stream must have produced samples");
+    }
+
+    /// `RWM_HONEST_K` law + OFF-value property, at the engine feed site
+    /// (`record_rtt`), on a jittered series: RTprop (min over RAW samples)
+    /// reads the distribution FLOOR, the smoothed srtt reads near the MEAN
+    /// — so the legacy K (windowed-min of the SMOOTHED series over the
+    /// floor) reads HIGH by ≈ mean/floor, which is the measured jit25
+    /// ×1.34-class inversion. The raw-fed tracker reads the floor ratio
+    /// ≈ 1. Gate OFF ⇒ `k_raw_ratio()` is None (nothing is fed, nothing
+    /// can consume it).
+    #[test]
+    fn k_raw_reads_the_jitter_floor_where_the_smoothed_min_reads_high() {
+        let clock = Arc::new(MockClock::new());
+        // OFF: byte-identical legacy — no ratio exists.
+        let mut off = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        off.record_rtt(Duration::from_millis(40));
+        assert_eq!(off.k_raw_ratio(), None, "gate OFF ⇒ no raw K");
+
+        // ON: the raw-fed windowed min under ±25 ms uniform jitter around a
+        // 40 ms base (the jit25 shape).
+        let mut on = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        on.force_k_raw();
+        // The net-side legacy tracker, fed the SMOOTHED series at the 5 ms
+        // refresh clock — exactly the engine's shipped K feed.
+        let mut legacy_k = crate::net::EchoRatioMin::new(crate::net::PERCAP_K_HALF_WINDOW_US);
+        let mut lcg: u64 = 42;
+        let mut uniform = move || {
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((lcg >> 33) as f64) / (u32::MAX as f64) // [0, 1)
+        };
+        let t0 = clock.now();
+        for _ in 0..2000 {
+            clock.advance(Duration::from_millis(5)); // ack + refresh cadence
+            let jitter_ms = 50.0 * uniform() - 25.0; // ±25 ms
+            let raw = Duration::from_secs_f64((0.040 + jitter_ms / 1e3).max(0.000_07));
+            on.record_rtt(raw); // raw feed (the fix) + srtt/min_rtt as shipped
+            // Shipped feed: smoothed srtt at the refresh clock.
+            let now_us = clock.now().duration_since(t0).as_micros() as u64;
+            legacy_k.observe_srtt_over_rtprop(on.srtt.unwrap(), on.min_rtt, now_us);
+        }
+        let k_raw = on.k_raw_ratio().expect("gate ON ⇒ raw K live");
+        let k_legacy = legacy_k.k();
+        // Direction + class, both ways (reproduce THEN remove): the smoothed
+        // min sits near mean/floor ≈ 40/15 territory, far above 1; the raw
+        // min reads the floor.
+        assert!(
+            k_legacy > 1.2,
+            "the smoothed-series windowed min must read HIGH under wide jitter \
+             (the jit25 inversion): k_legacy = {k_legacy}"
+        );
+        assert!(
+            k_raw < 1.05,
+            "the raw-fed windowed min must read the distribution floor: k_raw = {k_raw}"
+        );
+        assert!(
+            k_legacy > k_raw * 1.2,
+            "the bias must be the SMOOTHING's, removed by the raw feed: \
+             legacy {k_legacy} vs raw {k_raw}"
+        );
+    }
+
+    /// The `RWM_HONEST_ANCHOR` cost curve, in one process (MEASUREMENT
+    /// DISCIPLINE 14 — the component instrument for the c1 −35%): the
+    /// legacy per-sample full-window fold's cost per delivered symbol GROWS
+    /// with the symbol rate (window holds ≈ rate × 1 s samples ⇒ O(rate²)
+    /// per second — the measured rate-dependence: D/A 1.00 at 5–9.9 k,
+    /// 0.88 at 19 k, 0.64 at 24 k), while the mono-deque read is flat.
+    /// `#[ignore]`d: it is a measurement with wall-clock timing; run
+    ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture bw_filter_cost
+    #[test]
+    #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
+    fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
+        fn per_delivery_ns(rate_sym_s: u64, o1: bool) -> f64 {
+            let clock = Arc::new(MockClock::new());
+            let mut copa = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+            if o1 {
+                copa.force_bw_o1();
+            }
+            copa.record_rtt(Duration::from_millis(10)); // RTprop 10 ms ⇒ window 1 s
+            let step = Duration::from_nanos(1_000_000_000 / rate_sym_s);
+            let lag = (rate_sym_s / 50) as u64; // ≈20 ms of in-flight seqs
+            let mut send_seq = 0u64;
+            // Warm: fill one full window so the deque is at steady state.
+            let warm = rate_sym_s * 12 / 10;
+            for _ in 0..warm {
+                copa.rs_on_sent(send_seq, false);
+                if send_seq >= lag {
+                    copa.rs_on_delivered(send_seq - lag);
+                }
+                clock.advance(step);
+                send_seq += 1;
+            }
+            assert!(
+                copa.bw_samples.len() as u64 > rate_sym_s / 2,
+                "window must be rate-sized: {} at {rate_sym_s}",
+                copa.bw_samples.len()
+            );
+            // Measure N deliveries (with their sends) at steady state.
+            let n = 100_000u64;
+            let t = std::time::Instant::now();
+            for _ in 0..n {
+                copa.rs_on_sent(send_seq, false);
+                copa.rs_on_delivered(send_seq - lag);
+                clock.advance(step);
+                send_seq += 1;
+            }
+            let ns = t.elapsed().as_nanos() as f64 / n as f64;
+            println!(
+                "[HONEST-BENCH] rate={rate_sym_s} o1={o1} window_samples={} \
+                 per_delivery={ns:.0} ns  (per-second-of-transfer cost: {:.0} ms)",
+                copa.bw_samples.len(),
+                ns * rate_sym_s as f64 / 1e6,
+            );
+            ns
+        }
+        // The battery's parity band (9.6 k) and c1's rate class (24 k).
+        let legacy_lo = per_delivery_ns(9_600, false);
+        let legacy_hi = per_delivery_ns(24_000, false);
+        let o1_lo = per_delivery_ns(9_600, true);
+        let o1_hi = per_delivery_ns(24_000, true);
+        println!(
+            "[HONEST-BENCH] legacy 24k/9.6k = {:.2} (rate-dependence), \
+             o1 24k = {:.3} of legacy 24k (the removal)",
+            legacy_hi / legacy_lo,
+            o1_hi / legacy_hi,
+        );
+        assert!(
+            legacy_hi > 1.8 * legacy_lo,
+            "the legacy fold's per-delivery cost must GROW with rate \
+             (the measured rate-dependent tax): {legacy_lo:.0} → {legacy_hi:.0} ns"
+        );
+        assert!(
+            o1_hi < 0.25 * legacy_hi,
+            "the O(1) read must remove the dominant cost at c1's rate: \
+             o1 {o1_hi:.0} vs legacy {legacy_hi:.0} ns"
+        );
+        assert!(
+            o1_hi < 3.0 * o1_lo.max(50.0),
+            "the O(1) read must be rate-flat: {o1_lo:.0} → {o1_hi:.0} ns"
         );
     }
 

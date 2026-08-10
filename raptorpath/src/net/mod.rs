@@ -1736,6 +1736,35 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_copa_feed = copa_feed_plain.clone();
     let recv_copa_feed = copa_feed_plain.clone();
 
+    // ── Honest Inputs (goal-gate "Honest Inputs", anchor-hygiene family) ──
+    // Mechanism-liveness echoes (MEASUREMENT DISCIPLINE 1/15): asserted
+    // PRESENT on the fix arms, ABSENT on the controls; the [GATES] line
+    // carries the two-sided value either way. Emitted in `run_impl` so both
+    // roles echo.
+    if crate::scheduler::honest_anchor_active() {
+        info!(
+            "O(1) windowed-max rate filter ACTIVE (RWM_HONEST_ANCHOR: max_bw read \
+             off a monotonic max-deque maintained beside bw_samples — the \
+             VALUE-IDENTICAL statistic, same [1s,10s] window, same evictions, \
+             amortized O(1) per accepted sample instead of the O(window) \
+             full-window fold that costs +61-64% sender CPU/byte at c1 under \
+             RWM_PLAIN_RS; zero constants; RWM_HONEST_ANCHOR=0 = legacy fold \
+             control, value-identical by unit-pinned equivalence)"
+        );
+    }
+    if crate::scheduler::honest_k_active() {
+        info!(
+            "raw-sample echo-ratio floor ACTIVE (RWM_HONEST_K: EchoRatioMin fed \
+             the RAW per-sample rtt/RTprop ratio at the sample clock in \
+             PathState::record_rtt, consumed as k_raw.unwrap_or(legacy) by every \
+             honest-cap/three-term K read — the windowed MIN reads the delay \
+             distribution's FLOOR instead of the smoothed series' near-mean \
+             minimum (the measured jit25 x1.34 inversion); same window, clamp \
+             and seed-identity guard; zero constants; RWM_HONEST_K=0 = \
+             smoothed-at-refresh control)"
+        );
+    }
+
     // ── Window-mode control-datagram MERGE (env RWM_ACK_MERGE) ────────────
     // Goal-gate "Unlock The Default 1: ack-merge". Mechanism-liveness echo
     // (MEASUREMENT DISCIPLINE item 1) — emitted in `run_impl` so it fires in
@@ -2430,6 +2459,7 @@ pub fn percap_redirect_bound(floor_pipe: Option<f64>, cap_i: usize, gain: f64) -
 /// windowed statistic, not a latched constant — the window rolls (two
 /// half-window buckets), so a stale unloaded read expires and the ratio
 /// re-measures.
+#[derive(Debug)]
 pub struct EchoRatioMin {
     cur: f64,
     prev: f64,
@@ -2590,6 +2620,13 @@ pub const PERCAP_K_HALF_WINDOW_US: u64 = 5_000_000;
 /// on cold-anchor ticks would make the window's min depend on anchor
 /// warmth. (Idempotent within a refresh tick: two calls at the same
 /// `now_us` with the same sample leave identical state.)
+/// goal-gate "Honest Inputs" (`RWM_HONEST_K`): `k_raw` is the path's
+/// RAW-sample windowed-min ratio when the gate is on (`PathState::k_raw`),
+/// substituted for the smoothed-at-refresh tracker's k in the UNCHANGED law
+/// — `k_raw.unwrap_or(k_legacy)`, one formula. The legacy tracker is STILL
+/// observed on every call (its window state must not depend on the gate, so
+/// the A/B isolates the K source and nothing else); `None` (default) is
+/// byte-identical legacy.
 pub fn honest_cap_term(
     ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
     id: u32,
@@ -2599,12 +2636,13 @@ pub fn honest_cap_term(
     anchor: Option<f64>,
     rate: Option<f64>,
     gain: f64,
+    k_raw: Option<f64>,
 ) -> Option<f64> {
     let k = ks
         .entry(id)
         .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
         .observe_srtt_over_rtprop(srtt, rtprop, now_us);
-    honest_store_cap(anchor, rate, k, gain)
+    honest_store_cap(anchor, rate, k_raw.unwrap_or(k), gain)
 }
 
 /// One path's inputs to [`honest_cap_term`], as read off `PathState` under
@@ -2620,6 +2658,12 @@ pub struct HonestCapPath {
     pub rate: Option<f64>,
     pub srtt: Duration,
     pub rtprop: Option<Duration>,
+    /// goal-gate "Honest Inputs" (`RWM_HONEST_K`): the path's RAW-sample
+    /// windowed-min echo ratio (`PathState::k_raw`), `Some` only with the
+    /// gate on. Consumers read `k_raw.unwrap_or(<legacy tracker's k>)` —
+    /// ONE formula whose K input the gate re-sources from the raw sample
+    /// stream; `None` (the shipped default) is byte-identical legacy.
+    pub k_raw: Option<f64>,
 }
 
 /// ONE collector for the honest per-path cap terms over a path set.
@@ -2644,7 +2688,9 @@ pub fn honest_cap_terms(
         .iter()
         .map(|slot| {
             slot.and_then(|p| {
-                honest_cap_term(ks, p.id, p.srtt, p.rtprop, now_us, p.anchor, p.rate, gain)
+                honest_cap_term(
+                    ks, p.id, p.srtt, p.rtprop, now_us, p.anchor, p.rate, gain, p.k_raw,
+                )
             })
         })
         .collect()
@@ -2734,6 +2780,12 @@ pub struct ThreeTermPath {
     pub rate: Option<f64>,
     pub srtt: Duration,
     pub rtprop: Option<Duration>,
+    /// goal-gate "Honest Inputs" (`RWM_HONEST_K`): the RAW-sample
+    /// windowed-min ratio (`PathState::k_raw`), `Some` only with the gate
+    /// on — substituted for the refresh-clock tracker's k in the unchanged
+    /// law (`k_raw.unwrap_or(legacy)`), which is what carries the jit25 fix
+    /// into the `[3T]` window term. `None` (default) = legacy verbatim.
+    pub k_raw: Option<f64>,
 }
 
 /// One WARM path's three-term term, with the honest clock already resolved.
@@ -2773,6 +2825,10 @@ pub fn three_term_terms(
                 .entry(p.id)
                 .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
                 .observe_srtt_over_rtprop(p.srtt, p.rtprop, now_us);
+            // "Honest Inputs" (`RWM_HONEST_K`): the raw-sample floor when
+            // the gate supplies one; the tracker above is still observed on
+            // every tick (window state gate-independent).
+            let k = p.k_raw.unwrap_or(k);
             let rtprop_s = p.rtprop?.as_secs_f64();
             let rate = p.rate.filter(|r| *r > 0.0)?;
             if rtprop_s <= 0.0 {
@@ -4429,6 +4485,7 @@ async fn run_window_sender(
                                         rate: p.btlbw_sym_per_s(),
                                         srtt: p.srtt(),
                                         rtprop: p.min_rtt(),
+                                        k_raw: p.k_raw(),
                                     })
                                 })
                                 .collect()
@@ -4459,6 +4516,7 @@ async fn run_window_sender(
                                     rate: p.btlbw_sym_per_s(),
                                     srtt: p.srtt(),
                                     rtprop: p.min_rtt(),
+                                    k_raw: p.k_raw(),
                                 })
                             })
                             .collect()
@@ -4519,6 +4577,7 @@ async fn run_window_sender(
                                             rate: p.btlbw_sym_per_s(),
                                             srtt: p.srtt(),
                                             rtprop: p.min_rtt(),
+                                            k_raw: p.k_raw(),
                                         }));
                                     }
                                 }
@@ -4547,7 +4606,11 @@ async fn run_window_sender(
                                     slot.rate.filter(|r| *r > 0.0),
                                     slot.rtprop.map(|d| d.as_secs_f64()),
                                 ) {
-                                    let k = percap_k.get(&slot.id).map_or(1.0, |e| e.k());
+                                    // "Honest Inputs": the raw-sample floor
+                                    // when RWM_HONEST_K supplies one.
+                                    let k = slot.k_raw.unwrap_or_else(|| {
+                                        percap_k.get(&slot.id).map_or(1.0, |e| e.k())
+                                    });
                                     wd = Some((a, r, k, rtp));
                                 }
                             }
@@ -4611,6 +4674,7 @@ async fn run_window_sender(
                                             rate: Some(sr),
                                             srtt: p.srtt(),
                                             rtprop: p.min_rtt(),
+                                            k_raw: p.k_raw(),
                                         })
                                     })
                                 })
@@ -4817,6 +4881,7 @@ async fn run_window_sender(
                                                 floor_pipe,
                                                 rate,
                                                 pol.store_bdp_gain,
+                                                p.k_raw(),
                                             )
                                         } else {
                                             None
@@ -8646,6 +8711,7 @@ mod tests {
             rate: Some(10_400.0),
             srtt: Duration::from_millis(12), // RTprop 8 ms + a 4 ms wire queue
             rtprop: Some(Duration::from_millis(8)),
+            k_raw: None,
         };
         let t0 = 1_000_000u64;
         let first = three_term_terms(&mut ks, &[Some(honest)], t0);
@@ -8678,6 +8744,58 @@ mod tests {
             three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap().0,
             WIN_STORE_MAX
         );
+    }
+
+    /// goal-gate "Honest Inputs" (`RWM_HONEST_K`): the K override is ONE
+    /// formula — `k_raw.unwrap_or(legacy)` — so (a) `k_raw = None` (the
+    /// shipped default: the gate resolves OFF and `PathState::k_raw()`
+    /// returns None) is byte-identical to the legacy law, (b) `Some(k)`
+    /// substitutes the raw-fed floor into the UNCHANGED law, and (c) the
+    /// legacy tracker's window state is observed identically either way
+    /// (the A/B isolates the K source, nothing else).
+    #[test]
+    fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
+        let mk = |k_raw: Option<f64>| HonestCapPath {
+            id: 1,
+            anchor: Some(83.2),
+            rate: Some(10_400.0),
+            srtt: Duration::from_millis(12),
+            rtprop: Some(Duration::from_millis(8)),
+            k_raw,
+        };
+        // (a) OFF ⇒ byte-identical to the pre-gate law.
+        let mut ks_off: std::collections::HashMap<u32, EchoRatioMin> =
+            std::collections::HashMap::new();
+        let off = honest_cap_terms(&mut ks_off, &[Some(mk(None))], 1_000_000, 2.0);
+        let legacy_k = 12.0 / 8.0;
+        let expect_legacy = honest_store_cap(Some(83.2), Some(10_400.0), legacy_k, 2.0);
+        assert_eq!(off[0], expect_legacy, "None ⇒ the legacy K, bit-exactly");
+
+        // (b) ON ⇒ the same law at the raw floor.
+        let mut ks_on: std::collections::HashMap<u32, EchoRatioMin> =
+            std::collections::HashMap::new();
+        let on = honest_cap_terms(&mut ks_on, &[Some(mk(Some(1.0)))], 1_000_000, 2.0);
+        let expect_raw = honest_store_cap(Some(83.2), Some(10_400.0), 1.0, 2.0);
+        assert_eq!(on[0], expect_raw, "Some(k) ⇒ the same law at the raw K");
+        assert!(on[0].unwrap() < off[0].unwrap(), "the floor is below the smoothed read");
+
+        // (c) The legacy tracker was fed identically on both arms.
+        assert_eq!(ks_off.get(&1).map(|e| e.k()), ks_on.get(&1).map(|e| e.k()));
+
+        // Same law through the three-term collector: the window term's K.
+        let tt = |k_raw: Option<f64>| ThreeTermPath {
+            id: 2,
+            rate: Some(10_400.0),
+            srtt: Duration::from_millis(12),
+            rtprop: Some(Duration::from_millis(8)),
+            k_raw,
+        };
+        let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
+            std::collections::HashMap::new();
+        let t_off = three_term_terms(&mut ks, &[Some(tt(None))], 1_000_000);
+        assert!((t_off[0].unwrap().k - legacy_k).abs() < 1e-12);
+        let t_on = three_term_terms(&mut ks, &[Some(tt(Some(1.0)))], 1_000_000);
+        assert!((t_on[0].unwrap().k - 1.0).abs() < 1e-12);
     }
 
     #[test]
