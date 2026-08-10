@@ -1,0 +1,25 @@
+#!/bin/bash
+# GOAL "HONEST INPUTS" phase 2 — both seeds, one detached session, one
+# completion sentinel (discipline 13: launch detached, never poll).
+#
+#   sudo nohup bash hi_all.sh >/home/vibe/honestinputs/all.out 2>&1 &
+#
+# Writes /home/vibe/honestinputs/DONE-ALL when both seed batteries have
+# finished; per-seed ledgers land at /home/vibe/honestinputs/hi-s{42,7}.log.
+#
+# RAN 2026-08-10 (goal-gate "Honest Inputs — BATTERY"): main 17:57-19:07Z,
+# top-up 20:05-20:13Z; ledgers committed at docs/l1-raw/honestinputs-*.
+# WATCHER NOTE for any remote completion sentinel: `pgrep -f hi_battery.sh`
+# matches the WATCHER'S OWN shell when its command line contains the string
+# (a remote ssh loop naming this file reads "still running" forever) —
+# check the ledger's HI-BATTERY-DONE line, not the process table.
+set -u
+cd /home/vibe/raptorpath/raptorpath/tools/l1
+OUTDIR=/home/vibe/honestinputs
+mkdir -p "$OUTDIR"
+rm -f "$OUTDIR/DONE-ALL"
+echo "HI-ALL start $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.txt"
+bash hi_battery.sh 42 "${1:-8}"
+bash hi_battery.sh 7 "${1:-8}"
+echo "HI-ALL end $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" >> "$OUTDIR/all-era.txt"
+touch "$OUTDIR/DONE-ALL"

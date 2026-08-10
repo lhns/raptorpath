@@ -22621,3 +22621,262 @@ it is value-identical by construction and priced only in cycles.
 question (expected-failure 1) is adjudicated. `RWM_PLAIN_RS` itself stays
 a measurement arm either way — this goal makes it AFFORDABLE, not
 default.
+
+## Honest Inputs — BATTERY (2026-08-10) — GOAL "HONEST INPUTS" phase 2. Every verdict below is stated against a number pre-registered at 6f6f2a9, never against one chosen after the fact. Branch `feat/honest-inputs-battery` from main@3e0505b; drivers `tools/l1/hi_battery.sh` + `hi_parse.py` + `hi_report.py` (committed BEFORE the run at e20e0ee, with a 1-rep disclosed instrument smoke and no scored number read from it).
+
+### ERA (discipline 2/6/9/12)
+
+VM 10.1.5.16, binary sha256
+`ba86d0e088d666a43c833df04f7bb504b35ef65af187cf646a3a9e4390603f8b`, **the
+same binary in every arm**, built on the VM from source `e20e0ee` (= the
+phase-1 fixes at 3e0505b plus battery tooling only; no Rust differs from
+main). Kernel `7.0.14-101.fc43.x86_64`, E5-2650 v3 `aes avx2 pclmulqdq`,
+6 cores. Lock `/tmp/rwm-vm.lock` found FREE and taken 17:46Z, held through
+the whole arc. Load at launch 1.11/1.28/0.89 — the release build had
+finished ~2 minutes earlier and is disclosed rather than assumed harmless;
+the first scored cell began at 17:57Z and every arm shares whatever
+residual settling existed (interleaving makes it common-mode). Main
+battery 17:57:08→19:07:36Z (70 min, seeds 42 then 7, arms interleaved per
+cell per rep, fresh topology per invocation); seed-7 symmetric top-up
+20:05Z as its OWN session, pooled separately. **Launched detached with a
+completion sentinel and not polled** (discipline 13); one direct status
+check at 20:02Z — after the expected completion time — read only the
+sentinel's presence, never a score. Ledgers `docs/l1-raw/honestinputs-*`.
+
+### LIVENESS (discipline 1/15) — asserted before any number was read
+
+| check | result |
+|---|---|
+| invocations | **400** main (200 per seed) + 60 top-up |
+| two-sided `[GATES]` mismatches (all FOUR gates, both endpoints) | **0 / 351 live** |
+| fix-arm ACTIVE-echo failures (honest-anchor on DH/BH, honest-K on BH) / contamination on A/D/B | **0 / 0** |
+| arm-B/BH invocations with no `[3T] eng=1` | **0** |
+| **INSTRUMENT-FAIL** (CPU gauge or probe absent on a live invocation) | **0** |
+| REAL DNF | **0 / 351** |
+| ABORTS | **49 / 400 (12.2%)** — every one seed 7, every one sc2/c7/c8 |
+
+**ABORT ≠ DNF, again.** All 49 are the documented seed-7 topo-ping class
+(no `[GATES]` on either endpoint, no datum): 24.5% of seed-7 invocations,
+0% on seed 42, 0% at c1 and jit25 (jit25's adv rig carries its own
+double-abort retry). The thin arms this left (c7-A n=2, c8-DH n=2) were
+**re-run symmetrically** — a separate interleaved top-up session over
+sc2/c7/c8, ALL FIVE arms — and pooled separately below, never silently
+merged. The CPU gauge — the gauge criterion H2 is scored on — was present
+on all 351 live invocations including every jit25 one (the adv driver now
+carries perf_rwm_c.sh's exact method).
+
+### THE HEADROOM TABLE (discipline 16) — tc-measured, arm A, every cell
+
+| cell | shaped | tc util s42/s7 | headroom | claims permitted (pre-registered) |
+|---|---|---|---|---|
+| c1 | 1 Gbit | 25.2% / 25.1% | **~75%** | throughput targets |
+| jit25 | 100 Mbit | 84.3% / 90.4% | 10–16% | LIMIT claims; throughput parity only |
+| sc2 | 100 Mbit | 98.6% / 98.1% | **none** | parity + latency survival only |
+| c7 | 200 Mbit | 97.2% / 94.3% | ~3–6% | parity claims only |
+| c8 | 120 Mbit | 80.6% / 80.4% | (abort-class cell) | no-regression only, n reported |
+
+### THE TABLE — goodput (Mbit/s) with the sender-CPU gauge beside it (CPUCLI s; fixed bytes per cell, so the arm ratio IS the CPU/byte ratio)
+
+| cell | seed | A | D | DH | B | BH |
+|---|---|---|---|---|---|---|
+| c1 | 42 | 230.0±4.9 (8) | 148.7±1.6 (8) | 197.1±8.0 (8) | 152.9±4.5 (8) | **260.4±33.1 (8)** |
+| c1 | 7 | 229.3±7.0 (8) | 146.4±3.7 (8) | 200.4±4.8 (8) | 152.0±4.4 (8) | **278.9±15.2 (8)** |
+| c1 CPU | 42 | 15.17±0.39 | 24.50±0.38 | **15.12±0.11** | 27.24±0.92 | **15.14±1.29** |
+| c1 CPU | 7 | 15.24±0.43 | 24.55±0.56 | **15.44±0.31** | 27.33±0.92 | **14.58±0.91** |
+| jit25 | 42 | 75.8±10.0 (8) | 61.8±21.0 (8) | 58.7±15.6 (8) | 61.6±15.8 (8) | 74.3±8.0 (8) |
+| jit25 | 7 | 81.1±3.5 (8) | 75.6±3.4 (8) | 76.2±3.1 (8) | 75.9±3.3 (8) | 76.6±4.2 (8) |
+| sc2 | 42 | 88.0±1.1 (8) | 87.0±1.1 (8) | 87.0±0.9 (8) | 87.6±0.8 (8) | 87.7±0.7 (8) |
+| sc2 | 7 | 87.7±1.0 (5) | 87.7±0.9 (6) | 87.7±0.8 (5) | 87.8±0.9 (5) | 88.7±0.2 (5) |
+| c7 | 42 | 174.7±2.1 (8) | 154.5±3.4 (8) | **173.7±1.4 (8)** | 150.0±15.5 (8) | **173.8±1.3 (8)** |
+| c7 | 7 | 169.4±4.5 (2) | 153.2±1.9 (6) | **171.9±2.1 (4)** | 152.5±4.7 (6) | **173.1±2.1 (4)** |
+| c7 CPU | 42 | 13.61±0.05 | 15.82±0.33 | 14.94±0.10 | 15.56±0.59 | 14.30±0.19 |
+| c7 CPU | 7 | 13.62±0.02 | 15.89±0.15 | 14.88±0.05 | 16.00±0.39 | 14.41±0.21 |
+| c8 | 42 | 82.6±11.9 (8) | 85.9±5.4 (8) | 87.7±9.7 (8) | 87.7±5.5 (8) | 88.7±8.2 (8) |
+| c8 | 7 | 81.8±6.3 (6) | 89.8±5.3 (5) | 88.4±1.2 (2) | 85.9±5.9 (5) | 84.4±8.4 (5) |
+
+**The seed-7 top-up (own session, 20:05–20:13Z, sc2/c7/c8 × all five arms
+× 4, pooled separately; 21/60 aborted, same class) REPRODUCES every
+verdict at its reduced n:** c7 D/A 0.853 (EXCEEDS), DH/A 0.989 (within),
+DH−D = +23.9 vs 2σ 8.4 (EXCEEDS), BH/A 0.984 (within); sc2 BH probe p50
+40.7±2.9 = 0.43×A (EXCEEDS 2σ) at goodput 87.1±0.3 vs A 88.6±0.2 (a
+−1.7% point read whose "exceeds" stands on a tiny-n 2σ of 0.6 — reported,
+not adjudicated against the main session's within-noise parity); c8
+within noise everywhere (c8-DH reached n=1 there; its main-session n=2
+plus this rep are all reported, and no criterion rests on that arm
+beyond no-regression, which every reading satisfies). Per-arm live n,
+main+topup, seed 7: sc2 A 5+3, D 6+2, DH 5+2, B 5+2, BH 5+3; c7 A 2+2,
+D 6+3, DH 4+3, B 6+2, BH 4+4; c8 A 6+2, D 5+4, DH 2+1, B 5+4, BH 5+2.
+
+### THE CRITERIA, SCORED — each against its pre-registered number
+
+**H1 — c1: DH/A goodput parity, point 0.95–1.02, falsified below 0.90.
+VERDICT: FALSIFIED (the pre-registration's own <0.90 branch), both seeds.**
+D/A reproduces the defect (0.646 / 0.639, required ≤ 0.75), so the session
+scores. DH/A = **0.857 (s42) / 0.874 (s7)**, |Δ| = 32.9 vs 2σ 18.7 and
+28.9 vs 17.0 — a real 13% shortfall, both seeds, not noise. Per the
+pre-registered falsification clause the fold was NOT the dominant term
+*of the goodput loss*, and the residual earns a probe before any change.
+
+**H2 — c1: DH sender CPU/byte ≤ 1.15×A. VERDICT: PASS, emphatically —
+0.996× (s42) / 1.013× (s7)** against D's reproduced ×1.614/×1.611. The
+O(rate²) fold owned the ENTIRE CPU tax; the O(1) deque removes every
+measurable cycle of it on VM silicon. The receiver agrees (CPUSRV: DH
+16.1–16.4 vs D 17.4–17.5 vs A 15.0).
+
+**H1+H2 read together (the mechanism split the pre-registration's
+expected-failure 4 anticipated, sharpened):** the −35% was TWO stacked
+effects, not one. The CPU-arithmetic share (fold) is gone — at CPU/byte
+parity the collapse-to-0.64 is gone too — but a −13% share survives at
+FULL CPU parity, so it is not cycles at all: the wait attribution names
+it. DH's sender sits in `wait[paused]` 48–53% vs A's 32% while its store
+occupancy median is 188/688 — a sender parked on the backpressure poll
+with the pool nowhere near full. The residual is a BLOCKING effect of the
+per-seq attribution path (the expected failure named "attribution under
+the scheduler lock ... contention, not arithmetic"), and it is the named
+Phase-3 probe. No constant, no batching hack shipped on this evidence.
+
+**H3 — jit25: BH limit back inside 1300–1430 with window ≤ 500; B must
+reproduce the ≥1800-class miss. VERDICT: FALSIFIED HIGH (BH 1779 / 1809 >
+1600) — and the in-cell decomposition says WHY: smoothing was NOT the
+mechanism.** Scored honestly with its two confounds shown:
+(1) *B did not reproduce its own precondition* — B reads 1402 (s42) /
+1757 (s7) against the required ≥1800-class, because the substrate itself
+moved: arm A now delivers 75.8/81.1 Mbit/s at jit25 where the three-term
+battery's era delivered ~50, and the limit is LINEAR in the measured
+rate, so the pre-registered absolute band could not bind either arm.
+(2) *The instrument built for exactly this* — `khr=`/`kraw=` on the same
+steady-state DIAG lines — measures the smoothing bias IN-CELL at
+khr−kraw ≈ **zero** (BH s42: khr 1.391 vs kraw 1.546; s7: 1.139 vs
+1.204; per-rep the two track each other to ±0.15 with BOTH signs). The
+raw-fed windowed min does NOT read materially below the smoothed one at
+jit25, so re-sourcing K's feed moves nothing there (BH−B cap Δ = +377
+vs 2σ ≈ 1000, within noise), and the K elevation that remains lives in
+**RTprop's own honesty under netem's clamped jitter** — pre-registered
+expected-failure 1, confirmed in modified form: not an undershoot (the
+predicted K_raw→1 never happened) but a floor RTprop saw once and the
+half-window never sees again. A finding, not a fix; explicitly not to be
+patched with a constant. Throughput at jit25: parity within 2σ in every
+arm pair, both seeds, as required.
+
+**H4 — sc2: the latency win must survive at parity on honest inputs.
+VERDICT: PASS.** BH goodput within σ of same-session A (0.996 / 1.011,
+|Δ| 0.4 vs 2σ 2.6 and 1.0 vs 2.0); DH likewise (0.988 / 1.000). BH probe
+p50 **43.3±7.4 / 46.6±2.8 ms vs A 95.7±8.5 / 97.3±4.7 — 0.452× / 0.479×,
+both EXCEED 2σ** (22.5, 11.0), p99 48.5 / 52.0 — inside the ≤55 ms class.
+"RTT halved at parity" reproduces on honest inputs, with the honest-K cap
+a touch TIGHTER (454–486 vs B's 492–517) at unchanged goodput — the sc2
+standing-queue worry (expected-failure 2) did not fire. And BH's sender
+CPU/byte at sc2 is 0.963–0.985×A: the win now costs LESS CPU than the
+shipped default, where B paid ×1.17–1.18.
+
+**H5 — c7/c8 must not regress; the c7 question. VERDICT: PASS, and the
+c7 answer is unambiguous: D/A 0.88 was PURE CPU.** DH > D by +19.1 (2σ
+7.3, s42) and +18.6 (2σ 5.7, s7 at n=4/6) — EXCEEDS both seeds; DH/A =
+**0.994 / 1.014** against the pre-registered ≥ 0.95 floor, i.e. full
+parity with the shipped default at 3% headroom. The DH/D split the
+pre-registration asked for reads: at c7 the fix recovers the WHOLE gap;
+the attribution-behavior share is zero. (The asymmetry with c1 is the
+finding: c7's per-path windows are half of c1's and its sender has
+intake headroom, so the linear/blocking residual that keeps c1 at 0.86
+fits inside c7's idle time — the same reason the 5–9.9k cells were
+always tax-free.) c8: DH within 2σ of D on both seeds (+1.8 vs 22.3;
+−1.4 vs 10.8), aborts counted per arm (c8-DH s7 ran n=2 in the main
+session; top-up below), no asymmetric top-up anywhere.
+
+### THE UNREGISTERED RESULT, REPORTED AS ONE — the law on honest inputs BEATS the shipped default at c1
+
+No H-criterion pre-registered a BH throughput target at c1, so this is
+an observation with its noise bound, not a banked claim: **BH/A = 1.132
+(s42, within its own 2σ 67 — the arm's σ is 33.1) and 1.217 (s7,
+EXCEEDS 2σ 33.5)**, at sender CPU/byte 0.957–0.998×A and receiver CPU
+BELOW A (13.7–14.4 vs 15.0). Arm B — the same law on the dishonest
+anchor — reads 0.663–0.665×A at CPU/byte ×1.79. This is the three-term
+pre-registration's original criterion-4 shape (the banked "+16–25%
+c1 floor") finally visible on the wire once the anchor stopped eating a
+third of the sender; it is also the widest-variance arm in the battery
+(per-rep 208–303 on s42), which is exactly what a flip battery would
+have to size its n against.
+
+### THE PRE-REGISTRATION'S EXPECTED-WRONG LIST, SCORED AS THEY FELL
+
+1. **jit25 RTprop (named "the most likely miss")** — CONFIRMED as the
+   live mechanism, in modified form (kraw ≈ khr, both elevated; not the
+   predicted undershoot). H3 fell to exactly this.
+2. **sc2's standing-queue K** — DID NOT FIRE: the honest cap shrank ~7%
+   and goodput/latency both held.
+3. **c7's non-CPU share** — REFUTED: DH recovers all of it; 0.88 was
+   cycles.
+4. **c1's residual linear tax on VM silicon** — CONFIRMED in refined
+   form: H1 fails, H2 passes — but the residual is measured as BLOCKING
+   (wait[paused] 48–53% at CPU parity, store not full), not as the
+   predicted linear arithmetic.
+
+### THE DEFAULT RE-ADJUDICATION — `RWM_THREE_TERM` on corrected inputs, BH vs A, the arm a user would get
+
+| cell | seed | BH/A | vs 2σ_pooled |
+|---|---|---|---|
+| c1 | 42 / 7 | **1.132 / 1.217** | within (2σ 67.0) / **EXCEEDS** (2σ 33.5) |
+| jit25 | 42 / 7 | 0.981 / 0.943 | within / within |
+| sc2 | 42 / 7 | 0.996 / 1.011 | within / within |
+| c7 | 42 / 7 | 0.995 / 1.021 | within / within |
+| c8 | 42 / 7 | 1.073 / 1.031 | within / within |
+
+**The −35% blocker is dead.** The latency battery's verdict was "the
+latency control is blocked on the anchor, and on nothing else this
+battery can see"; this battery removes that blocker measurably: BH
+regresses NOTHING outside noise at any cell on either seed, keeps the
+sc2 halved-RTT win at parity, holds c7 at parity where B paid 12–14%,
+and is ahead at c1 (decisively on one seed, inside its own wide noise on
+the other) at BELOW-default CPU on both ends.
+
+**It still ships OFF, on the pre-registration's own two grounds, not on
+new judgment.** (1) The pre-registration pre-commits: "`RWM_HONEST_K`
+cannot be a default candidate before the jit25 RTprop question
+(expected-failure 1) is adjudicated" — H3 fell to precisely that
+question, so the BH composition contains a gate whose input honesty is
+still unresolved at its own primary cell. (2) "Nothing in this battery
+flips a default" — a flip needs its own pre-registered battery (the
+ack-merge precedent), and the c1 arm's σ of 33 says that battery must
+size n for it (n=8 gives 2σ ≈ 67 on a +30 point effect on seed 42).
+What is DIFFERENT from every prior adjudication in this arc: the road to
+ON is now open on the evidence — nothing measurable remains against the
+composition except the two named probes below.
+
+**Phase 3, named by the data:** (i) the RTprop-honesty probe at jit25 —
+decompose K's elevation into "floor seen once at the netem clamp" vs
+"genuine in-window delay spread" (windowed-min-of-raw vs global-min
+decomposition, the same shape as fix 2, one level down); (ii) the c1
+DH-residual probe — why a sender at CPU parity with a store at 27%
+occupancy spends half its wall time on the backpressure poll
+(`wait[paused]`), i.e. the attribution path's blocking behavior under
+the scheduler lock; (iii) the BH flip battery, n sized to σ=33, only
+after (i) resolves or removes `RWM_HONEST_K` from the composition.
+`RWM_HONEST_ANCHOR` alone is a flip-battery candidate TODAY on this
+battery's evidence (value-identical by construction, CPU-priced only,
+zero regressions anywhere, H2 green both seeds) — per the
+pre-registration's own "what would change defaults" clause with H1's
+goodput branch honestly failed and said so.
+
+### WHAT THIS BATTERY DELIBERATELY DOES NOT CONCLUDE
+
+1. It does not claim the c1 BH gain as a banked result (unregistered,
+   one seed inside its own noise) — that is the flip battery's job.
+2. It does not settle WHAT blocks DH's last 13% at c1 — it names the
+   gauge (paused-wait at CPU parity) and hands Phase 3 a probe, not a
+   story.
+3. It does not re-price the jit25 band: the cell's own substrate moved
+   (~50 → 76–81 Mbit/s at arm A across eras) and no number here may be
+   compared to the three-term battery's absolute caps without carrying
+   that confound.
+4. It does not explain the seed-7 abort class (24.5% here, same class,
+   same cells); it is a standing instrument cost, re-run symmetrically
+   and reported.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed: `RWM_HONEST_ANCHOR`, `RWM_HONEST_K`, `RWM_PLAIN_RS`,
+`RWM_THREE_TERM` all remain OFF. No constant tuned, no cell rescued, no
+prediction adjusted post hoc; the two falsified criteria (H1, H3) are
+reported as falsifications with their mechanisms, and the confound on
+H3's precondition is disclosed rather than resolved in the favourable
+direction. The pre-registration at 6f6f2a9 is untouched.
