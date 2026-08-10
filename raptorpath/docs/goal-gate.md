@@ -22472,3 +22472,152 @@ to; three consecutive uncontended processes after it were 3/3 green.
 No L1 number was produced or reinterpreted: every battery figure above is
 quoted from the ledgers/logs already committed, and the c1/jit25 verdicts
 stay exactly as their batteries recorded them.
+
+## Honest Inputs — PRE-REGISTRATION (2026-08-10) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any battery, in its OWN commit, against the fixes shipped at `feat/honest-inputs`@678eeb8. GOAL "HONEST INPUTS" phase 2 (the scored battery, dispatched separately; **this phase ran NOTHING on the VM**). Gates under test: `RWM_HONEST_ANCHOR`, `RWM_HONEST_K` (both default OFF; anchor-hygiene family).
+
+Scored the way the latency-lever battery was: every verdict against a
+number written here, never against one chosen after the fact.
+
+### ARMS (same-session interleaved per cell, ×8, seeds 42 and 7)
+
+| arm | env | role |
+|---|---|---|
+| A | (default) | shipped control |
+| D | `RWM_PLAIN_RS=1` | the measured defect, reproduced (the fixes' control) |
+| DH | `RWM_PLAIN_RS=1 RWM_HONEST_ANCHOR=1` | fix 1 isolated on the honest sampler |
+| B | `RWM_THREE_TERM=1 RWM_PLAIN_RS=1` | the three-term battery's composed arm, reproduced |
+| BH | `RWM_THREE_TERM=1 RWM_PLAIN_RS=1 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=1` | the law on honest, affordable inputs (jit25's limit arm) |
+
+`RWM_HONEST_K` rides only the BH arm because its consumer surface (the
+K read) is only load-bearing where a cap/limit law consumes K; a DHK arm
+may be added at jit25 if BH's limit read needs decomposition, and its
+criteria are then the jit25 rows below unchanged.
+
+LIVENESS, asserted per arm and per direction before any number is read
+(MEASUREMENT DISCIPLINE 1/15): `[GATES] RWM_HONEST_ANCHOR=…` /
+`RWM_HONEST_K=…` scoped to the `[GATES]` line (the amendment-1 lesson) on
+BOTH endpoints; the `O(1) windowed-max rate filter ACTIVE` /
+`raw-sample echo-ratio floor ACTIVE` echoes PRESENT on fix arms and ABSENT
+on A/D/B; the per-2 s `[3T]` line with `eng=1` on B/BH; **the `CPU:
+CPUSRV=/CPUCLI=` gauge captured on every invocation — it is the
+mechanism's conviction gauge and criterion H2 is scored on it**; `tc -s
+qdisc` captured at every cell (What-Binds instrument 1); `RWM_DIAG=1`
+on every arm so the `khr=`/`kraw=` pair decomposes the K bias in-cell
+at jit25. An arm whose
+echo set is wrong is discarded with its n recorded, not re-read.
+
+Driver requirements carried forward — both already ENCODED in the parsers
+(`tools/l1/lat_parse.py` / `tt_parse.py`: "no summary at all" = ABORT, not
+DNF) and to be kept by any phase-2 driver: **abort ≠ DNF** (the seed-7 abort
+class — 25.9%/41.4% of invocations on jittered/lossy c2/c3-based cells in
+the three-term battery, 0% on seed 42 — is counted separately, per arm,
+and reported; aborted invocations are re-run only symmetrically across
+arms). One green run of any order/timing-sensitive assertion is not
+evidence; the echo gates run on every invocation.
+
+### THE CELLS, THEIR MEASURED HEADROOM (discipline 16), AND THE PRE-REGISTERED NUMBERS
+
+Headroom = 1 − arm-A utilisation of the shaped link, from "What Binds
+Throughput" (measured, not assumed). **No throughput target is stated for
+any cell whose headroom cannot contain it.**
+
+| cell | arm-A util (s42/s7) | **headroom** | claims permitted |
+|---|---|---|---|
+| c1 | 23.8% / 24.5% of 1 Gbit | **~75%** | throughput targets PERMITTED |
+| jit25 | 80.8% / 100.6% | ~19% / **none** | LIMIT claims; throughput parity only |
+| sc2 | 100.3% / 99.9% | **none** | parity + latency survival only |
+| c7 | 97.2% / 97.0% | **~3%** | parity/latency claims only |
+| c8 | (abort-class cell) | — | no-regression only, n reported |
+
+**H1 — c1, the anchor's cell (fix 1's primary).** The goal's criterion:
+**DH/A at goodput parity within 2σ of the same-session A**, both seeds.
+Point prediction DH/A = 0.95–1.02 (the component bench prices the
+remaining `RWM_PLAIN_RS` machinery at ~315 ns/delivery + linear wiring ≈
+1–3% of a core at 24 k sym/s). D/A must simultaneously REPRODUCE the
+defect (≤ 0.75) or the session cannot score the fix.
+*Falsified (mechanism) if* DH/A < 0.90: the fold was NOT the dominant
+term; the residual linear wiring (per-seq DashMap/BTreeMap + attribution
+under the scheduler lock) becomes the named suspect and earns its own
+probe BEFORE any further change — no constant, no batching hack shipped
+on this battery's evidence.
+*Confirmed only with the mechanism gauge:* **H2 — DH sender CPU/byte ≤
+1.15× A** (D measured ×1.60/×1.62). If DH reaches goodput parity while
+CPU/byte stays > 1.25× A, the outcome is right for the wrong reason
+(headroom absorbed an unremoved tax) — the result is flagged, not banked,
+and the mechanism claim is withdrawn.
+
+**H3 — jit25, K's cell (fix 2's primary), scored on the LIMIT.** The
+`[3T]` limit under BH returns **inside the original pre-registered band
+1300–1430 symbols** (the K=1 / K@4ms columns), with the window term ≤ 500
+(pre-registered 458-class); B must simultaneously reproduce the miss
+(≥ 1800-class, measured 1919/1981).
+*Falsified HIGH if* BH limit > 1600: smoothing was not the (whole)
+mechanism of the ×1.34 inversion.
+*Falsified LOW if* BH limit < 900: the raw floor UNDERSHOOTS — the named
+expected-failure mode (below), and the finding transfers to RTprop's own
+honesty under netem's clamped jitter. In neither direction may a
+coefficient bridge the gap.
+Throughput at jit25: parity within 2σ only (no headroom on s7).
+
+**H4 — sc2, the latency win that must survive.** BH and DH goodput within
+σ of same-session A (the cell has zero headroom, so ANY throughput move
+is a defect signal, not a win). The latency-lever sc2 result must
+survive on honest inputs: BH RTT in the **≤ 55 ms class at goodput
+parity** (the battery measured 50 ms at 1.003× with cap 495 on dishonest
+K; the honest K may move the cap — the CLAIM that must survive is
+"RTT halved at parity", not the cap's exact value).
+*Falsified if* sc2 goodput drops > 2σ under BH (the K floor re-pricing
+the residence term too tightly — expected-failure mode 2 below) or the
+RTT reduction is lost at parity.
+
+**H5 — c7/c8, must not regress.** c7 (3% headroom): DH > D by more than
+2σ (the fix recovers a measured share of c7's D/A 0.877–0.884), point
+prediction DH/A ≥ 0.95; no gain claim vs A is available at 3% headroom
+and none is made. c8: DH within 2σ of D (no regression), aborts counted
+separately, per-arm n reported; if seed-7 aborts exceed the three-term
+battery's class (> ~40%), the cell reports n and abstains rather than
+top-up asymmetrically.
+
+### WHERE I EXPECT THE FIXES TO BE WRONG (a pre-registration that predicts success everywhere is worthless)
+
+1. **jit25's RTprop side (the most likely miss).** The component bench
+   reads the floor of the series it is given; the ENGINE's RTprop is
+   itself a windowed min over the same clamped-jitter distribution, and
+   the jit25 tc capture recorded netem's negative-delay clamp (0.07 ms
+   minimum). If the raw delay distribution's floor sits far below the
+   operating delay, K_raw → 1 makes the window term under-provision
+   (H3's falsified-LOW branch). That would be the SAME "min of a wide
+   distribution" defect mirrored onto RTprop — a finding, not a fix, and
+   explicitly not to be patched with a constant.
+2. **sc2/c2r100's standing-queue K.** The component control shows the two
+   feedings agree on a narrow distribution, but a cell with occasional
+   genuinely un-queued samples (idle restarts) will let the raw min dip
+   below the SUSTAINED overhead the smoothed min was (accidentally)
+   reading. Honest caps then shrink; sc2's cap may un-latch from 1024.
+   H4's parity clause is the tripwire. If it fires, the adjudication is
+   about the residence term's correct clock (floor vs sustained), not
+   about a coefficient.
+3. **c7's non-CPU share.** c7's D-loss may be partly attribution behavior
+   (cross-path machinery c1 does not have), not cycles. If DH recovers
+   markedly less at c7 than at c1 relative to each cell's D, that split
+   is the next mechanism question — H5 is deliberately a floor, not a
+   parity claim.
+4. **c1's residual linear tax on VM silicon.** The 1–3%-of-core residual
+   was measured on the local machine; the VM's cores are slower and the
+   scheduler-lock serialization is contention, not arithmetic. DH/A
+   landing 0.90–0.95 with CPU/byte ≤ 1.15× would mean the quadratic
+   attribution held but the linear wiring is heavier there — H1 fails,
+   H2 passes, and the next seam is named (attribution batching under the
+   lock), not fudged.
+
+### WHAT WOULD CHANGE DEFAULTS
+
+Nothing in this battery flips a default. A full green set (H1+H2 both
+seeds, H3 inside the band, H4, H5) makes `RWM_HONEST_ANCHOR=1` a
+candidate for the anchor-hygiene family default in a SEPARATE flip
+battery with its own pre-registration (the ack-merge precedent), because
+it is value-identical by construction and priced only in cycles.
+`RWM_HONEST_K` cannot be a default candidate before the jit25 RTprop
+question (expected-failure 1) is adjudicated. `RWM_PLAIN_RS` itself stays
+a measurement arm either way — this goal makes it AFFORDABLE, not
+default.
