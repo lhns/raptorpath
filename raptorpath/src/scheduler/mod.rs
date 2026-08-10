@@ -3381,6 +3381,61 @@ mod tests {
         }
     }
 
+    /// `active_paths()` and `live_paths()` are NOT interchangeable: the
+    /// active set additionally filters on spare capacity, so a SATURATED
+    /// path (in_flight ≥ cwnd) is live but not active. Every sender phase
+    /// that aggregates over paths picks one of the two deliberately, and
+    /// swapping them silently changes the law — the CC pace rate uses
+    /// `live_paths()` precisely because the active filter dropped a
+    /// saturated path out of the aggregate (`net/mod.rs`, cc-rate refresh),
+    /// while the M* RTprop / in-flight-cap / tail-sweep phases use
+    /// `active_paths()`.
+    ///
+    /// This test exists because the deleted `RWM_SCHED_SNAPSHOT` seam
+    /// (2026-08-10, ADR-0066) carried a unit test that CLAIMED to catch a
+    /// path-set swap and could not: its fixture only ever added fresh paths,
+    /// where `in_flight = 0 < cwnd` makes the two sets IDENTICAL, so
+    /// substituting either for the other passed. Assert the divergence
+    /// itself, at the only state that exhibits it.
+    #[test]
+    fn saturated_path_is_live_but_not_active() {
+        let mut sched = Scheduler::new(Arc::new(WallClock));
+        sched.add_path(0);
+        sched.add_path(1);
+
+        // Fresh paths: the trap. Both sets agree, so nothing here can
+        // distinguish them — this is exactly the fixture that gave a false
+        // pass, asserted so the trap cannot be re-entered unnoticed.
+        assert_eq!(
+            sched.active_paths(),
+            sched.live_paths(),
+            "fresh paths make active/live indistinguishable — a fixture of \
+             only-fresh paths CANNOT test the distinction"
+        );
+
+        // Saturate path 1: up, but no spare capacity.
+        {
+            let p = sched.path_mut(1).unwrap();
+            assert!(p.active, "path must be up for the distinction to bite");
+            p.in_flight = p.cwnd;
+            assert_eq!(p.available(), 0);
+        }
+
+        assert_eq!(sched.active_paths(), vec![0], "saturated path 1 is NOT active");
+        assert_eq!(
+            sched.live_paths(),
+            vec![0, 1],
+            "saturated path 1 IS live — control traffic and the CC rate \
+             aggregate must still see it"
+        );
+
+        // And the other direction: a DOWN path with spare capacity is in
+        // neither set, so `live_paths()` is not merely "all paths".
+        sched.path_mut(0).unwrap().active = false;
+        assert!(sched.active_paths().is_empty());
+        assert_eq!(sched.live_paths(), vec![1]);
+    }
+
     #[test]
     fn test_best_source_path_picks_lowest_rtt() {
         let mut sched = Scheduler::new(Arc::new(WallClock));

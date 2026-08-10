@@ -18,7 +18,6 @@ pub mod framing;
 pub mod interleave;
 pub mod receiver;
 pub mod reorder;
-pub mod sched_snapshot;
 pub mod sender_policy;
 pub mod tasks;
 
@@ -26,7 +25,6 @@ use block_arq::BlockArq;
 use block_sender::run_block_sender;
 use diag::{DiagCtx, DiagInputs, DiagState};
 use emit_source::{SenderCtx, SenderState, emit_source};
-use sched_snapshot::SchedSnapshot;
 use sender_policy::SenderPolicy;
 
 use crate::control::FecRateController;
@@ -4013,25 +4011,6 @@ async fn run_window_sender(
         copa_feed: copa_feed.as_ref(),
     };
 
-    // ── RWM_SCHED_SNAPSHOT (default OFF; net seam pass 2) ─────────────────
-    // One scheduler read per loop iteration instead of a dozen independent
-    // re-derivations of the same aggregates. NOT behaviour-preserving — see
-    // net/sched_snapshot.rs for the skew hazard and why this ships OFF. With
-    // the gate off `sched_snap` is None at every routed site and each runs
-    // its original `scheduler.lock()` block bit-for-bit.
-    let sched_snapshot_on = gates.sched_snapshot;
-    if sched_snapshot_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1): the arm
-        // must be visible in the recorded run that measures it.
-        info!(
-            "per-iteration scheduler snapshot ACTIVE (RWM_SCHED_SNAPSHOT: ONE \
-             scheduler read per sender-loop iteration serves the M* RTprop, \
-             the in-flight-cap BDP sum, the CC pace rate, the tail-sweep \
-             pooled SRTT and the reactive deficit spacing; =0 = the \
-             per-phase reads the shipped default takes)"
-        );
-    }
-
     // Retention backpressure state (reliable mode), for edge-triggered logs.
     let mut last_tx_paused = false;
 
@@ -4063,14 +4042,29 @@ async fn run_window_sender(
     // setup and are moved in, not re-sampled.
     let mut dg = DiagState::new(gd_last_us, diag_start_us, diag_last_us, sidle_last_change_us);
     loop {
-        // RWM_SCHED_SNAPSHOT: the ONE scheduler reading this iteration's
-        // routed read-only phases share. `None` (the shipped default) leaves
-        // every one of them taking its own lock exactly where it always did.
-        let sched_snap = if sched_snapshot_on {
-            Some(SchedSnapshot::capture(&scheduler.lock()))
-        } else {
-            None
-        };
+        // Scheduler reads in this loop are PER PHASE, each under its own
+        // acquisition, taken where the value is used. A loop-top snapshot
+        // shared by the phases (`RWM_SCHED_SNAPSHOT`, net seam pass 2) was
+        // built and DELETED unmeasured on 2026-08-10 — its premise did not
+        // survive reading (ADR-0066 deprecation register; goal-gate
+        // "Scheduler-Snapshot Adjudication"). Three findings, if it is ever
+        // proposed again:
+        //   1. The "BDP that never existed" it claimed to prevent is not
+        //      reachable from these sites. Every phase below composes its
+        //      scheduler-derived inputs under ONE acquisition already, and
+        //      the only rate×RTprop product in play (`copa_bdp_anchor` =
+        //      `max_bw × min_rtt`) is atomic inside one `CopaState`. No
+        //      derived value spans two acquisitions.
+        //   2. It could not deliver the coherence it promised: the phases it
+        //      served are independently throttled (~5 ms each, separate
+        //      stamps), so they fire on DIFFERENT iterations and would have
+        //      consumed DIFFERENT snapshots regardless.
+        //   3. It made the one genuinely skew-exposed site WORSE. The
+        //      reactive deficit-spacing read sits after the `select!` await;
+        //      a loop-top capture serves it a value older by the whole park,
+        //      where the per-phase read is fresh.
+        // A future attempt at intra-iteration consistency must capture per
+        // phase-group AFTER the await, not once at the top.
 
         // SACK drain: consume the receiver's RECEIVED-above-frontier ranges
         // NON-BLOCKING at the top of every iteration (never as a select! branch
@@ -4223,24 +4217,19 @@ async fn run_window_sender(
                 // it is positive feedback (deeper ⇒ more queue ⇒ deeper). The
                 // in-flight cap holds the actual RTT near RTprop, so RTprop is
                 // the self-consistent anchor (the BBR discipline).
-                // RWM_SCHED_SNAPSHOT: the loop-top reading when armed; the
-                // verbatim per-phase read otherwise (the shipped default).
-                let rtprop_s = match sched_snap.as_ref() {
-                    Some(s) => s.rtprop_max_s,
-                    None => {
-                        let sched = scheduler.lock();
-                        sched
-                            .active_paths()
-                            .iter()
-                            .filter_map(|id| {
-                                sched.path(*id).map(|p| {
-                                    p.min_rtt()
-                                        .map(|d| d.as_secs_f64())
-                                        .unwrap_or_else(|| p.srtt().as_secs_f64())
-                                })
+                let rtprop_s = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| {
+                            sched.path(*id).map(|p| {
+                                p.min_rtt()
+                                    .map(|d| d.as_secs_f64())
+                                    .unwrap_or_else(|| p.srtt().as_secs_f64())
                             })
-                            .fold(0.0, f64::max)
-                    }
+                        })
+                        .fold(0.0, f64::max)
                 };
                 let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
@@ -4261,17 +4250,13 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_infl_refresh_us) >= 5_000 {
                 dyn_infl_refresh_us = dnow;
-                // RWM_SCHED_SNAPSHOT: see the M* refresh above.
-                let bdp: f64 = match sched_snap.as_ref() {
-                    Some(s) => s.bdp_sum,
-                    None => {
-                        let sched = scheduler.lock();
-                        sched
-                            .active_paths()
-                            .iter()
-                            .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
-                            .sum()
-                    }
+                let bdp: f64 = {
+                    let sched = scheduler.lock();
+                    sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
+                        .sum()
                 };
                 if bdp > 0.0 {
                     dyn_infl_cap = ((pol.infl_bdp_gain * bdp).ceil() as u64).max(64);
@@ -5502,24 +5487,20 @@ async fn run_window_sender(
                 // aggregate clamp it silently capped C7's two-path intake
                 // at one path's worth (MEASURED: C7 = ×1.00 of own single
                 // vs C0's ×1.7 aggregation).
-                // RWM_SCHED_SNAPSHOT: see the M* refresh above.
-                let (rate, n_live) = match sched_snap.as_ref() {
-                    Some(s) => (s.cwnd_rate_sum, s.cwnd_rate_live),
-                    None => {
-                        let sched = scheduler.lock();
-                        let mut r = 0.0f64;
-                        let mut n = 0usize;
-                        for id in sched.live_paths() {
-                            if let Some(p) = sched.path(id) {
-                                let s = p.srtt().as_secs_f64();
-                                if s > 1e-4 {
-                                    r += p.cwnd as f64 / s;
-                                }
-                                n += 1;
+                let (rate, n_live) = {
+                    let sched = scheduler.lock();
+                    let mut r = 0.0f64;
+                    let mut n = 0usize;
+                    for id in sched.live_paths() {
+                        if let Some(p) = sched.path(id) {
+                            let s = p.srtt().as_secs_f64();
+                            if s > 1e-4 {
+                                r += p.cwnd as f64 / s;
                             }
+                            n += 1;
                         }
-                        (r, n.max(1))
                     }
+                    (r, n.max(1))
                 };
                 cc_rate_cached = rate;
                 cc_rate_ceiling = pol.gen_rate * n_live as f64;
@@ -5552,19 +5533,15 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                // RWM_SCHED_SNAPSHOT: see the M* refresh above.
-                let srtt_us = match sched_snap.as_ref() {
-                    Some(s) => s.pooled_est_rtt_us,
-                    None => {
-                        let sched = scheduler.lock();
-                        let pooled: Vec<u64> = sched
-                            .active_paths()
-                            .iter()
-                            .filter_map(|id| sched.path(*id))
-                            .map(|p| p.estimator.rtt().as_micros() as u64)
-                            .collect();
-                        pooled_recovery_srtt_us(&pooled)
-                    }
+                let srtt_us = {
+                    let sched = scheduler.lock();
+                    let pooled: Vec<u64> = sched
+                        .active_paths()
+                        .iter()
+                        .filter_map(|id| sched.path(*id))
+                        .map(|p| p.estimator.rtt().as_micros() as u64)
+                        .collect();
+                    pooled_recovery_srtt_us(&pooled)
                 };
                 let timeout_us = tail_sweep_timeout_us(srtt_us);
                 let deadline_us = last_activity_us + timeout_us;
@@ -5624,15 +5601,14 @@ async fn run_window_sender(
                     // window the baseline logic alone cannot bound a sub-RTT report
                     // stream. react_space_us = react_cap_cfg × SRTT (1.0 = 1 SRTT).
                     let react_space_us: u64 = if pol.react_cap_on {
-                        // RWM_SCHED_SNAPSHOT: see the M* refresh above.
-                        let srtt_us = match sched_snap.as_ref() {
-                            Some(s) => s.srtt_max_us.unwrap_or(50_000),
-                            None => {
-                                let sched = scheduler.lock();
-                                sched.active_paths().iter()
-                                    .filter_map(|id| sched.path(*id).map(|p| p.srtt().as_micros() as u64))
-                                    .max().unwrap_or(50_000)
-                            }
+                        // Read HERE, after the `select!` await: this is the one
+                        // phase whose value would be stale under a loop-top
+                        // snapshot (see the note at the top of the loop).
+                        let srtt_us = {
+                            let sched = scheduler.lock();
+                            sched.active_paths().iter()
+                                .filter_map(|id| sched.path(*id).map(|p| p.srtt().as_micros() as u64))
+                                .max().unwrap_or(50_000)
                         };
                         ((srtt_us as f64) * pol.react_cap_cfg).max(1_000.0) as u64
                     } else {
