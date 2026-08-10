@@ -2652,6 +2652,260 @@ pub fn honest_cap_terms(
         .collect()
 }
 
+// ═══ THE THREE-TERM OUTSTANDING-DATA LIMIT (RWM_THREE_TERM) ══════════════
+//
+// Goal-gate "Three-Term Law" (2026-08-10), paper §16.43 + §16.44. The
+// outstanding-data limit is ONE scalar doing THREE jobs, only one of which
+// was ever derived. All three are Little's law — quantity = rate × time —
+// over signals the engine already measures, and NONE contains a fitted
+// coefficient. Two of the three make OPPOSITE demands of the knob, which is
+// why every change this month split by topology.
+//
+//   limit = Σ_i rate_i·K_i·RTprop_i          TERM 1 — NETWORK WINDOW
+//         + Σ_i rate_i·stall(δ, ρ, i)        TERM 2 — EMISSION SLACK
+//         + 2·rate_fast·skew                 TERM 3 — RESEQUENCING SPAN
+//
+// THE PROPERTY THIS EXISTS FOR. Term 3 is identically ZERO at a single path
+// — not by an `if n_live == 1`, not by a topology predicate, and not by a
+// gate: `skew = (max_i RTprop_i − min_i RTprop_i)/2` over a ONE-ELEMENT set
+// is zero because max and min are the same number. That is how the
+// `active_paths()` vs `live_paths()` branch dies. Every consumer of the
+// limit sees ONE formula; the arithmetic supplies the topology.
+
+/// The δ dial's deadline budget b(δ) at the protocol's NAMED POINTS
+/// (paper §8.8 / §16.20.3): Realtime ½, Auto 1, Bulk 2 round trips.
+///
+/// These are POINTS ON A DIAL, never modes (CLAUDE.md). The only law b
+/// enters — `D(δ) = min(b·RTprop, 2·RTprop)`, [`shed_deadline_us`] — is
+/// continuous and monotone in it, and every consumer treats b as a plain
+/// number. Extracted here (2026-08-10) from the span-law site in
+/// `emit_source.rs`, which had the same three-arm map transcribed inline
+/// and would otherwise have been transcribed a second time by the law
+/// below — the `honest_cap_term` de-triplication lesson applied early.
+pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
+    match hint {
+        ProtocolHint::Realtime => 0.5,
+        ProtocolHint::Auto => 1.0,
+        ProtocolHint::Bulk => 2.0,
+    }
+}
+
+/// The CONTRACT-declared frontier stall, in SECONDS — the time TERM 2 is
+/// Little's law over. Declared by (δ, ρ); no statistic of a measured stall
+/// distribution is chosen, and no coefficient is fitted.
+///
+/// ```text
+///   stall(δ, ρ) = (1 − ρ)·D(δ)  +  ρ·(9/8·srtt + srtt)
+///                 └ shed-eligible ┘  └ retained: RFC 9002 §6.1.2 time
+///                   share, bounded      threshold (kTimeThreshold = 9/8,
+///                   by the span law's   cited, not magic) plus ONE
+///                   own D(δ)            retransmit round trip ┘
+/// ```
+///
+/// * the shed-eligible share (1 − ρ) cannot pin the in-order frontier
+///   longer than the span law's own deadline `D(δ)` ([`shed_deadline_us`]):
+///   past D a hole is RETIRED rather than served;
+/// * the retained share ρ is not sheddable by construction
+///   (RETAIN-UNTIL-ACKED), so it must actually be RECOVERED: detection plus
+///   one retransmit flight = 17/8·srtt.
+///
+/// CONTINUOUS in ρ with BOTH terms always computed — the shipped rate law's
+/// shape, not a mode bit (CLAUDE.md). Pinned across 21 values of ρ by
+/// `three_term_law_is_arithmetic_and_continuous`.
+///
+/// `srtt_s` is the HONEST ack clock (see [`ThreeTermTerm`]), never the
+/// store-dwell-inclusive app-echo RTT — §16.44 route B.
+pub fn contract_stall_s(rho: f64, b_hint: f64, rtprop_s: f64, srtt_s: f64) -> f64 {
+    let rho = rho.clamp(0.0, 1.0);
+    let rtprop_s = rtprop_s.max(0.0);
+    let srtt_s = srtt_s.max(0.0);
+    // ONE D(δ): the shipped span-law deadline, reused rather than restated.
+    let shed_term = shed_deadline_us(b_hint, (rtprop_s * 1e6) as u64) as f64 / 1e6;
+    let retain_term = (9.0 / 8.0) * srtt_s + srtt_s;
+    (1.0 - rho) * shed_term + rho * retain_term
+}
+
+/// One live path's inputs to the three-term law, as read off `PathState`
+/// under the scheduler lock. Exists (like [`HonestCapPath`]) so the law can
+/// be driven from a component bench with no transport, no tokio and no
+/// scheduler — MEASUREMENT DISCIPLINE 14.
+#[derive(Debug, Clone, Copy)]
+pub struct ThreeTermPath {
+    pub id: u32,
+    /// The path's delivered-rate anchor (symbols/s), `None` until warm.
+    pub rate: Option<f64>,
+    pub srtt: Duration,
+    pub rtprop: Option<Duration>,
+}
+
+/// One WARM path's three-term term, with the honest clock already resolved.
+///
+/// `k` is the windowed-MIN echoSRTT/RTprop ratio ([`EchoRatioMin`], the same
+/// tracker and the same `PERCAP_K_HALF_WINDOW_US` window every honest cap
+/// uses), so `k·rtprop_s` is the ack round trip the sender can HONESTLY see:
+/// RTprop plus the standing ack-path/batching overhead, and NOT the store's
+/// own dwell. That choice is what closes §16.44's route-B loop in ONE
+/// evaluation — see [`three_term_store_cap`].
+#[derive(Debug, Clone, Copy)]
+pub struct ThreeTermTerm {
+    pub rate: f64,
+    pub rtprop_s: f64,
+    pub k: f64,
+}
+
+/// ONE collector for the three-term inputs over a path set — the
+/// [`honest_cap_terms`] shape, and deliberately the SAME `EchoRatioMin` map
+/// and window, so the engine has exactly one definition of K per path.
+///
+/// K is observed for EVERY path this is called on, warm anchor or not (the
+/// tracker is a CLOCK statistic, not a cap statistic; starving it on
+/// cold-anchor ticks would make the window's min depend on anchor warmth).
+/// Idempotent within a refresh tick, so calling it beside
+/// [`honest_cap_terms`] at the same `now_us` cannot perturb either.
+pub fn three_term_terms(
+    ks: &mut std::collections::HashMap<u32, EchoRatioMin>,
+    paths: &[Option<ThreeTermPath>],
+    now_us: u64,
+) -> Vec<Option<ThreeTermTerm>> {
+    paths
+        .iter()
+        .map(|slot| {
+            let p = (*slot)?;
+            let k = ks
+                .entry(p.id)
+                .or_insert_with(|| EchoRatioMin::new(PERCAP_K_HALF_WINDOW_US))
+                .observe_srtt_over_rtprop(p.srtt, p.rtprop, now_us);
+            let rtprop_s = p.rtprop?.as_secs_f64();
+            let rate = p.rate.filter(|r| *r > 0.0)?;
+            if rtprop_s <= 0.0 {
+                return None;
+            }
+            Some(ThreeTermTerm { rate, rtprop_s, k: k.max(1.0) })
+        })
+        .collect()
+}
+
+/// The composed three-term outstanding-data limit. Returns
+/// `Some((limit, window, slack, span))` — the three terms are returned
+/// alongside the total so the DIAG echo can ATTRIBUTE the limit rather than
+/// merely report it — or `None` when the law is off or any live path is
+/// still cold (a partial sum would under-provision the unwarm path, exactly
+/// as [`capw_store_cap`] refuses to engage on one).
+///
+/// ## TERM 1 — NETWORK WINDOW, `Σ_i rate_i · K_i · RTprop_i`
+///
+/// Little's law on the wire: the outstanding needed to keep path i busy for
+/// one ack round trip. PROVENANCE of the clock: the bench (§16.43/§16.44)
+/// writes this term as `rate·srtt` with `srtt = RTprop + wireQ`, and the
+/// engine's shipped window laws write it as `rate·RTprop` — the two differ
+/// by the standing queue. Neither is used verbatim here, because the ENGINE
+/// cannot read a loaded srtt into a cap without the cap inflating its own
+/// input (the dwell→echo→cap feedback that parked the c8 slow path;
+/// [`honest_store_cap`]). `K_i` is the windowed-MIN echoSRTT/RTprop, which
+/// IS the bench's `srtt/RTprop` read on a clock the store cannot inflate —
+/// so `rate·K·RTprop` is the bench's own quantity, honestly measured. The
+/// engine-vs-bench adjudication is recorded in the goal-gate section, not
+/// smoothed over: on the bench's own axes `K = 1 + wireQ/RTprop` exactly.
+///
+/// ## TERM 2 — EMISSION SLACK, `Σ_i rate_i · stall(δ, ρ, i)`
+///
+/// Little's law on the RECOVERY PLANE: the backlog that keeps the wire fed
+/// across ONE frontier freeze. The time is [`contract_stall_s`], DECLARED
+/// by (δ, ρ) rather than measured, so there is no distribution statistic to
+/// choose. Per path, because the stall runs on that path's own clock; the
+/// sum's rate factor is Σ rate_i = the total emission rate, which is what
+/// the wire actually asks for.
+///
+/// **The closed dwell loop (§16.44 route B), and why ONE evaluation is the
+/// fixed point.** The open-loop form — feeding the store-dwell-inclusive
+/// app-echo RTT into the stall — is what produced §16.43's ×13.5 tail, and
+/// route B showed that tail was the cost of running the store at 3× its own
+/// derived size rather than a property of the clock. The loop is
+/// `S → dwell → srtt → patience → stall → S`. Its gain through THIS law is
+/// identically ZERO, because `K_i` is a windowed MIN: the store's dwell can
+/// only ADD to an echo sample, so it can never lower the window's minimum,
+/// and the minimum is the only statistic the law reads. §16.44 measured
+/// exactly this — on the wire (dwell-excluding) clock `closed_loop_dwell`
+/// terminates at iteration 2, i.e. converged after one update, "the honest
+/// clock is the loop-OPENING argument". So the iteration bound here is ONE,
+/// and it is one because the map is constant in its own output, not because
+/// the iteration was truncated. The residual is stated and BOUNDED rather
+/// than described: K's window is `PERCAP_K_HALF_WINDOW_US`×2 ≈ 10 s, so the
+/// gain is zero only while ONE un-dwelled sample remains in window; a dwell
+/// sustained beyond 10 s would re-open the loop. Pinned by
+/// `three_term_law_closes_the_dwell_loop_in_one_evaluation`.
+///
+/// ## TERM 3 — RESEQUENCING SPAN, `2 · rate_fast · skew`
+///
+/// The sender must RETAIN a symbol until it is acked, so while one
+/// slow-path symbol is unacked the fast path's symbols pile into the same
+/// unacked span. `skew` is the ONE-WAY inter-path skew; the store bounds a
+/// ROUND TRIP of it, hence the 2. That factor is a DEFINITION BOUNDARY, not
+/// a coefficient, and it was IDENTIFIED rather than fitted: §16.43's PS5
+/// measured the span as linear in skew with zero intercept and a slope of
+/// exactly the TOTAL emission rate, ratio 2.00 ± 0.03 in 18 of 18 non-zero
+/// cells across ×13 in rate and ×40 in skew. The engine cannot measure a
+/// one-way delay, so `skew` is read off the round-trip spread it CAN
+/// measure, `(max RTprop − min RTprop)/2`, and `2·skew` collapses back to
+/// the round-trip difference — written out in that form on purpose, so the
+/// 2 stays visible instead of being pre-multiplied away.
+///
+/// **The topology branch, deleted.** Over ONE path `max RTprop = min
+/// RTprop`, so `skew = 0` and the term is `0` by arithmetic. There is no
+/// path-count predicate anywhere in this function, and adding one would be
+/// the defect this law exists to remove. Asserted by
+/// `three_term_span_vanishes_continuously_as_skew_goes_to_zero`.
+///
+/// ## The clamp
+///
+/// `[floor, WIN_STORE_MAX]`. The ceiling is the MEMORY bound (4096 × ~1.2 KB
+/// ≈ 5 MB — [`WIN_STORE_MAX`], the same clamp [`win_decouple_cap_ret`]
+/// uses), NOT part of the law: the per-path 2048 knee the pooled laws clamp
+/// to is an empirical fit, and the whole point of this law is to DERIVE what
+/// that knee was approximating.
+pub fn three_term_store_cap(
+    on: bool,
+    terms: &[Option<ThreeTermTerm>],
+    rho: f64,
+    b_hint: f64,
+    floor: usize,
+) -> Option<(usize, f64, f64, f64)> {
+    if !on || terms.is_empty() || terms.iter().any(|t| t.is_none()) {
+        return None;
+    }
+    let warm: Vec<ThreeTermTerm> = terms.iter().flatten().copied().collect();
+
+    // TERM 1 and TERM 2 — BOTH always computed, for every path.
+    let mut window = 0.0f64;
+    let mut slack = 0.0f64;
+    for t in &warm {
+        let srtt_s = t.k.max(1.0) * t.rtprop_s; // the honest ack clock
+        window += t.rate * srtt_s;
+        slack += t.rate * contract_stall_s(rho, b_hint, t.rtprop_s, srtt_s);
+    }
+
+    // TERM 3 — always computed too, and identically 0 over a one-element
+    // set because `rtp_max == rtp_min` there. `rate_fast` is the rate of
+    // the path that ARRIVES FIRST (least RTprop) — the path whose symbols
+    // overtake the straggler.
+    let mut rtp_min = f64::INFINITY;
+    let mut rtp_max = 0.0f64;
+    let mut rate_fast = 0.0f64;
+    for t in &warm {
+        if t.rtprop_s < rtp_min {
+            rtp_min = t.rtprop_s;
+            rate_fast = t.rate;
+        }
+        rtp_max = rtp_max.max(t.rtprop_s);
+    }
+    let skew_s = (rtp_max - rtp_min) / 2.0;
+    let span = 2.0 * rate_fast * skew_s;
+
+    let total = window + slack + span;
+    let limit = (total.ceil() as usize).clamp(floor.min(WIN_STORE_MAX), WIN_STORE_MAX);
+    Some((limit, window, slack, span))
+}
+
 // ── The saturation-filter gauge (`sf=`), 2026-08-09 ──────────────────────
 //
 // MEASUREMENT DISCIPLINE 14's instrument for the store-cap phase, and the
@@ -3483,6 +3737,23 @@ async fn run_window_sender(
             "unified store-cap path set ACTIVE (RWM_STORE_CAP_UNIFIED, goal-gate \"Store-Cap Triplication\": the plain dyn-store-cap phase's Sigma-anchor base and honest per-path cap sum iterate live_paths() instead of the cwnd-saturation-filtered active_paths(), so the path-scaled law's Sigma-base and its xN multiplier range over the SAME set; Copa-sole, capw and pool-anchor already read live_paths(); RWM_STORE_CAP_UNIFIED=0 = the shipped-default control arm)"
         );
     }
+    if pol.three_term_on {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE 1/15): asserted
+        // PRESENT on the three-term arm, ABSENT on the default arm; the
+        // per-tick `[3T]` line carries the three terms separately.
+        info!(
+            rho = pol.contract_rho,
+            b = pol.delta_b,
+            "three-term outstanding limit ACTIVE (RWM_THREE_TERM, goal-gate \"Three-Term Law\": \
+             the plain dyn-store-cap is Sigma_i rate_i*K_i*RTprop_i (network window) + \
+             Sigma_i rate_i*stall(delta,rho,i) (emission slack) + 2*rate_fast*skew \
+             (resequencing span), each Little's law over a measured signal with no fitted \
+             coefficient; the span term is identically 0 at one path because \
+             skew = (max RTprop - min RTprop)/2 is 0 over a one-element set, which is what \
+             retires the active_paths()/live_paths() topology branch without an if N==1; \
+             RWM_THREE_TERM=0 = the shipped-default control arm)"
+        );
+    }
     if pol.honest_cap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE): asserted
         // PRESENT on honest-cap arms, ABSENT on knee-clamp control arms.
@@ -3517,6 +3788,14 @@ async fn run_window_sender(
     // inflated by design since the cwnd feed is untouched).
     let mut pa_engaged: bool = false;
     let mut pa_sum: f64 = 0.0;
+    // Three-term law state (RWM_THREE_TERM): `Some((window, slack, span))`
+    // at the last refresh where the law ENGAGED, `None` where it did not.
+    // This is the mechanism gauge MEASUREMENT DISCIPLINE 15 requires — a
+    // battery can read the three terms SEPARATELY, so a verdict never rests
+    // on "the cap moved" alone, and the span term's N = 1 zero is
+    // OBSERVABLE rather than merely argued.
+    let mut tt_terms_diag: Option<(f64, f64, f64)> = None;
+    let mut tt_print_us: u64 = 0;
     // path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
     // refresh cadence; ~10 s window = two 5 s half-buckets
     // (`PERCAP_K_HALF_WINDOW_US`, now module-level so every consumer of the
@@ -4173,6 +4452,35 @@ async fn run_window_sender(
                     } else {
                         Vec::new()
                     };
+                    // ── THE THREE-TERM LIMIT (RWM_THREE_TERM) ────────────
+                    // Goal-gate "Three-Term Law": the composed law's inputs
+                    // over LIVE paths — the same set every honest-cap
+                    // consumer reads, and the set whose RTprop SPREAD is the
+                    // span term's own argument. There is no path-count
+                    // predicate here or in the law: at N = 1 the spread is
+                    // zero and the span term vanishes by arithmetic.
+                    // Rate source: the per-path delivered-rate anchor
+                    // (`btlbw_sym_per_s`) — the same source the legacy
+                    // Σ-anchor base and the capw law read, so the A/B
+                    // isolates the LAW and not the anchor.
+                    let tt_slots: Vec<Option<ThreeTermPath>> = if pol.three_term_on {
+                        let sched = scheduler.lock();
+                        sched
+                            .live_paths()
+                            .iter()
+                            .map(|id| {
+                                sched.path(*id).map(|p| ThreeTermPath {
+                                    id: *id,
+                                    rate: p.btlbw_sym_per_s(),
+                                    srtt: p.srtt(),
+                                    rtprop: p.min_rtt(),
+                                })
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let tt_terms = three_term_terms(&mut percap_k, &tt_slots, dnow);
                     // feat/percap-honest-cap: alongside the legacy Σanchor
                     // base, accumulate the honest per-path cap sum
                     // Σ anchor_i·(K_i+gain−1) when the honest sampler is
@@ -4329,7 +4637,21 @@ async fn run_window_sender(
                     };
                     wd_engaged = false;
                     pa_engaged = false;
-                    dyn_store_cap = if let (true, Some((a, r, k, rtp))) =
+                    tt_terms_diag = None;
+                    dyn_store_cap = if let Some((cap, w, sl, sp)) = three_term_store_cap(
+                        pol.three_term_on,
+                        &tt_terms,
+                        pol.contract_rho,
+                        pol.delta_b,
+                        pol.store_cap_floor,
+                    ) {
+                        // The law under test takes precedence over every
+                        // pooled fallback, exactly as `capw_store_cap` does
+                        // for its own arm. Warm-up (any live path cold) ⇒
+                        // `None` ⇒ the configured chain below runs verbatim.
+                        tt_terms_diag = Some((w, sl, sp));
+                        cap
+                    } else if let (true, Some((a, r, k, rtp))) =
                         (pol.win_decouple_on && n_live == 1, wd_terms)
                     {
                         // Decoupled law (part 1, plain/BBR seat): residence
@@ -4401,6 +4723,28 @@ async fn run_window_sender(
                     } else {
                         pol.store_boot_cap.min(pol.store_max)
                     };
+                }
+                // `[3T]` readout — the three-term law's MECHANISM-LIVENESS
+                // echo at the wire (MEASUREMENT DISCIPLINE 15). It prints
+                // whenever the gate is CONFIGURED, so a battery can also
+                // detect "configured but never engaged" (all-cold anchors)
+                // as a distinct state from "engaged": `eng=0` with a live
+                // `[GATES] RWM_THREE_TERM=1` is a warm-up failure, not a
+                // null result. `span` is the number the topology claim
+                // stands on — it must read 0.0 at every single-path cell.
+                if pol.three_term_on && dnow.saturating_sub(tt_print_us) >= 2_000_000 {
+                    tt_print_us = dnow;
+                    let (w, sl, sp) = tt_terms_diag.unwrap_or((0.0, 0.0, 0.0));
+                    info!(
+                        eng = tt_terms_diag.is_some() as u8,
+                        cap = dyn_store_cap,
+                        window = w,
+                        slack = sl,
+                        span = sp,
+                        rho = pol.contract_rho,
+                        b = pol.delta_b,
+                        "[3T] three-term outstanding limit: window + slack + span (RWM_THREE_TERM)"
+                    );
                 }
                 // ── task #86: per-path account caps (RWM_STORE_PERCAP) ────
                 // Computed AFTER the pooled laws above so (a) the shipped /
@@ -8100,6 +8444,238 @@ mod tests {
         assert_eq!(honest_store_cap(None, Some(10_400.0), 2.0, 2.0), None);
         assert_eq!(honest_store_cap(Some(83.2), None, 2.0, 2.0), None);
         assert_eq!(honest_store_cap(Some(0.0), Some(10_400.0), 2.0, 2.0), None);
+    }
+
+    // ── THE THREE-TERM LAW (goal-gate "Three-Term Law") ──────────────────
+
+    /// A warm term at the bench's own axes: `k = srtt/RTprop` exactly, so
+    /// these numbers are the ones `tests/slack_bench.rs` computes.
+    fn tt(rate: f64, rtprop_ms: f64, srtt_ms: f64) -> Option<ThreeTermTerm> {
+        Some(ThreeTermTerm {
+            rate,
+            rtprop_s: rtprop_ms / 1e3,
+            k: srtt_ms / rtprop_ms,
+        })
+    }
+
+    /// The δ dial's named points — a DIAL, read once, in one place.
+    #[test]
+    fn delta_budget_b_is_the_dial_not_a_mode() {
+        assert_eq!(delta_budget_b(ProtocolHint::Realtime), 0.5);
+        assert_eq!(delta_budget_b(ProtocolHint::Auto), 1.0);
+        assert_eq!(delta_budget_b(ProtocolHint::Bulk), 2.0);
+        // The only law b enters is continuous and MONOTONE in it, through
+        // every named point — no step at a preset (CLAUDE.md).
+        let mut prev = 0u64;
+        for i in 0..=200 {
+            let b = i as f64 / 100.0; // sweeps 0 → 2, hitting ½, 1, 2 exactly
+            let d = shed_deadline_us(b, 20_000);
+            assert!(d >= prev, "D(b) stepped down at b={b}");
+            prev = d;
+        }
+        assert_eq!(shed_deadline_us(0.5, 20_000), 10_000);
+        assert_eq!(shed_deadline_us(2.0, 20_000), 40_000);
+    }
+
+    /// ABSOLUTE arithmetic on the composed law — every number hand-computable
+    /// from a rate and a time, and CONTINUOUS in ρ with both stall terms
+    /// always evaluated (CLAUDE.md: no mode bit, no threshold that selects a
+    /// formula).
+    #[test]
+    fn three_term_law_is_arithmetic_and_continuous() {
+        // ── The c2 SINGLE, ρ = 1, b = ½: RTprop 8 ms, wireQ 4 ms ⇒ K = 1.5.
+        //   window = 10 400 × 12 ms                     = 124.8
+        //   slack  = 10 400 × 17/8 × 12 ms              = 265.2
+        //   span   = 2 × 10 400 × 0                     =   0
+        let (cap, w, sl, sp) =
+            three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], 1.0, 0.5, 64).unwrap();
+        assert!((w - 124.8).abs() < 1e-9, "window {w}");
+        assert!((sl - 265.2).abs() < 1e-9, "slack {sl}");
+        assert_eq!(sp, 0.0, "ONE path ⇒ the span term is identically zero");
+        // 124.8 + 265.2 = 390.000000000000057 in f64, and a CAP ceils
+        // (it must cover), so the shipped integer is 391. The ±1-symbol
+        // ceil quantum is pinned here rather than hidden by a tolerance.
+        assert_eq!(cap, 391, "ceil(124.8 + 265.2 + 0)");
+
+        // ρ = 0 (fully sheddable): the stall collapses to the span law's own
+        // D(δ) = b·RTprop = 4 ms — `shed_deadline_us`, not a second constant.
+        let (_, w0, sl0, _) =
+            three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], 0.0, 0.5, 64).unwrap();
+        assert!((w0 - 124.8).abs() < 1e-9, "the window term does not move with ρ");
+        assert!((sl0 - 41.6).abs() < 1e-9, "10 400 × 4 ms = 41.6, got {sl0}");
+        // A STRAIGHT LINE in ρ through 21 points — both terms always
+        // computed, nothing switches at any value of the dial.
+        let mid =
+            three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], 0.5, 0.5, 64).unwrap().2;
+        assert!((mid - (sl0 + 265.2) / 2.0).abs() < 1e-9, "midpoint {mid}");
+        let mut prev = -1.0;
+        for i in 0..=20 {
+            let rho = i as f64 / 20.0;
+            let s =
+                three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], rho, 0.5, 64).unwrap().2;
+            let want = (1.0 - rho) * 41.6 + rho * 265.2;
+            assert!((s - want).abs() < 1e-9, "ρ={rho}: {s} vs {want}");
+            assert!(s >= prev, "slack(ρ) stepped down at ρ={rho}");
+            prev = s;
+        }
+
+        // ── The c8 GEOMETRY, both paths: c2 (10 400 sym/s, RTprop 8 ms,
+        // srtt 12 ms) + c3 (2 000 sym/s, RTprop 60 ms, srtt 64 ms).
+        //   window = 10 400×12 ms + 2 000×64 ms          = 124.8 + 128.0
+        //   slack  = 10 400×25.5 ms + 2 000×136 ms       = 265.2 + 272.0
+        //   span   = 2 × 10 400 × (60−8)/2 ms            = 540.8
+        let c8 = [tt(10_400.0, 8.0, 12.0), tt(2_000.0, 60.0, 64.0)];
+        let (cap8, w8, sl8, sp8) = three_term_store_cap(true, &c8, 1.0, 0.5, 64).unwrap();
+        assert!((w8 - 252.8).abs() < 1e-9, "window {w8}");
+        assert!((sl8 - 537.2).abs() < 1e-9, "slack {sl8}");
+        // §16.43 PS6's sender-retention span, reproduced by the SHIPPED
+        // arithmetic: 541 against the independently measured good pin of
+        // 508 (+6.5 %), and ×7.57 below the 4096 arm that read −19.6 %.
+        assert!((sp8 - 540.8).abs() < 1e-9, "span {sp8} must be PS6's 540.8");
+        assert_eq!(cap8, 1331, "252.8 + 537.2 + 540.8 = 1330.8 ⇒ 1331");
+        // Path ORDER is not a parameter: the law is a sum plus a spread.
+        let rev = [c8[1], c8[0]];
+        assert_eq!(three_term_store_cap(true, &rev, 1.0, 0.5, 64).unwrap().0, cap8);
+
+        // OFF, and warm-up, both return None — the caller's existing chain
+        // then runs verbatim (the gate's OFF-value property, in the law).
+        assert_eq!(three_term_store_cap(false, &c8, 1.0, 0.5, 64), None);
+        assert_eq!(three_term_store_cap(true, &[], 1.0, 0.5, 64), None);
+        assert_eq!(
+            three_term_store_cap(true, &[c8[0], None], 1.0, 0.5, 64),
+            None,
+            "one cold path ⇒ no partial sum (the capw rule)"
+        );
+        // The clamp is MEMORY, not law: an absurd pipe stops at WIN_STORE_MAX.
+        assert_eq!(
+            three_term_store_cap(true, &[tt(10_000_000.0, 8.0, 12.0)], 1.0, 0.5, 64).unwrap().0,
+            WIN_STORE_MAX
+        );
+    }
+
+    /// **THE TOPOLOGY BRANCH, DELETED — the property this whole law exists
+    /// for.** Sweep the path COUNT and the skew, and assert there is no step
+    /// anywhere: the span term is identically 0 at one path AND at any
+    /// number of paths with equal RTprop, and it approaches 0 CONTINUOUSLY
+    /// as the skew shrinks. No `if n == 1` produces this — the arithmetic
+    /// does, because `max − min` over one element is zero.
+    #[test]
+    fn three_term_span_vanishes_continuously_as_skew_goes_to_zero() {
+        let base_ms = 8.0;
+        let k = 1.5;
+        let mk = |n: usize, skew_ms: f64| -> (usize, f64, f64, f64) {
+            // n paths, all at the same rate; ONE of them lagging by the
+            // skew. n = 1 ⇒ the lagging path IS the only path.
+            let terms: Vec<Option<ThreeTermTerm>> = (0..n)
+                .map(|i| {
+                    let rtp = if i + 1 == n { base_ms + 2.0 * skew_ms } else { base_ms };
+                    Some(ThreeTermTerm { rate: 10_400.0, rtprop_s: rtp / 1e3, k })
+                })
+                .collect();
+            three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap()
+        };
+
+        // (a) PATH-COUNT SWEEP at ZERO skew: the span term is 0 at EVERY
+        // path count, so nothing about the limit keys on topology.
+        for n in 1..=6 {
+            let (_, _, _, span) = mk(n, 0.0);
+            assert_eq!(span, 0.0, "n={n}: zero skew must give a zero span term");
+        }
+        // A single path is the n = 1 case of the SAME expression — not a
+        // special case, and not reachable by any branch.
+        assert_eq!(mk(1, 40.0).3, 0.0, "one path has no skew to be skewed BY");
+
+        // (b) SKEW → 0 at N = 2: linear, zero intercept, NO STEP. The span
+        // is `2 · rate_fast · skew` exactly at every point, and the LIMIT's
+        // difference from the zero-skew limit vanishes with the skew.
+        let (_, w0, sl0, _) = mk(2, 0.0);
+        let zero_limit = (w0 + sl0).ceil() as usize;
+        assert_eq!(mk(2, 0.0).0, zero_limit);
+        // 20 ms of skew down to 0 in 50 µs steps. A step at ANY of these is
+        // a defect even if both sides are individually correct, so the test
+        // walks the whole sweep and bounds EVERY adjacent difference. (The
+        // lagging path's own window and slack terms move with its RTprop
+        // too — that is a real dependence on a real signal, and it is
+        // included in the bound rather than excluded from the sweep.)
+        let mut prev_span = -1.0;
+        let mut prev_limit: Option<usize> = None;
+        for i in (0..=400).rev() {
+            let skew_ms = i as f64 / 20.0;
+            let (limit, _, _, span) = mk(2, skew_ms);
+            assert!(
+                (span - 2.0 * 10_400.0 * skew_ms / 1e3).abs() < 1e-9,
+                "skew {skew_ms} ms: span {span} is not 2·rate_fast·skew"
+            );
+            assert!(span >= 0.0 && (prev_span < 0.0 || span <= prev_span + 1e-9));
+            prev_span = span;
+            // NO STEP: 50 µs of skew is 1.04 symbols of span plus 4.9 of
+            // window+slack on the lagging path's own clock — under 8, at
+            // every one of the 400 positions, including the last one INTO
+            // zero skew where a topology branch would have shown up.
+            if let Some(p) = prev_limit {
+                assert!(
+                    limit.abs_diff(p) <= 8,
+                    "skew {skew_ms} ms: limit stepped {p} → {limit}"
+                );
+            }
+            prev_limit = Some(limit);
+        }
+        // The sweep ended AT zero skew, and it arrived there continuously.
+        assert_eq!(prev_limit, Some(zero_limit));
+        assert_eq!(mk(2, 0.0).3, 0.0);
+        // And the FIRST nudge off zero moves the limit by a handful of
+        // symbols, not by a cliff: 50 µs of skew is 1.04 symbols of span
+        // plus 4.9 of the lagging path's own window + slack.
+        assert!(mk(2, 0.05).0.abs_diff(zero_limit) <= 8);
+        assert!((mk(2, 0.05).3 - 1.04).abs() < 1e-9, "the span's own first step");
+    }
+
+    /// ROUTE B (§16.44) IN THE ENGINE: the store dwell cannot walk back into
+    /// the law's own argument, so the closed loop's fixed point is reached in
+    /// ONE evaluation. BOUNDED, not described: an inflated echo sample can
+    /// only raise a windowed MIN's members, never the min itself, while one
+    /// honest sample is in window — and the bound on "in window" is stated.
+    #[test]
+    fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
+        let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
+            std::collections::HashMap::new();
+        let honest = ThreeTermPath {
+            id: 1,
+            rate: Some(10_400.0),
+            srtt: Duration::from_millis(12), // RTprop 8 ms + a 4 ms wire queue
+            rtprop: Some(Duration::from_millis(8)),
+        };
+        let t0 = 1_000_000u64;
+        let first = three_term_terms(&mut ks, &[Some(honest)], t0);
+        let cap0 = three_term_store_cap(true, &first, 1.0, 0.5, 64).unwrap();
+        assert!((first[0].unwrap().k - 1.5).abs() < 1e-12, "K = 12/8");
+        assert_eq!(cap0.0, 391);
+
+        // Now the store fills and the APP-ECHO RTT balloons to 200 ms — the
+        // §16.43 open-loop argument, the one worth ×13.5 in required
+        // backlog. The law does not move, at any point over the window.
+        let dwelled = ThreeTermPath { srtt: Duration::from_millis(200), ..honest };
+        for t in 1..=9u64 {
+            let now = t0 + t * 1_000_000;
+            let terms = three_term_terms(&mut ks, &[Some(dwelled)], now);
+            let cap = three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap();
+            assert_eq!(cap, cap0, "the dwell re-entered the law at t+{t}s");
+        }
+        // THE RESIDUAL, BOUNDED rather than waved at: K's memory is two
+        // `PERCAP_K_HALF_WINDOW_US` half-buckets. A dwell sustained past
+        // that DOES move the law — and the bound on how far is the dwell
+        // ratio itself, which is why this is stated as the law's stated
+        // limitation and not as an invariant.
+        let far = t0 + 3 * 2 * PERCAP_K_HALF_WINDOW_US;
+        let terms = three_term_terms(&mut ks, &[Some(dwelled)], far);
+        let k_far = terms[0].unwrap().k;
+        assert!((k_far - 25.0).abs() < 1e-9, "200/8 = 25, got {k_far}");
+        // …and even then the MEMORY clamp bounds the damage, which is the
+        // second reason the loop cannot run away in the engine.
+        assert_eq!(
+            three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap().0,
+            WIN_STORE_MAX
+        );
     }
 
     #[test]

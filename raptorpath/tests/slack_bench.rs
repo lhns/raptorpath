@@ -90,7 +90,10 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use raptorpath::net::{shed_deadline_us, tail_sweep_timeout_us};
+use raptorpath::net::{
+    ThreeTermTerm, contract_stall_s, shed_deadline_us, tail_sweep_timeout_us,
+    three_term_store_cap,
+};
 
 #[path = "common/recovery_model.rs"]
 mod recovery_model;
@@ -1748,5 +1751,278 @@ fn slack_bench_fixtures_pin_the_slack_term() {
         "the patience clock is supposed to dwarf the contract stall here: {} vs {}",
         out.patience_us,
         contract_stall_us(1.0, 0.5, 10_000, srtt_honest)
+    );
+}
+
+// ══════════ PHASE 1.3 — COMPONENT VALIDATION OF THE SHIPPED LAW ══════════
+//
+// MEASUREMENT DISCIPLINE 14: before any L1 battery, the ENGINE's composed
+// arithmetic is evaluated against the requirement THIS bench measured. What
+// runs below is not a re-derivation — it is `raptorpath::net::
+// three_term_store_cap`, the exact function `run_window_sender` calls under
+// `RWM_THREE_TERM`, driven on the bench's own cells.
+//
+// THE ENGINE-vs-BENCH ADJUDICATION, stated before the numbers (there are
+// exactly two divergences, and neither is a coefficient):
+//
+//  1. THE WINDOW TERM'S CLOCK. The bench writes term 1 as `rate·srtt` with
+//     `srtt = RTprop + wireQ`. The engine writes it as `rate·K·RTprop` with
+//     K the windowed-MIN echoSRTT/RTprop, because a cap that reads a LOADED
+//     srtt inflates its own input (the dwell→echo→cap feedback). On the
+//     bench's axes those are the SAME NUMBER — the driver's honest clock is
+//     literally `RTprop + wireQ`, so `K = 1 + wireQ/RTprop` exactly — and
+//     `three_term_engine_law_is_the_bench_terms_at_the_anchors` asserts the
+//     identity rather than asserting a tolerance around it.
+//  2. THE SPAN TERM EXISTS IN THE ENGINE AND NOT IN THE BENCH'S `pred_s`.
+//     §16.43/§16.44 measured the span separately (PS5/PS6) and never folded
+//     it into the composite. So at np = 2 the engine's limit is LARGER than
+//     `pred_s` by exactly `rate_total × Δowd`, and at np = 1 the two agree
+//     to the ceil quantum. That is a difference in WHAT IS BEING PREDICTED,
+//     not a disagreement about a value, and section (A) reports it as such.
+//
+// The requirement the ratios are taken against is the CLOSED-loop one
+// (§16.44 route B) — the open-loop curve is the one whose ×13.5 tail was an
+// artifact of running the store at 3× its own derived size.
+
+/// The ENGINE's law on one bench cell. The driver places symbol `seq` on
+/// path `seq % np` and gives path i a one-way delay of `RTprop/2 + i·skew`,
+/// so each path carries `rate/np` and has round trip `RTprop + 2·i·skew`;
+/// its honest clock is that plus the standing wire queue. Those are exactly
+/// the inputs `run_window_sender` reads off `PathState` — rate, `min_rtt`,
+/// `srtt` — and nothing else is supplied.
+fn engine_limit(
+    rate: f64,
+    rtprop_us: u64,
+    n_paths: usize,
+    cal: Calib,
+    rho: f64,
+    b_hint: f64,
+) -> (usize, f64, f64, f64) {
+    let terms: Vec<Option<ThreeTermTerm>> = (0..n_paths.max(1))
+        .map(|i| {
+            let rtp_us = rtprop_us + 2 * i as u64 * cal.skew_us;
+            let srtt_us = rtp_us + cal.wireq_us;
+            Some(ThreeTermTerm {
+                rate: rate / n_paths.max(1) as f64,
+                rtprop_s: rtp_us as f64 / 1e6,
+                k: srtt_us as f64 / rtp_us as f64,
+            })
+        })
+        .collect();
+    three_term_store_cap(true, &terms, rho, b_hint, 64).expect("every bench path is warm")
+}
+
+#[test]
+#[ignore]
+fn three_term_bench() {
+    let mut cal = Calib::from_env();
+    cal.n_src = env_u64("RWM_SB_N", 6_000);
+    cal.skew_us = env_u64("RWM_SB_SKEW_MS", 5) * 1_000;
+    let rtprops = list_u64("RWM_SB_RTPROP_MS", "5,10,20,50,100,200");
+    let paths = list_u64("RWM_SB_PATHS", "1,2");
+    let clocks: Vec<Clock> = list_str("RWM_SB_CLOCK", "app,wire")
+        .iter()
+        .map(|s| if s == "wire" { Clock::Wire } else { Clock::App })
+        .collect();
+    let rate_names = list_str("RWM_SB_RATE", "c1,c2,c3");
+    let seeds = list_u64("RWM_SB_SEEDS", "42,7");
+    let rho = env_f64("RWM_SB_RHO", 1.0);
+    let b_hint = env_f64("RWM_SB_DELTA_B", 0.5);
+    let t0 = std::time::Instant::now();
+
+    println!(
+        "\n=== COMPONENT VALIDATION — THE SHIPPED THREE-TERM LAW vs THIS BENCH ===\n\
+         The function under test is raptorpath::net::three_term_store_cap, the one\n\
+         run_window_sender calls under RWM_THREE_TERM. Nothing below re-derives it.\n"
+    );
+
+    // ── (A) THE ENGINE'S LAW vs THE BENCH'S OWN a-priori pred_s ──────────
+    println!(
+        "(A) ENGINE LIMIT vs the bench's pred_s = rate*srtt + rate*stall(d,rho).\n    \
+         np = 1: the two must AGREE (same terms, same clock) - any gap is a defect.\n    \
+         np = 2: the engine ADDS the span term the bench measured separately (PS5),\n    \
+                 so the excess must equal rate_total x d_owd, exactly.\n"
+    );
+    println!(
+        "{:>4} {:>4} {:>3} | {:>9} {:>9} {:>9} {:>9} | {:>9} {:>9} {:>9}",
+        "rate", "rtp", "np", "pred_s", "eng", "eng win", "eng slack", "eng span",
+        "pred span", "eng/pred"
+    );
+    let mut agree_max = 0.0f64;
+    let mut span_err_max = 0.0f64;
+    for rn in &rate_names {
+        let Some(rate) = rate_of(rn) else { continue };
+        for &rtprop_ms in &rtprops {
+            for &np in &paths {
+                let rtprop_us = rtprop_ms * 1_000;
+                let srtt_honest = rtprop_us + cal.wireq_us;
+                let pred_s = network_window(rate, srtt_honest)
+                    + emission_slack(rate, contract_stall_us(rho, b_hint, rtprop_us, srtt_honest));
+                let (lim, w, sl, sp) =
+                    engine_limit(rate, rtprop_us, np as usize, cal, rho, b_hint);
+                // PS5's own measured form: slope = the TOTAL emission rate
+                // against the one-way skew, over a retention round trip.
+                let pred_span = if np >= 2 { rate * (cal.skew_us as f64 / 1e6) } else { 0.0 };
+                span_err_max = span_err_max.max((sp - pred_span).abs() / pred_span.max(1.0));
+                if np == 1 {
+                    agree_max = agree_max.max(((w + sl) - pred_s).abs() / pred_s.max(1.0));
+                }
+                println!(
+                    "{:>4} {:>4} {:>3} | {:>9.1} {:>9} {:>9.1} {:>9.1} | {:>9.1} {:>9.1} {:>9.3}",
+                    rn, rtprop_ms, np, pred_s, lim, w, sl, sp, pred_span,
+                    lim as f64 / pred_s.max(1.0)
+                );
+            }
+        }
+    }
+    println!(
+        "\n    worst |(engine window + slack) - pred_s| / pred_s at np=1 = {agree_max:.3e}\n    \
+         worst |engine span - rate_total x d_owd| / that             = {span_err_max:.3e}\n    \
+         Both are floating-point dust: the engine computes the bench's own terms."
+    );
+
+    // ── (B) THE ENGINE'S LAW vs THE CLOSED-LOOP MEASURED REQUIREMENT ────
+    println!(
+        "\n(B) MEASURED CLOSED-LOOP S(1%) / THE ENGINE'S LIMIT. 16.44 route B: the dwell\n    \
+         is solved self-consistently at each candidate backlog, so this is the\n    \
+         requirement the store actually has rather than the 3x-oversized replay.\n    \
+         A ratio > 1 = the engine UNDER-provisions (the failure that matters); < 1 =\n    \
+         it over-covers, the expected direction for a DECLARED-bound stall.\n"
+    );
+    println!(
+        "{:>4} {:>4} {:>6} {:>3} {:>5} | {:>8} {:>8} {:>8} {:>8} | {:>8} {:>8}",
+        "rate", "rtp", "loss", "np", "clk", "eng", "win", "slack", "span",
+        "meas S1%", "meas/eng"
+    );
+    let cl_rt = list_u64("RWM_TT_RTPROP_MS", "5,20,100");
+    let cl_loss = list_f64("RWM_TT_LOSS", "0.026");
+    let mut ratios: Vec<f64> = Vec::new();
+    let mut ratios_np1: Vec<f64> = Vec::new();
+    let mut ratios_np2: Vec<f64> = Vec::new();
+    let mut worst_cell = (0.0f64, String::new());
+    for rn in &rate_names {
+        let Some(rate) = rate_of(rn) else { continue };
+        let mut ccal = cal;
+        ccal.mbps = mbps_of(rate);
+        for &rtprop_ms in &cl_rt {
+            for &loss in &cl_loss {
+                for &np in &paths {
+                    for &clock in &clocks {
+                        let rtprop_us = rtprop_ms * 1_000;
+                        let (lim, w, sl, sp) =
+                            engine_limit(rate, rtprop_us, np as usize, ccal, rho, b_hint);
+                        let hi0 = (8.0 * lim as f64).ceil() as usize;
+                        let mut meas: Option<usize> = None;
+                        for &seed in &seeds {
+                            let cell = Cell {
+                                rtprop_us,
+                                loss,
+                                pattern: Pattern::Ge,
+                                n_paths: np as usize,
+                                clock,
+                                arm: ARMS[0],
+                                seed,
+                            };
+                            let solve = |s: usize| closed_loop_dwell(cell, ccal, s, 12).3;
+                            let bisect = || -> Option<usize> {
+                                if solve(hi0) >= 0.01 {
+                                    return None;
+                                }
+                                let (mut lo, mut hi) = (1usize, hi0);
+                                while lo < hi {
+                                    let mid = lo + (hi - lo) / 2;
+                                    if solve(mid) < 0.01 {
+                                        hi = mid;
+                                    } else {
+                                        lo = mid + 1;
+                                    }
+                                }
+                                Some(lo)
+                            };
+                            worst(&mut meas, bisect());
+                        }
+                        let r = meas.map(|m| m as f64 / lim as f64);
+                        if let Some(v) = r {
+                            ratios.push(v);
+                            if np == 1 {
+                                ratios_np1.push(v)
+                            } else {
+                                ratios_np2.push(v)
+                            }
+                            if v > worst_cell.0 {
+                                worst_cell = (
+                                    v,
+                                    format!("{rn}/RTprop {rtprop_ms}/np {np}/{}", clock.tag()),
+                                );
+                            }
+                        }
+                        println!(
+                            "{:>4} {:>4} {:>6.3} {:>3} {:>5} | {:>8} {:>8.0} {:>8.0} {:>8.0} | {:>8} {:>8}",
+                            rn, rtprop_ms, loss, np, clock.tag(), lim, w, sl, sp,
+                            meas.map(|v| v.to_string()).unwrap_or_else(|| ">8xeng".into()),
+                            r.map(|v| format!("{v:.3}")).unwrap_or_else(|| "-".into())
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let q = |v: &Vec<f64>, p: f64| quant(&mut v.clone(), p);
+    println!(
+        "\n(B1) MEASURED / ENGINE — the component-validation distribution:\n    \
+         ALL   p50 {:.3}  p90 {:.3}  max {:.3}   ({} cells)\n    \
+         np=1  p50 {:.3}  p90 {:.3}  max {:.3}   ({} cells)\n    \
+         np=2  p50 {:.3}  p90 {:.3}  max {:.3}   ({} cells)\n    \
+         WORST CELL: {:.3} at {}\n    \
+         over-covering cells (ratio < 1): {} of {}",
+        q(&ratios, 0.5), q(&ratios, 0.9), q(&ratios, 1.0), ratios.len(),
+        q(&ratios_np1, 0.5), q(&ratios_np1, 0.9), q(&ratios_np1, 1.0), ratios_np1.len(),
+        q(&ratios_np2, 0.5), q(&ratios_np2, 0.9), q(&ratios_np2, 1.0), ratios_np2.len(),
+        worst_cell.0, worst_cell.1,
+        ratios.iter().filter(|v| **v < 1.0).count(), ratios.len()
+    );
+    println!("\ndone in {:.2} s", t0.elapsed().as_secs_f64());
+}
+
+/// The ENGINE's law IS the bench's terms — asserted as an IDENTITY at the
+/// anchors, not as a tolerance (CLAUDE.md: prove the wiring routes there).
+#[test]
+fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
+    let cal = Calib::fixture(); // wireQ 4 ms, skew 5 ms
+    // ── np = 1: window + slack must reproduce `pred_s` EXACTLY, and the
+    // span term must be identically zero. This is the whole engine-vs-bench
+    // adjudication, at c2 / RTprop 8 ms.
+    let (lim, w, sl, sp) = engine_limit(10_400.0, 8_000, 1, cal, 1.0, 0.5);
+    assert_eq!(sp, 0.0, "one path ⇒ no span term, by arithmetic");
+    assert!((w - network_window(10_400.0, 12_000)).abs() < 1e-9, "window {w}");
+    assert!(
+        (sl - emission_slack(10_400.0, contract_stall_us(1.0, 0.5, 8_000, 12_000))).abs() < 1e-9,
+        "slack {sl}"
+    );
+    assert_eq!(lim, 391, "ceil(124.8 + 265.2)");
+    // The clock identity that licenses the adjudication, and the engine's
+    // own stall in seconds against this bench's in µs.
+    assert!((contract_stall_s(1.0, 0.5, 0.008, 0.012) * 1e6 - 25_500.0).abs() < 1e-6);
+
+    // ── np = 2 at the same cell: the engine ADDS the span term, and it
+    // equals PS5's measured form, rate_total × Δowd = 10 400 × 5 ms.
+    let (lim2, w2, sl2, sp2) = engine_limit(10_400.0, 8_000, 2, cal, 1.0, 0.5);
+    assert!((sp2 - 52.0).abs() < 1e-9, "span {sp2} must be 10 400 × 5 ms");
+    assert!(lim2 > lim, "the span term must COST outstanding, not be free");
+    // The lagging path's own clock is longer, so its window and slack rise
+    // too — a real dependence on a real signal, not a topology bonus.
+    assert!(w2 > w && sl2 > sl);
+
+    // ── The c8 geometry: c2 fast + c3 slow at their OWN rates. The span
+    // reads §16.43 PS6's 541 (independently measured good pin 508, +6.5 %).
+    let c8 = [
+        Some(ThreeTermTerm { rate: 10_400.0, rtprop_s: 0.008, k: 12.0 / 8.0 }),
+        Some(ThreeTermTerm { rate: 2_000.0, rtprop_s: 0.060, k: 64.0 / 60.0 }),
+    ];
+    let (_, _, _, sp8) = three_term_store_cap(true, &c8, 1.0, 0.5, 64).unwrap();
+    assert!((sp8 - 540.8).abs() < 1e-9, "c8 span {sp8} vs PS6's 540.8");
+    assert!(
+        (sp8 - resequencing_span_store(10_400.0, 52_000)).abs() < 1e-9,
+        "the engine's span IS this bench's `resequencing_span_store`"
     );
 }

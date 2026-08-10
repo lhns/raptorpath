@@ -657,11 +657,11 @@ pub(crate) fn emit_source(
                             (est.throughput() / pol.symbol_size.max(1) as f64).max(0.0)
                         };
                         let rtprop = est.rtt().as_secs_f64();
-                        let b = match pol.protocol_hint {
-                            ProtocolHint::Realtime => 0.5,
-                            ProtocolHint::Auto => 1.0,
-                            ProtocolHint::Bulk => 2.0,
-                        };
+                        // The δ dial's named points, ONCE (see
+                        // `net::delta_budget_b`): the same three-arm map is
+                        // now also read by the three-term store law, and two
+                        // transcriptions of a dial is how they drift apart.
+                        let b = super::delta_budget_b(pol.protocol_hint);
                         let d = (b * rtprop).min(2.0 * rtprop);
                         let a_star = ((rate_sym * d).ceil() as u64)
                             .clamp(1, st.encoder.window_size() as u64);

@@ -147,6 +147,25 @@ pub(crate) struct SenderPolicy {
     /// the saturation-filtered `active_paths()`. Scoped to the plain
     /// dynamic cap — Copa-sole already reads `live_paths()`.
     pub store_cap_unified: bool,
+    /// `RWM_THREE_TERM` (goal-gate "Three-Term Law"): the plain dynamic
+    /// store cap is the composed three-term law
+    /// (`net::three_term_store_cap`). Scoped to the plain dynamic cap, like
+    /// `store_cap_unified`. Default OFF: the shipped tree is bit-identical.
+    pub three_term_on: bool,
+    /// The δ dial's deadline budget b(δ) at this tunnel's named point
+    /// (`net::delta_budget_b`) — a NUMBER on a dial, resolved once, read by
+    /// the three-term law's stall term. Not a mode selector: the law is
+    /// continuous and monotone in it.
+    pub delta_b: f64,
+    /// The retention dial ρ the three-term law is evaluated at.
+    ///
+    /// This is a VALUE of the (δ, ρ, r) triangle's ρ axis, not a mode
+    /// selector, and it is a constant here by SCOPE rather than by a
+    /// branch: the plain dynamic cap exists only on the RETAIN-UNTIL-ACKED
+    /// path (`plain_dyn_cap ⇒ reliable`), whose declared retention contract
+    /// IS ρ = 1. `net::contract_stall_s` is continuous over ρ ∈ [0, 1] with
+    /// both of its terms always computed, and is unit-tested at 21 points.
+    pub contract_rho: f64,
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
     /// `RWM_PLACE_SLACK`: frontier-slack placement cost.
@@ -615,6 +634,24 @@ impl SenderPolicy {
         // set every OTHER honest-cap consumer in this phase already reads.
         // Default OFF: the shipped tree is bit-identical.
         let store_cap_unified = gates.store_cap_unified && plain_dyn_cap;
+        // ── The composed THREE-TERM limit (env RWM_THREE_TERM) ────────────
+        // Goal-gate "Three-Term Law" (pre-registered 2026-08-10), paper
+        // §16.43 + §16.44: the outstanding-data limit is Σ per-path network
+        // window + Σ per-path emission slack + ONE resequencing span, each
+        // Little's law over a measured signal, no fitted coefficient. The
+        // span term is identically zero at a single path BY ARITHMETIC
+        // (max RTprop = min RTprop), which is what retires the
+        // `active_paths()`/`live_paths()` topology branch without an
+        // `if N == 1`. Scoped to the plain dynamic cap: under Copa
+        // ownership cwnd IS the operating point and that law is untouched.
+        // Default OFF: the shipped tree is bit-identical.
+        let three_term_on = gates.three_term && plain_dyn_cap;
+        // b(δ) at this tunnel's named point on the dial, ONCE.
+        let delta_b = crate::net::delta_budget_b(protocol_hint);
+        // ρ, the retention dial's declared value in this scope (see the
+        // field doc): the plain dynamic cap is RETAIN-UNTIL-ACKED, so the
+        // contract's ρ is 1 here — a scope, not a branch.
+        let contract_rho: f64 = 1.0;
         // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
         // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
         // the retention store releases slots only on the cumulative frontier,
@@ -1015,6 +1052,9 @@ impl SenderPolicy {
             capw_on,
             pool_anchor_on,
             store_cap_unified,
+            three_term_on,
+            delta_b,
+            contract_rho,
             store_sack_release_on,
             place_slack_on,
             win_decouple_on,

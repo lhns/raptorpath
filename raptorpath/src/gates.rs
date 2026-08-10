@@ -379,6 +379,25 @@ pub struct RuntimeGates {
     /// (`net::store_cap_sf_gauge`). `=0`/unset is the shipped default,
     /// bit-exactly.
     pub store_cap_unified: bool,
+    /// `RWM_THREE_TERM` (default OFF — the A/B arm; goal-gate "Three-Term
+    /// Law", 2026-08-10): the plain (non-Copa-sole) dynamic store cap is
+    /// computed as the composed THREE-TERM law
+    ///
+    /// ```text
+    ///   limit = Σ_i rate_i·K_i·RTprop_i            (network window)
+    ///         + Σ_i rate_i·stall(δ, ρ, i)          (emission slack)
+    ///         + 2·rate_fast·skew                   (resequencing span)
+    /// ```
+    ///
+    /// — paper §16.43/§16.44, `net::three_term_store_cap`. Every term is
+    /// Little's law over a signal the engine already measures and NONE of
+    /// them contains a fitted coefficient. The point of the gate is the
+    /// THIRD term: it is identically zero at a single path because
+    /// `skew = (max RTprop − min RTprop)/2` over a one-element set is zero
+    /// BY ARITHMETIC — which is how the `active_paths()` / `live_paths()`
+    /// topology branch dies without an `if N == 1`. `=0`/unset is the
+    /// shipped default, bit-exactly: the existing law chain runs verbatim.
+    pub three_term: bool,
     /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
     /// Residual"): SINGLE-path per-flight time-threshold suppression — the
     /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
@@ -497,6 +516,7 @@ impl RuntimeGates {
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
             recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
+            three_term: env_flag("RWM_THREE_TERM", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             sched_snapshot: env_flag("RWM_SCHED_SNAPSHOT", false),
             diag: env_flag("RWM_DIAG", false),
@@ -538,7 +558,7 @@ impl RuntimeGates {
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
-             RWM_STORE_CAP_UNIFIED={} \
+             RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_PATIENCE_DERIVED={} \
@@ -558,7 +578,7 @@ impl RuntimeGates {
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
-            b(self.store_cap_unified),
+            b(self.store_cap_unified), b(self.three_term),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.patience_derived),
@@ -832,6 +852,18 @@ mod tests {
         assert!(
             !g.store_cap_unified,
             "RWM_STORE_CAP_UNIFIED ships default OFF (A/B arm)"
+        );
+        assert!(
+            !g.three_term,
+            "RWM_THREE_TERM ships default OFF (A/B arm — goal-gate \"Three-Term Law\")"
+        );
+        // The gate's OFF-VALUE PROPERTY, asserted on the echo itself
+        // (MEASUREMENT DISCIPLINE 15, two-sided): a battery must be able to
+        // assert the gate ABSENT in the control arm, not merely unmentioned.
+        assert!(
+            g.echo_line().contains("RWM_THREE_TERM=0"),
+            "the default echo must NAME the three-term gate with its 0 value: {}",
+            g.echo_line()
         );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
