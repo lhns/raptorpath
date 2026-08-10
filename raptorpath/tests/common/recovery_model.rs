@@ -512,11 +512,27 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                         Ev::Report { frontier, highest: highest_seen, gaps, sweep: false }
                     );
                 }
-                let next = if arrived_since_ack > 0 {
+                let next = if arrived_since_ack > 0 || last_hole_nack_at == 0 {
+                    // COLD START (`last_hole_nack_at == 0`): the ack timer is
+                    // armed at `GAP_ACK_MIN_US`, before the first symbol can
+                    // possibly have arrived (one owd away). There is no
+                    // stalled hole to refresh yet, so the ordinary gap-ack
+                    // floor owns the cadence — the shipped receiver acks ON
+                    // ARRIVAL subject to that floor. Deferring the first
+                    // advertisement by the full refresh cadence instead would
+                    // hold EVERY symbol emitted inside that window in the
+                    // sender's store, a startup transient with no counterpart
+                    // in the engine. Measured (goal-gate "Coverage: derivable
+                    // or not"): at c1/20 ms that transient alone SET the
+                    // required backlog — S(0.1 %) = 1521 against a
+                    // 58 ms/38.46 µs = 1508-symbol cold-start hold — and made
+                    // it independent of the loss rate, which is exactly the
+                    // signature of an artifact rather than of a term.
                     now + GAP_ACK_MIN_US
                 } else {
-                    // Nothing arrived: the stalled-hole refresh cadence owns
-                    // the next advertisement.
+                    // Nothing arrived and a hole IS outstanding: the
+                    // stalled-hole refresh cadence owns the next
+                    // advertisement.
                     (last_hole_nack_at + refresh_us).max(now + GAP_ACK_MIN_US)
                 };
                 arrived_since_ack = 0;

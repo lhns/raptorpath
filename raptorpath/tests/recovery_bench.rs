@@ -454,6 +454,22 @@ fn recovery_bench_fixtures_pin_the_plane() {
 
 // The measured fixture values (bench outputs, `Calib::fixture`, seed 42,
 // RTprop 10 ms / uniform 2.6 % / np = 2 / arm `shipped`).
+//
+// RE-PINNED 2026-08-10 (goal-gate "Coverage: derivable or not", the driver's
+// COLD-START ACK CORRECTION). The receiver's ack timer is armed at
+// `GAP_ACK_MIN_US` = 2 ms, one owd before the first symbol can arrive; the
+// "nothing arrived" branch then deferred the next advertisement by the full
+// hole-refresh cadence even though no hole had ever been NACKed, holding
+// every symbol emitted inside that window in the sender's store. That is a
+// startup transient with no counterpart in the shipped receiver (which acks
+// ON ARRIVAL subject to the 2 ms floor), and at the fast rate classes it
+// SET the measured backlog requirement outright. The correction moves these
+// six pins and nothing else — the channel LAWS (fixture 1), the N ≤ 1
+// bit-exact bypass (fixture 3) and the SP asymmetry (fixture 4) are
+// unchanged:
+//   app  p50 16 600 → 14 776 µs        (−11.0 %)
+//   wire p50 16 600 → 14 328 µs        (−13.7 %)
+//   wire mix [75, 79] → [70, 84]  ·  retx 157 → 156  ·  sweeps 3 → 2
 const FIX_HOLES: usize = 154;
 /// 100 % FAST: on the app-echo clock the §6.1.2 channel (177.75 ms) never
 /// ripens inside a hole's life, so the packet-threshold channel serves
@@ -461,10 +477,10 @@ const FIX_HOLES: usize = 154;
 const FIX_APP_MIX: [u64; 5] = [0, 154, 0, 0, 0];
 const FIX_APP_RETX: u64 = 154;
 const FIX_APP_SWEEPS: u64 = 1;
-const FIX_APP_P50_US: u64 = 16_600;
+const FIX_APP_P50_US: u64 = 14_776;
 /// On the wire clock the time channel ripens at 15.75 ms and takes half the
 /// holes — the channel mix, not the retx total, is what the argument moves.
-const FIX_WIRE_MIX: [u64; 5] = [75, 79, 0, 0, 0];
-const FIX_WIRE_RETX: u64 = 157;
-const FIX_WIRE_SWEEPS: u64 = 3;
-const FIX_WIRE_P50_US: u64 = 16_600;
+const FIX_WIRE_MIX: [u64; 5] = [70, 84, 0, 0, 0];
+const FIX_WIRE_RETX: u64 = 156;
+const FIX_WIRE_SWEEPS: u64 = 2;
+const FIX_WIRE_P50_US: u64 = 14_328;
