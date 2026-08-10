@@ -21243,3 +21243,362 @@ should not be flipped, and the battery is the reason. No constant was tuned,
 no term added, no cell rescued. `RWM_THREE_TERM=0` remains bit-identical to
 main. No engine crate was modified by this battery: it is drivers, one parser,
 one report, and one `tail_matrix` crown arm.
+
+## What Binds Throughput (2026-08-10) — GOAL "THREE TERMS, NO CONSTANTS", the answer to the battery's central negative result. Branch `feat/find-the-binder` from main@448a82e. **NO NEW L1 RUN: this is the battery's own `diag/` tree, re-read.** Instrument `tools/l1/bind_analyze.py`; L0 probe `tests/anchor_rate_bench.rs`.
+
+The battery above established that at c2r100 the store is sized to the law,
+is *provably occupied* to the new size, and throughput does not follow, and
+it correctly declined to invent a term. This block identifies what binds.
+**It is the bottleneck link, and the measurement that shows it was never
+missing from the battery — it was missing a denominator.**
+
+### PROVENANCE, and what "no new run" means
+
+Every number below comes from `/home/vibe/threeterm/diag/` — 1 244 files,
+1 116 engine logs, the per-invocation client+server `[DIAG]` streams of the
+battery at commit 448a82e, plus the 64 `-q.txt` tc captures the `tt_adv`
+driver took at jit25 and shal8. Nothing was re-run, no gate was flipped, no
+lock was taken for an experiment. The VM was touched exactly once, to read
+those files.
+
+`tools/l1/bind_analyze.py` is the whole analysis, five modes
+(`ledger` / `cells` / `tc` / `anchor` / `work`), and it runs against any
+battery whose driver preserved per-run diag under the same naming.
+
+**THE ONE CONVERSION, and it is measured, not fitted.** Turning a symbol
+rate into a wire rate needs the on-wire bytes per symbol datagram. The
+battery measured it: `bind_analyze.py … tc` divides tc's own `Sent bytes` by
+the symbols the sender reports handing off and gets **1 264–1 287 B** across
+all 32 jit25 runs and all four arms, against a 1 200 B symbol — i.e. 64–87 B
+of QUIC + UDP + IP + L2 per datagram. `BSYM = 1270` is used. **Every verdict
+below holds for anything in 1 200–1 300**, so no verdict rests on the choice.
+
+### THE WAIT-REASON LEDGER AT c2r100, ARM A vs ARM B
+
+Steady state (t ≥ 2 s, final partial window dropped), per rep, both seeds.
+`util%` = (src+cod) × 1 270 B × 8 ÷ the shaped **100 Mbit**. `queue` =
+`rtt` − the per-path `rtp` (RTprop), both from the same line.
+
+| arm | seed | good Mbit | sym/s | **util %** | paused % | sidle % | win/cap | cwnd | infl | RTT | RTprop | **queue** | cod % | retx/1k-src |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **A** | 42 | 88.5 | 9 632 | **97.9 ± 0.2** | 6.7 | 5.3 | 1009/1024 | 6 869 | 16 | 105 | 100 | **5** | 4.1 | 36.4 |
+| **B** | 42 | 83.7 | 9 059 | **92.0 ± 13.6** | 2.8 | 34.3 | 2920/3073 | 822 | 42 | 287 | 100 | **187** | 7.9 | 91.1 |
+| **A** | 7 | 88.3 | 9 583 | **97.4 ± 0.4** | 6.6 | 6.7 | 1012/1024 | 7 252 | 20 | 106 | 100 | **6** | 3.8 | 33.2 |
+| **B** | 7 | 88.4 | 9 593 | **97.5 ± 3.9** | 3.4 | 25.0 | 3011/3048 | 832 | 100 | 312 | 100 | **212** | 5.9 | 73.8 |
+
+Read it as the answer to "when the sender is not sending, what is it waiting
+on?":
+
+* **Arm A is not waiting. It is transmitting at 97.9 % ± 0.2 of the shaped
+  link**, in all eight reps of seed 42 and all eight of seed 7, and it holds
+  **5–6 ms of queue above a 100 ms RTprop**. Its store cap of 1 024 symbols
+  is 0.98 of the cell's BDP (100 Mbit × 100 ms ÷ 9 600 bit = 1 042 symbols).
+  Arm A is at the textbook operating point — window = BDP, link full, queue
+  empty — and `paused = 6.7 %` is the ack-clock, not a shortage.
+* **Arm B took the extra permission and put it in the queue.** Occupancy
+  ×2.97 (1 012 → 3 011), RTT ×2.94 (106 → 312), **utilisation unchanged**
+  (97.4 → 97.5 on seed 7). Occupancy ÷ RTT is **9 547 sym/s in A and 9 651
+  sym/s in B** — the same rate. Little's law, measured: the law controls the
+  PRODUCT, the link controls one factor, so the law moved the other one.
+* **And the queue is not free.** Repair share 3.8 → 5.9 % and retransmits per
+  1 000 source symbols 33.2 → 73.8 (seed 42: 4.1 → 7.9 % and 36.4 → 91.1).
+  Of a wire that was already full, arm B spends 2–4 more points on repair and
+  **roughly twice as much on retransmission**, and delivers no more new data.
+* **Nothing else binds either arm.** `paused` FALLS (6.7 → 2.8), so the store
+  is not the constraint under B. `infl` is 16–100 against `cwnd` 822–7 252,
+  so cwnd is nowhere near binding — and it cannot: **`RWM_CC_PACE=0` in all
+  1 116 logs and `window_generation_coding: false` in all 1 116**, and with
+  both off the window sender's `select!` has exactly ONE intake gate,
+  `tx_paused` (store full). There is no cwnd gate and no pacer gate on
+  source intake at all.
+* **`sidle` rises 5.3 → 34.3 %** — the sender spends five times as much wall
+  time in ≥ 3 ms gaps between symbol handoffs. **That bucket is
+  unattributed** (see the instrument gap below); it is the only wait signal
+  that moves the "wrong" way and the only one the logs cannot explain.
+
+**Seed 42's arm B has two outlier reps** (r5 at 60.6 % util with an EMPTY
+queue and 70.8 % sidle, r8 at 79.5 %) which is where its σ of 13.6 and its
+0.900 goodput ratio come from. Seed 7's eight reps are all 87.7–100.2 % with
+σ 3.9. The battery's own "0.900 / 0.974" straddles the same split. **Arm B's
+mean is dragged by an instability, not by a rate loss** — six of eight s42
+reps and eight of eight s7 reps sit at 95–100 % util, exactly arm A's number.
+
+### THE BINDER: the shaped bottleneck, and it is not only c2r100
+
+Utilisation in **arm A** — the shipped default, before the law touches
+anything — against each cell's shaped capacity from `lib.sh scenario_params`
+and `adv_cells.sh` (dual cells sum their legs):
+
+| cell | shaped capacity | arm A util % | arm A queue (RTT − RTprop) | binder in arm A |
+|---|---|---|---|---|
+| **sc2** | 100 Mbit | **100.3 / 99.9** | 90 / 91 ms | **the link** |
+| **sc3** | 20 Mbit | **100.3 / 99.4** | 484 / 477 ms | **the link** |
+| **c2r100** | 100 Mbit | **97.9 / 97.4** | 5 / 6 ms | **the link** |
+| **c7** | 200 Mbit (2 × 100) | **97.2 / 97.0** | 101 / 91 ms | **the link** |
+| **jit25** | 100 Mbit | 80.8 / **100.6** | 117 / 39 ms | link on s7; open on s42 |
+| **c2r200** | 100 Mbit | 51.2 / 51.0 | 2 / 2 ms | **the store** (see below) |
+| **c1** | 1 Gbit | 23.8 / 24.5 | 6 / 6 ms | neither — open |
+| **shal8** | 8-PACKET queue | 9.0 / 9.0 | 2 / 2 ms | the queue depth |
+
+**Five of the eight cell-seeds the goal was scored on had no headroom to
+win.** The pre-registration asked c2r100 for **+25…+60 %** on a cell whose
+default arm already occupied 97.4–97.9 % of a 100 Mbit pipe: +25 % is
+122 Mbit on a 100 Mbit link. It asked c7 for ≥ 0.97×Σ at 97 % of 200 Mbit,
+where the only available direction is down. **Criterion 3's c2r100 clause and
+criterion 5's c7 clause were unsatisfiable at the moment they were written**,
+and nothing in the engine could have satisfied them.
+
+**c2r200 is the control that proves the reading, because there the store
+DOES bind.** Its cap of 1 024 is **0.49 of the BDP** (100 Mbit × 202 ms ÷
+9 600 = 2 103 symbols). Predicted utilisation 48.7 %; measured **51.2 ± 0.2
+and 51.0 ± 0.2** across all sixteen reps of both seeds, with the store pinned
+at 1024/1024, `paused = 11.4 %`, and **2 ms of queue**. That is a store-bound
+sender, unambiguously, and it is the only one in the battery. It is also the
+cell the pre-registration itself removed as CLAMPED — **the one cell where
+the diagnosis was right is the one cell the memory ceiling took out of the
+experiment.**
+
+### WHAT FOLLOWS FOR THE LAW — it is a latency law, and the battery already measured it as one
+
+Across every cell where the link binds, moving the outstanding limit moved
+**delay** and left **throughput** alone, in both directions:
+
+| cell | cap A → B | RTT A → B | goodput A → B | arm A util |
+|---|---|---|---|---|
+| sc2 | 1024 → **495** | 103 → **50 ms** | 90.9 → **91.2** | 100.3 % |
+| sc3 | 1024 → **307** | 525 → **155 ms** | 17.7 → 15.2 | 100.3 % |
+| c2r100 | 1024 → **3073** | 105 → **287 ms** | 88.5 → 83.7 | 97.9 % |
+| c7 | 4096 → **1155** | 110 → **43 ms** | 179.0 → 149.4 | 97.2 % |
+
+**At sc2 the law more than halves the outstanding limit, halves the round
+trip, and delivers the same goodput to within 0.3 %.** At sc3 it cuts the
+limit 3.3× and the round trip 3.4× for −14 % of goodput. Those are the
+battery's own numbers, and read as latency results they are the strongest
+thing in it — they were scored as "within σ" nulls because the criteria only
+asked about throughput.
+
+**This is not a missing term.** occupancy = throughput × delay is arithmetic,
+and the binder it exposes — the bottleneck rate — is `r`, which the (δ, ρ, r)
+triangle already names. What the three-term law lacks is not a fourth term
+but a **ceiling**: it sizes outstanding data from measured rate and delay
+without knowing whether the pipe is already full, so above the BDP its output
+is spent entirely on queue. Nothing in this block licenses adding a quantity,
+and none is proposed.
+
+### WHAT THE INSTRUMENTATION CANNOT SEPARATE — the gap, stated before any hypothesis
+
+The `[DIAG]` surface **can** separate: store-full (`paused`), release-frontier
+stall (`relgap`, `wnd2=head/hole`), repair vs source share (`src`/`cod`),
+retransmission volume (`retx`, `mpr[...]`), queueing delay (`rtt` − `rtp`),
+and live path count (`np`). All of the above is read off those.
+
+It **cannot** separate three things, and each is a specific missing
+instrument rather than a judgement call:
+
+1. **`sidle` is one undifferentiated bucket.** It counts wall-clock gaps
+   ≥ 3 ms between symbol handoffs and attributes them to nothing. It is
+   34.3 % of wall time at c2r100-B and **72.7 % at c2r200-B**, and no field
+   in any of the 1 116 logs says whether that time went to the TUN source
+   having no packet, the emit path back-pressured by the transport, the
+   loop's own recovery/gap-report phase, or tokio scheduling.
+   **The engine OWNS the instrument that would answer this** —
+   `stall[emit=/budget=/fill=/target=/tok=/cwnd=]`, backed by `gd_us[6]` in
+   `net/diag.rs` — **and it is printed only under `if generation`.** The
+   battery ran `RWM_GEN=0` in every arm: `stall[` appears in **0 of 1 116
+   logs**. The one wait-reason attribution gauge the engine has was
+   structurally absent from all 419 invocations.
+2. **`infl`/`sinfl` cannot answer "is cwnd binding?"** They read 0–100
+   against `cwnd` of 822–7 252 in every window-mode run because the
+   scheduler's flight accounting is not fed on the datagram path with
+   `RWM_COPA_FEED=0`. The question is in fact answerable — there is no cwnd
+   gate on intake — **but only from the source, never from the logs**.
+3. **There is no counter for datagrams the transport dropped.**
+   `quinn::Connection::send_datagram` calls `Datagrams::send(data, drop=true)`
+   (quinn-proto 0.11.14 `connection/datagrams.rs`:38–48), which **silently
+   evicts the OLDEST queued datagrams** when the 4 MB send buffer
+   (`transport.datagram_send_buffer_size(4*1024*1024)` ≈ 3 300 symbols)
+   overflows, logging a `trace!` nobody enabled. `src=`/`cod=` count
+   HANDOFFS, not transmissions. The three-term law sets the cap to 3 073 at
+   c2r100 and 4 096 at c2r200 — the same order as that buffer — so the arm
+   most exposed to this loss is the scored one, and the loss is invisible.
+
+**The single most consequential gap is none of those three: it is that the
+battery captured tc counters for 2 of its 9 cells.** The central negative
+result — "the store was occupied to the new limit and throughput did not
+follow" — needed exactly one number to be readable, the shaped link's
+utilisation, and that number is a `tc -s qdisc show` away. The `tt_adv`
+driver already takes it (`-q.txt`); the `tt_battery` driver does not. **This
+is a driver change with zero engine risk, and it is the first thing to fix.**
+
+Ranked, the missing instruments:
+
+| # | instrument | where | cost |
+|---|---|---|---|
+| 1 | `tc -s qdisc show` per run, EVERY cell | `tools/l1/*_battery.sh` | driver only, none |
+| 2 | wait-reason histogram for the `RWM_GEN=0` window sender — the `select!` arm that woke the loop, time-attributed, the shape `gd_us[6]` already has, printed unconditionally instead of under `if generation` | `net/mod.rs` + `net/diag.rs` | one gated counter per loop iteration |
+| 3 | transport-drop counter at the `send_datagram_shaped` seam (handoffs vs accepted) so `src=`/`cod=` can be trusted as wire rates | `transport/quic.rs` | one atomic |
+
+### THE HYPOTHESES, RANKED, EACH WITH ITS CONFIRMING **AND** ITS REFUTING MEASUREMENT
+
+**H1 — the shaped bottleneck link binds at c2r100. SUPPORTED; treat as
+established.** Arm A occupies 97.9 ± 0.2 % / 97.4 ± 0.4 % of 100 Mbit with
+5–6 ms of queue over a 100 ms RTprop, in 16 of 16 reps.
+*Confirms:* cli0 `tc` bytes ÷ run duration ≥ 95 Mbit in arm A at c2r100
+(instrument 1 — not captured at this cell, which is why this is the leading
+gap and not a closed case).
+*Refutes:* the same counter reading < 85 Mbit while goodput holds at 88 Mbit,
+i.e. `BSYM = 1270` wrong by > 15 % — bounded already at 1 264–1 287 by the
+jit25 captures. Also refuted if re-shaping c2r100 to 200 Mbit leaves arm A at
+88 Mbit.
+
+**H2 — an outstanding-data limit is a LATENCY control wherever the link is
+saturated, by Little's law. SUPPORTED, in both directions.** occupancy ÷ RTT
+is 9 547 sym/s (A) and 9 651 sym/s (B) at c2r100 — the same rate under a
+×2.97 occupancy and a ×2.94 RTT; and at sc2 a ×0.48 cap gives a ×0.49 RTT at
+1.003× goodput.
+*Confirms:* a cap sweep at c2r100 (512 / 1024 / 2048 / 3072, `RWM_STORE=`)
+tracing RTT linear in cap with goodput flat.
+*Refutes:* goodput rising with cap at any cell whose arm-A utilisation is
+≥ 95 %.
+
+**H3 — below the BDP the limit IS the throughput lever, and c2r200 is where
+that was true. SUPPORTED for arm A; OPEN for arm B.** c2r200-A: cap 1 024 =
+0.49 × BDP, predicted 48.7 %, measured 51.2 ± 0.2 / 51.0 ± 0.2, pinned
+1024/1024, `paused` 11.4 %, 2 ms queue. **Arm B released it and did not
+gain**, and its eight s42 reps split: three at 62–79 % util with 188–277 ms
+of queue, five at 30–48 % util with occupancy at 1 442–1 776 of a 4 096 cap,
+an EMPTY queue (RTT 210 vs RTprop 200) and **75–86 % sidle**. In that second
+cluster the sender is not store-bound, not link-bound and not cwnd-bound
+(there is no cwnd gate) — **it is idle for four fifths of the run and nothing
+in the instrumentation says why.** This is exactly where instrument 2 would
+have paid for itself, and it is the honest open question of this block.
+*Confirms a specific successor:* the wait-reason histogram attributing
+> 50 % of c2r200-B's wall time to a single `select!` arm.
+*Refutes the store reading (already):* `paused` = 1.4 % with occupancy at
+0.56 of cap.
+
+**H4 — the recovery plane's O(outstanding) gap walk. WEAKENED BY
+MEASUREMENT; do not pursue on this evidence.** The law does triple the work:
+`mpr` seqs-per-report tracks occupancy exactly (c2r100 30 → 100, c2r200
+29 → 114). But the absolute rate is 30 k seq-walks/s at c2r100-B and 116 k/s
+at c7-B, and **c7-B has the battery's HIGHEST walk rate and its LOWEST idle
+(sidle 2.9–3.9 %)** — the correlation runs the wrong way.
+*Would confirm:* a `recovery_bench` showing > 10 µs per gap report at 3 000
+outstanding, or a profile with > 15 % of sender cycles in the gap-report path.
+*Refutes:* the c7 anti-correlation above, already measured.
+
+**H5 — the transport silently evicts datagrams once the cap approaches
+quinn's ~3 300-symbol send buffer. OPEN AND UNMEASURABLE FROM THESE LOGS.**
+Mechanism confirmed in the dependency source (see gap 3); incidence unknown.
+*Confirms:* instrument 3 reading non-zero in arm B and zero in arm A; or tc
+B/symbol at c2r100-B falling below the 1 264–1 287 measured at jit25.
+*Refutes:* tc B/symbol at c2r100-B inside 1 264–1 287, i.e. every handoff
+reached the qdisc. Note jit25-B runs at cap 1 975–2 020 and shows **no**
+eviction (1 264–1 267 B/symbol, all four arms 1 264–1 287) — so if the effect
+is real it needs cap ≳ 3 000, which is c2r100-B and c2r200-B and nothing else
+in the battery.
+
+### THE ANCHOR: a TAX, not a binder, and it does not act through the store
+
+The battery's open lead asked whether `RWM_PLAIN_RS`'s 35 % cost at c1 is the
+binder or a tax. Arm D isolates it. Ordered by **arm A's symbol rate**
+(`bind_analyze.py … anchor`):
+
+| cell | seed | A sym/s | D sym/s | **D/A** | A paused % | **A occ/cap** | A util % |
+|---|---|---|---|---|---|---|---|
+| c1 | 7 | 24 069 | 15 276 | **0.635** | 0.8 | **0.43** | 24.5 |
+| c1 | 42 | 23 464 | 15 342 | **0.654** | 0.8 | **0.44** | 23.8 |
+| c7 | 42 | 19 127 | 16 912 | **0.884** | 0.0 | 0.31 | 97.2 |
+| c7 | 7 | 19 092 | 16 737 | **0.877** | 0.0 | 0.29 | 97.0 |
+| jit25 | 7 | 9 902 | 9 860 | 0.996 | 5.3 | **0.99** | 100.6 |
+| sc2 | 42 | 9 869 | 9 876 | 1.001 | 6.2 | **0.99** | 100.3 |
+| sc2 | 7 | 9 837 | 9 852 | 1.002 | 6.1 | **0.99** | 99.9 |
+| c2r100 | 42 | 9 632 | 9 610 | 0.998 | 6.7 | **0.99** | 97.9 |
+| c2r100 | 7 | 9 583 | 9 548 | 0.996 | 6.6 | **0.99** | 97.4 |
+| c2r200 | 42 | 5 042 | 5 048 | 1.001 | 11.4 | **1.00** | 51.2 |
+| c2r200 | 7 | 5 024 | 5 018 | 0.999 | 11.4 | **1.00** | 51.0 |
+| sc3 | 42 | 1 975 | 2 038 | 1.032 | 25.4 | **1.00** | 100.3 |
+| sc3 | 7 | 1 956 | 2 037 | 1.041 | 25.0 | **1.00** | 99.4 |
+
+(c8 s42 is excluded: n = 2 arm A and n = 1 arm D, the abort class. shal8 sits
+at 881 sym/s with occupancy 0 and D/A 1.20.)
+
+**The tax's only argument is arm A's symbol rate.** It is 1.00 (0.996–1.002)
+at all six cell-seeds in the 5.0–9.9 k band — cells which between them span
+RTT 10–525 ms, GE loss 0–2.5 %, jitter 0–25 ms and utilisation 51–100 % — and
+0.88 at 19 k, 0.64 at 24 k.
+
+**And it is ANTI-correlated with store binding.** The zero-tax cells are
+exactly the ones where the store binds hardest (occupancy/cap 0.99–1.00,
+`paused` 5–25 %); the maximum-tax cell, c1, has occupancy at 0.43 of its cap
+and `paused` = 0.8 % — **the store does not bind at c1 in any arm.** If the
+anchor's cost were a store-sizing effect it would be largest where the store
+binds. The observed relationship is the exact opposite. **`RWM_PLAIN_RS` is a
+tax, it is a function of rate alone, and it does not act through the
+outstanding limit** — which also means that fixing the anchor would not have
+rescued the throughput half of the goal at any of the five link-bound cells.
+
+**Counter-evidence, recorded rather than smoothed:** at c1 arm D's `sidle` is
+53.6/54.1 % against arm A's 33.5/31.7 %. A pure per-symbol *work* cost would
+leave the sender less idle, not more. So the shape is "a cost that only bites
+near the sender's own ceiling", and whether that cost is work or a wait is
+**not** decidable from these logs.
+
+### THE L0 PROBE (discipline 14, component-first) — `tests/anchor_rate_bench.rs`
+
+Loopback has no shaped bottleneck, no propagation delay and no loss, so the
+only ceiling is the sender. 64 MB over the reliable window, `#[ignore]`d,
+seven runs in seven separate processes (the env gate resolves once per
+process, so the two conditions cannot share one):
+
+| condition | runs | sym/s | mean | σ |
+|---|---|---|---|---|
+| default | 4 | 11 243 · 11 150 · 10 959 · 11 079 | **11 108** | 106 |
+| `RWM_PLAIN_RS=1` | 3 | 11 844 · 12 085 · 11 882 | **11 937** | 105 |
+
+**Result 1 — the rate-dependence reproduces.** D/A = **1.075** at 11.1 k
+sym/s: no tax, on the correct side of 1, exactly as the battery's 5.0–9.9 k
+band predicts. The separation is ~8σ, so the small *gain* is real on this
+substrate and is not noise.
+
+**Result 2 — and this is the useful negative.** The substrate tops out at
+**11–12 k sym/s**, about half the 19–24 k where the tax appears. **This bench
+cannot discriminate H-anchor, and no amount of running it will.** It is
+recorded so the next worker does not spend the attempt: settling whether the
+c1/c7 tax is sender-local needs a substrate that drives the sender past 20 k
+sym/s, which on this hardware means the L1 c1 cell or a faster host — not
+loopback on this one.
+
+### WHAT THIS BLOCK DELIBERATELY DOES NOT CONCLUDE
+
+1. **It does not say what binds c2r200 arm B, c1, c8 or shal8.** c2r200-B's
+   low-utilisation cluster is 75–86 % idle with an empty store, an empty
+   queue and no cwnd gate, and the logs name no reason. c1 runs at 24 % of a
+   1 Gbit pipe with the store at 0.43 of cap. Those are open, and the reason
+   they are open is instrument 2, not analysis.
+2. **It proposes no term.** The binder identified is the bottleneck rate,
+   which is `r` — already in the triangle. Nothing here is shown to be
+   underivable from (δ, ρ, r), so nothing here meets the standard that killed
+   the fourth-term claim.
+3. **It does not claim the law should be flipped on as a latency win.** The
+   sc2/sc3/c7 latency reductions are read off a battery that was
+   pre-registered for throughput; a latency claim needs its own
+   pre-registration, its own crown, and c7's −17 % goodput priced against it.
+   Saying "the law is a latency law" is a description of what was measured,
+   not a proposal.
+4. **It does not claim the eviction in H5 happens.** The mechanism is in the
+   dependency's source; the incidence is unmeasured and the only cells that
+   could show it have no tc capture.
+5. **It does not reinterpret the battery's verdicts.** Criteria 3, 4 and 5
+   FAILED and they stay failed. What this block adds is that two of those
+   clauses were unsatisfiable when written, which is a finding about the
+   pre-registration's cell selection — and the fix for that is instrument 1,
+   applied *before* the next set of targets is chosen.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed, no gate flipped, no existing gate or test weakened, no
+constant tuned, no term added. `RWM_THREE_TERM` stays default OFF. The only
+engine-crate file added is `tests/anchor_rate_bench.rs`, which is `#[ignore]`d,
+asserts no threshold beyond "the transfer completed", and is in no suite. The
+visualizer and wasm crates are untouched.
