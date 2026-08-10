@@ -3421,9 +3421,15 @@ mod tests {
             assert_eq!(p.available(), 0);
         }
 
+        // Both accessors iterate a HashMap, so the RETURNED ORDER is
+        // arbitrary and re-seeded per process — sort before comparing, or
+        // this asserts the hasher instead of the path sets (it did: the
+        // first version of this test was a coin flip on two paths).
         assert_eq!(sched.active_paths(), vec![0], "saturated path 1 is NOT active");
+        let mut live = sched.live_paths();
+        live.sort_unstable();
         assert_eq!(
-            sched.live_paths(),
+            live,
             vec![0, 1],
             "saturated path 1 IS live — control traffic and the CC rate \
              aggregate must still see it"
