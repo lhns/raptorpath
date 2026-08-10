@@ -6,6 +6,13 @@
 #
 # Writes /home/vibe/honestinputs/DONE-ALL when both seed batteries have
 # finished; per-seed ledgers land at /home/vibe/honestinputs/hi-s{42,7}.log.
+#
+# RAN 2026-08-10 (goal-gate "Honest Inputs — BATTERY"): main 17:57-19:07Z,
+# top-up 20:05-20:13Z; ledgers committed at docs/l1-raw/honestinputs-*.
+# WATCHER NOTE for any remote completion sentinel: `pgrep -f hi_battery.sh`
+# matches the WATCHER'S OWN shell when its command line contains the string
+# (a remote ssh loop naming this file reads "still running" forever) —
+# check the ledger's HI-BATTERY-DONE line, not the process table.
 set -u
 cd /home/vibe/raptorpath/raptorpath/tools/l1
 OUTDIR=/home/vibe/honestinputs
