@@ -217,6 +217,14 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # cadence, which is exactly the clock a tail cell is sensitive
             # to, so this arm is a gate, not a formality.
             am)      AENV="RWM_ACK_MERGE=1"; AFLAGS="" ;;
+            # feat/three-term-battery (goal-gate "Three-Term Law"): the crown
+            # NO-REGRESSION spot (criterion 5, <= ~41 ms at 1000/1000). `tt` =
+            # the SCORED composed arm RWM_THREE_TERM=1 RWM_PLAIN_RS=1 against
+            # `ship` (env unset). The law is scoped to the reliable window's
+            # plain dynamic cap, so Realtime streaming should be INERT here —
+            # which is precisely why the spot is a gate: an inert law that
+            # moves the crown has escaped its scope.
+            tt)      AENV="RWM_THREE_TERM=1 RWM_PLAIN_RS=1"; AFLAGS="" ;;
             # meas/streaming-retirement (crown re-test) HISTORIC arms: the
             # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
             # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
