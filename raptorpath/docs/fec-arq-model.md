@@ -11008,6 +11008,108 @@ throughput pre-registration*; a latency claim needs its own pre-registration,
 its own crown, and c7's cost priced against it, and this section makes no such
 claim.
 
+### 16.47 The outstanding-data limit is a signed, predictable latency control — measured on an independent flow, at goodput parity, and it still does not earn a default (2026-08-10, `feat/latency-lever`, pre-registered at ec6a5ec, 288 + 72 L1 invocations; drivers `tools/l1/lat_battery.sh`, `lat_parse.py`, `lat_report.py`)
+
+§16.45 scored the three-term store law on throughput and found nothing outside
+noise but a regression. §16.46 showed why: at five of eight cell-seeds the
+shipped default already occupied 97–100 % of the shaped link, so by Little's
+law the limit could only move delay. This section scores it on delay, against
+numbers written down first, and reaches a split verdict that neither previous
+section could have produced.
+
+**The instrument is an independent flow, not the sender's own estimate.** A
+20 pkt/s ICMP probe runs through the same shaped qdisc as the bulk transfer,
+for its duration, in every arm. The engine's `rtt=` gauge is produced by the
+code under test on a flow whose pacing that code changes; the probe is not, and
+it is measured by the kernel. Goodput is treated as a *constraint* — parity
+first, latency second — because a delay reduction bought with throughput is a
+trade, not a win.
+
+**THE CLAIM, and it is not "the law reduces latency".** A one-rep calibration
+refuted that framing before the battery ran and is committed with the
+pre-registration that says so. The law's cap is *computed*, and at c2r100 it
+computes a cap **above** the shipped 1 024 — where it raises the cap, it raises
+delay. The claim that survives is sharper:
+
+> The outstanding-data limit is a latency CONTROL whose sign at a saturated
+> link is set by whether the law's computed cap lands below or above the
+> shipped one. It is not a reducer; it is a knob the law turns in both
+> directions, and the direction is predictable from measured signals with no
+> fitted constant.
+
+**Measured, both seeds, ×8, with 2σ_pooled on every claim.** Writing
+`R = cap_B/cap_A` and scoring the delivered probe median:
+
+| cell | R | probe p50 B/A | probe p99 B/A | goodput B/A | pre-registered direction |
+|---|---|---|---|---|---|
+| sc2 | 0.46 | **0.456 / 0.477** | **0.509 / 0.506** | 0.999 / 0.987 (parity) | DOWN to 0.45–0.75× |
+| sc3 | 0.29 | **0.298 / 0.315** | 1.29 / 1.54 (inside 2σ) | 0.964 / 0.957 | DOWN to 0.25–0.65× |
+| c7 | 0.28 | **0.369 / 0.306** | **0.363 / 0.335** | 0.846 / 0.880 | DOWN or flat; p99 < 0.8× |
+| c2r100 | 2.98 | **2.778 / 2.944** | 3.28 / 3.05 | 0.916 / 0.950 | **UP, > 1.8×** |
+| c2r200 | 4.00 | 1.046 / 1.030 | **2.330 / 2.341** | (void, see below) | p50 propagation-pinned; UP at p99 |
+| c1 | 0.66 | **1.000 / 0.999** | 1.003 / 1.015 | **0.652 / 0.653** | **FLAT — no queue to remove** |
+
+**Twelve of twelve cell-seeds matched the pre-registered direction**, from one
+formula with no cell-specific term, including the two cells where it predicted
+a LOSS and the cell where it predicted NOTHING. At sc2 the law halves the
+delivered latency of an unrelated flow at goodput parity within noise, and a
+separate interleaved session reproduced it independently (0.496).
+
+**The null is what validates the instrument.** c1 has 75 % headroom, no
+standing queue, and a probe reading 2.1 ms against 2 ms of propagation. The law
+changes c1's cap from 542 to 356 and the probe does not move — 1.000 and 0.999
+across 48 invocations. A pre-registered falsifier said that any movement there
+would mean the probe was measuring something other than queueing delay. It did
+not move, so the sc2/sc3/c7 reductions mean what they say.
+
+**The wait-reason histogram names the gate.** The instrument §16.46 built for
+this battery — absent from all 1 116 logs of the previous one — shows
+`wait_paused`, the fraction of sender wall time woken by store-full
+backpressure, going 40 % → 7 % at c2r100 and 65 % → 5 % at c2r200, exactly
+where the law raises the cap, while staying flat at sc2 and sc3 where it lowers
+it. It also shows that c7's sender is `tun`-bound at 96–98 % in *every* arm:
+c7's store never binds, which is why c7's entire goodput cost belongs to the
+rate anchor and not to the law.
+
+**And the eviction audit fired where §16.46 said to look.** That section listed
+silent datagram eviction as "open and unmeasurable from these logs" and
+predicted that if real it would require a cap above ~3 000, "which is c2r100-B
+and c2r200-B and nothing else". The new audit reads `full = 0` in 34 of 36
+cell-arm-seeds and non-zero at **c2r200-B alone** (123–295 evicting calls,
+0.27–0.61 % of handoffs), the arm clamped at 4 096 — and zero at c2r100-B,
+whose cap lands near 3 030. By the pre-registration's own rule that voids
+c2r200-B's goodput figure, which is applied rather than waived because the
+figure happened to be inside noise anyway.
+
+**THE ADJUDICATION: the mechanism is real and the packaging is not.** The law
+does not earn a default ON, and the reason is the attribution arm rather than
+the scored one. The law requires an honest rate anchor, the only available one
+is `RWM_PLAIN_RS`, and that anchor alone costs **−35 % of goodput at c1**
+(arm D 0.638/0.649, roughly 17σ) **for exactly zero latency benefit at that
+cell**. A default is what a user receives, and a user who receives the law
+receives the tax; the adjudication was pre-committed to arm B versus arm A so
+that this could not be argued away by pointing at B-versus-D. The law therefore
+ships as a *documented latency control with an explicit default of OFF*, and
+this battery is simultaneously the strongest argument yet for eventually
+flipping it and the reason it cannot be flipped now.
+
+Choosing the law per cell is not the escape. A δ- or ρ-keyed switch between
+"law" and "no law" is precisely the mode-switch this architecture rejects
+(§16.20, §16.26, ADR-0064), and nothing here proposes one. **The latency
+control is blocked on the anchor and on nothing else this battery can see** —
+the tax is a function of the sender's symbol rate alone (1.00 at 5–10 k
+sym/s, 0.88 at 19 k, 0.64 at 24 k) and is anti-correlated with store binding,
+so it is a sender-local per-symbol cost, not a store effect.
+
+**What this section does not conclude.** It does not settle whether a smaller
+store trades tail for median: sc3's p99 rises in the predicted direction on
+both seeds and is inside 2σ on both, and n is not sufficient. It produces **no
+throughput verdict at all** — the one cell with permitted headroom and a real
+store bind, c2r200, was removed by the 4 096 clamp for the third time. It does
+not claim the ICMP probe is application-level latency. And it leaves the
+seed-7 abort class (11 % of the main battery, 39 % of the top-up) standing as
+an instrument cost rather than explaining it.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
