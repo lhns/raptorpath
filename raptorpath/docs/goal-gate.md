@@ -18735,7 +18735,7 @@ liveness was inferred; **(c) SUSPECT** — no echo and no explicit forwarding.
 | Ack-Merge Flip (2026-08-08) | `RWM_ACK_MERGE` | **(a)** — per-rep echo(client/server) + `[CTLD]` tx/rx table |
 | Unlock The Default 2: derived patience (2026-08-07) | `RWM_PATIENCE_DERIVED`, `RWM_SIDLE_DERIVED` | **(a)** — echo in `pat`, in NEITHER log of `est`; plus the `pf=` population counter |
 | Copa-Sole on Clean Substrate (2026-07-22); Copa Competitive + Cross-Traffic (2026-07-19); Adversarial Cells B1 (2026-08-06) | `RWM_COPA_COMPETE`, `RWM_COPA_DELTA`, `RWM_COPA_WIRE`, `RWM_COPA_FEED` | **(b)** — these four had NO echo of their own until this audit. The arms rode `RWM_QUIC_CC=passthrough` in the SAME `env` bundle and its echo WAS asserted, which proves the bundle reached the binary; the compete/δ gates' own resolution was inferred, not observed. The δ-probe dose-response is corroborating mechanism evidence. |
-| Refactor: net seams 2 (2026-08-08) | `RWM_SCHED_SNAPSHOT` | n/a — never measured; the arm is an open question |
+| Refactor: net seams 2 (2026-08-08) | `RWM_SCHED_SNAPSHOT` | n/a — never measured. **CLOSED 2026-08-10: gate DELETED unmeasured** (its premise was not reachable from the sites it served) — "Scheduler-Snapshot Adjudication", ADR-0066 |
 | — | `RWM_STORE_BOOT` | n/a — never a battery arm |
 
 **No live verdict lands in class (c), and no re-test is owed.** That is the
@@ -20602,3 +20602,217 @@ New, always-on: `net::tests::three_term_law_is_arithmetic_and_continuous`,
 `delta_budget_b_is_the_dial_not_a_mode`, and
 `slack_bench::three_term_engine_law_is_the_bench_terms_at_the_anchors`.
 New `--ignored` component bench: `slack_bench::three_term_bench` (18.7 s).
+
+## Scheduler-Snapshot Adjudication (2026-08-10) — ADJUDICATION of the `RWM_SCHED_SNAPSHOT` open question (branch `docs/sched-snapshot-adjudication` from main@17f7fa9; LOCAL only, no VM contact, no battery). **VERDICT: DELETE, unmeasured.** The premise did not survive reading the code it shipped in. **Second, independent finding: the seam's own unit test could not do the job it claimed** — see "The testing-discipline failure" below, which outlives the gate and is the reason this section carries a new always-on test.
+
+`RWM_SCHED_SNAPSHOT` shipped OFF on 2026-08-09 (seam pass 2, MOVE 2) with a
+documented same-iteration read-skew hazard and an explicit "OPEN A/B QUESTION
+for a later battery". This section closes it. **No battery was run and none is
+owed** — not because the arm would have been expensive, but because the
+mechanism a battery would have measured is not present in the arm as built.
+The null it would have returned would have been read as "the skew doesn't
+matter" when the correct reading is "this arm never removed the skew". That is
+the third-turn-of-open outcome this adjudication exists to prevent.
+
+### What the gate did
+
+One `SchedSnapshot::capture(&scheduler.lock())` at the top of
+`run_window_sender`'s loop (main@17f7fa9 `net/mod.rs:4069`), serving five
+read-only phases that otherwise each take their own acquisition: the M*-depth
+max RTprop (`:4228`), the in-flight-cap Σ Copa BDP anchor (`:4265`), the
+CC-pace Σ cwnd/srtt with its live count (`:5506`), the tail-sweep pooled
+estimator SRTT (`:5556`), and the reactive deficit-spacing max SRTT (`:5628`).
+The `select!` await is at `:5575` — four of the five sites are BEFORE the park,
+exactly one is after it.
+
+### The claimed hazard, and why it is not one
+
+The claim (`net/sched_snapshot.rs:12–24`, restated at `gates.rs:413–428` and in
+the seam-2 ledger section): *"a rate read before an ack burst and an RTprop
+read after it compose into a BDP that never existed."*
+
+**Finding 1 — that composition is not reachable from these sites.** Each of the
+five phases already reads everything it composes under ONE acquisition. The
+only rate×RTprop product in the routed set is `copa_bdp_anchor()`, and it is
+`max_bw * min_rtt` read from the SAME `CopaState`
+(`scheduler/mod.rs:1679–1685`) — atomic under either gate value. No derived
+quantity in the routed set spans two acquisitions, so the named hazard has no
+instance. The M* depth is the closest thing to a cross-source product and it is
+not a scheduler skew at all: its rate term `gp_rate_max` comes from the
+`window_ack_seq` atomic through a windowed MAX over 500 ms–2 s buckets
+(`net/mod.rs:4210–4217`), not from the scheduler. A sub-millisecond lock-timing
+difference on the RTprop side cannot matter against a rate term the code
+deliberately ages by half a second to two seconds.
+
+**Finding 2 — it could not deliver the coherence it promised.** The three
+heavyweight consumers are independently throttled to ~5 ms off SEPARATE stamps
+(`gen_pipe_refresh_us`, `dyn_infl_refresh_us`, `cc_rate_refresh_us` — main
+`:4218`, `:4262`, `:5492`). They fire on DIFFERENT loop iterations and, with
+the gate ON, would have consumed DIFFERENT snapshots. "One snapshot makes every
+phase agree" is false for exactly the phases the write-up named.
+
+**Finding 3 — at the one genuinely skew-exposed site it made things WORSE.**
+The reactive deficit-spacing read (`:5628`) is the only routed site after the
+`select!` await. Its per-phase read is FRESH — taken after the park, on
+post-ack state. A loop-top capture serves it a value older by the entire park,
+which the `select!` bounds at 1 ms only when one of its three conditional
+sleeps is armed (`tx_paused`; `cc_pace && src_tokens < 1`;
+`generation && encoder.window_size() > 0`) or a tail deadline exists. Reaching
+this site requires `generation`, so with an empty encoder window, not paused,
+tokens available and an empty retransmit buffer, the loop parks on
+`tun.read_packet()` / `nack_rx` / `deficit_rx` with no timer at all. The arm's
+effect at the one site where intra-iteration skew is real is to REPLACE a fresh
+read with an unboundedly stale one — the opposite of its stated purpose, and
+not inert: `react_space_us = srtt_max × react_cap_cfg` gates reactive recovery.
+
+**Finding 4 — the secondary motivation is inverted too.** The framing was "ONE
+scheduler read per iteration instead of a dozen". With the gate ON the capture
+is unconditional per iteration, in a loop that wakes at least every 1 ms and in
+practice per TUN packet, while the phases it replaces are throttled to one
+acquisition per 5 ms each. The ON arm plausibly takes MORE lock acquisitions
+than the default, plus an `Option` test at five sites in the hottest loop in
+the crate.
+
+**Finding 5 — the structural motivation was already disproved.** The seam map
+called this "the second blocker" for extracting later sender phases. Net seam
+pass 3 subsequently extracted the DIAG phase (`net/diag.rs`, `DiagState`) with
+the gate still OFF and the snapshot unused. The blocker was not a blocker.
+
+The gate WAS correctly wired in the audit sense — present in
+`tools/l1/lib.sh`'s `RWM_FORWARD`, named in the two-sided `[GATES]` echo, with
+its own `ACTIVE (RWM_SCHED_SNAPSHOT: …)` liveness echo and an OFF-value
+assertion in `default_env_resolves_the_shipped_stack`. That is what makes this
+a clean adjudication rather than a class-(c) unknown: the arm was measurable,
+and reading it was enough to establish there was nothing to measure. No test
+anywhere in the crate ever set `RWM_SCHED_SNAPSHOT=1`, so the ON path shipped
+with zero automated coverage; its only automated coverage of any kind was the
+unit test in the next section.
+
+### FINDING 6 — the testing-discipline failure, which is INDEPENDENT of this gate
+
+This one is not about the snapshot and does not go away with it. **A test whose
+stated obligation was a specific failure mode was structurally incapable of
+detecting that failure mode, and it read as the strongest test in the module.**
+
+`net/sched_snapshot.rs`'s `capture_matches_the_inline_per_phase_expressions`
+asserted `capture()` against the verbatim inline expressions rather than
+hand-written expected numbers, and said so in its own words:
+
+> "Asserted against the verbatim inline expressions, not against hand-written
+> expected numbers (an ordinal/eyeball check would not catch a path-set swap,
+> which is exactly the failure mode here: the `active_paths()` saturation
+> filter vs `live_paths()`)."
+
+That is exactly the reasoning CLAUDE.md's testing-discipline rule asks for, and
+the test still could not do it. Its fixture builds a fresh `Scheduler` and
+calls `add_path` for `n_paths` in `[0, 1, 3]`. A fresh path has `in_flight = 0`
+and `cwnd > 0`, so `available() > 0`, so it satisfies BOTH filters:
+`active_paths()` is `active && available() > 0` and `live_paths()` is `active`
+(`scheduler/mod.rs:2652`, `:2667`). **The two sets are IDENTICAL at every
+`n_paths` the fixture tried**, so substituting either accessor for the other
+passes. The saturation-filter trap the doc comment warns about at
+`capw_store_cap` — the one that made a saturated path invisible to liveness and
+got the peer to declare a path dead mid-transfer — was not covered by the test
+that named it.
+
+The general lesson is narrower and sharper than "ordinal tests are weak": **a
+test that asserts an invariant only over states where the invariant is
+degenerate proves nothing, however exactly it is written.** Comparing against
+the verbatim expression was the right technique; it was applied to a fixture
+that could not distinguish the two expressions. Naming the failure mode in a
+comment is not the same as constructing the state that exhibits it, and the
+comment made the gap harder to see rather than easier.
+
+**The replacement.** `scheduler::tests::saturated_path_is_live_but_not_active`
+(`scheduler/mod.rs:3401`) asserts the divergence at the only state that
+exhibits it: a path that is up but SATURATED (`in_flight = cwnd`) is in
+`live_paths()` and NOT in `active_paths()`, and a DOWN path with spare capacity
+is in neither — so `live_paths()` is not merely "all paths" either. It also
+asserts the trap explicitly, that on FRESH paths the two sets are EQUAL, with a
+message saying a fresh-only fixture cannot test the distinction, so the fixture
+that produced the false pass cannot be re-entered unnoticed. Swapping either
+accessor for the other fails it.
+
+**Nothing in the crate asserted this before** — not in `scheduler/`, not in the
+sender, not in `tests/`. `tests/store_cap_bench.rs` measures how OFTEN the two
+sets differ as a workload statistic, which presumes the distinction rather than
+pinning it. The distinction is load-bearing in shipped code: the CC-pace
+aggregate uses `live_paths()` precisely BECAUSE the active filter dropped a
+saturated path out of the sum (the C7 ×1.00-vs-×1.7 aggregation defect), while
+the M*, in-flight-cap and tail-sweep phases use `active_paths()`. So the
+deleted test's obligation was real, unmet, and until this commit unowned by
+anything else. It is now owned, and it is owned in `scheduler/`, where the two
+accessors live, rather than in a caller that happens to use them.
+
+### Decision
+
+**(a) DELETE.** Not (b): a "real but unmeasured candidate" row would preserve a
+mechanism whose premise is refuted and whose construction is wrong at the one
+site that matters — exactly the unfalsifiable state the register exists to
+drain. Not (c): a pre-registered `SCHED_SNAPSHOT` 0-vs-1 battery would spend VM
+time confirming that a no-op is a no-op, and would mis-license the conclusion.
+
+**No behaviour change to the shipped default**, and this was VERIFIED, not
+inferred from the shape of the edit. Each of the five `match sched_snap` sites
+was unwrapped to its `None` arm — that arm IS the OFF path — and a mechanical
+check compared the whitespace-stripped character stream of each unwrapped block
+against the same range of `git show 17f7fa9:raptorpath/src/net/mod.rs`: all
+five MATCH exactly (193/124/184/190/143 chars), so no identifier, operator,
+literal, or ordering changed and the only difference is indentation. The claim
+this supports is source-level: **the executed default path is character-for-
+character what main executes.** It is deliberately NOT a claim of binary
+identity — the compiled output legitimately differs from main's, because main
+also compiled an always-false `Option` test at each site and a loop-top capture
+the default never reached, and both are now gone. That is a removal of dead
+default-path work, not a change to it.
+
+Removed: `net/sched_snapshot.rs` (−219); `RuntimeGates::sched_snapshot` with
+its doc, `env_flag` resolution, `[GATES]` echo field and default-stack
+assertion; the mechanism-liveness echo block; the `RWM_FORWARD` entry.
+`net/mod.rs` 9,760 → 9,736. In its place, a 22-line note at the loop top
+recording findings 1–3 and what a future attempt must differ in (capture per
+phase-group AFTER the await, never once at the loop top), so the same
+construction is not re-proposed blind.
+
+Per CLAUDE.md's "bound it with a test, don't describe it in prose": findings
+1–5 refute a claim rather than document a live divergence, and with the ON path
+deleted there is no behaviour left for a test to bound — what they earn is the
+deletion plus the loop-top note. Finding 6 is the one that earns a test, and it
+got one.
+
+### Gates run
+
+Engine code changed, so the full set. `cargo test --lib`: **382 passed, 0
+failed, 2 ignored** — including all three `gates::forwarding_audit` tests, of
+which `gate_forwarding_list_covers_the_engine_surface` checks the engine
+`RWM_*` surface against `RWM_FORWARD` in BOTH directions and is what proves the
+gate left both sides together (a one-sided removal fails it), plus
+`every_forwarded_gate_has_a_liveness_echo`, `the_gates_echo_is_two_sided`, and
+the new `scheduler::tests::saturated_path_is_live_but_not_active`.
+`-p raptorpath-math`: 59 + 19 + 22 + 4 + 4 + 3 + 25 = **136 passed, 0 failed**.
+`--doc`: green (0 doctests in either crate). **All nine loopbacks, release,
+17 tests, 0 failures**: `ack_merge_loopback` 1/1, `ack_merge_optout` 2/2,
+`copa_sole_loopback` 1/1, `emit_batch_loopback` 1/1, `patience_loopback` 1/1,
+`perf_loopback` 8/8, `recov_mp_loopback` 1/1, `win_decouple_loopback` 1/1,
+`wire_compact_loopback` 1/1. **`gate_suite --release`: 15 passed, 0 failed,
+17 ignored, 282.40 s** — `gate_c1_dc_tie`, `gate_c2_wifi`, `gate_c3_lte`,
+`gate_c4_satellite`, `gate_c5_bad_wifi`, `gate_c7_dual_symmetric`,
+`gate_c8_dual_asymmetric_rtt`, `gate_c9_outage_recovery`, the three
+`gate_vs_simquic_*` and the four `g2_*` all green. Three green runs, no flake,
+no skip beyond the standing `--ignored` set.
+
+Ops: **no VM contact.** The L1 three-term battery held the VM lock for the
+whole session; no `tools/l1` driver was invoked and nothing on 10.1.5.16 was
+touched. The only `tools/l1` file edited is `lib.sh`'s `RWM_FORWARD` list,
+which the crate's own forwarding audit reads from disk at `cargo test` time.
+
+### What this does not license
+
+No default changed (the OFF path became the only path, verified character-for-
+character), no law touched, no gate weakened, no visualizer or wasm crate
+touched. No new ADR: this is a register disposition, not an architectural
+decision, and ADR-0066 carries it. The general question "should the sender read
+the scheduler once per iteration?" is NOT answered here and is not claimed to
+be — what is settled is that THIS artifact did not pose it. Anyone re-opening
+it owes a construction that captures after the await and consumers that are not
+independently throttled past each other.

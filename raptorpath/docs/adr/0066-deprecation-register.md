@@ -1,6 +1,6 @@
 # ADR-0066: The Deprecation Register — two-stage retirement for refuted mechanisms
 
-## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"). **FULLY EXECUTED 2026-07-27, consolidation pass 2 (`refactor/consolidation-2`): the two re-test clauses were both discharged same-day WITH DATA and their code deleted — FMTCP re-tested on the clean substrate → CONFIRMED-REFUTED → f841757; streaming crown re-test → CLEARED → bccb32a (scoped streaming-only; `RWM_UNIFIED=0` now = legacy-RLC). No Class-C gate remains in the tree; the two-stage discipline itself (deprecate → re-test → delete) stays the standing rule for future refuted mechanisms**. **RE-OPENED 2026-08-10: one Class-C row added — BLOCK MODE, the first non-env member, re-test OPEN (ADR-0069).**
+## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"). **FULLY EXECUTED 2026-07-27, consolidation pass 2 (`refactor/consolidation-2`): the two re-test clauses were both discharged same-day WITH DATA and their code deleted — FMTCP re-tested on the clean substrate → CONFIRMED-REFUTED → f841757; streaming crown re-test → CLEARED → bccb32a (scoped streaming-only; `RWM_UNIFIED=0` now = legacy-RLC). No Class-C gate remains in the tree; the two-stage discipline itself (deprecate → re-test → delete) stays the standing rule for future refuted mechanisms**. **RE-OPENED 2026-08-10: one Class-C row added — BLOCK MODE, the first non-env member, re-test OPEN (ADR-0069). Same day, one row added and RETIRED unmeasured — `RWM_SCHED_SNAPSHOT`, deleted with NO re-test clause because its premise was refuted by reading the code it shipped in, not by a measurement whose substrate could go stale (goal-gate "Scheduler-Snapshot Adjudication").**
 
 **Date**: 2026-07-21
 
@@ -69,6 +69,52 @@ DEPRECATION REGISTER):
   unset state of a CLI flag; the hook is instead the routing pin
   `net::tests::default_config_routes_bulk_and_auto_to_the_block_pipeline`,
   which fails if the default moves without its measurement.
+
+**Disposition added 2026-08-10 — DELETED SAME DAY, no re-test owed (the
+register's first row retired by READING rather than by measurement):**
+
+- `RWM_SCHED_SNAPSHOT` (`net/sched_snapshot.rs`, the net-seam-pass-2
+  per-iteration scheduler snapshot; shipped OFF 2026-08-09, never
+  measured) — **DELETED unmeasured, NO re-test clause.** The register's
+  standing rule is deprecate → re-test → delete, and the rule exists
+  because a refutation is only as good as its substrate. This row is
+  exempt for the one reason that can justify the exemption: it was not
+  refuted by a measurement on a possibly-stale substrate, it was refuted
+  by its OWN premise not being reachable in the code it shipped in. The
+  ledger section "Scheduler-Snapshot Adjudication (2026-08-10)" carries
+  the six findings; in short, the "BDP that never existed" it claimed
+  to prevent cannot be composed from the five sites it served (each
+  already reads under ONE acquisition; the only rate×RTprop product,
+  `copa_bdp_anchor`, is atomic inside one `CopaState`), the phases it
+  served are independently ~5 ms-throttled and so would have consumed
+  DIFFERENT snapshots anyway, and at the one genuinely skew-exposed site
+  (the post-`select!` deficit-spacing read) a loop-top capture is
+  STRICTLY STALER than the per-phase read it replaced. Measuring an arm
+  whose mechanism is absent produces a null that means nothing, so no
+  battery is owed and none is queued. **What a future proposal must
+  differ in** (recorded so this is not re-derived blind): capture per
+  phase-group AFTER the await, not once at the loop top. Removal:
+  `net/sched_snapshot.rs`, the `RuntimeGates::sched_snapshot` field +
+  echo + default-stack assertion, the `RWM_FORWARD` entry, and the five
+  `match sched_snap` sites unwrapped to their OFF arms — VERIFIED
+  character-for-character (whitespace-stripped) against
+  `17f7fa9:raptorpath/src/net/mod.rs`, so the executed default path is
+  exactly what main executes; the compiled output legitimately differs,
+  because main also compiled an always-false `Option` test at each site
+  and a capture the default never reached. **Finding 6, which is
+  INDEPENDENT of this gate and outlives it:** the deleted module's unit
+  test named the `active_paths()`/`live_paths()` swap as "exactly the
+  failure mode here" and was structurally incapable of detecting it — its
+  fixture only ever added FRESH paths, where `in_flight = 0 < cwnd` makes
+  the two sets identical, so either accessor passed. A test that asserts
+  an invariant only over states where the invariant is degenerate proves
+  nothing however exactly it is written, and naming the failure mode in a
+  comment is not constructing the state that exhibits it. It is
+  therefore REPLACED, not dropped, by
+  `scheduler::tests::saturated_path_is_live_but_not_active`, which pins
+  the divergence under saturation and asserts the fresh-path trap
+  explicitly. Nothing in the crate asserted this distinction before,
+  though shipped code is load-bearing on it.
 
 Class-B gates (concept incomplete, successor scheduled — percap family,
 `RWM_COPA_COMPETE`, formerly `RWM_TAPER_R`/`RWM_UNIFIED` before they
