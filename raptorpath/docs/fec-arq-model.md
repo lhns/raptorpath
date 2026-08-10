@@ -11110,6 +11110,93 @@ not claim the ICMP probe is application-level latency. And it leaves the
 seed-7 abort class (11 % of the main battery, 39 % of the top-up) standing as
 an instrument cost rather than explaining it.
 
+### 16.48 Honest inputs: the −35% was an O(rate²) max-filter fold and one honest deque erases its every cycle — the CPU share of the anchor tax is gone, a 13% blocking share survives at CPU parity, K's jit25 elevation is RTprop's own, and the three-term law on corrected inputs stops losing anywhere (2026-08-10, `feat/honest-inputs` + `feat/honest-inputs-battery`, `RWM_HONEST_ANCHOR`/`RWM_HONEST_K` both **default OFF**)
+
+§16.47 closed with the latency control "blocked on the anchor, and on
+nothing else this battery can see": `RWM_PLAIN_RS` — the honest per-symbol
+rate sample the three-term law needs — cost −35% goodput at c1 by itself,
+and the law's K input read ×1.34–1.38 HIGH at jit25 against its
+pre-registered direction. This arc named both mechanisms with file:line,
+shipped a zero-constant fix for each, and then scored the fixes in a
+pre-registered five-arm battery (A / D=`RWM_PLAIN_RS` / DH=D+honest-anchor /
+B=law+D / BH=law on both fixes; c1, jit25, sc2, c7, c8; ×8, both seeds;
+goal-gate "Honest Inputs — MECHANISM" and "— BATTERY").
+
+**Mechanism 1, convicted then killed.** After every accepted rate sample the
+Copa BtlBw filter recomputed its windowed max by a FULL-WINDOW fold
+(`rs_on_delivered`, scheduler/mod.rs) — invisible when fed per ACK, O(rate²)
+when `RWM_PLAIN_RS` feeds it per delivered symbol, under the scheduler lock,
+on a c1 sender already at its one-core ceiling. The rtt min-filter had the
+same defect and was fixed years-equivalent earlier; the max filter kept the
+old pattern because nothing fed it per-symbol until the honest sampler did.
+A component clock reproduced the arithmetic (102→700 ms of CPU per
+transfer-second from 9.6 k→24 k sym/s; the fix 0.011× that, rate-flat), and
+the battery confirmed it on the wire: sender CPU/byte at c1, arm D
+×1.611–1.614 over A — arm DH **0.996–1.013×**, both seeds (criterion H2,
+pre-registered ≤1.15×). `RWM_HONEST_ANCHOR` is a monotonic max-deque kept
+beside `bw_samples`, provably value-identical (a randomized 4000-step
+equivalence test pins deque front == fold at every step), so the gate
+selects COST, never behavior.
+
+**What the CPU parity bought — and what it exposed.** The goodput criterion
+(H1, DH/A 0.95–1.02) FAILED at 0.857/0.874, below its own <0.90
+falsification line: with every cycle of the fold gone, a −13% share
+survives at exact CPU parity. The wait-attribution gauge names its shape:
+DH's sender spends 48–53% of wall time on the store-backpressure poll
+(A: 32%) with median occupancy 188 of a 688 cap — a sender BLOCKING, not
+computing, pool not full. The residual of the honest sampler is contention
+on the attribution path, not arithmetic; it is Phase 3's first probe. At
+c7 the same fix recovers the anchor's whole 12% (DH/A 0.994/1.014, DH>D
+by >2σ both seeds): c7's D/A 0.88 was pure CPU, and the c1/c7 asymmetry —
+full recovery where the sender has intake headroom, partial where it has
+none — is itself the strongest evidence the c1 residual is a blocking
+effect rather than per-symbol cost.
+
+**Mechanism 2, convicted — then the cell reassigned the blame.** K =
+`EchoRatioMin` was fed min(EWMA(x))/min(x): a windowed min of a SMOOTHED
+series concentrates near the distribution's mean and rises with its width —
+a min that reads high under jitter by construction, reproduced at the
+component level (smoothed feed 1.466 vs raw feed 1.001 on the jit25 shape).
+`RWM_HONEST_K` re-sources the same statistic to the raw per-sample series.
+On the wire, the jit25 criterion (H3: BH limit back inside 1300–1430)
+FALSIFIED HIGH (1779/1809) — and the in-cell `khr=`/`kraw=` decomposition
+built for exactly this shows why: the smoothed and raw-fed mins agree
+in-cell (khr−kraw ≈ 0, both signs, per-rep paired), so smoothing is NOT
+what elevates K at jit25. What remains is RTprop itself — a global min
+that once saw netem's clamped-jitter floor (0.07 ms class) and a
+half-window that never sees it again — the pre-registration's own #1
+expected failure, confirmed in modified form. Two honest caveats carry the
+verdict: arm B failed its own ≥1800-class reproduction precondition
+(1402/1757), because the cell's substrate moved across eras (arm A now
+delivers 76–81 Mbit/s at jit25 vs ~50 in §16.45's battery, and the limit
+is linear in measured rate); and jit25 throughput held parity in every
+arm, so nothing was lost — the finding is that K's honesty question moves
+one level down, to RTprop, and may not be patched with a constant.
+
+**The re-adjudication on corrected inputs (BH vs A, the arm a user gets).**
+The §16.47 verdict table inverts: BH regresses nothing outside noise at
+any cell on either seed; keeps sc2's halved RTT at goodput parity
+(p50 0.452/0.479×A, ≫2σ, p99 ≤52 ms) now at CPU/byte 0.96–0.99×A where
+arm B paid ×1.17; holds c7 at parity where B paid 12–14%; and at c1 —
+where B lost a third — BH reads **+13%/+22% over the shipped default**
+(1.132 within its own 2σ at σ=33; 1.217 EXCEEDS), at below-default CPU on
+both endpoints. That is §16.45's original criterion-4 claim (the banked
++16–25% c1 floor) finally landing on the wire, and it is reported as an
+unregistered observation with its noise bound, not banked. The default
+still ships OFF on the pre-registration's own pre-commitments — honest-K
+is barred from candidacy while the RTprop question stands, and no battery
+flips its own default — but for the first time in this arc nothing
+measurable argues against the composition: the open items are two probes
+(RTprop honesty at jit25; the c1 blocking residual) and a flip battery
+sized to the c1 arm's σ. `RWM_HONEST_ANCHOR` alone — value-identical,
+CPU-priced, regression-free here — is a flip candidate on this evidence.
+
+Primary record: goal-gate "Honest Inputs — MECHANISM + FIXES + COMPONENT
+VALIDATION" and "Honest Inputs — BATTERY" (ledgers
+`docs/l1-raw/honestinputs-*`; 400+60 invocations, 0 gate mismatches, 0
+instrument failures, aborts 49 all in the documented seed-7 class, re-run
+symmetrically).
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
