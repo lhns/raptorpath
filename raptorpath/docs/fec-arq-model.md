@@ -10890,6 +10890,124 @@ were derivable, checkable and correct, the third was needed and lands within
 1.6 % where it matters, and the quantity they jointly predict is not the one that
 governs throughput at these cells.**
 
+### 16.46 The binder is the link, and two of §16.45's criteria were unsatisfiable when they were written: a pre-registered target must be checked against the cell's physical ceiling (2026-08-10, `feat/find-the-binder` → `feat/latency-lever`, no new L1 run for the arithmetic, `tools/l1/bind_analyze.py`; a SUCCESSOR note to §16.45, which is left exactly as it was written)
+
+§16.45 reported that the three-term law sizes the outstanding-data store
+correctly, that the store is *demonstrably* filled to the new size, and that
+throughput does not follow — and it declined to invent a term to cover the gap.
+That refusal was right. This section supplies what it was missing, which was
+not a term but a **denominator**, and it is arithmetic over §16.45's own
+`diag/` tree with nothing re-run.
+
+**The binder is the bottleneck link.** Dividing each cell's measured symbol
+rate by its shaped capacity — the conversion is measured, not fitted: tc's own
+`Sent bytes` over the symbols the sender reports handing off gives 1 264–1 287 B
+per 1 200 B symbol across all 32 jit25 runs and all four arms — the shipped
+default arm A is already transmitting at **97.9 ± 0.2 % / 97.4 ± 0.4 %** of
+100 Mbit at c2r100, with 5–6 ms of queue above a 100 ms RTprop, in 16 of 16
+reps. Its store cap of 1 024 symbols is 0.98 of that cell's BDP. Arm A is at
+the textbook operating point: window = BDP, link full, queue empty.
+
+**So the law moved the only factor left to move.** Under the law at c2r100,
+occupancy goes ×2.97 (1 012 → 3 011), RTT goes ×2.94 (106 → 312 ms), and
+utilisation does not move at all (97.4 → 97.5). Occupancy ÷ RTT is 9 547 sym/s
+in arm A and 9 651 sym/s in arm B — **the same rate**. That is Little's law,
+measured: the limit controls the PRODUCT of rate and delay, the link controls
+the rate, so the permission the law grants is spent entirely on queue. And the
+queue is not free — repair share rises 3.8 → 5.9 % and retransmits per 1 000
+source symbols roughly double.
+
+**The reading that follows is that the law is a LATENCY control, and §16.45
+already measured it as one without scoring it as one.** Wherever the link
+binds, moving the outstanding limit moved delay and left throughput alone, in
+both directions: at sc2 the law more than halves the limit (1024 → 495), halves
+the round trip (103 → 50 ms) and delivers the same goodput to within 0.3 %; at
+sc3 it cuts the limit 3.3× and the round trip 3.4× for −14 % of goodput; at c7
+it cuts 4096 → 1155 and 110 → 43 ms. Those numbers were scored as "within σ"
+nulls because the criteria only asked about throughput.
+
+**This is not a fourth term and nothing here proposes one.** occupancy =
+throughput × delay is arithmetic, and the binder it exposes — the bottleneck
+rate — is `r`, which the (δ, ρ, r) triangle already names. What the three-term
+law lacks is not an axis but a **ceiling**: it sizes outstanding data from
+measured rate and delay without knowing whether the pipe is already full, so
+above the BDP its output is queue by construction. Naming that is a description
+of what was measured, not a proposal, and §16.45's verdicts are not
+reinterpreted: criteria 3, 4 and 5 failed and they stay failed.
+
+**THE SPECIFICATION FAILURE, recorded as such.** Two of those clauses could not
+have been met by any engine. §16.45's pre-registration asked c2r100 for
+**+25…+60 %** on a cell whose default arm already occupied 97.4–97.9 % of a
+100 Mbit pipe — **+25 % is 122 Mbit on a 100 Mbit link** — and asked c7 for
+**≥ 0.97×Σ** at 97 % of 200 Mbit, a one-sided test whose only available
+direction is down. Across the whole battery:
+
+| cell | shaped capacity | arm A utilisation (s42 / s7) | headroom |
+|---|---|---|---|
+| sc2 | 100 Mbit | **100.3 / 99.9 %** | none |
+| sc3 | 20 Mbit | **100.3 / 99.4 %** | none |
+| c7 | 200 Mbit (2 × 100) | **97.2 / 97.0 %** | 3 % |
+| c2r100 | 100 Mbit | **97.9 / 97.4 %** | 2 % |
+| jit25 | 100 Mbit | 80.8 / **100.6 %** | none on s7 |
+| c2r200 | 100 Mbit | 51.2 / 51.0 % | 49 % |
+| c1 | 1 Gbit | 23.8 / 24.5 % | 76 % |
+| shal8 | 8-packet queue | 9.0 / 9.0 % | the queue, not the rate |
+
+**Five of the eight cell-seeds the goal was scored on had no headroom to win.**
+That is a defect in the goal specification, not in the measurement and not in
+the engine, and it is owned here rather than folded into a re-reading of the
+result. The rule it earns is now MEASUREMENT DISCIPLINE 16: *a pre-registered
+performance target must be checked against the physical ceiling of its cell
+before it is written; if headroom is under 5 %, no throughput target may be
+written for that cell.* Its general form is that **a criterion must be able to
+distinguish the mechanism working from the mechanism not working** — a target
+the cell cannot produce fails identically for a good mechanism and a bad one,
+so it carries no information at all.
+
+**The reason the arithmetic was only available afterwards is an instrument
+gap, and it is the first thing this successor fixed.** The battery captured
+`tc -s qdisc show` for 2 of its 9 cells. The utilisation its central negative
+result turned on was one command away on the other seven. Three instruments
+were missing and all three are now built, none of them a new gate — they ride
+`RWM_DIAG`, which every arm already sets:
+
+1. **tc counters on every cell.** The capture had to move *inside*
+   `perf_rwm_c.sh`, because that script's `EXIT` trap destroys both namespaces
+   the instant it returns; a caller can never see the qdiscs. Dual cells (c7,
+   c8) shape two veth pairs and now emit `== CLI1` / `== SRV1` sections, which
+   exposed a live parser defect: `bind_analyze.py` tested three fixed banners
+   and fell through on anything else, leaving the section pointer at its
+   previous value, so a CLI1 block would have been silently added to cli0.
+2. **A wait-reason histogram for the window sender.** `sidle` — 34.3 % of wall
+   time at c2r100-B and 72.7 % at c2r200-B — was one bucket attributed to
+   nothing. The engine owned `stall[emit/budget/fill/target/tok/cwnd]` and
+   printed it only under `if generation`, so it appeared in **0 of 1 116 logs**;
+   but printing it unconditionally would have printed zeros, because its
+   accumulator is generation-gated too and five of its six buckets are
+   generation-plane concepts that do not exist under `RWM_GEN=0`. The gauge was
+   not hidden in window mode, it was undefined there. The window sender
+   therefore gets its own attribution: the `select!` arm that woke each
+   iteration, time-weighted, printed with no condition on it at all.
+3. **A datagram send-queue audit.** quinn's `send_datagram` calls
+   `Datagrams::send(data, drop = true)`, which silently evicts the oldest
+   queued datagrams at the 4 MB send buffer (~3 300 symbols) and returns `Ok`;
+   `src=`/`cod=` count handoffs, so an evicted symbol reads as a delivered one.
+   The law set the cap to 3 073 at c2r100 and 4 096 at c2r200 — the same order
+   — so the arm most exposed was the scored one. quinn exposes **no** eviction
+   counter and no hook, and that is stated rather than worked around: two
+   independent proxies are recorded instead, a queue-full predicate that is an
+   upper bound on evicting calls tight to one byte-exact tie, and
+   handoffs-minus-`frame_tx.datagram`, which is the same quantity computed
+   without the predicate.
+
+**What this does not license.** No default changed, no gate flipped, no
+constant tuned, no term added, and §16.45 is not edited — it is left reading
+exactly as it was written, which is the point of a successor note. The
+latency reading above is a *description of measurements taken under a
+throughput pre-registration*; a latency claim needs its own pre-registration,
+its own crown, and c7's cost priced against it, and this section makes no such
+claim.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

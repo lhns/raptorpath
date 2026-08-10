@@ -245,15 +245,40 @@ def cmd_tc(diag, cells):
             continue
         cur, q = None, {}
         for line in open(os.path.join(diag, fn), errors="replace"):
-            if line.startswith("== CLI0"):
-                cur = "cli"; continue
-            if line.startswith("== SRV0-INGRESS"):
-                cur = None; continue
-            if line.startswith("== SRV0"):
-                cur = "srv"; continue
+            # goal-gate "Latency Lever": tc capture now runs on EVERY cell,
+            # including the DUAL ones (c7, c8), which shape two veth pairs and
+            # therefore emit `== CLI1` / `== SRV1` sections that never existed
+            # before. The old parser tested three fixed prefixes and fell
+            # through on anything else, leaving `cur` at its PREVIOUS value —
+            # so a CLI1 section would have been silently attributed to cli0
+            # and doubled the data-direction byte count. Dispatch on a table
+            # and reset `cur` to None on any UNRECOGNISED banner, so an
+            # unknown section contributes nothing rather than corrupting its
+            # predecessor. Order matters: SRV0-INGRESS is a prefix-superset
+            # of SRV0 and must be tested first.
+            if line.startswith("== "):
+                if line.startswith("== SRV0-INGRESS"):
+                    cur = None
+                elif line.startswith("== CLI0"):
+                    cur = "cli"
+                elif line.startswith("== CLI1"):
+                    cur = "cli1"
+                elif line.startswith("== SRV0"):
+                    cur = "srv"
+                elif line.startswith("== SRV1"):
+                    cur = "srv1"
+                else:
+                    cur = None
+                continue
             mm = QSENT.search(line) if cur else None
             if mm and cur not in q:
                 q[cur] = tuple(int(x) for x in mm.groups())
+        # Dual cells: the shaped capacity in CAP is the SUM of both legs, so
+        # the data-direction byte count must be the sum too. Single cells
+        # have no cli1 section and are unchanged, byte for byte.
+        if "cli1" in q:
+            a, b = q["cli"], q["cli1"]
+            q["cli"] = (a[0] + b[0], a[1] + b[1], a[2] + b[2])
         cpath = os.path.join(diag, f"{cell}-{arm}-s{seed}-r{rep}-c.log")
         if "cli" not in q or not os.path.exists(cpath):
             continue

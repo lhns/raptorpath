@@ -209,6 +209,58 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    name collision in `perf_rwm_c.sh`). (Added 2026-08-09, "Gate-Forwarding
    Audit".)
 
+16. **A PRE-REGISTERED PERFORMANCE TARGET MUST BE CHECKED AGAINST THE
+   PHYSICAL CEILING OF ITS CELL BEFORE IT IS WRITTEN. A target above the
+   remaining headroom is arithmetically impossible and no engine can meet
+   it.** Item 11 says pre-register a predicted effect size; item 5 says it
+   must exceed the noise floor. Neither says the cell has to be able to
+   PRODUCE it, and the three-term battery is what that omission costs.
+
+   **The failure, measured.** "Three-Term Law — PRE-REGISTRATION" asked
+   criterion 3 for **+25…+60 %** goodput at c2r100 and criterion 5 for
+   **≥ 0.97×Σ** at c7. The baseline arm A was already running at:
+
+   | cell | shaped capacity | arm A utilisation (s42 / s7) | headroom |
+   |---|---|---|---|
+   | sc2 | 100 Mbit | **100.3 / 99.9 %** | none |
+   | sc3 | 20 Mbit | **100.3 / 99.4 %** | none |
+   | c7 | 200 Mbit (2 × 100) | **97.2 / 97.0 %** | 3 % |
+   | c2r100 | 100 Mbit | **97.9 / 97.4 %** | 2 % |
+   | jit25 | 100 Mbit | 80.8 / **100.6 %** | none on s7 |
+
+   **+25 % at c2r100 is 122 Mbit on a 100 Mbit link.** Five of the eight
+   cell-seeds the goal was scored on had no headroom to win, and criterion
+   3's c2r100 clause and criterion 5's c7 clause were **unsatisfiable at the
+   moment they were written**. The battery then scored the mechanism FAILED
+   against them. The mechanism may well deserve that verdict on other
+   grounds — this item is not a re-reading of it — but two of those clauses
+   tested the link, not the engine, and that is a goal-specification defect,
+   not a measurement one.
+
+   Concretely, before a number goes into a pre-registration:
+   (a) state the cell's SHAPED capacity from its own definition
+       (`lib.sh scenario_params`, `adv_cells.sh`; dual cells sum their legs);
+   (b) state the BASELINE arm's utilisation of it, **measured**, from the
+       shaped device — `tc -s qdisc show` on every cell, not inferred from
+       goodput and not captured on a subset. The three-term battery took tc
+       on 2 of its 9 cells, which is why this arithmetic was available only
+       AFTERWARDS;
+   (c) write the headroom beside the target, in the pre-registration, as a
+       number. **If headroom < 5 %, no throughput target may be written for
+       that cell** — say so and score it on the axis that is still free
+       (latency, occupancy, loss, CPU);
+   (d) the same check applies to a NO-REGRESSION clause. "≥ 0.97×Σ" at 97 %
+       utilisation is a one-sided test whose only available direction is
+       down, and it will be failed by any mechanism that costs anything at
+       all.
+
+   The general form: **a criterion must be able to distinguish the
+   mechanism working from the mechanism not working.** A target the cell
+   cannot produce fails identically for a good mechanism and a bad one, so
+   it carries no information — the same defect item 1 names for a mechanism
+   that never ran, on the other side of the measurement. (Added 2026-08-10,
+   "Latency Lever"; the arithmetic is "What Binds Throughput".)
+
 ## Component Benches (2026-08-08)
 
 The instruments that satisfy MEASUREMENT DISCIPLINE 14. Each drives ONE
@@ -21602,3 +21654,300 @@ constant tuned, no term added. `RWM_THREE_TERM` stays default OFF. The only
 engine-crate file added is `tests/anchor_rate_bench.rs`, which is `#[ignore]`d,
 asserts no threshold beyond "the transfer completed", and is in no suite. The
 visualizer and wasm crates are untouched.
+
+## The Specification Failure (2026-08-10) — GOAL "THREE TERMS, NO CONSTANTS", recorded as a defect in the goal spec rather than folded into a re-reading of the result. Branch `feat/latency-lever` from main@c57c055. **NO NEW L1 RUN:** the arithmetic is "What Binds Throughput" above. Earns MEASUREMENT DISCIPLINE 16; paper successor §16.46.
+
+"Three-Term Law — BATTERY" scored criteria 3 and 5 FAILED against numbers
+pre-registered at 70833cd. Two of those clauses could not have been met by any
+engine, and that is mine.
+
+### THE ARITHMETIC
+
+Arm A — the shipped default, before the law touches anything — against each
+cell's shaped capacity:
+
+| cell | shaped capacity | arm A util % (s42 / s7) | **headroom** | clause written against it |
+|---|---|---|---|---|
+| **sc2** | 100 Mbit | **100.3 / 99.9** | **none** | criterion 5: "within σ" |
+| **sc3** | 20 Mbit | **100.3 / 99.4** | **none** | criterion 5: "within σ" |
+| **c7** | 200 Mbit (2 × 100) | **97.2 / 97.0** | **3 %** | criterion 5: **≥ 0.97×Σ** |
+| **c2r100** | 100 Mbit | **97.9 / 97.4** | **2 %** | criterion 3: **+25…+60 %** |
+| **jit25** | 100 Mbit | 80.8 / **100.6** | **none on s7** | criterion 3: **+5…+15 %** |
+| c2r200 | 100 Mbit | 51.2 / 51.0 | 49 % | pre-registered CLAMPED |
+| c1 | 1 Gbit | 23.8 / 24.5 | 76 % | criterion 4: +16–25 % class |
+| shal8 | 8-packet queue | 9.0 / 9.0 | the queue binds, not the rate | criterion 3: flat ±3 % |
+
+**+25 % at c2r100 is 122 Mbit on a 100 Mbit link.** c7's "≥ 0.97×Σ" at 97 %
+utilisation is a one-sided test whose only available direction is down: it is
+failed by any mechanism that costs anything at all, working or not. jit25's
++5…+15 % is unsatisfiable on seed 7 and satisfiable on seed 42, which is worse
+than either — the clause's meaning depends on the seed.
+
+**Five of the eight cell-seeds the goal was scored on had no headroom to win.**
+
+### WHAT IS AND IS NOT BEING CLAIMED
+
+**This does NOT rehabilitate the mechanism.** `RWM_THREE_TERM` stays default
+OFF and every verdict in "Three-Term Law — BATTERY" stands unamended. c1's
+regression (0.685 / 0.663, ≫ 2σ on both seeds) is real and is not a headroom
+artefact — c1 has 76 % headroom, so that criterion WAS satisfiable and the
+mechanism failed it. Criterion 4 is untouched by this.
+
+What is claimed is narrower and it is about the goal, not the engine: **two
+clauses tested the link rather than the mechanism**, so their FAIL verdicts
+carry no information about the mechanism in either direction. A criterion that
+fails identically whether the mechanism works or not is the mirror image of the
+defect MEASUREMENT DISCIPLINE 1 names — there, the mechanism never ran; here,
+the mechanism could run perfectly and still fail.
+
+### WHY IT WAS ONLY VISIBLE AFTERWARDS — an instrument gap, now closed
+
+The battery captured `tc -s qdisc show` on **2 of its 9 cells**. Every number
+in the table above therefore had to be reconstructed from the sender's own
+symbol rate times a measured bytes-per-symbol, after the fact, by a tool
+written after the verdicts were published. The utilisation that would have
+falsified the targets *at pre-registration time* was one command away on the
+other seven cells.
+
+It is fixed at 74c4e2f, along with the other two instruments "What Binds
+Throughput" ranked: the capture moved INSIDE `perf_rwm_c.sh` (its `EXIT` trap
+destroys the namespaces before any caller can read them), it covers the dual
+cells' second veth pair for the first time, and `bind_analyze.py`'s tc parser
+— which would have silently attributed a `== CLI1` section to cli0 — was
+corrected in the same commit.
+
+### THE RULE THIS EARNS
+
+MEASUREMENT DISCIPLINE **16**, added above: *a pre-registered performance
+target must be checked against the physical ceiling of its cell before it is
+written; state the shaped capacity, state the measured baseline utilisation
+from the shaped device, write the headroom beside the target, and if headroom
+is under 5 % write no throughput target for that cell at all.* It binds the
+next pre-registration on this branch, which is the immediately following
+block.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed, no gate flipped, no constant tuned, no term added, no
+criterion re-scored, no existing verdict edited. §16.45 is left reading exactly
+as it was written; the paper record is a SUCCESSOR note (§16.46), because a
+section that is silently corrected to know what it did not know is not a
+record.
+
+## Latency Lever — PRE-REGISTRATION (2026-08-10) — MEASUREMENT DISCIPLINE 11 and 16: written and committed BEFORE the scored battery, in its OWN commit, against the law shipped at 9f5adc0. Branch `feat/latency-lever` from main@c57c055; GOAL "THREE TERMS, NO CONSTANTS" criterion 6, the "law ships" branch. Gate `RWM_THREE_TERM`, default OFF. Driver `tools/l1/lat_battery.sh`, parser `lat_parse.py`, probe `RWM_LATPROBE`.
+
+### WHAT THIS SCORES AND WHY IT IS A DIFFERENT QUESTION
+
+"Three-Term Law — BATTERY" scored the outstanding-data limit on THROUGHPUT.
+"What Binds Throughput" showed why almost nothing moved: at five of eight
+cell-seeds the shipped default was already at 97–100 % of the shaped link, so
+by Little's law the limit could only move DELAY. This battery scores it on
+delay, with goodput as a CONSTRAINT rather than a score.
+
+**THE SCORE** is delivered latency of an INDEPENDENT flow: a 20 pkt/s ICMP
+probe sharing the same shaped qdisc as the bulk transfer, for the transfer's
+duration, in every arm (`RWM_LATPROBE=1`). It is measured by the kernel, not
+by the code under test — the engine's own `rtt=` is the sender's estimate of
+its own path, produced by the mechanism being scored, and is kept only as a
+corroborating second instrument (`q_p50/95/99` = `rtt` − `rtp`).
+
+**THE CONSTRAINT** is goodput parity: a latency change bought with goodput is
+a trade, not a win, and is reported as a trade.
+
+### THE HEADROOM CHECK — DISCIPLINE 16, MEASURED, BEFORE ANY TARGET IS WRITTEN
+
+From the calibration below (arm A, `tc -s qdisc show` on the shaped device,
+now captured on EVERY cell): `util = tc bytes × 8 ÷ (transfer seconds ×
+shaped capacity)`.
+
+| cell | shaped capacity | **arm A util, tc-measured** | steady-state util (prior battery) | **headroom** | throughput target permitted? |
+|---|---|---|---|---|---|
+| **sc2** | 100 Mbit | **98.7 %** | 100.3 % | **1.3 %** | **NO — latency only** |
+| **sc3** | 20 Mbit | **98.7 %** | 100.3 % | **1.3 %** | **NO — latency only** |
+| **c2r100** | 100 Mbit | **92.2 %** | 97.9 % | 2–8 % | **NO — latency only** |
+| **c7** | 200 Mbit | **93.8 %** | 97.2 % | 3–6 % | **NO — latency only** |
+| **c2r200** | 100 Mbit | **45.1 %** | 51.2 % | **55 %** | **YES** |
+| **c1** | 1 Gbit | **23.0 %** | 23.8 % | **77 %** | **YES** |
+
+The two utilisation columns differ because they measure different things: the
+tc column is the whole-transfer average over the shaped device including
+ramp-up; the prior column is a steady-state rate reconstructed from the
+sender's symbol counts. **Where they disagree the MORE BINDING one governs**,
+so c2r100 and c7 are treated as under 5 % and get no throughput target. That
+is the conservative direction and it is chosen before the run, not after.
+
+**No number in this pre-registration exceeds its cell's headroom.** The two
+targets that do exist (c2r200, c1) sit on cells with 55 % and 77 % free.
+
+### THE CALIBRATION THIS IS WRITTEN AGAINST — DISCLOSED IN FULL
+
+**These predictions are INFORMED, not blind.** One rep per arm per cell, seed
+42 only, run at 9f5adc0 before this block was written, committed with it. It
+is `n = 1`: it carries no σ, no seed-7 evidence, and nothing in it is a
+result. It is disclosed because a pre-registration that hides what it already
+saw is not a pre-registration.
+
+| cell | arm | goodput Mbit | occ/cap | probe p50 | p95 | p99 | util % |
+|---|---|---|---|---|---|---|---|
+| sc2 | A | 88.4 | 1006/1024 | 89.3 | 93.4 | 94.4 | 98.7 |
+| sc2 | **B** | 86.7 | **472/491** | **46.4** | **50.7** | **51.5** | 97.1 |
+| sc3 | A | 16.7 | 1024/1024 | 504 | 542 | 552 | 98.7 |
+| sc3 | **B** | 16.2 | **307/311** | **156** | **768** | **923** | 99.6 |
+| c2r100 | A | 82.1 | 1019/1024 | 103 | 109 | 113 | 92.2 |
+| c2r100 | **B** | 80.6 | **2927/3015** | **307** | **382** | **389** | 94.8 |
+| c7 | A | 168.3 | 958/4096 | 52.2 | 101 | 127 | 93.8 |
+| c7 | **B** | **106.7** | **656/680** | 63.8 | **69.4** | **72.3** | 60.3 |
+| c2r200 | A | 40.2 | 1024/1024 | 200 | 202 | 203 | 45.1 |
+| c2r200 | **B** | **46.8** | **3121/4096** | 201 | **452** | **460** | 55.9 |
+| c1 | A | 210.1 | 230/543 | 2.07 | 2.54 | 2.71 | 23.0 |
+| c1 | **B** | **142.5** | 186/467 | 2.07 | 2.54 | 2.71 | 15.6 |
+
+### THE MECHANISM, RESTATED — AND IT IS NOT "THE LAW REDUCES LATENCY"
+
+The tempting claim after "What Binds Throughput" was *the three-term law is a
+latency win*. **The calibration refutes that as stated**, and the corrected
+claim is sharper and more falsifiable:
+
+> **The outstanding-data limit is a latency CONTROL, and its sign at a
+> saturated link is set by whether the law's computed cap lands BELOW or
+> ABOVE the shipped default's cap. It is not a reducer; it is a knob that the
+> law happens to turn in both directions.**
+
+At a saturated link, occupancy = rate × delay with rate pinned by the link,
+so delay ∝ cap. Where the law computes a cap below the shipped 1024/4096
+(sc2 491, sc3 311, c7 680) latency must fall; where it computes one above
+(c2r100 3015, c2r200 4096) latency must rise. **This is the whole prediction
+and it is one formula with no cell-specific term.**
+
+### PREDICTION 1 (PRIMARY) — Δlatency tracks Δcap, sign and rough magnitude
+
+For every cell, with `R = cap_B / cap_A` measured live from the same logs:
+
+* **R < 0.9 ⇒ probe p50 falls**; **R > 1.1 ⇒ probe p50 rises**; and the ratio
+  `p50_B / p50_A` tracks `R` to within **±40 %** on the cells whose arm-A
+  queue is the dominant part of the probe RTT (sc2, sc3, c2r200, c2r100).
+* Cells whose arm-A queue is NOT dominant (c1: probe 2.07 ms on a 2 ms
+  propagation, i.e. ~0 ms of queue) predict **NO CHANGE**, because there is
+  no queue to remove. c1 is the null control and it must stay null.
+
+**Pre-registered per-cell direction, both seeds, ×8:**
+
+| cell | cap_A → cap_B (expected) | R | **predicted probe p50** | headroom-permitted goodput claim |
+|---|---|---|---|---|
+| sc2 | 1024 → ~490 | 0.48 | **DOWN, to 0.45–0.75× of A** | none (1.3 % headroom) — parity within σ required |
+| sc3 | 1024 → ~310 | 0.30 | **DOWN, to 0.25–0.65× of A** | none (1.3 %) — parity within σ required |
+| c7 | 4096 → ~680 | 0.17 | DOWN or FLAT at p50; **DOWN at p99, to < 0.8×** | none (3–6 %) |
+| c2r100 | 1024 → ~3000 | 2.9 | **UP, to > 1.8× of A** | none (2–8 %) |
+| c2r200 | 1024 → 4096 (clamped) | 4.0 | **UP at p95/p99**; p50 pinned by 200 ms propagation | **UP: goodput_B/goodput_A > 1.05** (55 % headroom, store-bound) |
+| c1 | 543 → ~470 | 0.86 | **FLAT: within ±10 %** (no queue to remove) | **DOWN is expected and is the anchor's:** B/A < 0.85, and D/A ≈ B/A |
+
+### PREDICTION 2 — THE TAIL IS NOT THE MEDIAN, and sc3 is where that shows
+
+The calibration's most uncomfortable number: at sc3 the median falls
+504 → 156 ms while **p95 rises 542 → 768 and p99 rises 552 → 923**. A smaller
+store on a 20 Mbit lossy link empties the queue but leaves less absorption for
+a loss burst, so the tail is paid for the median.
+
+**Pre-registered: at sc3, `p99_B > p99_A` on both seeds**, while
+`p50_B < 0.65 × p50_A`. If instead the tail also falls, this prediction is
+refuted and the law is a better latency control than claimed — that is a
+falsification in the favourable direction and will be reported as one.
+
+### PREDICTION 3 — the wait attribution says WHICH gate the law released
+
+`wait[paused]` is the fraction of sender wall time woken by the store-full
+backpressure poll. If the law's effect is the store, releasing it must move
+that bucket and nothing else needs to move.
+
+* **c2r100: `wait_paused` falls from ~36 % (A) to < 15 % (B)** on both seeds.
+* **c2r200: falls from ~63 % to < 20 %.**
+* **sc2/sc3: does NOT fall** (their caps go DOWN, so the store binds at least
+  as hard): sc2 stays within ±10 points, sc3 stays above 60 %.
+
+This is a mechanism check, not a score. It cannot be read at all without the
+instrument built at 74c4e2f; `stall[` was absent from all 1 116 logs of the
+previous battery.
+
+### PREDICTION 4 — H5, the datagram eviction, is REFUTED
+
+"What Binds Throughput" left open whether quinn silently evicts datagrams once
+the cap approaches its ~3 300-symbol send buffer, and named c2r100-B and
+c2r200-B as the only cells that could show it. The calibration reads
+`full = 0` and `hand − tx = 0` at c2r100-B (3 of 93 330) and c2r200-B (0 of
+48 226).
+
+**Pre-registered: `dgq_full = 0` and `(hand − tx) / hand < 0.005` in every arm
+of every cell, both seeds.** If any arm shows `full > 0`, H5 is CONFIRMED and
+the affected cell's goodput number is void until it is re-priced. The one
+non-zero reading in calibration is c7-B (117 of 175 632 = 0.07 %), inside the
+threshold and on a dual cell where the queue is per-path.
+
+### THE FALSIFIERS — BOTH DIRECTIONS, STATED BEFORE THE RUN
+
+**What shows the law is a real latency control (all must hold):**
+
+* **F-WIN-1.** At sc2, `p50_B / p50_A ≤ 0.75` on BOTH seeds, with
+  |Δgoodput| inside 2σ_pooled — the "half the limit, half the RTT, same
+  goodput" claim, now measured on an independent flow instead of the sender's
+  own estimate.
+* **F-WIN-2.** The SIGN of Δp50 matches `sign(R − 1)` at **≥ 5 of 6 cells**,
+  both seeds. One formula, no cell-specific term, direction predicted in
+  advance at every cell including the two where it predicts a LOSS.
+* **F-WIN-3.** The effect exceeds noise: at every cell where a direction is
+  claimed, |p50_B − p50_A| > 2σ_pooled of the same-config spread.
+
+**What shows it is NOT (any one is sufficient to deny a default):**
+
+* **F-LOSE-1 — the win is bought.** At sc2 or sc3, `p50` falls but goodput
+  falls by more than 2σ_pooled. A latency control that costs throughput at a
+  saturated link is a trade the user must be able to decline, and a default
+  cannot make that choice for them.
+* **F-LOSE-2 — it is inside noise.** |p50_B − p50_A| < 2σ_pooled at sc2. The
+  strongest predicted win failing its own noise bound denies the whole claim.
+* **F-LOSE-3 — the direction is not predictable.** The sign of Δp50 matches
+  `sign(R − 1)` at fewer than 5 of 6 cells, or differs BETWEEN SEEDS at any
+  cell. A control whose direction depends on the seed is not a control.
+* **F-LOSE-4 — the tail is worse where the median improves, at more than one
+  cell.** sc3 is pre-registered to do this (prediction 2); if c7 or sc2 do it
+  too, the mechanism trades median for tail generally and "latency win" is the
+  wrong description of it.
+* **F-LOSE-5 — the c1 null fires.** c1's probe p50 moves by more than ±10 %.
+  There is no queue at c1 to remove, so any movement means the probe is
+  measuring something other than queueing delay and the primary instrument is
+  not what it is claimed to be.
+
+### THE BATTERY
+
+Cells **sc2 sc3 c2r100 c7 c2r200 c1**; arms **A** (shipped default), **B**
+(`RWM_THREE_TERM=1 RWM_PLAIN_RS=1`, the SCORED arm), **D** (`RWM_PLAIN_RS=1`,
+attribution control — the anchor alone costs 35 % at c1 and ~12 % at c7 and
+B-vs-A is unreadable without it). Arm C is dropped: it was scored already and
+is not the law.
+
+Interleaved round-robin per rep, ×8, fresh topology per invocation, seeds
+**42 and 7**, `RWM_GEN=0 RWM_DIAG=1 RWM_LATPROBE=1` in every arm, gates
+forwarded through `lib.sh`'s single `rwm_forward_env`. Launched detached with
+a completion sentinel and **not polled** (discipline 13). Plus the realtime
+crown (`tail_matrix.sh`, arms `ship`/`tt`), which is already a delivered-
+latency instrument and is where a latency claim must not regress.
+
+**ABORT ≠ DNF.** An abort is an invocation with no `[GATES]` on either
+endpoint: it contributes no datum and is excluded with its n recorded. A DNF
+is a transfer that ran and did not finish. The previous battery would have
+reported `dnf = 111` without this distinction. A THIRD class is new here:
+**INSTRUMENT-FAIL**, an invocation whose engine ran but whose probe or gauge
+is missing. It is loud because it is silently scoreable.
+
+### WHAT A PASS WOULD AND WOULD NOT LICENSE
+
+A full pass licenses **`RWM_THREE_TERM` shipping as a documented latency
+control with an explicit default decision**, argued from the measured
+effect. It does NOT license flipping it on by itself: the law requires
+`RWM_PLAIN_RS`, which costs 35 % at c1 and ~12 % at c7 on its own, and any
+default that carries the law carries that tax. **The default question is
+therefore answered on arm B versus arm A, which is what a user would actually
+get, and never on B versus D.**
+
+Nothing here proposes a term, a constant or a cell-specific coefficient. If
+the latency win is absent, that is a second honest refutation and it closes
+the goal by the other route.

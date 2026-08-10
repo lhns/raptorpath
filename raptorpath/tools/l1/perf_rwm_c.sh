@@ -84,6 +84,12 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
+# The tc capture below writes a FIXED path, so a run that aborts before
+# reaching it would leave the PREVIOUS invocation's counters there for the
+# caller to copy under this cell's name. Silently attributing one cell's
+# wire truth to another is worse than having no capture, so clear it first:
+# an absent file is then an unambiguous "this invocation produced none".
+rm -f /tmp/rwm-q.txt
 
 if pgrep -x raptorpath >/dev/null 2>&1; then
     echo "BUSY: raptorpath already running -- aborting" >&2
@@ -123,12 +129,48 @@ echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} e
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
 # teardown.  Reported as CPUCLI/CPUSRV seconds so utilization = cpu/elapsed.
 rm -f /tmp/rwm-cli-time
+# goal-gate "Latency Lever" — THE LOADED DELIVERED-LATENCY PROBE (RWM_LATPROBE=1).
+#
+# The score for a latency control is what a *different* flow experiences while
+# the bulk transfer is running. The engine's own `rtt=`/`rtp` gauges cannot
+# supply that: they are the sender's estimate of its OWN path, produced by the
+# code under test, on a flow whose pacing the mechanism changes. An
+# independent ICMP flow sharing the SAME shaped qdisc is not — it is delivered
+# round-trip time, measured by the kernel, identical in both arms, and it is
+# exactly the standing queue a latency control is claimed to remove.
+#
+# It must run HERE because the namespaces exist only for this script's
+# lifetime. 20 probes/s over the data path, backgrounded before the transfer
+# starts and reaped after it ends; raw RTTs land in /tmp/rwm-ping.txt for the
+# caller to percentile. Default OFF, so every existing driver is unchanged.
+#
+# Cost accounting, stated rather than assumed: 20 pkt/s of 84 B is 13 kbit/s,
+# 1.3e-4 of a 100 Mbit cell — below the resolution of every goodput number
+# here, and it is present in EVERY arm, so it cannot favour one.
+PING_PID=""
+if [[ "${RWM_LATPROBE:-0}" != "0" ]]; then
+    rm -f /tmp/rwm-ping.txt
+    # NOT -q: the per-packet `time=<ms>` lines ARE the measurement; the
+    # summary line only carries min/avg/max/mdev, and a tail percentile is
+    # the whole point of a bufferbloat probe.
+    ip netns exec "$NS_CLI" ping -i 0.05 -W 2 -D 10.77.0.2 > /tmp/rwm-ping.txt 2>&1 &
+    PING_PID=$!
+    disown "$PING_PID" 2>/dev/null || true
+fi
 timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
     --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
     | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
     || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+# Reap the loaded-latency probe BEFORE the qdisc counters below, so its own
+# packets are inside the tc totals every arm is measured on.
+if [[ -n "$PING_PID" ]]; then
+    kill "$PING_PID" 2>/dev/null || true
+    pkill -f "ping -i 0.05 -W 2 -D 10.77.0.2" 2>/dev/null || true
+    wait "$PING_PID" 2>/dev/null || true
+    echo "    LATPROBE: /tmp/rwm-ping.txt $(grep -c 'time=' /tmp/rwm-ping.txt 2>/dev/null || echo 0) replies"
+fi
 SRV_TICKS=0
 for P in $(pgrep -x raptorpath); do
     T=$(awk '{print $14+$15}' /proc/$P/stat 2>/dev/null || echo 0)
@@ -153,6 +195,44 @@ for DEV in srv0 srv1; do
     ST=$(ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
 done
+
+# goal-gate "Latency Lever", instrument 1 — TC COUNTERS ON EVERY CELL.
+#
+# The three-term battery captured tc for 2 of its 9 cells, and its central
+# negative result ("the store was occupied to the new limit and throughput
+# did not follow") needed exactly one number to be readable: the shaped
+# link's utilisation. The flattened `QDISC` lines above ALREADY carry it —
+# and `tt_battery.sh`'s grep filter threw them away, and their one-line
+# form is not what any parser here reads.
+#
+# The capture MUST happen inside this script: `trap cleanup EXIT` above
+# destroys both namespaces the instant this process returns, so by the time
+# a caller regains control the qdiscs are gone. So write the sectioned form
+# to a FIXED path and let the caller copy it under its own rep-unique name
+# (the `adv_battery.sh` precedent). Callers that do not copy it pay nothing
+# but a stale /tmp file.
+#
+# Banner names match `adv_cells.sh counters` so `bind_analyze.py`'s parser
+# reads both without a second dialect. CLI1/SRV1 are NEW — dual cells (c7,
+# c8) shape two veth pairs and only the first was ever nameable.
+{
+    for DEV in cli0 cli1; do
+        ip netns exec "$NS_CLI" ip link show "$DEV" >/dev/null 2>&1 || continue
+        echo "== ${DEV^^} (data-dir egress: netem or tbf+netem bottleneck)"
+        ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+    done
+    for DEV in srv0 srv1; do
+        ip netns exec "$NS_SRV" ip link show "$DEV" >/dev/null 2>&1 || continue
+        echo "== ${DEV^^} (ack-dir egress)"
+        ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+    done
+    echo "== SRV0-INGRESS (policer, when present)"
+    ip netns exec "$NS_SRV" tc -s filter show dev srv0 parent ffff: 2>/dev/null || true
+    # Wall duration of the shaped window, so utilisation is computable from
+    # this file ALONE rather than joined against a RUNTIME line elsewhere.
+    echo "== INVOCATION_S ${SECONDS}"
+} > /tmp/rwm-q.txt 2>/dev/null || true
+echo "    QCAP: /tmp/rwm-q.txt $(wc -l < /tmp/rwm-q.txt 2>/dev/null || echo 0) lines"
 
 # --- HARD SANITY GUARD (feat/gen-on-rebaseline) -----------------------------------
 # A measurement where the mechanism under test did not run must FAIL LOUDLY, not
