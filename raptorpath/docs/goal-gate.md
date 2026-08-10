@@ -22235,3 +22235,240 @@ cannot be flipped today. No constant tuned, no term added, no cell rescued, no
 criterion re-scored. `RWM_THREE_TERM=0` remains bit-identical to main. The
 engine change in this branch is instrumentation only, gated on `RWM_DIAG`, with
 an asserted OFF-value property.
+
+## Honest Inputs — MECHANISM + FIXES + COMPONENT VALIDATION (2026-08-10) — GOAL "HONEST INPUTS" phase 1. Branch `feat/honest-inputs` from main@ffc4447. **STRICTLY LOCAL: no VM contact in this phase; every L1 number below is READ from ledgers/logs already in the tree** (the three-term battery's published tables above; the latency-lever battery's raw logs in `docs/l1-raw/latlever-lat-s{42,7}.log`). Gates `RWM_HONEST_ANCHOR` / `RWM_HONEST_K`, both default OFF, both anchor-hygiene umbrella members. The scored battery is phase 2, pre-registered in the NEXT section (own commit, before any run).
+
+The three-term arc closed with the law's two measured inputs both dishonest
+in load-bearing ways: the honest rate sample (`RWM_PLAIN_RS`, arm D) alone
+costs −35% goodput at c1 — the ONLY super-noise throughput effect in two
+full batteries — and `EchoRatioMin`'s K read ×1.34/1.38 HIGH at jit25, the
+inverse of its pre-registered direction. This block names both mechanisms
+with file:line and the measurement that convicts each, ships the derived
+zero-constant fix for each, and validates both at the component level.
+
+### MECHANISM 1 — the −35% is a CPU tax: an O(window) fold run once per delivered symbol, on a sender at its one-core ceiling
+
+**Where it enters:** `src/scheduler/mod.rs`, `CopaState::rs_on_delivered`
+— after every ACCEPTED rate sample the BtlBw windowed max is recomputed by
+a FULL-WINDOW FOLD over `bw_samples`
+(`self.max_bw = self.bw_samples.iter().map(..).fold(0.0, f64::max)`,
+`rs_on_delivered`, src/scheduler/mod.rs:1254, the fold at its tail). The window is ≈10·RTprop clamped [1 s, 10 s];
+at c1 (RTprop ≈ 2 ms → the 1 s clamp) it holds ≈ rate × 1 s samples, and at
+steady state essentially EVERY attributed source seq generates an accepted
+sample (ack_elapsed ≈ RTT ≥ RTprop = the guard's own bound). Fed per ACK
+(the legacy `record_delivery`) this fold is invisible. Fed PER DELIVERED
+SOURCE SYMBOL — which is exactly what `RWM_PLAIN_RS` does
+(`net::copa_feed_attribute` → `PathState::on_src_delivered_seq` →
+`rs_on_delivered`; the per-seq call is `src/net/mod.rs:1203`) — it is O(rate) work O(rate) times per second: **O(rate²)**,
+under the scheduler lock, on the ack-attribution path.
+
+This is not a new defect class in this file: the `rtt_samples` min filter
+had the SAME full-window rescan and was converted to a monotonic min-deque
+after a perf profile measured it at "~42% sender CPU … a hidden O(n²)"
+(`record_rtt`'s own comment, src/scheduler/mod.rs:1374). The max filter kept the old
+pattern because nothing fed it per-symbol until `RWM_PLAIN_RS` did.
+
+**The measurement that convicts it** — the latency-lever battery ran c1
+with arm D (`RWM_PLAIN_RS=1` alone) and captured the per-invocation CPU
+gauge (`CPU: CPUSRV=… CPUCLI=…`), 8 reps × 2 seeds, 400 MB fixed
+(`docs/l1-raw/latlever-lat-s42.log`, `-s7.log`):
+
+| c1 | goodput Mbit/s | sender CPU s (CPUCLI) | CPU/byte vs A | goodput D/A | (A/D) CPU/byte |
+|---|---|---|---|---|---|
+| s42 A | 226.0 ± 4.7 | 15.50 ± 0.50 | 1.000 | | |
+| s42 D | 144.2 ± 1.3 | 25.05 ± 0.27 | **×1.616** | **0.638** | **0.619** |
+| s7 A | 226.6 ± 2.7 | 15.44 ± 0.23 | 1.000 | | |
+| s7 D | 147.2 ± 1.9 | 24.66 ± 0.31 | **×1.597** | **0.649** | **0.626** |
+
+Two facts close the case. (1) **The sender is at its ~one-core ceiling in
+BOTH arms**: CPUCLI ≈ the whole invocation wall time in all 32 runs
+(A: 15.5 s of CPU in a 16 s invocation; D: 24.7–25.1 s in 24 s). (2) With
+the CPU pinned, goodput must equal core ÷ (CPU per byte) — and it does:
+**the goodput ratio (0.638/0.649) IS the inverse CPU-per-byte ratio
+(0.619/0.626) to within 2–4%**, on both seeds, σ tiny. The −35% is CPU
+arithmetic, not a network effect.
+
+The same gauge explains every anchor-tax fingerprint from "What Binds
+Throughput":
+
+* **Rate-dependence.** The fold's cost per second is ∝ rate². Component
+  measurement (below): 102 ms CPU per transfer-second at 9.6 k sym/s,
+  700 ms at 24 k.
+* **Zero tax in the 5.0–9.9 k band.** The tax EXISTS there — c2r100
+  measures D/A CPU ×1.208/1.216, sc2 ×1.243 — but those senders run at
+  ≈0.6 core with headroom, so +0.1 core of fold disappears into idle time
+  and goodput stays at parity (measured 0.969/0.966 and 0.994, within the
+  battery's noise). The tax only bites at the sender's own ceiling, which
+  is what the battery's anti-correlation with store binding was seeing:
+  the binder is the CPU, not the store.
+* **The sidle counter-evidence resolved.** Arm D's sender loop is MORE
+  idle (53.6/54.1% vs 33.5/31.7%) because the fold runs on the
+  ack-attribution path UNDER THE SCHEDULER LOCK — the sender loop's extra
+  "idle" is time blocked on/behind that work, a wait created by someone
+  else's cycles. "Work or wait" was the undecidable question; the answer
+  is: work, experienced by the sender as wait.
+* **The L0 negative result explained.** `anchor_rate_bench` (loopback)
+  could not reproduce the tax at 11–12 k not only because the rate is
+  half of c1's: on loopback ack_elapsed is sub-millisecond, so the ≥
+  min-interval guard REJECTS most samples and the window never fills —
+  the quadratic term is structurally absent there. The bench ceiling
+  workaround is therefore not a faster loopback but a component clock
+  (below), which reaches any rate.
+
+### FIX 1 — `RWM_HONEST_ANCHOR`: the same statistic at O(1), zero constants
+
+`CopaState` now maintains a monotonic (non-increasing) MAX-deque
+(`bw_mono`) beside `bw_samples` — the exact mirror of the `rtt_samples`
+min-deque — fed and evicted in lockstep (`bw_push_sample` /
+`bw_evict_before`, both feed paths, both eviction cutoffs). Under the gate
+`max_bw` is read off the deque's front; off, the legacy fold runs
+verbatim. **The two reads are the same value by construction** (a sample
+that is older and no larger than a newer one can never again be the
+windowed max under front-only evictions), so the gate selects COST, never
+behavior — the zero-fitted-constant claim in its strongest form. Nothing
+is sampled, decayed, subsetted or approximated; `bw_samples`, its length
+(the `ANCHOR_MIN_SAMPLES` establishment gate) and every eviction rule are
+unchanged.
+
+* Pinned by `scheduler::tests::bw_mono_front_equals_full_window_fold`
+  (runs in every `cargo test`): 4 000 randomized steps across BOTH feed
+  paths, window-length changes and mass evictions — `mono.front == fold ==
+  max_bw` at every step, gate on and off. This is simultaneously the
+  fix's law and the gate's OFF-value property.
+* Liveness echo `O(1) windowed-max rate filter ACTIVE (RWM_HONEST_ANCHOR: …)`
+  in `run_impl` (both roles); `[GATES] RWM_HONEST_ANCHOR={0,1}` two-sided;
+  `RWM_FORWARD` entry added (`gates::forwarding_audit` green).
+
+### FIX-1 COMPONENT VALIDATION — the c1 regime reached on the component clock
+
+`scheduler::tests::bw_filter_cost_is_quadratic_legacy_and_linear_fixed`
+(`#[ignore]`, `cargo test --release -p raptorpath --lib -- --ignored
+--nocapture bw_filter_cost`) drives `rs_on_sent`/`rs_on_delivered` on a
+`MockClock` at exactly the battery's two rate classes — the loopback
+ceiling does not apply because the clock is simulated and only the WORK is
+real. Steady state, window full (rate-sized, asserted), 100 k timed
+deliveries per condition, one process, both arms via test hooks:
+
+| condition | window samples | per-delivery | CPU per transfer-second |
+|---|---|---|---|
+| legacy, 9.6 k sym/s | 9 601 | 10 595 ns | **102 ms** |
+| legacy, 24 k sym/s | 24 001 | 29 164 ns | **700 ms** |
+| fixed, 9.6 k | 9 601 | 314 ns | 3 ms |
+| fixed, 24 k | 24 001 | 318 ns | 8 ms |
+
+* **The rate-dependence reproduces on the component**: ×2.75 per-delivery
+  cost at ×2.5 the rate (asserted ≥ 1.8), where the loopback bench could
+  not discriminate at all.
+* **The magnitudes close the loop against BOTH L1 gauges.** At 9.6 k the
+  fold alone predicts ≈ +1.0 s of sender CPU on a c2r100 transfer
+  (102 ms/s × ~9.5 s); the battery's gauge measured +1.36/+1.37 s — same
+  class, the remainder being the sampler's linear wiring. At c1's 24 k the
+  fold is 0.70 core on a sender with ≈0.05 core of headroom — the collapse
+  is forced, and the equilibrium (rate falls until the quadratic tax fits)
+  is the measured 15 k sym/s of arm D.
+* **The fix removes it**: 0.011× the legacy cost at 24 k, flat in rate
+  (asserted ≤ 0.25× and rate-flat). Predicted residual of the whole
+  `RWM_PLAIN_RS` machinery after the fix: ~315 ns/delivery + the send-side
+  bookkeeping ≈ 1–3% of a core at c1's rate — parity-class, to be priced
+  by the phase-2 battery, not asserted here.
+
+### MECHANISM 2 — K's windowed MIN is fed a SMOOTHED series, and the min of a smoothed series sits near the mean
+
+**Where it enters:** every K consumer feeds `EchoRatioMin` the smoothed
+`p.srtt()` sampled at the 5 ms dyn-cap refresh clock (`net::honest_cap_term`
+/ `net::three_term_terms`), while RTprop is the min over RAW samples
+(`CopaState::record_rtt`'s min-deque). So K = min(EWMA(x))/min(x): the
+EWMA (α = 1/8) filters out exactly the low excursions a windowed MIN
+exists to catch, its minimum concentrates near the MEAN of the underlying
+delay distribution, and K rises with the distribution's WIDTH — a
+windowed min that reads HIGH under jitter, by construction. That is the
+banked jit25 inversion (window term ×1.34/1.38 its pre-registered value,
+against a pre-registered "will read near the LOW end"). The hypothesis
+from the goal dispatch is CONFIRMED as the mechanism; nothing else was
+needed.
+
+### FIX 2 — `RWM_HONEST_K`: the same estimator fed the raw series, zero constants
+
+Under the gate, `CopaState::record_rtt` feeds a per-path `EchoRatioMin` —
+the SAME tracker type, the same `PERCAP_K_HALF_WINDOW_US` window, the same
+≥ 1 clamp, the same seed-identity guard — the RAW per-sample rtt/RTprop
+ratio at the SAMPLE clock. Every consumer reads it as
+`k_raw.unwrap_or(k_legacy)` (`HonestCapPath.k_raw` / `ThreeTermPath.k_raw`
+→ `honest_cap_term` / `three_term_terms` / the win-decouple read): ONE
+formula whose K input the gate re-sources; `None` (gate off, the shipped
+default) is byte-identical legacy, and the legacy tracker's window state is
+observed identically on both arms so the A/B isolates the K source alone.
+The fix changes WHICH MEASURED SERIES feeds an unchanged statistic —
+no coefficient anywhere. (Noted openly: the shared seed-identity guard
+discards the exact floor-setting sample, so the raw-fed min reads the
+second-lowest in window — a negligible upward bias under any dense stream,
+kept in preference to forking the guard.)
+
+* Law + OFF-property pinned by
+  `scheduler::tests::k_raw_reads_the_jitter_floor_where_the_smoothed_min_reads_high`
+  (engine feed site, gate off ⇒ `k_raw() = None`) and
+  `net::tests::honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical`
+  (None ⇒ bit-exact legacy term; Some ⇒ same law at the raw K; tracker
+  state identical both arms).
+* Liveness echo `raw-sample echo-ratio floor ACTIVE (RWM_HONEST_K: …)`;
+  `[GATES] RWM_HONEST_K={0,1}` two-sided; `RWM_FORWARD` entry added.
+* DIAG gains `kraw=` beside the legacy `khr=` (net/diag.rs): khr stays
+  the smoothed read on every arm, kraw is the raw-fed K under the gate
+  ("-" off), so **khr − kraw is the smoothing bias measured IN-CELL** —
+  the phase-2 jit25 decomposition instrument.
+
+### FIX-2 COMPONENT VALIDATION — the jit25 bias reproduced, then removed, then the no-jitter control
+
+`tests/honest_inputs_bench.rs` (deterministic, runs in the normal suite;
+the ON-arm wiring check is a second invocation, `RWM_HONEST_K=1 cargo test
+--test honest_inputs_bench`):
+
+| series (jit25 shape: 40 ms ± 25 ms uniform, 5 ms cadence, 12 s) | K read |
+|---|---|
+| smoothed-at-refresh (the shipped feed) | **1.466** |
+| raw-at-sample (`RWM_HONEST_K`) | **1.001** |
+| narrow distribution control (8 ms floor + 4 ms standing queue), shipped | 1.500 |
+| narrow distribution control, raw | 1.500 |
+
+The shipped feeding reproduces the jit25 inflation class (battery: ×1.34/
+1.38) from nothing but the smoothing; the raw feeding reads the floor; and
+where the distribution is narrow — the 5–9.9 k cells that were already
+honest — the two feedings agree to < 0.1% (asserted < 5%), so the fix
+cannot disturb the parity band through K. The engine-site wiring is
+asserted two-sided (`k_raw() = None` without the gate, floor-read with it).
+
+### WHAT THIS PHASE COULD NOT DETERMINE LOCALLY (phase 2's burden)
+
+1. **That removing the fold restores c1.** The component proof says the
+   dominant, rate-dependent term is gone and the residual is parity-class;
+   only the c1 cell can price the residual linear wiring (DashMap/BTreeMap
+   per seq, attribution under the scheduler lock) on the VM's cores.
+2. **jit25's limit under the honest K.** The component reads the floor of
+   the series it is GIVEN; what the engine's RTprop itself reads under
+   netem's clamped ±25 ms jitter (the recorded 0.07 ms negative-delay
+   clamp) is only measurable in the cell — the pre-registration names this
+   as the fix's most likely failure mode.
+3. **Whether c7's D/A 0.88 is pure CPU.** The per-path window at c7 is
+   half of c1's; the fold accounts for the right class, but c7's
+   cross-path attribution adds machinery c1 does not have. The battery's
+   D′/D split will say.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed: `RWM_HONEST_ANCHOR` and `RWM_HONEST_K` ship OFF
+(asserted, with the two-sided echo, in `gates::tests`), `RWM_PLAIN_RS`
+stays OFF, `RWM_THREE_TERM` stays OFF. No constant added anywhere: fix 1
+is a value-identical data structure, fix 2 is a re-sourced input to an
+unchanged statistic. No gate weakened; the forwarding audit and the whole
+local gate set are green (lib 390 ×2 runs, math, doc, the nine loopback
+suites in release, gate_suite --release 15/15, recovery_bench,
+slack_bench full --ignored 3/3 ×2 runs, the four three-term tests).
+Timing-sensitive pass counts reported per the discipline, not asserted
+from one run: `store_cap_bench --ignored` ran GREEN in 4 of 5 processes;
+the one red (its two L0 saturation-population tests) was the process that
+executed CONCURRENTLY with a full release build of another suite — the
+contention class those population assertions are known to be sensitive
+to; three consecutive uncontended processes after it were 3/3 green.
+No L1 number was produced or reinterpreted: every battery figure above is
+quoted from the ledgers/logs already committed, and the c1/jit25 verdicts
+stay exactly as their batteries recorded them.

@@ -576,6 +576,16 @@ pub(crate) fn report(
                     // windowed-min echoSRTT/RTprop ratio K_i feeding
                     // the honest cap law (1.00 when not engaged).
                     let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
+                    // goal-gate "Honest Inputs" DIAG (`RWM_HONEST_K`):
+                    // kraw = the RAW-sample windowed-min ratio the K
+                    // consumers substitute under the gate ("-" when the
+                    // gate is off). khr stays the legacy smoothed read
+                    // either way, so khr − kraw IS the smoothing bias,
+                    // measured in-cell — the jit25 decomposition gauge.
+                    let kraw_s = p
+                        .k_raw()
+                        .map(|k| format!("{k:.2}"))
+                        .unwrap_or_else(|| "-".to_string());
                     // feat/store-borrowing DIAG: this path's loan
                     // gauges — symbols LENT out (charged here,
                     // flying elsewhere) / BORROWED in (flying
@@ -604,8 +614,8 @@ pub(crate) fn report(
                     let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
                     let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }
