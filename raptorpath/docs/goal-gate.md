@@ -20601,3 +20601,137 @@ New, always-on: `net::tests::three_term_law_is_arithmetic_and_continuous`,
 `delta_budget_b_is_the_dial_not_a_mode`, and
 `slack_bench::three_term_engine_law_is_the_bench_terms_at_the_anchors`.
 New `--ignored` component bench: `slack_bench::three_term_bench` (18.7 s).
+
+## Three-Term Law — PRE-BATTERY SMOKE + INSTRUMENT AMENDMENT (2026-08-10) — committed BEFORE the battery, in its OWN commit. Branch `feat/three-term-battery` from `feat/three-term-law`@f36a758. Nothing in the PRE-REGISTRATION above is touched by this block; it records what one calibration rep found about the INSTRUMENT and what had to change before the scored run.
+
+VM 10.1.5.16, lock `/tmp/rwm-vm.lock` taken 2026-08-10T02:42:59Z (found FREE:
+no `raptorpath` processes, no `rp-*` namespaces, load 0.16). Binary sha256
+`744c2cb3bd6ed9be00a867c9b6668994dfd5959f374a75cc37a4e725c765deee`, source
+`f36a758`, kernel `7.0.14-101.fc43.x86_64`, E5-2650 v3 aes+avx2+pclmulqdq
+(post-divide era). Drivers `tools/l1/tt_{battery,adv,all,report}.sh|.py`.
+
+### L0 GATES, BEFORE ANY L1 (all green, same binary)
+
+`net::tests::three_term_law_is_arithmetic_and_continuous`,
+`three_term_span_vanishes_continuously_as_skew_goes_to_zero`,
+`three_term_law_closes_the_dwell_loop_in_one_evaluation`,
+`delta_budget_b_is_the_dial_not_a_mode` — **4/4**.
+`gates::forwarding_audit::{gate_forwarding_list_covers_the_engine_surface,
+every_forwarded_gate_has_a_liveness_echo, the_gates_echo_is_two_sided}` +
+`default_env_resolves_the_shipped_stack` — **4/4**.
+`slack_bench::three_term_engine_law_is_the_bench_terms_at_the_anchors` — ok.
+`mtu_blackhole_wedge` — **2/2 GREEN** (criterion 5's wedge clause, at L0).
+
+### THE SMOKE: seed 42, ONE rep, arms A/B/C. n = 1 — this is CALIBRATION, not a result, and no verdict is read off it.
+
+**The mechanism is LIVE.** Every gate-ON invocation printed the resolve-time
+`three-term outstanding limit ACTIVE` echo and a per-2 s `[3T]` line with
+`eng=1` (4–10 engaged lines per invocation on the long cells). Arm A printed
+neither, on both endpoints.
+
+**Measured `[3T]` limits, composed arm B (`RWM_THREE_TERM=1 RWM_PLAIN_RS=1`),
+against the pre-registered table** — the pre-registration's own ±30 % gate on
+whether the anchor is the binder:
+
+| cell | measured cap | pred K@4ms / K=1 | cap ÷ K@4ms | inside the pre-registered interval? |
+|---|---|---|---|---|
+| c1 | 264 | 488 / 163 | 0.54 | **yes** — between the two columns |
+| c7 | 1262 | 910 / 650 | 1.39 | above K@4ms |
+| c8 | 1227 | 1042 / 887 | 1.18 | above K@4ms |
+| c2r100 | 2825 | 3380 / 3250 | 0.84 | below, inside ±30 % |
+| c2r200 | 4096 | 4096 (clamped) | 1.00 | **clamped — B2, no verdict** |
+| jit25 | 1177 | 1430 / 1300 | 0.82 | **near the K=1 column, exactly as pre-registered** |
+| shal8 | 64 | 455 / 325 | 0.14 | **NO — the law lands on `store_cap_floor` = 64** |
+
+**The anchor caveat is CONFIRMED, quantitatively.** Arm C
+(`RWM_THREE_TERM=1` alone, the shipped over-reading anchor) read `cap=4096`
+at c7 / c8 / c2r100 / c2r200 / jit25 and `cap` 2186–3249 at c1 / sc2 / sc3,
+with window terms **×4.5 to ×13.6** the composed arm's (c2r200: window 23 430
+against arm B's 1728; sc3 hit 21 616 on one tick). Arm C is the ×4096 arm, as
+the pre-registration said it would be. **`RWM_THREE_TERM=1` alone does not
+test this law**, and the battery is scored on arm B.
+
+**The span term reads 0.0 EXACTLY at every single path** — c1, sc2, sc3,
+c2r100, c2r200, jit25, shal8, and both δ-check cells: `span_max = 0.0000`
+over every rep. That is the one-element-set arithmetic, measured.
+
+**c7's span is NOT zero: median 37.65, max 44.26 symbols (≈3 % of the limit).**
+The pre-registration calls this F3 and predicts 0 "because c7 is two IDENTICAL
+paths and max RTprop = min RTprop there". It is recorded here, before the
+battery, that the two c2 legs are identical only NOMINALLY — each carries
+netem `delay 5ms 3ms`, and the law reads `PathState::min_rtt()`, a MEASURED
+per-path statistic that need not tie. Whether that is F3 firing or the law
+correctly pricing a real measured skew is a question the battery's ×8 must
+answer, and it is written down now so the answer cannot be chosen afterwards.
+
+### AMENDMENT 1 — the liveness assertion was reading the DOCUMENTATION
+
+The driver's first form, `grep -o "RWM_THREE_TERM=[01]" <log> | tail -1`,
+reported `RWM_THREE_TERM=0` on **every** arm — including arms that had just
+printed `active=1 eng1_lines=10`. Cause: the resolve-time ACTIVE echo's own
+PROSE ends `... RWM_THREE_TERM=0 = the shipped-default control arm)`
+(`net/mod.rs:3754`), and it sorts after the `[GATES]` line, so `tail -1`
+read the message text instead of the resolved value.
+
+This is MEASUREMENT DISCIPLINE 15 catching itself: the gate was live and the
+ASSERTION was wrong. Had it run the other way round — assertion green, gate
+dead — the battery would have been unfalsifiable in principle. Both drivers
+now scope the grep to the `[GATES]` line. `tt_parse.py` was already correct
+(it filters on `[GATES]` before matching), so the recorded JSON was right
+throughout and the smoke is not contaminated.
+
+### AMENDMENT 2 — F2 cannot be tested by comparing `cap` between hints
+
+The δ-check ran c2 single at Bulk / Auto / Realtime under arm B and measured
+`cap` 492 / 458 / 703 at `b=2 / 1 / 0.5`. Read naively that is F2 firing —
+"the limit moved with the protocol hint on a reliable transfer".
+
+It is not, and the reason is arithmetic. The limit is LINEAR in the measured
+rate, and those three invocations achieved 84.0 / 29.5 / 62.5 Mbit/s. The
+δ-free invariant is the RATIO of the two terms, in which the rate cancels:
+
+```text
+   slack/window = ρ·(9/8·srtt + srtt) / (K·RTprop),   srtt = K·RTprop
+                = 17/8 = 2.125     at ρ = 1, for ANY δ
+```
+
+Measured 310.9/146.3 = 2.125 at b = 1 and 477.6/224.8 = 2.125 at b = 0.5 —
+δ is multiplied by zero, as claimed. `tt_parse.py` now records
+`sw_ratio_{med,min,max}` per invocation and **F2 is scored on that**, not on
+`cap`. The falsifier is unchanged; the instrument that reads it is fixed.
+
+### AMENDMENT 3 — arm D, the attribution control (NOT scored)
+
+Arm B composes TWO gates, so a movement at B is ambiguous between the LAW and
+the honest RATE ANCHOR the law requires. The smoke's c1 read arm A 212.2 vs
+arm B 155.0 Mbit/s — a −27 % move at the one cell whose criterion is a
+banked FLOOR, with no way to say which gate owns it.
+
+Arm **D = `RWM_PLAIN_RS=1` alone** is added to every cell: B − D is the law's
+own contribution, D − A is the anchor's. D scores nothing and can rescue
+nothing — there is no threshold in it and no verdict depends on it. It exists
+so the battery's "what remains unmodelled" can name an owner instead of a
+suspicion.
+
+### AMENDMENT 4 — transfer sizes, set by the smoke's own runtimes
+
+`c2r100` 50 → 100 MB: it is a HELD-OUT criterion-3 cell where the `[3T]`
+readout IS the datum, and 50 MB yielded only 2 engaged lines (the echo prints
+every 2 s). `c2r200` stays at 50 MB — pre-registered as CLAMPED (B2), it can
+neither confirm nor refute, so it does not earn the minutes. `shal8` 50 → 25
+MB: its 8-packet bottleneck delivers ~6 Mbit/s and 50 MB costs 68 s per
+invocation for no extra information. δ-check 20 → 60 MB (the Bulk arm
+produced too few engaged lines to parse at 20 MB).
+
+Measured per-invocation runtimes, seed 42: c1 17–23 s, c7 12–13 s, c8 4–5 s,
+sc2 11–12 s, sc3 15–16 s, c2r100 7–24 s, c2r200 ~40 s, jit25 ~22 s, shal8
+~68 s at 50 MB. dnf **0/30**.
+
+### WHAT THE SMOKE DOES NOT LICENSE
+
+n = 1, one seed, no interleaved Σ. Every directional number above (c1 0.73×,
+c7 0.86×, c8 1.03×, c2r100 0.89×, jit25 0.94×, shal8 1.14×) is a single rep
+against a documented same-nominal-config drift of 2.3× and is quoted here
+ONLY to justify the four amendments. **No criterion is scored on this
+block.** The verdicts live in the BATTERY section below, against the numbers
+pre-registered at 70833cd.
