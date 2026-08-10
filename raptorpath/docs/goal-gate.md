@@ -209,6 +209,58 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    name collision in `perf_rwm_c.sh`). (Added 2026-08-09, "Gate-Forwarding
    Audit".)
 
+16. **A PRE-REGISTERED PERFORMANCE TARGET MUST BE CHECKED AGAINST THE
+   PHYSICAL CEILING OF ITS CELL BEFORE IT IS WRITTEN. A target above the
+   remaining headroom is arithmetically impossible and no engine can meet
+   it.** Item 11 says pre-register a predicted effect size; item 5 says it
+   must exceed the noise floor. Neither says the cell has to be able to
+   PRODUCE it, and the three-term battery is what that omission costs.
+
+   **The failure, measured.** "Three-Term Law — PRE-REGISTRATION" asked
+   criterion 3 for **+25…+60 %** goodput at c2r100 and criterion 5 for
+   **≥ 0.97×Σ** at c7. The baseline arm A was already running at:
+
+   | cell | shaped capacity | arm A utilisation (s42 / s7) | headroom |
+   |---|---|---|---|
+   | sc2 | 100 Mbit | **100.3 / 99.9 %** | none |
+   | sc3 | 20 Mbit | **100.3 / 99.4 %** | none |
+   | c7 | 200 Mbit (2 × 100) | **97.2 / 97.0 %** | 3 % |
+   | c2r100 | 100 Mbit | **97.9 / 97.4 %** | 2 % |
+   | jit25 | 100 Mbit | 80.8 / **100.6 %** | none on s7 |
+
+   **+25 % at c2r100 is 122 Mbit on a 100 Mbit link.** Five of the eight
+   cell-seeds the goal was scored on had no headroom to win, and criterion
+   3's c2r100 clause and criterion 5's c7 clause were **unsatisfiable at the
+   moment they were written**. The battery then scored the mechanism FAILED
+   against them. The mechanism may well deserve that verdict on other
+   grounds — this item is not a re-reading of it — but two of those clauses
+   tested the link, not the engine, and that is a goal-specification defect,
+   not a measurement one.
+
+   Concretely, before a number goes into a pre-registration:
+   (a) state the cell's SHAPED capacity from its own definition
+       (`lib.sh scenario_params`, `adv_cells.sh`; dual cells sum their legs);
+   (b) state the BASELINE arm's utilisation of it, **measured**, from the
+       shaped device — `tc -s qdisc show` on every cell, not inferred from
+       goodput and not captured on a subset. The three-term battery took tc
+       on 2 of its 9 cells, which is why this arithmetic was available only
+       AFTERWARDS;
+   (c) write the headroom beside the target, in the pre-registration, as a
+       number. **If headroom < 5 %, no throughput target may be written for
+       that cell** — say so and score it on the axis that is still free
+       (latency, occupancy, loss, CPU);
+   (d) the same check applies to a NO-REGRESSION clause. "≥ 0.97×Σ" at 97 %
+       utilisation is a one-sided test whose only available direction is
+       down, and it will be failed by any mechanism that costs anything at
+       all.
+
+   The general form: **a criterion must be able to distinguish the
+   mechanism working from the mechanism not working.** A target the cell
+   cannot produce fails identically for a good mechanism and a bad one, so
+   it carries no information — the same defect item 1 names for a mechanism
+   that never ran, on the other side of the measurement. (Added 2026-08-10,
+   "Latency Lever"; the arithmetic is "What Binds Throughput".)
+
 ## Component Benches (2026-08-08)
 
 The instruments that satisfy MEASUREMENT DISCIPLINE 14. Each drives ONE
@@ -21602,3 +21654,82 @@ constant tuned, no term added. `RWM_THREE_TERM` stays default OFF. The only
 engine-crate file added is `tests/anchor_rate_bench.rs`, which is `#[ignore]`d,
 asserts no threshold beyond "the transfer completed", and is in no suite. The
 visualizer and wasm crates are untouched.
+
+## The Specification Failure (2026-08-10) — GOAL "THREE TERMS, NO CONSTANTS", recorded as a defect in the goal spec rather than folded into a re-reading of the result. Branch `feat/latency-lever` from main@c57c055. **NO NEW L1 RUN:** the arithmetic is "What Binds Throughput" above. Earns MEASUREMENT DISCIPLINE 16; paper successor §16.46.
+
+"Three-Term Law — BATTERY" scored criteria 3 and 5 FAILED against numbers
+pre-registered at 70833cd. Two of those clauses could not have been met by any
+engine, and that is mine.
+
+### THE ARITHMETIC
+
+Arm A — the shipped default, before the law touches anything — against each
+cell's shaped capacity:
+
+| cell | shaped capacity | arm A util % (s42 / s7) | **headroom** | clause written against it |
+|---|---|---|---|---|
+| **sc2** | 100 Mbit | **100.3 / 99.9** | **none** | criterion 5: "within σ" |
+| **sc3** | 20 Mbit | **100.3 / 99.4** | **none** | criterion 5: "within σ" |
+| **c7** | 200 Mbit (2 × 100) | **97.2 / 97.0** | **3 %** | criterion 5: **≥ 0.97×Σ** |
+| **c2r100** | 100 Mbit | **97.9 / 97.4** | **2 %** | criterion 3: **+25…+60 %** |
+| **jit25** | 100 Mbit | 80.8 / **100.6** | **none on s7** | criterion 3: **+5…+15 %** |
+| c2r200 | 100 Mbit | 51.2 / 51.0 | 49 % | pre-registered CLAMPED |
+| c1 | 1 Gbit | 23.8 / 24.5 | 76 % | criterion 4: +16–25 % class |
+| shal8 | 8-packet queue | 9.0 / 9.0 | the queue binds, not the rate | criterion 3: flat ±3 % |
+
+**+25 % at c2r100 is 122 Mbit on a 100 Mbit link.** c7's "≥ 0.97×Σ" at 97 %
+utilisation is a one-sided test whose only available direction is down: it is
+failed by any mechanism that costs anything at all, working or not. jit25's
++5…+15 % is unsatisfiable on seed 7 and satisfiable on seed 42, which is worse
+than either — the clause's meaning depends on the seed.
+
+**Five of the eight cell-seeds the goal was scored on had no headroom to win.**
+
+### WHAT IS AND IS NOT BEING CLAIMED
+
+**This does NOT rehabilitate the mechanism.** `RWM_THREE_TERM` stays default
+OFF and every verdict in "Three-Term Law — BATTERY" stands unamended. c1's
+regression (0.685 / 0.663, ≫ 2σ on both seeds) is real and is not a headroom
+artefact — c1 has 76 % headroom, so that criterion WAS satisfiable and the
+mechanism failed it. Criterion 4 is untouched by this.
+
+What is claimed is narrower and it is about the goal, not the engine: **two
+clauses tested the link rather than the mechanism**, so their FAIL verdicts
+carry no information about the mechanism in either direction. A criterion that
+fails identically whether the mechanism works or not is the mirror image of the
+defect MEASUREMENT DISCIPLINE 1 names — there, the mechanism never ran; here,
+the mechanism could run perfectly and still fail.
+
+### WHY IT WAS ONLY VISIBLE AFTERWARDS — an instrument gap, now closed
+
+The battery captured `tc -s qdisc show` on **2 of its 9 cells**. Every number
+in the table above therefore had to be reconstructed from the sender's own
+symbol rate times a measured bytes-per-symbol, after the fact, by a tool
+written after the verdicts were published. The utilisation that would have
+falsified the targets *at pre-registration time* was one command away on the
+other seven cells.
+
+It is fixed at 74c4e2f, along with the other two instruments "What Binds
+Throughput" ranked: the capture moved INSIDE `perf_rwm_c.sh` (its `EXIT` trap
+destroys the namespaces before any caller can read them), it covers the dual
+cells' second veth pair for the first time, and `bind_analyze.py`'s tc parser
+— which would have silently attributed a `== CLI1` section to cli0 — was
+corrected in the same commit.
+
+### THE RULE THIS EARNS
+
+MEASUREMENT DISCIPLINE **16**, added above: *a pre-registered performance
+target must be checked against the physical ceiling of its cell before it is
+written; state the shaped capacity, state the measured baseline utilisation
+from the shaped device, write the headroom beside the target, and if headroom
+is under 5 % write no throughput target for that cell at all.* It binds the
+next pre-registration on this branch, which is the immediately following
+block.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed, no gate flipped, no constant tuned, no term added, no
+criterion re-scored, no existing verdict edited. §16.45 is left reading exactly
+as it was written; the paper record is a SUCCESSOR note (§16.46), because a
+section that is silently corrected to know what it did not know is not a
+record.
