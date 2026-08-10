@@ -93,21 +93,38 @@ void = []
 for c in cells + extra:
     for a in arms:
         for s in seeds:
-            rs = by.get((c, a, s))
+            allrs = by.get((c, a, s))
+            if not allrs:
+                continue
+            # An ABORTED invocation never started an engine, so it has no gate
+            # echo to assert. Judging liveness on it would flag the harness,
+            # not the mechanism. Liveness is asserted over the COMPLETED
+            # invocations; the aborts are counted separately and loudly.
+            nab = sum(1 for r in allrs if r["gates_lines_cli"] == 0
+                      and r["gates_lines_srv"] == 0 and r["n_runs"] == 0)
+            rs = [r for r in allrs if not (r["gates_lines_cli"] == 0
+                                           and r["gates_lines_srv"] == 0 and r["n_runs"] == 0)]
+            flags = []
+            exp3 = 1 if a in ("B", "C") else 0
+            expr = 1 if a in ("B", "D") else 0
+            if nab:
+                flags.append(f"ABORTED({nab}/{len(allrs)})")
             if not rs:
+                print(f"{c:<8}{a:<4}{s:<6}{0:<4}{'-':<18}{'-':<12}{'-':<8}{'-':<12}"
+                      f"{' '.join(flags)} ALL-ABORTED")
+                void.append((c, a, s))
                 continue
             g3 = {(r["gates_cli_3t"], r["gates_srv_3t"]) for r in rs}
             gr = {(r["gates_cli_rs"], r["gates_srv_rs"]) for r in rs}
             act = sum(1 for r in rs if r["active_echo_cli"] > 0)
             eng = [r["tt_eng1"] for r in rs]
-            flags = []
-            exp3 = 1 if a in ("B", "C") else 0
-            expr = 1 if a in ("B", "D") else 0
             if g3 != {(exp3, exp3)}:
                 flags.append("GATE-MISMATCH")
             if gr != {(expr, expr)}:
                 flags.append("RS-MISMATCH")
             if exp3 == 1 and min(eng) == 0:
+                # gate CONFIGURED, engine STARTED, but never engaged: this is
+                # the warm-up failure the pre-registration calls VOID.
                 flags.append(f"VOID-NO-ENG1({sum(1 for e in eng if e == 0)}/{len(eng)})")
                 void.append((c, a, s))
             if exp3 == 0 and max(eng) > 0:
@@ -202,11 +219,32 @@ for c in cells + extra:
               f"{f(ratio,3):<8}{f(dratio,3):<8}{bound}")
 
 print()
-print("DNF (criterion: 0)")
+print("ABORTS vs DNF — these are DIFFERENT THINGS and criterion 5 scores only the second.")
+print("  ABORT = the harness invocation died before the engine ever started: no [GATES]")
+print("          line on EITHER endpoint, no summary, no log. It contributes NO datum and")
+print("          is excluded from every mean above, with n recorded. This is the documented")
+print("          seed-7 topo-ping double-abort class (MEASUREMENT DISCIPLINE 8).")
+print("  DNF   = the engine ran and the transfer did not complete inside the timeout. THAT")
+print("          is the protocol failure criterion 5 requires to be 0.")
+
+
+def is_abort(r):
+    return r["gates_lines_cli"] == 0 and r["gates_lines_srv"] == 0 and r["n_runs"] == 0
+
+
+aborts = [r for r in rows if is_abort(r)]
+real_dnf = [r for r in rows if r["dnf"] and not is_abort(r)]
 tot = len(rows)
-d = [r for r in rows if r["dnf"]]
-print(f"  dnf runs: {len(d)}/{tot}" + ("" if not d else
-      "  -> " + ", ".join(f'{r["cell"]}-{r["arm"]}-s{r["seed"]}-r{r["rep"]}' for r in d)))
+print(f"  ABORTS: {len(aborts)}/{tot}")
+for s in seeds:
+    a = [r for r in aborts if r["seed"] == s]
+    n = [r for r in rows if r["seed"] == s]
+    print(f"    seed {s}: {len(a)}/{len(n)}"
+          + ("  cells: " + ", ".join(f"{c}x{sum(1 for r in a if r['cell']==c)}"
+                                     for c in sorted({r["cell"] for r in a})) if a else ""))
+print(f"  REAL DNF: {len(real_dnf)}/{tot}" + ("" if not real_dnf else
+      "  -> " + ", ".join(f'{r["cell"]}-{r["arm"]}-s{r["seed"]}-r{r["rep"]}' for r in real_dnf)))
+print("  (every ABORT was verified SUMMARY-LESS before this classification)")
 
 print()
 print("=" * 100)

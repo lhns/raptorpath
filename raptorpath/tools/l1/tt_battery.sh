@@ -54,8 +54,10 @@ set -u
 [ "$(id -u)" -eq 0 ] || { echo "tt_battery.sh must run as root (sudo)" >&2; exit 2; }
 cd /home/vibe/raptorpath/raptorpath/tools/l1
 SEED_ARG="$1"; REPS="${2:-8}"
+TT_CELLS="${RWM_TT_CELLS:-c1 c7 c8 sc2 sc3 c2r100 c2r200}"
+TT_TAG="${RWM_TT_TAG:-battery}"
 BIN=/home/vibe/raptorpath/target/release/raptorpath
-OUT=/home/vibe/threeterm/battery-s${SEED_ARG}.log
+OUT=/home/vibe/threeterm/${TT_TAG}-s${SEED_ARG}.log
 DDIR=/home/vibe/threeterm/diag
 mkdir -p "$DDIR" /home/vibe/threeterm
 : > "$OUT"
@@ -79,6 +81,11 @@ run_one() { # cell arm envs cellA cellB mode bytes exp_3t exp_rs
   local cell="$1" arm="$2" envs="$3" ca="$4" cb="$5" mode="$6" bytes="$7"
   local e3t="$8" ers="$9"
   local name="$cell-$arm"
+  # TOP-UP support (RWM_TT_CELLS): restrict the schedule to a subset of cells
+  # while keeping the arm interleaving inside each rep byte-identical. Used to
+  # RE-RUN arms voided by the documented seed-7 topo-ping abort class
+  # (discipline 8) rather than explain their reduced n away.
+  case " $TT_CELLS " in *" $cell "*) ;; *) return 0 ;; esac
   local t0; t0=$(date +%s)
   echo "=== rep=$REP arm=$name seed=$SEED_ARG env=\"$envs\" cell=$ca/$cb/$mode bytes=$bytes $(date -u +%T)" >> "$OUT"
   # Stale-echo hygiene (the copaclean s7 lesson): an aborted invocation must
@@ -188,7 +195,7 @@ done
 #     slack/window = rho*(9/8*srtt + srtt) / (K*RTprop) = 17/8 = 2.125
 # at rho = 1, whatever delta is - the rate cancels. `tt_parse.py` records it
 # as `sw_ratio_*`, and THAT is what F2 is scored on.
-for HINT in bulk auto realtime; do
+for HINT in ${RWM_TT_DELTA-bulk auto realtime}; do
   echo "=== DELTACHECK hint=$HINT seed=$SEED_ARG $(date -u +%T)" >> "$OUT"
   rm -f /tmp/rwm-c.log /tmp/rwm-s.log
   # shellcheck disable=SC2086
@@ -200,7 +207,7 @@ done
 
 # ── Arm-liveness (discipline 7): an arm with zero results fails LOUDLY ────
 echo "--- ARMCOUNTS (expect $REPS per arm)" >> "$OUT"
-for c in c1 c7 c8 sc2 sc3 c2r100 c2r200; do
+for c in $TT_CELLS; do
   for a in A B C D; do
     hdr=$(grep -c "arm=$c-$a " "$OUT" || true)
     res=$(grep -c "\"cell\": \"$c\", \"arm\": \"$a\"" "$OUT" || true)

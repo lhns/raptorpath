@@ -10805,6 +10805,91 @@ the whole owner either. The loop closed here is the DWELL loop; the emission loo
 (a smaller cap changing loss correlation and ack timing) still needs a driver with
 a real emission constraint, and that remains what an L1 battery would be for.
 
+### 16.45 The three-term law measured on the wire: the terms are right and the lever is wrong — the store is sized, provably occupied to the new size, and throughput does not follow (2026-08-10, `feat/three-term-battery`, `RWM_THREE_TERM` **stays default OFF**)
+
+§16.44 closed by naming what was missing: *"the emission loop still needs a driver
+with a real emission constraint, and that remains what an L1 battery would be
+for."* This is that battery. It ran the composed law
+(`RWM_THREE_TERM=1 RWM_PLAIN_RS=1`) against the shipped default on nine cells,
+four arms, ×8 interleaved, both seeds, against numbers pre-registered before any
+code ran. **The structural claims survive. The premise that motivated them does
+not.**
+
+**What the wire confirms.** The topology branch is gone by arithmetic, and the
+arithmetic is what executed: the span term reads **exactly 0.0** at every
+single-path cell over roughly 500 invocations on both seeds, with no exception
+and no gate — `skew = (max − min)/2` over a one-element set is zero because max
+and min are the same number. The *same expression* produces **306.96 / 308.50**
+at c8 against a pre-registered **312**. That is a 1.6 % hit on the one term the
+whole construction exists for, at the one cell where it is meant to be large,
+from a formula with no `if n == 1` in it.
+
+δ likewise stays out of the limit where the derivation says it must. At ρ = 1 the
+`(1 − ρ)·D(δ)` term is multiplied by zero, so the two surviving terms must satisfy
+`slack/window = ρ·(9/8·srtt + srtt)/(K·RTprop) = 17/8 = 2.125` for *any* δ — the
+rate cancels. Measured **2.125000, worst deviation 4.4 × 10⁻¹⁶**, at every cell,
+every rep, both seeds, and at all three named points of the dial. (Comparing the
+limit itself between hints cannot test this and would have manufactured a false
+falsification: the limit is linear in the measured rate, and three invocations
+achieve three different rates. The ratio is the δ-free invariant; the raw cap is
+not. This was caught in a calibration rep and committed before the battery.)
+
+The limit is also *predictable*. Against a pre-registered two-column interval
+(K@4 ms and K = 1, the truth declared in advance to lie between them), the
+composed arm lands inside at c1 (429 vs 488/163), at c2r100 (3036 vs 3380/3250,
+×0.90) and at shal8 (382 vs 455/325) — **and c2r100 and shal8 were HELD OUT.**
+
+**What the wire refutes, and this is the result.** The law sizes the store
+correctly, the store is *demonstrably* filled to the new size, and the throughput
+does not move. c2r100 is the clean demonstration: steady-state occupancy rises
+from **1011** under the shipped default — pinned flat against the legacy 1024 —
+to **2909** under the law, a ×2.9 increase in outstanding data that the `[3T]`
+readout and the occupancy gauge agree on, with the limit within 10 % of its
+pre-registered value. Predicted goodput effect: **+25 to +60 %.** Measured:
+**0.900 and 0.974 of baseline** — the wrong direction, and inside the noise floor
+on both seeds. Across all nine cells and both seeds, the *only* effect that
+exceeds its own measured spread is a **loss**.
+
+So the diagnosis in §16.43/§16.44 was right about the sign and wrong about the
+lever. c8/Σ does move up under the law (0.785 → 0.872 at seed 42, 0.775 → 0.844
+pooled at seed 7), which is the direction the over-provisioning story predicts —
+but it straddles its 0.87 threshold rather than clearing it, and everywhere else
+the outstanding-data limit turns out not to be what binds. **What binds at these
+cells is not identified here, and no term was added to cover the gap.** The two
+named unadopted successors (`stall/(1 − ε̂)`, κ) address coverage, which is not
+this; reaching for either because it would move a cell is the move this phase
+exists to refuse.
+
+**The coupling that decides the law's fate is not in the law.** The limit is
+linear in `rate_i`, and the shipped anchor over-reads ×4.6–7.4, so the law can
+only be tested beside `RWM_PLAIN_RS`. A fourth arm carrying the anchor *alone*
+separates them, and the split is stark: at c1 the honest anchor by itself costs
+**−34.9 % / −36.1 %**, while the law given that anchor **recovers 3.7–5.3 %**
+(B/D = 1.053 / 1.037). The same holds at c7. **The largest regression in the
+battery — c1 handing back a previously banked +16–25 % — is owned by the rate
+anchor the law requires, not by the three terms.** A law that is arithmetically
+clean but can only be run beside a 35 % tax is not deployable, and that tax is
+now measured rather than suspected.
+
+Two smaller findings, both pre-registered as diagnostics and both fired. jit25's
+limit reads ×1.34–1.39 **above** both prediction columns, and the pre-registration
+had already written that a window term far above 458 "is a finding about
+`EchoRatioMin`, not about the three terms" — the windowed MIN reads *high* under
+±25 ms jitter, inverting the assumed direction. And c7's span is **not** zero
+(median 14.5 symbols): two nominally identical netem legs do not tie on *measured*
+`min_rtt`, so what is refuted is the pre-registration's premise of identical
+paths, not the law's arithmetic.
+
+**Nothing shipped.** `RWM_THREE_TERM` stays default OFF, and this battery is the
+reason. Realtime crown, dnf and the MTU wedge are all unregressed (crown median
+36/39 ms against 37/40, 64/64 reps at 1000/1000; 0 DNF in 419 invocations; wedge
+20/20 across distinct processes), so the gate is safe to keep — but a mechanism
+whose only super-noise effect is a regression does not earn a default. The
+honest exit from "THREE TERMS, NO CONSTANTS" is that **two of the three terms
+were derivable, checkable and correct, the third was needed and lands within
+1.6 % where it matters, and the quantity they jointly predict is not the one that
+governs throughput at these cells.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

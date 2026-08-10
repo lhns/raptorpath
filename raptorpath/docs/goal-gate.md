@@ -20735,3 +20735,297 @@ against a documented same-nominal-config drift of 2.3× and is quoted here
 ONLY to justify the four amendments. **No criterion is scored on this
 block.** The verdicts live in the BATTERY section below, against the numbers
 pre-registered at 70833cd.
+
+## Three-Term Law — BATTERY (2026-08-10) — GOAL "THREE TERMS, NO CONSTANTS" phase 1.4. Every verdict below is stated against the number pre-registered at 70833cd, never against a number chosen after the fact.
+
+### ERA (discipline 2/6/9)
+
+VM 10.1.5.16. Binary sha256
+`744c2cb3bd6ed9be00a867c9b6668994dfd5959f374a75cc37a4e725c765deee`, **the same
+binary in every arm**, built on the VM from source `f36a758`. Kernel
+`7.0.14-101.fc43.x86_64`; E5-2650 v3 `aes avx2 pclmulqdq` (post-divide era) in
+every log header. Lock `/tmp/rwm-vm.lock` taken 02:42:59Z (found FREE), held
+continuously to release. Main battery 03:12:07→05:59:28Z (2 h 47 m), seed-7
+top-up 09:35:23→09:53:20Z, suites 09:54:55→09:55:42Z. **Not polled once while
+running** (discipline 13): launched detached with a completion sentinel and
+waited on it.
+
+Drivers `tools/l1/tt_{battery,adv,all}.sh` + `tt_parse.py` (one parser for both
+drivers) + `tt_report.py`; logs `/home/vibe/threeterm/{battery,adv,topup,crown}-s{42,7}.log`
+plus per-invocation client+server logs under `diag/`. Base env every arm:
+`SEED=<seed> RWM_GEN=0 RWM_DIAG=1`, gates forwarded through `lib.sh`'s single
+`rwm_forward_env`.
+
+| arm | env | role |
+|---|---|---|
+| **A** | *(unset)* | the shipped default |
+| **B** | `RWM_THREE_TERM=1 RWM_PLAIN_RS=1` | **the SCORED arm** |
+| **C** | `RWM_THREE_TERM=1` | diagnostic: prices the anchor over-read |
+| **D** | `RWM_PLAIN_RS=1` | attribution control, **not scored** |
+
+Arms interleaved round-robin per rep, ×8, fresh tunnel per invocation, seeds
+**42 and 7**, same-session Σ.
+
+### LIVENESS (discipline 1/15) — asserted before any number was read
+
+`[GATES]` resolved values on **client AND server**, the resolve-time
+`three-term outstanding limit ACTIVE` echo, and the per-2 s `[3T] eng=`:
+
+* **seed 42: 36/36 arm-cells clean, 0 aborts, 0 contamination, 0 VOID.** Every
+  gate-ON arm shows `[(1,1)]` on both endpoints with 1–35 `eng=1` lines per
+  invocation; every gate-OFF arm shows `[(0,0)]` and zero `[3T]` lines.
+* **seed 42: `RWM_PLAIN_RS` two-sided too** — `[(1,1)]` on B and D, `[(0,0)]`
+  on A and C. An arm that cannot show its control was a control has measured
+  one condition twice; these can.
+* **seed 7: 58 of 224 invocations (25.9 %) ABORTED**, and 53 of 128 (41.4 %)
+  in the top-up. **Every abort verified SUMMARY-LESS** (no `[GATES]` on either
+  endpoint, no summary, no client log at all). This is the documented seed-7
+  topo-ping double-abort class (discipline 8), and it reproduces discipline
+  13's finding exactly — **seed 42 aborted zero times with the same driver,
+  same binary, same day, and I polled neither.**
+* **There is NO warm-up failure anywhere.** All 30 seed-7 "no `eng=1`" flags
+  are the SAME aborted invocations. Across both seeds and all sessions there
+  is not one case of "gate configured, engine started, never engaged".
+
+**AN ABORT IS NOT A DNF, and only the second is scored.** An abort contributes
+no datum and is excluded from every mean with its n recorded; a DNF is a
+transfer that ran and did not finish. Conflating them would have reported
+`dnf = 111` and falsely failed criterion 5. **Real DNF: 0 / 419 invocations.**
+
+The seed-7 arms whose n was reduced by aborts were **RE-RUN**, not explained:
+the top-up is a complete independent 4-arm × 8-rep interleaved session over
+c7/c8/sc2/sc3. It is reported as its own session and pooled separately —
+never silently merged, because cross-session drift is documented at 2.3×.
+
+### L0 GATES — ×20 IN DISTINCT PROCESSES, not one green run
+
+Rust re-seeds `RandomState` per process, so a single pass of anything
+order-sensitive is a coin flip. Re-run 20 times in 20 separate processes:
+
+| suite | result |
+|---|---|
+| `net::tests::{three_term_law_is_arithmetic_and_continuous, three_term_span_vanishes_continuously_as_skew_goes_to_zero, three_term_law_closes_the_dwell_loop_in_one_evaluation, delta_budget_b_is_the_dial_not_a_mode}` | **20/20** |
+| `gates::forwarding_audit::*` + `default_env_resolves_the_shipped_stack` | **20/20** |
+| `slack_bench::three_term_engine_law_is_the_bench_terms_at_the_anchors` | **20/20** |
+| `mtu_blackhole_wedge` | **20/20** |
+
+The three-term suite is order-insensitive *by construction*, not by luck:
+every numeric assertion is a tolerance, the law reads only `max`/`min`/`Σ`
+over the path set, and `three_term_law_is_arithmetic_and_continuous` asserts
+the cap is unchanged on an explicitly **reversed** path slice.
+
+### THE LAW AS MEASURED — `[3T]` terms (median over `eng=1` lines) vs the PRE-REGISTERED table
+
+Arm B. `pred` is the pre-registration's own two columns (K@4ms / K=1); the
+truth was pre-registered as lying between them.
+
+| cell | cap s42 | cap s7 | pred K@4ms / K=1 | cap÷K@4ms | window s42 (pred) | span s42 | inside pre-reg interval? |
+|---|---|---|---|---|---|---|---|
+| **c1** | 429 | 385 | 488 / 163 | 0.88 / 0.79 | 137.1 (156) | **0.00** | **YES** |
+| **c7** | 1149 | 1137 | 910 / 650 | 1.26 / 1.25 | 363.3 (291) | 14.48 | +26 % high |
+| **c8** | 1429 | 1423 | 1042 / 887 | 1.37 / 1.37 | 359.1 (234) | **306.96** (pred 312) | +37 % high |
+| **sc2** | 495 | 457 | — | — | 158.3 | **0.00** | — |
+| **sc3** | 307 | 324 | — | — | 98.2 | **0.00** | — |
+| **c2r100** | 3036 | 3057 | 3380 / 3250 | 0.90 / 0.90 | 971.3 (1082) | **0.00** | **YES** |
+| **c2r200** | 4075 | 4064 | 4096 CLAMPED | 1.00 | 1641.9 | **0.00** | **CLAMPED — no verdict (B2)** |
+| **jit25** | 1919 | 1981 | 1430 / 1300 | 1.34 / 1.39 | 613.8 (458) | **0.00** | **NO — high** |
+| **shal8** | 382 | 324 | 455 / 325 | 0.84 / 0.71 | 115.6 (146) | **0.00** | **YES** |
+
+**c8's span term is 306.96 / 308.50 against a pre-registered 312** — a 1.6 %
+hit on the one term the whole goal exists for, at the one cell where it is
+supposed to be large, computed by the same formula that returns exactly 0.0
+at every single path.
+
+**The anchor gate the pre-registration set** ("if the composed arm's limits do
+not land within ~±30 % of the table, the anchor is the binder and no verdict
+may be read"): satisfied at **5 of 7** named cells. **c8 (+37 %) and jit25
+(+34–39 %) exceed it**, and jit25's excess is precisely the diagnostic the
+pre-registration named in advance — see F-checks below.
+
+**Arm C confirms the anchor caveat quantitatively.** `cap` pinned at 4096 at
+c7 / c8 / c2r100 / c2r200, window terms **×4.3 to ×14.3** arm B's (c2r200:
+23 629 vs 1642; c2r100: 10 803 vs 971). Arm C is the ×4096 arm, exactly as
+pre-registered. `RWM_THREE_TERM=1` alone does not test this law.
+
+### THE FALSIFIERS, SCORED
+
+**F1 — a behaviour STEP across the vanishing point: DOES NOT FIRE.** No
+discontinuity between single-path and dual, and c7's small measured skew
+produces a proportionally small span (14.5 symbols on a 1149 limit) rather
+than a jump.
+
+**F2 — δ moves the limit at ρ = 1: DOES NOT FIRE, decisively.** Scored on the
+δ-free invariant (smoke AMENDMENT 2), not on `cap`:
+
+```text
+   slack/window = ρ·(9/8·srtt + srtt)/(K·RTprop) = 17/8 = 2.125   at ρ = 1, ∀δ
+```
+
+Measured **2.125000 with worst deviation 4.44 × 10⁻¹⁶** — floating-point dust
+— at **every cell, every arm, every rep, both seeds**, and at all three named
+points of the δ dial (`b = 2 / 1 / 0.5`, echoed live). The `(1−ρ)·D(δ)` term
+is multiplied by zero exactly as the law claims. This is the cleanest result
+in the battery.
+
+**F3 — the span term is non-zero at c7 or at any single path: SPLIT, and the
+honest reading matters.**
+
+* **Single paths: `span_max = 0.0000` EXACTLY**, over every rep of c1, sc2,
+  sc3, c2r100, c2r200, jit25, shal8 and all δ-check cells, both seeds —
+  roughly 500 invocations with no exception. **The topology branch is deleted.
+  `skew = (max − min)/2` over a one-element set is zero by arithmetic, and the
+  arithmetic is what the engine ran.**
+* **c7: span is NOT zero** — median 14.5, max 80.37 (s42) / 52.90 (s7).
+  **F3 as literally written FIRES here.** But the mechanism is measurement,
+  not a surviving branch: c7's two legs each carry netem `delay 5ms 3ms`, and
+  the law reads `PathState::min_rtt()`, a *measured* per-path statistic that
+  does not tie between two nominally identical links. **What is refuted is the
+  pre-registration's PREMISE** — "c7 is two IDENTICAL paths and
+  max RTprop = min RTprop there" — not the law's arithmetic. The span is 1.3 %
+  of the c7 limit and tracks a real skew. Recorded as a refuted premise with
+  its mechanism named, not argued away.
+
+**F4 — c8 REGRESSES below 0.87×Σ under the gate: DOES NOT FIRE.** c8/Σ moves
+**up** from the baseline everywhere: 0.785 → 0.872 (s42), 0.775 → 0.844
+(s7 pooled). The §16.43/§16.44 diagnosis is right about the *sign*.
+
+### GOODPUT — mean ± σ (n), and the noise bound on every claim (discipline 5)
+
+Effect is called real only when |B − A| exceeds 2σ_pooled of the same-config
+spread. **Almost nothing does.**
+
+| cell | seed | A | B | C | D | B/A | D/A | |B−A| vs 2σ |
+|---|---|---|---|---|---|---|---|---|
+| c1 | 42 | 221.6±5.9 (8) | 151.9±3.7 (8) | 240.1±79.9 (8) | 144.2±1.3 (8) | **0.685** | 0.651 | 69.7 vs 14.0 → **EXCEEDS** |
+| c1 | 7 | 224.9±3.2 (8) | 149.1±1.7 (8) | 269.0±15.6 (8) | 143.8±1.8 (8) | **0.663** | 0.639 | 75.8 vs 7.3 → **EXCEEDS** |
+| c7 | 42 | 171.3±3.8 (8) | 147.1±15.2 (8) | 172.8±1.6 (8) | 151.9±2.4 (8) | 0.859 | 0.887 | 24.2 vs 31.3 → within noise |
+| c7 | 7 pooled | 172.0±2.2 (11) | 150.4±2.4 (12) | 171.7±3.5 (8) | 150.1±2.6 (9) | 0.874 | 0.873 | **EXCEEDS** |
+| c8 | 42 | 81.9±13.8 (8) | 90.3±3.7 (8) | 56.5±18.6 (8) | 82.9±11.4 (8) | 1.101 | 1.011 | 8.3 vs 28.5 → within noise |
+| c8 | 7 pooled | 81.3±7.9 (11) | 87.9±8.7 (13) | 70.8±10.1 (8) | 85.4±8.8 (6) | 1.081 | 1.050 | within noise |
+| sc2 | 42 | 87.8±0.9 (8) | 87.5±0.8 (8) | 82.7±10.8 (8) | 87.0±0.8 (8) | 0.997 | 0.991 | within noise |
+| sc3 | 42 | 16.6±0.3 (8) | 16.0±0.2 (8) | 13.2±1.4 (8) | 16.5±0.1 (8) | 0.968 | 0.996 | 0.5 vs 0.8 → within noise |
+| c2r100 | 42 | 83.0±0.4 (8) | 74.7±12.4 (8) | 23.6±4.4 (8) | 80.0±1.3 (8) | 0.900 | 0.964 | 8.3 vs 24.7 → within noise |
+| c2r100 | 7 | 82.1±0.9 (8) | 79.9±3.1 (8) | 29.8±11.5 (8) | 80.1±1.7 (8) | 0.974 | 0.976 | within noise |
+| c2r200 | 42 | 41.2±0.4 (8) | 39.9±12.7 (8) | 29.2±7.0 (8) | 39.9±0.5 (8) | 0.970 | 0.969 | within noise |
+| c2r200 | 7 | 41.4±0.4 (8) | 43.3±12.2 (8) | 30.2±5.6 (8) | 39.5±1.2 (8) | 1.045 | 0.953 | within noise |
+| jit25 | 42 | 61.3±24.1 (8) | 73.1±6.5 (8) | 37.6±34.8 (8) | 65.7±12.5 (8) | 1.192 | 1.072 | 11.8 vs 49.9 → within noise |
+| jit25 | 7 | 77.2±5.8 (8) | 77.2±2.5 (8) | 47.8±28.6 (8) | 72.5±3.5 (8) | 1.000 | 0.940 | within noise |
+| shal8 | 42 | 9.8±1.7 (8) | 12.5±2.0 (8) | 9.7±1.5 (8) | 11.7±1.0 (8) | 1.277 | 1.196 | 2.7 vs 5.2 → within noise |
+| shal8 | 7 | 10.1±1.8 (8) | 11.5±1.4 (8) | 9.4±0.7 (8) | 11.1±0.9 (8) | 1.142 | 1.106 | 1.4 vs 4.5 → within noise |
+
+**THE ATTRIBUTION, and it is the battery's most important single result.**
+Arm D isolates `RWM_PLAIN_RS` from the law. At c1 the honest rate anchor
+ALONE costs **−34.9 % / −36.1 %**, while **B/D = 1.053 / 1.037** — given that
+anchor, the three-term law *recovers* 3.7–5.3 %. **c1's collapse is owned by
+the rate anchor the law requires, not by the law.** The same split holds at
+c7 (D/A 0.887/0.873 against B/A 0.859/0.874): most of c7's loss is the
+anchor's too.
+
+### THE CRITERIA, SCORED AGAINST THE PRE-REGISTERED NUMBERS
+
+**CRITERION 3 — the held-out cells. VERDICT: SPLIT — the LIMITS largely hold, the THROUGHPUT predictions do not.**
+
+| cell | pre-registered | measured | verdict |
+|---|---|---|---|
+| **c2r100** | limit 3380/3250 sym, 4.06/3.90 MB; throughput **UP +25…+60 %** | limit **3036 / 3057** (3.64/3.67 MB), ×0.90 of prediction; occupancy p50 **2909** vs arm A's 1011 pinned at the legacy 1024; throughput **0.900 / 0.974**, both within noise | **limit PASS · throughput REFUTED.** The store was sized to the law, was *provably occupied* to it, and the throughput went the other way. |
+| **shal8** | limit 455/325 sym, 0.55/0.39 MB; throughput **flat ±3 % (predicted NULL)** | limit **382 / 324** (0.46/0.39 MB) — **inside the interval**; throughput 1.277/1.142, |B−A| 2.7 vs 2σ 5.2 and 1.4 vs 4.5 | **limit PASS · throughput = THE PREDICTED NULL.** The +14…+28 % point estimates do **not** exceed noise and are **not** claimed. |
+| **jit25** | limit 1430/1300 sym, expected near the **K=1** column; throughput **UP +5…+15 %** | limit **1919 / 1981** — ×1.34/1.39, **above both columns**; window 613.8 vs pred 458; throughput 1.192 / 1.000, within noise | **limit FAIL · throughput INDETERMINATE.** |
+| **c2r200** | **CLAMPED (B2)** — cannot confirm or refute | cap 4075/4064 ≈ 4096 | **REMOVED from the experiment by the memory ceiling.** Not a pass and not a failure. |
+
+**jit25's miss is the pre-registration's own named diagnostic firing.** It
+wrote: *"If the measured `[3T]` window term is far above 458, the min-window
+is being inflated by something and that is a finding about `EchoRatioMin`, not
+about the three terms."* Measured window 613.8/633.9 = **×1.34/1.38 of 458**,
+and the prediction that jitter would push K to the *low* end is inverted —
+the windowed MIN reads **high** under ±25 ms netem jitter. That is a finding
+about `EchoRatioMin` under jitter, banked as such.
+
+**CRITERION 4 — c1 ≥ the +16–25 % class AND c8 ≥ 0.87×Σ, both seeds, one law, no topology branch. VERDICT: FAIL.**
+
+* **c1: FAIL, decisively and on both seeds.** 0.685 / 0.663 of the shipped
+  default, |B−A| ≫ 2σ (69.7 vs 14.0; 75.8 vs 7.3). The banked floor is given
+  back. **Attribution: the anchor, not the law** (D/A 0.651/0.639;
+  B/D 1.053/1.037).
+* **c8 ≥ 0.87×Σ: NOT MET ON BOTH SEEDS.** seed 42 **0.872 PASS**; seed 7 main
+  0.813 FAIL, seed 7 top-up 0.891 PASS, **seed 7 pooled 0.844 FAIL**. It
+  straddles the threshold. The *direction* is confirmed — the law lifts c8/Σ
+  from 0.785/0.775 — but the criterion asks for both seeds and does not get
+  them.
+* **"one law with no topology branch anywhere": CONFIRMED.** Span 0.0000
+  exactly at every single path over ~500 invocations, and 306.96/308.50 at c8
+  from the *same formula*, against a pre-registered 312.
+
+**CRITERION 5 — the no-regression set. VERDICT: FAIL on its tightest clause, PASS on the rest.**
+
+| clause | target | measured | verdict |
+|---|---|---|---|
+| c7 | ≥ 0.97×Σ | **0.841** (s42) · **0.854** (s7 pooled) | **FAIL** — and *below* the pre-registered B1 band (0.90–0.96), so worse than the residual the law priced for itself |
+| sc2 | within σ | 0.997 / 1.008 | **PASS** |
+| sc3 | within σ | 0.968 / 0.968 (0.952 top-up); |B−A| 0.5 vs 2σ 0.8 (s42), 0.5 vs 0.4 (s7) | **MARGINAL** — a consistent −3.2 %, inside noise on s42, just outside on s7 |
+| realtime crown | ≤ ~41 ms at 1000/1000 | `tt` median **36 / 39 ms** (s42), **36 / 39 ms** (s7) at 400/1200 B vs `ship` 37/40 and 37/39; **64/64 reps delivered 1000/1000** | **PASS** — the law is inert at the crown, as its scope requires |
+| dnf | 0 | **0 / 419** | **PASS** |
+| wedge | green | `mtu_blackhole_wedge` **20/20** | **PASS** |
+
+c7 was pre-registered as "the most likely regression" and it is. Arm D shows
+most of that loss is the anchor's (D/A 0.887/0.873), with the law adding a
+further ~2–3 points.
+
+### WHAT THIS BATTERY ESTABLISHED, AND WHAT IT REFUTED
+
+**Established.**
+1. **The topology branch is gone, by arithmetic, measured.** Span exactly 0.0
+   at every single path across ~500 invocations and both seeds; the same
+   expression produces c8's 307 against a pre-registered 312.
+2. **δ does not enter the limit at ρ = 1.** slack/window = 17/8 to 4×10⁻¹⁶
+   everywhere, at all three named points of the dial.
+3. **The limit is predictable from measured signals with no fitted constant**
+   at 5 of 7 named cells, and at 2 of 3 testable held-out cells the
+   *symbols-and-bytes* prediction lands inside a pre-registered interval.
+4. **The anchor caveat was real and is now priced.** Arm C reproduces the
+   ×4096 arm with window terms ×4.3–14.3 the composed arm's.
+
+**Refuted.**
+1. **The throughput half of the goal.** The law sizes the store correctly and
+   the store is *demonstrably* occupied to the new size — and throughput does
+   not follow. At c2r100, the strongest pre-registered gain (+25…+60 %), the
+   measured direction is **down**. Nothing outside c1 exceeds its noise bound
+   in either direction.
+2. **c1's banked floor is given back** — the largest single regression, ≫ noise
+   on both seeds. Owned by the honest anchor the law requires, not the law.
+3. **The pre-registration's premise that c7's span would be zero.** Two
+   nominally identical netem legs do not tie on *measured* `min_rtt`.
+4. **jit25's K prediction is inverted**: the windowed MIN reads high, not low,
+   under ±25 ms jitter.
+
+### WHAT REMAINS UNMODELLED — stated plainly, with nothing invented to close it
+
+1. **The store limit is not the throughput lever it was diagnosed to be.**
+   This is the phase's central negative result. c2r100 is the clean
+   demonstration: occupancy p50 rises 1011 → 2909 under the law, the limit is
+   within 10 % of its pre-registered value, and goodput does not move up. What
+   binds at these cells is therefore *not* the outstanding-data limit, and the
+   battery does not identify what does. **No term was added to rescue this,
+   and none should be** — the two named unadopted successors
+   (`stall/(1−ε̂)`, κ) address coverage, not this.
+2. **`RWM_PLAIN_RS` costs 35 % at c1 and ~12 % at c7 on its own.** The law
+   *needs* an honest rate anchor and the only one available is this
+   expensive. That is a real, measured, unresolved coupling and it is the
+   single largest obstacle to the law ever being a default. It is the
+   anchor's problem, not the law's — and it is now measured rather than
+   suspected.
+3. **`EchoRatioMin` under jitter.** K reads ×1.34–1.38 high at jit25, the
+   opposite of the pre-registered direction. The windowed MIN is not doing
+   what the derivation assumes when the delay distribution is wide.
+4. **`WIN_STORE_MAX` = 4096 remains the phase's largest un-derived quantity**,
+   and it removed c2r200 from the experiment exactly as pre-registered.
+5. **The seed-7 abort class is a standing instrument cost**, not a result:
+   25.9 % / 41.4 % of invocations on the jittered/lossy c2- and c3-based cells,
+   0 % on seed 42, with no observer present.
+
+### WHAT THIS DOES NOT LICENSE
+
+No default changed. `RWM_THREE_TERM` stays **default OFF**; on this evidence it
+should not be flipped, and the battery is the reason. No constant was tuned,
+no term added, no cell rescued. `RWM_THREE_TERM=0` remains bit-identical to
+main. No engine crate was modified by this battery: it is drivers, one parser,
+one report, and one `tail_matrix` crown arm.
