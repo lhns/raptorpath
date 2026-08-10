@@ -9696,4 +9696,65 @@ mod tests {
         assert!(emit, "the merged ack still goes out (it carries the counters)");
         assert!(!advertise, "but it advertises no gap — the rate limit holds");
     }
+
+    // ── The block/window default pin (ADR-0069) ──
+
+    /// PINS THE CONTRADICTION, it does not endorse it: with no config and no
+    /// flags, a Bulk/Auto peer routes to the BLOCK pipeline, while every L1
+    /// battery since 2026-07-12 has measured the WINDOW pipeline. ADR-0069
+    /// declares block mode legacy and pre-registers the flip battery; until
+    /// that battery discharges the re-test clause the default must not move
+    /// silently in either direction — a change here is a DELIBERATE default
+    /// flip and must land with its measurement.
+    ///
+    /// The pin asserts the ROUTING consequence, not just the flag (CLAUDE.md
+    /// testing discipline / goal-gate MEASUREMENT DISCIPLINE rule 1):
+    /// `config.rs`'s `test_window_reliable_default_off_and_opt_in` already
+    /// pins the field; what was unpinned — `is_window_mode` had no test at
+    /// all — is which PIPELINE that field selects.
+    #[test]
+    fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
+        // Resolve the shipped default: empty TOML, no CLI overlay.
+        let (pc, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default())
+            .expect("the empty default config resolves");
+        assert!(!pc.window_reliable, "shipped default is window_reliable = false");
+        assert_eq!(pc.protocol_hint, ProtocolHint::Auto, "shipped default hint is Auto");
+        assert_eq!(pc.fec_backend, FecBackend::RaptorQ, "shipped default codec is RaptorQ");
+        assert!(
+            !pc.fec_backend_explicit,
+            "unset in TOML ⇒ run_impl's auto-selection is live for this config"
+        );
+
+        // run_impl's effective-backend selection (mod.rs ~1370-1393): with the
+        // backend unset and the hint NOT Realtime, `window_reliable == false`
+        // leaves the configured RaptorQ in place — and RaptorQ is block-only.
+        assert!(
+            !FecBackend::RaptorQ.is_streaming(),
+            "RaptorQ is block-only, so it can never satisfy is_window_mode"
+        );
+        for hint in [ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert!(
+                !is_window_mode(hint, FecBackend::RaptorQ, pc.window_reliable),
+                "{hint:?} at the shipped default routes to the BLOCK pipeline"
+            );
+        }
+
+        // Opting in is the ONLY way Bulk/Auto reach the window pipeline today
+        // (run_impl then auto-selects RLC — the arm every battery measures).
+        for hint in [ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert!(
+                is_window_mode(hint, FecBackend::Rlc, true),
+                "{hint:?} + --window-reliable is the measured arm"
+            );
+        }
+
+        // Realtime is ALREADY window mode at the default — it auto-selects the
+        // RLC span machine (§16.20) — but with the lossy EVICT retention, i.e.
+        // ρ < 1, NOT the reliable window. The block default is a Bulk/Auto
+        // fact only; do not restate it as "the transport ships block mode".
+        assert!(
+            is_window_mode(ProtocolHint::Realtime, FecBackend::Rlc, false),
+            "Realtime rides the window pipeline at the default (EVICT retention)"
+        );
+    }
 }

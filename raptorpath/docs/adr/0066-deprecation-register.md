@@ -1,6 +1,6 @@
 # ADR-0066: The Deprecation Register — two-stage retirement for refuted mechanisms
 
-## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"). **FULLY EXECUTED 2026-07-27, consolidation pass 2 (`refactor/consolidation-2`): the two re-test clauses were both discharged same-day WITH DATA and their code deleted — FMTCP re-tested on the clean substrate → CONFIRMED-REFUTED → f841757; streaming crown re-test → CLEARED → bccb32a (scoped streaming-only; `RWM_UNIFIED=0` now = legacy-RLC). No Class-C gate remains in the tree; the two-stage discipline itself (deprecate → re-test → delete) stays the standing rule for future refuted mechanisms**
+## Status: Accepted (register live 2026-07-21; per-gate dispositions below; EXECUTED 2026-07-27 — the no-re-test rows + the argued DAPS/SRC_BP rows deleted on `refactor/consolidation`, per-row commits in goal-gate "Code Consolidation (2026-07-27)"). **FULLY EXECUTED 2026-07-27, consolidation pass 2 (`refactor/consolidation-2`): the two re-test clauses were both discharged same-day WITH DATA and their code deleted — FMTCP re-tested on the clean substrate → CONFIRMED-REFUTED → f841757; streaming crown re-test → CLEARED → bccb32a (scoped streaming-only; `RWM_UNIFIED=0` now = legacy-RLC). No Class-C gate remains in the tree; the two-stage discipline itself (deprecate → re-test → delete) stays the standing rule for future refuted mechanisms**. **RE-OPENED 2026-08-10: one Class-C row added — BLOCK MODE, the first non-env member, re-test OPEN (ADR-0069).**
 
 **Date**: 2026-07-21
 
@@ -51,6 +51,24 @@ DEPRECATION REGISTER):
   by the re-test clause: the 12–48× crown record spans historic cells
   the flip battery did not re-run — code removal requires a later pass
   holding that record cell-by-cell on the unified default.
+
+**Disposition added 2026-08-10 — the register's first NON-env row:**
+
+- **BLOCK MODE** (the `window_reliable = false` pipeline for Bulk/Auto:
+  block assembly + RaptorQ/RS/block-RLC + P8 block-ARQ + interleaver) —
+  DEPRECATED, re-test OWED, code FROZEN not deleted. Last measured as an
+  arm 2026-07-08 (goal-gate "Full Benchmark Re-Run", C1–C5, C4 DNF 6/6
+  still flagged) with **W1, W2, W7, W8 and PRE-DIV all ACTIVE** — the
+  same wall profile that made `RWM_FMTCP` the strongest re-test case —
+  yet it remains the SHIPPED DEFAULT while every battery since
+  2026-07-12 has measured the window pipeline. Counter-weighted by the
+  only head-to-head on record, which block WON (C2 1.23×, 2026-07-06).
+  Re-test clause, flip rule and removal list: **ADR-0069**. Note the
+  register's enforcement mechanism does not reach this row —
+  `deprecated_env_flag` warns on an env gate, and block mode is the
+  unset state of a CLI flag; the hook is instead the routing pin
+  `net::tests::default_config_routes_bulk_and_auto_to_the_block_pipeline`,
+  which fails if the default moves without its measurement.
 
 Class-B gates (concept incomplete, successor scheduled — percap family,
 `RWM_COPA_COMPETE`, formerly `RWM_TAPER_R`/`RWM_UNIFIED` before they
