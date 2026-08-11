@@ -3634,6 +3634,69 @@ fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
     );
 }
 
+/// THE FIRST DIVERGENCE, BOUNDED — and it is not the store law, it is Σ`cwnd`.
+///
+/// `available() = cwnd − in_flight` (`scheduler/mod.rs:2268-2271`), and the
+/// coupling chain shows Σ`in_flight` tracking the cap in BOTH store models. So
+/// what decides whether `active_paths()` empties is the OTHER operand. The
+/// bench's Σ`cwnd` over live paths at the duals is a large MULTIPLE of the
+/// wire's own measured Σ-anchor — the quantity that is the cwnd FLOOR — which
+/// means the bench's `available()` has structural headroom the wire's does
+/// not. The owner is this bench's known link artifact: 2.4–5.7× RTprop of
+/// standing queue at every fast path (goal-gate "SF Bench on Measured
+/// Inputs", "WHAT THIS BENCH STILL CANNOT SEE"), which is in `min_rtt`, hence
+/// in the anchor, hence in the cwnd floor.
+///
+/// Bounded rather than described, so a successor who fixes the link model
+/// re-scores this row instead of inheriting prose.
+#[test]
+fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals() {
+    for (cell, geom, shapes) in [
+        ("c7", vec![C2, C2], &ACK_C7[..]),
+        ("c8", vec![C2, C3], &ACK_C8[..]),
+    ] {
+        let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
+        // The SAME 20 s horizon the readout uses, on purpose: Copa is still
+        // ramping at 8 s (c7 reads Sigma cwnd 1100 there, below the wire's own
+        // anchor sum), so a shorter horizon would assert the warm-up and not
+        // the steady state this attribution is about.
+        let r = simulate_full(
+            &geom,
+            Arm::Unified,
+            Feed::Measured(shapes),
+            20.0,
+            0,
+            Acct::Engine,
+            Store::Span,
+        );
+        assert!(r.cwnd_live_mean > 0.0 && r.infl_mean > 0.0, "{cell}: the loop must run");
+        let ratio = r.cwnd_live_mean / sigma_wire;
+        assert!(
+            ratio > 2.0,
+            "{cell}: the bench's Sigma cwnd {:.0} is not above 2x the wire's \
+             Sigma anchor {sigma_wire:.0} — if this ever drops, the headroom \
+             attribution in goal-gate \"The Coupling Model\" is void and must \
+             be re-taken",
+            r.cwnd_live_mean
+        );
+        assert!(
+            ratio < 12.0,
+            "{cell}: Sigma cwnd {:.0} is {ratio:.1}x the wire's anchor sum \
+             {sigma_wire:.0}, outside the band this section measured",
+            r.cwnd_live_mean
+        );
+        // …and the headroom it buys is what keeps `available()` open: the
+        // in-flight the store cap can produce is a fraction of it.
+        assert!(
+            r.infl_mean < r.cwnd_live_mean,
+            "{cell}: Sigma in_flight {:.0} must sit under Sigma cwnd {:.0} on \
+             average — that gap IS the unclosed available()",
+            r.infl_mean,
+            r.cwnd_live_mean
+        );
+    }
+}
+
 /// (8) THE VALIDATION GATE — V1/V2/V3, scored per path against the ledger
 /// before the geography question may be asked at all.
 #[test]
