@@ -25,7 +25,10 @@
 //!     honest_cap = off`), i.e. `path_scaled_store_cap` over the path set the
 //!     flag selects, refreshed on the shipped 5 ms cadence.
 //!
-//! No wall clock, no sockets, no tokio, no netem: same numbers every run.
+//! No wall clock, no sockets, no tokio, no netem: same numbers every run —
+//! but only since `place_min_cost` began breaking exact-cost TIES by path id
+//! (see its comment). `Scheduler` holds paths in a `HashMap`, so before that
+//! the SYMMETRIC cell alone was reproducible only within a process.
 //!
 //! Run:
 //!   cargo test --test store_cap_sf_bench --release -- --ignored --nocapture
@@ -178,6 +181,64 @@ struct Sym {
     /// `Some(t)` = will be acked at t; `None` = dropped, awaiting retransmit.
     ack_at: Option<f64>,
     rtt: f64,
+    /// The reliable stream sequence number, assigned once at first admission
+    /// and CARRIED across retransmits — the number the receiver's cumulative
+    /// frontier is expressed in (`Feed::Cumulative` only).
+    seq: u64,
+}
+
+// ── THE ANCHOR-ERA AXIS (goal-gate "SF Anchor Suspect") ────────────────────
+//
+// FINDING 3 of the "c8 SF Mechanism" section reproduced U's direction but not
+// its CELL SPECIFICITY, and named one suspect: *the bench's Copa reads an
+// HONEST anchor and the engine's legacy one does not.* The bench acks
+// per-symbol at the true delivery instant, so `CopaState::record_delivery`'s
+// Δdelivered/Δt can only read the truth; the engine's legacy ack-interval
+// sampler over-reads ×4.6–7.4 (goal-gate "Anchor Hygiene" (b)) because acks
+// arrive BATCHED and the cumulative frontier JUMPS. That anchor is not just
+// the store-cap Σ — via `clamp_cwnd_with_anchor` it is also the cwnd FLOOR,
+// so an over-reading anchor PROPS `available() > 0` and can keep the fast
+// symmetric cells out of the empty-`active_paths()` state entirely.
+//
+// This axis makes the era a bench variable, two ways, because neither alone
+// would be honest:
+//
+//   * `Overread(f)` — the era as a PURE SCALE on the ack-interval sampler's
+//     input, SWEPT. `record_delivery` uses its `count` argument for nothing
+//     but Δdelivered, so feeding `f·count` scales every rate sample — and
+//     hence `max_bw`, `bdp_anchor()`, the anchor floor and the store-cap Σ —
+//     by exactly `f`, with the call cadence, the cwnd update cadence and the
+//     RTT feed bit-identical to the honest arm. `f = 1.0` IS the honest arm.
+//     No single f is privileged: the sweep reports the whole curve and the
+//     matrix quotes the wire's measured 4.6–7.4 band as a BAND.
+//   * `Cumulative { ack_period_s }` — the era DERIVED from the bench's own
+//     ack batching, with no injected number at all: a receiver that reports a
+//     CUMULATIVE frontier on a feedback cadence. A GE drop stalls the
+//     frontier; when the retransmit lands the frontier jumps by the whole
+//     run, and the sampler sees that jump over one feedback interval. The
+//     realized over-read is then MEASURED (`anchor / true BtlBw·RTprop`) and
+//     compared against the wire's band, rather than assumed.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Feed {
+    /// Per-symbol `on_ack(1)` at the true delivery instant — the SHIPPED
+    /// honest-anchor era (default since 9f6e56b), and bit-identical to the
+    /// original bench.
+    Honest,
+    /// The legacy ack-interval era as a swept scale on the sampler input.
+    Overread(f64),
+    /// The legacy era derived from cumulative-frontier acks at a feedback
+    /// cadence (seconds).
+    Cumulative { ack_period_s: f64 },
+}
+
+impl Feed {
+    fn label(self) -> String {
+        match self {
+            Feed::Honest => "honest (x1.0)".into(),
+            Feed::Overread(f) => format!("over-read x{f:.1}"),
+            Feed::Cumulative { ack_period_s } => format!("cum-ack {:.2} ms", ack_period_s * 1e3),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -191,6 +252,14 @@ struct Run {
     retx: u64,
     horizon_s: f64,
     mean_cap: f64,
+    /// Σ over refresh ticks and paths of `copa_bdp_anchor() / (rate·RTprop)`
+    /// — the REALIZED anchor over-read against the cell's own ground truth.
+    anchor_ratio_sum: f64,
+    anchor_ratio_n: u64,
+    /// Σ over refresh ticks and paths of `cwnd` (the anchor floor's visible
+    /// effect) — mean cwnd per path.
+    cwnd_sum: f64,
+    cwnd_n: u64,
 }
 
 impl Run {
@@ -207,6 +276,13 @@ impl Run {
     fn goodput_sym_s(&self) -> f64 {
         self.delivered as f64 / self.horizon_s
     }
+    /// Mean realized anchor over-read (×1.0 = honest).
+    fn overread(&self) -> f64 {
+        self.anchor_ratio_sum / self.anchor_ratio_n.max(1) as f64
+    }
+    fn mean_cwnd(&self) -> f64 {
+        self.cwnd_sum / self.cwnd_n.max(1) as f64
+    }
 }
 
 /// The REAL reliable-source placement objective (`Scheduler::place_costs` via
@@ -215,25 +291,61 @@ impl Run {
 /// `place_symbol` draws a uniform), same candidate set (`p.active`, no
 /// availability filter), same cost.
 fn place_min_cost(sched: &Scheduler) -> u32 {
-    sched
-        .place_probs_with_temperature(false, &[], f64::MIN_POSITIVE)
-        .into_iter()
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(pid, _)| pid)
-        .unwrap_or(0)
+    let mut cands = sched.place_probs_with_temperature(false, &[], f64::MIN_POSITIVE);
+    // DETERMINISM, and it is NOT free: `Scheduler` holds its paths in a
+    // `HashMap<PathId, PathState>`, whose iteration order is randomised per
+    // PROCESS. At an ASYMMETRIC cell the placement objective separates the
+    // paths and the order cannot matter; at the SYMMETRIC cell (c7, and the
+    // d = 1.0 point of the diagonal sweep) the two costs are bit-equal and the
+    // winner was whatever the map yielded last — so c7 was the one cell whose
+    // numbers moved run to run, which is exactly why goal-gate "c8 SF
+    // Mechanism" carries 9.0% for c7 in FINDING 3 and 9.3% for the SAME
+    // geometry in FINDING 4. Sorting by path id first makes the tie-break
+    // lowest-id-wins and the whole bench reproducible.
+    cands.sort_by_key(|(pid, _)| *pid);
+    let mut best: Option<(u32, f64)> = None;
+    for (pid, w) in cands {
+        if best.is_none_or(|(_, bw)| w > bw) {
+            best = Some((pid, w));
+        }
+    }
+    best.map(|(pid, _)| pid).unwrap_or(0)
+}
+
+/// Close the loop at the SHIPPED honest-anchor era (bit-identical to the
+/// bench's original behaviour — `Feed::Honest` is a per-symbol `on_ack(1)`).
+fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
+    simulate_era(paths, arm, Feed::Honest, horizon_s)
 }
 
 /// Close the loop. `paths` is the cell geometry; `arm` selects the path set /
-/// pooled ceiling; `horizon_s` is simulated seconds.
-fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
+/// pooled ceiling; `feed` selects the ANCHOR ERA (what the legacy ack-interval
+/// rate sampler sees); `horizon_s` is simulated seconds.
+fn simulate_era(paths: &[Spec], arm: Arm, feed: Feed, horizon_s: f64) -> Run {
+    simulate_seeded(paths, arm, feed, horizon_s, 0)
+}
+
+/// As `simulate_era`, with the GE link seeds SALTED. FINDING 4 established
+/// that this loop is BISTABLE, so a single run is a draw from a mode, not a
+/// measurement of one — every claim below is scored over a seed ensemble and
+/// reported as a MODE RATE, which is what that finding asked a successor to do.
+fn simulate_seeded(paths: &[Spec], arm: Arm, feed: Feed, horizon_s: f64, salt: u64) -> Run {
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     let mut links: Vec<Link> = Vec::new();
+    // Ground truth per path for the realized-over-read gauge: BtlBw·RTprop.
+    let truth: Vec<f64> = paths.iter().map(|(r, t, _, _)| r * t).collect();
     for (i, spec) in paths.iter().enumerate() {
         sched.add_path(i as u32);
-        links.push(Link::new(*spec, 0x5EED_0000 + i as u64 * 0x9E37_79B9));
+        links.push(Link::new(
+            *spec,
+            0x5EED_0000_u64
+                .wrapping_add(salt.wrapping_mul(0xD1B5_4A32_D192_ED03))
+                .wrapping_add(i as u64 * 0x9E37_79B9),
+        ));
     }
+    let np = paths.len();
 
     // The retention store: admitted, not yet acked.
     let mut store: Vec<Sym> = Vec::new();
@@ -243,6 +355,21 @@ fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
     let mut next_refresh = 0.0_f64;
     let (mut ticks, mut zero, mut short, mut sum_live, mut sum_active) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let mut cap_sum: f64 = 0.0;
+    let mut anchor_ratio_sum = 0.0_f64;
+    let mut anchor_ratio_n = 0u64;
+    let mut cwnd_sum = 0.0_f64;
+    let mut cwnd_n = 0u64;
+
+    // `Feed::Overread` — per-path fractional carry, so a non-integer scale is
+    // exact in the LONG RUN instead of rounded per call.
+    let mut scale_carry = vec![0.0_f64; np];
+    // `Feed::Cumulative` — the receiver's per-seq delivery flags, the carrying
+    // path of each seq, the cumulative frontier, and the feedback clock.
+    let mut next_seq: u64 = 0;
+    let mut seq_done: Vec<bool> = Vec::new();
+    let mut seq_owner: Vec<u32> = Vec::new();
+    let mut frontier: u64 = 0;
+    let mut next_feedback = 0.0_f64;
 
     let steps = (horizon_s / tick).round() as u64;
     for step in 1..=steps {
@@ -254,20 +381,65 @@ fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
         // Dropped ones are retransmitted once RFC 9002's time threshold
         // (9/8·SRTT — the same `PLACE_SLACK_RECOV_PATIENCE` the placement
         // objective uses) has passed, and are RE-CHARGED to their new path.
-        let acks: Vec<(u32, f64)> = store
+        let acks: Vec<(u32, f64, u64)> = store
             .iter()
             .filter(|s| matches!(s.ack_at, Some(t) if t <= now))
-            .map(|s| (s.path, s.rtt))
+            .map(|s| (s.path, s.rtt, s.seq))
             .collect();
-        for (pid, rtt) in &acks {
+        for (pid, rtt, seq) in &acks {
             if let Some(p) = sched.path_mut(*pid) {
                 p.record_rtt_sample(Duration::from_secs_f64(*rtt));
                 p.release_in_flight(1);
-                p.on_ack(1);
+                // THE ERA AXIS. The transport-level accounting above is
+                // identical in every era; only what the ack-interval RATE
+                // SAMPLER is shown differs.
+                match feed {
+                    Feed::Honest => p.on_ack(1),
+                    Feed::Overread(f) => {
+                        let acc = &mut scale_carry[*pid as usize];
+                        *acc += f;
+                        let k = acc.floor();
+                        *acc -= k;
+                        p.on_ack(k as u32)
+                    }
+                    // The cwnd-dynamics half runs on the SAME per-symbol
+                    // cadence as the honest arm (`on_delivery_signal` is the
+                    // shipped honest-feed entry point, `feat/copa-sole-cc`);
+                    // the rate sample is deferred to the frontier report.
+                    Feed::Cumulative { .. } => p.on_delivery_signal(),
+                }
+            }
+            if let Feed::Cumulative { .. } = feed {
+                seq_done[*seq as usize] = true;
+                seq_owner[*seq as usize] = *pid;
             }
         }
         delivered += acks.len() as u64;
         store.retain(|s| !matches!(s.ack_at, Some(t) if t <= now));
+
+        // ── the receiver's CUMULATIVE frontier report (legacy era) ───────
+        // A GE drop stalls the frontier; the retransmit's delivery releases
+        // the whole accumulated run in ONE feedback message, which is the
+        // engine's Δdelivered spike over one ack interval. No number is
+        // injected here — the batch size is whatever the bench's own loss and
+        // reordering produce.
+        if let Feed::Cumulative { ack_period_s } = feed {
+            if now >= next_feedback {
+                next_feedback = now + ack_period_s;
+                let mut cnt = vec![0u32; np];
+                while (frontier as usize) < seq_done.len() && seq_done[frontier as usize] {
+                    cnt[seq_owner[frontier as usize] as usize] += 1;
+                    frontier += 1;
+                }
+                for (pid, c) in cnt.iter().enumerate() {
+                    if *c > 0 {
+                        if let Some(p) = sched.path_mut(pid as u32) {
+                            p.on_ack(*c);
+                        }
+                    }
+                }
+            }
+        }
         for i in 0..store.len() {
             if store[i].ack_at.is_some() {
                 continue;
@@ -320,6 +492,20 @@ fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
             let bdp_set = if arm == Arm::Legacy { sum_over(&act) } else { bdp_live };
             cap = cap_for(arm, bdp_set, bdp_live, n_live);
             cap_sum += cap as f64;
+            // The realized anchor over-read and the cwnd it floors, per path,
+            // against the cell's OWN ground truth (rate·RTprop).
+            for pid in 0..np {
+                if let Some(p) = sched.path(pid as u32) {
+                    cwnd_sum += p.cwnd as f64;
+                    cwnd_n += 1;
+                    if let Some(a) = p.copa_bdp_anchor() {
+                        if truth[pid] > 0.0 {
+                            anchor_ratio_sum += a / truth[pid];
+                            anchor_ratio_n += 1;
+                        }
+                    }
+                }
+            }
         }
 
         // ── admission (bulk source: always data to send) ─────────────────
@@ -342,11 +528,18 @@ fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
                 p.charge_in_flight(1);
             }
             let r = links[pid as usize].send(now);
+            let seq = next_seq;
+            next_seq += 1;
+            if let Feed::Cumulative { .. } = feed {
+                seq_done.push(false);
+                seq_owner.push(pid);
+            }
             store.push(Sym {
                 path: pid,
                 sent: now,
                 ack_at: r.map(|(a, _)| a),
                 rtt: r.map(|(_, rt)| rt).unwrap_or(0.0),
+                seq,
             });
         }
     }
@@ -361,6 +554,10 @@ fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
         retx,
         horizon_s,
         mean_cap: cap_sum / ticks.max(1) as f64,
+        anchor_ratio_sum,
+        anchor_ratio_n,
+        cwnd_sum,
+        cwnd_n,
     }
 }
 
@@ -467,6 +664,202 @@ fn sf_zero_fold_vs_geometry_axes() {
         );
     }
     println!();
+}
+
+/// The four cells the anchor-era question is asked at: the two the wire
+/// separates (c7 immune, c8 exposed) and c8's two half-axes.
+fn era_cells() -> Vec<(&'static str, Vec<Spec>)> {
+    vec![
+        ("c7   dual symmetric   ", vec![C2, C2]),
+        ("c8   dual asym (r+RTT)", vec![C2, C3]),
+        ("c8r  dual asym RATE   ", vec![C2, (C3.0, C2.1, C3.2, C3.3)]),
+        ("c8t  dual asym RTT    ", vec![C2, (C2.0, C3.1, C3.2, C3.3)]),
+    ]
+}
+
+/// (3) THE ANCHOR-ERA SWEEP — the suspect, as a CURVE and not a point.
+///
+/// The engine's legacy ack-interval anchor over-reads ×4.6–7.4 (goal-gate
+/// "Anchor Hygiene" (b)); the shipped honest anchor reads ×1. No single value
+/// is privileged here: the scale is swept THROUGH that band and past it, and
+/// the reader is shown the whole curve, so a conclusion that depends on
+/// picking 4.6 is visibly not available.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_zero_fraction_vs_anchor_overread() {
+    println!("\n=== [SF] ZERO-FRACTION vs ANCHOR-ERA OVER-READ (20 s, deterministic) ===");
+    println!("scale f feeds the LEGACY ack-interval sampler f x its true delta =>");
+    println!("anchor, anchor floor (clamp_cwnd_with_anchor) and store-cap Sigma all x f.");
+    println!("f = 1.0 IS the shipped honest-anchor era; the wire's legacy band is 4.6-7.4.\n");
+    println!("NOTE: the injected scale f is NOT the realized over-read. `max_bw` is a windowed");
+    println!("MAX over a 10 s window, and the loop feeds back (a bigger cwnd sends bigger bursts,");
+    println!("which spike Delta/Dt further), so the MEASURED anchor/(rate*RTprop) is reported as x");
+    println!("and it is x, not f, that must be read against the wire's 4.6-7.4 band.\n");
+    for (name, geom) in era_cells() {
+        println!(
+            "{:<24} {:>6} {:>7} {:>9} {:>9} {:>10} {:>10} {:>12}",
+            name, "f", "x (A)", "A zero%", "AU zero%", "A cwnd", "A cap", "A goodput"
+        );
+        for f in [1.0_f64, 1.5, 2.0, 2.5, 3.0, 4.0, 4.6, 6.0, 7.4, 10.0] {
+            let feed = if f == 1.0 { Feed::Honest } else { Feed::Overread(f) };
+            let (mut az, mut uz, mut ax, mut ac, mut acp, mut ag) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            let n = 3u64;
+            for s in 0..n {
+                let a = simulate_seeded(&geom, Arm::Legacy, feed, 20.0, s);
+                let u = simulate_seeded(&geom, Arm::Unified, feed, 20.0, s);
+                az += a.zero_pct();
+                uz += u.zero_pct();
+                ax += a.overread();
+                ac += a.mean_cwnd();
+                acp += a.mean_cap;
+                ag += a.goodput_sym_s();
+            }
+            let n = n as f64;
+            println!(
+                "{:<24} {:>6.1} {:>7.2} {:>8.1}% {:>8.1}% {:>10.0} {:>10.0} {:>12.0}",
+                "",
+                f,
+                ax / n,
+                az / n,
+                uz / n,
+                ac / n,
+                acp / n,
+                ag / n
+            );
+        }
+        println!();
+    }
+}
+
+/// The seed ensemble size. FINDING 4: the loop is bistable, so the statistic
+/// that resolves it is the MODE RATE over an ensemble, not one run's mean.
+const SEEDS: u64 = 8;
+
+/// The CAUGHT class, pre-declared before the matrix is read: a run whose
+/// `[SF]` zero-fraction is below 10%. The wire's legacy arms sit in a ≈4%
+/// class and the bench's caught regime (FINDING 4, d = 5.2–7.5) sits at
+/// 0.2–0.3%; 10% separates those from the 40–100% saturated mode with a wide
+/// margin on both sides. `min`/`max` are printed so the cut can be re-drawn.
+const CAUGHT_PCT: f64 = 10.0;
+
+struct Ens {
+    zero: Vec<f64>,
+    gp: Vec<f64>,
+    x: Vec<f64>,
+    cwnd: Vec<f64>,
+    cap: Vec<f64>,
+}
+
+impl Ens {
+    fn run(geom: &[Spec], arm: Arm, feed: Feed) -> Self {
+        let mut e = Ens { zero: vec![], gp: vec![], x: vec![], cwnd: vec![], cap: vec![] };
+        for s in 0..SEEDS {
+            let r = simulate_seeded(geom, arm, feed, 20.0, s);
+            e.zero.push(r.zero_pct());
+            e.gp.push(r.goodput_sym_s());
+            e.x.push(r.overread());
+            e.cwnd.push(r.mean_cwnd());
+            e.cap.push(r.mean_cap);
+        }
+        e
+    }
+    fn mean(v: &[f64]) -> f64 {
+        v.iter().sum::<f64>() / v.len().max(1) as f64
+    }
+    /// P(caught) — the mode rate.
+    fn caught(&self) -> f64 {
+        self.zero.iter().filter(|z| **z < CAUGHT_PCT).count() as f64 / self.zero.len() as f64
+    }
+    fn lo(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::INFINITY, f64::min)
+    }
+    fn hi(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    }
+}
+
+/// (4) THE MATRIX the question asks for: {c7, c8, c8r, c8t} × {A, AU, P} ×
+/// {honest, over-read band}, scored over the seed ensemble. The over-read
+/// column is shown at BOTH ends of the wire's measured band, never at a
+/// single chosen value.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_anchor_era_matrix() {
+    println!("\n=== ANCHOR-ERA MATRIX: cell x arm x era, {SEEDS} seeds x 20 s ===");
+    println!("zero% = mean [SF] zero-fraction; [lo..hi] its range over seeds;");
+    println!("caught = MODE RATE, the fraction of seeds with zero% < {CAUGHT_PCT:.0}% (FINDING 4's statistic);");
+    println!("x = realized anchor over-read vs rate*RTprop.\n");
+    println!(
+        "{:<24} {:<22} {:>14} {:>8} {:>16} {:>8} {:>7} {:>8} {:>8} {:>9}",
+        "cell", "arm", "era", "zero%", "[lo..hi]", "caught", "x", "cwnd", "cap", "goodput"
+    );
+    for (name, geom) in era_cells() {
+        for arm in [Arm::Legacy, Arm::Unified, Arm::PooledUnified] {
+            for feed in [Feed::Honest, Feed::Overread(4.6), Feed::Overread(7.4)] {
+                let e = Ens::run(&geom, arm, feed);
+                println!(
+                    "{:<24} {:<22} {:>14} {:>7.1}% {:>16} {:>7.0}% {:>7.2} {:>8.0} {:>8.0} {:>9.0}",
+                    name,
+                    arm.label(),
+                    feed.label(),
+                    Ens::mean(&e.zero),
+                    format!("[{:.1}..{:.1}]", e.lo(), e.hi()),
+                    e.caught() * 100.0,
+                    Ens::mean(&e.x),
+                    Ens::mean(&e.cwnd),
+                    Ens::mean(&e.cap),
+                    Ens::mean(&e.gp)
+                );
+            }
+        }
+        println!();
+    }
+}
+
+/// (5) THE DERIVED ERA — no injected number at all. A cumulative-frontier
+/// receiver on a feedback cadence; the batch sizes, and hence the over-read,
+/// are whatever the bench's own GE loss and retransmit timing produce. The
+/// realized over-read is MEASURED against `rate·RTprop` and can be compared
+/// with the wire's 4.6–7.4 band on its own terms.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_derived_overread_from_ack_batching() {
+    println!("\n=== DERIVED ANCHOR ERA: cumulative-frontier acks at a feedback cadence ===");
+    println!("no injected factor; 'x' is the MEASURED anchor / (rate*RTprop).\n");
+    for (name, geom) in era_cells() {
+        println!(
+            "{:<24} {:>12} {:>8} {:>9} {:>7} {:>10} {:>12}",
+            name, "cadence", "A zero%", "AU zero%", "x (A)", "A cwnd", "A goodput"
+        );
+        let h = simulate(&geom, Arm::Legacy, 20.0);
+        let hu = simulate(&geom, Arm::Unified, 20.0);
+        println!(
+            "{:<24} {:>12} {:>7.1}% {:>8.1}% {:>7.2} {:>10.0} {:>12.0}",
+            "",
+            "honest",
+            h.zero_pct(),
+            hu.zero_pct(),
+            h.overread(),
+            h.mean_cwnd(),
+            h.goodput_sym_s()
+        );
+        for ms in [0.25_f64, 1.0, 2.0, 5.0, 10.0] {
+            let feed = Feed::Cumulative { ack_period_s: ms / 1e3 };
+            let a = simulate_era(&geom, Arm::Legacy, feed, 20.0);
+            let u = simulate_era(&geom, Arm::Unified, feed, 20.0);
+            println!(
+                "{:<24} {:>10.2}ms {:>7.1}% {:>8.1}% {:>7.2} {:>10.0} {:>12.0}",
+                "",
+                ms,
+                a.zero_pct(),
+                u.zero_pct(),
+                a.overread(),
+                a.mean_cwnd(),
+                a.goodput_sym_s()
+            );
+        }
+        println!();
+    }
 }
 
 fn fold_str(a: f64, u: f64) -> String {
@@ -606,6 +999,130 @@ fn unified_raises_the_sf_zero_fraction_at_every_dual() {
             "U did not raise the mean store cap: A {:.0} vs AU {:.0}",
             a.mean_cap,
             u.mean_cap
+        );
+    }
+}
+
+/// THE BENCH'S OWN REPRODUCIBILITY, pinned. `Scheduler` holds its paths in a
+/// `HashMap<PathId, PathState>`, so at the SYMMETRIC cell — where the
+/// placement objective's costs are bit-equal — the winner used to be whatever
+/// the map happened to yield last, i.e. a per-PROCESS random choice. This
+/// asserts the tie goes to the LOWEST path id, which is what makes c7's
+/// numbers the same on every run and every host. Without the tie-break this
+/// test fails in roughly half of all processes.
+#[test]
+fn symmetric_cell_placement_tie_is_broken_deterministically() {
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    for id in [0u32, 1, 2, 3] {
+        sched.add_path(id);
+    }
+    // Fresh identical paths ⇒ identical costs ⇒ a pure tie.
+    let probs = sched.place_probs_with_temperature(false, &[], f64::MIN_POSITIVE);
+    assert_eq!(probs.len(), 4);
+    let w0 = probs[0].1;
+    assert!(
+        probs.iter().all(|(_, w)| *w == w0),
+        "the symmetric cell must be an exact tie for this guard to mean anything: {probs:?}"
+    );
+    assert_eq!(place_min_cost(&sched), 0, "the tie must go to the lowest path id");
+}
+
+/// THE ARITHMETIC REASON THE ANCHOR-ERA SUSPECT CANNOT BE THE PROP.
+///
+/// The suspect (goal-gate "c8 SF Mechanism", FINDING 3) was that a ×5-class
+/// over-reading anchor props the cwnd FLOOR (`clamp_cwnd_with_anchor`), keeps
+/// `available() > 0`, and so keeps the fast cells out of the empty-
+/// `active_paths()` state. What that argument misses is that **the SAME anchor
+/// is on both sides of the loop**:
+///
+/// * the cwnd floor is `ANCHOR_FLOOR_GAIN · anchor` — LINEAR in the anchor,
+/// * the store cap is `gain · N · Σ anchor` — ALSO linear in the anchor.
+///
+/// Saturation is decided by `store_cap` vs `Σ_paths cwnd`, and a common scale
+/// `f` on the anchor cancels in that RATIO. So the era cannot move the
+/// saturation state at all while both terms are in their linear regime — the
+/// only thing that can is a term that is NOT homogeneous: the `N·knee`
+/// CEILING (and `FLOOR`/`MAX_CWND`). This test pins exactly that on the real
+/// `path_scaled_store_cap`: degree-1 homogeneity below the ceiling, and
+/// saturation at `N·knee` above it. The measured consequence — a large enough
+/// over-read helps only by driving the cap INTO its ceiling, and it reaches
+/// the ceiling first at the cell with the biggest anchor (c8t, RTT-asymmetric)
+/// rather than at the fast symmetric one — is what the era matrix shows.
+#[test]
+fn store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling() {
+    let sigma = C2.0 * C2.1 + C3.0 * C3.1; // c8's Σ = 203.2
+    let n = 2usize;
+    let ceiling = (n * KNEE) as f64; // 4096
+
+    // Below the ceiling: cap(f·Σ) == f·cap(Σ), for any scale — the anchor era
+    // divides out. (`ceil` gives at most a 1-symbol residue.)
+    let base = shipped_chain(sigma, n) as f64;
+    for f in [1.0_f64, 2.0, 4.6, 7.4] {
+        let scaled = shipped_chain(f * sigma, n) as f64;
+        if scaled >= ceiling {
+            continue;
+        }
+        assert!(
+            (scaled - f * base).abs() <= 1.0 + f,
+            "cap is not degree-1 in the anchor at f={f}: {scaled} vs {}",
+            f * base
+        );
+    }
+
+    // Above it the law SATURATES — this is the only non-homogeneous term, and
+    // therefore the only route by which an anchor era can change the loop's
+    // saturation state at all.
+    let huge = shipped_chain(1_000.0 * sigma, n) as f64;
+    assert_eq!(huge, ceiling, "the N*knee ceiling must bind");
+    let f_needed = ceiling / base;
+    assert!(
+        f_needed > 4.6,
+        "at c8 the cap only reaches its ceiling past x{f_needed:.1}, i.e. ABOVE the wire's \
+         measured legacy band (4.6-7.4) — so inside that band the era is a pure scale"
+    );
+}
+
+/// THE MEASURED REFUTATION, bounded: the over-reading (legacy-era) anchor does
+/// NOT make the fast symmetric cell immune. The suspect predicted c7 would
+/// stop folding because a propped cwnd floor keeps `available() > 0`; measured
+/// over the seed ensemble, the legacy era leaves c7's shipped arm STRICTLY
+/// WORSE than the honest era does, in the direction opposite to the prediction.
+///
+/// Kept ordinal-with-a-margin ON PURPOSE: the absolute levels are mode draws
+/// from a bistable loop (FINDING 4), but the SIGN of this gap is not — it is
+/// the store-cap side of the anchor (gain·N = 4× per path) outrunning the cwnd
+/// side (ANCHOR_FLOOR_GAIN = 0.85×), which is arithmetic.
+#[test]
+fn overreading_anchor_does_not_protect_the_fast_symmetric_cell() {
+    let c7 = vec![C2, C2];
+    for s in 0..3u64 {
+        let honest = simulate_seeded(&c7, Arm::Legacy, Feed::Honest, 8.0, s);
+        let legacy = simulate_seeded(&c7, Arm::Legacy, Feed::Overread(4.6), 8.0, s);
+        assert!(
+            legacy.zero_pct() > honest.zero_pct() + 10.0,
+            "seed {s}: the over-read era was supposed to PROTECT c7; honest {:.1}% vs \
+             over-read {:.1}%",
+            honest.zero_pct(),
+            legacy.zero_pct()
+        );
+        // MEASUREMENT DISCIPLINE 1 — the mechanism under test must EXECUTE.
+        // The prop is REAL: the over-reading anchor really does raise the cwnd
+        // floor, by a wide margin. It simply does not buy immunity, because
+        // the same anchor raises the admission the cwnd has to absorb.
+        assert!(
+            legacy.mean_cwnd() > 1.5 * honest.mean_cwnd(),
+            "seed {s}: the over-read anchor never propped cwnd, so this test proved nothing: \
+             honest {:.0} vs over-read {:.0}",
+            honest.mean_cwnd(),
+            legacy.mean_cwnd()
+        );
+        // And the realized over-read must actually be in/above the wire's band
+        // — otherwise the era was not reached.
+        assert!(
+            legacy.overread() > 4.6,
+            "seed {s}: realized over-read x{:.2} never reached the legacy band",
+            legacy.overread()
         );
     }
 }
