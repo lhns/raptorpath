@@ -362,6 +362,12 @@ enum Feed {
     /// The legacy era derived from cumulative-frontier acks at a feedback
     /// cadence (seconds).
     Cumulative { ack_period_s: f64 },
+    /// THE MEASURED WIRE ERA — the ack stream as goal-gate "Ack-Cadence
+    /// Measurement (VM)" recorded it, one `AckShape` per path of the cell.
+    /// Nothing about the anchor is injected: `record_delivery` is fed ONE
+    /// delivered symbol per ack at measured arrival instants and the shipped
+    /// 1 ms `elapsed` floor (`scheduler/mod.rs:1178`) does the folding.
+    Measured(&'static [AckShape]),
 }
 
 impl Feed {
@@ -370,8 +376,306 @@ impl Feed {
             Feed::Honest => "honest (x1.0)".into(),
             Feed::Overread(f) => format!("over-read x{f:.1}"),
             Feed::Cumulative { ack_period_s } => format!("cum-ack {:.2} ms", ack_period_s * 1e3),
+            Feed::Measured(_) => "MEASURED (wire)".into(),
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  THE MEASURED ACK STREAM — goal-gate "Ack-Cadence Measurement (VM)"
+//  (2026-08-11, `feat/ackdiag-measurement` from main@c0d9305)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Every prior SF-bench result had to INVENT its ack stream, and the ledger
+// scored all three inventions as wrong by one to three orders of magnitude
+// ("WHAT THIS MEANS FOR THE SF BENCH'S INPUTS"). They are replaced here by the
+// wire's own numbers, transcribed row by row from the measurement and NOTHING
+// else. The four inputs the ledger names, and where each one lands:
+//
+//   (1) DELIVERED COUNT PER ACK = 1. "p50 = p90 = 1 in all 60 report windows,
+//       857 400 acks, every cell and every path. There is no ack aggregation."
+//       ⇒ `record_delivery(1)`, once per delivered symbol. NOT swept.
+//   (2) ARRIVAL SPACING — heavy-tailed, per cell and per path (READOUT 1+2's
+//       gap columns). "A single assumed period cannot represent this and
+//       should not be attempted." ⇒ the quantiles below, as a DISTRIBUTION.
+//   (3) THE 1 ms FLOOR IS THE CLOCK. "The sampler is FLOOR-CLOCKED — model the
+//       floor, not the acks. Feed `record_delivery` at ack cadence and let the
+//       1 ms `elapsed` floor do the work." ⇒ the bench advances the MockClock
+//       to each ack's own arrival instant and calls the REAL `on_ack(1)`; the
+//       real `elapsed < 0.001` branch (`scheduler/mod.rs:1178`) rejects. The
+//       bench asserts NOTHING about the sample period — it MEASURES the
+//       realized rejection rate and scores it against READOUT 3b.
+//   (4) `xanchor` IS NOT AN INPUT. It is the CHECK. READOUT 3's medians
+//       (5.94 / 9.80–10.11 / 13.29–13.82) are targets the loop must PRODUCE.
+//
+// THE ONE STRUCTURAL CHOICE, STATED RATHER THAN BURIED. The gauge measured the
+// MARGINAL gap distribution (p50/p90/p99), not its correlation structure, and
+// the marginal ALONE cannot produce the measured over-read: an i.i.d. renewal
+// stream with these quantiles puts ~1000 µs / mean_gap ≈ 10 acks in any 1 ms
+// window, so `Δdelivered/Δt` reads ×1 and the max filter has nothing to latch.
+// A ×8 sample needs ~74 CONSECUTIVE sub-p50 gaps, which i.i.d. draws never
+// deliver. The over-read therefore lives in the stream's RUN structure, and
+// the model of it here is the one every measured number is already consistent
+// with — a work-conserving observer:
+//
+//     the sender observes acks one at a time, spaced at the MEASURED p50 gap,
+//     while it has un-observed acks; when it runs out it goes SILENT for a
+//     draw from the MEASURED upper tail, and the acks that arrive during the
+//     silence are observed in the burst that follows.
+//
+// This is not a free-parameter fit. It has exactly ZERO knobs, because
+// conservation closes it: an observer that drains at spacing `s` has duty
+// cycle `s/ḡ = q50` by arithmetic, so the silence fraction is pinned at the
+// value that makes the model's own marginal REPRODUCE the measured p50, p90
+// and p99 exactly (`u_c` below, solved, not chosen). What the model then
+// PREDICTS, and what this bench scores, is everything the ledger measured but
+// did not feed in: the floor-rejection rate, the accepted-sample rate, the
+// acks folded per sample, and `xanchor`.
+
+/// One measured path's ack stream, transcribed from goal-gate "Ack-Cadence
+/// Measurement (VM)". The `(lo, hi)` pairs are the ledger's own per-window
+/// RANGES over its 12 report windows — the measurement's uncertainty, carried
+/// rather than averaged away. Micro-seconds; `rate_lr` is symbols/s.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct AckShape {
+    /// The ledger row this is, verbatim.
+    row: &'static str,
+    /// READOUT 3, `rate_lr` column — the window's own long-run delivered rate,
+    /// i.e. the mean ack gap is `1e6/rate_lr` µs.
+    rate_lr: f64,
+    /// READOUT 1+2, `gap µs p50` column.
+    p50: (f64, f64),
+    /// READOUT 1+2, `p90` column.
+    p90: (f64, f64),
+    /// READOUT 1+2, `p99` column.
+    p99: (f64, f64),
+    // ── the CHECKS: measured, never fed in ──
+    /// READOUT 3b, `rejected %` — what the 1 ms floor did on the wire.
+    rej_pct: f64,
+    /// READOUT 3b, `accepted samples/s`.
+    samples_s: f64,
+    /// READOUT 3, `xanchor med` — the quantity the store-cap Σ and the cwnd
+    /// anchor floor consume, and the one this bench must PRODUCE.
+    xanchor: f64,
+    /// READOUT 3, `xanchor` min/max over the 12 windows.
+    xanchor_range: (f64, f64),
+}
+
+/// `c2r100/p0` — single 100 MB, the reference cell. READOUT 1+2 row 1,
+/// READOUT 3 row 1, READOUT 3b row 1.
+const ACK_C2R100_P0: AckShape = AckShape {
+    row: "c2r100/p0",
+    rate_lr: 9_316.0,
+    p50: (17.0, 23.0),
+    p90: (228.0, 374.0),
+    p99: (930.0, 1522.0),
+    rej_pct: 91.5,
+    samples_s: 744.0,
+    xanchor: 5.94,
+    xanchor_range: (4.04, 9.28),
+};
+
+/// `c7/p0` — c2/c2 dual 200 MB, leg 0. READOUT 1+2 row 2 / 3 row 2 / 3b row 2.
+const ACK_C7_P0: AckShape = AckShape {
+    row: "c7/p0",
+    rate_lr: 9_432.0,
+    p50: (13.0, 14.0),
+    p90: (73.0, 96.0),
+    p99: (1838.0, 2052.0),
+    rej_pct: 94.3,
+    samples_s: 536.0,
+    xanchor: 9.80,
+    xanchor_range: (8.14, 11.95),
+};
+
+/// `c7/p1` — the symmetric dual's other leg. Rows 3 / 3 / 3.
+const ACK_C7_P1: AckShape = AckShape {
+    row: "c7/p1",
+    rate_lr: 9_418.0,
+    p50: (13.0, 14.0),
+    p90: (68.0, 87.0),
+    p99: (1807.0, 2006.0),
+    rej_pct: 94.3,
+    samples_s: 536.0,
+    xanchor: 10.11,
+    xanchor_range: (8.06, 10.57),
+};
+
+/// `c8/p0` — the asymmetric dual's FAST (c2) leg. Rows 4 / 4 / 4.
+const ACK_C8_P0: AckShape = AckShape {
+    row: "c8/p0 fast",
+    rate_lr: 6_948.0,
+    p50: (11.0, 13.0),
+    p90: (42.0, 182.0),
+    p99: (1697.0, 2048.0),
+    rej_pct: 94.0,
+    samples_s: 415.0,
+    xanchor: 13.29,
+    xanchor_range: (7.79, 27.34),
+};
+
+/// `c8/p1` — the asymmetric dual's SLOW (c3) leg, the one that stalls to
+/// 18.2 ms and the only path the floor rejects less than 90% of. Rows 5/5/5.
+const ACK_C8_P1: AckShape = AckShape {
+    row: "c8/p1 slow",
+    rate_lr: 1_376.0,
+    p50: (31.0, 70.0),
+    p90: (1918.0, 2194.0),
+    p99: (5354.0, 18229.0),
+    rej_pct: 81.5,
+    samples_s: 258.0,
+    xanchor: 13.82,
+    xanchor_range: (7.35, 27.56),
+};
+
+/// The measured cells, path by path. `sc2` is the bench's single-fast cell and
+/// the wire's single cell is `c2r100`; `c7`/`c8` map leg for leg.
+static ACK_SC2: [AckShape; 1] = [ACK_C2R100_P0];
+static ACK_C7: [AckShape; 2] = [ACK_C7_P0, ACK_C7_P1];
+static ACK_C8: [AckShape; 2] = [ACK_C8_P0, ACK_C8_P1];
+
+// ── THE PRE-REGISTRATION (written and committed BEFORE the measured era was
+//    ever run; the ON arm is the NEXT commit) ────────────────────────────────
+//
+// THE QUESTION the dispatch asks: with the ack stream measured instead of
+// invented, and with the in-flight accounting axis at `Acct::Engine`, does the
+// bench's geography match the wire at BOTH cells?
+//
+//   * the legacy (A) arm is a ≈4% `[SF]` zero-fraction class at c7 AND c8
+//     (3.7–7.4% at c8, "c1/sc2/c7 do not move"), and
+//   * the U-fold is keyed to c8 (≈7.5×) and null at c7.
+//
+// That is the SAME G1/G2 pair the accounting axis pre-registered and the same
+// statistic (§16.52's mode rate), unchanged, so the two runs are comparable:
+//   G1 (LEVEL)       A-arm ensemble mean < 10% AND caught ≥ 50% at BOTH cells.
+//   G2 (CELL-KEYING) fold(c8) ≥ 3.0 AND fold(c7) ≤ 2.0.
+//
+// AND — new here, because the inputs are now measured and therefore SCORABLE —
+// three VALIDATION targets that must hold before the geography verdict may be
+// read at all. A loop whose ack stream lands nowhere near the wire's cannot
+// be asked whether its geography matches; these gate the question.
+//
+//   V1 `xanchor`. The bench's realized per-path `copa_bdp_anchor()/(rate·
+//      RTprop)` must land within ±30% of the ledger's measured median at each
+//      measured path (5.94 / 9.80 / 10.11 / 13.29 / 13.82). Why ±30% and not
+//      tighter: the measured quantity's OWN spread is far wider — 4.04–9.28 at
+//      c2r100 and 7.35–27.56 at c8, i.e. a 2.3×–3.8× range across windows of
+//      the same run, "2.5× between windows of the SAME run" — so a ±30% band
+//      on the median is already tight against the measurement's own noise, and
+//      it is 10–300× tighter than the ×3–100 by which the three invented
+//      inputs missed. Scored per path, not per cell, because READOUT 3 is a
+//      per-path table.
+//   V2 FLOOR REJECTION. The realized `elapsed < 1 ms` rejection rate must land
+//      within ±5 POINTS of READOUT 3b (91.5 / 94.3 / 94.3 / 94.0 / 81.5%).
+//      ±5 points because the wire's own per-window spread is ±0.5 pt at three
+//      of five paths but the paths themselves span 81.5–94.3, and because this
+//      is a PREDICTION of the model, not an input to it.
+//   V3 THE MARGINAL. The realized ack-gap p50/p90/p99 must lie inside the
+//      ledger's own reported per-window ranges. (The observer model
+//      reproduces these BY CONSTRUCTION, so V3 is a wiring check — it fails
+//      only if the era is mis-plumbed, which is exactly what it is for.)
+//
+// VERDICT = (V1 ∧ V2 ∧ V3) gating (G1 ∧ G2). If the validation gate fails the
+// geography question is NOT ASKED and the run reports which produced quantity
+// diverged first. If it passes and G1 ∧ G2 fails, the loop is wrong somewhere
+// the measured inputs do not reach, and the run reports which quantity — the
+// dispatch's own named NO-MATCH outcome.
+//
+// FOURTH, and not a criterion because the axis is supposed to produce it
+// rather than be scored on it: REPAIRS-IN-COUNTERS. READOUT 4 settles
+// Σ`crecv`/`srcack` at 1.01–1.04 at c2r100/c7 and 1.21–1.34 at c8. Under
+// `Acct::Engine` every wire symbol enters the bench's `ack_expected` /
+// `ack_received` counters, so the same ratio is `wire()/src` — already
+// printed. It is checked as an EMERGENT property and reported either way.
+
+/// V1 — the fraction by which the bench's realized `xanchor` may differ from
+/// the ledger's measured per-path median.
+const V1_XANCHOR_TOL: f64 = 0.30;
+/// V2 — the points by which the realized floor-rejection rate may differ from
+/// READOUT 3b's measured per-path percentage.
+const V2_REJECT_TOL_PTS: f64 = 5.0;
+
+/// Every measured path the bench consumes, for the transcription pin and the
+/// fidelity readouts.
+const ACK_ALL: &[&AckShape] =
+    &[&ACK_C2R100_P0, &ACK_C7_P0, &ACK_C7_P1, &ACK_C8_P0, &ACK_C8_P1];
+
+/// THE TRANSCRIPTION PIN. Not a model test — a check that the numbers this
+/// bench now runs on are the ones the ledger recorded, in the shape it
+/// recorded them, and that the CHECKS were not quietly turned into inputs.
+///
+/// It asserts the ledger's own internal identities, so a typo in any row
+/// fails here rather than surviving as a plausible-looking input:
+///
+///  * each quantile range is ordered and strictly increasing p50 < p90 < p99
+///    (READOUT 1+2 is a quantile table);
+///  * the measured `xanchor` median lies inside its own measured min/max
+///    (READOUT 3);
+///  * the measured accepted-sample rate, the rejection rate and `rate_lr` are
+///    the SAME measurement three ways — READOUT 3b's "acks folded per sample"
+///    column is `rate_lr/samples_s` and its rejection rate is
+///    `1 − samples_s/rate_lr`, so the three columns must agree;
+///  * every path's p50 gap is FAR below its own mean gap `1e6/rate_lr` — the
+///    heavy tail is the whole finding, and a row where it is absent would be
+///    a transcription error.
+#[test]
+fn measured_ack_inputs_are_the_ledger_transcription() {
+    for s in ACK_ALL {
+        let mean_gap_us = 1e6 / s.rate_lr;
+        assert!(s.rate_lr > 0.0, "{}: rate_lr", s.row);
+        for (lo, hi) in [s.p50, s.p90, s.p99] {
+            assert!(lo <= hi, "{}: range {lo}..{hi} out of order", s.row);
+        }
+        let (q50, q90, q99) = (mid(s.p50), mid(s.p90), mid(s.p99));
+        assert!(q50 < q90 && q90 < q99, "{}: {q50} {q90} {q99} not a quantile ladder", s.row);
+        assert!(
+            s.xanchor >= s.xanchor_range.0 && s.xanchor <= s.xanchor_range.1,
+            "{}: median xanchor {} outside its own measured range {:?}",
+            s.row,
+            s.xanchor,
+            s.xanchor_range
+        );
+        // READOUT 3b's three columns are one measurement: rejection %,
+        // accepted samples/s and rate_lr. The ledger prints all three; they
+        // must close on each other.
+        let implied_rej = (1.0 - s.samples_s / s.rate_lr) * 100.0;
+        assert!(
+            (implied_rej - s.rej_pct).abs() < 1.5,
+            "{}: READOUT 3b does not close — {:.1}% rejected implies {:.0} samples/s \
+             against rate_lr {:.0}, but the row says {:.0}",
+            s.row,
+            s.rej_pct,
+            (1.0 - s.rej_pct / 100.0) * s.rate_lr,
+            s.rate_lr,
+            s.samples_s
+        );
+        // THE FINDING ITSELF: the stream is heavy-tailed, i.e. the median gap
+        // is a small fraction of the mean gap. If this ever reads ≈1 the row
+        // is not the wire's.
+        assert!(
+            q50 < 0.25 * mean_gap_us,
+            "{}: p50 gap {q50:.1} µs is not far below the mean gap {mean_gap_us:.1} µs — \
+             the measured stream is heavy-tailed and this row is not",
+            s.row
+        );
+        // And the tail really is a tail: p99 is at least 5× the MEAN gap.
+        assert!(
+            q99 > 5.0 * mean_gap_us,
+            "{}: p99 gap {q99:.1} µs against mean {mean_gap_us:.1} µs",
+            s.row
+        );
+    }
+    // The two tolerances are pre-registered, not discovered: pin them so a
+    // successor that loosens them has to do it in a diff that says so.
+    assert_eq!(V1_XANCHOR_TOL, 0.30);
+    assert_eq!(V2_REJECT_TOL_PTS, 5.0);
+}
+
+/// The midpoint of a ledger range — the point estimate, with the range itself
+/// kept so the model can back off inside it when the measurement's own
+/// quantiles and its own mean do not close (see `AckGaps::new`).
+fn mid((lo, hi): (f64, f64)) -> f64 {
+    0.5 * (lo + hi)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -536,6 +840,14 @@ fn simulate_acct(
     salt: u64,
     acct: Acct,
 ) -> Run {
+    // PRE-REGISTRATION COMMIT: the criteria and the transcribed inputs land
+    // here, in their own commit, BEFORE the era that consumes them exists —
+    // the same discipline the accounting axis was pre-registered under
+    // (goal-gate "SF Accounting Axis", "THE PRE-REGISTRATION, and where it
+    // lives"). The observer lands in the next commit.
+    if let Feed::Measured(_) = feed {
+        unimplemented!("the measured ack era lands in the commit after the pre-registration");
+    }
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -662,6 +974,10 @@ fn simulate_acct(
                     // shipped honest-feed entry point, `feat/copa-sole-cc`);
                     // the rate sample is deferred to the frontier report.
                     Feed::Cumulative { .. } => p.on_delivery_signal(),
+                    // The MEASURED era drives `on_ack(1)` from the sub-tick
+                    // observation loop at the top of the step, at each ack's
+                    // own measured arrival instant — nothing to do here.
+                    Feed::Measured(_) => {}
                 }
             }
             if let Feed::Cumulative { .. } = feed {
