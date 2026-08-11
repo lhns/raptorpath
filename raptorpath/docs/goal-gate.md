@@ -26228,3 +26228,380 @@ tree is byte-identical to main@`c0d9305`. `RWM_ACKDIAG` still ships OFF.
 released at the end; `pkill -x raptorpath` only; verified after: no
 `raptorpath` processes, no `ip netns` entries, no lock file. `ens18`, the
 firewall, `sshd` and all non-`rp-*` namespaces untouched.
+
+## SF Bench on Measured Inputs (2026-08-11, `feat/sf-measured-inputs` from main@f1dc8ac) — MEASUREMENT DISCIPLINE 14. Consumes the preceding section's measured ack stream: the SF bench's invented inputs are replaced by the wire's, and the geography question is re-asked with the accounting axis on. STRICTLY LOCAL, no VM, no L1 number re-derived. **VERDICT against the pre-registration: the INPUTS are REPRODUCED (V1/V2/V3 all pass) and the GEOGRAPHY is NOT — G1 and G2 both fail, and they fail for an arithmetic reason the measurement itself supplies.** Vehicle: `raptorpath/tests/store_cap_sf_bench.rs` + `tests/store_cap_bench.rs`.
+
+### THE VERDICT IN FIVE LINES
+
+1. **The measured ack stream reproduces the wire, at every path.** Realized
+   `xanchor` **5.37 / 7.86 / 7.88 / 12.01 / 14.41** against the measured
+   **5.94 / 9.80 / 10.11 / 13.29 / 13.82** — four of five inside ±10%, worst
+   −22%, all inside the pre-registered ±30%. Floor rejection **92.4 / 94.5 /
+   94.6 / 94.5 / 81.3%** against **91.5 / 94.3 / 94.3 / 94.0 / 81.5%** — within
+   **1.1 points everywhere**. Acks folded per accepted sample 13.1 / 18.3 /
+   18.7 / 18.1 / 5.3 against 12.5 / 17.6 / 17.6 / 16.7 / 5.3. **Nothing was
+   fitted**: the model has zero knobs and both of its free quantities are roots
+   of measured identities.
+2. **The geography is NOT reproduced, and the U-fold is what breaks.**
+   `fold(c8)` collapses from **7.1× on the honest era** (the accounting axis's
+   G2 pass) to **1.3×** here. G2 FAILS at c8. G1 fails at c7 exactly as it did
+   before (36.0% against a wire that "does not move").
+3. **THE FIRST QUANTITY TO DIVERGE IS THE STORE CAP, AND IT DIVERGES BY
+   SATURATING.** At the measured over-read the shipped law asks for
+   `gain·N·Σ` = **11 056** against its `N·knee` = **4096** ceiling at c8 —
+   2.7× over. Both arms clamp to the same number (mean cap A 3788, AU 4084),
+   and U changes ONLY which set the Σ ranges over. **At the measured anchor the
+   shipped store-cap law is arithmetically incapable of expressing the U-fold
+   at N = 2**, because dropping a whole path from Σ removes 40% of the anchor
+   mass and the clamp is already swallowing 170%.
+4. **c8's LEVEL is the one thing that got better.** The A arm reads **7.2%,
+   caught on 88% of seeds** — inside the wire's 3.7–7.4% class, and a better
+   fit than the accounting axis's 9.8% / 75% on invented inputs. The failure is
+   specifically the CONTRAST, and it is the ceiling that eats it.
+5. **`store_cap_bench`'s `OVERREAD = 5.0` is not merely 2.0–2.8× low — it is
+   2.0–2.8× low ACROSS THE KNEE.** At ×5.0 c7 sits at 3328 and c8 at **4064
+   against a 4096 ceiling — clearing it by 0.8%**; at the measured `xanchor`
+   both are 1.6× and 2.7× ABOVE it and the cap is pinned. The constant is the
+   difference between a store cap proportional to the anchor and one that has
+   stopped responding to it.
+
+### WHAT WAS REPLACED, AND WITH WHAT
+
+Every prior SF-bench result invented its ack stream, and the preceding section
+scored all three inventions as wrong by one to three orders of magnitude. The
+four inputs that section named, and where each landed:
+
+| the ledger's input | how the bench now consumes it |
+|---|---|
+| **delivered count per ack = 1** ("p50 = p90 = 1 in all 60 report windows, 857 400 acks") | `record_delivery(1)`, once per delivered symbol. NOT swept. Asserted as an identity: observations + the observer's residual backlog == the run's delivered count |
+| **arrival spacing, heavy-tailed, per path** (READOUT 1+2) | the measured p50/p90/p99 as a DISTRIBUTION, transcribed with the ledger's own per-window ranges |
+| **the 1 ms `elapsed` floor** ("model the floor, not the acks") | the MockClock is walked to each ack's own arrival instant and the SHIPPED `elapsed < 0.001` branch (`scheduler/mod.rs:1178`) decides. No sample period is configured anywhere |
+| **`xanchor` per cell** | **not an input.** A CHECK, pre-registered at ±30% |
+
+**THE ONE STRUCTURAL CHOICE, STATED RATHER THAN BURIED.** The gauge measured
+the gap MARGINAL; it did not measure its run structure. The marginal alone
+**cannot** produce the over-read, and this is arithmetic, not opinion: an
+i.i.d. renewal stream with these quantiles puts `1 ms / ḡ` ≈ 10 acks in any
+1 ms window, so `Δdelivered/Δt` reads ×1 and the max filter has nothing to
+latch onto. A ×8 sample needs ~**74 consecutive** sub-p50 gaps, which i.i.d.
+draws never deliver at any sample size. So the over-read lives in the stream's
+CORRELATION, and the model of it is the only one every measured number is
+already consistent with — a **work-conserving observer**:
+
+> the sender observes acks one at a time, spaced at the MEASURED p50 gap,
+> while it has un-observed acks; when it catches up it goes SILENT for a draw
+> from the MEASURED upper tail, and the acks that arrive during the silence
+> are observed in the burst that follows.
+
+**It has zero knobs, and conservation is what closes it.** An observer draining
+at spacing `s` has duty cycle `s/ḡ = q50` by arithmetic, so the silence
+FRACTION is pinned; requiring the model's own marginal to BE the measured one
+then forces `∫_0^{u_c} Q = q50`, whose root is the silence threshold `u_c`. The
+tail exponent `α` is the root of the other measured identity, "the mean gap is
+`1/rate_lr`". Both are solved, and both are asserted as identities by
+`measured_ack_law_is_solved_from_the_measurement` (always-on), together with
+`Q(0.5)/Q(0.9)/Q(0.99)` being the transcribed numbers and every silence lying
+inside the largest gap the gauge ever reported.
+
+Two places where the measurement does not close on itself, handled by backing
+off INSIDE the ledger's own ranges rather than by inventing:
+
+* at **c2r100** and at **c8's slow leg** the quantile MIDPOINTS already imply a
+  mean gap ~10% and ~0.5% ABOVE `1/rate_lr`, leaving the tail negative mass.
+  `θ` — the position inside the reported p90/p99 per-window ranges — is
+  bisected down from the midpoint until they close (θ = 0.177 and 0.200; every
+  other path closed at the midpoint, θ = 0.5). **p50 is never moved.**
+* the Pareto tail is TRUNCATED at **18.2 ms**, the largest inter-ack gap the
+  instrument reported anywhere (READOUT 1+2, `c8/p1` p99 upper range).
+  Truncation is safe by construction — the observer is work-conserving, so a
+  lighter tail costs it silences, not acks.
+
+### TWO DEFINITIONAL CORRECTIONS THE MEASUREMENT FORCED
+
+Both were found by the bench MISSING its target, and both are recorded because
+a successor comparing these numbers to any earlier section needs them.
+
+**(a) THE LEDGER'S `xanchor` IS NOT THIS BENCH'S `overread()`.** READOUT 3
+defines it as `copa_bdp_anchor()/(rate_lr·RTprop)` where RTprop is **the
+anchor's own `min_rtt`** — the same `min_rtt` the anchor multiplied by — so the
+RTT **cancels** and `xanchor` is a pure RATE over-read, `max_bw/rate_lr`. The
+bench's pre-existing gauge divides by the **configured** `rate·RTprop` and so
+also carries whatever standing queue the link built. The bench's link builds
+**2.4–5.7× RTprop** of standing queue at the fast paths; the wire's cells do
+not (READOUT 3's RTprop column is each cell's own RTT). Read against the wire
+without this correction the same runs report ×12.6 / ×27.9 / ×67.5. **The
+pre-existing `overread()` is left untouched** — three ledger sections are
+scored on it — and the ledger's quantity is added beside it.
+
+**(b) `rate_lr` IS A 2 s WINDOW, NOT THE RUN.** c8's slow leg runs at its link
+rate while it runs and idles between (63% duty), so its 2 s windows read 1.6×
+the whole-run mean: `xanchor` **14.41 windowed against 22.68 run-mean**, target
+13.82. READOUT 3 takes "medians over the 12 windows", and the bench now does
+the same — median over refresh ticks of `max_bw` over the trailing `REPORT_S`
+delivered rate. Both are printed.
+
+Consequence of (b) for the model itself: the measured shape is dimensionless
+and must be scaled by the path's **realized** ack rate, not its link capacity.
+A path the scheduler under-fills has a correspondingly wider mean gap, and
+scaling by `1/link_rate` there quietly asserts a denser ack stream than the
+path produced.
+
+### THE VALIDATION GATE — V1/V2/V3, ALL PASS
+
+Pre-registered at `56b90b8`, in its own commit, before the era existed. 20 s,
+seed 0, `Acct::Off`. `θ`, `α` and `u_c` are the model's SOLVED values, printed
+so the reader sees what the measurement resolved to rather than having to
+trust it.
+
+| path | θ | α | u_c | p50 µs | p90 µs | p99 µs | rej% | want | **x_lr** | **want** | minRTT |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c2r100/p0 | 0.177 | 3.00 | 0.776 | 17.8 | 257.0 | 933.3 | 92.4% | 91.5% | **5.37** | **5.94** | 2.39× |
+| c7/p0 | 0.500 | 2.36 | 0.825 | 12.3 | 97.7 | 1778 | 94.5% | 94.3% | **7.86** | **9.80** | 3.60× |
+| c7/p1 | 0.500 | 2.08 | 0.833 | 12.3 | 97.7 | 1778 | 94.6% | 94.3% | **7.88** | **10.11** | 3.48× |
+| c8/p0 fast | 0.500 | 1.39 | 0.795 | 8.1 | 117.5 | 1413 | 94.5% | 94.0% | **12.01** | **13.29** | 5.69× |
+| c8/p1 slow | 0.200 | 3.00 | 0.725 | 35.5 | 1413 | 6166 | 81.3% | 81.5% | **14.41** | **13.82** | 1.08× |
+
+`V1 xanchor ±30% PASS · V2 rejection ±5 pts PASS · V3 marginal PASS`
+
+Read three ways:
+
+* **V2 is the strongest result here and it is a pure PREDICTION.** The floor's
+  rejection rate was never fed in; it falls out of the measured gap
+  distribution meeting the shipped 1 ms branch, and it lands within **1.1
+  points at all five paths** — including the 12.8-point separation between c8's
+  slow leg (81.3% against the measured 81.5%) and everything else. The
+  accepted-sample rate and the acks-folded-per-sample follow it (549–784/s and
+  5.3–18.7 against the wire's 258–744/s and 5.3–17.6; the residual differences
+  are the bench's path rates, which are the cells' nominal 10 400 / 2 000
+  against the wire's realized 6 948–9 432 / 1 376).
+* **V1 is systematically ~15% LOW at the two symmetric-class paths** (−19.8%,
+  −22.1%) and within 10% everywhere else. The model's ceiling is `ḡ/s = 1/q50`
+  — the drain reads the long-run rate divided by the p50 spacing — and the
+  wire's max filter evidently catches windows slightly denser than its own p50.
+  That is the honest limit of a marginal-plus-run-structure model; it is
+  recorded, not tuned away.
+* **`minRTT` is a BENCH ARTIFACT, now measured.** 2.4–5.7× RTprop of standing
+  queue at every fast path. It does not touch V1 (the ledger's definition
+  divides it out) but it is why the bench's own `overread()` gauge and the
+  wire's `xanchor` are not the same number, and any future section quoting one
+  against the other must say which.
+
+### THE GEOGRAPHY — 8 seeds × 20 s, and the pre-registered verdict
+
+```
+cell                       arm                  metering   zero%     [lo..hi]  caught   cap  goodput
+sc2  single fast (c2r100)  A   (U=0, shipped)   OFF        46.9%  [45.8..49.0]     0%   595    10259
+sc2  single fast (c2r100)  AU  (U=1)            OFF        50.3%  [50.3..50.3]     0%   941    10259
+sc2  single fast (c2r100)  P   (pooled+unified) OFF        50.3%  [50.3..50.3]     0%   941    10259
+sc2  single fast (c2r100)  A   (U=0, shipped)   ENGINE     16.4%  [15.2..18.4]     0%   810     9375
+sc2  single fast (c2r100)  AU  (U=1)            ENGINE     18.2%  [14.0..20.3]     0%   941     9524
+sc2  single fast (c2r100)  P   (pooled+unified) ENGINE     18.2%  [14.0..20.3]     0%   941     9524
+
+c7   dual symmetric        A   (U=0, shipped)   OFF        51.6%  [43.2..66.5]     0%  1938    20513
+c7   dual symmetric        AU  (U=1)            OFF        50.7%  [50.3..52.2]     0%  4084    20435
+c7   dual symmetric        P   (pooled+unified) OFF        50.3%  [50.3..50.4]     0%  3335    20514
+c7   dual symmetric        A   (U=0, shipped)   ENGINE     36.0%  [31.0..41.6]     0%  2478    19332
+c7   dual symmetric        AU  (U=1)            ENGINE     50.3%  [50.2..50.3]     0%  4084    19603
+c7   dual symmetric        P   (pooled+unified) ENGINE     26.8%  [24.8..28.9]     0%  3332    19225
+
+c8   dual asym (r+RTT)     A   (U=0, shipped)   OFF        18.8%  [15.9..22.2]     0%  3334    11454
+c8   dual asym (r+RTT)     AU  (U=1)            OFF        21.3%  [18.4..24.5]     0%  4084    11457
+c8   dual asym (r+RTT)     P   (pooled+unified) OFF        19.8%  [17.9..22.7]     0%  4070    11437
+c8   dual asym (r+RTT)     A   (U=0, shipped)   ENGINE      7.2%   [5.0..10.3]    88%  3788    11100
+c8   dual asym (r+RTT)     AU  (U=1)            ENGINE      9.3%   [8.4..10.7]    88%  4084    11040
+c8   dual asym (r+RTT)     P   (pooled+unified) ENGINE      7.2%    [4.4..9.6]   100%  4067    11000
+
+G1: ENGINE A-arm mean < 10% AND caught >= 50% at BOTH c7 and c8
+G2: fold(c8) >= 3.0 AND fold(c7) <= 2.0
+
+sc2  A 16.4%  caught  0%  fold 1.1x
+c7   A 36.0%  caught  0%  fold 1.4x
+c8   A  7.2%  caught 88%  fold 1.3x
+
+G1 FAIL  G2 FAIL  ==> GEOGRAPHY NOT REPRODUCED
+```
+
+### FINDING 1 — WHICH PRODUCED QUANTITY DIVERGES FIRST: THE STORE CAP, AND IT SATURATES
+
+The dispatch's NO-MATCH branch asks for the first divergence along
+`xanchor → SF → goodput`. It is none of those three: it is the term BETWEEN
+`xanchor` and `SF` — the store cap — and the divergence is a clamp.
+
+The shipped law is `clamp(gain·N·Σ_set, floor, N·knee)`, and **U changes only
+which set the Σ ranges over**. At c8's measured per-path `xanchor`:
+
+| Σ base | Σ anchor | `gain·N·Σ` | ceiling | cap |
+|---|---|---|---|---|
+| both legs | 2764.1 | 11 056 | 4096 | **4096** |
+| the fast leg alone (what U's set change removes) | 1105.7 | 4423 | 4096 | **4096** |
+
+**Both land on the same number.** Dropping a whole path from the Σ removes 40%
+of the anchor mass; the clamp is already swallowing 170%. So at the measured
+anchor **the shipped store-cap law is arithmetically incapable of expressing
+the U-fold at N = 2** — and the closed loop confirms it: the mean caps
+CONVERGE (A 3788 / AU 4084 at c8, A 2478 / AU 4084 at c7, against 379 / 2192
+on the honest era) and the fold collapses 7.1× → 1.3×. Pinned by
+`measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold`
+(always-on), which asserts the arithmetic on the REAL law and the convergence
+in the loop, so a successor who raises `RWM_STORE_PATH_POOL` or fixes the
+anchor era re-scores this rather than inheriting prose.
+
+**Everything upstream of the cap is validated, and everything downstream is
+therefore not independently informative.** `xanchor` passes V1; the floor
+passes V2; the marginal passes V3; goodput (19.3k at c7, 11.1k at c8) is in
+the same class the accounting axis reported on invented inputs (19.3k / 11.5k)
+and is not the divergence.
+
+### FINDING 2 — c8's LEVEL IMPROVED; IT IS THE CONTRAST THAT FAILED
+
+The c8 A arm reads **7.2%, caught on 88% of 8 seeds, range 5.0–10.3** — inside
+the wire's **3.7–7.4%** class, and a closer fit than the accounting axis's
+9.8% / 75% on invented inputs. So the measured ack stream **moved the c8 A arm
+onto the wire's operating point**, which is the ×10 gap the matrix's anomaly A2
+named.
+
+What it did NOT fix is c7: **36.0%, caught 0%**, against a wire whose c7 "does
+not move". This is the same failure, at the same cell, in the same direction,
+that "SF Accounting Axis" FINDING 2 recorded (39.3%). **The measured ack stream
+is therefore ELIMINATED as the cause of the c7 defect** — suspect rank 2 of the
+PIPELINE VERIFICATION MATRIX is now measured, consumed, and shown not to be it.
+That is a genuine elimination and it is the second-most useful thing this run
+produced.
+
+### FINDING 3 — REPAIRS-IN-COUNTERS DOES NOT SEPARATE THE CELLS
+
+READOUT 4 settles Σ`crecv`/`srcack` at **1.01–1.04** symmetric and
+**1.21–1.34** asymmetric. Under `Acct::Engine` every wire symbol enters the
+bench's expected/received counters, so the same ratio IS `wire()/src` — and it
+is EMERGENT: no repair rate is injected anywhere, `r*` is the shipped
+`FecRateController` reading the bench's own realizations.
+
+| cell | bench `wire/src` | wire |
+|---|---|---|
+| sc2 | 1.109 | 1.01–1.04 (c2r100) |
+| c7 | 1.075 | 1.02–1.04 |
+| c8 | 1.076 | 1.21–1.34 |
+
+**The level is the right order at the symmetric cells (≈2× the wire's excess)
+and the SEPARATION does not emerge at all**: the bench produces the same ≈1.08
+at both cells where the wire separates 1.03 against 1.27. Half of that is
+already accounted for by the measurement itself — the ledger records c8's
+1.21–1.34 as an **upper bound** inflated by frontier lag ("`srcack` is a
+FRONTIER and a frontier LAGS"), and this bench has no cumulative frontier under
+`Acct::Engine`: it releases per path at the counter delta. The other half is
+unexplained and is left so. Recorded as a measurement, not a verdict.
+
+### FINDING 4 — `store_cap_bench`'s `OVERREAD = 5.0`, RE-CHECKED
+
+The dispatch asks what that constant's error affects. The answer is exact,
+because the law is degree-1 homogeneous in the anchor below its ceiling and
+constant above it (proved on the real law by
+`store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`): **a wrong
+anchor scale is INERT for every ratio the bench reports — until it crosses the
+`N·knee` ceiling, the law's only non-homogeneous term.** And the measurement
+puts the assumed and the measured levels on OPPOSITE SIDES of it:
+
+| cell | Σ at ×5.0 | cap | Σ at the MEASURED `xanchor` | cap |
+|---|---|---|---|---|
+| c7 | 832 | 3328 (below 4096) | 1656.6 | **4096, SATURATED** |
+| c8 | 1016 | **4064 — below by 0.8%** | 2764.1 | **4096, SATURATED** |
+| sc2 (N = 1) | 416 | 832 (below `RELIABLE_STORE_MAX`) | 494.2 | 989 (still below) |
+
+So the constant is not "a bit low". It is **2.0–2.8× low across a knee**, and
+c8 clears that knee at ×5.0 by 32 symbols out of 4096. Every statement in
+`store_cap_pathset_sweep` that the filtered/unfiltered ratio is
+anchor-invariant is true at ×5.0 and false at the measured value. At N = 1 the
+error is inert at the median and clamps at the measured cell's own upper window
+(9.28 ⇒ 1544, clipped to 1024) — so the error is confined to the DUAL cells,
+which is exactly where the `[SF]` question lives.
+
+`the_overread_error_decides_whether_the_knee_ceiling_binds` (always-on) asserts
+all of it. The constant is KEPT — it is the legacy assumption and the
+comparison against it is the finding — and the sweep now runs a third
+**MEASURED per-path** row beside the honest and legacy ones. It runs no row at
+`sc3`: no single SLOW cell was ever measured, and this bench will not invent an
+over-read for a geometry the VM never ran.
+
+### THE CANDIDATE, on measured inputs — REPORTED, NOT ADVANCED
+
+The dispatch conditions any design conclusion on a MATCH, and the verdict is
+NOT REPRODUCED, so this is data and nothing more. On the measured era with the
+engine's ledger the pooled-ceiling successor is caught on **100% of seeds at
+c8** (7.2%, range 4.4–9.6 — the best row in the matrix) and on **0% at c7**
+(26.8%), where on invented inputs it was caught at 100% at three cells. It
+costs 1–3% of goodput. **Its standing is UNCHANGED: promising, not
+established** — and now for a third reason: the bench that produced its best
+row is one whose store cap is pinned at its ceiling, which is precisely the
+regime in which a candidate differing from the shipped law only by a
+multiplier cannot be distinguished from it.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Why c7's A arm sits at 36%.** Measured twice now, on two different ack
+  eras, explained neither time. The measured stream ELIMINATED itself as the
+  cause; an elimination is not a mechanism.
+* **Whether the wire's store cap is at its ceiling.** The bench's arithmetic
+  says it must be; the wire says it cannot be, because U demonstrably moves
+  c8's zero-fraction 4% → 30% there and a pinned cap forbids that. **That
+  contradiction is the handover**, and it is not resolved here.
+* **The `wire/src` separation.** Half-accounted by the ledger's own
+  frontier-lag caveat, half unexplained.
+* **No stabiliser design requirement is stated.** The dispatch conditioned that
+  on a MATCH and the condition was not met.
+* **Any L1 claim.** No VM was run and no L1 number re-derived.
+
+### WHAT THIS BENCH STILL CANNOT SEE
+
+Unchanged from the accounting axis except for one item now closed and one
+newly visible:
+
+* ~~**the real echo cadence**~~ — **CLOSED.** Measured, consumed, and validated
+  at ±30% on `xanchor` and ±1.1 points on the floor's rejection rate.
+* **The real GE channel** (rank 5) — four un-cross-validated implementations,
+  and now the last un-measured input in the loop.
+* **Composition effects** (rows 1, 20) — no tokio loop, no receiver.
+* **The standing queue.** NEW, and it is this bench's own: the link model
+  builds 2.4–5.7× RTprop of queue at every fast path where the wire's cells
+  read ≈1×. It divides out of `xanchor`, but it is in `min_rtt`, hence in the
+  anchor, hence in the Σ — and the Σ is the quantity that just saturated.
+* **Sub-tick repair placement**, unchanged.
+
+### THE HANDOVER — the next suspect, named
+
+**RANK 1: WHY THE WIRE'S STORE CAP IS NOT PINNED.** The bench's arithmetic is
+not in doubt — `gain·N·Σ` at the measured per-path `xanchor` is 2.7× the
+`N·knee` ceiling at c8, and the ceiling is the shipped law's, read from
+`net/mod.rs:2312`. The wire nonetheless shows a ≈7.5× U-fold at c8, which
+requires an UNSATURATED cap. Exactly one of these must be false, and all three
+are locally checkable before any VM time is spent:
+
+1. **the Σ the engine feeds is not Σ`copa_bdp_anchor()` at the measured
+   `xanchor`** — e.g. the anchor is `None` at a large fraction of refresh
+   instants (`bdp_anchor()` gates on `ANCHOR_MIN_SAMPLES` and on a min-RTT
+   sample), so the realized Σ is far below the max-filtered value the ACKDIAG
+   gauge reports. **This is the most likely of the three, and it is a pure
+   instrumentation question: what fraction of dyn-cap refreshes see a WARM
+   anchor on BOTH legs?**
+2. **`store_path_pool` at the battery's arms is not 2048** — a resolved-policy
+   read, minutes of work.
+3. **the `[SF]`-bearing arms are not in the anchor-sum branch at all.**
+   Already EXCLUDED here: `store_cap_sf_record` is called at `net/mod.rs:4586`,
+   inside the anchor-sum branch, and the Copa-sole Σcwnd branch
+   (`net/mod.rs:4474`) does not record the gauge — so an arm that produces
+   `[SF]` readings IS in the branch this bench models.
+
+Item 1 is the recommended next verification and it needs no VM: the gauge
+already exists.
+
+**RANK 2 (unchanged): the real GE channel.**
+
+### GATES
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default and no law is
+touched by this branch; the engine tree is byte-identical to main@`f1dc8ac`.
+`--lib` **402 passed** · `raptorpath-math` 59+19+22+4+4+3+25 = **136 passed** ·
+`--doc` 0 (no doctests) · `store_cap_bench` **4 passed** (3 `#[ignore]`d
+benches not run) · `store_cap_sf_bench` **21 passed, 0 failed** (10
+`#[ignore]`d benches not run). `gate_suite` not required — no engine code
+changed. Determinism verified across three separate processes on the fidelity
+readout and two on the full always-on suite.

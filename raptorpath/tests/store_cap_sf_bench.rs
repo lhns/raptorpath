@@ -3223,6 +3223,103 @@ fn measured_era_reproduces_the_wires_floor_and_anchor() {
     }
 }
 
+/// THE NO-MATCH RESULT, BOUNDED — goal-gate "SF Bench on Measured Inputs".
+///
+/// With the ack stream measured instead of invented, the pre-registered
+/// geography FAILS, and it fails for a reason that is arithmetic rather than
+/// stochastic: **the measured over-read saturates the store-cap law's `N·knee`
+/// ceiling, and a saturated cap cannot express the U-fold at all.**
+///
+/// The shipped law is `clamp(gain·N·Σ_set, floor, N·knee)`. U changes only
+/// WHICH SET the Σ ranges over. At the measured `xanchor` the unclamped law
+/// asks for 2.7× the ceiling at c8, so BOTH arms clamp to the same 4096 and
+/// the set becomes unobservable — dropping a path from Σ at c8 removes 40% of
+/// the anchor mass, far short of the 2.7× of headroom the clamp swallows.
+///
+/// Asserted here in both halves, at 3 seeds × 8 s (the ledger's evidence is
+/// the 8 × 20 s matrix; this is the regression bound):
+///
+///  * THE ARITHMETIC, on the real law: `gain·N·Σ` at the measured per-path
+///    `xanchor` exceeds `N·knee` by more than the anchor mass U can remove;
+///  * THE CONSEQUENCE, in the loop: under the measured era the mean cap sits
+///    within a few percent of the ceiling on BOTH arms at c8, and the U-fold
+///    that the engine's ledger produced on the honest era (7.1×, goal-gate
+///    "SF Accounting Axis" FINDING 1) collapses below 2×.
+///
+/// If a successor raises `RWM_STORE_PATH_POOL`, fixes the anchor era, or
+/// changes the ceiling, this test fails and the diagnosis gets re-scored
+/// rather than being inherited as prose.
+#[test]
+fn measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold() {
+    // (1) THE ARITHMETIC, on the shipped law itself.
+    let ceiling = (2 * KNEE) as f64; // 4096
+    let sigma_full = C2.0 * C2.1 * ACK_C8_P0.xanchor + C3.0 * C3.1 * ACK_C8_P1.xanchor;
+    let sigma_fast = C2.0 * C2.1 * ACK_C8_P0.xanchor; // what U's set change can remove
+    assert!(
+        GAIN * 2.0 * sigma_full > ceiling,
+        "the measured c8 anchor does not even reach the ceiling: {:.0} vs {ceiling}",
+        GAIN * 2.0 * sigma_full
+    );
+    assert_eq!(shipped_chain(sigma_full, 2), ceiling as usize);
+    // The set change U makes is SMALLER than the headroom the clamp eats, so
+    // both arms land on the same number — this is the fold's grave.
+    assert_eq!(
+        shipped_chain(sigma_fast, 2),
+        shipped_chain(sigma_full, 2),
+        "dropping the slow leg from Sigma must still clamp — otherwise the fold survives"
+    );
+
+    // (2) THE CONSEQUENCE, in the closed loop.
+    let mean = |arm: Arm, acct: Acct| -> (f64, f64) {
+        let (mut z, mut c) = (0.0, 0.0);
+        for s in 0..3u64 {
+            let r = simulate_acct(&[C2, C3], arm, Feed::Measured(&ACK_C8), 8.0, s, acct);
+            z += r.zero_pct();
+            c += r.mean_cap;
+        }
+        (z / 3.0, c / 3.0)
+    };
+    let (a_zero, a_cap) = mean(Arm::Legacy, Acct::Engine);
+    let (u_zero, u_cap) = mean(Arm::Unified, Acct::Engine);
+    // MEASUREMENT DISCIPLINE 1 — the era must have run, or this proves nothing.
+    let probe = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8), 8.0, 0, Acct::Engine);
+    assert!(probe.obs[0].n_obs > 10_000 && probe.obs[1].n_obs > 1_000);
+    assert!(probe.led.taper > 0 && probe.led.margin > 0 && probe.led.retx > 0);
+
+    // Both arms ride the ceiling — the means carry the warm-up ramp from the
+    // 128 boot cap, so they are scored against 0.7× rather than 1.0×, and the
+    // load-bearing half is that the two arms CONVERGE: on the honest era they
+    // differ by 5.8× (379 vs 2192, goal-gate "SF Accounting Axis" FINDING 1).
+    for (label, cap) in [("A", a_cap), ("AU", u_cap)] {
+        assert!(
+            cap > 0.7 * ceiling,
+            "{label} arm's mean cap {cap:.0} is not against the {ceiling} ceiling — the \
+             saturation this test diagnoses did not happen"
+        );
+    }
+    assert!(
+        (a_cap / u_cap - 1.0).abs() < 0.25,
+        "the two arms' caps did not converge onto the ceiling: A {a_cap:.0} vs AU {u_cap:.0} \
+         (on the honest era they differ by 5.8x)"
+    );
+    let fold = u_zero / a_zero;
+    assert!(
+        fold < 2.0,
+        "the U-fold survived the ceiling at c8: {fold:.2}x (A {a_zero:.1}% AU {u_zero:.1}%) \
+         — the engine's ledger produced 7.1x on the honest era"
+    );
+    // And the c8 A arm is NOT what fails — it stays out of the published
+    // bench's 37% class. Its full-horizon level (7.2%, caught on 88% of
+    // seeds, i.e. inside the wire's ≈4% class) is the ledger's number and is
+    // deliberately NOT asserted here: at 8 s the mean cap is still climbing
+    // off the 128 boot value and the zero-fraction has not settled. This
+    // bounds the class, which is stable; the level is evidence, not a bound.
+    assert!(
+        a_zero < 25.0,
+        "the c8 A arm fell back into the published bench's high class: {a_zero:.1}%"
+    );
+}
+
 fn fold_str(a: f64, u: f64) -> String {
     if a > 0.0 { format!("{:.1}x", u / a) } else { "inf".into() }
 }
