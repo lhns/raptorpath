@@ -39,8 +39,15 @@ use std::time::Duration;
 use raptorpath::control::fec_rate::ProtocolHint;
 use raptorpath::control::FecRateController;
 use raptorpath::fec::FecBackend;
-use raptorpath::net::path_scaled_store_cap;
+use raptorpath::net::{
+    delta_budget_b, path_scaled_store_cap, three_term_store_cap, three_term_terms, EchoRatioMin,
+    ThreeTermPath, ThreeTermTerm,
+};
 use raptorpath::scheduler::{MockClock, Scheduler};
+
+/// `sender_policy.rs:658` — `let contract_rho: f64 = 1.0;`, the resolved
+/// default at every arm in this ledger.
+const TT_RHO: f64 = 1.0;
 
 // ── Shipped policy constants at the battery's arms (sender_policy::resolve) ──
 const GAIN: f64 = 2.0;
@@ -86,6 +93,22 @@ enum Arm {
     /// constant: it deletes the multiplier that made the Σ and the ×N range
     /// over different sets in the first place.
     PooledUnified,
+    /// THE THREE-TERM LAW AS THE DUAL-CELL CAP (`RWM_THREE_TERM`): the
+    /// SHIPPED `net::three_term_store_cap` over `live_paths()`, at the
+    /// engine's own precedence — the law when every live path is warm, the
+    /// configured pooled chain verbatim when it is not (`net/mod.rs:4715-4726`,
+    /// "Warm-up (any live path cold) ⇒ `None` ⇒ the configured chain below
+    /// runs verbatim"). Inputs are the engine's collector's, unchanged:
+    /// `tt_slots` from `btlbw_sym_per_s` / `srtt` / `min_rtt` / `k_raw`
+    /// (`net/mod.rs:4533-4547`) through `three_term_terms`, and the resolved
+    /// `contract_rho = 1.0` (`sender_policy.rs:658`) and
+    /// `delta_b = delta_budget_b(hint)` (`sender_policy.rs:654`).
+    ///
+    /// It is a CANDIDATE here because its TERM 3 is the quantity the coupling
+    /// axis makes the bench produce: `2·rate_fast·skew`, "while one slow-path
+    /// symbol is unacked the fast path's symbols pile into the same unacked
+    /// span" (`net/mod.rs:2917-2930`).
+    ThreeTermCell,
 }
 
 impl Arm {
@@ -94,6 +117,7 @@ impl Arm {
             Arm::Legacy => "A   (U=0, shipped)",
             Arm::Unified => "AU  (U=1)         ",
             Arm::PooledUnified => "P   (pooled+unified)",
+            Arm::ThreeTermCell => "3T  (three-term cap)",
         }
     }
 }
@@ -110,9 +134,12 @@ fn shipped_chain(bdp: f64, n_live: usize) -> usize {
     }
 }
 
-fn cap_for(arm: Arm, bdp_over_set: f64, bdp_over_live: f64, n_live: usize) -> usize {
+fn cap_for(arm: Arm, bdp_over_set: f64, bdp_over_live: f64, n_live: usize, tt: Option<usize>) -> usize {
     match arm {
         Arm::Legacy | Arm::Unified => shipped_chain(bdp_over_set, n_live),
+        // The engine's own precedence: the law wins when it returns `Some`,
+        // otherwise the configured chain runs verbatim (`net/mod.rs:4722-4725`).
+        Arm::ThreeTermCell => tt.unwrap_or_else(|| shipped_chain(bdp_over_live, n_live)),
         Arm::PooledUnified => {
             if n_live >= 2 && bdp_over_live > 0.0 {
                 let ceiling = n_live.saturating_mul(KNEE).max(FLOOR);
@@ -276,6 +303,130 @@ impl Acct {
     fn on(self) -> bool {
         self != Acct::Off
     }
+}
+
+// ── THE COUPLING AXIS: WHAT `store_len` ACTUALLY COUNTS ────────────────────
+//
+// goal-gate "Cap-Refresh Warmth" RANK 1: the one quantity that diverges is
+// what a DEEPER RETENTION POOL does to `available()`. The wire says +16% of
+// mean pool depth buys 6.5× the `active_paths()`-empty rate at c8; the bench
+// says 1.3×. The bench's store is `sent − acked`, a per-symbol quantity that
+// drains at PATH latency. The engine's is a FRONTIER SPAN that drains at
+// CUMULATIVE-FRONTIER latency, minus whatever the receiver has managed to
+// SACK-advertise. Every semantic below is transplanted by file:line.
+//
+//   (1) THE STORE IS A DENSE SPAN. `emit_source.rs:321-323` inserts EVERY
+//       reliable source symbol into `st.sent_store` keyed by its stream seq,
+//       and `net/mod.rs:6591-6593` is the ONLY removal —
+//       `st.sent_store = st.sent_store.split_off(&(ack + 1))`, clocked by the
+//       CUMULATIVE ack alone. The engine states the identity itself at
+//       `net/mod.rs:4222-4230`: "the retention store's last key IS the sent
+//       edge (removal is by cumulative ack only)". So
+//       `|sent_store| = last_sent − ack`.
+//   (2) THE CUMULATIVE ACK IS THE RECEIVER'S IN-ORDER DELIVERY POINT.
+//       `receiver.rs:1554` sends `received_up_to: highest_delivered_seq`;
+//       `control_msg.rs:566` folds it into the sender's `window_ack_seq` with
+//       `fetch_max` ("acks arrive on multiple paths, out of order"). It
+//       advances only when in-order delivery passes a hole.
+//   (3) SACK RELEASE UNCOUNTS, IT DOES NOT REMOVE. `net/mod.rs:3368-3381`
+//       marks every seq of an arriving SACK range that is CURRENTLY RETAINED;
+//       `net/mod.rs:3394-3396` is the whole law,
+//       `sack_release_outstanding(store_len, released) =
+//       store_len.saturating_sub(released)`; `net/mod.rs:4267-4271` is the
+//       site that produces the flow-control `store_len` from it;
+//       `net/mod.rs:6594-6600` prunes the mark set on the same cumulative
+//       twin. (ADR-0060; `RWM_STORE_SACK_RELEASE=1` in 1 522 of 1 522
+//       `[GATES]` echoes in `docs/l1-raw`.)
+//   (4) THE MARKS ARRIVE ON A RATE-LIMITED CLOCK, NOT ON THE ACK STREAM.
+//       `receiver.rs:1517-1544`: SACK ranges ride only an ACK for which
+//       `advertise = cumulative_advanced || gap_report_due`
+//       (`net/mod.rs:3417-3424`), and `gap_report_due` requires
+//       `last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL` — **2 ms**,
+//       `net/mod.rs:213`. While the frontier is stalled behind a hole the
+//       cumulative leg is false, so the sender learns what the receiver has
+//       above the hole at most every 2 ms, plus the return flight.
+//   (5) THE RANGES ARE A COMPLETE SNAPSHOT. `received_sack_ranges`
+//       (`net/mod.rs:3430-3447`) encodes everything the receiver HAS in
+//       `(highest_delivered, highest_seen]` — so a later report SUBSUMES an
+//       earlier one above the later report's own cumulative point, which is
+//       why the sender's union of snapshots is exactly the newest snapshot it
+//       has received. (The engine unions; the identity is asserted by
+//       `sack_snapshots_subsume_and_the_union_is_the_newest`.)
+//
+// The admission gate reads (3), not the unacked count: `net/mod.rs:5054-5056`,
+// `reliable && (store_len >= effective_store_cap || cwnd_full)`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Store {
+    /// The published bench: `store_len` = admitted − acked, each symbol
+    /// leaving at its OWN ack instant. Bit-identical to every number in
+    /// goal-gate "c8 SF Mechanism" … "Cap-Refresh Warmth".
+    Unacked,
+    /// THE ENGINE: `store_len = (last_sent − cum_frontier) − |SACK marks|`,
+    /// the frontier span of ADR-0060 with the marks arriving on the receiver's
+    /// gap-report clock.
+    Span,
+}
+
+impl Store {
+    fn label(self) -> &'static str {
+        match self {
+            Store::Unacked => "UNACKED (published)",
+            Store::Span => "SPAN (frontier)    ",
+        }
+    }
+}
+
+/// `net/mod.rs:213` — `GAP_ACK_MIN_INTERVAL`, the receiver's gap-report rate
+/// limit and therefore the SACK-release clock while the frontier is stalled.
+const GAP_ACK_MIN_S: f64 = 0.002;
+
+/// One receiver→sender feedback message carrying a cumulative point and a
+/// SACK snapshot (`receiver.rs:1553-1555`), in flight for the return half of
+/// the path it was emitted on.
+struct Report {
+    arrive_at: f64,
+    /// The receiver instant it was BUILT at — the snapshot order (5).
+    built_at: f64,
+    /// `received_up_to + 1`: the count of contiguously delivered seqs.
+    frontier: u64,
+    /// `received_sack_ranges(...)`, inclusive.
+    ranges: Vec<(u64, u64)>,
+}
+
+/// `received_sack_ranges` (`net/mod.rs:3430-3447`) on the bench's receiver
+/// set: the inclusive ascending disjoint ranges of seqs the receiver HAS in
+/// `(delivered, seen]`. `frontier` is the count of contiguously delivered
+/// seqs, so `delivered = frontier − 1` and the scan starts at `frontier`.
+fn sack_snapshot(seen: &std::collections::BTreeSet<u64>, frontier: u64, highest: u64) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    if highest < frontier {
+        // Nothing above the cumulative point: the receiver has no hole and
+        // the ack carries an empty SACK list (`receiver.rs:1543`).
+        return out;
+    }
+    for &s in seen.range(frontier..=highest) {
+        match out.last_mut() {
+            Some((_, e)) if *e + 1 == s => *e = s,
+            _ => out.push((s, s)),
+        }
+    }
+    out
+}
+
+/// `|ranges ∩ [frontier, next_seq)|` — the released-mark COUNT the release law
+/// subtracts. The marks are only ever created for seqs currently retained
+/// (`net/mod.rs:3376`, `sent_store.range(start..=end)`) and pruned at the
+/// cumulative twin (`net/mod.rs:3387-3389`), which is exactly this clamp.
+fn released_count(ranges: &[(u64, u64)], frontier: u64, next_seq: u64) -> usize {
+    let mut n = 0usize;
+    for &(a, b) in ranges {
+        let lo = a.max(frontier);
+        let hi = b.min(next_seq.saturating_sub(1));
+        if hi >= lo {
+            n += (hi - lo + 1) as usize;
+        }
+    }
+    n
 }
 
 /// One un-stored recovery flight: a taper repair or a NACK margin repair. It
@@ -1148,6 +1299,23 @@ struct Run {
     /// number at a duty-cycled path: c8's slow leg runs at its link rate while
     /// it runs and idles between, so its 2 s windows read ~1.6× the run mean.
     xlr_med: [f64; 2],
+    /// THE COUPLING AXIS's produced quantities (zero under `Store::Unacked`):
+    /// the mean frontier SPAN `last_sent − cum_ack`, the mean released-mark
+    /// count the SACK law subtracts from it, and the fraction of ticks whose
+    /// receiver frontier sat behind a hole. All three are OUTPUTS — nothing
+    /// about them is configured.
+    span_mean: f64,
+    released_mean: f64,
+    stall_frac: f64,
+    /// AT THE REFRESH TICK, the three quantities the `available()` predicate is
+    /// made of, so "which produced quantity diverges first" is a measurement
+    /// and not an argument: the flow-control operand the gate actually read
+    /// (`store_len`), the UNACKED count beside it (what the published bench
+    /// used to read), and Σ`in_flight` / Σ`cwnd` over live paths.
+    store_len_mean: f64,
+    unacked_mean: f64,
+    infl_mean: f64,
+    cwnd_live_mean: f64,
 }
 
 impl Run {
@@ -1314,6 +1482,22 @@ fn simulate_acct(
     salt: u64,
     acct: Acct,
 ) -> Run {
+    simulate_full(paths, arm, feed, horizon_s, salt, acct, Store::Unacked)
+}
+
+/// As `simulate_acct`, with the COUPLING axis. `Store::Unacked` is
+/// bit-identical to `simulate_acct` — every branch the axis adds is behind
+/// `store_mode == Store::Span`, and it consumes no RNG.
+#[allow(clippy::too_many_arguments)]
+fn simulate_full(
+    paths: &[Spec],
+    arm: Arm,
+    feed: Feed,
+    horizon_s: f64,
+    salt: u64,
+    acct: Acct,
+    store_mode: Store,
+) -> Run {
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -1367,6 +1551,37 @@ fn simulate_acct(
     let mut frontier: u64 = 0;
     let mut next_feedback = 0.0_f64;
 
+    // ── THE COUPLING AXIS's state (`Store::Span` only) ──────────────────
+    // RECEIVER side: `received_seqs` / `highest_delivered_seq` /
+    // `highest_seen_seq` and the gap-report rate limit, all
+    // connection-wide locals of the single receiver task
+    // (`receiver.rs:132`, `:201`, `:300`, `:304-305`).
+    let mut recv_seen: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+    let mut recv_frontier: u64 = 0; // = highest_delivered_seq + 1
+    let mut recv_highest: u64 = 0;
+    let mut last_gap_ack_seen: u64 = 0;
+    let mut last_gap_ack_s: f64 = -GAP_ACK_MIN_S; // `Instant::now() - GAP_ACK_MIN_INTERVAL`
+    let mut last_advertised_ack: u64 = 0;
+    let mut reports: Vec<Report> = Vec::new();
+    // SENDER side: `window_ack_seq` (`net/mod.rs:1623`, `fetch_max` at
+    // `control_msg.rs:566`) and the `sack_released` mark set
+    // (`net/mod.rs:3974-3983`), the latter held as the newest SNAPSHOT it
+    // has received — identical content by (5), and O(#ranges) to count.
+    let mut snd_frontier: u64 = 0;
+    let mut snd_marks: Vec<(u64, u64)> = Vec::new();
+    let mut snd_marks_built: f64 = -1.0;
+    // Gauges: the span the model produces, and what the marks release.
+    let mut span_sum = 0.0_f64;
+    let mut span_n = 0u64;
+    let mut rel_sum = 0.0_f64;
+    let mut stall_ticks = 0u64;
+    // The `available()` decomposition, sampled at the refresh tick.
+    let mut sl_sum = 0.0_f64;
+    let mut un_sum = 0.0_f64;
+    let mut infl_sum = 0.0_f64;
+    let mut cwl_sum = 0.0_f64;
+    let mut dec_n = 0u64;
+
     // ── the accounting axis's state ─────────────────────────────────────
     // The SHIPPED FEC rate controller, constructed at the resolved defaults
     // (`net/mod.rs:1570`). r* is therefore whatever the shipped law returns on
@@ -1381,6 +1596,13 @@ fn simulate_acct(
         SYMBOL_SIZE,
     );
     ctrl.set_inner_feedback(0.0);
+    // The three-term candidate's K tracker and δ-budget, both the engine's:
+    // `percap_k` is the SAME `EchoRatioMin` map every honest cap uses
+    // (`net/mod.rs:4551`), and `b` is `delta_budget_b(hint)` at the bench's
+    // own hint (`sender_policy.rs:654`).
+    let mut percap_k: std::collections::HashMap<u32, EchoRatioMin> =
+        std::collections::HashMap::new();
+    let tt_b = delta_budget_b(ProtocolHint::Auto);
     let mut led = Ledger::default();
     let mut wire: Vec<WireSym> = Vec::new();
     // `st.repair_debt` (`emit_source.rs:787`) and the taper cache's r*.
@@ -1498,6 +1720,79 @@ fn simulate_acct(
             advance_to(&clock, &mut clock_ns, now);
         } else {
             clock.advance(Duration::from_secs_f64(tick));
+        }
+
+        // ── THE COUPLING AXIS: the receiver's frontier and its SACK clock ──
+        if store_mode == Store::Span {
+            let t_prev = (step - 1) as f64 * tick;
+            // (a) SENDER: apply every feedback message that has landed.
+            // `window_ack_seq.fetch_max` (`control_msg.rs:566`) and the
+            // mark set's snapshot union (5). The mark set prunes on the
+            // cumulative twin (`net/mod.rs:6594-6600`), which is what
+            // `released_count`'s `frontier` clamp performs.
+            let mut i = 0;
+            while i < reports.len() {
+                if reports[i].arrive_at <= now {
+                    let r = reports.swap_remove(i);
+                    if r.frontier > snd_frontier {
+                        snd_frontier = r.frontier;
+                    }
+                    if r.built_at > snd_marks_built {
+                        snd_marks_built = r.built_at;
+                        snd_marks = r.ranges;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            // (b) RECEIVER: in-order delivery, in TIME ORDER, and the
+            // gap-report clock evaluated per arrival — the engine
+            // evaluates `window_ack_emission` once per received data
+            // message (`receiver.rs:1517`, inside the data arm).
+            // A symbol reaches the RECEIVER half a round trip before its
+            // ack reaches the sender; the ack flies back on the arm it
+            // arrived on, so the return leg is that path's own RTprop/2.
+            let mut recvs: Vec<(f64, u32, u64)> = store
+                .iter()
+                .filter_map(|s| {
+                    let t = s.ack_at? - paths[s.path as usize].1 * 0.5;
+                    (t > t_prev && t <= now).then_some((t, s.path, s.seq))
+                })
+                .collect();
+            recvs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
+            for (t_r, pid, seq) in recvs {
+                recv_seen.insert(seq);
+                if seq > recv_highest {
+                    recv_highest = seq;
+                }
+                while recv_seen.contains(&recv_frontier) {
+                    recv_frontier += 1;
+                }
+                // `receiver.rs:1502-1521`, verbatim in structure.
+                let cumulative_advanced = recv_frontier > last_advertised_ack;
+                let gap_report_due = recv_highest >= recv_frontier
+                    && recv_highest > last_gap_ack_seen
+                    && t_r - last_gap_ack_s >= GAP_ACK_MIN_S;
+                if cumulative_advanced || gap_report_due {
+                    if cumulative_advanced {
+                        last_advertised_ack = recv_frontier;
+                    }
+                    last_gap_ack_seen = recv_highest;
+                    last_gap_ack_s = t_r;
+                    reports.push(Report {
+                        arrive_at: t_r + paths[pid as usize].1 * 0.5,
+                        built_at: t_r,
+                        frontier: recv_frontier,
+                        ranges: sack_snapshot(&recv_seen, recv_frontier, recv_highest),
+                    });
+                }
+            }
+            // The receiver's own retention: seqs at or below the delivered
+            // frontier are gone from `received_seqs`'s useful range
+            // (`net/mod.rs:1156-1158` retains `> received_up_to`).
+            if recv_frontier > 0 {
+                recv_seen = recv_seen.split_off(&recv_frontier);
+            }
         }
 
         // ── ack/delivery half + the recovery plane ───────────────────────
@@ -1761,6 +2056,23 @@ fn simulate_acct(
             if act.is_empty() && !live.is_empty() {
                 zero += 1;
             }
+            // THE `available()` DECOMPOSITION at the tick the gauge is
+            // recorded on. `store_len` is whatever the axis says the gate
+            // reads; `unacked` is the published bench's operand, carried
+            // beside it so the two are comparable at every tick.
+            dec_n += 1;
+            un_sum += store.len() as f64;
+            sl_sum += match store_mode {
+                Store::Unacked => store.len() as f64,
+                Store::Span => (next_seq - snd_frontier) as f64
+                    - released_count(&snd_marks, snd_frontier, next_seq) as f64,
+            };
+            for id in live.iter() {
+                if let Some(p) = sched.path(*id) {
+                    infl_sum += p.in_flight as f64;
+                    cwl_sum += p.cwnd as f64;
+                }
+            }
             let n_live = live.len().max(1);
             let sum_over = |set: &[u32]| -> f64 {
                 set.iter()
@@ -1783,7 +2095,31 @@ fn simulate_acct(
             }
             let bdp_live = sum_over(&live);
             let bdp_set = if arm == Arm::Legacy { sum_over(&act) } else { bdp_live };
-            cap = cap_for(arm, bdp_set, bdp_live, n_live);
+            // THE THREE-TERM CANDIDATE's inputs, collected the way
+            // `net/mod.rs:4533-4551` collects them: over `live_paths()`, off
+            // the SAME `PathState` accessors, through the SHIPPED
+            // `three_term_terms` and the SHIPPED `three_term_store_cap`. No
+            // number is introduced here — `rho` and `b` are the resolved
+            // defaults and the floor is the bench's own FLOOR.
+            let tt: Option<usize> = if arm == Arm::ThreeTermCell {
+                let slots: Vec<Option<ThreeTermPath>> = live
+                    .iter()
+                    .map(|id| {
+                        sched.path(*id).map(|p| ThreeTermPath {
+                            id: *id,
+                            rate: p.btlbw_sym_per_s(),
+                            srtt: p.srtt(),
+                            rtprop: p.min_rtt(),
+                            k_raw: p.k_raw(),
+                        })
+                    })
+                    .collect();
+                let terms = three_term_terms(&mut percap_k, &slots, (now * 1e6) as u64);
+                three_term_store_cap(true, &terms, TT_RHO, tt_b, FLOOR).map(|(c, ..)| c)
+            } else {
+                None
+            };
+            cap = cap_for(arm, bdp_set, bdp_live, n_live, tt);
             cap_sum += cap as f64;
             // The realized anchor over-read and the cwnd it floors, per path,
             // against the cell's OWN ground truth (rate·RTprop).
@@ -1835,7 +2171,24 @@ fn simulate_acct(
         // `cwnd_i` without bound, `available()` reads 0 and STAYS 0, and
         // `active_paths()` is a pure OBSERVABLE of the saturation the store cap
         // itself produced. That is the loop this bench closes.
-        while store.len() < cap {
+        // THE COUPLING AXIS reads the gate's operand from the RELEASE LAW
+        // (`net/mod.rs:4267-4271`) instead of from the unacked count. Under
+        // `Store::Unacked` this is `store.len()` and the branch is inert.
+        let mut store_len = match store_mode {
+            Store::Unacked => store.len(),
+            Store::Span => (next_seq - snd_frontier) as usize
+                - released_count(&snd_marks, snd_frontier, next_seq),
+        };
+        if store_mode == Store::Span {
+            span_sum += (next_seq - snd_frontier) as f64;
+            rel_sum += released_count(&snd_marks, snd_frontier, next_seq) as f64;
+            span_n += 1;
+            if recv_highest >= recv_frontier {
+                stall_ticks += 1;
+            }
+        }
+        while store_len < cap {
+            store_len += 1;
             let pid = place_min_cost(&sched);
             chg(&mut sched, pid, &mut led);
             let (a, rt, ok) = links[pid as usize].send_resolved(now);
@@ -1942,6 +2295,13 @@ fn simulate_acct(
         mrtt_sum,
         delivered_p,
         xlr_med,
+        span_mean: span_sum / span_n.max(1) as f64,
+        released_mean: rel_sum / span_n.max(1) as f64,
+        stall_frac: stall_ticks as f64 / span_n.max(1) as f64,
+        store_len_mean: sl_sum / dec_n.max(1) as f64,
+        unacked_mean: un_sum / dec_n.max(1) as f64,
+        infl_mean: infl_sum / dec_n.max(1) as f64,
+        cwnd_live_mean: cwl_sum / dec_n.max(1) as f64,
     }
 }
 
@@ -2797,6 +3157,546 @@ fn measured_cells() -> Vec<(&'static str, Vec<Spec>, &'static [AckShape])> {
     ]
 }
 
+// ── THE COUPLING MODEL'S PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11) ──────
+//
+// Written and committed BEFORE `sf_geography_on_the_coupling_model` was ever
+// run. Every number below is a WIRE number, cited to the ledger line that
+// measured it, and every tolerance is stated here rather than after the fact.
+//
+// THE WIRE, from goal-gate "Cap-Refresh Warmth"'s regime table (the `[SF]`
+// fractions pooled over every rep in `docs/l1-raw` that carries the gauge):
+//
+//   | cell | arm | zero% | short% |
+//   |------|-----|-------|--------|
+//   | c7   | A   |  0.3  |   3.7  |
+//   | c7   | AU  |  1.2  |   6.3  |
+//   | c8   | A   |  4.6  |  40.8  |
+//   | c8   | AU  | 29.9  |  51.1  |
+//
+// THE CRITERIA. All four must hold; the verdict is their conjunction and it is
+// printed by the test itself, not by prose.
+//
+//   C1 (the c8 CONTRAST — the thing "Cap-Refresh Warmth" handed over):
+//       fold(c8) = mean(AU zero%) / mean(A zero%) >= 3.0
+//       AND mean(c8 AU zero%) >= 20.0 points.
+//       [wire: fold 6.5x, AU 29.9%]
+//   C2 (the c8 LEVEL, unchanged from the predecessor's G1 so the two runs are
+//       comparable): mean(c8 A zero%) <= 10.0 AND caught >= 50% of seeds.
+//       [wire: 4.6%, class 3.7-7.4]
+//   C3 (c7 QUIET — the cell the wire says does not move):
+//       mean(c7 A zero%) <= 10.0 AND fold(c7) <= 2.0.
+//       [wire: 0.3% and 4.0x on a 0.3->1.2 base, i.e. both arms in the noise;
+//        the fold bound is the predecessor's G2 bound, kept verbatim]
+//   C4 (the SHORT-SET fractions, which no prior section scored at all —
+//       the regime mixture the cap arithmetic is expressed in):
+//       mean(c8 A short%) >= 25.0 AND mean(c7 A short%) <= 15.0.
+//       [wire: 40.8% and 3.7%]
+//
+// VERDICT = C1 & C2 & C3 & C4. If it holds, the bench corresponds to the wire
+// END TO END at the duals and the brake candidates are scored on it by the
+// rule pre-stated at `coupling_candidate_rule`. If it does not, the deliverable
+// is WHICH PRODUCED QUANTITY DIVERGES FIRST along
+// `span -> released -> store_len -> in_flight -> available()`, and no design
+// conclusion is drawn.
+const K1_FOLD_C8_MIN: f64 = 3.0;
+const K1_AU_C8_MIN: f64 = 20.0;
+const K2_LEVEL_C8_MAX: f64 = 10.0;
+const K2_CAUGHT_MIN: f64 = 0.50;
+const K3_LEVEL_C7_MAX: f64 = 10.0;
+const K3_FOLD_C7_MAX: f64 = 2.0;
+const K4_SHORT_C8_MIN: f64 = 25.0;
+const K4_SHORT_C7_MAX: f64 = 15.0;
+
+/// THE CANDIDATE SCORING RULE, pre-stated (dispatch item 3). Scored ONLY if
+/// the verdict above holds. Three candidates, one control:
+///
+///   (a) `Arm::PooledUnified` — the pooled-ceiling successor.
+///   (b) `Arm::ThreeTermCell` — the three-term law as the DUAL-CELL CAP.
+///   (c) `Arm::Unified` — U alone, the CONTROL that must reproduce the harm.
+///
+/// A candidate WINS iff, against the shipped `Arm::Legacy` baseline on the
+/// validated bench:
+///   * c8 stays STABLE at U's depth: its mean cap is within 10% of the U
+///     arm's, AND its c8 zero% is <= the shipped arm's + 2.0 points;
+///   * c1-class geometry keeps its throughput: goodput >= 0.98x the shipped
+///     arm's at the c1-class cell;
+///   * and the control (c) must FAIL the first clause, or the bench has not
+///     reproduced the harm it is being scored against.
+const CAND_CAP_TOL: f64 = 0.10;
+const CAND_ZERO_TOL_PTS: f64 = 2.0;
+const CAND_GP_MIN: f64 = 0.98;
+
+// ── THE COUPLING MODEL's ALWAYS-ON PINS ────────────────────────────────────
+
+/// The release law's two pure helpers, against the engine's own definitions.
+/// `sack_snapshot` is `received_sack_ranges` (`net/mod.rs:3430-3447`) and
+/// `released_count` is the cardinality the mark set contributes to
+/// `sack_release_outstanding` (`net/mod.rs:3394-3396`) after the cumulative
+/// prune (`net/mod.rs:3387-3389`).
+#[test]
+fn sack_snapshots_subsume_and_the_union_is_the_newest() {
+    use std::collections::BTreeSet;
+    // The engine's own unit fixture (`net/mod.rs:8758-8771`): delivered = 10,
+    // seen = 20, received {11,12,15,18,19,20} ⇒ [(11,12),(15,15),(18,20)].
+    let seen: BTreeSet<u64> = [11u64, 12, 15, 18, 19, 20].into_iter().collect();
+    assert_eq!(
+        sack_snapshot(&seen, 11, 20),
+        vec![(11, 12), (15, 15), (18, 20)],
+        "the snapshot must be received_sack_ranges' own encoding"
+    );
+    // Empty above the cumulative point ⇒ no ranges (`receiver.rs:1543`).
+    assert!(sack_snapshot(&seen, 21, 20).is_empty());
+
+    // The mark set only covers RETAINED seqs: below the frontier and at or
+    // above the sent edge are both excluded, which is what makes the count a
+    // subset of `sent_store` (`net/mod.rs:3376`, `:10181`).
+    let r = sack_snapshot(&seen, 11, 20);
+    assert_eq!(released_count(&r, 11, 21), 6, "all six retained marks count");
+    assert_eq!(released_count(&r, 16, 21), 3, "the prune drops 11,12,15");
+    assert_eq!(released_count(&r, 11, 19), 4, "the sent edge clips 19,20");
+    assert_eq!(released_count(&r, 25, 30), 0, "a passed frontier releases nothing");
+
+    // SUBSUMPTION (semantic 5): a later snapshot over a superset of arrivals
+    // covers every seq an earlier one did, ABOVE the later cumulative point.
+    let later: BTreeSet<u64> = [11u64, 12, 13, 14, 15, 18, 19, 20, 21].into_iter().collect();
+    let a = sack_snapshot(&seen, 11, 20);
+    let b = sack_snapshot(&later, 11, 21);
+    for &(lo, hi) in &a {
+        for s in lo..=hi {
+            assert!(
+                released_count(&b, s, s + 1) == 1,
+                "seq {s} released by the earlier snapshot must be in the later one"
+            );
+        }
+    }
+    assert!(
+        released_count(&b, 11, 22) > released_count(&a, 11, 22),
+        "the later snapshot is strictly larger here, so the union IS the newest"
+    );
+}
+
+/// MEASUREMENT DISCIPLINE 1: the axis EXECUTES, `Store::Unacked` is the
+/// published bench bit-for-bit, and `Store::Span` produces the three
+/// quantities the model exists to produce.
+#[test]
+fn coupling_axis_executes_and_unacked_is_the_published_bench() {
+    let geom = [C2, C3];
+    let feed = Feed::Measured(&ACK_C8[..]);
+    let base = simulate_acct(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine);
+    let off = simulate_full(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine, Store::Unacked);
+    assert_eq!(base.zero, off.zero, "Store::Unacked must be bit-identical");
+    assert_eq!(base.short, off.short);
+    assert_eq!(base.delivered, off.delivered);
+    assert_eq!(base.retx, off.retx);
+    assert_eq!(base.led.wire(), off.led.wire());
+    assert_eq!(off.span_mean, 0.0, "the gauges are inert on the published arm");
+
+    let on = simulate_full(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine, Store::Span);
+    assert!(on.span_mean > 0.0, "the frontier span must be produced");
+    assert!(on.released_mean > 0.0, "the SACK marks must actually arrive");
+    assert!(
+        on.span_mean > on.released_mean,
+        "span {} must exceed the marks {} — the difference IS store_len",
+        on.span_mean,
+        on.released_mean
+    );
+    assert!(
+        on.stall_frac > 0.0,
+        "the receiver frontier must sit behind a hole at least sometimes, or \
+         the 2 ms gap-report clock (net/mod.rs:213) never binds and the model \
+         is untested"
+    );
+    assert!(on.delivered > 0 && on.retx > 0, "the loop must still run");
+}
+
+/// The model's CELL-KEYED claim, BOUNDED rather than described (CLAUDE.md):
+/// the frontier span is what a SKEWED cell parks and a symmetric one does not.
+/// The asymmetric cell's span must exceed its released marks by more, relative
+/// to its own span, than the symmetric cell's — because the c8 legs differ by
+/// 4.6× in RTprop and the c7 legs do not.
+#[test]
+fn the_frontier_span_is_parked_at_the_skewed_cell_and_not_at_the_symmetric_one() {
+    let sym = simulate_full(&[C2, C2], Arm::Legacy, Feed::Measured(&ACK_C7[..]), 4.0, 0, Acct::Engine, Store::Span);
+    let asym = simulate_full(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8[..]), 4.0, 0, Acct::Engine, Store::Span);
+    assert!(sym.span_mean > 0.0 && asym.span_mean > 0.0);
+    // The fraction of the span the release law has NOT yet uncounted.
+    let held_sym = 1.0 - sym.released_mean / sym.span_mean;
+    let held_asym = 1.0 - asym.released_mean / asym.span_mean;
+    assert!(
+        (0.0..=1.0).contains(&held_sym) && (0.0..=1.0).contains(&held_asym),
+        "the marks are a subset of the span by construction: {held_sym} {held_asym}"
+    );
+    assert!(
+        asym.stall_frac >= sym.stall_frac,
+        "the skewed cell's in-order frontier cannot stall LESS often than the \
+         symmetric cell's: c8 {:.3} vs c7 {:.3}",
+        asym.stall_frac,
+        sym.stall_frac
+    );
+}
+
+/// The three-term candidate is the SHIPPED law and introduces no constant of
+/// its own: same function, same resolved arguments, and the span term is
+/// identically zero at N = 1 by arithmetic (no path-count predicate anywhere).
+#[test]
+fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
+    let tt = |rate: f64, rtp_ms: f64, k: f64| ThreeTermTerm { rate, rtprop_s: rtp_ms / 1e3, k };
+    let b = delta_budget_b(ProtocolHint::Auto);
+    // N = 1: the span term vanishes, and it does so without a branch.
+    let (_, _, _, sp1) =
+        three_term_store_cap(true, &[Some(tt(10_400.0, 8.0, 1.5))], TT_RHO, b, FLOOR).unwrap();
+    assert_eq!(sp1, 0.0, "one path has zero RTprop spread");
+    // The bench's own c8 geometry: the span term is 2·rate_fast·skew with
+    // skew = (60−8)/2 ms, i.e. rate_fast × the ROUND-TRIP difference.
+    let c8 = [Some(tt(C2.0, C2.1 * 1e3, 1.5)), Some(tt(C3.0, C3.1 * 1e3, 1.5))];
+    let (_, _, _, sp2) = three_term_store_cap(true, &c8, TT_RHO, b, FLOOR).unwrap();
+    let want = C2.0 * (C3.1 - C2.1);
+    assert!(
+        (sp2 - want).abs() < 1e-6,
+        "term 3 must be rate_fast × (RTprop_max − RTprop_min): {sp2} vs {want}"
+    );
+    // Cold ⇒ None ⇒ the arm falls back to the configured chain verbatim
+    // (`net/mod.rs:4722-4725`), which is what `cap_for` does.
+    assert!(three_term_store_cap(true, &[None, Some(tt(C2.0, 8.0, 1.5))], TT_RHO, b, FLOOR).is_none());
+    assert_eq!(
+        cap_for(Arm::ThreeTermCell, 0.0, 900.0, 2, None),
+        shipped_chain(900.0, 2),
+        "a cold three-term tick must read the shipped chain, not a substitute"
+    );
+}
+
+/// The seed ensemble over the COUPLING axis, carrying the short-set fraction
+/// (C4) and the model's own produced span/release gauges beside the `[SF]`
+/// zero-fraction.
+struct CoupEns {
+    zero: Vec<f64>,
+    short: Vec<f64>,
+    gp: Vec<f64>,
+    cap: Vec<f64>,
+    span: Vec<f64>,
+    rel: Vec<f64>,
+    stall: Vec<f64>,
+}
+
+impl CoupEns {
+    fn run(geom: &[Spec], arm: Arm, feed: Feed, acct: Acct, sm: Store) -> Self {
+        let mut e = CoupEns {
+            zero: vec![], short: vec![], gp: vec![], cap: vec![],
+            span: vec![], rel: vec![], stall: vec![],
+        };
+        for s in 0..SEEDS {
+            let r = simulate_full(geom, arm, feed, 20.0, s, acct, sm);
+            e.zero.push(r.zero_pct());
+            e.short.push(r.short_pct());
+            e.gp.push(r.goodput_sym_s());
+            e.cap.push(r.mean_cap);
+            e.span.push(r.span_mean);
+            e.rel.push(r.released_mean);
+            e.stall.push(r.stall_frac * 100.0);
+        }
+        e
+    }
+    fn caught(&self) -> f64 {
+        self.zero.iter().filter(|z| **z < CAUGHT_PCT).count() as f64 / self.zero.len() as f64
+    }
+    fn lo(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::INFINITY, f64::min)
+    }
+    fn hi(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    }
+}
+
+/// (11) THE COUPLING MODEL — the pre-registered C1..C4 verdict, and the
+/// candidate scoring rule that is unlocked only by it.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_geography_on_the_coupling_model() {
+    println!("\n=== THE COUPLING MODEL ({SEEDS} seeds x 20 s) ===");
+    println!(
+        "era = the wire's measured ack stream; metering = ENGINE (un-metered); \
+         store = UNACKED (published) vs SPAN (frontier)\n"
+    );
+    println!(
+        "{:<26} {:<22} {:<20} {:>7} {:>14} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>8}",
+        "cell", "arm", "store", "zero%", "[lo..hi]", "caught", "short%", "cap",
+        "span", "rel", "stall%", "goodput"
+    );
+    // (cell, A zero, A caught, A short, AU zero, AU short)
+    let mut rows: Vec<(&str, f64, f64, f64, f64, f64)> = Vec::new();
+    // (cell, arm, zero, cap, goodput) for the candidate rule.
+    let mut cand: Vec<(&str, Arm, f64, f64, f64)> = Vec::new();
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        let (mut az, mut ac, mut as_, mut uz, mut us) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for sm in [Store::Unacked, Store::Span] {
+            for arm in [Arm::Legacy, Arm::Unified, Arm::PooledUnified, Arm::ThreeTermCell] {
+                let e = CoupEns::run(&geom, arm, feed, Acct::Engine, sm);
+                let (z, sh) = (AcctEns::mean(&e.zero), AcctEns::mean(&e.short));
+                if sm == Store::Span {
+                    cand.push((name, arm, z, AcctEns::mean(&e.cap), AcctEns::mean(&e.gp)));
+                    match arm {
+                        Arm::Legacy => {
+                            az = z;
+                            ac = e.caught();
+                            as_ = sh;
+                        }
+                        Arm::Unified => {
+                            uz = z;
+                            us = sh;
+                        }
+                        _ => {}
+                    }
+                }
+                println!(
+                    "{:<26} {:<22} {:<20} {:>6.1}% {:>14} {:>6.0}% {:>6.1}% {:>7.0} \
+                     {:>7.0} {:>7.0} {:>6.1}% {:>8.0}",
+                    name, arm.label(), sm.label(), z,
+                    format!("[{:.1}..{:.1}]", e.lo(), e.hi()),
+                    e.caught() * 100.0, sh,
+                    AcctEns::mean(&e.cap), AcctEns::mean(&e.span),
+                    AcctEns::mean(&e.rel), AcctEns::mean(&e.stall),
+                    AcctEns::mean(&e.gp)
+                );
+            }
+            println!();
+        }
+        rows.push((name, az, ac, as_, uz, us));
+    }
+
+    println!("--- THE PRE-REGISTERED VERDICT (C1 contrast, C2 level, C3 c7-quiet, C4 short set) ---");
+    println!("wire: c7 A 0.3/3.7  c7 AU 1.2/6.3  c8 A 4.6/40.8  c8 AU 29.9/51.1  (zero%/short%)\n");
+    let (mut c1, mut c2, mut c3, mut c4) = (true, true, true, true);
+    for (name, az, ac, as_, uz, us) in &rows {
+        let key = name.trim();
+        let fold = if *az > 0.0 { uz / az } else { f64::INFINITY };
+        println!(
+            "{name}  A {az:.1}%/{as_:.1}%  AU {uz:.1}%/{us:.1}%  caught {:.0}%  fold {fold:.1}x",
+            ac * 100.0
+        );
+        if key.starts_with("c8") {
+            if fold < K1_FOLD_C8_MIN || *uz < K1_AU_C8_MIN {
+                c1 = false;
+            }
+            if *az > K2_LEVEL_C8_MAX || *ac < K2_CAUGHT_MIN {
+                c2 = false;
+            }
+            if *as_ < K4_SHORT_C8_MIN {
+                c4 = false;
+            }
+        }
+        if key.starts_with("c7") {
+            if *az > K3_LEVEL_C7_MAX || fold > K3_FOLD_C7_MAX {
+                c3 = false;
+            }
+            if *as_ > K4_SHORT_C7_MAX {
+                c4 = false;
+            }
+        }
+    }
+    let ok = c1 && c2 && c3 && c4;
+    let f = |b: bool| if b { "PASS" } else { "FAIL" };
+    println!(
+        "\nC1 {}  C2 {}  C3 {}  C4 {}  ==> THE COUPLING {}",
+        f(c1), f(c2), f(c3), f(c4),
+        if ok { "MODEL VALIDATES; candidates scored below" } else { "MODEL DOES NOT VALIDATE" }
+    );
+
+    println!("\n--- THE CANDIDATES (pre-stated rule; scored only on a validating model) ---");
+    let get = |cell: &str, arm: Arm| -> Option<(f64, f64, f64)> {
+        cand.iter()
+            .find(|(n, a, ..)| n.trim().starts_with(cell) && *a == arm)
+            .map(|(_, _, z, c, g)| (*z, *c, *g))
+    };
+    for arm in [Arm::PooledUnified, Arm::ThreeTermCell, Arm::Unified] {
+        let (Some((z8, c8cap, _)), Some((zb, _, _)), Some((_, ucap, _)), Some((g1, _, _))) = (
+            get("c8", arm),
+            get("c8", Arm::Legacy),
+            get("c8", Arm::Unified),
+            get("sc2", Arm::Legacy),
+        ) else {
+            continue;
+        };
+        let g_arm = get("sc2", arm).map(|(_, _, g)| g).unwrap_or(0.0);
+        let gp_base = get("sc2", Arm::Legacy).map(|(_, _, g)| g).unwrap_or(1.0);
+        let _ = g1;
+        let depth_ok = (c8cap - ucap).abs() <= CAND_CAP_TOL * ucap;
+        let harm_ok = z8 <= zb + CAND_ZERO_TOL_PTS;
+        let c1_ok = g_arm >= CAND_GP_MIN * gp_base;
+        println!(
+            "{:<22} c8 zero {z8:.1}% (shipped {zb:.1}%, +{:.1} pts)  cap {c8cap:.0} vs U {ucap:.0} \
+             ({:+.0}%)  c1-class gp {:.3}x  ==> depth {} harm {} c1 {}",
+            arm.label(), z8 - zb, (c8cap / ucap - 1.0) * 100.0, g_arm / gp_base,
+            f(depth_ok), f(harm_ok), f(c1_ok)
+        );
+    }
+    if !ok {
+        println!(
+            "\nThe model does not validate, so NO candidate conclusion is drawn from the rows \
+             above; they are data. The deliverable is the first divergence along \
+             span -> released -> store_len -> in_flight -> available()."
+        );
+    }
+}
+
+/// (12) WHICH PRODUCED QUANTITY DIVERGES FIRST — the NOT-VALIDATED branch's
+/// deliverable, walked along `span → released → store_len → in_flight →
+/// available()` with every column a produced number.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn the_coupling_chain_walked_quantity_by_quantity() {
+    println!("\n=== span -> released -> store_len -> in_flight -> available() ===");
+    println!(
+        "every column is PRODUCED. store_len is the operand the admission gate read;\n\
+         unacked is the published bench's operand, carried beside it at the same tick.\n"
+    );
+    println!(
+        "{:<26} {:<22} {:<20} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>7} {:>7}",
+        "cell", "arm", "store", "span", "rel", "store_len", "unacked", "S in_fl",
+        "S cwnd", "zero%", "short%"
+    );
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        for sm in [Store::Unacked, Store::Span] {
+            for arm in [Arm::Legacy, Arm::Unified] {
+                let (mut sp, mut re, mut sl, mut un, mut inf, mut cw, mut z, mut sh) =
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+                for s in 0..SEEDS {
+                    let r = simulate_full(&geom, arm, feed, 20.0, s, Acct::Engine, sm);
+                    sp += r.span_mean;
+                    re += r.released_mean;
+                    sl += r.store_len_mean;
+                    un += r.unacked_mean;
+                    inf += r.infl_mean;
+                    cw += r.cwnd_live_mean;
+                    z += r.zero_pct();
+                    sh += r.short_pct();
+                }
+                let n = SEEDS as f64;
+                println!(
+                    "{:<26} {:<22} {:<20} {:>8.0} {:>8.0} {:>10.0} {:>9.0} {:>9.0} \
+                     {:>9.0} {:>6.1}% {:>6.1}%",
+                    name, arm.label(), sm.label(),
+                    sp / n, re / n, sl / n, un / n, inf / n, cw / n, z / n, sh / n
+                );
+            }
+        }
+        println!();
+    }
+    println!(
+        "READ: the release law uncounts exactly what the frontier retains, so\n\
+         `store_len = span - released` lands back on the UNACKED count up to the\n\
+         2 ms gap-report lag; the admission loop then pins it at `cap` in BOTH\n\
+         store models, and S in_flight follows the cap in both. The store law is\n\
+         therefore an identity at the gate, not a new coupling."
+    );
+}
+
+/// THE REFUTATION, BOUNDED (CLAUDE.md: every documented model-vs-engine
+/// divergence carries a test that BOUNDS it). The frontier-span store does not
+/// change what the admission gate sees, because the SACK release law uncounts
+/// precisely the delivered part of the span — so `store_len` returns to the
+/// unacked count up to the gap-report lag. This asserts the identity with a
+/// number rather than describing it, at the ASYMMETRIC cell where the span is
+/// largest (3.5x the cap), so a successor who changes the release clock,
+/// `GAP_ACK_MIN_INTERVAL`, or the placement re-scores this row.
+#[test]
+fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
+    let geom = [C2, C3];
+    let feed = Feed::Measured(&ACK_C8[..]);
+    let r = simulate_full(&geom, Arm::Unified, feed, 8.0, 0, Acct::Engine, Store::Span);
+    // The span is MUCH larger than the gate's operand: this is the quantity
+    // ADR-0058's coda calls "the un-SACKed frontier span the fast path parks".
+    assert!(
+        r.span_mean > 2.0 * r.store_len_mean,
+        "the span must dwarf the flow-control operand: span {:.0} vs store_len {:.0}",
+        r.span_mean,
+        r.store_len_mean
+    );
+    // …and yet the operand is the unacked count back again, within a few
+    // percent — the release law's whole job.
+    let rel_err = (r.store_len_mean - r.unacked_mean).abs() / r.unacked_mean.max(1.0);
+    assert!(
+        rel_err < 0.10,
+        "store_len must return to the unacked count through the release law: \
+         store_len {:.0} vs unacked {:.0} ({:.1}% apart)",
+        r.store_len_mean,
+        r.unacked_mean,
+        rel_err * 100.0
+    );
+    // The gate pins the operand at the cap, which is why the +16% pool depth
+    // arrives as +16% of in-flight and no more.
+    assert!(
+        (r.store_len_mean - r.mean_cap).abs() < 0.15 * r.mean_cap,
+        "the bulk source pins store_len at the cap: {:.0} vs cap {:.0}",
+        r.store_len_mean,
+        r.mean_cap
+    );
+}
+
+/// THE FIRST DIVERGENCE, BOUNDED — and it is not the store law, it is Σ`cwnd`.
+///
+/// `available() = cwnd − in_flight` (`scheduler/mod.rs:2268-2271`), and the
+/// coupling chain shows Σ`in_flight` tracking the cap in BOTH store models. So
+/// what decides whether `active_paths()` empties is the OTHER operand. The
+/// bench's Σ`cwnd` over live paths at the duals is a large MULTIPLE of the
+/// wire's own measured Σ-anchor — the quantity that is the cwnd FLOOR — which
+/// means the bench's `available()` has structural headroom the wire's does
+/// not. The owner is this bench's known link artifact: 2.4–5.7× RTprop of
+/// standing queue at every fast path (goal-gate "SF Bench on Measured
+/// Inputs", "WHAT THIS BENCH STILL CANNOT SEE"), which is in `min_rtt`, hence
+/// in the anchor, hence in the cwnd floor.
+///
+/// Bounded rather than described, so a successor who fixes the link model
+/// re-scores this row instead of inheriting prose.
+#[test]
+fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals() {
+    for (cell, geom, shapes) in [
+        ("c7", vec![C2, C2], &ACK_C7[..]),
+        ("c8", vec![C2, C3], &ACK_C8[..]),
+    ] {
+        let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
+        // The SAME 20 s horizon the readout uses, on purpose: Copa is still
+        // ramping at 8 s (c7 reads Sigma cwnd 1100 there, below the wire's own
+        // anchor sum), so a shorter horizon would assert the warm-up and not
+        // the steady state this attribution is about.
+        let r = simulate_full(
+            &geom,
+            Arm::Unified,
+            Feed::Measured(shapes),
+            20.0,
+            0,
+            Acct::Engine,
+            Store::Span,
+        );
+        assert!(r.cwnd_live_mean > 0.0 && r.infl_mean > 0.0, "{cell}: the loop must run");
+        let ratio = r.cwnd_live_mean / sigma_wire;
+        assert!(
+            ratio > 2.0,
+            "{cell}: the bench's Sigma cwnd {:.0} is not above 2x the wire's \
+             Sigma anchor {sigma_wire:.0} — if this ever drops, the headroom \
+             attribution in goal-gate \"The Coupling Model\" is void and must \
+             be re-taken",
+            r.cwnd_live_mean
+        );
+        assert!(
+            ratio < 12.0,
+            "{cell}: Sigma cwnd {:.0} is {ratio:.1}x the wire's anchor sum \
+             {sigma_wire:.0}, outside the band this section measured",
+            r.cwnd_live_mean
+        );
+        // …and the headroom it buys is what keeps `available()` open: the
+        // in-flight the store cap can produce is a fraction of it.
+        assert!(
+            r.infl_mean < r.cwnd_live_mean,
+            "{cell}: Sigma in_flight {:.0} must sit under Sigma cwnd {:.0} on \
+             average — that gap IS the unclosed available()",
+            r.infl_mean,
+            r.cwnd_live_mean
+        );
+    }
+}
+
 /// (8) THE VALIDATION GATE — V1/V2/V3, scored per path against the ledger
 /// before the geography question may be asked at all.
 #[test]
@@ -3474,7 +4374,7 @@ fn empty_active_set_is_a_cliff_not_a_taper() {
 
     // The unified arm has NO cliff at all: `live_paths()` is non-empty
     // whenever the transfer is up, so the Σ never reaches 0.
-    assert!(cap_for(Arm::Unified, both as f64, a_fast + a_slow, 2) > BOOT);
+    assert!(cap_for(Arm::Unified, both as f64, a_fast + a_slow, 2, None) > BOOT);
 }
 
 /// THE REPRODUCED DIRECTION, bounded: at every DUAL cell the unified set
@@ -3636,8 +4536,8 @@ fn pooled_unified_candidate_introduces_no_constant() {
     for geom in [vec![C2], vec![C2, C2], vec![C2, C3]] {
         let n = geom.len();
         let sum: f64 = geom.iter().map(|(r, t, _, _)| r * t).sum();
-        let shipped = cap_for(Arm::Unified, sum, sum, n);
-        let cand = cap_for(Arm::PooledUnified, sum, sum, n);
+        let shipped = cap_for(Arm::Unified, sum, sum, n, None);
+        let cand = cap_for(Arm::PooledUnified, sum, sum, n, None);
         assert!(cand <= shipped, "N={n}: candidate {cand} > shipped {shipped}");
         if n == 1 {
             assert_eq!(cand, shipped, "N=1 must be bit-identical");

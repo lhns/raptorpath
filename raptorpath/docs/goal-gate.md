@@ -26876,3 +26876,452 @@ touched by this branch; the engine tree is byte-identical to main@`b2e18a2`.
 doctests) · `store_cap_sf_bench` **26 passed, 0 failed** (10 `#[ignore]`d
 benches not run) · `store_cap_bench` **4 passed**. `gate_suite` not required —
 no engine code changed.
+
+## The Coupling Model — PRE-REGISTRATION (2026-08-11) — MEASUREMENT DISCIPLINE 11 + 14: written and committed BEFORE any scored run, in its OWN commit, against the model shipped in the same commit. Branch `feat/sf-coupling` from main@`275d28b`. Executes the RANK 1 handover of "Cap-Refresh Warmth" ("THE POOL→IN-FLIGHT COUPLING, at c8"). **STRICTLY LOCAL: no VM, no L1 number re-derived, no engine file touched.** Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`.
+
+### THE GAP THIS ATTACKS, IN ONE SENTENCE
+
+With the cap now KNOWN (pinned at 4096 = 2·knee at both dual A-arms; U buys
++16% of mean pool depth by converting the interior and boot regimes into the
+ceiling), the bench still under-produces the c8-AU zero-fraction — **9.3%
+against the wire's 29.9%** — and the divergence is downstream of the cap, in
+`cap → store_len → in_flight → available() → active_paths()`. The predecessor
+named the missing mechanism exactly: *"it has no mechanism by which a deeper
+retention pool raises per-path in-flight, so its `available()` never closes."*
+
+### WHAT IS TRANSPLANTED, AND FROM WHICH LINE
+
+The bench's store was `admitted − acked`: a per-symbol quantity that drains at
+PATH latency. The engine's is a **FRONTIER SPAN** that drains at CUMULATIVE
+frontier latency, minus SACK-released marks. Five semantics, each cited:
+
+| # | semantic | site |
+|---|---|---|
+| 1 | **the store is a DENSE SPAN** — every reliable source symbol is inserted keyed by stream seq, and the ONLY removal is `split_off(&(ack+1))`, clocked by the cumulative ack alone. The engine states the identity itself: *"the retention store's last key IS the sent edge (removal is by cumulative ack only)"* | `emit_source.rs:321-323`; `net/mod.rs:6591-6593`; `net/mod.rs:4222-4230` |
+| 2 | **the cumulative ack IS the receiver's in-order delivery point**, folded into the sender with `fetch_max` because *"acks arrive on multiple paths, out of order"* | `receiver.rs:1554`; `control_msg.rs:563-566` |
+| 3 | **SACK release UNCOUNTS, it does not remove**: mark every seq of an arriving range that is CURRENTLY retained; `sack_release_outstanding(store_len, released) = store_len.saturating_sub(released)`; prune the marks on the cumulative twin | `net/mod.rs:3368-3381`, `3394-3396`, `4267-4271`, `6594-6600` (ADR-0060) |
+| 4 | **the marks arrive on a RATE-LIMITED clock, not on the ack stream**: SACK ranges ride only an ack with `advertise = cumulative_advanced ∨ gap_report_due`, and `gap_report_due` needs `GAP_ACK_MIN_INTERVAL` = **2 ms** since the last gap ack — so while the frontier is stalled the sender learns what is above the hole at most every 2 ms, plus the return flight | `receiver.rs:1502-1544`; `net/mod.rs:3417-3424`; `net/mod.rs:213` |
+| 5 | **the ranges are a COMPLETE SNAPSHOT** of `(highest_delivered, highest_seen]`, so a later report subsumes an earlier one above its own cumulative point | `net/mod.rs:3430-3447` |
+
+and the gate that consumes it — `reliable && (store_len >= effective_store_cap
+|| cwnd_full)`, `net/mod.rs:5054-5056` — now reads the release law's operand
+instead of the unacked count.
+
+`RWM_STORE_SACK_RELEASE=1` in **1 522 of 1 522** `[GATES]` echoes across
+`docs/l1-raw`, so semantic 3 is the arm every wire number in this ledger was
+taken on, not a counterfactual.
+
+The axis is `Store { Unacked, Span }`. **`Unacked` is bit-identical** to every
+published bench number — the branch consumes no RNG and is behind one equality
+— which is asserted by the 26 always-on tests passing unchanged.
+
+### THE CRITERIA — stated in advance, scored by the test itself
+
+The wire, from "Cap-Refresh Warmth"'s regime table (the `[SF]` fractions
+pooled over every `docs/l1-raw` rep that carries the gauge):
+
+| cell | arm | zero% | short% |
+|---|---|---|---|
+| c7 | A | 0.3 | 3.7 |
+| c7 | AU | 1.2 | 6.3 |
+| c8 | A | 4.6 | 40.8 |
+| c8 | AU | **29.9** | 51.1 |
+
+* **C1 (the c8 CONTRAST — the handover's own target).** `fold(c8) =
+  mean(AU zero%)/mean(A zero%) ≥ 3.0` **and** `mean(c8 AU zero%) ≥ 20.0`
+  points. [wire: 6.5×, 29.9%]
+* **C2 (the c8 LEVEL).** `mean(c8 A zero%) ≤ 10.0` **and** caught ≥ 50% of
+  seeds. Verbatim the predecessor's G1, so the two runs are comparable.
+  [wire: 4.6%, class 3.7–7.4]
+* **C3 (c7 QUIET).** `mean(c7 A zero%) ≤ 10.0` **and** `fold(c7) ≤ 2.0`.
+  [wire: 0.3%; both c7 arms are in the noise]
+* **C4 (the SHORT-SET fractions — the regime mixture the cap arithmetic is
+  expressed in, which no prior section scored at all).** `mean(c8 A short%) ≥
+  25.0` **and** `mean(c7 A short%) ≤ 15.0`. [wire: 40.8% and 3.7%]
+
+**VERDICT = C1 ∧ C2 ∧ C3 ∧ C4.** Constants: `K1_FOLD_C8_MIN` … `K4_SHORT_C7_MAX`
+in `store_cap_sf_bench.rs`, in this commit.
+
+### THE CANDIDATE SCORING RULE — also stated in advance
+
+Scored **only if the verdict holds**. Three arms and one control:
+
+* **(a) the pooled-ceiling successor** — `Arm::PooledUnified`.
+* **(b) THE THREE-TERM LAW AS THE DUAL-CELL CAP** — `Arm::ThreeTermCell`, the
+  SHIPPED `net::three_term_store_cap` over `live_paths()` at the engine's own
+  precedence (`net/mod.rs:4715-4726`), with the engine's own collector inputs
+  (`net/mod.rs:4533-4551`) and the resolved `contract_rho = 1.0` /
+  `delta_b = delta_budget_b(hint)`. It is the interesting candidate here
+  because **its TERM 3 IS the quantity this axis makes the bench produce**:
+  `2·rate_fast·skew`, *"while one slow-path symbol is unacked the fast path's
+  symbols pile into the same unacked span"* (`net/mod.rs:2917-2930`). The flip
+  battery's BH/BHU arms carried it and showed no c8 harm where every
+  U-without-3T arm did.
+* **(c) U alone** — `Arm::Unified`, the CONTROL that must reproduce the harm,
+  or the bench has not reproduced what it is scoring against.
+
+A candidate WINS iff, against the shipped `Arm::Legacy` baseline: its c8 mean
+cap is within **10%** of the U arm's AND its c8 zero% is at most **+2.0
+points** over the shipped arm's; and its goodput at the c1-class geometry
+(this bench's single-fast cell, the one where the empty-`active_paths()` state
+IS the mechanism — 29.8% at c1 per "Cap-Refresh Warmth") is ≥ **0.98×** the
+shipped arm's. Constants `CAND_CAP_TOL` / `CAND_ZERO_TOL_PTS` / `CAND_GP_MIN`,
+in this commit.
+
+### IF IT DOES NOT VALIDATE
+
+The deliverable is **which produced quantity diverges first** along
+`span → released → store_len → in_flight → available()`, measured on the
+model's own gauges (`span_mean`, `released_mean`, `stall_frac`, all outputs),
+and the honest handover. A third possibility is kept alive and explicitly NOT
+modelled in this step: the wire's 29.9% may partly ride the **cross-path
+loss-estimator contamination** the ack measurement recorded (`ce/cr` 2.05 at
+c7 and 5.59 on c8's slow leg against realized packet loss of 0.55% and 1.96%,
+because `record_batch` charges `gap × received` across a batch-seq gap that at
+N = 2 is full of the OTHER path's symbols — "Ack-Cadence Measurement (VM)",
+READOUT 4). If the residual points there, it is said so and left there.
+
+**NO NUMBER FROM ANY SCORED RUN EXISTS AT THIS COMMIT.** Zero fitted
+constants; every transplanted semantic is cited above to the engine line.
+
+## The Coupling Model — RESULTS (2026-08-12, `feat/sf-coupling`) — GOAL: "Cap-Refresh Warmth" RANK 1. Every verdict below is stated against the criteria pre-registered at `82d8463`, never against a number chosen after the fact. **VERDICT: NOT VALIDATED — C2 passes, C1/C3/C4 fail — and the refutation is ARITHMETIC, not statistical: the frontier-span store is an IDENTITY at the admission gate.** STRICTLY LOCAL, no VM, no L1 number re-derived, engine tree byte-identical to main@`275d28b`.
+
+### THE VERDICT IN FIVE LINES
+
+1. **THE COUPLING MODEL WAS BUILT, IT EXECUTES, AND IT PRODUCES THE SPAN.**
+   Under `Store::Span` the bench's frontier span reads **1 809 (sc2) / 9 087
+   (c7) / 13 560 (c8)** symbols against store caps of 814 / 2 409 / 3 786 —
+   at c8 the span is **3.6× the cap**, which is exactly the quantity
+   ADR-0058's coda names ("the FAST path parks the un-SACKed frontier span in
+   every deep-pool arm"). The receiver's in-order frontier sits behind a hole
+   **99.6–100.0%** of refresh ticks at every cell. Nothing about any of those
+   numbers is configured.
+2. **AND IT CHANGES NOTHING AT THE GATE, BECAUSE THE RELEASE LAW UNCOUNTS
+   EXACTLY WHAT THE FRONTIER RETAINS.** `store_len = span − released` lands
+   back on the UNACKED count — **888 vs 879 / 3 527 vs 3 508 / 4 012 vs
+   3 992**, i.e. **within 0.5–1.0%** at all three cells. The residual is the
+   2 ms `GAP_ACK_MIN_INTERVAL` gap-report lag plus the return flight, and on a
+   4 096-deep store that is under one percent. **ADR-0060 did its job; the
+   pre-SR frontier-span cost the handover was reaching for no longer exists on
+   the arm every wire number was taken on** (`RWM_STORE_SACK_RELEASE=1` in
+   1 522 of 1 522 `[GATES]` echoes).
+3. **SO THE `[SF]` GEOGRAPHY BARELY MOVES, AND THE PRE-REGISTERED VERDICT IS
+   FAIL.** `fold(c8)` **1.3× → 1.5×** against the wire's 6.5×; c8-AU
+   **9.3% → 10.6%** against the wire's 29.9%. C1 FAIL · C2 PASS · C3 FAIL ·
+   C4 FAIL.
+4. **THE FIRST DIVERGENCE IS NOT IN THE STORE CHAIN AT ALL — IT IS Σ`cwnd`.**
+   `available() = cwnd − in_flight` (`scheduler/mod.rs:2268-2271`), and
+   Σ`in_flight` tracks the cap in BOTH store models (c8: 2 405 → 2 502). The
+   other operand does not: the bench's Σ`cwnd` over live paths is **5 848–
+   10 245**, i.e. **3.6× (c7) and 6.6× (c8) the wire's own measured Σ-anchor**
+   (1 635 / 1 510 — READOUT 3, three measured columns multiplied). The anchor
+   is the cwnd FLOOR, so the wire cannot be far below it; the bench is a large
+   multiple above it, and that headroom is precisely the `available()` the
+   wire closes and the bench does not.
+5. **ITS OWNER IS ALREADY IN THIS LEDGER AND IT IS THE BENCH'S OWN LINK.**
+   "SF Bench on Measured Inputs" recorded it as a NEW blind spot without
+   knowing it was load-bearing: *"the link model builds 2.4–5.7× RTprop of
+   queue at every fast path where the wire's cells read ≈1×… it is in
+   `min_rtt`, hence in the anchor"* — and hence in the cwnd floor, hence in
+   `available()`. **The residual does NOT point at the `ce/cr` contamination**
+   the dispatch kept alive; see FINDING 4, where the arithmetic runs the wrong
+   way.
+
+### THE READOUT — 8 seeds × 20 s, `Acct::Engine`, the measured ack era
+
+```
+cell                       arm                    store                  zero%       [lo..hi]  caught  short%     cap    span     rel  stall%  goodput
+sc2  single fast (c2r100)  A   (U=0, shipped)     UNACKED (published)    16.4%   [15.2..18.4]      0%   16.4%     810       0       0    0.0%     9375
+sc2  single fast (c2r100)  AU  (U=1)              UNACKED (published)    18.2%   [14.0..20.3]      0%   18.2%     941       0       0    0.0%     9524
+sc2  single fast (c2r100)  P   (pooled+unified)   UNACKED (published)    18.2%   [14.0..20.3]      0%   18.2%     941       0       0    0.0%     9524
+sc2  single fast (c2r100)  3T  (three-term cap)   UNACKED (published)    43.6%   [41.7..47.0]      0%   43.6%    2796       0       0    0.0%     9846
+
+sc2  single fast (c2r100)  A   (U=0, shipped)     SPAN (frontier)        15.8%   [14.4..17.1]      0%   15.8%     814    1809     917   99.6%     9392
+sc2  single fast (c2r100)  AU  (U=1)              SPAN (frontier)        18.0%   [13.7..20.1]      0%   18.0%     941    1893     955   99.7%     9539
+sc2  single fast (c2r100)  P   (pooled+unified)   SPAN (frontier)        18.0%   [13.7..20.1]      0%   18.0%     941    1893     955   99.7%     9539
+sc2  single fast (c2r100)  3T  (three-term cap)   SPAN (frontier)        43.8%   [41.7..47.1]      0%   43.8%    2796    6257    3459   99.8%     9860
+
+c7   dual symmetric        A   (U=0, shipped)     UNACKED (published)    36.0%   [31.0..41.6]      0%   48.5%    2478       0       0    0.0%    19332
+c7   dual symmetric        AU  (U=1)              UNACKED (published)    50.3%   [50.2..50.3]      0%   50.3%    4084       0       0    0.0%    19603
+c7   dual symmetric        P   (pooled+unified)   UNACKED (published)    26.8%   [24.8..28.9]      0%   28.1%    3332       0       0    0.0%    19225
+c7   dual symmetric        3T  (three-term cap)   UNACKED (published)    50.3%   [50.2..50.3]      0%   50.3%    4068       0       0    0.0%    19609
+
+c7   dual symmetric        A   (U=0, shipped)     SPAN (frontier)        38.9%   [31.9..42.7]      0%   48.3%    2409    9087    5536   99.9%    19345
+c7   dual symmetric        AU  (U=1)              SPAN (frontier)        50.3%   [50.2..50.3]      0%   50.3%    4084   10922    6844   99.9%    19614
+c7   dual symmetric        P   (pooled+unified)   SPAN (frontier)        26.8%   [24.8..28.5]      0%   28.0%    3332    8679    5350   99.9%    19250
+c7   dual symmetric        3T  (three-term cap)   SPAN (frontier)        50.3%   [50.2..50.3]      0%   50.3%    4070   10953    6888   99.9%    19613
+
+c8   dual asym (r+RTT)     A   (U=0, shipped)     UNACKED (published)     7.2%    [5.0..10.3]     88%   50.3%    3788       0       0    0.0%    11100
+c8   dual asym (r+RTT)     AU  (U=1)              UNACKED (published)     9.3%    [8.4..10.7]     88%   50.3%    4084       0       0    0.0%    11040
+c8   dual asym (r+RTT)     P   (pooled+unified)   UNACKED (published)     7.2%     [4.4..9.6]    100%   50.3%    4067       0       0    0.0%    11000
+c8   dual asym (r+RTT)     3T  (three-term cap)   UNACKED (published)     9.4%    [8.5..10.7]     88%   50.3%    4085       0       0    0.0%    11062
+
+c8   dual asym (r+RTT)     A   (U=0, shipped)     SPAN (frontier)         7.2%     [4.3..8.8]    100%   50.3%    3786   13560    9545  100.0%    11056
+c8   dual asym (r+RTT)     AU  (U=1)              SPAN (frontier)        10.6%    [8.8..12.3]     38%   57.6%    4083   14205   10125  100.0%    11088
+c8   dual asym (r+RTT)     P   (pooled+unified)   SPAN (frontier)         8.4%    [5.3..11.5]     62%   50.3%    4067   14116   10052  100.0%    11049
+c8   dual asym (r+RTT)     3T  (three-term cap)   SPAN (frontier)        10.8%    [9.5..12.4]     38%   54.3%    4085   14101   10020  100.0%    11049
+
+--- THE PRE-REGISTERED VERDICT (C1 contrast, C2 level, C3 c7-quiet, C4 short set) ---
+wire: c7 A 0.3/3.7  c7 AU 1.2/6.3  c8 A 4.6/40.8  c8 AU 29.9/51.1  (zero%/short%)
+
+sc2  single fast (c2r100)  A 15.8%/15.8%  AU 18.0%/18.0%  caught 0%  fold 1.1x
+c7   dual symmetric        A 38.9%/48.3%  AU 50.3%/50.3%  caught 0%  fold 1.3x
+c8   dual asym (r+RTT)     A  7.2%/50.3%  AU 10.6%/57.6%  caught 100%  fold 1.5x
+
+C1 FAIL  C2 PASS  C3 FAIL  C4 FAIL  ==> THE COUPLING MODEL DOES NOT VALIDATE
+```
+
+### FINDING 1 — THE FRONTIER SPAN IS AN IDENTITY AT THE GATE, AND THE ARITHMETIC SAYS WHY
+
+The chain, walked quantity by quantity (`the_coupling_chain_walked_quantity_by_quantity`,
+8 seeds × 20 s, every column produced):
+
+```
+cell                       arm                    store                    span      rel  store_len   unacked   S in_fl    S cwnd   zero%  short%
+sc2  single fast (c2r100)  A   (U=0, shipped)     UNACKED (published)         0        0        888       888       118      1718   16.4%   16.4%
+sc2  single fast (c2r100)  AU  (U=1)              UNACKED (published)         0        0        938       938       135      2105   18.2%   18.2%
+sc2  single fast (c2r100)  A   (U=0, shipped)     SPAN (frontier)          1809      917        888       879       121      1699   15.8%   15.8%
+sc2  single fast (c2r100)  AU  (U=1)              SPAN (frontier)          1893      955        938       929       141      2061   18.0%   18.0%
+
+c7   dual symmetric        A   (U=0, shipped)     UNACKED (published)         0        0       3512      3512      2018      5933   36.0%   48.5%
+c7   dual symmetric        AU  (U=1)              UNACKED (published)         0        0       4079      4079      2830      7437   50.3%   50.3%
+c7   dual symmetric        A   (U=0, shipped)     SPAN (frontier)          9087     5536       3527      3508      2017      5848   38.9%   48.3%
+c7   dual symmetric        AU  (U=1)              SPAN (frontier)         10922     6844       4078      4059      2847      7357   50.3%   50.3%
+
+c8   dual asym (r+RTT)     A   (U=0, shipped)     UNACKED (published)         0        0       4015      4015      2405      9872    7.2%   50.3%
+c8   dual asym (r+RTT)     AU  (U=1)              UNACKED (published)         0        0       4080      4080      2487     10245    9.3%   50.3%
+c8   dual asym (r+RTT)     A   (U=0, shipped)     SPAN (frontier)         13560     9545       4012      3992      2502     10171    7.2%   50.3%
+c8   dual asym (r+RTT)     AU  (U=1)              SPAN (frontier)         14205    10125       4079      4054      2812      9370   10.6%   57.6%
+```
+
+Read left to right:
+
+* **`span` is real and large** — 2.2× / 3.8× / 3.6× the cap at sc2 / c7 / c8,
+  and correctly ordered by the cells' skew.
+* **`released` uncounts 51% / 61% / 70% of it** — the SACK snapshot arriving
+  on the receiver's own gap-report clock, with no number injected.
+* **`store_len = span − released` returns to `unacked` within 0.5–1.0%.** That
+  is the whole of it. ADR-0060's law is `sent_store.len() − released.len()`,
+  the released set is a subset of the retained set, and the retained set above
+  the frontier is exactly (delivered-above-frontier) ∪ (not-yet-delivered).
+  Subtracting the first leaves the second. **The only way the two can differ
+  is the REPORTING LAG** — `GAP_ACK_MIN_INTERVAL` = 2 ms (`net/mod.rs:213`)
+  plus one return flight — and at c8's ~11 000 sym/s that is ~23 + ~100
+  symbols against a 4 096 store.
+* **`Σ in_flight` therefore stays on the cap's own scale in BOTH models** —
+  what the span model changes is its SENSITIVITY to the cap, not its level
+  (FINDING 2's table).
+
+Pinned by `the_frontier_span_returns_to_the_unacked_count_through_the_release_law`
+(always-on): span > 2× store_len, `|store_len − unacked| < 10%`, and
+`|store_len − cap| < 15%·cap`. A successor who changes the release clock, the
+gap-ack interval, or the placement re-scores that row rather than inheriting
+this prose.
+
+**This is a genuine, transferable result about the ENGINE, not only about the
+bench.** The frontier-span cost ADR-0060 was written to remove is removed:
+under SACK-clocked release the flow-control operand is the unacked count again,
+to within the gap-report lag. Any successor tempted by "the store recycles at
+frontier latency" must first say why the release law does not apply — it did,
+here, at 51–70% of the span.
+
+### FINDING 2 — THE FIRST DIVERGENCE IS Σ`cwnd`, AND ITS OWNER IS THE BENCH'S LINK
+
+`active_paths()` filters on `p.active && p.available() > 0`
+(`scheduler/mod.rs:2907-2913`) and `available() = cwnd − in_flight`
+(`:2268-2271`). The chain above fixes one operand and leaves the other:
+
+| cell | bench Σ`cwnd` (live, at refresh) | wire Σ-anchor (READOUT 3, measured) | ratio |
+|---|---|---|---|
+| c7 | 5 848–7 437 | **1 635** | **3.6–4.5×** |
+| c8 | 9 370–10 245 | **1 510** | **6.2–6.8×** |
+
+The anchor is the cwnd FLOOR (`clamp_cwnd_with_anchor`), so the wire's Σ`cwnd`
+is at least 1 510 at c8 and the bench's is 6.6× that. With Σ`in_flight` at
+~2 500–2 800 in both, the bench has 3–4× aggregate headroom where the wire has
+at most ~1.7×. **That headroom is the `available()` the wire closes 29.9% of
+the time and the bench closes 10.6% of the time.**
+
+The owner is not new — it is this bench's own link model, recorded one section
+ago as a blind spot without knowing it was load-bearing: **2.4–5.7× RTprop of
+standing queue at every fast path**, where the wire's cells read ≈1×. Standing
+queue is in `min_rtt`; `min_rtt` is in the anchor; the anchor is the cwnd
+floor. Bounded by
+`the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals`
+(always-on, both duals, the 20 s horizon — at 8 s Copa is still ramping and c7
+reads 1 100, which is why the horizon is asserted rather than assumed).
+
+**This supersedes, without contradicting, the predecessor's handover.** "The
+bench has no mechanism by which a deeper retention pool raises per-path
+in-flight" was right about the symptom and wrong about the address — and the
+span model actually IMPROVES the transmission it named, which is the one place
+it earns its keep. At c8 the A→AU cap step is +7.8% (3 786 → 4 083) and it
+arrives as:
+
+| store model | Σ`in_flight` A → AU | gain |
+|---|---|---|
+| UNACKED (published) | 2 405 → 2 487 | **+3.4%** |
+| SPAN (frontier) | 2 502 → 2 812 | **+12.4%** |
+
+So the coupling the predecessor asked for is REAL and the span model is what
+delivers it: pool depth now converts to in-flight at 1.6× the cap step instead
+of 0.4× of it. It is simply not enough, because the operand it has to overcome
+is 6.6× too large.
+
+### FINDING 3 — WHAT THE SPAN MODEL DID MOVE, AND IT IS CORRECTLY CELL-KEYED
+
+The effect is small but it is not zero, and it is confined to the one cell with
+skew:
+
+| | c7-A | c7-AU | c8-A | **c8-AU** |
+|---|---|---|---|---|
+| zero% Unacked → Span | 36.0 → 38.9 | 50.3 → 50.3 | 7.2 → 7.2 | **9.3 → 10.6** |
+| short% Unacked → Span | 48.5 → 48.3 | 50.3 → 50.3 | 50.3 → 50.3 | **50.3 → 57.6** |
+
+The **only** row where the short-set fraction moves at all is c8 under U — the
+cell whose two legs differ by 4.6× in RTprop and the arm whose Σ ranges over
+`live_paths()`. That is the right cell and the right arm, at 1/20th of the
+required magnitude. It is reported as a measurement, not promoted.
+
+### FINDING 4 — THE THIRD POSSIBILITY, SCORED AND POINTED AWAY FROM
+
+The dispatch kept alive that the wire's 29.9% may ride the cross-path
+loss-estimator contamination the ack measurement recorded (`ce/cr` 2.05 at c7
+and 5.59 on c8's slow leg against realized packet loss of 0.55% and 1.96%,
+because `LossEstimator::record_batch` is charged `gap × received` over a
+batch-seq gap that at N = 2 is full of the other path's symbols). **The
+residual does not point there, and the sign is why.**
+
+Under `Acct::Engine` an inflated loss estimate makes the NACK repair margin
+larger — `margin = ceil(retransmitted × max active loss)` (`net/mod.rs:6420-6448`)
+— and every margin symbol RELEASES `in_flight` on the path it flew without
+ever having been charged (`control_msg.rs:341`/`:685`, over counters
+`receiver.rs:1754` builds from `batch.symbols`). Over-release LOWERS
+`in_flight`, which keeps `available() > 0`, which keeps `active_paths()`
+NON-empty. So a 2–5.6× inflated loss estimate pushes the wire's zero-fraction
+**down**, not up. It cannot be the source of a 29.9% the bench under-produces
+at 10.6%. This is an elimination by sign, taken on the mechanism the SF
+Accounting Axis already measured and bounded, and it is the reason no model of
+the contamination was built in this step — as the dispatch instructed.
+
+### THE CANDIDATES — REPORTED, NOT ADVANCED
+
+The pre-registration conditions any design conclusion on the verdict, and the
+verdict is NOT VALIDATED. These rows are data:
+
+```
+P   (pooled+unified)   c8 zero  8.4% (shipped 7.2%, +1.1 pts)  cap 4067 vs U 4083 (-0%)  c1-class gp 1.016x  ==> depth PASS harm PASS c1 PASS
+3T  (three-term cap)   c8 zero 10.8% (shipped 7.2%, +3.5 pts)  cap 4085 vs U 4083 (+0%)  c1-class gp 1.050x  ==> depth PASS harm FAIL c1 PASS
+AU  (U=1)              c8 zero 10.6% (shipped 7.2%, +3.3 pts)  cap 4083 vs U 4083 (+0%)  c1-class gp 1.016x  ==> depth PASS harm FAIL c1 PASS
+```
+
+Two observations, both of which are why nothing is advanced:
+
+* **The control (c) behaves as required** — U alone reproduces a harm the
+  shipped arm does not have (+3.3 points at c8), and the three-term cap
+  reproduces the SAME harm to within 0.2 points (+3.5). On this bench the
+  three-term law as the dual-cell cap is INDISTINGUISHABLE from U at c8 —
+  because both land on the same integer: its cap is **4 085** against U's
+  **4 083**, i.e. both are at the 4 096 ceiling. **The contrast the flip
+  battery's BH/BHU arms showed (3T carried, no c8 harm; every U-without-3T arm
+  harmed) is NOT reproduced here, and it cannot be, for the same arithmetic
+  reason "SF Bench on Measured Inputs" gave: at the measured over-read every
+  law that differs from the shipped one by a multiplier is invisible above the
+  clamp.** The three-term law's own dual-cell output on the wire's numbers is
+  ~450–540 interior; on this bench's inflated anchors it is 4 085.
+* **`P` is the only arm that satisfies all three clauses**, and it does so on a
+  bench that just failed its own reproduction criterion, with a c8 zero% only
+  1.1 points above the shipped arm's — inside the seed spread of both. Its
+  standing is UNCHANGED: **promising, not established**, now for a fourth
+  reason.
+
+The `3T` arm is worth one more line because it is new here and it is not
+degenerate everywhere: at **sc2** it reads cap **2 796** against the shipped
+arm's **814** — a 3.4× interior value, not a clamp — and it costs nothing in
+goodput (9 860 vs 9 392, +5.0%) while raising the single-path zero-fraction
+43.8% vs 15.8%. At N = 1 the span term is identically zero by arithmetic
+(pinned by `the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant`),
+so that number is the window + slack terms alone.
+
+### WHAT IS PINNED, AND WHERE
+
+Six always-on tests in `store_cap_sf_bench.rs`, all local, no engine code
+(32 passing, 0 failing, 12 `#[ignore]`d benches not run):
+
+* `sack_snapshots_subsume_and_the_union_is_the_newest` — the release law's two
+  helpers against the ENGINE's own unit fixture (`net/mod.rs:8758-8771`), the
+  retained-subset clamp (`net/mod.rs:3376`), the cumulative prune
+  (`:3387-3389`), and the snapshot-subsumption identity that makes the
+  sender's union of reports equal to the newest one.
+* `coupling_axis_executes_and_unacked_is_the_published_bench` — MEASUREMENT
+  DISCIPLINE 1: `Store::Unacked` bit-identical (zero, short, delivered, retx,
+  wire all equal), and `Store::Span` actually producing span, marks and a
+  stalled frontier.
+* `the_frontier_span_is_parked_at_the_skewed_cell_and_not_at_the_symmetric_one`
+  — the marks are a subset of the span by construction, and the skewed cell
+  cannot stall less often than the symmetric one.
+* `the_frontier_span_returns_to_the_unacked_count_through_the_release_law` —
+  **THE REFUTATION, BOUNDED**: span > 2× the operand, operand within 10% of
+  the unacked count, operand within 15% of the cap.
+* `the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals`
+  — **THE ATTRIBUTION, BOUNDED**: Σ`cwnd` in (2×, 12×) the wire's own measured
+  Σ-anchor at both duals, and Σ`in_flight` under it.
+* `the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant` — the
+  candidate is `net::three_term_store_cap` itself, its span term is `rate_fast
+  × (RTprop_max − RTprop_min)` and identically 0 at N = 1 with no path-count
+  predicate, and a cold tick falls back to the configured chain verbatim.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Whether the wire's Σ`cwnd` is near its anchor.** The bench's is measured;
+  the wire's is INFERRED from the anchor being the cwnd floor. No `cwnd` gauge
+  was read from any L1 log here, and none exists in the pooled form this
+  comparison would need. That is the single weakest link in FINDING 2 and it is
+  named rather than smoothed.
+* **Whether fixing the bench's standing queue would close the gap.** It is the
+  named next step, not a result. The link model is `Link::send_resolved`
+  (serialisation into an unbounded queue); making it match the wire's ≈1×
+  RTprop is a bench change with its own pre-registration, and this section did
+  not take it.
+* **Why c7's A arm sits at 36–39%.** Measured a fourth time on a fourth axis,
+  explained none of them. The coupling model ELIMINATES itself as the cause —
+  the third mechanism to eliminate itself at this cell, after the measured ack
+  stream and the anchor era. Its short-set fraction is now also measured
+  (48.3% against the wire's 3.7%), which is a sharper statement of the same
+  defect and is what a successor should target.
+* **Any candidate conclusion.** Conditioned on the verdict; the condition was
+  not met.
+* **Any L1 number.** No VM was run and no L1 figure re-derived; every wire
+  number above is cited to the section that measured it.
+
+### THE HANDOVER — the next suspect, named
+
+**RANK 1: THE BENCH'S STANDING QUEUE, because it is now load-bearing and it is
+the last un-fixed input in the loop.** The bench's link builds 2.4–5.7× RTprop
+of queue where the wire's cells read ≈1×; that inflation reaches `available()`
+through `min_rtt → anchor → cwnd floor`, and Σ`cwnd` is the quantity FINDING 2
+identifies as the first divergence. It is a bench change, it needs no VM, and
+unlike every suspect before it, it has a measured target: Σ`cwnd`/Σ-anchor must
+come down from 3.6–6.6× toward ~1×. **Everything else in the loop is now
+either validated (the ack stream, the floor, the marginal, the cap arithmetic,
+the store law) or eliminated (the ack era, the accounting axis's traffic level,
+the coupling model, the `ce/cr` contamination by sign).**
+
+**RANK 2: THE ONE VM READING THAT WOULD SETTLE IT** — a pooled `cwnd` gauge at
+the duals, beside the `occcap` the ledgers already carry. FINDING 2 infers the
+wire's Σ`cwnd` from the anchor floor; one DIAG column would measure it, and it
+is the only number that can convert this attribution from an inference into a
+comparison. It is engine code and it was not built here.
+
+**RANK 3 (unchanged): the real GE channel.**
+
+### GATES
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default and no law is
+touched by this branch; the engine tree is byte-identical to main@`275d28b`.
+`--lib` **402 passed** · `raptorpath-math` 59+19+22+4+4+3+25 = **136 passed** ·
+`--doc` 0 (no doctests) · `store_cap_bench` **4 passed** (3 `#[ignore]`d) ·
+`store_cap_sf_bench` **32 passed, 0 failed** (12 `#[ignore]`d benches not run).
+`gate_suite` not required — no engine code changed. Determinism verified across
+three separate processes on the always-on suite and two on the coupling chain
+readout.
