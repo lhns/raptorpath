@@ -23636,3 +23636,496 @@ pre-registration at 0db2322 is untouched. Gates on this tree: cargo
 `-p raptorpath --lib` 392, `-p raptorpath-math`, `--doc` — all green
 (drivers/parsers/docs only; no engine code changed, so `gate_suite`
 was not run, per the dispatch's own scope note).
+
+## Store-Cap Unification — ATTRIBUTION + FLIP BATTERY — PRE-REGISTRATION (2026-08-11) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any run, in its OWN commit. Branch `feat/unified-flip` from main@9f6e56b (the `RWM_HONEST_ANCHOR`-DEFAULT-ON era — every arm below inherits it unless explicitly `=0`). GOAL "HONEST INPUTS", final open item: the flip battery's named missing measurement ("A+U vs H+U at c8, n ≥ 8, both seeds, to attribute why the honest anchor neutralizes the −19.6% brake-removal harm"). Per the standing rule, NO battery flips its own default: the deliverable is the `RWM_STORE_CAP_UNIFIED` recommendation with its noise bounds, written so a separate, trivial flip commit can cite it.
+
+Drivers `tools/l1/uni_battery.sh` + `uni_all.sh` + `uni_report.py` are
+committed at eaedb19, BEFORE this block's commit and BEFORE any run;
+`flip_parse.py` (the instrument the flip-battery verdicts were read off)
+is REUSED BYTE-IDENTICAL so numbers pool across sessions without a
+second dialect. No engine code changes on this branch: every gauge the
+battery reads (`[SF]`, `[GATES]` five-wide, the ACTIVE echoes,
+`win=occ/cap`, `wait[]`, the CPU gauge, capboot) already ships.
+
+### WHY THIS BATTERY DECIDES THE GOAL'S LAST CRITERION
+
+The goal requires the honest-rate arm at parity with the shipped
+default at c1. On the new default (honest anchor ON) the honest-rate
+arm reads ~0.87–0.88 — and the flip battery measured that this gap is
+exactly the `active_paths()` store-cap cliff, which taxes the SHIPPED
+default too (arm A capboot 28.3–29.5% at c1, occcap_p50 535 against
+the law's ~1024). `RWM_STORE_CAP_UNIFIED` removes the cliff (capboot →
+0.0%, DHU/A 1.227/1.259). If U earns its flip, the shipped baseline
+becomes cliff-free and the honest arm sits at parity against it. What
+blocks U's flip is ONE unattributed interaction: the store-cap battery
+measured A+U removing a needed brake at c8 (−19.6%, s7, on the
+legacy-fold default of its era), while the flip battery's F5 measured
+c8 CLEAN under U with the honest anchor in the composition — "appears
+to neutralize" is not evidence, so this battery buys the attribution.
+
+### ARMS (same-session interleaved per cell per rep, same binary; ALL on the new default stack)
+
+| arm | env | role |
+|---|---|---|
+| A | (unset) | the shipped default (HA resolves 1) |
+| AU | `RWM_STORE_CAP_UNIFIED=1` | the flip candidate — what a default user would get |
+| AL | `RWM_HONEST_ANCHOR=0` | the legacy-fold control: pins what the OLD store-cap battery's baseline was, in THIS session's era |
+| ALU | `RWM_HONEST_ANCHOR=0 RWM_STORE_CAP_UNIFIED=1` | reproduces the OLD battery's A+U arm — must land in the −19.6% class at c8 or the era has moved and THAT is the finding |
+| RU | `RWM_PLAIN_RS=1 RWM_STORE_CAP_UNIFIED=1` (c1 ONLY) | the goal's criterion-1 reader: the honest-rate arm on the would-be new default, scored ONLY for parity vs AU — never for the U flip |
+
+RU exists because the deliverable must state the post-flip reading of
+criterion 1 (the honest arm vs the new shipped default at c1) WITH a
+same-session noise bound; reading it across sessions from the flip
+battery's DHU would import the documented 2.3× same-nominal-config
+cross-session drift. RU = the flip battery's DHU re-expressed on the
+new default (HA now inherited). It contributes nothing to U1–U5.
+
+### CELLS AND n (sized to the measured σ, never the hoped-for one)
+
+c8 (topo c2/c3 dual, 25 MB) **n = 8, THE DECISION CELL** — where the
+−19.6% lived (old battery s7: 60.9±25.3 vs 75.8±9.4, per-rep collapse
+modes 16.6/40.5/55.0). c1 (topo c1/c1 single, 400 MB) **n = 12** — the
+payoff cell; A's σ class 4–6 with a documented intermittent collapse
+rep (s7 σ 46-class once), U-arm σ class 4–12. sc2 (topo c2/c2 single,
+100 MB) **n = 8** — the latency-survival cell. c7 (topo c2/c2 dual,
+200 MB) **n = 8** — U's other known effect surface (old battery
+c7-s42 −6.5% carried by one 79.19 collapse rep). Both seeds (42, 7).
+Seed-7 aborts (the documented topo-ping class: 9.7–38.9% at
+sc2/c7/c8, 0% at c1, 0% on s42) are handled by SYMMETRIC top-up
+sessions only — all five arms — pooled separately, never silently
+merged. abort ≠ DNF ≠ INSTRUMENT-FAIL, exactly as flip_parse.py
+encodes them.
+
+**Headroom (discipline 16)** is RE-MEASURED same-session from arm-A's
+own `tc -s qdisc` captures and printed beside every target. The
+prior-session values that gate the claims below: c1 23.4% util
+(throughput targets PERMITTED), sc2 98.0/97.9% (parity + latency
+survival ONLY), c7 96.1/96.3% (parity floor ONLY — no gain claim is
+made or scoreable), c8 76.8/69.7% (both directions scoreable; the
+clauses below are regression-shaped anyway). If the same-session
+re-measure contradicts a permission, the affected target is VOID for
+that seed and reported, not re-scoped.
+
+### THE FALSIFIERS (both directions; U flips only if U1–U5 ALL pass)
+
+* **U1 — c8, the decision clause:** AU/A ≥ 0.95 (point, means) on
+  BOTH seeds AND AU not > 2σ_pooled below A on either seed. Per-rep
+  values printed; collapse-mode reps (< 60 Mbit/s) counted per arm.
+  If U1 fails, U does NOT flip, the goal's criterion 1 stays honestly
+  unmet, and the named successor is the pooled ceiling composed with
+  the unified set (the store-cap battery's own successor) — not a
+  re-run.
+* **U2 — c1, the payoff clause:** AU − A > 2σ_pooled (discipline 5
+  pooled form, the same statistic every prior battery scored) on BOTH
+  seeds, direction UP. The banked class is +15.8/+24.8% (old battery,
+  legacy era) and +22.7/+25.9% (flip battery's DHU, honest era);
+  against A σ 5-class and AU σ 4–12-class this clears 2σ_pooled ≈ 26
+  with 1.3–2× headroom — UNLESS A's s7 intermittent collapse rep
+  fires and inflates σ_A, in which case U2 can fail on a real gain;
+  that outcome is a sizing fact, reported as such (expected-wrong 2).
+* **U3 — sc2, parity + latency survival:** AU within 2σ_pooled of A
+  goodput AND probe p50 not > 2σ WORSE than A, both seeds. The old
+  battery read −0.4% (n=8×2 seeds); the P0 smoke once read −2.4% at
+  n=1. If the −2.4% class is real at n=8 it will exceed 2σ on sc2's
+  tight σ (~1) and U3 fails honestly — U's own cost, reported.
+* **U4 — CPU:** AU sender CPU/byte ≤ 1.05×A (point band) at c1 and
+  c7, both seeds. The flip battery's U-carrying arms read 0.93–0.98×A
+  at c1; a breach here means headroom absorbed a tax and the
+  mechanism claim is withdrawn at that cell.
+* **U5 — c7, no-regression:** AU not > 2σ_pooled below A on either
+  seed. (No gain claim exists at 3–4% headroom and none is made.)
+
+### THE ATTRIBUTION (scored INDEPENDENTLY of the flip clauses)
+
+**ATTR-0, the precondition:** ALU must REPRODUCE the c8 harm class —
+ALU > 2σ_pooled below AL, OR point ALU/AL ≤ 0.85, on ≥ 1 seed, with
+per-rep values printed (the old battery's signature was a collapse
+MODE, not a shift: reps at 16.6/40.5/55.0 beside 80–84). If ALU does
+NOT reproduce it, the old harm is ERA-DEAD: the attribution is not
+scorable, this is reported explicitly as the finding, and U's flip
+case rests on the fresh A/AU contrast (U1–U5) alone — stated in the
+results in exactly those words.
+
+**ATTR-1, the answer (only if ATTR-0 fired):** does the harm vanish
+under the honest anchor? YES = U1 passed while ATTR-0 fired — the
+honest anchor is the neutralizer, and the mechanism hypothesis from
+the flip battery's F5 ("the honest anchor's lower cwnd floor changes
+the saturation state the brake acted on") plus the ledger's CPU-brake
+hypothesis ("the fold's CPU tax was itself the brake — slowing the
+sender masked the over-exposure U permits") get their test on the
+gauges, pre-stated:
+  * CPU-brake: predicts AL/ALU sender CPU/byte measurably ABOVE
+    A/AU at c8 (the fold's tax present in the legacy arms). On the
+    per-ACK feed the fold is cheap (flip battery H-vs-A read ≤ 1.08
+    point everywhere), so this hypothesis PREDICTS A SMALL SIGNAL and
+    is expected to lose unless the c8 gauge says otherwise.
+  * Saturation-state: predicts the `[SF]` population differs between
+    the eras — AL/ALU E lower / zero% higher than A/AU at c8 (the
+    legacy over-reading anchor drives cwnd/in-flight into the filter
+    more often), with the harm's own signature (retx, ping p99
+    tails, wait[] shifts, occcap) riding the ALU arm only.
+  NO = AU also shows the harm (U1 failed) — the honest anchor was
+  never the neutralizer (the flip battery's clean c8 belonged to the
+  RS sender or to chance), U does not flip, and the report says so as
+  cleanly as a confirmation.
+
+**ERA — the AL/A pin, everywhere:** `RWM_HONEST_ANCHOR` selects a
+value-identical statistic, so AL/A beyond 2σ_pooled at any cell is an
+INSTRUMENT ALARM (the session's noise model is broken there), not a
+result — the flip battery's F7 rule, mirrored. AL/A also pins what
+"the old battery's baseline" reads in this session's era, which is
+what makes ATTR-0's class comparison honest.
+
+**C1RD — criterion 1's post-flip reading:** RU within 2σ_pooled of AU
+at c1, both seeds. This number (RU/AU with its bound) is what closes
+the goal if the recommendation is ON; expected class 0.95–1.05 (the
+flip battery's DHU sat +22.7/+25.9% over A exactly as AU's banked
+class does). If RU/AU fails parity while U1–U5 pass, the goal's
+criterion 1 is NOT closed by the flip and the residual is named — no
+rescue, no re-scope.
+
+### LIVENESS SET (asserted per invocation before any number is read)
+
+Two-sided `[GATES]` on ALL FIVE gates (`RWM_THREE_TERM`,
+`RWM_PLAIN_RS`, `RWM_HONEST_ANCHOR`, `RWM_HONEST_K`,
+`RWM_STORE_CAP_UNIFIED`), both endpoints, scoped to the `[GATES]`
+line; the honest-anchor ACTIVE echo PRESENT exactly on A/AU/RU (the
+default-ON era's resolved value) and ABSENT on AL/ALU; the
+`"unified store-cap path set ACTIVE"` echo PRESENT exactly on
+AU/ALU/RU and ABSENT elsewhere; NO three-term/honest-K echo anywhere
+(contamination); the `CPU: CPUSRV=/CPUCLI=` gauge on every invocation
+(absent = INSTRUMENT-FAIL); the `[SF]` line on every live invocation
+(absent = INSTRUMENT-FAIL); `tc -s qdisc` captured every invocation;
+`RWM_DIAG=1` + `RWM_LATPROBE=1` everywhere. An arm whose echo set is
+wrong is VOID and re-run symmetrically, not explained. Era honesty:
+binary sha256 (ONE binary, all arms, built on the VM from THIS
+commit's tree, stale binary removed first, CRLF-converted), source
+commit, kernel, CPU flags, load at launch — recorded in the ledger
+header; launched detached with a completion sentinel and not polled
+(discipline 13). A 1-rep disclosed instrument smoke (c8 all four
+attribution arms + c1 RU) runs before the battery to validate the
+echo routing; no scored number is read from it.
+
+### WHERE I EXPECT THIS TO BE WRONG (a pre-registration that predicts success everywhere is worthless)
+
+1. **ATTR-0 fails to fire.** The −19.6% was one seed, three collapse
+   reps of seven, at a cell with a documented abort class; a fresh
+   n = 8 may read ALU/AL ≈ 0.95 both seeds. Then the harm is
+   era-dead, the attribution question dissolves, and the flip rides
+   U1–U5 alone — the pre-registration commits NOW to calling that
+   outcome exactly what it is, an era finding, not a pass.
+2. **A's c1-s7 intermittent collapse rep** (measured on arm A itself
+   twice: store-cap battery 93.5, flip battery era) inflates σ_A and
+   U2 fails on s7 despite a real mean gain. Honest no-flip (or
+   needs-more) with the sizing fact stated.
+3. **sc2's −2.4% class is real.** The P0 smoke saw it at n = 1; the
+   battery at n = 8 saw −0.4%. If n = 8 in THIS era reads it beyond
+   2σ, U3 fails and U carries a named single-path cost — OFF with
+   reason, not needs-more.
+4. **The c8 gauges refuse to discriminate** (both hypotheses'
+   signatures present, or neither): the attribution then reports the
+   arm-level answer (WHERE the harm lives) without a mechanism
+   verdict, and the mechanism question goes to a component bench,
+   not to another battery rep.
+
+### WHAT WOULD CHANGE DEFAULTS (the deliverable's shape, fixed now)
+
+This battery flips NOTHING. Its deliverable is the
+`RWM_STORE_CAP_UNIFIED` recommendation — ship ON / ship OFF with
+reason / needs-more with the named missing measurement — with noise
+bounds, per-seed and pooled, plus the attribution answer. ON requires
+U1+U2+U3+U4+U5 all green, both seeds, in THIS battery (the old
+battery's pre-registered no-flip on A+U stands unless U1 reads clean
+here at n ≥ 8 both seeds — this battery IS the named successor
+measurement that can supersede it). If ON: the flip commit contains
+the `gates.rs` default flip to `true` + the default-stack assertion
+flip + the two-sided echo-test flip + a register row + paper §16.52;
+and the results section states the post-flip criterion-1 reading
+(RU vs AU at c1, noise bound) — the number that closes the goal. If
+ATTR-0 fired and U1 failed, OFF-with-reason (the harm is real and the
+honest anchor does not neutralize it); the successor stays the pooled
+ceiling composed with the unified set, already named.
+
+## Store-Cap Unification — RESULTS (2026-08-11, `feat/unified-flip-results` from bbd863d) — RECOMMENDATION: `RWM_STORE_CAP_UNIFIED` **OFF, with reason**. ATTR-0 FIRED and U1 FAILED — the pre-registration's own OFF branch, taken verbatim.
+
+Scored against the PRE-REGISTRATION block above, which was committed
+before any run and is not modified by this section. No constant was
+tuned, no cell rescued, no prediction added after the fact.
+
+### THE SESSIONS AND THEIR POOLS (kept separate, as pre-registered)
+
+| pool | ledger | window | invocations | live | aborts | VOID | DNF | instrument-fail |
+|---|---|---|---|---|---|---|---|---|
+| MAIN battery | `uniflip-uni-s42.log`, `uniflip-uni-s7.log` | 11:29:16Z–12:26:54Z | 312 | 272 | 40 (12.8%) | 0 | 0 | 0 |
+| s7 TOP-UP | `uniflip-unitop-s7.log` | 12:32:24Z–13:01:31Z | 240 | 138 | 102 (42.5%) | 0 | 0 | 0 |
+
+Both in-era: ONE binary, sha256 `36c109677cb2e50f…`, source `bbd863d`,
+kernel 7.0.14-101.fc43, Xeon E5-2650 v3, aes/avx2/pclmulqdq. Liveness
+was audited BEFORE any number was read and is clean in both pools:
+two-sided five-gate `[GATES]` echoes correct on every scored
+invocation (VOID = 0), the HA ACTIVE echo present exactly on A/AU/RU
+and absent on AL/ALU, the U echo present exactly on AU/ALU/RU, no
+3T/HK echo anywhere, the CPU gauge and `[SF]` line present on every
+live invocation. The only flagged lines in either pool are
+QCAP-MISSING, and in both pools they are the SET-IDENTICAL invocations
+to the aborts (checked, not assumed) — an aborted run captures no
+qdisc, so that is the abort's own footprint, not a second failure.
+abort ≠ DNF ≠ INSTRUMENT-FAIL held exactly as `flip_parse.py` encodes
+them.
+
+**Why a top-up existed.** Every abort in both pools is seed 7 at
+sc2/c7/c8 (zero at c1, zero anywhere on s42) — the documented
+topo-ping class. In the MAIN battery it left live n at seed 7 BELOW
+the pre-registered n = 8 (sc2 A6/AU7/AL5/ALU3; c7 A1/AU7/AL6/ALU5;
+**c8 A4/AU2/AL4/ALU6** — the decision cell, with U1 resting on n = 2).
+`tools/l1/uni_topup.sh` bought the n back symmetrically: same rep count
+for EVERY arm at EVERY deficient cell, the full arm list passed so the
+driver's own `arm_cells` rule scoped RU rather than a hand-picked
+selection, REPS = 20 sized to the MEASURED 41.7% abort rate (the
+top-up then ran 42.5% — the sizing held).
+
+**Scoring vehicle** (top-up pooled separately, never silently merged):
+s42 every cell from MAIN; s7 c1 from MAIN (n = 12, zero aborts); s7
+sc2/c7/c8 from the TOP-UP (n ≥ 10, complete). Live n scored:
+
+| cell | s42 (MAIN) | s7 (TOP-UP, except c1 = MAIN) |
+|---|---|---|
+| c1 | A12 AU12 AL12 ALU12 RU12 | A12 AU12 AL12 ALU12 RU12 |
+| sc2 | A8 AU8 AL8 ALU8 | A12 AU14 AL10 ALU10 |
+| c7 | A8 AU8 AL8 ALU8 | A13 AU11 AL11 ALU11 |
+| c8 | A8 AU8 AL8 ALU8 | A11 AU15 AL10 ALU10 |
+
+Note for anyone re-reading the ledgers: `uni_battery.sh`'s own
+`ARMCOUNT` tally counts PARSED rows, aborts included, so it prints
+`n=8/8` everywhere at seed 7 and is NOT abort-aware. The live counts
+above come from `uni_report.py`.
+
+**Headroom (discipline 16), re-measured same-session from arm A's own
+`tc -s qdisc`:** c1 24.7/24.9% util (throughput targets PERMITTED),
+sc2 98.0/98.4% (parity + latency only), c7 96.4/96.0% (parity floor
+only), c8 79.1/79.9% (both directions scoreable). Every prior-session
+permission the pre-registration gated the claims on is re-confirmed;
+no target is VOID for headroom.
+
+### U1–U5, SCORED VERBATIM
+
+| clause | pre-registered bar | s42 | s7 | pooled | verdict |
+|---|---|---|---|---|---|
+| **U1** c8 | AU/A ≥ 0.95 point, BOTH seeds, and not > 2σ down | **0.967** (d −2.6, 2σ 37.1) | **0.895** (d −8.6, 2σ 34.2) | **0.921** (d −6.4, 2σ 35.8) | **FAIL** (point bar, s7 + pooled) |
+| **U2** c1 | AU − A > 2σ_pooled UP, BOTH seeds | +29.9 = **1.132×** (2σ 11.0) EXCEEDS | +28.6 = **1.126×** (2σ 19.2) EXCEEDS | +29.2 = **1.129×** (2σ 15.7) EXCEEDS | **PASS** |
+| **U3** sc2 | goodput within 2σ AND probe p50 not > 2σ worse | 1.003 (d +0.3, 2σ 2.5); p50 90.7→94.4 (2σ 30.7) | 0.998 (d −0.2, 2σ 3.0); p50 98.1→95.5 (better) | 1.000 (d +0.0, 2σ 2.8) | **PASS** |
+| **U4** CPU | AU CPU/byte ≤ 1.05×A at c1 AND c7 | c1 1.033, c7 0.996 | c1 1.032, c7 1.003 | c1 1.032, c7 1.000 | **PASS** |
+| **U5** c7 | AU not > 2σ below A, either seed | 0.999 (d −0.2, 2σ 6.0) | 0.997 (d −0.6, 2σ 7.1) | 0.997 (d −0.5, 2σ 6.9) | **PASS** |
+
+U1 is the sole failure and it is at the decision cell. Per the
+pre-registration ("U flips only if U1–U5 ALL pass"), that is
+dispositive on its own.
+
+**The honest shape of U1's failure.** U1 fails its POINT bar (0.895 on
+s7, 0.921 pooled, against ≥ 0.95); it does NOT fail the 2σ arm — the
+c8 drop is not resolved as significant. That is not a rescue and must
+not be read as one, because of a property of the statistic: discipline
+5's `2σ_pooled` is built from population σ, so it is a per-rep
+DISPERSION band, not a standard error on the mean — **it does not
+tighten with n.** At c8 that band is 41.7–46.1% of the mean, so no 2σ
+verdict at this cell can ever resolve a 5–10% mean shift, in either
+direction, at any n. The pre-registration evidently knew the cell:
+U1's primary test is a point bar and ATTR-0 carries an OR-point clause
+(≤ 0.85). Both fired on their point arms. The corollary is stated
+plainly rather than buried: **c8 goodput alone cannot carry a
+significance claim in this design**, which is exactly why the
+mechanism gauges below — which ARE 2σ-resolved — decide the
+attribution.
+
+c8 per-rep goodput, both seeds, the collapse mode printed as required:
+
+```
+ s42 A   [54.3, 71.3, 73.1, 85.9, 86.6, 87.5, 90.6, 95.3]                collapse<60: 1
+ s42 AU  [54.8, 57.9, 72.9, 82.4, 85.9, 86.8, 89.5, 93.4]                collapse<60: 2
+ s42 AL  [50.8, 53.8, 61.0, 69.2, 70.3, 84.5, 87.7, 96.0]                collapse<60: 2
+ s42 ALU [66.8, 68.5, 69.0, 75.5, 77.6, 83.8, 84.2, 94.2]                collapse<60: 0
+ s7  A   [60.3, 68.3, 77.1, 81.5, 82.0, 83.2, 84.7, 86.0, 90.0, 93.1, 95.2]        collapse<60: 0
+ s7  AU  [34.7, 61.2, 61.4, 65.5, 67.7, 69.7, 70.9, 74.4, 77.9, 83.5,
+          86.4, 86.6, 86.8, 86.8, 87.4]                                            collapse<60: 1
+ s7  AL  [63.5, 68.5, 70.4, 75.5, 81.1, 81.4, 87.9, 90.3, 94.2, 97.5]              collapse<60: 0
+ s7  ALU [18.8, 49.5, 64.5, 65.2, 72.2, 73.4, 79.8, 80.0, 81.7, 83.3]              collapse<60: 2
+```
+
+Pooled collapse-mode rate (< 60 Mbit/s): A 1/19 = 5.3%, AL 2/18 =
+11.1%, AU 3/23 = 13.0%, ALU 2/18 = 11.1%. U raises it; the two eras do
+not separate.
+
+### ATTR-0 — FIRED (and only at honest n)
+
+ALU/AL at c8: s42 **1.081** (not reproduced), s7 **0.825** — at or
+below the pre-registered point bar of 0.85, with the old battery's
+actual signature present, a collapse MODE rather than a shift: reps at
+**18.8 and 49.5** beside 80–83. The pre-registration requires the
+class on ≥ 1 seed. **ATTR-0 fired.** The −19.6% class of the store-cap
+triplication battery is NOT era-dead; expected-wrong 1 does not fire.
+
+This verdict exists only because the top-up ran. The MAIN battery's
+under-n s7 pool (ALU n = 6, AL n = 4) read ALU/AL = 0.881 → "NOT
+REPRODUCED"; at honest n it reads 0.825 → reproduced, and the two
+collapse reps that carry it are in the top-up pool. Had this battery
+been scored at the n the aborts left, it would have reported the
+era-dead branch and recommended a flip that the evidence does not
+support. Recorded as a measurement-discipline result in its own right.
+
+### ATTR-1 — the answer is **NO**. The honest anchor is not the neutralizer.
+
+U1 failed: AU carries the c8 harm too (0.895 on s7, 0.921 pooled, with
+its own collapse rep at 34.7). Per the pre-registration's own wording,
+"NO = AU also shows the harm (U1 failed) — the honest anchor was never
+the neutralizer (the flip battery's clean c8 belonged to the RS sender
+or to chance), U does not flip, and the report says so as cleanly as a
+confirmation." That is the finding. §16.50's F5 "appears to
+neutralize" was n, not a mechanism.
+
+The gauges decide it independently of the goodput means, and they
+discriminate cleanly — expected-wrong 4 does not fire. The question
+put to them was whether the c8 signature is keyed to the ERA
+(A|AU vs AL|ALU) or to U (A|AL vs AU|ALU). The `[SF]` zero-fraction —
+`active_paths()` EMPTY at refresh — answers with 2σ to spare:
+
+| contrast | meaning | s42 | s7 |
+|---|---|---|---|
+| AU/A | U effect, honest era | 4.2% → 31.3%, d **+27.1pp**, 2σ 25.3 **EXCEEDS** | 3.8% → 30.4%, d **+26.6pp**, 2σ 19.7 **EXCEEDS** |
+| ALU/AL | U effect, legacy era | 7.4% → 28.9%, d **+21.5pp**, 2σ 19.3 **EXCEEDS** | 3.7% → 28.1%, d **+24.5pp**, 2σ 20.7 **EXCEEDS** |
+| AL/A | ERA effect, no U | 4.2% → 7.4%, d +3.2pp, 2σ 10.6 within | 3.8% → 3.7%, d −0.2pp, 2σ 5.4 within |
+| ALU/AU | ERA effect, with U | 31.3% → 28.9%, d −2.4pp, 2σ 30.0 within | 30.4% → 28.1%, d −2.3pp, 2σ 28.1 within |
+
+**The split is U-keyed, on both seeds, in both eras, past 2σ; the era
+contrasts are inside noise on both seeds.** U roughly EIGHT-FOLDS the
+rate at which `active_paths()` is empty at refresh at c8 (≈ 4% → ≈
+30%) and the honest anchor does not touch that. `[SF]` E moves the
+same way (0.82 → 0.60 s7, 0.74 → 0.58 s42, era contrasts ≤ 0.03), and
+retx rides U identically in both eras (+801 s7 AU/A, +797 s7 ALU/AL;
+era contrasts +95/+119) though retx's own 2σ band does not resolve it.
+
+**The pre-stated saturation-state hypothesis is REFUTED AS STATED.**
+It predicted "AL/ALU E lower / zero% higher than A/AU" — an ERA-keyed
+difference. The measured difference is not era-keyed at all. What the
+gauge shows instead is that U itself changes the c8 saturation state,
+identically with or without the honest anchor.
+
+**The pre-stated CPU-brake hypothesis is REFUTED**, as the
+pre-registration expected it to be ("PREDICTS A SMALL SIGNAL and is
+expected to lose"). It required the fold's tax to be present in the
+legacy arms; measured c8 AL/A CPU/byte is 1.031 pooled (1.044 s42,
+1.023 s7) and c1 AL/A is 1.006 — there is no fold tax to be a brake.
+The CPU/byte elevation at c8 rides U, not the era (AU/A 1.116 pooled),
+and even that is CONFOUNDED and is not claimed as a tax: at fixed
+bytes a collapsing transfer runs longer and accrues more sender CPU,
+so the c8 CPU elevation is at least partly an EFFECT of the harm.
+(c8 is outside U4's pre-registered scope, which named c1 and c7 only;
+it is reported as a gauge and is not scored as a U4 breach.)
+
+**Where the harm is NOT.** capboot is **0.0% in all four arms at c8**,
+both seeds — the CONSUMED store-cap cliff is not the c8 mechanism at
+all. It is the c1 PAYOFF mechanism, and there it is exactly as §16.50
+measured: A 30.1/33.0% and AL 32.0/27.7% against AU/ALU/RU 0.0%, with
+occcap_p50 ≈ 535–553 on the capped arms. So U's c1 gain and U's c8
+harm are two different mechanisms, and removing the cliff at c1 does
+not buy the c8 behaviour — they must be judged separately, which is
+what U1 and U2 do.
+
+### ERA PIN — no instrument alarm
+
+AL/A is within 2σ_pooled at EVERY cell on BOTH seeds (c1 0.993/0.987,
+sc2 1.008/1.004, c7 1.005/0.991, c8 0.889/0.989). The value-identical
+statistic reads value-identical; F7's rule is satisfied and the
+session's noise model is intact. (c8's 0.889 on s42 is a wide-cell
+point excursion well inside that cell's 2σ ≈ 40 — recorded, not
+promoted to a result, per the same rule that forbids promoting U1's
+2σ-unresolved point drop to a significance claim.)
+
+### C1RD — criterion 1's post-flip reading (moot, but measured and reported)
+
+RU/AU at c1: s42 **1.078** (d +20.0, 2σ 25.4, within), s7 **1.092**
+(d +23.5, 2σ 27.4, within), pooled **1.085** (d +21.7, 2σ 26.6,
+within) → **PARITY** by the pre-registered test, on both seeds. It is
+a MARGINAL parity and is reported as such: |d| is 82% of the bound,
+and the point estimate has the honest-rate arm 8.5% ABOVE the
+would-be new default rather than at it. RU/A pooled = 1.225 (d +50.9,
+2σ 24.3, EXCEEDS).
+
+This number would have closed the goal's criterion 1 had U flipped. U
+does not flip, so **criterion 1 is NOT closed by this battery**, and
+the reason is now named precisely: the blocker is not the honest-rate
+arm's parity — that clause passes — it is the c8 store-cap harm in
+the enabler U. No rescue and no re-scope: on the shipped default the
+honest-rate arm still reads the ~0.87–0.88 of §16.50, and this
+battery did not re-measure it (there is no U-free RS arm here by
+design; RU carries U).
+
+### THE RECOMMENDATION: `RWM_STORE_CAP_UNIFIED` **OFF, with reason**
+
+The pre-registration fixed this branch in advance: "If ATTR-0 fired
+and U1 failed, OFF-with-reason (the harm is real and the honest anchor
+does not neutralize it)." ATTR-0 fired; U1 failed; OFF. The gate stays
+`default false`; nothing in this battery flips a default, and no flip
+commit should cite this section as authorising one.
+
+The reason, stated so a future battery can attack it: **U buys ~+13%
+at c1 by removing the consumed store-cap cliff (capboot 30% → 0%, U2
+green past 2σ on both seeds) and pays for it at c8 by emptying
+`active_paths()` at refresh ~8× more often (4% → 30%, past 2σ on both
+seeds, in BOTH eras), which shows up as a −8 to −11% point drop and a
+13% collapse-mode rate that the cell's dispersion cannot resolve as
+significant.** The trade is real, it is not an artifact of the legacy
+fold, and the honest anchor does not mediate it.
+
+Costs U was cleared of, so the successor does not re-litigate them:
+sc2 parity and latency survival (U3 green, pooled 1.000 — the P0
+smoke's −2.4% class did NOT reproduce at n = 20+, expected-wrong 3
+does not fire), c7 no-regression (U5 green), CPU/byte at c1 and c7
+(U4 green, 1.032/1.000), and delivered probe p50 at every cell (AU
+within 2σ of A everywhere, and better than A at c8).
+
+**Successor, already named by the pre-registration and unchanged:**
+the pooled ceiling composed with the unified set — the store-cap
+battery's own named successor. This battery adds one requirement to
+it: any c8 claim must be scored on a statistic that can resolve the
+effect. Discipline 5's 2σ_pooled cannot, at that cell, at any n. The
+named measurement is therefore **the `[SF]` zero-fraction as the
+primary endpoint at c8** (it resolved at 2σ on both seeds at n = 10)
+with goodput as the corroborating point reading — plus a mechanism
+bench, not another battery rep, for WHY the unified path set empties
+`active_paths()` at refresh under a c2/c3 dual topology.
+
+### THE EXPECTED-WRONG SCORECARD (the pre-registration's own list)
+
+1. *ATTR-0 fails to fire / harm is era-dead* — **did not fire as
+   feared, but only just, and only because of the top-up**: not
+   reproduced on s42 (1.081), reproduced on s7 (0.825 with the
+   collapse mode). At the aborted n it would have read "era-dead".
+2. *A's c1-s7 collapse rep inflates σ_A and U2 fails on a real gain* —
+   **did not happen.** U2 passed both seeds with 1.5–2.7× headroom
+   over the bound.
+3. *sc2's −2.4% class is real* — **did not happen.** Pooled 1.000.
+4. *The c8 gauges refuse to discriminate* — **did not happen.** The
+   `[SF]` zero-fraction separated U from era at 2σ on both seeds.
+
+So the pre-registration was wrong about 2, 3 and 4, right to worry
+about 1, and its central bet — that the c8 attribution was buyable —
+paid off with the opposite answer to the one the flip battery's F5
+suggested.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Why** U's unified path set empties `active_paths()` at refresh at
+  c8 and not at c1/sc2/c7. The gauge localises the harm; it does not
+  explain it. That goes to a component bench.
+* **Whether the c8 harm is > 5% in truth.** The point estimates say
+  −8 to −11%; the cell's dispersion cannot resolve it; a
+  dispersion-based 2σ never will. Not claimed as significant.
+* **The c8 CPU/byte elevation on U arms** (1.116 pooled) as a tax —
+  confounded with collapse duration at fixed bytes, and outside U4's
+  pre-registered scope.
+* **Criterion 1 on the shipped default** — not re-measured here (no
+  U-free RS arm by design). §16.50's ~0.87–0.88 stands unrefreshed.
+* **Any cross-session pooling** with the store-cap or flip batteries.
+  The documented 2.3× same-nominal-config drift forbids it; every
+  number above is same-session, and the two pools of THIS session are
+  reported separately for the same reason.

@@ -11333,6 +11333,98 @@ composition), `RWM_STORE_CAP_UNIFIED` OFF pending the named c8
 attribution arm, `RWM_THREE_TERM` OFF (F1/F4; its cap is now the c1
 binder — the open derivation question, the window term at ms-RTprop).
 
+### 16.52 The c8 attribution: the store-cap harm is U's own, not the legacy fold's — the honest anchor never neutralized it, and `RWM_STORE_CAP_UNIFIED` stays **OFF** (2026-08-11, `feat/unified-flip-results`; recommendation only, per the no-self-flip rule)
+
+§16.51 left `RWM_STORE_CAP_UNIFIED` OFF "pending the named c8
+attribution arm". This section is that arm, measured. The question was
+sharp: the store-cap triplication battery saw A+U remove a needed
+brake at c8 (−19.6%, s7, on the legacy-fold default of its era), while
+§16.50's F5 saw c8 CLEAN under U with the honest anchor composed in.
+"Appears to neutralize" is not evidence, so a five-arm battery bought
+the attribution — A (shipped), AU (A+U), AL (legacy fold), ALU (the
+old battery's A+U arm re-run in this era), and RU (the honest-rate arm
+on the would-be new default, c1 only, as criterion 1's reader).
+
+**The answer is that the harm belongs to U, in both eras.** ATTR-0
+fired — ALU/AL at c8 reads 0.825 on s7 with the old battery's actual
+signature, a collapse MODE rather than a shift (reps at 18.8 and 49.5
+beside 80–83); the −19.6% class is not era-dead. And AU shows it too:
+AU/A = 0.895 (s7), 0.921 pooled, with its own collapse rep at 34.7. U1
+was pre-registered at ≥ 0.95 point on both seeds, so U1 fails and, by
+the pre-registered rule that U flips only if U1–U5 all pass, U does not
+flip. The honest anchor was never the neutralizer; F5's clean c8 was n,
+not a mechanism.
+
+The mechanism gauge is what makes this an attribution rather than an
+arm-level score, and it discriminates past 2σ where the goodput cannot.
+Asked whether the c8 signature is keyed to the ERA (A|AU vs AL|ALU) or
+to U (A|AL vs AU|ALU), the `[SF]` zero-fraction — `active_paths()`
+EMPTY at refresh — answers unambiguously: the U contrasts move it from
+≈ 4% to ≈ 30% and EXCEED 2σ on both seeds in both eras (AU/A +27.1pp
+s42, +26.6pp s7; ALU/AL +21.5pp s42, +24.5pp s7), while both ERA
+contrasts sit inside noise on both seeds (AL/A +3.2/−0.2pp; ALU/AU
+−2.4/−2.3pp). U roughly eight-folds the empty-refresh rate at c8 and
+the anchor does not touch it. Both pre-stated mechanism hypotheses are
+therefore refuted as written: the saturation-state hypothesis predicted
+an ERA-keyed `[SF]` difference and the difference is not era-keyed at
+all; the CPU-brake hypothesis required the fold's tax to be present in
+the legacy arms and there is no fold tax to be a brake (c8 AL/A
+CPU/byte 1.031, c1 AL/A 1.006).
+
+The cliff and the harm are two different mechanisms, which is why
+removing one does not buy the other. capboot is **0.0% in all four
+arms at c8** — the CONSUMED store-cap cliff of §16.49/§16.50 is simply
+not present there. It is entirely a c1 phenomenon, and at c1 U removes
+it exactly as advertised (A 30.1/33.0% and AL 32.0/27.7% → AU/ALU/RU
+0.0%), which is what U2 measures: +13.2%/+12.6% at c1, past 2σ on both
+seeds. So U's payoff and U's cost live at different cells through
+different mechanisms and have to be judged separately. On this
+evidence the trade is not worth taking by default.
+
+U was cleared on everything else, and those costs need not be
+re-litigated: sc2 parity and latency survival (pooled 1.000 — the P0
+smoke's −2.4% class did not reproduce at n ≥ 20), c7 no-regression
+(0.997), CPU/byte at c1 and c7 (1.032/1.000 against a 1.05 bar), and
+delivered probe p50 within 2σ of A at every cell.
+
+Two methodological results ride along, both worth more than the verdict.
+
+**First, a statistic's limit, stated rather than worked around.**
+Discipline 5's `2σ_pooled` is built from population σ, so it is a
+per-rep dispersion band, not a standard error — it does not tighten
+with n. At c8 that band is 41.7–46.1% of the mean, so no 2σ verdict at
+that cell can resolve a 5–10% mean shift in either direction at any n.
+U1's failure is therefore a POINT failure and is reported as one, with
+the 2σ arm explicitly not invoked in its favour; conversely the c8
+harm is NOT claimed as statistically significant. What carries the
+attribution is the `[SF]` gauge, which resolved at 2σ on both seeds at
+n = 10. Any successor c8 claim should take that gauge as the primary
+endpoint and goodput as corroboration.
+
+**Second, the abort class nearly inverted the verdict.** All aborts in
+both sessions were seed 7 at sc2/c7/c8 (the documented topo-ping
+class), and in the main battery they left the decision cell at
+AU n = 2. Scored there, ALU/AL read 0.881 → "harm NOT reproduced" and
+the era-dead branch would have fired, recommending a flip the evidence
+does not support. A symmetric top-up (same rep count for every arm,
+REPS sized to the measured 41.7% abort rate, its own ledger and
+sentinel, pooled separately) moved it to 0.825 → reproduced, and the
+two collapse reps that carry it are in the top-up pool. The
+pre-registered rule that aborts are repaired symmetrically and never
+silently merged is what preserved the result.
+
+`RWM_STORE_CAP_UNIFIED` accordingly stays **default OFF** with a
+reason on the record rather than a pending question. The successor is
+unchanged from the store-cap battery's own: the pooled ceiling composed
+with the unified set — plus a component bench for WHY the unified path
+set empties `active_paths()` at refresh under a c2/c3 dual topology,
+which the gauge localises but does not explain. Criterion 1 of the
+HONEST INPUTS goal is consequently NOT closed: its post-flip reader RU
+did pass parity against AU (pooled 1.085, |d| 21.7 vs 2σ 26.6 — a
+marginal parity, the honest arm 8.5% above rather than at the
+would-be default), so the blocker is not the honest-rate arm at all;
+it is the c8 harm in the enabler.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
