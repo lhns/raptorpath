@@ -1654,6 +1654,133 @@ fn counter_delta_release_is_conservative_under_loss() {
     }
 }
 
+/// THE MEASURED RESULT, BOUNDED — goal-gate "SF Accounting Axis", FINDING 1.
+///
+/// The metering axis MOVES WHICH CELL THE U-FOLD KEYS TO, and it moves it onto
+/// the cell the wire folds at. This is the one thing three prior sections
+/// could not reproduce and explicitly left unexplained ("c8 SF Mechanism"
+/// FINDING 3, "SF Anchor Suspect" DELIBERATELY NOT CONCLUDED, and the matrix's
+/// anomaly A2).
+///
+/// Absolute, at 3 seeds × 6 s, both directions asserted so the swap cannot be
+/// half-read (the 8-seed × 20 s ensemble that established it is in the
+/// ledger; this is the regression bound, not the evidence):
+///
+///   * with the ledger balanced (`Acct::Off`, the published bench) the fold is
+///     LARGER at the symmetric cell than at c8 — the wrong-cell keying;
+///   * with the ENGINE's ledger it is larger at c8 by > 3× and NULL at c7
+///     (< 2×), which is the wire's own separation (≈7.5× against null);
+///   * and the c8 A-arm's LEVEL falls by more than half, from a > 25% class to
+///     a < 15% class.
+///
+/// What is NOT asserted here, because it did not hold: the c7 A-arm's level.
+/// The pre-registered G1 FAILED at c7 and the verdict stands as NOT
+/// REPRODUCED; see the ledger block. This test bounds exactly what was
+/// measured and no more.
+#[test]
+fn sf_zero_fraction_moves_with_the_metering_axis() {
+    let mean = |geom: &[Spec], arm: Arm, acct: Acct| -> f64 {
+        (0..3u64)
+            .map(|s| simulate_acct(geom, arm, Feed::Honest, 6.0, s, acct).zero_pct())
+            .sum::<f64>()
+            / 3.0
+    };
+    let c7 = vec![C2, C2];
+    let c8 = vec![C2, C3];
+
+    // MEASUREMENT DISCIPLINE 1: the axis must have run.
+    let probe = simulate_acct(&c8, Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Engine);
+    assert!(probe.led.taper > 0 && probe.led.margin > 0 && probe.led.retx > 0);
+    assert!(probe.led.releases > probe.led.charges, "the un-metered ledger never ran");
+
+    let off_a7 = mean(&c7, Arm::Legacy, Acct::Off);
+    let off_u7 = mean(&c7, Arm::Unified, Acct::Off);
+    let off_a8 = mean(&c8, Arm::Legacy, Acct::Off);
+    let off_u8 = mean(&c8, Arm::Unified, Acct::Off);
+    let en_a7 = mean(&c7, Arm::Legacy, Acct::Engine);
+    let en_u7 = mean(&c7, Arm::Unified, Acct::Engine);
+    let en_a8 = mean(&c8, Arm::Legacy, Acct::Engine);
+    let en_u8 = mean(&c8, Arm::Unified, Acct::Engine);
+
+    // THE PUBLISHED BENCH keys the fold to the WRONG cell.
+    let off_f7 = off_u7 / off_a7;
+    let off_f8 = off_u8 / off_a8;
+    assert!(
+        off_f7 > off_f8,
+        "the balanced ledger must fold harder at c7 than at c8 (the published \
+         defect): c7 {off_f7:.2}x vs c8 {off_f8:.2}x"
+    );
+
+    // THE ENGINE'S LEDGER keys it to c8 and nulls c7.
+    let en_f7 = en_u7 / en_a7;
+    let en_f8 = en_u8 / en_a8;
+    assert!(
+        en_f8 > 3.0,
+        "the engine ledger must keep a large U-fold at c8: {en_f8:.2}x \
+         (A {en_a8:.1}% AU {en_u8:.1}%)"
+    );
+    assert!(
+        en_f7 < 2.0,
+        "the engine ledger must null the U-fold at c7: {en_f7:.2}x \
+         (A {en_a7:.1}% AU {en_u7:.1}%)"
+    );
+
+    // And the c8 A-arm's LEVEL, absolutely on both sides of the axis.
+    assert!(off_a8 > 25.0, "the published c8 A arm must be the high class: {off_a8:.1}%");
+    assert!(en_a8 < 15.0, "the engine c8 A arm must be the low class: {en_a8:.1}%");
+    assert!(
+        en_a8 < 0.5 * off_a8,
+        "the c8 A arm must more than halve across the axis: {off_a8:.1}% → {en_a8:.1}%"
+    );
+}
+
+/// THE ATTRIBUTION, bounded — goal-gate "SF Accounting Axis", FINDING 2: it is
+/// the LEDGER, not the extra recovery traffic, that moves c8.
+///
+/// The `Traffic` level emits exactly the same taper corrections and NACK margin
+/// repairs onto exactly the same repair placements, feeds exactly the same
+/// estimators, and consumes exactly the same wire — and changes the c8 A arm's
+/// zero-fraction by only a few points, leaving the fold on the wrong cell.
+/// Only `Engine`, which adds the two un-charged channels and the counter-delta
+/// release, moves it. Without this pin the result would be attributable to
+/// "more traffic", which is the reading the measurement excludes.
+#[test]
+fn the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction() {
+    let c8 = vec![C2, C3];
+    let mean = |arm: Arm, acct: Acct| -> f64 {
+        (0..3u64)
+            .map(|s| simulate_acct(&c8, arm, Feed::Honest, 6.0, s, acct).zero_pct())
+            .sum::<f64>()
+            / 3.0
+    };
+    // The traffic is REAL and identical in both ON levels — else this proves
+    // nothing (MEASUREMENT DISCIPLINE 1).
+    let t = simulate_acct(&c8, Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Traffic);
+    assert!(t.led.taper > 0 && t.led.margin > 0, "the traffic level emitted no recovery");
+    assert_eq!(t.led.charges, t.led.wire(), "the traffic level must balance");
+
+    let off_a = mean(Arm::Legacy, Acct::Off);
+    let tr_a = mean(Arm::Legacy, Acct::Traffic);
+    let en_a = mean(Arm::Legacy, Acct::Engine);
+    // The two levels move the arm in OPPOSITE directions, which is the whole
+    // point: balanced recovery traffic leaves c8 in — or pushes it further
+    // into — its published high class, and only the un-metered LEDGER brings
+    // it down to the wire's low class. Asserted as absolute classes on both
+    // sides, not as a ratio, because the levels are draws from a bistable
+    // loop and only the class membership is stable.
+    assert!(off_a > 25.0, "the published c8 A arm must be the high class: {off_a:.1}%");
+    assert!(
+        tr_a > 20.0 && tr_a > off_a - 5.0,
+        "balanced recovery traffic must not bring the c8 A arm down: \
+         off {off_a:.1}% vs traffic {tr_a:.1}%"
+    );
+    assert!(
+        en_a < 15.0 && off_a - en_a > 15.0,
+        "the un-metered ledger must bring the c8 A arm into the low class: \
+         off {off_a:.1}% vs engine {en_a:.1}%"
+    );
+}
+
 /// THE AXIS'S OWN REPRODUCIBILITY, pinned in the shape the bench already
 /// learned once (`symmetric_cell_placement_tie_is_broken_deterministically`).
 ///
