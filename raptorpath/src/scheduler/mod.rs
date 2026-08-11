@@ -1176,6 +1176,14 @@ impl CopaState {
 
         // Need at least 1ms of elapsed time to compute a meaningful rate
         if elapsed < 0.001 {
+            // ACK-CADENCE GAUGE (`RWM_ACKDIAG`, net/ackdiag.rs — readout 3):
+            // a REJECTED sample. It carries no rate (the filter is untouched)
+            // but its `count` did arrive, so it feeds the over-read
+            // denominator: the normalizer must see every delivered symbol the
+            // sampler saw, or x is inflated by the rejection rate.
+            if let Some(g) = crate::net::ackdiag::gauge() {
+                g.note_rate_sample(self.rs_trace_path, count, 0.0, false);
+            }
             return self.max_bw;
         }
 
@@ -1194,6 +1202,15 @@ impl CopaState {
                 elapsed * 1e3,
                 self.max_bw,
             );
+        }
+        // ACK-CADENCE GAUGE (`RWM_ACKDIAG`, net/ackdiag.rs — readout 3): an
+        // ACCEPTED ack-interval sample, i.e. exactly one of the values the
+        // windowed max below folds. This is THE statistic matrix row 10 calls
+        // "UNVERIFIED — and it is the one that is ALWAYS ON"; the gauge
+        // normalizes it at print time by the window's own long-run delivered
+        // rate to give the realized over-read x directly.
+        if let Some(g) = crate::net::ackdiag::gauge() {
+            g.note_rate_sample(self.rs_trace_path, count, rate, true);
         }
         // Add to sliding window
         self.bw_push_sample(now, rate);

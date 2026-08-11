@@ -617,6 +617,22 @@ fn on_window_ack(
         } else {
             (0, 0)
         };
+        // ACK-CADENCE GAUGE feed (`RWM_ACKDIAG`, net/ackdiag.rs — readouts 1,
+        // 2 and 4). EVERY WindowAck arrival is noted, including the (0, 0)
+        // sentinel/stale class below: that class IS readout 2's zero-delta
+        // fraction, and skipping it would report a cadence the sender does
+        // not have. Absent entirely with the gate off (a `OnceLock` null
+        // check — no clock read, no lock, no allocation), and the gauge owns
+        // all of its state, so nothing here can be observed by this arm.
+        //
+        // NOTE for the reader of an `RWM_ACK_MERGE=0` log: in that arm the
+        // (expected, received) payload rides the LEGACY per-batch `Ack`, so
+        // `ack_merge_counter_delta` is never called and the delta readouts
+        // are STRUCTURALLY zero. The SPACING readout is valid in both arms —
+        // it measures WindowAck arrivals, which the merge does not create.
+        if let Some(g) = crate::net::ackdiag::gauge() {
+            g.note_ack(path_id, d_expected, d_received);
+        }
         let am_live = d_expected > 0 || d_received > 0;
         if am_live {
             if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {

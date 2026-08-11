@@ -433,6 +433,23 @@ pub struct RuntimeGates {
     // ── Instruments (ADR-0052; no behavior) ───────────────────────────────
     /// `RWM_DIAG` (default OFF): the transport-ceiling / recovery-plane DIAG.
     pub diag: bool,
+    /// `RWM_ACKDIAG` (default OFF): the ACK-CADENCE GAUGE — the sender-side
+    /// instrument for PIPELINE VERIFICATION MATRIX row 21, whose STREAM SHAPE
+    /// had "no instrument of any kind, anywhere". Per path and per ~2 s
+    /// window it prints the WindowAck inter-arrival distribution, the
+    /// per-ack `d_received` distribution and zero-delta fraction, the
+    /// REALIZED rate-sampler over-read x (per accepted `record_delivery`
+    /// sample, normalized by the window's own long-run delivered rate — the
+    /// number three separate benches had to INVENT, landing ×24–2400 against
+    /// the wire's ×4.6–7.4), and the repair-counting reconciliation
+    /// (`symbols_sent` vs Σ`d_received` vs Σ`d_expected`). Observation only:
+    /// the gauge owns all its state and no engine decision can reach it
+    /// (`net::ackdiag::tests::ackdiag_is_observation_only`). Zero cost off —
+    /// the process-global is a `OnceLock<Option<…>>` that resolves to `None`,
+    /// so every feed site is a null check. Independent of `RWM_DIAG` on
+    /// purpose: it must be runnable on an arm that is not paying for the
+    /// 250 ms `[DIAG]` report.
+    pub ackdiag: bool,
     /// `RWM_RDIAG` (default OFF): engine-receiver saturation probe.
     pub rdiag: bool,
     /// `RWM_FDIAG` (default OFF): proactive-frontier diagnosis instrument
@@ -523,6 +540,7 @@ impl RuntimeGates {
             three_term: env_flag("RWM_THREE_TERM", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             diag: env_flag("RWM_DIAG", false),
+            ackdiag: env_flag("RWM_ACKDIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
@@ -576,7 +594,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
-             RWM_DIAG={} RWM_RDIAG={} RWM_FDIAG={} \
+             RWM_DIAG={} RWM_ACKDIAG={} RWM_RDIAG={} RWM_FDIAG={} \
              RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
@@ -599,7 +617,7 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
-            b(self.diag), b(self.rdiag), b(self.fdiag),
+            b(self.diag), b(self.ackdiag), b(self.rdiag), b(self.fdiag),
             b(self.trace), b(self.pfrac),
         )
     }
@@ -885,6 +903,18 @@ mod tests {
         );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
+        // The ack-cadence gauge (goal-gate "Ack-Cadence Gauge", 2026-08-11)
+        // is a DIAG-surface instrument and ships OFF, with the two-sided
+        // OFF-VALUE property asserted on the echo (MEASUREMENT DISCIPLINE 15).
+        assert!(
+            !g.ackdiag,
+            "RWM_ACKDIAG ships default OFF (DIAG-surface instrument)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_ACKDIAG=0"),
+            "the default echo must NAME the ack-cadence gauge with its 0 value: {}",
+            g.echo_line()
+        );
         // Numeric defaults
         assert_eq!(g.gen_size, 384);
         assert_eq!(g.pipeline, 2);
