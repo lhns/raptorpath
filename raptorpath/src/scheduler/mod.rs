@@ -2430,6 +2430,28 @@ impl PathState {
         self.copa.force_compete();
     }
 
+    /// Test hook (GOAL "HONEST INPUTS" phase 3, the c1 lock-blocking probe
+    /// in `net::tests`): force the O(1) honest windowed-max deque ON for
+    /// this path — the `RWM_HONEST_ANCHOR` (DH-arm) configuration — without
+    /// touching the process-global env gate. Value-identical either way
+    /// (`bw_mono_front_equals_full_window_fold`); this selects the DH arm's
+    /// COST so the bench prices the fixed attribution path, not the fold.
+    #[cfg(test)]
+    pub(crate) fn force_honest_anchor_for_test(&mut self) {
+        self.copa.force_bw_o1();
+    }
+
+    /// Test accessor (same probe): the cwnd anchor FLOOR
+    /// (`CopaState::anchor_floor` — ANCHOR_FLOOR_GAIN × BtlBw × RTprop).
+    /// The floor only ratchets cwnd UP, so it is the wire-bound sender's
+    /// resting cwnd LOWER bound — the quantity the saturation predicate
+    /// (`available() == 0`, the `active_paths()` filter) compares
+    /// outstanding against.
+    #[cfg(test)]
+    pub(crate) fn anchor_floor_for_test(&self) -> Option<u32> {
+        self.copa.anchor_floor()
+    }
+
 
     /// Read Copa's current min_rtt estimate (for diagnostics/benchmarking).
     pub fn copa_min_rtt(&self) -> Option<Duration> {
@@ -5122,6 +5144,179 @@ mod tests {
             k_legacy > k_raw * 1.2,
             "the bias must be the SMOOTHING's, removed by the raw feed: \
              legacy {k_legacy} vs raw {k_raw}"
+        );
+    }
+
+    /// GOAL "HONEST INPUTS" phase 3 — PROBE 2: jit25's RTprop honesty under
+    /// netem's clamped jitter, at component level, with the REAL estimator
+    /// stack. Run explicitly:
+    ///
+    ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture jit25_rtprop
+    ///
+    /// THE CELL'S ACTUAL CONFIG (tools/l1/adv_cells.sh `jit25`): each
+    /// direction is `netem delay 20ms 25ms 25% rate 100mbit`, i.e. one-way
+    /// delay = clamp(20 ms + x·25 ms, 0) + ~108 µs serialization (1350 B at
+    /// 100 Mbit), x the 25%-autoregressively-correlated uniform variate on
+    /// [−1, 1] (netem get_crandom's linear form x_n = ρ·x_{n−1} + (1−ρ)·u_n,
+    /// identical in distribution class; approximation disclosed). An RTT
+    /// sample sums two independent directions. NOTE the AR(ρ=0.25) marginal
+    /// is NARROWER than uniform (sd ≈ 0.45 vs 0.58), so the clamp mass is
+    /// ~4%/direction, not the naive 10% — the model computes it rather than
+    /// assuming it.
+    ///
+    /// INSTRUMENT: `CopaState::record_rtt` on a MockClock — the shipped
+    /// srtt EWMA (α = 1/8), the shipped 10 s min-window RTprop deque, and
+    /// the `RWM_HONEST_K` raw-fed `EchoRatioMin` (forced on) — at swept
+    /// RTT-sample cadences; plus direct windowed-min curves over the same
+    /// series for the pre-registered window sweep.
+    ///
+    /// The three pre-registered curves ([P3-JIT] lines): (1) floor-sighting
+    /// rate vs window length, (2) windowed-min RTprop vs the distribution's
+    /// true floor, (3) the implied K elevation vs window.
+    ///
+    /// WHAT IT ADJUDICATES: under the UNLOADED jit25 distribution the clamp
+    /// floor is NOT rare at dense cadences — every 10 s window re-sights the
+    /// floor class, RTprop reads ≪ the 40 ms base, K_raw → 1, and the law's
+    /// window term would COLLAPSE (the pre-registration's falsified-LOW
+    /// branch, quantified). In the rare-floor regime (sparse cadence) the
+    /// fingerprint inverts: RTprop keeps a once-seen deep min and the
+    /// windowed K reads ≫ 1.5. The battery measured NEITHER collapse NOR
+    /// K ≫ 1.5 (khr ≈ kraw ≈ 1.0–1.5 with an elevated limit): the in-cell
+    /// series therefore rides a floor the window genuinely RE-ACHIEVES,
+    /// far above the unloaded floor — the loaded link's standing queue.
+    /// Real residence, not estimator bias and not floor rarity.
+    #[test]
+    #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
+    fn jit25_rtprop_floor_sighting_under_netem_clamped_jitter() {
+        const BASE_S: f64 = 0.020; // netem delay 20ms
+        const JIT_S: f64 = 0.025; // ±25ms
+        const RHO: f64 = 0.25; // 25% correlation
+        const SER_S: f64 = 0.000_108; // 1350 B @ 100 Mbit, per direction
+        const FLOOR_S: f64 = 2.0 * SER_S; // both jitter draws at the clamp
+        const T_S: f64 = 30.0; // series length
+        const RATE_SYM_S: f64 = 7_600.0; // the battery's measured arm-A class
+
+        // One netem direction: AR-correlated uniform, clamped at 0.
+        struct Dir {
+            lcg: u64,
+            x: f64,
+        }
+        impl Dir {
+            fn new(seed: u64) -> Self {
+                Self { lcg: seed, x: 0.0 }
+            }
+            fn next(&mut self) -> f64 {
+                self.lcg = self
+                    .lcg
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let u = ((self.lcg >> 33) as f64) / (u32::MAX as f64) * 2.0 - 1.0;
+                self.x = RHO * self.x + (1.0 - RHO) * u;
+                (BASE_S + self.x * JIT_S).max(0.0) + SER_S
+            }
+        }
+
+        println!(
+            "[P3-JIT] model: clamp(20ms ± 25ms AR(0.25) uniform, 0) + {:.0} µs/dir; \
+             true two-way floor = {:.2} ms; base RTT = {:.1} ms; cell rate class {} sym/s",
+            SER_S * 1e6,
+            FLOOR_S * 1e3,
+            2.0 * BASE_S * 1e3,
+            RATE_SYM_S
+        );
+
+        for &cad in &[20.0f64, 100.0, 1000.0, 7400.0] {
+            let clock = Arc::new(MockClock::new());
+            let mut cs = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+            cs.force_k_raw();
+            let (mut fwd, mut back) = (Dir::new(42), Dir::new(7));
+            let step = Duration::from_secs_f64(1.0 / cad);
+            let n = (T_S * cad) as usize;
+            let mut series: Vec<f64> = Vec::with_capacity(n);
+            for _ in 0..n {
+                clock.advance(step);
+                let rtt = fwd.next() + back.next();
+                series.push(rtt);
+                cs.record_rtt(Duration::from_secs_f64(rtt));
+            }
+            let rtprop = cs.min_rtt().unwrap().as_secs_f64();
+            let srtt = cs.srtt.unwrap().as_secs_f64();
+            let k_raw = cs.k_raw_ratio().unwrap();
+            let global_min = series.iter().copied().fold(f64::INFINITY, f64::min);
+            // Window sweep: non-overlapping windows of W seconds — mean
+            // windowed min, floor-sighting fraction, implied K = mean
+            // windowed-min ÷ global min (the elevation of a W-horizon floor
+            // over the long-run floor).
+            print!(
+                "[P3-JIT] cadence {cad:>6.0}/s: RTprop(10s win) {:.2} ms, srtt {:.1} ms, \
+                 srtt/RTprop {:.1}, K_raw {k_raw:.2}, global min {:.2} ms | implied \
+                 3T window term {:.0} sym (cell measured 396–714)\n",
+                rtprop * 1e3,
+                srtt * 1e3,
+                srtt / rtprop,
+                global_min * 1e3,
+                RATE_SYM_S * k_raw.max(1.0) * rtprop,
+            );
+            let mut prev_mean = f64::INFINITY;
+            for &w_s in &[0.5f64, 1.0, 2.0, 5.0, 10.0] {
+                let wlen = ((w_s * cad) as usize).max(1);
+                let mut mins = Vec::new();
+                let mut sighted = 0usize;
+                for chunk in series.chunks(wlen) {
+                    if chunk.len() < wlen {
+                        break;
+                    }
+                    let m = chunk.iter().copied().fold(f64::INFINITY, f64::min);
+                    if m <= FLOOR_S + 0.001 {
+                        sighted += 1;
+                    }
+                    mins.push(m);
+                }
+                let mean = mins.iter().sum::<f64>() / mins.len() as f64;
+                println!(
+                    "[P3-JIT]   window {w_s:>4.1} s: mean windowed-min {:.2} ms, \
+                     floor-sighting {:.0}% of windows, implied K(w) {:.2}",
+                    mean * 1e3,
+                    100.0 * sighted as f64 / mins.len() as f64,
+                    mean / global_min,
+                );
+                // A longer horizon can only read LOWER (min over a superset)
+                // — "a derivable better floor" does not exist in the upward
+                // direction the elevated limit would need.
+                assert!(
+                    mean <= prev_mean * 1.02,
+                    "windowed min must be non-increasing in the horizon"
+                );
+                prev_mean = mean;
+            }
+            // The dense regime (any cadence ≥ ~1000/s): the floor is NOT
+            // rare — RTprop reads the floor class, K_raw reads ≈ 1, and the
+            // law's window term collapses to the sym class (the
+            // falsified-LOW branch the cell did NOT show).
+            if cad >= 1000.0 {
+                assert!(
+                    rtprop < 0.005,
+                    "dense sampling must sight the clamp floor: RTprop {rtprop}"
+                );
+                assert!(
+                    k_raw < 1.5,
+                    "dense sampling re-achieves the floor in-window: K_raw {k_raw}"
+                );
+                assert!(
+                    srtt / rtprop > 8.0,
+                    "the unloaded distribution's srtt/RTprop is an order above \
+                     the cell's measured 1.0–1.5 class: {}",
+                    srtt / rtprop
+                );
+            }
+        }
+        println!(
+            "[P3-JIT] adjudication: the cell measured khr ≈ kraw ≈ 1.0–1.5 WITH an \
+             elevated limit (window/rate ≈ 50–90 ms) — neither the dense-floor collapse \
+             nor the rare-floor K ≫ 1.5 fingerprint. The in-cell series rides a \
+             re-achieved floor far above the unloaded clamp floor: the standing queue \
+             of the loaded 100 Mbit link. RTprop is honest w.r.t. its own window; the \
+             elevation is real residence."
         );
     }
 
