@@ -678,6 +678,380 @@ fn mid((lo, hi): (f64, f64)) -> f64 {
     0.5 * (lo + hi)
 }
 
+// ── THE GAP DISTRIBUTION, built from the measured quantiles ────────────────
+//
+// `Q(u)` is the DIMENSIONLESS gap quantile function — gap divided by the
+// path's own mean gap — interpolated through the ledger's measured points:
+//
+//   u ∈ [0,   0.5 ]  linear   0   → q50   (the sub-median body; the gauge
+//                                          reports no quantile below p50)
+//   u ∈ [0.5, 0.9 ]  log-linear q50 → q90
+//   u ∈ [0.9, 0.99]  log-linear q90 → q99
+//   u ∈ [0.99, 1  ]  Pareto,  Q = q99·((1−u)/0.01)^(−1/α)
+//
+// α is NOT chosen. It is SOLVED from the one thing the measurement pins that
+// the quantiles do not: the mean gap is `1/rate_lr` (READOUT 3), so the top
+// 1% must carry exactly the mass the body leaves, and `E[G | G > p99] =
+// q99·α/(α−1)` fixes α. The measurement therefore determines its own tail.
+//
+// TWO PLACES WHERE THE MEASUREMENT DOES NOT CLOSE ON ITSELF, both handled by
+// backing off INSIDE the ledger's own reported ranges rather than by inventing:
+//
+//  (a) at c2r100 and at c8's slow leg the quantile MIDPOINTS already imply a
+//      mean gap ABOVE `1/rate_lr` (by ~10% and ~0.5%), leaving the tail
+//      negative mass. `θ` — the position inside the ledger's own p90/p99
+//      per-window ranges — is bisected DOWN from the midpoint until the two
+//      measurements close with `E[G|G>p99] ≥ 1.5·p99`. p50 is never moved: it
+//      is the headline number and the tightest-measured of the three.
+//  (b) the Pareto tail, unbounded, generates silences of hundreds of ms at the
+//      lightest α the mean allows. It is TRUNCATED at 18.2 ms — the largest
+//      inter-ack gap the instrument reported anywhere (READOUT 1+2, c8/p1's
+//      p99 upper range; the ledger's "tailing to 18 ms on a stalling leg").
+//      Truncation is safe by construction: the observer is work-conserving, so
+//      a lighter tail costs it silences, not acks.
+
+/// The floor on the tail's own mass: the top 1% of gaps must average at least
+/// this multiple of the measured p99 (α = 3 at 1.5 — the LIGHTEST tail this
+/// model will still call a tail). It binds only at the two paths where the
+/// ledger's quantile midpoints and its mean gap do not close, and it binds in
+/// the CONSERVATIVE direction: a lighter tail means fewer long silences and a
+/// SMALLER predicted over-read.
+const ACK_TAIL_R_MIN: f64 = 1.5;
+
+/// The largest inter-ack gap the instrument reported at any cell or path
+/// (READOUT 1+2, `c8/p1` p99 = 5354–**18229** µs). The silence draw is
+/// truncated here: the model never asserts a silence the gauge never saw.
+const ACK_GAP_MAX_S: f64 = 18_229e-6;
+
+/// One path's measured ack-gap law, resolved against the bench path that
+/// carries it.
+#[derive(Clone, Copy, Debug)]
+struct AckGaps {
+    /// Dimensionless measured quantiles (gap / mean gap).
+    q50: f64,
+    q90: f64,
+    q99: f64,
+    /// The Pareto tail exponent, SOLVED from the measured mean gap.
+    alpha: f64,
+    /// The silence threshold, SOLVED from the drain/duty identity below.
+    u_c: f64,
+    /// Where inside the ledger's p90/p99 ranges the model had to sit for the
+    /// measurement to close (0.5 = the midpoint, i.e. it closed there).
+    theta: f64,
+    /// The NOMINAL mean ack gap, seconds — `1/rate` — used only until the
+    /// path has measured its own. The live value is `AckObs::mean_gap_s`.
+    mean_gap_s: f64,
+}
+
+/// `w·(b−a)/ln(b/a)` — the mean of a log-linear segment of width `w`.
+fn logseg_mean(w: f64, a: f64, b: f64) -> f64 {
+    if (b - a).abs() < 1e-15 {
+        w * a
+    } else {
+        w * (b - a) / (b / a).ln()
+    }
+}
+
+impl AckGaps {
+    /// The dimensionless quantiles at range-position `theta` (p50 always at
+    /// its midpoint).
+    fn quantiles(sh: &AckShape, theta: f64) -> (f64, f64, f64) {
+        let m = 1e6 / sh.rate_lr; // the MEASURED mean gap, µs
+        (
+            mid(sh.p50) / m,
+            (sh.p90.0 + theta * (sh.p90.1 - sh.p90.0)) / m,
+            (sh.p99.0 + theta * (sh.p99.1 - sh.p99.0)) / m,
+        )
+    }
+
+    /// The mean of `Q` over `[0, 0.99]` — everything the measured quantiles
+    /// themselves account for.
+    fn body_mean(q50: f64, q90: f64, q99: f64) -> f64 {
+        0.25 * q50 + logseg_mean(0.4, q50, q90) + logseg_mean(0.09, q90, q99)
+    }
+
+    /// `E[G | G > p99] / p99` at range-position `theta` — what the measured
+    /// mean leaves for the tail, in units of the measured p99.
+    fn tail_ratio(sh: &AckShape, theta: f64) -> f64 {
+        let (q50, q90, q99) = Self::quantiles(sh, theta);
+        (1.0 - Self::body_mean(q50, q90, q99)) / (0.01 * q99)
+    }
+
+    fn new(sh: &AckShape, path_rate: f64) -> Self {
+        // (a) close the measurement against itself, inside its own ranges.
+        let mut theta = 0.5;
+        if Self::tail_ratio(sh, 0.5) < ACK_TAIL_R_MIN {
+            let (mut lo, mut hi) = (0.0_f64, 0.5_f64);
+            assert!(
+                Self::tail_ratio(sh, 0.0) >= ACK_TAIL_R_MIN,
+                "{}: even at the LOW end of every measured range the quantiles imply a \
+                 mean gap inconsistent with rate_lr — the ledger rows do not close",
+                sh.row
+            );
+            for _ in 0..80 {
+                let m = 0.5 * (lo + hi);
+                if Self::tail_ratio(sh, m) >= ACK_TAIL_R_MIN {
+                    lo = m;
+                } else {
+                    hi = m;
+                }
+            }
+            theta = lo;
+        }
+        let (q50, q90, q99) = Self::quantiles(sh, theta);
+        let r = Self::tail_ratio(sh, theta);
+        assert!(r > 1.0, "{}: tail ratio {r}", sh.row);
+        let alpha = r / (r - 1.0);
+
+        // THE SILENCE THRESHOLD, solved not chosen. A work-conserving observer
+        // that drains at spacing `s = q50·ḡ` has, per cycle, a silence `S`,
+        // a drain `D = S·q50/(1−q50)` and `S/(1−q50)` acks — so the silence
+        // FRACTION of gaps is `φ = (1−q50)/E[S]`. For the model's own marginal
+        // to reproduce the measured one, the silences must be exactly `Q`'s
+        // upper tail, i.e. `φ = 1 − u_c` and `E[S] = ∫_{u_c}^1 Q / (1−u_c)`.
+        // The two together give ONE equation with ONE unknown:
+        //
+        //     ∫_0^{u_c} Q(u) du = q50
+        //
+        // and its root is `u_c`. Nothing here is fitted: q50 is measured, Q is
+        // the measured quantile curve, and conservation supplies the rest.
+        let mut g = AckGaps {
+            q50,
+            q90,
+            q99,
+            alpha,
+            u_c: 0.5,
+            theta,
+            mean_gap_s: 1.0 / path_rate,
+        };
+        let (mut lo, mut hi) = (0.5_f64, 1.0_f64);
+        for _ in 0..80 {
+            let m = 0.5 * (lo + hi);
+            if g.cdf_mean_to(m) < q50 {
+                lo = m;
+            } else {
+                hi = m;
+            }
+        }
+        g.u_c = 0.5 * (lo + hi);
+        g
+    }
+
+    /// `∫_0^u Q(t) dt` — the mean mass of `Q` below quantile `u`.
+    fn cdf_mean_to(&self, u: f64) -> f64 {
+        let (q50, q90, q99, a) = (self.q50, self.q90, self.q99, self.alpha);
+        if u <= 0.5 {
+            return q50 * u * u; // ∫_0^u 2·q50·t dt
+        }
+        let mut acc = 0.25 * q50;
+        if u <= 0.9 {
+            let k = (q90 / q50).ln() / 0.4;
+            return acc + q50 * ((k * (u - 0.5)).exp() - 1.0) / k;
+        }
+        acc += logseg_mean(0.4, q50, q90);
+        if u <= 0.99 {
+            let k = (q99 / q90).ln() / 0.09;
+            return acc + q90 * ((k * (u - 0.9)).exp() - 1.0) / k;
+        }
+        acc += logseg_mean(0.09, q90, q99);
+        let w = ((1.0 - u) / 0.01).max(0.0);
+        acc + 0.01 * q99 * a / (a - 1.0) * (1.0 - w.powf(1.0 - 1.0 / a))
+    }
+
+    /// `Q(u)` — the dimensionless gap at quantile `u`.
+    fn q(&self, u: f64) -> f64 {
+        let (q50, q90, q99, a) = (self.q50, self.q90, self.q99, self.alpha);
+        if u <= 0.5 {
+            2.0 * q50 * u
+        } else if u <= 0.9 {
+            q50 * ((q90 / q50).powf((u - 0.5) / 0.4))
+        } else if u <= 0.99 {
+            q90 * ((q99 / q90).powf((u - 0.9) / 0.09))
+        } else {
+            let w = ((1.0 - u) / 0.01).max(1e-12);
+            q99 * w.powf(-1.0 / a)
+        }
+    }
+
+    /// One silence, seconds: a draw from `Q`'s upper tail above `u_c`, scaled
+    /// by the path's own measured mean gap, truncated at the largest gap the
+    /// instrument ever reported.
+    fn silence(&self, rng: &mut Rng, mean_gap_s: f64) -> f64 {
+        let u = self.u_c + (1.0 - self.u_c) * rng.f64();
+        (self.q(u) * mean_gap_s).min(ACK_GAP_MAX_S)
+    }
+}
+
+/// Log-spaced buckets for the realized ack-gap distribution: 1 µs → 100 ms
+/// over 5 decades. The bench MEASURES its own marginal and scores it against
+/// the ledger's (V3) rather than asserting it holds by construction.
+const GAP_BUCKETS: usize = 250;
+
+fn gap_bucket(g_s: f64) -> usize {
+    let us = (g_s * 1e6).max(1.0);
+    let d = us.log10() / 5.0 * GAP_BUCKETS as f64;
+    (d as usize).min(GAP_BUCKETS - 1)
+}
+
+fn gap_quantile(hist: &[u32; GAP_BUCKETS], q: f64) -> f64 {
+    let total: u64 = hist.iter().map(|c| *c as u64).sum();
+    if total == 0 {
+        return f64::NAN;
+    }
+    let want = (q * total as f64).ceil() as u64;
+    let mut acc = 0u64;
+    for (i, c) in hist.iter().enumerate() {
+        acc += *c as u64;
+        if acc >= want {
+            // The bucket's geometric centre, in µs.
+            return 10f64.powf((i as f64 + 0.5) / GAP_BUCKETS as f64 * 5.0);
+        }
+    }
+    f64::NAN
+}
+
+/// One path's ack-observation state under the MEASURED era.
+struct AckObs {
+    g: AckGaps,
+    /// Delivered but not yet observed by the sender's rate sampler.
+    backlog: u64,
+    /// When the next ack is observed.
+    next_obs: f64,
+    rng: Rng,
+    /// Arrival instants inside the last `REPORT_S` — the path's own measured
+    /// mean ack gap, which is the unit the ledger's shape is expressed in.
+    ///
+    /// THE SHAPE IS DIMENSIONLESS AND MUST BE SCALED BY THE REALIZED RATE, NOT
+    /// THE NOMINAL ONE. READOUT 1+2's gaps are quoted against READOUT 3's
+    /// `rate_lr`, "the window's own long-run rate" — an OUTPUT of the wire, not
+    /// a link capacity. A bench path the scheduler under-fills (c8's slow leg
+    /// runs at ~60% of its link) has a correspondingly wider mean gap, and
+    /// scaling the shape by `1/link_rate` there quietly asserts a denser ack
+    /// stream than the path actually produced. The window is `REPORT_S` = 2 s
+    /// because that is the gauge's own report cadence — the interval every
+    /// measured number in the ledger is a statistic over.
+    arrivals: std::collections::VecDeque<f64>,
+    // ── gauges: everything the ledger measured and this model PREDICTS ──
+    n_obs: u64,
+    n_accept: u64,
+    n_reject: u64,
+    last_accept: f64,
+    last_obs: f64,
+    gap_sum: f64,
+    hist: [u32; GAP_BUCKETS],
+}
+
+impl AckObs {
+    fn new(sh: &AckShape, path_rate: f64, seed: u64) -> Self {
+        Self {
+            g: AckGaps::new(sh, path_rate),
+            backlog: 0,
+            next_obs: 0.0,
+            rng: Rng::new(seed),
+            arrivals: std::collections::VecDeque::new(),
+            n_obs: 0,
+            n_accept: 0,
+            n_reject: 0,
+            last_accept: 0.0,
+            last_obs: 0.0,
+            gap_sum: 0.0,
+            hist: [0; GAP_BUCKETS],
+        }
+    }
+
+    /// A delivered symbol reaches the sender at `t`.
+    fn arrive(&mut self, t: f64) {
+        self.backlog += 1;
+        self.arrivals.push_back(t);
+        while self.arrivals.front().is_some_and(|f| *f < t - REPORT_S) {
+            self.arrivals.pop_front();
+        }
+        if self.backlog == 1 && self.next_obs < t {
+            self.next_obs = t;
+        }
+    }
+
+    /// The path's own mean ack gap over the gauge's 2 s window — the unit the
+    /// measured shape is expressed in. Falls back to the nominal `1/rate`
+    /// until the path has produced a window's worth of its own arrivals.
+    fn mean_gap_s(&self) -> f64 {
+        match (self.arrivals.front(), self.arrivals.back()) {
+            (Some(a), Some(b)) if self.arrivals.len() >= 2 && b > a => {
+                (b - a) / (self.arrivals.len() - 1) as f64
+            }
+            _ => self.g.mean_gap_s,
+        }
+    }
+
+    /// The next observation instant at or before `limit`, if any.
+    fn due(&self, limit: f64) -> Option<f64> {
+        if self.backlog > 0 && self.next_obs <= limit { Some(self.next_obs) } else { None }
+    }
+
+    /// Consume the observation at `t` and schedule the next: another drain
+    /// step if work remains, a SILENCE if the sender has caught up.
+    fn take(&mut self, t: f64) {
+        self.backlog -= 1;
+        let mg = self.mean_gap_s();
+        self.next_obs = t
+            + if self.backlog == 0 {
+                self.g.silence(&mut self.rng, mg)
+            } else {
+                // The drain spacing IS the measured p50 gap.
+                self.g.q50 * mg
+            };
+        // Gauges. The accept/reject mirror is `scheduler/mod.rs:1178`'s rule
+        // (`elapsed < 0.001` ⇒ rejected) transcribed for INSTRUMENTATION only;
+        // the real floor still runs inside `CopaState::record_delivery`, which
+        // returns nothing that distinguishes the two.
+        if self.n_obs > 0 {
+            let gap = t - self.last_obs;
+            self.gap_sum += gap;
+            self.hist[gap_bucket(gap)] += 1;
+        }
+        self.last_obs = t;
+        self.n_obs += 1;
+        if t - self.last_accept >= 0.001 {
+            self.n_accept += 1;
+            self.last_accept = t;
+        } else {
+            self.n_reject += 1;
+        }
+    }
+}
+
+/// Everything the measured era produced on one path, for the fidelity table.
+#[derive(Debug, Clone, Copy, Default)]
+struct ObsStat {
+    n_obs: u64,
+    n_accept: u64,
+    n_reject: u64,
+    /// Delivered but still un-observed when the horizon ended — the observer
+    /// is work-conserving, so this is the only place an ack can be.
+    backlog_end: u64,
+    mean_gap_us: f64,
+    p50_us: f64,
+    p90_us: f64,
+    p99_us: f64,
+    /// The model's own resolved law, reported so the reader sees what the
+    /// measurement resolved to rather than having to trust it.
+    theta: f64,
+    alpha: f64,
+    u_c: f64,
+}
+
+impl ObsStat {
+    fn reject_pct(&self) -> f64 {
+        self.n_reject as f64 / (self.n_obs.max(1)) as f64 * 100.0
+    }
+    fn samples_s(&self, horizon: f64) -> f64 {
+        self.n_accept as f64 / horizon
+    }
+    fn folded(&self) -> f64 {
+        self.n_obs as f64 / self.n_accept.max(1) as f64
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Run {
     ticks: u64,
@@ -700,6 +1074,38 @@ struct Run {
     /// The accounting axis's per-channel ledger (all zero but `src`/`charges`/
     /// `releases`/`tokens` under `Acct::Off`).
     led: Ledger,
+    /// PER PATH: Σ and n of `copa_bdp_anchor()/(rate·RTprop)` over refresh
+    /// ticks. READOUT 3 is a per-PATH table, so V1 is scored per path — a
+    /// cell mean would hide the c8 legs, which the wire reports separately.
+    /// (Every cell this bench runs has ≤ 2 paths.)
+    xa_sum: [f64; 2],
+    xa_n: [u64; 2],
+    /// PER PATH: what the measured ack observer actually did. All zero on
+    /// every era but `Feed::Measured`.
+    obs: [ObsStat; 2],
+    /// PER PATH: Σ/n of `btlbw_sym_per_s()` and of `min_rtt()` over refresh
+    /// ticks, plus the path's own delivered count.
+    ///
+    /// THE LEDGER'S `xanchor` IS NOT THIS BENCH'S `x`, and the difference is
+    /// load-bearing. READOUT 3 defines it as `copa_bdp_anchor()/(rate_lr·
+    /// RTprop)` where RTprop is the ANCHOR'S OWN `min_rtt` — the same
+    /// `min_rtt` the anchor multiplied by — so the RTT cancels and `xanchor`
+    /// is a pure RATE over-read, `max_bw/rate_lr`. The bench's pre-existing
+    /// `overread()` divides by the CONFIGURED `rate·rtprop` instead, so it
+    /// also carries whatever standing queue the link built. Both are kept:
+    /// `overread()` unchanged (three ledger sections are scored on it) and
+    /// `xanchor_lr()` as the ledger's own quantity.
+    bw_sum: [f64; 2],
+    bw_n: [u64; 2],
+    mrtt_sum: [f64; 2],
+    delivered_p: [u64; 2],
+    /// PER PATH: the MEDIAN of `max_bw / rate_lr` over the dyn-cap refresh
+    /// ticks, where `rate_lr` is the path's delivered rate over the PRECEDING
+    /// `REPORT_S` — READOUT 3's statistic, computed the way READOUT 3 computes
+    /// it ("Medians over the 12 windows"). A whole-run divisor is not the same
+    /// number at a duty-cycled path: c8's slow leg runs at its link rate while
+    /// it runs and idles between, so its 2 s windows read ~1.6× the run mean.
+    xlr_med: [f64; 2],
 }
 
 impl Run {
@@ -719,6 +1125,32 @@ impl Run {
     /// Mean realized anchor over-read (×1.0 = honest).
     fn overread(&self) -> f64 {
         self.anchor_ratio_sum / self.anchor_ratio_n.max(1) as f64
+    }
+    /// The realized over-read on ONE path, on the BENCH's definition
+    /// (`anchor / (configured rate·RTprop)`).
+    fn overread_path(&self, pid: usize) -> f64 {
+        self.xa_sum[pid] / self.xa_n[pid].max(1) as f64
+    }
+    /// The realized `xanchor` on ONE path on THE LEDGER'S definition
+    /// (READOUT 3): `max_bw / rate_lr`, the path's windowed-max rate estimate
+    /// over its own realized long-run delivered rate. The RTT divides out, as
+    /// it does on the wire.
+    fn xanchor_lr(&self, pid: usize) -> f64 {
+        self.xlr_med[pid]
+    }
+    /// The same quantity on a WHOLE-RUN divisor, kept beside it so the
+    /// duty-cycle effect is visible rather than chosen.
+    fn xanchor_runmean(&self, pid: usize) -> f64 {
+        let bw = self.bw_sum[pid] / self.bw_n[pid].max(1) as f64;
+        let lr = self.delivered_p[pid] as f64 / self.horizon_s;
+        if lr > 0.0 { bw / lr } else { f64::NAN }
+    }
+    /// How much standing queue the bench's link built: mean `min_rtt` over the
+    /// path's configured RTprop. On the wire this reads ≈1 (READOUT 3's RTprop
+    /// column is the cell's own RTT); anything else is a bench artifact and is
+    /// reported rather than absorbed.
+    fn rtt_inflation(&self, pid: usize, rtprop: f64) -> f64 {
+        self.mrtt_sum[pid] / self.bw_n[pid].max(1) as f64 / rtprop
     }
     fn mean_cwnd(&self) -> f64 {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
@@ -840,14 +1272,6 @@ fn simulate_acct(
     salt: u64,
     acct: Acct,
 ) -> Run {
-    // PRE-REGISTRATION COMMIT: the criteria and the transcribed inputs land
-    // here, in their own commit, BEFORE the era that consumes them exists —
-    // the same discipline the accounting axis was pre-registered under
-    // (goal-gate "SF Accounting Axis", "THE PRE-REGISTRATION, and where it
-    // lives"). The observer lands in the next commit.
-    if let Feed::Measured(_) = feed {
-        unimplemented!("the measured ack era lands in the commit after the pre-registration");
-    }
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -877,6 +1301,18 @@ fn simulate_acct(
     let mut anchor_ratio_n = 0u64;
     let mut cwnd_sum = 0.0_f64;
     let mut cwnd_n = 0u64;
+    let mut xa_sum = [0.0_f64; 2];
+    let mut xa_n = [0u64; 2];
+    let mut bw_sum = [0.0_f64; 2];
+    let mut bw_n = [0u64; 2];
+    let mut mrtt_sum = [0.0_f64; 2];
+    let mut delivered_p = [0u64; 2];
+    // Delivery instants inside the trailing `REPORT_S`, per path — the
+    // denominator of READOUT 3's `xanchor`, measured over the gauge's own
+    // report window rather than over the whole run.
+    let mut deliv_win: Vec<std::collections::VecDeque<f64>> =
+        (0..np).map(|_| std::collections::VecDeque::new()).collect();
+    let mut xlr_s: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
 
     // `Feed::Overread` — per-path fractional carry, so a non-integer scale is
     // exact in the LONG RUN instead of rounded per call.
@@ -916,6 +1352,41 @@ fn simulate_acct(
     let mut sent_since_report = vec![0u64; np];
     let mut next_report = REPORT_S;
 
+    // ── THE MEASURED ACK ERA's per-path observer ─────────────────────────
+    // One per path, its law resolved against THAT path's own rate (the
+    // measured shape is dimensionless), and its RNG kept strictly apart from
+    // the links' so `Feed::Measured` cannot perturb the GE realizations that
+    // every other era runs on.
+    let mut obs: Vec<AckObs> = Vec::new();
+    if let Feed::Measured(shapes) = feed {
+        assert_eq!(
+            shapes.len(),
+            np,
+            "the measured era needs one measured ack shape per path — the wire \
+             measured this cell path by path and the bench must not invent the rest"
+        );
+        for (i, sh) in shapes.iter().enumerate() {
+            obs.push(AckObs::new(
+                sh,
+                paths[i].0,
+                0x0ACD_0000_u64
+                    .wrapping_add(salt.wrapping_mul(0xA24B_AED4_963E_E407))
+                    .wrapping_add(i as u64 * 0xC2B2_AE3D_27D4_EB4F),
+            ));
+        }
+    }
+    /// The sub-tick clock cursor, in whole nanoseconds so the MockClock
+    /// advances monotonically and lands EXACTLY on each tick boundary — the
+    /// non-measured eras advance once per tick and must stay bit-identical.
+    fn advance_to(clock: &MockClock, cursor: &mut u128, t_s: f64) {
+        let target = (t_s * 1e9).round() as u128;
+        if target > *cursor {
+            clock.advance(Duration::from_nanos((target - *cursor) as u64));
+            *cursor = target;
+        }
+    }
+    let mut clock_ns: u128 = 0;
+
     let steps = (horizon_s / tick).round() as u64;
     // The repair objective's `covered` multiset and the path it selects,
     // computed at most ONCE PER TICK and reused by every correction emitted in
@@ -930,7 +1401,62 @@ fn simulate_acct(
         let now = step as f64 * tick;
         covered_cache = None;
         repair_path_cache = None;
-        clock.advance(Duration::from_secs_f64(tick));
+
+        if let Feed::Measured(_) = feed {
+            // ── THE MEASURED ACK STREAM, SUB-TICK ────────────────────────
+            // The whole point of the era: `record_delivery` must be called at
+            // each ack's OWN arrival instant, with `count = 1`, and the
+            // SHIPPED 1 ms `elapsed` floor (`scheduler/mod.rs:1178`) must be
+            // the thing that decides which of them becomes a rate sample.
+            // Feeding the sampler on the 250 µs tick — as every other era
+            // does — quantizes `elapsed` to a multiple of the tick and
+            // bypasses exactly the mechanism the wire measured.
+            //
+            // Deliveries enter each path's observer at their link arrival
+            // time; observations come back out at the measured cadence, in
+            // TIME ORDER across paths, with the clock walked to each one.
+            let t_prev = (step - 1) as f64 * tick;
+            let mut arrivals: Vec<(u32, f64)> = store
+                .iter()
+                .filter_map(|s| match s.ack_at {
+                    Some(t) if t > t_prev && t <= now => Some((s.path, t)),
+                    _ => None,
+                })
+                .collect();
+            arrivals.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+            let mut ai = 0usize;
+            loop {
+                // The earliest observation any path has ready, and the
+                // earliest arrival still to be admitted — whichever is first.
+                let next_ob = (0..np)
+                    .filter_map(|p| obs[p].due(now).map(|t| (t, p as u32)))
+                    .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                let next_ar = arrivals.get(ai).copied();
+                let observe_first = match (next_ob, next_ar) {
+                    (Some((tob, _)), Some((_, tar))) => tob <= tar,
+                    (Some(_), None) => true,
+                    (None, _) => false,
+                };
+                if observe_first {
+                    let (tob, pid) = next_ob.expect("observe_first implies an observation");
+                    advance_to(&clock, &mut clock_ns, tob);
+                    obs[pid as usize].take(tob);
+                    if let Some(p) = sched.path_mut(pid) {
+                        // drecv = 1: "p50 = p90 = 1 in all 60 report windows,
+                        // 857 400 acks" — never a batch.
+                        p.on_ack(1);
+                    }
+                } else if let Some((pid, tar)) = next_ar {
+                    obs[pid as usize].arrive(tar);
+                    ai += 1;
+                } else {
+                    break;
+                }
+            }
+            advance_to(&clock, &mut clock_ns, now);
+        } else {
+            clock.advance(Duration::from_secs_f64(tick));
+        }
 
         // ── ack/delivery half + the recovery plane ───────────────────────
         // Acked symbols leave the store and release their path's budget.
@@ -986,6 +1512,17 @@ fn simulate_acct(
             }
         }
         delivered += acks.len() as u64;
+        for (pid, _, _) in &acks {
+            if (*pid as usize) < 2 {
+                delivered_p[*pid as usize] += 1;
+            }
+            deliv_win[*pid as usize].push_back(now);
+        }
+        for w in deliv_win.iter_mut() {
+            while w.front().is_some_and(|f| *f < now - REPORT_S) {
+                w.pop_front();
+            }
+        }
         store.retain(|s| !matches!(s.ack_at, Some(t) if t <= now));
 
         // ── THE COUNTER-DELTA RELEASE, for the flights that did NOT land ──
@@ -1212,10 +1749,30 @@ fn simulate_acct(
                 if let Some(p) = sched.path(pid as u32) {
                     cwnd_sum += p.cwnd as f64;
                     cwnd_n += 1;
+                    // THE LEDGER'S OWN PAIR: the windowed-max rate estimate
+                    // and the min-RTT the anchor multiplies it by.
+                    if pid < 2 {
+                        if let (Some(bw), Some(mr)) = (p.btlbw_sym_per_s(), p.min_rtt()) {
+                            bw_sum[pid] += bw;
+                            mrtt_sum[pid] += mr.as_secs_f64();
+                            bw_n[pid] += 1;
+                            let w = &deliv_win[pid];
+                            if let (Some(a), Some(b)) = (w.front(), w.back()) {
+                                if w.len() >= 2 && b > a {
+                                    let lr = (w.len() - 1) as f64 / (b - a);
+                                    xlr_s[pid].push(bw / lr);
+                                }
+                            }
+                        }
+                    }
                     if let Some(a) = p.copa_bdp_anchor() {
                         if truth[pid] > 0.0 {
                             anchor_ratio_sum += a / truth[pid];
                             anchor_ratio_n += 1;
+                            if pid < 2 {
+                                xa_sum[pid] += a / truth[pid];
+                                xa_n[pid] += 1;
+                            }
                         }
                     }
                 }
@@ -1296,6 +1853,30 @@ fn simulate_acct(
         }
     }
 
+    let mut xlr_med = [f64::NAN; 2];
+    for (p, v) in xlr_s.iter_mut().enumerate() {
+        if !v.is_empty() {
+            v.sort_by(f64::total_cmp);
+            xlr_med[p] = v[v.len() / 2];
+        }
+    }
+    let mut obs_stat = [ObsStat::default(); 2];
+    for (i, o) in obs.iter().enumerate().take(2) {
+        obs_stat[i] = ObsStat {
+            n_obs: o.n_obs,
+            n_accept: o.n_accept,
+            n_reject: o.n_reject,
+            backlog_end: o.backlog,
+            mean_gap_us: o.gap_sum / (o.n_obs.saturating_sub(1)).max(1) as f64 * 1e6,
+            p50_us: gap_quantile(&o.hist, 0.50),
+            p90_us: gap_quantile(&o.hist, 0.90),
+            p99_us: gap_quantile(&o.hist, 0.99),
+            theta: o.g.theta,
+            alpha: o.g.alpha,
+            u_c: o.g.u_c,
+        };
+    }
+
     Run {
         ticks,
         zero,
@@ -1311,6 +1892,14 @@ fn simulate_acct(
         cwnd_sum,
         cwnd_n,
         led,
+        xa_sum,
+        xa_n,
+        obs: obs_stat,
+        bw_sum,
+        bw_n,
+        mrtt_sum,
+        delivered_p,
+        xlr_med,
     }
 }
 
@@ -2150,6 +2739,488 @@ fn accounting_axis_executes_and_off_is_the_published_bench() {
     assert!(on.led.taper > 0, "r* never cleared the repair debt");
     assert!(on.led.margin > 0, "the NACK margin never fired");
     assert!(on.led.retx > 0, "the retransmit channel never fired");
+}
+
+// ── THE MEASURED ERA'S READOUTS ────────────────────────────────────────────
+
+/// The cells the wire MEASURED an ack stream at, and only those. `c8r`/`c8t`
+/// are absent on purpose: they are half-axis geometries the VM never ran, so
+/// there is no measured shape for their paths and this bench will not invent
+/// one. That is the whole reason this branch exists.
+fn measured_cells() -> Vec<(&'static str, Vec<Spec>, &'static [AckShape])> {
+    vec![
+        ("sc2  single fast (c2r100)", vec![C2], &ACK_SC2[..]),
+        ("c7   dual symmetric      ", vec![C2, C2], &ACK_C7[..]),
+        ("c8   dual asym (r+RTT)   ", vec![C2, C3], &ACK_C8[..]),
+    ]
+}
+
+/// (8) THE VALIDATION GATE — V1/V2/V3, scored per path against the ledger
+/// before the geography question may be asked at all.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_measured_ack_era_fidelity() {
+    println!("\n=== THE MEASURED ACK ERA vs THE WIRE (validation gate V1/V2/V3) ===");
+    println!("inputs : drecv = 1, per-path gap p50/p90/p99 (READOUT 1+2), the 1 ms floor");
+    println!("checks : rejection %% (READOUT 3b), samples/s, acks folded, xanchor (READOUT 3)");
+    println!("model  : work-conserving observer; theta/alpha/u_c SOLVED from the measurement\n");
+    println!("V1 is scored on the LEDGER's xanchor (max_bw/rate_lr, READOUT 3); the bench's own");
+    println!("overread() gauge divides by the CONFIGURED rate*RTprop and is shown beside it.\n");
+    println!(
+        "{:<26} {:<11} {:>7} {:>7} {:>6} | {:>9} {:>9} {:>9} | {:>7} {:>7} | {:>7} {:>7} {:>7} {:>6}",
+        "cell", "path", "theta", "alpha", "u_c", "p50 us", "p90 us", "p99 us", "rej%", "want",
+        "x_lr", "want", "minRTT", "V1"
+    );
+    let mut v1 = true;
+    let mut v2 = true;
+    let mut v3 = true;
+    for (name, geom, shapes) in measured_cells() {
+        let r = simulate_acct(&geom, Arm::Legacy, Feed::Measured(shapes), 20.0, 0, Acct::Off);
+        for (i, sh) in shapes.iter().enumerate() {
+            let o = r.obs[i];
+            let x = r.xanchor_lr(i);
+            let ok1 = (x - sh.xanchor).abs() <= V1_XANCHOR_TOL * sh.xanchor;
+            let ok2 = (o.reject_pct() - sh.rej_pct).abs() <= V2_REJECT_TOL_PTS;
+            // V3 is scored against the ledger's own per-window ranges, scaled
+            // to THIS bench path's mean gap (the shape is dimensionless).
+            let scale = (1e6 / sh.rate_lr) / o.mean_gap_us.max(1e-9);
+            let inband = |v: f64, (lo, hi): (f64, f64)| v * scale >= lo * 0.5 && v * scale <= hi * 2.0;
+            let ok3 = inband(o.p50_us, sh.p50) && inband(o.p90_us, sh.p90) && inband(o.p99_us, sh.p99);
+            v1 &= ok1;
+            v2 &= ok2;
+            v3 &= ok3;
+            println!(
+                "{:<26} {:<11} {:>7.3} {:>7.2} {:>6.3} | {:>9.1} {:>9.1} {:>9.1} | {:>6.1}% {:>6.1}% | {:>7.2} {:>7.2} {:>6.2}x {:>6}",
+                if i == 0 { name } else { "" },
+                sh.row,
+                o.theta,
+                o.alpha,
+                o.u_c,
+                o.p50_us,
+                o.p90_us,
+                o.p99_us,
+                o.reject_pct(),
+                sh.rej_pct,
+                x,
+                sh.xanchor,
+                r.rtt_inflation(i, geom[i].1),
+                if ok1 && ok2 && ok3 { "ok" } else { "MISS" }
+            );
+            println!(
+                "{:<26} {:<11}   obs {} accept {} ({:.0}/s, want {:.0}/s at the WIRE's rate) \
+                 folded {:.1} (want {:.1}) mean gap {:.1} us (this path's 1/rate = {:.1}, wire {:.1}) \
+                 | bench overread() x{:.2}",
+                "",
+                "",
+                o.n_obs,
+                o.n_accept,
+                o.samples_s(20.0),
+                sh.samples_s,
+                o.folded(),
+                sh.rate_lr / sh.samples_s,
+                o.mean_gap_us,
+                1e6 / geom[i].0,
+                1e6 / sh.rate_lr,
+                r.overread_path(i)
+            );
+            println!(
+                "{:<26} {:<11}   x_lr median over 2 s windows {:.2}  |  on a whole-run divisor {:.2}",
+                "", "", x, r.xanchor_runmean(i)
+            );
+        }
+        println!();
+    }
+    println!(
+        "V1 xanchor +/-{:.0}%  {}   V2 rejection +/-{:.0} pts  {}   V3 marginal  {}",
+        V1_XANCHOR_TOL * 100.0,
+        if v1 { "PASS" } else { "FAIL" },
+        V2_REJECT_TOL_PTS,
+        if v2 { "PASS" } else { "FAIL" },
+        if v3 { "PASS" } else { "FAIL" }
+    );
+    println!(
+        "==> the measured inputs are {} — the geography question {} be asked\n",
+        if v1 && v2 && v3 { "REPRODUCED" } else { "NOT REPRODUCED" },
+        if v1 && v2 && v3 { "MAY" } else { "MAY NOT" }
+    );
+}
+
+/// (9) THE GEOGRAPHY, on measured inputs + the accounting axis. The same
+/// G1/G2 the accounting axis pre-registered, on the same statistic, so the two
+/// runs differ in exactly one thing: the ack stream.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_geography_on_measured_inputs() {
+    println!("\n=== GEOGRAPHY ON MEASURED INPUTS ({SEEDS} seeds x 20 s) ===");
+    println!("era = the wire's ack stream; metering = OFF (published) and ENGINE (un-metered)\n");
+    println!(
+        "{:<26} {:<22} {:<24} {:>8} {:>16} {:>8} {:>8} {:>9}",
+        "cell", "arm", "metering", "zero%", "[lo..hi]", "caught", "cap", "goodput"
+    );
+    let mut verdict: Vec<(&str, f64, f64, f64)> = Vec::new();
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        let (mut a_zero, mut a_caught, mut u_zero) = (0.0, 0.0, 0.0);
+        for acct in [Acct::Off, Acct::Engine] {
+            for arm in [Arm::Legacy, Arm::Unified, Arm::PooledUnified] {
+                let mut e = MeasEns::run(&geom, arm, feed, acct);
+                if acct == Acct::Engine && arm == Arm::Legacy {
+                    a_zero = AcctEns::mean(&e.zero);
+                    a_caught = e.caught();
+                }
+                if acct == Acct::Engine && arm == Arm::Unified {
+                    u_zero = AcctEns::mean(&e.zero);
+                }
+                println!(
+                    "{:<26} {:<22} {:<24} {:>7.1}% {:>16} {:>7.0}% {:>8.0} {:>9.0}",
+                    name,
+                    arm.label(),
+                    acct.label(),
+                    AcctEns::mean(&e.zero),
+                    format!("[{:.1}..{:.1}]", e.lo(), e.hi()),
+                    e.caught() * 100.0,
+                    AcctEns::mean(&e.cap),
+                    AcctEns::mean(&e.gp)
+                );
+                if acct == Acct::Engine && arm == Arm::Legacy {
+                    let l = e.led;
+                    // READOUT 4, as an EMERGENT property: under the engine's
+                    // ledger every wire symbol enters the receiver's
+                    // expected/received counters, so Σcrecv/srcack IS
+                    // wire()/src. The wire settles at 1.01–1.04 (c2r100, c7)
+                    // and 1.21–1.34 (c8).
+                    println!(
+                        "{:<26} {:<22} {:<24}   channels: src {} taper {} retx {} margin {} | \
+                         Sum crecv/srcack = wire/src {:.3}  (wire: 1.01-1.04 sym, 1.21-1.34 asym)",
+                        "", "", "",
+                        l.src, l.taper, l.retx, l.margin,
+                        l.wire() as f64 / l.src.max(1) as f64
+                    );
+                    println!(
+                        "{:<26} {:<22} {:<24}   realized xanchor per path: {}",
+                        "", "", "",
+                        e.x_str()
+                    );
+                }
+            }
+        }
+        verdict.push((name, a_zero, a_caught, if a_zero > 0.0 { u_zero / a_zero } else { f64::INFINITY }));
+        println!();
+    }
+
+    println!("--- THE PRE-REGISTERED VERDICT (G1 level, G2 cell-keying; c7 + c8) ---");
+    println!(
+        "G1: ENGINE A-arm mean < {G1_LEVEL_PCT:.0}% AND caught >= {:.0}% at BOTH c7 and c8",
+        G1_CAUGHT_MIN * 100.0
+    );
+    println!("G2: fold(c8) >= {G2_FOLD_C8_MIN:.1} AND fold(c7) <= {G2_FOLD_C7_MAX:.1}\n");
+    let (mut g1, mut g2) = (true, true);
+    for (name, z, c, f) in &verdict {
+        let key = name.trim();
+        let is_c7 = key.starts_with("c7");
+        let is_c8 = key.starts_with("c8");
+        println!("{name}  A {z:.1}%  caught {:.0}%  fold {f:.1}x", c * 100.0);
+        if is_c7 || is_c8 {
+            if *z >= G1_LEVEL_PCT || *c < G1_CAUGHT_MIN {
+                g1 = false;
+            }
+            if is_c8 && *f < G2_FOLD_C8_MIN {
+                g2 = false;
+            }
+            if is_c7 && *f > G2_FOLD_C7_MAX {
+                g2 = false;
+            }
+        }
+    }
+    println!(
+        "\nG1 {}  G2 {}  ==> GEOGRAPHY {}",
+        if g1 { "PASS" } else { "FAIL" },
+        if g2 { "PASS" } else { "FAIL" },
+        if g1 && g2 { "REPRODUCED" } else { "NOT REPRODUCED" }
+    );
+}
+
+/// The seed ensemble over the measured era, carrying the per-path `xanchor`
+/// so the candidate/geography tables can show what the loop produced.
+struct MeasEns {
+    zero: Vec<f64>,
+    gp: Vec<f64>,
+    cap: Vec<f64>,
+    led: Ledger,
+    x: [Vec<f64>; 2],
+    np: usize,
+}
+
+impl MeasEns {
+    fn run(geom: &[Spec], arm: Arm, feed: Feed, acct: Acct) -> Self {
+        let mut e = MeasEns {
+            zero: vec![],
+            gp: vec![],
+            cap: vec![],
+            led: Ledger::default(),
+            x: [vec![], vec![]],
+            np: geom.len(),
+        };
+        for s in 0..SEEDS {
+            let r = simulate_acct(geom, arm, feed, 20.0, s, acct);
+            e.zero.push(r.zero_pct());
+            e.gp.push(r.goodput_sym_s());
+            e.cap.push(r.mean_cap);
+            for p in 0..geom.len().min(2) {
+                e.x[p].push(r.overread_path(p));
+            }
+            e.led.src += r.led.src;
+            e.led.taper += r.led.taper;
+            e.led.retx += r.led.retx;
+            e.led.margin += r.led.margin;
+            e.led.charges += r.led.charges;
+            e.led.releases += r.led.releases;
+            e.led.releases_wasted += r.led.releases_wasted;
+            e.led.tokens += r.led.tokens;
+        }
+        e
+    }
+    fn caught(&self) -> f64 {
+        self.zero.iter().filter(|z| **z < CAUGHT_PCT).count() as f64 / self.zero.len() as f64
+    }
+    fn lo(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::INFINITY, f64::min)
+    }
+    fn hi(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    }
+    fn x_str(&self) -> String {
+        (0..self.np.min(2))
+            .map(|p| format!("p{p} x{:.2}", AcctEns::mean(&self.x[p])))
+            .collect::<Vec<_>>()
+            .join("  ")
+    }
+}
+
+/// (10) THE CANDIDATE, re-scored on the measured era — the dispatch's MATCH
+/// outcome asks for exactly this, and it is printed either way so a NO-MATCH
+/// still leaves the number on the record rather than losing it.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_pooled_candidate_on_measured_inputs() {
+    println!("\n=== POOLED-CEILING CANDIDATE on MEASURED inputs ({SEEDS} seeds x 20 s) ===");
+    println!(
+        "{:<26} {:<24} {:>8} {:>8} {:>8} {:>8} {:>10} {:>10} {:>10}",
+        "cell", "metering", "A zero%", "AU zero%", "P zero%", "P caught", "A gp", "AU gp", "P gp"
+    );
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        for acct in [Acct::Off, Acct::Engine] {
+            let a = MeasEns::run(&geom, Arm::Legacy, feed, acct);
+            let u = MeasEns::run(&geom, Arm::Unified, feed, acct);
+            let p = MeasEns::run(&geom, Arm::PooledUnified, feed, acct);
+            println!(
+                "{:<26} {:<24} {:>7.1}% {:>7.1}% {:>7.1}% {:>7.0}% {:>10.0} {:>10.0} {:>10.0}",
+                name,
+                acct.label(),
+                AcctEns::mean(&a.zero),
+                AcctEns::mean(&u.zero),
+                AcctEns::mean(&p.zero),
+                p.caught() * 100.0,
+                AcctEns::mean(&a.gp),
+                AcctEns::mean(&u.gp),
+                AcctEns::mean(&p.gp)
+            );
+        }
+        println!();
+    }
+}
+
+// ── The measured era's always-on pins ─────────────────────────────────────
+
+/// THE LAW IS SOLVED, NOT CHOSEN — the two quantities the model needs beyond
+/// the measured quantiles are both roots of measured identities, and this
+/// asserts they are, at every measured path:
+///
+///  * `alpha` is the root of "the distribution's mean is `1/rate_lr`", so
+///    reconstructing the mean from the model's own pieces must return 1;
+///  * `u_c` is the root of "the silence fraction equals the drain duty cycle",
+///    i.e. `∫_0^{u_c} Q = q50`;
+///  * and the model's marginal must reproduce the LEDGER's own quantiles: `Q`
+///    evaluated at 0.5/0.9/0.99 must be the transcribed p50/p90/p99 (at the
+///    range position `theta` the mean constraint left it).
+///
+/// If a successor edits the interpolation, the tail or the duty identity, this
+/// fails on the identity rather than drifting silently into a fitted curve.
+#[test]
+fn measured_ack_law_is_solved_from_the_measurement() {
+    for sh in ACK_ALL {
+        // Resolved against the wire's OWN rate, so the reconstruction can be
+        // checked in the wire's own units.
+        let g = AckGaps::new(sh, sh.rate_lr);
+        assert!(g.alpha > 1.0, "{}: alpha {} would give an infinite mean gap", sh.row, g.alpha);
+        assert!(g.theta >= 0.0 && g.theta <= 0.5, "{}: theta {}", sh.row, g.theta);
+        assert!(g.u_c > 0.5 && g.u_c < 1.0, "{}: u_c {}", sh.row, g.u_c);
+        // (1) THE MEAN CONSTRAINT: ∫_0^1 Q du = 1, i.e. the model's mean gap
+        // IS `1/rate_lr`. This is what `alpha` was solved for.
+        let m = g.cdf_mean_to(1.0);
+        assert!(
+            (m - 1.0).abs() < 1e-6,
+            "{}: the model's mean gap is {m:.6}x the measured one — alpha did not solve",
+            sh.row
+        );
+        // (2) THE DUTY IDENTITY: ∫_0^{u_c} Q du = q50.
+        assert!(
+            (g.cdf_mean_to(g.u_c) - g.q50).abs() < 1e-9,
+            "{}: the silence threshold does not satisfy the drain duty identity",
+            sh.row
+        );
+        // (3) THE MARGINAL IS THE LEDGER'S. Q at the three measured quantiles
+        // must BE the transcribed numbers, in µs, at this path's own scale.
+        let mean_us = 1e6 / sh.rate_lr;
+        let (want50, want90, want99) = AckGaps::quantiles(sh, g.theta);
+        for (u, want, range, what) in [
+            (0.5, want50, sh.p50, "p50"),
+            (0.9, want90, sh.p90, "p90"),
+            (0.99, want99, sh.p99, "p99"),
+        ] {
+            let got = g.q(u);
+            assert!(
+                (got - want).abs() < 1e-9,
+                "{}: Q({u}) = {got} but the ledger says {want}",
+                sh.row
+            );
+            let us = got * mean_us;
+            assert!(
+                us >= range.0 - 1e-6 && us <= range.1 + 1e-6,
+                "{}: {what} = {us:.1} µs is outside the ledger's own range {range:?}",
+                sh.row
+            );
+        }
+        // (4) THE TAIL IS TRUNCATED AT SOMETHING THE INSTRUMENT SAW.
+        let mut rng = Rng::new(1);
+        let mut hi = 0.0_f64;
+        for _ in 0..100_000 {
+            hi = hi.max(g.silence(&mut rng, g.mean_gap_s));
+        }
+        assert!(
+            hi <= ACK_GAP_MAX_S + 1e-12,
+            "{}: a silence of {:.1} ms exceeds the largest gap the gauge reported",
+            sh.row,
+            hi * 1e3
+        );
+        // And the drain rate really is faster than arrivals — otherwise the
+        // observer is not an observer and the whole era is inert.
+        assert!(g.q50 < 1.0, "{}: p50 gap is not below the mean gap", sh.row);
+    }
+}
+
+/// MEASUREMENT DISCIPLINE 1 for the measured era: the mechanism under test
+/// must EXECUTE, and it must execute as the wire describes it.
+///
+///  * every ack reaches `record_delivery` with `count = 1` — asserted as an
+///    identity between the observer's count and the run's delivered count, so
+///    a batching bug cannot hide;
+///  * the SHIPPED 1 ms floor really does the folding: most calls are rejected,
+///    and the accepted ones fold many acks each;
+///  * the sub-tick clock walk is monotone and lands on the tick grid (the
+///    refresh count is unchanged from every other era).
+#[test]
+fn measured_era_feeds_the_shipped_floor_one_ack_at_a_time() {
+    let m = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8), 6.0, 0, Acct::Off);
+    let h = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Off);
+    // drecv = 1: one observation per delivered symbol, no aggregation. The
+    // observer is work-conserving, so the identity is exact ONCE the acks
+    // still inside it at the horizon are counted — and that residual is
+    // asserted small, because a large one would mean the observer is running
+    // slower than the link and the era is throttling the loop rather than
+    // re-timing it.
+    let obs: u64 = m.obs.iter().map(|o| o.n_obs).sum();
+    let residual: u64 = m.obs.iter().map(|o| o.backlog_end).sum();
+    assert_eq!(
+        obs + residual,
+        m.delivered,
+        "every delivered symbol must be observed exactly once (or still be in the \
+         observer at the horizon) — a mismatch means acks were merged or dropped"
+    );
+    assert!(
+        residual * 1_000 < m.delivered,
+        "the observer is behind the link by {residual} of {} acks — it is throttling, \
+         not re-timing",
+        m.delivered
+    );
+    // The floor is the clock, and it rejects the way READOUT 3b says.
+    for (i, o) in m.obs.iter().enumerate().take(2) {
+        assert!(o.n_obs > 10_000, "path {i}: only {} acks observed", o.n_obs);
+        assert!(
+            o.reject_pct() > 70.0,
+            "path {i}: the 1 ms floor rejected only {:.1}% — it is not clocking the sampler",
+            o.reject_pct()
+        );
+        assert!(
+            o.folded() > 3.0,
+            "path {i}: {:.1} acks folded per accepted sample; the wire folds 5–18",
+            o.folded()
+        );
+    }
+    // The tick grid is untouched: the sub-tick walk must not add or lose a
+    // dyn-cap refresh.
+    assert_eq!(m.ticks, h.ticks, "the sub-tick clock walk moved the refresh grid");
+}
+
+/// THE MEASURED ERA IS AN ERA, NOT A REWRITE: `Feed::Measured` must leave
+/// every other feed bit-identical. The era axis is only a claim about the
+/// SAMPLER, so the transport half — deliveries, retransmits, the ledger — must
+/// come out of `Feed::Honest` exactly as it did before this branch.
+#[test]
+fn measured_era_does_not_disturb_the_other_eras() {
+    for acct in [Acct::Off, Acct::Traffic, Acct::Engine] {
+        for geom in [vec![C2, C2], vec![C2, C3]] {
+            let a = simulate_acct(&geom, Arm::Legacy, Feed::Honest, 6.0, 0, acct);
+            let b = simulate_acct(&geom, Arm::Legacy, Feed::Honest, 6.0, 0, acct);
+            assert_eq!(a.zero, b.zero);
+            assert_eq!(a.delivered, b.delivered);
+            assert_eq!(a.led.wire(), b.led.wire());
+            // And the honest era observes nothing — the observer is inert off
+            // its own feed.
+            assert_eq!(a.obs[0].n_obs, 0, "the honest era ran the measured observer");
+        }
+    }
+}
+
+/// THE VALIDATION GATE, bounded — V1 and V2 as always-on assertions at the
+/// two cells the dispatch's question is about, on the tolerances that were
+/// pre-registered in the previous commit rather than discovered here.
+///
+/// Scored at 3 seeds × 8 s rather than the ledger's 8 × 20 s: this is the
+/// regression bound, not the evidence.
+#[test]
+fn measured_era_reproduces_the_wires_floor_and_anchor() {
+    for (geom, shapes) in [(vec![C2, C2], &ACK_C7), (vec![C2, C3], &ACK_C8)] {
+        let feed = Feed::Measured(&shapes[..]);
+        for s in 0..3u64 {
+            let r = simulate_acct(&geom, Arm::Legacy, feed, 8.0, s, Acct::Off);
+            for (i, sh) in shapes.iter().enumerate() {
+                // V2 — the floor's rejection rate, a PREDICTION of the model.
+                let rej = r.obs[i].reject_pct();
+                assert!(
+                    (rej - sh.rej_pct).abs() <= V2_REJECT_TOL_PTS,
+                    "{} seed {s}: floor rejected {rej:.1}%, the wire {:.1}% (V2 = +/-{:.0} pts)",
+                    sh.row,
+                    sh.rej_pct,
+                    V2_REJECT_TOL_PTS
+                );
+                // V1 — the realized anchor over-read on THE LEDGER'S
+                // definition (READOUT 3: `max_bw/rate_lr`, the RTT divided
+                // out), which is the quantity the store-cap Σ and the cwnd
+                // anchor floor consume once the path's own RTprop is put back.
+                let x = r.xanchor_lr(i);
+                assert!(
+                    (x - sh.xanchor).abs() <= V1_XANCHOR_TOL * sh.xanchor,
+                    "{} seed {s}: realized xanchor x{x:.2}, the wire x{:.2} \
+                     (V1 = +/-{:.0}%)",
+                    sh.row,
+                    sh.xanchor,
+                    V1_XANCHOR_TOL * 100.0
+                );
+            }
+        }
+    }
 }
 
 fn fold_str(a: f64, u: f64) -> String {
