@@ -41,7 +41,7 @@ use raptorpath::control::FecRateController;
 use raptorpath::fec::FecBackend;
 use raptorpath::net::{
     delta_budget_b, path_scaled_store_cap, three_term_store_cap, three_term_terms, EchoRatioMin,
-    ThreeTermPath,
+    ThreeTermPath, ThreeTermTerm,
 };
 use raptorpath::scheduler::{MockClock, Scheduler};
 
@@ -399,6 +399,11 @@ struct Report {
 /// seqs, so `delivered = frontier − 1` and the scan starts at `frontier`.
 fn sack_snapshot(seen: &std::collections::BTreeSet<u64>, frontier: u64, highest: u64) -> Vec<(u64, u64)> {
     let mut out: Vec<(u64, u64)> = Vec::new();
+    if highest < frontier {
+        // Nothing above the cumulative point: the receiver has no hole and
+        // the ack carries an empty SACK list (`receiver.rs:1543`).
+        return out;
+    }
     for &s in seen.range(frontier..=highest) {
         match out.last_mut() {
             Some((_, e)) if *e + 1 == s => *e = s,
@@ -1302,6 +1307,15 @@ struct Run {
     span_mean: f64,
     released_mean: f64,
     stall_frac: f64,
+    /// AT THE REFRESH TICK, the three quantities the `available()` predicate is
+    /// made of, so "which produced quantity diverges first" is a measurement
+    /// and not an argument: the flow-control operand the gate actually read
+    /// (`store_len`), the UNACKED count beside it (what the published bench
+    /// used to read), and Σ`in_flight` / Σ`cwnd` over live paths.
+    store_len_mean: f64,
+    unacked_mean: f64,
+    infl_mean: f64,
+    cwnd_live_mean: f64,
 }
 
 impl Run {
@@ -1561,6 +1575,12 @@ fn simulate_full(
     let mut span_n = 0u64;
     let mut rel_sum = 0.0_f64;
     let mut stall_ticks = 0u64;
+    // The `available()` decomposition, sampled at the refresh tick.
+    let mut sl_sum = 0.0_f64;
+    let mut un_sum = 0.0_f64;
+    let mut infl_sum = 0.0_f64;
+    let mut cwl_sum = 0.0_f64;
+    let mut dec_n = 0u64;
 
     // ── the accounting axis's state ─────────────────────────────────────
     // The SHIPPED FEC rate controller, constructed at the resolved defaults
@@ -2036,6 +2056,23 @@ fn simulate_full(
             if act.is_empty() && !live.is_empty() {
                 zero += 1;
             }
+            // THE `available()` DECOMPOSITION at the tick the gauge is
+            // recorded on. `store_len` is whatever the axis says the gate
+            // reads; `unacked` is the published bench's operand, carried
+            // beside it so the two are comparable at every tick.
+            dec_n += 1;
+            un_sum += store.len() as f64;
+            sl_sum += match store_mode {
+                Store::Unacked => store.len() as f64,
+                Store::Span => (next_seq - snd_frontier) as f64
+                    - released_count(&snd_marks, snd_frontier, next_seq) as f64,
+            };
+            for id in live.iter() {
+                if let Some(p) = sched.path(*id) {
+                    infl_sum += p.in_flight as f64;
+                    cwl_sum += p.cwnd as f64;
+                }
+            }
             let n_live = live.len().max(1);
             let sum_over = |set: &[u32]| -> f64 {
                 set.iter()
@@ -2261,6 +2298,10 @@ fn simulate_full(
         span_mean: span_sum / span_n.max(1) as f64,
         released_mean: rel_sum / span_n.max(1) as f64,
         stall_frac: stall_ticks as f64 / span_n.max(1) as f64,
+        store_len_mean: sl_sum / dec_n.max(1) as f64,
+        unacked_mean: un_sum / dec_n.max(1) as f64,
+        infl_mean: infl_sum / dec_n.max(1) as f64,
+        cwnd_live_mean: cwl_sum / dec_n.max(1) as f64,
     }
 }
 
@@ -3184,6 +3225,414 @@ const K4_SHORT_C7_MAX: f64 = 15.0;
 const CAND_CAP_TOL: f64 = 0.10;
 const CAND_ZERO_TOL_PTS: f64 = 2.0;
 const CAND_GP_MIN: f64 = 0.98;
+
+// ── THE COUPLING MODEL's ALWAYS-ON PINS ────────────────────────────────────
+
+/// The release law's two pure helpers, against the engine's own definitions.
+/// `sack_snapshot` is `received_sack_ranges` (`net/mod.rs:3430-3447`) and
+/// `released_count` is the cardinality the mark set contributes to
+/// `sack_release_outstanding` (`net/mod.rs:3394-3396`) after the cumulative
+/// prune (`net/mod.rs:3387-3389`).
+#[test]
+fn sack_snapshots_subsume_and_the_union_is_the_newest() {
+    use std::collections::BTreeSet;
+    // The engine's own unit fixture (`net/mod.rs:8758-8771`): delivered = 10,
+    // seen = 20, received {11,12,15,18,19,20} ⇒ [(11,12),(15,15),(18,20)].
+    let seen: BTreeSet<u64> = [11u64, 12, 15, 18, 19, 20].into_iter().collect();
+    assert_eq!(
+        sack_snapshot(&seen, 11, 20),
+        vec![(11, 12), (15, 15), (18, 20)],
+        "the snapshot must be received_sack_ranges' own encoding"
+    );
+    // Empty above the cumulative point ⇒ no ranges (`receiver.rs:1543`).
+    assert!(sack_snapshot(&seen, 21, 20).is_empty());
+
+    // The mark set only covers RETAINED seqs: below the frontier and at or
+    // above the sent edge are both excluded, which is what makes the count a
+    // subset of `sent_store` (`net/mod.rs:3376`, `:10181`).
+    let r = sack_snapshot(&seen, 11, 20);
+    assert_eq!(released_count(&r, 11, 21), 6, "all six retained marks count");
+    assert_eq!(released_count(&r, 16, 21), 3, "the prune drops 11,12,15");
+    assert_eq!(released_count(&r, 11, 19), 4, "the sent edge clips 19,20");
+    assert_eq!(released_count(&r, 25, 30), 0, "a passed frontier releases nothing");
+
+    // SUBSUMPTION (semantic 5): a later snapshot over a superset of arrivals
+    // covers every seq an earlier one did, ABOVE the later cumulative point.
+    let later: BTreeSet<u64> = [11u64, 12, 13, 14, 15, 18, 19, 20, 21].into_iter().collect();
+    let a = sack_snapshot(&seen, 11, 20);
+    let b = sack_snapshot(&later, 11, 21);
+    for &(lo, hi) in &a {
+        for s in lo..=hi {
+            assert!(
+                released_count(&b, s, s + 1) == 1,
+                "seq {s} released by the earlier snapshot must be in the later one"
+            );
+        }
+    }
+    assert!(
+        released_count(&b, 11, 22) > released_count(&a, 11, 22),
+        "the later snapshot is strictly larger here, so the union IS the newest"
+    );
+}
+
+/// MEASUREMENT DISCIPLINE 1: the axis EXECUTES, `Store::Unacked` is the
+/// published bench bit-for-bit, and `Store::Span` produces the three
+/// quantities the model exists to produce.
+#[test]
+fn coupling_axis_executes_and_unacked_is_the_published_bench() {
+    let geom = [C2, C3];
+    let feed = Feed::Measured(&ACK_C8[..]);
+    let base = simulate_acct(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine);
+    let off = simulate_full(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine, Store::Unacked);
+    assert_eq!(base.zero, off.zero, "Store::Unacked must be bit-identical");
+    assert_eq!(base.short, off.short);
+    assert_eq!(base.delivered, off.delivered);
+    assert_eq!(base.retx, off.retx);
+    assert_eq!(base.led.wire(), off.led.wire());
+    assert_eq!(off.span_mean, 0.0, "the gauges are inert on the published arm");
+
+    let on = simulate_full(&geom, Arm::Legacy, feed, 4.0, 0, Acct::Engine, Store::Span);
+    assert!(on.span_mean > 0.0, "the frontier span must be produced");
+    assert!(on.released_mean > 0.0, "the SACK marks must actually arrive");
+    assert!(
+        on.span_mean > on.released_mean,
+        "span {} must exceed the marks {} — the difference IS store_len",
+        on.span_mean,
+        on.released_mean
+    );
+    assert!(
+        on.stall_frac > 0.0,
+        "the receiver frontier must sit behind a hole at least sometimes, or \
+         the 2 ms gap-report clock (net/mod.rs:213) never binds and the model \
+         is untested"
+    );
+    assert!(on.delivered > 0 && on.retx > 0, "the loop must still run");
+}
+
+/// The model's CELL-KEYED claim, BOUNDED rather than described (CLAUDE.md):
+/// the frontier span is what a SKEWED cell parks and a symmetric one does not.
+/// The asymmetric cell's span must exceed its released marks by more, relative
+/// to its own span, than the symmetric cell's — because the c8 legs differ by
+/// 4.6× in RTprop and the c7 legs do not.
+#[test]
+fn the_frontier_span_is_parked_at_the_skewed_cell_and_not_at_the_symmetric_one() {
+    let sym = simulate_full(&[C2, C2], Arm::Legacy, Feed::Measured(&ACK_C7[..]), 4.0, 0, Acct::Engine, Store::Span);
+    let asym = simulate_full(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8[..]), 4.0, 0, Acct::Engine, Store::Span);
+    assert!(sym.span_mean > 0.0 && asym.span_mean > 0.0);
+    // The fraction of the span the release law has NOT yet uncounted.
+    let held_sym = 1.0 - sym.released_mean / sym.span_mean;
+    let held_asym = 1.0 - asym.released_mean / asym.span_mean;
+    assert!(
+        (0.0..=1.0).contains(&held_sym) && (0.0..=1.0).contains(&held_asym),
+        "the marks are a subset of the span by construction: {held_sym} {held_asym}"
+    );
+    assert!(
+        asym.stall_frac >= sym.stall_frac,
+        "the skewed cell's in-order frontier cannot stall LESS often than the \
+         symmetric cell's: c8 {:.3} vs c7 {:.3}",
+        asym.stall_frac,
+        sym.stall_frac
+    );
+}
+
+/// The three-term candidate is the SHIPPED law and introduces no constant of
+/// its own: same function, same resolved arguments, and the span term is
+/// identically zero at N = 1 by arithmetic (no path-count predicate anywhere).
+#[test]
+fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
+    let tt = |rate: f64, rtp_ms: f64, k: f64| ThreeTermTerm { rate, rtprop_s: rtp_ms / 1e3, k };
+    let b = delta_budget_b(ProtocolHint::Auto);
+    // N = 1: the span term vanishes, and it does so without a branch.
+    let (_, _, _, sp1) =
+        three_term_store_cap(true, &[Some(tt(10_400.0, 8.0, 1.5))], TT_RHO, b, FLOOR).unwrap();
+    assert_eq!(sp1, 0.0, "one path has zero RTprop spread");
+    // The bench's own c8 geometry: the span term is 2·rate_fast·skew with
+    // skew = (60−8)/2 ms, i.e. rate_fast × the ROUND-TRIP difference.
+    let c8 = [Some(tt(C2.0, C2.1 * 1e3, 1.5)), Some(tt(C3.0, C3.1 * 1e3, 1.5))];
+    let (_, _, _, sp2) = three_term_store_cap(true, &c8, TT_RHO, b, FLOOR).unwrap();
+    let want = C2.0 * (C3.1 - C2.1);
+    assert!(
+        (sp2 - want).abs() < 1e-6,
+        "term 3 must be rate_fast × (RTprop_max − RTprop_min): {sp2} vs {want}"
+    );
+    // Cold ⇒ None ⇒ the arm falls back to the configured chain verbatim
+    // (`net/mod.rs:4722-4725`), which is what `cap_for` does.
+    assert!(three_term_store_cap(true, &[None, Some(tt(C2.0, 8.0, 1.5))], TT_RHO, b, FLOOR).is_none());
+    assert_eq!(
+        cap_for(Arm::ThreeTermCell, 0.0, 900.0, 2, None),
+        shipped_chain(900.0, 2),
+        "a cold three-term tick must read the shipped chain, not a substitute"
+    );
+}
+
+/// The seed ensemble over the COUPLING axis, carrying the short-set fraction
+/// (C4) and the model's own produced span/release gauges beside the `[SF]`
+/// zero-fraction.
+struct CoupEns {
+    zero: Vec<f64>,
+    short: Vec<f64>,
+    gp: Vec<f64>,
+    cap: Vec<f64>,
+    span: Vec<f64>,
+    rel: Vec<f64>,
+    stall: Vec<f64>,
+}
+
+impl CoupEns {
+    fn run(geom: &[Spec], arm: Arm, feed: Feed, acct: Acct, sm: Store) -> Self {
+        let mut e = CoupEns {
+            zero: vec![], short: vec![], gp: vec![], cap: vec![],
+            span: vec![], rel: vec![], stall: vec![],
+        };
+        for s in 0..SEEDS {
+            let r = simulate_full(geom, arm, feed, 20.0, s, acct, sm);
+            e.zero.push(r.zero_pct());
+            e.short.push(r.short_pct());
+            e.gp.push(r.goodput_sym_s());
+            e.cap.push(r.mean_cap);
+            e.span.push(r.span_mean);
+            e.rel.push(r.released_mean);
+            e.stall.push(r.stall_frac * 100.0);
+        }
+        e
+    }
+    fn caught(&self) -> f64 {
+        self.zero.iter().filter(|z| **z < CAUGHT_PCT).count() as f64 / self.zero.len() as f64
+    }
+    fn lo(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::INFINITY, f64::min)
+    }
+    fn hi(&self) -> f64 {
+        self.zero.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    }
+}
+
+/// (11) THE COUPLING MODEL — the pre-registered C1..C4 verdict, and the
+/// candidate scoring rule that is unlocked only by it.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_geography_on_the_coupling_model() {
+    println!("\n=== THE COUPLING MODEL ({SEEDS} seeds x 20 s) ===");
+    println!(
+        "era = the wire's measured ack stream; metering = ENGINE (un-metered); \
+         store = UNACKED (published) vs SPAN (frontier)\n"
+    );
+    println!(
+        "{:<26} {:<22} {:<20} {:>7} {:>14} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>8}",
+        "cell", "arm", "store", "zero%", "[lo..hi]", "caught", "short%", "cap",
+        "span", "rel", "stall%", "goodput"
+    );
+    // (cell, A zero, A caught, A short, AU zero, AU short)
+    let mut rows: Vec<(&str, f64, f64, f64, f64, f64)> = Vec::new();
+    // (cell, arm, zero, cap, goodput) for the candidate rule.
+    let mut cand: Vec<(&str, Arm, f64, f64, f64)> = Vec::new();
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        let (mut az, mut ac, mut as_, mut uz, mut us) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for sm in [Store::Unacked, Store::Span] {
+            for arm in [Arm::Legacy, Arm::Unified, Arm::PooledUnified, Arm::ThreeTermCell] {
+                let e = CoupEns::run(&geom, arm, feed, Acct::Engine, sm);
+                let (z, sh) = (AcctEns::mean(&e.zero), AcctEns::mean(&e.short));
+                if sm == Store::Span {
+                    cand.push((name, arm, z, AcctEns::mean(&e.cap), AcctEns::mean(&e.gp)));
+                    match arm {
+                        Arm::Legacy => {
+                            az = z;
+                            ac = e.caught();
+                            as_ = sh;
+                        }
+                        Arm::Unified => {
+                            uz = z;
+                            us = sh;
+                        }
+                        _ => {}
+                    }
+                }
+                println!(
+                    "{:<26} {:<22} {:<20} {:>6.1}% {:>14} {:>6.0}% {:>6.1}% {:>7.0} \
+                     {:>7.0} {:>7.0} {:>6.1}% {:>8.0}",
+                    name, arm.label(), sm.label(), z,
+                    format!("[{:.1}..{:.1}]", e.lo(), e.hi()),
+                    e.caught() * 100.0, sh,
+                    AcctEns::mean(&e.cap), AcctEns::mean(&e.span),
+                    AcctEns::mean(&e.rel), AcctEns::mean(&e.stall),
+                    AcctEns::mean(&e.gp)
+                );
+            }
+            println!();
+        }
+        rows.push((name, az, ac, as_, uz, us));
+    }
+
+    println!("--- THE PRE-REGISTERED VERDICT (C1 contrast, C2 level, C3 c7-quiet, C4 short set) ---");
+    println!("wire: c7 A 0.3/3.7  c7 AU 1.2/6.3  c8 A 4.6/40.8  c8 AU 29.9/51.1  (zero%/short%)\n");
+    let (mut c1, mut c2, mut c3, mut c4) = (true, true, true, true);
+    for (name, az, ac, as_, uz, us) in &rows {
+        let key = name.trim();
+        let fold = if *az > 0.0 { uz / az } else { f64::INFINITY };
+        println!(
+            "{name}  A {az:.1}%/{as_:.1}%  AU {uz:.1}%/{us:.1}%  caught {:.0}%  fold {fold:.1}x",
+            ac * 100.0
+        );
+        if key.starts_with("c8") {
+            if fold < K1_FOLD_C8_MIN || *uz < K1_AU_C8_MIN {
+                c1 = false;
+            }
+            if *az > K2_LEVEL_C8_MAX || *ac < K2_CAUGHT_MIN {
+                c2 = false;
+            }
+            if *as_ < K4_SHORT_C8_MIN {
+                c4 = false;
+            }
+        }
+        if key.starts_with("c7") {
+            if *az > K3_LEVEL_C7_MAX || fold > K3_FOLD_C7_MAX {
+                c3 = false;
+            }
+            if *as_ > K4_SHORT_C7_MAX {
+                c4 = false;
+            }
+        }
+    }
+    let ok = c1 && c2 && c3 && c4;
+    let f = |b: bool| if b { "PASS" } else { "FAIL" };
+    println!(
+        "\nC1 {}  C2 {}  C3 {}  C4 {}  ==> THE COUPLING {}",
+        f(c1), f(c2), f(c3), f(c4),
+        if ok { "MODEL VALIDATES; candidates scored below" } else { "MODEL DOES NOT VALIDATE" }
+    );
+
+    println!("\n--- THE CANDIDATES (pre-stated rule; scored only on a validating model) ---");
+    let get = |cell: &str, arm: Arm| -> Option<(f64, f64, f64)> {
+        cand.iter()
+            .find(|(n, a, ..)| n.trim().starts_with(cell) && *a == arm)
+            .map(|(_, _, z, c, g)| (*z, *c, *g))
+    };
+    for arm in [Arm::PooledUnified, Arm::ThreeTermCell, Arm::Unified] {
+        let (Some((z8, c8cap, _)), Some((zb, _, _)), Some((_, ucap, _)), Some((g1, _, _))) = (
+            get("c8", arm),
+            get("c8", Arm::Legacy),
+            get("c8", Arm::Unified),
+            get("sc2", Arm::Legacy),
+        ) else {
+            continue;
+        };
+        let g_arm = get("sc2", arm).map(|(_, _, g)| g).unwrap_or(0.0);
+        let gp_base = get("sc2", Arm::Legacy).map(|(_, _, g)| g).unwrap_or(1.0);
+        let _ = g1;
+        let depth_ok = (c8cap - ucap).abs() <= CAND_CAP_TOL * ucap;
+        let harm_ok = z8 <= zb + CAND_ZERO_TOL_PTS;
+        let c1_ok = g_arm >= CAND_GP_MIN * gp_base;
+        println!(
+            "{:<22} c8 zero {z8:.1}% (shipped {zb:.1}%, +{:.1} pts)  cap {c8cap:.0} vs U {ucap:.0} \
+             ({:+.0}%)  c1-class gp {:.3}x  ==> depth {} harm {} c1 {}",
+            arm.label(), z8 - zb, (c8cap / ucap - 1.0) * 100.0, g_arm / gp_base,
+            f(depth_ok), f(harm_ok), f(c1_ok)
+        );
+    }
+    if !ok {
+        println!(
+            "\nThe model does not validate, so NO candidate conclusion is drawn from the rows \
+             above; they are data. The deliverable is the first divergence along \
+             span -> released -> store_len -> in_flight -> available()."
+        );
+    }
+}
+
+/// (12) WHICH PRODUCED QUANTITY DIVERGES FIRST — the NOT-VALIDATED branch's
+/// deliverable, walked along `span → released → store_len → in_flight →
+/// available()` with every column a produced number.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn the_coupling_chain_walked_quantity_by_quantity() {
+    println!("\n=== span -> released -> store_len -> in_flight -> available() ===");
+    println!(
+        "every column is PRODUCED. store_len is the operand the admission gate read;\n\
+         unacked is the published bench's operand, carried beside it at the same tick.\n"
+    );
+    println!(
+        "{:<26} {:<22} {:<20} {:>8} {:>8} {:>10} {:>9} {:>9} {:>9} {:>7} {:>7}",
+        "cell", "arm", "store", "span", "rel", "store_len", "unacked", "S in_fl",
+        "S cwnd", "zero%", "short%"
+    );
+    for (name, geom, shapes) in measured_cells() {
+        let feed = Feed::Measured(shapes);
+        for sm in [Store::Unacked, Store::Span] {
+            for arm in [Arm::Legacy, Arm::Unified] {
+                let (mut sp, mut re, mut sl, mut un, mut inf, mut cw, mut z, mut sh) =
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+                for s in 0..SEEDS {
+                    let r = simulate_full(&geom, arm, feed, 20.0, s, Acct::Engine, sm);
+                    sp += r.span_mean;
+                    re += r.released_mean;
+                    sl += r.store_len_mean;
+                    un += r.unacked_mean;
+                    inf += r.infl_mean;
+                    cw += r.cwnd_live_mean;
+                    z += r.zero_pct();
+                    sh += r.short_pct();
+                }
+                let n = SEEDS as f64;
+                println!(
+                    "{:<26} {:<22} {:<20} {:>8.0} {:>8.0} {:>10.0} {:>9.0} {:>9.0} \
+                     {:>9.0} {:>6.1}% {:>6.1}%",
+                    name, arm.label(), sm.label(),
+                    sp / n, re / n, sl / n, un / n, inf / n, cw / n, z / n, sh / n
+                );
+            }
+        }
+        println!();
+    }
+    println!(
+        "READ: the release law uncounts exactly what the frontier retains, so\n\
+         `store_len = span - released` lands back on the UNACKED count up to the\n\
+         2 ms gap-report lag; the admission loop then pins it at `cap` in BOTH\n\
+         store models, and S in_flight follows the cap in both. The store law is\n\
+         therefore an identity at the gate, not a new coupling."
+    );
+}
+
+/// THE REFUTATION, BOUNDED (CLAUDE.md: every documented model-vs-engine
+/// divergence carries a test that BOUNDS it). The frontier-span store does not
+/// change what the admission gate sees, because the SACK release law uncounts
+/// precisely the delivered part of the span — so `store_len` returns to the
+/// unacked count up to the gap-report lag. This asserts the identity with a
+/// number rather than describing it, at the ASYMMETRIC cell where the span is
+/// largest (3.5x the cap), so a successor who changes the release clock,
+/// `GAP_ACK_MIN_INTERVAL`, or the placement re-scores this row.
+#[test]
+fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
+    let geom = [C2, C3];
+    let feed = Feed::Measured(&ACK_C8[..]);
+    let r = simulate_full(&geom, Arm::Unified, feed, 8.0, 0, Acct::Engine, Store::Span);
+    // The span is MUCH larger than the gate's operand: this is the quantity
+    // ADR-0058's coda calls "the un-SACKed frontier span the fast path parks".
+    assert!(
+        r.span_mean > 2.0 * r.store_len_mean,
+        "the span must dwarf the flow-control operand: span {:.0} vs store_len {:.0}",
+        r.span_mean,
+        r.store_len_mean
+    );
+    // …and yet the operand is the unacked count back again, within a few
+    // percent — the release law's whole job.
+    let rel_err = (r.store_len_mean - r.unacked_mean).abs() / r.unacked_mean.max(1.0);
+    assert!(
+        rel_err < 0.10,
+        "store_len must return to the unacked count through the release law: \
+         store_len {:.0} vs unacked {:.0} ({:.1}% apart)",
+        r.store_len_mean,
+        r.unacked_mean,
+        rel_err * 100.0
+    );
+    // The gate pins the operand at the cap, which is why the +16% pool depth
+    // arrives as +16% of in-flight and no more.
+    assert!(
+        (r.store_len_mean - r.mean_cap).abs() < 0.15 * r.mean_cap,
+        "the bulk source pins store_len at the cap: {:.0} vs cap {:.0}",
+        r.store_len_mean,
+        r.mean_cap
+    );
+}
 
 /// (8) THE VALIDATION GATE — V1/V2/V3, scored per path against the ledger
 /// before the geography question may be asked at all.
