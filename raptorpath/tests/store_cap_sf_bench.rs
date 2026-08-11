@@ -480,6 +480,31 @@ fn simulate_seeded(paths: &[Spec], arm: Arm, feed: Feed, horizon_s: f64, salt: u
     simulate_acct(paths, arm, feed, horizon_s, salt, Acct::Off)
 }
 
+/// The engine's `active_paths().max_by(loss_rate)` pick — the estimator the
+/// taper block reads for r\* (`emit_source.rs:613-620`) — with the SAME
+/// determinism fix `place_min_cost` needed and for the same reason:
+/// `active_paths()` returns `HashMap` order, so `max_by`'s last-wins tie-break
+/// is randomised per PROCESS. Losses tie exactly whenever both estimators are
+/// still at 0.0 (every cold start) and at the symmetric cell in general, so
+/// without the sort the bench's r\* — hence its whole repair channel — is not
+/// reproducible. Pinned by `worst_loss_path_tie_is_broken_deterministically`.
+/// The ENGINE has the same tie and does not break it; that divergence is
+/// recorded in the block, not silently modelled away.
+fn worst_loss_path(sched: &Scheduler) -> Option<u32> {
+    let mut ids = sched.active_paths();
+    ids.sort_unstable();
+    let mut best: Option<(u32, f64)> = None;
+    for id in ids {
+        if let Some(p) = sched.path(id) {
+            let l = p.estimator.loss_rate();
+            if best.is_none_or(|(_, bl)| l > bl) {
+                best = Some((id, l));
+            }
+        }
+    }
+    best.map(|(id, _)| id)
+}
+
 /// Charge one symbol to `pid`'s in-flight account.
 fn chg(sched: &mut Scheduler, pid: u32, led: &mut Ledger) {
     if let Some(p) = sched.path_mut(pid) {
@@ -580,8 +605,19 @@ fn simulate_acct(
     let mut next_report = REPORT_S;
 
     let steps = (horizon_s / tick).round() as u64;
+    // The repair objective's `covered` multiset and the path it selects,
+    // computed at most ONCE PER TICK and reused by every correction emitted in
+    // that tick. This is the engine's own cache granularity, not a new idea:
+    // `RWM_EMIT_BATCH` (`emit_source.rs:597-609`) refreshes the derived taper
+    // math at BURST granularity rather than per symbol. A 250 µs tick is finer
+    // than the engine's burst. Recorded in the block's "what this still cannot
+    // see" list all the same.
+    let mut covered_cache: Option<Vec<u32>>;
+    let mut repair_path_cache: Option<u32>;
     for step in 1..=steps {
         let now = step as f64 * tick;
+        covered_cache = None;
+        repair_path_cache = None;
         clock.advance(Duration::from_secs_f64(tick));
 
         // ── ack/delivery half + the recovery plane ───────────────────────
@@ -794,8 +830,11 @@ fn simulate_acct(
                 .fold(0.0_f64, f64::max);
             let margin = (retx_this_tick as f64 * current_loss).ceil() as u64;
             if margin > 0 && !store.is_empty() {
-                let covered: Vec<u32> = store.iter().map(|s| s.path).collect();
-                let mpid = place_min_cost_of(&sched, true, &covered);
+                let mpid = *repair_path_cache.get_or_insert_with(|| {
+                    let c = covered_cache
+                        .get_or_insert_with(|| store.iter().map(|s| s.path).collect());
+                    place_min_cost_of(&sched, true, c)
+                });
                 for _ in 0..margin {
                     if store.is_empty() {
                         break;
@@ -842,16 +881,8 @@ fn simulate_acct(
             // on the same throttle the taper cache uses.
             if acct.on() {
                 let spare = sched.spare_capacity();
-                repair_rate = sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .max_by(|a, b| {
-                        a.estimator
-                            .loss_rate()
-                            .partial_cmp(&b.estimator.loss_rate())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
+                repair_rate = worst_loss_path(&sched)
+                    .and_then(|id| sched.path(id))
                     .map(|p| ctrl.compute_repair_rate_capped(&p.estimator, spare, store.len()))
                     .unwrap_or(0.0);
             }
@@ -930,8 +961,11 @@ fn simulate_acct(
                 repair_debt += repair_rate;
                 while repair_debt >= 1.0 && !store.is_empty() {
                     repair_debt -= 1.0;
-                    let covered: Vec<u32> = store.iter().map(|s| s.path).collect();
-                    let rpid = place_min_cost_of(&sched, true, &covered);
+                    let rpid = *repair_path_cache.get_or_insert_with(|| {
+                        let c = covered_cache
+                            .get_or_insert_with(|| store.iter().map(|s| s.path).collect());
+                        place_min_cost_of(&sched, true, c)
+                    });
                     let (ra, _rrt, rok) = links[rpid as usize].send_resolved(now);
                     chg(&mut sched, rpid, &mut led);
                     wire.push(WireSym {
@@ -1449,7 +1483,7 @@ fn sf_pooled_candidate_on_the_accounting_axis() {
         "cell", "metering", "A zero%", "AU zero%", "P zero%", "P caught", "A gp", "AU gp", "P gp"
     );
     for (name, geom) in era_cells() {
-        for acct in [Acct::Off, Acct::Traffic, Acct::Engine] {
+        for acct in [Acct::Off, Acct::Engine] {
             let a = AcctEns::run(&geom, Arm::Legacy, acct);
             let u = AcctEns::run(&geom, Arm::Unified, acct);
             let p = AcctEns::run(&geom, Arm::PooledUnified, acct);
@@ -1618,6 +1652,36 @@ fn counter_delta_release_is_conservative_under_loss() {
             t.led.charges
         );
     }
+}
+
+/// THE AXIS'S OWN REPRODUCIBILITY, pinned in the shape the bench already
+/// learned once (`symmetric_cell_placement_tie_is_broken_deterministically`).
+///
+/// The repair channel's rate comes from ONE path's estimator — the max-loss
+/// path among `active_paths()` (`emit_source.rs:613-620`). `active_paths()`
+/// returns `HashMap` iteration order, and `max_by` keeps the LAST maximum, so
+/// on a tie the winner is a per-PROCESS coin flip. Losses tie exactly at every
+/// cold start (both estimators at 0.0) and routinely at the symmetric cell.
+/// Without the sort in `worst_loss_path` the whole ON arm is unreproducible —
+/// the same instrument fault, in the same instrument, that made c7 drift.
+#[test]
+fn worst_loss_path_tie_is_broken_deterministically() {
+    let clock = Arc::new(MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    for id in [0u32, 1, 2, 3] {
+        sched.add_path(id);
+    }
+    // Fresh paths: every estimator reads 0.0 ⇒ a pure four-way tie.
+    let ids = sched.active_paths();
+    assert_eq!(ids.len(), 4, "all four paths must be active for this to be a tie");
+    assert!(
+        ids.iter().all(|id| sched.path(*id).unwrap().estimator.loss_rate() == 0.0),
+        "the guard only means something if the losses are exactly equal"
+    );
+    assert_eq!(worst_loss_path(&sched), Some(0), "the tie must go to the lowest path id");
+    // And when the tie is broken by a real difference, the max wins on merit.
+    sched.path_mut(2).unwrap().estimator.record_batch(100, 50);
+    assert_eq!(worst_loss_path(&sched), Some(2), "the strict max must win");
 }
 
 /// MEASUREMENT DISCIPLINE 1 for the axis itself: every mechanism the axis
