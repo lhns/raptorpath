@@ -226,6 +226,10 @@ pub(crate) struct SenderPolicy {
     // ── Instruments ──────────────────────────────────────────────────────
     /// `RWM_DIAG` master gate.
     pub diag_on: bool,
+    /// `RWM_ACKDIAG` master gate — the ack-cadence gauge (`net/ackdiag.rs`).
+    /// Independent of `diag_on`: it prints its own `[ACKDIAG]` line on its own
+    /// ~2 s cadence.
+    pub ackdiag_on: bool,
     /// diag/unified-collapse: the span-law trace's own t0. NOT resolved by
     /// [`SenderPolicy::resolve`] (a wall-clock read, not a policy): the
     /// sender rebinds `pol` with it at the point in setup it was always
@@ -1078,6 +1082,7 @@ impl SenderPolicy {
             emit_burst,
             use_packing,
             diag_on,
+            ackdiag_on: gates.ackdiag,
             // Sampled by the sender at its original point in setup (see the
             // module doc); rebound there via a struct-update on `pol`.
             span_diag_start_us: 0,

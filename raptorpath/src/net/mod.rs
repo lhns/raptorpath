@@ -9,6 +9,7 @@
 //! Receiver:
 //!   QUIC paths → FEC decode → packet extraction → TUN injection
 
+pub mod ackdiag;
 pub mod block_arq;
 pub mod block_sender;
 pub mod control_msg;
@@ -5119,6 +5120,15 @@ async fn run_window_sender(
                 reliable,
                 generation,
             );
+        }
+        // The ACK-CADENCE GAUGE (`RWM_ACKDIAG`, net/ackdiag.rs — matrix row
+        // 21's missing instrument). Its own gate and its own ~2 s cadence,
+        // deliberately independent of `RWM_DIAG`: the point is to be runnable
+        // on an arm that is not paying for the 250 ms report. The guard stays
+        // HERE for the same reason the DIAG one does — the shipped path pays
+        // nothing.
+        if pol.ackdiag_on {
+            ackdiag::maybe_report(scheduler, stats, window_ack_seq);
         }
 
         // Generation coding: paced coded emission (see gen_tokens above). Runs

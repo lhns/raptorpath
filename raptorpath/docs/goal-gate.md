@@ -25721,3 +25721,260 @@ by this branch. **Gates run:** `--lib` 392 passed · `raptorpath-math`
 passed · `store_cap_sf_bench` **15 passed, 0 failed** (7 `#[ignore]`d benches
 not run). `gate_suite` not required — no engine code changed. Determinism
 preserved and verified across three separate processes.
+
+## Ack-Cadence Gauge — THE INSTRUMENT (2026-08-11, `feat/ack-cadence-gauge` from main@4131d25). Builds the fallback the preceding section triggered and the PIPELINE VERIFICATION MATRIX ranked suspect 2: the sender-side gauge that records what the ack stream ACTUALLY looks like, so no bench has to invent it again. **STRICTLY LOCAL — the instrument only. The VM measurement is a separate later step and is NOT taken here.** No behaviour is changed and no verdict is amended.
+
+### WHY — the input three benches had to invent
+
+Matrix row 21 states the gap in one line: the ack-emission PREDICATE is pinned
+three ways and the counter-diff re-homing four ways, but **the STREAM SHAPE
+has no instrument of any kind, anywhere**. Every consumer therefore invented
+it, and the inventions disagree with the wire by one to three orders of
+magnitude:
+
+| consumer | invented cadence | realized over-read it implies |
+|---|---|---|
+| `store_cap_sf_bench::sf_derived_overread_from_ack_batching` | 0.25–10 ms sweep | ×24–2400 |
+| `honest_inputs_bench` | 5 ms assumed | — |
+| `tests/common/recovery_model.rs` | 2 ms periodic `Ev::Ack` (PRE-merge) | — |
+| the wire, measured ("Anchor Hygiene" (b)) | never measured | **×4.6–7.4** |
+
+`store_cap_bench` carries the wire's band as the CONSTANT `OVERREAD = 5.0` —
+exactly the shape CLAUDE.md forbids ("every documented model-vs-engine
+divergence must carry a test that BOUNDS it, not prose that describes it"),
+and matrix row 10 marks the sampler that produces it **UNVERIFIED — and it is
+the one that is ALWAYS ON**.
+
+### THE GAUGE — `RWM_ACKDIAG`, default OFF, `src/net/ackdiag.rs`
+
+One `[ACKDIAG]` line per path per ~2 s window, on its own gate and its own
+cadence (deliberately independent of `RWM_DIAG`: the instrument must be
+runnable on an arm that is not paying for the 250 ms `[DIAG]` report).
+
+Feed sites, all three proven live by `ackdiag_loopback`:
+
+* `net/control_msg.rs::on_window_ack` — every inbound WindowAck, with the
+  `(d_expected, d_received)` counter diff, INCLUDING the `(0,0)` sentinel
+  class;
+* `scheduler::CopaState::record_delivery`, both arms — the ACCEPTED sample
+  (rate + count) and the REJECTED one (count only, sub-1 ms `elapsed`).
+
+**READOUT 1 — WindowAck arrival spacing.** `gap_us[p50 p90 p99 n]`, in
+MICROSECONDS, measured on the gauge's own monotonic epoch (not the
+`SystemTime` clock the rest of the DIAG surface uses — spacing is the
+measurement and a wall clock can step). `n` = arrivals − 1: the first arrival
+opens the series, it does not close a gap.
+
+**READOUT 2 — delivered-count deltas.** `acks=<n>/z=<n>(<pct>%)` and
+`drecv[p50 p90 max n sum]`, in SYMBOLS per ack. `z` is the zero-delta
+(sentinel/stale) class — `cum_received == 0`, or a duplicate/reordered ack
+whose counters have not advanced. Zero-delta acks are COUNTED and excluded
+from the `drecv` series, so a stale-ack storm cannot masquerade as a
+low-delivery cell.
+
+**READOUT 3 — the realized rate-sampler input.** `rd[acc rej cnt]` (calls
+accepted / rejected by the sampler's 1 ms `elapsed` floor / Σ`count` offered,
+SYMBOLS), `rate_lr` (SYM/S — Σ`count`/window, the long-run delivered rate the
+sampler itself saw), `x[p50 p90 p99]` (DIMENSIONLESS — each accepted sample's
+`Δdelivered/Δt_ack` divided by `rate_lr`), and `xanchor` (DIMENSIONLESS — the
+ledger's own formula `copa_bdp_anchor()/(rate_lr·RTprop)`, which reduces to
+`max_bw/rate_lr` and is the quantity the store-cap Σ and the cwnd anchor floor
+actually consume), beside its two inputs `anchor=<sym>` and `rtprop=<ms>`.
+**There is no invented input anywhere in this readout**: the denominator is
+the window's own delivered rate, over the same counter the numerator samples,
+and the rejected calls' `count` is included in it so the ratio is not inflated
+by the rejection rate. With no delivery in a window the gauge prints `-`
+rather than dividing — a fabricated over-read is precisely what this
+instrument exists to end.
+
+**READOUT 4 — the repair-counting reconciliation.**
+`recon[sent crecv cexp srcack cr/s ce/cr cr/sa]`, cumulative SYMBOLS and three
+dimensionless ratios:
+`sent` = `PathStats::symbols_sent` (every wire handoff — source, repair and
+retransmit alike); `crecv` = Σ`d_received`; `cexp` = Σ`d_expected`;
+`srcack` = the cumulative WindowAck frontier, i.e. DELIVERED SOURCE symbols
+and nothing else. **`cr/sa` is the discriminator**: `> 1` means the receiver's
+expected/received counters include repair and retransmit symbols, `≈ 1` means
+they count source only.
+
+Cost and neutrality. Zero cost off — the process-global is a
+`OnceLock<Option<…>>` that resolves to `None`, so every feed site is a null
+check that never allocates, never locks and never reads a clock. Neutral on —
+the gauge owns all of its state and reaches no engine handle mutably;
+`net::ackdiag::tests::ackdiag_is_observation_only` pins that STRUCTURALLY by
+source scrape (the same test-only reflection `gates::forwarding_audit` and the
+wait-bucket audit already use, for the same reason: the failure mode is
+someone LATER adding a convenient write, and that omission has no runtime
+symptom to assert on). Lock order is `scheduler → gauge`, and the report takes
+its scheduler snapshot and RELEASES it before touching the gauge, so no cycle
+exists.
+
+### WHAT LOOPBACK MEASURED
+
+Two arms, each its own test binary (the gate is a process-global `OnceLock`).
+
+**Clean loopback** (`ackdiag_loopback`, window-reliable, 20 MB × 3):
+
+```
+[ACKDIAG] p0 win=2.00s acks=25484/z=0(0.0%) gap_us[p50=16 p90=206 p99=777 n=25484]
+  drecv[p50=1 p90=1 max=1 n=25484 sum=25484] rd[acc=1690 rej=23794 cnt=25484]
+  rate_lr=12741sym/s x[p50=0.97 p90=1.60 p99=2.11] xanchor=4.85 anchor=75sym
+  rtprop=1.21ms recon[sent=50190 crecv=50135 cexp=50135 srcack=50079
+  cr/s=0.999 ce/cr=1.000 cr/sa=1.001] ov=0
+```
+
+**Lossy loopback** (`ackdiag_repair_recon`, `RWM_L0_NETEM=c3` — LTE-class,
+20 Mbit, 20 ms one-way, 5 ms jitter, GE ⇒ ε ≈ 4.8% on client egress, 4 MB × 2):
+
+```
+[ACKDIAG] p0 win=1.94s acks=3778/z=0(0.0%) gap_us[p50=13 p90=22 p99=15371 n=3777]
+  drecv[p50=1 p90=1 max=2 n=3778 sum=3779] rd[acc=132 rej=3646 cnt=3779]
+  rate_lr=1950sym/s x[p50=1.03 p90=1.24 p99=1.42] xanchor=3.65 anchor=332sym
+  rtprop=46.68ms recon[sent=3903 crecv=3779 cexp=3947 srcack=3385
+  cr/s=0.968 ce/cr=1.044 cr/sa=1.116] ov=0
+```
+
+Six facts, stated as measurements and not promoted to conclusions about the
+wire:
+
+1. **The merged cadence is per-DATA-MESSAGE, and the message carries ONE
+   symbol.** `drecv` p50 = p90 = max = 1 in BOTH arms. The merged WindowAck
+   fires once per data message (`ack_merge_on_emits_once_per_data_message`),
+   and at these cells a data message is one symbol — so the ack stream is
+   per-SYMBOL, not per-batch. Every model that assumed a batched delivered
+   count assumed a batching the engine does not do here.
+2. **The spacing is one to two orders below every invented cadence.**
+   p50 = 13–16 µs against the benches' 0.25–10 ms. The c3 arm's p99 = 15.4 ms
+   is the recovery stall, not the cadence — the distribution is extremely
+   heavy-tailed, which is exactly the shape a single assumed period cannot
+   represent.
+3. **The 1 ms `elapsed` floor rejects 93–96% of calls.** `rd[acc=1690
+   rej=23794]` and `[acc=132 rej=3646]`. The sampler is therefore NOT
+   ack-clocked in practice: it is clocked by its own floor, at ≈850 samples/s
+   clean and ≈68/s at c3, each folding the deliveries of ~15 and ~28 acks.
+   **This is the mechanism of the over-read**, and it was invisible to every
+   model that fed the sampler at an assumed ack period.
+4. **The realized per-sample over-read is modest; the ANCHOR's is not.**
+   x p50 ≈ 1.0 and p99 = 1.4–2.3 — individual samples are close to the truth.
+   `xanchor` = 4.85 (clean) and 3.65 (c3) is the WINDOWED MAX over them, which
+   is the number the store-cap Σ and the cwnd floor consume. The gap between
+   x p99 and `xanchor` is the max-filter's 10 s memory, not a sampling error.
+5. **`xanchor` at the clean loopback lands INSIDE the wire's 4.6–7.4 band.**
+   Recorded as a coincidence of geometry, NOT as a validation of the wire's
+   number — loopback's RTprop is 1.21 ms against the wire's 50–90 ms, and the
+   band is a property of the cell.
+6. **The zero-delta class is empty at both cells** (`z=0`). The sentinel/stale
+   ack is a real code path with a real cost, and at these cells it does not
+   fire.
+
+### THE REPAIR-COUNTING ANSWER, as far as loopback can see it
+
+**Repairs DO enter the receiver's expected/received counters.** Measured, not
+read: at the c3 cell the contemporaneous pair is `crecv = 3779` against
+`srcack = 3385`, i.e. **`cr/sa = 1.116`** — 11.6% of the arrivals the counters
+hold are above the delivered-source frontier, which is only possible if
+repair/retransmit symbols are counted. The clean arm reads `cr/sa = 1.001`,
+consistent with a cell that generates almost no recovery traffic. The
+inequality is asserted, not described:
+`ackdiag_repair_recon::repairs_enter_the_receivers_expected_received_counters`
+fails if `crecv ≤ srcack` on a cell that lost packets.
+
+The READ agrees and is now bounded rather than believed: the counters come
+from `PathBatchTracker::record_batch(batch_seq, batch.symbols.len())`
+(`net/mod.rs`, fed at `receiver.rs`), which counts the symbols of an arriving
+batch and never consults `symbol.is_repair`.
+
+**Why this matters beyond the reconciliation.** `d_received` is what
+`ack_merge_counter_delta` returns and therefore what
+`CopaState::record_delivery` is fed as `count`, what
+`LossEstimator::record_batch` is fed as a batch, and what `release_in_flight`
+releases. All three are consuming a WIRE-ARRIVAL population, not a goodput
+one. The rate anchor named in matrix row 10 is consequently an arrival-rate
+estimator with recovery traffic in its numerator — a fact the ledger can now
+cite from a measurement instead of from a reading of `receiver.rs`. **No
+verdict is drawn from it here**; it is recorded so the successor that needs it
+does not have to invent it either.
+
+The two implied-loss cross-checks are consistent: `ce/cr = 1.044` ⇒ 4.2%, and
+the end-of-run `1 − crecv/cexp` = 5.6%, against the c3 cell's configured
+ε ≈ 4.8%.
+
+### WHAT ONLY THE VM CAN ANSWER
+
+Stated in advance, per MEASUREMENT DISCIPLINE 14(c):
+
+* **The wire's ×4.6–7.4 band itself.** Loopback's RTprop is 1.21 ms (clean)
+  and 46.7 ms (the shim's c3); the wire's cells sit at 50–90 ms of REAL
+  residence under load ("Honest Inputs — PHASE 3", probe 2). The over-read is
+  a function of the cell, so a loopback `xanchor` neither confirms nor refutes
+  the band. The clean arm's 4.85 landing inside it is geometry, not evidence.
+* **Ack aggregation.** The ~145×-class over-read the code comment documents is
+  an ACK-AGGREGATION phenomenon — a NIC/qdisc/GRO effect that the in-process
+  loopback and the L0 netem shim do not have (the shim drops and delays
+  BEFORE quinn, matrix row 18(c)). The measured `drecv` p50 = 1 is the
+  UNAGGREGATED cadence; whether the wire's is 1 or 30 is the VM's question,
+  and it is the single most load-bearing number this gauge exists to collect.
+* **The c8 asymmetric geometry.** Both loopback arms are N = 1. Readouts 1–4
+  are per-path by construction and the report covers every path the gauge has
+  seen, but nothing here exercises a two-path cell, and the `srcack`
+  discriminator is connection-wide (one sequence space), so at N ≥ 2 it is
+  comparable against Σ`crecv`, not against one path's.
+* **The real GE channel** (matrix row 18) and **any composition effect** — the
+  same two exclusions the SF Accounting Axis recorded.
+
+### SCOPE LIMITS OF THE INSTRUMENT ITSELF, recorded rather than discovered later
+
+* **`RWM_ACK_MERGE=0`.** In that arm the (expected, received) payload rides the
+  legacy per-batch `Ack`, `ack_merge_counter_delta` is never called, and
+  readouts 2 and 4 are STRUCTURALLY zero. Readouts 1 and 3 are valid in both
+  arms. The gauge does not compute the diff itself in that arm on purpose:
+  doing so would mutate the `ack_cum_*` cursors and stop being
+  observation-only.
+* **Single engine per process.** The feed sites are static functions, so the
+  gauge is process-global, while `stats` and `window_ack_seq` are per-ENGINE
+  handles. The shipped binary and every L1 driver run one engine per process.
+  The in-process loopback runs two, so the report BINDS to the engine with the
+  leading source frontier; in a single-engine process that is one relaxed
+  `fetch_max` and no behaviour at all. (This was found by measurement, not
+  reasoning: the first lossy run paired the merged series with the peer's
+  trickle engine and printed `sent=2 srcack=1`.)
+* **Per-window sample cap** of 32 768 per series per path, with the refused
+  count PRINTED as `ov=` — a truncated window is never confusable with a
+  complete one. Both arms read `ov=0`.
+
+### GATES — all run, all green
+
+`--lib` **402 passed** (392 + the 10 new `net::ackdiag` unit pins), 5 ignored ·
+`raptorpath-math` 59+19+22+4+4+3+25 = **136 passed** · `--doc` 0 (no
+doctests) · **`gate_suite --release` 15 passed** (17 `#[ignore]`d), run and not
+waived because engine code changed · the ten loopbacks
+(`ack_merge`, `ack_merge_optout`, `copa_sole`, `emit_batch`, `patience`,
+`perf`, `recov_mp`, `three_term`, `win_decouple`, `wire_compact`) **18 passed**
+· the four component benches untouched-green: `store_cap_sf_bench` **15**,
+`store_cap_bench` **3**, `slack_bench` **7**, `recovery_bench` **1** · the two
+new binaries `ackdiag_loopback` **1** and `ackdiag_repair_recon` **1**.
+
+New always-on tests:
+
+* `net::ackdiag::tests` — ten unit pins, all ABSOLUTE against injected trains:
+  the spacing quantiles ARE the injected train; the zero-delta class is
+  counted and excluded from the delta series; the over-read is the sample rate
+  over the window's own long-run rate, exactly (1.00/5.00/10.00 from a
+  constructed 1000 sym/s window) and `xanchor` is the ledger's formula
+  (5.00 from anchor 500 / (1000 · 0.1)); an empty window prints `-` and does
+  not divide; the reconciliation ratios are arithmetic with no constants; the
+  window resets the series and carries the totals; a silent path emits no
+  line; the cap is reported; and the gauge is observation-only by source
+  scrape.
+* `ackdiag_loopback` — ROUTING (all three feed sites executed on a real
+  transfer), SELF-CONSISTENCY (`Σd_expected ≥ Σd_received`, zero-acks ≤ acks)
+  and BEHAVIOUR NEUTRALITY (the transfer completes with the gauge on).
+* `ackdiag_repair_recon` — the readout-4 discriminator on a lossy cell.
+* `gates::tests::default_env_resolves_the_shipped_stack` extended with the
+  two-sided OFF-value assertion (`RWM_ACKDIAG=0` NAMED in the `[GATES]` echo),
+  and `RWM_ACKDIAG` added to `tools/l1/lib.sh`'s `RWM_FORWARD` so
+  `gate_forwarding_list_covers_the_engine_surface` passes.
+
+**NOTHING IS SHIPPED.** `RWM_ACKDIAG` ships OFF; no default, no law and no
+behaviour is touched. **No VM was contacted and no benchmark was run** — the
+wire measurement is the named next step, not this one.
