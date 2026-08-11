@@ -25435,3 +25435,289 @@ always-on component-bench binaries — to confirm the pins cited above exist
 and pass: **8 + 3 + 7 + 1 = 19 passed, 0 failed** (11 `#[ignore]`d benches
 not run). **Gates required for this commit: NONE** — it is documentation
 only, and that is stated rather than assumed.
+
+## SF Accounting Axis — COMPONENT INVESTIGATION (2026-08-11, `feat/sf-accounting-axis` from main@b6b9617) — MEASUREMENT DISCIPLINE 14. Executes the single recommended next verification of the preceding section ("extend `tests/store_cap_sf_bench.rs` with an IN-FLIGHT ACCOUNTING axis that reproduces the engine's two un-metered recovery channels and its counter-delta release"; matrix rows 2 + 6, suspect rank 1). STRICTLY LOCAL, no VM, no L1 number re-derived. **VERDICT against the pre-registration: NOT REPRODUCED — G2 (the cell-keying) PASSED and G1 (the level) FAILED at c7, so the named fallback triggers.** The partial result is large, and it is reported as a partial result rather than promoted.
+
+### THE PRE-REGISTRATION, and where it lives
+
+Written and committed at 4b3910e, in its own commit, BEFORE the ON arm was
+ever run — it sits in the test file above `sf_accounting_axis_matrix`, and
+that test PRINTS its own verdict rather than leaving it to prose. The wire's
+geography, quoted from "Store-Cap Unification — RESULTS" and §16.52:
+
+* the legacy (A) arm is a **≈4% class** — 3.7–7.4% at c8, both seeds, both
+  anchor eras — and c1/sc2/c7 "do not move";
+* U raises c8 ≈4% → ≈30% past 2σ on both seeds (a ≈7.5× fold) and does **not**
+  do so at c7.
+
+  **G1 (LEVEL).** With `Acct::Engine` the A arm's ensemble mean is < 10% at
+  BOTH c7 and c8, and its CAUGHT mode rate is ≥ 50% at both.
+  **G2 (CELL-KEYING).** fold(c8) ≥ 3.0 **and** fold(c7) ≤ 2.0.
+
+VERDICT = G1 ∧ G2. Anything else triggers the named fallback.
+
+### WHAT WAS TRANSPLANTED, and from which site
+
+Nothing is parameterised by what makes an answer come out. Every constant is a
+resolved shipped default quoted by file:line (`TAIL_LOSS` 1e-5,
+`MAX_OVERHEAD` 0.5, `SYMBOL_SIZE` 1200, `REPORT_S` 2 s), and every rate is
+produced by a SHIPPED law reading the bench's OWN realizations.
+
+* **(a) the taper correction** — `emit_source.rs:787-931`. `repair_debt += r*`
+  per SOURCE symbol; while the debt clears 1.0 a correction is generated and
+  placed by `place_symbol(true, &covered)` (the ρ_fate objective), charged to
+  `in_flight` (`:929`) and **not paced**. `r*` is the shipped
+  `FecRateController` at `net/mod.rs:1570`'s arguments, capped by
+  `sched.spare_capacity()`, reading a `LossEstimator` fed through the shipped
+  feed sites (`control_msg.rs:337` counters, `net/tasks/report.rs:84`
+  throughput). No repair rate is injected anywhere.
+* **(b) the two BYPASS channels** — the SACK-gap retransmit
+  (`net/mod.rs:6374-6383`) and the NACK repair margin (`net/mod.rs:6420-6448`,
+  `margin = ceil(retransmitted × max active loss)`). Both reach
+  `transport.send_symbols` with no `charge_in_flight` anywhere on the path.
+  Both inputs are the bench's own: the retransmits its GE drops produced, the
+  loss its estimator measured.
+* **(c) COUNTER-DELTA RELEASE** — `control_msg.rs:341` / `:685` release
+  `expected − received` on the path the FEEDBACK arrived on, over counters
+  `receiver.rs:1754` builds from `batch.symbols`. **Every wire symbol enters
+  them**, charged or not, so each releases 1 wherever it flew; and
+  `release_in_flight` saturates at zero, so the excess is spent, not stored.
+
+The axis has THREE levels so the traffic and the ledger are not confounded:
+`Off` (the published bench), `Traffic` (the same recovery traffic, ledger
+balances 1:1 — the counterfactual engine that obeys §12), `Engine` (as
+`Traffic` plus (b)+(c)).
+
+**`Off` is bit-identical** to the published bench: the "c8 SF Mechanism"
+FINDING 3 table reproduces exactly (c7 9.0/99.4/8.5, c8 40.9/99.7/35.1, sc2
+54.2/53.5/53.5, …), pinned as an equality by
+`accounting_axis_executes_and_off_is_the_published_bench`.
+
+### FINDING 1 — THE CELL-KEYING REPRODUCES, and it is the LEDGER that does it
+
+8 seeds × 20 s, `caught` = the fraction of seeds below 10% (§16.52's mode-rate
+statistic). The `ENGINE` rows are the new ones:
+
+```
+cell                    arm   metering                 zero%      [lo..hi]   caught     cap  goodput
+c7   dual symmetric     A     OFF                       9.7%   [7.7..12.5]      62%     372    18420
+c7   dual symmetric     A     TRAFFIC                   9.9%   [5.1..18.0]      50%     374    17457
+c7   dual symmetric     A     ENGINE                   39.3%  [20.8..59.5]       0%     559    18414
+c7   dual symmetric     AU    OFF                      97.1%  [87.8..99.9]       0%    1245    20516
+c7   dual symmetric     AU    TRAFFIC                  88.8%  [82.6..99.3]       0%    1163    20487
+c7   dual symmetric     AU    ENGINE                   38.3%  [36.0..40.5]       0%    1811    19313
+
+c8   dual asym (r+RTT)  A     OFF                      37.1%  [33.0..42.1]       0%     379    11876
+c8   dual asym (r+RTT)  A     TRAFFIC                  39.8%  [29.1..43.9]       0%     360    11697
+c8   dual asym (r+RTT)  A     ENGINE                    9.8%   [4.1..31.4]      75%     671    11534
+c8   dual asym (r+RTT)  AU    OFF                      99.7%  [99.6..99.7]       0%    2192    12207
+c8   dual asym (r+RTT)  AU    TRAFFIC                  99.7%  [99.7..99.7]       0%    2186    12203
+c8   dual asym (r+RTT)  AU    ENGINE                   69.3%  [68.1..70.6]       0%    2285    11834
+
+c8r  dual asym RATE     A     OFF                      10.3%   [8.3..15.4]      62%     203    11832
+c8r  dual asym RATE     A     TRAFFIC                  10.3%   [7.0..12.2]      25%     133     9494
+c8r  dual asym RATE     A     ENGINE                   24.9%  [18.2..34.1]       0%     436    11058
+c8r  dual asym RATE     AU    OFF                      84.3%  [81.8..86.1]       0%     576    12206
+c8r  dual asym RATE     AU    TRAFFIC                  85.8%  [80.5..90.2]       0%     518    12176
+c8r  dual asym RATE     AU    ENGINE                   29.5%  [24.7..33.3]       0%    1098    11344
+
+c8t  dual asym RTT      A     OFF                      40.2%  [38.3..41.8]       0%     769    16982
+c8t  dual asym RTT      A     TRAFFIC                  41.6%  [40.2..43.4]       0%     790    16992
+c8t  dual asym RTT      A     ENGINE                   43.8%  [28.9..49.1]       0%    1569    18779
+c8t  dual asym RTT      AU    OFF                      99.6%  [99.6..99.6]       0%    3527    20359
+c8t  dual asym RTT      AU    TRAFFIC                  99.9%  [99.9..99.9]       0%    3530    20386
+c8t  dual asym RTT      AU    ENGINE                   29.1%  [28.4..29.8]       0%    3530    19054
+```
+
+The FOLD, which is what G2 scores:
+
+| cell | fold OFF | fold ENGINE |
+|---|---|---|
+| **c7 symmetric** | **10.0×** | **1.0×** |
+| **c8 (rate + RTT)** | **2.7×** | **7.1×** |
+| c8r rate only | 8.2× | 1.2× |
+| c8t RTT only | 2.5× | 0.7× |
+
+**The fold swaps cells.** On the published bench it is largest at the fast
+SYMMETRIC cell (10.0×) and small at c8 (2.7×) — the defect three sections
+recorded and none explained. With the engine's ledger it is 7.1× at c8 and
+**exactly null (1.0×) at c7**. The wire's own separation is ≈7.5× against
+null. Nothing was fitted to produce that: the only inputs are the three
+transplanted mechanisms and the cells' published numbers.
+
+**G2 PASSES**, and it passes at the magnitude, not only the sign.
+
+**The attribution is clean, and it is the LEDGER, not the traffic.** The
+`TRAFFIC` level emits the same corrections on the same placements, feeds the
+same estimators and consumes the same wire — and leaves every cell in its
+published class (c8's A arm 37.1% → 39.8%; c7's fold still 8.9×). Only
+`ENGINE`, which adds the two un-charged channels and the counter-delta
+release, moves anything. So "more repair traffic" is excluded as the reading
+by MEASUREMENT, not by argument. Pinned by
+`the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction` (always-on)
+and `sf_zero_fraction_moves_with_the_metering_axis` (always-on: both fold
+directions plus the c8 level, absolute).
+
+### FINDING 2 — G1 FAILS, at c7, and the verdict is NOT REPRODUCED
+
+```
+G1: ENGINE A-arm mean < 10% AND caught >= 50% at BOTH c7 and c8
+G2: fold(c8) >= 3.0 AND fold(c7) <= 2.0
+
+c7   dual symmetric     A 39.3%  caught  0%  fold 1.0x
+c8   dual asym (r+RTT)  A  9.8%  caught 75%  fold 7.1x
+c8r  dual asym RATE     A 24.9%  caught  0%  fold 1.2x
+c8t  dual asym RTT      A 43.8%  caught  0%  fold 0.7x
+
+G1 FAIL  G2 PASS  ==> GEOGRAPHY NOT REPRODUCED
+```
+
+**c8's A arm lands where the wire's does** — 9.8% mean, range 4.1–31.4, caught
+on 75% of seeds, against the wire's 3.7–7.4% class and this bench's own 37.1%
+before the axis. That is the ×10 operating-point gap the matrix's anomaly A2
+named, closed at c8.
+
+**c7's A arm goes the wrong way** — 9.7% → 39.3%, caught on 0% of seeds. The
+axis moves the fold onto the right cell by making the SYMMETRIC cell worse as
+much as by making c8 better, and the wire's c7 is not worse. So the mechanism
+as transplanted reproduces the CONTRAST and not the LEVEL, and per the
+pre-registration that is a fail. **It is scored as a fail. No criterion is
+re-drawn, and no post-hoc reading is offered in place of the one that was
+written down.**
+
+### FINDING 3 — the arithmetic of the bias, which is why it has this shape
+
+The ledger's imbalance is exactly measurable, and it is asserted rather than
+described (`unmetered_recovery_flow_is_not_charged_to_in_flight`,
+`counter_delta_release_is_conservative_under_loss`, both always-on):
+
+* `charges = src + taper` exactly; the deficit against the wire is exactly
+  `retx + margin`;
+* `releases = wire()` — so `releases − charges = retx + margin`, an
+  **over-release**, and part of it is provably thrown away by
+  `release_in_flight`'s saturating subtraction (`releases_wasted > 0`);
+* the balanced control charges every wire symbol and wastes none.
+
+Over-release lowers `in_flight`, which keeps `available() > 0`, which keeps
+`active_paths()` non-empty — the `[SF]` gauge's exact predicate. Its size is
+`retx + margin`, and BOTH terms are produced by recovery, which is produced by
+loss, which at an asymmetric cell is concentrated on the leg that is
+recovering. That is the "right sign and right cell" the matrix predicted, and
+it is what shows up as the c8 fold. What the same arithmetic does at the
+SYMMETRIC cell is give BOTH legs the same prop — a different effect, and the
+one that failed G1.
+
+### FINDING 4 — §12's divergence is now BOUNDED, which was required regardless
+
+Matrix row 2 was **KNOWN-DIVERGENT with no bounding test**, which CLAUDE.md
+forbids outright. `pacer_debit_bounds_only_the_source_arm_not_the_wire`
+(always-on) is that bound, and it asserts the IMPLEMENTATION, not the model:
+
+* all three unpaced channels must have fired first (discipline 1);
+* `tokens == src` **exactly** — the debit is the source arm and nothing else
+  (`emit_source.rs:493-497`);
+* `wire == src + taper + retx + margin` and `wire > tokens` — the paper's §12
+  claim ("the bucket paces source AND repair") would need equality;
+* the realized unpaced excess `wire/src − 1` is computed from the run's own
+  channel counts and bounded in (0, 1).
+
+Recorded honestly beside it: on the shipped default `RWM_CC_PACE=0` (1 116 of
+1 116 logs, "What Binds Throughput"), so the bucket does not run at all and the
+live divergence is about WIRE OCCUPANCY and IN-FLIGHT ACCOUNTING, not about
+spacing. The test bounds the code fact either way, so a successor that turns
+pacing on cannot quietly inherit an unbounded claim.
+
+### A SECOND DEFECT FOUND IN THE BENCH, the same shape as the first
+
+`active_paths()` returns `HashMap` order, and the taper block picks r\*'s
+estimator with `max_by(loss_rate)` over that set (`emit_source.rs:613-620`) —
+last-wins on a tie, i.e. a per-PROCESS coin flip. Losses tie EXACTLY at every
+cold start (both estimators at 0.0). This is the identical instrument fault
+the bench fixed for placement at 0afcd87, re-entering through a new call site.
+`worst_loss_path()` sorts by id; pinned by
+`worst_loss_path_tie_is_broken_deterministically` (always-on). Verified across
+three separate processes: every cell × every axis level reproduces
+byte-for-byte. **The engine has the same tie and does not break it** — that
+divergence is recorded here, not modelled away.
+
+### THE CANDIDATE, re-run on the corrected bench — REPORTED, NOT ADVANCED
+
+The dispatch conditions any design conclusion on reproduction, and the verdict
+is NOT REPRODUCED, so this is data and nothing more:
+
+```
+cell                    metering   A zero%  AU zero%   P zero%  P caught     A gp     AU gp      P gp
+c7   dual symmetric     OFF           9.7%     97.1%      7.6%      100%    18420     20516     19500
+c7   dual symmetric     ENGINE       39.3%     38.3%      0.4%      100%    18414     19313     17814
+c8   dual asym (r+RTT)  OFF          37.1%     99.7%     37.6%        0%    11876     12207     12180
+c8   dual asym (r+RTT)  ENGINE        9.8%     69.3%      0.1%      100%    11534     11834     10715
+c8r  dual asym RATE     OFF          10.3%     84.3%     20.8%        0%    11832     12206     11857
+c8r  dual asym RATE     ENGINE       24.9%     29.5%      1.3%      100%    11058     11344     10237
+c8t  dual asym RTT      OFF          40.2%     99.6%     98.5%        0%    16982     20359     20311
+c8t  dual asym RTT      ENGINE       43.8%     29.1%      9.8%       75%    18779     19054     18551
+```
+
+On the engine's ledger P is caught on 100% of seeds at three cells and 75% at
+the fourth, against 100/0/0/0 on the published bench — a much stronger record
+than "1 clear win, 1 tie, 2 losses". It also costs goodput at every cell
+(−3% at c7, −7% at c8, −7% at c8r, −1% at c8t against the shipped arm), which
+the published bench did not show. **Its standing is UNCHANGED: promising, not
+established.** Two reasons, both stated rather than weighed against each
+other: the bench that produced the better record is the one that just FAILED
+its own reproduction criterion, and the goodput cost is a new fact no prior
+section had to price.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **The c8 geography.** G2 passed and G1 failed; the pre-registered verdict is
+  the conjunction, and it is NOT REPRODUCED. No stabiliser design requirement
+  is stated here, because the dispatch conditioned that on reproduction and
+  the condition was not met.
+* **Why c7's A arm rises under the engine ledger.** Measured, not explained.
+  Reproduce before explaining.
+* **Whether the un-metered channels are a defect.** Unchanged from the matrix:
+  they may be deliberate (deficit-driven recovery bypassing ack-clocked
+  admission avoids deadlock). What is established is that the divergence from
+  §12 is now BOUNDED, and that it is load-bearing for the `[SF]` gauge.
+* **Any L1 claim.** No VM was run and no L1 number re-derived; every L1 figure
+  above is cited from the section that measured it.
+
+### WHAT THIS BENCH STILL CANNOT SEE (MEASUREMENT DISCIPLINE 14(c))
+
+* **The real echo cadence** (matrix rank 2). Unchanged, and now the blocker:
+  the bench's ack cadence is still invented, and the derived one lands at
+  ×24–2400 where the wire sits at ×4.6–7.4.
+* **The real GE channel** (rank 5) — four un-cross-validated implementations.
+* **Composition effects** (rows 1, 20) — no tokio loop, no receiver.
+* **Sub-tick repair placement.** The repair objective's `covered` multiset and
+  the path it selects are computed at most once per 250 µs tick, not per
+  correction — the engine's own cache granularity (`RWM_EMIT_BATCH`,
+  `emit_source.rs:597-609`, which refreshes the derived taper math at BURST
+  granularity), but a granularity nonetheless.
+* **Whether every wire symbol really enters the ack's expected/received
+  counters.** READ from `receiver.rs:1754` (they are built from
+  `batch.symbols`, and repairs ship as batches) — read, not measured. It is
+  the single modelling choice the over-release magnitude rests on, and it is
+  the first thing a successor should check.
+
+### THE FALLBACK, TRIGGERED — the next instrument, named
+
+The pre-registration named it in advance and the condition is met:
+
+**the next instrument must be the L0 WindowAck-cadence gauge (matrix suspect
+rank 2)** — an L0 loopback that records the ENGINE's WindowAck arrival
+timestamps and delivered-count deltas at the sender, and reports the
+inter-arrival distribution and the realized `x = anchor / (rate·RTprop)`. That
+is the one input every SF-bench result has had to invent, and the invention
+landed one to three orders of magnitude off the wire's measured 4.6–7.4 band.
+Until it exists no component bench can be run in the engine's own era, and
+FINDING 5 of "SF Anchor Suspect" applies in reverse: before a component branch
+is opened to chase a suspect, check whether the input it depends on has ever
+been measured. **It has not.**
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default, no law is touched
+by this branch. **Gates run:** `--lib` 392 passed · `raptorpath-math`
+59+19+22+4+4+3+25 = 136 passed · `--doc` 0 (no doctests) · `store_cap_bench` 3
+passed · `store_cap_sf_bench` **15 passed, 0 failed** (7 `#[ignore]`d benches
+not run). `gate_suite` not required — no engine code changed. Determinism
+preserved and verified across three separate processes.
