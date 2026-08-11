@@ -1,0 +1,18 @@
+== CLI0 (data-dir egress: netem or tbf+netem bottleneck)
+qdisc netem 9de7: root refcnt 7 limit 1000 delay 50ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42
+ Sent 112077534 bytes 100519 pkt (dropped 812, overlimits 0 requeues 0) 
+ backlog 1275b 5p requeues 0
+== CLI1 (data-dir egress: netem or tbf+netem bottleneck)
+qdisc netem 9de8: root refcnt 7 limit 1000 delay 50ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42
+ Sent 776 bytes 10 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+== SRV0 (ack-dir egress)
+qdisc netem 9de9: root refcnt 7 limit 1000 delay 50ms rate 100Mbit seed 8840294276814676108
+ Sent 10959591 bytes 61568 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 175b 1p requeues 0
+== SRV1 (ack-dir egress)
+qdisc netem 9dea: root refcnt 7 limit 1000 delay 50ms rate 100Mbit seed 15192509913445006651
+ Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+== SRV0-INGRESS (policer, when present)
+== INVOCATION_S 12

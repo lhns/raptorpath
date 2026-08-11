@@ -25978,3 +25978,253 @@ New always-on tests:
 **NOTHING IS SHIPPED.** `RWM_ACKDIAG` ships OFF; no default, no law and no
 behaviour is touched. **No VM was contacted and no benchmark was run** — the
 wire measurement is the named next step, not this one.
+
+## Ack-Cadence Measurement (VM) (2026-08-11, `feat/ackdiag-measurement` from main@c0d9305). The wire reading the preceding section named as its own next step. **A MEASUREMENT of the echo stream, NOT a performance battery** — one arm, one seed, three reps, no criterion is scored and no verdict is amended. It fills the four-item VM-ONLY list "WHAT ONLY THE VM CAN ANSWER" and hands the SF bench its inputs measured instead of invented.
+
+### THE VERDICT IN FIVE LINES
+
+1. **`drecv` on the wire is 1.** p50 = p90 = 1 in **all 60 report windows**,
+   857 400 acks, every cell and every path. **There is no ack aggregation.**
+   The single most load-bearing number this gauge was built to collect reads
+   the SAME as loopback, and the ~145×-class ACK-AGGREGATION hypothesis is
+   REFUTED at these cells.
+2. **The 4.6–7.4 band holds at c2r100 and NOWHERE ELSE.** Median `xanchor`
+   5.94 at c2r100 (in the band), **9.8–10.1 at c7** and **13.3–13.8 at c8** —
+   **47 of the 48 dual-cell windows are ABOVE 7.4** (the one exception reads
+   7.35, and it is the lowest c8 window there is). The band is a property
+   of ONE cell, exactly as the instrument section warned, and `store_cap_bench`'s
+   `OVERREAD = 5.0` constant under-reads the dual cells by 2.0–2.8×.
+3. **The spacing is 13–23 µs p50**, one to three orders below every invented
+   cadence. Loopback's 13–16 µs predicted the wire correctly.
+4. **The floor rejects 81.5–94.3%** of `record_delivery` calls, against
+   loopback's 93–96%. Floor-clocking is confirmed as the over-read's
+   mechanism ON THE WIRE.
+5. **Repairs are in the counters on the wire too** — settled Σ`crecv`/`srcack`
+   1.01–1.04 at c2r100/c7 and 1.21–1.34 at c8.
+
+### ARM, CELLS, AND WHAT IS AND IS NOT CLAIMED
+
+| | |
+|---|---|
+| arm | **`RWM_ACKDIAG=1` and NOTHING else** — the shipped default's own echo stream. No `RWM_DIAG`: the gauge has its own gate and its own cadence precisely so the reading need not pay for the 250 ms report |
+| base env | `SEED=42 RWM_GEN=0` — byte-identical to the tt / hi / copaclean batteries, i.e. the plain-window pipeline every store-cap and anchor ledger is scored on |
+| cells | **c7** `c2/c2 dual 200 MB` · **c8** `c2/c3 dual 25 MB ×3 runs` · **c2r100** `single 100 MB` |
+| reps | **3**, **seed 42 only** |
+| binary | `7444855555cbb549a052f73d421c6a977ae33b342c803d65b0d183aca7536397` |
+| source | main@`c0d9305`, kernel `7.0.14-101.fc43`, Xeon E5-2650 v3 |
+| driver | `tools/l1/ackdiag_battery.sh` (new); raw in `docs/l1-raw/ackdiag-ackdiag-s42.log` + `docs/l1-raw/ackdiag-diag/` |
+
+**ONE SEED, ON PURPOSE, AND WHAT THAT COSTS.** This is an INSTRUMENT READING:
+the quantities are distributions with n = 10³–10⁵ samples *inside each 2 s
+window*, and the answer to "is `drecv` 1 or 30" does not become more certain
+by adding a second seed. It is therefore **not scorable against any
+criterion** and nothing here may be cited as an arm comparison. The seed-7
+half of the usual pair is absent by design, not by attrition.
+
+**c8 RUNS=3, RECORDED.** `c8` at its ledger size (25 MB) completes in ~2.5 s
+and the gauge reports every ~2 s, so one rep yields ONE window per path.
+`runs=3` on the same tunnel gives 4 windows per path per rep without touching
+the cell's rate, delay, loss or byte count. `c7` and `c2r100` run at
+`runs=1` — their transfers are 9 s and already yield 4 windows each.
+
+**LIVENESS (discipline 1/15c), asserted on every one of the 9 invocations.**
+`RWM_ACKDIAG=1` in the `[GATES]` echo on BOTH endpoints, and the gauge
+EMITTED — 4–8 `[ACKDIAG]` lines per client log, 60 sender-side windows total,
+`ov=0` in every one (no window was truncated by the 32 768 sample cap).
+Zero `dnf`, zero parse failures, zero liveness failures.
+
+### READOUT 1+2 — CADENCE AND AGGREGATION (the load-bearing table)
+
+N = report windows (12 per cell/path = 3 reps × 4 windows). `drecv` p50/p90
+columns list the DISTINCT values observed across all 12 windows.
+
+| cell/path | N | Σacks | z% | drecv p50 | p90 | max | gap µs p50 | p90 | p99 |
+|---|---|---|---|---|---|---|---|---|---|
+| c2r100/p0 | 12 | 208 311 | 0.01% | **1** | **1** | 10 | 17–23 | 228–374 | 930–1522 |
+| c7/p0 | 12 | 224 489 | 0.08% | **1** | **1** | 7 | 13–14 | 73–96 | 1838–2052 |
+| c7/p1 | 12 | 225 560 | 0.09% | **1** | **1** | 8 | 13–14 | 68–87 | 1807–2006 |
+| c8/p0 (fast, c2) | 12 | 165 500 | 0.13% | **1** | **1** | 7 | 11–13 | 42–182 | 1697–2048 |
+| c8/p1 (slow, c3) | 12 | 33 540 | 0.12% | **1** | **1** | **1** | 31–70 | 1918–2194 | 5354–**18229** |
+
+**THE ANSWER TO THE VM'S ONE LOAD-BEARING QUESTION IS 1, NOT 30.** Not p50
+alone — p90 is 1 as well, at every cell and every path, and on c8's slow leg
+even the per-window MAX is 1 in all 12 windows: that path never once merged
+two symbols into one ack. The largest merge seen anywhere in 857 400 acks is
+10 symbols, in one window at c2r100.
+
+What the instrument can and cannot separate, stated rather than glossed: the
+gauge measures the DELTA the sampler is fed, so `drecv = 1` proves the
+RECEIVER emits one ack per delivered symbol and the sender's estimator
+consumes them one at a time. A NIC/GRO burst would not merge two WindowAcks'
+counters — it would show up as near-zero `gap_us`, and p50 = 11–23 µs is
+already burst-scale. Either way the operative fact for every consumer is the
+same: **the rate sampler is offered 857 400 discrete deliveries of ONE symbol
+each, never a batch of 30.**
+
+The spacing is **13–23 µs p50** on the three fast paths and 31–70 µs on the
+c3 leg — against `store_cap_sf_bench`'s 0.25–10 ms sweep, `honest_inputs_bench`'s
+5 ms and `recovery_model.rs`'s 2 ms. The sweep's FASTEST point is still
+11–19× too slow. And the distribution is not summarizable by a period at all:
+p50 → p99 spans two to three decades, and c8's slow leg tails to **18.2 ms**
+(the recovery stall, as at the c3 loopback).
+
+### READOUT 3 — REALIZED OVER-READ, AND THE BAND
+
+`x` is per-sample (each accepted sample's rate over the window's own long-run
+rate); `xanchor` is the ledger's `copa_bdp_anchor()/(rate_lr·RTprop)` — the
+quantity the store-cap Σ and the cwnd anchor floor actually consume. Medians
+over the 12 windows; `xanchor` min/max are the extremes.
+
+| cell/path | x p50 | x p90 | x p99 | **xanchor med** | min | max | RTprop ms | rate_lr sym/s |
+|---|---|---|---|---|---|---|---|---|
+| c2r100/p0 | 1.02 | 1.58 | 2.50 | **5.94** | 4.04 | 9.28 | 100.4 | 9 316 |
+| c7/p0 | 0.98 | 2.27 | 5.95 | **9.80** | 8.14 | 11.95 | 7.7 | 9 432 |
+| c7/p1 | 0.98 | 2.26 | 5.61 | **10.11** | 8.06 | 10.57 | 9.7 | 9 418 |
+| c8/p0 (fast) | 1.32 | 2.66 | 7.22 | **13.29** | 7.79 | 27.34 | 8.4 | 6 948 |
+| c8/p1 (slow) | 1.31 | 3.89 | 7.11 | **13.82** | 7.35 | 27.56 | 38.6 | 1 376 |
+
+Four readings:
+
+* **c2r100 — the reference cell — CONFIRMS the 4.6–7.4 band.** Median 5.94
+  sits inside it; the 12-window spread 4.04–9.28 straddles it. The band the
+  ledgers inferred is REAL at the cell it was inferred from.
+* **c7 REFUTES it as a general number.** All 24 symmetric-dual windows lie
+  ABOVE 7.4; the median is 9.8–10.1, i.e. **1.7× the band's midpoint and
+  2.0× `store_cap_bench`'s `OVERREAD = 5.0`.**
+* **c8 is worse and much noisier** — median 13.3–13.8, worst window 27.6,
+  **2.7× the constant.** The asymmetric cell's over-read moves by **2.5×
+  between windows of the SAME run** (2.55 / 2.51 / 2.55 in reps 1/2/3 — a
+  remarkably reproducible instability) and by 3.75× across the cell.
+* **Per path at c8, the two legs read the SAME magnitude** despite a 5× rate
+  gap and a 4.6× RTprop gap (fast 13.29 vs slow 13.82). `xanchor` reduces to
+  `max_bw/rate_lr`, and the max-filtered `max_bw` is near path-invariant while
+  `rate_lr` and `RTprop` move oppositely — so the slow leg is NOT protected by
+  being slow. **c8 is also the only cell where the PER-SAMPLE median
+  over-reads** (x p50 = 1.31–1.32, both legs): at c7 and c2r100 individual
+  samples are honest (0.98–1.02) and the entire over-read is the max filter.
+
+### READOUT 3b — THE FLOOR-CLOCKING RATE
+
+| cell/path | Σaccepted | Σrejected | **rejected %** | per-window range | accepted samples/s | acks folded per sample |
+|---|---|---|---|---|---|---|
+| c2r100/p0 | 17 635 | 190 660 | **91.5%** | 91.2–91.9 | 744 | 11.8 |
+| c7/p0 | 12 831 | 211 469 | **94.3%** | 93.9–94.5 | 536 | 17.5 |
+| c7/p1 | 12 838 | 212 515 | **94.3%** | 94.0–94.6 | 536 | 17.6 |
+| c8/p0 | 9 954 | 155 331 | **94.0%** | 93.4–95.4 | 415 | 16.6 |
+| c8/p1 | 6 196 | 27 303 | **81.5%** | 80.3–83.2 | 258 | 5.4 |
+
+Loopback measured 93–96%; the wire reads **81.5–94.3%**, and the ONE path
+below 90% is c8's slow leg — the only path whose ack spacing (31–70 µs p50)
+is close enough to the 1 ms floor for a meaningful fraction of calls to clear
+it. **The sampler is floor-clocked on the wire, not ack-clocked**, at 258–744
+samples/s folding 5–18 acks each. The mechanism loopback identified is
+confirmed at real RTT, and the per-window spread is tight (±0.5 pt at three
+of five paths) — this is a stable property of the code, not of the cell.
+
+### READOUT 4 — REPAIR SHARE IN THE COUNTERS
+
+Per-path `cr/sa` is **not** the discriminator at N = 2: `srcack` is the
+connection-wide source frontier while `crecv` is per path, so the ratio must
+be taken as Σ`crecv`/`srcack` over contemporaneous windows. Both are given;
+only the second is read.
+
+| cell/path | cr/s med | ce/cr med | per-path cr/sa med |
+|---|---|---|---|
+| c2r100/p0 | 0.986 | 1.029 | 1.028 |
+| c7/p0 | 0.988 | 2.056 | 0.522 |
+| c7/p1 | 0.987 | 2.050 | 0.526 |
+| c8/p0 | 1.011 | 1.258 | 1.095 |
+| c8/p1 | 1.063 | 5.593 | 0.233 |
+
+**Σ`crecv`/`srcack`, connection-wide, window by window:**
+
+| cell | rep 1 | rep 2 | rep 3 |
+|---|---|---|---|
+| c2r100 | 1.048 1.038 1.031 **1.011** | 1.083 1.038 1.025 **1.026** | 1.009 1.036 1.026 **1.012** |
+| c7 | 1.121 1.057 1.037 **1.023** | 1.126 1.079 1.027 **1.044** | 1.058 1.097 1.047 **1.025** |
+| c8 | 3.298 1.324 1.260 **1.214** | 1.545 1.411 1.155 **1.336** | 1.756 1.411 1.160 **1.214** |
+
+**Repairs enter the receiver's expected/received counters on the wire, as
+they did at the c3 loopback.** Every one of the 36 connection-wide readings
+is > 1. At the settled (last) window the excess is **1.1–4.4% at c2r100 and
+c7** — consistent with those cells' realized packet loss (tc: 0.55% at c7,
+0.81% at c2r100) plus retransmits — and **21.4–33.6% at c8**.
+
+Two caveats on the c8 number, recorded now rather than discovered later:
+
+* **It is an UPPER bound on repair share, because `srcack` is a FRONTIER and
+  a frontier LAGS.** At a cell with a slow leg, a hole held by the c3 path
+  stalls the delivered-source frontier while arrivals keep accruing on the
+  fast one. The first window of each c8 rep reads 1.55–3.30 — that is startup
+  frontier lag, not 230% repair — and it decays monotonically to 1.21–1.34.
+  The clean read is c7's: symmetric, low-loss, settling at 1.02–1.04.
+* **`ce/cr` is NOT a loss estimate at a dual cell.** It reads 2.05 at c7 and
+  5.59 on c8's slow leg, against realized packet loss of 0.55% and 1.96%.
+  `record_batch` charges `gap × received` across a batch-seq gap, and at N = 2
+  the batch-seq sequence a single path observes is FULL of gaps that are just
+  the other path's symbols. Only the single-path cell's `ce/cr` = 1.029 is a
+  loss reading, and it matches (2.8% implied vs 0.81% realized drops on a
+  cell whose GE mean is 2.53%). **`LossEstimator::record_batch` is fed this
+  quantity**, and at every multipath cell it is fed a number inflated ~2–5.6×
+  by cross-path interleaving. Recorded as a measurement; no verdict is drawn
+  from it here.
+
+### WHAT THIS MEANS FOR THE SF BENCH'S INPUTS
+
+The three consumers, scored against the wire:
+
+| invented input | what the wire says | verdict |
+|---|---|---|
+| `sf_derived_overread_from_ack_batching`: ack period **0.25–10 ms**, over-read derived from **BATCHING** | p50 **13–23 µs**; `drecv` p50 = p90 = **1** | **WRONG TWICE.** The cadence is 11–800× too slow AND the mechanism does not exist — there is no batching to derive an over-read from. Its ×24–2400 output is 3–100× the measured 4.0–27.6 at the top end |
+| `honest_inputs_bench`: **5 ms** ack period | ack p50 13–23 µs, but the accepted-SAMPLE period is **1.3–3.9 ms** | **CLOSEST, for the wrong reason.** 5 ms is ~250× off as an ACK cadence and within 1.3× of the realized SAMPLER period. It accidentally modelled the floor, not the stream |
+| `recovery_model.rs`: **2 ms** periodic `Ev::Ack` | same | ~100× off as a cadence; within 2× of the sampler period. Same accident |
+| `store_cap_bench`: `OVERREAD = 5.0` constant | 5.94 (c2r100) / 9.80 (c7) / 13.3 (c8) | **RIGHT AT ONE CELL, 2.0–2.7× LOW AT THE OTHERS.** Exactly the shape CLAUDE.md forbids: a constant standing in for a cell-dependent quantity |
+
+**The values a corrected bench run should use.** Not a period and not a
+constant — a distribution and a per-cell number:
+
+* **Ack arrival:** heavy-tailed, p50 **13 µs** (c7/c8 fast legs), **20 µs**
+  (c2r100), **45 µs** (c8 slow leg); p90 **80 µs / 300 µs / 2000 µs**;
+  p99 **1.9 ms / 1.0 ms / 6 ms**, tailing to 18 ms on a stalling leg. A single
+  assumed period cannot represent this and should not be attempted.
+* **Delivered count per ack: 1.** Not swept. p50 = p90 = 1 everywhere; use
+  a max of ≤ 10 only if the bench needs a tail.
+* **The sampler is FLOOR-CLOCKED — model the floor, not the acks.** Feed
+  `record_delivery` at ack cadence and let the 1 ms `elapsed` floor do the
+  work: it will reject **~92% (single) / ~94% (dual fast) / ~82% (slow leg)**
+  and emit **260–745 samples/s**, each folding **5–18** acks. A bench that
+  feeds the sampler at an assumed period bypasses the exact mechanism that
+  produces the over-read.
+* **`xanchor` per cell, replacing the constant:** **5.9** at c2r100 (range
+  4.0–9.3), **9.9** at c7 (8.1–12.0), **13.5** at c8 (7.4–27.6). If one number
+  is unavoidable it must be the CELL's, and it must carry the range — at c8
+  the same run varies by 2.5×.
+* **Repair share for a cell with recovery traffic:** ~3% of the counter
+  population at c2r100/c7, ≤ 21–34% at c8 (upper bound, frontier lag included).
+
+**NO BENCH WAS RE-RUN in this step**, per the brief. These are the measured
+inputs, recorded so the successor does not have to invent them a fourth time.
+
+### WHAT REMAINS VM-UNANSWERED
+
+Of the four items the instrument section listed in advance, three are now
+answered (the band — cell-dependent, confirmed only at c2r100; ack
+aggregation — none; the c8 asymmetric geometry — measured per path). The
+fourth stands: **the real GE channel and any composition effect** are still
+excluded, as the SF Accounting Axis recorded. Added by this measurement: the
+`ce/cr` inflation at multipath cells is now a measured quantity looking for
+an owner, and `xanchor`'s max-filter behaviour at c8 (2.5× within one run,
+reproduced to two decimals in all three reps) is a stability question no
+static input can express.
+
+### GATES
+
+**None needed and none run — this commit is documentation and raw logs only**
+(plus the new `tools/l1/ackdiag_battery.sh` driver, which is harness, not
+engine). No crate, no test, no gate and no default was touched; the engine
+tree is byte-identical to main@`c0d9305`. `RWM_ACKDIAG` still ships OFF.
+
+**VM hygiene.** `/tmp/rwm-vm.lock` taken before the first VM command and
+released at the end; `pkill -x raptorpath` only; verified after: no
+`raptorpath` processes, no `ip netns` entries, no lock file. `ens18`, the
+firewall, `sshd` and all non-`rp-*` namespaces untouched.
