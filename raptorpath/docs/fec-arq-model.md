@@ -11310,6 +11310,29 @@ PRE-REGISTRATION" (0db2322) and "Honest Inputs — FLIP BATTERY"
 (ledgers `docs/l1-raw/flip-*`; era, liveness, and the F3 two-prong
 gauge table).
 
+### 16.51 The flip executed: `RWM_HONEST_ANCHOR` DEFAULT ON (2026-08-11, the separate flip commit §16.50's no-self-flip rule requires)
+
+§16.50 recommended exactly one flip and executed none. This section is
+the record of the separate commit that executes it: `RWM_HONEST_ANCHOR`
+now resolves **default ON** (`anchor_gate_default("RWM_HONEST_ANCHOR",
+true)`, the same umbrella-preserving mechanism ASTAR/MSTAR/CLOCK_GAP
+used for their flips). The evidence cited is F7, swept in full: goodput
+within 2σ at every cell and both seeds, CPU/byte 0.90–1.03×A — and the
+flip is CATEGORICALLY safe in a way no throughput result could make it,
+because the gate selects the COST of a value-identical statistic
+(`bw_mono_front_equals_full_window_fold`, always-on): the shipped
+default now computes the same number for less work, nothing else. The
+legacy fold stays reachable as `RWM_HONEST_ANCHOR=0` (the A/B control
+arm and the equivalence oracle's live twin — register row in ADR-0066,
+no deprecation warning). The default-stack assertion in `gates.rs` now
+pins ON, so the flip cannot drift back silently.
+
+The other three gates scored by §16.50 keep their defaults, for the
+reasons recorded there: `RWM_HONEST_K` OFF (rode only the failed
+composition), `RWM_STORE_CAP_UNIFIED` OFF pending the named c8
+attribution arm, `RWM_THREE_TERM` OFF (F1/F4; its cap is now the c1
+binder — the open derivation question, the window term at ms-RTprop).
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

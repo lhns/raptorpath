@@ -116,6 +116,29 @@ register's first row retired by READING rather than by measurement):**
   explicitly. Nothing in the crate asserted this distinction before,
   though shipped code is load-bearing on it.
 
+**Disposition added 2026-08-11 — a DEFAULT FLIP row (the register also
+records flips, so the displaced arm keeps its provenance):**
+
+- `RWM_HONEST_ANCHOR` **FLIPPED DEFAULT ON** (goal-gate "Honest Inputs —
+  FLIP BATTERY", falsifier **F7 swept**: goodput within 2σ at every
+  cell/seed both seeds, CPU/byte 0.90–1.03×A; the statistic is
+  VALUE-IDENTICAL to the legacy fold by the unit-pinned equivalence
+  `bw_mono_front_equals_full_window_fold`, so the flip changes COST
+  only — any behavioral movement under it is an instrument alarm, not a
+  result). The displaced arm — the O(window) full-window fold, whose
+  O(window·rate) cost under `RWM_PLAIN_RS` was the measured c1 −35%
+  (sender CPU/byte +61…64%) — remains reachable as
+  `RWM_HONEST_ANCHOR=0` with NO deprecation warning: it is the A/B
+  control arm and the equivalence oracle's live twin, and it stays
+  re-runnable until a later register pass argues its removal separately.
+  Companions scored in the same battery and NOT flipped:
+  `RWM_HONEST_K` (rode only the failed BHU composition; khr−kraw ≈ 0
+  in-cell), `RWM_STORE_CAP_UNIFIED` (needs-more: A+U vs H+U at c8,
+  n≥8 both seeds, to attribute the −19.6% brake-removal interaction),
+  `RWM_THREE_TERM` (F1 failed both seeds; F4 failed at c7; its c1 cap
+  now BINDS below the repaired pooled cap — a derivation question, not
+  a flip candidate).
+
 Class-B gates (concept incomplete, successor scheduled — percap family,
 `RWM_COPA_COMPETE`, formerly `RWM_TAPER_R`/`RWM_UNIFIED` before they
 flipped ON) are NOT register members: they deprecate or flip when their

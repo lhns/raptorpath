@@ -367,10 +367,17 @@ pub fn floor_bound_active() -> bool {
 /// OFF ⇒ the fold runs verbatim (value-identical either way; the gate
 /// selects COST, not behavior). Read once and cached (consulted at
 /// CopaState construction).
+///
+/// **DEFAULT ON since 2026-08-11** (goal-gate "Honest Inputs — FLIP
+/// BATTERY", falsifier F7 swept: goodput within 2σ at every cell/seed,
+/// CPU/byte 0.90–1.03×; value-identical by the unit-pinned equivalence, so
+/// any behavioral movement is an instrument alarm, not a result). The
+/// legacy fold remains reachable as `RWM_HONEST_ANCHOR=0` — the A/B arm
+/// stays re-runnable per the deprecation register.
 pub fn honest_anchor_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::anchor_gate("RWM_HONEST_ANCHOR"))
+    *F.get_or_init(|| crate::config::anchor_gate_default("RWM_HONEST_ANCHOR", true))
 }
 
 /// Whether the RAW-sample echo-ratio floor is active for this process

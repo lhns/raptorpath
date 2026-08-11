@@ -77,11 +77,12 @@ pub struct RuntimeGates {
     /// `RWM_PLAIN_RS` (umbrella default OFF): plain-mode BBR send-interval
     /// sampler (sampling-only CopaFeed); the honest-cap law's anchor input.
     pub plain_rs: bool,
-    /// `RWM_HONEST_ANCHOR` (umbrella default OFF; goal-gate "Honest
-    /// Inputs"): the BtlBw windowed-max read off a monotonic max-deque —
-    /// value-identical statistic, O(1) amortized instead of the per-sample
-    /// full-window fold whose O(window·rate) cost under `RWM_PLAIN_RS` is
-    /// the measured c1 −35% (sender CPU/byte +61…64%, latlever CPU gauge).
+    /// `RWM_HONEST_ANCHOR` (**DEFAULT ON since 2026-08-11**, flip-battery
+    /// F7; `=0` = the legacy full-window fold, kept re-runnable): the BtlBw
+    /// windowed-max read off a monotonic max-deque — value-identical
+    /// statistic, O(1) amortized instead of the per-sample full-window fold
+    /// whose O(window·rate) cost under `RWM_PLAIN_RS` is the measured c1
+    /// −35% (sender CPU/byte +61…64%, latlever CPU gauge).
     /// Resolved via `scheduler::honest_anchor_active()` (cached — CopaState
     /// construction reads the same resolution).
     pub honest_anchor: bool,
@@ -839,17 +840,22 @@ mod tests {
         // two-sided on the echo (MEASUREMENT DISCIPLINE 15): a battery must
         // be able to assert the gates ABSENT on the control arm.
         assert!(
-            !g.honest_anchor,
-            "RWM_HONEST_ANCHOR ships default OFF (A/B arm — goal-gate \"Honest Inputs\")"
+            g.honest_anchor,
+            "RWM_HONEST_ANCHOR ships DEFAULT ON since 2026-08-11 (flip-battery F7 \
+             swept: goodput within 2σ every cell/seed, CPU/byte 0.90–1.03×; \
+             value-identical by the unit-pinned equivalence). `=0` remains the \
+             re-runnable legacy-fold A/B arm."
         );
         assert!(
             !g.honest_k,
-            "RWM_HONEST_K ships default OFF (A/B arm — goal-gate \"Honest Inputs\")"
+            "RWM_HONEST_K ships default OFF (A/B arm — goal-gate \"Honest Inputs\"; \
+             flip battery: rode only the failed BHU composition, khr−kraw ≈ 0 in-cell)"
         );
         assert!(
-            g.echo_line().contains("RWM_HONEST_ANCHOR=0")
+            g.echo_line().contains("RWM_HONEST_ANCHOR=1")
                 && g.echo_line().contains("RWM_HONEST_K=0"),
-            "the default echo must NAME both Honest-Inputs gates with their 0 value: {}",
+            "the default echo must NAME both Honest-Inputs gates with their shipped \
+             values (anchor=1 since the 2026-08-11 flip, K=0): {}",
             g.echo_line()
         );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
