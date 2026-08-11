@@ -11248,6 +11248,68 @@ Primary record: goal-gate "Honest Inputs — PHASE 3, THE TWO PROBES"
 (instrument names, the three-process bench table, the flip-battery
 pre-registration skeleton sized to c1's measured σ = 33: n = 12 at c1).
 
+### 16.50 The flip battery: the shipped default itself pays the store-cap cliff (~15–25% at c1), the honest-anchor+unified composition removes it wholesale, the three-term law becomes the c1 binder once the cliff is gone — and the only default the evidence flips is the value-identical one (2026-08-11, `feat/honest-inputs-flip`; all gates still **default OFF**; recommendations only, per the no-self-flip rule)
+
+The pre-registered six-arm battery (A / H=`RWM_HONEST_ANCHOR` alone /
+DH / DHU=DH+`RWM_STORE_CAP_UNIFIED` / BH / BHU=BH+U; c1 at n = 12 sized
+to the measured σ = 33, four more cells at n = 8, both seeds, 528+72
+invocations, zero gate mismatches, zero instrument failures) closed
+GOAL "HONEST INPUTS" phase 4. Its two falsified criteria are the
+headline, and both falsified in the informative direction.
+
+**F2 falsified HIGH — and the baseline was the defect.** DHU/A was
+pre-registered as a parity band (0.95–1.02, "H1's completion");
+measured **1.227/1.259, EXCEEDS 2σ both seeds**, at sender CPU/byte
+0.93–0.97×A, receiver CPU below A, retx share 0.24→0.42%. The
+mechanism gauge closes the chain with no inference: DH's effective cap
+sits at the 128 boot value in 45.5–45.9% of steady samples
+(wait[paused] 48–49%); under the unified path set the cap pins at the
+law's 1024, the boot fraction is 0.0%, the pause is 0%, and — the part
+the parity band failed to anticipate — **arm A itself reads 28–30%
+boot-cap residency** (occcap p50 535 against the law's ~1024, `[SF]`
+zero-ticks 30%). The −13% "honest-anchor residual" of §16.48 was the
+cliff; the cliff also taxes the shipped default by ~15–25% at c1, and
+DHU is simply c1 with the tax removed: +74/+83 Mbit/s over DH,
++48/+55 over A — the largest same-session single-composition c1
+movement in the ledger, with zero >2σ regressions anywhere including
+c8, where the store-cap battery's A+U collapse class did NOT reproduce
+under the honest anchor.
+
+**F1 failed honestly — no flip for the three-term family.** BHU/A read
++12.3/+13.2% but inside 2σ_Δ on both seeds: the arm's σ (17.5/48.2,
+one 92 Mbit/s anchor-warmup collapse rep) did not tighten, and the
+phase-3 conjecture that BH's variance was cliff intermittency is
+refuted by its own gauge (BH consumed-cliff 0.0%). Sharper: with the
+cliff fixed, the three-term law's derived c1 cap (438–526 symbols at
+RTprop ≈ 2 ms) **binds below the repaired pooled cap** — DHU beats BHU
+by 22–27 Mbit/s point on both seeds. The law that rescued a cliff-taxed
+c1 is the binder on a cliff-free one; its window term at millisecond
+RTprop is now a named derivation question, not a tuning question. What
+the composition keeps: sc2's halved RTT at exact goodput parity
+(p50 0.44–0.47×A, ≫2σ, p99 ≤ 52 ms) and parity everywhere else,
+including jit25 in relation form (slack/window = 2.125 in every rep;
+no absolute band, per §16.49).
+
+**The defaults, as recommended (each requiring its own trivial flip
+commit citing the goal-gate section):** `RWM_HONEST_ANCHOR` — **flip
+ON**; F7 scored it as pure no-regression (value-identical by
+construction, component-pinned) and it swept: goodput within 2σ at
+every cell both seeds, CPU/byte 0.90–1.03. `RWM_HONEST_K` — OFF
+(rides only the failed composition; khr−kraw ≈ 0 in-cell again).
+`RWM_STORE_CAP_UNIFIED` — OFF standalone, needs-more with the missing
+measurement named: A+U vs H+U at c8 to attribute why the honest anchor
+neutralizes the brake-removal harm. `RWM_THREE_TERM` — OFF (F1 both
+seeds; F4's c7 CPU 1.08–1.10× rides the `RWM_PLAIN_RS` substrate,
+measured twice now). DHU — the obvious next candidate — was a
+pre-registered control here, not a candidate, and is explicitly not
+promoted; its flip battery's three open items are the c8 attribution,
+the c7 CPU class, and the retx share.
+
+Primary record: goal-gate "Honest Inputs — FLIP BATTERY —
+PRE-REGISTRATION" (0db2322) and "Honest Inputs — FLIP BATTERY"
+(ledgers `docs/l1-raw/flip-*`; era, liveness, and the F3 two-prong
+gauge table).
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
