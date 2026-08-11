@@ -26605,3 +26605,274 @@ benches not run) · `store_cap_sf_bench` **21 passed, 0 failed** (10
 `#[ignore]`d benches not run). `gate_suite` not required — no engine code
 changed. Determinism verified across three separate processes on the fidelity
 readout and two on the full always-on suite.
+
+## Cap-Refresh Warmth (2026-08-11, `feat/cap-refresh-warmth` from main@`b2e18a2`) — MEASUREMENT DISCIPLINE 14. Executes the preceding section's RANK 1 handover ("WHY THE WIRE'S STORE CAP IS NOT PINNED"). STRICTLY LOCAL: no VM was run, no L1 number re-derived, no engine file touched. **VERDICT: the handover's premise is REFUTED. The wire's store cap at c7 and c8 IS pinned at its `N·knee` ceiling — the bench's arithmetic was right and its diagnosis was wrong.** Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`.
+
+### THE VERDICT IN FIVE LINES
+
+1. **THE WIRE IS AT ITS CEILING, AND THE INSTRUMENT ALREADY SAID SO.** The
+   realized cap is already in every L1 per-rep ledger as `occcap_p50` (the
+   median of `win=occ/cap`'s cap field, which IS `dyn_store_cap` —
+   `net/mod.rs:4971`). Over **178 dual-cell reps from five independent
+   sessions** it reads **exactly 4096 = 2·knee** in **69/69** c7-A reps and
+   **52/57** c8-A reps, and `capboot_frac` (cap ≤ boot = 128) is **0.0000 in
+   every one of them**. No VM time was needed and none was spent.
+2. **THE 7.5× "U-FOLD" THE HANDOVER SAID A PINNED CAP FORBIDS IS NOT A FOLD
+   IN THE CAP.** `fold` is `mean(AU zero%)/mean(A zero%)` — a ratio of the
+   `[SF]` gauge. `store_cap_sf_record(live, act)` (`net/mod.rs:4586`) runs on
+   BOTH arms, and under U the Σ ranges over `live`, so an empty
+   `active_paths()` **cannot reach the cap at all**. Under U the zero-fraction
+   is a pure OBSERVATION — the "downstream-coupled gauge" the store-cap
+   battery's P0 point 4 already flagged. A pinned cap forbids nothing, and no
+   unsaturated cap was ever required. **The contradiction was never in the
+   engine; it was in reading a downstream gauge as an upstream cause.**
+3. **THE PIN THRESHOLD IS PATH-COUNT-FREE AND IT IS 1024 SYMBOLS.**
+   `clamp(gain·N·Σ, floor, N·knee)` saturates iff `gain·N·Σ ≥ N·knee` iff
+   `Σ ≥ knee/gain` — **the N cancels**. On the wire's OWN anchors, both legs
+   sum to 1635 (c7) and 1510 (c8) — 1.6× and 1.5× the threshold, always
+   pinned — while EITHER leg alone is 712–924 / 734–776, i.e. 0.70–0.90× the
+   threshold, always INTERIOR. So the `[SF]` short-tick fraction IS the cap's
+   regime mixture, directly.
+4. **WHAT U ACTUALLY DOES AT c8 IS +16% OF MEAN POOL DEPTH, NOT A FOLD.** It
+   converts the 36.2% of refreshes with one leg in the Σ (interior cap ≈3020)
+   and the 4.6% with an empty Σ (boot 128) into the 4096 ceiling: **mean cap
+   3524 → 4096, median 4096 → 4096.** That +16% is spent on unacked-frontier
+   span at the one cell whose documented pathology is exactly that span, and
+   the 4.6% → 29.9% zero-fraction rise is the CONSEQUENCE of the deeper pool
+   (more store ⇒ more in-flight ⇒ `available()` = 0 more often), not its cause.
+5. **THE PREDECESSOR'S Σ IS 1.8× THE WIRE'S, AND THE ERROR CROSSES THE PIN
+   THRESHOLD.** It multiplies the measured `xanchor` by the cells' CONFIGURED
+   rate and RTT (10 400 / 2 000 sym/s at 8 / 60 ms) instead of the wire's own
+   measured `rate_lr` and `RTprop` (6 948 / 1 376 sym/s at 8.4 / 38.6 ms) —
+   the same "scale by the REALIZED ack rate, not the link capacity" caveat its
+   own correction (b) stated for the ack model and did not carry into the Σ.
+   On its numbers one leg alone still clamps (4423 > 4096); on the wire's it
+   does not (3103 / 2937). **Its FINDING 1 — "the store cap is the first
+   quantity to diverge, and it diverges by saturating" — is WRONG about the
+   divergence**: the cap does not diverge (bench mean 3788 vs the wire's 3524,
+   7% apart), and the divergence is downstream of it.
+
+### THE QUESTION, AND WHY THE VM WAS NOT NEEDED
+
+The dispatch asked: at the engine's actual 5 ms cap refreshes, what fraction
+are ceiling-pinned vs law-expressed vs boot-fallback, per cell? It named a
+DIAG counter and a minimal VM run as the fallback. Neither was built and
+neither was run, because **step 1 and step 2 of the dispatch's own order
+answered it** — the instrument existed twice over.
+
+**KILL BY READING — every branch that could make the refresh-time cap smaller
+than `gain·N·Σ_steady`, and what killed it.** Read at the batteries' resolved
+arms from the `[GATES]` echo each raw log carries.
+
+| candidate | site | verdict |
+|---|---|---|
+| **Copa-sole Σcwnd branch** | `net/mod.rs:4405` | DEAD. `RWM_COPA_FEED=0` on every arm; and it does not call `store_cap_sf_record`, which fires (`sf_ticks` 343 at c8-A) |
+| **three-term / win-decouple / capw / pool-anchor / percap laws** | `4715`–`4793`, `4966` | DEAD. `RWM_THREE_TERM=0 RWM_WIN_DECOUPLE=0 RWM_STORE_CAPW=0 RWM_POOL_ANCHOR=0 RWM_STORE_PERCAP=0` |
+| **honest-cap `hsum`** | `4756` | DEAD, and this one is a trap: `RWM_HONEST_CAP=1` in the echo, but `honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap` (`sender_policy.rs:741`) and `RWM_PLAIN_RS=0` on the A arms. `hsum = 0` |
+| **`RWM_STORE` static override** | `plain_dyn_cap` | DEAD. `RWM_STORE=unset` |
+| **`RWM_STORE_PATHS` off / `n_live < 2`** | `2320` | DEAD. `RWM_STORE_PATHS=1`, and the `n_live<2` law latches at `store_max` = 1024, an integer never observed at a dual (min 2350) |
+| **the `floor` clamp (64)** | `2324` | DEAD BY ARITHMETIC. Needs `Σ < 16` symbols at N = 2 — 46× below the smallest warm leg the wire ever reported |
+| **COLD ANCHOR** — the handover's OWN rank-1 suspect | `scheduler/mod.rs:1878` | **DEAD BY READING.** `bdp_anchor()` gates on `ANCHOR_MIN_SAMPLES = 8` (`:607`) samples inside a max-filter window of `10·RTprop` clamped to **[1 s, 10 s]** (`:1355`). The duals accept **258–744 samples/s** (READOUT 3b) — 8 samples arrive in **11–31 ms of activity** and are held for at least a second. Even c8's 63%-duty slow leg cannot go cold mid-transfer. There is no warm-up story at steady state |
+| **EMPTY `active_paths()`** — the known cliff | `4585` | **THE ONLY LIVE ONE, and it is small at the duals**: `[SF]` zero-ticks 0.3% at c7-A and 4.6% at c8-A (against 29.8% at c1, where it IS the mechanism) |
+| **SHORT `active_paths()`** — one leg dropped | `4587` | **THE ONE THE HANDOVER DID NOT LIST, and the one that matters**: 3.7% at c7-A and **40.8%** at c8-A |
+
+So exactly one input can plausibly be smaller at refresh than in steady
+state — the `active_paths()` filter — and it acts by DROPPING PATHS FROM THE
+Σ, not by making anchors cold. The question then becomes purely arithmetic:
+does dropping a path cross the pin threshold? That needs the wire's anchor in
+SYMBOLS, which READOUT 3 supplies exactly.
+
+### THE ARITHMETIC — the wire's anchor, reconstructed without modelling
+
+`xanchor := copa_bdp_anchor()/(rate_lr·RTprop)` where RTprop is the anchor's
+own `min_rtt` (the predecessor's correction (a)), so it inverts EXACTLY:
+`anchor = xanchor · rate_lr · RTprop`, three measured READOUT 3 columns
+multiplied. Nothing is modelled and nothing is fitted.
+
+| path | xanchor | rate_lr | RTprop | **anchor (sym)** | ÷ 1024 |
+|---|---|---|---|---|---|
+| c7/p0 | 9.80 | 9 432 | 7.7 ms | **712** | 0.70 |
+| c7/p1 | 10.11 | 9 418 | 9.7 ms | **924** | 0.90 |
+| c8/p0 fast | 13.29 | 6 948 | 8.4 ms | **776** | 0.76 |
+| c8/p1 slow | 13.82 | 1 376 | 38.6 ms | **734** | 0.72 |
+| c2r100/p0 | 5.94 | 9 316 | 100.4 ms | **5 556** | (N = 1: `store_max` latch) |
+
+`Σ` both legs: **c7 1635**, **c8 1510** — 1.60× and 1.47× the pin threshold.
+Either leg alone: **0.70–0.90×**. So the law is pinned with both legs and
+interior with one, at BOTH duals, with no margin question in either direction.
+
+### THE REGIME MIXTURE, PER CELL — the dispatch's actual question, answered
+
+`pinned` = `1 − short`, `interior` = `short − zero`, `boot` = `zero`, with the
+`[SF]` fractions pooled over every rep in `docs/l1-raw` that carries the gauge.
+Interior cap = the mean of the two single-leg caps.
+
+| cell | arm | reps | `[SF]` zero% | short% | **pinned** | **interior** | **boot** | mean cap | median cap (MEASURED) |
+|---|---|---|---|---|---|---|---|---|---|
+| c7 | A | 37 | 0.3 | 3.7 | **96.3%** | 3.4% (≈3271) | 0.3% | 4055 | **4096** (69/69) |
+| c7 | AU | 26 | 1.2 | 6.3 | **100%** | 0 | 0 | 4096 | **4096** (26/26) |
+| c8 | A | 41 | 4.6 | 40.8 | **59.2%** | 36.2% (≈3020) | 4.6% | 3524 | **4096** (52/57) |
+| c8 | AU | 26 | 29.9 | 51.1 | **100%** | 0 | 0 | 4096 | **4096** (26/26) |
+
+The U rows read 100%/0/0 **by construction, not by estimate**: with
+`RWM_STORE_CAP_UNIFIED` the Σ ranges over `live_paths()`, which is non-empty
+and complete whenever the transfer runs, so the interior and boot regimes are
+unreachable there. That is why their `[SF]` numbers are large and their caps
+are not.
+
+**The mixture is CONFIRMED, not just derived.** The mean/median split it
+predicts is what the ledger shows: at c8-A a 59% pinned mixture leaves the
+MEDIAN at 4096 (52/57 reps) while five reps' medians land in the interior —
+and two of those five read **3065 and 2350** against a predicted single-leg
+band of **2937–3103**. 3065 is 1.2% off the fast-leg-alone value. Nothing was
+fitted to produce that; it is the same three measured columns.
+
+### FINDING 1 — THE HANDOVER'S THREE ALTERNATIVES, SCORED
+
+The predecessor wrote "exactly one of these must be false". All three of its
+items are now settled, and the false statement was none of them — it was the
+unnumbered premise they hung from.
+
+* **Item 1 (the recommended one): "the anchor is `None` at a large fraction
+  of refresh instants".** **REFUTED, by reading.** 8 samples at 258–744/s
+  inside a ≥1 s window. The realized Σ is not far below the max-filtered
+  value; it is exactly it, minus whatever the `active_paths()` filter drops.
+* **Item 2: "`store_path_pool` at the battery's arms is not 2048".** **FALSE
+  — it is 2048.** `RWM_STORE_PATH_POOL=2048` is echoed in every raw log's
+  `[GATES]` line, and the realized cap is the integer 4096 = 2×2048.
+* **Item 3: "the `[SF]`-bearing arms are not in the anchor-sum branch".**
+  Already excluded by the predecessor, and independently confirmed here: the
+  gauge fires and the cap is the pooled law's ceiling to the symbol.
+* **THE PREMISE: "the wire nonetheless shows a ≈7.5× U-fold at c8, which
+  requires an UNSATURATED cap."** **THIS is the false one.** The fold is in
+  the `[SF]` zero-fraction, which U DISCONNECTS from the cap. A saturated cap
+  is not merely compatible with the fold — under U it is what the fold
+  measures the arrival of.
+
+### FINDING 2 — WHAT THE BENCH MUST MODEL, AND IT IS NOT THE CAP
+
+The predecessor stopped at "the store cap is the first quantity to diverge".
+On the wire's own anchors it does not diverge at all:
+
+| | bench | wire | |
+|---|---|---|---|
+| c8 A-arm cap | 3788 (mean) | 3524 (mean, derived) / 4096 (median, measured) | **within 7%** |
+| c8 AU-arm cap | 4084 (mean) | 4096 (median and mean, both exact) | **within 0.3%** |
+| c8 A-arm `[SF]` zero% | 7.2 | 4.6 (2.5–8.9 by session) | **inside the class** |
+| **c8 AU-arm `[SF]` zero%** | **9.3** | **29.9** | **×3.2 — THE DIVERGENCE** |
+
+**The bench reproduces the cap distribution and the A arm's saturation state,
+and fails only on what a DEEPER POOL DOES.** The divergence is therefore
+strictly downstream of the cap, in the loop `cap → store_len → in_flight →
+available() → active_paths()`. On the wire, +16% of mean pool depth is enough
+to empty `active_paths()` 6.5× more often; in the bench the same +16% moves it
+by 1.3×. That coupling — not the cap's magnitude, and not the ack stream,
+which the preceding section already eliminated — is the SF bench's remaining
+modelling gap, and it is the first thing a successor should attack.
+
+**Is it a modelling gap or an engine bug?** A gap, and the engine's side of it
+is documented behaviour, not a defect: under SACK-clocked release (ADR-0060)
+the pool bounds the UNACKED-FRONTIER SPAN, so a deeper pool at an asymmetric
+cell buys exactly the resequencing depth the c8 WATCH prices (ADR-0058). The
+engine is doing what its own ADRs say. What is missing is on the bench's side
+— it has no mechanism by which a deeper retention pool raises per-path
+in-flight, so its `available()` never closes.
+
+### FINDING 3 — THE SHIPPED LAW IS A CONSTANT AT EVERY DUAL CELL
+
+Stated separately because it is the most consequential thing here and it is
+not about U at all.
+
+On the shipped default, at both dual cells, the pooled store-cap law spends
+**96% (c7) and 59% (c8) of its refreshes returning the same integer regardless
+of its input**, and its MEDIAN output is that integer in 121 of 126 reps.
+Every other law in the same ledgers reads an interior value at the same cells
+(three-term 1198–1543, honest-cap 1972–2597, `B` 963–1570). So:
+
+* **the anchor is not steering the cap at the duals** — `RWM_STORE_PATH_POOL`
+  is, and any measured "store-cap effect" at c7/c8 on the shipped default is
+  an effect of that constant, not of the anchor era, the sampler, or the
+  path set;
+* which is a second, independent reason the pooled-ceiling CANDIDATE cannot be
+  distinguished from the shipped law at these cells (the preceding section
+  gave the first). It differs from the shipped law by a multiplier, and a
+  multiplier is invisible above the clamp;
+* and it re-frames the "×5.0 `OVERREAD` constant" finding: the constant is not
+  2.0–2.8× low across a knee that the wire sits below — **the wire sits ABOVE
+  the knee too**, at 1.5–1.6× Σ. The predecessor and the wire agree on the
+  side; they disagree only on how far, and the distance is what decides
+  whether U has anything to do.
+
+### WHAT IS PINNED, AND WHERE
+
+Five always-on tests in `store_cap_sf_bench.rs`, all local, no engine code:
+
+* `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free` — the
+  `N` cancels; 1024 symbols at every path count 2–8, degree-1 below and
+  constant above.
+* `the_shipped_dual_refresh_has_exactly_three_reachable_regimes` — boot only
+  on an empty Σ, interior on `(16, 1024)`, ceiling above; the floor branch
+  exists but binds only below Σ = 16, which no warm leg reaches; and N = 1 is
+  the `store_max` latch the single cells actually read.
+* `the_wires_measured_anchors_pin_both_legs_and_free_one_leg_at_both_duals` —
+  the arithmetic above, on `path_scaled_store_cap` itself.
+* `the_predecessors_sigma_is_inflated_by_configured_rates_not_the_wires_realized_ones`
+  — bounds the 1.8× and asserts the two OPPOSITE verdicts the two Σs give to
+  the same question.
+* `the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff` — the
+  178-rep transcription, so a successor who re-measures re-scores this row
+  rather than inheriting prose.
+
+`AckShape` gains one field, `rtprop_s` (READOUT 3's own RTprop column), which
+is what makes the wire's anchor reconstructible in symbols at all. The
+predecessor's `measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold`
+is **left standing and unmodified** — it is a true statement about the bench's
+own inputs and it is exactly why that bench's AU arm cannot move.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **The exact pinned fraction per refresh tick.** The mixture above is the
+  `[SF]` gauge's short/zero fractions composed with the pin arithmetic, not a
+  direct per-tick classification. A DIAG counter over
+  `{boot, floor, interior, ceiling}` would measure it directly; it was NOT
+  built, because the answer it would give is already bounded by two
+  independent readings that agree, and a counter is engine code.
+* **Whether c8's +16% of mean pool depth is the whole U harm.** It is the only
+  cap-side channel that exists, and it is the right sign and cell. Whether it
+  accounts for the full −8 to −11% point drop is a closed-loop question this
+  section did not run.
+* **Why c7's A arm sits at 36% in the bench.** Unchanged, and now with one
+  more suspect eliminated: it is not the cap, which is pinned at c7 in both
+  the bench and the wire.
+* **Any goodput claim.** No goodput statistic is pooled across sessions here
+  and none is asserted; the documented 2.3× same-nominal-config drift forbids
+  it. The cap is pooled because it is the same INTEGER in every session.
+* **Any L1 number.** No VM was run.
+
+### THE HANDOVER — the next suspect, named
+
+**RANK 1: THE POOL→IN-FLIGHT COUPLING, at c8.** The one quantity that
+diverges is what a deeper retention pool does to `available()`. The wire says
++16% of mean pool depth ⇒ 6.5× the `active_paths()`-empty rate; the bench says
+1.3×. Both numbers are now measured, on the same axis, so the successor has a
+target rather than a direction. It is a bench question first
+(`store_cap_sf_bench`'s in-flight accounting), and it needs no VM.
+
+**RANK 2: THE CEILING ITSELF.** `RWM_STORE_PATH_POOL` is the operating point
+at both dual cells and the anchor is not. If the pooled law is to be a law at
+the duals rather than a constant, either the knee moves or the gain does —
+and the `[SF]` battery's own named successor (the capacity-weighted ceiling
+composed with the unified set) is the shape that changes WHICH constant binds.
+Scoring it at c7/c8 requires an arm whose cap is not pinned; none of the arms
+in this ledger is.
+
+**RANK 3 (unchanged): the real GE channel.**
+
+### GATES
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default and no law is
+touched by this branch; the engine tree is byte-identical to main@`b2e18a2`.
+`--lib` **402 passed** · `raptorpath-math` **136 passed** · `--doc` 0 (no
+doctests) · `store_cap_sf_bench` **26 passed, 0 failed** (10 `#[ignore]`d
+benches not run) · `store_cap_bench` **4 passed**. `gate_suite` not required —
+no engine code changed.
