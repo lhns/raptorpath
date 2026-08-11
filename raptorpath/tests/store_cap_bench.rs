@@ -53,34 +53,81 @@ const BOOT: usize = 128;
 /// Hygiene" battery (b)); the shipped default runs on the over-read. Both
 /// levels are reported because the RATIO under test is anchor-invariant
 /// until a clamp bites — and showing that is half the point.
+///
+/// **MEASURED, AND WRONG AT EVERY DUAL CELL** (goal-gate "Ack-Cadence
+/// Measurement (VM)", READOUT 3, 2026-08-11). The wire's realized `xanchor`
+/// is **5.94** at the single cell (in the ×4.6–7.4 band this constant came
+/// from), **9.80–10.11** at c7 and **13.29–13.82** at c8 — so 5.0 is right at
+/// ONE cell and **2.0–2.8× low at the duals**. "Exactly the shape CLAUDE.md
+/// forbids: a constant standing in for a cell-dependent quantity."
+///
+/// It is kept, not deleted, because it is the LEGACY ASSUMPTION and the
+/// comparison against it is the finding: `the_overread_error_decides_whether
+/// _the_knee_ceiling_binds` shows that this constant is the difference
+/// between a store cap that is proportional to the anchor and one that is
+/// SATURATED at its ceiling. The sweep below runs at the MEASURED per-cell
+/// scale as well.
 const OVERREAD: f64 = 5.0;
 
 #[derive(Clone, Copy)]
 struct Cell {
     name: &'static str,
-    /// (rate sym/s, RTprop s) per path.
-    paths: &'static [(f64, f64)],
+    /// (rate sym/s, RTprop s, MEASURED `xanchor`) per path — the third term
+    /// is READOUT 3's per-path median at the cell the VM ran, replacing the
+    /// single `OVERREAD` constant with the per-path measurement it stood in
+    /// for. `None` = the VM never ran this geometry, and this bench will not
+    /// invent an over-read for it.
+    paths: &'static [(f64, f64, Option<f64>)],
 }
 
 const CELLS: &[Cell] = &[
-    Cell { name: "c7  (c2+c2)", paths: &[(C2_RATE, C2_RTPROP_S), (C2_RATE, C2_RTPROP_S)] },
-    Cell { name: "c8  (c2+c3)", paths: &[(C2_RATE, C2_RTPROP_S), (C3_RATE, C3_RTPROP_S)] },
-    Cell { name: "sc2 (c2)    ", paths: &[(C2_RATE, C2_RTPROP_S)] },
-    Cell { name: "sc3 (c3)    ", paths: &[(C3_RATE, C3_RTPROP_S)] },
+    // c7 legs: READOUT 3 rows `c7/p0` 9.80 and `c7/p1` 10.11.
+    Cell {
+        name: "c7  (c2+c2)",
+        paths: &[(C2_RATE, C2_RTPROP_S, Some(9.80)), (C2_RATE, C2_RTPROP_S, Some(10.11))],
+    },
+    // c8 legs: READOUT 3 rows `c8/p0` 13.29 (fast) and `c8/p1` 13.82 (slow).
+    Cell {
+        name: "c8  (c2+c3)",
+        paths: &[(C2_RATE, C2_RTPROP_S, Some(13.29)), (C3_RATE, C3_RTPROP_S, Some(13.82))],
+    },
+    // sc2: the VM's single cell is c2r100 — READOUT 3 row 1, 5.94.
+    Cell { name: "sc2 (c2)    ", paths: &[(C2_RATE, C2_RTPROP_S, Some(5.94))] },
+    // sc3: no single SLOW cell was ever measured. Left unmeasured on purpose.
+    Cell { name: "sc3 (c3)    ", paths: &[(C3_RATE, C3_RTPROP_S, None)] },
 ];
 
-fn slots(cell: &Cell, keep: &[bool], anchor_scale: f64) -> Vec<Option<HonestCapPath>> {
+/// The per-path anchor scale to run a sweep row at: `1.0` honest, `OVERREAD`
+/// the legacy constant, or the cell's own MEASURED per-path `xanchor`.
+#[derive(Clone, Copy, PartialEq)]
+enum Scale {
+    Fixed(f64),
+    Measured,
+}
+
+impl Scale {
+    fn of(self, path: &(f64, f64, Option<f64>)) -> Option<f64> {
+        match self {
+            Scale::Fixed(f) => Some(f),
+            Scale::Measured => path.2,
+        }
+    }
+}
+
+fn slots(cell: &Cell, keep: &[bool], anchor_scale: Scale) -> Vec<Option<HonestCapPath>> {
     cell.paths
         .iter()
         .enumerate()
         .filter(|(i, _)| keep[*i])
-        .map(|(i, (rate, rtprop))| {
+        .map(|(i, p)| {
+            let (rate, rtprop) = (p.0, p.1);
+            let scale = anchor_scale.of(p).unwrap_or(1.0);
             Some(HonestCapPath {
                 id: i as u32,
-                anchor: Some(rate * rtprop * anchor_scale),
-                rate: Some(*rate),
+                anchor: Some(rate * rtprop * scale),
+                rate: Some(rate),
                 srtt: Duration::from_secs_f64(rtprop * 3.0),
-                rtprop: Some(Duration::from_secs_f64(*rtprop)),
+                rtprop: Some(Duration::from_secs_f64(rtprop)),
                 k_raw: None,
             })
         })
@@ -135,7 +182,17 @@ fn store_cap_pathset_sweep() {
             let n = cell.paths.len();
             let n_live = n.max(1);
             // Baseline: nothing filtered (what live_paths() always gives).
-            for (label, scale) in [("honest anchor", 1.0), ("legacy anchor x5", OVERREAD)] {
+            // THREE anchor levels, not two: honest, the LEGACY CONSTANT, and
+            // the wire's own per-path measurement. The third row is the one
+            // this bench had no way to run until the VM measured it.
+            for (label, scale) in [
+                ("honest anchor", Scale::Fixed(1.0)),
+                ("legacy anchor x5", Scale::Fixed(OVERREAD)),
+                ("MEASURED xanchor", Scale::Measured),
+            ] {
+                if cell.paths.iter().any(|p| scale.of(p).is_none()) {
+                    continue; // no measurement at this geometry — do not invent one
+                }
                 let all = vec![true; n];
                 let mut ks: HashMap<u32, EchoRatioMin> = HashMap::new();
                 let base_terms = honest_cap_terms(&mut ks, &slots(cell, &all, scale), 0, GAIN);
@@ -423,4 +480,106 @@ fn shipped_pool_cap_is_proportional_to_retained_anchor_mass() {
     let c_over = shipped_pool_cap(OVERREAD * full, 2);
     assert_eq!(c_over, 3328);
     assert!((c_over as f64 / BOOT as f64) > 25.0);
+}
+
+/// WHAT THE `OVERREAD = 5.0` ERROR AFFECTS — goal-gate "Ack-Cadence
+/// Measurement (VM)", READOUT 3, answered as an assertion rather than as
+/// prose.
+///
+/// The shipped pooled law is `clamp(gain·N·Σ, floor, N·knee)`, which is
+/// DEGREE-1 HOMOGENEOUS in the anchor below the ceiling and constant above it
+/// (proved on the real law by `store_cap_sf_bench`'s
+/// `store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`). So a
+/// wrong anchor scale is INERT for every ratio this bench reports — until it
+/// pushes the cap into `N·knee`, the law's only non-homogeneous term. That is
+/// the whole of what the constant's error can affect, and the measurement puts
+/// the two levels on OPPOSITE SIDES of it:
+///
+/// | cell | Σ anchor at ×5.0 | cap | Σ at the MEASURED xanchor | cap |
+/// |---|---|---|---|---|
+/// | c7 | 832  | 3328 (below the 4096 ceiling) | 1656.6 | **4096, SATURATED** |
+/// | c8 | 1016 | 4064 (below it by **0.8%**)   | 2764.1 | **4096, SATURATED** |
+///
+/// So at the assumed ×5.0 BOTH dual cells sit just under the ceiling and the
+/// pooled cap tracks the anchor proportionally; at the measured over-read BOTH
+/// are 1.6× and 2.7× ABOVE it and the cap is PINNED at `N·knee`, where it no
+/// longer responds to the anchor at all. c8 clears the ceiling at ×5.0 by
+/// 32 symbols out of 4096 — the constant is not merely 2.7× low, it is 2.7×
+/// low across a knee, and it is the knee that the store-cap ratio arguments
+/// all assume away.
+///
+/// At N = 1 the ceiling is `RELIABLE_STORE_MAX` instead, and the measured
+/// single-cell over-read (5.94) stays under it — so the error is confined to
+/// the DUAL cells, which is exactly where the `[SF]` question lives.
+#[test]
+fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
+    let ceiling_n2 = (2 * KNEE) as f64; // 4096
+    let sigma = |cell: &Cell, scale: Scale| -> f64 {
+        cell.paths
+            .iter()
+            .map(|p| p.0 * p.1 * scale.of(p).expect("this cell is measured"))
+            .sum()
+    };
+    let c7 = &CELLS[0];
+    let c8 = &CELLS[1];
+    let sc2 = &CELLS[2];
+
+    // THE LEGACY CONSTANT: both duals below the ceiling, proportional.
+    for cell in [c7, c8] {
+        let s = sigma(cell, Scale::Fixed(OVERREAD));
+        let cap = shipped_pool_cap(s, 2);
+        assert!(
+            (cap as f64) < ceiling_n2,
+            "{}: at x{OVERREAD} the cap {cap} already saturates the {ceiling_n2} ceiling",
+            cell.name
+        );
+        assert_eq!(cap, (2.0 * 2.0 * s).ceil() as usize, "{}: not proportional", cell.name);
+    }
+    // ...and c8 clears it by less than 1%, which is why "the constant is a bit
+    // low" is not a safe reading of the miss.
+    let c8_legacy = shipped_pool_cap(sigma(c8, Scale::Fixed(OVERREAD)), 2) as f64;
+    assert!(
+        c8_legacy / ceiling_n2 > 0.99,
+        "c8 at x{OVERREAD} sits at {:.3} of the ceiling",
+        c8_legacy / ceiling_n2
+    );
+
+    // THE MEASURED OVER-READ: both duals PINNED at the ceiling.
+    for cell in [c7, c8] {
+        let s = sigma(cell, Scale::Measured);
+        assert_eq!(
+            shipped_pool_cap(s, 2),
+            ceiling_n2 as usize,
+            "{}: the measured anchor must saturate the N*knee ceiling (Sigma {s:.1})",
+            cell.name
+        );
+        // And it is over by a wide margin, not marginally.
+        assert!(
+            2.0 * 2.0 * s / ceiling_n2 > 1.5,
+            "{}: the unclamped law would ask for only {:.2}x the ceiling",
+            cell.name,
+            2.0 * 2.0 * s / ceiling_n2
+        );
+    }
+
+    // THE SIZE OF THE ERROR, per cell, as the ledger states it: 2.0-2.8x.
+    for (cell, lo, hi) in [(c7, 1.9, 2.1), (c8, 2.6, 2.8)] {
+        let ratio = sigma(cell, Scale::Measured) / sigma(cell, Scale::Fixed(OVERREAD));
+        assert!(
+            ratio >= lo && ratio <= hi,
+            "{}: the measured anchor is {ratio:.2}x the assumed one, outside the \
+             ledger's {lo}-{hi}x",
+            cell.name
+        );
+    }
+
+    // N = 1 IS UNAFFECTED: the single cell's measured over-read (5.94) leaves
+    // the cap below RELIABLE_STORE_MAX, so the error is a DUAL-cell error.
+    let s1 = sigma(sc2, Scale::Measured);
+    let cap1 = shipped_pool_cap(s1, 1);
+    assert!(cap1 < STORE_MAX, "sc2 at the measured x5.94 already clamps: {cap1}");
+    assert_eq!(cap1, (2.0 * s1).ceil() as usize, "N=1 must still be proportional");
+    // The measurement's own UPPER window at that cell (9.28) does clamp — so
+    // even at N = 1 the headroom is one window's excursion wide.
+    assert!(shipped_pool_cap(83.2 * 9.28, 1) >= STORE_MAX);
 }
