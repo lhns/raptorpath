@@ -23150,3 +23150,188 @@ measured c1 number until the flip battery runs. The seam extraction
 gates on the final tree: lib 392, math, --doc, gate_suite --release,
 the nine loopbacks, `honest_inputs_bench` both arms, three-term
 loopback — all green (pass counts in the phase-3 commits).
+
+## Honest Inputs — FLIP BATTERY — PRE-REGISTRATION (2026-08-11) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any run, in its OWN commit. Branch `feat/honest-inputs-flip` from main@ef4d827. GOAL "HONEST INPUTS" phase 4 — the battery that decides the DEFAULT RECOMMENDATIONS for `RWM_HONEST_ANCHOR` / `RWM_HONEST_K` / `RWM_STORE_CAP_UNIFIED` / `RWM_THREE_TERM`. Per the standing rule, NO battery flips its own default: the deliverable is the recommendation with its noise bounds, written so a separate, trivial flip commit can cite it.
+
+This block INSTANTIATES the phase-3 skeleton ("THE FLIP BATTERY —
+PRE-REGISTRATION SKELETON" above); it redesigns nothing. Drivers
+`tools/l1/flip_battery.sh` + `flip_parse.py` + `flip_report.py` +
+`flip_all.sh` are committed BEFORE this block's commit and BEFORE any run;
+`hi_battery.sh`/`hi_parse.py` (the phase-2 instruments verdicts were read
+off) stay byte-identical. No engine code changes on this branch: every
+gauge the battery reads (`[SF]`, `[GATES]` five-wide, the three ACTIVE
+echoes, `khr=`/`kraw=`, `win=occ/cap`, `wait[]`, the CPU gauge) already
+ships.
+
+### ARMS (same-session interleaved per cell per rep, same binary)
+
+| arm | env | role |
+|---|---|---|
+| A | (default) | shipped control |
+| H | `RWM_HONEST_ANCHOR=1` | F7's arm: the value-identical deque on the shipped per-ACK feed — pure no-regression |
+| DH | `RWM_PLAIN_RS=1 RWM_HONEST_ANCHOR=1` | control: must REPRODUCE the −13% (0.84–0.90 class) or the session cannot attribute the U response |
+| DHU | DH + `RWM_STORE_CAP_UNIFIED=1` | H1's completion: the anchor tax's full answer (F2) |
+| BH | `RWM_THREE_TERM=1 RWM_PLAIN_RS=1 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=1` | the composition as battered (its own control) |
+| BHU | BH + `RWM_STORE_CAP_UNIFIED=1` | the user-facing candidate (F1) |
+
+**Why H exists (the one arm the skeleton's table did not list):** the
+skeleton's F7 scores "`RWM_HONEST_ANCHOR`-alone" and no combination of
+the other five arms isolates it — DH carries `RWM_PLAIN_RS`. H is F7's
+instantiation, not a redesign; its criteria are F7's unchanged. Six arms,
+not five, is the whole delta.
+
+### CELLS AND n (skeleton verbatim; sized to the measured σ, never the hoped-for one)
+
+c1 (topo c1/c1 single, 400 MB) **n = 12** — c1's widest arm is BH at
+σ = 33.1 (s42; A's σ 4.9); σ_Δ ≈ 33.5/√n, so n = 12 gives 2σ_Δ = 19.3 on
+a +30 Mbit/s (s42) / +49.6 (s7) banked effect class — 1.55×/2.6×
+resolution headroom. jit25 (adv, 50 MB), sc2 (topo c2/c2 single,
+100 MB), c7 (topo c2/c2 dual, 200 MB), c8 (topo c2/c3 dual, 25 MB):
+**n = 8 each**. Both seeds (42, 7). Headroom is RE-MEASURED same-session
+from arm-A's own `tc -s qdisc` captures and printed beside every target
+(discipline 16); prior-session values that gate the claims: c1 ~75%
+(throughput targets PERMITTED), jit25 10–16% (parity + RELATION-form
+limit only), sc2 none (parity + latency survival only), c7 ~3–6% (parity
+floor only), c8 abort-class (no-regression only, n reported). If the
+same-session headroom re-measure contradicts a permission (e.g. c1 util
+> 50%), the affected target is VOID for that seed and reported, not
+re-scoped.
+
+### THE FALSIFIERS (skeleton F1–F7, carried verbatim; both directions)
+
+* **F1 — c1 gain:** BHU/A − 1 ≤ 2σ_Δ on a seed ⇒ the banked +13–21%
+  class did not survive composition; no flip for the
+  `RWM_THREE_TERM`-family. (2σ_Δ from the same-session measured σs at
+  n = 12, discipline 5 pooled form.)
+* **F2 — H1 completion:** DHU/A outside 0.95–1.02 on a seed ⇒ the anchor
+  tax is NOT fully answered; the residual gets a new probe, no flip.
+* **F3 — mechanism gauge (rule 1):** `[SF]` zero-tick fraction captured
+  per invocation on EVERY arm. Scored in the two-prong form (see the
+  instantiation note below): (a) the paired non-U arm reads ≥ 20%
+  zero-ticks at c1 — the trap is live; (b) the U-arm's CONSUMED cliff —
+  the fraction of steady DIAG samples with effective cap ≤ boot (128),
+  `capboot_frac` — reads < 5% where the paired non-U arm's reads ≥ 20%.
+  If the cap gauge does not move, NO goodput number may be attributed to
+  the path-set fix, whatever it reads.
+* **F4 — CPU:** DHU/BHU sender CPU/byte ≤ 1.05×A at c1/c7, else the
+  mechanism claim is withdrawn (headroom absorbed a tax).
+* **F5 — regressions:** any cell > 2σ down on either seed in a candidate
+  arm (H, DHU, BHU) denies that arm's flip. c8 is the pre-named risk
+  (the uni battery's −19.6% s7 collapse class); if it fires, the
+  successor is the pooled ceiling composed with the unified set (already
+  named by the store-cap battery), NOT a re-run.
+* **F6 — sc2:** the halved RTT must survive at parity in BHU: goodput
+  within 2σ of same-session A AND probe p50 ≤ 55 ms AND > 2σ below A's
+  p50 (phase 2 measured 43.3/46.6 vs 95.7/97.3).
+* **F7 — `RWM_HONEST_ANCHOR`-alone (the ack-merge precedent):** arm H
+  scored PURELY as no-regression + CPU ≤ 1.0+2σ everywhere (point band
+  ≤ 1.05×A), every cell, both seeds. It is value-identical by
+  construction (`bw_mono_front_equals_full_window_fold`), so ANY
+  goodput movement beyond 2σ is an INSTRUMENT ALARM — the session's
+  noise model is broken there — not a result; the H flip claim is then
+  not scored this session and the alarm is reported.
+
+**The DH control clause:** DH/A at c1 must land in the 0.84–0.90 class
+(phase 2: 0.857/0.874) on both seeds. If it does not, that is an
+era-stability finding, reported as such; DHU/A is still tabulated but
+the "H1 completed BY THE STORE-CAP MECHANISM" attribution is withdrawn
+for that seed (the control that prices the defect is absent).
+
+**The ONE instantiation note (F3), recorded here BEFORE any number:**
+the skeleton's literal one-prong reading — "`[SF]` zero-ticks < 5% on
+U-arms" — is not satisfiable by the mechanism working AS ALREADY
+MEASURED: the `[SF]` gauge counts the FILTER's population, is
+downstream-coupled to its own consumer (store-cap battery P0 point 4,
+recorded there before ITS battery), and the store-cap battery measured
+c1-uni zero-ticks at 25.6–26.3% WITH the cap repaired (961–963) and
+goodput +15.8/+24.8%. The gauge that carries F3's own second sentence
+("if the cap gauge does not move…") is the CONSUMED cliff, so prong (b)
+scores `capboot_frac` — cap fallen out of its law to ≤ 128 — with the
+raw `[SF]` fields still captured and reported per invocation on every
+arm, exactly as the skeleton demands. This is a gauge-semantics
+instantiation from prior measurement, not a post-hoc adjustment; it is
+written before the run and cannot be renegotiated after it.
+
+### jit25 — RELATION FORM ONLY (probe 2's verdict, honored)
+
+No absolute symbol band exists for jit25 (the residence clock is created
+by the load and moves with the era). Scored instead:
+1. **Parity:** every arm within 2σ of same-session A goodput, both
+   seeds.
+2. **R1 (the law's arithmetic on the cell's own gauges):** per-rep
+   median slack/window ∈ [2.0, 2.3] on BH and BHU (phase 3: 2.12 from
+   the law's arithmetic; 2.10–2.13 in every measured B/BH rep, through
+   an era shift).
+3. **R2 (the U-composition tripwire):** BHU's [3T] limit within 2σ of
+   same-session BH's — the engaged three-term law already reads
+   `live_paths()`, so the U gate may move only fallback residency;
+   an excess is an instrument alarm about warm-up fallback dwell,
+   reported not banked.
+4. The limit is REPORTED beside the same-session A rate and the in-cell
+   `khr=`/`kraw=`/`rtp` gauges (the DIAG carries all three), so the
+   relation limit = Σrate·K·RTprop + Σrate·stall is computable from the
+   run's own gauges. No absolute band may be reconstructed from this
+   block after the fact.
+
+c7: DHU/A ≥ 0.95 floor (phase-2 H5's floor carried; no gain claim at
+3–6% headroom, and none is made). c8: no-regression within 2σ per F5,
+aborts counted per arm and per seed, abort ≠ DNF ≠ INSTRUMENT-FAIL,
+seed-7 abort class handled by SYMMETRIC top-up sessions only (all six
+arms), pooled separately, never silently merged.
+
+### LIVENESS SET (asserted per invocation before any number is read)
+
+Two-sided `[GATES]` on ALL FIVE gates (`RWM_THREE_TERM`, `RWM_PLAIN_RS`,
+`RWM_HONEST_ANCHOR`, `RWM_HONEST_K`, `RWM_STORE_CAP_UNIFIED`), both
+endpoints, scoped to the `[GATES]` line; ACTIVE echoes (honest-anchor on
+H/DH/DHU/BH/BHU, honest-K on BH/BHU, `"unified store-cap path set
+ACTIVE"` on DHU/BHU) PRESENT exactly on their arms and ABSENT elsewhere,
+both endpoints; `[3T] eng=1` on BH/BHU; `[SF]` line present on every
+live invocation (absent = INSTRUMENT-FAIL, loud); the `CPU:
+CPUSRV=/CPUCLI=` gauge on every invocation (absent = INSTRUMENT-FAIL);
+`tc -s qdisc` captured every invocation; `RWM_DIAG=1` everywhere;
+`RWM_LATPROBE=1` on topo cells. An arm whose echo set is wrong is VOID
+and re-run symmetrically, not explained. Era honesty: binary sha256 (ONE
+binary, all arms), source commit, kernel, CPU flags, load at launch —
+recorded in the ledger header; launched detached with a completion
+sentinel and not polled (discipline 13).
+
+### WHERE I EXPECT THIS TO BE WRONG (a pre-registration that predicts success everywhere is worthless)
+
+1. **c8 under U (the pre-named F5 risk).** The store-cap battery
+   measured the unified set removing an accidentally load-bearing brake
+   at the 4096-clamped duals (−19.6% s7). DHU carries exactly that
+   exposure; BHU's three-term cap MAY replace the pooled law before the
+   brake matters, but its warm-up fallback runs the same pooled chain.
+   If either U arm collapses at c8, F5 denies it and the successor is
+   pooled-ceiling+unified-set — pre-named, not a re-run.
+2. **DH fails to reproduce the −13%** (era instability: the store-cap
+   battery saw arm A itself fall off this cliff once at c1-s7, σ 46).
+   Then the control clause fires, the finding is reported, and the
+   mechanism attribution narrows to the F3 gauge alone.
+3. **BHU's σ does not tighten** (phase 3's "plausible bonus" fails): if
+   BHU's c1 σ stays in BH's 33-class AND the mean lands at s42's +30,
+   F1 resolves at only 1.55× headroom and one seed may read within
+   2σ_Δ — an honest no-flip for the family even with a real mean gain.
+   That outcome is a sizing fact, not a rescue candidate.
+4. **jit25's R1 band.** slack/window drifts with (ρ, b) resolution and
+   K's source; if BHU's kraw-fed ratio lands outside [2.0, 2.3] while
+   BH's sits inside, that is a real finding about the raw K's coupling
+   into the stall term — reported, not absorbed by widening the band.
+
+### WHAT WOULD CHANGE DEFAULTS (the deliverable's shape, fixed now)
+
+This battery flips NOTHING. Its deliverable is a per-gate
+recommendation — ship ON / ship OFF with reason / needs-more with the
+named missing measurement — for `RWM_HONEST_ANCHOR`, `RWM_HONEST_K`,
+`RWM_STORE_CAP_UNIFIED`, `RWM_THREE_TERM`, each with its noise bounds,
+written so the flip commit (default change + DEPRECATION/register rows +
+paper note) can cite this section and the results section as its whole
+evidence. `RWM_HONEST_ANCHOR` ON requires F7 clean. `RWM_STORE_CAP_UNIFIED`
+ON (as a component of the candidate composition or alone) requires
+F2+F3+F4+F5 clean — its own battery's c8 no-flip stands unless F5 reads
+clean here at n = 8 both seeds. `RWM_THREE_TERM`+`RWM_HONEST_K` (the BHU
+composition) ON requires F1+F3+F4+F5+F6 clean plus jit25 parity+R1+R2.
+`RWM_PLAIN_RS` is not under test as a default: it is the composition's
+substrate, made affordable by phase 1; it ships ON only as part of a
+composition that sweeps, never alone.
