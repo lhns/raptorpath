@@ -24329,3 +24329,388 @@ pre-registration and a statistic that resolves a bistable cell.
   recommendation.
 * **Any L1 claim.** This branch ran no VM and re-derived no L1 number;
   every L1 figure quoted is cited from the RESULTS section above.
+
+## SF Anchor Suspect — COMPONENT INVESTIGATION (2026-08-11, `feat/sf-anchor-suspect` from main@81a1da1) — MEASUREMENT DISCIPLINE 14. Takes the ONE named suspect the preceding section left behind ("the bench's Copa reads an HONEST anchor and the engine's does not"). STRICTLY LOCAL, no VM, no L1 number re-derived. Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`, extended with an ANCHOR-ERA axis. **VERDICT: the suspect is REFUTED — measured, and then explained arithmetically.**
+
+### THE QUESTION, one sentence
+
+Does giving the bench's Copa an OVER-READING anchor (the legacy
+ack-interval era) reproduce the wire's cell-specificity — c7/sc2 stop
+folding, c8 keeps folding — and does the honest-anchor era (the shipped
+default since 9f6e56b) change which cells are exposed?
+
+### HOW THE ERA WAS MADE A VARIABLE — twice, because once would not be honest
+
+The suspect rests on a real asymmetry: the bench acks per symbol at the
+true delivery instant, so `CopaState::record_delivery`'s Δdelivered/Δt
+can only read the truth, while the engine's legacy ack-interval sampler
+over-reads ×4.6–7.4 ("Anchor Hygiene" (b); `store_cap_bench.rs` carries
+it as `OVERREAD = 5.0`). And that anchor is not only the store-cap Σ —
+via `clamp_cwnd_with_anchor` it is the cwnd FLOOR, so an over-reading
+anchor props `available() > 0`.
+
+Two independent implementations, so no conclusion rests on one modelling
+choice:
+
+* **`Feed::Overread(f)`** — the era as a pure SCALE on the sampler's
+  input, SWEPT. `record_delivery` uses its `count` argument for nothing
+  but Δdelivered, so feeding `f·count` scales every rate sample — and
+  therefore `max_bw`, `bdp_anchor()`, the anchor floor and the store-cap
+  Σ — by exactly `f`, with the call cadence, the cwnd-update cadence and
+  the RTT feed bit-identical to the honest arm. **`f = 1.0` IS the honest
+  arm**, bit-for-bit.
+* **`Feed::Cumulative { ack_period_s }`** — the era DERIVED from the
+  bench's own ack batching, with no injected number anywhere: a receiver
+  reporting a CUMULATIVE frontier on a feedback cadence, so a GE drop
+  stalls the frontier and the retransmit releases the whole accumulated
+  run in one message. The batch sizes, and hence the over-read, are
+  whatever the bench's own loss and retransmit timing produce.
+
+**`f` is not the over-read.** `max_bw` is a windowed MAX over a 10 s
+window and the loop feeds back (a bigger cwnd sends bigger bursts, which
+spike Δ/Δt further), so the injected scale and the REALIZED over-read
+differ by up to ×5. Every table below therefore reports the MEASURED
+`x = anchor / (rate·RTprop)` next to `f`, and it is `x`, never `f`, that
+is read against the wire's 4.6–7.4 band.
+
+Everything is scored over a **seed ensemble (8 seeds × 20 s)** with a
+**MODE RATE** — `caught` = the fraction of seeds whose `[SF]`
+zero-fraction lands below 10%. That is FINDING 4's own instruction to a
+successor taken literally: a mean over a bistable loop is the wrong
+statistic at any n.
+
+### FINDING 1 — REFUTED, read at the wire's own band
+
+The scale swept, 3 seeds × 20 s, arm A = the shipped set. `f` is the
+injected scale, `x` the REALIZED over-read:
+
+```
+c7   dual symmetric           f   x (A)   A zero%  AU zero%     A cwnd      A cap    A goodput
+                            1.0    1.07      9.2%     95.7%        204        372        18370
+                            1.5    1.65     48.1%     99.9%        156        373        19590
+                            2.0    2.36     62.0%     99.9%        194        377        20416
+                            2.5    2.77     72.3%     76.0%        225        368        20479
+                            3.0    3.36     72.5%     50.5%        275        409        20460
+                            4.0    5.14     73.3%     50.4%        413        547        20293
+                            4.6    8.85     85.6%     50.4%        675        527        20515
+                            6.0   13.19     65.3%     50.5%       1014       1326        20486
+                            7.4   24.28     46.7%     50.4%       1858       2109        20510
+                           10.0   30.90     41.9%     48.5%       2892       2401        20515
+
+c8   dual asym (r+RTT)        f   x (A)   A zero%  AU zero%     A cwnd      A cap    A goodput
+                            1.0    1.12     39.1%     99.7%        152        378        11885
+                            1.5    1.67     61.8%     87.5%        172        367        12121
+                            2.0    2.31     66.2%     84.9%        227        430        12155
+                            2.5    3.28     67.3%     51.5%        324        548        12131
+                            3.0    4.67     70.5%     50.8%        446        660        12151
+                            4.0    6.70     61.2%     50.5%        629       1032        11569
+                            4.6   10.39     52.2%     48.5%        967       1763        12206
+                            6.0   15.07     35.0%     45.3%       1782       2313        11750
+                            7.4   20.95     33.4%     42.2%       2606       2740        11568
+                           10.0   35.54     22.8%     23.8%       3799       3174        11464
+
+c8r  dual asym RATE           f   x (A)   A zero%  AU zero%     A cwnd      A cap    A goodput
+                            1.0    1.12     11.0%     83.5%        165        198        11908
+                            1.5    1.92     54.3%     91.9%        159        217        12145
+                            2.0    2.82     89.7%     95.7%        164        198        12208
+                            2.5    2.92     53.8%     98.8%        183        277        11964
+                            3.0    3.76     60.3%     93.9%        221        307        11970
+                            4.0    5.49     45.9%     50.7%        293        380        11448
+                            4.6    5.87     39.8%     50.6%        305        468        11355
+                            6.0    9.70     62.6%     50.5%        530        497        11808
+                            7.4   13.80     31.5%     50.4%        776        784        11166
+                           10.0   21.00     24.6%     50.3%       1211       1414        10960
+
+c8t  dual asym RTT            f   x (A)   A zero%  AU zero%     A cwnd      A cap    A goodput
+                            1.0    1.06     40.3%     99.6%        595        777        17077
+                            1.5    1.65     54.0%     63.6%        779       1056        18719
+                            2.0    2.17     46.9%     48.8%        894       1170        18184
+                            2.5    3.15     47.7%     42.8%       1189       1413        18586
+                            3.0    4.08     24.6%     39.0%       1529       2741        19442
+                            4.0    6.05     18.1%     33.0%       2324       3070        19532
+                            4.6   10.74     24.2%     30.4%       3201       3120        20340
+                            6.0   15.18      0.6%      0.6%       3579       4059        20328
+                            7.4   12.86      0.6%      0.6%       3810       4054        20312
+                           10.0   11.90      0.6%      0.6%       4739       4046        20251
+```
+
+Read the rows where the REALIZED `x` sits in the wire's measured
+4.6–7.4 band (`f` ≈ 3–4 at c7/c8). The suspect predicted the legacy era
+would make the fast symmetric cell IMMUNE while leaving c8 exposed.
+Measured, in-band:
+
+* **c7 gets WORSE, not immune** — the shipped arm goes 9.2% → 73.3% at
+  `x = 5.14`, from the caught class at the honest anchor into the
+  saturated mode under the over-read. This is the opposite of the
+  prediction, and it is the single fact that refutes the suspect.
+* **U's fold does not survive the era at ANY cell, c8 included.**
+  In-band the A arm is at or ABOVE the AU arm everywhere (c7 73.3 vs
+  50.4; c8 70.5 vs 50.8 at `x = 4.67` and 61.2 vs 50.5 at `x = 6.70`) —
+  U stops being a harm and becomes a small help. The wire keeps a large
+  U-fold at c8 in BOTH eras (FINDING 5), so an era that inverts the fold
+  everywhere cannot explain a fold that survives the era on the wire.
+* **No cell reaches the wire's ≈4% class.** The wire's legacy c8 arm
+  sits at 3.7–7.4%; in-band the bench's c8 arm sits at 61–70%, an order
+  of magnitude away, and its honest arm at 37% is no closer.
+
+The pattern does not move in the predicted direction, in the predicted
+cell, at the predicted magnitude. **REFUTED.**
+
+### FINDING 2 — the ARITHMETIC reason it could never have worked
+
+Pinned by `store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`
+(always-on), and it is the finding that generalises past this bench.
+
+The suspect treats the anchor as if it acted on ONE side of the loop.
+It acts on both:
+
+| term | dependence on the anchor |
+|---|---|
+| cwnd floor (`clamp_cwnd_with_anchor`) | `ANCHOR_FLOOR_GAIN · anchor` — LINEAR |
+| store cap (`path_scaled_store_cap`) | `gain · N · Σ anchor` — ALSO LINEAR |
+
+Saturation is decided by `store_cap` against `Σ_paths cwnd`, and a
+common scale on the anchor **cancels in that ratio**. So the era cannot
+move the loop's saturation state at all while both terms are in their
+linear regime — which is exactly the range the wire's 4.6–7.4 band lives
+in. The sibling static bench had already written this down for its own
+question (`store_cap_bench.rs`: "the RATIO under test is
+anchor-invariant until a clamp bites — and showing that is half the
+point"); this branch is that statement carried into the closed loop.
+
+The only terms that are NOT homogeneous are the clamps — `FLOOR`, the
+`N·knee` CEILING, `MIN/MAX_CWND`. So an anchor era can change the
+saturation state **only by driving the cap into its ceiling**, at which
+point the cap stops growing while the cwnd floor keeps going. That is
+visible in the tables as the ×7.4 column at c8t (RTT-asymmetric, the
+biggest anchor, therefore the first cell to hit `N·knee = 4096`) going
+to 0.3–0.6% on every arm. It reaches the ceiling FIRST at the
+RTT-asymmetric cell, not at the fast symmetric one — again the wrong
+cell for the wire's pattern.
+
+### FINDING 3 — the matrix
+
+{c7, c8, c8-rate-only, c8-RTT-only} × {A, AU, P} × {honest, ×4.6, ×7.4}:
+
+```
+cell                     arm                               era    zero%         [lo..hi]   caught       x     cwnd      cap   goodput
+c7   dual symmetric      A   (U=0, shipped)      honest (x1.0)     9.7%      [7.7..12.5]      62%    1.07      204      372     18420
+c7   dual symmetric      A   (U=0, shipped)     over-read x4.6    85.9%     [82.2..93.9]       0%    8.97      683      497     20516
+c7   dual symmetric      A   (U=0, shipped)     over-read x7.4    43.8%     [39.8..52.1]       0%   25.52     1959     2239     20514
+c7   dual symmetric      AU  (U=1)               honest (x1.0)    97.1%     [87.8..99.9]       0%    1.87      185     1245     20516
+c7   dual symmetric      AU  (U=1)              over-read x4.6    50.4%     [50.4..50.4]       0%   18.64     2651     3694     20516
+c7   dual symmetric      AU  (U=1)              over-read x7.4    50.5%     [50.3..50.9]       0%   11.16     3412     4092     20423
+c7   dual symmetric      P   (pooled+unified)    honest (x1.0)     7.6%       [6.8..8.5]     100%    1.07      393      357     19500
+c7   dual symmetric      P   (pooled+unified)   over-read x4.6    48.8%     [48.8..48.8]       0%   18.60     1435     2864     20516
+c7   dual symmetric      P   (pooled+unified)   over-read x7.4    47.7%     [47.6..47.8]       0%   25.02     2762     3369     20516
+
+c8   dual asym (r+RTT)   A   (U=0, shipped)      honest (x1.0)    37.1%     [33.0..42.1]       0%    1.11      149      379     11876
+c8   dual asym (r+RTT)   A   (U=0, shipped)     over-read x4.6    49.5%     [41.5..56.5]       0%   10.70     1016     1875     12207
+c8   dual asym (r+RTT)   A   (U=0, shipped)     over-read x7.4    33.8%     [33.0..35.2]       0%   21.70     2654     2722     11569
+c8   dual asym (r+RTT)   AU  (U=1)               honest (x1.0)    99.7%     [99.6..99.7]       0%    2.93      244     2192     12207
+c8   dual asym (r+RTT)   AU  (U=1)              over-read x4.6    48.5%     [48.5..48.6]       0%   38.75     3231     4085     11359
+c8   dual asym (r+RTT)   AU  (U=1)              over-read x7.4    42.2%     [42.2..42.3]       0%   43.17     3831     4088     11432
+c8   dual asym (r+RTT)   P   (pooled+unified)    honest (x1.0)    37.6%     [33.5..43.2]       0%    1.60      195      617     12180
+c8   dual asym (r+RTT)   P   (pooled+unified)   over-read x4.6    42.5%     [41.7..42.9]       0%   23.06     1970     3116     11484
+c8   dual asym (r+RTT)   P   (pooled+unified)   over-read x7.4    39.0%     [36.9..39.4]       0%   43.88     3684     3759     11432
+
+c8r  dual asym RATE      A   (U=0, shipped)      honest (x1.0)    10.3%      [8.3..15.4]      62%    1.13      173      203     11832
+c8r  dual asym RATE      A   (U=0, shipped)     over-read x4.6    49.0%     [33.1..80.6]       0%    6.11      323      448     11558
+c8r  dual asym RATE      A   (U=0, shipped)     over-read x7.4    28.9%      [9.6..57.4]      25%   14.72      838     1057     11202
+c8r  dual asym RATE      AU  (U=1)               honest (x1.0)    84.3%     [81.8..86.1]       0%    1.36       98      576     12206
+c8r  dual asym RATE      AU  (U=1)              over-read x4.6    50.5%     [50.4..50.6]       0%   25.64     1561     3053     11991
+c8r  dual asym RATE      AU  (U=1)              over-read x7.4    50.4%     [50.4..50.4]       0%   72.80     3116     3673     11409
+c8r  dual asym RATE      P   (pooled+unified)    honest (x1.0)    20.8%     [17.5..22.9]       0%    1.14       94      217     11857
+c8r  dual asym RATE      P   (pooled+unified)   over-read x4.6    85.2%     [83.0..88.3]       0%   13.57      763     2542     12216
+c8r  dual asym RATE      P   (pooled+unified)   over-read x7.4    38.9%     [38.8..39.1]       0%   29.64     1893     2854     12211
+
+c8t  dual asym RTT       A   (U=0, shipped)      honest (x1.0)    40.2%     [38.3..41.8]       0%    1.06      588      769     16982
+c8t  dual asym RTT       A   (U=0, shipped)     over-read x4.6    24.1%     [23.5..24.9]       0%   10.74     3173     3123     20340
+c8t  dual asym RTT       A   (U=0, shipped)     over-read x7.4     0.6%       [0.6..0.6]     100%   12.86     3816     4054     20311
+c8t  dual asym RTT       AU  (U=1)               honest (x1.0)    99.6%     [99.6..99.6]       0%    3.51      761     3527     20359
+c8t  dual asym RTT       AU  (U=1)              over-read x4.6    30.4%     [30.3..30.7]       0%   11.98     3437     4079     20362
+c8t  dual asym RTT       AU  (U=1)              over-read x7.4     0.6%       [0.6..0.6]     100%   13.08     4205     4084     20362
+c8t  dual asym RTT       P   (pooled+unified)    honest (x1.0)    98.5%     [98.5..98.6]       0%    1.90      470     2065     20311
+c8t  dual asym RTT       P   (pooled+unified)   over-read x4.6    37.2%     [37.1..37.5]       0%   10.30     3129     4075     20360
+c8t  dual asym RTT       P   (pooled+unified)   over-read x7.4     0.3%       [0.3..0.5]     100%   15.86     4359     4077     20360
+```
+
+Note the `x` column: at the ×4.6/×7.4 INJECTED scales the REALIZED
+over-read is 6–73×, i.e. mostly ABOVE the wire's band. The band itself
+is read off the sweep above (`f` ≈ 3–4), and the conclusion is the same
+at both places.
+
+### FINDING 4 — the DERIVED era overshoots the wire by one to three orders of magnitude
+
+The cumulative-frontier receiver, with no injected number at all:
+
+```
+c7   dual symmetric           cadence  A zero%  AU zero%   x (A)     A cwnd    A goodput
+                               honest     9.0%     99.4%    1.07        208        18206
+                               0.25ms     2.0%      2.7%  187.09       9390        19580
+                               1.00ms     1.3%      1.5%  255.03       9024        19728
+                               2.00ms     2.2%      8.7%  170.77       8633        19850
+                               5.00ms     8.4%      3.3%   56.15       4620        20424
+                              10.00ms    42.2%     49.7%   31.24       3445        20443
+
+c8   dual asym (r+RTT)        cadence  A zero%  AU zero%   x (A)     A cwnd    A goodput
+                               honest    40.9%     99.7%    1.13        150        11842
+                               0.25ms     0.2%      0.2%  502.85       8329        10470
+                               1.00ms     0.2%      0.2% 2434.30       9193        10591
+                               2.00ms     2.2%      6.6% 1460.03       9421        10494
+                               5.00ms     7.8%     19.8%  791.59       6266        10608
+                              10.00ms     9.2%      7.7%  486.52       6362        10625
+
+c8r  dual asym RATE           cadence  A zero%  AU zero%   x (A)     A cwnd    A goodput
+                               honest     8.7%     86.1%    1.09        168        11910
+                               0.25ms     2.0%      4.3% 2050.93       5110        10959
+                               1.00ms     2.1%      6.3% 1288.71       7870        10418
+                               2.00ms     1.2%      3.7%  516.02       4558        10365
+                               5.00ms    10.0%      6.4%  405.96       4046        10815
+                              10.00ms    22.9%     14.3%  535.87       4344        10779
+
+c8t  dual asym RTT            cadence  A zero%  AU zero%   x (A)     A cwnd    A goodput
+                               honest    39.7%     99.6%    1.07        597        17036
+                               0.25ms     0.2%      0.2%  180.98       9073        19086
+                               1.00ms     0.2%      0.2%  252.01       9553        18915
+                               2.00ms     0.7%      3.6%  170.71       8992        18932
+                               5.00ms     2.8%      3.0%   59.30       7083        19841
+                              10.00ms     5.3%      7.7%   23.58       5629        19891
+```
+
+The bench's own ack batching does NOT land in the wire's 4.6–7.4 band —
+it lands at ×24 to ×2400, because a frontier stalled by a GE drop
+releases hundreds of symbols into one feedback interval and the 10 s
+windowed MAX latches the spike for the rest of the run. cwnd pins near
+`MAX_CWND`, the `[SF]` signal collapses to 0.2–4% at EVERY cell, and
+goodput at c8 FALLS (bufferbloat). Same verdict from the other
+direction: no cell specificity, and the U-fold is gone everywhere.
+
+This also bounds the model honestly: the bench cannot be tuned onto the
+wire's era by this route, so "run the bench in the legacy era" is not an
+available move for a successor either.
+
+### FINDING 5 — L1 HAD ALREADY REFUTED AN ERA-KEYED HYPOTHESIS AT c8, and the preceding section did not cite it
+
+This is the part worth carrying forward. "Store-Cap Unification —
+RESULTS" ran the era as an ARM (`AL` = `RWM_HONEST_ANCHOR=0`) and put
+exactly this question to the `[SF]` gauge:
+
+| contrast | meaning | s42 | s7 |
+|---|---|---|---|
+| AU/A | U effect, honest era | 4.2% → 31.3%, **EXCEEDS** 2σ | 3.8% → 30.4%, **EXCEEDS** 2σ |
+| ALU/AL | U effect, legacy era | 7.4% → 28.9%, **EXCEEDS** 2σ | 3.7% → 28.1%, **EXCEEDS** 2σ |
+| AL/A | ERA effect, no U | 4.2% → 7.4%, within 2σ | 3.8% → 3.7%, within 2σ |
+| ALU/AU | ERA effect, with U | 31.3% → 28.9%, within 2σ | 30.4% → 28.1%, within 2σ |
+
+**On the wire the anchor era does not move the `[SF]` zero-fraction at
+c8 on either seed; the split is U-keyed in both eras.** That section
+even records the conclusion in as many words ("The pre-stated
+saturation-state hypothesis is REFUTED AS STATED… The measured
+difference is not era-keyed at all"). The suspect named in "c8 SF
+Mechanism" FINDING 3 was therefore already contradicted by a measurement
+in the same document. This branch's contribution is that it now also
+fails at the component bench, and FINDING 2 says why it had to.
+
+**The standing lesson, stated so it is not re-learned:** before a
+component branch is opened to chase a suspect, the L1 contrast that
+already varies that suspect must be checked. Here the arm existed, the
+contrast was tabulated, and it was null.
+
+### WHAT THIS MEANS FOR THE SHIPPED DEFAULT'S EXPOSURE
+
+The question asked whether the shipped honest-anchor default REMOVED a
+prop, making the accidental store-cap brake load-bearing more often.
+Measured at the bench, in the direction the numbers actually go:
+
+* The honest era does **not** sit closer to the fold than the legacy era
+  — it sits FURTHER from it. At c7 and c8r the honest shipped arm is in
+  the caught class on 62% of seeds; at c7 no over-read column reaches
+  the caught class on ANY seed. The legacy anchor was never a
+  protective prop in this loop;
+  it was an INFLATOR that raised admission at least as fast as it raised
+  cwnd headroom (FINDING 2), and drove the loop into permanent
+  saturation.
+* What IS true, and is the honest restatement of the concern: the honest
+  era is the era in which the CLIFF is the operative dynamic. With a
+  small, tight cap the `bdp = 0 ⇒ boot` cliff catches the loop and the
+  arm sits low; with an inflated anchor the loop is pinned in saturation
+  and the cliff is drowned. So the accidental brake is indeed doing more
+  work now — not because a prop was removed, but because it is now the
+  only thing operating at all.
+* **The urgency of the stabiliser design is therefore unchanged by this
+  branch, and the reason for it is narrowed:** the answer must live in
+  the cap law, and it cannot be bought by anything that scales the
+  anchor, because scaling the anchor is a no-op on the ratio that
+  decides saturation.
+
+### THE CANDIDATE (pooled ceiling + unified set) ON BOTH ERAS
+
+Re-tested as asked; its 2-of-3 showing had been measured on the honest
+era only.
+
+* **On the honest era it holds, and at c7 the ensemble statistic makes
+  it look BETTER than the single draw did**: P is caught on **100% of
+  seeds** at c7 (7.6%, range 6.8–8.5) where the shipped arm manages only
+  62% (9.7%, range 7.7–12.5), at goodput 19 500 against U's 20 516 — the
+  only arm that takes most of the unified set's goodput without the
+  saturation. At c8 it is level with the shipped arm (37.6% vs 37.1%,
+  goodput 12 180 vs 11 876); at c8r (20.8% vs 10.3%) and c8t (98.5% vs
+  40.2%) it is worse. So the previous section's 2-of-3 reads more
+  precisely as **1 clear win, 1 tie, 2 losses**, with a mode rate behind
+  each instead of one draw.
+* **On the over-read eras it shows nothing** — but neither does any
+  other arm, because the era flattens A, AU and P onto each other
+  (FINDING 2). The candidate is not refuted by that; it is simply not
+  measurable there.
+
+Two things follow, and they pull in opposite directions. In its favour:
+the honest era IS the shipped default era, so what advantage the
+candidate has sits in the era that ships, and at c7 it is now a mode
+rate rather than a single draw. Against it: re-scored on the ensemble
+the record is worse than "2 of 3" suggested, and it is unchanged where
+it matters — the vehicle still cannot discriminate c8, which is the cell
+the decision rests on. **Still promising, still not established, and
+this branch did not move it closer to shippable.**
+
+**NOTHING IS SHIPPED.** No engine file is touched by this branch, no
+gate is added, no default is flipped.
+
+### A DEFECT FOUND IN THE BENCH ITSELF — the symmetric cell was not reproducible
+
+Found while adding the seed axis, fixed, and pinned by
+`symmetric_cell_placement_tie_is_broken_deterministically` (always-on).
+
+`Scheduler` holds its paths in a `HashMap<PathId, PathState>`, whose
+iteration order is randomised per PROCESS. At an asymmetric cell the
+placement objective separates the paths and the order cannot matter. At
+the SYMMETRIC cell the two costs are bit-equal, and the winner was
+whatever the map yielded last — so **c7 was the one cell whose numbers
+moved run to run**, against the bench's own header claim of "same
+numbers every run". The tell was already in the previous section: it
+records 9.0% for c7 in FINDING 3 and 9.3% for the IDENTICAL geometry at
+d = 1.0 in FINDING 4. `place_min_cost` now breaks exact-cost ties by
+lowest path id; with that, the published FINDING 3 table reproduces
+byte-for-byte and stably across processes.
+
+No conclusion of the previous section changes — the c7 drift was ≤ 0.7pp
+on a cell whose arms differ by 90pp — but an unreproducible cell is a
+measurement instrument fault, and it was in the instrument the c8
+question is being asked with.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **The c8 cell specificity. Still unexplained, and the anchor era is
+  now excluded as the explanation** — measured (FINDING 1), derived
+  (FINDING 4), arithmetic (FINDING 2), and already excluded at L1
+  (FINDING 5). No replacement hypothesis is offered here.
+* **Why the bench's honest c8 arm sits at ≈37% where the wire's sits at
+  ≈4%.** That ~10× gap in the OPERATING POINT is not an era effect
+  (FINDING 2/5), and this branch does not know what it is. It is the
+  sharper form of the "not reproduced" from the previous section: the
+  bench's c7 is roughly where the wire's c8 is, which suggests the
+  cell↔geometry correspondence is what is wrong, not the loop.
+* **Whether the candidate helps at c8 in truth.** Unchanged: the bench
+  still cannot discriminate that cell.
+* **Any L1 claim.** No VM was run and no L1 number was re-derived; every
+  L1 figure above is cited from the RESULTS section.
