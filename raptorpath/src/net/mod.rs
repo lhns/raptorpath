@@ -1161,10 +1161,62 @@ fn copa_feed_attribute(
     if newly.is_empty() {
         return;
     }
-    let mut per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
     let now = now_us();
     let mut sched = scheduler.lock();
-    for seq in newly {
+    let per_path = copa_attribute_newly(feed, ack_path, now, &newly, &mut sched);
+    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode stops here —
+    // the rate samples above are the whole job. The cwnd dynamics keep their
+    // legacy per-batch-Ack call site, and the substrate window is whatever
+    // RWM_QUIC_CC says (this feed does not own the operating point).
+    if !feed.owns_cc() {
+        return;
+    }
+    for (p, _n) in per_path {
+        if let Some(ps) = sched.path_mut(p) {
+            // feat/copa-compete: feed the wire-level loss evidence (the
+            // pass-through shim's recorded congestion-event counter) into the
+            // competitive AIMD before the update consumes it. No-op unless
+            // RWM_COPA_COMPETE is active.
+            if crate::scheduler::copa_compete_active() {
+                if let Some((ev, _, _)) = transport.cc_passthrough_stats(p) {
+                    ps.on_wire_congestion_events(ev);
+                }
+            }
+            // NOT release_in_flight here: the per-batch Ack arm keeps doing
+            // the wire-level in-flight release (it covers repairs too);
+            // releasing again per attributed source seq would double-count.
+            ps.on_delivery_signal();
+            transport.set_cc_window_bytes(p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
+            if let Some(st) = stats.path(p) {
+                st.cwnd.store(ps.cwnd as u64, Ordering::Relaxed);
+                st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+/// The per-seq attribution loop of [`copa_feed_attribute`], under the
+/// scheduler lock the CALLER holds: resolve each newly-delivered seq's
+/// carrying path (send record → flight-time witness → ack-path fallback) and
+/// run that path's send-interval rate sampler (`on_src_delivered_seq`).
+/// Returns the per-path attribution counts for the (Copa-sole only) cwnd
+/// pass that follows.
+///
+/// Extracted 2026-08-11 (GOAL "HONEST INPUTS" phase 3, probe 1) so the c1
+/// lock-blocking bench can drive the EXACT production attribution body under
+/// the production lock from a two-thread component bench (MEASUREMENT
+/// DISCIPLINE rule 1: prove the mechanism under test executes). Sole
+/// non-test caller is `copa_feed_attribute`; behavior identical to the
+/// pre-extraction inline loop.
+fn copa_attribute_newly(
+    feed: &CopaFeed,
+    ack_path: u32,
+    now: u64,
+    newly: &[u64],
+    sched: &mut Scheduler,
+) -> std::collections::HashMap<u32, u32> {
+    let mut per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+    for &seq in newly {
         // Attribute to the path whose FLIGHT delivered the seq. Default:
         // the path it was last sent on; a seq without a send record
         // (pre-feed traffic, evicted record) falls back to the path the
@@ -1204,35 +1256,7 @@ fn copa_feed_attribute(
         }
         *per_path.entry(p).or_insert(0) += 1;
     }
-    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode stops here —
-    // the rate samples above are the whole job. The cwnd dynamics keep their
-    // legacy per-batch-Ack call site, and the substrate window is whatever
-    // RWM_QUIC_CC says (this feed does not own the operating point).
-    if !feed.owns_cc() {
-        return;
-    }
-    for (p, _n) in per_path {
-        if let Some(ps) = sched.path_mut(p) {
-            // feat/copa-compete: feed the wire-level loss evidence (the
-            // pass-through shim's recorded congestion-event counter) into the
-            // competitive AIMD before the update consumes it. No-op unless
-            // RWM_COPA_COMPETE is active.
-            if crate::scheduler::copa_compete_active() {
-                if let Some((ev, _, _)) = transport.cc_passthrough_stats(p) {
-                    ps.on_wire_congestion_events(ev);
-                }
-            }
-            // NOT release_in_flight here: the per-batch Ack arm keeps doing
-            // the wire-level in-flight release (it covers repairs too);
-            // releasing again per attributed source seq would double-count.
-            ps.on_delivery_signal();
-            transport.set_cc_window_bytes(p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
-            if let Some(st) = stats.path(p) {
-                st.cwnd.store(ps.cwnd as u64, Ordering::Relaxed);
-                st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
-            }
-        }
-    }
+    per_path
 }
 
 fn now_us() -> u64 {
@@ -7608,6 +7632,524 @@ mod tests {
         // yields no attributions.
         feed.set_n1_paused(false);
         assert!(feed.newly_delivered(15, &[]).is_empty());
+    }
+
+    // ── GOAL "HONEST INPUTS" phase 3 — PROBE 1: the c1 DH −13% residual ──
+    //
+    // The battery (goal-gate "Honest Inputs — BATTERY") left c1-DH at
+    // 0.857/0.874 of A at EXACT sender-CPU parity, with the wait gauge
+    // naming the shape: wait[paused] 48–53% vs A's 32%, store at 27%
+    // occupancy. The named hypothesis was "attribution blocking under the
+    // scheduler lock". The two tests + one bench below adjudicate it at
+    // component level:
+    //   1. the bench measures the named lock blocking DIRECTLY (two
+    //      threads, production lock, production attribution seam);
+    //   2. `dh_store_cap_falls_to_boot_on_the_saturation_filter…` pins the
+    //      rival mechanism the ledger itself surfaced (c1-DH `occcap_p50`
+    //      BIMODAL 128 ↔ 1024 across reps, both seeds; A ~540 steady; D
+    //      1024 steady): the DH arm's honest-cap law falls out to the
+    //      128-symbol BOOT cap whenever `active_paths()` returns empty —
+    //      the SAME `sf=` zero-tick cliff the store-cap-triplication
+    //      battery measured at 30–33% of c1-A ticks and priced at
+    //      +15.8/+24.8% goodput under `RWM_STORE_CAP_UNIFIED=1`;
+    //   3. `honest_anchor_floor_sits_at_true_bdp…` pins WHY the fixed
+    //      (fast) DH sender hits that cliff harder than A: the honest
+    //      send-interval anchor floors cwnd at the TRUE BDP class while
+    //      the legacy ack-interval feed floors it at the burst-peak
+    //      over-read, so the same outstanding level saturates
+    //      (`available() == 0`) only the honest arm.
+
+    /// PROBE 1, measurement (run explicitly, --release):
+    ///
+    ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture c1_attribution_lock
+    ///
+    /// Two OS threads share the production `Arc<parking_lot::Mutex<Scheduler>>`
+    /// at c1-class rate (24 000 delivered seqs/s, RTprop 2 ms):
+    ///   - SENDER thread, 1 ms ticks: the sender loop's per-iteration lock
+    ///     work (per-seq `on_src_sent` + `charge_src`/`charge_in_flight` at
+    ///     placement, then the backpressure poll: `expire_in_flight` +
+    ///     in_flight/cwnd read — `run_block_sender`/`run_window_sender`'s
+    ///     poll body), measuring every lock ACQUISITION WAIT.
+    ///   - ACK thread at the swept cadence: arm A = the legacy no-feed arm
+    ///     (`sched.ack` + RTT sample under one acquisition); arm DH = the
+    ///     `RWM_PLAIN_RS`+`RWM_HONEST_ANCHOR` arm — the Ack-arm section
+    ///     (release_in_flight + on_delivery_signal + RTT sample), drop,
+    ///     then `newly_delivered` + the production `copa_attribute_newly`
+    ///     seam under a second acquisition, exactly `handle_control_message`'s
+    ///     shape.
+    /// A third config replays the c1 recovery shape (85 ms ack stall, then
+    /// the SACK catch-up burst) to bound the worst-case hold.
+    ///
+    /// PRE-STATED verdict rule: the battery hypothesis needs the DH−A sender
+    /// lock-wait share to be ~13 points of wall; < 5 points at the realistic
+    /// cadences REFUTES "sender blocks on lock acquisition" as the residual's
+    /// mechanism (the numbers are printed either way, [P3-LOCK] lines).
+    #[test]
+    #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
+    fn c1_attribution_lock_blocking_bench() {
+        use std::sync::atomic::{AtomicBool, AtomicU64 as AU64};
+        use std::time::Instant;
+
+        const RATE: u64 = 24_000; // c1 class, sym/s
+        const TICK_US: u64 = 1_000; // sender iteration ≈ 1 ms
+        const BURST: u64 = RATE * TICK_US / 1_000_000; // 24 seqs/tick
+        const LAG: u64 = 72; // ≈3 ms of seqs between send and ack
+        const RUN_S: f64 = 4.0;
+        const WARM_S: f64 = 0.5;
+
+        fn pct(sorted: &[u64], p: f64) -> u64 {
+            if sorted.is_empty() {
+                return 0;
+            }
+            let i = ((sorted.len() as f64 - 1.0) * p) as usize;
+            sorted[i]
+        }
+
+        // One config+arm run. Returns (sender wait share %, ack hold duty %,
+        // sender wait [p50, p99, max] µs, ack hold [p50, p99, max] µs).
+        #[allow(clippy::too_many_arguments)]
+        fn run(
+            dh: bool,
+            ack_cad_us: u64,
+            stall: bool,
+            label: &str,
+        ) -> (f64, f64, [f64; 3], [f64; 3]) {
+            let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(
+                WallClock,
+            ))));
+            {
+                let mut s = scheduler.lock();
+                s.add_path(0);
+                let p = s.path_mut(0).unwrap();
+                p.record_rtt_sample(Duration::from_millis(2));
+                p.force_honest_anchor_for_test(); // the DH arm's O(1) deque
+            }
+            let feed = Arc::new(CopaFeed::new_sampling_only(true));
+            let frontier = AU64::new(0); // seqs sent so far
+            let stop = AtomicBool::new(false);
+
+            let mut snd_waits: Vec<u64> = Vec::with_capacity(8192);
+            let mut ack_waits: Vec<u64> = Vec::with_capacity(8192);
+            let mut ack_holds: Vec<u64> = Vec::with_capacity(8192);
+            let mut attributed: u64 = 0;
+
+            std::thread::scope(|sc| {
+                // ── SENDER thread ────────────────────────────────────────
+                let snd = sc.spawn(|| {
+                    let mut waits = Vec::with_capacity(8192);
+                    let t0 = Instant::now();
+                    let mut next = t0;
+                    let mut seq: u64 = 0;
+                    while t0.elapsed().as_secs_f64() < RUN_S {
+                        // production emit path: the send-record DashMap
+                        // write rides outside the scheduler guard.
+                        for s in seq..seq + BURST {
+                            feed.on_sent(s, 0);
+                        }
+                        let tq = Instant::now();
+                        let mut sched = scheduler.lock();
+                        let wait = tq.elapsed().as_nanos() as u64;
+                        if let Some(p) = sched.path_mut(0) {
+                            for s in seq..seq + BURST {
+                                p.on_src_sent(s, false);
+                            }
+                            p.charge_src(BURST as u32);
+                            p.charge_in_flight(BURST as u32);
+                        }
+                        // the backpressure poll (run_block_sender's body)
+                        let mut fl = 0u64;
+                        let mut cw = 0u64;
+                        for id in sched.live_paths() {
+                            if let Some(p) = sched.path_mut(id) {
+                                p.expire_in_flight();
+                                fl += p.in_flight as u64;
+                                cw += p.cwnd as u64;
+                            }
+                        }
+                        let _ = fl >= cw.max(4);
+                        drop(sched);
+                        if t0.elapsed().as_secs_f64() > WARM_S {
+                            waits.push(wait);
+                        }
+                        seq += BURST;
+                        frontier.store(seq, Ordering::Release);
+                        next += Duration::from_micros(TICK_US);
+                        while Instant::now() < next {
+                            std::hint::spin_loop();
+                        }
+                    }
+                    stop.store(true, Ordering::Release);
+                    waits
+                });
+                // ── ACK thread ───────────────────────────────────────────
+                let ack = sc.spawn(|| {
+                    let mut waits = Vec::with_capacity(8192);
+                    let mut holds = Vec::with_capacity(8192);
+                    let mut attr: u64 = 0;
+                    let t0 = Instant::now();
+                    let mut next = t0;
+                    let mut acked: u64 = 0;
+                    let mut last_stall = t0;
+                    while !stop.load(Ordering::Acquire) {
+                        if stall && last_stall.elapsed().as_millis() >= 1_000 {
+                            // c1 recovery shape: the ack stream stalls one
+                            // sweep-class round, then catches up in one
+                            // frontier jump (the biggest real batch).
+                            std::thread::sleep(Duration::from_millis(85));
+                            last_stall = Instant::now();
+                        }
+                        let target = frontier.load(Ordering::Acquire).saturating_sub(LAG);
+                        if target > acked {
+                            let d = (target - acked) as u32;
+                            // Ack-arm acquisition (control_msg PART 1+2).
+                            let tq = Instant::now();
+                            let mut sched = scheduler.lock();
+                            let w1 = tq.elapsed().as_nanos() as u64;
+                            let th = Instant::now();
+                            if dh {
+                                if let Some(p) = sched.path_mut(0) {
+                                    p.release_in_flight(d);
+                                    p.on_delivery_signal(); // !owns_cc arm
+                                    p.record_rtt_sample(Duration::from_millis(2));
+                                }
+                            } else {
+                                if let Some(p) = sched.path_mut(0) {
+                                    p.record_rtt_sample(Duration::from_millis(2));
+                                }
+                                sched.ack(0, d); // legacy no-feed arm
+                            }
+                            drop(sched);
+                            let h1 = th.elapsed().as_nanos() as u64;
+                            let (w2, h2) = if dh {
+                                // The RWM_PLAIN_RS attribution: cursor diff
+                                // (no scheduler lock), then the production
+                                // seam under its own acquisition.
+                                let newly = feed.newly_delivered(target - 1, &[]);
+                                attr += newly.len() as u64;
+                                let tq = Instant::now();
+                                let mut sched = scheduler.lock();
+                                let w = tq.elapsed().as_nanos() as u64;
+                                let th = Instant::now();
+                                copa_attribute_newly(&feed, 0, now_us(), &newly, &mut sched);
+                                drop(sched);
+                                (w, th.elapsed().as_nanos() as u64)
+                            } else {
+                                (0, 0)
+                            };
+                            if t0.elapsed().as_secs_f64() > WARM_S {
+                                waits.push(w1 + w2);
+                                holds.push(h1 + h2);
+                            }
+                            acked = target;
+                        }
+                        next += Duration::from_micros(ack_cad_us);
+                        let now = Instant::now();
+                        if next > now {
+                            std::thread::sleep(next - now);
+                        }
+                    }
+                    (waits, holds, attr)
+                });
+                snd_waits = snd.join().unwrap();
+                let (w, h, a) = ack.join().unwrap();
+                ack_waits = w;
+                ack_holds = h;
+                attributed = a;
+            });
+
+            // LIVENESS (discipline rule 1): the mechanism under test ran.
+            let sent = frontier.load(Ordering::Acquire);
+            if dh {
+                assert!(
+                    attributed as f64 >= 0.8 * (sent.saturating_sub(LAG)) as f64,
+                    "attribution must cover the acked stream: {attributed} of {sent}"
+                );
+                let sched = scheduler.lock();
+                assert!(
+                    sched.path(0).unwrap().copa_bdp_anchor().is_some(),
+                    "the send-interval sampler must establish (samples ACCEPTED)"
+                );
+            }
+
+            let wall_ns = (RUN_S - WARM_S) * 1e9;
+            let mut sw = snd_waits.clone();
+            sw.sort_unstable();
+            let mut ah = ack_holds.clone();
+            ah.sort_unstable();
+            let snd_share = 100.0 * snd_waits.iter().sum::<u64>() as f64 / wall_ns;
+            let hold_duty = 100.0 * ack_holds.iter().sum::<u64>() as f64 / wall_ns;
+            let sw_p = [
+                pct(&sw, 0.5) as f64 / 1e3,
+                pct(&sw, 0.99) as f64 / 1e3,
+                *sw.last().unwrap_or(&0) as f64 / 1e3,
+            ];
+            let ah_p = [
+                pct(&ah, 0.5) as f64 / 1e3,
+                pct(&ah, 0.99) as f64 / 1e3,
+                *ah.last().unwrap_or(&0) as f64 / 1e3,
+            ];
+            println!(
+                "[P3-LOCK] {label:<26} arm={} sender: wait-share {snd_share:.3}% \
+                 p50/p99/max {:.1}/{:.1}/{:.1} µs (n={}) | ack: hold-duty {hold_duty:.3}% \
+                 hold p50/p99/max {:.1}/{:.1}/{:.1} µs wait-sum {:.2} ms attr={attributed}",
+                if dh { "DH" } else { "A " },
+                sw_p[0],
+                sw_p[1],
+                sw_p[2],
+                sw.len(),
+                ah_p[0],
+                ah_p[1],
+                ah_p[2],
+                ack_waits.iter().sum::<u64>() as f64 / 1e6,
+            );
+            (snd_share, hold_duty, sw_p, ah_p)
+        }
+
+        let mut deltas = Vec::new();
+        for (cad, name) in [(1_000u64, "per-msg acks (1 ms)"), (5_000, "bunched acks (5 ms)")] {
+            let (a_share, _, _, _) = run(false, cad, false, name);
+            let (dh_share, dh_duty, _, dh_hold) = run(true, cad, false, name);
+            println!(
+                "[P3-LOCK] {name:<26} Δ(DH−A) sender wait-share = {:.3} points \
+                 (hypothesis needs ~13; ack-side lock duty {dh_duty:.3}%, worst hold {:.1} µs)",
+                dh_share - a_share,
+                dh_hold[2],
+            );
+            deltas.push(dh_share - a_share);
+        }
+        // Worst-case bound: the recovery-stall catch-up batch (reported,
+        // not scored — c1's steady state has no such stall each tick).
+        let _ = run(false, 1_000, true, "recovery catch-up (85 ms)");
+        let _ = run(true, 1_000, true, "recovery catch-up (85 ms)");
+
+        for (i, d) in deltas.iter().enumerate() {
+            assert!(
+                *d < 5.0,
+                "config {i}: DH−A sender lock-wait share = {d:.3} points — the \
+                 named lock-blocking mechanism would need ~13; investigate before \
+                 concluding (one green run is not evidence; re-run per discipline)"
+            );
+        }
+    }
+
+    /// PROBE 1, mechanism side (always-on, deterministic): the DH arm's own
+    /// store-cap law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1`, the exact
+    /// battery configuration — evaluated over the SHIPPED path set
+    /// (`active_paths()`, `RWM_STORE_CAP_UNIFIED=0`) vs the unified set
+    /// (`live_paths()`), at the same warm, saturated single-path state.
+    ///
+    /// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
+    /// `honest_cap_on` branch and its fallbacks; see the `set`/`slots`/
+    /// `hsum` collection and the `dyn_store_cap` chain in this file). The
+    /// L1 wiring end-to-end is already proven by the store-cap-triplication
+    /// battery's own engine print (`win=278/128` at c1-def); what THIS test
+    /// pins is that the DH law inherits the identical cliff: the honest law
+    /// never computes a small cap — the PATH SET erases its inputs.
+    ///
+    /// Ledger anchors (goal-gate "Honest Inputs — BATTERY", c1): DH
+    /// `occcap_p50` bimodal 128 ↔ 1024 across reps on both seeds with
+    /// occupancy ~165–217 — i.e. the measured pause state (store ≥ cap) is
+    /// exactly this cliff's 128 phase, store nowhere near the warm 1024.
+    #[test]
+    fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
+        let clock = Arc::new(crate::scheduler::MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+        // Warm the honest (send-interval) anchor at the c1 shape: 24 k
+        // sym/s, RTprop 2 ms, deliveries lagging sends by ~3 ms.
+        {
+            let p = sched.path_mut(0).unwrap();
+            p.record_rtt_sample(Duration::from_millis(2));
+            let step = Duration::from_micros(41);
+            for seq in 0..4000u64 {
+                p.on_src_sent(seq, false);
+                if seq >= 72 {
+                    p.on_src_delivered_seq(seq - 72);
+                }
+                clock.advance(step);
+            }
+            assert!(
+                p.copa_bdp_anchor().is_some(),
+                "honest anchor must be warm (samples accepted)"
+            );
+        }
+        // The DH law chain over a path set, exactly as the sender computes
+        // it (RWM_STORE_GAIN default 2.0; floor 64; RELIABLE_STORE_MAX
+        // latch at N = 1; store_boot_cap 128 — gates.rs defaults).
+        let now = now_us();
+        let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
+            std::collections::HashMap::new();
+        let mut cap_over = |sched: &Scheduler, set: &[u32]| -> usize {
+            let mut bdp = 0.0f64;
+            let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
+            for id in set {
+                if let Some(p) = sched.path(*id) {
+                    if let Some(a) = p.copa_bdp_anchor() {
+                        bdp += a;
+                        slots.push(Some(HonestCapPath {
+                            id: *id,
+                            anchor: Some(a),
+                            rate: p.btlbw_sym_per_s(),
+                            srtt: p.srtt(),
+                            rtprop: p.min_rtt(),
+                            k_raw: p.k_raw(),
+                        }));
+                    }
+                }
+            }
+            let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
+            let hsum: f64 = terms.iter().flatten().sum();
+            if hsum > 0.0 {
+                (hsum.ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
+            } else if bdp > 0.0 {
+                ((2.0 * bdp).ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
+            } else {
+                128 // store_boot_cap fallback — the cliff
+            }
+        };
+
+        // UNSATURATED: both path sets agree; the honest law computes its
+        // warm cap (runway term ≈ rate·0.1 ⇒ the 1024 latch at c1 rates —
+        // the ledger's DH warm phase).
+        let active = sched.active_paths();
+        let live = sched.live_paths();
+        assert_eq!(active, live, "unsaturated: the filter is inert");
+        let warm_cap = cap_over(&sched, &active);
+        assert_eq!(
+            warm_cap, RELIABLE_STORE_MAX,
+            "c1-class honest cap latches the store max (ledger: DH occcap 1024 phases)"
+        );
+
+        // SATURATED (the wire-bound sender state: in_flight ≥ cwnd — c1's
+        // normal state per the sf= gauge, 30–33% of def-arm ticks): the
+        // spare-capacity filter empties the DATA-scheduling set while the
+        // path is alive and its anchor is warm.
+        {
+            let p = sched.path_mut(0).unwrap();
+            let cw = p.cwnd;
+            p.charge_in_flight(cw);
+            assert_eq!(p.available(), 0);
+        }
+        let active = sched.active_paths();
+        let live = sched.live_paths();
+        assert!(active.is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
+        assert_eq!(live, vec![0], "…while the path is fully live");
+        // Shipped set (RWM_STORE_CAP_UNIFIED=0): the law's inputs vanish and
+        // the cap falls out to the boot value — BELOW the c1-DH measured
+        // occupancy class (~190), i.e. instant tx_paused.
+        assert_eq!(
+            cap_over(&sched, &active),
+            128,
+            "the cliff: an empty active set forfeits the warm anchor entirely"
+        );
+        // Unified set (RWM_STORE_CAP_UNIFIED=1): same instant, same law,
+        // warm cap — the fix that already exists prices this exact defect.
+        assert_eq!(
+            cap_over(&sched, &live),
+            RELIABLE_STORE_MAX,
+            "live_paths() keeps the warm honest cap at the same saturated instant"
+        );
+    }
+
+    /// PROBE 1, coupling side (always-on, deterministic): WHY the fixed DH
+    /// sender falls off the cliff harder than A. One delivery process, two
+    /// feeds:
+    ///   - HONEST (`RWM_PLAIN_RS` send-interval sampler): the windowed-max
+    ///     anchor reads ≈ the true rate, so the cwnd anchor FLOOR sits at
+    ///     the true-BDP class;
+    ///   - LEGACY (no-feed `sched.ack` ack-interval sampler) under c1-class
+    ///     ack bunching: the windowed-max latches the bunch peak (the
+    ///     documented ×4.6–7.4 over-read), so the floor sits far above.
+    /// `available() = cwnd − in_flight` with cwnd ≥ floor: an outstanding
+    /// level between the two floors can saturate ONLY the honest arm — the
+    /// legacy arm cannot even reach `available() == 0` there. The A arm's
+    /// own 30–33% zero-tick population (storecap battery) rode transient
+    /// cwnd states; the honest floor makes the saturated state the RESTING
+    /// state of a wire-bound sender. This is the c1/c7 asymmetry's shape:
+    /// where the sender has intake headroom (c7), in_flight sits below even
+    /// the honest floor and no cliff fires.
+    #[test]
+    fn honest_anchor_floor_sits_at_true_bdp_where_the_legacy_ack_feed_floors_high() {
+        let clock = Arc::new(crate::scheduler::MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0); // honest feed
+        sched.add_path(1); // legacy ack-interval feed
+        for id in [0u32, 1] {
+            sched
+                .path_mut(id)
+                .unwrap()
+                .record_rtt_sample(Duration::from_millis(2));
+        }
+        // One true process: 24 k sym/s for 2 s. Path 0 sees it per
+        // delivered seq (send-interval Δt); path 1 sees the same totals as
+        // c1-class BUNCHED acks: per 10 ms cycle, a straggler ack after
+        // 8.9 ms then the 216-symbol bunch 1.1 ms later — Δdelivered/Δt
+        // ≈ 196 k sym/s at the same 24 k carried rate.
+        for cycle in 0..200u64 {
+            // path 0: continuous per-seq attribution
+            {
+                let p = sched.path_mut(0).unwrap();
+                let base = cycle * 240;
+                for i in 0..240u64 {
+                    let seq = base + i;
+                    p.on_src_sent(seq, false);
+                    if seq >= 72 {
+                        p.on_src_delivered_seq(seq - 72);
+                    }
+                    clock.advance(Duration::from_micros(41));
+                }
+            }
+            // path 1: same 240 symbols, bunched (same wall interval)
+            {
+                clock.advance(Duration::from_micros(160)); // pad to 10 ms
+                let p = sched.path_mut(1).unwrap();
+                p.record_rtt_sample(Duration::from_millis(2));
+                p.on_ack(24); // straggler re-arms last_delivered_time
+                clock.advance(Duration::from_micros(1_100));
+                let p = sched.path_mut(1).unwrap();
+                p.on_ack(216); // the bunch: 216 / 1.1 ms ≈ 196 k sym/s
+            }
+        }
+        let a_honest = sched.path(0).unwrap().copa_bdp_anchor().expect("warm");
+        let a_legacy = sched.path(1).unwrap().copa_bdp_anchor().expect("warm");
+        let true_bdp = 24_000.0 * 0.002; // rate × RTprop = 48 symbols
+        assert!(
+            a_honest < 3.0 * true_bdp,
+            "honest anchor reads the true-BDP class: {a_honest:.0} vs {true_bdp:.0}"
+        );
+        assert!(
+            a_legacy > 3.0 * a_honest,
+            "legacy ack-interval anchor must floor high (the over-read): \
+             {a_legacy:.0} vs honest {a_honest:.0}"
+        );
+        let f_honest = sched.path(0).unwrap().anchor_floor_for_test().expect("floor");
+        let f_legacy = sched.path(1).unwrap().anchor_floor_for_test().expect("floor");
+        assert!(
+            f_legacy > 3 * f_honest,
+            "the cwnd floors order the same way: honest {f_honest} vs legacy {f_legacy}"
+        );
+        // The consequence, as arithmetic on the real predicate: outstanding
+        // between the floors saturates only the honest arm. cwnd ≥ floor
+        // always (the floor only ratchets UP), so the legacy arm CANNOT
+        // read available() == 0 at this level; the honest arm at its
+        // wire-bound lower bound (cwnd == floor) reads exactly 0.
+        let mid = 2 * f_honest;
+        assert!(mid < f_legacy);
+        {
+            let p = sched.path_mut(0).unwrap();
+            p.cwnd = f_honest; // the floor IS the resting cwnd lower bound
+            p.charge_in_flight(mid);
+            assert_eq!(p.available(), 0, "honest arm: saturated at mid outstanding");
+        }
+        {
+            let p = sched.path_mut(1).unwrap();
+            p.cwnd = p.cwnd.max(f_legacy);
+            p.charge_in_flight(mid);
+            assert!(
+                p.available() > 0,
+                "legacy arm keeps spare capacity at the same outstanding"
+            );
+        }
     }
 
     #[test]

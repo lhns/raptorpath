@@ -11197,6 +11197,57 @@ VALIDATION" and "Honest Inputs — BATTERY" (ledgers
 instrument failures, aborts 49 all in the documented seed-7 class, re-run
 symmetrically).
 
+### 16.49 Phase 3, the two probes: the c1 −13% is the store-cap saturation-filter cliff (not lock blocking — refuted ×1000 at the bench), and jit25's elevated limit is the loaded link's real residence (the pre-registered band was wrong, not the estimator) (2026-08-11, `feat/honest-inputs-p3`, strictly local)
+
+**Probe 1 (c1).** The battery's named hypothesis — attribution blocking
+under the scheduler lock — was measured directly: a two-thread component
+bench (production lock, the production attribution loop extracted as
+`net::copa_attribute_newly`, sender-side acquisition wait timed per poll)
+at c1's 24 k seq/s puts the DH−A sender lock-wait delta at ≤ 0.02 points
+of wall against the ~16–21 points of pause it would need to explain —
+refuted by three orders of magnitude, three processes green, worst
+single hold 1.1 ms once per recovery catch-up. The real mechanism was in
+the ledger: c1-DH's effective store cap is BIMODAL 128 ↔ 1024 across
+DIAG ticks (cap_p50 = 128 in 7 of 16 reps; arm A 518–557 steady; arm D
+pinned 1024) with occupancy ~190 — the wait[paused] 48–53% is the store
+sitting over the 128-symbol BOOT cap, i.e. §16.48's residual is the
+store-cap-triplication battery's `active_paths()` saturation-filter
+cliff (measured there at 30–33% zero-ticks and +15.8/+24.8% under
+`RWM_STORE_CAP_UNIFIED=1` at c1-A), DEEPENED by the honest anchor: the
+send-interval anchor floors cwnd at the true-BDP class where the legacy
+ack-interval over-read floored it ~8× higher, so the fold-freed (fast)
+sender's resting state is cwnd-saturated and the filter empties. Two
+always-on component tests pin the chain (the cliff is the path set, not
+the honest-cap law; the floor ordering is the coupling); the fix already
+exists as a shipped, gated, zero-constant knob (`RWM_STORE_CAP_UNIFIED`),
+and the DH+U / BH+U compositions go to the flip battery UNMEASURED —
+additivity is not assumed.
+
+**Probe 2 (jit25).** The component model generates the cell's exact
+netem process (clamp(20 ms ± 25 ms AR(0.25) uniform, 0) per direction +
+serialization) and drives the real estimator stack: the two-way clamp
+floor (0.22 ms) is re-sighted in 100% of 10 s RTprop windows at even 20
+samples/s — the "rare floor" explanation is refuted as stated — and the
+unloaded distribution yields RTprop ≈ floor, K_raw → 1, window term ≈ 2
+symbols (the pre-registration's falsified-LOW branch) in every regime.
+The cell measured neither that collapse nor the rare-floor K ≫ 1.5
+fingerprint: khr ≈ kraw ≈ 1.0–1.5 WITH window terms of 396–714 symbols.
+The in-cell RTprop therefore rides a floor its own window genuinely
+re-achieves, two orders above the unloaded floor: the standing queue of
+the 77–90%-utilized shaped link. **The elevated limit is correct
+behavior** — Little's law on the residence the loaded cell actually has;
+the 1300–1430 band assumed a 40 ms RTprop the estimator could never read
+(unloaded floor 0.22 ms, loaded residence 50–90 ms). No better floor is
+derivable in the upward direction (windowed mins are monotone
+non-increasing in horizon); the zero-constant re-derivation is a
+RELATION against same-session gauges (the [3T] terms), not an absolute
+band — and `RWM_HONEST_K`'s bar lifts: it rides BH into the flip
+battery, still default OFF.
+
+Primary record: goal-gate "Honest Inputs — PHASE 3, THE TWO PROBES"
+(instrument names, the three-process bench table, the flip-battery
+pre-registration skeleton sized to c1's measured σ = 33: n = 12 at c1).
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

@@ -22880,3 +22880,273 @@ prediction adjusted post hoc; the two falsified criteria (H1, H3) are
 reported as falsifications with their mechanisms, and the confound on
 H3's precondition is disclosed rather than resolved in the favourable
 direction. The pre-registration at 6f6f2a9 is untouched.
+
+## Honest Inputs — PHASE 3, THE TWO PROBES (2026-08-11) — GOAL "HONEST INPUTS" phase 3. Branch `feat/honest-inputs-p3` from main@4ab77a3. **STRICTLY LOCAL — no VM contact in this phase**; every L1 number below is read from the ledgers already committed (`docs/l1-raw/honestinputs-*`, the store-cap-triplication section above); every new number is a component measurement taken in this tree. No default changed, no constant introduced, no battery run.
+
+The battery closed with two probes named BY THE DATA: (i) the c1 DH
+residual — a sender at CPU parity, store at 27% occupancy, parked on the
+backpressure poll 48–53% of wall; (ii) jit25's K elevation surviving the
+raw re-source (khr−kraw ≈ 0), leaving RTprop's own honesty as the open
+question. Both are adjudicated below. Instruments (committed with this
+block): `net::tests::c1_attribution_lock_blocking_bench` (`#[ignore]`,
+release), `net::tests::dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law`,
+`net::tests::honest_anchor_floor_sits_at_true_bdp_where_the_legacy_ack_feed_floors_high`
+(both always-on), and
+`scheduler::tests::jit25_rtprop_floor_sighting_under_netem_clamped_jitter`
+(`#[ignore]`, release). One mechanical seam was extracted so the first
+bench drives the production code rather than a transcription
+(`net::copa_attribute_newly`, the per-seq attribution loop of
+`copa_feed_attribute`, sole non-test caller unchanged).
+
+### PROBE 1 — the c1 −13%: the NAMED hypothesis is REFUTED, and the ledger names the real mechanism itself
+
+**The named hypothesis** ("attribution blocking under the scheduler lock
+— the sender blocks on acquisition") **is refuted by direct measurement,
+by three orders of magnitude.** The bench shares the production
+`Arc<parking_lot::Mutex<Scheduler>>` between a sender thread (per-seq
+`on_src_sent` + placement charges + the backpressure poll, 1 ms ticks,
+acquisition wait timed on every lock) and an ack thread driving either
+the legacy no-feed arm (A) or the full `RWM_PLAIN_RS`+`RWM_HONEST_ANCHOR`
+ack machinery (DH: release + `on_delivery_signal` + RTT sample under one
+acquisition, then `newly_delivered` + the production `copa_attribute_newly`
+seam under a second — `handle_control_message`'s exact shape), at
+24 000 delivered seqs/s, RTprop 2 ms. Three processes, all green:
+
+| config | Δ(DH−A) sender lock-wait, % of wall (3 runs) | DH ack-lock duty | worst single hold |
+|---|---|---|---|
+| per-msg acks (1 ms) | +0.004 / +0.003 / +0.001 | 2.28–2.45% | 271–618 µs |
+| bunched acks (5 ms) | +0.018 / +0.005 / −0.000 | 1.39–1.60% | 353–958 µs |
+| recovery catch-up (85 ms stall, ~2 000-seq SACK batch) | (reported, unscored) | 2.30% | 1 142 µs |
+
+The wait[paused] gap to explain is **~16–21 points of wall** (DH 48–53%
+vs A 32%); the attribution path adds **≤ 0.02 points** of sender
+lock-wait. Its total lock duty (1.4–2.5% of a core) lands exactly on the
+phase-1 linear pricing (1–3%), and even the worst catch-up hold is one
+millisecond once per recovery event. Slower VM cores (×2–3) leave three
+orders of magnitude between this mechanism and the effect. LIVENESS:
+attribution covered ≥ 80% of the acked stream and the send-interval
+anchor established in every DH run (asserted in the bench).
+
+**The real mechanism was in the battery's own ledger, unread until now:
+the store-cap SATURATION-FILTER cliff — the same `active_paths()` trap
+the store-cap-triplication battery measured and priced at c1 — deepened
+by the honest anchor.** The per-rep ledger reads (c1, `occcap_p50` =
+median effective store cap at the DIAG ticks, `wait_paused` = the pause
+duty):
+
+| arm | s42 wait_paused | s42 cap_p50 = 128 (boot) | s7 wait_paused | s7 cap_p50 = 128 |
+|---|---|---|---|---|
+| A | 30–36% (mean 32) | 0/8 reps (518–557 steady) | 29–34% (32) | 0/8 (519–557) |
+| D | 33–42% (38) | 0/8 (1024 pinned, all reps) | 37–46% (41) | 0/8 (1024) |
+| **DH** | **46–61% (53)** | **4/8** (the rest 1024) | **44–52% (48)** | **3/8** |
+
+DH's effective cap is **BIMODAL 128 ↔ 1024** within every invocation
+(p50 aliases the tick-level flap to one side or the other per rep) while
+its occupancy p50 sits at 153–217: the measured pause state — store ≥
+cap with the store "only 27% occupied" — is precisely the 128-phase of
+this flap. The chain, each link pinned:
+
+1. **The cliff is the path set, not the honest law** (component,
+   always-on test): at a warm honest anchor and a cwnd-saturated single
+   path (`in_flight ≥ cwnd` — the resting state of a wire-bound sender),
+   the DH law chain (`honest_cap_on`, the battery's exact gate set) over
+   the shipped `active_paths()` set loses every input slot and falls out
+   to `store_boot_cap` = **128**; over `live_paths()`
+   (`RWM_STORE_CAP_UNIFIED=1`) the SAME instant computes the warm cap
+   (the 1024 latch at c1 rates). The honest law never computes a small
+   cap — the filter erases its inputs.
+2. **Why DH falls off harder than A** (component, always-on test): one
+   delivery process, two feeds — the honest send-interval anchor reads
+   the true-BDP class while the legacy ack-interval anchor floors ~8×
+   higher under c1-class ack bunching (in-cell measured ×4.6–7.4), and
+   the cwnd anchor FLOOR orders the same way, so an outstanding level
+   between the two floors saturates ONLY the honest arm. Fixing the fold
+   made the sender fast enough to live at `in_flight ≥ cwnd`; the honest
+   (smaller) floor keeps it there. That is also the c1/c7 asymmetry: at
+   c7 the pooled cap is clamp-bound at 4096 with zero-tick population
+   0.2–0.3%, so the cliff cannot reach goodput — DH recovered fully.
+3. **The magnitude and the cure are ALREADY MEASURED at c1** (the
+   store-cap-triplication battery, arm A): zero-tick fraction 30–33% of
+   refresh ticks ↔ A's wait_paused 29–36% here; effective cap 397–458
+   against the law's ~961; `RWM_STORE_CAP_UNIFIED=1` → cap 961–963 and
+   goodput **+15.8% / +24.8%** (s42/s7, n = 8, same-session), σ TIGHTER
+   than the default's. D's immunity is the same coupling inverted: the
+   fold-taxed sender is too slow to saturate its cwnd, so its cap pins at
+   1024 in 16/16 reps — the CPU defect was accidentally masking the
+   path-set defect.
+
+**The fix, with zero constants: it already exists and is already gated.**
+`RWM_STORE_CAP_UNIFIED` (default OFF, two-sided echo, OFF-value
+byte-identical, `RWM_FORWARD`-forwarded — all from its own battery) is
+the path-set correction; its NO-FLIP verdict was c8's accidental brake
+at the 4096-clamped duals, not c1. No new code is shipped in this phase.
+The composition DH+U (and BH+U) is **unmeasured** — two separate
+batteries price its parts (+15.8/+24.8% for A+U; −13% for DH−A) and the
+flip battery below must measure it rather than assume additivity. A
+plausible bonus, stated as prediction not result: BH's c1 σ of 33 (its
+wait_paused swings 3–46% across reps) may itself be this cliff's
+intermittency, in which case BH+U tightens exactly where the flip
+battery needs n.
+
+**What phase 3 could not determine locally:** (i) DH's in-cell zero-tick
+fraction — the `[SF]` gauge was not captured by the HI battery's parser;
+predicted ≈ the wait_paused class (~50%); the flip battery captures
+`[SF]` per invocation on every arm and scores the mechanism on it.
+(ii) The A-arm correspondence (zero-ticks 30–33% ↔ wait_paused 29–36%)
+is cross-battery correlation, not a same-session identity.
+
+### PROBE 2 — jit25's RTprop: the floor is NOT rare; the elevation is the loaded link's real residence; the pre-registered band was wrong on its own terms
+
+The component instrument generates the cell's ACTUAL configured process
+(`tools/l1/adv_cells.sh` jit25: per direction `netem delay 20ms 25ms 25%
+rate 100mbit` ⇒ clamp(20 ms + AR(0.25)-correlated uniform·25 ms, 0) +
+108 µs serialization; RTT = two independent directions; the AR marginal
+is NARROWER than uniform, clamp mass ~4%/direction — computed, not
+assumed) and drives the REAL estimator stack (`CopaState::record_rtt`:
+srtt EWMA, the 10 s min-window RTprop deque, the `RWM_HONEST_K` raw-fed
+`EchoRatioMin`) at swept sample cadences. The pre-registered curves:
+
+| cadence | RTprop (10 s win) | K_raw | srtt/RTprop | floor-sighting, 2 s / 10 s windows | implied [3T] window term |
+|---|---|---|---|---|---|
+| 20/s | **0.22 ms** (= the clamp floor) | 3.04 | 71.5 | 53% / **100%** | **5 sym** |
+| 100/s | 0.22 ms | 1.36 | 56.0 | 100% / 100% | 2 sym |
+| 1 000/s | 0.22 ms | 1.04 | 78.4 | 100% / 100% | 2 sym |
+| 7 400/s | 0.22 ms | 1.02 | 59.8 | 100% / 100% | 2 sym |
+
+(The windowed-min is non-increasing in the horizon at every cadence —
+asserted, not observed: a min over a superset cannot rise.)
+
+**Adjudication, from the model and the cell's own gauges jointly:**
+
+1. **"The floor is seen only when a packet draws near the clamp's low
+   edge, so the floor is rare" — REFUTED as stated.** Under the unloaded
+   distribution the exact two-way clamp floor (0.22 ms) is re-sighted in
+   100% of 10 s windows at even 20 samples/s. There is no cadence at
+   which the engine's RTprop window misses it.
+2. **The unloaded distribution cannot produce the cell's readings in ANY
+   regime.** Dense: RTprop → floor, K_raw → 1.0, window term → 2 sym —
+   the pre-registration's falsified-LOW branch, quantified. Sparse
+   (20/s): the rare-floor fingerprint K_raw ≫ 1.5 appears — but RTprop
+   still reads the floor and the window term still collapses. The cell
+   measured **neither**: khr ≈ kraw ≈ 1.0–1.5 (paired, per-rep, both
+   signs) WITH window terms of 396–714 sym at ~7.6 k sym/s — an
+   in-window achievable RTT of ~50–90 ms.
+3. **Therefore the in-cell RTprop rides a floor that its own window
+   genuinely RE-ACHIEVES (K ≈ 1 is exactly that gauge) and that sits two
+   orders above the unloaded floor: the standing queue of the 100 Mbit
+   shaped link under the transfer's own 77–90% utilisation.** The
+   elevation is real residence — not estimator bias (khr−kraw ≈ 0, the
+   battery's in-cell instrument) and not floor rarity (this model).
+
+**VERDICT: the elevated K·RTprop read is CORRECT BEHAVIOR, and jit25's
+1779/1809 limit is right** — Little's law honestly priced on the
+residence the loaded cell actually has. The pre-registered 1300–1430
+band was wrong on its own terms: its RTprop input (40 ms, the netem
+base) is a number the estimator could never read — the unloaded floor is
+0.22 ms (and the estimator WOULD read it, at any cadence), the loaded
+residence is 50–90 ms, and 40 ms is neither. The window ≤ 500 clause
+fails the same way (measured medians 396–714).
+
+**No "better floor" is derivable in the direction an absolute band would
+need.** Every longer-horizon or clamp-edge floor reads LOWER (asserted
+monotonicity) and under-provisions residence further — the falsified-LOW
+shape. The only honest higher clock is the one the estimator already
+reads. **The re-derivation with zero constants is therefore a RELATION,
+not a number:** limit = Σ rate·K·RTprop + Σ rate·stall(ρ, b, RTprop,
+srtt) on the cell's own gauges — and that relation already held exactly
+through the era shift the battery disclosed (slack/window = 2.12
+pre-registered from the law's arithmetic; 2.10–2.13 in every measured
+B/BH rep). An absolute symbol band for jit25 is NOT derivable from the
+cell config alone, because the residence clock is created by the load
+and moves with the era (arm A ~50 → 76–81 Mbit/s across batteries); any
+future jit25 criterion must be stated in relation form against
+same-session gauges. That statement introduces no constant.
+
+**`RWM_HONEST_K`'s barred status: the bar LIFTS.** The pre-registration
+barred it "before the jit25 RTprop question is adjudicated"; the
+adjudication is: RTprop's jit25 elevation is honest, and honest-K itself
+is value-neutral there (khr−kraw ≈ 0 in-cell; floor-reading where the
+series contains a floor, component-pinned in phase 1). It remains
+default OFF and rides the BH composition into the flip battery below.
+
+### WHAT THIS CHANGES FOR THE FLIP CANDIDATES
+
+`RWM_HONEST_ANCHOR` alone **remains the flip candidate it was** — the
+probes strengthen it: the −13% residual is NOT its cost (it is the
+store-cap path set's), it is value-identical by construction, and its
+CPU claim (H2) is green both seeds. The probes ADD one candidate
+composition (…+`RWM_STORE_CAP_UNIFIED` at the window-mode store law) and
+UNBAR `RWM_HONEST_K` within BH. Nothing here flips anything: phase 3 ran
+no cell.
+
+### THE FLIP BATTERY — PRE-REGISTRATION SKELETON (to be completed and committed in its OWN commit before any run; this skeleton is the phase-3 deliverable, not a pre-registration)
+
+**Arms (interleaved per cell per rep, same binary):**
+
+| arm | env | role |
+|---|---|---|
+| A | (default) | shipped control |
+| DH | `RWM_PLAIN_RS RWM_HONEST_ANCHOR` | control: must REPRODUCE the −13% (0.84–0.90 class) or the session cannot score the fix |
+| DHU | DH + `RWM_STORE_CAP_UNIFIED` | H1's completion: the anchor tax's full answer |
+| BH | `RWM_THREE_TERM RWM_PLAIN_RS RWM_HONEST_ANCHOR RWM_HONEST_K` | the composition as battered (its own control) |
+| BHU | BH + `RWM_STORE_CAP_UNIFIED` | the user-facing candidate |
+
+**Cells and claims (headroom re-measured same-session, discipline 16):**
+c1 (throughput targets permitted, ~75% headroom), jit25 (parity within
+2σ + the limit scored in RELATION form only — no absolute band, per
+probe 2), sc2 (parity + BH(U) probe p50 ≤ 55 ms class must survive), c7
+(parity floor, DH(U)/A ≥ 0.95), c8 (no-regression within 2σ, aborts
+counted per arm, symmetric re-runs only; abort ≠ DNF).
+
+**n, sized to the measured σ (the dispatch's question):** c1's widest
+arm is BH at σ = 33.1 (s42; A's σ 4.9). The difference-of-means noise is
+σ_Δ ≈ √((33.1² + 4.9²)/n) = 33.5/√n. The effect to resolve is the
++13%-of-A class = +30 Mbit/s (s42 read +30.4; s7 +49.6):
+**n = 8 gives 2σ_Δ = 23.7 — resolves +30 at only 1.27× headroom; n = 12
+gives 2σ_Δ = 19.3 (1.55× on the worst seed, 2.6× on s7) and is the
+pre-registered minimum for c1.** Other cells n = 8. If BHU's σ lands in
+the uni-arm class (3.8–6.6), the margin becomes ~7×; sizing uses the
+worst measured σ, never the hoped-for one.
+
+**Falsifiers (both directions, to be finalized in the pre-registration
+proper):**
+
+* F1 — c1 gain: BHU/A − 1 ≤ 2σ_Δ on a seed ⇒ the banked +13–21% class
+  did not survive composition; no flip for `RWM_THREE_TERM`-family.
+* F2 — H1 completion: DHU/A outside 0.95–1.02 on a seed ⇒ the anchor
+  tax is NOT fully answered; the residual gets a new probe, no flip.
+* F3 — mechanism gauge (rule 1): `[SF]` zero-tick fraction, captured per
+  invocation on EVERY arm, must read < 5% on U-arms where the paired
+  non-U arm reads ≥ 20%. If the cap gauge does not move, no goodput
+  number may be attributed to the path-set fix, whatever it reads.
+* F4 — CPU: DHU/BHU sender CPU/byte ≤ 1.05×A at c1/c7, else the
+  mechanism claim is withdrawn (headroom absorbed a tax).
+* F5 — regressions: any cell > 2σ down on either seed in a candidate arm
+  denies that arm's flip. c8 is the pre-named risk (the uni battery's
+  −19.6% s7 collapse class); if it fires, the successor is the pooled
+  ceiling composed with the unified set (already named by the store-cap
+  battery), not a re-run.
+* F6 — sc2's halved RTT must survive at parity in BHU.
+* F7 — `RWM_HONEST_ANCHOR`-alone default flip (the ack-merge precedent):
+  scored purely as no-regression + CPU ≤ 1.0+2σ everywhere; it is
+  value-identical, so ANY throughput movement beyond noise is an
+  instrument alarm, not a result.
+
+**Liveness set:** two-sided `[GATES]` on all five gates; ACTIVE echoes
+(honest-anchor, honest-K, `"unified store-cap path set ACTIVE"`) present
+on exactly their arms; `[SF]` + CPU gauge + `tc -s qdisc` every
+invocation; `RWM_DIAG=1` everywhere; the jit25 DIAG must include the
+in-cell RTprop/srtt pair so the relation-form criterion is computable
+from the run's own gauges (and the RTT-sample cadence becomes readable —
+the one Probe-2 input that could not be pinned locally).
+
+### WHAT THIS PHASE DOES NOT LICENSE
+
+No default changed (`RWM_HONEST_ANCHOR`, `RWM_HONEST_K`, `RWM_PLAIN_RS`,
+`RWM_THREE_TERM`, `RWM_STORE_CAP_UNIFIED` all remain OFF). No cell was
+run; no battery number was produced. The DH+U/BH+U compositions carry NO
+measured c1 number until the flip battery runs. The seam extraction
+(`copa_attribute_newly`) is mechanical with its sole caller unchanged;
+gates on the final tree: lib 392, math, --doc, gate_suite --release,
+the nine loopbacks, `honest_inputs_bench` both arms, three-term
+loopback — all green (pass counts in the phase-3 commits).
