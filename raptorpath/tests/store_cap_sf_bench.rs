@@ -459,7 +459,44 @@ pub struct AckShape {
     xanchor: f64,
     /// READOUT 3, `xanchor` min/max over the 12 windows.
     xanchor_range: (f64, f64),
+    /// READOUT 3, `RTprop ms` column — **the anchor's own `min_rtt`**, i.e.
+    /// exactly the `min_rtt` `copa_bdp_anchor()` multiplied by (goal-gate
+    /// "SF Bench on Measured Inputs", definitional correction (a)). Seconds.
+    ///
+    /// Added by goal-gate "Cap-Refresh Warmth": with it the wire's anchor is
+    /// RECONSTRUCTIBLE in symbols rather than only as a dimensionless ratio —
+    /// `xanchor := copa_bdp_anchor()/(rate_lr·RTprop)` inverts EXACTLY to
+    /// `anchor = xanchor · rate_lr · RTprop` ([`AckShape::anchor_sym`]), which
+    /// is the term the store-cap Σ actually adds up.
+    rtprop_s: f64,
 }
+
+impl AckShape {
+    /// The wire's own `copa_bdp_anchor()` for this path, IN SYMBOLS — the
+    /// store-cap Σ's per-path term, reconstructed from READOUT 3 by inverting
+    /// the definition of `xanchor`. No modelling and no fitting: three
+    /// measured columns multiplied.
+    ///
+    /// This is NOT `rate_configured · RTT_configured · xanchor`. The wire's
+    /// realized `rate_lr` is 0.67–0.69× the cells' nominal symbol rates and
+    /// its RTprop is 0.64–1.05× their configured RTTs, so the two differ by
+    /// **1.4–2.3× per path** — the same "scale by the path's REALIZED ack
+    /// rate, not its link capacity" caveat the measured-inputs section stated
+    /// for the ack MODEL and did not apply to the Σ.
+    fn anchor_sym(&self) -> f64 {
+        self.xanchor * self.rate_lr * self.rtprop_s
+    }
+}
+
+/// The Σ at which the shipped pooled law STOPS responding to the anchor.
+///
+/// `cap = clamp(gain·N·Σ, floor, N·knee)` is ceiling-pinned exactly when
+/// `gain·N·Σ ≥ N·knee`, i.e. when `Σ ≥ knee/gain` — **the `N` cancels**. The
+/// pin threshold on the anchor SUM is a per-path constant, identical at every
+/// path count, and at the shipped `knee = 2048`, `gain = 2` it is 1024
+/// symbols. Pinned by
+/// `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`.
+const SIGMA_PIN: f64 = KNEE as f64 / GAIN;
 
 /// `c2r100/p0` — single 100 MB, the reference cell. READOUT 1+2 row 1,
 /// READOUT 3 row 1, READOUT 3b row 1.
@@ -473,6 +510,7 @@ const ACK_C2R100_P0: AckShape = AckShape {
     samples_s: 744.0,
     xanchor: 5.94,
     xanchor_range: (4.04, 9.28),
+    rtprop_s: 0.1004, // READOUT 3, `RTprop ms` = 100.4
 };
 
 /// `c7/p0` — c2/c2 dual 200 MB, leg 0. READOUT 1+2 row 2 / 3 row 2 / 3b row 2.
@@ -486,6 +524,7 @@ const ACK_C7_P0: AckShape = AckShape {
     samples_s: 536.0,
     xanchor: 9.80,
     xanchor_range: (8.14, 11.95),
+    rtprop_s: 0.0077, // READOUT 3, `RTprop ms` = 7.7
 };
 
 /// `c7/p1` — the symmetric dual's other leg. Rows 3 / 3 / 3.
@@ -499,6 +538,7 @@ const ACK_C7_P1: AckShape = AckShape {
     samples_s: 536.0,
     xanchor: 10.11,
     xanchor_range: (8.06, 10.57),
+    rtprop_s: 0.0097, // READOUT 3, `RTprop ms` = 9.7
 };
 
 /// `c8/p0` — the asymmetric dual's FAST (c2) leg. Rows 4 / 4 / 4.
@@ -512,6 +552,7 @@ const ACK_C8_P0: AckShape = AckShape {
     samples_s: 415.0,
     xanchor: 13.29,
     xanchor_range: (7.79, 27.34),
+    rtprop_s: 0.0084, // READOUT 3, `RTprop ms` = 8.4
 };
 
 /// `c8/p1` — the asymmetric dual's SLOW (c3) leg, the one that stalls to
@@ -526,6 +567,7 @@ const ACK_C8_P1: AckShape = AckShape {
     samples_s: 258.0,
     xanchor: 13.82,
     xanchor_range: (7.35, 27.56),
+    rtprop_s: 0.0386, // READOUT 3, `RTprop ms` = 38.6
 };
 
 /// The measured cells, path by path. `sc2` is the bench's single-fast cell and
@@ -3606,5 +3648,275 @@ fn pooled_unified_candidate_introduces_no_constant() {
                 "N={n}: candidate {cand} ×{n} != shipped {shipped}"
             );
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  goal-gate "Cap-Refresh Warmth" — WHICH REFRESH REGIME THE WIRE IS IN
+//
+//  The preceding section handed over a CONTRADICTION: its arithmetic said the
+//  wire's store cap must be pinned at `N·knee`, and it believed the wire said
+//  it could not be, "because U demonstrably moves c8's zero-fraction 4% → 30%
+//  there and a pinned cap forbids that".
+//
+//  The contradiction dissolves, and it dissolves against the WIRE PREMISE.
+//  Two independent readings, both already on disk before this section
+//  existed:
+//
+//   1. THE REALIZED CAP. `win=occ/cap`'s `cap` field IS `dyn_store_cap`
+//      (`net/mod.rs:4971` — `effective_store_cap = dyn_store_cap` whenever
+//      `plain_dyn_cap`), and the L1 batteries record its median per rep as
+//      `occcap_p50`. Over **178 dual-cell reps from five independent
+//      sessions** it reads **exactly 4096 = 2·knee** in 69/69 c7-A reps and
+//      52/57 c8-A reps, with `capboot_frac` (cap ≤ boot = 128) **0.0000 in
+//      every single one**. The wire IS at its ceiling.
+//
+//   2. THE 7.5× "U-FOLD" IS NOT A FOLD IN THE CAP. `fold` is
+//      `mean(AU zero%)/mean(A zero%)` — a ratio of the `[SF]` gauge, whose
+//      `store_cap_sf_record(live, act)` call (`net/mod.rs:4586`) runs on BOTH
+//      arms and is CONSUMED on neither under U: with `RWM_STORE_CAP_UNIFIED`
+//      the Σ ranges over `live`, so an empty `active_paths()` cannot reach
+//      the cap at all. Under U the zero-fraction is a pure OBSERVATION.
+//      A pinned cap therefore forbids nothing, and no unsaturated cap was
+//      ever required.
+//
+//  What U really does at c8 is smaller and measurable: it converts the ~36%
+//  of refreshes the `active_paths()` filter leaves with ONE leg in the Σ
+//  (interior cap ≈2936–3102) and the ~4.6% it leaves EMPTY (boot cap 128)
+//  into the 4096 ceiling — the MEDIAN is unchanged, the MEAN moves ≈3520 →
+//  4096. The tests below pin the arithmetic that makes that the whole story.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The wire's realized store cap at the dual cells, transcribed from the L1
+/// per-rep ledgers (`docs/l1-raw/*.log`, the `FLIPRESULT`/`HIRESULT`/
+/// `LATRESULT` JSON rows, field `occcap_p50` = median of `win=occ/cap`'s cap
+/// over that rep's steady `[DIAG]` samples; `capboot_frac` = the share of the
+/// same samples with cap ≤ 128).
+struct WireCap {
+    cell: &'static str,
+    arm: &'static str,
+    /// Reps that reported a cap at all.
+    reps: usize,
+    /// Of those, how many read a median cap of exactly `2·KNEE` = 4096.
+    at_ceiling: usize,
+    /// The WORST `capboot_frac` over those reps.
+    max_capboot: f64,
+}
+
+/// Five independent sessions (`flip`, `flip-topup`, `honestinputs`,
+/// `latlever`, `uniflip`, `uniflip-topup`), two seeds, pooled ONLY for the
+/// count of reps whose median cap is the ceiling — no goodput statistic is
+/// pooled here and none is claimed (the documented 2.3× same-config drift
+/// forbids that; a cap that reads the same integer in every session does not
+/// care).
+const WIRE_CAPS: &[WireCap] = &[
+    WireCap { cell: "c7", arm: "A", reps: 69, at_ceiling: 69, max_capboot: 0.0 },
+    WireCap { cell: "c7", arm: "AU", reps: 26, at_ceiling: 26, max_capboot: 0.0 },
+    WireCap { cell: "c8", arm: "A", reps: 57, at_ceiling: 52, max_capboot: 0.0 },
+    WireCap { cell: "c8", arm: "AU", reps: 26, at_ceiling: 26, max_capboot: 0.0 },
+];
+
+/// THE PIN THRESHOLD IS PATH-COUNT-FREE, and it is `knee/gain`.
+///
+/// `clamp(gain·N·Σ, floor, N·knee)` saturates iff `gain·N·Σ ≥ N·knee` iff
+/// `Σ ≥ knee/gain`. The `N` cancels — so "does the anchor still steer the
+/// cap?" is a question about the anchor SUM alone, answerable without knowing
+/// the geometry, and at the shipped constants the answer flips at **1024
+/// symbols**. Every regime claim in this section rests on this one line.
+#[test]
+fn the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free() {
+    assert_eq!(SIGMA_PIN, 1024.0);
+    for n in 2..=8usize {
+        let ceiling = n * KNEE;
+        // Just below: strictly interior, and the law is still degree-1.
+        let below = shipped_chain(SIGMA_PIN * 0.99, n);
+        assert!(below < ceiling, "N={n}: Sigma just under the threshold pinned at {below}");
+        assert_eq!(below, (GAIN * n as f64 * SIGMA_PIN * 0.99).ceil() as usize);
+        // At and above: pinned, and INSENSITIVE to the anchor.
+        assert_eq!(shipped_chain(SIGMA_PIN, n), ceiling, "N={n}");
+        assert_eq!(shipped_chain(SIGMA_PIN * 100.0, n), ceiling, "N={n}");
+    }
+}
+
+/// THE ONLY THREE REACHABLE REGIMES AT A DUAL, and the two that are not.
+///
+/// Enumerated by reading the refresh block (`net/mod.rs:4382-4799`) at the
+/// batteries' resolved arms — every experiment gate off, so the chain is
+/// `path_scaled_store_cap` → legacy `gain·Σ` → `store_boot_cap`:
+///
+///  * **ceiling-pinned** — `Σ ≥ 1024`;
+///  * **interior** — `0 < Σ < 1024`, the only regime in which the anchor (and
+///    therefore U's choice of path set) can move the cap at all;
+///  * **boot fallback (128)** — `Σ == 0`, i.e. the summed set contributed no
+///    warm anchor. Under U the set is `live_paths()`, which is non-empty
+///    whenever the transfer is running, so this regime is UNREACHABLE on a
+///    U arm by construction.
+///
+/// NOT reachable at the duals, and each killed by arithmetic rather than by
+/// measurement:
+///
+///  * **the `floor` clamp (64)** would need `gain·N·Σ < 64`, i.e. `Σ < 16`
+///    symbols at N = 2 — far below the smallest single-leg anchor the wire
+///    ever reported. A warm anchor cannot get there.
+///  * **the `store_max` (1024) latch** is the `n_live < 2` law, so it cannot
+///    be seen at a cell where both legs are up; it is what `sc2`/`c2r100`
+///    read, and they read exactly 1024 in every session.
+#[test]
+fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
+    // Boot: the empty set, at any live count.
+    assert_eq!(shipped_chain(0.0, 2), BOOT);
+    // The floor is a REAL branch of the law, just an unreachable one here: it
+    // binds for Sigma below 16 symbols at N = 2 and nowhere above.
+    assert_eq!(shipped_chain(1.0, 2), FLOOR);
+    assert_eq!(shipped_chain(16.0, 2), FLOOR);
+    assert!(shipped_chain(17.0, 2) > FLOOR);
+    // Interior: strictly between, degree-1 in the anchor.
+    for sigma in [17.0, 100.0, 512.0, 1023.0] {
+        let cap = shipped_chain(sigma, 2);
+        assert!(cap > FLOOR && cap < 2 * KNEE, "Sigma {sigma}: cap {cap} not interior");
+        assert_eq!(cap, (GAIN * 2.0 * sigma).ceil() as usize);
+    }
+    // The floor is unreachable from ANY warm single-leg anchor the wire
+    // measured — the smallest is c7/p0's, and it clears the floor's Sigma by
+    // more than an order of magnitude.
+    let smallest = ACK_ALL
+        .iter()
+        .skip(1) // c2r100 is the N = 1 cell, whose law is the store_max latch
+        .map(|s| s.anchor_sym())
+        .fold(f64::INFINITY, f64::min);
+    let floor_sigma = FLOOR as f64 / (GAIN * 2.0); // 16 symbols
+    assert!(
+        smallest > 40.0 * floor_sigma,
+        "the floor clamp is within reach of a warm anchor: smallest leg {smallest:.0} \
+         vs the floor's Sigma {floor_sigma:.0}"
+    );
+    // N = 1 is the store_max latch, not the pooled ceiling — and it is what
+    // the single cells measure (occcap_p50 = 1024 at both sc2 and c2r100).
+    assert_eq!(shipped_chain(ACK_C2R100_P0.anchor_sym(), 1), STORE_MAX);
+}
+
+/// THE WIRE'S OWN ANCHORS PIN THE LAW WITH BOTH LEGS AND FREE IT WITH ONE.
+///
+/// Reconstructed from READOUT 3 by inverting `xanchor` — three measured
+/// columns multiplied, nothing modelled. The result is the section's central
+/// number and it is not close to the threshold in either direction:
+///
+/// | cell | Σ both legs | ×`SIGMA_PIN` | one leg | ×`SIGMA_PIN` |
+/// |---|---|---|---|---|
+/// | c7 | 1635 | 1.60 | 712 / 924 | 0.70 / 0.90 |
+/// | c8 | 1510 | 1.47 | 776 / 734 | 0.76 / 0.72 |
+///
+/// So at BOTH duals the shipped law is **pinned whenever both legs are in the
+/// Σ and interior whenever exactly one is** — which makes the `[SF]` gauge's
+/// short-tick fraction the cap's regime mixture directly, and makes the
+/// realized median cap 4096 an arithmetic PREDICTION rather than a surprise.
+/// It is confirmed by 121/126 dual reps reading exactly that integer.
+#[test]
+fn the_wires_measured_anchors_pin_both_legs_and_free_one_leg_at_both_duals() {
+    for (cell, legs) in [("c7", &ACK_C7), ("c8", &ACK_C8)] {
+        let sigma_both: f64 = legs.iter().map(|s| s.anchor_sym()).sum();
+        assert!(
+            sigma_both > SIGMA_PIN,
+            "{cell}: Sigma over both legs {sigma_both:.0} does not reach the pin \
+             threshold {SIGMA_PIN:.0} — the wire's median cap could not be the ceiling"
+        );
+        assert_eq!(shipped_chain(sigma_both, 2), 2 * KNEE, "{cell} both legs");
+        for leg in legs.iter() {
+            let one = leg.anchor_sym();
+            assert!(
+                one < SIGMA_PIN,
+                "{}: one leg alone {one:.0} still pins — U would be arithmetically \
+                 inert at this cell",
+                leg.row
+            );
+            let cap = shipped_chain(one, 2);
+            assert!(
+                cap < 2 * KNEE && cap > 2_500,
+                "{}: single-leg cap {cap} is not the interior regime this section \
+                 attributes the U effect to",
+                leg.row
+            );
+        }
+    }
+}
+
+/// **THE CORRECTION TO THE PREDECESSOR.** Its Σ is 1.8× the wire's, because
+/// it multiplies the measured `xanchor` by the cells' CONFIGURED rate and RTT
+/// (10 400 / 2 000 sym/s at 8 / 60 ms) instead of the wire's own measured
+/// `rate_lr` and `RTprop` (6 948 / 1 376 sym/s at 8.4 / 38.6 ms) — the same
+/// "scale by the path's REALIZED ack rate, not its link capacity" caveat its
+/// own section (b) stated for the ack MODEL and did not carry into the Σ.
+///
+/// The inflation is not cosmetic: it lands on the OTHER SIDE of the pin
+/// threshold for the single-leg Σ, and that single comparison is what its
+/// FINDING 1 rests on.
+///
+///  * on the bench's Σ, dropping the slow leg still clamps (4423 > 4096) ⇒
+///    "the shipped law is arithmetically INCAPABLE of expressing the U-fold";
+///  * on the WIRE's Σ, dropping either leg does NOT clamp (2936 / 3102) ⇒ U
+///    moves the cap on every short tick, which the `[SF]` gauge measures at
+///    **≈36% of c8 refreshes**.
+///
+/// The predecessor's `measured_over_read_saturates_the_knee_ceiling_and_
+/// collapses_the_u_fold` is left standing and unmodified — it is a true
+/// statement about the bench's own inputs, and it is the reason its AU arm
+/// cannot move. This test bounds the gap between those inputs and the wire's.
+#[test]
+fn the_predecessors_sigma_is_inflated_by_configured_rates_not_the_wires_realized_ones() {
+    let bench_fast = C2.0 * C2.1 * ACK_C8_P0.xanchor;
+    let bench_slow = C3.0 * C3.1 * ACK_C8_P1.xanchor;
+    let wire_fast = ACK_C8_P0.anchor_sym();
+    let wire_slow = ACK_C8_P1.anchor_sym();
+    // The predecessor's own printed numbers, re-derived here so a successor
+    // sees they are the same quantity and not a different definition.
+    assert!((bench_fast - 1105.7).abs() < 1.0 && (bench_slow - 1658.4).abs() < 1.0);
+    let ratio = (bench_fast + bench_slow) / (wire_fast + wire_slow);
+    assert!(
+        ratio > 1.7 && ratio < 2.0,
+        "the Sigma inflation moved: bench {:.0} vs wire {:.0} (x{ratio:.2})",
+        bench_fast + bench_slow,
+        wire_fast + wire_slow
+    );
+    // THE FLIP, stated as the two opposite verdicts on the same question.
+    assert_eq!(shipped_chain(bench_fast, 2), shipped_chain(bench_fast + bench_slow, 2));
+    assert_ne!(
+        shipped_chain(wire_fast, 2),
+        shipped_chain(wire_fast + wire_slow, 2),
+        "on the wire's own anchors, dropping a leg must CHANGE the cap — the whole \
+         U mechanism at c8 is that change"
+    );
+    assert_ne!(shipped_chain(wire_slow, 2), shipped_chain(wire_fast + wire_slow, 2));
+}
+
+/// THE WIRE'S REALIZED CAP, as the L1 ledgers already recorded it — the
+/// reading that settles the handover without a VM run.
+///
+/// This is a transcription gate, not a simulation: it asserts that the
+/// numbers this section's verdict quotes are the numbers in
+/// `docs/l1-raw/*.log`, and that they say "ceiling" rather than "boot". If a
+/// successor re-measures and gets something else, this is the row to change,
+/// and changing it re-scores the verdict instead of inheriting it as prose.
+#[test]
+fn the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff() {
+    for w in WIRE_CAPS {
+        let frac = w.at_ceiling as f64 / w.reps as f64;
+        assert!(
+            frac >= 0.9,
+            "{}-{}: only {}/{} reps read a median cap of 4096 — the wire is not \
+             ceiling-pinned and this section's verdict is wrong",
+            w.cell, w.arm, w.at_ceiling, w.reps
+        );
+        assert_eq!(
+            w.max_capboot, 0.0,
+            "{}-{}: the boot cliff was CONSUMED at a dual cell ({} of steady DIAG \
+             samples) — the c8 mechanism would then be the cliff after all",
+            w.cell, w.arm, w.max_capboot
+        );
+    }
+    // The U arms are pinned in EVERY rep, which is what "the Sigma ranges over
+    // live_paths()" predicts: the interior and boot regimes are unreachable
+    // there, so there is no dispersion left to have.
+    for w in WIRE_CAPS.iter().filter(|w| w.arm == "AU") {
+        assert_eq!(w.at_ceiling, w.reps, "{}-AU is not uniformly pinned", w.cell);
     }
 }
