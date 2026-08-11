@@ -24129,3 +24129,203 @@ suggested.
   The documented 2.3× same-nominal-config drift forbids it; every
   number above is same-session, and the two pools of THIS session are
   reported separately for the same reason.
+
+## c8 SF Mechanism — COMPONENT INVESTIGATION (2026-08-11, `feat/c8-sf-mechanism` from main@8079ecc) — MEASUREMENT DISCIPLINE 14. Takes the first item of the preceding section's DELIBERATELY NOT CONCLUDED list ("Why U's unified path set empties `active_paths()` at refresh at c8 and not at c1/sc2/c7 … goes to a component bench"). STRICTLY LOCAL, no VM, no L1 number re-derived. Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`.
+
+### THE QUESTION, and why it needed a CLOSED loop
+
+`store_cap_bench.rs` (the "Store-Cap Triplication" bench) answers the
+STATIC question — how much the cap differs when the Σ-base is filtered.
+It cannot answer this one, because the `[SF]` gauge is recorded
+UNCONDITIONALLY: at the call site in `net/mod.rs` the
+`let act = sched.active_paths()` line and the
+`store_cap_sf_record(live.len(), act.len())` call run on BOTH arms, and
+only the following line (`let set = if pol.store_cap_unified { &live }
+else { &act }`) is gated. **U cannot move the gauge directly.** It can
+only move it around the loop
+
+    cap → admission → in_flight → available() → active_paths() → cap
+
+so reproducing it at a component bench means CLOSING that loop. The new
+bench does: the real `Scheduler`/`PathState` (real Copa-lite cwnd, real
+`copa_bdp_anchor()`, the real `active_paths()`/`live_paths()`
+predicates, the real `place_costs` objective), a `MockClock`, a
+deterministic per-path bottleneck + Gilbert–Elliott link, the shipped
+dyn-cap chain on the shipped 5 ms cadence, and a seeded xorshift so the
+numbers are identical on every host and every run.
+
+### FINDING 1 — the load-bearing CODE FACT: `active_paths()` is an OBSERVABLE, never a brake
+
+Established by reading and PINNED against the real scheduler by
+`reliable_placement_does_not_filter_on_cwnd_headroom` (always-on):
+
+* The reliable source emitter picks with
+  `Scheduler::place_symbol(false, &[])` (`net/emit_source.rs`), whose
+  `place_costs` filters on **`p.active` ALONE**. There is no
+  `available() > 0` filter on the reliable data path — unlike
+  `best_source_path()` and `schedule()`, which DO filter and which the
+  reliable emitter does not use.
+* Therefore `in_flight_i` may exceed `cwnd_i` without bound, and
+  `available()` reads 0 and STAYS 0 until acks drain it.
+* The admission gate at the battery's arms is
+  `reliable && (store_len >= effective_store_cap || cwnd_full)`, and
+  `cwnd_full` is FALSE there (`RWM_INFL_CAP` defaults to 0). **The store
+  cap is the only brake on outstanding.**
+
+So `active_paths()` at the dyn-cap phase does not restrain saturation —
+it merely REPORTS the saturation the store cap itself produced. The test
+asserts all four halves together (filter empty, `best_source_path()`
+`None`, `schedule()` empty, `place_probs` still 2-wide), so if the
+reliable path ever gains an availability filter the gauge's meaning
+changes loudly rather than silently.
+
+### FINDING 2 — THE MECHANISM: U deletes a CLIFF that was acting as the loop's only stabiliser
+
+Pinned by `empty_active_set_is_a_cliff_not_a_taper` (always-on).
+
+Under the shipped law an empty `active_paths()` is not a taper. It is a
+**cliff**: `path_scaled_store_cap` returns `None` at `pipe_sum <= 0`,
+the `bdp > 0.0` arm is skipped, and the chain falls all the way through
+to `store_boot_cap`. At the cells' own parameters:
+
+| set | c8 (N = 2) cap | c1/sc2 (N = 1) cap |
+|---|---|---|
+| both paths in Σ | **813** | 832 (legacy anchor ×5) |
+| fast path only | 333 | — |
+| **empty ⇒ boot** | **128** (×6.4 step) | **128** (×6.5 step) |
+
+That cliff is a strong negative feedback the legacy arm gets for free:
+the instant every path is cwnd-saturated the store cap drops ≥6×,
+admission stops, the paths drain, and `active_paths()` repopulates. **U
+removes it entirely** — under U the Σ ranges over `live_paths()`, which
+is never empty while the transfer is up, so the empty state carries no
+consequence and simply persists.
+
+This also re-reads the two measured results as ONE mechanism seen from
+two sides, which the RESULTS section could only report as "two different
+mechanisms": at c1 the cliff is a COST (capboot 30% → 0% under U, +13%,
+U2 green) and at c8 the same cliff is a STABILISER whose removal is the
+harm. It is the same `bdp = 0 ⇒ boot` branch in both.
+
+### FINDING 3 — THE REPRODUCTION, and the honest limit of it
+
+Deterministic, 20 s simulated, `zero%` = `[SF]` zero-fraction:
+
+```
+cell                      A (U=0)   AU (U=1)   fold   mean cap A→AU   goodput A→AU
+sc2  single fast            54.2%      53.5%   1.0x       163→ 266    10261→10261
+sc3  single slow            89.4%     100.0%   1.1x       144→ 416     1957→ 1957
+c7   dual symmetric          9.0%      99.4%  11.0x       376→1260    18206→20520
+c8   dual asym (rate+RTT)   40.9%      99.7%   2.4x       372→2181    11842→12208
+c8r  dual asym RATE only     8.7%      86.1%   9.9x       198→ 596    11910→12212
+c8t  dual asym RTT only     39.7%      99.6%   2.5x       780→3527    17036→20361
+```
+
+**REPRODUCED:** U's direction and its cause. At every dual U raises the
+zero-fraction AND raises the mean store cap 3–6×, and the two move
+together — which is the loop of FINDING 2 running. Pinned by
+`unified_raises_the_sf_zero_fraction_at_every_dual` (always-on).
+
+**NOT REPRODUCED — stated plainly, not buried:** the CELL SPECIFICITY.
+The L1 battery found the fold at c8 and NOT at c1/sc2/c7; this bench
+folds at c7 (11.0×) at least as hard as at c8 (2.4×). So the c8-keying
+does **not** fall out of the cap/placement/cwnd/loss loop as modelled,
+and no explanation of the c8-keying is offered here. Per the standing
+rule (reproduce before explaining), the mechanism above is claimed ONLY
+for what reproduced: U removes the cliff, everywhere.
+
+The named suspect for the gap, so a successor can attack it directly:
+**the bench's Copa reads an HONEST anchor and the engine's does not.**
+The bench acks per-symbol at the true delivery instants, so its
+ack-interval rate sampler cannot over-read; the engine's legacy
+ack-interval anchor over-reads ×4.6–7.4 (measured, "Anchor Hygiene"
+(b); `store_cap_bench.rs` carries it as `OVERREAD = 5.0`), and that
+anchor is also the cwnd floor via `clamp_cwnd_with_anchor`. A ×5 cwnd
+floor is exactly what would keep `available() > 0` at the fast
+symmetric cells while leaving the slow asymmetric one exposed. Testing
+that needs batched cumulative acks in the bench, which is the next
+component step and was not taken here.
+
+### FINDING 4 — the loop is BISTABLE, which is why the cell reads as a MODE
+
+The diagonal sweep (rate ÷ d and RTprop × d together — the c8 direction,
+anchor held constant) shows the legacy arm switching regime, not sliding:
+
+```
+   d   drain ms   A zero%   AU zero%     fold
+ 1.0        8.0      9.3%      99.4%    10.6x
+ 2.0       16.0     13.9%      99.9%     7.2x
+ 3.0       24.0     33.4%      88.0%     2.6x
+ 5.2       41.6      0.2%      93.2%   528.6x
+ 7.5       60.0      0.3%      90.7%   360.1x
+```
+
+At d = 5.2–7.5 — the c8 direction — the legacy arm's cliff catches the
+loop early and pins it at **0.2–0.3%** (the L1 legacy arm's ≈4% class),
+while U sits at ~91–93%. Small parameter moves flip the legacy arm
+between the caught and uncaught regimes. **A bistable loop produces a
+collapse MODE, not a shift** — which is independently what the L1 data
+shows at c8 (reps at 18.8/34.7/49.5 beside 80–83) and why that cell's
+dispersion is 41.7–46.1% of its mean. This is a mechanism-level reason
+the RESULTS section's closing requirement ("any c8 claim must be scored
+on a statistic that can resolve the effect") is not a statistical
+inconvenience but a property of the system: **a mean over a bistable
+loop is the wrong statistic, at any n.** A successor should score the
+MODE RATE, not the mean.
+
+### THE CANDIDATE — pooled ceiling + unified set, MEASURED at the bench, NOT shipped
+
+The successor the pre-registration already named. It is a pure DELETION
+— drop the `×N` COUNT multiplier from `path_scaled_store_cap`, keep the
+N·knee ceiling, take the Σ over `live_paths()`:
+`cap = clamp(gain·Σ_live, floor, N·knee)`. **Zero new constants**, and
+bit-identical at N = 1. Pinned by
+`pooled_unified_candidate_introduces_no_constant`. At the bench (`P`
+arm of the run above):
+
+| cell | A zero% | AU zero% | **P zero%** | A goodput | AU goodput | **P goodput** |
+|---|---|---|---|---|---|---|
+| c7 | 9.0% | 99.4% | **8.5%** | 18206 | 20520 | **19512** |
+| c8 | 40.9% | 99.7% | **35.1%** | 11842 | 12208 | **12159** |
+| c8r | 8.7% | 86.1% | **20.6%** | 11910 | 12212 | **11850** |
+| c8t | 39.7% | 99.6% | **98.5%** | 17036 | 20361 | **20313** |
+
+At c7 and c8 P is the only arm that takes the unified set's goodput
+WITHOUT the saturation — zero-fraction at or below the shipped arm,
+goodput within 1% of U. At the RTT-only cell (c8t) it does not help at
+all: it tracks U. So the candidate is **promising but not established**,
+and on this bench's own admission (FINDING 3) the vehicle cannot yet
+discriminate the cell the decision rests on.
+
+**NOTHING IS SHIPPED.** No engine file is touched by this branch; no
+gate is added; `RWM_STORE_CAP_UNIFIED` stays `default false` with the
+reason the RESULTS section gave. The candidate exists here as a bench
+arm only, deliberately: adding a default-OFF engine gate for a law this
+bench cannot yet discriminate would buy an A/B arm that no battery could
+score, which is the failure mode the RESULTS section closed on.
+
+### WHAT THIS IMPLIES — a design choice, named
+
+The mechanism is not a bug with a derived fix. The shipped tree has been
+relying on an ACCIDENT: a data-scheduling filter, used in a law where
+the `live_paths()` decl comment says it should not be, happens to supply
+the only negative feedback that stops the store cap from running the
+pipes into saturation. Unifying the set is correct on its own terms — it
+is what makes the Σ and the ×N range over the same paths — and it
+removes that feedback at the same time. So the decision to make is:
+
+**what supplies the loop's stabiliser once the accidental one is gone?**
+The store cap is the sole brake (FINDING 1), so the answer has to live
+in the cap law itself, not in the path set. The candidate above is one
+answer (a smaller pool that never exceeds Σcwnd). It needs its own
+pre-registration and a statistic that resolves a bistable cell.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **The c8 cell specificity.** Not reproduced (FINDING 3). No
+  explanation of it is offered or implied.
+* **Whether the candidate helps at c8 in truth.** The bench cannot
+  discriminate the cell; the table above is a bench result, not a
+  recommendation.
+* **Any L1 claim.** This branch ran no VM and re-derived no L1 number;
+  every L1 figure quoted is cited from the RESULTS section above.
