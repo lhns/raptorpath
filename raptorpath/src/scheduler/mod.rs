@@ -341,7 +341,9 @@ pub fn floor_bound_active() -> bool {
 
 /// Whether the O(1) windowed-max rate filter is active for this process
 /// (`RWM_HONEST_ANCHOR`, goal-gate "Honest Inputs" — anchor-hygiene family
-/// member, default OFF; `RWM_ANCHOR_HYGIENE=1` turns the family on).
+/// member, **DEFAULT ON since 2026-08-11** per the flip battery's F7 and
+/// paper §16.51; `=0` is the re-runnable legacy-fold A/B arm, and the
+/// `RWM_ANCHOR_HYGIENE` umbrella still overrides in either direction).
 ///
 /// THE MECHANISM IT REPAIRS (measured, not argued): `CopaState`'s BtlBw
 /// windowed max (`max_bw`) is recomputed by a FULL-WINDOW FOLD over
