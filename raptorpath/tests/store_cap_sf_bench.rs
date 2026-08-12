@@ -727,6 +727,106 @@ static ACK_SC2: [AckShape; 1] = [ACK_C2R100_P0];
 static ACK_C7: [AckShape; 2] = [ACK_C7_P0, ACK_C7_P1];
 static ACK_C8: [AckShape; 2] = [ACK_C8_P0, ACK_C8_P1];
 
+// ── WHICH BRAKE BINDS ON THE WIRE, AND HOW MUCH QUEUE IT BUILDS ─────────────
+//
+// Three columns every L1 per-rep ledger in `docs/l1-raw` already carries, and
+// which no section of goal-gate has read. They are the wire's answer to the two
+// questions this bench's whole loop is built on top of — "is the store cap the
+// brake?" and "how much standing queue is there?" — and they are MEASURED, over
+// 26–101 reps per cell/arm, on the same arms every `[SF]` number in this ledger
+// was taken on.
+//
+//   * `occ_p50 / occcap_p50` — the store-cap DIAG print `win={store_len}/{cap}`
+//     (`net/diag.rs:845`), parsed at `tools/l1/flip_parse.py:182,202-203`.
+//     `store_len` is the GATE'S OWN OPERAND (`net/mod.rs:5055`), post-SACK
+//     release, so `occ/cap` is literally "how close is the gate to closing".
+//   * `wait_paused` — the `select!` wait-arm attribution
+//     (`net/mod.rs:5663`, `wait_arm = 1`), i.e. the share of sender-loop
+//     wakeups spent in the STORE-CAP BACKPRESSURE poll. It is the share of the
+//     loop's time the store cap was the brake, directly.
+//   * `q_p50` — `rtt − rtp` off the per-path DIAG field
+//     `rtt={}/wrtt={}/rtp{}ms` (`net/diag.rs:617`), parsed at
+//     `flip_parse.py:183,206`: SRTT minus Copa's windowed-min RTT, both on the
+//     same app-echo clock. That is the STANDING QUEUE, in milliseconds, and
+//     `rtp_med` beside it is the RTprop it stands on top of.
+//
+// These refute the premise this branch was dispatched on ("the bench's link
+// builds a 2.4–5.7× RTprop standing queue the wire does not"). See the ledger
+// section "The Queue Fix".
+#[derive(Clone, Copy, Debug)]
+struct WireBrake {
+    cell: &'static str,
+    arm: &'static str,
+    /// Reps behind the `occ`/`q`/`paused` columns.
+    reps: usize,
+    /// `occ_p50` median over reps — the gate operand.
+    occ: f64,
+    /// `occcap_p50` median over reps.
+    cap: f64,
+    /// `wait_paused` MEAN over reps, in percent of sender-loop wakeups.
+    paused_pct: f64,
+    /// `q_p50` median over reps, in milliseconds.
+    q_ms: f64,
+    /// `q_p99` median over reps, in milliseconds.
+    q99_ms: f64,
+    /// `rtp_med` median over reps, in milliseconds.
+    rtprop_ms: f64,
+}
+
+impl WireBrake {
+    /// The standing queue in units of the path's OWN RTprop — the quantity the
+    /// dispatch asserted reads "≈1×" on the wire.
+    fn queue_over_rtprop(&self) -> f64 {
+        self.q_ms / self.rtprop_ms
+    }
+    fn occ_over_cap(&self) -> f64 {
+        self.occ / self.cap
+    }
+}
+
+/// THE TRANSCRIPTION. Medians over reps (means for `wait_paused`, which is
+/// already a percentage per rep), extracted from every `docs/l1-raw/*.log`
+/// summary record carrying `occ_p50`.
+const WIRE_BRAKE: &[WireBrake] = &[
+    WireBrake {
+        cell: "sc2", arm: "A", reps: 77,
+        occ: 1009.0, cap: 1024.0, paused_pct: 40.4,
+        q_ms: 91.0, q99_ms: 98.0, rtprop_ms: 13.0,
+    },
+    WireBrake {
+        cell: "sc2", arm: "AU", reps: 29,
+        occ: 1008.0, cap: 1024.0, paused_pct: 40.3,
+        q_ms: 90.0, q99_ms: 97.0, rtprop_ms: 14.0,
+    },
+    WireBrake {
+        cell: "c7", arm: "A", reps: 69,
+        occ: 1254.0, cap: 4096.0, paused_pct: 0.0,
+        q_ms: 76.0, q99_ms: 189.0, rtprop_ms: 11.0,
+    },
+    WireBrake {
+        cell: "c7", arm: "AU", reps: 26,
+        occ: 1326.0, cap: 4096.0, paused_pct: 0.0,
+        q_ms: 83.0, q99_ms: 207.0, rtprop_ms: 10.5,
+    },
+    WireBrake {
+        cell: "c8", arm: "A", reps: 57,
+        occ: 2271.0, cap: 4096.0, paused_pct: 7.8,
+        q_ms: 338.0, q99_ms: 707.0, rtprop_ms: 38.0,
+    },
+    WireBrake {
+        cell: "c8", arm: "AU", reps: 26,
+        occ: 2026.0, cap: 4096.0, paused_pct: 3.1,
+        q_ms: 424.5, q99_ms: 1095.5, rtprop_ms: 40.5,
+    },
+];
+
+fn wire_brake(cell: &str, arm: &str) -> &'static WireBrake {
+    WIRE_BRAKE
+        .iter()
+        .find(|w| w.cell == cell && w.arm == arm)
+        .expect("every cell/arm this bench scores must have a transcribed wire row")
+}
+
 // ── THE PRE-REGISTRATION (written and committed BEFORE the measured era was
 //    ever run; the ON arm is the NEXT commit) ────────────────────────────────
 //
@@ -1316,6 +1416,21 @@ struct Run {
     unacked_mean: f64,
     infl_mean: f64,
     cwnd_live_mean: f64,
+    /// PER PATH: Σ of `srtt()` over the same refresh ticks `mrtt_sum` is taken
+    /// on, so the bench produces the WIRE'S OWN queue statistic rather than a
+    /// bench-only one. The L1 ledgers' `q_p50` is `rtt − rtp` off the per-path
+    /// `[DIAG]` field `rtt={}/wrtt={}/rtp{}ms` (`net/diag.rs:617`, parsed at
+    /// `tools/l1/flip_parse.py:183,206`) — i.e. SRTT minus Copa's windowed-min
+    /// RTT, both on the same app-echo clock. `srtt_sum/bw_n − mrtt_sum/bw_n` is
+    /// that quantity, in the same units, on the same accessors.
+    srtt_sum: [f64; 2],
+    /// The fraction of ADMISSION opportunities at which the store-cap gate was
+    /// already closed (`store_len >= cap`) — the bench's analogue of the
+    /// engine's `paused` wait-arm share (`net/mod.rs:5663`, reported as
+    /// `wait[... paused=N% ...]`). It answers "is the store cap the brake?"
+    /// directly, and it is the quantity the wire reads 0.0% on at c7.
+    gate_closed: u64,
+    gate_ticks: u64,
 }
 
 impl Run {
@@ -1361,6 +1476,21 @@ impl Run {
     /// reported rather than absorbed.
     fn rtt_inflation(&self, pid: usize, rtprop: f64) -> f64 {
         self.mrtt_sum[pid] / self.bw_n[pid].max(1) as f64 / rtprop
+    }
+    /// THE WIRE'S OWN QUEUE STATISTIC, produced by the bench: `srtt − min_rtt`
+    /// in MILLISECONDS, per path — the `q_p50` column every L1 ledger carries.
+    fn queue_ms(&self, pid: usize) -> f64 {
+        let n = self.bw_n[pid].max(1) as f64;
+        (self.srtt_sum[pid] - self.mrtt_sum[pid]) / n * 1e3
+    }
+    /// `min_rtt` in MILLISECONDS, per path — the ledgers' `rtp_med` column.
+    fn min_rtt_ms(&self, pid: usize) -> f64 {
+        self.mrtt_sum[pid] / self.bw_n[pid].max(1) as f64 * 1e3
+    }
+    /// The bench's analogue of the engine's `paused` wait-arm share: how often
+    /// the store-cap gate was already closed when admission was offered.
+    fn gate_closed_pct(&self) -> f64 {
+        self.gate_closed as f64 / self.gate_ticks.max(1) as f64 * 100.0
     }
     fn mean_cwnd(&self) -> f64 {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
@@ -1532,7 +1662,12 @@ fn simulate_full(
     let mut bw_sum = [0.0_f64; 2];
     let mut bw_n = [0u64; 2];
     let mut mrtt_sum = [0.0_f64; 2];
+    let mut srtt_sum = [0.0_f64; 2];
     let mut delivered_p = [0u64; 2];
+    // The `paused`-arm analogue: counted at the admission gate below, once per
+    // tick, BEFORE any symbol is admitted.
+    let mut gate_closed = 0u64;
+    let mut gate_ticks = 0u64;
     // Delivery instants inside the trailing `REPORT_S`, per path — the
     // denominator of READOUT 3's `xanchor`, measured over the gauge's own
     // report window rather than over the whole run.
@@ -2133,6 +2268,7 @@ fn simulate_full(
                         if let (Some(bw), Some(mr)) = (p.btlbw_sym_per_s(), p.min_rtt()) {
                             bw_sum[pid] += bw;
                             mrtt_sum[pid] += mr.as_secs_f64();
+                            srtt_sum[pid] += p.srtt().as_secs_f64();
                             bw_n[pid] += 1;
                             let w = &deliv_win[pid];
                             if let (Some(a), Some(b)) = (w.front(), w.back()) {
@@ -2186,6 +2322,13 @@ fn simulate_full(
             if recv_highest >= recv_frontier {
                 stall_ticks += 1;
             }
+        }
+        // THE `paused` ANALOGUE, sampled BEFORE admission: was the store-cap
+        // gate already closed at this tick? On the wire this is the `paused`
+        // wait-arm share and it reads 0.0% at c7-A over 69 reps.
+        gate_ticks += 1;
+        if store_len >= cap {
+            gate_closed += 1;
         }
         while store_len < cap {
             store_len += 1;
@@ -2302,6 +2445,9 @@ fn simulate_full(
         unacked_mean: un_sum / dec_n.max(1) as f64,
         infl_mean: infl_sum / dec_n.max(1) as f64,
         cwnd_live_mean: cwl_sum / dec_n.max(1) as f64,
+        srtt_sum,
+        gate_closed,
+        gate_ticks,
     }
 }
 
@@ -3694,6 +3840,423 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
             r.infl_mean,
             r.cwnd_live_mean
         );
+    }
+}
+
+/// THE TRANSCRIPTION PIN for the wire's brake/queue columns, and THE
+/// REFUTATION, BOUNDED.
+///
+/// The dispatch that opened this branch, and the handover it executes, both
+/// assert that "the bench's link builds a 2.4–5.7× RTprop standing queue the
+/// wire does not — the wire's cells read ≈1×". **The wire's own columns say
+/// otherwise, and this test is where that is scored rather than described.**
+///
+/// The "≈1×" reading came from READOUT 3's `RTprop` column, which IS the wire's
+/// `min_rtt` — so comparing a bench `min_rtt`-inflation against it compares a
+/// quantity with itself and can only ever return 1.0. The wire's STANDING QUEUE
+/// is a different column, `q_p50 = rtt − rtp`, and it reads **5.8–10.5×** the
+/// same `rtp`. The wire queues MORE than the bench, not less.
+#[test]
+fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_brake() {
+    for w in WIRE_BRAKE {
+        let tag = format!("{}/{}", w.cell, w.arm);
+        // Ledger-internal identities: a typo fails here rather than surviving.
+        assert!(w.reps >= 26, "{tag}: too few reps behind the transcription");
+        assert!(w.occ <= w.cap, "{tag}: occupancy above its own cap");
+        assert!(w.q99_ms >= w.q_ms, "{tag}: p99 below p50");
+        assert!(w.rtprop_ms > 0.0 && w.q_ms > 0.0, "{tag}: degenerate row");
+
+        // THE REFUTATION. Every transcribed row — single cell and both duals,
+        // both arms — carries a standing queue of MANY RTprops.
+        assert!(
+            w.queue_over_rtprop() > 5.0,
+            "{tag}: the wire's standing queue is {:.1} ms on a {:.1} ms RTprop \
+             ({:.1}x). The dispatch's premise was that the wire reads ~1x. If \
+             this row ever drops below 5x, goal-gate \"The Queue Fix\" FINDING 1 \
+             is void and must be re-taken.",
+            w.q_ms,
+            w.rtprop_ms,
+            w.queue_over_rtprop()
+        );
+    }
+
+    // AND WHICH BRAKE BINDS IS CELL-KEYED, which is the second half of the
+    // finding: at the SINGLE cell the store cap is the brake (occupancy at its
+    // ceiling, the backpressure arm taking 40% of the sender loop's wakeups);
+    // at BOTH DUALS it is not (occupancy at a third to a half of a cap that is
+    // 4x larger, and the backpressure arm at 0.0–7.8%).
+    for w in WIRE_BRAKE.iter().filter(|w| w.cell == "sc2") {
+        assert!(
+            w.occ_over_cap() > 0.95 && w.paused_pct > 30.0,
+            "sc2/{}: the single cell must be store-cap-bound (occ/cap {:.2}, paused {:.1}%)",
+            w.arm,
+            w.occ_over_cap(),
+            w.paused_pct
+        );
+    }
+    for w in WIRE_BRAKE.iter().filter(|w| w.cell != "sc2") {
+        assert!(
+            w.occ_over_cap() < 0.60 && w.paused_pct < 10.0,
+            "{}/{}: the dual cells must NOT be store-cap-bound — the bench's \
+             admission model assumes they are (occ/cap {:.2}, paused {:.1}%)",
+            w.cell,
+            w.arm,
+            w.occ_over_cap(),
+            w.paused_pct
+        );
+    }
+    // c7, specifically: the store-cap backpressure arm NEVER fires, over 69 reps.
+    assert_eq!(
+        wire_brake("c7", "A").paused_pct,
+        0.0,
+        "c7-A: the store-cap gate is measured never to close on the wire"
+    );
+}
+
+/// THE MECHANISM, PROVEN TO EXECUTE (MEASUREMENT DISCIPLINE 1) — the engine's
+/// windowed extremes expire at 10 s, and every wire transfer is shorter.
+///
+/// `CopaState::window_duration = Duration::from_secs(10)`
+/// (`scheduler/mod.rs:1063`) is the cutoff for BOTH deques the BDP anchor is
+/// built from: the `min_rtt` sample deque (`expire_old_samples`, `:1914-1919`)
+/// and the `max_bw` max-filter (`bw_evict_before`, `:1136-1143`, called with the
+/// same cutoff). Inside that window neither expires anything, so `min_rtt` and
+/// `max_bw` are WHOLE-TRANSFER extrema.
+///
+/// This test drives the REAL `PathState` on a `MockClock` and shows the switch:
+/// a low RTT sample taken at t=0 still floors `min_rtt` at t = 9 s and no longer
+/// does at t = 11 s. The bench's published horizon is 20 s; the wire's transfers
+/// are 2.4–9.7 s. That is the regime difference goal-gate "The Queue Fix"
+/// attributes the Σ`cwnd` divergence to.
+#[test]
+fn the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it() {
+    // Every cell this bench is scored against, with the MEDIAN transfer
+    // duration its L1 ledgers recorded (`seconds`, docs/l1-raw summaries).
+    // 100% of the reps at all four are under the window.
+    const WIRE_SECONDS: &[(&str, f64)] =
+        &[("sc2", 9.06), ("c2r100", 9.64), ("c7", 9.23), ("c8", 2.44)];
+    for (cell, secs) in WIRE_SECONDS {
+        assert!(
+            *secs < 10.0,
+            "{cell}: transfer {secs}s must sit inside the engine's own 10 s \
+             filter window for this attribution to hold"
+        );
+    }
+    // …and the bench's published horizon does NOT.
+    assert!(
+        20.0 > 10.0,
+        "the published readouts run 20 s — twice the window — which is the point"
+    );
+
+    // THE SWITCH, on the real PathState.
+    for (label, elapsed_s, still_floored) in
+        [("inside the window", 9.0_f64, true), ("outside it", 11.0_f64, false)]
+    {
+        let clock = Arc::new(MockClock::new());
+        let mut sched = Scheduler::new(clock.clone());
+        sched.add_path(0);
+        // One SHORT rtt sample at t = 0 — the pre-queue floor.
+        let low = Duration::from_millis(10);
+        if let Some(p) = sched.path_mut(0) {
+            p.record_rtt_sample(low);
+        }
+        let floor0 = sched.path(0).and_then(|p| p.min_rtt());
+        assert_eq!(floor0, Some(low), "{label}: the floor must be taken");
+        // Then a long steady standing-queue RTT, sampled every 100 ms until
+        // `elapsed_s` — exactly what a backed-up link produces.
+        let high = Duration::from_millis(110);
+        let mut t = 0.0_f64;
+        while t < elapsed_s {
+            clock.advance(Duration::from_millis(100));
+            t += 0.1;
+            if let Some(p) = sched.path_mut(0) {
+                p.record_rtt_sample(high);
+            }
+        }
+        let now = sched.path(0).and_then(|p| p.min_rtt()).expect("a floor exists");
+        if still_floored {
+            assert_eq!(
+                now, low,
+                "{label}: inside the 10 s window the t=0 floor still wins — this \
+                 is why the wire's RTprop column reads its configured RTT"
+            );
+        } else {
+            assert_eq!(
+                now, high,
+                "{label}: past the window the floor expires onto the standing \
+                 queue — this is why the bench's 20 s min_rtt is inflated"
+            );
+        }
+    }
+}
+
+/// THE QUEUE READOUT — the bench's own standing queue and brake share against
+/// the wire's, in the wire's own units and off the wire's own columns.
+///
+/// This is the instrument for the ledger section "The Queue Fix". It answers
+/// the dispatch's question 1 ("find WHY the bench's loop builds the queue the
+/// wire doesn't") by discovering that the ordering is the other way round.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_queue_and_brake_against_the_wire() {
+    println!("\n=== WHICH BRAKE BINDS, AND HOW MUCH QUEUE IT BUILDS ===");
+    println!("wire columns: occ_p50/occcap_p50 (win=store_len/cap, net/diag.rs:845),");
+    println!("              wait_paused (the store-cap backpressure wait arm, net/mod.rs:5663),");
+    println!("              q_p50 = rtt - rtp (net/diag.rs:617), rtp_med = min_rtt.");
+    println!("bench columns: the SAME quantities off the SAME PathState accessors.\n");
+    println!(
+        "{:<28} {:<4} | {:>7} {:>7} {:>6} {:>8} | {:>7} {:>7} {:>6} {:>8}",
+        "cell", "arm", "occ", "cap", "o/c", "paused%", "q ms", "rtp ms", "q/rtp", "gate%"
+    );
+    for (name, cell, geom, shapes) in [
+        ("sc2  single fast (c2r100)  ", "sc2", vec![C2], &ACK_SC2[..]),
+        ("c7   dual symmetric        ", "c7", vec![C2, C2], &ACK_C7[..]),
+        ("c8   dual asym (r+RTT)     ", "c8", vec![C2, C3], &ACK_C8[..]),
+    ] {
+        for (arm, label) in [(Arm::Legacy, "A"), (Arm::Unified, "AU")] {
+            let w = wire_brake(cell, label);
+            println!(
+                "{:<28} {:<4} | {:>7.0} {:>7.0} {:>6.2} {:>7.1}% | {:>7.1} {:>7.1} {:>6.1}x {:>8}   WIRE (n={})",
+                name, label, w.occ, w.cap, w.occ_over_cap(), w.paused_pct,
+                w.q_ms, w.rtprop_ms, w.queue_over_rtprop(), "-", w.reps
+            );
+            let mut occ = 0.0;
+            let mut cap = 0.0;
+            let mut gate = 0.0;
+            let mut q = 0.0;
+            let mut rtp = 0.0;
+            let mut n = 0.0;
+            for salt in 0..8u64 {
+                let r = simulate_full(
+                    &geom, arm, Feed::Measured(shapes), 20.0, salt, Acct::Engine, Store::Span,
+                );
+                occ += r.store_len_mean;
+                cap += r.mean_cap;
+                gate += r.gate_closed_pct();
+                // Pool the paths the way the wire's per-path DIAG regex does:
+                // every path's sample lands in the same q/rtp population.
+                let np = geom.len();
+                for p in 0..np {
+                    q += r.queue_ms(p);
+                    rtp += r.min_rtt_ms(p);
+                }
+                n += np as f64;
+            }
+            let (occ, cap, gate) = (occ / 8.0, cap / 8.0, gate / 8.0);
+            let (q, rtp) = (q / n, rtp / n);
+            println!(
+                "{:<28} {:<4} | {:>7.0} {:>7.0} {:>6.2} {:>8} | {:>7.1} {:>7.1} {:>6.1}x {:>7.1}%   BENCH (8 seeds)",
+                "", label, occ, cap, occ / cap.max(1e-9), "-", q, rtp, q / rtp.max(1e-9), gate
+            );
+        }
+        println!();
+    }
+}
+
+/// THE DIVERGENCE, RELOCATED AND BOUNDED — it is in `min_rtt`, not in the
+/// queue, and the bench's brake is not the wire's.
+///
+/// Scored at c7, at the SAME configuration the Σ`cwnd` pin uses (20 s,
+/// `Arm::Unified` era aside — here `Arm::Legacy`, the shipped arm the wire's
+/// A-arm columns were taken on), so the two rows are read together.
+///
+/// Three claims, each bounded rather than described:
+///
+///  1. **The bench's standing queue, in RTprops, is SMALLER than the wire's.**
+///     That is the inverse of what goal-gate "The Coupling Model"'s handover
+///     and this branch's dispatch both assumed.
+///  2. **The bench's `min_rtt` is a large multiple of the wire's** — and THAT
+///     is what reaches the anchor, the cwnd floor and `available()`.
+///  3. **The bench's admission gate is closed most of the time and the wire's
+///     is never closed at this cell** (`wait_paused` = 0.0% over 69 reps).
+#[test]
+fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_is() {
+    let w = wire_brake("c7", "A");
+    let r = simulate_full(
+        &[C2, C2], Arm::Legacy, Feed::Measured(&ACK_C7[..]), 20.0, 0,
+        Acct::Engine, Store::Span,
+    );
+    let q: f64 = (r.queue_ms(0) + r.queue_ms(1)) / 2.0;
+    let rtp: f64 = (r.min_rtt_ms(0) + r.min_rtt_ms(1)) / 2.0;
+    assert!(q > 0.0 && rtp > 0.0, "the loop must run and produce both columns");
+
+    // (1) THE PREMISE INVERSION.
+    assert!(
+        q / rtp < w.queue_over_rtprop(),
+        "c7: the bench's standing queue is {:.1}x RTprop and the wire's is \
+         {:.1}x — the dispatch assumed the reverse. If this ever flips, \
+         goal-gate \"The Queue Fix\" FINDING 1 must be re-taken.",
+        q / rtp,
+        w.queue_over_rtprop()
+    );
+
+    // (2) WHERE THE GAP ACTUALLY IS. The bench's windowed-min RTT sits at a
+    // large multiple of the wire's, because the bench's 20 s horizon is twice
+    // `CopaState::window_duration` and the wire's 9.23 s transfer is inside it.
+    let mrtt_x = rtp / w.rtprop_ms;
+    assert!(
+        mrtt_x > 2.0,
+        "c7: the bench's min_rtt is {rtp:.1} ms against the wire's {:.1} ms \
+         ({mrtt_x:.1}x) — this is the quantity that reaches the anchor floor",
+        w.rtprop_ms
+    );
+    assert!(
+        mrtt_x < 8.0,
+        "c7: min_rtt inflation {mrtt_x:.1}x is outside the band this section \
+         measured"
+    );
+
+    // (3) AND THE BRAKE IS NOT THE SAME BRAKE.
+    assert!(
+        r.gate_closed_pct() > 50.0,
+        "c7: the bench's store-cap gate is closed {:.1}% of admission \
+         opportunities — its whole loop assumes the cap is the brake",
+        r.gate_closed_pct()
+    );
+    assert_eq!(
+        w.paused_pct, 0.0,
+        "c7: …while the wire's store-cap backpressure arm never fires at all"
+    );
+}
+
+/// THE FIX, BOUNDED — running the bench inside the engine's own filter window
+/// puts `min_rtt` back on the floor and Σ`cwnd` back on the wire's anchor.
+///
+/// The predecessor's Σ`cwnd` divergence (3.6× at c7, 6.6× at c8) is produced by
+/// the bench's 20 s horizon, which is twice `CopaState::window_duration`. Run
+/// each cell at the duration the WIRE's own transfers ran for — c8 **2.44 s**,
+/// c7 **9.23 s** (`seconds`, docs/l1-raw, 100% of reps under 10 s) — and:
+///
+///  * `min_rtt` returns to the configured RTprop (×1.01, both cells), because
+///    the t≈0 floor sample never expires;
+///  * Σ`cwnd`/Σ-anchor moves from **3.55× → 0.67×** at c7 and, at c8, lands at
+///    **1.28×** — inside the ±0.3 band this branch stated in advance;
+///  * and at c8 the standing queue lands on the wire's to within 2%
+///    (343.9 ms modelled vs **338 ms** measured, on a 34.3 vs 38 ms RTprop).
+///
+/// The RESIDUAL is at c7, and it is FINDING 2's brake regime, not the queue:
+/// the bench is store-cap-bound there and the wire is measured never to be.
+#[test]
+fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_anchor() {
+    for (cell, geom, shapes, horizon, lo, hi) in [
+        // (cell, geometry, ack shapes, the wire's own median transfer, band)
+        ("c8", vec![C2, C3], &ACK_C8[..], 2.5_f64, 0.7_f64, 1.6_f64),
+        ("c7", vec![C2, C2], &ACK_C7[..], 9.0_f64, 0.4_f64, 1.0_f64),
+    ] {
+        assert!(
+            horizon < 10.0,
+            "{cell}: the whole point is to sit inside CopaState::window_duration"
+        );
+        let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
+        let mut cwnd = 0.0;
+        let mut infl_x = 0.0;
+        let seeds = 4u64;
+        for salt in 0..seeds {
+            let r = simulate_full(
+                &geom, Arm::Legacy, Feed::Measured(shapes), horizon, salt,
+                Acct::Engine, Store::Span,
+            );
+            cwnd += r.cwnd_live_mean;
+            infl_x += (0..geom.len())
+                .map(|p| r.rtt_inflation(p, geom[p].1))
+                .sum::<f64>()
+                / geom.len() as f64;
+        }
+        let cwnd = cwnd / seeds as f64;
+        let infl_x = infl_x / seeds as f64;
+        let ratio = cwnd / sigma_wire;
+
+        // (a) THE ANCHOR'S OWN RTprop IS HONEST INSIDE THE WINDOW. This is the
+        // mechanism; the Sigma below is its consequence.
+        assert!(
+            infl_x < 1.15,
+            "{cell}: min_rtt is {infl_x:.2}x the configured RTprop at a \
+             {horizon}s horizon — inside the 10 s window the t=0 floor must \
+             still win, or the attribution in goal-gate \"The Queue Fix\" \
+             FINDING 3 is wrong"
+        );
+        // (b) AND Sigma cwnd LANDS ON THE WIRE'S MEASURED ANCHOR SUM.
+        assert!(
+            ratio > lo && ratio < hi,
+            "{cell}: Sigma cwnd {cwnd:.0} is {ratio:.2}x the wire's measured \
+             Sigma-anchor {sigma_wire:.0}, outside the [{lo}, {hi}] band this \
+             section measured at a {horizon}s horizon (it is 3.55x/6.6x at the \
+             published 20 s)"
+        );
+    }
+}
+
+/// THE HORIZON AXIS — the single-axis experiment that isolates the first
+/// diverging quantity.
+///
+/// `CopaState::window_duration` is **10 s** (`scheduler/mod.rs:1063`), and it
+/// governs BOTH windowed extremes the anchor is built from: the `min_rtt`
+/// sample deque (`:1914-1919`) and the `max_bw` max-filter (`bw_evict_before`,
+/// same cutoff). Every wire transfer this bench is scored against is SHORTER
+/// than that window — c7 **9.23 s**, sc2 **9.11 s**, c2r100 **9.66 s**, c8
+/// **2.56 s** (the `seconds` column of every `docs/l1-raw` summary record). So
+/// on the wire NEITHER filter ever expires a sample: `min_rtt` and `max_bw` are
+/// WHOLE-TRANSFER extrema, latched before the standing queue builds.
+///
+/// The bench runs **20 s** — twice the window — so both filters roll, `min_rtt`
+/// climbs off the floor onto the standing queue, and the anchor
+/// (`max_bw · min_rtt`) climbs with it. The anchor is the cwnd FLOOR
+/// (`clamp_cwnd_with_anchor`), so Σ`cwnd` climbs too.
+///
+/// This sweep reports, per horizon, the quantities the attribution chain is
+/// made of. It is a MEASUREMENT of the instrument, not a tuning knob.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_horizon_against_the_engines_own_filter_window() {
+    println!("\n=== THE HORIZON AXIS vs CopaState::window_duration = 10 s ===");
+    println!("wire transfer durations (the `seconds` column, docs/l1-raw): c7 9.23s, sc2 9.11s, c8 2.56s.");
+    println!("Below 10 s NEITHER windowed extreme expires — min_rtt and max_bw are whole-transfer.\n");
+    for (name, cell, geom, shapes) in [
+        ("sc2  single fast (c2r100)  ", "sc2", vec![C2], &ACK_SC2[..]),
+        ("c7   dual symmetric        ", "c7", vec![C2, C2], &ACK_C7[..]),
+        ("c8   dual asym (r+RTT)     ", "c8", vec![C2, C3], &ACK_C8[..]),
+    ] {
+        let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
+        let w = wire_brake(cell, "A");
+        println!(
+            "{name}  wire: Sigma-anchor {sigma_wire:.0} sym  q {:.0} ms  rtp {:.0} ms  q/rtp {:.1}x  occ/cap {:.2}",
+            w.q_ms, w.rtprop_ms, w.queue_over_rtprop(), w.occ_over_cap()
+        );
+        println!(
+            "  {:>6} | {:>8} {:>8} {:>7} | {:>7} {:>7} {:>6} | {:>7} {:>7} {:>7}",
+            "horiz", "S cwnd", "S/Sw", "S infl", "q ms", "rtp ms", "q/rtp", "minRTTx", "zero%", "gp"
+        );
+        for horizon in [2.5_f64, 5.0, 9.0, 20.0] {
+            let mut acc = [0.0_f64; 7];
+            let seeds = 6u64;
+            for salt in 0..seeds {
+                let r = simulate_full(
+                    &geom, Arm::Legacy, Feed::Measured(shapes), horizon, salt,
+                    Acct::Engine, Store::Span,
+                );
+                let np = geom.len();
+                let q: f64 = (0..np).map(|p| r.queue_ms(p)).sum::<f64>() / np as f64;
+                let rtp: f64 = (0..np).map(|p| r.min_rtt_ms(p)).sum::<f64>() / np as f64;
+                let infl_x: f64 =
+                    (0..np).map(|p| r.rtt_inflation(p, geom[p].1)).sum::<f64>() / np as f64;
+                acc[0] += r.cwnd_live_mean;
+                acc[1] += r.infl_mean;
+                acc[2] += q;
+                acc[3] += rtp;
+                acc[4] += infl_x;
+                acc[5] += r.zero_pct();
+                acc[6] += r.goodput_sym_s();
+            }
+            for a in acc.iter_mut() {
+                *a /= seeds as f64;
+            }
+            println!(
+                "  {:>5.1}s | {:>8.0} {:>7.2}x {:>7.0} | {:>7.1} {:>7.1} {:>5.1}x | {:>6.2}x {:>6.1}% {:>7.0}",
+                horizon, acc[0], acc[0] / sigma_wire, acc[1], acc[2], acc[3],
+                acc[2] / acc[3].max(1e-9), acc[4], acc[5], acc[6]
+            );
+        }
+        println!();
     }
 }
 
