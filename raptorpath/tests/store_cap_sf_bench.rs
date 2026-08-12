@@ -376,6 +376,199 @@ impl Store {
     }
 }
 
+// ── THE SOURCE AXIS: WHAT OFFERS THE LOAD ──────────────────────────────────
+//
+// goal-gate "The Queue Fix" RANK 1: "a bench whose source is 'always data to
+// send' cannot model c7 or c8 … that is the last un-fixed input in the loop."
+//
+// THE WIRE'S SOURCE IS NOT THIS. `raptorpath perf --client` drives a
+// MEMORY-BACKED TUN "without a kernel TUN or an inner TCP stack"
+// (`tun/mod.rs`), and `perf.rs::run_object` is a bare `for idx in 0..total`
+// over `mem.feed.send(pkt)` — an OPEN loop bounded only by the mpsc channel's
+// capacity. That is measured, pinned by
+// `the_wires_offered_load_has_no_congestion_control`, and it means the
+// `Src::Reno` arm below models a DEPLOYED tunnel (a real user's TCP over the
+// TUN), NOT the L1 battery. Every number this axis produces is scoped that
+// way and no L1 verdict is re-scored against it.
+//
+// THE MODEL is Reno-class, and every constant in it is a cited standard —
+// there is no quantity here chosen to make an answer come out:
+//
+//   * ONE SEGMENT = ONE TUNNEL SYMBOL. `perf.rs:48-50` — the window pipeline
+//     "carries at most ONE packet per symbol" — so the inner flow's MSS and
+//     the bench's symbol are the same unit and no conversion constant exists.
+//   * IW = 10 segments (RFC 6928 §1, the standard initial window).
+//   * ssthresh starts arbitrarily high (RFC 5681 §3.1: "IW … ssthresh MAY be
+//     arbitrarily high"), i.e. the flow starts in slow start.
+//   * SLOW START `cwnd += 1` per acked segment; CONGESTION AVOIDANCE
+//     `cwnd += 1/cwnd` per acked segment (RFC 5681 §3.1).
+//   * MULTIPLICATIVE DECREASE `ssthresh = max(FlightSize/2, 2)` — the 0.5 is
+//     RFC 5681 §3.1 equation (4), the standard the dispatch names.
+//   * RTO from RFC 6298: SRTT/RTTVAR with α = 1/8, β = 1/4, K = 4 (§2.3);
+//     first sample SRTT = R, RTTVAR = R/2 (§2.2); `RTO = max(SRTT + 4·RTTVAR,
+//     1 s)` (§2.4's 1-second minimum) capped at 60 s (§2.5); doubled on each
+//     expiry (§5.5). On expiry `cwnd = 1` (RFC 5681 §3.1).
+//
+// THE FEEDBACK PATH IS THE TUNNEL'S OWN LATENCY, and it is not injected: the
+// inner flow's in-flight is `next_seq − snd_frontier`, the sender's own
+// knowledge of the receiver's CUMULATIVE in-order delivery point (the same
+// `snd_frontier` the coupling axis maintains, `control_msg.rs:566`), and the
+// inner RTT sample is the wall between a segment's admission and the frontier
+// passing it. So the inner flow's throughput is `w / (RTprop + tunnel queue +
+// recovery stall)` — every delay the bench's own link and recovery plane
+// build is in the denominator, which is exactly the loop the hypothesis names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Src {
+    /// THE PUBLISHED BENCH: an infinite offered load. Bit-identical to every
+    /// number in goal-gate "c8 SF Mechanism" … "The Queue Fix".
+    Bulk,
+    /// A Reno-class inner flow over the tunnel, RTT-clocked on the tunnel's
+    /// own delivered latency.
+    Reno,
+}
+
+impl Src {
+    fn label(self) -> &'static str {
+        match self {
+            Src::Bulk => "BULK (published)",
+            Src::Reno => "RENO (closed loop)",
+        }
+    }
+}
+
+/// RFC 6928 §1 — the standard initial window, in segments.
+const RENO_IW: f64 = 10.0;
+/// RFC 5681 §3.1 eq (4) — the multiplicative-decrease factor, and its floor.
+const RENO_BETA: f64 = 0.5;
+const RENO_MIN_SSTHRESH: f64 = 2.0;
+/// RFC 6298 §2.3 — the SRTT/RTTVAR gains and the variance multiplier.
+const RFC6298_ALPHA: f64 = 1.0 / 8.0;
+const RFC6298_BETA: f64 = 1.0 / 4.0;
+const RFC6298_K: f64 = 4.0;
+/// RFC 6298 §2.4 / §2.5 — the RTO bounds.
+const RFC6298_RTO_MIN_S: f64 = 1.0;
+const RFC6298_RTO_MAX_S: f64 = 60.0;
+
+/// One Reno-class inner flow, clocked by the TUNNEL's delivered latency.
+#[derive(Debug, Clone)]
+struct RenoSource {
+    /// Congestion window, in segments (= tunnel symbols).
+    w: f64,
+    ssthresh: f64,
+    srtt: f64,
+    rttvar: f64,
+    rto: f64,
+    have_sample: bool,
+    /// `(seq, admission instant)` for every segment handed to the tunnel and
+    /// not yet passed by the cumulative frontier — FIFO, because the frontier
+    /// is by construction monotone and in order.
+    outstanding: std::collections::VecDeque<(u64, f64)>,
+    /// Gauges. `rto_events` is the count of timeouts; `rtt_sum`/`rtt_n` is the
+    /// DELIVERED LATENCY the inner flow actually experienced (the user-visible
+    /// cost); `w_sum`/`w_n` is the window's time average over admission ticks.
+    rto_events: u64,
+    rtt_sum: f64,
+    rtt_n: u64,
+    w_sum: f64,
+    w_n: u64,
+    /// Admission opportunities at which the INNER WINDOW was the binder (the
+    /// bench's `wait_tun` analogue) and at which the STORE CAP was
+    /// (`wait_paused`). Sampled once per tick, before any admission.
+    src_bound: u64,
+    cap_bound: u64,
+}
+
+impl RenoSource {
+    fn new() -> Self {
+        Self {
+            w: RENO_IW,
+            ssthresh: f64::INFINITY,
+            srtt: 0.0,
+            rttvar: 0.0,
+            rto: RFC6298_RTO_MIN_S,
+            have_sample: false,
+            outstanding: std::collections::VecDeque::new(),
+            rto_events: 0,
+            rtt_sum: 0.0,
+            rtt_n: 0,
+            w_sum: 0.0,
+            w_n: 0,
+            src_bound: 0,
+            cap_bound: 0,
+        }
+    }
+
+    /// RFC 6298 §2.2/§2.3 — one RTT measurement folded into SRTT/RTTVAR/RTO.
+    fn sample_rtt(&mut self, r: f64) {
+        if !self.have_sample {
+            self.srtt = r;
+            self.rttvar = r / 2.0;
+            self.have_sample = true;
+        } else {
+            self.rttvar =
+                (1.0 - RFC6298_BETA) * self.rttvar + RFC6298_BETA * (self.srtt - r).abs();
+            self.srtt = (1.0 - RFC6298_ALPHA) * self.srtt + RFC6298_ALPHA * r;
+        }
+        self.rto = (self.srtt + RFC6298_K * self.rttvar).clamp(RFC6298_RTO_MIN_S, RFC6298_RTO_MAX_S);
+        self.rtt_sum += r;
+        self.rtt_n += 1;
+    }
+
+    /// The cumulative frontier advanced to `frontier`: retire every segment it
+    /// passed, take their RTT samples, and grow the window one ACK at a time —
+    /// RFC 5681 §3.1, slow start then congestion avoidance, with NO branch on
+    /// anything but `cwnd < ssthresh`.
+    fn on_frontier(&mut self, frontier: u64, now: f64) {
+        while let Some(&(seq, sent)) = self.outstanding.front() {
+            if seq >= frontier {
+                break;
+            }
+            self.outstanding.pop_front();
+            self.sample_rtt(now - sent);
+            if self.w < self.ssthresh {
+                self.w += 1.0;
+            } else {
+                self.w += 1.0 / self.w;
+            }
+        }
+    }
+
+    /// RFC 6298 §5.5 + RFC 5681 §3.1 — the retransmission timer expired on the
+    /// oldest outstanding segment. The tunnel is RELIABLE, so there is nothing
+    /// for the inner flow to retransmit that the tunnel is not already
+    /// retransmitting; what the timeout does to the TUNNEL is collapse the
+    /// offered load, which is the whole mechanism under test.
+    fn check_rto(&mut self, now: f64) {
+        let Some(&(_, sent)) = self.outstanding.front() else {
+            return;
+        };
+        if now - sent <= self.rto {
+            return;
+        }
+        let flight = self.outstanding.len() as f64;
+        self.ssthresh = (flight * RENO_BETA).max(RENO_MIN_SSTHRESH);
+        self.w = 1.0;
+        self.rto = (self.rto * 2.0).min(RFC6298_RTO_MAX_S);
+        self.rto_events += 1;
+        // The timer restarts on the same segment (§5.5's "start the
+        // retransmission timer"), which this model expresses by re-stamping
+        // the head's send instant. Nothing else in the queue moves.
+        if let Some(front) = self.outstanding.front_mut() {
+            front.1 = now;
+        }
+    }
+
+    /// The offered-load gate: how many segments the inner flow may have in the
+    /// tunnel right now.
+    fn window(&self) -> u64 {
+        self.w.floor().max(1.0) as u64
+    }
+
+    fn admit(&mut self, seq: u64, now: f64) {
+        self.outstanding.push_back((seq, now));
+    }
+}
+
 /// `net/mod.rs:213` — `GAP_ACK_MIN_INTERVAL`, the receiver's gap-report rate
 /// limit and therefore the SACK-release clock while the frontier is stalled.
 const GAP_ACK_MIN_S: f64 = 0.002;
@@ -1431,6 +1624,17 @@ struct Run {
     /// directly, and it is the quantity the wire reads 0.0% on at c7.
     gate_closed: u64,
     gate_ticks: u64,
+    /// THE SOURCE AXIS's produced quantities (all zero under `Src::Bulk`):
+    /// the inner flow's mean congestion window in segments, its mean DELIVERED
+    /// latency in seconds (admission → cumulative frontier, the user-visible
+    /// cost), its RTO count, and the split of admission opportunities between
+    /// "the inner window was the binder" and "the store cap was".
+    src_w_mean: f64,
+    src_rtt_mean: f64,
+    src_rto: u64,
+    src_bound: u64,
+    cap_bound: u64,
+    src_opps: u64,
 }
 
 impl Run {
@@ -1494,6 +1698,23 @@ impl Run {
     }
     fn mean_cwnd(&self) -> f64 {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
+    }
+    /// The bench's `wait_tun` analogue: the share of admission opportunities at
+    /// which the OFFERED LOAD was the binder (inner window full, store cap
+    /// not). Zero by construction under `Src::Bulk`, which is the point.
+    fn src_bound_pct(&self) -> f64 {
+        self.src_bound as f64 / self.src_opps.max(1) as f64 * 100.0
+    }
+    /// The bench's `wait_paused` analogue under the source axis: the share at
+    /// which the STORE CAP was the binder.
+    fn cap_bound_pct(&self) -> f64 {
+        self.cap_bound as f64 / self.src_opps.max(1) as f64 * 100.0
+    }
+    /// The inner flow's delivered latency in MILLISECONDS — the user-visible
+    /// cost of whatever the tunnel does, and the quantity a latency budget on
+    /// the pool would exist to protect.
+    fn src_rtt_ms(&self) -> f64 {
+        self.src_rtt_mean * 1e3
     }
 }
 
@@ -1628,6 +1849,31 @@ fn simulate_full(
     acct: Acct,
     store_mode: Store,
 ) -> Run {
+    simulate_src(paths, arm, feed, horizon_s, salt, acct, store_mode, Src::Bulk)
+}
+
+/// As `simulate_full`, with the SOURCE axis. `Src::Bulk` is bit-identical to
+/// `simulate_full` — every branch the axis adds is behind `src == Src::Reno`,
+/// and it consumes no RNG (the inner flow is deterministic given the tunnel).
+#[allow(clippy::too_many_arguments)]
+fn simulate_src(
+    paths: &[Spec],
+    arm: Arm,
+    feed: Feed,
+    horizon_s: f64,
+    salt: u64,
+    acct: Acct,
+    store_mode: Store,
+    src: Src,
+) -> Run {
+    // The inner flow's ack is the SENDER'S OWN cumulative frontier, which only
+    // the coupling axis maintains. Asking for a closed-loop source without it
+    // would silently run an open loop, so it is refused rather than degraded.
+    assert!(
+        src == Src::Bulk || store_mode == Store::Span,
+        "Src::Reno needs Store::Span: the inner flow's ack IS the sender's \
+         cumulative frontier (`snd_frontier`), and nothing else advances it"
+    );
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -1705,6 +1951,8 @@ fn simulate_full(
     let mut snd_frontier: u64 = 0;
     let mut snd_marks: Vec<(u64, u64)> = Vec::new();
     let mut snd_marks_built: f64 = -1.0;
+    // ── THE SOURCE AXIS's state (`Src::Reno` only) ──────────────────────
+    let mut reno = RenoSource::new();
     // Gauges: the span the model produces, and what the marks release.
     let mut span_sum = 0.0_f64;
     let mut span_n = 0u64;
@@ -1879,6 +2127,16 @@ fn simulate_full(
                 } else {
                     i += 1;
                 }
+            }
+            // (a2) THE INNER FLOW's ack clock. The sender's cumulative
+            // frontier is the ONLY thing that retires an inner segment, and
+            // the RTT it measures is the tunnel's whole delivered latency —
+            // RTprop, the standing queue, and any recovery stall. Both calls
+            // are no-ops under `Src::Bulk` because nothing was ever admitted
+            // into `reno.outstanding`.
+            if src == Src::Reno {
+                reno.on_frontier(snd_frontier, now);
+                reno.check_rto(now);
             }
             // (b) RECEIVER: in-order delivery, in TIME ORDER, and the
             // gap-report clock evaluated per arrival — the engine
@@ -2330,13 +2588,39 @@ fn simulate_full(
         if store_len >= cap {
             gate_closed += 1;
         }
-        while store_len < cap {
+        // ── THE SOURCE AXIS: what the OFFERED LOAD will allow ─────────────
+        // Under `Src::Bulk` this is `u64::MAX` and every branch below is
+        // inert, so the published bench is bit-identical. Under `Src::Reno`
+        // it is the inner flow's congestion window over the tunnel's own
+        // delivered latency, and the sender is offered-load-bound exactly
+        // when the window is full and the cap is not — the bench's analogue
+        // of the wire's `wait_tun` / `wait_paused` split, sampled here so it
+        // is attributed once per tick and BEFORE any admission.
+        let src_room: u64 = match src {
+            Src::Bulk => u64::MAX,
+            Src::Reno => reno.window().saturating_sub(next_seq - snd_frontier),
+        };
+        if src == Src::Reno {
+            reno.w_sum += reno.w;
+            reno.w_n += 1;
+            if store_len >= cap {
+                reno.cap_bound += 1;
+            } else if src_room == 0 {
+                reno.src_bound += 1;
+            }
+        }
+        let mut src_left = src_room;
+        while store_len < cap && src_left > 0 {
+            src_left -= 1;
             store_len += 1;
             let pid = place_min_cost(&sched);
             chg(&mut sched, pid, &mut led);
             let (a, rt, ok) = links[pid as usize].send_resolved(now);
             let seq = next_seq;
             next_seq += 1;
+            if src == Src::Reno {
+                reno.admit(seq, now);
+            }
             if let Feed::Cumulative { .. } = feed {
                 seq_done.push(false);
                 seq_owner.push(pid);
@@ -2448,6 +2732,12 @@ fn simulate_full(
         srtt_sum,
         gate_closed,
         gate_ticks,
+        src_w_mean: reno.w_sum / reno.w_n.max(1) as f64,
+        src_rtt_mean: reno.rtt_sum / reno.rtt_n.max(1) as f64,
+        src_rto: reno.rto_events,
+        src_bound: reno.src_bound,
+        cap_bound: reno.cap_bound,
+        src_opps: reno.w_n,
     }
 }
 
@@ -5609,6 +5899,72 @@ const C8_DEAD_PREFIX: usize = 19;
 const C8_REPS: usize = 131;
 /// How many of the remaining reps carry it.
 const C8_DEAD_ELSEWHERE: usize = 5;
+
+/// Each dual's own WIRE transfer duration — the horizon "The Queue Fix"
+/// established is the only one at which the bench's anchor is the wire's
+/// (`seconds`, docs/l1-raw, 100% of reps under `CopaState::window_duration`).
+const WIRE_HORIZON: &[(&str, f64)] = &[("c7", 9.23), ("c8", 2.44)];
+
+fn wire_horizon(cell: &str) -> f64 {
+    WIRE_HORIZON
+        .iter()
+        .find(|(c, _)| *c == cell)
+        .map(|(_, h)| *h)
+        .unwrap_or_else(|| panic!("no wire horizon for {cell}"))
+}
+
+/// THE SOURCE AXIS'S SMOKE — one seed, both duals, both source arms, printed
+/// so the instrument's behaviour is visible before anything is scored against
+/// it. `#[ignore]`d: it is a READOUT, not a pin.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_source_axis_smoke() {
+    println!(
+        "\nTHE SOURCE AXIS — Reno-class inner flow (RFC 5681 AIMD + RFC 6298 RTO,\n\
+         IW = 10 per RFC 6928) clocked on the tunnel's OWN delivered latency.\n\
+         Horizon = each cell's own wire transfer duration. Acct::Engine, Store::Span,\n\
+         the measured ack era. seed 0.\n"
+    );
+    println!(
+        "{:<26} {:<19} | {:>7} {:>7} {:>6} | {:>7} {:>7} | {:>7} {:>7} {:>5} | {:>8}",
+        "cell", "src", "occ", "cap", "o/c", "q ms", "rtp ms", "inner w", "innRTT", "rto", "gp sym/s"
+    );
+    for (label, specs, acks) in measured_cells().into_iter().filter(|(l, ..)| !l.starts_with("sc2"))
+    {
+        let cell = label.split_whitespace().next().expect("cell name");
+        let h = wire_horizon(cell);
+        for src in [Src::Bulk, Src::Reno] {
+            let r = simulate_src(
+                &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, src,
+            );
+            let n = specs.len() as f64;
+            let q: f64 = (0..specs.len()).map(|p| r.queue_ms(p)).sum::<f64>() / n;
+            let rtp: f64 = (0..specs.len()).map(|p| r.min_rtt_ms(p)).sum::<f64>() / n;
+            println!(
+                "{:<26} {:<19} | {:>7.0} {:>7.0} {:>6.2} | {:>7.1} {:>7.1} | {:>7.0} {:>7.1} {:>5} | {:>8.0}",
+                label,
+                src.label(),
+                r.store_len_mean,
+                r.mean_cap,
+                r.store_len_mean / r.mean_cap.max(1e-9),
+                q,
+                rtp,
+                r.src_w_mean,
+                r.src_rtt_ms(),
+                r.src_rto,
+                r.goodput_sym_s()
+            );
+            if src == Src::Reno {
+                println!(
+                    "{:<26} {:<19} | offered-load-bound {:.1}%  store-cap-bound {:.1}%  \
+                     (WIRE: c7 tun 98 / paused 0, c8 tun 34 / paused 6)",
+                    "", "", r.src_bound_pct(), r.cap_bound_pct()
+                );
+            }
+        }
+        println!();
+    }
+}
 
 /// THE THIRD FINDING, AND IT IS POSITIVE: the c8 collapse is APPENDED DEAD
 /// WALL, not a degraded transfer.
