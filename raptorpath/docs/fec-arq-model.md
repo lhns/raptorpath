@@ -113,6 +113,8 @@ ACK absence.
     - [11.2 Analytical Predictions to Verify](#112-analytical-predictions-to-verify)
     - [11.3 Boundary Cases](#113-boundary-cases)
     - [11.4 Connection to Existing Benchmarks](#114-connection-to-existing-benchmarks)
+    - [11.5 The Living Verification Inventory: the PIPELINE VERIFICATION MATRIX](#115-the-living-verification-inventory-the-pipeline-verification-matrix)
+    - [11.6 The As-Shipped Default Stack (2026-08-12)](#116-the-as-shipped-default-stack-2026-08-12)
 12. [Congestion Control Integration](#12-congestion-control-integration)
     - [12.1 Why Delay-Based CC is Required](#121-why-delay-based-cc-is-required)
     - [12.2 QUIC Datagrams Bypass Quinn's CC](#122-quic-datagrams-bypass-quinns-cc)
@@ -598,9 +600,141 @@ construction, so the multipath result above tests real per-path *dynamics* but
 Settling the correlation question needs simultaneous dual-link capture or a
 dual-radio hardware testbed — the remaining rung of the validation ladder.
 
+> **Correction (2026-08-12, `docs/paper-refresh`): GE as CONFIGURED is not GE
+> as REALIZED — there are FOUR incompatible implementations in the tree and
+> zero cross-validation between them.** Section 2.5 asks whether GE is an
+> adequate model of real loss, and answers it carefully. It does not ask the
+> prior question: whether our own instruments implement the same GE. They do
+> not. Per matrix row 18, the tree carries:
+>
+> * `tests/common/mod.rs:29` — the full 4-parameter GE of ADR-0023, used by the
+>   `sim_*` tests;
+> * `tests/common/recovery_model.rs:218` — a 2-parameter chain with
+>   `MEAN_BURST = 8.0` **hard-coded**, used by `recovery_bench` AND `slack_bench`;
+> * `transport/quic.rs:46-115` — the L0 netem shim: GE applied to **client
+>   egress only**, plus a discrete-Weibull heavy-tail extension netem's
+>   `gemodel` cannot express, with drops taken BEFORE quinn so quinn's own CC
+>   sees a clean loopback;
+> * `control/gilbert_elliott.rs` — the receiver-side ESTIMATOR.
+>
+> `gilbert_elliott_test.rs`'s four always-on tests all target the fourth. **There
+> is no cross-validation test between the first three at all.** Stated plainly,
+> as the matrix does: *a `recovery_bench` number and a `sim_*` number are
+> produced by different channels, and nothing pins that they are comparable.*
+> **STATUS: UNVERIFIED**; the matrix's suspect list ranks a differential test
+> over the three channel implementations at fixed seeds as rank 5, MEDIUM cost.
+> This does not touch Section 2.5's verdict, which was assessed against real
+> traces and is a different question — model-to-real, not model-to-model.
+>
+> One further wire-model caveat belongs beside this (matrix row 19). The jit25
+> cell's negative-delay clamp produces a 0.07–0.22 ms floor that is **not rare**
+> — it is re-sighted in 100% of 10 s windows at 20 samples/s — so that cell's
+> measured RTprop of 50–90 ms is the loaded link's REAL RESIDENCE, not estimator
+> bias, and the pre-registered 1300–1430 band was wrong on its own terms
+> (goal-gate "Honest Inputs — PHASE 3", probe 2; confirmed on the wire by
+> §16.50's R1 = 2.125 in every law-arm rep, both seeds). The finding is
+> adjudicated from two independent directions, but the only test that sights it
+> — `scheduler::tests::jit25_rtprop_floor_sighting_under_netem_clamped_jitter` —
+> is `#[ignore]`, so it gates nothing: **VERIFIED as a FINDING, UNVERIFIED as a
+> PIN.**
+
 ---
 
 ## 3. Recovery Fundamentals
+
+> **Correction (measured, 2026-08-12, `docs/paper-refresh`): the shipped
+> recovery plane is clocked by two constants that were never measured, and the
+> derived replacement is a CORRECT LAW that is an INERT LEVER.** Section 3
+> presents recovery as ARQ timing driven by `T_retx` and `P_lost(t)`. That model
+> is intact. What it does not carry is the shipped plane's own clock, which
+> four batteries have now examined.
+>
+> **(a) The `[25, 100] ms` clamps have no measurement behind them, and this is
+> now documented rather than inherited.** `tail_sweep_timeout_us`
+> (`net/mod.rs:545`) and `hole_nack_refresh` (`:554`) are both `2·SRTT` clamped;
+> `TAIL_SWEEP_MIN_US`/`TAIL_SWEEP_MAX_US` entered at cb66b93 (P10b, 2026-07-04)
+> with the entire justification "clamp [25,100]ms — block mode's P8 sweeper
+> analog" — borrowed from a sibling constant —  and
+> `HOLE_NACK_REFRESH_MIN/MAX` entered at 4c90153 with no mention at all.
+> **Neither was ever swept, fitted or measured.** Worse, the only stated
+> rationale (still live at `net/mod.rs:788-791`: stay below the receiver's
+> reorder hold and the inner-TCP RTO) names two quantities that do not exist on
+> the measured stack — the reorder hold is a property of the EVICT path and the
+> reliable (ρ = 1) receiver never force-delivers past a hole, and there is no
+> inner TCP. "A ceiling whose job is to stay below two absent quantities is a
+> constant with nothing behind it." Citation: goal-gate "The Derived Recovery
+> Clamp (2026-08-12)", verdict lines 1–3.
+>
+> **(b) The derived recovery round is one line with zero new constants, and it
+> is provably a generalization rather than a second machine.**
+> `derived_recovery_round_us(srtt, jitter) = max(2·srtt, patience_floor_us(jitter, srtt))`
+> (`net/mod.rs:608`) returns **exactly** `tail_sweep_timeout_us(srtt)` wherever
+> `2·srtt` already lies inside `[25, 100] ms` — pinned over a 12.5–50 ms grid at
+> 250 µs resolution. That **coincidence property** is why `RWM_DERIVED_SWEEP`
+> carries two separate liveness echoes, `ACTIVE` (the site executed) and
+> `DIVERGED` (the two laws actually differed): without the split, a null result
+> reads as a null effect (§16.53).
+>
+> **(c) The lever is inert, and arming it is expensive.** Measured divergence
+> medians: 1.21× sc2, 1.50× c8L, 1.76× c7, 1.77× c8, 2.85× c8-AUR, and **0.18×
+> at c1** (4.6 ms against the literal's 25 ms floor — diverging *downward*,
+> outside the coincidence property's cover). At c8, lengthening the round 1.77×
+> gave `ping_p99` 0.98× (bar met) and `retx` 1.06× (bar missed): "those
+> retransmits are doing work: they are a **backstop, not waste**" — the repair is
+> "inert where it was supposed to act, and inert in the one direction that would
+> have been good news". Where the clamp does not bind, removing the ceiling
+> breaks nothing (c1 −0.05%, sc2 0.00%, c7 +0.7%, law provably bound on every
+> rep). But arming it costs **−23%/−28% goodput across two independent
+> sessions**. `RWM_DERIVED_SWEEP` **ships OFF**; both batteries that examined it
+> were reported UNSCORED under their own stop rules, so it is explicitly **not a
+> deletion candidate** either (§16.53, §16.54). **The distinction worth
+> keeping: the ARGUMENT in the derived round is vindicated on the wire even
+> though the LEVER is not** — the two are usually refuted together.
+>
+> **(d) The separate, earlier derived-patience result is a different object and
+> was refuted from both sides.** `RWM_PATIENCE_DERIVED` (default OFF) is the
+> §6.1.2 time-threshold lever: at L1 the literal won **0 of 177 543**
+> evaluations at the cell it was accused at (§16.40), and the component bench
+> reproduced that refutation exactly — across **all 192 cells** the derived arm's
+> holes, latencies, channel mix, retx, sweeps and suppression counts are
+> IDENTICAL to shipped (§16.41; goal-gate "Component Benches"). That identity is
+> also the recovery bench's validation against a known answer.
+>
+> **(e) Why the same clock argument answers differently at the two sites.**
+> "The clock argument is not a global property of the engine; it is a property
+> of each clock's **referent event**." §6.1.2's time threshold waits for *"has
+> this symbol been LOST on the wire?"*, whose honest argument is the **wire**
+> RTT — including the dwell inflates patience ×17.8 RTprop at c7. The tail sweep
+> waits for *"has the ACK for this symbol failed to come back?"*, whose honest
+> argument is the **app-echo** RTT — the sweep is armed from the seq's own
+> retransmit-buffer insert instant (`net/emit_source.rs:551`) and the ack that
+> retires it is timed from the SAME instant, so the app-echo SRTT is not "a
+> clock" there but the measured time until the very event the sweep waits for.
+> The theorem: spurious rounds per tail-blocked symbol =
+> `ceil(srtt_app / cadence) − 1`, which for a cadence of `2·srtt_app` is 0 for
+> every positive srtt (goal-gate "The Derived Recovery Clamp", "THE ARGUMENT vs
+> THE CONSTANT").
+>
+> **(f) The DEAD WALL, and its length-scoping.** The re-attribution that
+> commissioned all of the above measured, of 131 c8 reps, that the 19 slowest
+> all read `wait_tun = 0%` **and** `wait_paused = 0%` — roughly 30% of a
+> collapse rep's wall spent neither reading source, nor blocked on its cap, nor
+> sending — against a c8 SRTT of 376 ms that overshoots the 100 ms ceiling 7.5×,
+> so a recovery round costs 100 ms of wall whatever the path does and ~1.1 s of
+> dead wall is ~11 of them. **The wall belonged to the ARM, not the cell**: it
+> is a 1/16 event at the shipped default and an 8/11 event on
+> `RWM_STORE_CAP_UNIFIED` (§16.53), and it **vanishes at 8× the transfer**
+> (0/24 at 200 MB, §16.54) — the harm is length-scoped. See the §12.8
+> correction (f) for the caveats that travel with those numbers.
+>
+> **Status, so the section is not over-read.** Matrix row 22: **VERIFIED for the
+> 8 extracted pure laws** (`extracted_laws_are_identical_to_the_inline_expressions_they_replaced`,
+> `patience_is_set_by_the_clock_argument_not_by_the_constants`,
+> `recovery_bench_fixtures_pin_the_plane`, all always-on) but **UNVERIFIED for
+> the PLANE-IN-ENGINE**: `recovery_bench` calls the shipped pure functions
+> inside its OWN synthetic event loop, so it proves the engine and the bench
+> compute the same ARITHMETIC — not that the engine invokes them at the same
+> instants with the same arguments.
 
 ### 3.1 The Problem: Recovering Lost Symbols
 
@@ -1237,6 +1371,82 @@ provides modest improvement for long-burst scenarios.
 
 ## 6. Protocol Mechanics
 
+> **Correction (measured, 2026-08-12, `docs/paper-refresh`): the wire is at
+> version 7, the ACK cadence is the merged WindowAck, and §6.5's
+> "compose without interfering" is not true of the shipped stack.** Section 6
+> describes the protocol as designed. Five facts bring it to the shipped
+> machine; §6.1's buffer algebra, §6.3's outcome tree and §6.4's triangle
+> reading are unaffected and stand as written.
+>
+> **(a) `PROTOCOL_VERSION = 7`** (`transport/protocol.rs:64`, magic `RPTQ` at
+> `:66`), hard-enforced at `Handshake::deserialize` (`:217`) and
+> `WireMessage::deserialize` (`:411`). The bump 6→7 was not a feature: six
+> `ControlMessage` variants with **zero construction sites anywhere in the
+> workspace** were deleted — `RepairRequest`, `PathAdd`, `PathRemove`,
+> `WindowNack`, `NackAck`, `WindowSwitchAck` — and because `ControlMessage`
+> rides bincode **fixint**, the variant tag IS the declaration index, so
+> removing a variant renumbers every later one and a v6 peer's `WindowAck`
+> would deserialize as a different variant entirely. The version bump makes a
+> mixed v6/v7 pair fail cleanly at handshake instead of silently mis-parsing
+> control traffic. `WindowSwitch` was deliberately KEPT despite never being
+> sent — its receive arm is a hostile-peer / future-version guard that warns and
+> ignores. Citation: goal-gate "Refactor: dead code batch 2 (2026-08-09)",
+> Item 1. There is no ADR for the v7 bump. The live SACK-gap repair path
+> (`on_window_ack` → `sack_to_gaps` → `nack_tx`) never went through
+> `WindowNack` and is untouched. Also default ON since 2026-08-06:
+> `RWM_WIRE_COMPACT`, the compact DATA framing (§16.34).
+>
+> **(b) §6.2's "an ACK per received symbol" is now the merged WindowAck — and
+> the merge is STRUCTURAL, not aggregating.** `window_ack_emission`
+> (`net/mod.rs:3579`; the matrix cites the older offset `:3416`) returns
+> `advertise = cumulative_advanced || gap_report_due` and
+> `emit = advertise || ack_merge`. Under `RWM_ACK_MERGE` (**DEFAULT ON since
+> 2026-08-08**, §16.42) the WindowAck goes out unconditionally *because it now
+> carries the suppressed legacy `Ack`'s payload and must keep the `Ack`'s
+> once-per-data-message cadence*. Pinned three ways, all always-on:
+> `ack_merge_off_emits_on_exactly_the_shipped_predicate`,
+> `ack_merge_on_emits_once_per_data_message`,
+> `ack_merge_never_changes_what_the_ack_advertises`. RTT-echo pairing is
+> preserved because timer-driven WindowAcks send `ts = 0` and are rejected at
+> the estimator feed (`control_msg.rs:655`; the matrix cites `:639`). The flip
+> bought c1 +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%, control-datagram
+> density 1.96→1.00 at c1 and 1.05→1.00 at c7.
+>
+> **(c) The resulting ack stream carries ONE symbol per ack, measured on the
+> wire.** `drecv` p50 = p90 = **1 in all 60 report windows over 857 400 acks**,
+> every cell and every path; on c8's slow leg even the per-window MAX is 1 in
+> all 12 windows, and the largest merge seen anywhere is 10 symbols in one
+> window at c2r100. **There is no ack aggregation**, and the ~145×-class
+> ack-aggregation hypothesis is REFUTED at these cells. Citation: goal-gate
+> "Ack-Cadence Measurement (VM) (2026-08-11)". This is what §7's correction (a)
+> then localises: the over-read is the sampler's own 1 ms floor, not the ack
+> stream's shape. Matrix row 21 had marked the echo STREAM SHAPE **UNVERIFIED
+> with no instrument in existence** — "naming the missing instrument is the
+> finding"; the gauge (`RWM_ACKDIAG`, ADR-0052 surface, ships OFF) is that
+> instrument and this is its reading.
+>
+> **(d) §6.2's alternatives list is now partly decided rather than
+> "considered".** Per-batch ACK is what the merge effectively suppresses in
+> window mode; the `!suppress_legacy_ack` branch is DEAD unless an operator sets
+> `RWM_ACK_MERGE=0` and is scheduled for deletion in refactor seam B2
+> (`gates.rs:199`).
+>
+> **(e) §6.5's four mechanisms do NOT compose without interfering on the
+> shipped stack.** The section's own claims, checked against the matrix:
+> *"Copa doesn't know about FEC — it just limits total rate"* — the token bucket
+> debits SOURCE only and does not run at all on the plain-reliable path (§12
+> correction (a)/(b)); *the outer capacity gate* — `cwnd_full` is permanently
+> false, so the **store cap is the sole brake** and the four mechanisms share
+> one operand (§12.8 correction (a)/(c)); *placement* — the reliable emitter's
+> candidate set does not test capacity, so Copa's cwnd does not constrain where
+> source goes (§13 correction (a)). The mechanisms remain **separately
+> specified**, which is the design property worth keeping; they are not
+> **independent in effect**, which is what the prose claims. No branching or
+> mode switch is involved in any of this — the no-mode-switch invariant is not
+> at issue — but "none needs to know about the others" is stronger than the
+> measured machine supports and should be read as an aspiration of the design
+> era.
+
 ### 6.1 The Retransmit Buffer
 
 The sender maintains a **retransmit buffer**: an ordered list of source symbols
@@ -1485,6 +1695,101 @@ protocol class without branching or mode switches.
 
 ## 7. Estimation — From Observations to Channel Parameters
 
+> **Correction (measured, 2026-08-12, `docs/paper-refresh`): the shipped
+> estimators do not read the stream this section describes.** Section 7 models
+> estimation as *feedback arrives → statistic updates*: one ACK, one sample,
+> loss counted on goodput. Four measured facts break that reading. None of them
+> changes the ESTIMATORS' formulas (7.2–7.5 remain correct as written); they
+> change what the formulas are fed. Every number below is quoted from the
+> ledger, not restated from memory.
+>
+> **(a) The rate anchor is FLOOR-CLOCKED, not ack-clocked — and that is the
+> mechanism of the over-read.** `CopaState::record_delivery`
+> (`scheduler/mod.rs:1172`) rejects any call with less than 1 ms elapsed
+> (`scheduler/mod.rs:1177-1178`). Measured, the floor rejects **93–96% of calls
+> at loopback** and **81.5–94.3% on the wire**, so the sampler emits
+> **258–850 accepted samples/s, each folding 5–28 acks' worth of deliveries**
+> (goal-gate "Ack-Cadence Gauge — THE INSTRUMENT" fact 3; "Ack-Cadence
+> Measurement (VM)" READOUT 3b — the one path below 90% is c8's slow leg,
+> whose 31–70 µs ack spacing is close enough to the floor for calls to clear
+> it). The ledger prices the realized over-read at **×4.6–7.4** ("Anchor
+> Hygiene" (b); `store_cap_bench.rs` carries it as `OVERREAD = 5.0`). This row
+> is **matrix row 10: UNVERIFIED — "and it is the one that is ALWAYS ON"** (the
+> well-tested send-interval sampler, matrix row 11, is the env-gated one). Any
+> model that feeds this sampler at an assumed ack period is modelling a
+> different machine: the SF bench's invented cadence landed at ×24–2400 against
+> the wire's ×4.6–7.4.
+>
+> **(b) Repairs enter the ack counters. The counters are a WIRE-ARRIVAL
+> population, not a goodput one.** Measured at the c3 loopback,
+> `crecv/srcack = 1.116`; on the wire every one of 36 connection-wide readings
+> exceeds 1, the settled excess being **1.1–4.4% at c2r100/c7 and 21.4–33.6% at
+> c8** (goal-gate "Ack-Cadence Gauge", "THE REPAIR-COUNTING ANSWER"; "Ack-Cadence
+> Measurement (VM)" READOUT 4; always-on
+> `ackdiag_repair_recon::repairs_enter_the_receivers_expected_received_counters`).
+> The consequence is structural and touches three consumers at once:
+> `d_received` is what `CopaState::record_delivery` is fed as `count`, what
+> `LossEstimator::record_batch` is fed as a batch, and what `release_in_flight`
+> releases. So Section 7.1's row "(sent, received) per batch" is, in the engine,
+> sent/received **on the wire including recovery traffic** — and at a dual cell
+> `ce/cr` is inflated a further ~2–5.6× by cross-path interleaving, so it is not
+> a loss estimate there at all. The c8 figure is an upper bound (`srcack` is a
+> frontier, and a frontier lags).
+>
+> **(c) srtt and RTprop come off the same event but are not the same
+> statistic — and the smoothed/raw distinction is load-bearing.**
+> `CopaState::record_rtt` (`scheduler/mod.rs:1369`) folds one `rtt` argument
+> into three things: the SRTT EWMA (7/8, 1/8 — RFC 6298 weights,
+> `:1375-1378`), the 10 s monotonic min-deque that is RTprop (`:1407-1416`),
+> and the since-last-update min. But K (`EchoRatioMin`) is fed the **smoothed**
+> `p.srtt()` at the 5 ms dyn-cap refresh clock while RTprop is the min over
+> **raw** samples, so shipped K = min(EWMA(x))/min(x) — "the EWMA filters out
+> exactly the low excursions a windowed MIN exists to catch … a windowed min
+> that reads HIGH under jitter, by construction" (goal-gate "Honest Inputs —
+> MECHANISM + FIXES", MECHANISM 2). `RWM_HONEST_K` is the one-formula fix that
+> feeds the same tracker the raw per-sample ratio at the sample clock; it
+> **ships OFF**, not for want of a pin (matrix row 14 is VERIFIED, four
+> always-on tests including two-sided routing) but as a family verdict —
+> khr−kraw ≈ 0–0.3 in-cell at every law cell and the gate rode only the failed
+> three-term composition (§16.50; `gates.rs:895`). Note the asymmetry the
+> matrix records: **srtt itself is matrix row 13, UNVERIFIED** — no test
+> anywhere asserts the EWMA's value on `CopaState`; two test files
+> re-implement it as an ORACLE instead. It is load-bearing as Copa's pacing
+> denominator, the `should_update` cadence, the `wire_above_target` comparand,
+> and the argument of the entire recovery plane.
+>
+> **(d) The 10 s filter window is longer than most measured transfers, so the
+> published anchors are WHOLE-TRANSFER EXTREMA.** The max-filter window is
+> ≈10·RTprop clamped to [1 s, 10 s] (`scheduler/mod.rs:1349-1356`), while the
+> battery's median transfers are **9.23 s at c7 and 2.44 s at c8**. Measured:
+> `minRTTx` is 1.01× at every sub-window horizon and every cell, and jumps to
+> 4.35–5.54× at 20 s — "the queue was always there; at 20 s the floor moves
+> under it". Matching the horizon to the wire's own transfer moves
+> Σcwnd/Σ-anchor from 3.55×/6.72× to 0.67×/1.28× (goal-gate "The Queue Fix",
+> WHAT THIS DOES AND DOES NOT SAY ABOUT THE ENGINE; always-on
+> `matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_anchor`,
+> `sf_horizon_against_the_engines_own_filter_window`). This is **not an engine
+> defect** — the window is a deliberate parameter and the short transfers are a
+> property of the battery's byte counts — but it means any anchor-derived
+> quantity in this paper measured at c7/c8/sc2/c2r100 is an extremum over an
+> entire transfer, and any successor running past 10 s is in a different
+> estimator regime than every wire number recorded here.
+>
+> **(e) What DID change in the shipped default: the BtlBw windowed max is now
+> read off a monotonic max-deque (`RWM_HONEST_ANCHOR` DEFAULT ON since
+> 2026-08-11, §16.51).** This is the one flip in this area and it is
+> categorically safe rather than measured-safe: the gate selects the COST of a
+> **value-identical** statistic, pinned by the always-on equivalence
+> `bw_mono_front_equals_full_window_fold` (the deque front equals the legacy
+> full-window fold after every push, every eviction, across window-length
+> changes and long idle gaps, on both feed paths). It removes the O(window·rate)
+> fold whose cost under `RWM_PLAIN_RS` was the measured c1 −35%. The legacy
+> fold stays reachable as `RWM_HONEST_ANCHOR=0`, as the A/B arm and the
+> equivalence oracle's live twin (ADR-0066).
+>
+> Section 7.6's self-healing argument and 7.7's error/overhead mapping are
+> unaffected by all of the above and stand as written.
+
 ### 7.1 What We Observe
 
 At the sender, we receive periodic feedback:
@@ -1655,6 +1960,47 @@ BOCD minimizes this gap by adapting the estimation confidence to the regime:
 ---
 
 ## 8. The Optimization Problem
+
+> **Correction (2026-08-12, `docs/paper-refresh`): the r\* KERNEL is verified;
+> the COMPOSED law the engine actually calls is not, and nothing connects r\* to
+> the FEC encoder.** Two matrix rows bear on this section and they say different
+> things about different objects.
+>
+> **The kernel is VERIFIED (matrix row 3).** `compute_r_star_with_z`
+> (`math/src/lib.rs:618`) returns this section's §8.5 tabled values to
+> ±0.002–0.005 with `dc_bulk == 0.0` exactly and a 24-point continuity sweep, by
+> the always-on `formula_verification.rs::test_r_star_worked_examples`; the
+> supporting identities `test_p_fec_exact_paper_table`,
+> `test_sigma2_burst_table`, `test_z_delta_values` are likewise absolute, and
+> §8.4.1's tail provisioning was oracle-validated on the #43 real traces.
+>
+> **The composed law is PARTIAL.** `controller_rate()` (`control/fec_rate.rs:269`)
+> — the function the engine calls, carrying the mass/tail term, the saturation
+> soft-cap, the χ glide, the inner-feedback floor and ε_codec — has only
+> zero-identities, ordinal comparisons, continuity sweeps and **one loose band**
+> (`test_r_star_mass_tracks_exact_ge`, ratio ∈ [0.6, 1.5] against the §8.7 exact
+> DP). `FecRateController::compute_repair_rate` has no absolute pin. Ordinal
+> coverage does not catch routing bugs, which is exactly why the matrix does not
+> call this VERIFIED.
+>
+> **And the r(β) blend does not exist in the engine.** CLAUDE.md's worked
+> example of the no-mode-switch rule — `r(β) = (1−β)·r_anchor + β·r_late-is-fine`
+> — is the VISUALIZER's shipped rate law; β lives only in `raptorpath-wasm`. The
+> engine's counterpart is the boolean `bulk_late_is_fine` plus the continuous χ
+> glide (§14.26). Both are continuous in δ at the shipped points; they are not
+> the same expression, and a reader should not assume the engine computes the
+> visualizer's formula.
+>
+> **Most consequentially: `r*` never reaches the FEC encoder (matrix row 4,
+> sub-row UNVERIFIED).** `gen_budget`'s `r` is the constant
+> `pol.gen_repair_floor` (0.15 systematic / 0.20 coded-only), while
+> `controller_rate`'s r\* reaches the wire only through the plain-window taper
+> path. **No test asserts the two agree**, so `sender_policy.rs:265`'s claim
+> that "r ≳ 1.5·ε keeps repair ahead of loss" is prose, not a pin. Everything
+> else about FEC encode is the best-instrumented stage in the pipeline —
+> the MDS boundary (k decodes, k−1 does not), the exact `gen_budget`, and three
+> differential oracles proving the sparse and unified decoders bit-equal to the
+> reference on random traces, all always-on and absolute.
 
 ### 8.1 Formal Statement
 
@@ -2853,6 +3199,33 @@ with δ = δ_min.
 
 ## 11. Verification
 
+> **Correction (2026-08-12, `docs/paper-refresh`): this section describes a
+> verification PLAN; the verification INVENTORY lives in the goal-gate.**
+> Sections 11.1–11.4 were written as a programme — "here is what we would
+> simulate, here is what we would predict, here is how we would compare to the
+> bench suite". They are still a correct statement of intent and are left
+> exactly as written. What they do not do, and what a reader looking for "is
+> this thing verified?" needs, is say which stages of the shipped pipeline
+> actually carry an always-on absolute pin today and which do not.
+>
+> That inventory now exists and is maintained outside this section: goal-gate
+> **"PIPELINE VERIFICATION MATRIX (2026-08-11)"**, 24 rows, one per pipeline
+> stage, each with a STATUS drawn from {VERIFIED, PARTIAL, UNVERIFIED,
+> KNOWN-DIVERGENT} under a stated reading rule (VERIFIED = an always-on test
+> asserts the law's ABSOLUTE value or an equivalence AND the wiring that
+> reaches it is pinned; ordinal-only coverage counts as UNVERIFIED, per this
+> project's standing rule that *ordinal tests do not catch routing bugs*).
+> Section 11.5 summarises it and Section 11.6 tabulates the default stack the
+> matrix is scored against. **Treat the matrix, not this section, as the
+> authority on what is verified.**
+>
+> One finding from the matrix belongs here rather than in a later section,
+> because it is a defect in the verification apparatus itself: **two FEC test
+> files that run in CI contain zero assertions** — `tests/fec_waterfall.rs`
+> and `tests/fec_realworld_recovery_test.rs` "run in CI and can never fail —
+> coverage-shaped, not pins" (matrix row 4). A green CI including those files
+> is weaker evidence than the file count suggests.
+
 ### 11.1 Simulation Approach
 
 Generate synthetic loss traces from the GE model, apply the taper function,
@@ -2915,6 +3288,123 @@ one vocabulary. The suite deliberately includes cells where naive FEC
 loses (clean links, congestion-dominant loss with a competing TCP flow,
 mid-transfer path outage) — ties are the win condition there.
 
+### 11.5 The Living Verification Inventory: the PIPELINE VERIFICATION MATRIX
+
+**(Added 2026-08-12, `docs/paper-refresh`. Summary only — the matrix itself is
+the authority and is maintained in `docs/goal-gate.md`.)**
+
+The matrix exists because three integrated results kept disagreeing with the
+component models and no further integrated run could localise the
+disagreement. It walks the pipeline stage by stage and records, for each,
+what the MODEL claims, what the ENGINE does, which always-on test isolates
+it, and a STATUS. Its 24-row summary, quoted:
+
+| # | stage | STATUS |
+|---|---|---|
+| 1 | source ingestion / `emit_source` composition | PARTIAL (callees pinned, composition not) |
+| 2 | emission pacing, the token bucket (§12) | **KNOWN-DIVERGENT** |
+| 3 | FEC rate law r\* | VERIFIED (kernel) / PARTIAL (composed `controller_rate`) |
+| 4 | FEC encode, generation + decoders | VERIFIED — best instrumented; r\*↔encoder link UNVERIFIED |
+| 5 | scheduler placement (§13.8/§16.3, the active-filter fact) | VERIFIED (divergence) / PARTIAL (its consequence) |
+| 6 | in-flight charge/release accounting | PARTIAL (ack path pinned; un-metered channels not) |
+| 7 | Copa target & velocity law | VERIFIED (wire) / PARTIAL (legacy branch constants) |
+| 8 | anchor floor `clamp_cwnd_with_anchor` | PARTIAL (floor-not-cap pinned; 0.85 pinned at 0.8) |
+| 9 | BBR-side substrate anchor | VERIFIED (gated, not the default) |
+| 10 | rate anchor (a) legacy ack-interval sampler | **UNVERIFIED — and it is the always-on one** |
+| 11 | rate anchor (b/c) send-interval + pool/delivery | VERIFIED |
+| 12 | RTprop | VERIFIED (law) |
+| 13 | srtt (Copa EWMA) | **UNVERIFIED — modelled by test oracles, never pinned** |
+| 14 | K (`EchoRatioMin`) | VERIFIED |
+| 15 | loss ε̂ | VERIFIED (readouts) / PARTIAL (constants) |
+| 16 | store-cap LAW | VERIFIED — the pipeline's best-instrumented law |
+| 17 | admission GATE + the accidental brake | **UNVERIFIED (gate)** — brake mechanism VERIFIED at bench |
+| 18 | wire model: GE configured vs realized | **UNVERIFIED — four implementations, zero cross-validation** |
+| 19 | wire model: netem clamp / jit25 RTprop | VERIFIED as finding / UNVERIFIED as pin (`#[ignore]`) |
+| 20 | receiver decode path | PARTIAL (decoders pinned, receiver composition not) |
+| 21 | receiver ack/echo cadence under ack-merge | **PARTIAL — echo STREAM SHAPE has NO instrument anywhere** |
+| 22 | recovery plane, the 8 pure laws | VERIFIED (laws) / UNVERIFIED (plane-in-engine) |
+| 23 | resequencing / A\*, M\*, Δ span law | **UNVERIFIED — default ON, no pure-law pin** |
+| 24 | resequencing SPAN term (store-cap TERM 3) | VERIFIED at bench / PARTIAL (geometry degenerate) |
+
+Two consequences for how this paper should be read:
+
+* **A section that describes a mechanism is not evidence that the mechanism is
+  pinned.** Where a design section's prose presents something the matrix marks
+  UNVERIFIED or KNOWN-DIVERGENT, a dated correction block now says so at the
+  point of the claim (Sections 2, 3, 6, 7, 11, 12, 13, 14, 15).
+* **Row 23 is a standing invariant hole and is called out as such by the
+  matrix:** the A\*/M\*/Δ span law is default ON and δ-continuous "in a
+  codebase whose non-negotiable invariant is precisely that such laws be
+  continuous with no mode switch, and nothing asserts its continuity at the
+  named points" — where the visualizer's identical claim is gated three ways
+  (CLAUDE.md; `test_visualizer.mjs`, `test_visualizer_ui.mjs`,
+  `test_continuum_one_law_across_the_dial`).
+
+The matrix also carries an ANOMALY MAP (A1–A10) and a ranked SUSPECT LIST; the
+two entries it declares **UNVERIFIABLE with current instruments** are A5's
+sender-local ceiling (loopback tops out at 11–12 k sym/s) and A1's magnitude
+(the c8 loop is bistable, so no dispersion-based 2σ resolves it at any n).
+Neither is a gap in this paper's model; both are limits of the instruments.
+
+### 11.6 The As-Shipped Default Stack (2026-08-12)
+
+**(Added 2026-08-12, `docs/paper-refresh`.)** Sections 1–15 were written across
+several eras and each assumes the machine of its own era. The engine is
+parameterised by ~66 `RWM_*` gates, and the ones below are the ones whose
+SHIPPED DEFAULT differs from — or decides — a section-era assumption. Every
+default here is read from `raptorpath/src/gates.rs` (`RuntimeGates::resolve()`)
+and is pinned by the always-on unit test
+**`gates.rs::default_env_resolves_the_shipped_stack`**, so the stack cannot
+drift silently. Citations are the deciding battery as recorded in the gate's
+own doc comment — no claim in this table is new.
+
+| Gate | Shipped default | Deciding evidence (as cited in `gates.rs`) |
+|---|---|---|
+| `RWM_UNIFIED` | **ON** | ADR-0064; §16.26 (the δ-continuum completed; opt-out semantics since 2026-07-28, streaming machine DELETED) |
+| `RWM_UNIFIED_SHED` | **ON** | §16.26 — δ-honest overload shedding inside the derived 1−ρ budget |
+| `RWM_TAPER_R` | **ON** (= `unified`) | ADR-0063/64, #85 quantity fix |
+| `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_CLOCK_GAP` | **ON** | ADR-0061 (`RWM_ANCHOR_HYGIENE` umbrella); §16.21 |
+| `RWM_HONEST_ANCHOR` | **ON since 2026-08-11** | §16.50 F7 → §16.51 (the separate flip commit): value-identical statistic, O(1) amortized; goodput within 2σ at every cell/seed, CPU/byte 0.90–1.03×. Value-identity pinned by `bw_mono_front_equals_full_window_fold` |
+| `RWM_HONEST_K` | **OFF** | §16.50: "rode only the failed BHU composition; khr−kraw ≈ 0 in-cell" — the gate is OFF as a family verdict, not for want of a pin (matrix row 14 is VERIFIED) |
+| `RWM_ACK_MERGE` | **ON since 2026-08-08** | §16.42 (`feat/ack-merge-flip`): c1 +12.7%/+13.0%, receiver CPU per bit −9.1%/−8.4%, control-datagram density 1.96→1.00 at c1 and 1.05→1.00 at c7; ×8 both seeds + sustained + crown, dnf 0/164 |
+| `RWM_WIRE_COMPACT` | **ON since 2026-08-06** | §16.34 (`feat/window-mtu`), goal-gate "Window Decoupling + MTU Scaling" |
+| `RWM_STORE_SACK_RELEASE` | **ON** | ADR-0060; §16.25 — the first default-flipped mechanism; supersedes the removed `RWM_SACK_PRUNE` |
+| `RWM_STORE_PATHS` | **ON** | ADR-0058 |
+| `RWM_HONEST_CAP` | **ON** | §16.23 — honest floor-clock store caps on the send-interval anchor |
+| `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW` | **ON** | ADR-0059; §16.24 — the RFC 9002-style per-path hole law |
+| `RWM_RS_ATTR`, `RWM_PERCAP_GUARD`, `RWM_RSTAR_TAIL` | **ON** | `=0` arms are the measured control arms (`RWM_PERCAP_GUARD=0` is the c8-regression control); `RWM_RSTAR_TAIL` is §8.4.1's shipped tail provisioning |
+| `RWM_THREE_TERM` | **OFF** | §16.43/§16.44 built it, §16.45 measured it ("the terms are right and the lever is wrong"), §16.50 F1 failed inside 2σ on both seeds — and on a cliff-free c1 its derived cap BINDS BELOW the pooled cap (DHU beats BHU by 22–27 Mbit/s) |
+| `RWM_STORE_CAP_UNIFIED` | **OFF** | §16.52 (harm is U's own, both eras: `[SF]` empty-refresh ≈4%→≈30% at c8, past 2σ both seeds), §16.53 (the dead wall is an `RWM_STORE_CAP_UNIFIED` phenomenon, 8/11 where it lives), §16.54 (0.727 did not reproduce — 9/26 = 0.346; and the c8 dead wall **vanishes at 8× the transfer**, 0/24 at 200 MB, so the harm is length-scoped) |
+| `RWM_DERIVED_SWEEP` | **OFF** | §16.53 (the law is correct, the lever is inert: 1.77× round at c8 bought no latency and no retransmit reduction) and §16.54 (the halving lead INVERTED, at a −23%/−28% goodput class break). Both batteries reported UNSCORED under their own stop rules; the gate is explicitly **not** a deletion candidate |
+| `RWM_PATIENCE_DERIVED` | **OFF** | §16.40 — wins zero of a million evaluations at the cell it was accused at; `RWM_PATIENCE_DERIVED` identical across all 192 cells (§16.41). Now a `deprecated_env_flag` consumer |
+| `RWM_SIDLE_DERIVED` | **OFF** | §16.40 — DIAG-only and behaviour-inert by construction |
+| `RWM_EMIT_BATCH` | **OFF** | §16.28 built it; the "Ship The Wins 1" composed flip measured c1 446–508 Mbit/s with est+pool-anchor and was **REVERTED** by its pre-set c7 clause (2026-08-07). Stays the documented fast single-path opt-in |
+| `RWM_EST_CADENCE`, `RWM_POOL_ANCHOR`, `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND` | **OFF** | §16.35 (the receiver per-message wall), §16.36 (the composed flip REVERTED by its c7 clause), §16.37 (the delivery-clocked successor moved c7 the wrong way — sub-goal closed as a STRUCTURAL BOUND). The last two are `deprecated_env_flag` consumers |
+| `RWM_PLAIN_RS` | **OFF** | anchor-hygiene umbrella default OFF; its c7 CPU class (1.09–1.10×) is measured twice and is the F4 blocker (§16.50) |
+| `RWM_STORE_CAPW` | **OFF** | §16.29 — the c8-aware pool law measured; ADR-0058's pooled verdict kept |
+| `RWM_STORE_PERCAP`, `RWM_STORE_BORROW` | **OFF** | §16.22 (loans ≡ 0 at symmetric cells by theorem); ADR-0058 c8 successor named |
+| `RWM_WIN_DECOUPLE` | **OFF** | §16.34 — the window-decoupling law is REFUTED and re-attributes the re-fire loop |
+| `RWM_RECOV_SP` | **OFF** | §16.30 — the reactive plane's queue-sustained over-fire (sc2-100M: 3313 fired vs ~580 drops, 80% younger than the law's own threshold) |
+| `RWM_PLACE_SLACK` | **OFF** | §16.32 — feeding the slow path source is negative-margin at c8 under every placement law measured |
+| `RWM_QUIC_CC` | **quinn's BBR** | ADR-0054; the in-tree replacement `bbr_rs` is VERIFIED (matrix row 9) but **gated**, because quinn's shallow-buffer collapse is a priced structural bound (§16.38) |
+| `RWM_CC_PACE` | **= `copa_wire_active()`** ⇒ **OFF on the plain-reliable path** | ADR-0062; see the §12 correction — this is why the §12 amendment's pacing claim does not describe the shipped path |
+| `RWM_INFL_CAP` | **0 (off)** | matrix row 17: with it 0, `cwnd_full` is permanently FALSE, so the store cap is the SOLE brake on outstanding data |
+| `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21 |
+| Numeric: `RWM_GEN`=384, `RWM_PIPELINE`=2, `RWM_STORE_PATH_POOL`=2048, `RWM_STORE_BOOT`=**128**, `RWM_STORE_GAIN`=2.0, `RWM_EMIT_BURST`=64, `RWM_CC_PACE_HR`=1.1 | as listed | all pinned by `default_env_resolves_the_shipped_stack`. `RWM_STORE_BOOT = 128` is the boot-cap cliff value of §16.49/§16.50 |
+
+**Two era-hazards this table is meant to prevent.**
+
+1. A section that says "the sender does X" may mean "the sender does X when the
+   gate that was ON in that section's era is set". `RWM_UNIFIED`,
+   `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT` and `RWM_HONEST_ANCHOR` have all flipped
+   ON since parts of Sections 1–15 were written; `RWM_THREE_TERM`,
+   `RWM_STORE_CAP_UNIFIED`, `RWM_DERIVED_SWEEP`, `RWM_HONEST_K` and
+   `RWM_EMIT_BATCH` were all built, measured and left OFF.
+2. **OFF is a verdict, not a backlog.** Every OFF row above cites a battery
+   that decided it. Under the project's no-self-flip rule, a section that
+   recommends a flip never executes it — the flip is a separate commit citing
+   the deciding section (§16.51 is the worked example).
+
 ---
 
 ## 12. Congestion Control Integration
@@ -2946,6 +3436,86 @@ mid-transfer path outage) — ties are the win condition there.
 > receiver-tail flush cannot re-bloat the queue. It bounds the queue as intended, but
 > — like the sender pacing above — does not by itself produce a throughput crossover
 > (§14.7 "Receiver-tail correction").
+
+> **Correction (measured, 2026-08-12, `docs/paper-refresh`): the amendment above
+> describes the GENERATION/BLOCK path, not the shipped plain-reliable path — and
+> where it does run, the bucket paces SOURCE ONLY.** This is the PIPELINE
+> VERIFICATION MATRIX's row 2, and the only row in the matrix marked
+> **KNOWN-DIVERGENT**. Four facts, each cited; nothing above is deleted, because
+> it is a true record of what `feat/transport-substrate` built.
+>
+> **(a) The debit is on the source arm alone.** The token debit is
+> `if pol.cc_pace { st.src_tokens -= 1.0 }`, inside the source arm
+> (`emit_source.rs:493-497`). Repair, taper, SACK-gap retransmit and NACK
+> repair-margin symbols all consume link capacity and no tokens, so the
+> realized wire rate is `src_rate·(1+r)`, not the token refill rate. Two of
+> those channels — the SACK-gap retransmit (`net/mod.rs:6374`) and the NACK
+> repair margin (`net/mod.rs:6420-6448`) — bypass **both** the pacer and the
+> in-flight charge, building a `SymbolBatch` and calling `transport.send_symbols`
+> directly. And the bucket is a **GATE, not a spacer**: there is no
+> inter-symbol spacing, only a 1 ms poll when dry.
+>
+> **This divergence is now BOUNDED, which CLAUDE.md required.** The always-on
+> `store_cap_sf_bench.rs::pacer_debit_bounds_only_the_source_arm_not_the_wire`
+> asserts reachability first (all three unpaced channels must have fired), then
+> `tokens == src` exactly, then `wire == src + taper + retx + margin`, then
+> `wire > tokens` — i.e. it asserts that the §12 claim as written is FALSE of
+> the implementation — with the realized excess `wire/src − 1` computed from the
+> run's own channel counts and bounded in (0, 1). Companion pins:
+> `unmetered_recovery_flow_is_not_charged_to_in_flight` (`wire − charges ==
+> retx + margin` exactly; the taper IS charged, `emit_source.rs:929`) and
+> `counter_delta_release_is_conservative_under_loss`. Citation: goal-gate "SF
+> Accounting Axis — COMPONENT INVESTIGATION (2026-08-11)", FINDING 4 — "Matrix
+> row 2 was KNOWN-DIVERGENT with no bounding test, which CLAUDE.md forbids
+> outright. … that bound … asserts the IMPLEMENTATION, not the model."
+>
+> **(b) On the shipped default the bucket does not run at all.** `RWM_CC_PACE`
+> resolves to `copa_wire_active()` (`gates.rs:319/535`), which is OFF on the
+> plain-reliable path — measured, not inferred: `RWM_CC_PACE=0` in **1 116 of
+> 1 116 logs** of the three-term battery (goal-gate "What Binds Throughput").
+> The pacer is a block/generation-mode mechanism. So the live divergence is
+> about WIRE OCCUPANCY and IN-FLIGHT ACCOUNTING, not about spacing.
+>
+> **(c) What actually gates admission on the shipped path is the STORE CAP and
+> `tx_paused` — nothing else.** The gate is
+> `reliable && (store_len >= effective_store_cap || cwnd_full)`
+> (`net/mod.rs:5220`; the matrix cites the older offset `:5054`), and
+> `cwnd_full` sits behind `eff_infl_cap > 0` while `RWM_INFL_CAP` **defaults 0**
+> (`gates.rs:327/540`) — so `cwnd_full` is permanently FALSE and **the store cap
+> is the SOLE brake on outstanding data** (goal-gate "c8 SF Mechanism", FINDING
+> 1: "`active_paths()` is an OBSERVABLE, never a brake"). `tx_paused`
+> (`net/mod.rs:5145`) then drives the select arms; the pacer arms at `:5842-5856`
+> are conditioned on `pol.cc_pace` and are therefore inert at the default. The
+> matrix's status for this gate is blunt: **the LAW is VERIFIED; the GATE is
+> UNVERIFIED** — the predicate has no isolating unit test, and
+> `tests/backpressure.rs`, despite the name, is ADR-0011 tokio-channel
+> backpressure and never touches `effective_store_cap`.
+>
+> **(d) In-flight release is not 1:1 with charge.** Lost symbols are released
+> via `expected − received` counter deltas (`control_msg.rs:341/685`), not by
+> matching each charge — and the un-metered channels of (a) are never charged.
+> Four always-on `ack_merge_counter_delta_*` tests pin the ack path (including
+> idempotence under duplication/reorder, and "received never exceeds expected");
+> none exercises the un-metered channels, so **matrix row 6 is PARTIAL**. This
+> matters because `available() = cwnd − in_flight` is exactly the predicate the
+> `[SF]` zero-fraction gauge counts.
+>
+> **What this does NOT say.** The matrix is explicit that the un-metered
+> channels "may be deliberate (deficit-driven recovery bypasses the ack-clocked
+> admission precisely to avoid deadlock). The finding is that the divergence
+> from §12 is unbounded by any test, not that it is wrong." As of the SF
+> Accounting Axis it IS bounded. Also unchanged: §12.4's loss-blind claim
+> (VERIFIED in code, L1 2026-07-07) and the Copa laws themselves — matrix row 7
+> marks the wire-mode laws VERIFIED (`copa_target_cwnd()` `== 2000` exactly,
+> the velocity ladder, the `BDP + 2/δ` coupling cap) while marking the
+> **shipped legacy branch PARTIAL**: `BACKOFF_MULT = 0.92` is pinned only as
+> "decreases", and the steady-state anchor-pull branch (`ANCHOR_PULL_ALPHA =
+> 0.25`, `ANCHOR_RECOVERY_GAIN = 1.0`, `scheduler/mod.rs:1709-1719`) has **no
+> test whatsoever**. Section 12.3's BBR discussion is likewise era-bound: the
+> shipped substrate CC is quinn's own BBR (ADR-0054), whose shallow-buffer
+> collapse is a priced structural bound (§16.38); the in-tree replacement
+> estimator is VERIFIED (matrix row 9) but gated behind
+> `RWM_QUIC_CC=bbr_rs`.
 
 ### 12.1 Why Delay-Based CC is Required
 
@@ -3524,6 +4094,102 @@ If not (common on wireless), fall back to Copa's delay-based detection.
 
 ### 12.8 Application Back-Pressure
 
+> **Correction (measured, 2026-08-12, `docs/paper-refresh`): the shipped
+> back-pressure operand is not `buffer_max`, and the cap law's actual operating
+> point at dual cells is a CONSTANT.** This subsection says back-pressure fires
+> "when the retransmit buffer reaches `buffer_max`" (§6.1's GE-derived size).
+> The mechanism is right — the sender does stop reading the TUN and the
+> application's `write()` blocks, exactly as described — but the operand and its
+> law have both moved, and where they sit now is measured rather than derived.
+> Six facts:
+>
+> **(a) The operand is `store_len` against `effective_store_cap`**, the pooled
+> store cap of `net/mod.rs:2311/:2944/:2359`:
+> `path_scaled_store_cap = clamp(gain·N_live·Σ_active anchor, floor, N_live·knee)`.
+> The ×N and the Σ range over DIFFERENT path sets — that asymmetry is the
+> defect the store-cap work is named after. **Matrix row 16 marks this law
+> VERIFIED and calls it "the most thoroughly instrumented law in the
+> pipeline"** — nine always-on absolute pins, a component bench, a closed-loop
+> component bench, an engine-equivalence pin
+> (`three_term_engine_law_is_the_bench_terms_at_the_anchors`, the one bench↔engine
+> equivalence in the tree) and an L1 mechanism gauge.
+>
+> **(b) At DUAL cells the law is pinned at its ceiling, so the anchor cannot
+> matter there.** The clamp saturates iff `Σ ≥ knee/gain`, and **that threshold
+> is path-count-free: it is 1024 symbols** (the N cancels). The wire's measured
+> Σ is 1635 at c7 and 1510 at c8 — 1.60×/1.47× the threshold — so the realized
+> cap is **4096 = 2·knee in 69/69 c7 reps and 52/57 c8 reps across 178
+> dual-cell reps from five independent sessions**, with `capboot_frac` = 0.0000
+> in every one. "The anchor is not steering the cap at the duals —
+> `RWM_STORE_PATH_POOL` is, and any measured 'store-cap effect' at c7/c8 on the
+> shipped default is an effect of that constant." Citation: goal-gate
+> "Cap-Refresh Warmth (2026-08-11)", FINDING 3; always-on
+> `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`,
+> `the_shipped_dual_refresh_has_exactly_three_reachable_regimes`,
+> `the_wires_measured_anchors_pin_both_legs_and_free_one_leg_at_both_duals`,
+> `the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff`.
+>
+> **(c) The BOOT-CAP CLIFF, and its measured cost on the SHIPPED default.**
+> When `active_paths()` comes back empty the cap does not taper — it drops to
+> `store_boot_cap` = 128 for that refresh, a ×6.4 step at c8 and ×6.5 at c1
+> (Σ both paths 813 / fast only 333 / empty 128). Pinned absolutely by
+> `empty_active_set_is_a_cliff_not_a_taper`. It is a **c1 phenomenon**: arm A
+> reads capboot 28.3–29.5% of steady DIAG samples with `occcap_p50` 535 against
+> the law's ~1024, and removing it is worth **c1 +15.8%/+24.8%** — so **the
+> shipped default itself pays ~15–25% at c1** (§16.50, whose title states it;
+> goal-gate "Honest Inputs — FLIP BATTERY"). At c8 `capboot` is 0.0% in all
+> four arms — the cliff is simply not present there (§16.52).
+>
+> **(d) The ACCIDENTAL BRAKE, and its refutation arc — recorded in full,
+> because the arc is the lesson.** "Store-Cap Triplication" found that removing
+> the cliff made the paths MORE saturated (`[SF]` zero-tick fraction 4.9%→28.6%
+> s42, 3.9%→32.2% s7) and concluded that "a defect can be doing load-bearing
+> work, and removing it correctly can still cost". "c8 SF Mechanism" FINDING 2
+> mechanised it as "the loop's only stabiliser", an ACCIDENT rather than a
+> design. **"Cap-Refresh Warmth" then refuted the reading:** under
+> `RWM_STORE_CAP_UNIFIED` the Σ ranges over `live`, so an empty `active_paths()`
+> **cannot reach the cap at all** — the zero-fraction under U is a pure
+> OBSERVATION, and "the contradiction was never in the engine; it was in reading
+> a downstream gauge as an upstream cause". On the wire the `[SF]` zero-fraction
+> is 0.3% at c7-A and 4.6% at c8-A against 29.8% at c1, "where it IS the
+> mechanism". What U actually buys at c8 is +16% of mean pool depth
+> (3524→4096), not a fold.
+>
+> **(e) ADR-0060 already removed the frontier-span cost this section would
+> otherwise pay.** Under SACK-clocked store release (`RWM_STORE_SACK_RELEASE`,
+> DEFAULT ON since 2026-07-21; §16.25) a SACK range releases the store SLOT
+> while RETAINING payload and recovery structures until the cumulative frontier
+> passes — "slot release ≠ recoverability". Measured: the frontier span is
+> 2.2×/3.8×/3.6× the cap at sc2/c7/c8, `released` uncounts **51%/61%/70%** of
+> it, and `store_len = span − released` returns to the unacked count to within
+> 0.5–1.0%. So the flow-control operand is the unacked count again, to within
+> the gap-report lag (`GAP_ACK_MIN_INTERVAL` = 2 ms plus one return flight).
+> Citation: ADR-0060; goal-gate "The Coupling Model — RESULTS (2026-08-12)",
+> FINDING 1; always-on
+> `the_frontier_span_returns_to_the_unacked_count_through_the_release_law`.
+>
+> **(f) `RWM_STORE_CAP_UNIFIED` ("U") ships OFF, and its harm is LENGTH-SCOPED.**
+> U removes the c1 cliff exactly as advertised (capboot 30%→0%, +13.2%/+12.6%
+> past 2σ both seeds) but eight-folds the `[SF]` empty-refresh rate at c8
+> (≈4%→≈30%, past 2σ both seeds in both anchor eras) — payoff and cost at
+> different cells through different mechanisms, judged separately, and the trade
+> not taken (§16.52). §16.53 then localised the c8 collapse to the ARM rather
+> than the cell (A 1/16 vs AU 8/11, non-overlapping intervals) and §16.54
+> re-measured that 0.727 at **9/26 = 0.346 on a byte-identical binary** — the
+> mode is real, the point estimate was an overestimate, and both batteries are
+> reported UNSCORED under their own stop rules. The one clean result:
+> **`p_AU(200 MB)` = 0/24 = 0.000 [0.000, 0.138]** against 0.346 at 25 MB, so
+> "the harm is length-scoped, not a steady-state property" — with the caveat
+> that `deadwall` is a median over a tick population of 6–17 at 25 MB versus
+> ~78 at 200 MB, so the 0/24 cannot separate a diluting fixed-duration tail from
+> an unstable estimator. The standing consequence for this paper: **the legacy
+> `active_paths()` store-cap path is load-bearing and is NOT a deletion
+> candidate** (goal-gate "Mode-Hunt Battery — RESULTS", recommendation 4).
+>
+> `U` here is `RWM_STORE_CAP_UNIFIED` and is DEFAULT OFF. It must not be
+> confused with `RWM_UNIFIED`, the one-span-machine gate of ADR-0064/§16.26,
+> which is DEFAULT ON. See Section 11.6.
+
 When r* is so high that source_rate = total_rate/(1+r*) drops below the
 application's minimum (e.g., VoIP codec needs 64kbps), the system signals
 back-pressure: "the channel cannot support your required quality at this
@@ -3780,6 +4446,62 @@ failing component was invisible from both endpoints' application state.
 ---
 
 ## 13. Multi-Path Scheduling
+
+> **Correction (2026-08-12, `docs/paper-refresh`): the shipped placement law
+> admits SATURATED paths, and the capacity hand-off §13.8 relies on does not
+> exist on the shipped default.** Section 13.8's objective is realised in the
+> engine as a continuous softmax over `place_costs` (§16.3), and the `in_flight/cwnd`
+> congestion term there is *deliberately* the continuous form of a capacity
+> filter rather than a hard one. That much is by design. What the section does
+> not say, and a reader needs:
+>
+> **(a) The candidate set filters on the `p.active` FIELD alone.**
+> `place_costs` (`scheduler/mod.rs:3499`) builds its candidates as
+> `self.paths.values().filter(|p| p.active)` (`:3563-3567`) — **no
+> `available() > 0` test**. The reliable emitter reaches it through
+> `place_symbol(false, &[])` (`net/emit_source.rs:334-339`), so on the source
+> path both the repair bias and the diversity term are identically zero.
+> Contrast `redundant_source_path` (`:3575`), `best_source_path()` (`:3259`)
+> and `schedule()` (`:2932`), which DO test capacity — and which the reliable
+> emitter does not use. (`tests/scheduler_test.rs`'s ten tests all target
+> `schedule()`.) Consequence: `in_flight_i` may exceed `cwnd_i` without bound,
+> and `available()` reads 0 and stays 0 until acks drain it.
+>
+> **(b) "Live" and "active" are different path sets, and swapping them silently
+> changes the law.** A saturated path (`in_flight ≥ cwnd`) is **live but not
+> active**: `active_paths()` additionally filters on spare capacity, while
+> `live_paths()` does not. The CC pace rate uses `live_paths()` precisely
+> because the active filter dropped a saturated path out of the aggregate,
+> whereas the M\* RTprop / in-flight-cap / tail-sweep phases use
+> `active_paths()`. Pinned always-on by
+> `scheduler::tests::saturated_path_is_live_but_not_active`
+> (`scheduler/mod.rs:3656`), which exists because the deleted
+> `RWM_SCHED_SNAPSHOT` seam's test CLAIMED to catch a path-set swap and could
+> not — its fixture only added fresh paths, where `in_flight = 0 < cwnd` makes
+> the two sets identical (ADR-0066; goal-gate "Scheduler-Snapshot
+> Adjudication"). Terminology caution: because `place_costs` reads the FIELD
+> `p.active` (link up) and not the `active_paths()` accessor (up **and** spare
+> capacity), its candidate set is `live_paths()`-shaped.
+>
+> **(c) The hand-off that was supposed to cover this is false on the shipped
+> default.** The scheduler doc's claim — "the send loop's pacing/backpressure
+> remains the real capacity gate" — does not hold: `RWM_CC_PACE=0` on the
+> plain-reliable path and `RWM_INFL_CAP` defaults 0, so there is no cwnd gate on
+> intake at all (see the §12 correction, (b) and (c)). **Matrix row 5:
+> VERIFIED for the divergence, PARTIAL for its CONSEQUENCE** — the filter
+> asymmetry is pinned by the always-on
+> `store_cap_sf_bench.rs::reliable_placement_does_not_filter_on_cwnd_headroom`,
+> which asserts all four halves at once (`active_paths()` empty,
+> `best_source_path()` None, `schedule()` empty, `place_probs` still 2-wide).
+> What is NOT pinned: `place_symbol`'s own sampling loop (every placement test
+> goes through `place_probs`), and the symmetric-cell tie-break — which is
+> `HashMap`-iteration-order random per PROCESS in the engine and deterministic
+> only inside the bench helper, the defect that made the bench's c7
+> unreproducible.
+>
+> The §13.8 measured results quoted below (block-granular affinity 8.8→11.4,
+> the D_i eligibility constraint to 12.6 Mbit/s, hold expiries 151→96) are
+> era-correct and are not re-scored here.
 
 ### 13.1 Why FEC Beats MPTCP
 
@@ -4136,6 +4858,26 @@ testing the interactive visualizer simulation. They represent deeper
 considerations about how FEC latency, ARQ latency, bandwidth, and the
 encoder window interact — areas where the current model can be refined
 in future work.
+
+> **Correction (2026-08-12, `docs/paper-refresh`): several subsections here have
+> since SHIPPED, and a reader cannot tell which from the framing.** The heading
+> says "future directions"; in practice §14.7's transport-substrate and
+> receiver-tail corrections, §14.26's χ glide, §14.27's batch-ACK ARQ, §14.28's
+> inner-feedback repair floor and §14.29's end-of-stream taper term are all in
+> the shipped machine, while others in this section remain unbuilt. **Section
+> 11.6 is the authority on what is on and what is off**; where a subsection here
+> names an `RWM_*` gate, check its row there before reading the subsection as a
+> description of the running system.
+>
+> Two specific era-hazards, both cited:
+>
+> * §14.7's substrate results are Copa-era. The shipped substrate CC is quinn's
+>   own BBR (ADR-0054); its shallow-buffer collapse is a **priced structural
+>   bound**, not an open item (§16.38), and the in-tree replacement estimator is
+>   VERIFIED but gated (`RWM_QUIC_CC=bbr_rs`, matrix row 9).
+> * Where a subsection reads as an open question that a later battery has since
+>   CLOSED — including by refutation — the closing citation is in Section 11.6's
+>   table or in §16.28–§16.54. **OFF is a verdict, not a backlog.**
 
 ### 14.1 Reconsidering the Triangle: Bandwidth as Constraint, Not Variable
 
@@ -5775,6 +6517,40 @@ This is a design section (no measured implementation yet); it reuses the
 existing `RlcEncoder`/`RlcDecoder` (raptorpath-math/src/rlc.rs), `TaperFunction`
 (Section 4), `derive_window` (Section 8.8), and the Section 13.8 scheduler,
 and states honestly what it costs and buys.
+
+> **Correction (2026-08-12, `docs/paper-refresh`): "no measured implementation
+> yet" is no longer true — the unified machine SHIPPED — and its central law is
+> the one UNVERIFIED default-ON law in the pipeline.** `RWM_UNIFIED` is
+> **DEFAULT ON** (ADR-0064; §16.20 built the one-span decoder, §16.26 completed
+> the δ-continuum and shipped it), with opt-out semantics since 2026-07-28: the
+> streaming two-layer machine is **DELETED**, and `RWM_UNIFIED=0` + Realtime now
+> selects the legacy-RLC windowed machine, not the streaming code. So the
+> per-stream triangle this section argues for is built, and the migration sketch
+> of §15.6 is history rather than plan. §15.7's amendment — retention is ρ, not
+> a new axis — is unaffected and remains the correct reading.
+>
+> **What is not verified is the span law itself (matrix row 23).** The shipped
+> resequencing/delivery law is `A* = clamp(rate·D, 1, W)` with
+> `D = min(H, 2·RTprop)`; `M* = ceil(rate·2·RTprop/A*) + 1`;
+> `Δ = clamp(⌈rate·jitter⌉, 1, 64)` — one law, continuous in δ, no mode bit. Its
+> only instruments are the `[SPAN]` DIAG trace (`emit_source.rs:751`) and two
+> `#[ignore]` L0 arms; `sim_reorder_test.rs` pins `ReorderBuffer`, a different
+> object. **No isolating pure-law test exists**, and the matrix says why that
+> matters here more than elsewhere: this is "a default-ON, δ-continuous law in a
+> codebase whose non-negotiable invariant is precisely that such laws be
+> continuous with no mode switch, and nothing asserts its continuity at the
+> named points" — where the visualizer's identical claim is gated three ways
+> (CLAUDE.md; `test_visualizer.mjs`, `test_visualizer_ui.mjs`,
+> `test_continuum_one_law_across_the_dial`). The matrix ranks closing it suspect
+> **rank 4, LOW cost**, and notes it "closes a CLAUDE.md-invariant hole
+> regardless of any anomaly".
+>
+> Two composition rows nearby, for completeness: the RECEIVER's own delivery
+> arms, in-order frontier advance and OOO delivery have no isolating instrument
+> either (matrix row 20, PARTIAL — the decoders are pinned, the composition is
+> not), and `emit_source`'s claimed `RWM_EMIT_BATCH=0` bit-identity is module-doc
+> prose with no bounding test (matrix row 1, PARTIAL; `emit_source()` has no
+> direct test at any level).
 
 ### 15.1 The Defect: One Triangle per Tunnel
 

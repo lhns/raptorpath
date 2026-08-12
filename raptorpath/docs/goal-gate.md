@@ -29285,3 +29285,104 @@ structure on it anyway. **A point estimate that has not been reproduced is a
 hypothesis, and a bar keyed to one is a bar keyed to a hypothesis.** Re-measure
 the baseline in the same session that scores against it — which S1 did, which
 is the only reason this is a caught error rather than a published one.
+
+## Paper Refresh (2026-08-12, `docs/paper-refresh` from main@2a3d82e) — **STRICTLY LOCAL, DOCS ONLY.** No engine file, no gate, no default, no test, no VM, no benchmark. The paper's design sections (§1–15) are brought into correspondence with VERIFIED reality using the PIPELINE VERIFICATION MATRIX as the authority for what is verified, divergent or unverified. **Gates run: `cargo test --doc` (0 doctests in both crates — the paper is NOT doctested; verified rather than assumed) and `cargo test --lib`, unchanged-green. No new claim is made anywhere; every correction cites a matrix row, a paper §16.x, an ADR, a goal-gate section, or an always-on test BY NAME.**
+
+### WHY
+
+The design sections describe the architecture as designed at their writing
+eras, patched with amendment blocks, while the current truth lives scattered
+across §16.40–16.54 and this file. Asked whether the architecture is cleanly
+documented and up to date, the honest answer was no. The method is the house
+style — **corrections, not rewrites**: a dated, clearly-marked block stating
+what the section claimed, what is now measured or shipped, and the citation.
+**No original prose was deleted or reworded.** Every amendment already in the
+paper (the §12 transport-substrate block, §15.7) is left exactly as written and
+is corrected from below rather than edited.
+
+### SECTIONS TOUCHED, one line per correction
+
+| § | correction | primary citations |
+|---|---|---|
+| 2 (Channel Model) | GE as CONFIGURED ≠ GE as REALIZED: **four incompatible implementations**, zero cross-validation; plus the jit25 clamp finding is VERIFIED as a finding, UNVERIFIED as a pin (`#[ignore]`) | matrix rows 18, 19; "Honest Inputs — PHASE 3" probe 2; §16.50 |
+| 3 (Recovery Fundamentals) | the `[25,100] ms` clamps have **no measurement behind them** and guard two absent quantities; the derived round is a correct law with the coincidence property but an **inert lever** costing −23%/−28%; `RWM_PATIENCE_DERIVED` refuted from both sides; the referent-event clock argument; the dead wall belonged to the ARM and is length-scoped; plane-in-engine UNVERIFIED | "The Derived Recovery Clamp"; §16.40, §16.41, §16.53, §16.54; matrix row 22 |
+| 6 (Protocol Mechanics) | `PROTOCOL_VERSION = 7` and the **six deleted control variants** (fixint renumbering ⇒ the bump); ack-merge DEFAULT ON, structural not aggregating; **drecv = 1 on the wire** in 857 400 acks, no aggregation; the WindowAck predicate and the ts = 0 echo rejection; §6.5's "compose without interfering" does **not** hold on the shipped stack | "Refactor: dead code batch 2" Item 1; §16.42; "Ack-Cadence Measurement (VM)"; matrix rows 2, 5, 17, 21 |
+| 7 (Estimation) | the rate anchor is **FLOOR-CLOCKED** (1 ms floor rejects 81.5–96% of calls; 5–28 acks folded per accepted sample) — the mechanism of the ×4.6–7.4 over-read; **repairs enter the ack counters**, so three consumers read a wire-arrival population; srtt/RTprop share an event but K is fed the smoothed series; the 10 s window exceeds most transfers ⇒ whole-transfer extrema; `RWM_HONEST_ANCHOR` DEFAULT ON as a value-identical cost flip | "Ack-Cadence Gauge — THE INSTRUMENT"; "Ack-Cadence Measurement (VM)" READOUT 3b/4; "Honest Inputs — MECHANISM + FIXES" MECHANISM 2; "The Queue Fix"; §16.50, §16.51; matrix rows 10, 13, 14 |
+| 8 (Optimization) | r\* KERNEL VERIFIED, **composed `controller_rate` PARTIAL** (one loose band); the `r(β)` blend is the VISUALIZER's law, not the engine's; **nothing connects r\* to the encoder** — `gen_budget` uses the constant `gen_repair_floor` | matrix rows 3, 4; `formula_verification.rs::test_r_star_worked_examples` |
+| 11 (Verification) | §11.1–11.4 are a PLAN; the INVENTORY is the matrix — pointer plus the 24-row summary reproduced; the **zero-assertion CI test files** finding; row 23 named as a standing CLAUDE.md-invariant hole | matrix (whole); matrix row 4 caveat |
+| **11.5 (NEW)** | "The Living Verification Inventory" — the matrix summarised, with its two UNVERIFIABLE-with-current-instruments entries named | matrix SUMMARY / ANOMALY MAP / SUSPECT LIST |
+| **11.6 (NEW)** | "The As-Shipped Default Stack (2026-08-12)" — every `RWM_*` default that differs from or decides a section-era assumption, each with its deciding battery, sourced from `gates.rs` doc comments; pinned by `default_env_resolves_the_shipped_stack` | `gates.rs`; §16.25/16.26/16.28–16.54; ADR-0052/0054/0058/0059/0060/0061/0062/0063/0064/0066 |
+| 12 (CC Integration) | the standing amendment describes the **generation/block** path: the debit is **SOURCE ONLY**, two recovery channels bypass tokens AND in-flight, release is counter-delta — and `RWM_CC_PACE=0` on the shipped path (1 116/1 116 logs), so the real admission gate is **store cap + `tx_paused`** with `cwnd_full` permanently false; the divergence is now BOUNDED | matrix rows 2, 6, 7, 17; "SF Accounting Axis" FINDING 4; "c8 SF Mechanism" FINDING 1; `pacer_debit_bounds_only_the_source_arm_not_the_wire` |
+| 12.8 (Back-Pressure) | the operand is `store_len` vs `effective_store_cap`, not `buffer_max`; **at duals the law is pinned at N·knee, threshold 1024 and path-count-free — the anchor cannot matter there**; the boot-cap cliff costs the shipped default ~15–25% at c1; the accidental-brake arc **including its refutation**; ADR-0060 neutralised the frontier-span cost (51–70% uncounted); U's status, its length-scoped harm, and the legacy path's non-deletability | "Cap-Refresh Warmth" FINDING 3; "Store-Cap Triplication"; "c8 SF Mechanism" FINDING 2; "The Coupling Model — RESULTS" FINDING 1; ADR-0060; §16.25, §16.50, §16.52, §16.53, §16.54 |
+| 13 (Multi-Path Scheduling) | `place_costs` filters on the `p.active` **field alone** (no capacity test) and the reliable emitter reaches it via `place_symbol(false, &[])`; live ≠ active and swapping them changes the law; **the capacity hand-off the doc claims covers this does not exist on the shipped default** | matrix row 5; `saturated_path_is_live_but_not_active`; `reliable_placement_does_not_filter_on_cwnd_headroom`; ADR-0066 |
+| 14 (Future Directions) | several subsections have SHIPPED and the framing hides which; §14.7's substrate results are Copa-era against a quinn-BBR default whose collapse is a priced structural bound; **OFF is a verdict, not a backlog** | §11.6; §16.38; matrix row 9 |
+| 15 (Unified Sliding-Window) | "no measured implementation yet" is false — `RWM_UNIFIED` **DEFAULT ON**, streaming machine DELETED; but the A\*/M\*/Δ span law is the one **UNVERIFIED default-ON δ-continuous law**, contrasted with the visualizer's three gates; receiver composition and `emit_source` composition likewise unpinned | ADR-0064; §16.20, §16.26; matrix rows 1, 20, 23; CLAUDE.md |
+
+Sections 1, 4, 5, 9, 10 were read and needed no correction: their content is
+model algebra that no measurement has moved.
+
+### MATRIX ADDENDUM ROWS — divergences the matrix did not carry
+
+Per the dispatch's validation rule, these are RECORDED here rather than
+silently repaired in prose or in code. **None of them is a new measurement**;
+each is a read of the tree at `main@2a3d82e` against the matrix's own text.
+No engine file is touched by this branch, including the stale doc comment
+named below.
+
+* **A-1 — two matrix rows have DRIFTED LINE OFFSETS; the laws they quote are
+  verbatim correct.** Row 17's admission gate is at `net/mod.rs:5220` (matrix
+  says `:5054`); row 21's `window_ack_emission` is at `net/mod.rs:3579` (matrix
+  says `:3416`) and its ts = 0 echo rejection is at `control_msg.rs:655`
+  (matrix says `:639` — which at HEAD is inside the `am_live` counter-release
+  block). The paper's correction blocks cite the current offsets and name the
+  matrix's, so neither reference rots silently.
+* **A-2 — two matrix rows have been DISCHARGED since the matrix was written,
+  and the matrix still reads them as open.** Row 2 was "KNOWN-DIVERGENT, and
+  the divergence carries NO bounding test"; "SF Accounting Axis" then built
+  `pacer_debit_bounds_only_the_source_arm_not_the_wire` (always-on), which IS
+  that bound. Row 21 was "ECHO STREAM SHAPE UNVERIFIED, with no instrument in
+  existence"; the "Ack-Cadence Gauge" built the instrument and "Ack-Cadence
+  Measurement (VM)" read it (drecv = 1 at p50 and p90 in all 60 windows,
+  857 400 acks). Both rows' STATUS text predates their own discharge and should
+  be re-scored by whoever next edits the matrix.
+* **A-3 — a doc-vs-code drift the matrix does not cover, because the matrix
+  scores tests and not comments.** `scheduler/mod.rs:342-344` still documents
+  `RWM_HONEST_ANCHOR` as "anchor-hygiene family member, **default OFF**", while
+  the resolution two lines below is `anchor_gate_default("RWM_HONEST_ANCHOR",
+  true)` and both `gates.rs:80` and `default_env_resolves_the_shipped_stack`
+  assert DEFAULT ON since the §16.51 flip. The behaviour is correct and pinned;
+  only the comment is stale. **Not fixed here** (this branch touches no engine
+  file) — recorded for the next branch that opens `scheduler/mod.rs`.
+* **A-4 — a terminology hazard adjacent to matrix row 5.** Row 5 says
+  `place_costs` "filters on `p.active` ALONE", which is exact — but `p.active`
+  is the `PathState` FIELD (link up), not the `active_paths()` ACCESSOR (up
+  **and** spare capacity). The candidate set is therefore `live_paths()`-shaped,
+  while row 17 and the `[SF]` gauge key on `active_paths()`. Two adjacent rows
+  of the same matrix use "active" for two different sets, and the always-on pin
+  `saturated_path_is_live_but_not_active` exists precisely because that
+  confusion is load-bearing. The §13 correction spells the distinction out.
+* **A-5 — an ADR-coverage gap, not a matrix row.** The `PROTOCOL_VERSION`
+  6 → 7 bump — the single deliberate behaviour change of the batch-2 refactor,
+  and a hard handshake incompatibility — has **no ADR**. It is recorded only in
+  the goal-gate refactor section and in a source comment, while prior wire
+  changes of comparable weight carry one (v3 / ADR-0030) and ADR-0069 already
+  constrains any future 7 → 8. Recorded so the gap is visible; writing the ADR
+  is a separate branch's work.
+
+### WHAT THIS DOES NOT LICENSE, AND WHAT IT DELIBERATELY DOES NOT DO
+
+* **No verdict is re-read and no number is re-derived.** Every figure in every
+  correction block is quoted from the section that measured it.
+* **Nothing is promoted.** A matrix row marked UNVERIFIED stays UNVERIFIED; the
+  corrections make the paper AGREE with the matrix, they do not close any row.
+  In particular row 23 (the A\*/M\*/Δ span law) is now named in the paper as a
+  standing CLAUDE.md-invariant hole and is **still open**.
+* **No prose was deleted.** Where a section states something the evidence no
+  longer supports — §6.2's per-symbol ACK, §6.5's independence claim, §12.8's
+  `buffer_max` operand, §15's "no measured implementation yet" — the original
+  is kept for its historical value and the correction block says what replaced
+  it and why. Nothing was found that was a plain falsehood with no historical
+  value, so nothing was removed.
+* **This is not a re-audit.** The matrix remains the authority; §11.5 is a
+  pointer and a summary, not a fork of it. If the two ever disagree, the matrix
+  wins and the paper is wrong.
