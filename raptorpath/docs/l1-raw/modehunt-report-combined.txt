@@ -1,0 +1,95 @@
+==============================================================================
+MODE-HUNT BATTERY — SCORING PASS
+contract: goal-gate "Mode-Hunt Battery — VM PRE-REGISTRATION" (b8fd6d9)
+==============================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+
+cell-arm    headers  ABORT   live  voided  scored   DNF
+c8-A              8      1      7       0       7     0
+c8-AU            32      6     26       0      26     0
+c8-AUR           32      8     24       0      24     0
+c8L-AU           32      8     24       0      24     0
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS
+
+cell-arm    GATES U cli/srv  GATES DS cli/srv     actU    actDS    divDS
+c8-A            7/7 (exp 0)       7/7 (exp 0)      7/7      7/7      7/7
+c8-AU         26/26 (exp 1)     26/26 (exp 0)    26/26    26/26    26/26
+c8-AUR        24/24 (exp 1)     24/24 (exp 1)    24/24    24/24    24/24
+c8L-AU        24/24 (exp 1)     24/24 (exp 0)    24/24    24/24    24/24
+
+### THE DEAD-WALL RATE (per-rep: wait_tun == 0 AND wait_paused == 0)
+
+cell-arm        s42       s7    pooled    rate   95% Wilson CI
+c8-A            0/4      0/3       0/7   0.000   [0.000, 0.354]
+c8-AU          6/12     3/14      9/26   0.346   [0.194, 0.538]
+c8-AUR         4/12     5/12      9/24   0.375   [0.212, 0.573]
+c8L-AU         0/12     0/12      0/24   0.000   [0.000, 0.138]
+
+### POOL PROVENANCE — main vs symmetric top-up, and are they exchangeable?
+
+cell-arm     pool  seed      k/n    rate
+c8-A         main    42      0/4   0.000
+c8-A         main     7      0/3   0.000
+c8-AU        main    42     6/12   0.500
+c8-AU        main     7      3/9   0.333
+c8-AU       topup     7      0/5   0.000
+c8-AUR       main    42     4/12   0.333
+c8-AUR       main     7      1/7   0.143
+c8-AUR      topup     7      4/5   0.800
+c8L-AU       main    42     0/12   0.000
+c8L-AU       main     7      0/9   0.000
+c8L-AU      topup     7      0/3   0.000
+
+  Heterogeneity, SAME arm / SAME seed / SAME binary, main vs top-up
+  (Fisher exact, two-sided — an instrument check, NOT a treatment contrast):
+
+  c8-AU      main 3/9 vs topup 0/5   Fisher p = 0.2582   exchangeable at p>=0.05
+  c8-AUR     main 1/7 vs topup 4/5   Fisher p = 0.0720   exchangeable at p>=0.05
+  c8L-AU     main 0/9 vs topup 0/3   Fisher p = 1.0000   exchangeable at p>=0.05
+
+### GUARDS — medians, and ratios against AU (the baseline)
+
+cell-arm     goodput     /AU  ping_p99     /AU  wait_tun  wait_paus  sf_zero    retx
+c8-A            86.4   1.127     141.0   0.956        38          7    0.034    1358
+c8-AU           76.7   1.000     147.5   1.000      18.5        1.0    0.265    1986
+c8-AUR          55.2   0.720     139.0   0.942      17.0        0.5    0.299    2003
+c8L-AU          52.6   0.686     140.0   0.949      86.5        0.0    0.061   13877
+
+==============================================================================
+THE PRE-REGISTERED BARS, SCORED VERBATIM
+==============================================================================
+
+[S1] THE REPRODUCTION / STOP BAR — p_AU pooled >= 0.4
+     p_AU = 9/26 = 0.346, 95% CI [0.194, 0.538]
+     ==> FAIL — BATTERY REPORTED UNSCORED
+     (predecessor AU = 0.727 [0.434, 0.903], SAME BINARY -> pure substrate test)
+
+[T-KILL] AUR: CI excludes p_AU=0.346 AND CI upper < 0.25
+     p_AUR = 9/24 = 0.375, 95% CI [0.212, 0.573]
+     clause 1 (CI excludes p_AU):   FAIL
+     clause 2 (CI upper < 0.25):    FAIL (upper = 0.573)
+     ==> T-KILL NOT MET
+
+[T-HALVE] AUR: CI excludes the transcribed 0.727
+     ==> T-HALVE MET (0.727 outside [0.212, 0.573])
+
+[G-GOODPUT] AUR/AU median goodput >= 0.85
+     55.2 / 76.7 = 0.720  ==> FAIL — any kill here is a TRADE
+
+[G-LATENCY] AUR/AU median ping_p99 <= 1.25
+     139.0 / 147.5 = 0.942  ==> PASS
+
+[ERA PIN] A = 0/7 = 0.000, 95% CI [0.000, 0.354]
+     falsifier: pin ABOVE 0.25 would void the session.
+     ==> PASS (era did not move)
+     NOT A CONTRAST. Pre-disqualified at n=8 by the pre-registration.
+
+[C8L] THE BYTE-COUNT ARTIFACT, asked on the arm that fires
+     p_AU(200MB) = 0/24 = 0.000, 95% CI [0.000, 0.138]
+     p_AU(25MB)  = 9/26 = 0.346, 95% CI [0.194, 0.538]
+     ARTIFACT CONFIRMED (CI excludes p_AU(25) AND upper < 0.25): YES
+     ARTIFACT REFUTED  (CIs overlap AND point >= 0.5*p_AU(25) = 0.173): no
+     ==> ARTIFACT CONFIRMED
+

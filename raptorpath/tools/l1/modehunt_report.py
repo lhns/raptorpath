@@ -59,15 +59,34 @@ def med(v):
     return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
 
 
+def fisher(a, b, c, d):
+    """Two-sided Fisher exact on [[a,b],[c,d]]. Used ONLY to ask whether two
+    pools of the SAME arm at the SAME seed are exchangeable — a heterogeneity
+    check on the instrument, never a treatment contrast."""
+    n = a + b + c + d
+    r1, r2, c1 = a + b, c + d, a + c
+
+    def pr(x):
+        return (math.comb(r1, x) * math.comb(r2, c1 - x)) / math.comb(n, c1)
+
+    obs = pr(a)
+    lo = max(0, c1 - r2)
+    hi = min(r1, c1)
+    return sum(pr(x) for x in range(lo, hi + 1) if pr(x) <= obs * (1 + 1e-9))
+
+
 rows = []
 for path in sys.argv[1:]:
+    pool = "topup" if "topup" in path.replace("\\", "/").split("/")[-1] else "main"
     with open(path, errors="replace") as f:
         for ln in f:
             i = ln.find('{"cell"')
             if i < 0:
                 continue
             try:
-                rows.append(json.loads(ln[i:]))
+                r = json.loads(ln[i:])
+                r["_pool"] = pool
+                rows.append(r)
             except ValueError:
                 pass
 
@@ -133,6 +152,34 @@ for ck in CELLARMS:
     rate[ck] = (k, n, k / n, lo, hi)
     print(f"{ck[0]+'-'+ck[1]:<10} {f'{per[42][0]}/{per[42][1]}':>8} {f'{per[7][0]}/{per[7][1]}':>8} "
           f"{f'{k}/{n}':>9} {k/n:>7.3f}   [{lo:.3f}, {hi:.3f}]")
+
+# ── POOL PROVENANCE + heterogeneity. The top-up is pooled INTO the scoring
+#    set (the §16.52 precedent: its collapse reps are what moved that verdict),
+#    and its own contribution is printed so the pooling is auditable rather
+#    than retrofitted.
+print("\n### POOL PROVENANCE — main vs symmetric top-up, and are they exchangeable?\n")
+print(f"{'cell-arm':<10} {'pool':>6} {'seed':>5} {'k/n':>8} {'rate':>7}")
+for ck in CELLARMS:
+    for pool in ("main", "topup"):
+        for s in (42, 7):
+            rs = [r for r in stat[ck] if r["_pool"] == pool and r["seed"] == s]
+            if not rs:
+                continue
+            k = sum(1 for r in rs if r["deadwall"])
+            print(f"{ck[0]+'-'+ck[1]:<10} {pool:>6} {s:>5} {f'{k}/{len(rs)}':>8} {k/len(rs):>7.3f}")
+
+print("\n  Heterogeneity, SAME arm / SAME seed / SAME binary, main vs top-up")
+print("  (Fisher exact, two-sided — an instrument check, NOT a treatment contrast):\n")
+for ck in CELLARMS:
+    m = [r for r in stat[ck] if r["_pool"] == "main" and r["seed"] == 7]
+    t = [r for r in stat[ck] if r["_pool"] == "topup" and r["seed"] == 7]
+    if not m or not t:
+        continue
+    a = sum(1 for r in m if r["deadwall"])
+    c = sum(1 for r in t if r["deadwall"])
+    p = fisher(a, len(m) - a, c, len(t) - c)
+    verdict = "HETEROGENEOUS" if p < 0.05 else "exchangeable at p>=0.05"
+    print(f"  {ck[0]+'-'+ck[1]:<10} main {a}/{len(m)} vs topup {c}/{len(t)}   Fisher p = {p:.4f}   {verdict}")
 
 # ── GUARDS (medians only; no means at this cell).
 print("\n### GUARDS — medians, and ratios against AU (the baseline)\n")

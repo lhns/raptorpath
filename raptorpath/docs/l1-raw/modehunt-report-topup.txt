@@ -1,0 +1,73 @@
+==============================================================================
+MODE-HUNT BATTERY — SCORING PASS
+contract: goal-gate "Mode-Hunt Battery — VM PRE-REGISTRATION" (b8fd6d9)
+==============================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+
+cell-arm    headers  ABORT   live  voided  scored   DNF
+c8-A              0      0      0       0       0     0
+c8-AU             8      3      5       0       5     0
+c8-AUR            8      3      5       0       5     0
+c8L-AU            8      5      3       0       3     0
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS
+
+cell-arm    GATES U cli/srv  GATES DS cli/srv     actU    actDS    divDS
+c8-AU           5/5 (exp 1)       5/5 (exp 0)      5/5      5/5      5/5
+c8-AUR          5/5 (exp 1)       5/5 (exp 1)      5/5      5/5      5/5
+c8L-AU          3/3 (exp 1)       3/3 (exp 0)      3/3      3/3      3/3
+
+### THE DEAD-WALL RATE (per-rep: wait_tun == 0 AND wait_paused == 0)
+
+cell-arm        s42       s7    pooled    rate   95% Wilson CI
+c8-AU           0/0      0/5       0/5   0.000   [-0.000, 0.434]
+c8-AUR          0/0      4/5       4/5   0.800   [0.376, 0.964]
+c8L-AU          0/0      0/3       0/3   0.000   [0.000, 0.562]
+
+### POOL PROVENANCE — main vs symmetric top-up, and are they exchangeable?
+
+cell-arm     pool  seed      k/n    rate
+c8-AU       topup     7      0/5   0.000
+c8-AUR      topup     7      4/5   0.800
+c8L-AU      topup     7      0/3   0.000
+
+  Heterogeneity, SAME arm / SAME seed / SAME binary, main vs top-up
+  (Fisher exact, two-sided — an instrument check, NOT a treatment contrast):
+
+
+### GUARDS — medians, and ratios against AU (the baseline)
+
+cell-arm     goodput     /AU  ping_p99     /AU  wait_tun  wait_paus  sf_zero    retx
+c8-AU           81.1   1.000     171.0   1.000        16          5    0.238    1624
+c8-AUR          52.8   0.651     105.0   0.614         0          0    0.183    1959
+c8L-AU          81.0   0.999     201.0   1.175        84          0    0.074   12055
+
+==============================================================================
+THE PRE-REGISTERED BARS, SCORED VERBATIM
+==============================================================================
+
+[S1] THE REPRODUCTION / STOP BAR — p_AU pooled >= 0.4
+     p_AU = 0/5 = 0.000, 95% CI [-0.000, 0.434]
+     ==> FAIL — BATTERY REPORTED UNSCORED
+     (predecessor AU = 0.727 [0.434, 0.903], SAME BINARY -> pure substrate test)
+
+[T-KILL] AUR: CI excludes p_AU=0.000 AND CI upper < 0.25
+     p_AUR = 4/5 = 0.800, 95% CI [0.376, 0.964]
+     clause 1 (CI excludes p_AU):   PASS
+     clause 2 (CI upper < 0.25):    FAIL (upper = 0.964)
+     ==> T-KILL NOT MET
+
+[T-HALVE] AUR: CI excludes the transcribed 0.727
+     ==> T-HALVE NOT MET (0.727 INSIDE [0.376, 0.964])
+
+[G-GOODPUT] AUR/AU median goodput >= 0.85
+     52.8 / 81.1 = 0.651  ==> FAIL — any kill here is a TRADE
+
+[G-LATENCY] AUR/AU median ping_p99 <= 1.25
+     105.0 / 171.0 = 0.614  ==> PASS
+Traceback (most recent call last):
+  File "C:\Users\pierr\Documents\claude\raptorpath\.claude\worktrees\agent-a48d0d0c8a406ab27\raptorpath\tools\l1\modehunt_report.py", line 236, in <module>
+    k_a, n_a, p_a, lo_a, hi_a = rate[("c8", "A")]
+                                ~~~~^^^^^^^^^^^^^
+KeyError: ('c8', 'A')

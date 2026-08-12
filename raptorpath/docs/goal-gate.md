@@ -28983,3 +28983,305 @@ every ledger header.
   provably bound; that is not re-litigated and not re-derived.
 * **Any flip.** No battery flips its own default. Everything this session can
   produce is a RECOMMENDATION.
+
+## Mode-Hunt Battery — RESULTS (2026-08-12) — **the pre-registered STOP RULE FIRED AGAIN, and the battery is reported UNSCORED**: the baseline that was supposed to carry the mode came in at **9/26 = 0.346** against its own 0.40 bar. The predecessor's 0.727 did not reproduce **on the same binary**. Everything else here is DESCRIPTIVE — and descriptively, the halving lead is not merely unconfirmed, it is **inverted** (AUR 0.375 vs AU 0.346), while the byte-count arm returns the one clean signal in the session: **0/24 at 200 MB**. Scored against "Mode-Hunt Battery — VM PRE-REGISTRATION" (`b8fd6d9`), which is untouched.
+
+### L1 BATTERY PROVENANCE
+
+VM 10.1.5.16. **MAIN POOL 04:44:48 → 05:06:10 UTC (21 min)**, **SYMMETRIC
+TOP-UP 05:11:29 → 05:14:40 UTC (3 min)**. Binary sha256
+`8b2337cce580c200fef09d054665d8bf6a1837092b0ec4297ea7658b183168b0`, VM source
+`5d089d0`, branch `feat/mode-hunt-battery` from main `e6f68a7`, **SAME binary
+in the smoke, both seeds and the top-up**, built fresh (stale rm'd,
+CRLF-normalized — the documented `git archive` trap, caught by the smoke's
+`bash -n`). Xeon E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43.
+Seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per
+invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1
+RWM_LATPROBE=1` everywhere. Drivers `tools/l1/modehunt_{battery,all,topup}.sh`,
+parser `deadwall_parse.py` **reused byte-identical**, scorer
+`modehunt_report.py`. Ledgers `docs/l1-raw/modehunt-{s42,s7,topup-s7}.log` +
+`modehunt-smoke-s42.log` + `modehunt-report-{mainpool,combined}.txt` +
+`modehunt-{all,topup}-era.txt`. Lock `/tmp/rwm-vm.lock` found FREE and taken
+04:36:43 UTC.
+
+**THE BINARY IS BYTE-IDENTICAL TO THE PREDECESSOR'S.** `8b2337cc…` is the same
+sha256 the dead-wall battery recorded for commit `465c28e`. This branch changes
+no engine file against `e6f68a7`, which merged that branch, so the build is
+reproducible to the byte. **That makes S1 a pure substrate test with zero code
+confound, and it is what gives this session's failure to reproduce 0.727 its
+force**: nothing between the two sessions changed except the draw.
+
+**INVOCATION ACCOUNTING (abort ≠ DNF ≠ INSTRUMENT-FAIL).** 104 headers, **81
+live**, **23 ABORT** — every abort summary-less, **every one of them seed 7**
+(seed 42 recorded **zero** across both pools), and **0 DNF in any completed
+run**. **ZERO** instrument or contamination flags anywhere: no
+`ARM-LIVENESS-FAIL`, no `ARM-CONTAMINATION`, no `INSTRUMENT-FAIL`, no
+`RECOVMP-UNEXPECTED`, no `DS-ECHO-ONE-SIDED`, no voided reps. `ARMCOUNT` reads
+n/n everywhere and **is not an n** — it counts headers, hence aborts; the live
+n is recomputed from the gates columns by `modehunt_report.py`, which is the
+only reason the top-up trigger was visible at all.
+
+**THE LAW WAS PROVABLY BOUND ON EVERY REP THAT CARRIED IT.**
+`DS-NO-DIVERGENCE = 0` over the whole session: on **24/24 live AUR reps** both
+the `ACTIVE` and the `DIVERGED` echoes fired, and on **57/57 live A/AU/c8L-AU
+reps** neither did. Two-sided `[GATES]` correct on **81/81**. **No AUR null in
+this battery can be dismissed as a null EFFECT** — the derived round replaced
+the clamp, hard, on every rep it was armed on (smoke witness: `srtt_us` 80 459
+→ `derived_us` 160 918 against `legacy_us` 100 000, 1.61×).
+
+### S1 — THE STOP RULE, AND IT FIRED
+
+> **S1** `p̂_AU` pooled **≥ 0.40**.
+
+**`p_AU` = 9/26 = 0.346**, 95 % Wilson **[0.194, 0.538]**. Bar 0.40. **FAIL.**
+
+**Per the pre-registration, NO row is scored and the battery is reported
+UNSCORED, verbatim.** Everything below this line is DESCRIPTIVE and POST-HOC.
+None of it is a scored verdict; none of it may be cited as one.
+
+**This is the second consecutive battery stopped by its own stop rule, and the
+two failures are mirror images.** The predecessor's control did not carry the
+mode (1/16). This session's *baseline* did not carry it strongly enough
+(9/26) — the very arm that was chosen *because* it carried the mode at 0.727.
+The bar was set at 0.40 precisely because 0.40 sits just below the
+predecessor's own 95 % CI floor of 0.434, so it was a genuine reproduction
+test and not a tautology. It failed by 0.054.
+
+**AND THE HONEST READING OF THAT.** 0.346 and 0.727 are not formally
+contradictory — the intervals overlap ([0.194, 0.538] vs [0.434, 0.903]).
+Under `p = 0.346`, `P(X ≥ 8 | n = 11) = 0.036`, so the predecessor's 8/11 was
+an unlikely-but-not-extraordinary draw from this session's rate. What is not
+in doubt is which reading is better resolved: **n = 26 against n = 11, same
+binary, same cell, same instrument.** The mode is real — `p_AU` excludes zero —
+but **0.727 was an overestimate, and every design decision this battery made
+was sized against it.**
+
+### THE DEAD-WALL RATE, PER ARM (DESCRIPTIVE, n from the gates columns)
+
+| arm | s42 | s7 | pooled | rate | 95 % Wilson CI |
+|---|---|---|---|---|---|
+| **A** (era pin) | 0/4 | 0/3 | **0/7** | 0.000 | [0.000, 0.354] |
+| **AU** (baseline) | 6/12 | 3/14 | **9/26** | **0.346** | [0.194, 0.538] |
+| **AUR** (treatment) | 4/12 | 5/12 | **9/24** | **0.375** | [0.212, 0.573] |
+| **c8L-AU** (200 MB) | 0/12 | 0/12 | **0/24** | **0.000** | [0.000, 0.138] |
+
+### THE HALVING LEAD IS REFUTED — AND IT IS INVERTED, NOT MERELY SHORT
+
+`p_AUR` = **0.375** against `p_AU` = **0.346**. The predecessor's lead was
+"the derived round roughly HALVES U's collapse rate" (3/11 vs 8/11), offered
+as the successor's foundation. At n ≈ 24 per arm the direction is **the wrong
+way**, and the intervals are almost coincident ([0.212, 0.573] vs
+[0.194, 0.538]).
+
+This is the pre-registration's **"AGAINST the flip — the load-bearing
+branch"**, reached descriptively: `AUR`'s CI **contains** `p̂_AU`. The clause's
+own words: *"The derived round is not U's handle; no composition in this
+battery kills the mode."* That is what the wire says. It is not a null from
+weak power — it is a null with the law provably bound on 24/24 reps.
+
+**AND IT COSTS.** `AUR`/`AU` median goodput **0.720** — a **−28 %** class
+break, failing G-GOODPUT's 0.85 outright. The predecessor measured the same
+price on the same gate in a different pairing (R/A **−23 %**, both seeds). Two
+sessions, two baselines, the same ~25 % goodput tax for no movement on the
+statistic the gate exists to move.
+
+### THE T-HALVE BAR WAS MET, AND THE BAR IS DEFECTIVE — SAID PLAINLY
+
+`AUR`'s CI [0.212, 0.573] excludes the transcribed 0.727, so **T-HALVE is MET
+as written**. It counts for nothing, and the defect is mine:
+
+**`AU`'s OWN CI [0.194, 0.538] ALSO EXCLUDES 0.727.** The baseline arm — the
+arm that *is* the mode — passes the halving bar. A bar the control satisfies
+cannot discriminate a treatment, so T-HALVE separates nothing in this session
+and must not be cited.
+
+The error is structural and worth naming: **T-HALVE was keyed to a TRANSCRIBED
+point estimate from another session, and that estimate was an n = 11
+fluctuation.** T-KILL clause 1 — keyed to *this* session's own `p̂_AU` — is the
+sound construction, and it **FAILS**. The lesson generalises past this battery:
+a cross-session point estimate is an acceptable *reference* only where the
+successor also re-measures it, and where the bar is stated against the
+re-measurement, not against the transcription.
+
+### THE SYMMETRIC TOP-UP, AND THE INSTABILITY IT EXPOSED
+
+The abort convention tripped: `c8-AUR` at seed 7 finished the main pool at **7
+live** (12 headers, 5 aborts), one below the pre-registered floor of 8. A
+symmetric top-up ran **AU, AUR and c8L-AU at seed 7 ×8** under the same binary,
+own ledger, own sentinel — the `A` pin excluded because the pre-registration
+disqualifies it as a contrast at any n, and seed 42 untouched because nothing
+there fell (zero aborts, both pools).
+
+**The top-up inverted the seed-7 ordering:**
+
+| arm | main pool (s7) | top-up (s7) | Fisher exact |
+|---|---|---|---|
+| c8-AU | 3/9 = 0.333 | **0/5 = 0.000** | p = 0.258 |
+| c8-AUR | 1/7 = 0.143 | **4/5 = 0.800** | p = 0.072 |
+| c8L-AU | 0/9 | 0/3 | p = 1.000 |
+
+Neither swing is individually significant at 0.05, and the honest statement is
+therefore **not** "the pools are heterogeneous" — it is that **two pools of the
+same arm, same seed, same binary, minutes apart, produced opposite orderings
+of the two arms, and the data cannot rule out chance.** Pooling them is
+required by the convention (the §16.52 precedent: the top-up's reps are what
+moved that verdict) and pooling them is what produced 0.346 and 0.375.
+
+**The guard bars moved with the pool too, which is its own warning.**
+G-LATENCY read **1.274 (FAIL)** on the main pool alone and **0.942 (PASS)** on
+the combined pool. A guard whose verdict flips on 5 added reps is not
+measuring what it claims to measure at this cell. G-GOODPUT, by contrast, was
+stable (0.767 → 0.720, FAIL both) — it is the one guard this session can stand
+behind.
+
+### THE ONE CLEAN RESULT — THE BYTE-COUNT ARTIFACT, CONFIRMED (DESCRIPTIVE)
+
+`p_AU(200 MB)` = **0/24 = 0.000**, 95 % CI **[0.000, 0.138]**, against
+`p_AU(25 MB)` = **9/26 = 0.346** [0.194, 0.538]. The CI excludes the 25 MB
+point and its upper bound is 0.138 < 0.25: **the pre-registration's ARTIFACT
+CONFIRMED clause is met**, on 24 live reps, both seeds, both pools, zero
+deadwall reps anywhere.
+
+This is what the predecessor could not ask. It put the length contrast on `A`
+and `R` and got 0/11 against 1/16 — vacuous, because a control near zero at
+both lengths discriminates nothing. **Asked on the arm that fires, the answer
+is unambiguous: U's dead wall does not survive an 8× transfer.**
+
+The mechanism gauge agrees, independently. Median `[SF]` zero-fraction —
+§16.52's own primary endpoint, `active_paths()` empty at refresh:
+
+| cell-arm | sf_zero | wait_tun | wait_paused |
+|---|---|---|---|
+| c8-A (pin) | **0.034** | 38 % | 7 % |
+| c8-AU | **0.265** | 18.5 % | 1.0 % |
+| c8-AUR | 0.299 | 17.0 % | 0.5 % |
+| **c8L-AU** | **0.061** | **86.5 %** | 0.0 % |
+
+U roughly **8-folds** the empty-refresh rate at 25 MB (0.265 vs 0.034), which
+reproduces §16.52's ≈ 4 % → ≈ 30 % finding exactly. **At 200 MB, on the same
+arm, it falls back to 0.061** — and the sender spends 86.5 % of its ticks
+waiting on the tunnel, i.e. source-limited, which is the ordinary steady state.
+Two independent gauges say the same thing: **U's c8 pathology is a property of
+the short transfer, not of U in steady state.**
+
+**THE CAVEAT THAT MUST TRAVEL WITH THIS RESULT, because it is not small.**
+`deadwall` is a per-rep binary over the MEDIAN of the wait histogram, and the
+tick population is a function of duration: `wait_lines` runs **6–17 at 25 MB**
+and **~78 at 200 MB**. A median over 8 samples can land exactly on 0 far more
+easily than a median over 78. So the 0/24 is consistent with **two different
+mechanisms this battery cannot separate**:
+
+1. the wall is a **fixed-duration recovery tail** whose SHARE dilutes as
+   1/duration — the predecessor's stated hypothesis, now supported; or
+2. the **estimator itself** is unstable at short transfers, and 25 MB is
+   simply too few ticks to median over.
+
+The seed-7 pool inversion above is direct evidence that (2) is *also* in play.
+**Both readings point the same way for the deletion chain — the mode is not a
+steady-state property of U — but they imply different repairs, and this
+session does not choose between them.**
+
+### WHAT THIS MEANS FOR THE DELETION CHAIN, IN PLAIN TERMS
+
+**(a) Does any principled composition make `RWM_STORE_CAP_UNIFIED` flippable?
+NO — and one of the two candidates was never buildable.**
+
+Of the two compositions the brief named, exactly one is gate-expressible and it
+was measured: `AUR` does not reduce U's dead-wall rate (0.375 against U's own
+0.346) and costs 28 % goodput. The other — **the pooled ceiling composed with
+the unified set**, §16.52's own named successor — **is not expressible by any
+existing engine gate** and was dropped before contact rather than manufactured
+(`Arm::PooledUnified` is bench-only; `RWM_STORE_CAPW` cannot stand in, because
+`capw_terms` read `live_paths()` unconditionally and `capw_store_cap` sits
+above `path_scaled_store_cap` in the cap chain, making the U bit a **no-op**
+wherever capw engages). So the honest answer is two-part: **no composition that
+EXISTS makes U flippable, and the composition that might has never been
+built.**
+
+**(b) What the confirmed byte-count artifact does to the case against U.**
+
+§16.52 left U OFF because of "the c8 harm", and the dead wall is the sharpest
+quantification of that harm on record. This session does not clear it: at
+25 MB the harm is real, U 8-folds the `[SF]` gauge, and `p_AU` excludes zero.
+What it does is **change the shape of the harm from a property to a
+length-scoped regime**. The harm was never measured across transfer lengths on
+U before; measured now, it is absent at 200 MB.
+
+That does not argue for a flip and it is not offered as one. It changes what a
+flip decision would have to consist of. Precisely, a U flip now needs at least
+one of:
+
+* **A length-stratified criterion.** U's cost is concentrated at short
+  transfers, so a flip must name the transfer-length distribution it is
+  optimising for and bound U's cost **across** that distribution rather than at
+  a single cell. A single-cell verdict at 25 MB now provably does not
+  generalise to 200 MB, and the reverse holds too.
+* **Or a recovery-tail repair scoped to short transfers.** If reading (1) above
+  is right, the object to fix is the fixed-duration tail at short transfers —
+  not the store-cap path set at all. Such a repair would decouple U's flip from
+  the dead wall entirely, and U would then have to be judged on the c1 payoff
+  §16.52 already measured (+13.2 %/+12.6 %, capboot 30 % → 0 %) against
+  whatever residue remains.
+* **And, either way, a statistic that is stable at the cell where the decision
+  is taken.** The current one is not. Same arm, same seed, same binary,
+  adjacent pools: 0.143 and 0.800. No flip should be decided on an endpoint
+  that does that, and no successor should re-use this one at 25 MB without
+  first fixing the tick population it medians over.
+
+**(c) Do the legacy dips stay load-bearing? On this evidence, YES — and the
+evidence is thinner than the question deserves.** The battery is unscored, so
+nothing here refutes them, and the era pin reads 0/7 with the shipped default
+carrying no dead wall at all. **The legacy `active_paths()` store-cap path is
+not a deletion candidate and must not be deleted.** What this session removes
+is not the reason to keep it — it is the *hope* that a cheap composition would
+make keeping it unnecessary.
+
+### FLIP RECOMMENDATIONS (recommendations only — no battery flips its own default)
+
+1. **`RWM_STORE_CAP_UNIFIED` — stays DEFAULT OFF.** No composition measured
+   here reduces its c8 harm; the one that might is not gate-expressible. Its
+   c8 harm is now known to be **length-scoped**, which is new information about
+   the shape of the blocker and not a reason to move it.
+2. **`RWM_DERIVED_SWEEP` — stays DEFAULT OFF.** Two batteries have now failed
+   to find it moving the statistic it was built for: inverted against the
+   shipped default (0.231 vs 0.062) and inverted again against U
+   (0.375 vs 0.346), at a consistent **−23 %/−28 %** goodput price, with the
+   law provably bound on every armed rep in both sessions.
+3. **`RWM_DERIVED_SWEEP` is STILL NOT a deletion candidate, and this session
+   does not make it one.** Both batteries that examined it were reported
+   UNSCORED under their own stop rules. Deleting a gate on the strength of two
+   unscored sessions would be exactly the inference this project's
+   pre-registration discipline exists to prevent. **Keep the gate, keep it
+   OFF.** What has changed is that it no longer has a live successor
+   hypothesis: the AU-interaction lead that argued for keeping it is the lead
+   this battery inverted.
+4. **The legacy clamped path (`[25, 100] ms`) and the legacy `active_paths()`
+   store-cap path MUST NOT be deleted.** Neither has evidence against it in
+   either session.
+5. **The dead-wall statistic should not be re-used at 25 MB without repair.**
+   Its tick population (6–17 samples) is too small for the median it is built
+   on, and the seed-7 pool inversion is the demonstration. Any successor should
+   either measure at a length where the histogram populates (c8L reads 78) or
+   replace the median-binary with an endpoint that does not degrade with
+   duration.
+
+### THE SUCCESSOR, AND THE METHODOLOGICAL LESSON
+
+**The successor question is no longer "which composition kills the mode".** It
+is: **is the c8 dead wall a fixed-duration recovery tail, or an artifact of
+medianing 8 ticks?** Those are separable — instrument the wall's ONSET and
+DURATION directly instead of its tick-share, and the two hypotheses predict
+different things at 25 MB. Until that is settled, no length-stratified U
+criterion can be written, because nobody knows what is being stratified.
+
+**THE LESSON IS ABOUT INHERITING POINT ESTIMATES.** The predecessor's closing
+lesson was about pooling across arms; this one is about pooling across
+*sessions*. This battery was designed, powered and barred against **0.727** —
+a number from n = 11 that this session re-measured at **0.346 on n = 26 with
+the identical binary**. The n ≈ 8 power calculation, the 0.40 stop bar and the
+T-HALVE bar were all keyed to it, and T-HALVE was rendered vacuous by it. The
+predecessor labelled 0.727 a lead and said so explicitly; the successor built
+structure on it anyway. **A point estimate that has not been reproduced is a
+hypothesis, and a bar keyed to one is a bar keyed to a hypothesis.** Re-measure
+the baseline in the same session that scores against it — which S1 did, which
+is the only reason this is a caught error rather than a published one.
