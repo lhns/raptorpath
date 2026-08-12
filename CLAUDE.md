@@ -44,6 +44,33 @@ between layers actually routes there (MEASUREMENT DISCIPLINE rule 1 in
 Every documented model-vs-engine divergence must carry a test that BOUNDS
 it, not prose that describes it.
 
+## FORMULA-FIRST LAWS (ADR-0070)
+
+A law that is measured exhaustively but never READ as a formula is not
+verified — it is only pinned. The store-cap law carried nine always-on
+absolute pins, two component benches and an L1 gauge for a month while
+being quadratic in the path count where its own doc comment described a
+linear quantity, and one term of it had no provenance in the repository
+at all. Every pin passed. They were all asserting that the code computes
+the model; none asked whether the model was right.
+
+- **No law ships without its formula and its derivation IN THE PAPER,
+  before the code.** Each symbol gets a one-line provenance: measured
+  (with the sweep), cited (with the reference), a declared dial, or a
+  resource bound stated outside the law. "Argued in a commit message" is
+  not provenance, and a constant with none does not ship.
+- **Design review presents the FORMULA, not the diff.** Put the
+  expression on a line by itself next to the sentence it is supposed to
+  implement, and check that the sentence and the expression agree in
+  SHAPE (order in N, units, monotonicity) before looking at any number.
+- **Every clamp gets a bind-fraction gauge**, reported. A clamp that
+  always binds turns its law into a constant and hides the law's shape
+  from every measurement taken through it.
+- **A law measured pinned or degenerate over its operating range is a
+  DEFECT FINDING requiring a ledger verdict — never an explanatory
+  footnote.** See MEASUREMENT DISCIPLINE 17 and 18 in
+  `raptorpath/docs/goal-gate.md`.
+
 ## Scope rules
 
 - The visualizer (`raptorpath-visualizer/` + `raptorpath-wasm/`) is a

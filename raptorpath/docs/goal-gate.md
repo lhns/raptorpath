@@ -261,6 +261,82 @@ Additions from the 2026-07-14…19 batteries (binding alongside 1–5):
    that never ran, on the other side of the measurement. (Added 2026-08-10,
    "Latency Lever"; the arithmetic is "What Binds Throughput".)
 
+17. **EVERY LAW CARRIES AN ALWAYS-ON SCALING-STRUCTURE TEST ON SYNTHETIC
+   INPUTS, ACROSS THE AXES THE CELLS NEVER EXERCISE — AND THE UNCLAMPED
+   FORMULA IS TESTED SEPARATELY FROM ITS CLAMP.** Item 1 proves the
+   mechanism under test executes; item 14 proves it was characterized at
+   component level. Neither asks whether the law has the SHAPE its own
+   derivation claims, and the store-cap law is what that omission costs.
+
+   **The failure, measured.** `path_scaled_store_cap = clamp(gain·N·Σ,
+   floor, N·knee)` is **quadratic** in the path count at a symmetric cell
+   (`Σ = N·a`), while the sentence it implements — its own doc comment,
+   "the pool that must fund Σ per-path (BDP + one recovery round of
+   runway) does not grow with the path count" — names a **linear**
+   quantity, `Σᵢ(gain·anchorᵢ)`. It carried nine always-on absolute pins,
+   two component benches, an engine-equivalence pin and an L1 gauge for a
+   month; PIPELINE VERIFICATION MATRIX row 16 called it "the most
+   thoroughly instrumented law in the pipeline". Every pin passed. They
+   were all asserting *the code computes the model*; none asked whether
+   the model was right, and none could have: the whole test universe is
+   `N ∈ {1, 2}`, and the exponent is distinguishable only at **N ≥ 3**.
+   The same missing axis is why "the knee is 2048 PER LIVE PATH" is an
+   INFERENCE — one dual measurement cannot separate `2048·N` from a
+   constant 4096. **Two independent errors, one missing axis.**
+
+   Concretely, for every law in the tree and every law added to it:
+   (a) an always-on property test of SCALING STRUCTURE on synthetic
+       inputs — `cap(N)/cap(1)` over N = 1…8 symmetric, degree in each
+       input, monotonicity and continuity in each dial — swept over
+       ranges **no cell reaches**, because the cells are exactly where
+       the coverage already is;
+   (b) the UNCLAMPED expression asserted separately from the clamped one.
+       **A clamp may never be the only thing making a law sane.** If the
+       law is only correct because a ceiling catches it, the ceiling is
+       the law and must be derived as one;
+   (c) the formula written out in the paper beside the sentence it
+       implements, and the two checked for agreement in SHAPE — order in
+       N, units, monotonicity — before any number is compared. This is
+       CLAUDE.md's FORMULA-FIRST LAWS rule; the verification matrix gains
+       a **"law-shape verified?"** column distinct from "implementation
+       matches model", and a law may not be marked VERIFIED on the
+       strength of the second alone.
+   (Added 2026-08-12, "The Cap Law On Trial"; ADR-0070.)
+
+18. **A MEASUREMENT SHOWING A LAW PINNED OR DEGENERATE OVER ITS OPERATING
+   RANGE IS A DEFECT FINDING REQUIRING A LEDGER VERDICT — NEVER AN
+   EXPLANATORY FOOTNOTE.** A law that always returns its clamp is not a
+   law; it is a constant, and every measurement taken through it is a
+   measurement of the constant. Degeneracy is therefore not context for
+   some other result — it INVALIDATES the mechanism attribution of every
+   result that ran through it, and it must be written up under its own
+   verdict with that scope stated.
+
+   **The failure, on this file's own record.** "Cap-Refresh Warmth"
+   (2026-08-11) measured the wire's store cap at **exactly 4096 = 2·knee
+   in 121 of 126 dual reps** across five independent sessions, and
+   correctly derived that the pin threshold `Σ ≥ knee/gain` is
+   path-count-free. The finding was true, well-instrumented and honestly
+   reasoned — and it was filed as a REFUTATION OF A DOWNSTREAM PREMISE,
+   i.e. as a fact about c7 and c8. The sentence it actually established
+   — *the law never expresses itself at any dual cell* — is a fact about
+   the FORMULA, and it sat unread for a day until a formula-level review
+   made it the primary evidence for ADR-0070's central defect.
+
+   Concretely, whenever a report shows a floor or ceiling binding on a
+   large share of evaluations:
+   (a) the bind fraction is REPORTED, not incidental — every clamp in
+       every law carries a bind-fraction gauge, and the L1 report parsers
+       check it (the `capboot_frac` / `occcap_p50` pattern, standardized);
+   (b) above the threshold the report emits the standing sentence **"this
+       law operates as a constant"**, naming the law and the clamp;
+   (c) a ledger section takes a VERDICT on it — the law's shape, not the
+       cell's behaviour — and states which earlier results are
+       re-scoped by it;
+   (d) no verdict about a MECHANISM may be recorded from an arm in which
+       that mechanism's law was pinned. It measured the clamp.
+   (Added 2026-08-12, "The Cap Law On Trial"; ADR-0070.)
+
 ## Component Benches (2026-08-08)
 
 The instruments that satisfy MEASUREMENT DISCIPLINE 14. Each drives ONE
@@ -29386,3 +29462,113 @@ named below.
 * **This is not a re-audit.** The matrix remains the authority; §11.5 is a
   pointer and a summary, not a fork of it. If the two ever disagree, the matrix
   wins and the paper is wrong.
+
+## The Cap Law On Trial (2026-08-12, `docs/adr-0070-cap-law` from main@`631ed4c`) — **STRICTLY LOCAL, DOCS ONLY.** No VM, no L1 number re-derived, no benchmark, no engine file, no gate, no default, no test. A term-by-term PROVENANCE review of the shipped outstanding-pool cap, asked as a formula rather than as an arm. **VERDICT: one term (`×N`) is a DEFECT whose provenance is ABSENT from this repository; one is a FOSSIL of a quantity the tree now derives exactly; one is MEASURED BUT STALE and is the actual operating point at every dual; two have no provenance at all; the estimator's shape is right and its USE is forbidden by its own doc comment; and the architecturally correct late-stage brake ships disabled with no decision record.** The full argument, with every citation, is ADR-0070; this section is the ledger's summary and the provenance table. **Gates run: `cargo test -p raptorpath --lib` unchanged-green, `--doc`. Required gates: none beyond those (docs only)** — stated explicitly.
+
+### THE LAW, AND ITS SEAT
+
+```text
+cap = clamp( gain · N · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  max(N·knee, floor) )
+      gain 2.0 · N = live_paths().len() · knee 2048/path · floor 64 · boot 128
+      Σ-set: active_paths() shipped | live_paths() under RWM_STORE_CAP_UNIFIED
+```
+
+`net::path_scaled_store_cap`, `net/mod.rs:2458-2487`. The plain cap chain
+(`net/mod.rs:4880-4964`) has EIGHT arms; B1–B5 are all default-OFF
+(`RWM_THREE_TERM`, `RWM_WIN_DECOUPLE`, `RWM_STORE_CAPW`,
+`RWM_PLAIN_RS`+`RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`←`RWM_EST_CADENCE`), so
+**B6 `path_scaled_store_cap` is the shipped seat** at N ≥ 2 with a warm Σ,
+which is what the 121/126 pinned reps of "Cap-Refresh Warmth" measure.
+
+### THE PROVENANCE TABLE
+
+| term | provenance on the record | swept? | verdict |
+|---|---|---|---|
+| Σ-set `active_paths()` | a DATA-SCHEDULING filter used as a liveness predicate; named "the defect" in matrix row 16 and paper §12.8 | A/B built (`RWM_STORE_CAP_UNIFIED`, OFF) | **DEFECT** — and currently load-bearing: the empty-set cliff to `boot` is the loop's only stabiliser (row 17) |
+| `× N` | **NONE.** Entered whole at `5cace52` (2026-07-14, task #84); the commit's own sentence names `Σ per-path`, which is `gain·Σ`, already linear | **never** — no A/B of `gain·Σ` vs `gain·N·Σ` at a fixed ceiling, ever | **DEFECT, PROVENANCE ABSENT** |
+| `gain = 2.0` | prose argument at `net/sender_policy.rs:569-571`, arriving with the C2 bufferbloat fix `ac3bc9d` (2026-07-07), a week before the multipath law | once, at 1.25, ONE cell (sc2), Copa passthrough — a different CC family — reading −5% (`:10355`); the ledger disclaims the default question at `:10217` | **FOSSIL** — the three-term law derives the same runway as `17/8 = 2.125` at ρ = 1 |
+| `knee = 2048/path`, ceiling `N·knee` | a real same-binary static-store sweep, `:10697-10706` | **yes** — the only measured term | **MEASURED BUT STALE** — dead era, and "per path" is an INFERENCE |
+| `floor = 64` | one sentence, source only: "so a transiently-tiny BDP estimate can't strangle the pipe" (`net/sender_policy.rs:135`, `:578`) | never | **PROVENANCE ABSENT** — and it BOUND at shal8 (`:20910`) where the pre-registration said it could not (`:20625-20627`) |
+| `boot = 128` | argued, and the argument is good — a closed-loop startup guard (`net/sender_policy.rs:573-577`) | **"n/a — never a battery arm"** (`:18791`) | **ARGUED, NEVER MEASURED** — a cold-start guard doing steady-state braking via the finding-1 cliff |
+| `max_bw · min_rtt` | BBR-style queue-free BDP; the max/min pair is what breaks the `cap→queue→RTT→cap` loop averages would close | shipped honest since §16.51 | **DEFENSIBLE SHAPE, MISUSED** — `scheduler/mod.rs:1873-1879` says it is "only ever used to RAISE cwnd … never as a cap"; this law consumes it as exactly a cap input |
+| `RWM_INFL_CAP` / `cwnd_full` | **no ADR, no register row, no ledger entry records when or why the default became 0** | once, a 2-point null at a C2 single (`:6758-6760`) — at a cell that section itself calls frontier-bound | **CORRECT ARCHITECTURE, DISABLED WITHOUT A DECISION** |
+| `RELIABLE_STORE_MAX = 1024` | EXISTENCE measured (removing it collapsed C8 to 2.5 Mbit, `net/mod.rs:985-993`), scoped to out-of-order object mode | the value, never | existence defended; **the VALUE un-derived** |
+| `WIN_STORE_MAX = 4096` | a memory bound; self-described as "the phase's largest un-derived quantity" (`:20621-20624`) | never | memory bound — and **it BINDS** (c2r200, `:20908`) |
+
+### THE ARITHMETIC — WHY THE FORMULA EXCEEDS ITS CEILING BY CONSTRUCTION
+
+At a symmetric cell with per-path anchor `a`, `Σ = N·a`, so the shipped
+value is `gain·N²·a` — **quadratic** — under a **linear** ceiling `N·knee`.
+Saturation is `gain·N·Σ ≥ N·knee ⟺ Σ ≥ knee/gain`: **the N cancels**
+(pinned by `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`).
+At `knee/gain = 1024` symbols against the wire's own measured anchors —
+1635 (c7) and 1510 (c8), i.e. 1.6× and 1.5× the threshold — **the law is
+always pinned at both duals**, while either leg alone (712–924 / 734–776)
+is always interior. Measured: `occcap_p50` = exactly 4096 in **69/69** c7-A
+reps and **52/57** c8-A reps over 178 dual reps from five sessions, with
+`capboot_frac = 0.0000` in every one ("Cap-Refresh Warmth", `:26616-26619`).
+
+**So the ramp is decorative and the ceiling is the law.** The `×N` does not
+make the shipped cap N× too large — while pinned it is `N·knee` either way.
+Its cost is that it **deletes the law's operating range**: the derived,
+measured, per-path term is never the number. Deleting it moves the law
+INTERIOR at both duals for the first time — `gain·Σ` = **3270** (c7) and
+**3020** (c8) against the 4096 ceiling.
+
+Three places in this tree already contradict the multiplier by name: the
+honest-cap branch drops it with the correct reasoning ("the Σ is already
+per-path-composed … so no gain× multiplier here", `net/mod.rs:4921-4927`);
+the three-term pre-registration repudiates count-scaling by name
+(`:20353-20358`, `:20471-20475`); and PS6 prices the damage — the pinned
+4096 arm is **×7.57** the cell's own resequencing span and read **−19.6 %**
+(`:19819-19835`).
+
+### THE POSTMORTEM — FIVE MECHANISMS, ONE ROOT
+
+1. **The clamp ate the evidence** — the saturation test is N-independent and both duals sit above it, so the unclamped value never appeared in any output. Every measurement of the "law" measured the ceiling.
+2. **`N ∈ {1, 2}` is the entire test universe** — the exponent is distinguishable only at N ≥ 3, and no cell, bench geometry or L1 arm has ever run three paths. The same missing axis made "per live path" an inference.
+3. **Two defects masked each other** — the anchor over-read ×4.6–7.4 while the multiplier over-scaled by N; `:24467-24475` records the cancellation as correct arithmetic without reading it as one.
+4. **The pinning was measured and misfiled** — as a fact about c7/c8 rather than about the formula (see MEASUREMENT DISCIPLINE 18, which this is the founding case for).
+5. **The formula was never reviewed as a formula** — the root, of which the other four are symptoms. Nine always-on pins asserted that the code computes the model; none asked whether the model was right. Caught in minutes on the first formula-level read.
+
+### THE CANDIDATE — STATED, NOT SHIPPED, AND NEVER MEASURED AS ONE ARM
+
+```text
+cap = Σ_i [ rate_i·RTprop_i + rate_i·stall(δ, ρ, srtt_i) ] + 2·rate_fast·skew
+      over live_paths(), honest inputs, NO arbitrary ceiling
+      (δ prices the queue as a latency budget; the memory bound is stated
+       SEPARATELY as a resource limit, not a law term)
+      per-path cwnd_full ENABLED as the late-stage emission brake
+```
+
+Zero fitted constants: `9/8` is RFC 9002 §6.1.2 cited, the span `2` is a
+definition boundary measured at 2.00 ± 0.03 over 18/18 non-zero cells,
+`b(δ)` and ρ are dials. Every piece exists and is individually validated —
+`three_term_store_cap` (`RWM_THREE_TERM`, OFF, engine↔bench equivalence
+pinned), honest anchors (default ON, §16.51), the unified set, the disabled
+brake, the `×N` deletion as `Arm::PooledUnified`. **The composition has
+NEVER been run as one arm**, anywhere. Blockers and their named answers:
+`WIN_STORE_MAX` → the δ ceiling; the c8 dead wall → arm-owned (§16.53) and
+length-scoped, 0/24 at 200 MB (§16.54), and the composed ~500 cap removes
+the queue driving the clamp overshoot; the anchor over-read → shipped fixed.
+Against the case, stated: the three-term law already landed on
+`store_cap_floor` = 64 at shal8, so removing the pooled ceiling yields a law
+with **one** un-derived constant, not zero, and the floor's derivation is owed.
+
+### WHAT THIS SECTION DOES NOT DO
+
+**Nothing flips.** No default moves, no gate is added, no engine line is
+touched. These are PROVENANCE findings; a default measured extensively is
+not made wrong by a bad derivation, and ADR-0067's rule cuts against
+flipping on inference in both directions. **Re-fitting `gain` or `knee` to
+better numbers is explicitly NOT licensed** — that is tuning a formula this
+review finds structurally wrong, and it would burn the only clean
+comparison available. The approved validation path is, in order:
+(1) the prevention kit — law-shape tests incl. the unclamped formula,
+bind-fraction report checks, a 4-path symmetric SF-bench geometry;
+(2) the dead-wall onset/duration instrument, so c8's statistic can resolve
+an effect; (3) the composed law as an SF-bench arm; (4) a pre-registered
+`{shipped, composed} × {c1, c7, c8@25MB, c8@200MB, sc2}` battery scored
+against the arm carrying the mode, headroom beside every target (item 16);
+(5) per-gate flips in separate commits with register rows — the legacy-path
+deletion returns only if the composed law wins everywhere.

@@ -12440,6 +12440,94 @@ mode" but "**is the wall a fixed-duration recovery tail, or an artifact of
 medianing 8 ticks**" — separable by instrumenting the wall's onset and duration
 instead of its tick-share, and unanswerable until it is.
 
+### 16.55 The cap law on trial: the most thoroughly instrumented law in the pipeline had never been read as a formula, and one of its five terms has no provenance in the repository at all (2026-08-12, `docs/adr-0070-cap-law`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default; ADR-0070 is the full argument, this section is the paper's pointer)
+
+Every section from §16.19 to §16.54 asked the outstanding-pool cap the same
+question — *does the number move* — and answered it with increasing rigour:
+nine always-on absolute pins, two component benches, an engine-equivalence
+pin, an L1 mechanism gauge, and PIPELINE VERIFICATION MATRIX row 16's
+verdict, *"the most thoroughly instrumented law in the pipeline"*. **None of
+them asked where each symbol in it came from.** ADR-0070 is that review, and
+it is not a measurement: it is a provenance audit, taken term by term
+against
+
+```text
+cap = clamp( gain · N · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  max(N·knee, floor) )
+```
+
+**The verdicts.** `×N` is a **DEFECT whose provenance is ABSENT** — it
+entered whole with `5cace52` (2026-07-14), the pre-existing law was
+`gain·Σ`, the birth commit's own sentence names "Σ per-path (BDP + one
+recovery round of runway)" which *is* `gain·Σ` and is already linear in the
+path count, and no A/B of `gain·Σ` against `gain·N·Σ` at a fixed ceiling has
+ever been run. `gain = 2.0` is a **FOSSIL**: a sound prose argument that
+arrived with the C2 bufferbloat fix a week before the multipath law, swept
+exactly once — one cell, a different CC family, −5 % — and superseded by
+§16.43's own derivation, which gives the same recovery runway as
+`17/8 = 2.125` at ρ = 1 from RFC 9002 §6.1.2 plus one retransmit round trip.
+`knee = 2048/path` is **MEASURED BUT STALE**: a real same-binary sweep run
+with the over-reading legacy anchor, pre-SACK-release and pre-honest-inputs,
+whose "per path" step is an INFERENCE no 3-path cell has ever tested — and
+it is the actual operating point at every dual. `floor = 64` has **no
+provenance**, and it bound at shal8 where §16.45's pre-registration said it
+could not. `boot = 128` is argued and was **never a battery arm**. The
+estimator `max_bw·min_rtt` has the **right shape and the forbidden use**:
+the max/min pair is exactly what breaks the `cap → queue → RTT → cap` loop
+that averages would close, but its own decl doc says it "STRUCTURALLY
+underestimates a warm-up/app-limited flow, which is exactly why it is only
+ever used to RAISE cwnd … never as a cap", and this law consumes it as
+precisely a cap input. The §16.51 honest-anchor fix is why that misuse is
+now visible. Finally, the architecturally correct **late-stage per-path
+brake** (`RWM_INFL_CAP`/`cwnd_full`) ships disabled, measured once as a
+two-point null at a cell that section itself calls frontier-bound, with **no
+ADR, no register row and no ledger entry recording when or why**.
+
+**The arithmetic that makes it structural.** At a symmetric cell `Σ = N·a`,
+so the shipped value is quadratic in N under a linear ceiling. Saturation is
+`Σ ≥ knee/gain` — **the N cancels** — and at 1024 symbols against the wire's
+own anchors (1635 at c7, 1510 at c8) the law is always pinned: `occcap_p50`
+reads exactly 4096 in 121 of 126 dual reps across five sessions. **The ramp
+is decorative; the ceiling is the law**, and the ceiling was swept as a
+static pool in an era whose every input has since changed. Deleting the `×N`
+puts the law interior at both duals for the first time (3270 / 3020).
+
+**The postmortem, which is the transferable part.** An effective N² survived
+a month of exhaustive measurement because the clamp ate the evidence (every
+test measured the ceiling), because `N ∈ {1,2}` is the entire test universe
+and the exponent only differentiates at N ≥ 3, because the anchor over-read
+and the double-scaling cancelled each other, because the pinning **was**
+measured — a day earlier — and filed as a fact about c7/c8 rather than about
+the formula, and above all because the formula was never put on a line by
+itself next to the sentence it was supposed to implement. It was caught in
+minutes on the first read that did so. The two standing rules this produced
+are MEASUREMENT DISCIPLINE **17** (every law carries an always-on
+scaling-structure test on synthetic inputs across the axes cells never
+exercise, with the unclamped formula tested separately from its clamp — *a
+clamp may never be the only thing making a law sane*) and **18** (a law
+measured pinned or degenerate over its operating range is a defect finding
+requiring a ledger verdict, never a footnote), plus CLAUDE.md's
+**FORMULA-FIRST LAWS**: no law ships without its formula and derivation in
+this paper before the code, and design review presents formulas, not diffs.
+
+**The candidate successor, stated and not shipped.** Every finding above is
+a symptom of one thing — the expression is a fitted constant wearing a law's
+clothes — so the answer is not a better coefficient but the deletion of the
+whole expression in favour of §16.43/§16.44's three-term law, summed over
+`live_paths()` on §16.51's honest inputs, with **no arbitrary ceiling** (δ
+prices the queue as a latency budget, which §16.47 measured the cap actually
+doing; the memory bound is stated separately as a resource limit rather than
+as a term that shapes the law) and the per-path `cwnd_full` brake ENABLED as
+the late-stage emission control. Zero fitted constants; no count keying, no
+topology predicate, no δ/ρ threshold — §16.20's one-machine claim satisfied
+by construction rather than by inspection. Every piece is built and
+individually validated. **The composition has never been measured as one
+arm, anywhere**, and ADR-0070's Decision makes the instruments — law-shape
+tests, bind-fraction gauges, an N ≥ 3 geometry, the dead-wall onset
+instrument — a precondition of the battery rather than a follow-up to it,
+because the instruments are what mechanisms 1, 2 and 4 of the postmortem are
+made of. **Nothing flips in that ADR, and re-fitting `gain` or `knee` to
+better numbers is explicitly not licensed.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
