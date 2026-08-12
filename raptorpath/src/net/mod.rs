@@ -21,6 +21,7 @@ pub mod receiver;
 pub mod reorder;
 pub mod sender_policy;
 pub mod tasks;
+pub mod walldiag;
 
 use block_arq::BlockArq;
 use block_sender::run_block_sender;
@@ -3155,6 +3156,55 @@ pub fn three_term_store_cap(
     Some((limit, window, slack, span))
 }
 
+/// The composed law's per-run `[CCAP]` readout (paper §16.56).
+///
+/// Split from its emission so the always-on pins assert the STRING an L1
+/// parser will scrape rather than a side effect, and so the two teardown arms
+/// share one renderer.
+///
+/// The fields, and what each one exists to make un-missable:
+///
+/// * `eng=<engaged>/<refreshes>` — MECHANISM LIVENESS (MEASUREMENT DISCIPLINE
+///   rule 1). `eng=0/N` with `RWM_COMPOSED_CAP=1` in the `[GATES]` echo is a
+///   WARM-UP failure (some live path was cold at every refresh), NOT a null
+///   result, and the two must never be confused again.
+/// * `cap=` — the realized mean cap. The number the whole arm is about.
+/// * `mem=` / `floor=` — the BIND FRACTIONS of the only two bounds that
+///   survive: `WIN_STORE_MAX`, a memory bound stated OUTSIDE the law, and
+///   `store_cap_floor` = 64, the one paroled constant whose provenance
+///   ADR-0070 finding 5 records as ABSENT. A composed run with `mem` above
+///   zero means the memory bound has become the law — the predecessor's exact
+///   defect reproduced, and §16.56 calls that a STOP, not a result.
+/// * `brake=<closed>/<ticks>` — the late-stage brake's own liveness. An arm
+///   bit-identical to control must read as a NULL RESULT, not a null effect,
+///   and `brake=0/N` is the difference between "the brake never bound" and
+///   "the brake was never armed".
+pub fn ccap_report_line(
+    refreshes: u64,
+    engaged: u64,
+    at_mem: u64,
+    at_floor: u64,
+    cap_sum: f64,
+    brake_ticks: u64,
+    brake_closed: u64,
+    floor: usize,
+) -> String {
+    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    format!(
+        "[CCAP] eng={}/{} cap={:.1} mem={:.4} floor={:.4} floor_val={} brake={}/{} \
+         brake_frac={:.4}",
+        engaged,
+        refreshes,
+        if refreshes == 0 { 0.0 } else { cap_sum / refreshes as f64 },
+        frac(at_mem, engaged),
+        frac(at_floor, engaged),
+        floor,
+        brake_closed,
+        brake_ticks,
+        frac(brake_closed, brake_ticks),
+    )
+}
+
 // ── The saturation-filter gauge (`sf=`), 2026-08-09 ──────────────────────
 //
 // MEASUREMENT DISCIPLINE 14's instrument for the store-cap phase, and the
@@ -4272,6 +4322,24 @@ async fn run_window_sender(
     // 10 ms BDP, same rationale as the plain-reliable store_boot_cap.
     let mut dyn_infl_cap: u64 = if pol.infl_bdp_on { 128 } else { pol.infl_cap };
     let mut dyn_infl_refresh_us: u64 = 0;
+    // ── `[CCAP]` — the composed law's ENGAGEMENT + BIND-FRACTION gauge ────
+    // (paper §16.56; CLAUDE.md FORMULA-FIRST, "every clamp gets a
+    // bind-fraction gauge, reported"). ADR-0070's postmortem is about
+    // measurements that could not see the property under test, so an arm
+    // that is bit-identical to control must be readable AS A NULL RESULT and
+    // not as a null effect: a law that was CONFIGURED but never ENGAGED (a
+    // cold live path at every refresh) and a law that engaged and changed
+    // nothing are different findings. These counters separate them, and they
+    // report the two surviving bounds — the MEMORY bound `WIN_STORE_MAX`
+    // (a resource limit stated outside the law) and the one paroled constant
+    // `store_cap_floor` = 64 — so neither can ever bind silently again.
+    let mut ccap_refreshes: u64 = 0;
+    let mut ccap_engaged: u64 = 0;
+    let mut ccap_at_mem: u64 = 0;
+    let mut ccap_at_floor: u64 = 0;
+    let mut ccap_cap_sum: f64 = 0.0;
+    let mut ccap_brake_ticks: u64 = 0;
+    let mut ccap_brake_closed: u64 = 0;
     // The periodic DIAG report clock (net seam pass 3 → net/diag.rs): both
     // stamps stay sampled here, at their original points.
     let diag_start_us = now_us();
@@ -4524,21 +4592,47 @@ async fn run_window_sender(
         // (gain·BtlBw_i·RTprop_i), so the fast path keeps pulling source while
         // the slow path is at its RTT-inflated cap. Non-gen_pipe keeps the
         // legacy global Σ in-flight ≥ Σ cap test.
-        let (pipe_infl, percap_full): (u64, bool) = if eff_infl_cap > 0 {
+        // ── THE LATE-STAGE BRAKE, and the composed arm's derived cap ──────
+        // `RWM_COMPOSED_CAP` (paper §16.56) arms this brake with NO NEW
+        // CONSTANT: the per-path cap is the path's OWN cwnd, i.e. the
+        // congestion controller's own window, which is what a congestion
+        // brake ought to be made of. `eff_infl_cap` is then irrelevant to
+        // arming — the composed arm uses neither RWM_INFL_CAP's static total
+        // nor RWM_INFL_BDP's gain·BDP, and neither changes meaning.
+        //
+        // THE SET IS LOAD-BEARING HERE (§16.56, and ADR-0070 finding 1
+        // appearing a second time). With cap_i = cwnd_i, "path i is full" is
+        // `in_flight_i >= cwnd_i`, which is EXACTLY `available()_i == 0` —
+        // and `active_paths()` is *active AND available() > 0*. Iterating it
+        // would ask a question whose answer is FALSE BY CONSTRUCTION on
+        // every tick, forever: the gate would resolve ON, cost a lock, and
+        // never brake. That is a null EFFECT wearing a null RESULT's clothes
+        // (§16.53's DIVERGED lesson), and it is why the composed brake reads
+        // `live_paths()`. `cwnd_full` under this arm means: EVERY LIVE PATH
+        // is at or above its own congestion window.
+        let brake_armed = eff_infl_cap > 0 || pol.composed_cap;
+        let (pipe_infl, percap_full): (u64, bool) = if brake_armed {
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
             let mut per_path: Vec<(u64, u64)> = Vec::new();
-            for id in sched.active_paths() {
+            let ids = if pol.composed_cap { sched.live_paths() } else { sched.active_paths() };
+            for id in ids {
                 if let Some(p) = sched.path_mut(id) {
                     p.expire_in_flight();
                     let fl = p.in_flight as u64;
                     infl += fl;
-                    // Per-path cap = gain·(BtlBw_i·RTprop_i); fall back to the
-                    // global boot cap before the anchor warms.
-                    let cap_i = p
-                        .copa_bdp_anchor()
-                        .map(|b| ((pol.infl_bdp_gain * b).ceil() as u64).max(1))
-                        .unwrap_or(eff_infl_cap);
+                    let cap_i = if pol.composed_cap {
+                        // The path's own congestion window. Derived, not
+                        // configured; always warm (cwnd has an initial value),
+                        // so this branch has no cold-start fallback to pick.
+                        p.cwnd as u64
+                    } else {
+                        // Per-path cap = gain·(BtlBw_i·RTprop_i); fall back to
+                        // the global boot cap before the anchor warms.
+                        p.copa_bdp_anchor()
+                            .map(|b| ((pol.infl_bdp_gain * b).ceil() as u64).max(1))
+                            .unwrap_or(eff_infl_cap)
+                    };
                     per_path.push((fl, cap_i));
                 }
             }
@@ -4546,8 +4640,21 @@ async fn run_window_sender(
         } else {
             (0, false)
         };
-        let cwnd_full = eff_infl_cap > 0
-            && if pol.infl_percap { percap_full } else { pipe_infl >= eff_infl_cap };
+        let cwnd_full = brake_armed
+            && if pol.infl_percap || pol.composed_cap {
+                percap_full
+            } else {
+                pipe_infl >= eff_infl_cap
+            };
+        // `[CCAP]` engagement gauge: the brake's own liveness, counted every
+        // iteration so a composed arm that never braked reads as a NULL
+        // RESULT rather than a null effect.
+        if pol.composed_cap {
+            ccap_brake_ticks += 1;
+            if cwnd_full {
+                ccap_brake_closed += 1;
+            }
+        }
         // Plain-reliable delay-based window cap (paper §12): bound the
         // outstanding store to gain×BDP so the standing queue stays ~1 RTT and
         // loss recovery does not stall behind a bloated queue. Refreshed off
@@ -4970,6 +5077,26 @@ async fn run_window_sender(
                     } else {
                         pol.store_boot_cap.min(pol.store_max)
                     };
+                    // `[CCAP]` bind fractions, taken at the refresh that
+                    // computed the cap. The UNCLAMPED law is `window + slack
+                    // + span` — recorded separately from its bounds, which is
+                    // MEASUREMENT DISCIPLINE 17's rule ("a clamp may never be
+                    // the only thing making a law sane") applied at runtime
+                    // rather than only in a property test.
+                    if pol.composed_cap {
+                        ccap_refreshes += 1;
+                        ccap_cap_sum += dyn_store_cap as f64;
+                        if let Some((w, sl, sp)) = tt_terms_diag {
+                            ccap_engaged += 1;
+                            let unclamped = (w + sl + sp).ceil();
+                            if unclamped >= WIN_STORE_MAX as f64 {
+                                ccap_at_mem += 1;
+                            }
+                            if unclamped <= pol.store_cap_floor as f64 {
+                                ccap_at_floor += 1;
+                            }
+                        }
+                    }
                 }
                 // `[3T]` readout — the three-term law's MECHANISM-LIVENESS
                 // echo at the wire (MEASUREMENT DISCIPLINE 15). It prints
@@ -5980,6 +6107,25 @@ async fn run_window_sender(
                 for pid in sched.active_paths() {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
+                // The run's ONE `[WALL]` line (RWM_WALLDIAG). Both teardown
+                // arms emit it; each returns immediately after, so it is
+                // emitted at most once per sender.
+                walldiag::report_at_teardown(now_us());
+                if pol.composed_cap {
+                    eprintln!(
+                        "{}",
+                        ccap_report_line(
+                            ccap_refreshes,
+                            ccap_engaged,
+                            ccap_at_mem,
+                            ccap_at_floor,
+                            ccap_cap_sum,
+                            ccap_brake_ticks,
+                            ccap_brake_closed,
+                            pol.store_cap_floor,
+                        )
+                    );
+                }
                 info!("window sender shut down gracefully");
                 return;
             }
@@ -6015,6 +6161,24 @@ async fn run_window_sender(
             dg.wait_us[wait_arm] += dt;
             dg.wait_n += 1;
         }
+        // ── THE DEAD-WALL GAUGE (`RWM_WALLDIAG`, net/walldiag.rs) ─────────
+        // The ONE feed site of the onset/duration instrument, deliberately
+        // placed beside the wait-arm charge above because it consumes the
+        // same `wait_arm` — but on its OWN gate, because the statistic it
+        // replaces has to be collectable on c8 arms that cannot afford the
+        // 250 ms `[DIAG]` report (that is the whole reason the tick-share
+        // statistic was only ever available under RWM_DIAG).
+        //
+        // Three scalars, no engine handle: the arm that woke the loop, the
+        // wall clock of the last NEW source symbol (`last_source_send_us`,
+        // maintained unconditionally by the emission step), and the engine's
+        // monotone retransmit counter. `productive(t)` is evaluated inside
+        // the gauge — see `net/walldiag.rs` for the measurand.
+        if pol.walldiag_on {
+            if let Some(g) = walldiag::gauge() {
+                g.observe(now_us(), wait_arm, st.last_source_send_us, dg.diag_retx);
+            }
+        }
 
         if let Some(packet) = packet {
             let pkt = match packet {
@@ -6035,6 +6199,22 @@ async fn run_window_sender(
                 );
                         }
                     }
+                    walldiag::report_at_teardown(now_us());
+                if pol.composed_cap {
+                    eprintln!(
+                        "{}",
+                        ccap_report_line(
+                            ccap_refreshes,
+                            ccap_engaged,
+                            ccap_at_mem,
+                            ccap_at_floor,
+                            ccap_cap_sum,
+                            ccap_brake_ticks,
+                            ccap_brake_closed,
+                            pol.store_cap_floor,
+                        )
+                    );
+                }
                     info!("TUN closed");
                     return;
                 }
@@ -9300,6 +9480,156 @@ mod tests {
             let r = cap(8).0 as f64 / cap(1).0 as f64;
             assert!((r - 8.0).abs() < 0.1, "N=8 vs N=1 reads {r}, not linear-8");
         }
+
+        /// **THE COMPOSED LAW'S UNCLAMPED VALUE, SEPARATED FROM ITS MEMORY
+        /// BOUND** — step (c) of the template, and the one that matters most
+        /// for this law because `WIN_STORE_MAX` is the ONLY bound left above
+        /// it. ADR-0070's whole postmortem is mechanism 1: *a clamp that
+        /// always binds converts a law into a constant and hides its shape
+        /// from every measurement taken through it*. If the composed law's
+        /// memory bound ever became its operating point, the predecessor's
+        /// exact defect would have been reproduced with a nicer formula.
+        ///
+        /// So: the bound is shown to be REACHABLE (it is not decorative), and
+        /// shown to be a CONSTANT in N once reached (it is a resource limit,
+        /// not a term — a term would scale with the Σ). Both directions,
+        /// because "never binds" and "always binds" are both defects here.
+        #[test]
+        fn three_term_memory_bound_is_a_resource_limit_and_not_a_term_of_the_law() {
+            const RTPROP_S: f64 = 0.05;
+            const K: f64 = 1.0;
+            const RHO: f64 = 1.0;
+            const B: f64 = 0.5;
+            const FLOOR: usize = 64;
+            let cap_at = |rate: f64, n: usize| {
+                let terms = vec![Some(ThreeTermTerm { rate, rtprop_s: RTPROP_S, k: K }); n];
+                three_term_store_cap(true, &terms, RHO, B, FLOOR).expect("warm").0
+            };
+
+            // The per-path term at rate 1000 is 156.25 (the test above).
+            // INTERIOR: at N = 1..8 the law is nowhere near the memory bound,
+            // so the shape assertions above are statements about the LAW.
+            for n in 1..=8usize {
+                assert!(
+                    cap_at(1_000.0, n) < WIN_STORE_MAX,
+                    "N={n}: the memory bound is binding where the law should be interior"
+                );
+            }
+
+            // REACHABLE: drive the rate up and the bound engages. A bound that
+            // could never bind would be decorative, and stating it as a
+            // resource limit would be a fiction.
+            assert_eq!(
+                cap_at(1_000_000.0, 1),
+                WIN_STORE_MAX,
+                "the memory bound is unreachable — it is not the resource limit it claims to be"
+            );
+
+            // A CONSTANT IN N once reached. This is the whole distinction
+            // between a resource limit and a term: the law's own value is
+            // Σ-linear in N (asserted above), so if this bound scaled with N
+            // it would be part of the law. It does not.
+            for n in 1..=8usize {
+                assert_eq!(
+                    cap_at(1_000_000.0, n),
+                    WIN_STORE_MAX,
+                    "N={n}: the memory bound scaled with the path count — that makes it a TERM"
+                );
+            }
+
+            // And the paroled floor, from the other side: it is the law's
+            // lower bound, also a constant in N. ADR-0070 finding 5 records
+            // its provenance as ABSENT and the three-term pre-registration
+            // MISSED it binding at shal8, so it is pinned here rather than
+            // assumed unreachable.
+            for n in 1..=8usize {
+                assert_eq!(
+                    cap_at(1e-9, n),
+                    FLOOR,
+                    "N={n}: the paroled floor is not the law's lower bound"
+                );
+            }
+        }
+    }
+
+    // ----- The composed cap law's report line (paper §16.56) -----------------
+
+    /// The `[CCAP]` line's SHAPE, pinned absolutely. An L1 parser and the
+    /// pre-registered battery are written against these keys, and the two that
+    /// carry the argument are `eng=` (mechanism liveness — MEASUREMENT
+    /// DISCIPLINE rule 1) and `mem=` (the bind fraction of the only bound left
+    /// above the law). A silent rename would leave the battery reading zeros
+    /// and calling a warm-up failure a null result, which is exactly the
+    /// confusion ADR-0070's postmortem is about.
+    #[test]
+    fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
+        // Engaged everywhere, nothing bound, brake closed a quarter of the
+        // time: the reading the composed arm is PREDICTED to produce.
+        let line = ccap_report_line(200, 200, 0, 0, 200.0 * 3020.0, 1_000, 250, 64);
+        assert_eq!(
+            line,
+            "[CCAP] eng=200/200 cap=3020.0 mem=0.0000 floor=0.0000 floor_val=64 \
+             brake=250/1000 brake_frac=0.2500"
+        );
+
+        // CONFIGURED BUT NEVER ENGAGED — a warm-up failure, and it must be
+        // distinguishable from a null result. `eng=0/200` is that signature;
+        // the bind fractions are 0/0 = 0.0 rather than NaN, so a parser reads
+        // "undefined" from `eng` and never from a poisoned float.
+        let cold = ccap_report_line(200, 0, 0, 0, 200.0 * 128.0, 1_000, 0, 64);
+        assert!(cold.contains("eng=0/200"), "{cold}");
+        assert!(cold.contains("mem=0.0000") && cold.contains("floor=0.0000"), "{cold}");
+
+        // THE STOP CONDITION of §16.56: the memory bound has become the law.
+        let pinned = ccap_report_line(100, 100, 100, 0, 100.0 * 4096.0, 500, 500, 64);
+        assert!(pinned.contains("mem=1.0000"), "{pinned}");
+        assert!(pinned.contains("cap=4096.0"), "{pinned}");
+
+        // Zero refreshes must not divide by zero.
+        assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64).contains("cap=0.0"));
+    }
+
+    /// **THE BRAKE'S SET IS LOAD-BEARING**, and this pins the trap §16.56
+    /// wrote down before it could be walked into rather than describing it in
+    /// prose (CLAUDE.md: every documented divergence carries a test that
+    /// BOUNDS it).
+    ///
+    /// With the composed arm's derived per-path cap — the path's OWN cwnd —
+    /// "path i is full" is `in_flight_i >= cwnd_i`, which is exactly
+    /// `available()_i == 0`. `active_paths()` is *active AND available() > 0*,
+    /// so every member of that set has `in_flight < cwnd` BY CONSTRUCTION and
+    /// `infl_percap_full` over it can only ever return false. A brake wired to
+    /// that set would resolve ON, take a lock every iteration, and never
+    /// brake: a null EFFECT wearing a null RESULT's clothes.
+    #[test]
+    fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
+        // What `active_paths()` can yield under the derived cap: membership
+        // REQUIRES available() > 0, i.e. in_flight < cwnd, for every member.
+        // Any such vector is un-full, whatever the values are.
+        for &(infl, cwnd) in &[(0u64, 100u64), (99, 100), (1, 2), (500, 501)] {
+            assert!(
+                !infl_percap_full(&[(infl, cwnd)]),
+                "a path in active_paths() has available() > 0, so it cannot be full"
+            );
+        }
+        assert!(
+            !infl_percap_full(&[(99, 100), (0, 40), (5, 6)]),
+            "no member of the active set can be full under cap_i = cwnd_i"
+        );
+
+        // Over `live_paths()` the same predicate is a REAL question, because
+        // a live path may be saturated (available() == 0) and still live.
+        assert!(
+            infl_percap_full(&[(100, 100), (40, 40)]),
+            "every live path at its own cwnd ⇒ the brake closes"
+        );
+        assert!(
+            !infl_percap_full(&[(100, 100), (39, 40)]),
+            "one live path below its own cwnd ⇒ the brake stays open"
+        );
+        // Saturated BEYOND the window (a retransmit can overshoot) still
+        // reads full — the predicate is `>=`, not `==`.
+        assert!(infl_percap_full(&[(120, 100), (41, 40)]));
     }
 
     // ----- Capacity-weighted pool (RWM_STORE_CAPW, "C8-Aware Pool Law") -------
