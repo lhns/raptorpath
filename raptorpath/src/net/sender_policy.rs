@@ -211,6 +211,11 @@ pub(crate) struct SenderPolicy {
     pub recov_mp_live: bool,
     /// `RWM_PATIENCE_DERIVED`: the derived recovery-patience floor.
     pub patience_derived: bool,
+    /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
+    /// tail-sweep / hole-refresh ROUND on the derived law (2·SRTT floored by
+    /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
+    /// undocumented [25, 100] ms. OFF ⇒ byte-identical to the shipped law.
+    pub derived_sweep: bool,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -1077,6 +1082,7 @@ impl SenderPolicy {
             recov_sp,
             recov_mp_live,
             patience_derived,
+            derived_sweep: gates.derived_sweep,
             sidle_derived,
             emit_batch_on,
             emit_burst,

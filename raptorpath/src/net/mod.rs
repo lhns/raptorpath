@@ -554,6 +554,86 @@ pub fn hole_nack_refresh(srtt: Option<Duration>) -> Duration {
     srtt.map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
         .unwrap_or(HOLE_NACK_REFRESH_MAX)
 }
+
+// ── The DERIVED recovery round (`RWM_DERIVED_SWEEP`, default OFF) ─────────
+//
+// Goal-gate "The Derived Recovery Clamp" (2026-08-12). Both recovery clocks
+// above are `2·SRTT` CLAMPED to [25 ms, 100 ms], and both literals are
+// undocumented: `TAIL_SWEEP_*` arrived at cb66b93 ("clamp [25,100]ms —
+// block mode's P8 sweeper analog", no measurement), `HOLE_NACK_REFRESH_*`
+// at 4c90153 with no mention at all. The only stated justification is the
+// comment on `TAIL_SWEEP_MIN_US`: the clock "must sit above the ack arrival
+// time (~1×SRTT + jitter) … and below the receiver's reorder hold (60 ms
+// floor) plus the inner-TCP RTO (~200 ms)".
+//
+// Both halves of that sentence are re-derived here rather than asserted:
+//
+//   * THE FLOOR IS REDUNDANT GIVEN THE MULTIPLIER. Its job is
+//     `2·srtt ≥ srtt + jitter`, which holds whenever `jitter ≤ srtt` — true
+//     by the definition of jitter as a consecutive-DIFFERENCE statistic. The
+//     only case it really covers is "no clock yet", and the engine ALREADY
+//     has a derived law for exactly that: `patience_floor_us` (goal-gate
+//     "Unlock The Default 2") = timer granularity + the path's own measured
+//     jitter, with the legacy literal as the no-sample fallback. So the
+//     floor here is not a new constant; it is the one already derived.
+//
+//   * THE CEILING'S TWO REFERENTS DO NOT HOLD ON THE MEASURED STACK. The
+//     receiver's reorder hold is a property of the EVICT path; the reliable
+//     window (ρ = 1) receiver never force-delivers past a hole
+//     (`recv_window_reliable`, net/receiver.rs), so no hold bounds this
+//     cadence there. And the "inner-TCP RTO" does not exist: goal-gate "The
+//     Latency-Feedback Source" PROVED, name by name, that the L1 vehicle
+//     `perf.rs::run_object` carries no inner stack at all. A ceiling whose
+//     stated purpose is to stay under two absent quantities is a constant
+//     with no derivation behind it, and it is removed rather than re-fitted.
+//
+// What remains is the shipped FORM with the clamp replaced by the derived
+// floor and NO ceiling — one expression, continuous in its argument, with
+// zero new constants (the `2` is the shipped multiplier, untouched):
+//
+//     round(srtt, jitter) = max(2·srtt, patience_floor_us(jitter, srtt))
+//
+// This is an ENV GATE (an A/B attribution arm), never a dial on the
+// (δ, ρ, r) triangle: nothing here keys on δ, on ρ, or on a hint.
+
+/// The DERIVED recovery round (µs): `2·SRTT` floored by the derived
+/// patience floor, with NO ceiling. See the block comment above.
+///
+/// COINCIDENCE PROPERTY (unit-tested): wherever `2·srtt` already lies inside
+/// the legacy clamp AND the derived floor is below it, this returns exactly
+/// `tail_sweep_timeout_us(srtt)` — the derived law is a strict
+/// generalization that reproduces the literal law over the whole band the
+/// literal law's own stated assumption ("2×SRTT is inside [25,100] ms")
+/// holds on.
+pub fn derived_recovery_round_us(srtt_us: u64, jitter_us: u64) -> u64 {
+    srtt_us.saturating_mul(2).max(patience_floor_us(jitter_us, srtt_us))
+}
+
+/// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
+/// clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
+/// `derived` is an ENV GATE (an A/B arm), never a dial.
+pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
+    if derived {
+        derived_recovery_round_us(srtt_us, jitter_us)
+    } else {
+        tail_sweep_timeout_us(srtt_us)
+    }
+}
+
+/// The receiver's hole-refresh cadence ACTUALLY supplied to the reliable
+/// window receiver: the legacy clamped law, or the derived round under
+/// `RWM_DERIVED_SWEEP`. With NO clock at all the legacy fallback
+/// (`HOLE_NACK_REFRESH_MAX`) is kept verbatim in BOTH arms — an
+/// information-availability fallback, not a mode.
+pub fn hole_refresh(derived: bool, srtt: Option<Duration>, jitter_us: u64) -> Duration {
+    match (derived, srtt) {
+        (true, Some(s)) => {
+            Duration::from_micros(derived_recovery_round_us(s.as_micros() as u64, jitter_us))
+        }
+        (true, None) => HOLE_NACK_REFRESH_MAX,
+        (false, s) => hole_nack_refresh(s),
+    }
+}
 // ── δ-honest overload shedding (goal-gate "Unified Shedding", fix C;
 //    part of the unified machine's realtime semantics under `RWM_UNIFIED`,
 //    sub-gate `RWM_UNIFIED_SHED=0` = the serializing control arm) ─────────
@@ -5632,17 +5712,22 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let srtt_us = {
+                let (srtt_us, jitter_us) = {
                     let sched = scheduler.lock();
-                    let pooled: Vec<u64> = sched
+                    let paths: Vec<_> = sched
                         .active_paths()
                         .iter()
                         .filter_map(|id| sched.path(*id))
-                        .map(|p| p.estimator.rtt().as_micros() as u64)
                         .collect();
-                    pooled_recovery_srtt_us(&pooled)
+                    let pooled: Vec<u64> =
+                        paths.iter().map(|p| p.estimator.rtt().as_micros() as u64).collect();
+                    // The jitter feeding the DERIVED floor is pooled the same
+                    // way the clock is (max over the same path set), so floor
+                    // and clock can never come from different paths.
+                    let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
+                    (pooled_recovery_srtt_us(&pooled), jit)
                 };
-                let timeout_us = tail_sweep_timeout_us(srtt_us);
+                let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
                 let deadline_us = last_activity_us + timeout_us;
                 let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
                 tokio::time::Instant::now() + remaining

@@ -24,9 +24,9 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 use std::time::Duration;
 
 use raptorpath::net::{
-    cooldown_elapsed, hole_nack_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
+    cooldown_elapsed, hole_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
     mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us, recovery_floor_us,
-    retx_cooldown_us, shed_allowed, shed_deadline_us, tail_sweep_timeout_us, time_threshold_ripe,
+    retx_cooldown_us, shed_allowed, shed_deadline_us, sweep_timeout_us, time_threshold_ripe,
     MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK,
 };
 
@@ -117,16 +117,54 @@ pub struct Arm {
     pub recov_mp: bool,
     pub recov_sp: bool,
     pub patience_derived: bool,
+    /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
+    /// tail sweep + hole refresh on `derived_recovery_round_us` instead of
+    /// the [25, 100] ms clamped law. `false` on every pre-existing arm, so
+    /// every pre-existing cell is bit-identical.
+    pub derived_sweep: bool,
 }
 pub const ARMS: &[Arm] = &[
     // `RWM_RECOV_MP` default ON since 2026-07-21 — the shipped stack.
-    Arm { name: "shipped", recov_mp: true, recov_sp: false, patience_derived: false },
+    Arm {
+        name: "shipped",
+        recov_mp: true,
+        recov_sp: false,
+        patience_derived: false,
+        derived_sweep: false,
+    },
     // Neither RFC channel: the pre-2026-07 legacy `srtt/2` age gate.
-    Arm { name: "legacy", recov_mp: false, recov_sp: false, patience_derived: false },
+    Arm {
+        name: "legacy",
+        recov_mp: false,
+        recov_sp: false,
+        patience_derived: false,
+        derived_sweep: false,
+    },
     // `RWM_RECOV_SP`: the §6.1.2 time threshold at N = 1 too.
-    Arm { name: "sp", recov_mp: true, recov_sp: true, patience_derived: false },
+    Arm {
+        name: "sp",
+        recov_mp: true,
+        recov_sp: true,
+        patience_derived: false,
+        derived_sweep: false,
+    },
     // `RWM_PATIENCE_DERIVED` on top of the shipped stack.
-    Arm { name: "pd", recov_mp: true, recov_sp: false, patience_derived: true },
+    Arm {
+        name: "pd",
+        recov_mp: true,
+        recov_sp: false,
+        patience_derived: true,
+        derived_sweep: false,
+    },
+    // `RWM_DERIVED_SWEEP` on top of the shipped stack — the arm this
+    // branch adds (goal-gate "The Derived Recovery Clamp").
+    Arm {
+        name: "ds",
+        recov_mp: true,
+        recov_sp: false,
+        patience_derived: false,
+        derived_sweep: true,
+    },
 ];
 
 /// Which channel ADMITTED a hole's first service.
@@ -348,9 +386,16 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     // The receiver's refresh cadence reads the COPA clock (`PathState::srtt`),
     // NOT the estimator — so the clock argument does not move it. That
     // asymmetry is a FINDING, not an accident: keep it faithful.
-    let refresh_us =
-        hole_nack_refresh(Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))))
-            .as_micros() as u64;
+    let refresh_us = hole_refresh(
+        cell.arm.derived_sweep,
+        Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))),
+        cal.jitter_us,
+    )
+    .as_micros() as u64;
+    // The SENDER's tail-sweep round: the pooled ESTIMATOR clock (the
+    // argument under test on the `clock` axis), through the shipped
+    // `sweep_timeout_us` — the legacy clamp with `derived_sweep` off.
+    let sweep_us = sweep_timeout_us(cell.arm.derived_sweep, pooled_us, cal.jitter_us);
     let shed_deadline = shed_deadline_us(0.5, cell.rtprop_us);
     // ρ budget: the residual the (δ,ρ,r) design already concedes — modelled
     // as the cell's own loss class (there is no FEC in the recovery plane).
@@ -414,7 +459,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     }
     let last_send_us = cal.n_src.saturating_sub(1) * tx_gap_us;
     push!(GAP_ACK_MIN_US, Ev::Ack);
-    push!(tail_sweep_timeout_us(pooled_us), Ev::Sweep);
+    push!(sweep_us, Ev::Sweep);
 
     // Virtual-time guard: the tail must drain, but a pathological cell must
     // not spin. 60 s of virtual time past the last original send.
@@ -542,7 +587,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
             }
             Ev::Sweep => {
                 // P10b tail sweep: arm at oldest-activity + 2×SRTT clamped.
-                let timeout = tail_sweep_timeout_us(pooled_us);
+                let timeout = sweep_us;
                 if let Some((&seq, &(send_us, _))) = retransmit_buffer.iter().next() {
                     let last_activity = nack_retx_at
                         .get(&seq)
