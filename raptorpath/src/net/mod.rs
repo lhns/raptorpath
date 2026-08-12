@@ -666,7 +666,34 @@ pub(crate) struct DerivedRoundEcho {
     diverged: bool,
 }
 
+/// The phrase drivers COUNT to prove the derived site executed.
+pub(crate) const DS_ECHO_RAN: &str = "derived recovery round ACTIVE";
+/// The phrase drivers COUNT to prove the derived law bound.
+pub(crate) const DS_ECHO_DIVERGED: &str = "derived recovery round DIVERGED";
+
 impl DerivedRoundEcho {
+    /// The execution echo's full text.
+    fn ran_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
+        format!(
+            "{DS_ECHO_RAN} (RWM_DERIVED_SWEEP, goal-gate \"The Derived Recovery Clamp\": \
+             round = max(2*srtt, patience_floor(jitter, srtt)), NO ceiling and zero new \
+             constants, replacing 2*srtt clamped to [25, 100] ms at both recovery-clock \
+             sites; RWM_DERIVED_SWEEP=0 = the shipped clamped control arm) site={site} \
+             srtt_us={srtt_us} jitter_us={jitter_us} derived_us={d_us} legacy_us={l_us}"
+        )
+    }
+
+    /// The binding echo's full text.
+    fn diverged_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
+        format!(
+            "{DS_ECHO_DIVERGED} from the clamped law (goal-gate \"The Derived Recovery \
+             Clamp\", coincidence property: the two laws agree wherever 2*srtt already lies \
+             inside [25, 100] ms, so this line, not the execution echo, is what proves the \
+             derived round BOUND at this site) site={site} srtt_us={srtt_us} \
+             jitter_us={jitter_us} derived_us={d_us} legacy_us={l_us}"
+        )
+    }
+
     /// Record one evaluation of the derived round. `derived_us` is the value
     /// the site is ACTUALLY using; `legacy_us` is what the clamped law it
     /// replaces would have returned for the same clock.
@@ -680,24 +707,11 @@ impl DerivedRoundEcho {
     ) {
         if !self.ran {
             self.ran = true;
-            info!(
-                "derived recovery round ACTIVE (RWM_DERIVED_SWEEP, goal-gate \"The Derived \
-                 Recovery Clamp\": round = max(2*srtt, patience_floor(jitter, srtt)), NO \
-                 ceiling and zero new constants, replacing 2*srtt clamped to [25, 100] ms at \
-                 both recovery-clock sites; RWM_DERIVED_SWEEP=0 = the shipped clamped control \
-                 arm) site={site} srtt_us={srtt_us} jitter_us={jitter_us} \
-                 derived_us={derived_us} legacy_us={legacy_us}"
-            );
+            info!("{}", Self::ran_msg(site, srtt_us, jitter_us, derived_us, legacy_us));
         }
         if !self.diverged && derived_us != legacy_us {
             self.diverged = true;
-            info!(
-                "derived recovery round DIVERGED from the clamped law (goal-gate \"The Derived \
-                 Recovery Clamp\", coincidence property: the two laws agree wherever 2*srtt \
-                 already lies inside [25, 100] ms, so this line — not the ACTIVE one — is what \
-                 proves the derived round BOUND at this site) site={site} srtt_us={srtt_us} \
-                 jitter_us={jitter_us} derived_us={derived_us} legacy_us={legacy_us}"
-            );
+            info!("{}", Self::diverged_msg(site, srtt_us, jitter_us, derived_us, legacy_us));
         }
     }
 }
@@ -8735,6 +8749,47 @@ mod tests {
         let mut f = DerivedRoundEcho::default();
         f.observe("t", srtt, 100, derived, legacy);
         assert!(f.ran && f.diverged);
+    }
+
+    /// NEITHER echo's PROSE may contain the phrase the OTHER echo is counted
+    /// on, and neither may contain a bare `RWM_DERIVED_SWEEP=<n>` that a
+    /// `[GATES]`-scoped grep could pick up. This is not style: the flip
+    /// battery's amendment 1 was forced by exactly this class of bug — an
+    /// ACTIVE echo whose own explanatory text matched the pattern a driver
+    /// counted — and the dead-wall battery reads BOTH phrases per rep to
+    /// separate "the site ran" from "the law bound". A wording change that
+    /// silently re-merged them would corrupt that separation with no other
+    /// symptom.
+    #[test]
+    fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
+        let ran = DerivedRoundEcho::ran_msg("s", 1, 2, 3, 4);
+        let div = DerivedRoundEcho::diverged_msg("s", 1, 2, 3, 4);
+
+        assert!(ran.starts_with(DS_ECHO_RAN));
+        assert!(div.starts_with(DS_ECHO_DIVERGED));
+        assert!(
+            !div.contains(DS_ECHO_RAN),
+            "the DIVERGED echo must not match the execution grep: {div}"
+        );
+        assert!(
+            !ran.contains(DS_ECHO_DIVERGED),
+            "the ACTIVE echo must not match the binding grep: {ran}"
+        );
+        // The gate's own name may be NAMED, but never with a resolved value:
+        // that is the `[GATES]` line's job and a stray `=0`/`=1` in prose is
+        // what the amendment-1 lesson is actually about.
+        for m in [&ran, &div] {
+            assert!(
+                !m.contains("RWM_DERIVED_SWEEP=1"),
+                "echo prose must not carry a resolved gate value: {m}"
+            );
+        }
+        // Both carry the five fields the parser reads, in the same dialect.
+        for m in [&ran, &div] {
+            for f in ["site=", "srtt_us=", "jitter_us=", "derived_us=", "legacy_us="] {
+                assert!(m.contains(f), "{m} is missing {f}");
+            }
+        }
     }
 
     /// 3a, the law: monotone in the measured interval, both clamps, and the

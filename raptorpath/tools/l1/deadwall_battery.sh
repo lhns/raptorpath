@@ -169,11 +169,17 @@ check_and_parse() {
 
   echo "LIVENESS $name rep=$REP cli=[$gdc $guc $gmc $gac] srv=[$gds $gus $gms $gas] actDS=$adc/$ads divDS=$ddc/$dds actU=$uc/$us ackdiag=$akc/$aks (expect ds=$eds u=$eu)" >> "$OUT"
 
-  # The derived round's own numbers, verbatim, wherever they were echoed.
-  (grep -h "derived recovery round" /tmp/rwm-c.log /tmp/rwm-s.log 2>/dev/null \
-    | grep -oE "(ACTIVE|DIVERGED).*site=\S+ srtt_us=[0-9]+ jitter_us=[0-9]+ derived_us=[0-9]+ legacy_us=[0-9]+" \
-    | grep -oE "(ACTIVE|DIVERGED)|site=\S+|srtt_us=[0-9]+|jitter_us=[0-9]+|derived_us=[0-9]+|legacy_us=[0-9]+" \
-    | paste -sd' ' - | sed "s/^/DSLINE $name rep=$REP /" >> "$OUT") || true
+  # The derived round's own numbers, ONE LINE PER ECHO, tagged by endpoint.
+  # Each echo is one-shot per SITE per PROCESS, so a rep yields up to four
+  # (sender/receiver x client/server) at whatever clock each saw first —
+  # they are emitted separately rather than flattened, because the spread
+  # between the warm-up clock and the steady-state one IS the reading.
+  for _ep in c s; do
+    (grep -h "derived recovery round" "/tmp/rwm-$_ep.log" 2>/dev/null \
+      | sed 's/\x1b\[[0-9;]*m//g' \
+      | sed -E "s/^.*derived recovery round (ACTIVE|DIVERGED).*(site=[^ ]+ srtt_us=[0-9]+ jitter_us=[0-9]+ derived_us=[0-9]+ legacy_us=[0-9]+).*$/DSLINE $name rep=$REP ep=$_ep \1 \2/" \
+      | grep "^DSLINE" >> "$OUT") || true
+  done
 
   # No [GATES] on EITHER endpoint = ABORT: no datum, no liveness verdict.
   if [ -z "$gdc" ] && [ -z "$gds" ]; then

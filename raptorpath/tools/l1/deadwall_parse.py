@@ -142,27 +142,45 @@ gates = {
 }
 
 # ── the derived round's OWN numbers, off whichever echo carries them ─────
-# The DIVERGED line is preferred: it is the one taken at a clock where the
-# two laws actually differ, so its pair is the size of the departure. The
-# ACTIVE line is the fallback and may legitimately show derived == legacy.
+# The DIVERGED lines are preferred: they are taken at clocks where the two
+# laws actually differ, so their pair is the SIZE of the departure. ACTIVE is
+# the fallback and may legitimately show derived == legacy.
+#
+# THE LARGEST departure is reported, not the first. Both echoes are one-shot
+# PER SITE PER PROCESS, and a transfer has up to four of them (sender and
+# receiver sites, client and server processes), which fire at whatever clock
+# each site happened to see first. The smoke run showed why this matters: the
+# earliest divergence was a WARM-UP one at srtt = 10 ms (derived 20 ms vs
+# clamped 25 ms, a 5 ms departure BELOW the legacy floor), while the
+# steady-state c8 divergence at the same rep was srtt = 552 ms (derived
+# 1 104 ms vs clamped 100 ms — an 11x departure). Reporting the first would
+# have understated the law's actual bind by two orders of magnitude and made
+# every downstream "did it bind?" reading wrong in the safe-looking direction.
 ds_re = re.compile(
     r"site=(\S+) srtt_us=(\d+) jitter_us=(\d+) derived_us=(\d+) legacy_us=(\d+)"
 )
 ds = {"ds_site": None, "ds_srtt_us": None, "ds_jitter_us": None,
-      "ds_derived_us": None, "ds_legacy_us": None, "ds_from": None}
+      "ds_derived_us": None, "ds_legacy_us": None, "ds_from": None,
+      "ds_n_echo": 0}
+_best = None
 for tag, want in (("diverged", DS_DIVERGED), ("active", DS_ACTIVE)):
-    if ds["ds_from"]:
-        break
     for ln in cli + srv:
         if want not in ln:
             continue
         m = ds_re.search(ln)
-        if m:
-            ds = {"ds_site": m.group(1), "ds_srtt_us": int(m.group(2)),
-                  "ds_jitter_us": int(m.group(3)),
-                  "ds_derived_us": int(m.group(4)),
-                  "ds_legacy_us": int(m.group(5)), "ds_from": tag}
-            break
+        if not m:
+            continue
+        ds["ds_n_echo"] += 1
+        d, l = int(m.group(4)), int(m.group(5))
+        gap = abs(d - l)
+        # A DIVERGED reading always outranks an ACTIVE one; within a tag the
+        # widest departure wins.
+        key = (1 if tag == "diverged" else 0, gap)
+        if _best is None or key > _best:
+            _best = key
+            ds.update({"ds_site": m.group(1), "ds_srtt_us": int(m.group(2)),
+                       "ds_jitter_us": int(m.group(3)),
+                       "ds_derived_us": d, "ds_legacy_us": l, "ds_from": tag})
 
 # ── the ack-cadence gauge: instrument liveness only, never a datum ───────
 ackdiag = {
