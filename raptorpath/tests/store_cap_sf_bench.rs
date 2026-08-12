@@ -1589,7 +1589,7 @@ struct Run {
     /// PER PATH: Σ and n of `copa_bdp_anchor()/(rate·RTprop)` over refresh
     /// ticks. READOUT 3 is a per-PATH table, so V1 is scored per path — a
     /// cell mean would hide the c8 legs, which the wire reports separately.
-    /// (Every cell this bench runs has ≤ 2 paths.)
+    /// (Sized `MAX_PATHS`; every WIRE cell has ≤ 2 paths, `c7x4` has 4.)
     xa_sum: [f64; MAX_PATHS],
     xa_n: [u64; MAX_PATHS],
     /// PER PATH: what the measured ack observer actually did. All zero on
