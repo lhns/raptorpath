@@ -28119,3 +28119,119 @@ the 36 pre-existing tests passes UNMODIFIED). `gate_suite` not required -- no
 engine code changed. Determinism verified across **three separate processes**
 on the always-on suite, all 41/41, and each readout was taken in its own
 process.
+
+## The Derived Recovery Clamp — VM PRE-REGISTRATION (2026-08-12) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any VM contact and BEFORE any battery, in its OWN commit, against the law shipped at `feat/derived-recovery-clamp`@`8a29845`. Branch `feat/derived-recovery-clamp` from main@`99514af`. **This block is the battery the preceding section ("The Latency-Feedback Source") specified under "WHAT THE PRE-REGISTERED VM BATTERY FOR THE DELETION CHAIN MUST MEASURE", written to that spec clause by clause.**
+
+### WHAT IS BEING TESTED
+
+`RWM_DERIVED_SWEEP` = 1 against unset, on the current default stack. The
+gate replaces the two recovery clocks' `2·SRTT` clamped to [25 ms, 100 ms]
+with `derived_recovery_round_us(srtt, jitter) = max(2·srtt,
+patience_floor_us(jitter, srtt))` — no ceiling, zero new constants — at both
+behavioural sites (the sender's tail-sweep deadline, `net/mod.rs`; the
+reliable receiver's stalled-hole refresh, `net/receiver.rs`).
+
+The component trial in the commit before this one is the reason the battery
+is worth VM time and it is also the reason the battery can FAIL cleanly:
+the model says the derived arm removes the spurious rounds by arithmetic AND
+that it fires 13 → 0 sweeps at the c8 geometry with a **+25 % p90
+hole→service** cost in the one model where the sweeps are doing real work.
+Which of those the wire shows is the whole question.
+
+### THE DECISION CELL, AND THE STATISTIC (the spec's clause 1, verbatim)
+
+**c8. The statistic is NOT goodput.** "Store-Cap Unification — RESULTS"
+established c8's 2σ band at 42–46 % of its own mean, so no c8 goodput
+contrast resolves a 5–10 % shift at any n this project can afford.
+
+**PRIMARY STATISTIC — the COLLAPSE-MODE RATE**, defined exactly as the
+preceding section defined it and not re-defined here:
+
+> the share of reps with `wait_tun` = 0 % **AND** `wait_paused` = 0 %
+
+a per-rep binary on two gauges the binary already prints, measured at
+19 of 19 on the slowest c8 tail and 5 of 112 elsewhere. It needs no new
+engine code and it resolves at **n = 8 per arm**.
+
+### THE ARMS (the spec's clause 2: "the arms are NOT cap arms")
+
+Four arms, interleaved round-robin per rep, same binary, both seeds:
+
+| id | env | what it isolates |
+|---|---|---|
+| **A** | (unset) | the shipped stack — the control |
+| **D** | `RWM_DERIVED_SWEEP=1` | the repair alone |
+| **AU** | `RWM_STORE_CAP_UNIFIED=1` | the deeper pool alone (the deletion chain's arm) |
+| **AUD** | `RWM_STORE_CAP_UNIFIED=1 RWM_DERIVED_SWEEP=1` | the interaction — **the load-bearing cell** |
+
+`RWM_RECOV_MP` is ON by default and must be RECORDED in every arm's
+`[GATES]` echo (the component bench's standing warning: any change to the
+recovery plane's clocks is only safe with the RFC 9002 hole law armed).
+Every arm asserts its own gate's echo two-sidedly (`RWM_DERIVED_SWEEP=1`
+in D/AUD, `RWM_DERIVED_SWEEP=0` in A/AU) before any number from it is read.
+
+### THE TRANSFER-LENGTH ARM (the spec's clause 3)
+
+**c8 at 25 MB and c8 at 200 MB, same cell, same seeds, arms A and D.** The
+preceding section's arithmetic: the dead wall is a roughly FIXED number of
+recovery rounds, so its SHARE of a transfer falls as 1/duration. If the
+A-arm collapse rate at 200 MB falls to roughly `25/200 = 1/8` of its 25 MB
+value, the "c8 keying" of five sections of this file is a **byte-count
+artifact** and the cell was never special.
+
+### THE PRE-REGISTERED VERDICTS — every number written down BEFORE the run
+
+Stated so that each can fail. `p_A`, `p_D`, `p_AU`, `p_AUD` are collapse
+rates out of 8 per seed (16 pooled over both seeds).
+
+| id | claim | bar | what a FAIL means |
+|---|---|---|---|
+| **C1** | the control reproduces the mode | `p_A ≥ 3/16` pooled | the collapse class is not present in this session — **STOP RULE, nothing downstream is scored** |
+| **C2** | the repair moves the mode | `p_D ≤ p_A − 4/16` | the dead wall is not made of the recovery clocks; the re-attribution is wrong or incomplete |
+| **C3** | the deeper pool's penalty is real | `p_AU ≥ p_A + 2/16` | AU's c8 hazard is not clock-mediated (the model's PIN 4 says it is) |
+| **C4** | **the interaction — the load-bearing clause** | `p_AUD ≤ p_D + 1/16` **and** `p_AUD ≤ p_AU − 3/16` | the repair does NOT make AU's c8 arm safe; the deletion chain does not unlock and AU stays blocked |
+| **C5** | no tail-latency regression bought | c8 `ping_p99` in D within **1.25×** of A | the model's +25 % p90 cost is real on the wire; the repair trades the dead wall for delivered latency and must be reported as a TRADE, not a win |
+| **C6** | the spurious plane actually shrinks | D's `retx` ≤ **0.85×** A's at c8, medians | the retransmits were not spurious; the 1.41× ratio has another owner |
+| **C7** | nothing moves where the clamp does not bind | c1 and c7 goodput within **±1σ** of A, both seeds | the derived round is not the strict generalization the coincidence pin says it is — a defect, not a tradeoff |
+| **C8** | the length artifact | at 200 MB, `p_A(200) ≤ 0.5 × p_A(25)` | the mode is NOT a fixed tail; the c8 keying is structural and the clock story is incomplete |
+
+**C1 is a STOP RULE.** If the control does not reproduce the collapse class
+at n = 8 × 2 seeds, no other row is scored and the battery is reported
+UNSCORED, verbatim, as "The Latency-Feedback Source" reported its own matrix.
+
+**C4 is the clause the whole branch exists for.** C2 alone would only say
+the clock matters; C4 is what the deletion chain needs, and it is stated as
+a CONJUNCTION so that "D is good and AU is bad" cannot be read as "AUD is
+safe".
+
+### WHAT WOULD MAKE THIS A REFUTATION, STATED IN ADVANCE
+
+* **C2 fails** ⇒ the recovery clocks are not the dead wall's quantum. The
+  component pins stay (they are arithmetic and they remain true), the gate
+  is reported **NO** and is a deletion candidate, and the successor the
+  finding names is the `wait_nack` arm's OTHER owner — the gap-report
+  channel at 31 % of the c8 sender loop.
+* **C5 fails while C2 passes** ⇒ the repair is a MEASURED TRADEOFF (dead
+  wall for delivered latency), reported as one, with the p99 cost in the
+  headline and NOT folded into a win.
+* **C7 fails** ⇒ a defect in the law, not a tradeoff. The coincidence pin
+  says the derived round is bit-identical wherever `2·srtt ∈ [25, 100]` ms,
+  and c1's `2·srtt` = 18 ms is BELOW that band, so c1 is the cell where a
+  law defect would surface first. It is scored for that reason.
+* **C8 passes** ⇒ the largest open question of the store-cap phase closes as
+  a byte-count artifact, whatever the other rows say, and that result is
+  reported on its own.
+
+### PROTOCOL
+
+Both seeds (42, 7). ARMCOUNT 8 every cell × arm. Arms interleaved
+round-robin per rep, fresh cell and fresh tunnel per invocation, ONE binary
+for every arm with its sha256 recorded, `RWM_GEN=0 RWM_DIAG=1` everywhere.
+Driver: the existing `tools/l1/flip_battery.sh` shape;
+`RWM_DERIVED_SWEEP` is already in `RWM_FORWARD` (`tools/l1/lib.sh`) as of
+`8a29845`, which is the forwarding-audit precondition. `dnf` reported per
+arm; any arm with dnf > 0 is reported and not silently pooled.
+
+**No number in this block may be changed after the first VM contact.** If
+the battery is re-scoped, the re-scoping is a new block with its own commit
+and this one stays as written.
