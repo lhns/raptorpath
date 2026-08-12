@@ -3205,6 +3205,105 @@ pub fn ccap_report_line(
     )
 }
 
+/// ── THE SENDER-TEARDOWN GAUGE CARRIER (`[WALL]` + `[CCAP]`) ──────────────
+///
+/// The run's ONE emission of both teardown gauges, bound to the **LIFETIME of
+/// the sender loop** rather than to any of its exit arms.
+///
+/// **Why this is a `Drop` and not two `eprintln!`s at a `return`.** The
+/// gauges shipped emitted from exactly two arms of `run_window_sender`'s
+/// `select!` — the `shutdown_rx` arm and the `packet == None` ("TUN closed")
+/// arm. The `perf` harness (`crate::perf`, the object benchmark every L1
+/// battery runs) takes NEITHER: `perf::client` finishes its objects, prints
+/// its summary and returns, dropping the engine `JoinHandle` without
+/// signalling shutdown and without closing the memory TUN; the sender task
+/// then lives until the runtime is dropped at the end of `main`. The
+/// pre-battery smoke measured the consequence — `window sender shut down
+/// gracefully` 0/4 and `TUN closed` 1/4, so `[CCAP]` appeared on 0 of 2 logs
+/// and `[WALL]` on 1 of 4 (goal-gate, "PRE-BATTERY SMOKE"). The renderers
+/// were pinned; REACHABILITY never was — ADR-0070's own postmortem shape, one
+/// layer down.
+///
+/// A destructor is the only site that is on EVERY exit path a sender can
+/// take: the graceful-shutdown arm, the TUN-closed arm, an early `return`,
+/// an unwind, and — the case the harness actually exercises — the task future
+/// being dropped at runtime shutdown. It also emits exactly ONCE by
+/// construction, which the two arms only achieved because each happened to
+/// `return` immediately after.
+///
+/// It carries the `[CCAP]` tally as fields so that the counters and their
+/// emission cannot drift apart again. `[WALL]`'s own state lives in
+/// `net::walldiag`'s process-global gauge; only its emission is carried here.
+///
+/// OBSERVATION ONLY, and on the shipped default a no-op: `RWM_WALLDIAG` ships
+/// OFF so `report_at_teardown` returns on a `None` gauge, and `composed_cap`
+/// is `RWM_COMPOSED_CAP`, also OFF. Nothing here is read by the engine.
+pub(crate) struct SenderTeardownGauges {
+    /// `[CCAP]` tally — dyn-cap refresh ticks under the composed law.
+    pub(crate) refreshes: u64,
+    /// Refresh ticks at which the law actually produced a value (warm).
+    pub(crate) engaged: u64,
+    /// Engaged ticks clamped by the `WIN_STORE_MAX` memory bound.
+    pub(crate) at_mem: u64,
+    /// Engaged ticks clamped by the paroled `store_cap_floor`.
+    pub(crate) at_floor: u64,
+    /// Σ realized cap over refreshes (the mean is rendered).
+    pub(crate) cap_sum: f64,
+    /// Late-stage cwnd brake: ticks armed.
+    pub(crate) brake_ticks: u64,
+    /// Late-stage cwnd brake: ticks closed.
+    pub(crate) brake_closed: u64,
+    /// `RWM_COMPOSED_CAP` — whether the `[CCAP]` line is emitted at all.
+    composed_cap: bool,
+    /// `store_cap_floor`, rendered as `floor_val=` (provenance, ADR-0070/5).
+    floor: usize,
+}
+
+impl SenderTeardownGauges {
+    pub(crate) fn new(composed_cap: bool, floor: usize) -> Self {
+        Self {
+            refreshes: 0,
+            engaged: 0,
+            at_mem: 0,
+            at_floor: 0,
+            cap_sum: 0.0,
+            brake_ticks: 0,
+            brake_closed: 0,
+            composed_cap,
+            floor,
+        }
+    }
+
+    /// The `[CCAP]` line this carrier would emit right now. Split out so the
+    /// reachability tests and the format pins share one renderer with the
+    /// destructor.
+    pub(crate) fn ccap_line(&self) -> String {
+        ccap_report_line(
+            self.refreshes,
+            self.engaged,
+            self.at_mem,
+            self.at_floor,
+            self.cap_sum,
+            self.brake_ticks,
+            self.brake_closed,
+            self.floor,
+        )
+    }
+}
+
+impl Drop for SenderTeardownGauges {
+    fn drop(&mut self) {
+        // The run's ONE `[WALL]` line (`RWM_WALLDIAG`), then the run's ONE
+        // `[CCAP]` line (`RWM_COMPOSED_CAP`) — same order the two teardown
+        // arms used, so an L1 parser written against the smoke's logs is
+        // unaffected.
+        walldiag::report_at_teardown(now_us());
+        if self.composed_cap {
+            eprintln!("{}", self.ccap_line());
+        }
+    }
+}
+
 // ── The saturation-filter gauge (`sf=`), 2026-08-09 ──────────────────────
 //
 // MEASUREMENT DISCIPLINE 14's instrument for the store-cap phase, and the
@@ -4333,13 +4432,12 @@ async fn run_window_sender(
     // report the two surviving bounds — the MEMORY bound `WIN_STORE_MAX`
     // (a resource limit stated outside the law) and the one paroled constant
     // `store_cap_floor` = 64 — so neither can ever bind silently again.
-    let mut ccap_refreshes: u64 = 0;
-    let mut ccap_engaged: u64 = 0;
-    let mut ccap_at_mem: u64 = 0;
-    let mut ccap_at_floor: u64 = 0;
-    let mut ccap_cap_sum: f64 = 0.0;
-    let mut ccap_brake_ticks: u64 = 0;
-    let mut ccap_brake_closed: u64 = 0;
+    //
+    // The counters live INSIDE `SenderTeardownGauges`, whose destructor is the
+    // single emission site for both `[WALL]` and `[CCAP]` — see that type for
+    // why the two teardown `select!` arms were the wrong site (the `perf`
+    // harness takes neither).
+    let mut ccap = SenderTeardownGauges::new(pol.composed_cap, pol.store_cap_floor);
     // The periodic DIAG report clock (net seam pass 3 → net/diag.rs): both
     // stamps stay sampled here, at their original points.
     let diag_start_us = now_us();
@@ -4650,9 +4748,9 @@ async fn run_window_sender(
         // iteration so a composed arm that never braked reads as a NULL
         // RESULT rather than a null effect.
         if pol.composed_cap {
-            ccap_brake_ticks += 1;
+            ccap.brake_ticks += 1;
             if cwnd_full {
-                ccap_brake_closed += 1;
+                ccap.brake_closed += 1;
             }
         }
         // Plain-reliable delay-based window cap (paper §12): bound the
@@ -5084,16 +5182,16 @@ async fn run_window_sender(
                     // the only thing making a law sane") applied at runtime
                     // rather than only in a property test.
                     if pol.composed_cap {
-                        ccap_refreshes += 1;
-                        ccap_cap_sum += dyn_store_cap as f64;
+                        ccap.refreshes += 1;
+                        ccap.cap_sum += dyn_store_cap as f64;
                         if let Some((w, sl, sp)) = tt_terms_diag {
-                            ccap_engaged += 1;
+                            ccap.engaged += 1;
                             let unclamped = (w + sl + sp).ceil();
                             if unclamped >= WIN_STORE_MAX as f64 {
-                                ccap_at_mem += 1;
+                                ccap.at_mem += 1;
                             }
                             if unclamped <= pol.store_cap_floor as f64 {
-                                ccap_at_floor += 1;
+                                ccap.at_floor += 1;
                             }
                         }
                     }
@@ -6107,25 +6205,11 @@ async fn run_window_sender(
                 for pid in sched.active_paths() {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
-                // The run's ONE `[WALL]` line (RWM_WALLDIAG). Both teardown
-                // arms emit it; each returns immediately after, so it is
-                // emitted at most once per sender.
-                walldiag::report_at_teardown(now_us());
-                if pol.composed_cap {
-                    eprintln!(
-                        "{}",
-                        ccap_report_line(
-                            ccap_refreshes,
-                            ccap_engaged,
-                            ccap_at_mem,
-                            ccap_at_floor,
-                            ccap_cap_sum,
-                            ccap_brake_ticks,
-                            ccap_brake_closed,
-                            pol.store_cap_floor,
-                        )
-                    );
-                }
+                // `[WALL]` and `[CCAP]` are NOT emitted here. They are emitted
+                // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
+                // this path AND on every other way this sender can end —
+                // including the `perf` harness's, which reaches none of the
+                // `select!`'s exit arms at all.
                 info!("window sender shut down gracefully");
                 return;
             }
@@ -6199,22 +6283,8 @@ async fn run_window_sender(
                 );
                         }
                     }
-                    walldiag::report_at_teardown(now_us());
-                if pol.composed_cap {
-                    eprintln!(
-                        "{}",
-                        ccap_report_line(
-                            ccap_refreshes,
-                            ccap_engaged,
-                            ccap_at_mem,
-                            ccap_at_floor,
-                            ccap_cap_sum,
-                            ccap_brake_ticks,
-                            ccap_brake_closed,
-                            pol.store_cap_floor,
-                        )
-                    );
-                }
+                    // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
+                    // by `ccap`'s destructor, on every exit path.
                     info!("TUN closed");
                     return;
                 }
@@ -9587,6 +9657,40 @@ mod tests {
 
         // Zero refreshes must not divide by zero.
         assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64).contains("cap=0.0"));
+    }
+
+    /// THE CARRIER AND THE RENDERER CANNOT DRIFT APART.
+    ///
+    /// `[CCAP]`'s tally moved into `SenderTeardownGauges` so that the counters
+    /// and their emission site are one object (the counters used to be seven
+    /// loose locals passed positionally to `ccap_report_line` at two
+    /// call sites — a shape in which a mis-ordered argument is invisible).
+    /// This pins that the carrier renders EXACTLY what the pinned renderer
+    /// renders for the same tally, field for field and in the same order.
+    ///
+    /// REACHABILITY — that the destructor actually fires under the harness's
+    /// exit path — is asserted by `tests/gauge_reachability.rs`, which is the
+    /// half no unit test can see.
+    #[test]
+    fn the_teardown_carrier_renders_exactly_the_pinned_ccap_line() {
+        let mut g = SenderTeardownGauges::new(true, 64);
+        g.refreshes = 200;
+        g.engaged = 190;
+        g.at_mem = 3;
+        g.at_floor = 7;
+        g.cap_sum = 200.0 * 3020.0;
+        g.brake_ticks = 1_000;
+        g.brake_closed = 250;
+        assert_eq!(
+            g.ccap_line(),
+            ccap_report_line(200, 190, 3, 7, 200.0 * 3020.0, 1_000, 250, 64),
+            "the carrier and the renderer disagree — a positional-argument drift"
+        );
+        // And the fresh carrier is the well-defined zero, not a NaN: a sender
+        // that ended before its first refresh must still print a readable line.
+        assert!(SenderTeardownGauges::new(true, 64)
+            .ccap_line()
+            .contains("eng=0/0"));
     }
 
     /// **THE BRAKE'S SET IS LOAD-BEARING**, and this pins the trap §16.56

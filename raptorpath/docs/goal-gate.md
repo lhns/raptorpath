@@ -29856,3 +29856,46 @@ battery, not discovered inside it.
    c8 reading above reproduces at n = 24, the c8 cell is UNSCORED by its own
    pre-registered stop rule, and that is a finding about the law's inputs at
    c8 â€” not a defect in the battery.
+
+## Gauge Reachability (2026-08-12, `fix/gauge-reachability` from main@`b68c020`) — **STRICTLY LOCAL, NO VM.** The `[CCAP]` and `[WALL]` teardown gauges were emitted from two `select!` arms of `run_window_sender` that the `perf` harness — the harness EVERY L1 battery runs — is not guaranteed to reach. **VERDICT: a REACHABILITY defect, not a rendering defect. Both gauges now emit from the destructor of `net::SenderTeardownGauges`, a local of the sender loop, which is on every exit path a sender can take and runs exactly once. Two new tests assert reachability under a `perf`-shaped exit; one of them is DETERMINISTIC and fails on the pre-fix engine with a count of ZERO.** Observation-only: both gates ship OFF, so the destructor is a no-op on the shipped default.
+
+### THE DEFECT, AS MEASURED
+
+The composed-cap battery's pre-launch smoke (branch `feat/composed-battery`, commit `a76f048`, and its own goal-gate block) recorded it on the VM before the battery was launched: `[CCAP]` on **0 of 2** C-arm client logs, `[WALL]` on **1 of 4**, with `window sender shut down gracefully` **0/4** and `TUN closed` **1/4**. The one `[WALL]` that appeared was well-formed. The RENDERER was fine; nothing had ever asserted that the line FIRES.
+
+The mechanism, confirmed locally at L0 and stated exactly: `perf::client` feeds its objects, prints its summary and returns. Nothing signals shutdown — `shutdown_tx` is a local of `run_with_tun` fed only by Ctrl+C — and the memory TUN closes only as a side effect of the `MemTun` handle dropping as `client` returns, which RACES the process teardown already under way. Whoever wins that race decided whether the run had a gauge. **The exit path was nondeterministic, and the instrument was mounted on one branch of it.**
+
+This is ADR-0070's own postmortem recurring one commit after the rules it produced: `ccap_report_line` and `walldiag::report_line` carry absolute FORMAT pins; `composed_cap_loopback` and `walldiag_loopback` drive a real `perf::client` transfer and assert the gate echo, the in-process gauge state and behaviour neutrality. All passed. None asked whether the emission site executes — the same shape as "every pin asserted that the code computes the model, none asked whether the model was right", one layer down. MEASUREMENT DISCIPLINE rule 1 ("prove the mechanism under test executes") was satisfied for the LAW and skipped for the INSTRUMENT.
+
+### THE FIX: THE EMISSION IS BOUND TO THE SENDER'S LIFETIME, NOT TO AN EXIT ARM
+
+`net::SenderTeardownGauges` carries the seven `[CCAP]` counters as fields and emits both lines from `Drop`:
+
+```text
+drop(SenderTeardownGauges)  ->  walldiag::report_at_teardown(now_us())   // [WALL]
+                            ->  eprintln!(ccap_line())  if composed_cap  // [CCAP]
+```
+
+A destructor is on EVERY exit of the scope it lives in — the graceful-shutdown arm, the TUN-closed arm, any early `return`, an unwind, and the case the harness actually exercises, **the task future being dropped at runtime shutdown**. It is also exactly-once BY CONSTRUCTION, where the two arms were exactly-once only because each happened to `return` immediately after emitting. Both arms now carry a comment saying they deliberately do not emit. The counters moving into the carrier is the second half: seven loose locals passed positionally to a renderer at two call sites is a shape in which a mis-ordered argument is invisible, and `the_teardown_carrier_renders_exactly_the_pinned_ccap_line` pins carrier-renderer agreement.
+
+**Line order and format are unchanged** (`[WALL]` then `[CCAP]`), so the battery parsers written against the smoke's logs are unaffected.
+
+### THE ASSERTION THAT WAS MISSING — `raptorpath/tests/gauge_reachability.rs`
+
+* `the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness` — spawns the SHIPPED binary as `perf --server` and `perf --client --window-reliable` with the battery's own arm (`RWM_COMPOSED_CAP=1 RWM_PLAIN_RS=1 RWM_WALLDIAG=1`), i.e. literally what the L1 driver invokes, and asserts EXACTLY ONE `[CCAP]` and EXACTLY ONE `[WALL]` on the client's merged output, each carrying a real measurement (`eng=` denominator > 0, `total_ms` > 0, a plausible loop period, `onset` a fraction). "Exactly one", not "at least one": the parsers read a per-run scalar and two lines is as wrong as none. It PRINTS which side of the teardown race the run took and asserts nothing about it, because that is genuinely nondeterministic — which is the defect, not a property to pin.
+
+* `the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown` — **the discriminator**, and it is deterministic. It re-executes the test binary as a child fixture that builds its runtime by hand, keeps the `MemTun` alive ACROSS `drop(rt)`, and therefore ends the sender by dropping its future and by nothing else: the log is asserted to contain ZERO `window sender shut down gracefully` and ZERO `TUN closed`, and still exactly one fed `[CCAP]` and one fed `[WALL]`. **Verified against the pre-fix engine: 0 `[CCAP]` and 0 `[WALL]`, i.e. the test fails on the code that shipped** — the falsification MEASUREMENT DISCIPLINE rule 1 asks for. (The first test passes on the pre-fix engine locally, because on this machine the TUN-closed side of the race happens to win; that is precisely why the second test exists.)
+
+**Residual gap, stated rather than papered over.** The graceful-shutdown arm is Ctrl+C-driven and not portably deliverable to a child on both Linux and Windows; the real TUN-closed arm needs a TUN device (root). Neither is asserted DIRECTLY. Both are covered by construction: they are exits of `run_window_sender`, and a destructor is on every exit of a scope — so the paths not asserted are a strict SUBSET of the paths asserted. That is the exact inversion of the shipped bug, in which the two asserted paths were DISJOINT from the one the harness took.
+
+### THE AUDIT: NO OTHER GAUGE SHARES THE HAZARD
+
+Every bracketed instrument in the engine was classified by emission site. `[DIAG]`, `[C8CONV-S]`, `[ACKDIAG]`, `[SPAN]`, `[GPIPE]`, `[SF]`, `[3T]`, `[PFRAC]` (sender loop) and `[RCV]`, `[WEDGE]`, `[SHED-R]`, `[RDIAG]`, `[WIDLE]`, `[C8CONV-R]`, `[FDIAG]`, `[CTLD]`, `[REASM]` (receiver loop) plus `[RSTRACE]`/`[RSTRACE-LEGACY]` (scheduler) are all PERIODIC-IN-LOOP — the `[ACKDIAG]` pattern, which is why `[ACKDIAG]` fired on 4/4 smoke runs. `[GATES]` is once-at-startup (reachability-safe). `run_block_sender`'s teardown arms emit no bracketed instrument at all, and the receiver's shutdown arm emits none either. **After this fix there is no bracketed gauge in the engine whose only emission site is a teardown, shutdown or loop-exit path.** Every instrument added this month except these two (`[ACKDIAG]` 08-11, `[3T]` 08-10, `[SF]`/`[GATES]` 08-09, `[CTLD]` 08-07) was born periodic.
+
+### THE RULE THIS ADDS
+
+**An instrument's REACHABILITY is a separate claim from its FORMAT, and it is the claim that decides whether a battery scores.** A format pin proves the line renders; only a run through THE HARNESS THE BATTERY USES proves it fires. Where an instrument must report once per run, bind its emission to the LIFETIME of the scope that owns its state (a destructor), never to a particular exit arm — an exit arm is a claim about how the process ends, and that claim is the harness's to make, not the engine's. And when the harness's exit is racy, the test that pins reachability must remove the race rather than sample it.
+
+### GATES
+
+Engine code changed, so the full set: `cargo test -p raptorpath --lib`, `-p raptorpath-math`, `--doc`, `gate_suite --release`, every loopback binary including the new `gauge_reachability`, and `store_cap_sf_bench` (task 46), `store_cap_bench`, `recovery_bench`, `slack_bench`. **The shipped default path is behaviour-identical**: no engine value is read from the carrier, `RWM_WALLDIAG` and `RWM_COMPOSED_CAP` both ship OFF, so the destructor is one `OnceLock` read returning `None` plus one `bool` test, once per run, off every hot path.
