@@ -5913,6 +5913,219 @@ fn wire_horizon(cell: &str) -> f64 {
         .unwrap_or_else(|| panic!("no wire horizon for {cell}"))
 }
 
+// ── THE SOURCE AXIS'S PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11) ─────────
+//
+// Written and committed at `2b14cc6`, BEFORE the scored run. Every tolerance
+// is here rather than after the fact, and every WIRE number it is stated
+// against is already published in this file.
+//
+// V1 — the standing queue, mean over legs, against the wire's `q_p50`.
+const V_Q_WIRE_MS: &[(&str, f64)] = &[("c7", 76.0), ("c8", 338.0)];
+const V_Q_LO: f64 = 0.5;
+const V_Q_HI: f64 = 2.0;
+// V2 — the regime, against the wire's own wait attribution.
+const V_SRC_BOUND_C7_MIN: f64 = 80.0; // wire `wait_tun` = 98%
+const V_CAP_BOUND_C7_MAX: f64 = 10.0; // wire `wait_paused` = 0%
+const V_CAP_BOUND_C8_MAX: f64 = 15.0; // wire `wait_paused` = 6%
+// V3 — occupancy over cap at the refresh tick.
+const V_OCC_WIRE: &[(&str, f64)] = &[("c7", 0.31), ("c8", 0.55)];
+const V_OCC_TOL: f64 = 0.20;
+// V4 — goodput class against the `Src::Bulk` arm at the same cell.
+const V_GP_LO: f64 = 0.5;
+const V_GP_HI: f64 = 2.0;
+/// The matrix's collapse threshold, TRANSCRIBED: the uniflip battery's own
+/// 60 Mbit/s over its own normal-class median of 81.1 Mbit/s. Not chosen here.
+const MATRIX_COLLAPSE_RATIO: f64 = 60.0 / 81.1;
+/// Seeds per arm per cell (the dispatch asks >= 5).
+const MATRIX_SEEDS: u64 = 8;
+
+/// THE VALIDATION GATE, SCORED — V1–V4 against the pre-registration at
+/// `2b14cc6`, and the STOP RULE the dispatch fixed.
+///
+/// **VERDICT: THE GATE FAILS, at c7, on V2 and V3, and the failure is the
+/// result.** A Reno-class flow over a RELIABLE tunnel has no congestion signal
+/// at all: the tunnel hides every loss, so the flow never leaves slow start,
+/// its window runs away, and it re-becomes the bulk source the bench already
+/// had. The offered load is therefore NOT a latency control — which is the
+/// same conclusion the reading reached about the wire, arrived at from the
+/// opposite direction.
+///
+/// This test PINS the failure rather than describing it, so a successor who
+/// changes the source model re-scores the gate instead of inheriting prose.
+#[test]
+fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_reliable_tunnel() {
+    let mut c7_cap_bound = f64::NAN;
+    let mut c7_src_bound = f64::NAN;
+    let mut c7_occ = f64::NAN;
+    for (label, specs, acks) in measured_cells() {
+        let cell = label.split_whitespace().next().expect("cell name");
+        if cell == "sc2" {
+            continue;
+        }
+        let h = wire_horizon(cell);
+        let r = simulate_src(
+            &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, Src::Reno,
+        );
+        let bulk = simulate_src(
+            &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, Src::Bulk,
+        );
+        assert!(r.src_opps > 0, "{cell}: the source axis never sampled an admission tick");
+        assert!(r.goodput_sym_s() > 0.0, "{cell}: the closed loop delivered nothing");
+
+        // V4 — the closed loop must not have destroyed the transfer. This one
+        // PASSES at both duals, which is what makes the V2/V3 failure a
+        // statement about the REGIME and not about a broken instrument.
+        let gp = r.goodput_sym_s() / bulk.goodput_sym_s();
+        assert!(
+            (V_GP_LO..=V_GP_HI).contains(&gp),
+            "{cell}: V4 — the closed loop's goodput is {gp:.2}x the bulk arm's, \
+             outside the pre-registered [{V_GP_LO}, {V_GP_HI}]; the instrument \
+             is broken and nothing else here can be read"
+        );
+
+        // Every criterion is PRODUCED at both duals and printed, so the gate's
+        // scorecard is a table and not a sentence. Only c7's are asserted on
+        // below, because c7 is where the gate fails and the failure is what
+        // this test exists to bound.
+        let n = specs.len() as f64;
+        let q: f64 = (0..specs.len()).map(|p| r.queue_ms(p)).sum::<f64>() / n;
+        let occ = r.store_len_mean / r.mean_cap.max(1e-9);
+        let (_, q_wire) = V_Q_WIRE_MS.iter().find(|(c, _)| *c == cell).expect("wire q");
+        let (_, occ_wire) = V_OCC_WIRE.iter().find(|(c, _)| *c == cell).expect("wire occ");
+        let vq = (V_Q_LO..=V_Q_HI).contains(&(q / q_wire));
+        let vocc = (occ - occ_wire).abs() <= V_OCC_TOL;
+        let vcap = r.cap_bound_pct()
+            <= if cell == "c7" { V_CAP_BOUND_C7_MAX } else { V_CAP_BOUND_C8_MAX };
+        println!(
+            "[V-GATE] {cell:4} q {q:7.1} ms vs wire {q_wire:5.1} ({:4.2}x) V1 {} | \
+             src-bound {:5.1}% cap-bound {:5.1}% (wire tun/paused {}) V2 {} | \
+             occ/cap {occ:4.2} vs {occ_wire:4.2} V3 {} | gp {gp:4.2}x bulk V4 PASS | \
+             inner w {:8.0} rto {}",
+            q / q_wire,
+            if vq { "PASS" } else { "FAIL" },
+            r.src_bound_pct(),
+            r.cap_bound_pct(),
+            if cell == "c7" { "98/0" } else { "34/6" },
+            if vcap && (cell != "c7" || r.src_bound_pct() >= V_SRC_BOUND_C7_MIN) {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            if vocc { "PASS" } else { "FAIL" },
+            r.src_w_mean,
+            r.src_rto,
+        );
+        if cell == "c7" {
+            c7_cap_bound = r.cap_bound_pct();
+            c7_src_bound = r.src_bound_pct();
+            c7_occ = occ;
+        }
+    }
+
+    // V2a/V2b FAIL AT c7, AND THEY FAIL IN THE SAME DIRECTION: the model puts
+    // the store cap in charge where the wire measures it never to fire.
+    assert!(
+        c7_src_bound < V_SRC_BOUND_C7_MIN,
+        "c7: V2a now PASSES ({c7_src_bound:.1}% >= {V_SRC_BOUND_C7_MIN}%) — the \
+         closed-loop source has become offered-load-bound at c7 and the STOP \
+         RULE no longer fires. Re-score the whole matrix."
+    );
+    assert!(
+        c7_cap_bound > V_CAP_BOUND_C7_MAX,
+        "c7: V2b now PASSES ({c7_cap_bound:.1}% <= {V_CAP_BOUND_C7_MAX}%) — \
+         re-score the gate"
+    );
+    // …and the mechanism: with no loss signal the window leaves the tunnel's
+    // own cap far behind, so the flow offers strictly more than the store can
+    // hold and the gate closes almost always.
+    assert!(
+        c7_cap_bound > 80.0,
+        "c7: the store cap binds only {c7_cap_bound:.1}% of admission \
+         opportunities — the runaway-window mechanism this section names is gone"
+    );
+    // V3 fails with it, on the same arithmetic: a full store is not an
+    // occupancy of 0.31.
+    let (_, w_occ) = V_OCC_WIRE.iter().find(|(c, _)| *c == "c7").expect("c7 row");
+    assert!(
+        (c7_occ - w_occ).abs() > V_OCC_TOL,
+        "c7: V3 now PASSES (occ/cap {c7_occ:.2} vs the wire's {w_occ:.2}) — \
+         re-score the gate"
+    );
+}
+
+/// THE MATRIX, RUN BUT **NOT SCORED** — the pre-registration's STOP RULE fired
+/// at the validation gate, so nothing here decides anything. It is produced so
+/// a successor inherits numbers rather than a description, and every row is
+/// labelled UNSCORED for exactly that reason.
+///
+/// {A, AU, U+3T, P} × {c7, c8} × 8 seeds, at each cell's own wire horizon.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_source_matrix_unscored() {
+    println!(
+        "\nTHE MATRIX — **UNSCORED**: the pre-registered STOP RULE fired at the\n\
+         validation gate (V2a/V2b/V3 fail at c7). Numbers for the record only.\n\
+         Src::Reno, Acct::Engine, Store::Span, the measured ack era, {MATRIX_SEEDS} seeds,\n\
+         each cell at its own wire transfer duration. `collapse` = goodput below\n\
+         {:.3}x the A arm's own median at that cell (the uniflip battery's 60/81.1).\n",
+        MATRIX_COLLAPSE_RATIO
+    );
+    println!(
+        "{:<26} {:<21} | {:>8} {:>8} {:>9} | {:>8} {:>7} | {:>8} {:>7} {:>5}",
+        "cell", "arm", "gp med", "gp min", "collapse", "cap mean", "occ/cap", "innRTT", "inner w", "rto"
+    );
+    for (label, specs, acks) in measured_cells() {
+        let cell = label.split_whitespace().next().expect("cell name");
+        if cell == "sc2" {
+            continue;
+        }
+        let h = wire_horizon(cell);
+        let feed = Feed::Measured(acks);
+        // The A arm's own median is the collapse denominator, per the
+        // pre-registration, so it is computed first and reused.
+        let mut a_gp: Vec<f64> = (0..MATRIX_SEEDS)
+            .map(|s| {
+                simulate_src(&specs, Arm::Legacy, feed, h, s, Acct::Engine, Store::Span, Src::Reno)
+                    .goodput_sym_s()
+            })
+            .collect();
+        a_gp.sort_by(f64::total_cmp);
+        let a_med = a_gp[a_gp.len() / 2];
+        let floor = MATRIX_COLLAPSE_RATIO * a_med;
+
+        for (arm, name) in [
+            (Arm::Legacy, "A    (shipped)"),
+            (Arm::Unified, "AU   (deeper pool)"),
+            (Arm::ThreeTermCell, "U+3T (three-term)"),
+            (Arm::PooledUnified, "P    (pooled+unified)"),
+        ] {
+            let runs: Vec<Run> = (0..MATRIX_SEEDS)
+                .map(|s| simulate_src(&specs, arm, feed, h, s, Acct::Engine, Store::Span, Src::Reno))
+                .collect();
+            let mut gp: Vec<f64> = runs.iter().map(|r| r.goodput_sym_s()).collect();
+            gp.sort_by(f64::total_cmp);
+            let collapse = gp.iter().filter(|g| **g < floor).count();
+            let mean = |f: fn(&Run) -> f64| runs.iter().map(f).sum::<f64>() / runs.len() as f64;
+            let cap = mean(|r| r.mean_cap);
+            println!(
+                "{:<26} {:<21} | {:>8.0} {:>8.0} {:>6}/{:<2} | {:>8.0} {:>7.2} | {:>8.1} {:>7.0} {:>5}   UNSCORED",
+                label,
+                name,
+                gp[gp.len() / 2],
+                gp[0],
+                collapse,
+                MATRIX_SEEDS,
+                cap,
+                mean(|r| r.store_len_mean) / cap.max(1e-9),
+                mean(|r| r.src_rtt_ms()),
+                mean(|r| r.src_w_mean),
+                runs.iter().map(|r| r.src_rto).sum::<u64>(),
+            );
+        }
+        println!();
+    }
+}
+
 /// THE SOURCE AXIS'S SMOKE — one seed, both duals, both source arms, printed
 /// so the instrument's behaviour is visible before anything is scored against
 /// it. `#[ignore]`d: it is a READOUT, not a pin.
