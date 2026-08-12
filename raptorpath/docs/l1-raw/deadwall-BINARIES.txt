@@ -1,0 +1,4 @@
+binary sha256 8b2337cce580c200fef09d054665d8bf6a1837092b0ec4297ea7658b183168b0
+source commit 465c28e
+branch feat/deadwall-battery from main 43b09fe
+kernel 7.0.14-101.fc43.x86_64
