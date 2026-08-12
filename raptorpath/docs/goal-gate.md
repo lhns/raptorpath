@@ -27325,3 +27325,340 @@ touched by this branch; the engine tree is byte-identical to main@`275d28b`.
 `gate_suite` not required — no engine code changed. Determinism verified across
 three separate processes on the always-on suite and two on the coupling chain
 readout.
+
+## The Queue Fix (2026-08-12, `feat/sf-queue-fix` from main@`cb422e2`) — MEASUREMENT DISCIPLINE 14. Executes the RANK 1 handover of "The Coupling Model" ("THE BENCH'S STANDING QUEUE, because it is now load-bearing and it is the last un-fixed input in the loop"). STRICTLY LOCAL: no VM was run, no L1 number re-derived, no engine file touched. **VERDICT: the handover's premise is REFUTED — from three columns the wire already recorded and no section of this file had read. The bench does not build a queue the wire lacks; the wire queues MORE. The first diverging quantity is the BENCH'S HORIZON against the engine's own 10 s filter window, and correcting it moves Σ`cwnd`/Σ-anchor from 3.55×/6.72× to 0.67×/1.28× — the pre-stated target MET at c8 and missed by 0.03 at c7.** Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`.
+
+### THE VERDICT IN FIVE LINES
+
+1. **THE WIRE'S STANDING QUEUE IS 5.8–10.5× RTprop, AT EVERY CELL AND BOTH
+   ARMS.** `q_p50 = rtt − rtp` sits in every `docs/l1-raw` summary record
+   (`net/diag.rs:617`, parsed `tools/l1/flip_parse.py:183,206`): **76 ms on an
+   11 ms RTprop at c7-A** (69 reps), **338/38 at c8-A** (57), **91/13 at
+   sc2-A** (77). The dispatch's "the wire's cells read ≈1× RTprop" came from
+   READOUT 3's `RTprop` column — **which IS the wire's `min_rtt`**. Dividing a
+   `min_rtt` by itself returns 1.0 whatever the queue is. **The comparison that
+   produced the RANK 1 handover was a tautology.**
+2. **AND THE BENCH QUEUES LESS THAN THE WIRE, NOT MORE.** At its published 20 s
+   the bench reads **q/rtp 1.1–4.1×** against the wire's **6.4–7.9×**. Its
+   TOTAL delay is the right size (sc2: bench 92.6 ms vs wire 104 ms, within
+   11%); what is wrong is the SPLIT — the bench's `min_rtt` reads **35–45 ms**
+   where the wire's reads **11–14 ms**.
+3. **AND THE STORE CAP IS NOT THE BRAKE AT EITHER DUAL — THE WIRE SAYS SO
+   TWICE.** `wait_paused`, the sender loop's store-cap backpressure arm
+   (`net/mod.rs:5663`), is **0.0% at c7-A over 69 reps** and 7.8% at c8-A,
+   against **40.4% at sc2-A**; and `occ_p50/occcap_p50` reads **0.31 (c7) /
+   0.55 (c8)** against **0.99 (sc2)**. The bench's admission loop is
+   `while store_len < cap` — the sc2 regime imposed at every cell — and it runs
+   with its gate closed **86–92%** of admission opportunities.
+4. **THE FIRST DIVERGENCE IS THE HORIZON.** `CopaState::window_duration` is
+   **10 s** (`scheduler/mod.rs:1063`) and it is the expiry cutoff for BOTH
+   deques the BDP anchor is built from — the `min_rtt` sample deque
+   (`expire_old_samples`, `:1914-1919`) and the `max_bw` max-filter
+   (`bw_evict_before`, `:1136-1143`, called with the same cutoff). **Every wire
+   transfer this bench is scored against is shorter than that window** — c7
+   **9.23 s**, sc2 **9.06 s**, c2r100 **9.64 s**, c8 **2.44 s**, and 100% of
+   reps at all four — so on the wire NEITHER filter ever expires a sample:
+   both are WHOLE-TRANSFER extrema, latched before the queue builds. The bench
+   publishes at **20 s**, twice the window, so both roll, `min_rtt` climbs off
+   the floor onto the standing queue, and the anchor (`max_bw · min_rtt`)
+   climbs with it. The anchor is the cwnd FLOOR (`clamp_cwnd_with_anchor`).
+5. **SO Σ`cwnd` WAS NEVER A LINK-MODEL DEFECT, AND THE FIX COSTS NOTHING.** Run
+   each cell for the duration its own wire transfers ran: `min_rtt` returns to
+   **×1.01** of the configured RTprop at both duals, and Σ`cwnd`/Σ-anchor goes
+   **3.55× → 0.67× (c7)** and **6.72× → 1.28× (c8)**. The branch's pre-stated
+   target was 1.0 ± 0.3: **MET at c8, missed by 0.03 at c7.** At c8 the
+   standing queue lands on the wire's to within 2% (**343.9 ms modelled vs
+   338 ms measured**, on a 34.3 vs 38 ms RTprop).
+
+### THE THREE COLUMNS NOBODY HAD READ
+
+Every per-rep summary record in `docs/l1-raw` carries them, on the same arms
+every `[SF]` number in this file was taken on. Medians over reps (means for
+`wait_paused`, already a percentage per rep). Nothing here is modelled, fitted,
+or re-derived; it is transcription, pinned by
+`the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_brake`.
+
+| cell | arm | reps | `occ_p50` | `occcap_p50` | **occ/cap** | **`wait_paused`** | `q_p50` ms | `q_p99` ms | `rtp_med` ms | **q/RTprop** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| sc2 | A | 77 | 1009 | 1024 | **0.99** | **40.4%** | 91.0 | 98 | 13.0 | **7.0×** |
+| sc2 | AU | 29 | 1008 | 1024 | **0.98** | **40.3%** | 90.0 | 97 | 14.0 | **6.4×** |
+| c7 | A | 69 | 1254 | 4096 | **0.31** | **0.0%** | 76.0 | 189 | 11.0 | **6.9×** |
+| c7 | AU | 26 | 1326 | 4096 | **0.32** | **0.0%** | 83.0 | 207 | 10.5 | **7.9×** |
+| c8 | A | 57 | 2271 | 4096 | **0.55** | **7.8%** | 338.0 | 707 | 38.0 | **8.9×** |
+| c8 | AU | 26 | 2026 | 4096 | **0.49** | **3.1%** | 424.5 | 1096 | 40.5 | **10.5×** |
+
+* `occ` is `store_len` — the **gate's own operand** (`net/mod.rs:5055`),
+  post-SACK-release — printed as `win={store_len}/{cap}` (`net/diag.rs:845`).
+* `wait_paused` is the `select!` arm attribution (`net/mod.rs:5663`,
+  `wait_arm = 1`): the share of sender-loop wakeups spent in the store-cap
+  backpressure poll.
+* `q` is SRTT minus Copa's windowed-min RTT, both on the same app-echo clock
+  (`net/diag.rs:617`, `rtt={}/wrtt={}/rtp{}ms`).
+
+### FINDING 1 — THE PREMISE WAS A TAUTOLOGY, AND THE ARITHMETIC RUNS THE OTHER WAY
+
+"SF Bench on Measured Inputs" recorded the bench's link as building "2.4–5.7×
+RTprop of queue at every fast path where the wire's cells read ≈1×", and both
+successor sections inherited it — "The Coupling Model" made it FINDING 2's
+owner and RANK 1 handover, and this branch was dispatched on it.
+
+The "≈1×" was never measured. It is READOUT 3's `RTprop` column, which is the
+wire's `min_rtt`; the bench's number is `mean(min_rtt)/RTprop_configured`. One
+side is a min-over-its-own-min and is 1.0 by construction.
+
+Scored on the wire's actual queue column, side by side at the published 20 s
+horizon (`sf_queue_and_brake_against_the_wire`, 8 seeds, `Acct::Engine`,
+`Store::Span`, the measured ack era):
+
+```
+cell                         arm  |     occ     cap    o/c  paused% |    q ms  rtp ms  q/rtp    gate%
+sc2  single fast (c2r100)    A    |    1009    1024   0.99    40.4% |    91.0    13.0    7.0x        -   WIRE (n=77)
+                             A    |     888     814   1.09        - |    53.4    39.2    1.4x    88.4%   BENCH
+sc2  single fast (c2r100)    AU   |    1008    1024   0.98    40.3% |    90.0    14.0    6.4x        -   WIRE (n=29)
+                             AU   |     938     941   1.00        - |    50.8    45.4    1.1x    86.4%   BENCH
+c7   dual symmetric          A    |    1254    4096   0.31     0.0% |    76.0    11.0    6.9x        -   WIRE (n=69)
+                             A    |    3527    2409   1.46        - |   143.5    35.0    4.1x    92.4%   BENCH
+```
+
+**The bench's queue in RTprops is smaller than the wire's at every row.** What
+is inflated is the DENOMINATOR. And the total delay is close: at sc2 the wire
+carries 13 + 91 = 104 ms and the bench 39.2 + 53.4 = 92.6 ms. The bench was
+never building a queue the wire lacks — it was mis-attributing its own queue to
+the floor.
+
+Bounded by `the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_is`
+(always-on, c7, the 20 s configuration the Σ`cwnd` pin uses).
+
+### FINDING 2 — WHICH BRAKE BINDS IS CELL-KEYED, AND THE BENCH HAS THE WRONG ONE AT BOTH DUALS
+
+This is independent of the queue and it is the larger structural result.
+
+The bench's admission is `while store_len < cap`, with the block comment "THE
+GATE, exactly as the shipped plain-reliable sender writes it … **the STORE CAP
+IS THE ONLY BRAKE**", and its own always-on pin asserts `|store_len − cap| <
+15%·cap`. That is TRUE on the wire at the single cells — sc2 occupancy 0.99 of
+cap, backpressure arm 40.4% — and **FALSE at both duals**: c7 occupancy 0.31
+with the backpressure arm at **0.0% over 69 reps**, c8 at 0.55 and 7.8%.
+
+The arithmetic is consistent with itself. At N = 1 the pooled law latches at
+`store_max` = 1024 (`net/mod.rs:2320`), which is BELOW what the source offers,
+so the cap binds. At N = 2 the cap is `N·knee` = 4096, four times larger, and
+the source cannot fill it — so something upstream of the engine binds instead.
+Residence confirms it by Little's law: c7 occupancy 1254 at 173.3 Mbit
+(18 050 sym/s) is 69 ms, and `q_p50` reads 76.
+
+**The bench therefore models the sc2 regime at every cell**, and it closes its
+gate 86–92% of the time where the wire closes it 0.0–7.8%. `active_paths()`
+being "a pure OBSERVABLE of the saturation the store cap itself produced" — the
+sentence the whole loop is built on — **is not the wire's mechanism at c7 or
+c8.** No section of this file has established what the dual-cell brake IS; it
+is upstream of the engine's own gate, and it is named in the handover.
+
+### FINDING 3 — THE HORIZON, AND THE ONE-LINE MECHANISM
+
+`CopaState::window_duration = Duration::from_secs(10)` (`scheduler/mod.rs:1063`)
+is the expiry cutoff for both windowed extremes the anchor multiplies:
+
+* the `min_rtt` sample deque — `expire_old_samples` (`:1914-1919`), whose front
+  is the windowed min (`:1415`);
+* the `max_bw` max-filter — `bw_evict_before` (`:1136-1143`), called from the
+  same function with the same cutoff.
+
+The `seconds` column of every summary record, per cell (median [min..max], and
+the share of reps under the window):
+
+| cell | reps | median s | range | under 10 s |
+|---|---|---|---|---|
+| c7-A | 69 | **9.23** | 9.00–9.70 | **100%** |
+| sc2-A | 77 | **9.06** | 8.96–9.53 | **100%** |
+| c2r100-A | 17 | **9.64** | 9.53–9.84 | **100%** |
+| c8-A | 57 | **2.44** | 2.06–4.08 | **100%** |
+| c1-A | 83 | 14.21 | 13.13–15.64 | 0% |
+| sc3-A | 20 | 11.93 | 11.77–12.52 | 0% |
+
+So at every cell the SF question is asked at, the wire's `min_rtt` and `max_bw`
+are WHOLE-TRANSFER extrema and no sample ever expires. The bench publishes at
+20 s. The switch is proven to execute on the real `PathState` by
+`the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it`
+(a 10 ms floor sample at t = 0 still floors `min_rtt` at t = 9 s and no longer
+does at t = 11 s).
+
+Recorded and NOT pursued: the two cells whose transfers EXCEED the window
+(c1 14.2 s, sc3 11.9 s) are also the cells with the large `[SF]` zero-fractions
+(c1 29.8%). That is one coincidence on two cells; it is written down, not
+claimed.
+
+### THE HORIZON SWEEP — the single-axis experiment, 6 seeds, `Acct::Engine`, `Store::Span`, the measured ack era
+
+```
+sc2  single fast (c2r100)    wire: Sigma-anchor 5556 sym  q 91 ms  rtp 13 ms  q/rtp 7.0x  occ/cap 0.99
+   horiz |   S cwnd     S/Sw  S infl |    q ms  rtp ms  q/rtp | minRTTx   zero%      gp
+    2.5s |      309    0.06x     453 |    51.3     8.1   6.3x |   1.01x   86.0%    9407
+    5.0s |      330    0.06x     395 |    62.1     8.1   7.7x |   1.01x   63.8%    9480
+    9.0s |      340    0.06x     237 |    69.5     8.1   8.6x |   1.01x   35.5%    9421
+   20.0s |     1696    0.31x     123 |    53.3    39.1   1.4x |   4.88x   16.0%    9398
+
+c7   dual symmetric          wire: Sigma-anchor 1635 sym  q 76 ms  rtp 11 ms  q/rtp 6.9x  occ/cap 0.31
+   horiz |   S cwnd     S/Sw  S infl |    q ms  rtp ms  q/rtp | minRTTx   zero%      gp
+    2.5s |     1070    0.65x    1844 |    97.1     8.1  12.0x |   1.01x   76.3%   20142
+    5.0s |     1089    0.67x    1874 |   114.8     8.1  14.2x |   1.01x   82.0%   20117
+    9.0s |     1100    0.67x    1779 |   134.9     8.1  16.7x |   1.01x   79.7%   19965
+   20.0s |     5812    3.55x    2020 |   143.5    34.8   4.1x |   4.35x   38.9%   19345
+
+c8   dual asym (r+RTT)       wire: Sigma-anchor 1510 sym  q 338 ms  rtp 38 ms  q/rtp 8.9x  occ/cap 0.55
+   horiz |   S cwnd     S/Sw  S infl |    q ms  rtp ms  q/rtp | minRTTx   zero%      gp
+    2.5s |     1928    1.28x    3287 |   343.9    34.3  10.0x |   1.01x   49.7%   11961
+    5.0s |     2100    1.39x    3283 |   388.3    34.3  11.3x |   1.01x   27.7%   12070
+    9.0s |     2181    1.44x    2955 |   412.8    34.3  12.0x |   1.01x   15.4%   12097
+   20.0s |    10144    6.72x    2494 |   520.1   100.5   5.2x |   5.54x    7.0%   11043
+```
+
+Read it column by column:
+
+* **`minRTTx` is 1.01× at EVERY sub-window horizon and at EVERY cell**, and
+  jumps to 4.35–5.54× at 20 s. The transition is the 10 s window, not the load:
+  `q` at c7 changes by only 6% between 9 s (134.9) and 20 s (143.5) while
+  `min_rtt` changes by 4.3×. **The queue was always there; at 20 s the floor
+  moves under it.**
+* **Σ`cwnd`/Σ-anchor** — the branch's stated validation target, 1.0 ± 0.3 —
+  reads **0.65–0.67 at c7** (all three sub-window horizons, i.e. it is a
+  plateau and not a crossing) and **1.28–1.44 at c8**. At the horizon matching
+  each cell's own median transfer (c7 9.23 s ⇒ the 9 s row; c8 2.44 s ⇒ the
+  2.5 s row) it is **0.67×** and **1.28×**. **c8 PASSES. c7 MISSES the band's
+  0.70 floor by 0.03** — and, since the anchor is a FLOOR and not a cap, a
+  bench slightly BELOW the wire's anchor sum is the conservative side.
+* **The queue itself lands at c8**: 343.9 ms modelled against 338 ms measured
+  (1.02×), on 34.3 vs 38 ms of RTprop (0.90×), q/rtp 10.0× vs 8.9×. **At c7 it
+  does not**: 134.9 vs 76 ms, 1.8× too much queue — which is FINDING 2, since
+  c7 is exactly the cell where the wire's brake is measured never to be the
+  store cap and the bench's is closed 92.4% of the time.
+
+Bounded by `matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_anchor`
+(always-on, both duals, 4 seeds): `min_rtt` inflation < 1.15× and Σ`cwnd`/Σ-anchor
+inside [0.7, 1.6] at c8 and [0.4, 1.0] at c7.
+
+### FINDING 4 — THE GEOGRAPHY IS STILL NOT REPRODUCED, AND NOW IT FAILS IN THE OTHER DIRECTION
+
+The dispatch's item 3 asked whether, with the queue fixed, the bench lands the
+wire's `[SF]` numbers. **It does not, and the failure has changed sign**, which
+is itself the result.
+
+| cell/arm | wire zero% | bench @ 20 s | bench @ the wire's own horizon |
+|---|---|---|---|
+| c7-A | **0.3** | 38.9 | **79.7** (9 s) |
+| c8-A | **4.6** | 7.2 | **49.7** (2.5 s) |
+
+The `[SF]` zero-fraction is **monotone decreasing in the horizon** at every cell
+(c8: 49.7 → 27.7 → 15.4 → 7.0; sc2: 86.0 → 63.8 → 35.5 → 16.0). It is a
+warm-up-dominated statistic at short horizons and a steady-state one at long
+ones, and the horizon that fixes the ANCHOR makes the GEOGRAPHY worse by an
+order of magnitude. The two quantities want opposite horizons, so no single
+choice of horizon reproduces both — which means **the horizon is a necessary
+correction and not a sufficient one**, and it is reported as exactly that.
+
+Note the shape of the miss: at c8 the bench's zero-fraction crosses the wire's
+4.6% somewhere just past 20 s, and c7's wire value (0.3%) is below every bench
+number at every horizon. The c7 A-arm's zero-fraction has now been measured on
+a FIFTH axis and explained by none of them.
+
+### WHAT THIS DOES AND DOES NOT SAY ABOUT THE ENGINE
+
+**Nothing here is an engine defect and nothing is shipped.** The 10 s window is
+a deliberate estimator parameter; the wire's transfers being shorter than it is
+a property of the BATTERY's byte counts, not of the code. The transferable
+statements are two, and both are about how this ledger's numbers should be read:
+
+1. **Every anchor-derived quantity measured at c7/c8/sc2/c2r100 is a
+   whole-transfer extremum, not a steady-state one.** `xanchor` 9.8–13.8 at the
+   duals (READOUT 3) is the max of the rate sampler over the ENTIRE transfer,
+   and the `RTprop` column beside it is the min over the entire transfer. Any
+   model, bench, or successor that runs past 10 s is in a different estimator
+   regime than every wire number in this file.
+2. **The store cap is not the dual-cell brake.** Three sections have reasoned
+   about `cap → store_len → in_flight → available()` as a closed loop driven by
+   the cap. At c7 the cap's own backpressure never fires.
+
+### WHAT IS PINNED, AND WHERE
+
+Four new always-on tests in `store_cap_sf_bench.rs`, all local, no engine code:
+
+* `the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_brake`
+  — **THE REFUTATION, BOUNDED**: the transcription's internal identities, every
+  row's queue above 5× its own RTprop, the single cell store-cap-bound
+  (occ/cap > 0.95, paused > 30%) and both duals not (occ/cap < 0.60,
+  paused < 10%), and c7's backpressure arm exactly 0.0%.
+* `the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it`
+  — **THE MECHANISM, PROVEN TO EXECUTE** (discipline 1) on the real
+  `PathState`/`MockClock`: the t = 0 floor still wins at 9 s and no longer at
+  11 s; plus the four wire durations asserted under the window.
+* `the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_is`
+  — **THE RELOCATION, BOUNDED**: bench q/RTprop strictly below the wire's,
+  `min_rtt` inflation in (2×, 8×), gate closed > 50% against the wire's 0.0%.
+* `matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_anchor`
+  — **THE FIX, BOUNDED**: at each dual's own wire duration, `min_rtt`
+  inflation < 1.15× and Σ`cwnd`/Σ-anchor inside the measured band.
+
+Two ignored readouts: `sf_queue_and_brake_against_the_wire` and
+`sf_horizon_against_the_engines_own_filter_window`. `Run` gains `srtt_sum`
+(so the bench produces the wire's own `q` column) and a `gate_closed`/
+`gate_ticks` pair (the `wait_paused` analogue). **No published number changes:**
+every pre-existing test passes unmodified, including
+`the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals`'s
+(2×, 12×) band — which this section now EXPLAINS rather than contradicts.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **What the dual-cell brake actually is.** FINDING 2 establishes that it is not
+  the store cap and that it is upstream of the engine's own gate. The candidate
+  it points at is the TUNNELLED SOURCE — `emit_source` is driven by
+  `tun.read_packet()` (`net/mod.rs:5669`) and the offered load is the inner
+  TCP's window over the tunnel's own inflated RTT — but that is an inference
+  from the wait-arm shares, not a measurement, and no model of it was built.
+* **Whether the horizon should be changed in the published readouts.** It is NOT
+  changed here. Every published number in this file stays on the 20 s horizon
+  and every pre-existing pin is untouched; the horizon is measured as an AXIS
+  and its effect is bounded. Re-taking the ledger's readouts at the wire's own
+  durations is a separate step with its own pre-registration, and it must first
+  answer FINDING 4's tension.
+* **The `[SF]` geography.** Not reproduced, at any horizon; see FINDING 4.
+* **Any candidate scoring.** The dispatch conditions it on the geography
+  landing. It did not.
+* **Any L1 number.** No VM was run. Every wire figure above is read from summary
+  records already committed in `docs/l1-raw`, and the extraction is arithmetic
+  over fields those records already carry.
+
+### THE HANDOVER — the next suspect, named
+
+**RANK 1: THE DUAL-CELL BRAKE, which is not in the engine.** `wait_paused` =
+0.0% at c7 and `occ/cap` = 0.31 say the store cap is inert there, so the loop
+this bench closes — `cap → store_len → in_flight → available() → active_paths()
+→ cap` — is not the loop the wire runs at the cells the question is about. The
+single measurement that would settle it needs no new engine code and no new
+battery: the sender loop already attributes its wakeups, and `wait_tun` is
+97.7% at c7. What is missing is the OFFERED LOAD beside it. Until that is
+known, a bench whose source is "always data to send" cannot model c7 or c8, and
+that — not the queue and not Σ`cwnd` — is the last un-fixed input in the loop.
+
+**RANK 2: THE HORIZON TENSION (FINDING 4).** The anchor wants a sub-10 s horizon
+and the `[SF]` fraction wants a long one. Both cannot be right, and the fact
+that they disagree means one of the two gauges is measuring warm-up rather than
+mechanism. Deciding WHICH is a component question this bench can answer.
+
+**RANK 3 (demoted from "The Coupling Model"'s RANK 2): the pooled `cwnd` DIAG
+column.** Still the only thing that would convert the predecessor's FINDING 2
+from an inference into a comparison — but it is now less urgent, because the
+divergence it was meant to explain is attributed and bounded here.
+
+**RANK 4 (unchanged): the real GE channel.**
+
+### GATES
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default and no law is
+touched by this branch; the engine tree is byte-identical to main@`cb422e2`.
+`--lib` **402 passed** (5 ignored) · `raptorpath-math` 59+19+22+4+4+3+25 =
+**136 passed** · `--doc` 0 (no doctests) · `store_cap_bench` **4 passed**
+(3 `#[ignore]`d) · `store_cap_sf_bench` **36 passed, 0 failed** (14 `#[ignore]`d
+benches not run; 32 → 36 is the four new pins, and every one of the 32 pre-existing
+tests passes UNMODIFIED). `gate_suite` not required — no engine code changed.
+Determinism verified across **three separate processes** on the always-on suite,
+all 36/36, and the two readouts were each taken in their own process.
