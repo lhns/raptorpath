@@ -78,6 +78,32 @@ const REPORT_S: f64 = 2.0;
 const C2: Spec = (10_400.0, 0.008, 0.013, 0.50);
 const C3: Spec = (2_000.0, 0.060, 0.020, 0.40);
 
+/// The widest geometry this bench's per-path gauges are sized for.
+///
+/// It was 2 until ADR-0070's prevention kit (item 3): the ENTIRE test universe
+/// had N ∈ {1, 2}, which is exactly the axis on which the pooled law's N² value
+/// and its N ceiling are indistinguishable as a ratio. Raising it to 4 costs
+/// nothing at the ≤ 2-path cells (the arrays are fixed-size and every index is
+/// `< np`) and gives `C7X4` somewhere to record.
+const MAX_PATHS: usize = 4;
+
+/// **`c7x4` — the SYMMETRIC QUAD.** c7's legs (`C2`) at N = 4: same per-path
+/// rate, RTprop and GE loss process, four of them. It is not a wire cell — it
+/// is the N ≥ 3 COVERAGE the store-cap laws never had, on the bench's own
+/// machinery, and it is deliberately SYMMETRIC so the law's own path-count
+/// scaling is the only thing that changes between it and `c7`.
+///
+/// Deterministic like every other geometry here, and for the same three
+/// reasons that each cost a bug: `place_min_cost` breaks the exact-cost
+/// placement tie by path id, `worst_loss_path` sorts before `max_by`, and the
+/// per-path link seeds are derived from the path INDEX rather than from
+/// `HashMap` order. A four-way symmetric cell ties in all three at once, which
+/// is why it is the strongest determinism probe in the file
+/// (`the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs`).
+fn c7x4() -> Vec<Spec> {
+    vec![C2, C2, C2, C2]
+}
+
 /// Which path set the dyn-cap phase's Σ-anchor base iterates, and which
 /// pooled ceiling composes it — the two axes the shipped chain fixes and the
 /// candidate successor varies.
@@ -1564,11 +1590,11 @@ struct Run {
     /// ticks. READOUT 3 is a per-PATH table, so V1 is scored per path — a
     /// cell mean would hide the c8 legs, which the wire reports separately.
     /// (Every cell this bench runs has ≤ 2 paths.)
-    xa_sum: [f64; 2],
-    xa_n: [u64; 2],
+    xa_sum: [f64; MAX_PATHS],
+    xa_n: [u64; MAX_PATHS],
     /// PER PATH: what the measured ack observer actually did. All zero on
     /// every era but `Feed::Measured`.
-    obs: [ObsStat; 2],
+    obs: [ObsStat; MAX_PATHS],
     /// PER PATH: Σ/n of `btlbw_sym_per_s()` and of `min_rtt()` over refresh
     /// ticks, plus the path's own delivered count.
     ///
@@ -1581,17 +1607,17 @@ struct Run {
     /// also carries whatever standing queue the link built. Both are kept:
     /// `overread()` unchanged (three ledger sections are scored on it) and
     /// `xanchor_lr()` as the ledger's own quantity.
-    bw_sum: [f64; 2],
-    bw_n: [u64; 2],
-    mrtt_sum: [f64; 2],
-    delivered_p: [u64; 2],
+    bw_sum: [f64; MAX_PATHS],
+    bw_n: [u64; MAX_PATHS],
+    mrtt_sum: [f64; MAX_PATHS],
+    delivered_p: [u64; MAX_PATHS],
     /// PER PATH: the MEDIAN of `max_bw / rate_lr` over the dyn-cap refresh
     /// ticks, where `rate_lr` is the path's delivered rate over the PRECEDING
     /// `REPORT_S` — READOUT 3's statistic, computed the way READOUT 3 computes
     /// it ("Medians over the 12 windows"). A whole-run divisor is not the same
     /// number at a duty-cycled path: c8's slow leg runs at its link rate while
     /// it runs and idles between, so its 2 s windows read ~1.6× the run mean.
-    xlr_med: [f64; 2],
+    xlr_med: [f64; MAX_PATHS],
     /// THE COUPLING AXIS's produced quantities (zero under `Store::Unacked`):
     /// the mean frontier SPAN `last_sent − cum_ack`, the mean released-mark
     /// count the SACK law subtracts from it, and the fraction of ticks whose
@@ -1616,7 +1642,7 @@ struct Run {
     /// `tools/l1/flip_parse.py:183,206`) — i.e. SRTT minus Copa's windowed-min
     /// RTT, both on the same app-echo clock. `srtt_sum/bw_n − mrtt_sum/bw_n` is
     /// that quantity, in the same units, on the same accessors.
-    srtt_sum: [f64; 2],
+    srtt_sum: [f64; MAX_PATHS],
     /// The fraction of ADMISSION opportunities at which the store-cap gate was
     /// already closed (`store_len >= cap`) — the bench's analogue of the
     /// engine's `paused` wait-arm share (`net/mod.rs:5663`, reported as
@@ -1890,6 +1916,11 @@ fn simulate_src(
         ));
     }
     let np = paths.len();
+    assert!(
+        np <= MAX_PATHS,
+        "the per-path gauges are [_; MAX_PATHS = {MAX_PATHS}] arrays; widen MAX_PATHS \
+         before running a {np}-path geometry"
+    );
 
     // The retention store: admitted, not yet acked.
     let mut store: Vec<Sym> = Vec::new();
@@ -1903,13 +1934,13 @@ fn simulate_src(
     let mut anchor_ratio_n = 0u64;
     let mut cwnd_sum = 0.0_f64;
     let mut cwnd_n = 0u64;
-    let mut xa_sum = [0.0_f64; 2];
-    let mut xa_n = [0u64; 2];
-    let mut bw_sum = [0.0_f64; 2];
-    let mut bw_n = [0u64; 2];
-    let mut mrtt_sum = [0.0_f64; 2];
-    let mut srtt_sum = [0.0_f64; 2];
-    let mut delivered_p = [0u64; 2];
+    let mut xa_sum = [0.0_f64; MAX_PATHS];
+    let mut xa_n = [0u64; MAX_PATHS];
+    let mut bw_sum = [0.0_f64; MAX_PATHS];
+    let mut bw_n = [0u64; MAX_PATHS];
+    let mut mrtt_sum = [0.0_f64; MAX_PATHS];
+    let mut srtt_sum = [0.0_f64; MAX_PATHS];
+    let mut delivered_p = [0u64; MAX_PATHS];
     // The `paused`-arm analogue: counted at the admission gate below, once per
     // tick, BEFORE any symbol is admitted.
     let mut gate_closed = 0u64;
@@ -1919,7 +1950,7 @@ fn simulate_src(
     // report window rather than over the whole run.
     let mut deliv_win: Vec<std::collections::VecDeque<f64>> =
         (0..np).map(|_| std::collections::VecDeque::new()).collect();
-    let mut xlr_s: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
+    let mut xlr_s: [Vec<f64>; MAX_PATHS] = std::array::from_fn(|_| Vec::new());
 
     // `Feed::Overread` — per-path fractional carry, so a non-integer scale is
     // exact in the LONG RUN instead of rounded per call.
@@ -2675,15 +2706,15 @@ fn simulate_src(
         }
     }
 
-    let mut xlr_med = [f64::NAN; 2];
+    let mut xlr_med = [f64::NAN; MAX_PATHS];
     for (p, v) in xlr_s.iter_mut().enumerate() {
         if !v.is_empty() {
             v.sort_by(f64::total_cmp);
             xlr_med[p] = v[v.len() / 2];
         }
     }
-    let mut obs_stat = [ObsStat::default(); 2];
-    for (i, o) in obs.iter().enumerate().take(2) {
+    let mut obs_stat = [ObsStat::default(); MAX_PATHS];
+    for (i, o) in obs.iter().enumerate().take(MAX_PATHS) {
         obs_stat[i] = ObsStat {
             n_obs: o.n_obs,
             n_accept: o.n_accept,
@@ -5489,6 +5520,129 @@ fn the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free() {
         assert_eq!(shipped_chain(SIGMA_PIN, n), ceiling, "N={n}");
         assert_eq!(shipped_chain(SIGMA_PIN * 100.0, n), ceiling, "N={n}");
     }
+}
+
+/// **N ≥ 3 COVERAGE — the symmetric QUAD against the symmetric DUAL, and the
+/// VALUE-vs-CEILING distinction that hid a quadratic.** ADR-0070 prevention
+/// kit item 3.
+///
+/// The shipped law is `clamp(gain·N·Σ, floor, N·knee)`, and its two halves
+/// scale DIFFERENTLY in the path count. At a symmetric cell `Σ = N·A`, so:
+///
+///  * the VALUE `gain·N·Σ = gain·A·N²` is **quadratic** — c7x4 gets 4× c7's
+///    pool where the summed derivation `Σᵢ gain·anchorᵢ` asks for 2×;
+///  * the CEILING `N·knee` is **linear** — c7x4's ceiling is exactly 2× c7's.
+///
+/// Which one a measurement reads depends only on whether `Σ ≥ knee/gain`
+/// (`the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`), and
+/// on the wire — where the legacy anchor over-reads ×4.6–7.4 — **every dual-cell
+/// rep read the ceiling** (`WIRE_CAPS`: 4096 in 69/69 c7-A reps). So every
+/// measurement of the shipped law ever taken reports the ratio 2 of a linear
+/// ceiling, and none of them can see the ratio 4 underneath. That is the whole
+/// mechanism by which the N² survived, stated as an assertion instead of as a
+/// postmortem.
+///
+/// Both regimes are asserted here, on the SAME two geometries, so the
+/// distinction cannot be lost again.
+#[test]
+fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadratic_value() {
+    // One c7 leg's honest anchor-BDP; the quad is the same leg, four times.
+    let a = C2.0 * C2.1; // 83.2
+    assert_eq!(c7x4().len(), 4, "the quad geometry must be N = 4");
+    assert!(c7x4().iter().all(|s| *s == C2), "the quad must be c7's leg, verbatim");
+    let sigma = |n: usize| n as f64 * a;
+
+    // ── REGIME 1: HONEST anchors ⇒ Σ < knee/gain ⇒ the VALUE rules ────────
+    assert!(sigma(4) < SIGMA_PIN, "the quad must be INTERIOR at honest anchors");
+    let v2 = shipped_chain(sigma(2), 2);
+    let v4 = shipped_chain(sigma(4), 4);
+    assert_eq!(v2, 666, "c7 interior value = ceil(2·2·166.4)");
+    assert_eq!(v4, 2_663, "c7x4 interior value = ceil(2·4·332.8)");
+    // The clamp is provably inert on both, so this is a reading of the LAW.
+    assert!(v2 < 2 * KNEE && v4 < 4 * KNEE, "a ceiling bound: {v2} / {v4}");
+    let r_value = v4 as f64 / v2 as f64;
+    assert!(
+        (r_value - 4.0).abs() < 0.01,
+        "N=4 vs N=2 value ratio is {r_value}, i.e. not the shipped ×N² — the summed \
+         derivation would read 2.0"
+    );
+
+    // ── REGIME 2: the wire's own OVER-READ era ⇒ pinned ⇒ the CEILING rules ─
+    // ×7.4 is the top of the measured legacy band this file already uses
+    // (`store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`).
+    const OVERREAD_HI: f64 = 7.4;
+    let sig = |n: usize| OVERREAD_HI * sigma(n);
+    assert!(sig(2) >= SIGMA_PIN && sig(4) >= SIGMA_PIN, "both must PIN in this era");
+    let c2_ = shipped_chain(sig(2), 2);
+    let c4_ = shipped_chain(sig(4), 4);
+    assert_eq!(c2_, 2 * KNEE, "c7 pinned at N·knee");
+    assert_eq!(c4_, 4 * KNEE, "c7x4 pinned at N·knee");
+    assert_eq!(
+        c4_ as f64 / c2_ as f64,
+        2.0,
+        "a PINNED cap can only ever report the ceiling's LINEAR ratio, whatever the \
+         value underneath is doing — this is the reading the wire took"
+    );
+
+    // And the two regimes disagree, which is the point: the same pair of
+    // geometries reports 4 or 2 depending only on the anchor era.
+    assert_ne!(r_value.round(), c4_ as f64 / c2_ as f64);
+}
+
+/// THE QUAD'S DETERMINISM, pinned before anything is measured on it.
+///
+/// A four-way symmetric cell ties every tie this bench has ever had a bug in
+/// at once — the placement objective's exact-cost tie (`place_min_cost`), the
+/// worst-loss pick's 0.0-vs-0.0 tie (`worst_loss_path`), and the per-path link
+/// seeding — and `Scheduler` holds its paths in a `HashMap`, so any one of them
+/// resolving by map order would make c7x4's numbers a per-process draw. Same
+/// lesson as `symmetric_cell_placement_tie_is_broken_deterministically`, at the
+/// path count that makes it hardest.
+#[test]
+fn the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs() {
+    let g = c7x4();
+    let a = simulate(&g, Arm::Legacy, 4.0);
+    let b = simulate(&g, Arm::Legacy, 4.0);
+    assert_eq!((a.delivered, a.retx, a.ticks, a.zero, a.short), (b.delivered, b.retx, b.ticks, b.zero, b.short));
+    assert_eq!(a.mean_cap.to_bits(), b.mean_cap.to_bits(), "mean cap is not reproducible");
+    assert_eq!(a.sum_live, b.sum_live);
+    assert_eq!(a.sum_active, b.sum_active);
+
+    // MEASUREMENT DISCIPLINE 1 — the geometry under test must EXECUTE at N = 4:
+    // the dyn-cap refresh must really see FOUR live paths, since `n_live` is the
+    // multiplier the whole law-shape question is about.
+    assert!(a.ticks > 0 && a.delivered > 0, "the quad never ran");
+    assert_eq!(a.sum_live, 4 * a.ticks, "the refresh never saw four live paths");
+    assert!(a.mean_cap <= (4 * KNEE) as f64, "the realized cap exceeded N·knee");
+
+    // ── A DIVERGENCE THE QUAD FOUND, BOUNDED RATHER THAN DESCRIBED ────────
+    // The placement objective LOCKS ON to the first two legs and never uses the
+    // other two, at a cell where all four are identical. It is not a tie-break
+    // bug — it is arithmetic in `Scheduler::place_costs`, whose load term is
+    // `(in_flight/cwnd)·srtt + srtt/2 + ε·srtt` over `ref_srtt`, with
+    // `srtt() = self.srtt.unwrap_or(DEFAULT_SRTT)` and `DEFAULT_SRTT = 50 ms`
+    // (`scheduler/mod.rs:586,1549`). A leg that has never carried a symbol has
+    // no SRTT sample, so it is priced at 25 ms of propagation while a warm c2
+    // leg is priced at 4 ms + its queue: the warm leg must reach
+    // `in_flight/cwnd ≈ 2.6` before the cold leg can win, and with the store cap
+    // bounding in-flight it never does. COLD-START LOCK-IN, and it is invisible
+    // at N ≤ 2, which is every cell the bench had before this one.
+    //
+    // The store-cap law is unaffected — `n_live` is 4 above whatever placement
+    // does — so this is recorded and bounded here rather than modelled away.
+    // If a future placement change spreads the quad, THIS assertion fails and
+    // the change gets reviewed, which is the point.
+    assert!(a.delivered_p[0] > 0 && a.delivered_p[1] > 0, "the warm pair carried nothing");
+    assert_eq!(
+        (a.delivered_p[2], a.delivered_p[3]),
+        (0, 0),
+        "legs 2/3 carried traffic — the cold-SRTT lock-in above no longer holds,          so the comment describing it is now wrong"
+    );
+    assert_eq!(
+        (a.bw_n[2], a.bw_n[3]),
+        (0, 0),
+        "a leg with no traffic must also have no warm anchor"
+    );
 }
 
 /// THE ONLY THREE REACHABLE REGIMES AT A DUAL, and the two that are not.
