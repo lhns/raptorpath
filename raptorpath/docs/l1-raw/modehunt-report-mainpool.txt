@@ -1,0 +1,73 @@
+==============================================================================
+MODE-HUNT BATTERY — SCORING PASS
+contract: goal-gate "Mode-Hunt Battery — VM PRE-REGISTRATION" (b8fd6d9)
+==============================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+
+cell-arm    headers  ABORT   live  voided  scored   DNF
+c8-A              8      1      7       0       7     0
+c8-AU            24      3     21       0      21     0
+c8-AUR           24      5     19       0      19     0
+c8L-AU           24      3     21       0      21     0
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS
+
+cell-arm    GATES U cli/srv  GATES DS cli/srv     actU    actDS    divDS
+c8-A            7/7 (exp 0)       7/7 (exp 0)      7/7      7/7      7/7
+c8-AU         21/21 (exp 1)     21/21 (exp 0)    21/21    21/21    21/21
+c8-AUR        19/19 (exp 1)     19/19 (exp 1)    19/19    19/19    19/19
+c8L-AU        21/21 (exp 1)     21/21 (exp 0)    21/21    21/21    21/21
+
+### THE DEAD-WALL RATE (per-rep: wait_tun == 0 AND wait_paused == 0)
+
+cell-arm        s42       s7    pooled    rate   95% Wilson CI
+c8-A            0/4      0/3       0/7   0.000   [0.000, 0.354]
+c8-AU          6/12      3/9      9/21   0.429   [0.245, 0.635]
+c8-AUR         4/12      1/7      5/19   0.263   [0.118, 0.488]
+c8L-AU         0/12      0/9      0/21   0.000   [0.000, 0.155]
+
+### GUARDS — medians, and ratios against AU (the baseline)
+
+cell-arm     goodput     /AU  ping_p99     /AU  wait_tun  wait_paus  sf_zero    retx
+c8-A            86.4   1.175     141.0   1.248        38          7    0.034    1358
+c8-AU           73.5   1.000     113.0   1.000        21          0    0.285    2043
+c8-AUR          56.4   0.767     144.0   1.274        20          3    0.313    2047
+c8L-AU          51.3   0.697     138.0   1.221        87          0    0.060   13899
+
+==============================================================================
+THE PRE-REGISTERED BARS, SCORED VERBATIM
+==============================================================================
+
+[S1] THE REPRODUCTION / STOP BAR — p_AU pooled >= 0.4
+     p_AU = 9/21 = 0.429, 95% CI [0.245, 0.635]
+     ==> PASS — the baseline carries the mode; treatment rows ARE scored
+     (predecessor AU = 0.727 [0.434, 0.903], SAME BINARY -> pure substrate test)
+
+[T-KILL] AUR: CI excludes p_AU=0.429 AND CI upper < 0.25
+     p_AUR = 5/19 = 0.263, 95% CI [0.118, 0.488]
+     clause 1 (CI excludes p_AU):   FAIL
+     clause 2 (CI upper < 0.25):    FAIL (upper = 0.488)
+     ==> T-KILL NOT MET
+
+[T-HALVE] AUR: CI excludes the transcribed 0.727
+     ==> T-HALVE MET (0.727 outside [0.118, 0.488])
+
+[G-GOODPUT] AUR/AU median goodput >= 0.85
+     56.4 / 73.5 = 0.767  ==> FAIL — any kill here is a TRADE
+
+[G-LATENCY] AUR/AU median ping_p99 <= 1.25
+     144.0 / 113.0 = 1.274  ==> FAIL — TRADE
+
+[ERA PIN] A = 0/7 = 0.000, 95% CI [0.000, 0.354]
+     falsifier: pin ABOVE 0.25 would void the session.
+     ==> PASS (era did not move)
+     NOT A CONTRAST. Pre-disqualified at n=8 by the pre-registration.
+
+[C8L] THE BYTE-COUNT ARTIFACT, asked on the arm that fires
+     p_AU(200MB) = 0/21 = 0.000, 95% CI [0.000, 0.155]
+     p_AU(25MB)  = 9/21 = 0.429, 95% CI [0.245, 0.635]
+     ARTIFACT CONFIRMED (CI excludes p_AU(25) AND upper < 0.25): YES
+     ARTIFACT REFUTED  (CIs overlap AND point >= 0.5*p_AU(25) = 0.214): no
+     ==> ARTIFACT CONFIRMED
+
