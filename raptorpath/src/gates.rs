@@ -424,6 +424,18 @@ pub struct RuntimeGates {
     /// 3313 fired vs ~580 drops, 80% younger than the law's own threshold),
     /// costing ~2.7 Mbit at sc2 / ~1.7 at sc3 of pure wire waste.
     pub recov_sp: bool,
+    /// `RWM_DERIVED_SWEEP` (default OFF — the A/B arm; goal-gate "The
+    /// Derived Recovery Clamp"): both recovery clocks — the sender's tail
+    /// sweep and the receiver's stalled-hole refresh — read
+    /// `net::derived_recovery_round_us` (2·SRTT floored by the DERIVED
+    /// patience floor, NO ceiling) instead of `2·SRTT` clamped to the
+    /// undocumented [25 ms, 100 ms]. OFF ⇒ both sites byte-identical to the
+    /// shipped law. Zero new constants: the `2` and the floor are already in
+    /// the tree. See `net/mod.rs`'s block comment for the provenance of the
+    /// two literals this replaces and why neither of the ceiling's stated
+    /// referents (the EVICT reorder hold; an inner-TCP RTO) exists on the
+    /// measured stack.
+    pub derived_sweep: bool,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -539,6 +551,7 @@ impl RuntimeGates {
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
+            derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
@@ -594,6 +607,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
+             RWM_DERIVED_SWEEP={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_RDIAG={} RWM_FDIAG={} \
              RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
@@ -617,6 +631,7 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
+            b(self.derived_sweep),
             b(self.diag), b(self.ackdiag), b(self.rdiag), b(self.fdiag),
             b(self.trace), b(self.pfrac),
         )
@@ -783,6 +798,12 @@ mod forwarding_audit {
             line.contains("RWM_ACK_MERGE=1"),
             "a default-ON gate must be named with its 1 value: {line}"
         );
+        // goal-gate "The Derived Recovery Clamp": the OFF-VALUE echo the
+        // battery's control arm asserts.
+        assert!(
+            line.contains("RWM_DERIVED_SWEEP=0"),
+            "RWM_DERIVED_SWEEP must print its OFF value: {line}"
+        );
     }
 }
 
@@ -805,6 +826,11 @@ mod tests {
         assert!(g.store_sack_release && g.store_paths);
         assert!(g.recov_mp && g.recov_mp_law);
         assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
+        assert!(
+            !g.derived_sweep,
+            "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
+             \"The Derived Recovery Clamp\")"
+        );
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
         // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:

@@ -68,7 +68,7 @@ use super::reorder::ReorderBuffer;
 use super::{
     BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, GAP_ACK_MIN_INTERVAL,
     GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL, collect_gen_deficits,
-    create_window_decoder, deliver_packet, extract_window_packets, hole_nack_refresh,
+    create_window_decoder, deliver_packet, extract_window_packets, hole_refresh,
     horizon_gate_deficits, now_us, received_sack_ranges, shed_armed, shed_recv_budget_ok,
     shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
@@ -187,6 +187,9 @@ pub(crate) async fn run_receiver(
     let mut recv_shed_holes: u64 = 0;
     let mut recv_shed_budget_open = true;
     let recv_shed_diag = recv_gates.diag;
+    // goal-gate "The Derived Recovery Clamp" (`RWM_DERIVED_SWEEP`, default
+    // OFF): the stalled-hole refresh cadence on the derived round.
+    let recv_derived_sweep = recv_gates.derived_sweep;
     let mut recv_shed_diag_at = Instant::now();
     // RWM Phase C unordered delivery: next in-order seq NOT yet received
     // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -711,19 +714,28 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if pending {
-                let srtt = {
+                let (srtt, srtt_jitter_us) = {
                     let sched = recv_scheduler.lock();
-                    sched
+                    let live: Vec<_> = sched
                         .live_paths()
                         .into_iter()
-                        .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
-                        .max()
+                        .filter_map(|pid| sched.path(pid))
+                        .collect();
+                    // Same path set for both, so the DERIVED floor and its
+                    // clock can never come from different paths.
+                    (
+                        live.iter().map(|p| p.srtt()).max(),
+                        live.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0),
+                    )
                 };
                 let deadline = if recv_window_reliable {
                     // Reliable policy: the hole is never given up on —
                     // this timer instead re-advertises the gap (SACK
                     // WindowAck) at 2×SRTT cadence until recovered.
-                    let refresh = hole_nack_refresh(srtt);
+                    // goal-gate "The Derived Recovery Clamp": under
+                    // `RWM_DERIVED_SWEEP` the cadence is the DERIVED round
+                    // (no ceiling); OFF ⇒ `hole_nack_refresh` verbatim.
+                    let refresh = hole_refresh(recv_derived_sweep, srtt, srtt_jitter_us);
                     Some(last_hole_nack_at + refresh)
                 } else {
                     // δ-honest shed (fix C): under the unified realtime
