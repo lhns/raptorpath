@@ -634,6 +634,74 @@ pub fn hole_refresh(derived: bool, srtt: Option<Duration>, jitter_us: u64) -> Du
         (false, s) => hole_nack_refresh(s),
     }
 }
+
+/// MECHANISM-LIVENESS echo for the derived recovery round, one per SITE per
+/// process (MEASUREMENT DISCIPLINE 1: a battery must be able to prove that
+/// the site under test EXECUTED, and this gate had no echo of its own —
+/// only its `[GATES] RWM_DERIVED_SWEEP=` value, which proves the env var was
+/// READ and nothing more).
+///
+/// TWO claims, deliberately separated, because the law's own COINCIDENCE
+/// PROPERTY makes them different claims: `derived_recovery_round_us` returns
+/// exactly `tail_sweep_timeout_us` wherever `2·srtt` already sits inside the
+/// legacy `[25, 100] ms` clamp. So "the derived site ran" does NOT imply
+/// "the derived law bound", and an arm that only ever ran inside the clamp
+/// is bit-identical to its control — a null result that must be readable as
+/// such rather than mistaken for a null EFFECT.
+///
+///   * `ACTIVE`   — first evaluation at this site, with the clock that drove
+///                  it. Proves execution.
+///   * `DIVERGED` — first evaluation whose derived round differs from the
+///                  clamped law it replaces. Proves the law actually bound,
+///                  and carries both µs values so the size of the departure
+///                  is a measured number and not an inference.
+///
+/// Emitted ONLY on the armed arm, so a battery asserts it PRESENT on the
+/// `RWM_DERIVED_SWEEP=1` arms and ABSENT on the controls — the same
+/// present/absent discipline the other gates' `ACTIVE` echoes carry.
+/// Observation only: nothing here feeds a decision.
+#[derive(Default)]
+pub(crate) struct DerivedRoundEcho {
+    ran: bool,
+    diverged: bool,
+}
+
+impl DerivedRoundEcho {
+    /// Record one evaluation of the derived round. `derived_us` is the value
+    /// the site is ACTUALLY using; `legacy_us` is what the clamped law it
+    /// replaces would have returned for the same clock.
+    pub(crate) fn observe(
+        &mut self,
+        site: &str,
+        srtt_us: u64,
+        jitter_us: u64,
+        derived_us: u64,
+        legacy_us: u64,
+    ) {
+        if !self.ran {
+            self.ran = true;
+            info!(
+                "derived recovery round ACTIVE (RWM_DERIVED_SWEEP, goal-gate \"The Derived \
+                 Recovery Clamp\": round = max(2*srtt, patience_floor(jitter, srtt)), NO \
+                 ceiling and zero new constants, replacing 2*srtt clamped to [25, 100] ms at \
+                 both recovery-clock sites; RWM_DERIVED_SWEEP=0 = the shipped clamped control \
+                 arm) site={site} srtt_us={srtt_us} jitter_us={jitter_us} \
+                 derived_us={derived_us} legacy_us={legacy_us}"
+            );
+        }
+        if !self.diverged && derived_us != legacy_us {
+            self.diverged = true;
+            info!(
+                "derived recovery round DIVERGED from the clamped law (goal-gate \"The Derived \
+                 Recovery Clamp\", coincidence property: the two laws agree wherever 2*srtt \
+                 already lies inside [25, 100] ms, so this line — not the ACTIVE one — is what \
+                 proves the derived round BOUND at this site) site={site} srtt_us={srtt_us} \
+                 jitter_us={jitter_us} derived_us={derived_us} legacy_us={legacy_us}"
+            );
+        }
+    }
+}
+
 // ── δ-honest overload shedding (goal-gate "Unified Shedding", fix C;
 //    part of the unified machine's realtime semantics under `RWM_UNIFIED`,
 //    sub-gate `RWM_UNIFIED_SHED=0` = the serializing control arm) ─────────
@@ -4048,6 +4116,9 @@ async fn run_window_sender(
     /// exhausted), or a past deadline keeps the timer arm permanently ready
     /// and the select! busy-spins, starving TUN reads.
     let mut last_tail_sweep_us: u64 = 0;
+    /// goal-gate "The Derived Recovery Clamp": the sender site's one-shot
+    /// mechanism-liveness echo (ACTIVE + DIVERGED). Observation only.
+    let mut derived_round_echo = DerivedRoundEcho::default();
 
 
 
@@ -5728,6 +5799,15 @@ async fn run_window_sender(
                     (pooled_recovery_srtt_us(&pooled), jit)
                 };
                 let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
+                if pol.derived_sweep {
+                    derived_round_echo.observe(
+                        "sender-tail-sweep",
+                        srtt_us,
+                        jitter_us,
+                        timeout_us,
+                        tail_sweep_timeout_us(srtt_us),
+                    );
+                }
                 let deadline_us = last_activity_us + timeout_us;
                 let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
                 tokio::time::Instant::now() + remaining
@@ -8618,6 +8698,43 @@ mod tests {
                 "evt={evt} µs must reproduce the legacy constant exactly"
             );
         }
+    }
+
+    /// The derived round's MECHANISM-LIVENESS echo separates "the site ran"
+    /// from "the law bound", and it must, because the coincidence property
+    /// makes those different claims: an arm that only ever evaluates inside
+    /// the legacy `[25, 100] ms` band is bit-identical to its control, and a
+    /// battery that read `ACTIVE` as proof of effect would score a null
+    /// RESULT as a null EFFECT. Both echoes are also ONE-SHOT — the two call
+    /// sites sit in per-iteration hot loops, so a re-arming echo would flood
+    /// the log the battery parses.
+    #[test]
+    fn the_derived_round_echo_fires_once_per_claim_and_separates_ran_from_bound() {
+        // Inside the band: the site RAN, the law did NOT bind.
+        let mut e = DerivedRoundEcho::default();
+        e.observe("t", 20_000, 100, tail_sweep_timeout_us(20_000), tail_sweep_timeout_us(20_000));
+        assert!(e.ran, "an evaluation inside the band must still prove execution");
+        assert!(!e.diverged, "identical values are NOT a divergence");
+
+        // Now the same site above the ceiling: the law binds, and only then.
+        let srtt = 376_000;
+        let derived = derived_recovery_round_us(srtt, 100);
+        let legacy = tail_sweep_timeout_us(srtt);
+        assert_ne!(derived, legacy, "the fixture must actually diverge");
+        e.observe("t", srtt, 100, derived, legacy);
+        assert!(e.diverged, "a departure from the clamped law must be echoed");
+
+        // Both claims are latched: further evaluations re-emit nothing.
+        let before = (e.ran, e.diverged);
+        for _ in 0..1_000 {
+            e.observe("t", srtt, 100, derived, legacy);
+        }
+        assert_eq!((e.ran, e.diverged), before, "both echoes are one-shot");
+
+        // A site that diverges on its FIRST evaluation latches both at once.
+        let mut f = DerivedRoundEcho::default();
+        f.observe("t", srtt, 100, derived, legacy);
+        assert!(f.ran && f.diverged);
     }
 
     /// 3a, the law: monotone in the measured interval, both clamps, and the
