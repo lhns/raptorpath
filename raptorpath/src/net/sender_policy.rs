@@ -152,6 +152,13 @@ pub(crate) struct SenderPolicy {
     /// (`net::three_term_store_cap`). Scoped to the plain dynamic cap, like
     /// `store_cap_unified`. Default OFF: the shipped tree is bit-identical.
     pub three_term_on: bool,
+    /// `RWM_COMPOSED_CAP` (paper §16.56): the composition arm. Implies
+    /// [`Self::three_term_on`] (same pool law, same function) and additionally
+    /// arms the LATE-STAGE PER-PATH BRAKE with the path's own cwnd as its cap,
+    /// over `live_paths()`. See the gate's decl in `gates.rs` for why the set
+    /// is load-bearing at the brake — `active_paths()` would make the brake's
+    /// question false by construction.
+    pub composed_cap: bool,
     /// The δ dial's deadline budget b(δ) at this tunnel's named point
     /// (`net::delta_budget_b`) — a NUMBER on a dial, resolved once, read by
     /// the three-term law's stall term. Not a mode selector: the law is
@@ -235,6 +242,10 @@ pub(crate) struct SenderPolicy {
     /// Independent of `diag_on`: it prints its own `[ACKDIAG]` line on its own
     /// ~2 s cadence.
     pub ackdiag_on: bool,
+    /// `RWM_WALLDIAG` master gate — the dead-wall onset/duration instrument
+    /// (`net/walldiag.rs`). Independent of `diag_on` for the same reason
+    /// `ackdiag_on` is: it prints ONE `[WALL]` line, at teardown.
+    pub walldiag_on: bool,
     /// diag/unified-collapse: the span-law trace's own t0. NOT resolved by
     /// [`SenderPolicy::resolve`] (a wall-clock read, not a policy): the
     /// sender rebinds `pol` with it at the point in setup it was always
@@ -654,7 +665,20 @@ impl SenderPolicy {
         // `if N == 1`. Scoped to the plain dynamic cap: under Copa
         // ownership cwnd IS the operating point and that law is untouched.
         // Default OFF: the shipped tree is bit-identical.
-        let three_term_on = gates.three_term && plain_dyn_cap;
+        // ── THE COMPOSED CAP LAW (env RWM_COMPOSED_CAP) ───────────────────
+        // Paper §16.56, ADR-0070 Deliverable 2. The composition gate: the
+        // SAME pool law as `three_term_on` above (it IS
+        // `net::three_term_store_cap` — one implementation, nothing to
+        // drift), plus the unified live set at the BRAKE, plus the
+        // late-stage per-path brake on the path's own cwnd. Composing is all
+        // it does; it introduces no law and no constant of its own.
+        //
+        // Both this gate and `RWM_THREE_TERM` reach the pool seat, so the
+        // three-term arm remains exactly what it was — the composed arm is
+        // that arm PLUS the brake, which is the axis ADR-0070 says has never
+        // been measured in composition with a sane pool.
+        let composed_cap = gates.composed_cap && plain_dyn_cap;
+        let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
         // b(δ) at this tunnel's named point on the dial, ONCE.
         let delta_b = crate::net::delta_budget_b(protocol_hint);
         // ρ, the retention dial's declared value in this scope (see the
@@ -1062,6 +1086,7 @@ impl SenderPolicy {
             pool_anchor_on,
             store_cap_unified,
             three_term_on,
+            composed_cap,
             delta_b,
             contract_rho,
             store_sack_release_on,
@@ -1089,6 +1114,7 @@ impl SenderPolicy {
             use_packing,
             diag_on,
             ackdiag_on: gates.ackdiag,
+            walldiag_on: gates.walldiag,
             // Sampled by the sender at its original point in setup (see the
             // module doc); rebound there via a struct-update on `pol`.
             span_diag_start_us: 0,

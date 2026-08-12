@@ -3389,7 +3389,8 @@ own doc comment — no claim in this table is new.
 | `RWM_QUIC_CC` | **quinn's BBR** | ADR-0054; the in-tree replacement `bbr_rs` is VERIFIED (matrix row 9) but **gated**, because quinn's shallow-buffer collapse is a priced structural bound (§16.38) |
 | `RWM_CC_PACE` | **= `copa_wire_active()`** ⇒ **OFF on the plain-reliable path** | ADR-0062; see the §12 correction — this is why the §12 amendment's pacing claim does not describe the shipped path |
 | `RWM_INFL_CAP` | **0 (off)** | matrix row 17: with it 0, `cwnd_full` is permanently FALSE, so the store cap is the SOLE brake on outstanding data |
-| `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21 |
+| `RWM_COMPOSED_CAP` | **OFF** | §16.56 / ADR-0070 Deliverable 2: the composed cap law as ONE arm (three-term pool + unified live set at both seats + the cwnd-derived late-stage brake). Never measured composed; no constant of its own |
+| `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21; `RWM_WALLDIAG` is the dead-wall onset/duration instrument that replaces the unstable tick-share statistic (ADR-0070 validation step 2) |
 | Numeric: `RWM_GEN`=384, `RWM_PIPELINE`=2, `RWM_STORE_PATH_POOL`=2048, `RWM_STORE_BOOT`=**128**, `RWM_STORE_GAIN`=2.0, `RWM_EMIT_BURST`=64, `RWM_CC_PACE_HR`=1.1 | as listed | all pinned by `default_env_resolves_the_shipped_stack`. `RWM_STORE_BOOT = 128` is the boot-cap cliff value of §16.49/§16.50 |
 
 **Two era-hazards this table is meant to prevent.**
@@ -12527,6 +12528,115 @@ instrument — a precondition of the battery rather than a follow-up to it,
 because the instruments are what mechanisms 1, 2 and 4 of the postmortem are
 made of. **Nothing flips in that ADR, and re-fitting `gain` or `knee` to
 better numbers is explicitly not licensed.**
+
+### 16.56 The composed cap law, stated as a formula before it is code: one Σ over live paths, one late-stage brake whose cap is the path's own cwnd, and a memory bound that is not a term (2026-08-12, `feat/composed-cap`, gate `RWM_COMPOSED_CAP` default OFF)
+
+§16.55 and ADR-0070 found the shipped pool law to be a fitted constant
+wearing a law's clothes, and named the successor without building it. This
+section is the successor's FORMULA, written here before the gate exists,
+because CLAUDE.md's FORMULA-FIRST rule is the one this arc produced and the
+first law after it must be the one that obeys it. Nothing in this section
+flips a default: `RWM_COMPOSED_CAP` ships OFF.
+
+**The law.**
+
+```text
+cap = Σᵢ over live_paths [ rateᵢ·RTpropᵢ + rateᵢ·stall(δ, ρ, srttᵢ) ]  +  2·rate_fast·skew
+
+  stall(δ, ρ, srtt) = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt),   D(δ) = min(b(δ)·RTprop, 2·RTprop)
+  skew              = (maxᵢ RTpropᵢ − minᵢ RTpropᵢ) / 2
+  rate_fast         = the rate of the LEAST-RTprop path (the one that overtakes)
+```
+
+**Every symbol's provenance, one line each** — the FORMULA-FIRST rule's
+actual requirement, and the audit the predecessor failed:
+
+| symbol | provenance |
+|---|---|
+| `rateᵢ` | measured — the per-path delivered-rate anchor `btlbw_sym_per_s`, on §16.51's honest sampler (default ON) |
+| `RTpropᵢ`, `srttᵢ` | measured — the path's own `min_rtt` / `srtt`; `srtt = K·RTprop` on the honest ack clock |
+| `9/8` | cited — RFC 9002 §6.1.2 `kTimeThreshold`, not fitted |
+| the second `srtt` in the stall | derived — one retransmit round trip, §16.43 |
+| `2` in `2·rate_fast·skew` | identified, not fitted — §16.43's PS5 measured the span/skew slope at 2.00 ± 0.03 over 18 of 18 non-zero cells, across ×13 in rate and ×40 in skew; it is a round-trip-vs-one-way DEFINITION boundary |
+| `b(δ)`, `ρ` | declared DIALS — named points on the triangle, never modes (§16.20) |
+| `live_paths()` | the liveness predicate, unconditional; the law never counts paths |
+| floor = 64 | **the one paroled constant.** Provenance ABSENT (ADR-0070 finding 5); kept because deleting it is a separate decision, and NAMED in the gate's echo so it can never bind silently again |
+| `WIN_STORE_MAX` = 4096 | a RESOURCE LIMIT stated OUTSIDE the law — a memory bound (4096 × ~1.2 KB ≈ 5 MB) that may abort, not a term that shapes. Its bind fraction is REPORTED, per the FORMULA-FIRST clamp rule |
+
+**Shape, checked before any number** (the rule's second clause). The
+sentence the law implements is *"the pool funds, per path, the network
+window plus the emission slack, plus one round trip of resequencing span."*
+The expression is a Σ over paths plus one cross-path term. Both are LINEAR
+in the path count, and the span term is identically zero at N = 1 because
+`skew` over a one-element set is zero BY ARITHMETIC — no `if N == 1`, no
+topology predicate, no δ/ρ threshold. That is the exact shape agreement the
+predecessor's `gain·N·Σ` failed while its own doc comment claimed it. Pinned
+always-on by `three_term_store_cap_value_is_linear_in_n_the_template_applied`
+over N = 1…8.
+
+**The ceiling is the stall term, not a clamp.** ADR-0070's position, restated
+as the operative design decision: `cap − BDP` *is* the standing queue, δ
+prices queue as a latency budget, and §16.47 measured the cap actually doing
+that (signed and predictable, 12/12). So there is no `N·knee`, no swept pool
+and no arbitrary clamp. `WIN_STORE_MAX` survives beside the law as the
+memory bound above, and the composition is only honest if that bound is
+measured NOT to be the operating point — which is why its bind fraction is
+part of the gate's own echo rather than a bench-side afterthought.
+
+**The composition, which is the part that has never existed.** Every piece
+below is built and individually validated; ADR-0070's strongest sentence
+about them is that *the composition has never been measured as one arm,
+anywhere*. `RWM_COMPOSED_CAP` is exactly that arm, and it enables three
+things and adds no fourth:
+
+1. **The pool law** — `net::three_term_store_cap` at the head of the plain
+   dyn-cap chain, i.e. what `RWM_THREE_TERM` already selects. The composed
+   law does not merely resemble the three-term law: **it IS that function**,
+   consuming honest inputs. Nothing is re-derived and no second
+   implementation exists to drift.
+2. **The unified live set, at BOTH seats.** The pool law already reads
+   `live_paths()` unconditionally, so the pool needs nothing. The BRAKE does:
+   see below.
+3. **The late-stage per-path brake** — `cwnd_full`, with its per-path cap
+   equal to **the path's own cwnd**. No new constant: the cap is the
+   congestion controller's own window, which is the quantity a congestion
+   brake is supposed to be made of. `RWM_INFL_CAP`'s static total and
+   `RWM_INFL_BDP`'s `gain·BDP` per-path cap both remain what they were; the
+   composed arm uses neither.
+
+**The trap in the brake, and why the unified set is load-bearing there.**
+With the per-path cap set to the path's own cwnd, "path i is full" is
+`in_flightᵢ ≥ cwndᵢ`, which is exactly `available()ᵢ = 0`. But
+`active_paths()` is *active AND `available() > 0`* — so a brake that
+iterated `active_paths()` asking "is every path full?" would be answering a
+question whose answer is FALSE BY CONSTRUCTION, on every tick, forever. It
+would resolve ON, cost a lock, and never brake: a null EFFECT masquerading
+as a null RESULT, which is precisely the failure §16.53's DIVERGED lesson
+names. The composed brake therefore iterates `live_paths()`, and that is the
+same `active_paths()`-in-a-law defect ADR-0070 finding 1 names at the pool,
+appearing a second time at the brake. **`cwnd_full` under this arm means:
+every LIVE path is at or above its own congestion window.**
+
+**Engagement is echoed, not assumed.** ADR-0070's postmortem is about
+measurements that could not see the property under test, so the gate carries
+a `[CCAP]` line reporting, per run: whether the law ENGAGED (all live paths
+warm) versus merely being configured; the realized cap; the fraction of
+refreshes at which the memory bound and the paroled floor BOUND; and the
+fraction of sender-loop iterations at which the brake was closed. An arm
+that is bit-identical to control must be readable AS a null result — a
+configured-but-never-engaged law and a law that engaged and changed nothing
+are different findings, and the echo is what separates them.
+
+**Predictions this section is written against, before the bench runs.** At
+the wire's own honest anchors ADR-0070 computes the `×N`-free pooled value
+at 3270 (c7) and 3020 (c8) against the shipped 4096 pin; the three-term law
+is a different and generally SMALLER expression than that (PS6's c8
+sender-retention span predicts ~541, measured good pin 508). So the composed
+law is predicted to land INTERIOR — below `WIN_STORE_MAX` and above the
+floor — at c7 and c8, with the memory bound's bind fraction at zero. A
+composed cap that lands ON 4096 would mean the memory bound has become the
+law, which is the predecessor's exact defect reproduced, and is a STOP
+rather than a result.
 
 ## 17. The Measured Regime Map (2026-07-19)
 

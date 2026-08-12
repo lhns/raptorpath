@@ -41,7 +41,7 @@ use raptorpath::control::FecRateController;
 use raptorpath::fec::FecBackend;
 use raptorpath::net::{
     delta_budget_b, path_scaled_store_cap, three_term_store_cap, three_term_terms, EchoRatioMin,
-    ThreeTermPath, ThreeTermTerm,
+    ThreeTermPath, ThreeTermTerm, WIN_STORE_MAX,
 };
 use raptorpath::scheduler::{MockClock, Scheduler};
 
@@ -135,6 +135,30 @@ enum Arm {
     /// symbol is unacked the fast path's symbols pile into the same unacked
     /// span" (`net/mod.rs:2917-2930`).
     ThreeTermCell,
+    /// **THE COMPOSED CAP LAW** (`RWM_COMPOSED_CAP`, paper §16.56, ADR-0070
+    /// Deliverable 2) — the composition that ADR-0070 says *has never been
+    /// measured as one arm, anywhere*.
+    ///
+    /// Its POOL is bit-identically [`Arm::ThreeTermCell`]'s: the composed law
+    /// IS `net::three_term_store_cap` on honest inputs, one implementation,
+    /// nothing to drift. What this arm adds — and the ONLY thing it adds — is
+    /// the **late-stage per-path brake**, `cwnd_full`, with its per-path cap
+    /// equal to the path's OWN cwnd. No new constant: the cap is the
+    /// congestion controller's own window.
+    ///
+    /// **The set is load-bearing at the brake**, and this bench is where that
+    /// is most visible. Its own admission comment records that the reliable
+    /// source path has no `available() > 0` filter, so `in_flight_i` may
+    /// exceed `cwnd_i` without bound and `available()` reads 0 and STAYS 0 —
+    /// which is exactly why iterating `active_paths()` here would ask a
+    /// question whose answer is false by construction (§16.56's trap). The
+    /// brake reads `live_paths()`, so it means: EVERY LIVE PATH is at or
+    /// above its own congestion window.
+    ///
+    /// The difference from `3T` is therefore a pure BRAKE measurement, which
+    /// is the axis ADR-0070 finding 7 says was never measured in composition
+    /// with a sane pool.
+    Composed,
 }
 
 impl Arm {
@@ -144,8 +168,30 @@ impl Arm {
             Arm::Unified => "AU  (U=1)         ",
             Arm::PooledUnified => "P   (pooled+unified)",
             Arm::ThreeTermCell => "3T  (three-term cap)",
+            Arm::Composed => "C   (composed law) ",
         }
     }
+    /// Does this arm arm the late-stage per-path brake? Only the composed one.
+    fn brake_on(self) -> bool {
+        self == Arm::Composed
+    }
+}
+
+/// `cwnd_full` at the composed arm: EVERY LIVE path is at or above its own
+/// congestion window (`available() == 0`). The engine's own predicate
+/// (`net::infl_percap_full` over `live_paths()` with `cap_i = cwnd_i`),
+/// evaluated on the bench's real `Scheduler`.
+///
+/// The `live_paths()` set is the load-bearing part — see [`Arm::Composed`].
+fn composed_brake_closed(sched: &Scheduler, arm: Arm) -> bool {
+    if !arm.brake_on() {
+        return false;
+    }
+    let live = sched.live_paths();
+    !live.is_empty()
+        && live
+            .iter()
+            .all(|id| sched.path(*id).map(|p| p.available() == 0).unwrap_or(false))
 }
 
 /// The shipped dyn-cap chain at the battery's arms, verbatim in structure:
@@ -165,7 +211,12 @@ fn cap_for(arm: Arm, bdp_over_set: f64, bdp_over_live: f64, n_live: usize, tt: O
         Arm::Legacy | Arm::Unified => shipped_chain(bdp_over_set, n_live),
         // The engine's own precedence: the law wins when it returns `Some`,
         // otherwise the configured chain runs verbatim (`net/mod.rs:4722-4725`).
-        Arm::ThreeTermCell => tt.unwrap_or_else(|| shipped_chain(bdp_over_live, n_live)),
+        // The composed arm's POOL is bit-identically the three-term arm's —
+        // one law, one implementation; the composition it adds is the BRAKE,
+        // applied at admission rather than here.
+        Arm::ThreeTermCell | Arm::Composed => {
+            tt.unwrap_or_else(|| shipped_chain(bdp_over_live, n_live))
+        }
         Arm::PooledUnified => {
             if n_live >= 2 && bdp_over_live > 0.0 {
                 let ceiling = n_live.saturating_mul(KNEE).max(FLOOR);
@@ -1650,6 +1701,14 @@ struct Run {
     /// directly, and it is the quantity the wire reads 0.0% on at c7.
     gate_closed: u64,
     gate_ticks: u64,
+    /// THE COMPOSED ARM'S LATE-STAGE BRAKE (`Arm::Composed` only; 0/0 at every
+    /// other arm): admission opportunities at which `cwnd_full` was already
+    /// closed — every LIVE path at or above its own cwnd. This is the
+    /// engagement gauge the DIVERGED lesson requires: an arm bit-identical to
+    /// control must read as a NULL RESULT (`brake_closed_pct` = 0 with the
+    /// brake armed) and never as a null effect (the brake was never armed).
+    brake_closed: u64,
+    brake_ticks: u64,
     /// THE SOURCE AXIS's produced quantities (all zero under `Src::Bulk`):
     /// the inner flow's mean congestion window in segments, its mean DELIVERED
     /// latency in seconds (admission → cumulative frontier, the user-visible
@@ -1721,6 +1780,12 @@ impl Run {
     /// the store-cap gate was already closed when admission was offered.
     fn gate_closed_pct(&self) -> f64 {
         self.gate_closed as f64 / self.gate_ticks.max(1) as f64 * 100.0
+    }
+    /// The composed arm's late-stage brake share. 0.0 at every other arm
+    /// because the brake was never armed there — read it beside
+    /// `brake_ticks > 0`, never alone.
+    fn brake_closed_pct(&self) -> f64 {
+        self.brake_closed as f64 / self.brake_ticks.max(1) as f64 * 100.0
     }
     fn mean_cwnd(&self) -> f64 {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
@@ -1944,6 +2009,8 @@ fn simulate_src(
     // The `paused`-arm analogue: counted at the admission gate below, once per
     // tick, BEFORE any symbol is admitted.
     let mut gate_closed = 0u64;
+    let mut brake_closed = 0u64;
+    let mut brake_ticks = 0u64;
     let mut gate_ticks = 0u64;
     // Delivery instants inside the trailing `REPORT_S`, per path — the
     // denominator of READOUT 3's `xanchor`, measured over the gauge's own
@@ -2525,7 +2592,7 @@ fn simulate_src(
             // `three_term_terms` and the SHIPPED `three_term_store_cap`. No
             // number is introduced here — `rho` and `b` are the resolved
             // defaults and the floor is the bench's own FLOOR.
-            let tt: Option<usize> = if arm == Arm::ThreeTermCell {
+            let tt: Option<usize> = if matches!(arm, Arm::ThreeTermCell | Arm::Composed) {
                 let slots: Vec<Option<ThreeTermPath>> = live
                     .iter()
                     .map(|id| {
@@ -2619,6 +2686,16 @@ fn simulate_src(
         if store_len >= cap {
             gate_closed += 1;
         }
+        // THE COMPOSED ARM'S LATE-STAGE BRAKE, sampled at the same instant as
+        // the store-cap gate above so the two brakes are comparable per tick.
+        // Zero by construction at every other arm (`Arm::brake_on`), which is
+        // what keeps the 43 always-on pins bit-identical.
+        if arm.brake_on() {
+            brake_ticks += 1;
+            if composed_brake_closed(&sched, arm) {
+                brake_closed += 1;
+            }
+        }
         // ── THE SOURCE AXIS: what the OFFERED LOAD will allow ─────────────
         // Under `Src::Bulk` this is `u64::MAX` and every branch below is
         // inert, so the published bench is bit-identical. Under `Src::Reno`
@@ -2641,7 +2718,13 @@ fn simulate_src(
             }
         }
         let mut src_left = src_room;
-        while store_len < cap && src_left > 0 {
+        // THE ADMISSION GATE, with the composed arm's second disjunct live:
+        // the engine writes `reliable && (store_len >= cap || cwnd_full)`, and
+        // at every arm but the composed one `cwnd_full` is false (RWM_INFL_CAP
+        // = 0), so the store cap is the sole brake. Re-evaluated per symbol
+        // because each placement moves `in_flight` on the path it chose, which
+        // is the whole point of a LATE-STAGE, PER-PLACEMENT brake.
+        while store_len < cap && src_left > 0 && !composed_brake_closed(&sched, arm) {
             src_left -= 1;
             store_len += 1;
             let pid = place_min_cost(&sched);
@@ -2763,6 +2846,8 @@ fn simulate_src(
         srtt_sum,
         gate_closed,
         gate_ticks,
+        brake_closed,
+        brake_ticks,
         src_w_mean: reno.w_sum / reno.w_n.max(1) as f64,
         src_rtt_mean: reno.rtt_sum / reno.rtt_n.max(1) as f64,
         src_rto: reno.rto_events,
@@ -4823,6 +4908,73 @@ impl MeasEns {
     }
 }
 
+/// **(17) THE COMPOSED CAP LAW, scored as one arm** (paper §16.56, ADR-0070
+/// Deliverable 2 — *"this composition has NEVER been measured as one arm.
+/// Not at L1, not at the SF bench, not at L0."*).
+///
+/// Reports, per geometry, against the SHIPPED arm and against the pool law
+/// alone, so the brake's contribution is separable from the pool's:
+///
+/// * **cap** — and whether it is INTERIOR. The predecessor operated AT its
+///   ceiling (121/126 dual reps at exactly 4096), so every measurement taken
+///   through it measured a constant; the composed law's only remaining bound
+///   is a MEMORY bound stated outside the law, and §16.56 calls a composed cap
+///   landing on it a STOP rather than a result. `mem%`/`floor%` are the
+///   FORMULA-FIRST bind-fraction gauges for the two surviving bounds.
+/// * **zero%** — the `[SF]` zero-fraction, the quantity this bench exists for.
+/// * **gp** — the goodput class, with the fold against the shipped arm.
+/// * **brake%** — the late-stage brake's own liveness. Read it beside the
+///   3T column: where the two arms' goodput agrees AND `brake%` is non-zero,
+///   the brake bound and changed nothing (a NULL RESULT); where `brake%` is
+///   zero, the brake never bound and the arms are the same law.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_composed_cap_law_as_one_arm() {
+    println!("\n=== THE COMPOSED CAP LAW as ONE ARM (§16.56) — 8 s, honest era ===");
+    println!(
+        "law: cap = SUM_live [ rate_i*RTprop_i + rate_i*stall(delta,rho,srtt_i) ] \
+         + 2*rate_fast*skew"
+    );
+    println!(
+        "     brake: cwnd_full over live_paths(), cap_i = the path's OWN cwnd \
+         (no new constant)"
+    );
+    println!("     bounds OUTSIDE the law: memory {WIN_STORE_MAX}, paroled floor {FLOOR}");
+    println!(
+        "\n{:<28} {:>9} {:>9} {:>9} {:>7} {:>7} {:>9} {:>9} {:>7} {:>7}",
+        "geometry", "A cap", "3T cap", "C cap", "interior", "brake%", "A gp", "C gp", "C/A", "zero%"
+    );
+    for (name, geom) in composed_geometries() {
+        let a = simulate(&geom, Arm::Legacy, 8.0);
+        let t = simulate(&geom, Arm::ThreeTermCell, 8.0);
+        let c = simulate(&geom, Arm::Composed, 8.0);
+        let interior = c.mean_cap > FLOOR as f64 && c.mean_cap < WIN_STORE_MAX as f64;
+        println!(
+            "{:<28} {:>9.1} {:>9.1} {:>9.1} {:>8} {:>6.1}% {:>9.0} {:>9.0} {:>6.2}x {:>6.1}%",
+            name,
+            a.mean_cap,
+            t.mean_cap,
+            c.mean_cap,
+            if interior { "YES" } else { "NO-STOP" },
+            c.brake_closed_pct(),
+            a.goodput_sym_s(),
+            c.goodput_sym_s(),
+            c.goodput_sym_s() / a.goodput_sym_s().max(1e-9),
+            c.zero_pct(),
+        );
+    }
+    println!(
+        "\nNOTE: `c1` (the 1 Gbit single) has NO geometry in this bench and one was \
+         NOT invented for this table — the fast single above is the single-path \
+         class. The 1 Gbit cell is a VM question."
+    );
+    println!(
+        "NOTE: at the quad the composed law must not touch the cold-start \
+         placement lock-in (a PLACEMENT defect, different layer) — bounded by \
+         `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`."
+    );
+}
+
 /// (10) THE CANDIDATE, re-scored on the measured era — the dispatch's MATCH
 /// outcome asks for exactly this, and it is printed either way so a NO-MATCH
 /// still leaves the number on the record rather than losing it.
@@ -5642,6 +5794,207 @@ fn the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs() {
         (a.bw_n[2], a.bw_n[3]),
         (0, 0),
         "a leg with no traffic must also have no warm anchor"
+    );
+}
+
+// ── THE COMPOSED CAP LAW (paper §16.56, ADR-0070 Deliverable 2) ───────────
+
+/// The geometries the composed arm is scored at. `c1`-class is DELIBERATELY
+/// ABSENT and its absence is stated rather than faked: the L1 `c1` cell is a
+/// 1 Gbit single, and this bench has never had a transcription of it — its
+/// fast single is `C2` (100 Mbit / 10 ms). Inventing a 1 Gbit spec here would
+/// be manufacturing a wire number to satisfy a column, which is the failure
+/// ADR-0070 finding 4 records about the knee. The fast single below is the
+/// SINGLE-PATH class; the 1 Gbit cell stays a VM question.
+fn composed_geometries() -> Vec<(&'static str, Vec<Spec>)> {
+    vec![
+        ("sc2  single fast (c1-class)", vec![C2]),
+        ("sc3  single slow           ", vec![C3]),
+        ("c7   dual symmetric        ", vec![C2, C2]),
+        ("c8   dual asym (rate + RTT)", vec![C2, C3]),
+        ("c7x4 symmetric quad        ", c7x4()),
+    ]
+}
+
+/// **THE COMPOSED LAW IS THE THREE-TERM LAW PLUS A BRAKE, AND NOTHING ELSE.**
+///
+/// The composition's honesty rests on one claim that is cheap to assert and
+/// expensive to discover broken: the composed arm's POOL is bit-identically
+/// the three-term arm's, because the composed law IS
+/// `net::three_term_store_cap` (paper §16.56 — one implementation, nothing to
+/// drift). If a second cap expression ever appeared for the composed arm, the
+/// A/B would stop isolating the BRAKE and would silently become a two-factor
+/// experiment — which is how §16.53/§16.54's confounds happened.
+///
+/// So: at a geometry where the brake NEVER closes, the two arms must agree in
+/// every produced quantity. A single path whose cwnd is never saturated is
+/// that geometry, and the test asserts the precondition rather than assuming
+/// it (`brake_closed` = 0 with `brake_ticks` > 0 — armed, and null).
+#[test]
+fn the_composed_arm_is_the_three_term_pool_plus_a_brake_and_nothing_else() {
+    // Pick the geometry by its MEASURED brake behaviour, not by assumption.
+    for geom in [vec![C2], vec![C3]] {
+        let t = simulate(&geom, Arm::ThreeTermCell, 4.0);
+        let c = simulate(&geom, Arm::Composed, 4.0);
+
+        // MECHANISM LIVENESS (rule 1): the brake must be ARMED at the composed
+        // arm and never armed at the three-term one, or the comparison below
+        // proves nothing.
+        assert!(c.brake_ticks > 0, "the composed arm never armed its brake");
+        assert_eq!(t.brake_ticks, 0, "the three-term arm must not arm the brake");
+
+        if c.brake_closed == 0 {
+            // The brake was armed and never bound ⇒ the arms are the same law,
+            // and every produced quantity must agree EXACTLY.
+            assert_eq!(
+                (c.delivered, c.retx, c.ticks, c.zero, c.short),
+                (t.delivered, t.retx, t.ticks, t.zero, t.short),
+                "the composed pool diverged from the three-term pool with the \
+                 brake never binding — the composition grew a second law"
+            );
+            assert_eq!(
+                c.mean_cap.to_bits(),
+                t.mean_cap.to_bits(),
+                "the composed cap is not bit-identical to the three-term cap"
+            );
+        }
+    }
+}
+
+/// **THE COMPOSED CAP LANDS INTERIOR AT THE DUALS** — §16.56's stated
+/// prediction, and its STOP condition, as an always-on absolute pin.
+///
+/// The predecessor's defining defect is that it operated AT its ceiling
+/// (`occcap_p50` = exactly 4096 in 121 of 126 dual reps), so every
+/// measurement taken through it measured a constant. The composed law's only
+/// remaining bound above it is `WIN_STORE_MAX`, a MEMORY bound stated outside
+/// the law — and §16.56 says in terms that *a composed cap landing ON 4096
+/// would mean the memory bound has become the law, which is the predecessor's
+/// exact defect reproduced, and is a STOP rather than a result*.
+///
+/// This is that STOP, wired as a test rather than left as prose. It also pins
+/// the other side: above the paroled floor, whose provenance ADR-0070 finding
+/// 5 records as ABSENT and which the three-term pre-registration wrongly
+/// declared unreachable before measuring it bind at shal8.
+#[test]
+fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() {
+    let mut caps: Vec<(&str, f64)> = Vec::new();
+    for (name, geom) in [
+        ("c7", vec![C2, C2]),
+        ("c8", vec![C2, C3]),
+        ("c7x4", c7x4()),
+    ] {
+        let r = simulate(&geom, Arm::Composed, 8.0);
+        assert!(r.ticks > 0 && r.delivered > 0, "{name}: the geometry never ran");
+        assert!(
+            r.mean_cap < WIN_STORE_MAX as f64,
+            "{name}: the composed cap reads {:.1} at the MEMORY bound {WIN_STORE_MAX} — \
+             the resource limit has become the law (§16.56 STOP)",
+            r.mean_cap
+        );
+        assert!(
+            r.mean_cap > FLOOR as f64,
+            "{name}: the composed cap reads {:.1} at the paroled floor {FLOOR} — \
+             the law's operating range is a constant with no provenance",
+            r.mean_cap
+        );
+        // And NOT the boot cliff either: `store_boot_cap` is where BOTH cap
+        // chains terminate, so a law that fell through would read here.
+        assert!(
+            (r.mean_cap - BOOT as f64).abs() > 1.0,
+            "{name}: the composed cap reads {:.1}, i.e. the boot cap {BOOT} — \
+             the law fell through to the terminal `else` at every refresh",
+            r.mean_cap
+        );
+        caps.push((name, r.mean_cap));
+    }
+
+    // **THE LAW HAS AN OPERATING RANGE** — MEASUREMENT DISCIPLINE 18, as a
+    // pin rather than a hope. The predecessor's defect was not that its
+    // ceiling was wrong; it was that the ceiling was the ONLY value the law
+    // ever took, so the law was a constant and every measurement through it
+    // measured that constant. A successor that read the same number at three
+    // structurally different geometries would have reproduced the defect with
+    // better prose. It must not.
+    //
+    // NOTE ON WHAT IS *NOT* ASSERTED HERE: no comparison against the shipped
+    // arm's MEAN cap. Measured, the shipped mean at c7 is ~352, far below its
+    // own 4096 ceiling — not because the law is interior but because the
+    // `active_paths()` cliff drops it to `store_boot_cap` on a large share of
+    // refreshes (ADR-0070 finding 1, "an empty active set is a cliff, not a
+    // taper"). A mean-vs-mean ordinal between a pinned-with-cliffs law and an
+    // interior one is not a meaningful comparison in either direction, and
+    // CLAUDE.md's testing discipline rejects ordinal pins anyway. The shipped
+    // numbers are REPORTED by `sf_composed_cap_law_as_one_arm`, not asserted.
+    for i in 0..caps.len() {
+        for j in (i + 1)..caps.len() {
+            assert!(
+                (caps[i].1 - caps[j].1).abs() > 1.0,
+                "the composed cap reads {:.1} at {} and {:.1} at {} — a law that \
+                 returns the same value at structurally different geometries is \
+                 operating as a constant (MEASUREMENT DISCIPLINE 18)",
+                caps[i].1,
+                caps[i].0,
+                caps[j].1,
+                caps[j].0
+            );
+        }
+    }
+}
+
+/// **THE COMPOSED LAW MUST NOT WORSEN THE COLD-START PLACEMENT LOCK-IN.**
+///
+/// `the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs`
+/// records a divergence the quad found and BOUNDS it: at a four-way symmetric
+/// cell the placement objective locks onto the first two legs, because a leg
+/// that never carried a symbol has no SRTT sample and is priced at
+/// `DEFAULT_SRTT`/2 = 25 ms against a warm c2 leg's ~4 ms. That is a
+/// PLACEMENT defect, in a different layer from the store-cap law, and the
+/// composed law is not expected to fix it.
+///
+/// It must not make it worse, and "worse" has a precise meaning here: the
+/// composed arm adds a per-path brake, and a brake is exactly the kind of
+/// mechanism that could deepen a lock-in by holding the warm legs saturated.
+/// So this pins that the lock-in is UNCHANGED under the composition — the
+/// same two legs carry, the same two carry nothing — and that the brake was
+/// genuinely armed while that held, so the result is a null RESULT and not a
+/// null effect.
+#[test]
+fn the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in() {
+    let g = c7x4();
+    let base = simulate(&g, Arm::Legacy, 4.0);
+    let c = simulate(&g, Arm::Composed, 4.0);
+
+    // Determinism first — the quad ties in three places at once.
+    let c2 = simulate(&g, Arm::Composed, 4.0);
+    assert_eq!(
+        (c.delivered, c.retx, c.ticks, c.zero, c.short),
+        (c2.delivered, c2.retx, c2.ticks, c2.zero, c2.short),
+        "the composed arm is not reproducible at the quad"
+    );
+
+    // MECHANISM LIVENESS: the brake was armed, so a null below is a RESULT.
+    assert!(c.brake_ticks > 0, "the composed arm never armed its brake at the quad");
+    // The refresh really saw four live paths — `n_live` is the axis.
+    assert_eq!(c.sum_live, 4 * c.ticks, "the refresh never saw four live paths");
+
+    // UNCHANGED, in both directions. Same warm pair, same cold pair.
+    assert!(
+        c.delivered_p[0] > 0 && c.delivered_p[1] > 0,
+        "the composed arm's warm pair carried nothing"
+    );
+    assert_eq!(
+        (c.delivered_p[2], c.delivered_p[3]),
+        (0, 0),
+        "the composed law SPREAD the quad — the cold-SRTT lock-in that \
+         `the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs` \
+         bounds no longer holds, so both comments are now wrong and this is a \
+         reviewed change, not a silent one"
+    );
+    assert_eq!(
+        (base.delivered_p[2], base.delivered_p[3]),
+        (0, 0),
+        "the shipped arm's lock-in moved — the baseline this test compares to is gone"
     );
 }
 

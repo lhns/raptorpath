@@ -414,6 +414,57 @@ pub struct RuntimeGates {
     /// topology branch dies without an `if N == 1`. `=0`/unset is the
     /// shipped default, bit-exactly: the existing law chain runs verbatim.
     pub three_term: bool,
+    /// `RWM_COMPOSED_CAP` (default OFF — the A/B arm; paper §16.56, ADR-0070
+    /// Deliverable 2): THE COMPOSED CAP LAW, as ONE arm. The formula and
+    /// every symbol's provenance are in the paper, written BEFORE this gate
+    /// existed (CLAUDE.md FORMULA-FIRST):
+    ///
+    /// ```text
+    ///   cap = Σᵢ over live_paths [ rateᵢ·RTpropᵢ + rateᵢ·stall(δ,ρ,srttᵢ) ]
+    ///       + 2·rate_fast·skew
+    /// ```
+    ///
+    /// **It IS [`crate::net::three_term_store_cap`]** on honest inputs — not
+    /// a resemblance and not a second implementation, so there is nothing to
+    /// drift. What this gate adds over `RWM_THREE_TERM` is the COMPOSITION
+    /// ADR-0070 says has never been measured anywhere: the pool law, the
+    /// unified live set at BOTH seats, and the late-stage per-path brake.
+    /// Exactly three things, and no fourth:
+    ///
+    /// 1. **The pool law** in the plain dyn-cap chain — what `RWM_THREE_TERM`
+    ///    already selects; this gate reaches the same seat.
+    /// 2. **The unified live set.** The pool law already reads `live_paths()`
+    ///    unconditionally, so the pool needs nothing. The BRAKE does — see 3.
+    /// 3. **The late-stage per-path brake** (`cwnd_full`, ADR-0070 finding 7:
+    ///    "the correct architecture, DISABLED WITHOUT A DECISION"), with its
+    ///    per-path cap equal to **the path's OWN cwnd**. NO NEW CONSTANT: the
+    ///    cap is the congestion controller's own window, which is what a
+    ///    congestion brake ought to be made of. Neither `RWM_INFL_CAP`'s
+    ///    static total nor `RWM_INFL_BDP`'s `gain·BDP` is used, and neither
+    ///    changes meaning.
+    ///
+    /// **The trap that makes point 2 load-bearing** (§16.56, written down
+    /// before it could be walked into): with the per-path cap set to the
+    /// path's own cwnd, "path i is full" is `in_flightᵢ ≥ cwndᵢ`, i.e.
+    /// exactly `available()ᵢ == 0` — and `active_paths()` is *active AND
+    /// `available() > 0`*. A brake iterating `active_paths()` would ask a
+    /// question whose answer is FALSE BY CONSTRUCTION on every tick, forever:
+    /// it would resolve ON, cost a lock, and never brake. That is a null
+    /// EFFECT wearing a null RESULT's clothes — §16.53's DIVERGED lesson. The
+    /// composed brake reads `live_paths()`, so `cwnd_full` here means **every
+    /// LIVE path is at or above its own congestion window**.
+    ///
+    /// **No ceiling of its own.** No `N·knee`, no swept pool, no arbitrary
+    /// clamp: δ prices the queue as a latency budget (§16.47 measured the cap
+    /// doing exactly that, 12/12). `WIN_STORE_MAX` survives beside the law as
+    /// a MEMORY bound — a resource limit that may abort, never a term that
+    /// shapes — and the one paroled constant, `store_cap_floor` = 64 (whose
+    /// provenance ADR-0070 finding 5 records as ABSENT), stays. Both are
+    /// NAMED with their bind fractions in the `[CCAP]` echo, per the
+    /// FORMULA-FIRST clamp rule, so neither can bind silently again.
+    ///
+    /// `=0`/unset is the shipped default, bit-exactly.
+    pub composed_cap: bool,
     /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
     /// Residual"): SINGLE-path per-flight time-threshold suppression — the
     /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
@@ -462,6 +513,29 @@ pub struct RuntimeGates {
     /// purpose: it must be runnable on an arm that is not paying for the
     /// 250 ms `[DIAG]` report.
     pub ackdiag: bool,
+    /// `RWM_WALLDIAG` (default OFF): the DEAD-WALL ONSET/DURATION instrument
+    /// — the statistic-stability prerequisite recorded at the close of the
+    /// mode-hunt work (#93) and made step 2 of ADR-0070's validation path.
+    ///
+    /// The statistic it replaces was a per-rep FLAG over two tick-share
+    /// medians (`wait_tun` = 0 % ∧ `wait_paused` = 0 %) and it proved
+    /// UNSTABLE — arm orderings INVERTED between pools collected minutes
+    /// apart. A tick-share is a fraction of sender-loop WAKEUPS, whose rate
+    /// is an output of the mechanism under test, and a conjunction of two
+    /// whole-run medians cannot tell one long terminal wall from a hundred
+    /// scattered micro-gaps. This gate measures the wall's ONSET (as a
+    /// fraction of the transfer wall) and DURATION (ms) instead, plus the
+    /// retransmit count inside it — per RUN, one `[WALL]` line at teardown.
+    /// See `net/walldiag.rs` for the measurand, stated before the code.
+    ///
+    /// Observation only: the gauge owns all its state and takes NO engine
+    /// handle at all (`net::walldiag::tests::walldiag_is_observation_only`).
+    /// Zero cost off — the process-global is a `OnceLock<Option<…>>` that
+    /// resolves to `None`, so the single feed site is a null check.
+    /// Independent of `RWM_DIAG` on purpose, exactly as `RWM_ACKDIAG` is:
+    /// the c8 arms whose statistic this stabilises are the arms that cannot
+    /// afford the 250 ms `[DIAG]` report.
+    pub walldiag: bool,
     /// `RWM_RDIAG` (default OFF): engine-receiver saturation probe.
     pub rdiag: bool,
     /// `RWM_FDIAG` (default OFF): proactive-frontier diagnosis instrument
@@ -550,10 +624,12 @@ impl RuntimeGates {
             recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
+            composed_cap: env_flag("RWM_COMPOSED_CAP", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
+            walldiag: env_flag("RWM_WALLDIAG", false),
             rdiag: env_flag("RWM_RDIAG", false),
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
@@ -593,7 +669,7 @@ impl RuntimeGates {
              RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
-             RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} \
+             RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_PATIENCE_DERIVED={} \
@@ -608,14 +684,14 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} \
-             RWM_DIAG={} RWM_ACKDIAG={} RWM_RDIAG={} RWM_FDIAG={} \
-             RWM_TRACE={} RWM_PFRAC={}",
+             RWM_DIAG={} RWM_ACKDIAG={} RWM_WALLDIAG={} RWM_RDIAG={} \
+             RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
             b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
-            b(self.store_cap_unified), b(self.three_term),
+            b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.patience_derived),
@@ -632,8 +708,8 @@ impl RuntimeGates {
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
             b(self.derived_sweep),
-            b(self.diag), b(self.ackdiag), b(self.rdiag), b(self.fdiag),
-            b(self.trace), b(self.pfrac),
+            b(self.diag), b(self.ackdiag), b(self.walldiag), b(self.rdiag),
+            b(self.fdiag), b(self.trace), b(self.pfrac),
         )
     }
 
@@ -927,6 +1003,17 @@ mod tests {
             "the default echo must NAME the three-term gate with its 0 value: {}",
             g.echo_line()
         );
+        // The COMPOSED CAP LAW (paper §16.56, ADR-0070 Deliverable 2) is an
+        // A/B arm and ships OFF, with the same two-sided OFF-value property.
+        assert!(
+            !g.composed_cap,
+            "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §16.56)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_COMPOSED_CAP=0"),
+            "the default echo must NAME the composed-cap gate with its 0 value: {}",
+            g.echo_line()
+        );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
         assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
         // The ack-cadence gauge (goal-gate "Ack-Cadence Gauge", 2026-08-11)
@@ -939,6 +1026,17 @@ mod tests {
         assert!(
             g.echo_line().contains("RWM_ACKDIAG=0"),
             "the default echo must NAME the ack-cadence gauge with its 0 value: {}",
+            g.echo_line()
+        );
+        // The dead-wall onset/duration instrument (ADR-0070 validation path
+        // step 2, 2026-08-12) is the same class and ships the same way.
+        assert!(
+            !g.walldiag,
+            "RWM_WALLDIAG ships default OFF (DIAG-surface instrument)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_WALLDIAG=0"),
+            "the default echo must NAME the dead-wall gauge with its 0 value: {}",
             g.echo_line()
         );
         // Numeric defaults
