@@ -3389,7 +3389,7 @@ own doc comment — no claim in this table is new.
 | `RWM_QUIC_CC` | **quinn's BBR** | ADR-0054; the in-tree replacement `bbr_rs` is VERIFIED (matrix row 9) but **gated**, because quinn's shallow-buffer collapse is a priced structural bound (§16.38) |
 | `RWM_CC_PACE` | **= `copa_wire_active()`** ⇒ **OFF on the plain-reliable path** | ADR-0062; see the §12 correction — this is why the §12 amendment's pacing claim does not describe the shipped path |
 | `RWM_INFL_CAP` | **0 (off)** | matrix row 17: with it 0, `cwnd_full` is permanently FALSE, so the store cap is the SOLE brake on outstanding data |
-| `RWM_COMPOSED_CAP` | **OFF** | §16.56 / ADR-0070 Deliverable 2: the composed cap law as ONE arm (three-term pool + unified live set at both seats + the cwnd-derived late-stage brake). Never measured composed; no constant of its own |
+| `RWM_COMPOSED_CAP` | **OFF** | §16.56 stated it, **§16.57 MEASURED it (240 L1 invocations)**: the SHAPE is confirmed (span identically 0.000 in all 340 N=1 evaluations; engaged 93.6–99.8 %; brake closes) and the MAGNITUDE is refuted. At ρ=1 the law is `3.125·Σ(rate·K·RTprop) + span`, which exceeds `WIN_STORE_MAX` at every dual (c8 100 %, c8L 78.8 % — by 6.3×, c7 63.2 %), so three of five cells are UNSCORED by the pre-registered stop rule; where it IS interior it grants 2.24× the shipped cap at sc2, 2.4× the standing queue, and **1.43–1.48× WORSE delivered latency at goodput parity**, at CPU/byte above 1.05× on 8 of 10 cell-seeds. **OFF is a measured verdict, not a backlog** |
 | `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21; `RWM_WALLDIAG` is the dead-wall onset/duration instrument that replaces the unstable tick-share statistic (ADR-0070 validation step 2) |
 | Numeric: `RWM_GEN`=384, `RWM_PIPELINE`=2, `RWM_STORE_PATH_POOL`=2048, `RWM_STORE_BOOT`=**128**, `RWM_STORE_GAIN`=2.0, `RWM_EMIT_BURST`=64, `RWM_CC_PACE_HR`=1.1 | as listed | all pinned by `default_env_resolves_the_shipped_stack`. `RWM_STORE_BOOT = 128` is the boot-cap cliff value of §16.49/§16.50 |
 
@@ -12637,6 +12637,120 @@ floor — at c7 and c8, with the memory bound's bind fraction at zero. A
 composed cap that lands ON 4096 would mean the memory bound has become the
 law, which is the predecessor's exact defect reproduced, and is a STOP
 rather than a result.
+
+### 16.57 The composed cap law on the wire: the SHAPE is confirmed and the MAGNITUDE is refuted — `WIN_STORE_MAX` becomes the law at every dual cell, and where the law IS interior it buys 2.4× the standing queue and 43–48 % WORSE delivered latency at goodput parity (2026-08-13, `feat/composed-battery`, pre-registered at `1e09c00`, 240 L1 invocations / 199 live on one binary; `RWM_COMPOSED_CAP` **stays default OFF**, recommendation only, per the no-self-flip rule)
+
+§16.56 stated the composed law as a formula before it was code, and predicted
+it would land INTERIOR at c7 and c8 with the memory bound's bind fraction at
+zero. This section reports the pre-registered battery that tested it. The
+primary record is the goal-gate ledger ("Composed-Cap Battery — RESULTS");
+this section states the position and the mechanism.
+
+**The shape is right, and this is the first wire confirmation of it.** The
+span term reads **identically 0.000 in all 340 single-path evaluations** — the
+arithmetic vanishing (`skew` over a one-element set is zero) that retires the
+`active_paths()`/`live_paths()` topology branch without an `if N == 1`,
+measured rather than argued. The law is linear in the path count, carries no
+mode bit, no δ/ρ threshold and no topology predicate, and it ENGAGED at
+93.6–99.8 % of refreshes at every cell. The late-stage brake iterates
+`live_paths()` and actually closes (0.7–3.2 % of sender-loop ticks at c1, c8
+and sc2), so the `active_paths()` trap §16.56 wrote down in advance — a brake
+whose question is false by construction — was correctly avoided. **Nothing
+about the formula's shape was refuted, and §16.20's no-mode-switch invariant
+is satisfied by construction and observed.**
+
+**The magnitude is wrong, and §16.56's own honesty condition is what fails.**
+That section required the memory bound to be measured NOT to be the operating
+point. It is the operating point at every dual: the unclamped law exceeds
+`WIN_STORE_MAX` = 4096 in **100 % of c8 evaluations, 78.8 % at c8L and 63.2 %
+at c7** — at c8L by a mean factor of **6.3×** (25 956 against 4 096). So at
+three of five cells arm C's realized cap is bit-equal to the shipped arm's,
+both pinned at 4096, and the pre-registered stop rule reports those cells
+**UNSCORED** as a §16.55/ADR-0070 discipline-18 finding: they measured a
+clamp, not a law.
+
+**Why it asks for so much, stated as arithmetic.** From 833 `[3T]`
+evaluations, `slack / window` reads **exactly 2.125, minimum equal to maximum,
+at all five cells** — an identity of the implementation, not a measurement.
+With ρ = 1 (the shipped retain-until-acked scope) the law reduces to
+
+```text
+cap = 3.125 · Σᵢ(rateᵢ · Kᵢ · RTpropᵢ)  +  2·rate_fast·skew
+```
+
+so the "network window" and "emission slack" terms are **not independent** —
+the second is the first times 17/8, and the three-term law is a TWO-term law
+at the shipped scope. ADR-0070 derived that 3.125 (`1 + 17/8` in srtt units,
+against the shipped `gain` = 2.0); this battery is the first measurement of
+what shipping it costs: **+56 % outstanding by construction**, before the span
+term.
+
+**Where the law IS interior it loses, and the mechanism is its own queue.** At
+sc2 — interior (`mem` 0.059), fully warm (`eng` 0.994), brake engaged on 100 %
+of reps — the composed law grants **2.24× the shipped cap** (2291 against
+1024), holds **2.19× the outstanding**, and stands up **2.4× the queue**
+(q_p50 218 ms against 91 ms). The cell was already at 98 % utilisation, so
+none of it buys throughput: goodput is parity (0.993 / 1.003, within 2σ) and
+delivered latency goes **1.43–1.48× WORSE** (138.8 / 138.0 ms against
+93.8 / 96.5 ms), on both seeds, far outside 2σ. §16.50's F6 measured the
+predecessor arm at **0.44×/0.47×** on the same cell; the predicted inheritance
+did not merely fail to transfer, **it reversed**. §16.56's design sentence —
+*"`cap − BDP` IS the standing queue, δ prices queue as a latency budget"* — is
+the bar this fails: the law chose ≈ 2.1 BDP of standing queue and δ priced
+nothing. CPU/byte is above the pre-registered 1.05× band at **8 of 10
+cell-seeds** (c8L 1.46×), with only c7 passing — which does confirm the one
+discriminating prediction, that the cost is not `RWM_PLAIN_RS`'s.
+
+**A FORMULA-FIRST divergence, in the first law the rule governed.** §16.56
+publishes term 1 as `rateᵢ·RTpropᵢ`; `net::three_term_store_cap` computes
+`rateᵢ·Kᵢ·RTpropᵢ`, with `K` measured this session at 1.04–1.505. The window
+term therefore runs 4–50 % above the published expression and the whole law
+with it. The divergence is modest in magnitude and total in principle — the
+provenance table's line is not what runs — and **no test asserts code-vs-
+published-formula agreement for this law.** That is the same gap one level up
+from the reachability gap the battery's own smoke found, and it is owed before
+any successor is measured.
+
+**What this does and does not say about ADR-0070.** The review's verdicts all
+stand and this session strengthens them: the shipped law was measured pinned
+at 4096 in 64 of 65 dual reps and at 1024 in 21 of 22 sc2 reps, i.e. operating
+as a constant, exactly as claimed. It does not follow that the stated
+successor is better, and on the wire it is not. **A better-derived law that
+asks for 3.125 BDP is not an improvement over a worse-derived constant that
+asks for 2.0, at cells whose real constraint is queueing delay.** The
+derivation was audited for PROVENANCE and never for MAGNITUDE against the
+quantity the cap actually controls. The legacy-path deletion therefore comes
+off the table (ADR-0070 Decision item 5 conditions it on the composed law
+winning everywhere; it won nowhere), and the named successor is a DERIVATION
+question, not another battery: if `cap − BDP` is the queue and δ is its
+budget, then 3.125 BDP means 2.1 BDP of standing queue at ρ = 1, and either δ
+must bound it or the `1 + 17/8` composition is wrong for this scope.
+
+**One era finding, and it confirms a review prediction.** At c1 the shipped
+arm was expected at its `RELIABLE_STORE_MAX` = 1024 latch and measured
+**interior at 517–568 in 16 of 16 reps**. At N = 1 the chain falls to legacy
+`clamp(gain·BDP, 64, 1024)`; every prior session that recorded 1024 there ran
+before `RWM_HONEST_ANCHOR` became default ON (§16.51), on the anchor that
+over-read by ×4.6–7.4. ADR-0070 finding 6 predicted precisely this — *"an
+honest anchor makes this term smaller … invisible under the pinning, and
+immediately visible the moment the ramp is live"* — and at c1 there is no
+`N·knee` to absorb it. It is the first cell in the tree observed running the
+pooled chain as a law rather than as a constant.
+
+**The dead-wall statistic failed its own trial, on the measurand built to fix
+it.** §16.54's successor requirement was to measure the wall's ONSET and
+DURATION rather than its tick-share. The `[WALL]` instrument is sound — it
+reported on 199 of 199 live reps after the reachability fix, at a loop period
+three to four orders below the walls it measures — but the pre-registered
+stability claim FAILED: the arm ordering on `dur_ms` at c8 inverted between
+the main pool and the symmetric top-up (−1, +1, −1), which is the exact event
+that voided §16.54. Every `[WALL]`-scored claim is reported UNSCORED. The
+honest conclusion is stronger than "the new gauge is also bad": **at c8 the
+dead-wall contrast is unstable regardless of measurand**, the instability
+belongs to the cell's bistability and the n this project has been willing to
+spend, and the next attempt must change the DESIGN — a paired within-rep
+contrast, or a cell whose statistic is not bistable — not the statistic.
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 

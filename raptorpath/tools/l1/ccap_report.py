@@ -199,17 +199,28 @@ print("  whose liveness is `[CCAP] brake=`. A count below n here is CONTAMINATIO
 
 # ── 3. HEADROOM RE-MEASURE (discipline 16b) ──────────────────────────────
 print("\n### HEADROOM RE-MEASURE (discipline 16b) — tc, arm A, THIS session, EVERY cell\n")
-print(f"{'cell':<6} {'shaped':>10} {'util s42':>9} {'util s7':>9} {'headroom':>9}   claims permitted")
+print("  DENOMINATOR = THE TRANSFER WALL (`seconds`), NOT `INVOCATION_S`.")
+print("  `== INVOCATION_S ${SECONDS}` in perf_rwm_c.sh is the whole script's wall —")
+print("  namespace bring-up, netem/tbf setup, the verification pings and teardown —")
+print("  and it runs 1.12x the transfer at c1/c8L up to 2.11x at c8, where the")
+print("  transfer is only 2.4 s. Dividing shaped-device BYTES by that wall understates")
+print("  utilisation by exactly that ratio: it read c7 at 77.6% (22% headroom) when")
+print("  the cell is at 96.9% (3%), which would have LICENSED the unsatisfiable c7")
+print("  throughput target discipline 16 exists to forbid. Corrected below; `INVOC_S`")
+print("  is printed beside it so the correction is auditable rather than asserted.\n")
+print(f"{'cell':<6} {'shaped':>10} {'xfer_s':>7} {'INVOC_S':>8} {'util s42':>9} {'util s7':>9} {'headroom':>9}   claims permitted")
 PERMIT = {}
 for c in CELLS:
     us = {}
     for s in (42, 7):
         vals = []
         for r in LIVE[(c, "A")]:
-            if r["seed"] != s or not r.get("tc_bytes") or not r.get("tc_s"):
+            if r["seed"] != s or not r.get("tc_bytes") or not r.get("seconds"):
                 continue
-            vals.append(100.0 * r["tc_bytes"] * 8.0 / (r["tc_s"] * SHAPED_BPS[c]))
+            vals.append(100.0 * r["tc_bytes"] * 8.0 / (r["seconds"] * SHAPED_BPS[c]))
         us[s] = med(vals)
+    xfer = med([r.get("seconds") for r in LIVE[(c, "A")]])
+    invoc = med([r.get("tc_s") for r in LIVE[(c, "A")]])
     worst = max([u for u in us.values() if u is not None], default=None)
     hr = None if worst is None else 100.0 - worst
     PERMIT[c] = hr
@@ -217,8 +228,8 @@ for c in CELLS:
              if hr is None else
              ("throughput targets permitted" if hr >= 5.0
               else "PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)"))
-    print(f"{c:<6} {SHAPED_BPS[c]//1_000_000:>7} Mb {fmt(us[42]):>9} {fmt(us[7]):>9} "
-          f"{fmt(hr):>9}   {claim}")
+    print(f"{c:<6} {SHAPED_BPS[c]//1_000_000:>7} Mb {fmt(xfer,2):>7} {fmt(invoc,1):>8} "
+          f"{fmt(us[42]):>9} {fmt(us[7]):>9} {fmt(hr):>9}   {claim}")
 print("\n  The pre-registration wrote NO throughput target at any cell: c7 and sc2")
 print("  because they have none to give, c1 because the law has never run at 1 Gbit")
 print("  in any layer, c8/c8L because the statistic there is bistable. This table is")
