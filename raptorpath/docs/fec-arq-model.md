@@ -11425,6 +11425,137 @@ marginal parity, the honest arm 8.5% above rather than at the
 would-be default), so the blocker is not the honest-rate arm at all;
 it is the c8 harm in the enabler.
 
+### 16.53 The dead wall belonged to the arm, not the cell: a pre-registered STOP RULE fired on complete control data, and separating `RWM_STORE_CAP_UNIFIED` out of a four-arm pool moved the c8 collapse mode from 1/16 to 8/11 (2026-08-12, `feat/deadwall-battery`, pre-registered at `16284c0`, 192 L1 invocations; `RWM_DERIVED_SWEEP` **stays default OFF**, recommendation only, per the no-self-flip rule)
+
+§16.52 left `RWM_STORE_CAP_UNIFIED` OFF with the c8 harm named as U's own.
+"The Latency-Feedback Source" then re-attributed the c8 collapse to an
+**appended dead wall**: of 131 c8 reps, the 19 slowest all read `wait_tun`
+= 0 % **and** `wait_paused` = 0 %, against 5 in the other 112 — roughly 30 %
+of a collapse rep's wall spent neither reading source, nor blocked on its
+cap, nor sending. The arithmetic pointed at two recovery clocks, both
+`2·SRTT` clamped to `[25, 100] ms`, against a c8 SRTT of 376 ms that
+overshoots the ceiling 7.5×. `RWM_DERIVED_SWEEP` replaced the clamp with
+`max(2·srtt, patience_floor(jitter, srtt))` — no ceiling, zero new
+constants — and this battery was pre-registered to decide it.
+
+**It did not decide it. The pre-registered stop rule fired, and the reason
+it fired is the section's result.**
+
+#### The instrument gap that had to be closed first
+
+`RWM_DERIVED_SWEEP` shipped with **no liveness echo of its own** — only its
+`[GATES]` value, which proves the environment variable was *read* and
+nothing further. Both behavioural sites were correctly wired; neither was
+observable. MEASUREMENT DISCIPLINE 1 was therefore unsatisfiable for the
+one arm the battery existed to test.
+
+The gate now carries **two** echoes, and the separation is forced by the
+law's own **coincidence property**: `derived_recovery_round_us` returns
+*exactly* `tail_sweep_timeout_us` wherever `2·srtt` already lies inside
+`[25, 100] ms`. So `ACTIVE` (the site executed) and `DIVERGED` (the two
+laws actually differed) are different claims, and an arm with the first
+but not the second is bit-identical to its control. Without that split a
+null **result** reads as a null **effect**. Both are one-shot per site per
+process and emitted only on the armed arm.
+
+This mattered immediately. On **100 % of live R/AUR invocations** both
+echoes fired on both endpoints; on **100 % of A/AU invocations** neither
+did. Median derived round against the law it replaces: **1.21×** at sc2,
+**1.50×** at c8L, **1.76×** at c7, **1.77×** at c8, **2.85×** at c8-AUR —
+and **0.18×** at c1, where the derived round is 4.6 ms against the
+literal's 25 ms floor, diverging *downward*, outside the coincidence
+property's cover. There is no ambiguity anywhere in this battery about
+whether the mechanism ran.
+
+#### C1, the stop rule, on a full denominator
+
+> **C1** the control reproduces the mode — `p_A ≥ 3/16` pooled, **STOP RULE**.
+
+Measured **`p_A` = 1/16 = 0.0625** (s42 1/8, s7 0/8). The control arm
+recorded **zero aborts in either seed**: its denominator is full at the
+pre-registered n, and no top-up can move it. Per the pre-registration, no
+other row is scored and the battery is reported **UNSCORED**. Everything
+below is descriptive and post-hoc.
+
+Honestly bounded: this miss is **not extraordinary**. Under the historical
+pooled base rate (24/131 = 0.183, the rate the bar was set from),
+`P(X ≤ 1 | n = 16) = 0.18`, and the 95 % Wilson interval on `p_A`,
+**[0.011, 0.283]**, *contains* the 3/16 bar. C1 alone does not establish
+that anything moved.
+
+#### What does survive: the arms separate
+
+| arm | gate | s42 | s7 | pooled | rate | 95 % CI |
+|---|---|---|---|---|---|---|
+| A | — | 1/8 | 0/8 | 1/16 | 0.062 | [0.011, 0.283] |
+| R (=D) | `RWM_DERIVED_SWEEP` | 2/8 | 1/5 | 3/13 | 0.231 | [0.082, 0.503] |
+| AU | `RWM_STORE_CAP_UNIFIED` | 6/8 | 2/3 | **8/11** | **0.727** | **[0.434, 0.903]** |
+| AUR (=AUD) | both | 2/8 | 1/3 | 3/11 | 0.273 | [0.097, 0.566] |
+
+**A's interval and AU's do not overlap.** That is a within-session contrast
+and it does not depend on the absolute base rate, so it survives C1's
+imprecision entirely. The dead wall is an `RWM_STORE_CAP_UNIFIED`
+phenomenon; the shipped default barely carries it.
+
+The re-attribution that commissioned this branch drew the mode from **131
+c8 reps pooled across the A/AU/AL/ALU arms** — two of which carried U. The
+mode is real and reproduces at 8/11 where it lives. What does not survive
+is the step from *"the c8 collapse"* to *"a property of the c8 cell on the
+shipped stack"*. **The dead wall was addressed to the cell when it belonged
+to the arm**, and every downstream inference — including this branch's
+existence — inherited the pooling.
+
+#### The arbitration the branch was commissioned to make
+
+At c8, medians over live reps, against the bars the clauses would have
+faced:
+
+| gauge | A | R | ratio | bar |
+|---|---|---|---|---|
+| `ping_p99` | 120.5 ms | 118.5 ms | **0.98×** | C5 ≤ 1.25× — met |
+| `retx` | 1304 | 1386 | **1.06×** | C6 ≤ 0.85× — missed |
+
+Lengthening the recovery round **1.77×** left the retransmit population
+unchanged and bought no latency. The premise — that the ceiling
+manufactured a *spurious* retransmit plane a derived round would delete by
+arithmetic — **does not hold on the wire**. Those retransmits are doing
+work: they are a **backstop, not waste**. The model's predicted +25 % p90
+hole→service cost did not materialise either. The repair is **neither a win
+nor a trade — it is inert where it was supposed to act, and inert in the
+one direction that would have been good news.**
+
+#### The law is correct; it is simply not a lever
+
+At every cell where the clamp does not bind, 16 live reps each, law
+provably bound on every rep: **c1 −0.05 %, sc2 0.00 %, c7 +0.7 %**. c1 is
+the cell the pre-registration named as where a law defect would surface
+first, and the derived round there departs **5.4×** from the literal floor
+while goodput moves 0.05 %. **Removing the ceiling breaks nothing.** The
+*argument* in the derived round is vindicated on the wire even though the
+*lever* is not — a distinction worth keeping, because the two are usually
+refuted together.
+
+The transfer-length arm is **underpowered, not answered**: `p_A(200 MB)` =
+0/11 against `p_A(25 MB)` = 1/16 meets C8's bar numerically and
+discriminates nothing at that base rate. The c8-keying question stays open,
+and the arm that would settle it is `c8L-AU` — which the pre-registration,
+written before the arm separation was known, did not include.
+
+#### Standing
+
+`RWM_DERIVED_SWEEP` **stays default OFF** and is **not** a deletion
+candidate: the pre-registration makes deletion conditional on C2 failing,
+and C2 was never scored. The legacy clamped path stays live — it is the
+shipped default and nothing here argues against it.
+`RWM_STORE_CAP_UNIFIED` **stays default OFF**, now with the sharpest
+evidence yet: its c8 hazard is not a goodput shortfall to be tuned away but
+a distinct failure **mode** the default stack does not have. The one live
+lead is that the derived round appears to **halve** U's rate (0.273 against
+0.727, both seeds, n = 11, unscored) — which makes the successor a battery
+scored against the arm that *carries* the mode rather than a control that
+does not. A statistic with a 1/16 control base rate needs n ≈ 60 to resolve
+a halving; measured from AU's 8/11 the same contrast resolves at n = 8.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

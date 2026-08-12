@@ -28492,3 +28492,231 @@ arm; any arm with dnf > 0 is reported and not silently pooled.
 **No number in this block may be changed after the first VM contact.** If
 the battery is re-scoped, the re-scoping is a new block with its own commit
 and this one stays as written.
+
+## Dead-Wall Battery — RESULTS (2026-08-12) — the pre-registered STOP RULE FIRED: the battery is reported **UNSCORED**, and the reason it fired is itself the finding — at the shipped default the c8 dead wall is a **1/16** event, while on the `RWM_STORE_CAP_UNIFIED` arm it is an **8/11** event. The mode is real, it is U's, and it was never the default stack's. Scored against "The Derived Recovery Clamp — VM PRE-REGISTRATION" (`16284c0`), which is untouched.
+
+**ARM ALIAS.** The pre-registration names the arms {A, D, AU, AUD}; the driver
+spells the two derived-sweep arms **R = D** and **AUR = AUD**. Same partition,
+different letter, echoed in every log header.
+
+### L1 BATTERY PROVENANCE
+
+VM 10.1.5.16, 2026-08-12 **03:32:16 → 04:10:25 UTC (38 min)**. Binary sha256
+`8b2337cce580c200fef09d054665d8bf6a1837092b0ec4297ea7658b183168b0` = commit
+`465c28e`, branch `feat/deadwall-battery` from main `43b09fe`, **SAME binary
+every arm**, built fresh (stale rm'd, CRLF-normalized — `git archive` preserved
+CRLF from the blobs and `deadwall_battery.sh` failed `bash -n` on the VM before
+normalization; the documented trap, caught by the smoke). Xeon E5-2650 v3
+aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header. Seeds 42 AND 7,
+ARMCOUNT 8 every cell × arm, arms interleaved round-robin per rep, fresh
+topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1
+RWM_LATPROBE=1` everywhere. Drivers `tools/l1/deadwall_{battery,all}.sh`,
+`deadwall_parse.py`, `deadwall_report.py`. Ledgers
+`docs/l1-raw/deadwall-s{42,7}.log` + `deadwall-report.txt` +
+`deadwall-BINARIES.txt`; 22 MB of per-run client/server/qdisc/ping captures
+preserved on the VM at `/home/vibe/deadwall/diag/`. Lock `/tmp/rwm-vm.lock`
+held 03:12:34 → released after teardown verification.
+
+**INVOCATION ACCOUNTING (abort ≠ DNF ≠ INSTRUMENT-FAIL).** 192 headers, **161
+live**, **31 ABORT** — every abort summary-less, **every one of them seed 7**
+(the documented seed-7 topo-ping class; seed 42 recorded **zero** aborts) —
+and **0 DNF in any completed run, both seeds**. **ZERO** liveness,
+contamination or instrument flags on any captured invocation: no
+`ARM-LIVENESS-FAIL`, no `ARM-CONTAMINATION`, no `INSTRUMENT-FAIL`, no
+`RECOVMP-UNEXPECTED`, no `DS-ECHO-ONE-SIDED`, no `DS-NO-DIVERGENCE`.
+
+**THE ARM IS PROVABLY LIVE, AND THE LAW PROVABLY BOUND.** `RWM_DERIVED_SWEEP`
+had no echo of its own before this branch (`2dd7bb2`); it now carries two, and
+they separate "the site ran" from "the law bound" because the coincidence
+property makes those different claims. On **100 % of live R/AUR invocations**
+both echoes fired on both endpoints, and on **100 % of A/AU invocations
+neither did**. Median derived round against the clamped law it replaces:
+
+| cell | arm | median 2·SRTT source | derived | clamped | ratio |
+|---|---|---|---|---|---|
+| c1 | R | 2.3 ms | **4.6 ms** | 25.0 ms | **0.18×** (diverges DOWNWARD, below the legacy floor) |
+| sc2 | R | 60.6 ms | 121.3 ms | 100 ms | 1.21× |
+| c8L | R | 74.9 ms | 149.8 ms | 100 ms | 1.50× |
+| c7 | R | 87.9 ms | 175.8 ms | 100 ms | 1.76× |
+| c8 | R | 88.7 ms | 177.4 ms | 100 ms | 1.77× |
+| c8 | AUR | 142.7 ms | **285.4 ms** | 100 ms | **2.85×** |
+
+There is no null-result ambiguity anywhere in this battery. The clock the
+repair was built to change was changed, hard, at every cell, in both
+directions, on every rep.
+
+### C1 — THE STOP RULE, AND IT FIRED
+
+> **C1** the control reproduces the mode — `p_A ≥ 3/16` pooled.
+
+**`p_A` = 1/16 = 0.0625.** Bar 3/16 = 0.1875. **FAIL.**
+
+Per seed: **s42 1/8, s7 0/8**. The control arm `c8-A` recorded **zero aborts
+in either seed** — its denominator is FULL at the pre-registered n. The stop
+rule fired on complete data, and no top-up can move it.
+
+**Per the pre-registration, NO other row is scored and the battery is reported
+UNSCORED, verbatim**, as "The Latency-Feedback Source" reported its own matrix.
+Everything below this line is DESCRIPTIVE and POST-HOC. None of it is a scored
+verdict; none of it may be cited as one.
+
+**AND THE HONEST CAVEAT ON C1 ITSELF.** A miss this size is not extraordinary.
+Under the historical pooled c8 base rate (24/131 = 0.183 — the rate the 3/16
+bar was set from), `P(X ≤ 1 | n = 16) = 0.18`. So **C1 alone does not establish
+that the control's base rate moved**; it is equally consistent with an unlucky
+draw. The 95 % Wilson interval on `p_A` is **[0.011, 0.283]**, which *contains*
+the 3/16 bar. What follows does not rest on C1's absolute value.
+
+### WHAT DOES REST ON SOLID GROUND: THE ARM SEPARATION
+
+The dead-wall rate, per arm at c8, with 95 % Wilson intervals:
+
+| arm | =preg | s42 | s7 | pooled | rate | 95 % CI |
+|---|---|---|---|---|---|---|
+| **A** | A | 1/8 | 0/8 | **1/16** | 0.062 | [0.011, 0.283] |
+| **R** | D | 2/8 | 1/5 | **3/13** | 0.231 | [0.082, 0.503] |
+| **AU** | AU | 6/8 | 2/3 | **8/11** | **0.727** | **[0.434, 0.903]** |
+| **AUR** | AUD | 2/8 | 1/3 | **3/11** | 0.273 | [0.097, 0.566] |
+
+**A's interval and AU's interval do not overlap.** That separation survives
+C1's own imprecision, because it is a contrast *within* the session and does
+not depend on the absolute base rate at all. At this stack the c8 dead wall is
+**an `RWM_STORE_CAP_UNIFIED` phenomenon**, and the shipped default barely
+carries it.
+
+**THIS RE-READS THE RE-ATTRIBUTION THAT COMMISSIONED THIS BRANCH.** "The
+Latency-Feedback Source" established the mode from **131 c8 reps pooled over
+the A/AU/AL/ALU arms** — "the 19 slowest ALL read `wait_tun` = 0 % AND
+`wait_paused` = 0 %". That finding is not contradicted: the mode is real, and
+this session reproduces it at 8/11 where it lives. What is contradicted is the
+step from *"the c8 collapse"* to *"a property of the c8 cell on the shipped
+stack"*. Two of the four pooled arms carried U. Separating them — which no
+prior battery did at this cell — puts the mode almost entirely in one of them.
+**The dead wall was mis-addressed to the cell when it belonged to the arm.**
+
+### THE DERIVED CLOCK IS NOT THE DEFAULT STACK'S HANDLE (C2's substance, UNSCORED)
+
+`p_R` = 3/13 = 0.231 against `p_A` = 1/16 = 0.0625. C2 asked for
+`p_D ≤ p_A − 4/16`. The observed direction is not merely short of the bar, it
+is **inverted**, and it is inverted in **both seeds** (s42 2/8 vs 1/8; s7 1/5
+vs 0/8). The intervals overlap heavily, so *"R is worse than A"* is **NOT**
+established — what is established is that R is nowhere near 4/16 **below** A,
+which is what the clause asked.
+
+### THE C5/C6 ARBITRATION: THE SWEEPS WERE BACKSTOP, NOT SPURIOUS
+
+This is the question the branch was commissioned to arbitrate, and the wire
+answers it against the repair. At c8, medians over live reps:
+
+| gauge | A | R | ratio | the pre-registered bar it would have faced |
+|---|---|---|---|---|
+| `ping_p99` | 120.5 ms | 118.5 ms | **0.98×** | C5: ≤ 1.25× — **would have been met** |
+| `retx` | 1304 | 1386 | **1.06×** | C6: ≤ 0.85× — **would have been missed** |
+
+**Lengthening the recovery round by 1.77× left the retransmit population
+unchanged and bought no latency.** The model's premise — that the 100 ms
+ceiling was manufacturing a *spurious* retransmit plane that a derived round
+would delete by arithmetic — does not hold on the wire. The retransmits the
+sweeps fire at the default stack are **doing work**: they are a backstop, not
+waste. Equally, the model's predicted **+25 % p90 hole→service cost did not
+materialise** (`ping_p99` 0.98×), so the repair is not a tradeoff either.
+
+**It is neither a win nor a trade. It is inert where it was supposed to act,
+and inert in the one direction that would have been good news.**
+
+### THE LAW IS SAFE — IT IS SIMPLY NOT A LEVER (C7's substance, UNSCORED)
+
+At all three cells where the clamp does not bind, at 16 live reps each and
+with the law **provably bound** on every rep:
+
+| cell | A | R | Δ | divergence at that cell |
+|---|---|---|---|---|
+| c1 | 221.2 | 221.1 | **−0.05 %** | 0.18× (derived is *shorter* than the legacy floor) |
+| sc2 | 86.9 | 86.9 | **0.00 %** | 1.21× |
+| c7 | 171.7 | 172.9 | **+0.7 %** | 1.76× |
+
+`c1` is the cell the pre-registration named as where a law defect would surface
+FIRST — its 2·SRTT sits **below** the legacy `[25, 100] ms` band, outside the
+coincidence property's cover. Measured: the derived round there is **4.6 ms
+against the literal's 25 ms floor**, a 5.4× departure, on 16 of 16 reps — and
+goodput moves by 0.05 %. **The derived round is a correct strict
+generalization. Removing the ceiling breaks nothing.** That is a real result
+and it should be recorded as one: the *argument* in `8a29845` is vindicated on
+the wire even though the *lever* is not.
+
+### THE TRANSFER-LENGTH ARM: UNDERPOWERED, NOT ANSWERED (C8's substance, UNSCORED)
+
+`p_A(200 MB)` = **0/11**, `p_A(25 MB)` = 1/16. C8's bar
+(`≤ 0.5 × p_A(25)` = 0.031) is numerically met — **and the test is vacuous at
+this base rate.** With the 25 MB control itself at 1/16, "0 at 200 MB"
+(95 % CI [0.000, 0.259]) cannot discriminate a byte-count artifact from a mode
+that simply did not fire in the control at either length. **The c8-keying
+question is NOT closed by this session and must not be reported as closed.**
+The arm that *would* have answered it is `c8L-AU`, which this battery did not
+run — because the pre-registration, written before the arm separation was
+known, put the length contrast on A and D.
+
+### THE ONE PROMISING SIGNAL (C4's substance, UNSCORED, n = 11)
+
+`p_AUR` = 3/11 = 0.273 against `p_AU` = 8/11 = 0.727 — the derived round
+roughly **halves** U's collapse rate, consistently in both seeds (s42 2/8 vs
+6/8; s7 1/3 vs 2/3). Intervals overlap ([0.097, 0.566] vs [0.434, 0.903]), the
+seed-7 leg is n = 3, and **the battery is UNSCORED**, so this is a lead and
+nothing more. But it is the lead the successor should be built on: U's c8
+hazard does appear to be clock-mediated, which is exactly what the model's
+PIN 4 claimed and what C3/C4 were written to test.
+
+### GOODPUT, AND WHY IT DECIDES NOTHING HERE
+
+c8 medians: A 80.6, R 62.2, AU 60.7, AUR 59.5 Mbit/s. R reads **−23 %** against
+A and does so in both seeds (s42 66.8 vs 86.7; s7 61.9 vs 78.6). **This
+resolves nothing and is not quoted as a regression**: the pre-registration
+opens by establishing c8's 2σ band at **42–46 % of its own mean**, which is why
+goodput was excluded as the statistic in the first place. The number is
+recorded because it is not a *win* either, and a lever that costs nothing must
+still earn its default on something.
+
+### FLIP RECOMMENDATIONS (recommendations only — no battery flips its own default)
+
+1. **`RWM_DERIVED_SWEEP` — NO FLIP. Stays DEFAULT OFF.** It does not move the
+   statistic it was built for at the shipped default (0.231 vs 0.062,
+   inverted), it does not shrink the retransmit plane (1.06× against a 0.85×
+   bar), and it buys no latency (0.98×). It is *safe* — three guard cells flat
+   to within 0.7 % with the law provably bound, including at c1 where it
+   departs 5.4× from the literal — but safety is not a reason to ship a lever.
+2. **`RWM_DERIVED_SWEEP` is NOT yet a deletion candidate.** The
+   pre-registration's refutation branch makes deletion conditional on **C2
+   failing**, and C2 was never scored — C1 stopped the battery first. Under the
+   contract the gate is UNSCORED, not refuted. It also now has a live successor
+   hypothesis (the AU interaction) that deletion would foreclose. **Keep the
+   gate, keep it OFF, re-pre-register.**
+3. **The legacy clamped path (`[25, 100] ms`) MUST NOT be deleted.** It is the
+   shipped default and this session produces no evidence against it. The
+   `sweep_timeout_us` / `hole_refresh` gate-OFF paths stay live.
+4. **`RWM_STORE_CAP_UNIFIED` — stays DEFAULT OFF, and this session is the
+   sharpest evidence yet for why.** §16.52 left U OFF because the c8 harm is
+   U's own; this battery *quantifies* that harm as a dead-wall rate of
+   **0.727 [0.434, 0.903] against the default's 0.062 [0.011, 0.283]**, with
+   non-overlapping intervals — the first arm-separated measurement of it. U's
+   c8 hazard is not a goodput shortfall to be tuned away; it is a distinct
+   failure MODE that the default stack does not have.
+5. **U's unblocking now has a named, measured handle** (recommendation 4's
+   corollary): the derived round halves U's rate. That is the deletion chain's
+   actual next question, and it is no longer about the default stack at all.
+
+### THE SUCCESSOR, AND THE METHODOLOGICAL LESSON
+
+**Pre-register the next battery on the corrected premise: score the treatment
+against the arm that CARRIES the mode, not against a control that does not.**
+A statistic whose control base rate is 1/16 needs n ≈ 60 per arm to resolve a
+halving; the same contrast measured from AU's 8/11 resolves at n = 8. The
+successor cell is `c8-AU` as the baseline with `RWM_DERIVED_SWEEP` as the
+treatment, plus the `c8L-AU` length arm this session could not run.
+
+**THE LESSON IS ABOUT POOLING.** The dead-wall mode was named, quantified and
+re-attributed from a 131-rep population **pooled across four arms**, two of
+which carried the gate that turns out to own the mode. Every downstream
+inference — including this branch's existence — inherited that pooling. The
+statistic was correct, the arms were recorded, and nobody split them until a
+battery was built whose control arm was scored on its own. **A per-arm rate
+should be read per arm before it is read per cell.**

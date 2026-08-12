@@ -66,11 +66,11 @@ use super::control_msg::{ControlCtx, handle_control_message};
 use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
-    BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, GAP_ACK_MIN_INTERVAL,
-    GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL, collect_gen_deficits,
-    create_window_decoder, deliver_packet, extract_window_packets, hole_refresh,
-    horizon_gate_deficits, now_us, received_sack_ranges, shed_armed, shed_recv_budget_ok,
-    shed_recv_hold, stall_threshold_us, window_ack_emission,
+    BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
+    GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
+    collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
+    hole_nack_refresh, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
+    shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::control::FecRateController;
 use crate::fec::{FecBackend, FecDecoder, WindowDecoder};
@@ -190,6 +190,9 @@ pub(crate) async fn run_receiver(
     // goal-gate "The Derived Recovery Clamp" (`RWM_DERIVED_SWEEP`, default
     // OFF): the stalled-hole refresh cadence on the derived round.
     let recv_derived_sweep = recv_gates.derived_sweep;
+    // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
+    // DIVERGED). Observation only; emitted on the armed arm alone.
+    let mut recv_derived_echo = DerivedRoundEcho::default();
     let mut recv_shed_diag_at = Instant::now();
     // RWM Phase C unordered delivery: next in-order seq NOT yet received
     // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -736,6 +739,17 @@ pub(crate) async fn run_receiver(
                     // `RWM_DERIVED_SWEEP` the cadence is the DERIVED round
                     // (no ceiling); OFF ⇒ `hole_nack_refresh` verbatim.
                     let refresh = hole_refresh(recv_derived_sweep, srtt, srtt_jitter_us);
+                    if recv_derived_sweep {
+                        if let Some(s) = srtt {
+                            recv_derived_echo.observe(
+                                "receiver-hole-refresh",
+                                s.as_micros() as u64,
+                                srtt_jitter_us,
+                                refresh.as_micros() as u64,
+                                hole_nack_refresh(srtt).as_micros() as u64,
+                            );
+                        }
+                    }
                     Some(last_hole_nack_at + refresh)
                 } else {
                     // δ-honest shed (fix C): under the unified realtime

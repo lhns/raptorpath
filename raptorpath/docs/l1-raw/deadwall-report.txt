@@ -1,0 +1,26 @@
+==============================================================================
+THE DEAD-WALL BATTERY — scored against goal-gate
+"The Derived Recovery Clamp — VM PRE-REGISTRATION" (commit 16284c0)
+==============================================================================
+
+PER ARM (pooled over seeds unless noted)
+cell arm  =preg    n  dead   rate     mbps     retx     p99  dnf  divDS
+c8   A    A       16     1  0.062     80.6     1304   120.5    0      0
+c8   R    D       16     3  0.231     62.2     1386   118.5    3     13
+c8   AU   AU      16     8  0.727     60.7     2254   129.5    5      0
+c8   AUR  AUD     16     3  0.273     59.5     1681   125.5    5     11
+c8L  A    A       16     0  0.000     77.5     8714   160.0    5      0
+c8L  R    D       16     0  0.000     73.1    10400   169.5    3     13
+sc2  A    A       16     0  0.000     86.9     3068   106.0    2      0
+sc2  R    D       16     0  0.000     86.9     3150   107.0    4     12
+c1   A    A       16     0  0.000    221.2      691     2.8    0      0
+c1   R    D       16     0  0.000    221.1      934     2.8    0     16
+c7   A    A       16     0  0.000    171.7     5522   158.5    1      0
+c7   R    D       16     0  0.000    172.9     5072   153.5    3     13
+
+------------------------------------------------------------------------------
+C1  the control reproduces the mode   p_A = 1/16 = 0.062   bar >= 0.188   FAIL   [STOP RULE]
+
+The collapse class is NOT present in this session. Per the
+pre-registration, NO other row is scored and the battery is
+reported **UNSCORED**, verbatim.
