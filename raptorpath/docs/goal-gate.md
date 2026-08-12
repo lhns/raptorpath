@@ -29899,3 +29899,66 @@ Every bracketed instrument in the engine was classified by emission site. `[DIAG
 ### GATES
 
 Engine code changed, so the full set: `cargo test -p raptorpath --lib`, `-p raptorpath-math`, `--doc`, `gate_suite --release`, every loopback binary including the new `gauge_reachability`, and `store_cap_sf_bench` (task 46), `store_cap_bench`, `recovery_bench`, `slack_bench`. **The shipped default path is behaviour-identical**: no engine value is read from the carrier, `RWM_WALLDIAG` and `RWM_COMPOSED_CAP` both ship OFF, so the destructor is one `OnceLock` read returning `None` plus one `bool` test, once per run, off every hot path.
+
+### PRE-BATTERY SMOKE, TAKE 2 — GREEN, AND THE BATTERY WAS LAUNCHED (2026-08-12 21:37:59–21:38:32 UTC; binary sha256 `9093c5ac539c45d5353494481295c1417c57bc52bc8eab25511d2bbb71b93d47` = commit `e878ee2`, whose ENGINE TREE IS IDENTICAL to main@`da37555` — the gauge-reachability fix merged in; rebuilt on the VM in 5m12s from a cleared, CRLF-converted `git archive` tree; same kernel and CPU era as take 1; seed 42, 1 rep/arm at `c8`@25 MB and `sc2`, driver `tools/l1/ccap_battery.sh`, log `/home/vibe/ccap/smoke2-s42.log`; lock held continuously since 19:36:51 UTC)
+
+**Shakeout evidence, n = 1 per cell-arm, recorded BEFORE the battery. It scores
+nothing and touches no number in the pre-registration (`1e09c00`, asserted
+byte-identical after the merge: 27 695 bytes, sha256 `272ea1c5c9a1986a`).**
+
+#### THE CLAUSES THAT FAILED IN TAKE 1 NOW PASS
+
+| clause | c8-A | c8-C | sc2-A | sc2-C |
+|---|---|---|---|---|
+| `[WALL]` present **exactly once** | **1** ✓ | **1** ✓ | **1** ✓ | **1** ✓ |
+| `[CCAP]` present exactly once on C, absent on A | 0 ✓ | **1** ✓ | 0 ✓ | **1** ✓ |
+| `[GATES] RWM_COMPOSED_CAP=` two-sided | `0/0` ✓ | `1/1` ✓ | `0/0` ✓ | `1/1` ✓ |
+| `three-term outstanding limit ACTIVE` | absent ✓ | present ✓ | absent ✓ | present ✓ |
+| unified echo — expected ABSENT both arms | ✓ | ✓ | ✓ | ✓ |
+| ABORT / DNF / INSTRUMENT-FAIL | 0/0/0 | 0/0/0 | 0/0/0 | 0/0/0 |
+
+Take 1 read `[CCAP]` 0/2 and `[WALL]` 1/4 on the pre-fix engine. Take 2 reads
+**4/4 and 2/2, with zero INSTRUMENT-FAIL lines in the whole run.** The
+destructor site is reached on the exit the `perf` harness actually takes.
+
+#### THE GAUGES CARRY REAL MEASUREMENTS, NOT JUST LINES
+
+```text
+c8-C   [CCAP] eng=343/372  cap=3804.9 mem=1.0000 floor=0.0000 brake_frac=0.0107
+sc2-C  [CCAP] eng=1595/1605 cap=2203.8 mem=0.0000 floor=0.0000 brake_frac=0.0350
+c8-A   [WALL] onset=0.7990 dur_ms=430.9 retx=93 total_ms=2143.6 it_ms=0.098
+c8-C   [WALL] onset=1.0000 dur_ms=0.0   retx=0  total_ms=2383.7 it_ms=0.109
+sc2-A  [WALL] onset=0.9911 dur_ms=82.0  retx=15 total_ms=9214.8 it_ms=0.102
+sc2-C  [WALL] onset=1.0000 dur_ms=0.0   retx=0  total_ms=9114.5 it_ms=0.101
+```
+
+**These are the first non-zero `[WALL]` readings in existence** — the
+instrument's only prior calibration was the loopback zero end
+(`onset=1.0000 dur_ms=0.0`). `c8-A` shows a 430.9 ms terminal window
+containing 93 retransmits on a 2.14 s transfer, i.e. a recovery tail rather
+than a hang, which is exactly the discrimination `retx`-inside-the-window was
+put there to make. `it_ms` ≈ 0.10 on every run, so the resolution bound is
+three to four orders below the c8 wall it is being asked to measure.
+
+#### THE OBSERVATION THE BATTERY EXISTS TO SETTLE, AND IT IS NOT SETTLED HERE
+
+`c8-C` reads **`mem=1.0000`** — the `WIN_STORE_MAX` memory bound binds on
+**every engaged refresh** — with the realized cap at 3804.9. Take 1's `[3T]`
+line said the same thing by arithmetic (window 1690.99 + slack 3593.36 + span
+1729.32 = 7013.67 unclamped, against a 4096 bound). At `sc2` the law is
+interior (`mem=0.0000`, cap 2203.8).
+
+**That is the pre-registration's S1 condition, and if it reproduces at n = 24
+the c8 cell is UNSCORED by the battery's own stop rule** — a discipline-18
+defect finding, and a finding about the law's INPUTS at c8 rather than about
+the law losing. It is *not* a reason to withhold the battery: S1 is scoped per
+cell, the other four cells are unaffected, `sc2` already reads interior on
+this evidence, and a stop rule firing on a cell it was written for is the
+instrument working. **n = 1, on the cell whose statistic is bistable, from a
+smoke — it must not be quoted as a result.**
+
+#### LAUNCH
+
+Full battery launched detached at **21:39:55 UTC**, seed 42 then seed 7,
+`tools/l1/ccap_all.sh 12`, sentinel `/home/vibe/ccap/DONE-ALL`. NOT POLLED
+(discipline 13).
