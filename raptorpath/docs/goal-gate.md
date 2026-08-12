@@ -29573,6 +29573,290 @@ against the arm carrying the mode, headroom beside every target (item 16);
 (5) per-gate flips in separate commits with register rows — the legacy-path
 deletion returns only if the composed law wins everywhere.
 
+## Composed-Cap Battery â€” VM PRE-REGISTRATION (2026-08-12, `feat/composed-battery` from main@`b68c020`) â€” MEASUREMENT DISCIPLINE 11 + 14 + 16 + 17 + 18, and CLAUDE.md **FORMULA-FIRST LAWS**: written and committed BEFORE any VM contact, in its OWN commit, before the driver exists and before a single number is read. **This is ADR-0070 Deliverable 3 step 4** â€” the pre-registered battery the approved validation path names, run only after its steps 1â€“3 landed (the law-shape prevention kit, the `[WALL]` onset/duration instrument, and the composed law as ONE SF-bench arm). The gate under test is `RWM_COMPOSED_CAP`, default OFF. **Nothing in this session flips a default.**
+
+### THE QUESTION, one sentence
+
+ADR-0070 found the shipped outstanding-pool cap to be a fitted constant wearing a law's clothes, paper Â§16.56 stated the successor as a FORMULA before it was code, and the SF bench measured that composition landing **INTERIOR at all five of its geometries** â€” so this battery asks the one question the bench cannot: does the composed law express itself on the wire (interior, engaged, braking) at real cells, and does it cost anything.
+
+### THE LAW UNDER TEST, VERBATIM â€” the FORMULA-FIRST requirement restated as the contract
+
+Copied from paper Â§16.56 without alteration. Any divergence between this block and Â§16.56 is a defect in THIS block, and Â§16.56 wins.
+
+```text
+cap = Î£áµ¢ over live_paths [ rateáµ¢Â·RTpropáµ¢ + rateáµ¢Â·stall(Î´, Ï, srttáµ¢) ]  +  2Â·rate_fastÂ·skew
+
+  stall(Î´, Ï, srtt) = (1 âˆ’ Ï)Â·D(Î´) + ÏÂ·(9/8Â·srtt + srtt),   D(Î´) = min(b(Î´)Â·RTprop, 2Â·RTprop)
+  skew              = (maxáµ¢ RTpropáµ¢ âˆ’ mináµ¢ RTpropáµ¢) / 2
+  rate_fast         = the rate of the LEAST-RTprop path (the one that overtakes)
+```
+
+| symbol | provenance â€” one line each (Â§16.56's table, which is the audit the predecessor failed) |
+|---|---|
+| `rateáµ¢` | **measured** â€” the per-path delivered-rate anchor `btlbw_sym_per_s`, on Â§16.51's honest sampler (default ON since 2026-08-11) |
+| `RTpropáµ¢`, `srttáµ¢` | **measured** â€” the path's own `min_rtt` / `srtt`; `srtt = KÂ·RTprop` on the honest ack clock |
+| `9/8` | **cited** â€” RFC 9002 Â§6.1.2 `kTimeThreshold`, not fitted |
+| the second `srtt` in the stall | **derived** â€” one retransmit round trip, Â§16.43 |
+| `2` in `2Â·rate_fastÂ·skew` | **identified, not fitted** â€” Â§16.43's PS5 measured the span/skew slope at 2.00 Â± 0.03 over 18 of 18 non-zero cells, across Ã—13 in rate and Ã—40 in skew; a round-trip-vs-one-way DEFINITION boundary |
+| `b(Î´)`, `Ï` | **declared DIALS** â€” named points on the triangle, never modes (Â§16.20). Ï = 1 in this scope: the plain dynamic cap is retain-until-acked, which is a SCOPE, not a branch |
+| `live_paths()` | the liveness predicate, unconditional; **the law never counts paths** |
+| `floor` = 64 | **the one paroled constant.** Provenance ABSENT (ADR-0070 finding 5). Kept because deleting it is a separate decision, and NAMED with its bind fraction in `[CCAP]` so it can never bind silently again |
+| `WIN_STORE_MAX` = 4096 | a **RESOURCE LIMIT stated OUTSIDE the law** â€” a memory bound (4096 Ã— ~1.2 KB â‰ˆ 5 MB) that may abort, never a term that shapes. Its bind fraction is REPORTED, per the FORMULA-FIRST clamp rule |
+
+**Shape agreed before any number (discipline 17c).** The sentence the law implements is *"the pool funds, per path, the network window plus the emission slack, plus one round trip of resequencing span."* The expression is a Î£ over paths plus one cross-path term â€” both LINEAR in the path count, with the span term identically zero at N = 1 because `skew` over a one-element set is zero BY ARITHMETIC. No `if N == 1`, no topology predicate, no Î´/Ï threshold. Pinned always-on by `three_term_store_cap_value_is_linear_in_n_the_template_applied` over N = 1â€¦8. This is the exact shape agreement `gainÂ·NÂ·Î£` failed while its own doc comment claimed it.
+
+### THE ARMS (both carry `RWM_ACKDIAG=1`, `RWM_WALLDIAG=1`, `RWM_DIAG=1`, `RWM_LATPROBE=1`, `RWM_GEN=0`)
+
+| arm | env | role |
+|---|---|---|
+| **A** | (unset) | **the shipped default** â€” `path_scaled_store_cap` = `clamp(gainÂ·NÂ·Î£, 64, max(NÂ·knee, 64))`, the law ADR-0070 puts on trial |
+| **C** | `RWM_COMPOSED_CAP=1` | **the composed law, as ONE arm** â€” the three-term pool at the head of the plain dyn-cap chain, the unified live set at the BRAKE, and the late-stage per-path brake whose cap is the path's OWN cwnd. Composing is all it does: no law and no constant of its own |
+
+Seeds 42 AND 7, arms interleaved round-robin per rep, fresh topology per invocation, one run per invocation, **ONE binary for every arm, every cell and both seeds**.
+
+**What C is NOT â€” stated because the wire's nearest prior is a DIFFERENT arm, and this is where a transcription error would enter.** The closest thing to C ever run on the wire is Â§16.50's `BHU` (`RWM_THREE_TERM=1 RWM_PLAIN_RS=1 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=1 RWM_STORE_CAP_UNIFIED=1`). **C is not BHU.** C does not set `RWM_PLAIN_RS` (whose c7 CPU class of 1.09â€“1.10Ã— is Â§16.50's F4 blocker, measured twice); does not set `RWM_HONEST_K` (OFF as a family verdict); and does not set `RWM_STORE_CAP_UNIFIED` (the pool law reads `live_paths()` unconditionally, so the U bit is a no-op at the pool â€” C's "unified set" is at the BRAKE). C also carries one thing BHU never had: the late-stage brake. **Every BHU/DHU number quoted below is therefore CONTEXT, never a prediction**, and each is labelled as such where it appears.
+
+### CELLS, n, AND THE HEADROOM MEASURED BESIDE EVERY TARGET (discipline 16)
+
+Headroom = 1 âˆ’ arm-A utilisation of the shaped link, from `tc -s qdisc show`, captured on **EVERY** cell and every invocation â€” not on a subset, which is the omission item 16 exists to prevent. The prior class below is what these targets are WRITTEN against (three same-era sessions: goal-gate `:22602`, `:22748`, `:23457`); the session's own tc re-measure is what they will be SCORED against.
+
+| cell | topology | bytes | shaped | prior arm-A util (three sessions) | **headroom** | claims PERMITTED | n/seed |
+|---|---|---|---|---|---|---|---|
+| `c1` | c1/c1 single | 400 MB | 1 Gbit | 23.4 / 23.8 / 25.2 % | **~75 %** | throughput targets permitted â€” **and none is written; see the non-predictions** | 8 |
+| `c7` | c2/c2 dual | 200 MB | 200 Mbit | 96.1 / 97.2 / 97.2 % | **~3 %** | **parity floor + latency + cap-shape ONLY. NO throughput target.** | 8 |
+| `c8` | c2/c3 dual | 25 MB | 120 Mbit | 69.7 / 76.8 / 80.6 % | ~20â€“30 % | no-regression + `[WALL]` + cap-shape; **no mean-based target** | 12 |
+| `c8L` | c2/c3 dual | 200 MB | 120 Mbit | the length axis; util as c8 | ~20â€“30 % | as c8 â€” the dead-wall regime boundary | 12 |
+| `sc2` | c2/c2 single | 100 MB | 100 Mbit | 98.0 / 98.6 / 100.3 % | **none** | **parity + latency survival ONLY** | 8 |
+
+`n = 12/seed` at both c8 cells is the mode-rate lesson applied: c8's per-rep statistic is a low-base-rate quantity whose CI is wide at small n, and the last two batteries were reported UNSCORED partly for want of reps on the arm carrying the mode. `n = 8/seed` elsewhere. Pooled `n = 24` (c8 cells) / `16` (others) per arm.
+
+**THE ARITHMETIC THIS TABLE FORCES, AND IT IS A FINDING BEFORE THE RUN.** The SF bench's single largest goodput signal for the composed law is **c7 at C/A = 1.12Ã—**. The wire's c7 runs at 96â€“97 % of its shaped 200 Mbit. **A +12 % claim at c7 is 224 Mbit on a 200 Mbit link, and it would be unsatisfiable at the moment it was written** â€” precisely the class of defect item 16 was added for, caught here BEFORE the pre-registration rather than after the scoring. So no c7 throughput target is written; c7 is scored on a parity FLOOR, on the cap's shape, and on latency. Symmetrically, the ONE cell in this table with headroom to carry a throughput claim (`c1`, ~75 %) is the ONE cell this law has never run at in any layer. **This battery therefore states in advance that it cannot deliver a headline goodput win, and that this is a property of the cell table crossed with the bench's coverage â€” not a hedge, and not something to be discovered in the results section.**
+
+### WHAT THE COMPONENT BENCH PREDICTS (discipline 14c), AND THE HONEST TRANSFER STATEMENT
+
+The SF bench measured the composed arm at five geometries in the 8 s honest era (`sf_composed_cap_law_as_one_arm`, commit `1f440db`; A = shipped, 3T = the pool law alone, C = composed):
+
+| geometry | A cap | 3T cap | C cap | interior | brake % | C/A goodput |
+|---|---|---|---|---|---|---|
+| `sc2` single fast (c1-CLASS, **not** 1 Gbit â€” it is C2, 100 Mbit / 10 ms) | 155.9 | 319.5 | 289.3 | YES | 2.3 % | 1.00Ã— |
+| `sc3` single slow | 147.5 | 418.7 | 457.5 | YES | 53.0 % | 0.99Ã— |
+| `c7` dual symmetric | 352.3 | 561.9 | 565.9 | YES | 1.8 % | 1.12Ã— |
+| `c8` dual asym (rate + RTT) | 395.9 | 1314.1 | 1297.4 | YES | 33.4 % | 1.02Ã— |
+| `c7x4` symmetric quad | 587.9 | 1127.5 | 1135.2 | YES | 4.0 % | 1.03Ã— |
+
+**WHAT THE BENCH CANNOT SEE, stated so the battery knows what it is for (discipline 14c's second clause).** It has no 1 Gbit geometry and one was deliberately not invented (`store_cap_sf_bench.rs:5802-5808`: *"Inventing a 1 Gbit spec here would be manufacturing a wire number to satisfy a column, which is the failure ADR-0070 finding 4 records about the knee â€¦ the 1 Gbit cell stays a VM question"*). It has no GE loss process, no netem jitter, no real ack cadence, no seed-7 abort class, and no transfer-length axis at all â€” so it cannot see the dead wall, cannot see the length scoping, and cannot see delivered latency.
+
+**THE TRANSFER HAS FAILED BEFORE, AND THIS BLOCK SAYS SO BEFORE IT IS USED.** Benchâ†’wire transfer is this project's most reliably broken inference: the SF bench's geography claims failed twice on measured inputs (G1/G2), "The Coupling Model" was refuted arithmetically, "The Queue Fix" refuted its own handover's premise, and "Cap-Refresh Warmth" refuted the premise it was built to confirm. Therefore: **DIRECTIONS and the cap's INTERIORITY are predicted; MAGNITUDES are bounded loosely and decade-wide; no bench ratio is transcribed as a wire target.** The mode-hunt lesson is applied literally â€” *a bar keyed to a transcribed point estimate from another session is a bar keyed to a hypothesis* â€” so **every bar below is stated against a SAME-SESSION measurement**, never against a transcribed number.
+
+### THE PREDICTIONS â€” named, each with its falsifier
+
+* **P-INTERIOR â€” the primary prediction, and the one Â§16.56 stakes the law on.** At EVERY cell, arm C reads `[CCAP] mem=0.0000` **and** `floor=0.0000` (bind fractions over ENGAGED refreshes), and `capbind_check.py` reports `ceiling=none â€¦ name=interior` for every `(cell, C)` group.
+  *Falsified (memory bound)* if `mem` > 0.5 on a majority of a cell's C reps â€” the memory bound has become the law, which is the predecessor's exact defect reproduced; Â§16.56 calls that **a STOP, not a result**.
+  *Falsified (paroled floor)* if `floor` > 0.5 on a majority. **Disclosed in advance, because it has already happened once:** the composed-cap LOOPBACK read `[CCAP] floor=1.0000` â€” on a 50 Âµs-RTT loopback the law asks for ~15 symbols and the paroled 64 binds on every engaged refresh, the `shal8` class again, caught by the report layer on its first run. The wire's RTprops are 1â€“20 ms, two to three orders of magnitude larger, so the floor is NOT expected to bind at any cell here; if it does, that is the floor's derivation being owed, not the law failing, and it is a discipline-18 finding either way.
+
+* **P-PINNED â€” the contrast P-INTERIOR is against, re-measured in the same session that scores against it.** Arm A reads `occcap_p50` = **exactly 4096** (`NÂ·knee` and `WIN_STORE_MAX` collide at N = 2: one bind with two names) on a MAJORITY of c7 and c8 reps, and **exactly 1024** (`RELIABLE_STORE_MAX`, the N < 2 latch) on a majority of c1 and sc2 reps, with a `capboot_frac` minority at c1 (Â§16.50 measured 28â€“30 % on arm A itself â€” context).
+  *Falsified if* A is interior at c7 or c8. ADR-0070's finding 2 rests on 178 dual reps of A pinned at exactly 4096 across five sessions; if this session's A is not pinned, something under the transport has moved and **NOTHING in this battery is scored** until that is explained.
+
+* **P-ENGAGE â€” discipline 1 at the level of the law, not of the gate.** Every C rep reads `[CCAP] eng=n/N` with `n/N â‰¥ 0.9`.
+  *Falsified if* `eng=0/N` while `[GATES] RWM_COMPOSED_CAP=1`: that is a **WARM-UP FAILURE, not a null result** (some live path was cold at every refresh). It is an INSTRUMENT-FAIL, the rep carries no datum, and Â§16.56 put the field there precisely so the two can never be confused again.
+
+* **P-BRAKE â€” the axis that has never existed anywhere.** `[CCAP] brake_frac` > 0.005 on a majority of C reps at every cell, and the ASYMMETRIC dual (`c8`/`c8L`) reads the largest brake share of the five cells. Bench calibration, quoted as calibration and not as a target: 1.8 % (c7 symmetric) â€¦ 4.0 % (quad) â€¦ 33.4 % (c8 asym) â€¦ 53.0 % (single slow).
+  *Falsified if* `brake_frac` = 0 everywhere: C is then bit-identical to the three-term pool arm, its result is a **null EFFECT and not a null RESULT**, and no claim about *the composition* may be made from this session â€” only about the pool law, which is already measured.
+
+* **P-CAPBAND â€” direction firm, magnitude loose, bands deliberately decade-wide.** C's `occcap_p50` is **strictly below A's** at c7 and c8 (A pinned at 4096) and lands in **[200, 2500]** at both. At c1 and sc2 (N = 1, A latched at 1024) C lands in **[150, 1000]**.
+  *Context, measured on BHU and NOT a prediction for C:* the wire's own prior for the pool term at c1 is 438â€“526 symbols (window 140â€“168, slack 300â€“360 at rtp â‰ˆ 2 ms, Â§16.50), and three-term arm A read `cap = 264` at c1 against 488/163 predicted (goal-gate `:20980`).
+  *Falsified if* C's cap sits outside those bands â€” the law is not computing what its terms say at wire inputs, which is a mechanism finding before it is a performance one.
+
+* **P-LATENCY-SC2 â€” the halved-latency result must SURVIVE.** Â§16.50's F6 measured the three-term law on honest inputs halving delivered latency at sc2 at goodput parity: probe p50 **42.6 Â± 8.1 / 44.2 Â± 8.6 ms against A's 96.2 Â± 13.6 / 93.9 Â± 15.8 â€” 0.44Ã— / 0.47Ã—, both exceeding 2Ïƒ**, p99 49.3 / 51.5, at CPU/byte 0.99â€“1.01. Decisively, `DHU` â€” the same stack WITHOUT the law â€” stayed at A's 84â€“85 ms, so **the win belongs to the law, not to the sampler.** C is that law on honest inputs.
+  Prediction, stated against the SAME-SESSION control: C's sc2 `ping_p50` â‰¤ 55 ms **AND** more than 2Ïƒ below same-session A's `ping_p50`, on both seeds, at goodput within 2Ïƒ of same-session A.
+  *Honest transfer:* this is the strongest transfer in the battery, because the attribution was made to exactly the term C carries â€” and it is still a transfer, across a sampler change (no `RWM_PLAIN_RS`) and a new brake. Its failure is a finding about the COMPOSITION, not automatically about the law, and this block says so now so that it cannot be said conveniently later.
+
+* **P-WALL-LENGTH â€” the dead wall measured by DURATION, never by tick-share.** The predecessor's statistic (`wait_tun` = 0 % AND `wait_paused` = 0 %) is a conjunction of two whole-run tick-share medians over a tick population that is itself a function of duration (`wait_lines` runs 6â€“17 at 25 MB against ~78 at 200 MB), and its arm orderings **inverted between pools collected minutes apart**. `RWM_WALLDIAG` exists because the recorded fix is a change of MEASURAND, not of estimator. This battery scores `[WALL] dur_ms` and `onset`, per rep; the tick-share flag is still parsed and reported as a WITNESS so the two measurands can be compared on identical reps, and it is scored on nothing.
+  Prediction, direction only: at `c8` (25 MB) the per-arm MEDIAN `dur_ms` is LARGER than at `c8L` (200 MB), **in both arms** â€” Â§16.54's one clean result (0/24 at 8Ã— the transfer) re-asked on a measurand that can see a wall's length rather than a median's tick population.
+  **Deliberately NOT predicted: the SIGN of C âˆ’ A on `dur_ms` at c8@25 MB.** The composed cap at c8 is bench-measured at ~1300 against the shipped 4096, and "removing the queue removes the wall" is an argument, not a measurement. The distribution is reported and the sign is READ, not predicted.
+  *Calibration honesty:* the only existing `[WALL]` calibration anywhere is the loopback ZERO end (`onset=1.0000 dur_ms=0.0 retx=0 total_ms=3700.9 it_ms=0.070`). **This session produces the instrument's first non-zero readings in existence.** `it_ms` is recorded on every rep so the resolution bound is read off rather than assumed.
+
+* **S-WALL â€” THE INSTRUMENT'S OWN SCORED CLAIM, and it is the thing tick-share failed.** `sign( median dur_ms(C) âˆ’ median dur_ms(A) )` at `c8`@25 MB must be the SAME in the main pool and in every top-up pool, and the same on both seeds.
+  *Falsified if* the arm ordering INVERTS between the main pool and any top-up â€” exactly the event that voided the predecessor (`c8-AU` 3/9 â†’ 0/5 while `c8-AUR` 1/7 â†’ 4/5, and a guard whose verdict flipped on five added reps). Then the new measurand carries the predecessor's defect, **every `[WALL]`-scored claim in this session is UNSCORED**, and the instrument â€” not the law â€” is the finding. A claim about the gauge, scored with the same seriousness as a claim about the engine, because the last two batteries were lost to a gauge.
+
+### THE HONEST NON-PREDICTIONS â€” where the record licenses nothing
+
+* **`c1` at 1 Gbit â€” NO goodput prediction is written, and the reason is not caution.** The bench states it in three places and the table prints it: *"`c1` (the 1 Gbit single) has NO geometry in this bench and one was NOT invented to fill the column."* The composed law has never run at 1 Gbit at L0, at the bench, or on the wire. It is simultaneously the ONLY cell here with the headroom (~75 %) to carry a throughput claim. **Predicting a direction there would be transcribing a hope.** What IS predicted at c1: P-INTERIOR, P-PINNED (A's 1024 latch plus its capboot minority), P-ENGAGE, P-BRAKE, P-CAPBAND. Goodput at c1 is REPORTED with its 2Ïƒ, guarded by G-REG, and **scored on nothing**.
+  *Context, labelled as context and forbidden as a match:* at c1 the same-session wire readings were A 213.3 Â± 5.6 / 213.6 Â± 4.2, `BHU` 239.5 Â± 48.2 / 241.6 Â± 17.5 (â‰ˆ 1.12Ã—), `DHU` 261.7 Â± 11.9 / 268.8 Â± 10.7 (â‰ˆ 1.23Ã—) â€” i.e. on a cliff-free baseline the pool law BINDS BELOW the repaired pooled cap at c1, by 22â€“27 Mbit/s. **C is neither BHU nor DHU.** If C lands anywhere in that spread it will be tempting to claim a match; this block forbids it in advance.
+* **`c7` goodput upside.** Not predicted, not scored, not runnable: ~3 % headroom.
+* **`N â‰¥ 3`.** The quad geometry exists at the bench (`c7x4`) and has no L1 cell. ADR-0070 prevention item 3's second half is not delivered here, and this battery cannot speak to whether the knee is per-path.
+* **Any flip.** No battery flips its own default. Everything this session can produce is a RECOMMENDATION and a register row.
+
+### GUARDS â€” a win bought by breakage is a TRADE, and is reported as one
+
+* **G-SC2 (parity).** sc2 goodput C/A within 2Ïƒ of same-session A, both seeds. With zero headroom this is the only throughput statement sc2 can carry, and it is one-sided by physics â€” stated here so it is read as such (item 16d).
+* **G-REG (no regression).** No cell more than 2Ïƒ down under C on either seed. `c8` is the pre-named risk cell (Â§16.50's F5 named it; the uni battery's âˆ’19.6 % seed-7 collapse class is the precedent).
+* **G-CPU.** CPU/byte C â‰¤ 1.05Ã— A as a POINT band at every cell, both seeds, and within 2Ïƒ. **A discriminating prediction, not a formality:** C omits `RWM_PLAIN_RS`, whose 1.09â€“1.10 Ã— c7 CPU class is Â§16.50's F4 blocker measured twice â€” so C is expected to PASS at c7 where BHU failed. A c7 CPU class at or above 1.09Ã— under C would mean the cost was never the RS sampler's, which is a finding in its own right.
+* **G-DNF.** `dnf = 0` in every completed run, both arms, both seeds. **ABORT â‰  DNF â‰  INSTRUMENT-FAIL**, encoded in the parser.
+* **G-LIVENESS (two-sided, per rep, before any number is read â€” discipline 15c).**
+  * `[GATES] RWM_COMPOSED_CAP=1` on BOTH endpoints for C; `=0` on BOTH endpoints for A. An arm that cannot show its control was a control has measured one condition twice.
+  * `[GATES] RWM_WALLDIAG=1` and `RWM_ACKDIAG=1` on BOTH endpoints, BOTH arms. Absence is an INSTRUMENT-FAIL, never a datum.
+  * `three-term outstanding limit ACTIVE` PRESENT on C (the composed gate reaches the same pool seat, `sender_policy.rs`: `three_term_on = (three_term || composed_cap) && plain_dyn_cap`), ABSENT on A. Contamination in either direction is recorded loudly.
+  * **`unified store-cap path set ACTIVE` is expected ABSENT on BOTH arms, and that is CORRECT rather than a defect.** `RWM_COMPOSED_CAP` does not set `RWM_STORE_CAP_UNIFIED`: the pool law already reads `live_paths()` unconditionally, and C's unified set is at the BRAKE, which has no separate prose echo of its own â€” its liveness is `[CCAP] brake=`. Written down here so a later reader cannot mistake the silence for a disarmed arm.
+  * `[CCAP]` PRESENT on the C client log and ABSENT on A (it is emitted only under `pol.composed_cap`); `[WALL]` PRESENT on the client log in BOTH arms.
+* **G-TOPUP.** If aborts drive any scored arm below **n = 8 at either seed**, the top-up runs the SAME rep count for EVERY arm of that cell at that seed, same session, same binary, own ledger, own sentinel. **Never asymmetric.** The seed-7 topo-ping abort class (discipline 8) is expected and is not a defect.
+* **G-COUNTING.** The driver's `ARMCOUNT` counts PARSED ROWS, and an aborted invocation still emits a row (with `dnf` true). **`ARMCOUNT` IS NOT AN n.** The scored n is the reporter's LIVE n, recomputed from the gates columns. This trap has been hit before â€” it is the only reason the predecessor's top-up trigger was visible at all â€” and it is named here so the report cannot quietly inherit it.
+
+### THE STOP RULE â€” the law must be shown to have EXPRESSED ITSELF, or that cell is not scored
+
+Scoped PER CELL rather than per battery, because these cells are independent and a warm-up failure at one says nothing about another.
+
+> A cell's C arm is **UNSCORED** if ANY of:
+> **S1** `[CCAP] mem` > 0.5 over engaged refreshes on a majority of that cell's C reps â€” the memory bound has become the law (Â§16.56's STOP; a discipline-18 defect finding).
+> **S2** `[CCAP] floor` > 0.5 on a majority â€” the same finding on the paroled constant.
+> **S3** `[CCAP] eng` < 0.9 on a majority â€” a warm-up failure, not a null result.
+> **S4** `capbind_check.py` WARNs (bind fraction > 0.5 on any known clamp) for that `(cell, C)` group.
+
+S4 is the same event as S1â€“S2 read off the standard report layer instead of the engine echo. **A disagreement between the two is itself reported**, because two gauges of one quantity disagreeing is a finding about the instruments.
+
+**Discipline 18(d) applied, in advance:** no verdict about the composed MECHANISM may be recorded from a cell whose C arm the stop rule voided. It measured a clamp.
+
+If the stop rule fires at EVERY cell, the battery is reported **UNSCORED in full**, and the finding is that the composed law does not express itself on the wire â€” a result about the law's INPUTS (warm anchors at real cells), and a different result from the law losing.
+
+### FALSIFIERS, BOTH WAYS â€” written before the data exist
+
+* **FOR the composed law.** C meets P-INTERIOR everywhere, P-ENGAGE, P-BRAKE and P-LATENCY-SC2, and passes G-REG, G-CPU and G-DNF at every cell on both seeds. Verdict: *the composition survives the wire*; the recommendation is to take the flip decision per gate in separate commits with register rows, and ADR-0070 Decision item 5 becomes live.
+* **AGAINST the composed law â€” THE LOAD-BEARING BRANCH, stated so it cannot be argued away later.** C is more than 2Ïƒ down at any cell **where `[CCAP]` shows the cap PROVABLY INTERIOR (`mem` = 0 AND `floor` = 0) and the brake PROVABLY ENGAGED (`brake_frac` > 0.01)**. Then the law ran, expressed itself, braked, and lost. **That is the law being wrong, not the instruments** â€” no re-run, no "the composition needs one more piece", and the legacy-path deletion leaves the table for good, because ADR-0070 Decision item 5's condition is *wins everywhere* and this refutes it.
+* **AGAINST the instruments, not the law.** C loses at a cell where `eng` < 0.9 (never warmed), or `mem` > 0.5 (the bound became the law), or `brake_frac` = 0 (the composition never happened). Those are instrument findings; the law is not scored at that cell, and the successor is named in the results section rather than assumed.
+* **AGAINST the gauge.** S-WALL inverts between pools. Every `[WALL]` claim is UNSCORED and the onset/duration measurand joins tick-share on the record. The goodput, cap and latency claims stand â€” none of them reads `[WALL]`.
+* **AGAINST the era.** P-PINNED fails. Nothing is scored until it is explained.
+* **THE MIDDLE, PRE-NAMED.** C is interior, engaged and braking, and lands within 2Ïƒ of A at every cell â€” no latency win, no regression, no goodput movement anywhere. Verdict: **the composed law is a WASH on the wire.** It is a better-derived law with no measured payoff, `RWM_COMPOSED_CAP` stays OFF, and ADR-0070's verdicts stand as PROVENANCE findings that did not become PERFORMANCE findings. This is a real and publishable outcome; naming it in advance is what stops it being reported as a disappointment, or quietly upgraded into a win.
+
+### ABORT â‰  DNF â‰  INSTRUMENT-FAIL
+
+* **ABORT** = no `[GATES]` on EITHER endpoint. No datum, no liveness verdict, **in no denominator**. The seed-7 topo-ping class (discipline 8), expected, recorded per arm.
+* **DNF** = a completed run that did not transfer. It **IS** a datum and is counted.
+* **INSTRUMENT-FAIL** = the run completed but a gauge did not report â€” `[CCAP]` absent on a C rep, `[WALL]` absent, `[ACKDIAG]` absent, the CPU gauge absent, or `eng=0/N`. Neither a clean rep nor an abort: excluded from the claim that gauge feeds, retained in every other claim, and counted separately.
+
+### ENVIRONMENT HONESTY, RECORDED PER ERA
+
+Binary sha256 and VM source commit in every ledger header; `lscpu` model with the aes/avx2/pclmulqdq flags; kernel; load and co-tenant count at launch (discipline 9). The desktop session's `kwin_x11`/`sddm` presence is recorded per era as in the preceding batteries â€” it is part of the era and every arm pays it equally. The battery is **LAUNCHED DETACHED AND NOT POLLED** (discipline 13): one `DONE-ALL` sentinel, collected once at the end.
+
+### PRE-BATTERY SMOKE â€” **THE BATTERY WAS NOT LAUNCHED** (2026-08-12 19:45:08â€“19:45:41 UTC; binary sha256 `ea3117ec3a64f73e9cf5512dce9b837f6c8c05ca405940815a03bc975bab2f17` = commit `4a1a0f1`, whose ENGINE TREE IS BYTE-IDENTICAL to main@`b68c020` â€” this branch adds only `docs/goal-gate.md` and five `tools/l1/ccap_*` files; built fresh on the VM in 5m55s from a CLEARED and CRLF-CONVERTED `git archive` tree; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43; seed 42, 1 rep/arm at `c8`@25 MB and `sc2`, driver `tools/l1/ccap_battery.sh`, log `/home/vibe/ccap/smoke-s42.log` + per-run diag; lock `/tmp/rwm-vm.lock` found FREE and taken 19:36:51 UTC, **held**)
+
+**This block is SHAKEOUT EVIDENCE, recorded BEFORE the battery, and it is n = 1
+per cell-arm: it decides whether the battery may run. It scores nothing, and no
+number in the pre-registration is touched by it.** The smoke did its job: it
+failed, and it failed on the instruments rather than on the law.
+
+#### THE ARM IS CORRECTLY WIRED â€” every liveness clause the pre-registration names PASSED
+
+| clause | c8-A | c8-C | sc2-A | sc2-C |
+|---|---|---|---|---|
+| `[GATES] RWM_COMPOSED_CAP=` two-sided, both endpoints | `0/0` âœ“ | `1/1` âœ“ | `0/0` âœ“ | `1/1` âœ“ |
+| `[GATES] RWM_WALLDIAG=1` / `RWM_ACKDIAG=1`, both endpoints | âœ“ | âœ“ | âœ“ | âœ“ |
+| `three-term outstanding limit ACTIVE` (the POOL SEAT reached) | absent âœ“ | **present** âœ“ | absent âœ“ | **present** âœ“ |
+| `unified store-cap path set ACTIVE` â€” expected ABSENT on both | absent âœ“ | absent âœ“ | absent âœ“ | absent âœ“ |
+| `RWM_THREE_TERM=0` / `RWM_STORE_CAP_UNIFIED=0` witnesses | âœ“ | âœ“ | âœ“ | âœ“ |
+| ABORT / DNF | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+The composed gate reaches `three_term_store_cap` **without** `RWM_THREE_TERM`
+being set, exactly as `sender_policy`'s
+`three_term_on = (three_term || composed_cap) && plain_dyn_cap` says it should,
+and the unified echo is absent on both arms exactly as the pre-registration
+wrote down in advance. Nothing about the ARM is wrong.
+
+#### THE DEFECT: `[CCAP]` AND `[WALL]` SIT ON TWO SENDER-TEARDOWN ARMS THE `perf` HARNESS DOES NOT REACH
+
+Measured, across the smoke's eight endpoint logs:
+
+| line | expected | observed |
+|---|---|---|
+| `[CCAP]` on the C client logs | 2 / 2 | **0 / 2** |
+| `[WALL]` on all client logs (both arms) | 4 / 4 | **1 / 4** |
+| `window sender shut down gracefully` | â€” | **0 / 4** |
+| `TUN closed` | â€” | **1 / 4** (the one run that emitted `[WALL]`) |
+
+Both gauges are emitted from exactly two places (`net/mod.rs:6113`/`:6117` in
+the `shutdown_rx.recv()` arm, and `:6202`/`:6206` in the `packet == None`
+"TUN closed" arm). **The `perf` harness's bulk transfer completes and the
+sender goes away without taking either arm** â€” 0 of 4 graceful shutdowns, 1 of
+4 TUN closes â€” so the run's ONE `[CCAP]` line and ONE `[WALL]` line are
+emitted racily or not at all. The single `[WALL]` that did appear
+(`sc2-A`: `onset=1.0000 dur_ms=0.0 retx=0 total_ms=9009.4 it_ms=0.100`) is
+well-formed, and its `it_ms` = 0.100 is a real resolution reading â€” the
+RENDERER is fine. What was never validated is REACHABILITY.
+
+**This is ADR-0070's own postmortem recurring one commit after the rules it
+produced.** The two loopback tests (`composed_cap_loopback.rs`,
+`walldiag_loopback.rs`) drive a graceful shutdown, so they exercised the
+teardown path and asserted the strings; the always-on pins assert
+`ccap_report_line`'s FORMAT. Every one of them passed, and none of them asked
+whether the line is reachable **under the harness the battery actually runs**.
+That is the same shape as "nine always-on pins asserting that the code computes
+the model, and none asking whether the model is right": here, several pins
+assert that the gauge renders, and none asserted that it fires.
+
+**Had the battery been launched, ~192 invocations over several hours would have
+produced `eng`, `mem`, `floor`, `brake` and `dur_ms` on a small racy minority
+of reps** â€” i.e. P-INTERIOR, P-ENGAGE, P-BRAKE, P-WALL-LENGTH and S-WALL all
+UNSCORED, and the stop rule firing at every cell for want of a gauge rather
+than for want of a law. The smoke is why that did not happen.
+
+#### THE FALLBACK THAT DOES WORK, AND IT IS ALREADY IN THE TREE
+
+The per-tick `[3T]` line (`RWM_DIAG`, present on both C arms â€” 2 lines at c8, 5
+at sc2) carries **`eng`, `cap`, and `window` / `slack` / `span` separately**,
+which is the unclamped expression reported apart from its clamp â€” discipline
+17(b)'s requirement, already satisfied by a different line. It supplies
+engagement, the realized cap and the bind readout by arithmetic; it does NOT
+supply the brake fraction or the wall, which have no second source.
+
+#### THE SUBSTANTIVE OBSERVATION, n = 1, AND IT IS NOT A RESULT
+
+From the `[3T]` lines the smoke did capture:
+
+| cell-arm | window | slack | span | **unclamped Î£** | realized `cap` | interior? |
+|---|---|---|---|---|---|---|
+| `sc2`-C | 883.74 | 1877.95 | **0.00** | **2761.69** | 2762 | **YES** |
+| `c8`-C (warm) | 1690.99 | 3593.36 | 1729.32 | **7013.67** | **4096** | **NO â€” `WIN_STORE_MAX`** |
+| `c8`-C (cold) | 0.00 | 0.00 | 0.00 | 0.00 | 128 (boot) | `eng=0`, warm-up |
+
+Two things are worth writing down before anyone looks at a battery:
+
+1. **The span term is EXACTLY 0.0 at `sc2`** (N = 1), on the wire, at the
+   precision the log prints. The vanishing that `three_term_span_vanishes_
+   continuously_as_skew_goes_to_zero` pins by arithmetic is confirmed on real
+   anchors, and it is what retires the topology branch without an `if N == 1`.
+2. **At `c8` the composed law's unclamped value is 7013.67 against a
+   `WIN_STORE_MAX` of 4096 â€” the memory bound IS the law at this cell**, which
+   is precisely Â§16.56's STOP condition and the pre-registration's S1. The SF
+   bench predicted **1297.4** there. That is a benchâ†’wire miss of **Ã—5.4**, in
+   the direction the pre-registration bounded loosely and named a stop for, and
+   it lands on the term the bench has no way to see: the wire's c8 slack is
+   3593 symbols at a measured `rtt = 353 ms` on the slow leg, against a bench
+   geometry with no GE loss process and no queue of that depth.
+
+**This is n = 1, on a cell whose statistic is bistable, from a smoke.** It does
+not score S1, it does not void anything, and it must not be quoted as a result.
+It is recorded because the pre-registration says a composed cap landing on 4096
+is a STOP rather than a result, and the first wire reading of that quantity
+pointing at 4096 is exactly the thing that must be on the record BEFORE the
+battery, not discovered inside it.
+
+#### WHAT MUST HAPPEN BEFORE THIS BATTERY RUNS
+
+1. **Make the two gauges emit on the path the harness actually takes.** The
+   quantities are all live in the sender loop; only the emission site is wrong.
+   Whatever the repair, it is an ENGINE change and it moves this branch off
+   "engine byte-identical to main@`b68c020`" â€” so it is its own commit, with
+   the local gate suite re-run, and the battery's binary is rebuilt from it.
+2. **Assert reachability, not just format.** The loopback that passes today
+   proves the string renders. What is owed is a check that the line appears
+   under a `perf`-shaped run â€” the same gap, one layer down, that discipline 1
+   names for a mechanism that never executes.
+3. **Nothing in the pre-registration changes.** It was committed at `1e09c00`
+   before any VM contact, its bars are keyed to same-session measurements, and
+   this smoke touches none of them. In particular S1 stays where it is: if the
+   c8 reading above reproduces at n = 24, the c8 cell is UNSCORED by its own
+   pre-registered stop rule, and that is a finding about the law's inputs at
+   c8 â€” not a defect in the battery.
+
 ## Gauge Reachability (2026-08-12, `fix/gauge-reachability` from main@`b68c020`) — **STRICTLY LOCAL, NO VM.** The `[CCAP]` and `[WALL]` teardown gauges were emitted from two `select!` arms of `run_window_sender` that the `perf` harness — the harness EVERY L1 battery runs — is not guaranteed to reach. **VERDICT: a REACHABILITY defect, not a rendering defect. Both gauges now emit from the destructor of `net::SenderTeardownGauges`, a local of the sender loop, which is on every exit path a sender can take and runs exactly once. Two new tests assert reachability under a `perf`-shaped exit; one of them is DETERMINISTIC and fails on the pre-fix engine with a count of ZERO.** Observation-only: both gates ship OFF, so the destructor is a no-op on the shipped default.
 
 ### THE DEFECT, AS MEASURED
@@ -29615,3 +29899,226 @@ Every bracketed instrument in the engine was classified by emission site. `[DIAG
 ### GATES
 
 Engine code changed, so the full set: `cargo test -p raptorpath --lib`, `-p raptorpath-math`, `--doc`, `gate_suite --release`, every loopback binary including the new `gauge_reachability`, and `store_cap_sf_bench` (task 46), `store_cap_bench`, `recovery_bench`, `slack_bench`. **The shipped default path is behaviour-identical**: no engine value is read from the carrier, `RWM_WALLDIAG` and `RWM_COMPOSED_CAP` both ship OFF, so the destructor is one `OnceLock` read returning `None` plus one `bool` test, once per run, off every hot path.
+
+### PRE-BATTERY SMOKE, TAKE 2 — GREEN, AND THE BATTERY WAS LAUNCHED (2026-08-12 21:37:59–21:38:32 UTC; binary sha256 `9093c5ac539c45d5353494481295c1417c57bc52bc8eab25511d2bbb71b93d47` = commit `e878ee2`, whose ENGINE TREE IS IDENTICAL to main@`da37555` — the gauge-reachability fix merged in; rebuilt on the VM in 5m12s from a cleared, CRLF-converted `git archive` tree; same kernel and CPU era as take 1; seed 42, 1 rep/arm at `c8`@25 MB and `sc2`, driver `tools/l1/ccap_battery.sh`, log `/home/vibe/ccap/smoke2-s42.log`; lock held continuously since 19:36:51 UTC)
+
+**Shakeout evidence, n = 1 per cell-arm, recorded BEFORE the battery. It scores
+nothing and touches no number in the pre-registration (`1e09c00`, asserted
+byte-identical after the merge: 27 695 bytes, sha256 `272ea1c5c9a1986a`).**
+
+#### THE CLAUSES THAT FAILED IN TAKE 1 NOW PASS
+
+| clause | c8-A | c8-C | sc2-A | sc2-C |
+|---|---|---|---|---|
+| `[WALL]` present **exactly once** | **1** ✓ | **1** ✓ | **1** ✓ | **1** ✓ |
+| `[CCAP]` present exactly once on C, absent on A | 0 ✓ | **1** ✓ | 0 ✓ | **1** ✓ |
+| `[GATES] RWM_COMPOSED_CAP=` two-sided | `0/0` ✓ | `1/1` ✓ | `0/0` ✓ | `1/1` ✓ |
+| `three-term outstanding limit ACTIVE` | absent ✓ | present ✓ | absent ✓ | present ✓ |
+| unified echo — expected ABSENT both arms | ✓ | ✓ | ✓ | ✓ |
+| ABORT / DNF / INSTRUMENT-FAIL | 0/0/0 | 0/0/0 | 0/0/0 | 0/0/0 |
+
+Take 1 read `[CCAP]` 0/2 and `[WALL]` 1/4 on the pre-fix engine. Take 2 reads
+**4/4 and 2/2, with zero INSTRUMENT-FAIL lines in the whole run.** The
+destructor site is reached on the exit the `perf` harness actually takes.
+
+#### THE GAUGES CARRY REAL MEASUREMENTS, NOT JUST LINES
+
+```text
+c8-C   [CCAP] eng=343/372  cap=3804.9 mem=1.0000 floor=0.0000 brake_frac=0.0107
+sc2-C  [CCAP] eng=1595/1605 cap=2203.8 mem=0.0000 floor=0.0000 brake_frac=0.0350
+c8-A   [WALL] onset=0.7990 dur_ms=430.9 retx=93 total_ms=2143.6 it_ms=0.098
+c8-C   [WALL] onset=1.0000 dur_ms=0.0   retx=0  total_ms=2383.7 it_ms=0.109
+sc2-A  [WALL] onset=0.9911 dur_ms=82.0  retx=15 total_ms=9214.8 it_ms=0.102
+sc2-C  [WALL] onset=1.0000 dur_ms=0.0   retx=0  total_ms=9114.5 it_ms=0.101
+```
+
+**These are the first non-zero `[WALL]` readings in existence** — the
+instrument's only prior calibration was the loopback zero end
+(`onset=1.0000 dur_ms=0.0`). `c8-A` shows a 430.9 ms terminal window
+containing 93 retransmits on a 2.14 s transfer, i.e. a recovery tail rather
+than a hang, which is exactly the discrimination `retx`-inside-the-window was
+put there to make. `it_ms` ≈ 0.10 on every run, so the resolution bound is
+three to four orders below the c8 wall it is being asked to measure.
+
+#### THE OBSERVATION THE BATTERY EXISTS TO SETTLE, AND IT IS NOT SETTLED HERE
+
+`c8-C` reads **`mem=1.0000`** — the `WIN_STORE_MAX` memory bound binds on
+**every engaged refresh** — with the realized cap at 3804.9. Take 1's `[3T]`
+line said the same thing by arithmetic (window 1690.99 + slack 3593.36 + span
+1729.32 = 7013.67 unclamped, against a 4096 bound). At `sc2` the law is
+interior (`mem=0.0000`, cap 2203.8).
+
+**That is the pre-registration's S1 condition, and if it reproduces at n = 24
+the c8 cell is UNSCORED by the battery's own stop rule** — a discipline-18
+defect finding, and a finding about the law's INPUTS at c8 rather than about
+the law losing. It is *not* a reason to withhold the battery: S1 is scoped per
+cell, the other four cells are unaffected, `sc2` already reads interior on
+this evidence, and a stop rule firing on a cell it was written for is the
+instrument working. **n = 1, on the cell whose statistic is bistable, from a
+smoke — it must not be quoted as a result.**
+
+#### LAUNCH
+
+Full battery launched detached at **21:39:55 UTC**, seed 42 then seed 7,
+`tools/l1/ccap_all.sh 12`, sentinel `/home/vibe/ccap/DONE-ALL`. NOT POLLED
+(discipline 13).
+
+## Composed-Cap Battery — RESULTS (2026-08-13) — **the composed law WINS NOWHERE ON THE WIRE.** Its SHAPE is confirmed exactly as §16.56 claims it; its MAGNITUDE is refuted. Three of five cells are UNSCORED by the pre-registered stop rule because `WIN_STORE_MAX` became the law there, and at the two cells where the law IS interior it grants 1.8–2.2× the shipped cap, buys 2.4× the standing queue, and reads **43–48 % WORSE delivered latency at goodput parity** — the exact inversion of the result it was predicted to inherit. Scored against "Composed-Cap Battery — VM PRE-REGISTRATION" (`1e09c00`), which is untouched. `RWM_COMPOSED_CAP` **stays default OFF**, recommendation only, per the no-self-flip rule.
+
+**Session.** VM 10.1.5.16, binary sha256 `9093c5ac539c45d5353494481295c1417c57bc52bc8eab25511d2bbb71b93d47` = commit `e878ee2` (engine byte-identical to main@`da37555`, the gauge-reachability fix), built fresh on the VM in 5m12s from a cleared, CRLF-converted `git archive` tree; **ONE binary for the smoke, both seeds and the top-up.** E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43 in every log header. Main pool 21:39:55–22:25:09 UTC (192 invocations), symmetric top-up 22:28:47–22:35:25 UTC (48 invocations), **240 invocations, 199 live**. Seeds 42 and 7, arms interleaved round-robin per rep, fresh topology per invocation, 1 run/invocation, `RWM_GEN=0 RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1`. Driver `tools/l1/ccap_all.sh` → `ccap_battery.sh`, collector `ccap_parse.py`, scorer `ccap_report.py`, ledgers in `docs/l1-raw/ccap-*`. **LAUNCHED DETACHED AND NOT POLLED** (item 13). Lock `/tmp/rwm-vm.lock` taken 19:36:51 UTC, held throughout.
+
+### LIVENESS — 199 of 199 live reps, every clause, no exceptions
+
+| clause | result |
+|---|---|
+| `[GATES] RWM_COMPOSED_CAP` two-sided, both endpoints (1 on C, 0 on A) | **199/199** |
+| `RWM_WALLDIAG=1`, `RWM_ACKDIAG=1` two-sided, both arms | **199/199** |
+| `three-term outstanding limit ACTIVE` PRESENT on C / ABSENT on A | **199/199** |
+| `unified store-cap path set ACTIVE` ABSENT on both arms (pre-registered as CORRECT) | **199/199** |
+| `[CCAP]` exactly once on every C rep, absent on every A rep | **199/199** |
+| `[WALL]` exactly once on every rep, both arms | **199/199** |
+| REAL DNF | **0/199** |
+| INSTRUMENT-FAIL of any class | **0/199** |
+| ABORTS | 41/240 (17.1 %) — **0/96 on seed 42**, 41/144 on seed 7 |
+
+Every abort is the documented seed-7 topo-ping class (no `[GATES]` on either endpoint); the only other flag in the entire session is the `QCAP-MISSING` each abort implies. Zero on seed 42 reproduces discipline 8 exactly. **The reachability fix (main@`da37555`) holds at scale: 199/199 on both gauges, against 1/4 and 0/2 on the pre-fix engine.**
+
+**`ARMCOUNT` said 8/8 and 12/12 everywhere and it is NOT an n.** The reporter's live n, recomputed from the gates columns, is what found that seed 7 had driven `c7` to 5, `c8` to 7 and `sc2` to 6 — below the pre-registered floor of 8 — and triggered G-TOPUP. The top-up ran **both arms** of exactly those three cells at seed 7, same binary (sha re-asserted before launch), own ledger, own sentinel. `c1` and `c8L` were at or above the floor and were **not** topped up. Final live n per seed: c1 8/8, c7 8/11, c8 12/14 (A) and 12/12 (C), c8L 12/8, sc2 8/14 (A) and 8/9 (C).
+
+### A METHODOLOGICAL CORRECTION MADE BEFORE ANY CLAUSE WAS SCORED (discipline 16b)
+
+The first scoring pass computed utilisation as `tc_bytes / (INVOCATION_S × shaped)`. **`== INVOCATION_S ${SECONDS}` is the whole `perf_rwm_c.sh` wall** — namespace bring-up, netem/tbf setup, the verification pings and teardown — and it runs 1.12× the transfer at c1/c8L up to **2.11× at c8**, where the transfer is only 2.4 s. That denominator read c7 at 77.6 % (22 % headroom) and would have **LICENSED the unsatisfiable c7 throughput target discipline 16 exists to forbid.** Corrected to the transfer wall (`seconds`), the session reproduces all three transcribed prior sessions:
+
+| cell | shaped | xfer s | INVOC_S | util s42 | util s7 | **headroom** | prior class | claims permitted |
+|---|---|---|---|---|---|---|---|---|
+| c1 | 1 Gbit | 14.61 | 17.0 | 24.1 % | 23.9 % | **75.9 %** | 23.4/23.8/25.2 % | throughput permitted |
+| c7 | 200 Mbit | 9.23 | 12.0 | 96.9 % | 96.4 % | **3.1 %** | 96.1/97.2/97.2 % | parity/latency/cap-shape ONLY |
+| c8 | 120 Mbit | 2.54 | 5.0 | 81.3 % | 76.4 % | 18.7 % | 76.8/80.6/69.7 % | no-regression |
+| c8L | 120 Mbit | 20.49 | 23.0 | 71.4 % | 78.2 % | 21.8 % | — | no-regression |
+| sc2 | 100 Mbit | 9.12 | 11.5 | 98.4 % | 97.8 % | **1.6 %** | 98.0/98.6/100.3 % | parity + latency survival ONLY |
+
+**The pre-registration's headroom classes were right and its refusal to write a throughput target at c7 and sc2 was correct.** The correction is recorded because a permissive-looking number nearly licensed the opposite.
+
+### THE STOP RULE FIRED AT THREE OF FIVE CELLS — S1, and it is a discipline-18 finding
+
+| cell | `[CCAP] mem` bind fraction, C | `floor` | verdict |
+|---|---|---|---|
+| c7 | **1.000** | 0.000 | **UNSCORED** — S1 + S4 |
+| c8 | **0.875** | 0.000 | **UNSCORED** — S1 + S4 |
+| c8L | **1.000** | 0.000 | **UNSCORED** — S1 + S4 |
+| c1 | 0.000 | 0.000 | scored |
+| sc2 | 0.059 | 0.000 | scored |
+
+At every dual cell the composed law's unclamped value exceeds `WIN_STORE_MAX` = 4096, so **the memory bound IS the law there and arm C's realized cap is identical to arm A's — both read exactly 4096.** §16.56 wrote the condition itself: *"A composed cap that lands ON 4096 would mean the memory bound has become the law, which is the predecessor's exact defect reproduced, and is a STOP rather than a result."* It landed there. Per discipline 18(d) no verdict about the composed MECHANISM is taken from those three cells — they measured a clamp, and the two arms are the same number.
+
+**The decomposition, from 833 `[3T]` evaluations across the session's own diag logs:**
+
+| cell | mean window | mean slack | mean span | **mean unclamped** | ≥ 4096 |
+|---|---|---|---|---|---|
+| c1 | 201 | 428 | **0** | 629 | 0.0 % |
+| sc2 | 374 | 794 | **0** | 1 168 | 2.7 % |
+| c7 | 1 261 | 2 680 | 118 | 4 059 | 63.2 % |
+| c8 | 1 669 | 3 546 | 2 563 | 7 778 | **100.0 %** |
+| c8L | 7 489 | 15 915 | 2 552 | **25 956** | 78.8 % |
+
+At c8L the law asks for **6.3× the memory bound**. This is not a marginal clamp.
+
+### THE CLAUSES, SCORED VERBATIM
+
+| clause | pre-registered bar | measured | verdict |
+|---|---|---|---|
+| **P-INTERIOR** | `mem` = 0 AND `floor` = 0 at EVERY cell | c1 0.000/0.000; sc2 0.059/0.000; c7 1.000; c8 0.875; c8L 1.000 | **FAIL** (holds at c1 only) |
+| **P-PINNED** | A pinned; *falsified if A interior at c7 or c8* | c7 19/19, c8 25/26, c8L 20/20, sc2 21/22 on their latches; **c1 0/16** | **PASS** — the era falsifier does NOT fire |
+| **P-ENGAGE** | `eng` ≥ 0.9 on a majority | medians 0.936–0.998; ≥ 0.9 on 95–100 % of reps | **PASS**, all five |
+| **P-BRAKE** | `brake_frac` > 0.005 on a majority | c1 0.875, c8 0.708, sc2 1.000; **c7 0.000, c8L 0.000** | **PASS 3 / FAIL 2** |
+| P-BRAKE, asym-dual clause | duals carry the largest brake share | sc2 0.0315 > c8 0.0074 | **FAIL** (direction only, not fatal) |
+| **P-CAPBAND** | C strictly below A at the duals; bands | duals C = A = 4096; sc2 2291 (band ≤ 1000); c1 960.5 in band but **above** A's 541 | **FAIL** |
+| **P-LATENCY-SC2** | p50 ≤ 55 ms AND > 2σ **below** same-session A, both seeds | **138.8 ± 129.3 vs 93.8 ± 23.6 (1.479×)** and **138.0 ± 59.4 vs 96.5 ± 15.1 (1.430×)** | **FAIL — INVERTED** |
+| **G-SC2** (parity) | goodput within 2σ of A | 0.993 (2σ_Δ 3.0) / 1.003 (2σ_Δ 2.8) | **PASS** |
+| **G-REG** | no cell > 2σ down, either seed | c1-s7 **0.924**, Δ = 16.7 vs 2σ_Δ = 14.8 | **FAIL at c1-s7** |
+| **G-CPU** | ≤ 1.05× A point band, every cell/seed | c7 1.007/1.005; c1 1.129/1.152; c8 1.063/1.077; **c8L 1.462/1.201**; sc2 1.103/1.083 | **FAIL at 8 of 10** |
+| **G-DNF** | dnf = 0 | 0/199 | **PASS** |
+| **G-LIVENESS** | two-sided, every rep | 199/199 | **PASS** |
+| **G-TOPUP** | symmetric only | both arms of c7/c8/sc2 at seed 7 | **PASS** |
+| **S-WALL** | arm ordering on `dur_ms` stable across pools | main-s42 **−1**, main-s7 **+1**, topup-s7 **−1** | **FAIL — INVERTED** |
+| P-WALL-LENGTH | c8 `dur_ms` > c8L, both arms | A 626.2 vs 219.2; C 698.8 vs 0.0 | met, but **UNSCORED** under S-WALL |
+
+**Goodput (Mbit/s, mean ± 2σ, live n).** c1 218.0±12.8 / 212.7±11.1 (s42) and 218.5±6.3 / **201.8±13.4** (s7); c7 173.8±4.1 / 171.7±6.2 and 172.6±4.6 / 171.6±4.5; c8 79.7±24.4 / 78.3±24.8 and 80.8±14.3 / 72.4±20.1; c8L 71.8±33.4 / 55.0±45.7 and 73.6±33.2 / 65.4±37.6; sc2 87.8±1.7 / 87.2±2.4 and 87.7±2.1 / 88.0±1.9. **c8 and c8L carry 2σ bands of 31–83 % of their own means and resolve nothing in either direction — as the pre-registration said they would, which is why no mean-based target was written there.**
+
+### THE c1 ERA ANOMALY, NAMED AND EXPLAINED — and it CONFIRMS an ADR-0070 prediction
+
+P-PINNED expected arm A at the `RELIABLE_STORE_MAX` = 1024 latch at c1 and measured it **interior at 517–568 in 16 of 16 reps**. The pre-registered era falsifier is scoped to "A interior at c7 or c8", and A is pinned at 4096 at both (19/19, 25/26), so **it does not fire** — but the anomaly is real and it has a mechanism.
+
+At c1, N = 1, so `path_scaled_store_cap` returns `None` (it requires `n_live ≥ 2`) and the chain falls to legacy `clamp(gain·BDP, 64, RELIABLE_STORE_MAX = 1024)` with `gain` = 2.0. Measured 541 ⇒ BDP ≈ 270 symbols. The prior sessions that recorded 1024 at c1 all ran **before `RWM_HONEST_ANCHOR` became default ON (2026-08-11, §16.51)**, on the legacy anchor that over-read by ×4.6–7.4. The honest anchor made `max_bw·min_rtt` smaller, and `2·BDP` fell below the 1024 latch. **ADR-0070 finding 6 predicted exactly this:** *"an honest anchor makes this term smaller, which under finding 2's pinning is currently invisible — the ceiling absorbs it — and would become immediately visible the moment the ramp is live."* At c1 there is no `N·knee` to absorb it, so it became visible. This is a confirmed prediction of the review, measured, and it is the first cell in the tree where the shipped pooled chain is observed operating as a LAW rather than as a constant.
+
+### WHERE THE LAW IS INTERIOR, IT LOSES — AND THE MECHANISM IS ITS OWN QUEUE
+
+The two scored cells, pooled over both seeds and both pools:
+
+| cell | arm | realized cap | `occ_p50` | **q_p50 (ms over RTprop)** | q_p99 | CPU/byte | probe p50 |
+|---|---|---|---|---|---|---|---|
+| sc2 | A | 1024 | 1012.5 | **91** | 97.5 | 1.00× | 93.8 / 96.5 ms |
+| sc2 | **C** | **2291** | **2214** | **218** | **320** | 1.10× / 1.08× | **138.8 / 138.0 ms** |
+| c1 | A | 541 | 243.5 | 8 | 23 | 1.00× | — |
+| c1 | **C** | **960.5** | 208.5 | 7 | 24 | **1.13× / 1.15×** | — |
+
+**At sc2 the composed law grants 2.24× the shipped cap, holds 2.19× the outstanding, and stands up 2.4× the queue (218 ms against 91 ms) — and the link was already at 98 % utilisation, so none of it buys throughput.** Delivered latency follows directly: 1.43–1.48× A, on both seeds, where §16.50's F6 measured the predecessor arm at **0.44×/0.47×**. The predicted inheritance did not merely fail to transfer; **it reversed.**
+
+§16.56's own words are the bar this fails: *"`cap − BDP` IS the standing queue, δ prices queue as a latency budget, and §16.47 measured the cap actually doing that."* At sc2 the law chose ≈ 2.1 BDP of standing queue and δ priced nothing.
+
+### WHY THE LAW ASKS FOR SO MUCH — two findings about the implementation, both new
+
+**1. Terms 1 and 2 are NOT INDEPENDENT.** `slack / window` reads **exactly 2.125 in 833 of 833 evaluations, min = max, at all five cells.** That is an algebraic identity of the code, not a measurement: `net/mod.rs:3134-3137` computes `srtt_s = k.max(1.0)·rtprop_s`, then `window += rate·srtt_s` and `slack += rate·stall(ρ=1) = rate·2.125·srtt_s`. So at the shipped scope (ρ = 1, retain-until-acked) the law reduces to
+
+```text
+cap = 3.125 · Σᵢ(rateᵢ · Kᵢ · RTpropᵢ)  +  2·rate_fast·skew
+```
+
+— **two independent terms, not three.** The "emission slack" carries no information the "network window" does not; it is that term times 17/8. ADR-0070 itself derived the 3.125 (*"the whole-expression multiplier the derivation implies is 1 + 17/8 = 25/8 = 3.125 in srtt units against the shipped 2.0"*) and this battery is the first measurement of what shipping it costs: **3.125 BDP where the shipped law asks 2.0, i.e. +56 % outstanding by construction**, before the span term is added.
+
+**2. THE CODE DOES NOT COMPUTE THE PUBLISHED FORMULA — a FORMULA-FIRST divergence in the first law the rule governed.** §16.56 publishes term 1 as `rateᵢ·RTpropᵢ`; the code computes `rateᵢ·Kᵢ·RTpropᵢ`. `K` is measured in this session at **1.04 (c8), 1.14 (c7, sc2), 1.15 (c1), 1.505 (c8L)** — so the window term runs 4–50 % above the published expression, and the whole law with it. The divergence is modest in magnitude and total in principle: the provenance table's `RTpropᵢ` line is not what runs. **No test asserts code-vs-published-formula agreement for this law**, which is the same gap one level up from the reachability gap the smoke found, and it is owed.
+
+### S-WALL: THE REPLACEMENT MEASURAND FAILED ITS OWN TRIAL
+
+`sign(median dur_ms(C) − median dur_ms(A))` at c8@25 MB: **main/s42 −1, main/s7 +1, top-up/s7 −1.** The ordering inverted between pools collected minutes apart on one binary — **the exact event that voided the mode-hunt battery, reproduced on the measurand built to replace the one that did it.** Per the pre-registration, every `[WALL]`-scored claim in this session is **UNSCORED**, including P-WALL-LENGTH, which was met.
+
+The honest conclusion is stronger than "the new gauge is also bad": **at c8 the dead-wall statistic is unstable regardless of measurand.** Tick-share inverted; onset/duration inverted. The instability is a property of the CELL's bistability and its n, not of the estimator, and the mode-hunt handover's premise — *"measure the wall's ONSET and DURATION, not its tick-share"* — is now measured and **does not fix it.** The instrument is sound (199/199 reachable, `it_ms` ≈ 0.04–0.15 ms, three to four orders below the walls it measures); what fails is the c8 contrast at any n this project has been willing to spend.
+
+The full table, reported and unscored:
+
+| cell | arm | n | onset med | **dur_ms med** | dur_ms p90 | retx med | it_ms |
+|---|---|---|---|---|---|---|---|
+| c1 | A / C | 16/16 | 0.9999 / 0.9996 | 1.5 / 6.7 | 8.5 / 9.1 | 0 / 0 | 0.043 / 0.045 |
+| c7 | A / C | 19/19 | 0.9844 / 0.9901 | 144.7 / **92.7** | 189.1 / 230.8 | 38 / 20 | 0.055 |
+| c8 | A / C | 26/24 | 0.7446 / 0.7134 | 626.2 / 698.8 | 1138.2 / 1610.8 | 168 / 268 | 0.117 / 0.122 |
+| c8L | A / C | 20/20 | 0.9886 / **1.0000** | 219.2 / **0.0** | 2455.9 / 749.3 | 31 / 0 | 0.119 / 0.152 |
+| sc2 | A / C | 22/17 | 0.9978 / **1.0000** | 20.2 / **0.0** | 113.8 / 350.7 | 0 / 0 | 0.101 |
+
+Directionally C removes the terminal wall at c7, c8L and sc2 and does not at c8 — but S-WALL failed, so none of that is scored, and it is written here as description only.
+
+### THE OUTRIGHT-REFUTATION CLAUSE, SCORED EXACTLY — AND THE DEFECT IN MY OWN BAR
+
+The pre-registered load-bearing falsifier: *"C is more than 2σ down at any cell where `[CCAP]` shows the cap PROVABLY INTERIOR (`mem` = 0 AND `floor` = 0) and the brake PROVABLY ENGAGED (`brake_frac` > 0.01). Then the law ran, expressed itself, braked, and lost."*
+
+**By the letter it does NOT fire.** The one 2σ goodput regression is c1-s7 (0.924), and c1's median `brake_frac` is **0.0069** — below the 0.01 bar by 0.0031. No other cell is more than 2σ down on goodput.
+
+**And the bar is defective, which is a finding about this pre-registration and not an escape from it.** It is keyed to GOODPUT ALONE. At sc2 the cap is provably interior (`mem` 0.059, `floor` 0.000), the brake is provably engaged (`brake_frac` 0.0315, > 0.01, on 100 % of reps), the law is fully warm (`eng` 0.994) — and it loses by **43–48 % on delivered latency, on both seeds, far outside 2σ**, on the axis the pre-registration's own headroom arithmetic had already declared to be the only one sc2 could be scored on. A falsifier that names the cell's scoring axis as latency and then keys its refutation clause to goodput cannot fire where it was most needed. **The spirit of the clause is met at sc2 and I am not going to hide behind its letter: the composed law ran, expressed itself, braked, and lost at sc2. That is the law being wrong at that cell, not the instruments.**
+
+### VERDICT
+
+**Shape: RIGHT, and confirmed on the wire for the first time.** The span term is **identically 0.000 in all 340 single-path evaluations** (c1 228, sc2 112) — the arithmetic vanishing that retires the `active_paths()`/`live_paths()` topology branch without an `if N == 1`, measured rather than argued. The law is linear in N, contains no mode bit, no δ/ρ threshold and no topology predicate, and it ENGAGED at 93.6–99.8 % of refreshes at every cell. The brake reads `live_paths()` and closes (0.7–3.2 % of ticks at c1/c8/sc2), so the `active_paths()` trap §16.56 wrote down in advance was correctly avoided. **Nothing about the formula's shape was refuted, and the CLAUDE.md no-mode-switch invariant is satisfied by construction and observed.**
+
+**Magnitude and inputs: WRONG.** At ρ = 1 the law is `3.125·Σ(rate·K·RTprop) + span` — 56 % more outstanding than the shipped `gain = 2.0` before the span term. That exceeds the 4096 memory bound at every dual (c8 100 %, c8L 78.8 %, c7 63.2 % of evaluations; c8L by **6.3×**), so at three of five cells the composed arm is bit-equal to the control and §16.56's honesty condition — *"the composition is only honest if that bound is measured NOT to be the operating point"* — is **falsified**. Where the law is interior it is not better: parity at best, a 2σ regression at c1-s7, **1.43–1.48× worse delivered latency at sc2**, and CPU/byte above the 1.05× band at **8 of 10 cell-seeds** (only c7 passes — which does confirm the one discriminating prediction, that C's cost is not `RWM_PLAIN_RS`'s; the cost is the composition's own).
+
+**The trial's answer to ADR-0070.** The review was right that the shipped law is a fitted constant wearing a law's clothes — this session measured it pinned at 4096 in 64 of 65 dual reps and at 1024 in 21 of 22 sc2 reps, exactly as claimed. It does not follow that the stated successor is better, and on the wire it is not. **A better-derived law that asks for 3.125 BDP is not an improvement over a worse-derived constant that asks for 2.0, at cells whose real constraint is queueing delay.** The derivation was audited for provenance and never for MAGNITUDE against the thing the cap actually controls, which is the standing queue.
+
+### RECOMMENDATIONS (recommendations only — no battery flips its own default)
+
+1. **`RWM_COMPOSED_CAP` stays default OFF.** Not a flip candidate on this evidence: it wins at no cell, regresses latency at the one cell scored on latency, and costs 6–46 % CPU/byte at 8 of 10 cell-seeds.
+2. **The legacy-path deletion comes OFF the table.** ADR-0070 Decision item 5 conditions it on *"the composed law wins everywhere"*. It won nowhere. The shipped chain keeps its provenance findings (ADR-0070's verdicts all stand) without acquiring a replacement.
+3. **`RWM_THREE_TERM` gains a second, independent reason to stay OFF** — §16.50's F1 failure was measured inside 2σ; this session adds a mechanism (3.125 BDP, clamped at every dual, queue-positive where interior).
+4. **Owed before any successor battery**, in order:
+   * a test asserting **code-vs-published-formula agreement** for `three_term_store_cap` (the window term is `rate·K·RTprop`, §16.56 publishes `rate·RTprop`) — either the code or the paper is wrong and FORMULA-FIRST says the paper wins until a commit says otherwise;
+   * a **degeneracy pin** on the term structure: `slack ≡ 2.125·window` at ρ = 1 makes the three-term law two-term, and discipline 18 says a degenerate law announces itself in the report, which `[3T]` did only because this battery went looking;
+   * the **magnitude question stated as a formula**, not a fit: if `cap − BDP` is the queue and δ is its budget, then 3.125 BDP means 2.1 BDP of standing queue at ρ = 1, and either δ must actually bound that or the `1 + 17/8` composition is wrong for a retain-until-acked scope. **This is the named successor, and it is a derivation question, not a battery question** (discipline 14: research, don't build).
+5. **c8's dead-wall contrast should not be re-run on a third measurand.** Two independent measurands have now inverted between pools minutes apart on one binary. The next attempt must change the DESIGN — a paired within-rep contrast, or a cell whose statistic is not bistable — not the statistic.
