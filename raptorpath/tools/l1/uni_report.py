@@ -33,6 +33,8 @@ import statistics as st
 import sys
 from collections import defaultdict
 
+from capbind_check import print_capbind
+
 CAP = {"c1": 1000e6, "sc2": 100e6, "c7": 200e6, "c8": 120e6}
 ORDER = ["c1", "sc2", "c7", "c8"]
 ARMS = ["A", "AU", "AL", "ALU", "RU"]
@@ -216,6 +218,16 @@ for c in CELLS:
                   + (f" occcap_p50={st.mean(oc):6.0f}" if oc else "")
                   + (f" paused={st.mean(pa):3.0f}%" if pa else "")
                   + (f" retx={st.mean(rx):6.0f}" if rx else ""))
+
+print()
+print("=" * 100)
+print("5b. BIND FRACTION -- is the store-cap LAW varying, or is it a CONSTANT?")
+print("=" * 100)
+print("  (ADR-0070 prevention kit item 2. Section 5's occcap_p50 is the cap the")
+print("   transfer RAN UNDER; this asks how often that number was one of the")
+print("   chain's own clamps, i.e. how often the law contributed nothing. The")
+print("   0.5 warn level is a REPORTING AID -- no clause below reads it.)")
+print_capbind(scored)
 
 print()
 print("=" * 100)
