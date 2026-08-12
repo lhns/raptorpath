@@ -28120,6 +28120,263 @@ engine code changed. Determinism verified across **three separate processes**
 on the always-on suite, all 41/41, and each readout was taken in its own
 process.
 
+## The Derived Recovery Clamp (2026-08-12, `feat/derived-recovery-clamp` from main@`99514af`) — MEASUREMENT DISCIPLINE 14, and §16.40's rule applied in BOTH directions. Executes the question "The Latency-Feedback Source" left DELIBERATELY NOT CONCLUDED ("whether the 100 ms recovery clamp should move"). **STRICTLY LOCAL: no VM was contacted, no L1 number re-derived, no default changed.** **VERDICT: the CEILING is the defect and it is DERIVABLE with zero new constants; the ARGUMENT is CORRECT at this clock and the wire-clock repair is REFUTED — which is the opposite of §16.40's verdict at the patience site, for a stated mechanical reason.** Vehicles: `raptorpath/src/net/mod.rs` (the law), `raptorpath/tests/recovery_bench.rs` (the trial).
+
+### THE VERDICT IN SIX LINES
+
+1. **THE TWO LITERALS HAVE NO MEASUREMENT BEHIND THEM.** `TAIL_SWEEP_MIN_US`
+   / `TAIL_SWEEP_MAX_US` entered at **cb66b93** (P10b, 2026-07-04) with the
+   entire justification "clamp [25,100]ms — **block mode's P8 sweeper
+   analog**": borrowed from a sibling constant. `HOLE_NACK_REFRESH_MIN/MAX`
+   entered at **4c90153** (RWM Phase A) with **no mention at all** in the
+   commit message. Neither was ever swept, fitted or measured. The only
+   stated reason anywhere is the code comment on `TAIL_SWEEP_MIN_US`: the
+   clock "must sit above the ack arrival time (~1×SRTT + jitter) … and below
+   the receiver's reorder hold (60 ms floor) plus the inner-TCP RTO
+   (~200 ms)".
+2. **AND NEITHER OF THE CEILING'S TWO REFERENTS EXISTS ON THE MEASURED
+   STACK.** The reorder hold is a property of the EVICT path; the reliable
+   (ρ = 1) receiver **never force-delivers past a hole**
+   (`recv_window_reliable`, `net/receiver.rs`), so no hold bounds this
+   cadence there. And the inner TCP does not exist: the preceding section
+   proved it name by name on `perf.rs` / `tun/mod.rs`. **A ceiling whose
+   job is to stay below two absent quantities is a constant with nothing
+   behind it**, and it is removed rather than re-fitted.
+3. **THE FLOOR IS REDUNDANT GIVEN THE MULTIPLIER, and where it is not, the
+   engine ALREADY has its derivation.** The floor's stated job is
+   `2·srtt ≥ srtt + jitter`, which holds whenever `jitter ≤ srtt` — true by
+   the definition of jitter as a consecutive-DIFFERENCE statistic. The one
+   case left is "no clock yet", and `patience_floor_us` (goal-gate "Unlock
+   The Default 2") is exactly that law: timer granularity + the path's own
+   measured jitter, with the legacy literal as the no-sample fallback.
+4. **SO THE DERIVED LAW IS ONE LINE WITH ZERO NEW CONSTANTS**, and it is a
+   strict generalization rather than a second machine:
+
+   ```text
+   round(srtt, jitter) = max( 2·srtt , patience_floor_us(jitter, srtt) )
+   ```
+
+   The `2` is the shipped multiplier, untouched. Over the whole band where
+   the literal law is not clamping (`2·srtt ∈ [25, 100]` ms) this returns
+   **exactly `tail_sweep_timeout_us(srtt)`, to the microsecond** — pinned
+   over a 12.5–50 ms grid at 250 µs resolution.
+5. **THE ARGUMENT IS RIGHT, AND THE WIRE-CLOCK REPAIR IS REFUTED.** The
+   sweep is armed from the seq's own `retransmit_buffer` insert instant
+   (`net/emit_source.rs:551`, `now_us()` at emission) and **the ack that
+   retires that seq is timed from the SAME instant** (`send_timestamp_us:
+   now_us()` on the DATA frame, differenced in `net/control_msg.rs` — which
+   is precisely what `estimator.rtt()` smooths). The app-echo SRTT is
+   therefore not "a clock" here: it is **the measured time until the event
+   the sweep is waiting for.** Wire-clocking replaces that with a quantity
+   that is not the referent, and the arithmetic says so (§ below): at c8 it
+   is a **NO-OP to the microsecond** under the shipped ceiling and still
+   leaves 2 spurious rounds with the ceiling removed.
+6. **AND THE DELETION CHAIN'S LOAD-BEARING QUESTION READS YES IN THE
+   MODEL.** Under the shipped ceiling a deeper pool (`AU`) raises the
+   dwell-inclusive clock 376 → 464 ms and the cadence **cannot move** (both
+   pinned at 100 ms), so the deeper pool buys **one MORE spurious round,
+   3 → 4**. Under the derived round the cadence tracks the pool
+   (752 → 928 ms) and the spurious count is **0 at both** — and 0 for every
+   dwell, by arithmetic, so no store-cap arm has a handle on it at all.
+
+### THE ARITHMETIC — WHY "SPURIOUS" IS A THEOREM AND NOT A JUDGEMENT
+
+The sweep timer and the ack are measured from the same instant, so
+
+```text
+spurious rounds per tail-blocked symbol = ceil(srtt_app / cadence) − 1
+```
+
+is exact: it counts the times the clock fires on a symbol before that
+symbol's own ack can possibly have arrived. With the derived cadence
+`2·srtt_app` it is `ceil(s / 2s) − 1 = 0` for **every** `s > 0`.
+
+`srtt_app = rtp_med + q_p50`, which is "The Queue Fix"'s own decomposition
+re-composed, over the summary records in `docs/l1-raw`. The `wire` column is
+the **`ping_p50` loaded-ICMP probe those same records carry and that no
+section of this file had ever read** — see the recording below on why it is
+the only wire-clock evidence in the tree. Printed by `derived_clamp_readout`:
+
+```
+cell     srtt_app    wire |   SHIPPED  spur |    A uncl  spur |    B wire  spur |       A+B  spur
+c1-A         9 ms    2 ms |     25 ms     0 |     18 ms     0 |     25 ms     0 |      4 ms     2
+c7-A        87 ms   72 ms |    100 ms     0 |    174 ms     0 |    100 ms     0 |    144 ms     0
+sc2-A      104 ms  101 ms |    100 ms     1 |    208 ms     0 |    100 ms     1 |    202 ms     0
+c8-A       376 ms   77 ms |    100 ms     3 |    752 ms     0 |    100 ms     3 |    154 ms     2
+c8-AU      464 ms   82 ms |    100 ms     4 |    928 ms     0 |    100 ms     4 |    164 ms     2
+```
+
+Read it column by column:
+
+* **c1 is the CONTROL and it says the reading is about c8's queue, not about
+  the law.** c1's `2·srtt` = 18 ms sits BELOW the literal floor, so the
+  shipped clock is the 25 ms floor — and 25 ms is still comfortably above
+  the 9 ms ack, so **zero spurious rounds**. The clamp is harmless exactly
+  where the queue is small.
+* **REPAIR B ALONE IS A NO-OP AT c8.** `2 × 77 = 154` ms is still above the
+  ceiling, so `tail_sweep_timeout_us(wire) == tail_sweep_timeout_us(app)`
+  **to the microsecond** — asserted as an equality, not as a ratio.
+* **REPAIR A + B IS BETTER AND STILL WRONG**: 154 ms against a 376 ms ack,
+  2 spurious rounds. And at c1 it is **worse than shipped** (a 4 ms cadence
+  against a 9 ms ack, 2 spurious rounds where the shipped law has 0) — the
+  wire clock under-reads the referent at every cell, and the ceiling was
+  accidentally hiding that.
+* **ONLY REPAIR A ON THE APP-ECHO ARGUMENT IS SPURIOUS-FREE**, at every row.
+  The verdict chain, pinned as an absolute tuple:
+  `(shipped, B, A+B, A) = (3, 3, 2, 0)`.
+
+### THE ARGUMENT vs THE CONSTANT — §16.40's RULE, AND WHY IT ANSWERS DIFFERENTLY HERE
+
+§16.40 is the last time a recovery constant was put on trial, and the
+constant WON: the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms floor won **0 of
+177 543** §6.1.2 evaluations at c7 because the threshold's ARGUMENT (a
+store-dwell-inclusive app-echo RTT) was wrong, not because the literal was.
+The rule that came out of it — put the argument on trial first — was
+followed here, and it returned the OPPOSITE verdict. That is not an
+inconsistency; the two sites wait for different events:
+
+| clock | the event it waits for | the honest argument |
+|---|---|---|
+| §6.1.2 time threshold (§16.40's site) | *"has this symbol been LOST on the wire?"* | the **wire** RTT — the dwell is not part of the question, so including it inflates patience ×17.8 RTprop at c7 |
+| the tail sweep (this site) | *"has the ACK for this symbol failed to come back?"* | the **app-echo** RTT — it is the measured distribution of exactly that event, from the same instant |
+
+**The clock argument is not a global property of the engine; it is a
+property of each clock's referent event.** That distinction is what this
+section adds to the two before it, and it is why the same bench that
+measured §16.40's `app → wire` win measures a `wire → app` refutation two
+clocks over.
+
+### THE DRIVER, AND THE COST THE MODEL DOES SHOW
+
+At the c8 geometry (RTprop 38 ms, wire queue 39 ms = ICMP p50 − RTprop,
+dwell 299 ms = app-echo − ICMP p50, GE 2.6 %, np 2, seeds 42 + 7):
+
+```
+arm         clk |     sweep   refresh |  holes   retx  sweeps |   p50 ms   p90 ms
+shipped     app |    100 ms    100 ms |    202    202      13 |    306.8    469.6
+shipped    wire |    100 ms    100 ms |    202    205       3 |     47.6    117.8
+ds          app |    772 ms    174 ms |    202    202       0 |    306.8    586.3
+ds         wire |    174 ms    174 ms |    202    205       3 |     47.6    117.8
+```
+
+**Stated as a cost, not buried.** In the driver the derived arm fires **0
+sweeps against 13** and its p90 hole→service rises **469.6 → 586.3 ms
+(+25 %)**. That is honest and it is also exactly the boundary the bench
+declares: **the driver's dwell is a CLOCK, not a delay** — its ack
+turnaround is the wire RTT, so the spurious-round arithmetic above is NOT
+reproduced there and the sweeps it removes are doing real work in that
+model. The bench cannot arbitrate between "the sweeps were spurious" (the
+arithmetic on the engine's own instants) and "the sweeps were the backstop"
+(the driver, with the dwell removed from the delay). **That is the single
+thing the VM battery exists to settle**, and it is pre-registered as C5 with
+a 1.25× `ping_p99` bar in the PRE-REGISTRATION section that follows.
+
+### WHAT IS SHIPPED (default OFF, byte-identical with the gate unset)
+
+`RWM_DERIVED_SWEEP` (`gates.derived_sweep`, default **OFF**): a two-sided
+`[GATES]` echo (`RWM_DERIVED_SWEEP=0` asserted by
+`the_gates_echo_is_two_sided`), the default-OFF assertion in
+`default_env_resolves_the_shipped_stack`, and the entry in `RWM_FORWARD`
+(`tools/l1/lib.sh`) that the 2026-08-09 forwarding audit made a
+precondition. Three pure functions in `net/mod.rs` —
+`derived_recovery_round_us`, `sweep_timeout_us`, `hole_refresh` — and two
+behavioural sites: the sender loop's tail deadline (`net/mod.rs`) and the
+reliable receiver's stalled-hole refresh (`net/receiver.rs`). Both jitter
+reads pool over the SAME path set as their clock, so floor and clock can
+never come from different paths.
+
+### WHAT IS PINNED, AND WHERE
+
+Five always-on tests in `recovery_bench.rs` (1 → 6) plus one readout. Every
+pre-existing test passes **UNMODIFIED** — `recovery_bench_fixtures_pin_the_plane`
+is untouched and green, which is the proof the `ds` arm's addition to `ARMS`
+changed nothing about the four arms before it.
+
+* `the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band` —
+  **THE COINCIDENCE PROPERTY + THE ROUTING PROOF** (CLAUDE.md rule 1):
+  identity with `tail_sweep_timeout_us` over a 12.5–50 ms grid; `2·srtt`
+  above the ceiling; the derived floor below it; the gate routing asserted
+  in both directions at both sites; the no-clock fallback identical in both
+  arms; and the ZERO-NEW-CONSTANTS identity against `patience_floor_us`.
+* `the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control`
+  — **THE DEAD WALL'S QUANTUM, BOUNDED**: the transcribed geometries, c8's
+  ≥ 3.5× overshoot and its three rounds, c1 on the FLOOR with zero as the
+  control, and the derived law's zero at every geometry AND over a decade of
+  synthetic `srtt`.
+* `wire_clocking_the_tail_sweep_does_not_lift_the_c8_clamp` — **REPAIR B'S
+  REFUTATION, BOUNDED**: the no-op asserted as an EQUALITY, the A+B residual
+  of 2, and the `(3, 3, 2, 0)` chain as one tuple.
+* `the_derived_round_removes_the_deeper_pools_clock_penalty_and_the_ceiling_does_not`
+  — **THE LOAD-BEARING INTERACTION, BOUNDED**: 376 → 464 ms of clock, the
+  cadence asserted IDENTICAL under the ceiling, 3 → 4 rounds, the derived
+  752 → 928 ms, and the invariant over a 0–1 000 ms dwell sweep so the claim
+  is about the law and not about two points.
+* `the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8` —
+  **LIVENESS**: same wire, same hole count, same clock argument; both
+  cadences moved; the sweep count strictly down; ≥ 95 % of holes still
+  reaching a named channel in both arms.
+
+One readout: `derived_clamp_readout`.
+
+### A RECORDING, NOT A CLAIM: THE WIRE CLOCK HAS NEVER REACHED A SUMMARY RECORD
+
+`tools/l1/flip_parse.py:183` compiles `rtt=(\d+)/wrtt=(\d+)/rtp(\d+)ms` and
+uses **groups 1 and 3 only** (`:205-207`); group 2 — `wrtt`, the quinn
+packet-timed wire RTT that ADR-0062/§16.34 introduced and that Copa's delay
+term already consumes — is **parsed and discarded**. So Repair B's own
+argument is unmeasured at L1 in every committed record, and the `wire`
+column above is the `ping_p50` **loaded ICMP** probe standing in for it.
+That probe is not `wire_rtt`: it is an out-of-band packet through the same
+netem, its c8 medians differ by source (`flip` 48 ms, `uniflip` 87 ms), and
+nothing here rests on its precise value — the refutation of Repair B holds
+for every `wire < 188 ms`, i.e. for the whole range in which `2·wire` is
+below the app-echo clock at all. A successor who wants Repair B properly
+scored should add `wrtt` to the summary record first; it is one line.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Whether the derived round HELPS on the wire.** Nothing here measures a
+  transfer. The component result licenses the battery in the section that
+  follows and nothing more.
+* **The RECEIVER's argument.** `hole_nack_refresh` reads the Copa (wire)
+  clock, and by this section's own rule its referent event — *"how long
+  until a repair I advertised can arrive?"* — passes through the sender's
+  emission queue, so the wire clock UNDER-reads it there too. The receiver
+  has no app-echo clock of its own, so that argument cannot be derived from
+  receiver-local information. **Named as an un-derived residual, not fixed.**
+  This branch changes only the receiver's CLAMP, not its argument.
+* **`HONEST_RECOVERY_ROUND_S`.** The honest store cap's runway term is
+  defined as `TAIL_SWEEP_MAX_US / 1e6` — i.e. the ceiling this section
+  argues has nothing behind it is also a term of the CAP law. Left
+  untouched and untested here: it is a different law with a different
+  derivation and folding it in would make the battery unattributable.
+* **Any deletion.** `TAIL_SWEEP_MIN/MAX_US` and `HOLE_NACK_REFRESH_MIN/MAX`
+  are all still live on the gate-OFF path and `HOLE_NACK_REFRESH_MIN` is
+  additionally the ceiling of `stall_threshold_us`. Nothing is scheduled
+  for removal on a component result.
+* **Any default change.** `RWM_DERIVED_SWEEP` ships OFF and stays OFF until
+  the pre-registered battery scores it.
+
+### GATES
+
+`-p raptorpath --lib` **402 passed** (5 ignored) · `-p raptorpath-math` (8
+targets) 59 + 19 + 22 + 4 + 4 + 3 + 25 + 0 = **136 passed** · `--doc` **0**
+(the crate has no doctests) · `recovery_bench` **6 passed** (2 ignored; 1 → 6
+is the five new pins and `recovery_bench_fixtures_pin_the_plane` passes
+UNMODIFIED) · `slack_bench` **7 passed** (3 ignored) · `store_cap_bench`
+**4 passed** (3 ignored) · `store_cap_sf_bench` **41 passed, 0 failed** (16
+ignored — the 41 stay green, every one UNMODIFIED) · `mtu_blackhole_wedge`
+**2** · `perf_loopback` **8** · all seven remaining loopbacks
+(`patience`, `recov_mp`, `ack_merge`, `copa_sole`, `emit_batch`,
+`win_decouple`, `wire_compact`) **1** each · `gate_suite --release --
+--test-threads 1` **15/15** (17 ignored) — required, since engine code
+changed.
+
+`patience_loopback` and `recov_mp_loopback` are named explicitly because
+they are the two loopbacks that exercise the recovery plane's clocks; both
+pass with the gate unset, which is the shipped-path-unchanged claim measured
+rather than asserted.
+
 ## The Derived Recovery Clamp — VM PRE-REGISTRATION (2026-08-12) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any VM contact and BEFORE any battery, in its OWN commit, against the law shipped at `feat/derived-recovery-clamp`@`8a29845`. Branch `feat/derived-recovery-clamp` from main@`99514af`. **This block is the battery the preceding section ("The Latency-Feedback Source") specified under "WHAT THE PRE-REGISTERED VM BATTERY FOR THE DELETION CHAIN MUST MEASURE", written to that spec clause by clause.**
 
 ### WHAT IS BEING TESTED
