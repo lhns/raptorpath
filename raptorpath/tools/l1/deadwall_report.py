@@ -26,6 +26,8 @@ import json
 import statistics as st
 import sys
 
+from capbind_check import print_capbind
+
 # ── the bars, transcribed ────────────────────────────────────────────────
 C1_BAR = 3 / 16          # p_A >= 3/16 pooled                    (STOP RULE)
 C2_DROP = 4 / 16         # p_D <= p_A - 4/16
@@ -119,6 +121,16 @@ def main():
             f_q = fmt(med(rs, "ping_p99"), "%.1f")
             print("%-5s%-5s%-6s%4d%6d%7s%9s%9s%8s%5d%7d"
                   % (c, a, ALIAS[a], len(rs), k, f_p, f_g, f_r, f_q, dnf, div))
+
+    # ── the store-cap bind fraction (ADR-0070 prevention kit item 2) ─────
+    # The recovery clamp is measured against a POOL whose own law may not be
+    # varying at all: if the realized cap sat on one of the chain's clamps in
+    # most reps, the pool was a CONSTANT for this battery and every pool-side
+    # reading here is a reading of that constant. Printed BEFORE the stop rule
+    # so it survives an UNSCORED verdict — it is instrument hygiene, not a
+    # score, and no pre-registered bar above or below reads it.
+    print()
+    print_capbind(rows)
 
     # ── C1, the stop rule ────────────────────────────────────────────────
     kA, nA, pA = rate(sel(rows, DECISION, "A"))

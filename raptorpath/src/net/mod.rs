@@ -2471,6 +2471,14 @@ pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64
 /// Σ Copa cwnd under the feed): cap = clamp(gain·N·pipe_sum, floor,
 /// N·pool). Returns `None` when the caller must use the legacy single-path
 /// law — so N = 1 is bit-exact legacy even with the flag ON.
+///
+/// **UNDER REVIEW — ADR-0070 "The store-cap law on trial".** The `×N` applies
+/// a path-count multiplier to an ALREADY-SUMMED base, so the value is
+/// QUADRATIC in N at symmetric inputs where the derivation (`Σᵢ gain·anchorᵢ`)
+/// is linear; the `N·knee` ceiling is what has been measured on every dual
+/// cell. Behaviour is unchanged here — the shape is PINNED by
+/// `net::tests::law_shape` (`path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`)
+/// so any change to it is a reviewed decision.
 pub fn path_scaled_store_cap(
     on: bool,
     n_live: usize,
@@ -9087,6 +9095,211 @@ mod tests {
             path_scaled_store_cap(true, 3, 4000.0, 2.0, 64, 2048),
             Some(3 * 2048)
         );
+    }
+
+    // ----- LAW-SHAPE TESTS (ADR-0070 prevention kit, item 1) -----------------
+
+    /// THE LAW-SHAPE TEMPLATE — the instrument the N² defect needed and did
+    /// not have. Documented here rather than in prose so the next law can be
+    /// covered by copying a test instead of by remembering a lesson.
+    ///
+    /// **What went wrong.** `path_scaled_store_cap`'s value is
+    /// `gain·N·Σᵢ anchorᵢ`, and at symmetric inputs `Σ` is itself ∝ N — so the
+    /// VALUE is quadratic in the path count while every derivation says the
+    /// pool is a sum over paths, i.e. LINEAR. The whole existing test suite
+    /// missed it, and each reason is a hole this template closes:
+    ///
+    ///  1. **The clamp ate the evidence.** `clamp(·, floor, N·knee)` is pinned
+    ///     at the ceiling for every Σ ≥ knee/gain = 1024, which is every
+    ///     measured dual cell. A test that reads the law THROUGH its clamp
+    ///     measures the ceiling, not the law. ⇒ Test the UNCLAMPED value and
+    ///     the CLAMP SEPARATELY: pick inputs that make the clamp provably
+    ///     inert (huge pool, floor ≈ 0) for the value, and inputs that make it
+    ///     provably binding for the ceiling.
+    ///  2. **The axes the cells never exercise.** The entire test universe had
+    ///     N ∈ {1, 2}; N² and N are indistinguishable from a RATIO at two
+    ///     points unless the ratio is asserted against an absolute form, and
+    ///     the exponent only becomes visible as a ratio at N ≥ 3. ⇒ Sweep the
+    ///     structural axis SYNTHETICALLY (here N = 1..8), well past whatever
+    ///     the deployment cells happen to contain.
+    ///  3. **Nobody asserted a SHAPE.** Every prior assertion was a point
+    ///     (`cap(2, 1076) == 4096`), and a point is satisfied by any law that
+    ///     passes through it. ⇒ Assert the exponent/closed form itself, on
+    ///     synthetic inputs chosen so the closed form is hand-computable.
+    ///
+    /// The template, applied to any new law `f(N, x…)`:
+    ///
+    /// ```text
+    ///   a. synthetic SYMMETRIC inputs (equal per-path term), round numbers;
+    ///   b. neutralise every clamp, then assert the closed form over N = 1..8;
+    ///   c. re-engage each clamp on its own and assert ITS shape (a clamp may
+    ///      never be the only thing making a law sane);
+    ///   d. state the DERIVED shape in the test name, so a change of shape is
+    ///      a change of a test name and therefore a reviewed decision.
+    /// ```
+    ///
+    /// The two `path_scaled_store_cap` tests below PIN the defect rather than
+    /// fix it (CLAUDE.md: "every documented divergence must carry a test that
+    /// BOUNDS it") — the law is under review as ADR-0070 "The store-cap law on
+    /// trial" and its behaviour is unchanged on this branch. The third test
+    /// applies the same template to the candidate successor's core,
+    /// [`three_term_store_cap`], which is linear in N as derived.
+    mod law_shape {
+        use crate::net::{
+            contract_stall_s, path_scaled_store_cap, three_term_store_cap, ThreeTermTerm,
+            WIN_STORE_MAX,
+        };
+
+        /// Per-path anchor for the synthetic symmetric cell, in symbols. Round
+        /// so every expected value below is hand-computable.
+        const A: f64 = 100.0;
+        /// The shipped gain (`sender_policy::resolve`).
+        const GAIN: f64 = 2.0;
+        /// A pool so large that `N·pool` cannot bind for any N ≤ 8 at these
+        /// inputs — this is what makes the assertion below a statement about
+        /// the LAW rather than about its ceiling.
+        const POOL_INERT: usize = 1 << 20;
+        /// Floor ≈ 0 (the law clamps to `[floor, ceiling]`, and `floor = 0`
+        /// would still be a clamp; 1 is the smallest value that cannot bind).
+        const FLOOR_INERT: usize = 1;
+
+        /// THE DOCUMENTED DEFECT, PINNED: the UNCLAMPED value is QUADRATIC in
+        /// the live-path count at symmetric inputs.
+        ///
+        /// `cap = gain·N·Σᵢ anchorᵢ`, and at a symmetric cell `Σ = N·A`, so
+        /// `cap = gain·A·N²`. The derivation the law generalises
+        /// (`Σᵢ gain·anchorᵢ`) is LINEAR in N; the shipped multiplier is
+        /// applied to an already-summed quantity. See ADR-0070 "The store-cap
+        /// law on trial" §×N.
+        ///
+        /// This test asserts the shape AS SHIPPED. It is the test that would
+        /// have failed on day one, and it must be UPDATED (not deleted) by
+        /// whatever change fixes the law.
+        #[test]
+        fn path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect() {
+            let cap = |n: usize| {
+                path_scaled_store_cap(true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
+                    .expect("the law is engaged at N >= 2 with a positive base")
+            };
+
+            // (b) The closed form, over the whole synthetic axis. `200·N²`.
+            for n in 2..=8usize {
+                let expected = (GAIN * A * (n * n) as f64) as usize;
+                assert_eq!(cap(n), expected, "N={n}: the law is not gain·A·N²");
+                // The clamp is provably inert here — otherwise this test would
+                // be measuring the ceiling again (hole 1).
+                assert!(cap(n) < n * POOL_INERT, "N={n}: the ceiling bound");
+                assert!(cap(n) > FLOOR_INERT, "N={n}: the floor bound");
+            }
+
+            // (a/c) The ratio that names the exponent. A law linear in N would
+            // read 2 at every doubling; the shipped law reads 4.
+            for n in [2usize, 3, 4] {
+                let r = cap(2 * n) as f64 / cap(n) as f64;
+                assert!(
+                    (r - 4.0).abs() < 1e-9,
+                    "cap({}) / cap({n}) = {r}, i.e. not quadratic",
+                    2 * n
+                );
+            }
+
+            // The absolute numbers, spelled out: the pool the law hands a
+            // symmetric 8-path cell is 16× the pool it hands a symmetric dual,
+            // where the summed derivation asks for 4×.
+            assert_eq!(cap(2), 800);
+            assert_eq!(cap(4), 3_200);
+            assert_eq!(cap(8), 12_800);
+            assert_eq!(cap(8) / cap(2), 16, "linear would be 4");
+        }
+
+        /// (c) THE CLAMP, TESTED ON ITS OWN: the CEILING is `N·knee`, i.e.
+        /// LINEAR in N — which is precisely why the defect above was invisible
+        /// on every measured cell. Once `Σ ≥ knee/gain` the realized cap is the
+        /// ceiling and carries no information about the value at all, so the
+        /// two must never be asserted through one another.
+        #[test]
+        fn path_scaled_store_cap_ceiling_is_linear_in_n() {
+            const KNEE: usize = 2048; // RWM_STORE_PATH_POOL, the shipped pool
+            const FLOOR: usize = 64;
+            // A pool base so large that the value cannot possibly be interior.
+            let cap = |n: usize| {
+                path_scaled_store_cap(true, n, n as f64 * 1.0e9, GAIN, FLOOR, KNEE)
+                    .expect("engaged")
+            };
+            for n in 2..=8usize {
+                assert_eq!(cap(n), n * KNEE, "N={n}: the ceiling is not N·knee");
+            }
+            // Linear, so a doubling reads exactly 2 — and this is the ONLY
+            // ratio a measurement of a pinned cap can report, whatever the
+            // value underneath is doing.
+            for n in [2usize, 3, 4] {
+                assert_eq!(cap(2 * n) as f64 / cap(n) as f64, 2.0);
+            }
+            // The floor is the other clamp, and it is a CONSTANT in N.
+            for n in 2..=8usize {
+                assert_eq!(
+                    path_scaled_store_cap(true, n, 1e-6, GAIN, FLOOR, KNEE),
+                    Some(FLOOR),
+                    "N={n}"
+                );
+            }
+        }
+
+        /// THE TEMPLATE APPLIED TO THE SUCCESSOR: `three_term_store_cap`'s
+        /// value is LINEAR in N at symmetric inputs — it is a Σ over paths with
+        /// no count multiplier, and its TERM 3 (`2·rate_fast·skew`) vanishes
+        /// identically over a symmetric set because `rtp_max == rtp_min`.
+        ///
+        /// Same three holes closed: the `[floor, WIN_STORE_MAX]` clamp is kept
+        /// provably inert (asserted, not assumed), N is swept 1..8, and the
+        /// closed form — not a point — is what is asserted.
+        #[test]
+        fn three_term_store_cap_value_is_linear_in_n_the_template_applied() {
+            const RATE: f64 = 1_000.0; // symbols/s
+            const RTPROP_S: f64 = 0.05;
+            const K: f64 = 1.0; // honest clock, no standing queue
+            const RHO: f64 = 1.0;
+            const B: f64 = 0.5; // Realtime's δ budget; any point on the dial
+            const FLOOR: usize = 64;
+
+            let term = ThreeTermTerm { rate: RATE, rtprop_s: RTPROP_S, k: K };
+            let cap = |n: usize| {
+                let terms = vec![Some(term); n];
+                three_term_store_cap(true, &terms, RHO, B, FLOOR)
+                    .expect("every synthetic path is warm")
+            };
+
+            // The per-path term, from the law's own pieces (window + slack;
+            // span = 0 at a symmetric set). ABSOLUTE, hand-computable:
+            // window = 1000·1·0.05 = 50; stall(ρ=1) = (9/8 + 1)·srtt =
+            // 2.125·0.05 = 0.10625 s; slack = 106.25.
+            let srtt_s = K * RTPROP_S;
+            let single = RATE * srtt_s + RATE * contract_stall_s(RHO, B, RTPROP_S, srtt_s);
+            assert!((single - 156.25).abs() < 1e-9, "per-path term drifted: {single}");
+
+            for n in 1..=8usize {
+                let (limit, window, slack, span) = cap(n);
+                // (b) the closed form: Σ over paths, no count multiplier.
+                assert_eq!(
+                    limit,
+                    (n as f64 * single).ceil() as usize,
+                    "N={n}: the three-term law is not Σ-linear in N"
+                );
+                // Every term individually linear, and TERM 3 identically 0 at
+                // a symmetric set (no path-count predicate anywhere).
+                assert!((window - n as f64 * RATE * srtt_s).abs() < 1e-9, "N={n} window");
+                assert!((slack - n as f64 * (single - RATE * srtt_s)).abs() < 1e-9, "N={n} slack");
+                assert_eq!(span, 0.0, "N={n}: skew is 0 over a symmetric set");
+                // (c) the clamp is inert — asserted, so this can never silently
+                // become a measurement of `WIN_STORE_MAX`.
+                assert!(limit > FLOOR && limit < WIN_STORE_MAX, "N={n}: a clamp bound at {limit}");
+            }
+
+            // The ratio that names the exponent, against the shipped law's 16.
+            assert_eq!(cap(8).0 as f64 / cap(1).0 as f64, 1_250.0 / 157.0);
+            let r = cap(8).0 as f64 / cap(1).0 as f64;
+            assert!((r - 8.0).abs() < 0.1, "N=8 vs N=1 reads {r}, not linear-8");
+        }
     }
 
     // ----- Capacity-weighted pool (RWM_STORE_CAPW, "C8-Aware Pool Law") -------
