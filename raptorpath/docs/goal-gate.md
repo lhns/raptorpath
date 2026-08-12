@@ -29736,3 +29736,123 @@ If the stop rule fires at EVERY cell, the battery is reported **UNSCORED in full
 ### ENVIRONMENT HONESTY, RECORDED PER ERA
 
 Binary sha256 and VM source commit in every ledger header; `lscpu` model with the aes/avx2/pclmulqdq flags; kernel; load and co-tenant count at launch (discipline 9). The desktop session's `kwin_x11`/`sddm` presence is recorded per era as in the preceding batteries â€” it is part of the era and every arm pays it equally. The battery is **LAUNCHED DETACHED AND NOT POLLED** (discipline 13): one `DONE-ALL` sentinel, collected once at the end.
+
+### PRE-BATTERY SMOKE â€” **THE BATTERY WAS NOT LAUNCHED** (2026-08-12 19:45:08â€“19:45:41 UTC; binary sha256 `ea3117ec3a64f73e9cf5512dce9b837f6c8c05ca405940815a03bc975bab2f17` = commit `4a1a0f1`, whose ENGINE TREE IS BYTE-IDENTICAL to main@`b68c020` â€” this branch adds only `docs/goal-gate.md` and five `tools/l1/ccap_*` files; built fresh on the VM in 5m55s from a CLEARED and CRLF-CONVERTED `git archive` tree; E5-2650 v3 aes+avx2+pclmulqdq, kernel 7.0.14-101.fc43; seed 42, 1 rep/arm at `c8`@25 MB and `sc2`, driver `tools/l1/ccap_battery.sh`, log `/home/vibe/ccap/smoke-s42.log` + per-run diag; lock `/tmp/rwm-vm.lock` found FREE and taken 19:36:51 UTC, **held**)
+
+**This block is SHAKEOUT EVIDENCE, recorded BEFORE the battery, and it is n = 1
+per cell-arm: it decides whether the battery may run. It scores nothing, and no
+number in the pre-registration is touched by it.** The smoke did its job: it
+failed, and it failed on the instruments rather than on the law.
+
+#### THE ARM IS CORRECTLY WIRED â€” every liveness clause the pre-registration names PASSED
+
+| clause | c8-A | c8-C | sc2-A | sc2-C |
+|---|---|---|---|---|
+| `[GATES] RWM_COMPOSED_CAP=` two-sided, both endpoints | `0/0` âœ“ | `1/1` âœ“ | `0/0` âœ“ | `1/1` âœ“ |
+| `[GATES] RWM_WALLDIAG=1` / `RWM_ACKDIAG=1`, both endpoints | âœ“ | âœ“ | âœ“ | âœ“ |
+| `three-term outstanding limit ACTIVE` (the POOL SEAT reached) | absent âœ“ | **present** âœ“ | absent âœ“ | **present** âœ“ |
+| `unified store-cap path set ACTIVE` â€” expected ABSENT on both | absent âœ“ | absent âœ“ | absent âœ“ | absent âœ“ |
+| `RWM_THREE_TERM=0` / `RWM_STORE_CAP_UNIFIED=0` witnesses | âœ“ | âœ“ | âœ“ | âœ“ |
+| ABORT / DNF | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+The composed gate reaches `three_term_store_cap` **without** `RWM_THREE_TERM`
+being set, exactly as `sender_policy`'s
+`three_term_on = (three_term || composed_cap) && plain_dyn_cap` says it should,
+and the unified echo is absent on both arms exactly as the pre-registration
+wrote down in advance. Nothing about the ARM is wrong.
+
+#### THE DEFECT: `[CCAP]` AND `[WALL]` SIT ON TWO SENDER-TEARDOWN ARMS THE `perf` HARNESS DOES NOT REACH
+
+Measured, across the smoke's eight endpoint logs:
+
+| line | expected | observed |
+|---|---|---|
+| `[CCAP]` on the C client logs | 2 / 2 | **0 / 2** |
+| `[WALL]` on all client logs (both arms) | 4 / 4 | **1 / 4** |
+| `window sender shut down gracefully` | â€” | **0 / 4** |
+| `TUN closed` | â€” | **1 / 4** (the one run that emitted `[WALL]`) |
+
+Both gauges are emitted from exactly two places (`net/mod.rs:6113`/`:6117` in
+the `shutdown_rx.recv()` arm, and `:6202`/`:6206` in the `packet == None`
+"TUN closed" arm). **The `perf` harness's bulk transfer completes and the
+sender goes away without taking either arm** â€” 0 of 4 graceful shutdowns, 1 of
+4 TUN closes â€” so the run's ONE `[CCAP]` line and ONE `[WALL]` line are
+emitted racily or not at all. The single `[WALL]` that did appear
+(`sc2-A`: `onset=1.0000 dur_ms=0.0 retx=0 total_ms=9009.4 it_ms=0.100`) is
+well-formed, and its `it_ms` = 0.100 is a real resolution reading â€” the
+RENDERER is fine. What was never validated is REACHABILITY.
+
+**This is ADR-0070's own postmortem recurring one commit after the rules it
+produced.** The two loopback tests (`composed_cap_loopback.rs`,
+`walldiag_loopback.rs`) drive a graceful shutdown, so they exercised the
+teardown path and asserted the strings; the always-on pins assert
+`ccap_report_line`'s FORMAT. Every one of them passed, and none of them asked
+whether the line is reachable **under the harness the battery actually runs**.
+That is the same shape as "nine always-on pins asserting that the code computes
+the model, and none asking whether the model is right": here, several pins
+assert that the gauge renders, and none asserted that it fires.
+
+**Had the battery been launched, ~192 invocations over several hours would have
+produced `eng`, `mem`, `floor`, `brake` and `dur_ms` on a small racy minority
+of reps** â€” i.e. P-INTERIOR, P-ENGAGE, P-BRAKE, P-WALL-LENGTH and S-WALL all
+UNSCORED, and the stop rule firing at every cell for want of a gauge rather
+than for want of a law. The smoke is why that did not happen.
+
+#### THE FALLBACK THAT DOES WORK, AND IT IS ALREADY IN THE TREE
+
+The per-tick `[3T]` line (`RWM_DIAG`, present on both C arms â€” 2 lines at c8, 5
+at sc2) carries **`eng`, `cap`, and `window` / `slack` / `span` separately**,
+which is the unclamped expression reported apart from its clamp â€” discipline
+17(b)'s requirement, already satisfied by a different line. It supplies
+engagement, the realized cap and the bind readout by arithmetic; it does NOT
+supply the brake fraction or the wall, which have no second source.
+
+#### THE SUBSTANTIVE OBSERVATION, n = 1, AND IT IS NOT A RESULT
+
+From the `[3T]` lines the smoke did capture:
+
+| cell-arm | window | slack | span | **unclamped Î£** | realized `cap` | interior? |
+|---|---|---|---|---|---|---|
+| `sc2`-C | 883.74 | 1877.95 | **0.00** | **2761.69** | 2762 | **YES** |
+| `c8`-C (warm) | 1690.99 | 3593.36 | 1729.32 | **7013.67** | **4096** | **NO â€” `WIN_STORE_MAX`** |
+| `c8`-C (cold) | 0.00 | 0.00 | 0.00 | 0.00 | 128 (boot) | `eng=0`, warm-up |
+
+Two things are worth writing down before anyone looks at a battery:
+
+1. **The span term is EXACTLY 0.0 at `sc2`** (N = 1), on the wire, at the
+   precision the log prints. The vanishing that `three_term_span_vanishes_
+   continuously_as_skew_goes_to_zero` pins by arithmetic is confirmed on real
+   anchors, and it is what retires the topology branch without an `if N == 1`.
+2. **At `c8` the composed law's unclamped value is 7013.67 against a
+   `WIN_STORE_MAX` of 4096 â€” the memory bound IS the law at this cell**, which
+   is precisely Â§16.56's STOP condition and the pre-registration's S1. The SF
+   bench predicted **1297.4** there. That is a benchâ†’wire miss of **Ã—5.4**, in
+   the direction the pre-registration bounded loosely and named a stop for, and
+   it lands on the term the bench has no way to see: the wire's c8 slack is
+   3593 symbols at a measured `rtt = 353 ms` on the slow leg, against a bench
+   geometry with no GE loss process and no queue of that depth.
+
+**This is n = 1, on a cell whose statistic is bistable, from a smoke.** It does
+not score S1, it does not void anything, and it must not be quoted as a result.
+It is recorded because the pre-registration says a composed cap landing on 4096
+is a STOP rather than a result, and the first wire reading of that quantity
+pointing at 4096 is exactly the thing that must be on the record BEFORE the
+battery, not discovered inside it.
+
+#### WHAT MUST HAPPEN BEFORE THIS BATTERY RUNS
+
+1. **Make the two gauges emit on the path the harness actually takes.** The
+   quantities are all live in the sender loop; only the emission site is wrong.
+   Whatever the repair, it is an ENGINE change and it moves this branch off
+   "engine byte-identical to main@`b68c020`" â€” so it is its own commit, with
+   the local gate suite re-run, and the battery's binary is rebuilt from it.
+2. **Assert reachability, not just format.** The loopback that passes today
+   proves the string renders. What is owed is a check that the line appears
+   under a `perf`-shaped run â€” the same gap, one layer down, that discipline 1
+   names for a mechanism that never executes.
+3. **Nothing in the pre-registration changes.** It was committed at `1e09c00`
+   before any VM contact, its bars are keyed to same-session measurements, and
+   this smoke touches none of them. In particular S1 stays where it is: if the
+   c8 reading above reproduces at n = 24, the c8 cell is UNSCORED by its own
+   pre-registered stop rule, and that is a finding about the law's inputs at
+   c8 â€” not a defect in the battery.
