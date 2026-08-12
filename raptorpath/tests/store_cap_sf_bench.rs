@@ -5383,3 +5383,367 @@ fn the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff() {
         assert_eq!(w.at_ceiling, w.reps, "{}-AU is not uniformly pinned", w.cell);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE LATENCY-FEEDBACK SOURCE — goal-gate "The Latency-Feedback Source",
+// executing "The Queue Fix"'s RANK 1 handover ("THE DUAL-CELL BRAKE, which is
+// not in the engine … What is missing is the OFFERED LOAD beside it").
+//
+// The handover's hypothesis was that the offered load is an inner TCP whose
+// congestion control reacts to the tunnel's own inflated RTT. Everything in
+// this block is what the ALREADY-COMMITTED evidence says about that, taken
+// BEFORE any model was built, because two independent readings settle it and
+// neither needed a VM.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// THE FIRST REFUTATION, PROVEN TO EXECUTE (MEASUREMENT DISCIPLINE 1).
+///
+/// The offered load at every L1 arm in this ledger is `raptorpath perf
+/// --client`, which drives a MEMORY-BACKED TUN. `tun/mod.rs`'s own doc for
+/// `MemTun` says what it is: "Used by `raptorpath perf` to drive objects over
+/// the real transport **without a kernel TUN or an inner TCP stack**". And
+/// `perf.rs::run_object` is the whole source: a bare `for idx in 0..total`
+/// over `mem.feed.send(pkt)`. There is NO window, no cwnd, no RTT estimator,
+/// no retransmit timer and no loss signal anywhere on the app side — the ONLY
+/// backpressure is the bounded mpsc channel.
+///
+/// So the wire's offered load has NO CONGESTION CONTROL, and cannot be
+/// reacting to the tunnel's latency. The hypothesis is refuted at its source
+/// before any bench runs.
+///
+/// This is asserted against the source text rather than described, on the
+/// precedent already in the tree (`net/diag.rs:990` counts
+/// `tun.read_packet()` occurrences in its own body to keep an attribution
+/// claim honest). A successor who adds an inner stack to `perf` fails here
+/// and re-scores this section rather than inheriting its prose.
+#[test]
+fn the_wires_offered_load_has_no_congestion_control() {
+    let perf = include_str!("../src/perf.rs");
+    let tun = include_str!("../src/tun/mod.rs");
+
+    assert!(
+        tun.contains("without a kernel TUN or an inner TCP stack"),
+        "tun/mod.rs no longer states that the perf vehicle has no inner TCP \
+         stack — the premise of goal-gate \"The Latency-Feedback Source\" \
+         must be re-read against whatever replaced it"
+    );
+    // The feed loop is open: one bare iteration per chunk, no gate but the
+    // channel's own capacity.
+    assert!(
+        perf.contains("for idx in 0..total"),
+        "perf.rs::run_object's open feed loop is gone; re-read the source model"
+    );
+    // Nothing that could implement a congestion response exists on the app
+    // side. Each name is checked separately so a failure says WHICH appeared.
+    let lower = perf.to_ascii_lowercase();
+    for banned in [
+        "cwnd", "ssthresh", "congestion", "rto", "retransmit", "sack", "in_flight",
+        "inflight", "rtt",
+    ] {
+        assert!(
+            !lower.contains(banned),
+            "perf.rs now mentions `{banned}` — the offered load may have grown \
+             a congestion response, which would REOPEN the latency-feedback \
+             hypothesis this section refuted"
+        );
+    }
+}
+
+/// THE WIRE'S SENDER-LOOP WAIT ATTRIBUTION, per cell and arm.
+///
+/// `net/mod.rs:5824-5829` charges every sender-loop iteration's wall time to
+/// the `select!` arm that woke it; `hi_parse.py:160-167` takes the MEDIAN over
+/// the rep's DIAG windows and every per-rep summary record in `docs/l1-raw`
+/// carries all eight buckets. No section of the ledger had read them per rep.
+///
+/// Medians over reps, extracted by `tools/l1/waitarm_analyze.py`. Nothing here
+/// is modelled or fitted; it is transcription.
+#[derive(Debug, Clone, Copy)]
+struct WireWait {
+    cell: &'static str,
+    arm: &'static str,
+    reps: usize,
+    tun: f64,
+    paused: f64,
+    nack: f64,
+    tail: f64,
+}
+
+const WIRE_WAIT: &[WireWait] = &[
+    WireWait { cell: "c7", arm: "A", reps: 101, tun: 98.0, paused: 0.0, nack: 2.0, tail: 0.0 },
+    WireWait { cell: "c7", arm: "AU", reps: 36, tun: 98.0, paused: 0.0, nack: 2.0, tail: 0.0 },
+    WireWait { cell: "c8", arm: "A", reps: 77, tun: 34.0, paused: 6.0, nack: 31.0, tail: 1.0 },
+    WireWait { cell: "c8", arm: "AU", reps: 37, tun: 26.5, paused: 2.0, nack: 29.0, tail: 1.0 },
+    WireWait { cell: "sc2", arm: "A", reps: 77, tun: 29.0, paused: 40.0, nack: 31.0, tail: 1.0 },
+    WireWait { cell: "sc3", arm: "A", reps: 20, tun: 7.0, paused: 75.0, nack: 16.0, tail: 1.0 },
+    WireWait { cell: "c1", arm: "A", reps: 83, tun: 67.0, paused: 33.0, nack: 0.0, tail: 0.0 },
+];
+
+fn wire_wait(cell: &str, arm: &str) -> &'static WireWait {
+    WIRE_WAIT
+        .iter()
+        .find(|w| w.cell == cell && w.arm == arm)
+        .unwrap_or_else(|| panic!("no transcribed wait row for {cell}-{arm}"))
+}
+
+/// THE SECOND REFUTATION, BOUNDED: "at c7/c8 the sender is offered-load-bound
+/// (`wait_tun` 97.7%, `wait_paused` ~0)" is TRUE AT c7 AND FALSE AT c8.
+///
+/// "The Queue Fix"'s handover stated the 97.7% figure at c7 only; the c8 half
+/// was an extrapolation and the wire had already contradicted it. At c8 the
+/// productive-intake arm is a MINORITY of the loop's wall (34%) and the single
+/// largest bucket beside it is the GAP-REPORT arm at 31% — the recovery plane,
+/// not the source and not the store cap.
+#[test]
+fn the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8() {
+    // Internal identity: no bucket is a percentage outside [0, 100].
+    for w in WIRE_WAIT {
+        for (n, v) in [("tun", w.tun), ("paused", w.paused), ("nack", w.nack), ("tail", w.tail)] {
+            assert!(
+                (0.0..=100.0).contains(&v),
+                "{}-{} {n} = {v} is not a percentage",
+                w.cell, w.arm
+            );
+        }
+        assert!(w.reps >= 20, "{}-{}: n = {} is too thin to transcribe", w.cell, w.arm, w.reps);
+    }
+    // c7 IS offered-load-bound and its store cap is inert, on BOTH arms.
+    for arm in ["A", "AU"] {
+        let w = wire_wait("c7", arm);
+        assert!(w.tun >= 95.0, "c7-{arm}: tun = {} — c7 is no longer tun-bound", w.tun);
+        assert_eq!(w.paused, 0.0, "c7-{arm}: the store-cap arm is no longer exactly 0%");
+        assert!(w.nack <= 5.0, "c7-{arm}: the recovery arm has grown to {}%", w.nack);
+    }
+    // c8 IS NOT. This is the refutation, and it is stated as a bound.
+    for arm in ["A", "AU"] {
+        let w = wire_wait("c8", arm);
+        assert!(
+            w.tun <= 40.0,
+            "c8-{arm}: tun = {} — if the productive-intake arm really dominates \
+             at c8 then the dispatch's premise stands and this section is wrong",
+            w.tun
+        );
+        assert!(
+            w.nack >= 25.0,
+            "c8-{arm}: the gap-report arm is only {}% — the recovery plane is \
+             not where c8's sender loop lives",
+            w.nack
+        );
+        assert!(
+            w.nack >= 0.7 * w.tun,
+            "c8-{arm}: the recovery arm ({}%) no longer rivals the intake arm ({}%)",
+            w.nack, w.tun
+        );
+    }
+    // And the store cap IS the brake at the single cells, which is why the
+    // published bench's `while store_len < cap` models sc2/sc3 and not the
+    // duals ("The Queue Fix" FINDING 2, independently re-derived here from a
+    // different column of the same records).
+    assert!(wire_wait("sc2", "A").paused >= 30.0);
+    assert!(wire_wait("sc3", "A").paused >= 60.0);
+    assert!(wire_wait("c7", "A").paused < 1.0);
+}
+
+/// THE c8 COLLAPSE MODE, PER REP — the class the uniflip battery printed
+/// (reps at 18.8 / 34.7 / 49.5 beside 80–83) has a SENDER-LOOP SIGNATURE, and
+/// it is a perfect separator.
+///
+/// Over the 131 c8 reps of the A/AU/AL/ALU arms that carry the gauge, sorted
+/// SLOWEST first, the 19 slowest reps ALL read `wait_tun` = 0% AND
+/// `wait_paused` = 0% — an unbroken prefix — against 5 such reps in the whole
+/// remaining 112. Every one of the 13 reps below the battery's own 60 Mbit/s
+/// collapse threshold is in it.
+///
+/// Transcribed from `tools/l1/waitarm_analyze.py`, whose input is the
+/// committed `docs/l1-raw` tree. The 60 Mbit/s threshold is the uniflip
+/// battery's own, not one chosen here.
+#[derive(Debug, Clone, Copy)]
+struct C8Class {
+    label: &'static str,
+    n: usize,
+    mbps: f64,
+    seconds: f64,
+    wait_tun: f64,
+    wait_paused: f64,
+    wait_nack: f64,
+    wait_tail: f64,
+    occ_p50: f64,
+    retx: f64,
+    tc_drop: f64,
+    tc_pkts: f64,
+    sf_ticks: f64,
+}
+
+const C8_COLLAPSE: C8Class = C8Class {
+    label: "collapse (< 60 Mbit/s)",
+    n: 13,
+    mbps: 54.3,
+    seconds: 3.70,
+    wait_tun: 0.0,
+    wait_paused: 0.0,
+    wait_nack: 51.0,
+    wait_tail: 4.0,
+    occ_p50: 0.0,
+    retx: 2120.0,
+    tc_drop: 182.0,
+    tc_pkts: 23935.0,
+    sf_ticks: 324.5,
+};
+const C8_NORMAL: C8Class = C8Class {
+    label: "normal",
+    n: 118,
+    mbps: 81.1,
+    seconds: 2.49,
+    wait_tun: 33.0,
+    wait_paused: 5.0,
+    wait_nack: 30.0,
+    wait_tail: 1.0,
+    occ_p50: 2372.0,
+    retx: 1501.5,
+    tc_drop: 171.0,
+    tc_pkts: 23552.5,
+    sf_ticks: 315.0,
+};
+/// The unbroken prefix of slowest reps carrying the signature, and the pool.
+const C8_DEAD_PREFIX: usize = 19;
+const C8_REPS: usize = 131;
+/// How many of the remaining reps carry it.
+const C8_DEAD_ELSEWHERE: usize = 5;
+
+/// THE THIRD FINDING, AND IT IS POSITIVE: the c8 collapse is APPENDED DEAD
+/// WALL, not a degraded transfer.
+///
+/// Three of the wire's own columns say so together, and none of them is a
+/// goodput statistic:
+///
+///  * `tc_pkts` — packets the SHAPER counted, i.e. what actually reached the
+///    wire — is 1.02× between the classes. The collapse rep sends the same
+///    traffic.
+///  * `sf_ticks` — the sender's own dyn-cap refresh count, which only
+///    increments inside the emission path — is 1.03×. The emission work is
+///    the same too.
+///  * `seconds` is 1.49×. So ~30% of a collapse rep's wall is time in which
+///    the sender is neither taking source in (`wait_tun` = 0) nor blocked on
+///    its store cap (`wait_paused` = 0) nor putting packets on the wire.
+///
+/// A store-sizing law cannot reach this. `wait_paused` = 0 in 13 of 13
+/// collapse reps means the gate a cap acts on is NEVER CLOSED while the
+/// collapse is happening.
+#[test]
+fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed() {
+    let (c, n) = (C8_COLLAPSE, C8_NORMAL);
+    assert_eq!(c.n + n.n, C8_REPS, "the class counts must partition the pool");
+    assert!(c.mbps < 60.0 && n.mbps >= 60.0, "the classes are the wrong side of the threshold");
+    assert!(c.wait_nack > n.wait_nack, "{}: the recovery arm did not grow", c.label);
+    assert!(c.wait_tail >= 2.0 * n.wait_tail, "{}: the tail-sweep arm did not grow", c.label);
+
+    // (a) THE SEPARATOR. Both loop-attribution buckets are EXACTLY zero in the
+    // collapse class and neither is in the normal class.
+    assert_eq!(c.wait_tun, 0.0, "{}: the intake arm is no longer dead", c.label);
+    assert_eq!(c.wait_paused, 0.0, "{}: the store-cap arm is no longer dead", c.label);
+    assert!(n.wait_tun >= 20.0 && n.wait_paused > 0.0, "the normal class lost its contrast");
+    assert!(
+        C8_DEAD_PREFIX >= 15 && C8_DEAD_ELSEWHERE <= C8_DEAD_PREFIX / 3,
+        "the signature is no longer a clean prefix of the slowest reps \
+         ({C8_DEAD_PREFIX} prefix vs {C8_DEAD_ELSEWHERE} elsewhere)"
+    );
+
+    // (b) THE WIRE VOLUME AND THE EMISSION WORK ARE UNCHANGED.
+    let pkts = c.tc_pkts / n.tc_pkts;
+    let ticks = c.sf_ticks / n.sf_ticks;
+    let drop = c.tc_drop / n.tc_drop;
+    assert!(
+        (0.95..=1.10).contains(&pkts),
+        "tc_pkts moved {pkts:.3}x between the classes — the collapse IS a \
+         throughput loss after all and this section's mechanism is wrong"
+    );
+    assert!((0.95..=1.10).contains(&ticks), "sf_ticks moved {ticks:.3}x");
+    assert!((0.90..=1.15).contains(&drop), "tc_drop moved {drop:.3}x — link loss is not equal");
+
+    // (c) SO THE WALL IS WHERE IT ALL WENT, and the residual is real.
+    let wall = c.seconds / n.seconds;
+    assert!(
+        wall >= 1.35,
+        "the collapse class is only {wall:.3}x the wall — the dead time is gone"
+    );
+    // The dead share, computed the way the tool computes it: hold the normal
+    // class's refresh duty fixed and ask how much of the collapse rep's wall
+    // its own refresh count can account for.
+    let duty = n.sf_ticks / n.seconds;
+    let dead = (c.seconds - c.sf_ticks / duty) / c.seconds;
+    assert!(
+        (0.20..0.50).contains(&dead),
+        "the non-emission share of a collapse rep's wall is {:.1}%, not the \
+         measured ~30%",
+        dead * 100.0
+    );
+    // The normal class must have essentially none, or the statistic is
+    // measuring the method rather than the mode.
+    let dead_n = (n.seconds - n.sf_ticks / duty) / n.seconds;
+    assert!(dead_n.abs() < 0.05, "the normal class shows {:.1}% dead wall too", dead_n * 100.0);
+
+    // (d) AND THE STORE IS EMPTY WHILE IT HAPPENS. The median DIAG window of a
+    // collapse rep holds NOTHING in the retention store.
+    assert_eq!(c.occ_p50, 0.0, "the collapse class's median occupancy is no longer 0");
+    assert!(n.occ_p50 > 1000.0, "the normal class's occupancy contrast is gone");
+
+    // (e) The extra work that IS there is RECOVERY, and it is spurious: 1.41x
+    // the retransmits on 1.06x the link drops.
+    let spurious = (c.retx / n.retx) / (c.tc_drop / n.tc_drop);
+    assert!(
+        spurious >= 1.20,
+        "retransmits are only {spurious:.2}x per unit of link loss — the extra \
+         recovery traffic is explained by extra loss and is not spurious"
+    );
+}
+
+/// THE DEAD TIME'S QUANTUM, on the SHIPPED laws and the wire's own SRTT.
+///
+/// Both timers that can end a c8 recovery stall are `2·SRTT` CLAMPED to a
+/// 100 ms ceiling — `net::tail_sweep_timeout_us` (`[25 ms, 100 ms]`) and
+/// `net::hole_nack_refresh` (`[25 ms, 100 ms]`). At c8 the wire's own SRTT is
+/// `rtp_med + q_p50` = 38 + 338 = 376 ms, so `2·SRTT` = 752 ms and BOTH timers
+/// sit at their ceiling, a factor of 7.5 below the round trip they are meant
+/// to be a multiple of. Each recovery round therefore costs 100 ms of wall
+/// whatever the path does, and ~1.1 s of dead wall is ~11 of them.
+///
+/// This is arithmetic on shipped functions, not a fit. It is recorded because
+/// it is what the dead time is MADE of; it is NOT a claim that changing the
+/// clamp would help, which nothing here measures.
+#[test]
+fn the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells() {
+    use raptorpath::net::{hole_nack_refresh, tail_sweep_timeout_us};
+    // The wire's measured SRTT per cell = rtp_med + q_p50, both from the same
+    // per-rep records the WIRE_BRAKE table transcribes.
+    let cells: &[(&str, u64, u64)] = &[("c7", 11, 76), ("c8", 38, 338), ("sc2", 13, 91)];
+    let mut clamped = 0usize;
+    for (cell, rtp_ms, q_ms) in cells {
+        let srtt_us = (rtp_ms + q_ms) * 1000;
+        let sweep = tail_sweep_timeout_us(srtt_us);
+        let refresh = hole_nack_refresh(Some(Duration::from_micros(srtt_us))).as_micros() as u64;
+        assert_eq!(
+            sweep, refresh,
+            "{cell}: the two recovery clocks have diverged; this section reads them as one"
+        );
+        if sweep == 100_000 {
+            clamped += 1;
+            let under = srtt_us as f64 * 2.0 / sweep as f64;
+            if *cell == "c8" {
+                assert!(
+                    under >= 5.0,
+                    "c8's 2*SRTT is only {under:.1}x the clamp — the clamp is no \
+                     longer badly bound there and the dead-time arithmetic changes"
+                );
+            }
+        }
+    }
+    assert_eq!(clamped, 3, "a transcribed cell stopped reaching the 100 ms clamp");
+    // c1, the cell with no queue, is NOT clamp-bound at the ceiling — the
+    // FLOOR holds it instead, which is the control that says the ceiling
+    // reading is about c8's queue and not about the law.
+    assert_eq!(
+        tail_sweep_timeout_us(9 * 1000),
+        25_000,
+        "c1's 2*SRTT = 18 ms should sit on the 25 ms FLOOR, not the ceiling"
+    );
+}
