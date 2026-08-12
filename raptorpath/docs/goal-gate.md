@@ -28720,3 +28720,266 @@ inference — including this branch's existence — inherited that pooling. The
 statistic was correct, the arms were recorded, and nobody split them until a
 battery was built whose control arm was scored on its own. **A per-arm rate
 should be read per arm before it is read per cell.**
+
+## Mode-Hunt Battery — VM PRE-REGISTRATION (2026-08-12, `feat/mode-hunt-battery` from main@`e6f68a7`) — MEASUREMENT DISCIPLINE 11 + 16: written and committed BEFORE any VM contact, in its OWN commit, before the driver exists and before a single number is read. **This is the successor the preceding section ("Dead-Wall Battery — RESULTS") specified by name, built to its spec clause by clause: score the treatment against THE ARM THAT CARRIES THE MODE.**
+
+### THE QUESTION, one sentence
+
+Does any principled composition kill `RWM_STORE_CAP_UNIFIED`'s c8 dead-wall
+mode — deciding whether U can ever flip (and the legacy `active_paths()`
+store-cap path be deleted), or whether the legacy dips are LOAD-BEARING and
+stay.
+
+### WHY THE BASELINE MOVED, AND WHAT THAT BUYS
+
+The predecessor's control arm `A` reads **1/16 = 0.062**; its `AU` arm reads
+**8/11 = 0.727**, non-overlapping. A statistic whose control base rate is
+0.062 needs n ≈ 60 per arm to resolve a halving. The same halving measured
+down from 0.727 resolves at n ≈ 8. **Every scored contrast in this battery is
+therefore taken against `AU`, not against the shipped default.** `A` is
+carried at small n as an ERA PIN only and is defined below as UNSCORABLE.
+
+### THE ARMS (all carry `RWM_ACKDIAG=1`, `RWM_DIAG=1`, `RWM_LATPROBE=1`, `RWM_GEN=0`)
+
+| arm | env | role | n/seed |
+|---|---|---|---|
+| **AU** | `RWM_STORE_CAP_UNIFIED=1` | **the baseline — the arm that CARRIES the mode.** Expected ≈ 0.727 | 12 |
+| **AUR** | `RWM_STORE_CAP_UNIFIED=1 RWM_DERIVED_SWEEP=1` | the treatment — the predecessor's unscored halving lead | 12 |
+| **A** | (unset) | **ERA PIN ONLY, NOT A CONTRAST** | 4 |
+
+Seeds 42 AND 7 (pooled n = 24 per scored arm, 8 for the pin), arms
+interleaved round-robin per rep, fresh topology per invocation, 1 run per
+invocation, ONE binary for every arm and both seeds.
+
+### CELLS
+
+| cell | topology | bytes | arms |
+|---|---|---|---|
+| `c8` | c2/c3 dual | 25 MB | A, AU, AUR |
+| `c8L` | c2/c3 dual | 200 MB | **AU** — the byte-count artifact arm the predecessor could not power |
+
+`c8L` carries `AU` and only `AU`. The predecessor put its length contrast on
+`A` and `R` — written before the arm separation was known — and got
+`p_A(200 MB)` = 0/11 against `p_A(25 MB)` = 1/16, which is vacuous: with the
+control near zero at both lengths, "0 at 200 MB" cannot discriminate a
+byte-count artifact from a mode that never fired. Putting the length contrast
+on the arm that fires at 0.727 is the whole repair.
+
+### THE ARM THAT IS NOT RUN, AND WHY — `AUP` IS DROPPED, DECIDED BEFORE CONTACT
+
+The commissioning brief named a third treatment: `AU` composed with **the
+pooled ceiling** (§16.52's named successor — "the pooled ceiling composed with
+the unified set"). **It is not expressible by any existing engine gate, so the
+arm is DROPPED rather than manufactured.** The check, on the record:
+
+1. The candidate law is `cap = clamp(gain·Σ_live, floor, N·knee)` — a pure
+   DELETION of the `×N` COUNT multiplier from `path_scaled_store_cap`, keeping
+   the `N·knee` ceiling. It exists **only** as `Arm::PooledUnified` in
+   `raptorpath/tests/store_cap_sf_bench.rs`, pinned by
+   `pooled_unified_candidate_introduces_no_constant`. Goal-gate "THE CANDIDATE
+   — pooled ceiling + unified set" states its status in terms that leave no
+   room: *"NOTHING IS SHIPPED. No engine file is touched by this branch; no
+   gate is added"* — and gives the reason, which is this battery's reason too:
+   *"adding a default-OFF engine gate for a law this bench cannot yet
+   discriminate would buy an A/B arm that no battery could score."*
+   `grep` over `raptorpath/src/` for any `pooled_unified` gate returns nothing.
+2. **`RWM_STORE_CAPW` is NOT that law and cannot stand in for it.** It is a
+   different formula (`Σ_i anchor_i·(K_i+gain−1) + rate_i·(gain−1)·R`), and —
+   decisively — `RWM_STORE_CAPW=1 RWM_STORE_CAP_UNIFIED=1` **is not a
+   composition at all**. In `net/mod.rs` the `capw_terms` slots are built from
+   `sched.live_paths()` **unconditionally**, never from the `store_cap_unified`
+   selected `set`; and `capw_store_cap(...)` sits ABOVE `path_scaled_store_cap`
+   in the cap chain, which is the only consumer of the U-selected Σ-base
+   `bdp`. So wherever `capw` engages (N ≥ 2 with all anchors warm — i.e. c8 in
+   steady state) **the U bit is a NO-OP on the cap value**. An `AUP` arm built
+   this way would measure `P` alone while wearing U's name, and a "kill" from
+   it would teach nothing whatever about U. It is a confound, not an arm.
+3. Compounding both: `RWM_STORE_CAPW` reads honestly only with `RWM_PLAIN_RS`
+   composed (its own doc: with the over-reading legacy anchor "it clamps to the
+   N×knee ceiling ≡ the path-scaled law"), so the arm would need a THIRD gate;
+   and unlike `RWM_THREE_TERM`'s `[3T] eng=` readout, `capw` has no ENGAGEMENT
+   echo, only a CONFIGURED one — "configured but never engaged" would be
+   undetectable in the ledger.
+
+**The battery therefore runs `{AU, AUR, A-pin, c8L-AU}` and the pooled-ceiling
+question stays open, unmeasured, and honestly labelled as such.** No engine
+code is written in a launch step; that is the rule this arm was tested against
+and the rule it lost to.
+
+### THE PRIMARY STATISTIC — one definition, emitted as a column
+
+**`deadwall` = (`wait_tun` == 0 % AND `wait_paused` == 0 %), per rep**, the
+predecessor's statistic verbatim, computed by `deadwall_parse.py` (reused
+BYTE-IDENTICAL — no second dialect) and emitted as a COLUMN so no downstream
+step can re-derive it. NOT goodput: c8's 2σ band is 42–46 % of its own mean.
+
+Per arm: the **mode RATE** = deadwall reps / live reps, with **95 % Wilson**
+intervals. Pooled over seeds, and reported per seed beside the pool.
+
+### THE BARS — pre-registered, and the point rates they are set from
+
+Let `p̂_AU` be **this session's** measured `AU` rate at c8. Let **0.727** be
+the predecessor's `AU` point rate — a TRANSCRIBED number, not one this session
+computes.
+
+* **T-KILL** — a treatment **KILLS the mode** iff its 95 % Wilson CI
+  **excludes `p̂_AU`** (this session's own point, a within-session contrast)
+  **AND** its CI **upper bound < 0.25**. Both clauses required: exclusion
+  alone would let a 0.727 → 0.45 shift be called a kill, and a mode at 0.45 is
+  still a mode.
+* **T-HALVE** — a treatment **HALVES the mode** iff its 95 % Wilson CI
+  **excludes 0.727** (the transcribed point). This is the predecessor's own
+  lead, promoted to a scored clause.
+* These are two different claims against two different reference points and
+  they are reported separately. A treatment may halve without killing; that
+  outcome is pre-named below.
+
+### GUARD BARS — a kill bought by breakage is a TRADE, and is reported as one
+
+* **G-GOODPUT.** Median c8 goodput ratio treatment / `AU`. **≥ 0.85 ⇒ class
+  intact; < 0.85 ⇒ the kill is reported as a TRADE, not a win.** This is a
+  CLASS guard on a collapse-scale move, explicitly **NOT** a significance test:
+  c8's dispersion band forbids that, and this bar is stated as unable to
+  resolve anything smaller than a collapse.
+* **G-LATENCY.** Median `ping_p99` ratio treatment / `AU` **≤ 1.25×**. A
+  treatment that clears the wall by paying for it in delivered latency fails
+  this and is reported as a TRADE.
+* **G-MECHANISM.** The wall must be shown to have GONE, not MOVED: per-arm
+  medians of `wait_tun` and `wait_paused` are reported beside every rate, so a
+  treatment that merely relocates the wall into a different wait arm is
+  visible as such rather than scoring as a kill. Descriptive, always reported.
+* **G-SF.** The `[SF]` zero-fraction (`active_paths()` empty at refresh) is
+  reported per arm — §16.52's own primary mechanism gauge, carried here as the
+  companion that says whether a treatment touched U's mechanism or only its
+  symptom.
+
+### THE C8L QUESTION — the byte-count artifact, asked on the arm that fires
+
+`p_AU(200 MB)` against `p_AU(25 MB)`, SAME arm, SAME session, SAME binary.
+
+* **ARTIFACT CONFIRMED** iff the 95 % CI on `p_AU(200 MB)` **excludes**
+  `p̂_AU(25 MB)` **AND** its upper bound **< 0.25** — the T-KILL shape, applied
+  to bytes instead of a gate.
+* **ARTIFACT REFUTED** iff the two CIs overlap **AND** the `p_AU(200 MB)`
+  point is **≥ 0.5 × p̂_AU(25 MB)** — the wall survives an 8× transfer, so it
+  is not a fixed round-count diluted by duration.
+* **Anything between the two ⇒ UNDERPOWERED, reported as underpowered**, in
+  the predecessor's own words about its own c8L row. This clause exists so
+  that "we could not tell" has a pre-registered name and cannot be quietly
+  upgraded.
+
+### THE STOP RULE — the baseline must carry the mode, or nothing is scored
+
+> **S1** `p̂_AU` pooled **≥ 0.40**.
+
+The predecessor measured `AU` at 0.727 with 95 % CI **[0.434, 0.903]**; 0.40
+sits just BELOW that interval's floor, so S1 is a genuine reproduction bar and
+not a tautology. **If S1 FAILS, no treatment row is scored and the battery is
+reported UNSCORED**, exactly as the predecessor reported itself when its own
+stop rule fired — because a treatment scored against a baseline that is not
+carrying the mode is the precise error this battery was commissioned to
+correct, and re-committing it in the act of correcting it would be worse than
+no result.
+
+### FALSIFIERS, BOTH WAYS — written before the data exist
+
+* **FOR the flip.** `AUR` meets **T-KILL** with **G-GOODPUT** and
+  **G-LATENCY** intact ⇒ U's c8 hazard has a named, principled, measured
+  handle. `RWM_STORE_CAP_UNIFIED` becomes **flip-ELIGIBLE composed with
+  `RWM_DERIVED_SWEEP`, never alone**, and the legacy `active_paths()`
+  store-cap path becomes a deletion CANDIDATE — needing its own flip battery,
+  since no battery flips its own default.
+* **AGAINST the flip — the load-bearing branch.** `AUR`'s CI **contains
+  `p̂_AU`** ⇒ the predecessor's halving lead is **REFUTED** at n = 24 (it was
+  n = 11 and unscored). The derived round is not U's handle; no composition in
+  this battery kills the mode; **`RWM_STORE_CAP_UNIFIED` cannot flip on this
+  evidence and the legacy dips are LOAD-BEARING and STAY.** With the
+  pooled-ceiling arm undeliverable, that closes the "any principled
+  composition" question to the compositions that EXIST, and the honest report
+  is that the remaining candidate is not gate-expressible.
+* **THE MIDDLE, pre-named.** `AUR` meets **T-HALVE** but fails **T-KILL** ⇒
+  the lead is CONFIRMED as a halving and **the flip stays blocked**: 0.727
+  halved is ≈ 0.36, which is still a mode and still not something to ship. The
+  handle is real and insufficient. This is the outcome the predecessor's point
+  estimates predict, and naming it in advance is what stops it being read as
+  either a win or a failure.
+* **FOR the trade branch.** `AUR` meets **T-KILL** but fails a guard ⇒ the
+  mode is killable and the price is measured. Reported as a TRADE with the
+  price quoted, never as a win, and the flip recommendation is explicitly
+  WITHHELD pending a battery that scores the price as a primary.
+* **AGAINST the instrument.** Any of: `p̂_A` (the pin) reading ABOVE 0.25, the
+  `U` echo absent on an `AU*` arm, `actDS`/`divDS` absent on `AUR`, or
+  `DS-NO-DIVERGENCE` on a majority of `AUR` reps ⇒ the session's substrate or
+  wiring does not match the predecessor's and **no row is scored**, stop rule
+  or not. `divDS` is load-bearing and separate from `actDS`: the coincidence
+  property makes the derived law identical to the clamped one wherever 2·SRTT
+  already lies in [25, 100] ms, so an `AUR` arm with `ACTIVE` and no
+  `DIVERGED` is bit-identical to `AU` and its null is a null RESULT, not a
+  null EFFECT.
+
+### THE ERA PIN, AND ITS EXPLICIT DISQUALIFICATION
+
+`A` runs at n = 4/seed (8 pooled) at c8 for ONE purpose: to confirm the
+shipped default still reads near-clean in this session, i.e. that the
+substrate matches the predecessor's. **`p̂_A` at n = 8 CANNOT be compared to
+anything and is pre-disqualified as a contrast** — at a 0.062 base rate its
+95 % Wilson interval is roughly [0.00, 0.37] whatever it reads. It is a
+witness that the era did not move, not a control, and no clause above scores
+against it. It appears in exactly one falsifier, as an upper bound.
+
+### LIVENESS, ASSERTED PER REP BEFORE ANY NUMBER IS READ (discipline 1/15)
+
+* `[GATES] RWM_STORE_CAP_UNIFIED=` **TWO-SIDED on BOTH endpoints** — asserted
+  `=1` on `AU`/`AUR`, `=0` on `A`.
+* `[GATES] RWM_DERIVED_SWEEP=` **TWO-SIDED on BOTH endpoints** — `=1` on
+  `AUR`, `=0` on `A`/`AU`.
+* `unified store-cap path set ACTIVE` PRESENT on `AU`/`AUR`, ABSENT on `A`.
+* `derived recovery round ACTIVE` PRESENT on `AUR`, ABSENT on `A`/`AU`; and
+  `derived recovery round DIVERGED` RECORDED on `AUR` with its `srtt_us` /
+  `derived_us` / `legacy_us` values carried through, because that — not
+  `ACTIVE` — is what proves the law BOUND.
+* `[GATES] RWM_RECOV_MP=1` RECORDED on every arm as a WITNESS, not an arm.
+* `[GATES] RWM_ACKDIAG=1` and a non-zero `[ACKDIAG]` line count on both
+  endpoints: the gauge is the wait-arm columns' companion and its absence is
+  an **INSTRUMENT-FAIL, never a datum**.
+* A non-zero `wait[tun=` line count: without the histogram the rep has **no
+  dead-wall verdict at all** and must be visible as such rather than counted
+  as a clean rep.
+
+### ABORT ≠ DNF ≠ INSTRUMENT-FAIL, and the SYMMETRIC top-up convention
+
+* **ABORT** = no `[GATES]` on EITHER endpoint. No datum, no liveness verdict,
+  and **not in any denominator**. The seed-7 topo-ping abort class is
+  documented and expected (31/192 in the predecessor, every one of them
+  seed 7); n = 12 is sized for it against a resolution need of n ≈ 8.
+* **DNF** = a completed run that did not transfer. It **IS** a datum, is
+  counted in the denominator, and is reported separately.
+* **INSTRUMENT-FAIL** = the run completed but a gauge did not report. Neither
+  an abort nor a datum; flagged per rep and excluded from the statistic it
+  voids, with the exclusion counted.
+* **TOP-UP.** If aborts drive any SCORED arm below **n = 8 at either seed**, a
+  top-up session runs the **SAME rep count for EVERY scored arm at that seed**,
+  under the SAME binary, with its OWN ledger and OWN sentinel, pooled and
+  reported separately. **Never asymmetric.** This is the convention that
+  preserved §16.52's verdict when an asymmetric read would have inverted it.
+
+### ENVIRONMENT HONESTY, RECORDED PER ERA
+
+The VM carries a **live desktop session (sddm/kwin) plus an htop** as a
+CO-TENANT, load ≈ 1.3 at pre-flight with no `raptorpath` process and no lock
+holder. It is recorded here, before the battery, because it is part of the era
+and every arm pays it equally — the contrasts are within-session and
+interleaved, which is what makes a shared co-tenant a nuisance rather than a
+confound. Binary sha256, VM source commit, kernel, CPU flags and load go into
+every ledger header.
+
+### WHAT IS DELIBERATELY NOT ASKED
+
+* **The pooled-ceiling composition** — not gate-expressible, dropped above,
+  and it stays the named open successor.
+* **Any `c8t`/`c8r`/`c7` cell.** This battery is c8 and c8L only. The
+  predecessor's guard cells (c1, sc2, c7) established that the derived round
+  is safe where the clamp does not bind, at 16 live reps each with the law
+  provably bound; that is not re-litigated and not re-derived.
+* **Any flip.** No battery flips its own default. Everything this session can
+  produce is a RECOMMENDATION.
