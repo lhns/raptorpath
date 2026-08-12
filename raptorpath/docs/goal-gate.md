@@ -27662,3 +27662,460 @@ benches not run; 32 → 36 is the four new pins, and every one of the 32 pre-exi
 tests passes UNMODIFIED). `gate_suite` not required — no engine code changed.
 Determinism verified across **three separate processes** on the always-on suite,
 all 36/36, and the two readouts were each taken in their own process.
+
+## The Latency-Feedback Source — READING + PRE-REGISTRATION (2026-08-12) — MEASUREMENT DISCIPLINE 11 + 14: the reading is committed at `4320fc4` and this pre-registration in its own commit, both BEFORE any scored run of the new instrument. Branch `feat/sf-latency-feedback` from main@`9ae50ee`. Executes the RANK 1 handover of "The Queue Fix" ("THE DUAL-CELL BRAKE, which is not in the engine … What is missing is the OFFERED LOAD beside it"). **STRICTLY LOCAL: no VM, no L1 number re-derived, no engine file touched.** Vehicle: `raptorpath/tests/store_cap_sf_bench.rs`.
+
+### THE HYPOTHESIS AS DISPATCHED
+
+> At c7/c8 the sender is offered-load-bound (`wait_tun` 97.7%, `wait_paused`
+> ~0), and the offered load is inner flows whose own congestion control reacts
+> to TUNNEL latency. The wire already runs 338 ms of queue on 38 ms RTprop at
+> c8-A. U deepens the pool +16% ⇒ more queue ⇒ the inner flow's throughput
+> drops (latency feedback) ⇒ the measured collapse modes. If true: the
+> dual-cell brake is a LATENCY BUDGET on the pool, and the three-term law's
+> interior cap (~450–540 at c8) is the existing candidate.
+
+### THE READING, TAKEN FIRST AND COMMITTED FIRST (`4320fc4`)
+
+Two independent readings settle the premise before any model runs, and a third
+finding replaces it. All three are pinned; none needed a VM.
+
+**1. THE WIRE'S OFFERED LOAD HAS NO CONGESTION CONTROL.** Every L1 arm in this
+file is `raptorpath perf --client --bytes N` (`tools/l1/*_battery.sh`), which
+drives a MEMORY-BACKED TUN. `tun/mod.rs`'s own doc for `MemTun` states the
+scope: *"Used by `raptorpath perf` to drive objects over the real transport
+**without a kernel TUN or an inner TCP stack**"*. `perf.rs::run_object` is the
+whole source — a bare `for idx in 0..total { mem.feed.send(pkt).await }` — and
+the file contains no occurrence of `cwnd`, `ssthresh`, `congestion`, `rto`,
+`retransmit`, `sack`, `in_flight` or `rtt`, checked name by name. The only
+backpressure on the app side is the bounded mpsc channel's capacity.
+
+**There is no inner flow on the wire to react to anything.** The hypothesis's
+mechanism does not exist at the source of every number it was built from.
+Pinned by `the_wires_offered_load_has_no_congestion_control` (source-text
+assertion, on the precedent already in the tree at `net/diag.rs:990`).
+
+**2. AND c8 IS NOT OFFERED-LOAD-BOUND.** The `wait_tun` 97.7% figure is real
+and it is a c7 figure; "The Queue Fix"'s handover stated it at c7 only and the
+dispatch generalised it. The eight `wait[...]` buckets sit in EVERY per-rep
+summary record in `docs/l1-raw` (`net/mod.rs:5824-5829`, parsed by
+`hi_parse.py:160-167` as the median over the rep's DIAG windows) and no section
+of this file had read them per rep. Medians over reps
+(`tools/l1/waitarm_analyze.py`):
+
+| cell | arm | reps | **`tun`** | **`paused`** | **`nack`** | `tail` | mbps | occ/cap |
+|---|---|---|---|---|---|---|---|---|
+| c7 | A | 101 | **98%** | **0%** | 2% | 0% | 173.4 | 0.31 |
+| c7 | AU | 36 | **98%** | **0%** | 2% | 0% | 172.7 | 0.32 |
+| **c8** | **A** | **77** | **34%** | **6%** | **31%** | 1% | 81.9 | 0.55 |
+| **c8** | **AU** | **37** | **26.5%** | **2%** | **29%** | 1% | 74.8 | 0.49 |
+| sc2 | A | 77 | 29% | **40%** | 31% | 1% | 88.3 | 0.99 |
+| sc3 | A | 20 | 7% | **75%** | 16% | 1% | 16.8 | 1.00 |
+| c1 | A | 83 | 67% | 33% | 0% | 0% | 225.2 | 0.44 |
+
+At c8 the productive-intake arm is a MINORITY of the sender loop's wall, and
+the largest bucket beside it is the GAP-REPORT arm at 31% — the recovery
+plane. Bounded by `the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8`.
+
+**3. AND THE c8 COLLAPSE MODE HAS A SENDER-LOOP SIGNATURE — a perfect
+separator, and it is APPENDED DEAD WALL rather than a degraded transfer.**
+
+Over the 131 c8 reps of the A/AU/AL/ALU arms carrying the gauge, sorted
+SLOWEST first, **the 19 slowest ALL read `wait_tun` = 0% AND `wait_paused` =
+0%** — an unbroken prefix — against 5 such reps in the whole remaining 112.
+Every one of the 13 reps below the uniflip battery's own 60 Mbit/s collapse
+threshold (the class printed as 18.8 / 34.7 / 49.5 beside 80–83) is in it.
+
+| column | collapse (n=13) | normal (n=118) | ratio |
+|---|---|---|---|
+| `mbps` | 54.3 | 81.1 | 0.670 |
+| `seconds` | **3.70** | **2.49** | **1.493** |
+| **`tc_pkts`** (the shaper's own count) | **23 935** | **23 553** | **1.016** |
+| **`sf_ticks`** (the sender's own refresh count) | **324.5** | **315.0** | **1.030** |
+| `tc_drop` | 182 | 171 | 1.064 |
+| `retx` | 2 120 | 1 501.5 | **1.412** |
+| `wait_tun` | **0** | 33 | — |
+| `wait_paused` | **0** | 5 | — |
+| `wait_nack` | 51 | 30 | 1.700 |
+| `wait_tail` | 4 | 1 | 4.000 |
+| `occ_p50` | **0** | 2 372 | — |
+
+**Same wire volume, same emission work, 1.49× the wall.** Holding the normal
+class's dyn-cap refresh duty (124.8 ticks/s) fixed, a collapse rep's own
+refresh count accounts for 2.60 s of its 3.70 s and **~30% of its wall is time
+the sender spends neither reading source, nor blocked on its store cap, nor
+putting packets on the wire** — against −1.4% (i.e. none) for the normal class.
+Its median DIAG window holds NOTHING in the retention store. The extra work
+that IS there is recovery and it is SPURIOUS: 1.41× the retransmits on 1.06×
+the link drops. Bounded by
+`the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed`.
+
+**A store-sizing law cannot reach this.** `wait_paused` = 0 in 13 of 13
+collapse reps means the gate any cap acts on is NEVER CLOSED while the collapse
+is happening. The dead time's quantum is named separately and it is arithmetic
+on shipped functions: both timers that can end a c8 recovery stall are `2·SRTT`
+CLAMPED to a 100 ms ceiling (`net::tail_sweep_timeout_us` and
+`net::hole_nack_refresh`, both `[25 ms, 100 ms]`), and c8's own measured SRTT
+(`rtp_med` + `q_p50` = 38 + 338 = 376 ms) overshoots that ceiling by **7.5×**,
+so every recovery round costs 100 ms of wall regardless of the path — ~1.1 s of
+dead wall is ~11 of them. Pinned by
+`the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells`.
+
+### WHAT IS BUILT ANYWAY, AND WITH WHAT SCOPE
+
+The reading refutes the premise ABOUT THE WIRE. It does not answer the
+question a deployed tunnel raises — a real user's TCP **does** run over the TUN
+— and the dispatch's item 1 asks for the instrument regardless. So the source
+axis is built, and its scope is stated rather than assumed: **`Src::Reno`
+models a DEPLOYED tunnel, NOT the L1 battery, and no L1 verdict is re-scored
+against it.**
+
+`Src::Bulk` is the published bench, bit-identical (every branch the axis adds
+is behind `src == Src::Reno`, and it consumes no RNG). `Src::Reno` is a
+Reno-class inner flow whose in-flight is `next_seq − snd_frontier` — the
+SENDER'S OWN knowledge of the receiver's cumulative in-order delivery point,
+the same `snd_frontier` the coupling axis maintains — and whose RTT sample is
+the wall between a segment's admission and the frontier passing it. So its
+throughput is `w / (RTprop + tunnel queue + recovery stall)`: every delay the
+bench's own link and recovery plane build is in the denominator. It requires
+`Store::Span` and refuses to run without it rather than silently running open.
+
+**EVERY CONSTANT IS A CITED STANDARD. There is no quantity chosen to make an
+answer come out.**
+
+| quantity | value | citation |
+|---|---|---|
+| segment = symbol | 1:1 | `perf.rs:48-50` — the window pipeline "carries at most ONE packet per symbol" |
+| initial window | 10 segments | RFC 6928 §1 |
+| initial ssthresh | ∞ | RFC 5681 §3.1 ("MAY be arbitrarily high") |
+| slow start | `cwnd += 1`/ack | RFC 5681 §3.1 |
+| congestion avoidance | `cwnd += 1/cwnd`/ack | RFC 5681 §3.1 |
+| multiplicative decrease | `ssthresh = max(FlightSize/2, 2)` | RFC 5681 §3.1 eq (4) — the AIMD 0.5 the dispatch names |
+| RTO estimator | α = 1/8, β = 1/4, K = 4 | RFC 6298 §2.3 |
+| first sample | SRTT = R, RTTVAR = R/2 | RFC 6298 §2.2 |
+| RTO bounds | [1 s, 60 s] | RFC 6298 §2.4, §2.5 |
+| RTO backoff / collapse | ×2, `cwnd = 1` | RFC 6298 §5.5, RFC 5681 §3.1 |
+
+**A 1-rep instrument smoke was taken and is disclosed** (`sf_source_axis_smoke`,
+seed 0, both duals): it confirmed the axis executes, produces all four new
+columns, and that `Src::Bulk` leaves all 40 always-on tests passing unmodified.
+**No number below is derived from it** — every criterion in this section is
+either the dispatch's own words or a WIRE number already published above.
+
+### THE VALIDATION GATE — V1–V4, and the STOP RULE, both the dispatch's
+
+> "Validation first: at the A arm … the model must reproduce the wire's A-arm
+> facts within stated tolerances: goodput class, `q_p50` ≈338/76 ms,
+> `wait_tun`-dominant regime, and the ackdiag realized rates. If the
+> closed-loop source cannot reproduce the A arm, stop and report — nothing
+> downstream is scorable."
+
+Scored at `Arm::Legacy`, `Feed::Measured`, `Acct::Engine`, `Store::Span`, at
+each dual's OWN wire transfer duration (c7 9.23 s, c8 2.44 s — "The Queue Fix"
+established this is the only horizon at which the bench's anchor is the
+wire's), 8 seeds.
+
+| id | quantity | wire | pre-registered tolerance |
+|---|---|---|---|
+| **V1** | standing queue `q_p50`, mean over legs | c7 **76 ms**, c8 **338 ms** | inside **[0.5×, 2.0×]** of the wire's, BOTH duals |
+| **V2a** | offered-load-bound share (the `wait_tun` analogue) at **c7** | **98%** | **≥ 80%** |
+| **V2b** | store-cap-bound share (the `wait_paused` analogue) at **c7** | **0%** | **≤ 10%** |
+| **V2c** | store-cap-bound share at **c8** | **6%** | **≤ 15%** |
+| **V3** | `occ/cap` at the refresh tick | c7 **0.31**, c8 **0.55** | within **±0.20**, BOTH duals |
+| **V4** | goodput class against the `Src::Bulk` arm at the same cell | — | inside **[0.5×, 2.0×]** (an internal check that the closed loop has not destroyed the transfer) |
+
+**STOP RULE, pre-committed.** The matrix below is scored ONLY if **V1, V2a,
+V2b and V3 all pass at BOTH duals**. If any fails, the matrix is NOT scored,
+the section reports the failure, and it names what the loop lacks — verbatim
+per the dispatch, and per the honest-exit rule.
+
+### THE MATRIX, PRE-REGISTERED (scored only if the gate passes)
+
+**Arms** — {**A** = `Arm::Legacy` (the shipped chain, cap 4096 at the duals),
+**AU** = `Arm::Unified` (the deeper pool, the measured +16% of mean pool
+depth), **U+3T** = `Arm::ThreeTermCell` (the SHIPPED `net::three_term_store_cap`
+over `live_paths()`, computed by the shipped law from the bench's OWN measured
+`btlbw_sym_per_s` / `srtt` / `min_rtt` / `k_raw` through the shipped
+`three_term_terms`, at the resolved `contract_rho = 1.0` and
+`delta_budget_b(Auto)` — no constant introduced, and the arm already exists and
+is already pinned by `the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant`),
+**P** = `Arm::PooledUnified` (the pooled-ceiling successor)} × **cells** {c7,
+c8} × **8 seeds** (salts 0–7; the dispatch asks ≥ 5).
+
+**Scored on MODE RATES, not means** — the loop is bistable (FINDING 4 of "c8
+SF Mechanism"), so a mean is a draw from a mixture.
+
+* **(a) DOES AU REPRODUCE A COLLAPSE MODE THAT A LACKS OR SHOWS LESS?** A rep
+  is a COLLAPSE iff its goodput is below **0.74×** the A arm's pooled median at
+  that cell. The 0.74 is TRANSCRIBED, not chosen: it is the uniflip battery's
+  own 60 Mbit/s threshold over its own normal-class median of 81.1
+  (60/81.1 = 0.740). Reported as a rate out of 8 per arm per cell.
+  **AU reproduces the class iff its c8 collapse rate exceeds A's by ≥ 2 reps
+  of 8.**
+* **(b) DOES U+3T REMOVE IT WHILE KEEPING THE POOL INTERIOR?** "Removes" =
+  U+3T's c8 collapse rate ≤ A's. "Interior" = U+3T's mean cap strictly below
+  the `N·knee` = 4096 ceiling at c8, i.e. the law is expressing a value rather
+  than clamping.
+* **(c) THE INNER FLOW'S DELIVERED LATENCY per arm** — `src_rtt_ms()`, the mean
+  wall between a segment's admission and the cumulative frontier passing it.
+  This is the user-visible cost and it is reported for every arm at both duals
+  whether or not (a) and (b) resolve.
+
+### THE VERDICT BRANCHES, WRITTEN BEFORE THE RUN
+
+* **CONFIRMED** — AU collapses and U+3T does not. Then the brake requirement is
+  stated in one sentence: the pool must be capped by the law's latency term at
+  the duals, zero constants.
+* **REFUTED** — AU does not collapse, or 3T does not help. Then the section
+  names what the collapse needs that this loop lacks.
+* **PARTIAL** — one of the two holds.
+
+In every branch the section states what the pre-registered VM battery for the
+deletion chain must measure: its arms, its decision cell, and its statistic.
+
+### WHAT THIS PRE-REGISTRATION ALREADY CONCEDES
+
+The reading above means the model's SCOPE is a deployed tunnel, so a CONFIRMED
+verdict would be a statement about deployed tunnels and **not** a
+re-attribution of the c8 collapse mode in this ledger — that mode is now
+attributed to appended dead wall in a recovery plane whose store-cap gate is
+never closed. Nothing in the matrix can move that attribution, and it is
+written down here so no result below can be read as moving it.
+
+## The Latency-Feedback Source — RESULTS (2026-08-12, `feat/sf-latency-feedback`) — every verdict below is stated against the criteria pre-registered at `2b14cc6`, never against a number chosen after the fact. **VERDICT: REFUTED, on three independent legs — and the c8 collapse mode is RE-ATTRIBUTED, from columns the wire already recorded.** STRICTLY LOCAL: no VM was run, no L1 number re-derived, engine tree byte-identical to main@`9ae50ee`.
+
+### THE VERDICT IN FIVE LINES
+
+1. **THE WIRE'S OFFERED LOAD HAS NO CONGESTION CONTROL, SO IT CANNOT BE
+   REACTING TO TUNNEL LATENCY.** Every L1 arm in this file is `raptorpath perf
+   --client`, whose vehicle `tun/mod.rs` documents as driving objects "**without
+   a kernel TUN or an inner TCP stack**"; `perf.rs::run_object` is a bare
+   `for idx in 0..total { mem.feed.send(pkt) }` and the file contains no
+   `cwnd`, `ssthresh`, `congestion`, `rto`, `retransmit`, `sack`, `in_flight`
+   or `rtt`, checked name by name. **The hypothesis's mechanism does not exist
+   at the source of every number it was built from.**
+2. **AND c8 IS NOT OFFERED-LOAD-BOUND.** `wait_tun` 97.7% is a **c7** figure —
+   "The Queue Fix" stated it at c7 only and the dispatch generalised it. Per
+   rep, over the eight `wait[...]` buckets every `docs/l1-raw` summary record
+   already carried and no section had read: **c7-A is 98 / 0 / 2**
+   (tun/paused/nack) and **c8-A is 34 / 6 / 31**. At c8 the productive-intake
+   arm is a MINORITY of the sender loop's wall and the largest bucket beside it
+   is the GAP-REPORT arm.
+3. **AND THE CLOSED-LOOP MODEL FAILS THE PRE-REGISTERED A-ARM GATE, for a
+   reason that is the same finding from the opposite direction.** Built to the
+   dispatch's spec with every constant a cited RFC, it scores **V1 PASS at both
+   duals** (c8's queue lands at **309.8 ms modelled against 338 ms measured,
+   0.92×**), **V4 PASS**, and **V2 FAIL at both duals with V3 FAIL at c7**: a
+   Reno flow over a RELIABLE tunnel never sees a loss, so at c7 its RTO never
+   fires, it never leaves slow start, its window runs to **86 893 segments**,
+   and it re-becomes the infinite source the bench already had (store cap the
+   binder at **93.3%** where the wire measures **0.0%**). The pre-registered
+   STOP RULE fired; the matrix was run and is reported **UNSCORED**.
+4. **WHAT THE c8 COLLAPSE ACTUALLY IS: APPENDED DEAD WALL.** Of 131 c8 reps on
+   the A/AU/AL/ALU arms, **the 19 slowest ALL read `wait_tun` = 0% AND
+   `wait_paused` = 0%** — an unbroken prefix, against 5 such reps in the other
+   112 — and every one of the 13 reps below the uniflip battery's own 60 Mbit/s
+   threshold is in it. Between the classes `tc_pkts` is **1.016×**, `sf_ticks`
+   **1.030×** and `tc_drop` **1.064×** — same wire volume, same emission work,
+   same link loss — against `seconds` **1.493×**. **~30% of a collapse rep's
+   wall is time the sender spends neither reading source, nor blocked on its
+   cap, nor sending**, and its median DIAG window holds NOTHING in the
+   retention store.
+5. **SO THE BRAKE REQUIREMENT AS DISPATCHED CANNOT BE MET BY ANY CAP.**
+   `wait_paused` = 0 in **13 of 13** collapse reps: the gate a store-sizing law
+   acts on is NEVER CLOSED while the collapse is happening. The dead time's
+   quantum is arithmetic on shipped functions — `tail_sweep_timeout_us` and
+   `hole_nack_refresh` are both `2·SRTT` clamped to a **100 ms** ceiling, and
+   c8's own measured SRTT (`rtp_med` + `q_p50` = 38 + 338 = **376 ms**)
+   overshoots that ceiling by **7.5×**, so a recovery round costs 100 ms of
+   wall whatever the path does and ~1.1 s of dead wall is ~11 of them.
+
+### THE VALIDATION GATE, SCORED VERBATIM
+
+`Arm::Legacy`, `Feed::Measured`, `Acct::Engine`, `Store::Span`, `Src::Reno`,
+seed 0, each dual at its OWN wire transfer duration (c7 9.23 s, c8 2.44 s).
+Printed by `the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_reliable_tunnel`.
+
+```
+[V-GATE] c7   q   128.0 ms vs wire  76.0 (1.68x) V1 PASS | src-bound   3.2% cap-bound  93.3% (wire tun/paused 98/0) V2 FAIL | occ/cap 2.95 vs 0.31 V3 FAIL | gp 0.99x bulk V4 PASS | inner w    86893 rto 0
+[V-GATE] c8   q   309.8 ms vs wire 338.0 (0.92x) V1 PASS | src-bound  62.2% cap-bound  36.0% (wire tun/paused 34/6) V2 FAIL | occ/cap 0.61 vs 0.55 V3 PASS | gp 0.56x bulk V4 PASS | inner w     3737 rto 2
+```
+
+| id | pre-registered bar | c7 | c8 | verdict |
+|---|---|---|---|---|
+| **V1** queue | inside [0.5×, 2.0×] of the wire's `q_p50` | 1.68× | **0.92×** | **PASS** both |
+| **V2a** src-bound at c7 | ≥ 80% (wire `wait_tun` 98) | **3.2%** | — | **FAIL** |
+| **V2b** cap-bound at c7 | ≤ 10% (wire `wait_paused` 0) | **93.3%** | — | **FAIL** |
+| **V2c** cap-bound at c8 | ≤ 15% (wire `wait_paused` 6) | — | **36.0%** | **FAIL** |
+| **V3** occ/cap | within ±0.20 of the wire's | **2.95 vs 0.31** | 0.61 vs 0.55 | **FAIL** c7, PASS c8 |
+| **V4** goodput class | inside [0.5×, 2.0×] of the `Src::Bulk` arm | 0.99× | 0.56× | **PASS** both |
+
+**STOP RULE FIRED** (V2a, V2b, V3 all fail at c7), verbatim per the
+pre-registration and per the dispatch's own item 2. Nothing downstream is
+scored.
+
+**AND THE FAILURE IS A MECHANISM, NOT NOISE — it is cell-keyed and its key is
+whether the tunnel is bad enough to trip an RTO.** The tunnel is RELIABLE
+(ρ = 1, retain-until-acked), so it hides every loss from the inner flow and the
+ONLY congestion signal Reno has left is its retransmission timer. At c8 that
+timer fires (2 at seed 0, **11–23 over 8 seeds**), the flow stays at a window
+of **3 737** and the model lands the wire's queue to **8%** and its occupancy
+to **0.06**. At c7 it never fires **once**, slow start never exits, the window
+reaches **86 893** — 21× the store cap it is supposedly negotiating with — and
+the "closed loop" is an open one. **A latency-sensitive offered load is not a
+brake where the tunnel is good; it is only a brake where the tunnel is already
+failing**, which is the TCP-over-TCP result and is why the offered load cannot
+be the dual-cell brake in general.
+
+### THE MATRIX — RUN, AND **NOT SCORED**
+
+The STOP RULE forbids scoring it. It is printed because a successor should
+inherit numbers rather than a description, and every row carries the word.
+`sf_source_matrix_unscored`, 8 seeds, `Src::Reno`, each cell at its own wire
+horizon; `collapse` = goodput below **0.740×** the A arm's own median at that
+cell (the uniflip battery's 60/81.1, transcribed).
+
+```
+cell                       arm                   |   gp med   gp min  collapse | cap mean occ/cap |   innRTT inner w   rto
+c7   dual symmetric        A    (shipped)        |    19143    18708      0/8  |      912    2.95 |    323.2   81562     0   UNSCORED
+c7   dual symmetric        AU   (deeper pool)    |    19672    18923      0/8  |     3961    0.96 |    471.8   80631     0   UNSCORED
+c7   dual symmetric        U+3T (three-term)     |    19732    19495      0/8  |     3818    0.97 |    439.7   83759     0   UNSCORED
+c7   dual symmetric        P    (pooled+unified) |    19628    18817      0/8  |     2463    0.98 |    284.6   86621     0   UNSCORED
+
+c8   dual asym (r+RTT)     A    (shipped)        |    10241     6659      1/8  |     1689    1.15 |    497.0    6309    11   UNSCORED
+c8   dual asym (r+RTT)     AU   (deeper pool)    |     6618     4907      5/8  |     3560    0.53 |    556.0    4153    23   UNSCORED
+c8   dual asym (r+RTT)     U+3T (three-term)     |     6693     4814      5/8  |     3686    0.50 |    557.9    4229    21   UNSCORED
+c8   dual asym (r+RTT)     P    (pooled+unified) |     9839     6512      2/8  |     2967    0.72 |    439.6    5702    16   UNSCORED
+```
+
+Read as a HANDOVER and nothing else, it says three things worth a successor's
+time, none of them scored here:
+
+* **(a) would have read YES.** AU produces a collapse class the A arm does not
+  (**5/8 against 1/8**, +4 of 8 against the pre-registered ≥ 2).
+* **(b) would have read NO, AND THAT IS THE INTERESTING HALF.** U+3T does NOT
+  remove it (**5/8**, identical to AU) even though its cap IS interior
+  (3 686 < the 4 096 ceiling). **The three-term law is not the candidate this
+  question needed.** What DOES move it in this model is the pooled-ceiling
+  successor **P — 2/8, cap 2 967, and the inner flow's delivered latency
+  556 → 440 ms**, the only arm that improves both together at c8.
+* **(c) THE INNER FLOW'S DELIVERED LATENCY** is 285–472 ms at c7 and
+  440–558 ms at c8, and it tracks the cap: the deeper the pool, the worse the
+  user-visible delay, monotonically, at both cells. That is the one part of the
+  dispatch's causal chain the model DOES exhibit — a deeper pool does cost
+  delivered latency — and it is exactly the part that needs no store-cap brake
+  to state.
+
+### WHAT THIS SECTION ADDS THAT NO PREDECESSOR HAD
+
+Three sections have now reasoned about the dual-cell brake from the cap's side.
+The wait attribution was in every raw log the whole time and answers it
+directly. Beyond the three refutation legs:
+
+**THE BRAKE IS CELL-KEYED, AND ALL THREE KEYS ARE NOW NAMED.** sc2/sc3 are
+store-cap-bound (`paused` 40% / 75%, occ/cap 0.99 / 1.00). c7 is
+intake-bound (`tun` 98%, `paused` exactly 0% over 101 reps). c8 is
+**recovery-bound** (`nack` 31% against `tun` 34%, `paused` 6%). The published
+bench models the sc2 regime at every cell, which is "The Queue Fix" FINDING 2
+re-derived from an independent column — and it now has the third regime's name.
+
+**AND THE c8 KEYING MAY BE A TRANSFER-LENGTH ARTIFACT.** Recorded, not claimed.
+The dead wall is a roughly FIXED number of 100 ms recovery rounds, so its SHARE
+of a transfer is inversely proportional to the transfer's length. c8's battery
+transfers are **25 MB / 2.44 s** — the shortest in this file — so ~1.1 s of tail
+is a **30% tax**; the same tail on c7's **200 MB / 9.23 s** would be 12% and on
+c1's 14.2 s, 8%. That is one arithmetic observation on one cell and it is
+written down rather than asserted; a successor who wants it settled should run
+c8 at 200 MB.
+
+### WHAT IS PINNED, AND WHERE
+
+Five always-on tests in `store_cap_sf_bench.rs` (36 → 41), all local, no engine
+code; every one of the 36 pre-existing tests passes **UNMODIFIED**.
+
+* `the_wires_offered_load_has_no_congestion_control` — **REFUTATION 1, PROVEN
+  TO EXECUTE** (discipline 1): the source-text assertion on `perf.rs` and
+  `tun/mod.rs`, name by name, on the precedent already at `net/diag.rs:990`.
+  A successor who adds an inner stack to `perf` fails here.
+* `the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8` — **REFUTATION 2,
+  BOUNDED**: the seven-row wait transcription, its internal identities, c7's
+  intake arm ≥ 95% with its store-cap arm exactly 0%, c8's intake arm ≤ 40%
+  with its gap-report arm ≥ 25% and rivalling it, and the single cells' 30–75%
+  store-cap arm as the control.
+* `the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed`
+  — **THE RE-ATTRIBUTION, BOUNDED**: both buckets exactly 0 in the collapse
+  class, the 19-rep unbroken prefix against 5 elsewhere, `tc_pkts`/`sf_ticks`/
+  `tc_drop` all inside 1.10×, wall ≥ 1.35×, the 20–50% dead-wall share with the
+  normal class's < 5% as its control, occupancy 0, and the 1.20× spurious-retx
+  floor.
+* `the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells` —
+  **THE DEAD TIME'S QUANTUM**, arithmetic on the SHIPPED
+  `tail_sweep_timeout_us` / `hole_nack_refresh`: both clocks equal at every
+  transcribed cell, all three at the 100 ms ceiling, c8 overshooting it ≥ 5×,
+  and c1's 18 ms sitting on the 25 ms FLOOR as the control that says the
+  reading is about c8's queue and not about the law.
+* `the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_reliable_tunnel`
+  — **THE GATE'S FAILURE, BOUNDED**: V4 asserted PASS first (so the failure is
+  about the REGIME, not a broken instrument), then V2a/V2b/V3 asserted FAILED
+  at c7 with the runaway-window mechanism bounded at cap-bound > 80%. Every
+  criterion is printed for both duals.
+
+Two readouts: `sf_source_axis_smoke` and `sf_source_matrix_unscored`.
+`store_cap_sf_bench.rs` gains the SOURCE axis (`Src::Bulk` bit-identical,
+`Src::Reno` behind every branch, no RNG consumed) and `Run` gains five
+columns. The collector `tools/l1/waitarm_analyze.py` reads only the committed
+`docs/l1-raw` tree.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Anything about a DEPLOYED tunnel's inner flows.** The model exists and its
+  scope is stated, but it FAILED its own validation gate at c7, so its numbers
+  bound nothing. The matrix is unscored and labelled so on every row.
+* **Whether the 100 ms recovery clamp should move.** Nothing here measures
+  that, and it is engine code. The clamp is named as what the dead time is MADE
+  of, not as a defect and not as a fix.
+* **Whether c8's collapse rate would fall at a longer transfer.** The
+  arithmetic is stated; the experiment was not run.
+* **Any re-scoring of an L1 verdict.** No VM was run. Every wire figure above
+  is a field of a summary record already committed in `docs/l1-raw`, and the
+  extraction is arithmetic over fields those records already carry.
+* **Any candidate flip.** `P`'s 2/8 against `AU`'s 5/8 is an UNSCORED number
+  from a model that failed its gate. It is a direction for a successor, not a
+  result.
+
+### WHAT THE PRE-REGISTERED VM BATTERY FOR THE DELETION CHAIN MUST MEASURE
+
+Stated as the dispatch requires, in either verdict branch.
+
+* **THE DECISION CELL IS c8, AND THE STATISTIC IS NOT GOODPUT.** "Store-Cap
+  Unification — RESULTS" already established that c8's 2σ band is 42–46% of its
+  own mean, so **no c8 goodput contrast can resolve a 5–10% shift at any n**.
+  The statistic must be the one that separates cleanly and already does:
+  **the collapse-mode RATE, defined as the share of reps with `wait_tun` = 0%
+  AND `wait_paused` = 0%** — 19 of 19 on the slowest tail, 5 of 112 elsewhere.
+  It is a per-rep binary on gauges the binary already prints, so it needs no
+  new engine code and it resolves at n = 8 per arm.
+* **THE ARMS ARE NOT CAP ARMS.** A cap cannot move a mode whose defining
+  property is that the cap's gate is open. The arms must move the RECOVERY
+  plane's clocks or its spuriousness: the 100 ms `tail_sweep_timeout_us` /
+  `hole_nack_refresh` ceiling against c8's 376 ms SRTT, and the 1.41×
+  spurious-retransmit ratio it produces. `RWM_RECOV_MP` / `RWM_RECOV_SP` and
+  the NACK cooldown are where those live.
+* **AND IT MUST CARRY A TRANSFER-LENGTH ARM.** c8 at 25 MB and c8 at 200 MB,
+  same cell, same seeds. If the collapse rate falls roughly as 1/duration, the
+  mode is the fixed recovery tail this section measured and the "c8 keying" of
+  four sections of this file is a byte-count artifact. That is one extra arm
+  and it would settle the largest open question the store-cap phase has left.
+
+### GATES
+
+**NOTHING IS SHIPPED.** No engine file, no gate, no default and no law is
+touched by this branch; the engine tree is byte-identical to main@`9ae50ee`.
+`--lib` **402 passed** (5 ignored) - `raptorpath-math` 59+19+22+4+4+3+25 =
+**136 passed** - `--doc` 0 (no doctests) - `store_cap_bench` **4 passed**
+(3 `#[ignore]`d) - `store_cap_sf_bench` **41 passed, 0 failed** (16
+`#[ignore]`d benches not run; 36 -> 41 is the five new pins, and every one of
+the 36 pre-existing tests passes UNMODIFIED). `gate_suite` not required -- no
+engine code changed. Determinism verified across **three separate processes**
+on the always-on suite, all 41/41, and each readout was taken in its own
+process.

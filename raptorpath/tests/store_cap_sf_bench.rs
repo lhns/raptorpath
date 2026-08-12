@@ -376,6 +376,199 @@ impl Store {
     }
 }
 
+// ── THE SOURCE AXIS: WHAT OFFERS THE LOAD ──────────────────────────────────
+//
+// goal-gate "The Queue Fix" RANK 1: "a bench whose source is 'always data to
+// send' cannot model c7 or c8 … that is the last un-fixed input in the loop."
+//
+// THE WIRE'S SOURCE IS NOT THIS. `raptorpath perf --client` drives a
+// MEMORY-BACKED TUN "without a kernel TUN or an inner TCP stack"
+// (`tun/mod.rs`), and `perf.rs::run_object` is a bare `for idx in 0..total`
+// over `mem.feed.send(pkt)` — an OPEN loop bounded only by the mpsc channel's
+// capacity. That is measured, pinned by
+// `the_wires_offered_load_has_no_congestion_control`, and it means the
+// `Src::Reno` arm below models a DEPLOYED tunnel (a real user's TCP over the
+// TUN), NOT the L1 battery. Every number this axis produces is scoped that
+// way and no L1 verdict is re-scored against it.
+//
+// THE MODEL is Reno-class, and every constant in it is a cited standard —
+// there is no quantity here chosen to make an answer come out:
+//
+//   * ONE SEGMENT = ONE TUNNEL SYMBOL. `perf.rs:48-50` — the window pipeline
+//     "carries at most ONE packet per symbol" — so the inner flow's MSS and
+//     the bench's symbol are the same unit and no conversion constant exists.
+//   * IW = 10 segments (RFC 6928 §1, the standard initial window).
+//   * ssthresh starts arbitrarily high (RFC 5681 §3.1: "IW … ssthresh MAY be
+//     arbitrarily high"), i.e. the flow starts in slow start.
+//   * SLOW START `cwnd += 1` per acked segment; CONGESTION AVOIDANCE
+//     `cwnd += 1/cwnd` per acked segment (RFC 5681 §3.1).
+//   * MULTIPLICATIVE DECREASE `ssthresh = max(FlightSize/2, 2)` — the 0.5 is
+//     RFC 5681 §3.1 equation (4), the standard the dispatch names.
+//   * RTO from RFC 6298: SRTT/RTTVAR with α = 1/8, β = 1/4, K = 4 (§2.3);
+//     first sample SRTT = R, RTTVAR = R/2 (§2.2); `RTO = max(SRTT + 4·RTTVAR,
+//     1 s)` (§2.4's 1-second minimum) capped at 60 s (§2.5); doubled on each
+//     expiry (§5.5). On expiry `cwnd = 1` (RFC 5681 §3.1).
+//
+// THE FEEDBACK PATH IS THE TUNNEL'S OWN LATENCY, and it is not injected: the
+// inner flow's in-flight is `next_seq − snd_frontier`, the sender's own
+// knowledge of the receiver's CUMULATIVE in-order delivery point (the same
+// `snd_frontier` the coupling axis maintains, `control_msg.rs:566`), and the
+// inner RTT sample is the wall between a segment's admission and the frontier
+// passing it. So the inner flow's throughput is `w / (RTprop + tunnel queue +
+// recovery stall)` — every delay the bench's own link and recovery plane
+// build is in the denominator, which is exactly the loop the hypothesis names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Src {
+    /// THE PUBLISHED BENCH: an infinite offered load. Bit-identical to every
+    /// number in goal-gate "c8 SF Mechanism" … "The Queue Fix".
+    Bulk,
+    /// A Reno-class inner flow over the tunnel, RTT-clocked on the tunnel's
+    /// own delivered latency.
+    Reno,
+}
+
+impl Src {
+    fn label(self) -> &'static str {
+        match self {
+            Src::Bulk => "BULK (published)",
+            Src::Reno => "RENO (closed loop)",
+        }
+    }
+}
+
+/// RFC 6928 §1 — the standard initial window, in segments.
+const RENO_IW: f64 = 10.0;
+/// RFC 5681 §3.1 eq (4) — the multiplicative-decrease factor, and its floor.
+const RENO_BETA: f64 = 0.5;
+const RENO_MIN_SSTHRESH: f64 = 2.0;
+/// RFC 6298 §2.3 — the SRTT/RTTVAR gains and the variance multiplier.
+const RFC6298_ALPHA: f64 = 1.0 / 8.0;
+const RFC6298_BETA: f64 = 1.0 / 4.0;
+const RFC6298_K: f64 = 4.0;
+/// RFC 6298 §2.4 / §2.5 — the RTO bounds.
+const RFC6298_RTO_MIN_S: f64 = 1.0;
+const RFC6298_RTO_MAX_S: f64 = 60.0;
+
+/// One Reno-class inner flow, clocked by the TUNNEL's delivered latency.
+#[derive(Debug, Clone)]
+struct RenoSource {
+    /// Congestion window, in segments (= tunnel symbols).
+    w: f64,
+    ssthresh: f64,
+    srtt: f64,
+    rttvar: f64,
+    rto: f64,
+    have_sample: bool,
+    /// `(seq, admission instant)` for every segment handed to the tunnel and
+    /// not yet passed by the cumulative frontier — FIFO, because the frontier
+    /// is by construction monotone and in order.
+    outstanding: std::collections::VecDeque<(u64, f64)>,
+    /// Gauges. `rto_events` is the count of timeouts; `rtt_sum`/`rtt_n` is the
+    /// DELIVERED LATENCY the inner flow actually experienced (the user-visible
+    /// cost); `w_sum`/`w_n` is the window's time average over admission ticks.
+    rto_events: u64,
+    rtt_sum: f64,
+    rtt_n: u64,
+    w_sum: f64,
+    w_n: u64,
+    /// Admission opportunities at which the INNER WINDOW was the binder (the
+    /// bench's `wait_tun` analogue) and at which the STORE CAP was
+    /// (`wait_paused`). Sampled once per tick, before any admission.
+    src_bound: u64,
+    cap_bound: u64,
+}
+
+impl RenoSource {
+    fn new() -> Self {
+        Self {
+            w: RENO_IW,
+            ssthresh: f64::INFINITY,
+            srtt: 0.0,
+            rttvar: 0.0,
+            rto: RFC6298_RTO_MIN_S,
+            have_sample: false,
+            outstanding: std::collections::VecDeque::new(),
+            rto_events: 0,
+            rtt_sum: 0.0,
+            rtt_n: 0,
+            w_sum: 0.0,
+            w_n: 0,
+            src_bound: 0,
+            cap_bound: 0,
+        }
+    }
+
+    /// RFC 6298 §2.2/§2.3 — one RTT measurement folded into SRTT/RTTVAR/RTO.
+    fn sample_rtt(&mut self, r: f64) {
+        if !self.have_sample {
+            self.srtt = r;
+            self.rttvar = r / 2.0;
+            self.have_sample = true;
+        } else {
+            self.rttvar =
+                (1.0 - RFC6298_BETA) * self.rttvar + RFC6298_BETA * (self.srtt - r).abs();
+            self.srtt = (1.0 - RFC6298_ALPHA) * self.srtt + RFC6298_ALPHA * r;
+        }
+        self.rto = (self.srtt + RFC6298_K * self.rttvar).clamp(RFC6298_RTO_MIN_S, RFC6298_RTO_MAX_S);
+        self.rtt_sum += r;
+        self.rtt_n += 1;
+    }
+
+    /// The cumulative frontier advanced to `frontier`: retire every segment it
+    /// passed, take their RTT samples, and grow the window one ACK at a time —
+    /// RFC 5681 §3.1, slow start then congestion avoidance, with NO branch on
+    /// anything but `cwnd < ssthresh`.
+    fn on_frontier(&mut self, frontier: u64, now: f64) {
+        while let Some(&(seq, sent)) = self.outstanding.front() {
+            if seq >= frontier {
+                break;
+            }
+            self.outstanding.pop_front();
+            self.sample_rtt(now - sent);
+            if self.w < self.ssthresh {
+                self.w += 1.0;
+            } else {
+                self.w += 1.0 / self.w;
+            }
+        }
+    }
+
+    /// RFC 6298 §5.5 + RFC 5681 §3.1 — the retransmission timer expired on the
+    /// oldest outstanding segment. The tunnel is RELIABLE, so there is nothing
+    /// for the inner flow to retransmit that the tunnel is not already
+    /// retransmitting; what the timeout does to the TUNNEL is collapse the
+    /// offered load, which is the whole mechanism under test.
+    fn check_rto(&mut self, now: f64) {
+        let Some(&(_, sent)) = self.outstanding.front() else {
+            return;
+        };
+        if now - sent <= self.rto {
+            return;
+        }
+        let flight = self.outstanding.len() as f64;
+        self.ssthresh = (flight * RENO_BETA).max(RENO_MIN_SSTHRESH);
+        self.w = 1.0;
+        self.rto = (self.rto * 2.0).min(RFC6298_RTO_MAX_S);
+        self.rto_events += 1;
+        // The timer restarts on the same segment (§5.5's "start the
+        // retransmission timer"), which this model expresses by re-stamping
+        // the head's send instant. Nothing else in the queue moves.
+        if let Some(front) = self.outstanding.front_mut() {
+            front.1 = now;
+        }
+    }
+
+    /// The offered-load gate: how many segments the inner flow may have in the
+    /// tunnel right now.
+    fn window(&self) -> u64 {
+        self.w.floor().max(1.0) as u64
+    }
+
+    fn admit(&mut self, seq: u64, now: f64) {
+        self.outstanding.push_back((seq, now));
+    }
+}
+
 /// `net/mod.rs:213` — `GAP_ACK_MIN_INTERVAL`, the receiver's gap-report rate
 /// limit and therefore the SACK-release clock while the frontier is stalled.
 const GAP_ACK_MIN_S: f64 = 0.002;
@@ -1431,6 +1624,17 @@ struct Run {
     /// directly, and it is the quantity the wire reads 0.0% on at c7.
     gate_closed: u64,
     gate_ticks: u64,
+    /// THE SOURCE AXIS's produced quantities (all zero under `Src::Bulk`):
+    /// the inner flow's mean congestion window in segments, its mean DELIVERED
+    /// latency in seconds (admission → cumulative frontier, the user-visible
+    /// cost), its RTO count, and the split of admission opportunities between
+    /// "the inner window was the binder" and "the store cap was".
+    src_w_mean: f64,
+    src_rtt_mean: f64,
+    src_rto: u64,
+    src_bound: u64,
+    cap_bound: u64,
+    src_opps: u64,
 }
 
 impl Run {
@@ -1494,6 +1698,23 @@ impl Run {
     }
     fn mean_cwnd(&self) -> f64 {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
+    }
+    /// The bench's `wait_tun` analogue: the share of admission opportunities at
+    /// which the OFFERED LOAD was the binder (inner window full, store cap
+    /// not). Zero by construction under `Src::Bulk`, which is the point.
+    fn src_bound_pct(&self) -> f64 {
+        self.src_bound as f64 / self.src_opps.max(1) as f64 * 100.0
+    }
+    /// The bench's `wait_paused` analogue under the source axis: the share at
+    /// which the STORE CAP was the binder.
+    fn cap_bound_pct(&self) -> f64 {
+        self.cap_bound as f64 / self.src_opps.max(1) as f64 * 100.0
+    }
+    /// The inner flow's delivered latency in MILLISECONDS — the user-visible
+    /// cost of whatever the tunnel does, and the quantity a latency budget on
+    /// the pool would exist to protect.
+    fn src_rtt_ms(&self) -> f64 {
+        self.src_rtt_mean * 1e3
     }
 }
 
@@ -1628,6 +1849,31 @@ fn simulate_full(
     acct: Acct,
     store_mode: Store,
 ) -> Run {
+    simulate_src(paths, arm, feed, horizon_s, salt, acct, store_mode, Src::Bulk)
+}
+
+/// As `simulate_full`, with the SOURCE axis. `Src::Bulk` is bit-identical to
+/// `simulate_full` — every branch the axis adds is behind `src == Src::Reno`,
+/// and it consumes no RNG (the inner flow is deterministic given the tunnel).
+#[allow(clippy::too_many_arguments)]
+fn simulate_src(
+    paths: &[Spec],
+    arm: Arm,
+    feed: Feed,
+    horizon_s: f64,
+    salt: u64,
+    acct: Acct,
+    store_mode: Store,
+    src: Src,
+) -> Run {
+    // The inner flow's ack is the SENDER'S OWN cumulative frontier, which only
+    // the coupling axis maintains. Asking for a closed-loop source without it
+    // would silently run an open loop, so it is refused rather than degraded.
+    assert!(
+        src == Src::Bulk || store_mode == Store::Span,
+        "Src::Reno needs Store::Span: the inner flow's ack IS the sender's \
+         cumulative frontier (`snd_frontier`), and nothing else advances it"
+    );
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -1705,6 +1951,8 @@ fn simulate_full(
     let mut snd_frontier: u64 = 0;
     let mut snd_marks: Vec<(u64, u64)> = Vec::new();
     let mut snd_marks_built: f64 = -1.0;
+    // ── THE SOURCE AXIS's state (`Src::Reno` only) ──────────────────────
+    let mut reno = RenoSource::new();
     // Gauges: the span the model produces, and what the marks release.
     let mut span_sum = 0.0_f64;
     let mut span_n = 0u64;
@@ -1879,6 +2127,16 @@ fn simulate_full(
                 } else {
                     i += 1;
                 }
+            }
+            // (a2) THE INNER FLOW's ack clock. The sender's cumulative
+            // frontier is the ONLY thing that retires an inner segment, and
+            // the RTT it measures is the tunnel's whole delivered latency —
+            // RTprop, the standing queue, and any recovery stall. Both calls
+            // are no-ops under `Src::Bulk` because nothing was ever admitted
+            // into `reno.outstanding`.
+            if src == Src::Reno {
+                reno.on_frontier(snd_frontier, now);
+                reno.check_rto(now);
             }
             // (b) RECEIVER: in-order delivery, in TIME ORDER, and the
             // gap-report clock evaluated per arrival — the engine
@@ -2330,13 +2588,39 @@ fn simulate_full(
         if store_len >= cap {
             gate_closed += 1;
         }
-        while store_len < cap {
+        // ── THE SOURCE AXIS: what the OFFERED LOAD will allow ─────────────
+        // Under `Src::Bulk` this is `u64::MAX` and every branch below is
+        // inert, so the published bench is bit-identical. Under `Src::Reno`
+        // it is the inner flow's congestion window over the tunnel's own
+        // delivered latency, and the sender is offered-load-bound exactly
+        // when the window is full and the cap is not — the bench's analogue
+        // of the wire's `wait_tun` / `wait_paused` split, sampled here so it
+        // is attributed once per tick and BEFORE any admission.
+        let src_room: u64 = match src {
+            Src::Bulk => u64::MAX,
+            Src::Reno => reno.window().saturating_sub(next_seq - snd_frontier),
+        };
+        if src == Src::Reno {
+            reno.w_sum += reno.w;
+            reno.w_n += 1;
+            if store_len >= cap {
+                reno.cap_bound += 1;
+            } else if src_room == 0 {
+                reno.src_bound += 1;
+            }
+        }
+        let mut src_left = src_room;
+        while store_len < cap && src_left > 0 {
+            src_left -= 1;
             store_len += 1;
             let pid = place_min_cost(&sched);
             chg(&mut sched, pid, &mut led);
             let (a, rt, ok) = links[pid as usize].send_resolved(now);
             let seq = next_seq;
             next_seq += 1;
+            if src == Src::Reno {
+                reno.admit(seq, now);
+            }
             if let Feed::Cumulative { .. } = feed {
                 seq_done.push(false);
                 seq_owner.push(pid);
@@ -2448,6 +2732,12 @@ fn simulate_full(
         srtt_sum,
         gate_closed,
         gate_ticks,
+        src_w_mean: reno.w_sum / reno.w_n.max(1) as f64,
+        src_rtt_mean: reno.rtt_sum / reno.rtt_n.max(1) as f64,
+        src_rto: reno.rto_events,
+        src_bound: reno.src_bound,
+        cap_bound: reno.cap_bound,
+        src_opps: reno.w_n,
     }
 }
 
@@ -5382,4 +5672,647 @@ fn the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff() {
     for w in WIRE_CAPS.iter().filter(|w| w.arm == "AU") {
         assert_eq!(w.at_ceiling, w.reps, "{}-AU is not uniformly pinned", w.cell);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE LATENCY-FEEDBACK SOURCE — goal-gate "The Latency-Feedback Source",
+// executing "The Queue Fix"'s RANK 1 handover ("THE DUAL-CELL BRAKE, which is
+// not in the engine … What is missing is the OFFERED LOAD beside it").
+//
+// The handover's hypothesis was that the offered load is an inner TCP whose
+// congestion control reacts to the tunnel's own inflated RTT. Everything in
+// this block is what the ALREADY-COMMITTED evidence says about that, taken
+// BEFORE any model was built, because two independent readings settle it and
+// neither needed a VM.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// THE FIRST REFUTATION, PROVEN TO EXECUTE (MEASUREMENT DISCIPLINE 1).
+///
+/// The offered load at every L1 arm in this ledger is `raptorpath perf
+/// --client`, which drives a MEMORY-BACKED TUN. `tun/mod.rs`'s own doc for
+/// `MemTun` says what it is: "Used by `raptorpath perf` to drive objects over
+/// the real transport **without a kernel TUN or an inner TCP stack**". And
+/// `perf.rs::run_object` is the whole source: a bare `for idx in 0..total`
+/// over `mem.feed.send(pkt)`. There is NO window, no cwnd, no RTT estimator,
+/// no retransmit timer and no loss signal anywhere on the app side — the ONLY
+/// backpressure is the bounded mpsc channel.
+///
+/// So the wire's offered load has NO CONGESTION CONTROL, and cannot be
+/// reacting to the tunnel's latency. The hypothesis is refuted at its source
+/// before any bench runs.
+///
+/// This is asserted against the source text rather than described, on the
+/// precedent already in the tree (`net/diag.rs:990` counts
+/// `tun.read_packet()` occurrences in its own body to keep an attribution
+/// claim honest). A successor who adds an inner stack to `perf` fails here
+/// and re-scores this section rather than inheriting its prose.
+#[test]
+fn the_wires_offered_load_has_no_congestion_control() {
+    let perf = include_str!("../src/perf.rs");
+    let tun = include_str!("../src/tun/mod.rs");
+
+    assert!(
+        tun.contains("without a kernel TUN or an inner TCP stack"),
+        "tun/mod.rs no longer states that the perf vehicle has no inner TCP \
+         stack — the premise of goal-gate \"The Latency-Feedback Source\" \
+         must be re-read against whatever replaced it"
+    );
+    // The feed loop is open: one bare iteration per chunk, no gate but the
+    // channel's own capacity.
+    assert!(
+        perf.contains("for idx in 0..total"),
+        "perf.rs::run_object's open feed loop is gone; re-read the source model"
+    );
+    // Nothing that could implement a congestion response exists on the app
+    // side. Each name is checked separately so a failure says WHICH appeared.
+    let lower = perf.to_ascii_lowercase();
+    for banned in [
+        "cwnd", "ssthresh", "congestion", "rto", "retransmit", "sack", "in_flight",
+        "inflight", "rtt",
+    ] {
+        assert!(
+            !lower.contains(banned),
+            "perf.rs now mentions `{banned}` — the offered load may have grown \
+             a congestion response, which would REOPEN the latency-feedback \
+             hypothesis this section refuted"
+        );
+    }
+}
+
+/// THE WIRE'S SENDER-LOOP WAIT ATTRIBUTION, per cell and arm.
+///
+/// `net/mod.rs:5824-5829` charges every sender-loop iteration's wall time to
+/// the `select!` arm that woke it; `hi_parse.py:160-167` takes the MEDIAN over
+/// the rep's DIAG windows and every per-rep summary record in `docs/l1-raw`
+/// carries all eight buckets. No section of the ledger had read them per rep.
+///
+/// Medians over reps, extracted by `tools/l1/waitarm_analyze.py`. Nothing here
+/// is modelled or fitted; it is transcription.
+#[derive(Debug, Clone, Copy)]
+struct WireWait {
+    cell: &'static str,
+    arm: &'static str,
+    reps: usize,
+    tun: f64,
+    paused: f64,
+    nack: f64,
+    tail: f64,
+}
+
+const WIRE_WAIT: &[WireWait] = &[
+    WireWait { cell: "c7", arm: "A", reps: 101, tun: 98.0, paused: 0.0, nack: 2.0, tail: 0.0 },
+    WireWait { cell: "c7", arm: "AU", reps: 36, tun: 98.0, paused: 0.0, nack: 2.0, tail: 0.0 },
+    WireWait { cell: "c8", arm: "A", reps: 77, tun: 34.0, paused: 6.0, nack: 31.0, tail: 1.0 },
+    WireWait { cell: "c8", arm: "AU", reps: 37, tun: 26.5, paused: 2.0, nack: 29.0, tail: 1.0 },
+    WireWait { cell: "sc2", arm: "A", reps: 77, tun: 29.0, paused: 40.0, nack: 31.0, tail: 1.0 },
+    WireWait { cell: "sc3", arm: "A", reps: 20, tun: 7.0, paused: 75.0, nack: 16.0, tail: 1.0 },
+    WireWait { cell: "c1", arm: "A", reps: 83, tun: 67.0, paused: 33.0, nack: 0.0, tail: 0.0 },
+];
+
+fn wire_wait(cell: &str, arm: &str) -> &'static WireWait {
+    WIRE_WAIT
+        .iter()
+        .find(|w| w.cell == cell && w.arm == arm)
+        .unwrap_or_else(|| panic!("no transcribed wait row for {cell}-{arm}"))
+}
+
+/// THE SECOND REFUTATION, BOUNDED: "at c7/c8 the sender is offered-load-bound
+/// (`wait_tun` 97.7%, `wait_paused` ~0)" is TRUE AT c7 AND FALSE AT c8.
+///
+/// "The Queue Fix"'s handover stated the 97.7% figure at c7 only; the c8 half
+/// was an extrapolation and the wire had already contradicted it. At c8 the
+/// productive-intake arm is a MINORITY of the loop's wall (34%) and the single
+/// largest bucket beside it is the GAP-REPORT arm at 31% — the recovery plane,
+/// not the source and not the store cap.
+#[test]
+fn the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8() {
+    // Internal identity: no bucket is a percentage outside [0, 100].
+    for w in WIRE_WAIT {
+        for (n, v) in [("tun", w.tun), ("paused", w.paused), ("nack", w.nack), ("tail", w.tail)] {
+            assert!(
+                (0.0..=100.0).contains(&v),
+                "{}-{} {n} = {v} is not a percentage",
+                w.cell, w.arm
+            );
+        }
+        assert!(w.reps >= 20, "{}-{}: n = {} is too thin to transcribe", w.cell, w.arm, w.reps);
+    }
+    // c7 IS offered-load-bound and its store cap is inert, on BOTH arms.
+    for arm in ["A", "AU"] {
+        let w = wire_wait("c7", arm);
+        assert!(w.tun >= 95.0, "c7-{arm}: tun = {} — c7 is no longer tun-bound", w.tun);
+        assert_eq!(w.paused, 0.0, "c7-{arm}: the store-cap arm is no longer exactly 0%");
+        assert!(w.nack <= 5.0, "c7-{arm}: the recovery arm has grown to {}%", w.nack);
+    }
+    // c8 IS NOT. This is the refutation, and it is stated as a bound.
+    for arm in ["A", "AU"] {
+        let w = wire_wait("c8", arm);
+        assert!(
+            w.tun <= 40.0,
+            "c8-{arm}: tun = {} — if the productive-intake arm really dominates \
+             at c8 then the dispatch's premise stands and this section is wrong",
+            w.tun
+        );
+        assert!(
+            w.nack >= 25.0,
+            "c8-{arm}: the gap-report arm is only {}% — the recovery plane is \
+             not where c8's sender loop lives",
+            w.nack
+        );
+        assert!(
+            w.nack >= 0.7 * w.tun,
+            "c8-{arm}: the recovery arm ({}%) no longer rivals the intake arm ({}%)",
+            w.nack, w.tun
+        );
+    }
+    // And the store cap IS the brake at the single cells, which is why the
+    // published bench's `while store_len < cap` models sc2/sc3 and not the
+    // duals ("The Queue Fix" FINDING 2, independently re-derived here from a
+    // different column of the same records).
+    assert!(wire_wait("sc2", "A").paused >= 30.0);
+    assert!(wire_wait("sc3", "A").paused >= 60.0);
+    assert!(wire_wait("c7", "A").paused < 1.0);
+}
+
+/// THE c8 COLLAPSE MODE, PER REP — the class the uniflip battery printed
+/// (reps at 18.8 / 34.7 / 49.5 beside 80–83) has a SENDER-LOOP SIGNATURE, and
+/// it is a perfect separator.
+///
+/// Over the 131 c8 reps of the A/AU/AL/ALU arms that carry the gauge, sorted
+/// SLOWEST first, the 19 slowest reps ALL read `wait_tun` = 0% AND
+/// `wait_paused` = 0% — an unbroken prefix — against 5 such reps in the whole
+/// remaining 112. Every one of the 13 reps below the battery's own 60 Mbit/s
+/// collapse threshold is in it.
+///
+/// Transcribed from `tools/l1/waitarm_analyze.py`, whose input is the
+/// committed `docs/l1-raw` tree. The 60 Mbit/s threshold is the uniflip
+/// battery's own, not one chosen here.
+#[derive(Debug, Clone, Copy)]
+struct C8Class {
+    label: &'static str,
+    n: usize,
+    mbps: f64,
+    seconds: f64,
+    wait_tun: f64,
+    wait_paused: f64,
+    wait_nack: f64,
+    wait_tail: f64,
+    occ_p50: f64,
+    retx: f64,
+    tc_drop: f64,
+    tc_pkts: f64,
+    sf_ticks: f64,
+}
+
+const C8_COLLAPSE: C8Class = C8Class {
+    label: "collapse (< 60 Mbit/s)",
+    n: 13,
+    mbps: 54.3,
+    seconds: 3.70,
+    wait_tun: 0.0,
+    wait_paused: 0.0,
+    wait_nack: 51.0,
+    wait_tail: 4.0,
+    occ_p50: 0.0,
+    retx: 2120.0,
+    tc_drop: 182.0,
+    tc_pkts: 23935.0,
+    sf_ticks: 324.5,
+};
+const C8_NORMAL: C8Class = C8Class {
+    label: "normal",
+    n: 118,
+    mbps: 81.1,
+    seconds: 2.49,
+    wait_tun: 33.0,
+    wait_paused: 5.0,
+    wait_nack: 30.0,
+    wait_tail: 1.0,
+    occ_p50: 2372.0,
+    retx: 1501.5,
+    tc_drop: 171.0,
+    tc_pkts: 23552.5,
+    sf_ticks: 315.0,
+};
+/// The unbroken prefix of slowest reps carrying the signature, and the pool.
+const C8_DEAD_PREFIX: usize = 19;
+const C8_REPS: usize = 131;
+/// How many of the remaining reps carry it.
+const C8_DEAD_ELSEWHERE: usize = 5;
+
+/// Each dual's own WIRE transfer duration — the horizon "The Queue Fix"
+/// established is the only one at which the bench's anchor is the wire's
+/// (`seconds`, docs/l1-raw, 100% of reps under `CopaState::window_duration`).
+const WIRE_HORIZON: &[(&str, f64)] = &[("c7", 9.23), ("c8", 2.44)];
+
+fn wire_horizon(cell: &str) -> f64 {
+    WIRE_HORIZON
+        .iter()
+        .find(|(c, _)| *c == cell)
+        .map(|(_, h)| *h)
+        .unwrap_or_else(|| panic!("no wire horizon for {cell}"))
+}
+
+// ── THE SOURCE AXIS'S PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11) ─────────
+//
+// Written and committed at `2b14cc6`, BEFORE the scored run. Every tolerance
+// is here rather than after the fact, and every WIRE number it is stated
+// against is already published in this file.
+//
+// V1 — the standing queue, mean over legs, against the wire's `q_p50`.
+const V_Q_WIRE_MS: &[(&str, f64)] = &[("c7", 76.0), ("c8", 338.0)];
+const V_Q_LO: f64 = 0.5;
+const V_Q_HI: f64 = 2.0;
+// V2 — the regime, against the wire's own wait attribution.
+const V_SRC_BOUND_C7_MIN: f64 = 80.0; // wire `wait_tun` = 98%
+const V_CAP_BOUND_C7_MAX: f64 = 10.0; // wire `wait_paused` = 0%
+const V_CAP_BOUND_C8_MAX: f64 = 15.0; // wire `wait_paused` = 6%
+// V3 — occupancy over cap at the refresh tick.
+const V_OCC_WIRE: &[(&str, f64)] = &[("c7", 0.31), ("c8", 0.55)];
+const V_OCC_TOL: f64 = 0.20;
+// V4 — goodput class against the `Src::Bulk` arm at the same cell.
+const V_GP_LO: f64 = 0.5;
+const V_GP_HI: f64 = 2.0;
+/// The matrix's collapse threshold, TRANSCRIBED: the uniflip battery's own
+/// 60 Mbit/s over its own normal-class median of 81.1 Mbit/s. Not chosen here.
+const MATRIX_COLLAPSE_RATIO: f64 = 60.0 / 81.1;
+/// Seeds per arm per cell (the dispatch asks >= 5).
+const MATRIX_SEEDS: u64 = 8;
+
+/// THE VALIDATION GATE, SCORED — V1–V4 against the pre-registration at
+/// `2b14cc6`, and the STOP RULE the dispatch fixed.
+///
+/// **VERDICT: THE GATE FAILS, at c7, on V2 and V3, and the failure is the
+/// result.** A Reno-class flow over a RELIABLE tunnel has no congestion signal
+/// at all: the tunnel hides every loss, so the flow never leaves slow start,
+/// its window runs away, and it re-becomes the bulk source the bench already
+/// had. The offered load is therefore NOT a latency control — which is the
+/// same conclusion the reading reached about the wire, arrived at from the
+/// opposite direction.
+///
+/// This test PINS the failure rather than describing it, so a successor who
+/// changes the source model re-scores the gate instead of inheriting prose.
+#[test]
+fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_reliable_tunnel() {
+    let mut c7_cap_bound = f64::NAN;
+    let mut c7_src_bound = f64::NAN;
+    let mut c7_occ = f64::NAN;
+    for (label, specs, acks) in measured_cells() {
+        let cell = label.split_whitespace().next().expect("cell name");
+        if cell == "sc2" {
+            continue;
+        }
+        let h = wire_horizon(cell);
+        let r = simulate_src(
+            &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, Src::Reno,
+        );
+        let bulk = simulate_src(
+            &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, Src::Bulk,
+        );
+        assert!(r.src_opps > 0, "{cell}: the source axis never sampled an admission tick");
+        assert!(r.goodput_sym_s() > 0.0, "{cell}: the closed loop delivered nothing");
+
+        // V4 — the closed loop must not have destroyed the transfer. This one
+        // PASSES at both duals, which is what makes the V2/V3 failure a
+        // statement about the REGIME and not about a broken instrument.
+        let gp = r.goodput_sym_s() / bulk.goodput_sym_s();
+        assert!(
+            (V_GP_LO..=V_GP_HI).contains(&gp),
+            "{cell}: V4 — the closed loop's goodput is {gp:.2}x the bulk arm's, \
+             outside the pre-registered [{V_GP_LO}, {V_GP_HI}]; the instrument \
+             is broken and nothing else here can be read"
+        );
+
+        // Every criterion is PRODUCED at both duals and printed, so the gate's
+        // scorecard is a table and not a sentence. Only c7's are asserted on
+        // below, because c7 is where the gate fails and the failure is what
+        // this test exists to bound.
+        let n = specs.len() as f64;
+        let q: f64 = (0..specs.len()).map(|p| r.queue_ms(p)).sum::<f64>() / n;
+        let occ = r.store_len_mean / r.mean_cap.max(1e-9);
+        let (_, q_wire) = V_Q_WIRE_MS.iter().find(|(c, _)| *c == cell).expect("wire q");
+        let (_, occ_wire) = V_OCC_WIRE.iter().find(|(c, _)| *c == cell).expect("wire occ");
+        let vq = (V_Q_LO..=V_Q_HI).contains(&(q / q_wire));
+        let vocc = (occ - occ_wire).abs() <= V_OCC_TOL;
+        let vcap = r.cap_bound_pct()
+            <= if cell == "c7" { V_CAP_BOUND_C7_MAX } else { V_CAP_BOUND_C8_MAX };
+        println!(
+            "[V-GATE] {cell:4} q {q:7.1} ms vs wire {q_wire:5.1} ({:4.2}x) V1 {} | \
+             src-bound {:5.1}% cap-bound {:5.1}% (wire tun/paused {}) V2 {} | \
+             occ/cap {occ:4.2} vs {occ_wire:4.2} V3 {} | gp {gp:4.2}x bulk V4 PASS | \
+             inner w {:8.0} rto {}",
+            q / q_wire,
+            if vq { "PASS" } else { "FAIL" },
+            r.src_bound_pct(),
+            r.cap_bound_pct(),
+            if cell == "c7" { "98/0" } else { "34/6" },
+            if vcap && (cell != "c7" || r.src_bound_pct() >= V_SRC_BOUND_C7_MIN) {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            if vocc { "PASS" } else { "FAIL" },
+            r.src_w_mean,
+            r.src_rto,
+        );
+        if cell == "c7" {
+            c7_cap_bound = r.cap_bound_pct();
+            c7_src_bound = r.src_bound_pct();
+            c7_occ = occ;
+        }
+    }
+
+    // V2a/V2b FAIL AT c7, AND THEY FAIL IN THE SAME DIRECTION: the model puts
+    // the store cap in charge where the wire measures it never to fire.
+    assert!(
+        c7_src_bound < V_SRC_BOUND_C7_MIN,
+        "c7: V2a now PASSES ({c7_src_bound:.1}% >= {V_SRC_BOUND_C7_MIN}%) — the \
+         closed-loop source has become offered-load-bound at c7 and the STOP \
+         RULE no longer fires. Re-score the whole matrix."
+    );
+    assert!(
+        c7_cap_bound > V_CAP_BOUND_C7_MAX,
+        "c7: V2b now PASSES ({c7_cap_bound:.1}% <= {V_CAP_BOUND_C7_MAX}%) — \
+         re-score the gate"
+    );
+    // …and the mechanism: with no loss signal the window leaves the tunnel's
+    // own cap far behind, so the flow offers strictly more than the store can
+    // hold and the gate closes almost always.
+    assert!(
+        c7_cap_bound > 80.0,
+        "c7: the store cap binds only {c7_cap_bound:.1}% of admission \
+         opportunities — the runaway-window mechanism this section names is gone"
+    );
+    // V3 fails with it, on the same arithmetic: a full store is not an
+    // occupancy of 0.31.
+    let (_, w_occ) = V_OCC_WIRE.iter().find(|(c, _)| *c == "c7").expect("c7 row");
+    assert!(
+        (c7_occ - w_occ).abs() > V_OCC_TOL,
+        "c7: V3 now PASSES (occ/cap {c7_occ:.2} vs the wire's {w_occ:.2}) — \
+         re-score the gate"
+    );
+}
+
+/// THE MATRIX, RUN BUT **NOT SCORED** — the pre-registration's STOP RULE fired
+/// at the validation gate, so nothing here decides anything. It is produced so
+/// a successor inherits numbers rather than a description, and every row is
+/// labelled UNSCORED for exactly that reason.
+///
+/// {A, AU, U+3T, P} × {c7, c8} × 8 seeds, at each cell's own wire horizon.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_source_matrix_unscored() {
+    println!(
+        "\nTHE MATRIX — **UNSCORED**: the pre-registered STOP RULE fired at the\n\
+         validation gate (V2a/V2b/V3 fail at c7). Numbers for the record only.\n\
+         Src::Reno, Acct::Engine, Store::Span, the measured ack era, {MATRIX_SEEDS} seeds,\n\
+         each cell at its own wire transfer duration. `collapse` = goodput below\n\
+         {:.3}x the A arm's own median at that cell (the uniflip battery's 60/81.1).\n",
+        MATRIX_COLLAPSE_RATIO
+    );
+    println!(
+        "{:<26} {:<21} | {:>8} {:>8} {:>9} | {:>8} {:>7} | {:>8} {:>7} {:>5}",
+        "cell", "arm", "gp med", "gp min", "collapse", "cap mean", "occ/cap", "innRTT", "inner w", "rto"
+    );
+    for (label, specs, acks) in measured_cells() {
+        let cell = label.split_whitespace().next().expect("cell name");
+        if cell == "sc2" {
+            continue;
+        }
+        let h = wire_horizon(cell);
+        let feed = Feed::Measured(acks);
+        // The A arm's own median is the collapse denominator, per the
+        // pre-registration, so it is computed first and reused.
+        let mut a_gp: Vec<f64> = (0..MATRIX_SEEDS)
+            .map(|s| {
+                simulate_src(&specs, Arm::Legacy, feed, h, s, Acct::Engine, Store::Span, Src::Reno)
+                    .goodput_sym_s()
+            })
+            .collect();
+        a_gp.sort_by(f64::total_cmp);
+        let a_med = a_gp[a_gp.len() / 2];
+        let floor = MATRIX_COLLAPSE_RATIO * a_med;
+
+        for (arm, name) in [
+            (Arm::Legacy, "A    (shipped)"),
+            (Arm::Unified, "AU   (deeper pool)"),
+            (Arm::ThreeTermCell, "U+3T (three-term)"),
+            (Arm::PooledUnified, "P    (pooled+unified)"),
+        ] {
+            let runs: Vec<Run> = (0..MATRIX_SEEDS)
+                .map(|s| simulate_src(&specs, arm, feed, h, s, Acct::Engine, Store::Span, Src::Reno))
+                .collect();
+            let mut gp: Vec<f64> = runs.iter().map(|r| r.goodput_sym_s()).collect();
+            gp.sort_by(f64::total_cmp);
+            let collapse = gp.iter().filter(|g| **g < floor).count();
+            let mean = |f: fn(&Run) -> f64| runs.iter().map(f).sum::<f64>() / runs.len() as f64;
+            let cap = mean(|r| r.mean_cap);
+            println!(
+                "{:<26} {:<21} | {:>8.0} {:>8.0} {:>6}/{:<2} | {:>8.0} {:>7.2} | {:>8.1} {:>7.0} {:>5}   UNSCORED",
+                label,
+                name,
+                gp[gp.len() / 2],
+                gp[0],
+                collapse,
+                MATRIX_SEEDS,
+                cap,
+                mean(|r| r.store_len_mean) / cap.max(1e-9),
+                mean(|r| r.src_rtt_ms()),
+                mean(|r| r.src_w_mean),
+                runs.iter().map(|r| r.src_rto).sum::<u64>(),
+            );
+        }
+        println!();
+    }
+}
+
+/// THE SOURCE AXIS'S SMOKE — one seed, both duals, both source arms, printed
+/// so the instrument's behaviour is visible before anything is scored against
+/// it. `#[ignore]`d: it is a READOUT, not a pin.
+#[test]
+#[ignore = "component bench; run with --ignored --nocapture"]
+fn sf_source_axis_smoke() {
+    println!(
+        "\nTHE SOURCE AXIS — Reno-class inner flow (RFC 5681 AIMD + RFC 6298 RTO,\n\
+         IW = 10 per RFC 6928) clocked on the tunnel's OWN delivered latency.\n\
+         Horizon = each cell's own wire transfer duration. Acct::Engine, Store::Span,\n\
+         the measured ack era. seed 0.\n"
+    );
+    println!(
+        "{:<26} {:<19} | {:>7} {:>7} {:>6} | {:>7} {:>7} | {:>7} {:>7} {:>5} | {:>8}",
+        "cell", "src", "occ", "cap", "o/c", "q ms", "rtp ms", "inner w", "innRTT", "rto", "gp sym/s"
+    );
+    for (label, specs, acks) in measured_cells().into_iter().filter(|(l, ..)| !l.starts_with("sc2"))
+    {
+        let cell = label.split_whitespace().next().expect("cell name");
+        let h = wire_horizon(cell);
+        for src in [Src::Bulk, Src::Reno] {
+            let r = simulate_src(
+                &specs, Arm::Legacy, Feed::Measured(acks), h, 0, Acct::Engine, Store::Span, src,
+            );
+            let n = specs.len() as f64;
+            let q: f64 = (0..specs.len()).map(|p| r.queue_ms(p)).sum::<f64>() / n;
+            let rtp: f64 = (0..specs.len()).map(|p| r.min_rtt_ms(p)).sum::<f64>() / n;
+            println!(
+                "{:<26} {:<19} | {:>7.0} {:>7.0} {:>6.2} | {:>7.1} {:>7.1} | {:>7.0} {:>7.1} {:>5} | {:>8.0}",
+                label,
+                src.label(),
+                r.store_len_mean,
+                r.mean_cap,
+                r.store_len_mean / r.mean_cap.max(1e-9),
+                q,
+                rtp,
+                r.src_w_mean,
+                r.src_rtt_ms(),
+                r.src_rto,
+                r.goodput_sym_s()
+            );
+            if src == Src::Reno {
+                println!(
+                    "{:<26} {:<19} | offered-load-bound {:.1}%  store-cap-bound {:.1}%  \
+                     (WIRE: c7 tun 98 / paused 0, c8 tun 34 / paused 6)",
+                    "", "", r.src_bound_pct(), r.cap_bound_pct()
+                );
+            }
+        }
+        println!();
+    }
+}
+
+/// THE THIRD FINDING, AND IT IS POSITIVE: the c8 collapse is APPENDED DEAD
+/// WALL, not a degraded transfer.
+///
+/// Three of the wire's own columns say so together, and none of them is a
+/// goodput statistic:
+///
+///  * `tc_pkts` — packets the SHAPER counted, i.e. what actually reached the
+///    wire — is 1.02× between the classes. The collapse rep sends the same
+///    traffic.
+///  * `sf_ticks` — the sender's own dyn-cap refresh count, which only
+///    increments inside the emission path — is 1.03×. The emission work is
+///    the same too.
+///  * `seconds` is 1.49×. So ~30% of a collapse rep's wall is time in which
+///    the sender is neither taking source in (`wait_tun` = 0) nor blocked on
+///    its store cap (`wait_paused` = 0) nor putting packets on the wire.
+///
+/// A store-sizing law cannot reach this. `wait_paused` = 0 in 13 of 13
+/// collapse reps means the gate a cap acts on is NEVER CLOSED while the
+/// collapse is happening.
+#[test]
+fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed() {
+    let (c, n) = (C8_COLLAPSE, C8_NORMAL);
+    assert_eq!(c.n + n.n, C8_REPS, "the class counts must partition the pool");
+    assert!(c.mbps < 60.0 && n.mbps >= 60.0, "the classes are the wrong side of the threshold");
+    assert!(c.wait_nack > n.wait_nack, "{}: the recovery arm did not grow", c.label);
+    assert!(c.wait_tail >= 2.0 * n.wait_tail, "{}: the tail-sweep arm did not grow", c.label);
+
+    // (a) THE SEPARATOR. Both loop-attribution buckets are EXACTLY zero in the
+    // collapse class and neither is in the normal class.
+    assert_eq!(c.wait_tun, 0.0, "{}: the intake arm is no longer dead", c.label);
+    assert_eq!(c.wait_paused, 0.0, "{}: the store-cap arm is no longer dead", c.label);
+    assert!(n.wait_tun >= 20.0 && n.wait_paused > 0.0, "the normal class lost its contrast");
+    assert!(
+        C8_DEAD_PREFIX >= 15 && C8_DEAD_ELSEWHERE <= C8_DEAD_PREFIX / 3,
+        "the signature is no longer a clean prefix of the slowest reps \
+         ({C8_DEAD_PREFIX} prefix vs {C8_DEAD_ELSEWHERE} elsewhere)"
+    );
+
+    // (b) THE WIRE VOLUME AND THE EMISSION WORK ARE UNCHANGED.
+    let pkts = c.tc_pkts / n.tc_pkts;
+    let ticks = c.sf_ticks / n.sf_ticks;
+    let drop = c.tc_drop / n.tc_drop;
+    assert!(
+        (0.95..=1.10).contains(&pkts),
+        "tc_pkts moved {pkts:.3}x between the classes — the collapse IS a \
+         throughput loss after all and this section's mechanism is wrong"
+    );
+    assert!((0.95..=1.10).contains(&ticks), "sf_ticks moved {ticks:.3}x");
+    assert!((0.90..=1.15).contains(&drop), "tc_drop moved {drop:.3}x — link loss is not equal");
+
+    // (c) SO THE WALL IS WHERE IT ALL WENT, and the residual is real.
+    let wall = c.seconds / n.seconds;
+    assert!(
+        wall >= 1.35,
+        "the collapse class is only {wall:.3}x the wall — the dead time is gone"
+    );
+    // The dead share, computed the way the tool computes it: hold the normal
+    // class's refresh duty fixed and ask how much of the collapse rep's wall
+    // its own refresh count can account for.
+    let duty = n.sf_ticks / n.seconds;
+    let dead = (c.seconds - c.sf_ticks / duty) / c.seconds;
+    assert!(
+        (0.20..0.50).contains(&dead),
+        "the non-emission share of a collapse rep's wall is {:.1}%, not the \
+         measured ~30%",
+        dead * 100.0
+    );
+    // The normal class must have essentially none, or the statistic is
+    // measuring the method rather than the mode.
+    let dead_n = (n.seconds - n.sf_ticks / duty) / n.seconds;
+    assert!(dead_n.abs() < 0.05, "the normal class shows {:.1}% dead wall too", dead_n * 100.0);
+
+    // (d) AND THE STORE IS EMPTY WHILE IT HAPPENS. The median DIAG window of a
+    // collapse rep holds NOTHING in the retention store.
+    assert_eq!(c.occ_p50, 0.0, "the collapse class's median occupancy is no longer 0");
+    assert!(n.occ_p50 > 1000.0, "the normal class's occupancy contrast is gone");
+
+    // (e) The extra work that IS there is RECOVERY, and it is spurious: 1.41x
+    // the retransmits on 1.06x the link drops.
+    let spurious = (c.retx / n.retx) / (c.tc_drop / n.tc_drop);
+    assert!(
+        spurious >= 1.20,
+        "retransmits are only {spurious:.2}x per unit of link loss — the extra \
+         recovery traffic is explained by extra loss and is not spurious"
+    );
+}
+
+/// THE DEAD TIME'S QUANTUM, on the SHIPPED laws and the wire's own SRTT.
+///
+/// Both timers that can end a c8 recovery stall are `2·SRTT` CLAMPED to a
+/// 100 ms ceiling — `net::tail_sweep_timeout_us` (`[25 ms, 100 ms]`) and
+/// `net::hole_nack_refresh` (`[25 ms, 100 ms]`). At c8 the wire's own SRTT is
+/// `rtp_med + q_p50` = 38 + 338 = 376 ms, so `2·SRTT` = 752 ms and BOTH timers
+/// sit at their ceiling, a factor of 7.5 below the round trip they are meant
+/// to be a multiple of. Each recovery round therefore costs 100 ms of wall
+/// whatever the path does, and ~1.1 s of dead wall is ~11 of them.
+///
+/// This is arithmetic on shipped functions, not a fit. It is recorded because
+/// it is what the dead time is MADE of; it is NOT a claim that changing the
+/// clamp would help, which nothing here measures.
+#[test]
+fn the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells() {
+    use raptorpath::net::{hole_nack_refresh, tail_sweep_timeout_us};
+    // The wire's measured SRTT per cell = rtp_med + q_p50, both from the same
+    // per-rep records the WIRE_BRAKE table transcribes.
+    let cells: &[(&str, u64, u64)] = &[("c7", 11, 76), ("c8", 38, 338), ("sc2", 13, 91)];
+    let mut clamped = 0usize;
+    for (cell, rtp_ms, q_ms) in cells {
+        let srtt_us = (rtp_ms + q_ms) * 1000;
+        let sweep = tail_sweep_timeout_us(srtt_us);
+        let refresh = hole_nack_refresh(Some(Duration::from_micros(srtt_us))).as_micros() as u64;
+        assert_eq!(
+            sweep, refresh,
+            "{cell}: the two recovery clocks have diverged; this section reads them as one"
+        );
+        if sweep == 100_000 {
+            clamped += 1;
+            let under = srtt_us as f64 * 2.0 / sweep as f64;
+            if *cell == "c8" {
+                assert!(
+                    under >= 5.0,
+                    "c8's 2*SRTT is only {under:.1}x the clamp — the clamp is no \
+                     longer badly bound there and the dead-time arithmetic changes"
+                );
+            }
+        }
+    }
+    assert_eq!(clamped, 3, "a transcribed cell stopped reaching the 100 ms clamp");
+    // c1, the cell with no queue, is NOT clamp-bound at the ceiling — the
+    // FLOOR holds it instead, which is the control that says the ceiling
+    // reading is about c8's queue and not about the law.
+    assert_eq!(
+        tail_sweep_timeout_us(9 * 1000),
+        25_000,
+        "c1's 2*SRTT = 18 ms should sit on the 25 ms FLOOR, not the ceiling"
+    );
 }
