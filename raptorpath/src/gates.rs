@@ -262,6 +262,19 @@ pub struct RuntimeGates {
     /// the backlog it can deliver by frontier need-time). Plain reliable
     /// window only.
     pub place_slack: bool,
+    /// `RWM_COLD_PLACE` (anchor-hygiene family member, default OFF): price an
+    /// UNMEASURED leg's latency anchor at the active set's fastest MEASURED
+    /// srtt instead of the 50-ms `DEFAULT_SRTT`-class seed that
+    /// `PathState::srtt()` hands back before the first sample. Zero constants
+    /// — the cold price is another leg's measurement — and OFF is
+    /// bit-identical (the cold price IS `p.srtt()` with the gate off).
+    ///
+    /// It binds only where a leg is cold WHILE another is warm, i.e. a LATE
+    /// JOIN; it is measured INERT at every SF-bench geometry, where all legs
+    /// start cold together. `scheduler::cold_place_active` carries the law,
+    /// the retraction of the `c7x4` "lock-in" that motivated it, and the
+    /// tests that bound both directions.
+    pub cold_place: bool,
 
     // ── Generation stack ──────────────────────────────────────────────────
     /// `RWM_GEN` (default 384, min 1): generation size G.
@@ -593,6 +606,7 @@ impl RuntimeGates {
             sidle_derived: crate::scheduler::sidle_derived_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
+            cold_place: crate::scheduler::cold_place_active(),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -683,6 +697,7 @@ impl RuntimeGates {
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={}              RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
+             RWM_COLD_PLACE={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
              RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
@@ -706,6 +721,7 @@ impl RuntimeGates {
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
             b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
+            b(self.cold_place),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
             b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
@@ -993,6 +1009,11 @@ mod tests {
         assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
         assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");
         assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
+        assert!(
+            !g.cold_place,
+            "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
+             placement repair must be opted into"
+        );
         assert!(
             !g.recov_mp_live,
             "RWM_RECOV_MP_LIVE ships default OFF (A/B arm)"

@@ -99,7 +99,12 @@ const MAX_PATHS: usize = 4;
 /// per-path link seeds are derived from the path INDEX rather than from
 /// `HashMap` order. A four-way symmetric cell ties in all three at once, which
 /// is why it is the strongest determinism probe in the file
-/// (`the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs`).
+/// (`the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm`).
+///
+/// It is also the geometry whose PER-PATH GAUGES were truncated at `pid < 2`
+/// until 2026-08-18 — the arrays were widened to `MAX_PATHS` for this cell
+/// and three of the writes into them were not, so legs 2 and 3 read zero at
+/// every arm. See the retraction on the test named above.
 fn c7x4() -> Vec<Spec> {
     vec![C2, C2, C2, C2]
 }
@@ -1957,6 +1962,43 @@ fn simulate_src(
     store_mode: Store,
     src: Src,
 ) -> Run {
+    simulate_place(paths, arm, feed, horizon_s, salt, acct, store_mode, src, Place::Shipped)
+}
+
+/// **THE PLACEMENT AXIS** — what an UNMEASURED leg's SRTT is worth in
+/// `Scheduler::place_costs` (`RWM_COLD_PLACE`; see
+/// `scheduler::cold_place_active`). `Place::Shipped` is bit-identical to
+/// `simulate_src`: the scheduler is pinned to the shipped
+/// `DEFAULT_SRTT`-class price rather than left to read the process env, so
+/// no arm of this bench can be perturbed by the environment it runs in.
+///
+/// It is an AXIS rather than a member of `Arm` on purpose. `Arm` selects a
+/// STORE-CAP law; this selects a PLACEMENT price, in a different layer, and
+/// the two compose — `the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold`
+/// scores the placement axis at `Arm::Legacy` while
+/// `the_composed_law_does_not_starve_a_leg_of_the_quad` keeps scoring the cap
+/// axis at `Place::Shipped`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Place {
+    /// The shipped price: `PathState::srtt()` on a leg with no sample, i.e.
+    /// the 50-ms `DEFAULT_SRTT`-class constructor seed.
+    Shipped,
+    /// `RWM_COLD_PLACE`: the active set's fastest MEASURED srtt.
+    ColdMeasured,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn simulate_place(
+    paths: &[Spec],
+    arm: Arm,
+    feed: Feed,
+    horizon_s: f64,
+    salt: u64,
+    acct: Acct,
+    store_mode: Store,
+    src: Src,
+    place: Place,
+) -> Run {
     // The inner flow's ack is the SENDER'S OWN cumulative frontier, which only
     // the coupling axis maintains. Asking for a closed-loop source without it
     // would silently run an open loop, so it is refused rather than degraded.
@@ -1968,6 +2010,15 @@ fn simulate_src(
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
+    // PIN the placement axis explicitly — never inherit the process env, or
+    // an `RWM_COLD_PLACE=1` in the shell silently moves every arm of this
+    // bench at once (the confound the gate-forwarding audit exists to stop).
+    sched.set_cold_place(place == Place::ColdMeasured);
+    assert_eq!(
+        sched.cold_place(),
+        place == Place::ColdMeasured,
+        "the placement axis did not take — the arm would be unfalsifiable"
+    );
     let mut links: Vec<Link> = Vec::new();
     // Ground truth per path for the realized-over-read gauge: BtlBw·RTprop.
     let truth: Vec<f64> = paths.iter().map(|(r, t, _, _)| r * t).collect();
@@ -2341,7 +2392,14 @@ fn simulate_src(
         }
         delivered += acks.len() as u64;
         for (pid, _, _) in &acks {
-            if (*pid as usize) < 2 {
+            // `np`, NOT a hard-coded 2. THE GAUGE-TRUNCATION DEFECT, repaired:
+            // these guards were written when `MAX_PATHS` was 2, and when the
+            // quad raised it to 4 the ARRAYS were widened while the guards
+            // were not — so `delivered_p[2..4]` and `bw_n[2..4]` read 0 at
+            // c7x4 NO MATTER WHAT PLACEMENT DID, and the assertion built on
+            // them could not fail (MEASUREMENT DISCIPLINE rule 1). See
+            // `the_quad_spreads_across_all_four_legs_and_all_four_warm`.
+            if (*pid as usize) < np {
                 delivered_p[*pid as usize] += 1;
             }
             deliv_win[*pid as usize].push_back(now);
@@ -2620,7 +2678,7 @@ fn simulate_src(
                     cwnd_n += 1;
                     // THE LEDGER'S OWN PAIR: the windowed-max rate estimate
                     // and the min-RTT the anchor multiplies it by.
-                    if pid < 2 {
+                    if pid < np {
                         if let (Some(bw), Some(mr)) = (p.btlbw_sym_per_s(), p.min_rtt()) {
                             bw_sum[pid] += bw;
                             mrtt_sum[pid] += mr.as_secs_f64();
@@ -2639,7 +2697,7 @@ fn simulate_src(
                         if truth[pid] > 0.0 {
                             anchor_ratio_sum += a / truth[pid];
                             anchor_ratio_n += 1;
-                            if pid < 2 {
+                            if pid < np {
                                 xa_sum[pid] += a / truth[pid];
                                 xa_n[pid] += 1;
                             }
@@ -4969,9 +5027,12 @@ fn sf_composed_cap_law_as_one_arm() {
          class. The 1 Gbit cell is a VM question."
     );
     println!(
-        "NOTE: at the quad the composed law must not touch the cold-start \
-         placement lock-in (a PLACEMENT defect, different layer) — bounded by \
-         `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`."
+        "NOTE: the quad's \"cold-start placement lock-in\" is RETRACTED (2026-08-18): \
+         it was three `pid < 2` gauge guards left behind when MAX_PATHS went 2 -> 4, \
+         not a placement defect. The quad spreads evenly over all four legs. See \
+         `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm`; the \
+         composed arm's four-way split is bounded by \
+         `the_composed_law_does_not_starve_a_leg_of_the_quad`."
     );
 }
 
@@ -5741,7 +5802,8 @@ fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadr
     assert_ne!(r_value.round(), c4_ as f64 / c2_ as f64);
 }
 
-/// THE QUAD'S DETERMINISM, pinned before anything is measured on it.
+/// THE QUAD'S DETERMINISM, pinned before anything is measured on it — and
+/// **THE RETRACTION OF THE COLD-START LOCK-IN THIS TEST USED TO ASSERT.**
 ///
 /// A four-way symmetric cell ties every tie this bench has ever had a bug in
 /// at once — the placement objective's exact-cost tie (`place_min_cost`), the
@@ -5750,8 +5812,40 @@ fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadr
 /// resolving by map order would make c7x4's numbers a per-process draw. Same
 /// lesson as `symmetric_cell_placement_tie_is_broken_deterministically`, at the
 /// path count that makes it hardest.
+///
+/// ── WHAT THIS TEST ASSERTED UNTIL 2026-08-18, AND WHY IT WAS WRONG ───────
+/// It was named `..._and_its_placement_locks_onto_two_legs` and asserted
+/// `delivered_p[2] == delivered_p[3] == 0` and `bw_n[2] == bw_n[3] == 0`,
+/// with a long comment attributing it to `Scheduler::place_costs` pricing an
+/// unmeasured leg at `DEFAULT_SRTT`/2 = 25 ms against a warm c2 leg's 4 ms.
+///
+/// **The arithmetic was right and the measurement was an artifact.** Three
+/// per-path gauge writes in the simulation loop were guarded by a hard-coded
+/// `pid < 2`, written when `MAX_PATHS` was 2. Raising `MAX_PATHS` to 4 for
+/// this very geometry widened the ARRAYS and left the GUARDS — so legs 2 and
+/// 3 recorded nothing WHATEVER PLACEMENT DID, and the two `assert_eq!(.., 0)`
+/// could not fail. An assertion that cannot fail proves nothing about the
+/// mechanism it names (MEASUREMENT DISCIPLINE rule 1), and this one had been
+/// read as a MEASURED divergence by
+/// `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`
+/// and by ADR-0070's quad coverage.
+///
+/// With the guards repaired (`pid < np`) the quad MEASURES the opposite: all
+/// four legs carry within 3% of each other, all four warm on the same tick
+/// count, and the cell delivers 2.1× c7 rather than 1×. The 25-ms cold price
+/// is real arithmetic, but it never binds HERE — every leg is unmeasured at
+/// once, so the first admission burst (which runs before any ack returns)
+/// ties all four at the seed price and the `in_flight` term round-robins
+/// them; one sample later every leg is warm forever. The regime where the
+/// cold price CAN close into a fixed point is a leg joining a set whose
+/// incumbents are ALREADY warm — a LATE JOIN, which no geometry in this
+/// bench contains, and which the scheduler bounds directly
+/// (`a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it`).
+///
+/// The gauge repair is provably inert at every other cell: `np` is 2 there,
+/// so `pid < np` IS `pid < 2`.
 #[test]
-fn the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs() {
+fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
     let g = c7x4();
     let a = simulate(&g, Arm::Legacy, 4.0);
     let b = simulate(&g, Arm::Legacy, 4.0);
@@ -5759,6 +5853,7 @@ fn the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs() {
     assert_eq!(a.mean_cap.to_bits(), b.mean_cap.to_bits(), "mean cap is not reproducible");
     assert_eq!(a.sum_live, b.sum_live);
     assert_eq!(a.sum_active, b.sum_active);
+    assert_eq!(a.delivered_p, b.delivered_p, "the per-leg split is not reproducible");
 
     // MEASUREMENT DISCIPLINE 1 — the geometry under test must EXECUTE at N = 4:
     // the dyn-cap refresh must really see FOUR live paths, since `n_live` is the
@@ -5767,34 +5862,106 @@ fn the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs() {
     assert_eq!(a.sum_live, 4 * a.ticks, "the refresh never saw four live paths");
     assert!(a.mean_cap <= (4 * KNEE) as f64, "the realized cap exceeded N·knee");
 
-    // ── A DIVERGENCE THE QUAD FOUND, BOUNDED RATHER THAN DESCRIBED ────────
-    // The placement objective LOCKS ON to the first two legs and never uses the
-    // other two, at a cell where all four are identical. It is not a tie-break
-    // bug — it is arithmetic in `Scheduler::place_costs`, whose load term is
-    // `(in_flight/cwnd)·srtt + srtt/2 + ε·srtt` over `ref_srtt`, with
-    // `srtt() = self.srtt.unwrap_or(DEFAULT_SRTT)` and `DEFAULT_SRTT = 50 ms`
-    // (`scheduler/mod.rs:586,1549`). A leg that has never carried a symbol has
-    // no SRTT sample, so it is priced at 25 ms of propagation while a warm c2
-    // leg is priced at 4 ms + its queue: the warm leg must reach
-    // `in_flight/cwnd ≈ 2.6` before the cold leg can win, and with the store cap
-    // bounding in-flight it never does. COLD-START LOCK-IN, and it is invisible
-    // at N ≤ 2, which is every cell the bench had before this one.
-    //
-    // The store-cap law is unaffected — `n_live` is 4 above whatever placement
-    // does — so this is recorded and bounded here rather than modelled away.
-    // If a future placement change spreads the quad, THIS assertion fails and
-    // the change gets reviewed, which is the point.
-    assert!(a.delivered_p[0] > 0 && a.delivered_p[1] > 0, "the warm pair carried nothing");
-    assert_eq!(
-        (a.delivered_p[2], a.delivered_p[3]),
-        (0, 0),
-        "legs 2/3 carried traffic — the cold-SRTT lock-in above no longer holds,          so the comment describing it is now wrong"
+    // ── ALL FOUR LEGS CARRY, AND THE SPLIT IS EVEN ───────────────────────
+    // Absolute, not ordinal: at a cell whose four legs are the SAME `C2` spec
+    // an even split is the placement objective's own prediction (§13.8
+    // water-fills by capacity, and the capacities are equal). The 10% band is
+    // loose enough for the four GE realizations to differ and tight enough
+    // that any re-truncation of the gauges, or any placement change that
+    // starves a leg, fails here.
+    for pid in 0..4 {
+        assert!(
+            a.delivered_p[pid] > 0,
+            "leg {pid} carried nothing — either placement starved it or a \
+             per-path gauge is truncated again (the `pid < 2` defect)"
+        );
+    }
+    let lo = *a.delivered_p[..4].iter().min().unwrap() as f64;
+    let hi = *a.delivered_p[..4].iter().max().unwrap() as f64;
+    assert!(
+        hi / lo < 1.10,
+        "the symmetric quad's legs delivered {:?} — a >10% spread at a cell \
+         whose four legs are the same spec is a placement defect, not noise",
+        a.delivered_p
     );
-    assert_eq!(
-        (a.bw_n[2], a.bw_n[3]),
-        (0, 0),
-        "a leg with no traffic must also have no warm anchor"
+    // The whole point of the quad: N = 4 really moves N× the traffic. Had the
+    // legs locked onto two, this would read like c7's total — so this is the
+    // retracted claim's own falsifier, stated as a number.
+    let c7_total = simulate(&[C2, C2], Arm::Legacy, 4.0).delivered as f64;
+    assert!(
+        a.delivered as f64 > 1.8 * c7_total,
+        "the quad delivered {} against c7's {c7_total} — two legs' worth, i.e. \
+         the lock-in this test used to assert would be REAL after all",
+        a.delivered
     );
+
+    // ── AND ALL FOUR WARM ────────────────────────────────────────────────
+    // `bw_n[pid]` counts refresh ticks at which leg `pid` had BOTH a BtlBw
+    // estimate and a min-RTT — a warm anchor. Every leg must reach it, and
+    // reach it as often as any other, or "carries traffic" and "has an
+    // anchor" have come apart.
+    for pid in 0..4 {
+        assert!(a.bw_n[pid] > 0, "leg {pid} carried traffic but never warmed an anchor");
+    }
+    let wlo = *a.bw_n[..4].iter().min().unwrap();
+    let whi = *a.bw_n[..4].iter().max().unwrap();
+    assert_eq!(
+        wlo, whi,
+        "the four legs warmed at different tick counts ({:?}) — at a symmetric \
+         cell every leg warms on the same refresh",
+        a.bw_n
+    );
+}
+
+/// **THE PLACEMENT AXIS IS INERT AT EVERY GEOMETRY THIS BENCH HAS**, and that
+/// is a RESULT rather than a null effect — the axis is proven live first
+/// (`simulate_place` asserts `sched.cold_place()` took, at construction, and
+/// refuses to run otherwise).
+///
+/// `RWM_COLD_PLACE` changes what an UNMEASURED leg's SRTT_i is worth in
+/// `place_costs` (`scheduler::cold_place_active`). Every cell here starts with
+/// all its legs unmeasured AT ONCE, so the first admission burst places on all
+/// of them before any ack returns; from the second tick on there is no
+/// unmeasured leg for the price to apply to, and the two arms are the same law
+/// on the same inputs. Bit-identity is therefore the PREDICTION, and it is
+/// asserted as one — including at `c7x4`, where the retracted lock-in claim
+/// would have predicted a large difference.
+///
+/// This doubles as the **N = 2 INERTNESS** pin the repair was required to
+/// carry: c7 and c8 must be bit-for-bit unmoved, because the cold-price
+/// pessimism cannot bind where no leg is ever cold-while-another-is-warm, and
+/// a repair that moved the duals would be changing something else.
+#[test]
+fn the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold() {
+    for (name, g) in [
+        ("c7  ", vec![C2, C2]),
+        ("c8  ", vec![C2, C3]),
+        ("c7x4", c7x4()),
+    ] {
+        let off = simulate_place(
+            &g, Arm::Legacy, Feed::Honest, 4.0, 0, Acct::Off, Store::Unacked, Src::Bulk,
+            Place::Shipped,
+        );
+        let on = simulate_place(
+            &g, Arm::Legacy, Feed::Honest, 4.0, 0, Acct::Off, Store::Unacked, Src::Bulk,
+            Place::ColdMeasured,
+        );
+        assert!(off.ticks > 0 && on.ticks > 0, "{name}: the geometry never ran");
+        assert_eq!(
+            (on.delivered, on.retx, on.ticks, on.zero, on.short),
+            (off.delivered, off.retx, off.ticks, off.zero, off.short),
+            "{name}: the cold-start price moved a cell where no leg is ever \
+             cold-while-another-is-warm — it must be inert here"
+        );
+        assert_eq!(on.delivered_p, off.delivered_p, "{name}: the per-leg split moved");
+        assert_eq!(on.bw_n, off.bw_n, "{name}: the per-leg warm-tick count moved");
+        assert_eq!(
+            on.mean_cap.to_bits(),
+            off.mean_cap.to_bits(),
+            "{name}: the store cap moved — placement and the cap law are \
+             different layers and this axis must not reach the cap"
+        );
+    }
 }
 
 // ── THE COMPOSED CAP LAW (paper §16.56, ADR-0070 Deliverable 2) ───────────
@@ -5942,25 +6109,25 @@ fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() 
     }
 }
 
-/// **THE COMPOSED LAW MUST NOT WORSEN THE COLD-START PLACEMENT LOCK-IN.**
+/// **THE COMPOSED LAW MUST NOT STARVE A LEG OF THE QUAD.**
 ///
-/// `the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs`
-/// records a divergence the quad found and BOUNDS it: at a four-way symmetric
-/// cell the placement objective locks onto the first two legs, because a leg
-/// that never carried a symbol has no SRTT sample and is priced at
-/// `DEFAULT_SRTT`/2 = 25 ms against a warm c2 leg's ~4 ms. That is a
-/// PLACEMENT defect, in a different layer from the store-cap law, and the
-/// composed law is not expected to fix it.
+/// This test used to be
+/// `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`,
+/// and it asserted that the composed arm left legs 2 and 3 at zero — reading
+/// the truncated-gauge artifact described on
+/// `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm` as a
+/// measured lock-in. With the `pid < 2` guards repaired the quad spreads
+/// evenly, so the old assertion was pinning a constant and the "null RESULT"
+/// it claimed was a null INSTRUMENT.
 ///
-/// It must not make it worse, and "worse" has a precise meaning here: the
-/// composed arm adds a per-path brake, and a brake is exactly the kind of
-/// mechanism that could deepen a lock-in by holding the warm legs saturated.
-/// So this pins that the lock-in is UNCHANGED under the composition — the
-/// same two legs carry, the same two carry nothing — and that the brake was
-/// genuinely armed while that held, so the result is a null RESULT and not a
-/// null effect.
+/// The QUESTION it was asking is still the right one and is now asked of the
+/// real quantity: the composed arm adds a per-path brake, and a brake is
+/// exactly the kind of mechanism that can starve a leg by holding the others
+/// saturated. So this pins that the four-way split SURVIVES the composition,
+/// against the shipped arm's own split as the baseline, with the brake proven
+/// armed — a null that is now falsifiable.
 #[test]
-fn the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in() {
+fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
     let g = c7x4();
     let base = simulate(&g, Arm::Legacy, 4.0);
     let c = simulate(&g, Arm::Composed, 4.0);
@@ -5978,24 +6145,43 @@ fn the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in() {
     // The refresh really saw four live paths — `n_live` is the axis.
     assert_eq!(c.sum_live, 4 * c.ticks, "the refresh never saw four live paths");
 
-    // UNCHANGED, in both directions. Same warm pair, same cold pair.
-    assert!(
-        c.delivered_p[0] > 0 && c.delivered_p[1] > 0,
-        "the composed arm's warm pair carried nothing"
-    );
-    assert_eq!(
-        (c.delivered_p[2], c.delivered_p[3]),
-        (0, 0),
-        "the composed law SPREAD the quad — the cold-SRTT lock-in that \
-         `the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs` \
-         bounds no longer holds, so both comments are now wrong and this is a \
-         reviewed change, not a silent one"
-    );
-    assert_eq!(
-        (base.delivered_p[2], base.delivered_p[3]),
-        (0, 0),
-        "the shipped arm's lock-in moved — the baseline this test compares to is gone"
-    );
+    // THE BASELINE IS MEASURED, NOT ASSUMED: the shipped arm spreads over all
+    // four legs. If that ever stops being true the comparison below is
+    // meaningless, so it is asserted before it is used.
+    for pid in 0..4 {
+        assert!(
+            base.delivered_p[pid] > 0,
+            "the shipped arm starved leg {pid} — the baseline this test \
+             compares to is gone"
+        );
+    }
+
+    // THE SPLIT SURVIVES THE BRAKE. Every leg still carries and still warms,
+    // and no leg's share collapses relative to the shipped arm's own share of
+    // its own total (a ratio, so the brake is free to move the TOTAL — which
+    // is what it is for — without that reading as starvation).
+    let (bt, ct) = (base.delivered as f64, c.delivered as f64);
+    assert!(bt > 0.0 && ct > 0.0, "a zero-delivery arm at the quad");
+    for pid in 0..4 {
+        assert!(
+            c.delivered_p[pid] > 0,
+            "the composed law STARVED leg {pid} of the quad: {:?} against the \
+             shipped arm's {:?}",
+            c.delivered_p,
+            base.delivered_p
+        );
+        assert!(
+            c.bw_n[pid] > 0,
+            "the composed law left leg {pid} without a warm anchor"
+        );
+        let (bs, cs) = (base.delivered_p[pid] as f64 / bt, c.delivered_p[pid] as f64 / ct);
+        assert!(
+            (cs - bs).abs() < 0.02,
+            "leg {pid}'s share moved {bs:.4} → {cs:.4} under the composition — \
+             the brake is redistributing placement, which is a different layer \
+             from the cap law it is supposed to be"
+        );
+    }
 }
 
 /// THE ONLY THREE REACHABLE REGIMES AT A DUAL, and the two that are not.
@@ -6823,3 +7009,4 @@ fn the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells() {
         "c1's 2*SRTT = 18 ms should sit on the 25 ms FLOOR, not the ceiling"
     );
 }
+

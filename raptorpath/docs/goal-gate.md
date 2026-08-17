@@ -30367,3 +30367,72 @@ cursors), `net/control_msg.rs` (two feed sites), `gates.rs` (echo),
 `net/mod.rs` (design note + tests), `tools/l1/lib.sh` (forwarding). No
 visualizer or wasm change (scope rule). Commits on `fix/loss-crosspath`, not
 merged, not pushed.
+## The Quad's Cold-Start Placement Lock-In — **RETRACTED** (2026-08-18, `fix/placement-coldstart` from main@`161b4ea`) — **STRICTLY LOCAL, NO VM.** Executes item 6 of the MECHANICAL DEFECT SWEEP. **VERDICT: the defect this item was written to fix DOES NOT EXIST. It was three truncated per-path gauges, not a placement law — and the assertion that "measured" it could not fail.** The cold price it named is nevertheless real arithmetic in a regime the bench has no geometry for, so it ships as a gated, bounded, default-OFF anchor-hygiene member with its binding regime stated and its wire question listed rather than answered.
+
+### THE CLAIM UNDER TEST
+
+`the_symmetric_quad_is_deterministic_and_its_placement_locks_onto_two_legs` (SF bench, landed with the `c7x4` quad in ADR-0070's prevention kit) asserted that at a four-way symmetric cell the §16.3 placement objective locks onto legs 0 and 1 and never uses 2 and 3, and attributed it — correctly, as arithmetic — to `Scheduler::place_costs`: `PathState::srtt()` returns the 50-ms `DEFAULT_SRTT`-class constructor seed for a leg that has never had an RTT sample, so a cold leg is priced at 25 ms of one-way propagation against a warm `C2` leg's ~4 ms, and the warm leg must reach `in_flight/cwnd ≈ 2.6` before the cold leg can win the argmin. No traffic ⇒ no sample ⇒ no traffic: a fixed point.
+
+The item's brief was to repair that with zero new constants, verify the cold legs warm at `c7x4`, and prove inertness at N = 2.
+
+### WHAT WAS ACTUALLY MEASURED
+
+**The quad does not lock on.** With the placement law untouched, `c7x4` delivers **157 125** symbols split **39 687 / 39 801 / 38 673 / 38 964** across the four legs — a 2.9 % spread — and all four legs warm an anchor on **795 of 795** refresh ticks each. Against `c7`'s 73 196 on the same horizon that is **2.15×**, i.e. the quad was scaling with N the whole time.
+
+The old numbers came from three per-path gauge writes in the simulation loop guarded by a hard-coded `pid < 2`:
+
+```
+delivered_p[pid]                       if (*pid as usize) < 2
+bw_sum / mrtt_sum / srtt_sum / bw_n    if pid < 2
+xa_sum / xa_n                          if pid < 2
+```
+
+They were written when `MAX_PATHS` was 2. Raising `MAX_PATHS` to 4 **for this very geometry** widened the ARRAYS and left the GUARDS. `delivered_p[2..4]` and `bw_n[2..4]` were therefore 0 **whatever placement did**, and the two `assert_eq!(.., (0, 0))` built on them could not fail. This is MEASUREMENT DISCIPLINE rule 1 exactly: the mechanism under test was never proven to execute, and an assertion that cannot fail proves nothing about the mechanism it names.
+
+The artifact had already been read as a measured result once: `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in` pinned "the same two legs carry, the same two carry nothing" under `Arm::Composed` and called the null a RESULT because the brake was armed. The brake was armed; the instrument was not.
+
+**Why the price never binds at `c7x4`.** Every leg of every geometry in this bench is unmeasured at t = 0. The first admission burst runs before any ack returns, so all N legs tie at the seed price and the `in_flight` term round-robins them one symbol at a time (traced: placements 0,1,2,3,0,1,2,3,… at the first tick). One RTT later every leg is warm, and a warm leg never returns to the cold price. **The cold price has no cold-vs-warm contrast to express at any cell this bench contains.**
+
+### THE REPAIR, AND WHY IT SHIPS ANYWAY
+
+The arithmetic in the retracted claim is right, and it binds where a leg joins a set whose incumbents are **already warm** — a LATE JOIN (path migration, a second interface coming up on a running transfer). That regime has no bench geometry and no L1 cell.
+
+`RWM_COLD_PLACE` (anchor-hygiene family member via `config::anchor_gate`, **default OFF**) prices an unmeasured leg's `SRTT_i` at the active set's **fastest MEASURED srtt** instead of the seed. Zero new constants — the price is another leg's measurement. It is hygiene rule 1 at a third site, beside `RWM_MSTAR_ANCHOR` (seed the RTT EWMA from the first sample) and `RWM_HONEST_K` (`k_raw.unwrap_or(legacy)`), and it takes the same shape those took: **ONE formula, the gate changes only WHICH measurement seeds the unmeasured anchor.**
+
+```
+srtt_of(p) = p.srtt_measured()                  // the leg's own measurement, if any
+                .or(cold_srtt)                  // else the set's fastest measured srtt (gate ON)
+                .unwrap_or(p.srtt())            // else the shipped seed (gate OFF, or nothing measured)
+```
+
+No threshold on any dial, no `if cold` beyond the `Option::None` the estimator already carries, no warm-up counter, no round-robin phase. `srtt_of` replaces `p.srtt()` in all three places `place_costs` reads it (the `ref_srtt` normalizer, the `PLACE_SLACK_RECOV_PATIENCE` deadline, the load term), so the §13.8 objective keeps its shape and only its COLD-regime inputs move. It is self-limiting without a threshold: the explored leg's own `in_flight/cwnd` term starts charging the moment it is placed on, and hands the placement back.
+
+**OFF is bit-identical by construction, not by measurement luck**: `srtt_measured() == Some(d)` implies `srtt() == d`, so with the gate off `srtt_of` IS `p.srtt()` at every leg in every state.
+
+### THE BOUNDS THAT REPLACE THE RETRACTED ONE
+
+* `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm` — the truth, absolutely: every leg carries, the four-way spread is < 10 %, every leg warms on the **same** tick count, and the quad delivers > 1.8× `c7` (the retracted claim's own falsifier, as a number). It also pins `delivered_p` reproducibility, which the quad's three simultaneous ties make non-trivial.
+* `the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold` — the **N = 2 inertness pin** and more: at `c7`, `c8` AND `c7x4` the ON and OFF arms are bit-identical in delivered, retx, ticks, zero, short, the per-leg split, the per-leg warm-tick count, and `mean_cap.to_bits()`. Inertness is the PREDICTION here (no leg is ever cold-while-another-is-warm), so this is a result, not a hope — and the axis is proven live at construction (`simulate_place` asserts `sched.cold_place()` took and refuses to run otherwise).
+* `the_composed_law_does_not_starve_a_leg_of_the_quad` — the composed-arm question re-asked of the real quantity: the four-way split survives the brake, every leg still warms, and no leg's SHARE of its own arm's total moves by more than 2 %. The old test's baseline is now measured before it is used.
+* `a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it` (scheduler unit) — the regime the bench cannot reach, bounded at ABSOLUTE values at T → 0 where the placement is an argmin and probabilities are exactly 0.0 or 1.0: **(1)** gate OFF, incumbents warm at 8 ms and at fills 0.25/0.5/1.0/2.0, the joining leg's mass is exactly **0.0**; **(2)** it is a PRICE and not an exclusion — the crossing exists at fill ≈ 2.6 and is asserted at 4.0, so the finding is "the exploration price is only paid by a path already 2.6× past its window", i.e. a law that never explores; **(3)** the FIXED POINT is closed — 500 draws of the shipped `place_symbol` never return the cold leg; **(4)** gate ON, the leg wins outright at every fill; **(5)** and it is self-limiting — once the explored leg is the most loaded, the SAME formula stops feeding it.
+* `the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured` — both halves of the safety claim as exact `f64` bit-equality across a 0-to-4 cold-leg sweep, with a liveness clause asserting the arms differ **exactly** when the set is mixed.
+* `a_fresh_scheduler_carries_the_resolved_cold_place_setting` — the `[GATES]` echo and the behaviour cannot describe different machines.
+* `gates.rs::default_env_resolves_the_shipped_stack` gains `!g.cold_place`.
+
+### GATES RUN (all green, all local)
+
+`cargo test -p raptorpath --lib` (422 passed, +3), `-p raptorpath-math` (25), `--doc` (0 doctests, verified not assumed), `--test gate_suite --release` (15 passed / 378 s), `--test store_cap_sf_bench` (**47** passed, was 46 — the placement-axis test is the new one), `--test store_cap_bench` (4), and every loopback: ack_merge, ack_merge_optout, ackdiag, composed_cap, copa_sole, emit_batch, patience, perf, recov_mp, three_term, walldiag, win_decouple, wire_compact. `RWM_COLD_PLACE` is in `tools/l1/lib.sh`'s `RWM_FORWARD` and in the `[GATES]` line, so `gate_forwarding_list_covers_the_engine_surface` and `every_forwarded_gate_has_a_liveness_echo` both cover it.
+
+### FINDINGS THIS SESSION BANKS
+
+1. **A gauge widened without its guards is worse than no gauge.** `MAX_PATHS` went 2 → 4 with a doc comment explaining that it "costs nothing at the ≤ 2-path cells (the arrays are fixed-size and every index is `< np`)" — which was true of the ARRAYS and false of the three `pid < 2` writes. The quad was added specifically to give the N ≥ 3 axis somewhere to record, and it recorded two of four legs.
+2. **The prose was more convincing than the measurement, which is how it survived review.** The retracted comment derived `in_flight/cwnd ≈ 2.6` from the source, cited `scheduler/mod.rs:586,1549`, named the invisibility at N ≤ 2, and was *arithmetically correct*. It was attached to a zero that had nothing to do with it. **A correct mechanism plus a matching-looking number is not evidence that the number came from the mechanism** — MEASUREMENT DISCIPLINE rule 1 exists for exactly this, and the missing step was never taken: nothing ever asserted that legs 2/3 were even *reachable* by the gauge.
+3. **"Bounded rather than described" is not enough if the bound is a constant.** The retracted test carried the strongest form the discipline asks for — an always-on absolute assertion with a comment saying "if a future placement change spreads the quad, THIS assertion fails and the change gets reviewed, which is the point". It could not have fired. This is discipline 17/18's lesson (a law measured pinned is a defect finding) applied to a TEST rather than a law: **an assertion whose value is fixed by construction is a constant wearing an assertion's clothes.**
+4. **A defect sweep item can be refuted by its own bench.** Item 6 named the cell, the site, the line numbers and the arithmetic. All four were right about the code and wrong about the cell.
+
+### THE WIRE QUESTIONS, LISTED AND NOT ANSWERED
+
+1. **`N ≥ 3` has no wire cell.** Unchanged from ADR-0070 prevention item 3: `c7x4` is a bench geometry, there is no quad netns cell, and nothing here was measured on a wire. Everything above is L0.
+2. **LATE JOIN has no cell ANYWHERE** — not on the wire and not at this bench. `simulate_place` adds every path before tick 0; there is no join-at-t axis. The regime `RWM_COLD_PLACE` addresses is therefore bounded only by scheduler unit tests at synthetic states. **This is the named successor**: a `join_at_s` axis for the SF bench (the last leg's link built up front, `sched.add_path` deferred), which is a real harness change — `n_live` becomes time-varying, so `sum_live == N·ticks` and every readout keyed to it needs a per-arm story. It should not be bolted on inside a refutation.
+3. **What does the handshake measure per path, and is it available at `add_path`?** Checked and answered NO for the current tree: nothing feeds `PathState`'s RTT estimators except `control_msg`'s Ack / WindowAck / Report arms (`estimator.record_rtt` + `record_rtt_sample`, always together). `transport::quic` has a wire RTT (`transport.wire_rtt(path_id)`) that the Copa wire-signal gate already consults per ack — whether quinn's handshake RTT is readable there **before the first application ack**, and could seed a joining path from its own measurement rather than from a sibling's, is the option-(c) question and is **not resolved here**.
+4. **No default was flipped and none is recommended on this evidence.** `RWM_COLD_PLACE` ships OFF. It is provably inert everywhere it has been measured, and the only regime where it is not inert has never been measured at all. Recommending a flip on unit tests would be the mistake this section is about.
