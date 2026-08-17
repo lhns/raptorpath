@@ -382,6 +382,74 @@ pub fn honest_anchor_active() -> bool {
     *F.get_or_init(|| crate::config::anchor_gate_default("RWM_HONEST_ANCHOR", true))
 }
 
+/// **`RWM_COLD_PLACE`** (anchor-hygiene family member, default OFF) — hygiene
+/// rule 1 at the PLACEMENT site: an unmeasured leg's latency anchor is seeded
+/// from MEASUREMENT, not from the 50-ms constant.
+///
+/// THE DEFECT IT REPAIRS: `place_costs`' load term reads
+/// `PathState::srtt()`, which for a leg that has never had an RTT sample is
+/// `estimator.rtt()` — still the 50-ms `DEFAULT_SRTT`-class constructor seed.
+/// That prices a COLD leg's one-way propagation at 25 ms against a warm c2
+/// leg's 4 ms, so the incumbents must reach `in_flight/cwnd ≈ 2.6` before the
+/// cold leg can win the argmin. It draws nothing, so it takes no sample, so
+/// it stays cold: a FIXED POINT of the estimator.
+///
+/// **WHERE IT BINDS, AND THE RETRACTION THAT ESTABLISHED THAT.** This was
+/// first claimed at the SF bench's `c7x4` symmetric quad, and that claim is
+/// RETRACTED (goal-gate "The Quad's Cold-Start Placement Lock-In —
+/// RETRACTED", 2026-08-18): the quad's per-path gauges were truncated at
+/// `pid < 2`, so the assertion that "measured" the lock-in could not fail,
+/// and the quad in fact spreads evenly over all four legs. The reason is
+/// mechanical and worth stating, because it bounds this gate's whole scope:
+/// when every leg starts cold TOGETHER, the first admission burst runs before
+/// any ack returns, all legs tie at the seed price, the `in_flight` term
+/// round-robins them, and one RTT later they are all warm — the cold price
+/// never gets a cold-vs-warm contrast to express.
+///
+/// The fixed point therefore forms only where a leg joins a set whose
+/// incumbents are ALREADY warm — a LATE JOIN (path migration, a second
+/// interface coming up mid-transfer). No SF-bench geometry and no L1 cell has
+/// one, so this gate is bounded by
+/// `a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it`
+/// at synthetic states, and measured INERT at every bench cell by
+/// `the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold`.
+/// That is why it ships OFF and why no flip is recommended: the only regime
+/// it changes has never been measured on a wire.
+///
+/// THE REPAIR, and why it costs no constant: the cold leg is priced at the
+/// path set's own FASTEST MEASURED srtt. The price is another leg's
+/// measurement, not a number — the same move `RWM_MSTAR_ANCHOR` makes inside
+/// `LossEstimator::record_rtt` (seed from the first sample) and
+/// `RWM_HONEST_K` makes for K (`k_raw.unwrap_or(legacy)`): ONE formula, the
+/// gate only changes WHICH measurement seeds the unmeasured anchor. It is
+/// the standard optimistic-exploration argument stated in the placement
+/// objective's own units — exploration is free until measurement says
+/// otherwise — and it is SELF-LIMITING without a threshold, because the
+/// cold leg's `in_flight/cwnd` term starts charging the moment it is placed
+/// on. No `if cold` beyond the `Option::None` the estimator already has, no
+/// dial threshold, no round-robin counter.
+///
+/// OFF is bit-identical by construction: with the gate off the cold price IS
+/// `p.srtt()`, i.e. the shipped expression verbatim at every leg.
+pub fn cold_place_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let on = crate::config::anchor_gate("RWM_COLD_PLACE");
+        // LIVENESS ECHO (MEASUREMENT DISCIPLINE item 1/15), two-sided: it
+        // prints the OFF value too, so "gate absent" is as checkable as
+        // "gate present". Resolved once and cached.
+        tracing::info!(
+            cold_place = on,
+            "cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): \
+             an unmeasured leg's SRTT_i in the §16.3 cost is the active set's \
+             fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed \
+             when OFF (shipped, bit-identical)"
+        );
+        on
+    })
+}
+
 /// Whether the RAW-sample echo-ratio floor is active for this process
 /// (`RWM_HONEST_K`, goal-gate "Honest Inputs" — anchor-hygiene family
 /// member, default OFF; `RWM_ANCHOR_HYGIENE=1` turns the family on).
@@ -2252,7 +2320,16 @@ impl PathState {
     /// latency of a reliable in-order stream (the completion cost itself), it
     /// carries UNIT weight independent of the protocol hint.
     pub fn expected_delivery_load(&self) -> f64 {
-        let srtt = self.srtt().as_secs_f64();
+        self.expected_delivery_load_at(self.srtt().as_secs_f64())
+    }
+
+    /// `expected_delivery_load` with the path's latency anchor supplied by
+    /// the caller, in seconds. Same formula, one free variable: `E_i` is
+    /// linear in SRTT_i, and the ONLY thing `RWM_COLD_PLACE` changes is which
+    /// measurement stands in for SRTT_i on a leg that has never had a sample.
+    /// `expected_delivery_load()` is this at `srtt()`, so no caller of the
+    /// nullary form can observe a difference.
+    pub fn expected_delivery_load_at(&self, srtt: f64) -> f64 {
         let eps = self.estimator.loss_rate();
         let cwnd = self.cwnd.max(1) as f64;
         let queue_wait = (self.in_flight as f64 / cwnd) * srtt;
@@ -2490,6 +2567,23 @@ impl PathState {
         match self.copa.srtt {
             Some(s) => s,
             None => self.estimator.rtt(),
+        }
+    }
+
+    /// `srtt()` ONLY IF it is a MEASUREMENT — `None` for a path that has
+    /// never had an RTT sample, where `srtt()` returns the 50-ms
+    /// `DEFAULT_SRTT`-class seed instead (hygiene rule 1: `srtt()` cannot
+    /// tell a consumer which of the two it just handed over).
+    ///
+    /// Structurally identical to `srtt()`, term for term — Copa's EWMA
+    /// first, the loss estimator's as the pre-Copa fallback — so wherever
+    /// this returns `Some(d)`, `srtt() == d` exactly. Consumers that must not
+    /// price an unmeasured path with a constant read this
+    /// (`Scheduler::place_costs`, `RWM_COLD_PLACE`).
+    pub fn srtt_measured(&self) -> Option<Duration> {
+        match self.copa.srtt {
+            Some(s) => Some(s),
+            None => self.estimator.rtt_measured(),
         }
     }
 
@@ -2849,6 +2943,16 @@ pub struct Scheduler {
     /// BIT-EXACTLY (max(0, x − 0) = x). Set by the plain reliable window
     /// sender on its 5 ms refresh cadence.
     place_slack_secs: f64,
+    /// `RWM_COLD_PLACE` (anchor-hygiene rule 1 at the placement site) as a
+    /// per-scheduler VALUE rather than a hot-path env read — the same shape
+    /// `place_slack_secs` uses, and for the same reason the estimator's
+    /// `force_anchor_hygiene` exists: the process-global `OnceLock` cannot
+    /// hold both arms, so an A/B that must measure BOTH directions in one
+    /// process (the SF bench's `Place` axis) would otherwise be impossible to
+    /// write.
+    /// Resolved from `cold_place_active()` at construction; `set_cold_place`
+    /// overrides. See `place_costs`.
+    cold_place: bool,
 }
 
 impl Scheduler {
@@ -2868,6 +2972,7 @@ impl Scheduler {
             block_affinity: true,
             affinity_credit: HashMap::new(),
             place_slack_secs: 0.0,
+            cold_place: cold_place_active(),
         }
     }
 
@@ -2875,6 +2980,19 @@ impl Scheduler {
     /// `false` = legacy per-symbol greedy striping).
     pub fn set_block_affinity(&mut self, enabled: bool) {
         self.block_affinity = enabled;
+    }
+
+    /// Override the cold-start placement price for this scheduler
+    /// (`RWM_COLD_PLACE`; see the field docs). A/B hook: the process gate is
+    /// a cached `OnceLock`, so a battery that scores BOTH arms in one process
+    /// sets this instead of racing the environment.
+    pub fn set_cold_place(&mut self, enabled: bool) {
+        self.cold_place = enabled;
+    }
+
+    /// The cold-start placement price setting in force for this scheduler.
+    pub fn cold_place(&self) -> bool {
+        self.cold_place
     }
 
     /// Set the frontier slack S (seconds) for the placement cost (goal-gate
@@ -3499,11 +3617,47 @@ impl Scheduler {
     /// smoothly without ever removing it, so placement never drops a symbol
     /// (the send loop's pacing/backpressure remains the real capacity gate).
     fn place_costs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
+        // ── THE COLD PRICE (`RWM_COLD_PLACE`, anchor-hygiene rule 1) ───────
+        // What one second of a leg that has NEVER been measured is worth.
+        // Under the gate: the active set's fastest MEASURED srtt — another
+        // leg's measurement, not a constant. Off (or with nothing measured
+        // yet, i.e. `INFINITY`): `None`, and `srtt_of` below falls back to
+        // `p.srtt()`, the shipped expression verbatim.
+        //
+        // This is the whole fix. Everything below is the shipped law, with
+        // SRTT_i read through `srtt_of` instead of `p.srtt()` — one
+        // substitution, applied identically to the reference, the deadline
+        // and the load term, so the objective (§13.8) keeps its shape and
+        // only its COLD-regime inputs change. Once every leg has a sample
+        // `srtt_of == p.srtt()` at every leg and the fix is inert.
+        let cold_srtt: Option<f64> = if self.cold_place {
+            let m = self
+                .paths
+                .values()
+                .filter(|p| p.active)
+                .filter_map(|p| p.srtt_measured())
+                .map(|d| d.as_secs_f64())
+                .fold(f64::INFINITY, f64::min);
+            m.is_finite().then_some(m)
+        } else {
+            None
+        };
+        // ONE expression, no `if cold`: the leg's own measurement when it has
+        // one, the cold price when it does not, and `p.srtt()` when there is
+        // no cold price — which is `p.srtt()` unconditionally with the gate
+        // off, since `srtt_measured() == Some(d)` implies `srtt() == d`.
+        let srtt_of = |p: &PathState| -> f64 {
+            p.srtt_measured()
+                .map(|d| d.as_secs_f64())
+                .or(cold_srtt)
+                .unwrap_or_else(|| p.srtt().as_secs_f64())
+        };
+
         let ref_srtt = self
             .paths
             .values()
             .filter(|p| p.active)
-            .map(|p| p.srtt().as_secs_f64().max(PLACE_REF_FLOOR_SECS))
+            .map(|p| srtt_of(p).max(PLACE_REF_FLOOR_SECS))
             .fold(f64::INFINITY, f64::min);
         let ref_srtt = if ref_srtt.is_finite() {
             ref_srtt
@@ -3543,10 +3697,11 @@ impl Scheduler {
             // propagation term alone was worth e^10:1 odds at T = 0.15)
             // while bounding each placement's lateness continuously — no
             // threshold, no mode, no per-topology branch.
+            let srtt_i = srtt_of(p);
             let deadline = self
                 .place_slack_secs
-                .min(PLACE_SLACK_RECOV_PATIENCE * p.srtt().as_secs_f64());
-            let load = (p.expected_delivery_load() - deadline).max(0.0) / ref_srtt;
+                .min(PLACE_SLACK_RECOV_PATIENCE * srtt_i);
+            let load = (p.expected_delivery_load_at(srtt_i) - deadline).max(0.0) / ref_srtt;
             // Bandwidth/correction burden (loss/wire waste); the hint's w_bw
             // dial. w_lat does NOT gate placement: on a reliable in-order stream
             // latency-to-frontier is the completion cost itself, already carried
@@ -4889,6 +5044,227 @@ mod tests {
                 "symmetric split must stay 50/50 at S={slack}, got p0={p0}"
             );
         }
+    }
+
+    // ── THE COLD-START PLACEMENT PRICE (`RWM_COLD_PLACE`) ─────────────────
+    //
+    // Provenance of these tests, stated because it is the honest part: the
+    // defect they bound was FIRST claimed at the SF bench's `c7x4` symmetric
+    // quad, and that claim was RETRACTED — the quad's per-path gauges were
+    // truncated at `pid < 2`, so the "lock-in" was an instrument artifact and
+    // the quad in fact spreads evenly over all four legs (see
+    // `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm`).
+    // The ARITHMETIC in that claim was nevertheless correct, and it binds in a
+    // regime the bench has no geometry for: a leg that joins a set whose
+    // incumbents are ALREADY warm. Nothing here is measured on a wire; these
+    // bound the LAW, at absolute values, and the wire question is listed
+    // rather than answered.
+
+    /// A leg that joins a set of ALREADY-WARM incumbents is priced at the
+    /// 50-ms `DEFAULT_SRTT`-class seed and cannot win the placement argmin
+    /// until the incumbents are >2× overdrawn — and because it wins nothing
+    /// it is never measured, so the state is a FIXED POINT. Under
+    /// `RWM_COLD_PLACE` the same leg is priced at the set's own fastest
+    /// MEASURED srtt and is admitted immediately.
+    ///
+    /// Absolute, not ordinal: at T → 0 the placement is an argmin, so the
+    /// cold leg's probability is exactly 0.0 or exactly 1.0 and there is
+    /// nothing to tune. The incumbents' fill fraction is swept so the result
+    /// is a PRICE with a crossing, not an exclusion — the OFF arm does admit
+    /// the cold leg, but only past a fill the shipped law has no reason to
+    /// reach, which is what makes the fixed point stick.
+    #[test]
+    fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() {
+        // Two incumbents warm at 8 ms, one leg joining cold. `fill` =
+        // in_flight/cwnd on the incumbents; the cold leg has nothing in
+        // flight, which is precisely why it looks expensive.
+        let build = |fill: f64, cold_place: bool| -> Vec<(PathId, f64)> {
+            let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+            sched.set_cold_place(cold_place);
+            for id in 0..2 {
+                sched.add_path(id);
+                set_rtt(&mut sched, id, 8);
+                let p = sched.path_mut(id).unwrap();
+                p.cwnd = 32;
+                p.in_flight = (32.0 * fill) as u32;
+            }
+            sched.add_path(2); // the late joiner: no RTT sample, ever
+            assert!(
+                sched.path(2).unwrap().srtt_measured().is_none(),
+                "the joining leg must be UNMEASURED or this test proves nothing"
+            );
+            sched.place_probs_with_temperature(false, &[], f64::MIN_POSITIVE)
+        };
+
+        // (1) THE LOCK-OUT. At any fill the shipped stack actually operates
+        // at, the cold leg's mass is exactly zero.
+        for fill in [0.25_f64, 0.5, 1.0, 2.0] {
+            let d = build(fill, false);
+            assert_eq!(
+                prob_of(&d, 2),
+                0.0,
+                "gate OFF, incumbents at fill {fill}: the cold leg took mass, so \
+                 the 50-ms price is not the exclusion this test bounds"
+            );
+            assert!(
+                prob_of(&d, 0) + prob_of(&d, 1) > 0.999,
+                "gate OFF, fill {fill}: the incumbents must hold all the mass"
+            );
+        }
+
+        // (2) IT IS A PRICE, NOT AN EXCLUSION — the crossing exists, and it
+        // sits ABOVE a 2× overdraft. `E_cold = 25 ms` against
+        // `E_warm = fill·8 + 4 + eps·8 ms`, so the cold leg wins at
+        // `fill > (25 − 4)/8 ≈ 2.6`. A law whose exploration price is only
+        // paid by a path already 2.6× past its window is a law that never
+        // explores.
+        assert_eq!(prob_of(&build(4.0, false), 2), 1.0, "the crossing does not exist");
+
+        // (3) THE FIXED POINT. Under the lock-out the leg draws no symbol, so
+        // it takes no sample, so it stays cold: sampling the shipped
+        // placement is stationary, not merely improbable.
+        {
+            let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+            sched.set_cold_place(false);
+            for id in 0..2 {
+                sched.add_path(id);
+                set_rtt(&mut sched, id, 8);
+                let p = sched.path_mut(id).unwrap();
+                p.cwnd = 32;
+                p.in_flight = 16;
+            }
+            sched.add_path(2);
+            for _ in 0..500 {
+                assert_ne!(
+                    sched.place_symbol(false, &[]),
+                    Some(2),
+                    "the cold leg drew a symbol — the fixed point is not closed"
+                );
+            }
+        }
+
+        // (4) THE REPAIR. Same states, gate ON: the cold leg is priced at the
+        // set's own fastest measured srtt (8 ms ⇒ E = 4 ms) and wins outright
+        // the moment the incumbents carry anything at all.
+        for fill in [0.25_f64, 0.5, 1.0, 2.0, 4.0] {
+            let d = build(fill, true);
+            assert_eq!(
+                prob_of(&d, 2),
+                1.0,
+                "gate ON, incumbents at fill {fill}: the cold leg must win — it \
+                 is the cheapest path in the set by the objective's own units"
+            );
+        }
+
+        // (5) AND IT IS SELF-LIMITING WITHOUT A THRESHOLD. The repaired price
+        // buys exploration, not a monopoly: once the explored leg carries its
+        // own backlog the SAME formula hands the placement back. No counter,
+        // no warm-up phase, no `if cold` beyond the estimator's `None`.
+        {
+            let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+            sched.set_cold_place(true);
+            for id in 0..2 {
+                sched.add_path(id);
+                set_rtt(&mut sched, id, 8);
+                let p = sched.path_mut(id).unwrap();
+                p.cwnd = 32;
+                p.in_flight = 8; // fill 0.25
+            }
+            sched.add_path(2);
+            let p2 = sched.path_mut(2).unwrap();
+            p2.cwnd = 32;
+            p2.in_flight = 16; // the explored leg is now the LOADED one
+            let d = sched.place_probs_with_temperature(false, &[], f64::MIN_POSITIVE);
+            assert_eq!(
+                prob_of(&d, 2),
+                0.0,
+                "the repaired price kept feeding a leg that is now the most \
+                 loaded in the set — that would be a monopoly, not exploration"
+            );
+        }
+    }
+
+    /// **OFF IS BIT-IDENTICAL, AND SO IS ON ONCE EVERY LEG IS MEASURED.**
+    ///
+    /// The two halves of the gate's safety claim, as exact `f64` equality
+    /// rather than a tolerance:
+    ///
+    ///   - gate OFF at ANY state ⇒ the shipped expression verbatim (the cold
+    ///     price IS `p.srtt()`), so no arm of any battery can move because
+    ///     this landed;
+    ///   - gate ON with every active leg measured ⇒ `srtt_of == p.srtt()` at
+    ///     every leg, so the repair is INERT in the warm regime and the §13.8
+    ///     objective it minimizes is untouched there. Only the COLD regime
+    ///     changes, which is the whole design claim.
+    #[test]
+    fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
+        // A state generator covering both regimes: `cold` = how many of the
+        // four legs have never had a sample.
+        let build = |cold: usize, cold_place: bool| -> Vec<(PathId, f64)> {
+            let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+            for id in 0..4u32 {
+                sched.add_path(id);
+                if (id as usize) < 4 - cold {
+                    set_rtt(&mut sched, id, 10 + 10 * u64::from(id));
+                }
+                let p = sched.path_mut(id).unwrap();
+                p.cwnd = 16 + 4 * id;
+                p.in_flight = 3 * id + 1;
+            }
+            sched.set_cold_place(cold_place);
+            // SORTED by path id: `place_probs` yields `HashMap` order, and two
+            // separately-built schedulers hash differently, so an unsorted
+            // zip would compare path 3 against path 1 and "find" a difference
+            // that is only the map's.
+            let mut d = sched.place_probs_with_temperature(false, &[], 0.15);
+            d.sort_by_key(|(pid, _)| *pid);
+            d
+        };
+
+        for cold in 0..=4 {
+            let off = build(cold, false);
+            let on = build(cold, true);
+            // MECHANISM LIVENESS: the arms must actually DIFFER somewhere, or
+            // the equalities below are vacuous. They differ exactly when some
+            // leg is cold and some leg is measured.
+            let differs = off
+                .iter()
+                .zip(on.iter())
+                .any(|((_, a), (_, b))| a.to_bits() != b.to_bits());
+            let mixed = cold > 0 && cold < 4;
+            assert_eq!(
+                differs, mixed,
+                "cold={cold}: the gate must move the distribution EXACTLY when \
+                 the set is mixed (some measured, some not) — differs={differs}"
+            );
+            if !mixed {
+                for ((pa, a), (pb, b)) in off.iter().zip(on.iter()) {
+                    assert_eq!(pa, pb);
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "cold={cold}: path {pa} moved {a} → {b}; with no leg cold \
+                         (or every leg cold) the two arms are the same formula on \
+                         the same inputs and must agree BIT-for-bit"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The gate is an anchor-hygiene family member and ships OFF, so a
+    /// freshly constructed `Scheduler` must carry the shipped price unless
+    /// the environment says otherwise. Reads the same cached resolution
+    /// `RuntimeGates` echoes, so the echo and the behaviour cannot disagree.
+    #[test]
+    fn a_fresh_scheduler_carries_the_resolved_cold_place_setting() {
+        let sched = Scheduler::new(Arc::new(WallClock));
+        assert_eq!(
+            sched.cold_place(),
+            cold_place_active(),
+            "the scheduler's placement price and the process gate disagree — \
+             the [GATES] echo would then be describing a different machine"
+        );
     }
 
     // feat/btlbw-rate-sample: the BBR send-interval anchor must read the TRUE

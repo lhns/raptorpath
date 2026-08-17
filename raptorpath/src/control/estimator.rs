@@ -40,6 +40,11 @@ pub struct LossEstimator {
     rtt_seed_from_sample: bool,
     /// True once a real RTT sample has been recorded (seed consumed).
     rtt_seeded: bool,
+    /// True once ANY real RTT sample has been recorded, independent of the
+    /// hygiene seeding gate — i.e. whether `ewma_rtt` is a MEASUREMENT at all
+    /// or still the 50-ms DEFAULT_SRTT-class constructor constant. Read by
+    /// `rtt_measured()`; see the hygiene rule-1 note on `rtt_seed_from_sample`.
+    rtt_sampled: bool,
 
     /// Throughput estimation (bytes/sec EWMA)
     ewma_throughput: f64,
@@ -137,6 +142,7 @@ impl LossEstimator {
             // DEFAULT ON (2026-07-21, "Consolidation" battery).
             rtt_seed_from_sample: crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true),
             rtt_seeded: false,
+            rtt_sampled: false,
             ewma_throughput: 0.0,
             consecutive_losses: 0,
             burst_threshold: 3,
@@ -282,6 +288,10 @@ impl LossEstimator {
 
     /// Record an RTT measurement.
     pub fn record_rtt(&mut self, rtt: Duration) {
+        // Observation only (no behaviour rides on this assignment): from here
+        // on `ewma_rtt` contains a measurement, so `rtt_measured()` may
+        // report it. Set BEFORE the hygiene early-return so both arms record.
+        self.rtt_sampled = true;
         // feat/anchor-hygiene rule 1: the first MEASURED sample replaces the
         // constructor seed outright (no blend with the 50-ms constant).
         if self.rtt_seed_from_sample && !self.rtt_seeded {
@@ -337,6 +347,17 @@ impl LossEstimator {
 
     pub fn rtt(&self) -> Duration {
         self.ewma_rtt
+    }
+
+    /// The RTT estimate ONLY IF it is a measurement — `None` while
+    /// `ewma_rtt` is still the 50-ms DEFAULT_SRTT-class constructor seed.
+    ///
+    /// `rtt()` cannot distinguish the two, which is exactly the hygiene
+    /// rule-1 hazard: a consumer that reads a seed as if it were an anchor
+    /// prices an UNMEASURED path with a constant. This accessor lets a
+    /// consumer ask instead (see `PathState::srtt_measured`).
+    pub fn rtt_measured(&self) -> Option<Duration> {
+        self.rtt_sampled.then_some(self.ewma_rtt)
     }
 
     pub fn throughput(&self) -> f64 {
