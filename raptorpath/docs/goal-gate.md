@@ -539,7 +539,7 @@ in the order found, each fixed or refuted:
 | 5 | **crypto** | software AES-GCM on every packet (qemu64 era) | REFUTED as a wall: AES-NI cut CPU 30–38%/byte and moved NOT ONE throughput cell | "Hardware-Honest Re-Baseline"; §16.19 |
 | 6 | **receiver threading** | the "single-thread receiver ceiling ~93–104" | REFUTED below ~150 Mbit/sink: the engine sinks 187.7 Mbit/s single-path; the pinned receiver runs C7 at 0.66 core; parallelization NOT built (profile refutes it) — **REFUTED AGAIN 2026-07-19 at 137–144: 1+1 pinned cores = full throughput, engine 81–87% busy with empty queue; the sink ceiling attributed to per-process service-time walls (~19.5–22k sym/s), not threads ("Engine Parallelization", §16.23)** | §16.19, §16.23 |
 | 7 | **per-transfer flow control** | the outstanding pool (`RELIABLE_STORE_MAX` = 1024) is a per-TRANSFER constant = a Little's-law ~100–128 Mbit wall, CPU-invariant — the ACTUAL multipath binder | FIXED, ships DEFAULT ON since 2026-07-21 ("Consolidation" LOO battery): path-scaled pool `RWM_STORE_PATHS` (knee ≈ 2048/path) — removal re-opens the c7 collapse class both seeds; per-path accounts `RWM_STORE_PERCAP` built, honest-cap-repaired (c7 ≥ pooled, sc2 exact), still < pooled at c8; bounded borrowing (`RWM_STORE_BORROW`, §16.22) derived+measured — law-perfect at the gauges, tax NOT repaid; percap family stays OFF. **c8 WATCH (2026-07-21): under SACK-release the LEGACY pool reads better at c8 (0.85–0.87×Σ vs the stack's 0.72–0.76) — the §16.22 pooled-c8 verdict was pre-SR and has MOVED; c8-aware pool law = the named follow-up. [2026-07-27, "C8-Aware Pool Law": the capacity-weighted pool (`RWM_STORE_CAPW`) derived+built+REFUTED at c8 — the gauges show the binder is SLOW-PATH CONVERSION, not pool sizing (fast path parks the span, slow path converts ~nothing, legacy c8 = fast single + 2.7); no flip, the WATCH stands with a sharper name] [2026-08-06, "C8 Slow-Path Conversion": the conversion question ANSWERED structurally — slow-path SOURCE share is monotonically anti-correlated with c8 goodput across five placement arms (6% share → 88.6 = 0.874×Σ; 16–18% → 70–83), conversion itself works (~90% first-copy) but costs more in frontier stalls + drain tail than it banks under EVERY law measured, matching kernel MPTCP-BBR's own +3.1/−2.4 vs its single; the frontier-slack placement law (`RWM_PLACE_SLACK`) refuted → register; `RWM_RECOV_MP_LIVE` (hole-law N/clocks on live_paths — the saturation-filter trap at the recovery plane) proven at the gauge (young fires 412–749 → 16-class) and half-repairs pbs's c8 collapse, flip-blocked by a 3/3-pairwise dc1 regression (named follow-up); the c8 remaining-gap owner is the SINGLE-PATH c2 gap (§16.30), not multipath]** | §16.19, §16.22, §16.29; "Per-Path Outstanding Accounting", "C8-Aware Pool Law" |
-| 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; **DEFAULT ON since 2026-07-21 ("Consolidation": removal −12.3/−13.9 ≫σ at c7, dual-c1 retx flood returns; `=0` = legacy opt-out)** | "Multipath Recovery Suppression"; paper §16.24 |
+| 8 | **multipath recovery-plane over-emission** | the recovery engine keeps GLOBAL clocks/serials under striping: 82% of c7 retransmits fire inside their flight's own-path RTT clock (scheduler-created gaps read as holes, retransmits never reset the clock), and per-path loss estimators read 0.62–0.77 at a 0.1%-loss cell (global batch serials → striping gaps counted as loss) → retx ×1.8 + repair ×2.2–2.5 waste, dual-c1 sinks BELOW single | FIXED as knob: `RWM_RECOV_MP` = RFC 9002 loss detection generalized per path (9/8 time threshold on the LIVE flight + kPacketThreshold=3 same-path fast channel + snapshot coalescing); c7 retx 14.9→4.5% (+5.3/+6.4 Mbit), dual-c1 anti-scaling ELIMINATED (192.3/193.2 vs single 186.0/181.0; retx 8.5–9.5→0.3–0.7%); serial namespaces vindicated as diagnosis, runtime-refuted (default OFF); residual Σ-gap owner moves to frontier-recovery latency; **DEFAULT ON since 2026-07-21 ("Consolidation": removal −12.3/−13.9 ≫σ at c7, dual-c1 retx flood returns; `=0` = legacy opt-out)**. **[2026-08-18, "Cross-Path Loss Contamination": the SERIAL half is answered WITHOUT a namespace and WITHOUT a wire change — the sender already keeps the quantity the receiver was guessing (`PathStats::symbols_sent`), so ε̂ rides `1 − Δcum_received/Δsymbols_sent` (`RWM_LOSS_SENT_TRUTH`, default OFF). Ledger replay: expected/received 2.05 → 1.01 (c7), 5.59 → 0.94 (c8 slow leg); ε̂ 0.51/0.82 → 0.007/0.020 against realized 0.0055/0.0196; NACK margin per 100 retransmitted 52 → 2 (c7), 83 → 2 (c8). Ships OFF: the 2026-07-21 refutation was about the honest SIGNAL, not how it was obtained, so the SRTT/loss-scaled cadence re-derivation is still the gating follow-up]** | "Multipath Recovery Suppression", "Cross-Path Loss Contamination"; paper §16.24 |
 | 9 | **frontier-clocked store release** | the retention store frees slots only on the CUMULATIVE frontier, so SACKed-but-not-cumulative symbols hold flow-control slots a full frontier round — at c7 the store recycles at frontier latency, not path rate (the §16.24 residual: wire un-full, goodput stopped) | FIXED, ships DEFAULT ON: `RWM_STORE_SACK_RELEASE` = SACKed seqs uncounted from the outstanding gate, payload + ARQ maps retained until the frontier (slot release ≠ recoverability — the SACK_PRUNE distinction); c7 0.885→0.959×Σ SR-only, **1.018–1.045×Σ composed with `RWM_RECOV_MP`** (both seeds); sc2 +4.3/+2.9 ≫σ; dual-c1 composed +20–22 above single; occupancy 3,157→1,460 at 167k slots released/200 MB with retx FALLING | "SACK-Clocked Store Release"; paper §16.25 |
 
 What remains STRUCTURAL (not a wall): the presence⊥throughput identity —
@@ -30122,3 +30122,248 @@ The pre-registered load-bearing falsifier: *"C is more than 2σ down at any cell
    * a **degeneracy pin** on the term structure: `slack ≡ 2.125·window` at ρ = 1 makes the three-term law two-term, and discipline 18 says a degenerate law announces itself in the report, which `[3T]` did only because this battery went looking;
    * the **magnitude question stated as a formula**, not a fit: if `cap − BDP` is the queue and δ is its budget, then 3.125 BDP means 2.1 BDP of standing queue at ρ = 1, and either δ must actually bound that or the `1 + 17/8` composition is wrong for a retain-until-acked scope. **This is the named successor, and it is a derivation question, not a battery question** (discipline 14: research, don't build).
 5. **c8's dead-wall contrast should not be re-run on a third measurand.** Two independent measurands have now inverted between pools minutes apart on one binary. The next attempt must change the DESIGN — a paired within-rep contrast, or a cell whose statistic is not bistable — not the statistic.
+
+## Cross-Path Loss Contamination — FIXED, no wire change (2026-08-18, `fix/loss-crosspath` from main@`161b4ea`) — MECHANICAL DEFECT SWEEP item 3. The per-path loss estimator is fed a number inflated **37–93×** at every multipath cell; the fix removes it with **NO protocol change, no new sender work, and no per-path serial namespace**, because the sender already keeps the exact quantity the receiver was guessing. Ships **`RWM_LOSS_SENT_TRUTH`, DEFAULT OFF**. STRICTLY LOCAL, no VM: the verification is a ledger replay of the ackdiag battery's own counters plus a deterministic two-path bench.
+
+### THE VERDICT IN FIVE LINES
+
+1. **The defect is structural and it is on the RECEIVER.** `batch_seq` is one
+   connection-wide `AtomicU64` (`net/mod.rs`'s `batch_counter`), but
+   `PathBatchTracker::record_batch` (`net/mod.rs:7576`) infers a path's
+   *expected* symbols from GAPS in that global sequence:
+   `expected = gap × received`. At N ≥ 2 a single path's batch-seq run is
+   mostly the OTHER path's symbols, so the gap is a SCHEDULING artefact
+   charged as loss.
+2. **Measured, it is 37–93×, not 2–5.6×.** READOUT 4 of "Ack-Cadence
+   Measurement (VM)" recorded the *ratio* `ce/cr` = 2.05 (c7) / 5.59 (c8 slow
+   leg). Converted to what the estimator actually reads —
+   `ε̂ = 1 − Σcr/Σce` — that is **0.514 / 0.825** against realized packet loss
+   **0.0055 / 0.0196**. The dispatch's "2–5.6×" understates it by an order of
+   magnitude because the inflation is in the DENOMINATOR of a ratio near 1.
+3. **The clean operands already exist and already ride the wire.**
+   `PathStats::symbols_sent` is the sender's own per-path wire-handoff count
+   (one increment per symbol, source/repair/retransmit alike);
+   `PathBatchTracker::total_received` is a pure per-path arrival count with no
+   sequence arithmetic in it and is already in every v6 `WindowAck`. The law
+   is `ε̂_p = 1 − Δcum_received_p / Δsymbols_sent_p`. **Nothing is added to any
+   datagram and nothing is added to the sender's hot path.**
+4. **The "ride the merged-ack counter deltas" candidate is REFUTED, and
+   structurally.** `cum_expected` is the running SUM of the same
+   `gap × received` estimate, so differencing it cannot remove the
+   contamination — the ack-merge path carries the defect identically, which is
+   why READOUT 4 measured `ce/cr` *through* it.
+5. **It ships OFF, and the reason is not this build's.** The 2026-07-21
+   refutation of `RWM_RECOV_MP_SERIAL` was about the honest SIGNAL, not about
+   how it was obtained: every SRTT/loss-scaled recovery cadence was tuned
+   against the poisoned values and re-heats under any honest ε̂ (dual-c1
+   181 → 134, sender CPU ×2.4). That cadence re-derivation was the named
+   follow-up then and is the gating follow-up now — but it is now the ONLY
+   thing in the way, because the cost objection (a wire-visible serial rework,
+   ×2.4 CPU) is gone.
+
+### WHAT WAS CONSIDERED AND WHY THIS SHAPE
+
+| candidate | verdict |
+|---|---|
+| **(a) per-path batch-seq spaces** (sender assigns per-path seqs) | **NOT TAKEN.** `batch_seq` rides the wire header and is the key of the block-ARQ ledger (`block_arq.rs`, `on_batch_sent`/`on_ack`) and of the v4 Ack echo — a protocol change. It is also literally `RWM_RECOV_MP_SERIAL`, built and runtime-refuted 2026-07-21, removed `ade48ad` |
+| **(b) receiver-side filtering** (subtract the seqs seen on other paths) | **NOT TAKEN, and the reason is the interesting one.** The receiver CAN cheaply tell which interior seqs arrived elsewhere, but a seq that arrived NOWHERE cannot be attributed to a path — that identity is exactly what the loss destroyed. Recovering per-path attribution receiver-side needs either a wire field or a reordering-horizon retirement pass, and neither beats (d) |
+| **(c) estimator-side ride-along on the ack-merge counter deltas** | **REFUTED** (verdict line 4): the deltas are deltas of the contaminated cumulative |
+| **(d) sender-truth pairing** — the shipped shape | **TAKEN.** The path the loss destroyed is known to the SENDER, and it never needed the wire at all |
+
+### THE LAW
+
+```
+  eps_p  =  1  -  d(cum_received_p) / d(symbols_sent_p)
+```
+
+Provenance, per symbol (ADR-0070): `symbols_sent_p` — **measured**, locally,
+at `emit_source.rs:489/581/933` and `net/mod.rs:5735/5792/5906/7282/7722`.
+`cum_received_p` — **measured**, remotely, `PathBatchTracker::total_received`,
+already on the wire. **No constant is introduced.** Deltas of monotone
+cumulatives rather than per-ack sums, so a dropped control datagram costs
+nothing (the next ack carries the whole outstanding delta) — the same property
+that makes `ack_merge_counter_delta` safe.
+
+**The named residual, BOUNDED not described.** The sent cursor leads the
+received cursor by ≈ `in_flight`. That offset is constant in steady state, so
+the DELTAS are unbiased; the residual is the TAIL — the last `lag` batches per
+path are charged with no arrival left to match. The bound is a formula, not a
+tuned number: `|ε̂ − ε| ≤ 5e-4 + lag / batches_per_path`, asserted over a lag
+sweep of `{0, 1, 4, 16, 64, 256}` in
+`sender_truth_loss_delta_is_unbiased_under_a_constant_in_flight_lag`.
+Subtracting `in_flight` would cancel the offset but couple ε̂ to a gauge whose
+release is driven by the contaminated pair; the circularity is deliberately
+not taken.
+
+### VERIFICATION 1 — LEDGER REPLAY (no re-run; `tools/l1/xpath_loss_replay.py`)
+
+Every operand was already in the `recon[...]` block of each `[ACKDIAG]` line,
+because the gauge was built to reconcile exactly these three counters. Raw
+output committed at `docs/l1-raw/xpathloss-replay.txt`; source
+`docs/l1-raw/ackdiag-ackdiag-s42.log` (60 windows, 3 reps, seed 42).
+
+**Expected/received per path — the same metric READOUT 4 reported.** Median
+over 12 windows per cell/path:
+
+| cell/path | legacy `ce/cr` | **fixed `sent/cr`** | realized loss |
+|---|---|---|---|
+| c2r100/p0 (N=1) | 1.029 | **1.015** | 0.81% |
+| c7/p0 | 2.056 | **1.012** | 0.55% |
+| c7/p1 | 2.050 | **1.013** | 0.55% |
+| c8/p0 | 1.258 | **0.989** | 0.55% |
+| c8/p1 | **5.593** | **0.941** | 1.96% |
+
+**The 2.05–5.59 class collapses to the 0.94–1.01 class**, which is the
+criterion. In loss terms, aggregated over all windows (sums):
+
+| cell/path | Σsent | Σcrecv | Σcexp | ε̂ legacy | **ε̂ fixed** | realized |
+|---|---|---|---|---|---|---|
+| c2r100/p0 | 504 107 | 497 259 | 511 806 | 0.0284 | **0.0136** | 0.0081 |
+| c7/p0 | 563 372 | 559 503 | 1 150 198 | **0.5136** | **0.0069** | 0.0055 |
+| c7/p1 | 569 632 | 563 382 | 1 153 743 | **0.5117** | **0.0110** | 0.0055 |
+| c8/p0 | 420 750 | 431 664 | 542 691 | 0.2046 | −0.0259 | 0.0055 |
+| c8/p1 | 82 309 | 88 460 | 505 591 | **0.8250** | −0.0747 | 0.0196 |
+
+**Recorded honestly: the c8 legs read NEGATIVE in the replay.** The gauge
+snapshots `sent` at report time while `crecv` accrues across the window, and
+c8 runs three transfers per rep, so its window edges do not close — a ±3–7%
+alignment error **of the LEDGER's instrument, not of the law**. The in-engine
+form diffs both cursors at the same instant and cannot have it. What the
+replay establishes is therefore the CLASS, and the class is unambiguous.
+`c7` — symmetric, four clean windows per rep, edges that do close — is the
+clean read, and it lands at 0.0069/0.0110 against 0.0055.
+
+### VERIFICATION 2 — DETERMINISTIC TWO-PATH BENCH (both directions)
+
+Four new lib tests in `net/mod.rs`, driving the **REAL** `PathBatchTracker`,
+the **REAL** cursor law and the **REAL** `LossEstimator` off one global
+`batch_seq` — the mechanism under test executes (MEASUREMENT DISCIPLINE 1).
+60 000 batches × 8 symbols, deterministic LCG, no clock, no seed drift.
+
+| geometry | ε injected | ε̂ legacy | **ε̂ fixed** | the wire's own reading |
+|---|---|---|---|---|
+| c7 p0 (50/50) | 0.0055 | 0.503 | **0.0056** | 0.514 |
+| c7 p1 (50/50) | 0.0053 | 0.503 | **0.0055** | 0.512 |
+| c8 p0 (5:1 fast) | 0.0054 | 0.171 | **0.0055** | 0.205 |
+| c8 p1 (5:1 slow) | 0.0195 | **0.837** | **0.0199** | 0.825 |
+
+**The model reproduces the wire's own readings to within 0.01–0.03** at every
+cell/path without being fitted to them — the striping geometry alone accounts
+for the whole inflation, which is the mechanism claim.
+
+- **DIRECTION 1 (`legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2`)**:
+  the OLD code MUST read 0.45–0.58 at 50/50 striping and >30× realized on
+  BOTH `loss_rate()` and `loss_rate_mean()`. Plus the **N = 1 control**: the
+  same legacy code is already honest at a single path (|ε̂ − ε| ≤ 0.004), so
+  the defect is multipath-only and the fix cannot regress N = 1.
+- **DIRECTION 2 (`sender_truth_loss_reads_each_path_own_epsilon_at_n2`)**:
+  absolute bounds on three quantities — the law itself (≤ 5e-4), the
+  count-weighted `loss_rate_mean()` (within [0.5ε, 2ε]) and the shipped
+  `loss_rate()` EWMA (within [0.3ε, 1.5ε]) — at BOTH geometries, with the c8
+  legs carrying DIFFERENT loss so **attribution** is bounded, not just
+  magnitude.
+
+**A SECOND DEFECT, FOUND AND BOUNDED RATHER THAN DESCRIBED.** `loss_rate()`
+is the EWMA of the PER-CALL ratio, not the count-weighted rate. At a
+rare-loss cell a dropped datagram folds its loss into the NEXT ack's doubled
+delta, so the EWMA averages `0.5` on ~ε of the calls instead of `ε` on all of
+them — a **≈½ under-read**, measured 0.0028 against 0.0055 at c7 and 0.0100
+against 0.0195 at c8's slow leg. It is a property of the estimator, present
+for any honest input, and INVISIBLE before this fix because the legacy input
+was constant. Bounded by the test; named as a successor below.
+
+### DOWNSTREAM CONSUMERS AND THEIR CORRECTED VALUES
+
+The estimate's blast radius, enumerated to file:line so a future flip knows
+what it moves. **Not gated** unless stated.
+
+| consumer | file:line | what it computes |
+|---|---|---|
+| **NACK repair margin** | `net/mod.rs:6867` | `margin = ceil(retransmitted × max_p ε̂_p)` |
+| NACK congestion multiplier | `net/mod.rs:6384` | `nack_congestion.update(loss, rtt)` → `cached_max_repairs` (ADR-0046) |
+| NACK admission cap | `net/mod.rs:6432`/`:6439` | `BudgetAllocator::compute(…, loss×0.5, …)` |
+| block-ARQ margins | `block_arq.rs:413`/`:520`/`:604` via `worst_loss_rate` `net/mod.rs:7613` | re-announce spare + fractional margin debt |
+| interleaver taper decay | `net/mod.rs:7344` → `interleave.rs:32` | `λ = 4.605/(1 + 10·loss)` |
+| δ-honest shed budget | `emit_source.rs:682` (`RWM_UNIFIED_SHED`, ON); `receiver.rs:767`/`:1398` | `residual_loss_after_fec(ε̂, …)` → `shed_budget_frac` (= 1 − ρ) |
+| ARQ/FEC arbitration | `emit_source.rs:547`/`:802` | `deficit.on_send(seq, path, ε)`, `p_lost(age, ε_at_send, …)` |
+| placement + scheduling cost | `scheduler/mod.rs:2212`, `:2229`, `:2256`, `:2266`, `:3111`, `:3185` | `r = ε/(1−ε)`, `E_i = rtt/2 + ε·rtt`, `E_i(load)`, `throughput·(1−ε)`, `p_blk = 1−(1−ε)^k` |
+| monitoring / wire / diag only | `control_msg.rs:364`/`:713`, `tasks/report.rs:132`, `diag.rs:601` | `loss_rate_e6`, `PathReport.loss_rate`, `pl=` |
+
+**NOT a consumer, contrary to the dispatch's guess: the proactive FEC rate.**
+`FecRateController::compute_repair_rate/compute_repair_count/derive_window`
+and `TaperFunction::from_estimator` (`control/fec_rate.rs:233/269/335/367/422`)
+read `predictive_loss_upper(0.95)` (BOCD) and the GE estimator, never
+`loss_rate()`. The `loss_rate()` calls at those call sites only pick WHICH
+path's estimator to hand the controller (argmax by loss) — so the
+contamination changes the SELECTOR, not the rate law. That is a smaller blast
+radius than assumed and it is worth having established.
+
+**The NACK repair margin, corrected**, per 100 retransmitted symbols
+(`max_p ε̂_p` over active paths, from the replay):
+
+| cell | ε̂ legacy (max) | ε̂ fixed | margin legacy | **margin fixed** | inflation |
+|---|---|---|---|---|---|
+| c2r100 (N=1) | 0.0284 | 0.0136 | 3 | **2** | 1.5× |
+| **c7** | 0.5136 | 0.0110 | 52 | **2** | **26×** |
+| **c8** | 0.8250 | 0.0196 (realized) | 83 | **2** | **41×** |
+
+At c8 the slow leg was buying **83 repair symbols per 100 retransmitted**
+where the channel justifies **2**.
+
+### A COUPLED DEFECT, NAMED AND NOT FIXED HERE
+
+`release_in_flight(d_expected − d_received)` at `control_msg.rs` (both the
+legacy `Ack` and the merged `WindowAck` arms) releases the in-flight budget
+by the SAME contaminated `expected`. At c7 that is ~1 extra budget slot
+released per delivered symbol; at c8's slow leg ~5. **The budget gauge does
+not merely mis-report — it leaks OPEN at N ≥ 2**, which loosens the
+`available() = cwnd − in_flight` admission gate exactly where the SF bench
+found Σ`cwnd` 3.6–6.6× the wire's measured Σ-anchor ("The Coupling Model",
+FINDING 4). This gate deliberately does NOT touch it: the release stays on
+the legacy pair in both arms so the flip moves ONE quantity. **Named as sweep
+successor.**
+
+### GATE HYGIENE
+
+`RWM_LOSS_SENT_TRUTH`, default OFF, resolved once via `OnceLock` in
+`scheduler::loss_sent_truth_active()`. Echoed in `[GATES]`. Added to
+`tools/l1/lib.sh`'s `RWM_FORWARD` — **the forwarding audit caught its absence
+at `cargo test`, exactly as it was built to** ("Gate-Forwarding Audit",
+2026-08-09). OFF is bit-identical by construction: the legacy pair is the
+`else` arm of one expression, and `if le > 0` reduces to the pre-existing
+`if expected_count > 0` / `if d_expected > 0` guard. Not a dial — it selects
+no law on (δ, ρ, r) and nothing keys on a threshold in the triangle; it
+changes which MEASUREMENT one estimator reads, and the laws downstream are
+the same laws evaluated at an honest argument.
+
+### WIRE QUESTIONS, PRE-REGISTERED AND LISTED (no VM in this session)
+
+Nothing here needs wire validation to be TRUE — the replay is of wire data
+and the bench is deterministic. What a VM session would have to answer before
+any flip:
+
+1. **Does the honest ε̂ re-heat the cadences, on THIS substrate?** The
+   2026-07-21 refutation was measured with the serial namespaces, i.e. with
+   ×2.4 sender CPU confounded in. This build has no CPU cost, so the cadence
+   effect can finally be measured ALONE. Arms: `RWM_LOSS_SENT_TRUTH=0/1` at
+   c7, c8, dual-c1, sc2 (identity), both seeds.
+2. **Does the NACK margin drop convert?** Prediction to register BEFORE the
+   run: repair volume falls at c7/c8 and `retx%` falls with it; goodput moves
+   by ≪σ unless the wire was margin-bound. If goodput FALLS, the poisoned
+   margin was doing load-bearing over-provisioning and that is a finding about
+   the margin law, not about ε̂.
+3. **Does the shed budget (1 − ρ) move?** `residual_loss_after_fec` takes ε̂
+   directly at `emit_source.rs:682` under a DEFAULT-ON gate, so a 0.51 → 0.007
+   change at c7 is the largest single argument change in the fix. Watch
+   `shed%` and the receiver give-up budget.
+4. **The in-flight over-release** (coupled defect above) is NOT in this arm;
+   a battery that flips both at once cannot attribute.
+
+### EVIDENCE
+
+`cargo test -p raptorpath --lib` 423/423 (4 new) · `-p raptorpath-math --lib`
+59/59 · `--doc` clean. Engine tree touched: `scheduler/mod.rs` (the law + two
+cursors), `net/control_msg.rs` (two feed sites), `gates.rs` (echo),
+`net/mod.rs` (design note + tests), `tools/l1/lib.sh` (forwarding). No
+visualizer or wasm change (scope rule). Commits on `fix/loss-crosspath`, not
+merged, not pushed.
