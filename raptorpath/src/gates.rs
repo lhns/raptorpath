@@ -204,6 +204,14 @@ pub struct RuntimeGates {
     /// legacy `Ack`'s 1:1 per-batch cadence, and the gate is scoped
     /// `gates.ack_merge && recv_window_mode` precisely so that stays true.
     pub ack_merge: bool,
+    /// `RWM_LOSS_SENT_TRUTH` (**default OFF**) — feed the per-path loss
+    /// estimator the sender's own `symbols_sent` delta instead of the
+    /// receiver's global-`batch_seq` gap estimate. See
+    /// `scheduler::loss_sent_truth_active()` and
+    /// `PathState::sender_truth_loss_delta` for the law and its provenance;
+    /// the defect is measured in goal-gate "Ack-Cadence Measurement (VM)"
+    /// READOUT 4 (apparent/realized 37-93x at every multipath cell).
+    pub loss_sent_truth: bool,
     /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
     /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
     /// = 10 ms literal — 10× RFC 9002's kGranularity, and at c2/c7 at or
@@ -580,6 +588,7 @@ impl RuntimeGates {
             pool_deliv: crate::scheduler::pool_deliv_active(),
             floor_bound: crate::scheduler::floor_bound_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
+            loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
             patience_derived: crate::scheduler::patience_derived_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
@@ -672,7 +681,7 @@ impl RuntimeGates {
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
-             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_PATIENCE_DERIVED={} \
+             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={}              RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
@@ -694,7 +703,8 @@ impl RuntimeGates {
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
-            b(self.floor_bound), b(self.ack_merge), b(self.patience_derived),
+            b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
+            b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),

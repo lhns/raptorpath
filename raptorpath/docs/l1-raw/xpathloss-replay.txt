@@ -1,0 +1,28 @@
+cell/path      N  ce/cr med  e_old med  s/cr med  e_new med  realized  old/real  new/real
+------------------------------------------------------------------------------------------------
+c2r100/p0     12      1.029     0.0282     1.015     0.0146    0.0081      3.5x     1.80x
+c7/p0         12      2.056     0.5135     1.012     0.0115    0.0055     93.4x     2.09x
+c7/p1         12      2.050     0.5122     1.013     0.0131    0.0055     93.1x     2.38x
+c8/p0         12      1.258     0.2050     0.989     0.0000    0.0055     37.3x     0.00x
+c8/p1         12      5.593     0.8212     0.941     0.0000    0.0196     41.9x     0.00x
+
+AGGREGATED over all windows (sums; NOTE the c8 legs read NEGATIVE: the
+gauge snapshots `sent` at report time while `crecv` accrues over the
+window, and c8 runs 3 transfers per rep, so its window edges do not
+close. That +/-3-7% is the LEDGER's alignment, not the law's: the
+in-engine form diffs both cursors at the same instant. What the replay
+establishes is the CLASS -- 0.94-1.01 expected/received, not 2.05-5.59.
+cell/path     Sigma sent Sigma crecv  Sigma cexp    e_old    e_new  realized
+--------------------------------------------------------------------------------
+c2r100/p0         504107      497259      511806   0.0284   0.0136    0.0081
+c7/p0             563372      559503     1150198   0.5136   0.0069    0.0055
+c7/p1             569632      563382     1153743   0.5117   0.0110    0.0055
+c8/p0             420750      431664      542691   0.2046  -0.0259    0.0055
+c8/p1              82309       88460      505591   0.8250  -0.0747    0.0196
+
+NACK repair margin  margin = ceil(retransmitted * max_p eps_p)  (net/mod.rs:6867)
+cell      eps_old(max)  eps_new(max)  margin/100 old  margin/100 new  inflation
+--------------------------------------------------------------------------------
+c2r100          0.0284        0.0136               3               2       1.5x
+c7              0.5136        0.0110              52               2      26.0x
+c8              0.8250        0.0000              83               0      83.0x

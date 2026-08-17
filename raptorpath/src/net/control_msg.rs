@@ -331,10 +331,30 @@ fn on_ack(
             }
         }
 
-        // ADR-0003: update loss stats from ACK
+        // ADR-0003: update loss stats from ACK.
+        //
+        // fix/loss-crosspath (`RWM_LOSS_SENT_TRUTH`, default OFF): the wire's
+        // `expected_count` is `PathBatchTracker`'s GLOBAL-batch_seq gap
+        // estimate, which at N >= 2 reads the OTHER path's symbols as this
+        // path's loss (measured 37-93x over realized — READOUT 4). Under the
+        // gate the estimator is fed the sender's own per-path
+        // `symbols_sent` delta instead. RELEASE below deliberately keeps the
+        // wire's `expected_count` in BOTH arms: the gate changes what the
+        // ESTIMATOR reads, nothing else (the coupled in_flight over-release
+        // is a separate defect, named in the branch record).
+        let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
+            let sent = stats
+                .path(path_id)
+                .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
+                .unwrap_or(0);
+            path.sender_truth_loss_batch(sent, received_count)
+        } else {
+            (expected_count, received_count)
+        };
+        if le > 0 {
+            path.estimator.record_batch(le, lr);
+        }
         if expected_count > 0 {
-            path.estimator
-                .record_batch(expected_count, received_count);
             // Lost symbols also left the wire: release them from
             // in_flight (sched.ack above only subtracts received),
             // otherwise losses leak budget and the Copa gate jams.
@@ -692,8 +712,30 @@ fn on_window_ack(
                     }
                 }
                 // ADR-0003: loss stats from the ack's counter delta.
+                //
+                // fix/loss-crosspath (`RWM_LOSS_SENT_TRUTH`, default OFF).
+                // `d_expected` is the DIFF OF A CONTAMINATED CUMULATIVE:
+                // `cum_expected` is `PathBatchTracker::total_expected`
+                // (`net/mod.rs:7576`), summed from `gap x received` over a
+                // GLOBAL `batch_seq`, so the merged-ack counter path carries
+                // the SAME cross-path inflation the legacy `Ack` did —
+                // differencing it cannot remove it. The clean pair is the
+                // sender's own `symbols_sent` against the receiver's
+                // `cum_received` (which never had sequence arithmetic in it).
+                // Release keeps the legacy `d_expected` in both arms.
+                let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
+                    let sent = stats
+                        .path(path_id)
+                        .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
+                        .unwrap_or(0);
+                    path.sender_truth_loss_delta(sent, cum_received)
+                } else {
+                    (d_expected, d_received)
+                };
+                if le > 0 {
+                    path.estimator.record_batch(le, lr);
+                }
                 if d_expected > 0 {
-                    path.estimator.record_batch(d_expected, d_received);
                     // Lost symbols also left the wire: release them
                     // from in_flight (the delivery branch above only
                     // subtracts received), otherwise losses leak

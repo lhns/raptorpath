@@ -370,6 +370,27 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 //     re-test owed: refuted ON the clean substrate). A cheaper serial-
 //     namespace implementation is a NEW pre-registered build, not a revival.
 //
+//     ANSWERED WITHOUT A NAMESPACE, 2026-08-18 (`fix/loss-crosspath`,
+//     MECHANICAL DEFECT SWEEP item 3). The poisoning is removable ON THE
+//     SENDER with NO wire change and no serial rework, because the sender
+//     already keeps the exact quantity the receiver was guessing:
+//     `PathStats::symbols_sent`, one increment per wire handoff per path.
+//     Under `RWM_LOSS_SENT_TRUTH` (**default OFF**) the estimator is fed
+//     `1 − Δcum_received / Δsymbols_sent` instead of the gap estimate — both
+//     operands per-path measurements, both already present. The law, its
+//     provenance and its named residual are on
+//     `PathState::sender_truth_loss_delta`. Ledger replay over the ackdiag
+//     battery: expected/received **2.05 → 1.01** (c7) and **5.59 → 0.94**
+//     (c8 slow leg); ε̂ **0.51 / 0.82 → 0.007 / 0.020** against realized
+//     0.0055 / 0.0196. Note that this ALSO makes the merged-ack counter path
+//     no cleaner than the legacy one: `cum_expected` is the SUM of the same
+//     gap estimate, so differencing it cannot remove the contamination —
+//     the "ride the counter deltas" idea is refuted structurally.
+//     It ships OFF because the runtime refutation above is about the honest
+//     SIGNAL, not about how it was obtained, and still stands: the
+//     SRTT/loss-scaled recovery cadences were tuned against the poisoned
+//     values. That cadence re-derivation is the named follow-up, unchanged.
+//
 // Sub-gate for trace attribution: `RWM_RECOV_MP_LAW` (default ON under the
 // umbrella) gates (1).
 
@@ -11332,5 +11353,336 @@ mod tests {
             is_window_mode(ProtocolHint::Realtime, FecBackend::Rlc, false),
             "Realtime rides the window pipeline at the default (EVICT retention)"
         );
+    }
+
+    // ── fix/loss-crosspath: the cross-path loss contamination, BOUNDED ──
+    //
+    // MECHANICAL DEFECT SWEEP item 3. A deterministic two-path model of
+    // exactly the wire geometry the ackdiag battery measured: ONE global
+    // `batch_seq` counter (the shipped `batch_counter`), batches striped
+    // across two paths, per-path datagram loss injected at a KNOWN rate,
+    // and the REAL `PathBatchTracker` on the receiver side. Both estimator
+    // feeds are then driven from it and read back through the REAL
+    // `LossEstimator`, so the assertions bound the shipped mechanism, not a
+    // re-implementation of it (MEASUREMENT DISCIPLINE rule 1).
+
+    /// What one path read, per arm, in one run of the two-path model.
+    #[derive(Debug, Clone, Copy)]
+    struct XpathRead {
+        /// The realized per-path datagram loss actually injected.
+        eps_true: f64,
+        /// THE LAW ITSELF, count-weighted: `1 − Σreceived / Σexpected` over
+        /// everything the arm fed the estimator. This is the quantity the
+        /// fix defines; everything below is an estimator READ of it.
+        fed_old: f64,
+        fed_new: f64,
+        /// `LossEstimator::loss_rate()` — `tx_ewma_loss`, the EWMA of the
+        /// PER-CALL ratio. THE shipped consumer read (NACK margin, placement
+        /// costs, …). Sampled as the run mean, because at a low-loss cell the
+        /// instantaneous EWMA sits near 0 between rare loss events.
+        ewma_old: f64,
+        ewma_new: f64,
+        /// `LossEstimator::loss_rate_mean()` — the Beta posterior mean, which
+        /// IS count-weighted (a shipped consumer: `scheduler/mod.rs:3111`
+        /// reads `loss_rate().max(loss_rate_mean())`).
+        beta_old: f64,
+        beta_new: f64,
+    }
+
+    /// One deterministic run of the two-path model.
+    ///
+    /// `share` is the striping period: 1 => single path (the N = 1 control),
+    /// 2 => 50/50 alternation (c7), 6 => 5:1 (c8's measured split).
+    fn xpath_loss_model(
+        batches: u32,
+        syms: u32,
+        share: u32,
+        eps: [f64; 2],
+        lag: usize,
+    ) -> [XpathRead; 2] {
+        use crate::control::estimator::LossEstimator;
+        use crate::scheduler::PathState;
+        use crate::scheduler::MockClock;
+
+        // Deterministic LCG — no rand, no clock, no seed drift.
+        let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((rng >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+
+        let clock = Arc::new(MockClock::new());
+        let mut tracker = [PathBatchTracker::new(), PathBatchTracker::new()];
+        let mut legacy = [LossEstimator::new(), LossEstimator::new()];
+        let mut truth = [LossEstimator::new(), LossEstimator::new()];
+        let mut path_state = [
+            PathState::new(0, clock.clone()),
+            PathState::new(1, clock.clone()),
+        ];
+        // The SENDER's own per-path wire-handoff counter (`PathStats::
+        // symbols_sent`), and its lagged view: an ack is processed when the
+        // sender has already dispatched `lag` further batches on that path.
+        // That lag is the in-flight offset the law's doc comment names.
+        let mut sent_cum = [0u64; 2];
+        let mut sent_hist: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
+        let mut dispatched = [0u64; 2];
+        let mut dropped = [0u64; 2];
+        // Arrivals, in wire order, as (path, batch_seq, symbols, dispatch
+        // index on that path — the cursor into `sent_hist`, which must be
+        // keyed by DISPATCHES, not by arrivals: a dropped batch still
+        // advanced the sender's counter, and that is the whole signal).
+        let mut arrivals: Vec<(usize, u64, u32, usize)> = Vec::new();
+
+        for seq in 0..batches as u64 {
+            let p = if share == 1 {
+                0
+            } else if seq % share as u64 == 0 {
+                1
+            } else {
+                0
+            };
+            sent_cum[p] += syms as u64;
+            sent_hist[p].push(sent_cum[p]);
+            let disp_idx = dispatched[p] as usize;
+            dispatched[p] += 1;
+            if next() < eps[p] {
+                dropped[p] += 1;
+                continue;
+            }
+            arrivals.push((p, seq, syms, disp_idx));
+        }
+
+        let mut seen = [0usize; 2];
+        // Σ(expected, received) actually fed, per arm — the law's own operands.
+        let mut fed_old = [(0u64, 0u64); 2];
+        let mut fed_new = [(0u64, 0u64); 2];
+        // Running mean of the shipped `loss_rate()` read, per arm.
+        let mut ewma_old = [(0.0f64, 0u64); 2];
+        let mut ewma_new = [(0.0f64, 0u64); 2];
+
+        for (p, seq, n, disp_idx) in arrivals {
+            // Receiver: the REAL tracker, fed the REAL global batch_seq.
+            let (expected, received) = tracker[p].record_batch(seq, n);
+            // ARM A (shipped): the receiver's gap estimate.
+            legacy[p].record_batch(expected, received);
+            fed_old[p].0 += expected as u64;
+            fed_old[p].1 += received as u64;
+            ewma_old[p].0 += legacy[p].loss_rate();
+            ewma_old[p].1 += 1;
+            // ARM B (`RWM_LOSS_SENT_TRUTH`): the sender's own count against
+            // the receiver's clean cumulative arrival count, paired through
+            // the REAL cursor law.
+            let idx = (disp_idx + lag).min(sent_hist[p].len().saturating_sub(1));
+            let (le, lr) = path_state[p]
+                .sender_truth_loss_delta(sent_hist[p][idx], tracker[p].total_received);
+            if le > 0 {
+                truth[p].record_batch(le, lr);
+                fed_new[p].0 += le as u64;
+                fed_new[p].1 += lr as u64;
+            }
+            ewma_new[p].0 += truth[p].loss_rate();
+            ewma_new[p].1 += 1;
+            seen[p] += 1;
+        }
+
+        let ratio = |(e, r): (u64, u64)| if e == 0 { 0.0 } else { 1.0 - r as f64 / e as f64 };
+        let mean = |(s, n): (f64, u64)| if n == 0 { 0.0 } else { s / n as f64 };
+        [0usize, 1].map(|p| XpathRead {
+            eps_true: dropped[p] as f64 / dispatched[p].max(1) as f64,
+            fed_old: ratio(fed_old[p]),
+            fed_new: ratio(fed_new[p]),
+            ewma_old: mean(ewma_old[p]),
+            ewma_new: mean(ewma_new[p]),
+            beta_old: legacy[p].loss_rate_mean(),
+            beta_new: truth[p].loss_rate_mean(),
+        })
+    }
+
+    /// DIRECTION 1 — the OLD code MUST reproduce the contamination. At 50/50
+    /// striping every path sees a batch-seq gap of exactly 2 on every batch,
+    /// so the legacy pair charges `2 × received` and reads ε̂ ≈ 0.5 against a
+    /// realized 0.55%: the c7 geometry, and the c7 reading (measured ce/cr
+    /// 2.05 ⇒ ε̂ 0.51 — goal-gate "Ack-Cadence Measurement (VM)" READOUT 4).
+    #[test]
+    fn legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2() {
+        let r = xpath_loss_model(60_000, 8, 2, [0.0055, 0.0055], 4);
+        for (p, x) in r.iter().enumerate() {
+            // The law: Σexpected/Σreceived = 2.0 exactly — the wire's c7
+            // `ce/cr` = 2.05.
+            assert!(
+                (0.45..0.58).contains(&x.fed_old),
+                "p{p}: legacy ε̂ must reproduce the ≈0.5 striping artefact, \
+                 read {:.4}",
+                x.fed_old
+            );
+            // Every shipped read of it inherits the artefact.
+            for (name, v) in [("loss_rate", x.ewma_old), ("loss_rate_mean", x.beta_old)] {
+                assert!(
+                    v / x.eps_true > 30.0,
+                    "p{p}: {name} apparent/realized must reproduce the measured \
+                     37–93× class, read {:.1}× ({v:.4} vs {:.4})",
+                    v / x.eps_true,
+                    x.eps_true
+                );
+            }
+        }
+        // And the single-path control: N = 1 has no other path in its
+        // sequence, so the SAME legacy code is already honest there. The
+        // defect is multipath-only, which is why this fix cannot regress N=1.
+        let s = xpath_loss_model(60_000, 8, 1, [0.0055, 0.0055], 4);
+        assert!(
+            (s[0].fed_old - s[0].eps_true).abs() <= 0.004,
+            "N=1 legacy must already be honest, read {:.4} vs {:.4}",
+            s[0].fed_old,
+            s[0].eps_true
+        );
+    }
+
+    /// DIRECTION 2 — under the fix each path reads ITS OWN realized loss.
+    /// Absolute bounds, not ordinal ones, at both the symmetric (c7) and the
+    /// 5:1 asymmetric (c8) geometry, with the c8 legs carrying DIFFERENT loss
+    /// (0.55% / 1.96%) so the test bounds ATTRIBUTION, not just magnitude.
+    ///
+    /// Three quantities are bounded, because they answer different questions:
+    /// the LAW (`Σreceived/Σexpected`, exact), the count-weighted estimator
+    /// read (`loss_rate_mean`, the Beta posterior), and the shipped
+    /// `loss_rate()` EWMA. The EWMA carries a KNOWN ≈½ under-read at a
+    /// rare-loss cell that is a property of the estimator, not of this fix:
+    /// a dropped datagram folds its loss into the NEXT ack's doubled delta,
+    /// so the per-call ratio it averages reads `0.5` on ~ε of the calls
+    /// instead of `ε` on all of them. It is BOUNDED here (`[0.3ε, 1.5ε]`)
+    /// rather than described, and named in the branch record as a successor.
+    #[test]
+    fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
+        // c7 geometry: symmetric 50/50, both legs 0.55%.
+        // c8 geometry: 5:1 split, ASYMMETRIC loss — p0 = fast leg 0.55%,
+        // p1 = slow leg 1.96% (the leg whose legacy read was ce/cr 5.59).
+        for (cell, share, eps) in [
+            ("c7", 2u32, [0.0055f64, 0.0055]),
+            ("c8", 6, [0.0055, 0.0196]),
+        ] {
+            let r = xpath_loss_model(60_000, 8, share, eps, 4);
+            for (p, x) in r.iter().enumerate() {
+                // Measured by this model (60 000 batches, 8 sym/batch, lag 4),
+                // against the wire's own readings at the same geometry:
+                //   c7 p0/p1  ε_true 0.0055  fed_old 0.503/0.503 (wire 0.514)
+                //                            fed_new 0.0056/0.0055
+                //   c8 p0     ε_true 0.0054  fed_old 0.171 (wire 0.205)
+                //                            fed_new 0.0055
+                //   c8 p1     ε_true 0.0195  fed_old 0.837 (wire 0.825)
+                //                            fed_new 0.0199
+                assert!(
+                    (x.fed_new - x.eps_true).abs() <= 5e-4,
+                    "{cell} p{p}: the LAW must read this path's own ε — \
+                     {:.5} vs realized {:.5}",
+                    x.fed_new,
+                    x.eps_true
+                );
+                // The Beta posterior decays at 0.995/call, so it is a
+                // ~200-call WINDOW mean, not the run mean — bounded
+                // multiplicatively (its sampling spread at these loss rates),
+                // where the legacy arm misses by 37–93×.
+                assert!(
+                    (0.5 * x.eps_true..2.0 * x.eps_true).contains(&x.beta_new),
+                    "{cell} p{p}: loss_rate_mean must read this path's own ε — \
+                     {:.5} vs realized {:.5}",
+                    x.beta_new,
+                    x.eps_true
+                );
+                assert!(
+                    (0.3 * x.eps_true..1.5 * x.eps_true).contains(&x.ewma_new),
+                    "{cell} p{p}: loss_rate() must land in the ε class — \
+                     {:.5} vs realized {:.5}",
+                    x.ewma_new,
+                    x.eps_true
+                );
+                assert!(
+                    x.ewma_old > 20.0 * x.ewma_new,
+                    "{cell} p{p}: the legacy read must be strictly the inflated \
+                     one ({:.4} vs {:.4})",
+                    x.ewma_old,
+                    x.ewma_new
+                );
+            }
+            // Attribution: at c8 the slow leg's honest ε must be the LARGER
+            // of the two by ≈ the injected ratio — the legacy pair got this
+            // ordering right by accident and its MAGNITUDE wrong by 42×.
+            if cell == "c8" {
+                assert!(
+                    r[1].fed_new / r[0].fed_new > 2.5,
+                    "c8: the slow leg's honest ε must be the larger one \
+                     ({:.5} vs {:.5})",
+                    r[1].fed_new,
+                    r[0].fed_new
+                );
+                assert!(
+                    r[1].fed_old > 0.5,
+                    "c8 slow leg legacy read {:.4} must reproduce the 5.59 \
+                     ce/cr class",
+                    r[1].fed_old
+                );
+            }
+        }
+    }
+
+    /// The law's NAMED RESIDUAL, bounded rather than described: the sent
+    /// cursor leads the received cursor by ≈ in_flight, so a run's opening
+    /// over-reads by about one BDP and thereafter the DELTAS are unbiased.
+    /// Sweep the lag over two orders and require the settled read to stay
+    /// inside the same absolute tolerance.
+    #[test]
+    fn sender_truth_loss_delta_is_unbiased_under_a_constant_in_flight_lag() {
+        for lag in [0usize, 1, 4, 16, 64, 256] {
+            let r = xpath_loss_model(60_000, 8, 2, [0.0055, 0.0055], lag);
+            let per_path = 60_000.0 / 2.0;
+            // THE BOUND, as a formula rather than a tuned number: a constant
+            // lag biases NOTHING in steady state (the offset cancels in the
+            // delta), and the only residual is the TAIL — the last `lag`
+            // batches on each path are charged as expected with no arrival
+            // left to match them. That is `lag / batches_per_path`, plus the
+            // 5e-4 sampling floor the zero-lag run already carries.
+            let bound = 5e-4 + lag as f64 / per_path;
+            for (p, x) in r.iter().enumerate() {
+                assert!(
+                    (x.fed_new - x.eps_true).abs() <= bound,
+                    "lag {lag} p{p}: a CONSTANT in-flight lag must not bias the \
+                     delta pair beyond its tail term {bound:.5} — read {:.5} vs \
+                     realized {:.5}",
+                    x.fed_new,
+                    x.eps_true
+                );
+            }
+        }
+    }
+
+    /// The cursor law's own invariants (the `ack_merge_counter_delta`
+    /// contract, re-asserted for the sender-truth pair): stale/reordered acks
+    /// are no-ops, cursors only move forward, received never exceeds
+    /// expected, and the zero-payload sentinel is inert.
+    #[test]
+    fn sender_truth_loss_delta_is_idempotent_and_never_underflows() {
+        use crate::scheduler::PathState;
+        use crate::scheduler::MockClock;
+        let clock = Arc::new(MockClock::new());
+        let mut p = PathState::new(0, clock.clone());
+        assert_eq!(p.sender_truth_loss_delta(500, 0), (0, 0), "sentinel is inert");
+        assert_eq!(p.sender_truth_loss_delta(500, 480), (500, 480));
+        assert_eq!(
+            p.sender_truth_loss_delta(500, 480),
+            (0, 0),
+            "a duplicate ack is a no-op"
+        );
+        assert_eq!(
+            p.sender_truth_loss_delta(300, 200),
+            (0, 0),
+            "a reordered/stale ack is a no-op"
+        );
+        assert_eq!(p.sender_truth_loss_delta(700, 660), (200, 180));
+        // Lag running the other way (receiver ahead of the sampled sender
+        // counter) must clamp, never underflow the derived loss count.
+        let mut q = PathState::new(0, clock);
+        assert_eq!(q.sender_truth_loss_delta(100, 400), (100, 100));
     }
 }
