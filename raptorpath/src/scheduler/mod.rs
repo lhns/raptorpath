@@ -471,6 +471,46 @@ pub fn ack_merge_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", true))
 }
 
+/// `RWM_LOSS_SENT_TRUTH` (**default OFF**) — feed the per-path loss estimator
+/// the SENDER's own `symbols_sent` delta instead of the receiver's
+/// gap-derived `total_expected`. The law, its provenance and its named
+/// residual are on [`PathState::sender_truth_loss_delta`]; the defect it
+/// removes is documented at the `PathBatchTracker` design note
+/// (`net/mod.rs` header item (2)) and measured in goal-gate "Ack-Cadence
+/// Measurement (VM)" READOUT 4.
+///
+/// **Behaviour-changing, hence gated.** The estimate feeds the NACK repair
+/// margin (`net/mod.rs:6867`), the NACK congestion multiplier and budget cap
+/// (`:6384`/`:6432`), the block-ARQ margins via `worst_loss_rate`
+/// (`:7613`), the interleaver taper decay (`:7344`), the shed budget
+/// (`emit_source.rs:682`, `receiver.rs:767`/`:1398`) and every placement /
+/// scheduling cost that carries an `eps` term (`scheduler/mod.rs:2212`,
+/// `:2229`, `:2256`, `:2266`, `:3111`). N = 1 is UNAFFECTED in shape — a
+/// single path's batch-seq stream has no other path in it, so the legacy
+/// pair is already honest there and this gate only removes its ~1 BDP of
+/// startup lag.
+///
+/// **Not the refuted `RWM_RECOV_MP_SERIAL`.** That build gave each path its
+/// own batch-seq NAMESPACE on the WIRE (sender-side, protocol-visible) and
+/// was runtime-refuted on the clean substrate (dual-c1 181 → 134, sender CPU
+/// x2.4 — goal-gate "Multipath Recovery Suppression", DEPRECATION REGISTER).
+/// This changes NO wire format and adds no sender work: both operands
+/// already exist and already ride the existing v6 counters. The refutation's
+/// mechanism — honest loss re-heating every SRTT/loss-scaled recovery
+/// cadence that the poisoned values were accidentally damping — applies to
+/// ANY honest-loss build and is exactly why this one ships OFF pending the
+/// named cadence re-derivation.
+///
+/// Not a dial: it selects no law on (delta, rho, r) and nothing keys on a
+/// threshold in the triangle (CLAUDE.md's no-mode-switch invariant). It
+/// changes which MEASUREMENT feeds one estimator; the laws downstream are
+/// the same laws, evaluated at an honest argument.
+pub fn loss_sent_truth_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_LOSS_SENT_TRUTH", false))
+}
+
 /// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
 /// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
 /// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
@@ -2111,6 +2151,16 @@ pub struct PathState {
     ack_cum_expected: u64,
     /// See [`Self::ack_cum_expected`].
     ack_cum_received: u64,
+    /// `RWM_LOSS_SENT_TRUTH` (default OFF): the SENDER-side cursor over this
+    /// path's own `PathStats::symbols_sent`. See
+    /// [`Self::sender_truth_loss_delta`].
+    loss_sent_cursor: u64,
+    /// `RWM_LOSS_SENT_TRUTH`: the paired cursor over the receiver's clean
+    /// per-path `total_received`. Separate from [`Self::ack_cum_received`]
+    /// because the two arms advance independently (the legacy cursor pair
+    /// keeps driving `release_in_flight` in BOTH arms — see
+    /// [`Self::sender_truth_loss_delta`]).
+    loss_recv_cursor: u64,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -2163,8 +2213,97 @@ impl PathState {
             floor_bound: floor_bound_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
+            loss_sent_cursor: 0,
+            loss_recv_cursor: 0,
             clock,
         }
+    }
+
+    /// `RWM_LOSS_SENT_TRUTH` (default OFF) — the CROSS-PATH-CLEAN loss pair.
+    ///
+    /// THE LAW, on one line:
+    ///
+    /// ```text
+    ///   eps_p  =  1  -  d(cum_received_p) / d(symbols_sent_p)
+    /// ```
+    ///
+    /// Provenance of both operands: **measured, locally, per path.**
+    /// `symbols_sent_p` is `PathStats::symbols_sent` — incremented once at
+    /// every wire handoff on this path (source, repair and retransmit alike;
+    /// `emit_source.rs:489/581/933`, `net/mod.rs:5735/5792/5906/7282/7722`),
+    /// so it is the SENDER's own exact count of what it put on this path.
+    /// `cum_received_p` is the receiver's `PathBatchTracker::total_received`,
+    /// already on the wire in every v6 `WindowAck` — a pure count of arrivals
+    /// on this path, with no sequence arithmetic in it.
+    ///
+    /// **What it replaces and why.** The shipped pair takes `expected` from
+    /// `PathBatchTracker::total_expected` (`net/mod.rs:7576`), which estimates
+    /// it as `gap × received` across a **GLOBAL** `batch_seq` gap
+    /// (`batch_counter` is one connection-wide `AtomicU64`). At N ≥ 2 a single
+    /// path's batch-seq sequence is mostly the OTHER path's symbols, so the
+    /// gap is a SCHEDULING artefact and the ratio reads loss that never
+    /// happened. Measured on the wire (goal-gate "Ack-Cadence Measurement
+    /// (VM)" READOUT 4): `ce/cr` = 2.05 at c7 and 5.59 on c8's slow leg
+    /// against realized packet loss of 0.55% and 1.96% — i.e. eps_hat 0.51
+    /// and 0.82 against truth, **37–93x**. The same ledgers' `cr/s` column is
+    /// exactly this law's reciprocal and reads 0.94–1.01 at those cells.
+    ///
+    /// **Why deltas of cumulatives and not a snapshot ratio.** Both operands
+    /// are monotone cumulative counters, so a dropped ack costs nothing (the
+    /// next one carries the whole outstanding delta) — the same property that
+    /// makes [`Self::ack_merge_counter_delta`] safe. The cursors only ever
+    /// move FORWARD, so a reordered/stale ack yields `(0, 0)`.
+    ///
+    /// **The named residual: in-flight lag.** `symbols_sent` counts a symbol
+    /// at handoff, `cum_received` counts it ~RTT later, so the sent cursor
+    /// leads by ≈ in_flight. The offset is CONSTANT in steady state, hence
+    /// the DELTAS are unbiased; what it costs is a one-BDP over-read during
+    /// the opening ramp (decaying, and in the same direction the legacy pair
+    /// errs, so it is never a new over-read) and a matching under-read at the
+    /// tail. Bounded by `sender_truth_loss_delta_is_unbiased_under_a_constant_
+    /// in_flight_lag`. Subtracting `in_flight` here would remove the offset
+    /// but couple this estimate to a gauge whose release is driven by the
+    /// contaminated pair — the circularity is deliberately not taken.
+    ///
+    /// `cum_received == 0` is the same "no counter payload" sentinel the
+    /// merged-ack cursor uses (the two timer-driven `WindowAck` sites
+    /// broadcast to every live path and carry no per-path counter).
+    /// `received` is clamped to `expected` so the derived loss count can
+    /// never underflow when the lag runs the other way.
+    pub fn sender_truth_loss_delta(
+        &mut self,
+        symbols_sent: u64,
+        cum_received: u64,
+    ) -> (u32, u32) {
+        if cum_received == 0 {
+            return (0, 0);
+        }
+        let d_expected = symbols_sent.saturating_sub(self.loss_sent_cursor);
+        let d_received = cum_received.saturating_sub(self.loss_recv_cursor);
+        if d_expected == 0 && d_received == 0 {
+            return (0, 0);
+        }
+        self.loss_sent_cursor = self.loss_sent_cursor.max(symbols_sent);
+        self.loss_recv_cursor = self.loss_recv_cursor.max(cum_received);
+        let cap = u32::MAX as u64;
+        (
+            d_expected.min(cap) as u32,
+            d_received.min(d_expected).min(cap) as u32,
+        )
+    }
+
+    /// [`Self::sender_truth_loss_delta`] for the LEGACY per-batch `Ack` arm,
+    /// whose `received_count` is a per-batch count rather than a cumulative
+    /// counter. Same law, same cursors: the received side is accumulated
+    /// here instead of arriving pre-summed on the wire. (`received_count` was
+    /// never the contaminated operand — only `expected_count` was.)
+    pub fn sender_truth_loss_batch(
+        &mut self,
+        symbols_sent: u64,
+        received_in_batch: u32,
+    ) -> (u32, u32) {
+        let cum = self.loss_recv_cursor.saturating_add(received_in_batch as u64);
+        self.sender_truth_loss_delta(symbols_sent, cum)
     }
 
     /// ack-merge (`RWM_ACK_MERGE`): advance the v6 cumulative-counter cursor
