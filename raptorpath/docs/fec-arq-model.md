@@ -12751,6 +12751,113 @@ belongs to the cell's bistability and the n this project has been willing to
 spend, and the next attempt must change the DESIGN — a paired within-rep
 contrast, or a cell whose statistic is not bistable — not the statistic.
 
+### 16.58 The per-path loss estimate, stated as a formula: the receiver was inferring what the sender already knew, and the inference is a scheduling artefact at every multipath cell (2026-08-18, `fix/loss-crosspath`, gate `RWM_LOSS_SENT_TRUTH` default OFF)
+
+**What the engine computes today.** `batch_seq` is one connection-wide
+counter. The receiver keeps a per-path `PathBatchTracker` and infers the
+symbols a path was *sent* from gaps in that global sequence:
+
+```
+    expected  =  (batch_seq − last_seq_on_this_path) × received
+```
+
+The sender's ε̂ is then `1 − Σreceived / Σexpected`. §7.1's row "(sent,
+received) per batch" reads as if `sent` were a measurement. **It is not: at
+N ≥ 2 it is an inference, and the thing it infers from is the SCHEDULER'S OWN
+STRIPING.** A path's batch-seq run is mostly the other path's symbols, so the
+gap is a decision the sender made, charged back to the channel as loss.
+
+**The magnitude, measured on the wire** (§16.42's gauge, goal-gate
+"Ack-Cadence Measurement (VM)" READOUT 4). Expected/received per path reads
+**2.05** at c7 and **5.59** on c8's slow leg. Converted to what the estimator
+actually reads, ε̂ = 1 − Σcr/Σce:
+
+| cell/path | ε̂ engine | ε realized (tc) | ratio |
+|---|---|---|---|
+| c2r100/p0 (N = 1) | 0.028 | 0.0081 | 3.5× |
+| c7/p0, c7/p1 | **0.514, 0.512** | 0.0055 | **93×** |
+| c8/p0 | 0.205 | 0.0055 | 37× |
+| c8/p1 (slow leg) | **0.825** | 0.0196 | **42×** |
+
+The ratio metric understates this by an order of magnitude, because the
+inflation sits in the denominator of a quantity near 1. The single-path cell
+is the control and it is honest — **the defect is multipath-only**, which is
+also the §16.24 finding ("per-path loss estimators read 0.62–0.77 at a
+0.1%-loss cell") restated with the arithmetic done.
+
+**THE LAW, before the code.**
+
+```
+    eps_p  =  1  −  d(cum_received_p) / d(symbols_sent_p)
+```
+
+Provenance, one line per symbol (ADR-0070):
+
+* `symbols_sent_p` — **measured**, locally, `PathStats::symbols_sent`: one
+  increment per wire handoff on path *p* (source, repair and retransmit
+  alike). The sender has always had it; §16.42's reconciliation gauge already
+  prints it as `sent`.
+* `cum_received_p` — **measured**, remotely, `PathBatchTracker::total_received`:
+  a pure count of arrivals on *p*, carrying no sequence arithmetic. Already on
+  the wire in every v6 `WindowAck`.
+* **No constant.** No dial. Nothing keys on δ, ρ or r.
+
+Two structural consequences worth stating, because both were candidate fixes.
+
+1. **The merged-ack counter delta is NOT a clean channel.** `cum_expected` is
+   the running SUM of the gap estimate above, so `d_expected` is the
+   difference of a contaminated cumulative — differencing removes nothing.
+   §16.42's re-homing preserved the Ack arm's payload exactly, which means it
+   preserved this exactly too.
+2. **Per-path attribution is not recoverable receiver-side.** The receiver can
+   cheaply subtract, from a path's gap, the seqs that arrived on some other
+   path; it cannot attribute a seq that arrived NOWHERE, because the path
+   identity is precisely what the loss destroyed. The sender never had that
+   problem. This is why the fix needs no wire field, and why §16.24's
+   per-path serial NAMESPACE — which did put the identity on the wire — was
+   solving a harder problem than the one that exists.
+
+**The residual, bounded.** `symbols_sent` counts a symbol at handoff and
+`cum_received` counts it ≈RTT later, so the sent cursor leads by ≈ `in_flight`.
+The offset is constant in steady state, hence the DELTAS are unbiased; the
+only residual is the tail, and it is a formula rather than a tuned number:
+
+```
+    |eps_hat − eps|  ≤  5e-4  +  lag / batches_per_path
+```
+
+asserted over a lag sweep of {0, 1, 4, 16, 64, 256}. Subtracting `in_flight`
+would cancel the offset but couple ε̂ to a gauge whose release is driven by the
+contaminated pair; that circularity is deliberately not taken.
+
+**Why the fix ships default OFF, and why that is not this section's finding.**
+§16.24 measured the honest signal at runtime and it REGRESSED (dual-c1
+181 → 134): the SRTT/loss-scaled recovery cadences — hole-refresh clamp, the
+per-seq retransmit cooldown, the ADR-0046 congestion multiplier — were tuned
+against the poisoned values and re-heat under any honest ε̂. That refutation is
+about the SIGNAL, not about how it was obtained, so it survives this build
+intact. What does NOT survive is the cost objection: §16.24's arm carried a
+wire-visible serial rework and ×2.4 sender CPU, and this one carries neither.
+**The cadence re-derivation §16.24 named as its follow-up is now the only
+thing between the honest estimate and a default**, and it can finally be
+measured without the CPU term confounded into it.
+
+**A second defect, surfaced by the first being fixed.** `loss_rate()` is the
+EWMA of the PER-CALL ratio, not the count-weighted rate. At a rare-loss cell a
+dropped datagram folds its loss into the next ack's doubled delta, so the EWMA
+averages 0.5 on ~ε of the calls instead of ε on all of them — a ≈½ under-read
+(0.0028 against 0.0055 at c7; 0.0100 against 0.0195 at c8's slow leg). It is a
+property of the estimator, present for any honest input, and it was invisible
+while the input was a constant 0.5. Bounded by test, named as successor.
+
+**And a coupled one, named and not fixed.** `release_in_flight(d_expected −
+d_received)` releases the budget by the same contaminated `expected`. The
+in_flight gauge therefore does not merely mis-report — **it leaks OPEN at
+N ≥ 2** (~1 extra slot per delivered symbol at c7, ~5 at c8's slow leg),
+loosening `available() = cwnd − in_flight` exactly where the SF bench found
+Σcwnd 3.6–6.6× the wire's measured Σ-anchor. The gate deliberately leaves the
+release on the legacy pair in both arms, so a flip moves one quantity.
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 
