@@ -12994,7 +12994,7 @@ which carries the table above as an executable record — including the two
 cells that still pin, asserted as still pinning, so this refutation cannot rot
 into a footnote.
 
-### 16.59 The bootstrap floor, derived from its job: `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10, and the loopback floor-bind that had been hiding the law's own answer VANISHES (2026-08-18, `fix/cap-law-cluster`, STRICTLY LOCAL)
+### 16.60 The bootstrap floor, derived from its job: `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10, and the loopback floor-bind that had been hiding the law's own answer VANISHES (2026-08-18, `fix/cap-law-cluster`, STRICTLY LOCAL)
 
 ADR-0070 finding 5 recorded `floor = 64` as **PROVENANCE ABSENT**: one
 sentence of rationale in source (*"Floor so a transiently-tiny BDP estimate
@@ -13077,7 +13077,7 @@ the floor's stated job to a number, with every input cited, and it is offered
 as such. The wire question it raises is pre-registered in the goal-gate ledger
 rather than run.
 
-### 16.60 The two conceptual successors, enumerated as CANDIDATES and not adjudicated: at ρ = 1 the shipped composed law contains no δ at all, and its slack exceeds the largest allowance the δ dial can express (2026-08-18, `docs/successor-candidates`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default, no test; ADR-0071 is the full enumeration, this section is the paper's pointer)
+### 16.61 The two conceptual successors, enumerated as CANDIDATES and not adjudicated: at ρ = 1 the shipped composed law contains no δ at all, and its slack exceeds the largest allowance the δ dial can express (2026-08-18, `docs/successor-candidates`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default, no test; ADR-0071 is the full enumeration, this section is the paper's pointer)
 
 §16.57 refuted the composed law's MAGNITUDE while confirming its SHAPE, and
 §16.59 eliminated the stall's CLOCK as the explanation — the queue-free

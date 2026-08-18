@@ -4,7 +4,7 @@
 
 This document enumerates, derives and prices candidates. It picks no winner
 and ships nothing: no engine file, no gate, no default, no test, no paper
-claim beyond the pointer at §16.60. The adjudication is the user's, and a
+claim beyond the pointer at §16.61. The adjudication is the user's, and a
 "recommendation" section is deliberately absent — ADR-0068's `Proposed`
 precedent is the shape copied.
 
@@ -703,7 +703,7 @@ this section is what should be corrected first.
   formula and provenance table, with the 2026-08-18 term-1 amendment), §16.57
   (SHAPE confirmed / MAGNITUDE refuted, the 2.125 identity, the sc2 inversion),
   §16.59 (the queue-free clock REFUTED, the 1.7 %-of-90 % table; and the
-  derived floor = 10), §16.60 (this ADR's pointer).
+  derived floor = 10 — now §16.60), §16.61 (this ADR's pointer).
 - **Ledger** (`docs/goal-gate.md`): "The Cap Law On Trial" (`:29466`),
   "Composed-Cap Battery — RESULTS" (`:29966` — the `[3T]` decomposition, the
   headroom table, S-WALL, the `[WALL]` table, the defect in its own bar),
