@@ -354,10 +354,23 @@ fn on_ack(
         if le > 0 {
             path.estimator.record_batch(le, lr);
         }
-        if expected_count > 0 {
-            // Lost symbols also left the wire: release them from
-            // in_flight (sched.ack above only subtracts received),
-            // otherwise losses leak budget and the Copa gate jams.
+        // Lost symbols also left the wire: release them from in_flight (the
+        // delivery arm above only subtracts received), otherwise losses leak
+        // budget and the Copa gate jams.
+        //
+        // fix/accounting-ledger (`RWM_RELEASE_1TO1`, default OFF — MECHANICAL
+        // DEFECT SWEEP item 5, defects 2+3): `expected_count` is
+        // `PathBatchTracker`'s GLOBAL-`batch_seq` gap estimate — the SAME
+        // contaminated operand `RWM_LOSS_SENT_TRUTH` removed from the
+        // estimator, here driving the LEDGER. At N >= 2 it over-releases ~1
+        // slot per delivered symbol at c7 and ~5 on c8's slow leg, and
+        // `release_in_flight` saturates at zero, so the excess is spent: the
+        // gauge leaks OPEN (measured: `in_flight == 0` on > 90% of acks at
+        // which the path is loaded — `legacy_counter_delta_release_leaks_the_
+        // in_flight_gauge_open_at_n2`). Under the gate this term is DELETED
+        // and the lost-symbol release is `expire_in_flight`'s RFC 9002 sweep
+        // of the charge log, which is 1:1 with the charge by construction.
+        if !crate::scheduler::release_1to1_active() && expected_count > 0 {
             path.release_in_flight(expected_count.saturating_sub(received_count));
         }
 
@@ -735,11 +748,20 @@ fn on_window_ack(
                 if le > 0 {
                     path.estimator.record_batch(le, lr);
                 }
-                if d_expected > 0 {
-                    // Lost symbols also left the wire: release them
-                    // from in_flight (the delivery branch above only
-                    // subtracts received), otherwise losses leak
-                    // budget and the Copa gate jams.
+                // Lost symbols also left the wire: release them from in_flight
+                // (the delivery branch above only subtracts received),
+                // otherwise losses leak budget and the Copa gate jams.
+                //
+                // fix/accounting-ledger (`RWM_RELEASE_1TO1`, default OFF).
+                // `d_expected` is the DIFF OF A CONTAMINATED CUMULATIVE
+                // (`PathBatchTracker::total_expected`, summed from
+                // `gap x received` over a GLOBAL `batch_seq`), so differencing
+                // it cannot remove the cross-path inflation — the merged-ack
+                // arm leaks the budget gauge exactly as the legacy `Ack` does.
+                // Under the gate the term is deleted and `expire_in_flight`'s
+                // RFC 9002 sweep of the charge log is the whole lost-symbol
+                // release.
+                if !crate::scheduler::release_1to1_active() && d_expected > 0 {
                     path.release_in_flight(d_expected.saturating_sub(d_received));
                 }
                 // Delivery-clocked pool anchor (RWM_POOL_DELIV): the

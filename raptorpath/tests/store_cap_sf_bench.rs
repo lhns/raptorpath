@@ -4313,6 +4313,107 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
     }
 }
 
+/// THE Σ`cwnd` QUESTION, ASKED OF THE LEDGER — goal-gate "The Accounting
+/// Ledger" (MECHANICAL DEFECT SWEEP item 5).
+///
+/// "Cross-Path Loss Contamination" named the counter-delta over-release as a
+/// candidate owner of FINDING 4's Σ`cwnd` 3.6–6.6× the wire's measured
+/// Σ-anchor, on the argument that an over-release keeps `available() > 0`.
+/// The engine fix — `RWM_CHARGE_RECOVERY` + `RWM_RELEASE_1TO1` composed — IS
+/// this bench's `Acct::Traffic` level by construction (every wire symbol
+/// charged once on the path it flies, released once on the same path), so the
+/// question can be asked here without inventing an arm: **does the balanced
+/// ledger move Σ`cwnd`/Σ-anchor toward 1?**
+///
+/// **MEASURED ANSWER: NO — and at c8 the sign is the OPPOSITE of the
+/// candidate's.** Balancing the ledger moves Σ`cwnd`/Σ-anchor
+/// **4.59× → 4.33× (−5.6%) at c7** and **4.99× → 6.25× (+25.3%) at c8**, i.e.
+/// AWAY from 1 at the very cell the candidate was proposed for. The mechanism
+/// is visible in the same rows: charging the recovery channels and releasing
+/// 1:1 raises Σ`in_flight` (2 884 → 4 181 at c7, 3 050 → 4 237 at c8) — an
+/// HONEST gauge is a FULLER gauge — and Copa's own dynamics answer the tighter
+/// `available()` by growing `cwnd`, not by shrinking it. The over-release was
+/// suppressing the window at c8, not inflating it.
+///
+/// So the ownership of FINDING 4 stays where "The Queue Fix" put it (the bench
+/// HORIZON: 3.55×/6.72× → 0.67×/1.28× by correcting the horizon alone), and
+/// this branch claims nothing about it. Bounded rather than described, in both
+/// directions and by sign, so a successor re-scores the row instead of
+/// inheriting the prose.
+#[test]
+fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
+    for (cell, geom, shapes) in [
+        ("c7", vec![C2, C2], &ACK_C7[..]),
+        ("c8", vec![C2, C3], &ACK_C8[..]),
+    ] {
+        let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
+        let run = |acct| {
+            simulate_full(
+                &geom,
+                Arm::Unified,
+                Feed::Measured(shapes),
+                20.0,
+                0,
+                acct,
+                Store::Span,
+            )
+        };
+        let e = run(Acct::Engine);
+        let t = run(Acct::Traffic);
+        // MEASUREMENT DISCIPLINE 1: the axis must actually have run — the
+        // un-metered ledger over-releases and the balanced one does not.
+        assert!(
+            e.led.releases > e.led.charges && t.led.charges == t.led.wire(),
+            "{cell}: the accounting axis did not execute"
+        );
+        let (re, rt) = (e.cwnd_live_mean / sigma_wire, t.cwnd_live_mean / sigma_wire);
+        println!(
+            "[LEDGER-SIGMA] {cell}: sigma_wire {sigma_wire:.0}  ENGINE cwnd \
+             {:.0} ({re:.2}x) infl {:.0}  |  BALANCED cwnd {:.0} ({rt:.2}x) \
+             infl {:.0}  |  move {:+.1}%",
+            e.cwnd_live_mean,
+            e.infl_mean,
+            t.cwnd_live_mean,
+            t.infl_mean,
+            (rt / re - 1.0) * 100.0
+        );
+        assert!(
+            re > 0.0 && rt > 0.0,
+            "{cell}: the loop must run in both arms"
+        );
+        // THE ANSWER: the balanced ledger does NOT bring the ratio near 1 at
+        // either dual. It stays in the same multiple-of-the-anchor class the
+        // ENGINE arm is in.
+        assert!(
+            rt > 3.0,
+            "{cell}: the balanced ledger left Sigma cwnd at {rt:.2}x the wire's \
+             anchor — if this ever approaches 1, the release fix DOES own \
+             'The Coupling Model' FINDING 4 and that must be claimed, not \
+             assumed away"
+        );
+        // An HONEST gauge is a FULLER gauge, at both cells — the mechanism
+        // behind the sign, asserted rather than argued.
+        assert!(
+            t.infl_mean > e.infl_mean,
+            "{cell}: balancing the ledger must RAISE Sigma in_flight ({:.0} vs \
+             {:.0}) — that is what stops the leak",
+            t.infl_mean,
+            e.infl_mean
+        );
+        // And the sign, per cell, which is the finding.
+        let move_pct = (rt / re - 1.0) * 100.0;
+        let band = if cell == "c7" { (-20.0, 0.0) } else { (10.0, 45.0) };
+        assert!(
+            move_pct > band.0 && move_pct < band.1,
+            "{cell}: Sigma cwnd/Sigma anchor moved {move_pct:+.1}% \
+             ({re:.2}x -> {rt:.2}x), outside the measured band \
+             [{:+.0}%, {:+.0}%]",
+            band.0,
+            band.1
+        );
+    }
+}
+
 /// THE TRANSCRIPTION PIN for the wire's brake/queue columns, and THE
 /// REFUTATION, BOUNDED.
 ///

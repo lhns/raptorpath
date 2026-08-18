@@ -6903,6 +6903,28 @@ async fn run_window_sender(
                         warn!(nack_path, ?e, "failed to send NACK retransmission");
                     }
                     debug!(seq, nack_path, "SACK-gap retransmit");
+                    // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
+                    // OFF — MECHANICAL DEFECT SWEEP item 5, defect 1): BYPASS
+                    // CHANNEL 1 of 2. This symbol reaches the link with no
+                    // in-flight charge, no pacer debit and no `symbols_sent`
+                    // increment, where every other channel meters all three at
+                    // the handoff — see `send_arq_repair_batch`'s "Charge like
+                    // any correction". Charging cannot deadlock recovery: this
+                    // site reads neither `available()` nor `cwnd_full`; it is
+                    // budgeted by `cached_nack_budget`. The pacer debit may go
+                    // negative, exactly as the block-ARQ repair's does.
+                    if crate::scheduler::charge_recovery_active() {
+                        {
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(nack_path) {
+                                p.charge_in_flight(1);
+                                p.consume_pace_tokens(1);
+                            }
+                        }
+                        if let Some(ps) = stats.path(nack_path) {
+                            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
                     // feat/copa-sole-cc: a retransmit re-commits the seq to
                     // its new path and re-snapshots the rate sample, so the
                     // eventual ack is attributed to the path that actually
@@ -6965,6 +6987,21 @@ async fn run_window_sender(
                     };
                     if let Err(e) = transport.send_symbols(margin_path, batch) {
                         warn!(margin_path, ?e, "failed to send NACK repair margin");
+                    }
+                    // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
+                    // OFF): BYPASS CHANNEL 2 of 2 — same defect, same fix, same
+                    // three meters as the SACK-gap retransmit above.
+                    if crate::scheduler::charge_recovery_active() {
+                        {
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(margin_path) {
+                                p.charge_in_flight(1);
+                                p.consume_pace_tokens(1);
+                            }
+                        }
+                        if let Some(ps) = stats.path(margin_path) {
+                            ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
@@ -11737,5 +11774,646 @@ mod tests {
         // counter) must clamp, never underflow the derived loss count.
         let mut q = PathState::new(0, clock);
         assert_eq!(q.sender_truth_loss_delta(100, 400), (100, 100));
+    }
+
+    /// The RELEASE law's own invariants, the mirror of the pair above.
+    #[test]
+    fn sender_truth_release_delta_is_idempotent_and_never_underflows() {
+        use crate::scheduler::MockClock;
+        use crate::scheduler::PathState;
+        let clock = Arc::new(MockClock::new());
+        let mut p = PathState::new(0, clock.clone());
+        assert_eq!(p.sender_truth_release_delta(500, 0), 0, "sentinel is inert");
+        assert_eq!(p.sender_truth_release_delta(500, 480), 20);
+        assert_eq!(
+            p.sender_truth_release_delta(500, 480),
+            0,
+            "a duplicate ack releases nothing"
+        );
+        assert_eq!(
+            p.sender_truth_release_delta(300, 200),
+            0,
+            "a reordered/stale ack releases nothing"
+        );
+        assert_eq!(p.sender_truth_release_delta(700, 660), 20);
+        // Receiver ahead of the sampled sender counter (the tail direction):
+        // the honest lost count is ZERO, never a negative that would wrap into
+        // a huge release. This is the direction that decides whether the law
+        // can leak the gauge open, and it cannot.
+        let mut q = PathState::new(0, clock.clone());
+        assert_eq!(q.sender_truth_release_delta(100, 400), 0);
+        // The two gates' cursors are INDEPENDENT — flipping one must not
+        // consume the other's delta. Same path, both laws, same operands:
+        // each sees the full delta.
+        let mut r = PathState::new(0, clock);
+        assert_eq!(r.sender_truth_loss_delta(1000, 900), (1000, 900));
+        assert_eq!(
+            r.sender_truth_release_delta(1000, 900),
+            100,
+            "the release cursor must not have been advanced by the loss law"
+        );
+    }
+
+    // ── THE ACCOUNTING LEDGER, DETERMINISTICALLY (fix/accounting-ledger,
+    //    MECHANICAL DEFECT SWEEP item 5) ─────────────────────────────────
+    //
+    // The sibling of `xpath_loss_model`, and built the same way: ONE global
+    // `batch_seq`, the REAL `PathBatchTracker` on the receiver, and the REAL
+    // `PathState` in-flight ledger driven through the REAL `charge_in_flight`
+    // / `release_in_flight` / cursor laws on the sender. The two un-metered
+    // recovery channels are modelled as what they are — a wire handoff with
+    // no charge — so the CHARGE defect and the RELEASE defect can be moved
+    // one at a time (MEASUREMENT DISCIPLINE: a battery that flips both at
+    // once cannot attribute).
+
+    /// What one path's ledger read, in one run of the two-path model.
+    #[derive(Debug, Clone, Copy)]
+    struct LedgerRead {
+        /// Symbols this path actually handed to the wire (source + recovery).
+        wire: u64,
+        /// Symbols `charge_in_flight` was called for.
+        charges: u64,
+        /// Σ`n` the release law ASKED for.
+        releases_req: u64,
+        /// Of that, what `release_in_flight`'s saturating subtraction threw
+        /// away because `in_flight` was already zero — budget the path can
+        /// never get back.
+        releases_wasted: u64,
+        /// Symbols the receiver actually took delivery of on this path.
+        delivered: u64,
+        /// `(releases_req − charges) / delivered` — THE LEAK, in the units the
+        /// branch record states it in: extra budget slots released per
+        /// delivered symbol.
+        leak_per_delivered: f64,
+        /// Fraction of post-ack samples at which the gauge read `in_flight ==
+        /// 0` while the path genuinely had symbols outstanding. This is the
+        /// defect's BEHAVIOURAL face: `available() = cwnd − in_flight` is then
+        /// wide open on evidence the path does not have.
+        false_empty_frac: f64,
+        /// Mean gauge reading, and the mean TRUTH beside it.
+        infl_mean: f64,
+        outstanding_mean: f64,
+        /// The gauge after the last ack — zero iff the ledger balanced.
+        infl_final: u32,
+    }
+
+    /// Which lost-symbol release law the run drives.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Release {
+        /// SHIPPED: `expected − received` off the global-`batch_seq` gap
+        /// estimate, plus the 250 ms-floored expiry as a backstop.
+        Legacy,
+        /// THE REFUTED CANDIDATE: `d(symbols_sent) − d(cum_received)`.
+        SentTruth,
+        /// `RWM_RELEASE_1TO1`: no ack-arm term at all — the RFC 9002
+        /// time-threshold sweep of the charge log is the whole answer.
+        OneToOne,
+    }
+
+    /// One deterministic run of the two-path ledger model.
+    ///
+    /// `share`: 1 = single path (the N = 1 control), 2 = 50/50 (c7), 6 = 5:1
+    /// (c8's measured split). `lag` = how many of this path's own dispatches
+    /// fit in one RTT, so `lag × syms` IS the true outstanding and `rtt_us /
+    /// lag` is the dispatch interval — the model's clock, which
+    /// `expire_in_flight` reads.
+    ///
+    /// `charge_recovery` = `RWM_CHARGE_RECOVERY`; `recov_per_drop` = symbols
+    /// the recovery plane puts on the wire per drop (the SACK-gap retransmit
+    /// plus the NACK repair margin), which arrive and are counted by the
+    /// receiver either way.
+    #[allow(clippy::too_many_arguments)]
+    fn xpath_ledger_model(
+        batches: u32,
+        syms: u32,
+        share: u32,
+        eps: [f64; 2],
+        lag: usize,
+        rtt_us: u64,
+        release: Release,
+        charge_recovery: bool,
+        recov_per_drop: u32,
+    ) -> [LedgerRead; 2] {
+        use crate::scheduler::MockClock;
+        use crate::scheduler::PathState;
+
+        let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((rng >> 11) as f64) / ((1u64 << 53) as f64)
+        };
+
+        // ONE CLOCK PER PATH. The two paths' ledgers are independent in this
+        // model, and a per-path clock lets each one's in-flight window be
+        // stated physically: `lag` dispatches IS one RTT, so the true
+        // outstanding is `lag x syms` and the dispatch interval is
+        // `RTT / lag`. Time is what `expire_in_flight` reads, so it cannot be
+        // left implicit.
+        let rtt = Duration::from_micros(rtt_us);
+        let dt = Duration::from_micros(rtt_us / lag.max(1) as u64);
+        let clocks = [Arc::new(MockClock::new()), Arc::new(MockClock::new())];
+        let mut tracker = [PathBatchTracker::new(), PathBatchTracker::new()];
+        let mut path_state = [
+            PathState::new(0, clocks[0].clone()),
+            PathState::new(1, clocks[1].clone()),
+        ];
+        for p in 0..2usize {
+            path_state[p].force_release_1to1(release == Release::OneToOne);
+            // The path's own smoothed RTT — the operand of the RFC 9002
+            // horizon. Fed through the REAL sampler, not written.
+            for _ in 0..64 {
+                path_state[p].record_rtt_sample(rtt);
+            }
+        }
+
+        // ── DISPATCH PHASE: build each path's wire history ────────────────
+        // Per dispatch: (batch_seq, symbols, arrived, symbols CHARGED). The
+        // recovery channel's entries carry `charged = 0` unless the gate is
+        // on — that is the whole of defect 1, expressed as data.
+        let mut disp: [Vec<(u64, u32, bool, u32)>; 2] = [Vec::new(), Vec::new()];
+        // Parallel per-path cumulative `PathStats::symbols_sent`. Under the
+        // charge gate the recovery channel increments it too; with the gate
+        // off it does not — the counter is one of the three meters the two
+        // channels bypass.
+        let mut sent_hist: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
+        let mut sent_cum = [0u64; 2];
+        let mut seq_ctr: u64 = 0;
+        let mut dropped = [0u64; 2];
+
+        for i in 0..batches as u64 {
+            let p = if share == 1 {
+                0
+            } else if i % share as u64 == 0 {
+                1
+            } else {
+                0
+            };
+            // The source batch: charged and counted at the handoff, always.
+            let seq = seq_ctr;
+            seq_ctr += 1;
+            sent_cum[p] += syms as u64;
+            let arrived = next() >= eps[p];
+            disp[p].push((seq, syms, arrived, syms));
+            sent_hist[p].push(sent_cum[p]);
+            if arrived {
+                continue;
+            }
+            dropped[p] += 1;
+            // The recovery plane answers the drop on the SAME path. It takes
+            // its own `batch_seq` (`batch_counter.fetch_add`) and it reaches
+            // the link — it is only the SENDER'S BOOKS it is missing from.
+            for _ in 0..recov_per_drop {
+                let rseq = seq_ctr;
+                seq_ctr += 1;
+                if charge_recovery {
+                    sent_cum[p] += 1;
+                }
+                disp[p].push((rseq, 1, true, u32::from(charge_recovery)));
+                sent_hist[p].push(sent_cum[p]);
+            }
+        }
+
+        // ── ACK PHASE ─────────────────────────────────────────────────────
+        let mut charge_cursor = [0usize; 2];
+        let mut wire = [0u64; 2];
+        let mut charges = [0u64; 2];
+        let mut releases_req = [0u64; 2];
+        let mut releases_wasted = [0u64; 2];
+        let mut delivered = [0u64; 2];
+        let mut false_empty = [0u64; 2];
+        let mut samples = [0u64; 2];
+        let mut infl_sum = [0f64; 2];
+        let mut outstanding_sum = [0f64; 2];
+
+        for p in 0..2usize {
+            for d in 0..disp[p].len() {
+                // Everything up to `d + lag` has left the wire by the time
+                // this ack is processed.
+                let upto = (d + lag).min(disp[p].len() - 1);
+                while charge_cursor[p] <= upto {
+                    // A dispatch takes `dt` of wall time, and the charge is
+                    // stamped with the clock `expire_in_flight` reads.
+                    clocks[p].advance(dt);
+                    let (_, n, _, charged) = disp[p][charge_cursor[p]];
+                    wire[p] += n as u64;
+                    if charged > 0 {
+                        charges[p] += charged as u64;
+                        path_state[p].charge_in_flight(charged);
+                    }
+                    charge_cursor[p] += 1;
+                }
+                // The engine sweeps the charge log on the sender loop's own
+                // cadence (`net/mod.rs`'s backpressure poll, the report task,
+                // `block_sender`). Driven at every ack here, in EVERY arm —
+                // it is an always-on mechanism, and leaving it out of the
+                // legacy arm would flatter the fix.
+                let before_exp = path_state[p].in_flight;
+                path_state[p].expire_in_flight();
+                releases_req[p] += (before_exp - path_state[p].in_flight) as u64;
+                let (seq, n, arrived, _) = disp[p][d];
+                if !arrived {
+                    continue;
+                }
+                // Receiver: the REAL tracker on the REAL global `batch_seq`.
+                let (expected, received) = tracker[p].record_batch(seq, n);
+                delivered[p] += received as u64;
+                // Sender, delivery arm (identical in both arms).
+                let mut rel = |ps: &mut PathState, want: u32| {
+                    let before = ps.in_flight;
+                    ps.release_in_flight(want);
+                    releases_req[p] += want as u64;
+                    releases_wasted[p] += (want as u64).saturating_sub((before - ps.in_flight) as u64);
+                };
+                rel(&mut path_state[p], received);
+                // Sender, LOST arm — the defect, the refuted candidate, and
+                // the fix.
+                let lost = match release {
+                    Release::Legacy => expected.saturating_sub(received),
+                    Release::SentTruth => {
+                        let sent = sent_hist[p][upto];
+                        path_state[p]
+                            .sender_truth_release_delta(sent, tracker[p].total_received)
+                    }
+                    // No ack-arm term: `expire_in_flight` above IS the release.
+                    Release::OneToOne => 0,
+                };
+                rel(&mut path_state[p], lost);
+
+                // The gauge, against the truth it is supposed to be.
+                let truth: u64 = disp[p][(d + 1)..=upto].iter().map(|(_, n, _, _)| *n as u64).sum();
+                samples[p] += 1;
+                infl_sum[p] += path_state[p].in_flight as f64;
+                outstanding_sum[p] += truth as f64;
+                if path_state[p].in_flight == 0 && truth > 0 {
+                    false_empty[p] += 1;
+                }
+            }
+        }
+
+        // QUIESCE: the flow stops, and the sender loop keeps sweeping. This is
+        // where "does the ledger close?" is actually asked — a gauge that only
+        // reads zero because it saturated is not a closed ledger, which is why
+        // `releases_wasted` is reported beside `infl_final`.
+        for p in 0..2usize {
+            clocks[p].advance(rtt * 8);
+            let before_exp = path_state[p].in_flight;
+            path_state[p].expire_in_flight();
+            releases_req[p] += (before_exp - path_state[p].in_flight) as u64;
+        }
+
+        let _ = dropped;
+        [0usize, 1].map(|p| LedgerRead {
+            wire: wire[p],
+            charges: charges[p],
+            releases_req: releases_req[p],
+            releases_wasted: releases_wasted[p],
+            delivered: delivered[p],
+            leak_per_delivered: (releases_req[p] as f64 - charges[p] as f64)
+                / delivered[p].max(1) as f64,
+            false_empty_frac: false_empty[p] as f64 / samples[p].max(1) as f64,
+            infl_mean: infl_sum[p] / samples[p].max(1) as f64,
+            outstanding_mean: outstanding_sum[p] / samples[p].max(1) as f64,
+            infl_final: path_state[p].in_flight,
+        })
+    }
+
+    /// DIRECTION 1 — the OLD release MUST leak, and by the measured class.
+    ///
+    /// At 50/50 striping every path's batch-seq gap is exactly 2, so
+    /// `expected = 2 × received` and the lost arm releases `received` on top
+    /// of the delivery arm's `received`: **≈1 extra budget slot per delivered
+    /// symbol**, which is what goal-gate "Cross-Path Loss Contamination"
+    /// recorded at c7 (`ce/cr` 2.05). At the 5:1 split the slow leg's gap is 6
+    /// and the same arithmetic gives **≈5**, its `ce/cr` 5.59.
+    ///
+    /// And the leak's BEHAVIOURAL face, asserted rather than argued: the gauge
+    /// reads `in_flight == 0` on nearly every ack at which the path genuinely
+    /// has a full in-flight window outstanding, so `available() = cwnd −
+    /// in_flight` is held wide open on evidence the path does not have. Plus
+    /// the N = 1 control — a single path has no other path in its sequence, so
+    /// the SAME legacy code does not leak there and no fix may regress it.
+    #[test]
+    fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
+        let leg = |share, eps| {
+            xpath_ledger_model(60_000, 8, share, eps, 16, 40_000, Release::Legacy, false, 0)
+        };
+        // c7: symmetric 50/50 — gap 2 on both legs.
+        let c7 = leg(2, [0.0055, 0.0055]);
+        for (p, x) in c7.iter().enumerate() {
+            assert!(
+                (0.85..1.15).contains(&x.leak_per_delivered),
+                "c7 p{p}: the legacy release must over-release ≈1 slot per \
+                 delivered symbol (the wire's ce/cr 2.05), read {:.3}",
+                x.leak_per_delivered
+            );
+        }
+        // c8: 5:1 split — p1 is the SLOW leg, gap 6.
+        let c8 = leg(6, [0.0055, 0.0196]);
+        assert!(
+            (4.5..5.5).contains(&c8[1].leak_per_delivered),
+            "c8 slow leg: the legacy release must over-release ≈5 slots per \
+             delivered symbol (the wire's ce/cr 5.59), read {:.3}",
+            c8[1].leak_per_delivered
+        );
+        // The excess is SPENT, not stored, and the gauge is pinned open.
+        for (cell, r) in [("c7", &c7[0]), ("c8slow", &c8[1])] {
+            assert!(
+                r.releases_wasted > 0,
+                "{cell}: no release ever hit a zero in_flight — the saturation \
+                 the leak runs into was never exercised"
+            );
+            assert!(
+                r.outstanding_mean > 100.0,
+                "{cell}: the model must hold a real in-flight window ({:.1})",
+                r.outstanding_mean
+            );
+            assert!(
+                r.false_empty_frac > 0.9,
+                "{cell}: the gauge must read EMPTY while the path is loaded — \
+                 that is what holds available() open; read {:.3} (in_flight \
+                 mean {:.1} against a true outstanding mean of {:.1})",
+                r.false_empty_frac,
+                r.infl_mean,
+                r.outstanding_mean
+            );
+        }
+        // N = 1 CONTROL: the legacy code is already 1:1 at a single path, so
+        // its gauge is honest there and this defect is multipath-only.
+        let n1 = leg(1, [0.0055, 0.0]);
+        assert!(
+            n1[0].leak_per_delivered.abs() <= 0.02,
+            "N=1: the legacy release must already balance, read {:.4}",
+            n1[0].leak_per_delivered
+        );
+        assert!(
+            n1[0].false_empty_frac < 0.05,
+            "N=1: the gauge must not sit on the floor, read {:.3}",
+            n1[0].false_empty_frac
+        );
+    }
+
+    /// THE READOUT the ledger section's tables are transcribed from. Not a
+    /// gate — every number it prints is bounded by one of the four tests
+    /// around it. `cargo test -p raptorpath --lib -- --ignored ledger_readout
+    /// --nocapture`.
+    #[test]
+    #[ignore = "readout, not a gate"]
+    fn ledger_readout() {
+        println!(
+            "{:<6} {:<3} {:<10} {:>10} {:>10} {:>9} {:>9} {:>8} {:>8}",
+            "cell", "p", "release", "charges", "releases", "leak/dl", "infl", "truth", "empty%"
+        );
+        for (cell, share, eps) in [
+            ("c7", 2u32, [0.0055, 0.0055]),
+            ("c8", 6, [0.0055, 0.0196]),
+            ("n1", 1, [0.0055, 0.0]),
+        ] {
+            for (name, rel) in [
+                ("legacy", Release::Legacy),
+                ("senttruth", Release::SentTruth),
+                ("1to1", Release::OneToOne),
+            ] {
+                let r = xpath_ledger_model(60_000, 8, share, eps, 16, 40_000, rel, false, 0);
+                for p in 0..(if share == 1 { 1 } else { 2 }) {
+                    let x = r[p];
+                    println!(
+                        "{cell:<6} {p:<3} {name:<10} {:>10} {:>10} {:>9.3} {:>9.1} {:>8.1} {:>7.1}%",
+                        x.charges,
+                        x.releases_req,
+                        x.leak_per_delivered,
+                        x.infl_mean,
+                        x.outstanding_mean,
+                        x.false_empty_frac * 100.0
+                    );
+                }
+            }
+        }
+        for (name, rel, chg) in [
+            ("legacy/off", Release::Legacy, false),
+            ("legacy/chg", Release::Legacy, true),
+            ("1to1/off", Release::OneToOne, false),
+            ("1to1/chg", Release::OneToOne, true),
+        ] {
+            let r =
+                xpath_ledger_model(60_000, 8, 2, [0.0055, 0.0055], 16, 40_000, rel, chg, 5);
+            println!(
+                "c7-recov p0 {name:<12} wire {:>7} charges {:>7} releases {:>7} wasted {:>6} infl {:>6.1}",
+                r[0].wire, r[0].charges, r[0].releases_req, r[0].releases_wasted, r[0].infl_mean
+            );
+        }
+    }
+
+    /// THE REFUTED CANDIDATE, REPRODUCED — goal-gate "The Accounting Ledger".
+    ///
+    /// The `fix/accounting-ledger` dispatch proposed sourcing the lost-symbol
+    /// release from the same clean pair `RWM_LOSS_SENT_TRUTH` gave the loss
+    /// estimator. It does not work, and the refutation is ARITHMETIC: with
+    /// every send charged, releasing `d_received + (d_sent − d_received)`
+    /// telescopes to `in_flight == outstanding_at_cursor_init`, a constant —
+    /// zero, for cursors that start at zero. `d_sent − d_received` is
+    /// `loss + Δ(outstanding)`, so releasing on it releases the in-flight
+    /// window itself.
+    ///
+    /// This test is the negative datum's reproduction path and it asserts the
+    /// refutation ABSOLUTELY: the candidate reproduces the legacy defect's own
+    /// signature (gauge pinned on the floor while the path is loaded), at both
+    /// multipath geometries AND at the N = 1 control — where the legacy code
+    /// is honest, so the candidate would REGRESS a cell that has no defect.
+    /// Item 3's trick works for a RATIO and does not transfer to a LEDGER.
+    #[test]
+    fn sender_truth_release_pins_the_gauge_on_the_floor() {
+        for (cell, share, eps) in [
+            ("c7", 2u32, [0.0055, 0.0055]),
+            ("c8", 6, [0.0055, 0.0196]),
+            ("n1", 1, [0.0055, 0.0]),
+        ] {
+            let r = xpath_ledger_model(
+                60_000, 8, share, eps, 16, 40_000, Release::SentTruth, false, 0,
+            );
+            let legs: &[usize] = if share == 1 { &[0] } else { &[0, 1] };
+            for &p in legs {
+                let x = r[p];
+                assert!(x.delivered > 10_000, "{cell} p{p}: the model must run");
+                assert!(
+                    x.outstanding_mean > 100.0,
+                    "{cell} p{p}: the model must hold a real in-flight window"
+                );
+                assert!(
+                    x.infl_mean < 0.05 * x.outstanding_mean,
+                    "{cell} p{p}: the sender-truth release must PIN the gauge on \
+                     the floor — that is the refutation; read {:.2} against a \
+                     true outstanding mean of {:.1}",
+                    x.infl_mean,
+                    x.outstanding_mean
+                );
+                assert!(
+                    x.false_empty_frac > 0.9,
+                    "{cell} p{p}: the candidate must reproduce the legacy \
+                     defect's own signature, read {:.3}",
+                    x.false_empty_frac
+                );
+            }
+        }
+    }
+
+    /// DIRECTION 2 — under `RWM_RELEASE_1TO1` the gauge reads the IN-FLIGHT
+    /// WINDOW, and the ledger closes at quiesce.
+    ///
+    /// The contaminated ack-arm term is deleted and the whole lost-symbol
+    /// release is `expire_in_flight`'s sweep of the charge log at RFC 9002
+    /// §6.1.2's kTimeThreshold, `9/8 × SRTT`. Because that sweep pops the very
+    /// entries `charge_in_flight` pushed, the release is 1:1 with the charge by
+    /// construction however the paths are striped — and because the horizon is
+    /// the RTT scale rather than the legacy `max(4×SRTT, 250 ms)`, the gauge
+    /// settles at the in-flight window instead of a quarter-second of send
+    /// rate.
+    ///
+    /// THE BOUND IS THE LAW'S OWN SHAPE, not a tuned number. The equilibrium
+    /// occupancy is `horizon × rate`, the truth is `RTT × rate`, so the gauge
+    /// must read `9/8 ×` the truth — asserted as `[1.0, 1.3]×`, one-sided in
+    /// the CONSERVATIVE direction (it may over-read the wire's occupancy, which
+    /// narrows `available()`; it may never under-read it, which is the leak).
+    /// Asserted at both multipath geometries and at the N = 1 control.
+    #[test]
+    fn release_1to1_makes_the_gauge_read_the_in_flight_window() {
+        for (cell, share, eps) in [
+            ("c7", 2u32, [0.0055, 0.0055]),
+            ("c8", 6, [0.0055, 0.0196]),
+            ("n1", 1, [0.0055, 0.0]),
+        ] {
+            let r = xpath_ledger_model(
+                60_000, 8, share, eps, 16, 40_000, Release::OneToOne, false, 0,
+            );
+            let legs: &[usize] = if share == 1 { &[0] } else { &[0, 1] };
+            for &p in legs {
+                let x = r[p];
+                assert!(x.delivered > 10_000, "{cell} p{p}: the model must run");
+                // 1:1 — an EQUALITY, and it is what the other two arms fail.
+                assert_eq!(
+                    x.releases_req, x.charges,
+                    "{cell} p{p}: every slot charged must be released exactly \
+                     once (charges {} releases {})",
+                    x.charges, x.releases_req
+                );
+                assert_eq!(
+                    x.releases_wasted, 0,
+                    "{cell} p{p}: a 1:1 ledger can never waste a release"
+                );
+                assert_eq!(
+                    x.infl_final, 0,
+                    "{cell} p{p}: in_flight must return to ZERO at quiesce"
+                );
+                // The gauge reads the window, and reads it high, never low.
+                let ratio = x.infl_mean / x.outstanding_mean;
+                assert!(
+                    (1.0..1.3).contains(&ratio),
+                    "{cell} p{p}: the gauge must read 9/8 × the in-flight window \
+                     — read {:.1} against a true outstanding mean of {:.1} \
+                     ({ratio:.3}×)",
+                    x.infl_mean,
+                    x.outstanding_mean
+                );
+                assert!(
+                    x.false_empty_frac < 0.01,
+                    "{cell} p{p}: the gauge must not sit on the floor, read {:.3}",
+                    x.false_empty_frac
+                );
+            }
+        }
+    }
+
+    /// DEFECT 1, BOTH DIRECTIONS — the two recovery channels reach the wire
+    /// un-metered, and `RWM_CHARGE_RECOVERY` is exactly the difference.
+    ///
+    /// Asserted as separate facts so a flip of either gate alone is bounded
+    /// rather than guessed:
+    ///
+    ///   * charge OFF: `charges < wire`, and the deficit IS the recovery
+    ///     channel — an equality by construction of the model;
+    ///   * charge ON: `charges == wire`, so the gauge counts what flew;
+    ///   * release 1:1 + charge OFF: the ledger is still 1:1 against what was
+    ///     CHARGED, and under-counts the WIRE by exactly the un-metered
+    ///     recovery — bounded, and in the conservative direction, where the
+    ///     legacy release's error is an over-release unbounded in the path
+    ///     count;
+    ///   * both ON: `charges == wire == releases`, and `in_flight` returns to
+    ///     zero at quiesce. That is the SF bench's `Acct::Traffic`
+    ///     configuration — the counterfactual engine that obeys paper §12.
+    #[test]
+    fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
+        // 5 recovery symbols per drop: the SACK-gap retransmit plus a NACK
+        // repair margin of 4, which is the margin the CONTAMINATED loss
+        // estimate buys (`ceil(retransmitted × ε̂)` at ε̂ ≈ 0.5 — the record
+        // measured 52 repair symbols per 100 retransmitted at c7).
+        let recov = 5u32;
+        let run = |release: Release, charge: bool| {
+            xpath_ledger_model(
+                60_000, 8, 2, [0.0055, 0.0055], 16, 40_000, release, charge, recov,
+            )
+        };
+        let off = run(Release::Legacy, false);
+        let charged = run(Release::Legacy, true);
+        let rel_only = run(Release::OneToOne, false);
+        let both = run(Release::OneToOne, true);
+
+        for p in 0..2usize {
+            // MEASUREMENT DISCIPLINE 1: the channel must have fired.
+            assert!(
+                off[p].wire > off[p].charges,
+                "p{p}: the recovery channel never reached the wire"
+            );
+            let recov_syms = off[p].wire - off[p].charges;
+            assert!(
+                recov_syms > 500,
+                "p{p}: too little recovery traffic to bound ({recov_syms})"
+            );
+            // DIRECTION 2: with the gate on, every wire symbol is charged.
+            assert_eq!(
+                charged[p].charges, charged[p].wire,
+                "p{p}: under RWM_CHARGE_RECOVERY the charge must equal the wire \
+                 (charges {} wire {})",
+                charged[p].charges, charged[p].wire
+            );
+            // Release alone: the ack arm's contaminated term is gone, but the
+            // DELIVERY arm still releases the arrival of every recovery symbol
+            // the sender never charged for — so the residual imbalance is
+            // BOUNDED BY THE UN-METERED RECOVERY and by nothing else. That
+            // residual is defect 1's, not the release law's, and it is why the
+            // two gates are stated as a composition rather than a choice.
+            assert!(
+                rel_only[p].releases_req >= rel_only[p].charges
+                    && rel_only[p].releases_req - rel_only[p].charges <= recov_syms,
+                "p{p}: with the charge gate off the residual must be bounded by \
+                 the un-metered recovery ({recov_syms}) — charges {} releases {}",
+                rel_only[p].charges,
+                rel_only[p].releases_req
+            );
+            assert!(
+                rel_only[p].wire - rel_only[p].releases_req <= recov_syms,
+                "p{p}: release-only must under-count the wire by at most the \
+                 un-metered recovery"
+            );
+            // BOTH: charges == wire == releases, and the ledger closes.
+            assert_eq!(both[p].charges, both[p].wire);
+            assert_eq!(
+                both[p].releases_req, both[p].wire,
+                "p{p}: with both gates the ledger must balance against the WIRE"
+            );
+            assert_eq!(both[p].releases_wasted, 0);
+            assert_eq!(
+                both[p].infl_final, 0,
+                "p{p}: in_flight must return to ZERO at quiesce"
+            );
+            // And the legacy arm, for contrast, leaks by MORE than the c7
+            // source-only ≈1 once the un-charged recovery is added.
+            assert!(
+                off[p].leak_per_delivered > 1.0,
+                "p{p}: the un-metered recovery must widen the legacy leak past \
+                 the source-only ≈1, read {:.3}",
+                off[p].leak_per_delivered
+            );
+        }
     }
 }
