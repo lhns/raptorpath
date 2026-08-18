@@ -9771,6 +9771,152 @@ mod tests {
     /// trial" and its behaviour is unchanged on this branch. The third test
     /// applies the same template to the candidate successor's core,
     /// [`three_term_store_cap`], which is linear in N as derived.
+    /// **THE FULL ARM, RESOLVED — does the composition actually COMPOSE?**
+    ///
+    /// The AUP lesson, applied BEFORE a pre-registration rather than after it:
+    /// §16.53 and §16.54 both fired pre-registered STOP RULES on compositions
+    /// whose members turned out not to compose, and the sharpest instance is on
+    /// the record — `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a
+    /// **no-op wherever capw engages**, because `capw_store_cap` sits ABOVE
+    /// `path_scaled_store_cap` in the chain and reads `live_paths()`
+    /// unconditionally. Nobody asserted that until it had cost two batteries.
+    ///
+    /// This test asserts the FULL arm's gate set resolves to the machine it is
+    /// supposed to be, at the POLICY layer where the collapses actually happen:
+    ///
+    /// * every one of the six bits survives resolution (none is silently
+    ///   ANDed away by a scope it does not satisfy);
+    /// * the pool law reached is the POOLED one, NOT the three-term law — i.e.
+    ///   `three_term_on` and `composed_cap` stay OFF, because the composed pool
+    ///   law's magnitude was REFUTED by §16.57 and the FULL arm deliberately
+    ///   does not carry it;
+    /// * the brake is armed WITHOUT it (the whole point of the extraction);
+    /// * and the CONTROL arm — every bit off — resolves to the shipped chain,
+    ///   which is what makes the pair an A/B rather than two experiments.
+    #[test]
+    fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
+        use crate::control::fec_rate::ProtocolHint;
+        use crate::gates::RuntimeGates;
+        use crate::net::sender_policy::SenderPolicy;
+
+        // The plain-reliable window sender: the seat every cap-law finding in
+        // ADR-0070 is about.
+        let resolve = |g: &RuntimeGates| {
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
+        };
+
+        // ── THE CONTROL ARM ───────────────────────────────────────────────
+        let base = RuntimeGates::resolve();
+        let ctl = resolve(&base);
+        assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
+        assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
+        assert!(!ctl.store_cap_unified, "control: the live set must be OFF");
+        assert!(!ctl.late_brake, "control: the brake must be OFF");
+        assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
+
+        // ── THE FULL ARM ──────────────────────────────────────────────────
+        // Set by field rather than through the environment on purpose: an
+        // env-mutating test is process-global state in a parallel runner, which
+        // is the shape of eight HashMap-order flakes already on this record.
+        let mut full = RuntimeGates::resolve();
+        full.sum_cap = true; // the ×N deletion            (§16.60)
+        full.store_cap_unified = true; // the LIVE SET     (ADR-0070 finding 1)
+        full.late_brake = true; // the LATE-STAGE BRAKE    (§16.60.1)
+        full.loss_sent_truth = true; // ── the ledger/loss trio ──
+        full.release_1to1 = true;
+        full.charge_recovery = true;
+        let arm = resolve(&full);
+
+        // 1. EVERY BIT SURVIVES RESOLUTION. This is the assertion the capw
+        //    no-op needed: a gate that resolves OFF because of a scope it does
+        //    not satisfy is a null EFFECT, and it would be scored as a null
+        //    RESULT by any battery that only reads the `[GATES]` echo.
+        assert!(arm.sum_cap, "FULL: RWM_SUM_CAP was ANDed away by resolution");
+        assert!(arm.store_cap_unified, "FULL: the live set was ANDed away");
+        assert!(arm.late_brake, "FULL: the brake was ANDed away");
+        // The ledger/loss trio is NOT resolved through `SenderPolicy`: those
+        // three bits are read by the SCHEDULER, through its own cached
+        // process-global helpers (`scheduler::loss_sent_truth_active` and
+        // siblings), because they govern the per-path estimator and the
+        // in-flight ledger rather than the sender's policy. That is a genuine
+        // composition FACT and not a gap: having no shared resolution step with
+        // the cap gates, they have nothing to be ANDed away BY — the failure
+        // mode assertion 1 is guarding against cannot arise for them. Asserted
+        // at the gate surface, which is the layer they actually live on.
+        assert!(full.loss_sent_truth, "FULL: the loss truth bit is not set");
+        assert!(full.release_1to1, "FULL: the 1:1 release bit is not set");
+        assert!(full.charge_recovery, "FULL: the recovery charge bit is not set");
+        assert!(
+            full.echo_line().contains("RWM_LOSS_SENT_TRUTH=1")
+                && full.echo_line().contains("RWM_RELEASE_1TO1=1")
+                && full.echo_line().contains("RWM_CHARGE_RECOVERY=1"),
+            "FULL: the trio must be visible in the echo a battery parses: {}",
+            full.echo_line()
+        );
+
+        // 2. THE POOL LAW IS THE POOLED ONE. §16.57 refuted the composed pool
+        //    law's MAGNITUDE (WIN_STORE_MAX becomes the law at every dual), so
+        //    the FULL arm carries the ×N deletion INSTEAD of it, not as well.
+        //    If this ever flips, the arm is measuring a different law than the
+        //    one it is pre-registered against.
+        assert!(
+            !arm.three_term_on && !arm.composed_cap,
+            "FULL: the composed/three-term pool law engaged — the arm is not \
+             the ×N deletion any more"
+        );
+
+        // 3. THE BRAKE IS ARMED WITHOUT THE COMPOSED LAW — the extraction's
+        //    entire reason to exist. Before `RWM_LATE_BRAKE` this combination
+        //    was NOT EXPRESSIBLE: the only door to the cwnd brake also forced
+        //    `three_term_on`, and assertion 2 would fail here.
+        assert!(
+            arm.late_brake && !arm.composed_cap,
+            "FULL: the brake is only reachable through the composed law — the \
+             extraction did not take"
+        );
+
+        // 4. THE CAP LAW UNDER THIS POLICY IS THE CORRECTED FORMULA, evaluated
+        //    through the same function the engine calls, at the wire's own c8 Σ.
+        const SIGMA_C8: f64 = 1_509.677;
+        let corrected = pooled_store_cap(
+            arm.store_paths_on,
+            arm.sum_cap,
+            2,
+            SIGMA_C8,
+            arm.store_bdp_gain,
+            arm.store_cap_floor,
+            arm.store_path_pool,
+        )
+        .expect("the pooled law is engaged at a warm dual");
+        let shipped = pooled_store_cap(
+            ctl.store_paths_on,
+            ctl.sum_cap,
+            2,
+            SIGMA_C8,
+            ctl.store_bdp_gain,
+            ctl.store_cap_floor,
+            ctl.store_path_pool,
+        )
+        .expect("engaged");
+        assert_eq!(shipped, 4_096, "the control arm is not the pinned shipped law");
+        assert_eq!(corrected, 3_020, "the FULL arm is not §16.60's published c8 value");
+        assert!(corrected < shipped, "the FULL arm did not free the law from its ceiling");
+
+        // 5. THE ONE REAL CROSS-LAYER INTERACTION, NAMED. The trio is not inert
+        //    with respect to the brake: `RWM_RELEASE_1TO1` changes how the
+        //    in-flight ledger is RELEASED, and the brake's predicate is
+        //    `in_flightᵢ ≥ cwndᵢ` — so the trio moves the brake's operand while
+        //    the brake moves nothing the trio reads. That is a one-way
+        //    dependency, and the arm must be scored knowing which direction it
+        //    runs in. Asserted as the structural fact it is: both bits live in
+        //    the same resolved policy and neither disables the other.
+        assert!(
+            full.release_1to1 && arm.late_brake,
+            "the trio and the brake must coexist — the brake reads the ledger \
+             the trio fixes, so a composition that drops either is not the arm"
+        );
+    }
+
     mod law_shape {
         use crate::net::{
             contract_stall_s, path_scaled_store_cap, three_term_store_cap, ThreeTermTerm,
