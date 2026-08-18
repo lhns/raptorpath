@@ -2501,8 +2501,69 @@ pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64
 /// cell. Behaviour is unchanged here — the shape is PINNED by
 /// `net::tests::law_shape` (`path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`)
 /// so any change to it is a reviewed decision.
+///
+/// **The correction is available behind `RWM_SUM_CAP`** (paper §16.62): this
+/// function is now the `sum_cap = false` face of [`pooled_store_cap`], which
+/// carries both forms in ONE expression so the two cannot drift.
 pub fn path_scaled_store_cap(
     on: bool,
+    n_live: usize,
+    pipe_sum: f64,
+    gain: f64,
+    floor: usize,
+    pool: usize,
+) -> Option<usize> {
+    pooled_store_cap(on, false, n_live, pipe_sum, gain, floor, pool)
+}
+
+/// **THE POOLED OUTSTANDING CAP, BOTH FORMS, ONE EXPRESSION** — paper §16.60,
+/// gate `RWM_SUM_CAP` (default OFF), ADR-0070 finding 2.
+///
+/// ```text
+///   cap = clamp( gain · m · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+///
+///     m = N   when sum_cap = false   — the SHIPPED law (`RWM_SUM_CAP=0`)
+///     m = 1   when sum_cap = true    — the CORRECTED law (`RWM_SUM_CAP=1`)
+/// ```
+///
+/// **What the correction is, and what it is not.** The birth commit's own
+/// diagnosis names the quantity the pool must fund: *"Σ per-path (BDP + one
+/// recovery round of runway)"*, i.e. `Σᵢ(gain·anchorᵢ) = gain·Σ`. That is
+/// **already linear in the path count, because the Σ is**. The shipped
+/// expression multiplies the already-summed base by the count a SECOND time,
+/// and no line of the birth commit, the doc comment, the decl site or the
+/// ledger explains it — ADR-0070 finding 2 records the multiplier's provenance
+/// as ABSENT and finds it contradicted by name in three places in this
+/// repository. `sum_cap = true` deletes that second multiplication and
+/// **nothing else**: gain, floor, ceiling, Σ-set and estimator are untouched,
+/// and no constant is introduced.
+///
+/// **Why one function and not two.** The whole class of defect this repairs is
+/// a formula nobody read; a second implementation of a law under review is how
+/// a paper and its code diverge inside one commit (§16.57 measured exactly
+/// that). The multiplier is therefore a VALUE in one expression, both arms
+/// always take the same code path, and the agreement test
+/// (`tests/formula_agreement.rs`) drives this function against the paper's
+/// transcription rather than against a sibling.
+///
+/// **Bit-identical at N = 1 BY CONSTRUCTION**: the `n_live < 2` guard returns
+/// `None` before the multiplier is read at all, so every single-path cell is
+/// byte-identical on both arms without needing a measurement to say so.
+///
+/// **The clamp is not the law, and the correction moves its crossover.** The
+/// shipped form pins at `gain·N·Σ ≥ N·knee ⟺ Σ ≥ knee/gain` — **the N cancels**,
+/// so the pin threshold is a path-count-free constant (1024 symbols shipped),
+/// which is why 121/126 dual reps read exactly `2·knee`. The corrected form
+/// pins at `gain·Σ ≥ N·knee ⟺ Σ ≥ N·knee/gain`, i.e. **1024 PER PATH**, so the
+/// ceiling's dependence on the path count is restored to the value as well. A
+/// `RWM_SUM_CAP=1` arm reading a high pin fraction has measured the clamp and
+/// not the law, and MEASUREMENT DISCIPLINE 18 requires it be reported as such
+/// — which is what the `[SUMCAP]` echo's `pin=` fraction exists for.
+///
+/// Shape pinned by `net::tests::law_shape::sum_store_cap_value_is_linear_in_n_the_template_applied`.
+pub fn pooled_store_cap(
+    on: bool,
+    sum_cap: bool,
     n_live: usize,
     pipe_sum: f64,
     gain: f64,
@@ -2512,8 +2573,26 @@ pub fn path_scaled_store_cap(
     if !on || n_live < 2 || pipe_sum <= 0.0 {
         return None;
     }
+    // The count multiplier, and the ONLY thing the gate changes. Written as a
+    // named factor rather than as two branches of an `if` so that the two arms
+    // are one formula with one value substituted — the shape CLAUDE.md's
+    // no-mode-switch rule asks for wherever two behaviours must both exist.
+    let count_multiplier = if sum_cap { 1.0 } else { n_live as f64 };
     let ceiling = n_live.saturating_mul(pool).max(floor);
-    Some(((gain * n_live as f64 * pipe_sum).ceil() as usize).clamp(floor, ceiling))
+    Some(((gain * count_multiplier * pipe_sum).ceil() as usize).clamp(floor, ceiling))
+}
+
+/// The UNCLAMPED pooled cap — the law's own value, before either bound.
+///
+/// MEASUREMENT DISCIPLINE 17(b): *"a clamp may never be the only thing making
+/// a law sane"*, and the corollary the `[CCAP]` echo already applies at
+/// runtime — the bind fractions must be computed against the value the law
+/// ASKED for, not against the number that survived its bounds. Exposed so the
+/// `[SUMCAP]` gauge and the law-shape tests read the same expression the
+/// engine does instead of re-deriving it.
+pub fn pooled_store_cap_unclamped(sum_cap: bool, n_live: usize, pipe_sum: f64, gain: f64) -> f64 {
+    let count_multiplier = if sum_cap { 1.0 } else { n_live as f64 };
+    gain * count_multiplier * pipe_sum
 }
 
 /// Capacity-weighted SHARED outstanding pool (env `RWM_STORE_CAPW`) — the
@@ -3277,6 +3356,153 @@ pub fn ccap_report_line(
         brake_ticks,
         frac(brake_closed, brake_ticks),
     )
+}
+
+/// The `[SUMCAP]` line — the `×N` deletion's engagement echo (paper §16.62).
+///
+/// **This gauge exists to make a null READABLE**, which is §16.53's DIVERGED
+/// lesson and MEASUREMENT DISCIPLINE 18 applied before the battery rather than
+/// after it. `RWM_SUM_CAP` changes one factor in a CLAMPED expression, so there
+/// are three completely different ways for an arm to come back saying "no
+/// difference", and a mean cap cannot tell them apart:
+///
+/// * `eng=0/N` — the law never engaged (every refresh fell through to the
+///   legacy or boot branch). A WARM-UP failure, not a result.
+/// * `chg=0/M` — engaged, and the two arms produced the SAME INTEGER at every
+///   refresh. The gate was live and arithmetically inert: a null RESULT, and
+///   the honest report is "the clamp still governs", not "the deletion does
+///   nothing".
+/// * `chg=M/M` with `pin` high — the corrected value is itself pinned at
+///   `N·knee`. Under MEASUREMENT DISCIPLINE 18 this is a DEFECT FINDING about
+///   the ceiling, and no verdict about the multiplier may be recorded from it,
+///   because the arm measured the clamp.
+///
+/// Fields: `eng=<engaged>/<refreshes>`; `chg=<differed>/<engaged>` with its
+/// fraction; `pin=` the fraction of engaged refreshes whose realized cap was
+/// the `N·knee` ceiling; `floor=` the same for the derived floor; `cap=` the
+/// realized mean and `ask=` the mean UNCLAMPED value the law asked for — the
+/// pair that shows directly whether the bound or the law is answering
+/// (MEASUREMENT DISCIPLINE 17(b): *a clamp may never be the only thing making
+/// a law sane*).
+pub fn sumcap_report_line(
+    refreshes: u64,
+    engaged: u64,
+    differed: u64,
+    at_pin: u64,
+    at_floor: u64,
+    cap_sum: f64,
+    ask_sum: f64,
+    on: bool,
+) -> String {
+    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    let mean = |s: f64, d: u64| if d == 0 { 0.0 } else { s / d as f64 };
+    format!(
+        "[SUMCAP] on={} eng={}/{} chg={}/{} chg_frac={:.4} pin={:.4} floor={:.4} \
+         cap={:.1} ask={:.1}",
+        on as u8,
+        engaged,
+        refreshes,
+        differed,
+        engaged,
+        frac(differed, engaged),
+        frac(at_pin, engaged),
+        frac(at_floor, engaged),
+        mean(cap_sum, engaged),
+        mean(ask_sum, engaged),
+    )
+}
+
+/// The `[SUMCAP]` tally, fed at every pooled-law refresh on BOTH arms.
+///
+/// It records the COUNTERFACTUAL as well as the realized value — at each
+/// refresh it computes what the other arm would have produced from the same
+/// inputs — because "did this gate change anything" is not answerable from one
+/// arm's outputs alone, and answering it from two separate RUNS is what the
+/// composed battery had to do and could not do cleanly (§16.57).
+pub(crate) struct SumCapGauge {
+    refreshes: u64,
+    engaged: u64,
+    differed: u64,
+    at_pin: u64,
+    at_floor: u64,
+    cap_sum: f64,
+    ask_sum: f64,
+    /// `RWM_SUM_CAP` — which arm this run is, and whether the line is emitted.
+    on: bool,
+    /// The clamp bounds the law is evaluated with, held here so the
+    /// counterfactual is bounded IDENTICALLY to the realized value. Comparing
+    /// two multipliers under two different clamps would not be an A/B of the
+    /// multiplier at all — it is the confound this whole section is about.
+    floor: usize,
+    pool: usize,
+}
+
+impl SumCapGauge {
+    pub(crate) fn new(on: bool, floor: usize, pool: usize) -> Self {
+        Self {
+            refreshes: 0,
+            engaged: 0,
+            differed: 0,
+            at_pin: 0,
+            at_floor: 0,
+            cap_sum: 0.0,
+            ask_sum: 0.0,
+            on,
+            floor,
+            pool,
+        }
+    }
+
+    /// Record one pooled-law refresh. Observation only — nothing here is read
+    /// by any engine decision, and on the default arm the only cost is a
+    /// handful of flops off the scheduler lock.
+    fn record(&mut self, on: bool, n_live: usize, pipe_sum: f64, gain: f64, realized: usize) {
+        self.refreshes += 1;
+        self.engaged += 1;
+        self.cap_sum += realized as f64;
+        self.ask_sum += pooled_store_cap_unclamped(on, n_live, pipe_sum, gain);
+        // The counterfactual: the SAME expression with the multiplier flipped,
+        // under the SAME bounds. It goes through `pooled_store_cap`, so it
+        // cannot drift from what the engine actually evaluates.
+        let other = pooled_store_cap(true, !on, n_live, pipe_sum, gain, self.floor, self.pool);
+        if other != Some(realized) {
+            self.differed += 1;
+        }
+        let ceiling = n_live.saturating_mul(self.pool).max(self.floor);
+        if realized >= ceiling {
+            self.at_pin += 1;
+        }
+        if realized <= self.floor {
+            self.at_floor += 1;
+        }
+    }
+
+    /// The `[SUMCAP]` line this gauge would emit right now. Split out so the
+    /// format pins and the destructor share one renderer.
+    pub(crate) fn sumcap_line(&self) -> String {
+        sumcap_report_line(
+            self.refreshes,
+            self.engaged,
+            self.differed,
+            self.at_pin,
+            self.at_floor,
+            self.cap_sum,
+            self.ask_sum,
+            self.on,
+        )
+    }
+}
+
+impl Drop for SumCapGauge {
+    fn drop(&mut self) {
+        // Emitted only on the ON arm, so the shipped default's output is
+        // unchanged. The control arm's own pin fraction is already carried by
+        // the L1 parsers' `occcap_p50` gauge, which is the statistic the
+        // 121/126 pinned-rep finding was measured with.
+        if self.on {
+            eprintln!("{}", self.sumcap_line());
+        }
+    }
 }
 
 /// ── THE SENDER-TEARDOWN GAUGE CARRIER (`[WALL]` + `[CCAP]`) ──────────────
@@ -4511,7 +4737,18 @@ async fn run_window_sender(
     // single emission site for both `[WALL]` and `[CCAP]` — see that type for
     // why the two teardown `select!` arms were the wrong site (the `perf`
     // harness takes neither).
-    let mut ccap = SenderTeardownGauges::new(pol.composed_cap, pol.store_cap_floor);
+    let mut ccap = SenderTeardownGauges::new(
+        // The `[CCAP]` line is emitted for EITHER door into the brake, because
+        // its `brake=<closed>/<ticks>` field is the extraction arm's primary
+        // readout (§16.60.1) just as it was the composed arm's.
+        pol.composed_cap || pol.late_brake,
+        pol.store_cap_floor,
+    );
+    // `[SUMCAP]` (paper §16.62): the `×N` deletion's engagement echo. Fed on
+    // BOTH arms at every pooled-law refresh — including the COUNTERFACTUAL, so
+    // "did the gate change anything" is answerable from one run — and emitted
+    // only on the ON arm, so the shipped default's output is unchanged.
+    let mut sumcap = SumCapGauge::new(pol.sum_cap, pol.store_cap_floor, pol.store_path_pool);
     // The periodic DIAG report clock (net seam pass 3 → net/diag.rs): both
     // stamps stay sampled here, at their original points.
     let diag_start_us = now_us();
@@ -4782,18 +5019,26 @@ async fn run_window_sender(
         // (§16.53's DIVERGED lesson), and it is why the composed brake reads
         // `live_paths()`. `cwnd_full` under this arm means: EVERY LIVE PATH
         // is at or above its own congestion window.
-        let brake_armed = eff_infl_cap > 0 || pol.composed_cap;
+        //
+        // `RWM_LATE_BRAKE` (§16.60.1) arms THE SAME brake without the composed
+        // pool law: the extraction exists because `composed_cap` also forces
+        // `three_term_on`, so before it there was no way to ask for the brake
+        // alone. Everything below reads `cwnd_brake` rather than `composed_cap`
+        // so the two gates cannot drift into two brakes — the composed arm is
+        // still exactly this brake, reached by a different door.
+        let cwnd_brake = pol.composed_cap || pol.late_brake;
+        let brake_armed = eff_infl_cap > 0 || cwnd_brake;
         let (pipe_infl, percap_full): (u64, bool) = if brake_armed {
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
             let mut per_path: Vec<(u64, u64)> = Vec::new();
-            let ids = if pol.composed_cap { sched.live_paths() } else { sched.active_paths() };
+            let ids = if cwnd_brake { sched.live_paths() } else { sched.active_paths() };
             for id in ids {
                 if let Some(p) = sched.path_mut(id) {
                     p.expire_in_flight();
                     let fl = p.in_flight as u64;
                     infl += fl;
-                    let cap_i = if pol.composed_cap {
+                    let cap_i = if cwnd_brake {
                         // The path's own congestion window. Derived, not
                         // configured; always warm (cwnd has an initial value),
                         // so this branch has no cold-start fallback to pick.
@@ -4813,15 +5058,19 @@ async fn run_window_sender(
             (0, false)
         };
         let cwnd_full = brake_armed
-            && if pol.infl_percap || pol.composed_cap {
+            && if pol.infl_percap || cwnd_brake {
                 percap_full
             } else {
                 pipe_infl >= eff_infl_cap
             };
         // `[CCAP]` engagement gauge: the brake's own liveness, counted every
-        // iteration so a composed arm that never braked reads as a NULL
-        // RESULT rather than a null effect.
-        if pol.composed_cap {
+        // iteration so an arm that never braked reads as a NULL RESULT rather
+        // than a null effect. Counted for BOTH doors into the brake — the
+        // composed arm and the extracted `RWM_LATE_BRAKE` arm — because the
+        // distinction the gauge exists to draw (`brake=0/N` armed-and-never-
+        // closed vs `brake=0/0` never-armed) is exactly what an extraction
+        // battery needs to read.
+        if cwnd_brake {
             ccap.brake_ticks += 1;
             if cwnd_full {
                 ccap.brake_closed += 1;
@@ -4923,14 +5172,24 @@ async fn run_window_sender(
                         );
                         wd_engaged = true;
                         wd_cap_ret
-                    } else if let Some(cap) = path_scaled_store_cap(
+                    } else if let Some(cap) = pooled_store_cap(
                         pol.store_paths_on,
+                        pol.sum_cap,
                         n_live,
                         cwnd_sum,
                         pol.store_bdp_gain,
                         pol.store_cap_floor,
                         pol.store_path_pool,
                     ) {
+                        // `RWM_SUM_CAP` reaches the Copa-sole seat too: the
+                        // `×N` is the same defect wherever the pooled law is
+                        // evaluated, and the base here is Σ cwnd rather than
+                        // Σ anchor — still a SUM over paths, so still already
+                        // linear in the count. Leaving this seat on the
+                        // shipped multiplier would make the gate's meaning
+                        // depend on the CC family, which is the kind of split
+                        // ADR-0064 exists to refuse.
+                        sumcap.record(pol.sum_cap, n_live, cwnd_sum, pol.store_bdp_gain, cap);
                         cap
                     } else if cwnd_sum > 0.0 {
                         ((pol.store_bdp_gain * cwnd_sum).ceil() as usize)
@@ -5235,14 +5494,21 @@ async fn run_window_sender(
                         pa_engaged = true;
                         pa_sum = pa_terms.iter().flatten().sum();
                         cap
-                    } else if let Some(cap) = path_scaled_store_cap(
+                    } else if let Some(cap) = pooled_store_cap(
                         pol.store_paths_on,
+                        pol.sum_cap,
                         n_live,
                         bdp,
                         pol.store_bdp_gain,
                         pol.store_cap_floor,
                         pol.store_path_pool,
                     ) {
+                        // THE SHIPPED SEAT (ADR-0070's B6): every default dual
+                        // cell's cap is decided here. `pol.sum_cap` is the ONLY
+                        // thing that differs between the two arms, and it is a
+                        // VALUE inside one expression rather than a second law
+                        // — see `pooled_store_cap`.
+                        sumcap.record(pol.sum_cap, n_live, bdp, pol.store_bdp_gain, cap);
                         cap
                     } else if bdp > 0.0 {
                         ((pol.store_bdp_gain * bdp).ceil() as usize).clamp(pol.store_cap_floor, pol.store_max)
@@ -9505,6 +9771,152 @@ mod tests {
     /// trial" and its behaviour is unchanged on this branch. The third test
     /// applies the same template to the candidate successor's core,
     /// [`three_term_store_cap`], which is linear in N as derived.
+    /// **THE FULL ARM, RESOLVED — does the composition actually COMPOSE?**
+    ///
+    /// The AUP lesson, applied BEFORE a pre-registration rather than after it:
+    /// §16.53 and §16.54 both fired pre-registered STOP RULES on compositions
+    /// whose members turned out not to compose, and the sharpest instance is on
+    /// the record — `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a
+    /// **no-op wherever capw engages**, because `capw_store_cap` sits ABOVE
+    /// `path_scaled_store_cap` in the chain and reads `live_paths()`
+    /// unconditionally. Nobody asserted that until it had cost two batteries.
+    ///
+    /// This test asserts the FULL arm's gate set resolves to the machine it is
+    /// supposed to be, at the POLICY layer where the collapses actually happen:
+    ///
+    /// * every one of the six bits survives resolution (none is silently
+    ///   ANDed away by a scope it does not satisfy);
+    /// * the pool law reached is the POOLED one, NOT the three-term law — i.e.
+    ///   `three_term_on` and `composed_cap` stay OFF, because the composed pool
+    ///   law's magnitude was REFUTED by §16.57 and the FULL arm deliberately
+    ///   does not carry it;
+    /// * the brake is armed WITHOUT it (the whole point of the extraction);
+    /// * and the CONTROL arm — every bit off — resolves to the shipped chain,
+    ///   which is what makes the pair an A/B rather than two experiments.
+    #[test]
+    fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
+        use crate::control::fec_rate::ProtocolHint;
+        use crate::gates::RuntimeGates;
+        use crate::net::sender_policy::SenderPolicy;
+
+        // The plain-reliable window sender: the seat every cap-law finding in
+        // ADR-0070 is about.
+        let resolve = |g: &RuntimeGates| {
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
+        };
+
+        // ── THE CONTROL ARM ───────────────────────────────────────────────
+        let base = RuntimeGates::resolve();
+        let ctl = resolve(&base);
+        assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
+        assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
+        assert!(!ctl.store_cap_unified, "control: the live set must be OFF");
+        assert!(!ctl.late_brake, "control: the brake must be OFF");
+        assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
+
+        // ── THE FULL ARM ──────────────────────────────────────────────────
+        // Set by field rather than through the environment on purpose: an
+        // env-mutating test is process-global state in a parallel runner, which
+        // is the shape of eight HashMap-order flakes already on this record.
+        let mut full = RuntimeGates::resolve();
+        full.sum_cap = true; // the ×N deletion            (§16.62)
+        full.store_cap_unified = true; // the LIVE SET     (ADR-0070 finding 1)
+        full.late_brake = true; // the LATE-STAGE BRAKE    (§16.60.1)
+        full.loss_sent_truth = true; // ── the ledger/loss trio ──
+        full.release_1to1 = true;
+        full.charge_recovery = true;
+        let arm = resolve(&full);
+
+        // 1. EVERY BIT SURVIVES RESOLUTION. This is the assertion the capw
+        //    no-op needed: a gate that resolves OFF because of a scope it does
+        //    not satisfy is a null EFFECT, and it would be scored as a null
+        //    RESULT by any battery that only reads the `[GATES]` echo.
+        assert!(arm.sum_cap, "FULL: RWM_SUM_CAP was ANDed away by resolution");
+        assert!(arm.store_cap_unified, "FULL: the live set was ANDed away");
+        assert!(arm.late_brake, "FULL: the brake was ANDed away");
+        // The ledger/loss trio is NOT resolved through `SenderPolicy`: those
+        // three bits are read by the SCHEDULER, through its own cached
+        // process-global helpers (`scheduler::loss_sent_truth_active` and
+        // siblings), because they govern the per-path estimator and the
+        // in-flight ledger rather than the sender's policy. That is a genuine
+        // composition FACT and not a gap: having no shared resolution step with
+        // the cap gates, they have nothing to be ANDed away BY — the failure
+        // mode assertion 1 is guarding against cannot arise for them. Asserted
+        // at the gate surface, which is the layer they actually live on.
+        assert!(full.loss_sent_truth, "FULL: the loss truth bit is not set");
+        assert!(full.release_1to1, "FULL: the 1:1 release bit is not set");
+        assert!(full.charge_recovery, "FULL: the recovery charge bit is not set");
+        assert!(
+            full.echo_line().contains("RWM_LOSS_SENT_TRUTH=1")
+                && full.echo_line().contains("RWM_RELEASE_1TO1=1")
+                && full.echo_line().contains("RWM_CHARGE_RECOVERY=1"),
+            "FULL: the trio must be visible in the echo a battery parses: {}",
+            full.echo_line()
+        );
+
+        // 2. THE POOL LAW IS THE POOLED ONE. §16.57 refuted the composed pool
+        //    law's MAGNITUDE (WIN_STORE_MAX becomes the law at every dual), so
+        //    the FULL arm carries the ×N deletion INSTEAD of it, not as well.
+        //    If this ever flips, the arm is measuring a different law than the
+        //    one it is pre-registered against.
+        assert!(
+            !arm.three_term_on && !arm.composed_cap,
+            "FULL: the composed/three-term pool law engaged — the arm is not \
+             the ×N deletion any more"
+        );
+
+        // 3. THE BRAKE IS ARMED WITHOUT THE COMPOSED LAW — the extraction's
+        //    entire reason to exist. Before `RWM_LATE_BRAKE` this combination
+        //    was NOT EXPRESSIBLE: the only door to the cwnd brake also forced
+        //    `three_term_on`, and assertion 2 would fail here.
+        assert!(
+            arm.late_brake && !arm.composed_cap,
+            "FULL: the brake is only reachable through the composed law — the \
+             extraction did not take"
+        );
+
+        // 4. THE CAP LAW UNDER THIS POLICY IS THE CORRECTED FORMULA, evaluated
+        //    through the same function the engine calls, at the wire's own c8 Σ.
+        const SIGMA_C8: f64 = 1_509.677;
+        let corrected = pooled_store_cap(
+            arm.store_paths_on,
+            arm.sum_cap,
+            2,
+            SIGMA_C8,
+            arm.store_bdp_gain,
+            arm.store_cap_floor,
+            arm.store_path_pool,
+        )
+        .expect("the pooled law is engaged at a warm dual");
+        let shipped = pooled_store_cap(
+            ctl.store_paths_on,
+            ctl.sum_cap,
+            2,
+            SIGMA_C8,
+            ctl.store_bdp_gain,
+            ctl.store_cap_floor,
+            ctl.store_path_pool,
+        )
+        .expect("engaged");
+        assert_eq!(shipped, 4_096, "the control arm is not the pinned shipped law");
+        assert_eq!(corrected, 3_020, "the FULL arm is not §16.60's published c8 value");
+        assert!(corrected < shipped, "the FULL arm did not free the law from its ceiling");
+
+        // 5. THE ONE REAL CROSS-LAYER INTERACTION, NAMED. The trio is not inert
+        //    with respect to the brake: `RWM_RELEASE_1TO1` changes how the
+        //    in-flight ledger is RELEASED, and the brake's predicate is
+        //    `in_flightᵢ ≥ cwndᵢ` — so the trio moves the brake's operand while
+        //    the brake moves nothing the trio reads. That is a one-way
+        //    dependency, and the arm must be scored knowing which direction it
+        //    runs in. Asserted as the structural fact it is: both bits live in
+        //    the same resolved policy and neither disables the other.
+        assert!(
+            full.release_1to1 && arm.late_brake,
+            "the trio and the brake must coexist — the brake reads the ledger \
+             the trio fixes, so a composition that drops either is not the arm"
+        );
+    }
+
     mod law_shape {
         use crate::net::{
             contract_stall_s, path_scaled_store_cap, three_term_store_cap, ThreeTermTerm,
@@ -9573,6 +9985,166 @@ mod tests {
             assert_eq!(cap(8) / cap(2), 16, "linear would be 4");
         }
 
+        /// THE TEMPLATE APPLIED TO THE CORRECTION: under `RWM_SUM_CAP` the
+        /// UNCLAMPED value is **LINEAR** in the live-path count at symmetric
+        /// inputs — `gain·Σ` with `Σ = N·A`, i.e. `gain·A·N`.
+        ///
+        /// This is the test the sibling above says *"must be UPDATED (not
+        /// deleted) by whatever change fixes the law"* — except that the fix
+        /// ships as an A/B arm rather than as a replacement, so the defect pin
+        /// stays exactly as it was (it still describes the SHIPPED default) and
+        /// this is its counterpart on the other arm. Between them they assert
+        /// that the gate selects between a quadratic and a linear law and
+        /// nothing else.
+        ///
+        /// Same three holes closed as the template requires: the clamps are
+        /// neutralised and their inertness ASSERTED rather than assumed, N is
+        /// swept 1..8 (the axis no cell reaches, and the only place the two
+        /// exponents are distinguishable), and the closed form is asserted
+        /// absolutely rather than as a point.
+        #[test]
+        fn sum_store_cap_value_is_linear_in_n_the_template_applied() {
+            use crate::net::pooled_store_cap;
+            let cap = |n: usize| {
+                pooled_store_cap(true, true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
+                    .expect("the law is engaged at N >= 2 with a positive base")
+            };
+
+            // (b) The closed form over the whole synthetic axis: `gain·A·N` =
+            // `200·N`, against the shipped arm's `200·N²`.
+            for n in 2..=8usize {
+                let expected = (GAIN * A * n as f64) as usize;
+                assert_eq!(cap(n), expected, "N={n}: the corrected law is not gain·A·N");
+                assert!(cap(n) < n * POOL_INERT, "N={n}: the ceiling bound");
+                assert!(cap(n) > FLOOR_INERT, "N={n}: the floor bound");
+            }
+
+            // (a/c) The ratio that names the exponent. THIS is the assertion the
+            // whole defect turned on: the shipped law reads 4 at a doubling and
+            // the corrected law reads 2, and at N ∈ {1, 2} — the entire
+            // deployment test universe — the two are indistinguishable.
+            for n in [2usize, 3, 4] {
+                let r = cap(2 * n) as f64 / cap(n) as f64;
+                assert!(
+                    (r - 2.0).abs() < 1e-9,
+                    "cap({}) / cap({n}) = {r}, i.e. not linear",
+                    2 * n
+                );
+            }
+
+            // The absolute numbers, spelled out beside the defect pin's, so the
+            // two shapes are readable side by side in one place.
+            assert_eq!(cap(2), 400); // shipped: 800
+            assert_eq!(cap(4), 800); // shipped: 3_200
+            assert_eq!(cap(8), 1_600); // shipped: 12_800
+            assert_eq!(cap(8) / cap(2), 4, "quadratic would be 16");
+
+            // THE EXACT RELATIONSHIP BETWEEN THE ARMS, asserted rather than
+            // described: the deleted factor is exactly N, at every N, on the
+            // unclamped value. If this ever fails the gate is doing something
+            // other than deleting one multiplication.
+            for n in 2..=8usize {
+                let shipped =
+                    path_scaled_store_cap(true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
+                        .expect("engaged");
+                assert_eq!(
+                    shipped,
+                    cap(n) * n,
+                    "N={n}: the two arms do not differ by exactly the count multiplier"
+                );
+            }
+
+            // N = 1 IS NOT A CASE — the guard returns before the multiplier is
+            // read, so both arms are `None` and the caller keeps the legacy
+            // single-path law bit-exactly. Asserted, because "bit-identical at
+            // N = 1" is a claim the paper makes BY CONSTRUCTION and a
+            // construction claim is exactly the kind that rots silently.
+            for on in [false, true] {
+                assert_eq!(
+                    pooled_store_cap(true, on, 1, A, GAIN, FLOOR_INERT, POOL_INERT),
+                    None,
+                    "sum_cap={on}: the N = 1 guard must fire before the multiplier"
+                );
+            }
+        }
+
+        /// THE COMPOSITION, AS FOUR FORMULAS: `RWM_SUM_CAP` (the count
+        /// MULTIPLIER) and `RWM_STORE_CAP_UNIFIED` (the Σ's path SET) are
+        /// INDEPENDENT AXES of one law, and their four combinations are four
+        /// distinct expressions.
+        ///
+        /// This is the assertion a composed battery needs before it is
+        /// pre-registered, not after — §16.53/§16.54 both fired STOP RULES on
+        /// compositions whose members turned out not to compose (`capw` makes
+        /// the U bit a no-op wherever it engages, which is a fact nobody
+        /// asserted until it had cost two batteries). Here the independence is
+        /// structural and provable: the set decides `pipe_sum`, the gate
+        /// decides the multiplier, and neither reads the other.
+        ///
+        /// The test states independence as a FACTORISATION rather than as four
+        /// inequalities: the multiplier ratio is `N` whichever set is used, and
+        /// the set ratio is `Σ_live/Σ_active` whichever multiplier is used. Two
+        /// ratios that hold across the other axis is what "independent dials"
+        /// means, and it is stronger than "the four numbers differ".
+        ///
+        /// Note the asymmetry the composition inherits and does NOT fix
+        /// (ADR-0070 finding 1): `N` is `live_paths().len()` in BOTH arms,
+        /// including where the Σ ranges over `active_paths()` only. The count
+        /// and the sum range over different sets on the shipped default, and
+        /// deleting the multiplier from the VALUE removes that mismatch from
+        /// the value while leaving it in the ceiling — which is the correct
+        /// scope for this gate and is asserted here so it stays deliberate.
+        #[test]
+        fn sum_cap_and_the_unified_set_are_independent_axes_of_one_law() {
+            use crate::net::pooled_store_cap;
+            // A cwnd-saturated leg: live counts it, active drops it. Round
+            // numbers so all four values are hand-computable.
+            const N_LIVE: usize = 2;
+            const SIGMA_LIVE: f64 = 1_000.0; // both legs warm
+            const SIGMA_ACTIVE: f64 = 400.0; // the saturated leg omitted
+
+            let f = |sum_cap: bool, unified: bool| {
+                let sigma = if unified { SIGMA_LIVE } else { SIGMA_ACTIVE };
+                pooled_store_cap(true, sum_cap, N_LIVE, sigma, GAIN, FLOOR_INERT, POOL_INERT)
+                    .expect("engaged")
+            };
+
+            // The four formulas, absolutely. `N` is live in every one.
+            assert_eq!(f(false, false), 1_600); // gain·N·Σ_active = 2·2·400
+            assert_eq!(f(false, true), 4_000); // gain·N·Σ_live   = 2·2·1000
+            assert_eq!(f(true, false), 800); // gain·Σ_active   = 2·400
+            assert_eq!(f(true, true), 2_000); // gain·Σ_live     = 2·1000
+
+            // All four distinct — the weak statement, kept because a
+            // composition that collapses two arms into one number is exactly
+            // how `capw`'s no-op went unnoticed.
+            let vals = [f(false, false), f(false, true), f(true, false), f(true, true)];
+            for i in 0..vals.len() {
+                for j in (i + 1)..vals.len() {
+                    assert_ne!(vals[i], vals[j], "combination {i} and {j} collapse");
+                }
+            }
+
+            // THE FACTORISATION — the actual independence claim.
+            // 1. The multiplier's effect is ×N, whichever set is selected.
+            for unified in [false, true] {
+                assert_eq!(
+                    f(false, unified),
+                    f(true, unified) * N_LIVE,
+                    "unified={unified}: the multiplier's effect depends on the set"
+                );
+            }
+            // 2. The set's effect is ×(Σ_live/Σ_active), whichever multiplier.
+            let set_ratio = SIGMA_LIVE / SIGMA_ACTIVE;
+            for sum_cap in [false, true] {
+                let r = f(sum_cap, true) as f64 / f(sum_cap, false) as f64;
+                assert!(
+                    (r - set_ratio).abs() < 1e-9,
+                    "sum_cap={sum_cap}: the set's effect {r} depends on the multiplier"
+                );
+            }
+        }
+
         /// (c) THE CLAMP, TESTED ON ITS OWN: the CEILING is `N·knee`, i.e.
         /// LINEAR in N — which is precisely why the defect above was invisible
         /// on every measured cell. Once `Σ ≥ knee/gain` the realized cap is the
@@ -9602,6 +10174,73 @@ mod tests {
                     path_scaled_store_cap(true, n, 1e-6, GAIN, FLOOR, KNEE),
                     Some(FLOOR),
                     "N={n}"
+                );
+            }
+        }
+
+        /// (c) THE CLAMP UNDER THE CORRECTION: the pin threshold stops being
+        /// path-count-FREE and becomes **PER PATH** — which is the property
+        /// that gives the law back an operating range.
+        ///
+        /// ```text
+        ///   shipped    gain·N·Σ ≥ N·knee  ⟺  Σ ≥ knee/gain        (N CANCELS)
+        ///   corrected  gain·Σ   ≥ N·knee  ⟺  Σ ≥ N·knee/gain      (per path)
+        /// ```
+        ///
+        /// The shipped threshold's path-count-freeness is exactly why the law
+        /// degenerated: `Σ` grows with N (it is a sum over paths) while the
+        /// threshold does not, so past two paths the ceiling is guaranteed and
+        /// the measured, derived, per-path term never appears in any output.
+        /// Pinned here as an ABSOLUTE pair of crossovers rather than as a
+        /// ratio, and swept over N = 2..8 so the "N cancels / N does not
+        /// cancel" difference is asserted on the axis it lives on.
+        ///
+        /// Companion to `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`
+        /// in `store_cap_sf_bench`, which pins the shipped half on the bench's
+        /// own constants; this asserts both halves against each other.
+        #[test]
+        fn the_correction_makes_the_pin_threshold_per_path_instead_of_path_count_free() {
+            use crate::net::pooled_store_cap;
+            const KNEE: usize = 2048;
+            const FLOOR: usize = 10; // the derived floor (§16.59); inert here
+
+            for n in 2..=8usize {
+                let ceiling = n * KNEE;
+                // The SHIPPED threshold: knee/gain, identical at every N.
+                let shipped_pin = KNEE as f64 / GAIN;
+                assert!(
+                    (shipped_pin - 1024.0).abs() < 1e-9,
+                    "N={n}: the shipped threshold moved off the path-count-free 1024"
+                );
+                // Just below it the shipped law is interior; at it, pinned.
+                let below = path_scaled_store_cap(true, n, shipped_pin - 1.0, GAIN, FLOOR, KNEE);
+                let at = path_scaled_store_cap(true, n, shipped_pin, GAIN, FLOOR, KNEE);
+                assert!(below.unwrap() < ceiling, "N={n}: shipped not interior below");
+                assert_eq!(at, Some(ceiling), "N={n}: shipped not pinned at knee/gain");
+
+                // The CORRECTED threshold: N·knee/gain, i.e. 1024 PER PATH.
+                let corrected_pin = n as f64 * KNEE as f64 / GAIN;
+                assert!(
+                    (corrected_pin - 1024.0 * n as f64).abs() < 1e-9,
+                    "N={n}: the corrected threshold is not per-path"
+                );
+                let below = pooled_store_cap(true, true, n, corrected_pin - 1.0, GAIN, FLOOR, KNEE);
+                let at = pooled_store_cap(true, true, n, corrected_pin, GAIN, FLOOR, KNEE);
+                assert!(below.unwrap() < ceiling, "N={n}: corrected not interior below");
+                assert_eq!(at, Some(ceiling), "N={n}: corrected not pinned at N·knee/gain");
+
+                // AND THE CONSEQUENCE, stated as the arithmetic it is: at the
+                // shipped threshold — the Σ every measured dual EXCEEDS — the
+                // shipped law is pinned while the corrected law is still
+                // interior, for every path count above one.
+                assert_eq!(
+                    path_scaled_store_cap(true, n, shipped_pin, GAIN, FLOOR, KNEE),
+                    Some(ceiling)
+                );
+                assert!(
+                    pooled_store_cap(true, true, n, shipped_pin, GAIN, FLOOR, KNEE).unwrap()
+                        < ceiling,
+                    "N={n}: the correction does not free the law at the shipped pin threshold"
                 );
             }
         }

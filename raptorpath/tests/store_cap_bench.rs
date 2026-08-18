@@ -487,6 +487,113 @@ fn shipped_pool_cap_is_proportional_to_retained_anchor_mass() {
     assert!((c_over as f64 / BOOT as f64) > 25.0);
 }
 
+/// **THE BOOTSTRAP CAP'S DERIVATION, AND THE BOUND ON WHAT REPLACING IT
+/// MOVES** — paper §16.61, ADR-0070 finding 5's second half (`boot = 128`,
+/// ARGUED, NEVER A BATTERY ARM).
+///
+/// `net::sender_policy::STORE_BOOT_DERIVED` derives boot from its own stated
+/// job and lands on `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW) = 10` — the
+/// SAME two clauses, the same inputs and the same answer as the floor, because
+/// boot and the floor turn out to be one quantity: *the outstanding bound that
+/// applies when the law has no measurement*. The derived constant is
+/// **NOT SHIPPED**; `RWM_STORE_BOOT` still defaults to 128.
+///
+/// This test asserts four things, and the fourth is the one that matters:
+///
+/// 1. **The identity is real, not a coincidence of rounding** — the derived
+///    boot IS `STORE_CAP_FLOOR`, computed from the same cited inputs.
+/// 2. **128 is a fit, and the test says what to** — `1.5 × (c2 rate × c2
+///    RTprop)` reconstructs the shipped value to within the rounding to a power
+///    of two, from c2's CONFIGURED parameters. A bootstrap cap sized to one
+///    path's BDP is circular, since the whole premise is that no BDP is known.
+/// 3. **At boot's LEGITIMATE job the two values are indistinguishable** — cold
+///    start, where either value warms the anchor inside one round trip, because
+///    both clear `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE`.
+/// 4. **At boot's ILLEGITIMATE reachability they are NOT** — the terminal
+///    `else` of the pooled chain, reached mid-transfer when the Σ-set empties
+///    (ADR-0070 finding 1's cliff, measured binding at c1 in 17.2–42.1 % of
+///    steady samples). There the swap is a ×12.8 tightening, and this test
+///    PINS that ratio rather than describing it. That is the whole reason the
+///    derived value does not ship, and it is a bound on a defect that belongs
+///    to the Σ-set, not to boot.
+///
+/// CLAUDE.md: *every documented model-vs-engine divergence must carry a test
+/// that BOUNDS it, not prose that describes it.* The divergence here is
+/// between a derived constant and a shipped one, and the bound is the exact
+/// condition under which they differ.
+#[test]
+fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() {
+    use raptorpath::net::sender_policy::{STORE_BOOT_DERIVED, STORE_CAP_FLOOR};
+
+    // 1. THE IDENTITY. Boot's derivation and the floor's are the same two
+    //    clauses over the same cited inputs, so they cannot disagree — and if a
+    //    future cadence change moves one it must move the other.
+    assert_eq!(
+        STORE_BOOT_DERIVED, STORE_CAP_FLOOR,
+        "boot and the floor are one quantity; they cannot derive to two values"
+    );
+    assert_eq!(STORE_BOOT_DERIVED, 10);
+    assert_eq!(
+        FLOOR, STORE_CAP_FLOOR,
+        "this bench must model the shipped floor, not a copy of it"
+    );
+
+    // 2. WHAT 128 WAS: 1.5 × c2's own configured BDP, rounded to a power of
+    //    two. Reconstructed rather than asserted, so the claim "it is a fit to
+    //    one cell" is checked instead of repeated.
+    let c2_bdp = C2_RATE * C2_RTPROP_S; // 83.2 symbols
+    let fitted = 1.5 * c2_bdp; // 124.8
+    assert!(
+        (fitted - 124.8).abs() < 0.05,
+        "the rationale's own sizing sentence no longer reconstructs: {fitted}"
+    );
+    assert!(
+        (BOOT as f64 - fitted).abs() < 4.0,
+        "128 is not 1.5x the c2 BDP rounded — the fit this test names has moved"
+    );
+
+    // 3. BOOT'S REAL JOB: both values warm the anchor inside ONE round trip,
+    //    because both clear the sample requirement. At cold start the two are
+    //    therefore indistinguishable in the only respect boot is FOR.
+    let samples_needed = 8 * 1; // ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE
+    for boot in [BOOT, STORE_BOOT_DERIVED] {
+        assert!(
+            boot >= samples_needed,
+            "boot = {boot} cannot buy the {samples_needed} samples that end it — \
+             a bootstrap cap that cannot end itself is a strangle"
+        );
+    }
+
+    // 4. THE CLIFF, WHERE THEY ARE NOT INDISTINGUISHABLE. `shipped_pool_cap`
+    //    with an empty Σ is exactly the terminal `else` the cliff reaches, at
+    //    any live count. The swap's effect there is pinned as a ratio.
+    for n in [1usize, 2, 3] {
+        assert_eq!(
+            shipped_pool_cap(0.0, n),
+            BOOT,
+            "N={n}: the empty-set fallthrough is not the boot cap"
+        );
+    }
+    let deepening = BOOT as f64 / STORE_BOOT_DERIVED as f64;
+    assert!(
+        (deepening - 12.8).abs() < 1e-9,
+        "the cliff deepening the derived boot would cause is {deepening}, not 12.8"
+    );
+
+    // And the ORDER that follows, asserted as arithmetic: once the Σ-set is
+    // non-empty — which is what the live set guarantees whenever the transfer
+    // is running — the boot branch is UNREACHABLE, and at that point the two
+    // values are indistinguishable everywhere because neither is ever read.
+    for n in [1usize, 2, 3] {
+        let smallest_warm_leg = 1.0; // any positive Σ at all
+        assert_ne!(
+            shipped_pool_cap(smallest_warm_leg, n),
+            BOOT,
+            "N={n}: a non-empty Sigma still reached the boot branch"
+        );
+    }
+}
+
 /// WHAT THE `OVERREAD = 5.0` ERROR AFFECTS — goal-gate "Ack-Cadence
 /// Measurement (VM)", READOUT 3, answered as an assertion rather than as
 /// prose.

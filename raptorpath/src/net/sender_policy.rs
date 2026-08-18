@@ -130,6 +130,91 @@ pub const STORE_CAP_FLOOR: usize = {
     if warm > RFC6928_INITIAL_WINDOW { warm } else { RFC6928_INITIAL_WINDOW }
 };
 
+/// **THE BOOTSTRAP CAP, DERIVED FROM ITS JOB — AND FOUND TO BE THE FLOOR**
+/// (paper §16.61; ADR-0070 finding 5's second half, `boot = 128` **ARGUED,
+/// NEVER A BATTERY ARM**).
+///
+/// **DERIVED, NOT SHIPPED.** `RWM_STORE_BOOT` still defaults to 128. This
+/// constant is the derivation's answer, standing beside the shipped value so
+/// the gap is a fact in the source rather than a claim in a ledger, and so the
+/// battery arm that would test it has a named quantity to set. The reason it
+/// does not ship is measured and is stated below.
+///
+/// ## The derivation
+///
+/// Boot's job, from its own rationale (`resolve`, unchanged since `ac3bc9d`):
+/// *"Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
+/// burst can't pre-bloat the queue and inflate the min-RTT floor (which would
+/// then inflate the anchor itself); the anchor takes over once samples land."*
+/// Read as a requirement, that is two LOWER bounds and one UPPER pressure:
+///
+/// 1. **It must buy the samples that end it.** The anchor does not exist until
+///    [`ANCHOR_MIN_SAMPLES`] delivered-rate samples are in its window, and at
+///    the shipped merged-ack cadence one outstanding symbol buys one sample per
+///    round trip ([`MERGED_ACK_SYMBOLS_PER_SAMPLE`]). A bootstrap cap that funds
+///    fewer than `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE` = **8**
+///    symbols cannot warm the anchor in one round trip, and a cap that cannot
+///    end itself is not a bootstrap — it is the strangle the floor's own
+///    derivation is about, one layer up.
+/// 2. **It must not open below the standard initial burst.**
+///    [`RFC6928_INITIAL_WINDOW`] = **10**. This clause is *literally* boot's
+///    job: RFC 6928 sizes the first flight a transport may put on an
+///    UNMEASURED path, and "before the anchor warms" is precisely the state of
+///    having no measurement.
+/// 3. **Tight, otherwise.** The upper pressure is boot's own and the floor does
+///    not have it: a startup burst that pre-bloats the queue inflates the
+///    min-RTT floor, which inflates the anchor, which is a closed loop. It
+///    selects the SMALLEST value satisfying 1 and 2 — it cannot select a
+///    number of its own.
+///
+/// ```text
+///   STORE_BOOT_DERIVED = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+///                             RFC6928_INITIAL_WINDOW )
+///                      = max( 8 · 1, 10 ) = 10   ≡ STORE_CAP_FLOOR
+/// ```
+///
+/// **The finding is the identity, not the number.** Boot and the floor turn out
+/// to be the SAME QUANTITY — *the outstanding bound that applies when the law
+/// has no measurement to offer* — reached from two different rationales, with
+/// the same two cited clauses and the same answer. Boot is therefore not an
+/// independent constant of this machine; it DISSOLVES into the floor. That is a
+/// stronger result than a new value, and it is why this is a `const` equal to
+/// [`STORE_CAP_FLOOR`] rather than an arithmetic re-statement of it.
+///
+/// ## What 128 actually was
+///
+/// The rationale's own sizing sentence — *"~1.5× a 100 Mbit / 10 ms BDP"* —
+/// reconstructs as `1.5 × (10 400 sym/s × 8 ms) = 124.8`, rounded to 128. Every
+/// input in that is c2's CONFIGURED parameters, and the `1.5` has no provenance
+/// anywhere. So 128 is **a fit to one cell's link budget, rounded to a power of
+/// two** — and it is circular for a bootstrap cap in particular, because sizing
+/// "the cap for when you do not know the path's BDP" to a specific path's BDP
+/// assumes exactly the quantity that is missing. It is not a derivation, and
+/// ADR-0070's *"never a battery arm"* is the other half: `RWM_STORE_BOOT` has
+/// never been swept, so 128's CONSEQUENCES are measured while 128 itself is not.
+///
+/// ## Why it does NOT ship (measured, and the block is not this constant's)
+///
+/// Boot binds on the current default at exactly one cell — **c1, in 17.2–42.1 %
+/// of steady DIAG samples (mean ≈30 %), MID-TRANSFER** — and at c7/c8/sc2 its
+/// gauge reads 0.0000. That binding is not boot's job being done: it is
+/// `net/mod.rs`'s terminal `else`, reached when `active_paths()` empties and the
+/// whole pooled chain falls through — ADR-0070 finding 1's cliff, landing a
+/// steady-state sender on a cold-start constant. Replacing 128 with 10 there
+/// would deepen a cliff already priced at +15.8/+24.8 % goodput when removed, by
+/// a further **×12.8**, at the one cell where it is live.
+///
+/// So the derivation closes and the replacement is BLOCKED — on the cliff, not
+/// on itself. The order is forced and it is the right way round: the live set
+/// (`RWM_STORE_CAP_UNIFIED`) takes boot's bind population at c1 from ≈30 % to
+/// **0 %**, and only once boot is unreachable except at genuine cold start are
+/// 10 and 128 indistinguishable everywhere and the derived value free to ship.
+/// **A constant cannot be derived into correctness while it is being used for a
+/// job it was never given.**
+///
+/// Bounded by `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`.
+pub const STORE_BOOT_DERIVED: usize = STORE_CAP_FLOOR;
+
 /// Everything `run_window_sender` decides once and then only reads.
 ///
 /// Grouped as the sender itself is: the caller's pipeline selection, the
@@ -238,6 +323,21 @@ pub(crate) struct SenderPolicy {
     /// is load-bearing at the brake — `active_paths()` would make the brake's
     /// question false by construction.
     pub composed_cap: bool,
+    /// `RWM_SUM_CAP` (paper §16.60, ADR-0070 finding 2): the `×N` deletion —
+    /// the pooled law's count multiplier is removed from the VALUE and kept in
+    /// the CEILING (`net::pooled_store_cap`'s `sum_cap` argument). Scoped to
+    /// the plain dynamic cap like its siblings; INDEPENDENT of
+    /// [`Self::store_cap_unified`], which selects the Σ's path SET — the two
+    /// are orthogonal axes of the same law and their four combinations are
+    /// four distinct formulas. Default OFF: the shipped tree is bit-identical.
+    pub sum_cap: bool,
+    /// `RWM_LATE_BRAKE` (paper §16.60.1, ADR-0070 finding 7): the late-stage
+    /// per-path cwnd brake, armed WITHOUT the composed pool law. Exactly
+    /// [`Self::composed_cap`]'s point 3 with its points 1 and 2 removed — same
+    /// code path, same per-path cap (the path's own cwnd), same `live_paths()`
+    /// set, and no constant in the predicate. Default OFF: `cwnd_full` stays
+    /// permanently false on the plain seat, as shipped.
+    pub late_brake: bool,
     /// The δ dial's deadline budget b(δ) at this tunnel's named point
     /// (`net::delta_budget_b`) — a NUMBER on a dial, resolved once, read by
     /// the three-term law's stall term. Not a mode selector: the law is
@@ -759,6 +859,63 @@ impl SenderPolicy {
         // been measured in composition with a sane pool.
         let composed_cap = gates.composed_cap && plain_dyn_cap;
         let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
+        // ── THE `×N` DELETION (env RWM_SUM_CAP) ───────────────────────────
+        // Paper §16.60, ADR-0070 finding 2. The pooled law's count multiplier
+        // is removed from the VALUE and kept in the CEILING:
+        //
+        //   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+        //   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+        //
+        // The law's own decl sentence names "Σ per-path (BDP + one recovery
+        // round of runway)", which is `Σᵢ(gain·anchorᵢ) = gain·Σ` — already
+        // linear in the path count because the Σ is. The shipped expression
+        // multiplies that already-summed base by the count a SECOND time, and
+        // the multiplier's provenance is ABSENT from this repository: not in
+        // the birth commit (`5cace52`), not in the doc comment, not at the
+        // decl site, not in the ledger. Its only cited evidence is a static-
+        // store sweep run with RWM_STORE set, which DISABLES the dynamic law
+        // entirely and therefore measures the CEILING — it is structurally
+        // incapable of seeing the multiplier.
+        //
+        // Exactly one factor changes: gain (a FOSSIL, finding 3), the knee
+        // (MEASURED BUT STALE, finding 4), the floor (DERIVED, §16.59), the
+        // Σ-set and the estimator are all carried unchanged and IDENTICAL on
+        // both arms, so they cancel out of the comparison rather than
+        // confounding it. Zero new constants; bit-identical at N = 1 by
+        // construction (`n_live < 2` returns None before the multiplier is
+        // read). Scoped to the plain dynamic cap like its siblings, and
+        // INDEPENDENT of `store_cap_unified` — U picks the Σ's path SET, this
+        // picks the count MULTIPLIER, and the four combinations are four
+        // distinct formulas. Default OFF: the shipped tree is bit-identical.
+        let sum_cap = gates.sum_cap && plain_dyn_cap;
+        // ── THE EXTRACTED LATE-STAGE BRAKE (env RWM_LATE_BRAKE) ───────────
+        // Paper §16.60.1, ADR-0070 finding 7 ("the correct architecture,
+        // DISABLED WITHOUT A DECISION"). The predicate, whole:
+        //
+        //   brake closes  ⟺  ∀ i ∈ live_paths() : in_flightᵢ ≥ cwndᵢ
+        //
+        // This is `composed_cap`'s point 3 with its points 1 and 2 removed —
+        // the SAME code path, the SAME per-path cap (the path's own cwnd:
+        // derived, never configured, always warm), the SAME `live_paths()` set
+        // (with `capᵢ = cwndᵢ` the predicate is exactly `available()ᵢ == 0`, so
+        // an `active_paths()` brake would resolve ON and never close — §16.53's
+        // DIVERGED lesson, a null EFFECT wearing a null RESULT's clothes). No
+        // constant appears in the predicate at all.
+        //
+        // It exists because the brake was not separately armable: it arms on
+        // `eff_infl_cap > 0 || composed_cap`, and `composed_cap` also forces
+        // `three_term_on` above — so the only two pre-existing ways to get a
+        // brake give either the composed pool law §16.57 refuted on magnitude,
+        // or `RWM_INFL_CAP`'s GLOBAL `Σ in_flight ≥ n` test against an
+        // operator-invented constant (`infl_percap` rides `gen_pipe`, off on
+        // this seat). Neither of those knobs changes meaning here.
+        //
+        // NOT scoped to `plain_dyn_cap`: the brake is an EMISSION-side
+        // congestion test, not a cap law, and it is exactly the seat
+        // `composed_cap` reaches. Default OFF: `cwnd_full` stays permanently
+        // false on the plain seat and the store cap remains the sole brake on
+        // outstanding (PIPELINE VERIFICATION MATRIX row 17).
+        let late_brake = gates.late_brake;
         // b(δ) at this tunnel's named point on the dial, ONCE.
         let delta_b = crate::net::delta_budget_b(protocol_hint);
         // ρ, the retention dial's declared value in this scope (see the
@@ -1167,6 +1324,8 @@ impl SenderPolicy {
             store_cap_unified,
             three_term_on,
             composed_cap,
+            sum_cap,
+            late_brake,
             delta_b,
             contract_rho,
             store_sack_release_on,

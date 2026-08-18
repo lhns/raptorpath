@@ -49,15 +49,19 @@
 //! amended), its contract stall (§16.56), and the δ deadline `D(δ)` (§16.20.3)
 //! that the stall is built on.
 //!
-//! Not in the class yet, and named so the gap is visible rather than
-//! implicit: the shipped pooled law `clamp(gain·N·Σ, floor, N·knee)` — it has
-//! no published derivation to agree WITH (ADR-0070 finding 2 records the `×N`
-//! as PROVENANCE ABSENT), and manufacturing one here would launder the defect
-//! into a passing test.
+//! **Joined 2026-08-18**: the pooled store cap, BOTH forms — §16.60 publishes
+//! `clamp(gain·Σ, floor, N·knee)` with a provenance line per symbol, so the
+//! corrected form now has a derivation to agree WITH. The shipped form's `×N`
+//! still has none (ADR-0070 finding 2 records it as PROVENANCE ABSENT), and
+//! this file does NOT manufacture one: what it transcribes for the shipped arm
+//! is §16.60's statement OF the defect — the expression the code runs, labelled
+//! as the thing under review — which is a different act from publishing a
+//! derivation for it. The agreement test's job here is to guarantee that the
+//! arm a battery scores is the arm the paper describes, on both sides.
 
 use raptorpath::net::{
-    contract_stall_s, delta_budget_b, shed_deadline_us, three_term_store_cap, ThreeTermTerm,
-    WIN_STORE_MAX,
+    contract_stall_s, delta_budget_b, pooled_store_cap, pooled_store_cap_unclamped,
+    shed_deadline_us, three_term_store_cap, ThreeTermTerm, WIN_STORE_MAX,
 };
 use raptorpath::control::fec_rate::ProtocolHint;
 
@@ -111,6 +115,39 @@ fn published_composed_cap_unclamped(paths: &[(f64, f64, f64)], rho: f64, b: f64)
         .unwrap_or(0.0);
     let skew = (rtp_max - rtp_min) / 2.0;
     sum + 2.0 * rate_fast * skew
+}
+
+/// **PUBLISHED**: paper §16.60 — the pooled outstanding cap, both forms.
+///
+/// ```text
+///   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+///   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+/// ```
+///
+/// Transcribed 2026-08-18. Written in the paper's own order and symbols, with
+/// the multiplier as the single differing factor because that is how §16.60
+/// states it. Returned UNCLAMPED and real-valued so the law and its bounds are
+/// asserted separately (template part 4); the caller applies the `ceil` and the
+/// clamp where they are visible.
+///
+/// It takes the per-path anchors rather than a pre-summed Σ on purpose: the
+/// claim under test is that the Σ *is* the path-count scaling, and handing the
+/// transcription an already-summed number would assume exactly that.
+fn published_pooled_cap_unclamped(anchors: &[f64], gain: f64, sum_cap: bool) -> f64 {
+    let n = anchors.len() as f64;
+    let sigma: f64 = anchors.iter().sum();
+    if sum_cap { gain * sigma } else { gain * n * sigma }
+}
+
+/// **PUBLISHED**: paper §16.60's ceiling — `max(N·knee, floor)`.
+///
+/// Transcribed 2026-08-18. ADR-0070's own correction to the shorthand used
+/// everywhere else in the tree: the upper clamp is `max(N·knee, floor)`, not
+/// bare `N·knee`. At the shipped `knee = 2048` the two coincide and no cell has
+/// ever reached the difference — which is exactly why it must be transcribed
+/// from the paper rather than from memory.
+fn published_pooled_ceiling(n: usize, knee: usize, floor: usize) -> usize {
+    (n * knee).max(floor)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -336,6 +373,153 @@ fn the_amended_term_one_is_k_times_the_pre_amendment_term_one() {
         assert!(
             (4.0..=50.5).contains(&pct),
             "K={k} is outside the range §16.57 measured on the wire"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 4. THE POOLED STORE CAP (paper §16.60) — joined 2026-08-18
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The wire's own per-path anchors in symbols, reconstructed the way
+/// `store_cap_sf_bench::AckShape::anchor_sym` does it (READOUT 3's three
+/// measured columns multiplied: `xanchor · rate_lr · RTprop`). Transcribed here
+/// so the agreement is driven over the range the law actually operates in —
+/// template part 2 — and not only over round synthetic numbers.
+const WIRE_C7: [f64; 2] = [9.80 * 9_432.0 * 0.0077, 10.11 * 9_418.0 * 0.0097];
+const WIRE_C8: [f64; 2] = [13.29 * 6_948.0 * 0.0084, 13.82 * 1_376.0 * 0.0386];
+
+/// The shipped pooled-law constants (`sender_policy::resolve`, `gates.rs`).
+const POOL_GAIN: f64 = 2.0;
+const KNEE: usize = 2048;
+const POOL_FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
+
+/// **LAW: the pooled store cap, paper §16.60, BOTH ARMS.**
+/// `net::pooled_store_cap` against the published expressions.
+///
+/// Driven over the wire's own measured anchors, a symmetric synthetic sweep to
+/// N = 8 (the axis no cell reaches, and the only one on which the two arms'
+/// shapes are distinguishable), and an asymmetric geometry so nothing here
+/// depends on the legs being equal. The engine's `ceil`-to-whole-symbols is the
+/// sole deliberate divergence and it is BOUNDED rather than absorbed: the
+/// realized value is the published one rounded up by strictly less than one
+/// symbol, asserted SIGNED.
+#[test]
+fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
+    // A pool large enough that the ceiling is provably inert, so what follows
+    // is an assertion about the LAW (template part 4 / DISCIPLINE 17b).
+    const POOL_INERT: usize = 1 << 20;
+
+    let mut cases: Vec<Vec<f64>> = vec![WIRE_C7.to_vec(), WIRE_C8.to_vec()];
+    for n in 2..=8usize {
+        cases.push(vec![137.0; n]);
+    }
+    cases.push(vec![50.0, 900.0, 3_000.0]);
+
+    for anchors in &cases {
+        let n = anchors.len();
+        let sigma: f64 = anchors.iter().sum();
+        for sum_cap in [false, true] {
+            let paper = published_pooled_cap_unclamped(anchors, POOL_GAIN, sum_cap);
+
+            // (i) The UNCLAMPED law, exactly — no quantization on this side.
+            let engine_raw = pooled_store_cap_unclamped(sum_cap, n, sigma, POOL_GAIN);
+            assert!(
+                (engine_raw - paper).abs() < 1e-9,
+                "N={n} sum_cap={sum_cap}: unclamped engine {engine_raw} vs paper {paper}"
+            );
+
+            // (ii) The realized value: the paper's expression, ceil'd.
+            let engine = pooled_store_cap(true, sum_cap, n, sigma, POOL_GAIN, POOL_FLOOR, POOL_INERT)
+                .expect("engaged at N >= 2 with a positive base");
+            let err = engine as f64 - paper;
+            assert!(
+                (0.0..1.0).contains(&err),
+                "N={n} sum_cap={sum_cap}: realized {engine} is not paper {paper} ceil'd (err {err})"
+            );
+
+            // (iii) PROVE THE CLAMP IS NOT ANSWERING.
+            let ceiling = published_pooled_ceiling(n, POOL_INERT, POOL_FLOOR);
+            assert!(
+                engine < ceiling && engine > POOL_FLOOR,
+                "N={n} sum_cap={sum_cap}: value {engine} is not interior — this \
+                 assertion compared two clamps, not two laws"
+            );
+        }
+    }
+}
+
+/// **THE CEILING, agreed separately** — `max(N·knee, floor)`, not bare
+/// `N·knee`, and it is the same expression on both arms.
+///
+/// Asserted on its own because the whole ADR-0070 postmortem is that a law and
+/// its clamp were never asserted apart, and because the `max(·, floor)` half is
+/// exactly the piece the tree's own shorthand keeps dropping.
+#[test]
+fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
+    for n in 2..=8usize {
+        // A base so large the value cannot be interior: what comes back IS the
+        // ceiling, which is what makes this an assertion about the bound.
+        for sum_cap in [false, true] {
+            let engine =
+                pooled_store_cap(true, sum_cap, n, 1.0e12, POOL_GAIN, POOL_FLOOR, KNEE).expect("on");
+            assert_eq!(
+                engine,
+                published_pooled_ceiling(n, KNEE, POOL_FLOOR),
+                "N={n} sum_cap={sum_cap}: the ceiling is not max(N·knee, floor)"
+            );
+        }
+        // The `max(·, floor)` clause exercised where it actually differs: a knee
+        // below the floor. No shipped cell reaches this, which is precisely why
+        // the shorthand lost it and why it is pinned here.
+        assert_eq!(
+            pooled_store_cap(true, true, n, 1.0e12, POOL_GAIN, POOL_FLOOR, 1),
+            Some(POOL_FLOOR),
+            "N={n}: the ceiling dropped its floor clause"
+        );
+    }
+}
+
+/// **THE PUBLISHED PREDICTIONS, PINNED** — §16.60's table, RECOMPUTED from the
+/// wire's measured anchors rather than transcribed from the table.
+///
+/// These are the numbers the battery's pre-registration is scored against, so
+/// they must be a CONSEQUENCE of the published formula and the measured inputs.
+/// If an anchor input is ever corrected this test fails and the paper's table is
+/// wrong — which is the intended coupling, and the reason the predictions live
+/// in a test at all rather than only in prose.
+#[test]
+fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
+    for (cell, anchors, expect_corrected) in
+        [("c7", &WIRE_C7, 3_271usize), ("c8", &WIRE_C8, 3_020usize)]
+    {
+        let sigma: f64 = anchors.iter().sum();
+        let n = anchors.len();
+
+        // The SHIPPED arm: pinned at the ceiling, 2·knee at a dual. This is the
+        // 121/126-reps observation, as arithmetic.
+        let shipped = pooled_store_cap(true, false, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
+            .expect("on");
+        assert_eq!(shipped, 2 * KNEE, "{cell}: the shipped arm is not pinned at 2·knee");
+        assert_eq!(shipped, 4_096);
+
+        // The CORRECTED arm: interior, and exactly the published integer.
+        let corrected = pooled_store_cap(true, true, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
+            .expect("on");
+        assert_eq!(
+            corrected, expect_corrected,
+            "{cell}: §16.60's published prediction is not what the law computes"
+        );
+        assert!(
+            corrected < 2 * KNEE && corrected > POOL_FLOOR,
+            "{cell}: the correction is not interior — the prediction would be a clamp"
+        );
+
+        // The ratios §16.60 states, recomputed: c7 0.799, c8 0.737.
+        let ratio = corrected as f64 / shipped as f64;
+        assert!(
+            (0.70..0.81).contains(&ratio),
+            "{cell}: the cap ratio {ratio:.4} left the published band"
         );
     }
 }

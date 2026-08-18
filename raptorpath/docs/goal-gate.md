@@ -30834,3 +30834,219 @@ gates, the expiry horizon, the refuted candidate + its cursors),
 assertions), `tests/store_cap_sf_bench.rs` (the Σ`cwnd` readout),
 `tools/l1/lib.sh` (forwarding). No visualizer or wasm change (scope rule).
 Commits on `fix/accounting-ledger`, not merged, not pushed.
+
+## The ×N Deletion, the Boot Derivation, and the FULL Arm's Expressibility (2026-08-18, `fix/sum-cap` from main@`1d83547`) — **STRICTLY LOCAL.** No VM, no L1 invocation, no benchmark run. SHIPPED-LAW CLEANUP item 1: ADR-0070 finding 2's `×N` becomes a gate, finding 5's `boot = 128` gets its derivation attempted, and the goal's FULL arm is checked for expressibility BEFORE anything is pre-registered. **VERDICT: the deletion ships as `RWM_SUM_CAP` (default OFF) with the corrected formula and its predictions published FIRST; `boot = 128` DERIVES — to the FLOOR, dissolving as an independent constant — but the derived value is BLOCKED by the cliff and does NOT ship; and the FULL arm was NOT expressible on main, because the late-stage brake could not be armed without the composed pool law §16.57 refuted. A gate had to be built.** Every default unchanged.
+
+### PART 1 — the `×N` deletion
+
+Paper **§16.60**, committed BEFORE any code (`6794dec`), per CLAUDE.md
+FORMULA-FIRST. The law, both forms in ONE expression (`net::pooled_store_cap`,
+multiplier as a VALUE — no second implementation to drift, which is how
+§16.57's divergence happened inside one commit):
+
+```text
+  shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+  corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+```
+
+Exactly one factor changes. `gain` (FOSSIL), `knee` (MEASURED BUT STALE),
+`floor` (DERIVED, §16.59), the Σ-set and the estimator are carried unchanged
+and are **identical on both arms**, so they cancel out of the comparison rather
+than confounding it. Zero new constants. Bit-identical at N = 1 **by
+construction** (`n_live < 2` returns before the multiplier is read — asserted,
+not assumed).
+
+**THE PRE-REGISTRATION'S PREDICTIONS**, recomputed from the wire's own measured
+anchors (READOUT 3's three columns multiplied, `xanchor · rate_lr · RTprop`)
+rather than transcribed from ADR-0070's prose, and PINNED as a test
+(`formula_agreement::the_published_predictions_are_what_the_law_computes_at_the_wires_anchors`)
+so that correcting an anchor input fails the test and the paper's table with it:
+
+| cell | legs (symbols) | Σ | shipped → realized | corrected → realized | ratio | tolerance |
+|---|---|---|---|---|---|---|
+| c7 | 711.74 / 923.60 | 1635.33 | 6541 → **4096** (pinned `2·knee`) | 3270.67 → **3271** | 0.799 | ±1 symbol (the `ceil`); RATIO band 0.70–0.81 |
+| c8 | 775.65 / 734.03 | 1509.68 | 6039 → **4096** (pinned `2·knee`) | 3019.35 → **3020** | 0.737 | as above |
+| c1 / sc2 | N = 1 | — | not engaged | not engaged | 1.000 | EXACT — bit-identical by construction |
+
+So the deletion is predicted to take both duals **off the ceiling for the first
+time**, cutting the realized cap 20.1 % at c7 and 26.3 % at c8. There is no free
+parameter: the shipped side is the 121/126-reps observation as arithmetic, and
+the corrected side is `2 × Σ` of three measured columns.
+
+**The crossover the correction restores**, which is the honest reading of any
+null on this arm:
+
+```text
+  shipped    pins at  Σ ≥ knee/gain    = 1024        (the N CANCELS — path-count-free)
+  corrected  pins at  Σ ≥ N·knee/gain  = 1024 per path
+```
+
+An arm whose `[SUMCAP]` echo reads a high `pin=` fraction measured the CLAMP,
+not the law, and MEASUREMENT DISCIPLINE 18 requires that be the finding rather
+than a filed null.
+
+**The echo, built so a null is READABLE** (§16.53's DIVERGED lesson, in
+advance): `[SUMCAP] on= eng=/ chg=/ chg_frac= pin= floor= cap= ask=`, plus the
+two-sided `RWM_SUM_CAP=0`/`=1` in `[GATES]`. The gauge records the
+**counterfactual** at every refresh — the same expression with the multiplier
+flipped, under the SAME bounds — so *"did this gate change anything"* is
+answerable from ONE run instead of by differencing two. It separates the three
+ways this arm can return "no difference": `eng=0/N` (never engaged — a warm-up
+failure), `chg=0/M` (engaged, same integer every time — a null RESULT, the
+clamp governs), and `pin` high (the corrected value itself pinned — a
+DISCIPLINE 18 defect finding about the CEILING, from which no verdict about the
+multiplier may be recorded). `cap=` and `ask=` are reported as a pair, which is
+DISCIPLINE 17(b) at runtime.
+
+### PART 2 — `boot = 128`: DERIVED, and the derivation lands on the FLOOR
+
+Paper **§16.61**. Boot's own rationale, read as a requirement, is two LOWER
+bounds and one UPPER pressure: it must buy the `ANCHOR_MIN_SAMPLES` samples
+that END it (8 at the shipped merged-ack cadence — a cap that cannot end itself
+is not a bootstrap but the strangle the floor prevents, one layer up); it must
+not open below RFC 6928's IW (10 — *literally* boot's job, since RFC 6928 sizes
+the first flight on an UNMEASURED path); and "tight, otherwise" selects the
+smallest value satisfying both.
+
+```text
+  STORE_BOOT_DERIVED = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+                            RFC6928_INITIAL_WINDOW ) = max(8·1, 10) = 10 ≡ STORE_CAP_FLOOR
+```
+
+**THE FINDING IS THE IDENTITY, NOT THE NUMBER.** Boot and the floor are the
+same quantity — *the outstanding bound that applies when the law has no
+measurement* — reached from two rationales through the same two cited clauses
+to the same answer. **Boot is not an independent constant of this machine; it
+dissolves into the floor.**
+
+**What 128 was**: *"~1.5× a 100 Mbit / 10 ms BDP"* reconstructs as
+`1.5 × (10 400 × 0.008) = 124.8`, rounded to 128 — every input **c2's
+configured parameters**, the `1.5` with no provenance anywhere. A fit to one
+cell's link budget, and circular for a bootstrap cap specifically: sizing "the
+cap for when the path's BDP is unknown" to a particular path's BDP assumes the
+missing quantity. `RWM_STORE_BOOT` has never been swept, so 128's
+*consequences* are measured while 128 itself never was.
+
+**WHERE BOOT ACTUALLY BINDS — the question ADR-0070 did not ask**, and it
+decides the disposition:
+
+| cell | `capboot` bind fraction | when |
+|---|---|---|
+| **c1** | **17.2–42.1 % of steady DIAG samples (mean ≈30 %)** | **MID-TRANSFER** |
+| c7 / c8 / sc2 | 0.0000 | — |
+
+Three sites read the constant; only the plain chain's terminal `else` binds,
+reached when `active_paths()` empties — ADR-0070 finding 1's cliff landing a
+steady-state sender on a cold-start constant. It survives the honest-anchor
+flip (29.1 / 25.9 %) and the newest wire session reads 0.17–0.42 across all 16
+reps on both seeds. **The duals read 0.0000 because the `2·knee` pin absorbs
+them — i.e. Part 1's `×N` defect is what HIDES boot's defect at c7/c8. The two
+findings are one clamp seen from two sides.**
+
+**VERDICT: DERIVED, NOT SHIPPED.** Replacing 128 with 10 at the one place boot
+is live would deepen a cliff already priced at **+15.8 / +24.8 % goodput when
+removed** by a further **×12.8**. The derivation closes; the replacement is
+blocked *on the cliff, not on itself*. The order is forced: the live set takes
+boot's c1 bind population ≈30 % → **0 %**, and only then are 10 and 128
+indistinguishable everywhere. **A constant cannot be derived into correctness
+while it is being used for a job it was never given.** The derived value rides
+the FULL arm behind the live set, or not at all. `RWM_STORE_BOOT` stays 128.
+
+This is a disposition ADR-0070's framing had no slot for: *the derivation
+closes and the derived value is still not shippable*, because the constant's
+binding population is a symptom of a DIFFERENT defect.
+
+### PART 3 — FULL-arm expressibility: **it was NOT expressible, and a gate had to be built**
+
+Checked BEFORE the pre-registration, per the AUP lesson. Four of the five
+pieces were gate-expressible on main. **The late-stage brake was not.** It arms
+on `eff_infl_cap > 0 || composed_cap`, and `composed_cap` also forces
+`three_term_on` — so the only two pre-existing doors gave either the composed
+pool law whose MAGNITUDE §16.57 refuted, or `RWM_INFL_CAP`'s GLOBAL
+`Σ in_flight ≥ n` test against an operator-invented constant (`infl_percap`
+rides `gen_pipe`, off on the plain seat). "Arm the brake AND keep the pooled
+law" was **unsatisfiable**.
+
+`RWM_LATE_BRAKE` (paper §16.60.1, default OFF) is therefore an EXTRACTION, not
+a new mechanism — the identical code path via a shared `cwnd_brake` predicate,
+the identical per-path cap, the identical set:
+
+```text
+  brake closes  ⟺  ∀ i ∈ live_paths() :  in_flightᵢ ≥ cwndᵢ
+```
+
+**No constant appears in the predicate at all**: `cwndᵢ` is the congestion
+controller's own window (derived, never configured, always warm), and
+`live_paths()` is forced because with `capᵢ = cwndᵢ` the predicate is exactly
+`available()ᵢ == 0`, so an `active_paths()` brake would resolve ON and never
+close — a null EFFECT wearing a null RESULT's clothes. `[CCAP]`'s
+`brake=<closed>/<ticks>` now counts for both doors.
+
+**THE FULL ARM'S EXACT GATE LIST** — six env vars, all default OFF:
+
+```sh
+RWM_SUM_CAP=1             # the ×N deletion            (§16.62)
+RWM_STORE_CAP_UNIFIED=1   # the LIVE SET               (ADR-0070 finding 1)
+RWM_LATE_BRAKE=1          # the LATE-STAGE BRAKE       (§16.60.1) — NEW
+RWM_LOSS_SENT_TRUTH=1     #  ┐
+RWM_RELEASE_1TO1=1        #  ├ the ledger/loss trio
+RWM_CHARGE_RECOVERY=1     #  ┘
+```
+
+`RWM_COMPOSED_CAP` and `RWM_THREE_TERM` stay **0**: the FULL arm carries the
+`×N` deletion *instead of* the composed pool law, not as well.
+
+**The composition, asserted rather than assumed**
+(`net::tests::the_full_arm_gate_set_resolves_to_the_intended_machine`): every
+bit survives resolution (the generalized capw-no-op assertion — a gate ANDed
+away by a scope it does not satisfy is a null EFFECT any battery would score as
+a null RESULT); the pool law reached is the POOLED one; the brake is armed
+WITHOUT the composed law (**this assertion could not have passed before this
+branch**); and the cap under the resolved policy is §16.60's published 3020 at
+c8 against the control's 4096.
+
+Two composition facts recorded rather than discovered later:
+
+* **The `×N` gate and the live set are INDEPENDENT AXES**, and independence is
+  asserted as a **factorisation** rather than as four inequalities — the
+  multiplier's effect is `×N` whichever set is selected, and the set's effect is
+  `×Σ_live/Σ_active` whichever multiplier is selected. The four combinations are
+  four distinct formulas.
+* **The trio is not resolved through `SenderPolicy` at all** — those three bits
+  are read by the SCHEDULER through its own cached process-globals, since they
+  govern the estimator and the ledger rather than sender policy. Having no
+  shared resolution step with the cap gates, they have nothing to be ANDed away
+  BY. The one real interaction is **one-way**: `RWM_RELEASE_1TO1` moves the
+  brake's OPERAND (`in_flight`) while the brake moves nothing the trio reads.
+
+### WHAT THIS SECTION DOES NOT CLAIM
+
+* **No wire measurement of the multiplier exists in either direction** — that
+  IS ADR-0070 finding 2. `RWM_SUM_CAP`'s OFF is a **BACKLOG**, not a verdict,
+  unlike `RWM_COMPOSED_CAP`'s OFF which §16.57 made a measured one.
+* **No default flips.** Not the multiplier, not the boot cap, not the brake.
+* **No claim that 10 beats 128**, or that 128 beats anything. Neither has a
+  measurement; that is the finding.
+* **Loopback is not the arm's evidence.** One path means `n_live < 2` and the
+  pooled law is not engaged; the completion check is that the N = 1 claim did
+  not break the seat it does not touch.
+
+### EVIDENCE
+
+`cargo test -p raptorpath --lib` **435** (3 law-shape + 1 composition test
+added) · `-p raptorpath-math` · `--doc` clean · `gate_suite --release` 15
+(17 `#[ignore]`d) · `formula_agreement` **7** (3 added — the pooled law JOINS
+the agreement class) · `store_cap_bench` **6** (1 added) · `store_cap_sf_bench`
+**48** · `recovery_bench` 8 · `slack_bench` 6 · loopbacks: `sum_cap_loopback`
+(NEW), `composed_cap`, `gauge_reachability`, `copa_sole`, `patience`,
+`ack_merge` — all green. **MULTI-PROCESS**: lib ×8 and the three sensitive
+binaries ×5 in independent processes, no flake surfaced.
+
+Engine tree touched: `net/mod.rs` (the law, the `[SUMCAP]` gauge, both pooled
+seats, the shared `cwnd_brake` predicate, the tests), `net/sender_policy.rs`
+(two policy bits + `STORE_BOOT_DERIVED`), `gates.rs` (two gates, echo, two
+two-sided OFF assertions), `tests/formula_agreement.rs`,
+`tests/store_cap_bench.rs`, `tests/sum_cap_loopback.rs` (new),
+`tools/l1/lib.sh` (forwarding). Paper: §16.60, §16.60.1, §16.61, two §11.6
+rows. No visualizer or wasm change (scope rule). Commits on `fix/sum-cap`, not
+merged, not pushed.
