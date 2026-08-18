@@ -13077,6 +13077,50 @@ the floor's stated job to a number, with every input cited, and it is offered
 as such. The wire question it raises is pre-registered in the goal-gate ledger
 rather than run.
 
+### 16.60 The two conceptual successors, enumerated as CANDIDATES and not adjudicated: at ρ = 1 the shipped composed law contains no δ at all, and its slack exceeds the largest allowance the δ dial can express (2026-08-18, `docs/successor-candidates`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default, no test; ADR-0071 is the full enumeration, this section is the paper's pointer)
+
+§16.57 refuted the composed law's MAGNITUDE while confirming its SHAPE, and
+§16.59 eliminated the stall's CLOCK as the explanation — the queue-free
+construction sheds 1.7 % of a 90 % overshoot at c8. What remains is the
+magnitude itself, in two places: the `17/8` slack and the ceiling that is
+supposed to bound it. **ADR-0071 enumerates both as candidate families,
+formula-first, each with per-symbol provenance, a reduction check, predictions
+at the five battery cells computed from the published `[3T]` means, and a
+falsification plan. It takes no decision and recommends nothing**; the review
+is the user's, and the ADR ships `Proposed` for that reason.
+
+Three formula-level findings from that enumeration belong in the paper because
+they are arithmetic on published numbers and they constrain any successor:
+
+1. **At the shipped scope δ is multiplied by zero.** `contract_stall_s` is
+   `(1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)`, and the plain reliable seat pins
+   ρ = 1 (`sender_policy.rs:767`), so the stall is `17/8·srtt` and **the
+   composed law contains no δ term at all where it ships.** §16.56's design
+   sentence — *"δ prices queue as a latency budget"* — is therefore not merely
+   unmet at sc2 (§16.57) but unmeetable by construction, and that is the
+   mechanism behind "δ priced nothing".
+2. **The shipped slack exceeds the dial's own maximum allowance, everywhere.**
+   The largest budget `D(δ) = min(b(δ)·RTprop, 2·RTprop)` can express is
+   2·RTprop at `b(Bulk) = 2`. The shipped slack is `2.125·K·RTprop` with `K`
+   floored at 1.0, i.e. **2.21–3.20 RTprop at the session's measured `K`**.
+   The law charges more than the Bulk allowance at every point of the dial,
+   including Realtime, where the allowance is ½·RTprop.
+3. **c8L cannot fund one BDP, and c8 measures a warming estimator.** Term 1
+   alone reads `W` = 7 489 symbols at c8L against `WIN_STORE_MAX` = 4096 —
+   **1.83× the memory bound before any slack, span or δ** — so no cap law of
+   any magnitude can be interior there and c8L must be pre-declared
+   memory-starved rather than reported as a law that pinned. And c8 (25 MB,
+   2.54 s) and c8L (200 MB, 20.5 s) are the SAME geometry with `W` differing
+   **4.5×** while delivered goodput is flat, which makes c8 a cell whose cap
+   inputs are still warming.
+
+A fourth finding is structural rather than numeric: the δ-priced slack and the
+δ-priced ceiling are **one formula written twice**. Because
+`min(a + x, a + y) = a + min(x, y)` over the shared network-window baseline,
+δ is charged exactly once and the ceiling can only ever remove time from the
+demand, never add it — so the composition does not double-charge, and the real
+open choice is which slack sits inside the `min`. ADR-0071 shows the
+composition rather than asserting it.
 
 ## 17. The Measured Regime Map (2026-07-19)
 
