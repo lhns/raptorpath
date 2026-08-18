@@ -1,0 +1,105 @@
+============================================================================================
+LADDER BATTERY — CALIBRATION PASS (n = 1; NOTHING HERE IS A RESULT)
+contract: goal-gate "Ladder Battery — PRE-REGISTRATION" (91c00dd), era main@5ddf7f6
+arms: A = shipped | N = SUM_CAP | T = the ledger/loss trio | NT = N+T | FULL = NT + UNIFIED + LATE_BRAKE
+============================================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+### ARMCOUNT in the driver is NOT this table's n — it counts aborts too.
+
+cell-arm     rows  ABORT   live   DNF  noSUMCAP  noWALL   noPL  noCPU  noPING
+c1-A            1      0      1     0         0       0      0      0       0
+c1-N            1      0      1     0         0       0      0      0       0
+c1-T            1      0      1     0         0       0      0      0       0
+c1-NT           1      0      1     0         0       0      0      0       0
+c1-FULL         1      0      1     0         0       0      0      0       0
+c7-A            1      0      1     0         0       0      0      0       0
+c7-N            1      0      1     0         0       0      0      0       0
+c7-T            1      0      1     0         0       0      0      0       0
+c7-NT           1      0      1     0         0       0      0      0       0
+c7-FULL         1      0      1     0         0       0      0      0       0
+c8-A            1      0      1     0         0       0      0      0       0
+c8-N            1      0      1     0         0       0      0      0       0
+c8-T            1      0      1     0         0       0      0      0       0
+c8-NT           1      0      1     0         0       0      0      0       0
+c8-FULL         1      0      1     0         0       0      0      0       0
+c8L-A           1      0      1     0         0       0      0      0       0
+c8L-N           1      0      1     0         0       0      0      0       0
+c8L-T           1      0      1     0         0       0      0      0       0
+c8L-NT          1      0      1     0         0       0      0      0       0
+c8L-FULL        1      0      1     0         0       0      0      0       0
+sc2-A           1      0      1     0         0       0      0      0       0
+sc2-N           1      0      1     0         0       0      0      0       0
+sc2-T           1      0      1     0         0       0      0      0       0
+sc2-NT          1      0      1     0         0       0      0      0       0
+sc2-FULL        1      0      1     0         0       0      0      0       0
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS (discipline 15c)
+### An arm that cannot show its control was a control has measured one condition twice.
+
+cell-arm      sum_cap  loss_sent  charge_re  release_1  store_cap  late_brak  composed_  three_ter   instr  SUMCAP   actU  act3T=0   CCAP
+c1-A           1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c1-N           1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c1-T           1/1(0)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c1-NT          1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c1-FULL        1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c7-A           1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c7-N           1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c7-T           1/1(0)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c7-NT          1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c7-FULL        1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8-A           1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8-N           1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8-T           1/1(0)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8-NT          1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8-FULL        1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8L-A          1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8L-N          1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8L-T          1/1(0)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8L-NT         1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+c8L-FULL       1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+sc2-A          1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+sc2-N          1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+sc2-T          1/1(0)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+sc2-NT         1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+sc2-FULL       1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1     1/1    1/1      1/1    1/1
+
+  `SUMCAP` counts reps whose [SUMCAP] PRESENCE matches the arm (emitted
+  only on the ON arm, fed the counterfactual on both). `act3T=0` counts
+  reps with the three-term echo ABSENT, which is the expected state on
+  EVERY arm: no ladder arm reaches the three-term pool seat. `CCAP` counts
+  reps whose [CCAP] presence matches — PRESENT on FULL through the
+  LATE_BRAKE door, ABSENT elsewhere.
+
+### HEADROOM (discipline 16b) — tc, arm A, THIS session, EVERY cell
+
+  DENOMINATOR = THE TRANSFER WALL (`seconds`), NOT `INVOCATION_S`.
+  `INVOCATION_S` is the whole script's wall — namespace bring-up, netem/tbf
+  setup, the verification pings and teardown — and it runs 1.12x the
+  transfer at c1/c8L up to 2.11x at c8. Dividing shaped-device BYTES by it
+  read c7 at 77.6% when the cell is at 96.9%, which would have LICENSED the
+  unsatisfiable c7 throughput target discipline 16 exists to forbid. It is
+  printed beside the corrected figure so the correction is auditable.
+
+cell       shaped  xfer_s  INVOC_S  util s42   util s7  headroom   claims permitted
+c1        1000 Mb   14.76     19.0      23.8         -      76.2   throughput targets permitted
+c7         200 Mb    9.65     12.0      92.8         -       7.2   throughput targets permitted
+c8         120 Mb    2.40      5.0      82.7         -      17.3   throughput targets permitted
+c8L        120 Mb   18.90     22.0      80.8         -      19.2   throughput targets permitted
+sc2        100 Mb    9.24     11.0      96.9         -       3.1   PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)
+
+  THE CONTRACT WRITES NO THROUGHPUT TARGET AT ANY CELL. Every scored clause
+  is a bind fraction, a cap magnitude, an eps-hat class, a paired sign test
+  or a no-regression guard; goodput appears only in the N rung's OUTRIGHT-
+  REFUTATION falsifier and in G-REG, both one-sided DOWNWARD and therefore
+  satisfiable at any utilisation. This table is the check that those
+  decisions were made against the right arithmetic — and, at the
+  calibration, it is what fills the contract's own headroom table.
+
+============================================================================================
+CALIBRATION PASS ENDS HERE. n = 1: no sigma, no seed-7 evidence, and
+nothing above is a result. Commit this table as the contract's
+COMPLETION — in its own commit — BEFORE launching ladder_all.sh, and
+read the ledger's LIVENESS / ARM-LIVENESS-FAIL / ARM-CONTAMINATION
+lines first: this is also the smoke.
+============================================================================================

@@ -31417,11 +31417,56 @@ The protocol, which is the uniflip / latency-lever pattern applied verbatim:
 
 | cell | shaped | prior arm-A util class (three same-era sessions + the composed battery) | **headroom, tc-measured this session** | claims permitted |
 |---|---|---|---|---|
-| c1 | 1 Gbit | 23.0–25.2 % | *(owed — calibration)* | *(owed)* |
-| c7 | 200 Mbit | 93.8–97.2 % | *(owed — calibration)* | *(owed)* |
-| c8 | 120 Mbit | 69.7–80.6 % | *(owed — calibration)* | *(owed)* |
-| c8L | 120 Mbit | as c8 (the length axis) | *(owed — calibration)* | *(owed)* |
-| sc2 | 100 Mbit | 97.9–100.3 % | *(owed — calibration)* | *(owed)* |
+| c1 | 1 Gbit | 23.0–25.2 % | **76.2 %** (util 23.8 %, xfer 14.76 s) | **throughput targets permitted** |
+| c7 | 200 Mbit | 93.8–97.2 % | **7.2 %** (util 92.8 %, xfer 9.65 s) | **throughput targets permitted** |
+| c8 | 120 Mbit | 69.7–80.6 % | **17.3 %** (util 82.7 %, xfer 2.40 s) | **throughput targets permitted** |
+| c8L | 120 Mbit | as c8 (the length axis) | **19.2 %** (util 80.8 %, xfer 18.90 s) | **throughput targets permitted** |
+| sc2 | 100 Mbit | 97.9–100.3 % | **3.1 %** (util 96.9 %, xfer 9.24 s) | **PARITY / LATENCY / CAP-SHAPE ONLY** — headroom < 5 % (discipline 16c) |
+
+**THE COMPLETION, and it is the ONLY edit this contract permits itself after the
+pre-registration.** Filled from the same-session, same-binary calibration pass
+(`ladder_calib.sh`, `RWM_LADDER_TAG=ladder-calib`, ONE rep per arm per cell, seed 42,
+20 → in fact 25 invocations, all five arms × all five cells), binary sha256
+`1ef6d8a1…82cb559`, source `87009e2` (engine byte-identical to the era's `5ddf7f6` —
+that merge touched `docs/goal-gate.md` and `tools/l1/ladder_*` and nothing else),
+VM settled load 0.22 before launch. `tc -s qdisc show` was captured on **every cell and
+every invocation**, not a subset. **The denominator is the TRANSFER wall (`seconds`),
+never `INVOCATION_S`** — both are printed in `ladder-calib-headroom.txt` so the
+correction is auditable, and `INVOCATION_S` runs 1.16× (c8L) to 2.08× (c8) the transfer
+in this session, reproducing the ratio range the protocol warned about. **It is n = 1:
+no σ, no seed-7 evidence, and nothing in it is a result.**
+
+*The drift check the protocol asks for (item (b)), reported in both directions.* c1
+(23.8 %) and c8L (80.8 %) land inside their prior class. Three cells land marginally
+outside: **c8 at 82.7 % is 2.1 pt ABOVE** its prior ceiling of 80.6 %, **c7 at 92.8 % is
+1.0 pt BELOW** its prior floor of 93.8 %, and **sc2 at 96.9 % is 1.0 pt BELOW** its prior
+floor of 97.9 %. All three are within the spread of the prior classes themselves and
+none crosses a permission boundary in the direction that would matter; the prior classes
+remain quotable, and this note is the record that they were checked rather than assumed.
+
+*Does the calibration CONTRADICT any permission (protocol item 4)?* **No clause is
+voided.** sc2 draws the `< 5 %` permission and is therefore restricted to parity /
+latency / cap-shape — which is what sc2 was already scored on: **G-SC2-LAT is keyed to
+`ping_p50` with goodput entering only as a within-2σ PARITY condition, not as a target**,
+and N-IDENT/T-IDENT at sc2 are two-sided identity checks. The contract writes no
+throughput target at any cell, and its only two goodput clauses (the N rung's
+OUTRIGHT-REFUTATION falsifier and G-REG) are one-sided DOWNWARD and so remain satisfiable
+at 96.9 % utilisation. c7 at 7.2 % clears the bar but only just, and no clause depends
+on that margin.
+
+*And the smoke, disclosed in full because a pre-registration that hides what it already
+saw is not one.* The calibration is also this battery's first execution of every arm's
+env on this binary. **All 25 invocations live; 0 ABORT, 0 DNF, 0 ARM-LIVENESS-FAIL,
+0 ARM-CONTAMINATION, 0 INSTRUMENT-FAIL**, and the two-sided `[GATES]` echo matched the
+expectation table on both endpoints in 25/25 reps. The three pre-written instrument facts
+all read as written: `[SUMCAP]` appeared on N/NT/FULL and on neither A nor T; `[SUMCAP]
+eng=0/0` at the single-path cells (sc2 on all three ON arms) with `eng=N/N`, N ≫ 0, at
+every dual — no `eng=0/N` anywhere; and FULL's `[CCAP]` read `eng=0/0 cap=0.0 mem=0.0000
+floor=0.0000` at all five cells with `brake=` the only field carrying a datum, armed
+everywhere (c8 975/22411, sc2 5329/89972). `RWM_CC_PACE=0` on the `[GATES]` echo confirms
+T-PACER's code fact from the run; `RWM_RECOV_MP=1` two-sided on all 25. **Nothing in this
+paragraph is scored — it is the smoke's liveness verdict, and the numbers it happens to
+contain are n = 1 and belong to no rung.**
 
 **AND THE ARITHMETIC THIS FORCES, WHICH IS WHY THE MISSING NUMBERS DO NOT BLOCK THE
 DESIGN: NO THROUGHPUT TARGET IS WRITTEN AT ANY CELL IN THIS CONTRACT.** Every scored
@@ -31479,3 +31524,434 @@ so numbers pool across sessions without a second dialect. Sentinels only: **neve
 `pgrep -f` a watcher whose own command line contains the driver's name**, and never
 poll a running battery (measured: 121 RUN-RETRY over 171 polled invocations against 0
 over 80 unpolled).
+
+## Ladder Battery — RESULTS (2026-08-19, `feat/ladder-run` from main@`87009e2`) — **the `×N` deletion is DELIVERED and RECOMMENDED FOR FLIP; the ledger/loss trio is REFUTED on its own primary claim, and refuted in the OPPOSITE DIRECTION to its prediction; the brake arms everywhere and resolves nothing.** Scored against "Ladder Battery — PRE-REGISTRATION" (`91c00dd`) as completed by its own calibration commit (`2ee194b`), neither of which is modified here. 720 L1 invocations / 529 live on **one binary**, sha256 `1ef6d8a1…82cb559`. **Nothing in this section flips a default.**
+
+### THE ERA, AND THE POOLS
+
+One binary for every arm, cell, seed and pool: `1ef6d8a1f4a0d6ab5933eba509ca2bb65cbf315bcecb9d6e3b21ef99282cb559`,
+source `87009e2` (engine tree byte-identical to the contract's declared era `5ddf7f6` —
+that merge touched `docs/goal-gate.md` and `tools/l1/ladder_*` and nothing else). The
+sha is recorded in all four ledger headers and was re-asserted before the top-up
+launched. VM settled load 0.22 before the calibration; kernel 7.0.14-101.fc43,
+Xeon E5-2650 v3, one desktop co-tenant (`sddm`) recorded per era honesty.
+
+| pool | invocations | aborts | live | ledger |
+|---|---|---|---|---|
+| calibration (s42, n=1) | 25 | 0 | 25 | `ladder-calib-s42.log` |
+| main s42 | 240 | **0** | 240 | `ladder-s42.log` |
+| main s7 | 240 | **83 (34.6 %)** | 157 | `ladder-s7.log` |
+| top-up s7 (symmetric, 4 cells) | 240 | **108 (45.0 %)** | 132 | `ladder-topup-s7.log` |
+
+**G-TOPUP fired and was honoured symmetrically.** After the main run, live n at seed 7
+fell below the pre-registered floor of 8 at c7 (min 4), c8 (min 5), c8L (min 7) and sc2
+(min 3); c1 was untouched at 8/8. The top-up ran **12 reps for ALL FIVE ARMS** at those
+four cells — never one arm alone — on the same binary, in its own ledger with the
+`topup` tag, and its own sentinel. After pooling, **every cell-arm clears n ≥ 8 at both
+seeds** (worst: c8-NT at s7, exactly 8). No second top-up was required.
+
+**The seed-7 abort class is a session fact and is NOT diagnosed here.** 191 aborts, all
+at seed 7, zero at seed 42, each carrying a `QCAP-MISSING` (they abort before the
+transfer). Per the parser's encoding **ABORT ≠ DNF ≠ INSTRUMENT-FAIL**: an aborted
+invocation has no `[GATES]` on either endpoint, carries no datum, and is **in no
+denominator**. `DNF = 0` over all 529 live reps. `ARMCOUNT` read a full `8/8` and
+`12/12` everywhere precisely because aborted invocations still emit rows — this session
+is the case that convention exists for, and the scored n throughout is the reporter's
+recomputed LIVE n. **The abort class itself is OWED to a separate diagnosis**; it is not
+a result of this battery and no clause is scored on it.
+
+### G-LIVENESS — the two-sided echo table, every scored invocation
+
+**PASS, without exception.** Across all 529 live reps in all four pools, every one of
+the eight contract gates read its expected value on **BOTH** the client and the server
+`[GATES]` line: every cell-arm reads `n/n` on `RWM_SUM_CAP`, `RWM_LOSS_SENT_TRUTH`,
+`RWM_CHARGE_RECOVERY`, `RWM_RELEASE_1TO1`, `RWM_STORE_CAP_UNIFIED`, `RWM_LATE_BRAKE`,
+and `RWM_COMPOSED_CAP` / `RWM_THREE_TERM` at 0. `0 ARM-LIVENESS-FAIL`,
+`0 ARM-CONTAMINATION`, `0 INSTRUMENT-FAIL`, `0 SUMCAP-WARMUP-FAIL`,
+`0 SUMCAP-N1-UNEXPECTED`, `0 BRAKE-NEVER-ARMED`, `0 LADDER-PARSE-FAIL`,
+`0 WITNESS-UNEXPECTED-RECOVMP`, `0 ARM-VANISHED`, `0 RUN-RETRY`. `[SUMCAP]` presence
+matched the arm in 100 % of reps; `unified store-cap path set ACTIVE` and `[CCAP]`
+appeared on FULL and nowhere else; the three-term echo was absent on every arm.
+**Every rung below rests on this, and it is clean.**
+
+The three pre-written instrument facts all read as written, on the full pools, and none
+produced a false flag: `[SUMCAP]` emitted on N/NT/FULL only; `eng=0/0` at c1 and sc2 on
+every ON-arm rep (the N=1 short-circuit) with `eng=N/N`, N ≫ 0, at every dual and **no
+`eng=0/N` anywhere**; FULL's `[CCAP]` reading `eng=0/0 cap=0.0 mem=0.0000 floor=0.0000`
+with `brake=` the only field carrying a datum.
+
+### THREE PLACES THIS REPORT OVERRIDES ITS OWN TOOL, and why
+
+`ladder_report.py` transcribes the contract's bars, but three of its automated verdicts
+are artefacts of how a bar was coded. Each is corrected here **toward the contract's own
+words**, never away from them, and each correction is recorded rather than silently applied.
+
+1. **T-IDENT at c1 and sc2 — the tool printed PASS by dividing by a zero.** The code
+   computes `ratio = a_pl / t_pl if (a_pl and t_pl) else None` and then passes the clause
+   when `ratio is None`. Arm A reads `pl_max` **exactly 0.0000** at both single-path
+   cells, so the ratio is undefined and the clause passed by default. Verbatim, the
+   contract asks whether `pl=` "moves less than 2×". A move from **0.0000 to 0.3614**
+   (c1) and **0.0000 to 0.5821** (sc2) is not a move of less than 2× — it is an
+   **unbounded** move, and the contract's own next sentence governs it: *"A large
+   single-path ε̂ move is a finding about the ESTIMATOR … not a confirmation."* **Scored
+   as a FINDING, below. It is the single most diagnostic number in the T rung.**
+2. **F-FACTOR at c8 — the tool tested a fixed band whose centre this session refuted.**
+   The code asks whether FULL's cap lands inside `N_BAND[c8]`; the contract's operative
+   falsifier is *"Falsified if FULL's cap differs from N's by more than the band."* At c8
+   **N's own cap missed that band**, so the fixed band is not a valid reference there.
+   Scored on the contract's sentence, below.
+3. **N-IDENT — the tool scored arm NT alongside arm N.** NT carries the T trio, which is
+   not an identity arm by anyone's claim. The N = 1 cap identity is the **A vs N**
+   contrast, and it is scored on that alone.
+
+A fourth divergence is noted and NOT overridden: the contract says "median per-path
+`pl=`" and the parser reports `pl_max`, the **maximum over paths of each path's median**.
+The parser's comment justifies it (the c8 legs carry different loss, so pooling hides
+the attribution the fix is about), it is the conservative choice for the "below 0.05 on
+every leg" half of the bar, and the per-leg values are reported below so nothing rests
+on the summary. The T-rung result is 20× in the wrong direction and is not sensitive to
+this choice.
+
+### HEADROOM, RE-SCORED ON THE FINAL POOLS (discipline 16b)
+
+| cell | shaped | xfer_s | util s42 | util s7 | headroom (calib → final) | permission |
+|---|---|---|---|---|---|---|
+| c1 | 1 Gbit | 15.64 | 22.4 % | 22.4 % | 76.2 → **77.6 %** | throughput permitted |
+| c7 | 200 Mbit | 9.45 | 94.2 % | 94.4 % | 7.2 → **5.6 %** | throughput permitted (near the bar) |
+| c8 | 120 Mbit | 2.47 | 81.5 % | 76.7 % | 17.3 → **18.5 %** | throughput permitted |
+| c8L | 120 Mbit | 24.25 | 60.4 % | 64.0 % | 19.2 → **36.0 %** | throughput permitted |
+| sc2 | 100 Mbit | 9.11 | 97.9 % | 98.3 % | 3.1 → **1.7 %** | **PARITY / LATENCY / CAP-SHAPE ONLY** |
+
+**Both permission boundaries are unchanged, so protocol item 4 voids nothing.** c7
+drifted from 7.2 % to 5.6 % and sc2 from 3.1 % to 1.7 %, each toward its bar without
+crossing it; c8L moved most (19.2 → 36.0 %) because the pooled transfer wall rose to
+24.25 s. Because the contract writes **no throughput target at any cell**, and its only
+two goodput clauses are one-sided downward, no scored clause depends on any of these
+margins — which is the property the pre-registration argued for in advance and which
+this session is the test of.
+
+### RUNG N — DELIVERED. The `×N` deletion does exactly what §16.62 derived, and costs nothing measurable.
+
+**N-CONTROL first, because nothing is scoreable without it.** Same-session arm A reads
+`occcap_p50` **exactly 4096** on 19/19 c7 reps, 20/21 c8 reps and 25/25 c8L reps, and
+exactly 1024 on 17/18 sc2 reps. ADR-0070 finding 2's premise — the shipped default is
+pinned at the ceiling at every dual — **reproduces on this binary**. PASS.
+
+**N-IDENT (c1, sc2) — the N = 1 identity. PASS.**
+
+| bar | measured | verdict |
+|---|---|---|
+| `[SUMCAP] eng=0/0` at the singles | 16/16 (c1), 18/18 (sc2) ON-arm reps | PASS |
+| goodput within 2σ, both seeds | c1 +0.27 (2σ 14.64) / +1.79 (2σ 9.91); sc2 +0.84 (2σ 1.53) / −0.34 (2σ 1.69) | PASS |
+| `occcap_p50` distribution | sc2 A 1024 ≡ N 1024; c1 A 519.5 vs N 524.0, ranges 499–663 vs 498–649 | PASS |
+| CPU/byte | c1 0.998×, sc2 1.003× | PASS |
+
+The c1 `occcap_p50` medians differ by 0.9 % inside a per-rep range spanning ±15 % — c1-A
+rides the legacy `2·BDP` branch and is interior, so it varies rep to rep. The gate cannot
+be the cause: `eng=0/0` on every rep proves `pooled_store_cap` short-circuited before the
+multiplier was read. **The N = 1 short-circuit is confirmed on the wire, not only at L0.**
+
+**N-INTERIOR (c7, c8) — the primary claim. PASS at c7 on all five bars; PASS at c8 on
+four of five, with the CAP-MAGNITUDE bar FALSIFIED.**
+
+| bar | c7 measured | c8 measured |
+|---|---|---|
+| `pin ≤ 0.10` on a majority | med **0.000**, 82.6 % of reps — PASS | med **0.000**, 83.3 % — PASS |
+| `eng ≥ 0.90` on a majority | med **1.000**, 100 % — PASS | med **1.000**, 100 % — PASS |
+| `chg_frac ≥ 0.90` on a majority | med **1.000**, 100 % — PASS | med **1.000**, 100 % — PASS |
+| `CAPBIND … name=interior` | frac 0.087, no WARN — PASS | frac 0.167, no WARN — PASS |
+| `cap` in band | **3142.4** in [2617, 3925] — PASS | **2308.7** vs [2416, 3624] — **FAIL** |
+
+**`chg_frac = 1.000` at both cells is the answer to the question `[SUMCAP]` was built to
+ask.** The counterfactual — the same expression with the multiplier restored, under the
+same bounds — differs from the realized value on **100 %** of engaged refreshes. The
+deletion is not cosmetic: it changes the computed cap every time the law runs.
+
+**The c8 band miss, and it is a finding about Σ rather than about the law.** `cap` =
+2308.7 against `ask` = 2308.1 with `pin` = 0.000 and `eng` = 1.000: the law is landing
+interior and computing `clamp(gain·Σ, floor, N·knee)` **faithfully**. What missed is the
+anchor. Back out the input: Σ = cap/gain = **1154.3**, against §16.60's READOUT 3 at
+1509.68 and ADR-0071's composed-battery inputs at 1604.8 — the wire presented Σ **23.5 %
+below the lower source and 28.1 % below the higher**. The ±20 % band was written wide
+specifically to contain both anchors, and the wire came in below both. This is exactly
+the contract's own "cannot fix in advance" item 5 — *"Which Σ the wire will actually
+present at c8"* — realised. **The clause is recorded FALSIFIED AS WRITTEN and is not
+re-scoped**; the mechanism evidence (`cap ≡ ask`, `pin = 0`) is recorded beside it, and
+the named follow-up is the within-run Σ window series the contract already declares owed
+under its item 4 (the c8 warm-up question), which needs no VM arm.
+
+**c8L — the PRE-DECLARED VOID, honoured.** The contract declared c8L unscoreable for the
+N rung in advance, on arithmetic: Σ = 4976 against an interiority threshold of 2048, an
+ask 2.43× the ceiling. Measured: `pin` med **0.432**, `chg_frac` med 0.568, `cap` med
+3306.6 against `ask` med 5630.7 — the arm measured the clamp, exactly as predicted.
+**Reported; no multiplier verdict is taken from c8L, and none is taken here.** Discipline
+18(d) applied as written, before the run rather than after.
+
+**THE c8 SPAN PREDICTION — the load-bearing one, scored most carefully.** The contract
+predicted the deletion would under-fund c8's own resequencing span (`W + S` = 4232) by
+**29 %**, landing at 3020 = 0.714× of it, and named c8 the pre-registered risk cell.
+
+| quantity | predicted | measured |
+|---|---|---|
+| N's realized cap at c8 | 3020 | **2308.7** (0.764× of prediction) |
+| funding of the cell's own `W + S` = 4232 | 0.714× | **0.546×** |
+| **under-funding of the span** | **29 %** | **45.4 %** |
+
+**The under-funding is REAL and it is WORSE than predicted — and it cost nothing.** The
+outright-refutation falsifier required a provably interior N to be more than 2σ_pooled
+below A on goodput on **both** seeds. N is provably interior at c8 (`pin` 0.000, `eng`
+1.000, `chg_frac` 1.000). Its goodput is **above** A at both seeds: **+9.29 Mbit/s**
+(2σ 27.07) at seed 42 and **+1.34** (2σ 14.55) at seed 7. At c7 the same reading is
+−2.83 (2σ 9.31) and −2.21 (2σ 14.49). **The falsifier does not fire, at either cell, at
+either seed, and the direction at the risk cell is upward.**
+
+So the arithmetic fear was correct about the cap and wrong about the consequence: **the
+span the multiplier was accidentally funding was not load-bearing at c8 in this era.**
+That is precisely the contract's pre-written "WHAT REFUTES THE CEILING'S IMPORTANCE
+INSTEAD" branch — N interior at c7 and c8 with goodput, latency and CPU all moving ≪σ —
+and it is the outcome that block said it expected. **ADR-0070 finding 2's PRACTICAL
+weight is retired at these cells; its provenance verdict stands entirely untouched.**
+
+The honest bound on that statement: the noise floor here is wide (2σ = 27.07 Mbit/s at
+c8/s42 against a 77–86 Mbit/s base, i.e. ±35 %), so this session excludes a **large** c8
+regression, not a small one. A 5 % c8 cost would sit inside this noise. That is a
+limitation of n = 21/24 at a bistable cell, not a claim of exact parity.
+
+### RUNG T — REFUTED on its primary claim, and refuted in the OPPOSITE DIRECTION.
+
+**T-EPS — FALSIFIED.** The bar: the median per-path `pl=` on T at least **5× BELOW**
+same-session A on both seeds, and **below 0.05 on every dual leg**.
+
+| cell | A `pl_p0` | A `pl_p1` | A `pl_max` | T `pl_p0` | T `pl_p1` | T `pl_max` | A/T |
+|---|---|---|---|---|---|---|---|
+| c7 | 0.0081 | 0.0241 | 0.0288 | 0.5667 | 0.5384 | **0.5799** | **0.05** |
+| c8 | 0.0028 | 0.1951 | 0.1951 | 0.5883 | 0.7282 | **0.7454** | **0.26** |
+| c8L | 0.0000 | 0.8233 | 0.8233 | 0.4702 | 0.5655 | **0.5768** | 1.43 |
+
+The fraction of T reps with `pl_max` below 0.05 is **0.000 at every cell**. At c7 the
+estimator the recovery plane keys on reads **20.1× HIGHER** on the corrected arm than on
+the shipped default; at c8, **3.8× higher**. Only at c8L — the memory-starved cell — does
+T read lower than A, and by 1.43×, far short of 5×. **The clause is falsified on its
+threshold, on its absolute bar, and on its sign.**
+
+**And the move is attributable, because the witness did not move.** The `[ACKDIAG] recon`
+cursors are counted unconditionally on both arms, which is exactly what the contract
+built them for:
+
+| cell | A `ce/cr` p0 / p1 | T `ce/cr` p0 / p1 | A `cr/sa` p0 / p1 | T `cr/sa` p0 / p1 |
+|---|---|---|---|---|
+| c7 | 2.067 / 2.055 | 2.049 / 2.057 | 1.004 / 1.009 | 0.956 / 0.958 |
+| c8 | 1.263 / 5.762 | 1.240 / 5.896 | 1.025 / 1.026 | 0.906 / 0.859 |
+| c8L | 1.175 / 6.558 | 1.239 / 6.101 | 1.002 / 1.076 | 0.947 / 0.917 |
+
+The reconstruction accounting is **materially unchanged** between the arms. The wire's
+actual loss did not move; **the estimator's reading of it did, upward.** This is the
+attributable statement the two-sided witness design exists to license, and it is
+available because the gauge reports both pairs on both arms.
+
+**T-IDENT (c1, sc2) — a FINDING ABOUT THE ESTIMATOR, and the most diagnostic number in
+the rung.** Arm A reads `pl_max` **0.0000** at both single-path cells. Arm T reads
+**0.3614** at c1 and **0.5821** at sc2. At N = 1 there is no cross-path attribution
+possible **by construction** — the contamination §16.58 describes cannot exist on one
+path. Yet `RWM_LOSS_SENT_TRUTH` still moves ε̂ from zero to 0.36–0.58 there. **Whatever
+the sender-truth estimator is doing on the wire, it is not repairing a per-path
+attribution error**; the effect is present where that error cannot be. The contract wrote
+this disposition in advance and this session is the case it wrote it for.
+
+**T-MARGIN — FALSIFIED in direction.** The bar: repair volume falls at c7/c8 and `retx`
+falls with it.
+
+| cell | A `retx` | T `retx` | ratio |
+|---|---|---|---|
+| c1 | 792 | 724 | 0.91× (fell) |
+| c7 | 5 326 | **24 269** | **4.56× ROSE** |
+| c8 | 1 494 | **3 569** | **2.39× ROSE** |
+| c8L | 12 508 | **21 552** | **1.72× ROSE** |
+| sc2 | 3 333 | **7 766** | **2.33× ROSE** |
+
+Retransmissions **rose** at every cell except c1 — the opposite of the prediction, and
+exactly what a higher ε̂ would produce. The rung is internally coherent: the estimator
+reads more loss, the recovery plane spends more, and the wire's real loss is unchanged.
+
+**T-SF — CONFIRMED, and it is an honest null.** The bar: the `sf=` empty-set tick rate
+RISES at the duals, and goodput moves ≪σ unless the leak was load-bearing.
+
+| cell | A `sf_zero` | T `sf_zero` | goodput Δ (2σ) |
+|---|---|---|---|
+| c7 | 0.003 | **0.357** | −19.46 (21.73) |
+| c8 | 0.033 | **0.556** | +3.15 (17.87) |
+| c8L | 0.005 | **0.370** | +17.55 (33.02) |
+| sc2 | 0.062 | **0.824** | −5.93 (6.69) |
+
+The rate rises at all three duals as predicted — an honest gauge empties
+`active_paths()` more often — and goodput moves ≪σ at every cell. **Item 5's wire
+question 1 is answered: the ledger leak was NOT load-bearing over-provisioning.** This is
+the one clause of the T rung that landed as written.
+
+**T-PACER — CONFIRMED as a code fact.** `RWM_CC_PACE=0` on the client `[GATES]` line of
+every live rep, read from the run and never assumed. `RWM_CHARGE_RECOVERY`'s pacer term
+is therefore **INERT** and the T arm is genuinely two-quantity, not three.
+
+**THE ATTRIBUTION LIMIT, honoured.** T flips all three gates together by the contract's
+own arm definition, and both source sections forbid attributing within it. **No clause
+above attributes any T movement to any one of the three gates.** Item 5's question 4
+cannot be asked by this design at all, as the contract declared in advance. The 2×2
+remains **OWED and undelivered**.
+
+### RUNG SET/BRAKE — armed everywhere, resolves nothing.
+
+**B-SET — PASS.** `unified store-cap path set ACTIVE` present on 100 % of FULL reps at
+every cell and absent on every other arm, both endpoints. No contamination.
+
+**B-ARMED — PASS.** `[CCAP] brake_ticks > 0` on **every FULL rep at every cell**: 16/16
+c1, 21/21 c7, 27/27 c8, 26/26 c8L, 20/20 sc2. Brake-closed fractions: c1 0.0012, c7
+0.0160, c8 0.0481, c8L 0.0222, sc2 0.0599. `brake=0/0` — the null EFFECT that would have
+meant the extraction never reached the seat — **never occurred**. The `RWM_LATE_BRAKE`
+extraction is confirmed live on the wire.
+
+**B-WALL — CLOSES NEEDS-MORE, exactly as pre-written.** The paired within-rep-index sign
+test at c8:
+
+| pool | paired n | non-zero | FULL > A | sign |
+|---|---|---|---|---|
+| s42 main | 12 | 9 | 4/9 | − |
+| s7 main | 5 | 5 | 2/5 | − |
+| s7 top-up | 3 | 3 | 1/3 | − |
+
+**The sign agreed across all three pools and both seeds** — FULL's dead wall is the
+shorter one — but the pre-declared close fires on its **power** condition: fewer than
+**8** paired reps carrying a non-zero difference at seed 7, in either pool (5 and 3).
+The contract's close is taken verbatim: *the c8 dead-wall contrast is not resolvable by
+`[WALL] dur_ms` at any n this project has been willing to spend, and what is owed is a
+c8 statistic that is NOT bistable — not a fourth measurand.* **No dead-wall claim of any
+kind is made from this battery.** The agreeing sign is reported as direction only and is
+scored on nothing. c8L's signs are reported likewise (s42 main −, s7 main −, s7 top-up
++ — they do not even agree) and scored on nothing.
+
+### RUNG FULL — the composition is the intended machine, and it does not carry the old harm.
+
+**F-COMPOSED — PASS.** On 100 % of live FULL reps at every cell: the six gates ON
+two-sided, `RWM_COMPOSED_CAP` and `RWM_THREE_TERM` **0** two-sided, `three-term
+outstanding limit ACTIVE` **absent on both endpoints**, `[SUMCAP]` present, the unified
+set echo present, `[CCAP] brake=` armed. The gate set resolves to the intended machine on
+the wire, which is the wire form of the L0 assertion.
+
+**F-FACTOR — the independence claim is NOT refuted.** Scored on the contract's own
+falsifier sentence (see the override note above):
+
+| cell | N cap | FULL cap | difference | ±20 % tolerance | fires? |
+|---|---|---|---|---|---|
+| c7 | 3142.4 | 3236.2 | **+93.8 (3.0 %)** | ±654 | no |
+| c8 | 2308.7 | 1952.5 | **−356.2 (15.4 %)** | ±604 | no |
+
+At c7 both arms also land inside the published band, so the claim is confirmed there
+without qualification. At c8 the fixed band is void as a reference — N's own cap missed
+it — and on the difference test FULL sits 15.4 % from N against a ±20 % tolerance:
+**inside, but not comfortably.** The `×N` gate and the live set behave as independent
+axes; the c8 margin is the weakest evidence in this rung and is recorded as such.
+
+**F-C8LIABILITY — PASS. The known harm is era-dead.**
+
+| cell | arm | reps below 60 Mbit/s | the reps |
+|---|---|---|---|
+| c8 | A | **2/21** | 42.0, 56.7 |
+| c8 | FULL | **0/27** | — |
+| c8L | A | 10/25 | 24.5 … 59.9 |
+| c8L | FULL | 7/26 | 25.9 … 56.8 |
+
+The uniflip-era collapse MODE (`RWM_STORE_CAP_UNIFIED` costing c8 −19.6 % at seed 7 as
+reps at 16.6/40.5/55.0) is **not reproduced**: FULL produces **no** c8 rep below
+60 Mbit/s while the shipped control produces two. At c8L FULL is also the better arm.
+The honest anchor, now default ON, was predicted to have neutralised this, and **it did**.
+
+### GUARDS
+
+| guard | bar | measured | verdict |
+|---|---|---|---|
+| **G-REG** | no cell > 2σ_pooled below A, either seed, any arm | all 20 arm×cell rows within 2σ at both seeds | **PASS** |
+| **G-SC2-LAT** | `ping_p50` not > 2σ WORSE than A at goodput within 2σ, both seeds | every arm ≤ A; worst goodput Δ −6.15 (2σ 6.84) | **PASS** |
+| **G-CPU** | sender CPU/byte ≤ 1.05× A, point band, every cell | max ratio **1.005** (c7-N); every other arm ≤ 1.003, most 0.59–0.91 | **PASS** |
+| **G-DNF** | `dnf = 0` every completed run | **0** over all 529 live reps | **PASS** |
+| **G-CAPBIND** | a claiming arm shows no CAPBIND WARN and `pin ≤ 0.10` | c7-N and c8-N carry **no WARN**; pin med 0.000 both | **PASS** |
+| **G-LIVENESS** | the echo table, per rep, both endpoints | 529/529 | **PASS** |
+
+**G-CPU is worth one sentence: the trio does not cost CPU, it saves it.** T, NT and FULL
+read **0.59–0.91×** arm A's CPU/byte at every cell. The contract predicted the trio would
+add counter increments on an existing path and the cap gates none; the cap gate is
+indeed neutral (N at 0.937–1.005×), but the trio is measurably *cheaper*, which is not
+what a pure-instrumentation change predicts and is recorded as unexplained.
+
+**An unclaimed observation at sc2, reported because it is large and NOT claimed because
+it is inside its own noise.** Delivered latency at sc2:
+
+| arm | `ping_p50` | vs A | ratio | 2σ |
+|---|---|---|---|---|
+| A | 92.1 | — | 1.000 | — |
+| N | 91.0 | −1.1 | 0.988 | 23.9 |
+| T | 52.9 | −39.2 | **0.575** | 53.2 |
+| NT | 57.3 | −34.9 | 0.622 | 48.1 |
+| FULL | 44.1 | −48.1 | **0.478** | 51.6 |
+
+FULL's point estimate — **0.478×** — sits on top of §16.50 F6's 0.44×/0.47×, which the
+contract explicitly disclaimed any ability to reproduce because that result belonged to
+the three-term law and **no arm here carries it**. It would be a striking finding if it
+were established. **It is not: every one of these deltas is inside its own 2σ**, and the
+guard they are scored against is a SURVIVAL guard, which they pass. sc2 also draws the
+`< 5 %` headroom permission, under which latency claims *are* admissible — so the bar is
+not the obstacle; the noise is. **Recorded as SUGGESTIVE ONLY, claimed by nothing, and
+named for a successor**: a latency-powered sc2 cell (n ≥ 30/arm/seed, or a paired
+within-rep latency contrast) would settle it, and it is the cheapest open question this
+session produced.
+
+### THE VERDICTS TABLE — PER GATE
+
+**No battery flips its own default.** Every row is a RECOMMENDATION with its noise bound,
+written so a separate trivial flip commit can cite it by name.
+
+| gate | verdict | evidence | recommendation |
+|---|---|---|---|
+| **`RWM_SUM_CAP`** | **DELIVERED — FLIP RECOMMENDED** | Interior at both scoreable duals (`pin` 0.000, `eng` 1.000, `chg_frac` 1.000, no CAPBIND WARN); the N=1 identity holds on goodput, CPU and `occcap`; goodput ≥ A at c8 on both seeds and within 2σ at c7; CPU 0.937–1.005×; latency parity at sc2 (0.988×). The 4096 pin it removes is measured NOT load-bearing at c7 or c8. | **Flip ON.** Bound: excludes a c8 regression larger than ±35 % of base (2σ = 27.07 at n = 21/24), not a small one. Carry the c8 cap-magnitude finding (below) with it. |
+| **`RWM_LOSS_SENT_TRUTH`** | **REFUTED — with record** | ε̂ moves **20.1× UP** at c7 and 3.8× up at c8 against a bar of 5× DOWN; `< 0.05` on 0.000 of reps; `retx` rises 2.4–4.6×; and at **N = 1**, where per-path contamination cannot exist, ε̂ still moves 0.0000 → 0.36/0.58. The `[ACKDIAG]` witness is unchanged, so the move is the estimator's, not the wire's. | **Do NOT flip. Keep default OFF.** Not a null — a measured move in the wrong direction. The N=1 result says the mechanism is not per-path attribution; §16.58's derivation needs re-reading against it before any successor arm. |
+| **`RWM_CHARGE_RECOVERY`** | **NEEDS-MORE — named instrument** | Its pacer term is **INERT** in this era (`RWM_CC_PACE=0`, confirmed as a code fact on every rep), so the battery could not exercise it; and the contract forbids attributing within T. | Keep OFF. Instrument: **the OWED 2×2** (`RWM_RELEASE_1TO1` × `RWM_CHARGE_RECOVERY`, with and without `RWM_LOSS_SENT_TRUTH`), plus an arm with `RWM_CC_PACE=1` if the pacer term is to be tested at all. |
+| **`RWM_RELEASE_1TO1`** | **NEEDS-MORE — named instrument** | Its predicted signature IS observed — `sf_zero` rises 0.003→0.357 (c7), 0.033→0.556 (c8), 0.005→0.370 (c8L) — with goodput ≪σ, so the leak was not load-bearing. But T-SF cannot be attributed to it alone within T. | Keep OFF. Instrument: **the OWED 2×2**. This is the most promising single gate in the trio and the one the 2×2 should be built around. |
+| **`RWM_STORE_CAP_UNIFIED`** | **DELIVERED in composition — NEEDS-MORE for a solo flip** | B-SET echoes on 100 % of FULL reps and nowhere else; the uniflip-era c8 collapse class is **not reproduced** (0/27 vs A's 2/21); F-FACTOR shows it does not move the multiplier's value beyond tolerance. | Keep OFF pending a **solo arm**. This battery has no `U`-alone arm, so its independent effect is unmeasured; the composition evidence is good and the harm is era-dead. |
+| **`RWM_LATE_BRAKE`** | **DELIVERED as ARMED — NEEDS-MORE for effect** | `brake_ticks > 0` on **110/110** FULL reps across all five cells (closed fraction 0.0012–0.0599); `brake=0/0` never occurred. The extraction reaches the seat. | Keep OFF. Its EFFECT is unresolved because B-WALL closed NEEDS-MORE. Instrument: **a c8 statistic that is not bistable** — explicitly NOT a fourth measurand. |
+
+### THE VERDICTS TABLE — PER COMPOSITION (rung)
+
+| rung | verdict | the one sentence |
+|---|---|---|
+| **A** (shipped default) | **VALID CONTROL** | Pinned at 4096 on 19/19 c7, 20/21 c8, 25/25 c8L and at 1024 on 17/18 sc2 — ADR-0070 finding 2's premise reproduces on this binary, so every contrast below has a control that was shown to be one. |
+| **N** (`×N` deleted) | **DELIVERED — FLIP RECOMMENDED** | Lands interior as derived at both scoreable duals, changes the computed cap on 100 % of engaged refreshes, and costs nothing measurable in goodput, latency or CPU at any cell — including the pre-named risk cell, where it under-funds the span by 45 % and goodput goes UP. |
+| **T** (the ledger/loss trio) | **REFUTED — with record** | Its primary claim is falsified in sign and magnitude (ε̂ 20× the wrong way), its margin claim is falsified in direction (`retx` up 2.4–4.6×), and only its ledger claim (T-SF) lands — as an honest null. |
+| **NT** (N + T) | **NEEDS-MORE** | Mechanically clean — the composition's gates echo two-sided and the cap still lands interior — but it inherits T's refutation wholesale, so there is nothing here to recommend that N does not already carry alone. |
+| **FULL** (all six) | **NEEDS-MORE — but the composition itself is sound** | F-COMPOSED, F-FACTOR and F-C8LIABILITY all pass and the old c8 harm is era-dead; what blocks a recommendation is T inside it and the unresolved brake, not the composition. |
+
+### WHAT THIS BATTERY OWES ITS SUCCESSOR, named rather than described
+
+1. **The 2×2 inside T** (`RWM_RELEASE_1TO1` × `RWM_CHARGE_RECOVERY`, with and without
+   `RWM_LOSS_SENT_TRUTH`). Declared OWED by the contract in advance; still owed. Build it
+   around `RWM_RELEASE_1TO1`, which is the gate whose predicted signature actually appeared.
+2. **The N = 1 ε̂ question, which this battery raised and cannot answer.** A single-path
+   A/B of `RWM_LOSS_SENT_TRUTH` alone, at c1 and sc2. It is cheap, it needs two arms, and
+   it addresses the finding directly: ε̂ moved from 0.0000 to 0.36–0.58 where per-path
+   contamination cannot exist.
+3. **A c8 statistic that is not bistable.** B-WALL's pre-written close names this and
+   forbids a fourth measurand. Until it exists, no dead-wall claim is available at any n.
+4. **The within-run Σ window series at c8**, which the contract already names under its
+   item 4 and which needs **no VM arm**. It would settle whether c8's Σ = 1154.3 is a
+   warm-up artefact and therefore whether the N-band miss is about the cell or the law.
+5. **A `RWM_STORE_CAP_UNIFIED` solo arm**, absent from this ladder by design.
+6. **The seed-7 abort class.** 191 aborts at seed 7, zero at seed 42, all pre-transfer.
+   It cost this session a full symmetric top-up and it is undiagnosed.
+7. **A latency-powered sc2 cell.** FULL reads 0.478× A's delivered latency at sc2 and the
+   result is inside its own 2σ. This is the cheapest open question the session produced.
+
+### WHAT IS NOT CLAIMED
+
+Nothing here flips a default. No verdict is taken about the `×N` multiplier from c8L
+(pre-declared void, honoured). No dead-wall claim is made from any contrast, paired or
+unpaired, at any n. Nothing is attributed to any single gate inside the T rung. The sc2
+latency movement is not claimed. No throughput target was written at any cell and none
+was scored. Every c8 cap number carries the warm-up caveat the contract attached to it in
+advance, and this battery does not settle it.

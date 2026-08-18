@@ -1,0 +1,3 @@
+LADDER-CALIB start 2026-08-18T19:36:39Z load=0.27 0.86 0.95 1/336 2835
+LADDER-CALIB one rep per arm per cell, seed 42 — the discipline-16 headroom pass AND the smoke
+LADDER-CALIB end 2026-08-18T19:42:32Z load=1.29 1.72 1.39 1/328 9907
