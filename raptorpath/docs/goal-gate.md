@@ -31417,11 +31417,56 @@ The protocol, which is the uniflip / latency-lever pattern applied verbatim:
 
 | cell | shaped | prior arm-A util class (three same-era sessions + the composed battery) | **headroom, tc-measured this session** | claims permitted |
 |---|---|---|---|---|
-| c1 | 1 Gbit | 23.0–25.2 % | *(owed — calibration)* | *(owed)* |
-| c7 | 200 Mbit | 93.8–97.2 % | *(owed — calibration)* | *(owed)* |
-| c8 | 120 Mbit | 69.7–80.6 % | *(owed — calibration)* | *(owed)* |
-| c8L | 120 Mbit | as c8 (the length axis) | *(owed — calibration)* | *(owed)* |
-| sc2 | 100 Mbit | 97.9–100.3 % | *(owed — calibration)* | *(owed)* |
+| c1 | 1 Gbit | 23.0–25.2 % | **76.2 %** (util 23.8 %, xfer 14.76 s) | **throughput targets permitted** |
+| c7 | 200 Mbit | 93.8–97.2 % | **7.2 %** (util 92.8 %, xfer 9.65 s) | **throughput targets permitted** |
+| c8 | 120 Mbit | 69.7–80.6 % | **17.3 %** (util 82.7 %, xfer 2.40 s) | **throughput targets permitted** |
+| c8L | 120 Mbit | as c8 (the length axis) | **19.2 %** (util 80.8 %, xfer 18.90 s) | **throughput targets permitted** |
+| sc2 | 100 Mbit | 97.9–100.3 % | **3.1 %** (util 96.9 %, xfer 9.24 s) | **PARITY / LATENCY / CAP-SHAPE ONLY** — headroom < 5 % (discipline 16c) |
+
+**THE COMPLETION, and it is the ONLY edit this contract permits itself after the
+pre-registration.** Filled from the same-session, same-binary calibration pass
+(`ladder_calib.sh`, `RWM_LADDER_TAG=ladder-calib`, ONE rep per arm per cell, seed 42,
+20 → in fact 25 invocations, all five arms × all five cells), binary sha256
+`1ef6d8a1…82cb559`, source `87009e2` (engine byte-identical to the era's `5ddf7f6` —
+that merge touched `docs/goal-gate.md` and `tools/l1/ladder_*` and nothing else),
+VM settled load 0.22 before launch. `tc -s qdisc show` was captured on **every cell and
+every invocation**, not a subset. **The denominator is the TRANSFER wall (`seconds`),
+never `INVOCATION_S`** — both are printed in `ladder-calib-headroom.txt` so the
+correction is auditable, and `INVOCATION_S` runs 1.16× (c8L) to 2.08× (c8) the transfer
+in this session, reproducing the ratio range the protocol warned about. **It is n = 1:
+no σ, no seed-7 evidence, and nothing in it is a result.**
+
+*The drift check the protocol asks for (item (b)), reported in both directions.* c1
+(23.8 %) and c8L (80.8 %) land inside their prior class. Three cells land marginally
+outside: **c8 at 82.7 % is 2.1 pt ABOVE** its prior ceiling of 80.6 %, **c7 at 92.8 % is
+1.0 pt BELOW** its prior floor of 93.8 %, and **sc2 at 96.9 % is 1.0 pt BELOW** its prior
+floor of 97.9 %. All three are within the spread of the prior classes themselves and
+none crosses a permission boundary in the direction that would matter; the prior classes
+remain quotable, and this note is the record that they were checked rather than assumed.
+
+*Does the calibration CONTRADICT any permission (protocol item 4)?* **No clause is
+voided.** sc2 draws the `< 5 %` permission and is therefore restricted to parity /
+latency / cap-shape — which is what sc2 was already scored on: **G-SC2-LAT is keyed to
+`ping_p50` with goodput entering only as a within-2σ PARITY condition, not as a target**,
+and N-IDENT/T-IDENT at sc2 are two-sided identity checks. The contract writes no
+throughput target at any cell, and its only two goodput clauses (the N rung's
+OUTRIGHT-REFUTATION falsifier and G-REG) are one-sided DOWNWARD and so remain satisfiable
+at 96.9 % utilisation. c7 at 7.2 % clears the bar but only just, and no clause depends
+on that margin.
+
+*And the smoke, disclosed in full because a pre-registration that hides what it already
+saw is not one.* The calibration is also this battery's first execution of every arm's
+env on this binary. **All 25 invocations live; 0 ABORT, 0 DNF, 0 ARM-LIVENESS-FAIL,
+0 ARM-CONTAMINATION, 0 INSTRUMENT-FAIL**, and the two-sided `[GATES]` echo matched the
+expectation table on both endpoints in 25/25 reps. The three pre-written instrument facts
+all read as written: `[SUMCAP]` appeared on N/NT/FULL and on neither A nor T; `[SUMCAP]
+eng=0/0` at the single-path cells (sc2 on all three ON arms) with `eng=N/N`, N ≫ 0, at
+every dual — no `eng=0/N` anywhere; and FULL's `[CCAP]` read `eng=0/0 cap=0.0 mem=0.0000
+floor=0.0000` at all five cells with `brake=` the only field carrying a datum, armed
+everywhere (c8 975/22411, sc2 5329/89972). `RWM_CC_PACE=0` on the `[GATES]` echo confirms
+T-PACER's code fact from the run; `RWM_RECOV_MP=1` two-sided on all 25. **Nothing in this
+paragraph is scored — it is the smoke's liveness verdict, and the numbers it happens to
+contain are n = 1 and belong to no rung.**
 
 **AND THE ARITHMETIC THIS FORCES, WHICH IS WHY THE MISSING NUMBERS DO NOT BLOCK THE
 DESIGN: NO THROUGHPUT TARGET IS WRITTEN AT ANY CELL IN THIS CONTRACT.** Every scored
