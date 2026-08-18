@@ -606,7 +606,14 @@ const DEFAULT_SRTT: Duration = Duration::from_millis(50);
 
 /// Minimum delivery-rate samples in the 10s window before the BtlBw anchor
 /// is trusted. A handful of coarse samples is too noisy to floor cwnd on.
-const ANCHOR_MIN_SAMPLES: usize = 8;
+///
+/// PUBLIC because it is now LOAD-BEARING OUTSIDE the scheduler: the store-cap
+/// bootstrap floor is DERIVED from it (`net::sender_policy::STORE_CAP_FLOOR`,
+/// paper §16.59) rather than being the bare `64` ADR-0070 finding 5 recorded
+/// as PROVENANCE ABSENT. The floor's job is to keep enough outstanding that
+/// this gate can close; the number of samples the gate wants is this constant,
+/// and the derivation cites it instead of restating it.
+pub const ANCHOR_MIN_SAMPLES: usize = 8;
 /// cwnd_gain on the BtlBw×RTprop BDP estimate for the post-backoff recovery
 /// TARGET. 1.0 = aim to re-fill exactly the pipe; the gentle +2 probe (and
 /// the hint-coupled queue target) still governs the standing queue ABOVE

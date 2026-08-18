@@ -2955,6 +2955,28 @@ pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
 ///
 /// `srtt_s` is the HONEST ack clock (see [`ThreeTermTerm`]), never the
 /// store-dwell-inclusive app-echo RTT — §16.44 route B.
+///
+/// **THE QUEUE-FREE CLOCK WAS TRIED AND REFUTED (§16.58, 2026-08-18).** The
+/// standing charge against this term is that its clock is `K·RTprop` and `K`
+/// carries the standing WIRE queue the cap itself stood up (the store DWELL
+/// is already excluded — a dwell can only ADD to an echo sample, so it can
+/// never lower the windowed MIN; that is route B and it is closed). The
+/// candidate — the same stall on the loop-free `min_rtt` — was written as a
+/// formula first and then evaluated on §16.57's 833 wire evaluations: at c8
+/// the ask must shed **47 %** to clear `WIN_STORE_MAX` and the queue-free
+/// clock sheds **1.7 %** (7 778 → 7 642); at c8L it must shed 84 % and sheds
+/// 21 %. Both cells STILL PIN. Nothing changed here, and no coefficient was
+/// invented to close the gap.
+///
+/// Two findings came out of writing it down and both constrain any successor:
+/// (i) the magnitude is the `17/8`, not the clock — 3.125 BDP at ρ = 1 means
+/// ≈2.1 BDP of standing queue, and either δ bounds that or the composition is
+/// wrong for a retain-until-acked scope; (ii) RFC 9002 §6.1.2 defines the
+/// time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`, so the
+/// `9/8` below is cited ONLY as a multiplier of a SMOOTHED RTT — moving it
+/// onto RTprop turns it into a fitted coefficient on a new clock, which is a
+/// provenance REGRESSION and is not licensed. Pinned by
+/// `slack_bench.rs::the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs`.
 pub fn contract_stall_s(rho: f64, b_hint: f64, rtprop_s: f64, srtt_s: f64) -> f64 {
     let rho = rho.clamp(0.0, 1.0);
     let rtprop_s = rtprop_s.max(0.0);
@@ -3056,6 +3078,37 @@ pub fn three_term_terms(
 /// so `rate·K·RTprop` is the bench's own quantity, honestly measured. The
 /// engine-vs-bench adjudication is recorded in the goal-gate section, not
 /// smoothed over: on the bench's own axes `K = 1 + wireQ/RTprop` exactly.
+///
+/// **THE CODE-vs-PAPER ADJUDICATION (2026-08-18, `fix/cap-law-cluster`).**
+/// §16.56 originally PUBLISHED this term as `rateᵢ·RTpropᵢ` while this
+/// function has always computed `rateᵢ·Kᵢ·RTpropᵢ`. §16.57 measured the
+/// divergence on the wire (`K` = 1.04–1.505, so the window term ran 4–50 %
+/// above the paper) and recorded it as the FORMULA-FIRST rule's first
+/// violation. **It is adjudicated in favour of THIS CODE and the paper now
+/// carries the dated amendment.** The reason is the term's JOB, not its
+/// ancestry: term 1 funds the outstanding that keeps a slot free when the
+/// sender wants one, and the time until a slot frees is the round trip the
+/// ACK actually takes — `K·RTprop`, RTprop plus the receiver's standing
+/// ack-path overhead. `RTprop` alone is the DATA's flight on an empty wire;
+/// funding to `rate·RTprop` runs the sender dry for `(K−1)·RTprop` of every
+/// round. §16.42 measured that overhead as first-class (`[CTLD]` 1.96 → ≈1.0
+/// per data message at c1, worth +12.7/+13.0 % goodput), so pricing it at
+/// zero here would not be conservative — it would be wrong. It also makes
+/// TERM 1 and TERM 2 share ONE clock, which the published block did not.
+///
+/// AGREEMENT WITH THE PUBLISHED EXPRESSION IS NOW A TEST, not a reading:
+/// `tests/formula_agreement.rs` drives this function against an independent
+/// transcription of §16.56 over the dials' named points and the wire's own
+/// `K` range. A future edit that reverts this term to `rate·RTprop` without
+/// re-amending the paper fails there.
+///
+/// NOT settled by the above, and deliberately: `K` is a windowed MIN, so it
+/// still carries whatever STANDING wire queue survives its ≈10 s window
+/// (c8 1.04 vs c8L 1.505 on ONE geometry at 8× the transfer). §16.58 wrote
+/// the queue-free replacement as a formula and REFUTED it — at c8 the law
+/// must shed 47 % of its ask to clear the memory bound and the queue-free
+/// clock sheds 1.7 %. The magnitude lives in TERM 2's `17/8`, not in the
+/// clock, and that is the named successor.
 ///
 /// ## TERM 2 — EMISSION SLACK, `Σ_i rate_i · stall(δ, ρ, i)`
 ///

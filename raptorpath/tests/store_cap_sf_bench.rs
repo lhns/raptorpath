@@ -51,7 +51,13 @@ const TT_RHO: f64 = 1.0;
 
 // ── Shipped policy constants at the battery's arms (sender_policy::resolve) ──
 const GAIN: f64 = 2.0;
-const FLOOR: usize = 64;
+/// CITED, not transcribed, since the floor became a derived quantity (paper
+/// §16.59, `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10): a bench that
+/// models shipped policy must track the shipped value, and a private copy
+/// would silently model a policy the engine no longer has. Inert at every
+/// geometry in this file — the 46 always-on pins are bit-identical across the
+/// change, which is the bound §16.59 claims.
+const FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
 const KNEE: usize = 2048; // RWM_STORE_PATH_POOL
 const STORE_MAX: usize = 1024; // RELIABLE_STORE_MAX
 const BOOT: usize = 128; // RWM_STORE_BOOT
@@ -6015,9 +6021,13 @@ fn the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in() {
 /// NOT reachable at the duals, and each killed by arithmetic rather than by
 /// measurement:
 ///
-///  * **the `floor` clamp (64)** would need `gain·N·Σ < 64`, i.e. `Σ < 16`
-///    symbols at N = 2 — far below the smallest single-leg anchor the wire
-///    ever reported. A warm anchor cannot get there.
+///  * **the `floor` clamp** would need `gain·N·Σ < floor`, i.e. `Σ` below
+///    `floor/(gain·N)` — 16 symbols at N = 2 under the legacy bare 64, and
+///    2.5 under the derived 10 (§16.59). Either way it is far below the
+///    smallest single-leg anchor the wire ever reported, and the derivation
+///    moved it FURTHER out of reach. The crossover is computed from `FLOOR`
+///    below rather than transcribed, so this enumeration tracks the shipped
+///    constant instead of pinning a number that used to be it.
 ///  * **the `store_max` (1024) latch** is the `n_live < 2` law, so it cannot
 ///    be seen at a cell where both legs are up; it is what `sc2`/`c2r100`
 ///    read, and they read exactly 1024 in every session.
@@ -6026,10 +6036,15 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
     // Boot: the empty set, at any live count.
     assert_eq!(shipped_chain(0.0, 2), BOOT);
     // The floor is a REAL branch of the law, just an unreachable one here: it
-    // binds for Sigma below 16 symbols at N = 2 and nowhere above.
-    assert_eq!(shipped_chain(1.0, 2), FLOOR);
-    assert_eq!(shipped_chain(16.0, 2), FLOOR);
-    assert!(shipped_chain(17.0, 2) > FLOOR);
+    // binds for Sigma at or below `floor/(gain·N)` and nowhere above. The
+    // crossover is COMPUTED from the shipped floor, not transcribed, so this
+    // regime enumeration survives the floor becoming a derived quantity
+    // (§16.59) — what it asserts is the SHAPE of the branch, which is what
+    // "three reachable regimes" means.
+    let floor_sigma_n2 = FLOOR as f64 / (GAIN * 2.0);
+    assert_eq!(shipped_chain(floor_sigma_n2 * 0.5, 2), FLOOR);
+    assert_eq!(shipped_chain(floor_sigma_n2, 2), FLOOR);
+    assert!(shipped_chain(floor_sigma_n2 + 1.0, 2) > FLOOR);
     // Interior: strictly between, degree-1 in the anchor.
     for sigma in [17.0, 100.0, 512.0, 1023.0] {
         let cap = shipped_chain(sigma, 2);
@@ -6044,7 +6059,8 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
         .skip(1) // c2r100 is the N = 1 cell, whose law is the store_max latch
         .map(|s| s.anchor_sym())
         .fold(f64::INFINITY, f64::min);
-    let floor_sigma = FLOOR as f64 / (GAIN * 2.0); // 16 symbols
+    // 16 symbols under the legacy bare floor; 2.5 under the derived one.
+    let floor_sigma = FLOOR as f64 / (GAIN * 2.0);
     assert!(
         smallest > 40.0 * floor_sigma,
         "the floor clamp is within reach of a warm anchor: smallest leg {smallest:.0} \

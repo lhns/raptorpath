@@ -2026,3 +2026,136 @@ fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
         "the engine's span IS this bench's `resequencing_span_store`"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE SLACK CLOCK, REFUTED — paper §16.58 (2026-08-18, `fix/cap-law-cluster`)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// **THE EXECUTABLE RECORD OF §16.58's REFUTATION.**
+///
+/// The charge: term 2's clock is `srtt = K·RTprop` with `K` a windowed MIN of
+/// `echoSRTT/RTprop`, so the clock carries whatever standing WIRE queue
+/// survives the estimator's window and the law sizes itself on a queue it
+/// created — `cap → wireQ → srtt → K → slack → cap`. The candidate replaces
+/// the stall's argument with the loop-free `min_rtt`:
+///
+/// ```text
+///   shipped   slack = Σ rate·stall(δ, ρ, K·RTprop)   ⇒ at ρ = 1, 2.125·window
+///   candidate slack = Σ rate·stall(δ, ρ,   RTprop)   ⇒ at ρ = 1, 2.125·window/K
+/// ```
+///
+/// Scored on §16.57's own `[3T]` decomposition (833 wire evaluations), which
+/// is why this is a record and not a new claim: every input below is
+/// TRANSCRIBED from the ledger's table, and the candidate's value follows by
+/// arithmetic from numbers already published.
+///
+/// **The refutation, asserted in both directions.** The isolated criterion was
+/// that the memory-bound pinning goes INTERIOR at the c8 geometry that read
+/// `mem` = 1.000. This test asserts that it does NOT — c8 and c8L still exceed
+/// `WIN_STORE_MAX` under the candidate — and that the SECOND criterion (the
+/// `slack/window` code identity) IS broken. A refutation with a surviving half
+/// is worth exactly as much as the half, and both are pinned so neither can
+/// rot into prose.
+///
+/// Nothing here drives a candidate implementation, because there is none:
+/// `contract_stall_s` is unchanged and nothing shipped. The candidate is
+/// evaluated as the closed form its own formula gives.
+#[test]
+fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
+    // §16.57 / goal-gate "Composed-Cap Battery — RESULTS", the `[3T]`
+    // decomposition over 833 evaluations, plus the per-cell `K`.
+    // (cell, mean window, mean slack, mean span, K)
+    const WIRE: &[(&str, f64, f64, f64, f64)] = &[
+        ("c1", 201.0, 428.0, 0.0, 1.15),
+        ("sc2", 374.0, 794.0, 0.0, 1.14),
+        ("c7", 1_261.0, 2_680.0, 118.0, 1.14),
+        ("c8", 1_669.0, 3_546.0, 2_563.0, 1.04),
+        ("c8L", 7_489.0, 15_915.0, 2_552.0, 1.505),
+    ];
+    // The shipped retain-until-acked multiplier: `stall(ρ=1) = 9/8·srtt +
+    // srtt`, so `slack = 17/8 · window`. Not a constant of this test — it is
+    // asserted against the ENGINE's own `contract_stall_s` below.
+    const RETAIN_MULT: f64 = 17.0 / 8.0;
+    // `net::WIN_STORE_MAX`, the memory bound stated OUTSIDE the law.
+    const MEM: f64 = 4096.0;
+
+    // MEASUREMENT DISCIPLINE rule 1 at closed-form scale: if
+    // `contract_stall_s` ever stops being 17/8·srtt at ρ = 1, every number
+    // below is void, and this fires before any of them is read.
+    for &(_, _, _, _, k) in WIRE {
+        let (rtprop_s, srtt_s) = (0.038, 0.038 * k);
+        let stall = contract_stall_s(1.0, 1.0, rtprop_s, srtt_s);
+        assert!(
+            (stall - RETAIN_MULT * srtt_s).abs() < 1e-12,
+            "the shipped stall is no longer 17/8·srtt at ρ = 1 — §16.58's \
+             closed form does not apply"
+        );
+    }
+
+    let mut ratios: Vec<f64> = Vec::new();
+    let mut still_pinning = 0usize;
+    for &(cell, window, slack, span, k) in WIRE {
+        // (a) THE DEGENERACY, reproduced from the ledger's own numbers: the
+        // shipped slack is the window times 17/8 — an identity of the code, so
+        // the "three-term" law is a TWO-term law at the shipped scope.
+        let shipped_ratio = slack / window;
+        assert!(
+            (shipped_ratio - RETAIN_MULT).abs() < 5e-3,
+            "{cell}: the ledger's slack/window is not the 2.125 identity \
+             ({shipped_ratio})"
+        );
+
+        // (b) THE CANDIDATE, by its own formula: the same stall on `min_rtt`.
+        let cand_slack = RETAIN_MULT * window / k;
+        let shipped_total = window + slack + span;
+        let cand_total = window + cand_slack + span;
+        assert!(
+            cand_total < shipped_total,
+            "{cell}: the queue-free clock must be a REDUCTION or the candidate \
+             is not what it claims"
+        );
+
+        // (c) THE CRITERION THAT FAILS. c8 read `mem` = 1.000 and c8L 0.788 in
+        // the battery; if the candidate cleared the memory bound there, the
+        // item would be FIXED. It does not.
+        if cell == "c8" || cell == "c8L" {
+            assert!(
+                cand_total > MEM,
+                "{cell}: the queue-free slack clock CLEARED the memory bound \
+                 ({cand_total} < {MEM}) — §16.58's REFUTATION no longer holds \
+                 and the paper must be re-scored, not this assertion relaxed"
+            );
+            still_pinning += 1;
+            // And by how much it misses: the ask must shed (1 − MEM/Σ) and the
+            // clock sheds far less. BOUNDED, not described.
+            let needed = 1.0 - MEM / shipped_total;
+            let achieved = 1.0 - cand_total / shipped_total;
+            assert!(
+                achieved < needed / 2.0,
+                "{cell}: the clock now sheds {achieved} of an ask that must \
+                 shed {needed} — the refutation's margin has closed"
+            );
+        } else {
+            // The three cells that were interior stay interior: the candidate
+            // is never the reason a cell moves the wrong way.
+            assert!(cand_total < MEM, "{cell}: the candidate pushed an interior cell out");
+        }
+
+        ratios.push(cand_slack / window);
+    }
+
+    // (d) THE HALF THAT SURVIVES. The shipped ratio is 2.125 with min == max
+    // in 833 of 833 evaluations; the candidate's is `2.125/K` and VARIES, so
+    // the term structure de-degenerates. Asserted as min != max, which is the
+    // exact shape of the identity being broken.
+    let lo = ratios.iter().cloned().fold(f64::INFINITY, f64::min);
+    let hi = ratios.iter().cloned().fold(0.0f64, f64::max);
+    assert!(
+        hi - lo > 0.5,
+        "the candidate's slack/window is still an identity (min {lo}, max {hi})"
+    );
+    assert!((lo - RETAIN_MULT / 1.505).abs() < 1e-9, "the min ratio is c8L's 2.125/K");
+    assert!((hi - RETAIN_MULT / 1.04).abs() < 1e-9, "the max ratio is c8's 2.125/K");
+
+    assert_eq!(still_pinning, 2, "both pinning cells must have been scored");
+}

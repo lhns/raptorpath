@@ -50,6 +50,85 @@
 use super::{GEN_PIPE_MAX_GENS, MAX_WINDOW_SIZE, RELIABLE_STORE_MAX, shed_armed};
 use crate::control::fec_rate::ProtocolHint;
 use crate::gates::RuntimeGates;
+use crate::scheduler::ANCHOR_MIN_SAMPLES;
+
+/// Symbols that must be OUTSTANDING to buy ONE delivered-rate sample, at the
+/// shipped merged-ack cadence.
+///
+/// MEASURED, not assumed. `PathState::on_ack` calls `record_delivery` ONCE per
+/// received ack datagram and that call is the ONLY site that pushes a
+/// `BwSample`, so "samples per round" is "acks per round". §16.42 (the
+/// ack-merge flip, `RWM_ACK_MERGE` DEFAULT ON since 2026-08-08) measured the
+/// receiver's control-datagram density with `[CTLD]` on every run: **1.96 at
+/// c1 before the merge, ≈1.0 after**, against 1.05 at c7 — i.e. at the shipped
+/// cadence the receiver emits ONE control datagram per data message. One
+/// outstanding symbol therefore buys one delivery-rate sample per round, and
+/// this factor is 1.
+///
+/// It is written as a named factor rather than elided because it is the term
+/// that would MOVE if the ack cadence ever changed (a delayed-ack or
+/// stretch-ack scheme acking every m-th symbol makes it m), and a derivation
+/// whose units are invisible is the shape ADR-0070 finding 5 is about.
+pub const MERGED_ACK_SYMBOLS_PER_SAMPLE: usize = 1;
+
+/// RFC 6928 — "Increasing TCP's Initial Window" — raises the permitted initial
+/// window to **10** segments. CITED, not fitted: it is the standardised size
+/// of the first flight a transport may put on an unmeasured path, and it is
+/// the closest citable analog this protocol has for "the smallest burst a
+/// sender is licensed to open with".
+pub const RFC6928_INITIAL_WINDOW: usize = 10;
+
+/// **THE BOOTSTRAP FLOOR OF THE STORE-CAP CHAIN, DERIVED FROM ITS JOB**
+/// (paper §16.59; supersedes ADR-0070 finding 5's `floor = 64`, PROVENANCE
+/// ABSENT).
+///
+/// The floor's job, as its own one-line rationale has always said, is that *a
+/// transiently-tiny BDP estimate must not strangle the pipe*. Read as a
+/// requirement rather than as a mood, that is two independent lower bounds on
+/// the same quantity, and the floor must satisfy BOTH:
+///
+/// 1. **Keep the estimators warm.** The BtlBw anchor every pooled cap law
+///    consumes does not exist until [`ANCHOR_MIN_SAMPLES`] delivered-rate
+///    samples are in its window (`PathState::bdp_anchor` /
+///    `effective_btlbw` both return `None` below it). A floor that funds
+///    fewer symbols than that per round cannot buy the samples that would let
+///    the LAW take over from the floor — the floor would be self-sustaining,
+///    which is the strangle it exists to prevent. At the shipped merged-ack
+///    cadence that is `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE`
+///    = 8 · 1 = **8** symbols.
+/// 2. **Never open below the standard initial burst.** [`RFC6928_INITIAL_WINDOW`]
+///    = **10**.
+///
+/// ```text
+///   STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+///                          RFC6928_INITIAL_WINDOW )
+///                   = max( 8 · 1, 10 ) = 10
+/// ```
+///
+/// **`max`, not `+`.** The two clauses are independent LOWER BOUNDS on one
+/// quantity, so their conjunction is the larger of them. Adding them would
+/// compose two unrelated requirements into a number neither of them asks for
+/// — an invented constant wearing a derivation's clothes, which is the exact
+/// defect being repaired here.
+///
+/// **Zero bare constants**: `8` is [`ANCHOR_MIN_SAMPLES`], an existing engine
+/// constant cited at its own site; `1` is measured (§16.42's `[CTLD]`); `10`
+/// is RFC 6928. Nothing here is chosen to make an answer come out — the
+/// derivation was written before the value was computed, and it lands 6.4×
+/// BELOW the constant it replaces.
+///
+/// **What this changes, bounded.** The floor only binds where the chain's
+/// unclamped ask is under it. On the shipped chain that needs `Σ(max_bw·min_rtt)`
+/// under 16 symbols at N = 2 — 46× below the smallest warm leg the wire has
+/// ever reported (ADR-0070 finding 5) — so at every named L1 cell the change
+/// is INERT and the two values are indistinguishable. Where it is not inert is
+/// the degenerate end: loopback, and `shal8`, the one cell the record has ever
+/// caught landing exactly on the floor. Bounded by
+/// `derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end`.
+pub const STORE_CAP_FLOOR: usize = {
+    let warm = ANCHOR_MIN_SAMPLES * MERGED_ACK_SYMBOLS_PER_SAMPLE;
+    if warm > RFC6928_INITIAL_WINDOW { warm } else { RFC6928_INITIAL_WINDOW }
+};
 
 /// Everything `run_window_sender` decides once and then only reads.
 ///
@@ -587,7 +666,8 @@ impl SenderPolicy {
         // samples land. ~1.5× a 100 Mbit / 10 ms BDP.
         let store_boot_cap: usize = gates.store_boot;
         // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
-        let store_cap_floor: usize = 64;
+        // DERIVED, not fitted, since 2026-08-18 — see `STORE_CAP_FLOOR`.
+        let store_cap_floor: usize = STORE_CAP_FLOOR;
         // ── Path-scaled outstanding pool (task #84, env RWM_STORE_PATHS) ──────
         // MEASURED at L1 (2026-07-14, host-passthrough E5-2650v3): the plain-
         // reliable OUTSTANDING ceiling is a per-TRANSFER constant
