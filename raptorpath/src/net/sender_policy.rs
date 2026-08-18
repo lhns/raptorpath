@@ -130,6 +130,91 @@ pub const STORE_CAP_FLOOR: usize = {
     if warm > RFC6928_INITIAL_WINDOW { warm } else { RFC6928_INITIAL_WINDOW }
 };
 
+/// **THE BOOTSTRAP CAP, DERIVED FROM ITS JOB — AND FOUND TO BE THE FLOOR**
+/// (paper §16.61; ADR-0070 finding 5's second half, `boot = 128` **ARGUED,
+/// NEVER A BATTERY ARM**).
+///
+/// **DERIVED, NOT SHIPPED.** `RWM_STORE_BOOT` still defaults to 128. This
+/// constant is the derivation's answer, standing beside the shipped value so
+/// the gap is a fact in the source rather than a claim in a ledger, and so the
+/// battery arm that would test it has a named quantity to set. The reason it
+/// does not ship is measured and is stated below.
+///
+/// ## The derivation
+///
+/// Boot's job, from its own rationale (`resolve`, unchanged since `ac3bc9d`):
+/// *"Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
+/// burst can't pre-bloat the queue and inflate the min-RTT floor (which would
+/// then inflate the anchor itself); the anchor takes over once samples land."*
+/// Read as a requirement, that is two LOWER bounds and one UPPER pressure:
+///
+/// 1. **It must buy the samples that end it.** The anchor does not exist until
+///    [`ANCHOR_MIN_SAMPLES`] delivered-rate samples are in its window, and at
+///    the shipped merged-ack cadence one outstanding symbol buys one sample per
+///    round trip ([`MERGED_ACK_SYMBOLS_PER_SAMPLE`]). A bootstrap cap that funds
+///    fewer than `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE` = **8**
+///    symbols cannot warm the anchor in one round trip, and a cap that cannot
+///    end itself is not a bootstrap — it is the strangle the floor's own
+///    derivation is about, one layer up.
+/// 2. **It must not open below the standard initial burst.**
+///    [`RFC6928_INITIAL_WINDOW`] = **10**. This clause is *literally* boot's
+///    job: RFC 6928 sizes the first flight a transport may put on an
+///    UNMEASURED path, and "before the anchor warms" is precisely the state of
+///    having no measurement.
+/// 3. **Tight, otherwise.** The upper pressure is boot's own and the floor does
+///    not have it: a startup burst that pre-bloats the queue inflates the
+///    min-RTT floor, which inflates the anchor, which is a closed loop. It
+///    selects the SMALLEST value satisfying 1 and 2 — it cannot select a
+///    number of its own.
+///
+/// ```text
+///   STORE_BOOT_DERIVED = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+///                             RFC6928_INITIAL_WINDOW )
+///                      = max( 8 · 1, 10 ) = 10   ≡ STORE_CAP_FLOOR
+/// ```
+///
+/// **The finding is the identity, not the number.** Boot and the floor turn out
+/// to be the SAME QUANTITY — *the outstanding bound that applies when the law
+/// has no measurement to offer* — reached from two different rationales, with
+/// the same two cited clauses and the same answer. Boot is therefore not an
+/// independent constant of this machine; it DISSOLVES into the floor. That is a
+/// stronger result than a new value, and it is why this is a `const` equal to
+/// [`STORE_CAP_FLOOR`] rather than an arithmetic re-statement of it.
+///
+/// ## What 128 actually was
+///
+/// The rationale's own sizing sentence — *"~1.5× a 100 Mbit / 10 ms BDP"* —
+/// reconstructs as `1.5 × (10 400 sym/s × 8 ms) = 124.8`, rounded to 128. Every
+/// input in that is c2's CONFIGURED parameters, and the `1.5` has no provenance
+/// anywhere. So 128 is **a fit to one cell's link budget, rounded to a power of
+/// two** — and it is circular for a bootstrap cap in particular, because sizing
+/// "the cap for when you do not know the path's BDP" to a specific path's BDP
+/// assumes exactly the quantity that is missing. It is not a derivation, and
+/// ADR-0070's *"never a battery arm"* is the other half: `RWM_STORE_BOOT` has
+/// never been swept, so 128's CONSEQUENCES are measured while 128 itself is not.
+///
+/// ## Why it does NOT ship (measured, and the block is not this constant's)
+///
+/// Boot binds on the current default at exactly one cell — **c1, in 17.2–42.1 %
+/// of steady DIAG samples (mean ≈30 %), MID-TRANSFER** — and at c7/c8/sc2 its
+/// gauge reads 0.0000. That binding is not boot's job being done: it is
+/// `net/mod.rs`'s terminal `else`, reached when `active_paths()` empties and the
+/// whole pooled chain falls through — ADR-0070 finding 1's cliff, landing a
+/// steady-state sender on a cold-start constant. Replacing 128 with 10 there
+/// would deepen a cliff already priced at +15.8/+24.8 % goodput when removed, by
+/// a further **×12.8**, at the one cell where it is live.
+///
+/// So the derivation closes and the replacement is BLOCKED — on the cliff, not
+/// on itself. The order is forced and it is the right way round: the live set
+/// (`RWM_STORE_CAP_UNIFIED`) takes boot's bind population at c1 from ≈30 % to
+/// **0 %**, and only once boot is unreachable except at genuine cold start are
+/// 10 and 128 indistinguishable everywhere and the derived value free to ship.
+/// **A constant cannot be derived into correctness while it is being used for a
+/// job it was never given.**
+///
+/// Bounded by `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`.
+pub const STORE_BOOT_DERIVED: usize = STORE_CAP_FLOOR;
+
 /// Everything `run_window_sender` decides once and then only reads.
 ///
 /// Grouped as the sender itself is: the caller's pipeline selection, the

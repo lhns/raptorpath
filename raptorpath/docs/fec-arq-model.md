@@ -13246,6 +13246,109 @@ RESULT (`brake=0/N`, armed and never closed), never as a null effect
 the composed arm; the extraction reuses the same counters and the same
 renderer, so there is nothing to drift.
 
+### 16.61 The bootstrap cap, derived from its job — and it turns out to BE the floor: boot and the floor are one quantity reached from two rationales, `128` is a fit to c2's link budget rounded to a power of two, and the derived value is blocked by the CLIFF rather than by itself (2026-08-18, `fix/sum-cap`, **DERIVED, NOT SHIPPED**)
+
+ADR-0070 finding 5's second half recorded `boot = 128` as **ARGUED, NEVER A
+BATTERY ARM**: a good closed-loop argument in prose, and a gate-forwarding
+audit row reading, in four words, *"n/a — never a battery arm"*. §16.59 paid
+the floor's parole; this section attempts boot's, and the attempt produces a
+result the ADR's framing did not have a slot for.
+
+**The derivation.** Boot's job, from its own rationale: *"Cap before the BtlBw
+anchor warms (a few RTTs). Tight so the startup burst can't pre-bloat the queue
+and inflate the min-RTT floor (which would then inflate the anchor itself); the
+anchor takes over once samples land."* Read as a requirement, that is two LOWER
+bounds and one UPPER pressure:
+
+1. **It must buy the samples that end it.** The anchor does not exist until
+   `ANCHOR_MIN_SAMPLES` delivered-rate samples land, and at the shipped
+   merged-ack cadence one outstanding symbol buys one sample per round trip. A
+   bootstrap cap funding fewer than `ANCHOR_MIN_SAMPLES ·
+   MERGED_ACK_SYMBOLS_PER_SAMPLE` = **8** symbols cannot warm the anchor in one
+   round trip — and a cap that cannot end itself is not a bootstrap, it is the
+   strangle §16.59's floor exists to prevent, one layer up.
+2. **It must not open below the standard initial burst.** RFC 6928's IW = **10**.
+   This clause is *literally* boot's job description: RFC 6928 sizes the first
+   flight a transport may put on an UNMEASURED path, and "before the anchor
+   warms" is exactly the state of having no measurement.
+3. **Tight, otherwise.** The upper pressure — the closed loop the original
+   rationale correctly identified — selects the SMALLEST value satisfying 1 and
+   2. It cannot select a number of its own.
+
+```text
+  STORE_BOOT_DERIVED = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+                            RFC6928_INITIAL_WINDOW )
+                     = max( 8 · 1, 10 ) = 10   ≡ STORE_CAP_FLOOR
+```
+
+**The finding is the IDENTITY, not the number.** Boot and the floor are the
+**same quantity** — *the outstanding bound that applies when the law has no
+measurement to offer* — reached from two different rationales, through the same
+two cited clauses, to the same answer. Boot is therefore not an independent
+constant of this machine: it **dissolves into the floor**. That is a stronger
+result than a replacement value, and it is why the tree now carries
+`STORE_BOOT_DERIVED` as a `const` equal to `STORE_CAP_FLOOR` rather than as an
+arithmetic restatement of it. Zero bare constants: `8` is `ANCHOR_MIN_SAMPLES`,
+`1` is measured (§16.42's `[CTLD]`), `10` is RFC 6928.
+
+**What 128 actually was.** The rationale's sizing sentence — *"~1.5× a 100 Mbit
+/ 10 ms BDP"* — reconstructs as `1.5 × (10 400 sym/s × 8 ms) = 124.8`, rounded
+to 128. Every input is **c2's configured parameters**, and the `1.5` has no
+provenance anywhere in the tree. So 128 is a fit to one cell's link budget
+rounded to a power of two — and for a bootstrap cap specifically it is
+**circular**, because sizing "the cap for when the path's BDP is unknown" to a
+particular path's BDP assumes precisely the quantity that is missing. The
+measurement status is the other half: `RWM_STORE_BOOT` has never been swept, so
+128's *consequences* are measured while 128 itself never was.
+
+**Where boot actually binds today** — the question ADR-0070 did not ask, and it
+changes the disposition completely:
+
+| cell | `capboot` bind fraction | when |
+|---|---|---|
+| **c1** | **17.2–42.1 % of steady DIAG samples (mean ≈30 %)** | **MID-TRANSFER** |
+| c7 / c8 / sc2 | 0.0000 | — |
+
+Three sites read the constant and only one of them binds: the cold-start
+initializer (boot's real job, superseded within a few RTTs), the Copa-sole
+terminal `else` (not reachable mid-transfer), and the **plain chain's terminal
+`else`** — reached when `active_paths()` empties and the whole pooled chain
+falls through. That last one is ADR-0070 finding 1's cliff landing a
+steady-state sender on a cold-start constant, and it is the c1 30 %. It
+survives the honest-anchor flip (29.1 / 25.9 %), and the newest wire session
+confirms it at 0.17–0.42 across all 16 reps on both seeds. The duals read
+0.0000 because they are absorbed by the `2·knee` pin — i.e. **the `×N` defect
+of §16.60 is what hides boot's defect at c7 and c8**, and the two findings are
+the same clamp seen from two sides.
+
+**Why the derived value does NOT ship, and whose block it is.** At the one place
+boot is live, replacing 128 with 10 would deepen a cliff already priced at
+**+15.8 / +24.8 % goodput when removed** by a further **×12.8**. So the
+derivation closes and the replacement is blocked — *on the cliff, not on
+itself*. The order that follows is forced and is the right way round: the live
+set (`RWM_STORE_CAP_UNIFIED`) takes boot's bind population at c1 from ≈30 % to
+**0 %**, and only once boot is unreachable except at genuine cold start are 10
+and 128 indistinguishable everywhere and the derived value free to ship at no
+cost.
+
+**A constant cannot be derived into correctness while it is being used for a job
+it was never given.** ADR-0070 asked whether each constant had provenance; the
+answer for boot is *the derivation closes, and the derived value is still not
+shippable* — because the constant's binding population is a symptom of a
+DIFFERENT defect, and deriving it correctly would sharpen that defect rather
+than repair anything. The derived value therefore rides the FULL arm, behind the
+live set, or not at all.
+
+**Bounded, not described.** `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`
+asserts the identity with the floor, reconstructs the `1.5 × c2 BDP` fit,
+asserts that BOTH values clear the sample requirement at boot's legitimate job,
+and PINS the ×12.8 cliff deepening together with the emptiness condition that
+reaches it.
+
+**What is NOT claimed.** No wire measurement supports 10 over 128; none supports
+128 over anything, which is the finding. `RWM_STORE_BOOT` remains **128** and
+this section flips nothing.
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 
