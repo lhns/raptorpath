@@ -323,13 +323,14 @@ pub(crate) struct SenderPolicy {
     /// is load-bearing at the brake — `active_paths()` would make the brake's
     /// question false by construction.
     pub composed_cap: bool,
-    /// `RWM_SUM_CAP` (paper §16.60, ADR-0070 finding 2): the `×N` deletion —
-    /// the pooled law's count multiplier is removed from the VALUE and kept in
-    /// the CEILING (`net::pooled_store_cap`'s `sum_cap` argument). Scoped to
-    /// the plain dynamic cap like its siblings; INDEPENDENT of
+    /// `RWM_SUM_CAP` (paper §16.60/§16.64, ADR-0070 finding 2): the `×N`
+    /// deletion — the pooled law's count multiplier is removed from the VALUE
+    /// and kept in the CEILING (`net::pooled_store_cap`'s `sum_cap` argument).
+    /// Scoped to the plain dynamic cap like its siblings; INDEPENDENT of
     /// [`Self::store_cap_unified`], which selects the Σ's path SET — the two
     /// are orthogonal axes of the same law and their four combinations are
-    /// four distinct formulas. Default OFF: the shipped tree is bit-identical.
+    /// four distinct formulas. **DEFAULT ON since 2026-08-19** (ladder battery
+    /// rung N DELIVERED); `RWM_SUM_CAP=0` re-runs the displaced quadratic.
     pub sum_cap: bool,
     /// `RWM_LATE_BRAKE` (paper §16.60.1, ADR-0070 finding 7): the late-stage
     /// per-path cwnd brake, armed WITHOUT the composed pool law. Exactly
@@ -860,11 +861,11 @@ impl SenderPolicy {
         let composed_cap = gates.composed_cap && plain_dyn_cap;
         let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
         // ── THE `×N` DELETION (env RWM_SUM_CAP) ───────────────────────────
-        // Paper §16.60, ADR-0070 finding 2. The pooled law's count multiplier
-        // is removed from the VALUE and kept in the CEILING:
+        // Paper §16.60/§16.64, ADR-0070 finding 2. The pooled law's count
+        // multiplier is removed from the VALUE and kept in the CEILING:
         //
-        //   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
-        //   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+        //   `=0` arm   cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+        //   SHIPPED    cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
         //
         // The law's own decl sentence names "Σ per-path (BDP + one recovery
         // round of runway)", which is `Σᵢ(gain·anchorᵢ) = gain·Σ` — already
@@ -886,7 +887,19 @@ impl SenderPolicy {
         // read). Scoped to the plain dynamic cap like its siblings, and
         // INDEPENDENT of `store_cap_unified` — U picks the Σ's path SET, this
         // picks the count MULTIPLIER, and the four combinations are four
-        // distinct formulas. Default OFF: the shipped tree is bit-identical.
+        // distinct formulas.
+        //
+        // **DEFAULT ON since 2026-08-19** — goal-gate "Ladder Battery —
+        // RESULTS" rung N, the one gate that program recommended flipping:
+        // interior at both scoreable duals (`pin` 0.000, `eng` 1.000,
+        // `chg_frac` 1.000 — the multiplier changed the computed cap on 100 %
+        // of engaged refreshes), a control that reproduced the shipped 4096
+        // pin, goodput UP at the pre-registered risk cell c8 on BOTH seeds
+        // (+9.29 / +1.34 Mbit/s), N-IDENT clean at the singles, CPU
+        // 0.937–1.005×, every guard green. The span the multiplier was
+        // accidentally funding was measured NOT load-bearing at c8 in this era
+        // — under-funded by 45.4 % and goodput rose. `RWM_SUM_CAP=0` re-runs
+        // the displaced quadratic, unchanged and with no deprecation warning.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
         // ── THE EXTRACTED LATE-STAGE BRAKE (env RWM_LATE_BRAKE) ───────────
         // Paper §16.60.1, ADR-0070 finding 7 ("the correct architecture,

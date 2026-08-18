@@ -501,13 +501,14 @@ pub struct RuntimeGates {
     ///
     /// `=0`/unset is the shipped default, bit-exactly.
     pub composed_cap: bool,
-    /// `RWM_SUM_CAP` (default OFF — the A/B arm; paper §16.60, ADR-0070
-    /// finding 2): **THE `×N` DELETION.** The shipped pooled law's count
+    /// `RWM_SUM_CAP` (**DEFAULT ON since 2026-08-19**, ladder battery rung N;
+    /// `=0` = the displaced quadratic, kept re-runnable; paper §16.60/§16.64,
+    /// ADR-0070 finding 2): **THE `×N` DELETION.** The pooled law's count
     /// multiplier is removed from the VALUE and kept in the CEILING:
     ///
     /// ```text
-    ///   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
-    ///   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+    ///   `=0` arm   cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+    ///   SHIPPED    cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
     /// ```
     ///
     /// The quantity the law's own decl comment names — *"Σ per-path (BDP + one
@@ -518,9 +519,12 @@ pub struct RuntimeGates {
     /// ADR-0070 finding 2 records the multiplier's provenance as **ABSENT** —
     /// not in the birth commit message, not in the doc comment, not at the
     /// decl site, not in the ledger — and contradicted by name in three places
-    /// in this repository. **No A/B of `gain·Σ` against `gain·N·Σ` at a fixed
-    /// ceiling has ever been run**, at L1, at a bench, or at L0; this gate is
-    /// the arm that would run it.
+    /// in this repository. This gate is the arm that finally ran the A/B that
+    /// had never been run, and **it delivered**: goal-gate "Ladder Battery —
+    /// RESULTS" measured the corrected law INTERIOR at both scoreable duals
+    /// (`pin` 0.000, `eng` 1.000, `chg_frac` 1.000, no CAPBIND WARN) against a
+    /// control reproducing the shipped 4096 pin, with goodput UP at the
+    /// pre-registered risk cell (c8) on BOTH seeds. Hence the flip.
     ///
     /// **Exactly one factor changes.** Gain, floor, ceiling, Σ-set and
     /// estimator are untouched, and no constant is introduced — so `gain`'s
@@ -538,14 +542,25 @@ pub struct RuntimeGates {
     /// **Reading a null.** At `N = 1` the law is not engaged at all
     /// (`n_live < 2` ⇒ `None`), so singles are byte-identical BY CONSTRUCTION.
     /// At `N ≥ 2` the correction is only VISIBLE where the value is interior:
-    /// the shipped form pins at `Σ ≥ knee/gain` (path-count-FREE, 1024), the
-    /// corrected form at `Σ ≥ N·knee/gain` (1024 PER PATH). An arm whose
+    /// the `=0` form pins at `Σ ≥ knee/gain` (path-count-FREE, 1024), the
+    /// shipped form at `Σ ≥ N·knee/gain` (1024 PER PATH). An arm whose
     /// `[SUMCAP]` echo reads a high `pin=` fraction measured the CLAMP, not the
     /// law, and MEASUREMENT DISCIPLINE 18 requires that be reported as the
     /// finding rather than filed as a null — which is why the echo carries
     /// `eng=`, `pin=` and `chg=` and not a mean.
     ///
-    /// `=0`/unset is the shipped default, bit-exactly.
+    /// **The honest bound on the flip**, carried here because the
+    /// recommendation carried it: the ladder's noise floor at c8 is wide
+    /// (2σ = 27.07 Mbit/s against a 77–86 Mbit/s base, n = 21/24 at a bistable
+    /// cell), so the session excludes a **large** c8 regression, not a small
+    /// one. Carried with it: the c8 CAP-MAGNITUDE clause was FALSIFIED AS
+    /// WRITTEN (`cap` 2308.7 vs a ±20 % band of [2416, 3624]) because the wire
+    /// presented Σ = 1154.3, 23–28 % below both published anchors — a finding
+    /// about Σ, not about the law (`cap ≡ ask`, `pin = 0`).
+    ///
+    /// `=0` is the DISPLACED QUADRATIC, kept fully re-runnable as the A/B arm
+    /// with no deprecation warning (ADR-0066 register row); its shape stays
+    /// pinned by `net::tests::law_shape::path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`.
     pub sum_cap: bool,
     /// `RWM_LATE_BRAKE` (default OFF — the A/B arm; paper §16.60.1, ADR-0070
     /// finding 7): the late-stage per-path cwnd brake, **EXTRACTED** from
@@ -738,7 +753,12 @@ impl RuntimeGates {
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
             composed_cap: env_flag("RWM_COMPOSED_CAP", false),
-            sum_cap: env_flag("RWM_SUM_CAP", false),
+            // DEFAULT ON since 2026-08-19 — the ladder battery's one
+            // FLIP-RECOMMENDED gate (goal-gate "Ladder Battery — RESULTS",
+            // paper §16.64). `RWM_SUM_CAP=0` remains the re-runnable A/B arm:
+            // the shipped quadratic `gain·N·Σ`, kept with its provenance per
+            // the deprecation register, no deprecation warning.
+            sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
@@ -1160,27 +1180,53 @@ mod tests {
             "the default echo must NAME the composed-cap gate with its 0 value: {}",
             g.echo_line()
         );
-        // THE `×N` DELETION (paper §16.60, ADR-0070 finding 2) and THE
-        // EXTRACTED LATE-STAGE BRAKE (§16.60.1, finding 7). Both are A/B arms
-        // and both ship OFF, with the same two-sided OFF-VALUE property: a
-        // battery must be able to assert the gate ABSENT in its control arm,
-        // not merely unmentioned. `RWM_SUM_CAP`'s OFF is a BACKLOG rather than
-        // a verdict — no A/B of `gain·Σ` against `gain·N·Σ` has ever been run,
-        // which is precisely ADR-0070 finding 2 — so this assertion is what
-        // keeps the shipped defect a DELIBERATE default instead of an
-        // unnoticed one.
+        // THE `×N` DELETION (paper §16.60/§16.64, ADR-0070 finding 2) —
+        // **FLIPPED DEFAULT ON 2026-08-19**. The A/B that ADR-0070 said had
+        // never been run was run (goal-gate "Ladder Battery — RESULTS", rung
+        // N): interior at both scoreable duals (`pin` 0.000, `eng` 1.000,
+        // `chg_frac` 1.000), the control reproducing the shipped 4096 pin,
+        // goodput UP at c8 on both seeds, CPU 0.937–1.005×, all guards green.
+        // Pinned ON here so the flip cannot drift back silently; the OFF-value
+        // property now belongs to the `=0` arm, asserted below on an explicit
+        // arm rather than on the default.
         assert!(
-            !g.sum_cap,
-            "RWM_SUM_CAP ships default OFF (A/B arm — paper §16.60)"
+            g.sum_cap,
+            "RWM_SUM_CAP ships DEFAULT ON since 2026-08-19 (ladder battery rung \
+             N DELIVERED: interior at both duals, pin 0.000 / eng 1.000 / \
+             chg_frac 1.000, goodput ≥ control at c8 both seeds). `=0` remains \
+             the re-runnable A/B arm — the displaced quadratic."
         );
         assert!(
-            g.echo_line().contains("RWM_SUM_CAP=0"),
-            "the default echo must NAME the sum-cap gate with its 0 value: {}",
+            g.echo_line().contains("RWM_SUM_CAP=1"),
+            "the default echo must NAME the sum-cap gate with its shipped 1 \
+             value (flipped 2026-08-19): {}",
             g.echo_line()
         );
+        // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
+        // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
+        // re-running the displaced quadratic must be able to assert the gate
+        // ABSENT on both endpoints, not merely unmentioned. Asserted on an
+        // EXPLICIT arm now that the default is ON, so the property survives the
+        // flip instead of being retired by it. Set by field rather than through
+        // the environment: env mutation is process-global state in a parallel
+        // runner.
+        let mut off_arm = g.clone();
+        off_arm.sum_cap = false;
+        assert!(
+            off_arm.echo_line().contains("RWM_SUM_CAP=0"),
+            "the `=0` arm's echo must NAME the sum-cap gate with its 0 value — \
+             the displaced quadratic stays re-runnable and scrapeable: {}",
+            off_arm.echo_line()
+        );
+        // THE EXTRACTED LATE-STAGE BRAKE (§16.60.1, ADR-0070 finding 7) is
+        // still an A/B arm and still ships OFF: the ladder scored it
+        // DELIVERED-AS-ARMED but NEEDS-MORE for effect (B-WALL closed on
+        // power), so it is NOT flipped by the same program that flipped
+        // `RWM_SUM_CAP`.
         assert!(
             !g.late_brake,
-            "RWM_LATE_BRAKE ships default OFF (A/B arm — paper §16.60.1)"
+            "RWM_LATE_BRAKE ships default OFF (A/B arm — paper §16.60.1; ladder \
+             battery: armed on 110/110 FULL reps but its EFFECT is unresolved)"
         );
         assert!(
             g.echo_line().contains("RWM_LATE_BRAKE=0"),
