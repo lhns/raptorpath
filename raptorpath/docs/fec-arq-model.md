@@ -12541,12 +12541,42 @@ flips a default: `RWM_COMPOSED_CAP` ships OFF.
 **The law.**
 
 ```text
-cap = Σᵢ over live_paths [ rateᵢ·RTpropᵢ + rateᵢ·stall(δ, ρ, srttᵢ) ]  +  2·rate_fast·skew
+cap = Σᵢ over live_paths [ rateᵢ·srttᵢ + rateᵢ·stall(δ, ρ, srttᵢ) ]  +  2·rate_fast·skew
 
+  srttᵢ             = Kᵢ·RTpropᵢ                          ← AMENDED 2026-08-18, see below
   stall(δ, ρ, srtt) = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt),   D(δ) = min(b(δ)·RTprop, 2·RTprop)
   skew              = (maxᵢ RTpropᵢ − minᵢ RTpropᵢ) / 2
   rate_fast         = the rate of the LEAST-RTprop path (the one that overtakes)
 ```
+
+> **AMENDMENT, 2026-08-18 (`fix/cap-law-cluster`) — TERM 1's CLOCK.** As
+> first published on 2026-08-12 this block read
+> `cap = Σᵢ [ rateᵢ·RTpropᵢ + rateᵢ·stall(δ, ρ, srttᵢ) ]  +  2·rate_fast·skew`
+> — term 1 on `RTprop`, term 2 on `srtt`. `net::three_term_store_cap` has
+> always computed term 1 on `Kᵢ·RTpropᵢ`; §16.57 measured the divergence
+> (`K` = 1.04–1.505, so the window term ran 4–50 % above the published
+> expression) and recorded it as the FORMULA-FIRST rule's first violation,
+> with the disposition left open. **It is adjudicated here in favour of the
+> CODE, and the paper is corrected to match.** The reason is the term's JOB,
+> not its ancestry: term 1 funds *one ack round trip* — the outstanding a
+> path needs so that the sender always has a slot freed by the time it wants
+> one. The time until a slot is freed is the round trip the ACK actually
+> takes, which is `K·RTprop` (RTprop plus the standing ack-path/batching
+> overhead the receiver imposes: delayed acks, merged acks, ack aggregation).
+> `RTprop` alone is the time the DATA takes one way and back on an empty
+> wire; a sender funded to `rate·RTprop` runs dry for `(K−1)·RTprop` of every
+> round and under-provisions the pipe by exactly the ack overhead — the
+> failure Little's law on the ack clock exists to prevent. §16.42 measured
+> that overhead as real and first-class (`[CTLD]` 1.96 → ~1.0 control
+> datagrams per data message at c1 under `RWM_ACK_MERGE`, worth +12.7/+13.0 %
+> goodput), so it is not a rounding term. The two terms now share one clock,
+> which was the internal inconsistency of the original block: it wrote term 1
+> on RTprop and term 2 on srtt with no argument for the difference.
+> **What this amendment does NOT license:** `K` is a windowed MIN of
+> `srtt/RTprop`, so on the bench's own axes `K = 1 + wireQ/RTprop` and the
+> clock carries whatever standing queue survives the window. That is a real
+> residual and it is exactly §16.58's subject; adjudicating term 1 does not
+> settle it, and §16.58 refutes the swap that was supposed to.
 
 **Every symbol's provenance, one line each** — the FORMULA-FIRST rule's
 actual requirement, and the audit the predecessor failed:
@@ -12555,12 +12585,13 @@ actual requirement, and the audit the predecessor failed:
 |---|---|
 | `rateᵢ` | measured — the per-path delivered-rate anchor `btlbw_sym_per_s`, on §16.51's honest sampler (default ON) |
 | `RTpropᵢ`, `srttᵢ` | measured — the path's own `min_rtt` / `srtt`; `srtt = K·RTprop` on the honest ack clock |
+| `Kᵢ` | measured — [`EchoRatioMin`], the windowed-MIN `echoSRTT/RTprop` over `PERCAP_K_HALF_WINDOW_US`×2 ≈ 10 s, floored at 1.0. It is the ACK-path overhead ratio the sender can honestly see, and it EXCLUDES the store's own dwell (§16.44 route B), which is what closes the dwell loop in one evaluation. Wire values 1.04 (c8) / 1.14 (c7, sc2) / 1.15 (c1) / 1.505 (c8L), §16.57 |
 | `9/8` | cited — RFC 9002 §6.1.2 `kTimeThreshold`, not fitted |
 | the second `srtt` in the stall | derived — one retransmit round trip, §16.43 |
 | `2` in `2·rate_fast·skew` | identified, not fitted — §16.43's PS5 measured the span/skew slope at 2.00 ± 0.03 over 18 of 18 non-zero cells, across ×13 in rate and ×40 in skew; it is a round-trip-vs-one-way DEFINITION boundary |
 | `b(δ)`, `ρ` | declared DIALS — named points on the triangle, never modes (§16.20) |
 | `live_paths()` | the liveness predicate, unconditional; the law never counts paths |
-| floor = 64 | **the one paroled constant.** Provenance ABSENT (ADR-0070 finding 5); kept because deleting it is a separate decision, and NAMED in the gate's echo so it can never bind silently again |
+| floor = 64 | **the one paroled constant.** Provenance ABSENT (ADR-0070 finding 5); kept because deleting it is a separate decision, and NAMED in the gate's echo so it can never bind silently again. **PAROLE PAID 2026-08-18: DERIVED and now 10** — `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)`, §16.59; the gate's `floor_val=` echo carries the derived value |
 | `WIN_STORE_MAX` = 4096 | a RESOURCE LIMIT stated OUTSIDE the law — a memory bound (4096 × ~1.2 KB ≈ 5 MB) that may abort, not a term that shapes. Its bind fraction is REPORTED, per the FORMULA-FIRST clamp rule |
 
 **Shape, checked before any number** (the rule's second clause). The
@@ -12710,6 +12741,16 @@ provenance table's line is not what runs — and **no test asserts code-vs-
 published-formula agreement for this law.** That is the same gap one level up
 from the reachability gap the battery's own smoke found, and it is owed before
 any successor is measured.
+>
+> **ADJUDICATED 2026-08-18 (`fix/cap-law-cluster`), and both halves closed.**
+> The divergence is resolved IN FAVOUR OF THE CODE on the term's job — term 1
+> funds one ack round trip, and the round trip an ack actually takes is
+> `K·RTprop`, not `RTprop` — and §16.56's law block carries the dated
+> amendment. The owed test also landed: `tests/formula_agreement.rs` is the
+> AGREEMENT-TEST CLASS, one test per formula-first law, each asserting that
+> the engine function equals an INDEPENDENT transcription of the published
+> expression on the same inputs (including the wire anchors of this session),
+> with the template for future laws documented in the file header.
 
 **What this does and does not say about ADR-0070.** The review's verdicts all
 stand and this session strengthens them: the shipped law was measured pinned
@@ -12750,6 +12791,185 @@ dead-wall contrast is unstable regardless of measurand**, the instability
 belongs to the cell's bistability and the n this project has been willing to
 spend, and the next attempt must change the DESIGN — a paired within-rep
 contrast, or a cell whose statistic is not bistable — not the statistic.
+
+### 16.58 The slack term's clock, written as a formula and then REFUTED by its own arithmetic: the queue-free construction removes 1.7 % of a 90 % overshoot at c8, and the residual loop it closes is real but is not the mechanism (2026-08-18, `fix/cap-law-cluster`, STRICTLY LOCAL — no VM, no default change, no engine line shipped)
+
+The composed law's term 2 runs Little's law over `stall(δ, ρ, srtt)`, and the
+charge against it is that its clock is queue-inclusive: `srtt = K·RTprop` with
+`K` the windowed-MIN `echoSRTT/RTprop`, so on the bench's own axes
+`K = 1 + wireQ/RTprop` and the cap sizes itself on a queue the cap itself
+stood up — `cap → wireQ → srtt → K → slack → cap`. §16.57 measured the cap
+pinned at the memory bound on every dual cell, and the DIAG on that session
+read an `rtt` of **353 ms on a 38 ms leg**.
+
+**FORMULA FIRST, before any code.** The candidate replaces the stall's
+argument — nothing else. It is candidate (b) of the record: a recovery round
+built on the queue-free clock.
+
+```text
+cap' = Σᵢ over live_paths [ rateᵢ·Kᵢ·RTpropᵢ + rateᵢ·stall'(δ, ρ, RTpropᵢ) ]  +  2·rate_fast·skew
+
+  stall'(δ, ρ, RTprop) = (1 − ρ)·D(δ) + ρ·(9/8·RTprop + RTprop)
+```
+
+| symbol | provenance |
+|---|---|
+| term 1's `Kᵢ` | UNCHANGED and deliberately so — §16.56's amendment of the same date: term 1 funds one ACK ROUND TRIP, and the ack really does take `K·RTprop`. Only term 2 is at issue: it funds a RECOVERY round, and a recovery round is not an ack round |
+| `RTprop` in `stall'` | measured — the path's own `min_rtt`, the windowed MIN of the RTT. Loop-free BY CONSTRUCTION: a min-RTT cannot be raised by a queue the sender created, which is the same argument that makes `max_bw·min_rtt` the defensible BDP shape (ADR-0070 finding 6) |
+| `9/8` | **PROVENANCE REGRESSION, and this is the first thing the formula shows.** RFC 9002 §6.1.2 defines the time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`. The 9/8 is cited ONLY as a multiplier of a SMOOTHED RTT. Moved onto RTprop it stops being the cited quantity and becomes a fitted coefficient on a new clock — the exact species of constant this whole arc exists to remove |
+| the second `RTprop` | derived — one retransmit round trip, §16.43, on the same clock as the detection term |
+| everything else | unchanged from §16.56 |
+
+Candidate (a) of the record — §16.44's closed dwell loop — is **not a change
+at all**: `net::three_term_store_cap` already implements it. `K` is a windowed
+MINIMUM precisely so the store's own dwell cannot enter the clock (a dwell can
+only ADD to an echo sample, so it can never lower a minimum), which is why
+§16.44 measured `closed_loop_dwell` terminating at iteration 2. The loop that
+construction closes is `cap → store dwell → srtt`. The loop it does NOT close
+is `cap → standing WIRE queue → srtt`, because a standing queue is standing:
+it is present at the minimum too. **The 353 ms reading is on the DIAG's `rtt`,
+not on the law's clock** — at c8 the law's own `K` read **1.04**, so the term
+that was accused of eating a 353 ms queue was in fact running 4 % above
+RTprop. The charge is against the wrong term.
+
+**The loop is nonetheless REAL, and here is its measurement.** c8 and c8L are
+the SAME geometry at 25 MB and 200 MB. `K` reads **1.04 at c8 and 1.505 at
+c8L** — the clock takes on 50 % of standing queue when the transfer runs long
+enough for the queue to fill the estimator's ≈10 s window. That is the loop,
+measured, on one cell, by length. It is a finding and it is why the candidate
+was worth writing down.
+
+**VERIFY ISOLATED — the candidate evaluated on the wire's own inputs.** Scored
+on §16.57's `[3T]` decomposition (833 evaluations). At ρ = 1 the shipped slack
+is `2.125·window` and the candidate's is `2.125·window/K`, so the whole
+comparison is arithmetic on numbers already published, with nothing fitted and
+no new measurement claimed:
+
+| cell | window | span | shipped Σ | **candidate Σ** | Δ | `WIN_STORE_MAX` = 4096 |
+|---|---|---|---|---|---|---|
+| c1 | 201 | 0 | 629 | **572.4** | −9.0 % | interior → interior |
+| sc2 | 374 | 0 | 1 168 | **1 071.1** | −8.3 % | interior → interior |
+| c7 | 1 261 | 118 | 4 059 | **3 729.6** | −8.1 % | 63.2 % of evals over → mean interior |
+| **c8** | 1 669 | 2 563 | 7 778 | **7 642.3** | **−1.7 %** | **1.90× over → 1.87× over — STILL PINS** |
+| **c8L** | 7 489 | 2 552 | 25 956 | **20 615.9** | **−20.6 %** | **6.34× over → 5.03× over — STILL PINS** |
+
+**VERDICT: REFUTED.** The item's own isolated criterion was that the `[CCAP]`
+`mem` pinning goes INTERIOR at the c8 geometry that read `mem` = 1.000. It
+does not. At c8 the law must shed **47 %** of its ask to clear the memory
+bound and the queue-free clock sheds **1.7 %**; at c8L it must shed 84 % and
+sheds 21 %. The construction is directionally right and quantitatively
+irrelevant, and the reason is visible in the table: at c8 `K` = 1.04, so there
+was almost nothing in the clock to remove. **The 3.125 multiplier is the
+mechanism, not the clock**, exactly as §16.57 concluded from the other side.
+Adding a coefficient to close the gap is forbidden and would be the fitted
+constant this arc exists to delete, so nothing ships: `contract_stall_s` is
+UNCHANGED and no gate moved.
+
+The item's second criterion is met and is recorded because it is the half that
+survives: the shipped `slack/window` ≡ 2.125 in 833 of 833 evaluations
+(min = max — an identity of the code, so the "three-term" law is two-term at
+the shipped scope), while the candidate's ratio is `2.125/K` and reads
+**1.412 (c8L) … 2.043 (c8)** across the same cells. The queue-free clock DOES
+de-degenerate the term structure. It just does not resize the law.
+
+**The successor, named.** Unchanged from §16.57, and this section strengthens
+it by eliminating the clock as a candidate explanation: **if `cap − BDP` is
+the standing queue and δ is its budget, then 3.125 BDP at ρ = 1 means ≈ 2.1
+BDP of standing queue, and either δ must actually bound that or the
+`1 + 17/8` composition is wrong for a retain-until-acked scope.** It is a
+DERIVATION question about the stall's MAGNITUDE — the `17/8` — not about its
+argument, and not a battery. The provenance regression this section found on
+`9/8` is a constraint on that work: any construction that moves 9/8 off a
+smoothed RTT owes a new citation or a new derivation, and may not simply
+inherit RFC 9002's.
+
+Pinned by `slack_bench.rs::the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs`,
+which carries the table above as an executable record — including the two
+cells that still pin, asserted as still pinning, so this refutation cannot rot
+into a footnote.
+
+### 16.59 The bootstrap floor, derived from its job: `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10, and the loopback floor-bind that had been hiding the law's own answer VANISHES (2026-08-18, `fix/cap-law-cluster`, STRICTLY LOCAL)
+
+ADR-0070 finding 5 recorded `floor = 64` as **PROVENANCE ABSENT**: one
+sentence of rationale in source (*"Floor so a transiently-tiny BDP estimate
+can't strangle the pipe"*), never measured, never swept, no ledger entry, no
+derivation, and it was caught binding at `shal8` where the three-term
+pre-registration had asserted it could not. §16.56 shipped the composed law
+with it as *"the one paroled constant"*. This section pays the parole.
+
+**The job, read as a requirement.** *A transiently-tiny BDP estimate must not
+strangle the pipe* is two independent LOWER BOUNDS on one quantity:
+
+1. **Enough outstanding to warm the estimators.** Every pooled cap law
+   consumes the BtlBw anchor, and the anchor does not exist until
+   `ANCHOR_MIN_SAMPLES` delivered-rate samples are in its window
+   (`PathState::bdp_anchor` and `effective_btlbw` both return `None` below
+   it). A floor that funds fewer symbols per round than that cannot buy the
+   samples that would let the LAW relieve the floor — the floor becomes
+   self-sustaining, which is precisely the strangle. `PathState::on_ack`
+   calls `record_delivery` once per ack datagram and that is the only site
+   that pushes a sample, so samples-per-round is acks-per-round; §16.42's
+   `[CTLD]` measured the shipped merged-ack cadence at ≈1.0 control datagram
+   per data message (1.96 before the merge). One outstanding symbol buys one
+   sample. **8 × 1 = 8 symbols.**
+2. **Never open below the standard initial burst.** RFC 6928 raises TCP's
+   permitted initial window to **10** segments — the citable analog for the
+   smallest flight a transport may put on an unmeasured path.
+
+```text
+STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+                       RFC6928_INITIAL_WINDOW )
+                = max( 8 · 1, 10 ) = 10
+```
+
+`max`, not `+`: two independent lower bounds on one quantity conjoin to the
+larger of them, and adding them would compose a number neither clause asks
+for — an invented constant wearing a derivation's clothes. Every symbol has
+provenance: `8` is the existing engine constant `scheduler::ANCHOR_MIN_SAMPLES`
+cited at its own site (now `pub`, because it is load-bearing outside the
+scheduler for the first time), `1` is measured (§16.42), `10` is RFC 6928.
+**Zero bare constants, and the derivation lands 6.4× BELOW the number it
+replaces** — which is the honest finding, not a convenience: `64` was never a
+floor for this job, and nothing in the repository says what job it was for.
+
+**The bind that had to VANISH or be EXPLAINED, MEASURED.** ADR-0070's own
+prevention kit says a clamp must carry a bind-fraction gauge, and the composed
+law's `[CCAP]` line carries `floor=`. Driven at loopback
+(`tests/composed_cap_loopback.rs`, `RWM_COMPOSED_CAP=1 RWM_PLAIN_RS=1`, one
+2 MB window-reliable transfer, release build):
+
+```text
+before  [CCAP] eng=81/82 cap=64.8 mem=0.0000 floor=1.0000 floor_val=64 brake_frac=0.0383
+after   [CCAP] eng=61/62 cap=60.0 mem=0.0000 floor=0.0000 floor_val=10 brake_frac=0.0496
+```
+
+**The bind vanishes: 81 of 81 engaged refreshes → 0 of 61.** And the number it
+was hiding is the point of the whole exercise — with the floor at 64 the
+realized cap read **64.8** and the law's own answer was invisible; with the
+floor at 10 the law reads **60.0**, i.e. the composed cap had been asking for
+60 symbols at loopback and the un-derived floor was overriding it by 4 and
+reporting itself as the law. That is ADR-0070's mechanism 1 — *a clamp that
+always binds converts a law into a constant and hides its shape from every
+measurement taken through it* — caught at the smallest scale in the tree, on
+the instrument built to catch it.
+
+**What changes on the shipped default, bounded.** The floor binds only where
+the chain's unclamped ask is beneath it, which on the shipped pooled chain
+requires `Σ(max_bw·min_rtt) < 16` symbols at N = 2 — 46× below the smallest
+warm leg the wire has ever reported (ADR-0070 finding 5). At every named L1
+cell the two values are therefore INDISTINGUISHABLE, and the change is not a
+default flip in effect: it is a relaxation of a bound that does not bind
+there. Where it is not inert is the degenerate end — loopback above, and
+`shal8`, the single cell the record ever caught landing on the floor. Bounded
+by `store_cap_bench.rs::derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end`,
+which asserts the derivation's arithmetic, both clauses' independence, and the
+inertness at every cell geometry the bench carries.
+
+**What is NOT claimed.** No wire measurement supports 10 over 64; none
+supports 64 either, which is the finding. The derivation is an argument from
+the floor's stated job to a number, with every input cited, and it is offered
+as such. The wire question it raises is pre-registered in the goal-gate ledger
+rather than run.
 
 
 ## 17. The Measured Regime Map (2026-07-19)

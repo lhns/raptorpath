@@ -1,5 +1,9 @@
 # ADR-0070: The store-cap law on trial — a term-by-term review of `clamp(gain·N·Σ, floor, N·knee)`, one defect, two fossils, one stale measurement, and the derived law that would replace the whole expression
 
+> **AMENDMENT 2026-08-18 (`fix/cap-law-cluster`, paper §16.59, goal-gate "Mechanical Defect Sweep, items 1 / 2 / 4").** Finding 5's first half is DISCHARGED: `floor = 64` no longer exists. The bootstrap floor is DERIVED from its own stated job as `max(ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC6928_INITIAL_WINDOW) = max(8·1, 10) = **10**`, with every input cited or measured. The composed law's `[CCAP]` floor-bind at loopback goes 81/81 → 0/61 and the realized cap drops from the floor's 64.8 to the LAW's own 60.0 — this ADR's mechanism 1 caught at the smallest scale in the tree. Finding 5's second half (`boot = 128`, ARGUED but never a battery arm) is UNCHANGED. Every other verdict below stands.
+>
+> **AMENDMENT 2026-08-18 — Deliverable 2's term 1.** §16.56's published `rateᵢ·RTpropᵢ` is corrected to `rateᵢ·Kᵢ·RTpropᵢ` (the form `net::three_term_store_cap` always computed), adjudicated on the term's job: it funds ONE ACK ROUND TRIP, and the ack takes `K·RTprop`. The agreement-test class this ADR's prevention kit implied but did not name now exists — `tests/formula_agreement.rs`.
+
 ## Status: Accepted (2026-08-12) — **a REVIEW, not a change.** Every verdict below is a finding about provenance; no engine file, no gate, no default, no test is touched by this ADR. The replacement of Deliverable 2 is STATED, not shipped, and is gated on the validation path in the Decision.
 
 **Date**: 2026-08-12
