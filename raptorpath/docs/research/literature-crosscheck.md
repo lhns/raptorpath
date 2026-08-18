@@ -37,7 +37,7 @@ ADR-0070 found the shipped cap law to be a fitted constant wearing a law's
 clothes. ADR-0071 enumerated successors and deliberately took no decision.
 Between them the tree now carries roughly a dozen expressions whose
 derivations are either absent, fossilised, or freshly invented. The observation
-that produced this ADR is simple and it is the user's:
+that produced this review is simple and it is the user's:
 
 > **Many of these questions have published answers. Confirming or diverging
 > from a published formula is faster than re-deriving one.**
