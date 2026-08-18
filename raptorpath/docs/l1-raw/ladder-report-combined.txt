@@ -1,0 +1,455 @@
+============================================================================================
+LADDER BATTERY — SCORING PASS
+contract: goal-gate "Ladder Battery — PRE-REGISTRATION" (91c00dd), era main@5ddf7f6
+arms: A = shipped | N = SUM_CAP | T = the ledger/loss trio | NT = N+T | FULL = NT + UNIFIED + LATE_BRAKE
+============================================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+### ARMCOUNT in the driver is NOT this table's n — it counts aborts too.
+
+cell-arm     rows  ABORT   live   DNF  noSUMCAP  noWALL   noPL  noCPU  noPING
+c1-A           16      0     16     0         0       0      0      0       0
+c1-N           16      0     16     0         0       0      0      0       0
+c1-T           16      0     16     0         0       0      0      0       0
+c1-NT          16      0     16     0         0       0      0      0       0
+c1-FULL        16      0     16     0         0       0      0      0       0
+c7-A           28      9     19     0         0       0      0      0       0
+c7-N           28      5     23     0         0       0      0      0       0
+c7-T           28      8     20     0         0       0      0      0       0
+c7-NT          28      9     19     0         0       0      0      0       0
+c7-FULL        28      7     21     0         0       0      0      0       0
+c8-A           36     15     21     0         0       0      0      0       0
+c8-N           36     12     24     0         0       0      0      0       0
+c8-T           36      7     29     0         0       0      0      0       0
+c8-NT          36     16     20     0         0       0      0      0       0
+c8-FULL        36      9     27     0         0       0      0      0       0
+c8L-A          36     11     25     0         0       0      0      0       0
+c8L-N          36      9     27     0         0       0      0      0       0
+c8L-T          36     14     22     0         0       0      0      0       0
+c8L-NT         36      9     27     0         0       0      0      0       0
+c8L-FULL       36     10     26     0         0       0      0      0       0
+sc2-A          28     10     18     0         0       0      0      0       0
+sc2-N          28     10     18     0         0       0      0      0       0
+sc2-T          28      6     22     0         0       0      0      0       0
+sc2-NT         28      7     21     0         0       0      0      0       0
+sc2-FULL       28      8     20     0         0       0      0      0       0
+
+  Per-seed live n (the G-TOPUP floor is n = 8 at EITHER seed):
+
+cell-arm      s42     s7   top-up needed?
+c1-A            8      8   no
+c1-N            8      8   no
+c1-T            8      8   no
+c1-NT           8      8   no
+c1-FULL         8      8   no
+c7-A            8     11   no
+c7-N            8     15   no
+c7-T            8     12   no
+c7-NT           8     11   no
+c7-FULL         8     13   no
+c8-A           12      9   no
+c8-N           12     12   no
+c8-T           12     17   no
+c8-NT          12      8   no
+c8-FULL        12     15   no
+c8L-A          12     13   no
+c8L-N          12     15   no
+c8L-T          12     10   no
+c8L-NT         12     15   no
+c8L-FULL       12     14   no
+sc2-A           8     10   no
+sc2-N           8     10   no
+sc2-T           8     14   no
+sc2-NT          8     13   no
+sc2-FULL        8     12   no
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS (discipline 15c)
+### An arm that cannot show its control was a control has measured one condition twice.
+
+cell-arm      sum_cap  loss_sent  charge_re  release_1  store_cap  late_brak  composed_  three_ter   instr  SUMCAP   actU  act3T=0   CCAP
+c1-A         16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16   16/16  16/16    16/16  16/16
+c1-N         16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16   16/16  16/16    16/16  16/16
+c1-T         16/16(0)   16/16(1)   16/16(1)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16   16/16  16/16    16/16  16/16
+c1-NT        16/16(1)   16/16(1)   16/16(1)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16   16/16  16/16    16/16  16/16
+c1-FULL      16/16(1)   16/16(1)   16/16(1)   16/16(1)   16/16(1)   16/16(1)   16/16(0)   16/16(0)   16/16   16/16  16/16    16/16  16/16
+c7-A         19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19   19/19  19/19    19/19  19/19
+c7-N         23/23(1)   23/23(0)   23/23(0)   23/23(0)   23/23(0)   23/23(0)   23/23(0)   23/23(0)   23/23   23/23  23/23    23/23  23/23
+c7-T         20/20(0)   20/20(1)   20/20(1)   20/20(1)   20/20(0)   20/20(0)   20/20(0)   20/20(0)   20/20   20/20  20/20    20/20  20/20
+c7-NT        19/19(1)   19/19(1)   19/19(1)   19/19(1)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19   19/19  19/19    19/19  19/19
+c7-FULL      21/21(1)   21/21(1)   21/21(1)   21/21(1)   21/21(1)   21/21(1)   21/21(0)   21/21(0)   21/21   21/21  21/21    21/21  21/21
+c8-A         21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21   21/21  21/21    21/21  21/21
+c8-N         24/24(1)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24   24/24  24/24    24/24  24/24
+c8-T         29/29(0)   29/29(1)   29/29(1)   29/29(1)   29/29(0)   29/29(0)   29/29(0)   29/29(0)   29/29   29/29  29/29    29/29  29/29
+c8-NT        20/20(1)   20/20(1)   20/20(1)   20/20(1)   20/20(0)   20/20(0)   20/20(0)   20/20(0)   20/20   20/20  20/20    20/20  20/20
+c8-FULL      27/27(1)   27/27(1)   27/27(1)   27/27(1)   27/27(1)   27/27(1)   27/27(0)   27/27(0)   27/27   27/27  27/27    27/27  27/27
+c8L-A        25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25   25/25  25/25    25/25  25/25
+c8L-N        27/27(1)   27/27(0)   27/27(0)   27/27(0)   27/27(0)   27/27(0)   27/27(0)   27/27(0)   27/27   27/27  27/27    27/27  27/27
+c8L-T        22/22(0)   22/22(1)   22/22(1)   22/22(1)   22/22(0)   22/22(0)   22/22(0)   22/22(0)   22/22   22/22  22/22    22/22  22/22
+c8L-NT       27/27(1)   27/27(1)   27/27(1)   27/27(1)   27/27(0)   27/27(0)   27/27(0)   27/27(0)   27/27   27/27  27/27    27/27  27/27
+c8L-FULL     26/26(1)   26/26(1)   26/26(1)   26/26(1)   26/26(1)   26/26(1)   26/26(0)   26/26(0)   26/26   26/26  26/26    26/26  26/26
+sc2-A        18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18   18/18  18/18    18/18  18/18
+sc2-N        18/18(1)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18(0)   18/18   18/18  18/18    18/18  18/18
+sc2-T        22/22(0)   22/22(1)   22/22(1)   22/22(1)   22/22(0)   22/22(0)   22/22(0)   22/22(0)   22/22   22/22  22/22    22/22  22/22
+sc2-NT       21/21(1)   21/21(1)   21/21(1)   21/21(1)   21/21(0)   21/21(0)   21/21(0)   21/21(0)   21/21   21/21  21/21    21/21  21/21
+sc2-FULL     20/20(1)   20/20(1)   20/20(1)   20/20(1)   20/20(1)   20/20(1)   20/20(0)   20/20(0)   20/20   20/20  20/20    20/20  20/20
+
+  `SUMCAP` counts reps whose [SUMCAP] PRESENCE matches the arm (emitted
+  only on the ON arm, fed the counterfactual on both). `act3T=0` counts
+  reps with the three-term echo ABSENT, which is the expected state on
+  EVERY arm: no ladder arm reaches the three-term pool seat. `CCAP` counts
+  reps whose [CCAP] presence matches — PRESENT on FULL through the
+  LATE_BRAKE door, ABSENT elsewhere.
+
+### HEADROOM (discipline 16b) — tc, arm A, THIS session, EVERY cell
+
+  DENOMINATOR = THE TRANSFER WALL (`seconds`), NOT `INVOCATION_S`.
+  `INVOCATION_S` is the whole script's wall — namespace bring-up, netem/tbf
+  setup, the verification pings and teardown — and it runs 1.12x the
+  transfer at c1/c8L up to 2.11x at c8. Dividing shaped-device BYTES by it
+  read c7 at 77.6% when the cell is at 96.9%, which would have LICENSED the
+  unsatisfiable c7 throughput target discipline 16 exists to forbid. It is
+  printed beside the corrected figure so the correction is auditable.
+
+cell       shaped  xfer_s  INVOC_S  util s42   util s7  headroom   claims permitted
+c1        1000 Mb   15.64     18.0      22.4      22.4      77.6   throughput targets permitted
+c7         200 Mb    9.45     12.0      94.2      94.4       5.6   throughput targets permitted
+c8         120 Mb    2.47      5.0      81.5      76.7      18.5   throughput targets permitted
+c8L        120 Mb   24.25     28.0      60.4      64.0      36.0   throughput targets permitted
+sc2        100 Mb    9.11     11.0      97.9      98.3       1.7   PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)
+
+  THE CONTRACT WRITES NO THROUGHPUT TARGET AT ANY CELL. Every scored clause
+  is a bind fraction, a cap magnitude, an eps-hat class, a paired sign test
+  or a no-regression guard; goodput appears only in the N rung's OUTRIGHT-
+  REFUTATION falsifier and in G-REG, both one-sided DOWNWARD and therefore
+  satisfiable at any utilisation. This table is the check that those
+  decisions were made against the right arithmetic — and, at the
+  calibration, it is what fills the contract's own headroom table.
+
+### CAPBIND — the standard bind-fraction readout (ADR-0070 kit item 2)
+
+  CAPBIND -- realized store cap vs the chain's known clamps (key=occcap_p50; warn at frac > 0.50, a reporting aid, ADR-0070 kit item 2)
+  CAPBIND cell=c1 arm=A ceiling=none frac=0.000 n=16 name=interior  (range 499..663)
+  CAPBIND cell=c1 arm=FULL ceiling=1024 frac=1.000 n=16 name=RELIABLE_STORE_MAX
+    WARN c1/FULL: cap == 1024 (RELIABLE_STORE_MAX) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c1 arm=N ceiling=none frac=0.000 n=16 name=interior  (range 498..649)
+  CAPBIND cell=c1 arm=NT ceiling=1024 frac=0.938 n=16 name=RELIABLE_STORE_MAX
+    WARN c1/NT: cap == 1024 (RELIABLE_STORE_MAX) in 93.8% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c1 arm=T ceiling=1024 frac=0.938 n=16 name=RELIABLE_STORE_MAX
+    WARN c1/T: cap == 1024 (RELIABLE_STORE_MAX) in 93.8% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c7 arm=A ceiling=4096 frac=1.000 n=19 name=WIN_STORE_MAX=N*knee
+    WARN c7/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c7 arm=FULL ceiling=4096 frac=0.429 n=21 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c7 arm=N ceiling=4096 frac=0.087 n=23 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c7 arm=NT ceiling=4096 frac=0.263 n=19 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c7 arm=T ceiling=4096 frac=0.450 n=20 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8 arm=A ceiling=4096 frac=0.952 n=21 name=WIN_STORE_MAX=N*knee
+    WARN c8/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 95.2% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c8 arm=FULL ceiling=none frac=0.000 n=27 name=interior  (range 1495..3444)
+  CAPBIND cell=c8 arm=N ceiling=4096 frac=0.167 n=24 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8 arm=NT ceiling=128 frac=0.050 n=20 name=boot
+  CAPBIND cell=c8 arm=T ceiling=128 frac=0.276 n=29 name=boot
+  CAPBIND cell=c8L arm=A ceiling=4096 frac=1.000 n=25 name=WIN_STORE_MAX=N*knee
+    WARN c8L/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c8L arm=FULL ceiling=4096 frac=0.615 n=26 name=WIN_STORE_MAX=N*knee
+    WARN c8L/FULL: cap == 4096 (WIN_STORE_MAX=N*knee) in 61.5% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c8L arm=N ceiling=4096 frac=0.407 n=27 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8L arm=NT ceiling=4096 frac=0.222 n=27 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8L arm=T ceiling=4096 frac=0.409 n=22 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=sc2 arm=A ceiling=1024 frac=0.944 n=18 name=RELIABLE_STORE_MAX
+    WARN sc2/A: cap == 1024 (RELIABLE_STORE_MAX) in 94.4% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=FULL ceiling=1024 frac=0.650 n=20 name=RELIABLE_STORE_MAX
+    WARN sc2/FULL: cap == 1024 (RELIABLE_STORE_MAX) in 65.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=N ceiling=1024 frac=0.944 n=18 name=RELIABLE_STORE_MAX
+    WARN sc2/N: cap == 1024 (RELIABLE_STORE_MAX) in 94.4% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=NT ceiling=128 frac=0.857 n=21 name=boot
+    WARN sc2/NT: cap == 128 (boot) in 85.7% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=NT ceiling=1024 frac=0.143 n=21 name=RELIABLE_STORE_MAX
+  CAPBIND cell=sc2 arm=T ceiling=128 frac=0.864 n=22 name=boot
+    WARN sc2/T: cap == 128 (boot) in 86.4% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=T ceiling=1024 frac=0.136 n=22 name=RELIABLE_STORE_MAX
+
+### `[SUMCAP]` — the xN deletion's engagement, counterfactual and pin
+
+cell-arm      n  eng med  eng>=.9  chg_frac  pin med  pin<=.10   cap med   ask med             band
+c1-N         16        -        -         -        -         -         -         -                -  (16 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+c1-NT        16        -        -         -        -         -         -         -                -  (16 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+c1-FULL      16        -        -         -        -         -         -         -                -  (16 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+c7-N         23    1.000    1.000     1.000    0.000     0.826    3142.4    3141.8   IN [2617,3925]
+c7-NT        19    1.000    1.000     0.724    0.276     0.421    2399.9    3306.7  OUT [2617,3925]
+c7-FULL      21    1.000    1.000     0.682    0.318     0.333    3236.2    4192.6   IN [2617,3925]
+c8-N         24    1.000    1.000     1.000    0.000     0.833    2308.7    2308.1  OUT [2416,3624]
+c8-NT        20    1.000    1.000     1.000    0.000     0.950    1105.1    1104.8  OUT [2416,3624]
+c8-FULL      27    1.000    1.000     1.000    0.000     1.000    1952.5    1951.9  OUT [2416,3624]
+c8L-N        27    1.000    1.000     0.568    0.432     0.111    3306.6    5630.7                -
+c8L-NT       27    1.000    1.000     0.628    0.372     0.000    2580.2    7506.5                -
+c8L-FULL     26    1.000    1.000     0.628    0.372     0.000    3269.8    7587.9                -
+sc2-N        18        -        -         -        -         -         -         -                -  (18 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+sc2-NT       21        -        -         -        -         -         -         -                -  (21 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+sc2-FULL     20        -        -         -        -         -         -         -                -  (20 reps eng=0/0 = the N=1 short-circuit, EXPECTED)
+
+### N-CONTROL — arm A's realized cap, the contrast N is measured against
+
+  c1    A occcap_p50 med    519.5  REPORTED, not scored — c1-A rides the legacy 2*BDP branch and reads interior (541 in ADR-0071's inputs) with a capboot minority beside it
+  c7    A occcap_p50 == 4096  on 19/19 reps   PASS
+  c8    A occcap_p50 == 4096  on 20/21 reps   PASS
+  c8L   A occcap_p50 == 4096  on 25/25 reps   PASS
+  sc2   A occcap_p50 == 1024  on 17/18 reps   PASS
+
+============================================================================================
+RUNG N — THE BIND-FRACTION AXIS (discipline 18(d) evaluated FIRST)
+============================================================================================
+
+  c8L   UNSCOREABLE FOR THE N RUNG — PRE-DECLARED by the contract: ceiling-governed by arithmetic: Sigma = 4976 vs the 2048 interiority threshold -> ask 2.43x the 4096 ceiling; ADR-0071 finding 1 (W = 7489 = 1.83x WIN_STORE_MAX before any slack or span)
+        observed: pin med 0.432, chg_frac med 0.568, cap med 3306.6 — reported, scored on nothing about the multiplier
+
+  N-INTERIOR (c7, c8) — the primary claim
+
+  c7    pin <= 0.1 on a majority               PASS
+  c7    eng >= 0.9 on a majority               PASS
+  c7    chg_frac >= 0.9 on a majority          PASS
+  c7    cap in [2617, 3925]                    PASS
+  c7    CAPBIND reads interior                 PASS
+  c8    pin <= 0.1 on a majority               PASS
+  c8    eng >= 0.9 on a majority               PASS
+  c8    chg_frac >= 0.9 on a majority          PASS
+  c8    cap in [2416, 3624]                    FAIL
+  c8    CAPBIND reads interior                 PASS
+
+  N-IDENT (c1, sc2) — the N = 1 identity, bit-identical by construction
+
+  c1    N    goodput delta     1.03 Mbit  (2sigma 13.21)  PASS
+  c1    NT   goodput delta    69.38 Mbit  (2sigma 93.09)  PASS
+  sc2   N    goodput delta     0.18 Mbit  (2sigma 1.72)  PASS
+  sc2   NT   goodput delta    -6.15 Mbit  (2sigma 6.84)  PASS
+
+  THE OUTRIGHT-REFUTATION FALSIFIER — a PROVABLY INTERIOR N more than
+  2sigma_pooled below A on BOTH seeds. c8 is the PRE-NAMED risk cell: the
+  corrected cap 3020 is 0.71x the cell's own W+S = 4232, i.e. the deletion
+  is predicted to under-fund c8's resequencing span by 29%.
+
+  c7    interior=True  >2sigma-down-both-seeds=False  -> refutation does NOT fire
+  c8    interior=True  >2sigma-down-both-seeds=False  -> refutation does NOT fire
+
+============================================================================================
+RUNG T — THE eps-hat AXIS
+============================================================================================
+
+  `pl=` is the per-path loss estimate THE RECOVERY PLANE ACTUALLY KEYS ON
+  (repair_debt, P_lost, NACK budgets). Calibration, labelled calibration and
+  NOT a target (item 3's ledger replay, Sigma form): legacy 0.514/0.512 at
+  c7 and 0.825 at c8/p1, fixed 0.0069/0.0110 at c7, against realized loss
+  0.0055/0.0196. The shipped loss_rate() EWMA carries a KNOWN ~1/2 under-read
+  at a rare-loss cell, BOUNDED to [0.3eps, 1.5eps] by the lib test — so the
+  bar is a CLASS and a RATIO, never a point.
+
+cell    A pl_max  T pl_max   ratio  T pl below .05  clause
+c1        0.0000    0.3614       -           0.000  T-IDENT (< 2.0x): PASS
+c7        0.0288    0.5799    0.05           0.000  T-EPS (>= 5.0x AND < 0.05): FAIL  *** FALSIFIED: under 2x — the correction did not reach the estimator ***
+c8        0.1951    0.7454    0.26           0.000  T-EPS (>= 5.0x AND < 0.05): FAIL  *** FALSIFIED: under 2x — the correction did not reach the estimator ***
+c8L       0.8233    0.5768    1.43           0.000  T-EPS (>= 5.0x AND < 0.05): FAIL  *** FALSIFIED: under 2x — the correction did not reach the estimator ***
+sc2       0.0000    0.5821       -           0.000  T-IDENT (< 2.0x): PASS
+
+  The [ACKDIAG] recon WITNESS — reported on BOTH arms whatever the gate
+  says, because the gauge counts all three cursors unconditionally. It is
+  what makes the `pl=` move attributable: the witness does not move, the
+  estimator does.
+
+cell   arm        cecr_p0      cecr_p1       crs_p0       crs_p1
+c1     A            1.002            -        1.000            -
+c1     N            1.002            -        0.999            -
+c1     T            1.002            -        0.995            -
+c1     NT           1.002            -        0.995            -
+c1     FULL         1.002            -        0.995            -
+c7     A            2.067        2.055        1.004        1.009
+c7     N            2.069        2.046        1.009        1.006
+c7     T            2.049        2.057        0.956        0.958
+c7     NT           2.051        2.052        0.955        0.958
+c7     FULL         2.052        2.051        0.951        0.955
+c8     A            1.263        5.762        1.025        1.026
+c8     N            1.220        6.498        0.988        1.065
+c8     T            1.240        5.896        0.906        0.859
+c8     NT           1.238        5.976        0.927        0.881
+c8     FULL         1.238        6.163        0.899        0.848
+c8L    A            1.175        6.558        1.002        1.076
+c8L    N            1.122        6.598        0.997        1.078
+c8L    T            1.239        6.101        0.947        0.917
+c8L    NT           1.240        6.128        0.950        0.921
+c8L    FULL         1.237        6.240        0.944        0.917
+sc2    A            1.027            -        1.001            -
+sc2    N            1.027            -        1.001            -
+sc2    T            1.026            -        0.964            -
+sc2    NT           1.026            -        0.965            -
+sc2    FULL         1.027            -        0.966            -
+
+  T-MARGIN / T-SF — item 3's wire question 2 and item 5's wire question 1,
+  verbatim. Repair volume and retx fall; the `sf=` empty-set tick rate RISES
+  at the duals; goodput moves by <<sigma unless the margin or the leak was
+  LOAD-BEARING — and if goodput FALLS that is a finding about the MARGIN LAW
+  and the ADMISSION GATE respectively, not about eps-hat or the ledger.
+
+cell     A retx   T retx  A sf_zero  T sf_zero   A Mbit   T Mbit    delta   2sigma  reading
+c1          792      724      0.287      0.142    204.8    284.9    80.08    87.76  goodput <<sigma — the honest null
+c7         5326    24269      0.003      0.357    168.4    149.0   -19.46    21.73  goodput <<sigma — the honest null
+c8         1494     3569      0.033      0.556     78.0     81.1     3.15    17.87  goodput <<sigma — the honest null
+c8L       12508    21552      0.005      0.370     64.4     82.0    17.55    33.02  goodput <<sigma — the honest null
+sc2        3333     7766      0.062      0.824     87.6     81.7    -5.93     6.69  goodput <<sigma — the honest null
+
+  T-PACER (item 5's wire question 3): RWM_CC_PACE is read from the [GATES]
+  echo of the run, as a CODE FACT, never assumed. With it 0 the pacer term of
+  RWM_CHARGE_RECOVERY is INERT and the arm is really two-quantity.
+    observed RWM_CC_PACE on the client [GATES] line: [0]
+
+  THE ATTRIBUTION LIMIT, from the contract: T flips all three ledger/loss
+  gates together, both source sections forbid attributing WITHIN it, and this
+  report attributes nothing to any one of them. The 2x2 (RELEASE_1TO1 x
+  CHARGE_RECOVERY, with and without LOSS_SENT_TRUTH) is OWED and is not
+  delivered by this battery.
+
+============================================================================================
+RUNG SET/BRAKE — [CCAP] brake= AND THE PAIRED WITHIN-REP DEAD WALL
+============================================================================================
+
+cell      n  brake med  ticks med  B-ARMED
+c1       16     0.0012     338962  16/16 armed PASS
+c7       21     0.0160     172722  21/21 armed PASS
+c8       27     0.0481      22524  27/27 armed PASS
+c8L      26     0.0222     174795  26/26 armed PASS
+sc2      20     0.0599      90040  20/20 armed PASS
+
+  B-WALL — the PAIRED WITHIN-REP-INDEX sign test at c8. The Mode-Hunt
+  RESULTS' binding recommendation: two independent measurands have inverted
+  between pools minutes apart on a byte-identical binary, so the next attempt
+  changes the DESIGN, not the statistic. One sign per (seed, pool, rep index)
+  where BOTH arms produced a live [WALL]; never a difference of medians.
+
+  c8    seed=7 pool=main  paired n=  5 non-zero=  5 FULL>A on 2/5  sign=-
+  c8    seed=7 pool=topup paired n=  3 non-zero=  3 FULL>A on 1/3  sign=-
+  c8    seed=42 pool=main  paired n= 12 non-zero=  9 FULL>A on 4/9  sign=-
+  c8    *** B-WALL CLOSES **NEEDS-MORE**, per the contract's
+        pre-written close. The instrument named: `[WALL] dur_ms` at c8
+        does not resolve at any n this project has been willing to
+        spend (tick-share inverted; onset/duration inverted; the
+        mode-hunt baseline read 0.346 against its predecessor's 0.727
+        on a byte-identical binary). What is owed is a c8 statistic
+        that is not bistable — NOT a fourth measurand. NO dead-wall
+        claim is made from an unpaired contrast, at any n. ***
+  c8L   seed=7 pool=main  paired n=  4 non-zero=  4 FULL>A on 1/4  sign=-
+  c8L   seed=7 pool=topup paired n=  5 non-zero=  5 FULL>A on 3/5  sign=+
+  c8L   seed=42 pool=main  paired n= 12 non-zero= 11 FULL>A on 5/11  sign=-
+  c8L   reported, direction only, scored on nothing (16.54's 0/24 at 8x the transfer is the one clean prior signal in this family)
+
+============================================================================================
+RUNG FULL
+============================================================================================
+
+  F-FACTOR — the wire's test of item 1's INDEPENDENCE claim: the xN gate and
+  the live set are independent axes, so FULL's [SUMCAP] cap must land inside
+  the SAME band N's does.
+
+  c7    N cap   3142.4   FULL cap   3236.2   band [2617,3925]   PASS
+  c8    N cap   2308.7   FULL cap   1952.5   band [2416,3624]   FAIL   *** the set moves the multiplier's own value: the four gate combinations are not four points on two axes ***
+
+  F-C8LIABILITY — RWM_STORE_CAP_UNIFIED cost c8 -19.6% at seed 7 in the
+  uniflip-era ledger as a collapse MODE (reps at 16.6/40.5/55.0), not a shift.
+  The honest anchor is now DEFAULT ON and was measured to neutralize it.
+
+  c8    A     reps below 60 Mbit/s: 2/21   42.0, 56.7
+  c8    FULL  reps below 60 Mbit/s: 0/27   —
+  c8L   A     reps below 60 Mbit/s: 10/25   24.5, 30.1, 40.0, 45.2, 49.4, 53.2, 53.8, 57.3, 58.1, 59.9
+  c8L   FULL  reps below 60 Mbit/s: 7/26   25.9, 34.5, 38.7, 42.6, 49.2, 52.1, 56.8
+
+  If FULL reproduces the collapse class where A does not, the harm is NOT
+  era-dead and FULL's verdict is about that composition, not about any rung
+  below it.
+
+============================================================================================
+GUARDS — a win bought by breakage is a TRADE and is reported as one
+============================================================================================
+
+  G-REG — no cell more than 2sigma_pooled below A on either seed, ANY arm
+
+cell   arm      s42 A  s42 arm     s7 A   s7 arm   2sigma  G-REG
+c1     N        203.4    203.7    206.2    208.0    15.12  PASS
+c1     T        203.4    275.9    206.2    293.9    91.36  PASS
+c1     NT       203.4    253.8    206.2    294.6    93.33  PASS
+c1     FULL     203.4    293.6    206.2    299.9    98.25  PASS
+c7     N        168.3    165.5    168.5    166.3    14.78  PASS
+c7     T        168.3    150.8    168.5    147.7    23.89  PASS
+c7     NT       168.3    148.8    168.5    148.4    22.05  PASS
+c7     FULL     168.3    142.6    168.5    148.1    31.96  PASS
+c8     N         77.1     86.3     79.2     80.5    27.66  PASS
+c8     T         77.1     83.5     79.2     79.5    22.39  PASS
+c8     NT        77.1     77.9     79.2     82.5    21.68  PASS
+c8     FULL      77.1     82.9     79.2     82.9    21.33  PASS
+c8L    N         61.1     76.4     67.4     68.0    39.44  PASS
+c8L    T         61.1     82.1     67.4     81.8    35.53  PASS
+c8L    NT        61.1     74.6     67.4     77.5    36.25  PASS
+c8L    FULL      61.1     62.4     67.4     78.8    40.02  PASS
+sc2    N         87.6     88.4     87.7     87.3     1.74  PASS
+sc2    T         87.6     81.3     87.7     81.9     7.34  PASS
+sc2    NT        87.6     81.2     87.7     81.6     7.04  PASS
+sc2    FULL      87.6     85.7     87.7     85.8     2.54  PASS
+
+  G-SC2-LAT — the crown-class delivered latency must SURVIVE at sc2:
+  ping_p50 not more than 2sigma worse than same-session A, at goodput within
+  2sigma of same-session A, both seeds. This battery claims NO reproduction of
+  16.50 F6's halved latency — that belonged to the three-term law, which NO
+  arm here carries. The guard is SURVIVAL, and it is keyed to LATENCY.
+
+  sc2 A     ping_p50    92.1 vs A    92.1 (2sigma 21.1)   goodput delta    0.00 (2sigma 1.67)   PASS
+  sc2 N     ping_p50    91.0 vs A    92.1 (2sigma 24.3)   goodput delta    0.18 (2sigma 1.72)   PASS
+  sc2 T     ping_p50    52.9 vs A    92.1 (2sigma 53.9)   goodput delta   -5.93 (2sigma 6.69)   PASS
+  sc2 NT    ping_p50    57.3 vs A    92.1 (2sigma 48.7)   goodput delta   -6.15 (2sigma 6.84)   PASS
+  sc2 FULL  ping_p50    44.1 vs A    92.1 (2sigma 52.3)   goodput delta   -1.89 (2sigma 2.49)   PASS
+
+  G-CPU — sender CPU/byte <= 1.05x A as a POINT band, every cell, both seeds
+
+  c1    N     CPU/byte   17.37 vs A   17.40  ratio  0.998  PASS
+  c1    T     CPU/byte   11.86 vs A   17.40  ratio  0.682  PASS
+  c1    NT    CPU/byte   12.29 vs A   17.40  ratio  0.706  PASS
+  c1    FULL  CPU/byte   12.27 vs A   17.40  ratio  0.705  PASS
+  c7    N     CPU/byte   14.20 vs A   14.13  ratio  1.005  PASS
+  c7    T     CPU/byte   11.74 vs A   14.13  ratio  0.831  PASS
+  c7    NT    CPU/byte   11.92 vs A   14.13  ratio  0.843  PASS
+  c7    FULL  CPU/byte   12.83 vs A   14.13  ratio  0.908  PASS
+  c8    N     CPU/byte    2.26 vs A    2.41  ratio  0.937  PASS
+  c8    T     CPU/byte    1.75 vs A    2.41  ratio  0.728  PASS
+  c8    NT    CPU/byte    1.76 vs A    2.41  ratio  0.732  PASS
+  c8    FULL  CPU/byte    1.76 vs A    2.41  ratio  0.730  PASS
+  c8L   N     CPU/byte   25.53 vs A   29.71  ratio  0.859  PASS
+  c8L   T     CPU/byte   17.53 vs A   29.71  ratio  0.590  PASS
+  c8L   NT    CPU/byte   20.03 vs A   29.71  ratio  0.674  PASS
+  c8L   FULL  CPU/byte   23.41 vs A   29.71  ratio  0.788  PASS
+  sc2   N     CPU/byte    6.44 vs A    6.42  ratio  1.003  PASS
+  sc2   T     CPU/byte    4.27 vs A    6.42  ratio  0.665  PASS
+  sc2   NT    CPU/byte    4.39 vs A    6.42  ratio  0.684  PASS
+  sc2   FULL  CPU/byte    4.85 vs A    6.42  ratio  0.755  PASS
+
+  G-DNF — dnf = 0 in every completed run, every arm, both seeds
+
+    live reps with dnf: 0   PASS
+    (ABORT != DNF != INSTRUMENT-FAIL: an invocation with no [GATES] on either
+     endpoint is an ABORT, carries no datum, and is in NO denominator.)
+
+  G-CAPBIND — any arm CLAIMING an interior landing shows CAPBIND
+  `name=interior` AND [SUMCAP] pin <= 0.10. A claiming arm carrying a CAPBIND
+  WARN line has measured the clamp; discipline 18(d) forbids the claim.
+
+    WARN c1/FULL: cap == 1024 (RELIABLE_STORE_MAX) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c1/NT: cap == 1024 (RELIABLE_STORE_MAX) in 93.8% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c1/T: cap == 1024 (RELIABLE_STORE_MAX) in 93.8% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c7/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c8/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 95.2% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c8L/A: cap == 4096 (WIN_STORE_MAX=N*knee) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN c8L/FULL: cap == 4096 (WIN_STORE_MAX=N*knee) in 61.5% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN sc2/A: cap == 1024 (RELIABLE_STORE_MAX) in 94.4% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN sc2/FULL: cap == 1024 (RELIABLE_STORE_MAX) in 65.0% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN sc2/N: cap == 1024 (RELIABLE_STORE_MAX) in 94.4% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN sc2/NT: cap == 128 (boot) in 85.7% of reps -- the law is operating as a CONSTANT over its measured range
+    WARN sc2/T: cap == 128 (boot) in 86.4% of reps -- the law is operating as a CONSTANT over its measured range
+
+============================================================================================
+Nothing in this report flips a default. Every deliverable is a
+RECOMMENDATION with its noise bounds, written so a separate trivial flip
+commit can cite it.
+============================================================================================

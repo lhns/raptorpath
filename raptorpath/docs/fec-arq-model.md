@@ -13394,6 +13394,135 @@ reaches it.
 this section flips nothing.
 
 
+### 16.63 The ladder on the wire: the `×N` deletion is confirmed as derived and costs nothing — it under-funds c8's span by 45 % and goodput goes UP — while the sender-truth loss estimator moves ε̂ **20× in the wrong direction**, including at N = 1 where the error it corrects cannot exist (2026-08-19, `feat/ladder-run`, pre-registered at `91c00dd` and completed at `2ee194b`, 720 L1 invocations / 529 live on one binary; all six gates **stay default OFF**, recommendations only, per the no-self-flip rule)
+
+§16.62 deleted the count multiplier as a formula and §16.58 restated the per-path loss
+estimate as one; neither had a wire measurement in either direction, which is the
+finding each of them records about itself. This section reports the pre-registered
+ladder that measured five gates as rungs on one binary. The primary record is the
+goal-gate ledger ("Ladder Battery — RESULTS"); this section states the positions and
+the mechanisms.
+
+**The control was shown to be a control, which is what makes the rest readable.** Arm A
+reads `occcap_p50` **exactly 4096** on 19/19 c7 reps, 20/21 c8 and 25/25 c8L, and 1024
+on 17/18 sc2. ADR-0070 finding 2 — the shipped default is pinned at its ceiling at every
+dual — reproduces on this binary. Every one of the eight gates in the contract's
+expectation table read its expected value on **both** endpoints in all 529 live reps:
+zero liveness failures, zero contamination, zero instrument failures, zero DNF.
+
+**The `×N` deletion lands interior exactly as derived.** At c7 and c8 the corrected law
+engages on 100 % of refreshes, pins at **0.000**, and its counterfactual — the same
+expression with the multiplier restored under the same bounds — differs from the
+realized value on **100 %** of them. The deletion is not cosmetic; it changes the
+computed cap every time the law runs. At c7 the realized cap is **3142.4** against the
+published 3271, inside the pre-registered ±20 % band. The N = 1 short-circuit is
+confirmed on the wire and not merely at L0: `eng=0/0` on every single-path rep, with
+goodput, CPU/byte and the `occcap_p50` distribution all inside 2σ of same-session A.
+
+**The load-bearing prediction was right about the cap and wrong about the consequence,
+and that is the section's main result.** The pre-registration computed that at c8 the
+corrected law would land at 3020 = 0.714× the cell's own window-plus-span requirement
+(`W + S` = 4232), and named c8 the risk cell on exactly that arithmetic: the deletion was
+**predicted to under-fund c8's resequencing span by 29 %**. It under-funds it by **45.4 %**
+— the realized cap is 2308.7, or 0.546× of `W + S`, worse than predicted — and c8's
+goodput on the deleted arm is **higher than the control at both seeds** (+9.29 Mbit/s at
+seed 42, +1.34 at seed 7, against 2σ of 27.07 and 14.55). The pre-registered
+outright-refutation falsifier — a provably interior N more than 2σ below A on both
+seeds — **does not fire at either dual**. The span the multiplier was accidentally
+funding was **not load-bearing** at c8 in this era. ADR-0070 finding 2's practical weight
+is retired at these cells; its provenance verdict stands untouched.
+
+**Why the cap came in low, stated as arithmetic rather than as a caveat.** `cap` = 2308.7
+against `ask` = 2308.1 with `pin` = 0.000: the law is landing interior and computing
+`clamp(gain·Σ, floor, N·knee)` faithfully. Back out its input and Σ = cap/gain =
+**1154.3**, against §16.60's READOUT 3 at 1509.68 and ADR-0071's composed-battery inputs
+at 1604.8 — the wire presented Σ **23.5 % below the lower prior source and 28.1 % below
+the higher**. The ±20 % band was written wide precisely to contain both, and the wire
+came in below both. The pre-registered cap-magnitude clause is therefore recorded
+**falsified as written and is not re-scoped**; the mechanism evidence localizes the miss
+to the **anchor**, not the law, and the named follow-up is the within-run Σ window series
+at c8, which needs no VM arm.
+
+**c8L was declared unscoreable for this rung before the run, and the wire agreed.** Σ =
+4976 against an interiority threshold of 2048 makes the corrected ask 2.43× the ceiling;
+measured, c8L's deleted arm pins at **0.432** with `ask` 5630.7 against `cap` 3306.6. The
+arm measured the clamp. Under discipline 18(d) **no multiplier verdict is taken from
+c8L**, and the pre-declaration is what makes that a rule rather than an excuse.
+
+**The sender-truth loss estimator moves ε̂ the wrong way, and the witness proves it is
+the estimator that moved.** The pre-registration asked for the per-path `pl=` — the
+estimate the recovery plane actually keys on for `repair_debt`, `P_lost` and NACK
+budgets — to fall **at least 5×** below the shipped default and to land below 0.05 on
+every dual leg. Measured:
+
+```text
+cell    A pl_max    T pl_max     A/T
+c7        0.0288      0.5799    0.05      (T reads 20.1x HIGHER)
+c8        0.1951      0.7454    0.26      (T reads  3.8x HIGHER)
+c8L       0.8233      0.5768    1.43      (T reads  1.4x lower)
+```
+
+Not one T rep at any cell reads below 0.05. Meanwhile the `[ACKDIAG]` reconstruction
+cursors — counted unconditionally on **both** arms, which is what the two-sided witness
+exists for — are materially unchanged (c7 `ce/cr` 2.067/2.055 → 2.049/2.057; c8
+1.263/5.762 → 1.240/5.896). **The wire's actual loss did not move; the estimator's
+reading of it did, upward.** Retransmissions follow it: `retx` rises **4.56×** at c7,
+2.39× at c8 and 2.33× at sc2, against a pre-registration that predicted repair volume
+would fall.
+
+**And the number that localizes it: the move survives at N = 1.** At c1 and sc2 the
+shipped default reads `pl_max` **exactly 0.0000** and the corrected arm reads **0.3614**
+and **0.5821**. On a single path there is no cross-path attribution possible *by
+construction* — the scheduling artefact §16.58 describes cannot exist there. Whatever
+`RWM_LOSS_SENT_TRUTH` is doing on this wire, **it is not repairing a per-path attribution
+error**, because the effect is present where that error cannot be. (The battery's own
+reporter scored this clause PASS by dividing by the zero; the ledger records the override
+and the reasoning, because a tool that passes a clause by arithmetic accident is exactly
+the failure mode discipline 15 exists to catch.) `RWM_LOSS_SENT_TRUTH` **stays default
+OFF**, and §16.58's derivation needs re-reading against this before any successor arm.
+
+**One clause of that rung did land, as an honest null.** The in-flight ledger's predicted
+signature appears cleanly: the empty-set tick rate rises from 0.003 to 0.357 at c7, 0.033
+to 0.556 at c8 and 0.005 to 0.370 at c8L — an honest gauge empties `active_paths()` more
+often — while goodput moves ≪σ at every cell. The ledger leak was **not** load-bearing
+over-provisioning. Because the arm flips three gates together by the contract's own
+definition, and both source sections forbid attributing within it, **nothing here is
+attributed to any single gate**; the 2×2 remains owed.
+
+**The composition is the intended machine and no longer carries the old harm.** With all
+six gates on, the three-term echo is absent on both endpoints in every rep, the unified
+set and the late brake both echo, and `[CCAP] brake_ticks > 0` on **110/110** reps at
+every cell — the extraction reaches the seat, and the null-effect reading `brake=0/0`
+never occurred. The `×N` gate and the live set behave as independent axes (FULL's cap
+differs from N's by 3.0 % at c7 and 15.4 % at c8, against a ±20 % tolerance). And the
+uniflip-era liability is gone: `RWM_STORE_CAP_UNIFIED` once cost c8 −19.6 % at seed 7 as
+a collapse **mode**, and here the composed arm produces **0/27** c8 reps below
+60 Mbit/s while the shipped control produces 2/21. The honest anchor, default ON since
+§16.51, was predicted to neutralize it and did.
+
+**What the brake's effect is remains unresolved, and the battery says so rather than
+reaching.** The c8 dead-wall contrast was pre-designed as a **paired within-rep-index
+sign test** — the Mode-Hunt result's binding instruction to change the design rather than
+the statistic. The sign agreed across both seeds and all three pools (the composed arm's
+wall is the shorter one), but the pre-declared close fires on power: fewer than 8 paired
+reps carried a non-zero difference at seed 7 in either pool (5 and 3). The clause closes
+**NEEDS-MORE and names its instrument** — a c8 statistic that is not bistable, explicitly
+**not** a fourth measurand. No dead-wall claim of any kind is made from this session.
+
+**What is not claimed.** No default is flipped. Every guard passed — no cell more than 2σ
+below the control on any arm at either seed, delivered latency surviving at sc2, CPU/byte
+within the 1.05× point band at every cell (the trio is in fact *cheaper*, 0.59–0.91×,
+which is unexplained and recorded as such), zero DNF. A large point movement in sc2
+delivered latency on the composed arm — **0.478×** the control, sitting on top of the
+0.44×/0.47× that §16.50 measured for a law **no arm here carries** — is reported and
+**explicitly not claimed**, because every one of those deltas lies inside its own 2σ. It
+is named instead as the cheapest open question this session produced. The recommendation
+that does follow is narrow and citable: **`RWM_SUM_CAP` is the one gate this battery
+recommends flipping ON**, bounded by a noise floor that excludes a large c8 regression
+but not a small one.
+
+
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
