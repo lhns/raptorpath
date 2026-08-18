@@ -501,6 +501,79 @@ pub struct RuntimeGates {
     ///
     /// `=0`/unset is the shipped default, bit-exactly.
     pub composed_cap: bool,
+    /// `RWM_SUM_CAP` (default OFF — the A/B arm; paper §16.60, ADR-0070
+    /// finding 2): **THE `×N` DELETION.** The shipped pooled law's count
+    /// multiplier is removed from the VALUE and kept in the CEILING:
+    ///
+    /// ```text
+    ///   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+    ///   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+    /// ```
+    ///
+    /// The quantity the law's own decl comment names — *"Σ per-path (BDP + one
+    /// recovery round of runway)"* — is `Σᵢ(gain·anchorᵢ) = gain·Σ`, which is
+    /// ALREADY linear in the path count because the Σ is. The shipped
+    /// expression multiplies that already-summed base by the count a second
+    /// time, making the value QUADRATIC in N where its own sentence is LINEAR.
+    /// ADR-0070 finding 2 records the multiplier's provenance as **ABSENT** —
+    /// not in the birth commit message, not in the doc comment, not at the
+    /// decl site, not in the ledger — and contradicted by name in three places
+    /// in this repository. **No A/B of `gain·Σ` against `gain·N·Σ` at a fixed
+    /// ceiling has ever been run**, at L1, at a bench, or at L0; this gate is
+    /// the arm that would run it.
+    ///
+    /// **Exactly one factor changes.** Gain, floor, ceiling, Σ-set and
+    /// estimator are untouched, and no constant is introduced — so `gain`'s
+    /// fossil status (finding 3) and the knee's staleness (finding 4) are
+    /// carried, identical on both arms, and cancel out of the comparison.
+    /// [`crate::net::pooled_store_cap`] carries both forms in ONE expression
+    /// with the multiplier as a VALUE, so there is no second implementation to
+    /// drift from the paper.
+    ///
+    /// **It composes with [`Self::store_cap_unified`], and the four
+    /// combinations are four distinct formulas** — U selects the Σ's path SET,
+    /// this gate selects the count MULTIPLIER, and they are independent axes of
+    /// the same law (asserted by `net::tests::law_shape`).
+    ///
+    /// **Reading a null.** At `N = 1` the law is not engaged at all
+    /// (`n_live < 2` ⇒ `None`), so singles are byte-identical BY CONSTRUCTION.
+    /// At `N ≥ 2` the correction is only VISIBLE where the value is interior:
+    /// the shipped form pins at `Σ ≥ knee/gain` (path-count-FREE, 1024), the
+    /// corrected form at `Σ ≥ N·knee/gain` (1024 PER PATH). An arm whose
+    /// `[SUMCAP]` echo reads a high `pin=` fraction measured the CLAMP, not the
+    /// law, and MEASUREMENT DISCIPLINE 18 requires that be reported as the
+    /// finding rather than filed as a null — which is why the echo carries
+    /// `eng=`, `pin=` and `chg=` and not a mean.
+    ///
+    /// `=0`/unset is the shipped default, bit-exactly.
+    pub sum_cap: bool,
+    /// `RWM_LATE_BRAKE` (default OFF — the A/B arm; paper §16.60.1, ADR-0070
+    /// finding 7): the late-stage per-path cwnd brake, **EXTRACTED** from
+    /// [`Self::composed_cap`] so it can be armed WITHOUT the composed pool law
+    /// that §16.57 refuted on magnitude.
+    ///
+    /// ```text
+    ///   brake closes  ⟺  ∀ i ∈ live_paths() :  in_flightᵢ ≥ cwndᵢ
+    /// ```
+    ///
+    /// Identical code path, identical per-path cap (**the path's OWN cwnd** —
+    /// derived, never configured, always warm), identical set (`live_paths()`,
+    /// because with `capᵢ = cwndᵢ` the predicate is exactly `available()ᵢ == 0`
+    /// and an `active_paths()` brake would resolve ON and never close — the
+    /// §16.53 DIVERGED lesson). **No constant appears in the predicate at all.**
+    ///
+    /// Why an extraction was needed: the brake arms on
+    /// `eff_infl_cap > 0 || composed_cap`, and `composed_cap` also forces
+    /// `three_term_on` — so the only two pre-existing ways to arm a brake give
+    /// either the refuted composed pool law, or [`Self::infl_cap`]'s GLOBAL
+    /// `Σ in_flight ≥ n` test against an operator-invented constant
+    /// (`infl_percap` rides `gen_pipe`, which is off on the plain seat).
+    /// Neither `RWM_INFL_CAP` nor `RWM_INFL_BDP` changes meaning here.
+    ///
+    /// `=0`/unset is the shipped default, bit-exactly: `cwnd_full` stays
+    /// permanently false on the plain seat and the store cap remains the sole
+    /// brake on outstanding (PIPELINE VERIFICATION MATRIX row 17).
+    pub late_brake: bool,
     /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
     /// Residual"): SINGLE-path per-flight time-threshold suppression — the
     /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
@@ -665,6 +738,8 @@ impl RuntimeGates {
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
             composed_cap: env_flag("RWM_COMPOSED_CAP", false),
+            sum_cap: env_flag("RWM_SUM_CAP", false),
+            late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
             diag: env_flag("RWM_DIAG", false),
@@ -710,6 +785,7 @@ impl RuntimeGates {
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
+             RWM_SUM_CAP={} RWM_LATE_BRAKE={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
@@ -735,6 +811,7 @@ impl RuntimeGates {
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
+            b(self.sum_cap), b(self.late_brake),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
@@ -1081,6 +1158,33 @@ mod tests {
         assert!(
             g.echo_line().contains("RWM_COMPOSED_CAP=0"),
             "the default echo must NAME the composed-cap gate with its 0 value: {}",
+            g.echo_line()
+        );
+        // THE `×N` DELETION (paper §16.60, ADR-0070 finding 2) and THE
+        // EXTRACTED LATE-STAGE BRAKE (§16.60.1, finding 7). Both are A/B arms
+        // and both ship OFF, with the same two-sided OFF-VALUE property: a
+        // battery must be able to assert the gate ABSENT in its control arm,
+        // not merely unmentioned. `RWM_SUM_CAP`'s OFF is a BACKLOG rather than
+        // a verdict — no A/B of `gain·Σ` against `gain·N·Σ` has ever been run,
+        // which is precisely ADR-0070 finding 2 — so this assertion is what
+        // keeps the shipped defect a DELIBERATE default instead of an
+        // unnoticed one.
+        assert!(
+            !g.sum_cap,
+            "RWM_SUM_CAP ships default OFF (A/B arm — paper §16.60)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_SUM_CAP=0"),
+            "the default echo must NAME the sum-cap gate with its 0 value: {}",
+            g.echo_line()
+        );
+        assert!(
+            !g.late_brake,
+            "RWM_LATE_BRAKE ships default OFF (A/B arm — paper §16.60.1)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_LATE_BRAKE=0"),
+            "the default echo must NAME the late-brake gate with its 0 value: {}",
             g.echo_line()
         );
         assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
