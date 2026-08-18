@@ -212,6 +212,21 @@ pub struct RuntimeGates {
     /// the defect is measured in goal-gate "Ack-Cadence Measurement (VM)"
     /// READOUT 4 (apparent/realized 37-93x at every multipath cell).
     pub loss_sent_truth: bool,
+    /// `RWM_RELEASE_1TO1` (**default OFF**) — release the in-flight
+    /// budget by the sender's own `d(symbols_sent) - d(cum_received)` instead
+    /// of the contaminated `expected - received` counter delta. SIBLING of
+    /// [`Self::loss_sent_truth`]: same clean operand pair, independent
+    /// cursors, one gate per quantity (that one feeds the ESTIMATOR, this one
+    /// feeds the LEDGER). See `scheduler::release_1to1_active()` and
+    /// `PathState::sender_truth_release_delta`.
+    pub release_1to1: bool,
+    /// `RWM_CHARGE_RECOVERY` (**default OFF**) — meter the SACK-gap
+    /// retransmit and the NACK repair margin at their wire handoff
+    /// (`charge_in_flight` + `consume_pace_tokens` + `symbols_sent`), as every
+    /// other channel already does. See `scheduler::charge_recovery_active()`;
+    /// the divergence is PIPELINE VERIFICATION MATRIX rows 2 + 6 and is
+    /// bounded by `pacer_debit_bounds_only_the_source_arm_not_the_wire`.
+    pub charge_recovery: bool,
     /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
     /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
     /// = 10 ms literal — 10× RFC 9002's kGranularity, and at c2/c7 at or
@@ -589,6 +604,8 @@ impl RuntimeGates {
             floor_bound: crate::scheduler::floor_bound_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
             loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
+            release_1to1: crate::scheduler::release_1to1_active(),
+            charge_recovery: crate::scheduler::charge_recovery_active(),
             patience_derived: crate::scheduler::patience_derived_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
@@ -681,7 +698,9 @@ impl RuntimeGates {
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
-             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={}              RWM_PATIENCE_DERIVED={} \
+             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
+             RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
+             RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
@@ -704,6 +723,7 @@ impl RuntimeGates {
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
+            b(self.release_1to1), b(self.charge_recovery),
             b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
@@ -950,6 +970,24 @@ mod tests {
             g.ack_merge,
             "RWM_ACK_MERGE ships default ON since 2026-08-08 (paper §16.42); \
              RWM_ACK_MERGE=0 is the opt-out arm"
+        );
+        // "Cross-Path Loss Contamination" (2026-08-18) and its successor
+        // "The Accounting Ledger" (fix/accounting-ledger): the three honest-
+        // accounting gates all ship OFF. The loss estimator's re-heats every
+        // SRTT/loss-scaled recovery cadence (the named follow-up); the two
+        // ledger gates change the ADMISSION gauge's operand and must be
+        // measured on the wire before any flip.
+        assert!(
+            !g.loss_sent_truth,
+            "RWM_LOSS_SENT_TRUTH ships default OFF pending the cadence re-derivation"
+        );
+        assert!(
+            !g.release_1to1,
+            "RWM_RELEASE_1TO1 ships default OFF (A/B arm)"
+        );
+        assert!(
+            !g.charge_recovery,
+            "RWM_CHARGE_RECOVERY ships default OFF (A/B arm)"
         );
         // "Unlock The Default 2: derived patience" (2026-08-07): the derived
         // recovery-patience floor is a pure A/B arm and must not reach the

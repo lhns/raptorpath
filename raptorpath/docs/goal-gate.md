@@ -30367,3 +30367,309 @@ cursors), `net/control_msg.rs` (two feed sites), `gates.rs` (echo),
 `net/mod.rs` (design note + tests), `tools/l1/lib.sh` (forwarding). No
 visualizer or wasm change (scope rule). Commits on `fix/loss-crosspath`, not
 merged, not pushed.
+
+## The Accounting Ledger — ONE CHARGED, ONE FIXED-BY-A-DIFFERENT-SHAPE, ONE CANDIDATE REFUTED (2026-08-18, `fix/accounting-ledger` from main@`346e6a0`) — MECHANICAL DEFECT SWEEP item 5. The three ledger defects the sweep named are adjudicated one at a time. Ships **`RWM_CHARGE_RECOVERY`** and **`RWM_RELEASE_1TO1`**, both **DEFAULT OFF**. STRICTLY LOCAL, no VM: the verification is a deterministic two-path ledger model driving the REAL `PathState` charge/release/expiry and the REAL `PathBatchTracker`, plus the SF bench's own accounting axis.
+
+### THE VERDICTS IN FIVE LINES
+
+1. **Defect 1 (two un-metered recovery channels): CHARGED.** The SACK-gap
+   retransmit and the NACK repair margin reach `transport.send_symbols` with no
+   `charge_in_flight`, no `consume_pace_tokens` **and no `PathStats::
+   symbols_sent`** — a THIRD bypassed meter that no prior section names, and
+   one that silently biases `RWM_LOSS_SENT_TRUTH`'s own denominator. No record
+   anywhere exempts them; the peer channel's own comment states the norm
+   ("Charge like any correction"). Charging cannot deadlock them because
+   **neither site reads `available()` or `cwnd_full`**. `RWM_CHARGE_RECOVERY`,
+   default OFF.
+2. **Defect 2+3 (non-1:1, contaminated release): FIXED — but NOT by the shape
+   the dispatch proposed.** `RWM_RELEASE_1TO1` DELETES the
+   `expected − received` term at both ack arms and makes the whole lost-symbol
+   release `expire_in_flight`'s sweep of the charge log — which is 1:1 with the
+   charge **by construction**, because it pops the very entries
+   `charge_in_flight` pushed — at RFC 9002 §6.1.2's kTimeThreshold, `9/8 ×
+   SRTT`, instead of the legacy `max(4 × SRTT, 250 ms)`. **No constant is
+   introduced:** 9/8 and its kGranularity floor are already in the tree,
+   already cited from the same RFC clause, already used for exactly this
+   judgement on the recovery plane (`net::mp_time_threshold_split`).
+3. **The dispatch's proposed shape — sourcing the release from
+   `RWM_LOSS_SENT_TRUTH`'s clean pair — is REFUTED, ARITHMETICALLY.** Charge
+   every send and release `d_received + (d_sent − d_received)` and the sums
+   telescope to `in_flight == outstanding_at_cursor_init`, a CONSTANT — zero,
+   for cursors that start at zero. The gauge is pinned on the floor exactly as
+   the contaminated delta pins it, **including at N = 1, where the legacy code
+   is honest**, so the candidate would have regressed a cell that has no
+   defect. Reason: `d_sent − d_received` is `loss + Δ(outstanding)`, so
+   releasing on it releases the in-flight window itself. **Item 3's trick works
+   for a RATIO and does not transfer to a LEDGER**, which needs the per-symbol
+   identity the striping destroyed (item 3's own candidate (b)).
+4. **Measured, the legacy leak is exactly the class the sweep predicted, and
+   its behavioural face is worse than "mis-reports".** Over-release per
+   delivered symbol: **1.005 at c7**, **5.099 on c8's slow leg**, **0.000 at
+   N = 1**. The gauge reads `in_flight == 0` on **99.8–99.9%** of acks at which
+   the path holds a full in-flight window — `available() = cwnd − in_flight` is
+   not merely wrong, it is **structurally wide open** at every multipath cell.
+5. **The Σ`cwnd` connection is REFUTED, and at c8 the sign is the opposite of
+   the candidate's.** Balancing the ledger moves Σ`cwnd`/Σ-anchor
+   **4.59× → 4.33× (−5.6%) at c7** and **4.99× → 6.25× (+25.3%) at c8** —
+   AWAY from 1 at the cell it was proposed for. Ownership of "The Coupling
+   Model" FINDING 4 stays with the bench HORIZON where "The Queue Fix" put it.
+   **No ownership is claimed here.**
+
+### DEFECT 1 — THE ADJUDICATION, from the code's own structure
+
+The dispatch asked for a real adjudication, not a fix. Here is what the tree
+says, and it says it in three places.
+
+| channel | `charge_in_flight` | pacer debit | `symbols_sent` |
+|---|---|---|---|
+| source arm (`emit_source.rs`) | YES | **YES — the only one** | YES |
+| taper correction (`emit_source.rs`) | YES | no | YES |
+| generation coding, ×3 arms (`net/mod.rs`) | YES | via `gen_tokens` | YES |
+| block-ARQ repair batch (`send_arq_repair_batch`) | YES | YES | YES |
+| **SACK-gap retransmit** | **no** | **no** | **no** |
+| **NACK repair margin** | **no** | **no** | **no** |
+
+* **The exemption that IS on the record is a different one.** Recovery is
+  deliberately exempt from the ACK-CLOCKED ADMISSION TARGET (deadlock
+  otherwise), and the reactive generation arm states its own position on the
+  congestion question in its own comment — *"Recovery is NON-EXEMPT from
+  `cwnd_full`"*. Nothing in the tree exempts these two channels from the
+  in-flight ledger, the pacer, or the sender's own wire count, and the
+  provenance audit found no record either.
+* **The peer channel states the norm in a comment**: `send_arq_repair_batch`
+  charges in-flight and pacing tokens together and calls it *"Charge like any
+  correction"*, with the pacer debit allowed to go negative because "recovery
+  latency wins over strict pacing for these few symbols".
+* **The deadlock objection does not apply.** Neither send site reads
+  `available()` or `cwnd_full`. They are budgeted by `cached_nack_budget` and
+  the NACK congestion multiplier. Charging makes the SOURCE arm see the
+  occupancy recovery created — which is the entire purpose of the gauge —
+  without gating recovery on it.
+
+**The third bypassed meter, found here and not named anywhere before.**
+`PathStats::symbols_sent` is not incremented by either channel. That was
+cosmetic while the counter fed only monitoring; it stopped being cosmetic on
+2026-08-18, when `RWM_LOSS_SENT_TRUTH` made it the DENOMINATOR of
+`ε̂ = 1 − Δcum_received/Δsymbols_sent`. The receiver counts every arrival
+including retransmits and margin repairs, so the numerator sees traffic the
+denominator does not, and ε̂ under-reads — the mechanism behind the NEGATIVE
+c8 readings that section recorded honestly and attributed to window alignment.
+It is a SECOND contributor, and it is now named.
+
+**One gate, one quantity: *are these two channels metered?*** The three meters
+move together because they are one act at the peer site. A battery cannot
+attribute AMONG the three; that is a listed wire question below, not a papered
+crack.
+
+### DEFECT 2+3 — WHY THE PROPOSED SHAPE FAILS, AND WHAT REPLACES IT
+
+The gauge is `charged − delivered − lost`. `delivered` is clean per path
+(`PathBatchTracker::total_received` has no sequence arithmetic in it).
+**`lost` per path is the quantity the striping destroyed**, and every route to
+it was tried:
+
+| candidate | verdict |
+|---|---|
+| **(a) the shipped `expected − received`** | **THE DEFECT.** `expected` is `gap × received` over a GLOBAL `batch_seq`; at N ≥ 2 the gap is a scheduling artefact. Measured leak 1.005 (c7) / 5.099 (c8 slow) slots per delivered symbol; gauge falsely empty 99.8–99.9% |
+| **(b) the sender-truth pair** (the dispatch's proposal) | **REFUTED ARITHMETICALLY** — `in_flight` telescopes to a constant (zero). Reproduced at all three cells INCLUDING N = 1, where it regresses an honest cell. Retained as `PathState::sender_truth_release_delta` with no production call site, the negative datum's only reproduction path |
+| **(c) delivered-only + the LEGACY expiry** | **REFUTED BY ITS OWN HORIZON.** `max(4 × SRTT, 250 ms)` with oldest-first popping equilibrates `in_flight` at `horizon × send rate` — a quarter-second of throughput, an order of magnitude past the in-flight window — and then lands on the report task's `in_flight > cwnd ⇒ −25%` leak-guard backstop. A divergence of the OPPOSITE sign and larger magnitude |
+| **(d) delivered-only + the RFC 9002 expiry** — the shipped shape | **TAKEN.** Same 1:1-by-construction sweep, at the horizon the engine ALREADY uses to decide a symbol is lost |
+| (e) per-symbol path-attributed resolution (`block_arq`'s own ledger) | **NOT TAKEN, and named as the successor.** `BlockArq` keeps exactly the right thing — `on_batch_sent(batch_seq, path_id, ids)` resolved per batch by ack diff and by timeout sweep — but it is populated only on the block/generation paced-drain and the ARQ repair batch, NOT on the shipped window-mode source arm. Extending it there is its own pre-registered build |
+
+### THE LAW
+
+```
+  released(t)  =  delivered(t)  +  charges older than 9/8 x SRTT
+```
+
+Provenance, per symbol (ADR-0070): `delivered` — **measured**, remotely,
+`PathBatchTracker::total_received`, already on the wire. `9/8` — **cited**,
+RFC 9002 §6.1.2 kTimeThreshold, already in `net::mp_time_threshold_split`. The
+floor — **cited**, the same kGranularity analog that function is already
+floored at (`NACK_RETX_COOLDOWN_FLOOR_US`, or `patience_floor_us` under
+`RWM_PATIENCE_DERIVED`). **No constant is introduced.** Both terms pop the
+same `in_flight_log` the charge pushed, so the ledger is 1:1 by construction
+however the paths are striped.
+
+**The residual, BOUNDED not described, and it is a SHAPE not a number.** The
+equilibrium occupancy is `horizon × rate` where the truth is `RTT × rate`, so
+the gauge reads a multiple of the in-flight window — measured **1.06×**,
+bounded at `[1.0, 1.3]×`, **one-sided in the CONSERVATIVE direction**: it may
+over-read the wire's occupancy (which narrows `available()`); it may never
+under-read it (which is the leak). Asserted at both duals and at the N = 1
+control by `release_1to1_makes_the_gauge_read_the_in_flight_window`.
+
+### VERIFICATION — THE DETERMINISTIC TWO-PATH LEDGER MODEL (both directions)
+
+Five new lib tests in `net/mod.rs`, the sibling of item 3's `xpath_loss_model`
+and built the same way: ONE global `batch_seq`, the **REAL**
+`PathBatchTracker`, and the **REAL** `PathState` ledger driven through the
+**REAL** `charge_in_flight` / `release_in_flight` / `expire_in_flight` on a
+real (mock) clock — the mechanism under test executes (MEASUREMENT DISCIPLINE
+1). 60 000 batches × 8 symbols, deterministic LCG, one clock per path so the
+in-flight window is stated physically (`lag` dispatches IS one RTT).
+
+Readout (`--ignored ledger_readout`); `infl` is the gauge's run mean, `truth`
+the path's actual outstanding, `empty%` the fraction of acks at which the
+gauge read ZERO while the path was loaded:
+
+```
+cell   p   release       charges   releases   leak/dl      infl    truth   empty%
+c7     0   legacy         240000     479992     1.005       0.0    128.0    99.9%
+c7     1   legacy         240000     479992     1.005       0.0    128.0    99.9%
+c7     0   senttruth      240000     240128     0.001       0.0    128.0   100.0%
+c7     0   1to1           240000     240000     0.000     136.0    128.0     0.0%
+c8     0   legacy         400000     479992     0.201       0.1    128.0    99.8%
+c8     1   legacy          80000     479960     5.099       0.0    127.9    99.9%
+c8     1   senttruth       80000      80128     0.002       0.0    127.9   100.0%
+c8     1   1to1            80000      80000     0.000     135.9    127.9     0.0%
+n1     0   legacy         480000     480000     0.000     128.0    128.0     0.0%
+n1     0   senttruth      480000     480128     0.000       0.0    128.0   100.0%
+n1     0   1to1           480000     480000     0.000     136.0    128.0     0.0%
+```
+
+**Read the `senttruth` rows against the `n1` row above them.** The candidate
+balances the CUMULATIVE ledger (releases ≈ charges) and still pins the gauge at
+zero everywhere — including the single-path cell where the legacy code is
+already honest. A cumulative balance is not a working gauge, and that
+distinction is the whole finding.
+
+The composition, with the recovery channel present (5 symbols per drop — one
+retransmit plus the margin of 4 the CONTAMINATED ε̂ buys, i.e. the 52-per-100
+the item-3 record measured at c7):
+
+```
+c7-recov p0 legacy/off   wire  240820 charges  240000 releases  484846 wasted 244846 infl    1.2
+c7-recov p0 legacy/chg   wire  240820 charges  240820 releases  484846 wasted 244026 infl    1.2
+c7-recov p0 1to1/off     wire  240820 charges  240000 releases  240004 wasted      4 infl  120.8
+c7-recov p0 1to1/chg     wire  240820 charges  240820 releases  240820 wasted      0 infl  126.2
+```
+
+**`charges == wire == releases`, `wasted = 0`, `in_flight = 0` at quiesce — but
+only with BOTH gates.** Each alone is bounded and stated: charge-only leaves
+the contaminated release; release-only leaves the ledger 1:1 against what was
+CHARGED and short of the WIRE by exactly the un-metered recovery (the delivery
+arm still releases recovery ARRIVALS the sender never charged for — defect 1's
+residual, not the release law's). That is why they are two gates and not one.
+
+* `legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2` —
+  DIRECTION 1, absolute: the leak class at c7 (0.85–1.15) and c8's slow leg
+  (4.5–5.5), `releases_wasted > 0`, `false_empty > 90%`, plus the **N = 1
+  control** at ≤ 0.02 and < 5% — the defect is multipath-only and no fix may
+  regress N = 1.
+* `sender_truth_release_pins_the_gauge_on_the_floor` — the refutation,
+  absolute, at all three cells.
+* `release_1to1_makes_the_gauge_read_the_in_flight_window` — DIRECTION 2:
+  `releases == charges` EXACTLY, `wasted == 0`, `in_flight == 0` at quiesce,
+  gauge/truth in `[1.0, 1.3]`, `false_empty < 1%`, at all three cells.
+* `charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release` —
+  defect 1 both directions plus the four-way composition.
+* `sender_truth_release_delta_is_idempotent_and_never_underflows` — the cursor
+  contract, including the assertion that the loss gate's cursors and the
+  release cursors are INDEPENDENT (neither consumes the other's delta).
+
+### VERIFICATION 2 — THE SF BENCH'S ACCOUNTING AXIS, AND THE Σ`cwnd` QUESTION
+
+The composed fix IS the SF bench's `Acct::Traffic` level by construction —
+"every wire symbol charged once, on the path it flies, and released once, on
+the same path" — so the bench's own axis prices it without inventing an arm.
+`balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor`
+(always-on, `Feed::Measured`, `Store::Span`, 20 s, both duals):
+
+```
+[LEDGER-SIGMA] c7: sigma_wire 1635  ENGINE cwnd 7502 (4.59x) infl 2884  |  BALANCED cwnd 7080 (4.33x) infl 4181  |  move  -5.6%
+[LEDGER-SIGMA] c8: sigma_wire 1510  ENGINE cwnd 7527 (4.99x) infl 3050  |  BALANCED cwnd 9429 (6.25x) infl 4237  |  move +25.3%
+```
+
+**The candidate ownership is REFUTED and the mechanism is visible in the same
+rows.** An HONEST gauge is a FULLER gauge — Σ`in_flight` rises at both cells
+(2 884 → 4 181, 3 050 → 4 237) — and Copa answers the tighter `available()`
+by GROWING `cwnd`, not by shrinking it. At c8 that pushes the ratio away from
+1. The over-release was SUPPRESSING the window there, not inflating it.
+Ownership of "The Coupling Model" FINDING 4 stays with the bench HORIZON,
+where "The Queue Fix" measured it (3.55×/6.72× → 0.67×/1.28×). Bounded by sign
+and band per cell so a successor re-scores rather than inherits.
+
+The three pre-existing accounting-axis tests
+(`unmetered_recovery_flow_is_not_charged_to_in_flight`,
+`counter_delta_release_is_conservative_under_loss`,
+`pacer_debit_bounds_only_the_source_arm_not_the_wire`) are UNCHANGED and still
+green: they bound the ENGINE's divergence, and this branch does not remove that
+divergence by default — it gates its removal.
+
+### GATE HYGIENE
+
+`RWM_CHARGE_RECOVERY` and `RWM_RELEASE_1TO1`, both default OFF, resolved once
+via `OnceLock` in `scheduler::charge_recovery_active()` /
+`release_1to1_active()` (the release gate additionally cached per `PathState`
+at construction, like `pool_anchor_feed`, with a `#[cfg(test)]
+force_release_1to1` so no unit test depends on the process-global env cache).
+Both echoed in `[GATES]`, two-sided; both added to `tools/l1/lib.sh`'s
+`RWM_FORWARD`; both asserted default-OFF in
+`default_env_resolves_the_shipped_stack` — where `RWM_LOSS_SENT_TRUTH`'s
+missing default assertion was noticed and added at the same time. OFF is
+bit-identical by construction: each gate's OFF arm is the pre-existing
+expression unchanged (`!release_1to1_active() && expected_count > 0` reduces to
+`expected_count > 0`; the charge block is absent entirely).
+
+Neither is a dial: no law on (δ, ρ, r) is selected and no threshold in the
+triangle is keyed. `RWM_CHARGE_RECOVERY` adds counter increments on an existing
+path; `RWM_RELEASE_1TO1` changes which MEASUREMENT the release reads and moves
+one horizon onto a constant already in the tree.
+
+### WIRE QUESTIONS, PRE-REGISTERED AND LISTED (no VM in this session)
+
+1. **Does the honest gauge close `available()` on the wire?** The whole point
+   is that `in_flight` stops reading zero. On the shipped default
+   `RWM_INFL_CAP=0` so `cwnd_full` is permanently false and `available()` gates
+   only through `active_paths()` and the placement cost — which is exactly why
+   this must be measured and not reasoned about. Arms:
+   `RWM_RELEASE_1TO1=0/1` × `RWM_CHARGE_RECOVERY=0/1` at c7, c8, dual-c1, sc2
+   (identity), both seeds. **Prediction registered BEFORE the run:** the `sf=`
+   empty-set tick rate RISES at the duals (an honest gauge empties
+   `active_paths()` more often), goodput moves by ≪σ unless the leak was
+   load-bearing, and if goodput FALLS the leak was accidental
+   over-provisioning — a finding about the admission gate, not about the
+   ledger.
+2. **Does the RFC 9002 expiry horizon hold at a long-RTT cell?** `9/8 × SRTT`
+   floored at the kGranularity analog is a much tighter sweep than
+   `max(4 × SRTT, 250 ms)`. c4 (sat, 100 ms one-way) is where an under-measured
+   SRTT would expire budget for symbols still genuinely in flight. Watch
+   `in_flight` against `cwnd` and the leak-guard's `−25%` backstop firing rate.
+3. **Can the three meters be attributed?** `RWM_CHARGE_RECOVERY` moves
+   in-flight, pacer tokens and `symbols_sent` together. On the shipped default
+   `RWM_CC_PACE=0`, so the pacer term is INERT and the arm is really
+   two-quantity — but that is a code fact to confirm from the `[GATES]` echo of
+   the run, not an assumption.
+4. **Does the `symbols_sent` correction move `RWM_LOSS_SENT_TRUTH`'s ε̂?**
+   Composing `RWM_CHARGE_RECOVERY=1` with `RWM_LOSS_SENT_TRUTH=1` should raise
+   ε̂ (the denominator gains the recovery traffic) and is the first thing that
+   could turn the c8 legs' negative readings positive. Registered as a
+   composition arm, and NOT flipped together with anything else.
+5. **The Σ`cwnd` ownership is NOT re-opened by this branch.** Any battery that
+   flips a ledger gate and reads FINDING 4 must carry "The Queue Fix"'s horizon
+   correction, or it is measuring the horizon again.
+
+### DELIBERATELY NOT CONCLUDED
+
+* **Whether the leak was load-bearing.** The SF bench says balancing it moves
+  Σ`cwnd` the WRONG way at c8 by 25%. That is a bench statement about a
+  quantity whose own owner is elsewhere; it is reported, not promoted.
+* **Any default flip.** Both gates ship OFF and no wire measurement exists.
+* **The successor's shape.** `block_arq`'s per-symbol ledger is NAMED as the
+  only route to a per-symbol honest `lost`, and priced (it does not cover the
+  window-mode source arm today). No design is stated for it here.
+
+### EVIDENCE
+
+`cargo test -p raptorpath --lib` **433/433** (5 new + 1 `#[ignore]`d readout) ·
+`-p raptorpath-math --lib` 59/59 · `--doc` 0 doctests, clean ·
+`gate_suite --release` · `store_cap_sf_bench` **47 passed** (1 new; 17
+`#[ignore]`d benches not run) · `store_cap_bench` 4 · `recovery_bench` 6 ·
+`slack_bench` 7 · loopbacks. Engine tree touched: `scheduler/mod.rs` (two
+gates, the expiry horizon, the refuted candidate + its cursors),
+`net/control_msg.rs` (both release arms), `net/mod.rs` (both recovery channels
++ the model and its five tests), `gates.rs` (two echoes + three default
+assertions), `tests/store_cap_sf_bench.rs` (the Σ`cwnd` readout),
+`tools/l1/lib.sh` (forwarding). No visualizer or wasm change (scope rule).
+Commits on `fix/accounting-ledger`, not merged, not pushed.

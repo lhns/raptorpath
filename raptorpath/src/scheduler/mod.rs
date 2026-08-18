@@ -511,6 +511,120 @@ pub fn loss_sent_truth_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_LOSS_SENT_TRUTH", false))
 }
 
+/// `RWM_RELEASE_1TO1` (**default OFF**) — MAKE THE RELEASE 1:1 WITH THE
+/// CHARGE. One gate, one quantity: **what releases a LOST symbol's budget
+/// slot.**
+///
+/// Today the answer is two mechanisms, and the first of them is contaminated:
+///
+/// 1. `control_msg.rs` releases `expected_count - received_count` in BOTH ack
+///    arms, where `expected` is `PathBatchTracker`'s GLOBAL-`batch_seq` gap
+///    estimate `gap x received` (`net/mod.rs`'s `PathBatchTracker::
+///    record_batch`). At N >= 2 that gap is a SCHEDULING artefact — mostly the
+///    OTHER path's symbols — so the release is inflated by the same 37-93x the
+///    loss estimate was (goal-gate "Cross-Path Loss Contamination" READOUT 4:
+///    `ce/cr` 2.05 at c7, 5.59 on c8's slow leg = **~1 and ~5 EXTRA slots
+///    released per delivered symbol**). `release_in_flight` saturates at zero,
+///    so the excess is spent, not stored: the gauge does not merely
+///    mis-report, it **leaks OPEN**. Measured on the deterministic two-path
+///    model, the gauge reads `in_flight == 0` on **> 90%** of acks at which
+///    the path genuinely has symbols outstanding, which holds
+///    `available() = cwnd - in_flight` wide open on evidence the path does not
+///    have.
+/// 2. [`PathState::expire_in_flight`], a time-based sweep of the charge log
+///    itself. This one IS 1:1 by construction — it pops the very entries
+///    `charge_in_flight` pushed — but its horizon is
+///    `max(4 x SRTT, 250 ms)`, roughly an order of magnitude past the RTT
+///    scale at which a symbol's fate is actually decided, so on the shipped
+///    path it is a backstop and (1) is the operative release.
+///
+/// **Under the gate, (1) is DELETED and (2) becomes the whole answer, at the
+/// scale the engine already uses to decide a symbol IS lost:** RFC 9002
+/// §6.1.2's kTimeThreshold, `9/8 x SRTT`, floored at the same kGranularity
+/// analog the recovery plane's own time threshold is floored at
+/// (`net::mp_time_threshold_split`, `net::NACK_RETX_COOLDOWN_FLOOR_US`).
+/// **No constant is introduced** — 9/8 and the floor are both already in the
+/// tree, cited from the same RFC clause, and used for exactly this judgement
+/// on the recovery plane.
+///
+/// THE LAW, on one line:
+///
+/// ```text
+///   released(t)  =  delivered(t)  +  charges older than 9/8 x SRTT
+/// ```
+///
+/// Both terms pop the SAME `in_flight_log` the charge pushed, so the ledger is
+/// 1:1 by construction and cannot over-release however the paths are striped.
+///
+/// **WHY NOT the sender-truth pair**, which is the shape the dispatch that
+/// opened this branch proposed and which
+/// [`PathState::sender_truth_release_delta`] implements as the recorded
+/// negative datum: it is refuted ARITHMETICALLY, not statistically. Charging
+/// every send and releasing `d_received` plus `d_sent - d_received` telescopes
+/// to `in_flight == outstanding_at_cursor_init`, a CONSTANT — with the cursors
+/// starting at zero that constant is zero, so the gauge is pinned on the floor
+/// exactly as the contaminated delta pins it. The reason is structural:
+/// `d_sent - d_received` is `loss + delta(outstanding)`, so releasing on it
+/// releases the in-flight window itself. Item 3's trick works for a RATIO and
+/// does not transfer to a LEDGER, which needs the per-symbol identity.
+/// Reproduced and bounded by
+/// `sender_truth_release_pins_the_gauge_on_the_floor`.
+///
+/// **Composition with [`charge_recovery_active`].** This gate makes releases
+/// 1:1 with CHARGES; that one makes charges equal the TRUE WIRE. Both are
+/// needed for `in_flight` to be the wire's occupancy, and each is separately
+/// meaningful, so they are separate gates and a battery can attribute.
+///
+/// Not a dial: it selects no law on (delta, rho, r) and keys on no threshold
+/// in the triangle (CLAUDE.md's no-mode-switch invariant).
+pub fn release_1to1_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_RELEASE_1TO1", false))
+}
+
+/// `RWM_CHARGE_RECOVERY` (**default OFF**) — METER THE TWO RECOVERY CHANNELS
+/// THAT ARE NOT METERED.
+///
+/// The SACK-gap retransmit (`net/mod.rs`, "SACK-gap retransmit") and the NACK
+/// repair margin (`net/mod.rs`, "NACK repair margin") each build a
+/// `SymbolBatch` and call `transport.send_symbols` with **no
+/// `charge_in_flight`, no `consume_pace_tokens`, and no
+/// `PathStats::symbols_sent` increment** anywhere on the path. Every OTHER
+/// wire channel meters all three at the handoff — the source arm
+/// (`emit_source.rs`), the taper correction (`emit_source.rs`), the three
+/// generation-coding arms (`net/mod.rs`) and, most directly, the block-ARQ
+/// repair batch, whose own comment states the norm this gate restores:
+/// *"Charge like any correction: in_flight budget … + pacing tokens"*.
+///
+/// **The exemption that IS on the record is a different one.** Recovery is
+/// deliberately exempt from the ACK-CLOCKED ADMISSION TARGET (deadlock
+/// otherwise), and the reactive generation arm states its own position on the
+/// congestion question explicitly — *"Recovery is NON-EXEMPT from
+/// `cwnd_full`"*. No record anywhere in the tree exempts these two channels
+/// from the in-flight ledger, the pacer or the sender's own wire count; the
+/// provenance audit found none. Charging cannot deadlock them either, because
+/// **neither send site reads `available()` or `cwnd_full`** — they are budgeted
+/// by `cached_nack_budget` and the NACK congestion multiplier. The charge
+/// therefore makes the SOURCE arm see the occupancy recovery created, which is
+/// the whole purpose of the gauge, without gating recovery on it.
+///
+/// **One gate, one quantity: "are these two channels metered?"** The three
+/// meters move together on purpose — they are one act at the peer site
+/// (block-ARQ repair charges in_flight, pace tokens and `symbols_sent` in one
+/// block), and splitting them would assert an accounting the engine has
+/// nowhere else. A battery cannot attribute AMONG the three; that is stated as
+/// a listed wire question rather than papered over.
+///
+/// Not a dial (CLAUDE.md's no-mode-switch invariant): no law on (delta, rho,
+/// r) is selected and no threshold is keyed. It adds two counter increments on
+/// a path that already exists.
+pub fn charge_recovery_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| crate::config::env_flag("RWM_CHARGE_RECOVERY", false))
+}
+
 /// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
 /// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
 /// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
@@ -2161,6 +2275,18 @@ pub struct PathState {
     /// keeps driving `release_in_flight` in BOTH arms — see
     /// [`Self::sender_truth_loss_delta`]).
     loss_recv_cursor: u64,
+    /// THE REFUTED CANDIDATE's cursor pair (see
+    /// [`Self::sender_truth_release_delta`]) — retained as the negative
+    /// datum's only reproduction path, with no production call site.
+    release_sent_cursor: u64,
+    /// See [`Self::release_sent_cursor`].
+    release_recv_cursor: u64,
+    /// `RWM_RELEASE_1TO1` (default OFF, resolved once at construction): the
+    /// lost-symbol release is the charge log's OWN RFC 9002 time-threshold
+    /// sweep, and the contaminated `expected - received` term at the ack arms
+    /// is not applied. See [`release_1to1_active`] and
+    /// [`Self::expire_in_flight`].
+    release_1to1: bool,
     /// Injectable clock
     clock: Arc<dyn Clock>,
 }
@@ -2215,6 +2341,9 @@ impl PathState {
             ack_cum_received: 0,
             loss_sent_cursor: 0,
             loss_recv_cursor: 0,
+            release_sent_cursor: 0,
+            release_recv_cursor: 0,
+            release_1to1: release_1to1_active(),
             clock,
         }
     }
@@ -2304,6 +2433,80 @@ impl PathState {
     ) -> (u32, u32) {
         let cum = self.loss_recv_cursor.saturating_add(received_in_batch as u64);
         self.sender_truth_loss_delta(symbols_sent, cum)
+    }
+
+    /// **THE REFUTED CANDIDATE — retained as the negative datum's only
+    /// reproduction path, with NO production call site.**
+    ///
+    /// The shape the `fix/accounting-ledger` dispatch proposed for the
+    /// lost-symbol release: the same clean operand pair
+    /// `RWM_LOSS_SENT_TRUTH` gave the loss ESTIMATOR, applied to the LEDGER —
+    ///
+    /// ```text
+    ///   released_lost_p  =  d(symbols_sent_p)  -  d(cum_received_p)
+    /// ```
+    ///
+    /// **It is refuted ARITHMETICALLY, and the identity is short enough to
+    /// state here.** Charge every send and release `d_received` (delivery arm)
+    /// plus this term, and the sums telescope:
+    ///
+    /// ```text
+    ///   in_flight  =  sent      -  [ recv + (sent - sent_0) - (recv - recv_0) ]
+    ///              =  sent_0 - recv_0
+    /// ```
+    ///
+    /// a CONSTANT — the outstanding at cursor init, which with cursors
+    /// starting at zero is **zero**. The gauge is pinned on the floor exactly
+    /// as the contaminated `expected - received` pins it, so the defect is
+    /// reproduced rather than fixed, and lazily initialising the cursors only
+    /// freezes the gauge at a different constant.
+    ///
+    /// The reason is structural, not a tuning failure: `d_sent - d_received`
+    /// is `loss + delta(outstanding)`, so releasing on it releases the
+    /// in-flight window itself. **Item 3's trick works for a RATIO** — where
+    /// a constant lag cancels in the deltas and leaves the estimate unbiased —
+    /// **and does not transfer to a LEDGER**, which needs the per-symbol
+    /// identity that the striping destroyed (item 3's own candidate (b): "a
+    /// seq that arrived NOWHERE cannot be attributed to a path").
+    ///
+    /// Reproduced and bounded by `sender_truth_release_pins_the_gauge_on_the_
+    /// floor`; the shipped shape is [`release_1to1_active`].
+    ///
+    /// Cursor mechanics, for the reproduction: `cum_received == 0` is the "no
+    /// counter payload" sentinel; cursors only move FORWARD, so a reordered or
+    /// duplicated ack yields 0; and the lost count saturates at zero rather
+    /// than going negative, so it can never invent budget.
+    pub fn sender_truth_release_delta(
+        &mut self,
+        symbols_sent: u64,
+        cum_received: u64,
+    ) -> u32 {
+        if cum_received == 0 {
+            return 0;
+        }
+        let d_sent = symbols_sent.saturating_sub(self.release_sent_cursor);
+        let d_received = cum_received.saturating_sub(self.release_recv_cursor);
+        if d_sent == 0 && d_received == 0 {
+            return 0;
+        }
+        self.release_sent_cursor = self.release_sent_cursor.max(symbols_sent);
+        self.release_recv_cursor = self.release_recv_cursor.max(cum_received);
+        d_sent.saturating_sub(d_received).min(u32::MAX as u64) as u32
+    }
+
+    /// [`Self::sender_truth_release_delta`] for the LEGACY per-batch `Ack`
+    /// arm, whose `received_count` is a per-batch count rather than a
+    /// cumulative counter. Same law, same cursors: the received side is
+    /// accumulated here instead of arriving pre-summed on the wire.
+    pub fn sender_truth_release_batch(
+        &mut self,
+        symbols_sent: u64,
+        received_in_batch: u32,
+    ) -> u32 {
+        let cum = self
+            .release_recv_cursor
+            .saturating_add(received_in_batch as u64);
+        self.sender_truth_release_delta(symbols_sent, cum)
     }
 
     /// ack-merge (`RWM_ACK_MERGE`): advance the v6 cumulative-counter cursor
@@ -2906,6 +3109,13 @@ impl PathState {
         self.floor_bound = on;
     }
 
+    /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must
+    /// not depend on the process-global env cache — the `force_wire` pattern.
+    #[cfg(test)]
+    pub fn force_release_1to1(&mut self, on: bool) {
+        self.release_1to1 = on;
+    }
+
     /// Release `n` symbols of budget (ACK feedback: received or
     /// gap-inferred lost). Pops the OLDEST charges first.
     pub fn release_in_flight(&mut self, n: u32) {
@@ -2926,15 +3136,42 @@ impl PathState {
         }
     }
 
-    /// Expire budget charged longer than max(4×SRTT, 250ms) ago: its ACK
-    /// (or the loss evidence) would have arrived by now — the datagram was
-    /// delivered with the ACK lost, or lost with no later batch to reveal
-    /// the gap. Either way it is no longer on the wire.
+    /// Expire budget charged longer than the horizon ago: its ACK (or the
+    /// loss evidence) would have arrived by now — the datagram was delivered
+    /// with the ACK lost, or lost with no later batch to reveal the gap.
+    /// Either way it is no longer on the wire.
+    ///
+    /// This sweep is **1:1 with the charge by construction** — it pops the
+    /// very `in_flight_log` entries `charge_in_flight` pushed.
+    ///
+    /// LEGACY horizon: `max(4 x SRTT, 250 ms)`, roughly a decade past the
+    /// scale at which a symbol's fate is decided, which makes this a backstop
+    /// and leaves the operative release to the contaminated
+    /// `expected - received` term at the ack arms.
+    ///
+    /// `RWM_RELEASE_1TO1` horizon: RFC 9002 §6.1.2's kTimeThreshold,
+    /// `9/8 x SRTT`, floored at the same kGranularity analog the recovery
+    /// plane's own time threshold uses ([`crate::net::mp_time_threshold_split`],
+    /// [`crate::net::NACK_RETX_COOLDOWN_FLOOR_US`]) — the engine's OWN
+    /// judgement about when a symbol is lost, applied to the budget it charged
+    /// for that symbol. No new constant; see [`release_1to1_active`].
     pub fn expire_in_flight(&mut self) {
         if self.in_flight_log.is_empty() {
             return;
         }
-        let horizon = (self.srtt() * 4).max(IN_FLIGHT_EXPIRY_MIN);
+        let horizon = if self.release_1to1 {
+            let srtt_us = self.srtt().as_micros() as u64;
+            Duration::from_micros(
+                crate::net::mp_time_threshold_split(
+                    srtt_us,
+                    srtt_us,
+                    crate::net::NACK_RETX_COOLDOWN_FLOOR_US,
+                )
+                .0,
+            )
+        } else {
+            (self.srtt() * 4).max(IN_FLIGHT_EXPIRY_MIN)
+        };
         let now = self.clock.now();
         while let Some(&(t, c)) = self.in_flight_log.front() {
             if now.duration_since(t) < horizon {
