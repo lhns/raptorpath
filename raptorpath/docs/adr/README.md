@@ -102,3 +102,4 @@ tables. The feature triage feeding the code-consolidation pass is
 | [0068](0068-copa-bbr-fusion.md) | A better Copa — δ-priced probing over a measured rate model, ε̂-referenced loss discrimination | Proposed (future exploration; adversarial-cell prerequisite) |
 | [0069](0069-block-mode-disposition.md) | Block mode is LEGACY — the last mode bit, deprecated with a re-test clause; default pinned, not flipped | Accepted (re-test clause OPEN) |
 | [0070](0070-store-cap-law-review.md) | The store-cap law on trial — term-by-term provenance review of `clamp(gain·N·Σ, floor, N·knee)`; the derived replacement stated, not shipped | Accepted (review; validation path OPEN) |
+| [0071](0071-successor-candidates.md) | The two conceptual successors as CANDIDATES — the slack magnitude (what replaces `17/8`-as-permanent) and the δ-priced queue bound (what replaces the knee and `WIN_STORE_MAX`-as-law) | Proposed (enumeration only; NO decision taken) |
