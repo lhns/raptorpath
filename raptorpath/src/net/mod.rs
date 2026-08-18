@@ -2494,17 +2494,23 @@ pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64
 /// N·pool). Returns `None` when the caller must use the legacy single-path
 /// law — so N = 1 is bit-exact legacy even with the flag ON.
 ///
-/// **UNDER REVIEW — ADR-0070 "The store-cap law on trial".** The `×N` applies
-/// a path-count multiplier to an ALREADY-SUMMED base, so the value is
-/// QUADRATIC in N at symmetric inputs where the derivation (`Σᵢ gain·anchorᵢ`)
-/// is linear; the `N·knee` ceiling is what has been measured on every dual
-/// cell. Behaviour is unchanged here — the shape is PINNED by
-/// `net::tests::law_shape` (`path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`)
-/// so any change to it is a reviewed decision.
+/// **NO LONGER THE SHIPPED FACE — this is the `RWM_SUM_CAP=0` ARM** (paper
+/// §16.64, 2026-08-19). The `×N` applies a path-count multiplier to an
+/// ALREADY-SUMMED base, so the value is QUADRATIC in N at symmetric inputs
+/// where the derivation (`Σᵢ gain·anchorᵢ`) is linear; the `N·knee` ceiling is
+/// what had been measured on every dual cell. ADR-0070 finding 2 recorded the
+/// multiplier's provenance as ABSENT, the ladder battery ran the A/B that had
+/// never been run, and `RWM_SUM_CAP` FLIPPED DEFAULT ON — so the expression
+/// below is now the DISPLACED arm, kept re-runnable with its provenance
+/// intact and with no deprecation warning (ADR-0066 register row). Its shape
+/// is still PINNED by `net::tests::law_shape`
+/// (`path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`),
+/// which now pins the `=0` arm rather than the default.
 ///
-/// **The correction is available behind `RWM_SUM_CAP`** (paper §16.62): this
-/// function is now the `sum_cap = false` face of [`pooled_store_cap`], which
-/// carries both forms in ONE expression so the two cannot drift.
+/// Mechanically: this function is the `sum_cap = false` face of
+/// [`pooled_store_cap`], which carries both forms in ONE expression so the two
+/// cannot drift. Callers that want the SHIPPED law must call
+/// [`pooled_store_cap`] with the resolved gate, not this function.
 pub fn path_scaled_store_cap(
     on: bool,
     n_live: usize,
@@ -2516,14 +2522,16 @@ pub fn path_scaled_store_cap(
     pooled_store_cap(on, false, n_live, pipe_sum, gain, floor, pool)
 }
 
-/// **THE POOLED OUTSTANDING CAP, BOTH FORMS, ONE EXPRESSION** — paper §16.60,
-/// gate `RWM_SUM_CAP` (default OFF), ADR-0070 finding 2.
+/// **THE POOLED OUTSTANDING CAP, BOTH FORMS, ONE EXPRESSION** — paper
+/// §16.60/§16.64, gate `RWM_SUM_CAP` (**DEFAULT ON since 2026-08-19**),
+/// ADR-0070 finding 2.
 ///
 /// ```text
 ///   cap = clamp( gain · m · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
 ///
-///     m = N   when sum_cap = false   — the SHIPPED law (`RWM_SUM_CAP=0`)
-///     m = 1   when sum_cap = true    — the CORRECTED law (`RWM_SUM_CAP=1`)
+///     m = 1   when sum_cap = true    — the SHIPPED law (default, `RWM_SUM_CAP=1`)
+///     m = N   when sum_cap = false   — the DISPLACED quadratic (`RWM_SUM_CAP=0`,
+///                                      the re-runnable A/B arm)
 /// ```
 ///
 /// **What the correction is, and what it is not.** The birth commit's own
@@ -2551,14 +2559,24 @@ pub fn path_scaled_store_cap(
 /// byte-identical on both arms without needing a measurement to say so.
 ///
 /// **The clamp is not the law, and the correction moves its crossover.** The
-/// shipped form pins at `gain·N·Σ ≥ N·knee ⟺ Σ ≥ knee/gain` — **the N cancels**,
-/// so the pin threshold is a path-count-free constant (1024 symbols shipped),
-/// which is why 121/126 dual reps read exactly `2·knee`. The corrected form
-/// pins at `gain·Σ ≥ N·knee ⟺ Σ ≥ N·knee/gain`, i.e. **1024 PER PATH**, so the
-/// ceiling's dependence on the path count is restored to the value as well. A
-/// `RWM_SUM_CAP=1` arm reading a high pin fraction has measured the clamp and
-/// not the law, and MEASUREMENT DISCIPLINE 18 requires it be reported as such
-/// — which is what the `[SUMCAP]` echo's `pin=` fraction exists for.
+/// `=0` form pins at `gain·N·Σ ≥ N·knee ⟺ Σ ≥ knee/gain` — **the N cancels**,
+/// so the pin threshold is a path-count-free constant (1024 symbols), which is
+/// why 121/126 dual reps on the old default read exactly `2·knee`. The shipped
+/// form pins at `gain·Σ ≥ N·knee ⟺ Σ ≥ N·knee/gain`, i.e. **1024 PER PATH**, so
+/// the ceiling's dependence on the path count is restored to the value as well.
+/// An arm reading a high pin fraction has measured the clamp and not the law,
+/// and MEASUREMENT DISCIPLINE 18 requires it be reported as such — which is
+/// what the `[SUMCAP]` echo's `pin=` fraction exists for.
+///
+/// **Measured on the wire before it shipped** (goal-gate "Ladder Battery —
+/// RESULTS", 2026-08-19, rung N): interior at both scoreable duals with `pin`
+/// med 0.000, `eng` med 1.000 and `chg_frac` 1.000 — the multiplier's deletion
+/// changes the computed cap on 100 % of engaged refreshes, so it is not
+/// cosmetic — against a control pinned at exactly 4096. Goodput moved UP at
+/// the pre-registered risk cell. The band clause on the c8 cap MAGNITUDE was
+/// falsified as written (`cap` 2308.7 vs [2416, 3624]) because the wire
+/// presented Σ = 1154.3, below both published anchors: a finding about Σ, with
+/// `cap ≡ ask` and `pin = 0` showing the law itself landing faithfully.
 ///
 /// Shape pinned by `net::tests::law_shape::sum_store_cap_value_is_linear_in_n_the_template_applied`.
 pub fn pooled_store_cap(
@@ -9791,8 +9809,11 @@ mod tests {
     ///   law's magnitude was REFUTED by §16.57 and the FULL arm deliberately
     ///   does not carry it;
     /// * the brake is armed WITHOUT it (the whole point of the extraction);
-    /// * and the CONTROL arm — every bit off — resolves to the shipped chain,
-    ///   which is what makes the pair an A/B rather than two experiments.
+    /// * and the CONTROL arm — every bit off, `RWM_SUM_CAP` included, which
+    ///   since the 2026-08-19 flip means EXPLICITLY off rather than merely
+    ///   default — still resolves to the quadratic chain and its 4096 pin,
+    ///   which is what makes the pair an A/B rather than two experiments and
+    ///   is what keeps the displaced arm re-runnable.
     #[test]
     fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
         use crate::control::fec_rate::ProtocolHint;
@@ -9806,7 +9827,19 @@ mod tests {
         };
 
         // ── THE CONTROL ARM ───────────────────────────────────────────────
-        let base = RuntimeGates::resolve();
+        // Arm A is the LADDER's control — the quadratic law — which since the
+        // 2026-08-19 flip (§16.64) is no longer the default: `RWM_SUM_CAP` now
+        // resolves ON. The control is therefore constructed EXPLICITLY as the
+        // `=0` arm, which is exactly what keeps this test an A/B rather than a
+        // comparison against a moving default. Set by field, not through the
+        // environment (see the FULL arm's note below).
+        let mut base = RuntimeGates::resolve();
+        assert!(
+            base.sum_cap,
+            "the shipped default must carry the ×N deletion since 2026-08-19 — \
+             if this fails the flip drifted back (gates.rs pins it too)"
+        );
+        base.sum_cap = false; // the DISPLACED quadratic, still re-runnable
         let ctl = resolve(&base);
         assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
         assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
@@ -9898,7 +9931,11 @@ mod tests {
             ctl.store_path_pool,
         )
         .expect("engaged");
-        assert_eq!(shipped, 4_096, "the control arm is not the pinned shipped law");
+        assert_eq!(
+            shipped, 4_096,
+            "the `=0` arm is not the pinned quadratic law — the displaced arm \
+             must stay re-runnable and must still reproduce the 4096 pin"
+        );
         assert_eq!(corrected, 3_020, "the FULL arm is not §16.60's published c8 value");
         assert!(corrected < shipped, "the FULL arm did not free the law from its ceiling");
 
@@ -9945,9 +9982,19 @@ mod tests {
         /// applied to an already-summed quantity. See ADR-0070 "The store-cap
         /// law on trial" §×N.
         ///
-        /// This test asserts the shape AS SHIPPED. It is the test that would
-        /// have failed on day one, and it must be UPDATED (not deleted) by
-        /// whatever change fixes the law.
+        /// **THIS PIN NOW BELONGS TO THE `RWM_SUM_CAP=0` ARM, not to the
+        /// default** (the 2026-08-19 flip, paper §16.64). It reads the law
+        /// through `path_scaled_store_cap`, which IS the `sum_cap = false`
+        /// face of `pooled_store_cap` — so the arm under test here is explicit
+        /// in the call, not inherited from a default, and the flip does not
+        /// move a single number below. It stays exactly as it was written,
+        /// because the displaced quadratic stays re-runnable and its shape must
+        /// remain pinned for as long as it is reachable: a `RWM_SUM_CAP=0`
+        /// battery is entitled to the same guarantee the default used to have.
+        /// The SHIPPED shape is pinned by its sibling
+        /// (`sum_store_cap_value_is_linear_in_n_the_template_applied`).
+        ///
+        /// It is the test that would have failed on day one.
         #[test]
         fn path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect() {
             let cap = |n: usize| {
@@ -9966,7 +10013,7 @@ mod tests {
             }
 
             // (a/c) The ratio that names the exponent. A law linear in N would
-            // read 2 at every doubling; the shipped law reads 4.
+            // read 2 at every doubling; the `=0` arm's law reads 4.
             for n in [2usize, 3, 4] {
                 let r = cap(2 * n) as f64 / cap(n) as f64;
                 assert!(
@@ -9985,17 +10032,19 @@ mod tests {
             assert_eq!(cap(8) / cap(2), 16, "linear would be 4");
         }
 
-        /// THE TEMPLATE APPLIED TO THE CORRECTION: under `RWM_SUM_CAP` the
-        /// UNCLAMPED value is **LINEAR** in the live-path count at symmetric
-        /// inputs — `gain·Σ` with `Σ = N·A`, i.e. `gain·A·N`.
+        /// THE TEMPLATE APPLIED TO THE CORRECTION — and **since 2026-08-19
+        /// (paper §16.64) this is the pin on the SHIPPED DEFAULT**: under
+        /// `RWM_SUM_CAP` (now default ON) the UNCLAMPED value is **LINEAR** in
+        /// the live-path count at symmetric inputs — `gain·Σ` with `Σ = N·A`,
+        /// i.e. `gain·A·N`.
         ///
-        /// This is the test the sibling above says *"must be UPDATED (not
-        /// deleted) by whatever change fixes the law"* — except that the fix
-        /// ships as an A/B arm rather than as a replacement, so the defect pin
-        /// stays exactly as it was (it still describes the SHIPPED default) and
-        /// this is its counterpart on the other arm. Between them they assert
-        /// that the gate selects between a quadratic and a linear law and
-        /// nothing else.
+        /// The two pins swapped roles at the flip and NEITHER moved: the
+        /// quadratic sibling above still pins the `=0` arm, which stays
+        /// re-runnable, and this one now describes what the engine computes
+        /// unset. Between them they assert that the gate selects between a
+        /// quadratic and a linear law and nothing else — which is the property
+        /// the flip is entitled to rest on, since the gate is the only thing
+        /// that changed.
         ///
         /// Same three holes closed as the template requires: the clamps are
         /// neutralised and their inertness ASSERTED rather than assumed, N is

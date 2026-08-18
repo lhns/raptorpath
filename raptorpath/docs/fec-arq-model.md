@@ -13521,7 +13521,93 @@ that does follow is narrow and citable: **`RWM_SUM_CAP` is the one gate this bat
 recommends flipping ON**, bounded by a noise floor that excludes a large c8 regression
 but not a small one.
 
+### 16.64 The flip executed: `RWM_SUM_CAP` DEFAULT ON — the `×N` deletion ships (2026-08-19, `flip/sum-cap`, the separate flip commit §16.63's no-self-flip rule requires)
 
+§16.63 recommended exactly one flip and executed none, as its own closing
+paragraph says. This section is the record of the separate commit that
+executes it, in the shape §16.51 established: `RWM_SUM_CAP` now resolves
+**default ON**, so the pooled outstanding cap the engine computes unset is
+
+```text
+  cap = clamp( gain · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+```
+
+— the expression the law's own birth-commit sentence names (*"Σ per-path
+(BDP + one recovery round of runway)"*), which is already linear in the
+path count because the Σ is. The second multiplication by that count,
+whose provenance ADR-0070 finding 2 recorded as **ABSENT** — not in the
+birth commit, not in the doc comment, not at the decl site, not in the
+ledger, and contradicted by name in three places in this repository — is
+gone from the VALUE and kept in the CEILING, where the birth commit's
+diagnosis actually argued for it.
+
+**The evidence cited is §16.63's rung N, in full.** The gate lands
+**interior at both scoreable duals** — `pin` med 0.000, `eng` med 1.000,
+`chg_frac` **1.000**, no CAPBIND WARN — against a same-session control
+that reproduced the shipped 4096 pin on 19/19 c7, 20/21 c8 and 25/25 c8L
+reps, which is what makes the contrast an A/B with a control shown to be
+one. `chg_frac = 1.000` is the load-bearing number: the counterfactual
+with the multiplier restored under the same bounds differs from the
+realized value on **100 %** of engaged refreshes, so the deletion is not
+cosmetic — it changes the computed cap every time the law runs. At the
+singles the N = 1 short-circuit is confirmed on the wire rather than only
+at L0 (`eng=0/0` on 16/16 c1 and 18/18 sc2 ON-arm reps, goodput and
+`occcap` and CPU all identical within noise). CPU/byte 0.937–1.005×,
+latency parity at sc2 (0.988×), every one of the six guards green over
+529 live reps on one binary.
+
+**The prediction it beat, and why that is the interesting part.** The
+pre-registration named c8 the risk cell and predicted the deletion would
+under-fund that cell's own resequencing span (`W + S` = 4232) by 29 %. It
+under-funds it by **45.4 %** — worse than predicted — and **goodput went
+UP at both seeds** (+9.29 Mbit/s at s42, +1.34 at s7), where the
+outright-refutation falsifier required a provably interior arm to be more
+than 2σ BELOW the control on both. The arithmetic fear was right about the
+cap and wrong about the consequence: the span the multiplier had been
+accidentally funding was **not load-bearing at c8 in this era**. That is
+the pre-registration's own "what refutes the ceiling's importance instead"
+branch, realised.
+
+**The honest bound, quoted rather than dropped.** The c8 noise floor is
+wide — 2σ = 27.07 Mbit/s against a 77–86 Mbit/s base at n = 21/24, at a
+cell known to be bistable — so this session **excludes a LARGE c8
+regression, not a small one**; a 5 % c8 cost would sit inside it. That is
+a limitation of the power available at that cell, not a claim of exact
+parity, and the flip is taken knowing it.
+
+**Carried with the flip, per the recommendation's instruction**: the c8
+CAP-MAGNITUDE clause is recorded **FALSIFIED AS WRITTEN**. The realized
+`cap` = 2308.7 missed the pre-registered ±20 % band [2416, 3624] — but
+`cap` = 2308.7 against `ask` = 2308.1 with `pin` = 0.000 and `eng` = 1.000
+means the law computed `clamp(gain·Σ, floor, N·knee)` faithfully and what
+missed was the ANCHOR: backing out the input gives Σ = 1154.3, which is
+23.5 % below §16.60's READOUT 3 and 28.1 % below ADR-0071's composed
+inputs. The band was written wide specifically to contain both, and the
+wire came in below both. It is a finding about Σ, not about the law, and
+its named follow-up — the within-run Σ window series at c8 — needs no VM
+arm.
+
+**The displaced quadratic is not deleted.** `RWM_SUM_CAP=0` re-runs it
+verbatim, with no deprecation warning: it is the A/B control arm, its
+`=0` echo value stays asserted (on an explicit arm now that the default is
+ON), and its shape stays pinned by the always-on
+`path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`,
+which after this flip pins the `=0` arm rather than the default while its
+linear sibling pins what ships. The two pins swapped roles and neither
+moved a number. Register row in ADR-0066.
+
+**The five companions scored in the same program keep their defaults**,
+for the reasons §16.63 records: `RWM_LOSS_SENT_TRUTH` **REFUTED with
+record** (ε̂ 20.1× the wrong way at c7, and moving at N = 1 where the
+error it corrects cannot exist), `RWM_CHARGE_RECOVERY` and
+`RWM_RELEASE_1TO1` **NEEDS-MORE** pending the owed 2×2 (the pacer term is
+inert at `RWM_CC_PACE=0`; the ledger signature appeared but cannot be
+attributed inside T), `RWM_STORE_CAP_UNIFIED` **NEEDS-MORE** pending a
+solo arm, `RWM_LATE_BRAKE` **NEEDS-MORE for effect** (armed on 110/110
+FULL reps; B-WALL closed on power). ADR-0070's finding 2 keeps its
+PROVENANCE verdict in full and gains a disposition line: the deletion it
+called for is now executed, and the practical weight of the span is
+retired **at these cells**.
 
 ## 17. The Measured Regime Map (2026-07-19)
 

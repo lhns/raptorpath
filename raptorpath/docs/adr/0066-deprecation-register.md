@@ -139,6 +139,58 @@ records flips, so the displaced arm keeps its provenance):**
   now BINDS below the repaired pooled cap — a derivation question, not
   a flip candidate).
 
+**Disposition added 2026-08-19 — a second DEFAULT FLIP row, same shape as
+the one above:**
+
+- `RWM_SUM_CAP` **FLIPPED DEFAULT ON** (goal-gate "Ladder Battery —
+  RESULTS", rung **N DELIVERED / FLIP-RECOMMENDED** — the only gate that
+  program recommended). The `×N` count multiplier is deleted from the
+  pooled store-cap VALUE and kept in the CEILING; ADR-0070 finding 2
+  recorded its provenance as **ABSENT**, and the battery ran the A/B that
+  finding said had never been run at L1, at a bench, or at L0. Evidence:
+  **interior at both scoreable duals** (`pin` med 0.000, `eng` med 1.000,
+  `chg_frac` **1.000** — the deletion changes the computed cap on 100 % of
+  engaged refreshes, so it is not cosmetic — with no CAPBIND WARN); the
+  same-session control reproducing the shipped **4096** pin on 19/19 c7,
+  20/21 c8 and 25/25 c8L reps; **goodput UP at c8 on BOTH seeds** (+9.29
+  Mbit/s at s42, +1.34 at s7) *against* the pre-registration's own risk
+  prediction — the span the multiplier was accidentally funding was
+  under-funded by 45.4 % and cost nothing, i.e. it was **not
+  load-bearing** at these cells; N-IDENT clean at the singles (`eng=0/0`
+  on 16/16 c1 and 18/18 sc2 ON-arm reps — the N = 1 short-circuit
+  confirmed on the wire); CPU/byte 0.937–1.005×; latency parity at sc2
+  (0.988×); all six guards green over 529 live reps on one binary.
+  **The recommendation's own honest bound, carried here rather than
+  dropped**: the c8 noise floor is wide (2σ = 27.07 Mbit/s against a
+  77–86 Mbit/s base at n = 21/24, a bistable cell), so this session
+  **excludes a LARGE c8 regression, not a small one** — a 5 % c8 cost
+  would sit inside the noise. Carried with the flip, per the
+  recommendation's instruction: the c8 CAP-MAGNITUDE clause is recorded
+  **FALSIFIED AS WRITTEN** (`cap` 2308.7 against the ±20 % band
+  [2416, 3624]) because the wire presented Σ = 1154.3, 23.5–28.1 % below
+  both published anchors — a finding about **Σ**, not about the law, since
+  `cap ≡ ask` with `pin = 0.000`; the named follow-up is the within-run Σ
+  window series at c8, which needs no VM arm.
+  The displaced arm — the quadratic `clamp(gain·N·Σ, floor, N·knee)` —
+  remains reachable as `RWM_SUM_CAP=0` with **NO deprecation warning**: it
+  is the A/B control arm, its provenance findings (ADR-0070 findings 2–4)
+  are preserved verbatim, its shape stays pinned by the always-on
+  `path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`
+  (which now pins the `=0` arm explicitly), its `=0` echo value stays
+  asserted in the `gates.rs` default-stack test on an explicit arm, and it
+  stays re-runnable until a later register pass argues its removal
+  separately. Companions scored in the SAME program and NOT flipped:
+  `RWM_LOSS_SENT_TRUTH` (**REFUTED with record** — ε̂ moved 20.1× UP at c7
+  against a bar of 5× DOWN, and moved at N = 1 where the error it corrects
+  cannot exist), `RWM_CHARGE_RECOVERY` (**NEEDS-MORE** — its pacer term is
+  INERT at `RWM_CC_PACE=0`, so the battery could not exercise it),
+  `RWM_RELEASE_1TO1` (**NEEDS-MORE** — its predicted `sf_zero` signature
+  did appear, but T forbids attribution within itself; the owed 2×2 is its
+  named instrument), `RWM_STORE_CAP_UNIFIED` (**DELIVERED in composition,
+  NEEDS-MORE for a solo flip** — the ladder has no U-alone arm),
+  `RWM_LATE_BRAKE` (**DELIVERED as ARMED, NEEDS-MORE for effect** —
+  `brake_ticks > 0` on 110/110 FULL reps, but B-WALL closed on power).
+
 Class-B gates (concept incomplete, successor scheduled — percap family,
 `RWM_COPA_COMPETE`, formerly `RWM_TAPER_R`/`RWM_UNIFIED` before they
 flipped ON) are NOT register members: they deprecate or flip when their

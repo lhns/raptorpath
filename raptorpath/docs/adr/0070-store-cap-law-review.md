@@ -275,7 +275,7 @@ cap = Σ_i [ rate_i · RTprop_i  +  rate_i · stall(δ, ρ, srtt_i) ]  +  2 · r
 | term | verdict |
 |---|---|
 | Σ-set `active_paths()` | **DEFECT** — a scheduling filter in a sizing law; already named, and currently load-bearing as an accidental brake |
-| `× N` | **DEFECT, provenance ABSENT** — quadratic where its own comment says linear; never A/B'd against `gain·Σ`; contradicted by name in three places in this repository |
+| `× N` | **DEFECT, provenance ABSENT** — quadratic where its own comment says linear; never A/B'd against `gain·Σ`; contradicted by name in three places in this repository. **DISPOSITION 2026-08-19: the deletion is EXECUTED by default flip** (`RWM_SUM_CAP` ON; see the annotation below the table) |
 | `gain = 2.0` | **FOSSIL** — sound prose argument, one sweep at one cell under a different CC, superseded by a derivation the tree already contains (17/8 at ρ = 1) |
 | `knee = 2048/path`, ceiling `N·knee` | **MEASURED BUT STALE** — a real sweep in a dead era; "per path" is an inference no 3-path cell has ever tested; it is the actual operating point at every dual |
 | `floor = 64` | **PROVENANCE ABSENT** — one sentence, never measured; bound at shal8 where the pre-registration said it could not |
@@ -284,6 +284,13 @@ cap = Σ_i [ rate_i · RTprop_i  +  rate_i · stall(δ, ρ, srtt_i) ]  +  2 · r
 | `RWM_INFL_CAP` / `cwnd_full` | **CORRECT ARCHITECTURE, DISABLED WITHOUT A DECISION** — one null at a cell that could not move, no ADR, no register row |
 | `RELIABLE_STORE_MAX` = 1024 | existence measured (C8 → 2.5 Mbit), scoped to out-of-order object mode; **the value un-derived** |
 | `WIN_STORE_MAX` = 4096 | memory bound, self-described as the phase's largest un-derived quantity; **it binds** |
+
+**FINDING 2's DISPOSITION, annotated 2026-08-19 (the ADR's verdicts are not re-opened; this records what the validation path below produced).** Step 4 of that path ran as the pre-registered ladder battery (goal-gate "Ladder Battery — RESULTS"; paper §16.63) and step 5's flip decision was taken in its own separate commit (paper §16.64):
+
+- **The deletion is EXECUTED**, by default flip: `RWM_SUM_CAP` resolves ON, so the shipped pooled law is `clamp(gain·Σ, floor, N·knee)`. The A/B this finding said *"has never been run, at L1, at a bench, or at L0"* **has now been run**, and the corrected law landed interior at both scoreable duals (`pin` 0.000, `eng` 1.000, `chg_frac` 1.000) against a control that reproduced this finding's own premise — the shipped default pinned at 4096 on 19/19 c7, 20/21 c8, 25/25 c8L reps, and at 1024 on 17/18 sc2 reps.
+- **The PROVENANCE verdict stands entirely untouched.** Nothing measured on the wire supplies the multiplier with the derivation it never had; the flip removes it rather than justifying it. This finding's reversal condition — *"an A/B of `gain·Σ` against `gain·N·Σ` at a fixed ceiling finding the multiplier ahead ≫σ"* — did NOT fire: the multiplier was behind or at parity everywhere, and at the risk cell the corrected law was ahead.
+- **The PRACTICAL weight of the span this finding priced is RETIRED at these cells, and only at these cells.** The corrected law under-funds c8's own resequencing span (`W + S` = 4232) by **45.4 %** — worse than the 29 % the pre-registration predicted — and c8 goodput went **UP on both seeds**. The span was not load-bearing at c7 or c8 in this era. The bound is stated with it: the c8 noise floor (2σ = 27.07 Mbit/s on a 77–86 base, n = 21/24, bistable cell) excludes a **large** regression, not a small one, and no claim is made about cells or path counts this ladder did not visit. PS6's ×7.57 pricing of the c8 collapse remains the record of what the pinned law did; it is not re-derived here.
+- **The displaced arm is preserved, not deprecated.** `RWM_SUM_CAP=0` re-runs the quadratic verbatim with no warning, its shape still pinned by `path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect` and its `=0` echo value still asserted. Register row in ADR-0066. Findings 1 and 3–8 are unchanged by this flip: `gain` is still a FOSSIL and the knee still MEASURED-BUT-STALE, carried identical on both arms by construction, and the "two things explicitly NOT licensed" clause below still forbids re-fitting either.
 
 **2. Nothing flips in this ADR.** No default moves, no gate is added, no engine line is touched. The findings are provenance findings; a default that has been measured extensively is not made wrong by a bad derivation, and ADR-0067's rule cuts against flipping on inference in both directions.
 
