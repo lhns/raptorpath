@@ -29,7 +29,7 @@ defect finding, never an explanatory footnote").
 
 THE BIND VALUES ARE THE CHAIN'S OWN CONSTANTS, quoted by site, never fitted:
 
-    64            `RWM_STORE_FLOOR`      floor of the pooled laws
+    10            `STORE_CAP_FLOOR`      floor of the pooled laws (DERIVED, §16.59)
     128           `RWM_STORE_BOOT`       `store_boot_cap`, the cold fallback
     1024          `RELIABLE_STORE_MAX`   the single-path (N < 2) latch
     N * 2048      `RWM_STORE_PATH_POOL`  the pooled ceiling, N = live paths
@@ -50,7 +50,14 @@ import sys
 from collections import defaultdict
 
 # ── the chain's constants, by site ──────────────────────────────────────────
-STORE_FLOOR = 64        # sender_policy::resolve, `RWM_STORE_FLOOR`
+# `net::sender_policy::STORE_CAP_FLOOR` — DERIVED 2026-08-18 (paper §16.59) as
+# `max(ANCHOR_MIN_SAMPLES * MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC6928_INITIAL_WINDOW)`
+# = max(8*1, 10) = 10, replacing the bare 64 ADR-0070 finding 5 recorded as
+# PROVENANCE ABSENT. NOTE: there is no `RWM_STORE_FLOOR` gate and there never
+# was — the earlier docstring named one that does not exist. Ledgers collected
+# BEFORE 2026-08-18 were produced on the 64 and are read with LEGACY_STORE_FLOOR.
+STORE_FLOOR = 10        # sender_policy::STORE_CAP_FLOOR (derived)
+LEGACY_STORE_FLOOR = 64  # the pre-2026-08-18 bare constant, for old ledgers
 STORE_BOOT = 128        # `store_boot_cap`, `RWM_STORE_BOOT`
 RELIABLE_STORE_MAX = 1024   # net/mod.rs, the N < 2 latch
 STORE_PATH_POOL = 2048  # `RWM_STORE_PATH_POOL`, the per-path knee
@@ -80,6 +87,7 @@ def known_binds(cell):
     than guessed) for a cell whose geometry is not transcribed above."""
     binds = [
         ("floor", STORE_FLOOR),
+        ("floor_legacy", LEGACY_STORE_FLOOR),
         ("boot", STORE_BOOT),
         ("RELIABLE_STORE_MAX", RELIABLE_STORE_MAX),
         ("WIN_STORE_MAX", WIN_STORE_MAX),

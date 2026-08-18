@@ -30436,3 +30436,95 @@ No threshold on any dial, no `if cold` beyond the `Option::None` the estimator a
 2. **LATE JOIN has no cell ANYWHERE** — not on the wire and not at this bench. `simulate_place` adds every path before tick 0; there is no join-at-t axis. The regime `RWM_COLD_PLACE` addresses is therefore bounded only by scheduler unit tests at synthetic states. **This is the named successor**: a `join_at_s` axis for the SF bench (the last leg's link built up front, `sched.add_path` deferred), which is a real harness change — `n_live` becomes time-varying, so `sum_live == N·ticks` and every readout keyed to it needs a per-arm story. It should not be bolted on inside a refutation.
 3. **What does the handshake measure per path, and is it available at `add_path`?** Checked and answered NO for the current tree: nothing feeds `PathState`'s RTT estimators except `control_msg`'s Ack / WindowAck / Report arms (`estimator.record_rtt` + `record_rtt_sample`, always together). `transport::quic` has a wire RTT (`transport.wire_rtt(path_id)`) that the Copa wire-signal gate already consults per ack — whether quinn's handshake RTT is readable there **before the first application ack**, and could seed a joining path from its own measurement rather than from a sibling's, is the option-(c) question and is **not resolved here**.
 4. **No default was flipped and none is recommended on this evidence.** `RWM_COLD_PLACE` ships OFF. It is provably inert everywhere it has been measured, and the only regime where it is not inert has never been measured at all. Recommending a flip on unit tests would be the mistake this section is about.
+## Mechanical Defect Sweep, items 1 / 2 / 4 (2026-08-18, `fix/cap-law-cluster` from main@`161b4ea`) — **STRICTLY LOCAL, NO VM.** Two FIXED and one REFUTED-with-record. The FORMULA-FIRST divergence §16.57 found is ADJUDICATED in favour of the code and the paper carries a dated amendment; the agreement-test class it said was owed exists and is proven to fire on the divergence it was built for; the slack term's queue-free clock is **REFUTED on the wire-measured inputs** (it removes 1.7 % of a 90 % overshoot at c8) and nothing shipped; and the floor's parole is paid — `floor = 64` is DERIVED to **10**, and the loopback bind that was hiding the law's own answer VANISHES. **No gate default moved. `RWM_COMPOSED_CAP`, `RWM_THREE_TERM` and friends all stay OFF.**
+
+### VERDICTS, one line each
+
+| item | verdict | the number that decides it |
+|---|---|---|
+| **1 — the K divergence + the agreement-test class** | **FIXED** | the window term's job is one ACK round trip; the ack takes `K·RTprop`. §16.56 amended, `tests/formula_agreement.rs` lands, and the negative control fires: transcribing the pre-amendment `rate·RTprop` fails at `paper=124.8 engine=128.128` (K = 1.04) |
+| **2 — slack's clock** | **REFUTED-with-record** | at c8 the ask must shed **47 %** to clear `WIN_STORE_MAX`; the queue-free clock sheds **1.7 %** (7 778 → 7 642). At c8L: must shed 84 %, sheds 21 % (25 956 → 20 616). Still pins at both |
+| **4 — floor = 64** | **FIXED** | `max(8·1, 10) = 10`. Loopback `[CCAP]` `floor=1.0000` (81/81, cap 64.8) → `floor=0.0000` (0/61, cap **60.0**) — the law had been asking for 60 and the floor was answering 64 |
+
+### ITEM 1 — THE ADJUDICATION, AND WHY THE CODE WINS
+
+§16.57 measured `net::three_term_store_cap` computing `rateᵢ·Kᵢ·RTpropᵢ` where §16.56 published `rateᵢ·RTpropᵢ`, and left the disposition open ("FORMULA-FIRST says the paper wins until a commit says otherwise"). **This is that commit, and it says the code.**
+
+The argument is the term's JOB, not its ancestry. Term 1 funds the outstanding a path needs so a slot is always free when the sender wants one — Little's law over *the time until a slot frees*. That time is the round trip an ACK actually takes, `K·RTprop`: RTprop plus the receiver's standing ack-path overhead (delayed acks, merged acks, aggregation). `RTprop` alone is the DATA's one-way-and-back on an empty wire; funding to `rate·RTprop` runs the sender dry for `(K−1)·RTprop` of every round. §16.42 already measured that overhead as first-class rather than a rounding term (`[CTLD]` 1.96 → ≈1.0 per data message at c1, worth **+12.7/+13.0 %** goodput), so pricing it at zero in the window term is not conservative — it is wrong. And the original block was internally inconsistent: term 1 on RTprop, term 2 on srtt, no argument for the difference. They now share one clock.
+
+**What the adjudication does NOT settle**, stated because item 2 is next: `K` is a windowed MIN, so `K = 1 + wireQ/RTprop` and the clock carries whatever standing queue survives the window. That residual is real. It is not what makes the law too big.
+
+**The agreement-test class**, `raptorpath/tests/formula_agreement.rs`, 4 tests, always-on. One test per formula-first law; each TRANSCRIBES the paper into a local `published_*` that may not call the engine and may not be "simplified", drives both on one grid (ρ at both ends, b at its named points AND between them, `K` at the five values the wire measured, N ∈ {1, 2 sym, 2 asym, 4}), asserts equality, BOUNDS every deliberate divergence, and asserts the clamp is not the thing answering. Laws covered today: the composed/three-term cap (§16.56 amended), the contract stall (§16.56), and `D(δ)` (§16.20.3). The template for adding a law is the file header. **Named as NOT covered, so the gap is visible**: the shipped `clamp(gain·N·Σ, floor, N·knee)` — it has no published derivation to agree WITH, and manufacturing one would launder ADR-0070 finding 2 into a passing test.
+
+Two divergences are BOUNDED rather than described (CLAUDE.md): the engine floors `D(δ)` to integer µs twice, so it sits below the paper by `< 2 µs`, asserted SIGNED and weighted by `(1 − ρ)` — at the shipped ρ = 1 the agreement is asserted EXACT; and the engine `ceil`s the total to whole symbols, asserted as exactly that.
+
+### ITEM 2 — THE REFUTATION, AND THE FINDING THAT SURVIVES IT
+
+Formula written first (paper §16.58), then evaluated. Candidate (b) of the record: `stall'(δ, ρ, RTprop)` — the same stall on the loop-free `min_rtt`.
+
+**Candidate (a) was not a change at all.** §16.44's closed dwell loop is already implemented: `K` is a windowed MINIMUM precisely so the store's dwell cannot enter (a dwell only ADDs to an echo sample, so it can never lower a minimum). The loop that closes is `cap → store dwell → srtt`. The one it does not close is `cap → standing WIRE queue → srtt`, because a standing queue is present at the minimum too.
+
+**The premise, corrected.** The "srtt 353 ms on a 38 ms path" that motivated the item is the DIAG's `rtt`, not the law's clock. At c8 the law's own `K` read **1.04** — the term accused of eating a 353 ms queue was running 4 % above RTprop. **The charge was against the wrong term.**
+
+**The loop is real anyway, and here is its measurement**: c8 and c8L are the SAME geometry at 25 MB and 200 MB, and `K` reads **1.04 → 1.505**. The clock takes on 50 % standing queue once the transfer runs long enough to fill the estimator's ≈10 s window. One cell, one axis, clean.
+
+**Isolated verification**, on §16.57's own `[3T]` decomposition (833 evaluations), closed-form at ρ = 1 (`shipped slack = 2.125·window`, `candidate = 2.125·window/K`):
+
+| cell | window | span | shipped Σ | candidate Σ | Δ | vs 4096 |
+|---|---|---|---|---|---|---|
+| c1 | 201 | 0 | 629 | 572.4 | −9.0 % | interior → interior |
+| sc2 | 374 | 0 | 1 168 | 1 071.1 | −8.3 % | interior → interior |
+| c7 | 1 261 | 118 | 4 059 | 3 729.6 | −8.1 % | 63.2 % of evals over → mean interior |
+| **c8** | 1 669 | 2 563 | 7 778 | **7 642.3** | **−1.7 %** | **1.90× → 1.87× — STILL PINS** |
+| **c8L** | 7 489 | 2 552 | 25 956 | **20 615.9** | **−20.6 %** | **6.34× → 5.03× — STILL PINS** |
+
+The item's criterion was `mem` going INTERIOR at the c8 geometry that read 1.000. **It does not.** Per the item's own rule, that is REFUTED-with-record, and no coefficient was invented to close it.
+
+**The half that survives, recorded because it is worth the same as itself**: the second criterion IS met. The shipped `slack/window` is 2.125 with min = max in 833 of 833 evaluations (a code identity — the three-term law is TWO-term at the shipped scope); the candidate's is `2.125/K` and reads **1.412 (c8L) … 2.043 (c8)**. The queue-free clock de-degenerates the term structure. It does not resize the law.
+
+**A third finding, from writing the formula down**: RFC 9002 §6.1.2 defines the time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`. The `9/8` is cited ONLY as a multiplier of a SMOOTHED RTT. Moving it onto RTprop makes it a **fitted coefficient on a new clock** — a provenance REGRESSION, and a standing constraint on any successor that touches this term.
+
+**THE SUCCESSOR, NAMED** (unchanged from §16.57, and now with the clock eliminated as an explanation): **the MAGNITUDE of the stall — the `17/8` — not its argument.** If `cap − BDP` is the standing queue and δ is its budget, 3.125 BDP at ρ = 1 means ≈2.1 BDP of standing queue, and either δ must actually bound that or `1 + 17/8` is wrong for a retain-until-acked scope. It is a derivation question (discipline 14: research, don't build), and it now inherits the 9/8 citation constraint above.
+
+Pinned by `slack_bench.rs::the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs`, which asserts BOTH cells still pinning and the identity broken, so the refutation cannot rot into prose.
+
+### ITEM 4 — THE FLOOR, DERIVED
+
+```text
+STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+                       RFC6928_INITIAL_WINDOW )
+                = max( 8 · 1, 10 ) = 10
+```
+
+Two independent LOWER BOUNDS read off the floor's own stated job (*a transiently-tiny BDP estimate must not strangle the pipe*): (1) fund enough outstanding per round to WARM the anchor the law consumes — `ANCHOR_MIN_SAMPLES` samples, and `PathState::on_ack` pushes exactly one sample per ack, at §16.42's measured merged-ack cadence of ≈1.0 ack per data message ⇒ **8 symbols**; (2) never open below the standard initial burst — **RFC 6928 IW = 10**. `max`, not `+`: two lower bounds on one quantity conjoin to the larger, and summing them would invent a number neither asks for. **Zero bare constants**: 8 is `scheduler::ANCHOR_MIN_SAMPLES` (now `pub`, cited at its own site), 1 is measured, 10 is cited.
+
+**The bind VANISHES — measured, not argued.** `tests/composed_cap_loopback.rs`, `RWM_COMPOSED_CAP=1 RWM_PLAIN_RS=1`, one 2 MB window-reliable transfer, release:
+
+```text
+before  [CCAP] eng=81/82 cap=64.8 mem=0.0000 floor=1.0000 floor_val=64 brake_frac=0.0383
+after   [CCAP] eng=61/62 cap=60.0 mem=0.0000 floor=0.0000 floor_val=10 brake_frac=0.0496
+```
+
+81 of 81 engaged refreshes → 0 of 61. **And the number the old floor was hiding is the point**: at floor 64 the realized cap read 64.8; at floor 10 the law reads **60.0**. The composed cap had been asking for 60 symbols and the un-derived constant was overriding it by 4 while reporting itself as the law — ADR-0070's mechanism 1, caught at the smallest scale in the tree by the gauge built to catch it.
+
+**Bounded**, per CLAUDE.md: the floor binds only where the chain's unclamped ask is beneath it, which on the shipped pooled chain needs `Σ(max_bw·min_rtt) < 16` at N = 2, 46× below the smallest warm leg ever reported. `store_cap_bench.rs::derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end` asserts the derivation's arithmetic from its three cited inputs, that both clauses are live and conjoined by `max` (and WHICH one binds today, so a cadence change is a red test), and that the two floors are INDISTINGUISHABLE at every measured cell geometry × both anchor scales × N ∈ {1,2}, while remaining reachable at the degenerate end.
+
+**Stated plainly**: `store_cap_floor` is a shipped constant on the default path, not a gate, so this is the one behaviour change in the cluster that is not behind an OFF gate. It is a RELAXATION of a bound that is measurably inert at every named cell, replacing a constant ADR-0070 recorded as PROVENANCE ABSENT. No wire measurement supports 10 over 64 — and none supports 64 either, which is the finding.
+
+Also corrected: `tools/l1/capbind_check.py` named an `RWM_STORE_FLOOR` gate **that does not exist and never did**. It now carries the derived 10 and keeps 64 as `floor_legacy` so pre-2026-08-18 ledgers still read.
+
+### GATE BATTERY — ALL GREEN
+
+lib **419**; `raptorpath-math` **136** across its 8 targets (59 lib + 19 + 22 + 4 + 4 + 3 + 25); `cargo test --doc -p raptorpath` **0** (this crate carries no doctests — recorded as a fact, not a pass) and `cargo doc --no-deps` clean of any NEW unresolved link (the 7 that warn are the pre-existing `[0,1]` / `[25,100]` bracket artefacts); `gate_suite --release` **15** (17 ignored, 354 s); all **12 loopbacks**, each in its OWN process (order/timing-sensitive) — ack_merge 1, ackdiag 1, composed_cap 1, copa_sole 1, emit_batch 1, patience 1, perf 8, recov_mp 1, three_term 1, walldiag 1, win_decouple 1, wire_compact 1; `store_cap_sf_bench --release` **46**; `store_cap_bench` **5**; `recovery_bench` **6**; `slack_bench` **8**; `formula_agreement` **4**. Zero failures.
+
+**One pin needed editing, and it is named rather than buried.** `store_cap_sf_bench::the_shipped_dual_refresh_has_exactly_three_reachable_regimes` had TRANSCRIBED the floor's crossover (`Σ < 16` at N = 2) instead of computing it, so it asserted a number that used to be `FLOOR/(GAIN·N)`. It now computes the crossover from `FLOOR`, which is the property the test names ("three reachable regimes" is a statement about the branch's SHAPE), and the enumeration is unchanged. 45 of the 46 SF pins were bit-identical across the floor change with no edit at all — which is the inertness §16.59 claims, observed. Both benches that transcribed the shipped floor (`store_cap_bench`, `store_cap_sf_bench`) now CITE `net::sender_policy::STORE_CAP_FLOOR`, because a bench modelling shipped policy with a private copy of a derived constant is the next version of this same defect.
+
+### WIRE QUESTIONS — PRE-REGISTERED AND LISTED, NOT RUN (no VM this session)
+
+Each is stated with the arm that would answer it and the reading that would settle it, so none of them becomes a battery designed after its own result.
+
+1. **W1 — does the derived floor bind anywhere on the wire?** Arm: the shipped default at `shal8`, the ONE cell the record ever caught landing on `store_cap_floor` = 64 (goal-gate `:20910`, under `RWM_THREE_TERM`). Reading: `[CCAP]`/`CAPBIND` `floor` bind fraction. **Pre-registered expectation: 0.000 at every named cell including shal8**, because shal8's own recorded ask was 64 (i.e. AT the old floor, above the new one). A non-zero bind at any cell means the warm clause is under-sized and §16.59 must be re-derived, not re-fitted.
+2. **W2 — does lowering the floor cost anything at the degenerate end?** Arm: `{floor 64, floor 10}` at `shal8` and `c1`, shipped chain, both seeds. Reading: goodput within 2σ of its own same-session control. **Pre-registered expectation: parity** — the change is inert wherever the ask exceeds 64, so a difference at `c1` would mean the ask is smaller than the anchor arithmetic says and the anchor is the finding, not the floor.
+3. **W3 — the successor's actual question, and it needs no new gate.** Arm: `RWM_COMPOSED_CAP` at `sc2` with the stall's `17/8` as the only axis. Reading: `q_p50` over RTprop against the realized `cap − BDP`, and delivered-latency p50 against the same-session control. **This is a DERIVATION question first** (§16.58) and is listed here only so that when the derivation lands its wire arm is already specified: the claim to falsify is that δ prices the standing queue the composition buys. §16.57 measured 2.4× the queue and 1.43–1.48× the latency at 2.24× the cap; any successor must move THAT number.
+4. **W4 — is `K` length-scoped, as c8 vs c8L implies?** Arm: one cell at {25 MB, 200 MB}, `RWM_DIAG` `[3T]` only, no A/B. Reading: mean `K` per length. **Pre-registered expectation: `K` rises with transfer length on a fixed geometry** (1.04 → 1.505 is the reading that motivated it). This is the residual loop of §16.59, measured directly rather than inferred from two cells that also differ in n. It scores nothing about the law and must not be used to.
+5. **W5 — the agreement class against a REAL run.** Arm: any `RWM_COMPOSED_CAP=1` rep with `RWM_DIAG=1`. Reading: recompute §16.56's published expression from the `[3T]` line's own inputs and compare to its reported `cap`. `formula_agreement.rs` proves the FUNCTION agrees with the paper; it cannot prove the WIRING feeds it the inputs the log reports. That is MEASUREMENT DISCIPLINE rule 1 one layer up, and it is owed the next time the gate runs on a VM.

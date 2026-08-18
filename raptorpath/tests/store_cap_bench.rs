@@ -44,7 +44,12 @@ const C3_RTPROP_S: f64 = 0.060;
 
 // Shipped policy constants (sender_policy::resolve / gates defaults).
 const GAIN: f64 = 2.0;
-const FLOOR: usize = 64;
+/// The shipped bootstrap floor, CITED rather than transcribed since it became
+/// a derived quantity (paper §16.59): a bench that models shipped policy must
+/// track it, and a copy would silently model a policy the engine no longer
+/// has. Inert at every geometry here — asserted by
+/// `derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end`.
+const FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
 const KNEE: usize = 2048;
 const STORE_MAX: usize = 1024;
 const BOOT: usize = 128;
@@ -582,4 +587,131 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     // The measurement's own UPPER window at that cell (9.28) does clamp — so
     // even at N = 1 the headroom is one window's excursion wide.
     assert!(shipped_pool_cap(83.2 * 9.28, 1) >= STORE_MAX);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE BOOTSTRAP FLOOR, DERIVED — paper §16.59 (2026-08-18)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// **THE FLOOR'S DERIVATION, AND THE BOUND ON WHAT CHANGING IT MOVES.**
+///
+/// ADR-0070 finding 5 recorded `floor = 64` as PROVENANCE ABSENT. §16.59
+/// derives it from the floor's own stated job — *a transiently-tiny BDP
+/// estimate must not strangle the pipe* — read as two independent LOWER
+/// BOUNDS on one quantity:
+///
+/// ```text
+///   STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
+///                          RFC6928_INITIAL_WINDOW )
+///                   = max( 8 · 1, 10 ) = 10
+/// ```
+///
+/// This test asserts three things and nothing else:
+///
+/// 1. **The arithmetic is the derivation's**, computed from the three cited
+///    inputs rather than transcribed — so the value cannot be edited without
+///    editing an input that has a citation attached to it.
+/// 2. **`max`, not `+`, and both clauses are LIVE.** The conjunction is
+///    asserted to be the larger clause, and each clause is asserted to be
+///    capable of being the binding one, so neither is decoration. (Today RFC
+///    6928 binds; if the ack cadence ever became 2 symbols per sample, the
+///    warm clause would, and this test says so rather than silently agreeing.)
+/// 3. **The behaviour delta is BOUNDED to the degenerate end** — CLAUDE.md's
+///    rule that a documented divergence carries a test that bounds it. The
+///    floor only binds where the chain's unclamped ask is beneath it, so at
+///    every cell geometry this bench carries the old and new floors are
+///    INDISTINGUISHABLE, and that is asserted cell by cell rather than argued.
+#[test]
+fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end() {
+    use raptorpath::net::sender_policy::{
+        MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC6928_INITIAL_WINDOW, STORE_CAP_FLOOR,
+    };
+    use raptorpath::scheduler::ANCHOR_MIN_SAMPLES;
+
+    // (1) THE ARITHMETIC IS THE DERIVATION'S.
+    let warm_clause = ANCHOR_MIN_SAMPLES * MERGED_ACK_SYMBOLS_PER_SAMPLE;
+    let burst_clause = RFC6928_INITIAL_WINDOW;
+    assert_eq!(
+        STORE_CAP_FLOOR,
+        warm_clause.max(burst_clause),
+        "the shipped floor is not `max(warm, RFC 6928 IW)` — §16.59's \
+         derivation and the constant have drifted apart"
+    );
+    assert_eq!(STORE_CAP_FLOOR, 10, "the derivation evaluates to 10 today");
+
+    // (2) BOTH CLAUSES ARE LIVE, and the conjunction is `max`.
+    assert!(
+        warm_clause > 0 && burst_clause > 0,
+        "a clause that can never bind is decoration, not a derivation"
+    );
+    assert!(
+        STORE_CAP_FLOOR >= warm_clause && STORE_CAP_FLOOR >= burst_clause,
+        "the floor must satisfy BOTH lower bounds"
+    );
+    assert!(
+        STORE_CAP_FLOOR < warm_clause + burst_clause,
+        "the floor is the LARGER of two independent lower bounds, never their \
+         sum — a sum is a composition neither clause asks for"
+    );
+    // Which clause binds TODAY, stated so a cadence change is a red test and
+    // not a silent re-derivation.
+    assert_eq!(
+        STORE_CAP_FLOOR, burst_clause,
+        "RFC 6928's initial window is the binding clause at the shipped ack \
+         cadence; if this fires, the cadence moved and §16.59 must be re-read"
+    );
+
+    // (3) THE DELTA IS BOUNDED TO THE DEGENERATE END. `sigma` here is the
+    // cell's Σ(max_bw·min_rtt) and the shipped pooled law is `clamp(2·N·Σ,
+    // floor, N·knee)`; the floor can only be the answer where `2·N·Σ` is
+    // beneath it. Asserted at every cell this bench carries, at BOTH the
+    // honest and the over-reading anchor scale, at N = 1 and N = 2.
+    const LEGACY_FLOOR: usize = 64;
+    let sigma = |cell: &Cell, scale: Scale| -> f64 {
+        cell.paths
+            .iter()
+            .map(|p| p.0 * p.1 * scale.of(p).expect("this cell is measured"))
+            .sum()
+    };
+    // The three cells the VM actually measured an anchor scale for; `sc3` is
+    // deliberately unmeasured (`None`) and this bench does not invent one.
+    for cell in &CELLS[..3] {
+        for scale in [Scale::Measured, Scale::Fixed(1.0)] {
+            let s = sigma(cell, scale);
+            for n in 1..=2usize {
+                let unclamped = 2.0 * n as f64 * s;
+                assert!(
+                    unclamped > LEGACY_FLOOR as f64,
+                    "{}: the shipped law's ask ({unclamped}) is beneath the \
+                     LEGACY floor at N={n} — the floor change is not inert here \
+                     and §16.59's bound is wrong",
+                    cell.name
+                );
+                assert_eq!(
+                    path_scaled_store_cap(true, n, s, 2.0, LEGACY_FLOOR, 2048),
+                    path_scaled_store_cap(true, n, s, 2.0, STORE_CAP_FLOOR, 2048),
+                    "{}: the two floors are distinguishable at N={n} — the \
+                     change is not inert at a named cell geometry",
+                    cell.name
+                );
+            }
+        }
+    }
+
+    // And the other side of the bound, so "inert" is not mistaken for "dead":
+    // the derived floor IS reachable, at an ask beneath it. A floor that could
+    // never bind would be decorative and §16.59 would be describing nothing.
+    let tiny = 1e-6;
+    assert_eq!(
+        path_scaled_store_cap(true, 2, tiny, 2.0, STORE_CAP_FLOOR, 2048),
+        Some(STORE_CAP_FLOOR),
+        "the derived floor is unreachable — it is not the lower bound it claims"
+    );
+    // The window the change actually occupies: asks strictly between the two
+    // floors used to read 64 and now read the law's own answer.
+    for ask in [11usize, 30, 60, 63] {
+        let s = ask as f64 / 4.0; // 2·N·Σ with N = 2
+        assert_eq!(path_scaled_store_cap(true, 2, s, 2.0, LEGACY_FLOOR, 2048), Some(64));
+        assert_eq!(path_scaled_store_cap(true, 2, s, 2.0, STORE_CAP_FLOOR, 2048), Some(ask));
+    }
 }
