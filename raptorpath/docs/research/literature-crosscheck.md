@@ -1,20 +1,33 @@
-# ADR-0072: A systematic literature cross-check of every load-bearing formula — the shipped laws, the refuted ones, and the ADR-0071 candidates — against the published transport literature and against the older, deeper literature of seven other fields
+# Formula Cross-Check — every load-bearing formula against the published literature
 
-## Status: **INFORMATIONAL — FOR THE USER'S REVIEW. No decision is taken and none is sought.**
+**A desk-research review, not a decision record.** Companion to
+`literature-map.md`, which did this for the arc's *findings*; this document does
+it for the *expressions*. Nothing here is an ADR: no decision is taken, no
+default moves, no ADR-0071 candidate is picked, ranked or recommended.
 
-This document adjudicates nothing. It picks no ADR-0071 candidate, flips no
-default, touches no engine file, gate, test or paper claim beyond the §16.64
-pointer. It does one thing: for each load-bearing formula in the tree, it puts
-**our expression** next to **the published counterpart, quoted verbatim with
-its citation**, and records AGREE / DIVERGE / NO-COUNTERPART plus what the
-divergence implies. Where the literature *settles* a question we have been
-deriving from scratch, it says so; where our measurement *contradicts* the
-literature, it says that too, and does not resolve it in either direction.
+For each load-bearing formula in the tree — the shipped laws, the refuted ones,
+and the ADR-0071 candidates — this puts **our expression** next to **the
+published counterpart, quoted verbatim with its citation**, and records
+AGREE / DIVERGE / NO-COUNTERPART plus what the divergence implies. Where the
+literature *settles* a question we have been deriving from scratch, it says so;
+where our measurement *contradicts* the literature, it says that too, and does
+not resolve it in either direction.
 
 **Date**: 2026-08-19
 **Branch**: `docs/literature-crosscheck` from main@`62f078b`. **DOCS ONLY.** No
 VM was contacted, no L1 number re-derived, no benchmark run, no engine line
 touched.
+**Paper pointer**: §16.64. **Related**: ADR-0070 (the provenance trial),
+ADR-0071 (the candidates — **not adjudicated here**), Appendix B.
+
+> **The one part of this document that is decision-shaped**, and the only part
+> that asks anything of anybody: **three claims in the tree are stronger than
+> their sources support** — `9/8` as "cited not fitted", `gain = 2.0`'s
+> recovery-runway rationale, and any citation of the MPTCP literature for our
+> span decomposition. Tier 0 of the prioritized list corrects all three, at
+> zero measurement cost. If the user wants those corrections recorded as a
+> decision rather than as a finding, they are the natural content of a short
+> ADR-0072; this document deliberately does not presume that.
 
 ---
 
@@ -331,13 +344,46 @@ appears to be exactly what BLEST's adaptive λ exists to discover empirically
 datum in a place the literature also handles empirically** — a mild vindication
 of having measured it rather than derived it.
 
-**ECF and DAPS.** DAPS's buffer rule (Kuhn et al., ICC 2014 §II.D Eq. 3) is
-`R_buf_min = Σᵢ cᵢ × maxᵢ rᵢ` — `RTT_max` again — with its own caveat *"This
-solution is however neither optimal nor scalable, as R_buf_min can quickly grow
-beyond manageability."* Its blocking-time model (Eq. 2) is
-`T_maxblock = r_s/2 + 8L/c_s − r_f/2 − 8L/c_f` — **an RTT difference, but a
-TIME, never multiplied by a bandwidth.** ECF's send-decision arithmetic was
-**not obtained** `[UNVERIFIED]`; the ECF comparison is recorded as owed.
+**DAPS — and its Eq. (2) is the closest published statement of our span's own
+continuity property.** The buffer rule (Kuhn et al., ICC 2014 §II.D Eq. 3) is
+`R_buf_min = Σᵢ cᵢ × maxᵢ rᵢ` — `RTT_max` again, a fourth source — with its own
+caveat *"This solution is however neither optimal nor scalable, as R_buf_min can
+quickly grow beyond manageability."* But the blocking-time model, §II.B Eq. (2),
+verbatim:
+
+> "**T_maxblock = t2 − t1 = rs/2 + 8L/cs − rf/2 − 8L/cf. (2)**"
+
+**`T_maxblock` is proportional to `(rs − rf)/2` plus a serialisation
+difference, so it vanishes CONTINUOUSLY as the RTT skew goes to zero, with no
+threshold and no regime switch.** That is precisely the property our span term
+has and which `three_term_span_vanishes_continuously_as_skew_goes_to_zero`
+pins — and it is the property THE NO-MODE-SWITCH INVARIANT requires. **The
+published blocking TIME uses the RTT difference; the published buffer SIZE uses
+`RTT_max`.** So the difference form is not unknown to the literature — it is
+just used for a different quantity, and no source multiplies it by a bandwidth
+to get a buffer. Our span term is that unwritten product. `[DAPS's prose never
+says "negligible when paths are similar"; Eq. (2) says it, the prose does not.]`
+
+**ECF** (Lim, Nahum, Towsley & **Gibbens** — `[authorship correction: the fourth
+author is Richard J. Gibbens, not "Lee"]`, CoNEXT 2017 §4) decides by comparing
+completion times rather than by sizing a buffer, verbatim:
+
+> "**(1 + k/CWNDf) × RTTf < RTTs + δ**"  · "**(k/CWNDs) × RTTs ≥ 2RTTf + δ**"
+> · "**(1 + k/CWNDf) × RTTf < (1 + β)(RTTs + δ)**"
+
+where *"we add a margin **δ = max(σf, σs)**, where σf and σs are the standard
+deviations of RTTf and RTTs"*, and the third inequality *"adds some hysteresis
+to the system and prevents it from switching states … too frequently."*
+
+**Two things worth carrying from ECF.** (i) Its margin is a **dispersion**
+term — `max(σf, σs)`, the standard deviation of the RTTs — which is the same
+shape correction CD-1 derives for the slack from base-stock theory: *provision
+against variability, not against a mean.* Two unrelated literatures, same
+correction. (ii) ECF needs explicit **hysteresis** (`β`) to avoid state
+flapping, which is a published acknowledgement that a threshold-shaped
+scheduling decision has exactly the flapping problem our invariant exists to
+forbid — and ECF's answer is a mode switch with damping, where ours would have
+to be a continuous law.
 
 **IMPLICATION.** Test, do not adopt: published span sizings are *larger* than
 ours and our wire says ours is already over-funded. The transferable idea is
@@ -857,17 +903,84 @@ cannot be."* And the loop's own signature — retransmissions rising 4.56× whil
 the independent witness shows the wire's loss unmoved — is what the battery
 measured.
 
-> **This is a HYPOTHESIS, not a finding, and it is labelled as one.** I did not
-> measure it, and this ADR measures nothing. What the literature supplies is
-> (i) a standards-track statement that counting retransmissions in a sender-side
-> in-flight estimate double-counts, (ii) the explicit warning that the sender
-> *cannot* disambiguate which copy left the network, and (iii) the fact that
-> both are properties of retransmission, not of multipath. **The falsifier is
-> cheap and needs no VM**: recompute ε̂ with `symbols_sent_p` counting *first
-> transmissions only*, on the same `[ACKDIAG]` cursors already captured in the
-> ladder's logs, and see whether the 20× collapses. If it does, §16.58's
-> derivation is repaired rather than abandoned; if it does not, this hypothesis
-> is dead and the anomaly is still open.
+**AND THERE IS A PAPER ON EXACTLY THIS BIAS, WITH MAGNITUDES.** Allman, Eddy &
+Ostermann, "Estimating Loss Rates With TCP", *ACM Performance Evaluation Review*
+31(3):12–24, December 2003 — abstract, verbatim:
+
+> "we first show that **using a simple count of the number of retransmissions
+> yields inaccurate estimates of the loss rate** in many cases. The
+> mis-estimation stems from flaws in TCP's retransmission schemes that cause the
+> protocol to **spuriously retransmit data** in a number of cases."
+
+and §3, the measured magnitudes:
+
+> "For TCP Reno transfers, we have found that retransmits exactly estimate the
+> loss rate in roughly 26% of the transfers. However, in roughly two-thirds of
+> the transfers, using retransmits as an estimate of the loss rate is off by
+> more than 10%. Further, **in approximately 16% of the transfers, the
+> discrepancy between retransmissions and losses is over 100%.** Finally, the
+> median percent difference between the number of retransmits and the actual
+> number of losses in the Reno transfers is roughly **33%**."
+
+**AND the published estimators never use our denominator.** In every
+sender-side loss/delivery estimator surveyed, the denominator is **newly
+delivered**, per-packet, resolved at (S)ACK time — never "packets sent" over a
+window. `draft-cheng-iccrg-delivery-rate-estimation` §2.2, verbatim:
+
+> "**Since the rate samples only include packets actually cumulatively and/or
+> selectively acknowledged, the sender knows the exact octets that were
+> delivered to the receiver (not lost)**, and the sender can compute an estimate
+> of a bottleneck delivery rate over that time interval."
+
+with an explicit warning against naive differencing (§2.2.1):
+
+> "**it is not safe to simply calculate a bandwidth estimate by using the time
+> between the transmit of a packet and the acknowledgment of that packet.**
+> Transmits and ACKs can happen out of phase with each other… **Because of this
+> effect, drastic over-estimates can happen**…"
+
+an explicit in-flight-boundary rule (§3.2):
+
+> "**If there are packets already in flight, then we need to start delivery rate
+> samples from the time we received the most recent ACK, to try to ensure that
+> we include the full time the network needs to deliver all in-flight
+> packets.**"
+
+and an explicit anti-double-count guard (§3.3): `if P.delivered_time == 0
+return /* P already SACKed */`.
+
+**PCC (Dong et al., NSDI 2015) solves the boundary by construction** — §3.1:
+loss for a Monitor Interval is computed over *the set of packets sent in that
+interval*, resolved ≈1 RTT after it ends, explicitly including retransmissions
+in the sent set but attributing outcomes per packet: *"**At time T1,
+approximately one RTT after T0 + Tm, it has received the SACKs for all packets
+sent out in MI1.**"*
+
+**So there are THREE published bias sources for our estimator, all inflating
+ε̂, and all path-count-independent:**
+
+| bias | source | why it survives at N = 1 |
+|---|---|---|
+| (a) **in-flight boundary** — `Δsent` includes a BDP whose ACKs have not arrived | RFC 9002's three-way exit: "sent but are not acknowledged, declared lost, or discarded" | a property of the window, not of paths |
+| (b) **retransmits in the denominator** | RFC 6675's double-count note; Allman et al.'s 33 % median / >100 % in 16 % | a property of retransmission |
+| (c) **ACK aggregation** | DRE §2.2.2: "ACK arrivals can temporarily make it appear as if data packets were delivered much faster" | a property of the link layer |
+
+> **This is a HYPOTHESIS about our engine, not a finding, and it is labelled as
+> one.** Nothing here was measured; this document measures nothing. What the
+> literature supplies is a standards-track double-counting warning, a measured
+> paper on the same bias, a unanimous published convention for the *other*
+> denominator, and the fact that all three bias sources are properties of
+> windows and retransmissions rather than of multipath — which is exactly why
+> the effect would survive at N = 1.
+>
+> **The falsifier is cheap and needs no VM**: recompute ε̂ with `symbols_sent_p`
+> counting *first transmissions only*, on the `[ACKDIAG]` cursors already
+> captured in the ladder's logs, and see whether the 20× collapses. **§16.58's
+> own bound already covers bias (a)** — `sender_truth_loss_delta_is_unbiased_under_a_constant_in_flight_lag`
+> pins it under a *constant* lag — so if the hypothesis is right, (b) is the
+> live term, because retransmit multiplicity is **not** constant in steady
+> state: it moves with ε̂ itself. If the 20× survives the first-transmissions-only
+> denominator, this hypothesis is dead and §16.63's anomaly is still open.
 
 **Note also what §16.58 already got right, against the literature.** Its own
 residual analysis — *"`symbols_sent` counts a symbol at handoff and
@@ -919,16 +1032,96 @@ and — this is the load-bearing clause —
 > parameters or one must employ statistical means to introduce regularization
 > and induce identifiability."
 
-**VERDICT: CONFIRMS §16.58's structural claim, and names the exact condition
-under which it could be false.**
+**VERDICT: CONFIRMS §16.58's structural claim — and the standards bodies have
+independently reached the same conclusion for exactly our topology.**
 
-Network tomography is the field that owns "infer per-link loss from confounded
-end-to-end observations", and its answer is precise: **per-path loss rates are
-identifiable only when the observation matrix has full rank, and the classical
-positive result buys that rank from an *induced correlation* (multicast) that a
-unicast striped sequence space does not have.** §16.58's sentence — the identity
-is what the loss destroyed — is the same statement in transport vocabulary, and
-Castro et al.'s "A is not full rank" is its general form.
+Network tomography owns "infer per-link loss from confounded end-to-end
+observations", and its answer is precise: **per-path loss rates are identifiable
+only when the observation matrix has full rank, and the classical positive
+result buys that rank from an *induced correlation* (multicast) that a unicast
+striped sequence space does not have.**
+
+> `[CORRECTION carried from the research pass: Castro et al. 2004's
+> identifiability statements are GENERIC rank statements about the linear model;
+> its worked examples are multicast delay and OD matrices, not loss. The
+> loss-specific unicast non-identifiability statement belongs to Coates & Nowak
+> (ITC 2000) and Coates/Hero/Nowak/Yu (IEEE SP Magazine 2002). Cite those for
+> the loss claim.]`
+
+**Coates, Hero, Nowak & Yu, *IEEE Signal Processing Magazine*, May 2002,
+verbatim — this is the exact statement:**
+
+> "**If the routing matrix A is full rank, then unique maximum likelihood
+> estimates of the loss rates can be formed by solving a set of linear
+> equations. If A is not full rank, then there is no unique mapping** of the
+> path success probabilities to the success probabilities on individual links."
+
+**Coates & Nowak, ITC 2000 §7, give the continuous degradation** — no
+threshold, which matters for our invariant. With `Λ = ∏γ` over the shared
+subpath:
+
+> "**If the conditional success probabilities γ are all exactly one, then it can
+> be shown that maximum likelihood estimates of the unconditional losses α will
+> tend to their true values** as the number of packet measurements increases."
+>
+> "**If one or more of the γ are less than one, then a systematic bias is
+> introduced into the estimation process and the maximum likelihood estimators
+> are not consistent.** However, the severity of the bias is directly linked to
+> the extent to which the γ deviate from one."
+
+with the estimators bracketed in `[Λ·αᵢ, αᵢ/Λ]`. **Λ = 1 ⇒ identifiable;
+Λ → 0 ⇒ the interval is (0,1) and nothing is learned. It degrades continuously
+in Λ, with no mode switch** — the same shape our own laws are required to have.
+
+**★ AND THE IETF HAS WRITTEN DOWN OUR EXACT PROBLEM.**
+`draft-ietf-quic-multipath-02` §9.1, on the *shared* packet-number-space design
+— which is our `batch_seq` design:
+
+> "If a zero-length connection ID is used, one packet number space for all paths…
+> ACK frames report the numbers of packets that have been received so far,
+> **regardless of the path on which they have been received. That means the
+> sender needs to maintain an association between sent packet numbers and the
+> path over which these packets were sent.**"
+
+> "**senders MUST be able to infer the sending path from the acknowledged packet
+> numbers, for example by remembering which packet was sent on what path.**" …
+> "**Therefore, senders cannot directly use the packet sequence numbers to
+> compute the Packet Thresholds** defined in Section 6.1.1 of [QUIC-RECOVERY].
+> Relying only on Time Thresholds produces correct results, but is somewhat
+> suboptimal."
+
+**And the working group subsequently abandoned the shared space entirely.**
+draft-14 (April 2025) §1:
+
+> "This extension uses **multiple packet number spaces, one for each path**…
+> Using multiple packet number spaces enables direct use of the loss detection
+> and congestion control mechanisms defined in [QUIC-RECOVERY] **on a per-path
+> basis**."
+
+**This is as close to external validation as §16.58 could get.** The IETF
+independently concluded that (i) with one shared sequence space, per-path loss
+is recoverable **only from sender-side side information** — *"remembering which
+packet was sent on what path"*, which is exactly `PathStats::symbols_sent` —
+(ii) packet-threshold detection **cannot** be computed from the shared sequence
+numbers, which is our §16.24 finding, and (iii) the durable fix is per-path
+sequence spaces, which is what §16.24 built and refuted on cost. **Every one of
+our three positions on this question has an IETF counterpart that reached it
+independently.**
+
+**A negative result worth recording, because it bounds what any fix could
+achieve.** Gupta, Kumar & Vassilvitskii, "On Mixtures of Markov Chains", NIPS
+2016, verbatim:
+
+> "**consider a mixture where two of the matrices M_ℓ and M_ℓ′ in M are
+> identical. Then for a fixed vector v, any s^ℓ and s^ℓ′ with s^ℓ + s^ℓ′ = v
+> will give the same observations, regardless of the length of the trails.**"
+
+**If two paths have the same loss behaviour, their split is unidentifiable at
+any data volume** — only the aggregate is identified. That is c7 exactly (two
+identical legs), and it is the same degeneracy as tomography's series-link
+collapse. **No receiver-side estimator, however good, can attribute loss between
+two statistically identical paths.** Which is a second, independent reason
+§16.58's sender-side reading is the right architecture.
 
 **Two consequences worth recording:**
 
@@ -946,15 +1139,36 @@ Castro et al.'s "A is not full rank" is its general form.
    cross-check intact; §16.63's refutation is explained, if at all, by RFC
    6675's double-counting note, not by an attribution error.
 
-**On GE itself: NO NEW COUNTERPART.** Appendix B Finding 5 already records the
-GE-inadequacy literature (Hasslinger & Hohlfeld 2008 for wired adequacy; the
-802.11/cellular HMM line for wireless inadequacy; Sprout/Mahimahi for
-non-stationarity) and this pass surfaced nothing beyond it. **No published work
-was found on GE parameter estimation under cross-path contamination in a shared
-sequence space** `[searched; not found]` — the tomography literature handles the
-*loss-rate* inference problem but not the *burst-parameter* inference problem
-under confounding. That is a real gap and it is where our setting is genuinely
-unusual rather than merely un-researched.
+**On GE itself: NO COUNTERPART, and the right result is not the one you would
+reach for.** Appendix B Finding 5 already records the GE-inadequacy literature
+(Hasslinger & Hohlfeld 2008; the 802.11/cellular HMM line; Sprout/Mahimahi) and
+this pass surfaced nothing beyond it. **No published work was found on GE
+parameter estimation from observations multiplexing several channels**
+`[searched; not found]` — the tomography literature handles the *loss-rate*
+inference problem but not the *burst-parameter* one under confounding.
+
+**One structural correction is worth recording, because it redirects any future
+attempt** (this is analysis, not a quotation): **two independent GE channels
+interleaved into one sequence space are NOT a mixture of HMMs.** A mixture draws
+a whole trajectory from one chain; interleaving produces a *function of the
+product Markov chain* on 2×2 = 4 states. **The mixture-of-HMMs literature is the
+wrong tool; the identifiability result to use is the HMM one.** Allman, Matias &
+Rhodes, *Annals of Statistics* 37(6A), 2009, Theorem 6, verbatim:
+
+> "The parameters of an HMM with r hidden states and κ observable states are
+> **generically identifiable from the marginal distribution of 2k + 1
+> consecutive variables** provided k satisfies ((k+κ−1) choose (κ−1)) ≥ r. (3)"
+> … "**The worst case (i.e., the largest value for k) arises when κ = 2**."
+
+**A binary loss trace has κ = 2 — the theorem's worst case.** A single GE
+(r = 2) needs 3 consecutive observations; two multiplexed GE channels form a
+product chain with r = 4 and need **7**. And only *generically*, only *up to
+label swapping* (nothing says which factor is which path), and **nothing forces
+the recovered 4-state chain to factor as a product of two 2-state chains at
+all.** Combined with the Gupta et al. degeneracy above, the honest summary is:
+**recovering per-path GE parameters from a shared sequence space is not merely
+un-researched, it is ill-posed in exactly the cases we care about.** That is a
+positive argument for the sender-side reading, not a gap to fill.
 
 **IMPLICATION.** Record the tomography citations as the formal backing for
 §16.58's non-recoverability claim — a documentation change. Nothing to adopt;
@@ -1004,10 +1218,102 @@ bound for a queue-control loop:**
 with the PI tuning giving the crossover bound `ω_g = β/R₀`, `β ∈ (0, 0.85)`
 for positive phase margin (§6, Eqs. 14–15) — i.e. **`ω_g·R₀ < 0.85`**.
 
-**VERDICT: NO DIRECT COUNTERPART for two nested *delay-based CC* loops —
-`[searched; not found]` — but the cascade rule gives a concrete, checkable
-design constraint the tree does not currently apply, and it looks hard to
-satisfy.**
+**VERDICT: NO DIRECT COUNTERPART — and the absence is well-evidenced enough to
+be a finding rather than a search failure.**
+
+> **The negative result, with its method.** A systematic pass found **no
+> published stability analysis of a delay-based congestion controller operating
+> inside an outer, delay-budgeted window or buffer limit.** Queries run and
+> returning nothing relevant: arXiv `abs:"nested control loops" AND
+> abs:"congestion"` → 0; `all:"congestion control" AND "flow control" AND
+> "nested"` → 0; `abs:"congestion control" AND abs:"cascaded"` → 0;
+> `abs:"congestion control" AND abs:"inner loop"` → 0; `abs:"congestion
+> control" AND abs:"two-level"` → 1 (irrelevant); DBLP `nested loops congestion
+> control` → 0. A full-text search of the Copa paper for `nested`, `receive
+> window`, `rwnd`, `flow control`, `cascade` returns **zero hits**. Honest
+> rating: *"no such result is prominent or well-cited"*, not *"provably does not
+> exist"* — the paywalled full-text indexes were not queryable.
+>
+> **So the composition ADR-0068 × ADR-0071-family-2 proposes is, as far as this
+> pass can tell, un-analysed in the networking literature.** That is worth
+> knowing before building it.
+
+**What the general theory does say, and it is unanimous: the inner loop's gain
+must scale as 1/delay.** Three independent statements:
+
+- **Vinnicombe** (CUED/F-INFENG/TR.398, 2000), the sharpest form:
+  *"**k_i ‖e_iᵀ P(jω) X‖₁ < π/(2 T_i) ∀i, ω**"*
+- **Low, Paganini & Doyle** (*IEEE Control Systems Magazine* 22(1), 2002), the
+  constructive form: *"instability will always occur at high values of τ unless
+  the gain is made a function of τ. Indeed, **introducing a gain K/τ in the loop
+  … leads to a loop gain (K/τ)·(e^{−sτ}/s), which is scale invariant**"*, with
+  the reason: *"**it is impossible for a stable loop to track variations that
+  are faster than the pure delay of the loop.**"*
+- **Hollot et al.**, the AQM form quoted under CD-4.
+
+And the same paper supplies the warning that matches our fastest cells:
+*"**Perhaps more striking is the destabilizing effect of high capacity; as
+routers become faster Reno is bound to go into an unstable regime.**"*
+
+**Copa itself contains one proved gain-vs-BDP bound — for the variant it
+rejected.** §3, "Alternate approaches to reaching equilibrium", verbatim:
+
+> "A different approach would be to *directly* set the current sending rate to
+> the target rate of 1/δdq. We experimented with and analyzed this approach, but
+> found that the system converges only under certain conditions. **We proved
+> that the system converges to a constant rate when C·∑ᵢ 1/δᵢ < (bandwidth delay
+> product), where C ≈ 0.8 is a dimensionless constant. With ns-2 simulations, we
+> found this condition to be both necessary and sufficient for convergence.
+> Otherwise it oscillates.**"
+
+**That is a necessary-and-sufficient "loop aggressiveness vs BDP" condition for
+a Copa-class delay controller, and it governs precisely the high-gain,
+zero-damping variant that a hard outer cap most resembles.** It is the closest
+thing in the CC literature to the bound our composition would need.
+
+**The cascade rule, in its most precise published form** — Skogestad, *Annual
+Reviews in Control* 56 (2023) §2.5, verbatim:
+
+> "**Time scale separation = τc1/τc2 (3)** … Shinskey (1981) recommends a time
+> scale separation of at least 4, whereas Skogestad & Postlethwaite (2005) and
+> Smith (2010) recommend at least 5. **If the time scale separation gets too
+> small, typically 3 or less, the layers (loops) start interacting and resonance
+> occurs …, such that performance degrades even nominally.**"
+
+> "a process gain decrease in the lower layer (inner loop) is 'bad' as it
+> translates into a larger ('slower') value of τc2 which reduces the time scale
+> separation τc1/τc2, and **in addition τc2 appears as an effective delay as
+> seen from the upper layer (outer loop)**."
+
+**That last clause is the mechanism that makes the composition harder than it
+looks**: the inner CC's own response time *adds to the outer cap's effective
+delay*, which by Vinnicombe/Low then *lowers the outer loop's admissible gain*.
+The two constraints tighten each other.
+
+**And there is one measured, published instance of an outer window loop
+destabilising an inner CC loop** — Huang, Handigol, Heller, McKeown & Johari,
+"Confused, Timid, and Unstable: Picking a Video Streaming Rate is Hard", ACM IMC
+2012, where the outer loop is *literally* a receive-window limit:
+
+> "**Service B and Service C rely on the TCP receive window: when the playback
+> buffer is full, TCP reduces the receive window to slow down the server.**"
+
+> "rate selection based on inaccurate estimates can trigger a feedback loop,
+> leading to undesirably variable and low-quality video. **We call this
+> phenomenon the downward spiral effect.**"
+
+with the structural diagnosis that transfers directly to us:
+
+> "**The problem is that because it observes the throughput above TCP, it is not
+> aware that TCP itself is having trouble reaching its fair share of the
+> bandwidth.** Coupled with a (natural) tendency to pick rates conservatively,
+> the rate drops down."
+
+**An outer limiter that measures the throughput its own limiting produced is the
+same circularity ADR-0070 finding 6 and ADR-0071 candidate (c) both name.**
+It is a loss-based inner loop and a measurement paper — no theorem, no bound —
+but it is the one published case of this topology going wrong, and it went wrong
+in the direction our tree has already refuted twice.
 
 **The problem, stated as arithmetic.** Cascade stability wants the inner loop
 ≥5× faster than the outer. But:
@@ -1186,7 +1492,10 @@ mitigation list; and one supplies the review discipline whose absence ADR-0070's
 postmortem is about.
 
 Each mapping gives: the established result quoted, CONFIRMS / CONTRADICTS /
-SHARPENS, and the translation table.
+SHARPENS, and the translation table. **The numbering follows the user's list;
+the sections are ordered by theme (inventory → buffers → failure modes →
+control → detection → estimation → review discipline), so CD-4 through CD-8 do
+not appear in numeric order.**
 
 ---
 
@@ -1706,6 +2015,263 @@ vote on item 1's open question.
 
 ---
 
+## CD-4. The δ-queue budget as CLASSICAL CONTROL — the AQM stability literature
+
+**TRANSLATION TABLE**
+
+| ours | control theory |
+|---|---|
+| δ budget / permitted standing queue | reference setpoint `q_ref` |
+| the cap | actuator (admission limit) |
+| Copa's rate law | inner loop |
+| the δ-priced cap | outer loop |
+| RTprop | loop dead time `R₀` |
+| anchor estimator windows | sensor filter time constant |
+
+**THEIRS — Hollot, Misra, Towsley & Gong, IEEE TAC 47(6):945–959, 2002.** The
+linearised TCP/AQM plant, Eq. (6):
+
+> P(s) = (C²/2N) / [(s + 2N/(R₀²C))(s + 1/R₀)]
+
+carried through the loop with the delay as `P(s)e^{−sR₀}`. The stability
+condition, §4.2 Eqs. (9)–(10):
+
+> "we first allow RED's low-pass filter to dominate the loop by requiring ω_g to
+> be less than the corner frequencies of either the TCP or queue dynamic; that
+> is, **ω_g ≤ min { 2N/(R₀²C), 1/R₀ }** (9)"
+
+and the PI tuning, §6 Eqs. (14)–(15):
+
+> "**z = 2N/(R₀²C)** (14) … we take the loop's unity gain crossover frequency as
+> **ω_g = β/R₀** (15) … **values of β ∈ (0, 0.85) yield positive phase
+> margins** … **β = 0.5 gives a phase margin of about 30°.**"
+
+plus the gain warning, Remarks 2: *"either small TCP loads N or large link
+capacities C increase this gain, leading to decreased stability margins and
+increased oscillatory response."*
+
+**VERDICT: SHARPENS — a queue setpoint is not free; it comes with a
+delay-product bound on how fast it may be enforced.**
+
+**(a) The bound is `ω_g·R₀ < 0.85`, and it is the quantity our design does not
+state.** ADR-0071 family 2 specifies *what* queue δ permits; it says nothing
+about *how fast* the cap may move to enforce it. Hollot says the closed-loop
+bandwidth is bounded by the RTT — *"closed-loop time constants are approximately
+bounded by R₀/2 seconds"* — regardless of the setpoint. **A δ budget plus a cap
+that reacts faster than ≈`R₀/0.85` is an oscillator, and no amount of correct
+setpoint arithmetic fixes it.** This is the missing half of family 2's
+specification.
+
+**(b) RED's documented failure is our estimator-window question.** Misra, Gong
+& Towsley, SIGCOMM 2000:
+
+> "**We point out a flaw in the RED averaging mechanism which we believe is a
+> cause of tuning problems for RED.**"
+> "**If we maintain a high value of [K], then the AQM function starts tracking
+> the instantaneous queue length closely resulting in sustained oscillations.**"
+> "**As the link capacity increases, the RED average queue estimate tracks the
+> instantaneous queue length more closely, essentially resulting in sustained
+> oscillations.**"
+
+and Firoiu & Borden, INFOCOM 2000, on the fix:
+
+> "**It follows that the 'ideal' sampling rate should be 'once every RTT'**,
+> since this would capture each change of value. … If the flows have different
+> RTTs, then … we recommend the sampling interval to be equal to the **minimum
+> RTT**."
+
+**That is a published, derived answer to "how long should the anchor's window
+be?"** — a question the tree has never posed as a control question. §16.59
+measured `K` drifting 1.04 → 1.505 purely by *transfer length*, i.e. the
+estimator window interacting with the standing queue: **the same class of defect
+RED's averaging flaw is.** And note the direction of Misra's warning — *higher
+capacity makes the averaged estimate track the instantaneous queue more
+closely* — which predicts the drift is worse at fast cells.
+
+**(c) A useful negative finding: PIE's target has no justification either.**
+RFC 8033's control law is quoted verbatim as
+
+> `p = alpha * (current_qdelay - QDELAY_REF) + beta * (current_qdelay - PIE->qdelay_old_);`
+
+with the honest tuning rule *"**if we cut T_UPDATE in half, we should also cut
+alpha by half and increase beta by alpha/4**"* and defaults `alpha = 1/8`,
+`beta = 1+1/4`, `QDELAY_REF = 15 ms`, `T_UPDATE = 15 ms`. **But the research
+pass verified, by exhaustive search, that RFC 8033 gives NO justification
+anywhere for the 15 ms target** — it is asserted with SHOULD and no RTT-relative
+argument. **So the standards-track AQM RFC has exactly our problem: a delay
+setpoint as an absolute millisecond constant with no derivation.** CoDel (item
+4) is the one that derives its setpoint; PIE is not. **This is worth recording
+precisely because it stops the CoDel comparison from reading as "everyone else
+has this solved."**
+
+**IMPLICATION.** Adopt no numbers. Record two design constraints that family 2
+currently lacks and that cost nothing to state: **(i) the cap's own reaction
+bandwidth is bounded by `≈0.85/R₀` independent of the setpoint; (ii) the
+anchor's averaging window is a control parameter, and the published guidance is
+to sample on the order of the minimum RTT, not on a fixed wall-clock window.**
+Item (ii) is directly testable against §16.59's `K` drift with no VM.
+
+---
+
+## CD-6. Recovery clocks as SEQUENTIAL CHANGE DETECTION — the principled answer to "how long to wait"
+
+**TRANSLATION TABLE**
+
+| ours | sequential analysis |
+|---|---|
+| "has the ack failed to come back?" | change-point detection |
+| `2·SRTT` clamp `[25,100] ms` | a fixed stopping rule |
+| spurious retransmit | false alarm |
+| late loss detection | detection delay |
+| `9/8`, `min_rtt/4`, `[25,100] ms` | tuned thresholds |
+
+**THEIRS — Lorden, *Ann. Math. Statist.* 42(6):1897–1908, 1971** (transcribed
+from the scanned Annals pages). The criterion, p. 1897:
+
+> "**subject to E₀N ≥ γ, we seek to minimize Ē₁N**"
+
+**THEOREM 1, p. 1899:**
+
+> "Then N\*(γ) is a stopping variable, (7) E₀N\*(γ) ≥ γ for all γ, and for all
+> θ ∈ Θ {N\*(γ), γ > 1} **minimizes Ē_θN\*(γ) asymptotically subject to (7)**, by
+> virtue of the relation (8) **Ē_θN\*(γ) ~ log γ / I(θ) as γ → ∞.**"
+
+**Moustakides, *Ann. Statist.* 14(4):1379–1387, 1986**, abstract:
+
+> "**It is shown that Page's stopping time is optimal for the detection of
+> changes in distributions, in a well defined sense.**"
+
+with the CUSUM recursion (4) `S₀ = 0, S_n = max{S_{n−1}, 1}·l(X_n)`, and the
+exact-optimality statement p. 1382: *"**N_P minimizes D̄(N) by simultaneously
+minimizing its numerator and maximizing its denominator.**"*
+
+**Wald & Wolfowitz, *Ann. Math. Statist.* 19(3), 1948**, Summary:
+
+> "**of all tests with the same power the sequential probability ratio test
+> requires on the average fewest observations.**"
+
+**VERDICT: NO COUNTERPART IN OUR FIELD — and that is the finding. There is a
+mature optimality theory for exactly our question, and transport does not use
+it.**
+
+**(a) The theory answers our question exactly.** *"How long should the sender
+wait before declaring the ack failed?"* is quickest-change-detection. Lorden's
+Theorem 1 gives the answer in closed form: **subject to a false-alarm budget γ,
+the minimum achievable worst-case detection delay is `log γ / I(θ)`**, where `I`
+is the Kullback–Leibler information per observation, and CUSUM achieves it —
+exactly, per Moustakides. **Every constant in our recovery plane (`9/8`,
+`min_rtt/4`, `2·SRTT`, `[25,100] ms`) is a hand-set point on a curve this theory
+characterises.**
+
+**(b) And the theory's parameter is one we already report.** RACK's design
+budget — *"bound such spurious recoveries to approximately once every 16
+recoveries (**less than 7%**)"* — **is a false-alarm rate, i.e. Lorden's `γ`,
+chosen by hand.** So RFC 8985 is already reasoning in this framework without
+naming it. **That is the cleanest possible bridge: our recovery clocks could be
+specified by declaring the spurious-retransmit budget (a contract quantity, like
+δ and ρ) and deriving the threshold, rather than by clamping milliseconds.**
+
+**(c) A verified negative finding, and it is a genuine opportunity.** The
+research pass found **no published application of SPRT or quickest-change
+detection to TCP timeouts or transport loss detection** `[searched; not found]`.
+CUSUM appears in network *security* anomaly detection, not in loss recovery.
+**This is one of the few places in this entire document where the literature does
+NOT already have our answer.**
+
+**(d) The systems literature's continuous answer, and it satisfies CLAUDE.md's
+invariant.** Hayashibara, Défago, Yared & Katayama, SRDS 2004, §4.1:
+
+> "**φ(t_now) =def −log₁₀(P_later(t_now − T_last))**"
+
+> "**Instead of providing information of a binary nature (trust vs. suspect),
+> accrual failure detectors output a suspicion level on a continuous scale.** The
+> principal merit of this approach is that it favors a nearly complete
+> decoupling between application requirements and the monitoring of the
+> environment."
+
+**That is precisely the shape THE NO-MODE-SWITCH INVARIANT demands** — a
+continuous scalar rather than a threshold that selects behaviour — and it is
+*already the shape of `p_lost`*, which ADR-0071 candidate (a′) uses to weight
+the slack continuously. **The φ-accrual detector is published prior art for
+"replace a timeout with a continuous suspicion level", and our engine already
+computes such a scalar on every emission.** Chen, Toueg & Aguilera (DSN 2000)
+add the QoS vocabulary — **detection time `T_D`, mistake recurrence time
+`T_MR`, mistake duration `T_M`** — which is the right way to *report* a recovery
+clock's quality and which our DIAG does not currently produce.
+
+**IMPLICATION.** The most intellectually valuable mapping in the document, and
+the least immediately actionable. Nothing to adopt today. **What it changes is
+the shape of the question**: recovery-clock constants should be derived from a
+declared false-alarm budget (RACK's own <7 %, or a contract dial) rather than
+tuned, and the reporting vocabulary (`T_D`, `T_MR`, `T_M`) is free to adopt.
+**Given (c), a derived recovery clock in this framework would be a genuine
+contribution rather than a re-derivation — the only such item this
+cross-check found.**
+
+---
+
+## CD-8. Cross-path loss attribution as DATA ASSOCIATION — and the honest correction
+
+**TRANSLATION TABLE**
+
+| ours | tracking / sensor fusion |
+|---|---|
+| a lost symbol with unknown path | a measurement of unknown origin |
+| per-path loss estimate | per-target state estimate |
+| shared `batch_seq` space | unlabelled measurement stream |
+| §16.24's per-path serial namespace | tagging the measurement at source |
+
+**THEIRS — Reid, IEEE Trans. Automatic Control AC-24(6):843–854, 1979, p. 843:**
+
+> "**The foremost difficulty in the application of multiple-target tracking
+> involves the problem of associating measurements with the appropriate
+> tracks**, especially when there are missing reports…, unknown targets…, and
+> false reports (from clutter)."
+
+**On whether tagging fixes it — Bar-Shalom, Kirubarajan & Gokberk, IEEE Trans.
+AES 41(3), 2005:**
+
+> "**Target class information … can also be used to improve data association to
+> give better tracking accuracy. The use of target class information in data
+> association can improve discrimination by yielding purer tracks and preserving
+> their continuity.**"
+
+**VERDICT: CONFIRMS §16.58's framing — with a correction to the "tag at source"
+claim that I am recording against my own brief.**
+
+**(a) The mapping is exact and the field is old.** Estimating per-path loss from
+an unlabelled shared sequence space *is* measurement-origin uncertainty, the
+problem MHT and JPDA exist to solve. §16.58's *"it cannot attribute a seq that
+arrived NOWHERE"* is measurement-origin uncertainty in the hardest case: the
+measurement does not merely lack a label, **it does not exist.**
+
+**(b) HONEST CORRECTION.** My brief asked the research pass to confirm that "the
+established fix is to tag the observation at source rather than infer the
+assignment." **No published sentence asserting that was found** `[verified
+absent, not merely unfound]`. What exists is the weaker, quoted result above:
+class information *improves* association. **The strong claim is folklore and
+this document does not make it.**
+
+The honest and still-strong framing: **the entire PDA/JPDA/MHT machinery exists
+only because measurements arrive unlabelled.** A per-path sequence namespace
+removes the problem the machinery exists to mitigate — which is a statement
+about the problem, not a citable theorem about the fix. **§16.24 built exactly
+that namespace and it was refuted at runtime for cost (×2.4 sender CPU) and for
+cadence re-heating, not for being the wrong idea; §16.58's contribution is
+noticing the sender never had the problem at all.** Both remain correct after
+this cross-check.
+
+**(c) The identifiability half is item 8's** and is the rigorous version of the
+same statement: `A` is not full rank, so per-path parameters are not
+identifiable without either induced correlation or regularisation.
+
+**IMPLICATION.** Documentation only. Record Reid 1979 and the tomography
+citations as the formal framing for §16.58's non-recoverability argument, **and
+record that the "tagging trivialises association" claim is not supported** so it
+does not enter the paper as received wisdom.
+
+---
+
 ## CD-7. The N² escape as DIMENSIONAL ANALYSIS — the review standard ADR-0070 reinvented
 
 **OURS:** ADR-0070's postmortem — a law quadratic in `N` where its own doc
@@ -1714,38 +2280,461 @@ measurement because *"nobody ever reviewed the formula as a formula."* The
 prevention kit's items 4 and 5 (CLAUDE.md FORMULA-FIRST; MEASUREMENT DISCIPLINE
 17 and 18) were derived from first principles.
 
-**THEIRS — Buckingham's Π theorem** (Buckingham, *Physical Review* 4(4), 1914)
-and Rayleigh's principle of similitude (*Nature*, 1915) establish that a
-physically meaningful equation must be expressible in dimensionless groups, so
-that **checking the exponent of each governing quantity is a mandatory step
-that precedes checking any coefficient.**
+**THEIRS — Buckingham, *Physical Review* 4(4):345–376, 1914, §2**
+(`[archive.org OCR; subscripts should be re-checked against the APS PDF before
+print]`):
 
-**VERDICT: CONFIRMS — and the discipline is ~110 years old.** ADR-0070's rule
+> "By reason of the principle of dimensional homogeneity, every complete physical
+> equation … is reducible to the form (9) in which [Π₁] = [Π₂] = ⋯ = [Πᵢ] = [1]
+> … the number of products Π which appear as independent variables in equation
+> (9) is **i = n − k**."
+
+`[NOTE: the paper contains no boxed "Pi Theorem" in the modern form; this is the
+actual argument.]`
+
+**Rayleigh, "The Principle of Similitude", *Nature* 95:66–68, 1915, verbatim:**
+
+> "**I have often been impressed by the scanty attention paid even by original
+> workers in physics to the great principle of similitude. It happens not
+> infrequently that results in the form of 'laws' are put forward as novelties
+> on the basis of elaborate experiments, which might have been predicted a
+> priori after a few minutes' consideration.**"
+
+**Kennedy, *Programming Languages and Dimensions*, PhD thesis, Cambridge
+UCAM-CL-TR-391, 1996, p. 1, verbatim:**
+
+> "**Dimensions are to science what types are to programming. In science and
+> engineering, dimensional consistency provides a first check on the correctness
+> of an equation or formula**, just as in programming the typability of a program
+> or program fragment eliminates one possible reason for program failure."
+
+**VERDICT: CONFIRMS — and the discipline is 110 years old.** ADR-0070's rule
 *"check that the sentence and the expression agree in SHAPE (order in N, units,
 monotonicity) before looking at any number"* **is dimensional analysis applied
-to a dimensionless parameter (the path count).** The `×N` defect is a
-scaling-exponent error, the exact class Π-theorem discipline exists to catch,
-and the exact class our nine always-on absolute pins could not see because every
-one of them was an equality at fixed `N ∈ {1,2}`.
+to a dimensionless parameter (the path count).** Rayleigh's sentence is, almost
+word for word, ADR-0070's postmortem: an elaborate experimental programme
+producing a "law" that a few minutes' consideration of its scaling would have
+settled. **The `×N` defect is a scaling-exponent error — the exact class this
+discipline exists to catch, and the exact class our nine always-on absolute pins
+could not see, because every one of them was an equality at fixed `N ∈ {1,2}`.**
 
-> `[VERIFICATION GAP: the verbatim Buckingham and Rayleigh quotations, the
-> dimension-types programming-languages literature (Kennedy), and the Mars
-> Climate Orbiter mishap-board finding were assigned to a research worker whose
-> report had not returned at the time of writing. The mapping above is stated
-> at the level of the established result rather than quoted, and the primary
-> citations are listed as un-consulted in the References. **This section's
-> claim is a claim about a well-known discipline, not about a specific
-> quotation**, and it should be quoted properly before it appears in the
-> paper.]`
+**The canonical cautionary citation, verbatim — Mars Climate Orbiter Mishap
+Investigation Board, Phase I Report, 10 Nov 1999, pp. 6, 16:**
 
-**IMPLICATION.** Free and purely editorial: CLAUDE.md's FORMULA-FIRST rule and
-MEASUREMENT DISCIPLINE 17 gain an established name and a citation lineage
-rather than standing as house rules. **The practical upgrade the analogy
-suggests — and it is concrete — is that MEASUREMENT DISCIPLINE 17's law-shape
-test should assert the EXPONENT of each governing quantity (`N`, `rate`,
-`RTprop`, `srtt`), not merely monotonicity and continuity.** `cap(2N)/cap(N) =
-2` is a dimensional assertion; the tree's existing template already sweeps
-`N = 1…8` synthetically, so this is a strengthening of an existing test rather
-than a new instrument.
+> "**The MCO MIB has determined that the root cause for the loss of the MCO
+> spacecraft was the failure to use metric units in the coding of a ground
+> software file**, 'Small Forces,' used in trajectory models."
+
+and — the sentence that makes it our postmortem rather than merely a famous
+accident:
+
+> "**Unfortunately for MCO, the root cause was not caught by the processes
+> in-place in the MCO project**"
+
+with Contributing Cause 8: *"End-to-end testing to validate the small forces
+ground software performance and its applicability to the specification did not
+appear to be accomplished."* **A dimensional error that every existing process
+passed** — ADR-0070 mechanism 5, in 1999, with a spacecraft.
+
+**The sharpest one-liner for our purpose — Bentley, "Programming Pearls: The
+Envelope Is Back", *CACM* 29(3):176–182, March 1986, p. 178**, set off on its
+own line in the original:
+
+> "**Dimension tests check the form of equations.**"
+
+**And the exact structural analogue of the prevention item — Roy, "Review of
+code and solution verification procedures for computational simulation",
+*J. Comput. Phys.* 205:131–156, 2005, §2.3:**
+
+> "**The most rigorous code verification test is the order of accuracy test**,
+> which determines whether or not the discretization error is reduced at the
+> expected rate. … Since it is **the most difficult test to satisfy (and
+> therefore the most sensitive to coding mistakes)**, the order of accuracy test
+> is the recommended acceptance test for code verification."
+
+**That is MEASUREMENT DISCIPLINE 17, arrived at independently in scientific
+computing.** Magnitude-plausibility checks pass indefinitely; a *rate-of-change*
+check across the governing parameter fails on the first two honest data points.
+Our law-shape template sweeping `N = 1…8` synthetically is an order-of-accuracy
+test in `N`.
+
+> **CORRECTION TO MY OWN BRIEF, recorded rather than quietly dropped.** I asked
+> the research pass to confirm Kennedy argues "dimension checking catches a
+> class of errors no test catches." **No such sentence exists in Kennedy**
+> `[verified absent]`; his framing is static-checking versus runtime failure.
+> The stronger claim is not made here. Kennedy's own later note (CEFP'09) is
+> pointed in a different and more useful direction: on the MCO report, *"**Notably
+> absent … was any suggestion that programming languages might assist in the
+> prevention of such errors**, either through static analysis tools, or through
+> type-checking."*
+
+**IMPLICATION.** Mostly editorial and free: CLAUDE.md's FORMULA-FIRST rule and
+MEASUREMENT DISCIPLINE 17 gain an established name and a 110-year citation
+lineage instead of standing as house rules — which matters for the paper, since
+a reviewer will recognise the discipline. **The one concrete upgrade the analogy
+suggests: MEASUREMENT DISCIPLINE 17's law-shape test should assert the EXPONENT
+of each governing quantity (`N`, `rate`, `RTprop`, `srtt`), not merely
+monotonicity and continuity.** `cap(2N)/cap(N) = 2` is a dimensional assertion
+and is strictly stronger than "monotone in N"; the tree's template already
+sweeps `N = 1…8` synthetically, so this strengthens an existing test rather than
+adding an instrument.
 
 ---
+
+# PART III — THE SCORECARD
+
+## Verdicts, one line each
+
+| # | ours | theirs | verdict |
+|---|---|---|---|
+| 1 | `2·Σ bwᵢ·RTTᵢ` + span | RFC 6182 §5.3 `2·Σ BW_i·RTT_max` (**send** buffer too) | **AGREE** on ×2 and shape; **DIVERGE** on clock — ours is `RTTᵢ` + a HALF-sized span |
+| 2 | `span = rate_fast·(RTT_max − RTT_min)` | BLEST `X ≈ rate_fast·RTT_slow`, adapted by measured λ < 1 | **DIVERGE** in magnitude (theirs 2×), **AGREE** in structure (zero at equal delay); our wire says even ours is 45 % over-funded |
+| 3 | `gain = 2.0` "recovery runway" | BBR `cwnd_gain = 2` (ACK aggregation / rate doubling); RFC 6182 ×2 | **AGREE** on value, **DIVERGE** on derivation — our stated rationale is in no primary source |
+| 4 | δ permits `b·RTprop` standing queue (50–200 % RTT) | CoDel **5–10 % of RTT**, derived from Kleinrock power; Copa `1.25/δ` **packets** | **DIVERGE 10–40×**; CoDel's derivation predicts §16.57's measurement |
+| 5 | `17/8·srtt` standing slack | RFC 6182 rejects worst-case (`RTO_max`) provisioning as "too expensive" | **AGREE** the reserve exists; literature **rejects** provisioning it for the worst case, permanently |
+| 6 | `2·SRTT` clamped `[25,100] ms` | RFC 8985 §7.2 `PTO = 2 * SRTT`; bounds `min_rtt/4` … `SRTT` | **AGREE** on the base (verbatim); **DIVERGE** on the clamp — theirs is RTT-relative, ours absolute |
+| 7 | `ε̂ = 1 − Δrecv/Δsent`, retransmits in the denominator | RFC 6675 *"retransmitted … counted twice"*; Allman et al. 2003 measure >100 % error in 16 % of transfers; every published estimator uses **newly-delivered** | **DIVERGE** — three published bias sources, all inflating ε̂, all path-count-independent |
+| 8 | per-path loss from a shared sequence space | tomography: no unique mapping unless `A` full rank; **MPQUIC draft-02 §9.1 states our exact case**; draft-14 abandons the shared space | **AGREE** — confirms §16.58 on all three of its positions |
+| 9 | Copa inside a δ-budgeted cap | cascade separation 4–10× (Skogestad 2023); gain ∝ 1/delay (Vinnicombe, Low); Copa's own proved `C·Σ1/δ < BDP` | **NO COUNTERPART** — the topology appears **un-analysed**; our separation holds by accident |
+| 10 | `knee = 2048/path`; `boot = 128` | DRS / Linux autotuning: **no knee at all**; RFC 6928 IW = 10 | **NO COUNTERPART** for the knee — the published architecture is ADR-0071 family 2's |
+| CD-1 | slack `rate·stall`, linear in mean | newsvendor `Q* = F⁻¹(c_u/(c_u+c_o))`; base stock `z·σ·√L` | **CONFIRMS** payout-zero ⇒ `Q* = 0`; **SHARPENS** — wrong SHAPE (mean vs dispersion, linear vs √) |
+| CD-2 | span as buffer sizing | ROB `W/D` coverage; balanced design `W ∝ D²` | **CONFIRMS** units; **CONTRADICTS** the linear form; third field to call the term negligible |
+| CD-3 | the c8 dead wall | metastable failure; `Cstable = Cnorm/(w*L·w*C)`; RFC 896 *"This condition is stable"* | **CONFIRMS** — named class, quantified gap, published mitigation list |
+| CD-4 | δ setpoint enforcement speed | Hollot `ω_g·R₀ < 0.85`; RED averaging flaw | **SHARPENS** — family 2 specifies the setpoint but not the bandwidth bound |
+| CD-5 | one pooled cap (ADR-0058) | Eppen 1979 √N risk pooling; Fukuda 1964 slow-lead-time base | **CONFIRMS** the pooled decision — with an untested correlation condition |
+| CD-6 | recovery clocks | Lorden/Moustakides CUSUM optimality `log γ / I`; φ-accrual | **NO COUNTERPART IN TRANSPORT** — a real opportunity |
+| CD-7 | FORMULA-FIRST / discipline 17 | Buckingham 1914, Rayleigh 1915, Roy 2005 order-of-accuracy | **CONFIRMS** — 110-year-old discipline, independently re-derived |
+| CD-8 | cross-path attribution | Reid 1979 measurement-origin uncertainty | **CONFIRMS** framing; "tag at source" claim **NOT SUPPORTED** |
+
+## What the literature settles outright — things we have been deriving from scratch
+
+1. **The standing-queue setpoint has a derived published value: 5–10 % of RTT**
+   (RFC 8289 §3.2, from Kleinrock power maximisation). §16.57's open derivation
+   question, §16.59's successor and ADR-0071 family 2's central premise all
+   point at a quantity that was settled in 2018 — and the derivation *predicts*
+   the goodput-parity/worse-latency result we measured.
+2. **`gain = 2.0` has two published derivations** (RFC 6182 §5.3; BBR
+   `DefaultCwndGain`). ADR-0070 finding 3's "fossil" verdict can be discharged
+   by citation, not by measurement — and our own stated rationale should be
+   corrected, since it appears in no primary source.
+3. **`2·SRTT` is RFC 8985's TLP PTO verbatim, with the derivation we lacked.**
+   Only the `[25,100] ms` clamp is ours.
+4. **The optimal reserve under zero payout is exactly zero** (newsvendor
+   critical fractile), and **the reserve's correct functional form is
+   dispersion-driven and sub-linear in lead time** (base stock). Both are closed
+   forms; neither required a battery.
+5. **Pooling beats per-path accounts, with a √N law** (Eppen 1979) — ADR-0058's
+   three-experiment refutation chain rediscovered a 1979 theorem.
+6. **The dead wall is a named failure class** with a definition, a quantified
+   hysteresis gap, and a published mitigation list — and *"add memory"* is
+   explicitly rejected on it (RFC 896, 1984).
+7. **A knee is not part of the published architecture at all.** Linux has sized
+   receive buffers with no per-path ceiling, plus a separate administrative
+   memory bound, for two decades.
+8. **`9/8` is empirical, not derived** — which corrects our own record.
+
+## The prioritized ADOPT-OR-TEST list, cheapest first
+
+**Tier 0 — free. Documentation and record corrections; no measurement, no code.**
+
+| # | action | why |
+|---|---|---|
+| 0.1 | Correct the `9/8` record: it is a **cited empirical recommendation**, not a derivation; RACK uses 5/4; RFC 9002 invites experiment. Soften "zero fitted constants" wherever it appears (ADR-0070 Deliverable 2, §16.43, §16.56). | Our own claim is stronger than its source. |
+| 0.2 | Cite RFC 6182 §5.3 + Raiciu NSDI'12 §4.2 + BBR `DefaultCwndGain` as provenance for `gain = 2.0` and the law's shape; **delete the unsupported "recovery runway" rationale** from `sender_policy.rs`'s comment. | Discharges ADR-0070 finding 3 without a measurement. |
+| 0.3 | Cite RFC 8985 §7.2 for `2·SRTT`. | The base of both recovery clocks is a standard. |
+| 0.4 | Record in ADR-0071 that family 2's *architecture* (law + separate resource bound, no knee) is Linux's shipped design, and that the knee has no counterpart. | Prior art for an open proposal, in its support column. |
+| 0.5 | Record Eppen 1979 as prior art for ADR-0058; Reid 1979 + tomography for §16.58; metastable-failure vocabulary for the dead wall. | Paper-ready framing the arc currently lacks. |
+| 0.6 | Record that **no published source writes our span decomposition** `Σ bwᵢ(RTT_max − RTTᵢ)`. | Prevents a mis-citation in the paper. |
+
+**Tier 1 — cheap tests against data we may already have. No VM.**
+
+| # | test | falsifier |
+|---|---|---|
+| 1.1 | **Score the ladder's existing curves at the CoDel rung**: `BDP·1.05` per cell (c1 ≈ 184, sc2 ≈ 344, c7 ≈ 1161, c8 ≈ 1685, c8L ≈ 5225 symbols). | If goodput at those rungs is at parity, the δ dial is mis-scaled 10–40× and family 2's dial needs re-basing. **Highest value in the document.** |
+| 1.2 | **Recompute ε̂ with first-transmissions-only in the denominator**, from the ladder's captured `[ACKDIAG]` cursors. Three published bias sources predict the sign and the path-count-independence; Allman et al. 2003 measured the same bias at >100 % in 16 % of transfers. | If the 20× collapses, §16.58 is repaired rather than abandoned; if not, this hypothesis dies and §16.63's anomaly stays open. |
+| 1.3 | **`slack_bench.rs` idle-vs-backlog replay scored against the newsvendor prediction** (`c_u ≈ 0 ⇒ reserve ≈ 0`) rather than a coverage point. 576 cells, 13 s, no VM. | Non-zero idle at `W + S` anywhere means the payout was not zero. |
+| 1.4 | **The `K`-drift-vs-window test**: read the `[3T]` `window=` series *within* one c8L run at t ≈ 2.5 s and t ≈ 20 s (ADR-0071 finding 2 already names this). | Confirms the estimator window is a control parameter (CD-4) and that c8 measures warm-up. |
+| 1.5 | **Strengthen MEASUREMENT DISCIPLINE 17's law-shape test to assert EXPONENTS** in each governing quantity, not just monotonicity. | An order-of-accuracy test in `N`; strengthens an existing instrument. |
+
+**Tier 2 — derivations, not batteries. Write the formula first, per FORMULA-FIRST.**
+
+| # | item |
+|---|---|
+| 2.1 | **RACK-shaped recovery clocks**: replace `[25,100] ms` with `min(2·SRTT, …)` bounded relatively — a `min_rtt/4`-shaped floor and an `SRTT`-shaped ceiling. `RWM_DERIVED_SWEEP` is two-thirds of the way there and already has its liveness echo. |
+| 2.2 | **State the cascade constraint** on ADR-0068 × ADR-0071-family-2: inner loop ≥5× faster (Skogestad p. 387) and the cap's own bandwidth bounded by `≈0.85/R₀` (Hollot). Currently satisfied by accident. |
+| 2.3 | **Name the missing queue-draining guarantee.** BBR has ProbeRTT, Copa has its 5-RTT oscillation, CoDel has a 5 % target; we have none, and §16.59's `K` 1.04 → 1.505 is the measured consequence. |
+| 2.4 | **The δ unit mismatch** between Copa's `1.25/δ` packets and our `b·RTprop` — resolve before ADR-0068 fuses the two, since both call it δ. |
+
+**Tier 3 — measurement, and each is a new axis rather than a re-run.**
+
+| # | item |
+|---|---|
+| 3.1 | **Cross-path correlation of stall/loss events** (Eppen's condition). Does the pooling advantage track √N or collapse toward 1? Reframes ADR-0058's c7-vs-c8 split from anomaly to prediction. |
+| 3.2 | **The metastable amplification factor** `w*L·w*C` at c8, instead of tuning the cliff. Report the **collapse RATE** (§16.63's 0/27 vs 2/21 already is one), not a mean — the literature's own reporting convention, and the answer to the bistable-statistic problem. |
+| 3.3 | **A recovery clock derived from a declared spurious-retransmit budget** (Lorden's γ; RACK's own <7 %). The one item in this document where the literature does **not** already have our answer. |
+
+## Folklore corrected — nine places the repeated version is not the source
+
+1. **BBR's `cwnd_gain = 2` is not about recovery headroom.** No primary source says so; it is ACK aggregation (v1) or rate doubling (v2/v3). **This is our own comment's claim.**
+2. **RFC 6824/8684 omit the ×2** and call the undoubled quantity "a tight upper bound", contradicting RFC 6182 — and declare the question open.
+3. **RFC 9002's `9/8` has no derivation**: *"Experience with QUIC shows that 9/8 works well."* RACK uses 5/4.
+4. **RACK's `min_rtt/4` is inherited Linux practice**, not derived; and TLP's delayed-ACK term applies **only when FlightSize is one segment**.
+5. **BBR's startup gain `2/ln2 ≈ 2.89` was corrected to `4·ln2 ≈ 2.77`** in v2/v3; Linux still ships 2.89.
+6. **Copa's queue is `1.25/δ̂` on average**, not `1/δ` — that is the equilibrium *threshold*; and competitive mode does AIMD on `1/δ`, not δ.
+7. **DRS's factor 2 is a slow-start-matching argument**, not RFC 6182's reordering+retransmit split. Current Linux (v6.16+) dropped the loss half of the rationale entirely.
+8. **CoDel's derived quantity is the ratio 0.05, not 5 ms.** Porting the millisecond ports nothing.
+9. **RFC 2914 §5 lists only TWO collapse forms**; the five-way taxonomy is Floyd & Fall 1999. And **"hysteresis"/"bistable" appear nowhere in the metastability literature** — use `Cstable = Cnorm/(w*L·w*C)`.
+
+Plus four corrections against my own brief or against internal notes, recorded
+rather than dropped:
+
+- **Kennedy does not claim dimension checking catches errors testing cannot** —
+  his framing is static-checking versus runtime failure.
+- **No source states that source-tagging trivialises data association.**
+- **Castro et al. 2004 does not contain the loss-specific unicast
+  non-identifiability statement** — its rank statements are generic. Cite
+  **Coates & Nowak ITC 2000** or **Coates/Hero/Nowak/Yu SP Mag 2002** for the
+  loss claim.
+- **ECF's fourth author is Richard J. Gibbens**, not "Lee"; and the *Computer
+  Networks* 2014 bounded-receive-buffer paper is **Li, Lukyanenko, Tarkoma,
+  Cui & Ylä-Jääski**.
+
+**And one methodological warning worth carrying into any future desk research
+here:** the fetch-summarisers used by two of the research passes **refused
+RFC 6675 outright and silently paraphrased elsewhere.** Every quotation in this
+document that matters was obtained by direct text extraction of a primary PDF or
+RFC plaintext. A literature cross-check conducted through a summariser would
+have produced plausible, wrong quotations for at least three of the constants
+above.
+
+---
+
+## What this document concludes
+
+**Nothing, in the decision sense.** It flips no default, adds no gate, touches
+no engine file or test, and **explicitly does not adjudicate ADR-0071** — every
+candidate in that document is annotated with literature support or literature
+tension above, and none is preferred, ranked or recommended. ADR-0071's Status
+is unchanged.
+
+Two things it *does* assert, both of which are findings about our record rather
+than about the machine:
+
+1. **Three claims in the tree are stronger than their sources support** —
+   `9/8` as "cited not fitted", `gain = 2.0`'s recovery-runway rationale, and
+   (prospectively) any citation of the MPTCP literature for our span
+   decomposition. Tier 0 corrects all three.
+2. **One measured refutation (§16.63) now has a candidate mechanism** from a
+   standards-track RFC, with a falsifier that needs no VM. It is a hypothesis
+   and is labelled as one.
+
+## Consequences for the record
+
+- **The arc's "we re-derived what was known" pattern (Appendix B's headline)
+  extends from the FINDINGS to the FORMULAS.** Appendix B concluded that almost
+  every *result* of the FEC/ARQ arc was established. This document finds the
+  same of the *expressions*: six of ten transport formulas have exact published
+  counterparts, and four cross-domain mappings return closed forms we lacked.
+  **The honest reading is unchanged from Appendix B's — the value is rigour and
+  measurement on our own stack, not novelty — with one addition: CD-6 is a
+  place where the literature genuinely does not have our answer.**
+- **ADR-0070's postmortem gains a 110-year-old name.** FORMULA-FIRST and
+  MEASUREMENT DISCIPLINE 17 are dimensional analysis and the order-of-accuracy
+  test. That is reassuring about the rules and unflattering about how long it
+  took to write them down.
+- **A verification-gap ledger now exists** (below). Roughly a dozen primary
+  sources are paywalled and were quoted at abstract level or via secondary
+  restatement; each is marked at its point of use, and the OR classics are the
+  ones most worth an institutional pull.
+- **No engine behaviour changed; zero production lines touched.**
+
+**What would reverse or amend the findings here:** (i) obtaining Eppen 1979's
+closed form, Scarf 1960's interior, or Arrow/Harris/Marschak 1951 could
+strengthen or qualify CD-1 and CD-5 — both currently rest on abstracts plus
+teaching sources; (ii) a primary BBR source stating a recovery rationale for
+`cwnd_gain` would withdraw folklore item 1; (iii) measuring Tier 1.2 and finding
+the 20× intact would kill item 7's hypothesis outright.
+
+---
+
+## VERIFICATION-GAP LEDGER
+
+Quoted **first-hand from a primary source in this session**: RFC 6182, RFC 6675,
+RFC 6928, RFC 8289, RFC 8985, RFC 9002, draft-ietf-ccwg-bbr, Copa (NSDI 2018
+PDF), BLEST (IFIP 2016 proceedings PDF), Bronson et al. (HotOS '21 PDF).
+
+Quoted by research workers from primary sources, **not independently
+re-verified by me**: Raiciu NSDI '12, Barré IFIP 2011, Kuhn ICC 2014,
+RFC 6824/8684, BBR ACM Queue 2016, Fisk & Feng LAUR 00-3321, Linux source
+comments, Huang et al. OSDI '22, Google SRE Book, Envoy/Hystrix docs, DAGOR
+SoCC '18, Hollot TAC 2002, RFC 8033, Misra SIGCOMM 2000, Firoiu INFOCOM 2000,
+Skogestad §10.2, Seborg §16.1, Åström & Murray, Jacobson 1988 (LBL revision),
+RFC 6298, Lorden 1971, Moustakides 1986, Wald 1945, Wald–Wolfowitz 1948,
+φ-accrual SRDS 2004, Chen/Toueg/Aguilera DSN 2000, Buckingham 1914,
+Rayleigh 1915, Kennedy 1996, MCO MIB report, Bentley 1986, Roy 2005,
+Cáceres 1999 preprint, Castro 2004, Reid 1979, Low/Peterson/Wang JACM 2002.
+
+**NOT OBTAINED — quoted at abstract level, via secondary/teaching sources, or
+not quoted at all. None of these supports a verdict on its own:**
+
+| source | status | affects |
+|---|---|---|
+| Arrow, Harris & Marschak 1951 | not consulted | CD-1 (critical fractile via teaching source) |
+| Eppen 1979 — **closed form** | abstract only | CD-5 (√N law and correlation extension) |
+| Scarf 1960 — interior | not consulted | CD-1 (K-convexity via encyclopedia) |
+| Clark & Scarf 1960 | not consulted | CD-5 (echelon decomposition) |
+| Veeraraghavan & Scheller-Wolf 2008 | fragments | CD-5 (dual-index structure) |
+| Sterman 1989 — oscillation condition | abstract only | CD-3/CD-1 (feedback provisioning) |
+| Page 1954 (Biometrika) | **no open copy anywhere** | CD-6 (CUSUM quoted via Lorden/Moustakides) |
+| Åström & Hägglund, *Advanced PID* | second-hand | CD-4/9 (the "5×" attribution — use Skogestad) |
+| Hollot INFOCOM 2001 | paywalled | CD-4 (quoted from TAC 2002 companion) |
+| PIE HPSR 2013 | paywalled | CD-4 (only RFC 8033 quoted) |
+| Li et al., *Comput. Netw.* 2014 | paywalled | item 2 (bounded receive buffers) |
+| ECF, CoNEXT 2017 | not obtained | item 2 (send-decision arithmetic **owed**) |
+| Fisk & Feng SC 2001 | archives dead | item 10 (quoted from LAUR 00-3321 instead) |
+| Rothenberg 1971 | paywalled | CD-8 (rank condition via restatements) |
+| Bar-Shalom & Fortmann 1988 | no access | CD-8 (Reid 1979 used instead) |
+| SIGCOMM '88 Jacobson proceedings text | not obtained | CD-6 (LBL Nov 1988 revision used) |
+
+**Authorship correction carried from the research pass:** the *Computer
+Networks* 64:1–14 (2014) bounded-receive-buffer paper is **Li, Lukyanenko,
+Tarkoma, Cui & Ylä-Jääski** — not the attribution used in earlier internal
+notes.
+
+---
+
+## References — paper-ready
+
+**IETF (all fetched from `rfc-editor.org` / `ietf.org`, quotable as printed)**
+
+- A. Ford, C. Raiciu, M. Handley, S. Barré, J. Iyengar, "Architectural Guidelines for Multipath TCP Development," RFC 6182, IETF, March 2011. https://www.rfc-editor.org/rfc/rfc6182.txt
+- A. Ford, C. Raiciu, M. Handley, O. Bonaventure, C. Paasch, "TCP Extensions for Multipath Operation with Multiple Addresses," RFC 8684, IETF, March 2020 (and RFC 6824, January 2013).
+- E. Blanton, M. Allman, L. Wang, I. Jarvinen, M. Kojo, Y. Nishida, "A Conservative Loss Recovery Algorithm Based on Selective Acknowledgment (SACK) for TCP," RFC 6675, IETF, August 2012. https://www.rfc-editor.org/rfc/rfc6675.txt
+- N. Dukkipati, T. Refice, Y. Cheng, J. Chu, T. Herbert, A. Agarwal, A. Jain, N. Sutin, "Increasing TCP's Initial Window," RFC 6928, IETF, April 2013.
+- K. Nichols, V. Jacobson, A. McGregor, J. Iyengar, "Controlled Delay Active Queue Management," RFC 8289, IETF, January 2018. https://www.rfc-editor.org/rfc/rfc8289.txt
+- Y. Cheng, N. Cardwell, N. Dukkipati, P. Jha, "The RACK-TLP Loss Detection Algorithm for TCP," RFC 8985, IETF, February 2021. https://www.rfc-editor.org/rfc/rfc8985.txt
+- J. Iyengar, I. Swett (eds.), "QUIC Loss Detection and Congestion Control," RFC 9002, IETF, May 2021. https://www.rfc-editor.org/rfc/rfc9002.txt
+- R. Pan, P. Natarajan, F. Baker, G. White, "Proportional Integral Controller Enhanced (PIE)," RFC 8033, IETF, February 2017.
+- V. Paxson, M. Allman, J. Chu, M. Sargent, "Computing TCP's Retransmission Timer," RFC 6298, IETF, June 2011.
+- J. Nagle, "Congestion Control in IP/TCP Internetworks," RFC 896, IETF, 6 January 1984.
+- S. Floyd, "Congestion Control Principles," RFC 2914 / BCP 41, IETF, September 2000.
+- N. Cardwell, Y. Cheng, S. H. Yeganeh, I. Swett, V. Jacobson, "BBR Congestion Control," draft-ietf-ccwg-bbr (BBRv3); and draft-cardwell-iccrg-bbr-congestion-control-00/-01/-02.
+
+**Transport / multipath**
+
+- V. Arun, H. Balakrishnan, "Copa: Practical Delay-Based Congestion Control for the Internet," USENIX NSDI 2018. https://www.usenix.org/conference/nsdi18/presentation/arun
+- S. Ferlin, Ö. Alay, O. Mehani, R. Boreli, "BLEST: Blocking Estimation-based MPTCP Scheduler for Heterogeneous Networks," IFIP Networking 2016. https://dl.ifip.org/db/conf/networking/networking2016/1570234725.pdf
+- C. Raiciu, C. Paasch, S. Barré, A. Ford, M. Honda, F. Duchene, O. Bonaventure, M. Handley, "How Hard Can It Be? Designing and Implementing a Deployable Multipath TCP," USENIX NSDI 2012.
+- S. Barré, C. Paasch, O. Bonaventure, "MultiPath TCP: From Theory to Practice," IFIP Networking 2011, LNCS 6640.
+- N. Kuhn, E. Lochin, A. Mifdaoui, G. Sarwar, O. Mehani, R. Boreli, "DAPS: Intelligent Delay-Aware Packet Scheduling for Multipath Transport," IEEE ICC 2014.
+- Y. S. Li, A. Lukyanenko, S. Tarkoma, Y. Cui, A. Ylä-Jääski, "Tolerating path heterogeneity in multipath TCP with bounded receive buffers," *Computer Networks* 64:1–14, 2014. **[not obtained]**
+- N. Cardwell, Y. Cheng, C. S. Gunn, S. H. Yeganeh, V. Jacobson, "BBR: Congestion-Based Congestion Control," *ACM Queue* 14(5), 2016 / *CACM* 60(2), 2017.
+- V. Jacobson, M. Karels, "Congestion Avoidance and Control," ACM SIGCOMM 1988 (LBL revised version, November 1988). https://ee.lbl.gov/papers/congavoid.pdf
+- M. Fisk, W. Feng, "Dynamic Adjustment of TCP Window Sizes," LANL Tech. Report LAUR 00-3321, 2000.
+- S. H. Low, L. L. Peterson, L. Wang, "Understanding TCP Vegas: A Duality Model," *J. ACM* 49(2):207–235, 2002.
+- Y. Lim, E. M. Nahum, D. Towsley, R. J. Gibbens, "ECF: An MPTCP Path Scheduler to Manage Heterogeneous Paths," ACM CoNEXT 2017.
+- M. Allman, W. M. Eddy, S. Ostermann, "Estimating Loss Rates With TCP," *ACM Performance Evaluation Review* 31(3):12–24, 2003. https://www.icir.org/mallman/pubs/AEO03/AEO03.pdf
+- N. Cardwell, Y. Cheng, S. H. Yeganeh, V. Jacobson, "Delivery Rate Estimation," draft-cheng-iccrg-delivery-rate-estimation-02, IETF, March 2022.
+- M. Dong, Q. Li, D. Zarchy, P. B. Godfrey, M. Schapira, "PCC: Re-architecting Congestion Control for Consistent High Performance," USENIX NSDI 2015.
+- Q. De Coninck, O. Bonaventure et al. (eds.), "Multipath Extension for QUIC," draft-ietf-quic-multipath (-02, July 2022; -14, April 2025), IETF.
+- T.-Y. Huang, N. Handigol, B. Heller, N. McKeown, R. Johari, "Confused, Timid, and Unstable: Picking a Video Streaming Rate is Hard," ACM IMC 2012, pp. 225–238.
+- G. Vinnicombe, "On the stability of end-to-end congestion control for the Internet," Cambridge Univ. Eng. Dept. Tech. Report CUED/F-INFENG/TR.398, 2000.
+- S. H. Low, F. Paganini, J. C. Doyle, "Internet Congestion Control," *IEEE Control Systems Magazine* 22(1):28–43, 2002.
+- S. Skogestad, "Advanced control using decomposition and simple elements," *Annual Reviews in Control* 56:100903, 2023.
+
+**AQM / control theory**
+
+- C. V. Hollot, V. Misra, D. Towsley, W. Gong, "Analysis and Design of Controllers for AQM Routers Supporting TCP Flows," *IEEE Trans. Automatic Control* 47(6):945–959, 2002; and "On Designing Improved Controllers for AQM Routers Supporting TCP Flows," IEEE INFOCOM 2001.
+- V. Misra, W. Gong, D. Towsley, "Fluid-based Analysis of a Network of AQM Routers Supporting TCP Flows with an Application to RED," ACM SIGCOMM 2000.
+- V. Firoiu, M. Borden, "A Study of Active Queue Management for Congestion Control," IEEE INFOCOM 2000.
+- S. Skogestad, I. Postlethwaite, *Multivariable Feedback Control: Analysis and Design*, 2nd ed., Wiley, 2005, §10.2 p. 387. https://folk.ntnu.no/skoge/book/ps/bookall.pdf
+- D. E. Seborg, T. F. Edgar, D. A. Mellichamp, F. J. Doyle III, *Process Dynamics and Control*, 4th ed., Wiley, §16.1.
+- K. J. Åström, R. M. Murray, *Feedback Systems*, 2nd ed., Princeton, 2020.
+
+**Operations research / inventory**
+
+- J. D. C. Little, "A Proof for the Queuing Formula: L = λW," *Operations Research* 9(3):383–387, 1961.
+- G. D. Eppen, "Note—Effects of Centralization on Expected Costs in a Multi-Location Newsboy Problem," *Management Science* 25(5):498–501, 1979.
+- K. J. Arrow, T. Harris, J. Marschak, "Optimal Inventory Policy," *Econometrica* 19(3):250–272, 1951. **[not consulted]**
+- H. Scarf, "The Optimality of (S,s) Policies in the Dynamic Inventory Problem," in Arrow, Karlin, Suppes (eds.), *Mathematical Methods in the Social Sciences*, Stanford UP, 1960. **[not consulted]**
+- A. J. Clark, H. Scarf, "Optimal Policies for a Multi-Echelon Inventory Problem," *Management Science* 6(4):475–490, 1960. **[not consulted]**
+- Y. Fukuda, "Optimal Policies for the Inventory Problem with Negotiable Leadtime," *Management Science* 10(4):690–708, 1964.
+- S. Veeraraghavan, A. Scheller-Wolf, "Now or Later: A Simple Policy for Effective Dual Sourcing in Capacitated Systems," *Operations Research* 56(4):850–864, 2008.
+- A. Sheopuri, G. Janakiraman, S. Seshadri, "New Policies for the Stochastic Inventory Control Problem with Two Supply Sources," *Operations Research* 58(3):734–745, 2010.
+- H. L. Lee, V. Padmanabhan, S. Whang, "Information Distortion in a Supply Chain: The Bullwhip Effect," *Management Science* 43(4):546–558, 1997.
+- J. D. Sterman, "Modeling Managerial Behavior: Misperceptions of Feedback in a Dynamic Decision Making Experiment," *Management Science* 35(3):321–339, 1989.
+- F. Chen, Z. Drezner, J. K. Ryan, D. Simchi-Levi, "Quantifying the Bullwhip Effect in a Simple Supply Chain," *Management Science* 46(3):436–443, 2000.
+- S. Bimpikis, M. G. Markakis, "Inventory Pooling Under Heavy-Tailed Demand," *Management Science* 62(6), 2016.
+
+**Computer architecture**
+
+- T. Karkhanis, J. E. Smith, "A First-Order Superscalar Processor Model," ISCA-31, 2004.
+- S. Eyerman, L. Eeckhout, T. Karkhanis, J. E. Smith, "A Mechanistic Performance Model for Superscalar Out-of-Order Processors," *ACM TOCS* 27(2), Article 3, 2009.
+- P. Michaud, A. Seznec, S. Jourdan, "An Exploration of Instruction Fetch Requirement in Out-of-Order Superscalar Processors," *Int'l J. Parallel Programming* 29(1), 2001.
+- Y. Chou, B. Fahs, S. Abraham, "Microarchitecture Optimizations for Exploiting Memory-Level Parallelism," ISCA 2004.
+- H. Akkary, R. Rajwar, S. T. Srinivasan, "Checkpoint Processing and Recovery: Towards Scalable Large Instruction Window Processors," MICRO-36, 2003.
+- M. D. Hill, "Three Other Models of Computer System Performance," arXiv:1901.02926, 2018.
+- N. Santos, A. Schiper, "Optimizing Paxos with batching and pipelining," *Theoretical Computer Science* 496:170–183, 2013.
+
+**Metastability / overload**
+
+- N. Bronson, A. Aghayev, A. Charapko, T. Zhu, "Metastable Failures in Distributed Systems," ACM HotOS '21, pp. 221–227. https://sigops.org/s/conferences/hotos/2021/papers/hotos21-s11-bronson.pdf
+- L. Huang, M. Magnusson, A. B. Muralikrishna, S. Estyak, R. Isaacs, A. Aghayev, T. Zhu, A. Charapko, "Metastable Failures in the Wild," USENIX OSDI '22, pp. 73–90.
+- B. Beyer, C. Jones, J. Petoff, N. R. Murphy (eds.), *Site Reliability Engineering*, O'Reilly, 2016, Ch. 21–22.
+- H. Zhou, M. Chen, Q. Lin, Y. Wang, X. She, S. Liu, R. Gu, B. C. Ooi, J. Yang, "Overload Control for Scaling WeChat Microservices," ACM SoCC 2018.
+
+**Sequential detection / failure detectors**
+
+- E. S. Page, "Continuous Inspection Schemes," *Biometrika* 41(1/2):100–115, 1954. **[not obtained]**
+- G. Lorden, "Procedures for Reacting to a Change in Distribution," *Ann. Math. Statist.* 42(6):1897–1908, 1971.
+- G. V. Moustakides, "Optimal Stopping Times for Detecting Changes in Distributions," *Ann. Statist.* 14(4):1379–1387, 1986.
+- A. Wald, "Sequential Tests of Statistical Hypotheses," *Ann. Math. Statist.* 16(2):117–186, 1945; A. Wald, J. Wolfowitz, "Optimum Character of the Sequential Probability Ratio Test," *Ann. Math. Statist.* 19(3):326–339, 1948.
+- N. Hayashibara, X. Défago, R. Yared, T. Katayama, "The φ Accrual Failure Detector," IEEE SRDS 2004, pp. 66–78.
+- W. Chen, S. Toueg, M. K. Aguilera, "On the Quality of Service of Failure Detectors," IEEE DSN 2000 / *IEEE Trans. Computers* 51(5), 2002.
+
+**Tomography / estimation / data association**
+
+- R. Cáceres, N. G. Duffield, J. Horowitz, D. Towsley, "Multicast-Based Inference of Network-Internal Loss Characteristics," *IEEE Trans. Information Theory* 45(7):2462–2480, 1999.
+- R. Castro, M. Coates, G. Liang, R. Nowak, B. Yu, "Network Tomography: Recent Developments," *Statistical Science* 19(3):499–517, 2004.
+- M. Coates, R. Nowak, "Network Loss Inference Using Unicast End-to-End Measurement," ITC Conf. on IP Traffic, Modelling and Management, 2000, paper 28. **[the loss-specific unicast non-identifiability result]**
+- M. Coates, A. O. Hero III, R. Nowak, B. Yu, "Internet Tomography," *IEEE Signal Processing Magazine* 19(3):47–65, 2002.
+- E. S. Allman, C. Matias, J. A. Rhodes, "Identifiability of parameters in latent structure models with many observed variables," *Annals of Statistics* 37(6A):3099–3132, 2009 (arXiv:0809.5032).
+- R. Gupta, R. Kumar, S. Vassilvitskii, "On Mixtures of Markov Chains," NIPS 2016.
+- D. B. Reid, "An Algorithm for Tracking Multiple Targets," *IEEE Trans. Automatic Control* AC-24(6):843–854, 1979.
+- Y. Bar-Shalom, T. Kirubarajan, C. Gokberk, "Tracking with Classification-Aided Multiframe Data Association," *IEEE Trans. Aerospace and Electronic Systems* 41(3):868–878, 2005.
+
+**Dimensional analysis / verification discipline**
+
+- E. Buckingham, "On Physically Similar Systems; Illustrations of the Use of Dimensional Equations," *Physical Review* 4(4):345–376, 1914.
+- Lord Rayleigh, "The Principle of Similitude," *Nature* 95:66–68, 18 March 1915.
+- A. J. Kennedy, *Programming Languages and Dimensions*, PhD thesis, University of Cambridge, UCAM-CL-TR-391, 1996.
+- Mars Climate Orbiter Mishap Investigation Board, *Phase I Report*, NASA, 10 November 1999. https://llis.nasa.gov/llis_lib/pdf/1009464main1_0641-mr.pdf
+- J. Bentley, "Programming Pearls: The Envelope Is Back," *CACM* 29(3):176–182, 1986.
+- C. J. Roy, "Review of code and solution verification procedures for computational simulation," *J. Computational Physics* 205:131–156, 2005.
+- G. Pólya, *How to Solve It*, Princeton UP, 1945 ("Test by Dimension").
+
+---
+
+## Internal references
+
+- **ADR-0070** — the provenance trial. This document's items 1, 3, 6 and 10 bear
+  on its findings 2, 3, 4 and 6; **none of its verdicts is reversed**, and
+  finding 3's "fossil" is downgraded to "right value, wrong citation".
+- **ADR-0071** — the candidate enumeration. **Not adjudicated here.** Items 4, 5
+  and CD-1 annotate family 1; items 4, 10 and CD-4 annotate family 2. Its
+  candidate (d)'s explicitly-open verification item — *"a retransmit re-sends an
+  ALREADY-STORED symbol and needs no new slot … I did not verify it in the
+  code"* — **is confirmed by inspection**: `sent_store` is keyed by `block_id`
+  and inserted only on the source-emission path (`emit_source.rs:322`), and
+  ADR-0060 retains the payload until the cumulative frontier passes. That is a
+  code fact, not a preference between candidates.
+- **ADR-0058** — CD-5 supplies its prior art (Eppen 1979) and one untested
+  condition (demand correlation).
+- **ADR-0068** — item 4a and CD-4/item 9 record the δ unit mismatch and the
+  cascade constraint as hazards for the proposed fusion.
+- **ADR-0066** (era honesty), **ADR-0067** (why nothing flips), **ADR-0052**
+  (pre-registration shape for anything in Tier 1–3).
+- **CLAUDE.md, FORMULA-FIRST LAWS** and **MEASUREMENT DISCIPLINE 17/18** —
+  CD-7 gives them their established name and suggests one strengthening.
+- **Paper**: §16.55–§16.64, Appendix B (extended, not duplicated), Appendix C.
+
