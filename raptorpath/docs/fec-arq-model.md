@@ -3390,6 +3390,8 @@ own doc comment — no claim in this table is new.
 | `RWM_CC_PACE` | **= `copa_wire_active()`** ⇒ **OFF on the plain-reliable path** | ADR-0062; see the §12 correction — this is why the §12 amendment's pacing claim does not describe the shipped path |
 | `RWM_INFL_CAP` | **0 (off)** | matrix row 17: with it 0, `cwnd_full` is permanently FALSE, so the store cap is the SOLE brake on outstanding data |
 | `RWM_COMPOSED_CAP` | **OFF** | §16.56 stated it, **§16.57 MEASURED it (240 L1 invocations)**: the SHAPE is confirmed (span identically 0.000 in all 340 N=1 evaluations; engaged 93.6–99.8 %; brake closes) and the MAGNITUDE is refuted. At ρ=1 the law is `3.125·Σ(rate·K·RTprop) + span`, which exceeds `WIN_STORE_MAX` at every dual (c8 100 %, c8L 78.8 % — by 6.3×, c7 63.2 %), so three of five cells are UNSCORED by the pre-registered stop rule; where it IS interior it grants 2.24× the shipped cap at sc2, 2.4× the standing queue, and **1.43–1.48× WORSE delivered latency at goodput parity**, at CPU/byte above 1.05× on 8 of 10 cell-seeds. **OFF is a measured verdict, not a backlog** |
+| `RWM_SUM_CAP` | **OFF** | §16.60 / ADR-0070 finding 2 — the `×N` deletion, `clamp(gain·Σ, floor, N·knee)`. Zero new constants, bit-identical at N = 1 by construction. **OFF is a backlog, not a verdict**: no A/B of `gain·Σ` against `gain·N·Σ` at a fixed ceiling has ever been run at any level, which is exactly the finding. Predicted to move both duals off the `2·knee` pin for the first time (c7 4096 → 3271, c8 4096 → 3020) |
+| `RWM_LATE_BRAKE` | **OFF** | §16.60 / ADR-0070 finding 7 — the late-stage per-path cwnd brake, extracted from `RWM_COMPOSED_CAP` so it can be armed WITHOUT the composed law §16.57 refuted on magnitude. Same brake code path, same per-path cap (the path's own cwnd), same `live_paths()` set; no new constant |
 | `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21; `RWM_WALLDIAG` is the dead-wall onset/duration instrument that replaces the unstable tick-share statistic (ADR-0070 validation step 2) |
 | Numeric: `RWM_GEN`=384, `RWM_PIPELINE`=2, `RWM_STORE_PATH_POOL`=2048, `RWM_STORE_BOOT`=**128**, `RWM_STORE_GAIN`=2.0, `RWM_EMIT_BURST`=64, `RWM_CC_PACE_HR`=1.1 | as listed | all pinned by `default_env_resolves_the_shipped_stack`. `RWM_STORE_BOOT = 128` is the boot-cap cliff value of §16.49/§16.50 |
 
@@ -13076,6 +13078,173 @@ supports 64 either, which is the finding. The derivation is an argument from
 the floor's stated job to a number, with every input cited, and it is offered
 as such. The wire question it raises is pre-registered in the goal-gate ledger
 rather than run.
+
+### 16.60 The count multiplier deleted, stated as a formula: `clamp(gain·Σᵢ anchorᵢ, floor, N·knee)` — the Σ already scales with the path count, and the `×N` on top of it has no derivation anywhere in the repository (2026-08-18, `fix/sum-cap`, gate `RWM_SUM_CAP` default OFF)
+
+ADR-0070 finding 2 recorded the `×N` in the shipped outstanding-pool cap as
+**DEFECT, and its provenance is ABSENT**: quadratic in the path count where
+its own doc comment describes a linear quantity, never A/B'd against
+`gain·Σ` at a fixed ceiling in any bench / L1 / L0 arm, and contradicted **by
+name in three places in this repository**. This section publishes the
+corrected law and every symbol's provenance BEFORE the gate exists, which is
+what CLAUDE.md FORMULA-FIRST requires and what §16.55's postmortem says was
+never done for the expression it replaces.
+
+**The two laws, on a line by themselves, next to the sentence they implement.**
+The sentence is the birth commit's own, unchanged in the source since
+2026-07-14 (`net/mod.rs`): *"the pool that must fund Σ per-path (BDP + one
+recovery round of runway) does not grow with the path count."*
+
+```text
+  shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+  corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+
+    Σᵢ over the configured path set;  N = live_paths().len()
+```
+
+The quantity the sentence names — *Σ per-path (BDP + one recovery round of
+runway)* — is `Σᵢ(gain · anchorᵢ) = gain · Σ`. It is **already linear in the
+path count, because the Σ is**. The shipped expression multiplies that
+already-summed quantity by the count a second time. The correction is the
+deletion of the second multiplication and nothing else: the ceiling, the
+floor, the gain, the Σ-set and the estimator are all untouched.
+
+**Per-symbol provenance of the corrected law.** Every symbol is either
+carried over unchanged with its existing (and in two cases still unsatisfactory)
+provenance, or is the thing being deleted. Nothing new is introduced.
+
+| symbol | provenance |
+|---|---|
+| `Σᵢ(max_bwᵢ·min_rttᵢ)` | **measured, shape defensible** — the BBR-style queue-free BDP, a windowed MAX of delivered rate against a windowed MIN of RTT. ADR-0070 finding 6: the SHAPE is right (the max/min pair is what breaks the `cap → queue → RTT → cap` positive feedback loop), the USE as a cap input is the one its own decl doc forbids. **UNCHANGED here** — this section does not touch the estimator, and the misuse finding stands open |
+| `gain = 2.0` | **FOSSIL, carried unchanged and deliberately** — ADR-0070 finding 3. One BDP of pipe + one BDP of recovery runway, argued in prose at `ac3bc9d`, swept once at one cell under a different CC family. ADR-0070's Decision item 4 explicitly does NOT license re-fitting it, because re-fitting a coefficient inside a formula under structural review burns the only clean comparison available. It is the **same value on both arms**, so it cancels out of the A/B entirely |
+| `N = live_paths().len()` | **unchanged in the CEILING, deleted from the VALUE.** The count's defensible job is the one the birth commit's own diagnosis gives it — the pool's ceiling must grow with the path count — and `N·knee` keeps it. The value has no such job: the Σ already ranges over the paths |
+| `knee = 2048/path` | **MEASURED BUT STALE** — ADR-0070 finding 4, the 2026-07-14 static-store sweep, run on an era (legacy over-reading anchor, pre-SACK-clocked-release, pre-honest-inputs, pre-`RWM_ACK_MERGE`) none of whose inputs survive. "Per live path" is an INFERENCE no 3-or-more-path cell has ever tested. **UNCHANGED here**, and this is the point of the exercise: with the `×N` gone the ceiling stops being the law, so the knee's staleness becomes *measurable* instead of *absorbing* |
+| `floor` | **DERIVED, §16.59** — `max(ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC6928_INITIAL_WINDOW) = max(8·1, 10) = 10`. Unchanged here |
+| the deleted `×N` | **no provenance exists.** Not in the birth commit message, not in the doc comment, not at the decl site, not in the ledger. The birth commit's only measurement is a static-store sweep run with `RWM_STORE` set, which *disables the dynamic law entirely* — it measures the CEILING and is structurally incapable of seeing the multiplier |
+
+**Zero new constants, and bit-identical at N = 1.** The correction introduces
+no symbol that was not already in the expression; it removes one factor. At
+`N = 1` the path-scaled law is not engaged at all (`n_live < 2` ⇒ `None` ⇒ the
+legacy single-path law runs verbatim), so every single-path cell is byte-
+identical on both arms **by construction, not by measurement**.
+
+**The shape, and the test that will assert it.** At a symmetric cell with
+per-path anchor `a`, `Σ = N·a`:
+
+| law | unclamped value | order in N | `cap(2N)/cap(N)` |
+|---|---|---|---|
+| shipped `gain·N·Σ` | `gain·a·N²` | **quadratic** | 4 |
+| corrected `gain·Σ` | `gain·a·N` | **linear** | 2 |
+| ceiling `N·knee` | `N·knee` | linear | 2 |
+
+The ratio column is the whole reason the defect survived a month: at
+`N ∈ {1, 2}` — the entire test universe — a quadratic and a linear law are
+indistinguishable from a ratio, and the ceiling absorbs the difference at
+N = 2 anyway. The law-shape template (MEASUREMENT DISCIPLINE 17, ADR-0070
+prevention kit item 1) sweeps `N = 1…8` **synthetically**, with the clamps
+provably neutralised, precisely because no cell reaches there.
+
+**The predictions, computed from the wire's own measured anchors and recorded
+here before the arm runs.** The anchors are READOUT 3's three measured columns
+multiplied (`anchor = xanchor · rate_lr · RTprop`), the same reconstruction
+`store_cap_sf_bench.rs::AckShape::anchor_sym` performs — no modelling, no fit:
+
+| cell | leg anchors (symbols) | Σ | shipped `gain·N·Σ` → realized | corrected `gain·Σ` → realized | ratio to the pin |
+|---|---|---|---|---|---|
+| c7 | 711.74 / 923.60 | 1635.33 | 6541 → **4096** (pinned at `2·knee`) | 3270.67 → **3271** (INTERIOR) | 0.799 |
+| c8 | 775.65 / 734.03 | 1509.68 | 6039 → **4096** (pinned at `2·knee`) | 3019.35 → **3020** (INTERIOR) | 0.737 |
+| c1 / sc2 (N = 1) | — | — | not engaged | not engaged | 1.000 (bit-identical) |
+
+So the deletion is predicted to move both duals **off the ceiling for the
+first time**, and to cut the realized cap by **20.1 % at c7 and 26.3 % at c8**.
+That is the arm's entire visible effect, and it is a prediction with no free
+parameter in it: the shipped side is 121/126 dual reps at exactly 4096
+(goal-gate "Cap-Refresh Warmth"), and the corrected side is `2 × Σ` of three
+measured columns.
+
+**Why the honest reading of a null is a null RESULT, not a null effect
+(§16.53's DIVERGED lesson, applied in advance).** The corrected value is only
+*visible* where it is interior. Wherever `Σ ≥ knee/gain = 1024` on the SHIPPED
+arm the realized cap is `N·knee` on that arm — and wherever the corrected
+value also exceeds `N·knee` the two arms produce the **same integer**. The
+crossover is exact and path-count-dependent, unlike the shipped law's:
+
+```text
+  corrected law is ceiling-pinned  ⟺  gain·Σ ≥ N·knee  ⟺  Σ ≥ N·knee/gain
+```
+
+— which at the shipped constants is `Σ ≥ 1024·N`, i.e. **1024 per path**,
+against the shipped law's path-count-FREE `Σ ≥ 1024` total. The correction
+therefore does not merely lower the cap; it **restores the ceiling's dependence
+on the path count to the value as well**, and at both measured duals it lands
+the value ~1.6× and ~1.5× BELOW its own new crossover. An arm whose `[SUMCAP]`
+echo reads a high pin fraction has measured the clamp, not the law, and must be
+reported as such under MEASUREMENT DISCIPLINE 18 — which is why the gate's echo
+carries the pin fraction and the engagement count rather than only the mean cap.
+
+**The gate.** `RWM_SUM_CAP`, **default OFF**, `=0`/unset byte-identical to the
+shipped chain. It reaches both seats that evaluate the path-scaled pool — the
+plain dyn-cap chain and the Copa-sole Σ-cwnd seat — and it changes exactly one
+factor in one expression. It does NOT touch the Σ-set (that is
+`RWM_STORE_CAP_UNIFIED`, an independent dial that composes with this one), the
+estimator, the gain, the knee, the floor or the boot cap.
+
+**What is NOT claimed.** This section does not claim the corrected law is
+better on the wire; no wire measurement of the multiplier exists in either
+direction, which IS ADR-0070 finding 2. It claims that the corrected form is
+the one the law's own stated derivation writes down, that the deleted factor
+has no provenance, and that the two forms are now both published so an arm can
+be scored against a formula instead of against a memory. ADR-0070's reversal
+condition stands unchanged: an A/B finding the multiplier ahead ≫σ would make
+it a measured, named, still-underived choice rather than a defect.
+
+#### 16.60.1 The late-stage brake, extracted: `RWM_LATE_BRAKE`, the same brake `RWM_COMPOSED_CAP` carries, without the composed law §16.57 refuted
+
+ADR-0070 finding 7 records the per-path late-stage brake as **the correct
+architecture, DISABLED WITHOUT A DECISION**. §16.56 built it — with the right
+per-path cap (**the path's OWN cwnd**: no new constant, the congestion
+controller's own window is what a congestion brake ought to be made of) and
+the right set (`live_paths()`, because with `cap_i = cwnd_i` the predicate
+`in_flightᵢ ≥ cwndᵢ` is exactly `available()ᵢ == 0`, so a brake iterating
+`active_paths()` would resolve ON and never brake — a null EFFECT wearing a
+null RESULT's clothes).
+
+**But it is not separately armable, and that is a composition defect rather
+than a design one.** The brake arms on `eff_infl_cap > 0 || composed_cap`,
+and `composed_cap` also forces `three_term_on`. So on the shipped stack there
+are exactly two ways to get a brake, and neither is the one a cleanup arm
+wants:
+
+| how | what you actually get |
+|---|---|
+| `RWM_COMPOSED_CAP=1` | the cwnd brake **plus** the composed three-term pool law — whose MAGNITUDE §16.57 refuted (`WIN_STORE_MAX` becomes the law at every dual; 43–48 % worse delivered latency at goodput parity where it is interior) |
+| `RWM_INFL_CAP=<n>` | a **global** `Σ in_flight ≥ n` test against an operator-invented constant, not a per-path cwnd brake — `infl_percap` rides `gen_pipe`, which is off on the plain-reliable seat |
+
+`RWM_LATE_BRAKE` is therefore an EXTRACTION, not a new mechanism: it arms the
+identical code path with the identical per-path cap over the identical set,
+and it is deliberately the composed arm's point 3 with points 1 and 2 removed.
+Its formula is one line and every symbol is already in the tree:
+
+```text
+  brake closes  ⟺  ∀ i ∈ live_paths() :  in_flightᵢ ≥ cwndᵢ
+```
+
+**Provenance**: `cwndᵢ` is the congestion controller's own window — derived,
+never configured, and always warm (cwnd has an initial value, so this
+predicate has no cold-start fallback to choose). `live_paths()` is the
+liveness predicate, not the scheduling filter, for the reason above. **No
+constant appears in the expression at all**, which is why the extraction is
+publishable as a formula rather than as a tuning knob.
+
+**What OFF means, and what a null must read as.** `=0`/unset is byte-identical:
+`brake_armed` is unchanged, `cwnd_full` stays permanently false on the plain
+seat, and the store cap remains the sole brake on outstanding (matrix row 17).
+ON, the brake's own liveness is counted every iteration and reported as
+`brake=<closed>/<ticks>` — an arm bit-identical to control must read as a NULL
+RESULT (`brake=0/N`, armed and never closed), never as a null effect
+(`brake=0/0`, never armed). §16.57 already measured this echo doing its job on
+the composed arm; the extraction reuses the same counters and the same
+renderer, so there is nothing to drift.
 
 
 ## 17. The Measured Regime Map (2026-07-19)
