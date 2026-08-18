@@ -5583,7 +5583,16 @@ mod tests {
     fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
         // A state generator covering both regimes: `cold` = how many of the
         // four legs have never had a sample.
-        let build = |cold: usize, cold_place: bool| -> Vec<(PathId, f64)> {
+        //
+        // BOTH ARMS FROM ONE SCHEDULER (the eighth HashMap-order lesson):
+        // `place_probs` normalizes by summing over the paths in the MAP'S
+        // iteration order, and float addition is not associative — two
+        // separately-built schedulers hash differently, so their inert-arm
+        // probabilities can differ at the ULP even when the gate provably
+        // changes nothing. Sorting the OUTPUT (below) fixes the zip pairing
+        // but not the internal summation order. One instance, flag toggled,
+        // makes bit-equality a claim about the GATE instead of the hasher.
+        let build = |cold: usize| -> (Vec<(PathId, f64)>, Vec<(PathId, f64)>) {
             let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
             for id in 0..4u32 {
                 sched.add_path(id);
@@ -5594,19 +5603,20 @@ mod tests {
                 p.cwnd = 16 + 4 * id;
                 p.in_flight = 3 * id + 1;
             }
-            sched.set_cold_place(cold_place);
-            // SORTED by path id: `place_probs` yields `HashMap` order, and two
-            // separately-built schedulers hash differently, so an unsorted
-            // zip would compare path 3 against path 1 and "find" a difference
-            // that is only the map's.
-            let mut d = sched.place_probs_with_temperature(false, &[], 0.15);
-            d.sort_by_key(|(pid, _)| *pid);
-            d
+            // SORTED by path id: `place_probs` yields `HashMap` order, so an
+            // unsorted zip would compare path 3 against path 1 and "find" a
+            // difference that is only the map's.
+            sched.set_cold_place(false);
+            let mut off = sched.place_probs_with_temperature(false, &[], 0.15);
+            off.sort_by_key(|(pid, _)| *pid);
+            sched.set_cold_place(true);
+            let mut on = sched.place_probs_with_temperature(false, &[], 0.15);
+            on.sort_by_key(|(pid, _)| *pid);
+            (off, on)
         };
 
         for cold in 0..=4 {
-            let off = build(cold, false);
-            let on = build(cold, true);
+            let (off, on) = build(cold);
             // MECHANISM LIVENESS: the arms must actually DIFFER somewhere, or
             // the equalities below are vacuous. They differ exactly when some
             // leg is cold and some leg is measured.
