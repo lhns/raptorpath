@@ -5942,6 +5942,92 @@ mod tests {
         );
     }
 
+    /// Formula agreement for the Copa SRTT estimator (`CopaState::record_rtt`)
+    /// against RFC 6298 computed INDEPENDENTLY in the test — the estimator
+    /// analogue of `tests/formula_agreement.rs` (pipeline-verification matrix
+    /// row 13: the srtt was previously modelled as an oracle, never asserted).
+    ///
+    /// RFC 6298 §2.2/§2.3, srtt terms only (rttvar/RTO are not part of this
+    /// estimator):
+    ///
+    ///   first measurement R:   SRTT ← R
+    ///   subsequent R':         SRTT ← (1 − α)·SRTT + α·R',  α = 1/8
+    ///
+    /// Three absolute cases:
+    ///   1. SEED — the first sample IS the srtt, exactly (and before any
+    ///      sample there is no measured srtt at all).
+    ///   2. STEADY — 7/8·s + 1/8·r over a known mixed sequence agrees with
+    ///      the recursion computed here in f64, within Duration's
+    ///      per-step nanosecond rounding (≪ 1 µs over the whole sequence).
+    ///   3. FIXED POINT — a constant input is a fixed point (seeded at the
+    ///      constant, the EWMA holds it BIT-EXACTLY: 7/8·c + 1/8·c has no
+    ///      rounding at whole-millisecond c), and from a perturbed history
+    ///      the estimator CONVERGES to the constant at the (7/8)^n rate.
+    #[test]
+    fn copa_srtt_agrees_with_rfc6298_ewma() {
+        let clock = Arc::new(MockClock::new());
+        let mut cs = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+
+        // Case 1 — seed: SRTT ← R on the first measurement, exactly.
+        assert_eq!(cs.srtt, None, "no sample yet ⇒ no measured srtt");
+        cs.record_rtt(millis(48));
+        assert_eq!(
+            cs.srtt,
+            Some(millis(48)),
+            "RFC 6298 §2.2: the first sample must BE the srtt, exactly"
+        );
+
+        // Case 2 — steady: SRTT ← 7/8·SRTT + 1/8·R over a known mixed
+        // sequence (spikes both ways), against the independent f64 recursion.
+        let seq_ms: [u64; 10] = [80, 40, 40, 120, 33, 47, 60, 5, 500, 48];
+        let mut expect_s = 0.048_f64; // the seed above
+        for &ms in &seq_ms {
+            clock.advance(millis(5));
+            cs.record_rtt(millis(ms));
+            expect_s = 0.875 * expect_s + 0.125 * (ms as f64 / 1e3);
+            let got_s = cs.srtt.expect("seeded above").as_secs_f64();
+            assert!(
+                (got_s - expect_s).abs() < 1e-6,
+                "RFC 6298 recursion disagrees after the {ms} ms sample: \
+                 engine {got_s} s vs independent formula {expect_s} s"
+            );
+        }
+
+        // Case 3a — fixed point, exact: seeded at a constant, the EWMA must
+        // return the constant bit-for-bit on every subsequent sample.
+        let mut flat = CopaState::new(clock.clone(), ProtocolHint::Bulk);
+        flat.record_rtt(millis(40));
+        for _ in 0..32 {
+            clock.advance(millis(5));
+            flat.record_rtt(millis(40));
+            assert_eq!(
+                flat.srtt,
+                Some(millis(40)),
+                "a constant input must be an EXACT fixed point of the EWMA"
+            );
+        }
+
+        // Case 3b — convergence: from the mixed history above, a constant
+        // 40 ms input closes the gap as (7/8)^n. After n = 200 samples the
+        // initial offset (< 1 s) is below 1 ns, so the srtt must sit within
+        // 1 µs of the input — and agree with the f64 recursion throughout.
+        for _ in 0..200 {
+            clock.advance(millis(5));
+            cs.record_rtt(millis(40));
+            expect_s = 0.875 * expect_s + 0.125 * 0.040;
+        }
+        let got_s = cs.srtt.expect("seeded above").as_secs_f64();
+        assert!(
+            (got_s - expect_s).abs() < 1e-6,
+            "recursion agreement must hold through convergence: \
+             engine {got_s} s vs formula {expect_s} s"
+        );
+        assert!(
+            (got_s - 0.040).abs() < 1e-6,
+            "a constant input must converge to itself: srtt {got_s} s vs 40 ms"
+        );
+    }
+
     /// GOAL "HONEST INPUTS" phase 3 — PROBE 2: jit25's RTprop honesty under
     /// netem's clamped jitter, at component level, with the REAL estimator
     /// stack. Run explicitly:
