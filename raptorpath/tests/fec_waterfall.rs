@@ -1,6 +1,22 @@
 //! Waterfall curve comparison: all backends success rate at various loss/overhead combos.
 //!
 //! Run with: cargo test -p raptorpath --test fec_waterfall -- --nocapture
+//!
+//! The printed waterfall table is a characterization; the ASSERTED content
+//! (this file previously asserted nothing and could never fail) is the set of
+//! absolute laws every cell must obey, checked inside every trial:
+//!
+//! 1. INTEGRITY — a decode that reports success must reproduce the source
+//!    block byte-for-byte (every backend).
+//! 2. INFORMATION BOUND — fewer than ceil(data_len/symbol_size) received
+//!    symbols can never decode data_len bytes (every backend; here the data
+//!    fills k symbols exactly, so the bound equals k).
+//! 3. MDS — Reed-Solomon succeeds IF AND ONLY IF at least k distinct
+//!    symbols (source + repair) arrive.
+//!
+//! plus the table's own headline claim, per cell: at ≥100% overhead the
+//! repair budget alone covers any source loss, so every backend must sit at
+//! 100% success in that column.
 
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -61,24 +77,51 @@ fn trial(
 
     let mut decoder = backend.create_decoder(params, data.len() as u64);
     let mut fed = 0u32;
+    let mut decoded_payload = None;
 
-    // Feed surviving source symbols first
-    for sym in &available_source {
+    // Feed surviving source symbols first, then repair symbols.
+    for sym in available_source.iter().chain(available_repair.iter()) {
         fed += 1;
-        if decoder.add_symbol(sym).is_some() {
-            return (true, fed);
+        if let Some(payload) = decoder.add_symbol(sym) {
+            decoded_payload = Some(payload);
+            break;
         }
     }
+    let ok = decoded_payload.is_some() || decoder.is_decoded();
 
-    // Feed repair symbols
-    for sym in &available_repair {
-        fed += 1;
-        if decoder.add_symbol(sym).is_some() {
-            return (true, fed);
-        }
+    // Law 1 — INTEGRITY: success must reproduce the source block exactly.
+    if let Some(payload) = &decoded_payload {
+        assert_eq!(
+            &payload[..],
+            data,
+            "[{backend:?}] a successful decode must yield the source block \
+             byte-for-byte (loss {loss_rate}, overhead {overhead_pct}%)"
+        );
     }
 
-    (decoder.is_decoded(), fed)
+    let received = available_source.len() + available_repair.len();
+    // Law 2 — INFORMATION BOUND, computed from the DATA (RaptorQ partitions
+    // by transfer length; here data_len == k·symbol_size, so this equals k).
+    let k_info = data.len().div_ceil(SYMBOL_SIZE as usize);
+    if received < k_info {
+        assert!(
+            !ok,
+            "[{backend:?}] decoded {} bytes from only {received} symbols — \
+             impossible for any code (information bound {k_info})",
+            data.len()
+        );
+    }
+    // Law 3 — MDS: Reed-Solomon succeeds iff ≥ k distinct symbols arrived.
+    if matches!(backend, FecBackend::ReedSolomon) {
+        assert_eq!(
+            ok,
+            received >= num_source as usize,
+            "[ReedSolomon] MDS violated: {received} of k={num_source} \
+             received, decode success = {ok}"
+        );
+    }
+
+    (ok, fed)
 }
 
 use rand::Rng;
@@ -153,6 +196,24 @@ fn waterfall_comparison_small_block() {
                 print!(" {:<14.1}", pct);
             }
             println!();
+
+            assert_full_budget_column(&results, overhead_pct, loss_rate);
+        }
+    }
+}
+
+/// The table's headline claim, asserted: at ≥100% overhead the repair
+/// budget alone is ≥ k, so the received set is ≥ k regardless of source
+/// loss and EVERY backend must decode EVERY trial in that column.
+fn assert_full_budget_column(results: &[BackendResult], overhead_pct: f64, loss_rate: f64) {
+    if overhead_pct >= 100.0 {
+        for r in results {
+            assert_eq!(
+                r.success_count as usize, TRIALS,
+                "[{}] at {overhead_pct}% overhead (repair budget ≥ k) every \
+                 trial must decode; loss {loss_rate}",
+                r.name
+            );
         }
     }
 }
@@ -213,6 +274,8 @@ fn waterfall_comparison_large_block() {
                 print!(" {:<14.1}", pct);
             }
             println!();
+
+            assert_full_budget_column(&results, overhead_pct, loss_rate);
         }
     }
 }

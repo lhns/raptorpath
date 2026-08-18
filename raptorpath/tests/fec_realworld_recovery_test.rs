@@ -1,6 +1,28 @@
 //! Real-world FEC recovery rate comparison across Gilbert-Elliott channel scenarios.
 //!
 //! Run with: cargo test --test fec_realworld_recovery_test -- --nocapture
+//!
+//! The printed tables are the characterization (they fed ADR-0028/0029 and
+//! the benchmark-realworld docs); the ASSERTED content (this file previously
+//! asserted nothing and could never fail) is:
+//!
+//! Per decode attempt, in every part (`decode_and_check_laws`):
+//!   1. INTEGRITY — a successful decode must reproduce the source block
+//!      byte-for-byte (every backend).
+//!   2. INFORMATION BOUND — fewer than ceil(data_len/symbol_size) received
+//!      symbols can never decode data_len bytes (every backend; the bound is
+//!      data-based, NOT params.source_symbols — RaptorQ re-partitions from
+//!      the transfer length, so a padded header k overstates the true k).
+//!   3. MDS — Reed-Solomon shards by the header k exactly (padding to k),
+//!      so it succeeds IF AND ONLY IF ≥ k symbols arrived.
+//!
+//! Per part, the table's own benign-channel claim: on the Datacenter
+//! scenario (0.1% i.i.d. loss, no bad state) a 25%-or-better repair budget
+//! must recover 100% of blocks for every backend, and the RLC window must
+//! recover 100% of lost packets.
+//!
+//! Plus conservation through the interleaver: `InterleavingBuffer` must
+//! emit every pushed symbol exactly once (flat AND tapered).
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -113,6 +135,59 @@ fn make_params(k: u32, symbol_size: u16, repair_count: u32) -> EncodingParams {
 const NUM_TRIALS: u64 = 10;
 const SYMBOL_SIZE: u16 = 1200;
 
+/// Feed symbols until decode and enforce the three absolute laws on every
+/// attempt: INTEGRITY (success reproduces the source data exactly), the
+/// INFORMATION BOUND (< k received symbols can never decode), and RS's MDS
+/// property (success iff ≥ k symbols arrived). Returns decode success.
+fn decode_and_check_laws(
+    backend: FecBackend,
+    params: EncodingParams,
+    data: &[u8],
+    syms: &[WireSymbol],
+) -> bool {
+    let mut decoder = backend.create_decoder(params, data.len() as u64);
+    let mut payload = None;
+    for sym in syms {
+        if let Some(p) = decoder.add_symbol(sym) {
+            payload = Some(p);
+            break;
+        }
+    }
+    let ok = payload.is_some() || decoder.is_decoded();
+
+    if let Some(p) = &payload {
+        assert_eq!(
+            &p[..],
+            data,
+            "[{backend:?}] a successful decode must yield the source block byte-for-byte"
+        );
+    }
+    // The bound must be computed from the DATA, not the header k: RaptorQ
+    // partitions by transfer length (a padded header k overstates true k).
+    let k_info = data.len().div_ceil(params.symbol_size as usize);
+    if syms.len() < k_info {
+        assert!(
+            !ok,
+            "[{backend:?}] decoded {} bytes from only {} symbols of {} bytes \
+             — impossible for any code (information bound {k_info})",
+            data.len(),
+            syms.len(),
+            params.symbol_size
+        );
+    }
+    // RS shards by the header k exactly (padding the data to k shards).
+    if matches!(backend, FecBackend::ReedSolomon) {
+        let k = params.source_symbols as usize;
+        assert_eq!(
+            ok,
+            syms.len() >= k,
+            "[ReedSolomon] MDS violated: {} symbols of k={k} received, decode success = {ok}",
+            syms.len()
+        );
+    }
+    ok
+}
+
 // ---------------------------------------------------------------------------
 // Block-mode recovery test
 // ---------------------------------------------------------------------------
@@ -136,15 +211,7 @@ fn block_recovery_rate_same_overhead(backend: FecBackend, scenario: &Scenario) -
         let mut all_syms: Vec<WireSymbol> = surviving;
         all_syms.extend(repairs);
 
-        let mut decoder = backend.create_decoder(params, data.len() as u64);
-        let mut decoded = false;
-        for sym in &all_syms {
-            if decoder.add_symbol(sym).is_some() {
-                decoded = true;
-                break;
-            }
-        }
-        if decoded {
+        if decode_and_check_laws(backend, params, &data, &all_syms) {
             successes += 1;
         }
     }
@@ -177,15 +244,7 @@ fn block_recovery_rate_full_budget(backend: FecBackend, scenario: &Scenario) -> 
         let mut all_syms: Vec<WireSymbol> = surviving;
         all_syms.extend(repairs);
 
-        let mut decoder = backend.create_decoder(params, data.len() as u64);
-        let mut decoded = false;
-        for sym in &all_syms {
-            if decoder.add_symbol(sym).is_some() {
-                decoded = true;
-                break;
-            }
-        }
-        if decoded {
+        if decode_and_check_laws(backend, params, &data, &all_syms) {
             successes += 1;
         }
     }
@@ -226,15 +285,7 @@ fn block_recovery_rate_same_bandwidth(backend: FecBackend, scenario: &Scenario) 
         let mut all_syms: Vec<WireSymbol> = surviving;
         all_syms.extend(repairs);
 
-        let mut decoder = backend.create_decoder(params, data.len() as u64);
-        let mut decoded = false;
-        for sym in &all_syms {
-            if decoder.add_symbol(sym).is_some() {
-                decoded = true;
-                break;
-            }
-        }
-        if decoded {
+        if decode_and_check_laws(backend, params, &data, &all_syms) {
             successes += 1;
         }
     }
@@ -293,17 +344,8 @@ fn cross_block_recovery_same_bandwidth(backend: FecBackend, scenario: &Scenario)
             let mut all_syms: Vec<WireSymbol> = surviving;
             all_syms.extend(repairs);
 
-            let mut decoder = backend.create_decoder(params, block_data.len() as u64);
-            let mut decoded = false;
-            for sym in &all_syms {
-                if decoder.add_symbol(sym).is_some() {
-                    decoded = true;
-                    break;
-                }
-            }
-
             total_blocks += 1;
-            if decoded {
+            if decode_and_check_laws(backend, params, &block_data, &all_syms) {
                 successful_blocks += 1;
             }
         }
@@ -415,17 +457,8 @@ fn cross_block_recovery_same_overhead(backend: FecBackend, scenario: &Scenario) 
             let mut all_syms: Vec<WireSymbol> = surviving;
             all_syms.extend(repairs);
 
-            let mut decoder = backend.create_decoder(params, block_data.len() as u64);
-            let mut decoded = false;
-            for sym in &all_syms {
-                if decoder.add_symbol(sym).is_some() {
-                    decoded = true;
-                    break;
-                }
-            }
-
             total_blocks += 1;
-            if decoded {
+            if decode_and_check_laws(backend, params, &block_data, &all_syms) {
                 successful_blocks += 1;
             }
         }
@@ -478,17 +511,8 @@ fn cross_block_recovery_full_budget(backend: FecBackend, scenario: &Scenario) ->
             let mut all_syms: Vec<WireSymbol> = surviving;
             all_syms.extend(repairs);
 
-            let mut decoder = backend.create_decoder(params, block_data.len() as u64);
-            let mut decoded = false;
-            for sym in &all_syms {
-                if decoder.add_symbol(sym).is_some() {
-                    decoded = true;
-                    break;
-                }
-            }
-
             total_blocks += 1;
-            if decoded {
+            if decode_and_check_laws(backend, params, &block_data, &all_syms) {
                 successful_blocks += 1;
             }
         }
@@ -529,6 +553,7 @@ fn cross_block_recovery_interleaved(
 
         // Encode all blocks, collect (block_data_len, params, WireSymbols)
         let mut encoded_blocks: Vec<(Vec<u8>, EncodingParams, Vec<WireSymbol>)> = Vec::new();
+        let mut pushed_total = 0usize;
         let depth = num_blocks.min(4);
         let mut ileave = if tapered {
             InterleavingBuffer::new_tapered(depth, Duration::from_secs(60))
@@ -560,6 +585,7 @@ fn cross_block_recovery_interleaved(
             encoded_blocks.push((block_data, params, Vec::new()));
 
             // Push into interleaving buffer (single path 0)
+            pushed_total += all_syms.len();
             ileave.push_block(block_idx as u64, vec![(0u32, all_syms)]);
         }
 
@@ -569,6 +595,15 @@ fn cross_block_recovery_interleaved(
             .into_iter()
             .flat_map(|(_, syms)| syms)
             .collect();
+
+        // CONSERVATION: interleaving (flat or tapered) reorders symbols —
+        // it must never drop or duplicate one.
+        assert_eq!(
+            interleaved_syms.len(),
+            pushed_total,
+            "[{backend:?} tapered={tapered}] the interleaver must emit every \
+             pushed symbol exactly once"
+        );
 
         // Pass the interleaved stream through the channel
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -583,16 +618,8 @@ fn cross_block_recovery_interleaved(
 
         for (block_idx, (block_data, params, _)) in encoded_blocks.iter().enumerate() {
             let block_syms = per_block.get(&(block_idx as u64)).cloned().unwrap_or_default();
-            let mut decoder = backend.create_decoder(*params, block_data.len() as u64);
-            let mut decoded = false;
-            for sym in &block_syms {
-                if decoder.add_symbol(sym).is_some() {
-                    decoded = true;
-                    break;
-                }
-            }
             total_blocks += 1;
-            if decoded {
+            if decode_and_check_laws(backend, *params, block_data, &block_syms) {
                 successful_blocks += 1;
             }
         }
@@ -628,6 +655,11 @@ fn fec_realworld_recovery_comparison() {
             "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
         );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] Datacenter (0.1% iid loss) with a 25% repair budget \
+             must recover every block"
+        );
     }
 
     // Part 1b: Block-mode recovery — full budget (each backend's natural limit)
@@ -648,6 +680,11 @@ fn fec_realworld_recovery_comparison() {
             "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
         );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] Datacenter with the full repair budget (≥ 25%) \
+             must recover every block"
+        );
     }
 
     // Part 1c: Block-mode recovery — same bandwidth budget for all backends
@@ -667,6 +704,11 @@ fn fec_realworld_recovery_comparison() {
             "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, results[0].2
         );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] Datacenter at the shared (RS max_repairs) bandwidth \
+             budget must recover every block"
+        );
     }
 
     // Part 2: Window-mode recovery
@@ -684,6 +726,11 @@ fn fec_realworld_recovery_comparison() {
         println!(
             "{:>16} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
             "RLC Window", rates[0], rates[1], rates[2], rates[3]
+        );
+        assert_eq!(
+            rates[0], 100.0,
+            "[RLC Window] Datacenter (0.1% iid loss, 2x-loss repair budget) \
+             must recover every lost packet"
         );
     }
 
@@ -711,6 +758,11 @@ fn fec_realworld_recovery_comparison() {
             "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
         );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] cross-pipeline Datacenter with a 25% repair budget \
+             must recover every block"
+        );
     }
 
     println!(
@@ -735,6 +787,11 @@ fn fec_realworld_recovery_comparison() {
             "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, oh
         );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] cross-pipeline Datacenter with the full repair budget \
+             (≥ 25%) must recover every block"
+        );
     }
     println!(
         "\n=== Cross-Pipeline Block — Same Bandwidth Budget (500 pkts, 50-pkt blocks, {} trials) ===",
@@ -756,6 +813,11 @@ fn fec_realworld_recovery_comparison() {
         println!(
             "{:>20} {:>11.1}% {:>11.1}% {:>11.1}% {:>11.1}% {:>8} {:>9.0}%",
             name, results[0].0, results[1].0, results[2].0, results[3].0, results[0].1, results[0].2
+        );
+        assert_eq!(
+            results[0].0, 100.0,
+            "[{name}] cross-pipeline Datacenter at the shared bandwidth \
+             budget must recover every block"
         );
     }
 
@@ -787,6 +849,14 @@ fn fec_realworld_recovery_comparison() {
         println!(
             "{:>20} Taper {:>10.1}% {:>11.1}% {:>11.1}% {:>11.1}%",
             "", tapered[0].0, tapered[1].0, tapered[2].0, tapered[3].0
+        );
+        assert_eq!(
+            flat[0].0, 100.0,
+            "[{name}] flat interleaving on Datacenter must recover every block"
+        );
+        assert_eq!(
+            tapered[0].0, 100.0,
+            "[{name}] tapered interleaving on Datacenter must recover every block"
         );
     }
 
