@@ -33788,3 +33788,251 @@ So the launch step knows what it does *not* need to re-establish:
 
 **Nothing in this section flips a default, adds a gate, or scores a
 criterion.**
+
+---
+
+## Era Battery — THE SCORED RESULT (2026-08-19, `feat/era-score` from main@`b899312`) — **ERA LEDGER item 1 is CLOSED.** 204 invocations, two binaries, five cells, two seeds, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+**THE VERDICT IN ONE LINE.** The arc is **parity-or-better on goodput everywhere, a very large win on standing queue at the loaded duals, and a real CPU-per-byte reduction at those same duals** — and it is **NOT ADDITIVE**: latency composed SUPER-additively (1.7× the chained sum at `c8`), while goodput and receiver CPU composed SUB-additively at ack-merge's own cell (about half the chained sum). **P1 DISAGREES-LOW. P2 AGREES on goodput and DISAGREES-LOW on `q_p50` at both loaded duals. P3 DISAGREES-HIGH at 8 of 10 cell-seeds. P4 holds by construction. P5 DISAGREES on its one pre-committed direction, and is UNSCOREABLE at `c8L`.**
+
+**PROVENANCE.** Ledgers `era-s42.log` (102 `ERARESULT` rows) and `era-s7.log` (102), one detached session each, `ERA-ALL start 2026-08-19T09:36:12Z … end 10:25:06Z`, both `ERA-BATTERY-DONE` lines present. **G-SHA SATISFIED: both ledger headers carry BOTH shas** — OLD `fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d` (`4171b584`), NEW `e329d2c654dd8ca741c182d623e636db805b0071352572033d3ff5869a134bf5` (`820116b`, engine bit-identical to the contract's `6ad964d`). **G-ERA SATISFIED: 0 violations, 0 `ERA-SURPRISE`, 0 VOID rows** — every OLD row carried `[GATES]` 0/0 and every NEW/NR row 1/1, on both endpoints, on all 204 invocations. Rows: OLD 96 (83 live), NEW 96 (74 live), NR 12 (9 live). Artifacts are held out of the tree (26 MB of `diag/`) and are not committed.
+
+### 1 — THE ABORT-CAUSE TABLE, READ BEFORE ANY CONTRAST (G-ABORT)
+
+`era_report.py` prints it first by construction and this section reads it first for the same reason.
+
+| cell | arm | seed | rows | abort | rate | cause |
+|---|---|---|---|---|---|---|
+| `c1` | OLD/NEW | 42, 7 | 8 each | **0** | 0.0 % | — |
+| `c7` | OLD | 42 | 8 | 0 | 0.0 % | — |
+| `c7` | NEW | 42 | 8 | 0 | 0.0 % | — |
+| `c7` | OLD | 7 | 8 | 4 | 50.0 % | `topo_step`=4 |
+| `c7` | NEW | 7 | 8 | 4 | 50.0 % | `topo_step`=4 |
+| `c8` | OLD | 42 | 12 | 0 | 0.0 % | — |
+| `c8` | NEW | 42 | 12 | 0 | 0.0 % | — |
+| `c8` | OLD | 7 | 12 | 1 | 8.3 % | `topo_step`=1 |
+| `c8` | NEW | 7 | 12 | 7 | **58.3 %** | `topo_step`=7 |
+| `c8L` | OLD | 42 | 12 | 0 | 0.0 % | — |
+| `c8L` | NEW | 42 | 12 | 0 | 0.0 % | — |
+| `c8L` | OLD | 7 | 12 | 5 | 41.7 % | `topo_step`=5 |
+| `c8L` | NEW | 7 | 12 | 9 | **75.0 %** | `topo_step`=9 |
+| `sc2` | OLD | 42 | 8 | 0 | 0.0 % | — |
+| `sc2` | NEW | 42 | 8 | 0 | 0.0 % | — |
+| `sc2` | OLD | 7 | 8 | 3 | 37.5 % | `topo_step`=3 |
+| `sc2` | NEW | 7 | 8 | 2 | 25.0 % | `topo_step`=2 |
+| `NR` | — | 7 | 2 each at c7/c8/sc2 | 1 each | 50.0 % | `topo_step`=1 |
+
+**38 aborts of 204. `no_record` 0. residual `no_gates_unknown` 0.** Every single abort carries a cause. **The witness that the calibration nearly broke did its whole job on its first scored outing.**
+
+**G-ABORT'S 10-POINT RULE FIRES AT THREE CELL-SEEDS, ALL OF THEM SEED 7:**
+
+| cell, seed | OLD rate | NEW rate | gap | |
+|---|---|---|---|---|
+| `c8` s7 | 8.3 % | 58.3 % | **50.0 pts** | **FIRES** |
+| `c8L` s7 | 41.7 % | 75.0 % | **33.3 pts** | **FIRES** |
+| `sc2` s7 | 37.5 % | 25.0 % | **12.5 pts** | **FIRES** |
+| `c7` s7 | 50.0 % | 50.0 % | 0.0 pts | ok |
+| every cell at s42 | 0.0 % | 0.0 % | 0.0 pts | ok |
+
+**THE SELECTION THIS IMPLIES, STATED AS THE CONTRACT REQUIRES.** At `c8` s7 the NEW arm is 5 survivors of 12 against OLD's 11 of 12; at `c8L` s7 it is 3 of 12 against 7 of 12. **Every contrast at `c8` s7, `c8L` s7 and `sc2` s7 is therefore GATED and is reported below with this table beside it.** The survivors at those three cell-seeds are a draw, not a census, and the two arms were drawn at different rates.
+
+**AND THE WITNESS NAMED THE CLASS, WHICH THREE BATTERIES COULD NOT — INCLUDING THE PART THAT REFUTES THIS CONTRACT'S OWN ARGUMENT.** The 38 aborts resolve to `topo_step` at `topo_dual.sh` **line 95 (9×) and line 96 (29×)**, which are exactly `aw_ping "$NS_CLI" 10.77.0.2 pathA` and `aw_ping … 10.78.0.2 pathB` — **the topo-ping.** The recorded ping output is unambiguous: on all 38, `2 packets transmitted, 0 received, 100% packet loss`. On surviving invocations at the same cells the same 2-packet ping routinely records `1 received, 50% packet loss`. **The class is a two-packet sanity ping with no retry, run across a deliberately Gilbert-Elliott-lossy shaped link; the abort is the draw where BOTH packets are lost.**
+
+> **THE PRE-REGISTRATION SAID THIS COULD NOT HAPPEN, AND IT WAS WRONG.** This contract, and `topo_dual.sh`'s own comment at lines 88–94, argue in bold that "a failed topo ping cannot produce a `[GATES]`-less invocation" because the pings are the last statements of `up()`. The association is nonetheless **perfect at n = 204: `topo_step` on 38 of 38 aborts and on 0 of 166 non-aborts.** The argument was about topology completeness and it was correct about topology completeness; it was wrong about the exit path, because `aw_ping` re-returns the ping's status under `set -e`.
+>
+> **THE ONE FACT THAT KEEPS THIS FROM CONTAMINATING THE ERA CONTRAST.** On all 38 aborts `srv_bound`, `cli_rc` and `seconds` are **all `None`** — the server never bound, the client never ran, **the engine binary was never launched.** The abort is entirely upstream of the binary and therefore **cannot be caused by the era.** The arm imbalance at `c8`/`c8L` s7 is an imbalance in an arm-independent loss draw, not an effect of the code under test. **The selection is still real** — the surviving transfers were preceded by a healthier link state and the two arms survived at different rates, so the survivors may be biased toward easy draws unequally — **but its mechanism is now named rather than guessed, and it is a HARNESS DEFECT with an obvious repair (retry or widen the sanity ping), not an engine property.**
+
+**THE CONTROL IS CLEAN.** `drain_pids_t0 > 0` in **0 of 204 invocations, max 0, at every cell and every arm.** The SIGTERM race is not the mechanism and is now excluded on a measured control rather than by argument.
+
+### 2 — LIVENESS AND HEADROOM
+
+**G-LIVE.** 166 live of 204. All 38 non-live rows are the aborts above; the `half` column (an anchor on ONE endpoint only) is **0 everywhere** — there is not one instrument-fail of the liveness gate in the battery. Seed 42 is **48/48 live on both arms at every cell**; every loss is seed 7.
+
+**G-HEAD.** The permission table is the **PRE-REGISTERED** one from the calibration and is not re-derived here: `c1`, `c8`, `c8L` **throughput permitted**; **`c7` and `sc2` PARITY / LATENCY ONLY**. The scored run's own utilisation is recorded for the record and it is *more* generous than the calibration at `c7` (OLD 92.1 % / NEW 89.4 %, i.e. 7.9 % / 10.6 % headroom against the calibration's binding 4.9 %) — **and the contract's permission stands anyway, because the contract said the calibration fixes it and a permission widened after the numbers are in is not a permission.** No throughput magnitude is claimed at `c7` or `sc2` below. Nothing turns on it: both cells read PARITY with small bands.
+
+| cell | cap | OLD util | NEW util | permission USED |
+|---|---|---|---|---|
+| `c1` | 1 Gbit | 20.1 % | 21.8 % | throughput PERMITTED |
+| `c7` | 200 Mbit | 92.1 % | 89.4 % | **PARITY / LATENCY ONLY** (pre-registered) |
+| `c8` | 120 Mbit | 73.5 % | 82.7 % | throughput PERMITTED |
+| `c8L` | 120 Mbit | 61.8 % | 76.3 % | throughput PERMITTED |
+| `sc2` | 100 Mbit | 98.2 % | 98.6 % | **PARITY / LATENCY ONLY** |
+
+**THE PRE-RECORDED `c8L` CAUTION DID NOT REPRODUCE, AND THAT IS A RESULT.** The calibration's `n = 1` smoke read `c8L` at OLD **20.8** vs NEW **88.5 Mbit/s** — a 4.25× gap — and this contract pre-committed that *if the scored battery reproduced a gap of that size, `E-CPU`'s ratio and `E-GOOD`'s delta at `c8L` would be ONE phenomenon read twice.* **The scored run reads OLD 60.09 vs NEW 82.67 (1.38×) at s42 and 72.04 vs 75.51 (1.05×) at s7.** The condition does not fire. The calibration's OLD `c8L` row was an `n = 1` outlier, disclosed in advance precisely so it could be retired here, and **`E-GOOD` and `E-CPU` at `c8L` are read as two measurements.**
+
+### 3 — E-GOOD: GOODPUT, TWO-SIDED
+
+| cell | seed | nOLD | nNEW | OLD Mbit/s | NEW Mbit/s | Δ | 2σ | % | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `c1` | 42 | 8 | 8 | 175.25 | 187.23 | +11.98 | 82.74 | +6.84 % | PARITY |
+| `c1` | 7 | 8 | 8 | 192.06 | 210.53 | +18.47 | 10.88 | +9.62 % | **WIN** |
+| `c7` | 42 | 8 | 8 | 163.87 | 156.97 | −6.90 | 31.20 | −4.21 % | PARITY (magnitude not claimed) |
+| `c7` | 7 | 4 | 4 | 167.38 | 167.83 | +0.45 | 6.00 | +0.27 % | PARITY (magnitude not claimed) |
+| `c8` | 42 | 12 | 12 | 73.13 | 86.74 | +13.61 | 27.36 | +18.61 % | PARITY |
+| `c8` | 7 | 11 | 5 | 77.95 | 90.16 | +12.21 | 19.64 | +15.67 % | PARITY — **GATED (G-ABORT 50.0 pts)** |
+| `c8L` | 42 | 12 | 12 | 60.09 | 82.67 | +22.58 | 34.93 | +37.57 % | PARITY |
+| `c8L` | 7 | 6 | 3 | 72.04 | 75.51 | +3.48 | 35.61 | +4.83 % | PARITY — **GATED (33.3 pts)** |
+| `sc2` | 42 | 8 | 8 | 88.18 | 87.59 | −0.60 | 1.82 | −0.68 % | PARITY (magnitude not claimed) |
+| `sc2` | 7 | 5 | 6 | 87.65 | 87.83 | +0.18 | 2.17 | +0.21 % | PARITY — **GATED (12.5 pts)** |
+
+**NOT ONE LOSS ANYWHERE, at either seed, at any cell, on a two-sided test.** One resolved WIN (`c1` s7, +9.6 %). The large point gains at `c8` (+18.6 %) and `c8L` (+37.6 %) are **NOT resolved** — the dual cells' own rep-to-rep spread is 27–35 Mbit/s and swallows them. **That is the honest reading and it is not upgraded here.**
+
+**P1 — c1 goodput vs the chained sum `[+12.7, +13.0] %`:**
+
+* s42: measured **+6.84 %** → **DISAGREES-LOW**
+* s7: measured **+9.62 %** → **DISAGREES-LOW**
+
+**P1 DISAGREES-LOW at both seeds.** Two disclosures the verdict is reported with, neither of which changes it (the contract scores against the pre-registered band and against nothing else): (i) the s42 point carries a 2σ of 82.7 Mbit/s and has no resolving power at all, so s7 is the seed that speaks; (ii) **the cell itself is not the cell the prediction was published on** — ack-merge's own battery read OLD at 203.1/201.8 and NEW at 228.9/228.1 Mbit/s, and this battery reads **both arms lower** (OLD 175/192, NEW 187/211). Whatever moved `c1` moved it under both binaries. Sub-additivity and substrate drift are both live explanations and this battery does not separate them.
+
+### 4 — E-LAT: DELIVERED LATENCY, TWO INSTRUMENTS, NEVER AVERAGED
+
+| cell | seed | `q_p50` OLD | `q_p50` NEW | Δq | `ping_p50` OLD | NEW | Δp | agree? |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 42 | 14.8 | 32.2 | **+17.5** | 2.1 | 2.1 | 0.0 | yes |
+| `c1` | 7 | 8.9 | 7.4 | −1.5 | 2.1 | 2.1 | 0.0 | **SIGN!** |
+| `c7` | 42 | 49.5 | 48.8 | −0.8 | 44.8 | 38.1 | −6.7 | yes |
+| `c7` | 7 | 59.8 | 44.2 | −15.5 | 54.0 | 46.2 | −7.8 | yes |
+| `c8` | 42 | 320.4 | 122.2 | **−198.2** | 50.2 | 62.9 | +12.7 | **SIGN!** |
+| `c8` | 7 | 336.2 | 137.2 | **−199.0** | 70.7 | 83.3 | +12.6 | **SIGN!** — GATED |
+| `c8L` | 42 | 396.6 | 136.1 | **−260.5** | 59.5 | 104.1 | +44.7 | **SIGN!** |
+| `c8L` | 7 | 458.1 | 115.7 | **−342.5** | 82.9 | 83.8 | +0.9 | **SIGN!** — GATED |
+| `sc2` | 42 | 92.0 | 87.8 | −4.2 | 88.4 | 94.0 | +5.6 | **SIGN!** |
+| `sc2` | 7 | 90.0 | 90.8 | +0.8 | 99.5 | 97.5 | −2.1 | **SIGN!** — GATED |
+
+**P2, the duals' `q_p50`, against the δ-cap's own measured class:**
+
+| cell | seed | measured | predicted | verdict |
+|---|---|---|---|---|
+| `c7` | 42 | −0.8 ms | [−16.0, −10.0] | **DISAGREES-HIGH** (no move) |
+| `c7` | 7 | −15.5 ms | [−16.0, −10.0] | **AGREES** |
+| `c8` | 42 | −198.2 ms | [−117.0, −113.0] | **DISAGREES-LOW** (1.7× the prediction) |
+| `c8` | 7 | −199.0 ms | [−117.0, −113.0] | **DISAGREES-LOW** — GATED |
+| `c8L` | 42 | −260.5 ms | [−200.0, −130.0] | **DISAGREES-LOW** |
+| `c8L` | 7 | −342.5 ms | [−200.0, −130.0] | **DISAGREES-LOW** — GATED |
+
+**P2's goodput half AGREES: PARITY at all four dual cell-seeds, exactly as predicted.** **P2's latency half DISAGREES-LOW at both loaded duals — the arc removed HALF AGAIN MORE standing queue than the chain predicts** — and DISAGREES-HIGH at `c7` s42, where it removed none.
+
+> **THE INSTRUMENT DISAGREEMENT IS REPORTED, NOT RESOLVED, AND NEITHER GAUGE IS PROMOTED.** At `c8` and `c8L` s42 — both cells where headroom is PERMITTED, so the probe is not simply measuring the wall — the engine's own standing-queue estimate falls by **198–261 ms** while the independent 20 pkt/s ICMP flow through the same qdisc gets **12.7–44.7 ms SLOWER**. The `sc2` and `c7` rows are exempt: those cells are pre-registered PARITY/LATENCY-ONLY and the probe there is measuring the wall by the contract's own clause. **A coherent candidate exists and is named rather than adopted:** `q_p50` is `median(max(0, rtt − rtp))` — the *engine's own* standing queue — while the ping traverses the *whole shaped queue*, which the NEW arm fills harder because it is moving 15–38 % more data through the same 120 Mbit cell. On that reading both gauges are right and they measure different queues. **This battery does not test that, so `c8`/`c8L` latency is reported as: the engine's queue definitely collapsed; whether an unrelated flow sharing the bottleneck sees less delay is NOT established and the one instrument that looked says it sees more.** That is a named instrument for the successor, not a caveat to be filed away.
+
+`c1` s42's `+17.5 ms` `q_p50` rise is on a 1 Gbit cell at 21 % utilisation where the ping probe reads a flat 2.1 ms on both arms — an 18 ms move in an engine estimate that no delivered-latency instrument can see. It is recorded and not interpreted.
+
+### 5 — E-CPU: CPU PER GBIT, BOTH ENDPOINTS
+
+| cell | seed | side | OLD | NEW | % | 2σ% | verdict |
+|---|---|---|---|---|---|---|---|
+| `c1` | 42 | recv | 5.833 | 5.549 | −4.86 | 32.46 | PARITY |
+| `c1` | 42 | send | 5.822 | 5.714 | −1.85 | 26.85 | PARITY |
+| `c1` | 7 | recv | 5.496 | 5.151 | **−6.27** | 3.74 | **DOWN** |
+| `c1` | 7 | send | 5.632 | 5.382 | −4.44 | 8.64 | PARITY |
+| `c7` | 42 | recv | 7.907 | 8.052 | +1.84 | 4.87 | PARITY |
+| `c7` | 42 | send | 8.879 | 8.729 | −1.69 | 9.12 | PARITY |
+| `c7` | 7 | recv | 7.858 | 7.962 | +1.33 | 2.41 | PARITY |
+| `c7` | 7 | send | 8.764 | 8.789 | +0.28 | 2.24 | PARITY |
+| `c8` | 42 | recv | 11.238 | 10.233 | **−8.94** | 5.21 | **DOWN** |
+| `c8` | 42 | send | 11.979 | 8.271 | **−30.96** | 18.47 | **DOWN** |
+| `c8` | 7 | recv | 11.091 | 10.460 | **−5.69** | 4.21 | **DOWN** — GATED |
+| `c8` | 7 | send | 11.600 | 9.180 | **−20.86** | 13.30 | **DOWN** — GATED |
+| `c8L` | 42 | recv | 10.587 | 9.320 | **−11.97** | 10.30 | **DOWN** |
+| `c8L` | 42 | send | 19.494 | 11.011 | −43.51 | 56.29 | PARITY |
+| `c8L` | 7 | recv | 10.034 | 9.396 | −6.36 | 8.38 | PARITY — GATED |
+| `c8L` | 7 | send | 15.195 | 11.810 | −22.27 | 51.38 | PARITY — GATED |
+| `sc2` | 42 | recv | 9.278 | 9.014 | −2.85 | 6.04 | PARITY |
+| `sc2` | 42 | send | 7.973 | 7.969 | −0.06 | 11.91 | PARITY |
+| `sc2` | 7 | recv | 9.093 | 8.862 | −2.53 | 5.13 | PARITY |
+| `sc2` | 7 | send | 7.818 | 7.746 | −0.92 | 5.46 | PARITY |
+
+**CPU per byte never rose past the band anywhere, on either endpoint.** It fell, resolved, at `c8` on **both** endpoints and both seeds (receiver −5.7 to −8.9 %, sender −20.9 to −31.0 %), at `c8L` receiver s42 (−12.0 %), and at `c1` receiver s7 (−6.3 %).
+
+**P3 — receiver CPU/Gbit vs ack-merge's own `[−9.1, −8.4] %`:**
+
+| cell | seed | measured | verdict |
+|---|---|---|---|
+| `c1` | 42 | −4.86 % | DISAGREES-HIGH |
+| `c1` | 7 | −6.27 % | DISAGREES-HIGH |
+| `c7` | 42 | +1.84 % | DISAGREES-HIGH |
+| `c7` | 7 | +1.33 % | DISAGREES-HIGH |
+| `c8` | 42 | −8.94 % | **AGREES** |
+| `c8` | 7 | −5.69 % | DISAGREES-HIGH — GATED |
+| `c8L` | 42 | −11.97 % | **DISAGREES-LOW** |
+| `c8L` | 7 | −6.36 % | DISAGREES-HIGH — GATED |
+| `sc2` | 42 | −2.85 % | DISAGREES-HIGH |
+| `sc2` | 7 | −2.53 % | DISAGREES-HIGH |
+
+**P3 DISAGREES at 9 of 10 cell-seeds, 8 of them HIGH (a SMALLER reduction than predicted), 1 LOW, 1 AGREES.** This is the prediction with a stated mechanism on both endpoints, so the contract designated its failure the most informative — and the next table is why that designation earned its place.
+
+### 6 — `[CTLD]`: THE MECHANISM, AND THE ONLY CROSS-ERA GAUGE THE BATTERY HAS
+
+| cell | seed | OLD | NEW | ratio |
+|---|---|---|---|---|
+| `c1` | 42 | 0.511 | 1.002 | **1.960** |
+| `c1` | 7 | 0.511 | 1.002 | **1.960** |
+| `c7` | 42 | 0.943 | 1.032 | 1.095 |
+| `c7` | 7 | 0.948 | 1.032 | 1.089 |
+| `c8` | 42 | 0.976 | 1.051 | 1.077 |
+| `c8` | 7 | 0.978 | 1.075 | 1.099 |
+| `c8L` | 42 | 0.967 | 1.031 | 1.066 |
+| `c8L` | 7 | 0.972 | 1.031 | 1.061 |
+| `sc2` | 42 | 0.861 | 1.037 | 1.205 |
+| `sc2` | 7 | 0.870 | 1.038 | 1.194 |
+
+**THE ACK-MERGE FLIP'S OWN PUBLISHED MECHANISM READING WAS `1.96` AT `c1` AGAINST `1.05` AT `c7`. THIS BATTERY, ON A DIFFERENT BINARY PAIR ELEVEN DAYS AND 211 COMMITS LATER, READS `1.960` AT `c1` AND `1.095`/`1.089` AT `c7` — to three digits at `c1` and to the second at `c7`, at both seeds.** The mechanism is not merely still shipped; it is quantitatively identical to its own flip's measurement.
+
+**THAT IS WHAT MAKES P1's AND P3's SUB-ADDITIVITY A FINDING RATHER THAN A DOUBT.** The mechanism is fully engaged at `c1` and delivers about **half** the goodput gain (+6.8/+9.6 % against +12.7/+13.0 %) and about **half to two-thirds** the receiver-CPU reduction (−4.9/−6.3 % against −8.4/−9.1 %) that it delivered alone. Something in the other 210 commits, or in the substrate both arms now run on, absorbs the rest. **The mechanism gauge rules out "the flip regressed" and rules out "the flip stopped shipping"; it does not distinguish interaction from substrate, and this battery does not claim to.**
+
+### 7 — P4 AND P5
+
+**P4 — sc2 and c1 carry NO δ-cap or sum-cap contribution. HOLDS BY CONSTRUCTION, not by measurement:** `n_live < 2` short-circuits the pooled seat before any multiplier is read. Stated ex ante so it could not be used ex post — and it is needed, because `sc2` moved essentially nothing (goodput −0.68 %/+0.21 %, `q_p50` −4.2/+0.8 ms, CPU −2.5 to −2.9 % PARITY) and `c1`'s move is the one attributed above to ack-merge. **No `sc2` or `c1` number in this section is attributed to either cap flip.**
+
+**P5 — the `NR` clamp readout.** `NR` is scored on its own `[RACK]` line and on nothing else.
+
+| cell | seed | n | evals | `legacy_pin` | `fa_frac` | `fa_d` |
+|---|---|---|---|---|---|---|
+| `c7` | 42 | 2 | 169 813 | **0.5476** | 0.1686 | 5639 |
+| `c7` | 7 | 1 | 169 821 | **0.7348** | 0.2215 | 5247 |
+| `c8` | 42 | 2 | 21 598 | 0.9272 | 0.2632 | 845 |
+| `c8` | 7 | 1 | 22 104 | 0.9852 | 0.3305 | 826 |
+| `sc2` | 42 | 2 | 85 371 | 0.9909 | 0.7523 | 3121 |
+| `sc2` | 7 | 1 | 85 496 | 0.9986 | 0.7066 | 3122 |
+
+Prior (Candidates Battery, `RWM_DELTA_CAP` OFF): `legacy_pin` **0.924–0.997**, `fa_frac` **0.17–0.78**, against RACK's own `α_class = 0.0625`.
+
+* **`legacy_pin`: P5 DISAGREES on the one direction it pre-committed.** It predicted a RISE at every cell with the LARGEST rise at `c8` and `c8L`. Measured: `c7` **FELL hard** (0.99-class → 0.548/0.735), `c8` sits at 0.927/0.985 — inside the prior band, no rise — and `sc2` at 0.991/0.999 is a rise of at most 0.2 points off a ceiling of 1.0.
+* **`c8L` IS UNSCOREABLE FOR P5, AND BY THIS CONTRACT'S OWN DESIGN**: `NR` runs at `c7`, `c8` and `sc2` only, so the cell where P5 predicted its largest effect has no armed arm. **That is a specification gap in the pre-registration, recorded as one.**
+* **THE TEST WAS UNDERPOWERED WHERE IT PREDICTED MOST AND WRONG WHERE IT HAD ROOM.** A prior of 0.924–0.997 leaves at most 7.6 points of headroom to rise, so `c8` and `sc2` could not have shown a large rise had one occurred. `c7` is the only cell with real room, and it moved **the other way** — and `c7` is also the cell where `q_p50` barely moved (−0.8/−15.5 ms), which is the opposite of the mechanism P5 argued from. **The clamp's behaviour under the new default is a genuinely open question and the successor instrument must arm `NR` at `c8L` and at a cell with headroom under the pin.**
+* **`fa_frac`: NO MOVE, and that is a result under this contract's own "either direction is a result" clause.** Measured 0.169–0.752, entirely inside the 0.17–0.78 prior. **It remains 2.7–12× RACK's own `α_class` of 0.0625 under the new default, exactly as it was under the old one.** The δ-cap did not fix it and did not worsen it.
+
+### 8 — THE INTERACTION CLAUSE, SCORED
+
+**The cumulative two-binary measurement DISAGREES with the chained per-rung sum, and the SIGN OF THE DISAGREEMENT DEPENDS ON THE QUANTITY. The arc did not compose additively.**
+
+| what | chained sum predicts | two-binary measurement | reading |
+|---|---|---|---|
+| `c1` goodput | +12.7 / +13.0 % | **+6.8 / +9.6 %** | **SUB-additive** (≈ half) |
+| dual goodput | PARITY | **PARITY, 4/4** | **additive — AGREES** |
+| `c8` `q_p50` | −113 / −117 ms | **−198 / −199 ms** | **SUPER-additive** (≈ 1.7×) |
+| `c8L` `q_p50` | −130 / −200 ms | **−261 / −343 ms** | **SUPER-additive** |
+| `c7` `q_p50` | −10 / −16 ms | **−0.8 / −15.5 ms** | split: one seed AGREES, one shows no move |
+| receiver CPU | −8.4 / −9.1 % | **−1.3 to −12.0 %, mostly −3 to −6 %** | **SUB-additive** (1 AGREES of 10) |
+
+**Read as the contract demands — before any statement about the arc's value:** the four rungs are **not** independent contributions that add. The two cap flips' latency effect at the loaded duals is **larger in combination with the rest of the arc than either battery measured alone**, and ack-merge's throughput and CPU effect at its own cell is **smaller in combination than it measured alone, with its mechanism gauge reading its own published value to three digits.** Super-additivity here is not a bonus and sub-additivity is not a disappointment; both are statements about the rungs, and **neither is explained by this battery.** The two named candidates for the sub-additive half — dilution by the 207 non-flip commits, and a substrate whose `c1` goodput fell on *both* arms relative to the ack-merge era — are not separated by any measurement in this ledger, and **the successor is a same-session `c1` re-run of the ack-merge pair alone on today's substrate**, which would separate them in one cell.
+
+### 9 — WHAT THIS SAYS THE ARC WAS WORTH, IN PLAIN TERMS
+
+A deployment that upgraded from the pre-arc default (`4171b58`, 2026-08-08) to today's default, changing no environment variable, gets this:
+
+**Latency is where the arc paid, and it paid enormously — at the loaded, congested, multi-path cells and nowhere else.** At `c8` the engine's standing queue fell from **320 ms to 122 ms**; at `c8L` from **397 ms to 136 ms** and, on the gated seed, from **458 ms to 116 ms**. That is a **60–75 % reduction in queueing delay** at the cells that were worst, and it is roughly **1.7× larger than the sum of the rungs that produced it**. At the uncongested or single-path cells — `c1`, `c7`, `sc2` — there was essentially nothing to remove and nothing was removed. **The caveat is real and is not buried: the independent ping probe through the same bottleneck disagrees in sign at `c8` and `c8L`, reading 13–45 ms slower. The engine's own queue definitely collapsed; whether a bystander flow sharing that bottleneck feels it is NOT established by this battery.**
+
+**Throughput is parity-or-better, with one resolved win and no losses.** The only contrast that clears its own noise is `c1` at seed 7: **+9.6 %**, about 18 Mbit/s on a 400 MB single-path transfer. The `c8` (+15.7/+18.6 %) and `c8L` (+4.8/+37.6 %) point gains are large and are **not** resolved by the dual cells' rep-to-rep spread — they are encouraging and they are not claimed. At `c7` and `sc2` no magnitude may be claimed at all (headroom below 5 %), and both read PARITY. **Nothing anywhere got slower past its band.**
+
+**CPU per byte fell where the machine was working hardest, on both ends of the wire.** At `c8` the receiver spends **8.9 % less CPU per Gbit** and the sender **31.0 % less**, both resolved and both reproduced on the gated second seed. At `c8L` the receiver is down **12.0 %**. At `c1`, `c7` and `sc2` it is flat. **The arc made the congested dual cell cheaper to run as well as faster to drain — which is the one place the goodput, latency and CPU stories all point the same way.**
+
+**And the honest summary of the disagreement:** the arc is worth **more** than the chain predicted on latency at the loaded duals, **less** than the chain predicted on throughput and receiver CPU at ack-merge's own cell, and **exactly** what the chain predicted on dual goodput parity. **The single question this battery answers cleanly and the ledger should carry forward is: the improvements are real, they are concentrated at the congested multi-path cells, and they do not add up — in both directions.**
+
+### 10 — WHAT IS NOT CLAIMED, AND WHAT THE SUCCESSOR MUST DO
+
+* **No cross-era wall, `[SUMCAP]`, `[DCAP]`, `[ACKDIAG]`, `[LCW]`, `[CCAP]`, `[SF]` or wait-histogram claim is made** — those gauges do not exist at `4171b58` and G-PAIR ruled the `c8` dead-wall contrast unavailable cross-era before the run.
+* **No throughput magnitude at `c7` or `sc2`.**
+* **Three cell-seeds are GATED** (`c8` s7, `c8L` s7, `sc2` s7) and every number from them is marked so above.
+* **Named successors, in the order the evidence names them:** (1) **repair the topo-ping** — a 2-packet no-retry ICMP sanity check on a deliberately lossy link manufactured 38 aborts and a 50-point arm imbalance, and it is a harness defect with a one-line fix; (2) **resolve the `q_p50` / `ping_p50` sign disagreement at `c8`/`c8L`**, which is the only thing standing between "the engine's queue collapsed" and "delivered latency improved"; (3) **arm `NR` at `c8L`, and at a cell where `legacy_pin` is not already at its ceiling**, because P5's test had room at exactly one cell and lost there; (4) **re-run the ack-merge pair alone at `c1` on today's substrate**, to separate interaction from substrate drift in P1 and P3.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
