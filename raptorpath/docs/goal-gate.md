@@ -33620,10 +33620,68 @@ Same protocol as the Candidates and Ladder contracts, unmodified: a
 wall, never `INVOCATION_S`**, committed as this contract's completion in its
 own commit **BEFORE** the scored battery runs.
 
-| cell | shaped aggregate | headroom | claims permitted |
-|---|---|---|---|
-| c9 | 4 × 100 Mbit = **400 Mbit** | `[LAUNCH]` | ≥ 5 % → throughput targets permitted; < 5 % → **parity / latency / cap-shape only** |
-| c9h | 2 × 100 + 2 × 20 Mbit = **240 Mbit** | `[LAUNCH]` | as above |
+**FILLED 2026-08-19** (`feat/c9-run`, VM 10.1.5.16, binary sha256
+`a23e45f57ab1ac9b2bbb414577c844573cd2060fef239f2f3c232a54c14a13c3` =
+main@`97bd690` + the topo-ping repair `7c67ad0`; kernel 7.0.14-101.fc43;
+Xeon E5-2650 v3, 6 cores; seed 42; **one rep per arm per cell, 4 invocations,
+`tc -s qdisc show` captured on EVERY one**; `RWM_ACKDIAG=1
+RWM_ACKDIAG_WINDOW_US=250000` echoed two-sided on all four).
+
+| cell | arm | shaped aggregate | tc data bytes | transfer wall | util % | **headroom %** | claims permitted |
+|---|---|---|---|---|---|---|---|
+| c9 | pooled | 4 × 100 Mbit = **400 Mbit** | 449.3 MB | 18.14 s | 49.5 | **50.5** | throughput targets PERMITTED |
+| c9 | percap | 400 Mbit | 449.3 MB | 17.66 s | 50.9 | **49.1** | throughput targets PERMITTED |
+| c9h | pooled | 2 × 100 + 2 × 20 Mbit = **240 Mbit** | 168.4 MB | 8.10 s | 69.3 | **30.7** | throughput targets PERMITTED |
+| c9h | percap | 240 Mbit | 169.9 MB | 8.63 s | 65.6 | **34.4** | throughput targets PERMITTED |
+
+`util = tc_bytes·8 / (TRANSFER wall × capacity)`, `tc_bytes` summed over the
+**DATA-direction legs CLI0..CLI3 only** — the direction the shaped aggregate
+describes — first `Sent` line per device, exactly as `era_parse.py` reads it.
+The counters accumulate over the whole invocation, so at the 3-run `c9h` the
+denominator is the **SUM** of the runs' walls, not their median.
+
+**THE DENOMINATOR CORRECTION, shown rather than asserted** (discipline 16's
+whole point). Reading `INVOCATION_S` instead would have given: c9/pooled
+44.9 % (not 49.5), c9/percap 47.3 % (not 50.9), c9h/pooled 56.1 % (not 69.3),
+c9h/percap 51.5 % (not 65.6) — the invocation wall runs **1.08–1.28×** the
+transfer wall here. Every reading in this table is the transfer wall.
+
+> **THE HAZARD THIS SECTION NAMED IN ADVANCE HAS FIRED: c9 IS SENDER-BOUND,
+> AND IT IS NOT A CLOSE CALL.** §4 warned that "if c9 turns out to be
+> sender-bound rather than link-bound, its headroom will read high while the
+> cell is nonetheless saturated *at the wrong bottleneck*". It reads 50.5 %
+> and it is. Three measurements say so and they agree quantitatively:
+>
+> * **CPU-per-payload-byte is INVARIANT across two very different cells**:
+>   c9 `CPUCLI` 27.38 s / 400 MB = **68.5 ms/MB**; c9h 10.38 s / 150 MB =
+>   **69.2 ms/MB**. A link-bound sender's CPU-per-byte would not be pinned to
+>   1 % across a 400 Mbit and a 240 Mbit cell.
+> * **The sender's CPU budget predicts its goodput to within 1 %**: 1.51
+>   cores (27.38 s of CPU over an 18.14 s transfer) ÷ 68.5 ms/MB = 22.0 MB/s
+>   = **176.3 Mbit/s**, against the **176.4 Mbit/s measured**.
+> * **1.67× the capacity bought 1.19× the wire rate**: c9 puts 198 Mbit/s on
+>   the wire against c9h's 166 Mbit/s, on a cell with 400 Mbit against 240.
+>
+> `CPUCLI` is **not pinned to the box** (1.51 of 6 cores), so this is a
+> per-flow sender ceiling rather than a saturated machine, and it is reported
+> as the measurement it is rather than diagnosed further here.
+>
+> **THE CONSEQUENCE, and it is exactly the one pre-registered.** C9-L2 asked
+> whether the cap law's INPUTS are N-invariant, predicting
+> `cap(c9)/cap(c7) ∈ [1.8, 2.2]`, and named the failure mode: "the law is
+> Σ-linear but its inputs are NOT N-invariant, and *cap linear in N* is false
+> on the wire **for a reason that is not the law's shape**". A sender that
+> cannot fill four legs is precisely such a reason. **C9-L2 is therefore
+> flagged AT RISK before the battery runs, and a low reading on it must be
+> read against this row rather than against the cap law.** Nothing is scored
+> here and no clause is re-scoped: the clause stands as written and this is
+> the context its verdict will be read in.
+>
+> **What the calibration does NOT license.** Headroom ≥ 5 % permits throughput
+> targets at both cells, so **C9-2 remains scoreable** — and C9-2 is a paired
+> *difference between two arms at the same cell*, which a shared sender
+> ceiling distorts least. The other six clauses are correlation and cap-shape
+> statements and were never headroom-gated.
 
 **THE ARITHMETIC THIS FORCES, and it is why the blanks do not block the
 design.** Of the seven clauses here, **only C9-2 is a goodput comparison.**
