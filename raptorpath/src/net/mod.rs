@@ -10861,6 +10861,45 @@ mod tests {
         }
     }
 
+    /// **THE ECHO FORMAT PINS.** `[DCAP]`, `[RACK]` and `[LCW]` are what an L1
+    /// driver greps and what a report parser regexes; a silent format change
+    /// makes a battery read zeros and call them a null result. Pinned as whole
+    /// strings, the way `[SUMCAP]`'s own contract is.
+    #[test]
+    fn the_new_echo_lines_are_format_pinned_for_the_parsers() {
+        use crate::net::{dcap_report_line, rack_report_line};
+        use crate::scheduler::lcw_report_line;
+
+        // [DCAP] — engagement, both clamp bind fractions, the counterfactual
+        // change fraction, realized vs asked, and the resolved dial.
+        assert_eq!(
+            dcap_report_line(10, 8, 8, 0, 0, 1_213.0 * 8.0, 1_212.0 * 8.0, 0.05, 0.5, true),
+            "[DCAP] on=1 eng=8/10 chg=8/8 chg_frac=1.0000 pin=0.0000 floor=0.0000 cap=1213.0 ask=1212.0 q=0.050000 b=0.5000"
+        );
+        // NEVER ARMED reads as eng=0/0 and must stay distinguishable from
+        // armed-and-inert (eng=0/N) — both numerator and denominator print.
+        assert!(dcap_report_line(0, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/0"));
+        assert!(dcap_report_line(9, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/9"));
+
+        // [RACK] — the two bind fractions plus §16.67.1's false-alarm
+        // validation, with RACK's own class bar printed beside it.
+        assert_eq!(
+            rack_report_line(4, 0, 1, 4, 4.0 * 9_500.0, 4.0 * 100_000.0, 1, 40, 39, false),
+            "[RACK] on=0 evals=4 ceil=0.0000 gran=0.2500 legacy_pin=1.0000 round=9500.0 legacy=100000.0 mult=1 fa=39/40 fa_frac=0.9750 fa_class=0.0625"
+        );
+        // The ceiling's bind fraction is the DEFECT FINDING §16.67 predicts at
+        // mult = 1; it must be readable as an explicit 0.0000, never absent.
+        assert!(rack_report_line(4, 0, 0, 0, 1.0, 1.0, 1, 0, 0, true).contains("ceil=0.0000"));
+
+        // [LCW] — the one-sided-clamp witness, and its scoreable ratio.
+        crate::scheduler::lcw_reset();
+        assert_eq!(
+            crate::scheduler::lcw_report_line(),
+            "[LCW] over_n=0 over_mass=0 loss_mass=0 rect_frac=0.0000"
+        );
+        assert!(lcw_report_line().starts_with("[LCW] "));
+    }
+
     mod law_shape {
         use crate::net::{
             contract_stall_s, path_scaled_store_cap, three_term_store_cap, ThreeTermTerm,
