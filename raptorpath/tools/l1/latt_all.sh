@@ -99,6 +99,7 @@ fi
 } > "$OUTDIR/all-latt.txt"
 export RWM_ERA_OUTDIR="$OUTDIR"
 export RWM_ERA_TAG=latt
+export RWM_ERA_CONTRACT='goal-gate "Latency Truth — PRE-REGISTRATION", MEASUREMENT TRUTH item 1'
 export RWM_ERA_CELLS="${RWM_LATT_CELLS:-c7 c8 c8L}"
 export RWM_ERA_ARMS="${RWM_LATT_ARMS:-OLD NEW}"
 export RWM_ERA_SMALLREPS=8     # c7

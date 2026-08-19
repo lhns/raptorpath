@@ -382,9 +382,22 @@ fi
 
 {
   echo "=== ERA BATTERY seed=$SEED_ARG reps=$REPS smallreps=${RWM_ERA_SMALLREPS:-8} auxreps=$AUXREPS cells='$ERA_CELLS' arms='$ERA_ARMS' $(date -u +%FT%TZ)"
-  echo "=== CONTRACT goal-gate \"Era Battery — PRE-REGISTRATION\", ERA LEDGER item 1 — TWO BINARIES, and that is new"
-  echo "=== ARMS OLD = 4171b584 (pre-arc default, PROTOCOL_VERSION 6, NO [GATES] echo) | NEW = 6ad964d (shipped defaults) | NR = NEW + RACK mult=17, AUX"
-  echo "=== NR IS SCORED ON ITS OWN [RACK] LINE AND ON NOTHING ELSE — excluded from every contrast and every denominator, by the contract, before the run"
+  # THE CONTRACT AND ARM LINES ARE DERIVED, NOT HARD-CODED, and that is a
+  # PROVENANCE FIX. They used to name "Era Battery — PRE-REGISTRATION" and
+  # "NEW = 6ad964d" as literal strings, so a SUCCESSOR battery reusing this
+  # driver produced a ledger whose header named the wrong contract and the wrong
+  # NEW commit — contradicting, four lines further down, the `sha256` and
+  # `COMMIT` lines that are correct. A header that disagrees with itself is
+  # worse than a terse one: a reader has to know which half to believe.
+  echo "=== CONTRACT ${RWM_ERA_CONTRACT:-goal-gate \"Era Battery — PRE-REGISTRATION\", ERA LEDGER item 1} — TWO BINARIES"
+  echo "=== ARMS OLD = $(cat "$OLD_ROOT/COMMIT" 2>/dev/null | cut -c1-12) (pre-arc default, PROTOCOL_VERSION 6, NO [GATES] echo) | NEW = $(cat "$NEW_ROOT/COMMIT" 2>/dev/null | cut -c1-12) (shipped defaults) — the AUTHORITATIVE identities are the sha256 and COMMIT lines below"
+  case " $ERA_ARMS " in
+    *" NR "*)
+      echo "=== NR = NEW + RWM_RACK_CLOCKS=1 RWM_RACK_REO_MULT=17, AUXILIARY"
+      echo "=== NR IS SCORED ON ITS OWN [RACK] LINE AND ON NOTHING ELSE — excluded from every contrast and every denominator, by the contract, before the run"
+      ;;
+    *) echo "=== NO NR ARM IN THIS SESSION (arms='$ERA_ARMS')" ;;
+  esac
   echo "=== WIRE COMPATIBILITY IS NOT REQUIRED AND NOT CLAIMED: each arm is a self-contained sender+receiver from ONE era. PROTOCOL_VERSION 6 vs 7 hard-refuse a mismatch at handshake, so mixing is impossible anyway."
   echo "=== THE ENV CARRIES NO GATE on OLD/NEW: each arm IS its era's shipped default. Liveness is asserted on the ECHO, the only signal OLD has."
   echo "=== G-ERA (anti-mix): [GATES] absent two-sided IS the OLD binary, present two-sided IS the NEW one. A violation VOIDS the rep."

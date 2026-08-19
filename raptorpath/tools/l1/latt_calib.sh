@@ -57,6 +57,7 @@ rm -f "$OUTDIR/DONE-CALIB"
   echo "LATT-CALIB THE INSTRUMENT UNDER SMOKE IS THE PER-LEG DELIVERED-LATENCY PROBE. Read the LATPROBE-LEG lines: both legs non-empty, censoring printed, sent_source=summary."
 } > "$OUTDIR/calib-latt.txt"
 RWM_ERA_OUTDIR="$OUTDIR" RWM_ERA_TAG=latt-calib \
+  RWM_ERA_CONTRACT='goal-gate "Latency Truth — PRE-REGISTRATION", MEASUREMENT TRUTH item 1' \
   RWM_ERA_CELLS="${RWM_LATT_CELLS:-c7 c8 c8L}" RWM_ERA_ARMS="${RWM_LATT_ARMS:-OLD NEW}" \
   RWM_ERA_SMALLREPS=1 RWM_ERA_AUXREPS=0 \
   bash era_battery.sh 42 1
