@@ -117,8 +117,13 @@ OLD_ROOT="${RWM_ERA_OLD_ROOT:-/home/vibe/era-old}"
 NEW_BIN="$NEW_ROOT/target/release/raptorpath"
 OLD_BIN="$OLD_ROOT/target/release/raptorpath"
 
-OUT="/home/vibe/era/${TAG}-s${SEED_ARG}.log"
-DDIR="/home/vibe/era/diag"
+# The output ROOT is overridable so a successor battery reusing this driver
+# writes its own ledger tree instead of interleaving rows into the era ledger
+# the era verdict was read off. The DEFAULT IS UNCHANGED, so every era artifact
+# path in the record still resolves.
+ERA_OUTDIR="${RWM_ERA_OUTDIR:-/home/vibe/era}"
+OUT="$ERA_OUTDIR/${TAG}-s${SEED_ARG}.log"
+DDIR="$ERA_OUTDIR/diag"
 mkdir -p "$(dirname "$OUT")" "$DDIR"
 
 # ── THE ERA TABLE: arm -> binary, and arm -> the ONE env it may carry ────
@@ -174,8 +179,20 @@ check_and_parse() {
   local era; era="$(arm_era "$arm")"
   local npaths; npaths="$(cell_paths "$cell")"
 
+  # THE PER-LEG PROBE FILE LIST (goal-gate "Latency Truth"). Derived from the
+  # cell's OWN path count — the same `cell_paths` the liveness line prints — so
+  # a cell that grows a leg cannot keep being scored on one. The list is passed
+  # as the parser's 13th, OPTIONAL argument: era-battery rows parsed without it
+  # are unchanged, which is what makes this instrument HARNESS-SIDE and
+  # therefore identical in both arms.
+  local legf="" li
+  for ((li = 0; li < npaths; li++)); do
+    legf="${legf}${legf:+,}/tmp/rwm-ping-${li}.txt"
+  done
+
   python3 ./era_parse.py "$cell" "$arm" "$era" "$SEED_ARG" "$REP" \
       /tmp/rwm-c.log /tmp/rwm-s.log "$cpus" "$cpuc" "$pingp" "$qp" /tmp/rwm-abort.txt \
+      "$legf" \
     >> "$OUT" 2>&1 || echo "ERA-PARSE-FAIL $name rep=$REP" >> "$OUT"
 
   # ── G-LIVE, PER ERA. The anchors first, because they are the ONLY liveness
@@ -319,10 +336,18 @@ run_topo() { # cell arm
   check_and_parse "$name" "$cell" "$arm" "$cpus" "$cpuc" /tmp/rwm-ping.txt /tmp/rwm-q.txt
 
   # E-LAT's probe is load-bearing at every cell the calibration grants headroom,
-  # so it is captured everywhere and its absence is reported everywhere.
-  local pn; pn=$(grep -c "time=" /tmp/rwm-ping.txt 2>/dev/null || true); pn="${pn:-0}"
-  { [ "$pn" -eq 0 ] && [ -s /tmp/rwm-c.log ]; } \
-    && echo "INSTRUMENT-FAIL-PROBE $name rep=$REP" >> "$OUT"
+  # so it is captured everywhere and its absence is reported everywhere — NOW
+  # PER LEG. A dual whose leg-B probe produced nothing is a HALF-MEASURED cell,
+  # and under the old single-leg probe it was indistinguishable from a healthy
+  # one because leg B was never looked at.
+  local npaths2 li pn
+  npaths2="$(cell_paths "$cell")"
+  for ((li = 0; li < npaths2; li++)); do
+    pn=$(grep -c "time=" "/tmp/rwm-ping-${li}.txt" 2>/dev/null || true); pn="${pn:-0}"
+    { [ "$pn" -eq 0 ] && [ -s /tmp/rwm-c.log ]; } \
+      && echo "INSTRUMENT-FAIL-PROBE $name rep=$REP leg=$li (no delivered-latency sample on this leg)" >> "$OUT"
+    cp "/tmp/rwm-ping-${li}.txt" "$DDIR/${name}-s${SEED_ARG}-r${REP}-p${li}.txt" 2>/dev/null || true
+  done
   # discipline 16b: the shaped device's own counters, on EVERY cell and EVERY
   # invocation. The headroom denominator is the TRANSFER wall (`seconds`), never
   # INVOCATION_S — see the contract's headroom protocol.
@@ -366,6 +391,10 @@ fi
   echo "=== G-LIVE anchors (era-invariant, both roles, both eras): '$ANCHOR_CC' + '$ANCHOR_MTU'"
   echo "=== ABSENT AT OLD by construction: [GATES] [ACKDIAG] [WALL] [SUMCAP] [DCAP] [RACK] [LCW] [CCAP] [SF] and wait[tun=...]. The c8 dead-wall paired contrast is NOT available cross-era."
   echo "=== ABORT = no era anchor on EITHER endpoint, and it now carries abort_cause= from the witness. Read the abort table BEFORE any contrast."
+  echo "=== LATPROBE IS PER-LEG (goal-gate \"Latency Truth\"): one ICMP probe per leg, 20/s, reaped with SIGINT so ping writes its own transmitted/received summary."
+  echo "=== EVERY delivered percentile carries a CENSORING FRACTION. A lost probe produces NO sample, GE loss censors exactly the worst states, and the survivors' tail is biased LOW."
+  echo "=== q_p50 (engine's OWN standing-queue estimate, computed by the code under test) and ping_* (delivered RTT through the WHOLE shaped path, measured by the kernel) are DIFFERENT QUANTITIES and are never averaged."
+  echo "=== THE PROBE IS HARNESS-SIDE: OLD and NEW get the byte-identical instrument, so the fix cannot favour an arm."
   echo "=== OLD binary $OLD_BIN sha256 $(sha256sum "$OLD_BIN" | cut -d' ' -f1)"
   echo "=== NEW binary $NEW_BIN sha256 $(sha256sum "$NEW_BIN" | cut -d' ' -f1)"
   echo "=== OLD source $(cat "$OLD_ROOT/COMMIT" 2>/dev/null)"

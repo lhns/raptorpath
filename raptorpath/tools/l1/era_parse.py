@@ -5,6 +5,12 @@ in it may be changed once the VM has been touched).
 
   usage: era_parse.py <cell> <arm> <era> <seed> <rep> <clog> <slog>
                       <cpusrv> <cpucli> <ping.txt> <q.txt> <abort.txt>
+                      [<leg0.txt,leg1.txt,...>]
+
+The 13th argument is OPTIONAL and ADDITIVE (goal-gate "Latency Truth"): the
+per-leg delivered-latency probe files. Absent, this parser behaves exactly as it
+did for the era battery. Present, it emits `legN_*` columns with a CENSORING
+FRACTION beside every percentile — see the DELIVERED LATENCY block below.
 
 A SEPARATE parser from `ccand_parse.py` / `ladder_parse.py`, for the same reason
 those were separate from each other: they are the instruments earlier verdicts
@@ -73,6 +79,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from abort_witness import read_witness  # noqa: E402  ONE definition of abort_cause
+from latt_probe import PCTS, probe_stats  # noqa: E402  ONE definition of censoring
 
 #: The era-invariant liveness anchors, as FIXED strings. Both are emitted by
 #: `transport/quic.rs` at endpoint construction on BOTH roles, and both are
@@ -273,6 +280,44 @@ ping = {
     "ping_loss": (round(100.0 * (p_tx - p_rx) / p_tx, 2) if p_tx else None),
 }
 
+# ── PER-LEG DELIVERED LATENCY, WITH ITS CENSORING (goal-gate "Latency Truth")
+#
+# ADDITIVE, AND THAT IS THE POINT. The `ping_*` block above keeps its definition
+# TO THE LINE — it still reads `/tmp/rwm-ping.txt`, which `perf_rwm_c.sh` still
+# writes as LEG A's file with byte-identical content — so the era ledger's rows
+# pool with these without a second dialect. What is new is a column set the era
+# battery COULD NOT HAVE HAD, because the harness only ever probed one leg:
+#
+#   legN_p50/p95/p99   the per-leg delivered percentiles
+#   legN_censor_frac   the fraction of probes that never produced a sample
+#   legN_<p>_scoreable the pre-registered verdict, PER PERCENTILE
+#
+# `latt_probe.py` owns the definitions; they are imported and not duplicated,
+# for the same reason `abort_witness.read_witness` is.
+leg_paths = [p for p in (av[12].split(",") if len(av) > 12 and av[12] else [])
+             if p]
+legs = {}
+for _i, _p in enumerate(leg_paths):
+    _s = probe_stats(_p, leg=_i)
+    for _k in ("n", "sent", "recv", "sent_source", "censor_frac",
+               "recv_mismatch", "leg_unscoreable", "min", "max"):
+        legs["leg%d_%s" % (_i, _k)] = _s[_k]
+    for _name, _ in PCTS:
+        legs["leg%d_%s" % (_i, _name)] = _s[_name]
+        legs["leg%d_%s_censored" % (_i, _name)] = _s[_name + "_censored"]
+        legs["leg%d_%s_scoreable" % (_i, _name)] = _s[_name + "_scoreable"]
+legs["legs_probed"] = len(leg_paths)
+# THE WORST LEG, precomputed, because a two-leg system's delivered latency is
+# not the mean of its legs and a scorer that averages them has thrown away the
+# asymmetry that made `c8` interesting. Reported alongside the per-leg columns,
+# never instead of them.
+_cf = [legs["leg%d_censor_frac" % i] for i in range(len(leg_paths))
+       if legs.get("leg%d_censor_frac" % i) is not None]
+legs["legs_censor_max"] = (max(_cf) if _cf else None)
+_p50 = [legs["leg%d_p50" % i] for i in range(len(leg_paths))
+        if legs.get("leg%d_p50" % i) is not None]
+legs["legs_p50_max"] = (max(_p50) if _p50 else None)
+
 # ── DIAG gauges: occupancy, khr, standing queue, `pl=`, retx ────────────
 # EVERY regex below is one the OLD binary's own `[DIAG]` format satisfies —
 # checked against `4171b584:raptorpath/src/net/mod.rs:8388,8570` before this
@@ -396,6 +441,7 @@ out.update(era_cols)
 out.update(rack)
 out.update(ctld)
 out.update(ping)
+out.update(legs)
 out.update(pl_out)
 out.update(tc)
 out.update(witness)
