@@ -3393,6 +3393,7 @@ own doc comment — no claim in this table is new.
 | `RWM_SUM_CAP` | **OFF** | §16.60 / ADR-0070 finding 2 — the `×N` deletion, `clamp(gain·Σ, floor, N·knee)`. Zero new constants, bit-identical at N = 1 by construction. **OFF is a backlog, not a verdict**: no A/B of `gain·Σ` against `gain·N·Σ` at a fixed ceiling has ever been run at any level, which is exactly the finding. Predicted to move both duals off the `2·knee` pin for the first time (c7 4096 → 3271, c8 4096 → 3020) |
 | `RWM_LATE_BRAKE` | **OFF** | §16.60 / ADR-0070 finding 7 — the late-stage per-path cwnd brake, extracted from `RWM_COMPOSED_CAP` so it can be armed WITHOUT the composed law §16.57 refuted on magnitude. Same brake code path, same per-path cap (the path's own cwnd), same `live_paths()` set; no new constant |
 | `RWM_DELTA_CAP` | **OFF** | §16.66 — the δ-priced pool ceiling `(1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ` with `q(δ)` mapped continuously onto RFC 8289 §3.2's DERIVED 5–10 %-of-RTT setpoint band. Replaces `gain = 2.0` (ADR-0070 finding 3's FOSSIL) with a number Kleinrock power maximisation fixes; reduces to ADR-0071 candidate (d) ZERO as `q → 0`. One factor substituted in `pooled_store_cap`, bit-identical at N = 1 |
+| `RWM_QUANTILE_CLOCKS` | **OFF** | §16.68 — the DERIVED recovery clock `W(α) = srtt + √((1−α)/α)·σ`, Cantelli's distribution-free one-sided bound at a contract-priced false-alarm rate. **REFUTED-WITH-RECORD** three ways at the tree's own numbers: the bound needs 316σ at the contract's `α = 1e-5`, the empirical route needs 10⁵ samples the min-deque cannot hold, and pricing `α` off `target_tail_loss` is a category error whose repair is an invented cost ratio. Shipped OFF so the refutation is reproducible |
 | `RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT` | **OFF** | §16.67 — RFC 8985 §6.2 Step 4's reordering window transplanted verbatim (`max(min(mult·min_rtt/4, srtt), G)`), and **REFUTED by its own arithmetic**: 8–46× tighter than the `[25,100] ms` clamp it replaces, and its `SRTT` ceiling is unreachable within RACK's own `mult ≤ 17` at four of five cells. RFC 8985 publishes no RTT-relative ceiling for a re-probe cadence; the cross-check's Tier-2 item 2.1 is recorded as a backlog specification error |
 | `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG`, `RWM_RDIAG`, `RWM_FDIAG`, `RWM_TRACE`, `RWM_PFRAC` | **OFF** | ADR-0052 instruments, no behaviour. `RWM_ACKDIAG` is the ack-cadence gauge built for matrix row 21; `RWM_WALLDIAG` is the dead-wall onset/duration instrument that replaces the unstable tick-share statistic (ADR-0070 validation step 2) |
 | Numeric: `RWM_GEN`=384, `RWM_PIPELINE`=2, `RWM_STORE_PATH_POOL`=2048, `RWM_STORE_BOOT`=**128**, `RWM_STORE_GAIN`=2.0, `RWM_EMIT_BURST`=64, `RWM_CC_PACE_HR`=1.1 | as listed | all pinned by `default_env_resolves_the_shipped_stack`. `RWM_STORE_BOOT = 128` is the boot-cap cliff value of §16.49/§16.50 |
@@ -13887,6 +13888,23 @@ per path**, against the shipped default's 1 024 per path. So:
   **PINS**, exactly as ADR-0071 finding 1 predicted from `W(c8L) = 7 489 =
   1.83×WIN_STORE_MAX`.
 
+**c8L IS PRE-DECLARED UNREACHABLE FOR THE CoDel RUNG BY CONSTRUCTION, on the
+secondary anchors, and the bind-fraction expectation carries that in advance.**
+The arithmetic is one line and needs no run: at c8L, `N·knee = 2·2048 = 4 096 <
+BDP = 4 976`, so the ceiling sits BELOW one network window before any setpoint
+is added. No value of `q` can be interior there, and reporting "the law pinned"
+at c8L would repeat exactly the MEASUREMENT DISCIPLINE 18(d) error this arc
+exists to prevent — the same exclusion ADR-0071 finding 1 took on `W(c8L) =
+7 489 = 1.83×WIN_STORE_MAX`, and the same one the ladder battery honoured in
+advance at its own rung. On the PRIMARY anchors c8L's measured Σ is 2 815 and
+the ceiling is interior, which is why the status must be read from `[DCAP] pin=`
+in the run rather than assumed from either table.
+
+**The two anchor eras disagree by up to 1.8×** (c8L 4 976 vs 2 815 = 1.77×; c8
+1 605 vs 1 154 = 1.39×; c7 1 106 vs 1 571 = 0.70× — and the disagreement is not
+even in a consistent direction). Both are carried in every prediction pin for
+that reason, and no verdict may rest on one era alone.
+
 **c8L's scorability is therefore ANCHOR-DEPENDENT, and that is a finding about
 Σ rather than about the law.** It is the same divergence the ladder recorded
 when the wire presented Σ = 1 154.3 at c8 against published anchors of 1 509.7
@@ -14114,6 +14132,181 @@ records as the one place the literature does not already have our answer.**
 Until that signal exists, RACK's adaptive window cannot be transplanted, and
 transplanting its static half means shipping one third of RACK under RACK's
 name.
+
+#### 16.67.1 THE VALIDATION BAR EVERY CITED FRACTION IN THIS FAMILY NOW CARRIES: a measured FALSE-ALARM RATE on our own cells, against RACK's own <7 % class budget
+
+A constant that is merely CITED does not clear this tree's bar. §16.65 already
+had to soften three of our own claims for exactly this reason: RFC 9002
+presents `kTimeThreshold = 9/8` as *"Experience with QUIC shows that 9/8 works
+well"*, notes RACK uses `5/4` for the same job, and invites experiment; and RFC
+8985's own `min_RTT/4` is inherited Linux practice (*"experience showed this
+worked reasonably well"*), not a derivation. **Every fixed fraction in the
+recovery-clock family — RACK's `/4`, RACK's `5/4`, our `9/8` inside the
+`17/8` slack — is therefore an EMPIRICAL DEFAULT, and an empirical default
+ships only with a falsifiable validation of the thing it is empirical ABOUT.**
+
+**What it is empirical about is a FALSE-ALARM RATE.** RFC 8985 §7.2 says so in
+prose: *"Choosing the PTO to be exactly an SRTT would risk causing spurious
+probes given that network and end-host delay variance can cause an ACK to be
+delayed beyond the SRTT."* The fraction is standing in for a quantile of the
+delay distribution, and the quantity it is chosen to control is the rate at
+which the clock fires on data that was going to arrive anyway.
+
+**THE CLASS BAR, cited.** RFC 8985 §6.2 Step 4 declares its own:
+
+> "RACK persists using the inflated RACK.reo_wnd for up to **16 loss
+> recoveries** … The rationale … is to bound such spurious recoveries to
+> approximately once every 16 recoveries (**less than 7%**)."
+
+So `α_class = 1/16 = 6.25 %` is the published budget for this mechanism class,
+and it is the bar every arm of the R axis is scored against.
+
+**THE MEASUREMENT, pre-registered.** A recovery round fires against a
+cumulative blocker; a FALSE ALARM is a fired round whose target was already in
+flight and arrived without needing the retransmit it triggered. Both operands
+already exist — the retransmit counter and the flight witness's own
+spurious-retransmit class (`net/mod.rs`, *"the delivering flight was the
+ORIGINAL copy"*). The `[RACK]` gauge carries them as `fa=<spurious>/<fired>`
+and `fa_frac=`, on every arm including the shipped control, so the shipped
+`[25, 100] ms` clamp's own false-alarm rate — **never measured in this tree** —
+lands on the record beside its successors'.
+
+**Pre-registered expectation, from §16.67's component arithmetic.** The
+component bench's `spurious_rounds(srtt, cadence) = ⌈srtt/cadence⌉ − 1` is an
+upper bound on rounds fired per ack round trip, so the predicted false-alarm
+fraction is `spurious/(spurious+1)`:
+
+| arm | c1 | c7 | sc2 | c8 | c8-AU | clears `α_class` = 6.25 %? |
+|---|---|---|---|---|---|---|
+| shipped `[25,100] ms` | 0 % | 0 % | **50 %** | **75 %** | **80 %** | **NO at sc2, c8, c8-AU** |
+| `RWM_DERIVED_SWEEP` | 0 % | 0 % | 0 % | 0 % | 0 % | yes (by being slow) |
+| `RWM_RACK_CLOCKS`, mult=1 | **89 %** | **97 %** | **97 %** | **97 %** | **98 %** | **NO, everywhere** |
+| `RWM_RACK_CLOCKS`, mult=17 | 50 % | 50 % | 50 % | 67 % | 67 % | **NO, everywhere** |
+
+**This table is the strongest statement available about the shipped clamp, and
+it is about the CONTROL rather than the successors: the shipped
+`[25, 100] ms` law is predicted to violate RACK's own published spurious budget
+by 8–13× at three of five cells.** That is a defect finding about the default,
+pre-registered here, and it stands whether or not either successor ships. It
+also explains the direction of §16.53's measurement — the derived arm bought no
+retransmit reduction because it traded a violated budget for a slow one.
+
+**The falsifier.** If the wire-measured `fa_frac` on the shipped control lands
+below `α_class` at sc2, c8 and c8-AU, this component model is wrong about the
+mechanism and the whole R axis is rebased on the measurement rather than on
+`⌈srtt/cadence⌉`. That is a falsifier keyed to the INSTRUMENT, which is the
+right place for it when the instrument is new.
+
+**This measurement is UNCONDITIONAL.** It runs on every arm of the R axis
+regardless of what §16.68 concludes about the derived variant, because it is
+the validation the shipped default has never had.
+
+### 16.68 The DERIVED recovery clock, written as a formula and then REFUTED THREE WAYS BY ITS OWN INPUTS: a distribution-free quantile at a contract-priced false-alarm rate is the literature's named gap, and our contract prices `α` at 10⁻⁵ — where the bound needs 316 standard deviations and the estimator needs 100 000 samples (2026-08-19, `feat/derived-setpoint-laws`, gate `RWM_QUANTILE_CLOCKS` default OFF)
+
+§16.65 named two places the literature does not already have our answer. One of
+them is this: **no published application of sequential change detection to
+transport timeouts**, with the note that *"Lorden's and Moustakides's
+optimality results answer 'how long to wait before declaring the ack failed' in
+closed form, and RACK's own 'less than 7%' spurious budget is already a
+false-alarm rate chosen by hand."* This section writes the construction that
+closes that gap, publishes it as a formula, and then records that **it does not
+close on this stack** — for three independent reasons, each computed from the
+tree's own shipped numbers.
+
+**The construction, on a line by itself.** A recovery clock's whole job is to
+wait long enough that an ack which was going to arrive has arrived. Let `X` be
+the ack-arrival time. A false alarm is `X > W`. So the clock IS a quantile:
+
+```text
+  W(α) = F⁻¹_X (1 − α)          — the (1−α) quantile of the ack-arrival distribution
+
+  and, distribution-free, by CANTELLI'S INEQUALITY (the one-sided Chebyshev
+  bound, Cantelli 1929):     P( X − μ ≥ k·σ )  ≤  1 / (1 + k²)
+
+  ⇒   W(α) = srtt  +  k(α)·σ_rtt ,      k(α) = √( (1 − α) / α )
+
+  α = the contract's own declared failure probability on the r leg
+      (`effective_tail_loss = target_tail_loss × ζ(hint)`), which is
+      CONTINUOUS in the hint — ζ is the dial's ONE declared price ratio, not
+      a mode selector.
+```
+
+**Why this is the right shape, and why RFC 8985 already says so.** §7.2's own
+justification for `2·SRTT` — *"delay variance can cause an ACK to be delayed
+beyond the SRTT … the PTO is conservatively chosen to be the next integral
+multiple of SRTT"* — is a quantile argument with the quantile replaced by a
+round number. `W(α)` is that argument carried out: the margin over the mean is
+`k(α)` standard deviations, `k` is a closed form with no fitted coefficient,
+and Cantelli makes the guarantee hold for ANY delay distribution rather than
+for an assumed one. **Every symbol is measured or contract-declared and there
+is no free constant in the law.**
+
+**Per-symbol provenance.**
+
+| symbol | provenance |
+|---|---|
+| `srtt` | **measured** — the path's smoothed RTT, unchanged |
+| `σ_rtt` | **measured** — an EWMA of the squared deviation `(rtt − srtt)²`, at RFC 6298 §2's own smoothing gain `β = 1/4` (the gain the RFC uses for exactly this job on the first absolute moment). The gain is a CITED EMPIRICAL DEFAULT and therefore carries §16.67.1's false-alarm validation like every other fraction in this family |
+| `k(α) = √((1−α)/α)` | **DERIVED** — Cantelli's inequality, closed form, distribution-free. No fit, no assumed distribution, no tuned coefficient |
+| `α` | **CONTRACT-DECLARED, on the r leg** — `target_tail_loss × ζ(hint)`, the probability the repair plane is already provisioned to leave unrecovered. Continuous in the dial; no threshold, no mode bit |
+
+**THE REFUTATION, computed at the tree's own shipped numbers.** The contract's
+`target_tail_loss` defaults to `1e-5` (`config.rs:317`), scaled by the hint's
+`ζ` (Realtime 0.01, Auto 1, Bulk 100). So:
+
+| hint | `α = target × ζ` | `k(α) = √((1−α)/α)` | `W` at c8 (`srtt` 77 ms, `σ` ≈ 10 ms) | shipped clamp |
+|---|---|---|---|---|
+| Realtime | 1e-7 | **3 162** | **31.7 s** | 100 ms |
+| Auto | 1e-5 | **316** | **3.24 s** | 100 ms |
+| Bulk | 1e-3 | **31.6** | **393 ms** | 100 ms |
+
+**Reason 1 — the bound is unusably loose at the contract's own α.** At Auto the
+distribution-free clock must wait 316 standard deviations, i.e. **3.2 seconds
+at c8, 32× the shipped clamp and 4× `RWM_DERIVED_SWEEP`'s already-slow 752 ms**.
+Cantelli is tight only for the two-point distribution that attains it; on any
+realistic delay distribution the margin is enormous. Tightening it requires
+assuming a distribution — and the coefficient of that assumption is a fitted
+constant, which is the thing this section exists to avoid.
+
+**Reason 2 — the empirical route is unavailable for the same α.** Estimating a
+`1 − 10⁻⁵` quantile empirically needs of order **10⁵ independent samples in the
+window**. The Copa RTT window is 10 s, and its sample store is a MIN-DEQUE
+(`scheduler/mod.rs:1638-1646` pops every sample not on the increasing staircase)
+— it does not retain the upper tail at all, by construction. Any high quantile
+read from this tree today is extrapolation, not estimation. **Both the
+parametric and the non-parametric route fail on the same number.**
+
+**Reason 3 — and this is the one that matters, because it is a CATEGORY ERROR
+rather than an arithmetic one.** `target_tail_loss` is the probability that a
+symbol is never delivered. `α` is the probability that a retransmit is wasted.
+**These are not the same failure and they do not cost the same**: an unrepaired
+loss is a delivery failure the contract is written to prevent; a spurious
+retransmit is one wasted symbol. Pricing the RATE of the second from the
+tolerated rate of the first asserts that they cost the same. Making the
+mapping honest requires the RATIO of the two costs — *how many wasted symbols
+is one unrecovered symbol worth?* — and **that ratio exists nowhere in this
+repository and has no published value.** It is exactly the invented constant
+this section is forbidden to ship.
+
+**VERDICT: the derived variant is REFUTED-WITH-RECORD, and the record is the
+point.** `RWM_QUANTILE_CLOCKS` ships **default OFF** so the refutation is
+reproducible rather than asserted — the law is the formula above, evaluated
+through the same function the paper transcribes, and the bench pins `k(α)` at
+all three hints and the resulting cadence at all five cells. Nothing is tuned
+to make it pass.
+
+**What this leaves standing, and what it asks for.** The empirical arms stand
+alone, with §16.67.1's false-alarm measurement attached to each — which is the
+bar the coordinator's directive sets and which the shipped default is predicted
+to fail at three of five cells. **The named prerequisite for ever closing the
+derived variant is a declared price ratio between a wasted retransmit and an
+unrecovered symbol.** That is one number, it is a product decision rather than
+a measurement, and once it exists `α(r)` becomes a continuous function of the r
+leg with no free parameter and this section's construction closes immediately.
+**The novelty claim is therefore narrowed and kept: the construction is ours
+and the literature has no counterpart** (§16.65's negative search: no published
+application of sequential change detection to transport timeouts), **but this
+tree cannot instantiate it until the contract prices its own false alarm.**
 
 ## 17. The Measured Regime Map (2026-07-19)
 
