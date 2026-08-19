@@ -13738,6 +13738,59 @@ Moustakides's optimality results answer "how long to wait before declaring the
 ack failed" in closed form, and RACK's own *"less than 7%"* spurious budget is
 already a false-alarm rate chosen by hand.
 
+### 16.66 The two cheapest cross-check items scored against data we already owned: the CoDel setpoint's NEIGHBOURHOOD is supported at three of five cells and REACHED at none, and the ε̂ denominator hypothesis is refuted on the code before any arithmetic (2026-08-19, `analysis/tier1-rescores`, **STRICTLY LOCAL** — no VM, no new arm, no new binary, no engine file, no gate, no default; goal-gate "Tier-1 Re-Scores" is the full scoring, this section is the paper's pointer)
+
+§16.65 named two tests that need no VM. Both are now scored against ledgers
+already committed, and both changed what the cross-check itself asserts.
+
+**The CoDel rung (cross-check Tier 1.1).** A ceiling permitting CoDel's derived
+standing queue is `cap*(f) = BDP·(1+f)`, `f ∈ {0.05, 0.10}` — one measured input
+per cell. Recomputed from both anchor sources in the tree (which disagree by up
+to 1.8×, itself a finding), the 5 % rungs are c1 184, sc2 345, c7 1 161, c8
+1 685, c8L 5 225. **The first result is negative: no arm in this tree was ever
+run at the setpoint.** The single near-miss is the latency-lever's composed-law
+arm at c7, cap 1 134 against a 1 161 rung — 0.98×, and there by accident.
+Scored on matched controls that hold the anchor fixed and move only the cap,
+three cells SUPPORT the setpoint's neighbourhood, one is INSUFFICIENT and one is
+VOID on arithmetic: at **sc2**, cap 481 (1.40× the rung) reads goodput
+**parity** (+0.31 against 2σ_pooled 0.69) with **0.45× the delivered latency**
+on a 98 %-utilised link; at **c7**, the step from 4 096 to the rung costs
+**−4.59 against 2σ_pooled 6.93** — nothing measurable — once arm D shows the
+−15 % against the shipped arm belongs to the ANCHOR, not the cap; at **c8** the
+ladder already walked to 0.63× the rung and lost nothing (−1.41 against 3.64)
+while shedding 50 ms of queue. The other direction is confirmed twice more:
+raising the cap to 6.65× the rung at sc2 buys **zero** goodput for +26 ms of
+delay. **CoDel's derivation is not contradicted anywhere in the data we own,
+and it is not confirmed at its own setpoint anywhere either** — the two
+statements are different and this section makes both.
+
+**The ε̂ denominator (cross-check Tier 1.2, verdict row 7).** The proposed
+mechanism was RFC 6675's double-count: `Δsent` carries retransmits while the
+numerator does not. **Reading the emitting code settles it before any
+arithmetic — both operands count retransmits.** `PathStats::symbols_sent`
+increments once per wire handoff at all ten of its sites, source/repair/retransmit
+alike, and `PathBatchTracker::total_received` counts every arriving symbol
+without ever reading `is_repair`. It is a **matched pair**, so RFC 6675's bias
+is absent by construction and the prescribed correction is **wrong-signed** —
+and `PathStats` carries no per-path retransmit counter at all, so `Δfirst_sent`
+is not computable from any captured column anywhere in the tree. Recomputed
+from the `[ACKDIAG]` cursors regardless, ε̂_sender-truth is **NEGATIVE at every
+cell and every path** (−0.012 to −0.30) against realized loss of 0.43–1.99 %:
+there was no 20× at the cursor layer to collapse. What *does* read 40–95× is
+the legacy gap pair, reproducing §16.58's own diagnosis on independent
+arithmetic. **So §16.58's diagnosis stands and its repair's failure has a
+different mechanism than anyone proposed.** The re-score localizes it: at a
+single-path cell in the same ledger the cursor pair is clean (−0.012 vs realized
+0.008), so the inflation §16.63 measured at N = 1 is **downstream of the pair**
+— and the candidate now on the record is `sender_truth_loss_delta`'s
+`d_received.min(d_expected)`, **a one-sided clamp on a two-clock pair**, which
+rectifies zero-mean jitter between a local wire counter and a remote ack-cadence
+counter into a strictly positive loss bias, at any path count. That is a
+hypothesis with a named falsifier — a per-ack witness counting when the clamp
+fires and by how much — and the "corrected denominator" build the cross-check
+implied is **moot**. Cross-check verdict row 7's bias source (b) is
+**withdrawn**; (a) and (c) are untouched.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

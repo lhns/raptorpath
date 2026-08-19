@@ -2456,6 +2456,25 @@ adding an instrument.
 | 1.4 | **The `K`-drift-vs-window test**: read the `[3T]` `window=` series *within* one c8L run at t ≈ 2.5 s and t ≈ 20 s (ADR-0071 finding 2 already names this). | Confirms the estimator window is a control parameter (CD-4) and that c8 measures warm-up. |
 | 1.5 | **Strengthen MEASUREMENT DISCIPLINE 17's law-shape test to assert EXPONENTS** in each governing quantity, not just monotonicity. | An order-of-accuracy test in `N`; strengthens an existing instrument. |
 
+> **1.1 AND 1.2 ARE NOW SCORED** (2026-08-19, goal-gate "Tier-1 Re-Scores",
+> paper §16.66; `tools/l1/codel_rung.py`, `tools/l1/eps_recompute.py`). **1.1:**
+> the rung numbers above reproduce from the anchors to the digit, but **no arm
+> in this tree was ever run at the setpoint** — the closest is 0.98× at c7, by
+> accident. On matched anchor-held controls, three cells SUPPORT the
+> neighbourhood (sc2, c7, c8), c1 is INSUFFICIENT and c8L is VOID by arithmetic.
+> Not contradicted anywhere; not confirmed at the setpoint anywhere either.
+> **1.2: this hypothesis is DEAD, and it dies on the code rather than on the
+> data.** Both operands of `ε̂ = 1 − Δrecv/Δsent` count retransmits
+> (`PathStats::symbols_sent` at all ten increment sites;
+> `PathBatchTracker::total_received` never reads `is_repair`), so RFC 6675's
+> bias is absent by construction and the correction is wrong-signed — and no
+> per-path retransmit counter exists to compute `Δfirst_sent` with. Recomputed
+> from the cursors anyway, ε̂ is **NEGATIVE everywhere**: the 20× was never at
+> the pair layer. **Bias source (b) in the table above is WITHDRAWN for this
+> estimator**; (a) and (c) stand. §16.63's anomaly stays open with a narrower
+> target — `sender_truth_loss_delta`'s one-sided `d_received.min(d_expected)`
+> clamp on a two-clock pair.
+
 **Tier 2 — derivations, not batteries. Write the formula first, per FORMULA-FIRST.**
 
 | # | item |
