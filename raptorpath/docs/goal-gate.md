@@ -33154,3 +33154,161 @@ recorded here as a blocking dependency**, not as a nice-to-have.
 
 **Nothing in this section flips a default, adds a gate, or touches an engine
 line.**
+## Era Battery — PRE-REGISTRATION (2026-08-19, `feat/era-battery-prep` from main@`6ad964d`) — MEASUREMENT DISCIPLINE 1 + 11 + 13 + 15 + 16 + 17 + 18, and CLAUDE.md **FORMULA-FIRST LAWS**: written and committed BEFORE any VM contact, in its OWN commit, before the drivers exist and before a single number is read. **This is ERA LEDGER item 1.** It measures the ARC'S CUMULATIVE SHIPPED EFFECT directly, on TWO binaries, instead of summing the rungs that produced it. **Nothing in this session flips a default, and no number below is a result.** **The VM is DOWN: the abort-cause witness (committed before this block), this contract, and the drivers that follow are the LOCAL half; the launch is a separate later step and may not begin until this contract's calibration completion is committed.**
+
+### THE QUESTION
+
+Every flip in this arc was scored against a same-session control on ONE binary, one rung at a time. Nothing has ever measured the arc END TO END: what a deployment that upgraded from the pre-arc default to today's default actually gets. The chained deltas predict a sum. **The sum is the HYPOTHESIS here, not the finding** — and the interesting outcome is the one where the cumulative measurement DISAGREES with it, because that disagreement is a statement about interaction between the rungs and it must be read before any celebration.
+
+### THE TWO ERAS
+
+| arm | commit | date | `PROTOCOL_VERSION` | defaults |
+|---|---|---|---|---|
+| **OLD** | `4171b5843d22140d54b2d05fc153451d0d03c545` (`4171b58`) | 2026-08-08 16:13:46 +0200 | **6** | its own, unmodified |
+| **NEW** | main@`6ad964d` | 2026-08-19 08:49:34 +0200 | **7** | its own, unmodified |
+
+**WHY `4171b58` IS THE BASELINE, mechanically and not by taste.** It is the PARENT of `bdab7de` ("FLIP: `RWM_ACK_MERGE` ships DEFAULT ON"), the first default flip of the arc, on 2026-08-08. `git show 4171b58:raptorpath/src/gates.rs` carries the assertion `RWM_ACK_MERGE ships default OFF (A/B arm)` and `scheduler::ack_merge_active()` resolves `env_flag("RWM_ACK_MERGE", false)` there. It is the last tree in which the pre-arc default is the shipped default.
+
+**BUILD VERIFICATION, run before this block was written and reported whatever it said.** `4171b58` extracted with `git archive` and checked with **today's** toolchain — `cargo 1.95.0 (f2d3ce0bd 2026-03-21)` / `rustc 1.95.0 (59807616e 2026-04-14)` — as `cargo check --release -p raptorpath --all-targets`, against the era's OWN committed `Cargo.lock`. Result: **`Finished` in 3 m 13 s, 0 errors, warnings only (93, all dead-code/unused).** **No fallback commit was needed and none is used.** Had it failed, this table would name the nearest buildable pre-arc commit and the reason; it did not, so there is nothing to record but the pass.
+
+### THE ARC, ENUMERATED — what the two eras differ by
+
+211 commits. The SHIPPED-DEFAULT changes, which is what an upgrading deployment gets without touching an env var:
+
+| flip | commit | date | what it is |
+|---|---|---|---|
+| `RWM_ACK_MERGE` OFF → ON | `bdab7de` | 2026-08-08 | window mode sends ONE control datagram per data message. Its own battery measured c1 **+12.7 % / +13.0 %** and receiver CPU per Gbit **−9.1 % / −8.4 %**. |
+| `RWM_HONEST_ANCHOR` OFF → ON | `9f6e56b` | 2026-08-11 | the value-identical O(1) max filter. Claimed value-identical; the c1 −35 % `O(rate²)` fold is what it removes. |
+| `RWM_SUM_CAP` OFF → ON | `6a65380` | 2026-08-19 | the `×N` deletion — the shipped store-cap law becomes `cap = clamp(gain·Σ, floor, N·knee)`. |
+| `RWM_DELTA_CAP` OFF → ON | `e9c6b24` | 2026-08-19 | the CoDel-derived setpoint replaces `gain = 2.0` in the pooled value. Its own battery measured goodput parity at every dual with `q_p50` **−10 to −200 ms**. |
+
+Everything else in the 211 is carried too and is NOT enumerable as a list of arms: the `v6 → v7` wire bump, the loss-estimator cross-path fix's *gate* (default OFF, so not shipped), the `floor` derivation, the net-seams extractions, the gauge-reachability fix, the `[GATES]` echo itself, and the instruments. **That residue is the whole reason for running this battery instead of adding the four numbers up.**
+
+### THE TWO-BINARY PROTOCOL — new to this battery, and every prior battery's assumption is void here
+
+Every battery this tree has run scored arms of ONE binary, and its parsers, its liveness gates and its era-honesty record all assume that. This one does not, and the consequences are stated before the run:
+
+1. **THE CONTRACT NAMES BOTH SHAS.** `4171b584…` and `6ad964d…` above; the ledger header of every session prints `sha256` for BOTH binaries and the era-honesty record carries both. **A session whose header names one binary is not an era battery** and is discarded, not re-labelled.
+2. **WIRE-FORMAT COMPATIBILITY IS NOT REQUIRED AND IS NOT CLAIMED.** Each arm is a SELF-CONTAINED sender + receiver from ONE era. Nothing in this battery says the eras interoperate, and no clause depends on it.
+3. **BINARIES ARE NEVER MIXED WITHIN AN INVOCATION.** The driver launches `--server` and `--client` from the SAME `$BIN` per arm, resolved once per invocation.
+4. **AND MIXING IS STRUCTURALLY IMPOSSIBLE ANYWAY**, which is checked rather than assumed: `transport/protocol.rs` carries `PROTOCOL_VERSION = 6` at OLD and `= 7` at NEW, and BOTH `Handshake::deserialize` and `WireMessage::deserialize` hard-refuse a mismatch (`protocol version mismatch: expected {PROTOCOL_VERSION}, got {version}`). A mixed pair fails at the handshake, loudly, before a byte of data. The version bump's own doc comment says this is deliberate: "a mixed v6/v7 pair fails cleanly and loudly at handshake instead of silently mis-parsing control traffic."
+5. **THE MECHANICAL ANTI-MIX ASSERTION (G-ERA, below) does not rest on any of that.** `[GATES]` exists at NEW and does NOT EXIST AT OLD — the echo was added by the 2026-08-09 gate-forwarding audit, one day after the baseline. So `[GATES]` present two-sided **is** the NEW binary and absent two-sided **is** the OLD one, read off the logs of every single invocation.
+
+### THE PER-ERA ECHO TABLES — and why this contract could not reuse the shipped abort rule
+
+`git grep -hoE '\[[A-Z][A-Z0-9]+\]'` over `raptorpath/src` at both commits, which is a reading of the source and not an expectation:
+
+| gauge | OLD `4171b58` | NEW `6ad964d` | consequence for this battery |
+|---|---|---|---|
+| `[GATES]` | **ABSENT** | present | **the abort rule and G-ERA both turn on this row** |
+| `[DIAG]` | present | present | `win=`, `rtt=/wrtt=/rtp`, `khr=`, `pl=`, `retx=` — the shared columns |
+| `[CTLD]` `[PFRAC]` `[RDIAG]` `[FDIAG]` `[SND]` `[RCV]` `[REASM]` `[SPAN]` `[WIDLE]` `[WEDGE]` `[GPIPE]` `[RSTRACE]` | present | present | era-invariant; poolable |
+| `[ACKDIAG]` | **ABSENT** | present | no `recon[...]` columns on OLD |
+| `[WALL]` | **ABSENT** | present | **the c8 dead-wall paired contrast is NOT AVAILABLE cross-era** |
+| `[SUMCAP]` `[DCAP]` `[RACK]` `[LCW]` `[CCAP]` `[SF]` | **ABSENT** | present | every cap/clock/ledger gauge is NEW-only |
+| the wait-reason histogram `wait[tun=…]` | **ABSENT** | present | no `deadwall` / `wait_*` columns on OLD, so no tick-share witness |
+
+**THE RULE EVERY BATTERY SINCE THE FLIP BATTERY ENCODES — "no `[GATES]` on EITHER endpoint = ABORT" (`ccand_battery.sh:246-252`, `ccand_report.py:21`) — WOULD MARK EVERY SINGLE OLD INVOCATION AN ABORT.** It is not a general liveness rule; it is a rule about an echo that is one day younger than the baseline. Applying it unchanged here would produce a battery with one arm.
+
+**THE ERA-INVARIANT LIVENESS ANCHORS**, therefore, read from the source at both commits and emitted unconditionally by BOTH roles at endpoint construction:
+
+* `quinn congestion controller: BBR (shipped default; RWM_QUIC_CC overrides)` — `transport/quic.rs:289` at OLD, `:289` at NEW, byte-identical.
+* `MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (fix/frontier-wedge)` — `transport/quic.rs:1137` at OLD, `:1269` at NEW.
+
+**G-LIVE, PER ERA:**
+
+| | OLD | NEW |
+|---|---|---|
+| LIVE ⇔ | both anchors on BOTH endpoints | both anchors AND `[GATES]` on BOTH endpoints |
+| ABORT ⇔ | neither anchor on either endpoint | neither anchor on either endpoint |
+| gate assertion | `[GATES]` lines **= 0** on both endpoints | `[GATES]` lines **≥ 1** on both endpoints, with `RWM_ACK_MERGE=1 RWM_SUM_CAP=1 RWM_DELTA_CAP=1 RWM_RACK_CLOCKS=0 RWM_QUANTILE_CLOCKS=0` |
+
+### THE ARMS
+
+| arm | binary | env | n |
+|---|---|---|---|
+| **OLD** | `4171b58` | **no gate at all** | 12 at c8 / c8L, 8 elsewhere |
+| **NEW** | `6ad964d` | **no gate at all** | 12 at c8 / c8L, 8 elsewhere |
+| **NR** (auxiliary) | `6ad964d` | `RWM_RACK_CLOCKS=1 RWM_RACK_REO_MULT=17` | 2 per seed, c7 + c8 + sc2 only |
+
+**THE ENV CARRIES NO GATE, AND THAT INVERTS EVERY PRIOR BATTERY IN THIS TREE.** The Ladder and Candidates batteries DERIVE each arm's env from an echo-expectation table precisely so a control can be SHOWN to be a control. Here the arm IS the shipped default of its era, so passing `RWM_SUM_CAP=0` to OLD (where the gate does not exist) or `RWM_DELTA_CAP=1` to NEW (where it is already the default) would either do nothing or restate the default in a way that could drift. The env is exactly `RWM_DIAG=1 RWM_GEN=0 RWM_LATPROBE=1` on both arms, plus `RWM_ACKDIAG=1 RWM_WALLDIAG=1` which OLD ignores and NEW needs. **The liveness assertion is therefore on the ECHO, not on the env** — which is the stronger of the two and the only one available at OLD.
+
+**WHY `NR` EXISTS, and it is an INSTRUMENT and not an era.** The Candidates Battery's instrument fact 4 is load-bearing here: `[RACK] legacy_pin=` — the SHIPPED `[25,100] ms` clamp's own bind fraction — is a counterfactual computed INSIDE the armed law, fed on the RACK-ON arm ONLY, and read NEVER off a RACK-off arm. The NEW arm at shipped defaults has `RWM_RACK_CLOCKS=0` and therefore carries `evals=0` and a denominator of zero. So the clamp readout requires one armed arm, and `NR` is it. **`NR` is scored on its OWN `[RACK]` line and on NOTHING else** — not on goodput, not on latency, not in any denominator, not against OLD or NEW — by this contract, before the run, exactly as `R1` and `L` were in the Candidates Battery.
+
+### CELLS
+
+TRANSCRIBED from `ccand_battery.sh`'s `cell_spec`, never redefined, so the rows pool with the ladder and candidates ledgers:
+
+| cell | scenarios | mode | bytes | n | why it is here |
+|---|---|---|---|---|---|
+| `c1` | c1/c1 | single | 400 MB | 8 | **ack-merge's own cell** — where the arc's largest published claim lives, and where `RWM_DELTA_CAP` is bit-identical by construction |
+| `c7` | c2/c2 | dual | 200 MB | 8 | the clean dual rung |
+| `c8` | c2/c3 | dual | 25 MB | 12 | the load-bearing rung |
+| `c8L` | c2/c3 | dual | 200 MB | 12 | the length axis |
+| `sc2` | c2/c2 | single | 100 MB | 8 | the crown-class latency guard, single-path |
+
+Seeds **42 and 7**, both, in that order, one detached session each. `12 + 12 + 8 + 8 + 8 = 48` invocations per arm per seed ⇒ `48 × 2 × 2 = 192` scored, plus `3 × 2 × 2 = 12` for `NR` ⇒ **204 invocations**.
+
+### WHAT IS SCORED
+
+**E-GOOD — GOODPUT, TWO-SIDED.** The arc claims parity-or-better, so the test is two-sided and a WIN and a LOSS are equally reportable. Per cell per seed: `NEW − OLD` in Mbit/s against `2σ_pooled` of the two arms' own reps. A cell is a **WIN** at `> +2σ`, a **LOSS** at `< −2σ`, **PARITY** otherwise. No one-sided regression bar is used and none is invented after the fact.
+
+**E-LAT — DELIVERED LATENCY.** Two instruments, reported side by side and never averaged:
+* `q_p50` — the engine's own standing-queue estimate, `median(max(0, rtt − rtp))` over steady `[DIAG]` samples. Available at BOTH eras (the `[DIAG]` `rtt={:.0}/wrtt={:.0}/rtp{:.0}ms` field group exists at `4171b58`).
+* `ping_p50` / `ping_p95` — the LOADED DELIVERED-LATENCY PROBE, an independent 20 pkt/s ICMP flow through the same shaped qdisc, harness-side and therefore era-invariant by construction. **Read only where the calibration grants the cell headroom**; at a cell running at the wall the probe measures the wall.
+* Where the two DISAGREE IN SIGN the disagreement is reported as such (the Candidates Battery had one such row) and neither is promoted.
+
+**E-CPU — CPU PER BYTE, BOTH ENDPOINTS.** `cpucli` (sender, `/usr/bin/time -v`) and `cpusrv` (receiver, `/proc/<pid>/stat`) divided by the transferred bytes, per cell per seed, both arms. Harness-side on both eras. Reported as a RATIO `NEW/OLD` with its `2σ`. **This is a scored claim here, not a guard** — it is one of the three quantities the arc is being asked about.
+
+**THE CLOCK-UNDER-NEW-DEFAULT READOUT — `NR` only, and the numbers it revises are named.** The Candidates Battery measured the shipped `[25,100] ms` recovery clamp binding **92.4–99.7 %** of the time at all five cells, and `fa_frac` at **0.17–0.78** against RACK's own `α_class = 0.0625`. **Both were measured on a binary where `RWM_DELTA_CAP` was OFF.** `RWM_DELTA_CAP` is now the default and its measured effect is to remove 10–200 ms of standing queue, which shrinks the app-echo SRTT the clamp and the reordering timer are both computed from. So those numbers are stale by construction and `NR` re-reads them.
+
+### THE PRE-REGISTERED PREDICTIONS — stated as the HYPOTHESIS UNDER TEST, not as the truth
+
+Each is the CHAINED SUM of the rungs' own published numbers. **This contract does not assert them; it asserts that they are what the chain predicts, and it pre-commits to reading a disagreement as a finding rather than as noise.**
+
+* **P1 — c1 goodput: `+12.7 to +13.0 %` class.** Source: `bdab7de`'s own battery (228.9 ± 4.2 vs 203.1 ± 8.5 at s42; 228.1 ± 3.1 vs 201.8 ± 5.6 at s7). c1 is single-path, so `RWM_SUM_CAP` and `RWM_DELTA_CAP` contribute NOTHING there by construction (the pooled seat short-circuits at `n_live < 2`), and the prediction is ack-merge's alone plus the residue.
+* **P2 — the duals: GOODPUT PARITY with `q_p50` DOWN by the δ-cap's measured class.** `c7 −10 to −16 ms`, `c8 −113 to −117 ms`, `c8L −130 to −200 ms`, both seeds. Source: "Candidates Battery — RESULTS", D-LAT. Goodput at the duals is predicted PARITY and not a win: the δ-cap's own honest bound is *"free", not "faster"*, and `RWM_SUM_CAP`'s rung was recommended on the same terms.
+* **P3 — receiver CPU per byte DOWN by `8–9 %`.** Source: ack-merge's `4.72 vs 5.19` / `4.82 vs 5.26` per Gbit (`−9.1 % / −8.4 %`). This is the one prediction with a stated MECHANISM on both endpoints (one control datagram instead of two), so it is the one whose failure is most informative.
+* **P4 — sc2: NO δ-cap contribution.** Single-path, so any sc2 move belongs to ack-merge, `RWM_HONEST_ANCHOR`, or the residue — never to the two cap flips. Stated so that an sc2 result cannot be attributed to the cap laws after the fact.
+* **P5 — `NR`'s clamp readout MOVES, and the direction is pre-committed.** `legacy_pin ≥` its Candidates value at every cell, with the largest rise at `c8` and `c8L` (the cells where `q_p50` fell 113–200 ms): a shorter SRTT drives the clamp's input toward the 25 ms LOWER bound, so it binds MORE, and a law that already operated as a constant operates as a constant harder. `fa_frac` is predicted to RISE at the duals for the same reason (a shorter timer fires sooner) — **but `fa_frac` has no mechanism argument as clean as `legacy_pin`'s, so EITHER DIRECTION IS A RESULT there and only the magnitude is a surprise.**
+
+**THE INTERACTION CLAUSE, which is the point of the battery.** If the cumulative measurement agrees with P1–P3 the arc is additive and the rungs composed. **If it DISAGREES — in either direction, at any cell — that is a FINDING ABOUT INTERACTION between the rungs, and it is read and reported BEFORE any statement about the arc's value.** A cumulative result larger than the chained sum is not a bonus; it is an unexplained super-additivity and it gets a named instrument. A cumulative result smaller is not a disappointment; it is an interaction and it gets the same. **Neither outcome is preferred here, and no clause below is written so that one of them reads better.**
+
+### THE GUARDS
+
+* **G-ERA (anti-mix, mechanical, every invocation).** OLD must show `[GATES]` lines `= 0` on BOTH endpoints; NEW must show `≥ 1` on BOTH. A violation means a binary was launched from the wrong era: the rep is **VOID**, it is reported in the void table with its `sha256`, and it enters no denominator.
+* **G-SHA.** Both binaries' `sha256` in every session header, plus each era's `COMMIT` file. A session missing either is discarded.
+* **G-LIVE (per era).** The table above. A rep failing its era's anchors on ONE endpoint only is an INSTRUMENT-FAIL for that rep, not an abort — the distinction the abort protocol below turns on.
+* **G-ABORT — ABORT ≠ DNF ≠ INSTRUMENT-FAIL, WITH THE NEW WITNESS COLUMNS, AND IT IS SCORED BEFORE ANY CONTRAST.**
+  * ABORT = no era-anchor on EITHER endpoint. Not a datum, not a liveness verdict, in no denominator — **as before, and as before that exclusion is only sound while the aborts are INDEPENDENT OF THE ARM.** At c8/seed 7 the Candidates Battery measured 20 % on the control against 75 % on the RACK arm, which makes the exclusion a SELECTION ON THE TREATMENT.
+  * **Every abort must now carry `abort_cause=`** from the abort-cause witness committed before this block (`tools/l1/abort_witness.sh`, `abort_witness.py`). An abort with `abort_cause=no_record` is an INSTRUMENT-FAIL OF THE WITNESS and is reported as one.
+  * **THE ABORT TABLE IS PRINTED PER (cell, arm) BEFORE THE FIRST CONTRAST**, with `abort_cause`, `drain_pids_t0`, `srv_bound` and `cli_rc`. **If the per-cell abort rate differs between OLD and NEW by more than 10 percentage points, every contrast at that cell is reported WITH the abort table beside it and the survivors' selection is stated in the verdict** — it is not silently pooled and it is not silently dropped.
+  * **THE CLASS'S OWN NAME IS ALREADY KNOWN TO BE WRONG.** The class has been carried as "the seed-7 topo-ping abort class" for three batteries. `topo.sh:82` and `topo_dual.sh:80-81` run their pings as the LAST statements of `up()`, so a ping failure leaves a COMPLETE topology behind; and `perf_rwm_c.sh` discarded `topo*.sh`'s exit code entirely. **A failed topo ping cannot produce a `[GATES]`-less invocation.** The witness instruments the four steps that can — `busy_precheck`, `topo_up`/`topo_step`, `srv_bind`, `cli_exec` — plus the residual `no_gates_unknown`, which is the value that FALSIFIES all four. **A class concentrated in `no_gates_unknown` is a finding, and the successor instrument is named there rather than guessed.**
+  * `drain_pids_t0` is the ARM-CORRELATION column and it is measured on EVERY invocation, aborted or not, so it has a control.
+* **G-HEAD (discipline 16).** Headroom from the calibration pass, `util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`. **The denominator is the TRANSFER wall (`seconds`), NEVER `INVOCATION_S`** — the correction that read c7 at 77.6 % when the cell was at 96.9 %. `headroom ≥ 5 %` ⇒ throughput claims permitted at that cell; `< 5 %` ⇒ **parity / latency only**, and E-GOOD's verdict at that cell is restricted to PARITY-or-not with no magnitude claimed. Where the calibration contradicts a permission the affected clause is VOID for that cell and reported void, never re-scoped after the fact.
+* **G-PAIR — the paired design, and what it CANNOT be here.** OLD and NEW run INTERLEAVED within one rep of one cell, adjacent, in the same session on the same freshly built topology, so a paired contrast is available wherever the cell is bistable. **The c8 dead-wall pairing specifically is NOT available cross-era**: `[WALL]` does not exist at `4171b58`, so the dead-wall contrast is a NEW-only reading and no cross-era wall claim may be made. Stated here so it cannot be improvised later.
+* **G-GEN.** `RWM_GEN=0` on both arms — the plain-window control, the same geometry the ladder and candidates ledgers used, so the rows pool. The generation sanity guard is inert at `RWM_GEN=0` by construction on both eras, and that is expected rather than a missing guard.
+
+### THE CALIBRATION, AND IT IS NOT OPTIONAL
+
+`era_calib.sh`: ONE rep per arm per cell, seed 42, SAME session, the SAME TWO binaries, `tc -s qdisc show` captured on EVERY cell and EVERY invocation. It is `n = 1`: it carries no σ, no seed-7 evidence, and **nothing in it is a result**. It is ALSO the smoke, and this battery needs one more than its predecessors did because **the OLD binary has never been run by this harness in its current form** — the `RWM_LATPROBE` probe, the sectioned `tc` capture, the `[GATES]`-scoped liveness greps and the abort witness were all built after it. The calibration is where that is discovered, at `n = 1`, and not in the scored run.
+
+Its output fills this contract's headroom table and is committed as **THE CONTRACT'S COMPLETION**, in its own commit, BEFORE the scored battery is launched. The table is left EMPTY here on purpose.
+
+| cell | shaped capacity | OLD util | NEW util | headroom | permission |
+|---|---|---|---|---|---|
+| `c1` | 1 Gbit | — | — | — | *(filled by the completion commit)* |
+| `c7` | 200 Mbit | — | — | — | *(filled by the completion commit)* |
+| `c8` | 120 Mbit | — | — | — | *(filled by the completion commit)* |
+| `c8L` | 120 Mbit | — | — | — | *(filled by the completion commit)* |
+| `sc2` | 100 Mbit | — | — | — | *(filled by the completion commit)* |
+
+### WHAT THE LAUNCH STEP MUST DO
+
+1. **Build BOTH binaries on the VM**, from detached checkouts — `4171b5843d22140d54b2d05fc153451d0d03c545` and `6ad964d` — into distinct paths, and write each era's `COMMIT` file. Record both `sha256`.
+2. **Run `era_calib.sh`.** Read its liveness / abort-cause / dial lines. **Commit the filled headroom table as this contract's completion**, with the smoke disclosed in full including anything it found.
+3. **Launch `era_all.sh` DETACHED, then WAIT.** MEASUREMENT DISCIPLINE 13 is measured and not advisory here: polling a running battery manufactures the seed-7 abort signature (121 `RUN-RETRY` over 171 polled invocations against 0 over 80 unpolled, 2026-08-07). Watch the SENTINEL, never the process table — `pgrep -f era_battery.sh` matches the watcher's own shell.
+4. **Collect once. Read the ABORT-CAUSE TABLE FIRST**, before any contrast, and state the selection if G-ABORT's 10-point rule fires.
+5. **Score with `era_report.py` against THIS block**, which is not modified after the VM is touched.
+
+**Nothing in this session flips a default.**

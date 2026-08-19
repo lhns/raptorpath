@@ -13,6 +13,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+# THE ABORT-CAUSE WITNESS. `set -E` makes the ERR trap inherit into `up()` —
+# without it the trap is not taken inside a function and every failure in this
+# file would still be attributed to nothing. `set -E` changes NO other
+# behaviour: with no ERR trap installed it is inert, and the trap body only
+# writes to the witness record.
+set -E
+source ./abort_witness.sh
+trap 'aw_err_trap "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 down() {
     for ns in "$NS_CLI" "$NS_SRV"; do
@@ -77,8 +85,15 @@ up() {
     ip netns exec "$NS_SRV" ip mptcp endpoint add 10.78.0.2 dev srv1 signal
 
     echo "dual topology up: pathA=$scen_a pathB=$scen_b"
-    ip netns exec "$NS_CLI" ping -c 2 -i 0.2 -W 2 10.77.0.2 | tail -1
-    ip netns exec "$NS_CLI" ping -c 2 -i 0.2 -W 2 10.78.0.2 | tail -1
+    # THE "TOPO-PING". Same two pings, same exit semantics (`aw_ping` re-returns
+    # the ping's status, so `set -e` still aborts here exactly as before) — but
+    # the rc and the output are now RECORDED. Note what the position of these
+    # two lines already proves: they are the LAST statements of `up()`, so a
+    # failure here leaves a COMPLETE topology behind, and `perf_rwm_c.sh` does
+    # not read this script's exit code at all. The abort class named after them
+    # cannot have been caused by them.
+    aw_ping "$NS_CLI" 10.77.0.2 pathA
+    aw_ping "$NS_CLI" 10.78.0.2 pathB
 }
 
 case "${1:-}" in
