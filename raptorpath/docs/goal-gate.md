@@ -33508,17 +33508,23 @@ So:
   printed, and a cell whose reps straddle a 2× gap is declared bimodal and its
   goodput clause degraded to the paired sign test alone.
 
-### 6 — ABORT-WITNESS COLUMNS — **BLOCKED ON A DEPENDENCY THAT IS NOT IN `main`**
+### 6 — ABORT-WITNESS COLUMNS — **THE DEPENDENCY LANDED IN `main` WHILE THIS BRANCH WAS BEING BUILT (corrected 2026-08-19)**
 
 The abort class is **arm-correlated** (20 % control vs 75 % RACK at c8/seed 7),
 which makes abort-exclusion a **selection on the treatment**: every statistic
 computed over the survivors is conditioned on an arm-dependent event. A
 24-invocation battery with two arms cannot be read without it.
 
-The instrument exists — `abort_witness.sh` / `abort_witness.py`, commit
-`0702811` — but **on branch `feat/era-battery-prep`, which is NOT merged into
-`main` as of `b98d537`**, and this branch is cut from `main`. So the columns
-are named here and their source is named with them:
+> **CORRECTION, recorded rather than silently rewritten.** This section was
+> first written against this branch's base, `main@b98d537`, where the witness
+> lived only on the unmerged `feat/era-battery-prep` and the columns were a
+> hard blocker. **`main` advanced to `280b5fd` during this branch's work**
+> and the witness is now IN `main` (merged at `22d2407`). The blocker is
+> discharged; what replaces it is a REBASE requirement and one behaviour
+> warning, both below. The original blocker text is superseded, not deleted
+> from the record — a launch step reading only the corrected version would
+> not know the columns were ever absent, and the merge order below is the
+> reason they now exist.
 
 | column | meaning |
 |---|---|
@@ -33526,21 +33532,50 @@ are named here and their source is named with them:
 | `abort_missing` | TRUE when the record file is ABSENT — **not** the same as `abort_cause=None`; it means the witness never ran |
 | `drain_pids_t0` | THE ARM-CORRELATION COLUMN: survivors of the previous invocation's teardown at the `BUSY` pre-check, measured on EVERY invocation so it has a control |
 
-> **THE DEPENDENCY, stated as a blocker rather than a note.** `c9_battery.sh`
-> does **not** source `abort_witness.sh` and does not emit these columns. It
-> cannot: the file is not on this branch. **The launch step must merge
-> `feat/era-battery-prep` (or land its witness) BEFORE running the c9
-> battery**, and add the three columns to `c9_battery.sh` at that point.
-> A c9 battery run WITHOUT the witness is scoreable only if its abort count
-> is **zero**; any non-zero abort count without `abort_cause` makes C9-2 and
-> C9-4 — the two arm-comparison clauses — **unscoreable**, because those are
-> exactly the clauses arm-correlated attrition biases.
+**THE LAUNCH STEP'S ORDER OF OPERATIONS, now that the dependency exists:**
+
+1. **Rebase this branch onto `main ≥ 280b5fd`.** It is cut from `b98d537` and
+   does not contain the witness; `c9_battery.sh` therefore does not source
+   `abort_witness.sh` and emits none of the three columns yet.
+2. **Expect one conflict, in `topo_dual.sh`, and it is a genuine
+   both-sides-needed conflict rather than a formatting one.** `main` adds
+   `set -E` + `source ./abort_witness.sh` + an `ERR` trap at the top and
+   replaces the two sanity pings with `aw_ping`; this branch changes the two
+   `shape` calls to per-leg seeds and rewrites the `dual topology up:` echo
+   **on the line immediately above those pings**. Both edits must survive.
+   The seed changes and the witness changes are independent in meaning, so
+   the resolution is a union, not a choice.
+3. **Give `topo_quad.sh` the same treatment** — `set -E`, `source
+   ./abort_witness.sh`, the `ERR` trap, and `aw_ping` for its four sanity
+   pings. It was written without them because they did not exist on this
+   base, and a quad topology that cannot name its own failing line is the
+   one place a four-legged setup is hardest to debug.
+4. **Add the three columns to `c9_battery.sh`**, copying `/tmp/rwm-abort.txt`
+   per rep the way it already copies `/tmp/rwm-q.txt`, and read them with
+   `abort_witness.py` rather than a re-implemented block.
+
+> **AND A WARNING THAT IS WORTH MORE THAN THE COLUMNS.** The witness shipped
+> with a defect that **MANUFACTURED the abort class it was built to explain**:
+> `aw_drain_probe` opened with a bare `pgrep -x raptorpath | wc -l`, and
+> `pgrep` exits 1 when nothing matches — the NORMAL, HEALTHY case, since the
+> caller has just `pkill`ed — which `pipefail` carried past `wc` and `set -e`
+> turned into a dead invocation. The era battery's smoke came back **6/6
+> ABORT in under a second each**, every one with `abort_cause=none`. Fixed at
+> `d6c6cba` with `test_abort_witness.sh` as its gate.
 >
-> There is a second, smaller conflict to expect: `feat/era-battery-prep`
-> edits `topo_dual.sh` (an `ERR` trap and `aw_ping`) and so does this branch
-> (per-leg seeds). The two edits are in different hunks and both must
-> survive the merge; `topo_quad.sh` needs the same `set -E` + trap treatment
-> applied when the witness lands.
+> **The c9 consequence is a standing check, not a historical note.** Before
+> the c9 battery is trusted, its FIRST rep must be confirmed to have actually
+> launched an engine — `[GATES]` present on both endpoints and a non-zero
+> `[ACKDIAG]` line count — because an instrument that aborts what it measures
+> produces a *clean-looking* ledger of nothing. `c9_battery.sh` already
+> asserts both (`LIVENESS` and `LIVENESS-EMIT`), and after the rebase those
+> assertions are what stand between this battery and the same failure.
+
+**The scoring rule is unchanged by the correction.** A c9 battery run without
+usable witness columns is scoreable only if its abort count is **zero**; any
+non-zero abort count without `abort_cause` makes C9-2 and C9-4 — the two
+arm-comparison clauses — **unscoreable**, because those are exactly the
+clauses arm-correlated attrition biases.
 
 ### 7 — WHAT ONLY THE LAUNCH STEP CAN FILL
 
@@ -33549,7 +33584,7 @@ are named here and their source is named with them:
 | every measured ρ̄, pairwise ρ, and B | c9/c9h have never been run; that is the point of pre-registering |
 | the headroom table (§4) | needs a same-session, same-binary `tc` calibration on the VM |
 | the sender-bound determination at c9 | needs `CPUCLI` against a real 400 Mbit aggregate |
-| the abort-witness columns (§6) | needs `feat/era-battery-prep` merged |
+| the abort-witness columns (§6) | the witness is now in `main@280b5fd`; needs this branch REBASED onto it, the `topo_dual.sh` conflict resolved as a union, and the columns wired into `c9_battery.sh` |
 | the c9h span reading against C9-L3's 333 | needs `[CCAP]` off a real heterogeneous quad |
 | whether the engine's 4-path scheduler splits evenly under LOSS | the local 4-path loopback is lossless; it proves all four legs carry, not how they share under GE bursts |
 
