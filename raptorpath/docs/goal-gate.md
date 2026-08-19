@@ -35448,9 +35448,9 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 
 | cell | shaped capacity | B ms/MB | cores | link headroom | **cpu headroom** | permission |
 |---|---|---|---|---|---|---|
-| `c9` | 400 Mbit | | | | | |
-| `c9h` | 240 Mbit | | | | | |
-| `c1` | 1 Gbit | | | | | |
+| `c9` | 400 Mbit | **70.90** | **1.473** | **53.5 %** | **75.4 %** | see the completion below |
+| `c9h` | 240 Mbit | **69.00** | **1.481** | **19.5 %** | **75.3 %** | see the completion below |
+| `c1` | 1 Gbit | **47.67** | **1.198** | **77.9 %** | **80.0 %** | see the completion below |
 
 **Where the calibration CONTRADICTS a permission, the affected clause is VOID for that cell and is reported as void, never re-scoped after the fact.**
 
@@ -35475,6 +35475,98 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 * **No seam is predicted to win.** The loopback smoke in the instrument commit is disclosed and is not a prior.
 * **No throughput magnitude at c9.** The cell is sender-bound; that is the premise of this contract, not a conclusion of it.
 * **No claim that the five seams are the right five.** A3 is the clause that can falsify it, and the honest outcome of a low `attr` is a redesigned instrument, not a reweighted table.
+
+---
+
+## The Sender CPU Ceiling — THE CONTRACT'S COMPLETION, PHASE 1 (2026-08-19, `feat/cpuprof-run` from main@`77c95ef`)
+
+**This section is the calibration owed by the block above, committed in its own commit BEFORE the scored battery was launched. It is `n = 1` per arm per cell, one session, seed 42. NOTHING IN IT IS A RESULT.** The pre-registered text above is left standing unedited except the owed table fill; where the calibration contradicts a clause, the clause is reported **VOID as written**, never re-scoped.
+
+### THE SESSION'S PROVENANCE
+
+| | |
+|---|---|
+| source | `77c95ef` (`feat/cpuprof-run` from `main`), CRLF-converted `git archive`, 300 files normalised |
+| `release` sha256 | `330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984` |
+| `release-prof` sha256 | `d84711e72c1c4a860a45efd8def99327475f95dafafaa1e41402f5a709600017` |
+| `.text` `release` | `9c9a59486bf67fcfe7a67fb341c68e2ea0ca2392eae3c74eecd72ac590cadd4d` (`0x553600` B) |
+| `.text` `release-prof` | `6de29a1763c955d35a580186c620fe0ec2440f7b19c999443b42d718474c75a4` (`0x554380` B) |
+| **`TEXT-EQUAL`** | **NO** — see below |
+| `perf` | 7.1.3-100.fc43, freq 999, graph 0 — **already installed, nothing was added to the box** |
+| `kernel.perf_event_paranoid` | **2 → 1**, `sysctl -w`, not persisted in `/etc/sysctl.d`. **Restore intent: back to 2 when the goal releases the VM.** `kptr_restrict` 0, untouched |
+| kernel / CPU | 7.0.14-101.fc43, Xeon E5-2650 v3, 6 cores, `aes avx2 pclmulqdq` |
+| co-tenant | 0 `kwin_x11`, 1 `sddm` |
+
+**`TEXT-EQUAL NO`, AND WHAT IT DOES AND DOES NOT TOUCH.** `[profile.release-prof]` adds only `debug = 1`, and the Cargo comment predicts the two `.text` sections will match. **They do not: `0x554380` against `0x553600`, +3 968 B, +0.07 %.** Per the contract this **QUALIFIES every `P` attribution and does not abort the battery**, and the qualification is printed first by the parser. **The qualification's SIZE was then bounded rather than left open:** the symbols `X2` names are byte-identical across the two builds — `gf256::mul_acc_slice` `0x72` in both, the three `code_generation*` bodies `0x120`/`0x442`/`0x44c` in both. The difference is layout and two extra symbols, not the coding kernel.
+
+### THE PERMISSIONS, BOTH COLUMNS, NEITHER QUOTED WITHOUT THE OTHER
+
+| cell | shaped | live legs | B ms/MB | cores | link headroom | cpu headroom | max thread | permission |
+|---|---|---|---|---|---|---|---|---|
+| `c9` | 400 Mbit | **2 of 4** | 70.90 | 1.473 | 53.5 % | 75.4 % | **0.28 core** | **NO gauge reads saturated.** Throughput magnitudes stay disclaimed (c9's confound stands); the ceiling is a CPU-per-byte property, not an occupancy one |
+| `c9h` | 240 Mbit | **2 of 4** | 69.00 | 1.481 | **19.5 %** | 75.3 % | **0.30 core** | **THROUGHPUT MAGNITUDE AT `c9h` IS NOT PERMITTED.** On the two live legs (200 Mbit) utilisation is **95.6 %** — `c9h` is at its link |
+| `c1` | 1 Gbit | 1 of 1 | 47.67 | 1.198 | 77.9 % | 80.0 % | **0.29 core** | throughput permitted; **`c1` is neither link-bound nor sender-CPU-bound** |
+
+`link_headroom = 1 − tc_bytes·8/(TRANSFER wall × shaped capacity)`, denominator the TRANSFER wall and never `INVOCATION_S`, from the `-q.txt` `CLI*` captures. `cpu_headroom = 1 − cores/6`. `max thread` = the largest single-thread share of the `P` arm's samples × that arm's `cores`.
+
+**THE QUAD DOES NOT FILL FOUR LEGS, AND THE CALIBRATION SAYS SO IN BYTES.** At `c9` the `B` arm put 221.8 / 1.0 / 224.5 / 0.8 MB on the four legs; at `c9h`, 83.7 / 83.4 / 0.1 / 1.5. **Two legs carry the transfer and two are dark.** This is the c9 successor list's own words — *"re-run c9 on a sender that can fill four legs"* — measured rather than inferred. **WHICH two legs is not fixed:** across the three `c9` arms the live pair was legs 0+2, then 2+3, then all four unevenly. It is a scheduling outcome, not a topology one.
+
+**AND `c9h`'s PERMISSION IS THE ONE THAT MOVED.** The contract sized `c9h` at 240 Mbit and expected the invariance check to run at a *different* capacity from `c9`. With two of four legs dark, `c9h`'s live capacity is 200 Mbit and it runs at 95.6 % of it. **`A6` is a `ms/MB` clause and survives in kind, but its two cells are no longer the same KIND of operating point** — `c9` at 46.5 % of its link, `c9h` at 95.6 % of its live link — and phase 1 must read the invariance with that beside it.
+
+### THE SPECIFICATION FAILURE: `G-SEAM` AND `G-GEN` ARE MUTUALLY UNSATISFIABLE
+
+**This is the same class of defect as `G6`/`A7` in the item-3 ledger, and it is recorded the same way: as a failure of the clause, before the clause is scored.** The smoke caught it on its first invocation, which is what the smoke is for.
+
+* **`G-GEN`** requires `RWM_GEN=0` on every arm — the plain-window control, so the rows pool with the c9 and era ledgers.
+* **`G-SEAM`** requires `n > 0` on **all five** seams on every `S` invocation.
+
+`RWM_GEN=0` makes `perf_rwm_c.sh` drop `--window-generation-coding`. `emit_source.rs` then builds `create_window_encoder(...)` instead of a `GenerationEncoder`. **Both the `enc` seam and the `src` seam live only inside `GenerationEncoder`** (`fec/generation.rs:216, 355, 429, 513`) — so with `G-GEN` satisfied, **two of the five seams have no reachable call site at all.** It is structural, not stochastic: `enc=0.0/n0` and `src=0.0/n0` on **all three cells**, and `--window-generation-coding` appears **zero** times in the client log.
+
+**THEREFORE `G-SEAM` IS VOID AS WRITTEN**, and with it:
+
+* **`X2` (`A4`'s coding term) IS VOID AS WRITTEN.** It compares `S`'s `enc` share against `P`'s share in `gf256::mul_acc_slice` + `generate_window_coefficients` + `code_generation*`. At `RWM_GEN=0` the first is `0` by construction and the second is the residue of a dead path (`gf256::simd::mul_acc_avx2` reads **1.34 %** at `c9`). Agreement "within 10 percentage points" is satisfied **trivially and carries no information** — the `A7` pathology exactly.
+* **`A4` therefore rests on `X1` alone**, and that must be said before `A4` is scored rather than after.
+* **`A3` IS THE CLAUSE THAT SURVIVES AND IT IS NOT COMFORTABLE.** `attr` reads **0.1411** at `c9` and **0.1341** at `c9h` — inside `[0.10, 0.90]`, but only just, and only because two seams are dark. **At `c1` it reads 0.0518 — BELOW the floor.** At `n = 1` that is a pointer, not a verdict; the scored run decides it.
+
+**WHAT IS NOT DONE ABOUT IT.** `RWM_GEN` is **not** flipped to 1. The ceiling under decomposition is the plain-window one — that is the arm the 68.5 ms/MB was measured on and the arm the rows pool with — and changing the gate to feed an instrument would change the measurand to rescue the gauge. The instrument commit's own loopback smoke (`enc` largest) was taken with generation coding **ON**; it was disclosed as a non-prior, and this is now the mechanical reason it could never have been one.
+
+### THE SMOKE — EVERYTHING ELSE PASSED, MECHANICALLY
+
+| check | result |
+|---|---|
+| `G-CONTROL` — `B`/`P` clean | ✓ `RWM_CPUPROF=0` two-sided, **0** `[CPUPROF]` lines, on all 6 control invocations |
+| `G-ARM` — the gate took | ✓ `RWM_CPUPROF=1` two-sided and **exactly one** `[CPUPROF]` line on all 3 `S` invocations |
+| `G-SEAM` | ✗ **VOID** — see above |
+| `G-DISJOINT` — `attr ≤ 1` | ✓ 0.14 / 0.13 / 0.05 |
+| `A5` — `perf` attaches and symbolizes | ✓ **1210 / 995 / 1115** symbol rows; `attach_ms` 2018 / 2194 / 1732 |
+| aborts | ✓ **0** — `anchor_cc` 4/4/4 at the quads, 1/1 at `c1` |
+| `INSTRUMENT AND ABORT TABLE` | **only** `TEXT-EQUAL NO` |
+
+**`A2` — THE INSTRUMENTS ARE CHEAP — FAILS FOR `P`, AND THE CONTRACT ALREADY SAID WHAT TO DO.** `S` costs **−1.2 / −3.7 / −2.0 %** of `ms/MB` (inside the 5 % band, and *negative*). **`P` costs +28.1 % at `c1`, +19.6 % at `c9`, +18.4 % at `c9h`** — three to six times the band. Per `A2`: the decomposition is reported **with the cost printed beside it**, `P`'s shares are read as shares of *the instrumented run's* CPU, **and no correction is invented.** `P` was already read as a shape and never as a total; this is the number that makes that rule load-bearing rather than decorative.
+
+### THE PER-THREAD READING — THE POINTER THE GAP PHASE ASKED FOR, AND IT KILLS A CANDIDATE
+
+The gap ledger left a hypothesis: the sender sits at ~1.09 cores, *one core's worth*, so a **single-core ceiling** could be hiding behind a machine-level headroom column that reads 80 % idle. **`P`'s per-thread sample distribution answers it, and the answer is no.**
+
+```text
+   c9   16.20 15.86 16.09 15.76 15.50 15.17 %  over six tokio-rt-workers  + 5.42 % main
+   c9h  17.42 17.12 16.53 16.10 14.43 13.20 %                             + 5.21 %
+   c1   20.68 16.24 15.14 14.73 14.10 11.25 %                             + 7.86 %
+```
+
+**The load is FLAT across all six workers at every cell.** At `c9` the busiest thread is `0.162 × 1.699 = 0.28` of a core. **Nothing is saturated: not the machine (75 % headroom), not the link (53 %), and not any single thread (~28 % of one core).** Whatever fixes `ms/MB` at 68–71, it is **not** an occupancy ceiling — which is precisely why the `cpu_headroom`/`link_headroom` pair the item-3 ledger substituted for the void `G6`/`A7` needs this third column beside it. **At `n = 1` this is a pointer for the scored run to confirm or kill.**
+
+### THE `A7` CROSS-REFERENCE, AS PROMISED
+
+`A7`'s reading rule is **VOID as written** — recorded in the item-3 ledger's *"THE SPECIFICATION FAILURE: `G6` — AND MEASUREMENT TRUTH ITEM 2's `A7` — ARE UNFALSIFIABLE AS WRITTEN"*, because `pred_mbit ≡ meas_mbit` identically once `cores` and `ms_per_MB` are substituted. **This calibration reproduces the identity on all nine rows** (`pred` and `meas` agree to the printed digit at every cell and arm) — a ninth demonstration, taken on a different binary and two cells the earlier demonstrations never touched. **`A7` is not scored.** Its question — is `c1` sender-bound? — is answered by the substituted pair, and this session's `c1` row says the same thing the flip-week and era-week rows said: **77.9 % link headroom, 80.0 % CPU headroom, 0.29 core on the busiest thread. `c1` is neither.**
+
+### AND ONE POINTER ON THE SUBSTRATE DRIFT
+
+The gap ledger recorded `c1` at **48.95 ms/MB** today against **40.88** on flip week — +20 %, same executable. **This session's `c1` `B` arm reads 47.67 ms/MB at 1.198 cores**, on a *different* env (no `RWM_DIAG`/`ACKDIAG`/`WALLDIAG`/`LATPROBE` on any arm here). The +18 %-ish gap against flip week survives the removal of those four instruments, which is a reading about the substrate rather than about the gauges. **`n = 1`. The scored run has 12 `c1` `B` invocations and decides it.**
+
+### THE LEDGERS
+
+`/home/vibe/cpuprof/calib-cpuprof.txt`, `calib-cpuprof-table.txt`, `cpuprof-calib-s42.log`, `diag/*-{c,s}.log` and `diag/*-q.txt`, `perf/*.data` + `perf/*.report.txt`.
 
 ---
 
