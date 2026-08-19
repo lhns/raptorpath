@@ -277,7 +277,9 @@ pub(crate) const LOOP_WAKE_US: u64 = 1_000;
 /// information-availability fallback, not a mode.
 ///
 /// RFC 9002's kTimeThreshold (9/8) and kPacketThreshold (3) are UNTOUCHED:
-/// they are cited, not magic. Only the floor is derived.
+/// they are cited — 9/8 as RFC 9002's EMPIRICAL recommendation ("Experience
+/// with QUIC shows that 9/8 works well"; RACK uses 5/4), corrected 2026-08-19,
+/// cross-check item 6(d). Only the floor is derived.
 pub fn patience_floor_us(jitter_us: u64, srtt_us: u64) -> u64 {
     if srtt_us == 0 {
         return NACK_RETX_COOLDOWN_FLOOR_US;
@@ -404,7 +406,9 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 /// `NACK_RETX_COOLDOWN_FLOOR_US` when `RWM_PATIENCE_DERIVED` is off (⇒ this
 /// function is bit-identical to its pre-2026-08-07 form), and
 /// `patience_floor_us(jitter, srtt)` when it is on. kTimeThreshold (9/8) is
-/// untouched — it is cited, not magic; only the floor is derived.
+/// untouched — cited as RFC 9002's empirical recommendation ("works well";
+/// RACK uses 5/4 — corrected 2026-08-19, cross-check item 6(d)); only the
+/// floor is derived.
 ///
 /// Returns the threshold and whether the FLOOR term won (the `pf=` mechanism
 /// gauge: "patience is derived" means the floor term stops winning).
@@ -3056,9 +3060,17 @@ pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
 ///   stall(δ, ρ) = (1 − ρ)·D(δ)  +  ρ·(9/8·srtt + srtt)
 ///                 └ shed-eligible ┘  └ retained: RFC 9002 §6.1.2 time
 ///                   share, bounded      threshold (kTimeThreshold = 9/8,
-///                   by the span law's   cited, not magic) plus ONE
+///                   by the span law's   empirically recommended) plus ONE
 ///                   own D(δ)            retransmit round trip ┘
 /// ```
+///
+/// PROVENANCE of the 9/8, corrected 2026-08-19 (literature cross-check item
+/// 6(d), `docs/research/literature-crosscheck.md`; paper §16.65): RFC 9002
+/// RECOMMENDS 9/8 empirically — *"Experience with QUIC shows that 9/8 works
+/// well"* — it does not derive it, and RACK (RFC 8985) uses 5/4 for the same
+/// job. So the constant is cited AND tuned: the 17/8 below inherits a tuned
+/// constant, and earlier descriptions of it as "cited, not magic"/"not
+/// fitted" overstated the source.
 ///
 /// * the shed-eligible share (1 − ρ) cannot pin the in-order frontier
 ///   longer than the span law's own deadline `D(δ)` ([`shed_deadline_us`]):
@@ -3093,7 +3105,13 @@ pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
 /// time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`, so the
 /// `9/8` below is cited ONLY as a multiplier of a SMOOTHED RTT — moving it
 /// onto RTprop turns it into a fitted coefficient on a new clock, which is a
-/// provenance REGRESSION and is not licensed. Pinned by
+/// provenance REGRESSION and is not licensed. (Softened 2026-08-19, cross-check
+/// item 6(d): the RFC's own *"Implementations MAY experiment with absolute
+/// thresholds, thresholds from previous connections, adaptive thresholds"*
+/// clause anticipates such a move — it just blesses no value, so a mover
+/// still owes its own derivation; and 9/8 itself is an empirical
+/// recommendation, *"Experience with QUIC shows that 9/8 works well"*, with
+/// RACK on 5/4.) Pinned by
 /// `slack_bench.rs::the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs`.
 pub fn contract_stall_s(rho: f64, b_hint: f64, rtprop_s: f64, srtt_s: f64) -> f64 {
     let rho = rho.clamp(0.0, 1.0);

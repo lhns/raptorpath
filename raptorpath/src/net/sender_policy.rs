@@ -757,9 +757,24 @@ impl SenderPolicy {
         // a static window; generation/coded-only keep their own structural caps.
         let plain_dyn_cap =
             reliable && !generation && !coded_only && !gates.store_env_set;
-        // Window = gain × BDP. ≥2 keeps the pipe full (≈1 BDP) while leaving ≈1
-        // BDP of headroom to keep sending fresh data during a one-RTT recovery
-        // round; 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
+        // Window = gain × BDP, gain = 2.0. CORRECTED 2026-08-19 (literature
+        // cross-check item 3(a), docs/research/literature-crosscheck.md; paper
+        // §16.65): this comment used to argue "≥2 keeps the pipe full (≈1 BDP)
+        // while leaving ≈1 BDP of headroom to keep sending fresh data during a
+        // one-RTT recovery round" — that recovery-runway rationale appears in
+        // NO primary source and is withdrawn. The value 2 has two PUBLISHED
+        // derivations, quoted from their sources:
+        //  - RFC 6182 §5.3 recommends 2*BDP buffers: "One BDP allows
+        //    supporting reordering of segments by the network. The other BDP
+        //    allows the connection to continue during fast retransmit";
+        //  - BBR's cwnd_gain = 2 "bounds in-flight data to a small multiple of
+        //    the BDP, in order to handle common network and receiver
+        //    pathologies, such as delayed, stretched, or aggregated ACKs"
+        //    (draft-cardwell-iccrg-bbr-00 §4.2.3.2; draft-ietf-ccwg-bbr §2.5
+        //    re-derives the same 2 as "the minimum gain value that allows the
+        //    sending rate to double each round"). BBR handles recovery by
+        //    packet conservation and prior_cwnd, never via cwnd_gain.
+        // 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
         let store_bdp_gain: f64 = gates.store_gain;
         // Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
         // burst can't pre-bloat the queue and inflate the min-RTT floor (which
