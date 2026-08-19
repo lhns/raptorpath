@@ -33851,7 +33851,7 @@ criterion.**
 
 ## Era Battery — THE SCORED RESULT (2026-08-19, `feat/era-score` from main@`b899312`) — **ERA LEDGER item 1 is CLOSED.** 204 invocations, two binaries, five cells, two seeds, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
 
-**THE VERDICT IN ONE LINE.** The arc is **parity-or-better on goodput everywhere, a very large win on standing queue at the loaded duals, and a real CPU-per-byte reduction at those same duals** — and it is **NOT ADDITIVE**: latency composed SUPER-additively (1.7× the chained sum at `c8`), while goodput and receiver CPU composed SUB-additively at ack-merge's own cell (about half the chained sum). **P1 DISAGREES-LOW. P2 AGREES on goodput and DISAGREES-LOW on `q_p50` at both loaded duals. P3 DISAGREES-HIGH at 8 of 10 cell-seeds. P4 holds by construction. P5 DISAGREES on its one pre-committed direction, and is UNSCOREABLE at `c8L`.**
+**THE VERDICT IN ONE LINE.** The arc is **parity-or-better on goodput everywhere, a very large win on ENGINE-ESTIMATED standing queue at the loaded duals** (*see "Latency Truth — THE SCORED RESULT": the delivered-latency half of this line was measured on ONE LEG of a two-leg cell with the probe's loss uncounted; re-measured per leg with bands, the engine gauge's move does NOT resolve at 2σ and the delivered gauge's "slower" reading does not reproduce*)**, and a real CPU-per-byte reduction at those same duals** — and it is **NOT ADDITIVE**: latency composed SUPER-additively (1.7× the chained sum at `c8`), while goodput and receiver CPU composed SUB-additively at ack-merge's own cell (about half the chained sum). **P1 DISAGREES-LOW. P2 AGREES on goodput and DISAGREES-LOW on `q_p50` at both loaded duals. P3 DISAGREES-HIGH at 8 of 10 cell-seeds. P4 holds by construction. P5 DISAGREES on its one pre-committed direction, and is UNSCOREABLE at `c8L`.**
 
 **PROVENANCE.** Ledgers `era-s42.log` (102 `ERARESULT` rows) and `era-s7.log` (102), one detached session each, `ERA-ALL start 2026-08-19T09:36:12Z … end 10:25:06Z`, both `ERA-BATTERY-DONE` lines present. **G-SHA SATISFIED: both ledger headers carry BOTH shas** — OLD `fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d` (`4171b584`), NEW `e329d2c654dd8ca741c182d623e636db805b0071352572033d3ff5869a134bf5` (`820116b`, engine bit-identical to the contract's `6ad964d`). **G-ERA SATISFIED: 0 violations, 0 `ERA-SURPRISE`, 0 VOID rows** — every OLD row carried `[GATES]` 0/0 and every NEW/NR row 1/1, on both endpoints, on all 204 invocations. Rows: OLD 96 (83 live), NEW 96 (74 live), NR 12 (9 live). Artifacts are held out of the tree (26 MB of `diag/`) and are not committed.
 
@@ -33957,6 +33957,8 @@ criterion.**
 | `sc2` | 42 | 92.0 | 87.8 | −4.2 | 88.4 | 94.0 | +5.6 | **SIGN!** |
 | `sc2` | 7 | 90.0 | 90.8 | +0.8 | 99.5 | 97.5 | −2.1 | **SIGN!** — GATED |
 
+> **FOOTNOTE ADDED 2026-08-19 BY "Latency Truth — THE SCORED RESULT", AND IT IS A CORRECTION TO THE TABLE ABOVE, NOT A GLOSS ON IT.** The `ping_p50` columns in this table were produced by a probe that **pinged `10.77.0.2` — path A — on every topology**, including `c8` and `c8L`, whose two legs are `c2` and `c3` and which the two arms load differently. **They are one leg of a two-leg cell, and the table does not say so.** The same probe was reaped with SIGTERM, which `iputils` `ping` does not handle, so **its `packets transmitted / received` summary was never written and the censoring of its percentiles by the cells' own Gilbert-Elliott loss was never measured** — the `ping_tx`, `ping_rx` and `ping_loss` columns were `None` on all 204 invocations of this battery. Neither `ping_p50` nor `q_p50` in this table carries a σ. **Read the successor's per-leg tables before using any number in the `ping_p50` columns.**
+
 **P2, the duals' `q_p50`, against the δ-cap's own measured class:**
 
 | cell | seed | measured | predicted | verdict |
@@ -33971,6 +33973,8 @@ criterion.**
 **P2's goodput half AGREES: PARITY at all four dual cell-seeds, exactly as predicted.** **P2's latency half DISAGREES-LOW at both loaded duals — the arc removed HALF AGAIN MORE standing queue than the chain predicts** — and DISAGREES-HIGH at `c7` s42, where it removed none.
 
 > **THE INSTRUMENT DISAGREEMENT IS REPORTED, NOT RESOLVED, AND NEITHER GAUGE IS PROMOTED.** At `c8` and `c8L` s42 — both cells where headroom is PERMITTED, so the probe is not simply measuring the wall — the engine's own standing-queue estimate falls by **198–261 ms** while the independent 20 pkt/s ICMP flow through the same qdisc gets **12.7–44.7 ms SLOWER**. The `sc2` and `c7` rows are exempt: those cells are pre-registered PARITY/LATENCY-ONLY and the probe there is measuring the wall by the contract's own clause. **A coherent candidate exists and is named rather than adopted:** `q_p50` is `median(max(0, rtt − rtp))` — the *engine's own* standing queue — while the ping traverses the *whole shaped queue*, which the NEW arm fills harder because it is moving 15–38 % more data through the same 120 Mbit cell. On that reading both gauges are right and they measure different queues. **This battery does not test that, so `c8`/`c8L` latency is reported as: the engine's queue definitely collapsed; whether an unrelated flow sharing the bottleneck sees less delay is NOT established and the one instrument that looked says it sees more.** That is a named instrument for the successor, not a caveat to be filed away.
+>
+> **THE SUCCESSOR RAN, AND IT FOUND THE INSTRUMENT AT FAULT — see "Latency Truth — THE SCORED RESULT" (2026-08-19).** The `ping_p50` column above was measured on **path A only, on cells whose two legs are `c2` and `c3`**, with the probe's **loss never counted at all** (it was reaped with SIGTERM, which `ping` does not handle, so the `packets transmitted/received` line was never written on any of the 204 invocations). Re-measured **per leg, with loss accounting and bands, at n = 12 and 0 aborts**: the "12.7–44.7 ms SLOWER" reading **does not reproduce as a resolved effect on either leg** — path A's deltas are `+7.9 / +32.9 / +20.2 / +49.6 ms` against a rep-to-rep 2σ of **55–96 ms** — and **path B, which no battery had ever measured, moves the OTHER WAY at every loaded-dual cell-seed** (`−143.4 / −78.4 / −15.4 / −3.5 ms`, the first of them resolved). **The sentence "the one instrument that looked says it sees more" is withdrawn: the instrument was looking at one leg of two, and it was the leg where the arc does the least good.** The `q_p50` collapse likewise re-measures in the same direction and class but **does not resolve at 2σ at any cell-seed** — the `198–261 ms` above are point estimates that were never given a band.
 
 `c1` s42's `+17.5 ms` `q_p50` rise is on a 1 Gbit cell at 21 % utilisation where the ping probe reads a flat 2.1 ms on both arms — an 18 ms move in an engine estimate that no delivered-latency instrument can see. It is recorded and not interpreted.
 
@@ -35111,3 +35115,185 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 **WHAT THE SMOKE ALREADY SHOWS ABOUT THE DEFECT — DISCLOSED AS AN OBSERVATION AT `n = 1`, EXPLICITLY NOT A RESULT AND NOT SCORED.** The two legs of a dual are **not interchangeable**, which is precisely what the single-leg probe assumed. At `c8` OLD the two legs read `p50` **101.0 ms (leg A)** and **244.0 ms (leg B)**; at `c8L` OLD `p95` reads **141.0 ms (leg A)** against **633.0 ms (leg B)**. **A probe that samples leg A alone is not measuring a degraded version of the delivered latency — it is measuring a different quantity from the one it is quoted as.** The scored battery is what decides the direction and the magnitude; this row of the smoke only establishes that the question was worth re-opening.
 
 **LAUNCH GATE SATISFIED.** All six pre-launch conditions of `latt_calib.sh` are met, the headroom table above is filled and committed, and the scored battery may launch. **This commit contains the owed edit and nothing else: no prediction, band, cell, arm, `n`, reading rule or guard above is altered.**
+
+
+## Latency Truth — THE SCORED RESULT (2026-08-19, `feat/lat-truth-score` from main@`636e40f`) — **MEASUREMENT TRUTH item 1 is CLOSED.** 128 invocations, two binaries, three cells, two seeds, **0 aborts**, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+**THE VERDICT IN ONE LINE.** **The era battery's delivered-latency reading was an artifact of measuring one leg of a two-leg cell, and it is withdrawn — but the win it was thought to contradict does not survive re-measurement either.** Re-measured per leg, with the probe's loss counted and with bands, at n = 12 and **zero aborts**: the era's "NEW is 12.7–44.7 ms SLOWER" **does not reproduce as a resolved effect on either leg**; **path B — which no battery had ever measured — moves the other way at every loaded-dual cell-seed**, once resolved (`−143.4 ms` at `c8` s42, the largest resolved effect in the battery); and the engine's `q_p50` collapse **reproduces in direction and class but resolves at 2σ nowhere.** **NEITHER pre-committed rule (i) NOR (ii) fires, (iii) does not fire, and the contract did not anticipate this outcome — which is recorded as a SPECIFICATION GAP, not resolved by picking the nearer rule.**
+
+**PROVENANCE.** Ledgers `latt-s42.log` (64 `ERARESULT` rows) and `latt-s7.log` (64), one detached session each, `LATT-ALL start 2026-08-19T15:41:05Z … end 16:17:22Z`, both `ERA-BATTERY-DONE` lines present. **G-SHA SATISFIED: both ledger headers carry BOTH shas** — OLD `fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d` (`4171b584`, **the very binary the era verdict was read off, unrebuilt**), NEW `a23e45f57ab1ac9b2bbb414577c844573cd2060fef239f2f3c232a54c14a13c3` (`feat/lat-truth`, engine bit-identical to main@`7f2b009`). Artifacts (2 ledgers + 896 per-run captures) are held in `.scratch/` and are not committed. Scorer: `tools/l1/latt_report.py`, which imports every estimator from `era_report.py` so a row here is scored by the same arithmetic that produced the verdict it adjudicates.
+
+### 1 — THE ABORT-CAUSE TABLE, READ BEFORE ANY CONTRAST (G-ABORT)
+
+**0 aborts of 128.** At every cell, every arm, every seed. `no_record` 0. `drain_pids_t0 > 0` in 0 of 128. **G-ABORT's 10-point rule fires nowhere, so every contrast below is an unselected census of its arm's reps** — which no previous battery in this tree has been able to say.
+
+**THE CONTRAST WITH THE ERA BATTERY IS THE POINT.** That battery ran **38 aborts of 204 (18.6 %)**, resolved all 38 to `topo_dual.sh`'s two-packet no-retry sanity ping, and had to gate three cell-seeds because the two arms survived at different rates (at `c8` s7, NEW was 5 survivors of 12 against OLD's 11). **The `aw_ping` retry repair removed the entire class.**
+
+**AND THE FIELD DATA NAMES THE CLASS PRECISELY, WHICH THREE BATTERIES COULD NOT.** Every invocation records how many draws each leg's sanity ping needed:
+
+| attempts | leg-pings | share |
+|---|---|---|
+| **1** | 243 | **94.92 %** |
+| **2** | 13 | **5.08 %** |
+| 3–26 | **0** | 0 % |
+
+**256 leg-pings, max attempts observed 2, against a bound of 26.** The retries are not spread randomly:
+
+| | seed 42 | seed 7 |
+|---|---|---|
+| **path A** (leg 0) | **0 of 64** | **13 of 64 (20.3 %)** |
+| **path B** (leg 1) | 0 of 64 | **0 of 64** |
+
+**All 13 retries are seed 7, and all 13 are path A.** Not one on seed 42; not one on path B, which at `c8`/`c8L` is the *lossier* leg (`c3`, GE 4.76 %) — so this is not "seed 7 is a lossy seed", it is that **leg A's netem PRNG stream under base seed 7 puts the link in the Gilbert-Elliott bad state at the moment the sanity ping fires.** Under the old two-packet no-retry check each of those 13 draws was a coin-flip toward an abort, which is exactly the shape of the era battery's seed-7-only abort class. **The "seed-7 topo-ping abort class" is now a measured, located, and closed phenomenon**, and the repair costs one extra ICMP packet on 5 % of legs.
+
+### 2 — LIVENESS, ANTI-MIX, AND HEADROOM
+
+**G-LIVE: 128 live of 128.** Both era-invariant anchors two-sided on both endpoints of both eras, at every cell, both seeds. `half` (an anchor on ONE endpoint only) is **0 everywhere**. **G-ERA: 0 anti-mix violations, 0 `ERA-SURPRISE`** — every OLD row carried no `[GATES]` line and every NEW row carried one, on both endpoints, on all 128 invocations. **G-GEN:** `RWM_GEN=0` on both arms.
+
+**G-HEAD.** Recomputed on the scored run's own `tc` counters, transfer-wall denominator:
+
+| cell | cap | OLD util | NEW util | headroom (binding) | permission |
+|---|---|---|---|---|---|
+| `c8` | 120 Mbit | 74.7 % | 80.4 % | **19.6 %** | throughput PERMITTED |
+| `c8L` | 120 Mbit | 60.4 % | 64.0 % | **36.0 %** | throughput PERMITTED |
+| `c7` | 200 Mbit | 86.1 % | 80.2 % | **13.9 %** | throughput PERMITTED |
+
+**All three cells have real headroom, so the delivered probe is NOT measuring the wall anywhere in this battery** — the exemption the era battery had to apply at `c7` and `sc2` does not apply here, and every delivered number below is entitled to be read.
+
+### 3 — G-CENSOR: THE LOSS ACCOUNTING THE ERA BATTERY NEVER HAD
+
+**`sent_source=summary` on 24 of 24 leg-groups — `ping` wrote its own `transmitted/received` line on every leg of every invocation.** 0 fallbacks to the `max_icmp_seq` lower bound, 0 count mismatches. The SIGTERM defect is closed and measured closed.
+
+| cell | arm | seed | leg 0 censor % | leg 1 censor % |
+|---|---|---|---|---|
+| `c8` | OLD | 42 | 1.95 | 3.57 |
+| `c8` | NEW | 42 | 4.10 | 5.25 |
+| `c8` | OLD | 7 | 2.16 | 8.47 |
+| `c8` | NEW | 7 | 3.10 | **13.12** |
+| `c8L` | OLD | 42 | 2.68 | 4.51 |
+| `c8L` | NEW | 42 | 2.90 | 4.82 |
+| `c8L` | OLD | 7 | 2.62 | 5.54 |
+| `c8L` | NEW | 7 | 2.71 | 5.29 |
+| `c7` | OLD | 42 | 3.57 | 1.75 |
+| `c7` | NEW | 42 | 2.76 | 2.22 |
+| `c7` | OLD | 7 | 2.65 | 2.17 |
+| `c7` | NEW | 7 | 2.36 | 2.35 |
+
+**Reading rule (iii) DOES NOT FIRE: no leg-group exceeds the 20 % contract bar.** The worst is `c8` NEW s7 leg B at **13.12 %**, and it is the leg the contract predicted would be worst.
+
+**BUT THE STRUCTURAL RULE KILLS A GREAT DEAL, AND THAT IS THE HONEST RESULT.** With a censoring fraction `c`, the top `c` of the true distribution produced no sample and a percentile `qq > 1 − c` cannot be placed at all. At these censoring levels **`p99` is unplaceable on every single leg-group in the battery** (as it was in the smoke, and as it would have been throughout the era battery), and **`p95` is structurally censored on 6 of the 8 loaded-dual leg-seed groups** — `p95` needs `c ≤ 5 %`, and it fails on any rep whose own censoring exceeded that. **Those `p95` rows are reported below and marked UNSCOREABLE; they are not averaged into a verdict.**
+
+**D4 FAILED, AND ITS PRE-REGISTERED EXPLANATION IS REFUTED.** The contract predicted censoring **above** the GE floors (2.5 % on a `c2` leg, 4.8 % on a `c3` leg) and said that below a floor "means the netem loss is not reaching the probe and the probe is not on the shaped path — an instrument failure, not a clean cell". **8 of 24 leg-groups read below their floor** (`c8` OLD s42 leg 0 at 1.95 %, `c7` OLD s42 leg 1 at 1.75 %, and six others). **The stated mechanism is refuted by the same rows:** the probe plainly *is* on the shaped path — its RTTs track the shaped delay (`c8` leg B reads a 223 ms median under OLD against leg A's 58 ms), and the sibling leg of the very same probe reads up to 13.12 %. **What failed is the floor's derivation, not the instrument.** The floor was set from netem's *steady-state* GE occupancy, which is not a lower bound on a 50–650-packet draw of a bursty two-state chain; the effective sample size is the number of *bursts*, not of packets. **The prediction is recorded as FAILED and its clause as MIS-SPECIFIED.** No verdict below rests on it.
+
+### 4 — E-LAT-ENGINE: `q_p50`, TWO-SIDED — THE REPRODUCTION CHECK
+
+| cell | seed | nOLD | nNEW | OLD | NEW | Δ | 2σ | verdict | vs D5 band |
+|---|---|---|---|---|---|---|---|---|---|
+| `c8` | 42 | 12 | 12 | 300.3 | 184.9 | **−115.4** | 159.3 | **PARITY** | `[−260, −140]` point inside, not resolved |
+| `c8` | 7 | 12 | 12 | 257.0 | 130.5 | **−126.5** | 129.3 | **PARITY** | `[−260, −140]` point inside, not resolved |
+| `c8L` | 42 | 12 | 12 | 411.3 | 193.4 | **−217.9** | 242.8 | **PARITY** | `[−400, −200]` point inside, not resolved |
+| `c8L` | 7 | 12 | 12 | 371.8 | 232.2 | **−139.6** | 377.3 | **PARITY** | `[−400, −200]` point inside, not resolved |
+| `c7` | 42 | 8 | 8 | 38.2 | 31.1 | −7.1 | 9.1 | PARITY | `[−20, +2]` point inside, not resolved |
+| `c7` | 7 | 8 | 8 | 38.0 | 40.9 | +2.9 | 33.8 | PARITY | `[−20, +2]` point inside, not resolved |
+
+**D5 AGREES ON EVERY POINT ESTIMATE AND RESOLVES ON NONE.** The direction and rough magnitude of the era battery's `q_p50` collapse reproduce — the arc's engine-estimated standing queue is smaller at both loaded duals, at both seeds, by 115–218 ms — **but at n = 12 the rep-to-rep spread of `q_p50` is 129–377 ms and swallows every one of them.**
+
+> **AND THIS IS A FINDING ABOUT THE ERA BATTERY'S OWN REPORTING, NOT ONLY ABOUT THIS ONE.** The era battery reported `q_p50` deltas of `−198.2 / −199.0 / −260.5 / −342.5 ms` and scored them against a predicted *interval*. **It never computed a σ for `q_p50` and never applied a two-sided test to it** — its `E-LAT` table has no band column, unlike its `E-GOOD` and `E-CPU` tables, which have one. Those four numbers are point estimates. **On this battery's evidence, at the same n and with 0 aborts instead of 38, that quantity does not resolve.** The phrase "a very large win on standing queue" was carrying more confidence than the measurement had, and the era section's headline has been amended accordingly.
+
+### 5 — D-LAT: DELIVERED LATENCY, PER LEG, WITH CENSORING BESIDE EVERY PERCENTILE
+
+**leg 0 = path A (`10.77.0.2`) — THE ONLY LEG THE ERA BATTERY SAW. leg 1 = path B (`10.78.0.2`) — never measured by any battery before this one.**
+
+**THE LOADED DUALS, `p50`:**
+
+| cell | seed | leg | nOLD | nNEW | OLD ms | NEW ms | Δ | 2σ | censor OLD/NEW | verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `c8` | 42 | **A** | 12 | 12 | 58.5 | 66.4 | +7.9 | 60.2 | 1.95 / 4.10 % | PARITY |
+| `c8` | 42 | **B** | 12 | 12 | 223.1 | 79.7 | **−143.4** | 108.2 | 3.57 / 5.25 % | **FASTER** |
+| `c8` | 7 | **A** | 12 | 12 | 44.0 | 76.9 | +32.9 | 55.0 | 2.16 / 3.10 % | PARITY |
+| `c8` | 7 | **B** | 12 | 12 | 140.8 | 62.5 | −78.4 | 92.8 | 8.47 / 13.12 % | PARITY — *structurally censored on 3 reps* |
+| `c8L` | 42 | **A** | 12 | 12 | 43.4 | 63.6 | +20.2 | 83.9 | 2.68 / 2.90 % | PARITY |
+| `c8L` | 42 | **B** | 12 | 12 | 45.1 | 41.6 | −3.5 | 11.3 | 4.51 / 4.82 % | PARITY |
+| `c8L` | 7 | **A** | 12 | 12 | 41.0 | 90.6 | +49.6 | 95.6 | 2.62 / 2.71 % | PARITY |
+| `c8L` | 7 | **B** | 12 | 12 | 56.5 | 41.0 | −15.4 | 68.1 | 5.54 / 5.29 % | PARITY |
+
+**THE LOADED DUALS, `p95`** — every row here is **UNSCOREABLE** except two, and the reason is printed rather than implied:
+
+| cell | seed | leg | OLD ms | NEW ms | Δ | 2σ | verdict |
+|---|---|---|---|---|---|---|---|
+| `c8` | 42 | A | 115.2 | 115.6 | +0.4 | 57.4 | **UNSCOREABLE** — structurally censored on 6 reps |
+| `c8` | 42 | B | 562.2 | 268.3 | −293.9 | 333.4 | **UNSCOREABLE** — structurally censored on 8 reps |
+| `c8` | 7 | A | 111.1 | 108.3 | −2.8 | 56.0 | **UNSCOREABLE** — structurally censored on 4 reps |
+| `c8` | 7 | B | 512.8 | 236.1 | −276.8 | 276.1 | **UNSCOREABLE** — structurally censored on 20 reps |
+| `c8L` | 42 | A | 140.9 | 114.2 | −26.6 | 83.4 | PARITY |
+| `c8L` | 42 | B | 612.6 | 262.8 | −349.8 | 427.8 | **UNSCOREABLE** — structurally censored on 6 reps |
+| `c8L` | 7 | A | 122.0 | 138.0 | +16.0 | 62.7 | PARITY |
+| `c8L` | 7 | B | 508.1 | 185.1 | −323.0 | 539.1 | **UNSCOREABLE** — structurally censored on 14 reps |
+
+**`c7`, THE SYMMETRIC CONTROL:**
+
+| cell | seed | leg | pct | OLD ms | NEW ms | Δ | 2σ | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `c7` | 42 | A | p50 | 34.4 | 29.2 | −5.2 | 7.1 | PARITY |
+| `c7` | 42 | B | p50 | 35.4 | 27.9 | **−7.4** | 7.3 | **FASTER** |
+| `c7` | 7 | A | p50 | 33.5 | 25.5 | −8.0 | 14.8 | PARITY |
+| `c7` | 7 | B | p50 | 33.0 | 37.9 | +4.9 | 39.7 | PARITY |
+| `c7` | 42 | A | p95 | 88.2 | 69.7 | −18.5 | 21.8 | PARITY |
+| `c7` | 42 | B | p95 | 86.6 | 68.5 | −18.1 | 22.6 | PARITY |
+| `c7` | 7 | A | p95 | 87.8 | 66.7 | −21.1 | 37.7 | PARITY |
+| `c7` | 7 | B | p95 | 82.7 | 81.5 | −1.1 | 36.3 | PARITY |
+
+**D3 — the `c7` control — HOLDS in the sense that mattered.** Seven of eight `c7` contrasts are negative or near zero and one resolves FASTER; **the agreement between the two instruments that the era battery found at `c7` is preserved, so the repair is not under suspicion.** The one positive (`c7` s7 leg B, `+4.9 ms`) sits inside a 39.7 ms band. D3 was stated on `p50`, and its band `[−12, 0]` contains **3 of the 4** `c7` `p50` point estimates (`−5.2`, `−7.4`, `−8.0`; the miss is the `+4.9` inside a 39.7 ms band).
+
+**D1 — the reproduction check on the era's own leg — FAILS, and its failure is the battery's main result.** The contract predicted `c8` leg A s42 delivered `p50` in `[+3, +25] ms`, reproducing the era's `+12.7`. Measured: **`+7.9 ms`, squarely inside the band — but against a 2σ of 60.2 ms.** The point reproduces; the *effect* does not exist at this resolution. Across all four loaded-dual leg-A cell-seeds the deltas are `+7.9 / +32.9 / +20.2 / +49.6 ms` against bands of `55–96 ms`. **The era battery's "12.7–44.7 ms SLOWER" is the same size as this battery's noise, and the era battery had no band to notice that with.**
+
+**D2 — the leg with no prior — is where the arc actually shows up.** Path B's `p50` deltas at the loaded duals are **`−143.4 / −78.4 / −15.4 / −3.5 ms`: negative at all four cell-seeds, and the largest of them is the only resolved delivered-latency effect in the entire battery.** The contract asserted no band here on purpose and pre-committed only the decision rule; that self-denial is what makes this number readable now.
+
+### 6 — G-GOOD (a guard, not a claim): the load that produced the latency
+
+| cell | seed | OLD Mbit/s | NEW Mbit/s | Δ | 2σ | % | verdict |
+|---|---|---|---|---|---|---|---|
+| `c8` | 42 | 80.88 | 81.68 | +0.80 | 19.44 | +0.99 % | PARITY |
+| `c8` | 7 | 74.59 | 88.25 | +13.67 | 15.18 | +18.32 % | PARITY |
+| `c8L` | 42 | 64.14 | 63.66 | −0.48 | 43.99 | −0.74 % | PARITY |
+| `c8L` | 7 | 61.39 | 71.72 | +10.33 | 33.38 | +16.83 % | PARITY |
+| `c7` | 42 | 155.22 | 149.72 | −5.51 | 7.79 | −3.55 % | PARITY |
+| `c7` | 7 | 151.82 | 137.32 | −14.51 | 38.70 | −9.55 % | PARITY |
+
+**PARITY everywhere, no losses.** This matters for one specific reason: **the era battery's named candidate for the sign disagreement was that NEW fills the shaped queue harder because it moves "15–38 % more data".** On an unselected census with 0 aborts, **NEW does not move resolvably more data at any cell-seed.** The mechanism that was offered to reconcile the two gauges is not present in this battery's data, and the reconciliation it supported is withdrawn along with the reading it was meant to explain.
+
+### 7 — THE PRE-COMMITTED READING RULES, APPLIED LITERALLY
+
+* **(iii) does not fire.** No leg exceeds the 20 % contract bar (worst 13.12 %). The *structural* rule fires hard and independently: `p99` unplaceable everywhere, `p95` unplaceable on 6 of 8 loaded-dual leg-seed groups. Those percentiles are reported as unscoreable and enter no verdict.
+* **(ii) does not fire.** It requires delivered `p50` to **rise** in NEW on a loaded-dual leg, resolved at 2σ. **Zero of eight** loaded-dual `p50` contrasts resolve SLOWER.
+* **(i) does not hold.** Its literal text requires **both legs' delivered `p50` to fall at both loaded duals, resolved at 2σ**. **One of eight** resolves FASTER. Six are PARITY and one is unscoreable.
+
+> **THE CONTRACT DID NOT ANTICIPATE THIS OUTCOME, AND THAT IS RECORDED AS A SPECIFICATION GAP RATHER THAN RESOLVED BY PICKING THE NEARER RULE.** The pre-registration's four rules assume the delivered gauge *resolves* something — it enumerates "agrees in sign", "disagrees", "unscoreable", and "both clean but disagreeing". **It has no branch for "both instruments are clean and NEITHER resolves at the pre-registered n."** That is what happened. Reading (i) as satisfied because nothing rose, or (ii) as satisfied because something failed to fall, would each be a rule invented after the numbers were seen. **The gap is the contract's, it is named here, and the successor's contract must pre-commit a power statement — the n needed to resolve a delivered `p50` difference of a given size against a 55–110 ms rep-to-rep spread — instead of assuming resolution and enumerating its directions.**
+
+**WHAT IS NEVERTHELESS SETTLED, AND IT IS NOT NOTHING.** Three statements survive at this battery's resolution:
+
+1. **The era battery's delivered-latency reading is WITHDRAWN.** It was one leg of two, on cells whose legs are deliberately unequal, with the probe's loss uncounted. Re-measured on both legs with bands, the "slower" finding does not reproduce, and the unmeasured leg moves the other way at all four loaded-dual cell-seeds.
+2. **The sign disagreement is DISSOLVED, not adjudicated.** There is no longer a sign conflict to adjudicate: both instruments now point the same way (engine queue down, delivered latency down or flat) and **neither resolves at n = 12.** The two-queues explanation the era battery named is no longer needed, and its supporting mechanism (NEW pushing 15–38 % more data) is absent from this data.
+3. **The delta-cap latency win does NOT survive in delivered terms — and it does not fail either.** It is **UNRESOLVED at this n**, in both instruments, and the honest statement of the arc's latency effect is a direction with a wide band, not a magnitude.
+
+### 8 — WHAT THE ARC'S DELIVERED-LATENCY STORY ACTUALLY IS, IN PLAIN LANGUAGE
+
+The engine has a gauge that reports how much of its own data is sitting in a queue waiting to go out. On the two hardest test networks that gauge says the new code leaves **about 115–218 ms less** data queued than the old code. That is a real, consistent direction: it points the same way on both networks and both random seeds. **But the number bounces around a lot from run to run — by more than the improvement itself — so we cannot honestly say how big it is.** The earlier report quoted figures around 200–340 ms without a margin of error; those were single-run-style estimates, and with a margin of error attached they do not stand up.
+
+The more important question is what somebody *else* on the same network feels — a video call sharing the link while the transfer runs. We measure that by pinging across the link during the transfer. **The earlier report said that person would be 13–45 ms *worse off* under the new code, which was a worrying result: the engine claiming to shorten queues while a bystander waits longer.** That result was wrong, and the reason is simple: **these test networks have two separate links, deliberately made unequal, and the ping was only ever sent down one of them.** It was the link where the new code helps least.
+
+Pinging **both** links tells a different story. On the link that was always measured, the new code looks very slightly worse — but the run-to-run variation is five to ten times bigger than the difference, so that is noise, not a finding. On the link **nobody had ever measured**, the new code is *better* on every network and seed we tested, once by **143 ms** — the single clearest effect in the whole experiment.
+
+So: **the new code does not make a bystander's delay worse. That earlier conclusion is withdrawn.** It probably makes it better, especially on the slower of the two links. **But "probably" is as far as this experiment can take it** — at twelve runs per cell, only one of eight comparisons is sharp enough to stand alone. **The truthful summary is: the arc's latency effect points in the good direction on every gauge and every link we now measure, and its size is not yet established.** Saying more than that would be the same mistake, one leg over.
+
+### 9 — WHAT CHANGED IN THE RECORD, AND WHAT DID NOT
+
+The pre-registration listed a three-site pointer edit in advance and made it contingent on rule (ii). **Rule (ii) did not fire, and it is stated plainly that the edit below was NOT triggered by it.** The edit is made on a different and disclosed basis: **sites 1 and 3 are FACTUAL corrections that are owed regardless of any verdict** — the era table's `ping_p50` column really was one leg of two with uncounted loss, and its headline really did describe an engine-estimated quantity without saying so. Site 2 records what the successor found, which the era section explicitly invited.
+
+* **"Era Battery — THE SCORED RESULT" one-line verdict** — "a very large win on standing queue" now reads "a very large win on **ENGINE-ESTIMATED** standing queue", with an inline pointer here.
+* **The §4 blockquote** — a closing paragraph withdraws the sentence "the one instrument that looked says it sees more".
+* **The §4 `E-LAT` table** — a footnote states that its `ping_p50` column was path A only, that the probe's loss was never counted on any of the 204 invocations, and that neither `ping_p50` nor `q_p50` in that table carries a σ.
+
+**NOTHING ELSE IN THAT SECTION IS TOUCHED**, exactly as pre-committed: `P2`'s scored verdicts, the abort table, `E-GOOD`, `E-CPU` and every number stand as recorded. **The era battery is annotated, not rewritten.**
+
+**AND THE ERA BATTERY'S OWN INSTINCT IS VINDICATED, WHICH IS WORTH SAYING.** It could have averaged the two gauges, or promoted the one that flattered the arc, or filed the disagreement as a caveat. It did none of those: it reported the conflict, named a candidate without adopting it, and named the successor instrument. **That is why the defect was findable at all.** The instrument was wrong; the discipline that surfaced it was not.
