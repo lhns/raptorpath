@@ -35703,3 +35703,406 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 * **No claim that the −13.7 % / −4.8 % table above IS drift.** It is two ledgers laid on one axis for the first time. Two sessions differ in more than their date, and closing those differences is what the three phase-1 arms are for.
 * **No cross-era pooling.** Every contrast here is within one session, on one binary, paired within rep. The published means are compared **as levels, with both dispersions carried**, and never merged into a pooled n.
 * **No default flips, no gate is added, no engine crate is edited.** `[CTLD]`, `ack-merge ACTIVE`, and every gate this battery drives already exist and already ship.
+
+---
+
+## THE SPAN RUN â€” PRE-REGISTRATION (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM HALF, plus item 5's FIRST FIELD Ïƒ.** Written and committed BEFORE the VM is run, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
+
+### WHAT THIS RUN IS, IN ONE PARAGRAPH
+
+The c9 battery's headline finding was a SPECIFICATION FAILURE of gauges: it
+pre-registered C9-L1 and C9-L3 against a `[CCAP] span=` field that **did not
+exist**, so both clauses were scored UNSCOREABLE at a geometry (`c9h`) the same
+battery had just proved comes up clean. MEASUREMENT TRUTH item 4's local half
+built the missing instrument â€” `span= span_sigma= span_ratio= rate_fast=
+spread_us=` in `[CCAP]`, one computation shared with the law's own TERM 3, with
+a reachability test that FAILS on the shipped-before engine. **This run supplies
+the instrument to the geometry.** It is one mixed-quad re-run with
+`RWM_COMPOSED_CAP=1` actually set, which the c9 battery never did.
+
+### THE CRITERIA ARE NOT NEW, AND ARE NOT RE-DERIVED HERE
+
+**C9-L1 and C9-L3 are scored against their EXISTING pre-registered bands**, in
+the c9 contract above (`goal-gate` "the c9 CONTRACT", C9-L1/C9-L3 rows and
+C9-L3's absolute-anchor table). They are CITED, not restated with new numbers:
+
+| clause | the pre-registered reading | cited from |
+|---|---|---|
+| **C9-L1** | *"The `[CCAP]` span field reads 0"* at a SYMMETRIC cell. **Here the prior half is what this run supplies: `span=` READS AT ALL, and reads nonzero at c9h where the c9 battery read the gauge ABSENT.** c9h is heterogeneous, so its span is *expected* nonzero; C9-L1's own zero-at-symmetric prediction is already evaluated on loopback by `gauge_reachability` and is NOT re-scored here | c9 CONTRACT, C9-L1 row |
+| **C9-L3** | the SCORED quantity is the **RATIO** `span_ratio = Î£ span_sigma / Î£ span`, predicted **exactly 2.000**, anchor-free | c9 CONTRACT, C9-L3 row |
+| **C9-L3 anchors** | `rate_fast` **9 370â€“10 400 sym/s (Â±5 %)**; spread **30.0 ms nominal / 29.88 ms measured (Â±0.4 %)**; absolute span **281 sym, band [265, 315]** | c9 CONTRACT, C9-L3's anchor table |
+
+**THE DISPOSAL RULE, applied LITERALLY and in this order** â€” verbatim from the
+c9 contract, which is why it is executable from a log rather than argued:
+
+1. `span_ratio` **inside** the 2.000 band â‡’ **the shipped `rate_fastÂ·spread`
+   form is the one on the wire.**
+2. `span_ratio` **outside** the ratio band **but the anchors INSIDE** their
+   bands â‡’ **the shipped form is FALSIFIED** (the engine is not computing the
+   law its doc comment states). *This adopts nothing:* the crosscheck's
+   "Adopt nothing" stands and a divergence is a defect finding against the
+   engine, not a licence to switch formulas.
+3. **Outside BOTH** â‡’ **the ANCHORS are falsified**, not either formula, and
+   **no span verdict is issued.**
+
+The ratio band: the prediction is *exactly* 2.000 and the field renders three
+decimals, so the band is **[1.95, 2.05]** â€” a rendering tolerance, not a fitted
+one. The two near-tied fast legs are not exactly tied on the wire and the gauge
+has NO tie predicate by design, so the ratio measures the effective count
+rather than asserting it.
+
+### THE ARMS â€” two, and the control exists to make the gate two-sided
+
+| arm | env | why |
+|---|---|---|
+| **ON (measurement)** | `RWM_COMPOSED_CAP=1` | the gate the c9 battery never set. `[CCAP]` is emitted only under `pol.composed_cap`, so this is the arm that has the instrument |
+| **OFF (control)** | `RWM_COMPOSED_CAP=0` | `[CCAP]` must be **ABSENT** and `[GATES]` must echo `RWM_COMPOSED_CAP=0`. Absence confirmed TWO-SIDED: an arm that sets nothing cannot be told from an arm whose knob failed to forward |
+
+**THIS IS NOT A DEFAULT FLIP.** `RWM_COMPOSED_CAP` ships OFF and stays OFF; it
+is set on ONE ARM of ONE RUN as a measurement instrument. Nothing in this
+session changes what the shipped default does.
+
+### CELL, REPS, SEEDS
+
+**`c9h` only** â€” the mixed quad, `perf_rwm_c.sh c2 c3 bulk 50000000 3 quad`
+â‡’ legs `c2 c2 c3 c3`, RTprop ~10/10/37/37 ms, **two min-RTprop legs**. That
+count of two is the entire reason this geometry exists: at N = 2 there is only
+ever one min-RTprop leg and the discriminating factor is invisible.
+
+**50 MB, per the REVERTED sizing** (c9 re-smoke FINDING 1): c9h cannot be
+rescued by length because it is sender-starved. **That is fine and is stated in
+advance:** the span reads off `[CCAP]`, not off window correlations, so this
+clause needs windows to EXIST, not correlation power. C9-3 and C9-4's
+underpowered status at c9h is unchanged and not re-litigated here.
+
+**n = 3 reps per arm, seed 42**, per-leg seeds 42/1042/2042/3042 as the c9
+battery derives them. **6 invocations total.**
+
+### ABORT-CAUSE FIRST (discipline: G-ABORT)
+
+The abort-cause table is read BEFORE any span number. The topo-ping repair is
+in this binary and the c9 battery read **0 aborts in 24 invocations**, so the
+pre-registered expectation is **0 aborts**. A non-zero abort count is reported
+with `abort_cause` before any contrast, and an abort with no witness record is
+an INSTRUMENT-FAIL, not a clean rep.
+
+**Per-rep INSTRUMENT-FAIL** (excluded from the span claim, retained in every
+other): `[CCAP]` absent on an ON rep, or `eng=0/N` on an ON rep â€” the composed-
+cap battery's own warm-up-failure rule, unchanged.
+
+### ITEM 5's FIRST FIELD Ïƒ â€” REPORTED, NOT SCORED
+
+`RWM_DIAG=1` on **both** arms, so `[DIAG]`'s new `sig_us=<Âµs>/n<count>` is read
+per path on every rep. **This is a READOUT, not a scored clause.** Â§5.3's `Î´`
+prediction needs the full-cell pass across all five cells; one heterogeneous
+quad is not that. What is reported here is **per-path Ïƒ with its n counts**, and
+n is reported beside every Ïƒ because the EWMA is seeded at 0 and retains
+`0.75â¿` of that seed â€” a Ïƒ at small n is biased LOW by construction, and the
+reader discards small n rather than the gauge hiding it.
+
+**DISCLOSED IN ADVANCE:** the c9 battery's base was *"RWM_GEN=0, no RWM_DIAG"*.
+This run sets `RWM_DIAG=1`. It is set on **BOTH** arms, so the ON/OFF contrast
+is unaffected; but this run's ledger is **NOT poolable with the c9 battery's**
+on any timing quantity, and no number here is compared to one there.
+
+### WHAT THIS FEEDS
+
+ADR-0071's span-term provenance: which of the two span forms the wire actually
+computes, decided at the one geometry that can tell them apart, on the
+instrument the c9 battery lacked.
+
+`[LAUNCH]` â€” every measured value in the scored section that follows.
+
+---
+
+## THE SPAN RUN â€” THE SCORED RESULT (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM half. The instrument WORKS; C9-L3's ANCHORS DO NOT, and the falsifier that fires is the one that says so.** 6 invocations, one binary, one cell, one seed, **0 aborts**, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+**VERDICT IN ONE PARAGRAPH.** The gauge the c9 battery lacked now exists on the
+wire: `[CCAP] span=` reads on **3 of 3** measurement reps at c9h and is
+**ABSENT on 3 of 3** control reps, two-sided. The scored quantity â€”
+`span_ratio`, predicted **exactly 2.000** â€” reads **1.929 pooled** (1.880,
+2.017, 1.901 per rep), **outside** the pre-registered [1.95, 2.05]. But the
+anchors are outside their bands too, and by a great deal: `rate_fast` reads
+**82 064 sym/s** against an anchor of **9 370â€“10 400**, a factor of **8.7**.
+**So the pre-registered disposal rule's THIRD branch fires: the ANCHORS are
+falsified, not either formula, and NO SPAN VERDICT is issued.** That is the
+rule applied literally, and it is the correct outcome rather than a
+disappointing one â€” the run has located a real defect, in the CONTRACT's own
+inputs rather than in the engine. The mechanism is measured below and named:
+**C9-L3's `rate_fast` anchor was quoted from `[ACKDIAG] rate_lr`, and the law
+consumes `Path::rate` (BtlBw). They are different measurands wearing the same
+units.**
+
+### 1 â€” THE ABORT-CAUSE TABLE, READ BEFORE ANY SPAN NUMBER (G-ABORT)
+
+| | ON (`RWM_COMPOSED_CAP=1`) | OFF (`=0`) |
+|---|---|---|
+| invocations | 3 | 3 |
+| `abort_cause` | `none` Ã—3 | `none` Ã—3 |
+| `abort_missing` | FALSE Ã—3 | FALSE Ã—3 |
+| `[GATES]` on both endpoints | 3/3 | 3/3 |
+| `"dnf"` in the summary | 0 Ã—3 | 0 Ã—3 |
+| ping-retry `attempts` (all 4 legs) | **1** on every leg, every rep (max 26) | same |
+
+**0 aborts in 6 invocations**, exactly as pre-registered. Every leg's topo-ping
+succeeded on its FIRST attempt on all 24 leg-pings â€” the repaired probe never
+had to spend a retry, so nothing here is a repair that only just held.
+
+### 2 â€” LIVENESS, TWO-SIDED, ON THE ONE KNOB THIS RUN RESTS ON
+
+| | ON | OFF |
+|---|---|---|
+| `[GATES]` echo, client | `RWM_COMPOSED_CAP=1` Ã—3 | `RWM_COMPOSED_CAP=0` Ã—3 |
+| `[GATES]` echo, server | `RWM_COMPOSED_CAP=1` Ã—3 | `RWM_COMPOSED_CAP=0` Ã—3 |
+| `[CCAP]` lines on the client | **1, 1, 1** | **0, 0, 0** |
+| `[DIAG]` lines on the client | 29, 30, 31 | 36, 30, 36 |
+| `RWM_DIAG` echo, both roles | `=1` | `=1` |
+| `eng=` engagement | 1185/1308, 1316/1342, 1357/1408 (**0.91, 0.98, 0.96**) | â€” |
+
+**ARM-LIVENESS-FAIL: none. INSTRUMENT-FAIL: none.** Every ON rep clears the
+composed-cap battery's own `eng â‰¥ 0.9` warm-up bar. **The control arm is the
+half the c9 battery could not have produced:** `[CCAP]` absent AND the gate
+echoed at `0`, so "the gauge read nothing" is distinguished from "the gauge was
+never armed" â€” which is precisely the confusion that cost that battery two
+clauses.
+
+### 3 â€” THE `[CCAP]` SPAN BLOCK, PER REP (ON arm)
+
+| rep | `eng` | `cap` | `span` | `span_sigma` | `span_ratio` | `rate_fast` | `spread_us` | `mem` | `floor` | `brake_frac` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1185/1308 | 3779.0 | 2520.1 | 4737.9 | **1.880** | 84 637.7 | 29 781.4 | 1.0000 | 0.0000 | 0.0000 |
+| 2 | 1316/1342 | 4021.2 | 2256.2 | 4551.3 | **2.017** | 76 343.6 | 29 499.5 | 0.9977 | 0.0000 | 0.0001 |
+| 3 | 1357/1408 | 3967.3 | 2782.9 | 5290.9 | **1.901** | 85 210.9 | 32 594.3 | 0.9985 | 0.0000 | 0.0002 |
+| **pooled** | | | **7559.2** | **14 580.1** | **1.929** | **82 064.1** | **30 625.1** | | | |
+
+`span_ratio` pooled is `Î£ span_sigma / Î£ span`, which is the quantity the
+contract defines; the mean of the three per-rep ratios is 1.933, and the two
+agree to 0.2 % so nothing turns on which is quoted.
+
+**THE GAUGE IS INTERNALLY CONSISTENT, which is worth checking before it is
+disbelieved.** `rate_fast Ã— spread_s` reproduces `span` on every rep to within
+**0.2 %** (rep 1: 84 637.7 Ã— 0.029 781 = 2520.6 vs 2520.1; rep 2: 2252.1 vs
+2256.2; rep 3: 2777.4 vs 2782.9). The engine IS computing
+`rate_fastÂ·(RTprop_max âˆ’ RTprop_min)`, and the five fields are one arithmetic
+family rather than five independent reads.
+
+### 4 â€” C9-L3, THE DISPOSAL RULE APPLIED LITERALLY
+
+| test | band (cited, not derived) | reading | inside? |
+|---|---|---|---|
+| `span_ratio` | [1.95, 2.05] | **1.929** | **NO** |
+| `rate_fast` | [8 901, 10 920] sym/s (Â±5 %) | **82 064** | **NO** (Ã—8.7) |
+| `spread_us` | [29 760, 30 120] Âµs (Â±0.4 %) | **30 625** | **NO** (+1.7 %) |
+| `span` absolute | [265, 315] sym | **2 520** | **NO** (Ã—8.7) |
+
+> **BRANCH 3 FIRES: the ANCHORS are falsified, not either formula. NO SPAN
+> VERDICT is issued, and none is smuggled in below.**
+
+**This is the outcome the contract wrote a branch for, and the branch is being
+honoured rather than argued around.** It would be easy â€” and wrong â€” to say
+"1.929 is near 2 and far from 1, so the shipped form wins". The pre-registered
+band is [1.95, 2.05] and 1.929 is outside it; more importantly the absolute
+scale is off by a factor of nearly nine, which means the run is not measuring
+the quantity the anchors describe. **A ratio computed from two quantities that
+are both eight-fold away from their anchors is not evidence about which formula
+the wire uses.** It is recorded, in full, and it is not a verdict.
+
+**WHAT CAN BE SAID, and its limit stated in the same sentence:** the ratio
+lands at 1.88â€“2.02 across three reps, decisively nearer the count of TWO
+min-RTprop legs than the count of ONE, which is consistent with â€” and only
+consistent with â€” the geometry being read as the contract intended. That is
+suggestive and it is NOT the clause. The clause needs anchors that describe
+the field.
+
+### 5 â€” WHY THE ANCHORS FAILED, MEASURED IN THE SAME SESSION
+
+**A POST-HOC DIAGNOSTIC. It is labelled as one because it is one: it was not
+pre-registered, it scores nothing, and no verdict above or below rests on it.**
+One extra ON invocation was run with `RWM_ACKDIAG=1
+RWM_ACKDIAG_WINDOW_US=250000` so that `rate_lr` â€” the gauge C9-L3's
+`rate_fast` anchor was quoted FROM â€” could be read beside `[CCAP] rate_fast=`
+on the same legs of the same cell in the same session.
+
+All four columns are from that ONE invocation, last window / last `[DIAG]`:
+
+| leg | `[ACKDIAG] rate_lr` | `[ACKDIAG] rtprop` | `[DIAG] btlbw` |
+|---|---|---|---|
+| p0 (c2-class) | **6 797 sym/s** | 8.81 ms | **92 837** |
+| p1 (c2-class, min-RTprop) | **4 214 sym/s** | 6.85 ms | **89 772** |
+| p2 (c3-class) | 0 sym/s | 38.32 ms | 17 895 |
+| p3 (c3-class) | 0 sym/s | 38.47 ms | 14 728 |
+
+That invocation's `[CCAP]`: `span=2627.4 span_sigma=4912.5 span_ratio=1.870
+rate_fast=83714.7 spread_us=31366.4` â€” the same family as the three scored
+reps.
+
+**THE MECHANISM, stated plainly.** `span_forms()` takes `rate` from
+`ThreeTermTerm`, which is fed from `p.rate` â€” the path's **BtlBw estimate**.
+`[DIAG] btlbw` on the two c2-class legs reads **89 772 and 92 837**, and
+`[CCAP] rate_fast` on the same invocation reads **83 715** (a mean over 1 292
+engaged refreshes against an end-of-run instantaneous read): the same quantity,
+agreeing. `[ACKDIAG] rate_lr` on those same two legs reads **4 214 and 6 797**,
+an order of magnitude below.
+
+The same four rows also show WHY the ratio sits near 2 rather than near 1
+without any leg being counted: `span_sigma` evaluated by hand from this table
+is `89 772 Ã— 0.031 62 + 92 837 Ã— 0.029 66 + 17 895 Ã— 0.000 15 = 5 595`, against
+a shipped `89 772 Ã— 0.031 62 = 2 839` â€” **ratio 1.971**, and the second fast
+leg supplies almost exactly the second copy because its rate and its RTprop are
+both near the first's. No tie predicate was consulted; the arithmetic went
+there.
+**C9-L3's anchor of 9 370â€“10 400 sym/s was measured at c7 from `[ACKDIAG]`,
+i.e. from `rate_lr`.** So the contract anchored a BtlBw field to a delivered-
+rate gauge. **Two different measurands, both spelled `sym/s`, and the anchor
+table's provenance column says so in its own words â€” "measured 9 370 / 9 416
+sym/s at c7 (both legs, `[ACKDIAG]`)".** The defect was legible in the
+contract before the run and nobody read the two lines against each other,
+which is the same failure shape as the missing field itself: a provenance that
+was written down and then not checked.
+
+**WHICH GAUGE IS RIGHT IS NOT DECIDED HERE, and must not be.** `rate_lr` is a
+windowed delivered rate over a 250 ms window at a cell whose slow legs are
+silent most windows (`rate_lr` = 0 on both c3 legs above); BtlBw is a
+max-filtered bandwidth estimate. They can honestly differ. Adjudicating them is
+a separate measurement with its own contract, and it is named as this run's
+first successor below.
+
+**`spread_us` fails its band for a smaller and separate reason**, recorded so
+the two are not conflated: measured RTprop on the fast legs drifted to
+**6.85â€“8.81 ms** against the 8.45 ms the anchor was computed from, so the
+maxâˆ’min spread reads **29.5â€“32.6 ms** against 29.88. The Â±0.4 % band was the
+agreement between the NOMINAL and MEASURED spread, quoted in the contract as
+the input that "is not the uncertainty" â€” it was never a run-to-run tolerance,
+and used as one it fails. **Both readings straddle the nominal 30 ms and the
+geometry is not in doubt.**
+
+### 6 â€” C9-L1's PRIOR HALF: THE GAUGE EXISTS ON THE WIRE
+
+| reading | result |
+|---|---|
+| `span=` present on ON reps | **3 / 3** (the c9 battery read it on **0 / 0** â€” the field did not exist) |
+| `span=` nonzero at c9h | **3 / 3** (2 256 â€“ 2 783 sym; c9h is heterogeneous, so nonzero is the expectation) |
+| `span=` and `span_sigma=` on the one-path loopback smoke | **0.0 and 0.0**, `spread_us=0.0`, `rate_fast=18 208.1 > 0` |
+
+**C9-L1's own symmetric-cell prediction is NOT re-scored here** and was not
+pre-registered to be: c9h is not a symmetric cell. What this run closes is the
+prior question â€” *does the instrument report at all on the wire* â€” and the
+answer is yes, on the first attempt, on both a quad and a loopback, with the
+zero-at-one-path reading the law's shape requires. **The gauge half of the
+specification failure is repaired and demonstrated.**
+
+### 7 â€” A DISCIPLINE-18 FINDING THIS RUN REPRODUCES: `mem` = 1.0000
+
+`[CCAP] mem` reads **1.0000, 0.9977, 0.9985** on the three ON reps, with
+`cap` = 3 779 â€“ 4 021 against `WIN_STORE_MAX` = 4 096. **The memory bound has
+become the law at c9h** â€” the composed-cap battery's pre-registered **STOP S1**
+(*"`mem` > 0.5 over engaged refreshes â€¦ the memory bound HAS BECOME the law"*),
+now read at a four-path cell as it was previously read at `c8`
+(`mem=1.0000`, that battery's own record). `floor` = 0.0000 throughout, so the
+paroled constant binds nowhere; `brake_frac` = 0.0000â€“0.0002, i.e. the late
+brake is armed and essentially never closes at this cell.
+
+**This does NOT contaminate the span reading and the reason is structural:**
+`span_forms()` computes TERM 3 from the path set BEFORE any clamp, and `[CCAP]
+span=` renders that computation (asserted by
+`the_span_gauge_is_the_laws_own_term_3`). **What it does mean is that at c9h
+the span term never expresses itself in the REALIZED cap** â€” the realized cap
+is `WIN_STORE_MAX`. Any future clause that tries to read the span's EFFECT
+rather than its VALUE at this cell will be reading the memory bound. Recorded
+here so that clause is not written.
+
+### 8 â€” MEASUREMENT TRUTH item 5's FIRST FIELD Ïƒ (REPORTED, NOT SCORED)
+
+`sig_us=<Âµs>/n<count>`, last `[DIAG]` per rep, all six reps, both arms. **No
+clause is scored on these; Â§5.3's Î´ prediction needs the full-cell pass and one
+heterogeneous quad is not it.**
+
+| rep | fast legs (c2-class) | slow legs (c3-class) |
+|---|---|---|
+| ON r1 | 675 Âµs/n64 178 Â· 397 Âµs/n65 220 | 4 574 Âµs/n47 Â· 6 853 Âµs/n144 |
+| ON r2 | 92 Âµs/n65 781 Â· 1 328 Âµs/n63 205 | 8 356 Âµs/n88 Â· 3 652 Âµs/n27 |
+| ON r3 | 3 364 Âµs/n61 630 Â· 1 459 Âµs/n63 667 | 719 Âµs/n1 469 Â· 83 422 Âµs/n2 598 |
+| OFF r1 | 1 205 Âµs/n68 046 Â· 4 792 Âµs/n60 478 | 58 032 Âµs/n1 930 Â· 5 778 Âµs/n63 |
+| OFF r2 | 68 Âµs/n65 334 Â· 2 290 Âµs/n63 784 | 2 566 Âµs/n110 Â· 2 897 Âµs/n532 |
+| OFF r3 | 155 Âµs/n60 383 Â· 1 412 Âµs/n65 460 | 2 099 Âµs/n1 618 Â· 568 Âµs/n1 241 |
+
+**Legs are classed by their sample count, not by a label**, because the index
+order is not fixed across reps: the c2-class legs carry **n = 60 383 â€“ 68 046**
+and the c3-class legs **n = 27 â€“ 2 598**. That 25-to-2 500-fold split is c9h's
+sender-starvation showing up in a second instrument, and it is the first thing
+to read off this table.
+
+* **Fast legs, 12 readings, all at n > 60 000** â€” Ïƒ spans **68 â€“ 4 792 Âµs**,
+  median **1 267 Âµs**, mean **1 436 Âµs**. The seed bias is not in play: at
+  n > 60 000 the EWMA retains `0.75â¿` â‰ˆ 0 of its zero seed.
+* **Slow legs, 12 readings at n = 27 â€“ 2 598** â€” Ïƒ spans **568 â€“ 83 422 Âµs**,
+  median **4 113 Âµs**, with two readings (58 ms, 83 ms) an order above the
+  rest. Even n = 27 retains only `0.75Â²â·` â‰ˆ 4Ã—10â»â´ of the seed, **so these are
+  not seed-biased either â€” they are SAMPLING-noisy**, which is a different
+  complaint and the counts are what let a reader tell them apart. That is the
+  whole argument for printing n rather than gating on it.
+* **The arms do not separate** on Ïƒ, which is expected: `RWM_COMPOSED_CAP`
+  changes a store cap, not the RTT sample stream.
+
+**AGAINST Â§16.69's WORKING VALUE, and stated as an observation with no verdict
+attached:** Â§16.69 derived `W(Î±) = srtt + k(Î±)Â·Ïƒ` against an assumed **Ïƒ â‰ˆ 10
+ms** at c8, and `cost-ratio-memo.md` Â§2.3 inverted Cantelli to estimate **â‰ˆ 18.1
+ms**. The first Ïƒ ever read off the field at a wire cell is **~1.4 ms on
+well-sampled legs** â€” roughly **7Ã— below** the working value and **13Ã— below**
+the memo's estimate. **This is one cell, one seed, and c9h is not c8**, so it
+scores nothing and supersedes nothing. It is reported because it points the
+opposite way from the memo's correction, and a full-cell pass now has a reason
+to be run rather than merely a place in a list.
+
+### 9 â€” THE GUARD NUMBERS (not a claim, and not a goodput comparison)
+
+`mean_mbps`: ON **164.1 / 156.4 / 153.0** (mean 157.8, sd 5.7); OFF **128.0 /
+157.5 / 131.2** (mean 138.9, sd 16.2). `dnf` = 0 on all six. **The 19 Mbit/s
+gap is not separable at n = 3 with that spread and NO goodput claim is made
+from it** â€” this run was not designed as a goodput contrast, has no headroom
+calibration of its own, and its ON arm changes a law rather than only a gauge.
+The numbers are disclosed so a reader can see both arms moved real bytes.
+
+### 10 â€” WHAT THIS FEEDS INTO ADR-0071, AND WHAT IT DOES NOT
+
+**What it establishes.** The span instrument exists, reaches the wire, emits
+exactly once per run, is absent and provably disarmed on its control, is
+internally consistent to 0.2 %, and reads the law's own TERM 3. **ADR-0071 can
+cite a MEASURED span term at a heterogeneous quad for the first time.** The
+`2Â·rate_fastÂ·skew` term's identification-not-fitting claim (Â§16.43's PS5) is
+untouched by this run and neither confirmed nor disturbed by it.
+
+**What it does NOT establish, and this is the load-bearing half.** **ADR-0071
+cannot yet say which of the two span forms the wire computes**, because the
+discriminating clause's anchors do not describe the field they anchor. **No
+formula is adopted, no formula is retired, and the crosscheck's "Adopt
+nothing" stands undisturbed** â€” the defect this run found is in the
+contract's inputs, and a defect in the anchors is not evidence about the law.
+
+**Named successors, in the order the evidence names them:**
+
+1. **Adjudicate `rate_lr` against `Path::rate` (BtlBw).** They differ by 12â€“20Ã—
+   on the same legs of the same cell in the same session. Until one of them is
+   the named rate of the composed law's TERM 3 in the paper, every absolute
+   span anchor in the tree is quoted in an unstated unit. This is a
+   discipline-18 finding against the CONTRACT, and it is the blocker.
+2. **Re-anchor C9-L3 against BtlBw and re-run at c9h.** The ratio is
+   anchor-free and already reads 1.87â€“2.02; with anchors that describe the
+   field, the [265, 315]-shaped band becomes checkable and the clause becomes
+   scoreable in one invocation.
+3. **The full-cell Ïƒ pass** across all five cells, which is what Â§5.3's Î´
+   prediction actually needs and which this run supplies exactly one cell of.
+4. **A c9h span reading at a cell where `mem` does not bind**, if any clause is
+   ever to read the span's EFFECT rather than its VALUE.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it is scored against.** `RWM_COMPOSED_CAP`
+ships OFF and is still OFF.
+
+**Artifacts** (VM 10.1.5.16): ledger `/home/vibe/span/span-c9h-s42.log`;
+per-rep client/server logs `/home/vibe/span/{cli,srv}-{on,off}-r{1,2,3}.log`;
+post-hoc diagnostic `/home/vibe/span/cli-diag.log`; loopback smoke
+`/home/vibe/span/smoke-{cli,srv}-{0,1}.log`; report
+`/home/vibe/span/span-report.txt`; tarball `/home/vibe/span-artifacts.tar.gz`.
+Binary sha256 **`37c1ed3fd4194b0029a2be0a8f4b77b79b036adabd9148552e14a1e078e2bcec`**
+= main@`cb28863`; kernel 7.0.14-101.fc43.x86_64; Xeon E5-2650 v3, 6 cores.
