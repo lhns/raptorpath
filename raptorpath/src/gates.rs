@@ -611,15 +611,32 @@ pub struct RuntimeGates {
     /// referents (the EVICT reorder hold; an inner-TCP RTO) exists on the
     /// measured stack.
     pub derived_sweep: bool,
-    /// `RWM_DELTA_CAP` (default OFF — the A/B arm; paper §16.67, ADR-0071
-    /// family 2): the pooled outstanding cap's VALUE multiplier becomes the
-    /// δ-priced, CoDel-DERIVED standing-queue setpoint instead of the shipped
-    /// `gain = 2.0` fossil.
+    /// `RWM_DELTA_CAP` (**DEFAULT ON since 2026-08-19**, candidates battery
+    /// rung D; `=0` = the displaced `gain = 2.0` fossil, kept re-runnable;
+    /// paper §16.67/§16.70/§16.71, ADR-0071 family 2): the pooled outstanding
+    /// cap's VALUE multiplier is the δ-priced, CoDel-DERIVED standing-queue
+    /// setpoint instead of the shipped `gain = 2.0` fossil.
     ///
     /// ```text
-    ///   cap  = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
+    ///   SHIPPED   cap  = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
+    ///   `=0` arm  cap  = clamp(  gain      · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
     ///   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)   ==  (b+1)/30
     /// ```
+    ///
+    /// **THE SHIPPED FORMULA AFTER BOTH 2026-08-19 FLIPS**, stated whole
+    /// because the two gates compose and neither record is readable alone —
+    /// [`Self::sum_cap`] (ON, §16.64) deleted the COUNT multiplier and this
+    /// gate (ON, §16.71) replaced the VALUE multiplier, so the pooled law the
+    /// engine computes unset is
+    ///
+    /// ```text
+    ///   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ · RTpropᵢ),  floor,  N · knee )
+    /// ```
+    ///
+    /// with the `N·knee` knee **measured INERT at both scoreable duals**
+    /// (`pin` = 0.0000 at c7 and c8) rather than assumed inert. `gain = 2.0`
+    /// no longer appears in the shipped VALUE at all: it survives only on the
+    /// `=0` arm and at the other cap seats.
     ///
     /// RFC 8289 (CoDel) §3.2 DERIVES the permitted standing queue from
     /// Kleinrock power maximisation and states it as *"between 5% and 10% of
@@ -641,9 +658,48 @@ pub struct RuntimeGates {
     /// As `q → 0` the law reduces to `Σᵢ bwᵢ·RTpropᵢ`, which IS ADR-0071
     /// candidate (d) ZERO. Bit-identical at N = 1 BY CONSTRUCTION (the pooled
     /// seat returns `None` at `n_live < 2` before any multiplier is read).
-    /// `=0`/unset is the shipped default, bit-exactly. Engagement, both clamp
-    /// bind fractions and the counterfactual against `gain` are reported by the
-    /// `[DCAP]` echo.
+    /// Engagement, both clamp bind fractions and the counterfactual against
+    /// `gain` are reported by the `[DCAP]` echo.
+    ///
+    /// **Measured on the wire before it shipped** (goal-gate "Candidates
+    /// Battery — RESULTS", 2026-08-19, rung D): **D-LAT six of six** — goodput
+    /// PARITY at every dual on both seeds (no reading outside 2σ_pooled in
+    /// either direction) with `q_p50` strictly down at every one, by 10–16 ms
+    /// at c7, 113–117 ms at c8 and 130–200 ms at c8L; INTERIOR with the
+    /// ceiling provably inert at c7 and c8 (`pin` = 0.0000, `eng` = `chg` =
+    /// 1.00, cap inside its pre-registered ±20 % band at both); `eng = 0/0` at
+    /// c1 and sc2, the N = 1 identity confirmed on the wire; and c8's paired
+    /// dead wall SHORTENED (18 of 23 non-zero pairs favour the arm, sign test
+    /// p ≈ 0.011 — B-WALL resolving for the first time in this tree).
+    ///
+    /// **The honest bounds on the flip**, carried here because the
+    /// recommendation carried them:
+    ///
+    /// * **Goodput is PARITY, not a win** — the honest claim is *"free"*, not
+    ///   *"faster"*. Worst readings −2.64 Mbit/s against 2σ 38.09 (c8L s42),
+    ///   −1.28 against 4.28 (c7 s7); best +7.83 against 11.13 (c8 s42).
+    /// * **c8L is a PARTIAL delivery, not a verdict.** `pin` = 0.23 there
+    ///   falls in the gap BETWEEN the contract's two pre-declared branches
+    ///   (`≤ 0.10` primary era, `> 0.50` secondary era) and neither branch is
+    ///   claimed after the fact. §16.67's "interior EVERYWHERE incl. c8L" is
+    ///   therefore NOT delivered; the named instrument is the WITHIN-RUN Σ
+    ///   series, which needs no VM arm.
+    /// * **The probe is not unanimous**: `ping_p50` agrees with `q_p50` on
+    ///   five of six rows and disagrees in SIGN on one (c8 s42, +20.5 ms). The
+    ///   claim rests on `q_p50`, the sender-side measurand this law governs.
+    /// * **The c8/seed-7 abort class is ARM-CORRELATED** (20 % on the control
+    ///   against 75 % on the RACK arm), so excluding aborts from denominators
+    ///   there is a selection on the treatment and the surviving c8 seed-7
+    ///   reps are a biased sample of unknown direction. Scoped to c8 seed 7:
+    ///   seed 42 is abort-free at every cell and no headline verdict rests on
+    ///   c8 seed 7 alone. The owed instrument is an abort-cause witness.
+    /// * **No support at single-path cells**, and none is claimed: the law
+    ///   cannot regress a single-path deployment and cannot help one either.
+    ///
+    /// `=0` is the DISPLACED `gain = 2.0` FOSSIL, kept fully re-runnable as
+    /// the A/B arm with no deprecation warning (ADR-0066 register row); the
+    /// substitution's shape stays pinned two-sidedly by
+    /// `formula_agreement::the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d`.
     pub delta_cap: bool,
     /// `RWM_RACK_CLOCKS` (default OFF — the A/B arm; paper §16.68): both
     /// recovery clocks read RFC 8985 §6.2 Step 4's reordering window,
@@ -852,7 +908,15 @@ impl RuntimeGates {
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
-            delta_cap: env_flag("RWM_DELTA_CAP", false),
+            // DEFAULT ON since 2026-08-19 — the candidates battery's one
+            // FLIP-RECOMMENDED gate (goal-gate "Candidates Battery — RESULTS",
+            // paper §16.71). Plain `env_flag`, not `anchor_gate_default`: this
+            // is a store-cap gate with no umbrella family, exactly as
+            // `RWM_SUM_CAP` above, so there is no umbrella semantic to
+            // preserve. `RWM_DELTA_CAP=0` remains the re-runnable A/B arm: the
+            // shipped `gain = 2.0` fossil, kept with its provenance per the
+            // deprecation register, no deprecation warning.
+            delta_cap: env_flag("RWM_DELTA_CAP", true),
             rack_clocks: env_flag("RWM_RACK_CLOCKS", false),
             quantile_clocks: env_flag("RWM_QUANTILE_CLOCKS", false),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
@@ -1147,17 +1211,35 @@ mod tests {
             "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
              \"The Derived Recovery Clamp\")"
         );
-        // The three laws added 2026-08-19 (paper 16.67 / 16.68 / 16.69). All
-        // default OFF; RWM_RACK_REO_MULT defaults to RFC 8985 6.2 Step 4's own
-        // initial reo_wnd_mult of 1, so an unset run is RACK's own starting
-        // point and not an operator-chosen number.
+        // The three laws added 2026-08-19 (paper 16.67 / 16.68 / 16.69).
+        // RWM_RACK_REO_MULT defaults to RFC 8985 6.2 Step 4's own initial
+        // reo_wnd_mult of 1, so an unset run is RACK's own starting point and
+        // not an operator-chosen number.
+        //
+        // THE CoDel-DERIVED SETPOINT (paper 16.67/16.70/16.71, ADR-0071
+        // family 2) - FLIPPED DEFAULT ON 2026-08-19. The battery that scored
+        // it (goal-gate "Candidates Battery - RESULTS", rung D) measured
+        // D-LAT six of six: goodput parity at every dual on both seeds with
+        // q_p50 down 10-200 ms at every one; interior with the ceiling
+        // provably inert at c7 and c8 (pin 0.0000); bit-identical at N = 1
+        // (eng 0/0 at c1 and sc2); and c8's paired dead wall shortened
+        // (p = 0.011). Pinned ON here so the flip cannot drift back silently;
+        // the OFF-value property now belongs to the `=0` arm, asserted below
+        // on an explicit arm rather than on the default.
         assert!(
-            !g.delta_cap,
-            "RWM_DELTA_CAP ships default OFF (A/B arm - paper 16.67, the              CoDel-derived setpoint band)"
+            g.delta_cap,
+            "RWM_DELTA_CAP ships DEFAULT ON since 2026-08-19 (candidates \
+             battery rung D DELIVERED: D-LAT 6/6 - goodput parity at every \
+             dual both seeds with q_p50 down 10-200 ms; interior with the \
+             ceiling inert at c7/c8; bit-identical at N = 1). `=0` remains \
+             the re-runnable A/B arm - the displaced gain = 2.0 fossil."
         );
         assert!(
             !g.rack_clocks,
-            "RWM_RACK_CLOCKS ships default OFF (A/B arm - paper 16.68)"
+            "RWM_RACK_CLOCKS ships default OFF (A/B arm - paper 16.68; the \
+             candidates battery scored it REFUTED-WITH-RECORD on RACK's own \
+             false-alarm bar at every arm and every cell, so the SAME program \
+             that flipped RWM_DELTA_CAP does not flip this)"
         );
         assert!(
             !g.quantile_clocks,
@@ -1172,13 +1254,31 @@ mod tests {
         // are on it with their resolved values, two-sided.
         let line = g.echo_line();
         for tok in [
-            "RWM_DELTA_CAP=0",
+            // Flipped 2026-08-19: the echo must name the SHIPPED value.
+            "RWM_DELTA_CAP=1",
             "RWM_RACK_CLOCKS=0",
             "RWM_QUANTILE_CLOCKS=0",
             "RWM_RACK_REO_MULT=1",
         ] {
             assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
         }
+        // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
+        // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
+        // re-running the displaced `gain = 2.0` fossil must be able to assert
+        // the gate ABSENT on both endpoints, not merely unmentioned. RE-HOMED
+        // onto an EXPLICIT arm now that the default is ON, so the property
+        // survives the flip instead of being retired by it. Set by field
+        // rather than through the environment: env mutation is process-global
+        // state in a parallel runner.
+        let mut off_arm = g.clone();
+        off_arm.delta_cap = false;
+        assert!(
+            off_arm.echo_line().contains("RWM_DELTA_CAP=0"),
+            "the `=0` arm's echo must NAME the delta-cap gate with its 0 value \
+             - the displaced gain = 2.0 fossil stays re-runnable and \
+             scrapeable: {}",
+            off_arm.echo_line()
+        );
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
         // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:

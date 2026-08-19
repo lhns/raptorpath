@@ -191,6 +191,70 @@ the one above:**
   `RWM_LATE_BRAKE` (**DELIVERED as ARMED, NEEDS-MORE for effect** —
   `brake_ticks > 0` on 110/110 FULL reps, but B-WALL closed on power).
 
+**Disposition added 2026-08-19 — a THIRD DEFAULT FLIP row, same shape as the
+two above:**
+
+- `RWM_DELTA_CAP` **FLIPPED DEFAULT ON** (goal-gate "Candidates Battery —
+  RESULTS", rung **D DELIVERED / FLIP-RECOMMENDED** — the only gate that
+  program recommended). The pooled store-cap's VALUE multiplier moves off the
+  `gain = 2.0` fossil (ADR-0070 finding 3) onto the CoDel-DERIVED
+  standing-queue setpoint `1 + q(δ)`, `q(δ) = (b+1)/30` over RFC 8289 §3.2's
+  own 5–10 % band, with both band endpoints cited and both dial endpoints read
+  from `net::delta_budget_b` — **no fitted constant**. Composed with
+  `RWM_SUM_CAP` (flipped ON in the same week), the shipped pooled law is
+  `cap = clamp((1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`.
+  Evidence: **D-LAT six of six** — goodput PARITY at every dual on BOTH seeds
+  (no reading outside 2σ_pooled in either direction) with `q_p50` strictly
+  DOWN at every one, by 10–16 ms at c7, 113–117 ms at c8 and 130–200 ms at
+  c8L; **interior with the `N·knee` ceiling provably inert at c7 and c8**
+  (`pin` med 0.0000, `eng` = `chg` = 1.00, cap inside its pre-registered
+  ±20 % band, `CAPBIND … name=interior`) against a same-session control that
+  pinned at 4096 in 31.6 % of c7 reps; **`eng = 0/0` at c1 and sc2** — the
+  N = 1 identity confirmed on the wire, so a single-path deployment is
+  bit-identical by construction; and **B-WALL RESOLVING for the first time in
+  this tree** (18 of 23 non-zero paired `dur_ms` differences at c8 favour the
+  arm, ≥ 8 per seed, agreeing across both seeds and all three pools, two-sided
+  sign test **p ≈ 0.011**). Also measured, as a corroborating observation
+  rather than a bar: arming the δ-cap and touching no clock reduced the
+  SHIPPED recovery clock's false-alarm rate by 24 % at c8 and 50 % at c8L.
+  **The recommendation's own honest bounds, carried here rather than
+  dropped**: goodput is **PARITY and not a win** — the honest claim is
+  *"free"*, not *"faster"* (worst −2.64 Mbit/s against 2σ 38.09 at c8L s42,
+  best +7.83 against 11.13 at c8 s42); **c8L is a PARTIAL delivery** with
+  `pin` = 0.23 falling in the gap BETWEEN the contract's two pre-declared
+  branches (`≤ 0.10` primary era, `> 0.50` secondary era), so §16.67's
+  "interior EVERYWHERE incl. c8L" is **NOT delivered** and neither branch is
+  claimed after the fact — the named instrument is the WITHIN-RUN Σ series,
+  which needs no VM arm; the independent probe **disagrees in SIGN with
+  `q_p50` on one of six rows** (c8 s42, +20.5 ms), and the claim rests on
+  `q_p50`, the sender-side measurand the law governs; the **c8/seed-7 abort
+  class is ARM-CORRELATED** (20 % control against 50/65/75 % on D/DR/R), so
+  excluding aborts from denominators there is a selection on the treatment and
+  those reps are a biased sample of unknown direction — scoped to c8 seed 7,
+  since seed 42 is abort-free at every cell and D is scored at three cells on
+  both seeds, with an **abort-cause witness** the owed instrument; the one
+  guard breach on D is CPU at c1 seed 7 (1.070× against 1.05) **at the cell
+  where the law provably does not engage**, which bounds it as that cell's
+  noise; and **no sc2 number in the session supports the δ-cap**, since the
+  law returns before any multiplier is read at `n_live < 2`.
+  The displaced arm — the pool's `gain = 2.0` fossil — remains reachable as
+  `RWM_DELTA_CAP=0` with **NO deprecation warning**: it is the A/B control
+  arm, ADR-0070 finding 3's FOSSIL verdict and ADR-0071's candidate pricing
+  are preserved verbatim, the substitution's shape stays pinned two-sidedly by
+  `formula_agreement::the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d`
+  (`m(OFF) ≡ gain`, `m(ON) ≡ 1 + q(δ)`, and the two axes factorising over all
+  four combinations), its `=0` echo value stays asserted in the `gates.rs`
+  default-stack test on an explicit arm, and it stays re-runnable until a later
+  register pass argues its removal separately. Companions scored in the SAME
+  program and NOT flipped: `RWM_RACK_CLOCKS` (**REFUTED-WITH-RECORD** — no arm
+  clears RACK's own `α_class` = 6.25 % at any cell, 0.17–0.78 measured, and at
+  `mult = 1` its `SRTT` ceiling bound **0 times in 108 847 evaluations**),
+  `RWM_RACK_REO_MULT` (**RECORD-STANDING** — it exists so that bound is
+  reachable by a battery; it was reached and read `ceil = 0.0000`),
+  `RWM_QUANTILE_CLOCKS` (**REFUTED-STANDING, UNTOUCHED** — §16.69's three-way
+  refutation is unmodified and was confirmed `0` two-sided on all 452 live
+  invocations). `RWM_SUM_CAP` was **already ON** by the row above.
+
 Class-B gates (concept incomplete, successor scheduled — percap family,
 `RWM_COPA_COMPETE`, formerly `RWM_TAPER_R`/`RWM_UNIFIED` before they
 flipped ON) are NOT register members: they deprecate or flip when their

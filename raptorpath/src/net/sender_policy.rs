@@ -332,14 +332,18 @@ pub(crate) struct SenderPolicy {
     /// four distinct formulas. **DEFAULT ON since 2026-08-19** (ladder battery
     /// rung N DELIVERED); `RWM_SUM_CAP=0` re-runs the displaced quadratic.
     pub sum_cap: bool,
-    /// `RWM_DELTA_CAP` (paper §16.67, ADR-0071 family 2): the pooled cap's
-    /// VALUE multiplier becomes `1 + q(δ)` — the CoDel-DERIVED standing-queue
-    /// setpoint (RFC 8289 §3.2, 5–10 % of RTT from Kleinrock power
-    /// maximisation) mapped continuously onto the δ dial — instead of the
-    /// shipped `gain = 2.0` fossil. INDEPENDENT of [`Self::sum_cap`], which
-    /// picks the COUNT multiplier: the two are separate factors of one
+    /// `RWM_DELTA_CAP` (paper §16.67/§16.70/§16.71, ADR-0071 family 2): the
+    /// pooled cap's VALUE multiplier is `1 + q(δ)` — the CoDel-DERIVED
+    /// standing-queue setpoint (RFC 8289 §3.2, 5–10 % of RTT from Kleinrock
+    /// power maximisation) mapped continuously onto the δ dial — instead of
+    /// the displaced `gain = 2.0` fossil. INDEPENDENT of [`Self::sum_cap`],
+    /// which picks the COUNT multiplier: the two are separate factors of one
     /// expression and the four combinations are four distinct formulas.
-    /// Scoped to the plain dynamic cap like its siblings. Default OFF.
+    /// Scoped to the plain dynamic cap like its siblings. **DEFAULT ON since
+    /// 2026-08-19** (candidates battery rung D DELIVERED, D-LAT 6/6);
+    /// `RWM_DELTA_CAP=0` re-runs the displaced fossil. With
+    /// [`Self::sum_cap`] also ON, the SHIPPED pooled law is
+    /// `cap = clamp((1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`.
     pub delta_cap: bool,
     /// `RWM_LATE_BRAKE` (paper §16.60.1, ADR-0070 finding 7): the late-stage
     /// per-path cwnd brake, armed WITHOUT the composed pool law. Exactly
@@ -942,9 +946,9 @@ impl SenderPolicy {
         // the displaced quadratic, unchanged and with no deprecation warning.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
         // ── THE δ-PRICED VALUE MULTIPLIER (env RWM_DELTA_CAP) ─────
-        // Paper §16.67, ADR-0071 family 2. The pooled law's VALUE multiplier
-        // moves off the `gain = 2.0` fossil (ADR-0070 finding 3) onto the
-        // CoDel-DERIVED setpoint band:
+        // Paper §16.67/§16.70/§16.71, ADR-0071 family 2. The pooled law's
+        // VALUE multiplier is off the `gain = 2.0` fossil (ADR-0070 finding 3)
+        // and on the CoDel-DERIVED setpoint band:
         //
         //   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ), floor, N·knee )
         //   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)  ==  (b+1)/30
@@ -957,7 +961,35 @@ impl SenderPolicy {
         // ceiling and the floor are identical on both arms and cancel out of
         // the A/B. INDEPENDENT of `sum_cap` (the COUNT multiplier) and of
         // `store_cap_unified` (the Σ's SET) — three axes of one law.
-        // Bit-identical at N = 1 by construction. Default OFF.
+        // Bit-identical at N = 1 by construction.
+        //
+        // **DEFAULT ON since 2026-08-19** — goal-gate "Candidates Battery —
+        // RESULTS" rung D, the one gate that program recommended flipping:
+        // D-LAT SIX OF SIX (goodput parity at every dual on both seeds, no
+        // reading outside 2σ_pooled in either direction, with `q_p50` down
+        // 10–16 ms at c7, 113–117 ms at c8 and 130–200 ms at c8L); INTERIOR
+        // with the ceiling provably inert at c7 and c8 (`pin` 0.0000, `eng` =
+        // `chg` = 1.00, cap inside its ±20 % band); `eng = 0/0` at c1 and sc2,
+        // the N = 1 identity confirmed on the wire; c8's paired dead wall
+        // SHORTENED (18/23 non-zero pairs, sign test p ≈ 0.011). The pool's
+        // gain was funding DELAY, not goodput. Bounds carried, not dropped:
+        // goodput is PARITY and not a win; c8L is a PARTIAL delivery (`pin` =
+        // 0.23, in the gap between the contract's two pre-declared branches,
+        // neither claimed); the probe disagrees in sign on one of six rows;
+        // and the c8/seed-7 abort class is ARM-CORRELATED, so that cell's
+        // seed-7 exclusions are a selection on the treatment.
+        // `RWM_DELTA_CAP=0` re-runs the displaced `gain = 2.0` fossil,
+        // unchanged and with no deprecation warning.
+        //
+        // COMPOSED WITH `RWM_SUM_CAP` (also ON since 2026-08-19, §16.64) the
+        // SHIPPED pooled law is the δ-cap over the SUMMED anchors:
+        //
+        //   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ), floor, N·knee )
+        //
+        // — with the `N·knee` ceiling measured INERT at the duals rather than
+        // assumed inert, and `gain` gone from the shipped VALUE entirely. The
+        // two gates factorise on the wire as well as on paper: the battery's
+        // DR arm read D's cap to within 0.1 % (c7) and 4.5 % (c8).
         let delta_cap = gates.delta_cap && plain_dyn_cap;
         // ── THE EXTRACTED LATE-STAGE BRAKE (env RWM_LATE_BRAKE) ───────────
         // Paper §16.60.1, ADR-0070 finding 7 ("the correct architecture,
