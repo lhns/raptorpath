@@ -33620,10 +33620,68 @@ Same protocol as the Candidates and Ladder contracts, unmodified: a
 wall, never `INVOCATION_S`**, committed as this contract's completion in its
 own commit **BEFORE** the scored battery runs.
 
-| cell | shaped aggregate | headroom | claims permitted |
-|---|---|---|---|
-| c9 | 4 × 100 Mbit = **400 Mbit** | `[LAUNCH]` | ≥ 5 % → throughput targets permitted; < 5 % → **parity / latency / cap-shape only** |
-| c9h | 2 × 100 + 2 × 20 Mbit = **240 Mbit** | `[LAUNCH]` | as above |
+**FILLED 2026-08-19** (`feat/c9-run`, VM 10.1.5.16, binary sha256
+`a23e45f57ab1ac9b2bbb414577c844573cd2060fef239f2f3c232a54c14a13c3` =
+main@`97bd690` + the topo-ping repair `7c67ad0`; kernel 7.0.14-101.fc43;
+Xeon E5-2650 v3, 6 cores; seed 42; **one rep per arm per cell, 4 invocations,
+`tc -s qdisc show` captured on EVERY one**; `RWM_ACKDIAG=1
+RWM_ACKDIAG_WINDOW_US=250000` echoed two-sided on all four).
+
+| cell | arm | shaped aggregate | tc data bytes | transfer wall | util % | **headroom %** | claims permitted |
+|---|---|---|---|---|---|---|---|
+| c9 | pooled | 4 × 100 Mbit = **400 Mbit** | 449.3 MB | 18.14 s | 49.5 | **50.5** | throughput targets PERMITTED |
+| c9 | percap | 400 Mbit | 449.3 MB | 17.66 s | 50.9 | **49.1** | throughput targets PERMITTED |
+| c9h | pooled | 2 × 100 + 2 × 20 Mbit = **240 Mbit** | 168.4 MB | 8.10 s | 69.3 | **30.7** | throughput targets PERMITTED |
+| c9h | percap | 240 Mbit | 169.9 MB | 8.63 s | 65.6 | **34.4** | throughput targets PERMITTED |
+
+`util = tc_bytes·8 / (TRANSFER wall × capacity)`, `tc_bytes` summed over the
+**DATA-direction legs CLI0..CLI3 only** — the direction the shaped aggregate
+describes — first `Sent` line per device, exactly as `era_parse.py` reads it.
+The counters accumulate over the whole invocation, so at the 3-run `c9h` the
+denominator is the **SUM** of the runs' walls, not their median.
+
+**THE DENOMINATOR CORRECTION, shown rather than asserted** (discipline 16's
+whole point). Reading `INVOCATION_S` instead would have given: c9/pooled
+44.9 % (not 49.5), c9/percap 47.3 % (not 50.9), c9h/pooled 56.1 % (not 69.3),
+c9h/percap 51.5 % (not 65.6) — the invocation wall runs **1.08–1.28×** the
+transfer wall here. Every reading in this table is the transfer wall.
+
+> **THE HAZARD THIS SECTION NAMED IN ADVANCE HAS FIRED: c9 IS SENDER-BOUND,
+> AND IT IS NOT A CLOSE CALL.** §4 warned that "if c9 turns out to be
+> sender-bound rather than link-bound, its headroom will read high while the
+> cell is nonetheless saturated *at the wrong bottleneck*". It reads 50.5 %
+> and it is. Three measurements say so and they agree quantitatively:
+>
+> * **CPU-per-payload-byte is INVARIANT across two very different cells**:
+>   c9 `CPUCLI` 27.38 s / 400 MB = **68.5 ms/MB**; c9h 10.38 s / 150 MB =
+>   **69.2 ms/MB**. A link-bound sender's CPU-per-byte would not be pinned to
+>   1 % across a 400 Mbit and a 240 Mbit cell.
+> * **The sender's CPU budget predicts its goodput to within 1 %**: 1.51
+>   cores (27.38 s of CPU over an 18.14 s transfer) ÷ 68.5 ms/MB = 22.0 MB/s
+>   = **176.3 Mbit/s**, against the **176.4 Mbit/s measured**.
+> * **1.67× the capacity bought 1.19× the wire rate**: c9 puts 198 Mbit/s on
+>   the wire against c9h's 166 Mbit/s, on a cell with 400 Mbit against 240.
+>
+> `CPUCLI` is **not pinned to the box** (1.51 of 6 cores), so this is a
+> per-flow sender ceiling rather than a saturated machine, and it is reported
+> as the measurement it is rather than diagnosed further here.
+>
+> **THE CONSEQUENCE, and it is exactly the one pre-registered.** C9-L2 asked
+> whether the cap law's INPUTS are N-invariant, predicting
+> `cap(c9)/cap(c7) ∈ [1.8, 2.2]`, and named the failure mode: "the law is
+> Σ-linear but its inputs are NOT N-invariant, and *cap linear in N* is false
+> on the wire **for a reason that is not the law's shape**". A sender that
+> cannot fill four legs is precisely such a reason. **C9-L2 is therefore
+> flagged AT RISK before the battery runs, and a low reading on it must be
+> read against this row rather than against the cap law.** Nothing is scored
+> here and no clause is re-scoped: the clause stands as written and this is
+> the context its verdict will be read in.
+>
+> **What the calibration does NOT license.** Headroom ≥ 5 % permits throughput
+> targets at both cells, so **C9-2 remains scoreable** — and C9-2 is a paired
+> *difference between two arms at the same cell*, which a shared sender
+> ceiling distorts least. The other six clauses are correlation and cap-shape
+> statements and were never headroom-gated.
 
 **THE ARITHMETIC THIS FORCES, and it is why the blanks do not block the
 design.** Of the seven clauses here, **only C9-2 is a goodput comparison.**
@@ -34036,3 +34094,214 @@ A deployment that upgraded from the pre-arc default (`4171b58`, 2026-08-08) to t
 * **Named successors, in the order the evidence names them:** (1) **repair the topo-ping** — a 2-packet no-retry ICMP sanity check on a deliberately lossy link manufactured 38 aborts and a 50-point arm imbalance, and it is a harness defect with a one-line fix; (2) **resolve the `q_p50` / `ping_p50` sign disagreement at `c8`/`c8L`**, which is the only thing standing between "the engine's queue collapsed" and "delivered latency improved"; (3) **arm `NR` at `c8L`, and at a cell where `legacy_pin` is not already at its ceiling**, because P5's test had room at exactly one cell and lost there; (4) **re-run the ack-merge pair alone at `c1` on today's substrate**, to separate interaction from substrate drift in P1 and P3.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
+
+---
+
+## HARNESS ERA BOUNDARY — THE TOPO-PING REPAIR (2026-08-19, `feat/c9-run` from main@`97bd690`) — **era scoring's named successor #1, closed. A SECOND ERA BOUNDARY FOR ABORT STATISTICS: every pre-repair abort rate in this document is conditioned on a defect in the sanity check, not on the arm it is filed under.**
+
+The era battery's abort-cause witness resolved **ALL 38 of its 204 aborts** to
+`topo_step` at `topo_dual.sh:95/96` — the two sanity pings — with `topo_step`
+on **38 of 38 aborts and 0 of 166 non-aborts**, every one recording `2 packets
+transmitted, 0 received, 100% packet loss`, and the engine binary never
+launched on any of them. The check is a **2-packet no-retry ICMP probe run
+across a deliberately Gilbert-Elliott-lossy shaped leg**; its purpose is
+"namespace and route exist", not "zero loss", so a loss draw was aborting
+invocations for doing exactly what the cell was shaped to do.
+
+**THE REPAIR.** `aw_ping` now retries to at most `AW_PING_ATTEMPTS = 26` draws
+and accepts the FIRST reply. The bound is sized, not chosen: netem's
+`loss gemodel p q` drops iff the chain is in the bad state, so
+`P(N draws all lost) = pi_bad * (1-q)^(N-1)` with `pi_bad = p/(p+q)`. At the
+**worst committed GE cell — `c5`/badwifi, `p=5.3 q=30`, `pi_bad = 0.15014`,
+persistence `1-q = 0.70`** (worst on both terms across the whole
+`scenario_params` table):
+
+```text
+  N = 2   (shipped)   0.15014 * 0.70     = 1.05e-1   per leg   <- the 38/204 class
+  N = 26  (repaired)  0.15014 * 0.70^25  = 2.01e-5   per leg
+                      1 - (1-2.01e-5)^4  = 8.05e-5   per QUAD invocation  < 1e-4
+```
+
+At c9's own legs it is not close: **7.6e-10** (c2) and **1.4e-7** (c3). It is a
+retry LOOP rather than a wider `-c` for two reasons: it **exits on the first
+reply**, so the healthy path — every invocation that is not about to abort —
+now costs ONE packet and ~10 ms against the two packets and 200 ms interval it
+cost before, i.e. the repair is *cheaper* on 100 % of the runs that matter; and
+only a loop's semantics are observable through a stubbed `ping`. **A genuinely
+dead leg still aborts, and still aborts fast** (no route makes `ping` fail
+immediately rather than time out). Recording semantics are unchanged and two
+columns are added: `ping_<leg>_attempts` and `ping_<leg>_max_attempts`.
+
+`topo_quad.sh` receives the same repair plus the witness wiring it was owed
+(c9 contract §6 step 3: `set -E`, `source ./abort_witness.sh`, the `ERR` trap,
+`aw_ping` on all four legs). It had inherited the 2-packet check **into a
+topology with twice the legs**, i.e. twice the independent chances of a false
+abort per invocation, and it had no way to name its own failing line. **It was
+never run on the wire in that form, so no quad ledger carries the defect.**
+`c9_battery.sh` gains the three §6 columns (`abort_cause`, `abort_missing`,
+`drain_pids_t0`) plus a `PING-RETRY` line per leg, read through
+`abort_witness.py` rather than a re-implemented block.
+
+**THE GATE.** `test_topo.sh` grew a `ping_plan` stub that drives the outcome
+from the `ip` stub (which is the process the retry loop actually sees, since
+the check is issued as `ip netns exec <ns> ping`): a ping that **fails 3× then
+succeeds does NOT abort** — dual and quad, and the retry count is asserted
+exactly (5 and 7 attempts, so a loop that reset per leg or gave up early is
+caught) — an **always-failing ping still DOES abort**, **bounded at exactly 26
+draws**, the witness still records rc and now the attempt count, and the quad's
+new `ERR` trap names `abort_cause=topo_step`. The **sized constant itself is
+asserted against `abort_witness.sh`**, so a later edit that quietly shrinks the
+bound re-opens the class through a failing gate rather than through a battery.
+
+> **THE ERA BOUNDARY, and it is the part that can silently corrupt a
+> comparison.** Abort rates are not comparable across this commit.
+> **Every abort statistic in this document that predates it — the "seed-7
+> topo-ping double-abort class" carried in prose since the candidates battery,
+> the per-arm `n` reductions it caused across roughly twenty batteries, the
+> 9.7 %/38.9 %/24.5 %/50.0 % rates, and G-ABORT's 10-point deductions — is
+> conditioned on the lossy-ping defect, not on the arm, cell or binary it is
+> filed under.** Those numbers measured a property of the sanity check
+> interacting with the cell's shaped loss; at a fixed cell they are still a
+> valid *relative* signal between arms only insofar as the arms drew from the
+> same loss process, which is exactly what the arm-correlated rates
+> (20 % control vs 75 % RACK) say they did not. **A post-repair abort rate and
+> a pre-repair one are not the same measurement and neither is a control for
+> the other.** Post-repair, an abort at `topo_step` means a leg that failed 26
+> consecutive draws — at c5 a 2e-5 event — and should be read as a real
+> topology failure rather than as weather.
+
+**Nothing here flips a default, adds an engine gate, or edits an engine crate.**
+
+---
+
+## c9 VALIDATION BATTERY — THE SMOKE, DISCLOSED IN FULL (2026-08-19, `feat/c9-run` from main@`97bd690`) — **the smoke found TWO instrument problems before the battery ran. One is a harness sizing defect and is repaired here; the other is a PROPERTY OF THE CALIBRATION ITSELF and means the smoke CANNOT clear C9-1's primary measurand.** Nothing is scored and no prediction moves.
+
+The calibration pass doubles as the smoke, as it does in every battery in this
+tree. Four invocations (2 cells × 2 arms, seed 42, rep 0), binary sha256
+`a23e45f5…`. **What passed, first, because it is most of it:**
+
+| check | result |
+|---|---|
+| quad topology up/down on the real kernel | **CLEAN**, `rp-cli`/`rp-srv` only, `ens18` untouched, 0 namespaces left behind |
+| per-leg netem seeds echoed distinct | **42 / 1042 / 2042 / 3042**, read off the live qdiscs; ACK direction carries none (the audit's control) |
+| `[GATES]` `RWM_ACKDIAG_WINDOW_US` | **`250000` two-sided on all four invocations** — the RESOLVED value, not the shipped 2 s |
+| `[GATES]` arm knob | `RWM_STORE_PERCAP=0/1` correct per arm, two-sided, all four |
+| aborts | **0 of 4.** `abort_cause=none`, `abort_missing=FALSE`, `drain_pids_t0=0` everywhere |
+| topo-ping retries | **every leg cleared on attempt 1** (`ping_path0..3_attempts=1`, max 26) — the repaired check, on the wire |
+| `LIVENESS-EMIT` | 173 / 194 / 92 / 96 `[ACKDIAG]` lines — the gauge reported on every invocation |
+| `LIVENESS-PATHS` (the `pid < 2` gate) | **`distinct_ackdiag_paths=4` on all four** — the truncation defect the SF bench taught does not reproduce on the wire |
+| `eppen_quad.py` parses all four legs | **yes, `N=4 paths [0, 1, 2, 3]` at every cell** |
+
+### FINDING 1 — **`BYTES` was sized against RAW windows; the scorer correlates COMPLETE ones. Three of four cell-arms failed the scorer's own power bar.** (repaired)
+
+`c9_battery.sh`'s byte counts were sized as "transfer wall ÷ 250 ms ≈ 40
+windows per rep". But `eppen_quad.py::group_windows` keeps only windows in
+which **ALL FOUR legs reported** — a pairwise ρ needs both legs present in the
+same window, so one silent leg drops that window for all six pairs — and
+`score_cell`'s bar is `windows_per_rep < 3·C(N,2)` = **18** at a quad. The
+smoke measured the completion rate directly:
+
+| cell/arm | raw windows | **complete** | completion | vs the 18 bar |
+|---|---|---|---|---|
+| c9/pooled | 72 | **16** | 22 % | **FAILS** |
+| c9/percap | 71 | **35** | 49 % | passes |
+| c9h/pooled | 32 | **14** | 44 % | **FAILS** |
+| c9h/percap | 34 | **11** | 32 % | **FAILS** |
+
+The legs go silent because per-leg delivery is bursty — the smoke's own
+`rate_lr` CVs run **13.9 % to 187 %**, and at c9h the two c3-class legs sit at
+**728 and 280 sym/s** against the c2 legs' 8 618 and 8 110.
+
+**REPAIR: `BYTES` ×2 at c9 (400 → 800 MB) and ×3 at c9h (50 → 150 MB/run).**
+The multiplier comes from the WORST ARM of each cell, since both arms must
+share one byte count (c9 needs 30/16 = 1.9×; c9h needs 30/11 = 2.7×).
+Predicted complete windows/rep after: **c9 32/70, c9h 42/33** — above the
+contract's own ≥ 30 and well above the scorer's 18.
+
+> **THIS IS A SAMPLE SIZE MOVED TO MEET A PRE-REGISTERED TARGET, NOT A TUNING.**
+> No threshold, band, prediction or falsifier changes; C9-1…4 and C9-L1…L3 are
+> untouched. The completion rate it is sized against was measured **before any
+> correlation was read off any ledger**. Sizing an experiment to reach the
+> power its own contract demands is the opposite of tuning it to an answer.
+
+### FINDING 2 — **the two-way estimator is MATHEMATICALLY DEGENERATE at one rep, so the calibration cannot exercise C9-1's primary measurand at all.** (not a defect; a limit of the smoke, and it is disclosed rather than papered over)
+
+The smoke's scorer output shows all six pairwise delivered-rate ρ as `n/a`, and
+on two lines it printed a two-way ρ̄ of **−0.417 and −0.645 — below the
+−0.333 positive-semi-definiteness floor** — which its own guard caught and
+voided as "a BUG IN THIS SCORER". **It is not a bug.** `center_two_way`
+computes `v − rep_mean − window_mean + grand_mean`. At **R = 1**:
+
+```text
+  rep_mean    = grand_mean                    (one rep)
+  window_mean = v                             (each window index occurs ONCE)
+  residual    = v - grand - v + grand = 0     IDENTICALLY, for every point
+  n_eff       = (R-1)*(W-1) + 1 = 1           ZERO degrees of freedom
+```
+
+Verified, not argued: **`n_eff_2way = 1` on all 16 series** (4 cells × 4
+series) in the calibration's own JSON. The residuals are all zero, Pearson of
+two zero-variance series is `0/0`, and the two values that did print are
+floating-point noise on that — which is exactly why the PSD guard voided them.
+**The guard behaved correctly and is the reason this was caught.**
+
+> **THE CONSEQUENCE, stated because it is the one thing a launch step could
+> wrongly claim.** C9-1's measurand is the *mean pairwise **two-way-centered**
+> drain ρ̄*. **A one-rep calibration cannot produce it, so this smoke does NOT
+> clear C9-1, C9-3 or C9-4's estimator** — it clears the topology, the gates,
+> the seeds, the four-path gauge, the abort path and the parser, and nothing
+> about the correlation statistic. The estimator becomes well-defined only at
+> the battery's **3 reps** (`n_eff = 2·(W−1)+1`, ≈ 63 at the re-sized c9). The
+> `rho_ctr` column IS defined at one rep and is reported above for the record,
+> but it is not C9-1's measurand and no clause is scored on it.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it will be scored against.**
+
+### FINDING 1, CORRECTED BY THE RE-SMOKE — **c9 was fixable by length; c9h IS NOT, and its byte count is put back**
+
+The repair above predicted **c9 32/70 and c9h 42/33** complete windows per rep.
+The re-smoke at the new byte counts measured:
+
+| cell/arm | before | after | change | verdict |
+|---|---|---|---|---|
+| c9/pooled | 16 | **45** | ×2 bytes | **CLEARS** the 18 bar and the 30 target |
+| c9h/percap | 11 | **10** | ×3 bytes | **NO CHANGE** — completion fell 32 % → 12 % |
+
+**THE PREDICTION FOR c9h WAS WRONG AND THE MECHANISM IS NOW MEASURED.** At
+c9h the two c3-class legs run `rate_lr` **682 and 836 sym/s** against the
+c2-class legs' **8 860 and 9 167** — a **12:1 split** — with CVs of 115 % and
+88 %: the slow legs are *silent in most windows*. Lengthening the transfer adds
+raw windows in which they are still silent, so the completion **rate falls**
+rather than the complete **count** rising.
+
+**Why they are silent is this session's other finding, and the two join up.**
+The calibration measured the sender bound at ~176 Mbit/s; the two c2 legs alone
+carry 200 Mbit/s; so at c9h the scheduler is never under enough pressure to use
+the c3 legs at all. **c9h's window completeness is bounded by the sender
+ceiling, not by transfer length, and no byte count reaches the bar.**
+
+**c9h therefore goes back to its PRE-REGISTERED 50 MB.** The 3× cost bought
+nothing, and changing a pre-registered quantity for no measured benefit is the
+unjustified edit this discipline exists to prevent. **c9 keeps the ×2** on the
+measured 16 → 45.
+
+**THE SCOREABILITY CONSEQUENCE, stated before the battery rather than after:**
+
+| clause | cell | status going in |
+|---|---|---|
+| C9-1, C9-2, C9-L1, C9-L2 | c9 | **SCOREABLE** — 45 complete windows/rep at the worst arm, `n_eff_2way ≈ 2·44+1 = 89` at 3 reps |
+| C9-4 (c9 half) | c9 | **SCOREABLE** |
+| **C9-3** | c9h | **UNDERPOWERED, and expected to stay so** — ~10 complete windows/rep against the scorer's 18 bar. Reported as underpowered, never rescued by pooling reps or widening the window after the fact |
+| C9-L3 | c9h | **SCOREABLE** — the span reads off `[CCAP]`, not off window correlations |
+| C9-4 (c9h half) | c9h | **UNDERPOWERED**, same reason as C9-3 |
+| **C9-L2** | c9 | scoreable but **FLAGGED AT RISK** by the sender-bound finding, for exactly the reason it pre-registered |
+
+**A c9h that starves its own slow legs is itself a result about the
+heterogeneous quad** — C9-3 predicted a shared-frontier coupling that
+*presupposes the frontier is shared* — but it is a result this battery is not
+powered to score, and it is recorded here as the launch step's finding rather
+than smuggled into the verdict.
+
+**Nothing here flips a default, adds a gate, edits an engine crate, or modifies
+any prediction, band or falsifier.**

@@ -36,6 +36,18 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+# THE ABORT-CAUSE WITNESS, on the quad — goal-gate's c9 contract §6 step 3,
+# which was owed and is paid here. This script was written on a base where the
+# witness did not exist, so a quad failure could only ever be reported as
+# `topo_up` plus a stderr blob; with the `ERR` trap it names the exact FAILING
+# LINE inside `up()`, which is worth strictly more at four legs than at two
+# because there are twice as many identical-looking statements to confuse.
+# `set -E` makes the trap inherit into `up()` (without it the trap is not taken
+# inside a function); it changes nothing else, and the trap body only writes to
+# the witness record.
+set -E
+source ./abort_witness.sh
+trap 'aw_err_trap "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 # The four legs, as parallel arrays. ONE definition, read by both `up` and
 # `down`, so a fifth leg is a single edit and cannot be added to one half of
@@ -140,8 +152,22 @@ up() {
         seeds="${seeds}${seeds:+,}$(leg_seed "$seed" "$i")"
     done
     echo "quad topology up: paths=${scen[*]} seeds=[$seeds] (spec='${seed:-unset}')"
+    # THE TOPO-PING, REPAIRED AND RECORDED, on all four legs. This script
+    # inherited `topo_dual.sh`'s 2-packet no-retry check verbatim — the exact
+    # shape the era battery resolved ALL 38 of its 204 aborts to — and inherited
+    # it into a topology with TWICE THE LEGS, i.e. twice the independent chances
+    # to draw a false abort per invocation. It was never run on the wire in that
+    # form, so no quad ledger carries the defect; this repair lands before the
+    # first one exists.
+    #
+    # `aw_ping` retries to at most `AW_PING_ATTEMPTS = 26` draws and accepts the
+    # FIRST reply. At the worst committed GE cell (c5, pi_bad = 0.1501,
+    # persistence 0.70) that is 2.0e-5 per leg and **8.05e-5 for the whole
+    # four-legged invocation — under 1e-4** — against 1.05e-1 per leg before.
+    # See the sizing arithmetic in `abort_witness.sh`. A leg with no namespace,
+    # no address or no route still aborts, and still aborts fast.
     for ((i = 0; i < NLEGS; i++)); do
-        ip netns exec "$NS_CLI" ping -c 2 -i 0.2 -W 2 "${SRV_ADDRS[$i]}" | tail -1
+        aw_ping "$NS_CLI" "${SRV_ADDRS[$i]}" "path$i"
     done
 }
 

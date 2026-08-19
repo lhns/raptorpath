@@ -68,10 +68,67 @@ mkdir -p "$DDIR"
 # cadence's entire purpose. c9 carries ~2x c7's aggregate capacity (4 x
 # 100 Mbit vs 2 x 100 Mbit) and so takes 2x c7's bytes to hold the same wall
 # time; c9h carries ~2x c8's (2 x 100 + 2 x 20 Mbit vs 100 + 20) and takes 2x
-# c8's. Both land near the ~10 s invocation the c7/c8 captures ran at, i.e.
-# ~40 windows per rep against the four the 2 s window gave.
+# c8's.
+#
+# ── RE-SIZED 2026-08-19 BY THE CALIBRATION SMOKE, AND WHY IT IS NOT TUNING ──
+#
+# THE SIZING ABOVE COUNTED THE WRONG WINDOWS. It divided the transfer wall by
+# the 250 ms cadence and got ~40 RAW windows per rep. But `eppen_quad.py`
+# correlates only COMPLETE windows — those in which ALL FOUR legs reported —
+# because a pairwise rho needs both legs present in the same window
+# (`group_windows`, and `score_cell`'s own UNDERPOWERED bar is
+# `windows_per_rep < 3 * C(N,2)` = 18 at a quad). A leg that goes silent for a
+# window drops that window for EVERY pair. The smoke measured the completion
+# rate directly and it is nowhere near 1:
+#
+#   cell/arm      raw windows   COMPLETE   completion   vs the 18 bar
+#   c9/pooled          72          16         22 %      FAILS
+#   c9/percap          71          35         49 %      passes
+#   c9h/pooled         32          14         44 %      FAILS
+#   c9h/percap         34          11         32 %      FAILS
+#
+# THREE OF FOUR CELL-ARMS FAIL THE SCORER'S OWN POWER BAR at the pre-registered
+# byte counts. Launching 24 invocations at those sizes would have produced the
+# "clean-looking ledger of nothing" the contract's section 6 warns about.
+#
+# The multiplier is taken from the WORST ARM of each cell, since both arms must
+# share one byte count: c9 needs 30/16 = 1.9x -> 2x; c9h needs 30/11 = 2.7x
+# -> 3x.
+#
+# THIS CHANGES THE SAMPLE SIZE TO MEET A PRE-REGISTERED TARGET. It moves no
+# threshold, no band, no prediction and no falsifier; C9-1..4 and C9-L1..L3 are
+# untouched. Sizing an experiment to reach the power its own contract demands
+# is the opposite of tuning it to an answer — and the number it is sized
+# against was measured BEFORE any correlation was read off any ledger.
+#
+# ── AND THE RE-SMOKE FALSIFIED HALF OF THAT PREDICTION. c9h IS NOT FIXABLE ──
+# ── BY LENGTH, SO ITS BYTE COUNT IS PUT BACK. ───────────────────────────────
+#
+# Predicted above: c9 32/70 complete windows/rep, c9h 42/33. MEASURED at the
+# re-sized counts:
+#
+#   c9/pooled   16 -> 45 complete   (x2 bytes)   CLEARS the 18 bar and the 30 target
+#   c9h/percap  11 -> 10 complete   (x3 bytes)   NO CHANGE — completion FELL 32% -> 12%
+#
+# THE MECHANISM, measured on the same capture. At c9h the two c3-class legs run
+# `rate_lr` 682 and 836 sym/s against the c2-class legs' 8 860 and 9 167 — a
+# 12:1 split — with CVs of 115% and 88%, i.e. THE SLOW LEGS ARE SILENT MOST
+# WINDOWS. Lengthening the transfer adds raw windows in which they are still
+# silent, so the COMPLETION RATE FALLS rather than the complete count rising.
+#
+# Why they are silent is the calibration's sender-bound finding (goal-gate
+# section 4, FILLED): the sender tops out near 176 Mbit/s, the two c2 legs alone
+# carry 200 Mbit/s, so the scheduler is never under enough pressure to use the
+# c3 legs at all. c9h's completeness is bounded by THAT, not by transfer length,
+# and no byte count reaches the bar.
+#
+# So c9h goes back to its PRE-REGISTERED 50 MB: the 3x cost bought nothing, and
+# changing a pre-registered quantity for no measured benefit is exactly the
+# unjustified edit this file's own header exists to prevent. c9h's correlation
+# clause (C9-3) is reported UNDERPOWERED rather than silently rescued; its
+# cap-shape clause (C9-L3) reads off `[CCAP]` and is unaffected by window count.
 case "$CELL" in
-  c9)   CA=c2; CB=c2; BYTES=400000000; RUNS=1 ;;
+  c9)   CA=c2; CB=c2; BYTES=800000000; RUNS=1 ;;
   c9h)  CA=c2; CB=c3; BYTES=50000000;  RUNS=3 ;;
   *) echo "unknown cell $CELL (want c9|c9h)" >&2; exit 2 ;;
 esac
@@ -113,6 +170,49 @@ env SEED=$SEED_ARG RWM_GEN=0 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=250000 $ARM_ENV
   bash perf_rwm_c.sh "$CA" "$CB" bulk "$BYTES" "$RUNS" quad 2>&1 \
   | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
 echo "RUNTIME $CELL/$ARM rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
+
+# ── THE ABORT-WITNESS COLUMNS (goal-gate c9 contract §6, step 4) ──────────
+# THE SCORING RULE THIS EXISTS TO SATISFY, verbatim from the contract: "A c9
+# battery run without usable witness columns is scoreable only if its abort
+# count is ZERO; any non-zero abort count without `abort_cause` makes C9-2 and
+# C9-4 — the two arm-comparison clauses — UNSCOREABLE." Those two clauses are
+# the arm comparisons, and an arm-correlated abort class (20 % control vs 75 %
+# RACK at c8/seed 7) makes abort-exclusion a SELECTION ON THE TREATMENT. So the
+# columns are not optional decoration on a 24-invocation two-arm battery; they
+# are what makes half of it readable.
+#
+# Read through `abort_witness.py` rather than a re-implemented grep block, so
+# this battery's `abort_cause` has the SAME definition as the era battery's.
+aw_col() { # key
+  python3 -c "
+import sys; sys.path.insert(0, '.')
+from abort_witness import read_witness
+w = read_witness('/tmp/rwm-abort.txt')
+print('' if w is None else (w.get('$1') if w.get('$1') is not None else ''))" 2>/dev/null
+}
+gates_c=$(grep -c '\[GATES\]' /tmp/rwm-c.log 2>/dev/null || true)
+gates_s=$(grep -c '\[GATES\]' /tmp/rwm-s.log 2>/dev/null || true)
+cause=$(python3 -c "
+import sys; sys.path.insert(0, '.')
+from abort_witness import cause_or
+print(cause_or('/tmp/rwm-abort.txt'))" 2>/dev/null)
+drain=$(aw_col drain_pids_t0)
+# `abort_missing` is NOT the same as `abort_cause=None`: the first means the
+# witness never ran, the second means it ran and named no failing step. Only
+# the first is an instrument failure.
+if [ -f /tmp/rwm-abort.txt ]; then amiss=FALSE; else amiss=TRUE; fi
+echo "WITNESS $CELL/$ARM rep=$REP abort_cause=${cause:-no_record} abort_missing=$amiss drain_pids_t0=${drain:-NA} gates_cli=${gates_c:-0} gates_srv=${gates_s:-0}" >> "$OUT"
+# THE TOPO-PING COLUMN, new with the ping repair. `attempts=1` on every leg is
+# the healthy reading; anything above 1 is a Gilbert-Elliott loss draw that
+# WOULD HAVE BEEN AN ABORT under the pre-repair 2-packet no-retry check, and
+# counting them is how this battery measures what the repair bought.
+grep -E '^ping_.*_attempts=' /tmp/rwm-abort.txt 2>/dev/null \
+  | sed "s/^/PING-RETRY $CELL\/$ARM rep=$REP /" >> "$OUT" || true
+if [ "$(( ${gates_c:-0} + ${gates_s:-0} ))" -eq 0 ]; then
+  echo "ABORT $CELL/$ARM rep=$REP (no [GATES] on either endpoint) abort_cause=${cause:-no_record}" >> "$OUT"
+  [ "${cause:-no_record}" = "no_record" ] \
+    && echo "INSTRUMENT-FAIL-WITNESS $CELL/$ARM rep=$REP (an abort with no witness record)" >> "$OUT"
+fi
 
 # ── LIVENESS, two-sided, on EVERY knob this arm rests on (discipline 15c) ──
 # The gauge gate, the WINDOW, and the arm knob are each asserted from the
@@ -161,4 +261,9 @@ cp /tmp/rwm-c.log "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-c.log" 2>/dev/
 cp /tmp/rwm-s.log "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-s.log" 2>/dev/null || true
 cp /tmp/rwm-q.txt "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-q.txt" 2>/dev/null \
   || echo "QCAP-MISSING $CELL/$ARM rep=$REP" >> "$OUT"
+# The witness record, per rep, exactly the way the qdisc capture is collected —
+# so the launch step gathers it with the rest of the ledger and no protocol
+# changes (goal-gate c9 contract §6 step 4).
+cp /tmp/rwm-abort.txt "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-abort.txt" 2>/dev/null \
+  || echo "AWCAP-MISSING $CELL/$ARM rep=$REP" >> "$OUT"
 echo "RUN-DONE $CELL/$ARM rep=$REP"
