@@ -35706,6 +35706,104 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 
 ---
 
+## The Missing Half at the Fast Single Path — THE CONTRACT'S COMPLETION (2026-08-19, `feat/gap-run` from main@`01c2d38`) — the owed calibration, plus TWO findings the calibration was not looking for
+
+**This section fills the table the pre-registration above left empty on purpose, and it is committed BEFORE the scored battery launches.** The pre-registration is not edited: it is the contract, and nothing in it moves now that the VM has been touched. Everything below is either `n = 1` (and therefore **not a result**), or a datum recovered from disk, or a statement about the *arithmetic* of a clause rather than about a measurement.
+
+### STEP 0 — THE FREE DATUM SURVIVED, AND IT PAID MORE THAN THE CONTRACT ASKED FOR
+
+`/home/vibe/ackflip/` is intact. `battery-s42.log` and `battery-s7.log` — the flip week's own ledgers, 2026-08-08 — are recovered whole and committed at `docs/l1-raw/ackflip-battery-s42.log`, `-s7.log` and `-env.log`. **No run was needed.**
+
+**THE PROVENANCE IS AIRTIGHT, AND IT CHECKS ITSELF.** Re-deriving the goodput means from the recovered `CPU:`/summary blocks reproduces all four published numbers to three significant figures:
+
+| arm | recovered mean | published | `ms_per_MB` | `cores` (cli) | `cpu_headroom` (cli, `NPROC` 6) |
+|---|---|---|---|---|---|
+| `c1-prior` s42 | **203.07** | 203.1 | **40.88** | 1.039 | **82.7 %** |
+| `c1-am` s42 | **228.94** | 228.9 | **37.33** | 1.068 | **82.2 %** |
+| `c1-prior` s7 | **201.82** | 201.8 | **41.80** | 1.054 | **82.4 %** |
+| `c1-am` s7 | **228.10** | 228.1 | **38.05** | 1.085 | **81.9 %** |
+
+`n = 8` per cell, the flip battery's own reps. `ms_per_MB = CPUCLI·1000/(bytes/1e6)`; `cores = CPUCLI/(transfer wall)`. `CPUCLI` is a whole-invocation counter and the wall is the transfer only, so **both columns are UPPER bounds** on the transfer-window cost — which is what makes the headroom reading below conservative rather than optimistic.
+
+**AND THE ANSWER THE CONTRACT WANTED FROM `G6` WAS ALREADY ON THAT DISK.** `c1` at flip week ran at **~1.04 of 6 cores on the sender, 82 % CPU headroom**, at ~21 % link utilisation. **`c1` was not sender-CPU-bound on the week the `+12.7/+13.0 %` was published** — not by a small margin, and the number needed no VM run at all.
+
+**A SECOND RECOVERED DATUM, NOT ASKED FOR AND WORTH MORE THAN THE FIRST.** Ack-merge did not only raise goodput; it **cut sender CPU per MB**: 40.88 → 37.33 `ms/MB` at s42 (**−8.7 %**) and 41.80 → 38.05 at s7 (**−9.0 %**), against goodput of +12.7 % and +13.0 %. That is the same direction and the same order as the `[CTLD]` density it moved (1.96 → ≈ 1.0), and it means the flip's published gain has a **measured CPU-side mechanism** that no ledger had ever printed. Recorded here as a recovered observation, not as a verdict.
+
+### `G-SHA` — PASS, WITHOUT A REBUILD
+
+```text
+   sha256  fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d
+           /home/vibe/era-old/target/release/raptorpath        ← MATCHES the pre-registered value
+```
+
+The drift control is available and the design is not void. Today's `main`@`01c2d38` was also built and recorded — **`sha256 330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984`** — although **phase 1 does not use it**; it is recorded now so a later phase-2 dispatch can prove it is running the binary this session's tree produced.
+
+### THE SPECIFICATION FAILURE: `G6` — AND MEASUREMENT TRUTH ITEM 2's `A7` — ARE UNFALSIFIABLE AS WRITTEN
+
+**This is the same class of defect as the c9 battery's `[CCAP] span=`, and it is recorded the same way: as a failure of the clause, before the clause is scored.** The difference is that c9's gauge did not exist, while this one exists and is degenerate.
+
+`G6` reads: `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %` ⇒ **sender-bound**, with `pred = cores / ms_per_MB × 8000`. Substituting the driver's own definitions of the two inputs:
+
+```text
+   cores      =  CPUCLI / secs
+   ms_per_MB  =  CPUCLI * 1000 / (bytes/1e6)
+
+   pred  =  cores / ms_per_MB * 8000
+         =  (CPUCLI/secs) * (bytes/1e6) / (CPUCLI*1000) * 8000
+         =  8 * (bytes/1e6) / secs
+```
+
+**`CPUCLI` CANCELS.** `pred` contains no CPU term at all: it is `8·MB/secs`, the transfer's own goodput. And `meas` is `mean_mbps`, which the engine emits as `bytes·8/mean_s/1e6` — the same quantity, because the battery calls `perf_rwm_c.sh` with `RUNS = 1`, so `mean_s` **is** `secs`. **`pred ≡ meas` identically, on every row, for every binary, at every cell.** `G6`'s test therefore evaluates `0 ≤ 5 %` and returns **SENDER-BOUND unconditionally**. It cannot fail. It is not a prediction.
+
+**IT IS DEMONSTRATED, NOT ARGUED — TWICE.** On the 32 recovered flip-week `c1` invocations, `pred` equals the measured goodput to two decimals on all 32. And in **this contract's own calibration ledger below**, `pred_mbit` reads 170.3 / 188.3 / 178.4 against `mbit` 170.332 / 188.319 / 178.409 — agreement to 0.02 %, while the sender was using 1.04–1.14 of 6 cores. **The clause says "sender-bound" at 82 % CPU idle.**
+
+**`A7` INHERITS IT.** MEASUREMENT TRUTH item 2's `A7` is the same reading rule over `cpuprof_battery.sh`'s `CEIL` row, which computes `pred_mbit` by the identical expression and `meas_mbit` as `mb*8/s` from the *same* `secs` — so there the identity is even more direct. The pre-registration's promise that `G6` and `A7` **"must agree"** is satisfied trivially and carries no information: both always say sender-bound. **Running item 2 would not rescue `G6`, and `G6` will not corroborate `A7`.**
+
+**THEREFORE, PER THE CONTRACT'S OWN RULE** (*"where the calibration CONTRADICTS a permission, the affected clause is VOID for that cell and is reported as void, never re-scoped after the fact"*): **`G6` IS VOID AS WRITTEN, and is reported void rather than scored.** The pre-registered text is left standing unedited above, because a contract that is rewritten after contact with the instrument is not a contract.
+
+**WHAT IS REPORTED IN ITS PLACE, AND WHY IT IS NOT A RE-SCOPE.** The *question* `G6` names — is `c1` sender-bound? — is answerable from columns the battery already records, by the comparison the pre-registration itself pairs with it in `G-HEAD`: **`cpu_headroom = 1 − cores/NPROC`, quoted beside `link_headroom`, neither without the other.** That substitution is announced here, before the scored run, and it changes no band and no arm. **The answer is already unambiguous at both eras and needs no phase-2 ladder: 81–83 % CPU headroom on flip week and today alike. `c1` is neither link-bound (~19–21 % utilisation) nor sender-CPU-bound.**
+
+### THE CALIBRATION — `n = 1` PER ARM, seed 42, ONE session, the OLD binary. **NOTHING IN THIS TABLE IS A RESULT.**
+
+| arm | Mbit/s (n=1) | `[CTLD]` lines | `ack-merge ACTIVE` c/s | `[GATES]` c/s | ms/MB | cores | link headroom | **cpu headroom** |
+|---|---|---|---|---|---|---|---|---|
+| `Op` | 170.33 | 18 | **0/0** ✓ | **0/0** ✓ | 48.95 | 1.042 | **81.3 %** | **82.6 %** |
+| `Oa` | 188.32 | 16 | **1/1** ✓ | **0/0** ✓ | 47.08 | 1.108 | **79.4 %** | **81.5 %** |
+| `Oe` | 178.41 | 17 | **0/0** ✓ | **0/0** ✓ | 50.92 | 1.136 | **80.5 %** | **81.1 %** |
+
+`link_headroom = 1 − tc_bytes·8/(TRANSFER wall × 1 Gbit)`, denominator the transfer wall and never `INVOCATION_S`, from the `-q.txt` `CLI0` captures (438 279 361 / 437 876 634 / 438 244 335 bytes). `cpu_headroom = 1 − cores/6`.
+
+**THE SMOKE PASSED ON EVERY LINE, AND IT WAS SMOKING SOMETHING REAL.** Nobody had launched this binary with `RWM_ACK_MERGE=1` since 2026-08-08.
+
+* **The gate still arms.** `ack-merge ACTIVE` **two-sided on `Oa`** and absent on `Op`/`Oe` — the only mechanical arm assertion available on a binary with no `[GATES]` echo, and it took.
+* **The mechanism still runs.** `[CTLD]` present on the receiver on **all three** arms.
+* **`G-ERA` clean.** `[GATES]` absent two-sided on every arm: the OLD binary is what ran, proved mechanically rather than by path or sha.
+* **The era-absent gauges are absent.** `ACKDIAG WALL SUMCAP DCAP RACK LCW CCAP SF` all `0/0` — so `Oe − Op` isolates the harness-side `RWM_LATPROBE` cost alone, exactly as the arm's design requires, and `Oe`'s env is confirmed inert on its two engine-side terms.
+* **Zero aborts, zero instrument failures, zero liveness failures, zero contamination, zero era surprises** across 3 invocations. The 2026-08-19 topo-ping repair holds here.
+* **`INSTRUMENT AND ABORT TABLE: (none)`.**
+
+**AND THE `n = 1` POINTS, STATED AS POINTS AND NOTHING MORE.** `Op` reads 170.33 against flip week's 203.1 and the era week's 175.25 — near the era week, far from the flip week. `Oa/Op` reads +10.56 % against a published +12.7 %. `Oe − Op` reads **+4.7 %**, i.e. the era session's env ran *faster*, so `G4`'s ≤ 5 % band is met at n=1 and the instrument-load hypothesis has no positive support yet. **One rep per arm cannot select a branch and does not.** They are recorded because a calibration that hid its numbers would be a smoke test pretending to be nothing.
+
+**ONE OBSERVATION FROM THE CPU COLUMN THAT THE LEVEL READING ALONE WOULD MISS.** `Op` today spends **48.95 ms/MB** where the same executable spent **40.88** on flip week — **+20 %** — at **the same `cores` (1.042 vs 1.039)**. Same binary, same cell, same core count, more CPU-milliseconds per megabyte. If that reproduces at `n = 12`, the drift is a **CPU-efficiency** shift in the substrate rather than a CPU-availability or link one, and `ms_per_MB` is the column that says so. **At `n = 1` this is a pointer for the scored run to confirm or kill, not a finding.**
+
+### WHAT PHASE 1 WILL AND WILL NOT SETTLE
+
+* `G1`–`G5` are intact and are scored as written.
+* **`G6` is void as written** and is replaced in reporting by the `cpu_headroom`/`link_headroom` pair the contract already requires. **The item-3 ledger alone does answer the sender-bound question** — it simply cannot answer it through `G6`. Item 2 is not required for it, and would not have supplied it.
+* `G7` remains a phase-2 clause and is untouched. **Phase 2 is NOT launched by this dispatch**, per the pre-registration: the branch selects it, and a dispatch that ran both would make the branch a formality.
+
+### THE SESSION'S CONDITIONS, RECORDED BECAUSE `G-STEAL` ASKS FOR THEM
+
+Kernel-reported load average read 4.9–5.1 with CPUs 80–86 % idle: the box's load figure is inflated by **D-state** tasks (a long-running `systemd-journald` and, during tree sync, a `btrfs` `wait_current_trans` stall that blocked `cargo` for ~7 minutes before clearing on its own). **Load average on this VM is not a CPU-occupancy reading and must not be quoted as one.** A desktop session (`sddm-greeter`, `kwin_wayland`) is co-tenant, as it was for both prior ledgers. `/proc/stat` steal, load and the co-tenant count are captured in every session header by the driver.
+
+### WHAT IS NOT CLAIMED HERE
+
+* **No branch is selected.** The 2×2 is scored from the `n = 12` run, not from this table.
+* **No claim that `Op = 170.33` is the level.** It is one invocation.
+* **No engine crate is edited, no default flips, no gate is added.** The only repository changes in this commit are this section and three recovered raw ledgers under `docs/l1-raw/`.
+
+---
+
 ## THE SPAN RUN â€” PRE-REGISTRATION (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM HALF, plus item 5's FIRST FIELD Ïƒ.** Written and committed BEFORE the VM is run, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### WHAT THIS RUN IS, IN ONE PARAGRAPH
