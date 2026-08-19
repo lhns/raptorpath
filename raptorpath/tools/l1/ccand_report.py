@@ -230,9 +230,23 @@ def pooled_2s(a, b):
 argv = [a for a in sys.argv[1:] if not a.startswith("--")]
 CALIB = "--calib" in sys.argv[1:]
 rows = []
+def pool_of(base):
+    """Pool provenance from the FILENAME's OWN TAG, not from a substring test.
+
+    B-WALL's clause is scored across "the main pool and EVERY top-up pool", so a
+    second top-up must be a THIRD pool and not merge into the first. A
+    `"topup" in base` test would collapse `ccand-topup` and `ccand-topup2` into
+    one pool and quietly destroy exactly the cross-pool granularity the clause
+    asks for."""
+    stem = base.rsplit("-s", 1)[0]
+    if stem == "ccand":
+        return "main"
+    return stem[6:] if stem.startswith("ccand-") else stem
+
+
 for path in argv:
     base = path.replace("\\", "/").split("/")[-1]
-    pool = "topup" if "topup" in base else ("calib" if "calib" in base else "main")
+    pool = pool_of(base)
     with open(path, errors="replace") as f:
         for ln in f:
             i = ln.find('{"cell"')
@@ -686,9 +700,18 @@ print("  that prior could not be.")
 # ── 10. B-WALL — THE PAIRED c8 CONTRAST ──────────────────────────────────
 print("\n### B-WALL — sign(dur_ms(D) − dur_ms(A)) PAIRED WITHIN REP INDEX at c8.")
 print("### A sign test over paired reps, NEVER a difference of medians.\n")
+#: THE CONTRACT'S OWN GROUPING, and the reporter must not invent a stricter one.
+#: The clause reads: "fewer than 8 paired reps carrying a non-zero difference AT
+#: EITHER SEED, or a sign that disagrees between seeds OR BETWEEN POOLS". So the
+#: POWER test is per SEED (pooling that seed's pools) and the CONSISTENCY test is
+#: per pool. Evaluating power per (pool, seed) would impose an 8-per-pool bar the
+#: contract never wrote, and would close a clause the pre-registration resolves.
 print(f"{'pool':<7} {'seed':>5} {'paired':>7} {'nonzero':>8} {'D<A':>5} {'D>A':>5}   verdict")
 WALL_SIGNS = {}
-for pool in ("main", "topup"):
+# Every pool actually present, in a stable order — a second top-up is a THIRD
+# pool and B-WALL's stability clause is scored across all of them.
+POOLS = sorted({r["_pool"] for r in rows}, key=lambda p: (p != "main", p))
+for pool in POOLS:
     for s in (42, 7):
         Aw = {r["rep"]: r.get("wall_dur_ms") for r in LIVE[("c8", "A")]
               if r["seed"] == s and r["_pool"] == pool and r.get("wall_lines")}
@@ -701,9 +724,25 @@ for pool in ("main", "topup"):
             continue
         neg, pos = sum(1 for d in nz if d < 0), sum(1 for d in nz if d > 0)
         WALL_SIGNS[(pool, s)] = (neg, pos)
-        ok = len(nz) >= PAIRED_MIN
         print(f"{pool:<7} {s:>5} {len(pairs):>7} {len(nz):>8} {neg:>5} {pos:>5}   "
-              + ("resolvable" if ok else f"NEEDS-MORE (<{PAIRED_MIN} non-zero pairs)"))
+              + ("D<A" if neg > pos else ("D>A" if pos > neg else "tie")))
+
+# THE POWER TEST, per SEED across that seed's pools — the contract's wording.
+print(f"\n{'':<7} {'seed':>5} {'paired':>7} {'nonzero':>8} {'D<A':>5} {'D>A':>5}   "
+      f"power (needs >= {PAIRED_MIN} non-zero)")
+SEED_OK = True
+for s in (42, 7):
+    n_pair = n_nz = n_neg = n_pos = 0
+    for (pool, ss), (neg, pos) in WALL_SIGNS.items():
+        if ss != s:
+            continue
+        n_neg += neg
+        n_pos += pos
+    n_nz = n_neg + n_pos
+    if n_nz < PAIRED_MIN:
+        SEED_OK = False
+    print(f"{'SEED':<7} {s:>5} {'-':>7} {n_nz:>8} {n_neg:>5} {n_pos:>5}   "
+          + ("sufficient" if n_nz >= PAIRED_MIN else f"NEEDS-MORE (<{PAIRED_MIN})"))
 consistent = None
 if WALL_SIGNS:
     dirs = {("neg" if n > p else ("pos" if p > n else "tie"))
@@ -717,6 +756,13 @@ print("  measurand. NO DEAD-WALL CLAIM OF ANY KIND is made from an unpaired")
 print("  contrast in this battery, at any n.")
 print(f"  Cross-pool / cross-seed sign consistency: "
       f"{'CONSISTENT' if consistent else 'NOT CONSISTENT — NEEDS-MORE'}")
+print(f"  Per-seed power (>= {PAIRED_MIN} non-zero pairs at EITHER seed): "
+      f"{'SUFFICIENT' if SEED_OK else 'INSUFFICIENT'}")
+print("  B-WALL VERDICT: " + ("RESOLVED — " + ("dur_ms(D) < dur_ms(A)"
+      if consistent else "sign inconsistent")
+      if (SEED_OK and consistent) else
+      "NEEDS-MORE, and the instrument it names is a c8 statistic that is not "
+      "bistable — NOT a fourth measurand"))
 print("  c8L's [WALL] is REPORTED, direction only, scored on nothing: it did not")
 print("  order at all in the ladder (438 → 913 → 395 → 557).")
 

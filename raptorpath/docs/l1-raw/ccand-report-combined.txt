@@ -1,0 +1,496 @@
+================================================================================================
+CANDIDATES BATTERY — SCORING PASS
+contract: goal-gate "Candidates Battery — PRE-REGISTRATION" (6bd5299), era main@0055c5d
+scored arms: A = shipped default (RWM_SUM_CAP IS DEFAULT ON — A is the LADDER'S ARM N)
+             D = RWM_DELTA_CAP | R = RACK mult=17 | DR = D+R
+aux arms:    R1 = RACK mult=1 | L = RWM_LOSS_SENT_TRUTH — SCORED ON THEIR OWN ECHO ALONE,
+             excluded from G-REG and from every contrast, by the contract, before the run
+================================================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+### ARMCOUNT in the driver is NOT this table's n — it counts aborts too.
+
+cell-arm     rows  ABORT   live   DNF  noDCAP  noRACK   noFA  noWALL   noPL  noCPU  noPING
+c1-A           16      0     16     0       0       0      0       0      0      0       0
+c1-D           16      0     16     0       0       0      0       0      0      0       0
+c1-R           16      0     16     0       0       0      0       0      0      0       0
+c1-DR          16      0     16     0       0       0      0       0      0      0       0
+c7-A           24      5     19     0       0       0      0       0      0      0       0
+c7-D           24      7     17     0       0       0      0       0      0      0       0
+c7-R           24      5     19     0       0       0      0       0      0      0       0
+c7-DR          24      5     19     0       0       0      0       0      0      0       0
+c7-L            4      2      2     0       0       0      0       0      0      0       0
+c8-A           48     11     37     0       0       0      0       0      0      0       0
+c8-D           48     14     34     0       0       0      0       0      0      0       0
+c8-R           48     22     26     0       0       0      0       0      0      0       0
+c8-DR          48     14     34     0       0       0      0       0      0      0       0
+c8-R1           4      1      3     0       0       0      0       0      0      0       0
+c8-L            4      1      3     0       0       0      0       0      0      0       0
+c8L-A          32      7     25     0       0       0      0       0      0      0       0
+c8L-D          32      7     25     0       0       0      0       0      0      0       0
+c8L-R          32      8     24     0       0       0      0       0      0      0       0
+c8L-DR         32      8     24     0       0       0      0       0      0      0       0
+sc2-A          24      5     19     0       0       0      0       0      0      0       0
+sc2-D          24      8     16     0       0       0      0       0      0      0       0
+sc2-R          24      7     17     0       0       0      0       0      0      0       0
+sc2-DR         24      7     17     0       0       0      0       0      0      0       0
+sc2-R1          4      0      4     0       0       0      0       0      0      0       0
+sc2-L           4      0      4     0       0       0      0       0      0      0       0
+
+  Per-seed live n (the G-TOPUP floor is n = 8 at EITHER seed, SCORED arms only):
+
+cell-arm      s42     s7   top-up needed?
+c1-A            8      8   no
+c1-D            8      8   no
+c1-R            8      8   no
+c1-DR           8      8   no
+c7-A            8     11   no
+c7-D            8      9   no
+c7-R            8     11   no
+c7-DR           8     11   no
+c8-A           12     25   no
+c8-D           12     22   no
+c8-R           12     14   no
+c8-DR          12     22   no
+c8L-A          12     13   no
+c8L-D          12     13   no
+c8L-R          12     12   no
+c8L-DR         12     12   no
+sc2-A           8     11   no
+sc2-D           8      8   no
+sc2-R           8      9   no
+sc2-DR          8      9   no
+  R1 and L are NOT topped up: they have no contrast to make cross-pool.
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS (discipline 15c)
+### An arm that cannot show its control was a control has measured one condition twice.
+
+cell-arm    delta_cap  rack_cloc  loss_sent    sum_cap  quantile_  derived_s  composed_  three_ter  store_cap  late_brak  charge_re  release_1     mult   instr   DCAP   RACK    LCW  SUMCAP
+c1-A         16/16(0)   16/16(0)   16/16(0)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0) 16/16(1)   16/16  16/16  16/16  16/16   16/16
+c1-D         16/16(1)   16/16(0)   16/16(0)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0) 16/16(1)   16/16  16/16  16/16  16/16   16/16
+c1-R         16/16(0)   16/16(1)   16/16(0)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0) 16/16(17)   16/16  16/16  16/16  16/16   16/16
+c1-DR        16/16(1)   16/16(1)   16/16(0)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0) 16/16(17)   16/16  16/16  16/16  16/16   16/16
+c7-A         19/19(0)   19/19(0)   19/19(0)   19/19(1)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0) 19/19(1)   19/19  19/19  19/19  19/19   19/19
+c7-D         17/17(1)   17/17(0)   17/17(0)   17/17(1)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0) 17/17(1)   17/17  17/17  17/17  17/17   17/17
+c7-R         19/19(0)   19/19(1)   19/19(0)   19/19(1)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0) 19/19(17)   19/19  19/19  19/19  19/19   19/19
+c7-DR        19/19(1)   19/19(1)   19/19(0)   19/19(1)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0) 19/19(17)   19/19  19/19  19/19  19/19   19/19
+c7-L           2/2(0)     2/2(0)     2/2(1)     2/2(1)     2/2(0)     2/2(0)     2/2(0)     2/2(0)     2/2(0)     2/2(0)     2/2(0)     2/2(0)   2/2(1)     2/2    2/2    2/2    2/2     2/2
+c8-A         37/37(0)   37/37(0)   37/37(0)   37/37(1)   37/37(0)   37/37(0)   37/37(0)   37/37(0)   37/37(0)   37/37(0)   37/37(0)   37/37(0) 37/37(1)   37/37  37/37  37/37  37/37   37/37
+c8-D         34/34(1)   34/34(0)   34/34(0)   34/34(1)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0) 34/34(1)   34/34  34/34  34/34  34/34   34/34
+c8-R         26/26(0)   26/26(1)   26/26(0)   26/26(1)   26/26(0)   26/26(0)   26/26(0)   26/26(0)   26/26(0)   26/26(0)   26/26(0)   26/26(0) 26/26(17)   26/26  26/26  26/26  26/26   26/26
+c8-DR        34/34(1)   34/34(1)   34/34(0)   34/34(1)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0)   34/34(0) 34/34(17)   34/34  34/34  34/34  34/34   34/34
+c8-R1          3/3(0)     3/3(1)     3/3(0)     3/3(1)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)   3/3(1)     3/3    3/3    3/3    3/3     3/3
+c8-L           3/3(0)     3/3(0)     3/3(1)     3/3(1)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)     3/3(0)   3/3(1)     3/3    3/3    3/3    3/3     3/3
+c8L-A        25/25(0)   25/25(0)   25/25(0)   25/25(1)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0) 25/25(1)   25/25  25/25  25/25  25/25   25/25
+c8L-D        25/25(1)   25/25(0)   25/25(0)   25/25(1)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0)   25/25(0) 25/25(1)   25/25  25/25  25/25  25/25   25/25
+c8L-R        24/24(0)   24/24(1)   24/24(0)   24/24(1)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0) 24/24(17)   24/24  24/24  24/24  24/24   24/24
+c8L-DR       24/24(1)   24/24(1)   24/24(0)   24/24(1)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0)   24/24(0) 24/24(17)   24/24  24/24  24/24  24/24   24/24
+sc2-A        19/19(0)   19/19(0)   19/19(0)   19/19(1)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0)   19/19(0) 19/19(1)   19/19  19/19  19/19  19/19   19/19
+sc2-D        16/16(1)   16/16(0)   16/16(0)   16/16(1)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0)   16/16(0) 16/16(1)   16/16  16/16  16/16  16/16   16/16
+sc2-R        17/17(0)   17/17(1)   17/17(0)   17/17(1)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0) 17/17(17)   17/17  17/17  17/17  17/17   17/17
+sc2-DR       17/17(1)   17/17(1)   17/17(0)   17/17(1)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0)   17/17(0) 17/17(17)   17/17  17/17  17/17  17/17   17/17
+sc2-R1         4/4(0)     4/4(1)     4/4(0)     4/4(1)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)   4/4(1)     4/4    4/4    4/4    4/4     4/4
+sc2-L          4/4(0)     4/4(0)     4/4(1)     4/4(1)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)     4/4(0)   4/4(1)     4/4    4/4    4/4    4/4     4/4
+
+  `DCAP` counts reps whose [DCAP] PRESENCE matches the arm (emitted only
+  on D/DR, fed the counterfactual on both). `RACK` counts reps carrying a
+  CLIENT-side [RACK] line — it rides EVERY arm, and on A/D/L it is
+  §16.68.1's fa= meter and nothing else. `LCW` counts reps whose [LCW]
+  presence matches THE SPECIFICATION FINDING: only arm L can record it,
+  and absence elsewhere is CORRECT, not a null result. `SUMCAP` counts
+  reps carrying the gauge at all — its rule INVERTS from the Ladder
+  Battery because RWM_SUM_CAP became the DEFAULT on 2026-08-19.
+
+### NEW-GAUGE ECHO AUDIT (the smoke) — and MEASUREMENT DISCIPLINE 1
+### The dial must ROUTE, not merely be read. The harness runs the `bulk`
+### hint, so b(Bulk) = 2 and q = (b+1)/30 = 0.100000 EXACTLY.
+
+cell-arm             DCAP q/b       eng   chg_f     pin       cap       ask  RACKevals    ceil  legpin         fa  LCW rect
+c1-A                        —         —       -       -         -         -          0  0.0000  0.0000     80/806         -
+c1-D          0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0          0  0.0000  0.0000     92/816         -
+c1-R                        —         —       -       -         -         -     224682  0.6403  0.9242   421/1313         -
+c1-DR         0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0     221977  0.6195  0.9185   431/1410         -
+c7-A                        —         —       -       -         -         -          0  0.0000  0.0000  1189/5015         -
+c7-D          0.100000/2.0000 1724/1724  1.0000  0.0000    1801.9    1801.3          0  0.0000  0.0000  1124/4946         -
+c7-R                        —         —       -       -         -         -     169445  0.0187  0.9592  1096/5018         -
+c7-DR         0.100000/2.0000 1728/1728  1.0000  0.0000    1803.8    1803.4     169650  0.0275  0.9561   998/4969         -
+c7-L                        —         —       -       -         -         -          0  0.0000  0.0000  2786/6286    1.0327
+c8-A                        —         —       -       -         -         -          0  0.0000  0.0000   436/1139         -
+c8-D          0.100000/2.0000   381/381  1.0000  0.0000    1074.6    1074.1          0  0.0000  0.0000    269/848         -
+c8-R                        —         —       -       -         -         -      21685  0.1010  0.9660   498/1104         -
+c8-DR         0.100000/2.0000   380/380  1.0000  0.0000    1026.7    1025.9      22251  0.0477  0.9808    199/807         -
+c8-R1                       —         —       -       -         -         -      21923  0.0000  0.9832   729/1299         -
+c8-L                        —         —       -       -         -         -          0  0.0000  0.0000   707/1240    1.0648
+c8L-A                       —         —       -       -         -         -          0  0.0000  0.0000  1971/9917         -
+c8L-D         0.100000/2.0000 2764/2764  0.7688  0.2312    2078.7    3135.9          0  0.0000  0.0000  1252/8130         -
+c8L-R                       —         —       -       -         -         -     174584  0.0141  0.9968 1788/10037         -
+c8L-DR        0.100000/2.0000 2900/2900  0.7497  0.2503    2152.6    3075.9     177166  0.0192  0.9967  1263/7177         -
+sc2-A                       —         —       -       -         -         -          0  0.0000  0.0000  2415/3264         -
+sc2-D         0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0          0  0.0000  0.0000  2371/3161         -
+sc2-R                       —         —       -       -         -         -      85573  0.0053  0.9948  2351/3156         -
+sc2-DR        0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0      85389  0.0045  0.9965  2467/3297         -
+sc2-R1                      —         —       -       -         -         -      86924  0.0000  0.9957  2813/3592         -
+sc2-L                       —         —       -       -         -         -          0  0.0000  0.0000  2423/3031    1.0374
+
+  READ THE THREE INSTRUMENT FACTS BEFORE THIS TABLE, or it will be misread:
+  * `[DCAP] eng=0/0` at c1/sc2 is CORRECT — the pooled seat short-circuits
+    at n_live < 2, so D is BIT-IDENTICAL to A at every single-path cell.
+  * On arm A `RACKevals = 0` BY CONSTRUCTION, so its `ceil` and `legpin`
+    are DENOMINATORS OF ZERO. §16.68's ceil=0.0000 DEFECT FINDING may be
+    read ONLY where RACKevals > 0 — i.e. on R / DR / R1, never on A. The
+    only field carrying a datum on A is `fa`.
+  * `[LCW]` is blank on every arm but L, and that is THE SPECIFICATION
+    FINDING, not a null: the witness sits behind loss_sent_truth_active().
+
+  D-ROUTE: PASS — [DCAP] echoes q=0.100000 b=2.0000 at every engaged dual (6 groups).
+
+### HEADROOM (discipline 16b) — tc, arm A, THIS session, EVERY cell
+
+  DENOMINATOR = THE TRANSFER WALL (`seconds`), NOT `INVOCATION_S`.
+  `INVOCATION_S` is the whole script's wall — namespace bring-up, netem/tbf
+  setup, the verification pings and teardown — and it runs 1.12x the
+  transfer at c1/c8L up to 2.11x at c8. Dividing shaped-device BYTES by it
+  read c7 at 77.6% when the cell is at 96.9%, which would have LICENSED the
+  unsatisfiable c7 throughput target discipline 16 exists to forbid. It is
+  printed beside the corrected figure so the correction is auditable.
+
+cell       shaped  xfer_s  INVOC_S  util s42   util s7  headroom   claims permitted
+c1        1000 Mb   14.34     16.0      24.6      24.2      75.4   throughput targets permitted
+c7         200 Mb    9.20     12.0      96.6      97.0       3.0   PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)
+c8         120 Mb    2.29      5.0      80.8      83.9      16.1   throughput targets permitted
+c8L        120 Mb   19.22     22.0      78.5      83.8      16.2   throughput targets permitted
+sc2        100 Mb    9.07     12.0      98.4      98.6       1.4   PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)
+
+  THE CONTRACT WRITES NO THROUGHPUT TARGET AT ANY CELL. Every scored clause
+  is a dial echo, a bind fraction, a cap magnitude, a false-alarm fraction,
+  a queue-latency sign, a paired sign test or a no-regression guard.
+  Goodput appears in exactly three places — D-LAT's PARITY CONDITION (a
+  two-sided CONDITION on a latency claim, never a target), D-LAT's ADR-0071
+  refutation falsifier, and G-REG — and the latter two are one-sided
+  DOWNWARD and so remain satisfiable at any utilisation. The parity
+  condition is scoped to the DUALS and never to sc2, which is the cell the
+  δ-cap cannot engage at anyway.
+
+### RUNG D — THE δ-CAP (§16.67). CAPBIND first: discipline 18(d) is
+### evaluated BEFORE any mechanism verdict.
+
+  CAPBIND -- realized store cap vs the chain's known clamps (key=occcap_p50; warn at frac > 0.50, a reporting aid, ADR-0070 kit item 2)
+  CAPBIND cell=c1 arm=A ceiling=none frac=0.000 n=16 name=interior  (range 513..791)
+  CAPBIND cell=c1 arm=D ceiling=1024 frac=0.062 n=16 name=RELIABLE_STORE_MAX
+  CAPBIND cell=c1 arm=DR ceiling=none frac=0.000 n=16 name=interior  (range 508..538)
+  CAPBIND cell=c1 arm=R ceiling=none frac=0.000 n=16 name=interior  (range 504..549)
+  CAPBIND cell=c7 arm=A ceiling=4096 frac=0.316 n=19 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c7 arm=D ceiling=none frac=0.000 n=17 name=interior  (range 1509..2369)
+  CAPBIND cell=c7 arm=DR ceiling=none frac=0.000 n=19 name=interior  (range 728..2373)
+  CAPBIND cell=c7 arm=L ceiling=4096 frac=1.000 n=2 name=WIN_STORE_MAX=N*knee
+    WARN c7/L: cap == 4096 (WIN_STORE_MAX=N*knee) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=c7 arm=R ceiling=4096 frac=0.211 n=19 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8 arm=A ceiling=none frac=0.000 n=37 name=interior  (range 1547..4043)
+  CAPBIND cell=c8 arm=D ceiling=none frac=0.000 n=34 name=interior  (range 357..3587)
+  CAPBIND cell=c8 arm=DR ceiling=none frac=0.000 n=34 name=interior  (range 417..1693)
+  CAPBIND cell=c8 arm=L ceiling=4096 frac=0.333 n=3 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8 arm=R ceiling=4096 frac=0.038 n=26 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8 arm=R1 ceiling=none frac=0.000 n=3 name=interior  (range 1812..2238)
+  CAPBIND cell=c8L arm=A ceiling=4096 frac=0.440 n=25 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8L arm=D ceiling=none frac=0.000 n=25 name=interior  (range 922..3535)
+  CAPBIND cell=c8L arm=DR ceiling=4096 frac=0.042 n=24 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=c8L arm=R ceiling=4096 frac=0.375 n=24 name=WIN_STORE_MAX=N*knee
+  CAPBIND cell=sc2 arm=A ceiling=1024 frac=1.000 n=19 name=RELIABLE_STORE_MAX
+    WARN sc2/A: cap == 1024 (RELIABLE_STORE_MAX) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=D ceiling=1024 frac=0.812 n=16 name=RELIABLE_STORE_MAX
+    WARN sc2/D: cap == 1024 (RELIABLE_STORE_MAX) in 81.2% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=DR ceiling=1024 frac=1.000 n=17 name=RELIABLE_STORE_MAX
+    WARN sc2/DR: cap == 1024 (RELIABLE_STORE_MAX) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=L ceiling=1024 frac=0.500 n=4 name=RELIABLE_STORE_MAX
+  CAPBIND cell=sc2 arm=R ceiling=1024 frac=0.941 n=17 name=RELIABLE_STORE_MAX
+    WARN sc2/R: cap == 1024 (RELIABLE_STORE_MAX) in 94.1% of reps -- the law is operating as a CONSTANT over its measured range
+  CAPBIND cell=sc2 arm=R1 ceiling=1024 frac=1.000 n=4 name=RELIABLE_STORE_MAX
+    WARN sc2/R1: cap == 1024 (RELIABLE_STORE_MAX) in 100.0% of reps -- the law is operating as a CONSTANT over its measured range
+
+#### D-IDENT (c1, sc2) — BIT-IDENTICAL BY CONSTRUCTION, and it is an alarm before it is a result
+
+cell        eng    d_mbps     2σ_p   d_ping    d_q50  cpu D/A   verdict
+c1          0/0    -14.87    63.66      0.0      0.0    1.040   PASS
+sc2         0/0      0.06     2.74     -0.5      0.0    1.007   PASS
+
+#### D-INTERIOR (c7, c8, c8L) — the primary mechanism claim
+
+cell      n  eng>=.90  chg>=.90  pin<=.10       cap              band    point     D/A    pred   verdict
+c7       17      1.00      1.00      1.00    1801.9      [1383, 2075]     1729   0.483   0.550   PASS
+c8       34      1.00      1.00      1.00    1074.6      [1016, 1524]     1270   0.412   0.550   PASS
+c8L      25      1.00      0.08      0.08    2078.7      [2478, 3716]     3097   0.552   0.937   FAIL
+
+  The band is the PRIMARY-anchor point ±20%. Both anchor eras are carried:
+    c7   primary    1729   secondary    1217
+    c8   primary    1270   secondary    1766
+    c8L  primary    3097   secondary    5474   — secondary EXCEEDS the 4096 ceiling and PINS by construction
+  c8L IS THE ANCHOR-DEPENDENT CELL and its status is read from [DCAP] pin=
+  IN THE RUN. pin <= 0.10 ⇒ the PRIMARY era holds and §16.67's
+  interior-EVERYWHERE claim is DELIVERED by measurement, which is ADR-0071
+  family 2's 'NO knee' in its stronger form. pin > 0.50 ⇒ the SECONDARY era
+  holds, discipline 18(d) applies and NO multiplier verdict is taken there.
+  NEITHER OUTCOME REFUTES §16.67, and the contract says so in advance.
+
+### D-LAT — THE CoDel-DERIVED PREDICTION STATED AS THE BAR
+### goodput PARITY (within 2σ_pooled, a CONDITION not a target) AND q_p50
+### strictly below same-session A, at the duals, on BOTH seeds.
+
+cell    seed   nA/nD   mbps A   mbps D   d_mbps    2σ_p  parity   q50 A   q50 D   d_q50  d_ping   verdict
+c7        42     8/8   173.09   172.95    -0.15    5.71     yes    77.5    61.5   -16.0   -13.5   PASS
+c7         7    11/9   174.06   172.78    -1.28    4.28     yes    73.0    63.0   -10.0    -6.2   PASS
+c8        42   12/12    82.75    90.58     7.83   11.13     yes   250.5   137.0  -113.5    20.5   PASS
+c8         7   25/22    86.68    87.93     1.25   14.09     yes   220.0   103.0  -117.0   -22.7   PASS
+c8L       42   12/12    72.48    69.83    -2.64   38.09     yes   300.5   100.5  -200.0   -30.2   PASS
+c8L        7   13/13    77.80    77.02    -0.78   36.72     yes   271.0   141.0  -130.0     3.0   PASS
+
+  THE MAGNITUDE IS A CLASS, NOT A POINT, AND THE REASON IS ON THE RECORD:
+  the two matched c8 contrasts this tree owns do NOT order monotonically in
+  the cap ratio (ladder N vs A moved the cap 0.70× for q_p50 −78 ms; NT vs T
+  moved it 0.51× for −50 ms). A 0.550× cut therefore licenses no point
+  prediction. The class is d_q50 ∈ [−80, −30] ms at c8, REPORTED against the
+  bar and not AS the bar.
+
+  AND THE CELL THIS BAR CANNOT REACH: Tier-1 2a's cleanest datum — sc2, the
+  98%-utilised cell, cap 481 at goodput parity for ping_p50 −55.2 ms — is at
+  a SINGLE-PATH cell, and RWM_DELTA_CAP DOES NOT ENGAGE AT N = 1. No sc2
+  number in this session may be read as support for the δ-cap.
+
+### RUNG R — §16.68. `ceil=` MAY BE READ ONLY WHERE `evals > 0`.
+
+cell-arm    site    evals    ceil    gran  legacy_pin  round_ms  legacy_ms  mult   expectation
+c1-R         cli   224682  0.6403  0.0000      0.9242      8.60      25.39    17   ceil ~ 0 expected (bench: needs mult>=18 > 17)
+c1-DR        cli   221977  0.6195  0.0000      0.9185      8.66      25.42    17   ceil ~ 0 expected (bench: needs mult>=18 > 17)
+c7-R         cli   169445  0.0187  0.0000      0.9592     40.66      99.09    17   ceil ~ 0 expected (bench: needs mult>=32 > 17)
+c7-DR        cli   169650  0.0275  0.0000      0.9561     40.08      98.78    17   ceil ~ 0 expected (bench: needs mult>=32 > 17)
+c8-R         cli    21685  0.1010  0.0000      0.9660     59.32      99.06    17   ceil ~ 0 expected (bench: needs mult>=40 > 17)
+c8-DR        cli    22251  0.0477  0.0000      0.9808     46.90      99.07    17   ceil ~ 0 expected (bench: needs mult>=40 > 17)
+c8-R1        cli    21923  0.0000  0.0000      0.9832      3.46      99.17     1   ceil MUST read 0.0000 — §16.68's DEFECT FINDING, measured
+c8L-R        cli   174584  0.0141  0.0000      0.9968     76.73      99.89    17   ceil ~ 0 expected (bench: needs mult>=47 > 17) [c8-AU CLASS, not the length axis]
+c8L-DR       cli   177166  0.0192  0.0000      0.9967     75.11      99.86    17   ceil ~ 0 expected (bench: needs mult>=47 > 17) [c8-AU CLASS, not the length axis]
+sc2-R        cli    85573  0.0053  0.0000      0.9948     57.23      99.81    17   ceil ~ 0 expected (bench: needs mult>=32 > 17)
+sc2-DR       cli    85389  0.0045  0.0000      0.9965     59.00      99.90    17   ceil ~ 0 expected (bench: needs mult>=32 > 17)
+sc2-R1       cli    86924  0.0000  0.0000      0.9957      2.92      99.84     1   ceil MUST read 0.0000 — §16.68's DEFECT FINDING, measured
+
+  R-LEGACY — THE FIRST MEASUREMENT OF THE SHIPPED [25,100] ms CLAMP'S OWN
+  BIND FRACTION, and it is a DEFECT FINDING ABOUT THE DEFAULT. `legacy_pin`
+  is the counterfactual computed INSIDE the armed law, so it is fed on the
+  ON arm ONLY and is read off R / DR / R1 and NEVER off A. §16.68's bench
+  predicts ≈1.0000 at every cell: if it holds, the shipped
+  `round = (2·srtt).clamp(25 ms, 100 ms)` IS A CONSTANT at every cell this
+  tree measures, its 2·srtt term is inert, and CLAUDE.md's 'a clamp that
+  always binds turns its law into a constant' applies to a SHIPPED law by
+  measurement rather than by argument.
+
+### §16.68.1 — THE FALSE-ALARM VALIDATION. `fa_class` = 1/16 = 6.25%,
+### RFC 8985 §6.2 Step 4's OWN published budget. SENDER SITE ONLY.
+
+cell-arm    n(fa)    fired  spurious  fa_frac  predicted  × α_class   clears 6.25%?
+c1-A           16      806        80   0.1066       0.00        1.7   NO
+c1-D           16      816        92   0.1056       0.00        1.7   NO
+c1-R           16     1313       421   0.3098       0.50        5.0   NO
+c1-DR          16     1410       432   0.3016       0.50        4.8   NO
+c7-A           19     5015      1189   0.2385       0.00        3.8   NO
+c7-D           17     4946      1124   0.2273       0.00        3.6   NO
+c7-R           19     5018      1096   0.2320       0.50        3.7   NO
+c7-DR          19     4969       998   0.2073       0.50        3.3   NO
+c7-L            2     6286      2786   0.4429       0.00        7.1   NO
+c8-A           37     1139       436   0.4014       0.75        6.4   NO
+c8-D           34      848       270   0.3050       0.75        4.9   NO
+c8-R           26     1104       498   0.4825       0.67        7.7   NO
+c8-DR          34      807       200   0.2490       0.67        4.0   NO
+c8-R1           3     1299       729   0.5612       0.97        9.0   NO
+c8-L            3     1240       707   0.5673       0.75        9.1   NO
+c8L-A          25     9917      1971   0.2591       0.80        4.1   NO
+c8L-D          25     8130      1252   0.1294       0.80        2.1   NO
+c8L-R          24    10037      1788   0.1740       0.67        2.8   NO
+c8L-DR         24     7178      1264   0.1656       0.67        2.6   NO
+sc2-A          19     3264      2415   0.7516       0.50       12.0   NO
+sc2-D          16     3161      2372   0.7760       0.50       12.4   NO
+sc2-R          17     3156      2351   0.7498       0.50       12.0   NO
+sc2-DR         17     3297      2467   0.7383       0.50       11.8   NO
+sc2-R1          4     3592      2813   0.7833       0.97       12.5   NO
+sc2-L           4     3032      2423   0.7859       0.50       12.6   NO
+
+  FA-CONTROL is the strongest statement available about the SHIPPED clamp,
+  and it is about the CONTROL rather than the successors: §16.68.1
+  pre-registers arm A at ≥0.50 (sc2), ≥0.75 (c8), ≥0.80 (c8L, the c8-AU
+  class) — 8–13× RACK's own published budget at three of five cells.
+
+  THE FALSIFIER, verbatim and keyed to the INSTRUMENT because the
+  instrument is new: 'If the wire-measured fa_frac on the shipped control
+  lands below α_class at sc2, c8 and c8-AU, this component model is wrong
+  about the mechanism and the whole R axis is rebased on the measurement
+  rather than on ⌈srtt/cadence⌉.'
+
+  NO ARM OF THE R AXIS IS PREDICTED TO CLEAR α_class. This battery CANNOT
+  produce a recommendation to flip RWM_RACK_CLOCKS and is not run to
+  produce one. It is run because the CONTROL's number has never existed.
+  A rep with fa=0/0 fired no recovery round: it is EXCLUDED here with the
+  exclusion counted in `n(fa)`, and is NEVER read as fa_frac = 0.
+
+### [LCW] — THE ONE-SIDED-CLAMP WITNESS (Tier-1 2b finding 5). NO BAR.
+### Arm L only, and that is THE SPECIFICATION FINDING, not an omission.
+
+cell-arm      n    over_n   over_mass   loss_mass  rect_frac
+c7-L          2    162656      162809      157649     1.0327
+c8-L          3     21129       21152       19864     1.0648
+sc2-L         4     82786       82881       79858     1.0374
+
+  SCORED ON NOTHING. This is the first reading of an instrument built two
+  commits ago and never run. The ONE falsifier the contract writes, because
+  it costs nothing: rect_frac = 0 at EVERY cell including sc2 (N = 1) would
+  refute the hypothesis's own premise — the clamp never fires. Anything
+  above zero is DATA and takes no verdict.
+  The coarse prior, labelled coarse: at ~2 s granularity Tier-1 already saw
+  the received delta running ahead in 9/9 (c2r100), 12/18 (c7), 11/18 (c8)
+  windows — an indication the cursors cross often, NOT a measurement of the
+  clamp rate and NOT a bound on it. `over_n` is the per-ack measurement
+  that prior could not be.
+
+### B-WALL — sign(dur_ms(D) − dur_ms(A)) PAIRED WITHIN REP INDEX at c8.
+### A sign test over paired reps, NEVER a difference of medians.
+
+pool     seed  paired  nonzero   D<A   D>A   verdict
+main       42      12        9     6     3   D<A
+main        7       6        6     5     1   D<A
+topup       7       2        2     2     0   D<A
+topup2      7       7        6     5     1   D<A
+
+         seed  paired  nonzero   D<A   D>A   power (needs >= 8 non-zero)
+SEED       42       -        9     6     3   sufficient
+SEED        7       -       14    12     2   sufficient
+
+  THE PRE-DECLARED CLOSE: fewer than 8 paired reps carrying a non-zero
+  difference at either seed, OR a sign that disagrees between seeds or
+  between pools ⇒ the clause closes NEEDS-MORE AND NAMES ITS INSTRUMENT —
+  what is owed is a c8 statistic that is not bistable, NOT a fourth
+  measurand. NO DEAD-WALL CLAIM OF ANY KIND is made from an unpaired
+  contrast in this battery, at any n.
+  Cross-pool / cross-seed sign consistency: CONSISTENT
+  Per-seed power (>= 8 non-zero pairs at EITHER seed): SUFFICIENT
+  B-WALL VERDICT: RESOLVED — dur_ms(D) < dur_ms(A)
+  c8L's [WALL] is REPORTED, direction only, scored on nothing: it did not
+  order at all in the ladder (438 → 913 → 395 → 557).
+
+### DR-FACTOR — the two gates sit in disjoint seats and share no operand.
+
+cell       D cap    DR cap              band  DR in band?   verdict
+c7        1801.9    1803.8      [1383, 2075]          yes   PASS
+c8        1074.6    1026.7      [1016, 1524]          yes   PASS
+c8L       2078.7    2152.6      [2478, 3716]           NO   FAIL
+
+  Falsified if DR's cap moves outside D's band — then the two seats are
+  coupled through something neither §16.67 nor §16.68 names, and every
+  rung's composition reading is re-scoped.
+
+### GUARDS — a win bought by breakage is a TRADE and is reported as one.
+### SCORED ARMS ONLY. R1 and L are excluded by the contract, before the run:
+### R1's regression is its OWN PREDICTION and L carries a gate the ladder
+### refuted.
+
+guard        cell-arm    seed      value        bar   verdict
+G-REG        c1-D          42    -10.253    -29.756   PASS
+G-CPU        c1-D          42      1.011      1.050   PASS
+G-REG        c1-D           7    -19.487    -85.734   PASS
+G-CPU        c1-D           7      1.070      1.050   FAIL
+G-REG        c1-R          42     -3.758    -12.167   PASS
+G-CPU        c1-R          42      1.032      1.050   PASS
+G-REG        c1-R           7      0.636    -15.585   PASS
+G-CPU        c1-R           7      1.034      1.050   PASS
+G-REG        c1-DR         42     -6.255    -10.837   PASS
+G-CPU        c1-DR         42      1.049      1.050   PASS
+G-REG        c1-DR          7     -1.147    -15.323   PASS
+G-CPU        c1-DR          7      1.032      1.050   PASS
+G-DNF        c1-A           0      0.000      0.000   PASS
+G-DNF        c1-D           0      0.000      0.000   PASS
+G-DNF        c1-R           0      0.000      0.000   PASS
+G-DNF        c1-DR          0      0.000      0.000   PASS
+G-REG        c7-D          42     -0.145     -5.709   PASS
+G-CPU        c7-D          42      0.991      1.050   PASS
+G-REG        c7-D           7     -1.282     -4.278   PASS
+G-CPU        c7-D           7      0.993      1.050   PASS
+G-REG        c7-R          42      0.009     -3.936   PASS
+G-CPU        c7-R          42      1.005      1.050   PASS
+G-REG        c7-R           7    -13.797    -57.544   PASS
+G-CPU        c7-R           7      1.176      1.050   FAIL
+G-REG        c7-DR         42     -0.423     -3.561   PASS
+G-CPU        c7-DR         42      1.004      1.050   PASS
+G-REG        c7-DR          7    -12.765    -37.152   PASS
+G-CPU        c7-DR          7      0.983      1.050   PASS
+G-DNF        c7-A           0      0.000      0.000   PASS
+G-DNF        c7-D           0      0.000      0.000   PASS
+G-DNF        c7-R           0      0.000      0.000   PASS
+G-DNF        c7-DR          0      0.000      0.000   PASS
+G-DNF        c7-L           0      0.000      0.000   PASS
+G-REG        c8-D          42      7.832    -11.132   PASS
+G-CPU        c8-D          42      0.826      1.050   PASS
+G-REG        c8-D           7      1.252    -14.094   PASS
+G-CPU        c8-D           7      0.811      1.050   PASS
+G-REG        c8-R          42      4.293    -12.782   PASS
+G-CPU        c8-R          42      0.912      1.050   PASS
+G-REG        c8-R           7     -2.273    -18.330   PASS
+G-CPU        c8-R           7      1.049      1.050   PASS
+G-REG        c8-DR         42      5.843    -15.824   PASS
+G-CPU        c8-DR         42      0.769      1.050   PASS
+G-REG        c8-DR          7      2.622    -14.945   PASS
+G-CPU        c8-DR          7      0.811      1.050   PASS
+G-DNF        c8-A           0      0.000      0.000   PASS
+G-DNF        c8-D           0      0.000      0.000   PASS
+G-DNF        c8-R           0      0.000      0.000   PASS
+G-DNF        c8-DR          0      0.000      0.000   PASS
+G-DNF        c8-R1          0      0.000      0.000   PASS
+G-DNF        c8-L           0      0.000      0.000   PASS
+G-REG        c8L-D         42     -2.644    -38.087   PASS
+G-CPU        c8L-D         42      0.853      1.050   PASS
+G-REG        c8L-D          7     -0.783    -36.718   PASS
+G-CPU        c8L-D          7      0.900      1.050   PASS
+G-REG        c8L-R         42      2.559    -37.358   PASS
+G-CPU        c8L-R         42      0.945      1.050   PASS
+G-REG        c8L-R          7     -4.400    -36.641   PASS
+G-CPU        c8L-R          7      1.085      1.050   FAIL
+G-REG        c8L-DR        42      2.434    -36.511   PASS
+G-CPU        c8L-DR        42      0.802      1.050   PASS
+G-REG        c8L-DR         7     -0.855    -35.602   PASS
+G-CPU        c8L-DR         7      0.863      1.050   PASS
+G-DNF        c8L-A          0      0.000      0.000   PASS
+G-DNF        c8L-D          0      0.000      0.000   PASS
+G-DNF        c8L-R          0      0.000      0.000   PASS
+G-DNF        c8L-DR         0      0.000      0.000   PASS
+G-REG        sc2-D         42      0.536     -3.246   PASS
+G-CPU        sc2-D         42      1.019      1.050   PASS
+G-SC2-LAT    sc2-D         42     -0.550     25.041   PASS
+G-REG        sc2-D          7     -0.359     -2.509   PASS
+G-CPU        sc2-D          7      1.002      1.050   PASS
+G-SC2-LAT    sc2-D          7      0.200     27.888   PASS
+G-REG        sc2-R         42      0.392     -3.190   PASS
+G-CPU        sc2-R         42      1.019      1.050   PASS
+G-SC2-LAT    sc2-R         42    -10.900     29.325   PASS
+G-REG        sc2-R          7     -0.089     -1.721   PASS
+G-CPU        sc2-R          7      0.999      1.050   PASS
+G-SC2-LAT    sc2-R          7      0.100     23.908   PASS
+G-REG        sc2-DR        42      0.175     -3.200   PASS
+G-CPU        sc2-DR        42      1.017      1.050   PASS
+G-SC2-LAT    sc2-DR        42      6.300     18.700   PASS
+G-REG        sc2-DR         7     -0.497     -1.935   PASS
+G-CPU        sc2-DR         7      1.009      1.050   PASS
+G-SC2-LAT    sc2-DR         7     -4.300     19.286   PASS
+G-DNF        sc2-A          0      0.000      0.000   PASS
+G-DNF        sc2-D          0      0.000      0.000   PASS
+G-DNF        sc2-R          0      0.000      0.000   PASS
+G-DNF        sc2-DR         0      0.000      0.000   PASS
+G-DNF        sc2-R1         0      0.000      0.000   PASS
+G-DNF        sc2-L          0      0.000      0.000   PASS
+
+  G-SC2-LAT is the guard most likely to fire, and the contract says why in
+  advance: the RACK clock at mult=17 reads 55 ms against the shipped 100 ms
+  at sc2, and a tighter re-probe cadence at a 98%-utilised cell is exactly
+  where a spurious-round storm would show. For D at sc2 it is a two-sided
+  IDENTITY check, because D is bit-identical at N = 1.
+
+  GUARDS CLEAN: False   LIVENESS CLEAN: True
+
+================================================================================================
+NOTHING IN THIS REPORT FLIPS A DEFAULT. Every deliverable is a
+RECOMMENDATION with its noise bounds — and §16.68.1 pre-registers that no
+RACK arm can earn one.
+================================================================================================

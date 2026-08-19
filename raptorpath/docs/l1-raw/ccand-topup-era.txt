@@ -1,0 +1,4 @@
+CCAND-TOPUP start 2026-08-19T05:03:05Z load=0.32 0.19 0.64 1/330 324580
+CCAND-TOPUP seed=7 cells='c7 c8 c8L sc2' reps=8 — SYMMETRIC over ALL FOUR SCORED ARMS (A D R DR)
+CCAND-TOPUP the AUX arms R1 and L are excluded: they enter no contrast and no guard denominator
+CCAND-TOPUP end 2026-08-19T05:23:43Z load=1.02 1.39 1.38 1/324 355054
