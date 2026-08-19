@@ -511,7 +511,40 @@ A standing list, so a later draft cannot quietly acquire these.
 Ranked. **#1 is the one to check first.**
 
 1. **`δ = 0.4838` — ~~the claimed 3 % agreement with the contract's
-   `δ_auto = 0.5`~~ — SUPERSEDED-PENDING-MEASUREMENT (2026-08-19).**
+   `δ_auto = 0.5`~~ — SUPERSEDED BY MEASUREMENT (2026-08-19). The measured
+   value is `δ = 45`.**
+
+   **THE MEASUREMENT, AND IT IS NOW THE ROW'S HEADLINE.** σ has been read off
+   the field at c8 — `sig_us=` in the per-path `[DIAG]` line, last emission per
+   path, 3 reps, cell **c8 = `c2 c3` dual**, **25 MB**, **seed 42**, shipped
+   defaults, **0 aborts**, binary sha256 `330ebfcc…` (goal-gate *"THE MEASURED
+   σ AT c8 — THE SCORED RESULT"*). The **data path** (identified by sample
+   count, `btlbw` and symbols handed — it carries 96–99.8 % of the bytes) reads
+
+   ```text
+       σ(c8, data path)  =  620 / 853 / 8 550 µs   at n = 24 661 / 24 445 / 24 421
+       median  σ  =  0.853 ms
+   ```
+
+   which, with the measured `ν(c8) = 0.0438`, gives
+
+   ```text
+       δ(σ = 0.853 ms, ν = 0.0438)  =  38.4 / 0.853  =  45.0     vs  δ_auto = 0.5
+   ```
+
+   **The prediction written below — that the measurement would KILL the
+   agreement rather than confirm it — is CONFIRMED**, against a band
+   pre-committed before the run (`δ ∈ [0.4, 0.6]`, i.e. `σ ∈ [64, 96] ms`).
+   Every rep fails independently: even the most generous single reading
+   (8.55 ms) gives `δ = 4.49`, still 7.5× above the band, and the slow leg's
+   19.7 ms gives `δ = 1.95`. **No path in the cell restores the agreement.**
+
+   **NEITHER `0.4838` NOR `2.12` MAY BE QUOTED.** The quotable number is `δ =
+   45` at c8, with the provenance above attached to it, and with the standing
+   caveat that this is **one cell, one seed, three reps** — the full-cell σ pass
+   is the named successor. The prose below is preserved as the derivation that
+   the measurement was written against, and its ν and σ discussion now reads as
+   history rather than as an open question.
 
    *What the number was.* `cost-ratio-memo.md:420-435` calls it *"the most
    interesting number in this document"*, and it was the paper's single most
@@ -583,10 +616,11 @@ Ranked. **#1 is the one to check first.**
    comment described it as *"Fed unconditionally; read by nothing"* — is now
    reported per path in the `[DIAG]` line as `sig_us=<µs>/n<count>`, with the
    EWMA's sample count beside it as warm-up evidence
-   (`tests/sigma_diag_reachability.rs`). **What remains is one L1 run to read
+   (`tests/sigma_diag_reachability.rs`). ~~**What remains is one L1 run to read
    σ at c8, and this row is rewritten from a measurement instead of an
-   inversion.** Until then, no paper may quote 0.4838, and none may quote 2.12
-   either: both are `δ(σ, ν)` at a σ nobody has measured.
+   inversion.**~~ **THAT RUN HAS BEEN TAKEN** — see the measurement at the head
+   of this row. Neither 0.4838 nor 2.12 may be quoted: both are `δ(σ, ν)` at a
+   σ that has now been measured and is neither of the values they assume.
 
 2. **`slack/window ≡ 2.125` in 833 of 833 evaluations** (§16.57, row 1.4). By
    MEASUREMENT DISCIPLINE 18 this reads as a **degeneracy**, not a validation —

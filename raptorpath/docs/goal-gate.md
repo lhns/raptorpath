@@ -36959,3 +36959,140 @@ paths cannot be separated by count — if both legs read comparable `n` — the
 
 **Nothing in this section flips a default, adds a gate, or edits an engine
 crate.**
+
+---
+
+## THE MEASURED σ AT c8 — THE SCORED RESULT (2026-08-19, `feat/sigma-c8` from main@`4e52a31`) — **MEASUREMENT TRUTH item 5's MEASUREMENT CLAUSE IS DISCHARGED. `S1` FAILS, and it fails by ~75×.** 3 invocations, one binary, one cell, one seed, **0 aborts**, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+### 1 — THE VERDICT FIRST
+
+`σ(c8, data path) = 0.85 ms` (median of three), which puts
+
+```text
+    δ(σ_meas, ν = 0.0438)  =  38.4 / 0.853  =  45.0        vs  δ_auto = 0.5
+```
+
+**`S1` FAILS.** The pre-committed band was `δ ∈ [0.4, 0.6]`; the measurement
+reads **45.0**, which is **75× the top of the band**. The skeleton's
+pre-existing prediction — *"the honest expectation is that the measurement
+kills the agreement rather than confirming it"* — **is CONFIRMED**, and it was
+written before this field existed.
+
+**`δ = 0.4838` IS RETIRED FROM EVERY PAPER.** So is the interim `2.12`. Both
+were `δ(σ, ν)` at a σ nobody had measured; σ is now measured.
+
+### 2 — THE FIELD, AS READ (last `[DIAG]` per path, per the pre-committed rule)
+
+| rep | DATA path (c2-class) `sig_us`/n | second path (c3-class) `sig_us`/n | `mean_mbps` | `dnf` |
+|---|---|---|---|---|
+| r1 | **620 µs** / n 24 661 | 19 690 µs / n 50 | 31.16 | 0 |
+| r2 | **853 µs** / n 24 445 | 53 381 µs / n 839 | 29.10 | 0 |
+| r3 | **8 550 µs** / n 24 421 | 11 060 µs / n 77 | 31.01 | 0 |
+
+**The DATA path identifies itself and the section-6 ambiguity does not arise.**
+The two legs are separated by **~300× in sample count** (24 421–24 661 vs
+50–839), by **~100× in `btlbw`** (114 739–115 359 vs 961–72 769 kbit/s), and by
+**~30–430× in symbols handed to the wire** (`dgq0[hand=` 25 474–26 001 vs
+`dgq1[hand=` 59–910). The c2-class leg carries **96–99.8 % of the transfer** in
+every rep. It is the data path on all four independent indicators, and no
+judgement call was needed.
+
+**`n > 24 000` on all three data-path readings**, so the section-6 warm-up
+caveat does not attach either: the EWMA retains `0.75ⁿ` ≈ 0 of its zero seed,
+and these are converged readings, not warm-up artefacts.
+
+**Median σ = 853 µs.** The spread is real and disclosed: r3 reads **8 550 µs**,
+ten times r1 and r2, at the same n. **No dispersion claim is made from three
+reps at one seed** — but the spread does not rescue the agreement, and that is
+the only thing it would need to do:
+
+| rep | data-path σ | `δ(σ) = 38.4/σ_ms` | in band [0.4, 0.6]? |
+|---|---|---|---|
+| r1 | 0.620 ms | **61.9** | no — 103× high |
+| r2 | 0.853 ms | **45.0** | no — 75× high |
+| r3 | 8.550 ms | **4.49** | no — 7.5× high |
+
+**Every rep fails independently.** The single most generous reading in the whole
+battery — r3's 8.55 ms, ten times the median — still lands **7.5× above the
+band's ceiling**. `S1` does not turn on the choice of aggregate.
+
+**AND THE SLOW LEG DOES NOT RESCUE IT EITHER**, though nothing scored it: its
+median is **19.7 ms** (n = 50–839, sampling-noisy in exactly the sense the span
+run named), which gives **δ = 1.95** — still **3.2× above the band**, on a leg
+carrying under 4 % of the bytes. **There is no path in this cell whose σ
+restores the agreement.**
+
+### 3 — HOW FAR OFF THE REQUIREMENT IS
+
+The skeleton solved for the σ that would restore `δ_auto = 0.5` and got **≈ 77
+ms ≈ `d`**, calling a σ equal to the srtt it is the dispersion of *"not a
+plausible reading"*. Measured: **0.853 ms**. **The requirement misses by ~90×.**
+The pre-committed band in σ terms was `σ ∈ [64 ms, 96 ms]`; the field is nearly
+two orders of magnitude below its floor.
+
+**AND IT AGREES WITH THE ONLY OTHER FIELD σ THIS TREE HAS.** The span run's
+c9h fast legs read a median **1.27 ms** (12 readings, n > 60 000). c8's data
+path reads **0.85 ms** (3 readings, n > 24 000), on a different cell, a
+different geometry, a different binary and a different session. **Two
+independent wire cells now agree that σ is order 1 ms**, against §16.69's
+assumed **10 ms** and the memo's Cantelli-inverted **18.1 ms**. Those two
+working values are **8–21× high**, and the memo's was published as a point
+value while being a lower bound — the error is in the direction the bound could
+not exclude.
+
+### 4 — WHAT THIS MEANS, IN PLAIN LANGUAGE
+
+The paper's most quotable result was that two recovery-clock options, derived
+independently, agreed at Auto to 3 %. That agreement was never measured — it
+was an inversion, and it had two unmeasured inputs, `ν` and `σ`, both of which
+have now been measured. `ν` came in at 4.4× the value the agreement was
+computed at, and `σ` has come in ~21× *below* it. Because δ goes as `ν/σ`, the
+two errors compound instead of cancelling, and the number that was supposed to
+be 0.5 is **45**. **The agreement is gone, and it is not gone by a little — it
+is gone by a factor of ninety.** The honest reading is not that the derivation
+is wrong but that **it was never constrained**: a formula with two free inputs
+can be made to produce any answer, and this one was evaluated at inputs chosen
+because they produced the pleasing one.
+
+**For the cost-ratio memo's YES-option, this is the load-bearing consequence,
+and it is a finding, not a decision.** The no-constants construction's appeal
+was that it derived δ rather than picking it, and self-consistency was its
+evidence. That evidence is now spent: fed its own measured inputs, the
+construction produces **δ = 45** — a recovery clock ninety times slower than
+the contract's Auto point, which is not a sane δ by any reading of what δ
+means. **The construction does not self-consistently produce a sane δ at c8.**
+That leaves the YES-option needing a different argument than the one it had —
+either the stationarity condition being inverted does not describe this
+machine, or `α_b`/`p`/`d` need the same measurement treatment `ν` and `σ` just
+received. **This section does not choose between those, does not flip a
+default, and does not make the USER DECISION. It removes the number the
+decision was leaning on.**
+
+### 5 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** σ is measurable at c8 off the shipped `[DIAG]` gauge with no
+engine change; it reads order 1 ms on the data path at converged sample counts;
+`δ(σ, ν)` at measured inputs is 45, and `S1` fails on every rep and on both
+paths. The skeleton's §7 row 1 is rewritten from a measurement.
+
+**NOT established.** **One cell, one seed, three reps.** No claim is made about
+σ at c1/c7/c9, about its dependence on cell, or about its variance — r3's 10×
+excursion at identical n says the estimator has structure this battery cannot
+resolve. The **full-cell σ pass across all five cells** remains the named
+successor, and it is now motivated by a result rather than by a list. Nor does
+this touch `α_b = 0.1843`, `p = 0.0126` or `d = 77 ms`: they remain committed
+but unmeasured-in-this-sense, and section 4 names them as the next inputs owed
+the same treatment.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it is scored against.**
+
+**Artifacts** (VM 10.1.5.16): per-rep driver logs `/home/vibe/sigmac8/run-r{1,2,3}.log`;
+sender logs (the σ source) `/home/vibe/sigmac8/cli-r{1,2,3}.log`; receiver logs
+`/home/vibe/sigmac8/srv-r{1,2,3}.log`; tarball `/home/vibe/sigmac8-artifacts.tar.gz`.
+Binary sha256 **`330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984`**
+(unchanged since `01c2d38`, reused at `77c95ef`/`5abe00c`, carries the `sig_us=`
+gauge — **NOT REBUILT**, verified before the run); harness shipped from
+`feat/sigma-c8`'s `tools/l1` to `/home/vibe/sigmac8/l1`; kernel
+7.0.14-101.fc43.x86_64; Xeon E5-2650 v3, 6 cores. VM left at 0 `raptorpath`
+processes, 0 `rp-*` namespaces, lock released.
