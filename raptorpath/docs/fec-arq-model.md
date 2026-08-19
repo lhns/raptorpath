@@ -11007,7 +11007,9 @@ jitter, srtt)` — both terms already estimated in-tree (the 1 ms loop
 wake, which coincides with RFC 9002's recommendation, and Copa's RFC
 3550-style consecutive-difference jitter, the same estimate the backoff
 threshold reads). kTimeThreshold 9/8 and kPacketThreshold 3 were left
-untouched: they are cited, not magic. The tail-sweep fallback was
+untouched: they are cited, not magic *[corrected 2026-08-19, cross-check
+item 6(d), §16.65: the 9/8 is RFC 9002's EMPIRICAL recommendation ("works
+well"), not a derivation; RACK uses 5/4]*. The tail-sweep fallback was
 deliberately left alone and its INERTNESS asserted by test rather than
 claimed — it feeds `(srtt·2).clamp(25 ms, 100 ms)`, so every value
 ≤ 12.5 ms is identical.
@@ -11429,6 +11431,19 @@ reading is **541 symbols** against the independently measured good pin of
 **508** — +6.5 %, from a formula containing a rate and a delay difference and
 nothing else — and the arm that read −19.6 % was running that cell at
 **×7.6** its own span.
+
+> **NOVELTY CLAIM, added 2026-08-19 (literature cross-check items 1(c)/2 and
+> Tier 0.6, `docs/research/literature-crosscheck.md`; §16.65).** The span
+> decomposition this section derives — resequencing priced as a SEPARABLE
+> term (`2·rate_fast·skew`, i.e. the `Σᵢ bwᵢ·(RTT_max − RTTᵢ)` shape) beside
+> the window term — appears in **no publication**: checked against RFC 6182
+> §5.3, RFC 8684 §3.3.4, Barré 2011, Raiciu NSDI'12 and DAPS (Kuhn ICC 2014).
+> It is OURS and must be presented as our derivation, on the basis of that
+> negative search. The honest scope: what IS standard is the AGGREGATE — every
+> published multipath sizing puts `RTT_max` OUTSIDE the sum
+> (`2·Σᵢ bwᵢ·RTT_max`, RFC 6182 §5.3; Raiciu NSDI'12 §4.2) — and our form is
+> one step of algebra from it (and half its magnitude at N = 2). That
+> literature may be cited for the term's *magnitude*, never for its *shape*.
 
 **The contract question, answered as a split verdict.** The stall TIME is
 fully derivable from (δ, ρ). The COVERAGE — where on a three-octave slope to
@@ -12467,7 +12482,10 @@ ever been run. `gain = 2.0` is a **FOSSIL**: a sound prose argument that
 arrived with the C2 bufferbloat fix a week before the multipath law, swept
 exactly once — one cell, a different CC family, −5 % — and superseded by
 §16.43's own derivation, which gives the same recovery runway as
-`17/8 = 2.125` at ρ = 1 from RFC 9002 §6.1.2 plus one retransmit round trip.
+`17/8 = 2.125` at ρ = 1 from RFC 9002 §6.1.2 plus one retransmit round trip
+*[refined 2026-08-19, cross-check item 3 / §16.65: right VALUE with two
+published derivations — RFC 6182 §5.3's ×2 and BBR's `cwnd_gain = 2` — and a
+wrong local rationale; the recovery-runway prose is in no primary source]*.
 `knee = 2048/path` is **MEASURED BUT STALE**: a real same-binary sweep run
 with the over-reading legacy anchor, pre-SACK-release and pre-honest-inputs,
 whose "per path" step is an INFERENCE no 3-path cell has ever tested — and
@@ -12520,7 +12538,10 @@ whole expression in favour of §16.43/§16.44's three-term law, summed over
 prices the queue as a latency budget, which §16.47 measured the cap actually
 doing; the memory bound is stated separately as a resource limit rather than
 as a term that shapes the law) and the per-path `cwnd_full` brake ENABLED as
-the late-stage emission control. Zero fitted constants; no count keying, no
+the late-stage emission control. Zero fitted constants *[softened 2026-08-19,
+cross-check item 6(d), §16.65: the stall's `9/8` is RFC 9002's EMPIRICAL
+recommendation — "Experience with QUIC shows that 9/8 works well"; RACK uses
+5/4 — so the successor inherits one tuned constant]*; no count keying, no
 topology predicate, no δ/ρ threshold — §16.20's one-machine claim satisfied
 by construction rather than by inspection. Every piece is built and
 individually validated. **The composition has never been measured as one
@@ -12588,9 +12609,9 @@ actual requirement, and the audit the predecessor failed:
 | `rateᵢ` | measured — the per-path delivered-rate anchor `btlbw_sym_per_s`, on §16.51's honest sampler (default ON) |
 | `RTpropᵢ`, `srttᵢ` | measured — the path's own `min_rtt` / `srtt`; `srtt = K·RTprop` on the honest ack clock |
 | `Kᵢ` | measured — [`EchoRatioMin`], the windowed-MIN `echoSRTT/RTprop` over `PERCAP_K_HALF_WINDOW_US`×2 ≈ 10 s, floored at 1.0. It is the ACK-path overhead ratio the sender can honestly see, and it EXCLUDES the store's own dwell (§16.44 route B), which is what closes the dwell loop in one evaluation. Wire values 1.04 (c8) / 1.14 (c7, sc2) / 1.15 (c1) / 1.505 (c8L), §16.57 |
-| `9/8` | cited — RFC 9002 §6.1.2 `kTimeThreshold`, not fitted |
+| `9/8` | cited — RFC 9002 §6.1.2 `kTimeThreshold` **[CORRECTED 2026-08-19, cross-check item 6(d), §16.65: EMPIRICALLY RECOMMENDED, not derived — *"Experience with QUIC shows that 9/8 works well"*; RACK (RFC 8985) uses 5/4 for the same purpose, and the RFC invites experiment. "Not fitted" overstated it: cited AND tuned, so the 17/8 inherits a tuned constant]** |
 | the second `srtt` in the stall | derived — one retransmit round trip, §16.43 |
-| `2` in `2·rate_fast·skew` | identified, not fitted — §16.43's PS5 measured the span/skew slope at 2.00 ± 0.03 over 18 of 18 non-zero cells, across ×13 in rate and ×40 in skew; it is a round-trip-vs-one-way DEFINITION boundary |
+| `2` in `2·rate_fast·skew` | identified, not fitted — §16.43's PS5 measured the span/skew slope at 2.00 ± 0.03 over 18 of 18 non-zero cells, across ×13 in rate and ×40 in skew; it is a round-trip-vs-one-way DEFINITION boundary. **[ADDED 2026-08-19, cross-check Tier 0.6, §16.65: the span DECOMPOSITION itself is OURS — no publication writes a separable `Σ bwᵢ·(RTT_max − RTTᵢ)`-shaped term; the standard MPTCP sizing is the AGGREGATE `2·Σ bwᵢ·RTT_max` (RFC 6182 §5.3; Raiciu NSDI'12), citable for magnitude, never for shape]** |
 | `b(δ)`, `ρ` | declared DIALS — named points on the triangle, never modes (§16.20) |
 | `live_paths()` | the liveness predicate, unconditional; the law never counts paths |
 | floor = 64 | **the one paroled constant.** Provenance ABSENT (ADR-0070 finding 5); kept because deleting it is a separate decision, and NAMED in the gate's echo so it can never bind silently again. **PAROLE PAID 2026-08-18: DERIVED and now 10** — `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)`, §16.59; the gate's `floor_val=` echo carries the derived value |
@@ -12989,7 +13010,12 @@ DERIVATION question about the stall's MAGNITUDE — the `17/8` — not about its
 argument, and not a battery. The provenance regression this section found on
 `9/8` is a constraint on that work: any construction that moves 9/8 off a
 smoothed RTT owes a new citation or a new derivation, and may not simply
-inherit RFC 9002's.
+inherit RFC 9002's. *[Softened 2026-08-19, cross-check item 6(d), §16.65: the
+RFC's own "Implementations MAY experiment with absolute thresholds …
+adaptive thresholds" clause anticipates the move — it just blesses no value,
+so the derivation is still owed; and the 9/8 itself is an empirical
+recommendation ("works well"), RACK using 5/4, so what would be inherited was
+never a derivation in the first place.]*
 
 Pinned by `slack_bench.rs::the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs`,
 which carries the table above as an executable record — including the two
@@ -13160,7 +13186,7 @@ provenance, or is the thing being deleted. Nothing new is introduced.
 | symbol | provenance |
 |---|---|
 | `Σᵢ(max_bwᵢ·min_rttᵢ)` | **measured, shape defensible** — the BBR-style queue-free BDP, a windowed MAX of delivered rate against a windowed MIN of RTT. ADR-0070 finding 6: the SHAPE is right (the max/min pair is what breaks the `cap → queue → RTT → cap` positive feedback loop), the USE as a cap input is the one its own decl doc forbids. **UNCHANGED here** — this section does not touch the estimator, and the misuse finding stands open |
-| `gain = 2.0` | **FOSSIL, carried unchanged and deliberately** — ADR-0070 finding 3. One BDP of pipe + one BDP of recovery runway, argued in prose at `ac3bc9d`, swept once at one cell under a different CC family. ADR-0070's Decision item 4 explicitly does NOT license re-fitting it, because re-fitting a coefficient inside a formula under structural review burns the only clean comparison available. It is the **same value on both arms**, so it cancels out of the A/B entirely |
+| `gain = 2.0` | **FOSSIL, carried unchanged and deliberately** — ADR-0070 finding 3. One BDP of pipe + one BDP of recovery runway, argued in prose at `ac3bc9d`, swept once at one cell under a different CC family. ADR-0070's Decision item 4 explicitly does NOT license re-fitting it, because re-fitting a coefficient inside a formula under structural review burns the only clean comparison available. It is the **same value on both arms**, so it cancels out of the A/B entirely. **[REFINED 2026-08-19, cross-check item 3 / folklore item 1, §16.65: right value, TWO published derivations, wrong local rationale — the recovery-runway prose is in no primary source; the published arguments are RFC 6182 §5.3's ×2 (one BDP for network reordering + one to continue during fast retransmit) and BBR's `cwnd_gain = 2` (delayed/stretched/aggregated-ACK absorption; v3's minimum per-round rate-doubling gain). Decl-site comment corrected; no-re-fit disposition unchanged]** |
 | `N = live_paths().len()` | **unchanged in the CEILING, deleted from the VALUE.** The count's defensible job is the one the birth commit's own diagnosis gives it — the pool's ceiling must grow with the path count — and `N·knee` keeps it. The value has no such job: the Σ already ranges over the paths |
 | `knee = 2048/path` | **MEASURED BUT STALE** — ADR-0070 finding 4, the 2026-07-14 static-store sweep, run on an era (legacy over-reading anchor, pre-SACK-clocked-release, pre-honest-inputs, pre-`RWM_ACK_MERGE`) none of whose inputs survive. "Per live path" is an INFERENCE no 3-or-more-path cell has ever tested. **UNCHANGED here**, and this is the point of the exercise: with the `×N` gone the ceiling stops being the law, so the knee's staleness becomes *measurable* instead of *absorbing* |
 | `floor` | **DERIVED, §16.59** — `max(ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE, RFC6928_INITIAL_WINDOW) = max(8·1, 10) = 10`. Unchanged here |

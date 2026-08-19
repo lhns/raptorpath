@@ -10957,6 +10957,12 @@ Derived, not tuned — per-path Little's law on the retention store itself:
   as the per-account ceiling; **floor** = 64 (the existing dyn-cap floor).
 - **gain** = `RWM_STORE_GAIN` (2.0): ~1 pipe full + ~1 recovery round of
   runway, per path — the same gain law as the pooled cap, now per account.
+  **[CORRECTED 2026-08-19, literature cross-check item 3 / folklore item 1,
+  paper §16.65: the recovery-runway rationale appears in NO primary source.
+  The value's published derivations are RFC 6182 §5.3's ×2 (one BDP for
+  network reordering + one to continue during fast retransmit) and BBR's
+  `cwnd_gain = 2` (delayed/stretched/aggregated-ACK absorption); BBR handles
+  recovery via packet conservation and `prior_cwnd`, never `cwnd_gain`.]**
 - **Copa-sole feed**: pipe_i = Copa cwnd_i (Copa's operating point IS the
   per-path pipe — mirrors the pooled Σcwnd law per-path).
 - **Warm-up** (anchor not established): the account inherits an equal
@@ -17641,6 +17647,10 @@ they are compared against is a constant, freshness cannot help, and a
 hole waits out a 10 ms literal on a path whose own round trip is 9 ms.
 **KEEP RFC 9002's kTimeThreshold = 9/8 and kPacketThreshold = 3
 untouched** — those are cited, not magic. Only the floor is derived.
+**[2026-08-19, cross-check item 6(d) / paper §16.65: "cited, not magic"
+needs its honest strength — the 9/8 is RFC 9002's EMPIRICAL recommendation
+(*"Experience with QUIC shows that 9/8 works well"*), not a derivation, and
+RACK (RFC 8985) uses 5/4 for the same job. The KEEP decision stands.]**
 
 **(b) The two derivations (what the gates do; both default OFF, gated
 separately so the battery attributes them independently).**
@@ -20416,7 +20426,7 @@ No VM was contacted at any point; the whole phase is local and deterministic.
 | `K_i` | `EchoRatioMin::observe_srtt_over_rtprop` — windowed-MIN echoSRTT/RTprop on the SAME `PERCAP_K_HALF_WINDOW_US` window every honest cap uses | measured |
 | `ρ` | the declared retention contract. **1 here by SCOPE, not by a branch**: the plain dynamic cap exists only on the RETAIN-UNTIL-ACKED path | declared dial |
 | `b(δ)` | `net::delta_budget_b(hint)` — the δ dial's named points (½ / 1 / 2), de-triplicated this commit | declared dial |
-| `9/8` | RFC 9002 §6.1.2 `kTimeThreshold` | **cited, not fitted** |
+| `9/8` | RFC 9002 §6.1.2 `kTimeThreshold` | **cited, not fitted** **[CORRECTED 2026-08-19, literature cross-check item 6(d) / paper §16.65: RFC 9002 RECOMMENDS 9/8 empirically — *"Experience with QUIC shows that 9/8 works well"* — and RACK (RFC 8985) uses 5/4 for the same purpose; cited AND tuned, so "not fitted" overstated the source]** |
 | `2` (span) | the definition boundary §16.43 PS5 IDENTIFIED — sequence-number span vs fast-path buffered symbols — and measured at 2.00 ± 0.03 over 18/18 non-zero cells | **identified, not fitted** |
 | `WIN_STORE_MAX` | 4096 × ~1.2 KB ≈ 5 MB, the existing memory clamp `win_decouple_cap_ret` uses | memory, outside the law |
 
@@ -20703,6 +20713,10 @@ its n recorded.
    clamp.
 3. **`9/8`.** RFC 9002 §6.1.2's `kTimeThreshold` — cited from the standard,
    not fitted, but it IS a number the machine did not measure.
+   **[CORRECTED 2026-08-19, cross-check item 6(d) / paper §16.65: "not
+   fitted" overstates — the standard itself RECOMMENDS 9/8 empirically
+   (*"Experience with QUIC shows that 9/8 works well"*; RACK uses 5/4), so
+   the number is cited AND tuned — tuned by QUIC's experience, not ours.]**
 4. **`b(δ)` = ½ / 1 / 2.** The δ dial's named points (§8.8). At ρ = 1 they
    are multiplied by zero, so no named cell depends on them; at ρ < 1 they
    would be load-bearing and they are declared, not derived.
@@ -29543,7 +29557,10 @@ cap = Σ_i [ rate_i·RTprop_i + rate_i·stall(δ, ρ, srtt_i) ] + 2·rate_fast·
 
 Zero fitted constants: `9/8` is RFC 9002 §6.1.2 cited, the span `2` is a
 definition boundary measured at 2.00 ± 0.03 over 18/18 non-zero cells,
-`b(δ)` and ρ are dials. Every piece exists and is individually validated —
+`b(δ)` and ρ are dials. **[CORRECTED 2026-08-19, cross-check item 6(d) /
+paper §16.65: "zero fitted constants" overstates — the 9/8 is RFC 9002's
+EMPIRICAL recommendation (*"Experience with QUIC shows that 9/8 works
+well"*; RACK uses 5/4), so the candidate inherits one tuned constant.]** Every piece exists and is individually validated —
 `three_term_store_cap` (`RWM_THREE_TERM`, OFF, engine↔bench equivalence
 pinned), honest anchors (default ON, §16.51), the unified set, the disabled
 brake, the `×N` deletion as `Arm::PooledUnified`. **The composition has
@@ -29595,7 +29612,7 @@ cap = Î£áµ¢ over live_paths [ rateáµ¢Â·RTpropáµ¢ + rateáµ¢Â·st
 |---|---|
 | `rateáµ¢` | **measured** â€” the per-path delivered-rate anchor `btlbw_sym_per_s`, on Â§16.51's honest sampler (default ON since 2026-08-11) |
 | `RTpropáµ¢`, `srttáµ¢` | **measured** â€” the path's own `min_rtt` / `srtt`; `srtt = KÂ·RTprop` on the honest ack clock |
-| `9/8` | **cited** â€” RFC 9002 Â§6.1.2 `kTimeThreshold`, not fitted |
+| `9/8` | **cited** â€” RFC 9002 Â§6.1.2 `kTimeThreshold`, not fitted **[CORRECTED 2026-08-19, cross-check item 6(d) / paper §16.65: empirically recommended, not derived — "Experience with QUIC shows that 9/8 works well"; RACK (RFC 8985) uses 5/4. Cited AND tuned]** |
 | the second `srtt` in the stall | **derived** â€” one retransmit round trip, Â§16.43 |
 | `2` in `2Â·rate_fastÂ·skew` | **identified, not fitted** â€” Â§16.43's PS5 measured the span/skew slope at 2.00 Â± 0.03 over 18 of 18 non-zero cells, across Ã—13 in rate and Ã—40 in skew; a round-trip-vs-one-way DEFINITION boundary |
 | `b(Î´)`, `Ï` | **declared DIALS** â€” named points on the triangle, never modes (Â§16.20). Ï = 1 in this scope: the plain dynamic cap is retain-until-acked, which is a SCOPE, not a branch |
@@ -30482,7 +30499,7 @@ The item's criterion was `mem` going INTERIOR at the c8 geometry that read 1.000
 
 **The half that survives, recorded because it is worth the same as itself**: the second criterion IS met. The shipped `slack/window` is 2.125 with min = max in 833 of 833 evaluations (a code identity — the three-term law is TWO-term at the shipped scope); the candidate's is `2.125/K` and reads **1.412 (c8L) … 2.043 (c8)**. The queue-free clock de-degenerates the term structure. It does not resize the law.
 
-**A third finding, from writing the formula down**: RFC 9002 §6.1.2 defines the time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`. The `9/8` is cited ONLY as a multiplier of a SMOOTHED RTT. Moving it onto RTprop makes it a **fitted coefficient on a new clock** — a provenance REGRESSION, and a standing constraint on any successor that touches this term.
+**A third finding, from writing the formula down**: RFC 9002 §6.1.2 defines the time threshold as `kTimeThreshold × max(smoothed_rtt, latest_rtt)`. The `9/8` is cited ONLY as a multiplier of a SMOOTHED RTT. Moving it onto RTprop makes it a **fitted coefficient on a new clock** — a provenance REGRESSION, and a standing constraint on any successor that touches this term. **[Softened 2026-08-19, cross-check item 6(d) / paper §16.65: the RFC's own "Implementations MAY experiment … adaptive thresholds" clause anticipates the move (blessing no value, so a mover still owes its own derivation), and the 9/8 itself is an empirical recommendation — *"works well"* — with RACK on 5/4.]**
 
 **THE SUCCESSOR, NAMED** (unchanged from §16.57, and now with the clock eliminated as an explanation): **the MAGNITUDE of the stall — the `17/8` — not its argument.** If `cap − BDP` is the standing queue and δ is its budget, 3.125 BDP at ρ = 1 means ≈2.1 BDP of standing queue, and either δ must actually bound that or `1 + 17/8` is wrong for a retain-until-acked scope. It is a derivation question (discipline 14: research, don't build), and it now inherits the 9/8 citation constraint above.
 

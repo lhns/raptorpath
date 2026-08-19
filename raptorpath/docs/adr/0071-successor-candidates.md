@@ -14,6 +14,35 @@ VM was contacted, no L1 number re-derived, no benchmark run. Every number in
 every predictions table below is **arithmetic on already-published means**,
 and the arithmetic is shown.
 
+> **AMENDMENT 2026-08-19 (`docs/tier0-corrections` — literature cross-check
+> Tier 0, `docs/research/literature-crosscheck.md`, paper §16.65).** Three
+> record corrections land on claims this ADR inherits; no candidate, verdict
+> or ranking changes.
+>
+> 1. **The span term every candidate below carries (`2·rate_fast·skew`) is
+>    OURS — a NOVELTY CLAIM, recorded where the term is proposed** (cross-check
+>    item 1(c) honesty note; Tier 0.6). No publication writes a separable
+>    resequencing term of the shape `Σ bwᵢ·(RTT_max − RTTᵢ)` beside a window
+>    term — checked against RFC 6182 §5.3, RFC 8684 §3.3.4, Barré 2011,
+>    Raiciu NSDI'12 and DAPS (Kuhn ICC 2014). The published multipath sizings
+>    are AGGREGATES with `RTT_max` outside the sum (`2·Σ bwᵢ·RTT_max`); our
+>    decomposition is one step of algebra from them and **half** their
+>    magnitude at N = 2. The paper may cite that literature for the term's
+>    *magnitude*, never for its *shape*: the decomposition must always be
+>    presented as our derivation.
+> 2. **The `17/8` at the centre of family 1 inherits a TUNED constant**
+>    (cross-check item 6(d)): RFC 9002 §6.1.2 recommends `kTimeThreshold = 9/8`
+>    empirically — *"Experience with QUIC shows that 9/8 works well"* — and
+>    RACK (RFC 8985) uses 5/4 for the same purpose. Earlier "cited, not
+>    fitted" descriptions overstate the source (candidate (d)'s deletion note
+>    below is unaffected — it removes the constant rather than re-deriving it).
+> 3. **The displaced predecessor's `gain = 2.0` is the right value with two
+>    published derivations and a wrong local rationale** (cross-check item 3,
+>    folklore item 1): RFC 6182 §5.3's `×2` and BBR's `cwnd_gain = 2`
+>    (ACK-aggregation absorption / minimum per-round rate-doubling gain) — the
+>    "recovery runway" prose appears in no primary BBR source. Recorded here
+>    because ADR-0070's FOSSIL verdict is cited throughout this document.
+
 ---
 
 ## Why these two, and why now
