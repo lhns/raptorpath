@@ -586,6 +586,41 @@ pub(crate) fn report(
                         .k_raw()
                         .map(|k| format!("{k:.2}"))
                         .unwrap_or_else(|| "-".to_string());
+                    // §16.69's SECOND MOMENT, reported at last — the RTT
+                    // standard-deviation estimate `√(EWMA[(rtt−srtt)²])`
+                    // (`Path::rtt_sigma_us`) and the number of samples folded
+                    // into it. The cost-ratio memo's FINDING B is that this
+                    // quantity is "computed on every arm and reported on
+                    // none": the engine's own comment reads *"Fed
+                    // unconditionally; read by nothing on the default arm"*,
+                    // and every construction the memo puts to the user needs
+                    // σ as a MEASURED input. §16.69's working `σ ≈ 10 ms` at
+                    // c8 was an assumption, and the memo's §2.3 had to invert
+                    // Cantelli against a cross-site statistic to estimate it
+                    // ~1.8× higher. This field is the print statement that
+                    // ends that: per path, on the sender's own `[DIAG]`
+                    // surface, at the same site as `rtt`/`wrtt`/`rtp`.
+                    //
+                    // FORMAT — `sig_us=<µs>/n<count>`, `-` for σ before the
+                    // first (rtt, srtt) pair, exactly the `kraw` convention.
+                    // The count is EVIDENCE, not a gate: the EWMA is seeded at
+                    // 0 and runs at β = 1/4, so it retains 0.75^n of that seed
+                    // and a σ read at n = 2 is biased low by about half. A
+                    // parser that wants a trustworthy σ discards small n
+                    // itself; the gauge does not decide for it, because a
+                    // field that disappears below a threshold cannot be told
+                    // apart from a path that was never sampled.
+                    //
+                    // NOT `ANCHOR_MIN_SAMPLES`-gated, and that is the honest
+                    // answer to "is σ valid before 8 samples?": the 8-sample
+                    // rule governs the DELIVERED-RATE anchor (`bw_samples`)
+                    // and touches nothing here. σ's warm-up is the EWMA's own,
+                    // it is reported, and it is a different clock.
+                    let sig_s = p
+                        .rtt_sigma_us()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    let sig_n = p.rtt_sigma_samples();
                     // feat/store-borrowing DIAG: this path's loan
                     // gauges — symbols LENT out (charged here,
                     // flying elsewhere) / BORROWED in (flying
@@ -614,8 +649,8 @@ pub(crate) fn report(
                     let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
                     let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }

@@ -510,21 +510,83 @@ A standing list, so a later draft cannot quietly acquire these.
 
 Ranked. **#1 is the one to check first.**
 
-1. **`δ = 0.4838` vs the contract's `δ_auto = 0.5` — the claimed 3 %
-   disagreement** (`cost-ratio-memo.md:420-435`, *"the most interesting number
-   in this document"*). It is the paper's single most quotable result: two
-   independently-derived recovery-clock options agreeing at Auto to 3 %,
-   apparently validating the transfer of Copa's δ to the recovery plane. **It
-   rests on two quantities that are not on the record.** σ is *"estimated, not
-   measured, everywhere in this memo, by inverting an inequality across two
-   clocks"* — and inverting Cantelli on measured `fa_frac` puts it near **18 ms
-   at c8** against the **10 ms** assumed, a **1.8×** discrepancy that lands
-   directly on this number. And ν *"is not on the record at all"*, so (d)'s
-   column is **parameterised rather than evaluated**; the memo itself calls the
-   agreement *"a prediction rather than a result."* **A 3 % agreement computed
-   from a σ that may be 1.8× wrong is not a 3 % agreement.** Prerequisite:
-   report `rtt_sigma_us()`, which the engine's own comment describes as *"Fed
-   unconditionally; read by nothing."*
+1. **`δ = 0.4838` — ~~the claimed 3 % agreement with the contract's
+   `δ_auto = 0.5`~~ — SUPERSEDED-PENDING-MEASUREMENT (2026-08-19).**
+
+   *What the number was.* `cost-ratio-memo.md:420-435` calls it *"the most
+   interesting number in this document"*, and it was the paper's single most
+   quotable result: two independently-derived recovery-clock options agreeing
+   at Auto to 3 %, apparently validating the transfer of Copa's δ to the
+   recovery plane.
+
+   *Why it is no longer quotable as stated.* It was never a measurement. It is
+   an INVERSION of option (d)'s stationarity condition, and it therefore
+   carries every input of that condition. Written out — which the memo did not
+   do, and which is the repair — invert
+   `α^{3/2}(1−α)^{1/2} = δ·p·σ/(2·ν·d)` at option (b)'s Auto point `α_b`:
+
+   ```text
+                2 · ν · d · α_b^{3/2} · (1 − α_b)^{1/2}
+       δ(σ, ν) = ───────────────────────────────────────
+                                p · σ
+   ```
+
+   **δ IS INVERSELY PROPORTIONAL TO σ AND LINEAR IN ν.** Every symbol on the
+   right except σ and ν is on the record: `α_b = 0.1843` (option (b)'s Auto
+   point at c8), `p = 0.0126` (realized per-path loss), `d = 77 ms`
+   (`srtt_wire` at c8; only the ratio `d/σ` matters, so the unit cancels).
+   Collecting them:
+
+   ```text
+       δ(σ, ν)  =  0.484 · (18.1 ms / σ) · (ν / 0.01)
+   ```
+
+   (The expression evaluates to **0.483** at the memo's own inputs, against the
+   memo's **0.4838** — a 0.3 % residual from `α_b`'s rounding, which is the
+   check that this really is the memo's number re-derived and not a new one.)
+
+   The `0.4838` in the memo is that expression evaluated at **σ = 18.1 ms** —
+   itself an estimate obtained by inverting Cantelli across two different
+   clocks, reported by the memo as a point value while being a lower bound —
+   and at **ν = 0.01**, which the memo picked precisely BECAUSE it reproduced
+   the agreement. *"A 3 % agreement computed from a σ that may be 1.8× wrong is
+   not a 3 % agreement"*, and one computed at a ν chosen to produce it is not
+   an agreement at all until ν is measured.
+
+   *What has changed since.* **ν IS NOW MEASURED**, off committed ledgers and
+   with no VM run: `tools/l1/nu_measure.py` over the Candidates Battery's 477
+   usable records reads **ν(c8) = 0.0438** — `fired` (the `[RACK]` line's
+   `fa=` denominator) over `dgq_hand` (symbols handed to the wire), both from
+   the same record and the same site. That is **4.5× the ν = 0.01 the
+   agreement was computed at**, and it moves δ the same way:
+
+   ```text
+       δ(σ = 18.1 ms, ν = 0.0438)  =  2.12        vs  δ_auto = 0.5
+   ```
+
+   *σ REMAINS A SYMBOL, and no value is invented here.* What can be stated is
+   the FALSIFIABLE PREDICTION the measurement will settle. Solving `δ(σ, ν) =
+   δ_auto = 0.5` at the measured ν gives the σ that would restore the
+   agreement:
+
+   ```text
+       σ_required  =  18.1 ms · (0.484 / 0.5) · 4.38  ≈  77 ms   ≈  d
+   ```
+
+   **A σ equal to the srtt it is the dispersion of is not a plausible reading**
+   — so the honest expectation is that the measurement kills the agreement
+   rather than confirming it. That is a prediction, it is written before the
+   measurement, and it is the reason the row is marked SUPERSEDED rather than
+   deleted: the number's FATE is now decided by one field.
+
+   *The prerequisite is discharged.* `rtt_sigma_us()` — the engine's own
+   comment described it as *"Fed unconditionally; read by nothing"* — is now
+   reported per path in the `[DIAG]` line as `sig_us=<µs>/n<count>`, with the
+   EWMA's sample count beside it as warm-up evidence
+   (`tests/sigma_diag_reachability.rs`). **What remains is one L1 run to read
+   σ at c8, and this row is rewritten from a measurement instead of an
+   inversion.** Until then, no paper may quote 0.4838, and none may quote 2.12
+   either: both are `δ(σ, ν)` at a σ nobody has measured.
 
 2. **`slack/window ≡ 2.125` in 833 of 833 evaluations** (§16.57, row 1.4). By
    MEASUREMENT DISCIPLINE 18 this reads as a **degeneracy**, not a validation —

@@ -34698,3 +34698,141 @@ now asserts, over a log the shipped `perf` harness actually produces:
 the c9 battery did not do. With that field and one c9h invocation, C9-L1 and
 C9-L3 both become readable and C9-L3's 2.000 ratio is decided. Nothing about
 that run is prepared, scheduled or launched here.
+
+---
+
+## MEASUREMENT TRUTH item 5 — THE CLOCK PREREQUISITES (local half)
+
+**Branch `feat/span-and-sigma` from main@`7f2b009`. LOCAL ONLY: no VM contact,
+no lock, nothing launched. No default flips, no gate is added, no law
+changes. `RWM_QUANTILE_CLOCKS` stays OFF and REFUTED-STANDING.**
+
+Three instruments and one re-derivation. All of them are prerequisites of a
+decision, none of them is the decision.
+
+### 5.1 — σ IS REPORTED AT LAST: `sig_us=<µs>/n<count>` in `[DIAG]`
+
+`Path::rtt_sigma_us()` — §16.69's second moment, `√(EWMA[(rtt − srtt)²])` at
+RFC 6298's own β = 1/4 — has been computed on every arm since it was written,
+and the engine's own comment next to the feed site said what became of it:
+*"Fed unconditionally; read by nothing on the default arm."* Its only
+consumers sit behind `RWM_QUANTILE_CLOCKS`.
+
+The cost of that is on the record. §16.69 derived `W(α) = srtt + k(α)·σ`
+against a **working value σ ≈ 10 ms** at c8 because no measured σ existed;
+`cost-ratio-memo.md` §2.3 then had to invert Cantelli across two different
+clocks to estimate ≈ 18.1 ms, **1.8× the assumed figure**, and said in the same
+paragraph that the real number *"is one print line away"*. This is that line:
+per path, on the sender's `[DIAG]` surface, beside `rtt`/`wrtt`/`rtp`.
+
+**IS σ VALID BEFORE `ANCHOR_MIN_SAMPLES`? The question does not apply, and
+that is the honest answer rather than a dodge.** `ANCHOR_MIN_SAMPLES` = 8
+gates the DELIVERED-RATE anchor (`bw_samples`) and has nothing to say about
+this statistic, which is fed from the RTT sample stream at `record_rtt` and
+exists from the first sample that has an `srtt` to deviate from. What it is
+NOT is trustworthy from the first sample: the EWMA is seeded at 0 and retains
+`0.75ⁿ` of that seed — 24 % at n = 5, 10 % at n = 8, 1 % at n = 16 — so a σ
+read at n = 2 is biased LOW by roughly half.
+
+**So the count is REPORTED, not used as a gate.** `sig_us=<µs>/n<count>`,
+with `-` for σ before the first (rtt, srtt) pair, exactly the existing `kraw`
+convention. Emitting only-when-valid would need a threshold on n, and a
+threshold that decides whether a gauge EXISTS is the same defect as a
+threshold that decides which law runs: the reader could not tell "σ
+suppressed" from "path never sampled". The parser gets the number and the
+evidence about it, and discards small n itself.
+
+**Reachability** — `tests/sigma_diag_reachability.rs`, a spawned run of the
+shipped binary because `[DIAG]` is an `eprintln!` no unit test can see. It
+asserts the two-sided `RWM_DIAG` echo; that `[DIAG]` fires; that **every**
+per-path block carries the field (a gauge present on some paths and not
+others is worse than absent — a parser would average a biased subset without
+knowing); that σ is parsed, positive and fed by n > 8; and that σ is bounded
+by the RTT it is a dispersion of, which catches the µs/s unit error at the
+instrument instead of in a results table. Observed on loopback:
+**σ = 1 873 µs at n = 6 737**. No claim about any cell's σ is made from that;
+loopback's dispersion is the host scheduler's.
+
+### 5.2 — ν IS MEASURED, AND IT NEEDS NO VM RUN
+
+`cost-ratio-memo.md` option (d) closes `α^{3/2}(1−α)^{1/2} = δ·p·σ/(2·ν·d)`
+with no fitted constant, and lists ν as the one symbol *"DERIVABLE, NOT
+CURRENTLY REPORTED — fires per delivered symbol."*
+
+**BOTH COUNTERS ARE ALREADY IN COMMITTED LEDGERS.** `fired` is the
+denominator of the `[RACK]` line's `fa=<spurious>/<fired>`, fed on EVERY arm
+including the shipped control (§16.68.1); the symbol count is `dgq_hand`, the
+datagram handoff counter summed over paths. Both are already extracted into
+every `CCANDRESULT` record. `tools/l1/nu_measure.py` is the ratio, over the
+Candidates Battery's five committed ledgers — **477 usable records, five
+cells, two seeds, no invocation, no lock, no VM.**
+
+| cell | n | fired | symbols | **ν** | loss | implied sym B |
+|---|---|---|---|---|---|---|
+| c1 | 68 | 75 075 | 22 855 521 | **0.0032** | 0.0000 | 1 188 |
+| c7 | 81 | 417 397 | 14 247 521 | **0.0291** | 0.0221 | 1 137 |
+| **c8** | 143 | 147 574 | 3 224 861 | **0.0438** | 0.0000 | 1 109 |
+| c8L | 102 | 933 088 | 18 877 371 | **0.0486** | 0.0000 | 1 083 |
+| sc2 | 83 | 266 232 | 7 297 206 | **0.0370** | 0.0000 | 1 140 |
+
+The **implied symbol size** column is a CHECK, not an input: it is the run's
+own goodput divided by its own handoff count, and it lands at MTU-class
+payload on every cell, which is what says the two counters are counting what
+this reading assumes. A row where it did not would be suspect.
+
+**THE RESULT THE MEMO ASKED FOR.** The memo's chief technical residue was:
+*"If a measurement of ν at c8 lands near 0.01, then (b) and (d) are the same
+option and there is materially less to decide … If ν lands an order of
+magnitude away, they diverge and the choice between them is real."*
+
+**ν(c8) = 0.0438 — 4.5× the 0.0097 the agreement was computed at. (b) and (d)
+DIVERGE, and the choice between them is real.** This is the prediction the
+memo wrote down being scored against data that was already on disk.
+
+Two caveats stated rather than buried: `fired` is a SENDER-site count and the
+loss `p` used to convert sent→delivered is the sender's own per-path
+estimate, so unlike the memo's §2.3 this ratio does **not** cross sites; and
+`dgq_hand` counts sent symbols, which at a lossless cell is the delivered
+count exactly.
+
+### 5.3 — THE PAPER SKELETON'S `δ = 0.4838` IS NOW SUPERSEDED-PENDING-MEASUREMENT
+
+`position-paper-skeleton.md` §7 item 1 ranked `δ = 0.4838` vs `δ_auto = 0.5`
+as *"the number to check first"* — the paper's most quotable result — while
+flagging that it rests on a σ estimated ~1.8× off. It has been rewritten as
+a DERIVATION PARAMETERIZED BY σ rather than a number:
+
+```text
+             2 · ν · d · α_b^{3/2} · (1 − α_b)^{1/2}
+   δ(σ, ν) = ───────────────────────────────────────  =  0.484 · (18.1 ms / σ) · (ν / 0.01)
+                           p · σ
+```
+
+δ is **inversely proportional to σ and linear in ν**. The expression
+reproduces the memo's 0.4838 to 0.3 % at the memo's own inputs, which is the
+check that it is the same number re-derived and not a new one. **No σ is
+invented.** With ν now measured, `δ(σ = 18.1 ms, ν = 0.0438) = 2.12` against
+`δ_auto = 0.5`; and the σ that would RESTORE the agreement at the measured ν
+is **≈ 77 ms ≈ d itself** — a dispersion equal to the mean it disperses
+around, which is not a plausible reading. **That is a falsifiable prediction
+written before the measurement:** the honest expectation is that measuring σ
+kills the agreement rather than confirming it. Until σ is read at c8, **no
+paper may quote 0.4838 and none may quote 2.12** — both are `δ(σ, ν)` at a σ
+nobody has measured.
+
+### Gates
+
+`cargo test -p raptorpath --lib` green; `--test sigma_diag_reachability`
+green (1 test); `--test gauge_reachability` green. `nu_measure.py` runs on
+committed ledgers only. No default flipped, no gate added, no engine law
+touched — σ is a print statement and ν is a parser.
+
+### WHAT REMAINS FOR THE VM HALF
+
+* **σ**: one L1 run with `RWM_DIAG=1` (which every battery arm already sets)
+  reads `sig_us=` at all five cells, and §5.3's prediction is scored. Not
+  prepared here.
+* **ν**: **nothing.** It is measured above from committed data.
+* **`fa` and σ at the SAME SITE**: the receiver's `[RACK]` gauge never calls
+  `record_fire`, which is why the memo's §2.3 had to cross clocks. Untouched
+  here; it is the one instrument change with real surface area.
