@@ -14644,6 +14644,64 @@ its δ-priced candidate is adopted **through the derived band**, in the pool's
 value multiplier, and not as the ceiling replacement the family's own formula
 proposes.
 
+### 16.72 Eppen's correlation condition scored at c8: the ordering is measured and significant, the cross-check named the wrong series, and the harness has been making the series it named ρ = +1 by construction at every symmetric cell in this tree (2026-08-19, `analysis/eppen-c8`, **STRICTLY LOCAL** — no VM, no new arm, no new binary, no engine file, no gate, no default, no test; goal-gate "Eppen's Condition at c8" is the full scoring and carries the c9 pre-registration, this section is the paper's pointer)
+
+§16.65 recorded the cross-check's cheapest open item: Eppen 1979 proves that a
+centralized stock beats N dedicated ones, that *"the magnitude of the saving
+depends on the correlation of demands"*, and that the saving **vanishes as
+ρ → +1**. CD-5 read ADR-0058's pooled-vs-per-path arc as that theorem and its
+c7-vs-c8 split as the condition showing, then named one measurement to settle
+it: *cross-path correlation of stall/loss events*. It is now scored against
+ledgers already committed, and it changed both the cross-check's claim and one
+fact about the measurement apparatus.
+
+**The ordering PREDICTS.** On the per-path drain of the shared outstanding pool
+— the `[ACKDIAG]` gauge's own `rate_lr` and `acks` series, twelve 2 s window
+pairs per cell — the cross-path correlation is **−0.814 at c7 and +0.612 at
+c8** with the warm-up ramp removed (**+0.048 / +0.800** rep-centered, **+0.282 /
++0.786** raw). `ρ_c8 > ρ_c7` under **all three estimators**, Fisher two-sample
+**p = 0.009** (two-way) and **p = 0.026** (rep-centered). Through the
+pooled-variance identity that is a pooling benefit of **0.695 at c7 against
+0.102 at c8**, and the ordering survives in absolute units too, which is not
+automatic: c7 carries the *smaller* per-path dispersion (CV 2.5 %/1.6 % against
+c8's 25 %/25 %) and still the *larger* absolute saving, **82.3 vs 59.0 sym/s**.
+Those two rows are ADR-0058's two verdicts — pooling LOO-defended at c7,
+pooling's edge never appearing at c8 — with no parameter fitted.
+
+**The referent is REFUTED, and this is the part worth publishing.** CD-5 named
+the stall/loss series and guessed c7 would be the *more* correlated cell. The
+stall series does not separate the cells at all (`p` = 0.26/0.28); the drain
+series does. And on the loss series c7 is not "likely correlated" — it is
+**ρ = +1 exactly**, because `tools/l1/topo_dual.sh` passes ONE `--seed` to both
+legs, so at a symmetric cell the two paths' Gilbert-Elliott chains and
+delay-jitter draws are the **same realization**, read straight off the `-q.txt`
+qdisc captures in 6 of 9 of them. That is the zero-benefit end of Eppen's axis
+at exactly the cell where pooling demonstrably wins. **Run as written, CD-5's
+experiment would have returned the opposite answer.** The harness limitation is
+recorded as a defect with its instrument — a second seed parameter, so ρ_loss
+becomes a dial instead of a constant nobody knew was set.
+
+**And the analogy strains at the one joint that decides what the result means.**
+Eppen's demands are exogenous and their sum is free. Ours are one flow split by
+a work-conserving scheduler against a binding total, and for N exchangeable
+series summing to a constant the mean pairwise correlation is **pinned at
+−1/(N−1)** — exactly −1 at N = 2. A saturated symmetric dual therefore sits at
+the ρ → −1 end of Eppen's axis *by construction*, and c7's measured −0.814 is
+81 % of the way to that algebraic floor. The corollary is the finding's real
+content: in this machine positive drain correlation cannot come from correlated
+environmental demand, so it must come from **a shared constraint that starves
+every path at once** — and the c8 windows show it directly, both legs collapsing
+in the same window while the fast path parks the un-SACKed frontier span. **At
+c8 the two paths do not have two demands; they have one.** Eppen's ρ is an input
+to his model; ours is at least partly an output of the design under test, which
+is why the verdict is **PARTIAL** and not PREDICTS: until ρ is measured on a
+per-path-account arm at the same geometry, *"pooling loses at c8 because the
+demands are correlated"* and *"the demands are correlated at c8 because of
+pooling"* are the same data. The goal-gate section pre-registers the four c9
+bars that separate them, before c9 exists — including the deciding one, which
+costs a single extra arm and can retire CD-5's reading rather than confirm it.
+
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

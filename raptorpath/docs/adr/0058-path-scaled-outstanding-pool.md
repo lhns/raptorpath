@@ -89,7 +89,34 @@ candidacy refuted at c7).
   efc8f75 + 5d30c02 (honest caps), 477ab32 + 7c3343f (borrowing +
   verdict), 5ebbcda (default flip).
 
+## Prior art and the correlation condition (added 2026-08-19)
+
+The pooled-vs-per-path result above is **Eppen 1979** (*Management Science*
+25(5):498–501): centralized stock strictly beats decentralized, the saving
+depends on the correlation of demands, and it goes as √N when they are
+identical and uncorrelated. `RWM_STORE_BORROW` is *lateral transshipment*,
+whose published limitation is exactly what was measured. The three
+sub-experiments were a rediscovery; see `docs/research/literature-crosscheck.md`
+CD-5.
+
+**The condition MEASURED (goal-gate "Eppen's Condition at c8", paper §16.72,
+verdict PARTIAL).** The cross-path correlation of the pool DRAIN is **−0.814 at
+c7 and +0.612 at c8**, `ρ_c8 > ρ_c7` at Fisher `p = 0.009`, implying pooling
+benefits of **0.695 vs 0.102** — i.e. this ADR's own c7-vs-c8 split is the
+signature Eppen's condition predicts, unfitted. **It does not amend any verdict
+here**, for two recorded reasons: the correlation is measured on ONE arm (this
+ADR's pooled default), so it cannot distinguish "pooling loses at c8 because the
+demands are correlated" from "the demands are correlated at c8 because of
+pooling"; and the c8 record's own name for the residual — slow-path CONVERSION,
+the fast path parking the un-SACKed frontier while the slow path converts
+~nothing — is precisely the shared constraint that would MANUFACTURE the
+correlation. The c9 pre-registration's bar C9-4 (ρ̄ measured on the pooled AND
+the `RWM_STORE_PERCAP` arm at one geometry) is what separates them.
+
 ## References
 
 - ADR-0057 (the refuted receiver-wall attribution this replaced),
   ADR-0060 (the release law that moved the c8 story), ADR-0067 (LOO).
+- Eppen 1979 (prior art for the pooled decision); Fukuda 1964 + RFC 6182
+  (size on the slowest lead time) — via `docs/research/literature-crosscheck.md`
+  CD-5.
