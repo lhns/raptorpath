@@ -105,13 +105,29 @@ up() {
     # carries them too, which is what the seed audit reads).
     echo "dual topology up: pathA=$scen_a pathB=$scen_b" \
          "seeds=[$(leg_seed "$seed" 0),$(leg_seed "$seed" 1)] (spec='${seed:-unset}')"
-    # THE "TOPO-PING". Same two pings, same exit semantics (`aw_ping` re-returns
-    # the ping's status, so `set -e` still aborts here exactly as before) — but
-    # the rc and the output are now RECORDED. Note what the position of these
-    # two lines already proves: they are the LAST statements of `up()`, so a
-    # failure here leaves a COMPLETE topology behind, and `perf_rwm_c.sh` does
-    # not read this script's exit code at all. The abort class named after them
-    # cannot have been caused by them.
+    # THE "TOPO-PING" — REPAIRED. These two lines are `topo_dual.sh:95` and
+    # `:96`, i.e. the exact pair the era battery's witness resolved **ALL 38 of
+    # its 204 aborts** to (goal-gate "Era Battery — THE SCORED RESULT" §1). The
+    # cause was not these lines' POSITION but the check's SHAPE: two ICMP
+    # packets, no retry, across a Gilbert-Elliott-lossy leg, aborting on the
+    # draw where both land in the bad state.
+    #
+    # THE COMMENT THAT USED TO BE HERE ARGUED THE OPPOSITE, AND IT WAS WRONG.
+    # It said the abort class "cannot have been caused by them" because they are
+    # the LAST statements of `up()` and `perf_rwm_c.sh` does not read this
+    # script's exit code. Both halves are true and the conclusion still does not
+    # follow: `aw_ping` re-returns the ping's status under `set -e`, so a lost
+    # draw kills `up()` — and `perf_rwm_c.sh` runs it through `aw_step topo_up`,
+    # which DOES read the code. The association was perfect at n = 204 (38/38
+    # aborts, 0/166 non-aborts). The wrong argument is kept in view here rather
+    # than quietly deleted, because it is why three batteries carried the class
+    # as an unexplained "seed-7" footnote.
+    #
+    # The repair lives in `aw_ping` (abort_witness.sh) with its sizing
+    # arithmetic: retry to at most `AW_PING_ATTEMPTS = 26` draws, accept the
+    # FIRST reply, which puts the false-abort probability at 2.0e-5 per leg at
+    # the worst committed GE cell (c5) against the 1.05e-1 it was. Recording
+    # semantics are unchanged and a genuinely dead leg still aborts.
     aw_ping "$NS_CLI" 10.77.0.2 pathA
     aw_ping "$NS_CLI" 10.78.0.2 pathB
 }

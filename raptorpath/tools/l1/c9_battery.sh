@@ -114,6 +114,49 @@ env SEED=$SEED_ARG RWM_GEN=0 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=250000 $ARM_ENV
   | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
 echo "RUNTIME $CELL/$ARM rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
 
+# ── THE ABORT-WITNESS COLUMNS (goal-gate c9 contract §6, step 4) ──────────
+# THE SCORING RULE THIS EXISTS TO SATISFY, verbatim from the contract: "A c9
+# battery run without usable witness columns is scoreable only if its abort
+# count is ZERO; any non-zero abort count without `abort_cause` makes C9-2 and
+# C9-4 — the two arm-comparison clauses — UNSCOREABLE." Those two clauses are
+# the arm comparisons, and an arm-correlated abort class (20 % control vs 75 %
+# RACK at c8/seed 7) makes abort-exclusion a SELECTION ON THE TREATMENT. So the
+# columns are not optional decoration on a 24-invocation two-arm battery; they
+# are what makes half of it readable.
+#
+# Read through `abort_witness.py` rather than a re-implemented grep block, so
+# this battery's `abort_cause` has the SAME definition as the era battery's.
+aw_col() { # key
+  python3 -c "
+import sys; sys.path.insert(0, '.')
+from abort_witness import read_witness
+w = read_witness('/tmp/rwm-abort.txt')
+print('' if w is None else (w.get('$1') if w.get('$1') is not None else ''))" 2>/dev/null
+}
+gates_c=$(grep -c '\[GATES\]' /tmp/rwm-c.log 2>/dev/null || true)
+gates_s=$(grep -c '\[GATES\]' /tmp/rwm-s.log 2>/dev/null || true)
+cause=$(python3 -c "
+import sys; sys.path.insert(0, '.')
+from abort_witness import cause_or
+print(cause_or('/tmp/rwm-abort.txt'))" 2>/dev/null)
+drain=$(aw_col drain_pids_t0)
+# `abort_missing` is NOT the same as `abort_cause=None`: the first means the
+# witness never ran, the second means it ran and named no failing step. Only
+# the first is an instrument failure.
+if [ -f /tmp/rwm-abort.txt ]; then amiss=FALSE; else amiss=TRUE; fi
+echo "WITNESS $CELL/$ARM rep=$REP abort_cause=${cause:-no_record} abort_missing=$amiss drain_pids_t0=${drain:-NA} gates_cli=${gates_c:-0} gates_srv=${gates_s:-0}" >> "$OUT"
+# THE TOPO-PING COLUMN, new with the ping repair. `attempts=1` on every leg is
+# the healthy reading; anything above 1 is a Gilbert-Elliott loss draw that
+# WOULD HAVE BEEN AN ABORT under the pre-repair 2-packet no-retry check, and
+# counting them is how this battery measures what the repair bought.
+grep -E '^ping_.*_attempts=' /tmp/rwm-abort.txt 2>/dev/null \
+  | sed "s/^/PING-RETRY $CELL\/$ARM rep=$REP /" >> "$OUT" || true
+if [ "$(( ${gates_c:-0} + ${gates_s:-0} ))" -eq 0 ]; then
+  echo "ABORT $CELL/$ARM rep=$REP (no [GATES] on either endpoint) abort_cause=${cause:-no_record}" >> "$OUT"
+  [ "${cause:-no_record}" = "no_record" ] \
+    && echo "INSTRUMENT-FAIL-WITNESS $CELL/$ARM rep=$REP (an abort with no witness record)" >> "$OUT"
+fi
+
 # ── LIVENESS, two-sided, on EVERY knob this arm rests on (discipline 15c) ──
 # The gauge gate, the WINDOW, and the arm knob are each asserted from the
 # `[GATES]` echo on BOTH endpoints, and the gauge is separately proven to have
@@ -161,4 +204,9 @@ cp /tmp/rwm-c.log "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-c.log" 2>/dev/
 cp /tmp/rwm-s.log "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-s.log" 2>/dev/null || true
 cp /tmp/rwm-q.txt "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-q.txt" 2>/dev/null \
   || echo "QCAP-MISSING $CELL/$ARM rep=$REP" >> "$OUT"
+# The witness record, per rep, exactly the way the qdisc capture is collected —
+# so the launch step gathers it with the rest of the ledger and no protocol
+# changes (goal-gate c9 contract §6 step 4).
+cp /tmp/rwm-abort.txt "$DDIR/${CELL}-${ARM}-s${SEED_ARG//,/x}-r${REP}-abort.txt" 2>/dev/null \
+  || echo "AWCAP-MISSING $CELL/$ARM rep=$REP" >> "$OUT"
 echo "RUN-DONE $CELL/$ARM rep=$REP"

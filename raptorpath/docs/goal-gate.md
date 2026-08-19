@@ -34036,3 +34036,80 @@ A deployment that upgraded from the pre-arc default (`4171b58`, 2026-08-08) to t
 * **Named successors, in the order the evidence names them:** (1) **repair the topo-ping** — a 2-packet no-retry ICMP sanity check on a deliberately lossy link manufactured 38 aborts and a 50-point arm imbalance, and it is a harness defect with a one-line fix; (2) **resolve the `q_p50` / `ping_p50` sign disagreement at `c8`/`c8L`**, which is the only thing standing between "the engine's queue collapsed" and "delivered latency improved"; (3) **arm `NR` at `c8L`, and at a cell where `legacy_pin` is not already at its ceiling**, because P5's test had room at exactly one cell and lost there; (4) **re-run the ack-merge pair alone at `c1` on today's substrate**, to separate interaction from substrate drift in P1 and P3.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
+
+---
+
+## HARNESS ERA BOUNDARY — THE TOPO-PING REPAIR (2026-08-19, `feat/c9-run` from main@`97bd690`) — **era scoring's named successor #1, closed. A SECOND ERA BOUNDARY FOR ABORT STATISTICS: every pre-repair abort rate in this document is conditioned on a defect in the sanity check, not on the arm it is filed under.**
+
+The era battery's abort-cause witness resolved **ALL 38 of its 204 aborts** to
+`topo_step` at `topo_dual.sh:95/96` — the two sanity pings — with `topo_step`
+on **38 of 38 aborts and 0 of 166 non-aborts**, every one recording `2 packets
+transmitted, 0 received, 100% packet loss`, and the engine binary never
+launched on any of them. The check is a **2-packet no-retry ICMP probe run
+across a deliberately Gilbert-Elliott-lossy shaped leg**; its purpose is
+"namespace and route exist", not "zero loss", so a loss draw was aborting
+invocations for doing exactly what the cell was shaped to do.
+
+**THE REPAIR.** `aw_ping` now retries to at most `AW_PING_ATTEMPTS = 26` draws
+and accepts the FIRST reply. The bound is sized, not chosen: netem's
+`loss gemodel p q` drops iff the chain is in the bad state, so
+`P(N draws all lost) = pi_bad * (1-q)^(N-1)` with `pi_bad = p/(p+q)`. At the
+**worst committed GE cell — `c5`/badwifi, `p=5.3 q=30`, `pi_bad = 0.15014`,
+persistence `1-q = 0.70`** (worst on both terms across the whole
+`scenario_params` table):
+
+```text
+  N = 2   (shipped)   0.15014 * 0.70     = 1.05e-1   per leg   <- the 38/204 class
+  N = 26  (repaired)  0.15014 * 0.70^25  = 2.01e-5   per leg
+                      1 - (1-2.01e-5)^4  = 8.05e-5   per QUAD invocation  < 1e-4
+```
+
+At c9's own legs it is not close: **7.6e-10** (c2) and **1.4e-7** (c3). It is a
+retry LOOP rather than a wider `-c` for two reasons: it **exits on the first
+reply**, so the healthy path — every invocation that is not about to abort —
+now costs ONE packet and ~10 ms against the two packets and 200 ms interval it
+cost before, i.e. the repair is *cheaper* on 100 % of the runs that matter; and
+only a loop's semantics are observable through a stubbed `ping`. **A genuinely
+dead leg still aborts, and still aborts fast** (no route makes `ping` fail
+immediately rather than time out). Recording semantics are unchanged and two
+columns are added: `ping_<leg>_attempts` and `ping_<leg>_max_attempts`.
+
+`topo_quad.sh` receives the same repair plus the witness wiring it was owed
+(c9 contract §6 step 3: `set -E`, `source ./abort_witness.sh`, the `ERR` trap,
+`aw_ping` on all four legs). It had inherited the 2-packet check **into a
+topology with twice the legs**, i.e. twice the independent chances of a false
+abort per invocation, and it had no way to name its own failing line. **It was
+never run on the wire in that form, so no quad ledger carries the defect.**
+`c9_battery.sh` gains the three §6 columns (`abort_cause`, `abort_missing`,
+`drain_pids_t0`) plus a `PING-RETRY` line per leg, read through
+`abort_witness.py` rather than a re-implemented block.
+
+**THE GATE.** `test_topo.sh` grew a `ping_plan` stub that drives the outcome
+from the `ip` stub (which is the process the retry loop actually sees, since
+the check is issued as `ip netns exec <ns> ping`): a ping that **fails 3× then
+succeeds does NOT abort** — dual and quad, and the retry count is asserted
+exactly (5 and 7 attempts, so a loop that reset per leg or gave up early is
+caught) — an **always-failing ping still DOES abort**, **bounded at exactly 26
+draws**, the witness still records rc and now the attempt count, and the quad's
+new `ERR` trap names `abort_cause=topo_step`. The **sized constant itself is
+asserted against `abort_witness.sh`**, so a later edit that quietly shrinks the
+bound re-opens the class through a failing gate rather than through a battery.
+
+> **THE ERA BOUNDARY, and it is the part that can silently corrupt a
+> comparison.** Abort rates are not comparable across this commit.
+> **Every abort statistic in this document that predates it — the "seed-7
+> topo-ping double-abort class" carried in prose since the candidates battery,
+> the per-arm `n` reductions it caused across roughly twenty batteries, the
+> 9.7 %/38.9 %/24.5 %/50.0 % rates, and G-ABORT's 10-point deductions — is
+> conditioned on the lossy-ping defect, not on the arm, cell or binary it is
+> filed under.** Those numbers measured a property of the sanity check
+> interacting with the cell's shaped loss; at a fixed cell they are still a
+> valid *relative* signal between arms only insofar as the arms drew from the
+> same loss process, which is exactly what the arm-correlated rates
+> (20 % control vs 75 % RACK) say they did not. **A post-repair abort rate and
+> a pre-repair one are not the same measurement and neither is a control for
+> the other.** Post-repair, an abort at `topo_step` means a leg that failed 26
+> consecutive draws — at c5 a 2e-5 event — and should be read as a real
+> topology failure rather than as weather.
+
+**Nothing here flips a default, adds an engine gate, or edits an engine crate.**

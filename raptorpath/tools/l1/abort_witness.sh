@@ -277,12 +277,102 @@ aw_err_trap() { # rc line command
     aw_cause "topo_step" "line=$2 rc=$1 cmd=$3"
 }
 
+# ── THE TOPO-PING, AND THE ABORT CLASS IT MANUFACTURED ──────────────────
+#
+# THE DEFECT, measured. The era battery (goal-gate "Era Battery — THE SCORED
+# RESULT" §1, G-ABORT) resolved **ALL 38 of its 204 aborts** to `topo_step` at
+# `topo_dual.sh` lines 95/96 — these two calls — with `topo_step` on 38 of 38
+# aborts and **0 of 166 non-aborts**. The recorded ping output is unambiguous
+# on all 38: `2 packets transmitted, 0 received, 100% packet loss`, while
+# surviving invocations at the same cells routinely record `1 received, 50%
+# packet loss`. The engine binary was never launched on any of them
+# (`srv_bound`, `cli_rc`, `seconds` all `None`), so the class is entirely
+# upstream of the code under test — a **2-packet no-retry ICMP check run
+# across a deliberately Gilbert-Elliott-lossy shaped leg, aborting on the draw
+# where both packets happen to land in the GE bad state.**
+#
+# THE CHECK'S PURPOSE IS "NAMESPACE AND ROUTE EXIST", NOT "ZERO LOSS". A loss
+# draw is the cell doing exactly what it was shaped to do and must not abort
+# the invocation; a leg with no namespace, no address or no route still must.
+# So the repair is to RETRY until at least one reply, bounded, and to size the
+# bound from the loss process rather than from taste.
+#
+# ── THE SIZING ARITHMETIC (this is the number's whole provenance) ────────
+#
+# netem `loss gemodel p q` with `h`/`k` defaulted is a two-state Gilbert-
+# Elliott chain that drops a packet IFF the chain is in the BAD state, with
+# `p` = P(good->bad) and `q` = P(bad->good) per packet. Hence
+#
+#     pi_bad     = p / (p + q)                     stationary bad probability
+#     P(stay)    = 1 - q                           per-packet bad-state persistence
+#     P(N lost)  = pi_bad * (1 - q)^(N-1)          N consecutive packets, all lost
+#
+# The ICMP echo REQUEST is the only half that crosses a lossy qdisc — the
+# reverse (`srv*`) direction is shaped delay/rate only, never loss — so each
+# attempt is exactly ONE draw of this chain and the attempts of a retry loop
+# are consecutive draws, identical in law to consecutive `-c` packets.
+#
+# WORST COMMITTED GE CELL — `lib.sh::scenario_params`, all of them:
+#
+#     cell           p      q      pi_bad     1-q     P(2 lost)   P(26 lost)
+#     c1/dc          0.05   50     0.000999   0.500   5.0e-4      3.0e-11
+#     c2/wifi        1.3    50     0.025341   0.500   1.3e-2      7.6e-10
+#     c2r100l5       2.63   50     0.049971   0.500   2.5e-2      1.5e-9
+#     c3/lte         2      40     0.047619   0.600   2.9e-2      1.4e-7
+#     c2r100l10      5.56   50     0.100072   0.500   5.0e-2      3.0e-9
+#     c4/sat         3      30     0.090909   0.700   6.4e-2      1.2e-5
+#   > c5/badwifi     5.3    30     0.150142   0.700   1.1e-1      2.0e-5   <- WORST
+#
+# `c5` is the worst committed cell on BOTH terms that matter (highest `pi_bad`
+# AND, jointly with `c4`, the highest persistence `1-q = 0.70`), so it sizes
+# the bound for every other cell at once.
+#
+#     shipped N = 2 :  0.150142 * 0.70^1  = 1.05e-1   <- the 38/204 class
+#     chosen  N = 26:  0.150142 * 0.70^25 = 2.01e-5   per leg
+#                      1 - (1 - 2.01e-5)^4 = 8.05e-5  per QUAD invocation (4 legs)
+#
+# **8.05e-5 < 1e-4 for a whole four-legged invocation**, which is the stronger
+# of the two readings of the requirement; per leg it is 2.0e-5. At c9's own
+# legs it is not close: 7.6e-10 (c2) and 1.4e-7 (c3).
+#
+# ── WHY A RETRY LOOP AND NOT `ping -c 26` ───────────────────────────────
+# Identical arithmetic (same chain, same per-packet draws), but the loop EXITS
+# ON THE FIRST REPLY, so the healthy path — which is every invocation that is
+# not about to abort — costs ONE packet and about 10 ms instead of the two
+# packets and 200 ms interval it costs today. It is therefore FASTER than the
+# check it replaces on 100 % of the runs that matter. It is also the only form
+# whose retry semantics a stubbed `ping` can test, which `test_topo.sh` does.
+#
+# A genuinely dead leg STILL ABORTS, and fast: no namespace, no address or no
+# route makes `ping` fail immediately (`Network is unreachable`) rather than
+# time out, so all 26 attempts are spent in milliseconds. Only the
+# route-exists-but-100%-loss leg pays the timeout, which is a real failure and
+# is supposed to be expensive exactly once.
+: "${AW_PING_ATTEMPTS:=26}"
+: "${AW_PING_WAIT:=1}"
+
 # A recorded sanity ping that PRESERVES the caller's exit status, so `set -e`
-# behaviour at the call site is exactly what it was.
+# behaviour at the call site is exactly what it was: the final attempt's status
+# is re-returned, `set -e` still kills `up()` on a leg that never replied, and
+# the rc + the output are still recorded under the same `ping_<label>*` keys the
+# witness has always written.
 aw_ping() { # ns peer label
-    local ns="$1" peer="$2" label="$3" out rc
-    out="$(ip netns exec "$ns" ping -c 2 -i 0.2 -W 2 "$peer" 2>&1)" && rc=0 || rc=$?
+    local ns="$1" peer="$2" label="$3" out rc i
+    rc=1
+    for ((i = 1; i <= AW_PING_ATTEMPTS; i++)); do
+        out="$(ip netns exec "$ns" ping -c 1 -W "$AW_PING_WAIT" "$peer" 2>&1)" \
+            && rc=0 || rc=$?
+        [ "$rc" -eq 0 ] && break
+    done
+    # The loop counter runs one past the bound when every attempt failed; the
+    # recorded column must read "26 of 26 spent", not "27".
+    [ "$i" -gt "$AW_PING_ATTEMPTS" ] && i="$AW_PING_ATTEMPTS"
     aw_kv "ping_${label}_rc" "$rc"
+    # NEW COLUMN, and it is the one that makes the repair auditable: how many
+    # draws this leg needed. `1` is the healthy case; anything above it is a
+    # loss draw that USED to be an abort and is now a recorded retry.
+    aw_kv "ping_${label}_attempts" "$i"
+    aw_kv "ping_${label}_max_attempts" "$AW_PING_ATTEMPTS"
     aw_kv "ping_${label}" "$(printf '%s' "$out" | tail -2)"
     printf '%s\n' "$out" | tail -1
     return "$rc"
