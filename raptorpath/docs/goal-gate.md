@@ -35962,6 +35962,76 @@ That leaves the third possibility, and it is now the leading one: **something am
 
 ---
 
+## The Missing Half at the Fast Single Path — PHASE 2 AMENDMENT (2026-08-19, `feat/gap-phase2` from main@`9919321`) — **written and committed BEFORE the ladder runs, in its own commit. No number below is a result.**
+
+Phase 1 scored `D1` and **also failed `G1`**, and those two pre-registered clauses give opposite dispatch instructions. The original contract has no precedence rule for that, and inventing one after seeing the ladder's numbers would be choosing the verdict. **So the rule is written here, before the run, together with the three other things phase 1 proved the contract was missing.** The phase-1 pre-registration and its scored section are **not edited**; this amendment is additive and is scored alongside them.
+
+### (a) THE `D1` / `G1` PRECEDENCE RULE — **PHASE 2 LAUNCHES**, and exactly what its numbers may be used for
+
+**THE CONFLICT, STATED PLAINLY.** `D1` (the 2×2's cell: `L = DRIFTED` × `R = REPRODUCES`) says *"phase 2 launches with the ladder as its discriminator."* `G1` failed — `Op` landed outside **both** published levels at s7, and its s42 "pass" was against a reference carrying `σ = 41.37`, which the contract itself had already declared to have *"no resolving power at all"* — and `G1`'s consequence reads *"that outcome is reported as the finding and phase 2 is held."* **Both clauses fired. The contract did not anticipate that they could.**
+
+**THE RULE, AND ITS REASON.** **`D1` GOVERNS: PHASE 2 LAUNCHES.** The reason is not that a launch is more convenient than a hold; it is that **`G1` and phase 2 are about different quantities, and phase 1 demonstrated the difference rather than assumed it.**
+
+* `G1`'s failure is a statement about **ABSOLUTE LEVELS COMPARED ACROSS SESSIONS.** `c1`'s level moved 201.8 → 192.06 → 179.35 at s7, with the last two steps **on the same day**. Any number of the form "today's `X` against another session's `Y`" is therefore untrustworthy at this cell.
+* **Every phase-2 contrast is a RATIO taken WITHIN ONE SESSION, on ONE BINARY, PAIRED WITHIN REP,** with the five arms interleaved and adjacent inside each rep on the same freshly built topology. That is the design phase 1 put under exactly this stress and **watched survive it**: the drift broke `L` at −11.2 %/−11.1 % while `R` came through at +9.88 %/+11.95 %, reproducing a band published eleven days and one substrate-state earlier. **A level shift divides out of a within-rep ratio, and phase 1 is the evidence for that claim rather than the assumption behind it.**
+
+**WHAT THIS BUYS AND WHAT IT COSTS, PRE-COMMITTED:**
+
+* **CITABLE:** every within-session paired ratio and difference phase 2 produces — `Nd − Nm`, `Nd − Nh`, `Nd − Ns`, `Nd − Nc` — with their dispersions.
+* **NOT CITABLE:** **every absolute level in phase 2's ledger, against any other session's number, anywhere in this document.** Phase 2's `Nd` Mbit/s is not comparable to flip week's 203.1, to the era battery's 187.23, or to phase 1's 180.30. Rows carry the level because a ratio needs a denominator and because `ms_per_MB` needs its wall — **not so that it can be differenced against another day.** Any later section that quotes a phase-2 level cross-session is in violation of this clause, and this sentence exists so that violation is checkable rather than arguable.
+* **AND `G1`'S FINDING IS NOT DOWNGRADED.** The third state stands as phase 1 recorded it. This clause narrows what the hold applies to; it does not retract it.
+
+### (b) PHASE 2 PUBLISHES A STEAL FIGURE BESIDE EVERY ARM
+
+Phase 1 published **one** steal figure for a whole seed's session — 4.25 % of wall, **10.3 % of non-idle** — covering 36 invocations at once. That is enough to say the hypervisor is taking roughly one CPU tick in ten from a workload concentrated in about one core, and **not** enough to say whether it took them evenly. **A steal burst that lands on one arm and not the arm beside it in the same rep is precisely the confound the paired design exists to exclude, and phase 1 could not have detected it.**
+
+So `/proc/stat`'s `user/sys/idle/steal` are now read **either side of every invocation** and the delta published on a per-invocation `STEALROW`, aggregated per arm per seed by the parser. **PRE-COMMITTED READING RULE: if any arm's mean `pct_nonidle` differs from another arm's at the same seed by more than 5 percentage points, every contrast between those two arms is reported WITH the steal table beside it**, and the verdict says so in those words. No band is asserted on steal's absolute level — no prior ledger published one, so there is nothing to assert against, and phase 1's session figure is the first datum of a series rather than a threshold.
+
+### (c) THE SEEDS-DISAGREE COMBINING RULE, PRE-COMMITTED THIS TIME
+
+Phase 1's primary reading split across seeds — `R` scored **LOW at s42 and REPRODUCES at s7** — and the s42 exclusion was **0.08 percentage points**, three per cent of its own half-width. There was no pre-registered rule, so one had to be stated post-hoc. **That is a defect in the contract, not in the reading, and it is repaired here in advance.**
+
+**THE RULE, for every per-seed verdict phase 2 takes (`G7`'s parity clauses and each `Nd − X` contrast):**
+
+1. **Score each seed independently and PRINT BOTH.** A combined verdict never replaces the two it came from.
+2. **AGREE → that is the verdict.**
+3. **DISAGREE, and the disagreeing seed's margin is smaller than `0.25 × its own 2σ` → the verdict is the OTHER seed's, and the near-miss is reported with its margin in percentage points.** A margin that small is a rounding, not an exclusion, and one additional rep would erase it.
+4. **DISAGREE with both margins larger than that → the verdict is `SPLIT`, reported as `SPLIT`, and NOT resolved by averaging, by pooling the seeds, or by preferring the tighter one.** A genuine seed dependence at a single-path cell is itself a finding about the cell.
+5. **If either seed's own `2σ` exceeds the 5 % design bar, that seed is `UNRESOLVED` and does not vote** — the phase-1 pre-registration's existing rule for the s42 dispersion pathology, restated so it composes with the four rules above.
+
+**Applied retrospectively to phase 1 for the avoidance of doubt: rule 3 gives `REPRODUCES`**, which is what the scored section recorded — but it now rests on a rule fixed before the next run rather than after the last one.
+
+### (d) TWO INSTRUMENT DEFECTS, FIXED BEFORE THE RUN RATHER THAN NOTED AFTER IT
+
+**THE WITNESS WAS DISCARDED ON THE SUCCESS PATH.** `/tmp/rwm-abort.txt` is rewritten every invocation and the driver copied it out **only on the abort branch**. Phase 1 ran 72/72 clean, so the topo-ping repair's own auditable column — `ping_<leg>_attempts`, `1` being the healthy single draw — **was retained exactly when it did not matter and destroyed on 100 % of the battery.** The repair was confirmed to hold (0 aborts) and its retry histogram was unmeasurable from the artifacts. **Fixed:** the witness is copied on **every** invocation, and a `PINGROW` line puts both legs' attempt counts in the **ledger** so the distribution survives without the diag tree. The parser prints the histogram, the per-arm maximum, and the battery-wide retry fraction. At `c1` the witness's own arithmetic predicts ≈ 0.14 of 240 legs needing a second draw, so **near-zero is the expected reading and is now a MEASUREMENT rather than an absence** — which is the whole point, since an absence cannot falsify anything.
+
+**`gap_parse.py` PRINTED NO MECHANISM TABLE AT ALL, SILENTLY.** Its `[CTLD]` extractor scanned for a single `a/b` token; the driver emits `tx=<n> rx=<n>` as two separate tokens. The scan therefore matched nothing on **every ledger this battery has ever produced**, and the section was skipped by an `if ctld:` that was always false. Phase 1's densities had to be computed outside the parser to score `G3` at all. **Fixed**, with the `a/b` form kept as a fallback; the density is now keyed per rep so the cumulative intermediate `[CTLD]` snapshots are not averaged into it, and per seed so a seed split cannot hide inside a pooled mean. **The fix is regression-checked against phase 1's committed ledgers and reproduces the hand-computed 1.960 / 1.000 / 1.956 with their dispersions to three decimals** — a parser change validated against an independent computation of the same quantity, rather than against its own output.
+
+**NEITHER FIX TOUCHES AN ENGINE CRATE, A GATE, A DEFAULT, OR ANY ARM'S ENV.** They add two ledger lines and repair a reader.
+
+### THE ARMS, UNCHANGED FROM THE ORIGINAL PRE-REGISTRATION
+
+| arm | env | what it reads |
+|---|---|---|
+| `Nd` | shipped defaults | today's stack |
+| `Nm` | `RWM_ACK_MERGE=0` | **THE DISCRIMINATING ARM.** `Nd − Nm` is ack-merge's marginal effect in today's composed stack |
+| `Nh` | `RWM_HONEST_ANCHOR=0` | flip 2 |
+| `Ns` | `RWM_SUM_CAP=0` | flip 3 — **predicted INERT at `c1`** |
+| `Nc` | `RWM_DELTA_CAP=0` | flip 4 — **predicted INERT at `c1`** |
+
+`c1`, 400 MB, single, `RWM_GEN=0`, `n = 12`, seeds 42 and 7 — **5 × 12 × 2 = 120 invocations.** `G7` stands exactly as pre-registered: `|Nd − Ns|` and `|Nd − Nc|` each within their own `2σ`, and a non-parity reading is a **defect finding against the era contract's inertness claim**, not a footnote.
+
+**THE BINARY.** Phase 2 runs today's `main`. `01c2d38` → `9919321` is **docs-only** — `git diff --stat` over the two commits touches nothing outside `raptorpath/docs/` — so the binary already built and recorded at `sha256 330ebfcc…` **is** main@`9919321`'s engine, and is used without a rebuild. **This is the same argument the original pre-registration used for `4171b58` versus `c2bfab7`**, applied to today's tree and stated before the run rather than discovered after it. `G-ERA` still proves mechanically which binary ran: `[GATES]` **present two-sided** is today's, absent is the pre-flip one.
+
+### WHAT IS NOT CLAIMED IN THIS AMENDMENT
+
+* **No number is a result.** Nothing here has been run.
+* **No phase-1 verdict is revised.** `D1` stands, `G1`'s third state stands, `G6` stays void as written.
+* **The era battery's section is still not edited** — that waits on phase 2 being scored, exactly as the original contract requires.
+* **No default flips, no gate is added, no engine crate is edited.**
+
+---
+
 ## THE SPAN RUN â€” PRE-REGISTRATION (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM HALF, plus item 5's FIRST FIELD Ïƒ.** Written and committed BEFORE the VM is run, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### WHAT THIS RUN IS, IN ONE PARAGRAPH
